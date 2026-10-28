@@ -96,15 +96,21 @@ def genAssumableContext : Gen Ix.ClaimContext :=
   (fun ctx assumed => { ctx with bindingAssumed := assumed })
     <$> genClaimContext <*> genBool
 
+/-- A context for `checkEnv`, which may also be under a literal class. -/
+def genCheckEnvContext : Gen Ix.ClaimContext :=
+  (fun ctx assumed klass =>
+      if klass then { ctx with literalClass := true } else { ctx with bindingAssumed := assumed })
+    <$> genClaimContext <*> genBool <*> genBool
+
 def genClaim : Gen Claim :=
   frequency [
     (10, Claim.eval     <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
     (10, Claim.check    <$> genAssumableContext <*> genAddress <*> genOptAddress),
-    (10, Claim.checkEnv <$> genAssumableContext <*> genAddress <*> genOptAddress),
+    (10, Claim.checkEnv <$> genCheckEnvContext <*> genAddress <*> genOptAddress),
     (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo),
     (10, Claim.contains <$> genAddress <*> genAddress),
     (10, Claim.binding  <$> genAddress <*> genAddress),
-    (10, Claim.catalog  <$> genClaimContext <*> genAddress <*> genAddress <*> genOptAddress),
+    (10, Claim.catalog  <$> genAddress),
     (10, Claim.resource <$> genAddress <*> genAddress),
   ]
 
@@ -142,10 +148,9 @@ instance : Shrinkable Claim where
     | .reveal comm info =>
       (.reveal comm <$> Shrinkable.shrink info) ++ [.check default comm none]
     | .contains t _ => [.checkEnv default t none]
-    | .catalog ctx m _ none => [.checkEnv ctx m none]
+    | .catalog m => [.checkEnv default m none]
     | .resource _ _ => []
     | .binding _ _ => []
-    | .catalog ctx m c (some _) => [.catalog ctx m c none]
 
 /-! ## SampleableExt instances -/
 

@@ -18,13 +18,15 @@ def fixtures : Array (String × Ix.Claim) :=
       binding := Address.blake3 "binding".toUTF8
       axioms := none }
   let assumed := { ctx with bindingAssumed := true }
+  let klass := { ctx with literalClass := true }
   #[ ("eval", .eval ctx a b asm), ("check", .check ctx a none),
      ("check_env", .checkEnv ctx a asm), ("reveal", .reveal a (.axio none none none)),
-     ("contains", .contains a b), ("catalog", .catalog ctx a b asm),
+     ("contains", .contains a b), ("catalog", .catalog a),
      ("resource", .resource a b),
      ("check_assumed", .check assumed a none),
      ("check_env_assumed", .checkEnv assumed a asm),
-     ("binding", .binding ctx.spec ctx.binding) ]
+     ("binding", .binding ctx.spec ctx.binding),
+     ("check_env_class", .checkEnv klass a asm) ]
 
 /-- The variants whose claims may assume their binding (validator 4). -/
 def mayAssume (claim : Ix.Claim) : Bool :=
@@ -63,11 +65,20 @@ def run : IO Unit := do
       unless ctx' == { ctx with bindingAssumed := true } && a' == a && asm' == asm do
         throw <| IO.userError "validator 4 check read wrongly"
     | .ok (.checkEnv ctx' r' asm'), .checkEnv ctx r asm =>
-      unless ctx' == { ctx with bindingAssumed := true } && r' == r && asm' == asm do
+      unless ctx' == { ctx with bindingAssumed := true, literalClass := false } && r' == r && asm' == asm do
         throw <| IO.userError "validator 4 check-env read wrongly"
     | .ok _, _ => throw <| IO.userError "validator 4 accepted for a variant that cannot assume"
     | .error _, _ =>
       if mayAssume claim then throw <| IO.userError "validator 4 refused for check or check-env"
+    -- Validator 5 (a literal class) is read only for `checkEnv`, and as
+    -- exactly that.
+    match Ix.Claim.de (bytes.set! (header + 1) Ix.Claim.VALIDATOR_ERASED_LEAN_CLASS), claim with
+    | .ok (.checkEnv ctx' r' asm'), .checkEnv ctx r asm =>
+      unless ctx' == { ctx with bindingAssumed := false, literalClass := true } && r' == r && asm' == asm do
+        throw <| IO.userError "validator 5 check-env read wrongly"
+    | .ok _, _ => throw <| IO.userError "validator 5 accepted for a variant other than check-env"
+    | .error _, .checkEnv .. => throw <| IO.userError "validator 5 refused for check-env"
+    | .error _, _ => pure ()
     let proof : Ixon.Proof := { claim, proof := ⟨#[1, 2, 3]⟩ }
     let proofBytes := Ixon.Proof.ser proof
     let decoded ← IO.ofExcept (Ixon.Proof.de proofBytes)

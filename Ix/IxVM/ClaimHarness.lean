@@ -520,12 +520,10 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     let roots := Ix.Tc.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env
     ioBuffer := addEntries env (closureFromRoots env roots).contains ioBuffer
   | .catalog .. =>
-    -- Deliberately unsupported: a catalog claim is verified by
-    -- COMPOSITION of per-piece CheckEnv claims with set discharge
-    -- (plan §5.3) — interpreting the whole catalog in one circuit run
-    -- would recreate exactly the union bound the `.ixc` removes.
-    throw "catalog claims have no single-run witness; verify by \
-composition of per-piece check-env claims"
+    -- A catalog claim collects other claims; it is formed and verified only
+    -- by aggregation (`ix_aggr` shape 16), never by one IxVM run.
+    throw "catalog claims have no single-run witness; they are formed by \
+aggregating their members' check-env claims"
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 

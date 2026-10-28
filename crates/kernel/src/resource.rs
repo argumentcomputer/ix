@@ -362,6 +362,7 @@ mod tests {
             binding: Address::hash(b"binding"),
             axioms: None,
             binding_assumed: false,
+            literal_class: false,
           },
           root: Address::hash(b"subject"),
           assumptions: None

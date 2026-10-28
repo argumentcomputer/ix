@@ -214,7 +214,7 @@ def runVMClaims : IO Nat := do
     -- is verified by host or aggregate composition, never by `run_claim`.
     if name == "check" then
       checks := checks + (← checkVMClaim vm "catalog-no-arm"
-        (replaceClaimBytes witness (Ix.Claim.ser (.catalog ctx tree.root tree.root none))) false)
+        (replaceClaimBytes witness (Ix.Claim.ser (.catalog tree.root))) false)
   -- Erased typing deliberately accepts a resource-invalid body. The
   -- validator byte keeps that fact separate from resource admission.
   let (escaping, escapingTarget) := Tests.ResourceAddressed.store base

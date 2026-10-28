@@ -296,6 +296,7 @@ mod doc_examples {
       binding: Address::hash(b"binding"),
       axioms: None,
       binding_assumed: false,
+      literal_class: false,
     }
   }
 

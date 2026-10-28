@@ -125,7 +125,54 @@ def structuralAdviceTrees (left right output : CheckEnvTrees) :
   left.assumptions.toArray ++ right.assumptions.toArray ++
     output.assumptions.toArray
 
+/-- The cross-binding structural fold (`ix_aggr` shape 15): the structural
+fold of two claims whose role bindings have the literal class `klass`, stated
+under that class (validator `erased-lean-v2-class`). The circuit checks that
+both children's classes are `klass`, reading each from its binding section when
+the child validates its binding. Advice is that of `joinStructural`, plus the
+binding sections of children that validate their binding. -/
+def joinCrossBinding (klass : Address) (left right : CheckEnvTrees) : CheckEnvTrees :=
+  let joined := joinStructural left right
+  { joined with ctx := { left.ctx with binding := klass, bindingAssumed := false,
+                                       literalClass := true } }
+
 end CheckEnvTrees
+
+/-- A `Catalog` statement with its members tree: the canonical tree over the
+member claims' digests (`Ix.Claim.commit`). -/
+structure CatalogTrees where
+  members : Ix.AssumptionTree
+  deriving Repr
+
+namespace CatalogTrees
+
+def claim (catalog : CatalogTrees) : Ix.Claim := .catalog catalog.members.root
+
+/-- Whether a claim may be a catalog member: an unconditional `CheckEnv` claim
+that validates its binding or names a literal class. -/
+def isMember : Ix.Claim → Bool
+  | .checkEnv ctx _ none => !ctx.bindingAssumed
+  | _ => false
+
+/-- The catalog of `members`, each of which must be a catalog member. -/
+def ofMembers (members : Array Ix.Claim) : Except String CatalogTrees := do
+  for m in members do
+    unless isMember m do throw s!"aggr catalog: not a catalog member: {m}"
+  let some tree := Ix.AssumptionTree.canonical (members.map Ix.Claim.commit)
+    | throw "aggr catalog: a catalog has at least one member"
+  return { members := tree }
+
+/-- The member statements of one side of a catalog join (`ix_aggr` shape 16):
+a member claim's own digest, or a catalog's members. -/
+def part : Ix.Claim ⊕ CatalogTrees → Array Address
+  | .inl claim => #[Ix.Claim.commit claim]
+  | .inr catalog => catalog.members.leaves
+
+/-- The catalog join: the union of both sides' member statements. -/
+def join (left right : Ix.Claim ⊕ CatalogTrees) : CatalogTrees :=
+  { members := (Ix.AssumptionTree.canonical (part left ++ part right)).get! }
+
+end CatalogTrees
 
 end Aggr
 

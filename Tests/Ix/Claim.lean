@@ -46,9 +46,9 @@ def claimUnits : TestSeq :=
   -- Contains
   ++ test "Contains roundtrip" (claimSerde (.contains addr1 addr2))
   -- Catalog (the first multi-byte claim tag)
-  ++ test "Catalog no-asm roundtrip" (claimSerde (.catalog ctx addr1 addr2 none))
-  ++ test "Catalog with-asm roundtrip"
-       (claimSerde (.catalog ctx addr1 addr2 (some addr3)))
+  ++ test "Catalog roundtrip" (claimSerde (.catalog addr1))
+  ++ test "CheckEnv under a literal class roundtrip"
+       (claimSerde (.checkEnv { ctx with literalClass := true } addr1 none))
   -- Reveal claim variants (carried over from previous suite)
   ++ test "Reveal defn safety-only" (claimSerde (.reveal addr1
     (.defn none (some .safe) none none none)))
@@ -140,30 +140,25 @@ def claimEncodingTests : TestSeq :=
 -/
 
 private def catMembers : Address := Address.blake3 "members".toUTF8
-private def catContent : Address := Address.blake3 "content".toUTF8
-private def catAsm : Address := Address.blake3 "assumptions".toUTF8
 
 /-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
 private def catalogDigestPin : String :=
-  "5f6f427ffe393beabc12bf64df64c32657d79d0dd925ec7a3e2ea9180fa85e03"
+  "4f5686bd1a8386231370703d58223aca769c82c835964d4914ca41305a8030f3"
 
 def catalogClaimTests : TestSeq :=
-  let someBytes := Claim.ser (.catalog ctx catMembers catContent (some catAsm))
-  let noneBytes := Claim.ser (.catalog ctx catMembers catContent none)
-  let proof : Ixon.Proof := { claim := .catalog ctx catMembers catContent none
-                              proof := .empty }
+  let bytes := Claim.ser (.catalog catMembers)
+  let proof : Ixon.Proof := { claim := .catalog catMembers, proof := .empty }
   let proofBytes := Ixon.Proof.ser proof
   let proofRoundtrips : Bool := match Ixon.Proof.de proofBytes with
     | .ok p => p.claim == proof.claim && p.proof == proof.proof
     | .error _ => false
   test "Catalog tag is 2 bytes 0xE8 0x00 (TagN 4 0xE 8)"
-    (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x00)
+    (bytes.data[0]! == 0xE8 && bytes.data[1]! == 0x00)
   ++ test "Catalog scope is object format 4, erased-lean-v2"
-       (someBytes.data[2]! == 4 && someBytes.data[3]! == 3)
-  ++ test "Catalog no-asm size is 134" (noneBytes.size == 4 + 65 + 64 + 1)
-  ++ test "Catalog with-asm size is 166" (someBytes.size == 4 + 65 + 64 + 33)
+       (bytes.data[2]! == 4 && bytes.data[3]! == 3)
+  ++ test "Catalog is the scope and the members root, 36 bytes" (bytes.size == 4 + 32)
   ++ test "Catalog digest parity with Rust pin"
-       (toString (Address.blake3 someBytes) == catalogDigestPin)
+       (toString (Address.blake3 bytes) == catalogDigestPin)
   ++ test "Catalog proof wrapper tag is single-byte 0xF5"
        (proofBytes.data[0]! == 0xF5)
   ++ test "Catalog proof wrapper roundtrips" proofRoundtrips
