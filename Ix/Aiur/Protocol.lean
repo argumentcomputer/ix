@@ -207,7 +207,7 @@ structure ShardProveResult where
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& Nat → Bool → Bool →
-  @& Nat → Except String ShardProveResult
+  @& Nat → Bool → Except String ShardProveResult
 
 /-- What a trace-shard batch keeps of each shard between its two rounds.
     `auto` lets the prover's RAM model choose: retain when the whole
@@ -250,15 +250,17 @@ def ShardRetention.code : ShardRetention → Nat
     `peakBytes` is then the heaviest shard's projection. Only when no
     shard count fits does the result fall back to `suggestedParts`.
     `retention` fixes what the batch keeps between its rounds, or lets
-    the RAM model choose. -/
+    the RAM model choose. `assumeBinding` proves the claim assuming the
+    environment's binding meets the specifications (validator 4), for an
+    aggregate that discharges it once with a binding proof. -/
 def shardProveWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (maxRamBytes : Nat := 0)
   (execOnly : Bool := false) (traceShards : Bool := false)
-  (retention : ShardRetention := .auto) :
+  (retention : ShardRetention := .auto) (assumeBinding : Bool := false) :
     Except String ShardProveResult :=
   shardProveWithEnv' system funIdx envHandle ownedBlob maxRamBytes execOnly
-    traceShards retention.code
+    traceShards retention.code assumeBinding
 
 @[extern "rs_aiur_system_prove_env_distributed"]
 private opaque proveEnvDistributed' : @& AiurSystem →

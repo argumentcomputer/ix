@@ -39,14 +39,27 @@ pub(super) fn projection_block(addr: &Address, constant: &Constant) -> Address {
   }
 }
 
+/// The run's claims, each validating its binding.
 pub(super) fn prepare_run(
   env: &ixon::Env,
   manifest: &ShardManifest,
 ) -> Result<PreparedRun, String> {
+  prepare_run_with(env, manifest, false)
+}
+
+/// The run's claims, each assuming its binding meets the specifications
+/// when `assume_binding` (to be discharged once at the root) and validating
+/// it otherwise.
+pub(super) fn prepare_run_with(
+  env: &ixon::Env,
+  manifest: &ShardManifest,
+  assume_binding: bool,
+) -> Result<PreparedRun, String> {
   if manifest.shards.is_empty() {
     return Err("manifest contains no shards".into());
   }
-  let ctx = ixon::ClaimContext::for_env(env)?;
+  let mut ctx = ixon::ClaimContext::for_env(env)?;
+  ctx.binding_assumed = assume_binding;
 
   let mut block_to_shard = FxHashMap::default();
   let mut id_to_index = FxHashMap::default();

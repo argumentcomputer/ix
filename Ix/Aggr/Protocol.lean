@@ -69,6 +69,18 @@ def rangeLeafShape : Nat := 10
 def rangeJoinShape : Nat := 11
 def rangeRootShape : Nat := 12
 
+/-! ## Binding discharge
+
+Shapes `13`–`14` take a `CheckEnv` child that assumes its binding (an IxVM
+child for `13`, an `ix_aggr` child for `14`, at key 0) and an IxVM proof of
+the `binding` claim for its specification digest and binding hash (key 1),
+and state the child's claim validating its binding: the same bytes with
+validator 3. Folds keep the validator, so an aggregate discharges once, at
+the top. -/
+
+/-- The binding-discharge shape for a child of kind `kind`. -/
+def dischargeShapeCode (kind : ChildKind) : Nat := 13 + kind.code
+
 /-- The byte that opens every range statement; no `Ix.Claim` starts with it,
 so a range statement never parses as a `CheckEnv` claim. -/
 def rangeStatementTag : UInt8 := 0x52

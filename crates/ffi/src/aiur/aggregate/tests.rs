@@ -86,6 +86,7 @@ fn test_ctx() -> ixon::ClaimContext {
     spec: ixon::proof::spec_digest(),
     binding: addr("aggregate-test-binding"),
     axioms: None,
+    binding_assumed: false,
   }
 }
 
@@ -214,4 +215,64 @@ fn native_preparation_and_structural_fold_discharge_a_frontier() {
   assert_eq!(paths.len(), 1);
   assert_eq!(paths[0].0, dependency);
   assert_eq!(paths[0].1.first(), Some(&1));
+}
+
+/// One `Binding` claim discharges any claim set over its binding: two
+/// conditional `CheckEnv` claims with different subjects and assumptions
+/// both discharge against the same binding claim, each to its own claim
+/// validating the binding. A claim that already validates it, or a binding
+/// claim for another binding or specification, does not discharge.
+#[test]
+fn one_binding_claim_discharges_any_claim_set() {
+  use super::prove::discharged_claim_bytes;
+  use ixon::proof::Claim;
+  let assumed = test_ctx().assuming_binding();
+  let binding = Claim::Binding {
+    spec: assumed.spec.clone(),
+    binding: assumed.binding.clone(),
+  };
+  let claims = [
+    Claim::CheckEnv {
+      ctx: assumed.clone(),
+      root: addr("subjects-a"),
+      assumptions: None,
+    },
+    Claim::CheckEnv {
+      ctx: assumed.clone(),
+      root: addr("subjects-b"),
+      assumptions: Some(addr("assumptions-b")),
+    },
+  ];
+  for claim in &claims {
+    let (_, bytes) = claim.commit();
+    let discharged =
+      discharged_claim_bytes(&bytes, &binding).expect("discharges");
+    let Claim::CheckEnv { ctx, root, assumptions } = claim.clone() else {
+      unreachable!()
+    };
+    let validating = Claim::CheckEnv {
+      ctx: ixon::ClaimContext { binding_assumed: false, ..ctx },
+      root,
+      assumptions,
+    };
+    assert_eq!(discharged, validating.commit().1);
+  }
+  let (_, validating_bytes) = Claim::CheckEnv {
+    ctx: test_ctx(),
+    root: addr("subjects-a"),
+    assumptions: None,
+  }
+  .commit();
+  assert!(discharged_claim_bytes(&validating_bytes, &binding).is_err());
+  let (_, assumed_bytes) = claims[0].commit();
+  let other_binding = Claim::Binding {
+    spec: assumed.spec.clone(),
+    binding: addr("another binding"),
+  };
+  assert!(discharged_claim_bytes(&assumed_bytes, &other_binding).is_err());
+  let other_spec = Claim::Binding {
+    spec: addr("another spec"),
+    binding: assumed.binding.clone(),
+  };
+  assert!(discharged_claim_bytes(&assumed_bytes, &other_spec).is_err());
 }
