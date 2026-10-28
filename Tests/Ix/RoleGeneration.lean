@@ -146,6 +146,18 @@ private def checks (operation : Role) : Except String Unit := do
   let malformedBytes := ByteArray.mk #[255]
   let malformedAddress := Address.admissionHash malformedBytes
   let malformedRecord : LazyConstant := { buf := malformedBytes, len := malformedBytes.size }
+  need "certificate overlap accepts matching artifact bytes"
+    (Ix.RoleBinding.checkCertificateContent larger certificates).isOk
+  let conflictingRecord := { certificates with
+    consts := certificates.consts.insert smallAddress malformedRecord }
+  need "certificate overlap refuses conflicting records outside support"
+    (!(Ix.RoleBinding.checkCertificateContent larger conflictingRecord).isOk)
+  let blobBytes := ByteArray.mk #[1, 2, 3]
+  let blobAddress := Address.admissionHash blobBytes
+  let artifactWithBlob := { larger with blobs := larger.blobs.insert blobAddress blobBytes }
+  let conflictingBlob := { certificates with blobs := certificates.blobs.insert blobAddress malformedBytes }
+  need "certificate overlap refuses conflicting blobs outside support"
+    (!(Ix.RoleBinding.checkCertificateContent artifactWithBlob conflictingBlob).isOk)
   let malformed := { larger with consts := larger.consts.insert malformedAddress malformedRecord }
   need "whole-artifact validation refuses an authenticated malformed orphan"
     (!(Ix.RoleBinding.checkedStore limits malformed).isOk)

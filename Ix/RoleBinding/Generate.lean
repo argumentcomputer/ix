@@ -72,6 +72,18 @@ def mergeRecords (left right : RecordStore) : Except String RecordStore := do
     else out := out.insert address record
   return out
 
+/-- Refuse conflicting certificate bytes anywhere in the artifact, including
+outside the support used for evidence generation. Authentication and canonical
+decoding remain separate checks; a shared address does not imply equal bytes. -/
+def checkCertificateContent (artifact certificates : Ixon.Env) : Except String Unit := do
+  for (address, record) in certificates.consts.toList do
+    if let some old := artifact.consts[address]? then
+      unless old.rawBytes == record.rawBytes do
+        throw s!"role generation: conflicting record bytes at {address}"
+  for (address, bytes) in certificates.blobs.toList do
+    if let some old := artifact.blobs[address]? then
+      unless old == bytes do throw s!"role generation: conflicting blob bytes at {address}"
+
 def readDeclarations (s : Setup) (addresses : Array Address) :
     Except String (Array (CDecl .anon)) := do
   let mut state : State .anon := {}
