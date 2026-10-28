@@ -81,7 +81,7 @@ theorem mutCtx_singleton (source : InductiveVal) (constructors : Array Construct
         ((Std.TreeMap.empty : Ix.MutCtx).insert source.cnst.name 0) := by
     simp [buildInductiveMutCtx]
   rw [Canon.ctx_fold, unfolded, ← Array.foldl_toList, Array.toList_zipIdx]
-  simp only [Canon.ctxPairs, Canon.pairsOf, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+  simp only [Canon.ctxPairs, Canon.pairsOf, List.append_nil,
     List.foldl_cons, List.foldl_map, List.length_singleton, MutConst.name, MutConst.ctors, Emission.sourceData]
   have same : (fun (acc : Ix.MutCtx) (entry : ConstructorVal × Nat) => Canon.insP acc (entry.1.cnst.name, 1 + entry.2)) =
       fun acc entry => acc.insert entry.1.cnst.name (entry.2 + 1) := by

@@ -1026,7 +1026,7 @@ theorem member_lits {T : Ix.Expr → Prop} (c : MutConst) (hc : MutLits T c) :
 abbrev PayloadsLits (T : Ix.Expr → Prop) (state : MutConstCompileState) : Prop :=
   ∀ p ∈ state.payloads.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e
 
-theorem members_lits {T : Ix.Expr → Prop} (sources : List MutConst) (initial : MutConstCompileState)
+theorem compiledMembers_lits {T : Ix.Expr → Prop} (sources : List MutConst) (initial : MutConstCompileState)
     (hc : ∀ c ∈ sources, MutLits T c) :
     Triple LI (fun _ _ => PayloadsLits T initial) (compileMutConstMembers sources initial)
       (fun _ _ r => PayloadsLits T r) := by
@@ -1116,7 +1116,7 @@ theorem mutConsts_lits {T : Ix.Expr → Prop} (classes : List MutConst)
     Triple LI (fun _ _ => True) (compileMutConsts classes)
       (fun _ _ out => ∀ p ∈ out.1.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e) := by
   unfold compileMutConsts
-  exact Triple.bind (Triple.pre (members_lits classes {} hc) fun _ _ _ _ p hp => by simp at hp)
+  exact Triple.bind (Triple.pre (compiledMembers_lits classes {} hc) fun _ _ _ _ p hp => by simp at hp)
     fun state => Triple.returns fun _ _ _ h => h
 
 theorem mutualPayload_lits {T : Ix.Expr → Prop} (classes : List MutConst)
