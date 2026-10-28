@@ -52,21 +52,105 @@ theorem rawRun_ite_cond {α : Type} {c : Prop} [Decidable c] {a b : CompileM α}
   · exact .inl ⟨hc, by simpa [hc] using h⟩
   · exact .inr ⟨hc, by simpa [hc] using h⟩
 
+/-! ## Blobs the block compile's tail keeps -/
+
+/-- **Every successful run keeps every blob the block reads**, with the bytes it read. -/
+def Grows {α : Type} (m : CompileM α) : Prop :=
+  ∀ (ctx : CompileEnv × BlockEnv) (s : BlockState) (x : α) (s' : BlockState),
+    rawRun m ctx s = (.ok x, s') → BlobWrites.Extends ctx.1.blobs s s'
+
+theorem Grows.elim {α : Type} {m : CompileM α} (hm : Grows m) {ctx : CompileEnv × BlockEnv} {s s' : BlockState}
+    {x : α} : rawRun m ctx s = (.ok x, s') → BlobWrites.Extends ctx.1.blobs s s' :=
+  hm ctx s x s'
+
+theorem Grows.pure {α : Type} (x : α) : Grows (Pure.pure x : CompileM α) := by
+  intro ctx s y s' ran
+  rw [rawRun_pure] at ran
+  cases ran
+  exact .refl _ _
+
+theorem Grows.throw {α : Type} (e : CompileError) : Grows (throw e : CompileM α) := by
+  intro ctx s y s' ran
+  rw [rawRun_throw] at ran
+  cases ran
+
+theorem Grows.bind {α β : Type} {m : CompileM β} {k : β → CompileM α} (hm : Grows m) (hk : ∀ b, Grows (k b)) :
+    Grows (m >>= k) := by
+  intro ctx s x s' ran
+  obtain ⟨b, mid, h₁, h₂⟩ := bind_ok ran
+  exact (hm ctx s b mid h₁).trans (hk b ctx mid x s' h₂)
+
+theorem Grows.ite {α : Type} {c : Prop} [Decidable c] {a b : CompileM α} (ha : Grows a) (hb : Grows b) :
+    Grows (if c then a else b) := by
+  split
+  · exact ha
+  · exact hb
+
+theorem Grows.modify {f : BlockState → BlockState} (h : ∀ s, (f s).blockBlobs = s.blockBlobs) :
+    Grows (modifyBlockState f) := by
+  intro ctx s x s' ran
+  rw [rawRun_modify] at ran
+  cases ran
+  exact RefTables.Extends.of_blobs (h s)
+
+theorem Grows.compileName (n : Ix.Name) : Grows (compileName n) := by
+  intro ctx s x s' ran
+  have := (BlobWrites.compileName_preserves n ctx s).2
+  rw [ran] at this
+  exact this
+
+theorem Grows.forIn_list {α β : Type} (items : List α) (init : β) (body : α → β → CompileM (ForInStep β))
+    (h : ∀ a b, Grows (body a b)) : Grows (forIn items init body) := by
+  induction items generalizing init with
+  | nil => exact Grows.pure init
+  | cons a rest ih =>
+    rw [List.forIn_cons]
+    refine Grows.bind (h a init) fun r => ?_
+    cases r with
+    | done v => exact Grows.pure v
+    | yield v => exact ih v
+
+theorem Grows.forIn_array {α β : Type} (items : Array α) (init : β) (body : α → β → CompileM (ForInStep β))
+    (h : ∀ a b, Grows (body a b)) : Grows (forIn items init body) := by
+  rw [← Array.forIn_toList]
+  exact Grows.forIn_list items.toList init body h
+
+/-- One step of a walk through a `do` block for `Grows`, as `BlockRecords`' `returns_step` walks
+one for `Returns`: a bind (both halves), an `if`, a `return`, a loop over an array, a write that
+keeps the blobs, a name's compile, a refusal, or a match on a local. -/
+local macro "grows_step" : tactic => `(tactic| first
+  | (with_reducible apply Grows.bind)
+  | (with_reducible apply Grows.ite)
+  | (with_reducible apply Grows.pure)
+  | (with_reducible apply Grows.throw)
+  | (with_reducible apply Grows.compileName)
+  | (with_reducible apply Grows.forIn_array)
+  | ((with_reducible apply Grows.modify); intro _; rfl)
+  | split
+  | ((with_reducible show ∀ _, _); intro _))
+
+theorem registerMutsEntry_grows (cls : List (List MutConst)) (addr : Address) :
+    Grows (registerMutsEntry cls addr) := by
+  unfold registerMutsEntry
+  repeat grows_step
+
 /-- **A block runs on one of its two paths, by its size and its key's kind**: a lone constant
-that is no inductive or constructor compiles alone (`compileConstantInfo`); any other block runs
-its members' loop from the empty state, and compiles the members in Lean's order
-(`compileMutualBlock (sourceClasses cs)`) with the records `runBlock` returns. -/
+that is no inductive or constructor compiles alone (`compileConstantInfo`), to `runBlock`'s final
+state; any other block runs its members' loop from the empty state, and compiles the members in
+Lean's order (`compileMutualBlock (sourceClasses cs)`) with the records `runBlock` returns, to a
+state whose blobs `runBlock`'s final state keeps (the registrations only add names). -/
 theorem runBlock_paths {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} {r : BlockResult}
     {cache : BlockState} (h : runBlock cenv all lo = .ok (r, cache)) :
     ∃ const, cenv.env.get? lo = some const ∧
-      (((all.size == 1 && !isIndConst const) = true ∧ ∃ s₂,
+      (((all.size == 1 && !isIndConst const) = true ∧
           rawRun (compileConstantInfo const) (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} =
-            (.ok r, s₂)) ∨
+            (.ok r, cache)) ∨
         ((all.size == 1 && !isIndConst const) = false ∧ ∃ cs out s₄,
           rawRun (GroupBlocks.membersLoop all.toList #[])
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok cs, {}) ∧
           rawRun (compileMutualBlock (sourceClasses cs))
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
+          BlobWrites.Extends cenv.blobs s₄ cache ∧
           BlockRecords.recordsOf r = BlockRecords.recordsOf out)) := by
   have h' := run_success (BlockRecords.runBlock_compiles h)
   unfold compileBlock at h'
@@ -78,7 +162,7 @@ theorem runBlock_paths {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
   subst h₁
   refine ⟨const, BlockRecords.findConst_ok hc, ?_⟩
   rcases rawRun_ite_cond h' with ⟨hcond, hs⟩ | ⟨hcond, hm⟩
-  · exact .inl ⟨hcond, _, hs⟩
+  · exact .inl ⟨hcond, hs⟩
   · right
     refine ⟨Bool.eq_false_iff.mpr hcond, ?_⟩
     obtain ⟨cs, s₂, hcs, hm₁⟩ := bind_ok hm
@@ -89,9 +173,14 @@ theorem runBlock_paths {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
       · exact Preserves.bind (BlockRecords.mkIndc_preserves _) fun _ => Preserves.pure id _
       all_goals exact Preserves.pure id _
     subst h₂
-    refine ⟨cs, out, s₄, ?_, hout, ?_⟩
+    refine ⟨cs, out, s₄, ?_, hout, ?_, ?_⟩
     · rw [Std.HashSet.forIn_eq_forIn_toList] at hcs
       exact hcs
+    · revert hm₂
+      refine Grows.elim ?_
+      repeat first
+        | exact registerMutsEntry_grows _ _
+        | grows_step
     · revert hm₂
       refine BlockRecords.Returns.elim
         (P := fun (x : BlockResult) => BlockRecords.recordsOf x = BlockRecords.recordsOf out) ?_
@@ -442,7 +531,7 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
       ∃ out after, rawRun (compileMutualBlock (((TraceSegments.defsOf members).map MutConst.defn).map ([·])))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
-        BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
+        BlobWrites.Extends snap.cenv.blobs after c ∧ BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
   have hcl : IsClosure env roots sub := P.source.1
   have hmemg : Group.definitions members ∈ groupsOf sub (blocksOf sub) := Array.mem_of_getElem? hgr
   obtain ⟨repS, allS, -, hcomp⟩ := GroupBlocks.component_of_groups sub (blocksOf sub) _ hmemg trivial
@@ -487,7 +576,7 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     rw [sourceData_name e]
     exact memIn ci hci
   obtain ⟨const, -, paths⟩ := runBlock_paths fb.ran
-  rcases paths with ⟨hcond, -⟩ | ⟨-, cs, out, s₄, hloop, hout, hrec⟩
+  rcases paths with ⟨hcond, -⟩ | ⟨-, cs, out, s₄, hloop, hout, hext, hrec⟩
   · -- a block of one name holds one member
     exfalso
     have hsize : all.size = 1 := by
@@ -499,7 +588,7 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     simp only [List.getElem_map, Array.getElem_toList] at this
     rw [e] at this
     cases this
-  refine ⟨snap, rep, all, r, c, fb, memDefs, out, s₄, ?_, hrec⟩
+  refine ⟨snap, rep, all, r, c, fb, memDefs, out, s₄, ?_, hext, hrec⟩
   have hcs := membersLoop_eq _ _ hloop
   have hE : (fun x => ((snap.cenv, ({ all, current := blockKey rep all, mutCtx := default, univCtx := [] } :
       BlockEnv)).1.env.get? x)) = fun x => env.consts.get? x := funext fb.env
@@ -766,7 +855,7 @@ theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Enviro
       ∃ out after, rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·])))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
-        BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
+        BlobWrites.Extends snap.cenv.blobs after c ∧ BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
   have hcl : IsClosure env roots sub := P.source.1
   obtain ⟨n, v, -, head, -, hcsize, hsizeT, typeAt, typeGet, ctorGet, ctorsOf⟩ := inductive_facts P hgr
   have namedE : ∀ k ci, env.consts.get? k = some ci → (ci.getCnst.name == k) = true :=
@@ -794,7 +883,7 @@ theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Enviro
   have memAll := FamilyGroups.inductive_block_at P fbk hgr fb.block h0 hin0
   -- a name of the block is a type or a constructor, so the block is an inductive block
   obtain ⟨const, hconst, paths⟩ := runBlock_paths fb.ran
-  rcases paths with ⟨hcond, -⟩ | ⟨-, cs, out, s₄, hloop, hout, hrec⟩
+  rcases paths with ⟨hcond, -⟩ | ⟨-, cs, out, s₄, hloop, hout, hext, hrec⟩
   · exfalso
     rw [fb.env] at hconst
     have hkey := (memAll _).mp (blockKey_mem (lo := rep) (Condense.condense_nonempty fb.block))
@@ -805,7 +894,7 @@ theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Enviro
     · rw [← envCongr _ _ e, ctorGet j hj k hk] at hconst
       cases hconst
       simp [isIndConst] at hcond
-  refine ⟨snap, rep, all, r, c, fb, memAll, out, s₄, ?_, hrec⟩
+  refine ⟨snap, rep, all, r, c, fb, memAll, out, s₄, ?_, hext, hrec⟩
   have hcs := membersLoop_eq _ _ hloop
   have hE : (fun x => ((snap.cenv, ({ all, current := blockKey rep all, mutCtx := default, univCtx := [] } :
       BlockEnv)).1.env.get? x)) = fun x => env.consts.get? x := funext fb.env
@@ -1006,7 +1095,7 @@ theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
             rawRun (compileConstantInfo (.recInfo r'))
               (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
               (.ok out, after)) ∧
-        BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
+        BlobWrites.Extends snap.cenv.blobs after c ∧ BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
   have hcl : IsClosure env roots sub := P.source.1
   obtain ⟨n, v, hnv, head, hrecs, hcsize, hsizeT, typeAt, -, -, -⟩ := inductive_facts P hgr
   have namedE : ∀ k ci, env.consts.get? k = some ci → (ci.getCnst.name == k) = true :=
@@ -1077,7 +1166,7 @@ theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
   obtain ⟨jk, hjk, ek⟩ := (memAll _).mp (blockKey_mem (lo := rep) (Condense.condense_nonempty fb.block))
   rw [← envCongr _ _ ek, (recOwn jk hjk).2.1] at hconst
   cases hconst
-  rcases paths with ⟨hcond, s₂, hs⟩ | ⟨-, cs, out, s₄, hloop, hout, hrec⟩
+  rcases paths with ⟨hcond, hs⟩ | ⟨-, cs, out, s₄, hloop, hout, hext, hrec⟩
   · -- a lone recursor, compiled alone under its own name
     have hsize : all.size = 1 := by
       simp only [Bool.and_eq_true, beq_iff_eq] at hcond
@@ -1104,8 +1193,8 @@ theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
       have h := Array.getElem_toList (xs := recs) (i := 0) (h := by rw [Array.length_toList]; omega)
       simp only [ha, List.getElem_cons_zero] at h
       rw [ha, h]
-    exact ⟨snap, rep, all, r, c, fb, memAll, r, s₂, .inr ⟨recs[0], hl, hkey.symm, hs⟩, rfl⟩
-  · refine ⟨snap, rep, all, r, c, fb, memAll, out, s₄, .inl ?_, hrec⟩
+    exact ⟨snap, rep, all, r, c, fb, memAll, r, c, .inr ⟨recs[0], hl, hkey.symm, hs⟩, .refl _ _, rfl⟩
+  · refine ⟨snap, rep, all, r, c, fb, memAll, out, s₄, .inl ?_, hext, hrec⟩
     have hcs := membersLoop_eq _ _ hloop
     have hE : (fun x => ((snap.cenv, ({ all, current := blockKey rep all, mutCtx := default, univCtx := [] } :
         BlockEnv)).1.env.get? x)) = fun x => env.consts.get? x := funext fb.env
@@ -1140,8 +1229,16 @@ theorem FoldBlock.claimed {env sub : Ix.Environment} {ixe : Ixon.Env} {failures 
     (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf out) : TraceSegments.Claimed ixe sub out :=
   ⟨snap.cenv, all, blockKey rep all, r, c, fb.ran, fb.published, hrec⟩
 
-/-- **`BlockCompiled.ran` and `.claimed`** for a definitions group of two or more, at the fold's
-block of the group (`FoldBlock`, which also gives `fresh`, `bound`, `blobs` and `published`). -/
+/-- **The blobs a run reads are the artifact's** (`TraceSegments.BlobsKept`), for a run to a state
+whose blobs the fold block's final state keeps. -/
+theorem FoldBlock.blobsKept {env sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {snap : DriverAcc}
+    {rep : Ix.Name} {all : Ix.Set Ix.Name} {r : BlockResult} {c : BlockState}
+    (fb : FoldBlock env sub ixe failures snap rep all r c) {after : BlockState}
+    (ext : BlobWrites.Extends snap.cenv.blobs after c) : TraceSegments.BlobsKept ixe snap.cenv after :=
+  fun a v h => fb.blobs a v (ext a v h)
+
+/-- **`BlockCompiled.ran`, `.claimed` and `.blobs`** for a definitions group of two or more, at the
+fold's block of the group (`FoldBlock`, which also gives `fresh`, `bound` and `published`). -/
 theorem definitions_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ)
@@ -1155,12 +1252,12 @@ theorem definitions_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub 
       ∃ out after, rawRun (compileMutualBlock (((TraceSegments.defsOf members).map MutConst.defn).map ([·])))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
-        TraceSegments.Claimed ixe sub out := by
-  obtain ⟨snap, rep, all, r, c, fb, mem, out, after, ran, hrec⟩ := definitions_run P scheduled hgr two
-  exact ⟨snap, rep, all, r, c, fb, mem, out, after, ran, fb.claimed hrec⟩
+        TraceSegments.Claimed ixe sub out ∧ TraceSegments.BlobsKept ixe snap.cenv after := by
+  obtain ⟨snap, rep, all, r, c, fb, mem, out, after, ran, ext, hrec⟩ := definitions_run P scheduled hgr two
+  exact ⟨snap, rep, all, r, c, fb, mem, out, after, ran, fb.claimed hrec, fb.blobsKept ext⟩
 
-/-- **`InductiveCompiled.ran₁` and `.claimed₁`**: an inductive group's types, at the fold's block
-of its types. -/
+/-- **`InductiveCompiled.ran₁`, `.claimed₁` and `.blobs₁`**: an inductive group's types, at the
+fold's block of its types. -/
 theorem types_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyGroups.FamilyBlocks env)
@@ -1172,12 +1269,12 @@ theorem types_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
       ∃ out after, rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·])))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
-        TraceSegments.Claimed ixe sub out := by
-  obtain ⟨snap, rep, all, r, c, fb, -, out, after, ran, hrec⟩ := types_run P fbk hgr distinct
-  exact ⟨snap, rep, all, r, c, fb, out, after, ran, fb.claimed hrec⟩
+        TraceSegments.Claimed ixe sub out ∧ TraceSegments.BlobsKept ixe snap.cenv after := by
+  obtain ⟨snap, rep, all, r, c, fb, -, out, after, ran, ext, hrec⟩ := types_run P fbk hgr distinct
+  exact ⟨snap, rep, all, r, c, fb, out, after, ran, fb.claimed hrec, fb.blobsKept ext⟩
 
-/-- **`InductiveCompiled.family`**: an inductive group's recursors, at the fold's block of its
-recursors, with `cenv₂ := snap.cenv`. -/
+/-- **`InductiveCompiled.family` and `.blobs₂`**: an inductive group's recursors, at the fold's
+block of its recursors, with `cenv₂ := snap.cenv`. -/
 theorem recursors_family {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyGroups.FamilyBlocks env)
@@ -1187,7 +1284,7 @@ theorem recursors_family {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix
     (distinct : Canon.KeysDistinct ((indsOf types ctors).map MutConst.indc)) :
     ∃ snap rep all r c, FoldBlock env sub ixe failures snap rep all r c ∧
       ∃ out after,
-        ∃ (cenvR₂ : CompileEnv) (all₂ : Ix.Set Ix.Name) (key₂ : Ix.Name) (r₂ : BlockResult) (cache₂ : BlockState),
+        (∃ (cenvR₂ : CompileEnv) (all₂ : Ix.Set Ix.Name) (key₂ : Ix.Name) (r₂ : BlockResult) (cache₂ : BlockState),
           runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂) ∧ BlockPublication.Published ixe sub key₂ r₂ ∧
           BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out ∧
           (rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·])))
@@ -1196,10 +1293,11 @@ theorem recursors_family {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix
             ∃ r', recs.toList = [r'] ∧ key₂ = r'.cnst.name ∧
               rawRun (compileConstantInfo (.recInfo r'))
                 (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
-                (.ok out, after)) := by
-  obtain ⟨snap, rep, all, r, c, fb, -, out, after, ran, hrec⟩ := recursors_run P fbk hgr distinct
-  exact ⟨snap, rep, all, r, c, fb, out, after, snap.cenv, all, blockKey rep all, r, c, fb.ran, fb.published, hrec,
-    ran⟩
+                (.ok out, after))) ∧
+        TraceSegments.BlobsKept ixe snap.cenv after := by
+  obtain ⟨snap, rep, all, r, c, fb, -, out, after, ran, ext, hrec⟩ := recursors_run P fbk hgr distinct
+  exact ⟨snap, rep, all, r, c, fb, out, after, ⟨snap.cenv, all, blockKey rep all, r, c, fb.ran, fb.published, hrec,
+    ran⟩, fb.blobsKept ext⟩
 
 end Ix.Cert.GroupRuns
 
