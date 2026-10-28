@@ -44,11 +44,12 @@ theorem readerStreams_of_units {env : Ix.Environment} {roots : List Ix.Name}
     (hds : Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((fiberHintsMap ixe)[·]?) pre sub
       (blocksOf sub) = .ok ds)
     (hb : Ix.RoleEvidence.quotientBundle () = .ok b)
-    (units : ∀ (preA : Prelude .anon) rs fin s kb, preludeFor t = .ok preA →
+    (units : ∀ (preA : Prelude .anon) rs fin s kb (decls : Array (Declaration .source)), preludeFor t = .ok preA →
       SourcePrelude.Trace (graphCollapsed (fiberAliasAt ixe (roleAtMap t)) ((fiberHintsMap ixe)[·]?)
           sub (blocksOf sub)) pre.state
         (scheduleOf (graphCollapsed (fiberAliasAt ixe (roleAtMap t)) ((fiberHintsMap ixe)[·]?) sub
           (blocksOf sub))).zipIdx.toList rs fin s kb →
+      decls.toList = rs.flatMap (·.decls.toList) → ds = Frontend.preparePrelude pre.ix decls →
       UnitsRead ixe sub t preA b pre rs) :
     ∃ (binding : Admission.Binding) (tA : RoleTable) (preA : Prelude .anon) (order : List Address)
       (st' : State .anon) (decls : Array (Declaration .anon)),
@@ -84,7 +85,7 @@ theorem readerStreams_of_units {env : Ix.Environment} {roots : List Ix.Name}
   cases hb'
   obtain ⟨rs, fin, decls, s, kb, -, htrace, -, -, hflat, hdsEq, hkeepAll⟩ :=
     SourcePrelude.prepareSourceCollapsed_prefix hsrc
-  obtain ⟨order, hord, hcanon, hunits⟩ := units preA rs fin s kb hA htrace
+  obtain ⟨order, hord, hcanon, hunits⟩ := units preA rs fin s kb decls hA htrace hflat hdsEq
   have tb := tableBound_of (defaultTable_check P.table) P.bound
   have hf : InjOn (evAddr ixe b) (QRepAt ixe (roleAtMap t')) :=
     (Ix.LeanIngress.evAddr_injOn tb hd).mono fun _ h => Or.inl h

@@ -25,9 +25,9 @@ which are in the block too), and a block is applied once, after its snapshot.
   and the block's claims for closure names are published;
 * `Ix.Cert.compileReport_owned_blobs`: that, and every blob the claiming block reads is the
   fold's final store's, with its bytes, and stored in the artifact (`onRun_grows`,
-  `StepKeeps.stepBlobs`: a merge refuses a blob the store holds with other bytes). The
-  artifact's own bytes are not exact: `assembleEnv` folds the name-component blobs over the
-  store, unchecked. -/
+  `StepKeeps.stepBlobs`: a merge refuses a blob the store holds with other bytes), with the
+  same bytes in the artifact: `assembleEnv` inserts the store last, over the name-component
+  blobs (`assembleEnv_blob`). -/
 
 namespace Ix.Cert.FreshSnapshot
 
@@ -771,6 +771,15 @@ theorem assembleEnv_blobs (acc : DriverAcc) {a : Address} (h : acc.cenv.blobs.co
   rw [hX, Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]
   exact StepKeeps.fold_insert_add h
 
+/-- **The environment stores the driver's blobs with their bytes**: `assembleEnv` inserts the
+store last, over the name-component blobs. -/
+theorem assembleEnv_blob (acc : DriverAcc) {a : Address} {v : ByteArray} (h : acc.cenv.blobs.get? a = some v) :
+    (assembleEnv acc).1.blobs.get? a = some v := by
+  obtain ⟨X, hX⟩ : ∃ X : Std.HashMap Address ByteArray,
+      (assembleEnv acc).1.blobs = acc.cenv.blobs.fold (fun m k v => m.insert k v) X := ⟨_, rfl⟩
+  rw [hX]
+  exact StepKeeps.fold_insert_last h
+
 /-- **A checked compiled application holds the block's blobs, with their bytes.** -/
 theorem applyCompiled_blobs (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
     (c : BlockState) (hc : checkCompiledBlock acc.cenv lo r c = .ok ()) {a : Address} {v : ByteArray}
@@ -937,7 +946,7 @@ theorem compileEnvFold_provenanceFresh {env : Ix.Environment} {blocks : Ix.Conde
         OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc → acc.cenv.constants.get? a = some b →
           ixe.consts.get? a = some { buf := b, len := b.size }) ∧
       (∀ (acc : DriverAcc) (a : Address) (v : ByteArray), OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc →
-        acc.cenv.blobs.get? a = some v → cenv.blobs.get? a = some v ∧ (ixe.blobs.get? a).isSome = true) ∧
+        acc.cenv.blobs.get? a = some v → cenv.blobs.get? a = some v ∧ ixe.blobs.get? a = some v) ∧
       ∀ (n : ExactName) (a : Address),
         cenv.nameToAddr.get? n = some a →
           ∃ b, CompiledFresh blocks (OnRun blocks sched (FoldState.init cenv₀ blocks sched)) cenv n a b ∧
@@ -953,8 +962,7 @@ theorem compileEnvFold_provenanceFresh {env : Ix.Environment} {blocks : Ix.Conde
   · have hv := onRun_grows hst hacc a v hb
     refine ⟨by rw [hblobs]; exact hv, ?_⟩
     rw [← finalized]
-    exact assembleEnv_blobs _ (by
-      rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hv]; rfl)
+    exact assembleEnv_blob _ hv
   rw [hmap] at hn
   obtain ⟨b, hc, hb⟩ := (waveStart_provenanceFresh hd (waveInv_init h₀)
     (fun st' hst' => claimsAt cenv₀ sched st' henv hst')
@@ -1338,7 +1346,7 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
             (sub.consts.get? m).isSome = true →
             (ixe.named.get? m).map (·.addr) = some a' ∧ ixe.consts.get? a' = some { buf := b', len := b'.size }) ∧
           ∀ (a' : Address) (v : ByteArray), Ix.CompileCert.BlobWrites.readBlob snap.cenv.blobs c a' = some v →
-            cenv.blobs.get? a' = some v ∧ (ixe.blobs.get? a').isSome = true := by
+            cenv.blobs.get? a' = some v ∧ ixe.blobs.get? a' = some v := by
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold hu
   have claimsAt : ∀ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
@@ -1432,7 +1440,7 @@ open Ix.Compile.ExactKey (ExactName)
 
 /-- **The closure's claims, with their blocks and blobs published**: `compileReport_owned_block`,
 and every blob the claiming block reads (its own table, then the snapshot's store) is in the
-fold's final store with the bytes it read, and is stored in the artifact. -/
+fold's final store with the bytes it read, and is stored in the artifact with them. -/
 theorem Ix.Cert.compileReport_owned_blobs {env : Ix.Environment} {ixe : Ixon.Env}
     {failures : Failures} {roots : List Ix.Name} {sub : Ix.Environment}
     (h : compileReport env = .ok (ixe, failures)) (hcl : IsClosure env roots sub)
@@ -1462,7 +1470,7 @@ theorem Ix.Cert.compileReport_owned_blobs {env : Ix.Environment} {ixe : Ixon.Env
             (sub.consts.get? m).isSome = true →
             (ixe.named.get? m).map (·.addr) = some a' ∧ ixe.consts.get? a' = some { buf := b', len := b'.size }) ∧
           ∀ (a' : Address) (v : ByteArray), Ix.CompileCert.BlobWrites.readBlob snap.cenv.blobs c a' = some v →
-            cenv.blobs.get? a' = some v ∧ (ixe.blobs.get? a').isSome = true :=
+            cenv.blobs.get? a' = some v ∧ ixe.blobs.get? a' = some v :=
   FreshSnapshot.compileReport_owned_block_of h hcl nofail fun _ hE => FreshSnapshot.ctorsInBlock h hE
 
 /-- **The closure's claims, with their blocks published**: `compileReport_owned_stored`; a

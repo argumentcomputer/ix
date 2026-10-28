@@ -90,7 +90,8 @@ theorem recordMap_none_iff (records : Array (Address × Ixon.Constant)) (a : Add
     intro same
     exact h (List.mem_map.mpr ⟨p, hp, same.symm⟩)
 
-/-- The exact record array scanned by both builders in `contextOf`. -/
+/-- The records `contextOf` computes keys ahead for (`keysOf`); its recursor index scans the
+sub-array `indexedRecords`. -/
 def scanned (input fallback : Array (Address × Ixon.Constant)) : Array (Address × Ixon.Constant) :=
   let known : Std.HashSet Address := input.foldl (fun s (a, _) => s.insert a) {}
   input ++ fallback.filter (fun (a, _) => !known.contains a)
@@ -132,6 +133,16 @@ theorem mem_scanned {input fallback : Array (Address × Ixon.Constant)}
     simp only [h, not_false_eq_true, and_true]
   · simp only [hc, Bool.not_true, Bool.false_eq_true, and_false, or_false, true_iff] at h ⊢
     simp only [h, not_true_eq_false, and_false, or_false]
+
+/-- The index scans a sub-array of the scanned records: the fallback records it leaves out are
+ones filed into a block the input supplies (`indexedRecords`). -/
+theorem mem_indexed_scanned {store : Store} {input fallback : Array (Address × Ixon.Constant)}
+    {a : Address} {c : Ixon.Constant} (h : (a, c) ∈ indexedRecords store input fallback) :
+    (a, c) ∈ scanned input fallback := by
+  simp only [indexedRecords, scanned, Array.mem_append, Array.mem_filter, Bool.and_eq_true] at h ⊢
+  rcases h with h | ⟨h, known, -⟩
+  · exact .inl h
+  · exact .inr ⟨h, known⟩
 
 section Context
 
@@ -195,8 +206,8 @@ theorem selected_origin {block : Address} {shape : BlockShape} {ref : ConstRef A
       ((owner, c) ∈ input ∨ (owner, c) ∈ fallback ∧ owner ∉ input.toList.map Prod.fst) ∧
       (position, recursor) ∈ recursorMembers c := by
   obtain ⟨_, _, _, owner, c, position, recursor, _, _, _, _, _, _, reference, present, member, _⟩ :=
-    ReaderIndex.grouped_entry (cx).store (scanned input fallback) block shape found ref selected
-  exact ⟨owner, c, position, recursor, reference, mem_scanned.mp present, member⟩
+    ReaderIndex.grouped_entry (cx).store (indexedRecords (cx).store input fallback) block shape found ref selected
+  exact ⟨owner, c, position, recursor, reference, mem_scanned.mp (mem_indexed_scanned present), member⟩
 
 /-- A coherent scanned singleton recursor contributes its own cached address. -/
 theorem standalone_origin_cached (coherent : ReaderIndex.Coherent (cx).store (scanned input fallback))

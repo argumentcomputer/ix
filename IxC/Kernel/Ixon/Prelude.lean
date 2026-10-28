@@ -113,9 +113,35 @@ structure Prelude (md : Mode) where
 
 instance : Inhabited (Prelude md) := ⟨{}⟩
 
+/-- **Whether the recursor index scans the fallback record `c` at `a`**, given
+the addresses `known` the input supplies: none of its recursor members is
+analysed into a block the input supplies (`analyseRecursor`, whose first
+carrier names the block `buildIndex` files the member under). A block the input
+supplies brings its own recursors; a fallback recursor filed under it would
+read the input's block with a record the input does not hold, so the block
+declines without its recursor instead. -/
+def fallbackIndexed (store : Store) (known : Std.HashSet Address) (a : Address) (c : Ixon.Constant) : Bool :=
+  (recursorMembers c).all fun (_, r) =>
+    match analyseRecursor store a c r with
+    | some (_, carriers, _) =>
+      match carriers[0]? with
+      | some (ConstRef.member b _) => !known.contains b
+      | _ => true
+    | none => true
+
+/-- **The records the recursor index scans**: the input's, then the fallback's
+the input does not shadow, less the fallback records with a recursor member
+analysed into a block the input supplies (`fallbackIndexed`). -/
+def indexedRecords (store : Store) (records fallback : Array (Address × Ixon.Constant)) :
+    Array (Address × Ixon.Constant) :=
+  let known : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}
+  records ++ fallback.filter fun (a, c) => !known.contains a && fallbackIndexed store known a c
+
 /-- The reader context of `records` under the role table `t`, with the
 fallback store `fallback` and fallback blobs `fallbackBlobs`: the bound
-addresses resolve against both stores (`bindingsOf`).
+addresses resolve against both stores (`bindingsOf`), and the recursor index
+scans `indexedRecords`: a fallback recursor is never filed under a block the
+input supplies.
 
 `reconstruct store` gives the addresses of the projection records the input
 omits (`Admission.projectionAddress`, under the entry's hash); without it a
@@ -138,7 +164,7 @@ def contextOf (t : Ix.Kernel.RoleTable) (records : Array (Address × Ixon.Consta
     (blobs ++ fallbackBlobs).foldl (fun m (a, b) => if m.contains a then m else m.insert a b) {}
   let known : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}
   let all := records ++ fallback.filter (fun (a, _) => !known.contains a)
-  contextWith store (blobMap[·]?) t all hint (reconstruct store)
+  contextWith store (blobMap[·]?) t all hint (reconstruct store) (indexedRecords store records fallback)
 
 /-- Read prelude records under a role table, with `extra` records and blobs
 backing the store (the evidence). -/
