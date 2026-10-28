@@ -2,12 +2,12 @@ import Lean.Data.Json
 import LSpec
 import IxC.Kernel.Ixon.Prelude
 
-/-! # Init+Std through the `ix` binary (merge queue tier `ci:landing-initstd`)
+/-! # Init+Std through the `ix` binary (merge queue tier `ci:landing-initstd-cli`)
 
 * `initstd-reference`: `ix compile-lean Benchmarks/Compile/CompileInitStd.lean
-  --rust-check`, the certified compile of Init+Std with its report checks
-  (`Ix.CompileM.reportPostStep`, which refuses the compile on any failed check)
-  and the default role binding, byte-compared with the Rust compiler's output
+  --rust-check`, the certified compile of Init+Std, which refuses the compile
+  on any failed report check, with the default role binding. Its bytes are
+  compared with the Rust compiler's output
   (`ALIGNED`). The artifact's SHA-256 and size must equal the reference in
   `Tests/Fixtures/initstd-reference.txt`. The Rust kernel then checks the
   artifact (`ix check-rs --anon`): it must admit every role the default role
