@@ -5,7 +5,7 @@ import Ix.CompileCert.Canon.QSort
 
 The certified reader indexes the recursors of its records before reading
 them (`Ix.Kernel.Reader.buildIndex`): each recursor is keyed by its own
-record's member reference (SP3 D8: never after the type it eliminates), and
+record's member reference, and
 its analysis (`analyseRecursor`) names the block it eliminates, its motive
 and its major premise's carrier; an inductive block's shape is its motive
 order and its recursors in motive order. This module (CT-16's

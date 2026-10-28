@@ -564,7 +564,7 @@ theorem memberSources_terms {E : Ix.Name → Option Ix.ConstantInfo} {x : Ix.Nam
     simpa [BlockEmission.memberSources, termsOf] using he
   | _ => simp [memberOf, hE] at hm
 
-/-- `sourceMembers` is one class per member, in some order of the members. -/
+/-- `sourceMembers` is one entry per member, in some order of the members. -/
 theorem sourceMembers_perm (cs : Array MutConst) :
     (sourceMembers cs).Perm cs.toList := by
   rw [LeanOrder.sourceMembers_def]

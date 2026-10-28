@@ -1,8 +1,8 @@
 import Ix.CompileCert.MutualInductiveReading
 
-/-! # A block of several members, compiled one member per class
+/-! # A block of several members, compiled one payload per member
 
-The compiler lays a block out in Lean's order, one member per class
+The compiler lays a block out in Lean's order, one payload per member
 (`compileMutualBlock ms`). Each member runs the emitter of its kind (a
 definition's, an inductive's with its constructors, a recursor's), from a clean state, in the
 block's mutual context; the emitters' theorems (`Emission.definition_correct`,
@@ -185,7 +185,7 @@ theorem member_correct (context : CompileEnv × BlockEnv)
     rw [hp]
     exact read
 
-/-- **The members of a block, one per class, compiled from a clean state**: each keeps its
+/-- **The members of a block, in source order, compiled from a clean state**: each keeps its
 skeleton, and the final in-flight reader reads every member's roots, in member order. -/
 theorem members_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -243,7 +243,7 @@ theorem blockInfo_roots (ps : List Ixon.MutConst) :
     rw [this]
     simp [constantInfoRootExprs]
 
-/-- **A block compiled one member per class reads back as its sources**: the emitted record
+/-- **A block compiled one payload per member reads back as its sources**: the emitted record
 keeps its payloads' skeletons, and its member reader reads every member's roots, in member
 order, as terms related to the members' sources. -/
 theorem mutualBlock_correct (context : CompileEnv × BlockEnv)

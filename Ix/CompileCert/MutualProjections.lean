@@ -247,7 +247,7 @@ theorem mutual_projection_wire (sources : List MutConst) :
   ProjectionLayout.mutual_block _ sources (payload_projection_wire sources)
 
 /-- **A mutual block and all its projections decode exactly**: under an
-environment without Pass 3 records, a successful compile from a state
+compile environment, a successful compile from a state
 whose tables are on the wire. -/
 theorem mutual_codec (context : CompileEnv × BlockEnv)
     (sources : List MutConst) {before after : BlockState} {output : BlockResult}

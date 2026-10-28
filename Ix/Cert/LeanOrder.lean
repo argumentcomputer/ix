@@ -15,7 +15,7 @@ module proves:
 * so `Ix.sourceOrderLt` is a strict weak order: `lt_irrefl`, `lt_trans`, `lt_of_lt_of_le`,
   `lt_of_le_of_lt`, `le_trans`, and two keys neither of which is before the other tie
   (`tie_of_not_lt`);
-* `sourceMembers` lists, one per class, the sorted permutation of its input (`sourceMembers_eq`):
+* `sourceMembers` lists, in source order, the sorted permutation of its input (`sourceMembers_eq`):
   any permutation of the input that is sorted and has no two members that tie. -/
 
 namespace Ix.Cert.LeanOrder
@@ -240,7 +240,7 @@ theorem sourceMembers_def (cs : Array MutConst) :
     sourceMembers cs = (cs.zipIdx.qsort (zipBefore orderKey)).toList.map (·.1) := by
   rfl
 
-/-- **`sourceMembers` is the sorted permutation of its input**: one class per member, in the order
+/-- **`sourceMembers` is the sorted permutation of its input**: one entry per member, in the order
 of any permutation of the input that Lean's order sorts and in which no two members tie. -/
 theorem sourceMembers_eq {cs : Array MutConst} {xs : List MutConst} (perm : cs.toList.Perm xs)
     (sorted : xs.Pairwise fun a b => Ix.sourceOrderLt (orderKey b) (orderKey a) = false)

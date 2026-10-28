@@ -15,7 +15,7 @@ into the table and the inspected application spines fit the reader's fuel
 whole recursor analysis (`build_analyse`), through the generic root
 write-back inversion (`SharingRoots.withRoots_inv`) and the canonical
 sharing's meaning. The reader's walks are those of the donor's reader,
-unchanged. CT-16's `ReaderSpines`. -/
+unchanged. `ReaderSpines`. -/
 
 namespace Ix.CompileCert.ReaderSpines
 

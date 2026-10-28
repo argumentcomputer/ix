@@ -105,7 +105,7 @@ theorem owner_in_order {S : Address → Prop} (corder : ClosureOrder ixe S order
 
 /-! ## The compile's rows -/
 
-/-- **A mutual block's rows**: one per class member and constructor, at its projection of the
+/-- **A mutual block's rows**: in source order member and constructor, at its projection of the
 block (`expectedRows`); or, when the block is a lone definition or recursor, every member at the
 block itself. -/
 theorem mutual_rows {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}

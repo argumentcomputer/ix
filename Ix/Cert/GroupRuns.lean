@@ -516,7 +516,7 @@ theorem componentGroup_sorted {E : Ix.Environment} {members : Ix.Set Ix.Name} {m
 
 /-- **A definitions group of two or more runs as its definitions, in its own order**: its
 compile block is a `FoldBlock` holding the group's names, and the block's records are those of
-`compileMutualBlock` over the group's definitions (`defsOf`), one per class, run from the empty
+`compileMutualBlock` over the group's definitions (`defsOf`), in source order, run from the empty
 state at the fold's snapshot. -/
 theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
@@ -840,7 +840,7 @@ theorem types_distinct {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.
 
 /-- **An inductive group's types run as the group's members, in its order**: the compile block
 of its types is a `FoldBlock` holding exactly the group's types and constructors, and its records
-are those of `compileMutualBlock` over `indsOf types ctors`, one per class. -/
+are those of `compileMutualBlock` over `indsOf types ctors`, in source order. -/
 theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyBlocks env)
@@ -1076,7 +1076,7 @@ theorem blockRecursors_names {first : Ix.InductiveVal} {cands recs : Array Ix.Re
 /-- **An inductive group's recursors run as a family in `blockRecursors`' order, or alone under
 their own name when there is one**: the compile block of its recursors is a `FoldBlock` holding
 exactly the group's recursors, and its records are those of `compileMutualBlock` over the
-recursors, one per class, or, for a lone recursor, of its single-constant compile, the block's
+recursors, in source order, or, for a lone recursor, of its single-constant compile, the block's
 key being its name. -/
 theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}

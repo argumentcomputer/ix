@@ -1,7 +1,7 @@
 import Ix.CompileCert.ExpressionIngress
 import Ix.LeanIngress.CanonLevel
 
-/-! # Levels read syntactically (N-READS, N2)
+/-! # Levels read syntactically
 
 The reading chain related a compiled level to its Source level by value only
 (`ExpressionState.related_ingress_value`): Source mode lowered levels as Lean
@@ -156,7 +156,7 @@ theorem levelMeaning_canon {params : List Ix.Name} {σ : Ix.Name → Kernel.Leve
   exact ⟨target, ingress, canonLevelIn_ingress inj aligned lowered ingress⟩
 
 /-- **The Source term and the reader's term agree syntactically at levels**
-(N2; `ExpressionState.related_ingress_value` agrees by value): at every level,
+(`ExpressionState.related_ingress_value` agrees by value): at every level,
 the reader's level is the Source level in the compiler's canonical form, when
 the reader's parameter map is the constant's level parameters and `σ` keeps
 them apart. -/

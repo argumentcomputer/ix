@@ -25,7 +25,7 @@ not read.
 
 Keys are read through `Ctx.keyAt`/`Ctx.memberKey` (which can decline), so a
 head reference's key is the key of the address it resolves from, or its
-member key (`HeadKey`). CT-16's `ReaderSourceSpines`, adapted to keys,
+member key (`HeadKey`). `ReaderSourceSpines`, adapted to keys,
 binder contracts and the contract frame; the walks are those of the donor's
 reader, unchanged. -/
 

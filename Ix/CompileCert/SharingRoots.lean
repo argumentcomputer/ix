@@ -7,7 +7,7 @@ import Ix.CompileCert.ExpressionRead
 The compiler builds every block with `Ix.CompileM.buildConstantWithSharing`:
 the payload's roots (`constantInfoRootExprs`, in cursor order) go through
 the canonical sharing construction and are written back by `withRoots`.
-This module proves, once for every `Ixon.ConstantInfo` (R07-01/02):
+This module proves, once for every `Ixon.ConstantInfo`:
 
 * `withRoots_inv`: a successful write-back replaces exactly the roots, in
   order (`constantInfoRoots info' = roots`), and keeps everything else
@@ -23,7 +23,7 @@ This module proves, once for every `Ixon.ConstantInfo` (R07-01/02):
   its roots, and so is every relation stated root by root (`RootsRead`):
   the "header plus ordered roots" view of each payload kind.
 
-CT-15's `SharingRead` and the per-kind `writeback`/`build_read` lemmas of
+`SharingRead` and the per-kind `writeback`/`build_read` lemmas of
 `HeaderBlock`, `RecursorSharing` and `InductiveSharing`, as one theorem;
 it covers mutual blocks too. -/
 

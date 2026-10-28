@@ -28,7 +28,7 @@ the compiled recursors is R10b). The returned block decodes exactly.
 index (`ReaderIndex.compiled_order`). The reader runs over the block's blobs
 overlaid on the context's (publication is R13).
 
-CT-16's `InductiveReading`, re-derived against `readInductive` = `BlockRead`
+`InductiveReading`, re-derived against `readInductive` = `BlockRead`
 + `lowerInductive` (5b): the donor's family assembly checks are
 `lowerInductive`'s now, so the statement is the `BlockRead` itself. The
 reader's loops are restated as named steps (`typeStep`, `ctorStep`,
@@ -542,7 +542,7 @@ theorem rootsRead_cons {reader : MemberReader md} {related : Ix.Expr → CExpr m
       SharingRoots.RootsRead reader related sources roots :=
   List.forall₂_cons.mp holds
 
-/-! ## No constructor of the family occurs (N-READS, N4)
+/-! ## No constructor of the family occurs
 
 The reader reads a standalone family's types with only the inductive as its
 self (`inductiveSelf`), so a constructor of the family occurring in them
@@ -674,7 +674,7 @@ recursors are what the reader's own loop reads from their records
 index shaping the block at member 0 (`inductive_reads_indexed` derives it
 from the reader's index); the keys reading; the self references: the
 family's own name related to its key (`selfKey`, R13's half) and no
-constructor of the family occurring in the types (`NoCtorIn`; N-READS N4: proved
+constructor of the family occurring in the types (`NoCtorIn`; proved
 from Source acceptance by `Ix.Cert.NoCtor.noCtor_of_checkSourceWith`); and a
 well-formed source (safe, constructors at their positions, each constructor's type a
 telescope of the parameters and its fields). -/

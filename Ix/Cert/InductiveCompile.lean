@@ -4,7 +4,7 @@ import Ix.CompileCert.Canon.Ctx
 
 /-! # Inductive and recursor blocks compiled in Lean's order, read in a closure
 
-`BlockEmission.mutualBlock_correct` reads a block compiled one member per class back as its
+`BlockEmission.mutualBlock_correct` reads a block compiled one payload per member back as its
 members' sources, in the compile environment's reading context. This module splits that
 reading member by member and moves it to the closure's context (`RecordTransfer.read_le`):
 

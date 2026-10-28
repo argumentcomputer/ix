@@ -148,7 +148,7 @@ theorem source_premises_of_sourceAccepts {condense : Ix.Environment → Ix.Conde
     (admits_of_sourceAccepts accepted stored head) member sourceFound agree found
 
 open Ix.CompileM in
-/-- **R9a's `ConstructorPositions` for the compiler's mutual members, from
+/-- **`ConstructorPositions` for the compiler's mutual members, from
 Source acceptance.** -/
 theorem mkIndc_positions_of_sourceAccepts {condense : Ix.Environment → Ix.CondensedBlocks}
     {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}

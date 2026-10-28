@@ -423,7 +423,7 @@ def UniverseBridge : Prop :=
       Ix.Kernel.Level.eval φ (Ix.Kernel.Reader.convUniv id (Ixon.canonUniv u)) =
         Ix.Kernel.Level.eval φ k
 
-/-- **The composition** (proved): CT-12's `convCanon_eval` and the pure
+/-- **The composition** (proved): `convCanon_eval` and the pure
 universe meaning give the universe bridge from Lean, through
 `ingressLevel_levelS` and `numbering_nameS`. -/
 theorem universe_bridge (hmean : UnivMeaningS) : UniverseBridge := by

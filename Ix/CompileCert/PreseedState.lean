@@ -19,7 +19,7 @@ applies after preseeding. A successful run leaves the primary universe
 table final (`preseed_final`).
 
 `GoodStep` is the one traversal: each primitive of the collector and the
-inserters keeps the invariant (CT-14's `PreseedState`, `PreseedCanonical`
+inserters keeps the invariant (`PreseedState`, `PreseedCanonical`
 and the binding and cache frames of `PreseedReferences`/
 `PreseedUniverses`, as one proof, R07-15). -/
 
@@ -335,7 +335,7 @@ theorem preseed_final (roots : Array (Ix.Expr × List Ix.Name)) (context : Compi
 
 /-- **Preseed, then compile**: from a state satisfying `Good`, after a
 successful preseed of the block's roots, a successful compile of an
-expression reads back as its source (without Pass 3 records). -/
+expression reads back as its source. -/
 theorem preseed_compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)

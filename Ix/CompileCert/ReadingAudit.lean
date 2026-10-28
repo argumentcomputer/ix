@@ -171,7 +171,7 @@ def meaningRoots : Array Lean.Name :=
     `compileUniv_returns, `compileUniv_total,
     `compileUniv_total_eval].map (`Ix.CompileCert.UniverseMeaning ++ ·)
 
-/-- The ordinary expression compiler's core (CT-13): the state and its
+/-- The ordinary expression compiler's core: the state and its
 effects, one step per constructor, the spine's fold, the memo and the top
 induction, and the correspondence with Source mode's reading. -/
 def expressionRoots : Array Lean.Name :=
@@ -196,7 +196,7 @@ def expressionRoots : Array Lean.Name :=
     `compileExpr_initial_read, `withContract_matches, `levels_ingress, `related_ingress,
     `related_ingress_value].map (`Ix.CompileCert.ExpressionState ++ ·)
 
-/-- The preseed (CT-14): it keeps the expression invariant and the binding
+/-- The preseed: it keeps the expression invariant and the binding
 view, it keeps the primary tables on the wire, and a final table does not
 grow. -/
 def preseedStateRoots : Array Lean.Name :=
@@ -217,7 +217,7 @@ def preseedStateRoots : Array Lean.Name :=
 
 
 /-- Successful compilation keeps the primary tables on the wire (CT-14's
-`EmissionWire`, CT-15's `FamilyWire` traversal): the combinators, the
+`EmissionWire`, `FamilyWire` traversal): the combinators, the
 leaves, the well-founded expression compiler, every emitter and the preseed. -/
 def emissionWireRoots : Array Lean.Name :=
   #[`Valid.of_view, `Safe.framed, `Safe.pure, `Safe.returns, `Safe.throw, `Safe.bind, `Safe.throwBind,
@@ -234,7 +234,7 @@ def emissionWireRoots : Array Lean.Name :=
     `Safe.constructors, `Safe.inductiveMetadata, `Safe.finishInductive, `Safe.inductivePayload,
     `Safe.finishInductiveData, `Safe.inductiveData, `Safe.member, `Safe.members, `Safe.mutConsts, `seeded_valid].map (`Ix.CompileCert.EmissionWire ++ ·)
 
-/-- Canonical sharing preserves the reading of every root (R07-01/02): the
+/-- Canonical sharing preserves the reading of every root: the
 certified reader against a sharing substitution, the root write-back's
 inversion for every payload kind, and the builder's reading. -/
 def sharingRootRoots : Array Lean.Name :=
@@ -244,7 +244,7 @@ def sharingRootRoots : Array Lean.Name :=
     `build_roots, `RootsRead.transfer, `RootsRead.grow, `RootsRead.append,
     `build_read].map (`Ix.CompileCert.SharingRoots ++ ·)
 
-/-- The payload emitters read back as their sources (CT-15's emission, as one
+/-- The payload emitters read back as their sources (emission, as one
 skeleton): the finishers' invariant and frames, the header counts, and the
 definition, axiom, quotient, constructor, inductive and recursor emitters. -/
 def emissionRoots : Array Lean.Name :=
@@ -262,7 +262,7 @@ def emissionRoots : Array Lean.Name :=
     `inductiveData_correct, `rules_correct, `recursor_correct].map (`Ix.CompileCert.Emission ++ ·)
 
 /-- The singleton blocks read back as their sources and decode exactly
-(CT-15's blocks): the block finisher's inversion, the skeletons, the
+(blocks): the block finisher's inversion, the skeletons, the
 definition-like, axiom, quotient, recursor and inductive-family blocks,
 with and without their preseed. -/
 def blockRoots : Array Lean.Name :=
@@ -298,7 +298,7 @@ def singletonReadRoots : Array Lean.Name :=
     `quotientInfo_levels, `axiom_unsafe, `axiom_reads, `axiom_declines,
     `quotient_reads].map (`Ix.CompileCert.HeaderReading ++ ·))
 
-/-- The reader's syntactic walks (CT-16's spines): through a sharing table
+/-- The reader's syntactic walks (spines): through a sharing table
 they commute with the expansion and the sharing builder keeps the recursor
 analysis; on an unshared record they follow the converted reading and the
 source expression. -/
@@ -316,7 +316,7 @@ def spineRoots : Array Lean.Name :=
     `last_pair, `source_lastHead, `source_carrier, `recursor_counts,
     `compiled_telescope_variable].map (`Ix.CompileCert.ReaderSourceSpines ++ ·))
 
-/-- The mutual layout (CT-15, R9a): what the constructor and class folds keep
+/-- The mutual layout: what the constructor and class folds keep
 of the source, the write-back keeps every member's kind and constructor
 positions, and the standalone
 family's projections resolve. -/
@@ -331,7 +331,7 @@ def layoutRoots : Array Lean.Name :=
     `family_layout, `familyInfo_layout, `dispatch_layout, `inductive_projection_resolves,
     `constructor_projection_resolves].map (`Ix.CompileCert.ProjectionLayout ++ ·)
 
-/-- A mutual block's projections (CT-15, R9a): the rows the compiler emits,
+/-- A mutual block's projections: the rows the compiler emits,
 their wire validity and codec, and what the certified reader resolves them
 to. -/
 def projectionRoots : Array Lean.Name :=
@@ -345,7 +345,7 @@ def projectionRoots : Array Lean.Name :=
     `finish_references, `payload_references, `mutual_references,
     `mutual_correct].map (`Ix.CompileCert.MutualArtifact ++ ·))
 
-/-- The reader's recursor index (CT-16, R10a, re-derived for D8): the
+/-- The reader's recursor index: the
 builder's two loops and one candidate inversion, validated block shapes,
 provenance and grouping, the reader's lookups, per-motive coverage and one
 recursor per motive. -/
@@ -368,7 +368,7 @@ R10a): the reader's inductive block as named steps, its loops on a
 one-member block, what the compiled family keeps of the source, and public
 dispatch composed with `readRecord` = `lowerInductive` of the source's
 `BlockRead`, its self references from `NoCtorIn` and the family's name related
-to its key (N-READS N4 a). -/
+to its key. -/
 def inductiveReadRoots : Array Lean.Name :=
   #[`readInductive_eq, `blockSelf_blobs, `readRecord_inductive, `indcs_singleton, `typeLoop, `ctorStep_ok,
     `ctorLoop_ok, `ctorClassLoop, `readRecord_singleton, `blockSelf_singleton, `erase_singleton,
@@ -385,7 +385,7 @@ def loopRoots : Array Lean.Name :=
     `forIn_exit_array, `exit_of_fst, `pushed_of_fst, `forIn_all_some, `no_exit, `forall₂_append, `forIn_inv,
     `forIn_inv_array, `forIn_push_array, `mapM_forall₂].map (`Ix.CompileCert.Loop ++ ·)
 
-/-- What Source mode admits of an inductive block (R12): `inductiveGroup`
+/-- What Source mode admits of an inductive block: `inductiveGroup`
 and `convertInductive` read (positions, safety, parameters, telescopes),
 the compiler's constructor resolution as environment lookups, and
 `inductive_reads` with its Source premises discharged by Source admission. -/
@@ -605,7 +605,7 @@ run_cmd do
   checkRuntime (tag := "reading-audit") "source admission" Ix.CompileCert.ReadingAudit.sourceRuntime
   checkRuntime (tag := "reading-audit") "canon" Ix.CompileCert.ReadingAudit.canonRuntime
 
-/-! ## N-READS, N2: levels read syntactically
+/-! ## Levels read syntactically
 
 Since IxC's U lowers Source levels to the compiler's canonical form
 (`Ix.LeanIngress.canonLevelIn`), the reader's level is the Source level in that
@@ -620,12 +620,12 @@ def Ix.CompileCert.ReadingAudit.levelCanonRoots : Array Lean.Name :=
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd checkRoots (tag := "reading-audit") "levels canonically" Ix.CompileCert.ReadingAudit.levelCanonRoots
 
-/-! ## N-READS, N5 b: inductives through the driver's mutual path
+/-! ## Inductives through the driver's mutual path
 
 The driver compiles every inductive block, singletons included, through
 `compileMutualBlock` over `MutConst.mkIndc` members
 (`Ix.CompileCert.MutualInductiveReading`). For a block of one inductive: the
-member emitter is the family path's, the class's mutual context is the
+member emitter is the family path's, the block's mutual context is the
 family's, and the block reads back as its source (`inductive_reads_mutual`). -/
 
 def Ix.CompileCert.ReadingAudit.driverInductiveRoots : Array Lean.Name :=

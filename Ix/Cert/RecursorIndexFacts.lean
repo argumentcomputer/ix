@@ -21,7 +21,7 @@ beside the compile report's checks that pin an input family's recursors to their
   distinct (`motives_nodup`); with them a block's recursor list is its filed pairs sorted by
   motive (`buildIndex_at`), and a sorted list of distinct motives is determined
   (`sorted_eq_range`).
-* **The compile's headers**: a block compiled one member per class keeps each member's
+* **The compile's headers**: a block compiled one payload per member keeps each member's
   level-parameter count and counts (`block_headers`), and so does a lone recursor
   (`lone_header`). -/
 
@@ -607,7 +607,7 @@ theorem members_headers (context : CompileEnv × BlockEnv) :
     rw [hps]
     simp [MutConstCompileState.addMember]
 
-/-- **A block compiled one member per class keeps its members' headers**: its record is its
+/-- **A block compiled one payload per member keeps its members' headers**: its record is its
 payloads' block up to the expressions' roots. -/
 theorem block_headers {ms : List MutConst} {context : CompileEnv × BlockEnv} {before after : BlockState}
     {output : BlockResult} (ran : rawRun (compileMutualBlock ms) context before = (.ok output, after)) :

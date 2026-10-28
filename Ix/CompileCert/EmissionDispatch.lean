@@ -210,7 +210,7 @@ theorem constant_codec (context : CompileEnv × BlockEnv)
     all_goals try (cases compiled)
     exact inductive_codec (singletonContext value.cnst.name context) _ wire compiled
 
-/-! ## Mutual payload counts (CT-15's `PayloadArrays`) -/
+/-! ## Mutual payload counts (`PayloadArrays`) -/
 
 theorem member_counts (member : Ixon.MutConst) :
     Emission.Yields (checkMutConstArrayCounts member) (fun _ => MutConstHeaderWF member) := by

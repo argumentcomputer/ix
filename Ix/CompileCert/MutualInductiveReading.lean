@@ -3,7 +3,7 @@ import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.SourceConstructorPositions
 
-/-! # Inductives through the driver's mutual path (N-READS, N5 b)
+/-! # Inductives through the driver's mutual path
 
 The driver (`Ix.CompileM.compileBlock`) compiles every inductive block,
 singletons included, through `compileMutualBlock` over `MutConst.mkIndc`
@@ -13,7 +13,7 @@ covers). This module carries the family
 reading over to the mutual path, for a block of one inductive (stage A; a
 family of several, R10b proper, is stage B).
 
-**A one-member inductive class** (`singletonBlock_correct`): `compileMutualBlock
+**A one-member inductive block** (`singletonBlock_correct`): `compileMutualBlock
 [.indc d]` runs the same member emitter as the family path
 (`compileMutConstMember (.indc d)` is `compileInductiveData d` under
 `withCurrent`, and `compileInductive` is `compileInductiveData` of the
@@ -23,7 +23,7 @@ only the projections differ (`buildMutualProjections`). So the emitted record
 keeps the payload's skeleton and reads its roots as terms related to the
 source's, as `EmissionBlocks.familyBlock_correct` states for the family path.
 
-**The class's mutual context is the family's** (`mutCtx_singleton`): the
+**The block's mutual context is the family's** (`mutCtx_singleton`): the
 inductive at slot 0, its constructors after it. So the family path's self
 references (`InductiveReading.scope_of_noCtor`: no constructor of the family
 occurs, and the family's name is related to its key) serve the mutual path
@@ -45,7 +45,7 @@ open Ix.Kernel.Reader (Ctx CName CExpr ReadM MemberReader)
 def mutContext (classes : List MutConst) (context : CompileEnv × BlockEnv) : CompileEnv × BlockEnv :=
   (context.1, { context.2 with mutCtx := MutConst.ctx classes })
 
-/-- **A one-member inductive class compiles as its member emitter**:
+/-- **A one-member inductive block compiles as its member emitter**:
 `compileMutConsts [.indc d]` is `compileInductiveData d` under `withCurrent`,
 with the payload as its one member and its metadata after the member's name. -/
 theorem mutConsts_indc (d : Ix.Ind) {context : CompileEnv × BlockEnv} {before after : BlockState}
@@ -71,7 +71,7 @@ theorem mutConsts_indc (d : Ix.Ind) {context : CompileEnv × BlockEnv} {before a
   cases wrapRan
   exact ⟨_, outRan, rfl, rfl⟩
 
-/-- **A one-inductive class's mutual context is the family's**: the inductive
+/-- **A one-inductive block's mutual context is the family's**: the inductive
 at slot 0 and its constructors after it, as `buildInductiveMutCtx` lays
 them out. -/
 theorem mutCtx_singleton (source : InductiveVal) (constructors : Array ConstructorVal) :
@@ -90,7 +90,7 @@ theorem mutCtx_singleton (source : InductiveVal) (constructors : Array Construct
   rw [same]
   rfl
 
-/-- **The class's block environment is the family's**: `compileMutualBlock
+/-- **The block's environment is the family's**: `compileMutualBlock
 [.indc (sourceData source constructors)]` runs its member in the block
 environment the family compile installs. -/
 theorem mutBlock_family (source : InductiveVal) (constructors : Array ConstructorVal)
@@ -100,7 +100,7 @@ theorem mutBlock_family (source : InductiveVal) (constructors : Array Constructo
   unfold mutContext InductiveReading.familyBlock EmissionDispatch.familyContext EmissionDispatch.singletonContext
   rw [mutCtx_singleton]
 
-/-! ## A one-member inductive class -/
+/-! ## A one-member inductive block -/
 
 section Blocks
 
@@ -109,10 +109,10 @@ variable {md : Mode} (cx : Ctx md) (param : Nat → LevelParam) (self : Nat → 
 
 local notation "reader" => ExpressionRead.blockReader cx param self
 
-/-- **A one-member inductive class reads back as its source** through
+/-- **A one-member inductive block reads back as its source** through
 `compileMutualBlock`: `EmissionBlocks.familyBlock_correct`'s conclusions, with
 the mutual path's projections (`buildMutualProjections`) and the member run in
-the class's mutual context (`mutContext`). -/
+the block's mutual context (`mutContext`). -/
 theorem singletonBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (d : Ix.Ind)
@@ -168,9 +168,9 @@ theorem singletonBlock_correct (context : CompileEnv × BlockEnv)
 
 end Blocks
 
-/-! ## The one-member class's headers -/
+/-! ## The one-member block's headers -/
 
-/-- **The headers of a one-member inductive class**: one inductive whose header
+/-- **The headers of a one-member inductive block**: one inductive whose header
 and every constructor's header are the source's, as natural numbers
 (`InductiveReading.family_headers` over the mutual path). -/
 theorem singleton_headers (d : Ix.Ind) :

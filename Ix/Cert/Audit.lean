@@ -2447,7 +2447,7 @@ table final, after which universe compilation does not grow it
 /-! ## Component theorems: successful compilation keeps the tables on the wire
 
 A successful run of the production expression compiler, under an
-environment without Pass 3 records, or of any payload emitter (definition,
+compile environment, or of any payload emitter (definition,
 axiom, quotient, recursor, constructor, inductive, mutual members and
 classes) keeps the primary reference and universe tables representable by
 the constant wire format, from a state whose tables are on the wire and
@@ -2504,7 +2504,7 @@ fun {α} action post =>
 
 /-! ## Component theorems: canonical sharing preserves the reading of every root
 
-One theorem for every payload kind (R07-01/02): a successful root
+One theorem for every payload kind: a successful root
 write-back replaces exactly the roots, in order, and keeps the rest of the
 payload (`SharingRoots.withRoots_inv`, over `erase`, which replaces every
 root by one placeholder); the sharing builder keeps the payload but its
@@ -2584,7 +2584,7 @@ fun {md} reader related sources roots =>
 Every declaration emitter (definition-like, axiom, quotient, constructor and
 the constructor loop, inductive, recursor and the rule loop), from a state
 satisfying the expression invariant for the declaration's own relation and
-under an environment without Pass 3 records, returns on success the
+returns on success the
 payload its source describes, whose expression roots the in-flight reader
 reads as terms `Related` to the source's, in order
 (`SharingRoots.RootsRead`); it ends `Emission.Clean` (the invariant's state
@@ -2693,7 +2693,7 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state �
 
 The preseeded singleton block compilers (definition-like, axiom, quotient,
 recursor, standalone inductive family), from a clean state and under an
-environment without Pass 3 records, return on success a block whose
+compile environment, return on success a block whose
 payload keeps the source's skeleton (`SharingRoots.erase`: every field but
 the expression roots) and whose actual member reader (the block's blobs
 overlaid on the context's) reads the roots as terms `Related` to the
@@ -2817,7 +2817,7 @@ block that decodes exactly. Every lemma behind them is audited in
 /-! ## Component theorems: compiled singleton records are read back as their sources
 
 Public dispatch of a definition, theorem, opaque, axiom or quotient, under
-an environment without Pass 3 records, from a clean state whose tables
+from a clean state whose tables
 are on the wire returns a block that decodes exactly and that the certified
 reader's `readRecord` (over the block's blobs overlaid on the context's)
 reads as exactly the declaration the source describes: under the record's
@@ -3201,8 +3201,7 @@ and the index holds one recursor per block and motive
 
 /-! ## Component theorems: compiled standalone inductives are read back as their sources
 
-Public dispatch of an inductive, under an environment without Pass 3
-records, from a clean state whose tables are on the wire, returns a block
+Public dispatch of an inductive, from a clean state whose tables are on the wire, returns a block
 that decodes exactly and that the certified reader's `readRecord` (over the
 block's blobs overlaid on the context's) reads as `lowerInductive` of the
 `BlockRead` the source describes (`InductiveReading.sourceBlock`): the
@@ -3333,7 +3332,7 @@ fun constructors =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.InductiveReading.inductive_declines_unindexed
 
-/-! ## Component theorems: what Source mode admits of an inductive block (R12)
+/-! ## Component theorems: what Source mode admits of an inductive block
 
 Source mode's group and conversion of an inductive block
 (`Ix.LeanIngress.inductiveGroup`, `convertInductive`) check every
@@ -3347,7 +3346,7 @@ Source's input does (`Ix.Cert.compile` compiles the environment Source mode
 checks), `InductiveReading.inductive_reads`' safety, position and telescope
 premises hold (`source_premises`, `inductive_reads_source`), and so do R9a's
 `ConstructorPositions` for the compiler's mutual members
-(`mkIndc_positions`). The self references stay premises (N-READS). Every
+(`mkIndc_positions`). The self references stay premises. Every
 lemma behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
 /-- info: def Ix.CompileCert.SourceConstructorPositions.Admits : Ix.Environment → Ix.InductiveVal → Prop :=
@@ -3857,7 +3856,7 @@ fun t ixe =>
 
 /-! ## N-READS, N1: Source acceptance admits every inductive block
 
-R12 reads `inductive_reads`' Source premises and R9a's `ConstructorPositions`
+R12 reads `inductive_reads`' Source premises and `ConstructorPositions`
 off `Admits` (the block's group converts). An accepted Source check admits
 every inductive block stored under its first member: the block's group is one
 of the ingress's groups, and every one of those converts
@@ -3881,7 +3880,7 @@ run_cmd do
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Admits.admits_of_sourceAccepts
 
-/-! ## N-READS, N2: levels read syntactically
+/-! ## Levels read syntactically
 
 The reader's level is the Source level in the compiler's canonical form
 (`Ix.LeanIngress.canonLevelIn`, what IxC's U lowers Source levels to), when the

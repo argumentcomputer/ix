@@ -23,7 +23,7 @@ axiom, quotient, recursor and standalone inductive-family blocks:
   success-only wire traversal (`EmissionWire`) and the builder's
   `buildConstantWithSharing_wireWF_headers` (R07-10).
 
-CT-15's `DefinitionBlock`,
+`DefinitionBlock`,
 `HeaderBlock`, `RecursorBlock`, `InductiveBlock` and the block half of
 `FamilyWire`. -/
 

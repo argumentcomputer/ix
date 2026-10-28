@@ -3,10 +3,10 @@ import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.MutualArtifact
 import Ix.LeanIngress
 
-/-! # What Source mode admits of an inductive block (R12)
+/-! # What Source mode admits of an inductive block
 
 The donor's `SourceConstructorPositions` read constructor positions off the
-old source export (CT-02's `SourceExportFast`). Source mode is now
+old source export (`SourceExportFast`). Source mode is now
 `Ix.LeanIngress`, which reads the compiler's own input, an `Ix.Environment`:
 an inductive block is a group (`inductiveGroup`, Lean's layout checked) and
 its conversion (`convertInductive`, the reader's checks). This file reads
@@ -31,16 +31,16 @@ what those two functions check:
 `inductive_reads_source` is `InductiveReading.inductive_reads` with its
 safety, position and telescope premises discharged by Source admission of
 the block (`Admits`: the block's group converts). `mkIndc_positions` gives
-R9a's `MutualProjections.ConstructorPositions` for the compiler's mutual
+`MutualProjections.ConstructorPositions` for the compiler's mutual
 members.
 
-**What remains** (N-READS): the self references: that the family's name
-is related to its key (`selfKey`, R13's published maps), and that no
+**What remains**: the self references: that the family's name
+is related to its key (`selfKey`, the published maps), and that no
 constructor of the family occurs in the family's own types
-(`InductiveReading.NoCtorIn`, N4). The ingress does not check the latter; the
+(`InductiveReading.NoCtorIn`). The ingress does not check the latter; the
 fold does, through IxC's route-independent shape guard on every accepted
 `.indDecl`, and `Ix.Cert.NoCtor.inductive_reads_sourceAccepts` discharges it
-from Source acceptance (N4 (b)). And
+from Source acceptance. And
 Source acceptance (`checkSource … = .ok _`) reaches a group's conversion
 only through the schedule (`Ix.LeanIngress.scheduleOf`), whose order
 (`orderOf`) is a `while` loop and so has no unfolding: `Admits` is the
@@ -671,7 +671,7 @@ theorem find_run (name : Ix.Name) (context : CompileEnv × BlockEnv) (state : Bl
   ⟨_, Prod.ext rfl (EmissionDispatch.find_state name context state)⟩
 
 /-- **The family's constructors are the compile environment's**: under an
-environment without Pass 3 records, `collectInductiveConstructors` returns,
+compile environment, `collectInductiveConstructors` returns,
 after what it started with, the constructor the environment has under each
 name, in order. -/
 theorem collect_lookups (context : CompileEnv × BlockEnv) :
@@ -915,7 +915,7 @@ theorem source_premises (context : CompileEnv × BlockEnv)
   exact ⟨safe, ctorSafe, positions, arity⟩
 
 open Ix.CompileM in
-/-- **R9a's `ConstructorPositions` for the compiler's mutual members**: a
+/-- **`ConstructorPositions` for the compiler's mutual members**: a
 member `MutConst.mkIndc` builds for an inductive of a Source-admitted block,
 in a compile environment that resolves its constructor names as Source's
 input does, declares its constructors' positions. -/

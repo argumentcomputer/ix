@@ -85,7 +85,7 @@ numbering `σOf m`. -/
 abbrev relOf (σOf : MutConst → Ix.Name → LevelParam) (m : MutConst) : Ix.Expr → CExpr md → Prop :=
   rel param names (σOf m) (memberLps m)
 
-/-- **The members of a block, one per class, each in its own relation.** -/
+/-- **The members of a block, in source order, each in its own relation.** -/
 theorem members_each (σOf : MutConst → Ix.Name → LevelParam) (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) :
