@@ -16,14 +16,14 @@ What those theorems need beyond the trace is collected in `TraceNeeds`, per kind
 lowering (`LoweredAt`):
 * `DefinitionNeeds`, `HeaderNeeds`, `BlockNeeds`, `InductiveNeeds`: the compile's run of the
   group's block and its publication (`LoneCompiled`, `BlockCompiled`, `InductiveCompiled`),
-  quotient Source's facts about the group, and the collapse's form for blocks and inductive
-  groups;
+  quotient Source's facts about the group, and the collapse's form for blocks;
 * `ConvGood`: the group's quotient terms lie in the scope of representatives;
 * `StateGood`: so do the entries of every state the trace's reads are read from.
 
 The names of a group are closure constants (`ClosureLayout.converted_names_stored`), stored
 and published under those names; each kind's placement premises (its names, its declared keys)
 come from the group itself and its lowering (`ClosureLayout.lowered_declares`).
+An inductive read is kept whole: the trace gives it (`CollapseWhole.inductiveWhole_of_traceAt`).
 `unitsRead_of_needs` puts this together with `ClosureLayout.unitsRead_of_layout`. -/
 
 namespace Ix.Cert.TraceSegments
@@ -253,7 +253,6 @@ structure InductiveNeeds (t : RoleTable) (preA : Prelude .anon) (order : List Ad
   noCtor : ∀ i ∈ indsOf types ctors, ∀ e ∈ BlockEmission.memberSources (.indc i),
     ConstsSatisfy (fun n => ∀ i' ∈ indsOf types ctors, ∀ c ∈ i'.ctors.toList, n ≠ c.cnst.name) e
   recDistinct : Canon.KeysDistinct (recs.toList.map MutConst.recr)
-  kept : rd = raw
 
 end Needs
 
@@ -649,6 +648,7 @@ theorem inductive_at (P : Premises env roots sub ixe failures t envQ) {preA : Pr
       c stS raw rd)
     {first : Ix.InductiveVal} (hfirst : types[0]? = some first)
     (needs : InductiveNeeds ixe sub t preA (cutOf ixe t hints sub ls L).flatten b types ctors recs first raw rd)
+    (kept : rd = raw)
     (stGood : StateGood (scope ixe t) stS) (good : ConvGood (scope ixe t) ((c.withHints hints).quotient (fibers ixe t)))
     {seg : List Address} (hseg : (cutOf ixe t hints sub ls L)[ℓ]? = some seg) :
     SegmentReads (evAddr ixe b) (scope ixe t) (closureContext ixe t preA (cutOf ixe t hints sub ls L).flatten) ixe
@@ -692,12 +692,12 @@ theorem inductive_at (P : Premises env roots sub ixe failures t envQ) {preA : Pr
   obtain ⟨before, after, hplace, hin⟩ := InductiveSegments.inductive_place P prelude corder canonical steps inTrace hnd
     hmem resolves hy hr needs.hcsize hpos needs.hrne typesIn ctorsIn recsIn hnames ran₁ hr₁ pub₁ hrec₁ hr₂ pub₂
     hrec₂ ran₂ (fun n hn => by
-      rw [needs.kept]
+      rw [kept]
       refine ClosureLayout.lowered_declares hyx hc hl n ((hnames n).mpr ?_)
       rcases hn with h | h
       · exact .inl h
       · exact .inr (.inl h))
-  exact InductiveSegments.inductive_segment P corder resolves stored₁ stored₂ inert₂ hscoped reads needs.kept
+  exact InductiveSegments.inductive_segment P corder resolves stored₁ stored₂ inert₂ hscoped reads kept
     ⟨before, after, Option.some.inj (hseg.symm.trans hplace), hin⟩
 
 end Kinds
@@ -749,6 +749,7 @@ theorem segmentsRead_of_needs {env : Ix.Environment} {roots : List Ix.Name} {sub
     (canonical : Stream.StoredCanonical ixe (cutOf ixe t hints sub ls L).flatten)
     (empty : ∀ (ℓ : Nat) (r : Read .source), rs[ℓ]? = some r → r.decls = #[] →
       (cutOf ixe t hints sub ls L)[ℓ]? = some [])
+    (whole : CollapseWhole.InductiveWhole start ls rs)
     (needs : TraceNeeds ixe sub t preA b hints start ls rs L) :
     SegmentsRead (evAddr ixe b) (scope ixe t) (closureContext ixe t preA (cutOf ixe t hints sub ls L).flatten) ixe
       start rs (cutOf ixe t hints sub ls L) := by
@@ -784,10 +785,11 @@ theorem segmentsRead_of_needs {env : Ix.Environment} {roots : List Ix.Name} {sub
     · exact block_at P prelude hf resolves steps inTrace hnd hmem corder canonical low (by simp)
         (needs.blocks _ _ _ _ _ _ _ low (by simp)) (needs.states ℓ) cgood hlevels hseg hempty
   | «inductive» types ctors recs =>
-    obtain ⟨first, hfirst, -⟩ := InductiveUnits.convertInductive_src
+    obtain ⟨first, hfirst, hceq, -⟩ := InductiveUnits.convertInductive_src
       (show Ix.LeanIngress.convertInductive types ctors recs = .ok c from hconv)
+    have kept : r = raw := whole ℓ y r _ raw hy hr hc ⟨_, by rw [hceq]; rfl⟩ hl
     exact inductive_at P prelude hf resolves steps inTrace hnd hmem corder canonical low hfirst
-      (needs.inductives _ _ _ _ _ _ _ _ _ _ low hfirst) (needs.states ℓ) cgood hseg
+      (needs.inductives _ _ _ _ _ _ _ _ _ _ low hfirst) kept (needs.states ℓ) cgood hseg
 
 /-- **The reader's units from what the trace's lowered groups need**: for an accepted closure
 whose compiled records lie as `Layout` says, quotient Source's trace from the prelude has the
@@ -805,15 +807,18 @@ theorem unitsRead_of_needs {env : Ix.Environment} {roots : List Ix.Name} {sub : 
       (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList rs fin s kb)
     (layout : ClosureLayout.Layout ixe (quotientGraph ixe t hints sub))
     (each : ∀ (ls : List Scheduled) (L : List Address), Steps (quotientGraph ixe t hints sub) pre.state ls rs →
+      CollapseWhole.InductiveWhole pre.state ls rs →
       (∀ y ∈ ls, y ∈ (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList) →
       L.Nodup → (∀ a, a ∈ L ↔ ixe.consts.contains a = true) → L.Pairwise (fun a b => ¬ RecordRef ixe a b) →
       ClosureOrder ixe (Seed ixe sub) (cutOf ixe t hints sub ls L).flatten →
       Stream.StoredCanonical ixe (cutOf ixe t hints sub ls L).flatten ∧
         TraceNeeds ixe sub t preA b hints pre.state ls rs L) :
     ReaderStreamsUnits.UnitsRead ixe sub t preA b pre rs :=
-  ClosureLayout.unitsRead_of_layout P htrace layout fun ls L steps inTrace hnd hmem hpw corder empty =>
-    have needs := each ls L steps inTrace hnd hmem hpw corder
-    ⟨needs.1, segmentsRead_of_needs P prelude hf resolves steps inTrace hnd hmem corder needs.1 empty needs.2⟩
+  ClosureLayout.unitsRead_of_layout P htrace layout fun ls L steps traceAt inTrace hnd hmem hpw corder empty =>
+    have whole := CollapseWhole.inductiveWhole_of_traceAt traceAt fun _ hx => hx
+    have needs := each ls L steps whole inTrace hnd hmem hpw corder
+    ⟨needs.1, segmentsRead_of_needs P prelude hf resolves steps inTrace hnd hmem corder needs.1 empty whole
+      needs.2⟩
 
 /--
 info: 'Ix.Cert.TraceSegments.segmentsRead_of_needs' depends on axioms: [propext, Classical.choice, Quot.sound]

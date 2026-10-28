@@ -2,6 +2,7 @@ import Ix.Cert.ClosureSegments
 import Ix.Cert.ScheduleOrder
 import Ix.Cert.SourceStoredNames
 import Ix.Cert.Order
+import Ix.Cert.CollapseWhole
 
 /-! # The compiled closure's segments in quotient Source's order
 
@@ -220,18 +221,23 @@ theorem trace_lowered {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source �
     (∀ x ∈ xs, x ∈ (scheduleOf (graphCollapsed ρ hints env blocks)).zipIdx.toList) →
     xs.map (·.2) = List.range xs.length →
     ∃ ls, Lowered (graphCollapsed ρ hints env blocks) ρ xs ls kb ∧
-      Steps (graphCollapsed ρ hints env blocks) start ls rs := by
+      Steps (graphCollapsed ρ hints env blocks) start ls rs ∧
+      CollapseWhole.TraceAt (graphCollapsed ρ hints env blocks) start xs ls rs := by
   induction h with
   | nil =>
     intro _ _
     exact ⟨[], ⟨List.Sublist.slnil, (fun x hx => nomatch hx), fun k hk => by simp at hk⟩,
-      rfl, fun ℓ y r hy => by simp at hy⟩
+      ⟨rfl, fun ℓ y r hy => by simp at hy⟩, fun ℓ y r hy => by simp at hy⟩
   | @«alias» xs rs st s kb x i ht hcol ih =>
     intro inside hidx
     rw [List.map_append, List.length_append, List.length_singleton, List.range_succ] at hidx
     obtain ⟨hpre, hlast⟩ := List.append_inj hidx (by simp)
-    obtain ⟨ls, low, steps⟩ := ih (fun y hy => inside y (List.mem_append_left _ hy)) hpre
-    refine ⟨ls, ⟨low.sub.trans (List.sublist_append_left _ _), fun y hy n hn => ?_, low.kept⟩, steps⟩
+    obtain ⟨ls, low, steps, traceAt⟩ := ih (fun y hy => inside y (List.mem_append_left _ hy)) hpre
+    refine ⟨ls, ⟨low.sub.trans (List.sublist_append_left _ _), fun y hy n hn => ?_, low.kept⟩, steps,
+      fun ℓ y r hy hr => by
+        obtain ⟨xs', s0, kb0, conv, raw, s1, kb1, dropped, ht', hsub, hyx, rest⟩ := traceAt ℓ y r hy hr
+        exact ⟨xs', s0, kb0, conv, raw, s1, kb1, dropped, ht', fun z hz => List.mem_append_left _ (hsub z hz),
+          List.mem_append_left _ hyx, rest⟩⟩
     rcases List.mem_append.mp hy with hy | hy
     · exact low.covers y hy n hn
     · rw [List.mem_singleton] at hy
@@ -260,14 +266,14 @@ theorem trace_lowered {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source �
     intro inside hidx
     rw [List.map_append, List.length_append, List.length_singleton, List.range_succ] at hidx
     obtain ⟨hpre, -⟩ := List.append_inj hidx (by simp)
-    obtain ⟨ls, low, hlen, steps⟩ := ih (fun y hy => inside y (List.mem_append_left _ hy)) hpre
+    obtain ⟨ls, low, ⟨hlen, steps⟩, traceAt⟩ := ih (fun y hy => inside y (List.mem_append_left _ hy)) hpre
     have hxin := inside x (List.mem_append_right _ List.mem_cons_self)
     obtain ⟨gr, c, hgr, hconv, heq⟩ := scheduled_conversion hxin hc
     have hnames : namesAt (graphCollapsed ρ hints env blocks) x = gr.names := by
       unfold namesAt
       rw [getElem!_of_getElem? hgr]
     refine ⟨ls ++ [x], ⟨low.sub.append (List.Sublist.refl _), fun y hy n hn => ?_, fun k hk => ?_⟩,
-      by simp [hlen], fun ℓ y r' hy hr' => ?_⟩
+      ⟨by simp [hlen], fun ℓ y r' hy hr' => ?_⟩, fun ℓ y r' hy hr' => ?_⟩
     · rcases List.mem_append.mp hy with hy | hy
       · obtain ⟨y', hy', hle, n₀, hn₀, hkey⟩ := low.covers y hy n hn
         exact ⟨y', List.mem_append_left _ hy', hle, n₀, hn₀, hkey⟩
@@ -334,6 +340,28 @@ theorem trace_lowered {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source �
             ⟨d', by rw [← hdi]; exact (Array.getElem?_eq_getElem (by simpa using hi)).trans (by simp), hk'⟩
           rw [fresh] at hown
           cases hown
+    · -- each read with the trace before it
+      by_cases hℓ : ℓ < ls.length
+      · rw [List.getElem?_append_left hℓ] at hy
+        rw [List.getElem?_append_left (hlen ▸ hℓ)] at hr'
+        have htake : (rs ++ [r]).take ℓ = rs.take ℓ := List.take_append_of_le_length (by omega)
+        rw [htake]
+        obtain ⟨xs', s0, kb0, conv0, raw0, s1, kb1, dropped0, ht', hsub, hyx, rest⟩ := traceAt ℓ y r' hy hr'
+        exact ⟨xs', s0, kb0, conv0, raw0, s1, kb1, dropped0, ht', fun z hz => List.mem_append_left _ (hsub z hz),
+          List.mem_append_left _ hyx, rest⟩
+      · have hℓ' : ℓ = ls.length := by
+          have := (List.getElem?_eq_some_iff.mp hy).1
+          simp at this
+          omega
+        subst hℓ'
+        rw [List.getElem?_append_right (Nat.le_refl _), Nat.sub_self] at hy
+        rw [hlen, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self] at hr'
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hy hr'
+        subst hy hr'
+        have htake : (rs ++ [r]).take ls.length = rs := by rw [hlen]; simp
+        rw [htake, ← ht.fold]
+        exact ⟨xs, s, kb, conv, raw, s', kb', dropped, ht, fun z hz => List.mem_append_left _ hz,
+          List.mem_append_right _ List.mem_cons_self, hc, hl, hr, hcol⟩
 
 /-! ## The keys a lowered group declares -/
 
@@ -547,6 +575,8 @@ theorem closureOrder_segments {env : Ix.Environment} {roots : List Ix.Name} {sub
     (layout : Layout ixe (quotientGraph ixe t hints sub)) :
     ∃ (ls : List Scheduled) (L : List Address),
       Steps (quotientGraph ixe t hints sub) start ls rs ∧
+      CollapseWhole.TraceAt (quotientGraph ixe t hints sub) start
+        (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList ls rs ∧
       (∀ y ∈ ls, y ∈ (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList) ∧
       L.Nodup ∧ (∀ a, a ∈ L ↔ ixe.consts.contains a = true) ∧ L.Pairwise (fun a b => ¬ RecordRef ixe a b) ∧
       ClosureOrder ixe (Seed ixe sub)
@@ -559,7 +589,7 @@ theorem closureOrder_segments {env : Ix.Environment} {roots : List Ix.Name} {sub
   have hxs : ((scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList).map (·.2) =
       List.range (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList.length := by
     rw [Array.toList_zipIdx, List.zipIdx_map_snd, List.length_zipIdx, List.range_eq_range']
-  obtain ⟨ls, low, steps⟩ := trace_lowered htrace (fun _ h => h) hxs
+  obtain ⟨ls, low, steps, traceAt⟩ := trace_lowered htrace (fun _ h => h) hxs
   obtain ⟨-, declared⟩ := SourceDeclares.trace_declares htrace
   -- the trace's items are groups that convert
   have groupOf : ∀ x ∈ (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList, ∃ gr c,
@@ -744,7 +774,7 @@ theorem closureOrder_segments {env : Ix.Environment} {roots : List Ix.Name} {sub
       obtain ⟨gr, c', hgr, -, hnm⟩ := groupOf y (low.sub.subset hy)
       obtain ⟨j, gr', hgr', m, hm, hb⟩ := layout.extra _ gr hgr n (hnm ▸ hn) a hrec b (.inr hedge)
       exact ⟨hedge.1, ofGroup j gr' hgr' m hm b hb⟩
-  refine ⟨ls, L, steps, fun y hy => low.sub.subset hy, hnd, hmem, hpw, ⟨segmentsOf_nodup hnd _ _, fun a => ?_, ?_⟩, ?_⟩
+  refine ⟨ls, L, steps, traceAt, fun y hy => low.sub.subset hy, hnd, hmem, hpw, ⟨segmentsOf_nodup hnd _ _, fun a => ?_, ?_⟩, ?_⟩
   · rw [mem_segmentsOf]
     constructor
     · rintro ⟨-, -, C, hC, ha⟩
@@ -850,6 +880,8 @@ theorem unitsRead_of_layout {env : Ix.Environment} {roots : List Ix.Name} {sub :
       (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList rs fin s kb)
     (layout : Layout ixe (quotientGraph ixe t hints sub))
     (reads : ∀ (ls : List Scheduled) (L : List Address), Steps (quotientGraph ixe t hints sub) pre.state ls rs →
+      CollapseWhole.TraceAt (quotientGraph ixe t hints sub) pre.state
+        (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList ls rs →
       (∀ y ∈ ls, y ∈ (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList) →
       L.Nodup → (∀ a, a ∈ L ↔ ixe.consts.contains a = true) → L.Pairwise (fun a b => ¬ RecordRef ixe a b) →
       ClosureOrder ixe (Seed ixe sub)
@@ -865,8 +897,8 @@ theorem unitsRead_of_layout {env : Ix.Environment} {roots : List Ix.Name} {sub :
           ixe pre.state rs
           (segmentsOf L (ls.map fun y => groupRecords ixe (namesAt (quotientGraph ixe t hints sub) y)) [])) :
     ReaderStreamsUnits.UnitsRead ixe sub t preA b pre rs := by
-  obtain ⟨ls, L, steps, inTrace, hnd, hmem, hpw, order, empty⟩ := closureOrder_segments P htrace layout
-  obtain ⟨canonical, segs⟩ := reads ls L steps inTrace hnd hmem hpw order empty
+  obtain ⟨ls, L, steps, traceAt, inTrace, hnd, hmem, hpw, order, empty⟩ := closureOrder_segments P htrace layout
+  obtain ⟨canonical, segs⟩ := reads ls L steps traceAt inTrace hnd hmem hpw order empty
   exact ClosureSegments.unitsRead_of_segments [] _ order canonical (fun _ h => nomatch h) segs
 
 /--
