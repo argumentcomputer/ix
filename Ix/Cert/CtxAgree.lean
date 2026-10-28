@@ -1,6 +1,7 @@
 import IxC.Kernel.Verify.Frontend.InModelGenNested
 import IxC.Kernel.Ixon.ReaderSpec
 import Ix.CompileCert.Loop
+import Ix.Cert.LowerDistinct
 
 /-! # The generator's context on both streams (the statements half of `CtxAgree`)
 
@@ -452,17 +453,17 @@ theorem ite_ok' {α : Type} {c : Prop} [Decidable c] {x y : Ix.Kernel.Reader.Rea
   · exact .inl ⟨hc, by simpa [hc] using h⟩
   · exact .inr ⟨hc, by simpa [hc] using h⟩
 
-/-- **What an accepted `lowerInductive` returns**: the modeller's records
+/-- **What an accepted `lowerInductiveDecls` returns**: the modeller's records
 (`generate` at `genCtx`, when the block wants them), then the block's own
 declaration; the block, by its members' names. -/
-theorem lowerInductive_ok {st : State md} {rb : BlockRead md} {r : Read md}
-    (h : Ix.Kernel.Reader.lowerInductive st rb = .ok r) :
+theorem lowerInductiveDecls_ok {st : State md} {rb : BlockRead md} {r : Read md}
+    (h : Ix.Kernel.Reader.lowerInductiveDecls st rb = .ok r) :
     ∃ gens : List (CDecl md), r.decls = gens.toArray.push (indDeclOf rb) ∧ r.generated = gens.length ∧
       r.blocks = blocksOf rb ∧
       ((wants (blockRecOf rb) = true ∧ generate (genCtx st rb) (blockRecOf rb) = .ok gens) ∨
         (wants (blockRecOf rb) = false ∧ gens = [])) := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
-  unfold Ix.Kernel.Reader.lowerInductive at h
+  unfold Ix.Kernel.Reader.lowerInductiveDecls at h
   simp only [ite_not, bne_iff_ne, ne_eq] at h
   all_goals
     rcases ite_ok' h with ⟨-, h⟩ | ⟨-, h⟩
@@ -480,6 +481,15 @@ theorem lowerInductive_ok {st : State md} {rb : BlockRead md} {r : Read md}
       · simp only [pure, Except.pure, Except.ok.injEq] at h
         subst h
         exact ⟨[], rfl, rfl, rfl, .inr ⟨Bool.eq_false_iff.mpr hw, rfl⟩⟩
+
+/-- **What an accepted `lowerInductive` returns**: as `lowerInductiveDecls_ok`. -/
+theorem lowerInductive_ok {st : State md} {rb : BlockRead md} {r : Read md}
+    (h : Ix.Kernel.Reader.lowerInductive st rb = .ok r) :
+    ∃ gens : List (CDecl md), r.decls = gens.toArray.push (indDeclOf rb) ∧ r.generated = gens.length ∧
+      r.blocks = blocksOf rb ∧
+      ((wants (blockRecOf rb) = true ∧ generate (genCtx st rb) (blockRecOf rb) = .ok gens) ∨
+        (wants (blockRecOf rb) = false ∧ gens = [])) :=
+  lowerInductiveDecls_ok (LowerDistinct.lowerInductiveDecls_of_ok h)
 
 end Lower
 
@@ -545,17 +555,18 @@ theorem wants_mapKeys (b : BlockRec md) : wants (b.mapKeys f) = wants b := by
     IndTypeRec.mapKeys_numNested]
   rfl
 
-/-- **A block and its renaming lower to renamed records** at agreeing states:
-the modeller's records renamed (IxC's parametricity, `generate_toOption_mapKeys`),
-then the renamed block's declaration; the renamed block. -/
-theorem lowerInductive_mapKeys (hP : P.Pre) (hf : InjOn f P) {stS : State md} {stA : State md'}
+/-- **A block and its renaming lower to renamed records** at agreeing states,
+before their names are compared (`lowerInductiveDecls`): the modeller's records
+renamed (IxC's parametricity, `generate_toOption_mapKeys`), then the renamed
+block's declaration; the renamed block. -/
+theorem lowerInductiveDecls_mapKeys (hP : P.Pre) (hf : InjOn f P) {stS : State md} {stA : State md'}
     (hst : StateAgree f P stS stA) {rb : BlockRead md} (hg : rb.Good P) {rS : Read md} {rA : Read md'}
-    (hS : Ix.Kernel.Reader.lowerInductive stS rb = .ok rS)
-    (hA : Ix.Kernel.Reader.lowerInductive stA (rb.mapKeys f) = .ok rA) :
+    (hS : Ix.Kernel.Reader.lowerInductiveDecls stS rb = .ok rS)
+    (hA : Ix.Kernel.Reader.lowerInductiveDecls stA (rb.mapKeys f) = .ok rA) :
     rA.decls = rS.decls.map (Declaration.mapKeys f) ∧ rA.generated = rS.generated ∧
       rA.blocks = rS.blocks.map fun (n, b) => (n.map f, b.mapKeys f) := by
-  obtain ⟨gS, hdS, hnS, hbS, hwS⟩ := lowerInductive_ok hS
-  obtain ⟨gA, hdA, hnA, hbA, hwA⟩ := lowerInductive_ok hA
+  obtain ⟨gS, hdS, hnS, hbS, hwS⟩ := lowerInductiveDecls_ok hS
+  obtain ⟨gA, hdA, hnA, hbA, hwA⟩ := lowerInductiveDecls_ok hA
   rw [blockRecOf_mapKeys hf hg, wants_mapKeys] at hwA
   have hgen : gA = gS.map (Declaration.mapKeys f) := by
     rcases hwS with ⟨hw, hgS⟩ | ⟨hw, rfl⟩
@@ -573,6 +584,17 @@ theorem lowerInductive_mapKeys (hP : P.Pre) (hf : InjOn f P) {stS : State md} {s
   · rw [hnA, hnS, hgen, List.length_map]
   · rw [hbA, hbS, blocksOf, blocksOf, blockRecOf_mapKeys hf hg]
     simp [BlockRec.mapKeys, Function.comp_def, IndTypeRec.mapKeys]
+
+/-- **A block and its renaming lower to renamed records** at agreeing states
+(`lowerInductiveDecls_mapKeys`). -/
+theorem lowerInductive_mapKeys (hP : P.Pre) (hf : InjOn f P) {stS : State md} {stA : State md'}
+    (hst : StateAgree f P stS stA) {rb : BlockRead md} (hg : rb.Good P) {rS : Read md} {rA : Read md'}
+    (hS : Ix.Kernel.Reader.lowerInductive stS rb = .ok rS)
+    (hA : Ix.Kernel.Reader.lowerInductive stA (rb.mapKeys f) = .ok rA) :
+    rA.decls = rS.decls.map (Declaration.mapKeys f) ∧ rA.generated = rS.generated ∧
+      rA.blocks = rS.blocks.map fun (n, b) => (n.map f, b.mapKeys f) :=
+  lowerInductiveDecls_mapKeys hP hf hst hg (LowerDistinct.lowerInductiveDecls_of_ok hS)
+    (LowerDistinct.lowerInductiveDecls_of_ok hA)
 
 end Agree
 

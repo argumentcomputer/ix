@@ -1,5 +1,6 @@
 import Ix.Cert.Statement
 import Ix.CompileCert.Loop
+import Ix.Cert.LowerDistinct
 
 /-! # Each record's and each group's lowering (S1's units, (R1): reader and ingress)
 
@@ -150,7 +151,8 @@ theorem lowerInductive_decls {st : State md} {rb : BlockRead md} {r : Read md}
     subst hb
     simp only [Ix.Kernel.Declaration.names, List.map_append, List.map_map]
     rfl
-  unfold lowerInductive at h
+  replace h := LowerDistinct.lowerInductiveDecls_of_ok h
+  unfold lowerInductiveDecls at h
   simp only [ite_not, bne_iff_ne, ne_eq] at h
   split at h
   all_goals

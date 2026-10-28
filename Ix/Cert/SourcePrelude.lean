@@ -567,7 +567,8 @@ theorem lowerInductive_sideNames {st : State .source} {rb : BlockRead .source}
       x.1.1.name ∈ Ix.LeanIngress.BlockRead.names ⟨nPd, types, ctors, ctorNames, recs⟩ := by
     exact List.mem_append_left _ (List.mem_append_left _
       (List.mem_map.mpr ⟨x.1, (List.of_mem_zip hx).1, rfl⟩))
-  unfold lowerInductive at h
+  replace h := LowerDistinct.lowerInductiveDecls_of_ok h
+  unfold lowerInductiveDecls at h
   simp only [ite_not, bne_iff_ne, ne_eq] at h
   split at h
   all_goals

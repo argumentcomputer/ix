@@ -138,7 +138,8 @@ which declarations the modeller generates. -/
 theorem lowerInductive_owners {st : State md} {rb : BlockRead md} {r : Read md}
     (h : lowerInductive st rb = .ok r) : r.owners = ownersOf rb := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
-  unfold lowerInductive at h
+  replace h := LowerDistinct.lowerInductiveDecls_of_ok h
+  unfold lowerInductiveDecls at h
   simp only [ite_not, bne_iff_ne, ne_eq] at h
   all_goals
     rcases ite_ok' h with ⟨-, h⟩ | ⟨-, h⟩

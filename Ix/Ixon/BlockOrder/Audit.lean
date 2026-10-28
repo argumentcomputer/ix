@@ -85,9 +85,13 @@ from 6099, by the entry's change (38 in: the check, the state's keys and the der
 -- Keeping the fallback's recursors off the input's blocks (`fallbackIndexed`, `indexedRecords`,
 -- through `contextOf`) adds four compiled functions. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Declining an inductive read whose declarations repeat a name (`lowerInductive` over
+-- `lowerInductiveDecls`) adds 11 compiled functions, the entry's
+-- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ixon.BlockOrder.checkBytes,
  Ixon.BlockOrder.canonicalClasses,
- Ixon.BlockOrder.compareExpr]: 6149 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ixon.BlockOrder.compareExpr]: 6160 compiled functions; inherited externs 114, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.BlockOrder.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
