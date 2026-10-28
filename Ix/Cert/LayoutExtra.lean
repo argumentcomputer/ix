@@ -7,6 +7,7 @@ import Ix.Cert.SourceOrigin
 import Ix.Cert.CtxAgree
 import Ix.Cert.BlockLayout
 import Ix.Cert.BlockWire
+import Ix.Cert.RecordReadings
 
 /-! # `Layout.extra`: the edges the fold follows without a reference
 
@@ -34,8 +35,12 @@ that key (`stream_role`), and that name is published at the role's address (`rol
 **Kinds.** A closure name published at a standalone definition record of kind `defn` is an
 input definition (`claimed_definition`), since a lone constant's compile makes such a block only
 of a definition (`lone_defn`) and a mutual block only of a single member its members' loop made
-of an input definition (`compileMutualBlock_defn`, `members_defn`). A name with `sorryAx`'s key
-sits at the role's axiom record (`not_sorryAx`). -/
+of an input definition (`compileMutualBlock_defn`, `members_defn`). Quotient Source then declares
+an operation's key by a definition (`stream_defn`): a group's names are stored constants of the
+group's kind (`groupsOf_kinded`), so an inductive, axiom or quotient group has no definition
+with the key, and a definitions group lowers each member at its own kind. Together they give
+`OpsDeclared` (`opsDeclared_of`), so the ground edges follow from the claims
+(`ground_extra_of`). A name with `sorryAx`'s key sits at the role's axiom record (`not_sorryAx`). -/
 
 namespace Ix.Cert.LayoutExtra
 
@@ -1415,6 +1420,555 @@ theorem not_sorryAx {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} (htable : Ix.Kern
   have hs := role_published (defaultTable_check htable) bound agree hm hkey
   obtain ⟨ax, hax⟩ := (kinds t htable .sorryAx _ _ hs hc).2 rfl
   exact notAxiom ax hax
+
+/-! ## Source kinds: a group's names are stored constants of the group's kind -/
+
+section SourceKinds
+
+open Ix.LeanIngress
+open Ix.CompileCert.Loop (idBind idPure except_bind_ok)
+open SourceStoredNames (forIn_id_prop forIn_id_prop_array lookup_stored Pending blockRecursors_mem)
+
+/-- The kind a group's constants have: an inductive group's are inductives, constructors or
+recursors; a definitions group's are its members; an axiom or quotient group's its constant. -/
+def GroupKind : Group → Ix.ConstantInfo → Prop
+  | .inductive _ _ _, ci => isFamily ci = true
+  | .definitions ms, ci => ci ∈ ms
+  | .axiom v, ci => ci = .axiomInfo v
+  | .quot v, ci => ci = .quotInfo v
+  | .invalid _ _, _ => True
+
+/-- **A group's names are own names of stored constants of the group's kind**
+(`SourceStoredNames.NamesStored`, with the kind kept). -/
+def NamesKinded (env : Ix.Environment) (g : Group) : Prop :=
+  (∀ x ∈ g.names, ∃ k ci, (k, ci) ∈ env.consts.toList ∧ ci.getCnst.name = x ∧ GroupKind g ci) ∧
+    ∀ ms, g = .definitions ms → ∀ ci ∈ ms, ∃ k, (k, ci) ∈ env.consts.toList
+
+theorem kinded_of_others {env : Ix.Environment} {g : Group} {others : Array Ix.ConstantInfo}
+    (stored : ∀ ci ∈ others, ∃ k, (k, ci) ∈ env.consts.toList)
+    (names : g.names = others.map (·.getCnst.name)) (kinds : ∀ ci ∈ others, GroupKind g ci)
+    (members : ∀ ms, g = .definitions ms → ∀ ci ∈ ms, ci ∈ others) : NamesKinded env g := by
+  refine ⟨fun x hx => ?_, fun ms hg ci hci => stored ci (members ms hg ci hci)⟩
+  rw [names] at hx
+  obtain ⟨ci, hci, rfl⟩ := Array.mem_map.mp hx
+  obtain ⟨k, hk⟩ := stored ci hci
+  exact ⟨k, ci, hk, rfl, kinds ci hci⟩
+
+theorem componentGroup_kinded {env : Ix.Environment} {members : Ix.Set Ix.Name} {g : Group}
+    (h : componentGroup env members = some g) : NamesKinded env g := by
+  rw [Ix.Cert.SourceGroupPlan.component_default] at h
+  unfold componentGroupUsing at h
+  generalize hcis : (Array.filterMapM (m := Id) (fun x => env.consts.get? x) members.toArray :
+    Array Ix.ConstantInfo) = cis at h
+  dsimp only [Id.run, bind, pure] at h
+  have stored : ∀ ci ∈ Id.run cis, ∃ k, (k, ci) ∈ env.consts.toList := by
+    intro ci hci
+    rw [← hcis] at hci
+    have hm : ci ∈ members.toArray.filterMap (fun x => env.consts.get? x) := hci
+    obtain ⟨x, -, hx⟩ := Array.mem_filterMap.mp hm
+    exact lookup_stored hx
+  generalize hothers : (cis.filter (fun x => !isFamily x)).qsort
+    (fun a b => Ix.sourceOrderLt (a.blockPosition, a.getCnst.name)
+      (b.blockPosition, b.getCnst.name)) = others at h
+  have storedOthers : ∀ ci ∈ others, ∃ k, (k, ci) ∈ env.consts.toList := by
+    intro ci hci
+    rw [← hothers] at hci
+    exact stored ci (Array.mem_filter.mp (Ix.CompileCert.Canon.mem_qsort.mp hci)).1
+  split at h
+  · cases h
+  · split at h
+    · cases h
+      exact kinded_of_others storedOthers rfl (fun _ _ => trivial) (fun _ h => by cases h)
+    · split at h
+      · cases h
+        exact kinded_of_others storedOthers rfl (fun _ h => h) (fun _ h => by cases h; exact fun _ h => h)
+      · obtain ⟨l⟩ := others
+        rcases l with _ | ⟨c, _ | ⟨c₂, rest⟩⟩
+        · cases h
+          exact kinded_of_others storedOthers rfl (fun _ _ => trivial) (fun _ h => by cases h)
+        · cases c <;> cases h
+          all_goals first
+            | exact kinded_of_others storedOthers rfl (fun _ _ => trivial) (fun _ h => by cases h)
+            | exact kinded_of_others storedOthers (by simp [Group.names, Ix.ConstantInfo.getCnst])
+                (fun ci hci => by simpa [GroupKind] using hci) (fun _ h => by cases h)
+        · cases h
+          exact kinded_of_others storedOthers rfl (fun _ _ => trivial) (fun _ h => by cases h)
+
+theorem inductiveGroup_kinded {env : Ix.Environment} {first : Ix.InductiveVal}
+    {cands : Array Ix.RecursorVal}
+    (hc : ∀ r ∈ cands, ∃ k, (k, Ix.ConstantInfo.recInfo r) ∈ env.consts.toList) {c : Converted}
+    (conv : convert (inductiveGroup env first cands) = .ok c) :
+    NamesKinded env (inductiveGroup env first cands) := by
+  generalize hg : inductiveGroup env first cands = g at conv ⊢
+  rw [Ix.Cert.SourceGroupPlan.inductive_default] at hg
+  unfold inductiveGroupUsing at hg
+  simp only [Id.run, idBind, idPure] at hg
+  split at hg
+  · rename_i r hr
+    have pend : Pending (some r) := by
+      rw [← hr]
+      refine forIn_id_prop_array (I := fun s : Option Group × Array Ix.InductiveVal => Pending s.1)
+        (Q := fun t => Pending t.1) _ ?_ (fun _ h => h) _ (.inl rfl)
+      intro x _ s _
+      split
+      · split
+        · exact .inl rfl
+        · exact .inr ⟨_, _, rfl⟩
+      · exact .inr ⟨_, _, rfl⟩
+    rcases pend with h0 | ⟨cl, e, he⟩
+    · cases h0
+    · cases he
+      subst hg
+      cases conv
+  · split at hg
+    · rename_i r hr
+      have pend : Pending (some r) := by
+        rw [← hr]
+        refine forIn_id_prop_array
+          (I := fun s : Option Group × Array (Array Ix.ConstructorVal) => Pending s.1)
+          (Q := fun t => Pending t.1) _ ?_ (fun _ h => h) _ (.inl rfl)
+        intro v _ s _
+        split
+        · rename_i r' hr'
+          show Pending (some r')
+          rw [← hr']
+          refine forIn_id_prop_array (I := fun s : Option Group × Array Ix.ConstructorVal => Pending s.1)
+            (Q := fun t => Pending t.1) _ ?_ (fun _ h => h) _ (.inl rfl)
+          intro x _ s _
+          split
+          · split
+            · split
+              · exact .inl rfl
+              · exact .inr ⟨_, _, rfl⟩
+            · exact .inr ⟨_, _, rfl⟩
+          · exact .inr ⟨_, _, rfl⟩
+        · exact .inl rfl
+      rcases pend with h0 | ⟨cl, e, he⟩
+      · cases h0
+      · cases he
+        subst hg
+        cases conv
+    · split at hg
+      · rename_i recs hrecs
+        subst hg
+        refine ⟨fun x hx => ?_, fun ms h => by cases h⟩
+        unfold Group.names at hx
+        rcases Array.mem_append.mp hx with hx | hx
+        · rcases Array.mem_append.mp hx with hx | hx
+          · obtain ⟨v, hv, rfl⟩ := Array.mem_map.mp hx
+            refine (forIn_id_prop_array
+              (I := fun s : Option Group × Array Ix.InductiveVal =>
+                ∀ v ∈ s.2, ∃ k, (k, Ix.ConstantInfo.inductInfo v) ∈ env.consts.toList)
+              (Q := fun t => ∀ v ∈ t.2, ∃ k ci, (k, ci) ∈ env.consts.toList ∧ ci.getCnst.name = v.cnst.name ∧
+                isFamily ci = true)
+              _ ?_ ?_ _ ?_) v hv
+            · intro y _ s hs
+              split
+              · rename_i v' hv'
+                split
+                · intro w hw
+                  rcases Array.mem_push.mp hw with hw | rfl
+                  · exact hs w hw
+                  · exact lookup_stored hv'
+                · exact hs
+              · exact hs
+            · intro t ht v hv
+              obtain ⟨k, hk⟩ := ht v hv
+              exact ⟨k, _, hk, rfl, rfl⟩
+            · intro v hv
+              exact absurd hv (Array.not_mem_empty _)
+          · obtain ⟨cs, hcs, hx⟩ := Array.mem_flatMap.mp hx
+            obtain ⟨cv, hcv, rfl⟩ := Array.mem_map.mp hx
+            refine (forIn_id_prop_array
+              (I := fun s : Option Group × Array (Array Ix.ConstructorVal) =>
+                ∀ cs ∈ s.2, ∀ cv ∈ cs, ∃ k, (k, Ix.ConstantInfo.ctorInfo cv) ∈ env.consts.toList)
+              (Q := fun t => ∀ cs ∈ t.2, ∀ cv ∈ cs,
+                ∃ k ci, (k, ci) ∈ env.consts.toList ∧ ci.getCnst.name = cv.cnst.name ∧ isFamily ci = true)
+              _ ?_ ?_ _ ?_) cs hcs cv hcv
+            · intro v _ s hs
+              split
+              · exact hs
+              · intro cs hcs
+                rcases Array.mem_push.mp hcs with hcs | rfl
+                · exact hs cs hcs
+                · refine forIn_id_prop_array
+                    (I := fun s : Option Group × Array Ix.ConstructorVal =>
+                      ∀ cv ∈ s.2, ∃ k, (k, Ix.ConstantInfo.ctorInfo cv) ∈ env.consts.toList)
+                    (Q := fun t => ∀ cv ∈ t.2, ∃ k, (k, Ix.ConstantInfo.ctorInfo cv) ∈ env.consts.toList)
+                    _ ?_ (fun _ h => h) _ ?_
+                  · intro y _ s hs
+                    split
+                    · rename_i cv' hcv'
+                      split
+                      · split
+                        · intro w hw
+                          rcases Array.mem_push.mp hw with hw | rfl
+                          · exact hs w hw
+                          · exact lookup_stored hcv'
+                        · exact hs
+                      · exact hs
+                    · exact hs
+                  · intro cv hcv
+                    exact absurd hcv (Array.not_mem_empty _)
+            · intro t ht cs hcs cv hcv
+              obtain ⟨k, hk⟩ := ht cs hcs cv hcv
+              exact ⟨k, _, hk, rfl, rfl⟩
+            · intro cs hcs
+              exact absurd hcs (Array.not_mem_empty _)
+        · obtain ⟨r, hr, rfl⟩ := Array.mem_map.mp hx
+          obtain ⟨k, hk⟩ := hc r (blockRecursors_mem hrecs r hr)
+          exact ⟨k, _, hk, rfl, rfl⟩
+      · subst hg
+        cases conv
+
+/-- **Every converted group's names are own names of stored constants of its kind.** -/
+theorem groupsOf_kinded (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    ∀ g ∈ groupsOf env blocks, ∀ c, convert g = .ok c → NamesKinded env g := by
+  unfold groupsOf
+  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, idBind, idPure]
+  refine forIn_id_prop (I := fun acc : Array Group => ∀ g ∈ acc, ∀ c, convert g = .ok c → NamesKinded env g)
+    _ ?_ (fun _ h => h) _ ?_
+  · intro x _ s hs
+    split
+    · exact hs
+    · intro g hg c hc
+      rcases Array.mem_push.mp hg with hg | rfl
+      · exact hs g hg c hc
+      · unfold unplaced at hc
+        split at hc <;> cases hc
+  · refine forIn_id_prop (I := fun acc : Array Group => ∀ g ∈ acc, ∀ c, convert g = .ok c → NamesKinded env g)
+      _ ?_ (fun _ h => h) _ ?_
+    · intro x _ s hs
+      split
+      · rename_i g' hg'
+        intro g hg c hc
+        rcases Array.mem_push.mp hg with hg | rfl
+        · exact hs g hg c hc
+        · exact componentGroup_kinded hg'
+      · exact hs
+    · refine forIn_id_prop
+        (I := fun acc : Array Group => ∀ g ∈ acc, ∀ c, convert g = .ok c → NamesKinded env g)
+        _ ?_ (fun _ h => h) _ ?_
+      · intro x _ s hs
+        split
+        · split
+          · intro g hg c hc
+            rcases Array.mem_push.mp hg with hg | rfl
+            · exact hs g hg c hc
+            · refine inductiveGroup_kinded ?_ hc
+              intro r hr
+              refine (forIn_id_prop
+                (I := fun m : Ix.Map TableName (Array Ix.RecursorVal) =>
+                  ∀ key, ∀ r ∈ m.getD key #[], ∃ k, (k, Ix.ConstantInfo.recInfo r) ∈ env.consts.toList)
+                (Q := fun m => ∀ r ∈ m.getD x.fst #[],
+                  ∃ k, (k, Ix.ConstantInfo.recInfo r) ∈ env.consts.toList)
+                _ ?_ (fun t ht => ht x.fst) _ ?_) r hr
+              · intro y hy m hm
+                split
+                · rename_i rv hrv
+                  split
+                  · intro key r' hr'
+                    simp only [ForInStep.value] at hr'
+                    rw [Std.HashMap.getD_insert] at hr'
+                    split at hr'
+                    · rcases Array.mem_push.mp hr' with hr' | rfl
+                      · exact hm _ r' hr'
+                      · obtain ⟨a, b⟩ := y
+                        simp only at hrv
+                        subst hrv
+                        exact ⟨a, hy⟩
+                    · exact hm key r' hr'
+                  · exact hm
+                · exact hm
+              · intro key r' hr'
+                simp at hr'
+          · exact hs
+        · exact hs
+      · intro g hg
+        exact absurd hg (Array.not_mem_empty _)
+
+
+/-- **A definitions group converts each member at its own kind**: every converted member has
+a member's key and the kind `definitionShape` gives that member. -/
+theorem convertDefinitions_kinds {members : Array Ix.ConstantInfo} {conv : Converted}
+    (ran : convertDefinitions members = .ok conv) :
+    ∃ ms : Array DefMember, conv = .definitions ms ∧
+      ∀ m ∈ ms, ∃ ci ∈ members, m.cv.name = ingressKey ci.getCnst.name ∧
+        ∃ s h, definitionShape ci = some (m.kind, s, h) := by
+  unfold convertDefinitions at ran
+  obtain ⟨shapes, hshapes, ran⟩ := except_bind_ok.mp ran
+  have shapesOf : ∀ x ∈ shapes, x.1 ∈ members ∧ definitionShape x.1 = some x.2.1 := by
+    intro x hx
+    obtain ⟨ci, hci, hf⟩ := ReaderUnits.forall₂_mem_right (ReaderUnits.array_mapM_ok hshapes) x
+      (Array.mem_toList_iff.mpr hx)
+    split at hf
+    · rename_i s v hs hv
+      simp only [pure, Except.pure, Except.ok.injEq] at hf
+      subst hf
+      exact ⟨Array.mem_toList_iff.mp hci, hs⟩
+    · cases hf
+  dsimp only at ran
+  rcases ReaderUnits.ite_ok ran with ran | ran <;>
+    try (split at ran; exact (ReaderUnits.fail_bind ran).elim)
+  all_goals
+    obtain ⟨ks, -, ran⟩ := except_bind_ok.mp ran
+    rcases ReaderUnits.ite_ok ran with ran | ran
+    · simp only [pure, Except.pure, Except.ok.injEq] at ran
+      subst ran
+      refine ⟨_, rfl, fun m hm => ?_⟩
+      obtain ⟨⟨⟨ci, ⟨kind, safety, hint⟩, v⟩, j⟩, hx, rfl⟩ := Array.mem_map.mp hm
+      obtain ⟨hmem, hshape⟩ := shapesOf _ (Array.fst_mem_of_mem_zipIdx hx)
+      exact ⟨ci, hmem, rfl, safety, hint, hshape⟩
+    · split at ran
+      · rename_i order horder
+        simp only [pure, Except.pure, Except.ok.injEq] at ran
+        subst ran
+        refine ⟨_, rfl, fun m hm => ?_⟩
+        obtain ⟨i, hi, rfl⟩ := Array.mem_map.mp hm
+        have hlt := ReaderUnits.defOrder_lt horder i hi
+        rw [Array.size_map] at hlt
+        obtain ⟨⟨⟨ci, ⟨kind, safety, hint⟩, v⟩, j⟩, hx, he⟩ :=
+          Array.mem_map.mp (ReaderUnits.getElem!_mem hlt)
+        rw [← he]
+        obtain ⟨hmem, hshape⟩ := shapesOf _ (Array.fst_mem_of_mem_zipIdx hx)
+        exact ⟨ci, hmem, rfl, safety, hint, hshape⟩
+      · cases ran
+
+/-- The hint override and the quotient renaming keep a definitions group's members' kinds and
+rename their keys. -/
+theorem quotient_definitions (ρ : FiberMap) (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint)
+    (ms : Array DefMember) :
+    ∃ ms', ((Converted.definitions ms).withHints hints).quotient ρ = .definitions ms' ∧
+      ∀ m ∈ ms', ∃ m₀ ∈ ms, m.kind = m₀.kind ∧ m.cv.name = Key.subst ρ m₀.cv.name := by
+  refine ⟨_, rfl, fun m hm => ?_⟩
+  simp only [Array.map_map] at hm
+  obtain ⟨m₀, hm₀, rfl⟩ := Array.mem_map.mp hm
+  refine ⟨m₀, hm₀, ?_, ?_⟩
+  · simp only [Function.comp_def, RecordReadings.defMember_canon, DefMember.substKeys]
+    split <;> rfl
+  · simp only [Function.comp_def, RecordReadings.defMember_canon, DefMember.substKeys,
+      ConstantVal.substKeys]
+    split <;> rfl
+
+/-- A definition member's declaration declares the member's key, and is a definition when
+the member's kind is. -/
+theorem lowerDefinition_kind {hint : Option Ix.Kernel.ReducibilityHint} {st : State .source}
+    {heights : Ix.Kernel.Reader.CName .source → Nat} {cv : Ix.Kernel.Reader.CVal .source}
+    {value : Ix.Kernel.Reader.CExpr .source} {kind : Ix.DefKind} {safety : Ix.DefinitionSafety}
+    {decl : Ix.Kernel.Reader.CDecl .source} {rw : Bool}
+    (h : Ix.Kernel.Reader.lowerDefinition hint st heights cv value kind safety = .ok (decl, rw)) :
+    decl.names = [cv.name] ∧ (kind = .defn → ∃ cv' value' hint', decl = .defnDecl cv' value' hint') := by
+  refine ⟨ReaderUnits.lowerDefinition_names h, fun hk => ?_⟩
+  subst hk
+  unfold Ix.Kernel.Reader.lowerDefinition at h
+  dsimp only at h
+  split at h
+  · simp [Ix.Kernel.Reader.declined, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at h
+  · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -⟩ := h
+    exact ⟨_, _, _, rfl⟩
+
+/-- **A definitions group lowers each member to one declaration of the member's key**, a
+definition when the member's kind is. -/
+theorem lower_definitions_kinds {st : State .source} {ms : Array DefMember} {raw : Read .source}
+    (h : lower st (.definitions ms) = .ok raw) :
+    ∀ d ∈ raw.decls.toList, ∃ m ∈ ms, d.names = [m.cv.name] ∧
+      (m.kind = .defn → ∃ cv value hint, d = .defnDecl cv value hint) := by
+  unfold lower at h
+  delta Ix.LeanIngress.lower.match_6 at h
+  dsimp only at h
+  split at h
+  · rename_i hsz
+    obtain ⟨l⟩ := ms
+    obtain _ | ⟨m, _ | ⟨_, _⟩⟩ := l
+    · cases hsz
+    · simp only at h
+      obtain ⟨⟨decl, rw⟩, hd, h⟩ := except_bind_ok.mp h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      intro d hd'
+      simp at hd'
+      subst hd'
+      obtain ⟨hn, hdef⟩ := lowerDefinition_kind hd
+      exact ⟨m, by simp, hn, hdef⟩
+    · simp at hsz
+  · obtain ⟨s, hs, h⟩ := except_bind_ok.mp h
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    have pushed := ReaderUnits.forIn_pushes (fun s => s.2.1)
+      (fun d => ∃ m ∈ ms, d.names = [m.cv.name] ∧ (m.kind = .defn → ∃ cv value hint, d = .defnDecl cv value hint))
+      _ _
+      (fun m hm s q hq => by
+        obtain ⟨⟨decl, rw⟩, hd, hq⟩ := except_bind_ok.mp hq
+        obtain ⟨hn, hdef⟩ := lowerDefinition_kind hd
+        dsimp only at hq
+        split at hq <;> split at hq <;>
+        · simp only [pure, Except.pure, Except.ok.injEq] at hq
+          subst hq
+          refine ⟨_, rfl, fun e he => ?_⟩
+          rcases Array.mem_push.mp he with he | rfl
+          · exact .inl he
+          · exact .inr ⟨m, Array.mem_def.mpr hm, hn, hdef⟩)
+      (fun e he => by simp at he) hs
+    exact fun d hd => pushed d (Array.mem_def.mpr hd)
+
+/-- No role with an `ops` specification is a prelude role. -/
+theorem ops_not_prelude (r : Ix.Kernel.Role) (h : (Ix.Kernel.Role.spec (md := .anon) r).kind = .ops) :
+    r ∉ Ix.Kernel.preludeShape.flatten := by
+  revert h
+  cases r <;> decide
+
+/-- **Quotient Source declares an `ops` role's key only by a definition**, when every closure
+name with that key is an input definition. A prelude declaration names only prelude roles. A
+lowered declaration naming the key names a group name's key: an inductive, axiom or quotient
+group's names are stored constants of the group's kind (`groupsOf_kinded`), so not
+definitions; a definitions group lowers each member at its own kind
+(`convertDefinitions_kinds`, `quotient_definitions`, `lower_definitions_kinds`). -/
+theorem stream_defn {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) {pre : Ix.Kernel.Reader.Prelude .source}
+    {ds : Array (Ix.Kernel.Declaration .source)} (hpre : Ix.Kernel.Reader.builtinPrelude = .ok pre)
+    (hprep : Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub
+      (blocksOf sub) = .ok ds)
+    {d : Ix.Kernel.Declaration .source} (hd : d ∈ ds.toList) {r : Ix.Kernel.Role}
+    (hspec : (Ix.Kernel.Role.spec (md := .anon) r).kind = .ops)
+    (hk : (Ix.Kernel.Key.role r : Ix.Kernel.Key .source) ∈ d.names)
+    (defns : ∀ m ci, (m, ci) ∈ sub.consts.toList → quotientKey ixe t m = .role r → ∃ v, ci = .defnInfo v) :
+    ∃ cv value hint, d = .defnDecl cv value hint := by
+  have hcol := SourceDeclares.preparedAt_collapsed hprep
+  obtain ⟨fin, decls, hl, -, hds⟩ := Ix.LeanIngress.prepareSourceCollapsed_keepsPrelude hcol
+  obtain ⟨extra, hextra, perm⟩ := Ix.Kernel.Frontend.preparePrelude_perm pre.ix decls
+  rw [hds] at hd
+  -- a stored closure constant under a name is the constant at that name
+  have named : ∀ k ci, (k, ci) ∈ sub.consts.toList → (ci.getCnst.name, ci) ∈ sub.consts.toList := by
+    intro k ci hk
+    have := inputsNamed P.compiled k ci (SourceStoredNames.stored_input P hk)
+    rw [this]
+    exact hk
+  rcases List.mem_append.mp (perm.mem_iff.mp hd) with hd | hd
+  · obtain ⟨rs, s', kb, ht, -, -, hdecls⟩ := SourcePrelude.lowerAllCollapsed_trace hl
+    rw [hdecls] at hd
+    obtain ⟨rd, hr, hdr⟩ := List.mem_flatMap.mp hd
+    obtain ⟨x, hx, conv, st', raw, hc, hlow, hsub⟩ := trace_reads ht rd hr
+    have hdraw := hsub d hdr
+    obtain ⟨gr, c, hgr, hconv, heq⟩ := scheduled_conversion hx hc
+    have hg : gr ∈ groupsOf sub (blocksOf sub) := Array.mem_of_getElem? hgr
+    have kinded := groupsOf_kinded sub _ gr hg c hconv
+    by_cases hdef : ∃ members, gr = .definitions members
+    · obtain ⟨members, rfl⟩ := hdef
+      obtain ⟨ms, rfl, hms⟩ := convertDefinitions_kinds hconv
+      obtain ⟨ms', hconvq, hkind'⟩ := quotient_definitions (fiberAliasAt ixe (roleAtMap t))
+        ((fiberHintsMap ixe)[·]?) ms
+      rw [heq, hconvq] at hlow
+      obtain ⟨m, hm, hnames, hdefn⟩ := lower_definitions_kinds hlow d hdraw
+      rw [hnames, List.mem_singleton] at hk
+      obtain ⟨m₀, hm₀, hkm, hname₀⟩ := hkind' m hm
+      obtain ⟨ci, hci, hcin, s, h, hshape⟩ := hms m₀ hm₀
+      obtain ⟨k, hkci⟩ := kinded.2 members rfl ci hci
+      have hq : quotientKey ixe t ci.getCnst.name = .role r := by
+        rw [hk, hname₀, hcin]
+        rfl
+      obtain ⟨v, rfl⟩ := defns _ ci (named k ci hkci) hq
+      simp only [definitionShape, Option.some.injEq, Prod.mk.injEq] at hshape
+      exact hdefn (hkm.trans hshape.1.symm)
+    · exfalso
+      obtain ⟨n₀, hn₀, hq⟩ := lowered_keys hx hc hlow d hdraw (.role r) hk rfl
+      have hnames : namesAt (quotientGraph ixe t ((fiberHintsMap ixe)[·]?) sub) x = gr.names := by
+        unfold namesAt
+        rw [getElem!_of_getElem? hgr]
+      rw [hnames] at hn₀
+      obtain ⟨k, ci, hkci, hname, hkind⟩ := kinded.1 n₀ hn₀
+      have hsub' : (n₀, ci) ∈ sub.consts.toList := by
+        have := named k ci hkci
+        rw [hname] at this
+        exact this
+      obtain ⟨v, rfl⟩ := defns n₀ ci hsub' hq.symm
+      cases gr with
+      | definitions ms => exact hdef ⟨ms, rfl⟩
+      | «inductive» _ _ _ => cases hkind
+      | «axiom» _ => cases hkind
+      | quot _ => cases hkind
+      | invalid _ _ => cases hconv
+  · have hp := hextra d hd
+    have shape := SourceInstalls.builtinPrelude_shape hpre
+    have hm : d.names ∈ pre.ix.decls.toList.map (·.names) := List.mem_map.mpr ⟨d, hp, rfl⟩
+    rw [shape] at hm
+    obtain ⟨rs, hrs, hnr⟩ := List.mem_map.mp hm
+    rw [← hnr] at hk
+    obtain ⟨s', hs', he⟩ := List.mem_map.mp hk
+    cases he
+    exact absurd (List.mem_flatten.mpr ⟨rs, hrs, hs'⟩) (ops_not_prelude r hspec)
+
+/-- A claimed record is stored and decodes. -/
+theorem claimed_record {env : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {A : Address}
+    (claimed : ClaimedIn env ixe n A) : ∃ c, recordAt ixe A = some c := by
+  obtain ⟨cenv, all, k, res, cst, layout, bytes, -, hr, hclaim, hstored, hblock⟩ := claimed
+  have shape := BlockLayout.runBlock_shape hr
+  have wire := BlockWire.blocksWire _ _ _ _ _ _ hr
+  unfold Resolution.claimWrites at hclaim
+  split at hclaim
+  · simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at hclaim
+    obtain ⟨-, rfl, rfl⟩ := hclaim
+    rw [shape.bytes] at hblock
+    exact ⟨_, BlockLayout.recordAt_ser wire hblock⟩
+  · obtain ⟨q, hq, e⟩ := Array.mem_map.mp hclaim
+    simp only [Prod.mk.injEq] at e
+    obtain ⟨-, rfl, rfl⟩ := e
+    rcases shape.rows q hq with same | proj
+    · exact ⟨_, BlockLayout.recordAt_ser (by rw [same]; exact wire) hstored⟩
+    · exact ⟨_, BlockLayout.recordAt_ser proj.1 hstored⟩
+
+/-- **Quotient Source declares an `ops` role's key only by a definition** (`OpsDeclared`), from
+the role's record kind (`RoleRecordKinds`) and the closure names' claims (`ClaimedIn`): every
+closure name with the key sits at the role's address, whose record is a standalone definition
+of kind `defn`, so it is an input definition (`claimed_definition`), and the stream declares
+the key by a definition (`stream_defn`). -/
+theorem opsDeclared_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (kinds : RoleRecordKinds ixe)
+    (claimed : ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, ClosureLayout.addrOf ixe m = some a →
+      ClaimedIn env ixe m a) :
+    ∀ pre ds, Ix.Kernel.Reader.builtinPrelude = .ok pre →
+      Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub
+        (blocksOf sub) = .ok ds → OpsDeclared ds.toList := by
+  intro pre ds hpre hprep d hd r hspec hk
+  refine stream_defn P hpre hprep hd hspec hk fun m ci hm hq => ?_
+  have checked := defaultTable_check P.table
+  obtain ⟨named, hmem, hget⟩ := SourceStoredNames.stored_published P hm
+  have hp := role_published checked P.bound P.agree hmem hq
+  have hA : ClosureLayout.addrOf ixe m = some named.addr := by
+    unfold ClosureLayout.addrOf
+    rw [hget]
+    rfl
+  have hcl := claimed m ci hm _ hA
+  obtain ⟨c, hc⟩ := claimed_record hcl
+  obtain ⟨d', hd', hk'⟩ := (kinds t P.table r _ c hp hc).1 hspec
+  obtain ⟨v, hv⟩ := claimed_definition P.compiled hcl hc hd' hk'
+  have henv := P.source.1.mem_env (SourceStoredNames.stored_get hm)
+  rw [hv] at henv
+  cases henv
+  exact ⟨v, rfl⟩
+end SourceKinds
+
+/-! ## Ground edges, from the claims -/
+
+/-- **`Layout.extra` for ground edges, from the compile's claims**: `ground_extra` with its
+stream premise discharged (`opsDeclared_of`) and its block premise read off `ClaimedIn`, the
+claims of the closure's names. -/
+theorem ground_extra_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (kinds : RoleRecordKinds ixe)
+    (claimed : ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, addrOf ixe m = some a → ClaimedIn env ixe m a)
+    (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint) :
+    ∀ (i : Nat) (gr : Group), (quotientGraph ixe t hints sub).groups[i]? = some gr → ∀ n ∈ gr.names,
+      ∀ a ∈ nameRecords ixe n, ∀ (b : Address) (t' : Ix.Kernel.RoleTable), Ix.Kernel.Reader.defaultTable = .ok t' →
+        ∀ (s r : Ix.Kernel.Role) (p : Address), t'.addressOf? s = some b → t'.addressOf? r = some p →
+          s ∈ groundRoles r → (p = a ∨ ∃ c, recordAt ixe p = some c ∧ ownerOf p c = a) →
+            ∃ (j : Nat) (gr' : Group), (quotientGraph ixe t hints sub).groups[j]? = some gr' ∧
+              ∃ m ∈ gr'.names, b ∈ nameRecords ixe m :=
+  ground_extra P kinds (opsDeclared_of P kinds claimed) hints fun _ _ hgr n hn a ha => by
+    obtain ⟨ci, hci⟩ := groupName_stored P hgr hn
+    exact (claimed n ci hci a ha).claimedAt
 end Ix.Cert.LayoutExtra
 
 /--
@@ -1440,3 +1994,15 @@ info: 'Ix.Cert.LayoutExtra.not_sorryAx' depends on axioms: [propext, Classical.c
 -/
 #guard_msgs in
 #print axioms Ix.Cert.LayoutExtra.not_sorryAx
+
+/--
+info: 'Ix.Cert.LayoutExtra.opsDeclared_of' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.opsDeclared_of
+
+/--
+info: 'Ix.Cert.LayoutExtra.ground_extra_of' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.ground_extra_of
