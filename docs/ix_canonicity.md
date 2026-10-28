@@ -1,13 +1,21 @@
 # Anonymous Canonicity in Ix
 
-> This document describes **anonymous canonicity**, the intended
-> content-addressing invariants of the Ix compiler. It covers
-> the property, the compile/decompile pipeline and metadata,
-> worked examples from `Tests/Ix/Compile/Mutual.lean`, a testing plan,
-> and implementation limitations. Retired call-site surgery is historical (§8);
-> the current compiler uses Pass 3 images (§7). These are implementation
-> contracts, not a completed compiler value-preservation theorem; see
-> [the certification boundary](kernel.md#relation-to-compiler-certification).
+> **Status: mostly historical.** This document describes the canonicalizing
+> compiler that the certified compiler replaced. The compiler now compiles
+> Lean verbatim: each block keeps Lean's grouping and member order, and
+> every declaration, auxiliaries included, is compiled as Lean declared it.
+> The canonical block order (`sortConsts`, Rust `sort_consts`, the
+> comparators and the kernel's canonical-order check), auxiliary
+> regeneration, images and occurrence passes, call-site surgery and
+> decompile regeneration are gone, so most of §1–§9 and §11–§17 no longer
+> describes the code. The removed implementation is kept, unmerged, on the
+> branch `jcb/ix-block-canonicalization-wip`.
+>
+> **Still current:** universe-level canonicalization (§10.6, `canonUniv`),
+> which code comments cite as "canonicity §10.6". Whole-constant α-collapse
+> also stays: α-equivalent constants share one address. The compiler's
+> correctness theorem is described in
+> [`kernel.md`](kernel.md#relation-to-compiler-certification).
 >
 > Companion document: [`docs/Ixon.md`](./Ixon.md) (binary format
 > reference).
