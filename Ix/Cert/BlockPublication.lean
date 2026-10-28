@@ -213,7 +213,7 @@ theorem sameKey {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env
 /-- **`BlockRefs.exactNames_of` for a claimed block**: its `stored`, `owned` and `apart`
 premises from the block's published claims. The block's compile is the fold's (`r`, from
 `runBlock`), read as the mutual compile of the group's definitions with the same records. -/
-theorem exactNames_of_published (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem exactNames_of_published (context : CompileEnv × BlockEnv)
     {bindings : ExpressionState.Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
@@ -235,7 +235,7 @@ theorem exactNames_of_published (context : CompileEnv × BlockEnv) (free : conte
   have hblock : r.block = output.block := by
     simp only [BlockRecords.recordsOf, Prod.mk.injEq] at hrec
     exact hrec.1
-  exact BlockRefs.exactNames_of context free clean two distinct ran unresolved acyclic
+  exact BlockRefs.exactNames_of context clean two distinct ran unresolved acyclic
     (hblock ▸ stored hr pub) (owned hr pub two ran hrec insub) (apart hr pub two ran hrec insub) published
     sameKey
 

@@ -14,12 +14,7 @@ This module proves:
   `FamilyWire.constant_codec`);
 * the mutual payload's count guards (`PayloadArrays`: the outer and nested
   array counts the wire format needs) and `mutualBlock_codec` (CT-15's
-  `FamilyWire.mutualBlock_codec`).
-
-The dispatch used to audit the declaration's call-site plan heads first,
-a no-op without plans (`surgeryFree`); the audits went with the call-site
-surgery (CQ3.5). Several statements keep their `surgeryFree` premise, which
-always holds; where a proof no longer reads it, it is bound as `_free`. -/
+  `FamilyWire.mutualBlock_codec`). -/
 
 namespace Ix.CompileCert.EmissionDispatch
 
@@ -44,7 +39,7 @@ theorem compileDefinitionInfo_eq (source : DefinitionVal) :
 
 /-- **Definition-like dispatch** is the preseeded definition-like block in
 the singleton context. -/
-theorem definition_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
+theorem definition_run (context : CompileEnv × BlockEnv)
     (info : ConstantInfo) (source : Ix.Def) (view : sourceData info = some source) (state : BlockState) :
     rawRun (compileConstantInfo info) context state =
       rawRun (compileDefinitionDataInfo source) (singletonContext source.name context) state := by
@@ -63,7 +58,7 @@ theorem definition_run (context : CompileEnv × BlockEnv) (_free : context.1.sur
       rawRun_withBlockEnv, compileOpaqueInfo]
     rfl
 
-theorem axiom_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
+theorem axiom_run (context : CompileEnv × BlockEnv)
     (source : AxiomVal) (state : BlockState) :
     rawRun (compileConstantInfo (.axiomInfo source)) context state =
       rawRun (compileAxiomInfo source) (singletonContext source.cnst.name context) state := by
@@ -72,7 +67,7 @@ theorem axiom_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryF
     rawRun_withBlockEnv]
   rfl
 
-theorem quotient_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
+theorem quotient_run (context : CompileEnv × BlockEnv)
     (source : QuotVal) (state : BlockState) :
     rawRun (compileConstantInfo (.quotInfo source)) context state =
       rawRun (compileQuotientInfo source) (singletonContext source.cnst.name context) state := by
@@ -81,7 +76,7 @@ theorem quotient_run (context : CompileEnv × BlockEnv) (_free : context.1.surge
     rawRun_withBlockEnv]
   rfl
 
-theorem recursor_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
+theorem recursor_run (context : CompileEnv × BlockEnv)
     (source : RecursorVal) (state : BlockState) :
     rawRun (compileConstantInfo (.recInfo source)) context state =
       rawRun (compileRecursorInfo source) (singletonContext source.cnst.name context) state := by
@@ -90,7 +85,7 @@ theorem recursor_run (context : CompileEnv × BlockEnv) (_free : context.1.surge
     rawRun_withBlockEnv]
   rfl
 
-theorem inductive_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
+theorem inductive_run (context : CompileEnv × BlockEnv)
     (source : InductiveVal) (state : BlockState) :
     rawRun (compileConstantInfo (.inductInfo source)) context state =
       rawRun (compileInductiveInfo source) (singletonContext source.cnst.name context) state := by
@@ -99,7 +94,7 @@ theorem inductive_run (context : CompileEnv × BlockEnv) (_free : context.1.surg
     rawRun_withBlockEnv]
   rfl
 
-theorem constructor_run (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true)
+theorem constructor_run (context : CompileEnv × BlockEnv)
     (source : ConstructorVal) (state : BlockState) :
     rawRun (compileConstantInfo (.ctorInfo source)) context state =
       rawRun (compileConstructorInfo source) (singletonContext source.cnst.name context) state := by
@@ -117,7 +112,7 @@ theorem find_state (name : Ix.Name) (context : CompileEnv × BlockEnv) (state : 
 
 /-- Resolving a family's constructors changes no
 state. -/
-theorem collect_state (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true) :
+theorem collect_state (context : CompileEnv × BlockEnv) :
     ∀ (names : List Ix.Name) (initial : Array ConstructorVal) (state : BlockState),
       (rawRun (collectInductiveConstructors names initial) context state).2 = state := by
   intro names
@@ -148,7 +143,7 @@ def familyContext (source : InductiveVal) (constructors : Array ConstructorVal)
 /-- **A standalone inductive's dispatch** resolves its constructors without
 changing the state, then runs the preseeded family block in the family's
 mutual context. -/
-theorem family_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem family_run (context : CompileEnv × BlockEnv)
     (source : InductiveVal) {before after : BlockState} {output : BlockResult}
     (ran : rawRun (compileInductiveInfo source) context before = (.ok output, after)) :
     ∃ constructors, rawRun (lookupInductiveConstructors source) context before = (.ok constructors, before) ∧
@@ -156,7 +151,7 @@ theorem family_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryF
         (.ok output, after) := by
   unfold compileInductiveInfo at ran
   obtain ⟨constructors, middle, found, compiled⟩ := bind_ok ran
-  have same := collect_state context free source.ctors.toList #[] before
+  have same := collect_state context source.ctors.toList #[] before
   change (rawRun (lookupInductiveConstructors source) context before).2 = before at same
   rw [found] at same
   subst same
@@ -164,49 +159,48 @@ theorem family_run (context : CompileEnv × BlockEnv) (free : context.1.surgeryF
 
 /-! ## Every dispatch kind decodes exactly -/
 
-theorem inductive_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductive_codec (context : CompileEnv × BlockEnv)
     (source : InductiveVal) {before after : BlockState} {output : BlockResult}
     (wire : BlockWireTablesWF before)
     (ran : rawRun (compileInductiveInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
-  obtain ⟨constructors, _, compiled⟩ := family_run context free source ran
-  exact EmissionBlocks.familyInfo_codec (familyContext source constructors context) free source constructors
+  obtain ⟨constructors, _, compiled⟩ := family_run context source ran
+  exact EmissionBlocks.familyInfo_codec (familyContext source constructors context) source constructors
     wire compiled
 
 /-- **Every public dispatch kind's block decodes exactly**: a successful
-compile, under `surgeryFree` (no Pass 3 records), from a state whose
-tables are on the wire, returns a wire-valid block whose stored bytes decode to
-it. No source semantics, projection correspondence or admission is
+compile from a state whose tables are on the wire returns a wire-valid block
+whose stored bytes decode to it. No source semantics, projection correspondence or admission is
 claimed here. -/
-theorem constant_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem constant_codec (context : CompileEnv × BlockEnv)
     (info : ConstantInfo) {before after : BlockState} {output : BlockResult}
     (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   cases info with
   | defnInfo value =>
-    rw [definition_run context free _ (definitionValData value) rfl] at ran
-    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire ran
+    rw [definition_run context _ (definitionValData value) rfl] at ran
+    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) _ wire ran
   | thmInfo value =>
-    rw [definition_run context free _ (theoremValData value) rfl] at ran
-    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire ran
+    rw [definition_run context _ (theoremValData value) rfl] at ran
+    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) _ wire ran
   | opaqueInfo value =>
-    rw [definition_run context free _ (opaqueValData value) rfl] at ran
-    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) free _ wire ran
+    rw [definition_run context _ (opaqueValData value) rfl] at ran
+    exact EmissionBlocks.definitionInfo_codec (singletonContext _ context) _ wire ran
   | axiomInfo value =>
-    rw [axiom_run context free] at ran
-    exact EmissionBlocks.axiomInfo_codec (singletonContext value.cnst.name context) free _ wire ran
+    rw [axiom_run context] at ran
+    exact EmissionBlocks.axiomInfo_codec (singletonContext value.cnst.name context) _ wire ran
   | quotInfo value =>
-    rw [quotient_run context free] at ran
-    exact EmissionBlocks.quotientInfo_codec (singletonContext value.cnst.name context) free _ wire ran
+    rw [quotient_run context] at ran
+    exact EmissionBlocks.quotientInfo_codec (singletonContext value.cnst.name context) _ wire ran
   | recInfo value =>
-    rw [recursor_run context free] at ran
-    exact EmissionBlocks.recursorInfo_codec (singletonContext value.cnst.name context) free _ wire ran
+    rw [recursor_run context] at ran
+    exact EmissionBlocks.recursorInfo_codec (singletonContext value.cnst.name context) _ wire ran
   | inductInfo value =>
-    rw [inductive_run context free] at ran
-    exact inductive_codec (singletonContext value.cnst.name context) free value wire ran
+    rw [inductive_run context] at ran
+    exact inductive_codec (singletonContext value.cnst.name context) value wire ran
   | ctorInfo value =>
-    rw [constructor_run context free] at ran
+    rw [constructor_run context] at ran
     unfold compileConstructorInfo at ran
     obtain ⟨parent, middle, found, compiled⟩ := bind_ok ran
     have same := find_state value.induct (singletonContext value.cnst.name context) before
@@ -214,7 +208,7 @@ theorem constant_codec (context : CompileEnv × BlockEnv) (free : context.1.surg
     subst same
     cases parent
     all_goals try (cases compiled)
-    exact inductive_codec (singletonContext value.cnst.name context) free _ wire compiled
+    exact inductive_codec (singletonContext value.cnst.name context) _ wire compiled
 
 /-! ## Mutual payload counts (CT-15's `PayloadArrays`) -/
 
@@ -352,12 +346,10 @@ theorem finish_mutual_codec (context : CompileEnv × BlockEnv) (classes : List (
     cases Except.ok.inj values
     exact ⟨states.symm, build_mutual_codec _ classes members metadata middle bounds tables output built⟩
 
-/-- **A mutual block decodes exactly**: under `surgeryFree` (no Pass 3
-records), a successful compile from a state whose tables are on the
-wire 
-returns a block that decodes exactly; the mutual guard supplies the nested
-array counts. -/
-theorem mutualBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+/-- **A mutual block decodes exactly**: a successful compile from a state whose
+tables are on the wire returns a block that decodes exactly; the mutual guard
+supplies the nested array counts. -/
+theorem mutualBlock_codec (context : CompileEnv × BlockEnv)
     (classes : List (List MutConst)) {before after : BlockState} {output : BlockResult}
     (wire : BlockWireTablesWF before)
     (ran : rawRun (compileMutualBlock classes) context before = (.ok output, after)) :
@@ -372,7 +364,7 @@ theorem mutualBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.s
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
   have tables := (EmissionWire.Safe.mutConsts classes (context.1, { context.2 with mutCtx := MutConst.ctx classes })
-    free _ payload middle valid payloadRan).1.1
+    _ payload middle valid payloadRan).1.1
   obtain ⟨members, roots, metadata⟩ := payload
   dsimp only at finished
   exact (finish_mutual_codec _ classes members metadata tables finished).2

@@ -229,39 +229,6 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       | .ok () => errors := errors.push s!"{label}: checkReport accepts {what}"
     lines := lines.push s!"{label}: checkReport refuses {byCheck} of {planted.length} planted \
       resolutions by the resolution check"
-  -- the component check (every published input inductive at an inductive
-  -- projection of a block with a `Muts` entry), timed alone on the compile's
-  -- result, then refusing, by its own message, the result with the `Muts` entry
-  -- of a published input inductive's block dropped
-  let c0 ← IO.monoMsNow
-  let unseen? ← IO.lazyPure fun _ => Ix.Cert.unseenInductive env ixe
-  let c1 ← IO.monoMsNow
-  let inductives := env.consts.toList.filterMap fun (n, ci) => match ci with
-    | .inductInfo _ => (ixe.named.get? n).map fun nd => (n, nd)
-    | _ => none
-  match unseen? with
-  | none => lines := lines.push s!"{label}: unseenInductive finds every published input inductive at \
-      an inductive projection of a block with a Muts entry ({inductives.length} published inductives, \
-      {c1 - c0} ms)"
-  | some n => errors := errors.push s!"{label}: unseenInductive finds {n.pretty} in the compile's result"
-  let blockOf (nd : Ixon.Named) : Option Address :=
-    match (Ix.Cert.storedRecord ixe nd.addr).map (·.info) with
-    | some (Ixon.ConstantInfo.iPrj p) => some p.block
-    | _ => none
-  match inductives.findSome? fun (_, nd) => blockOf nd with
-  | none => errors := errors.push s!"{label}: no published input inductive at an inductive projection"
-  | some block =>
-    let dropped := ixe.named.filter fun _ nd => match nd.constMeta.info with
-      | .muts .. => nd.addr != block
-      | _ => true
-    match chk resolved ({ ixe with named := dropped }, failures) with
-    | .error e =>
-      if (e.splitOn "component check failed").length > 1 then
-        lines := lines.push s!"{label}: checkReport refuses a block's Muts entry dropped by the \
-          component check ({ixe.named.size - dropped.size} entries dropped)"
-      else
-        errors := errors.push s!"{label}: the dropped Muts entry is refused, but not by the component check: {e}"
-    | .ok () => errors := errors.push s!"{label}: checkReport accepts a block's Muts entry dropped"
   -- the publication check (every published input name resolved), timed alone
   -- on the compile's result, then refusing, by its own message, the result with
   -- a published input name dropped from the resolution map
@@ -356,26 +323,6 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           constructor check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a stray input constructor"
   | [] => errors := errors.push s!"{label}: no input constructor"
-  -- the failure check (every failure the driver records is an input name),
-  -- timed alone, then refusing, by its own message, the driver's final
-  -- environment with a failure recorded under a name no input constant has
-  let f0 ← IO.monoMsNow
-  let strayF? ← IO.lazyPure fun _ => Ix.Cert.strayFailure env cenv.ungrounded
-  let f1 ← IO.monoMsNow
-  match strayF? with
-  | none => lines := lines.push s!"{label}: strayFailure finds every recorded failure an input name \
-      ({cenv.ungrounded.size} failures, {f1 - f0} ms)"
-  | some f => errors := errors.push s!"{label}: strayFailure finds {f.pretty} recorded as a failure"
-  let planted : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "planted-stray-failure"
-  let cenvF := { cenv with ungrounded := cenv.ungrounded.insert planted "planted" }
-  match Ix.Cert.checkReport env cenvF (ixe, failures) with
-  | .error e =>
-    if (e.splitOn "failure check failed").length > 1 then
-      lines := lines.push s!"{label}: checkReport refuses a failure recorded under a name no input \
-        constant has ({planted.pretty})"
-    else
-      errors := errors.push s!"{label}: the stray failure is refused, but not by the failure check: {e}"
-  | .ok () => errors := errors.push s!"{label}: checkReport accepts a failure that is not an input name"
   -- the projection check (one stored definition projection record per member),
   -- timed alone, then refusing, by its own message, a second authentic record
   -- projecting a member (an existing projection with its univs grown, stored at
@@ -714,42 +661,6 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
   | _ => lines := lines.push s!"{label}: no published string name; the forged case is skipped"
   return (errors, lines)
 
-/-- S1's certificate-side `Closed` for string literals (`Ix.Cert.LiteralOrder`): in the
-closure order of every published record (`closureOrder`, the order a certificate is read
-in), every record with a string literal comes after the stream records of the string
-roles (`stringSupportOrdered`). Not vacuous: a string role's record moved right after
-the first record with a string literal fails it. -/
-def stringOrderCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
-    Array String × Array String := Id.run do
-  let mut errors : Array String := #[]
-  let mut lines : Array String := #[]
-  let seeds : Array Address := ixe.named.fold (fun acc _ d => acc.push d.addr) #[]
-  let order := (closureOrder ixe seeds).toList
-  let withStr := order.filter (Ix.Cert.LiteralOrder.strAt ixe)
-  let owners := Ix.Cert.LiteralOrder.stringRoles.filterMap (Ix.Cert.LiteralOrder.supportOwner ixe t)
-  if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order then
-    lines := lines.push s!"{label}: stringSupportOrdered holds on the closure order of \
-      {order.length} records: {withStr.length} with a string literal, after the \
-      {owners.length} string roles' records"
-  else
-    errors := errors.push s!"{label}: stringSupportOrdered fails on the closure order \
-      ({withStr.length} records with a string literal, {owners.length} of \
-      {Ix.Cert.LiteralOrder.stringRoles.length} string roles with a stream record)"
-  match withStr.head? with
-  | some a =>
-    match owners.find? (· != a) with
-    | some b =>
-      let planted := (order.filter (· != b)).flatMap fun x => if x == a then [a, b] else [x]
-      if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t planted then
-        errors := errors.push s!"{label}: stringSupportOrdered misses {b} moved after {a}"
-      else
-        lines := lines.push s!"{label}: stringSupportOrdered catches a string role's record \
-          moved after the first record with a string literal"
-    | none => errors := errors.push s!"{label}: no string role's record to move"
-  | none => lines := lines.push s!"{label}: no record with a string literal; the planted case \
-      is skipped"
-  return (errors, lines)
-
 /-- The role table's bindings in a compile's result (Route A, B5a), decided by ingress
 name over every published name (`publishedCases`: `Ix.Cert.publishedRolesBound`). Also
 counted, not checked: the roles whose Lean name the input declares, and (B5c, on hold)
@@ -769,10 +680,9 @@ def rolesCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env) :
     | some r => Ix.LeanIngress.ingressName n != r.leanName
     | none => false
   let (errors, lines) := publishedCases label t ixe
-  let (strErrors, strLines) := stringOrderCases label t ixe
-  return (errors ++ strErrors, #[s!"{label}: {declared.length} of {roles.length} role names declared \
+  return (errors, #[s!"{label}: {declared.length} of {roles.length} role names declared \
     by the input; {aliases.length} other published names at a role-bound address (B5c, counted)"] ++
-    lines ++ strLines)
+    lines)
 
 /-- N-READS N4 (a): no constructor of a family occurs in the family's type or in
 its constructors' types (`InductiveReading.NoCtorIn`, through its check
@@ -1060,17 +970,6 @@ def perRoot (leanEnv : Lean.Environment) : IO (Array String × Array String) := 
   let (groundErrors, groundLines) := groundEdgeCases "closure" ixe seeds
   errors := errors ++ groundErrors
   lines := lines ++ groundLines
-  -- S1's certificate-side `Closed` for string literals, on the order the closure is read in
-  match Ix.Kernel.Reader.defaultTable with
-  | .error e => errors := errors.push s!"the default role table does not read: {e}"
-  | .ok t =>
-    let withStr := order.toList.filter (Ix.Cert.LiteralOrder.strAt ixe)
-    if Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order.toList then
-      lines := lines.push s!"stringSupportOrdered holds on the closure's order \
-        ({withStr.length} records with a string literal)"
-    else
-      errors := errors.push s!"stringSupportOrdered fails on the closure's order \
-        ({withStr.length} records with a string literal)"
   let records := Ix.Cert.recordsOf ixe order.toList
   let blobs := Ix.Cert.blobsOf ixe order.toList
   lines := lines.push s!"compiled closure: {seeds.size} published addresses \

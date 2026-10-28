@@ -343,7 +343,7 @@ theorem runBlock_claims {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name
 theorem componentGroup_not_inductive {env : Ix.Environment} {members : Ix.Set Ix.Name}
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
     (h : componentGroup env members = some (.inductive types ctors recs)) : False := by
-  rw [Ix.Cert.SourceGroupPlan.component_default] at h
+  rw [Ix.Cert.SourceStoredNames.component_default] at h
   unfold Ix.LeanIngress.componentGroupUsing at h
   generalize (Array.filterMapM (m := Id) (fun x => env.consts.get? x) members.toArray :
     Array Ix.ConstantInfo) = cis at h

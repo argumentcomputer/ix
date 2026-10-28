@@ -1,11 +1,12 @@
-import Ix.Cert.SourceGraph
+import Ix.Compile.SourceGraph
+import Ix.Cert.Canon
+import Ix.Cert.Statement
 
 /-! Capture and collector controls. Synthetic records test exact data flow;
 they do not claim Source acceptance or execution of the streaming compiler. -/
 namespace Tests.Ix.Cert.SourceGraph
 
 open _root_.Ix.Compile.SourceGraph
-open _root_.Ix.Cert.SourceGraph
 
 private def addr (n : Nat) : Address := ⟨⟨Array.replicate 32 n.toUInt8⟩⟩
 private def name (n : Nat) : _root_.Ix.Name := .str (.anonymous (addr 0)) s!"n{n}" (addr n)
@@ -17,6 +18,9 @@ private def code : _root_.Ix.ConstantInfo := .defnInfo ⟨cv (name 1), ref 2, .a
 private def streamed : _root_.Ix.ConstantInfo := .opaqueInfo ⟨cv sameHash, ref 3, false, #[sameHash]⟩
 private def proof : _root_.Ix.ConstantInfo := .thmInfo ⟨cv sameHash, ref 4, #[sameHash]⟩
 private def other : _root_.Ix.ConstantInfo := .axiomInfo ⟨cv (name 9), false⟩
+/-- The input map the collector's rows follow, with the same keys and insertion order. -/
+private def full (xs : List (_root_.Ix.Name × _root_.Ix.ConstantInfo)) : _root_.Ix.Environment :=
+  { consts := xs.foldl (fun m p => m.insert p.1 p.2) {} }
 private def raw := [(name 1, code), (name 9, other), (sameHash, streamed)]
 private def result := collect (raw.map fun (n, ci) => rowOfCanonical n ci)
 private def hybrid : _root_.Ix.Environment := { consts := result.code, fallback? := some (full raw).get? }
@@ -80,18 +84,5 @@ private def canonical := _root_.Ix.CanonM.canonChunk #[(`StreamRow.poly, leanCi)
 #guard canonical.size == 1
 #guard canonical[0]?.any fun (n, ci) => (rowOfCanonical n ci).kept.isNone
 #guard canonical[0]?.any fun (n, ci) => (rowOfCanonical n ci).node.literals == .none
-
-/-- info: 'Ix.Cert.SourceGraph.captureUsing_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceGraph.captureUsing_eq
-/-- info: 'Ix.Cert.SourceGraph.dependencies_capture' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceGraph.dependencies_capture
-/-- info: 'Ix.Cert.SourceGraph.collect_nodes_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceGraph.collect_nodes_get
-/-- info: 'Ix.Cert.SourceGraph.collect_code_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceGraph.collect_code_get
-/-- info: 'Ix.Cert.SourceGraph.collected_hybrid_get' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceGraph.collected_hybrid_get
-/-- info: 'Ix.Cert.SourceGraph.rowOfCanonical_canon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceGraph.rowOfCanonical_canon
 
 end Tests.Ix.Cert.SourceGraph

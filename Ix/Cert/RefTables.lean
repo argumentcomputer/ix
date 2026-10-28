@@ -576,9 +576,6 @@ theorem Holds.expression (source : Ix.Expr) (cov : Covers M source) :
 theorem Holds.takeArena : Holds (RefsOK M B) takeArena := by
   unfold Ix.CompileM.takeArena; exact Holds.modifyGet _ (fun _ => rfl)
 
-theorem Holds.takeSurgerySharing : Holds (RefsOK M B) takeSurgerySharing := by
-  unfold Ix.CompileM.takeSurgerySharing; exact Holds.modifyGet _ (fun _ => rfl)
-
 theorem Holds.takeUnivPatches : Holds (RefsOK M B) takeUnivPatches := by
   unfold Ix.CompileM.takeUnivPatches; exact Holds.modifyGet _ (fun _ => rfl)
 
@@ -601,7 +598,6 @@ local macro "holds_finish" : tactic => `(tactic|
   with_reducible repeat' first
     | exact Holds.pure _
     | exact Holds.takeArena
-    | exact Holds.takeSurgerySharing
     | exact Holds.takeUnivPatches
     | exact Holds.clearExprCache
     | exact Holds.checkedCount _ _

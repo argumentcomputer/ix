@@ -615,7 +615,7 @@ block starts from. -/
 theorem inductive_reads_sourceAccepts (V : Type w) [Ix.Kernel.SetTheory V]
     {condense : Ix.Environment → Ix.CondensedBlocks} {env : Ix.Environment} {roots : List Ix.Name}
     {sub : Ix.Environment} {envS : Ix.Kernel.Env .source} (accepted : SourceAccepts condense env roots sub envS)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names)
     {n : Ix.Name} {first : Ix.InductiveVal} (stored : (n, Ix.ConstantInfo.inductInfo first) ∈ sub.consts.toList)
@@ -640,7 +640,7 @@ theorem inductive_reads_sourceAccepts (V : Type w) [Ix.Kernel.SetTheory V]
           readRecursors (ExpressionRead.withBlockBlobs cx after) (List.range source.cnst.levelParams.size)
               shape.recs >>= fun recs =>
             lowerInductive state (sourceBlock key ctorKey type ctorTypes source constructors recs) := by
-  obtain ⟨cs, looked, rfl⟩ := collect_lookups (EmissionDispatch.singletonContext source.cnst.name context) free
+  obtain ⟨cs, looked, rfl⟩ := collect_lookups (EmissionDispatch.singletonContext source.cnst.name context)
     source.ctors.toList #[] before _ found
   have looked' : List.Forall₂ (fun n c => sub.consts.get? n = some (.ctorInfo c)) source.ctors.toList
       (#[] ++ cs.toArray).toList := by
@@ -648,7 +648,7 @@ theorem inductive_reads_sourceAccepts (V : Type w) [Ix.Kernel.SetTheory V]
   obtain ⟨_, _, bundled⟩ := checkSourceBundled_with accepted.2
   obtain ⟨typeNoCtor, ctorNoCtor⟩ :=
     noCtor_of_checkSourceWith V bundled stored head member sourceFound _ looked'
-  exact inductive_reads_source cx names σ bindings context free aligned external
+  exact inductive_reads_source cx names σ bindings context aligned external
     (Ix.Cert.Admits.admits_of_sourceAccepts accepted stored head) source member sourceFound agree _ found state
     indexed order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor clean wire ran
 

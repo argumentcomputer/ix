@@ -18,7 +18,7 @@ for a header) and whose record's key reads, reads as exactly the expected
 declaration, with a type `Related` to the source's; the block decodes
 exactly; an unsafe axiom is declined (`axiom_declines`, with no other
 premise). CT-16's `HeaderReading`, adapted to `memberKey` and positional
-levels. Under `surgeryFree` until CQ3.5. -/
+levels. -/
 
 namespace Ix.CompileCert.HeaderReading
 
@@ -144,7 +144,7 @@ as exactly the axiom declaration of the record's key, the level parameters
 `0, …, n - 1` and a type related to the source's; given that the type does
 not mention the declaration itself, that the record's key reads, and that
 the axiom is safe. -/
-theorem axiom_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiom_reads (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : AxiomVal)
     {before after : BlockState} {output : BlockResult} (state : State md) {key : CName md}
@@ -158,11 +158,11 @@ theorem axiom_reads (context : CompileEnv × BlockEnv) (free : context.1.surgery
       ∃ type, Related names (LevelMeaning source.cnst.levelParams.toList σ id) source.cnst.type type ∧
         readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
           .ok { decls := #[.axiomDecl ⟨key, List.range source.cnst.levelParams.size, type⟩] } := by
-  have codec := EmissionDispatch.constant_codec context free _ wire ran
-  rw [EmissionDispatch.axiom_run context free] at ran
+  have codec := EmissionDispatch.constant_codec context _ wire ran
+  rw [EmissionDispatch.axiom_run context] at ran
   have levels := axiomInfo_levels source _ before output after ran
   obtain ⟨_, _, wrapped, erased, roots⟩ := EmissionBlocks.axiomInfo_correct cx id (fun _ => none) names σ bindings
-    (EmissionDispatch.singletonContext source.cnst.name context) free aligned external source scope clean ran
+    (EmissionDispatch.singletonContext source.cnst.name context) aligned external source scope clean ran
   obtain ⟨target, info, unsafeEq, lvls⟩ := erase_axio (payload := Emission.axiomPayload source (.sort 0)) erased
   have count := levels target info
   rw [info] at roots
@@ -194,12 +194,12 @@ theorem axiom_unsafe (source : AxiomVal) :
 
 /-- **A compiled unsafe axiom is declined**, with no premise but a
 successful compile without Pass 3 records. -/
-theorem axiom_declines (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiom_declines (context : CompileEnv × BlockEnv)
     (source : AxiomVal) (unsafeSource : source.isUnsafe = true) {before after : BlockState}
     {output : BlockResult} (state : State md)
     (ran : rawRun (compileConstantInfo (.axiomInfo source)) context before = (.ok output, after)) :
     readRecord cx state output.blockAddr output.block = .error (.declined "unsafe axiom") := by
-  rw [EmissionDispatch.axiom_run context free] at ran
+  rw [EmissionDispatch.axiom_run context] at ran
   unfold compileAxiomInfo at ran
   obtain ⟨_, middle, _, compiled⟩ := bind_ok ran
   unfold compileAxiomBlock at compiled
@@ -213,7 +213,7 @@ theorem axiom_declines (context : CompileEnv × BlockEnv) (free : context.1.surg
 
 /-- **A compiled quotient is read back as its source**: as `axiom_reads`,
 with the quotient declaration of the source's kind. -/
-theorem quotient_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem quotient_reads (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : QuotVal)
     {before after : BlockState} {output : BlockResult} (state : State md) {key : CName md}
@@ -227,11 +227,11 @@ theorem quotient_reads (context : CompileEnv × BlockEnv) (free : context.1.surg
         readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
           .ok { decls := #[.quotDecl (quotKind (convertQuotKind source.kind))
             ⟨key, List.range source.cnst.levelParams.size, type⟩] } := by
-  have codec := EmissionDispatch.constant_codec context free _ wire ran
-  rw [EmissionDispatch.quotient_run context free] at ran
+  have codec := EmissionDispatch.constant_codec context _ wire ran
+  rw [EmissionDispatch.quotient_run context] at ran
   have levels := quotientInfo_levels source _ before output after ran
   obtain ⟨_, _, wrapped, erased, roots⟩ := EmissionBlocks.quotientInfo_correct cx id (fun _ => none) names σ bindings
-    (EmissionDispatch.singletonContext source.cnst.name context) free aligned external source scope clean ran
+    (EmissionDispatch.singletonContext source.cnst.name context) aligned external source scope clean ran
   obtain ⟨target, info, kindEq, lvls⟩ := erase_quot erased
   have count := levels target info
   rw [info] at roots

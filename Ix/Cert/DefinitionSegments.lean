@@ -269,7 +269,7 @@ theorem closure_block_reads {env : Ix.Environment} {roots : List Ix.Name} {sub :
     simpa using DefinitionBlocks.forall₂_length views
   obtain ⟨hB, stored, each⟩ := block_members P prelude corder canonical b resolves (by omega) insub ran hr pub hrec
   exact DefinitionBlockReads.definition_block_reads (P := KeyScope.ofId (QRepAt ixe (roleAtMap t)))
-    (fun _ _ => trivial) hf two views distinct exactNames (cenv, benv) rfl BlockStart.clean_empty ran
+    (fun _ _ => trivial) hf two views distinct exactNames (cenv, benv) BlockStart.clean_empty ran
     (fun d hd => ⟨Std.HashMap.get?_eq_getElem?.trans Std.HashMap.getElem?_empty, fresh d hd⟩)
     (cx₁ := blockCtx (closureContext ixe t preA order) ixe order output.block.refs (fun a => cenv.blobs.get? a))
     (fun _ => rfl)

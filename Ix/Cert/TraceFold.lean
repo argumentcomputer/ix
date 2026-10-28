@@ -494,7 +494,7 @@ theorem occ_refs {n : Ix.Name} : ∀ {e : Ix.Expr}, ConstOcc n e → GraphWalk.R
 
 /-- **`BlockRefs.exactNames_of`, for the names the block's sources mention**: its `published`
 and `sameKey` premises asked only at a mentioned name the block binds, and at its members. -/
-theorem exactNames_bound (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem exactNames_bound (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
@@ -528,7 +528,7 @@ theorem exactNames_bound (context : CompileEnv × BlockEnv) (free : context.1.su
   | none =>
     -- a non-member: the block would reference member `j`'s record
     exfalso
-    obtain ⟨a, hb, hmem⟩ := BlockRefs.mentioned_binding_ref context free clean two distinct ran unresolved hi hn hc
+    obtain ⟨a, hb, hmem⟩ := BlockRefs.mentioned_binding_ref context clean two distinct ran unresolved hi hn hc
     obtain ⟨hpub, sameKey⟩ := bound i hi n a hn hb
     have same := sameKey j hj hkey
     obtain ⟨P, c, hP, hrec, hown⟩ := owned j hj
@@ -640,7 +640,7 @@ theorem definitions_exactNames (P : Premises env roots sub ixe failures t envQ)
     rw [SourceStoredNames.stored_get hci]
     rfl
   have hblock : r.block = out.block := (Prod.mk.inj hrec).1
-  refine exactNames_bound (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) rfl
+  refine exactNames_bound (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] })
     BlockStart.clean_empty two' (definitions_distinct P hgr) ran
     (fun d hd => ⟨Std.HashMap.get?_eq_getElem?.trans Std.HashMap.getElem?_empty, fb.fresh d.name (mem d hd)⟩)
     (compileReport_checks P.compiled).2.2.1 (hblock ▸ BlockPublication.stored fb.ran fb.published)
@@ -681,7 +681,7 @@ theorem definitions_occ_input (P : Premises env roots sub ixe failures t envQ)
     exact ⟨ci, SourceStoredNames.stored_input P hci⟩
   | none =>
     obtain ⟨a, hb, -⟩ := BlockRefs.mentioned_binding_ref
-      (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) rfl BlockStart.clean_empty
+      (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) BlockStart.clean_empty
       two' distinct ran
       (fun d hd => ⟨Std.HashMap.get?_eq_getElem?.trans Std.HashMap.getElem?_empty, fb.fresh d.name (mem d hd)⟩)
       hi hn hc

@@ -17,7 +17,6 @@ import Ix.Cert.BlockStart
 import Ix.Cert.RoleClosure
 import Ix.Cert.NoCtor
 import Ix.Cert.Quotient
-import Ix.Cert.LiteralOrder
 import Ix.Cert.ReaderUnits
 import Ix.Cert.BlockRecords
 import Ix.Cert.Resolution
@@ -40,19 +39,6 @@ import Ix.Cert.SourceOrigin
 import Ix.Cert.SourceOriginRead
 import Ix.Cert.ValueRows
 import Ix.Cert.ConversionValues
-import Ix.Cert.AnnotatedBeta
-import Ix.Cert.ContextValues
-import Ix.Cert.ApplicationFronts
-import Ix.Cert.ReferenceFronts
-import Ix.Cert.PrefixReadings
-import Ix.Cert.PrefixCore
-import Ix.Cert.PrefixDefinitions
-import Ix.Cert.PrefixConstType
-import Ix.Cert.PrefixCapabilities
-import Ix.Cert.PrefixRecRules
-import Ix.Cert.PrefixTowers
-import Ix.Cert.PrefixNatOps
-import Ix.Cert.RuleInputValues
 import Ix.CompileCert.PrimaryAddressFrame
 import Ix.Cert.CompileCorrect
 import Ix.Cert.Composition
@@ -1095,6 +1081,12 @@ fun ixe =>
 -- theorem or opaque has a reducibility hint at its address (`unhintedDefinition`), which the
 -- reader and quotient Source both read; the compile records every definition's hint, so no
 -- real input trips it. `CheckReportOk` gains `hints`.
+-- Re-frozen when the block-entry and recorded-failure checks were deleted (twenty-one
+-- checks): `unseenInductive` (with `mutsAddrs`) and `strayFailure` guarded the removed
+-- changed-set classifier and rewriting hooks, and no proof reads them: neither their
+-- `CheckReportOk` fields nor their meaning theorems are in the constant closure of
+-- `Ix.Cert.ReaderStreamsTrace.compileCorrect`. `CheckReportOk` loses `inductives` and
+-- `failures`.
 /-- info: def Ix.Cert.checkReport : (env : Ix.Environment) →
   Ix.CompileM.CompileEnv →
     Ixon.Env × Ix.Cert.Failures → optParam Ix.CondensedBlocks (Ix.Cert.compileBlocks env) → Except String Unit :=
@@ -1109,139 +1101,126 @@ fun env cenv out blocks =>
         | none =>
           match Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst with
           | none =>
-            match Ix.Cert.unseenInductive env out.fst with
+            match Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst with
             | none =>
-              match Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst with
+              match Ix.Cert.misnamedInput env with
               | none =>
-                match Ix.Cert.misnamedInput env with
+                match Ix.Cert.strayConstructor env with
                 | none =>
-                  match Ix.Cert.strayConstructor env with
+                  match Ix.Cert.projectionCollision out.fst with
                   | none =>
-                    match Ix.Cert.strayFailure env cenv.ungrounded with
+                    match Ix.Cert.unreadablePublished env out.fst with
                     | none =>
-                      match Ix.Cert.projectionCollision out.fst with
+                      match Ix.Cert.blobRecordCollision out.fst with
                       | none =>
-                        match Ix.Cert.unreadablePublished env out.fst with
-                        | none =>
-                          match Ix.Cert.blobRecordCollision out.fst with
-                          | none =>
-                            match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst,
-                              Ix.Cert.literalRoleUnnamed env out.fst with
-                            | none, none, none =>
-                              match Ix.Cert.unstoredFamilyName env, Ix.Cert.misplacedConstructor env,
-                                Ix.Cert.strayLevelParams env, Ix.Cert.strayFamilyMember env blocks,
-                                Ix.Cert.recursorShapeError env out.fst with
-                              | none, none, none, none, none =>
-                                match Ix.Cert.unhintedDefinition env out.fst with
-                                | none => Except.ok ()
-                                | some n =>
-                                  Except.error
-                                    (toString "compileReport: hint check failed: the published definition " ++
-                                        toString n.pretty ++
-                                      toString " has no reducibility hint at its address")
-                              | some (n, a), x, x_1, x_2, x_3 =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: the input constant " ++
-                                          toString n.pretty ++
-                                        toString " lists " ++
-                                      toString a.pretty ++
-                                    toString " in its family, which is not an input constant's own name")
-                              | none, some c, x, x_1, x_2 =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: the constructor " ++
-                                      toString c.pretty ++
-                                    toString
-                                      " of an input inductive declares another index than its position in the inductive's constructors")
-                              | none, none, some x, x_1, x_2 =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: " ++ toString x.pretty ++
-                                    toString
-                                      " does not have the level parameters of its family (for a recursor: its family's recursors' list, of its family's count or one more)")
-                              | none, none, none, some (fst, y), x =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: the compile block of " ++
-                                      toString y.pretty ++
-                                    toString
-                                      " is not exactly its family's types and constructors, or its family's recursors, or the family has 2^63 members and auxiliary motives or more")
-                              | none, none, none, none, some e =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: " ++ toString e.message)
-                            | none, none, some (s, b) =>
+                        match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst,
+                          Ix.Cert.literalRoleUnnamed env out.fst with
+                        | none, none, none =>
+                          match Ix.Cert.unstoredFamilyName env, Ix.Cert.misplacedConstructor env,
+                            Ix.Cert.strayLevelParams env, Ix.Cert.strayFamilyMember env blocks,
+                            Ix.Cert.recursorShapeError env out.fst with
+                          | none, none, none, none, none =>
+                            match Ix.Cert.unhintedDefinition env out.fst with
+                            | none => Except.ok ()
+                            | some n =>
                               Except.error
-                                (toString
-                                              "compileReport: literal-role check failed: the artifact stores a record at " ++
-                                            toString b ++
-                                          toString ", the default role table's address of the literal-support role " ++
-                                        toString (repr s) ++
-                                      toString ", which a stored record's literal is checked against, but " ++
-                                    toString (Ix.Cert.literalRoleIxName s).pretty ++
-                                  toString " is not an input constant published there")
-                            | none, some (r, p), x =>
-                              Except.error
-                                (toString "compileReport: role check failed: the record stored at " ++ toString p ++
-                                      toString ", the default role table's address of the role " ++
-                                    toString (repr r) ++
-                                  toString
-                                    ", is not of its specification's kind (a standalone definition for a Nat operation, an axiom for an axiom role)")
-                            | some (b, x, none), x_1, x_2 =>
-                              Except.error
-                                (toString "compileReport: recursor check failed: the input name " ++
-                                        toString x.pretty ++
-                                      toString ", published in the inductive block at " ++
-                                    toString b ++
-                                  toString
-                                    " that the recursor index attaches recursors to, is not an inductive, constructor or recursor of a family")
-                            | some (b, x, some r), x_1, x_2 =>
-                              have pos :=
-                                match r with
-                                | Ix.Kernel.ConstRef.member b j => j
-                                | Ix.Kernel.ConstRef.ctor b i c => i;
-                              Except.error
-                                (toString "compileReport: recursor check failed: the recursor at member " ++
-                                                toString pos ++
-                                              toString " of the record " ++
-                                            toString r.block ++
-                                          toString ", indexed under the inductive block at " ++
-                                        toString b ++
-                                      toString ", is not a published recursor of the family of " ++
-                                    toString x.pretty ++
-                                  toString ", published in that block")
-                          | some a =>
+                                (toString "compileReport: hint check failed: the published definition " ++
+                                    toString n.pretty ++
+                                  toString " has no reducibility hint at its address")
+                          | some (n, a), x, x_1, x_2, x_3 =>
                             Except.error
-                              (toString "compileReport: blob check failed: the address " ++ toString a ++
-                                toString " holds both a stored blob and a stored record")
-                        | some n =>
+                              (toString "compileReport: inductive input check failed: the input constant " ++
+                                      toString n.pretty ++
+                                    toString " lists " ++
+                                  toString a.pretty ++
+                                toString " in its family, which is not an input constant's own name")
+                          | none, some c, x, x_1, x_2 =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: the constructor " ++
+                                  toString c.pretty ++
+                                toString
+                                  " of an input inductive declares another index than its position in the inductive's constructors")
+                          | none, none, some x, x_1, x_2 =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: " ++ toString x.pretty ++
+                                toString
+                                  " does not have the level parameters of its family (for a recursor: its family's recursors' list, of its family's count or one more)")
+                          | none, none, none, some (fst, y), x =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: the compile block of " ++
+                                  toString y.pretty ++
+                                toString
+                                  " is not exactly its family's types and constructors, or its family's recursors, or the family has 2^63 members and auxiliary motives or more")
+                          | none, none, none, none, some e =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: " ++ toString e.message)
+                        | none, none, some (s, b) =>
                           Except.error
-                            (toString "compileReport: readability check failed: the input name " ++ toString n.pretty ++
-                              toString " is published at an address that holds no stored record, or a block record")
-                      | some (b, i) =>
+                            (toString
+                                          "compileReport: literal-role check failed: the artifact stores a record at " ++
+                                        toString b ++
+                                      toString ", the default role table's address of the literal-support role " ++
+                                    toString (repr s) ++
+                                  toString ", which a stored record's literal is checked against, but " ++
+                                toString (Ix.Cert.literalRoleIxName s).pretty ++
+                              toString " is not an input constant published there")
+                        | none, some (r, p), x =>
+                          Except.error
+                            (toString "compileReport: role check failed: the record stored at " ++ toString p ++
+                                  toString ", the default role table's address of the role " ++
+                                toString (repr r) ++
+                              toString
+                                ", is not of its specification's kind (a standalone definition for a Nat operation, an axiom for an axiom role)")
+                        | some (b, x, none), x_1, x_2 =>
+                          Except.error
+                            (toString "compileReport: recursor check failed: the input name " ++
+                                    toString x.pretty ++
+                                  toString ", published in the inductive block at " ++
+                                toString b ++
+                              toString
+                                " that the recursor index attaches recursors to, is not an inductive, constructor or recursor of a family")
+                        | some (b, x, some r), x_1, x_2 =>
+                          have pos :=
+                            match r with
+                            | Ix.Kernel.ConstRef.member b j => j
+                            | Ix.Kernel.ConstRef.ctor b i c => i;
+                          Except.error
+                            (toString "compileReport: recursor check failed: the recursor at member " ++
+                                            toString pos ++
+                                          toString " of the record " ++
+                                        toString r.block ++
+                                      toString ", indexed under the inductive block at " ++
+                                    toString b ++
+                                  toString ", is not a published recursor of the family of " ++
+                                toString x.pretty ++
+                              toString ", published in that block")
+                      | some a =>
                         Except.error
-                          (toString "compileReport: projection check failed: member " ++ toString i ++
-                                toString " of the block at " ++
-                              toString b ++
-                            toString " has more than one stored definition projection record")
-                    | some f =>
+                          (toString "compileReport: blob check failed: the address " ++ toString a ++
+                            toString " holds both a stored blob and a stored record")
+                    | some n =>
                       Except.error
-                        (toString "compileReport: failure check failed: the driver records the name " ++
-                            toString f.pretty ++
-                          toString " as a failure, but no input constant is stored under it")
-                  | some c =>
+                        (toString "compileReport: readability check failed: the input name " ++ toString n.pretty ++
+                          toString " is published at an address that holds no stored record, or a block record")
+                  | some (b, i) =>
                     Except.error
-                      (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
-                        toString ", a constructor of an input inductive, is not stored as a constructor of it")
-                | some n =>
+                      (toString "compileReport: projection check failed: member " ++ toString i ++
+                            toString " of the block at " ++
+                          toString b ++
+                        toString " has more than one stored definition projection record")
+                | some c =>
                   Except.error
-                    (toString "compileReport: name invariant failed: the input constant stored under " ++
-                        toString n.pretty ++
-                      toString " carries another name")
+                    (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
+                      toString ", a constructor of an input inductive, is not stored as a constructor of it")
               | some n =>
                 Except.error
-                  (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
-                    toString " is published but not resolved")
+                  (toString "compileReport: name invariant failed: the input constant stored under " ++
+                      toString n.pretty ++
+                    toString " carries another name")
             | some n =>
               Except.error
-                (toString "compileReport: component check failed: the input inductive " ++ toString n.pretty ++
-                  toString " is not published at an inductive projection of a block with a Muts entry")
+                (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
+                  toString " is published but not resolved")
           | some (n, a, published) =>
             have found :=
               match published with
@@ -1410,11 +1389,9 @@ fields:
   Ix.Cert.CheckReportOk.hashes : Ix.Cert.nameHashCollision env out.fst = none
   Ix.Cert.CheckReportOk.muts : Ix.Cert.mutsMismatch out.fst = none
   Ix.Cert.CheckReportOk.resolution : Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none
-  Ix.Cert.CheckReportOk.inductives : Ix.Cert.unseenInductive env out.fst = none
   Ix.Cert.CheckReportOk.resolved : Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst = none
   Ix.Cert.CheckReportOk.named : Ix.Cert.misnamedInput env = none
   Ix.Cert.CheckReportOk.constructors : Ix.Cert.strayConstructor env = none
-  Ix.Cert.CheckReportOk.failures : Ix.Cert.strayFailure env cenv.ungrounded = none
   Ix.Cert.CheckReportOk.projections : Ix.Cert.projectionCollision out.fst = none
   Ix.Cert.CheckReportOk.readable : Ix.Cert.unreadablePublished env out.fst = none
   Ix.Cert.CheckReportOk.blobs : Ix.Cert.blobRecordCollision out.fst = none
@@ -1433,10 +1410,8 @@ constructor:
     (acyclic : Ix.Cert.referenceCycle out.fst = none) (hashes : Ix.Cert.nameHashCollision env out.fst = none)
     (muts : Ix.Cert.mutsMismatch out.fst = none)
     (resolution : Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none)
-    (inductives : Ix.Cert.unseenInductive env out.fst = none)
     (resolved : Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst = none)
     (named : Ix.Cert.misnamedInput env = none) (constructors : Ix.Cert.strayConstructor env = none)
-    (failures : Ix.Cert.strayFailure env cenv.ungrounded = none)
     (projections : Ix.Cert.projectionCollision out.fst = none)
     (readable : Ix.Cert.unreadablePublished env out.fst = none) (blobs : Ix.Cert.blobRecordCollision out.fst = none)
     (recursors : Ix.Cert.unownedRecursor env out.fst = none) (roles : Ix.Cert.roleRecordKind out.fst = none)
@@ -2342,7 +2317,6 @@ Ix.CompileCert.ExpressionState.Related.contract : ∀ {md : Ix.Kernel.Mode}
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         Ix.CompileCert.ExpressionState.SelfCorrect context.snd self names →
@@ -2416,7 +2390,6 @@ table final, after which universe compilation does not grow it
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         Ix.CompileCert.ExpressionState.SelfCorrect context.snd self names →
@@ -2468,26 +2441,6 @@ table final, after which universe compilation does not grow it
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.FinalUniverses.compile_no_growth
 
--- After a successful preseed, every level occurrence of every root is
--- preseeded (the universe table is final and holds the canonical form of
--- the level's exact lowering), discharging `UniversePipeline.Preseeded`.
-/-- info: Ix.CompileCert.PreseedInsertion.preseed_preseeded : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
-  (roots : Array (Ix.Expr × List Ix.Name)) {before after : Ix.CompileM.BlockState},
-  Ix.CompileCert.Interning.UnivIndexSound before →
-    Ix.CompileCert.CanonUnivCache.CanonCacheExact before →
-      Ix.CompileCert.rawRun (Ix.CompileM.preseedExprTables roots) context before = (Except.ok (), after) →
-        after.univsFinal = true ∧
-          ∀ (root : Ix.Expr × List Ix.Name),
-            root ∈ roots →
-              Ix.CompileCert.PreseedUniverses.LevelsSatisfy
-                (fun level => Ix.CompileCert.UniversePipeline.Preseeded root.snd level after) root.fst -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.CompileCert.PreseedInsertion.preseed_preseeded
-
-/-- info: 'Ix.CompileCert.PreseedInsertion.preseed_preseeded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.PreseedInsertion.preseed_preseeded
-
 /-! ## Component theorems: successful compilation keeps the tables on the wire
 
 A successful run of the production expression compiler, under an
@@ -2508,12 +2461,11 @@ fun state => Ix.Sharing.Verify.BlockWireTablesWF state ∧ state.univsFinal = tr
 /-- info: def Ix.CompileCert.EmissionWire.Safe : {α : Type} →
   Ix.CompileM.CompileM α → (optParam (α → Prop) fun x => True) → Prop :=
 fun {α} action post =>
-  ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-    context.fst.surgeryFree = true →
-      ∀ (before : Ix.CompileM.BlockState) (value : α) (after : Ix.CompileM.BlockState),
-        Ix.CompileCert.EmissionWire.Valid before →
-          Ix.CompileCert.rawRun action context before = (Except.ok value, after) →
-            Ix.CompileCert.EmissionWire.Valid after ∧ post value -/
+  ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv) (before : Ix.CompileM.BlockState) (value : α)
+    (after : Ix.CompileM.BlockState),
+    Ix.CompileCert.EmissionWire.Valid before →
+      Ix.CompileCert.rawRun action context before = (Except.ok value, after) →
+        Ix.CompileCert.EmissionWire.Valid after ∧ post value -/
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.EmissionWire.Safe
 
@@ -2647,7 +2599,6 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state �
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.Def),
@@ -2681,7 +2632,6 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state �
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.RecursorVal),
@@ -2759,7 +2709,6 @@ fun source =>
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.Def),
@@ -2787,13 +2736,11 @@ fun source =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionBlocks.definitionInfo_correct
 
-/-- info: Ix.CompileCert.EmissionBlocks.definitionInfo_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (source : Ix.Def) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before =
-            (Except.ok output, after) →
-          Ix.Sharing.Verify.BlockResultCodecWF output -/
+/-- info: Ix.CompileCert.EmissionBlocks.definitionInfo_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (source : Ix.Def) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source) context before = (Except.ok output, after) →
+      Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionBlocks.definitionInfo_codec
 
@@ -2830,32 +2777,29 @@ and for a mutual block, a successful compile from tables on the wire returns a
 block that decodes exactly. Every lemma behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
 
-/-- info: Ix.CompileCert.EmissionDispatch.constant_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (info : Ix.ConstantInfo) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before = (Except.ok output, after) →
-          Ix.Sharing.Verify.BlockResultCodecWF output -/
+/-- info: Ix.CompileCert.EmissionDispatch.constant_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (info : Ix.ConstantInfo) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context before = (Except.ok output, after) →
+      Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.constant_codec
 
-/-- info: Ix.CompileCert.EmissionDispatch.mutualBlock_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
-          Ix.Sharing.Verify.BlockResultCodecWF output -/
+/-- info: Ix.CompileCert.EmissionDispatch.mutualBlock_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
+      Ix.Sharing.Verify.BlockResultCodecWF output -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.mutualBlock_codec
 
-/-- info: Ix.CompileCert.EmissionDispatch.definition_run : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (info : Ix.ConstantInfo) (source : Ix.Def),
-      Ix.CompileCert.EmissionDispatch.sourceData info = some source →
-        ∀ (state : Ix.CompileM.BlockState),
-          Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context state =
-            Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source)
-              (Ix.CompileCert.EmissionDispatch.singletonContext source.name context) state -/
+/-- info: Ix.CompileCert.EmissionDispatch.definition_run : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (info : Ix.ConstantInfo) (source : Ix.Def),
+  Ix.CompileCert.EmissionDispatch.sourceData info = some source →
+    ∀ (state : Ix.CompileM.BlockState),
+      Ix.CompileCert.rawRun (Ix.CompileM.compileConstantInfo info) context state =
+        Ix.CompileCert.rawRun (Ix.CompileM.compileDefinitionDataInfo source)
+          (Ix.CompileCert.EmissionDispatch.singletonContext source.name context) state -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionDispatch.definition_run
 
@@ -2884,7 +2828,6 @@ declined. Every lemma behind them is audited in
 /-- info: @Ix.CompileCert.DefinitionReading.constant_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (info : Ix.ConstantInfo) (source : Ix.Def),
@@ -2922,7 +2865,6 @@ declined. Every lemma behind them is audited in
 /-- info: @Ix.CompileCert.HeaderReading.axiom_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.AxiomVal) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult}
@@ -3032,7 +2974,6 @@ recursor's result-variable walk is the source's
   (param : Nat → Ix.Kernel.LevelParam) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CName md)))
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.RecursorVal),
@@ -3172,23 +3113,21 @@ fun sources =>
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.MutualProjections.ClassesAgree
 
-/-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
-          Ix.CompileCert.MutualProjections.ClassesAgree sources →
-            (∀ (source : Ix.MutConst),
-                source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
-              Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before =
-                  (Except.ok output, after) →
-                Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                  Ix.CompileCert.MutualProjections.ProjectionWire output ∧
-                    ∀ (store : Ix.Kernel.Reader.Store),
-                      store output.blockAddr = some output.block →
-                        Ix.CompileCert.MutualProjections.readRows store
-                            (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
-                          Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr sources -/
+/-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  Ix.Sharing.Verify.BlockWireTablesWF before →
+    (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
+      Ix.CompileCert.MutualProjections.ClassesAgree sources →
+        (∀ (source : Ix.MutConst),
+            source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
+          Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before = (Except.ok output, after) →
+            Ix.Sharing.Verify.BlockResultCodecWF output ∧
+              Ix.CompileCert.MutualProjections.ProjectionWire output ∧
+                ∀ (store : Ix.Kernel.Reader.Store),
+                  store output.blockAddr = some output.block →
+                    Ix.CompileCert.MutualProjections.readRows store
+                        (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
+                      Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr sources -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.MutualArtifact.mutual_correct
 
@@ -3325,7 +3264,6 @@ fun constructors =>
 /-- info: @Ix.CompileCert.InductiveReading.inductive_reads : ∀ {md : Ix.Kernel.Mode} (cx : Ix.Kernel.Reader.Ctx md)
   (names : Ix.Name → Ix.Kernel.Reader.CName md → Prop) (σ : Ix.Name → Ix.Kernel.LevelParam)
   (bindings : Ix.CompileCert.ExpressionState.Bindings) (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
     (∀ (address : Address), cx.blob address = context.fst.blobs.get? address) →
       Ix.CompileCert.ExpressionState.BindingsCorrect context.fst bindings cx names →
         ∀ (source : Ix.InductiveVal) (constructors : Array Ix.ConstructorVal) {before after : Ix.CompileM.BlockState}
@@ -3432,28 +3370,27 @@ fun env first =>
 #guard_msgs (whitespace := lax) in
 #print Ix.CompileCert.SourceConstructorPositions.Admits
 
-/-- info: Ix.CompileCert.SourceConstructorPositions.source_premises : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ {env : Ix.Environment} {first : Ix.InductiveVal},
-      Ix.CompileCert.SourceConstructorPositions.Admits env first →
-        ∀ {source : Ix.InductiveVal},
-          source.cnst.name ∈ first.all.toList →
-            env.consts.get? source.cnst.name = some (Ix.ConstantInfo.inductInfo source) →
-              (∀ (n : Ix.Name), n ∈ source.ctors.toList → context.fst.env.get? n = env.consts.get? n) →
-                ∀ {constructors : Array Ix.ConstructorVal} {before : Ix.CompileM.BlockState},
-                  (Ix.CompileCert.rawRun (Ix.CompileM.lookupInductiveConstructors source)
-                          (Ix.CompileCert.EmissionDispatch.singletonContext source.cnst.name context) before).fst =
-                      Except.ok constructors →
-                    source.isUnsafe = false ∧
-                      (∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → ctor.isUnsafe = false) ∧
-                        (∀ (j : Nat) (inside : j < constructors.size), constructors[j].cidx = j) ∧
-                          ∀ (ctor : Ix.ConstructorVal),
-                            ctor ∈ constructors.toList →
-                              ∃ types body,
-                                Ix.CompileCert.ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields)
-                                      ctor.cnst.type =
-                                    some (types, body) ∧
-                                  Ix.CompileCert.ReaderSourceSpines.SourceNonForall body -/
+/-- info: Ix.CompileCert.SourceConstructorPositions.source_premises : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
+  {env : Ix.Environment} {first : Ix.InductiveVal},
+  Ix.CompileCert.SourceConstructorPositions.Admits env first →
+    ∀ {source : Ix.InductiveVal},
+      source.cnst.name ∈ first.all.toList →
+        env.consts.get? source.cnst.name = some (Ix.ConstantInfo.inductInfo source) →
+          (∀ (n : Ix.Name), n ∈ source.ctors.toList → context.fst.env.get? n = env.consts.get? n) →
+            ∀ {constructors : Array Ix.ConstructorVal} {before : Ix.CompileM.BlockState},
+              (Ix.CompileCert.rawRun (Ix.CompileM.lookupInductiveConstructors source)
+                      (Ix.CompileCert.EmissionDispatch.singletonContext source.cnst.name context) before).fst =
+                  Except.ok constructors →
+                source.isUnsafe = false ∧
+                  (∀ (ctor : Ix.ConstructorVal), ctor ∈ constructors.toList → ctor.isUnsafe = false) ∧
+                    (∀ (j : Nat) (inside : j < constructors.size), constructors[j].cidx = j) ∧
+                      ∀ (ctor : Ix.ConstructorVal),
+                        ctor ∈ constructors.toList →
+                          ∃ types body,
+                            Ix.CompileCert.ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields)
+                                  ctor.cnst.type =
+                                some (types, body) ∧
+                              Ix.CompileCert.ReaderSourceSpines.SourceNonForall body -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.SourceConstructorPositions.source_premises
 
@@ -4230,46 +4167,6 @@ run_cmd do
       `tableBound_of, `publishedAgree_iff, `nameIsName_iff, `publishedAddress_role, `publishedAddress_id,
       `reading_id, `sourceAcceptsQ_addrAt].map (`Ix.Cert ++ ·))
 
-/-! ## S1's certificate-side `Closed`: string literals after their support
-
-S1's `Closed` (IxC, 2026-10-20) counts a literal's support roles as mentions. A
-record's reference table does not show them, so B4's `ClosureOrder` does not order
-them; the decided `Ix.Cert.LiteralOrder.stringSupportOrdered` does: every record of
-the order with a string literal (in itself or its owner block) comes after the stream
-records of the string roles (`stringRoles`, `Ix.Kernel.strLitSupported`'s). A `Nat`
-literal's support is the prelude's, at the front. `cert-statement`,
-`cert-compile-parity-init` and `cert-roles-initstd` decide it on the closure orders of
-the fixtures, `Init` and Init+Std, with a planted failure each. -/
-
-/-- info: def Ix.Cert.LiteralOrder.StringSupportOrdered : Ixon.Env → Ix.Kernel.RoleTable → List Address → Prop :=
-fun ixe t order =>
-  ∀ (pre : List Address) (a : Address) (post : List Address),
-    order = pre ++ a :: post →
-      Ix.Cert.LiteralOrder.strAt ixe a = true →
-        ∀ (r : Ix.Kernel.Role),
-          r ∈ Ix.Cert.LiteralOrder.stringRoles →
-            ∃ b, Ix.Cert.LiteralOrder.supportOwner ixe t r = some b ∧ (b = a ∨ b ∈ pre) -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.LiteralOrder.StringSupportOrdered
-
-/-- info: def Ix.Cert.LiteralOrder.stringRoles : List Ix.Kernel.Role :=
-[Ix.Kernel.Role.string, Ix.Kernel.Role.stringOfList, Ix.Kernel.Role.list, Ix.Kernel.Role.listNil,
-  Ix.Kernel.Role.listCons, Ix.Kernel.Role.char, Ix.Kernel.Role.charOfNat] -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.LiteralOrder.stringRoles
-
-/-- info: Ix.Cert.LiteralOrder.stringSupportOrdered_iff : ∀ (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (order : List Address),
-  Ix.Cert.LiteralOrder.stringSupportOrdered ixe t order = true ↔ Ix.Cert.LiteralOrder.StringSupportOrdered ixe t order -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.Cert.LiteralOrder.stringSupportOrdered_iff
-
-/-- info: [cert-audit] string literal order: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "string literal order"
-    (#[`recordOk_iff, `orderedFrom_iff, `stringSupportOrdered_iff].map (`Ix.Cert.LiteralOrder ++ ·))
-
 /-! ## Distinct name hashes (B9's name keys; owner-approved check, 2026-10-20)
 
 `Ix.Name`'s `==` compares stored name hashes, and every map keyed by name (the
@@ -4388,62 +4285,6 @@ fun resolved ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.resolutionMismatch
 
-/-! ## Every inductive component is seen (B9b's (c3); coordinator decision, 2026-10-20)
-
-The changed set reads an inductive component only through its block's `Muts`
-entry (`Ix.Compile.ChangedSet.mutsRecords`), which a later `Named` entry may
-override, so a component could escape the classifier. `compileReport` now refuses a result in
-which a published input inductive is not published at an inductive projection
-of a block with a `Muts` entry at its address (`checkReport`'s seventh check,
-`unseenInductive`). It reads the published input inductives' records, not every
-stored record: finding the stored inductive blocks among the records would mean
-decoding every mutual block record, and the changed set is about the input's
-names. Re-frozen with it: `checkReport`'s print (the seventh check) and
-`checkReport_ok` (a seventh conjunct). On a consistent run the result is
-unchanged. -/
-
-/-- info: [cert-audit] inductive components: 3 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] inductive components: 2 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "inductive components"
-    (#[`mutsAddrs_contains, `unseenInductive_none, `inductivesSeen].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "inductive components"
-    #[``Ix.Cert.mutsAddrs, ``Ix.Cert.unseenInductive]
-
-/-- info: def Ix.Cert.mutsAddrs : Ixon.Env → Std.HashSet Address :=
-fun ixe =>
-  Std.HashMap.fold
-    (fun s x named =>
-      match named.constMeta.info with
-      | Ixon.ConstantMetaInfo.muts all auxLayout => s.insert named.addr
-      | x => s)
-    ∅ ixe.named -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.mutsAddrs
-
-/-- info: def Ix.Cert.unseenInductive : Ix.Environment → Ixon.Env → Option Ix.Name :=
-fun env ixe =>
-  have muts := Ix.Cert.mutsAddrs ixe;
-  List.findSome?
-    (fun x =>
-      match x with
-      | (n, ci) =>
-        match ci with
-        | Ix.ConstantInfo.inductInfo v =>
-          match ixe.named.get? n with
-          | none => none
-          | some named =>
-            match Option.map (fun x => x.info) (Ix.Cert.storedRecord ixe named.addr) with
-            | some (Ixon.ConstantInfo.iPrj p) => if muts.contains p.block = true then none else some n
-            | x => some n
-        | x => none)
-    env.consts.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.unseenInductive
-
 /-! ## Published input names are resolved (B9b, `HookFree`'s discharge, (v); coordinator decision, 2026-10-21)
 
 A `Named` entry can come from a block's `Muts` entry (`BlockState.mutsNamed`),
@@ -4561,40 +4402,6 @@ fun env =>
     env.consts.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.strayConstructor
-
-/-! ## Recorded failures are input names (B9b, `HookFree`'s discharge, (i); coordinator decision, 2026-10-21 ~08:17)
-
-A reference of the block holding a compile's key may name no input constant
-(a ground edge can dangle: `Ix.groundExpr` is `partial`, so no proof shows
-edges land in the input). If such a name was a Pass 3 head when the block
-compiled and was withdrawn later, it is recorded as a failure, and `NoFailure`
-(over the closure only) does not refute it. `compileReport` now refuses a
-driver's final environment that records a failure under a name the input's
-map does not hold (`checkReport`'s fourteenth check, `strayFailure`). The
-proof route not taken: a fold invariant that every recorded failure is a
-condensation member. Re-frozen with it: `checkReport`'s print and
-`checkReport_ok` (a fourteenth conjunct). On a consistent run the result is
-unchanged. -/
-
-/-- info: [cert-audit] recorded failures: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] recorded failures: 1 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "recorded failures"
-    (#[`strayFailure_none, `failuresInput].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "recorded failures" #[``Ix.Cert.strayFailure]
-
-/-- info: def Ix.Cert.strayFailure : Ix.Environment → Std.HashMap Ix.Name String → Option Ix.Name :=
-fun env ungrounded =>
-  List.findSome?
-    (fun x =>
-      match x with
-      | (n, snd) => if (env.consts.get? n).isSome = true then none else some n)
-    ungrounded.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.strayFailure
 
 /-! ## One projection record per definition member (CtxAgree's hints premise; coordinator decision, 2026-10-21 ~18:20)
 
@@ -5583,329 +5390,6 @@ run_cmd do
   checkRoots (tag := "cert-audit") "checked conversion values"
     (#[`infer_reading, `reading_denotes, `defeq_values, `defeq_denotations_eq,
       `checked_defeq_values, `definition_front, `valueFront_defeq_values].map (`Ix.Cert.ConversionValues ++ ·))
-
-/-! ## Actual closed annotation/inference: certified beta and public values
-
-The exact application run supplies argument io inference and domain DefEq,
-including Prop. The annotation trace retains the real opener and marker.
-Reduction soundness supplies the reduct's frame/read/grade at the same model;
-annotation of the raw reduct or actual O6 output is not identified here. -/
-
-/-- info: [cert-audit] annotated beta values: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "annotated beta values"
-    (#[`inferred_beta_certificate, `annotate_lam_trace, `annotate_beta_trace,
-      `inferred_beta_values, `annotated_beta_values].map (`Ix.Cert.AnnotatedBeta ++ ·))
-
-/-! ## Whole-lambda markers
-
-Two real value fronts against one checked header force marker agreement
-inside each supplied strong model, including empty binder domains. No model
-existence or context inhabitant is assumed.
-
-Re-frozen without the rewriting pipeline: the rewritten recursor's
-whole-lambda public value, which these markers fed, is deleted with it; the
-marker lemmas stay. 4 roots → 3. -/
-
-/-- info: [cert-audit] whole lambda markers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "whole lambda markers"
-    (#[`lam_mem_pi_bits, `infer_package, `lambda_markers_eq_of_fronts].map
-      (`Ix.Cert.LambdaMarkers ++ ·))
-
-/-! ## Internal context composition under valid valuations
-
-Actual local checks transport the raw Frame/Ctx invariant and supply
-witnessed readings/grades. Same-domain lambda congruence uses the body IH
-and bit agreement only under Sat, without a context inhabitant or global
-marker equality. Local check producers remain an explicit proof obligation. -/
-
-/-- info: [cert-audit] checked context lambda congruence: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "checked context lambda congruence"
-    (#[`annotate_context, `infer_package_at, `lambda_bits_at,
-      `eqAt_of_readings, `checked_lambda_congr_at].map (`Ix.Cert.ContextValues ++ ·))
-
-/-! ## Real local fronts from enclosing applications
-
-Paired actual app checks with the same raw function derive both argument
-fronts and one WHNF domain. Real function inference/WHNF supplies its
-semantic frame/context/read/grade, without inventing a domain check. The
-typed-header consumer and full O6 production composition remain separate. -/
-
-/-- info: [cert-audit] actual application argument fronts: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual application argument fronts"
-    (#[`function_domain, `paired_app_argument_fronts].map (`Ix.Cert.ApplicationFronts ++ ·))
-
-/-! ## Consumers of the application producer's typed header
-
-The factored marker/congruence proofs consume the proved domain package.
-The direct lambda-argument connection derives every header fact and both
-local fronts from actual paired app calls. Existing executable-header
-interfaces remain wrappers; no domain check or runtime checker is invented. -/
-
-/-- info: [cert-audit] produced typed header consumers: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "produced typed header consumers"
-    #[`Ix.Cert.ContextValues.lambda_bits_of_header,
-      `Ix.Cert.ContextValues.checked_lambda_congr_of_header,
-      `Ix.Cert.ApplicationFronts.paired_app_lambda_arguments]
-
-/-! ## Indexed reference-stream definition fronts
-
-One actual accepted fuel supplies the exact prefix, declaration and suffix.
-Lookup persistence identifies the annotated body in the final environment. -/
-
-/-- info: [cert-audit] indexed reference definition fronts: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "indexed reference definition fronts"
-    (#[`reference_definition_front_at, `DefinitionFrontAt.unique,
-      `DefinitionFrontAt.denotes].map (`Ix.Cert.ReferenceFronts ++ ·))
-
-/-! ## Fronts of the exact prepared Ixon stream
-
-One actual preparation/evidence witness supplies every indexed definition
-front; no separately accepted environment or source-form check is chosen. -/
-
-/-- info: [cert-audit] prepared Ixon definition fronts: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "prepared Ixon definition fronts"
-    #[`Ix.Cert.ReferenceFronts.ixon_definition_fronts]
-
-/-! ## Actual paired readings under a fixed interpretation
-
-Positive lookup preservation transports the real inference run's literal
-support and present projection slots; no prefix model is assumed. -/
-
-/-- info: [cert-audit] fixed interpretation paired readings: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "fixed interpretation paired readings"
-    (#[`lookup_guard, `nat_support, `string_support, `projection_slot,
-      `inferred_readings_preserved].map (`Ix.Cert.PrefixReadings ++ ·))
-
-/-! ## Actual prefix fronts at the supplied final interpretation
-
-The indexed run derives lookup growth and paired header/body readings.
-Final stored-definition laws supply the target package at the same acval. -/
-
-/-- info: [cert-audit] final interpretation prefix fronts: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "final interpretation prefix fronts"
-    (#[`lookup_preserved, `readings_across, `final_semantic_front].map
-      (`Ix.Cert.ReferenceFronts.DefinitionFrontAt ++ ·))
-
-/-! ## The actual prefix core with the final model's literal valuation
-
-Prefix acceptance yields only model-free Props; every interpreted field
-comes from the supplied final model, with both valuation equalities by rfl. -/
-
-/-- info: [cert-audit] fixed final interpretation prefix core: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "fixed final interpretation prefix core"
-    (#[`prefix_syntax, `coreAt_acval, `coreAt_cval,
-      `core_of_front].map (`Ix.Cert.PrefixCore ++ ·))
-
-/-! ## Actual final-interpretation prefix core and basic target package
-
-Leaf validity, numeral heads and Eq use only the supplied final model;
-the actual target package is transported through the same literal acval. -/
-
-/-- info: [cert-audit] actual final interpretation prefix package: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual final interpretation prefix package"
-    #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_core]
-
-/-! ## Every stored definition's actual creating reference step
-
-All non-definition paths preserve the exact definition entries, including
-native settled/retry, modeled, basis, quotient and projection branches. -/
-
-/-- info: [cert-audit] universal stored definition origins: 17 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "universal stored definition origins"
-    (#[`definition_mem, `fold_definitions, `basis_definitions, `member_definitions,
-      `recs_definitions, `projection_definitions, `projection_step_definitions,
-      `modeled_definitions, `constructors_definitions, `native_table_definitions,
-      `native_pass_definitions, `native_tail_definitions, `native_definitions,
-      `checkDecl_definitions, `step_definition_origin, `fold_definition_origin,
-      `reference_stored_definition_origin].map (`Ix.Cert.PrefixDefinitions ++ ·))
-
-/-! ## Universal prefix unfolding at the supplied final interpretation
-
-Every stored definition uses its actual creating front/run and produced
-lookup. Paired readings and the same final model pin its exact leaf. -/
-
-/-- info: [cert-audit] universal fixed interpretation definition row: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "universal fixed interpretation definition row"
-    (#[`prefix_definitions_read, `final_prefix_defn].map (`Ix.Cert.ReferenceFronts.DefinitionFrontAt ++ ·))
-
-/-! ## Actual table origin and old-head projection slots
-
-Every new table's former was fresh in the original checker prefix; real
-growth then preserves all slots at already-stored heads, without an absence
-premise or membership-to-hit shortcut. -/
-
-/-- info: [cert-audit] actual old-head projection slots: 16 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual old-head projection slots"
-    (#[`table_mem, `TableOrigin.of_tables, `fold_tables, `basis_tables, `member_tables,
-      `recs_tables, `projection_tables, `modeled_tables, `constructors_tables,
-      `native_table_origin, `native_pass_origin, `native_tail_origin, `native_origin,
-      `step_table_origin, `checked_step_stored_slots,
-      `checked_suffix_stored_slots].map (`Ix.Cert.PrefixConstType ++ ·))
-
-/-! ## Every resolving header at the supplied final interpretation
-
-Actual growth derives subject-specific literal queries and both projection
-branches. The SAME final model supplies every constant type/level/depth row. -/
-
-/-- info: [cert-audit] universal fixed interpretation constant types: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "universal fixed interpretation constant types"
-    ((#[`query_eq, `nat_guard_eq, `string_queries_eq, `resolving_reading_eq].map
-      (`Ix.Cert.PrefixConstType ++ ·)) ++
-      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.stored_head_slots,
-        `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_const_ty])
-
-/-! ## Capability and successor rows at the same final interpretation
-
-Positive family guards and resolving headers transport both capability
-halves. The successor argument uses only the supplied core; the unit law
-gains no eta-family premise and no prefix interpretation is chosen. -/
-
-/-- info: [cert-audit] fixed interpretation capability and successor rows: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "fixed interpretation capability and successor rows"
-    ((#[`eta_family_preserved, `capabilities_preserved, `nat_succ_row].map
-      (`Ix.Cert.PrefixCapabilities ++ ·)) ++
-      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_caps_succ])
-
-/-! ## Every stored recursor's exact header, RHS and open-pin readings
-
-Actual prefix WF supplies resolution, including getD defaults and the
-sort-zero reverse openers. Reading equations need no model or grading. -/
-
-/-- info: [cert-audit] fixed interpretation stored recursor readings: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "fixed interpretation stored recursor readings"
-    (#[`openRev_resolves, `stored_rule_resolves, `stored_rule_readings].map
-      (`Ix.Cert.PrefixRecRules ++ ·))
-
-/-! ## Universal recursor rules at the supplied final interpretation
-
-The full law retains RHS grading, outer guarded pin grading, contravariant
-nested comparisons, both type readings and the fired equality/output grade. -/
-
-/-- info: [cert-audit] universal fixed interpretation recursor rules: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "universal fixed interpretation recursor rules"
-    #[`Ix.Cert.PrefixRecRules.rec_rules_preserved,
-      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_rec_rules]
-
-/-! ## Actual prefix tower heads and all body/header readings
-
-Both positive head witnesses come from prefix projection discipline;
-the table and three exact depth-zero readings transport at fixed acval. -/
-
-/-- info: [cert-audit] fixed interpretation stored tower readings: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "fixed interpretation stored tower readings"
-    (#[`stored_tower_heads, `stored_tower_readings].map
-      (`Ix.Cert.PrefixTowers ++ ·))
-
-/-! ## Universal tower laws at the supplied final interpretation
-
-Produced prefix hits identify the final law's witnesses. The exact typing,
-iota, eta and Prop-guard clauses use the same readings and final acval. -/
-
-/-- info: [cert-audit] universal fixed interpretation tower laws: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "universal fixed interpretation tower laws"
-    #[`Ix.Cert.PrefixTowers.tower_ok_preserved,
-      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_tower_ok]
-
-/-! ## Actual Nat-operation guards and both fixed-acval readings
-
-Each creating POST guard survives its actual suffix. Original raw/result
-facts derive both readings, with no model or backwards support premise. -/
-
-/-- info: [cert-audit] actual prefix Nat-operation readings: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual prefix Nat-operation readings"
-    ((#[`guard_preserved, `reference_nat_op_guards, `binary_mem, `literal_resolves,
-      `raw_literal_resolves, `result_resolves, `guarded_nat_op_readings].map
-      (`Ix.Cert.PrefixNatOps ++ ·)) ++
-      #[`Ix.Cert.ReferenceFronts.DefinitionFrontAt.prefix_nat_op_guards])
-
-/-! ## All rule inputs at the supplied final interpretation
-
-The original NatOpRow transfers through both actual readings. Nine proved
-fields retain EqLaw, exact valuations and the unchanged target package. -/
-
-/-- info: [cert-audit] actual fixed interpretation rule inputs: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "actual fixed interpretation rule inputs"
-    #[`Ix.Cert.PrefixNatOps.nat_op_preserved,
-      `Ix.Cert.ReferenceFronts.DefinitionFrontAt.final_prefix_rules_inputs]
-
-/-! ## Actual checked values and root markers from rule inputs
-
-The fixed carrier and nine proved rows supply inference/Denotes and checked
-marker equality without a prefix StrongModel or an inner context witness. -/
-
-/-- info: [cert-audit] fixed interpretation checked value adapters: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "fixed interpretation checked value adapters"
-    (#[`frame_context, `infer_package, `reading_denotes, `defeq_readings,
-      `lambda_markers_eq_of_fronts, `markers_of_fronts].map (`Ix.Cert.RuleInputValues ++ ·))
 
 /-! ## Actual checked primary writes and ordered merge projection
 

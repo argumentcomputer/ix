@@ -15,8 +15,7 @@ the wire decodes exactly, its projections decode exactly, and its rows read
 as `expectedReferences`.
 
 Adapted: `Address.admissionHash`, the write-back through `erase`
-(`writeback_standalone`), the mutual finisher's inversion, `surgeryFree`
-(until CQ3.5). Not ported here (R13): the donor's `published_*` and
+(`writeback_standalone`), the mutual finisher's inversion. Not ported here (R13): the donor's `published_*` and
 `compile_merge_references`, which are about the driver's merge
 (`DriverAcc`, `mergeCompiledBlock`); CQ2.14 replaced the driver with the
 pure wave fold, and they are re-derived against it with CT-09's merge
@@ -223,7 +222,7 @@ on the wire returns a block that decodes exactly, projections that decode
 exactly, and rows that read, in any store holding the block, as the
 source-indexed references; given non-empty classes whose members agree in
 shape and source constructors that declare their positions. -/
-theorem mutual_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem mutual_correct (context : CompileEnv × BlockEnv)
     (sources : List (List MutConst)) {before after : BlockState} {output : BlockResult}
     (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
     (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
@@ -232,7 +231,7 @@ theorem mutual_correct (context : CompileEnv × BlockEnv) (free : context.1.surg
     Ix.Sharing.Verify.BlockResultCodecWF output ∧ MutualProjections.ProjectionWire output ∧
       ∀ store : Store, store output.blockAddr = some output.block →
         readRows store (logicalRows output.projections) = expectedReferences output.blockAddr sources := by
-  have codec := MutualProjections.mutual_codec context free sources wire ran
+  have codec := MutualProjections.mutual_codec context sources wire ran
   exact ⟨codec.1, codec.2.1, fun store stored =>
     mutual_references sources nonempty agree positions context before output after ran store stored codec.1.1⟩
 

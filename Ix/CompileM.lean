@@ -179,11 +179,6 @@ structure BlockState where
       block without a `Muts` record. The driver merges it into
       `CompileEnv.nameToNamed` after the members' entries. -/
   mutsNamed : Array (Name × Ixon.Named) := #[]
-  /-- Compiled Ixon expressions for collapsed call-site args, accumulated
-      by surgered `compileExpr` calls within the current constant and
-      drained into `ConstantMeta.metaSharing` when the constant's
-      metadata is built (Rust `BlockCache.surgery_sharing`). -/
-  surgerySharing : Array Ixon.Expr := #[]
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/
@@ -351,13 +346,6 @@ def resetArena : CompileM Unit :=
 /-- Clear the expression cache (between constants to avoid cross-constant arena references). -/
 def clearExprCache : CompileM Unit :=
   modifyBlockState fun c => { c with exprCache := {} }
-
-/-- Take the accumulated collapsed call-site expressions for the current
-    constant, clearing the accumulator (Rust
-    `std::mem::take(&mut cache.surgery_sharing)`, compile.rs:2230). The
-    result becomes the constant's `ConstantMeta.metaSharing`. -/
-def takeSurgerySharing : CompileM (Array Ixon.Expr) :=
-  modifyGetBlockState fun c => (c.surgerySharing, { c with surgerySharing := #[] })
 
 /-- A source index (bound variable, mutual slot, projection field,
     universe parameter) or a table index as its Ixon wire integer, or the
@@ -794,11 +782,6 @@ theorem decomposeApps_app_mem_lt (fn arg : Expr) (hash : Address) {x : Expr}
     sizeOf x < sizeOf (Expr.app fn arg hash) := by
   have small := decomposeApps.go_mem (.app fn arg hash) #[] mem
   simpa only [Array.not_mem_empty, or_false] using small
-
-/-- Whether expression compilation takes the kernel-visible ordinary path.
-    It always does: the compiler writes no decompile records. The reading
-    theorems keep it as a premise, which holds by `rfl`. -/
-def CompileEnv.surgeryFree (_env : CompileEnv) : Bool := true
 
 /-- One cache-miss step of ordinary expression compilation, parameterized by
     the recursive compiler, which it calls only on strict source subterms of
@@ -1610,7 +1593,6 @@ def finishDefinitionDataCompilation (d : Def)
     (valueExpr : Ixon.Expr) (valueRoot : UInt64) :
     CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -1642,7 +1624,7 @@ def finishDefinitionDataCompilation (d : Def)
   recordDefHints d.name hints
   let constMeta := { Ixon.ConstantMeta.new
     (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := #[], metaUnivs, univPatches }
   pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Definition specialization of the common definition-like finalizer. -/
@@ -1705,7 +1687,6 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
     (typeRoot : UInt64) :
     CompileM (Ixon.Axiom × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -1725,7 +1706,7 @@ def finishAxiomCompilation (a : AxiomVal) (typeExpr : Ixon.Expr)
   }
   let constMeta := { Ixon.ConstantMeta.new
     (.axio nameAddr lvlAddrs arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := #[], metaUnivs, univPatches }
   pure (axio, constMeta, typeExpr)
 
 /-- Compile an axiom to Ixon.Axiom with metadata. -/
@@ -1750,7 +1731,6 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
     (typeRoot : UInt64) :
     CompileM (Ixon.Quotient × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -1767,7 +1747,7 @@ def finishQuotientCompilation (q : QuotVal) (typeExpr : Ixon.Expr)
   let constMeta := { Ixon.ConstantMeta.new
     (.quot q.cnst.name.getHash
       (q.cnst.levelParams.map (·.getHash)) arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := #[], metaUnivs, univPatches }
   pure (quot, constMeta, typeExpr)
 
 /-- Compile a quotient to Ixon.Quotient with metadata. -/
@@ -1813,7 +1793,6 @@ def finishRecursorCompilation (r : RecursorVal)
     (compiledRules : RecursorRuleCompileState) :
     CompileM (Ixon.Recursor × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -1851,7 +1830,7 @@ def finishRecursorCompilation (r : RecursorVal)
   let constMeta := { Ixon.ConstantMeta.new
     (.recr nameAddr lvlAddrs compiledRules.ruleAddrs allAddrs ctxAddrs
       arena typeRoot compiledRules.ruleRoots) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := #[], metaUnivs, univPatches }
   pure (recursor, constMeta, typeExpr)
 
 /-- Compile a recursor to Ixon.Recursor with metadata. -/
@@ -1868,7 +1847,6 @@ def finishConstructorCompilation (c : ConstructorVal)
     (typeExpr : Ixon.Expr) (typeRoot : UInt64) :
     CompileM (Ixon.Constructor × Ixon.ConstantMeta × Ixon.Expr) := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
@@ -1894,7 +1872,7 @@ def finishConstructorCompilation (c : ConstructorVal)
   }
   let ctorMeta := { Ixon.ConstantMeta.new
     (.ctor nameAddr lvlAddrs c.induct.getHash arena typeRoot) with
-    metaSharing := surgerySharing, metaUnivs, univPatches }
+    metaSharing := #[], metaUnivs, univPatches }
   pure (ctor, ctorMeta, typeExpr)
 
 /-- Compile a constructor to Ixon.Constructor with metadata (ConstantMeta.ctor). -/
@@ -1916,16 +1894,14 @@ structure InductiveConstructorCompileState where
 starts. Each constructor subsequently owns an independent arena. -/
 structure InductiveTypeCompileMeta where
   arena : Ixon.ExprMetaArena
-  surgerySharing : Array Ixon.Expr
   metaUnivs : Array Ixon.Univ
   univPatches : Array Ixon.UnivPatch
 
 def takeInductiveTypeCompileMeta : CompileM InductiveTypeCompileMeta := do
   let arena ← takeArena
-  let surgerySharing ← takeSurgerySharing
   let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
-  pure { arena, surgerySharing, metaUnivs, univPatches }
+  pure { arena, metaUnivs, univPatches }
 
 /-- Compile constructors in source order. -/
 def compileInductiveConstructors :
@@ -1976,7 +1952,7 @@ def finishInductiveCompilation (i : InductiveVal)
   let constMeta := { Ixon.ConstantMeta.new
     (.indc nameAddr lvlAddrs compiledCtors.ctorNameAddrs allAddrs ctxAddrs
       typeMeta.arena typeRoot) with
-    metaSharing := typeMeta.surgerySharing
+    metaSharing := #[]
     metaUnivs := typeMeta.metaUnivs
     univPatches := typeMeta.univPatches }
   pure (ind, constMeta, compiledCtors.ctorMetaPairs,
@@ -2043,7 +2019,7 @@ def finishInductiveDataCompilation (i : Ind)
   let constMeta := { Ixon.ConstantMeta.new
     (.indc nameAddr lvlAddrs compiledCtors.ctorNameAddrs allAddrs ctxAddrs
       typeMeta.arena typeRoot) with
-    metaSharing := typeMeta.surgerySharing
+    metaSharing := #[]
     metaUnivs := typeMeta.metaUnivs
     univPatches := typeMeta.univPatches }
   pure (ind, constMeta, compiledCtors.ctorMetaPairs,

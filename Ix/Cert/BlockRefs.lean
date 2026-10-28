@@ -292,7 +292,7 @@ def addrNames (defs : List Ix.Def) (env : CompileEnv) (bindings : Bindings) (K :
 
 /-- **A definition block's reference table holds the binding of every non-member name its
 members mention**, for a block compiled from a clean state in which no member is bound. -/
-theorem mentioned_binding_ref (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem mentioned_binding_ref (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
@@ -330,7 +330,7 @@ theorem mentioned_binding_ref (context : CompileEnv × BlockEnv) (free : context
       by simp only [addrNames, found]⟩
   obtain ⟨ts, hinfo, each⟩ := DefinitionEmission.defsBlock_each cx id (DefinitionOrder.tagSelf defs.length K)
     (addrNames defs context.1 bindings K) bindings (fun m => (Ix.LeanIngress.Numbering.mk m.levelParams false).pos)
-    context free (fun _ => rfl) external defs two scopes clean ran
+    context (fun _ => rfl) external defs two scopes clean ran
   obtain ⟨-, -, ⟨tT, hTread, hTrel⟩, ⟨tV, hVread, hVrel⟩⟩ :=
     DefinitionBlocks.forall₂_getElem each i hi (by have := DefinitionBlocks.forall₂_length each; omega)
   have keys : ∀ a k, (ExpressionRead.withBlockBlobs cx after).keyAt a = .ok k → k = .id a := by
@@ -367,7 +367,7 @@ that `B` owns, members at distinct addresses (`apart`); a name the compile binds
 at its binding (`published`); quotient Source publishes names of one ingress key alike
 (`sameKey`); and no record references itself (`referenceCycle = none`). A mentioned non-member
 of a member's ingress key would make `B` reference that member's record, owned by `B`. -/
-theorem exactNames_of (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem exactNames_of (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
@@ -399,7 +399,7 @@ theorem exactNames_of (context : CompileEnv × BlockEnv) (free : context.1.surge
   | none =>
     -- a non-member: the block would reference member `j`'s record
     exfalso
-    obtain ⟨a, hb, hmem⟩ := mentioned_binding_ref context free clean two distinct ran unresolved hi hn hc
+    obtain ⟨a, hb, hmem⟩ := mentioned_binding_ref context clean two distinct ran unresolved hi hn hc
     obtain ⟨P, c, hP, hrec, hown⟩ := owned j hj
     have ha : a = P := by
       rw [published n a hb, hP] at same

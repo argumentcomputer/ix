@@ -256,7 +256,7 @@ theorem compileReport_store {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
   | ok st =>
     simp only [finalizeEnv, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hf
     obtain ⟨rfl, -, -⟩ := hf
-    exact ⟨_, _, st, ⟨rfl, rfl, rfl, rfl⟩, hr, fun a lc hlc => StoredEncoding.assembleEnv_consts_inv _ hlc,
+    exact ⟨_, _, st, ⟨rfl, rfl, rfl⟩, hr, fun a lc hlc => StoredEncoding.assembleEnv_consts_inv _ hlc,
       fun a b hb => assembleEnv_consts _ hb⟩
 
 /-- **A stored definition projection names a stored block record as its block.** -/

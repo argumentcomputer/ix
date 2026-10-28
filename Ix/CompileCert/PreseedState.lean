@@ -339,7 +339,6 @@ expression reads back as its source (without Pass 3 records). -/
 theorem preseed_compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)
-    (free : context.1.surgeryFree = true)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (selfSound : SelfCorrect context.2 self names)
     (roots : Array (Ix.Expr × List Ix.Name)) (source : Ix.Expr) {before middle after : BlockState}
@@ -353,7 +352,7 @@ theorem preseed_compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → Leve
       (rawRun (preseedExprTables roots) context before).2 :=
     (preseed_good aligned roots context.2 before good).1
   rw [preseeded] at kept
-  exact compileExpr_read cx param self names σ bindings context free aligned external selfSound source middle
+  exact compileExpr_read cx param self names σ bindings context aligned external selfSound source middle
     kept ran
 
 end Ix.CompileCert.PreseedState

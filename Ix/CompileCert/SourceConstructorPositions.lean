@@ -674,7 +674,7 @@ theorem find_run (name : Ix.Name) (context : CompileEnv × BlockEnv) (state : Bl
 environment without Pass 3 records, `collectInductiveConstructors` returns,
 after what it started with, the constructor the environment has under each
 name, in order. -/
-theorem collect_lookups (context : CompileEnv × BlockEnv) (_free : context.1.surgeryFree = true) :
+theorem collect_lookups (context : CompileEnv × BlockEnv) :
     ∀ (names : List Ix.Name) (acc : Array Ix.ConstructorVal) (state : BlockState) (out : Array Ix.ConstructorVal),
       (rawRun (collectInductiveConstructors names acc) context state).1 = .ok out →
       ∃ cs, List.Forall₂ (fun n c => context.1.env.get? n = some (.ctorInfo c)) names cs ∧
@@ -892,7 +892,7 @@ input, and the compile environment resolves `source`'s constructor names as
 that input does, then the member is safe and the constructors the
 compiler's dispatch resolves are safe, at their positions, and source
 telescopes of the parameters and their fields. -/
-theorem source_premises (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem source_premises (context : CompileEnv × BlockEnv)
     {env : Ix.Environment} {first : Ix.InductiveVal} (admits : Admits env first) {source : Ix.InductiveVal}
     (member : source.cnst.name ∈ first.all.toList)
     (sourceFound : env.consts.get? source.cnst.name = some (.inductInfo source))
@@ -905,7 +905,7 @@ theorem source_premises (context : CompileEnv × BlockEnv) (free : context.1.sur
       (∀ ctor ∈ constructors.toList, ∃ types body,
         sourceStrip (source.numParams + ctor.numFields) ctor.cnst.type = some (types, body) ∧
           SourceNonForall body) := by
-  obtain ⟨cs, looked, rfl⟩ := collect_lookups (EmissionDispatch.singletonContext source.cnst.name context) free
+  obtain ⟨cs, looked, rfl⟩ := collect_lookups (EmissionDispatch.singletonContext source.cnst.name context)
     source.ctors.toList #[] before constructors found
   have looked' : List.Forall₂ (fun n c => env.consts.get? n = some (.ctorInfo c)) source.ctors.toList
       (#[] ++ cs.toArray).toList := by
@@ -949,7 +949,7 @@ constructor names as Source's input does, and the rest is
 `inductive_reads`' (the self references stay premises: the family's own
 name related to its key, `selfKey`, and no constructor of the family in its
 types, `NoCtorIn`). -/
-theorem inductive_reads_source (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductive_reads_source (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names)
     {env : Ix.Environment} {first : Ix.InductiveVal} (admits : Admits env first) (source : Ix.InductiveVal)
@@ -975,8 +975,8 @@ theorem inductive_reads_source (context : CompileEnv × BlockEnv) (free : contex
               shape.recs >>= fun recs =>
             lowerInductive state (sourceBlock key ctorKey type ctorTypes source constructors recs) := by
   obtain ⟨safe, ctorSafe, positions, arity⟩ :=
-    source_premises context free admits member sourceFound agree found
-  exact inductive_reads cx names σ bindings context free aligned external source constructors found state indexed
+    source_premises context admits member sourceFound agree found
+  exact inductive_reads cx names σ bindings context aligned external source constructors found state indexed
     order keyed ctorKey ctorKeyed selfKey typeNoCtor ctorNoCtor safe ctorSafe positions arity clean wire ran
 
 end Reading

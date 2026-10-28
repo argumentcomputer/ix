@@ -130,7 +130,7 @@ theorem source_premises_of_sourceAccepts {condense : Ix.Environment → Ix.Conde
     {envS : Ix.Kernel.Env .source} (accepted : SourceAccepts condense env roots sub envS) {n : Ix.Name}
     {first : Ix.InductiveVal} (stored : (n, Ix.ConstantInfo.inductInfo first) ∈ sub.consts.toList)
     (head : first.all[0]? = some n) (context : CompileEnv × BlockEnv)
-    (free : context.1.surgeryFree = true) {source : Ix.InductiveVal}
+    {source : Ix.InductiveVal}
     (member : source.cnst.name ∈ first.all.toList)
     (sourceFound : sub.consts.get? source.cnst.name = some (.inductInfo source))
     (agree : ∀ n ∈ source.ctors.toList, context.1.env.get? n = sub.consts.get? n)
@@ -144,7 +144,7 @@ theorem source_premises_of_sourceAccepts {condense : Ix.Environment → Ix.Conde
         Ix.CompileCert.ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields)
             ctor.cnst.type = some (types, body) ∧
           Ix.CompileCert.ReaderSourceSpines.SourceNonForall body) :=
-  Ix.CompileCert.SourceConstructorPositions.source_premises context free
+  Ix.CompileCert.SourceConstructorPositions.source_premises context
     (admits_of_sourceAccepts accepted stored head) member sourceFound agree found
 
 open Ix.CompileM in

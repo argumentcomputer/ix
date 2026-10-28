@@ -1,5 +1,4 @@
 import Ix.Cert.SourceInstalls
-import Ix.Cert.SourceGroupPlan
 import Ix.CompileCert.Canon.QSort
 import Ix.Cert.Composition
 
@@ -18,6 +17,17 @@ namespace Ix.Cert.SourceStoredNames
 
 open Ix.LeanIngress
 open Ix.CompileCert.Loop (idBind idPure except_bind_ok)
+
+/-! ## Groups over the environment's lookup -/
+
+/-- `inductiveGroup` is `inductiveGroupUsing` over the environment's lookup, in `Id`. -/
+theorem inductive_default (env : Ix.Environment) (first : Ix.InductiveVal) (candidates : Array Ix.RecursorVal) :
+    inductiveGroup env first candidates =
+      Id.run (inductiveGroupUsing (m := Id) (env.consts.get? ·) first candidates) := rfl
+
+/-- `componentGroup` is `componentGroupUsing` over the environment's lookup, in `Id`. -/
+theorem component_default (env : Ix.Environment) (members : Ix.Set Ix.Name) :
+    componentGroup env members = Id.run (componentGroupUsing (m := Id) (env.consts.get? ·) members) := rfl
 
 /-! ## Loops in `Id` -/
 
@@ -69,7 +79,7 @@ abbrev Pending (o : Option Group) : Prop := o = none ∨ ∃ c e, o = some (.inv
 environment stores. -/
 theorem componentGroup_stored {env : Ix.Environment} {members : Ix.Set Ix.Name} {g : Group}
     (h : componentGroup env members = some g) : NamesStored env g := by
-  rw [Ix.Cert.SourceGroupPlan.component_default] at h
+  rw [component_default] at h
   unfold componentGroupUsing at h
   generalize hcis : (Array.filterMapM (m := Id) (fun x => env.consts.get? x) members.toArray :
     Array Ix.ConstantInfo) = cis at h
@@ -146,7 +156,7 @@ theorem inductiveGroup_stored {env : Ix.Environment} {first : Ix.InductiveVal}
     (conv : convert (inductiveGroup env first cands) = .ok c) :
     NamesStored env (inductiveGroup env first cands) := by
   generalize hg : inductiveGroup env first cands = g at conv ⊢
-  rw [Ix.Cert.SourceGroupPlan.inductive_default] at hg
+  rw [inductive_default] at hg
   unfold inductiveGroupUsing at hg
   simp only [Id.run, idBind, idPure] at hg
   split at hg

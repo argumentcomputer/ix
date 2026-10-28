@@ -23,8 +23,7 @@ axiom, quotient, recursor and standalone inductive-family blocks:
   success-only wire traversal (`EmissionWire`) and the builder's
   `buildConstantWithSharing_wireWF_headers` (R07-10).
 
-Every theorem assumes an environment without Pass 3 records
-(`CompileEnv.surgeryFree`), until CQ3.5. CT-15's `DefinitionBlock`,
+CT-15's `DefinitionBlock`,
 `HeaderBlock`, `RecursorBlock`, `InductiveBlock` and the block half of
 `FamilyWire`. -/
 
@@ -216,7 +215,7 @@ theorem preseed_then {related : Ix.Expr → CExpr md → Prop} {context : Compil
 /-- **A definition-like block reads back as its source**: the emitted
 record keeps the source's skeleton, and its actual member reader reads its
 type and value as terms related to the source's. -/
-theorem definitionBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem definitionBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : Ix.Def)
     (typeScope : ConstsSatisfy (SelfName context.2 self names) source.type)
@@ -234,7 +233,7 @@ theorem definitionBlock_correct (context : CompileEnv × BlockEnv) (free : conte
   unfold compileDefinitionDataBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .defn payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _, _⟩ := payload; rfl) ran
-  obtain ⟨clean, growth, shape, _, roots⟩ := Emission.definition_correct cx param self names σ bindings context free
+  obtain ⟨clean, growth, shape, _, roots⟩ := Emission.definition_correct cx param self names σ bindings context
     aligned external source typeScope valueScope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.defn payload.1)
     output.block built roots
@@ -242,7 +241,7 @@ theorem definitionBlock_correct (context : CompileEnv × BlockEnv) (free : conte
   rw [erased, shape]
   exact definition_erase _ _ _
 
-theorem definitionBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem definitionBlock_codec (context : CompileEnv × BlockEnv)
     (source : Ix.Def) {before after : BlockState} {output : BlockResult}
     (valid : EmissionWire.Valid before)
     (ran : rawRun (compileDefinitionDataBlock source) context before = (.ok output, after)) :
@@ -250,13 +249,13 @@ theorem definitionBlock_codec (context : CompileEnv × BlockEnv) (free : context
   unfold compileDefinitionDataBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .defn payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.definitionData source context free before payload after valid compiled).1.1
+  have tables := (EmissionWire.Safe.definitionData source context before payload after valid compiled).1.1
   rw [wrapped]
   exact block_codec (info := .defn payload.1) trivial tables built _ _
 
 /-- **The preseeded definition-like block reads back as its source**, from
 a clean state. -/
-theorem definitionInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem definitionInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : Ix.Def)
     (typeScope : ConstsSatisfy (SelfName context.2 self names) source.type)
@@ -274,21 +273,21 @@ theorem definitionInfo_correct (context : CompileEnv × BlockEnv) (free : contex
   have kept := preseed_then cx param self bindings
     (related := Emission.related param names σ (Emission.inner source.name source.levelParams.toList context))
     aligned (clean.good cx param self _) seeded
-  obtain ⟨cleaned, growth, rest⟩ := definitionBlock_correct cx param self names σ bindings context free aligned
+  obtain ⟨cleaned, growth, rest⟩ := definitionBlock_correct cx param self names σ bindings context aligned
     external source typeScope valueScope kept.1 compiled
   exact ⟨cleaned, ExpressionState.extends_trans kept.2 growth, rest⟩
 
-theorem definitionInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem definitionInfo_codec (context : CompileEnv × BlockEnv)
     (source : Ix.Def) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
     (ran : rawRun (compileDefinitionDataInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileDefinitionDataInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact definitionBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
+  exact definitionBlock_codec context source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
 /-! ### Axiom and quotient blocks -/
 
-theorem axiomBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiomBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : AxiomVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -306,7 +305,7 @@ theorem axiomBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.
   unfold compileAxiomBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .axio payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  obtain ⟨clean, growth, shape, _, roots⟩ := Emission.axiom_correct cx param self names σ bindings context free
+  obtain ⟨clean, growth, shape, _, roots⟩ := Emission.axiom_correct cx param self names σ bindings context
     aligned external source scope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.axio payload.1)
     output.block built roots
@@ -314,7 +313,7 @@ theorem axiomBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.
   rw [erased, shape]
   exact axiom_erase _ _
 
-theorem axiomBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiomBlock_codec (context : CompileEnv × BlockEnv)
     (source : AxiomVal) {before after : BlockState} {output : BlockResult}
     (valid : EmissionWire.Valid before)
     (ran : rawRun (compileAxiomBlock source) context before = (.ok output, after)) :
@@ -322,11 +321,11 @@ theorem axiomBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.su
   unfold compileAxiomBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .axio payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.axiomPayload source context free before payload after valid compiled).1.1
+  have tables := (EmissionWire.Safe.axiomPayload source context before payload after valid compiled).1.1
   rw [wrapped]
   exact block_codec (info := .axio payload.1) trivial tables built _ _
 
-theorem axiomInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiomInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : AxiomVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -343,19 +342,19 @@ theorem axiomInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.s
   have kept := preseed_then cx param self bindings
     (related := Emission.related param names σ (Emission.inner source.cnst.name source.cnst.levelParams.toList context))
     aligned (clean.good cx param self _) seeded
-  obtain ⟨cleaned, growth, rest⟩ := axiomBlock_correct cx param self names σ bindings context free aligned
+  obtain ⟨cleaned, growth, rest⟩ := axiomBlock_correct cx param self names σ bindings context aligned
     external source scope kept.1 compiled
   exact ⟨cleaned, ExpressionState.extends_trans kept.2 growth, rest⟩
 
-theorem axiomInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem axiomInfo_codec (context : CompileEnv × BlockEnv)
     (source : AxiomVal) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
     (ran : rawRun (compileAxiomInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileAxiomInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact axiomBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
+  exact axiomBlock_codec context source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
-theorem quotientBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem quotientBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : QuotVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -373,7 +372,7 @@ theorem quotientBlock_correct (context : CompileEnv × BlockEnv) (free : context
   unfold compileQuotientBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .quot payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  obtain ⟨clean, growth, shape, _, roots⟩ := Emission.quotient_correct cx param self names σ bindings context free
+  obtain ⟨clean, growth, shape, _, roots⟩ := Emission.quotient_correct cx param self names σ bindings context
     aligned external source scope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.quot payload.1)
     output.block built roots
@@ -381,7 +380,7 @@ theorem quotientBlock_correct (context : CompileEnv × BlockEnv) (free : context
   rw [erased, shape]
   exact quotient_erase _ _
 
-theorem quotientBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem quotientBlock_codec (context : CompileEnv × BlockEnv)
     (source : QuotVal) {before after : BlockState} {output : BlockResult}
     (valid : EmissionWire.Valid before)
     (ran : rawRun (compileQuotientBlock source) context before = (.ok output, after)) :
@@ -389,11 +388,11 @@ theorem quotientBlock_codec (context : CompileEnv × BlockEnv) (free : context.1
   unfold compileQuotientBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .quot payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.quotientPayload source context free before payload after valid compiled).1.1
+  have tables := (EmissionWire.Safe.quotientPayload source context before payload after valid compiled).1.1
   rw [wrapped]
   exact block_codec (info := .quot payload.1) trivial tables built _ _
 
-theorem quotientInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem quotientInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : QuotVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -410,17 +409,17 @@ theorem quotientInfo_correct (context : CompileEnv × BlockEnv) (free : context.
   have kept := preseed_then cx param self bindings
     (related := Emission.related param names σ (Emission.inner source.cnst.name source.cnst.levelParams.toList context))
     aligned (clean.good cx param self _) seeded
-  obtain ⟨cleaned, growth, rest⟩ := quotientBlock_correct cx param self names σ bindings context free aligned
+  obtain ⟨cleaned, growth, rest⟩ := quotientBlock_correct cx param self names σ bindings context aligned
     external source scope kept.1 compiled
   exact ⟨cleaned, ExpressionState.extends_trans kept.2 growth, rest⟩
 
-theorem quotientInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem quotientInfo_codec (context : CompileEnv × BlockEnv)
     (source : QuotVal) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
     (ran : rawRun (compileQuotientInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileQuotientInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact quotientBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
+  exact quotientBlock_codec context source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
 /-! ### Recursor blocks -/
 
@@ -435,7 +434,7 @@ theorem recursorPayload_rules (source : RecursorVal) :
   intro context before output after ran
   exact (Emission.recursorHeader source typeExpr typeRoot rules context before output after ran).2.2.2.2.2
 
-theorem recursorBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem recursorBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : RecursorVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -455,14 +454,14 @@ theorem recursorBlock_correct (context : CompileEnv × BlockEnv) (free : context
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .recr payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
   obtain ⟨clean, growth, shape, fields, _, roots⟩ := Emission.recursor_correct cx param self names σ bindings
-    context free aligned external source scope ruleScope good compiled
+    context aligned external source scope ruleScope good compiled
   obtain ⟨erased, read⟩ := SharingRoots.build_read cx param self after context.1.sharingLimits (.recr payload.1)
     output.block built roots
   refine ⟨clean, growth, ⟨_, wrapped⟩, ?_, read⟩
   rw [erased, shape]
   exact recursor_erase _ _ _ fields
 
-theorem recursorBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem recursorBlock_codec (context : CompileEnv × BlockEnv)
     (source : RecursorVal) {before after : BlockState} {output : BlockResult}
     (valid : EmissionWire.Valid before)
     (ran : rawRun (compileRecursorBlock source) context before = (.ok output, after)) :
@@ -470,12 +469,12 @@ theorem recursorBlock_codec (context : CompileEnv × BlockEnv) (free : context.1
   unfold compileRecursorBlock at ran
   obtain ⟨payload, compiled, built, wrapped⟩ := block_ok (fun payload => .recr payload.1) (fun payload => payload.2.1)
     (fun payload => by obtain ⟨_, _, _⟩ := payload; rfl) ran
-  have tables := (EmissionWire.Safe.recursorPayload source context free before payload after valid compiled).1.1
+  have tables := (EmissionWire.Safe.recursorPayload source context before payload after valid compiled).1.1
   have header := recursorPayload_rules source context before payload after compiled
   rw [wrapped]
   exact block_codec (info := .recr payload.1) header tables built _ _
 
-theorem recursorInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem recursorInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : RecursorVal)
     (scope : ConstsSatisfy (SelfName context.2 self names) source.cnst.type)
@@ -493,17 +492,17 @@ theorem recursorInfo_correct (context : CompileEnv × BlockEnv) (free : context.
   have kept := preseed_then cx param self bindings
     (related := Emission.related param names σ (Emission.inner source.cnst.name source.cnst.levelParams.toList context))
     aligned (clean.good cx param self _) seeded
-  obtain ⟨cleaned, growth, rest⟩ := recursorBlock_correct cx param self names σ bindings context free aligned
+  obtain ⟨cleaned, growth, rest⟩ := recursorBlock_correct cx param self names σ bindings context aligned
     external source scope ruleScope kept.1 compiled
   exact ⟨cleaned, ExpressionState.extends_trans kept.2 growth, rest⟩
 
-theorem recursorInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem recursorInfo_codec (context : CompileEnv × BlockEnv)
     (source : RecursorVal) {before after : BlockState} {output : BlockResult} (wire : BlockWireTablesWF before)
     (ran : rawRun (compileRecursorInfo source) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileRecursorInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact recursorBlock_codec context free source (EmissionWire.seeded_valid _ context wire seeded) compiled
+  exact recursorBlock_codec context source (EmissionWire.seeded_valid _ context wire seeded) compiled
 
 /-! ### Standalone inductive-family blocks -/
 
@@ -560,7 +559,7 @@ theorem inductiveData_ctors (source : Ix.Ind) :
 emitted record keeps the family's skeleton (headers and constructor
 headers), and its actual member reader reads the type and every
 constructor type, in source order, as terms related to the source's. -/
-theorem familyBlock_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem familyBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : InductiveVal)
     (constructors : Array ConstructorVal)
@@ -588,7 +587,7 @@ theorem familyBlock_correct (context : CompileEnv × BlockEnv) (free : context.1
   obtain ⟨same, built, wrapped⟩ := familyFinish_ok source ind indMeta pairs finished
   subst same
   obtain ⟨clean, growth, shape, ctorShapes, _, roots⟩ := Emission.inductiveData_correct cx param self names σ
-    bindings context free aligned external (Emission.sourceData source constructors) scope ctorScope good compiled
+    bindings context aligned external (Emission.sourceData source constructors) scope ctorScope good compiled
   dsimp only at shape ctorShapes roots
   have rootsList := family_roots ind
   rw [← rootsList] at roots
@@ -598,14 +597,14 @@ theorem familyBlock_correct (context : CompileEnv × BlockEnv) (free : context.1
   rw [erased, shape]
   exact inductive_erase _ _ _ ctorShapes
 
-theorem familyBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem familyBlock_codec (context : CompileEnv × BlockEnv)
     (source : InductiveVal) (constructors : Array ConstructorVal) {before after : BlockState}
     {output : BlockResult} (valid : EmissionWire.Valid before)
     (ran : rawRun (compileInductiveFamilyBlock source constructors) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileInductiveFamilyBlock at ran
   obtain ⟨payload, middle, compiled, finished⟩ := bind_ok ran
-  have tables := (EmissionWire.Safe.inductivePayload source constructors context free before payload middle valid
+  have tables := (EmissionWire.Safe.inductivePayload source constructors context before payload middle valid
     compiled).1.1
   rw [Emission.compileInductive_eq] at compiled
   have bounded := inductiveData_ctors (Emission.sourceData source constructors) context before payload middle compiled
@@ -622,7 +621,7 @@ theorem familyBlock_codec (context : CompileEnv × BlockEnv) (free : context.1.s
   rw [wrapped]
   exact block_codec header tables built _ _
 
-theorem familyInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem familyInfo_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : InductiveVal)
     (constructors : Array ConstructorVal)
@@ -644,18 +643,18 @@ theorem familyInfo_correct (context : CompileEnv × BlockEnv) (free : context.1.
   have kept := preseed_then cx param self bindings
     (related := Emission.related param names σ (Emission.inner source.cnst.name source.cnst.levelParams.toList context))
     aligned (clean.good cx param self _) seeded
-  obtain ⟨cleaned, growth, rest⟩ := familyBlock_correct cx param self names σ bindings context free aligned
+  obtain ⟨cleaned, growth, rest⟩ := familyBlock_correct cx param self names σ bindings context aligned
     external source constructors scope ctorScope kept.1 compiled
   exact ⟨cleaned, ExpressionState.extends_trans kept.2 growth, rest⟩
 
-theorem familyInfo_codec (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem familyInfo_codec (context : CompileEnv × BlockEnv)
     (source : InductiveVal) (constructors : Array ConstructorVal) {before after : BlockState}
     {output : BlockResult} (wire : BlockWireTablesWF before)
     (ran : rawRun (compileInductiveFamilyInfo source constructors) context before = (.ok output, after)) :
     BlockResultCodecWF output := by
   unfold compileInductiveFamilyInfo at ran
   obtain ⟨_, middle, seeded, compiled⟩ := bind_ok ran
-  exact familyBlock_codec context free source constructors (EmissionWire.seeded_valid _ context wire seeded)
+  exact familyBlock_codec context source constructors (EmissionWire.seeded_valid _ context wire seeded)
     compiled
 
 end Blocks

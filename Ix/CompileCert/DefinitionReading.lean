@@ -24,7 +24,7 @@ compiler's in-flight reader does (publication is CT-16's R13).
 
 CT-16's `DefinitionReading`, adapted to keys read through `memberKey`
 (which can decline), positional levels and the reader's own
-`definitionReader`. Under `surgeryFree` until CQ3.5. -/
+`definitionReader`. -/
 
 namespace Ix.CompileCert.DefinitionReading
 
@@ -184,7 +184,7 @@ of the type and the value, which are terms related to the source's; given
 that the record's key reads, that the names the compiler resolves as the
 self reference are related to it, and that the reader's safety policy
 admits the declaration. -/
-theorem constant_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem constant_reads (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (info : ConstantInfo) (source : Ix.Def)
     (view : EmissionDispatch.sourceData info = some source) {before after : BlockState} {output : BlockResult}
@@ -200,12 +200,12 @@ theorem constant_reads (context : CompileEnv × BlockEnv) (free : context.1.surg
         related names σ source source.type type ∧ related names σ source source.value value ∧
         DefinitionDecl ⟨key, List.range source.levelParams.size, type⟩ value
           (projRewrite state ⟨key, List.range source.levelParams.size, type⟩ value) source.kind declaration := by
-  have codec := EmissionDispatch.constant_codec context free info wire ran
-  rw [EmissionDispatch.definition_run context free info source view] at ran
+  have codec := EmissionDispatch.constant_codec context info wire ran
+  rw [EmissionDispatch.definition_run context info source view] at ran
   have levels := definitionInfo_levels source _ before output after ran
   have selfSound := singleton_self cx output.blockAddr source.name context names keyed aliases
   obtain ⟨_, _, wrapped, erased, roots⟩ := EmissionBlocks.definitionInfo_correct cx id (selfAt cx output.blockAddr)
-    names σ bindings (EmissionDispatch.singletonContext source.name context) free aligned external source
+    names σ bindings (EmissionDispatch.singletonContext source.name context) aligned external source
     (constsSatisfy_of_forall (fun name => selfSound name) _) (constsSatisfy_of_forall (fun name => selfSound name) _)
     clean ran
   obtain ⟨target, info, kind, safety, lvls⟩ := erase_defn erased
@@ -252,7 +252,7 @@ theorem constant_reads (context : CompileEnv × BlockEnv) (free : context.1.surg
 
 /-- **A compiled definition the reader's safety policy declines is
 declined** (under the same premises, but the policy). -/
-theorem constant_declines (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem constant_declines (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (info : ConstantInfo) (source : Ix.Def)
     (view : EmissionDispatch.sourceData info = some source) {before after : BlockState} {output : BlockResult}
@@ -262,10 +262,10 @@ theorem constant_declines (context : CompileEnv × BlockEnv) (free : context.1.s
     (ran : rawRun (compileConstantInfo info) context before = (.ok output, after)) :
     readRecord (ExpressionRead.withBlockBlobs cx after) state output.blockAddr output.block =
       .error (.declined reason) := by
-  rw [EmissionDispatch.definition_run context free info source view] at ran
+  rw [EmissionDispatch.definition_run context info source view] at ran
   have selfSound := singleton_self cx output.blockAddr source.name context names keyed aliases
   obtain ⟨_, _, _, erased, roots⟩ := EmissionBlocks.definitionInfo_correct cx id (selfAt cx output.blockAddr)
-    names (fun _ => 0) bindings (EmissionDispatch.singletonContext source.name context) free aligned external source
+    names (fun _ => 0) bindings (EmissionDispatch.singletonContext source.name context) aligned external source
     (constsSatisfy_of_forall (fun name => selfSound name) _) (constsSatisfy_of_forall (fun name => selfSound name) _)
     clean ran
   obtain ⟨target, info, kind, safety, _⟩ := erase_defn erased

@@ -2,6 +2,7 @@ import LSpec
 import Ix.Meta
 import Ix.LeanIngress
 import IxC.Kernel.Tier.Answer
+import Ix.Resource.Typing
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierIndDefs
 
@@ -11,8 +12,8 @@ M7 Q1, T1. The fixtures of `Tests.Ix.Kernel.TierIndDefs` are canonicalized,
 their logical closure (`List` and the prelude) is checked in Source mode
 (`checkSource`), and on top of it:
 
-* **the blocks**, through the Source ingress's tier conversion
-  (`convertTierInductive`) and `Ix.Kernel.Tier.indC`: the reflexive `U`, the
+* **the blocks**, through the Source conversion read for the tier
+  (`convertTierInductive`, below) and `Ix.Kernel.Tier.indC`: the reflexive `U`, the
   nested `UN` and polymorphic MLList-shaped `Poly` (including their nested
   recursors), the negative `UNeg`
   (positivity is not checked), the structure `S` (a projection table), the
@@ -49,6 +50,26 @@ def ixn (n : Lean.Name) : Ix.Name := Ix.Name.fromLeanName n
 def readMsg : _root_.Ix.Kernel.Reader.ReadError → String
   | .malformed m => s!"malformed: {m}"
   | .declined m => s!"declined: {m}"
+
+/-- **An unsafe inductive group**: a member, a constructor or a recursor is
+unsafe. The tiered check declines such a group; the tier takes it. -/
+def isTierInductive : Group → Bool
+  | .inductive types ctors recs =>
+    types.any (·.isUnsafe) || ctors.any (·.any (·.isUnsafe)) || recs.any (·.isUnsafe)
+  | _ => false
+
+/-- **An inductive group's conversion for the tier**: `convertInductive`'s,
+unsafe or not (the safety flags are the only thing it reads that the tier
+does not), as the tier takes it (`Ix.Resource.tierIndOf`). A block without
+recursors converts too. -/
+def convertTierInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal))
+    (recs : Array Ix.RecursorVal) : Except _root_.Ix.Kernel.Reader.ReadError (TierInd .source) := do
+  let c ← convertInductive (types.map fun v => { v with isUnsafe := false })
+    (ctors.map (·.map fun v => { v with isUnsafe := false }))
+    (recs.map fun v => { v with isUnsafe := false })
+  match c with
+  | .inductive rb => pure (_root_.Ix.Resource.tierIndOf rb)
+  | _ => throw (.malformed "tier: an inductive group converted to something else")
 
 /-- A block's group from its formers' and recursors' names. -/
 def groupOf (env : Ix.Environment) (formers recs : List Lean.Name) :

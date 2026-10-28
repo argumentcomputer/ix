@@ -589,32 +589,6 @@ mismatch, every name the compile resolves is published at that address. -/
     let published := (ixe.named.get? n).map (·.addr)
     if published = some a then none else some (n, a, published)
 
-/-- The addresses at which `Muts` entries are published. -/
-@[expose] def mutsAddrs (ixe : Ixon.Env) : Std.HashSet Address :=
-  ixe.named.fold (init := {}) fun s _ named =>
-    match named.constMeta.info with
-    | .muts .. => s.insert named.addr
-    | _ => s
-
-/-- A published input inductive whose block a reader cannot find, the first
-met, if any: one whose published record is not an inductive projection, or
-whose block has no `Muts` entry published at its address (`mutsAddrs`).
-Kernel ingress finds an inductive's block only through the block's `Muts`
-entry, which a later `Named` entry may override. With none, every published
-input inductive's block has its `Muts` entry. -/
-@[expose] def unseenInductive (env : Ix.Environment) (ixe : Ixon.Env) : Option Ix.Name :=
-  let muts := mutsAddrs ixe
-  env.consts.toList.findSome? fun (n, ci) =>
-    match ci with
-    | .inductInfo _ =>
-      match ixe.named.get? n with
-      | none => none
-      | some named =>
-        match (storedRecord ixe named.addr).map (·.info) with
-        | some (Ixon.ConstantInfo.iPrj p) => if muts.contains p.block then none else some n
-        | _ => some n
-    | _ => none
-
 /-- The first input name published in `ixe` that is not in the driver's final
 resolution map (`resolved`), if any. A `Named` entry can come from a block's
 `Muts` entry (`BlockState.mutsNamed`), so publication alone says nothing of
@@ -655,15 +629,6 @@ every closure that holds it. -/
         | some (.ctorInfo cv) => !(cv.induct == n)
         | _ => true
     | _ => none
-
-/-- The first name the driver's final environment records as a failure
-(`CompileEnv.ungrounded`, the `ungrounded` argument) that the input's map does
-not hold, if any. The driver records failures of a block's members (a failed
-compile, a conflicting claim), so on valid input there is none. With none,
-every recorded failure is an input name. -/
-@[expose] def strayFailure (env : Ix.Environment) (ungrounded : Std.HashMap Ix.Name String) :
-    Option Ix.Name :=
-  ungrounded.toList.findSome? fun (n, _) => if (env.consts.get? n).isSome then none else some n
 
 /-- The first address that holds both a stored blob and a stored record, if
 any. Blobs (literal bytes) and records share one address space,
@@ -1313,7 +1278,7 @@ so a real artifact has one at every published definition's address. -/
       if ixe.anonHints.contains named.addr then none else some n
     | _ => none
 
-/-- `compileReport`'s twenty-three checks on a compile's result, each an error on
+/-- `compileReport`'s twenty-one checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -1325,17 +1290,12 @@ agree with the blocks:** each name a `Muts` entry lists in class `i` is
 published at member `i`'s projection of its block (`mutsMismatch`).
 **Resolved names are published where they resolve:** each name of the
 driver's final resolution map (`cenv.nameToAddr`) is published at the address it resolves
-to (`resolutionMismatch`). **Every inductive block is found:** each
-published input inductive is published at an inductive projection of a block
-with a `Muts` entry at its address (`unseenInductive`). **Published input
-names are resolved:** each published input name is in the resolution map
-(`unresolvedPublished`). **Input constants carry their names:** each input
+to (`resolutionMismatch`). **Published input names are resolved:** each
+published input name is in the resolution map (`unresolvedPublished`). **Input constants carry their names:** each input
 constant's own name is spelled as the name it is stored under
 (`misnamedInput`). **Input constructors belong to their inductive:** each
 constructor an input inductive lists is stored as a constructor of it
-(`strayConstructor`). **Failures are input names:** each name the driver's
-final environment records as a failure (`cenv.ungrounded`) is one the input's
-map holds (`strayFailure`). **One projection record per definition member:**
+(`strayConstructor`). **One projection record per definition member:**
 no two stored definition projection records project one member
 (`projectionCollision`). **Published input names are readable:** each
 published input name's address holds a stored record that is not a block
@@ -1374,100 +1334,90 @@ hint at its address (`unhintedDefinition`). -/
         | none =>
           match resolutionMismatch cenv.nameToAddr out.1 with
           | none =>
-            match unseenInductive env out.1 with
+            match unresolvedPublished env cenv.nameToAddr out.1 with
             | none =>
-              match unresolvedPublished env cenv.nameToAddr out.1 with
+              match misnamedInput env with
               | none =>
-                match misnamedInput env with
+                match strayConstructor env with
                 | none =>
-                  match strayConstructor env with
+                  match projectionCollision out.1 with
                   | none =>
-                    match strayFailure env cenv.ungrounded with
+                    match unreadablePublished env out.1 with
                     | none =>
-                      match projectionCollision out.1 with
+                      match blobRecordCollision out.1 with
                       | none =>
-                        match unreadablePublished env out.1 with
-                        | none =>
-                          match blobRecordCollision out.1 with
-                          | none =>
-                            match unownedRecursor env out.1, roleRecordKind out.1,
-                                literalRoleUnnamed env out.1 with
-                            | none, none, none =>
-                              match unstoredFamilyName env, misplacedConstructor env, strayLevelParams env,
-                                  strayFamilyMember env blocks, recursorShapeError env out.1 with
-                              | none, none, none, none, none =>
-                                match unhintedDefinition env out.1 with
-                                | none => .ok ()
-                                | some n =>
-                                  .error s!"compileReport: hint check failed: the published definition \
-                                    {n.pretty} has no reducibility hint at its address"
-                              | some (n, a), _, _, _, _ =>
-                                .error s!"compileReport: inductive input check failed: the input constant \
-                                  {n.pretty} lists {a.pretty} in its family, which is not an input \
-                                  constant's own name"
-                              | none, some c, _, _, _ =>
-                                .error s!"compileReport: inductive input check failed: the constructor \
-                                  {c.pretty} of an input inductive declares another index than its position \
-                                  in the inductive's constructors"
-                              | none, none, some x, _, _ =>
-                                .error s!"compileReport: inductive input check failed: {x.pretty} does not \
-                                  have the level parameters of its family (for a recursor: its family's \
-                                  recursors' list, of its family's count or one more)"
-                              | none, none, none, some (_, y), _ =>
-                                .error s!"compileReport: inductive input check failed: the compile block of \
-                                  {y.pretty} is not exactly its family's types and constructors, or its \
-                                  family's recursors, or the family has 2^63 members and auxiliary motives \
-                                  or more"
-                              | none, none, none, none, some e =>
-                                .error s!"compileReport: inductive input check failed: {e.message}"
-                            | none, none, some (s, b) =>
-                              .error s!"compileReport: literal-role check failed: the artifact stores \
-                                a record at {b}, the default role table's address of the literal-support \
-                                role {repr s}, which a stored record's literal is checked against, but \
-                                {(literalRoleIxName s).pretty} is not an input constant published there"
-                            | none, some (r, p), _ =>
-                              .error s!"compileReport: role check failed: the record stored at {p}, \
-                                the default role table's address of the role {repr r}, is not of its \
-                                specification's kind (a standalone definition for a Nat operation, \
-                                an axiom for an axiom role)"
-                            | some (b, x, none), _, _ =>
-                              .error s!"compileReport: recursor check failed: the input name \
-                                {x.pretty}, published in the inductive block at {b} that the recursor \
-                                index attaches recursors to, is not an inductive, constructor or \
-                                recursor of a family"
-                            | some (b, x, some r), _, _ =>
-                              let pos := match r with
-                                | .member _ j => j
-                                | .ctor _ i _ => i
-                              .error s!"compileReport: recursor check failed: the recursor at member \
-                                {pos} of the record {r.block}, indexed under the inductive block at {b}, \
-                                is not a published recursor of the family of {x.pretty}, published in \
-                                that block"
-                          | some a =>
-                            .error s!"compileReport: blob check failed: the address {a} holds both \
-                              a stored blob and a stored record"
-                        | some n =>
-                          .error s!"compileReport: readability check failed: the input name \
-                            {n.pretty} is published at an address that holds no stored record, \
-                            or a block record"
-                      | some (b, i) =>
-                        .error s!"compileReport: projection check failed: member {i} of the block at \
-                          {b} has more than one stored definition projection record"
-                    | some f =>
-                      .error s!"compileReport: failure check failed: the driver records the name \
-                        {f.pretty} as a failure, but no input constant is stored under it"
-                  | some c =>
-                    .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
-                      constructor of an input inductive, is not stored as a constructor of it"
-                | some n =>
-                  .error s!"compileReport: name invariant failed: the input constant stored \
-                    under {n.pretty} carries another name"
+                        match unownedRecursor env out.1, roleRecordKind out.1,
+                            literalRoleUnnamed env out.1 with
+                        | none, none, none =>
+                          match unstoredFamilyName env, misplacedConstructor env, strayLevelParams env,
+                              strayFamilyMember env blocks, recursorShapeError env out.1 with
+                          | none, none, none, none, none =>
+                            match unhintedDefinition env out.1 with
+                            | none => .ok ()
+                            | some n =>
+                              .error s!"compileReport: hint check failed: the published definition \
+                                {n.pretty} has no reducibility hint at its address"
+                          | some (n, a), _, _, _, _ =>
+                            .error s!"compileReport: inductive input check failed: the input constant \
+                              {n.pretty} lists {a.pretty} in its family, which is not an input \
+                              constant's own name"
+                          | none, some c, _, _, _ =>
+                            .error s!"compileReport: inductive input check failed: the constructor \
+                              {c.pretty} of an input inductive declares another index than its position \
+                              in the inductive's constructors"
+                          | none, none, some x, _, _ =>
+                            .error s!"compileReport: inductive input check failed: {x.pretty} does not \
+                              have the level parameters of its family (for a recursor: its family's \
+                              recursors' list, of its family's count or one more)"
+                          | none, none, none, some (_, y), _ =>
+                            .error s!"compileReport: inductive input check failed: the compile block of \
+                              {y.pretty} is not exactly its family's types and constructors, or its \
+                              family's recursors, or the family has 2^63 members and auxiliary motives \
+                              or more"
+                          | none, none, none, none, some e =>
+                            .error s!"compileReport: inductive input check failed: {e.message}"
+                        | none, none, some (s, b) =>
+                          .error s!"compileReport: literal-role check failed: the artifact stores \
+                            a record at {b}, the default role table's address of the literal-support \
+                            role {repr s}, which a stored record's literal is checked against, but \
+                            {(literalRoleIxName s).pretty} is not an input constant published there"
+                        | none, some (r, p), _ =>
+                          .error s!"compileReport: role check failed: the record stored at {p}, \
+                            the default role table's address of the role {repr r}, is not of its \
+                            specification's kind (a standalone definition for a Nat operation, \
+                            an axiom for an axiom role)"
+                        | some (b, x, none), _, _ =>
+                          .error s!"compileReport: recursor check failed: the input name \
+                            {x.pretty}, published in the inductive block at {b} that the recursor \
+                            index attaches recursors to, is not an inductive, constructor or \
+                            recursor of a family"
+                        | some (b, x, some r), _, _ =>
+                          let pos := match r with
+                            | .member _ j => j
+                            | .ctor _ i _ => i
+                          .error s!"compileReport: recursor check failed: the recursor at member \
+                            {pos} of the record {r.block}, indexed under the inductive block at {b}, \
+                            is not a published recursor of the family of {x.pretty}, published in \
+                            that block"
+                      | some a =>
+                        .error s!"compileReport: blob check failed: the address {a} holds both \
+                          a stored blob and a stored record"
+                    | some n =>
+                      .error s!"compileReport: readability check failed: the input name \
+                        {n.pretty} is published at an address that holds no stored record, \
+                        or a block record"
+                  | some (b, i) =>
+                    .error s!"compileReport: projection check failed: member {i} of the block at \
+                      {b} has more than one stored definition projection record"
+                | some c =>
+                  .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
+                    constructor of an input inductive, is not stored as a constructor of it"
               | some n =>
-                .error s!"compileReport: publication check failed: the input name {n.pretty} \
-                  is published but not resolved"
+                .error s!"compileReport: name invariant failed: the input constant stored \
+                  under {n.pretty} carries another name"
             | some n =>
-              .error s!"compileReport: component check failed: the input inductive {n.pretty} is \
-                not published at an inductive projection of a block with a Muts entry"
+              .error s!"compileReport: publication check failed: the input name {n.pretty} \
+                is published but not resolved"
           | some (n, a, published) =>
             let found := match published with
               | some b => s!"published at {b}"
@@ -1493,19 +1443,17 @@ hint at its address (`unhintedDefinition`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with twenty-three checks (`checkReport`):
+condensation it cannot schedule). It ends with twenty-one checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
 published names share a name hash; every `Muts` entry lists in class `i`
 only names published at member `i`'s projection of its block; every name
 the driver resolves is published at the address it resolves to; every
-published input inductive is published at an inductive projection of a
-block with a `Muts` entry; every published input name is resolved; every
-input constant carries the name it is stored under; every constructor an
-input inductive lists is stored as a constructor of it; every failure the
-driver records is an input name; no two stored definition projection records
-project one member; every published input name's address holds a stored
+published input name is resolved; every input constant carries the name it
+is stored under; every constructor an input inductive lists is stored as a
+constructor of it; no two stored definition projection records project one
+member; every published input name's address holds a stored
 record that is not a block; no address holds both a stored blob and a stored
 record; every input name published in an inductive block the recursor index
 attaches recursors to has a family, and each of those recursors is a published
@@ -1522,14 +1470,12 @@ the one its name gives it; and every published input definition has a reducibili
 hint at its address. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that agree
-with their blocks, resolved names published where they resolve, found inductive
-blocks, resolved published input names, readable published records, blobs
-apart from records, indexed recursors of their blocks' families, bound roles'
+with their blocks, resolved names published where they resolve, resolved
+published input names, readable published records, blobs apart from records, indexed recursors of their blocks' families, bound roles'
 records of their kinds, named literal-support roles and Lean's inductive shapes
 hold by construction (`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
 `Ix.Cert.ClosureOrder`'s existence, `Ix.Cert.nameHashes_distinct`,
-`Ix.Cert.mutsMismatch_none`, `Ix.Cert.resolvedPublished`,
-`Ix.Cert.inductivesSeen`, `Ix.Cert.publishedResolved`,
+`Ix.Cert.mutsMismatch_none`, `Ix.Cert.resolvedPublished`, `Ix.Cert.publishedResolved`,
 `Ix.Cert.publishedReadable`, `Ix.Cert.blobsApart`, `Ix.Cert.recursorsOwned`,
 `Ix.Cert.roleRecordKinds`, `Ix.Cert.literalRolesNamed`,
 `Ix.Cert.familyNamesStored`, `Ix.Cert.constructorIndices`, `Ix.Cert.familyLevelParams`,

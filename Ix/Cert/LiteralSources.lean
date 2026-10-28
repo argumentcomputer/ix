@@ -662,9 +662,6 @@ theorem LitsIn.of_from {s : Ix.Expr} {e : Ixon.Expr} {T : Ix.Expr → Prop} (h :
 theorem hold_takeArena : Holds LI takeArena :=
   cacheFrame (by unfold takeArena; exact Preserves.modifyGet _ _ fun _ => rfl)
 
-theorem hold_takeSurgerySharing : Holds LI takeSurgerySharing :=
-  cacheFrame (by unfold takeSurgerySharing; exact Preserves.modifyGet _ _ fun _ => rfl)
-
 theorem hold_takeUnivPatches : Holds LI takeUnivPatches :=
   cacheFrame (by unfold takeUnivPatches; exact Preserves.modifyGet _ _ fun _ => rfl)
 
@@ -688,7 +685,7 @@ theorem hold_clear : Holds LI clearExprCache := by
 
 theorem hold_inductiveMeta : Holds LI takeInductiveTypeCompileMeta := by
   unfold takeInductiveTypeCompileMeta
-  exact Holds.seq hold_takeArena fun _ => Holds.seq hold_takeSurgerySharing fun _ =>
+  exact Holds.seq hold_takeArena fun _ =>
     Holds.seq hold_takeUnivPatches fun _ => Holds.seq hold_clear fun _ => Holds.pure _
 
 theorem Triple.withUnivCtxL (params : List Ix.Name) {α : Type} {action : CompileM α}
@@ -819,7 +816,6 @@ local macro "lits_finish" : tactic => `(tactic|
     | exact Triple.returns fun _ _ _ _ => ⟨rfl, rfl⟩
     | exact Triple.returns fun _ _ _ _ => rfl
     | exact hold_takeArena
-    | exact hold_takeSurgerySharing
     | exact hold_takeUnivPatches
     | exact hold_clear
     | exact cacheFrame (frame_checkedCount _ _)

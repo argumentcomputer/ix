@@ -440,7 +440,7 @@ theorem definition_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     {ci : Ix.ConstantInfo} {source : Ix.Def}
     (view : EmissionDispatch.sourceData ci = some source)
     (nodup : source.levelParams.toList.Nodup)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (safe : safetyDeclineOf source.kind source.safety = none)
@@ -475,16 +475,16 @@ theorem definition_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   -- the compile-side reading
   obtain ⟨-, -, result, declaration, type, value, read, decls, typeRel, valueRel, ddecl⟩ :=
     DefinitionReading.constant_reads (cx := cx₁) (names := names) (σ := (Numbering.mk source.levelParams false).pos)
-      (bindings := bindings) context free aligned external ci source view stA keyed aliases clean
+      (bindings := bindings) context aligned external ci source view stA keyed aliases clean
       wire safe ran
   -- the record is a definition record
   have selfSound := DefinitionReading.singleton_self cx₁ output.blockAddr source.name context
     names keyed aliases
   have ran' := ran
-  rw [EmissionDispatch.definition_run context free ci source view] at ran'
+  rw [EmissionDispatch.definition_run context ci source view] at ran'
   obtain ⟨-, -, -, erased, -⟩ := EmissionBlocks.definitionInfo_correct cx₁ id
     (DefinitionReading.selfAt cx₁ output.blockAddr) names (Numbering.mk source.levelParams false).pos bindings
-    (EmissionDispatch.singletonContext source.name context) free aligned external source
+    (EmissionDispatch.singletonContext source.name context) aligned external source
     (constsSatisfy_of_forall (fun name => selfSound name) _)
     (constsSatisfy_of_forall (fun name => selfSound name) _) clean ran'
   obtain ⟨target, hinfo, -, -, -⟩ := DefinitionReading.erase_defn erased
@@ -562,7 +562,7 @@ Source's declaration renamed**, under the compile-side reading theorem's premise
 reading the record as the compile-side context does. -/
 theorem axiom_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     {v : Ix.AxiomVal} (nodup : v.cnst.levelParams.toList.Nodup)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.axiomInfo v)) context before = (.ok output, after))
@@ -585,13 +585,13 @@ theorem axiom_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   subst hc
   obtain ⟨-, -, type, typeRel, read⟩ :=
     HeaderReading.axiom_reads (cx := cx₁) (names := names)
-      (σ := (Numbering.mk v.cnst.levelParams false).pos) (bindings := bindings) context free aligned
+      (σ := (Numbering.mk v.cnst.levelParams false).pos) (bindings := bindings) context aligned
       external v stA keyed scope clean wire safe ran
   have ran' := ran
-  rw [EmissionDispatch.axiom_run context free] at ran'
+  rw [EmissionDispatch.axiom_run context] at ran'
   obtain ⟨-, -, -, erased, -⟩ := EmissionBlocks.axiomInfo_correct cx₁ id (fun _ => none)
     names (Numbering.mk v.cnst.levelParams false).pos bindings
-    (EmissionDispatch.singletonContext v.cnst.name context) free aligned external v scope clean ran'
+    (EmissionDispatch.singletonContext v.cnst.name context) aligned external v scope clean ran'
   obtain ⟨target, hinfo, -, -⟩ :=
     HeaderReading.erase_axio (payload := Emission.axiomPayload v (.sort 0)) erased
   have readA := RecordTransfer.readRecord_le refs sameKey sameHint (by rw [hinfo]; rfl) read
@@ -608,7 +608,7 @@ theorem axiom_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
 quotient Source's declaration renamed** (`HeaderReading.quotient_reads`'s premises). -/
 theorem quotient_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     {v : Ix.QuotVal} (nodup : v.cnst.levelParams.toList.Nodup)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.quotInfo v)) context before = (.ok output, after))
@@ -631,13 +631,13 @@ theorem quotient_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
   obtain ⟨rfl, rfl⟩ := hc
   obtain ⟨-, -, type, typeRel, read⟩ :=
     HeaderReading.quotient_reads (cx := cx₁) (names := names)
-      (σ := (Numbering.mk v.cnst.levelParams false).pos) (bindings := bindings) context free aligned
+      (σ := (Numbering.mk v.cnst.levelParams false).pos) (bindings := bindings) context aligned
       external v stA keyed scope clean wire ran
   have ran' := ran
-  rw [EmissionDispatch.quotient_run context free] at ran'
+  rw [EmissionDispatch.quotient_run context] at ran'
   obtain ⟨-, -, -, erased, -⟩ := EmissionBlocks.quotientInfo_correct cx₁ id (fun _ => none)
     names (Numbering.mk v.cnst.levelParams false).pos bindings
-    (EmissionDispatch.singletonContext v.cnst.name context) free aligned external v scope clean ran'
+    (EmissionDispatch.singletonContext v.cnst.name context) aligned external v scope clean ran'
   obtain ⟨target, hinfo, -, -⟩ := HeaderReading.erase_quot erased
   have readA := RecordTransfer.readRecord_le refs sameKey sameHint (by rw [hinfo]; rfl) read
   refine ⟨_, readA, ⟨rfl, rfl, rfl⟩, ?_⟩
@@ -674,7 +674,7 @@ theorem definition_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .
     {ci : Ix.ConstantInfo} {source : Ix.Def}
     (view : EmissionDispatch.sourceData ci = some source)
     (nodup : source.levelParams.toList.Nodup)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (safe : safetyDeclineOf source.kind source.safety = none)
@@ -706,14 +706,14 @@ theorem definition_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .
     rw [quotientMember, defMember_canon]
     rfl
   rw [hhint] at lowS
-  obtain ⟨rA, read, plain, decls⟩ := definition_reads hP hf view nodup context free clean wire safe ran
+  obtain ⟨rA, read, plain, decls⟩ := definition_reads hP hf view nodup context clean wire safe ran
     aligned external keyed self agree refs sameKey hint sameHint conv hst ownersGood typeGood valueGood lowS
   exact ⟨rA, read, plain, by rw [decls]; simp⟩
 
 /-- **A compiled axiom's record reads as quotient Source's unit renamed**, from every state. -/
 theorem axiom_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     {P : KeyScope .source} {v : Ix.AxiomVal} (nodup : v.cnst.levelParams.toList.Nodup)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.axiomInfo v)) context before = (.ok output, after))
@@ -738,7 +738,7 @@ theorem axiom_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
       .ok { decls := #[.axiomDecl (quotientHeader ρ cv0)] } := rfl
   rw [unfolded, Except.ok.injEq] at lowered
   subst lowered
-  obtain ⟨rA, read, plain, decls⟩ := axiom_reads nodup context free clean wire ran aligned external
+  obtain ⟨rA, read, plain, decls⟩ := axiom_reads nodup context clean wire ran aligned external
     keyed scope agree refs sameKey sameHint conv stA
   exact ⟨rA, read, plain, by rw [decls]; simp⟩
 
@@ -746,7 +746,7 @@ theorem axiom_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
 every state. -/
 theorem quotient_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon}
     {P : KeyScope .source} {v : Ix.QuotVal} (nodup : v.cnst.levelParams.toList.Nodup)
-    (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+    (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
     (ran : rawRun (compileConstantInfo (.quotInfo v)) context before = (.ok output, after))
@@ -772,7 +772,7 @@ theorem quotient_unit_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .an
       .ok { decls := #[.quotDecl kind (quotientHeader ρ cv0)] } := rfl
   rw [unfolded, Except.ok.injEq] at lowered
   subst lowered
-  obtain ⟨rA, read, plain, decls⟩ := quotient_reads nodup context free clean wire ran aligned
+  obtain ⟨rA, read, plain, decls⟩ := quotient_reads nodup context clean wire ran aligned
     external keyed scope agree refs sameKey sameHint conv stA
   exact ⟨rA, read, plain, by rw [decls]; simp⟩
 

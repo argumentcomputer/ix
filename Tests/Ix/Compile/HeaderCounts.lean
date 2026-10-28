@@ -28,7 +28,7 @@ private def inductiveData : Ind :=
   { name, levelParams := #[], type := sourceType, numParams := 0, numIndices := 0,
     all := #[], ctors := #[], numNested := 0, isRec := false, isUnsafe := false, isReflexive := false }
 private def metadata : InductiveTypeCompileMeta :=
-  { arena := {}, surgerySharing := #[], metaUnivs := #[], univPatches := #[] }
+  { arena := {}, metaUnivs := #[], univPatches := #[] }
 private def raw (action : CompileM α) (state : BlockState := {}) : Except CompileError α × BlockState := (action context).run state
 private def refused (result : Except CompileError α) : Bool := match result with
   | .error (.resourceLimit _) => true

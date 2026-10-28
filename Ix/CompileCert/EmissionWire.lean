@@ -18,10 +18,8 @@ when they were before and the preseed has finalized the universe table
 The facts are success-only (`Safe`): a failing universe miss may write its
 candidate before the guard refuses it, so wire validity is not an invariant
 of every run (unlike `ExpressionState.Good`), and this is a traversal of its
-own (R6, finding 6). Every `Safe` statement assumes the environment has no
-Pass 3 records (`CompileEnv.surgeryFree`), under which `compileExpr` is the
-ordinary compiler (`ExpressionState.compileExpr_surgeryFree`); CQ3.5 deletes
-the surgery and the premise. A successful preseed establishes `Valid`
+own (R6, finding 6). The production entry `compileExpr` is the ordinary
+compiler (`ExpressionState.compileExpr_surgeryFree`). A successful preseed establishes `Valid`
 (`seeded_valid`). CT-14's `EmissionWire` and CT-15's `FamilyWire` traversal,
 re-derived over the well-founded expression compiler. -/
 
@@ -46,17 +44,16 @@ theorem Valid.of_view {before after : BlockState}
   obtain ⟨refs, univs, flag⟩ := same
   exact ⟨WireTables.of_same valid.1 refs univs, flag.trans valid.2⟩
 
-/-- Every successful run under a surgery-free environment from a `Valid`
-state ends `Valid` and returns a value satisfying `post`. -/
+/-- Every successful run from a `Valid` state ends `Valid` and returns a value
+satisfying `post`. -/
 def Safe (action : CompileM α) (post : α → Prop := fun _ => True) : Prop :=
-  ∀ context : CompileEnv × BlockEnv, context.1.surgeryFree = true →
-    ∀ before value after, Valid before →
-      rawRun action context before = (.ok value, after) → Valid after ∧ post value
+  ∀ (context : CompileEnv × BlockEnv) before value after, Valid before →
+    rawRun action context before = (.ok value, after) → Valid after ∧ post value
 
 /-! ## Combinators -/
 
 theorem Safe.framed {action : CompileM α} (frame : Preserves view action) : Safe action := by
-  intro context _ before value after valid ran
+  intro context before value after valid ran
   have same := frame context before
   rw [ran] at same
   exact ⟨valid.of_view same, trivial⟩
@@ -65,21 +62,21 @@ theorem Safe.pure (value : α) : Safe (Pure.pure value : CompileM α) := Safe.fr
 
 theorem Safe.returns {value : α} {post : α → Prop} (holds : post value) :
     Safe (Pure.pure value : CompileM α) post := by
-  intro context _ before result after valid ran
+  intro context before result after valid ran
   cases ran
   exact ⟨valid, holds⟩
 
 theorem Safe.throw (error : CompileError) {post : α → Prop} : Safe (throw error : CompileM α) post := by
-  intro context _ before value after valid ran
+  intro context before value after valid ran
   cases ran
 
 theorem Safe.bind {action : CompileM α} {next : α → CompileM β} {first : α → Prop} {last : β → Prop}
     (head : Safe action first) (tail : ∀ value, first value → Safe (next value) last) :
     Safe (action >>= next) last := by
-  intro context free before output after valid ran
+  intro context before output after valid ran
   obtain ⟨middle, state, firstRan, lastRan⟩ := bind_ok ran
-  have checked := head context free before middle state valid firstRan
-  exact tail middle checked.2 context free state output after checked.1 lastRan
+  have checked := head context before middle state valid firstRan
+  exact tail middle checked.2 context state output after checked.1 lastRan
 
 /-- A failure followed by anything. -/
 theorem Safe.throwBind (error : CompileError) (next : α → CompileM β) {post : β → Prop} :
@@ -87,8 +84,8 @@ theorem Safe.throwBind (error : CompileError) (next : α → CompileM β) {post 
   Safe.bind (Safe.throw error (post := fun _ => False)) (fun _ impossible => impossible.elim)
 
 theorem Safe.forget {action : CompileM α} {post : α → Prop} (safe : Safe action post) : Safe action := by
-  intro context free before value after valid ran
-  exact ⟨(safe context free before value after valid ran).1, trivial⟩
+  intro context before value after valid ran
+  exact ⟨(safe context before value after valid ran).1, trivial⟩
 
 theorem Safe.seq {action : CompileM α} {next : α → CompileM β} {post : β → Prop}
     (head : Safe action) (tail : ∀ value, Safe (next value) post) : Safe (action >>= next) post :=
@@ -112,9 +109,9 @@ theorem Safe.map {action : CompileM α} {post : α → Prop} (safe : Safe action
 
 theorem Safe.withBlockEnv (update : BlockEnv → BlockEnv) {action : CompileM α} {post : α → Prop}
     (safe : Safe action post) : Safe (withBlockEnv update action) post := by
-  intro context free before value after valid ran
+  intro context before value after valid ran
   rw [rawRun_withBlockEnv] at ran
-  exact safe (context.1, update context.2) free before value after valid ran
+  exact safe (context.1, update context.2) before value after valid ran
 
 theorem Safe.withCurrent (name : Ix.Name) {action : CompileM α} {post : α → Prop}
     (safe : Safe action post) : Safe (withCurrent name action) post := Safe.withBlockEnv _ safe
@@ -169,7 +166,7 @@ theorem Safe.forIn_array (items : Array α) (initial : β) (body : α → β →
 /-- A universe compile after the final flag keeps the tables (the production
 guard), the bindings and the reference table. -/
 theorem Safe.compileLevel (source : Ix.Level) : Safe (compileAndInternUnivCanon source) := by
-  intro context _ before output after valid ran
+  intro context before output after valid ran
   have frozen := FinalUniverses.compile_no_growth source context valid.2 ran
   have frame := UniversePipeline.compileAndInternUnivCanon_frame source context before
   rw [ran] at frame
@@ -179,7 +176,7 @@ theorem Safe.compileLevel (source : Ix.Level) : Safe (compileAndInternUnivCanon 
 /-- Interning an address keeps the tables on the wire (the interner refuses
 an address that is not 32 bytes). -/
 theorem Safe.internRef (address : Address) : Safe (internRef address) := by
-  intro context _ before output after valid ran
+  intro context before output after valid ran
   have wire := WireTables.internRef_preserves context before address valid.1
   have frame := ExpressionState.internRef_frame address context before
   rw [ran] at wire frame
@@ -189,7 +186,7 @@ theorem Safe.internRef (address : Address) : Safe (internRef address) := by
 
 /-- Resolving a name leaves the state as it was. -/
 theorem Safe.lookup (name : Ix.Name) : Safe (lookupConstAddr name) := by
-  intro context _ before output after valid ran
+  intro context before output after valid ran
   have same : after = before := by
     have state := ExpressionState.lookupConstAddr_state name context before
     rw [ran] at state
@@ -199,7 +196,7 @@ theorem Safe.lookup (name : Ix.Name) : Safe (lookupConstAddr name) := by
 
 /-- Storing a blob writes neither table. -/
 theorem Safe.blob (bytes : ByteArray) : Safe (storeBlob bytes) := by
-  intro context _ before output after valid ran
+  intro context before output after valid ran
   have frame := (BlobWrites.storeBlob_preserves bytes context before).1
   rw [ran] at frame
   have same := congrArg view frame
@@ -345,19 +342,16 @@ theorem Safe.noSurgery : ∀ source, Safe (compileExprNoSurgery source) := by
       exact Safe.seq (Safe.modify _ (fun _ => rfl)) (fun _ => Safe.pure _)
 
 /-- **The production expression compiler keeps the tables on the wire** on
-success, under a surgery-free environment. -/
+success. -/
 theorem Safe.expression (source : Ix.Expr) : Safe (compileExpr source) := by
-  intro context free before value after valid ran
-  rw [ExpressionState.compileExpr_surgeryFree source context free] at ran
-  exact Safe.noSurgery source context free before value after valid ran
+  intro context before value after valid ran
+  rw [ExpressionState.compileExpr_surgeryFree source context] at ran
+  exact Safe.noSurgery source context before value after valid ran
 
 /-! ## The drains -/
 
 theorem Safe.takeArena : Safe takeArena := by
   unfold Ix.CompileM.takeArena; exact Safe.modifyGet _ (fun _ => rfl)
-
-theorem Safe.takeSurgerySharing : Safe takeSurgerySharing := by
-  unfold Ix.CompileM.takeSurgerySharing; exact Safe.modifyGet _ (fun _ => rfl)
 
 theorem Safe.takeUnivPatches : Safe takeUnivPatches := by
   unfold Ix.CompileM.takeUnivPatches; exact Safe.modifyGet _ (fun _ => rfl)
@@ -381,7 +375,6 @@ local macro "safe_finish" : tactic => `(tactic|
   with_reducible repeat' first
     | exact Safe.pure _
     | exact Safe.takeArena
-    | exact Safe.takeSurgerySharing
     | exact Safe.takeUnivPatches
     | exact Safe.clearExprCache
     | exact Safe.checkedCount _ _

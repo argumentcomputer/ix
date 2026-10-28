@@ -240,7 +240,7 @@ the block in its members' types, and the closure's context reading the record's 
 as the compile environment's does. The compile is read under any name relation that relates each
 member to its key and agrees with quotient Source's names renamed on the names the members'
 terms mention. -/
-theorem inductiveBlock_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem inductiveBlock_reads (context : CompileEnv × BlockEnv)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a) {bindings : Bindings}
     {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (inds : List Ix.Ind)
@@ -263,7 +263,7 @@ theorem inductiveBlock_reads (context : CompileEnv × BlockEnv) (free : context.
           ∃ type, (blockReader cx owner output.block targets).read ct.typ = .ok type ∧
             blockRel ρ f lps c.cnst.type type) i.ctors.toList t.ctors.toList) inds targets := by
   obtain ⟨ps, payloads, erased, roots⟩ := BlockEmission.mutualBlock_correct cx₁ id (selfOf cx owner inds.length)
-    names (Numbering.mk lps false).pos bindings context free aligned external (inds.map MutConst.indc)
+    names (Numbering.mk lps false).pos bindings context aligned external (inds.map MutConst.indc)
     lps.toList (by
       intro m hm
       obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hm
@@ -467,7 +467,7 @@ closure's context the reader reads every recursor's type and rules' right-hand s
 terms related to their Lean ones, given the compile run, the members' keys in the closure's
 context, distinct names, and the closure's context reading the record's references as the
 compile environment's does. -/
-theorem recursorBlock_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem recursorBlock_reads (context : CompileEnv × BlockEnv)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a) {bindings : Bindings}
     {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (recs : List Ix.RecursorVal)
@@ -491,7 +491,7 @@ theorem recursorBlock_reads (context : CompileEnv × BlockEnv) (free : context.1
             .ok rhs ∧ recRel ρ f lps large rule.rhs rhs) r.rules.toList rI.rules.toList) recs rIs := by
   obtain ⟨ps, payloads, erased, roots⟩ := BlockEmission.mutualBlock_correct cx₁
     (recParam (Numbering.mk lps large).params) (recSelfOf cx owner key recs.length)
-    names (Numbering.mk lps large).pos bindings context free aligned external (recs.map MutConst.recr)
+    names (Numbering.mk lps large).pos bindings context aligned external (recs.map MutConst.recr)
     lps.toList (by
       intro m hm
       obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
@@ -574,7 +574,7 @@ def FamilyReads (cx : Ctx .anon) (owner : Address) (key : CName .anon) (lps : Ar
 
 /-- **A recursor family compiled as a block, read in a closure** (`recursorBlock_reads` at the
 members' keys in the closure's context). -/
-theorem mutualFamily_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem mutualFamily_reads (context : CompileEnv × BlockEnv)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a) {bindings : Bindings}
     {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (recs : List Ix.RecursorVal)
@@ -589,7 +589,7 @@ theorem mutualFamily_reads (context : CompileEnv × BlockEnv) (free : context.1.
     (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after))
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx) :
     FamilyReads ρ f cx owner key lps large recs output.block :=
-  recursorBlock_reads ρ f context free aligned external recs self agree hne lps hlps large owner key
+  recursorBlock_reads ρ f context aligned external recs self agree hne lps hlps large owner key
     (by
       intro k hk
       by_cases h1 : recs.length = 1
@@ -610,7 +610,7 @@ theorem mutualFamily_reads (context : CompileEnv × BlockEnv) (free : context.1.
 one-member family's (`FamilyReads`), given the compile run on the single-constant path, the
 recursor's name related to its key, and the closure's context reading the record's references as
 the compile environment's does. -/
-theorem loneRecursor_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
+theorem loneRecursor_reads (context : CompileEnv × BlockEnv)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a) {bindings : Bindings}
     {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
     (r : Ix.RecursorVal) (key : CName .anon) (self : names r.cnst.name key)
@@ -620,7 +620,7 @@ theorem loneRecursor_reads (context : CompileEnv × BlockEnv) (free : context.1.
     (ran : rawRun (compileConstantInfo (.recInfo r)) context before = (.ok output, after))
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx) :
     FamilyReads ρ f cx owner key lps large [r] output.block := by
-  rw [EmissionDispatch.recursor_run context free r before] at ran
+  rw [EmissionDispatch.recursor_run context r before] at ran
   -- the record's self references: the recursor's own name
   have scope : ∀ e, ConstsSatisfy (SelfName (EmissionDispatch.singletonContext r.cnst.name context).2
       (recSelfOf cx owner key 1) names) e := fun e =>
@@ -632,7 +632,7 @@ theorem loneRecursor_reads (context : CompileEnv × BlockEnv) (free : context.1.
   obtain ⟨-, -, -, erased, roots⟩ := EmissionBlocks.recursorInfo_correct (cx := cx₁)
     (param := recParam (Numbering.mk lps large).params) (self := recSelfOf cx owner key 1) (names := names)
     (σ := (Numbering.mk lps large).pos) (bindings := bindings) (EmissionDispatch.singletonContext r.cnst.name context)
-    free aligned external r (scope _)
+    aligned external r (scope _)
     (fun _ _ => scope _) clean ran
   -- the compiled payload's header bounds
   have hdr : BlockEmission.RecHeader r (Emission.recursorPayload r (.sort 0)
@@ -938,7 +938,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     (distinct : Canon.KeysDistinct ((indsOf types ctors).map MutConst.indc))
     (noCtor : ∀ i ∈ indsOf types ctors, ∀ e ∈ memberSources (.indc i),
       ConstsSatisfy (fun n => ∀ i' ∈ indsOf types ctors, ∀ c ∈ i'.ctors.toList, n ≠ c.cnst.name) e)
-    (context₁ : CompileEnv × BlockEnv) (free₁ : context₁.1.surgeryFree = true) {cx₁ : Ctx .anon}
+    (context₁ : CompileEnv × BlockEnv) {cx₁ : Ctx .anon}
     (aligned₁ : ∀ a, cx₁.blob a = context₁.1.blobs.get? a) {bindings₁ : Bindings}
     {names₁ : Ix.Name → CName .anon → Prop} (external₁ : BindingsCorrect context₁.1 bindings₁ cx₁ names₁)
     (self₁ : ∀ i (hi : i < types.size), names₁ types[i].cnst.name (srcKey ρ f types[i].cnst.name))
@@ -978,7 +978,7 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
   have recSafe := convertInductive_recs_safe src
   have hlenI := indsOf_length hcsize
   -- the inductive block
-  obtain ⟨targets, hinfo, hT⟩ := inductiveBlock_reads ρ f context₁ free₁ aligned₁ external₁ (indsOf types ctors)
+  obtain ⟨targets, hinfo, hT⟩ := inductiveBlock_reads ρ f context₁ aligned₁ external₁ (indsOf types ctors)
     (by
       intro k hk
       rw [indsOf_getElem hcsize hk]

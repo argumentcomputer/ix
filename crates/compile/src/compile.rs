@@ -161,10 +161,6 @@ pub struct BlockCache {
   pub univ_patches: Vec<UnivPatch>,
   /// Name of the constant currently being compiled (for error context).
   pub compiling: Option<Name>,
-  /// The current constant's `ConstantMeta.meta_sharing` accumulator,
-  /// drained after compilation completes. The compiler adds no entries, so
-  /// the table is written empty. Lean: `BlockState.metaSharing`.
-  pub surgery_sharing: Vec<Arc<Expr>>,
 }
 
 #[derive(Debug)]
@@ -1487,10 +1483,9 @@ pub fn compile_definition(
   let value = compile_expr(&def.value, univ_params, mut_ctx, cache, stt)?;
   let value_root = *cache.arena_roots.last().expect("missing value arena root");
 
-  // Take arena, surgery sharing, and level-spelling channels (canonicity
-  // §10.6), clear for next constant
+  // Take the arena and the level-spelling channels (canonicity §10.6), clear
+  // for next constant
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -1523,7 +1518,6 @@ pub fn compile_definition(
     type_root,
     value_root,
   });
-  meta.meta_sharing = surgery_sharing;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
   stt.record_hint(&def.name, Some(def.hints));
@@ -1575,15 +1569,9 @@ pub fn compile_recursor(
     rules.push(r);
   }
 
-  // Take arena and surgery sharing, clear for next constant.
-  // Rule RHS bodies can contain surgered call-sites (a recursor rule for
-  // ctor C may reference another alpha-collapsed auxiliary), so any
-  // collapsed args accumulated during rule compilation must be attached
-  // to THIS recursor's meta — not left behind to corrupt the next
-  // constant's `sharing_idx` offsets. Level-spelling channels (canonicity
-  // §10.6) drain on the same boundary for the same reason.
+  // Take the arena and the level-spelling channels (canonicity §10.6), clear
+  // for next constant: they belong to this recursor's meta.
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -1622,7 +1610,6 @@ pub fn compile_recursor(
     type_root,
     rule_roots,
   });
-  meta.meta_sharing = surgery_sharing;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -1644,15 +1631,10 @@ fn compile_constructor(
   let type_root =
     *cache.arena_roots.last().expect("missing ctor type arena root");
 
-  // Take arena and surgery sharing for this constructor. A ctor's type
-  // may contain surgered call-sites when the ctor's field types reference
-  // alpha-collapsed auxiliaries, so drain here to attach to THIS ctor's
-  // meta rather than leaking into whichever constant comes next.
-  // Level-spelling channels (canonicity §10.6) drain on the same
-  // boundary — the decompiler's ctor-scoped window installs them per
+  // Take the arena and the level-spelling channels (canonicity §10.6) for
+  // this constructor: the decompiler's ctor-scoped window installs them per
   // constructor.
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -1682,7 +1664,6 @@ fn compile_constructor(
     arena,
     type_root,
   });
-  meta.meta_sharing = surgery_sharing;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -1708,14 +1689,10 @@ pub fn compile_inductive(
   let type_root =
     *cache.arena_roots.last().expect("missing indc type arena root");
 
-  // Take arena and surgery sharing for the inductive's OWN type. Any
-  // surgered call-sites accumulated while compiling `ind.ind.cnst.typ`
-  // belong to this inductive's meta. Ctor surgery_sharing is handled
-  // separately by `compile_constructor` below — each ctor attaches its
-  // own sharing to its own meta. Level-spelling channels (canonicity
-  // §10.6) split on the same boundary.
+  // Take the arena and the level-spelling channels (canonicity §10.6) of the
+  // inductive's own type; each constructor takes its own in
+  // `compile_constructor` below.
   let indc_arena = std::mem::take(&mut cache.arena);
-  let indc_surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
   let indc_meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let indc_univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -1768,7 +1745,6 @@ pub fn compile_inductive(
     arena: indc_arena,
     type_root,
   });
-  meta.meta_sharing = indc_surgery_sharing;
   meta.meta_univs = indc_meta_univs;
   meta.univ_patches = indc_univ_patches;
 
@@ -1789,12 +1765,9 @@ fn compile_axiom(
   let type_root =
     *cache.arena_roots.last().expect("missing axiom type arena root");
 
-  // Drain surgery sharing onto this axiom's meta. Axioms can reference
-  // alpha-collapsed auxiliaries in their type; any collapsed args must
-  // stay with this axiom rather than leak to the next constant. Same for
-  // the level-spelling channels (canonicity §10.6).
+  // Take the arena and the level-spelling channels (canonicity §10.6) onto
+  // this axiom's meta, so they do not leak to the next constant.
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -1816,7 +1789,6 @@ fn compile_axiom(
     arena,
     type_root,
   });
-  meta.meta_sharing = surgery_sharing;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 
@@ -1837,12 +1809,9 @@ fn compile_quotient(
   let type_root =
     *cache.arena_roots.last().expect("missing quot type arena root");
 
-  // Drain surgery sharing onto this quotient's meta — same reasoning as
-  // in compile_axiom / compile_recursor / etc.: keep collapsed args
-  // attached to the constant whose compilation produced them. Same for
-  // the level-spelling channels (canonicity §10.6).
+  // Take the arena and the level-spelling channels (canonicity §10.6) onto
+  // this quotient's meta, as in `compile_axiom`.
   let arena = std::mem::take(&mut cache.arena);
-  let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
   let meta_univs: Vec<Arc<Univ>> =
     std::mem::take(&mut cache.meta_univs).into_iter().collect();
   let univ_patches = std::mem::take(&mut cache.univ_patches);
@@ -1863,7 +1832,6 @@ fn compile_quotient(
     arena,
     type_root,
   });
-  meta.meta_sharing = surgery_sharing;
   meta.meta_univs = meta_univs;
   meta.univ_patches = univ_patches;
 

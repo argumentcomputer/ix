@@ -1,4 +1,5 @@
-import Ix.Cert.SourcePrepass
+import Ix.Compile.SourceGraph.Prepass
+import Ix.Cert.Hybrid
 
 /-! Prepass, winner and diagnostic controls; synthetic records make no
 Source-acceptance or canonical-name hash-collision claim. -/
@@ -69,28 +70,5 @@ private def failed := groundConstCheck (_root_.Ix.Cert.Canon.constS ind)
 #guard match groundConstCheck (_root_.Ix.Cert.Canon.constS ind) { consts := {} } with
   | .error (.indc _ none) => true | _ => false
 #guard (groundConstCheck (_root_.Ix.Cert.Canon.constS ind) { consts := prep.thinConsts }).isOk
-
-/-- info: 'Ix.Cert.SourcePrepass.prepass_labels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.prepass_labels
-/-- info: 'Ix.Cert.SourcePrepass.canonical_lookup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.canonical_lookup
-/-- info: 'Ix.Cert.SourcePrepass.canonical_key' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.canonical_key
-/-- info: 'Ix.Cert.SourcePrepass.thin_lookup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.thin_lookup
-/-- info: 'Ix.Cert.SourcePrepass.thin_key' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.thin_key
-/-- info: 'Ix.Cert.SourcePrepass.collect_key' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.collect_key
-/-- info: 'Ix.Cert.SourcePrepass.canonical_size' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.canonical_size
-/-- info: 'Ix.Cert.SourcePrepass.code_size' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.code_size
-/-- info: 'Ix.Cert.SourcePrepass.produced_hybrid_lookup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.produced_hybrid_lookup
-/-- info: 'Ix.Cert.SourcePrepass.stored_inductives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.stored_inductives
-/-- info: 'Ix.Cert.SourcePrepass.produced_fold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourcePrepass.produced_fold
 
 end Tests.Ix.Cert.SourcePrepass

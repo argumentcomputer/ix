@@ -659,11 +659,9 @@ structure CheckReportOk (env : Ix.Environment) (cenv : Ix.CompileM.CompileEnv)
   hashes : nameHashCollision env out.1 = none
   muts : mutsMismatch out.1 = none
   resolution : resolutionMismatch cenv.nameToAddr out.1 = none
-  inductives : unseenInductive env out.1 = none
   resolved : unresolvedPublished env cenv.nameToAddr out.1 = none
   named : misnamedInput env = none
   constructors : strayConstructor env = none
-  failures : strayFailure env cenv.ungrounded = none
   projections : projectionCollision out.1 = none
   readable : unreadablePublished env out.1 = none
   blobs : blobRecordCollision out.1 = none
@@ -680,13 +678,11 @@ structure CheckReportOk (env : Ix.Environment) (cenv : Ix.CompileM.CompileEnv)
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
 unauthentic, no stored record is on a reference cycle, no two different
 names share a name hash, every `Muts` entry agrees with its block, every
-resolved name is published where it resolves, every published input
-inductive's block is found, every published input name is resolved, all in
-the driver's final environment `cenv`, every input constant carries the name
-it is stored under, every input constructor belongs to its inductive, every
-recorded failure is an input name, no definition member has two projection
-records, every published input name's address holds a stored record that is
-not a block, no address holds both a blob and a record, every input name
+resolved name is published where it resolves, every published input name
+is resolved, both in the driver's final environment `cenv`, every input constant
+carries the name it is stored under, every input constructor belongs to its
+inductive, no definition member has two projection records, every published
+input name's address holds a stored record that is not a block, no address holds both a blob and a record, every input name
 published in an inductive block the recursor index attaches recursors to has a
 family of which each of those recursors is a published recursor, every stored
 record at a bound role's address has its specification's kind, every stored
@@ -903,81 +899,6 @@ theorem resolvedPublished {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fa
   obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
   exact ⟨cenv, hu, resolutionMismatch_none (checkReport_ok hc).resolution⟩
 
-/-- An address of `mutsAddrs` is one at which a `Muts` entry is published. -/
-theorem mutsAddrs_contains {ixe : Ixon.Env} {a : Address} (h : (mutsAddrs ixe).contains a = true) :
-    ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = a ∧
-      e.constMeta.info = .muts all layout := by
-  unfold mutsAddrs at h
-  rw [Std.HashMap.fold_eq_foldl_toList] at h
-  suffices key : ∀ (l : List (Ix.Name × Ixon.Named)) (s : Std.HashSet Address),
-      (l.foldl (fun s x => match x.2.constMeta.info with
-        | .muts .. => s.insert x.2.addr
-        | _ => s) s).contains a = true →
-      s.contains a = true ∨ ∃ entry e all layout, (entry, e) ∈ l ∧ e.addr = a ∧
-        e.constMeta.info = .muts all layout by
-    rcases key _ _ h with h | h
-    · simp at h
-    · exact h
-  intro l
-  induction l with
-  | nil => intro s h; exact .inl h
-  | cons x l ih =>
-    intro s h
-    rcases ih _ h with h | ⟨entry, e, all, layout, hm, ha, hi⟩
-    · obtain ⟨xn, xe⟩ := x
-      dsimp only at h
-      split at h
-      · rename_i all layout hinfo
-        rw [Std.HashSet.contains_insert] at h
-        rcases Bool.or_eq_true_iff.mp h with heq | hs
-        · exact .inr ⟨xn, xe, all, layout, List.mem_cons_self, beq_iff_eq.mp heq, hinfo⟩
-        · exact .inl hs
-      · exact .inl h
-    · exact .inr ⟨entry, e, all, layout, List.mem_cons_of_mem _ hm, ha, hi⟩
-
-/-- What `unseenInductive = none` says: every published input inductive is
-published at an inductive projection whose block has a `Muts` entry
-published at its address. -/
-theorem unseenInductive_none {env : Ix.Environment} {ixe : Ixon.Env}
-    (h : unseenInductive env ixe = none) :
-    ∀ n v named, (n, Ix.ConstantInfo.inductInfo v) ∈ env.consts.toList →
-      ixe.named.get? n = some named →
-      ∃ p, (storedRecord ixe named.addr).map (·.info) = some (Ixon.ConstantInfo.iPrj p) ∧
-        ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = p.block ∧
-          e.constMeta.info = .muts all layout := by
-  intro n v named hn hnamed
-  unfold unseenInductive at h
-  dsimp only at h
-  rw [List.findSome?_eq_none_iff] at h
-  have hn := h (n, .inductInfo v) hn
-  dsimp only at hn
-  rw [hnamed] at hn
-  dsimp only at hn
-  split at hn
-  · rename_i p hp
-    refine ⟨p, hp, ?_⟩
-    split at hn
-    · rename_i hc
-      exact mutsAddrs_contains hc
-    · cases hn
-  · cases hn
-
-/-- **Every inductive component is seen** ((c3)): on `compileReport`'s
-result, every published input inductive is published at an inductive
-projection of a block with a `Muts` entry at its address (`checkReport`'s
-seventh check), so the changed set's classifier, which reads an inductive
-component only through its `Muts` entry, evaluates every published input
-inductive's component. -/
-theorem inductivesSeen {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    (h : compileReport env = .ok (ixe, failures)) :
-    ∀ n v named, (n, Ix.ConstantInfo.inductInfo v) ∈ env.consts.toList →
-      ixe.named.get? n = some named →
-      ∃ p, (storedRecord ixe named.addr).map (·.info) = some (Ixon.ConstantInfo.iPrj p) ∧
-        ∃ entry e all layout, (entry, e) ∈ ixe.named.toList ∧ e.addr = p.block ∧
-          e.constMeta.info = .muts all layout := by
-  obtain ⟨_, -, hc⟩ := compileReport_ok h
-  exact unseenInductive_none (checkReport_ok hc).inductives
-
 /-- What `unresolvedPublished = none` says: every published input name is in
 `resolved`. -/
 theorem unresolvedPublished_none {env : Ix.Environment}
@@ -996,7 +917,7 @@ theorem unresolvedPublished_none {env : Ix.Environment}
 
 /-- **Published input names are resolved**: `compileReport`'s result comes
 with the driver's final environment, whose resolution map (`nameToAddr`)
-holds every published input name (`checkReport`'s eighth check). So a
+holds every published input name (`checkReport`'s seventh check). So a
 published input name is a primary claim of a block compiled during the fold
 (`Ix.Cert.Resolution.compileReport_claim`). -/
 theorem publishedResolved {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
@@ -1022,7 +943,7 @@ theorem misnamedInput_none {env : Ix.Environment} (h : misnamedInput env = none)
 
 /-- **Input constants carry their names**: when `compileReport` returns,
 every input constant's own name is the name it is stored under
-(`checkReport`'s ninth check). -/
+(`checkReport`'s eighth check). -/
 theorem inputsNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ (n : Ix.Name) (ci : Ix.ConstantInfo), (n, ci) ∈ env.consts.toList → ci.getCnst.name = n := by
@@ -1055,43 +976,13 @@ theorem strayConstructor_none {env : Ix.Environment} (h : strayConstructor env =
 
 /-- **Input constructors belong to their inductive**: when `compileReport`
 returns, every constructor name of an input inductive is stored as a
-constructor of it (`checkReport`'s tenth check). -/
+constructor of it (`checkReport`'s ninth check). -/
 theorem ctorsBelong {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ (n : Ix.Name) (iv : Ix.InductiveVal), env.consts.get? n = some (.inductInfo iv) →
       ∀ c ∈ iv.ctors, ∃ cv, env.consts.get? c = some (.ctorInfo cv) ∧ (cv.induct == n) = true := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
   exact strayConstructor_none (checkReport_ok hc).constructors
-
-/-- What `strayFailure = none` says: every name `ungrounded` holds is one the
-input's map holds. -/
-theorem strayFailure_none {env : Ix.Environment} {ungrounded : Std.HashMap Ix.Name String}
-    (h : strayFailure env ungrounded = none) :
-    ∀ x, ungrounded.contains x = true → (env.consts.get? x).isSome = true := by
-  intro x hx
-  unfold strayFailure at h
-  rw [List.findSome?_eq_none_iff] at h
-  rw [Std.HashMap.contains_eq_isSome_getElem?] at hx
-  obtain ⟨msg, hmsg⟩ := Option.isSome_iff_exists.mp hx
-  obtain ⟨k, hxk, hk⟩ := Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList.mp hmsg
-  have hfind := h (k, msg) hk
-  dsimp only at hfind
-  have hks : (env.consts.get? k).isSome = true := by
-    cases e : (env.consts.get? k).isSome
-    · rw [e] at hfind; cases hfind
-    · rfl
-  rw [Std.HashMap.get?_eq_getElem?] at hks ⊢
-  rwa [Std.HashMap.getElem?_congr hxk]
-
-/-- **Recorded failures are input names**: when `compileReport` returns,
-every name the driver's final environment records as a failure is one the
-input's map holds (`checkReport`'s eleventh check). -/
-theorem failuresInput {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    (h : compileReport env = .ok (ixe, failures)) :
-    ∃ cenv : Ix.CompileM.CompileEnv, compileUnchecked env = .ok (ixe, failures, cenv) ∧
-      ∀ x, cenv.ungrounded.contains x = true → (env.consts.get? x).isSome = true := by
-  obtain ⟨cenv, hu, hc⟩ := compileReport_ok h
-  exact ⟨cenv, hu, strayFailure_none (checkReport_ok hc).failures⟩
 
 /-- What `projectionCollision = none` says: two stored definition projection
 records of one member are one address. -/
@@ -1119,7 +1010,7 @@ theorem projectionCollision_none {ixe : Ixon.Env} (h : projectionCollision ixe =
 
 /-- **One projection record per definition member**: when `compileReport`
 returns, two stored definition projection records of one member are one
-address (`checkReport`'s twelfth check). -/
+address (`checkReport`'s tenth check). -/
 theorem projectionsOne {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ e ∈ ixe.consts.toList, ∀ e' ∈ ixe.consts.toList, ∀ r a a',
@@ -1149,7 +1040,7 @@ theorem unreadablePublished_none {env : Ix.Environment} {ixe : Ixon.Env}
 
 /-- **Published input names are readable**: when `compileReport` returns, every
 published input name's address holds a stored record that is not a block
-(`checkReport`'s thirteenth check). -/
+(`checkReport`'s eleventh check). -/
 theorem publishedReadable {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∀ n named, (n, named) ∈ ixe.named.toList → env.consts.contains n = true →

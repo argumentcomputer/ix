@@ -29,10 +29,10 @@ theorem blocksWire : BlockLayout.BlocksWire := by
   rcases rest with ⟨r', s₂, run, same⟩ | ⟨cs, out, s₄, run, same⟩
   · simp only [BlockRecords.recordsOf, Prod.mk.injEq] at same
     rw [same.1]
-    exact (Ix.CompileCert.EmissionDispatch.constant_codec _ rfl const BlockStart.wire_empty run).1
+    exact (Ix.CompileCert.EmissionDispatch.constant_codec _ const BlockStart.wire_empty run).1
   · simp only [BlockRecords.recordsOf, Prod.mk.injEq] at same
     rw [same.1]
-    exact (Ix.CompileCert.EmissionDispatch.mutualBlock_codec _ rfl _ BlockStart.wire_empty run).1
+    exact (Ix.CompileCert.EmissionDispatch.mutualBlock_codec _ _ BlockStart.wire_empty run).1
 
 /-- info: 'Ix.Cert.BlockWire.blocksWire' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
