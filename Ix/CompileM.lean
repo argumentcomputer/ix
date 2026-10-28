@@ -26,7 +26,6 @@ public import Ix.Mutual
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.SOrder
-public import Ix.Compile.Canon.Classes
 public import Ix.Compile.ExactKey
 public import Ix.CanonM
 
@@ -1399,42 +1398,6 @@ def mutConstPreseedInputs (c : MutConst) : List (Expr × List Name) :=
 def mutConstPreseedExprs (c : MutConst) : Array (Expr × List Name) :=
   (mutConstPreseedInputs c).toArray
 
-/-! ## Classes and canonical order (Pass 1, `Ix.Compile.Canon`)
-
-Step 1 of a block's compilation, the classes (collapse) and their canonical
-order, is `Ix.Compile.Canon.sortClasses` under `Rules.compiler`: external
-references by compiled address at the first difference, levels compared
-after `canonUniv`, mixed kinds by kind tag, the comparison cache in its
-key's orientation (`Ix/Compile/Canon/Order.lean`), name-hash seed and
-least-name-hash representative. The pure functions are the definition; what
-follows only converts between them and `CompileM`. -/
-
-/-- The compiled address of a constant as `lookupConstAddr` resolves it
-(current block's primary registrations, then the merged name map), as a pure
-function of the current state. Sorting writes neither map, so a snapshot
-taken before a sort answers every lookup the sort makes. -/
-def constAddrLookup : CompileM (Name → Option Address) := do
-  let env ← getCompileEnv
-  let bstate ← getBlockState
-  pure fun name =>
-    match bstate.blockNameToAddr.get? name with
-    | some addr => some addr
-    | none => env.nameToAddr.get? name
-
-/-- Raise the error a Pass 1 comparison failure stands for, with the kind
-and text the former comparator raised (`lookupConstAddr`'s
-`missingConstant`, `compareLevel`'s `unknownUnivParam`, …), so failure
-reports, and their parity with Rust's `compare_expr`, are unchanged. -/
-def throwCmpError {α : Type} : Ix.Compile.Canon.CmpError → CompileM α
-  | .levelMVar => throw (.unsupportedExpr "level metavariable")
-  | .exprMVar => throw (.unsupportedExpr "metavariable in comparison")
-  | .fvar => throw (.unsupportedExpr "fvar in comparison")
-  | .unknownUnivParam param => do
-    throw (.unknownUnivParam s!"{(← getBlockEnv).current}" s!"{param}")
-  | .contract msg => throw (.unsupportedExpr msg)
-  | .missingAddress name => throw (.missingConstant s!"{name}")
-  | .refinement msg => throw (.invalidMutualBlock msg)
-
 /-- Resolve one inductive member's constructors for SCC collection. -/
 def collectMutConstConstructors :
     List Name → Array ConstructorVal → CompileM (Array ConstructorVal)
@@ -1451,19 +1414,6 @@ def MutConst.mkIndc (i : InductiveVal) : CompileM MutConst := do
   pure (.indc ⟨i.cnst.name, i.cnst.levelParams, i.cnst.type, i.numParams,
     i.numIndices, i.all, ctors, i.numNested, i.isRec, i.isReflexive,
     i.isUnsafe⟩)
-
-/-- The classes of a block's members in canonical order, each class's
-representative first: `Ix.Compile.Canon.sortClasses Rules.compiler`, with
-external addresses from `constAddrLookup`. The comparison cache lives inside
-the call, so nothing leaks into the block state. An empty member list is
-refused, as the former sorter refused it (its one class was empty). -/
-def sortConsts (sources : List MutConst) : CompileM (List (List MutConst)) := do
-  if sources.isEmpty then
-    throw (.invalidMutualBlock "empty class in sortConsts")
-  let addr? ← constAddrLookup
-  match Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addr? sources with
-  | .ok (classes, _) => pure classes
-  | .error e => throwCmpError e
 
 /-- `u64::MAX`, the "no position" key of `recursorFamilyPosition`. -/
 def recursorFamilyNoPosition : UInt64 := 0xFFFFFFFFFFFFFFFF
@@ -1492,22 +1442,6 @@ def recursorFamilyPosition (r : RecursorVal) : UInt64 :=
         else recursorFamilyNoPosition
     | none => recursorFamilyNoPosition
   | _ => recursorFamilyNoPosition
-
-/-- A block of recursors is laid out in its family's flat order (the
-order the kernel pairs with the inductive block's flat members), not in
-`sortConsts` order; other blocks are returned unchanged. Stable: classes with
-equal keys keep their `sortConsts` order. Mirrors Rust
-`order_recursor_family`. -/
-def orderRecursorFamily (classes : List (List MutConst)) : List (List MutConst) :=
-  if classes.isEmpty || !classes.all (·.all fun c => c matches .recr _) then classes
-  else
-    let key (cls : List MutConst) : UInt64 := cls.foldl (init := recursorFamilyNoPosition)
-      fun acc c => match c with
-        | .recr r => min acc (recursorFamilyPosition r)
-        | _ => acc
-    let decorated := classes.toArray.zipIdx.map fun (cls, i) => (key cls, i, cls)
-    let sorted := decorated.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)
-    (sorted.map (·.2.2)).toList
 
 /-- The member order of a block, one member per class: Lean's order
 (`Ix.sourceOrderLt`). An inductive is at its position in Lean's `all`, a

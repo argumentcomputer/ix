@@ -15,10 +15,6 @@ build's write-back keeps of the payload (CT-15's `ProjectionLayout`, R9a):
   (`writeback_shape`, `sharing_shape`): both are fields `erase` keeps, so
   they follow from R7b's one inversion (`SharingRoots.withRoots_inv`,
   `build_roots`);
-* the class sort's guard leaves no empty class (`sort_nonempty`), which
-  discharges `payload_count`'s premise for every sorted block, and the
-  compiler's sort is `sortClasses Rules.compiler` on an address map of the
-  state, which it leaves unchanged (`sort_run`, R9b);
 * the standalone inductive family's block is `.muts #[.indc target]` with
   the source's constructor positions (`family_layout`), and its projection
   records resolve under the certified reader to the block's member and its
@@ -29,11 +25,7 @@ Ported from the donor `a9cf3607`, adapted: `Emission.Yields` for the
 donor's `DeclarationHeaders.Returns`, `Address.admissionHash` for
 `Address.blake3`, the write-back facts through `erase` (R07-17), no
 `timedC`/`PhaseTimers`, and the mutual block's plan-head audit passed over
-(a successful run passed it). The donor's `ordered_nonempty` (about
-`orderRecursorFamily`) is `MutualArtifact.ordered_partition`, from the
-family order being a permutation (`orderRecursorFamily_perm`, N-READS N5 a).
-Since CQ2.18 the class sort is `Ix.Compile.Canon.sortClasses Rules.compiler`,
-whose guard is what `sorted_nonempty` reads. -/
+(a successful run passed it). -/
 
 namespace Ix.CompileCert.ProjectionLayout
 
@@ -218,94 +210,6 @@ theorem mutual_class_index (sources : List (List MutConst))
     (index : Nat) (inside : index < sources.length) : index.toUInt64.toNat = index :=
   Emission.exact_header index
     (Nat.lt_trans inside (mutual_block_capacity sources nonempty context before output after ran))
-
-/-! ## The class sort leaves no empty class -/
-
-/-- `sortClasses`'s guard: every class it returns is non-empty. -/
-theorem sorted_nonempty (rules : Ix.Compile.Canon.Rules) (addresses : Ix.Name → Option Address)
-    (sources : List MutConst) (classes : List (List MutConst)) (stats : Ix.Compile.Canon.SortStats)
-    (ran : Ix.Compile.Canon.sortClasses rules addresses sources = .ok (classes, stats)) :
-    ∀ members ∈ classes, members ≠ [] := by
-  unfold Ix.Compile.Canon.sortClasses at ran
-  split at ran
-  · cases Except.ok.inj ran
-    simp
-  · simp only [bind, Except.bind] at ran
-    split at ran
-    · contradiction
-    · split at ran
-      · contradiction
-      · split at ran
-        · contradiction
-        · have equal := Except.ok.inj ran
-          cases equal
-          simp_all [List.any_eq_true]
-          intro members present equal
-          subst members
-          contradiction
-
-theorem throwCmpError_fails (error : Ix.Compile.Canon.CmpError) (context : CompileEnv × BlockEnv)
-    (state : BlockState) : ∃ failure, (rawRun (throwCmpError error : CompileM α) context state).1 = .error failure := by
-  cases error <;> exact ⟨_, rfl⟩
-
-/-- **The compiler's class sort returns no empty class.** -/
-theorem sort_nonempty (sources : List MutConst) :
-    Emission.Yields (sortConsts sources) (fun classes => ∀ members ∈ classes, members ≠ []) := by
-  intro context before output after ran
-  unfold sortConsts at ran
-  dsimp only at ran
-  split at ran
-  · obtain ⟨_, _, thrown, _⟩ := bind_ok ran
-    rw [rawRun_throw] at thrown
-    cases thrown
-  obtain ⟨addresses, middle', _, tail⟩ := bind_ok ran
-  cases sorted : Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addresses sources with
-  | error reason =>
-    rw [sorted] at tail
-    obtain ⟨failure, failed⟩ := throwCmpError_fails (α := List (List MutConst)) reason context middle'
-    dsimp only at tail
-    rw [tail] at failed
-    cases failed
-  | ok pair =>
-    rw [sorted] at tail
-    dsimp only at tail
-    rw [rawRun_pure] at tail
-    have equal := Except.ok.inj (congrArg Prod.fst tail)
-    cases equal
-    exact sorted_nonempty _ addresses sources pair.1 pair.2 sorted
-
-theorem constAddrLookup_run (context : CompileEnv × BlockEnv) (state : BlockState) :
-    ∃ addresses, rawRun constAddrLookup context state = (.ok addresses, state) := ⟨_, rfl⟩
-
-/-- **The compiler's class sort is `sortClasses Rules.compiler`**, run on an
-address map of the state, and leaves the state as it found it (R9b). -/
-theorem sort_run (sources : List MutConst) {context : CompileEnv × BlockEnv} {before after : BlockState}
-    {classes : List (List MutConst)} (ran : rawRun (sortConsts sources) context before = (.ok classes, after)) :
-    after = before ∧ ∃ addresses stats,
-      Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addresses sources = .ok (classes, stats) := by
-  unfold sortConsts at ran
-  dsimp only at ran
-  split at ran
-  · obtain ⟨_, _, thrown, _⟩ := bind_ok ran
-    rw [rawRun_throw] at thrown
-    cases thrown
-  obtain ⟨addresses, middle, looked, tail⟩ := bind_ok ran
-  obtain ⟨addresses', looked'⟩ := constAddrLookup_run context before
-  rw [looked'] at looked
-  cases looked
-  cases sorted : Ix.Compile.Canon.sortClasses Ix.Compile.Canon.Rules.compiler addresses sources with
-  | error reason =>
-    rw [sorted] at tail
-    obtain ⟨failure, failed⟩ := throwCmpError_fails (α := List (List MutConst)) reason context before
-    dsimp only at tail
-    rw [tail] at failed
-    cases failed
-  | ok pair =>
-    rw [sorted] at tail
-    dsimp only at tail
-    rw [rawRun_pure] at tail
-    cases tail
-    exact ⟨rfl, addresses, pair.2, sorted⟩
 
 /-! ## Member shapes -/
 

@@ -22,8 +22,7 @@ A proof about `compile` meets each of them as an opaque constant. Adding one,
 or removing one, changes the list below; the change that re-records it states
 why. The expression-table walks (`collectExprTables`, `preseedExprTables`) run
 as proved `csimp` replacements (`collectExprTables_eq_worklist`,
-`preseedExprTables_eq_worklist`) since they left the list, and the class
-refinement (`Ix.Compile.Canon.sortClasses`) adds nothing to it.
+`preseedExprTables_eq_worklist`) since they left the list.
 
 The compiler compiles Lean's declarations as given: every block's records are
 compiled from its Lean declarations, and no auxiliary is regenerated. The code

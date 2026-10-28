@@ -64,17 +64,6 @@ def run : IO Unit := do
     for j in [:sources.size] do
       let equal := Id.run ((Ix.CanonM.exprEqCached sources[i]! sources[j]!).run' {})
       unless equal == (i == j) do throw <| IO.userError "semantic equality ignored a contract"
-  let canonical := Id.run ((sources.mapM Ix.CanonM.canonExpr).run' {})
-  for i in [:canonical.size] do
-    for j in [:canonical.size] do
-      -- The compiler's comparator (Pass 1, `Ix.Compile.Canon.compareExpr`),
-      -- with no block members and no external constants.
-      let ctx : Ix.Compile.Canon.CmpCtx :=
-        { addr? := fun _ => none, mutCtx := {} }
-      let comparison ← get "ordering" <|
-        Ix.Compile.Canon.compareExpr ctx [] [] canonical[i]! canonical[j]!
-      unless (comparison.ord == .eq) == (i == j) do
-        throw <| IO.userError "canonical ordering merged distinct contracts"
   let rawLet := Lean.Expr.letE `view (.sort .zero) (.bvar 0) (.bvar 0) false
   let borrow : Ix.SemanticContract.Contract := {
     kind := .letE, binder := ⟨.affine, .localShared⟩, letKind := .borrowShared }

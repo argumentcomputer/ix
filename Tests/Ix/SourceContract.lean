@@ -333,46 +333,6 @@ def arityProducerTests : TestSeq := Id.run do
     test "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" kinds ++
     test "decorator preserves plain metadata, removes source markers and refuses original semantic frames" metadata
 
--- These open source expressions exercise the universe substitution. Resolving
--- their contracts does not assert declaration admission or whole-program
--- validity.
-def substitutionTests : TestSeq := Id.run do
-  let domain := Expr.sort (.param `u)
-  let source := definition `rewriteOpen (.forallE `x domain (.bvar 1) .default)
-    (.lam `x domain (.bvar 1) .default)
-  let canonical := fun out => (Id.run ((_root_.Ix.CanonM.canonConst out).run {})).1
-  let mut inputs : Array _root_.Ix.Expr := #[]
-  let linear : TelescopeContract := { binder := .position 0, uses := .linear, result := some .unique }
-  if let some out := (resolveTelescope source #[linear]).toOption.bind (fun c => c.decorate.toOption) then
-    if let .defnInfo v := canonical out then inputs := #[v.cnst.type, v.value]
-  let binding := definition `rewriteLet domain (.letE `view domain (.bvar 0) (.bvar 1) false)
-  let borrow : SourceContract := { source := binding, binders := #[
-    { site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
-  if let some out := (borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption) then
-    if let .defnInfo v := canonical out then inputs := inputs.push v.value
-  let eq := _root_.Ix.Compile.ExactKey.exprEq
-  let anchor := _root_.Ix.Expr.mkBVar 0
-  let payloadSame := fun (a b : _root_.Ix.Expr) => match a, b with
-    | .mdata data _ hash, .mdata other _ _ => data.size == 3 &&
-      eq (.mdata data anchor hash) (.mdata other anchor hash)
-    | _, _ => false
-  let u := _root_.Ix.Name.fromLeanName `u
-  let v := _root_.Ix.Name.fromLeanName `v
-  let one := _root_.Ix.Level.mkSucc _root_.Ix.Level.mkZero
-  let domainIsOne := fun (e : _root_.Ix.Expr) => match e with
-    | .mdata _ (.lam _ ty _ _ _) _ | .mdata _ (.forallE _ ty _ _ _) _ |
-      .mdata _ (.letE _ ty _ _ _ _) _ => eq ty (_root_.Ix.Expr.mkSort one)
-    | _ => false
-  return test "rewrite universe substitution retains exact lam/all/let frames and changes their domains"
-      (inputs.size == 3 && inputs.all fun e =>
-        let out := Canon.substLevels #[u] #[one] e
-        domainIsOne out && !eq e out && payloadSame e out) ++
-    test "rewrite universe substitution preserves empty and unequal-array branches"
-      (inputs.size == 3 && inputs.all fun e =>
-        eq e (Canon.substLevels #[] #[one] e) && eq e (Canon.substLevels #[u] #[] e) &&
-        eq e (Canon.substLevels #[v, u] #[one] e) &&
-        domainIsOne (Canon.substLevels #[u] #[one, _root_.Ix.Level.mkZero] e))
-
 def inspectionTests : TestSeq := Id.run do
   let digest := fun (n : UInt8) => Address.mk (ByteArray.mk (Array.replicate 32 n))
   let scalar := _root_.Ix.Expr.lit (.natVal 0) (digest 3)
@@ -432,7 +392,7 @@ def presenceMemoTests : TestSeq := Id.run do
 
 def suite : List TestSeq :=
   [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
-    arityProducerTests, substitutionTests, inspectionTests, presenceMemoTests]
+    arityProducerTests, inspectionTests, presenceMemoTests]
 
 end Tests.Ix.SourceContract
 

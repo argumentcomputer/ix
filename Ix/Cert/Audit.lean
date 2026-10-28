@@ -3096,8 +3096,7 @@ recursor's result-variable walk is the source's
 
 A mutual block keeps one payload per class, the class's first member, with
 that member's kind and constructor positions, and the sharing build's
-write-back keeps both (`ProjectionLayout.mutual_block_shape`); the class
-sort returns no empty class (`sort_nonempty`); the standalone inductive
+write-back keeps both (`ProjectionLayout.mutual_block_shape`); the standalone inductive
 family's block keeps the source's constructor positions, so its projection
 records resolve under the certified reader to the block's member and
 constructors (`inductive_projection_resolves`,
@@ -3128,10 +3127,6 @@ constructors (`inductive_projection_resolves`,
 /-- info: 'Ix.CompileCert.ProjectionLayout.payload_count' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.ProjectionLayout.payload_count
-
-/-- info: 'Ix.CompileCert.ProjectionLayout.sort_nonempty' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.ProjectionLayout.sort_nonempty
 
 /-- info: 'Ix.CompileCert.ProjectionLayout.mutual_block_shape' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -3215,150 +3210,6 @@ fun sources =>
 /-- info: 'Ix.CompileCert.MutualArtifact.mutual_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.MutualArtifact.mutual_correct
-
-/-! ## Component theorems: Pass 1's classes (CS-01) and the compiler's classes agree (R9b)
-
-`Ix.Compile.Canon.sortClasses` (the compiler's `sortConsts`) returns the
-coarsest consistent partition of its members: its classes partition them,
-any two distinct members of a class compare `eq` under the classes' own
-context, and every consistent partition refines them
-(`Canon.sortClasses_coarsest`); an `eq` answer relates the two members by
-the comparator's identifications (`Canon.sortClasses_match`). The one
-hypothesis: the members' and constructors' names are pairwise distinct
-(`Canon.KeysDistinct`). Pass 1 compares names structurally throughout
-(`compareRef` by `nameEq`, the class context by `nameCompareExact`, the
-comparison cache by `ExactName` keys, the address map by `ExactName`), so no
-hypothesis on stored hashes is needed. So the compiler's classes agree in
-shape (`MutualProjections.sort_classes`), which discharges
-`mutual_correct`'s class premises for the driver's two steps
-(`MutualArtifact.mutual_sorted_correct`) and for its three, with the
-recursor-family order between them (`MutualArtifact.mutual_ordered_correct`,
-N-READS N5 a: `orderRecursorFamily` permutes the classes). Every lemma behind
-them is audited in `Ix.CompileCert.ReadingAudit`. -/
-
-/-- info: def Ix.CompileCert.Canon.KeysDistinct : List Ix.MutConst → Prop :=
-fun ms => (List.flatMap Ix.CompileCert.Canon.keysOf ms).Nodup -/
-#guard_msgs (whitespace := lax) in
-#print Ix.CompileCert.Canon.KeysDistinct
-
-/-- info: def Ix.CompileCert.Canon.Consistent : (Ix.Name → Option Address) → List (List Ix.MutConst) → Prop :=
-fun addr? P =>
-  ∀ (C : List Ix.MutConst),
-    C ∈ P →
-      ∀ (a : Ix.MutConst),
-        a ∈ C →
-          ∀ (b : Ix.MutConst),
-            b ∈ C → a ≠ b → Ix.CompileCert.Canon.constOrd addr? (Ix.MutConst.ctx P) a b = Except.ok Ordering.eq -/
-#guard_msgs (whitespace := lax) in
-#print Ix.CompileCert.Canon.Consistent
-
-/-- info: Ix.CompileCert.Canon.sortClasses_coarsest : ∀ (rules : Ix.Compile.Canon.Rules) {addr? : Ix.Name → Option Address}
-  {sources : List Ix.MutConst},
-  Ix.CompileCert.Canon.KeysDistinct sources →
-    ∀ {F : List (List Ix.MutConst)} {stats : Ix.Compile.Canon.SortStats},
-      Ix.Compile.Canon.sortClasses rules addr? sources = Except.ok (F, stats) →
-        Ix.CompileCert.Canon.Partition F sources ∧
-          Ix.CompileCert.Canon.Consistent addr? F ∧ Ix.CompileCert.Canon.Coarsest addr? sources F -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.CompileCert.Canon.sortClasses_coarsest
-
-/-- info: Ix.CompileCert.Canon.sortClasses_match : ∀ (rules : Ix.Compile.Canon.Rules) {addr? : Ix.Name → Option Address}
-  {sources : List Ix.MutConst},
-  Ix.CompileCert.Canon.KeysDistinct sources →
-    ∀ {F : List (List Ix.MutConst)} {stats : Ix.Compile.Canon.SortStats},
-      Ix.Compile.Canon.sortClasses rules addr? sources = Except.ok (F, stats) →
-        ∀ (C : List Ix.MutConst),
-          C ∈ F →
-            ∀ (a : Ix.MutConst),
-              a ∈ C →
-                ∀ (b : Ix.MutConst),
-                  b ∈ C →
-                    a ≠ b → Ix.CompileCert.Canon.ConstMatch (Ix.CompileCert.Canon.ctxOf addr? (Ix.MutConst.ctx F)) a b -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.CompileCert.Canon.sortClasses_match
-
-/-- info: Ix.CompileCert.MutualProjections.sort_classes : ∀ (sources : List Ix.MutConst),
-  Ix.CompileCert.Canon.KeysDistinct sources →
-    Ix.CompileCert.Emission.Yields (Ix.CompileM.sortConsts sources) fun classes =>
-      Ix.CompileCert.Canon.Partition classes sources ∧ Ix.CompileCert.MutualProjections.ClassesAgree classes -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.CompileCert.MutualProjections.sort_classes
-
-/-- info: Ix.CompileCert.MutualArtifact.mutual_sorted_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (members : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.Canon.KeysDistinct members →
-          (∀ (member : Ix.MutConst), member ∈ members → Ix.CompileCert.MutualProjections.ConstructorPositions member) →
-            Ix.CompileCert.rawRun (Ix.CompileM.sortConsts members >>= Ix.CompileM.compileMutualBlock) context before =
-                (Except.ok output, after) →
-              ∃ classes,
-                Ix.CompileCert.Canon.Partition classes members ∧
-                  Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                    Ix.CompileCert.MutualProjections.ProjectionWire output ∧
-                      ∀ (store : Ix.Kernel.Reader.Store),
-                        store output.blockAddr = some output.block →
-                          Ix.CompileCert.MutualProjections.readRows store
-                              (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
-                            Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr classes -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.CompileCert.MutualArtifact.mutual_sorted_correct
-
-/-- info: Ix.CompileCert.MutualArtifact.mutual_ordered_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv),
-  context.fst.surgeryFree = true →
-    ∀ (members : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
-      Ix.Sharing.Verify.BlockWireTablesWF before →
-        Ix.CompileCert.Canon.KeysDistinct members →
-          (∀ (member : Ix.MutConst), member ∈ members → Ix.CompileCert.MutualProjections.ConstructorPositions member) →
-            Ix.CompileCert.rawRun
-                  (do
-                    let sorted ← Ix.CompileM.sortConsts members
-                    Ix.CompileM.compileMutualBlock (Ix.CompileM.orderRecursorFamily sorted))
-                  context before =
-                (Except.ok output, after) →
-              ∃ classes,
-                Ix.CompileCert.Canon.Partition classes members ∧
-                  Ix.Sharing.Verify.BlockResultCodecWF output ∧
-                    Ix.CompileCert.MutualProjections.ProjectionWire output ∧
-                      ∀ (store : Ix.Kernel.Reader.Store),
-                        store output.blockAddr = some output.block →
-                          Ix.CompileCert.MutualProjections.readRows store
-                              (Ix.CompileCert.MutualProjections.logicalRows output.projections) =
-                            Ix.CompileCert.MutualProjections.expectedReferences output.blockAddr classes -/
-#guard_msgs (whitespace := lax) in
-#check @Ix.CompileCert.MutualArtifact.mutual_ordered_correct
-
-/-- info: 'Ix.CompileCert.Canon.constOrd_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.Canon.constOrd_total
-
-/-- info: 'Ix.CompileCert.Canon.sortClasses_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.Canon.sortClasses_eq
-
-/-- info: 'Ix.CompileCert.Canon.sortClasses_coarsest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.Canon.sortClasses_coarsest
-
-/-- info: 'Ix.CompileCert.Canon.compareExpr_eq_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.Canon.compareExpr_eq_sound
-
-/-- info: 'Ix.CompileCert.Canon.sortClasses_match' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.Canon.sortClasses_match
-
-/-- info: 'Ix.CompileCert.MutualProjections.sort_classes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.MutualProjections.sort_classes
-
-/-- info: 'Ix.CompileCert.MutualArtifact.mutual_sorted_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.MutualArtifact.mutual_sorted_correct
-
-/-- info: 'Ix.CompileCert.MutualArtifact.mutual_ordered_correct' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.MutualArtifact.mutual_ordered_correct
 
 /-! ## Component theorems: the reader's recursor index
 
@@ -4216,23 +4067,6 @@ run_cmd do
       `withContract_mentions, `ingressMData_mentions, `noCtorIn_of_ingress, `mem_blockOf_type,
       `mem_blockOf_ctor, `lowerInductive_decl, `forIn_kept, `lowerAll_mem, `noCtor_of_checkSourceWith,
       `inductive_reads_sourceAccepts].map (`Ix.Cert.NoCtor ++ ·))
-
-/-! ## N-READS, N5 b (stage A): one inductive through the driver's mutual path
-
-The driver compiles a block of one inductive as `compileMutualBlock [[m]]`
-over the member `MutConst.mkIndc` builds, after its class sort and
-recursor-family order (which keep the one class), not through
-`compileConstantInfo`. Over that path the block reads back as its source, its
-projections are the class's (`MutualArtifact.mutual_correct`), and its Source
-premises come from Source acceptance as in N4 (b)
-(`Ix.Cert.NoCtor.inductive_reads_driver_sourceAccepts`; the reading-chain half
-is `Ix.CompileCert.MutualInductiveReading`, audited by the reading audit). -/
-
-/-- info: [cert-audit] driver inductive: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "driver inductive" #[`Ix.Cert.NoCtor.inductive_reads_driver_sourceAccepts]
 
 /-! ## Source mode at the pinned bundle evidence (owner, 2026-10-20)
 

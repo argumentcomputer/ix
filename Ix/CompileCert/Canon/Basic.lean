@@ -1,13 +1,12 @@
-import Ix.Compile.Canon.Classes
+import Ix.Common
+import Ix.SOrder
+import Ix.Environment
 
-/-! # Pass 1's comparisons: results and total preorders on the ok-domain
+/-! # Comparisons with a strength flag: total preorders on the ok-domain
 
-CS-01, ported from the donor `a9cf3607` (`Canon/Basic`). Pass 1's
-comparators (`Ix.Compile.Canon`, `Order.lean`) return
-`Except CmpError SOrder`: an error (a metavariable, an unknown universe
-parameter, an external constant without a compiled address, an undecodable
-contract) or an ordering with a strength flag. "The key is a total preorder
-at a fixed context" is made precise here, on the comparisons that succeed:
+A comparison returns `Except ε SOrder`: an error or an ordering with a
+strength flag. "The comparison is a total preorder" is made precise here, on
+the comparisons that succeed:
 
 * `Le r`: `r` succeeded with an ordering other than `gt`;
 * `PreOn S F`: on the points satisfying `S`, the comparison `F` is
@@ -17,14 +16,15 @@ at a fixed context" is made precise here, on the comparisons that succeed:
 
 Orientation gives reflexivity on the ok-domain and antisymmetry up to the
 equivalence `F a b = eq`; transitivity in this form also closes the
-ok-domain under chains, so a class whose adjacent members compared
-successfully is totally comparable (`Round.lean`).
+ok-domain under chains.
 
 The combinators: lexicographic products (`SOrder.cmpM`, the
 `if o ≠ eq then o else …` form of the constant case, `SOrder.zipM` on
 lists), comparisons by a lawful `cmp` on a key (`PreOn.pureCmp`), dispatch
 on a tag (`PreOn.ofTag`), restriction to the points where every comparison
-can succeed (`PreOn.ofGood`), and induction on a size (`PreOn.ofSizeOn`). -/
+can succeed (`PreOn.ofGood`), and induction on a size (`PreOn.ofSizeOn`).
+A total preorder whose results are strong `pure` values is a lawful `cmp`
+(`transCmp_of_total`); `Canon.Ref` proves the name orders lawful this way. -/
 
 namespace Ix.CompileCert.Canon
 
@@ -497,5 +497,25 @@ theorem PreOn.zipCtx {γ : Type w} {β : Type v} {S : γ × β → Prop}
           constructor
           · intro a b ha; exact absurd ha (hno a)
           · intro a b c ha; exact absurd ha (hno a)
+
+/-! ## Lawful comparisons -/
+
+theorem cmpM_pure (o p : Ordering) :
+    SOrder.cmpM (pure ⟨true, o⟩ : Except ε SOrder) (pure ⟨true, p⟩) = pure ⟨true, o.then p⟩ := by
+  cases o <;> rfl
+
+/-- A total preorder whose results are strong `pure` values is a lawful `cmp`. -/
+theorem transCmp_of_total {α : Type u} (cmp : α → α → Ordering)
+    (h : TotalPre (fun a b => (pure ⟨true, cmp a b⟩ : Except ε SOrder))) : Std.TransCmp cmp where
+  eq_swap {a b} := by
+    have := h.swap (a := b) (b := a) trivial trivial (s := true) (o := cmp b a) rfl
+    simp only [pure, Except.pure, Except.ok.injEq, SOrder.mk.injEq, true_and] at this
+    exact this
+  isLE_trans {a b c} h1 h2 := by
+    obtain ⟨s, o, he, hne⟩ := h.trans (a := a) (b := b) (c := c) trivial trivial trivial
+      ⟨true, _, rfl, Ordering.isLE_iff_ne_gt.1 h1⟩ ⟨true, _, rfl, Ordering.isLE_iff_ne_gt.1 h2⟩
+    simp only [pure, Except.pure, Except.ok.injEq, SOrder.mk.injEq] at he
+    obtain ⟨-, rfl⟩ := he
+    exact Ordering.isLE_iff_ne_gt.2 hne
 
 end Ix.CompileCert.Canon

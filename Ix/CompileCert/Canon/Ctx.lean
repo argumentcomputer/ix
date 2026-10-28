@@ -1,9 +1,9 @@
-import Ix.CompileCert.Canon.Group
+import Ix.CompileCert.Canon.Ref
+import Ix.Mutual
 
-/-! # Pass 1's refinement: the class context `MutConst.ctx`
+/-! # The class context `MutConst.ctx`
 
-CS-01, ported from the donor `a9cf3607` (`Canon/Ctx`) and adapted to
-CQ2.25's exact `MutCtx`. `Ix.MutConst.ctx classes` maps each member to the
+`Ix.MutConst.ctx classes` maps each member to the
 index of its class and each constructor to `#classes + offset + position`,
 the offsets reserved per class by the class's largest constructor count.
 This module reads the imperative definition as a fold of insertions of an
@@ -14,14 +14,10 @@ proves:
 * `ctx_member`, `ctx_ctor`: the value of a member's and of a constructor's
   name;
 * `ctx_dom`: the names in the context are exactly the member and
-  constructor names (as values: the map compares names exactly);
-* `ctx_merge`: a context of a partition that refines another identifies no
-  more names than the coarser one, which is what the coarsest-partition
-  argument needs. -/
+  constructor names (as values: the map compares names exactly). -/
 
 namespace Ix.CompileCert.Canon
 
-open Ix.Compile.Canon
 open Ix (Name MutConst MutCtx ConstructorVal)
 
 /-! ## The definition as a fold -/
@@ -390,59 +386,5 @@ theorem slot_disjoint {cls : List (List MutConst)} {j₁ j₂ : Nat} {C₁ C₂ 
   · have := offs_mono cls (Nat.succ_le_of_lt hl); rw [offs_succ cls j₁ C₁ h₁] at this; omega
   · exact ⟨rfl, by omega⟩
   · have := offs_mono cls (Nat.succ_le_of_lt hl); rw [offs_succ cls j₂ C₂ h₂] at this; omega
-
-/-! ## Refining partitions and their contexts -/
-
-/-- `P` refines `Q`: two members of one class of `P` are in one class of `Q`. -/
-def Refines (P Q : List (List MutConst)) : Prop :=
-  ∀ C ∈ P, ∀ m ∈ C, ∀ m' ∈ C, ∃ D ∈ Q, m ∈ D ∧ m' ∈ D
-
-theorem class_index {Q : List (List MutConst)} {D : List MutConst} (h : D ∈ Q) :
-    ∃ j : Nat, Q[j]? = some D := by
-  obtain ⟨j, hj, e⟩ := List.getElem_of_mem h
-  exact ⟨j, by rw [List.getElem?_eq_getElem hj, e]⟩
-
-/-- **The context of a refining partition identifies no more names**: two names with one index
-under `MutConst.ctx P` have one index under `MutConst.ctx Q` when `P` refines `Q`. -/
-theorem ctx_merge {P Q : List (List MutConst)} (hkP : KeysDistinct P.flatten)
-    (hkQ : KeysDistinct Q.flatten) (href : Refines P Q) (x y : Name) (nx ny : Nat)
-    (hx : (MutConst.ctx P)[x]? = some nx) (hy : (MutConst.ctx P)[y]? = some ny) (he : nx = ny) :
-    (MutConst.ctx Q)[x]? = (MutConst.ctx Q)[y]? := by
-  obtain ⟨j₁, C₁, m₁, hC₁, hm₁, s₁⟩ := ctx_val hkP hx
-  obtain ⟨j₂, C₂, m₂, hC₂, hm₂, s₂⟩ := ctx_val hkP hy
-  have hj₁ : j₁ < P.length := by
-    rcases Nat.lt_or_ge j₁ P.length with h | h
-    · exact h
-    · rw [List.getElem?_eq_none h] at hC₁; cases hC₁
-  have hj₂ : j₂ < P.length := by
-    rcases Nat.lt_or_ge j₂ P.length with h | h
-    · exact h
-    · rw [List.getElem?_eq_none h] at hC₂; cases hC₂
-  rcases s₁ with ⟨hx₁, rfl⟩ | ⟨k₁, c₁, hc₁, hx₁, rfl⟩ <;>
-    rcases s₂ with ⟨hy₂, rfl⟩ | ⟨k₂, c₂, hc₂, hy₂, rfl⟩
-  · -- two members of one class of `P`
-    subst he
-    rw [hC₁] at hC₂; cases hC₂
-    obtain ⟨D, hD, hmD₁, hmD₂⟩ := href C₁ (List.mem_of_getElem? hC₁) m₁ hm₁ m₂ hm₂
-    obtain ⟨jD, hjD⟩ := class_index hD
-    rw [← hx₁, ← hy₂,
-      ctx_member hkQ hjD hmD₁, ctx_member hkQ hjD hmD₂]
-  · omega
-  · omega
-  · -- two constructors at one position of members of one class of `P`
-    have hk₁ : k₁ < maxC C₁ := Nat.lt_of_lt_of_le (by
-      rcases Nat.lt_or_ge k₁ m₁.ctors.size with h | h
-      · exact h
-      · rw [Array.getElem?_eq_none h] at hc₁; cases hc₁) (maxC_ge hm₁)
-    have hk₂ : k₂ < maxC C₂ := Nat.lt_of_lt_of_le (by
-      rcases Nat.lt_or_ge k₂ m₂.ctors.size with h | h
-      · exact h
-      · rw [Array.getElem?_eq_none h] at hc₂; cases hc₂) (maxC_ge hm₂)
-    obtain ⟨rfl, rfl⟩ := slot_disjoint hC₁ hC₂ hk₁ hk₂ (by omega)
-    rw [hC₁] at hC₂; cases hC₂
-    obtain ⟨D, hD, hmD₁, hmD₂⟩ := href C₁ (List.mem_of_getElem? hC₁) m₁ hm₁ m₂ hm₂
-    obtain ⟨jD, hjD⟩ := class_index hD
-    rw [← hx₁, ← hy₂,
-      ctx_ctor hkQ hjD hmD₁ hc₁, ctx_ctor hkQ hjD hmD₂ hc₂]
 
 end Ix.CompileCert.Canon
