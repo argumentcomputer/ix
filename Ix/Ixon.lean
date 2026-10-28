@@ -208,15 +208,14 @@ structure UnivPatch where
 /-- Per-constant metadata wrapper: variant payload + extension tables.
     The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) extend the
     index spaces of the primary `Constant` tables (for a projection, the
-    tables of its `muts` block), used by Pass 3's decompile records
-    (`_ix.inline`), and `univPatches` holds original level spellings
-    (canonicity §10.6). Mirrors Rust
-    `ixon::metadata::ConstantMeta`. -/
+    tables of its `muts` block), and `univPatches` holds original level
+    spellings (canonicity §10.6). No compiler writes `metaSharing` or
+    `metaRefs` now. Mirrors Rust `ixon::metadata::ConstantMeta`. -/
 structure ConstantMeta where
   info : ConstantMetaInfo := .empty
-  /-- Compiled Ixon expressions of Pass 3's decompile records (`_ix.inline`),
-      indexed DIRECTLY (no offset). (The retired call-site metadata indexed
-      its collapsed arguments here too.)
+  /-- Compiled metadata expressions, indexed DIRECTLY (no offset). No compiler
+      writes them now: they held the source occurrences of the retired
+      call-site metadata and decompile records.
 
       Extended index space for `share` (a reader rule; the bytes are
       unchanged). Let the primary table `sharing` have `p` entries and this

@@ -118,8 +118,8 @@ functions in this table were removed by this work):
 | Lean sharing | `Ix/Sharing.lean`: `analyzeBlock`, `decideSharing`, `buildSharingVec`, `applySharingCore`, `applySharing` |
 | Lean codec and contracts | `Ix/Ixon.lean`: `putTag0`, `putTag4`, `putExpr`, `putConstant`, `Env.VERSION`; `Ix/IxonContract.lean`, `Ix/IxonMode.lean` |
 | Rust sharing/codec | `crates/ixon/src/sharing.rs`, `serialize.rs`, `expr.rs` |
-| Lean compiler integration | `Ix/CompileM.lean`: `constantInfoRootExprs`, `mutConstRootExprs`, `buildConstantWithSharing`; `Ix/AuxGen/CompileAux.lean` |
-| Rust compiler integration | `crates/compile/src/compile.rs`: `apply_sharing_with_stats`, `apply_sharing_to_*`; `compile/mutual.rs`; `kernel_egress.rs`; `decompile.rs` |
+| Lean compiler integration | `Ix/CompileM.lean`: `constantInfoRootExprs`, `mutConstRootExprs`, `buildConstantWithSharing` |
+| Rust compiler integration | `crates/compile/src/compile.rs`: `apply_sharing_with_stats`, `apply_sharing_to_*`; `kernel_egress.rs`; `decompile.rs` |
 | Cross-language boundary | `crates/ffi/src/lean_ixon/sharing.rs`, existing sharing comparison FFI |
 | Metadata and ingress | `Ix/DecompileM.lean`, `Ix/Tc/Ingress.lean`, `Ix/Tc/IngressMeta.lean`, Rust `compile/decompile.rs` and kernel ingress consumers |
 | Proofs | `Ix/Compile/Verify/Sharing.lean`, `CompileSharingCodec.lean`, downstream compiler codec theorems and audit manifests |
@@ -545,8 +545,8 @@ not imply that the combined anonymous-plus-metadata artifact has globally minimu
 
 The extended index space for `Share` inside metadata expressions (a metadata `Share(i)` with
 `i < p` is a primary entry, `i ≥ p` is `metaSharing[i − p]`) and its construction are specified
-in §13; collapsed call-site indices keep addressing `metaSharing` directly. (CQ3.6 retired the
-call-site metadata; Pass 3 records index `metaSharing` the same way.)
+in §13. No compiler writes metadata expressions now: the call-site metadata and the
+decompile records that used them are retired.
 
 ### 8.3 Version and address migration
 
@@ -1115,9 +1115,8 @@ primary bytes decode.
 
 Well-foundedness: entry `metaSharing[j]` may reference every primary entry and the metadata
 entries before it (`p ≤ i < p + j`); a reader expands `metaSharing` in order, each entry against
-`sharing ++ metaSharing[0..j)`. Record references are unchanged: a Pass 3 record's `_ix.inline`
-indexes `metaSharing` directly (no offset by `p`), as the call-site `sharingIdx` and `origHead`
-did before CQ3.6 retired them (§8.2).
+`sharing ++ metaSharing[0..j)`. No compiler writes metadata expressions now (§8.2); the
+readers keep the rule.
 
 Readers. Only the two decompilers read `metaSharing` contents, and both implement the rule:
 Lean `Ix.DecompileM` (`ShareScope`, `resolveShareIn`; also the semantic-contract scan
@@ -1371,8 +1370,9 @@ guards stay:
   of the reference route's proofs.
 
 Rust keeps its own self-checks: no proof covers the Rust implementation, and they fire
-only on a Rust defect. None of this completes the separate Source acceptance, no-drop,
-paired-stream or `CompileCorrect` obligations.
+only on a Rust defect. The compiler theorem (`Ix.Cert.CompileCorrect`, proved by
+`Ix.Cert.ReaderStreamsTrace.compileCorrect`) is stated for compiles that report no
+failure, so a guard that fires puts the closure outside it rather than making it false.
 
 ### 14.4 Evidence and release gates
 

@@ -65,9 +65,8 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
    circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`, `Ix/IxVM/IxonSerialize.lean`),
    generated into `crates/ixvm-codegen/src/aiur_ixvm.rs` by `lake exe ix codegen`. CI runs
    `lake exe ix codegen --check`.
-5. **Metadata does not depend on the primary table's shape.** A Pass 3 record's `_ix.inline`
-   indexes `ConstantMeta.metaSharing` directly (before CQ3.6 the call-site `sharingIdx` and
-   `origHead` did the same), arena roots follow the unshared logical tree, and every consumer expands `Share` transparently.
+5. **Metadata does not depend on the primary table's shape.** `ConstantMeta.metaSharing`,
+   which no compiler writes now, is indexed directly, arena roots follow the unshared logical tree, and every consumer expands `Share` transparently.
    Re-sharing a constant leaves its metadata valid (§5).
 6. **The compiler's sharing builder theorems are stated over the tiered construction.**
    `Ix.Sharing.Verify.Tiered.canonicalSharingTiered_format` (`TieredWire.lean`) gives
@@ -153,7 +152,6 @@ through it:
 | `buildBlockConstant` (limits from `CompileEnv.sharingLimits`) via `finishConstantWithSharing` | definitions, theorems, opaques, axioms, quotients, recursors |
 | `finishInductiveFamilyBlock` | standalone inductive families |
 | `finishMutualCompilation` → `buildCompiledMutualBlock` | mutual blocks |
-| `Ix/AuxGen/CompileAux.lean`, through `buildBlockConstant` | aux-gen standalone and mutual blocks |
 
 **Rust** (`crates/compile/src`). `share_roots` runs the construction on a block's ordered roots.
 `apply_sharing_to_{definition,axiom,quotient,recursor,mutual_block}_with_limits` run it under
@@ -165,9 +163,7 @@ explicit limits.
 | Caller | Error handling |
 |---|---|
 | `compile.rs`: `compile_single_def`, `compile_const_inner`, `compile_mutual`, `compile_mutual_block` | `CompileError`, propagated with `?` |
-| `compile/mutual.rs`: `compile_aux_block_with_rename` | `CompileError`, propagated |
 | `kernel_egress.rs`: `egress_muts_block`, `egress_standalone` | mapped to the egress `String` errors, naming the constant (`egress '<name>': …`) |
-| `decompile.rs`: `roundtrip_block` | `AuxGenError::Recompile`, which keeps the compile error and its category and names the constant and step (`recompile of '<name>' (sharing): …`); the recompiled address must equal `Named.original`, so the recompile uses exactly the compile route |
 
 Errors: resource exhaustion is `CompileError.resourceLimit` (it names the limit and the
 override); every other construction failure is `CompileError.sharingConstruction`.
@@ -178,7 +174,7 @@ failure does not switch families or emit a best-so-far result.
 
 These expand `Share(i)` against the decoded table and need no change for TagN: Lean
 `Ix/DecompileM.lean` (`resolveShareIn`, `collectIxonTelescopeExpandingShares`),
-`Ix/Tc/Ingress.lean`, `Ix/Tc/IngressMeta.lean` (fuel-bounded expansion that reports a cycle),
+IxC's reader (`IxC/Kernel/Ixon/Reader.lean`),
 `Ix/SemanticContract.lean` (`containsIxon`), `Ix/Resource/Addressed.lean` (offsets Share into a
 program-wide table); Rust `crates/compile/src/decompile.rs`, `crates/kernel/src/ingress.rs`,
 `crates/compile/src/semantic_contract.rs`, `crates/ixon/src/resource.rs`,
@@ -243,18 +239,15 @@ codec, is retired ([kernel](kernel.md), "Removal ledger").
 
 ### 5.1 Index spaces
 
-- **Separate namespaces.** A Pass 3 decompile record's `_ix.inline` indexes
-  `ConstantMeta.metaSharing`, which both compilers start at 0 per constant. (Before CQ3.6 the
-  call-site surgery's `CallSiteEntry.collapsed sharingIdx` and `callSite.origHead.0` indexed it
-  too.)
-- **No offset.** Record indices are never offset by the primary table length.
-- **Kernel ingress ignores it.** `Ix/Tc/IngressMeta.lean` and Rust `crates/kernel/src/ingress.rs`
-  do not read `metaSharing`.
+- **Separate namespaces.** `ConstantMeta.metaSharing` is its own table, indexed from 0 per
+  constant. No compiler writes it now: the call-site metadata and the decompile records that
+  indexed it are retired.
+- **Kernel ingress ignores it.** Rust `crates/kernel/src/ingress.rs` and IxC's reader do not
+  read `metaSharing`.
 
 ### 5.2 Metadata payloads contain no primary Share references
 
-`metaSharing` entries are raw compiled expressions (the source occurrences of Pass 3 records,
-compiled by Lean `Ix.CompileM` and Rust `compile_expr`). Share is produced only by the sharing construction, which runs on the roots
+`metaSharing` entries are raw compiled expressions (no compiler writes any now). Share is produced only by the sharing construction, which runs on the roots
 after metadata is built. Their Ref/univ indices point into the block's primary `refs`/`univs`
 tables, which the construction does not change, so no remapping is needed when the primary table
 changes.
@@ -299,11 +292,11 @@ definition cycles. That guard does not validate Share or metadata-replay edges.
 ### 5.4 How per-occurrence arena roots survive
 
 Arena nodes mirror the **unshared** logical tree; a Share is transparent and keeps the same
-arena index (`Ix/Tc/IngressMeta.lean`, `Ix/DecompileM.lean`, Rust `decompile.rs`,
+arena index (`Ix/DecompileM.lean`, Rust `decompile.rs`,
 `ingress.rs`). Universe patches are keyed by arena index. Root indices
 (`typeRoot`, `valueRoot`, `ruleRoots`) are arena indices. So any change of which subterms are
-shared, or of where a Share cuts a telescope, leaves arena roots, binder data, Pass 3
-records, universe patches and `Named.original` valid. Editing only the optional
+shared, or of where a Share cuts a telescope, leaves arena roots, binder data,
+universe patches and `Named.original` valid. Editing only the optional
 `ConstantMeta` sidecar leaves anonymous bytes fixed. Semantic source-contract
 mdata is different: compilation lowers it into `Constant`'s binder fields,
 which are part of anonymous identity (`Ix/SemanticContract.lean`).
@@ -338,7 +331,7 @@ the claim" ("catalog: …" likewise). The in-circuit claim readers require objec
 |---|---|---|---|
 | handoff set | `Tests/Fixtures/ixon-v4/handoff/` (`accepted.ixe`, `rejected-local-escape.ixe`, `profile.bin`, `accepted.claim`, `manifest.json`) | `ixon-v4-tests` (byte equality); `ix-kernel` `resource::tests::cross_language_consumer_handoff` | `lake exe ixon-v4-tests --export-handoff` |
 | claims, addressed resources, resource cases | `Tests/Fixtures/ixon-v4/{claims,addressed,resource}.tsv` | `ixon-v4-tests` (whole files); `ixon` `proof::tests::v4_claim_fixtures_and_strict_scope`, `resource::addressed::tests::canonical_cross_language_fixtures` | `lake exe ixon-v4-tests --export-fixtures` |
-| canonical primitive addresses | `Tests/Fixtures/ixon-v4/primitives.tsv`, `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`), `Ix/Tc/Primitive.lean`, the IxVM literals in `Ix/IxVM/Kernel/*.lean` | `lake exe ixon-v4-primitives` (file equality), suites `primitive-address-parity` and `prim-addrs` (IxVM literals) | `lake exe ixon-v4-primitives` |
+| canonical primitive addresses | `Tests/Fixtures/ixon-v4/primitives.tsv`, `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`), `Ix/PrimAddrs.lean`, the IxVM literals in `Ix/IxVM/Kernel/*.lean` | `lake exe ixon-v4-primitives` (file equality), suites `primitive-address-parity` and `prim-addrs` (IxVM literals) | `lake exe ixon-v4-primitives` |
 | catalog claim digest | `Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs` (`catalog_claim_wire_bytes_pinned`) | `claim` suite, `ixon` tests | the serializers' output |
 | env-bytes hash | `crates/compile/src/graph.rs` | `ix-compile` `graph::tests::setup_scan_preserves_compiled_fixture_bytes` | rerun and pin |
 | independent expression bytes | `Tests/Fixtures/ixon-v4/expressions.txt` | `ixon-v4-tests`; `ixon` `v4_independent_golden_expressions` | written by hand from the specification (`text.tsv` holds no bytes) |
@@ -357,7 +350,7 @@ Not regenerated, because their inputs are not available in the development envir
 
 **Caches and on-disk artifacts.** The TruthMines piece-cache key includes `ixe=<VERSION>`
 (`Benchmarks/TruthMinesSpec/Main.lean`); `tc-parity.ixe` is recompiled when its header
-carries another version (`Tests/Ix/Tc/ParityEnv.lean`). `comppoly.ixe` and `tauceti.ixe` are
+carries another version (`Tests/Ix/Kernel/ParityEnv.lean`). `comppoly.ixe` and `tauceti.ixe` are
 user-built and gitignored; a stale one fails with the version error. CI caches `.ixe` files by
 commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`.
 
@@ -372,8 +365,8 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
    write identical environments (238,574 constants on Lean 4.34.0)
    (`sharing-minimum-performance.md`).
 2. **Resource exhaustion in the compiler.** The construction fails closed; a constant over the
-   limits is a compile error for every caller (compile, aux-gen, kernel egress, decompile
-   recompile). The defaults sit far above every corpus maximum (Mathlib: largest MSS table
+   limits is a compile error for every caller (compile and kernel egress). The defaults sit
+   far above every corpus maximum (Mathlib: largest MSS table
    21,461 entries; 81,833 candidates; largest table-count knapsack 9,959,424 cells against a
    `knapsack_cells` default of 2^28), and `--sharing-limits` raises them. Neither language limits
    the candidate count on this path. Lean and Rust count work differently (Rust's `work` charges

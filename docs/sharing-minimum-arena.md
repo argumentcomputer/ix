@@ -320,9 +320,8 @@ Tag0 → TagN replacement had not landed.
 
 - the pass in Lean and Rust, about 120 lines each, plus Lean/Rust parity tests;
 - one call at each metadata finalization site: Lean `takeArena` users in
-  `Ix/CompileM.lean` (defn, axio, quot, recr, ctor, inductive and mutual paths) and
-  `Ix/AuxGen/CompileAux.lean`, and the Rust equivalents in `compile.rs`, `mutual.rs` and
-  `kernel_egress.rs`;
+  `Ix/CompileM.lean` (defn, axio, quot, recr, ctor, inductive and mutual paths), and the
+  Rust equivalents in `compile.rs` and `kernel_egress.rs`;
 - fixture regeneration, which v4 needs anyway.
 
 That is too large for "serializer only", hence a stacked PR. It needs no format change:
