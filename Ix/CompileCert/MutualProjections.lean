@@ -131,7 +131,14 @@ theorem build_rows (sources : List MutConst) (owner : Address)
     logicalRows (buildMutualProjections sources owner metadata) = expectedRows owner sources := by
   let lookup : Std.HashMap Ix.Name Ixon.ConstantMeta :=
     metadata.foldl (fun table pair => table.insert pair.1 pair.2) {}
-  change logicalRows (forIn (m := Id) sources (#[], (0 : UInt64)) (indexedMemberStep owner lookup)).1 = _
+  have rows : buildMutualProjections sources owner metadata =
+      (forIn (m := Id) sources (#[], (0 : UInt64)) (indexedMemberStep owner lookup)).1 := by
+    unfold buildMutualProjections
+    apply congrArg Prod.fst
+    apply congrArg (fun body => forIn (m := Id) sources (#[], (0 : UInt64)) body)
+    funext source state
+    cases source <;> rfl
+  rw [rows]
   simpa [expectedRows, logicalRows] using members_rows sources #[] 0 owner lookup
 
 theorem pushed_rows (sources : List α) (initial : Array Row) (makeRow : α → Row) :
@@ -298,7 +305,7 @@ theorem selected_member (sources : List MutConst) (targets : Array Ixon.MutConst
   simp only [List.getElem?_map, Array.getElem?_toList, sourceAt, Option.map_some] at atIndex
   cases targetAt : targets[index]? with
   | none => simp [targetAt] at atIndex
-  | some target => exact ⟨target, targetAt, Option.some.inj (by simpa [targetAt] using atIndex)⟩
+  | some target => exact ⟨target, rfl, Option.some.inj (by simpa [targetAt] using atIndex)⟩
 
 /-- A source member's constructors declare their own positions. -/
 def ConstructorPositions (source : MutConst) : Prop :=
