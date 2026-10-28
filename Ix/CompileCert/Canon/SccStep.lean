@@ -3,7 +3,7 @@ module
 public import Ix.CompileCert.Canon.Scc
 
 /-!
-# M7 L1, components: every iteration of Tarjan's loop keeps the invariant
+# Every iteration of Tarjan's loop keeps the invariant
 
 `inv_root` (a new DFS root), `inv_new` (an edge to an unvisited node), `inv_on` (an edge to a
 node on the stack), `inv_done` (an edge to a popped node), and `inv_finish` (a finished node:

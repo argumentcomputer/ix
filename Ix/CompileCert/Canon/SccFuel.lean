@@ -3,7 +3,7 @@ module
 public import Ix.CompileCert.Canon.SccMain
 
 /-!
-# M7 L1, components: Tarjan's fuel suffices
+# Tarjan's fuel suffices
 
 `condensation` gives each root the fuel `|E| + |V| + 1` (`fuel0`) and reports exhaustion as
 `none`. `condensation_isSome`: it never does. The work left (`pot`: each unvisited node with
