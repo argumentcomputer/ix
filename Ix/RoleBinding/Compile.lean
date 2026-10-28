@@ -135,9 +135,21 @@ def compileRequired (backend : Backend) (source : Lean.Environment)
       throw (IO.userError s!"artifact support: internal compilation did not publish {name}")
   return out
 
+/-- The certificate theorems of the toolchain ix runs on: its own
+`IxC.Kernel.PinGen.Certs`, elaborated against its own `Init`. -/
+def nativeCertSource : IO Lean.Environment :=
+  getCompileEnv #[`IxC.Kernel.PinGen.Certs]
+
 /-- Generate from real certificate source, compiled by the same raw backend.
-No committed/default role table or certificate store supplies missing inputs. -/
+No committed/default role table or certificate store supplies missing inputs.
+
+The certificate theorems are read from `certSource`, which must be the same
+toolchain's environment as `source`: `nativeCertSource` for a compile of ix's own
+toolchain, and the imported environment itself for a compile of another
+toolchain's export (`Ix.LeanExport`). It is only run when a well-founded
+operation's role is published. -/
 def finalize (backend : Backend) (source : Lean.Environment)
+    (certSource : IO Lean.Environment)
     (input : Ix.Compile.CompileInput) (artifact : Ixon.Env)
     (limits : Ix.Kernel.Admission.Limits) : IO Ixon.Env := do
   let (required, selected) ← IO.ofExcept (supportInput source artifact)
@@ -149,7 +161,7 @@ def finalize (backend : Backend) (source : Lean.Environment)
     throw (IO.userError "artifact support: compiled role publications differ from the selected closure")
   let theorems := (Ix.RoleEvidence.certTheorems.filter (fun (role, _) => required.contains role)).flatMap (·.2)
   let certificates ← if theorems.isEmpty then pure ({} : Ixon.Env) else do
-    let certSource ← getCompileEnv #[`IxC.Kernel.PinGen.Certs]
+    let certSource ← certSource
     for name in theorems do
       match certSource.find? name with
       | some (.thmInfo _) => pure ()

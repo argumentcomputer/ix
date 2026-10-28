@@ -100,7 +100,7 @@ serialize the grounded subset)"
         IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
       return 1
     let artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.leanBackend workers opts)
-      fe.env input out.env Ix.Resource.typingLimits
+      fe.env Ix.RoleBinding.Compile.nativeCertSource input out.env Ix.Resource.typingLimits
     let out := { out with env := artifact, bytes := ← IO.ofExcept (Ixon.serEnv artifact) }
     IO.ofExcept (Ix.CompileM.resourcePostStep out)
     Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) out.bytes
@@ -121,7 +121,8 @@ serialize the grounded subset)"
         let constants ← IO.ofExcept input.prepare
         let _ ← Ix.CompileM.rsCompileEnvBytesFFI constants rustOut.toString true
         let raw ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rustOut))
-        let bound ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend fe.env input raw Ix.Resource.typingLimits
+        let bound ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend fe.env
+          Ix.RoleBinding.Compile.nativeCertSource input raw Ix.Resource.typingLimits
         IO.ofExcept (Ixon.serEnv bound)
       let tRe := (← IO.monoMsNow) - tR
       if rustBytes == out.bytes then
