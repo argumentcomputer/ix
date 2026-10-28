@@ -4298,10 +4298,8 @@ mod tests {
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
     tc.enable_extra_reductions();
-    let back = kt::ME::cnst(
-      tc.primitives().unwrap().string_back.clone(),
-      Box::new([]),
-    );
+    let back =
+      kt::ME::cnst(tc.primitives().unwrap().string_back.clone(), Box::new([]));
     let empty = kt::ME::str(String::new(), Address::hash(b""));
     let result = tc.whnf(&kt::ME::app(back, empty)).unwrap();
     let (head, args) = collect_app_spine(&result);
