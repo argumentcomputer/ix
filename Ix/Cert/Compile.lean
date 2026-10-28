@@ -3,6 +3,7 @@ module
 public import Ix.CompileDriver
 public import IxC.Kernel.Ixon.Reader
 public import IxC.Kernel.Ixon.Prelude
+public import Ix.LeanIngress
 
 /-! # The compiler as a pure function
 
@@ -726,17 +727,22 @@ inductive is `first`, published at the record `blk` or at a projection of it. -/
   | some (.recInfo rv) => decide (rv.all[0]? = some first) && decide (blk ∈ publishedRecords ixe rn)
   | _ => false
 
+/-- `familyRecursors`' step at the input constant `n`: a recursor is filed under
+its family's first inductive's name hash. -/
+@[expose] def familyRecursorsStep (m : Std.HashMap Address (Array Ix.Name)) (n : Ix.Name)
+    (ci : Ix.ConstantInfo) : Std.HashMap Address (Array Ix.Name) :=
+  match ci with
+  | .recInfo rv =>
+    match rv.all[0]? with
+    | some first => m.insert first.getHash ((m.getD first.getHash #[]).push n)
+    | none => m
+  | _ => m
+
 /-- The input recursors, by the name hash of their family's first inductive:
 the candidates `unownedRecursor` tries for a family. Each candidate is checked
 in full (`familyRecursorAt`), so the table only narrows the search. -/
 @[expose] def familyRecursors (env : Ix.Environment) : Std.HashMap Address (Array Ix.Name) :=
-  env.consts.fold (init := {}) fun m n ci =>
-    match ci with
-    | .recInfo rv =>
-      match rv.all[0]? with
-      | some first => m.insert first.getHash ((m.getD first.getHash #[]).push n)
-      | none => m
-    | _ => m
+  env.consts.fold (init := {}) familyRecursorsStep
 
 /-- Whether a recursor of the family whose first inductive is `first` is published
 at the record `blk` or at a projection of it (`cands`, `familyRecursors`, gives the
@@ -906,6 +912,331 @@ a literal's support role stored in the artifact is its name's
     let roles := storedLiteralRoles ixe
     unnamed.find? fun (s, _) => roles.contains s
 
+/-! ## Inductive input shapes
+
+The compiler copies an inductive family's declarations as Lean gives them, and
+reads only some of what it copies. The certified reading of a family
+(quotient Source) and the reading of its compiled records (the Ixon reader)
+agree only on inputs of the shapes Lean produces; these checks refuse every
+other input. Real inputs pass all of them, and none changes a compiled byte. -/
+
+/-- The first constructor name of an input inductive that is stored as a constructor declaring
+another index than its position in the inductive's list, if any. The compiler stores the
+declared index in the block and addresses the constructor by its position, so they must agree
+for its projection to resolve. -/
+@[expose] def misplacedConstructor (env : Ix.Environment) : Option Ix.Name :=
+  env.consts.toList.findSome? fun (_, ci) =>
+    match ci with
+    | .inductInfo iv =>
+      (iv.ctors.toList.zipIdx.find? fun (c, j) =>
+        match env.consts.get? c with
+        | some (.ctorInfo cv) => cv.cidx != j
+        | _ => false).map (·.1)
+    | _ => none
+
+/-- Whether two arrays of names are equal, name by name structurally
+(`Ix.Name.beqRaw`, through `Ix.LeanIngress.TableName`'s lawful `==`). -/
+@[expose] def namesEq (a b : Array Ix.Name) : Bool :=
+  @BEq.beq (Array Ix.LeanIngress.TableName) _ a b
+
+/-- The level parameters of the first input recursor met for each family's first inductive
+(its `all[0]`, compared structurally). -/
+@[expose] def recursorLevelParams (env : Ix.Environment) :
+    Std.HashMap Ix.LeanIngress.TableName (Array Ix.Name) :=
+  env.consts.fold (init := {}) fun m _ ci =>
+    match ci with
+    | .recInfo rv =>
+      match rv.all[0]? with
+      | some first => if m.contains first then m else m.insert first rv.cnst.levelParams
+      | none => m
+    | _ => m
+
+/-- Whether the recursor `rv` has as many level parameters as its family's first inductive
+`first`, or one more (a large eliminator's); any count when `first` is not an input
+inductive. -/
+@[expose] def recursorLevelCountOk (env : Ix.Environment) (first : Ix.Name) (rv : Ix.RecursorVal) : Bool :=
+  match env.consts.get? first with
+  | some (.inductInfo iv) =>
+    rv.cnst.levelParams.size == iv.cnst.levelParams.size ||
+      rv.cnst.levelParams.size == iv.cnst.levelParams.size + 1
+  | _ => true
+
+/-- The first input name whose level parameters are not its family's, if any: a member an
+input inductive lists, or a constructor it lists, without the inductive's names, or a
+recursor without the names of the first recursor met with its `all[0]`
+(`recursorLevelParams`), or with neither its family's count nor one more
+(`recursorLevelCountOk`). The compiler compiles a constructor's type under its inductive's
+level parameters, while quotient Source numbers each constant by its own. -/
+@[expose] def strayLevelParams (env : Ix.Environment) : Option Ix.Name :=
+  let recLps := recursorLevelParams env
+  env.consts.toList.findSome? fun (n, ci) =>
+    match ci with
+    | .inductInfo iv =>
+      match iv.all.find? (fun m =>
+          match env.consts.get? m with
+          | some (.inductInfo iv') => !namesEq iv'.cnst.levelParams iv.cnst.levelParams
+          | _ => false) with
+      | some m => some m
+      | none =>
+        iv.ctors.find? fun c =>
+          match env.consts.get? c with
+          | some (.ctorInfo cv) => !namesEq cv.cnst.levelParams iv.cnst.levelParams
+          | _ => false
+    | .recInfo rv =>
+      match rv.all[0]? with
+      | some first =>
+        if (recLps[(first : Ix.LeanIngress.TableName)]?).any (namesEq · rv.cnst.levelParams) &&
+            recursorLevelCountOk env first rv then none
+        else some n
+      | none => none
+    | _ => none
+
+/-- The names an input constant lists as members of its family: an inductive's `all` and
+constructors, a constructor's inductive, a recursor's `all` and its rules' constructors. -/
+@[expose] def familyNamesOf : Ix.ConstantInfo → List Ix.Name
+  | .inductInfo v => v.all.toList ++ v.ctors.toList
+  | .ctorInfo c => [c.induct]
+  | .recInfo r => r.all.toList ++ r.rules.toList.map (·.ctor)
+  | _ => []
+
+/-- An input name and a name its family lists (`familyNamesOf`) that is not an input
+constant's own name, spelled exactly, the first met, if any. `Ix.Name`'s `==` compares
+stored hashes only, so a name stored nowhere that carries another's hash would otherwise be
+looked up as that other name; with none, every family name is an input key exactly
+(`Ix.Cert.FamilyNamesStored`, with `misnamedInput`). -/
+@[expose] def unstoredFamilyName (env : Ix.Environment) : Option (Ix.Name × Ix.Name) :=
+  env.consts.toList.findSome? fun (n, ci) =>
+    ((familyNamesOf ci).find? fun a =>
+      !(env.consts.get? a).any fun ci' => Ix.nameCompareExact ci'.getCnst.name a == .eq).map (n, ·)
+
+/-- The names of the family whose Lean block is `block`: the names it lists, then the
+constructors of each inductive it lists. -/
+@[expose] def familyNames (env : Ix.Environment) (block : Array Ix.Name) : Array Ix.Name :=
+  block ++ block.flatMap fun n =>
+    match env.consts.get? n with
+    | some (.inductInfo iv) => iv.ctors
+    | _ => #[]
+
+/-- Whether the compile block `all` holds exactly the names `names` (by `==`). -/
+@[expose] def sameNames (all : Ix.Set Ix.Name) (names : Array Ix.Name) : Bool :=
+  let set : Ix.Set Ix.Name := Std.HashSet.ofList names.toList
+  all.toList.all set.contains && names.all all.contains
+
+/-- Whether an inductive family's motive positions fit the compiled records' 64-bit
+fields: its members and auxiliary motives number fewer than `2 ^ 63`. -/
+@[expose] def familySized (iv : Ix.InductiveVal) : Bool :=
+  decide (iv.all.size + iv.numNested < 2 ^ 63)
+
+/-- Whether the compile block `all` is the family of its member `y`: exactly the types and
+constructors of `y`'s family when `y` is an inductive or a constructor of an input inductive;
+exactly the input recursors with `y`'s `all[0]` (`recs`, `familyRecursors`, by the name's
+hash) when `y` is a recursor whose `all[0]` is an input inductive with `y`'s `all`, of a
+family that is `familySized`. Any other member passes. -/
+@[expose] def familyBlockOk (env : Ix.Environment) (recs : Std.HashMap Address (Array Ix.Name))
+    (all : Ix.Set Ix.Name) (y : Ix.Name) : Bool :=
+  match env.consts.get? y with
+  | some (.inductInfo iv) => sameNames all (familyNames env iv.all)
+  | some (.ctorInfo cv) =>
+    match env.consts.get? cv.induct with
+    | some (.inductInfo iv) => sameNames all (familyNames env iv.all)
+    | _ => false
+  | some (.recInfo rv) =>
+    match rv.all[0]? with
+    | some first =>
+      match env.consts.get? first with
+      | some (.inductInfo iv) =>
+        namesEq rv.all iv.all && familySized iv &&
+        (all.toList.all fun x =>
+          match env.consts.get? x with
+          | some (.recInfo rx) => rx.all[0]?.any (Ix.Name.beqRaw · first)
+          | _ => false) &&
+        (recs.getD first.getHash #[]).all all.contains
+      | _ => false
+    | none => false
+  | _ => true
+
+/-- A block of the condensation `blocks` (its representative) and a member of it whose family
+it is not exactly (`familyBlockOk`), the first met, if any. The compile compiles each block
+of its condensation as one unit; with none, a block holding a family member holds exactly
+that family's types and constructors, or exactly its recursors
+(`Ix.Cert.FamilyBlocks`). -/
+@[expose] def strayFamilyMember (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Option (Ix.Name × Ix.Name) :=
+  let recs := familyRecursors env
+  blocks.blocks.toList.findSome? fun (rep, all) =>
+    (all.toList.find? fun y => !familyBlockOk env recs all y).map (rep, ·)
+
+/-- The inductive members of a block's members, with their positions
+(`Ix.CompileCert.ReaderIndex.inductives`). -/
+@[expose] def inductiveMembers (members : Array Ixon.MutConst) : Array (Nat × Ixon.Inductive) :=
+  members.zipIdx.filterMap fun | (.indc ind, index) => some (index, ind) | _ => none
+
+/-- The positions of `owner`'s members among the first `count` carriers
+(`Ix.CompileCert.ReaderIndex.orderFor`). -/
+@[expose] def motiveOrder (carriers : Array (Ix.Kernel.ConstRef Address)) (owner : Address) (count : Nat) :
+    Array Nat :=
+  (carriers.extract 0 count).filterMap fun
+    | .member block index => if block == owner then some index else none
+    | .ctor .. => none
+
+/-- Whether `order` orders the block's inductive members, starting at `firstIndex`
+(`Ix.CompileCert.ReaderIndex.orderValid`). -/
+@[expose] def motiveOrderValid (firstIndex : Nat) (indcs : Array (Nat × Ixon.Inductive)) (order : Array Nat) :
+    Bool :=
+  order.size == indcs.size && order[0]? == some firstIndex &&
+    order.all (fun index => indcs.any (·.1 == index)) && order.toList.eraseDups.length == indcs.size
+
+/-- **The analysis the recursor index files a recursor member by**, when it files it
+(`Ix.CompileCert.ReaderIndex.candidate`, before its one-recursor-per-motive test): its block
+and motive, its motives' carriers, its major premise's carrier. -/
+@[expose] def recursorAnalysis? (store : Ix.Kernel.Reader.Store) (owner : Address) (c : Ixon.Constant)
+    (r : Ixon.Recursor) :
+    Option (Address × Nat × Array (Ix.Kernel.ConstRef Address) × Ix.Kernel.ConstRef Address) := do
+  let (motive, carriers, major) ← Ix.Kernel.Reader.analyseRecursor store owner c r
+  let .member block firstIndex ← carriers[0]? | none
+  let blockRecord ← store block
+  let .muts members := blockRecord.info | none
+  let indcs := inductiveMembers members
+  let _ ← indcs[0]?
+  guard (motiveOrderValid firstIndex indcs (motiveOrder carriers block indcs.size))
+  pure (block, motive, carriers, major)
+
+/-- The slot a recursor member is filed at: its block and motive. -/
+@[expose] def recursorSlot? (store : Ix.Kernel.Reader.Store) (owner : Address) (c : Ixon.Constant)
+    (r : Ixon.Recursor) : Option (Address × Nat) :=
+  (recursorAnalysis? store owner c r).map fun (b, m, _, _) => (b, m)
+
+/-- The motive an input recursor's name gives it in its family's block, in
+`Ix.LeanIngress.blockRecursors`' order: `T.rec` for the `i`-th member `T` of `first.all`;
+`first.rec_{j+1}` for `j < first.numNested` at `first.all.size + j`. -/
+@[expose] def namedMotive? (first : Ix.InductiveVal) (n : Ix.Name) : Option Nat :=
+  (first.all.toList.findIdx? fun T => Ix.LeanIngress.isStrName T "rec" n).orElse fun _ =>
+    ((List.range first.numNested).find? fun j =>
+      Ix.LeanIngress.isStrName first.cnst.name s!"rec_{j + 1}" n).map (first.all.size + ·)
+
+/-- The record member a published name sits at: a recursor projection's block member, or a
+lone recursor's member 0. -/
+@[expose] def publishedRecursor? (ixe : Ixon.Env) (n : Ix.Name) : Option (Address × Nat) := do
+  let named ← ixe.named.get? n
+  let c ← storedRecord ixe named.addr
+  match c.info with
+  | .rPrj q => pure (q.block, q.idx.toNat)
+  | .recr _ => pure (named.addr, 0)
+  | _ => none
+
+/-- What the recursor shape check found. -/
+inductive RecursorShapeError where
+  /-- a stored recursor member the recursor index would not file -/
+  | unanalysed (owner : Address) (member : Nat)
+  /-- two stored recursor members on one slot -/
+  | clash (block : Address) (motive : Nat)
+  /-- a published input recursor whose name gives no motive in its family -/
+  | unnamed (n : Ix.Name)
+  /-- a published input recursor not filed at its family's block and named motive, with
+  the block's members as its first carriers -/
+  | misfiled (n : Ix.Name)
+  /-- a published input recursor whose major premise's constructors are not its rules' -/
+  | major (n : Ix.Name)
+
+/-- The text of a recursor shape refusal. -/
+@[expose] def RecursorShapeError.message : RecursorShapeError → String
+  | .unanalysed o j => s!"the recursor at member {j} of the record {o} does not have the shape \
+      the recursor index files by"
+  | .clash b m => s!"two stored recursor records fall on motive {m} of the inductive block at {b}"
+  | .unnamed n => s!"the input recursor {n.pretty} is named neither T.rec for a member T of its \
+      family nor rec_j for an auxiliary motive j of it"
+  | .misfiled n => s!"the input recursor {n.pretty} is not filed at its family's block and the \
+      motive its name gives it, with the block's members as its first carriers"
+  | .major n => s!"the major premise of the input recursor {n.pretty} is not an inductive whose \
+      constructors, in order, are its rules' constructors"
+
+/-- Each stored recursor member, by its record and position, with its slot
+(`recursorSlot?`), analysed on tasks (`parMap`). -/
+@[expose] def recursorSlots (ixe : Ixon.Env) : List ((Address × Nat) × Option (Address × Nat)) :=
+  (parMap (fun (e : Address × Ixon.Constant) =>
+    (Ix.Kernel.Reader.recursorMembers e.2).toList.map fun (j, r) =>
+      ((e.1, j), recursorSlot? (storedRecord ixe) e.1 e.2 r))
+    (storedRecursorRecords ixe)).toList.flatten
+
+/-- A stored recursor member that is not filed, or a slot two stored recursor members are
+filed at, the first met, if any. Every filed member's first slot is recorded, then each
+member is compared with its slot's. -/
+@[expose] def recursorSlotError (ixe : Ixon.Env) : Option RecursorShapeError :=
+  let slots := recursorSlots ixe
+  match slots.find? (·.2.isNone) with
+  | some ((o, j), _) => some (.unanalysed o j)
+  | none =>
+    let filed := slots.filterMap fun (k, s) => s.map (·, k)
+    let first : Std.HashMap (Address × Nat) (Address × Nat) := filed.foldl (init := {}) fun m (s, k) =>
+      if m.contains s then m else m.insert s k
+    filed.findSome? fun (s, k) => if decide (first[s]? = some k) then none else some (.clash s.1 s.2)
+
+/-- Whether the recursor's rules' constructors are, in order, the constructors of the
+inductive at member `mi` of the block `mb`: each published where it resolves to its
+position. -/
+@[expose] def rulesAt (ixe : Ixon.Env) (rv : Ix.RecursorVal) (mb : Address) (mi : Nat) : Bool :=
+  (List.finRange rv.rules.size).all fun k =>
+    match ixe.named.get? rv.rules[k].ctor with
+    | some cn => Ix.Kernel.Reader.resolve (storedRecord ixe) cn.addr == some (.ctor mb mi k.val)
+    | none => false
+
+/-- The published input recursor `n` (`rv`), when it is not filed by its name: at its
+family's block, at the motive its name gives it (`namedMotive?`), its first carriers the
+block's members in order, its major premise an inductive whose constructors, in order, are
+where its rules' constructors are published. An unpublished name passes. -/
+@[expose] def recursorNameError (env : Ix.Environment) (ixe : Ixon.Env) (n : Ix.Name)
+    (rv : Ix.RecursorVal) : Option RecursorShapeError :=
+  if (ixe.named.get? n).isNone then none else
+  match rv.all[0]? with
+  | none => some (.unnamed n)
+  | some first =>
+    match env.consts.get? first with
+    | some (.inductInfo fv) =>
+      match namedMotive? fv n with
+      | none => some (.unnamed n)
+      | some m =>
+        match ixe.named.get? first, publishedRecursor? ixe n with
+        | some fnamed, some (owner, j) =>
+          match storedRecord ixe owner with
+          | none => some (.misfiled n)
+          | some c =>
+            match (Ix.Kernel.Reader.recursorMembers c).find? (·.1 == j) with
+            | none => some (.misfiled n)
+            | some (_, r) =>
+              match recursorAnalysis? (storedRecord ixe) owner c r with
+              | none => some (.unanalysed owner j)
+              | some (b, m', carriers, major) =>
+                if b == recordBlock ixe fnamed.addr && m' == m &&
+                    (List.range fv.all.size).all (fun i => carriers[i]? == some (.member b i)) then
+                  match major with
+                  | .ctor .. => some (.major n)
+                  | .member mb mi =>
+                    match Ix.Kernel.Reader.inductiveAt (storedRecord ixe) (.member mb mi) with
+                    | none => some (.major n)
+                    | some ind =>
+                      if ind.ctors.size == rv.rules.size && rulesAt ixe rv mb mi then none
+                      else some (.major n)
+                else some (.misfiled n)
+        | _, _ => some (.misfiled n)
+    | _ => some (.unnamed n)
+
+/-- **Recursors have the shapes Lean gives them**: a stored recursor member that the
+recursor index would not file, or two filed at one slot (`recursorSlotError`); otherwise a
+published input recursor not filed by its name (`recursorNameError`, input constants read on
+tasks), the first met, if any. With none, every stored recursor member is filed at a slot of
+its own (`Ix.Cert.RecursorSlotsUnique`) and every published input family recursor at its
+family's block and named motive, with its rules' constructors its major premise's
+(`Ix.Cert.RecursorShapes`). The index files a recursor by its type, which the compiler
+copies; quotient Source reads it by its name. -/
+@[expose] def recursorShapeError (env : Ix.Environment) (ixe : Ixon.Env) : Option RecursorShapeError :=
+  match recursorSlotError ixe with
+  | some e => some e
+  | none =>
+    (parMap (fun (e : Ix.Name × Ix.ConstantInfo) =>
+      match e.2 with
+      | .recInfo rv => recursorNameError env ixe e.1 rv
+      | _ => none) env.consts.toArray).findSome? id
+
 /-- A stored record's definition projection: the member it projects (its block's
 address and its index) and the record's address. -/
 @[expose] def definitionProjection (e : Address × Ixon.LazyConstant) : Option ((Address × Nat) × Address) :=
@@ -970,7 +1301,7 @@ an input name. -/
       | none => some n
     else none
 
-/-- `compileReport`'s seventeen checks on a compile's result, each an error on
+/-- `compileReport`'s twenty-two checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -1007,9 +1338,18 @@ role's address an axiom (`roleRecordKind`). **Literal-support roles are named:**
 under the default role table, a role a stored record's literal is checked against
 (the `Nat` basis, and the string support for a `String` literal) whose address the
 artifact stores a record at is an input constant published at that address
-(`literalRoleUnnamed`). -/
+(`literalRoleUnnamed`). **Inductive inputs have Lean's shapes:** every name an
+input family lists is an input constant's own name (`unstoredFamilyName`); every input
+inductive's `j`-th constructor declares index `j` (`misplacedConstructor`); a
+family's members, constructors and recursors share its level-parameter names, a
+recursor's of its family's count or one more (`strayLevelParams`); every block of the condensation `blocks` (by default the
+compile's, `compileBlocks`) that holds a family member is exactly one family's
+types and constructors, or exactly its recursors (`strayFamilyMember`); and every
+stored recursor member is filed by the recursor index at a slot of its own, every
+published input recursor at the slot its name gives it (`recursorShapeError`). -/
 @[expose] def checkReport (env : Ix.Environment)
-    (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
+    (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures)
+    (blocks : Ix.CondensedBlocks := compileBlocks env) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
   | [], [] =>
     match referenceCycle out.1 with
@@ -1038,7 +1378,29 @@ artifact stores a record at is an input constant published at that address
                           | none =>
                             match unownedRecursor env out.1, roleRecordKind out.1,
                                 literalRoleUnnamed env out.1 with
-                            | none, none, none => .ok ()
+                            | none, none, none =>
+                              match unstoredFamilyName env, misplacedConstructor env, strayLevelParams env,
+                                  strayFamilyMember env blocks, recursorShapeError env out.1 with
+                              | none, none, none, none, none => .ok ()
+                              | some (n, a), _, _, _, _ =>
+                                .error s!"compileReport: inductive input check failed: the input constant \
+                                  {n.pretty} lists {a.pretty} in its family, which is not an input \
+                                  constant's own name"
+                              | none, some c, _, _, _ =>
+                                .error s!"compileReport: inductive input check failed: the constructor \
+                                  {c.pretty} of an input inductive declares another index than its position \
+                                  in the inductive's constructors"
+                              | none, none, some x, _, _ =>
+                                .error s!"compileReport: inductive input check failed: {x.pretty} does not \
+                                  have the level parameters of its family (for a recursor: its family's \
+                                  recursors' list, of its family's count or one more)"
+                              | none, none, none, some (_, y), _ =>
+                                .error s!"compileReport: inductive input check failed: the compile block of \
+                                  {y.pretty} is not exactly its family's types and constructors, or its \
+                                  family's recursors, or the family has 2^63 members and auxiliary motives \
+                                  or more"
+                              | none, none, none, none, some e =>
+                                .error s!"compileReport: inductive input check failed: {e.message}"
                             | none, none, some (s, b) =>
                               .error s!"compileReport: literal-role check failed: the artifact stores \
                                 a record at {b}, the default role table's address of the literal-support \
@@ -1112,7 +1474,7 @@ artifact stores a record at is an input constant published at that address
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with seventeen checks (`checkReport`):
+condensation it cannot schedule). It ends with twenty-two checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -1129,22 +1491,30 @@ record that is not a block; no address holds both a stored blob and a stored
 record; every input name published in an inductive block the recursor index
 attaches recursors to has a family, and each of those recursors is a published
 recursor of it;
-and under the default role table, the stored record at a bound `Nat` operation's
+under the default role table, the stored record at a bound `Nat` operation's
 address is a standalone definition and at a bound axiom role's address an
 axiom, and a role a stored record's literal is checked against whose address holds
-a stored record is an input constant published there. Any inconsistency is an error, and no artifact is returned. So
-coverage, authenticity, an order of the records in which none precedes a
-record it references, distinct name hashes, `Muts` entries that agree with
-their blocks, resolved names published where they resolve, found inductive
+a stored record is an input constant published there; and inductive inputs have
+Lean's shapes: family names are input keys, constructor indices are positions, a
+family shares its level-parameter names, each compile block holding a family member is exactly
+that family's types and constructors or its recursors, and recursors are filed
+by the recursor index at slots of their own, each published input recursor at
+the one its name gives it. Any inconsistency is an error, and no artifact is
+returned. So coverage, authenticity, an order of the records in which none
+precedes a record it references, distinct name hashes, `Muts` entries that agree
+with their blocks, resolved names published where they resolve, found inductive
 blocks, resolved published input names, readable published records, blobs
-apart from records, indexed recursors of their blocks' families, and bound
-roles' records of their kinds hold by construction (`Ix.Cert.compileCovers`,
-`Ix.Cert.compileAuthentic`, `Ix.Cert.ClosureOrder`'s existence,
-`Ix.Cert.nameHashes_distinct`, `Ix.Cert.mutsMismatch_none`,
-`Ix.Cert.resolvedPublished`, `Ix.Cert.inductivesSeen`,
-`Ix.Cert.publishedResolved`, `Ix.Cert.publishedReadable`,
-`Ix.Cert.blobsApart`, `Ix.Cert.recursorsOwned`, `Ix.Cert.roleRecordKinds`); on a
-consistent run the result is
+apart from records, indexed recursors of their blocks' families, bound roles'
+records of their kinds, named literal-support roles and Lean's inductive shapes
+hold by construction (`Ix.Cert.compileCovers`, `Ix.Cert.compileAuthentic`,
+`Ix.Cert.ClosureOrder`'s existence, `Ix.Cert.nameHashes_distinct`,
+`Ix.Cert.mutsMismatch_none`, `Ix.Cert.resolvedPublished`,
+`Ix.Cert.inductivesSeen`, `Ix.Cert.publishedResolved`,
+`Ix.Cert.publishedReadable`, `Ix.Cert.blobsApart`, `Ix.Cert.recursorsOwned`,
+`Ix.Cert.roleRecordKinds`, `Ix.Cert.literalRolesNamed`,
+`Ix.Cert.familyNamesStored`, `Ix.Cert.constructorIndices`, `Ix.Cert.familyLevelParams`,
+`Ix.Cert.familyBlocks`, `Ix.Cert.recursorSlotsUnique`,
+`Ix.Cert.recursorShapes`); on a consistent run the result is
 `compileUnchecked`'s environment and failures, byte for byte. -/
 @[expose] def compileReport (env : Ix.Environment) : Except String (Ixon.Env × Failures) := do
   let (ixe, failures, cenv) ← compileUnchecked env

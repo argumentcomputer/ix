@@ -57,8 +57,14 @@ The headers leave the verdict unchanged: `Ix.Cert.checkReport` reads its input
 environment only through its keys (`uncovered`, `nameHashCollision`,
 `unresolvedPublished`, `strayFailure`, `unreadablePublished`), a constant's kind
 and own name (`unseenInductive`, `misnamedInput`), an inductive's constructors
-and a constructor's inductive (`strayConstructor`), and never a type or a value. Reading the
-values would hold every proof body of the input at once. -/
+and a constructor's inductive (`strayConstructor`), and an inductive family's
+shape: the names it lists, constructor indices, level-parameter names, `all` lists,
+nested counts and recursor rules' constructor names (`unstoredFamilyName`,
+`misplacedConstructor`, `strayLevelParams`,
+`strayFamilyMember`, `recursorShapeError`), and never a type or a value. Reading the
+values would hold every proof body of the input at once. The family check reads the
+condensation the driver compiled (`LeanPipelineOut.blocks`), not one recomputed from
+the headers. -/
 def reportInput (out : LeanPipelineOut) : Except String Ix.Environment := do
   let some nodes := out.sourceNodes?
     | throw "report check: original input facts are unavailable"
@@ -92,10 +98,12 @@ fail because of a block that failed to compile.
 Coverage, authentic storage, an acyclic reference order, distinct name hashes,
 blocks that agree with their `Muts` entries, published input names at readable
 records (`Ix.Cert.unreadablePublished`), and the resolution and naming invariants
-hold of the emitted artifact, or the compile is refused. -/
+hold of the emitted artifact, and the input's inductives have Lean's shapes over the
+condensation the driver compiled (`out.blocks`), or the compile is refused. -/
 def reportPostStep (out : LeanPipelineOut) : Except String Unit := do
   let env ← reportInput out
-  (Ix.Cert.checkReport env out.cenv (out.env, { blocks := out.cenv.ungrounded })).mapError fun e =>
+  (Ix.Cert.checkReport env out.cenv (out.env, { blocks := out.cenv.ungrounded })
+    out.blocks).mapError fun e =>
     match recordedFailures out.cenv.ungrounded with
     | "" => e
     | causes => s!"{e}; the compile recorded {out.cenv.ungrounded.size} failure(s), first {causes}"

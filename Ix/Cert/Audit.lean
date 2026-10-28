@@ -1081,9 +1081,19 @@ fun ixe =>
 -- Re-frozen when the literal-role check was narrowed to the roles a stored record's
 -- literal is checked against: its message says so (an α-copy of `Nat` without `Nat` and
 -- beside no literal is accepted; one beside a `Nat` literal is still refused).
--- Seventeen checks; `checkReport_ok` concludes `CheckReportOk`, one field each.
-/-- info: def Ix.Cert.checkReport : Ix.Environment → Ix.CompileM.CompileEnv → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
-fun env cenv out =>
+-- Re-frozen for five inductive input checks (twenty-two checks): family names are input
+-- keys exactly, constructor indices are positions, a family shares its level-parameter
+-- names (a recursor's of its family's count or one more), each block of the condensation
+-- holding a family member is exactly that family's types and constructors or its recursors
+-- (with the family's `all`, of 64-bit size), and recursors are filed at slots of their own,
+-- by their names (checkReport refuses a crafted inductive input of any other shape). The
+-- condensation is a last argument, by default the compile's (`compileBlocks`), so the
+-- pipeline's post-step passes the driver's own. `CheckReportOk` gains five fields.
+-- Twenty-two checks; `checkReport_ok` concludes `CheckReportOk`, one field each.
+/-- info: def Ix.Cert.checkReport : (env : Ix.Environment) →
+  Ix.CompileM.CompileEnv →
+    Ixon.Env × Ix.Cert.Failures → optParam Ix.CondensedBlocks (Ix.Cert.compileBlocks env) → Except String Unit :=
+fun env cenv out blocks =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
   | [], [] =>
     match Ix.Cert.referenceCycle out.fst with
@@ -1112,7 +1122,38 @@ fun env cenv out =>
                           | none =>
                             match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst,
                               Ix.Cert.literalRoleUnnamed env out.fst with
-                            | none, none, none => Except.ok ()
+                            | none, none, none =>
+                              match Ix.Cert.unstoredFamilyName env, Ix.Cert.misplacedConstructor env,
+                                Ix.Cert.strayLevelParams env, Ix.Cert.strayFamilyMember env blocks,
+                                Ix.Cert.recursorShapeError env out.fst with
+                              | none, none, none, none, none => Except.ok ()
+                              | some (n, a), x, x_1, x_2, x_3 =>
+                                Except.error
+                                  (toString "compileReport: inductive input check failed: the input constant " ++
+                                          toString n.pretty ++
+                                        toString " lists " ++
+                                      toString a.pretty ++
+                                    toString " in its family, which is not an input constant's own name")
+                              | none, some c, x, x_1, x_2 =>
+                                Except.error
+                                  (toString "compileReport: inductive input check failed: the constructor " ++
+                                      toString c.pretty ++
+                                    toString
+                                      " of an input inductive declares another index than its position in the inductive's constructors")
+                              | none, none, some x, x_1, x_2 =>
+                                Except.error
+                                  (toString "compileReport: inductive input check failed: " ++ toString x.pretty ++
+                                    toString
+                                      " does not have the level parameters of its family (for a recursor: its family's recursors' list, of its family's count or one more)")
+                              | none, none, none, some (fst, y), x =>
+                                Except.error
+                                  (toString "compileReport: inductive input check failed: the compile block of " ++
+                                      toString y.pretty ++
+                                    toString
+                                      " is not exactly its family's types and constructors, or its family's recursors, or the family has 2^63 members and auxiliary motives or more")
+                              | none, none, none, none, some e =>
+                                Except.error
+                                  (toString "compileReport: inductive input check failed: " ++ toString e.message)
                             | none, none, some (s, b) =>
                               Except.error
                                 (toString
@@ -1368,6 +1409,11 @@ fields:
   Ix.Cert.CheckReportOk.recursors : Ix.Cert.unownedRecursor env out.fst = none
   Ix.Cert.CheckReportOk.roles : Ix.Cert.roleRecordKind out.fst = none
   Ix.Cert.CheckReportOk.literals : Ix.Cert.literalRoleUnnamed env out.fst = none
+  Ix.Cert.CheckReportOk.familyNames : Ix.Cert.unstoredFamilyName env = none
+  Ix.Cert.CheckReportOk.constructorIndices : Ix.Cert.misplacedConstructor env = none
+  Ix.Cert.CheckReportOk.levelParams : Ix.Cert.strayLevelParams env = none
+  Ix.Cert.CheckReportOk.families : Ix.Cert.strayFamilyMember env (Ix.Cert.compileBlocks env) = none
+  Ix.Cert.CheckReportOk.recursorShapes : Ix.Cert.recursorShapeError env out.fst = none
 constructor:
   Ix.Cert.CheckReportOk.mk {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Ix.Cert.Failures}
     (covered : Ix.Cert.uncovered env out.fst out.snd = []) (authentic : Ix.Cert.unauthentic out.fst = [])
@@ -1381,7 +1427,10 @@ constructor:
     (projections : Ix.Cert.projectionCollision out.fst = none)
     (readable : Ix.Cert.unreadablePublished env out.fst = none) (blobs : Ix.Cert.blobRecordCollision out.fst = none)
     (recursors : Ix.Cert.unownedRecursor env out.fst = none) (roles : Ix.Cert.roleRecordKind out.fst = none)
-    (literals : Ix.Cert.literalRoleUnnamed env out.fst = none) : Ix.Cert.CheckReportOk env cenv out -/
+    (literals : Ix.Cert.literalRoleUnnamed env out.fst = none) (familyNames : Ix.Cert.unstoredFamilyName env = none)
+    (constructorIndices : Ix.Cert.misplacedConstructor env = none) (levelParams : Ix.Cert.strayLevelParams env = none)
+    (families : Ix.Cert.strayFamilyMember env (Ix.Cert.compileBlocks env) = none)
+    (recursorShapes : Ix.Cert.recursorShapeError env out.fst = none) : Ix.Cert.CheckReportOk env cenv out -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CheckReportOk
 
@@ -4987,6 +5036,267 @@ fun env ixe =>
   (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.LiteralRolesNamed env ixe -/
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.literalRolesNamed
+
+/-! ## Inductive inputs have Lean's shapes
+
+The compiler copies an inductive family's declarations as Lean gives them; quotient Source
+reads a family by its names and the Ixon reader reads the compiled records by their types and
+positions. `compileReport` refuses an input whose inductives do not have Lean's shapes
+(`checkReport`'s last five checks, one message prefix): a name a family lists that is not an
+input constant's own name (`unstoredFamilyName`), a constructor declaring another index than
+its position (`misplacedConstructor`), a family member, constructor or recursor without its
+family's level-parameter names, or a recursor with neither its family's count nor one more
+(`strayLevelParams`), a block of the condensation holding a
+family member that is not exactly the family's types and constructors or its recursors, a
+recursor whose `all` is not its family's, or a family of `2 ^ 63` members and auxiliary motives
+or more (`strayFamilyMember`, over `compileBlocks` by default and over the driver's own
+condensation in the pipeline's post-step), and a stored recursor member that the recursor
+index would not file, two filed at one slot, or a published input recursor not filed at the
+slot its name gives it (`recursorShapeError`). The meanings, `FamilyNamesStored`, `ConstructorIndices`,
+`FamilyLevelParams`, `FamilyBlocks`, `RecursorSlotsUnique` and `RecursorShapes`, hold of every
+input and artifact `compileReport` returns. -/
+
+/-- info: [cert-audit] inductive input shapes: 30 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] inductive input shapes: 26 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "inductive input shapes"
+    #[``Ix.Cert.unstoredFamilyName_none, ``Ix.Cert.familyNamesStored,
+      ``Ix.Cert.misplacedConstructor_none, ``Ix.Cert.constructorIndices, ``Ix.Cert.namesEq_iff,
+      ``Ix.Cert.strayLevelParams_recursor, ``Ix.Cert.strayLevelParams_none, ``Ix.Cert.familyLevelParams,
+      ``Ix.Cert.set_key, ``Ix.Cert.sameNames_spec, ``Ix.Cert.familyNames_spec,
+      ``Ix.Cert.familyRecursors_mono, ``Ix.Cert.familyRecursors_mem, ``Ix.Cert.familyBlockOk_congr,
+      ``Ix.Cert.familySized_iff, ``Ix.Cert.familyBlockOk_spec, ``Ix.Cert.strayFamilyMember_member,
+      ``Ix.Cert.strayFamilyMember_none, ``Ix.Cert.familyBlocks, ``Ix.Cert.inductiveMembers_eq,
+      ``Ix.Cert.motiveOrder_eq, ``Ix.Cert.motiveOrderValid_eq, ``Ix.Cert.mem_storedRecords,
+      ``Ix.Cert.mem_recursorSlots, ``Ix.Cert.recursorSlotError_none, ``Ix.Cert.rulesAt_spec,
+      ``Ix.Cert.recursorNameError_spec, ``Ix.Cert.recursorShapeError_none,
+      ``Ix.Cert.recursorSlotsUnique, ``Ix.Cert.recursorShapes]
+  checkRuntime (tag := "cert-audit") "inductive input shapes"
+    #[``Ix.Cert.familyNamesOf, ``Ix.Cert.unstoredFamilyName, ``Ix.Cert.recursorLevelCountOk,
+      ``Ix.Cert.misplacedConstructor, ``Ix.Cert.namesEq, ``Ix.Cert.recursorLevelParams,
+      ``Ix.Cert.strayLevelParams, ``Ix.Cert.familyNames, ``Ix.Cert.sameNames, ``Ix.Cert.familySized,
+      ``Ix.Cert.familyRecursorsStep,
+      ``Ix.Cert.familyBlockOk, ``Ix.Cert.strayFamilyMember, ``Ix.Cert.inductiveMembers,
+      ``Ix.Cert.motiveOrder, ``Ix.Cert.motiveOrderValid, ``Ix.Cert.recursorAnalysis?,
+      ``Ix.Cert.recursorSlot?, ``Ix.Cert.namedMotive?, ``Ix.Cert.publishedRecursor?,
+      ``Ix.Cert.RecursorShapeError.message, ``Ix.Cert.recursorSlots, ``Ix.Cert.recursorSlotError,
+      ``Ix.Cert.rulesAt, ``Ix.Cert.recursorNameError, ``Ix.Cert.recursorShapeError]
+
+/-- info: def Ix.Cert.familyNamesOf : Ix.ConstantInfo → List Ix.Name :=
+fun x =>
+  match x with
+  | Ix.ConstantInfo.inductInfo v => v.all.toList ++ v.ctors.toList
+  | Ix.ConstantInfo.ctorInfo c => [c.induct]
+  | Ix.ConstantInfo.recInfo r => r.all.toList ++ List.map (fun x => x.ctor) r.rules.toList
+  | x => [] -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.familyNamesOf
+
+/-- info: def Ix.Cert.FamilyNamesStored : Ix.Environment → Prop :=
+fun env =>
+  ∀ (n : Ix.Name) (ci : Ix.ConstantInfo),
+    (n, ci) ∈ env.consts.toList → ∀ (a : Ix.Name), a ∈ Ix.Cert.familyNamesOf ci → ∃ ci', (a, ci') ∈ env.consts.toList -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.FamilyNamesStored
+
+/-- info: def Ix.Cert.ConstructorIndices : Ix.Environment → Prop :=
+fun env =>
+  ∀ (n : Ix.Name) (iv : Ix.InductiveVal),
+    env.consts.get? n = some (Ix.ConstantInfo.inductInfo iv) →
+      ∀ (j : Nat) (hj : j < iv.ctors.size) (cv : Ix.ConstructorVal),
+        env.consts.get? iv.ctors[j] = some (Ix.ConstantInfo.ctorInfo cv) → cv.cidx = j -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.ConstructorIndices
+
+/-- info: def Ix.Cert.FamilyLevelParams : Ix.Environment → Prop :=
+fun env =>
+  (∀ (n : Ix.Name) (iv : Ix.InductiveVal),
+      env.consts.get? n = some (Ix.ConstantInfo.inductInfo iv) →
+        (∀ (m : Ix.Name),
+            m ∈ iv.all →
+              ∀ (iv' : Ix.InductiveVal),
+                env.consts.get? m = some (Ix.ConstantInfo.inductInfo iv') →
+                  iv'.cnst.levelParams = iv.cnst.levelParams) ∧
+          ∀ (c : Ix.Name),
+            c ∈ iv.ctors →
+              ∀ (cv : Ix.ConstructorVal),
+                env.consts.get? c = some (Ix.ConstantInfo.ctorInfo cv) → cv.cnst.levelParams = iv.cnst.levelParams) ∧
+    (∀ (x y : Ix.Name) (rx ry : Ix.RecursorVal) (first : Ix.Name),
+        env.consts.get? x = some (Ix.ConstantInfo.recInfo rx) →
+          env.consts.get? y = some (Ix.ConstantInfo.recInfo ry) →
+            rx.all[0]? = some first → ry.all[0]? = some first → rx.cnst.levelParams = ry.cnst.levelParams) ∧
+      ∀ (x : Ix.Name) (rx : Ix.RecursorVal) (first : Ix.Name) (iv : Ix.InductiveVal),
+        env.consts.get? x = some (Ix.ConstantInfo.recInfo rx) →
+          rx.all[0]? = some first →
+            env.consts.get? first = some (Ix.ConstantInfo.inductInfo iv) →
+              rx.cnst.levelParams.size = iv.cnst.levelParams.size ∨
+                rx.cnst.levelParams.size = iv.cnst.levelParams.size + 1 -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.FamilyLevelParams
+
+/-- info: def Ix.Cert.InFamily : Ix.Environment → Array Ix.Name → Ix.Name → Prop :=
+fun env block x =>
+  (∃ n, n ∈ block ∧ (n == x) = true) ∨
+    ∃ n,
+      n ∈ block ∧ ∃ iv, env.consts.get? n = some (Ix.ConstantInfo.inductInfo iv) ∧ ∃ c, c ∈ iv.ctors ∧ (c == x) = true -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.InFamily
+
+/-- info: def Ix.Cert.InRecursors : Ix.Environment → Ix.Name → Ix.Name → Prop :=
+fun env first x => ∃ rv, env.consts.get? x = some (Ix.ConstantInfo.recInfo rv) ∧ rv.all[0]? = some first -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.InRecursors
+
+/-- info: def Ix.Cert.FamilyBlocks : Ix.Environment → Prop :=
+fun env =>
+  ∀ (rep : Ix.Name) (all : Ix.Set Ix.Name),
+    Std.HashMap.get? (Ix.Cert.compileBlocks env).blocks rep = some all →
+      ∀ (y : Ix.Name),
+        Std.HashSet.contains all y = true →
+          (∀ (iv : Ix.InductiveVal),
+              env.consts.get? y = some (Ix.ConstantInfo.inductInfo iv) →
+                ∀ (x : Ix.Name), Std.HashSet.contains all x = true ↔ Ix.Cert.InFamily env iv.all x) ∧
+            (∀ (cv : Ix.ConstructorVal),
+                env.consts.get? y = some (Ix.ConstantInfo.ctorInfo cv) →
+                  ∃ iv,
+                    env.consts.get? cv.induct = some (Ix.ConstantInfo.inductInfo iv) ∧
+                      ∀ (x : Ix.Name), Std.HashSet.contains all x = true ↔ Ix.Cert.InFamily env iv.all x) ∧
+              ∀ (rv : Ix.RecursorVal),
+                env.consts.get? y = some (Ix.ConstantInfo.recInfo rv) →
+                  ∃ first iv,
+                    rv.all[0]? = some first ∧
+                      env.consts.get? first = some (Ix.ConstantInfo.inductInfo iv) ∧
+                        rv.all = iv.all ∧
+                          iv.all.size + iv.numNested < 2 ^ 63 ∧
+                            ∀ (x : Ix.Name), Std.HashSet.contains all x = true ↔ Ix.Cert.InRecursors env first x -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.FamilyBlocks
+
+/-- info: def Ix.Cert.RecursorSlotsUnique : Ixon.Env → Prop :=
+fun ixe =>
+  (∀ (o : Address) (c : Ixon.Constant),
+      Ix.Cert.recordAt ixe o = some c →
+        ∀ (j : Nat) (r : Ixon.Recursor),
+          (j, r) ∈ Ix.Kernel.Reader.recursorMembers c →
+            (Ix.Cert.recursorSlot? (Ix.Cert.recordAt ixe) o c r).isSome = true) ∧
+    ∀ (o₁ o₂ : Address) (c₁ c₂ : Ixon.Constant) (j₁ j₂ : Nat) (r₁ r₂ : Ixon.Recursor) (slot : Address × Nat),
+      Ix.Cert.recordAt ixe o₁ = some c₁ →
+        Ix.Cert.recordAt ixe o₂ = some c₂ →
+          (j₁, r₁) ∈ Ix.Kernel.Reader.recursorMembers c₁ →
+            (j₂, r₂) ∈ Ix.Kernel.Reader.recursorMembers c₂ →
+              Ix.Cert.recursorSlot? (Ix.Cert.recordAt ixe) o₁ c₁ r₁ = some slot →
+                Ix.Cert.recursorSlot? (Ix.Cert.recordAt ixe) o₂ c₂ r₂ = some slot → o₁ = o₂ ∧ j₁ = j₂ -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecursorSlotsUnique
+
+/-- info: def Ix.Cert.RecursorShapes : Ix.Environment → Ixon.Env → Prop :=
+fun env ixe =>
+  ∀ (n : Ix.Name) (rv : Ix.RecursorVal) (named : Ixon.Named),
+    (n, Ix.ConstantInfo.recInfo rv) ∈ env.consts.toList →
+      ixe.named.get? n = some named →
+        ∃ first fv m fnamed owner j c r carriers mb mi ind,
+          rv.all[0]? = some first ∧
+            env.consts.get? first = some (Ix.ConstantInfo.inductInfo fv) ∧
+              Ix.Cert.namedMotive? fv n = some m ∧
+                ixe.named.get? first = some fnamed ∧
+                  Ix.Cert.publishedRecursor? ixe n = some (owner, j) ∧
+                    Ix.Cert.recordAt ixe owner = some c ∧
+                      (j, r) ∈ Ix.Kernel.Reader.recursorMembers c ∧
+                        Ix.Cert.recursorAnalysis? (Ix.Cert.recordAt ixe) owner c r =
+                            some
+                              (Ix.Cert.ClosureLayout.blockAt ixe fnamed.addr, m, carriers,
+                                Ix.Kernel.ConstRef.member mb mi) ∧
+                          (∀ (i : Nat),
+                              i < fv.all.size →
+                                carriers[i]? =
+                                  some (Ix.Kernel.ConstRef.member (Ix.Cert.ClosureLayout.blockAt ixe fnamed.addr) i)) ∧
+                            Ix.Kernel.Reader.inductiveAt (Ix.Cert.recordAt ixe) (Ix.Kernel.ConstRef.member mb mi) =
+                                some ind ∧
+                              ind.ctors.size = rv.rules.size ∧
+                                ∀ (k : Nat) (hk : k < rv.rules.size),
+                                  ∃ cn,
+                                    ixe.named.get? rv.rules[k].ctor = some cn ∧
+                                      Ix.Kernel.Reader.resolve (Ix.Cert.recordAt ixe) cn.addr =
+                                        some (Ix.Kernel.ConstRef.ctor mb mi k) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RecursorShapes
+
+/-- info: def Ix.Cert.recursorAnalysis? : Ix.Kernel.Reader.Store →
+  Address →
+    Ixon.Constant →
+      Ixon.Recursor → Option (Address × Nat × Array (Ix.Kernel.ConstRef Address) × Ix.Kernel.ConstRef Address) :=
+fun store owner c r => do
+  let __x ← Ix.Kernel.Reader.analyseRecursor store owner c r
+  match __x with
+    | (motive, carriers, major) => do
+      let __x ← carriers[0]?
+      match __x with
+        | Ix.Kernel.ConstRef.member block firstIndex => do
+          let blockRecord ← store block
+          match blockRecord.info with
+            | Ixon.ConstantInfo.muts members =>
+              have indcs := Ix.Cert.inductiveMembers members;
+              do
+              let _ ← indcs[0]?
+              guard (Ix.Cert.motiveOrderValid firstIndex indcs (Ix.Cert.motiveOrder carriers block indcs.size) = true)
+              pure (block, motive, carriers, major)
+            | x => none
+        | x => none -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.recursorAnalysis?
+
+/-- info: def Ix.Cert.namedMotive? : Ix.InductiveVal → Ix.Name → Option Nat :=
+fun first n =>
+  (List.findIdx? (fun T => Ix.LeanIngress.isStrName T "rec" n) first.all.toList).orElse fun x =>
+    Option.map (fun x => first.all.size + x)
+      (List.find? (fun j => Ix.LeanIngress.isStrName first.cnst.name (toString "rec_" ++ toString (j + 1)) n)
+        (List.range first.numNested)) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.namedMotive?
+
+/-- info: def Ix.Cert.publishedRecursor? : Ixon.Env → Ix.Name → Option (Address × Nat) :=
+fun ixe n => do
+  let named ← ixe.named.get? n
+  let c ← Ix.Cert.storedRecord ixe named.addr
+  match c.info with
+    | Ixon.ConstantInfo.rPrj q => pure (q.block, q.idx.toNat)
+    | Ixon.ConstantInfo.recr a => pure (named.addr, 0)
+    | x => none -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.publishedRecursor?
+
+/-- info: Ix.Cert.familyNamesStored {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.FamilyNamesStored env -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.familyNamesStored
+
+/-- info: Ix.Cert.constructorIndices {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.ConstructorIndices env -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.constructorIndices
+
+/-- info: Ix.Cert.familyLevelParams {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.FamilyLevelParams env -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.familyLevelParams
+
+/-- info: Ix.Cert.familyBlocks {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.FamilyBlocks env -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.familyBlocks
+
+/-- info: Ix.Cert.recursorSlotsUnique {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.RecursorSlotsUnique ixe -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.recursorSlotsUnique
+
+/-- info: Ix.Cert.recursorShapes {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.RecursorShapes env ixe -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.recursorShapes
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 
