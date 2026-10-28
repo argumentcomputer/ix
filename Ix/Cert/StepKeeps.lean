@@ -168,6 +168,18 @@ theorem fold_insert_exact {m src : Std.HashMap Address ByteArray} (ag : Agrees m
       rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]; exact h
     exact added (a, v) hm
 
+/-- **An inserting fold holds the source's entries**, whatever store it starts from. -/
+theorem fold_insert_last {m src : Std.HashMap Address ByteArray} {a : Address} {v : ByteArray}
+    (h : src.get? a = some v) : (src.fold (fun m k v => m.insert k v) m).get? a = some v := by
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  have hm : (a, v) ∈ src.toList := by
+    rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]; exact h
+  exact foldl_insert_consistent (fun p : Address × ByteArray => p.1) (fun p => p.2) _ (fun _ _ => rfl) _ _
+    (fun p hp q hq e => by
+      rw [Std.HashMap.mem_toList_iff_getElem?_eq_some] at hp hq
+      rw [e, hq] at hp
+      exact (Option.some.inj hp).symm) (a, v) hm
+
 /-- A merge runs only after `checkCompiledBlock`, whose blob check covers the block's blobs. -/
 theorem checkCompiledBlock_blobs {cenv : CompileEnv} {lo : Ix.Name} {result : BlockResult}
     {cache : BlockState} (h : checkCompiledBlock cenv lo result cache = .ok ()) :

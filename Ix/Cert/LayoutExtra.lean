@@ -56,8 +56,8 @@ three cases together are `layout_extra`.
 
 **Claims.** Every closure name's published record is a primary claim of its block's compile in
 the fold, whose key and members are closure names (`claimedIn_of`, from
-`compileReport_owned_block`), so `Layout.extra` follows from the compile and Source acceptance
-given the literal-roles check (`layout_extra_of`). -/
+`compileReport_owned_block`), and the compile report checks the literal roles, so `Layout.extra`
+follows from the compile and Source acceptance (`layout_extra_of`). -/
 
 namespace Ix.Cert.LayoutExtra
 
@@ -1995,21 +1995,6 @@ section Literals
 
 open Ix.CompileM Ix.CompileCert
 
-/-- The input name `literalSupport` gives a literal-support role (`supportNames`' spelling). -/
-def literalRoleName (s : Ix.Kernel.Role) : Ix.Name :=
-  Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.Key.role s : Ix.Kernel.Key .source))
-
-/-- **A stored literal-support role's record is its name's**, under the default role table:
-when the artifact stores a record at the address of a role a literal is checked against (the
-`Nat` basis and the string support, `Ix.Kernel.Reader.strLitSupportNames`), that role's name
-is an input constant published at that address. Every other address, and every unbound role,
-is unconstrained. -/
-def LiteralRolesNamed (env : Ix.Environment) (ixe : Ixon.Env) : Prop :=
-  ∀ t, Ix.Kernel.Reader.defaultTable = .ok t →
-    ∀ s ∈ keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)), ∀ b,
-      t.addressOf? s = some b → ixe.consts.contains b = true →
-        env.consts.contains (literalRoleName s) = true ∧ addrOf ixe (literalRoleName s) = some b
-
 /-- A role among a list's keys is one of its keys. -/
 theorem role_of_keyRoles {md : Ix.Kernel.Mode} {L : List (Ix.Kernel.Key md)} {s : Ix.Kernel.Role}
     (h : s ∈ keyRoles L) : (Ix.Kernel.Key.role s : Ix.Kernel.Key md) ∈ L := by
@@ -2314,19 +2299,19 @@ theorem claimedIn_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Env
   exact ⟨snap.cenv, all, blockKey rep all, r, c, b, hE, blockKey_mem (Condense.condense_nonempty hall),
     hsub, hr, hclaim, hb, hblock⟩
 
-/-- **`Layout.extra` from the compile and Source acceptance**, given the literal-roles report
-check: the claims are the fold's (`claimedIn_of`), and the role-record and recursor checks are
-the compile report's (`roleRecordKinds`, `recursorsOwned`). -/
+/-- **`Layout.extra` from the compile and Source acceptance**: the claims are the fold's
+(`claimedIn_of`), and the role-record, recursor and literal-roles checks are the compile
+report's (`roleRecordKinds`, `recursorsOwned`, `literalRolesNamed`). -/
 theorem layout_extra_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
-    (P : Premises env roots sub ixe failures t envQ) (named : LiteralRolesNamed env ixe)
+    (P : Premises env roots sub ixe failures t envQ)
     (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint) :
     ∀ (i : Nat) (gr : Group), (quotientGraph ixe t hints sub).groups[i]? = some gr → ∀ n ∈ gr.names,
       ∀ a ∈ nameRecords ixe n, ∀ b, (GroundEdge ixe a b ∨ RecursorEdge ixe a b) →
         ∃ (j : Nat) (gr' : Group), (quotientGraph ixe t hints sub).groups[j]? = some gr' ∧
           ∃ m ∈ gr'.names, b ∈ nameRecords ixe m :=
-  layout_extra P (Ix.Cert.roleRecordKinds P.compiled) (Ix.Cert.recursorsOwned P.compiled) named
-    (claimedIn_of P) hints
+  layout_extra P (Ix.Cert.roleRecordKinds P.compiled) (Ix.Cert.recursorsOwned P.compiled)
+    (Ix.Cert.literalRolesNamed P.compiled) (claimedIn_of P) hints
 
 end Claims
 
