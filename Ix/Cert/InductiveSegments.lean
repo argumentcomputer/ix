@@ -11,7 +11,7 @@ recursors with a projection record each. The segment `ClosureLayout` cuts for th
 inductive block's record, which reads as the Source read renamed, among records read to nothing:
 the projections and the recursor family's record.
 
-* `mutual_rows`, `inductive_rows`, `recursor_rows`: the compile's rows of a block.
+* `mutual_rows`, `inductive_rows`, `recursor_rows`, `lone_projections`: the compile's rows of a block.
 * `inductive_published`, `recursor_published`: the artifact publishes each type and constructor at
   its projection of the inductive block, and each recursor at a record of the family that
   resolves to its position.
@@ -237,6 +237,30 @@ theorem recursor_rows {context : CompileEnv × BlockEnv} {before after : BlockSt
       · simp at hsize
       · exact hs rfl
 
+/-- **A lone recursor compiled as a single constant has no projection rows**: it is its own record. -/
+theorem lone_projections {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
+    {r : Ix.RecursorVal}
+    (ran : rawRun (compileConstantInfo (.recInfo r)) context before = (.ok output, after)) :
+    output.projections = #[] := by
+  rw [EmissionDispatch.recursor_run context rfl r before] at ran
+  unfold compileRecursorInfo at ran
+  obtain ⟨_, _, _, compiled⟩ := bind_ok ran
+  unfold compileRecursorBlock at compiled
+  obtain ⟨_, -, -, wrapped⟩ := EmissionBlocks.block_ok (fun p => .recr p.1) (fun p => p.2.1)
+    (fun p => by obtain ⟨_, _, _⟩ := p; rfl) compiled
+  rw [wrapped]
+  rfl
+
+/-- **A recursor family's record, by its reading**: a lone recursor or a block of the family's recursors. -/
+theorem family_info {c : Ixon.Constant} {rIs : List Ixon.Recursor}
+    (h : c.info = BlockEmission.blockInfo (rIs.map Ixon.MutConst.recr)) (hne : rIs ≠ []) :
+    (∃ r, c.info = .recr r) ∨
+      ∃ rs : List Ixon.Recursor, c.info = .muts (rs.map Ixon.MutConst.recr).toArray ∧ rs.length = rIs.length := by
+  rcases rIs with _ | ⟨x, _ | ⟨y, rest⟩⟩
+  · exact absurd rfl hne
+  · exact .inl ⟨x, h⟩
+  · exact .inr ⟨x :: y :: rest, h, rfl⟩
+
 /-! ## The compile's publications -/
 
 /-- **A row of a claimed block is published**: a closure name the block's rows place at a
@@ -313,10 +337,12 @@ that resolves to its position in the family. -/
 theorem recursor_published {sub : Ix.Environment} (resolves : SingletonSegments.PublishedResolve ixe sub)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     {recs : List Ix.RecursorVal} (hne : recs ≠ [])
-    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
     (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
+    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after) ∨
+      ∃ r₀, recs = [r₀] ∧ key = r₀.cnst.name ∧
+        rawRun (compileConstantInfo (.recInfo r₀)) context before = (.ok output, after))
     (recsIn : ∀ j (hj : j < recs.length), ∃ ci, (recs[j].cnst.name, ci) ∈ sub.consts.toList) :
     ∀ j (hj : j < recs.length), ∃ Q c, ClosureLayout.addrOf ixe recs[j].cnst.name = some Q ∧
       recordAt ixe Q = some c ∧ resolveSource (recordAt ixe) Q c = some (.member output.blockAddr j) ∧
@@ -327,6 +353,35 @@ theorem recursor_published {sub : Ix.Environment} (resolves : SingletonSegments.
     rw [SourceStoredNames.stored_get hci]
     rfl
   obtain ⟨hblock, width, built, wire⟩ := claimed_block hr hrec
+  -- a lone recursor at the block itself
+  have lone : ClosureLayout.addrOf ixe recs[j].cnst.name = some output.blockAddr →
+      recordAt ixe output.blockAddr = some output.block → ∃ Q c, ClosureLayout.addrOf ixe recs[j].cnst.name = some Q ∧
+        recordAt ixe Q = some c ∧ resolveSource (recordAt ixe) Q c = some (.member output.blockAddr 0) ∧
+          ownerOf Q c = output.blockAddr := fun ha hc => by
+    obtain ⟨q, hq⟩ := published_resolves resolves hci ha hc
+    have single := SingletonReads.lone_of built (fun ms e => by simp [resolveSource, e] at hq)
+    have hval : resolveSource (recordAt ixe) output.blockAddr output.block = some (.member output.blockAddr 0) := by
+      cases hi : output.block.info <;> simp_all [BlockContext.lone, resolveSource]
+    exact ⟨_, _, ha, hc, hval, built.owner _⟩
+  rcases ran with ran | ⟨r₀, rfl, rfl, ranL⟩
+  rotate_left
+  · -- the single-constant path: the claim is the block itself
+    have hj0 : j = 0 := by simp at hj; omega
+    subst hj0
+    have hrec' := hrec
+    simp only [BlockRecords.recordsOf, Prod.mk.injEq] at hrec'
+    obtain ⟨hb, hbytes, haddr, hprojs⟩ := hrec'
+    rw [lone_projections ranL] at hprojs
+    have hempty : r.projections.isEmpty = true := by
+      simp at hprojs
+      exact Array.isEmpty_iff.mpr hprojs
+    have hser : output.blockBytes = Ixon.ser output.block := by
+      rw [← hbytes, ← hb]
+      exact (BlockLayout.runBlock_shape hr).bytes
+    obtain ⟨ha, hc'⟩ := pub.claims _ _ _ (Resolution.claim_of_empty hempty) insub
+    rw [haddr] at ha hc'
+    rw [hbytes, hser] at hc'
+    exact lone ha (BlockLayout.recordAt_ser wire hc')
   obtain ⟨count, rows⟩ := recursor_rows hne ran
   rcases rows with rows | ⟨r₀, hr₀, row⟩
   · obtain ⟨ha, hc⟩ := row_published pub hrec (rows j hj) (MutualProjections.member_wire _ width _ _) insub
@@ -340,11 +395,7 @@ theorem recursor_published {sub : Ix.Environment} (resolves : SingletonSegments.
     subst hj0
     obtain ⟨ha, hc⟩ := row_published pub hrec row wire insub
     rw [← hblock] at ha hc
-    obtain ⟨q, hq⟩ := published_resolves resolves hci ha hc
-    have single := SingletonReads.lone_of built (fun ms e => by simp [resolveSource, e] at hq)
-    have hval : resolveSource (recordAt ixe) output.blockAddr output.block = some (.member output.blockAddr 0) := by
-      cases hi : output.block.info <;> simp_all [BlockContext.lone, resolveSource]
-    exact ⟨_, _, ha, hc, hval, built.owner _⟩
+    exact lone ha hc
 
 /-! ## The closure's keys at published names -/
 
@@ -371,54 +422,6 @@ theorem published_key {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
     (by rw [hQ]; exact BlockContext.closure_resolve corder ha hc hq)
 
 /-! ## Records read to nothing -/
-
-theorem recrs_of : ∀ l : List Ixon.MutConst, (∀ x ∈ l, ∃ r, x = .recr r) →
-    ∃ rs : List Ixon.Recursor, l = rs.map Ixon.MutConst.recr
-  | [], _ => ⟨[], rfl⟩
-  | x :: l, h => by
-    obtain ⟨r, rfl⟩ := h x List.mem_cons_self
-    obtain ⟨rs, rfl⟩ := recrs_of l fun y hy => h y (List.mem_cons_of_mem _ hy)
-    exact ⟨r :: rs, rfl⟩
-
-/-- **A recursor family's record** is a lone recursor or a block of the family's recursors. -/
-theorem recursor_info {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
-    {recs : List Ix.RecursorVal}
-    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after)) :
-    (∃ r, output.block.info = .recr r) ∨
-      ∃ rs : List Ixon.Recursor, output.block.info = .muts (rs.map Ixon.MutConst.recr).toArray ∧
-        rs.length = recs.length := by
-  have shape := ProjectionLayout.mutual_block_shape _ context before output after ran
-  rw [heads_map] at shape
-  cases hi : output.block.info with
-  | recr r => exact .inl ⟨r, rfl⟩
-  | muts ms =>
-    rw [hi] at shape
-    simp only [ProjectionLayout.blockShape, Option.some.injEq] at shape
-    have each : ∀ x ∈ ms.toList, ∃ r, x = .recr r := by
-      intro x hx
-      have hx' : ProjectionLayout.memberShape x ∈ ms.toList.map ProjectionLayout.memberShape :=
-        List.mem_map_of_mem hx
-      rw [shape] at hx'
-      obtain ⟨a, ha, h⟩ := List.mem_map.mp hx'
-      obtain ⟨r', -, rfl⟩ := List.mem_map.mp ha
-      cases x with
-      | recr r => exact ⟨r, rfl⟩
-      | defn _ => simp [ProjectionLayout.memberShape, ProjectionLayout.sourceShape] at h
-      | indc _ => simp [ProjectionLayout.memberShape, ProjectionLayout.sourceShape] at h
-    obtain ⟨rs, hrs⟩ := recrs_of _ each
-    refine .inr ⟨rs, by rw [← hrs, Array.toArray_toList], ?_⟩
-    have := congrArg List.length shape
-    rw [hrs] at this
-    simpa using this
-  | defn _ =>
-    exfalso
-    rw [hi] at shape
-    cases recs with
-    | nil => simp [ProjectionLayout.blockShape] at shape
-    | cons r rest => simp [ProjectionLayout.blockShape, ProjectionLayout.sourceShape] at shape
-  | axio _ | quot _ | dPrj _ | iPrj _ | rPrj _ | cPrj _ =>
-    rw [hi] at shape
-    simp [ProjectionLayout.blockShape] at shape
 
 /-- **A recursor family's record reads to nothing** where the context's recursor index holds every
 recursor of the family. -/
@@ -557,13 +560,15 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     (published₁ : ∀ m a, (∃ i ∈ indsOf types ctors, ∃ e ∈ BlockEmission.memberSources (.indc i), GraphWalk.Refs m e) →
       lookupBinding cenv₁ {} m = some a →
         ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
-    -- the recursor family
+    -- the recursor family: a block of several, or a lone recursor compiled as a single constant
     {cenv₂ : CompileEnv} {benv₂ : BlockEnv} {out₂ : BlockResult} {after₂ : BlockState}
-    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) (cenv₂, benv₂) {} =
-      (.ok out₂, after₂))
     {cenvR₂ : CompileEnv} {all₂ : Ix.Set Ix.Name} {key₂ : Ix.Name} {r₂ : BlockResult} {cache₂ : BlockState}
     (hr₂ : runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂))
     (pub₂ : BlockPublication.Published ixe sub key₂ r₂) (hrec₂ : BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out₂)
+    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) (cenv₂, benv₂) {} =
+        (.ok out₂, after₂) ∨
+      ∃ r, recs.toList = [r] ∧ key₂ = r.cnst.name ∧
+        rawRun (compileConstantInfo (.recInfo r)) (cenv₂, benv₂) {} = (.ok out₂, after₂))
     (bound₂ : BoundResolve ixe cenv₂)
     (blobs₂ : ∀ a bytes, BlobWrites.readBlob cenv₂.blobs after₂ a = some bytes → ixe.blobs.get? a = some bytes)
     (published₂ : ∀ m a, (∃ r ∈ recs.toList, ∃ e ∈ BlockEmission.memberSources (.recr r), GraphWalk.Refs m e) →
@@ -655,7 +660,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
   -- the recursors' records and keys
   have recsIn' : ∀ j (hj : j < recs.toList.length), ∃ ci, (recs.toList[j].cnst.name, ci) ∈ sub.consts.toList :=
     fun j hj => by simpa using recsIn j (by simpa using hj)
-  have recAt := recursor_published resolves hrne ran₂ hr₂ pub₂ hrec₂ recsIn'
+  have recAt := recursor_published resolves hrne hr₂ pub₂ hrec₂ ran₂ recsIn'
   have recKeys : ∀ j (hj : j < recs.size), ∃ Q, Q ∈ order ∧ ∃ c, recordAt ixe Q = some c ∧
       ownerOf Q c = out₂.blockAddr ∧
       (closureContext ixe t preA order).memberKey (.member out₂.blockAddr j) =
@@ -738,10 +743,52 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
       Nat.mod_eq_of_lt (Nat.lt_trans hj' (ctorCount i hi'))] at hqv
     subst hqv
     exact (published_key P prelude corder canonical b hci hQ hc hq).2
+  -- the recursor family's record, by either compile path
+  obtain ⟨r₀, rest, hrs⟩ : ∃ r₀ rest, recs.toList = r₀ :: rest := by
+    rcases h : recs.toList with _ | ⟨r₀, rest⟩
+    · exact absurd h hrne
+    · exact ⟨r₀, rest, rfl⟩
+  have hkey₀ : ∀ r ∈ recs.toList.head?, InductiveUnits.srcKey (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b)
+      r₀.cnst.name = InductiveUnits.srcKey (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) r.cnst.name := by
+    intro r hr
+    rw [hrs] at hr
+    cases hr
+    rfl
+  have h0 : 0 < recs.size := by
+    have := congrArg List.length hrs
+    simp only [Array.length_toList, List.length_cons] at this
+    omega
+  have hrec0 : recs[0] = r₀ := by
+    have := congrArg (·[0]?) hrs
+    simp only [Array.getElem?_toList, List.getElem?_cons_zero] at this
+    exact Option.some.inj ((Array.getElem?_eq_getElem h0).symm.trans this)
+  have family : InductiveCompile.FamilyReads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b)
+      (closureContext ixe t preA order) out₂.blockAddr
+      (InductiveUnits.srcKey (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) r₀.cnst.name) rlps
+      (rlps.size == first.cnst.levelParams.size + 1) recs.toList out₂.block := by
+    rcases ran₂ with ranM | ⟨r, hr1, -, ranL⟩
+    · exact InductiveCompile.mutualFamily_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) (cenv₂, benv₂) rfl
+        (fun _ => rfl) external₂ recs.toList (fun j hj => .inl ⟨⟨j, by simpa using hj, by simp⟩, rfl⟩)
+        (fun r hr e he n key hn h => agree₂ n key ⟨r, hr, e, he, hn⟩ h) hrne rlps recLpsEq _ out₂.blockAddr hkey₀
+        (fun j hj => by
+          obtain ⟨_, -, _, -, -, hkey⟩ := recKeys j (by simpa using hj)
+          rw [Array.getElem_toList]
+          exact hkey)
+        recDistinct BlockStart.clean_empty ranM refs₂
+    · rw [hrs] at hr1
+      obtain ⟨rfl, rfl⟩ := List.cons.inj hr1
+      rw [hrs]
+      exact InductiveCompile.loneRecursor_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b) (cenv₂, benv₂) rfl
+        (fun _ => rfl) external₂ r₀ _ (.inl ⟨⟨0, h0, by rw [hrec0]⟩, rfl⟩)
+        (fun e he n k hn h => agree₂ n k ⟨r₀, by rw [hrs]; exact List.mem_cons_self, e, he, hn⟩ h) rlps
+        (recLpsEq r₀ (by rw [hrs]; exact List.mem_cons_self)) _ out₂.blockAddr BlockStart.clean_empty ranL refs₂
   -- the recursor family's record reads to nothing: the closure's index holds its recursors
   have inert₂ : InertAt (closureContext ixe t preA order) out₂.blockAddr out₂.block := by
-    refine recursor_inert (recursor_info ran₂) (List.length_pos_iff.mpr hrne) fun j hj => ?_
-    obtain ⟨entry, -, -, hentry, -⟩ := entries j (by simpa using hj)
+    obtain ⟨rIs, hrinfo, hR⟩ := id family
+    have hlenR := InductiveCompile.forall₂_length hR
+    have hne' : rIs ≠ [] := fun h => hrne (List.eq_nil_of_length_eq_zero (by simp [hlenR, h]))
+    refine recursor_inert (family_info hrinfo hne') (List.length_pos_iff.mpr hne') fun j hj => ?_
+    obtain ⟨entry, -, -, hentry, -⟩ := entries j (by rw [← hlenR] at hj; simpa using hj)
     rw [Std.HashMap.contains_eq_isSome_getElem?, hentry]
     rfl
   -- quotient Source's read lies in the scope
@@ -759,14 +806,12 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
   refine ⟨hB₁, stored₁, hB₂, stored₂, inert₂, inScope, ?_⟩
   exact InductiveCompile.compiled_inductive_unit_reads (fiberAliasAt ixe (roleAtMap t)) (evAddr ixe b)
     (P := KeyScope.ofId (QRepAt ixe (roleAtMap t))) (fun _ _ => trivial) hf src hfirst hcsize lpsEq ctorLps nodup
-    positions recLpsEq recNodup hrne distinct noCtor recDistinct
+    positions recLpsEq recNodup distinct noCtor
     (cenv₁, benv₁) rfl (fun _ => rfl) external₁ (fun i hi => .inl ⟨⟨i, hi, rfl⟩, rfl⟩)
     (fun i hi e he n key hn h => agree₁ n key ⟨i, hi, e, he, hn⟩ h) BlockStart.clean_empty ran₁
-    (cenv₂, benv₂) rfl (fun _ => rfl) external₂ (fun j hj => .inl ⟨⟨j, hj, rfl⟩, rfl⟩)
-    (fun r hr e he n key hn h => agree₂ n key ⟨r, hr, e, he, hn⟩ h) BlockStart.clean_empty ran₂
     (closureContext ixe t preA order) out₁.blockAddr out₂.blockAddr
     (ClosureKeying.closure_store corder.nodup hB₁ stored₁) (ClosureKeying.closure_store corder.nodup hB₂ stored₂)
-    refs₁ refs₂ (fun i hi => by obtain ⟨_, -, -, hkey⟩ := typeKeys i hi; exact hkey) ctorKeys
+    refs₁ hkey₀ family (fun i hi => by obtain ⟨_, -, -, hkey⟩ := typeKeys i hi; exact hkey) ctorKeys
     (fun j hj => by obtain ⟨_, -, _, -, -, hkey⟩ := recKeys j hj; exact hkey)
     hindexed hshape hrecs entries good typesGood blocksGood lowered
 
@@ -1017,11 +1062,13 @@ theorem inductive_place {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     (hr₁ : runBlock cenvR₁ all₁ key₁ = .ok (r₁, cache₁)) (pub₁ : BlockPublication.Published ixe sub key₁ r₁)
     (hrec₁ : BlockRecords.recordsOf r₁ = BlockRecords.recordsOf out₁)
     {context₂ : CompileEnv × BlockEnv} {before₂ after₂ : BlockState} {out₂ : BlockResult}
-    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) context₂ before₂ =
-      (.ok out₂, after₂))
     {cenvR₂ : CompileEnv} {all₂ : Ix.Set Ix.Name} {key₂ : Ix.Name} {r₂ : BlockResult} {cache₂ : BlockState}
     (hr₂ : runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂)) (pub₂ : BlockPublication.Published ixe sub key₂ r₂)
     (hrec₂ : BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out₂)
+    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) context₂ before₂ =
+        (.ok out₂, after₂) ∨
+      ∃ r, recs.toList = [r] ∧ key₂ = r.cnst.name ∧
+        rawRun (compileConstantInfo (.recInfo r)) context₂ before₂ = (.ok out₂, after₂))
     (hdecl : ∀ n, ((∃ (i : Nat) (_ : i < types.size), types[i].cnst.name = n) ∨
         ∃ (i : Nat) (hi : i < ctors.size) (k : Nat) (_ : k < ctors[i].size), ctors[i][k].cnst.name = n) →
       ∃ d ∈ r.decls.toList, ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) n ∈ d.names) :
@@ -1063,7 +1110,7 @@ theorem inductive_place {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
   obtain ⟨ms, hinfo, hms, hshape⟩ := inductive_block_info ran₁
   have recsIn' : ∀ j (hj : j < recs.toList.length), ∃ ci, (recs.toList[j].cnst.name, ci) ∈ sub.consts.toList :=
     fun j hj => by simpa using recsIn j (by simpa using hj)
-  have recAt := recursor_published resolves hrne ran₂ hr₂ pub₂ hrec₂ recsIn'
+  have recAt := recursor_published resolves hrne hr₂ pub₂ hrec₂ ran₂ recsIn'
   -- every record of a name of the group is the block, the recursor family, or a published projection
   have inC : ∀ a ∈ ClosureLayout.groupRecords ixe (ClosureLayout.namesAt (ClosureLayout.quotientGraph ixe t hints sub) y),
       a = out₁.blockAddr ∨ (a = out₂.blockAddr ∨ ∃ (n : Ix.Name) (ci : Ix.ConstantInfo) (c : Ixon.Constant),
