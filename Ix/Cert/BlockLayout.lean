@@ -285,10 +285,11 @@ def ClaimedAt (ixe : Ixon.Env) (n : Ix.Name) (a : Address) : Prop :=
     ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size }
 
 theorem recordAt_ser {ixe : Ixon.Env} {a : Address} {c : Ixon.Constant} (wire : c.wireWF)
+    (fits : Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes)
     (h : ixe.consts.get? a = some { buf := Ixon.ser c, len := (Ixon.ser c).size }) : recordAt ixe a = some c := by
   unfold recordAt
   rw [h]
-  exact (StoredEncoding.get?_serConstant wire).1
+  exact (StoredEncoding.get?_serConstant wire fits).1
 
 /-- **A claimed record's block is stored and is its own block.** -/
 theorem claim_block (bw : BlocksWire) {ixe : Ixon.Env} {n : Ix.Name} {a : Address} (h : ClaimedAt ixe n a) :
@@ -296,9 +297,10 @@ theorem claim_block (bw : BlocksWire) {ixe : Ixon.Env} {n : Ix.Name} {a : Addres
   obtain ⟨cenv, A, k, r, c, b, hr, hclaim, ha, hb⟩ := h
   have shape := runBlock_shape hr
   have wire := bw _ _ _ _ _ hr
+  have fits := BlockRecords.runBlock_bounded hr
   have blockRec : recordAt ixe r.blockAddr = some r.block := by
     rw [shape.bytes] at hb
-    exact recordAt_ser wire hb
+    exact recordAt_ser wire fits.1 hb
   -- the block's own record
   have atBlock : ∃ c, recordAt ixe (blockAt ixe r.blockAddr) = some c ∧
       ownerOf (blockAt ixe r.blockAddr) c = blockAt ixe r.blockAddr := by
@@ -319,7 +321,7 @@ theorem claim_block (bw : BlocksWire) {ixe : Ixon.Env} {n : Ix.Name} {a : Addres
     rcases shape.rows p hp with same | ⟨pwire, -, powner⟩
     · rw [same, ← shape.bytes, ← shape.addr]
       exact atBlock
-    · have prec := recordAt_ser pwire ha
+    · have prec := recordAt_ser pwire (fits.2 p hp) ha
       have hat : blockAt ixe (Address.admissionHash (Ixon.ser p.2.1)) = r.blockAddr := by
         unfold blockAt
         rw [prec]

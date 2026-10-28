@@ -296,10 +296,11 @@ theorem dPrj_claimant (P : Premises env roots sub ixe failures t envQ) {n : Ix.N
       obtain ⟨e₁, rfl, rfl⟩ := e
       refine ⟨q, hq, e₁, ?_⟩
       rcases shape.rows q hq with same | proj
-      · have := BlockLayout.recordAt_ser (by rw [same]; exact wire) hb
+      · have := BlockLayout.recordAt_ser (by rw [same]; exact wire)
+          ((BlockRecords.runBlock_bounded fb.ran).2 q hq) hb
         rw [hc] at this
         exact (Option.some.inj this).symm
-      · have := BlockLayout.recordAt_ser proj.1 hb
+      · have := BlockLayout.recordAt_ser proj.1 ((BlockRecords.runBlock_bounded fb.ran).2 q hq) hb
         rw [hc] at this
         exact (Option.some.inj this).symm
   obtain ⟨q, hq, hqn, hqc⟩ := row

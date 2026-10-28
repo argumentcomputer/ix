@@ -2,10 +2,13 @@
   The test registry: one typed list of every `IxTests` entry, each with the
   place it runs (its tier), and the command line that selects from it.
 
-  `Tests/Main.lean` declares the entries (`Tests.Main.registry`) and calls
-  `Tests.Registry.main`. CI derives its partitions from the tiers
-  (`--tier ci:<job>`); a primary self-test (`ixtests-registry`) checks the
-  registry against the workflows that name those jobs. The two landing jobs
+  `Tests/Main.lean` declares the entries (`registry`) and the entries that
+  must stay in their tier (`required`), and calls `Tests.Registry.run`. CI
+  derives its partitions from the tiers (`--tier ci:<job>`); a primary
+  self-test (`ixtests-registry`) checks the registry against the workflows
+  that name those jobs (comments removed), and checks that every required
+  entry is registered once, in its tier, and that the required list names an
+  entry in every tier that runs in CI. The three landing jobs
   hold the end-to-end checks of the compiler and of the certification, which
   are too slow for every pull request and run in the merge queue.
 
@@ -14,7 +17,7 @@
   - `<name>…`: exactly the named entries, whatever their tier (names match
     exactly; an unknown name is an error);
   - `--tier <tier>` (repeatable): every entry of that tier, where `<tier>`
-    is `primary`, `manual`, `ci:<job>`, or `landing` for the two landing jobs;
+    is `primary`, `manual`, `ci:<job>`, or `landing` for the three landing jobs;
   - `--ignored`: with no name and no `--tier`, every entry that is not
     primary; with a name or a `--tier`, nothing more (kept so that
     `--ignored <name>…` works as before);
@@ -47,19 +50,25 @@ inductive CiJob where
   not depend on its schedule, and the Rust compiler's compile, serialize and
   decompile roundtrip over the test environment. -/
   | landingCompilers
-  /-- End-to-end checks on Init+Std: the certified compiler against the
-  pipeline and the Rust compiler, role binding and evidence, a reading
-  premise on every inductive, and the admission hash. -/
+  /-- End-to-end checks on Init+Std, in process: the certified compile with
+  its report checks against the pipeline and the Rust compiler, role binding
+  and evidence, a reading premise on every inductive, and the admission hash. -/
   | landingInitStd
+  /-- Init+Std through the `ix` binary: `ix compile-lean` with its report
+  checks and the Rust comparison, whose artifact must match the reference
+  digest and which the Rust kernel checks with every bound role admitted, and
+  `ix validate-lean` fidelity. A job of its own, so that neither Init+Std
+  job approaches the merge queue's timeout. -/
+  | landingInitStdCli
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
   [.cli, .compilePipeline, .compilerClosures, .compile, .decompile, .misc,
-   .landingCompilers, .landingInitStd]
+   .landingCompilers, .landingInitStd, .landingInitStdCli]
 
 /-- The jobs that `--tier landing` selects together. -/
 def CiJob.isLanding : CiJob → Bool
-  | .landingCompilers | .landingInitStd => true
+  | .landingCompilers | .landingInitStd | .landingInitStdCli => true
   | _ => false
 
 /-- The job's name on the command line (`--tier ci:<key>`) and in the workflows. -/
@@ -72,6 +81,7 @@ def CiJob.key : CiJob → String
   | .misc => "misc"
   | .landingCompilers => "landing-compilers"
   | .landingInitStd => "landing-initstd"
+  | .landingInitStdCli => "landing-initstd-cli"
 
 /-- Where an entry runs. -/
 inductive Tier where
@@ -125,9 +135,28 @@ def Entry.runner (name : String) (tier : Tier) (run : IO UInt32) : Entry :=
 def Entry.env (name : String) (tier : Tier) (run : Lean.Environment → IO UInt32) : Entry :=
   ⟨name, tier, .env run⟩
 
+/-- A workflow line without its YAML comment: from the first `#` at the line's
+start or after a space or a tab. A `#` inside a quoted string after a space is
+cut too, which can only hide a mention, never invent one. -/
+def stripComment (line : String) : String := Id.run do
+  let mut out : Array Char := #[]
+  let mut prev := ' '
+  for c in line.toList do
+    if c == '#' && (prev == ' ' || prev == '\t') then break
+    out := out.push c
+    prev := c
+  return String.ofList out.toList
+
+/-- A workflow's text without its YAML comments, so that a commented-out step
+does not count as running a tier. A step disabled by an `if:` still counts:
+the check is textual. -/
+def stripComments (text : String) : String :=
+  "\n".intercalate ((text.splitOn "\n").map stripComment)
+
 /-- The registry's own consistency checks, against the workflows that name
-the CI jobs. Returns the problems found (empty: consistent). -/
+the CI jobs (comments removed). Returns the problems found (empty: consistent). -/
 def problems (entries : List Entry) (workflows : List (String × String)) : List String := Id.run do
+  let workflows := workflows.map fun (file, text) => (file, stripComments text)
   let mut out : List String := []
   let names := entries.map (·.name)
   for n in names.eraseDups do
@@ -137,12 +166,16 @@ def problems (entries : List Entry) (workflows : List (String × String)) : List
       out := out ++ [s!"entry name '{e.name}' is not a plain word"]
     if let .manual reason := e.tier then
       if reason.trimAscii.isEmpty then out := out ++ [s!"manual entry {e.name} has no reason"]
+  -- the job keys the workflows name after `--tier ci:`, whole: one key is not
+  -- run by a mention of a longer key it is a prefix of
+  let named : List String := workflows.flatMap fun (_, text) =>
+    ((text.splitOn "--tier ci:").drop 1).map fun chunk =>
+      (chunk.takeWhile (fun c => c.isAlphanum || c == '-')).toString
   for job in CiJob.all do
     unless entries.any (fun e => match e.tier with | .ci j => j == job | _ => false) do
       out := out ++ [s!"CI job ci:{job.key} has no entry"]
-    let mention := s!"--tier ci:{job.key}"
-    unless workflows.any (fun (_, text) => (text.splitOn mention).length > 1) do
-      out := out ++ [s!"no workflow runs '{mention}'"]
+    unless named.contains job.key do
+      out := out ++ [s!"no workflow runs '--tier ci:{job.key}'"]
   -- every `--tier ci:<key>` a workflow names is a job of the registry
   for (file, text) in workflows do
     for chunk in (text.splitOn "--tier ci:").drop 1 do
@@ -163,18 +196,50 @@ def coverageProblems (entries : List Entry) (required : List (String × String))
         some s!"required entry {name} runs in {entry.tier.key}, expected {tier}"
     | hits => some s!"required entry {name} is registered {hits.length} times"
 
+/-- The tiers that run in CI: `primary` and every CI job. -/
+def ciTierKeys : List String := "primary" :: CiJob.all.map (s!"ci:{·.key}")
+
+/-- The required list itself: it names an entry in every tier that runs in CI,
+and only such tiers, so that an emptied or truncated list is a problem rather
+than a check that passes on nothing. -/
+def requiredProblems (required : List (String × String)) : List String :=
+  ciTierKeys.filterMap (fun tier =>
+    if required.any (·.2 == tier) then none else some s!"no required entry runs in {tier}") ++
+  required.filterMap fun (name, tier) =>
+    if ciTierKeys.contains tier then none else
+      some s!"required entry {name} names {tier}, which is not a tier that runs in CI"
+
+/-- Each required entry is load-bearing: with it removed, or moved to the
+manual tier, the coverage check fails. -/
+def mutationProblems (entries : List Entry) (required : List (String × String)) : List String :=
+  required.filterMap fun (name, _) =>
+    let removed := entries.filter (·.name != name)
+    let manual := entries.map fun e => if e.name == name then { e with tier := .manual "x" } else e
+    if (coverageProblems removed required).isEmpty then
+      some s!"removing required entry {name} passes the coverage check"
+    else if (coverageProblems manual required).isEmpty then
+      some s!"moving required entry {name} to the manual tier passes the coverage check"
+    else none
+
+/-- Every check of the self-test that reads no file. -/
+def selfTestProblems (entries : List Entry) (required : List (String × String))
+    (workflows : List (String × String)) : List String :=
+  problems entries workflows ++ requiredProblems required ++ coverageProblems entries required ++
+    mutationProblems entries required
+
 /-- The primary self-test `ixtests-registry`. -/
-def selfTest (entries : List Entry) (required : List (String × String) := []) : IO UInt32 := do
+def selfTest (entries : List Entry) (required : List (String × String)) : IO UInt32 := do
   let workflows ← workflowFiles.mapM fun f => do pure (f.toString, ← IO.FS.readFile f)
-  let ps := problems entries workflows ++ coverageProblems entries required
+  let ps := selfTestProblems entries required workflows
   for p in ps do IO.eprintln s!"[ixtests-registry] {p}"
   if ps.isEmpty then
-    IO.println s!"[ixtests-registry] {entries.length} entries; CI jobs and workflows agree"
+    IO.println s!"[ixtests-registry] {entries.length} entries, {required.length} required; \
+      CI jobs and workflows agree"
     return 0
   return 1
 
 /-- The registry with its own self-test in front. -/
-def withSelfTest (entries : List Entry) (required : List (String × String) := []) : List Entry :=
+def withSelfTest (entries : List Entry) (required : List (String × String)) : List Entry :=
   ⟨"ixtests-registry", .primary, .runner (selfTest entries required)⟩ :: entries
 
 structure Options where
@@ -231,11 +296,11 @@ def runEntry (getEnv : IO Lean.Environment) (e : Entry) : IO UInt32 := do
   | .runner run => run
   | .env run => run (← getEnv)
 
-/-- Run the selected entries; `loadEnv` is `get_env!` of `Tests/Main.lean`,
-run at most once. -/
-def run (registry : List Entry) (loadEnv : IO Lean.Environment) (args : List String)
-    (required : List (String × String) := []) :
-    IO UInt32 := do
+/-- Run the selected entries; `required` lists the entries that must stay in
+their tier (checked by `ixtests-registry`), and `loadEnv` is `get_env!` of
+`Tests/Main.lean`, run at most once. -/
+def run (registry : List Entry) (required : List (String × String))
+    (loadEnv : IO Lean.Environment) (args : List String) : IO UInt32 := do
   let entries := withSelfTest registry required
   let o ← match parseArgs args {} with
     | .ok o => pure o
@@ -316,5 +381,29 @@ private def picks (args : List String) : List String :=
   ["required entry a is registered 2 times"]
 #guard coverageProblems demo [("g", "ci:compile-pipeline")] ==
   ["required entry g runs in ci:landing-compilers, expected ci:compile-pipeline"]
+
+-- removing a required entry, or moving it to the manual tier, fails the coverage check
+#guard (coverageProblems (demo.filter (·.name != "x")) [("x", "ci:compile")]) ==
+  ["required entry x is registered 0 times"]
+#guard (coverageProblems (demo.map fun e => if e.name == "x" then { e with tier := .manual "x" } else e)
+  [("x", "ci:compile")]) == ["required entry x runs in manual, expected ci:compile"]
+#guard mutationProblems demo [("a", "primary"), ("x", "ci:compile")] == []
+
+-- the required list names every tier that runs in CI, and only those
+#guard (requiredProblems []).length == ciTierKeys.length
+#guard requiredProblems (ciTierKeys.map ("a", ·)) == []
+#guard requiredProblems (("m", "manual") :: ciTierKeys.map ("a", ·)) ==
+  ["required entry m names manual, which is not a tier that runs in CI"]
+
+-- a commented-out step does not run a tier; a `#` inside a word is kept
+#guard stripComment "  # run: lake test -- --tier ci:compile" == "  "
+#guard stripComment "run: lake test -- --tier ci:compile  # the compile tier" ==
+  "run: lake test -- --tier ci:compile  "
+#guard stripComment "echo a#b" == "echo a#b"
+#guard (problems demo [("w", "#--tier ci:compile\n  # --tier ci:landing-compilers")]).length ==
+  CiJob.all.length - 2 + CiJob.all.length
+-- a longer key that a job's key is a prefix of does not run that job
+#guard (problems demo [("w", "--tier ci:compile-pipeline")]).contains
+  "no workflow runs '--tier ci:compile'"
 
 end Tests.Registry

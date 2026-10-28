@@ -13,6 +13,7 @@ public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
 public import IxC.Ixon.Codec
+public import IxC.Ixon.Bounded.Constant
 import all IxC.Ixon.Codec
 public import Ix.Merkle
 
@@ -341,15 +342,29 @@ structure Comm where
   payload : Address
   deriving BEq, Repr, Inhabited
 
-/-- Parse a `Constant` starting at byte offset `off` within `buf`, WITHOUT
-    copying out a sub-buffer. The window length bounds the constant, so any
-    bytes after it in `buf` are simply left unread (no trailing-bytes check).
-    Zero-copy apart from the small interior string/nat reads `getConstant`
-    performs regardless. -/
-def deConstantAt (buf : ByteArray) (off : Nat) : Except String Constant :=
-  match getConstant.run { idx := off, bytes := buf } with
-  | .ok a _ => .ok a
-  | .error e _ => .error e
+/-- The aggregate expanded universe-node limit for one loaded record. This is
+    shared by eager loading, lazy windows, and the compiler's emitted records.
+    It matches host admission and the Rust decoder. -/
+def loadMaxUnivNodes : Nat := 1 <<< 26
+
+/-- Parse the `Constant` serialized exactly in the window `buf[off, off + len)`,
+    WITHOUT copying the window out. The window must lie inside `buf`, and the
+    decode must end exactly at `off + len`. The decoder only reads forward, so
+    a decode that ends there has read nothing outside the window: the result
+    depends on the window's bytes alone. A window holding a truncated record
+    (whose decode would run on into the bytes after it), or a record followed
+    by other bytes, is refused. Zero-copy apart from the small interior
+    string/nat reads the decoder performs regardless. Universe expansion is
+    bounded across the whole record before constructing successor chains. -/
+def deConstantAt (buf : ByteArray) (off len : Nat)
+    (maxUnivNodes : Nat := loadMaxUnivNodes) : Except String Constant :=
+  if off + len ≤ buf.size then
+    match (Bounded.getConstant maxUnivNodes).run { idx := off, bytes := buf } with
+    | .ok a s =>
+      if s.idx = off + len then .ok a
+      else .error s!"constant window: the record is {s.idx - off} bytes, the window {len}"
+    | .error e _ => .error e
+  else .error s!"constant window: {off} + {len} exceeds the buffer's {buf.size} bytes"
 
 /-- Lazily-materialized constant: an offset window `(buf, off, len)` into a
     shared backing `ByteArray` plus an optional pre-materialized `Constant`.
@@ -397,17 +412,18 @@ def ofSlice (buf : ByteArray) (off len : Nat) : LazyConstant :=
   { buf, off, len, cache := none }
 
 /-- Materialize the constant, surfacing parse errors. Returns the cached value
-    when present, otherwise parses the window in place (no copy). -/
+    when present, otherwise parses exactly the window in place (no copy;
+    `deConstantAt`). -/
 def get (lc : LazyConstant) : Except String Constant :=
   match lc.cache with
   | some c => .ok c
-  | none => deConstantAt lc.buf lc.off
+  | none => deConstantAt lc.buf lc.off lc.len
 
 /-- Materialize the constant, discarding parse errors. -/
 def get? (lc : LazyConstant) : Option Constant :=
   match lc.cache with
   | some c => some c
-  | none => (deConstantAt lc.buf lc.off).toOption
+  | none => (deConstantAt lc.buf lc.off lc.len).toOption
 
 /-- Raw serialized bytes (the TagN-headed constant body). Returns the backing buffer
     directly when the window spans all of it (the standalone case), and only
@@ -1614,6 +1630,122 @@ def putNamedEntries (named : Array (Ix.Name × Named)) (lo hi : Nat)
 /-- Entries per task when §5 is written in parallel (`putEnv`). -/
 def namedChunk : Nat := 2048
 
+/-! `putEnv` encodes sections 1, 2, 4 and 6, which read only the env and its
+sorted constants, each on its own task, and writes their bytes in place:
+`putBytes` of a section's bytes is the output of its writes, so the bytes are
+those of writing the sections one after the other. -/
+
+/-- Section 1: Blobs (Address -> bytes). -/
+def blobsSection (env : Env) : ByteArray := runPut do
+  let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
+  putTagN 0 0 blobs.size.toUInt64
+  for (addr, bytes) in blobs do
+    Serialize.put addr
+    putTagN 0 0 bytes.size.toUInt64
+    putBytes bytes
+
+/-- Section 2: Consts (Address -> TagN-length-prefixed constant bytes), of the
+    constants sorted by address.
+
+    The TagN length sidecar is added at the env-section level so a lazy
+    loader can slice each constant without parsing its header.
+    The length is NOT part of the content-addressed bytes: the address
+    is `Address.hash` over the constant body alone (which is
+    exactly what `serConstant` produces). -/
+def constsSection (consts : Array (Address × LazyConstant)) : ByteArray := runPut do
+  putTagN 0 0 consts.size.toUInt64
+  for (addr, lc) in consts do
+    Serialize.put addr
+    -- The lazy entry already holds exactly `serConstant`'s output, so write
+    -- its bytes directly — no re-materialization or re-serialization.
+    let bytes := lc.rawBytes
+    putTagN 0 0 bytes.size.toUInt64
+    putBytes bytes
+
+/-- Section 4: Names (Address -> Name component), with the names in their
+    written order: topologically sorted so parents come before children, with
+    ties broken by address. -/
+def namesSection (env : Env) : Array (Address × Ix.Name) × ByteArray :=
+  let sortedNames := topologicalSortNames env.names
+  (sortedNames, runPut do
+    putTagN 0 0 sortedNames.size.toUInt64
+    for (addr, name) in sortedNames do
+      Serialize.put addr
+      putNameComponent name)
+
+/-- Section 6: Comms (Address -> Comm). -/
+def commsSection (env : Env) : ByteArray := runPut do
+  let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
+  putTagN 0 0 comms.size.toUInt64
+  for (addr, comm) in comms do
+    Serialize.put addr
+    putComm comm
+
+/-- Sections 1 to 6 of `putEnv`, sections 1, 2, 4 and 6 from their tasks. Not
+    inlined, so that `putEnv` starts every task before the first is read. -/
+@[noinline] def putSections (env : Env) (consts : Array (Address × LazyConstant))
+    (blobsTask constsTask commsTask : Task ByteArray)
+    (namesTask : Task (Array (Address × Ix.Name) × ByteArray)) :
+    ExceptT String PutM Unit := do
+  -- Rank of each constant in §2's ascending-address order — §3 hint
+  -- entries and §5 named entries key their constants through it.
+  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity consts.size)
+  putBytes blobsTask.get
+  putBytes constsTask.get
+
+  -- Section 3: anon_hints — the canonical hint channel for the
+  -- anon/lazy readers, placed before the metadata sections so they can
+  -- stop right after it. Serialized straight from `env.anonHints`, the
+  -- single home for hints, as delta-coded §2 ranks + fused hints (the
+  -- address sort is load-bearing: it makes the ranks strictly
+  -- ascending). Matches Rust `Env::put`.
+  let hintPairs := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+  putTagN 0 0 hintPairs.size.toUInt64
+  let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
+  for (addr, hints) in hintPairs do
+    match constIdx.get? addr with
+    | none => throw s!"putEnv: anon_hints key {reprStr (toString addr)} not \
+                       present in consts — hints must be keyed by stored \
+                       constant addresses"
+    | some rank =>
+      putTagN 0 0 (rank + 1 - prevRank)
+      putFusedHint hints
+      prevRank := rank + 1
+
+  let (sortedNames, namesBytes) := namesTask.get
+  -- Build name index from sorted positions (matching Rust)
+  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
+    (Std.HashMap.emptyWithCapacity sortedNames.size)
+  putBytes namesBytes
+
+  -- Section 5: Named (name §4-index -> Named with metadata; the
+  -- entry's constant is a §2 rank). Entry order stays ascending name
+  -- hash. Each entry carries its EXACT per-name hint in the header,
+  -- then a length-prefixed metadata blob so hint scanners can skip the
+  -- bodies. `original` keeps a raw address: it can reference an
+  -- assumed constant that is NOT stored in §2 (prune cut bundles).
+  let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
+  putTagN 0 0 named.size.toUInt64
+  -- The entries are independent given the two indices: they are written in
+  -- chunks of `namedChunk` on parallel tasks and concatenated in order, which
+  -- is the sequential loop's output (`putNamedEntries` is its body); the first
+  -- failing entry in order reports, as in the loop.
+  let chunks := (named.size + namedChunk - 1) / namedChunk
+  let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
+    match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
+      constIdx).run).run ByteArray.empty with
+    | (.ok _, bytes) => Except.ok bytes
+    | (.error e, _) => Except.error e
+  for t in tasks do
+    match t.get with
+    | .ok bytes => putBytes bytes
+    | .error e => throw e
+
+  putBytes commsTask.get
+
 /-- Serialize an Env to bytes.
 
     Runs in `ExceptT String PutM`: the §3/§5 sections key their entries
@@ -1646,97 +1778,21 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   for addr in assumptions do
     Serialize.put addr
   putBindingHeader env.roleBinding
+  putSections env consts (Task.spawn fun _ => blobsSection env)
+    (Task.spawn fun _ => constsSection consts) (Task.spawn fun _ => commsSection env)
+    (Task.spawn fun _ => namesSection env)
 
-  -- Section 1: Blobs (Address -> bytes)
-  let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
-  putTagN 0 0 blobs.size.toUInt64
-  for (addr, bytes) in blobs do
-    Serialize.put addr
-    putTagN 0 0 bytes.size.toUInt64
-    putBytes bytes
+/-- The most universe constructors one record's universes may expand to when the
+    loaders below decode it: the host admission limit
+    (`artifactLimits.maxRecordUnivNodes` in `Ix/Cli/CheckLeanCmd.lean`) and the
+    Rust decoder's (`MAX_UNIV_NODES`). A successor run is stored as one count,
+    so the production decoder would expand a few bytes to billions of nodes. -/
+abbrev loadMaxUnivNodes : Nat := Ixon.loadMaxUnivNodes
 
-  -- Section 2: Consts (Address -> TagN-length-prefixed constant bytes)
-  --
-  -- The TagN length sidecar is added at the env-section level so a lazy
-  -- loader can slice each constant without parsing its header.
-  -- The length is NOT part of the content-addressed bytes: the address
-  -- is `Address.hash` over the constant body alone (which is
-  -- exactly what `serConstant` produces). `consts` is sorted above.
-  putTagN 0 0 consts.size.toUInt64
-  for (addr, lc) in consts do
-    Serialize.put addr
-    -- The lazy entry already holds exactly `serConstant`'s output, so write
-    -- its bytes directly — no re-materialization or re-serialization.
-    let bytes := lc.rawBytes
-    putTagN 0 0 bytes.size.toUInt64
-    putBytes bytes
-
-  -- Rank of each constant in §2's ascending-address order — §3 hint
-  -- entries and §5 named entries key their constants through it.
-  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
-    (Std.HashMap.emptyWithCapacity consts.size)
-
-  -- Section 3: anon_hints — the canonical hint channel for the
-  -- anon/lazy readers, placed before the metadata sections so they can
-  -- stop right after it. Serialized straight from `env.anonHints`, the
-  -- single home for hints, as delta-coded §2 ranks + fused hints (the
-  -- address sort is load-bearing: it makes the ranks strictly
-  -- ascending). Matches Rust `Env::put`.
-  let hintPairs := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
-  putTagN 0 0 hintPairs.size.toUInt64
-  let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
-  for (addr, hints) in hintPairs do
-    match constIdx.get? addr with
-    | none => throw s!"putEnv: anon_hints key {reprStr (toString addr)} not \
-                       present in consts — hints must be keyed by stored \
-                       constant addresses"
-    | some rank =>
-      putTagN 0 0 (rank + 1 - prevRank)
-      putFusedHint hints
-      prevRank := rank + 1
-
-  -- Section 4: Names (Address -> Name component)
-  -- Topologically sorted so parents come before children, with ties broken by address
-  let sortedNames := topologicalSortNames env.names
-  -- Build name index from sorted positions (matching Rust)
-  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
-    (Std.HashMap.emptyWithCapacity sortedNames.size)
-  putTagN 0 0 sortedNames.size.toUInt64
-  for (addr, name) in sortedNames do
-    Serialize.put addr
-    putNameComponent name
-
-  -- Section 5: Named (name §4-index -> Named with metadata; the
-  -- entry's constant is a §2 rank). Entry order stays ascending name
-  -- hash. Each entry carries its EXACT per-name hint in the header,
-  -- then a length-prefixed metadata blob so hint scanners can skip the
-  -- bodies. `original` keeps a raw address: it can reference an
-  -- assumed constant that is NOT stored in §2 (prune cut bundles).
-  let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
-  putTagN 0 0 named.size.toUInt64
-  -- The entries are independent given the two indices: they are written in
-  -- chunks of `namedChunk` on parallel tasks and concatenated in order, which
-  -- is the sequential loop's output (`putNamedEntries` is its body); the first
-  -- failing entry in order reports, as in the loop.
-  let chunks := (named.size + namedChunk - 1) / namedChunk
-  let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
-    match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
-      constIdx).run).run ByteArray.empty with
-    | (.ok _, bytes) => Except.ok bytes
-    | (.error e, _) => Except.error e
-  for t in tasks do
-    match t.get with
-    | .ok bytes => putBytes bytes
-    | .error e => throw e
-
-  -- Section 6: Comms (Address -> Comm)
-  let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
-  putTagN 0 0 comms.size.toUInt64
-  for (addr, comm) in comms do
-    Serialize.put addr
-    putComm comm
+/-- A §2 record for the loaders below: exactly its bytes, decoded under
+    `loadMaxUnivNodes` (`Ixon.Bounded.deConstant`). -/
+def deConstantLoaded (bytes : ByteArray) : Except String Constant :=
+  Bounded.deConstant bytes.size loadMaxUnivNodes bytes
 
 /-- Deserialize an Env from bytes (pure Lean, full metadata). Used for
     round-trip (`deEnv`) on small/in-memory envs. The lazy/anon `.ixe` check
@@ -1809,7 +1865,7 @@ def getEnv : GetM Env := do
       if !(compare prev addr).isLT then
         throw "Env.get: §2 constants not in strictly ascending address order"
     constOrder := constOrder.push addr
-    match deConstant bytes with
+    match deConstantLoaded bytes with
     | .ok constant => env := env.storeConst addr constant
     | .error e =>
       throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
@@ -1850,6 +1906,9 @@ def getEnv : GetM Env := do
   for _ in [:numNames.toNat] do
     let addr ← Serialize.get
     let name ← getNameComponent namesLookup
+    -- §5 and the metadata name a name by this address: it must be the hash
+    if name.getHash != addr then
+      throw s!"Env.get: §4 name stored under {reprStr (toString addr)} hashes elsewhere"
     nameRev := nameRev.push addr
     namesLookup := namesLookup.insert addr name
     env := { env with names := env.names.insert addr name }
@@ -2112,7 +2171,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     constOrder := constOrder.push addr
     if constOrder.size % 100000 == 0 then
       loadTrace s!"§2 at {constOrder.size}/{numConsts} (byte {eStart})"
-    match deConstant bytes with
+    match Env.deConstantLoaded bytes with
     | .ok constant =>
       reserCheck "§2 const" eStart <| runPut do
         Serialize.put addr

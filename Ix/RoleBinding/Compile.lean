@@ -72,7 +72,9 @@ def supportInput (source : Lean.Environment) (artifact : Ixon.Env) :
   throw "artifact support: role closure exceeded its finite domain"
 
 /-- Merge authenticated support without replacing any original publication or
-its metadata. Structural names, rather than stored name hashes, decide overlap.
+its metadata. The support is authenticated here; the original is authenticated
+with the merged artifact (`finalize`). Structural names, rather than stored name
+hashes, decide overlap.
 A reducibility hint the support carries at an address the original already
 hints is refused when merging it would change the original's hint (the reader
 checks a definition at the hint stored at its address, so a changed hint would
@@ -80,7 +82,6 @@ change how the original's definitions are checked); otherwise the original's
 hint is kept. -/
 def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.Env) :
     Except String Ixon.Env := do
-  let _ ← recordStore limits original
   let _ ← recordStore limits support
   unless support.main.isNone && support.assumptions.isEmpty do
     throw "artifact support: internal compilation produced a bundle"
@@ -215,6 +216,9 @@ def finalize (backend : Backend) (source : Lean.Environment)
   let (required, selected) ← IO.ofExcept (supportInput source artifact)
   let support ← compileRequired backend source selected
   let merged ← IO.ofExcept (mergeSupport limits artifact support)
+  -- Validate the whole artifact, including records outside the role closure.
+  -- Emission reuses the store associated with these exact bytes and limits.
+  let store ← IO.ofExcept (checkedStore limits merged)
   IO.ofExcept (preserveRequested input artifact merged)
   let actual := publishedRoles merged
   unless actual == required do
@@ -229,8 +233,12 @@ def finalize (backend : Backend) (source : Lean.Environment)
     let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
     let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
     compileRequired backend certSource selected
-  let generated ← IO.ofExcept (generate limits merged certificates required Ix.Kernel.preludeShape)
-  let emitted ← IO.ofExcept (generated.emit limits merged)
+  IO.ofExcept (checkCertificateContent merged certificates)
+  -- The support already contains every selected role and its source closure.
+  -- Evidence generation needs only that closure and the certificate closure;
+  -- emission below checks its binding against the complete merged artifact.
+  let generated ← IO.ofExcept (generate limits support certificates required Ix.Kernel.preludeShape)
+  let emitted ← IO.ofExcept (generated.emit limits merged (store? := some store))
   IO.ofExcept (preserveRequested input artifact emitted)
   IO.ofExcept (checkFinalized artifact emitted)
   return emitted

@@ -1206,7 +1206,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 /// claim digest before the next shard is proven, so a killed run keeps
 /// every proof it finished. Returns, per shard: the claim's wire bytes,
 /// the proof wrapper's store address (hex) and the heaviest shard's
-/// projected peak.
+/// projected peak. Each claim assumes the environment's binding meets the
+/// specifications (validator 4) when `assume_binding`, and validates it
+/// otherwise.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -1222,6 +1224,7 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
   store_dir: LeanString<LeanBorrowed<'_>>,
   index_dir: LeanString<LeanBorrowed<'_>>,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveAheadWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1261,6 +1264,7 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
       exec_jobs,
       &store_path,
       (!index_dir.is_empty()).then_some(index_path.as_path()),
+      assume_binding,
     );
     let proven = match proven {
       Ok(proven) => proven,
@@ -1307,6 +1311,7 @@ fn prove_shards_ahead(
   exec_jobs: usize,
   store_dir: &std::path::Path,
   index_dir: Option<&std::path::Path>,
+  assume_binding: bool,
 ) -> Result<Vec<(Vec<u8>, Address, usize)>, String> {
   let count = owners.len();
   let cores = std::thread::available_parallelism().map_or(1, usize::from);
@@ -1339,8 +1344,10 @@ fn prove_shards_ahead(
     let label = labels[k];
     let started = std::time::Instant::now();
     let (claim, input, mut io) =
-      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-        env, &owners[k],
+      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+        env,
+        &owners[k],
+        assume_binding,
       )
       .map_err(|e| {
         PrepareFailure::Other(format!("shard {label}: witness build: {e}"))

@@ -183,6 +183,18 @@ fn address(input: &mut &[u8]) -> Result<Address, String> {
 }
 
 impl RoleTable {
+  /// Every record the table names: each bound address, then each proof of
+  /// its evidence, in table order.
+  pub fn records(&self) -> impl Iterator<Item = &Address> {
+    let proofs = self.evidence.iter().flat_map(|(_, entries)| {
+      entries.iter().filter_map(|entry| match entry {
+        Evidence::Proof(address) => Some(address),
+        Evidence::DefEq => None,
+      })
+    });
+    self.bound.iter().map(|(_, address)| address).chain(proofs)
+  }
+
   /// Exact counterpart of IxC's wireWF; Address and version widths are typed.
   pub fn check_wire(&self) -> Result<(), String> {
     byte_count(self.bound.len())?;
@@ -252,7 +264,56 @@ impl RoleTable {
     table.check_wire()?;
     Ok(table)
   }
+
+  /// The literal class of a table that binds every role: BLAKE3 of
+  /// [`LITERAL_CLASS_TAG`] followed by the addresses it binds to
+  /// [`CLASS_ROLES`], in role order. Mirrors `Ix.ClaimContext.literalClassOf`.
+  pub fn literal_class(&self) -> Result<Address, String> {
+    if self.bound.len() != Role::ALL.len() {
+      return Err(
+        "literal class: the role table does not bind every role".into(),
+      );
+    }
+    let mut bytes = LITERAL_CLASS_TAG.to_vec();
+    for role in CLASS_ROLES {
+      let (_, address) =
+        self.bound.iter().find(|(r, _)| *r == role).ok_or_else(|| {
+          format!(
+            "literal class: the role table does not bind {}",
+            role.lean_name()
+          )
+        })?;
+      bytes.extend_from_slice(address.as_bytes());
+    }
+    Ok(Address::hash(&bytes))
+  }
 }
+
+/// The roles the checker uses without a reference to them, in role order:
+/// a `Nat` literal's type and constructor forms, a `String` literal's type and
+/// constructor form, and the standard axioms the axiom policy admits as the
+/// binding binds them. Two bindings that bind these alike have the same literal
+/// class, and typing transfers between them. Mirrors
+/// `Ix.ClaimContext.classRoles`; a checker change that fabricates a reference
+/// to another role must add it to both.
+pub const CLASS_ROLES: [Role; 12] = [
+  Role::Nat,
+  Role::NatZero,
+  Role::NatSucc,
+  Role::List,
+  Role::ListNil,
+  Role::ListCons,
+  Role::String,
+  Role::StringOfList,
+  Role::Char,
+  Role::CharOfNat,
+  Role::Propext,
+  Role::Choice,
+];
+
+/// The tag of a literal class preimage: `N4(0xE, 12)`, after the binding
+/// section's `E8 03`.
+pub const LITERAL_CLASS_TAG: [u8; 2] = [0xE8, 0x04];
 
 #[cfg(test)]
 mod tests;

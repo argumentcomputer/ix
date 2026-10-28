@@ -119,13 +119,24 @@ def compileBlock (lo : Name) (all : Set Name) : CompileM BlockResult := do
   registerMutsEntry sortedClasses blockResult.blockAddr
   return blockResult
 
+/-- Every emitted record fits the aggregate universe-expansion budget used
+    by the loaders. Projection records are checked independently. -/
+def blockUnivsFit (result : BlockResult) (maxUnivNodes : Nat := Ixon.loadMaxUnivNodes) : Bool :=
+  decide (Ixon.Bounded.univNodes result.block.univs ≤ maxUnivNodes) &&
+    result.projections.all fun p => decide (Ixon.Bounded.univNodes p.2.1.univs ≤ maxUnivNodes)
+
 /-- Compile one block (`compileBlock`) purely, from the empty block state,
-    returning its result and the final block state. -/
+    returning its result and the final block state. Refuse records the
+    production loaders would reject for universe expansion. -/
 def runBlock (cenv : CompileEnv) (all : Set Name) (lo : Name)
     : Except CompileError (BlockResult × BlockState) := do
   let blockEnv : BlockEnv :=
     { all, current := lo, mutCtx := default, univCtx := [] }
-  CompileM.run cenv blockEnv {} (compileBlock lo all)
+  let result ← CompileM.run cenv blockEnv {} (compileBlock lo all)
+  if blockUnivsFit result.1 then
+    return result
+  else
+    throw (.resourceLimit "record universe expansion exceeds the loader's node budget")
 
 /-! ## Driver state and merges -/
 
@@ -839,17 +850,25 @@ def inspectSemanticSource (source : Lean.ConstantInfo) : Except String Unit := d
   | .axiomInfo _ => pure ()
   | _ => throw s!"annotated inductive/constructor/recursor transformations are unsupported: {source.name}"
 
+/-- **The checks of a prepared source list** (`Ix.Compile.CompileInput.prepare`'s
+output), made before it is canonicalized: no binder contract is left
+unresolved, and every semantic contract inspects (`inspectSemanticSource`).
+The result says whether the list carries semantic contracts; such a list's
+output is emitted only after resource validation. -/
+def checkPreparedSource (consts : List (Lean.Name × Lean.ConstantInfo)) : Except String Bool := do
+  for (name, source) in consts do
+    if Ix.Compile.sourceHasAnnotations source then
+      throw s!"unresolved source binder contracts: {name}"
+    inspectSemanticSource source
+  return consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
+
 def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (opts : DriverOptions := {})
     : IO (Except String LeanPipelineOut) := do
-  let annotated := consts.any fun (_, source) => Ix.Compile.sourceHasSemanticContracts source
-  for (name, source) in consts do
-    if Ix.Compile.sourceHasAnnotations source then
-      return .error s!"unresolved source binder contracts: {name}"
-    match inspectSemanticSource source with
+  let annotated ← match checkPreparedSource consts with
+    | .ok annotated => pure annotated
     | .error error => return .error error
-    | .ok _ => pure ()
   let dbg := opts.dbg
   let tick (label : String) (t0 : Nat) : IO Nat := do
     let t1 ← IO.monoMsNow

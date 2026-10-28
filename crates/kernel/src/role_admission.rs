@@ -471,6 +471,32 @@ impl ArtifactSource {
     Ok(source)
   }
 
+  /// The records whose checks role admission defers: every bound record and
+  /// every proof of the binding's evidence. A group validator compares a
+  /// role with its specification, but it assumes the declared types of the
+  /// constants that the role's records and certificates mention. Those
+  /// records' units, and the units they reach, must be checked like any
+  /// other before a verdict may rest on an admitted role.
+  pub fn binding_support(&self) -> Vec<Address> {
+    self
+      .binding()
+      .map(|binding| binding.table.records().cloned().collect())
+      .unwrap_or_default()
+  }
+
+  /// The records a verdict on `roots` rests on: the reference closure of
+  /// `roots` and of [`Self::binding_support`]. A partial check is sound only
+  /// over this set; the closure of `roots` alone omits the role records and
+  /// certificates whose validity admission assumed.
+  pub fn verdict_closure(
+    &self,
+    roots: &[Address],
+  ) -> Result<FxHashSet<Address>, Error> {
+    let mut all = roots.to_vec();
+    all.extend(self.binding_support());
+    self.closure(&all)
+  }
+
   /// Capture a borrowed input once, before sharing the result. The caller must
   /// prevent concurrent map mutation during Env::clone; afterwards maps are
   /// independent, constant buffers shared, and blob vectors copied only once.

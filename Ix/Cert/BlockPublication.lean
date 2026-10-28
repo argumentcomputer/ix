@@ -38,7 +38,8 @@ theorem stored {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all 
   have shape := BlockLayout.runBlock_shape hr
   have hb := pub.block
   rw [shape.bytes] at hb
-  exact BlockLayout.recordAt_ser (BlockWire.blocksWire _ _ _ _ _ hr) hb
+  exact BlockLayout.recordAt_ser (BlockWire.blocksWire _ _ _ _ _ hr)
+    (BlockRecords.runBlock_bounded hr).1 hb
 
 /-- **The rows of a block of several definitions**: member `j`'s row is its projection at
 index `j`, and the members' count fits the wire. -/
@@ -102,6 +103,16 @@ theorem row_claim {k : Ix.Name} {r : BlockResult} {name : Ix.Name} {proj : Ixon.
   rw [hne]
   exact Array.mem_map.2 ⟨p, hp', rfl⟩
 
+/-- A logical projection row inherits the successful block's loader budget. -/
+theorem row_bounded {cenv : CompileEnv} {all : Ix.Set Ix.Name} {k : Ix.Name}
+    {r : BlockResult} {cache : BlockState} (hr : runBlock cenv all k = .ok (r, cache))
+    {name : Ix.Name} {proj : Ixon.Constant}
+    (row : (name, proj) ∈ MutualProjections.logicalRows r.projections) :
+    Ixon.Bounded.univNodes proj.univs ≤ Ixon.loadMaxUnivNodes := by
+  obtain ⟨p, hp, e⟩ := List.mem_map.mp row
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj e
+  exact (BlockRecords.runBlock_bounded hr).2 p (Array.mem_toList_iff.mp hp)
+
 /-- **A member of a claimed block of several definitions is published at its projection,
 whose record the artifact stores.** -/
 theorem member_published {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all : Ix.Set Ix.Name}
@@ -132,7 +143,8 @@ theorem member_published {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : Compile
     rw [← Array.toList_map, hproj, Array.toList_map]
     exact row
   obtain ⟨ha, hb⟩ := pub.claims _ _ _ (row_claim row') (insub j hj)
-  exact ⟨ha, BlockLayout.recordAt_ser (MutualProjections.member_wire _ width _ _) hb⟩
+  exact ⟨ha, BlockLayout.recordAt_ser (MutualProjections.member_wire _ width _ _)
+    (row_bounded hr row') hb⟩
 
 /-- **`owned`: each member is published at a record the block owns.** -/
 theorem owned {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all : Ix.Set Ix.Name}

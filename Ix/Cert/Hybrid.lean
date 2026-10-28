@@ -45,7 +45,7 @@ that its loops build the hybrid environment's pieces as stated (`code`,
 `canon`, and `inductives`: the code constants hold exactly the input's
 inductives), that its streamed
 canonicalization, graph, ground filter and condensation are
-`Ix.Cert.groundSplit`'s and `blocksOf`'s (`cert-compile-parity-init`), and
+`Ix.Cert.groundSplit`'s and `blocksOf`'s (`cert-compile-parity-initstd`), and
 that the blocks of one wave are independent (`compile-schedule-identity`'s
 reference schedule). -/
 

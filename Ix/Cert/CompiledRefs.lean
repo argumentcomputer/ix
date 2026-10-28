@@ -191,7 +191,7 @@ theorem claim_records {cenv : CompileEnv} {all : Ix.Set Ix.Name} {k : Ix.Name} {
     rcases shape.rows p hp with same | ⟨pwire, prefs, powner⟩
     · rw [same, ← shape.bytes, ← shape.addr]
       exact blockCase
-    · have prec := BlockLayout.recordAt_ser pwire hP
+    · have prec := BlockLayout.recordAt_ser pwire ((BlockRecords.runBlock_bounded hr).2 p hp) hP
       have hat : ClosureLayout.blockAt ixe (Address.admissionHash (Ixon.ser p.2.1)) = r.blockAddr := by
         unfold ClosureLayout.blockAt
         rw [prec]

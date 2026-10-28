@@ -1,6 +1,7 @@
 import Tests.Aiur
 import Tests.Aiur.RustSyntax
 import Tests.Ix.Ixon
+import Tests.Ix.IxonRejectParity
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
@@ -63,11 +64,12 @@ import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Kernel.ReaderRoundtrip
 import Tests.Ix.Kernel.FidelityAccess
 import Tests.Ix.Kernel.PreludeFidelity
-import Tests.Ix.Kernel.CollapseFidelity
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
+import Tests.Ix.InitStd
+import Tests.RoleTableWire
 import Tests.Ix.ResourceHints
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.Kernel.RecordCheck
@@ -100,6 +102,7 @@ import Tests.MultiStark
 import Tests.Aggr
 import Tests.AggrProof
 import Tests.AggrBindingReuse
+import Tests.AggrToolchains
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
@@ -119,15 +122,6 @@ import Ix.Common
 import Ix.Meta
 import Ix.IxVM
 
-/-- The tier of an entry that asserts the compiler's canonical rewriting of
-Lean's declarations (class sorting and collapse, regenerated auxiliaries,
-caller rewrites, clique transport, original-form data), which the compile no
-longer does: it compiles Lean's declarations as given. The entry stays
-runnable by name until the code it tests is removed, and is removed with
-it. -/
-def expectedToRetire (why : String) : Tests.Registry.Tier :=
-  .manual s!"expected to retire: {why}"
-
 open Tests.Registry in
 /-- Every `IxTests` entry with its tier (`Tests/Registry.lean`): primary
 entries run with no arguments; the others are named, or selected by tier
@@ -139,12 +133,9 @@ def registry : List Entry := [
   .suite "catalog" .primary Tests.Ix.Catalog.suite,
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
-  .suite "import-ixe-collapsed"
-    (expectedToRetire "the alpha-equivalent mutual pair no longer collapses to one class, \
-      and its recursors are no longer `_ix` support")
-    Tests.Ix.ImportIxe.collapsedSuite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
   .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
+  .suiteIO "ixon-reject-parity" .primary Tests.Ix.IxonRejectParity.suite,
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
   .suite "claim" .primary Tests.Claim.suite,
   .suite "merkle" .primary Tests.Merkle.suite,
@@ -190,14 +181,13 @@ def registry : List Entry := [
   .suite "aiur-cost" .primary [AiurTests.Cost.tests],
   .suite "aiur-trace-plan" .primary [AiurTests.TracePlan.tests],
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
+  -- the role table's wire vectors (Tests/Fixtures/ixon-v4/role-table.tsv), which
+  -- Rust's codec is tested against, are IxC's codec's
+  .runner "role-table-wire" .primary Tests.RoleTableWire.run,
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
   .suite "kernel-prelude-fidelity" .primary Tests.Ix.Kernel.PreludeFidelity.suite,
-  .suite "kernel-collapse-fidelity"
-    (expectedToRetire "it reads a block whose alpha-equivalent members the compile \
-      merged into one class")
-    Tests.Ix.Kernel.CollapseFidelity.suite,
   .suite "validate-lean-reader-cli" .primary Tests.Ix.Kernel.ValidateReaderCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
@@ -284,6 +274,10 @@ def registry : List Entry := [
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
+  -- `ix prove-binding`, shard proofs that assume the binding, and their
+  -- composition with the binding proof file and refusals without it, through
+  -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates)
+  .env "binding-proof-cli" (.ci .cli) Tests.Aggr.BindingReuse.cli,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,
@@ -320,14 +314,23 @@ def registry : List Entry := [
   .suite "auxiliary-closure" (.ci .compilePipeline) Tests.Ix.Compile.AuxiliaryClosure.suite,
   -- auxiliary addresses do not depend on the compile set (closure vs whole env)
   .suite "canon-closure-aux" (.ci .compilePipeline) Tests.Ix.Compile.AuxiliaryClosureCanon.suite,
-  -- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on Init
-  .suite "cert-compile-parity-init" (.ci .landingInitStd) Tests.Ix.Cert.Statement.initSuite,
+  -- `Ix.Cert.compile` with its report checks against the IO pipeline and the
+  -- Rust compiler on Init+Std
+  .suite "cert-compile-parity-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.initStdSuite,
+  -- `ix compile-lean` on Init+Std: its report checks, the Rust compiler byte for
+  -- byte, the reference digest (Tests/Fixtures/initstd-reference.txt), and the
+  -- Rust kernel on the artifact with every bound role admitted
+  .runner "initstd-reference" (.ci .landingInitStdCli) Tests.Ix.InitStd.reference,
+  -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
+  -- decompile fidelity
+  .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
   .suite "cert-roles-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.rolesInitStdSuite,
   .suite "cert-evidence-agreement" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceSuite,
   .suite "cert-evidence-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceInitStdSuite,
   .suite "cert-noctor-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.noCtorInitStdSuite,
   .runner "aggregate-proof" (.manual "a proof round trip through the production ix_aggr circuit; minutes of proving") Tests.Aggr.proofRoundTrip,
-  .env "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of proving, needs `lake build ix`") Tests.Aggr.BindingReuse.run,
+  .env "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of recursion and about 190 GB, needs `lake build ix`; `binding-proof-cli` runs it without the aggregates") Tests.Aggr.BindingReuse.run,
+  .runner "aggregate-toolchains" (.manual "libraries from four Lean toolchains proven with one IxVM key and joined into one catalog root, end to end through the `ix` binary; tens of minutes of proving, needs `lake build ix` and `zstd`") Tests.Aggr.Toolchains.run,
   .runner "kernel-dependencies" (.manual "the IxVM definition-dependency checks alone; `ixvm` runs them too") (do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
@@ -394,10 +397,13 @@ def registry : List Entry := [
       -- parallel closure walk) and run on the native kernel. Pinned FFT
       -- is the regression signal.
       let shardSeq ← match (← shardCheckEnvCase env) with
-        -- Only reachable when the target constant is absent from this
-        -- toolchain; a fixture that no longer selects any owned
-        -- constants throws instead of skipping.
-        | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
+        -- The target constant is absent from this toolchain: a failure, as
+        -- an absent pinned constant is in `kernelChecks`, so that a
+        -- toolchain bump that renames it cannot turn the pin into a pass.
+        -- A fixture that no longer selects any owned constants throws.
+        | none => pure (LSpec.test
+            "shard pipeline: the target ByteArray.utf8DecodeChar?_utf8EncodeChar_append is in the environment"
+            false)
         | some (handle, ownedBlob) =>
           let funIdx := vmEnv.compiled.getFuncIdx `verify_claim |>.get!
           match vmEnv.compiled.bytecode.shardCheckWithEnv
@@ -453,6 +459,58 @@ def registry : List Entry := [
   .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit
 ]
 
+/-- The entries that must stay registered once, in their tier
+(`Tests.Registry.coverageProblems`): the checks the certification, the
+compilers' agreement and the proof system's claims rest on. Moving one to the
+manual tier, or deleting it, fails `ixtests-registry`; so does a CI tier
+with no required entry. -/
+def required : List (String × String) := [
+  ("cert-statement", "primary"),
+  ("ix-aggr", "primary"),
+  ("lean-export", "primary"),
+  ("io-ingress", "primary"),
+  ("kernel-source-ingress", "primary"),
+  ("kernel-reader-roundtrip", "primary"),
+  ("kernel-bundle-evidence", "primary"),
+  ("resource-hints", "primary"),
+  ("compiler-reports", "primary"),
+  ("ground-unit", "primary"),
+  ("prim-addrs", "primary"),
+  ("role-table-wire", "primary"),
+  ("exact-sharing", "primary"),
+  ("ixon-reject-parity", "primary"),
+  ("ixvm-tagn", "primary"),
+  ("ixes-manifest", "primary"),
+  ("rust-compile-coverage", "primary"),
+  ("cli", "ci:cli"),
+  ("kernel-check-lean-cli", "ci:cli"),
+  ("artifact-compile-cli", "ci:cli"),
+  ("host-admission-cli", "ci:cli"),
+  ("binding-proof-cli", "ci:cli"),
+  ("rust-serialize", "ci:compile-pipeline"),
+  ("decompile-diff", "ci:compile-pipeline"),
+  ("compile-ind-flags", "ci:compile-pipeline"),
+  ("compile-claim-conflict", "ci:compile-pipeline"),
+  ("compile-closure-whole", "ci:compiler-closures"),
+  ("checker-support-regression", "ci:compiler-closures"),
+  ("tc-pins", "ci:compiler-closures"),
+  ("kernel-accel-semantics", "ci:compiler-closures"),
+  ("compile", "ci:compile"),
+  ("compile-determinism", "ci:compile"),
+  ("decompile", "ci:decompile"),
+  ("ixvm", "ci:misc"),
+  ("kernel-check-env", "ci:misc"),
+  ("kernel-tutorial", "ci:misc"),
+  ("compile-schedule-identity", "ci:landing-compilers"),
+  ("rust-compile", "ci:landing-compilers"),
+  ("cert-compile-parity-initstd", "ci:landing-initstd"),
+  ("initstd-reference", "ci:landing-initstd-cli"),
+  ("fidelity-initstd", "ci:landing-initstd-cli"),
+  ("cert-roles-initstd", "ci:landing-initstd"),
+  ("cert-evidence-initstd", "ci:landing-initstd"),
+  ("cert-noctor-initstd", "ci:landing-initstd"),
+  ("admission-hash-diff", "ci:landing-initstd")]
+
 def main (args : List String) : IO UInt32 := do
   -- Namespace-filtered kernel ixon roundtrip diagnostic.
   -- `kernel-roundtrip-ns=Nat.le` runs the same pipeline as the
@@ -477,4 +535,4 @@ def main (args : List String) : IO UInt32 := do
     for msg in errors[:min 50 errors.size] do
       IO.println s!"  {msg}"
     return 1
-  Tests.Registry.run registry get_env! args
+  Tests.Registry.run registry required get_env! args

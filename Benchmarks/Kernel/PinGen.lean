@@ -10,6 +10,7 @@ import Ix.CondenseM
 import Ix.LeanIngress
 import Ix.Cert.RoleClosurePrepare
 import IxC.Kernel.Verify.Rename.Basic
+import IxC.Kernel.RoleEquations
 
 /-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
 
@@ -581,6 +582,14 @@ def run (args : List String) : IO UInt32 := do
   let str := Ix.Kernel.strLitSupportedF fe
   IO.eprintln s!"pin-gen: Nat literals {nat}, String literals {str}"
   unless bad == 0 && nat && str do return 1
+  for (role, _) in bound do
+    if role.spec (md := .anon) matches .eqns .. then
+      let started ← IO.monoMsNow
+      match (Ix.Kernel.eqnsCheck (Ix.Kernel.Cached.sharedOpsC .verified fe)
+          fe.env role s.evidence) {} with
+      | .error error => fail s!"{repr role}: definition equations do not check: {error}"
+      | .ok _ =>
+        IO.eprintln s!"pin-gen: {repr role}: definition equations checked in {(← IO.monoMsNow) - started} ms"
   for (r, _) in Ix.RoleEvidence.certTheorems do
     let a := ((refOfRole[r]?).map (·.block)).getD default
     let micros := ((rows.find? (·.address == a)).map (·.micros)).getD 0

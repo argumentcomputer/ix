@@ -129,19 +129,43 @@ def fallbackIndexed (store : Store) (known : Std.HashSet Address) (a : Address) 
       | _ => true
     | none => true
 
-/-- **The records the recursor index scans**: the input's, then the fallback's
-the input does not shadow, less the fallback records with a recursor member
-analysed into a block the input supplies (`fallbackIndexed`). -/
+/-- **Whether the recursor index scans the input record `c` at `a`**, given
+the addresses `known` the input supplies and the fallback records: each of its
+recursor members analysed into a block (`analyseRecursor`, as in
+`fallbackIndexed`) is analysed into one the input supplies, or `c` is the
+fallback's own record at `a`. A recursor is read with its block's record
+(`readInductive`). Filed under a block only the fallback supplies, it would be
+read by nothing, and only the fallback's own record, which the fallback's
+reading already covers, may stand there. Any other such record is left out of
+the index, and declines as a recursor without its block (`readRecord`). -/
+def inputIndexed (store : Store) (known : Std.HashSet Address)
+    (fallback : Array (Address × Ixon.Constant)) (a : Address) (c : Ixon.Constant) : Bool :=
+  (recursorMembers c).all (fun (_, r) =>
+    match analyseRecursor store a c r with
+    | some (_, carriers, _) =>
+      match carriers[0]? with
+      | some (ConstRef.member b _) => known.contains b
+      | _ => true
+    | none => true) ||
+  fallback.contains (a, c)
+
+/-- **The records the recursor index scans**: the input's, less those with a
+recursor member analysed into a block only the fallback supplies
+(`inputIndexed`), then the fallback's the input does not shadow, less those
+with a recursor member analysed into a block the input supplies
+(`fallbackIndexed`). -/
 def indexedRecords (store : Store) (records fallback : Array (Address × Ixon.Constant)) :
     Array (Address × Ixon.Constant) :=
   let known : Std.HashSet Address := records.foldl (fun s (a, _) => s.insert a) {}
-  records ++ fallback.filter fun (a, c) => !known.contains a && fallbackIndexed store known a c
+  records.filter (fun (a, c) => inputIndexed store known fallback a c) ++
+    fallback.filter fun (a, c) => !known.contains a && fallbackIndexed store known a c
 
 /-- The reader context of `records` under the role table `t`, with the
 fallback store `fallback` and fallback blobs `fallbackBlobs`: the bound
 addresses resolve against both stores (`bindingsOf`), and the recursor index
 scans `indexedRecords`: a fallback recursor is never filed under a block the
-input supplies.
+input supplies, and an input recursor is filed under a block only the fallback
+supplies only as the fallback's own record.
 
 `reconstruct store` gives the addresses of the projection records the input
 omits (`Admission.projectionAddress`, under the entry's hash); without it a

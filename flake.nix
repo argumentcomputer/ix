@@ -394,7 +394,8 @@
             # files by paths relative to the working dir, so run it from a
             # writable copy of the source tree, as if from a checkout.
             ix-tests = pkgs.runCommandCC "ix-tests" {
-              nativeBuildInputs = [ rustToolchain lean ];
+              # zstd decompresses the lean-export suite's toolchain fixture.
+              nativeBuildInputs = [ rustToolchain lean pkgs.zstd ];
             } ''
               cp -r ${./.} src
               chmod -R u+w src

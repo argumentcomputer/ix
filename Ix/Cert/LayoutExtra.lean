@@ -778,7 +778,7 @@ theorem block_role {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} (htable : Ix.Kerne
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have blockRec : recordAt ixe res.blockAddr = some res.block := by
     rw [shape.bytes] at hblock
-    exact BlockLayout.recordAt_ser wire hblock
+    exact BlockLayout.recordAt_ser wire (BlockRecords.runBlock_bounded hr).1 hblock
   have selfBlock : blockAt ixe res.blockAddr = res.blockAddr := by
     unfold blockAt
     rw [blockRec]
@@ -797,7 +797,7 @@ theorem block_role {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} (htable : Ix.Kerne
     · exfalso
       rcases shape.rows q hq with h | ⟨pwire, -, powner⟩
       · exact same h
-      have prec := BlockLayout.recordAt_ser pwire hstored
+      have prec := BlockLayout.recordAt_ser pwire ((BlockRecords.runBlock_bounded hr).2 q hq) hstored
       have hat : blockAt ixe (Address.admissionHash (Ixon.ser q.2.1)) = res.blockAddr := by
         unfold blockAt
         rw [prec]
@@ -1360,7 +1360,7 @@ theorem claimed_definition {env sub : Ix.Environment} {ixe : Ixon.Env} {failures
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have blockRec : recordAt ixe res.blockAddr = some res.block := by
     rw [shape.bytes] at hblock
-    exact BlockLayout.recordAt_ser wire hblock
+    exact BlockLayout.recordAt_ser wire (BlockRecords.runBlock_bounded hr).1 hblock
   -- the claim is the block record, as the block's key or as one of its rows
   have claimBlock : res.block.info = .defn d ∧
       ((res.projections = #[] ∧ n = k) ∨ ∃ q ∈ res.projections, n = q.1) := by
@@ -1379,7 +1379,7 @@ theorem claimed_definition {env sub : Ix.Environment} {ixe : Ixon.Env} {failures
       · rw [same, ← shape.bytes, ← shape.addr, blockRec] at hc
         cases hc
         exact ⟨hd, .inr ⟨q, hq, rfl⟩⟩
-      · have prec := BlockLayout.recordAt_ser proj.1 hstored
+      · have prec := BlockLayout.recordAt_ser proj.1 ((BlockRecords.runBlock_bounded hr).2 q hq) hstored
         rw [prec] at hc
         cases hc
         exact (defn_not_projects hd _ proj).elim
@@ -1929,13 +1929,14 @@ theorem claimed_record {env sub : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name}
   · simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at hclaim
     obtain ⟨-, rfl, rfl⟩ := hclaim
     rw [shape.bytes] at hblock
-    exact ⟨_, BlockLayout.recordAt_ser wire hblock⟩
+    exact ⟨_, BlockLayout.recordAt_ser wire (BlockRecords.runBlock_bounded hr).1 hblock⟩
   · obtain ⟨q, hq, e⟩ := Array.mem_map.mp hclaim
     simp only [Prod.mk.injEq] at e
     obtain ⟨-, rfl, rfl⟩ := e
     rcases shape.rows q hq with same | proj
-    · exact ⟨_, BlockLayout.recordAt_ser (by rw [same]; exact wire) hstored⟩
-    · exact ⟨_, BlockLayout.recordAt_ser proj.1 hstored⟩
+    · exact ⟨_, BlockLayout.recordAt_ser (by rw [same]; exact wire)
+        ((BlockRecords.runBlock_bounded hr).2 q hq) hstored⟩
+    · exact ⟨_, BlockLayout.recordAt_ser proj.1 ((BlockRecords.runBlock_bounded hr).2 q hq) hstored⟩
 
 /-- **Quotient Source declares an `ops` role's key only by a definition** (`OpsDeclared`), from
 the role's record kind (`RoleRecordKinds`) and the closure names' claims (`ClaimedIn`): every
@@ -2082,7 +2083,7 @@ theorem claimed_records {ixe : Ixon.Env} {n : Ix.Name} {A : Address} {cenv : Com
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have blockRec : recordAt ixe r.blockAddr = some r.block := by
     rw [shape.bytes] at hblock
-    exact BlockLayout.recordAt_ser wire hblock
+    exact BlockLayout.recordAt_ser wire (BlockRecords.runBlock_bounded hr).1 hblock
   have selfBlock : blockAt ixe r.blockAddr = r.blockAddr := by
     unfold blockAt
     rw [blockRec]
@@ -2103,7 +2104,7 @@ theorem claimed_records {ixe : Ixon.Env} {n : Ix.Name} {A : Address} {cenv : Com
         exact .inl ⟨blockRec, selfBlock⟩
       · rcases shape.rows q hq with h | ⟨pwire, -, powner⟩
         · exact absurd h same
-        have prec := BlockLayout.recordAt_ser pwire hstored
+        have prec := BlockLayout.recordAt_ser pwire ((BlockRecords.runBlock_bounded hr).2 q hq) hstored
         refine .inr ⟨q.2.1, prec, ?_, (runBlock_rows hr q hq same).2⟩
         unfold blockAt
         rw [prec]

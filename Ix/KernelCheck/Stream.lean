@@ -99,7 +99,7 @@ def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
       if let .proof address := entry then
         proofRecords := proofRecords.insert address
         if let some lazy := consts[address]? then
-          let record ← IO.ofExcept (Ixon.deConstant lazy.rawBytes)
+          let record ← IO.ofExcept lazy.get
           proofRecords := proofRecords.insert (Ixon.CheckOrder.owner address record)
   for (address, lazy) in consts.toList do
     let c ← IO.ofExcept lazy.get
@@ -133,7 +133,7 @@ def StreamState.take (windows : IO.Ref (Std.HashMap Address Ixon.LazyConstant)) 
 the `.ixe` does not hold, the setup's. -/
 def StreamState.read (l : Loaded) (ss : StreamState) (address : Address) : Except ReadError (Read .anon) :=
   match ss.bytes[address]? with
-  | some b => match Ixon.deConstantAt b 0 with
+  | some b => match Ixon.deConstantAt b 0 b.size with
     | .ok source => readRecord l.setup.cx ss.st address source
     | .error e => .error (.malformed s!"record does not decode: {e}")
   | none =>
@@ -152,7 +152,7 @@ def StreamState.tierRead (l : Loaded) (ss : StreamState) (address : Address) :
   let sk ← l.setup.store[address]?
   guard (Ix.Kernel.Admission.isTierInfo sk.info)
   match ss.bytes[address]? with
-  | some b => match Ixon.deConstantAt b 0 with
+  | some b => match Ixon.deConstantAt b 0 b.size with
     | .ok source => readTierAt l.setup.cx address source
     | .error e => some (.error (.malformed s!"record does not decode: {e}"))
   | none => some (.error (.malformed "record is missing or was read already"))

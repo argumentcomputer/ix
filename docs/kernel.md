@@ -67,16 +67,25 @@ it as a hypothesis. That link concerns acceptance only: it supplies no
 relation between nominal and quotient value models.
 
 On the command line, `ix compile` and `ix compile-lean` run the certified
-compiler: the Lean driver followed by `compileLeanInputValidated` in
-[`Ix/CompileResource.lean`](../Ix/CompileResource.lean). It validates resources
-when semantic contracts or a resource profile require them, then runs the
-compile-report checks (`Ix.Cert.checkReport`, the checks behind
-`compileReport`) on the compile; a failed check refuses the compile and
-nothing is written. The role support, certificates and binding are then added
-(`Ix.RoleBinding.Compile.finalize`), and the finalized artifact is checked
-again (`checkFinalized`: the original's publications and hints unchanged, and
-every report check that reads the artifact alone) before it is written. So are
-`ix prove`, `ix check` and `ix addr-of` given a name and no `.ixe`.
+compiler, `Ix.Cert.compileReport` itself (`Ix.CompileM.compileCertified` in
+[`Ix/CompileCertified.lean`](../Ix/CompileCertified.lean)). The input's source
+contracts are resolved, its constants canonicalized (`Ix.CanonM`), and
+`compileReport` compiles them and runs its report checks (`Ix.Cert.checkReport`);
+a failed check refuses the compile and nothing is written. Every reported
+failure must be an input constant's, and an input with semantic contracts must
+compile completely and validate its resources. The role support, certificates
+and binding are then added (`Ix.RoleBinding.Compile.finalize`, which compiles the
+support with `compileReport` too), and the finalized artifact is checked again
+(`checkFinalized`: the original's publications and hints unchanged, and every
+report check that reads the artifact alone) before it is written. The certified
+compiler runs at the default sharing limits, which `compileReport` fixes: a
+sharing-limit override is refused there.
+
+`ix compile --streamed` and `ix compile-lean --streamed` select the streamed
+Lean pipeline (`compileLeanInputValidated` in
+[`Ix/CompileResource.lean`](../Ix/CompileResource.lean)), which runs the same
+report checks on the compile. `ix prove`, `ix check` and `ix addr-of` given a
+name and no `.ixe` compile its closure with it.
 
 The Rust compiler is opt-in and uncertified: `ix compile --rust` (and `--rust`
 on `prove`, `check` and `addr-of`). It has no counterpart of the report
@@ -87,11 +96,12 @@ compiler-refinement theorem for the Rust compiler. Metadata is outside the
 certification claim.
 
 What the theorem covers on these paths: `CompileCorrect` is about the pure
-function `Ix.Cert.compileReport`. The command line runs the streamed driver,
-whose canonicalization, reference graph, ground filter and condensation are
-tested equal to the pure ones (`cert-compile-parity-init`), not proved; its fold
-over the hybrid environment is proved equal to the pure fold
-(`Ix/Cert/Hybrid.lean`). `finalize`'s additions are outside the theorem.
+function `Ix.Cert.compileReport`, which `ix compile` and `ix compile-lean` run on
+the canonicalized input. The streamed pipeline's canonicalization, reference
+graph, ground filter and condensation are tested equal to the pure ones
+(`cert-compile-parity-init`), not proved; its fold over the hybrid environment
+is proved equal to the pure fold (`Ix/Cert/Hybrid.lean`). `finalize`'s additions
+are outside the theorem.
 
 ## The certified entry
 
@@ -1050,7 +1060,13 @@ re-records it states why the closure or the statement moved.
    and the projection output against the compiler's records, on the fixture
    closure (the check the `lake test` suite `kernel-reader-roundtrip` runs)
    and on the first records of Init and Std; the log goes to
-   `.lake/build/kernel-reader-fidelity.log`.
+   `.lake/build/kernel-reader-fidelity.log`;
+10. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
+    ill-typed declarations and the fixtures;
+11. `kernel-source-ingress --collapse --bundle-evidence --compare-prepared`
+    on Init and Std: quotient Source, as `checkSourceCollapsedBundledAt` runs
+    it, on a freshly compiled artifact; it fails when a collapse check fails
+    or the harness's prepared stream differs from production's.
 
 The CI job runs the same gate and keeps the codec, order, entry-case and
 reader-fidelity logs.

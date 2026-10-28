@@ -31,6 +31,7 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
   let dir ← IO.FS.createTempDir
   let source := dir / "NoBuild.lean"
   let output := dir / "no-build.ixe"
+  let leanOutput := dir / "no-build-lean.ixe"
   let report := dir / "compile.json"
   try
     -- No Lake project or compiled target exists here. Only the toolchain's
@@ -49,6 +50,13 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let version ← IO.ofExcept (json.getObjValAs? Nat "ixeFormatVersion")
     unless schema == 2 && version == 5 do
       throw <| IO.userError "compile report did not identify its emitted bound v5 envelope under schema2"
+    let leanArgs := #["compile-lean", source.toString, "--consts", "noBuildProof",
+      "--out", leanOutput.toString]
+    let leanBuilt ← IO.Process.output { cmd := ix.toString, args := leanArgs.push "--no-build" }
+    unless leanBuilt.exitCode == 0 do
+      throw <| IO.userError s!"compile-lean --no-build failed:\n{leanBuilt.stdout}\n{leanBuilt.stderr}"
+    unless (← leanOutput.pathExists) && (← IO.FS.readBinFile leanOutput) == (← IO.FS.readBinFile output) do
+      throw <| IO.userError "compile-lean --no-build differs from the certified compile output"
     for ext in ["olean", "c"] do
       if ← (source.withExtension ext).pathExists then
         throw <| IO.userError s!"compile --no-build unexpectedly wrote a .{ext} file"
@@ -56,13 +64,20 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let defaultRun ← IO.Process.output { cmd := ix.toString, args }
     if defaultRun.exitCode == 0 then
       throw <| IO.userError "compile without --no-build unexpectedly skipped the Lake build"
+    let leanDefault ← IO.Process.output { cmd := ix.toString, args := leanArgs }
+    if leanDefault.exitCode == 0 then
+      throw <| IO.userError "compile-lean without --no-build unexpectedly skipped the Lake build"
     -- Missing imports must fail instead of silently fetching/building them.
     IO.FS.removeFile output
+    IO.FS.removeFile leanOutput
     IO.FS.writeFile source "import IxCliNoBuildMissingImport\n"
     let missing ← IO.Process.output { cmd := ix.toString, args := args.push "--no-build" }
     if missing.exitCode == 0 || (← output.pathExists) then
       throw <| IO.userError "compile --no-build accepted a missing import"
-    IO.println "compile --no-build: source elaboration, output, default build, and missing-import checks passed"
+    let leanMissing ← IO.Process.output { cmd := ix.toString, args := leanArgs.push "--no-build" }
+    if leanMissing.exitCode == 0 || (← leanOutput.pathExists) then
+      throw <| IO.userError "compile-lean --no-build accepted a missing import"
+    IO.println "compile and compile-lean --no-build: output parity, default builds, and missing-import checks passed"
   finally
     IO.FS.removeDirAll dir
 
@@ -121,7 +136,9 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
     IO.FS.removeDirAll dir
 
 /-- `ix compile --sharing-limits`: a malformed override is rejected before
-    compiling (nothing written), a valid one (Lean and Rust keys mixed)
+    compiling (nothing written). The certified compiler, whose theorem fixes
+    the default limits, refuses a valid override, given or inherited, and
+    writes nothing. Under `--streamed` a valid one (Lean and Rust keys mixed)
     compiles, and a limit no constant fits in fails the compile naming the
     limit (so an override that never reached the compiler would be caught).
     An invalid `IX_SHARING_LIMITS` set directly fails the compile once. -/
@@ -138,12 +155,22 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
     let args := #["compile", source.toString, "--no-build", "--consts", "limitsProof",
       "--out", output.toString]
     let run := fun (spec : String) => IO.Process.output {
-      cmd := ix.toString, args := args ++ #["--sharing-limits", spec] }
+      cmd := ix.toString, args := args ++ #["--streamed", "--sharing-limits", spec] }
     let bad ← run "bogus=1"
     if bad.exitCode == 0 || (← output.pathExists) then
       throw <| IO.userError s!"compile accepted --sharing-limits bogus=1:\n{bad.stdout}\n{bad.stderr}"
     unless (bad.stderr.splitOn "unknown sharing limit bogus").length > 1 do
       throw <| IO.userError s!"--sharing-limits bogus=1: unexpected error:\n{bad.stderr}"
+    -- The certified compiler refuses a valid override, as a flag or inherited.
+    for (flags, env) in [(#["--sharing-limits", "states=2^44"], #[]),
+        (#[], #[("IX_SHARING_LIMITS", some "states=2^44")])] do
+      let refused ← IO.Process.output { cmd := ix.toString, args := args ++ flags, env }
+      if refused.exitCode == 0 || (← output.pathExists) then
+        throw <| IO.userError s!"the certified compiler accepted a sharing-limit override:\n\
+          {refused.stdout}\n{refused.stderr}"
+      unless occurrences refused "runs at the default sharing limits" > 0 do
+        throw <| IO.userError s!"certified sharing-limit override: unexpected error:\n\
+          {refused.stdout}\n{refused.stderr}"
     -- Every serialized constant is longer than one byte: the override must
     -- reach the compiler and fail it, naming the limit to raise.
     let tight ← run "output_bytes=1"
@@ -166,8 +193,9 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
     let good ← run "states=2^44, depth=2^22, work=max"
     unless good.exitCode == 0 && (← output.pathExists) do
       throw <| IO.userError s!"compile --sharing-limits failed:\n{good.stdout}\n{good.stderr}"
-    IO.println "compile --sharing-limits: malformed override rejected, tight limit enforced, \
-      invalid IX_SHARING_LIMITS rejected once, valid override compiled"
+    IO.println "compile --sharing-limits: malformed override rejected, certified compiler \
+      refuses an override, tight limit enforced under --streamed, invalid IX_SHARING_LIMITS \
+      rejected once, valid override compiled under --streamed"
   finally
     IO.FS.removeDirAll dir
 

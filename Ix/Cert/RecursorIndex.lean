@@ -6,9 +6,10 @@ import Ix.Cert.ReaderFallback
 
 /-! # The closure's recursor index at an inductive group's block
 
-The closure's reading context indexes the recursors of the closure's records, then of the
-prelude's records it does not shadow and does not file under a block the closure supplies
-(`Ix.Kernel.Reader.indexedRecords`). For an inductive group compiled in Lean's order, the block
+The closure's reading context indexes the recursors of the closure's records that it does not
+file under a block only the prelude supplies, then of the prelude's records it does not shadow
+and does not file under a block the closure supplies (`Ix.Kernel.Reader.indexedRecords`). A
+closure record whose recursor members file under closure blocks is indexed (`order_scanned`). For an inductive group compiled in Lean's order, the block
 the index files the group's recursors under is the inductive block, in member order, and its
 recursors are the recursor family's members in family order, each with the entry quotient
 Source's reading of the group needs (`closure_recursor_index`). These are the index premises of
@@ -62,11 +63,6 @@ theorem mem_decoded {a : Address} {c : Ixon.Constant} :
   · rintro ⟨ha, hc⟩
     exact ⟨a, ha, c, hc, rfl, rfl⟩
 
-theorem order_scanned {a : Address} {c : Ixon.Constant} (ha : a ∈ order) (hc : recordAt ixe a = some c) :
-    (a, c) ∈ scannedOf ixe t preA order := by
-  simp only [scannedOf, indexedRecords, Array.mem_append]
-  exact .inl (mem_decoded.mpr ⟨ha, hc⟩)
-
 theorem known_contains {records : Array (Address × Ixon.Constant)} {a : Address} {c : Ixon.Constant}
     (h : (a, c) ∈ records) :
     (records.foldl (fun s (a, _) => s.insert a) ({} : Std.HashSet Address)).contains a = true := by
@@ -94,6 +90,59 @@ theorem known_contains {records : Array (Address × Ixon.Constant)} {a : Address
         · exact .inr h
   exact key _ _ (.inr (Array.mem_toList_iff.mpr h))
 
+/-- **A closure record is scanned** when each of its recursor members that the closure context's
+analysis files at all is filed under a block the closure stores (`Ix.Kernel.Reader.inputIndexed`). -/
+theorem order_scanned {a : Address} {c : Ixon.Constant} (ha : a ∈ order) (hc : recordAt ixe a = some c)
+    (filed : ∀ j r, (j, r) ∈ recursorMembers c → ∀ m cs mj b i,
+      analyseRecursor (closureContext ixe t preA order).store a c r = some (m, cs, mj) →
+      cs[0]? = some (.member b i) → b ∈ order ∧ (recordAt ixe b).isSome) :
+    (a, c) ∈ scannedOf ixe t preA order := by
+  simp only [scannedOf, indexedRecords, Array.mem_append, Array.mem_filter]
+  refine .inl ⟨mem_decoded.mpr ⟨ha, hc⟩, ?_⟩
+  unfold inputIndexed
+  rw [Bool.or_eq_true]
+  refine .inl (Array.all_eq_true'.mpr fun ⟨j, r⟩ hm => ?_)
+  dsimp only
+  cases han : analyseRecursor (closureContext ixe t preA order).store a c r with
+  | none => rfl
+  | some x =>
+    obtain ⟨m, cs, mj⟩ := x
+    dsimp only
+    cases hcs : cs[0]? with
+    | none => rfl
+    | some q =>
+      cases q with
+      | ctor _ _ _ => rfl
+      | member b i =>
+        obtain ⟨hb, hrb⟩ := filed j r hm m cs mj b i han hcs
+        obtain ⟨cb, hcb⟩ := Option.isSome_iff_exists.mp hrb
+        exact known_contains (mem_decoded.mpr ⟨hb, hcb⟩)
+
+/-- **A record's recursor members sit at distinct positions.** -/
+theorem recursorMembers_unique {c : Ixon.Constant} {j : Nat} {r₁ r₂ : Ixon.Recursor}
+    (h₁ : (j, r₁) ∈ recursorMembers c) (h₂ : (j, r₂) ∈ recursorMembers c) : r₁ = r₂ := by
+  unfold recursorMembers at h₁ h₂
+  split at h₁
+  · rename_i r hi
+    rw [hi] at h₂
+    simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at h₁ h₂
+    rw [h₁.2, h₂.2]
+  · rename_i ms hi
+    rw [hi] at h₂
+    simp only [Array.mem_filterMap] at h₁ h₂
+    obtain ⟨⟨x₁, k₁⟩, hk₁, e₁⟩ := h₁
+    obtain ⟨⟨x₂, k₂⟩, hk₂, e₂⟩ := h₂
+    cases x₁ <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at e₁
+    cases x₂ <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at e₂
+    obtain ⟨rfl, rfl⟩ := e₁
+    obtain ⟨rfl, rfl⟩ := e₂
+    have g₁ := Array.mem_zipIdx_iff_getElem?.mp hk₁
+    have g₂ := Array.mem_zipIdx_iff_getElem?.mp hk₂
+    rw [g₁] at g₂
+    simp only [Option.some.injEq, Ixon.MutConst.recr.injEq] at g₂
+    exact g₂
+  · simp at h₁
+
 /-- **A record the closure context's index scans** is a closure record, or a prelude record none of
 whose recursor members is analysed into a block the closure supplies. -/
 theorem scanned_cases {a : Address} {c : Ixon.Constant} (h : (a, c) ∈ scannedOf ixe t preA order) :
@@ -102,7 +151,7 @@ theorem scanned_cases {a : Address} {c : Ixon.Constant} (h : (a, c) ∈ scannedO
         analyseRecursor (closureContext ixe t preA order).store a c r = some (m, cs, mj) →
         cs[0]? = some (.member b fi) → b ∈ order → recordAt ixe b = none := by
   simp only [scannedOf, indexedRecords, Array.mem_append, Array.mem_filter, Bool.and_eq_true] at h
-  rcases h with h | ⟨-, -, hfb⟩
+  rcases h with ⟨h, -⟩ | ⟨-, -, hfb⟩
   · exact .inl (mem_decoded.mp h)
   · refine .inr fun j r hm m cs mj b fi ha hcs hb => ?_
     cases hrb : recordAt ixe b with
@@ -880,6 +929,19 @@ theorem closure_recursor_index {env : Ix.Environment} {roots : List Ix.Name} {su
     obtain ⟨r, cs, mb, mi, ind, hmem, han, hcs, hind, hisize, hrules⟩ := fam.slot j hj
     obtain ⟨hanS, -, hmb⟩ := analysis_closure (t := t) (preA := preA) corder hB₂ stored₂ han
     exact ⟨r, cs, mb, mi, ind, hmem, hanS, hmb, hcs, hind, hisize, hrules⟩
+  -- every member files under the inductive block, which the closure stores, so the index scans
+  -- the family's record
+  have scanned₂ : (out₂.blockAddr, out₂.block) ∈ scannedOf ixe t preA order := by
+    refine order_scanned hB₂ stored₂ fun j r hm m cs mj b i han hcs => ?_
+    obtain ⟨hj, -⟩ := fam.members j r hm
+    obtain ⟨r', cs', mb, mi, ind, hm', hanS, -⟩ := filed j hj
+    cases recursorMembers_unique hm hm'
+    obtain ⟨ha', fi, bc, ms, slot, first', hcar, -⟩ := recursorAnalysis_spec.mp hanS
+    rw [han] at ha'
+    cases ha'
+    rw [hcs] at hcar
+    cases hcar
+    exact ⟨hB₁, by rw [stored₁]; rfl⟩
   -- each member is the one filed at its slot
   have entryOf : ∀ j (hj : j < recs.size), ∃ chosen shape,
       (closureContext ixe t preA order).index.recs[ConstRef.member out₂.blockAddr j]? = some chosen ∧
@@ -888,7 +950,7 @@ theorem closure_recursor_index {env : Ix.Environment} {roots : List Ix.Name} {su
     intro j hj
     obtain ⟨r, cs, mb, mi, ind, hmem, hanS, -⟩ := filed j hj
     obtain ⟨fA, sA, bcA, msA, -, -, -, hfrom⟩ := from_of_analysis (records := scannedOf ixe t preA order)
-      (order_scanned hB₂ stored₂) hmem hanS
+      scanned₂ hmem hanS
     obtain ⟨chosen, shape, hrecs', hb, hm, hshape, -⟩ :=
       ReaderIndexDiscovery.buildIndex_unique_reference _ _ coherent _ _ hfrom (by
         intro other chosen' hother hb hm

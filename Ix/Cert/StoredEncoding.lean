@@ -1,6 +1,7 @@
 import Ix.Cert.Resolution
 import Ix.Cert.Stream
 import IxC.Ixon.Verify.Framing
+import IxC.Ixon.Verify.BoundedConstant
 
 /-! # The compiled store is canonically encoded
 
@@ -8,8 +9,8 @@ import IxC.Ixon.Verify.Framing
 wire-valid constant whose canonical encoding is its stored bytes. This module reduces that,
 for every order of a compiled artifact, to the fold's store: the artifact stores each of the
 fold's final records as its own buffer (`assembleEnv_consts_inv`, with the original-data
-finalization keeping the records), and a buffer that is a wire-valid constant's canonical
-encoding decodes to that constant (`get?_serConstant`). So the artifact is stored canonically
+finalization keeping the records), and a wire-valid canonical encoding within the loader's
+universe budget decodes to that constant (`get?_serConstant`). So the artifact is stored canonically
 once every record the fold stores is such an encoding (`Encoded`); the fold starts from an
 empty store (`compileReport_start`, `FoldStart`), so it is enough that every outcome the fold
 applies to a reached state keeps its store encoded (`StepsEncode`, `storedCanonical_of_steps`).
@@ -17,15 +18,18 @@ applies to a reached state keeps its store encoded (`StepsEncode`, `storedCanoni
 `StepsEncode` is the fold's provenance: a merge stores the block's record, its projections and
 its auxiliary records (`blockRecordWrites`), each the encoding of a constant the block compile
 returned, which the block codec theorems (`EmissionDispatch.constant_codec`,
-`MutualArtifact.mutual_correct`) show wire-valid. -/
+`MutualArtifact.mutual_correct`) show wire-valid. Successful block compilation checks the
+universe budget for its block and projection records (`BlockRecords.runBlock_bounded`). -/
 
 namespace Ix.Cert.StoredEncoding
 
 open Ix.CompileM Ix.Cert.Resolution Ix.Cert.Schedule
 
-/-- **Every record of a store is a wire-valid constant's canonical encoding.** -/
+/-- Every record is a wire-valid constant's canonical encoding and fits the
+production loader's aggregate universe-expansion budget. -/
 def Encoded (store : Std.HashMap Address ByteArray) : Prop :=
-  ∀ a b, store.get? a = some b → ∃ c : Ixon.Constant, c.wireWF ∧ Ixon.serConstant c = b
+  ∀ a b, store.get? a = some b → ∃ c : Ixon.Constant, c.wireWF ∧
+    Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes ∧ Ixon.serConstant c = b
 
 theorem encoded_empty : Encoded ({} : Std.HashMap Address ByteArray) := fun a b h => by
   rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h
@@ -33,24 +37,30 @@ theorem encoded_empty : Encoded ({} : Std.HashMap Address ByteArray) := fun a b 
 
 /-! ## Decoding an encoded record -/
 
-/-- A wire-valid constant's canonical encoding parses back to it in place. -/
-theorem deConstantAt_serConstant {c : Ixon.Constant} (h : c.wireWF) :
-    Ixon.deConstantAt (Ixon.serConstant c) 0 = .ok c := by
+/-- A wire-valid constant within the loader's universe budget parses back
+from its canonical encoding in place. -/
+theorem deConstantAt_serConstant {c : Ixon.Constant} (h : c.wireWF)
+    (fits : Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes) :
+    Ixon.deConstantAt (Ixon.serConstant c) 0 (Ixon.serConstant c).size = .ok c := by
   have exact := Ixon.Verify.deConstantExact_serConstant c h
   unfold Ixon.deConstantExact at exact
-  obtain ⟨state, hrun, -⟩ := Ixon.Verify.runGetExact_complete exact
+  obtain ⟨state, hrun, hidx⟩ := Ixon.Verify.runGetExact_complete exact
+  have bounded := Ixon.Verify.BoundedConstant.getConstant_complete _ _ _ _ hrun fits
   unfold Ixon.deConstantAt
-  rw [hrun]
+  simp only [EStateM.run]
+  rw [ite_eq_left (Nat.le_of_eq (Nat.zero_add _)), bounded]
+  simp [hidx]
 
 /-- **A wire-valid constant's canonical encoding, held as its own buffer, decodes to it**,
 and is its own raw bytes. -/
-theorem get?_serConstant {c : Ixon.Constant} (h : c.wireWF) :
+theorem get?_serConstant {c : Ixon.Constant} (h : c.wireWF)
+    (fits : Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes) :
     ({ buf := Ixon.serConstant c, len := (Ixon.serConstant c).size } : Ixon.LazyConstant).get? = some c ∧
       ({ buf := Ixon.serConstant c, len := (Ixon.serConstant c).size } : Ixon.LazyConstant).rawBytes =
         Ixon.serConstant c := by
   refine ⟨?_, by simp [Ixon.LazyConstant.rawBytes]⟩
-  show (Ixon.deConstantAt (Ixon.serConstant c) 0).toOption = some c
-  rw [deConstantAt_serConstant h]
+  show (Ixon.deConstantAt (Ixon.serConstant c) 0 (Ixon.serConstant c).size).toOption = some c
+  rw [deConstantAt_serConstant h fits]
   rfl
 
 /-! ## The artifact's store is the fold's -/
@@ -95,8 +105,8 @@ theorem storedCanonical_of_store {ixe : Ixon.Env} {store : Std.HashMap Address B
     (encoded : Encoded store) (order : List Address) : Stream.StoredCanonical ixe order := by
   intro a _ lc hlc
   obtain ⟨b, hb, rfl⟩ := stores a lc hlc
-  obtain ⟨c, wire, rfl⟩ := encoded a b hb
-  obtain ⟨hget, hraw⟩ := get?_serConstant wire
+  obtain ⟨c, wire, fits, rfl⟩ := encoded a b hb
+  obtain ⟨hget, hraw⟩ := get?_serConstant wire fits
   exact ⟨c, hget, wire, hraw.symm⟩
 
 /-! ## The fold keeps its store encoded -/

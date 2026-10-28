@@ -134,13 +134,14 @@ theorem mem_scanned {input fallback : Array (Address × Ixon.Constant)}
   · simp only [hc, Bool.not_true, Bool.false_eq_true, and_false, or_false, true_iff] at h ⊢
     simp only [h, not_true_eq_false, and_false, or_false]
 
-/-- The index scans a sub-array of the scanned records: the fallback records it leaves out are
+/-- The index scans a sub-array of the scanned records: the input records it leaves out are
+ones filed into a block only the fallback supplies, and the fallback records it leaves out are
 ones filed into a block the input supplies (`indexedRecords`). -/
 theorem mem_indexed_scanned {store : Store} {input fallback : Array (Address × Ixon.Constant)}
     {a : Address} {c : Ixon.Constant} (h : (a, c) ∈ indexedRecords store input fallback) :
     (a, c) ∈ scanned input fallback := by
   simp only [indexedRecords, scanned, Array.mem_append, Array.mem_filter, Bool.and_eq_true] at h ⊢
-  rcases h with h | ⟨h, known, -⟩
+  rcases h with ⟨h, -⟩ | ⟨h, known, -⟩
   · exact .inl h
   · exact .inr ⟨h, known⟩
 

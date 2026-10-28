@@ -56,11 +56,15 @@ namespace Ix.Kernel.PinGen
 
 /-- Case analysis on a `Decidable` instance, false case first: the argument
 order of `Decidable.casesOn` when `Decidable` was an inductive with the two
-constructors `isFalse` and `isTrue`. -/
+constructors `isFalse` and `isTrue`. It cases on the instance's fields, as
+`dite` does, so that a closed proof reaches `Decidable` only through its
+projections and constructor (structure eta), never through its recursor, which
+is outside the operations' dependency closures. -/
 private abbrev decCases {c : Prop} {motive : Decidable c → Sort u} (d : Decidable c)
     (isFalse : ∀ h, motive (Decidable.isFalse h)) (isTrue : ∀ h, motive (Decidable.isTrue h)) :
     motive d :=
-  Decidable.falseTrueCases isFalse isTrue d
+  Bool.casesOn (motive := fun b => ∀ r : b.Reflects c, motive ⟨b, r⟩) d.decide isFalse isTrue
+    d.reflects_decide
 
 /-- `dite` at a true condition. -/
 private theorem dpos {c : Prop} {d : Decidable c} {α : Sort u} {t : c → α} {e : ¬c → α}

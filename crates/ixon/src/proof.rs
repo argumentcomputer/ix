@@ -158,12 +158,23 @@ pub enum RevealConstantInfo {
 /// a [`Claim::Binding`] states and aggregation discharges once. The flag is
 /// the claim's validator byte, not a context field on the wire, and only
 /// `Check` and `CheckEnv` carry it: the other typing claims always validate.
+///
+/// `literal_class` says that `binding` is not a binding hash but a literal
+/// class digest ([`crate::role_table::RoleTable::literal_class`]): the hash of
+/// the addresses a binding binds to the roles the checker uses without a
+/// reference to them (the literal support and the standard axioms). A
+/// `CheckEnv` claim under a literal class ([`VALIDATOR_ERASED_LEAN_CLASS`])
+/// states its typing under every binding with that literal class that meets
+/// the specifications. Only aggregation produces such claims (`ix_aggr` shape
+/// 15); IxVM never reads one. Like `binding_assumed`, the flag is the
+/// validator byte.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClaimContext {
   pub spec: Address,
   pub binding: Address,
   pub axioms: Option<Address>,
   pub binding_assumed: bool,
+  pub literal_class: bool,
 }
 
 /// A claim that can be proven.
@@ -211,22 +222,14 @@ pub enum Claim {
   Reveal { comm: Address, info: RevealConstantInfo },
   /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
   Contains { tree: Address, const_addr: Address },
-  /// The `.ixc` catalog claim. Two leaf vocabularies, never mixed:
-  /// `members` is `merkle_root_canonical` over member ENV ROOTS;
-  /// `content` (and `assumptions`) commit CONSTANT ADDRESSES. States
-  /// that (1) `tree(content)` is exactly the union of the member envs'
-  /// const sets — nothing missing, nothing unattributed — and (2)
-  /// every constant in `tree(content)` typechecks, conditional on
-  /// `assumptions` (`None` = unconditional). Verified by COMPOSITION
-  /// of per-piece/chunk `CheckEnv` claims with set discharge (the
-  /// shard protocol one level up) — there is deliberately no
-  /// whole-catalog interpreter arm.
-  Catalog {
-    ctx: ClaimContext,
-    members: Address,
-    content: Address,
-    assumptions: Option<Address>,
-  },
+  /// A conjunction of unconditional `CheckEnv` claims, each under its own
+  /// context, so members compiled under different role bindings (different
+  /// Lean toolchains) meet in one statement: every claim whose digest
+  /// ([`Claim::commit`]) is a leaf of the canonical merkle tree `members`
+  /// holds. Formed only by aggregation (`ix_aggr` shape 16), from
+  /// unconditional `CheckEnv` claims (validator 3 or 5) and other catalogs;
+  /// there is no whole-catalog interpreter arm.
+  Catalog { members: Address },
   /// Combined erased typing and resource admission of a complete addressed closure.
   Resource { root: Address, profile: Address },
   /// The role table with hash `binding` binds every role, and each bound
@@ -346,6 +349,18 @@ fn compute_mask(flags: &[bool]) -> u64 {
   mask
 }
 
+/// Refuse a reveal mask with a bit at or above `width`: the variant has `width`
+/// fields, and a mask bit naming none of them would give one claim two
+/// encodings.
+fn require_mask(mask: u64, width: u32) -> Result<(), String> {
+  if width < 64 && mask >> width != 0 {
+    return Err(format!(
+      "claim: reveal mask {mask} sets bits beyond its {width} fields"
+    ));
+  }
+  Ok(())
+}
+
 fn put_def_kind(k: DefKind, buf: &mut Vec<u8>) {
   buf.push(match k {
     DefKind::Definition => 0,
@@ -449,6 +464,7 @@ impl RevealConstructorInfo {
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let mask = TagN::get(0, buf)?.value;
+    require_mask(mask, 6)?;
     let is_unsafe =
       if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
     let lvls =
@@ -497,7 +513,7 @@ fn put_rules(rules: &[RevealRecursorRule], buf: &mut Vec<u8>) {
 fn get_rules(buf: &mut &[u8]) -> Result<Vec<RevealRecursorRule>, String> {
   let count =
     usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
-  let mut rules = Vec::with_capacity(count);
+  let mut rules = Vec::with_capacity(count.min(buf.len()));
   for _ in 0..count {
     rules.push(RevealRecursorRule::get(buf)?);
   }
@@ -517,7 +533,7 @@ fn get_ctors(
 ) -> Result<Vec<(u64, RevealConstructorInfo)>, String> {
   let count =
     usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
-  let mut ctors = Vec::with_capacity(count);
+  let mut ctors = Vec::with_capacity(count.min(buf.len()));
   for _ in 0..count {
     let idx = TagN::get(0, buf)?.value;
     let info = RevealConstructorInfo::get(buf)?;
@@ -647,6 +663,15 @@ impl RevealMutConstInfo {
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let variant = get_u8(buf)?;
     let mask = TagN::get(0, buf)?.value;
+    require_mask(
+      mask,
+      match variant {
+        0 => 5,
+        1 => 6,
+        2 => 9,
+        _ => 64,
+      },
+    )?;
     match variant {
       0 => {
         let kind = if mask & 1 != 0 { Some(get_def_kind(buf)?) } else { None };
@@ -886,6 +911,17 @@ impl RevealConstantInfo {
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let variant = get_u8(buf)?;
     let mask = TagN::get(0, buf)?.value;
+    require_mask(
+      mask,
+      match variant {
+        0 => 5,
+        1 => 9,
+        2..=4 => 3,
+        5..=7 => 2,
+        8 => 1,
+        _ => 64,
+      },
+    )?;
     match variant {
       0 => {
         // Defn
@@ -979,7 +1015,7 @@ impl RevealConstantInfo {
         let components = if mask & 1 != 0 {
           let count = usize::try_from(TagN::get(0, buf)?.value)
             .map_err(|e| e.to_string())?;
-          let mut comps = Vec::with_capacity(count);
+          let mut comps = Vec::with_capacity(count.min(buf.len()));
           for _ in 0..count {
             let idx = TagN::get(0, buf)?.value;
             let info = RevealMutConstInfo::get(buf)?;
@@ -1034,11 +1070,16 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 ///   its binding meets the specifications instead of validating it
 ///   ([`ClaimContext::binding_assumed`]); its typing holds if the `Binding`
 ///   claim for its context does.
+/// - `5`, erased-lean-v2-class: a `CheckEnv` claim relative to a literal
+///   class instead of one binding ([`ClaimContext::literal_class`]); its
+///   typing holds under every binding of that class that meets the
+///   specifications.
 pub const VALIDATOR_STRUCTURAL: u8 = 0;
 pub const VALIDATOR_ERASED_LEAN_RETIRED: u8 = 1;
 pub const VALIDATOR_RESOURCE: u8 = 2;
 pub const VALIDATOR_ERASED_LEAN: u8 = 3;
 pub const VALIDATOR_ERASED_LEAN_ASSUMED: u8 = 4;
+pub const VALIDATOR_ERASED_LEAN_CLASS: u8 = 5;
 
 fn validator_for_variant(variant: u64) -> u8 {
   match variant {
@@ -1055,9 +1096,11 @@ fn variant_may_assume(variant: u64) -> bool {
 fn put_scope(validator: u8, buf: &mut Vec<u8>) {
   buf.extend_from_slice(&[Env::OBJECT_FORMAT, validator]);
 }
-/// Read the scope of a claim of variant `variant`; returns whether it
-/// assumes its binding.
-fn get_scope(variant: u64, buf: &mut &[u8]) -> Result<bool, String> {
+/// Read the scope of a claim of variant `variant`; returns its validator:
+/// the variant's, [`VALIDATOR_ERASED_LEAN_ASSUMED`] for `Check` and
+/// `CheckEnv`, or [`VALIDATOR_ERASED_LEAN_CLASS`] for `CheckEnv`. Any other
+/// byte is refused.
+fn get_scope(variant: u64, buf: &mut &[u8]) -> Result<u8, String> {
   let validator = validator_for_variant(variant);
   let format = get_u8(buf)?;
   if format != Env::OBJECT_FORMAT {
@@ -1068,11 +1111,12 @@ fn get_scope(variant: u64, buf: &mut &[u8]) -> Result<bool, String> {
     ));
   }
   let found = get_u8(buf)?;
-  if found == validator {
-    return Ok(false);
-  }
-  if found == VALIDATOR_ERASED_LEAN_ASSUMED && variant_may_assume(variant) {
-    return Ok(true);
+  if found == validator
+    || (found == VALIDATOR_ERASED_LEAN_ASSUMED && variant_may_assume(variant))
+    || (found == VALIDATOR_ERASED_LEAN_CLASS
+      && variant == VARIANT_CHECK_ENV_CLAIM)
+  {
+    return Ok(found);
   }
   if validator == VALIDATOR_ERASED_LEAN
     && found == VALIDATOR_ERASED_LEAN_RETIRED
@@ -1096,7 +1140,13 @@ impl ClaimContext {
     let spec = get_address(buf)?;
     let binding = get_address(buf)?;
     let axioms = get_opt_addr(buf)?;
-    Ok(ClaimContext { spec, binding, axioms, binding_assumed: false })
+    Ok(ClaimContext {
+      spec,
+      binding,
+      axioms,
+      binding_assumed: false,
+      literal_class: false,
+    })
   }
 
   /// The context of a claim made today over `env`'s own role binding: this
@@ -1112,7 +1162,20 @@ impl ClaimContext {
       binding: binding.address.clone(),
       axioms: None,
       binding_assumed: false,
+      literal_class: false,
     })
+  }
+
+  /// The context of a `CheckEnv` claim under the literal class `class`:
+  /// this specification set and no axiom beyond the standard three.
+  pub fn for_literal_class(class: Address) -> Self {
+    ClaimContext {
+      spec: spec_digest(),
+      binding: class,
+      axioms: None,
+      binding_assumed: false,
+      literal_class: true,
+    }
   }
 
   /// This context, assuming its binding meets the specifications.
@@ -1161,12 +1224,9 @@ impl Claim {
         buf.extend_from_slice(tree.as_bytes());
         buf.extend_from_slice(const_addr.as_bytes());
       },
-      Claim::Catalog { ctx, members, content, assumptions } => {
+      Claim::Catalog { members } => {
         // A two-byte claim tag: `E8 00` on the wire.
-        ctx.put(buf);
         buf.extend_from_slice(members.as_bytes());
-        buf.extend_from_slice(content.as_bytes());
-        put_opt_addr(assumptions, buf);
       },
       Claim::Resource { root, profile } => {
         buf.extend_from_slice(root.as_bytes());
@@ -1180,13 +1240,14 @@ impl Claim {
     }
   }
 
-  /// Read the bytes after the scope of claim variant `variant`; `assumed` is
-  /// what the scope said ([`get_scope`]).
+  /// Read the bytes after the scope of claim variant `variant`; `validator`
+  /// is what the scope said ([`get_scope`]).
   fn get_payload(
     variant: u64,
-    assumed: bool,
+    validator: u8,
     buf: &mut &[u8],
   ) -> Result<Self, String> {
+    let assumed = validator == VALIDATOR_ERASED_LEAN_ASSUMED;
     match variant {
       VARIANT_EVAL_CLAIM => {
         let ctx = ClaimContext::get(buf)?;
@@ -1205,6 +1266,7 @@ impl Claim {
       VARIANT_CHECK_ENV_CLAIM => {
         let mut ctx = ClaimContext::get(buf)?;
         ctx.binding_assumed = assumed;
+        ctx.literal_class = validator == VALIDATOR_ERASED_LEAN_CLASS;
         let root = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
         Ok(Claim::CheckEnv { ctx, root, assumptions })
@@ -1220,11 +1282,7 @@ impl Claim {
         Ok(Claim::Contains { tree, const_addr })
       },
       VARIANT_CATALOG_CLAIM => {
-        let ctx = ClaimContext::get(buf)?;
-        let members = get_address(buf)?;
-        let content = get_address(buf)?;
-        let assumptions = get_opt_addr(buf)?;
-        Ok(Claim::Catalog { ctx, members, content, assumptions })
+        Ok(Claim::Catalog { members: get_address(buf)? })
       },
       VARIANT_RESOURCE_CLAIM => Ok(Claim::Resource {
         root: get_address(buf)?,
@@ -1240,12 +1298,16 @@ impl Claim {
     }
   }
 
-  /// The validator the claim's scope names: its variant's, or
+  /// The validator the claim's scope names: its variant's,
   /// [`VALIDATOR_ERASED_LEAN_ASSUMED`] for a `Check` or `CheckEnv` claim
-  /// that assumes its binding. Only those two carry the flag on the wire;
-  /// the other typing claims always validate.
+  /// that assumes its binding, or [`VALIDATOR_ERASED_LEAN_CLASS`] for a
+  /// `CheckEnv` claim under a literal class. Only those carry the flags on
+  /// the wire; the other typing claims always validate one binding.
   pub fn validator(&self) -> u8 {
     match self {
+      Claim::CheckEnv { ctx, .. } if ctx.literal_class => {
+        VALIDATOR_ERASED_LEAN_CLASS
+      },
       Claim::Check { ctx, .. } | Claim::CheckEnv { ctx, .. }
         if ctx.binding_assumed =>
       {
@@ -1269,8 +1331,8 @@ impl Claim {
         FLAG_CLAIM, tag.flag
       ));
     }
-    let assumed = get_scope(tag.value, buf)?;
-    Self::get_payload(tag.value, assumed, buf)
+    let validator = get_scope(tag.value, buf)?;
+    Self::get_payload(tag.value, validator, buf)
   }
 
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -1295,10 +1357,10 @@ impl Claim {
     match self {
       Claim::Eval { ctx, .. }
       | Claim::Check { ctx, .. }
-      | Claim::CheckEnv { ctx, .. }
-      | Claim::Catalog { ctx, .. } => Some(ctx),
+      | Claim::CheckEnv { ctx, .. } => Some(ctx),
       Claim::Reveal { .. }
       | Claim::Contains { .. }
+      | Claim::Catalog { .. }
       | Claim::Resource { .. }
       | Claim::Binding { .. } => None,
     }
@@ -1354,8 +1416,8 @@ impl Proof {
         tag.value
       ));
     }
-    let assumed = get_scope(tag.value + 3, buf)?;
-    let claim = Claim::get_payload(tag.value + 3, assumed, buf)?;
+    let validator = get_scope(tag.value + 3, buf)?;
+    let claim = Claim::get_payload(tag.value + 3, validator, buf)?;
 
     // Opaque ZK proof bytes
     let len = usize::try_from(TagN::get(0, buf)?.value)
@@ -1593,6 +1655,7 @@ mod tests {
         binding: Address::arbitrary(g),
         axioms: gen_opt_addr(g),
         binding_assumed: false,
+        literal_class: false,
       }
     }
   }
@@ -1605,6 +1668,15 @@ mod tests {
     }
   }
 
+  /// A context for `CheckEnv`, which may also be under a literal class.
+  fn gen_check_env_ctx(g: &mut Gen) -> ClaimContext {
+    match u8::arbitrary(g) % 3 {
+      0 => ClaimContext::arbitrary(g),
+      1 => ClaimContext { binding_assumed: true, ..ClaimContext::arbitrary(g) },
+      _ => ClaimContext { literal_class: true, ..ClaimContext::arbitrary(g) },
+    }
+  }
+
   /// A fixed context: this specification set, a stand-in binding hash, the
   /// standard axioms only.
   fn test_ctx() -> ClaimContext {
@@ -1613,6 +1685,7 @@ mod tests {
       binding: Address::hash(b"binding"),
       axioms: None,
       binding_assumed: false,
+      literal_class: false,
     }
   }
 
@@ -1631,7 +1704,7 @@ mod tests {
           assumptions: gen_opt_addr(g),
         },
         2 => Claim::CheckEnv {
-          ctx: gen_assumable_ctx(g),
+          ctx: gen_check_env_ctx(g),
           root: Address::arbitrary(g),
           assumptions: gen_opt_addr(g),
         },
@@ -1643,12 +1716,7 @@ mod tests {
           comm: Address::arbitrary(g),
           info: RevealConstantInfo::arbitrary(g),
         },
-        4 => Claim::Catalog {
-          ctx: ClaimContext::arbitrary(g),
-          members: Address::arbitrary(g),
-          content: Address::arbitrary(g),
-          assumptions: gen_opt_addr(g),
-        },
+        4 => Claim::Catalog { members: Address::arbitrary(g) },
         5 => Claim::Resource {
           root: Address::arbitrary(g),
           profile: Address::arbitrary(g),
@@ -1695,30 +1763,38 @@ mod tests {
     }
   }
 
+  /// A reveal mask bit beyond the variant's fields is refused, so one claim
+  /// has one encoding. The Lean reader refuses the same bytes
+  /// (`Tests/Ix/Claim.lean`, `revealMaskTests`): a Reveal claim over the zero
+  /// commitment, its variant byte, then the one-byte mask.
+  #[test]
+  fn reveal_mask_refuses_unknown_bits() {
+    let mut header = vec![0xE6, 0x04, 0x00];
+    header.extend_from_slice(&[0u8; 32]);
+    for (variant, unknown) in [(0u8, 0x20u8), (2, 0x08), (7, 0x04)] {
+      let mut bytes = header.clone();
+      bytes.extend_from_slice(&[variant, 0x00]);
+      assert!(Claim::from_bytes(&bytes).is_ok(), "variant {variant}");
+      let last = bytes.len() - 1;
+      bytes[last] = unknown;
+      let err = Claim::from_bytes(&bytes).unwrap_err();
+      assert!(err.contains("reveal mask"), "{err}");
+    }
+  }
+
   /// The catalog claim's exact wire form is a cross-serializer
   /// commitment (the Rust↔Lean digest-parity gate pins the same bytes
   /// from the Lean side): the first multi-byte claim tag, TagN `0xE8 0x00`,
-  /// the scope (object format, validator erased-lean-v2), the context, then
-  /// members ‖ content ‖ opt-assumptions. A drift here changes every catalog
-  /// digest.
+  /// the scope (object format, validator erased-lean-v2), then the members
+  /// root: a catalog has no context of its own (each member claim carries
+  /// one) and is unconditional. A drift here changes every catalog digest.
   #[test]
   fn catalog_claim_wire_bytes_pinned() {
     let members = Address::hash(b"members");
-    let content = Address::hash(b"content");
-    let asm = Address::hash(b"assumptions");
-    let claim = Claim::Catalog {
-      ctx: test_ctx(),
-      members: members.clone(),
-      content: content.clone(),
-      assumptions: Some(asm.clone()),
-    };
+    let claim = Claim::Catalog { members: members.clone() };
     let (addr, bytes) = claim.commit();
     let mut expected = vec![0xE8, 0x00, 4, VALIDATOR_ERASED_LEAN];
-    test_ctx().put(&mut expected);
     expected.extend_from_slice(members.as_bytes());
-    expected.extend_from_slice(content.as_bytes());
-    expected.push(0x01);
-    expected.extend_from_slice(asm.as_bytes());
     assert_eq!(bytes, expected, "catalog claim wire bytes drifted");
     assert_eq!(addr, Address::hash(&expected));
     // Cross-language digest pin: `Tests/Ix/Claim.lean` asserts the
@@ -1726,19 +1802,12 @@ mod tests {
     // two serializers cannot drift on the large-tag path unnoticed.
     assert_eq!(
       addr.hex(),
-      "72eadc8676a4b86a6c829087b2aaf7c56674e0dec42a356cf70c47c654c37066",
+      "4f5686bd1a8386231370703d58223aca769c82c835964d4914ca41305a8030f3",
       "catalog claim digest drifted"
     );
-    // Unconditional form: trailing 0x00, same 2-byte tag.
-    let claim_none =
-      Claim::Catalog { ctx: test_ctx(), members, content, assumptions: None };
-    let mut buf = Vec::new();
-    claim_none.put(&mut buf);
-    assert_eq!(buf.len(), 2 + 2 + 65 + 32 + 32 + 1);
-    assert_eq!(&buf[0..2], &[0xE8, 0x00]);
-    assert_eq!(*buf.last().unwrap(), 0x00);
+    assert_eq!(bytes.len(), 2 + 2 + 32);
     // The proof wrapper stays a single-byte tag: 0xF5.
-    let proof = Proof::new(claim_none, Vec::new());
+    let proof = Proof::new(claim, Vec::new());
     let mut pbuf = Vec::new();
     proof.put(&mut pbuf);
     assert_eq!(pbuf[0], 0xF5, "catalog proof wrapper tag drifted");
@@ -2545,15 +2614,10 @@ mod tests {
         assumptions: None,
       },
       Claim::CheckEnv { ctx: ctx.clone(), root: a.clone(), assumptions: None },
-      Claim::Catalog {
-        ctx: ctx.clone(),
-        members: a.clone(),
-        content: a.clone(),
-        assumptions: None,
-      },
+      Claim::Catalog { members: a.clone() },
       Claim::Binding { spec: ctx.spec.clone(), binding: ctx.binding.clone() },
     ];
-    for claim in claims {
+    for claim in claims.clone() {
       let (_, mut bytes) = claim.commit();
       let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
       bytes[header + 1] = VALIDATOR_ERASED_LEAN_ASSUMED;
@@ -2569,5 +2633,57 @@ mod tests {
         (Err(_), _) => {},
       }
     }
+    // Validator 5 (a literal class) is read only for `CheckEnv`.
+    for claim in claims {
+      let (_, mut bytes) = claim.commit();
+      let header = if claim.proof_variant_size() + 3 >= 8 { 2 } else { 1 };
+      bytes[header + 1] = VALIDATOR_ERASED_LEAN_CLASS;
+      match (Claim::from_bytes(&bytes), &claim) {
+        (Ok(Claim::CheckEnv { ctx: c, .. }), Claim::CheckEnv { .. }) => {
+          assert!(c.literal_class && !c.binding_assumed);
+          assert_eq!(c.binding, ctx.binding);
+        },
+        (Ok(read), _) => panic!("validator 5 read as {read:?}"),
+        (Err(_), Claim::CheckEnv { .. }) => {
+          panic!("validator 5 refused for {claim:?}")
+        },
+        (Err(_), _) => {},
+      }
+    }
+  }
+
+  /// The literal class depends on exactly the class roles: rebinding
+  /// another role keeps it, rebinding a class role moves it, and an
+  /// incomplete table has none.
+  #[test]
+  fn literal_class_reads_only_the_class_roles() {
+    use crate::role_table::{CLASS_ROLES, Role, RoleTable};
+    let table = RoleTable {
+      version: 2,
+      bound: Role::ALL
+        .iter()
+        .map(|r| (*r, Address::hash(r.lean_name().as_bytes())))
+        .collect(),
+      evidence: vec![],
+    };
+    let class = table.literal_class().unwrap();
+    let rebind = |role: Role| {
+      let mut t = table.clone();
+      for entry in &mut t.bound {
+        if entry.0 == role {
+          entry.1 = Address::hash(b"other");
+        }
+      }
+      t.literal_class().unwrap()
+    };
+    assert_eq!(rebind(Role::NatLand), class);
+    for role in CLASS_ROLES {
+      assert_ne!(rebind(role), class, "{}", role.lean_name());
+    }
+    let mut incomplete = table.clone();
+    incomplete.bound.pop();
+    assert!(incomplete.literal_class().is_err());
+    let indices: Vec<u8> = CLASS_ROLES.iter().map(|r| r.index()).collect();
+    assert_eq!(indices, [0, 1, 2, 29, 30, 31, 37, 38, 39, 40, 56, 57]);
   }
 }

@@ -87,6 +87,7 @@ fn test_ctx() -> ixon::ClaimContext {
     binding: addr("aggregate-test-binding"),
     axioms: None,
     binding_assumed: false,
+    literal_class: false,
   }
 }
 

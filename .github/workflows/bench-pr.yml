@@ -20,10 +20,9 @@
 #                                  #  predates the flag proves whole
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
-#                                  # IX_COMPILE_WORKERS): RAM/speed knobs for the
-#                                  # measured `ix compile`. Every setting emits a
-#                                  # bit-identical `.ixe`, so they move the compile
-#                                  # backend's own numbers and nothing downstream.
+#                                  # IX_COMPILE_WORKERS): Rust compiler knobs for
+#                                  # older base checkouts; the certified default
+#                                  # does not use them.
 #                                  # The `.ixe` and compile-row caches are keyed by
 #                                  # SHA alone, so a knob run on a commit already
 #                                  # benchmarked replays the cached row instead of
@@ -362,7 +361,7 @@ jobs:
       # `lake build` below clones this package's Lake dependencies.
       - uses: $/.github/actions/authenticate-github-fetches
       # Apply the allowlisted KEY=VALUE lines from the !benchmark comment,
-      # so IX_COMPILE_* knobs reach the measured compile. Delivered via an
+      # including Rust compiler knobs for older base checkouts. Delivered via an
       # env var, not inline `${{ }}` — inlining would risk shell injection.
       - name: Apply passthrough env
         env:
