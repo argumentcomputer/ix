@@ -1,6 +1,7 @@
 import Ix.Cert.DefinitionBlockReads
 import Ix.Cert.Statement
 import Ix.CompileCert.Canon.QSort
+import IxC.Kernel.Semantics.Bridge.Sound
 
 /-! # A definition group's member names are distinct
 
@@ -178,4 +179,48 @@ info: 'Ix.Cert.DefinitionPremises.distinct_of_groupsOf' depends on axioms: [prop
 #guard_msgs in
 #print axioms distinct_of_groupsOf
 
+
+/-! ## Accepted declarations -/
+
+/-- Every step of a successful fold succeeded. -/
+theorem foldlM_steps {α β ε : Type} (f : β → α → Except ε β) :
+    ∀ (l : List α) (b b' : β), l.foldlM f b = .ok b' → ∀ a ∈ l, ∃ e e', f e a = .ok e'
+  | [], _, _, _ => fun _ h => nomatch h
+  | a :: l, b, b', h => by
+    rw [List.foldlM_cons] at h
+    obtain ⟨e₁, h₁, h⟩ := RecordTransfer.bind_ok h
+    intro x hx
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact ⟨b, e₁, h₁⟩
+    · exact foldlM_steps f l e₁ b' h x hx
+
+/-- **An accepted declaration's level positions are distinct**: the checker installs a
+definition, theorem or opaque only after `LevelParam.nodup` of its positions
+(`ConstantValRun`). With `DefinitionBlockReads.lowerDefinition_nodup` and `nodup_of_params`, the
+premise `levels` of `definition_block_reads` for a group whose declarations are accepted. -/
+theorem accepted_nodup {md : Ix.Kernel.Mode} {μ : Ix.Kernel.CheckMode} {ev : Ix.Kernel.Evidences md}
+    {ds : List (Ix.Kernel.Declaration md)} {env : Ix.Kernel.Env md}
+    (h : Ix.Kernel.Cached.AcceptsRef μ ev ds env) : ∀ d ∈ ds, DefinitionBlockReads.DeclNodup d := by
+  obtain ⟨F, hF⟩ := h
+  unfold Ix.Kernel.checkDeclsPure at hF
+  intro d hd
+  obtain ⟨e, e', he⟩ := foldlM_steps _ ds _ env hF d hd
+  have run := Ix.Kernel.Semantics.checkDeclRun_ofEnvFactsE he
+  cases d with
+  | defnDecl cv value hint =>
+    obtain ⟨_, _, hcv, -⟩ := run
+    exact hcv.2.2.2.1
+  | thmDecl cv value =>
+    obtain ⟨_, _, hcv, -⟩ := run
+    exact hcv.2.2.2.1
+  | opaqueDecl cv value =>
+    obtain ⟨_, _, hcv, -⟩ := run
+    exact hcv.2.2.2.1
+  | _ => trivial
+
+/--
+info: 'Ix.Cert.DefinitionPremises.accepted_nodup' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms accepted_nodup
 end Ix.Cert.DefinitionPremises

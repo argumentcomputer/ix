@@ -443,6 +443,65 @@ theorem quotientMember_hint (ρ : FiberMap) (m : Ix.LeanIngress.DefMember) (h : 
   rw [quotientMember, RecordReadings.defMember_canon]
   rfl
 
+/-! ## Premises the closure discharges
+
+Two of `definition_block_reads`'s premises follow from facts the closure has: a block's members
+are a set of names (`keysDistinct_of_pairwise`), and quotient Source's checker accepts a
+declaration only at distinct level parameters (`nodup_of_params`). -/
+
+theorem levelParam_nodup_iff : ∀ l : List LevelParam, LevelParam.nodup l = true ↔ l.Nodup
+  | [] => by simp [LevelParam.nodup]
+  | n :: ns => by
+    simp [LevelParam.nodup, List.nodup_cons, levelParam_nodup_iff ns]
+
+/-- **Distinct level-parameter positions are distinct names**: the checker requires a
+declaration's positions distinct (`LevelParam.nodup`), and equal names have one position. -/
+theorem nodup_of_params {lps : Array Ix.Name}
+    (h : LevelParam.nodup (Numbering.mk lps false).params = true) : lps.toList.Nodup := by
+  rw [levelParam_nodup_iff] at h
+  simp only [Ix.LeanIngress.Numbering.params] at h
+  exact List.Pairwise.of_map _ (fun a b hab e => hab (by rw [e])) h
+
+/-- **A block's members, from a set of names, are distinct**: names a hash set holds compare
+unequal (`Std.HashSet.distinct_toList`), so they differ. -/
+theorem keysDistinct_of_pairwise {defs : List Ix.Def}
+    (h : (defs.map (·.name)).Pairwise (fun a b => (a == b) = false)) :
+    Ix.CompileCert.Canon.KeysDistinct (defs.map MutConst.defn) := by
+  have hk : (defs.map MutConst.defn).flatMap Ix.CompileCert.Canon.keysOf = defs.map (·.name) := by
+    clear h
+    induction defs with
+    | nil => rfl
+    | cons d ds ih => simp [Ix.CompileCert.Canon.keysOf, MutConst.name, MutConst.ctors, ih]
+  unfold Ix.CompileCert.Canon.KeysDistinct
+  rw [hk]
+  refine h.imp fun {a b} hab e => ?_
+  subst e
+  have : (a == a) = true := Address.beq_iff_eq.mpr rfl
+  rw [this] at hab
+  cases hab
+
+/-- **A declaration's level positions are distinct**, where it has them as a definition, theorem
+or opaque: what the checker requires before it installs one. -/
+def DeclNodup {md : Mode} : CDecl md → Prop
+  | .defnDecl cv _ _ | .thmDecl cv _ | .opaqueDecl cv _ => LevelParam.nodup cv.levelParams = true
+  | _ => True
+
+theorem lowerDefinition_nodup {md : Mode} {st : State md} {heights : CName md → Nat} {cv : CVal md}
+    {value : CExpr md} {kind : Ix.DefKind} {safety : Ix.DefinitionSafety} {h : ReducibilityHint}
+    {decl : CDecl md} {rw : Bool}
+    (hl : lowerDefinition (some h) st heights cv value kind safety = .ok (decl, rw)) (hd : DeclNodup decl) :
+    LevelParam.nodup cv.levelParams = true := by
+  unfold lowerDefinition at hl
+  cases hs : safetyDeclineOf kind safety with
+  | some why => simp [hs, declined, throw, throwThe, MonadExceptOf.throw, bind, Except.bind] at hl
+  | none =>
+    cases kind <;> simp [hs, pure, Except.pure] at hl <;> (obtain ⟨rfl, -⟩ := hl; exact hd)
+
+theorem quotientMember_levelParams (ρ : FiberMap) (m : Ix.LeanIngress.DefMember) (h : ReducibilityHint) :
+    (quotientMember ρ m h).cv.levelParams = m.cv.levelParams := by
+  rw [quotientMember, RecordReadings.defMember_canon]
+  rfl
+
 section Main
 
 open Ix.CompileM Ix.CompileCert Ix.CompileCert.ExpressionState
@@ -462,7 +521,6 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     {P : KeyScope .source} (hP : P.Pre) (hf : InjOn f P)
     {members : Array Ix.ConstantInfo} (two : 2 ≤ members.size) {defs : List Ix.Def}
     (views : List.Forall₂ (fun ci d => EmissionDispatch.sourceData ci = some d) members.toList defs)
-    (nodup : ∀ d ∈ defs, d.levelParams.toList.Nodup)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
     (exactNames : ∀ i (hi : i < defs.length) j (hj : j < defs.length) n,
       ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value →
@@ -487,7 +545,8 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     (ownersGood : ∀ k : Key .source, k.Good P → ∀ o, stS.projOwners[k]? = some o → o.Good P)
     (good : ∀ qms, (c.withHints hints).quotient ρ = .definitions qms →
       ∀ m ∈ qms.toList, m.cv.type.Good P ∧ m.value.Good P)
-    {rS : Read .source} (lowered : Ix.LeanIngress.lower stS ((c.withHints hints).quotient ρ) = .ok rS) :
+    {rS : Read .source} (lowered : Ix.LeanIngress.lower stS ((c.withHints hints).quotient ρ) = .ok rS)
+    (levels : ∀ d ∈ rS.decls, DeclNodup d) :
     ∀ stA : State .anon, StreamRename.StateRen f P stS stA →
       ∃ rA, readRecord cx stA owner output.block = .ok rA ∧ StreamRename.Plain rA ∧
         rA.decls = rS.decls.map (Declaration.mapKeys f) := by
@@ -665,8 +724,16 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
       have := lowS
       simp only [G, quotientMember_hint] at this ⊢
       exact this
-    exact member_lower hP hf (nodup _ (List.getElem_mem hi)) hTrel hVrel ht' hv' hm hst ownersGood
-      hgood.1 hgood.2 lowS')
+    -- the member's level parameters are distinct: its Source declaration is accepted
+    have nodup : defs[i].levelParams.toList.Nodup := by
+      have hmem : decOf (.axiomDecl ⟨.role default, [], .sort .zero⟩) (G (quotientMember ρ ms[i]! (H i))) ∈
+          rS.decls := by
+        rw [hds, hdsEq, List.mem_toArray]
+        exact List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨i, hio, rfl⟩, rfl⟩
+      have hlp := lowerDefinition_nodup lowS' (levels _ hmem)
+      rw [quotientMember_levelParams, hm] at hlp
+      exact nodup_of_params hlp
+    exact member_lower hP hf nodup hTrel hVrel ht' hv' hm hst ownersGood hgood.1 hgood.2 lowS')
   refine ⟨rA, hread, hplain, ?_⟩
   rw [hdecls, hds, hdsEq, List.map_map]
   simp [List.map_toArray]
@@ -679,42 +746,5 @@ info: 'Ix.Cert.DefinitionBlockReads.definition_block_reads' depends on axioms: [
 #guard_msgs in
 #print axioms definition_block_reads
 
-
-/-! ## Premises the closure discharges
-
-Two of `definition_block_reads`'s premises follow from facts the closure has: a block's members
-are a set of names (`keysDistinct_of_pairwise`), and quotient Source's checker accepts a
-declaration only at distinct level parameters (`nodup_of_params`). -/
-
-theorem levelParam_nodup_iff : ∀ l : List LevelParam, LevelParam.nodup l = true ↔ l.Nodup
-  | [] => by simp [LevelParam.nodup]
-  | n :: ns => by
-    simp [LevelParam.nodup, List.nodup_cons, levelParam_nodup_iff ns]
-
-/-- **Distinct level-parameter positions are distinct names**: the checker requires a
-declaration's positions distinct (`LevelParam.nodup`), and equal names have one position. -/
-theorem nodup_of_params {lps : Array Ix.Name}
-    (h : LevelParam.nodup (Numbering.mk lps false).params = true) : lps.toList.Nodup := by
-  rw [levelParam_nodup_iff] at h
-  simp only [Ix.LeanIngress.Numbering.params] at h
-  exact List.Pairwise.of_map _ (fun a b hab e => hab (by rw [e])) h
-
-/-- **A block's members, from a set of names, are distinct**: names a hash set holds compare
-unequal (`Std.HashSet.distinct_toList`), so they differ. -/
-theorem keysDistinct_of_pairwise {defs : List Ix.Def}
-    (h : (defs.map (·.name)).Pairwise (fun a b => (a == b) = false)) :
-    Ix.CompileCert.Canon.KeysDistinct (defs.map MutConst.defn) := by
-  have hk : (defs.map MutConst.defn).flatMap Ix.CompileCert.Canon.keysOf = defs.map (·.name) := by
-    clear h
-    induction defs with
-    | nil => rfl
-    | cons d ds ih => simp [Ix.CompileCert.Canon.keysOf, MutConst.name, MutConst.ctors, ih]
-  unfold Ix.CompileCert.Canon.KeysDistinct
-  rw [hk]
-  refine h.imp fun {a b} hab e => ?_
-  subst e
-  have : (a == a) = true := Address.beq_iff_eq.mpr rfl
-  rw [this] at hab
-  cases hab
 
 end Ix.Cert.DefinitionBlockReads
