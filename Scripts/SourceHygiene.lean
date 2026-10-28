@@ -21,16 +21,22 @@ def hasQueueLabel (text : String) : Bool :=
     | c :: _ => c.isDigit
     | [] => false
 
+def hasRetiredOpen (text : String) : Bool :=
+  (text.splitOn "\n").any fun line =>
+    let words := line.trimAscii.toString.splitOn " "
+    words.head? == some "open" && words.any (fun word => word == "Ix.Tc" || word.startsWith "Ix.Tc.")
+
 def violations (text : String) : List String :=
   (if hasQueueLabel text then ["numbered private work queue"] else []) ++
+    (if hasRetiredOpen text then ["open of retired typechecker namespace"] else []) ++
     (privatePlans ++ retiredNames).filter (has text)
 
 def selfCheck : IO Unit := do
   for bad in ["-- CQ2.8 exact cache", "IXC-PLAN §12", "PRIMITIVES-DESIGN", "Ix.Tc.PrimAddrs.canonical",
-      "sourceClasses members", "compileEquivalentMutConsts sources"] do
+      "sourceClasses members", "compileEquivalentMutConsts sources", "open LSpec Ix.Tc"] do
     if (violations bad).isEmpty then throw <| IO.userError s!"scanner missed control: {bad}"
   for good in ["S3 object storage", "R1 and R2 are relations", "2026-10-28", "CQRS architecture",
-      "sourceMembers members", "compileMutConstMembers sources", "fae62ca5"] do
+      "sourceMembers members", "compileMutConstMembers sources", "fae62ca5", "#guard !allowedData `Ix.Tc"] do
     unless (violations good).isEmpty do throw <| IO.userError s!"scanner rejected ordinary text: {good}"
 
 def sourceFile (path : System.FilePath) : Bool :=
