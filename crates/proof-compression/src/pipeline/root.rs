@@ -22,7 +22,7 @@ fn print_capabilities() {
       "cuda": cfg!(feature = "cuda"),
       "parallel": cfg!(feature = "parallel"),
       "development_setup_only": false,
-      "ignition_setup": cfg!(feature = "bn254"),
+      "ignition_setup": true,
       "terminal_plonk": cfg!(feature = "plonk"),
     })
   );

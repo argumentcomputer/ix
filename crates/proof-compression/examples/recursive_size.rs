@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .map(|&(rows, width)| json!({ "rows": rows, "width": width }))
     .collect();
   let report = json!({
-    "curve": if cfg!(feature = "bn254") { "bn254" } else { "bls12-381" },
+    "curve": "bn254",
     "scope": "Four-row development fixture; frontend gates and lookups, not gnark PLONK constraints or production performance.",
     "recursive_proof_generated": false,
     "frontend": {

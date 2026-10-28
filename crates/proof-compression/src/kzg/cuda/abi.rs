@@ -3,10 +3,7 @@
 use super::{BigInt, FftJob, Fq, Fr, G1Affine};
 use ark_ff::{FftField, Field, PrimeField};
 
-#[cfg(feature = "bn254")]
 pub(super) const FQ_LIMBS: usize = 4;
-#[cfg(not(feature = "bn254"))]
-pub(super) const FQ_LIMBS: usize = 6;
 
 pub(super) type FqLimbs = [u64; FQ_LIMBS];
 pub(super) type ProjectiveLimbs = [FqLimbs; 3];

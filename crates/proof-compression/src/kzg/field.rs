@@ -285,10 +285,7 @@ mod tests {
         .exp_power_of_2(Scalar::TWO_ADICITY - 1),
       Scalar::NEG_ONE
     );
-    #[cfg(feature = "bn254")]
     assert_eq!(Scalar::TWO_ADICITY, 28);
-    #[cfg(not(feature = "bn254"))]
-    assert_eq!(Scalar::TWO_ADICITY, 32);
   }
 
   #[test]

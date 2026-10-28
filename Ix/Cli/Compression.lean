@@ -9,7 +9,7 @@ namespace Ix.Cli.Compression
 @[extern "rs_compression_check_claim"]
 opaque checkClaim (claim statement : @& ByteArray) : IO Unit
 
-/-- The KZG curve compiled into this executable: `"bn254"` or `"bls12-381"`. -/
+/-- The KZG curve compiled into this executable: `"bn254"`. -/
 @[extern "rs_compression_curve"]
 opaque curve : IO String
 
@@ -26,7 +26,7 @@ opaque compress (vk proof claim statement : @& ByteArray) (dir cacheRoot : @& St
 
 /-- Verify with the verifying key compiled in under the packet's id, whose pinned
 aggregation program fixes the statement for `claim`, and return the setup
-class: `"filecoin"`, `"ignition"` or `"development"`. Development proofs need
+class: `"ignition"` or `"development"`. Development proofs need
 `devSrs`.
 Needs neither the aggregation backend nor a GPU. -/
 @[extern "rs_compression_verify"]
@@ -60,7 +60,7 @@ def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UIn
   | "ignition" =>
     IO.println s!"ok: proof {addr} verifies claim {Address.blake3 claim} under the Aztec Ignition powers of tau"
   | _ =>
-    IO.println s!"ok: proof {addr} verifies claim {Address.blake3 claim} under the Filecoin powers of tau"
+    throw <| IO.userError s!"unsupported compression setup: {setup}"
   return 0
 
 end Ix.Cli.Compression

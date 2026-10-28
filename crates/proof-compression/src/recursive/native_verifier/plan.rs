@@ -2,9 +2,6 @@ use super::*;
 use ark_ec::AffineRepr;
 use shape::Shape;
 
-#[cfg(not(feature = "bn254"))]
-const FRONTEND_VERSION: &[u8] = b"init-kzg-recursive/frontend/v1";
-#[cfg(feature = "bn254")]
 const FRONTEND_VERSION: &[u8] = b"init-kzg-recursive/bn254/frontend/v1";
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]

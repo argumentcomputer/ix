@@ -35,8 +35,8 @@ def main():
     (out / 'typecheck.log').write_text(result.stdout)
     if result.returncode:
         raise RuntimeError(f'Lake configuration typecheck failed: {out / "typecheck.log"}')
-    cases = [('default', {}, 'bls12-381', False, True)]
-    for curve in ['bn254', 'bls12-381']:
+    cases = [('default', {}, 'bn254', False, True)]
+    for curve in ['bn254']:
         for cuda in [False, True]:
             cases.append((f'{curve}-{"cuda" if cuda else "cpu"}',
                 {'IX_KZG_CURVE': curve, 'IX_CUDA': str(int(cuda))}, curve, cuda, True))
@@ -58,7 +58,7 @@ def main():
         if result.returncode:
             raise RuntimeError(f'configuration evaluation failed: {name}')
         actual = json.loads(result.stdout.splitlines()[-1])
-        required = {curve, 'plonk'} | ({'solidity'} if curve == 'bls12-381' else set())
+        required = {'plonk'}
         required |= {'parallel'} if parallel else set()
         worker = required | ({'cuda'} if cuda else set())
         ffi = required | ({'cuda-trace-codegen'} if name == 'trace-codegen' else ({'cuda'} if cuda else set()))
@@ -79,24 +79,24 @@ def main():
             raise RuntimeError(f'{name}: wrong terminal backend selection')
         if actual['plonk_cuda'] != (selection.get('IX_PLONK_CUDA') == '1'):
             raise RuntimeError(f'{name}: PLONK CUDA selection depends on inner CUDA selection')
-        helper = 'ix-bn254-plonk-wrapper' if curve == 'bn254' else 'ix-bls-plonk-wrapper'
-        if actual['plonk_helper'] != helper or ('-tags' in actual['plonk_build']) != (curve == 'bn254'):
+        helper = 'ix-bn254-plonk-wrapper'
+        if actual['plonk_helper'] != helper or '-tags' in actual['plonk_build']:
             raise RuntimeError(f'{name}: wrong PLONK helper or Go build tags')
         report['cases'].append({'name': name, 'environment': selection, 'arguments': actual, 'passed': True})
     environment.update(IX_KZG_CURVE='invalid')
     result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
         env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     (out / 'invalid.log').write_text(result.stdout)
-    if result.returncode != 1 or 'IX_KZG_CURVE must be bls12-381 or bn254' not in result.stdout:
+    if result.returncode != 1 or 'IX_KZG_CURVE must be bn254' not in result.stdout:
         raise RuntimeError('invalid curve was not rejected as expected')
     report['invalid_curve_rejected'] = True
     environment.update(IX_KZG_CURVE='bls12-381', IX_PLONK_CUDA='1')
     result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
         env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     (out / 'invalid-plonk-cuda.log').write_text(result.stdout)
-    if result.returncode != 1 or 'IX_PLONK_CUDA requires IX_KZG_CURVE=bn254' not in result.stdout:
-        raise RuntimeError('BLS CUDA PLONK configuration was not rejected')
-    report['unsupported_plonk_cuda_rejected'] = True
+    if result.returncode != 1 or 'IX_KZG_CURVE must be bn254' not in result.stdout:
+        raise RuntimeError('retired curve configuration was not rejected')
+    report['retired_curve_rejected'] = True
     report['source_sha256'] = {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in [
         'lakefile.lean', 'tests/compression_build_config.lean', 'tests/check_compression_build.py',
         'crates/ffi/Cargo.toml', 'crates/proof-compression/Cargo.toml', 'lean-toolchain',

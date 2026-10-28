@@ -196,11 +196,7 @@ mod tests {
           old_key[..8].copy_from_slice(b"IXRECV01");
           assert!(RecursiveVerifier::from_bytes(&old_key).is_err());
           let mut other_curve = key_bytes.clone();
-          other_curve[..8].copy_from_slice(if cfg!(feature = "bn254") {
-            b"IXRECV02"
-          } else {
-            b"IXBNRV02"
-          });
+          other_curve[..8].copy_from_slice(b"IXRECV02");
           assert!(RecursiveVerifier::from_bytes(&other_curve).is_err());
           assert!(
             RecursiveVerifier::from_bytes(&key_bytes[..key_bytes.len() - 1])

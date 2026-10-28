@@ -3,11 +3,8 @@ use super::relation::{codegen, *};
 use super::*;
 use crate::kzg::curve::G1Affine;
 use ark_ec::AffineRepr;
-#[cfg(feature = "bn254")]
 use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::CanonicalDeserialize;
-#[cfg(not(feature = "bn254"))]
-use ark_serialize::CanonicalSerialize;
 use multi_stark::{
   config::ProofConfig,
   prover::Proof,
@@ -28,9 +25,6 @@ fn point(point: G1Affine) -> Json {
 
 fn key(point: &G2Affine) -> String {
   let mut bytes = vec![];
-  #[cfg(not(feature = "bn254"))]
-  point.serialize_compressed(&mut bytes).unwrap();
-  #[cfg(feature = "bn254")]
   for value in [point.x.c0, point.x.c1, point.y.c0, point.y.c1] {
     bytes.extend(value.into_bigint().to_bytes_be());
   }
@@ -49,9 +43,6 @@ pub(in crate::pipeline) fn export(
     return Err("trusted verifier digest differs".into());
   }
   let vk = VerifyingKey::from_bytes(&bytes)?;
-  #[cfg(not(feature = "bn254"))]
-  vk.check_setup_class(SetupClass::Filecoin)?;
-  #[cfg(feature = "bn254")]
   {
     let setup = super::super::super::setup::SetupConfig::from_env(false)?;
     let admission = setup
@@ -257,9 +248,6 @@ fn write_vk(
   name: &str,
 ) -> Result<()> {
   let Export { system, proof, logs, .. } = export;
-  #[cfg(not(feature = "bn254"))]
-  let diagnostic = export.diagnostic.clone();
-  #[cfg(feature = "bn254")]
   let diagnostic = {
     let mut diagnostic = export.diagnostic.clone();
     let encodings = proof_points(proof)
@@ -310,7 +298,7 @@ fn write_vk(
     })
     .collect();
   let exported = json!({
-    "format": if cfg!(feature = "bn254") { "ix-bn254-plonk-vk-v1" } else { "ix-bls-plonk-vk-v1" },
+    "format": "ix-bn254-plonk-vk-v1",
     "vkId": hex_json(&export.vk_id),
     "setupId": hex_json(&params.public_setup.id),
     "publicMaxDegree": params.public_setup.max_degree,

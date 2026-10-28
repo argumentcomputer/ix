@@ -27,8 +27,8 @@ pub(super) mod srs_cache;
 mod tests;
 
 // Conservative bound for point storage, upload staging, scalars, signed
-// digits and sorting scratch on either curve. Buckets use separate headroom;
-// smaller Fq coordinates do not shrink scalar and sorting allocations.
+// digits and sorting scratch. Buckets use separate headroom; Fq coordinate
+// widths do not determine scalar and sorting allocation sizes.
 const MSM_BYTES_PER_POINT: usize = 384;
 
 /// When the constraint-pass layout replaces dense device admission.

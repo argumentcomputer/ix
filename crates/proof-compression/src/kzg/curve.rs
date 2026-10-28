@@ -1,31 +1,18 @@
 //! Curve types and canonical encoding widths for the selected KZG backend.
 //!
-//! BN254 is the default backend; BLS12-381 is selected with
-//! `--no-default-features --features bls12-381`. Encodings are arkworks canonical
+//! BN254 encodings are arkworks canonical
 //! encodings; these widths do not describe in-memory or EVM representations.
 
 use ark_serialize::{
   CanonicalDeserialize, CanonicalSerialize, Read, SerializationError,
 };
 
-#[cfg(not(feature = "bn254"))]
-pub use ark_bls12_381::{
-  Bls12_381 as PairingCurve, Fq, Fr, G1Affine, G1Projective, G2Affine,
-  G2Projective,
-};
-#[cfg(feature = "bn254")]
 pub use ark_bn254::{
   Bn254 as PairingCurve, Fq, Fr, G1Affine, G1Projective, G2Affine, G2Projective,
 };
 
-#[cfg(not(feature = "bn254"))]
-pub const NAME: &str = "bls12-381";
-#[cfg(feature = "bn254")]
 pub const NAME: &str = "bn254";
 
-#[cfg(not(feature = "bn254"))]
-pub const G1_COMPRESSED_BYTES: usize = 48;
-#[cfg(feature = "bn254")]
 pub const G1_COMPRESSED_BYTES: usize = 32;
 
 pub const G1_UNCOMPRESSED_BYTES: usize = G1_COMPRESSED_BYTES * 2;
@@ -104,7 +91,6 @@ mod tests {
     );
   }
 
-  #[cfg(feature = "bn254")]
   #[test]
   fn bn254_compressed_point_vectors() {
     let mut positive = [0; 32];
@@ -125,7 +111,6 @@ mod tests {
     }
   }
 
-  #[cfg(feature = "bn254")]
   #[test]
   fn bn254_point_reader_rejects_infinity_alias_and_noncanonical_x() {
     use ark_ff::{BigInteger, PrimeField};

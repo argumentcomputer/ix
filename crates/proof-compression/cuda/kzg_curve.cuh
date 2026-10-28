@@ -4,17 +4,9 @@
 #include <cstdint>
 #include <cstring>
 
-#if defined(FEATURE_BN254) && !defined(FEATURE_BLS12_381)
 #include <ff/alt_bn128.hpp>
 constexpr size_t KZG_FQ_LIMBS = 4;
 static_assert(MAX_LG_DOMAIN_SIZE == 28);
-#elif defined(FEATURE_BLS12_381) && !defined(FEATURE_BN254)
-#include <ff/bls12-381.hpp>
-constexpr size_t KZG_FQ_LIMBS = 6;
-static_assert(MAX_LG_DOMAIN_SIZE == 32);
-#else
-#error "Select exactly one KZG curve"
-#endif
 
 // The NTT domain stride is 32 bits even when the field has a 2^32 root.
 constexpr uint32_t KZG_MAX_FFT_LOG = MAX_LG_DOMAIN_SIZE < 31 ? MAX_LG_DOMAIN_SIZE : 31;
@@ -32,17 +24,10 @@ extern "C" int ix_kzg_check_field_abi(const uint64_t* fq, size_t fq_bytes,
                                       const uint64_t* fr, size_t fr_bytes) {
     if (!fq || !fr || fq_bytes != 3 * sizeof(fp_t) || fr_bytes != 3 * sizeof(fr_t))
         return 1;
-#if defined(FEATURE_BN254)
     const auto& fq_modulus = alt_bn128::ALT_BN128_P;
     const auto& fq_r2 = alt_bn128::ALT_BN128_RR;
     const auto& fr_modulus = alt_bn128::ALT_BN128_r;
     const auto& fr_r2 = alt_bn128::ALT_BN128_rRR;
-#else
-    const auto& fq_modulus = bls12_381::BLS12_381_P;
-    const auto& fq_r2 = bls12_381::BLS12_381_RR;
-    const auto& fr_modulus = bls12_381::BLS12_381_r;
-    const auto& fr_r2 = bls12_381::BLS12_381_rRR;
-#endif
     const fp_t fq_one = fp_t::one();
     const fr_t fr_one = fr_t::one();
     return std::memcmp(fq, fq_modulus, sizeof(fp_t)) != 0

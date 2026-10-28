@@ -1,5 +1,3 @@
-#![cfg(feature = "bn254")]
-
 use std::sync::Arc;
 
 use ark_bn254::Fr;

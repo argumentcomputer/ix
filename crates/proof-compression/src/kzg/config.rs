@@ -1,4 +1,4 @@
-//! [`ProofConfig`] instantiation for the KZG backend: the selected curve's
+//! [`ProofConfig`] instantiation for the KZG backend: BN254's
 //! scalar field (its own challenge field, `D = 1`), a selected transcript,
 //! monomial KZG commitments.
 
@@ -100,12 +100,6 @@ impl KzgConfig {
     max_quotient_degree: usize,
     kind: TranscriptKind,
   ) -> Vec<u8> {
-    #[cfg(not(feature = "bn254"))]
-    let domain: &[u8] = match kind {
-      TranscriptKind::Blake3 => b"multi-stark/kzg/v4",
-      TranscriptKind::Keccak256 => b"multi-stark/kzg/keccak256/v1",
-    };
-    #[cfg(feature = "bn254")]
     let domain: &[u8] = match kind {
       TranscriptKind::Blake3 => b"multi-stark/kzg/bn254/blake3/v1",
       TranscriptKind::Keccak256 => b"multi-stark/kzg/bn254/keccak256/v1",

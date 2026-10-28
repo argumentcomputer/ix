@@ -16,9 +16,6 @@ use ark_ff::Zero;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use multi_stark::{system::System, types::Val};
 
-#[cfg(not(feature = "bn254"))]
-const RECURSIVE_VERIFIER_MAGIC: &[u8; 8] = b"IXRECV02";
-#[cfg(feature = "bn254")]
 const RECURSIVE_VERIFIER_MAGIC: &[u8; 8] = b"IXBNRV02";
 
 pub(in crate::pipeline) const PAIRING_BYTES: usize = 2 * G1_COMPRESSED_BYTES;
@@ -261,7 +258,6 @@ mod tests {
     Ok(())
   }
 
-  #[cfg(feature = "bn254")]
   #[test]
   fn pairing_transport_rejects_infinity_coordinate_aliases() -> Result<()> {
     let values = pairing::encode([G1Affine::identity(); 2]);

@@ -39,7 +39,7 @@ def run(command, log, environment, *, success=True, expected_error=None):
 
 def build(curve, cuda, directory, environment):
     mode = 'cuda' if cuda else 'cpu'
-    features = f'{curve},parallel' + (',cuda' if cuda else '')
+    features = 'parallel' + (',cuda' if cuda else '')
     command = [
         'cargo', 'build', '--offline', '--locked', '-p', 'ix-proof-compression',
         '--no-default-features', '--features', features,
@@ -92,14 +92,13 @@ def check_dispatch(log, mode):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--curve', choices=['bn254', 'bls12-381', 'both'], default='both')
     args = parser.parse_args()
     root = args.out.resolve()
     if root.exists() and any(root.iterdir()):
         parser.error('output directory must be empty')
     root.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ, RUST_LOG='ix_proof_compression=debug')
-    curves = ['bn254', 'bls12-381'] if args.curve == 'both' else [args.curve]
+    curves = ['bn254']
     report = {
         'baseline_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
         'scope': 'Two ordinary KZG circuits at 4096/8192 rows with development parameters; no FRI or recursive KZG proving.',
@@ -153,16 +152,6 @@ def main():
             'input_blake3': reference['input_blake3'], 'exact_byte_parity': True,
         }
         (root / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
-    if len(curves) == 2:
-        report['cross_curve_rejections'] = []
-        for curve, other in [('bn254', 'bls12-381'), ('bls12-381', 'bn254')]:
-            directory = root / curve
-            record = run([
-                str(directory / 'bin' / 'cpu'), 'verify', str(root / other / 'cpu' / 'proof.bin'),
-                str(directory / 'cpu' / 'vk.bin'), report['curves'][curve]['verifier_blake3'],
-            ], directory / 'reject-other-curve.log', dict(environment, CUDA_VISIBLE_DEVICES=''),
-                success=False, expected_error='CompactProofError')
-            report['cross_curve_rejections'].append(record)
     (root / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({'report': str(root / 'report.json'), 'curves': curves, 'exact_byte_parity': True}), flush=True)
 

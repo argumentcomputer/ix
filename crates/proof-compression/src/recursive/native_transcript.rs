@@ -146,9 +146,6 @@ pub fn point_bytes(
   let mut half = ((modulus() - 1u8) / 2u8).to_bytes_le();
   half.resize(G1_COMPRESSED_BYTES, 0);
   let sign = greater_than(b, bytes, &y, &half);
-  #[cfg(not(feature = "bn254"))]
-  let (sign_mask, compressed_mask) = (32, 128);
-  #[cfg(feature = "bn254")]
   let (sign_mask, compressed_mask) = (128, 0);
   let flagged = b.linear_combination(
     &[
@@ -159,15 +156,11 @@ pub fn point_bytes(
     Scalar::from_u8(compressed_mask),
   );
   let flagged = bytes.constrain_byte(b, flagged);
-  #[cfg(not(feature = "bn254"))]
-  let result = std::array::from_fn(|i| {
-    if i == 0 { flagged } else { x[G1_COMPRESSED_BYTES - 1 - i] }
-  });
-  #[cfg(feature = "bn254")]
-  let result = std::array::from_fn(|i| {
-    if i == G1_COMPRESSED_BYTES - 1 { flagged } else { x[i] }
-  });
-  result
+  std::array::from_fn(
+    |i| {
+      if i == G1_COMPRESSED_BYTES - 1 { flagged } else { x[i] }
+    },
+  )
 }
 
 pub struct Transcript {

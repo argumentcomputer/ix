@@ -5,8 +5,6 @@ use super::{
   statement, storage, wrap,
 };
 use ark_ff::{BigInteger, PrimeField};
-#[cfg(not(feature = "bn254"))]
-use ark_serialize::CanonicalSerialize;
 use sha2::{Digest, Sha256};
 use std::{
   fs,
@@ -15,22 +13,10 @@ use std::{
   process::{Command, Stdio},
 };
 
-#[cfg(not(feature = "bn254"))]
-pub(super) const PROOF_TAG: &[u8; 8] = b"IXCMP\0\0\x05";
-#[cfg(feature = "bn254")]
 pub(super) const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x02";
-const HELPER: &str = if cfg!(feature = "bn254") {
-  "ix-bn254-plonk-wrapper"
-} else {
-  "ix-bls-plonk-wrapper"
-};
-const CATALOG_FORMAT: &str = if cfg!(feature = "bn254") {
-  "ix-bn254-plonk-verifiers-v1"
-} else {
-  "ix-bls-plonk-verifiers-v1"
-};
-const SETUP_NAME: &str =
-  if cfg!(feature = "bn254") { "ignition" } else { "filecoin" };
+const HELPER: &str = "ix-bn254-plonk-wrapper";
+const CATALOG_FORMAT: &str = "ix-bn254-plonk-verifiers-v1";
+const SETUP_NAME: &str = "ignition";
 const CATALOG_VAR: &str = "IX_PLONK_VERIFIER_CATALOG";
 const MAX_PROOF_BYTES: usize = 1 << 20;
 
@@ -145,9 +131,6 @@ fn checked(command: &mut Command) -> Result<()> {
 
 fn setup_manifest(config: &SetupConfig) -> Result<[u8; 32]> {
   match config {
-    #[cfg(not(feature = "bn254"))]
-    SetupConfig::Filecoin { manifest, .. } => Ok(*manifest),
-    #[cfg(feature = "bn254")]
     SetupConfig::Ignition { manifest, .. } => Ok(*manifest),
     _ => Err("PLONK requires authenticated ceremony parameters".into()),
   }
@@ -155,17 +138,11 @@ fn setup_manifest(config: &SetupConfig) -> Result<[u8; 32]> {
 
 fn anchors(config: &SetupConfig) -> Result<crate::kzg::Srs> {
   setup_manifest(config)?;
-  #[cfg(not(feature = "bn254"))]
-  return Ok(crate::kzg::srs::filecoin::filecoin_anchors());
-  #[cfg(feature = "bn254")]
   Ok(config.ignition_admission().ok_or("missing Ignition admission")?.anchors())
 }
 
 fn encode_g2(point: crate::kzg::curve::G2Affine) -> Vec<u8> {
   let mut bytes = Vec::new();
-  #[cfg(not(feature = "bn254"))]
-  point.serialize_compressed(&mut bytes).expect("Vec serialization");
-  #[cfg(feature = "bn254")]
   for value in [point.x.c0, point.x.c1, point.y.c0, point.y.c1] {
     bytes.extend(value.into_bigint().to_bytes_be());
   }
@@ -174,9 +151,6 @@ fn encode_g2(point: crate::kzg::curve::G2Affine) -> Vec<u8> {
 
 fn anchor_encoding(srs: &crate::kzg::Srs) -> String {
   let mut bytes = Vec::new();
-  #[cfg(not(feature = "bn254"))]
-  srs.g1[0].serialize_compressed(&mut bytes).expect("Vec serialization");
-  #[cfg(feature = "bn254")]
   for value in [srs.g1[0].x, srs.g1[0].y] {
     bytes.extend(value.into_bigint().to_bytes_be());
   }
@@ -185,14 +159,7 @@ fn anchor_encoding(srs: &crate::kzg::Srs) -> String {
   hex(&bytes)
 }
 
-#[cfg_attr(not(feature = "bn254"), allow(clippy::unnecessary_wraps))]
 fn key_anchors(key: &TrustedKey) -> Result<crate::kzg::Srs> {
-  #[cfg(not(feature = "bn254"))]
-  {
-    let _ = key;
-    Ok(crate::kzg::srs::filecoin::filecoin_anchors())
-  }
-  #[cfg(feature = "bn254")]
   {
     Ok(
       crate::kzg::srs::ignition::IgnitionAdmission::read(
@@ -227,7 +194,6 @@ fn select_key(path: &Path, id: &[u8; 32]) -> Result<TrustedKey> {
     if key.setup != SETUP_NAME {
       return Err("PLONK catalog setup class differs".into());
     }
-    #[cfg(feature = "bn254")]
     {
       digest(
         key.admission_blake3.as_ref().ok_or("missing trusted admission pin")?,
@@ -285,9 +251,6 @@ pub(super) fn verify(packet: &[u8], claim: &[u8]) -> Result<SetupClass> {
       .arg(blake3::hash(claim).to_hex().as_str())
       .arg(anchor_encoding(&key_anchors(&key)?)),
   )?;
-  #[cfg(not(feature = "bn254"))]
-  return Ok(SetupClass::Filecoin);
-  #[cfg(feature = "bn254")]
   Ok(SetupClass::Ignition)
 }
 
@@ -311,15 +274,6 @@ pub(crate) fn run(args: &[String]) -> Result<()> {
       wrap::plonk_export_first(Path::new(stage), &expected, Path::new(out), development)
     },
     ["srs", domain, out] => export_srs(domain.parse()?, Path::new(out)),
-    #[cfg(not(feature = "bn254"))]
-    ["vk-blake3", source, trusted, out] => {
-      let source = fs::read(source)?;
-      if *blake3::hash(&source).as_bytes() != digest(trusted)? { return Err("trusted source verifying key digest differs".into()); }
-      let (bytes, id) = wrap::VerifyingKey::reencode_blake3(&source)?;
-      storage::write_atomic(Path::new(out), &bytes)?;
-      eprintln!("vk_id={} verifier_blake3={}", hex(&id), blake3::hash(&bytes).to_hex());
-      Ok(())
-    },
     ["wrap", verifier, packet, trusted, expected, cache, out] => {
       let expected = load_json(Path::new(expected))?;
       wrap_packet(Path::new(verifier), Path::new(packet), trusted, &expected, Path::new(cache), Path::new(out))
@@ -344,18 +298,14 @@ fn export_parameters(
   let prefix =
     count.checked_next_power_of_two().ok_or("PLONK SRS length overflow")?;
   let manifest = setup_manifest(config)?;
-  let source = config.for_stage(b"ix/bls-plonk/srs/v1", prefix)?;
+  let source = config.for_stage(b"ix/bn254-plonk/srs/v1", prefix)?;
   let srs = source.srs(prefix, false)?;
   let temporary = storage::temporary_path(path);
   if let Some(parent) = path.parent() {
     fs::create_dir_all(parent)?;
   }
   let mut out = std::io::BufWriter::new(fs::File::create(&temporary)?);
-  out.write_all(if cfg!(feature = "bn254") {
-    b"IXBPSR01"
-  } else {
-    b"IXPSRS01"
-  })?;
+  out.write_all(b"IXBPSR01")?;
   out.write_all(&srs.public_setup.id)?;
   out.write_all(&(srs.public_setup.max_degree as u64).to_le_bytes())?;
   out.write_all(&manifest)?;
@@ -372,10 +322,10 @@ fn export_parameters(
   let mut hash = blake3::Hasher::new();
   hash.update_mmap_rayon(path)?;
   let receipt = serde_json::json!({
-    "format": if cfg!(feature = "bn254") { "ix-bn254-plonk-srs-export-v1" } else { "ix-plonk-srs-export-v1" }, "blake3": hash.finalize().to_hex().as_str(),
+    "format": "ix-bn254-plonk-srs-export-v1", "blake3": hash.finalize().to_hex().as_str(),
     "setupId": blake3::Hash::from_bytes(srs.public_setup.id).to_hex().as_str(),
     "publicMaxDegree": srs.public_setup.max_degree, "powers": count,
-    (if cfg!(feature = "bn254") { "ignitionManifest" } else { "filecoinManifest" }): blake3::Hash::from_bytes(manifest).to_hex().as_str(),
+    ("ignitionManifest"): blake3::Hash::from_bytes(manifest).to_hex().as_str(),
   });
   storage::write_atomic(
     &path.with_extension("json"),
@@ -392,7 +342,7 @@ struct ParameterReceipt {
   setup_id: String,
   public_max_degree: usize,
   powers: usize,
-  #[serde(rename = "filecoinManifest", alias = "ignitionManifest")]
+  #[serde(rename = "ignitionManifest")]
   setup_manifest: String,
 }
 
@@ -414,12 +364,7 @@ fn cached_parameters(
     export_parameters(domain, &path, config)?;
   }
   let receipt: ParameterReceipt = load_json(&receipt_path)?;
-  if receipt.format
-    != if cfg!(feature = "bn254") {
-      "ix-bn254-plonk-srs-export-v1"
-    } else {
-      "ix-plonk-srs-export-v1"
-    }
+  if receipt.format != "ix-bn254-plonk-srs-export-v1"
     || digest(&receipt.setup_id)? != anchors.public_setup.id
     || digest(&receipt.setup_manifest)? != manifest
     || receipt.public_max_degree != anchors.public_setup.max_degree
@@ -478,7 +423,7 @@ fn wrap_packet(
   let vk_path = input.join("vk.json");
   let exported: serde_json::Value = load_json(&vk_path)?;
   let mut identity = blake3::Hasher::new();
-  identity.update(b"ix/bls-plonk-cache/v1");
+  identity.update(b"ix/bn254-plonk-cache/v1");
   identity.update(&fixed_cache::executable_digest()?);
   identity.update(&sha256(&helper)?);
   identity.update(&sha256(&vk_path)?);
@@ -547,12 +492,10 @@ fn wrap_packet(
     &out.join("PlonkVerifier.sol"),
     &fs::read(cache.join("PlonkVerifier.sol"))?,
   )?;
-  #[cfg(feature = "bn254")]
   let admission_bytes = setup
     .ignition_admission()
     .ok_or("missing Ignition admission")?
     .to_bytes()?;
-  #[cfg(feature = "bn254")]
   storage::write_atomic(&out.join("admission.json"), &admission_bytes)?;
   let candidate = TrustedCatalog {
     format: CATALOG_FORMAT.into(),
@@ -568,16 +511,10 @@ fn wrap_packet(
       .into(),
       helper_sha256: metadata_string(&metadata, "ExecutableSHA256")?.into(),
       setup: SETUP_NAME.into(),
-      #[cfg(feature = "bn254")]
       admission: Some("admission.json".into()),
-      #[cfg(feature = "bn254")]
       admission_blake3: Some(
         blake3::hash(&admission_bytes).to_hex().to_string(),
       ),
-      #[cfg(not(feature = "bn254"))]
-      admission: None,
-      #[cfg(not(feature = "bn254"))]
-      admission_blake3: None,
     }],
   };
   storage::write_atomic(
@@ -587,77 +524,7 @@ fn wrap_packet(
   Ok(())
 }
 
-#[cfg(all(test, not(feature = "bn254")))]
-mod tests {
-  use super::*;
-
-  fn key() -> TrustedKey {
-    TrustedKey {
-      sha256: hex(&[1; 32]),
-      path: "vk.bin".into(),
-      inner_vk_id: hex(&[2; 32]),
-      statement_prefix: [0; 10],
-      circuit_sha256: hex(&[3; 32]),
-      helper_sha256: hex(&[4; 32]),
-      setup: "filecoin".into(),
-      admission: None,
-      admission_blake3: None,
-    }
-  }
-
-  #[test]
-  fn catalog_requires_an_independently_authorized_key() -> Result<()> {
-    let scratch = Scratch::new()?;
-    let path = scratch.0.join("catalog.json");
-    let mut catalog =
-      TrustedCatalog { format: CATALOG_FORMAT.into(), keys: vec![key()] };
-    let write = |catalog: &TrustedCatalog| {
-      storage::write_atomic(&path, &serde_json::to_vec(catalog).unwrap())
-    };
-    write(&catalog)?;
-    assert_eq!(select_key(&path, &[1; 32])?.path, scratch.0.join("vk.bin"));
-    assert!(select_key(&path, &[5; 32]).is_err());
-    catalog.keys.push(key());
-    write(&catalog)?;
-    assert!(select_key(&path, &[1; 32]).is_err());
-    catalog.keys.pop();
-    catalog.keys[0].setup = "development".into();
-    write(&catalog)?;
-    assert!(select_key(&path, &[1; 32]).is_err());
-    catalog.keys[0].setup = "filecoin".into();
-    catalog.keys[0].statement_prefix[0] = u64::MAX;
-    write(&catalog)?;
-    assert!(select_key(&path, &[1; 32]).is_err());
-    assert!(digest("é").is_err());
-    assert!(verify(&[], b"claim").is_err());
-    Ok(())
-  }
-
-  #[test]
-  fn parameter_cache_preserves_filecoin_receipt_and_rejects_corruption()
-  -> Result<()> {
-    use crate::kzg::srs::filecoin::{
-      FILECOIN_PREFIX_2P8_FIXTURE, FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
-    };
-    let scratch = Scratch::new()?;
-    let setup = SetupConfig::Filecoin {
-      cache: FILECOIN_PREFIX_2P8_FIXTURE.into(),
-      manifest: FILECOIN_PREFIX_2P8_MANIFEST_BLAKE3,
-    };
-    let (path, receipt) = cached_parameters(8, &scratch.0, &setup)?;
-    assert_eq!(fs::metadata(&path)?.len(), 280 + 96 * 11);
-    let (again, same_receipt) = cached_parameters(8, &scratch.0, &setup)?;
-    assert_eq!(again, path);
-    assert_eq!(same_receipt, receipt);
-    let mut bytes = fs::read(&path)?;
-    *bytes.last_mut().unwrap() ^= 1;
-    fs::write(&path, bytes)?;
-    assert!(cached_parameters(8, &scratch.0, &setup).is_err());
-    Ok(())
-  }
-}
-
-#[cfg(all(test, feature = "bn254"))]
+#[cfg(test)]
 mod bn254_tests {
   use super::*;
 

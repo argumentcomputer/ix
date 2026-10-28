@@ -53,7 +53,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
     "dev-srs"; "Use known-trapdoor development parameters; results are not production-secure."
-    "plonk"; "Add a terminal BLS12-381 PLONK proof using the Filecoin parameters."
+    "plonk"; "Add a terminal PLONK proof using the compiled curve and selected setup."
   ARGS:
     proof : String; "Address of an aggregate Ixon.Proof in the ix store."
 ]

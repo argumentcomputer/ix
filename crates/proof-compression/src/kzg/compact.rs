@@ -17,9 +17,6 @@ use multi_stark::prover::Proof;
 use multi_stark::system::System;
 use multi_stark::traits::Algebra;
 
-#[cfg(not(feature = "bn254"))]
-const MAGIC: &[u8; 4] = b"KQP4";
-#[cfg(feature = "bn254")]
 const MAGIC: &[u8; 4] = b"KBN1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -73,7 +73,6 @@ fn quotient_width(max_degree: usize) -> Result<usize> {
 }
 
 impl OpeningLayout {
-
   pub(in crate::pipeline::wrap::outer) fn new_for_system(
     system: &System<KzgConfig>,
     logs: &[u8],
@@ -191,7 +190,6 @@ impl OpeningLayout {
       accumulator_count,
     })
   }
-
 }
 
 #[cfg(test)]

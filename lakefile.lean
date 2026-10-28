@@ -54,9 +54,8 @@ section FFI
 /-- Curve selection shared by the CLI library and compression worker. -/
 def compressionFeatures : IO (Array String) := do
   match (← IO.getEnv "IX_KZG_CURVE").getD "bn254" with
-  | "bls12-381" => return #["bls12-381", "plonk"]
-  | "bn254" => return #["bn254", "plonk"]
-  | other => throw <| IO.userError s!"IX_KZG_CURVE must be bls12-381 or bn254, got {other}"
+  | "bn254" => return #["plonk"]
+  | other => throw <| IO.userError s!"IX_KZG_CURVE must be bn254, got {other}"
 
 /-- Rust feature selection shared by compilation and native runtime linkage. -/
 def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
@@ -108,7 +107,7 @@ def usesCuda (features : Array String) : Bool :=
 /-- Worker features follow the CLI's curve while omitting CLI-only features. -/
 def compressionWorkerArgs (features : Array String) : Array String := Id.run do
   let mut selected := features.filter fun name =>
-    #["bls12-381", "bn254", "plonk", "parallel"].contains name
+    #["plonk", "parallel"].contains name
   if usesCuda features then selected := selected.push "cuda"
   return #["build", "--release", "-p", "ix-proof-compression",
     "--bin", "ix-compression-worker", "--no-default-features",
@@ -141,7 +140,7 @@ def copyNativeArtifact (source output : FilePath) (tag : String) : JobM Unit := 
   proc { cmd := "cp", args := #["-f", source.toString, temporary.toString] } (quiet := true)
   IO.FS.rename temporary output
 
-/-- Every source, kernel, manifest and verifying-key file the Cargo builds read. -/
+/-- Every source, kernel, manifest and fixture file the Cargo builds read. -/
 def rustSources (pkg : Package) : SpawnM (Job Unit) := do
   let sources ← inputDir (pkg.dir / "crates") true fun path =>
     path.extension == some "rs" || path.extension == some "cu" ||
@@ -149,14 +148,14 @@ def rustSources (pkg : Package) : SpawnM (Job Unit) := do
     path.extension == some "h" ||
     path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
     path.fileName == "trace-manifest.json"
-  let keys ← inputDir (pkg.dir / "crates/proof-compression/verifying-keys") false fun path =>
+  let fixtures ← inputDir (pkg.dir / "crates/proof-compression/tests/fixtures") false fun path =>
     path.extension == some "bin"
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock"),
     ← inputTextFile (pkg.dir / ".cargo/config.toml")
   ]
-  let sources := sources.zipWith (fun _ _ => ()) keys
+  let sources := sources.zipWith (fun _ _ => ()) fixtures
   return sources.zipWith (fun _ _ => ()) manifests
 
 /-- Cargo's archive or executable and its native library are one build output.
@@ -224,33 +223,29 @@ target ix_compression_worker pkg : FilePath := do
     (pkg.buildDir / "bin" / "ix-compression-worker") before
 
 /-- The terminal prover is a native Go executable with a pinned module graph. -/
-def compressionHelperName (features : Array String) : String :=
-  if features.contains "bls12-381" then "ix-bls-plonk-wrapper" else "ix-bn254-plonk-wrapper"
+def compressionHelperName : String := "ix-bn254-plonk-wrapper"
 
-def compressionHelperArgs (features : Array String) (output : FilePath) : Array String :=
+def compressionHelperArgs (output : FilePath) : Array String :=
   #["build", "-buildvcs=false", "-trimpath", "-mod=readonly"] ++
-    (if features.contains "bls12-381" then #["-tags", "bls12381"] else #[]) ++
     #["-o", output.toString, "."]
 
 /-- PLONK arithmetic selection is independent of the inner KZG CUDA backend. -/
-def compressionHelperCuda (features : Array String) : IO Bool := do
+def compressionHelperCuda : IO Bool := do
   let value := (← IO.getEnv "IX_PLONK_CUDA").getD "0"
   let enabled ← match value with
     | "1" | "true" | "yes" => pure true
     | "0" | "false" | "no" | "" => pure false
     | _ => throw <| IO.userError "IX_PLONK_CUDA must be 0/1, false/true or no/yes"
-  if enabled && !features.contains "bn254" then
-    throw <| IO.userError "IX_PLONK_CUDA requires IX_KZG_CURVE=bn254"
   return enabled
 
 def plonkCudaLibraryName := "libix_plonk_bn254_cuda.so"
 
 target ix_plonk_wrapper pkg : Array FilePath := do
   let features ← compressionFeatures
-  let cuda ← compressionHelperCuda features
+  let cuda ← compressionHelperCuda
   unless features.contains "plonk" do
     return pure #[]
-  let mut sources ← inputDir (pkg.dir / "tools/bls-plonk-wrapper") true fun path =>
+  let mut sources ← inputDir (pkg.dir / "tools/plonk-wrapper") false fun path =>
     path.extension == some "go" || path.extension == some "json" ||
     path.extension == some "py" || path.extension == some "patch" ||
     path.extension == some "h" ||
@@ -259,7 +254,7 @@ target ix_plonk_wrapper pkg : Array FilePath := do
     let native ← inputDir (pkg.dir / "crates/proof-compression/cuda") true fun path =>
       #["cu", "cuh", "cpp", "h", "hpp", "py", "map", "json", "patch"].contains (path.extension.getD "")
     sources := sources.zipWith (fun paths _ => paths) native
-  let helperName := compressionHelperName features
+  let helperName := compressionHelperName
   let output := pkg.buildDir / "bin" / helperName
   let library := pkg.buildDir / "lib" / plonkCudaLibraryName
   let outputs := if cuda then #[output, library] else #[output]
@@ -295,7 +290,7 @@ target ix_plonk_wrapper pkg : Array FilePath := do
             | error "IX_PLONK_BLST_SOURCE must name the pinned blst source tree"
           proc {
             cmd := "python3"
-            args := #["tools/bls-plonk-wrapper/build_cuda.py", "--out", temporary.toString,
+            args := #["tools/plonk-wrapper/build_cuda.py", "--out", temporary.toString,
               "--build-dir", (pkg.buildDir / "plonk-cuda").toString,
               "--sppark", sppark, "--blst", blst]
             cwd := pkg.dir
@@ -303,8 +298,8 @@ target ix_plonk_wrapper pkg : Array FilePath := do
         else
           proc {
             cmd := "go"
-            args := compressionHelperArgs features temporary
-            cwd := pkg.dir / "tools/bls-plonk-wrapper"
+            args := compressionHelperArgs temporary
+            cwd := pkg.dir / "tools/plonk-wrapper"
           }
         IO.FS.rename temporary output
     setTrace (← computeTrace outputs)
@@ -503,7 +498,7 @@ script install := do
   -- Compression resolves its worker and terminal prover beside the CLI.
   let mut binaries := #["ix", "ix-compression-worker"]
   if (← compressionFeatures).contains "plonk" then
-    binaries := binaries.push (compressionHelperName (← compressionFeatures))
+    binaries := binaries.push compressionHelperName
   for name in binaries do
     let destination := binDir / name
     FS.writeBinFile destination (← FS.readBinFile $ ".lake" / "build" / "bin" / name)
@@ -513,7 +508,7 @@ script install := do
     let libraryDir := binDir.parent.getD "." / "lib"
     FS.createDirAll libraryDir
     FS.writeBinFile (libraryDir / cudaLibraryName) (← FS.readBinFile cudaLibrary)
-  if ← compressionHelperCuda (← compressionFeatures) then
+  if ← compressionHelperCuda then
     let libraryDir := binDir.parent.getD "." / "lib"
     FS.createDirAll libraryDir
     let source : FilePath := ".lake" / "build" / "lib" / plonkCudaLibraryName

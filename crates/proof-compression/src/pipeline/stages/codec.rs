@@ -10,9 +10,6 @@ use multi_stark::traits::TwoAdicField;
 use multi_stark::types::Val;
 use serde::{Serialize, de::DeserializeOwned};
 
-#[cfg(not(feature = "bn254"))]
-const KZG_VERIFIER_MAGIC: &[u8; 8] = b"IXKZGV02";
-#[cfg(feature = "bn254")]
 const KZG_VERIFIER_MAGIC: &[u8; 8] = b"IXBNKV02";
 
 pub(super) fn encode(tag: &[u8; 8], value: impl Serialize) -> Result<Vec<u8>> {
@@ -82,13 +79,7 @@ impl KzgVerifier {
       Vec<Circuit<Scalar>>,
       Option<KzgCommitment>,
       Statement<Scalar>,
-    ) = if !cfg!(feature = "bn254") && bytes.starts_with(b"IXKZGV01") {
-      let (params, circuits, preprocessing, statement) =
-        decode(b"IXKZGV01", bytes)?;
-      (params, 0, circuits, preprocessing, statement)
-    } else {
-      decode(KZG_VERIFIER_MAGIC, bytes)?
-    };
+    ) = decode(KZG_VERIFIER_MAGIC, bytes)?;
     let params = VerifierParams::from_bytes(&params)?;
     if params.max_trace_len().ilog2() as usize + 1 > Scalar::TWO_ADICITY {
       return Err("quotient domain exceeds scalar field two-adicity".into());

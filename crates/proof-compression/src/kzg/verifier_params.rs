@@ -8,9 +8,6 @@ use ark_serialize::{
 };
 use multi_stark::traits::TwoAdicField;
 
-#[cfg(not(feature = "bn254"))]
-const VERSION: u64 = 4;
-#[cfg(feature = "bn254")]
 const VERSION: u64 = 0x424e0001;
 
 #[derive(Clone)]
@@ -114,10 +111,7 @@ mod tests {
 
   #[test]
   fn trace_cap_respects_scalar_two_adicity() {
-    #[cfg(feature = "bn254")]
     assert_eq!(Scalar::TWO_ADICITY, 28);
-    #[cfg(not(feature = "bn254"))]
-    assert_eq!(Scalar::TWO_ADICITY, 32);
     let Some(max_cap) =
       1usize.checked_shl(u32::try_from(Scalar::TWO_ADICITY).unwrap())
     else {
@@ -150,8 +144,7 @@ mod tests {
       3 * 8 + 32 + 2 * G1_COMPRESSED_BYTES + 2 * G2_COMPRESSED_BYTES
     );
     assert_eq!(&encoded[..8], &VERSION.to_le_bytes());
-    let other_curve_version: u64 =
-      if cfg!(feature = "bn254") { 4 } else { 0x424e0001 };
+    let other_curve_version: u64 = 4;
     encoded[..8].copy_from_slice(&other_curve_version.to_le_bytes());
     assert!(VerifierParams::from_bytes(&encoded).is_err());
   }

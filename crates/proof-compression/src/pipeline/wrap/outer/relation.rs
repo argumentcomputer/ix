@@ -38,15 +38,9 @@ pub(super) fn fq(value: Fq) -> Vec<u8> {
 
 pub(super) fn g1(point: G1Affine) -> Vec<u8> {
   if point.is_zero() {
-    return vec![0; if cfg!(feature = "bn254") { 64 } else { 128 }];
+    return vec![0; 64];
   }
-  [
-    vec![0; if cfg!(feature = "bn254") { 0 } else { 16 }],
-    fq(point.x),
-    vec![0; if cfg!(feature = "bn254") { 0 } else { 16 }],
-    fq(point.y),
-  ]
-  .concat()
+  [fq(point.x), fq(point.y)].concat()
 }
 
 pub(super) fn proof_points(proof: &Proof<KzgConfig>) -> Vec<G1Affine> {
@@ -148,9 +142,8 @@ impl GraphProgram {
         return Err("invalid Solidity graph opening window".into());
       }
     }
-    let mut program = Self {
-      instructions: Vec::with_capacity(graph.nodes.len()),
-    };
+    let mut program =
+      Self { instructions: Vec::with_capacity(graph.nodes.len()) };
     for (index, node) in graph.nodes.iter().enumerate() {
       let child = |id: multi_stark::graph::NodeId| -> Result<usize> {
         let child = id.index();
@@ -181,15 +174,9 @@ impl GraphProgram {
           }
           GraphInstruction::Public(index)
         },
-        Node::IsFirstRow => {
-          GraphInstruction::First
-        },
-        Node::IsLastRow => {
-          GraphInstruction::Last
-        },
-        Node::IsTransition => {
-          GraphInstruction::Transition
-        },
+        Node::IsFirstRow => GraphInstruction::First,
+        Node::IsLastRow => GraphInstruction::Last,
+        Node::IsTransition => GraphInstruction::Transition,
         Node::Add(a, b) => GraphInstruction::Add(child(a)?, child(b)?),
         Node::Sub(a, b) => GraphInstruction::Sub(child(a)?, child(b)?),
         Node::Mul(a, b) => GraphInstruction::Mul(child(a)?, child(b)?),
@@ -235,7 +222,6 @@ impl GraphProgram {
     }
     values
   }
-
 }
 
 struct Batch {

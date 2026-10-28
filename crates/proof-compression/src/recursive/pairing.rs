@@ -1,7 +1,7 @@
 //! Canonical public encoding of the two deferred KZG pairing operands.
 //!
-//! Each compressed point occupies two little-endian scalar limbs: 24 bytes
-//! per limb for BLS12-381 and 16 for BN254. Both fit injectively in Fr.
+//! Each compressed point occupies two little-endian scalar limbs: 16 bytes
+//! per limb. Each limb fits injectively in the BN254 scalar field.
 
 use crate::kzg::{
   Scalar,
@@ -74,7 +74,6 @@ mod tests {
     let identity = encode([G1Affine::identity(); 2]);
     assert_ne!(positive, negative);
     assert_ne!(positive, identity);
-    #[cfg(feature = "bn254")]
     {
       assert_eq!(positive[0], Scalar::ONE);
       assert_eq!(positive[1], Scalar::ZERO);
@@ -82,16 +81,6 @@ mod tests {
       assert_eq!(identity[1], Scalar::from_limbs_le([0, 1 << 62, 0, 0]));
       assert_eq!(negative[1], Scalar::from_limbs_le([0, 1 << 63, 0, 0]));
     }
-    #[cfg(not(feature = "bn254"))]
-    assert_eq!(
-      identity,
-      [
-        Scalar(Fr::from(0xc0u8)),
-        Scalar::ZERO,
-        Scalar(Fr::from(0xc0u8)),
-        Scalar::ZERO
-      ]
-    );
   }
 
   #[test]
@@ -108,7 +97,6 @@ mod tests {
     }
   }
 
-  #[cfg(feature = "bn254")]
   #[test]
   fn bn254_public_pairing_encoding_rejects_noncanonical_infinity() {
     let mut values = encode([G1Affine::identity(); 2]);

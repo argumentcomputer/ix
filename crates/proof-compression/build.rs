@@ -25,11 +25,6 @@ const SOURCES: &[&str] = &[
 ];
 
 fn main() {
-  assert!(
-    env::var_os("CARGO_FEATURE_BN254").is_none()
-      || env::var_os("CARGO_FEATURE_BLS12_381").is_none(),
-    "BN254 KZG requires --no-default-features --features bn254; BLS12-381 and direct Solidity features cannot be combined with it"
-  );
   println!("cargo:rerun-if-changed=build.rs");
   for source in SOURCES {
     println!("cargo:rerun-if-changed={source}");
@@ -93,12 +88,6 @@ fn build_kzg_cuda() {
     println!("cargo:rerun-if-changed={}", root.join(directory).display());
   }
   let mut objects = Vec::new();
-  let (curve_flag, domain_flag) =
-    if env::var_os("CARGO_FEATURE_BN254").is_some() {
-      ("-DFEATURE_BN254", "-DMAX_LG_DOMAIN_SIZE=28")
-    } else {
-      ("-DFEATURE_BLS12_381", "-DMAX_LG_DOMAIN_SIZE=32")
-    };
   for (source, name) in
     [("cuda/kzg.cu", "kzg.o"), ("cuda/kzg_runtime.cpp", "kzg_runtime.o")]
   {
@@ -106,9 +95,9 @@ fn build_kzg_cuda() {
     let mut command = cuda_compile_command(&nvcc, &architectures);
     command.args([
       "-c",
-      curve_flag,
+      "-DFEATURE_BN254",
       "-D__BLST_PORTABLE__",
-      domain_flag,
+      "-DMAX_LG_DOMAIN_SIZE=28",
       "-include",
       "cuda/kzg_sppark.cuh",
     ]);
