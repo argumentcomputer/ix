@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use ix_common::address::Address;
 use ix_common::env::{DefinitionSafety, Name};
+use ix_kernel::anon_work::{build_artifact_work, verdict_work};
 use ix_kernel::artifact_checker::ArtifactChecker;
 use ix_kernel::mode::Anon;
 use ix_kernel::role_admission::{ArtifactSource, PRELUDE};
@@ -1066,6 +1067,256 @@ fn a_well_founded_operation_needs_local_proofs_of_its_statements() {
   );
   let reason = refused_division(env, proof);
   assert!(reason.contains("certificate 0"), "{reason}");
+}
+
+fn theorem(
+  env: &Env,
+  typ: Arc<Expr>,
+  value: Arc<Expr>,
+  refs: Vec<Address>,
+  univs: Vec<Arc<Univ>>,
+) -> Address {
+  declare(
+    env,
+    DefKind::Theorem,
+    DefinitionSafety::Safe,
+    typ,
+    value,
+    refs,
+    univs,
+  )
+}
+
+fn apps(head: Arc<Expr>, arguments: Vec<Arc<Expr>>) -> Arc<Expr> {
+  arguments.into_iter().fold(head, app)
+}
+
+/// A `Nat.div` admitted on a lemma that does not check: the lemma is local
+/// to the division's certificates only through a dead reference in the
+/// bound `Nat.sub`'s value, so the closure of a constant that uses the
+/// division does not reach it. A verdict on that constant must still check
+/// the lemma, because admission assumed it.
+#[test]
+fn a_closure_verdict_checks_what_role_admission_assumed() {
+  let mut env = loaded();
+  let a = |name: &str| address_of(&env, name);
+  let (nat, zero, succ, eq) = (a("Nat"), a("Nat.zero"), a("Nat.succ"), a("Eq"));
+  let (eq_refl, eq_rec) = (a("Eq.refl"), a("Eq.rec"));
+  let (boolean, true_c, false_c) = (a("Bool"), a("Bool.true"), a("Bool.false"));
+  let ble = a("Nat.ble");
+  let one = || Arc::new(Univ::Succ(Arc::new(Univ::Zero)));
+  let v = |i: u64| arc(Expr::Var(i));
+  let r = |i: u64| reference(i, vec![]);
+  let eq_at = |i: u64, t: Arc<Expr>, lhs: Arc<Expr>, rhs: Arc<Expr>| {
+    apps(reference(i, vec![0]), vec![t, lhs, rhs])
+  };
+
+  // `theorem zero_is_one : @Eq Nat Nat.zero (Nat.succ Nat.zero)
+  //   := @Eq.refl Nat Nat.zero`, which does not check.
+  // refs: Eq, Nat, Nat.zero, Nat.succ, Eq.refl
+  let zero_is_one = theorem(
+    &env,
+    eq_at(0, r(1), r(2), app(r(3), r(2))),
+    apps(reference(4, vec![0]), vec![r(1), r(2)]),
+    vec![eq.clone(), nat.clone(), zero.clone(), succ.clone(), eq_refl.clone()],
+    vec![one()],
+  );
+  // `def sub (x y : Nat) : Nat := (fun _ : 0 = 1 => Nat.sub x y) zero_is_one`
+  // refs: Nat, Nat.sub, Eq, Nat.zero, Nat.succ, zero_is_one
+  let sub = definition(
+    &env,
+    0,
+    pi(r(0), pi(r(0), r(0))),
+    lambda(
+      r(0),
+      lambda(
+        r(0),
+        app(
+          lambda(
+            eq_at(2, r(0), r(3), app(r(4), r(3))),
+            apps(r(1), vec![v(2), v(1)]),
+          ),
+          r(5),
+        ),
+      ),
+    ),
+    vec![
+      nat.clone(),
+      a("Nat.sub"),
+      eq.clone(),
+      zero.clone(),
+      succ.clone(),
+      zero_is_one.clone(),
+    ],
+    vec![one()],
+  );
+  // `def div (_ _ : Nat) : Nat := Nat.zero`
+  let div = definition(
+    &env,
+    0,
+    pi(r(0), pi(r(0), r(0))),
+    lambda(r(0), lambda(r(0), r(1))),
+    vec![nat.clone(), zero.clone()],
+    vec![],
+  );
+  // The certificates, over refs Nat, Eq, Bool, Nat.ble, Bool.true,
+  // Bool.false, Nat.succ, Nat.zero, div, sub, zero_is_one, Eq.refl.
+  let refs = vec![
+    nat.clone(),
+    eq.clone(),
+    boolean,
+    ble,
+    true_c,
+    false_c,
+    succ.clone(),
+    zero.clone(),
+    div.clone(),
+    sub.clone(),
+    zero_is_one.clone(),
+    eq_refl.clone(),
+  ];
+  let guard = |a: Arc<Expr>, b: Arc<Expr>, holds: bool| {
+    eq_at(1, r(2), apps(r(3), vec![a, b]), r(if holds { 4 } else { 5 }))
+  };
+  let one_n = || app(r(6), r(7));
+  let div_of = |x: Arc<Expr>, y: Arc<Expr>| apps(r(8), vec![x, y]);
+  // `∀ x y, ble y x = true → ble 1 y = true → div x y = succ (div (sub x y)
+  // y) := fun _ _ _ _ => zero_is_one`
+  let recursive = theorem(
+    &env,
+    pi(
+      r(0),
+      pi(
+        r(0),
+        pi(
+          guard(v(0), v(1), true),
+          pi(
+            guard(one_n(), v(1), true),
+            eq_at(
+              1,
+              r(0),
+              div_of(v(3), v(2)),
+              app(r(6), div_of(apps(r(9), vec![v(3), v(2)]), v(2))),
+            ),
+          ),
+        ),
+      ),
+    ),
+    lambda(
+      r(0),
+      lambda(
+        r(0),
+        lambda(
+          guard(v(0), v(1), true),
+          lambda(guard(one_n(), v(1), true), r(10)),
+        ),
+      ),
+    ),
+    refs.clone(),
+    vec![one()],
+  );
+  // `∀ x y, g = false → div x y = 0 := fun _ _ _ => rfl`, for the guards
+  // `ble y x` and `ble 1 y`.
+  let base = |guard_of: &dyn Fn() -> Arc<Expr>| {
+    theorem(
+      &env,
+      pi(
+        r(0),
+        pi(r(0), pi(guard_of(), eq_at(1, r(0), div_of(v(2), v(1)), r(7)))),
+      ),
+      lambda(
+        r(0),
+        lambda(
+          r(0),
+          lambda(guard_of(), apps(reference(11, vec![0]), vec![r(0), r(7)])),
+        ),
+      ),
+      refs.clone(),
+      vec![one()],
+    )
+  };
+  let below = base(&|| guard(v(0), v(1), false));
+  let by_zero = base(&|| guard(one_n(), v(0), false));
+
+  // `theorem vanishes : ∀ n, div n 2 = 0 := fun _ => rfl`, by unfolding.
+  // refs: Nat, Eq, div, 2, Nat.zero, Eq.refl
+  let two = env.store_blob(vec![2]);
+  let four = env.store_blob(vec![4]);
+  let vanishes = theorem(
+    &env,
+    pi(r(0), eq_at(1, r(0), apps(r(2), vec![v(0), arc(Expr::Nat(3))]), r(4))),
+    lambda(r(0), apps(reference(5, vec![0]), vec![r(0), r(4)])),
+    vec![
+      nat.clone(),
+      eq.clone(),
+      div.clone(),
+      two.clone(),
+      zero.clone(),
+      eq_refl.clone(),
+    ],
+    vec![one()],
+  );
+  // `theorem bad : 2 = 0 := @Eq.rec (motive := fun b _ => 2 = b)
+  //   (rfl : 2 = div 4 2) (vanishes 4)`: `div 4 2` is `2` natively.
+  // refs: Eq, Nat, 2, Nat.zero, Eq.rec, div, 4, Eq.refl, vanishes
+  let eq1 = |lhs, rhs| apps(reference(0, vec![1]), vec![r(1), lhs, rhs]);
+  let lit = |i: u64| arc(Expr::Nat(i));
+  let quotient = apps(r(5), vec![lit(6), lit(2)]);
+  let bad = theorem(
+    &env,
+    eq1(lit(2), r(3)),
+    apps(
+      reference(4, vec![0, 1]),
+      vec![
+        r(1),
+        quotient.clone(),
+        lambda(r(1), lambda(eq1(quotient, v(0)), eq1(lit(2), v(1)))),
+        apps(reference(7, vec![1]), vec![r(1), lit(2)]),
+        r(3),
+        app(r(8), lit(6)),
+      ],
+    ),
+    vec![eq, nat, two, zero, eq_rec, div.clone(), four, eq_refl, vanishes],
+    vec![Arc::new(Univ::Zero), one()],
+  );
+
+  let mut roles = basis_roles(&env);
+  roles.extend(bool_roles(&env));
+  let mut evidence = vec![];
+  for (role, name, equations) in STRUCTURAL {
+    let bound = if role == Role::NatSub { sub.clone() } else { a(name) };
+    roles.push((role, bound));
+    evidence.push((role, vec![Evidence::DefEq; equations]));
+  }
+  roles.push((Role::NatDiv, div));
+  evidence.push((
+    Role::NatDiv,
+    [recursive, below, by_zero].into_iter().map(Evidence::Proof).collect(),
+  ));
+  let roles = with_prelude(&env, roles);
+  bind_with_evidence(&mut env, roles, evidence);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  let refused = source.admission().refused();
+  assert!(refused.is_empty(), "{refused:?}");
+  assert!(source.is_admitted(Role::NatDiv));
+
+  let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source.clone()));
+  checker.check_const(&bad).unwrap();
+  assert!(checker.check_const(&zero_is_one).is_err());
+
+  let work = build_artifact_work(&source).unwrap();
+  for dependencies in [true, false] {
+    let selected =
+      verdict_work(&source, &work, std::slice::from_ref(&bad), dependencies)
+        .unwrap();
+    assert!(selected.iter().any(|item| item.primary() == &bad));
+    let failed: Vec<&Address> = selected
+      .iter()
+      .map(|item| item.primary())
+      .filter(|primary| checker.check_const(primary).is_err())
+      .collect();
+    assert_eq!(failed, [&zero_is_one], "dependencies: {dependencies}");
+  }
 }
 
 /// `roles` with every prelude role it lacks bound to the compiled records.

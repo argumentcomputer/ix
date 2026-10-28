@@ -1981,38 +1981,35 @@ fn load_anon_seed_context(
   Ok(AnonSeedContext { source, kernel_work, seeds })
 }
 
-/// Work items inside the seeds' full dependency closure — the same set a
-/// zkVM guest enumerates from its closure sub-env (`build_sub_env` +
-/// `build_anon_work`), computed directly from `closure_addrs` without
-/// serializing a sub-env.
-fn closure_work_items(
+/// The work items a verdict on the seeds rests on
+/// ([`ix_kernel::anon_work::verdict_work`]): with `dependencies`, those
+/// inside the seeds' full dependency closure — the set a zkVM guest
+/// enumerates from its closure sub-env (`build_sub_env` + `build_anon_work`)
+/// — and otherwise the seeds' own items. Both include the closure of the
+/// role binding's records and certificates, whose units role admission
+/// defers.
+fn verdict_work_items(
   ctx: &AnonSeedContext,
   seed_items: &[usize],
+  dependencies: bool,
 ) -> Result<Vec<ix_kernel::anon_work::AnonWorkItem>, String> {
-  use ix_kernel::anon_work::AnonWorkItem as KItem;
-
   let roots: Vec<Address> = seed_items
     .iter()
     .flat_map(|&i| ctx.kernel_work[i].proven_targets())
     .collect();
-  let closure =
-    ctx.source.closure(&roots).map_err(|error| error.to_string())?;
-  Ok(
-    ctx
-      .kernel_work
-      .iter()
-      .filter(|w| match w {
-        KItem::Standalone { addr } => closure.contains(addr),
-        KItem::Block { block_addr, .. } => closure.contains(block_addr),
-      })
-      .cloned()
-      .collect(),
+  ix_kernel::anon_work::verdict_work(
+    &ctx.source,
+    &ctx.kernel_work,
+    &roots,
+    dependencies,
   )
 }
 
 /// FFI: anon-mode type-check of named constants with (by default) their full
 /// dependency closures. `skip_deps` restricts the check to each name's own
-/// work item (subject-only; deps trusted).
+/// work item (subject-only; deps trusted). Every mode also checks the
+/// closure of a bound artifact's role records and certificates, which role
+/// admission assumes and a verdict on an admitted role rests on.
 ///
 /// Names resolve through the env's `named` metadata by displayed form,
 /// then the metadata is dropped and
@@ -2081,13 +2078,9 @@ pub extern "C" fn rs_kernel_check_anon_consts(
     for (name, item_idx) in &ctx.seeds {
       tracing_texray::rss_sampler::reset_peak_tree_rss();
       let t = Instant::now();
-      let selected = if skip_deps {
-        vec![ctx.kernel_work[*item_idx].clone()]
-      } else {
-        match closure_work_items(&ctx, &[*item_idx]) {
-          Ok(work) => work,
-          Err(error) => return LeanIOResult::error_string(&error),
-        }
+      let selected = match verdict_work_items(&ctx, &[*item_idx], !skip_deps) {
+        Ok(work) => work,
+        Err(error) => return LeanIOResult::error_string(&error),
       };
       let (work, addrs) = index_anon_work(selected);
       let total = addrs.len();
@@ -2155,13 +2148,10 @@ pub extern "C" fn rs_kernel_check_anon_consts(
 
   // The check set. Subject-only: the seeds' own items. Full-closure: every
   // work item inside the seeds' dependency closure (union across seeds).
-  let selected = if skip_deps {
-    seed_items.iter().map(|&i| ctx.kernel_work[i].clone()).collect()
-  } else {
-    match closure_work_items(&ctx, &seed_items) {
-      Ok(work) => work,
-      Err(error) => return LeanIOResult::error_string(&error),
-    }
+  // Both add the closure of the binding's records and certificates.
+  let selected = match verdict_work_items(&ctx, &seed_items, !skip_deps) {
+    Ok(work) => work,
+    Err(error) => return LeanIOResult::error_string(&error),
   };
   let (work, addrs) = index_anon_work(selected);
   eprintln!(

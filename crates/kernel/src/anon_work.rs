@@ -182,6 +182,44 @@ pub fn build_artifact_work(
   Ok(work)
 }
 
+/// The items of `work` that a verdict on `roots` must check. With
+/// `dependencies`, these are the items inside
+/// [`ArtifactSource::verdict_closure`]; without, the items covering `roots`
+/// themselves, whose dependencies are trusted. Either way the set includes
+/// the closure of the binding's support: role admission checks a role
+/// against its specification but defers its records' and certificates'
+/// units, so no verdict that may rest on an admitted role omits them.
+///
+/// [`ArtifactSource::verdict_closure`]:
+///   crate::role_admission::ArtifactSource::verdict_closure
+#[cfg(not(target_arch = "riscv64"))]
+pub fn verdict_work(
+  source: &crate::role_admission::ArtifactSource,
+  work: &[AnonWorkItem],
+  roots: &[Address],
+  dependencies: bool,
+) -> Result<Vec<AnonWorkItem>, String> {
+  let selected = if dependencies {
+    source.verdict_closure(roots)
+  } else {
+    source.verdict_closure(&[]).map(|mut support| {
+      support.extend(roots.iter().cloned());
+      support
+    })
+  }
+  .map_err(|error| error.to_string())?;
+  Ok(
+    work
+      .iter()
+      .filter(|item| match item {
+        AnonWorkItem::Standalone { addr } => selected.contains(addr),
+        AnonWorkItem::Block { block_addr, .. } => selected.contains(block_addr),
+      })
+      .cloned()
+      .collect(),
+  )
+}
+
 /// Enumerate the anon-mode kernel work set from `env.consts`.
 ///
 /// Returns one `AnonWorkItem` per kernel-checkable group of
@@ -282,10 +320,20 @@ pub fn build_sub_env(
 
 /// The in-memory closure sub-env behind [`build_sub_env`]: copy the BFS
 /// dependency closure of `roots` (genuine bytes + blobs + reducibility
-/// hints), no Named section.
+/// hints), no Named section. A bound source's binding is copied with the
+/// closure of the records it names, so the sub-env carries every record its
+/// role admission reads and every unit a verdict on `roots` rests on (see
+/// [`verdict_work`]). A binding that does not decode is copied as is, and
+/// the sub-env's reader refuses it.
 #[cfg(not(target_arch = "riscv64"))]
 fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
-  let closure = closure_addrs(source, roots);
+  let mut roots = roots.to_vec();
+  if let Some(binding) = &source.role_binding
+    && let Ok(table) = ixon::role_table::RoleTable::from_bytes(&binding.bytes)
+  {
+    roots.extend(table.records().cloned());
+  }
+  let closure = closure_addrs(source, &roots);
   let mut sub = IxonEnv::new();
   sub.role_binding = source.role_binding.clone();
   for addr in &closure {

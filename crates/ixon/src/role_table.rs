@@ -139,6 +139,18 @@ fn address(input: &mut &[u8]) -> Result<Address, String> {
 }
 
 impl RoleTable {
+  /// Every record the table names: each bound address, then each proof of
+  /// its evidence, in table order.
+  pub fn records(&self) -> impl Iterator<Item = &Address> {
+    let proofs = self.evidence.iter().flat_map(|(_, entries)| {
+      entries.iter().filter_map(|entry| match entry {
+        Evidence::Proof(address) => Some(address),
+        Evidence::DefEq => None,
+      })
+    });
+    self.bound.iter().map(|(_, address)| address).chain(proofs)
+  }
+
   /// Exact counterpart of IxC's wireWF; Address and version widths are typed.
   pub fn check_wire(&self) -> Result<(), String> {
     byte_count(self.bound.len())?;
