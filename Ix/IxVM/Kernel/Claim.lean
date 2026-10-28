@@ -263,6 +263,10 @@ def claim := ⟦
   -- use a standard axiom whose group comes after its own (the axioms'
   -- groups come after the structural operations'), even when the claim
   -- never uses the role; this walk and the two below agree on it.
+  --
+  -- Under an assumed binding such a ref is left unchecked (`walk_covered`):
+  -- the claim's condition, that the binding meets the specifications,
+  -- covers its check with its dependencies.
   fn walk_refs_transitive(rc: RoleCtx, refs: List‹Addr›, consts: List‹G›, i: G) {
     match load(refs) {
       ListNode.Nil => (),
@@ -270,7 +274,10 @@ def claim := ⟦
         match g_list_has(consts, i) {
           1 =>
             assert_ref_allowed(rc, a);
-            run_check_transitive(walk_ctx(rc, a), a),
+            match walk_covered(rc, a) {
+              0 => run_check_transitive(walk_ctx(rc, a), a),
+              _ => (),
+            },
           _ => (),
         };
         walk_refs_transitive(rc, rest, consts, i + 1),
@@ -464,7 +471,10 @@ def claim := ⟦
         match g_list_has(consts, i) {
           1 =>
             assert_ref_allowed(rc, a);
-            env_walk(walk_ctx(rc, a), a, owned, asm, strict),
+            match walk_covered(rc, a) {
+              0 => env_walk(walk_ctx(rc, a), a, owned, asm, strict),
+              _ => (),
+            },
           _ => (),
         };
         env_walk_refs(rc, rest, consts, i + 1, owned, asm, strict),
@@ -517,20 +527,21 @@ def claim := ⟦
     match load(leaves) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
-        check_owned(load(role_ctx_binding(rc)), load(a));
+        check_owned(load(role_ctx_binding(rc)), role_ctx_validator(rc), load(a));
         walk_leaves_owned(rc, rest),
     }
   }
 
   -- Check the constant with address `bytes` and, transitively, everything
   -- it references (the unsharded walk of `env_walk`, without the owned and
-  -- assumption sets), under the role binding with hash `binding`. An
+  -- assumption sets), under the role binding with hash `binding`, validated
+  -- (`validator` 3) or assumed (4) as the claim's validator says. An
   -- entry, so that a worker record can run it over the leaves it owns; a
   -- caller in another record reaches the same row through the executor's
-  -- deferred call. Both arguments are bytes rather than interned pointers,
-  -- which are per record.
-  pub fn check_owned(binding: [U8; 32], bytes: [U8; 32]) {
-    env_walk_all(role_ctx_of_binding(store(binding)), store(bytes))
+  -- deferred call. The binding and the constant are bytes rather than
+  -- interned pointers, which are per record.
+  pub fn check_owned(binding: [U8; 32], validator: G, bytes: [U8; 32]) {
+    env_walk_all(role_ctx_for_validator(store(binding), validator), store(bytes))
   }
 
   fn env_walk_all(rc: RoleCtx, addr: Addr) {
@@ -544,25 +555,25 @@ def claim := ⟦
             match dprj {
               DefinitionProj.Mk(_, block_addr) =>
                 run_check(rc, addr);
-                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
+                check_owned(load(role_ctx_binding(rc)), role_ctx_validator(rc), load(block_addr)),
             },
           ConstantInfo.IPrj(iprj) =>
             match iprj {
               InductiveProj.Mk(_, block_addr) =>
                 run_check(rc, addr);
-                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
+                check_owned(load(role_ctx_binding(rc)), role_ctx_validator(rc), load(block_addr)),
             },
           ConstantInfo.CPrj(cprj) =>
             match cprj {
               ConstructorProj.Mk(_, _, block_addr) =>
                 run_check(rc, addr);
-                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
+                check_owned(load(role_ctx_binding(rc)), role_ctx_validator(rc), load(block_addr)),
             },
           ConstantInfo.RPrj(rprj) =>
             match rprj {
               RecursorProj.Mk(_, block_addr) =>
                 run_check(rc, addr);
-                check_owned(load(role_ctx_binding(rc)), load(block_addr)),
+                check_owned(load(role_ctx_binding(rc)), role_ctx_validator(rc), load(block_addr)),
             },
           _ => run_check(rc, addr),
         };
@@ -578,12 +589,18 @@ def claim := ⟦
           1 =>
             assert_ref_allowed(rc, a);
             -- A role checked by its admission is checked in this record,
-            -- under its group's context (`walk_ctx`); anything else may go
-            -- to the record that owns it.
-            let wc = walk_ctx(rc, a);
-            match ptr_val(wc) - ptr_val(rc) {
-              0 => check_owned(load(role_ctx_binding(rc)), load(a)),
-              _ => run_check_transitive(wc, a),
+            -- under its group's context (`walk_ctx`), or left to the
+            -- binding claim under an assumed binding (`walk_covered`);
+            -- anything else may go to the record that owns it.
+            match walk_covered(rc, a) {
+              0 =>
+                let wc = walk_ctx(rc, a);
+                match ptr_val(wc) - ptr_val(rc) {
+                  0 => check_owned(load(role_ctx_binding(rc)), role_ctx_validator(rc),
+                    load(a)),
+                  _ => run_check_transitive(wc, a),
+                },
+              _ => (),
             },
           _ => (),
         };
@@ -1343,12 +1360,13 @@ def claim := ⟦
     assert_eq!(@b3_pack(h), digest,
       "claim: bytes do not hash to the public claim digest");
     -- The claim header is TagN4(0xE, variant): variants 3-7 are the one
-    -- byte 0xE3-0xE7, and Resource (9) is rung 2, `E8 01`.
+    -- byte 0xE3-0xE7, and Resource (9) and Binding (10) are rung 2,
+    -- `E8 01` and `E8 02`.
     let (tag, s) = get_tagn4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE, "claim: wrong TagN flag");
     -- Dispatch on the FULL TagN value, matching Rust `Claim::get`, which
-    -- matches `tag.value: u64`. The variant is only ever 3-9, so the high 7
+    -- matches `tag.value: u64`. The variant is only ever 3-10, so the high 7
     -- bytes must be zero; a value >= 256 whose low byte is a variant would
     -- otherwise dispatch here while Rust rejects it as an unknown variant.
     -- Sum is 0 iff every high byte is 0 (7 bytes, max sum 1785, no wrap).
@@ -1373,9 +1391,10 @@ def claim := ⟦
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
         run_eval(rc, input, output, asm),
       4 =>
-        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        -- Validator 3 validates the binding's roles as the claim uses
+        -- them; 4 assumes the binding meets the specifications.
         let (binding, s) = get_claim_context(s);
-        let rc = role_ctx_of_binding(binding);
+        let rc = role_ctx_for_validator(binding, to_field(validator));
         let (target, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
@@ -1387,9 +1406,8 @@ def claim := ⟦
             env_walk(rc, target, RBTreeMap.Nil, asm_set, 0),
         },
       5 =>
-        assert_eq!(validator, 3u8, "claim: wrong validator identity");
         let (binding, s) = get_claim_context(s);
-        let rc = role_ctx_of_binding(binding);
+        let rc = role_ctx_for_validator(binding, to_field(validator));
         let (root, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
@@ -1412,6 +1430,17 @@ def claim := ⟦
         -- unsupported boundary explicit; no host success flag is trusted.
         assert_eq!(0, 1, "claim: resource-v1 is not implemented by IxVM");
         (),
+      10 =>
+        -- The binding claim: the table binds every role and each bound
+        -- constant meets its specification, which admitting every group
+        -- checks.
+        assert_eq!(validator, 3u8, "claim: wrong validator identity");
+        let (spec, s2) = get_address(s);
+        assert_eq!(address_eq(spec, spec_digest()), 1,
+          "claim: specification digest is not this circuit's");
+        let (binding, rest) = get_address(s2);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
+        validate_binding(binding),
     }
   }
 ⟧

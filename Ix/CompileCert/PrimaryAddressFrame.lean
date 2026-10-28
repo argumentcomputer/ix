@@ -57,10 +57,11 @@ theorem WalkOk.insert {before done checked} (held : WalkOk before done checked)
     · exact held.2 n a hit old prior
 
 /-- The actual first loop checks EVERY ordered write, including repeated
-keys whose earlier local entry shadows the old primary lookup. -/
-theorem checkBlockClaims_primary_agrees {before : CompileEnv} {writes : Array (Name × Address)}
+keys whose earlier local entry shadows the old primary lookup: its table holds
+every write, and every entry agrees with the resolution before the block. -/
+theorem checkBlockClaims_walk {before : CompileEnv} {writes : Array (Name × Address)}
     (run : checkBlockClaims before writes = .ok ()) :
-    PrimaryAgrees before writes := by
+    ∃ checked, WalkOk before writes.toList checked := by
   unfold checkBlockClaims at run
   obtain ⟨checked, walk, tail⟩ := Loop.except_bind_ok.mp run
   clear run tail
@@ -95,6 +96,12 @@ theorem checkBlockClaims_primary_agrees {before : CompileEnv} {writes : Array (N
     · constructor
       · intro _ _ impossible; cases impossible
       · intro _ _ impossible; simp at impossible
+  exact ⟨checked, valid⟩
+
+theorem checkBlockClaims_primary_agrees {before : CompileEnv} {writes : Array (Name × Address)}
+    (run : checkBlockClaims before writes = .ok ()) :
+    PrimaryAgrees before writes := by
+  obtain ⟨checked, valid⟩ := checkBlockClaims_walk run
   intro n addr member old prior
   exact valid.2 n addr (valid.1 n addr (Array.mem_toList_iff.mpr member)) old prior
 

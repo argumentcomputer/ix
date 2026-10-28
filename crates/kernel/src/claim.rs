@@ -90,6 +90,7 @@ mod tests {
       spec: ixon::proof::spec_digest(),
       binding: Address::hash(b"binding"),
       axioms: None,
+      binding_assumed: false,
     }
   }
 

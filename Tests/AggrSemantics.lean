@@ -404,7 +404,7 @@ def semanticSuite : IO UInt32 := do
           ixesPath.toString "" verifyIdx fakeAggrIdx 1
           (16 * 1024 * 1024 * 1024) 4096 0 false true
           childRecursionParameters.cacheFriBytes false true false 0 false 1
-          false 0).isOk
+          false 0 "").isOk
         let expectedMatches := match Aiur.AiurSystem.aggregateExpected
             handle ixesPath.toString 4096 with
           | .error _ => false

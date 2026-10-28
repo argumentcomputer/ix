@@ -43,9 +43,9 @@ def NotPrj : Ixon.ConstantInfo → Prop
 def Built (c : Ixon.Constant) : Prop :=
   ∃ limits info refs univs, buildConstantWithSharing limits info refs univs = .ok c ∧ NotPrj info
 
-/-- A projection of the block at `owner`, in the wire domain. -/
+/-- A projection of the block at `owner`, in the wire domain, with no references. -/
 def ProjectsTo (owner : Address) (c : Ixon.Constant) : Prop :=
-  c.wireWF ∧ ∀ a, ownerOf a c = owner
+  c.wireWF ∧ c.refs = #[] ∧ ∀ a, ownerOf a c = owner
 
 /-- **A compiled block's shape.** -/
 structure ResultShape (r : BlockResult) : Prop where
@@ -110,9 +110,9 @@ theorem inductiveProjections_rows (i : Ix.InductiveVal) (indMeta : Ixon.Constant
   rcases Array.mem_append.mp hp with hp | hp
   · simp only [List.mem_toArray, List.mem_singleton] at hp
     subst hp
-    exact ⟨MutualProjections.empty_tables_wire _ width, fun _ => rfl⟩
+    exact ⟨MutualProjections.empty_tables_wire _ width, rfl, fun _ => rfl⟩
   · obtain ⟨k, hk, rfl⟩ := Array.mem_mapIdx.mp hp
-    exact ⟨MutualProjections.empty_tables_wire _ width, fun _ => rfl⟩
+    exact ⟨MutualProjections.empty_tables_wire _ width, rfl, fun _ => rfl⟩
 
 theorem finishInductive_shape (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (pairs : Array (Ix.Name × Ixon.ConstantMeta)) :
@@ -132,7 +132,7 @@ theorem mutualProjections_rows (classes : List (List MutConst)) (owner : Address
     (metas : Array (Ix.Name × Ixon.ConstantMeta)) :
     ∀ p ∈ buildMutualProjections classes owner metas, ProjectsTo owner p.2.1 := by
   intro p hp
-  refine ⟨MutualProjections.build_rows_wire classes owner width metas p hp, fun a => ?_⟩
+  refine ⟨MutualProjections.build_rows_wire classes owner width metas p hp, ?_⟩
   have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows (buildMutualProjections classes owner metas) :=
     List.mem_map.mpr ⟨p, Array.mem_toList_iff.mpr hp, rfl⟩
   rw [MutualProjections.build_rows, MutualProjections.expectedRows] at logical
@@ -142,12 +142,12 @@ theorem mutualProjections_rows (classes : List (List MutConst)) (owner : Address
   rcases List.mem_cons.mp generated with e | rest
   · have : p.2.1 = MutualProjections.memberProjection owner index.toUInt64 source := (Prod.mk.inj e).2
     rw [this]
-    cases source <;> rfl
+    cases source <;> exact ⟨rfl, fun _ => rfl⟩
   · obtain ⟨⟨ctor, ctorIndex⟩, _, e⟩ := List.mem_map.mp rest
     have : p.2.1 = MutualProjections.constructorProjection owner index.toUInt64 ctorIndex.toUInt64 :=
       (Prod.mk.inj e).2.symm
     rw [this]
-    rfl
+    exact ⟨rfl, fun _ => rfl⟩
 
 theorem standalone_notPrj (payloads : Array Ixon.MutConst) {info : Ixon.ConstantInfo}
     (h : standaloneMutConstInfo? payloads = some info) : NotPrj info := by
@@ -316,7 +316,7 @@ theorem claim_block (bw : BlocksWire) {ixe : Ixon.Env} {n : Ix.Name} {a : Addres
   · obtain ⟨p, hp, e⟩ := Array.mem_map.mp hclaim
     simp only [Prod.mk.injEq] at e
     obtain ⟨-, rfl, rfl⟩ := e
-    rcases shape.rows p hp with same | ⟨pwire, powner⟩
+    rcases shape.rows p hp with same | ⟨pwire, -, powner⟩
     · rw [same, ← shape.bytes, ← shape.addr]
       exact atBlock
     · have prec := recordAt_ser pwire ha

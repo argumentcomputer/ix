@@ -167,11 +167,14 @@ extern "C" fn rs_aiur_stage2_aggregate(
   exec_ahead: LeanNat<LeanBorrowed<'_>>,
   verify_only: bool,
   subtree_code: LeanNat<LeanBorrowed<'_>>,
+  binding_proof_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
       lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
     let subtree = lean_unbox_nat_as_usize(subtree_code.inner()).checked_sub(1);
+    let binding_proof =
+      super::lanes::read_binding_proof(binding_proof_path.as_str())?;
     run(RunConfig {
       ixvm_system: ixvm_system.get(),
       aggr_system: aggr_system.get(),
@@ -195,6 +198,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
       verify_only,
       subtree,
+      binding_proof: binding_proof.as_ref(),
     })
   }));
   match result {

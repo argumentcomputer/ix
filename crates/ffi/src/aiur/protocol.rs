@@ -1119,6 +1119,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   exec_only: bool,
   trace_shards: bool,
   retention: LeanNat<LeanBorrowed<'_>>,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1135,8 +1136,10 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-        env, &owned,
+      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+        env,
+        &owned,
+        assume_binding,
       ) {
         Ok(t) => t,
         Err(e) => {
@@ -1763,9 +1766,12 @@ fn prove_env_distributed(
   let input = statement.digest_key.clone();
   let toplevel = system.toplevel();
   let binding = statement.binding();
+  let validator = statement.claim.validator();
   let owned_keys: Vec<FxHashSet<Vec<G>>> = owners
     .iter()
-    .map(|owned| owned.iter().map(|a| check_owned_key(&binding, a)).collect())
+    .map(|owned| {
+      owned.iter().map(|a| check_owned_key(&binding, validator, a)).collect()
+    })
     .collect();
   let mut owner_of: FxHashMap<Vec<G>, usize> = FxHashMap::default();
   for (worker, keys) in owned_keys.iter().enumerate() {
@@ -1832,7 +1838,7 @@ fn prove_env_distributed(
       // walk and be replayed, double-counting its callees.
       let mut entries: Vec<Vec<G>> = Vec::new();
       for addr in &owners[worker] {
-        let key = check_owned_key(&binding, addr);
+        let key = check_owned_key(&binding, validator, addr);
         let queries = &record.function_queries[check_owned_idx];
         // Reached already through another owned constant's walk.
         if queries

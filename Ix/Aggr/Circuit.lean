@@ -7,7 +7,7 @@ public import MultiStark.Verifier
 # Heterogeneous recursive aggregation circuit
 
 One entrypoint, `ix_aggr`, subsumes wrapping and joining. A non-deterministic
-shape hint (IO channel 6) selects one of thirteen verified forms:
+shape hint (IO channel 6) selects one of fifteen verified forms:
 
 | shape | children                  | statement fold                          |
 |-------|---------------------------|-----------------------------------------|
@@ -24,6 +24,8 @@ shape hint (IO channel 6) selects one of thirteen verified forms:
 | 10    | shards `[lo, hi)` of an IxVM batch | range leaf: residual sum        |
 | 11    | `ix_aggr`, `ix_aggr` (ranges) | range join: adjacent ranges added   |
 | 12    | one `ix_aggr` range proof | range root: whole batch, IxVM claim     |
+| 13    | IxVM, IxVM `Binding`      | binding discharge: validator 4 → 3      |
+| 14    | `ix_aggr`, IxVM `Binding` | binding discharge: validator 4 → 3      |
 
 Shapes 10–12 are the range-sum recursion (see the section of that name in
 the circuit): together they verify one large IxVM batch across several
@@ -83,7 +85,7 @@ not stored values to be globally deduplicated.
 | 3       | `[0]`                | 80-byte allowed blob                     |
 | 4       | packed digest        | `CheckEnv` claim and range statement preimages |
 | 5       | raw 32-byte root     | serialized canonical `AssumptionTree`s   |
-| 6       | `[0]` / address      | shape byte (0–12) / structural path choice |
+| 6       | `[0]` / address      | shape byte (0–14) / structural path choice |
 -/
 
 public section
@@ -542,19 +544,23 @@ def circuit := ⟦
   }
 
   -- Strictly decode one complete `Claim::CheckEnv` byte string: its context
-  -- (specification digest, binding hash, axioms), root and assumptions.
-  -- The fixed sequence and final Nil check rule out cycles in preimages and
-  -- output claims without a separate depth traversal.
+  -- (specification digest, binding hash, axioms, validator), root and
+  -- assumptions. The fixed sequence and final Nil check rule out cycles in
+  -- preimages and output claims without a separate depth traversal.
   fn aggr_parse_check_env(bytes: ByteStream)
-      -> ((Addr, Addr, Option‹Addr›), Addr, Option‹Addr›) {
+      -> ((Addr, Addr, Option‹Addr›, G), Addr, Option‹Addr›) {
     -- TagN4(0xE, 5) is the one byte 0xE5; object format 4 is Ixon v4;
-    -- validator 3 is erased-lean-v2, whose claims carry a context.
+    -- validator 3 is erased-lean-v2, whose claims carry a context, and 4
+    -- erased-lean-v2-assumed, whose claims assume their binding meets the
+    -- specifications.
     let (tag, s) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE5u8, "aggr: claim is not CheckEnv");
     let (format, s) = aggr_read_byte(s);
     assert_eq!(format, 4u8, "aggr: unsupported object format");
-    let (validator, s) = aggr_read_byte(s);
-    assert_eq!(validator, 3u8, "aggr: wrong validator identity");
+    let (validator_byte, s) = aggr_read_byte(s);
+    let validator = to_field(validator_byte);
+    assert_eq!((validator - 3) * (validator - 4), 0,
+      "aggr: wrong validator identity");
     let (spec, s) = aggr_read_address(s);
     let (binding, s) = aggr_read_address(s);
     let (axioms, s) = aggr_get_opt_address(s);
@@ -562,7 +568,26 @@ def circuit := ⟦
     let (assumptions, stop) = aggr_get_opt_address(s2);
     assert_eq!(load(stop), ListNode.Nil,
       "aggr: trailing bytes after CheckEnv claim");
-    ((spec, binding, axioms), root, assumptions)
+    ((spec, binding, axioms, validator), root, assumptions)
+  }
+
+  -- Strictly decode one complete `Claim::Binding` byte string: its
+  -- specification digest and binding hash.
+  fn aggr_parse_binding(bytes: ByteStream) -> (Addr, Addr) {
+    -- TagN4(0xE, 10) is the two bytes `E8 02`; validator 3.
+    let (tag0, s) = aggr_read_byte(bytes);
+    assert_eq!(tag0, 0xE8u8, "aggr: claim is not Binding");
+    let (tag1, s) = aggr_read_byte(s);
+    assert_eq!(tag1, 0x02u8, "aggr: claim is not Binding");
+    let (format, s) = aggr_read_byte(s);
+    assert_eq!(format, 4u8, "aggr: unsupported object format");
+    let (validator, s) = aggr_read_byte(s);
+    assert_eq!(validator, 3u8, "aggr: wrong validator identity");
+    let (spec, s) = aggr_read_address(s);
+    let (binding, stop) = aggr_read_address(s);
+    assert_eq!(load(stop), ListNode.Nil,
+      "aggr: trailing bytes after Binding claim");
+    (spec, binding)
   }
 
   fn aggr_opt_address_eq(a: Option‹Addr›, b: Option‹Addr›) -> G {
@@ -581,18 +606,21 @@ def circuit := ⟦
   }
 
   -- A fold states its children's typing under one context: both children
-  -- and the output must carry the same specification digest, binding hash
-  -- and axioms.
-  fn aggr_assert_same_context(a: (Addr, Addr, Option‹Addr›),
-      b: (Addr, Addr, Option‹Addr›)) {
-    let (spec_a, binding_a, axioms_a) = a;
-    let (spec_b, binding_b, axioms_b) = b;
+  -- and the output must carry the same specification digest, binding hash,
+  -- axioms and validator, so a fold never mixes claims that assume their
+  -- binding with claims that validate it.
+  fn aggr_assert_same_context(a: (Addr, Addr, Option‹Addr›, G),
+      b: (Addr, Addr, Option‹Addr›, G)) {
+    let (spec_a, binding_a, axioms_a, validator_a) = a;
+    let (spec_b, binding_b, axioms_b, validator_b) = b;
     assert_eq!(address_eq(spec_a, spec_b), 1,
       "aggr: claims differ in specification digest");
     assert_eq!(address_eq(binding_a, binding_b), 1,
       "aggr: claims differ in binding hash");
     assert_eq!(aggr_opt_address_eq(axioms_a, axioms_b), 1,
       "aggr: claims differ in axioms");
+    assert_eq!(validator_a, validator_b,
+      "aggr: claims differ in whether they assume their binding");
     ()
   }
 
@@ -795,6 +823,44 @@ def circuit := ⟦
     let output_assumptions = aggr_load_optional_tree(output_asm);
     aggr_assert_structural_difference(left_assumptions, right_assumptions,
       output_root, output_assumptions);
+    ()
+  }
+
+  -- Binding discharge: a `CheckEnv` child that assumes its binding (key 0,
+  -- of the hinted kind) and an IxVM proof of the `Binding` claim for its
+  -- specification digest and binding hash (key 1). The output is the
+  -- child's claim validating its binding: the same bytes with validator 3.
+  -- Folds keep the validator, so an aggregate discharges once, at the top.
+  fn aggr_discharge_binding(kind: G,
+      ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let child_digest = aggr_child_check_env_digest(kind, 0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let binding_digest = aggr_child_check_env_digest(0, 1,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let (child_ctx, child_root, child_asm) =
+      aggr_parse_check_env(aggr_load_preimage(child_digest));
+    let (spec, binding, axioms, validator) = child_ctx;
+    assert_eq!(validator, 4,
+      "aggr discharge: the claim does not assume its binding");
+    let (bound_spec, bound_binding) =
+      aggr_parse_binding(aggr_load_preimage(binding_digest));
+    assert_eq!(address_eq(spec, bound_spec), 1,
+      "aggr discharge: the binding claim is for another specification digest");
+    assert_eq!(address_eq(binding, bound_binding), 1,
+      "aggr discharge: the binding claim is for another binding");
+
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = #read_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "aggr discharge: output claim digest mismatch");
+    let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    aggr_assert_same_context((spec, binding, axioms, 3), output_ctx);
+    assert_eq!(address_eq(child_root, output_root), 1,
+      "aggr discharge: output subject root differs from the child's");
+    assert_eq!(aggr_opt_address_eq(child_asm, output_asm), 1,
+      "aggr discharge: output assumptions differ from the child's");
     ()
   }
 
@@ -1071,6 +1137,8 @@ def circuit := ⟦
     --   2–5 = flat pairs:       2 + 2·left + right
     --   6–9 = structural pairs: 6 + 2·left + right
     --   10 = range leaf      11 = range join      12 = range root
+    --   13 = binding discharge of an IxVM child
+    --   14 = binding discharge of a self child
     let (hidx, hlen) = io_get_info(6, [0]);
     assert_eq!(hlen, 1, "aggr: shape hint must be exactly one byte");
     let hint = #read_byte_stream(6, hidx, hlen);
@@ -1102,6 +1170,10 @@ def circuit := ⟦
       11 => aggr_range_join(ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
       12 => aggr_range_root(ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      13 => aggr_discharge_binding(0, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      14 => aggr_discharge_binding(1, ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
     }
   }
