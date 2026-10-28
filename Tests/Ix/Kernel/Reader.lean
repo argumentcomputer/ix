@@ -870,6 +870,34 @@ def natBlockRecord : Ixon.Constant := Id.run do
   | .error (.declined _) => true
   | _ => false
 
+/-- The prelude's record at `a`, if it has one. -/
+def preludeRecord (a : Address) : List (Address × Ixon.Constant) :=
+  (builtinPre.records.find? (·.1 == a)).toList
+
+/-- `Nat`'s family copied from the prelude byte for byte, at the prelude's own addresses: its
+block, its projection records and, `withRec`, its recursor. -/
+def natCopy (withRec : Bool) : List (Address × Ixon.Constant) :=
+  match boundRef .nat with
+  | some r => ([r.block, nat, natZero, natSucc] ++ (if withRec then [bound .natRec] else [])).flatMap preludeRecord
+  | none => []
+
+#guard (natCopy true).length == 5 && (natCopy false).length == 4
+-- a stream copying the family reads with its own recursor
+#guard match readStream hash builtinTable builtinPre (natCopy true) [] with
+  | .ok _ => true
+  | .error _ => false
+-- without it, the prelude's recursor, which the analysis files under the copied block, is left out of
+-- the index (`fallbackIndexed`): the copied block declines instead of reading with the prelude's
+-- recursor
+#guard
+  let cx := contextOf (md := .anon) builtinTable (natCopy false).toArray [] builtinPre.records
+  match boundRef .nat with
+  | some r => (buildIndex cx.store builtinPre.records).blocks.contains r.block && !cx.index.blocks.contains r.block
+  | none => false
+#guard match readStream hash builtinTable builtinPre (natCopy false) [] with
+  | .error (.read _ (.declined _)) => true
+  | _ => false
+
 -- The keys are computed ahead (`Ctx.keys`): every record address has its key,
 -- an unbound singleton its own address and a bound reference its role's, and
 -- every reference its address
