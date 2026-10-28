@@ -179,7 +179,7 @@ theorem block_members {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
     (resolves : SingletonSegments.PublishedResolve ixe sub) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (insub : ∀ j (hj : j < defs.length), ∃ ci, (defs[j].name, ci) ∈ sub.consts.toList)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
     (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output) :
@@ -238,7 +238,7 @@ theorem closure_block_reads {env : Ix.Environment} {roots : List Ix.Name} {sub :
     (exactNames : ∀ i (hi : i < defs.length) j (hj : j < defs.length) n,
       ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value → ingressKey n = ingressKey defs[j].name → n = defs[j].name)
     {cenv : CompileEnv} {benv : BlockEnv} {output : BlockResult} {after : BlockState}
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) (cenv, benv) {} = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) (cenv, benv) {} = (.ok output, after))
     (fresh : ∀ d ∈ defs, cenv.nameToAddr.get? d.name = none)
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
     (hr : runBlock cenvR all key = .ok (r, cache))
@@ -383,7 +383,7 @@ theorem definition_block_segment {env : Ix.Environment} {roots : List Ix.Name} {
     (exactNames : ∀ i (hi : i < defs.length) j (hj : j < defs.length) n,
       ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value → ingressKey n = ingressKey defs[j].name → n = defs[j].name)
     {cenv : CompileEnv} {benv : BlockEnv} {output : BlockResult} {after : BlockState}
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) (cenv, benv) {} = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) (cenv, benv) {} = (.ok output, after))
     (fresh : ∀ d ∈ defs, cenv.nameToAddr.get? d.name = none)
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
     (hr : runBlock cenvR all key = .ok (r, cache))
@@ -443,21 +443,21 @@ theorem definition_block_segment {env : Ix.Environment} {roots : List Ix.Name} {
 
 /-! ## Where a definition block's segment lies -/
 
-/-- A group of definitions, one per class, has one definition shape per member. -/
-theorem heads_defn : ∀ l : List Ix.Def,
-    (((l.map MutConst.defn).map ([·])).filterMap List.head?).map ProjectionLayout.sourceShape =
+/-- Every definition member has the definition shape. -/
+theorem definition_shapes : ∀ l : List Ix.Def,
+    (l.map MutConst.defn).map ProjectionLayout.sourceShape =
       l.map fun _ => ProjectionLayout.MemberShape.defn
   | [] => rfl
-  | _ :: ds => congrArg (List.cons _) (heads_defn ds)
+  | _ :: ds => congrArg (List.cons _) (definition_shapes ds)
 
 /-- **A compiled block of several definitions is a block of definitions**, one per member. -/
 theorem block_info {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     {defs : List Ix.Def} (two : 2 ≤ defs.length)
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after)) :
     ∃ ms : Array Ixon.MutConst, output.block.info = .muts ms ∧ ms.size = defs.length ∧
       ∀ x ∈ ms, ∃ d, x = .defn d := by
   have shape := ProjectionLayout.mutual_block_shape _ context before output after ran
-  rw [heads_defn] at shape
+  rw [definition_shapes] at shape
   cases hi : output.block.info with
   | muts ms =>
     rw [hi] at shape
@@ -658,7 +658,7 @@ theorem block_place {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
       ∃ (j : Nat) (_ : j < defs.length), defs[j].name = n)
     (insub : ∀ j (hj : j < defs.length), ∃ ci, (defs[j].name, ci) ∈ sub.consts.toList)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r' : BlockResult} {cache : BlockState}
     (hr' : runBlock cenvR all key = .ok (r', cache))
     (pub : BlockPublication.Published ixe sub key r') (hrec : BlockRecords.recordsOf r' = BlockRecords.recordsOf output)

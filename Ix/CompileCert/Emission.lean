@@ -3,7 +3,7 @@ import Ix.CompileCert.SharingRoots
 
 /-! # The payload emitters read back as their sources
 
-Every declaration emitter of `Ix.CompileM` has one shape (R07-08): it enters
+Every declaration emitter of `Ix.CompileM` has one shape: it enters
 the declaration's context (`withCurrent`, and `withUnivCtx` with its level
 parameters, which clears the raw universe memo), resets the arena, compiles
 its root expressions with `compileExpr`, and finishes: the finisher drains
@@ -16,14 +16,14 @@ quotient, recursor, constructor and inductive emitters:
   invariant's state part and extends the in-flight reader, and leaves an
   empty memo (`Clean`), through one invariant (`Tidy`) and one set of
   leaf frames (`Frame`); the header counts are the source's (`Yields`,
-  the production guards: CT-15's `DeclarationHeaders`);
+  the production guards: `DeclarationHeaders`);
 * the emitters: from a state satisfying `ExpressionState.Good` (for the
   declaration's own relation, whose levels mean the declaration's level
   parameters), a successful run returns the payload the source describes,
   with its roots read by the in-flight reader as terms `Related` to the
   source's (`SharingRoots.RootsRead`), ends `Clean`, and extends the
   reader. The recursor's rules keep the warm memo across the rule loop;
-  the inductive's constructors start and end clean (CT-15's `*Emission`). -/
+  the inductive's constructors start and end clean (`*Emission`). -/
 
 namespace Ix.CompileCert.Emission
 
@@ -300,7 +300,7 @@ end Finish
 /-! ## Header counts
 
 The finishers' guards make every header field the source's natural number
-(CT-15's `DeclarationHeaders`). -/
+(`DeclarationHeaders`). -/
 
 /-- Every successful run returns a value satisfying `post`. -/
 def Yields (action : CompileM α) (post : α → Prop) : Prop :=

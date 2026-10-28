@@ -34,12 +34,11 @@ the preparation **succeeds** on the compiled closure.
   declarations in front; `closure_accepts`: with the fold's acceptance and
   the committed prelude, that is `IxonAccepts`.
 
-What stays an obligation: `StoredCanonical` (R7e's per-block codec over the
-published store, R13), the stream reading itself (every record of the
-closure reads, N-READS: R8, R10a/R10b, R13), and `keeps` (the reading's final
-state keeps the prelude's entries). The compiled-output argument that each
-earlier reader state also keeps those entries is a separate composition
-obligation; the final-state check alone does not establish it. -/
+The component theorems require `StoredCanonical` (the per-block codec over
+the published store), a reading of every closure record, and `keeps` (the
+final state keeps the prelude's entries). The compiler composition also
+proves preservation at each earlier reader state; the final-state check
+alone does not establish that property. -/
 
 namespace Ix.Cert.Stream
 
@@ -148,7 +147,7 @@ theorem readStream_complete {hash : ByteArray → Address} {t : Ix.Kernel.RoleTa
 
 /-- Every stored record of `order` decodes (`recordAt`) to a wire-valid
 constant whose canonical encoding is its stored bytes: the per-record codec
-over the compiled store (R7e's, through R13's published store). -/
+over the compiled store. -/
 def StoredCanonical (ixe : Ixon.Env) (order : List Address) : Prop :=
   ∀ a ∈ order, ∀ lc, ixe.consts.get? a = some lc →
     ∃ c, lc.get? = some c ∧ c.wireWF ∧ Ixon.serConstant c = lc.rawBytes

@@ -26,7 +26,7 @@ def literalIdentities (env : Ixon.Env) : Except String (Option Address × Option
     let table ← (Ix.Kernel.Admission.admitBinding Address.admissionHash
       ⟨raw.address, raw.bytes⟩).mapError fun e => toString (Ix.Kernel.Admission.Error.binding e)
     return (table.addressOf? .nat, table.addressOf? .bool, table.addressOf? .string)
-  let primitives := Ix.Tc.PrimAddrs.canonical
+  let primitives := Ix.PrimAddrs.canonical
   return (some primitives.nat, some primitives.boolType, some primitives.string)
 
 /-- A minimal profile restricted to actual interfaces present in the closure.

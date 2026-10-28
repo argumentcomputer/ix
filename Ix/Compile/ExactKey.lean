@@ -254,8 +254,7 @@ theorem nameEq_iff (a b : Ix.Name) : nameEq a b = true ↔ a = b := by
 `BlockState.blockNameToAddr`): a name
 compared structurally (`nameEq`, whose stored hash is only its fast path) and
 hashed by its stored hash. `Ix.Name`'s own `==` compares the stored hashes
-only, so a table keyed by it holds two names with one hash field as one entry
-(CQ2.25). A type synonym, so that a name is a key as it is. -/
+only, so a table keyed by it holds two names with one hash field as one entry. A type synonym, so that a name is a key as it is. -/
 @[expose] def ExactName : Type := Ix.Name
 
 instance : BEq ExactName := ⟨fun a b => nameEq a b⟩

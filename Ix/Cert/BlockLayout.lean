@@ -128,7 +128,7 @@ theorem finishInductive_shape (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indM
   refine ⟨rfl, rfl, ⟨_, _, _, _, buildBlockConstant_ok hb, trivial⟩, fun p hp => .inr ?_⟩
   exact inductiveProjections_rows i indMeta pairs _ (Ixon.Authenticated.admissionHash_width _) p hp
 
-theorem mutualProjections_rows (classes : List (List MutConst)) (owner : Address) (width : owner.hash.size = 32)
+theorem mutualProjections_rows (classes : List MutConst) (owner : Address) (width : owner.hash.size = 32)
     (metas : Array (Ix.Name × Ixon.ConstantMeta)) :
     ∀ p ∈ buildMutualProjections classes owner metas, ProjectsTo owner p.2.1 := by
   intro p hp
@@ -136,8 +136,7 @@ theorem mutualProjections_rows (classes : List (List MutConst)) (owner : Address
   have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows (buildMutualProjections classes owner metas) :=
     List.mem_map.mpr ⟨p, Array.mem_toList_iff.mpr hp, rfl⟩
   rw [MutualProjections.build_rows, MutualProjections.expectedRows] at logical
-  obtain ⟨⟨members, index⟩, _, inClass⟩ := List.mem_flatMap.mp logical
-  obtain ⟨source, _, generated⟩ := List.mem_flatMap.mp inClass
+  obtain ⟨⟨source, index⟩, _, generated⟩ := List.mem_flatMap.mp logical
   unfold MutualProjections.sourceRows at generated
   rcases List.mem_cons.mp generated with e | rest
   · have : p.2.1 = MutualProjections.memberProjection owner index.toUInt64 source := (Prod.mk.inj e).2
@@ -160,7 +159,7 @@ theorem standalone_notPrj (payloads : Array Ixon.MutConst) {info : Ixon.Constant
     | recr r => cases h; trivial
   · cases h
 
-theorem buildMutual_shape {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+theorem buildMutual_shape {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
     ResultShape out := by
@@ -186,7 +185,7 @@ theorem buildMutual_shape {limits : Ix.Sharing.Exact.Limits} {classes : List (Li
       (mutualProjections_rows classes _ (Ixon.Authenticated.admissionHash_width _) metas p hp)⟩
 
 /-- **A mutual block compile returns a block of this shape.** -/
-theorem compileMutualBlock_shape (classes : List (List MutConst)) :
+theorem compileMutualBlock_shape (classes : List MutConst) :
     Returns ResultShape (compileMutualBlock classes) := by
   intro ctx s x s' ran
   unfold compileMutualBlock at ran

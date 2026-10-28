@@ -69,7 +69,7 @@ end Ixon.Authenticated.Audit
 -- The committed fallback recursor guard (2026-10-22) adds seven compiled
 -- functions to each entry closure. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- M7 A2: module visibility compiles one additional specialization,
+-- Module visibility compiles one additional specialization,
 -- Option.instBEq.beq._at_.Ixon.BlockOrder.checkMotives.spec_0,
 -- instead of reusing Reader.buildIndex's Option Nat equality helper.
 -- Its IR is identical after symbol renaming. Measured +1 against the

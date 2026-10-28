@@ -28,6 +28,10 @@ public import Ix.Ixon
 public import Ix.CanonM
 public import Ix.Ground
 public import Ix.CompileM
+public import Ix.Compile.WorkerContext
+import all Ix.CompileM
+import all Ix.Compile.WorkerContext
+import Std.Data.HashSet.Lemmas
 public import Ix.IndFlags
 public import Ix.Compile.Publication
 public import Ix.Compile.SourceContract.Transport
@@ -53,18 +57,16 @@ def blockKey (lo : Name) (all : Set Name) : Name :=
 
 /-- Register the synthetic `Muts` named entry of a mutual block (Rust
     `compile_mutual`): the block's address under `Ix.<hex>.<first member>`
-    (`Address.mutsName`), with each class's member name hashes. Kernel
+    (`Address.mutsName`), with singleton groups of member name hashes. Kernel
     ingress discovers a mutual block through this entry. The entry goes to
     `BlockState.mutsNamed`, which the driver merges after the members'
     entries. -/
-def registerMutsEntry (sortedClasses : List (List MutConst)) (blockAddr : Address) :
+def registerMutsEntry (orderedMembers : List MutConst) (blockAddr : Address) :
     CompileM Unit := do
-  let some firstClass := sortedClasses.head?
+  let some first := orderedMembers.head?
     | throw (.invalidMutualBlock "registerMutsEntry: block without a class")
-  let some first := firstClass.head?
-    | throw (.invalidMutualBlock "registerMutsEntry: class without a member")
-  let mutsAll : Array (Array Address) := sortedClasses.toArray.map fun cls =>
-    cls.toArray.map fun c => c.name.getHash
+  let mutsAll : Array (Array Address) := orderedMembers.toArray.map fun member =>
+    #[member.name.getHash]
   let mutsName := blockAddr.mutsName first.name
   compileName mutsName
   modifyBlockState fun st =>
@@ -74,7 +76,7 @@ def registerMutsEntry (sortedClasses : List (List MutConst)) (blockAddr : Addres
 /-- Compile one block of the condensation. Mirrors `compile_const_inner`
     (compile.rs): singleton non-inductive constants take the plain
     single-constant path; mutual blocks and inductives (of any size) go
-    through `compileMutualBlock` in Lean's order (`sourceClasses`) and
+    through `compileMutualBlock` in Lean's order (`sourceMembers`) and
     register their synthetic `Muts` entry (Rust `compile_mutual`).
 
     The members' projection addresses are inserted into
@@ -97,9 +99,9 @@ def compileBlock (lo : Name) (all : Set Name) : CompileM BlockResult := do
     | .thmInfo val => cs := cs.push (MutConst.fromTheoremVal val)
     | .recInfo val => cs := cs.push (.recr val)
     | _ => continue
-  -- Lean's order (`sourceClasses`): the order of a block is the source's.
-  let sortedClasses := sourceClasses cs
-  let blockResult ← compileMutualBlock sortedClasses
+  -- Lean's order (`sourceMembers`): the order of a block is the source's.
+  let orderedMembers := sourceMembers cs
+  let blockResult ← compileMutualBlock orderedMembers
   -- A standalone constant (a single non-inductive member): Rust returns
   -- before the Muts registration (compile.rs) — no synthetic Muts entry.
   let isMuts := match blockResult.block.info with
@@ -112,11 +114,10 @@ def compileBlock (lo : Name) (all : Set Name) : CompileM BlockResult := do
     let projAddr := Address.admissionHash (Ixon.ser proj)
     modifyBlockState fun st =>
       { st with blockNameToAddr := st.blockNameToAddr.insert name projAddr }
-  -- Class ordering for `CompileEnv.blocks` (Rust `stt.blocks`).
+  -- Preserve singleton grouping at the serialized metadata boundary.
   let blockResult := { blockResult with
-    classNames := sortedClasses.toArray.map fun cls =>
-      cls.toArray.map (·.name) }
-  registerMutsEntry sortedClasses blockResult.blockAddr
+    classNames := orderedMembers.toArray.map fun member => #[member.name] }
+  registerMutsEntry orderedMembers blockResult.blockAddr
   return blockResult
 
 /-- Every emitted record fits the aggregate universe-expansion budget used
@@ -658,6 +659,80 @@ def waveTasks (width : Nat) (snapshot : CompileEnv) (ready : Array (Name × Name
   (Array.range chunks).map fun c => Task.spawn fun _ =>
     (ready.extract (c * size) ((c + 1) * size)).map fun (key, _, all) =>
       (key, all, auxBlockOutcome snapshot key all)
+
+namespace WorkerSnapshot
+
+open Ix.Compile.WorkerContext
+open scoped Ix.Compile.WorkerContext
+
+theorem Stable.forIn_set (items : Ix.Set Ix.Name) (initial : α)
+    (body : Ix.Name → α → CompileM (ForInStep α)) (stable : ∀ item acc, Stable (body item acc)) :
+    Stable (forIn items initial body) := by
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  exact Stable.forIn_list items.toList initial body stable
+
+theorem registerMutsEntry_stable (sources : List Ix.MutConst) (address : Address) :
+    Stable (registerMutsEntry sources address) := by
+  unfold registerMutsEntry
+  finish_steps
+
+theorem compileBlock_stable (name : Ix.Name) (all : Ix.Set Ix.Name) : Stable (compileBlock name all) := by
+  unfold compileBlock
+  with_reducible repeat' first
+    | exact compileConstantInfo_stable _
+    | exact compileMutualBlock_stable _
+    | exact registerMutsEntry_stable _ _
+    | exact mkIndc_stable _
+    | refine Stable.forIn_set _ _ _ (fun _ _ => ?_)
+    | finish_step
+
+/-- A block's successful result or complete refusal depends only on its four
+global inputs, independently of the driver's accumulated output maps. -/
+theorem runBlock_same (left right : CompileEnv) (same : SameReads left right)
+    (all : Ix.Set Ix.Name) (name : Ix.Name) : runBlock left all name = runBlock right all name := by
+  have runs := compileBlock_stable name all left right same
+    { all, current := name, mutCtx := default, univCtx := [] } {}
+  have run_eq (action : CompileM BlockResult) (env : CompileEnv) (block : BlockEnv) (state : BlockState) :
+      CompileM.run env block state action =
+        match Ix.Compile.WorkerContext.run action (env, block) state with
+        | (.ok value, after) => .ok (value, after)
+        | (.error error, _) => .error error := by
+    simp only [CompileM.run, Ix.Compile.WorkerContext.run, ReaderT.run, ExceptT.run, StateT.run]
+    cases action (env, block) state with
+    | mk outcome after => cases outcome <;> rfl
+  have compiled : CompileM.run left
+      { all, current := name, mutCtx := default, univCtx := [] } {} (compileBlock name all) =
+      CompileM.run right
+      { all, current := name, mutCtx := default, univCtx := [] } {} (compileBlock name all) := by
+    rw [run_eq, run_eq, runs]
+  unfold runBlock
+  rw [compiled]
+
+theorem outcome_projected (snapshot : CompileEnv) (name : Ix.Name) (all : Ix.Set Ix.Name) :
+    auxBlockOutcome (project snapshot) name all = auxBlockOutcome snapshot name all := by
+  unfold auxBlockOutcome
+  rw [← runBlock_same snapshot (project snapshot) (project_same snapshot)]
+
+end WorkerSnapshot
+
+/-- Project the snapshot before spawning any task. Workers keep their exact
+input fields while output-only maps stay outside every task closure. Chunk
+partitioning and the scheduler's application order are unchanged. -/
+@[expose] def waveTasksProjected (width : Nat) (snapshot : CompileEnv)
+    (ready : Array (Name × Name × Set Name)) :
+    Array (Task (Array (Name × Set Name × AuxBlockOutcome))) :=
+  let snapshot := Ix.Compile.WorkerContext.project snapshot
+  let n := ready.size
+  let width := max 1 width
+  let size := (n + width - 1) / width
+  let chunks := if size == 0 then 0 else (n + size - 1) / size
+  (Array.range chunks).map fun c => Task.spawn fun _ =>
+    (ready.extract (c * size) ((c + 1) * size)).map fun (key, _, all) =>
+      (key, all, auxBlockOutcome snapshot key all)
+
+@[csimp] theorem waveTasks_eq_projected : @waveTasks = @waveTasksProjected := by
+  funext width snapshot ready
+  simp only [waveTasks, waveTasksProjected, WorkerSnapshot.outcome_projected]
 
 /-- One wave. -/
 def foldWave (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (width : Nat)

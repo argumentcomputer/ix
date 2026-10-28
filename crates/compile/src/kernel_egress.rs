@@ -2145,7 +2145,7 @@ mod tests {
     assert!(out.named.contains_key(&name));
   }
 
-  // ---- fallible universe interning (CQ2.24 a) ----
+  // ---- fallible universe interning ----
 
   #[test]
   fn preseeded_univ_table_refuses_an_absent_universe() {

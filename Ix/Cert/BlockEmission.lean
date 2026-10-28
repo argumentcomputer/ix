@@ -1,14 +1,14 @@
 import Ix.CompileCert.MutualInductiveReading
 
-/-! # A block of several members, compiled one member per class
+/-! # A block of several members, compiled one payload per member
 
-The compiler lays a block out in Lean's order, one member per class
-(`compileMutualBlock (ms.map ([·]))`). Each member runs the emitter of its kind (a
+The compiler lays a block out in Lean's order, one payload per member
+(`compileMutualBlock ms`). Each member runs the emitter of its kind (a
 definition's, an inductive's with its constructors, a recursor's), from a clean state, in the
 block's mutual context; the emitters' theorems (`Emission.definition_correct`,
 `Emission.inductiveData_correct`, `Emission.recursor_correct`) say each member's payload keeps
 its source's skeleton and the in-flight reader reads its roots as terms related to the
-source's. `classes_correct` folds them over the block, and `mutualBlock_correct` carries the
+source's. `members_correct` folds them over the block, and `mutualBlock_correct` carries the
 roots through the block's sharing to the emitted record (`SharingRoots.build_read`): the record
 keeps the payloads' skeletons and its member reader reads every member's roots, in member
 order, as terms related to the members' sources, for members sharing their level
@@ -82,7 +82,7 @@ theorem recursor_headers (source : Ix.RecursorVal) :
   exact ⟨lvls, params, indices, motives, minors, bounded⟩
 
 /-- The context the block's members run in. -/
-def mutContext (classes : List (List MutConst)) (context : CompileEnv × BlockEnv) :
+def mutContext (classes : List MutConst) (context : CompileEnv × BlockEnv) :
     CompileEnv × BlockEnv :=
   (context.1, { context.2 with mutCtx := MutConst.ctx classes })
 
@@ -185,9 +185,9 @@ theorem member_correct (context : CompileEnv × BlockEnv)
     rw [hp]
     exact read
 
-/-- **The members of a block, one per class, compiled from a clean state**: each keeps its
+/-- **The members of a block, in source order, compiled from a clean state**: each keeps its
 skeleton, and the final in-flight reader reads every member's roots, in member order. -/
-theorem classes_correct (context : CompileEnv × BlockEnv)
+theorem members_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (lps : List Ix.Name) :
     ∀ (ms : List MutConst) (acc : MutConstCompileState) {before after : BlockState}
@@ -195,32 +195,28 @@ theorem classes_correct (context : CompileEnv × BlockEnv)
       (∀ m ∈ ms, memberLps m = lps) →
       (∀ m ∈ ms, ∀ e ∈ memberSources m, ConstsSatisfy (SelfName context.2 self names) e) →
       Good cx param self (rel param names σ lps) bindings before →
-      rawRun (compileMutConstClasses (ms.map ([·])) acc) context before = (.ok state, after) →
+      rawRun (compileMutConstMembers ms acc) context before = (.ok state, after) →
       ExpressionRead.Extends (reader before).ecx (reader after).ecx ∧
         ∃ ps : List Ixon.MutConst, state.payloads = acc.payloads ++ ps.toArray ∧
           List.Forall₂ PayloadOf ms ps ∧
           SharingRoots.RootsRead (reader after) (rel param names σ lps) (ms.flatMap memberSources)
             (ps.flatMap mutConstRootExprs)
   | [], acc, before, after, state, _, _, good, ran => by
-    rw [List.map_nil, compileMutConstClasses, rawRun_pure] at ran
+    rw [compileMutConstMembers, rawRun_pure] at ran
     cases ran
     exact ⟨ExpressionRead.Extends.refl _, [], by simp, .nil, .nil⟩
   | m :: ms, acc, before, after, state, hlps, scopes, good, ran => by
-    rw [List.map_cons, compileMutConstClasses] at ran
-    obtain ⟨classState, middle, classRan, restRan⟩ := bind_ok ran
-    rw [compileMutConstClass] at classRan
-    obtain ⟨member, memberMiddle, memberRan, equivRan⟩ := bind_ok classRan
-    rw [compileEquivalentMutConsts, rawRun_pure] at equivRan
-    cases equivRan
+    rw [compileMutConstMembers] at ran
+    obtain ⟨member, middle, memberRan, restRan⟩ := bind_ok ran
     have hm := hlps m List.mem_cons_self
     obtain ⟨clean₁, growth₁, payload₁, roots₁⟩ := member_correct cx param self names σ bindings context
       aligned external m (scopes m List.mem_cons_self) (by rw [hm]; exact good) memberRan
-    obtain ⟨growth₂, ps, hps, payloads, roots₂⟩ := classes_correct context aligned external lps ms
+    obtain ⟨growth₂, ps, hps, payloads, roots₂⟩ := members_correct context aligned external lps ms
       _ (fun m' hm => hlps m' (List.mem_cons_of_mem _ hm))
       (fun m' hm => scopes m' (List.mem_cons_of_mem _ hm)) (clean₁.good cx param self _) restRan
     refine ⟨extends_trans growth₁ growth₂, member.payload :: ps, ?_, .cons payload₁ payloads, ?_⟩
     · rw [hps]
-      simp [MutConstCompileState.addRepresentative]
+      simp [MutConstCompileState.addMember]
     · rw [List.flatMap_cons, List.flatMap_cons]
       rw [hm] at roots₁
       exact SharingRoots.RootsRead.append (SharingRoots.RootsRead.grow growth₂ roots₁) roots₂
@@ -247,7 +243,7 @@ theorem blockInfo_roots (ps : List Ixon.MutConst) :
     rw [this]
     simp [constantInfoRootExprs]
 
-/-- **A block compiled one member per class reads back as its sources**: the emitted record
+/-- **A block compiled one payload per member reads back as its sources**: the emitted record
 keeps its payloads' skeletons, and its member reader reads every member's roots, in member
 order, as terms related to the members' sources. -/
 theorem mutualBlock_correct (context : CompileEnv × BlockEnv)
@@ -255,9 +251,9 @@ theorem mutualBlock_correct (context : CompileEnv × BlockEnv)
     (external : BindingsCorrect context.1 bindings cx names) (ms : List MutConst) (lps : List Ix.Name)
     (hlps : ∀ m ∈ ms, memberLps m = lps)
     (scopes : ∀ m ∈ ms, ∀ e ∈ memberSources m,
-      ConstsSatisfy (SelfName (mutContext (ms.map ([·])) context).2 self names) e)
+      ConstsSatisfy (SelfName (mutContext ms context).2 self names) e)
     {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
-    (ran : rawRun (compileMutualBlock (ms.map ([·]))) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock ms) context before = (.ok output, after)) :
     ∃ ps : List Ixon.MutConst, List.Forall₂ PayloadOf ms ps ∧
       SharingRoots.erase output.block.info = SharingRoots.erase (blockInfo ps) ∧
       SharingRoots.RootsRead (EmissionBlocks.recordReader cx param self after output.block)
@@ -269,15 +265,15 @@ theorem mutualBlock_correct (context : CompileEnv × BlockEnv)
   rw [rawRun_withBlockEnv] at ran
   obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok ran
   have kept := EmissionBlocks.preseed_then cx param self bindings (related := rel param names σ lps)
-    (context := mutContext (ms.map ([·])) context) aligned (clean.good cx param self _) seeded
+    (context := mutContext ms context) aligned (clean.good cx param self _) seeded
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
   unfold compileMutConsts at payloadRan
   obtain ⟨state, middle', classesRan, finish⟩ := bind_ok payloadRan
   rw [rawRun_pure] at finish
   cases finish
-  obtain ⟨_, ps, hps, payloads, roots⟩ := classes_correct cx param self names σ bindings
-    (mutContext (ms.map ([·])) context) aligned external lps ms {} hlps scopes kept.1 classesRan
+  obtain ⟨_, ps, hps, payloads, roots⟩ := members_correct cx param self names σ bindings
+    (mutContext ms context) aligned external lps ms {} hlps scopes kept.1 classesRan
   obtain ⟨same, _, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
   subst same
   simp only [hps] at built

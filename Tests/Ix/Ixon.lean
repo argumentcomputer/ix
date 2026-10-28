@@ -322,7 +322,7 @@ def exprMetaArenaUnits : TestSeq :=
   test "arena: a forward reference wraps"
     (arenaVector forward #[0x04, 0x00, 0x00, 0x00,
       0x40, 0x00, 0xC3, 0x7B, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
-  test "arena: rejects the retired call-site kinds 10 and 11 (CQ3.6)"
+  test "arena: rejects the retired call-site kinds 10 and 11"
     (arenaRejects #[0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00] &&
       arenaRejects #[0x01, 0x58, 0x00, 0x00, 0x00, 0x00, 0x00]) ++
   test "arena: rejects an explicit slot at the implicit position"
@@ -533,7 +533,7 @@ def envSerializationUnitTests : TestSeq :=
   -- kinds 0-9 (indexed names, binder info, an app, a ref, mdata), the
   -- extension tables (sharing exprs, raw refs, univs, univ patches), and
   -- a muts entry with the nested-aux `auxLayout` sidecar. Every indexed
-  -- name address is a registered name component. (Before CQ3.6 the arena
+  -- name address is a registered name component. (Before call-site metadata was retired, the arena
   -- also carried a call-site surgery node, kinds 10/11, now retired.)
   let surgName := Ix.Name.mkStr Ix.Name.mkAnon "surg"
   let blkName := Ix.Name.mkStr Ix.Name.mkAnon "blk"

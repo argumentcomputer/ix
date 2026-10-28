@@ -19,7 +19,7 @@
 
   This test closes that class. It reads the byte arrays out of the
   ELABORATED toplevel — not the source text — and compares each against
-  the address computed at test runtime from `Ix.Tc.PrimAddrs`, which is
+  the address computed at test runtime from `Ix.PrimAddrs`, which is
   the same table the host-side closure walker and ingress verifier use.
   Any drift between the two sources of truth fails here.
 
@@ -96,12 +96,12 @@ private def expectedAddrFns : Array String := #[
 
 /-- The canonical address set, computed at test runtime from the Lean
     parity table + reserved markers — the same source the host closure
-    walker (`Ix.Tc.primAddrSet`) consults. -/
+    walker (`Ix.primAddrSet`) consults. -/
 private def canonical : Std.HashMap Address String := Id.run do
   let mut m : Std.HashMap Address String := {}
-  for (name, a) in Ix.Tc.PrimAddrs.leanParityTable do
+  for (name, a) in Ix.PrimAddrs.leanParityTable do
     m := m.insert a name
-  for (name, a) in Ix.Tc.PrimAddrs.reservedMarkerAddrs do
+  for (name, a) in Ix.PrimAddrs.reservedMarkerAddrs do
     m := m.insert a name
   return m
 

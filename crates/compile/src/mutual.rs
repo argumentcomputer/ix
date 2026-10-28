@@ -171,21 +171,18 @@ impl MutConst {
     mut_ctx
   }
 
-  /// Builds a [`MutCtx`] from grouped mutual constant classes, assigning
+  /// Builds a [`MutCtx`] from ordered mutual members, assigning
   /// indices to types first and then to constructors.
-  pub fn ctx(classes: &[Vec<&MutConst>]) -> MutCtx {
+  pub fn ctx(members: &[&MutConst]) -> MutCtx {
     let mut mut_ctx = FxHashMap::default();
-    let mut i = classes.len();
-    for (j, consts) in classes.iter().enumerate() {
-      let mut max_ctors = 0;
-      for cnst in consts {
-        mut_ctx.insert(cnst.name(), Nat(j.into()));
-        max_ctors = usize::max(max_ctors, cnst.ctors().len());
-        for (cidx, c) in cnst.ctors().iter().enumerate() {
-          mut_ctx.insert(c.cnst.name.clone(), Nat((i + cidx).into()));
-        }
+    let mut i = members.len();
+    for (j, cnst) in members.iter().enumerate() {
+      mut_ctx.insert(cnst.name(), Nat(j.into()));
+      let ctors = cnst.ctors();
+      for (cidx, c) in ctors.iter().enumerate() {
+        mut_ctx.insert(c.cnst.name.clone(), Nat((i + cidx).into()));
       }
-      i += max_ctors;
+      i += ctors.len();
     }
     mut_ctx
   }
@@ -290,43 +287,37 @@ mod tests {
   }
 
   #[test]
-  fn ctx_single_class_defs_only() {
+  fn ctx_definitions_have_consecutive_indices() {
     let d1 = mk_def("f");
     let d2 = mk_def("g");
-    let classes: Vec<Vec<&MutConst>> = vec![vec![&d1, &d2]];
-    let ctx = MutConst::ctx(&classes);
-    // Both defs get the class index (0) since they're in class 0
+    let ctx = MutConst::ctx(&[&d1, &d2]);
     assert_eq!(ctx.get(&n("f")), Some(&Nat(0u64.into())));
-    assert_eq!(ctx.get(&n("g")), Some(&Nat(0u64.into())));
+    assert_eq!(ctx.get(&n("g")), Some(&Nat(1u64.into())));
   }
 
   #[test]
-  fn ctx_class_with_ctors() {
+  fn ctx_member_with_ctors() {
     let ind = mk_ind("Bool", &["Bool.true", "Bool.false"]);
-    let classes: Vec<Vec<&MutConst>> = vec![vec![&ind]];
-    let ctx = MutConst::ctx(&classes);
-    // The type gets class index 0
+    let ctx = MutConst::ctx(&[&ind]);
+    // The type gets member index 0.
     assert_eq!(ctx.get(&n("Bool")), Some(&Nat(0u64.into())));
-    // Ctors start at classes.len() = 1
+    // Constructors follow the one member.
     assert_eq!(ctx.get(&n("Bool.true")), Some(&Nat(1u64.into())));
     assert_eq!(ctx.get(&n("Bool.false")), Some(&Nat(2u64.into())));
   }
 
   #[test]
-  fn ctx_two_classes() {
-    // Class 0: inductive with 2 ctors
+  fn ctx_constructors_follow_all_members() {
     let ind = mk_ind("A", &["A.mk1", "A.mk2"]);
-    // Class 1: definition (no ctors)
     let def = mk_def("f");
-    let classes: Vec<Vec<&MutConst>> = vec![vec![&ind], vec![&def]];
-    let ctx = MutConst::ctx(&classes);
-    // Class 0: A at index 0
+    let other = mk_ind("B", &["B.mk"]);
+    let ctx = MutConst::ctx(&[&ind, &def, &other]);
     assert_eq!(ctx.get(&n("A")), Some(&Nat(0u64.into())));
-    // Class 1: f at index 1
     assert_eq!(ctx.get(&n("f")), Some(&Nat(1u64.into())));
-    // i starts at classes.len()=2. Class 0 has 2 ctors, so:
-    assert_eq!(ctx.get(&n("A.mk1")), Some(&Nat(2u64.into())));
-    assert_eq!(ctx.get(&n("A.mk2")), Some(&Nat(3u64.into())));
+    assert_eq!(ctx.get(&n("B")), Some(&Nat(2u64.into())));
+    assert_eq!(ctx.get(&n("A.mk1")), Some(&Nat(3u64.into())));
+    assert_eq!(ctx.get(&n("A.mk2")), Some(&Nat(4u64.into())));
+    assert_eq!(ctx.get(&n("B.mk")), Some(&Nat(5u64.into())));
   }
 
   #[test]

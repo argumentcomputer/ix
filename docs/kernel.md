@@ -489,7 +489,7 @@ the reader's output's (`Reader.Read.display`: what the `.ixe`'s metadata says
 of the keys a record declares, its Lean names and level names), filled by the
 meta reader (`Benchmarks/Kernel/CheckIxeMeta.lean`), and no checker code
 reads a display field (`IxC/Kernel/Audit/Display.lean`). `.meta` never
-decides: it explains failures with names (IXC-PLAN §11).
+decides: it explains failures with names.
 
 **Names in terms (step 6b).** So that a failure can print a term, a reduced
 one included, with Lean's names, the names travel inside the terms, as in
@@ -1197,7 +1197,7 @@ files carry further changes:
 
 | File | Change | Why |
 | --- | --- | --- |
-| `IxC/Kernel/{CheckerBase,Checker,DeclCheck}.lean`, `IxC/Kernel/Cached/ParsedC.lean` and the proofs that consume them; the former `TrustAxioms.lean` was removed | `Roles` replaces `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`); compiler-trust support is excluded from the certified theory; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications (IXC-PLAN step 4) |
+| `IxC/Kernel/{CheckerBase,Checker,DeclCheck}.lean`, `IxC/Kernel/Cached/ParsedC.lean` and the proofs that consume them; the former `TrustAxioms.lean` was removed | `Roles` replaces `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`); compiler-trust support is excluded from the certified theory; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications |
 | `IxC/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
 | `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically |
 | `IxC/Kernel/Level.lean`, `IxC/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |

@@ -1,25 +1,13 @@
 import Ix.CompileCert.MutualProjections
 
-/-! # A mutual block's artifact: decoded, and its rows read as their sources
+/-! # A mutual block's decoded artifact and source references
 
-CT-15's `MutualArtifact` (R9a), the block half, ported from the donor
-`a9cf3607`. A mutual block either keeps the mutual wrapper (its rows are
-`buildMutualProjections`') or collapses a lone definition or recursor to a
-standalone record (every source name registered to the block itself);
-`build_cases` says which, with the block's address. In both cases the rows
-read under the certified reader, in any store holding the wire-valid block,
-as the source-indexed references (`build_resolves`), and
-`mutual_correct` composes it with the codec: under an environment without
-Pass 3 records, a successful mutual block from a state whose tables are on
-the wire decodes exactly, its projections decode exactly, and its rows read
-as `expectedReferences`.
-
-Adapted: `Address.admissionHash`, the write-back through `erase`
-(`writeback_standalone`), the mutual finisher's inversion. Not ported here (R13): the donor's `published_*` and
-`compile_merge_references`, which are about the driver's merge
-(`DriverAcc`, `mergeCompiledBlock`); CQ2.14 replaced the driver with the
-pure wave fold, and they are re-derived against it with CT-09's merge
-specification. -/
+A mutual block either retains its wrapper and projections or collapses a lone
+definition or recursor to a standalone record. Both cases decode exactly;
+their rows resolve to the source-indexed references in any store holding the
+wire-valid block. The member and constructor positions are preserved by
+compilation and sharing's write-back.
+-/
 
 namespace Ix.CompileCert.MutualArtifact
 
@@ -73,20 +61,20 @@ theorem chosen_standalone (members : Array Ixon.MutConst) (info : Ixon.ConstantI
 
 /-- The mutual wrapper's case: the block's members have the payload's
 shapes and the rows are the wrapper's projections. -/
-def WrappedRows (sources : List (List MutConst)) (members : Array Ixon.MutConst) (output : BlockResult) : Prop :=
+def WrappedRows (sources : List MutConst) (members : Array Ixon.MutConst) (output : BlockResult) : Prop :=
   ∃ targets metadata, output.block.info = .muts targets ∧
     targets.toList.map memberShape = members.toList.map memberShape ∧
     output.projections = buildMutualProjections sources output.blockAddr metadata
 
 /-- The collapsed case: a lone definition or recursor, every source name
 registered to the block itself. -/
-def CollapsedRows (sources : List (List MutConst)) (members : Array Ixon.MutConst) (output : BlockResult) : Prop :=
+def CollapsedRows (sources : List MutConst) (members : Array Ixon.MutConst) (output : BlockResult) : Prop :=
   Standalone output.block.info ∧
     (∃ kind, (kind = MemberShape.defn ∨ kind = MemberShape.recr) ∧ members.toList.map memberShape = [kind]) ∧
-    logicalRows output.projections = sources.flatten.map (fun source => (source.name, output.block))
+    logicalRows output.projections = sources.map (fun source => (source.name, output.block))
 
 /-- **The mutual builder's two cases**, with the block's address. -/
-theorem build_cases (limits : Ix.Sharing.Exact.Limits) (sources : List (List MutConst))
+theorem build_cases (limits : Ix.Sharing.Exact.Limits) (sources : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
     (output : BlockResult) (ran : buildCompiledMutualBlock limits sources members metadata state = .ok output) :
     output.blockAddr = Address.admissionHash (Ixon.ser output.block) ∧
@@ -108,17 +96,6 @@ theorem build_cases (limits : Ix.Sharing.Exact.Limits) (sources : List (List Mut
       ProjectionLayout.sharing_mutual_shape limits members state.refs state.univs block built
     exact ⟨rfl, .inl ⟨targets, metadata, info, shape, rfl⟩⟩
 
-theorem selected_length (sources : List (List MutConst)) (nonempty : ∀ members ∈ sources, members ≠ []) :
-    (sources.filterMap List.head?).length = sources.length := by
-  induction sources with
-  | nil => rfl
-  | cons members rest ih =>
-    have first := nonempty members (by simp)
-    have tail : ∀ members ∈ rest, members ≠ [] := fun members present => nonempty members (by simp [present])
-    cases members with
-    | nil => exact False.elim (first rfl)
-    | cons member members => simpa [List.filterMap] using congrArg Nat.succ (ih tail)
-
 theorem no_ctor_references (owner : Address) (index : Nat) (source : MutConst) (kind : MemberShape)
     (standalone : kind = .defn ∨ kind = .recr) (shape : sourceShape source = kind) :
     MutualProjections.sourceReferences owner index source = [(source.name, some (.member owner index))] := by
@@ -126,34 +103,19 @@ theorem no_ctor_references (owner : Address) (index : Nat) (source : MutConst) (
   all_goals cases source
   all_goals first | rfl | cases shape
 
-theorem collapsed_references (owner : Address) (sources : List (List MutConst))
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
+theorem collapsed_references (owner : Address) (sources : List MutConst)
     (kind : MemberShape) (standalone : kind = .defn ∨ kind = .recr)
-    (shape : (sources.filterMap List.head?).map sourceShape = [kind]) :
-    expectedReferences owner sources = sources.flatten.map (fun source => (source.name, some (.member owner 0))) := by
-  have length : sources.length = 1 := by
-    have counted := congrArg List.length shape
-    simpa only [List.length_map, selected_length sources nonempty, List.length_cons, List.length_nil] using counted
+    (shape : sources.map sourceShape = [kind]) :
+    expectedReferences owner sources = sources.map (fun source => (source.name, some (.member owner 0))) := by
+  have length : sources.length = 1 := by simpa using congrArg List.length shape
   cases sources with
   | nil => simp at length
-  | cons members rest =>
+  | cons source rest =>
     cases rest with
     | cons other rest => simp at length
     | nil =>
-      have firstNonempty := nonempty members (by simp)
-      cases members with
-      | nil => exact False.elim (firstNonempty rfl)
-      | cons representative rest =>
-        have firstShape : sourceShape representative = kind := by simpa [List.filterMap] using shape
-        suffices allRows : (representative :: rest).flatMap (MutualProjections.sourceReferences owner 0) =
-            (representative :: rest).map (fun source => (source.name, some (.member owner 0))) by
-          simpa [expectedReferences] using allRows
-        rw [List.map_eq_flatMap]
-        apply congrArg List.flatten
-        apply List.map_congr_left
-        intro source present
-        have same := agree (representative :: rest) (by simp) source present representative (by simp)
-        exact no_ctor_references owner 0 source kind standalone (same.trans firstShape)
+      have sourceKind : sourceShape source = kind := by simpa using shape
+      simpa [expectedReferences] using no_ctor_references owner 0 source kind standalone sourceKind
 
 theorem standalone_resolves (store : Store) (owner : Address) (block : Ixon.Constant)
     (standalone : Standalone block.info) :
@@ -162,21 +124,20 @@ theorem standalone_resolves (store : Store) (owner : Address) (block : Ixon.Cons
   all_goals simp [resolveSource, info]
 
 /-- **The built block's rows read as their sources**, in either case. -/
-theorem build_resolves (limits : Ix.Sharing.Exact.Limits) (sources : List (List MutConst))
+theorem build_resolves (limits : Ix.Sharing.Exact.Limits) (sources : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
     (output : BlockResult) (ran : buildCompiledMutualBlock limits sources members metadata state = .ok output)
-    (shape : members.toList.map memberShape = (sources.filterMap List.head?).map sourceShape)
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
-    (positions : ∀ source ∈ sources.flatten, MutualProjections.ConstructorPositions source)
+    (shape : members.toList.map memberShape = sources.map sourceShape)
+    (positions : ∀ source ∈ sources, MutualProjections.ConstructorPositions source)
     (store : Store) (stored : store output.blockAddr = some output.block) (wire : output.block.wireWF) :
     readRows store (logicalRows output.projections) = expectedReferences output.blockAddr sources := by
   obtain ⟨address, wrapped | collapsed⟩ := build_cases limits sources members metadata state output ran
   · obtain ⟨targets, metadata, info, targetShape, projections⟩ := wrapped
     rw [projections]
     exact MutualProjections.build_resolves store output.blockAddr output.block sources targets metadata
-      stored info wire nonempty agree (targetShape.trans shape) positions
+      stored info wire (targetShape.trans shape) positions
   · obtain ⟨standalone, ⟨kind, kindStandalone, kindShape⟩, rows⟩ := collapsed
-    have expected := collapsed_references output.blockAddr sources nonempty agree kind kindStandalone
+    have expected := collapsed_references output.blockAddr sources kind kindStandalone
       (shape.symm.trans kindShape)
     rw [rows, expected]
     simp only [readRows, List.map_map]
@@ -188,51 +149,45 @@ theorem build_resolves (limits : Ix.Sharing.Exact.Limits) (sources : List (List 
 
 /-- In every store holding the wire-valid block, its rows read as the
 source-indexed references. -/
-def References (sources : List (List MutConst)) (output : BlockResult) : Prop :=
+def References (sources : List MutConst) (output : BlockResult) : Prop :=
   ∀ store : Store, store output.blockAddr = some output.block → output.block.wireWF →
     readRows store (logicalRows output.projections) = expectedReferences output.blockAddr sources
 
-theorem finish_references (sources : List (List MutConst)) (members : Array Ixon.MutConst)
+theorem finish_references (sources : List MutConst) (members : Array Ixon.MutConst)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta))
-    (shape : members.toList.map memberShape = (sources.filterMap List.head?).map sourceShape)
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
-    (positions : ∀ source ∈ sources.flatten, MutualProjections.ConstructorPositions source) :
+    (shape : members.toList.map memberShape = sources.map sourceShape)
+    (positions : ∀ source ∈ sources, MutualProjections.ConstructorPositions source) :
     Emission.Yields (finishMutualCompilation sources members metadata) (References sources) := by
   intro context before output after ran store stored wire
   obtain ⟨rfl, _, built⟩ := ProjectionLayout.finish_mutual_ok context sources members metadata ran
-  exact build_resolves _ sources members metadata _ output built shape nonempty agree positions store stored wire
+  exact build_resolves _ sources members metadata _ output built shape positions store stored wire
 
-theorem payload_references (sources : List (List MutConst))
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
-    (positions : ∀ source ∈ sources.flatten, MutualProjections.ConstructorPositions source) :
+theorem payload_references (sources : List MutConst)
+    (positions : ∀ source ∈ sources, MutualProjections.ConstructorPositions source) :
     Emission.Yields (compileMutualPayload sources) (References sources) := by
   unfold compileMutualPayload
   exact Emission.Yields.bind (ProjectionLayout.payload_shapes sources) fun compiled shape =>
-    finish_references sources compiled.1 compiled.2.2 shape nonempty agree positions
+    finish_references sources compiled.1 compiled.2.2 shape positions
 
-theorem mutual_references (sources : List (List MutConst))
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
-    (positions : ∀ source ∈ sources.flatten, MutualProjections.ConstructorPositions source) :
+theorem mutual_references (sources : List MutConst)
+    (positions : ∀ source ∈ sources, MutualProjections.ConstructorPositions source) :
     Emission.Yields (compileMutualBlock sources) (References sources) :=
-  ProjectionLayout.mutual_block _ sources (payload_references sources nonempty agree positions)
+  ProjectionLayout.mutual_block _ sources (payload_references sources positions)
 
-/-- **A compiled mutual block is a correct artifact**: under an environment
-without Pass 3 records, a successful compile from a state whose tables are
-on the wire returns a block that decodes exactly, projections that decode
-exactly, and rows that read, in any store holding the block, as the
-source-indexed references; given non-empty classes whose members agree in
-shape and source constructors that declare their positions. -/
+/-- A successful mutual compile from wire-valid tables returns a block and
+projections that decode exactly. In any store holding the block, the rows
+resolve to source-indexed references, provided constructors declare their
+positions. -/
 theorem mutual_correct (context : CompileEnv × BlockEnv)
-    (sources : List (List MutConst)) {before after : BlockState} {output : BlockResult}
+    (sources : List MutConst) {before after : BlockState} {output : BlockResult}
     (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : MutualProjections.ClassesAgree sources)
-    (positions : ∀ source ∈ sources.flatten, MutualProjections.ConstructorPositions source)
+    (positions : ∀ source ∈ sources, MutualProjections.ConstructorPositions source)
     (ran : rawRun (compileMutualBlock sources) context before = (.ok output, after)) :
     Ix.Sharing.Verify.BlockResultCodecWF output ∧ MutualProjections.ProjectionWire output ∧
       ∀ store : Store, store output.blockAddr = some output.block →
         readRows store (logicalRows output.projections) = expectedReferences output.blockAddr sources := by
   have codec := MutualProjections.mutual_codec context sources wire ran
   exact ⟨codec.1, codec.2.1, fun store stored =>
-    mutual_references sources nonempty agree positions context before output after ran store stored codec.1.1⟩
+    mutual_references sources positions context before output after ran store stored codec.1.1⟩
 
 end Ix.CompileCert.MutualArtifact

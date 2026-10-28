@@ -39,6 +39,7 @@ import Tests.Ix.Compile.HeaderCounts
 import Tests.Ix.Compile.PayloadArrays
 import Tests.Ix.Compile.UniverseWire
 import Tests.Ix.Compile.GroundRefusal
+import Tests.Ix.Compile.WorkerSnapshot
 import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.ClosurePhase4
@@ -171,6 +172,7 @@ def registry : List Entry := [
   .suite "compile-driver-input" .primary Tests.Ix.Compile.DriverInput.suite,
   .runner "compile-source-graph" .primary Tests.Ix.Compile.SourceGraph.run,
   .suite "local-blob" .primary Tests.Ix.Compile.LocalBlob.suite,
+  .suite "worker-snapshot" .primary Tests.Ix.Compile.WorkerSnapshot.suite,
   .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
   .suite "table-worklist" .primary Tests.Ix.Compile.TableWorklist.suite,
   .suite "header-count" .primary Tests.Ix.Compile.HeaderCounts.suite,
@@ -481,6 +483,8 @@ def required : List (String × String) := [
   ("role-table-wire", "primary"),
   ("exact-sharing", "primary"),
   ("ixon-reject-parity", "primary"),
+  ("record-decoding", "primary"),
+  ("worker-snapshot", "primary"),
   ("ixvm-tagn", "primary"),
   ("ixes-manifest", "primary"),
   ("rust-compile-coverage", "primary"),

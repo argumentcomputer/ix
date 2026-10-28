@@ -99,7 +99,7 @@ open Ix.Kernel.Reader (CName CExpr CVal CDecl ReadError State Read BlockRead Rec
 
 `Ix.Name`'s `==` compares the root's stored hash only, so the ingress compares
 names structurally (`Ix.Name.beqRaw`) and keys its own tables by `TableName`, as
-the compiler's tables do since CQ2.25. The environment's map
+the compiler's tables do. The environment's map
 (`Ix.Environment.consts`) and the condensation's (`Ix.CondensedBlocks`) are
 inputs, looked up as they come. -/
 

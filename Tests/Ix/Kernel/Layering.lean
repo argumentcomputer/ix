@@ -175,7 +175,7 @@ the kernel may import these two modules of Ixon and no other. -/
 def contractData : List String := ["IxC.Ixon.Types.Modes", "IxC.Ixon.Types.Contract"]
 
 /-- The address type an input key carries in the Ixon modes (`Mode.Id .anon =
-Address`, IXC-PLAN §3): the pure key type, its equality, order, hash and
+Address`): the pure key type, its equality, order, hash and
 hexadecimal spelling, in a module that imports nothing. The hashers that
 make addresses live outside it (`Ix.Address`), and the kernel may import
 this module of the address library and no other. -/

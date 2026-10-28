@@ -1,27 +1,15 @@
 import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.Canon.Ctx
 
-/-! # A mutual block's projection rows: what they are, their codec, what they read as
+/-! # A mutual block's projection rows
 
-CT-15's `MutualProjections` (R9a), ported from the donor `a9cf3607`:
-
-* `build_rows`: the mutual wrapper's projection rows are exactly, class by
-  class and member by member, a member projection (`dPrj`/`iPrj`/`rPrj` at
-  the class index) and, for an inductive, one constructor projection per
-  constructor position (`cPrj`), registered under the source names;
-  `standalone_rows`: a collapsed lone definition or recursor registers every
-  source name to the block itself;
-* their codec: every row is a wire-valid projection (`build_rows_wire`,
-  `standalone_rows_wire`), so it decodes exactly; `mutual_codec`: a
-  successful mutual block decodes exactly and so do all its projections;
-* `build_resolves`: in a store holding the block, every row resolves under
-  the certified reader to its source-indexed reference (the member of the
-  class index, or the constructor at its position), given the class shapes
-  agree within each class (`ClassesAgree`) and the source constructors
-  declare their positions (`ConstructorPositions`).
-
-Adapted: `Address.admissionHash` for `Address.blake3`, the mutual
-finisher's inversion (`ProjectionLayout.finish_mutual_ok`). -/
+The compiler emits one member projection at each source member's index and
+one constructor projection at each constructor position. These rows are
+wire-valid and decode exactly. In a store holding the wire-valid block, they
+resolve to the corresponding source-indexed references when the source
+constructors declare their positions. A lone definition or recursor instead
+registers its name directly to the standalone block.
+-/
 
 namespace Ix.CompileCert.MutualProjections
 
@@ -48,9 +36,8 @@ def sourceRows (owner : Address) (index : UInt64) (source : MutConst) : List (Ix
     source.ctors.toList.zipIdx.map fun (ctor, ctorIndex) =>
       (ctor.cnst.name, constructorProjection owner index ctorIndex.toUInt64)
 
-def expectedRows (owner : Address) (classes : List (List MutConst)) : List (Ix.Name × Ixon.Constant) :=
-  classes.zipIdx.flatMap fun (members, index) =>
-    members.flatMap (sourceRows owner index.toUInt64)
+def expectedRows (owner : Address) (classes : List MutConst) : List (Ix.Name × Ixon.Constant) :=
+  classes.zipIdx.flatMap fun (member, index) => sourceRows owner index.toUInt64 member
 
 /-! ## The rows -/
 
@@ -116,49 +103,43 @@ theorem memberStep_rows (owner : Address) (index : UInt64) (metadata : Std.HashM
     rw [constructor_rows]
     simp [sourceRows, logicalRows, MutConst.ctors, MutConst.name, List.append_assoc]
 
-theorem members_rows (sources : List MutConst) (initial : Array Row)
-    (owner : Address) (index : UInt64) (metadata : Std.HashMap Ix.Name Ixon.ConstantMeta) :
-    logicalRows (forIn (m := Id) sources initial (memberStep owner index metadata)) =
-      logicalRows initial ++ sources.flatMap (sourceRows owner index) := by
-  induction sources generalizing initial with
-  | nil => change logicalRows initial = logicalRows initial ++ []; simp
-  | cons source rest ih =>
-    rw [List.forIn_cons, memberStep_yield]
-    change logicalRows (forIn (m := Id) rest (memberStep owner index metadata source initial).value
-      (memberStep owner index metadata)) = _
-    rw [ih, memberStep_rows]
-    simp [List.append_assoc]
+def indexedMemberStep (owner : Address) (metadata : Std.HashMap Ix.Name Ixon.ConstantMeta)
+    (source : MutConst) (initial : Array Row × UInt64) : Id (ForInStep (Array Row × UInt64)) :=
+  .yield ((memberStep owner initial.2 metadata source initial.1).value, initial.2 + 1)
 
-def classStep (owner : Address) (metadata : Std.HashMap Ix.Name Ixon.ConstantMeta)
-    (sources : List MutConst) (initial : Array Row × UInt64) : Id (ForInStep (Array Row × UInt64)) :=
-  .yield (forIn (m := Id) sources initial.1 (memberStep owner initial.2 metadata), initial.2 + 1)
-
-theorem classes_rows (sources : List (List MutConst)) (initial : Array Row) (offset : Nat)
+theorem members_rows (sources : List MutConst) (initial : Array Row) (offset : Nat)
     (owner : Address) (metadata : Std.HashMap Ix.Name Ixon.ConstantMeta) :
-    logicalRows (forIn (m := Id) sources (initial, offset.toUInt64) (classStep owner metadata)).1 =
-      logicalRows initial ++ (sources.zipIdx offset).flatMap (fun (members, index) =>
-        members.flatMap (sourceRows owner index.toUInt64)) := by
+    logicalRows (forIn (m := Id) sources (initial, offset.toUInt64) (indexedMemberStep owner metadata)).1 =
+      logicalRows initial ++ (sources.zipIdx offset).flatMap (fun (member, index) =>
+        sourceRows owner index.toUInt64 member) := by
   induction sources generalizing initial offset with
   | nil => change logicalRows initial = logicalRows initial ++ []; simp
   | cons source rest ih =>
     rw [List.forIn_cons]
     change logicalRows (forIn (m := Id) rest
-      (forIn (m := Id) source initial (memberStep owner offset.toUInt64 metadata), offset.toUInt64 + 1)
-      (classStep owner metadata)).1 = _
+      ((memberStep owner offset.toUInt64 metadata source initial).value, offset.toUInt64 + 1)
+      (indexedMemberStep owner metadata)).1 = _
     have next : offset.toUInt64 + 1 = (offset + 1).toUInt64 := by simp
-    rw [next, ih, members_rows]
+    rw [next, ih, memberStep_rows]
     simp [List.zipIdx_cons, List.append_assoc]
 
 /-- **The mutual wrapper's rows**: the compiler emits exactly these
 anonymous projections under the source registration names, independently
 of the metadata values. -/
-theorem build_rows (sources : List (List MutConst)) (owner : Address)
+theorem build_rows (sources : List MutConst) (owner : Address)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) :
     logicalRows (buildMutualProjections sources owner metadata) = expectedRows owner sources := by
   let lookup : Std.HashMap Ix.Name Ixon.ConstantMeta :=
     metadata.foldl (fun table pair => table.insert pair.1 pair.2) {}
-  change logicalRows (forIn (m := Id) sources (#[], (0 : UInt64)) (classStep owner lookup)).1 = _
-  simpa [expectedRows, logicalRows] using classes_rows sources #[] 0 owner lookup
+  have rows : buildMutualProjections sources owner metadata =
+      (forIn (m := Id) sources (#[], (0 : UInt64)) (indexedMemberStep owner lookup)).1 := by
+    unfold buildMutualProjections
+    apply congrArg Prod.fst
+    apply congrArg (fun body => forIn (m := Id) sources (#[], (0 : UInt64)) body)
+    funext source state
+    cases source <;> rfl
+  rw [rows]
+  simpa [expectedRows, logicalRows] using members_rows sources #[] 0 owner lookup
 
 theorem pushed_rows (sources : List α) (initial : Array Row) (makeRow : α → Row) :
     logicalRows (forIn (m := Id) sources initial (fun source rows => .yield (rows.push (makeRow source)))) =
@@ -172,36 +153,17 @@ theorem pushed_rows (sources : List α) (initial : Array Row) (makeRow : α → 
     rw [ih]
     simp [logicalRows, List.append_assoc]
 
-theorem standalone_classes_rows (sources : List (List MutConst)) (initial : Array Row)
-    (block : Ixon.Constant) (metadata : Std.HashMap Ix.Name Ixon.ConstantMeta) :
-    logicalRows (forIn (m := Id) sources initial (fun members rows =>
-      .yield (forIn (m := Id) members rows (fun source rows =>
-        .yield (rows.push (source.name, block, (metadata.get? source.name).getD .empty)))))) =
-      logicalRows initial ++ sources.flatten.map (fun source => (source.name, block)) := by
-  induction sources generalizing initial with
-  | nil => change logicalRows initial = logicalRows initial ++ []; simp
-  | cons source rest ih =>
-    rw [List.forIn_cons]
-    change logicalRows (forIn (m := Id) rest
-      (forIn (m := Id) source initial (fun source rows =>
-        .yield (rows.push (source.name, block, (metadata.get? source.name).getD .empty))))
-      (fun members rows => .yield (forIn (m := Id) members rows (fun source rows =>
-        .yield (rows.push (source.name, block, (metadata.get? source.name).getD .empty)))))) = _
-    rw [ih, pushed_rows]
-    simp [List.append_assoc]
-
-/-- **A collapsed block's rows** register every source name to the block
-itself. -/
-theorem standalone_rows (sources : List (List MutConst)) (block : Ixon.Constant)
+/-- A collapsed block registers each source name to the block itself. -/
+theorem standalone_rows (sources : List MutConst) (block : Ixon.Constant)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) :
     logicalRows (buildStandaloneMutualProjections sources block metadata) =
-      sources.flatten.map (fun source => (source.name, block)) := by
+      sources.map (fun source => (source.name, block)) := by
   let lookup : Std.HashMap Ix.Name Ixon.ConstantMeta :=
     metadata.foldl (fun table pair => table.insert pair.1 pair.2) {}
-  change logicalRows (forIn (m := Id) sources #[] (fun members rows =>
-    .yield (forIn (m := Id) members rows (fun source rows =>
-      .yield (rows.push (source.name, block, (lookup.get? source.name).getD .empty)))))) = _
-  simpa [logicalRows] using standalone_classes_rows sources #[] block lookup
+  change logicalRows (forIn (m := Id) sources #[] (fun source rows =>
+    .yield (rows.push (source.name, block, (lookup.get? source.name).getD .empty)))) = _
+  simpa [logicalRows] using pushed_rows sources #[]
+    (fun source => (source.name, block, (lookup.get? source.name).getD .empty))
 
 /-! ## Wire validity and codec -/
 
@@ -226,23 +188,22 @@ theorem source_rows_wire (owner : Address) (width : owner.hash.size = 32) (index
   · obtain ⟨⟨ctor, ctorIndex⟩, _, rfl⟩ := List.mem_map.mp rest
     exact constructor_wire owner width index ctorIndex.toUInt64
 
-theorem build_rows_wire (sources : List (List MutConst)) (owner : Address) (width : owner.hash.size = 32)
+theorem build_rows_wire (sources : List MutConst) (owner : Address) (width : owner.hash.size = 32)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (row : Row)
     (present : row ∈ buildMutualProjections sources owner metadata) : row.2.1.wireWF := by
   have logical : (row.1, row.2.1) ∈ logicalRows (buildMutualProjections sources owner metadata) :=
     List.mem_map.mpr ⟨row, by simpa using present, rfl⟩
   rw [build_rows, expectedRows] at logical
-  obtain ⟨⟨members, index⟩, _, inClass⟩ := List.mem_flatMap.mp logical
-  obtain ⟨source, _, generated⟩ := List.mem_flatMap.mp inClass
+  obtain ⟨⟨source, index⟩, _, generated⟩ := List.mem_flatMap.mp logical
   exact source_rows_wire owner width index.toUInt64 source (row.1, row.2.1) generated
 
-theorem build_rows_codec (sources : List (List MutConst)) (owner : Address) (width : owner.hash.size = 32)
+theorem build_rows_codec (sources : List MutConst) (owner : Address) (width : owner.hash.size = 32)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (row : Row)
     (present : row ∈ buildMutualProjections sources owner metadata) :
     Ixon.deConstant (Ixon.ser row.2.1) = .ok row.2.1 :=
   Ixon.Verify.deConstant_serConstant row.2.1 (build_rows_wire sources owner width metadata row present)
 
-theorem standalone_rows_wire (sources : List (List MutConst)) (block : Ixon.Constant) (wire : block.wireWF)
+theorem standalone_rows_wire (sources : List MutConst) (block : Ixon.Constant) (wire : block.wireWF)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (row : Row)
     (present : row ∈ buildStandaloneMutualProjections sources block metadata) : row.2.1.wireWF := by
   have logical : (row.1, row.2.1) ∈ logicalRows (buildStandaloneMutualProjections sources block metadata) :=
@@ -256,7 +217,7 @@ theorem standalone_rows_wire (sources : List (List MutConst)) (block : Ixon.Cons
 /-- Every projection row of a block result is wire-valid. -/
 def ProjectionWire (output : BlockResult) : Prop := ∀ row ∈ output.projections, row.2.1.wireWF
 
-theorem build_projection_wire (limits : Ix.Sharing.Exact.Limits) (classes : List (List MutConst))
+theorem build_projection_wire (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
     (output : BlockResult) (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output)
     (main : output.block.wireWF) : ProjectionWire output := by
@@ -274,7 +235,7 @@ theorem build_projection_wire (limits : Ix.Sharing.Exact.Limits) (classes : List
     exact build_rows_wire classes (Address.admissionHash (Ixon.ser block))
       (Ixon.Authenticated.admissionHash_width _) metadata
 
-theorem finish_projection_wire (classes : List (List MutConst)) (members : Array Ixon.MutConst)
+theorem finish_projection_wire (classes : List MutConst) (members : Array Ixon.MutConst)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta)) :
     Emission.Yields (finishMutualCompilation classes members metadata)
       (fun output => output.block.wireWF → ProjectionWire output) := by
@@ -282,21 +243,21 @@ theorem finish_projection_wire (classes : List (List MutConst)) (members : Array
   obtain ⟨rfl, _, built⟩ := ProjectionLayout.finish_mutual_ok context classes members metadata ran
   exact build_projection_wire _ classes members metadata _ output built main
 
-theorem payload_projection_wire (sources : List (List MutConst)) :
+theorem payload_projection_wire (sources : List MutConst) :
     Emission.Yields (compileMutualPayload sources) (fun output => output.block.wireWF → ProjectionWire output) := by
   unfold compileMutualPayload
   exact Emission.Yields.bindAny (compileMutConsts sources) fun compiled =>
     finish_projection_wire sources compiled.1 compiled.2.2
 
-theorem mutual_projection_wire (sources : List (List MutConst)) :
+theorem mutual_projection_wire (sources : List MutConst) :
     Emission.Yields (compileMutualBlock sources) (fun output => output.block.wireWF → ProjectionWire output) :=
   ProjectionLayout.mutual_block _ sources (payload_projection_wire sources)
 
 /-- **A mutual block and all its projections decode exactly**: under an
-environment without Pass 3 records, a successful compile from a state
+compile environment, a successful compile from a state
 whose tables are on the wire. -/
 theorem mutual_codec (context : CompileEnv × BlockEnv)
-    (sources : List (List MutConst)) {before after : BlockState} {output : BlockResult}
+    (sources : List MutConst) {before after : BlockState} {output : BlockResult}
     (wire : Ix.Sharing.Verify.BlockWireTablesWF before)
     (ran : rawRun (compileMutualBlock sources) context before = (.ok output, after)) :
     Ix.Sharing.Verify.BlockResultCodecWF output ∧ ProjectionWire output ∧
@@ -336,53 +297,15 @@ theorem constructor_resolves (store : Store) (owner : Address) (block : Ixon.Con
   simp [constructorProjection, resolveSource, emptyTables,
     stored, info, member, Array.getElem?_eq_getElem targetInside, converted, guard]
 
-theorem selected_member (sources : List (List MutConst)) (targets : List Ixon.MutConst)
-    (nonempty : ∀ members ∈ sources, members ≠ [])
-    (shape : targets.map memberShape = (sources.filterMap List.head?).map sourceShape)
-    (index : Nat) (inside : index < sources.length) :
-    ∃ selected rest target, sources[index]? = some (selected :: rest) ∧ targets[index]? = some target ∧
-      memberShape target = sourceShape selected := by
-  induction sources generalizing targets index with
-  | nil => simp at inside
-  | cons members remaining ih =>
-    have firstNonempty := nonempty members (by simp)
-    cases members with
-    | nil => exact False.elim (firstNonempty rfl)
-    | cons selected rest =>
-      cases targets with
-      | nil => simp [List.filterMap] at shape
-      | cons target targets =>
-        have equal : memberShape target = sourceShape selected ∧
-            targets.map memberShape = (remaining.filterMap List.head?).map sourceShape := by
-          simpa [List.filterMap] using shape
-        cases index with
-        | zero => exact ⟨selected, rest, target, rfl, rfl, equal.1⟩
-        | succ index =>
-          have tailNonempty : ∀ members ∈ remaining, members ≠ [] := fun members present =>
-            nonempty members (by simp [present])
-          obtain ⟨next, suffix, member, sourceAt, targetAt, shapeAt⟩ :=
-            ih targets tailNonempty equal.2 index (by simpa using inside)
-          exact ⟨next, suffix, member, by simpa using sourceAt, by simpa using targetAt, shapeAt⟩
-
-/-- The class-specific condition needed for every alias of a class, beyond
-the compiled representative's shape: the members of a class have one shape.
-(A class of one member, as the driver's are, satisfies it.) -/
-def ClassesAgree (sources : List (List MutConst)) : Prop :=
-  ∀ members ∈ sources, ∀ left ∈ members, ∀ right ∈ members, sourceShape left = sourceShape right
-
-theorem class_member (sources : List (List MutConst)) (targets : Array Ixon.MutConst)
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : ClassesAgree sources)
-    (shape : targets.toList.map memberShape = (sources.filterMap List.head?).map sourceShape)
-    (index : Nat) (inside : index < sources.length) (source : MutConst) (present : source ∈ sources[index]) :
+theorem selected_member (sources : List MutConst) (targets : Array Ixon.MutConst)
+    (shape : targets.toList.map memberShape = sources.map sourceShape)
+    (index : Nat) (source : MutConst) (sourceAt : sources[index]? = some source) :
     ∃ target, targets[index]? = some target ∧ memberShape target = sourceShape source := by
-  obtain ⟨selected, rest, target, sourceAt, targetAt, shapeAt⟩ :=
-    selected_member sources targets.toList nonempty shape index inside
-  have sameClass : sources[index] = selected :: rest := by
-    rw [List.getElem?_eq_getElem inside] at sourceAt
-    exact Option.some.inj sourceAt
-  have classPresent : sources[index] ∈ sources := List.getElem_mem inside
-  have sameShape := agree sources[index] classPresent selected (by simp [sameClass]) source present
-  exact ⟨target, by simpa using targetAt, shapeAt.trans sameShape⟩
+  have atIndex := congrArg (fun values : List MemberShape => values[index]?) shape
+  simp only [List.getElem?_map, Array.getElem?_toList, sourceAt, Option.map_some] at atIndex
+  cases targetAt : targets[index]? with
+  | none => simp [targetAt] at atIndex
+  | some target => exact ⟨target, rfl, Option.some.inj (by simpa [targetAt] using atIndex)⟩
 
 /-- A source member's constructors declare their own positions. -/
 def ConstructorPositions (source : MutConst) : Prop :=
@@ -398,9 +321,9 @@ def sourceReferences (owner : Address) (index : Nat) (source : MutConst) :
   (source.name, some (.member owner index)) :: source.ctors.toList.zipIdx.map fun (ctor, position) =>
     (ctor.cnst.name, some (.ctor owner index position))
 
-def expectedReferences (owner : Address) (sources : List (List MutConst)) :
+def expectedReferences (owner : Address) (sources : List MutConst) :
     List (Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
-  sources.zipIdx.flatMap fun (members, index) => members.flatMap (sourceReferences owner index)
+  sources.zipIdx.flatMap fun (member, index) => sourceReferences owner index member
 
 theorem source_rows_resolve (store : Store) (owner : Address) (block : Ixon.Constant)
     (members : Array Ixon.MutConst) (source : MutConst) (target : Ixon.MutConst) (index : Nat)
@@ -442,34 +365,24 @@ theorem source_rows_resolve (store : Store) (owner : Address) (block : Ixon.Cons
       simpa only [constructorProjection, indexExact, positionExact, Function.comp_def] using
         congrArg (fun result => (ctor.cnst.name, result)) resolves
 
-/-- **Every generated mutual projection resolves to its source-indexed
-reference**: in a store holding the wire-valid block, the rows read as the
-class index's member (and its constructors at their positions), given
-non-empty classes whose members agree in shape and source constructors that
-declare their positions. -/
+/-- Every generated projection resolves to its source member or constructor
+at the same position, in any store holding the wire-valid block. -/
 theorem build_resolves (store : Store) (owner : Address) (block : Ixon.Constant)
-    (sources : List (List MutConst)) (targets : Array Ixon.MutConst)
+    (sources : List MutConst) (targets : Array Ixon.MutConst)
     (metadata : Array (Ix.Name × Ixon.ConstantMeta))
     (stored : store owner = some block) (info : block.info = .muts targets) (wire : block.wireWF)
-    (nonempty : ∀ members ∈ sources, members ≠ []) (agree : ClassesAgree sources)
-    (shape : targets.toList.map memberShape = (sources.filterMap List.head?).map sourceShape)
-    (positions : ∀ source ∈ sources.flatten, ConstructorPositions source) :
+    (shape : targets.toList.map memberShape = sources.map sourceShape)
+    (positions : ∀ source ∈ sources, ConstructorPositions source) :
     readRows store (logicalRows (buildMutualProjections sources owner metadata)) =
       expectedReferences owner sources := by
   rw [build_rows]
   simp only [readRows, expectedRows, expectedReferences, List.map_flatMap]
   apply congrArg List.flatten
   apply List.map_congr_left
-  rintro ⟨members, index⟩ present
-  have inside : index < sources.length := by simpa using List.snd_lt_of_mem_zipIdx present
-  have classAt : sources[index] = members := by simpa using (List.fst_eq_of_mem_zipIdx present).symm
-  have classPresent := List.fst_mem_of_mem_zipIdx present
-  apply congrArg List.flatten
-  apply List.map_congr_left
-  intro source sourceIn
-  obtain ⟨target, targetAt, sourceShape⟩ := class_member sources targets nonempty agree shape index inside source
-    (by simpa only [classAt] using sourceIn)
+  rintro ⟨source, index⟩ present
+  have sourceAt : sources[index]? = some source := List.mem_zipIdx_iff_getElem?.mp present
+  obtain ⟨target, targetAt, sourceShape⟩ := selected_member sources targets shape index source sourceAt
   exact source_rows_resolve store owner block targets source target index stored info wire targetAt sourceShape
-    (positions source (List.mem_flatten.mpr ⟨members, classPresent, sourceIn⟩))
+    (positions source (List.fst_mem_of_mem_zipIdx present))
 
 end Ix.CompileCert.MutualProjections

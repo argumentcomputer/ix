@@ -111,34 +111,24 @@ theorem sourceRows_names (owner : Address) (index : UInt64) (src : MutConst) :
   rfl
 
 theorem rows_names (owner : Address) :
-    ∀ (sources : List (List MutConst)) (k : Nat),
+    ∀ (sources : List MutConst) (k : Nat),
       ((sources.zipIdx k).flatMap fun p =>
-        p.1.flatMap (MutualProjections.sourceRows owner p.2.toUInt64)).map Prod.fst =
-        sources.flatten.flatMap srcNames
+        MutualProjections.sourceRows owner p.2.toUInt64 p.1).map Prod.fst =
+        sources.flatMap srcNames
   | [], _ => rfl
   | members :: rest, k => by
     simp only [List.zipIdx_cons, List.flatMap_cons, List.map_append, rows_names owner rest (k + 1),
-      List.flatten_cons, List.flatMap_append, List.map_flatMap, sourceRows_names]
+      sourceRows_names]
 
-theorem expectedRows_names (owner : Address) (sources : List (List MutConst)) :
-    (MutualProjections.expectedRows owner sources).map Prod.fst = sources.flatten.flatMap srcNames :=
+theorem expectedRows_names (owner : Address) (sources : List MutConst) :
+    (MutualProjections.expectedRows owner sources).map Prod.fst = sources.flatMap srcNames :=
   rows_names owner sources 0
-
-theorem flatten_singletons {α : Type} : ∀ L : List α, (L.map ([·])).flatten = L
-  | [] => rfl
-  | a :: L => by rw [List.map_cons, List.flatten_cons, flatten_singletons L]; rfl
-
-theorem heads_singletons {α : Type} : ∀ L : List α, (L.map ([·])).filterMap List.head? = L
-  | [] => rfl
-  | a :: L => by
-    show a :: (L.map ([·])).filterMap List.head? = a :: L
-    rw [heads_singletons L]
 
 /-- **The names of a mutual compile's rows are its sources'**, for one source per class: the
 wrapper's rows (`MutualProjections.build_rows`), or a lone definition's or recursor's, which has
 no constructors. -/
 theorem mutual_names (L : List MutConst) :
-    Emission.Yields (compileMutualBlock (L.map ([·])))
+    Emission.Yields (compileMutualBlock L)
       (fun out => out.projections.toList.map Prod.fst = L.flatMap srcNames) := by
   refine ProjectionLayout.mutual_block _ _ ?_
   unfold compileMutualPayload
@@ -149,14 +139,13 @@ theorem mutual_names (L : List MutConst) :
       (MutualProjections.logicalRows output.projections).map Prod.fst := by
     simp [MutualProjections.logicalRows]
   rw [logical]
-  have flat := flatten_singletons L
   obtain ⟨-, wrapped | collapsed⟩ :=
     MutualArtifact.build_cases _ _ compiled.1 compiled.2.2 before output built
   · obtain ⟨targets, metadata, -, -, proj⟩ := wrapped
-    rw [proj, MutualProjections.build_rows, expectedRows_names, flat]
+    rw [proj, MutualProjections.build_rows, expectedRows_names]
   · obtain ⟨-, ⟨kind, hk, kshape⟩, rows⟩ := collapsed
-    rw [rows, List.map_map, flat]
-    rw [heads_singletons, kshape] at shape
+    rw [rows, List.map_map]
+    rw [kshape] at shape
     rcases L with _ | ⟨src, _ | ⟨src', rest⟩⟩
     · simp at shape
     · have none : src.ctors = #[] := by
@@ -174,17 +163,6 @@ theorem projections_names {r out : BlockResult} (h : BlockRecords.recordsOf r = 
   simp only [BlockRecords.recordsOf, Prod.mk.injEq] at h
   have := congrArg (fun a : Array (Ix.Name × Ixon.Constant) => a.toList.map Prod.fst) h.2.2.2
   simpa [List.map_map, Function.comp_def] using this
-
-/-- Lean's order makes one class per member. -/
-theorem sourceClasses_singletons (cs : Array MutConst) :
-    ∃ L : List MutConst, sourceClasses cs = L.map ([·]) := by
-  refine ⟨(sourceClasses cs).map (·.head!), ?_⟩
-  rw [List.map_map]
-  refine (List.map_id _).symm.trans (List.map_congr_left fun c hc => ?_)
-  unfold sourceClasses at hc
-  try dsimp only at hc
-  obtain ⟨e, -, rfl⟩ := List.mem_map.1 hc
-  rfl
 
 /-- **Two runs of one block, in states that read the same constants, project the same names**:
 both take the lone path, with no projections, or both run the members' loop, which makes the
@@ -220,9 +198,7 @@ theorem runBlock_names {cenv cenv' : CompileEnv} {all : Ix.Set Ix.Name} {k : Ix.
       exact same x
     obtain rfl : cs = cs' := Array.toList_inj.mp hcs
     rw [projections_names hrec, projections_names hrec']
-    obtain ⟨L, hL⟩ := sourceClasses_singletons cs
-    rw [hL] at hout hout'
-    rw [mutual_names L _ _ _ _ hout, mutual_names L _ _ _ _ hout']
+    rw [mutual_names _ _ _ _ _ hout, mutual_names _ _ _ _ _ hout']
 
 /-- **A name a run of a block claims, another run of the block claims too**, in states that read
 the same constants. -/

@@ -231,7 +231,7 @@ def Reading {md : Mode} (source : Ix.Expr → CExpr md → Prop)
   ∃ target, source expr target ∧ (reader state).read value.1 = .ok target
 
 /-- The meaning of an expression-cache entry. The cache is keyed by
-`Ix.Compile.ExactKey.ExprKey` (exact keys, CQ2.8): an entry means what its
+`Ix.Compile.ExactKey.ExprKey` (exact keys): an entry means what its
 key's expression reads as. -/
 def KeyReading {md : Mode} (source : Ix.Expr → CExpr md → Prop)
     (reader : Ix.CompileM.BlockState → MemberReader md) (state : Ix.CompileM.BlockState)

@@ -467,7 +467,7 @@ def seedBinding (env : Ixon.Env) (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer :=
     key`. -/
 def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
   closureFromRoots env
-    (#[target] ++ Ix.Tc.primAddrSet.toArray.filter env.consts.contains
+    (#[target] ++ Ix.primAddrSet.toArray.filter env.consts.contains
       ++ bindingRoots env)
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
@@ -517,7 +517,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     -- references to are seeded as `closureFrom` seeds them.
     unless env.roleBinding.map (·.address) == some bound do
       throw s!"the environment's role binding is not {bound}"
-    let roots := Ix.Tc.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env
+    let roots := Ix.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env
     ioBuffer := addEntries env (closureFromRoots env roots).contains ioBuffer
   | .catalog .. =>
     -- A catalog claim collects other claims; it is formed and verified only
@@ -597,7 +597,7 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let env ← withDefaultRoleBinding env
   let (claim, trees) ← shardCheckEnvClaimTrees env owned
-  let primitiveRoots := Ix.Tc.primAddrSet.toArray.filter env.consts.contains
+  let primitiveRoots := Ix.primAddrSet.toArray.filter env.consts.contains
   let closure := closureFromRoots env (owned ++ primitiveRoots ++ bindingRoots env)
   pure (claim, closure, trees)
 

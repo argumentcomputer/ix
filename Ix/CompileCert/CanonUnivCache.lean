@@ -15,7 +15,7 @@ value of the universe under every valuation (`canonUnivCached_eval`, from
 
 `compileUniv_frame`: the raw universe compiler changes only its own memo
 `univCache`, failing runs included, so it keeps the canonical memo and every
-table. Its value theorems, which need the memo's exact keys (CQ2.8), are
+table. Its value theorems, which need the memo's exact keys, are
 `Ix.CompileCert.UniverseMeaning`'s. -/
 
 namespace Ix.CompileCert.CanonUnivCache

@@ -75,8 +75,8 @@ pub struct CompileState {
   /// Map from Lean constant name to Ixon address
   pub name_to_addr: DashMap<Name, Address>,
   /// Mutual block class ordering, keyed by any inductive name in the block.
-  /// Each entry is the list of classes (in Lean's order, `source_classes`),
-  /// where each class is a list of names.
+  /// Each entry preserves the serialized singleton groups in Lean's order
+  /// (`source_members`).
   pub blocks: DashMap<Name, Vec<Vec<Name>>>,
   /// Constants that couldn't be compiled (name -> error description).
   ///
@@ -2032,15 +2032,15 @@ pub fn block_position(all: &[Name], name: &Name) -> u64 {
   all.iter().position(|n| n == name).map_or(all.len() as u64, |p| p as u64)
 }
 
-/// The member order of a block, one member per class: Lean's order (Lean
+/// The member order of a block: Lean's order (Lean
 /// `Ix.sourceOrderLt`). An inductive is at its position in Lean's `all`, a
 /// recursor at its family's declared position (`recursor_family_position`),
 /// a definition at its position in its Lean `all` (restricted to the block).
 /// The order of a block is the source's, as the order of an inductive's
 /// constructors is, and alpha-equal members are never merged. Members whose
 /// positions and names tie (only on input that is not Lean's) keep their
-/// order in `cs`. Mirrors Lean `sourceClasses`.
-pub fn source_classes<'a>(cs: &[&'a MutConst]) -> Vec<Vec<&'a MutConst>> {
+/// order in `cs`.
+pub fn source_members<'a>(cs: &[&'a MutConst]) -> Vec<&'a MutConst> {
   fn position(c: &MutConst) -> u64 {
     match c {
       MutConst::Indc(i) => block_position(&i.ind.all, &i.ind.cnst.name),
@@ -2054,7 +2054,7 @@ pub fn source_classes<'a>(cs: &[&'a MutConst]) -> Vec<Vec<&'a MutConst>> {
       .cmp(&position(b))
       .then_with(|| lean_name_cmp(&a.name(), &b.name()))
   });
-  members.into_iter().map(|c| vec![c]).collect()
+  members
 }
 
 // ===========================================================================
@@ -2328,10 +2328,10 @@ fn compile_mutual(
     cs.push(mut_const);
   }
 
-  // Lean's order (`source_classes`): the order of a block is the source's.
+  // The order of a block is the source's.
   let members: Vec<&MutConst> = cs.iter().collect();
-  let sorted_classes = source_classes(&members);
-  let mut_ctx = MutConst::ctx(&sorted_classes);
+  let ordered_members = source_members(&members);
+  let mut_ctx = MutConst::ctx(&ordered_members);
 
   let mut exprs = Vec::new();
   for cnst in &cs {
@@ -2349,45 +2349,30 @@ fn compile_mutual(
     .map(|n| compile_name(n, stt))
     .collect::<Result<_, _>>()?;
 
-  for class in &sorted_classes {
-    // Only push one representative per equivalence class into ixon_mutuals,
-    // since alpha-equivalent constants compile to identical data and share
-    // the same class index in MutConst::ctx.
-    let mut representative_pushed = false;
-    for cnst in class {
-      match cnst {
-        MutConst::Defn(def) => {
-          let (data, meta) =
-            compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
-          if !representative_pushed {
-            ixon_mutuals.push(IxonMutConst::Defn(data));
-            representative_pushed = true;
-          }
-          all_metas.insert(def.name.clone(), meta);
-        },
-        MutConst::Indc(ind) => {
-          let (data, meta, ctor_metas_vec) =
-            compile_inductive(ind, &mut_ctx, &ctx_addrs, cache, stt)?;
-          if !representative_pushed {
-            ixon_mutuals.push(IxonMutConst::Indc(data));
-            representative_pushed = true;
-          }
-          // Register per-constructor ConstantMeta::Ctor entries
-          for (ctor, ctor_meta) in ind.ctors.iter().zip(ctor_metas_vec) {
-            all_metas.insert(ctor.cnst.name.clone(), ctor_meta);
-          }
-          all_metas.insert(ind.ind.cnst.name.clone(), meta);
-        },
-        MutConst::Recr(rec) => {
-          let (data, meta) =
-            compile_recursor(rec, &mut_ctx, &ctx_addrs, cache, stt)?;
-          if !representative_pushed {
-            ixon_mutuals.push(IxonMutConst::Recr(data));
-            representative_pushed = true;
-          }
-          all_metas.insert(rec.cnst.name.clone(), meta);
-        },
-      }
+  for cnst in &ordered_members {
+    match cnst {
+      MutConst::Defn(def) => {
+        let (data, meta) =
+          compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
+        ixon_mutuals.push(IxonMutConst::Defn(data));
+        all_metas.insert(def.name.clone(), meta);
+      },
+      MutConst::Indc(ind) => {
+        let (data, meta, ctor_metas_vec) =
+          compile_inductive(ind, &mut_ctx, &ctx_addrs, cache, stt)?;
+        ixon_mutuals.push(IxonMutConst::Indc(data));
+        // Register per-constructor ConstantMeta::Ctor entries
+        for (ctor, ctor_meta) in ind.ctors.iter().zip(ctor_metas_vec) {
+          all_metas.insert(ctor.cnst.name.clone(), ctor_meta);
+        }
+        all_metas.insert(ind.ind.cnst.name.clone(), meta);
+      },
+      MutConst::Recr(rec) => {
+        let (data, meta) =
+          compile_recursor(rec, &mut_ctx, &ctx_addrs, cache, stt)?;
+        ixon_mutuals.push(IxonMutConst::Recr(data));
+        all_metas.insert(rec.cnst.name.clone(), meta);
+      },
     }
   }
 
@@ -2424,14 +2409,12 @@ fn compile_mutual(
     let addr = Address::hash(&bytes);
 
     stt.store_const_bytes(addr.clone(), bytes, standalone_constant)?;
-    for class in &sorted_classes {
-      for cnst in class {
-        let n = cnst.name();
-        // `remove`, not `get().cloned()`: each name is consumed exactly
-        // once, and ConstantMeta is an arena-sized deep clone.
-        let meta = all_metas.remove(&n).unwrap_or_default();
-        stt.claim_and_register_compiled(&n, Named::new(addr.clone(), meta))?;
-      }
+    for cnst in &ordered_members {
+      let n = cnst.name();
+      // `remove`, not `get().cloned()`: each name is consumed exactly
+      // once, and ConstantMeta is an arena-sized deep clone.
+      let meta = all_metas.remove(&n).unwrap_or_default();
+      stt.claim_and_register_compiled(&n, Named::new(addr.clone(), meta))?;
     }
     return Ok(addr);
   }
@@ -2445,79 +2428,70 @@ fn compile_mutual(
     compiled.bytes,
     compiled.constant,
   )?;
-  // Register class ordering for each inductive name in the block.
-  let class_ordering: Vec<Vec<Name>> = sorted_classes
-    .iter()
-    .map(|class| class.iter().map(|c| c.name()).collect())
-    .collect();
-  for class in &sorted_classes {
-    for cnst in class {
-      stt.register_block(cnst.name(), class_ordering.clone());
-    }
+  // Preserve singleton grouping at the metadata boundary.
+  let class_ordering: Vec<Vec<Name>> =
+    ordered_members.iter().map(|cnst| vec![cnst.name()]).collect();
+  for cnst in &ordered_members {
+    stt.register_block(cnst.name(), class_ordering.clone());
   }
 
   // Create projections for each constant: store their Ixon blobs and
   // register their Named entries.
-  let mut idx = 0u64;
   let mut requested_addr = None;
-  for class in &sorted_classes {
-    for cnst in class {
-      let n = cnst.name();
-      // `remove`: consumed once per name, so no deep clone is needed.
-      let meta = all_metas.remove(&n).unwrap_or_default();
+  for (index, cnst) in ordered_members.iter().enumerate() {
+    let idx = index as u64;
+    let n = cnst.name();
+    // `remove`: consumed once per name, so no deep clone is needed.
+    let meta = all_metas.remove(&n).unwrap_or_default();
 
-      let proj = match cnst {
-        MutConst::Defn(_) => defn_proj_constant(idx, block_addr.clone()),
-        MutConst::Indc(ind) => {
-          // Inductive projection
-          let indc_proj = indc_proj_constant(idx, block_addr.clone());
-          let mut proj_bytes = Vec::new();
-          indc_proj.put(&mut proj_bytes);
-          let proj_addr = Address::hash(&proj_bytes);
-          if n == *name {
-            requested_addr = Some(proj_addr.clone());
+    let proj = match cnst {
+      MutConst::Defn(_) => defn_proj_constant(idx, block_addr.clone()),
+      MutConst::Indc(ind) => {
+        // Inductive projection
+        let indc_proj = indc_proj_constant(idx, block_addr.clone());
+        let mut proj_bytes = Vec::new();
+        indc_proj.put(&mut proj_bytes);
+        let proj_addr = Address::hash(&proj_bytes);
+        if n == *name {
+          requested_addr = Some(proj_addr.clone());
+        }
+        stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
+        stt.claim_and_register_compiled(
+          &n,
+          Named::new(proj_addr.clone(), meta),
+        )?;
+
+        // Constructor projections
+        for (cidx, ctor) in ind.ctors.iter().enumerate() {
+          let ctor_meta = all_metas.remove(&ctor.cnst.name).unwrap_or_default();
+          let ctor_proj =
+            ctor_proj_constant(idx, cidx as u64, block_addr.clone());
+          let mut ctor_bytes = Vec::new();
+          ctor_proj.put(&mut ctor_bytes);
+          let ctor_addr = Address::hash(&ctor_bytes);
+          if ctor.cnst.name == *name {
+            requested_addr = Some(ctor_addr.clone());
           }
-          stt.store_const_bytes(proj_addr.clone(), proj_bytes, indc_proj)?;
+          stt.store_const_bytes(ctor_addr.clone(), ctor_bytes, ctor_proj)?;
           stt.claim_and_register_compiled(
-            &n,
-            Named::new(proj_addr.clone(), meta),
+            &ctor.cnst.name,
+            Named::new(ctor_addr.clone(), ctor_meta),
           )?;
+        }
 
-          // Constructor projections
-          for (cidx, ctor) in ind.ctors.iter().enumerate() {
-            let ctor_meta =
-              all_metas.remove(&ctor.cnst.name).unwrap_or_default();
-            let ctor_proj =
-              ctor_proj_constant(idx, cidx as u64, block_addr.clone());
-            let mut ctor_bytes = Vec::new();
-            ctor_proj.put(&mut ctor_bytes);
-            let ctor_addr = Address::hash(&ctor_bytes);
-            if ctor.cnst.name == *name {
-              requested_addr = Some(ctor_addr.clone());
-            }
-            stt.store_const_bytes(ctor_addr.clone(), ctor_bytes, ctor_proj)?;
-            stt.claim_and_register_compiled(
-              &ctor.cnst.name,
-              Named::new(ctor_addr.clone(), ctor_meta),
-            )?;
-          }
+        continue;
+      },
+      MutConst::Recr(_) => recr_proj_constant(idx, block_addr.clone()),
+    };
 
-          continue;
-        },
-        MutConst::Recr(_) => recr_proj_constant(idx, block_addr.clone()),
-      };
-
-      let mut proj_bytes = Vec::new();
-      proj.put(&mut proj_bytes);
-      let proj_addr = Address::hash(&proj_bytes);
-      if n == *name {
-        requested_addr = Some(proj_addr.clone());
-      }
-      stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
-      stt
-        .claim_and_register_compiled(&n, Named::new(proj_addr.clone(), meta))?;
+    let mut proj_bytes = Vec::new();
+    proj.put(&mut proj_bytes);
+    let proj_addr = Address::hash(&proj_bytes);
+    if n == *name {
+      requested_addr = Some(proj_addr.clone());
     }
-    idx += 1;
+    stt.store_const_bytes(proj_addr.clone(), proj_bytes, proj)?;
+    stt.claim_and_register_compiled(&n, Named::new(proj_addr.clone(), meta))?;
   }
 
   // Register the synthetic Muts named entry for this block. `block_addr`
@@ -2527,19 +2501,13 @@ fn compile_mutual(
   // `ingress_muts_block`. Without this entry, each member's projection-typed
   // named entry falls through ingress silently and none of its content
   // reaches the kernel env.
-  let first_name = sorted_classes
+  let first_name = ordered_members
     .first()
-    .and_then(|c| c.first())
     .map(|c| c.name())
-    .expect("compile_mutual invariant: at least one class with one member");
-  let muts_all: Vec<Vec<Address>> = sorted_classes
+    .expect("compile_mutual invariant: at least one member");
+  let muts_all: Vec<Vec<Address>> = ordered_members
     .iter()
-    .map(|class| {
-      class
-        .iter()
-        .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
-        .collect()
-    })
+    .map(|cnst| vec![Address::from_blake3_hash(*cnst.name().get_hash())])
     .collect();
   let muts_name = block_addr.muts_name(&first_name);
   compile_name(&muts_name, stt)?;
@@ -2692,9 +2660,9 @@ mod tests {
     }
     assert_eq!(pos("A.rec_18446744073709551615"), u64::MAX);
     let (ar, br, a1) = (rec("A.rec"), rec("B.rec"), rec("A.rec_1"));
-    let classes = source_classes(&[&a1, &br, &ar]);
+    let members = source_members(&[&a1, &br, &ar]);
     let order: Vec<String> =
-      classes.iter().map(|c| c[0].name().pretty()).collect();
+      members.iter().map(|c| c.name().pretty()).collect();
     assert_eq!(order, ["A.rec", "B.rec", "A.rec_1"]);
   }
 

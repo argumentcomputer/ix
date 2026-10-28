@@ -7,8 +7,7 @@ public import Std.Data.HashSet
 /-! # The role table and its binding section
 
 A **role table** binds the checker's roles (`Ix.Kernel.Role`) to the
-constants of one environment and carries the evidence of its operations
-(IXC-PLAN §8.2). It is input: the checker carries the specifications
+constants of one environment and carries the evidence of its operations. It is input: the checker carries the specifications
 (`Role.spec`, `IxC/Kernel/Roles.lean`) and no addresses, and every theorem
 holds for every table. The reader renames each bound address to its role key
 (`Ix.Kernel.Reader.Bindings`) and resolves each proof entry to its theorem's
@@ -87,7 +86,7 @@ theorem Role.idx_inj {r s : Role} (h : r.idx = s.idx) : r = s := by
 
 /-! ## The table -/
 
-/-- **A role table** (IXC-PLAN §8.2): the version of the specification set it
+/-- **A role table**: the version of the specification set it
 was made for, the bound roles' addresses (by role, ascending), and the
 operations' evidence (by role, ascending; one entry per equation). -/
 structure RoleTable where

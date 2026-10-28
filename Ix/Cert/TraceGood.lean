@@ -445,15 +445,11 @@ theorem foldl_insP_some : ∀ (L : List (Ix.Name × Nat)) (m0 : Ix.MutCtx) {x : 
 
 /-- **A name a block's member context holds is a member's or a member's constructor's.** -/
 theorem ctx_memberName {ms : List MutConst} {n : Ix.Name} {idx : Nat}
-    (h : (MutConst.ctx (ms.map ([·])))[n]? = some idx) : MemberName ms n := by
+    (h : (MutConst.ctx ms)[n]? = some idx) : MemberName ms n := by
   rw [Ix.CompileCert.Canon.ctx_fold] at h
   rcases foldl_insP_some _ _ h with ⟨p, hp, rfl⟩ | h
-  · obtain ⟨j, C, m, hC, hm, hcase⟩ := (Ix.CompileCert.Canon.mem_ctxPairs _ 0 _ p).1 hp
-    simp only [List.getElem?_map, Option.map_eq_some_iff] at hC
-    obtain ⟨m0, hm0, rfl⟩ := hC
-    rw [List.mem_singleton] at hm
-    subst hm
-    refine ⟨m, List.mem_of_getElem? hm0, ?_⟩
+  · obtain ⟨j, m, hm, hcase⟩ := (Ix.CompileCert.Canon.mem_ctxPairs _ 0 _ p).1 hp
+    refine ⟨m, List.mem_of_getElem? hm, ?_⟩
     rcases hcase with rfl | ⟨k, c, hc, rfl⟩
     · exact .inl rfl
     · exact .inr ⟨c, Array.mem_toList_iff.mpr (Array.mem_of_getElem? hc), rfl⟩
@@ -462,17 +458,17 @@ theorem ctx_memberName {ms : List MutConst} {n : Ix.Name} {idx : Nat}
 
 /-- A block's members read their member names as member slots. -/
 theorem block_scope (ms : List MutConst) (context : CompileEnv × BlockEnv) (cenv : CompileEnv) (e : Ix.Expr) :
-    ConstsSatisfy (SelfName (BlockEmission.mutContext (ms.map ([·])) context).2 selfAny
+    ConstsSatisfy (SelfName (BlockEmission.mutContext ms context).2 selfAny
       (BoundOr cenv (MemberName ms))) e :=
   constsSatisfy_of_forall (fun m index found => by
-    change (MutConst.ctx (ms.map ([·]))).get? m = some index at found
+    change (MutConst.ctx ms).get? m = some index at found
     rw [Std.TreeMap.get?_eq_getElem?] at found
     exact ⟨_, rfl, .inl (ctx_memberName found)⟩) e
 
 /-- **The names a block compiled in its members' order references** are member names or
 bindings of the state it is compiled at. -/
 theorem block_names {ms : List MutConst} {cenv : CompileEnv} {benv : BlockEnv} {out : BlockResult}
-    {after : BlockState} (ran : rawRun (compileMutualBlock (ms.map ([·]))) (cenv, benv) {} = (.ok out, after))
+    {after : BlockState} (ran : rawRun (compileMutualBlock ms) (cenv, benv) {} = (.ok out, after))
     {m : MutConst} (hm : m ∈ ms) {e : Ix.Expr} (he : e ∈ BlockEmission.memberSources m) {n : Ix.Name}
     (hn : Names n e) : MemberName ms n ∨ ∃ a, lookupBinding cenv {} n = some a := by
   let cx := BlockRefs.addrCtx fun a => cenv.blobs.get? a
@@ -486,14 +482,14 @@ theorem block_names {ms : List MutConst} {cenv : CompileEnv} {benv : BlockEnv} {
   obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok ran
   have kept : ∀ m ∈ ms, Good cx param selfAny (DefinitionEmission.relOf param names σOf m) {} seededState :=
     fun m _ => (EmissionBlocks.preseed_then cx param selfAny {} (related := DefinitionEmission.relOf param names σOf m)
-      (context := BlockEmission.mutContext (ms.map ([·])) (cenv, benv)) (fun _ => rfl)
+      (context := BlockEmission.mutContext ms (cenv, benv)) (fun _ => rfl)
       (BlockStart.clean_empty.good cx param selfAny _) seeded).1
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, -⟩ := bind_ok compiled
   unfold compileMutConsts at payloadRan
   obtain ⟨state, middle', classesRan, -⟩ := bind_ok payloadRan
-  obtain ⟨-, ps, -, each⟩ := DefinitionEmission.classes_each cx param selfAny names {} σOf
-    (BlockEmission.mutContext (ms.map ([·])) (cenv, benv)) (fun _ => rfl) (boundOr_external cenv _ _) ms {}
+  obtain ⟨-, ps, -, each⟩ := DefinitionEmission.members_each cx param selfAny names {} σOf
+    (BlockEmission.mutContext ms (cenv, benv)) (fun _ => rfl) (boundOr_external cenv _ _) ms {}
     (fun _ _ e _ => block_scope ms _ cenv e) kept classesRan
   obtain ⟨_, -, -, -, roots⟩ := InductiveUnits.forall₂_mem_left each m hm
   exact (rootsRead_names roots he hn).elim fun _ h => h
@@ -568,11 +564,11 @@ theorem memberSources_terms {E : Ix.Name → Option Ix.ConstantInfo} {x : Ix.Nam
     simpa [BlockEmission.memberSources, termsOf] using he
   | _ => simp [memberOf, hE] at hm
 
-/-- `sourceClasses` is one class per member, in some order of the members. -/
-theorem sourceClasses_perm (cs : Array MutConst) :
-    ∃ ms : List MutConst, sourceClasses cs = ms.map ([·]) ∧ ms.Perm cs.toList := by
-  refine ⟨_, LeanOrder.sourceClasses_def cs, ?_⟩
-  have p := ((Ix.CompileCert.Canon.qsort_perm cs.zipIdx (LeanOrder.zipBefore LeanOrder.classKey)).toList).map (·.1)
+/-- `sourceMembers` is one entry per member, in some order of the members. -/
+theorem sourceMembers_perm (cs : Array MutConst) :
+    (sourceMembers cs).Perm cs.toList := by
+  rw [LeanOrder.sourceMembers_def]
+  have p := ((Ix.CompileCert.Canon.qsort_perm cs.zipIdx (LeanOrder.zipBefore LeanOrder.orderKey)).toList).map (·.1)
   rw [Array.toList_zipIdx, List.zipIdx_map_fst] at p
   exact p
 
@@ -623,8 +619,7 @@ theorem fold_member_names (P : Premises env roots sub ixe failures t envQ) {x : 
       rw [hcs]
       simp only [List.nil_append, List.mem_filterMap]
       exact ⟨k, hk, hmk⟩
-    obtain ⟨ms, hms, perm⟩ := sourceClasses_perm cs
-    rw [hms] at hrun
+    have perm := sourceMembers_perm cs
     rcases block_names hrun (perm.mem_iff.mpr hmcs) he hn with ⟨m', hm', hname⟩ | ⟨a, hb⟩
     · obtain ⟨k', hk'⟩ := ofCs m' (perm.mem_iff.mp hm')
       obtain ⟨hnm, hct'⟩ := member_input P hk'

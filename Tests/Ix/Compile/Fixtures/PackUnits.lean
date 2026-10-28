@@ -1,4 +1,4 @@
-/- Fixture of the `pack-units` runner (CQ2.19; from a34e659a), elaborated at run time and in no Lake library: blocks with
+/- Fixture of the `pack-units` runner, elaborated at run time and in no Lake library: blocks with
 eager and on-demand auxiliaries. `Tree.size`'s equation lemmas are realised on demand by
 `size_leaf` (a later declaration); `Tree` has `match` and injectivity lemmas; `A`/`B` is a mutual
 block whose `sizeOf` family names both members. -/

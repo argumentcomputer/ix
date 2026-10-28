@@ -462,9 +462,22 @@ script "build-all" (args) := do
     if exitCode != 0 then failed := failed.push name
   IO.println "Building: every module under the covered directories (check-modules)"
   if (← checkModules args) != 0 then failed := failed.push "check-modules"
+  IO.println "Checking: source terminology (check-source-docs)"
+  let hygiene ← IO.Process.spawn {
+    cmd := "lake", args := #["env", "lean", "--run", "Scripts/SourceHygiene.lean"]
+    stdout := .inherit, stderr := .inherit }
+  if (← hygiene.wait) != 0 then failed := failed.push "check-source-docs"
   if failed.isEmpty then return 0
-  IO.eprintln s!"Failed to build {failed.size} of {allNames.length + 1} targets: {", ".intercalate failed.toList}"
+  IO.eprintln s!"Failed {failed.size} of {allNames.length + 2} build and lint checks: {", ".intercalate failed.toList}"
   return 1
+
+/-- Reject retired compiler APIs and private planning references in source
+and documentation. The scanner has no grandfather baseline. -/
+script "check-source-docs" := do
+  let child ← IO.Process.spawn {
+    cmd := "lake", args := #["env", "lean", "--run", "Scripts/SourceHygiene.lean"]
+    stdout := .inherit, stderr := .inherit }
+  return ← child.wait
 
 /-- The module-coverage gate (`checkModules`), always strict. `lake lint`
 runs it too, with the lint arguments. -/

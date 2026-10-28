@@ -259,7 +259,7 @@ def Derived.spell (n : Name) : Derived → Name
 
 /-! ## Modes -/
 
-/-- **The checker's modes** (IXC-PLAN §3): what identifies an input constant,
+/-- **The checker's modes**: what identifies an input constant,
 and what display data a term carries.
 * `anon`: Ixon, anonymous: identity by address, no names;
 * `meta`: Ixon with its metadata: identity by address, names for display;
@@ -293,7 +293,7 @@ class Certified (md : Mode) : Prop where
 instance : Certified .anon := ⟨fun _ => rfl⟩
 instance : Certified .source := ⟨fun _ => rfl⟩
 
-/-! ### Display fields (IXC-PLAN §3, step 6)
+/-! ### Display fields
 
 A display field has type `md.D α`: a value in `.meta`, `()` elsewhere. The
 instances below case on the mode, so a structure with display fields derives
@@ -425,7 +425,7 @@ instance : LawfulBEq (Key md) where
 
 /-! ## Renaming -/
 
-/-- **A renaming of input keys** (IXC-PLAN §12): `.id i` becomes `.id (f i)`, a
+/-- **A renaming of input keys**: `.id i` becomes `.id (f i)`, a
 role key is fixed, and a derived key is renamed through its base. The bridge
 from Source to Ixon renames by `Key.map f` with `f` a Lean name's compiled
 address (`Ix.Cert.RenamingLemma`). -/

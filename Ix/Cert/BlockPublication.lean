@@ -45,7 +45,7 @@ theorem stored {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all 
 index `j`, and the members' count fits the wire. -/
 theorem definition_rows {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     {defs : List Ix.Def} (two : 2 ≤ defs.length)
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after)) :
     defs.length < UInt64.size ∧ ∀ j (hj : j < defs.length),
       (defs[j].name, MutualProjections.memberProjection output.blockAddr j.toUInt64 (.defn defs[j])) ∈
         MutualProjections.logicalRows output.projections := by
@@ -56,12 +56,7 @@ theorem definition_rows {context : CompileEnv × BlockEnv} {before after : Block
   obtain ⟨_, _, -, compiled⟩ := bind_ok ran
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
-  have nonempty : ∀ members ∈ (defs.map MutConst.defn).map ([·]), members ≠ [] := by
-    intro members h
-    simp only [List.map_map, List.mem_map, Function.comp_apply] at h
-    obtain ⟨_, _, rfl⟩ := h
-    simp
-  have count := ProjectionLayout.payload_count _ nonempty _ _ _ _ payloadRan
+  have count := ProjectionLayout.payload_count _ _ _ _ _ payloadRan
   obtain ⟨members, roots, metadata⟩ := payload
   dsimp only at finished count
   obtain ⟨-, header, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
@@ -80,7 +75,7 @@ theorem definition_rows {context : CompileEnv × BlockEnv} {before after : Block
   dsimp only [BlockResult.mk']
   rw [MutualProjections.build_rows]
   unfold MutualProjections.expectedRows
-  refine List.mem_flatMap.mpr ⟨([.defn defs[j]], j), ?_, ?_⟩
+  refine List.mem_flatMap.mpr ⟨(.defn defs[j], j), ?_, ?_⟩
   · rw [List.mem_zipIdx_iff_getElem?]
     simp [hj]
   · simp [MutualProjections.sourceRows, MutConst.name, MutConst.ctors]
@@ -119,7 +114,7 @@ theorem member_published {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : Compile
     {k : Ix.Name} {r : BlockResult} {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult} {defs : List Ix.Def}
     (two : 2 ≤ defs.length)
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after))
     (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (insub : ∀ j (hj : j < defs.length), (sub.consts.get? defs[j].name).isSome = true) :
     defs.length < UInt64.size ∧ ∀ j (hj : j < defs.length),
@@ -151,7 +146,7 @@ theorem owned {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all :
     {k : Ix.Name} {r : BlockResult} {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult} {defs : List Ix.Def}
     (two : 2 ≤ defs.length)
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after))
     (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (insub : ∀ j (hj : j < defs.length), (sub.consts.get? defs[j].name).isSome = true) :
     ∀ j (hj : j < defs.length), ∃ P c', addrOf ixe defs[j].name = some P ∧ recordAt ixe P = some c' ∧
@@ -166,7 +161,7 @@ theorem apart {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all :
     {k : Ix.Name} {r : BlockResult} {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult} {defs : List Ix.Def}
     (two : 2 ≤ defs.length)
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before = (.ok output, after))
     (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (insub : ∀ j (hj : j < defs.length), (sub.consts.get? defs[j].name).isSome = true) :
     ∀ j (hj : j < defs.length) i (hi : i < defs.length), addrOf ixe defs[j].name = addrOf ixe defs[i].name →
@@ -229,7 +224,7 @@ theorem exactNames_of_published (context : CompileEnv × BlockEnv)
     {bindings : ExpressionState.Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before =
       (.ok output, after))
     (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
     {ixe : Ixon.Env} (acyclic : referenceCycle ixe = none)

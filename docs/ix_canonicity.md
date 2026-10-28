@@ -797,7 +797,7 @@ other stored form can check. Concretely:
   motives (via the target's source recursor — including AUX targets,
   which recurse through their own head-rewrite plans). The ORIGINAL
   head (source name + source levels) was preserved in `meta_sharing`,
-  pointed at by `ExprMetaData::CallSite::orig_head` (retired, CQ3.6),
+  pointed at by `ExprMetaData::CallSite::orig_head` (retired),
   and restored by decompile.
 - `.below_N` / `.brecOn_N[.go|.eq]` of evaporated auxes have no
   canonical regeneration: they compile as **surgered originals**
@@ -967,13 +967,10 @@ written:
 
 ## 8. Call-Site Surgery
 
-> **History.** This section describes the call-site surgery as it ran
-> before Pass 3. Since the flip to Pass 3 no compile registers a plan:
-> the callers of a changed block are rewritten through Pass 3 images
-> instead, and the surgery was deleted from both compilers (CQ3.5,
-> 2026-10-20). The `CallSite` metadata below was kept for decoding
-> artifacts written before Pass 3 until CQ3.6 retired it from the format:
-> kinds 10 and 11 are now refused, so such artifacts no longer decode.
+> **History.** This section describes removed call-site rewriting. The current
+> compiler preserves Lean's members and calls. Both compilers refuse the retired
+> `CallSite` and `EtaCallSite` metadata kinds 10 and 11, so artifacts using those
+> kinds no longer decode.
 
 User code — and Lean-auto-generated constants like `_sizeOf_N`,
 `_ctorIdx`, `.noConfusion` — reference aux constants by applying them

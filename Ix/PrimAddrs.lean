@@ -8,12 +8,10 @@ public import Std.Data.HashSet
 
 Mirror: crates/kernel/src/primitive.rs (`PrimAddrs::new()`).
 
-The hardcoded content addresses of the well-known primitives, the reserved
-kernel-marker addresses, the Lean parity table and the membership set over
-them, moved verbatim out of `Ix.Tc.Primitive` (step 10) so that consumers
-that need only addresses (the resource validator's profile, the IxVM claim
-harness) do not import `Ix.Tc`. The names are unchanged (`Ix.Tc.PrimAddrs`,
-`Ix.Tc.reservedMarkerName`, `Ix.Tc.primAddrSet`) for these address-only users.
+The primitive and reserved-marker content addresses, the Lean parity table,
+and their membership set are shared by the resource validator and IxVM claim
+harness. They require only the address representation, independently of the
+kernel typechecker.
 The addresses are hardcoded BLAKE3 hashes matching Rust's `PrimAddrs::new()`;
 regenerate with `lake test -- --ignored rust-kernel-build-primitives` and
 update both tables. The ordered live comparison is
@@ -29,7 +27,7 @@ address-only dispatch on that real constant would be unsound. The
 public section
 @[expose] section
 
-namespace Ix.Tc
+namespace Ix
 
 /-- Hardcoded canonical primitive addresses (for lookup in the env). -/
 structure PrimAddrs where
@@ -378,7 +376,7 @@ def primAddrSet : Std.HashSet Address := Id.run do
     s := s.insert a
   return s
 
-end Ix.Tc
+end Ix
 
 end
 end

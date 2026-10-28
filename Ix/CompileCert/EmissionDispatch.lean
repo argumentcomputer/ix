@@ -10,10 +10,10 @@ This module proves:
 
 * the dispatch equations, for every `ConstantInfo` kind;
 * `constant_codec`: for every kind, a successful compile from a state whose
-  tables are on the wire returns a block that decodes exactly (CT-15's
+  tables are on the wire returns a block that decodes exactly (
   `FamilyWire.constant_codec`);
 * the mutual payload's count guards (`PayloadArrays`: the outer and nested
-  array counts the wire format needs) and `mutualBlock_codec` (CT-15's
+  array counts the wire format needs) and `mutualBlock_codec` (
   `FamilyWire.mutualBlock_codec`). -/
 
 namespace Ix.CompileCert.EmissionDispatch
@@ -210,7 +210,7 @@ theorem constant_codec (context : CompileEnv × BlockEnv)
     all_goals try (cases compiled)
     exact inductive_codec (singletonContext value.cnst.name context) _ wire compiled
 
-/-! ## Mutual payload counts (CT-15's `PayloadArrays`) -/
+/-! ## Mutual payload counts (`PayloadArrays`) -/
 
 theorem member_counts (member : Ixon.MutConst) :
     Emission.Yields (checkMutConstArrayCounts member) (fun _ => MutConstHeaderWF member) := by
@@ -297,7 +297,7 @@ theorem standalone_header (members : Array Ixon.MutConst) (info : Ixon.ConstantI
 
 /-- The pure mutual builder's result decodes exactly, given header-valid
 members and wire-valid tables. -/
-theorem build_mutual_codec (limits : Ix.Sharing.Exact.Limits) (classes : List (List MutConst))
+theorem build_mutual_codec (limits : Ix.Sharing.Exact.Limits) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) (state : BlockState)
     (bounds : ConstantInfoHeaderWF (.muts members)) (tables : BlockWireTablesWF state) (output : BlockResult)
     (ran : buildCompiledMutualBlock limits classes members metadata state = .ok output) :
@@ -318,7 +318,7 @@ theorem build_mutual_codec (limits : Ix.Sharing.Exact.Limits) (classes : List (L
 /-- The mutual finisher changes no state and returns a block that decodes
 exactly, given wire-valid tables: its own guard supplies the member
 headers. -/
-theorem finish_mutual_codec (context : CompileEnv × BlockEnv) (classes : List (List MutConst))
+theorem finish_mutual_codec (context : CompileEnv × BlockEnv) (classes : List MutConst)
     (members : Array Ixon.MutConst) (metadata : Array (Ix.Name × Ixon.ConstantMeta)) {before after : BlockState}
     (tables : BlockWireTablesWF before) {output : BlockResult}
     (ran : rawRun (finishMutualCompilation classes members metadata) context before = (.ok output, after)) :
@@ -350,7 +350,7 @@ theorem finish_mutual_codec (context : CompileEnv × BlockEnv) (classes : List (
 tables are on the wire returns a block that decodes exactly; the mutual guard
 supplies the nested array counts. -/
 theorem mutualBlock_codec (context : CompileEnv × BlockEnv)
-    (classes : List (List MutConst)) {before after : BlockState} {output : BlockResult}
+    (classes : List MutConst) {before after : BlockState} {output : BlockResult}
     (wire : BlockWireTablesWF before)
     (ran : rawRun (compileMutualBlock classes) context before = (.ok output, after)) :
     BlockResultCodecWF output := by

@@ -8,10 +8,10 @@ builder over the block's primary tables and is serialized and addressed
 once (`BlockResult.mk'`). This module composes, for the definition-like,
 axiom, quotient, recursor and standalone inductive-family blocks:
 
-* one block-finisher inversion (`block_ok`, R07-17): the payload's run, the
+* one block-finisher inversion (`block_ok`): the payload's run, the
   sharing build and the exact wrapper;
 * the emitter's root readings with the generic sharing read
-  (`SharingRoots.build_read`, R07-01): the emitted record keeps the
+  (`SharingRoots.build_read`): the emitted record keeps the
   payload's skeleton (`SharingRoots.erase`: everything but the roots, which
   is what the source fixes) and its actual member reader reads its roots
   as terms related to the source's, in order;
@@ -21,9 +21,9 @@ axiom, quotient, recursor and standalone inductive-family blocks:
 * the codec: a successful block from a state whose tables are on the wire
   decodes exactly (`Ix.Sharing.Verify.BlockResultCodecWF`), through the
   success-only wire traversal (`EmissionWire`) and the builder's
-  `buildConstantWithSharing_wireWF_headers` (R07-10).
+  `buildConstantWithSharing_wireWF_headers`.
 
-CT-15's `DefinitionBlock`,
+`DefinitionBlock`,
 `HeaderBlock`, `RecursorBlock`, `InductiveBlock` and the block half of
 `FamilyWire`. -/
 

@@ -4,7 +4,7 @@ public import Ix.Compile.Canon.Graph
 public import Ix.CompileCert.Canon.QSort
 
 /-!
-# M7 L1, components: Tarjan's state and its operations
+# Tarjan's state and its operations
 
 `Ix.Compile.Canon.tarjanLoop` runs Tarjan's algorithm with an explicit call stack over
 arrays (`TarjanState`). This module reads the state as functions (`ix`, `lw`, `os`: the

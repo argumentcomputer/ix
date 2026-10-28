@@ -20,11 +20,11 @@ raw compile (`canonicalTail`), and then the whole operation:
   (`internCanonical_returns`, `canonicalTail_returns`);
 * the certified reader reads the returned slot as the canonical universe,
   whose value under every valuation is the raw universe's
-  (`canonicalTail_read`, through CT-12's `convCanon_eval`), and every earlier
+  (`canonicalTail_read`, through `convCanon_eval`), and every earlier
   successful reading survives (`canonicalTail_reading`).
 
 The raw compile computes the exact lowering of the source level
-(`UniverseMeaning.compileUniv_exact`, which needs CQ2.8's exact memo keys),
+(`UniverseMeaning.compileUniv_exact`, which needs exact memo keys),
 and `compileAndInternUnivCanon_eq` composes it with the tail:
 
 * every run keeps the universe invariants (`Sound`) and every old primary
@@ -363,7 +363,7 @@ theorem canonicalTail_returns (raw : Ixon.Univ) (context : CompileEnv × BlockEn
 /-- **The tail reads back at the raw universe's value.** After a successful
 run, the certified reader reads the returned slot as the canonical form of
 `raw`, whose value under every valuation of its level parameters is the
-value of `raw` itself (CT-12's `convCanon_eval`). -/
+value of `raw` itself (`convCanon_eval`). -/
 theorem canonicalTail_read {md : Mode} (raw : Ixon.Univ) (context : CompileEnv × BlockEnv)
     (before : BlockState) (exact : CanonCacheExact before) (sound : TablesSound before)
     {value : UInt64 × Option UInt64} {after : BlockState}
@@ -418,7 +418,7 @@ theorem canonicalTail_cache_sound {md : Mode} (raw : Ixon.Univ) (compileContext 
     (by have same := congrArg BlockState.exprCache (canonicalTail_frame raw compileContext before); exact same)
     valid
 
-/-! ## The whole operation (R4: after CQ2.8's exact universe memo)
+/-! ## The whole operation with exact universe memoization
 
 `compileAndInternUnivCanon = compileUniv >>= canonicalTail` (by `rfl`), so the
 whole operation composes the raw compiler's exactness
@@ -518,7 +518,7 @@ structure LevelMeaning (params : List Ix.Name) (σ : Ix.Name → LevelParam)
   defined : ∀ allowed : List LevelParam, (∀ index, index < params.length → param index ∈ allowed) →
     Kernel.Level.allParamsDefined allowed level = true
   /-- The level is the reading of the canonical form of the source level's exact
-  lowering (N2: with `CanonLevelReading.canonLevelIn_ingress`, the Source level
+  lowering (with `CanonLevelReading.canonLevelIn_ingress`, the Source level
   in the compiler's canonical form). -/
   exact : ∃ raw, lower params source = some raw ∧ level = Kernel.Reader.convUniv param (Ixon.canonUniv raw)
 

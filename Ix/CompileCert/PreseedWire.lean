@@ -12,7 +12,7 @@ were before: the collector writes neither table nor binding
 `checkPreseedUnivs` admits only wire-valid canonical universes; and the
 interners keep the tables on the wire given those facts
 (`Ix.CompileCert.WireTables`). The binding view is untouched by every run
-(`preseed_binding`). CT-14's `PreseedWire`. -/
+(`preseed_binding`). `PreseedWire`. -/
 
 namespace Ix.CompileCert.PreseedWire
 

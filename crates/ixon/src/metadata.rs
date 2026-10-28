@@ -987,8 +987,8 @@ fn get_mdata_stack_indexed(
 //   node_i := tag payload,   tag = kind << 3 | mask
 //
 // Kinds: 0 Leaf, 1 App, 2..5 Binder (2 + BinderInfo), 6 LetBinder, 7 Ref,
-// 8 Prj, 9 Mdata. Kinds 10 and 11 (the retired CallSite and EtaCallSite,
-// CQ3.6) are refused. The payload is the node's fields in declaration
+// 8 Prj, 9 Mdata. Kinds 10 and 11 (the retired CallSite and EtaCallSite)
+// are refused. The payload is the node's fields in declaration
 // order. Child references are never absolute:
 //
 // * The *structural* slots (App fun/arg, Binder type/body, Let
@@ -1733,7 +1733,7 @@ mod tests {
     );
   }
 
-  /// The retired call-site kinds (10 `CallSite`, 11 `EtaCallSite`; CQ3.6)
+  /// The retired call-site kinds (10 `CallSite`, 11 `EtaCallSite`)
   /// are refused: a file written before their retirement no longer decodes.
   #[test]
   fn arena_rejects_retired_call_site_kinds() {

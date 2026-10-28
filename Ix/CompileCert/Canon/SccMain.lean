@@ -3,7 +3,7 @@ module
 public import Ix.CompileCert.Canon.SccStep
 
 /-!
-# M7 L1, components: the components are the strongly connected components
+# Tarjan's components are the strongly connected components
 
 `Ix.Compile.Canon.condensation adj` runs Tarjan's loop from every node in index order over
 the graph with out-of-range successors dropped (`filt adj`). When it returns (`some C`):

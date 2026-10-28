@@ -153,56 +153,34 @@ theorem built_notPrj {c : Ixon.Constant} (h : BlockLayout.Built c) : BlockLayout
     simp_all [BlockLayout.NotPrj, SharingRoots.erase, Ix.Sharing.Exact.mapRoots]
 
 /-- Every source-indexed reference is a reference. -/
-theorem expectedReferences_some {owner : Address} {sources : List (List MutConst)} :
+theorem expectedReferences_some {owner : Address} {sources : List MutConst} :
     ∀ x ∈ MutualProjections.expectedReferences owner sources, x.2.isSome = true := by
   intro x hx
   simp only [MutualProjections.expectedReferences, MutualProjections.sourceReferences, List.mem_flatMap,
     List.mem_cons, List.mem_map] at hx
-  obtain ⟨⟨members, index⟩, -, source, -, hx⟩ := hx
+  obtain ⟨⟨source, index⟩, -, hx⟩ := hx
   rcases hx with rfl | ⟨⟨ctor, position⟩, -, rfl⟩ <;> rfl
 
-/-- A mutual block with no source-indexed reference has no class, when its classes are not empty. -/
-theorem expectedReferences_nil {owner : Address} {sources : List (List MutConst)}
-    (nonempty : ∀ members ∈ sources, members ≠ [])
+/-- A mutual block without source-indexed references has no members. -/
+theorem expectedReferences_nil {owner : Address} {sources : List MutConst}
     (h : MutualProjections.expectedReferences owner sources = []) : sources = [] := by
   cases sources with
   | nil => rfl
-  | cons members rest =>
-    exfalso
-    cases members with
-    | nil => exact nonempty [] List.mem_cons_self rfl
-    | cons m ms =>
-      simp [MutualProjections.expectedReferences, MutualProjections.sourceReferences, List.zipIdx_cons] at h
-
-/-- Lean's order puts each member in a class of its own. -/
-theorem sourceClasses_single {cs : Array MutConst} :
-    ∀ members ∈ sourceClasses cs, ∃ x ∈ cs, members = [x] := by
-  intro members hm
-  unfold sourceClasses at hm
-  try dsimp only at hm
-  obtain ⟨e, he, rfl⟩ := List.mem_map.1 hm
-  exact ⟨e.1, Array.fst_mem_of_mem_zipIdx (Ix.CompileCert.Canon.mem_qsort.1 (Array.mem_toList_iff.1 he)), rfl⟩
+  | cons member rest =>
+    simp [MutualProjections.expectedReferences, MutualProjections.sourceReferences, List.zipIdx_cons] at h
 
 /-- **A mutual block compile's claims resolve**, in Lean's order over members whose constructors
 are at their positions, unless the block is a mutual block without classes. -/
 theorem mutual_claims {cs : Array MutConst}
     (positions : ∀ m ∈ cs, MutualProjections.ConstructorPositions m)
     {ctx : CompileEnv × BlockEnv} {before after : BlockState} {out : BlockResult}
-    (ran : rawRun (compileMutualBlock (sourceClasses cs)) ctx before = (.ok out, after))
-    (wire : out.block.wireWF) (classes : IsMuts out.block.info → sourceClasses cs ≠ []) :
+    (ran : rawRun (compileMutualBlock (sourceMembers cs)) ctx before = (.ok out, after))
+    (wire : out.block.wireWF) (classes : IsMuts out.block.info → sourceMembers cs ≠ []) :
     ClaimsResolve out := by
-  have nonempty : ∀ members ∈ sourceClasses cs, members ≠ [] := by
-    intro members hm
-    obtain ⟨x, -, rfl⟩ := sourceClasses_single members hm
-    exact List.cons_ne_nil x []
-  have agree : MutualProjections.ClassesAgree (sourceClasses cs) := by
-    intro members hm left hl right hr
-    obtain ⟨x, -, rfl⟩ := sourceClasses_single members hm
-    rw [List.mem_singleton.1 hl, List.mem_singleton.1 hr]
-  have pos : ∀ source ∈ (sourceClasses cs).flatten, MutualProjections.ConstructorPositions source :=
-    fun source hs => positions source ((LayoutExtra.sourceClasses_flat cs).2 source hs)
-  have refs := MutualArtifact.mutual_references (sourceClasses cs) nonempty agree pos ctx before out after ran
-  have built := (BlockLayout.compileMutualBlock_shape (sourceClasses cs) ctx before out after ran).built
+  have pos : ∀ source ∈ sourceMembers cs, MutualProjections.ConstructorPositions source :=
+    fun source hs => positions source (Claims.mem_sourceMembers hs)
+  have refs := MutualArtifact.mutual_references (sourceMembers cs) pos ctx before out after ran
+  have built := (BlockLayout.compileMutualBlock_shape (sourceMembers cs) ctx before out after ran).built
   refine ⟨fun hempty => ?_, fun p hp store hs => ?_⟩
   · have hnil : out.projections = #[] := Array.isEmpty_iff.mp hempty
     cases hi : out.block.info with
@@ -215,7 +193,7 @@ theorem mutual_claims {cs : Array MutConst}
       exfalso
       have read := refs (fun _ => some out.block) rfl wire
       rw [hnil] at read
-      have hsources := expectedReferences_nil nonempty read.symm
+      have hsources := expectedReferences_nil read.symm
       exact classes (by rw [hi]; trivial) hsources
   · have read := refs store hs wire
     have hrow : (p.1, resolveSource store (Address.admissionHash (Ixon.ser p.2.1)) p.2.1) ∈
@@ -226,13 +204,13 @@ theorem mutual_claims {cs : Array MutConst}
     exact expectedReferences_some _ hrow
 
 /-- A mutual-block registration succeeds only for a block with a class. -/
-theorem register_ok {cls : List (List MutConst)} {addr : Address} {ctx : CompileEnv × BlockEnv}
+theorem register_ok {cls : List MutConst} {addr : Address} {ctx : CompileEnv × BlockEnv}
     {s s' : BlockState} {u : Unit} (h : rawRun (registerMutsEntry cls addr) ctx s = (.ok u, s')) : cls ≠ [] := by
   rintro rfl
   unfold registerMutsEntry at h
   simp [rawRun_throw] at h
 
-theorem Returns.bind_register {P : BlockResult → Prop} {cls : List (List MutConst)} {addr : Address}
+theorem Returns.bind_register {P : BlockResult → Prop} {cls : List MutConst} {addr : Address}
     {k : Unit → CompileM BlockResult} (h : cls ≠ [] → BlockRecords.Returns P (k ())) :
     BlockRecords.Returns P (registerMutsEntry cls addr >>= k) := by
   intro ctx s x s' ran
@@ -310,13 +288,13 @@ theorem compileBlock_claims {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all :
       refine BlockRecords.Returns.elim
         (P := fun (x : BlockResult) => BlockRecords.recordsOf x = BlockRecords.recordsOf out) ?_
       repeat returns_step
-    have classes : IsMuts out.block.info → sourceClasses cs ≠ [] := by
+    have classes : IsMuts out.block.info → sourceMembers cs ≠ [] := by
       intro hm
       obtain ⟨ms, hms⟩ : ∃ ms, out.block.info = .muts ms := by
         revert hm
         cases out.block.info <;> simp [IsMuts]
       revert h
-      refine BlockRecords.Returns.elim (P := fun (_ : BlockResult) => sourceClasses cs ≠ []) ?_
+      refine BlockRecords.Returns.elim (P := fun (_ : BlockResult) => sourceMembers cs ≠ []) ?_
       simp only [hms, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
       refine BlockRecords.Returns.bind fun _ => ?_
       refine Returns.bind_register fun hne => ?_

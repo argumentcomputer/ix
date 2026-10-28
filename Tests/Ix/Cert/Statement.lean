@@ -18,7 +18,7 @@ import Tests.Ix.Cert.ExecutedChecks
   its bytes (`Ix.Cert.CompileAuthentic`), and every input constant is
   published exactly when the report does not list it as failed
   (`Ix.Cert.CompileCovers`). Both are proved now, from `compileReport`'s own
-  checks (`Ix.Cert.checkReport`, CQ2.27); the checks are timed on the
+  checks (`Ix.Cert.checkReport`); the checks are timed on the
   compile's result and must refuse six tampered copies of it, and the
   reference check (`Ix.Cert.referenceCycle`, Route A, B4) must find four
   planted reference cycles (two decoded, two stored as bytes), and its
@@ -85,7 +85,7 @@ def coverage (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failure
     | false, true => (pub, failed + 1, both, neither)
     | false, false => (pub, failed, both, neither.push n)
 
-/-- `compileReport`'s own checks (`Ix.Cert.checkReport`, CQ2.27): timed on
+/-- `compileReport`'s own checks (`Ix.Cert.checkReport`): timed on
 the compile's result, which they must pass, and run on tampered copies of
 it, each of which they must refuse. The reference check alone
 (`Ix.Cert.referenceCycle`, Route A, B4) is timed on the result and must find
@@ -772,7 +772,7 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
     errors := errors.push s!"{label}: CompileAuthentic: {badRecords.size} records and \
       {badBlobs.size} blobs are not at pure BLAKE3 of their bytes: \
       {(badRecords ++ badBlobs).toList.take 5}"
-  -- `compileReport`'s own checks (CQ2.27)
+  -- `compileReport`'s own checks
   let (checkErrors, checkLines) ← checkReportCases label env ixe failures cenv
   errors := errors ++ checkErrors
   lines := lines ++ checkLines

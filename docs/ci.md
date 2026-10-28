@@ -30,6 +30,12 @@ that only run them.
 
 ## Test tiers
 
+`lake run check-source-docs` rejects retired compiler API names, numbered
+private work-queue labels and references to internal plan files in Lean,
+Rust and Markdown sources. It runs scanner controls on every invocation and
+uses no grandfather baseline. `lake lint` runs it after the strict module
+build and coverage checks.
+
 Every Lean test entry is registered once, with its tier, in
 `Tests/Main.lean` (the registry is `Tests/Registry.lean`). The tier says where
 the entry runs:

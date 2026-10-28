@@ -636,7 +636,7 @@ theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMe
     split
     rfl
 
-theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) :
     RowsMuts out := by
@@ -666,8 +666,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List (Lis
         (buildMutualProjections classes (Address.admissionHash (Ixon.ser block)) metas) :=
       List.mem_map.mpr ⟨p, Array.mem_toList_iff.mpr hp, rfl⟩
     rw [MutualProjections.build_rows, MutualProjections.expectedRows] at logical
-    obtain ⟨⟨members, index⟩, -, inClass⟩ := List.mem_flatMap.mp logical
-    obtain ⟨source, -, generated⟩ := List.mem_flatMap.mp inClass
+    obtain ⟨⟨source, index⟩, -, generated⟩ := List.mem_flatMap.mp logical
     unfold MutualProjections.sourceRows at generated
     rcases List.mem_cons.mp generated with e | rest
     · rw [(Prod.mk.inj e).2]
@@ -676,7 +675,7 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List (Lis
       rw [← (Prod.mk.inj e).2]
       rfl
 
-theorem compileMutualBlock_rows (classes : List (List MutConst)) :
+theorem compileMutualBlock_rows (classes : List MutConst) :
     Returns RowsMuts (compileMutualBlock classes) := by
   intro ctx s x s' ran
   unfold compileMutualBlock at ran
@@ -1083,54 +1082,38 @@ theorem member_kind (source : MutConst) : Yields (compileMutConstMember source)
   | indc value =>
     exact Yields.bindAny _ fun _ => Yields.pure rfl
 
-theorem class_kinds (sources : List MutConst) (initial : MutConstCompileState) :
-    Yields (compileMutConstClass sources initial) (fun output =>
+theorem members_kinds (sources : List MutConst) (initial : MutConstCompileState) :
+    Yields (compileMutConstMembers sources initial) (fun output =>
       output.payloads.toList.map payloadKind = initial.payloads.toList.map payloadKind ++
-        sources.head?.toList.map srcKind) := by
-  cases sources with
-  | nil => exact Yields.pure (by simp)
-  | cons source rest =>
-    rw [compileMutConstClass]
-    exact Yields.bind (member_kind source) fun member kind =>
-      fun context before output after ran => by
-        have same := ProjectionLayout.equivalents_payloads rest (initial.addRepresentative member) context
-          before output after ran
-        simp [same, MutConstCompileState.addRepresentative, kind]
-
-theorem classes_kinds (sources : List (List MutConst)) (initial : MutConstCompileState) :
-    Yields (compileMutConstClasses sources initial) (fun output =>
-      output.payloads.toList.map payloadKind = initial.payloads.toList.map payloadKind ++
-        (sources.filterMap List.head?).map srcKind) := by
+        sources.map srcKind) := by
   induction sources generalizing initial with
   | nil => exact Yields.pure (by simp)
   | cons source rest ih =>
-    intro context before output after ran
-    rw [compileMutConstClasses] at ran
-    obtain ⟨middle, state, firstRun, lastRun⟩ := bind_ok ran
-    have first := class_kinds source initial context before middle state firstRun
-    have last := ih middle context state output after lastRun
-    cases source <;> simpa [first, List.append_assoc, List.filterMap] using last
+    rw [compileMutConstMembers]
+    exact Yields.bind (member_kind source) fun member kind =>
+      fun context before output after ran => by
+        have restKinds := ih (initial.addMember member) context before output after ran
+        simpa [MutConstCompileState.addMember, kind, List.append_assoc] using restKinds
 
-/-- **The retained payloads have the representatives' definition kinds**, one per non-empty
-class, in class order. -/
-theorem payload_kinds (sources : List (List MutConst)) : Yields (compileMutConsts sources)
-    (fun output => output.1.toList.map payloadKind = (sources.filterMap List.head?).map srcKind) := by
+/-- The payloads keep every source member's definition kind, in order. -/
+theorem payload_kinds (sources : List MutConst) : Yields (compileMutConsts sources)
+    (fun output => output.1.toList.map payloadKind = sources.map srcKind) := by
   unfold compileMutConsts
-  exact Yields.bind (classes_kinds sources {}) fun compiled kinds =>
+  exact Yields.bind (members_kinds sources {}) fun compiled kinds =>
     Yields.pure (by simpa using kinds)
 
 /-- What a mutual block's compile says when its block is a standalone definition of kind
 `defn`: one class, its representative a definition of kind `defn`, and rows named after the
 classes' members, at least one. -/
-def MutDefnOut (classes : List (List MutConst)) (out : BlockResult) : Prop :=
+def MutDefnOut (classes : List MutConst) (out : BlockResult) : Prop :=
   ∀ d, out.block.info = .defn d → d.kind = .defn →
-    ∃ x, classes.filterMap List.head? = [x] ∧ srcKind x = some .defn ∧
-      out.projections ≠ #[] ∧ ∀ p ∈ out.projections, p.1 ∈ classes.flatten.map MutConst.name
+    ∃ x, classes = [x] ∧ srcKind x = some .defn ∧
+      out.projections ≠ #[] ∧ ∀ p ∈ out.projections, p.1 ∈ classes.map MutConst.name
 
-theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List MutConst}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
     {out : BlockResult}
-    (kinds : payloads.toList.map payloadKind = (classes.filterMap List.head?).map srcKind)
+    (kinds : payloads.toList.map payloadKind = classes.map srcKind)
     (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out) : MutDefnOut classes out := by
   unfold buildCompiledMutualBlock at ran
   cases hs : standaloneMutConstInfo? payloads with
@@ -1141,7 +1124,7 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List (Lis
     intro d hd hk
     have erased := (SharingRoots.build_roots (md := .anon) _ _ _ _ _ hb).1
     have rows : ∀ p ∈ buildStandaloneMutualProjections classes block metas,
-        (p.1, p.2.1) ∈ classes.flatten.map (fun source => (source.name, block)) := by
+        (p.1, p.2.1) ∈ classes.map (fun source => (source.name, block)) := by
       intro p hp
       rw [← MutualProjections.standalone_rows]
       exact List.mem_map.mpr ⟨p, Array.mem_toList_iff.mpr hp, rfl⟩
@@ -1160,16 +1143,13 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List (Lis
       have hkd := erase_defn_kind erased hd
       rw [hk] at hkd
       change [some definition.kind] = _ at kinds
-      generalize hL : classes.filterMap List.head? = L at kinds
-      rcases L with _ | ⟨x, _ | ⟨y, L⟩⟩
+      rcases classes with _ | ⟨x, _ | ⟨y, rest⟩⟩
       · simp at kinds
       · simp only [List.map_cons, List.map_nil, List.cons.injEq, and_true] at kinds
-        have hx : x ∈ classes.flatten := by
-          obtain ⟨cl, hcl, hh⟩ := List.mem_filterMap.mp (hL ▸ List.mem_singleton_self x)
-          exact List.mem_flatten.mpr ⟨cl, hcl, List.mem_of_mem_head? hh⟩
+        have hx : x ∈ [x] := List.mem_singleton_self x
         refine ⟨x, rfl, by rw [← kinds, ← hkd], ?_, ?_⟩
         · intro he
-          have hm : (x.name, block) ∈ (buildStandaloneMutualProjections classes block metas).toList.map
+          have hm : (x.name, block) ∈ (buildStandaloneMutualProjections [x] block metas).toList.map
               (fun p => (p.1, p.2.1)) := by
             rw [← MutualProjections.logicalRows, MutualProjections.standalone_rows]
             exact List.mem_map.mpr ⟨x, hx, rfl⟩
@@ -1188,7 +1168,7 @@ theorem buildMutual_defn {limits : Ix.Sharing.Exact.Limits} {classes : List (Lis
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb
     exact absurd (h.symm.trans hd) (by intro e; cases e)
 
-theorem compileMutualBlock_defn (classes : List (List MutConst)) :
+theorem compileMutualBlock_defn (classes : List MutConst) :
     Yields (compileMutualBlock classes) (MutDefnOut classes) := by
   intro ctx s x s' ran
   unfold compileMutualBlock at ran
@@ -1201,31 +1181,9 @@ theorem compileMutualBlock_defn (classes : List (List MutConst)) :
   have kinds := payload_kinds classes _ _ _ _ hp
   exact buildMutual_defn kinds (ProjectionLayout.finish_mutual_ok _ _ _ _ finished).2.2
 
-/-- Lean's order puts each member in a class of its own. -/
-theorem sourceClasses_flat (cs : Array MutConst) :
-    (sourceClasses cs).filterMap List.head? = (sourceClasses cs).flatten ∧
-      ∀ y ∈ (sourceClasses cs).flatten, y ∈ cs := by
-  unfold sourceClasses
-  dsimp only
-  generalize hL : (cs.zipIdx.qsort _).toList = L
-  have mem : ∀ e ∈ L, e.1 ∈ cs := by
-    intro e he
-    rw [← hL] at he
-    have := Ix.CompileCert.Canon.mem_qsort.mp (Array.mem_toList_iff.mp he)
-    exact Array.mem_of_getElem? (Array.mem_zipIdx_iff_getElem?.mp this)
-  clear hL
-  induction L with
-  | nil => exact ⟨rfl, fun y hy => by simp at hy⟩
-  | cons e L ih =>
-    obtain ⟨ih₁, ih₂⟩ := ih fun e' he' => mem e' (List.mem_cons_of_mem _ he')
-    refine ⟨?_, fun y hy => ?_⟩
-    · simp only [List.map_cons, List.filterMap_cons, List.head?_cons, List.flatten_cons]
-      rw [ih₁]
-      rfl
-    · simp only [List.map_cons, List.flatten_cons, List.mem_append, List.mem_singleton] at hy
-      rcases hy with rfl | hy
-      · exact mem e List.mem_cons_self
-      · exact ih₂ y hy
+/-- Ordering preserves membership in the source array. -/
+theorem sourceMembers_mem (cs : Array MutConst) :
+    ∀ y ∈ sourceMembers cs, y ∈ cs := fun _ h => Claims.mem_sourceMembers h
 
 /-- An invariant a loop's steps keep holds of its result. -/
 theorem forIn_rawRun_inv {α σ : Type} (I : σ → Prop) {body : α → σ → CompileM (ForInStep σ)}
@@ -1397,8 +1355,8 @@ theorem claimed_definition {env sub : Ix.Environment} {ixe : Ixon.Env} {failures
     obtain ⟨hblock', -, -, hrows⟩ := same
     obtain ⟨x, hx, hxk, hne, hrowsName⟩ :=
       compileMutualBlock_defn _ _ _ _ _ hmut d (hblock' ▸ hinfo) hk
-    obtain ⟨flat, inCs⟩ := sourceClasses_flat cs
-    have hxcs : x ∈ cs := inCs x (by rw [← flat, hx]; exact List.mem_singleton_self x)
+    have inCs := sourceMembers_mem cs
+    have hxcs : x ∈ cs := inCs x (by rw [hx]; exact List.mem_singleton_self x)
     obtain ⟨m, val, hm, rfl⟩ := members_defn loop x hxcs hxk
     have hn : n = val.cnst.name := by
       rcases hname with ⟨hempty, -⟩ | ⟨q, hq, rfl⟩
@@ -1412,7 +1370,7 @@ theorem claimed_definition {env sub : Ix.Environment} {ixe : Ixon.Env} {failures
         obtain ⟨q', hq', e⟩ := Array.mem_map.mp hm'
         have hq1 : q'.1 = q.1 := (Prod.mk.inj e).1
         have hnm := hrowsName q' hq'
-        rw [hq1, ← flat, hx] at hnm
+        rw [hq1, hx] at hnm
         simpa [Ix.MutConst.fromDefinitionVal, Ix.MutConst.name] using hnm
     rw [henv] at hm
     rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hm

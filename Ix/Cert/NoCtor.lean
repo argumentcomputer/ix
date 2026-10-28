@@ -3,7 +3,7 @@ import Ix.CompileCert.MutualInductiveReading
 import IxC.Kernel.Semantics.Bridge.DeclRun
 import Ix.Cert.LowerDistinct
 
-/-! # No constructor of a Source-accepted family occurs in its types (N-READS, N4 (b))
+/-! # No constructor of a Source-accepted family occurs in its types
 
 `inductive_reads` reads a standalone family's types with only the inductive as
 its self, so it asks that no constructor of the family occur in them
@@ -23,7 +23,7 @@ sources' constants to their keys:
   constructor's has its key);
 * `noCtor_of_checkSourceWith`, `inductive_reads_sourceAccepts`: so `inductive_reads`
   holds of a Source-accepted closure with its `NoCtorIn` premises discharged;
-  the family's name related to its key (R13's half) stays. -/
+  the family's name related to its key stays. -/
 
 namespace Ix.Cert.NoCtor
 
@@ -499,8 +499,7 @@ theorem lowerAll_mem {st : Ix.Kernel.Reader.State .source} {g : Graph}
 /-! ## Source acceptance: no constructor of a family in its types -/
 
 open Ix.CompileCert.InductiveReading (NoCtorIn) in
-/-- **No constructor of a Source-accepted family occurs in the family's types**
-(N-READS, N4 (b)): the ingress lowers the family's block to one `indDecl` whose
+/-- **No constructor of a Source-accepted family occurs in the family's types**: the ingress lowers the family's block to one `indDecl` whose
 type formers and constructors carry the sources' keys and their types'
 conversions (`convertInductive_entries`, `lowerInductive_decl`,
 `lowerAll_mem`); the reference fold checked it at its prefix
@@ -605,11 +604,11 @@ variable {md : Mode} (cx : Ctx md) (names : Ix.Name → CName md → Prop) (σ :
   (bindings : Bindings)
 
 /-- **A compiled standalone inductive of a Source-accepted closure is read back
-as its source** (N-READS, N4 (b)): `inductive_reads` with its Source premises
-(safety, constructor positions, telescopes: R12, through N1's admission) and
+as its source**: `inductive_reads` with its Source premises
+(safety, constructor positions, telescopes, through Source admission) and
 its "no constructor occurs" premises (`noCtor_of_checkSourceWith`) discharged by
 Source acceptance of `sub`. What stays: the family's own name related to its
-key (`selfKey`, R13's half), the reader's index and keys, the compile
+key (`selfKey`), the reader's index and keys, the compile
 context's agreement with `sub` on the constructor names, and the state the
 block starts from. -/
 theorem inductive_reads_sourceAccepts (V : Type w) [Ix.Kernel.SetTheory V]

@@ -2,10 +2,9 @@ import Ix.CompileCert.ReaderIndex
 
 /-! # The reader's recursor index: coverage and one recursor per motive
 
-CT-16's `ReaderIndexDiscovery`, re-derived for D8 (no pins; the stream
-facts `stream_covers`/`published_stream_order` need the admission's store
-coherence and the compile driver's publication, R10b/R13). Over records
-coherent with the store:
+The stream facts `stream_covers` and `published_stream_order` use admission's
+store coherence and the compile driver's publication. Over records coherent
+with the store:
 
 * an eligible recursor (one whose analysis the builder would accept) gets
   its block and motive covered: some recursor indexed at that block and

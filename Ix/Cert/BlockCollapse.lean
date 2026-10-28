@@ -148,9 +148,9 @@ theorem built_not_dPrj {c : Ixon.Constant} (built : BlockLayout.Built c) (p : Ix
 
 /-- **A mutual block's rows at definition projections are its definitions'**: every row is the
 block itself, or a row whose record is a definition projection names a definition-like source. -/
-theorem mutual_dPrj_rows (sources : List (List MutConst)) :
+theorem mutual_dPrj_rows (sources : List MutConst) :
     Emission.Yields (compileMutualBlock sources) (fun out => ∀ row ∈ out.projections, row.2.1 = out.block ∨
-      ∀ p, row.2.1.info = .dPrj p → ∃ c ∈ sources, ∃ src ∈ c, GroupBlocks.IsDefn src ∧ row.1 = src.name) := by
+      ∀ p, row.2.1.info = .dPrj p → ∃ src ∈ sources, GroupBlocks.IsDefn src ∧ row.1 = src.name) := by
   refine ProjectionLayout.mutual_block _ sources ?_
   unfold compileMutualPayload
   refine Emission.Yields.bindAny _ fun compiled => ?_
@@ -164,12 +164,11 @@ theorem mutual_dPrj_rows (sources : List (List MutConst)) :
     have hl := Claims.row_logical hrow
     rw [proj, MutualProjections.build_rows] at hl
     unfold MutualProjections.expectedRows at hl
-    obtain ⟨⟨members, index⟩, hm, hl⟩ := List.mem_flatMap.1 hl
-    obtain ⟨src, hsrc, hl⟩ := List.mem_flatMap.1 hl
+    obtain ⟨⟨src, index⟩, hm, hl⟩ := List.mem_flatMap.1 hl
     unfold MutualProjections.sourceRows at hl
     rcases List.mem_cons.1 hl with e | e
     · obtain ⟨e₁, e₂⟩ := Prod.mk.inj e
-      refine ⟨members, Claims.mem_of_mem_zipIdx hm, src, hsrc, ?_, e₁⟩
+      refine ⟨src, Claims.mem_of_mem_zipIdx hm, ?_, e₁⟩
       cases src with
       | defn d => trivial
       | indc i => rw [e₂] at hp; simp [MutualProjections.memberProjection] at hp
@@ -323,11 +322,11 @@ theorem dPrj_claimant (P : Premises env roots sub ixe failures t envQ) {n : Ix.N
       exact Array.mem_map.mpr ⟨q, hq, rfl⟩
     obtain ⟨q', hq', e⟩ := Array.mem_map.mp hm'
     obtain ⟨e₁, e₂⟩ := Prod.mk.inj e
-    rcases mutual_dPrj_rows (sourceClasses cs) _ _ _ _ hout q' hq' with same | defn
+    rcases mutual_dPrj_rows (sourceMembers cs) _ _ _ _ hout q' hq' with same | defn
     · exact absurd (show cA = r.block by rw [← hqc, ← e₂, same, hblock]) notBlock
-    obtain ⟨cl, hcl, src, hsrc, hdefn, hname⟩ := defn p (by rw [e₂, hqc]; exact hp)
+    obtain ⟨src, hsrc, hdefn, hname⟩ := defn p (by rw [e₂, hqc]; exact hp)
     obtain ⟨k, ci', hk, hdef, hnm⟩ := loop_defnSource _ all.toList #[] {} {} cs hloop
-      (fun m hm => by simp at hm) src (Claims.mem_sourceClasses hcl hsrc) hdefn
+      (fun m hm => by simp at hm) src (Claims.mem_sourceMembers hsrc) hdefn
     have hk' := (fb.env k).symm.trans hk
     have hn : ci'.getCnst.name = n := by rw [← hnm, ← hname, e₁, hqn]
     have hci := FamilyGroups.same_stored P.compiled (SourceStoredNames.stored_input P hm) hk' hn

@@ -78,8 +78,8 @@ theorem cacheRefs : CompiledRefs.CacheRefs := by
       (N := fun x => all.contains x = true ∨ x = lo) (fun x hx => .inl hx)
     rw [Std.HashSet.forIn_eq_forIn_toList] at members
     have cov := members {} cs {} hloop
-    obtain ⟨hI, refs⟩ := RefTables.Holds.mutualBlock (B := bindingView {}) (sourceClasses cs)
-      (fun cls hcls m hm => cov m (Claims.mem_sourceClasses hcls hm)) _ {} out s₄ RefTables.refsOK_empty trivial hout
+    obtain ⟨hI, refs⟩ := RefTables.Holds.mutualBlock (B := bindingView {}) (sourceMembers cs)
+      (fun m hm => cov m (Claims.mem_sourceMembers hm)) _ {} out s₄ RefTables.refsOK_empty trivial hout
     have block : r.block = out.block := (Prod.mk.inj hrec).1
     exact RefTables.Allowed.mono (hI.2 a (by rw [← refs, ← block]; exact ha)) hext
 
@@ -498,7 +498,7 @@ theorem exactNames_bound (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before =
       (.ok output, after))
     (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
     {ixe : Ixon.Env} (acyclic : referenceCycle ixe = none) {B : Address}
@@ -518,7 +518,7 @@ theorem exactNames_bound (context : CompileEnv × BlockEnv)
       (ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value) →
         Ix.LeanIngress.ingressKey n = Ix.LeanIngress.ingressKey defs[j].name → n = defs[j].name := by
   intro i hi j hj n hn hkey
-  cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+  cases hc : (MutConst.ctx (defs.map MutConst.defn))[n]? with
   | some k =>
     -- another member: members are published apart
     obtain ⟨hk, hname⟩ := DefinitionBlockReads.ctx_defs_val distinct hc
@@ -673,7 +673,7 @@ theorem definitions_occ_input (P : Premises env roots sub ixe failures t envQ)
   obtain ⟨snap, rep, all, r, c, fb, mem, out, after, ran, -, -⟩ := GroupRuns.definitions_run P scheduled hgr two
   have two' : 2 ≤ (TraceSegments.defsOf members).length := by rw [defsOf_length hgr]; exact two
   have distinct := definitions_distinct P hgr
-  cases hc : (MutConst.ctx (((TraceSegments.defsOf members).map MutConst.defn).map ([·])))[n]? with
+  cases hc : (MutConst.ctx ((TraceSegments.defsOf members).map MutConst.defn))[n]? with
   | some k =>
     obtain ⟨hk, hname⟩ := DefinitionBlockReads.ctx_defs_val distinct hc
     obtain ⟨ci, hci⟩ := defs_stored P hgr k hk

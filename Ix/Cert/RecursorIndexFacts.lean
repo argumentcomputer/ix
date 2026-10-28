@@ -21,7 +21,7 @@ beside the compile report's checks that pin an input family's recursors to their
   distinct (`motives_nodup`); with them a block's recursor list is its filed pairs sorted by
   motive (`buildIndex_at`), and a sorted list of distinct motives is determined
   (`sorted_eq_range`).
-* **The compile's headers**: a block compiled one member per class keeps each member's
+* **The compile's headers**: a block compiled one payload per member keeps each member's
   level-parameter count and counts (`block_headers`), and so does a lone recursor
   (`lone_header`). -/
 
@@ -591,30 +591,26 @@ theorem member_header (context : CompileEnv × BlockEnv) (m : MutConst) {before 
     obtain ⟨out, outRan, hp⟩ := BlockEmission.member_recr r ran
     exact ⟨out.1, hp, BlockEmission.recursor_headers r _ _ _ _ outRan⟩
 
-theorem classes_headers (context : CompileEnv × BlockEnv) :
+theorem members_headers (context : CompileEnv × BlockEnv) :
     ∀ (ms : List MutConst) (acc : MutConstCompileState) {before after : BlockState} {state : MutConstCompileState},
-      rawRun (compileMutConstClasses (ms.map ([·])) acc) context before = (.ok state, after) →
+      rawRun (compileMutConstMembers ms acc) context before = (.ok state, after) →
       ∃ ps : List Ixon.MutConst, state.payloads = acc.payloads ++ ps.toArray ∧ List.Forall₂ HeaderOf ms ps
   | [], acc, before, after, state, ran => by
-    rw [List.map_nil, compileMutConstClasses, rawRun_pure] at ran
+    rw [compileMutConstMembers, rawRun_pure] at ran
     cases ran
     exact ⟨[], by simp, .nil⟩
   | m :: ms, acc, before, after, state, ran => by
-    rw [List.map_cons, compileMutConstClasses] at ran
-    obtain ⟨classState, middle, classRan, restRan⟩ := bind_ok ran
-    rw [compileMutConstClass] at classRan
-    obtain ⟨member, memberMiddle, memberRan, equivRan⟩ := bind_ok classRan
-    rw [compileEquivalentMutConsts, rawRun_pure] at equivRan
-    cases equivRan
-    obtain ⟨ps, hps, headers⟩ := classes_headers context ms _ restRan
+    rw [compileMutConstMembers] at ran
+    obtain ⟨member, middle, memberRan, restRan⟩ := bind_ok ran
+    obtain ⟨ps, hps, headers⟩ := members_headers context ms _ restRan
     refine ⟨member.payload :: ps, ?_, .cons (member_header context m memberRan) headers⟩
     rw [hps]
-    simp [MutConstCompileState.addRepresentative]
+    simp [MutConstCompileState.addMember]
 
-/-- **A block compiled one member per class keeps its members' headers**: its record is its
+/-- **A block compiled one payload per member keeps its members' headers**: its record is its
 payloads' block up to the expressions' roots. -/
 theorem block_headers {ms : List MutConst} {context : CompileEnv × BlockEnv} {before after : BlockState}
-    {output : BlockResult} (ran : rawRun (compileMutualBlock (ms.map ([·]))) context before = (.ok output, after)) :
+    {output : BlockResult} (ran : rawRun (compileMutualBlock ms) context before = (.ok output, after)) :
     ∃ ps : List Ixon.MutConst, List.Forall₂ HeaderOf ms ps ∧
       SharingRoots.erase output.block.info = SharingRoots.erase (BlockEmission.blockInfo ps) := by
   unfold compileMutualBlock at ran
@@ -628,7 +624,7 @@ theorem block_headers {ms : List MutConst} {context : CompileEnv × BlockEnv} {b
   obtain ⟨state, middle', classesRan, finish⟩ := bind_ok payloadRan
   rw [rawRun_pure] at finish
   cases finish
-  obtain ⟨ps, hps, headers⟩ := classes_headers _ ms {} classesRan
+  obtain ⟨ps, hps, headers⟩ := members_headers _ ms {} classesRan
   obtain ⟨same, _, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
   subst same
   simp only [hps] at built

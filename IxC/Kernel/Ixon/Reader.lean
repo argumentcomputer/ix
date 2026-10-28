@@ -35,7 +35,7 @@ environment to the Ixon records; the latter is the fidelity theorem
 
 The kernel key is `Ix.Kernel.Key md` (`IxC/Kernel/Key.lean`). In the Ixon
 modes an input constant is keyed by the address its references use, the
-address in a record's `refs` table (IXC-PLAN §4):
+address in a record's `refs` table:
 
 * a singleton (`defn`, `recr`, `axio`, `quot`) by its own record's address;
 * a block member by its projection record's (`iPrj`, `cPrj`, `rPrj` or
@@ -696,15 +696,15 @@ def projRewrite (st : State md) (cv : CVal md) (value : CExpr md) : Option (CExp
 
 /-! ## Records -/
 
-/-- **What the `.ixe`'s metadata says of a key** (`.meta`'s display, IXC-PLAN
-§3, step 6): every Lean name of the constant (an alias fiber has several),
+/-- **What the `.ixe`'s metadata says of a key** (`.meta`'s display):
+every Lean name of the constant (an alias fiber has several),
 and its level parameters' names, by position. -/
 structure Display where
   names : List Ix.Kernel.Name := []
   levelNames : List Ix.Kernel.Name := []
   deriving Repr, Inhabited, DecidableEq
 
-/-! ### Rendering per mode (IXC-PLAN §7, step 6)
+/-! ### Rendering per mode
 
 A failure names constants by their keys (`CheckError md`), and a renderer
 spells them. `.anon` spells a key as `Key.toName` does (an address as `#` and

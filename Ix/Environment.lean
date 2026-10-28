@@ -178,7 +178,7 @@ included. -/
 /-- `nameCompare` with its ties confirmed: names are ordered by their stored
 hashes, and two names with one hash field by `Name.cmpRaw`, so `.eq` holds
 exactly on equal names. `nameCompare` alone would make two names that share
-a hash field one key (CQ2.25). Only a tie pays for the structural walk. -/
+a hash field one key. Only a tie pays for the structural walk. -/
 @[expose] def nameCompareExact (a b : Name) : Ordering :=
   match nameCompare a b with
   | .eq => Name.cmpRaw a b
@@ -186,7 +186,7 @@ a hash field one key (CQ2.25). Only a tie pays for the structural walk. -/
 
 /-- **Structural equality of names**, stored hashes included: `Name`'s `==`
 compares the root's stored hash only, so two names that share it are `==`
-without being equal (CQ2.25). The stored hash is compared first, so names
+without being equal. The stored hash is compared first, so names
 that differ there answer at once. -/
 @[expose] def Name.beqRaw : Name → Name → Bool
   | .anonymous h, .anonymous h' => decide (h = h')

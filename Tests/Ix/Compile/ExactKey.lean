@@ -54,7 +54,7 @@ def controls : List (String × Bool) := Id.run do
       (.mdata #[(xName, .ofSyntax syntaxRight)] zero digest))]
 
 /-- Two names with one stored hash, as only a digest collision makes them:
-the compiler's name tables (CQ2.25) keep them apart, where a table keyed by
+the compiler's name tables keep them apart, where a table keyed by
 `Ix.Name`'s `==` (stored hashes only) makes them one entry. -/
 def nameTableControls : List (String × Bool) := Id.run do
   let digest : Address := ⟨⟨Array.replicate 32 7⟩⟩

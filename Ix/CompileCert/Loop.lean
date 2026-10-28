@@ -5,7 +5,7 @@ import Batteries.Data.List.Basic
 The compiler, the reader and Source mode write their passes with `for`
 loops (`forIn`) over arrays and lists, in `Id` or in `Except`. The proofs
 reduce them with a few generic facts, collected here once (CS-01's
-`Canon/Loop`, merged with R12's loop lemmas):
+`Canon/Loop` and the Source-constructor loop lemmas):
 
 * in `Id`, a loop whose body always continues is the left fold of the
   body's values (`forIn_id_list`, `forIn_id_array`);

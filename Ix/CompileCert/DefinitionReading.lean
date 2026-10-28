@@ -20,9 +20,9 @@ and the readings of its type and value, which are terms `Related` to the
 source's; the returned block decodes exactly; and a definition the
 reader's safety policy declines is declined (`constant_declines`).
 The reader runs over the block's blobs overlaid on the context's, as the
-compiler's in-flight reader does (publication is CT-16's R13).
+compiler's in-flight reader does.
 
-CT-16's `DefinitionReading`, adapted to keys read through `memberKey`
+`DefinitionReading`, adapted to keys read through `memberKey`
 (which can decline), positional levels and the reader's own
 `definitionReader`. -/
 
@@ -175,8 +175,7 @@ abbrev related (source : Ix.Def) : Ix.Expr → CExpr md → Prop :=
   Related names (LevelMeaning source.levelParams.toList σ id)
 
 /-- **A compiled definition is read back as its source**: public dispatch of
-a definition, theorem or opaque, under an environment without Pass 3
-records, from a clean state whose tables are on the wire, returns a block
+a definition, theorem or opaque, from a clean state whose tables are on the wire, returns a block
 that decodes exactly and that `readRecord` (over the block's blobs overlaid
 on the context's) reads as exactly one declaration: the one the kind makes
 of the record's key, the level parameters `0, …, n - 1`, and the readings

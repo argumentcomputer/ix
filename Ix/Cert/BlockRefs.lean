@@ -286,7 +286,7 @@ open Ix.Cert.DefinitionBlockReads (ctx_defs_val ctx_defs_member)
 as its binding's address. -/
 def addrNames (defs : List Ix.Def) (env : CompileEnv) (bindings : Bindings) (K : Nat → CName .anon)
     (n : Ix.Name) (k : CName .anon) : Prop :=
-  match (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+  match (MutConst.ctx (defs.map MutConst.defn))[n]? with
   | some j => k = K j
   | none => ∃ a, lookupBinding env bindings n = some a ∧ k = .id a
 
@@ -296,19 +296,19 @@ theorem mentioned_binding_ref (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before =
       (.ok output, after))
     (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
     {i : Nat} (hi : i < defs.length) {n : Ix.Name} (hn : ConstOcc n defs[i].type ∨ ConstOcc n defs[i].value)
-    (notMember : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? = none) :
+    (notMember : (MutConst.ctx (defs.map MutConst.defn))[n]? = none) :
     ∃ a, lookupBinding context.1 bindings n = some a ∧ a ∈ output.block.refs := by
   let cx := addrCtx (fun a => context.1.blobs.get? a)
   let K : Nat → CName .anon := DefinitionOrder.freshKey cx
   have aux : ∀ j a, K j ≠ .id a := fun j a h => by cases h
   have external : BindingsCorrect context.1 bindings cx (addrNames defs context.1 bindings K) := by
     intro m a hb
-    have hnone : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[m]? = none := by
-      cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[m]? with
+    have hnone : (MutConst.ctx (defs.map MutConst.defn))[m]? = none := by
+      cases hc : (MutConst.ctx (defs.map MutConst.defn))[m]? with
       | none => rfl
       | some j =>
         exfalso
@@ -319,11 +319,11 @@ theorem mentioned_binding_ref (context : CompileEnv × BlockEnv)
         cases hb
     exact ⟨.id a, addrCtx_keyAt _ a, by simp only [addrNames, hnone]; exact ⟨a, hb, rfl⟩⟩
   have scopes : ∀ m ∈ defs.map MutConst.defn, ∀ e ∈ BlockEmission.memberSources m,
-      ConstsSatisfy (SelfName (BlockEmission.mutContext ((defs.map MutConst.defn).map ([·])) context).2
+      ConstsSatisfy (SelfName (BlockEmission.mutContext (defs.map MutConst.defn) context).2
         (DefinitionOrder.tagSelf defs.length K) (addrNames defs context.1 bindings K)) e := by
     intro _ _ e _
     refine constsSatisfy_of_forall (fun m index found => ?_) e
-    change (MutConst.ctx ((defs.map MutConst.defn).map ([·]))).get? m = some index at found
+    change (MutConst.ctx (defs.map MutConst.defn)).get? m = some index at found
     rw [Std.TreeMap.get?_eq_getElem?] at found
     obtain ⟨hj, -⟩ := ctx_defs_val distinct found
     exact ⟨_, by simp only [DefinitionOrder.tagSelf, hj, ↓reduceIte]; rfl,
@@ -371,7 +371,7 @@ theorem exactNames_of (context : CompileEnv × BlockEnv)
     {bindings : Bindings} {before after : BlockState} {output : BlockResult}
     (clean : Emission.Clean bindings before) {defs : List Ix.Def} (two : 2 ≤ defs.length)
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
-    (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
+    (ran : rawRun (compileMutualBlock (defs.map MutConst.defn)) context before =
       (.ok output, after))
     (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
     {ixe : Ixon.Env} (acyclic : referenceCycle ixe = none) {B : Address}
@@ -389,7 +389,7 @@ theorem exactNames_of (context : CompileEnv × BlockEnv)
         Ix.LeanIngress.ingressKey n = Ix.LeanIngress.ingressKey defs[j].name → n = defs[j].name := by
   intro i hi j hj n hn hkey
   have same := sameKey i hi n hn j hj hkey
-  cases hc : (MutConst.ctx ((defs.map MutConst.defn).map ([·])))[n]? with
+  cases hc : (MutConst.ctx (defs.map MutConst.defn))[n]? with
   | some k =>
     -- another member: members are published apart
     obtain ⟨hk, hname⟩ := ctx_defs_val distinct hc

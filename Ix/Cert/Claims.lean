@@ -29,18 +29,17 @@ open Ix.CompileCert.MutualProjections (logicalRows expectedRows sourceRows)
 
 /-- `x` is the name of a member of `sources` or of a constructor such a
 member carries. -/
-def SourceName (sources : List (List MutConst)) (x : Name) : Prop :=
-  ∃ src, (∃ c ∈ sources, src ∈ c) ∧ (x = src.name ∨ ∃ ctor ∈ src.ctors, x = ctor.cnst.name)
+def SourceName (sources : List MutConst) (x : Name) : Prop :=
+  ∃ src ∈ sources, x = src.name ∨ ∃ ctor ∈ src.ctors, x = ctor.cnst.name
 
 theorem mem_of_mem_zipIdx {α : Type} {l : List α} {x : α} {i : Nat} (h : (x, i) ∈ l.zipIdx) : x ∈ l :=
   List.fst_mem_of_mem_zipIdx h
 
-theorem expectedRows_name {owner : Address} {sources : List (List MutConst)} {x : Name}
+theorem expectedRows_name {owner : Address} {sources : List MutConst} {x : Name}
     {c : Ixon.Constant} (h : (x, c) ∈ expectedRows owner sources) : SourceName sources x := by
   unfold expectedRows at h
-  obtain ⟨⟨members, index⟩, hm, h⟩ := List.mem_flatMap.1 h
-  obtain ⟨src, hsrc, h⟩ := List.mem_flatMap.1 h
-  refine ⟨src, ⟨members, mem_of_mem_zipIdx hm, hsrc⟩, ?_⟩
+  obtain ⟨⟨src, index⟩, hm, h⟩ := List.mem_flatMap.1 h
+  refine ⟨src, mem_of_mem_zipIdx hm, ?_⟩
   unfold sourceRows at h
   rcases List.mem_cons.1 h with h | h
   · exact .inl (Prod.mk.inj h).1
@@ -55,7 +54,7 @@ theorem row_logical {rows : Array Ix.CompileCert.MutualProjections.Row} {row : I
 constructors'**: the wrapper's rows (`MutualProjections.build_rows`), or a
 collapsed block's, every member registered to it
 (`MutualProjections.standalone_rows`). -/
-theorem mutualBlock_names (sources : List (List MutConst)) :
+theorem mutualBlock_names (sources : List MutConst) :
     Yields (compileMutualBlock sources) (fun out => ∀ row ∈ out.projections, SourceName sources row.1) := by
   refine Ix.CompileCert.ProjectionLayout.mutual_block _ sources ?_
   unfold compileMutualPayload
@@ -75,8 +74,7 @@ theorem mutualBlock_names (sources : List (List MutConst)) :
     have hl := row_logical hrow
     rw [rows] at hl
     obtain ⟨src, hsrc, he⟩ := List.mem_map.1 hl
-    obtain ⟨c, hc, hs⟩ := List.mem_flatten.1 hsrc
-    exact ⟨src, ⟨c, hc, hs⟩, .inl (Prod.mk.inj he).1.symm⟩
+    exact ⟨src, hsrc, .inl (Prod.mk.inj he).1.symm⟩
 
 /-- The block finisher returns no projections. -/
 theorem finish_lone (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
@@ -271,20 +269,18 @@ def MemberName (E : Ix.Environment) (all : Ix.Set Name) (x : Name) : Prop :=
   ∃ m, Member E all m ∧ (x = m.name ∨ ∃ ctor ∈ m.ctors, x = ctor.cnst.name)
 
 /-- **Lean's order only arranges a block's members**: every class
-`sourceClasses` returns holds members of its input. -/
-theorem mem_sourceClasses {cs : Array MutConst} {c : List MutConst} {x : MutConst}
-    (hc : c ∈ sourceClasses cs) (hx : x ∈ c) : x ∈ cs := by
-  unfold sourceClasses at hc
+`sourceMembers` returns holds members of its input. -/
+theorem mem_sourceMembers {cs : Array MutConst} {x : MutConst}
+    (hc : x ∈ sourceMembers cs) : x ∈ cs := by
+  unfold sourceMembers at hc
   try dsimp only at hc
   obtain ⟨e, he, rfl⟩ := List.mem_map.1 hc
-  have hx : x = e.1 := List.mem_singleton.1 hx
-  subst hx
   exact Array.fst_mem_of_mem_zipIdx (Ix.CompileCert.Canon.mem_qsort.1 (Array.mem_toList_iff.1 he))
 
 /-- **The block compile's projections carry members' names**: a lone
 constant's compile has none (`constantInfo_lone`), and the mutual compile's
 are its sources' (`mutualBlock_names`), which Lean's order only arranges
-(`mem_sourceClasses`) and which the members loop reads (`members_post`). -/
+(`mem_sourceMembers`) and which the members loop reads (`members_post`). -/
 theorem compileBlock_names {ctx : CompileEnv × BlockEnv} {lo : Name} {all : Ix.Set Name}
     {s s' : BlockState} {r : BlockResult}
     (h : rawRun (compileBlock lo all) ctx s = (.ok r, s')) :
@@ -310,15 +306,15 @@ theorem compileBlock_names {ctx : CompileEnv × BlockEnv} {lo : Name} {all : Ix.
              Ix.Cert.BlockRecords.recordsOf x = Ix.Cert.BlockRecords.recordsOf out) ?_
          repeat returns_step
        have members := members_post ctx all s₁ cs s₂ hcs
-       have names := mutualBlock_names (sourceClasses cs) ctx s₂ out s₄ hout
+       have names := mutualBlock_names (sourceMembers cs) ctx s₂ out s₄ hout
        intro row hrow
        unfold Ix.Cert.BlockRecords.recordsOf at same
        have hmap : (row.1, row.2.1) ∈ out.projections.map (fun p => (p.1, p.2.1)) := by
          rw [← (Prod.mk.inj (Prod.mk.inj (Prod.mk.inj same).2).2).2]
          exact Array.mem_map_of_mem hrow
        obtain ⟨row', hrow', he⟩ := Array.mem_map.1 hmap
-       obtain ⟨src, ⟨c, hc', hsrc⟩, hname⟩ := names row' hrow'
-       have hm := members src (mem_sourceClasses hc' hsrc)
+       obtain ⟨src, hsrc, hname⟩ := names row' hrow'
+       have hm := members src (mem_sourceMembers hsrc)
        rw [← (Prod.mk.inj he).1]
        exact ⟨src, hm, hname⟩)
 

@@ -11,7 +11,7 @@ the canonical and raw universe memos.
 Insertion keeps it only where the map's key comparison is lawful
 (`CacheSound.insert`), or where `meaning` cannot tell apart keys the map
 identifies (`CacheSound.insert_of_respects`). `Ix.Expr` and `Ix.Level`
-compare stored hash fields only; since CQ2.8 the compiler's expression and
+compare stored hash fields only; the compiler's expression and
 universe memos are keyed by `Ix.Compile.ExactKey.ExprKey` and `UnivKey`,
 whose comparisons are lawful, so `CacheSound.insert` applies to them.
 Transport along a stronger meaning (`CacheSound.mono`) needs nothing about

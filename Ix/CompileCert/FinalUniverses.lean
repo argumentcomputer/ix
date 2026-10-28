@@ -7,7 +7,7 @@ Once the preseed has marked the primary universe table final
 leaves the table exactly as it was (`compile_no_growth`): a canonical form
 the table lacks trips the production guard (canonicity §10.6 V3), so a
 success only hits preseeded entries. This uses the guard itself, with no
-memo, index or source premise. CT-14's `FinalUniverses`. -/
+memo, index or source premise. `FinalUniverses`. -/
 
 namespace Ix.CompileCert.FinalUniverses
 

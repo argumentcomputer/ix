@@ -105,20 +105,20 @@ theorem owner_in_order {S : Address → Prop} (corder : ClosureOrder ixe S order
 
 /-! ## The compile's rows -/
 
-/-- **A mutual block's rows**: one per class member and constructor, at its projection of the
+/-- **A mutual block's rows**: in source order member and constructor, at its projection of the
 block (`expectedRows`); or, when the block is a lone definition or recursor, every member at the
 block itself. -/
 theorem mutual_rows {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
-    (classes : List (List MutConst)) (nonempty : ∀ members ∈ classes, members ≠ [])
+    (classes : List MutConst)
     (ran : rawRun (compileMutualBlock classes) context before = (.ok output, after)) :
     ∃ payloads : Array Ixon.MutConst, payloads.size = classes.length ∧ payloads.size < UInt64.size ∧
       payloads.toList.map ProjectionLayout.memberShape =
-        (classes.filterMap List.head?).map ProjectionLayout.sourceShape ∧
+        classes.map ProjectionLayout.sourceShape ∧
       ((standaloneMutConstInfo? payloads = none ∧
           MutualProjections.logicalRows output.projections =
             MutualProjections.expectedRows output.blockAddr classes) ∨
         (standaloneMutConstInfo? payloads ≠ none ∧
-          MutualProjections.logicalRows output.projections = classes.flatten.map fun s => (s.name, output.block))) := by
+          MutualProjections.logicalRows output.projections = classes.map fun s => (s.name, output.block))) := by
   unfold compileMutualBlock at ran
   dsimp only at ran
   unfold withMutCtx at ran
@@ -126,7 +126,7 @@ theorem mutual_rows {context : CompileEnv × BlockEnv} {before after : BlockStat
   obtain ⟨_, _, -, compiled⟩ := bind_ok ran
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
-  have count := ProjectionLayout.payload_count _ nonempty _ _ _ _ payloadRan
+  have count := ProjectionLayout.payload_count _ _ _ _ _ payloadRan
   have shapes := ProjectionLayout.payload_shapes classes _ _ _ _ payloadRan
   obtain ⟨members, roots, metadata⟩ := payload
   dsimp only at finished count shapes
@@ -149,16 +149,10 @@ theorem mutual_rows {context : CompileEnv × BlockEnv} {before after : BlockStat
     dsimp only [BlockResult.mk']
     exact MutualProjections.standalone_rows _ _ _
 
-/-- The head of each singleton class is its member. -/
-theorem heads_map {α : Type} (g : α → MutConst) :
-    ∀ l : List α, ((l.map g).map ([·])).filterMap List.head? = l.map g
-  | [] => rfl
-  | _ :: l => congrArg (List.cons _) (heads_map g l)
-
 /-- **An inductive block's rows**: each type at its projection, each constructor at its own. -/
 theorem inductive_rows {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     {inds : List Ix.Ind}
-    (ran : rawRun (compileMutualBlock ((inds.map MutConst.indc).map ([·]))) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock (inds.map MutConst.indc)) context before = (.ok output, after)) :
     inds.length < UInt64.size ∧
       (∀ i (hi : i < inds.length), (inds[i].name,
         MutualProjections.memberProjection output.blockAddr i.toUInt64 (.indc inds[i])) ∈
@@ -166,10 +160,7 @@ theorem inductive_rows {context : CompileEnv × BlockEnv} {before after : BlockS
       ∀ i (hi : i < inds.length) k (hk : k < inds[i].ctors.size), (inds[i].ctors[k].cnst.name,
         MutualProjections.constructorProjection output.blockAddr i.toUInt64 k.toUInt64) ∈
           MutualProjections.logicalRows output.projections := by
-  obtain ⟨payloads, hsize, hcount, shapes, rows⟩ := mutual_rows _ (fun m hm => by
-    obtain ⟨_, _, rfl⟩ := List.mem_map.mp hm
-    simp) ran
-  rw [heads_map] at shapes
+  obtain ⟨payloads, hsize, hcount, shapes, rows⟩ := mutual_rows _ ran
   have hnone : standaloneMutConstInfo? payloads = none := by
     rcases payloads with ⟨_ | ⟨m, _ | ⟨m₂, rest⟩⟩⟩
     · rfl
@@ -182,22 +173,22 @@ theorem inductive_rows {context : CompileEnv × BlockEnv} {before after : BlockS
         | cons i rest => simp [ProjectionLayout.memberShape, ProjectionLayout.sourceShape] at shapes
     · rfl
   have hrows : MutualProjections.logicalRows output.projections =
-      MutualProjections.expectedRows output.blockAddr ((inds.map MutConst.indc).map ([·])) := by
+      MutualProjections.expectedRows output.blockAddr (inds.map MutConst.indc) := by
     rcases rows with ⟨-, h⟩ | ⟨h, -⟩
     · exact h
     · exact absurd hnone h
   simp only [List.length_map] at hsize
   refine ⟨hsize ▸ hcount, fun i hi => ?_, fun i hi k hk => ?_⟩
   · rw [hrows]
-    refine List.mem_flatMap.mpr ⟨([.indc inds[i]], i), ?_, ?_⟩
+    refine List.mem_flatMap.mpr ⟨(.indc inds[i], i), ?_, ?_⟩
     · rw [List.mem_zipIdx_iff_getElem?]
       simp [hi]
     · simp [MutualProjections.sourceRows, MutConst.name]
   · rw [hrows]
-    refine List.mem_flatMap.mpr ⟨([.indc inds[i]], i), ?_, ?_⟩
+    refine List.mem_flatMap.mpr ⟨(.indc inds[i], i), ?_, ?_⟩
     · rw [List.mem_zipIdx_iff_getElem?]
       simp [hi]
-    · simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil, MutualProjections.sourceRows,
+    · simp only [MutualProjections.sourceRows,
         MutConst.ctors]
       refine List.mem_cons_of_mem _ (List.mem_map.mpr ⟨(inds[i].ctors[k], k), ?_, rfl⟩)
       rw [List.mem_zipIdx_iff_getElem?]
@@ -207,21 +198,19 @@ theorem inductive_rows {context : CompileEnv × BlockEnv} {before after : BlockS
 recursor at the block itself. -/
 theorem recursor_rows {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     {recs : List Ix.RecursorVal} (hne : recs ≠ [])
-    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock (recs.map MutConst.recr)) context before = (.ok output, after)) :
     recs.length < UInt64.size ∧
       ((∀ j (hj : j < recs.length), (recs[j].cnst.name,
           MutualProjections.memberProjection output.blockAddr j.toUInt64 (.recr recs[j])) ∈
             MutualProjections.logicalRows output.projections) ∨
         ∃ r, recs = [r] ∧ (r.cnst.name, output.block) ∈ MutualProjections.logicalRows output.projections) := by
-  obtain ⟨payloads, hsize, hcount, -, rows⟩ := mutual_rows _ (fun m hm => by
-    obtain ⟨_, _, rfl⟩ := List.mem_map.mp hm
-    simp) ran
+  obtain ⟨payloads, hsize, hcount, -, rows⟩ := mutual_rows _ ran
   simp only [List.length_map] at hsize
   refine ⟨hsize ▸ hcount, ?_⟩
   rcases rows with ⟨-, h⟩ | ⟨hs, h⟩
   · refine .inl fun j hj => ?_
     rw [h]
-    refine List.mem_flatMap.mpr ⟨([.recr recs[j]], j), ?_, ?_⟩
+    refine List.mem_flatMap.mpr ⟨(.recr recs[j], j), ?_, ?_⟩
     · rw [List.mem_zipIdx_iff_getElem?]
       simp [hj]
     · simp [MutualProjections.sourceRows, MutConst.name, MutConst.ctors]
@@ -302,7 +291,7 @@ theorem claimed_block {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name
 projection of the block, which the artifact holds. -/
 theorem inductive_published {sub : Ix.Environment} {context : CompileEnv × BlockEnv} {before after : BlockState}
     {output : BlockResult} {inds : List Ix.Ind}
-    (ran : rawRun (compileMutualBlock ((inds.map MutConst.indc).map ([·]))) context before = (.ok output, after))
+    (ran : rawRun (compileMutualBlock (inds.map MutConst.indc)) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
     (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
@@ -342,7 +331,7 @@ theorem recursor_published {sub : Ix.Environment} (resolves : SingletonSegments.
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
     (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
-    (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after) ∨
+    (ran : rawRun (compileMutualBlock (recs.map MutConst.recr)) context before = (.ok output, after) ∨
       ∃ r₀, recs = [r₀] ∧ key = r₀.cnst.name ∧
         rawRun (compileConstantInfo (.recInfo r₀)) context before = (.ok output, after))
     (recsIn : ∀ j (hj : j < recs.length), ∃ ci, (recs[j].cnst.name, ci) ∈ sub.consts.toList) :
@@ -553,7 +542,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     (recsIn : ∀ j (hj : j < recs.size), ∃ ci, (recs[j].cnst.name, ci) ∈ sub.consts.toList)
     -- the inductive block
     {cenv₁ : CompileEnv} {benv₁ : BlockEnv} {out₁ : BlockResult} {after₁ : BlockState}
-    (ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) (cenv₁, benv₁) {} =
+    (ran₁ : rawRun (compileMutualBlock ((indsOf types ctors).map MutConst.indc)) (cenv₁, benv₁) {} =
       (.ok out₁, after₁))
     {cenvR₁ : CompileEnv} {all₁ : Ix.Set Ix.Name} {key₁ : Ix.Name} {r₁ : BlockResult} {cache₁ : BlockState}
     (hr₁ : runBlock cenvR₁ all₁ key₁ = .ok (r₁, cache₁))
@@ -568,7 +557,7 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     {cenvR₂ : CompileEnv} {all₂ : Ix.Set Ix.Name} {key₂ : Ix.Name} {r₂ : BlockResult} {cache₂ : BlockState}
     (hr₂ : runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂))
     (pub₂ : BlockPublication.Published ixe sub key₂ r₂) (hrec₂ : BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out₂)
-    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) (cenv₂, benv₂) {} =
+    (ran₂ : rawRun (compileMutualBlock (recs.toList.map MutConst.recr)) (cenv₂, benv₂) {} =
         (.ok out₂, after₂) ∨
       ∃ r, recs.toList = [r] ∧ key₂ = r.cnst.name ∧
         rawRun (compileConstantInfo (.recInfo r)) (cenv₂, benv₂) {} = (.ok out₂, after₂))
@@ -869,12 +858,12 @@ theorem inductive_segment {env : Ix.Environment} {roots : List Ix.Name} {sub : I
 number of constructors. -/
 theorem inductive_block_info {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     {inds : List Ix.Ind}
-    (ran : rawRun (compileMutualBlock ((inds.map MutConst.indc).map ([·]))) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock (inds.map MutConst.indc)) context before = (.ok output, after)) :
     ∃ ms : Array Ixon.MutConst, output.block.info = .muts ms ∧ ms.size = inds.length ∧
       ∀ i (y : Ixon.MutConst), ms[i]? = some y → ∃ v, ∃ hi : i < inds.length, y = .indc v ∧
         v.ctors.size = inds[i].ctors.size := by
   have shape := ProjectionLayout.mutual_block_shape _ context before output after ran
-  rw [heads_map, List.map_map] at shape
+  rw [List.map_map] at shape
   cases hinfo : output.block.info with
   | muts ms =>
     rw [hinfo] at shape
@@ -1060,7 +1049,7 @@ theorem inductive_place {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
       (∃ (i : Nat) (hi : i < ctors.size) (k : Nat) (_ : k < ctors[i].size), ctors[i][k].cnst.name = n) ∨
       ∃ (j : Nat) (_ : j < recs.size), recs[j].cnst.name = n)
     {context₁ : CompileEnv × BlockEnv} {before₁ after₁ : BlockState} {out₁ : BlockResult}
-    (ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) context₁ before₁ =
+    (ran₁ : rawRun (compileMutualBlock ((indsOf types ctors).map MutConst.indc)) context₁ before₁ =
       (.ok out₁, after₁))
     {cenvR₁ : CompileEnv} {all₁ : Ix.Set Ix.Name} {key₁ : Ix.Name} {r₁ : BlockResult} {cache₁ : BlockState}
     (hr₁ : runBlock cenvR₁ all₁ key₁ = .ok (r₁, cache₁)) (pub₁ : BlockPublication.Published ixe sub key₁ r₁)
@@ -1069,7 +1058,7 @@ theorem inductive_place {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     {cenvR₂ : CompileEnv} {all₂ : Ix.Set Ix.Name} {key₂ : Ix.Name} {r₂ : BlockResult} {cache₂ : BlockState}
     (hr₂ : runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂)) (pub₂ : BlockPublication.Published ixe sub key₂ r₂)
     (hrec₂ : BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out₂)
-    (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) context₂ before₂ =
+    (ran₂ : rawRun (compileMutualBlock (recs.toList.map MutConst.recr)) context₂ before₂ =
         (.ok out₂, after₂) ∨
       ∃ r, recs.toList = [r] ∧ key₂ = r.cnst.name ∧
         rawRun (compileConstantInfo (.recInfo r)) context₂ before₂ = (.ok out₂, after₂))

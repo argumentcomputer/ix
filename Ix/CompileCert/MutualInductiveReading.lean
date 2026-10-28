@@ -3,18 +3,18 @@ import Ix.CompileCert.ProjectionLayout
 import Ix.CompileCert.InductiveReading
 import Ix.CompileCert.SourceConstructorPositions
 
-/-! # Inductives through the driver's mutual path (N-READS, N5 b)
+/-! # Inductives through the driver's mutual path
 
 The driver (`Ix.CompileM.compileBlock`) compiles every inductive block,
 singletons included, through `compileMutualBlock` over `MutConst.mkIndc`
 members, not through `compileConstantInfo (.inductInfo …)` (the
 `compileInductiveFamilyBlock` emitter, which `InductiveReading.inductive_reads`
-covers). This module carries the family
-reading over to the mutual path, for a block of one inductive (stage A; a
-family of several, R10b proper, is stage B).
+covers). This module carries the family reading over to the mutual path for
+a block of one inductive. `Ix.Cert.InductiveCompile` handles families with
+several members.
 
-**A one-member inductive class** (`singletonBlock_correct`): `compileMutualBlock
-[[.indc d]]` runs the same member emitter as the family path
+**A one-member inductive block** (`singletonBlock_correct`): `compileMutualBlock
+[.indc d]` runs the same member emitter as the family path
 (`compileMutConstMember (.indc d)` is `compileInductiveData d` under
 `withCurrent`, and `compileInductive` is `compileInductiveData` of the
 family's `sourceData`, `Emission.compileInductive_eq`), the same sharing
@@ -23,14 +23,14 @@ only the projections differ (`buildMutualProjections`). So the emitted record
 keeps the payload's skeleton and reads its roots as terms related to the
 source's, as `EmissionBlocks.familyBlock_correct` states for the family path.
 
-**The class's mutual context is the family's** (`mutCtx_singleton`): the
+**The block's mutual context is the family's** (`mutCtx_singleton`): the
 inductive at slot 0, its constructors after it. So the family path's self
 references (`InductiveReading.scope_of_noCtor`: no constructor of the family
 occurs, and the family's name is related to its key) serve the mutual path
 unchanged.
 
 **The reading** (`inductive_reads_mutual`): `InductiveReading.inductive_reads`'
-reading, for `compileMutualBlock [[.indc (sourceData source constructors)]]`.
+reading, for `compileMutualBlock [.indc (sourceData source constructors)]`.
 
 `MutConst.mkIndc`'s constructors are the compile environment's
 (`mkIndc_constructors`). -/
@@ -42,29 +42,25 @@ open Ix.Kernel (Mode LevelParam)
 open Ix.Kernel.Reader (Ctx CName CExpr ReadM MemberReader)
 
 /-- The context `compileMutualBlock classes` runs its members in. -/
-def mutContext (classes : List (List MutConst)) (context : CompileEnv × BlockEnv) : CompileEnv × BlockEnv :=
+def mutContext (classes : List MutConst) (context : CompileEnv × BlockEnv) : CompileEnv × BlockEnv :=
   (context.1, { context.2 with mutCtx := MutConst.ctx classes })
 
-/-- **A one-member inductive class compiles as its member emitter**:
-`compileMutConsts [[.indc d]]` is `compileInductiveData d` under `withCurrent`,
+/-- **A one-member inductive block compiles as its member emitter**:
+`compileMutConsts [.indc d]` is `compileInductiveData d` under `withCurrent`,
 with the payload as its one member and its metadata after the member's name. -/
 theorem mutConsts_indc (d : Ix.Ind) {context : CompileEnv × BlockEnv} {before after : BlockState}
     {payload : Array Ixon.MutConst × Array Ixon.Expr × Array (Ix.Name × Ixon.ConstantMeta)}
-    (ran : rawRun (compileMutConsts [[.indc d]]) context before = (.ok payload, after)) :
+    (ran : rawRun (compileMutConsts [.indc d]) context before = (.ok payload, after)) :
     ∃ out, rawRun (compileInductiveData d) (Emission.current d.name context) before = (.ok out, after) ∧
       payload.1 = #[.indc out.1] ∧ payload.2.2 = #[] ++ (#[(d.name, out.2.1)] ++ out.2.2.1) := by
   unfold compileMutConsts at ran
   obtain ⟨state, middle, classesRan, finish⟩ := bind_ok ran
   rw [rawRun_pure] at finish
   cases finish
-  rw [compileMutConstClasses] at classesRan
-  obtain ⟨classState, classMiddle, classRan, restRan⟩ := bind_ok classesRan
-  rw [compileMutConstClasses, rawRun_pure] at restRan
+  rw [compileMutConstMembers] at classesRan
+  obtain ⟨member, memberMiddle, memberRan, restRan⟩ := bind_ok classesRan
+  rw [compileMutConstMembers, rawRun_pure] at restRan
   cases restRan
-  rw [compileMutConstClass] at classRan
-  obtain ⟨member, memberMiddle, memberRan, equivRan⟩ := bind_ok classRan
-  rw [compileEquivalentMutConsts, rawRun_pure] at equivRan
-  cases equivRan
   unfold compileMutConstMember at memberRan
   obtain ⟨out, outMiddle, outRan, wrapRan⟩ := bind_ok memberRan
   unfold withCurrent at outRan
@@ -75,17 +71,17 @@ theorem mutConsts_indc (d : Ix.Ind) {context : CompileEnv × BlockEnv} {before a
   cases wrapRan
   exact ⟨_, outRan, rfl, rfl⟩
 
-/-- **A one-inductive class's mutual context is the family's**: the inductive
+/-- **A one-inductive block's mutual context is the family's**: the inductive
 at slot 0 and its constructors after it, as `buildInductiveMutCtx` lays
 them out. -/
 theorem mutCtx_singleton (source : InductiveVal) (constructors : Array ConstructorVal) :
-    MutConst.ctx [[.indc (Emission.sourceData source constructors)]] = buildInductiveMutCtx source constructors := by
+    MutConst.ctx [.indc (Emission.sourceData source constructors)] = buildInductiveMutCtx source constructors := by
   have unfolded : buildInductiveMutCtx source constructors =
       constructors.zipIdx.foldl (fun ctx entry => ctx.insert entry.1.cnst.name (entry.2 + 1))
         ((Std.TreeMap.empty : Ix.MutCtx).insert source.cnst.name 0) := by
     simp [buildInductiveMutCtx]
   rw [Canon.ctx_fold, unfolded, ← Array.foldl_toList, Array.toList_zipIdx]
-  simp only [Canon.ctxPairs, Canon.pairsOf, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+  simp only [Canon.ctxPairs, Canon.pairsOf, List.append_nil,
     List.foldl_cons, List.foldl_map, List.length_singleton, MutConst.name, MutConst.ctors, Emission.sourceData]
   have same : (fun (acc : Ix.MutCtx) (entry : ConstructorVal × Nat) => Canon.insP acc (entry.1.cnst.name, 1 + entry.2)) =
       fun acc entry => acc.insert entry.1.cnst.name (entry.2 + 1) := by
@@ -94,17 +90,17 @@ theorem mutCtx_singleton (source : InductiveVal) (constructors : Array Construct
   rw [same]
   rfl
 
-/-- **The class's block environment is the family's**: `compileMutualBlock
-[[.indc (sourceData source constructors)]]` runs its member in the block
+/-- **The block's environment is the family's**: `compileMutualBlock
+[.indc (sourceData source constructors)]` runs its member in the block
 environment the family compile installs. -/
 theorem mutBlock_family (source : InductiveVal) (constructors : Array ConstructorVal)
     (context : CompileEnv × BlockEnv) :
-    (mutContext [[.indc (Emission.sourceData source constructors)]] context).2 =
+    (mutContext [.indc (Emission.sourceData source constructors)] context).2 =
       InductiveReading.familyBlock source constructors context := by
   unfold mutContext InductiveReading.familyBlock EmissionDispatch.familyContext EmissionDispatch.singletonContext
   rw [mutCtx_singleton]
 
-/-! ## A one-member inductive class -/
+/-! ## A one-member inductive block -/
 
 section Blocks
 
@@ -113,25 +109,25 @@ variable {md : Mode} (cx : Ctx md) (param : Nat → LevelParam) (self : Nat → 
 
 local notation "reader" => ExpressionRead.blockReader cx param self
 
-/-- **A one-member inductive class reads back as its source** through
+/-- **A one-member inductive block reads back as its source** through
 `compileMutualBlock`: `EmissionBlocks.familyBlock_correct`'s conclusions, with
 the mutual path's projections (`buildMutualProjections`) and the member run in
-the class's mutual context (`mutContext`). -/
+the block's mutual context (`mutContext`). -/
 theorem singletonBlock_correct (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (d : Ix.Ind)
-    (scope : ConstsSatisfy (SelfName (mutContext [[.indc d]] context).2 self names) d.type)
+    (scope : ConstsSatisfy (SelfName (mutContext [.indc d] context).2 self names) d.type)
     (ctorScope : ∀ ctor ∈ d.ctors.toList,
-      ConstsSatisfy (SelfName (mutContext [[.indc d]] context).2 self names) ctor.cnst.type)
+      ConstsSatisfy (SelfName (mutContext [.indc d] context).2 self names) ctor.cnst.type)
     {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
-    (ran : rawRun (compileMutualBlock [[.indc d]]) context before = (.ok output, after)) :
+    (ran : rawRun (compileMutualBlock [.indc d]) context before = (.ok output, after)) :
     Emission.Clean bindings after ∧ ExpressionRead.Extends (reader before).ecx (reader after).ecx ∧
       (∃ metas, output = BlockResult.mk' output.block .empty
-        (buildMutualProjections [[.indc d]] (Address.admissionHash (Ixon.ser output.block)) metas)) ∧
+        (buildMutualProjections [.indc d] (Address.admissionHash (Ixon.ser output.block)) metas)) ∧
       SharingRoots.erase output.block.info = SharingRoots.erase (EmissionBlocks.inductiveSkeleton d) ∧
       SharingRoots.RootsRead (EmissionBlocks.recordReader cx param self after output.block)
         (Emission.related param names σ
-          (Emission.inner d.name d.levelParams.toList (mutContext [[.indc d]] context)))
+          (Emission.inner d.name d.levelParams.toList (mutContext [.indc d] context)))
         (d.type :: d.ctors.toList.map (·.cnst.type))
         (constantInfoRootExprs output.block.info).toList := by
   unfold compileMutualBlock at ran
@@ -141,14 +137,14 @@ theorem singletonBlock_correct (context : CompileEnv × BlockEnv)
   obtain ⟨_, seededState, seeded, compiled⟩ := bind_ok ran
   have kept := EmissionBlocks.preseed_then cx param self bindings
     (related := Emission.related param names σ
-      (Emission.inner d.name d.levelParams.toList (mutContext [[.indc d]] context)))
-    (context := mutContext [[.indc d]] context) aligned (clean.good cx param self _) seeded
+      (Emission.inner d.name d.levelParams.toList (mutContext [.indc d] context)))
+    (context := mutContext [.indc d] context) aligned (clean.good cx param self _) seeded
   unfold compileMutualPayload at compiled
   obtain ⟨payload, middle, payloadRan, finished⟩ := bind_ok compiled
   obtain ⟨out, outRan, members, metas⟩ := mutConsts_indc d payloadRan
   obtain ⟨ind, indMeta, pairs, exprs⟩ := out
   obtain ⟨cleanD, growth, shape, ctorShapes, _, roots⟩ := Emission.inductiveData_correct cx param self names σ
-    bindings (Emission.current d.name (mutContext [[.indc d]] context)) aligned external d scope ctorScope
+    bindings (Emission.current d.name (mutContext [.indc d] context)) aligned external d scope ctorScope
     kept.1 outRan
   obtain ⟨same, _, built⟩ := ProjectionLayout.finish_mutual_ok _ _ _ _ finished
   subst same
@@ -172,13 +168,13 @@ theorem singletonBlock_correct (context : CompileEnv × BlockEnv)
 
 end Blocks
 
-/-! ## The one-member class's headers -/
+/-! ## The one-member block's headers -/
 
-/-- **The headers of a one-member inductive class**: one inductive whose header
+/-- **The headers of a one-member inductive block**: one inductive whose header
 and every constructor's header are the source's, as natural numbers
 (`InductiveReading.family_headers` over the mutual path). -/
 theorem singleton_headers (d : Ix.Ind) :
-    Emission.Yields (compileMutualBlock [[.indc d]]) (fun output =>
+    Emission.Yields (compileMutualBlock [.indc d]) (fun output =>
       ∃ target, output.block.info = .muts #[.indc target] ∧ ProjectionLayout.IndHeader d target ∧
         List.Forall₂ ProjectionLayout.CtorHeader d.ctors.toList target.ctors.toList) := by
   refine ProjectionLayout.mutual_block _ _ ?_
@@ -233,10 +229,10 @@ variable {md : Mode} (cx : Ctx md) (names : Ix.Name → CName md → Prop) (σ :
 
 /-- **A standalone inductive compiled through the driver's mutual path is read
 back as its source**: `InductiveReading.inductive_reads` for
-`compileMutualBlock [[.indc (sourceData source constructors)]]`, the block the
+`compileMutualBlock [.indc (sourceData source constructors)]`, the block the
 driver compiles a one-inductive block as (`MutConst.mkIndc` of the source over
 its constructors). The premises are `inductive_reads`': the self references
-(the family's own name related to its key, `selfKey`, R13's half, and no
+(the family's own name related to its key, `selfKey`, and no
 constructor of the family in its types, `NoCtorIn`) serve the class's mutual
 context, which is the family's (`mutBlock_family`). -/
 theorem inductive_reads_mutual (context : CompileEnv × BlockEnv)
@@ -256,7 +252,7 @@ theorem inductive_reads_mutual (context : CompileEnv × BlockEnv)
       ReaderSourceSpines.sourceStrip (source.numParams + ctor.numFields) ctor.cnst.type = some (types, body) ∧
         ReaderSourceSpines.SourceNonForall body)
     (clean : Emission.Clean bindings before) (wire : BlockWireTablesWF before)
-    (ran : rawRun (compileMutualBlock [[.indc (Emission.sourceData source constructors)]]) context before =
+    (ran : rawRun (compileMutualBlock [.indc (Emission.sourceData source constructors)]) context before =
       (.ok output, after)) :
     BlockResultCodecWF output ∧
       ∃ type ctorTypes, InductiveReading.related names σ source source.cnst.type type ∧
@@ -267,7 +263,7 @@ theorem inductive_reads_mutual (context : CompileEnv × BlockEnv)
             lowerInductive state (InductiveReading.sourceBlock key ctorKey type ctorTypes source constructors recs) := by
   have codec := EmissionDispatch.mutualBlock_codec context _ wire ran
   have scope : ∀ {e : Ix.Expr}, InductiveReading.NoCtorIn constructors e →
-      ConstsSatisfy (SelfName (mutContext [[.indc (Emission.sourceData source constructors)]] context).2
+      ConstsSatisfy (SelfName (mutContext [.indc (Emission.sourceData source constructors)] context).2
         (InductiveReading.inductiveSelf cx output.blockAddr) names) e := by
     intro e noCtor
     rw [mutBlock_family]

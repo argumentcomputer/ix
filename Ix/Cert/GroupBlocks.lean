@@ -751,10 +751,10 @@ theorem defs_map : ∀ L : List MutConst, (∀ m ∈ L, IsDefn m) → (L.filterM
 
 /-- **Lean's order of a block of definition-like members is a list of definitions**, one per
 class, holding exactly the members. -/
-theorem sourceClasses_defs {cs : Array MutConst} (hd : ∀ m ∈ cs, IsDefn m) :
-    ∃ defs : List Ix.Def, sourceClasses cs = (defs.map MutConst.defn).map ([·]) ∧
+theorem sourceMembers_defs {cs : Array MutConst} (hd : ∀ m ∈ cs, IsDefn m) :
+    ∃ defs : List Ix.Def, sourceMembers cs = defs.map MutConst.defn ∧
       ∀ m, m ∈ cs ↔ ∃ d ∈ defs, MutConst.defn d = m := by
-  unfold sourceClasses
+  unfold sourceMembers
   dsimp only
   generalize hL : (cs.zipIdx.qsort _).toList = L
   have mem : ∀ e, e ∈ L ↔ e ∈ cs.zipIdx := by
@@ -767,8 +767,7 @@ theorem sourceClasses_defs {cs : Array MutConst} (hd : ∀ m ∈ cs, IsDefn m) :
     obtain ⟨e, he, rfl⟩ := List.mem_map.mp hm
     exact hd _ (inCs e he)
   refine ⟨(L.map (·.1)).filterMap toDef, ?_, fun m => ?_⟩
-  · rw [defs_map _ all, List.map_map]
-    rfl
+  · exact (defs_map _ all).symm
   · rw [← List.mem_map (f := MutConst.defn), defs_map _ all]
     constructor
     · intro hm
@@ -779,7 +778,7 @@ theorem sourceClasses_defs {cs : Array MutConst} (hd : ∀ m ∈ cs, IsDefn m) :
       exact inCs e he
 
 /-- **A definitions group's names are its compile block's definitions'**, in the form the
-definition-block readings take: the block's members in Lean's order (`sourceClasses`) are one
+definition-block readings take: the block's members in Lean's order (`sourceMembers`) are one
 definition per class, `defs`, and the group's names are theirs. -/
 theorem definitions_defs {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
@@ -799,10 +798,10 @@ theorem definitions_defs {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix
         | .thmInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromTheoremVal val)))
         | .recInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.recr val)))
         | _ => pure (ForInStep.yield acc)) ctx s = (.ok cs, s')) :
-    ∃ defs : List Ix.Def, sourceClasses cs = (defs.map MutConst.defn).map ([·]) ∧
+    ∃ defs : List Ix.Def, sourceMembers cs = defs.map MutConst.defn ∧
       ∀ x, x ∈ gr.names ↔ ∃ (j : Nat) (_ : j < defs.length), defs[j].name = x := by
   obtain ⟨names, kinds⟩ := definitions_members P scheduled hgr hdef hE hn hnE henv hloop
-  obtain ⟨defs, hcls, hmem⟩ := sourceClasses_defs kinds
+  obtain ⟨defs, hcls, hmem⟩ := sourceMembers_defs kinds
   refine ⟨defs, hcls, fun x => ?_⟩
   rw [names x]
   constructor

@@ -4,7 +4,7 @@ import Ix.KernelDisplay.Peek
 
 /-! # `.meta`: the display table, the meta reader and the erasure run (untrusted harness)
 
-IXC-PLAN §11 (step 6). `.meta` is the Ixon reading with display: its keys are
+`.meta` is the Ixon reading with display: its keys are
 the `.anon` keys (record addresses, role keys, derived keys), and the reader's
 output carries what the `.ixe`'s metadata says of the keys a record declares
 (`Reader.Read.display`). It explains failures with names; it never decides.

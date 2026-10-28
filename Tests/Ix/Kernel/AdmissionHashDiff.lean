@@ -7,11 +7,10 @@ import Ix.Ixon
 
 `Address.admissionHash` is pure BLAKE3 (`Address.blake3Pure`) in the logic and
 executes as the Rust BLAKE3 (`Address.blake3`), through the one approved
-`@[implemented_by]` (owner, 2026-10-13). Every theorem about the compiler's
+`@[implemented_by]` substitution. Every theorem about the compiler's
 addresses and the certified entries is about pure BLAKE3; what runs is the
 Rust one. `Tests.Ix.Kernel.AddressPure` compares the two on a few fixture
-inputs at elaboration time. This runner compares them broadly (compiler
-queue CQ2.28):
+inputs at elaboration time. This runner compares them across:
 
 * **every record and blob of the Init+Std artifact**: each record's stored
   bytes (`Ixon.LazyConstant.rawBytes`, the bytes its address is computed

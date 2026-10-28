@@ -9,8 +9,7 @@ public import Std.Data.HashSet
 /-!
 # The role specifications
 
-The checker's fixed, versioned specification set (IXC-PLAN §8.1,
-PRIMITIVES-DESIGN §6.2): for every `Role`, what a constant bound to it must
+The checker's fixed, versioned specification set: for every `Role`, what a constant bound to it must
 be. A specification is a closed term over role keys (`roleKey r`), positional
 levels and bound or free variables; it mentions no address and no input key,
 so the same terms serve every mode and every toolchain. A toolchain bump
@@ -101,7 +100,7 @@ open BasisDSL
 
 /-! ## Specifications -/
 
-/-- One role's specification (IXC-PLAN §8.1). -/
+/-- One role's specification. -/
 inductive Spec (md : Mode) where
   /-- The exact declarations, up to `ConstantInfo.canon` (a basis block; every
   member of the block has the same specification). -/
@@ -507,7 +506,7 @@ The certificate check's guard used to read the stream's order: a proof's
 constants had to be installed before the operation (`constsResolve` in the
 pre-insertion environment), so what a certificate could use depended on what
 the stream happened to declare earlier. The condition is now restated as a
-closure condition (IXC-PLAN §8.4, PRIMITIVES-DESIGN §6.5): every constant of a
+closure condition: every constant of a
 proof, after the operation's self-references are replaced by its value, lies
 in the dependency closure of that value and of the operation's dependencies'
 roles (`Role.deps`, with their blocks). The validation then reads only the

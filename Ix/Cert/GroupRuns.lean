@@ -14,7 +14,7 @@ forms the reader's segment theorems take (`TraceSegments`):
 * `FoldBlock` packages what the fold gives about the block of a closure name (`foldBlock_of`):
   its run, its publication, its snapshot's environment, freshness, resolution and blobs;
 * a definitions group of two or more runs `compileMutualBlock` over its definitions in its own
-  order (`definitions_run`). Both orders are Lean's (`LeanOrder.sourceClasses_eq`); two members
+  order (`definitions_run`). Both orders are Lean's (`LeanOrder.sourceMembers_eq`); two members
   of a block never tie, since names that differ only in their hash fields have one key and so one
   published address (`addr_of_key`), while a block's members are published apart
   (`BlockPublication.apart`);
@@ -36,7 +36,7 @@ open Ix.CompileM Ix.CompileCert Ix.Cert.Resolution Ix.Cert.Schedule
 open Ix.LeanIngress (Group groupsOf componentGroup isFamily isDefinition blockRecursors)
 open Ix.Cert.ClosureLayout (addrOf quotientGraph)
 open Ix.Cert.InductiveCompile (indsOf indOf)
-open Ix.Cert.LeanOrder (classKey)
+open Ix.Cert.LeanOrder (orderKey)
 
 /-! ## The block compile's two paths -/
 
@@ -129,7 +129,7 @@ local macro "grows_step" : tactic => `(tactic| first
   | split
   | ((with_reducible show ∀ _, _); intro _))
 
-theorem registerMutsEntry_grows (cls : List (List MutConst)) (addr : Address) :
+theorem registerMutsEntry_grows (cls : List MutConst) (addr : Address) :
     Grows (registerMutsEntry cls addr) := by
   unfold registerMutsEntry
   repeat grows_step
@@ -137,7 +137,7 @@ theorem registerMutsEntry_grows (cls : List (List MutConst)) (addr : Address) :
 /-- **A block runs on one of its two paths, by its size and its key's kind**: a lone constant
 that is no inductive or constructor compiles alone (`compileConstantInfo`), to `runBlock`'s final
 state; any other block runs its members' loop from the empty state, and compiles the members in
-Lean's order (`compileMutualBlock (sourceClasses cs)`) with the records `runBlock` returns, to a
+Lean's order (`compileMutualBlock (sourceMembers cs)`) with the records `runBlock` returns, to a
 state whose blobs `runBlock`'s final state keeps (the registrations only add names). -/
 theorem runBlock_paths {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} {r : BlockResult}
     {cache : BlockState} (h : runBlock cenv all lo = .ok (r, cache)) :
@@ -148,7 +148,7 @@ theorem runBlock_paths {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
         ((all.size == 1 && !isIndConst const) = false ∧ ∃ cs out s₄,
           rawRun (GroupBlocks.membersLoop all.toList #[])
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok cs, {}) ∧
-          rawRun (compileMutualBlock (sourceClasses cs))
+          rawRun (compileMutualBlock (sourceMembers cs))
             (cenv, { all, current := lo, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           BlobWrites.Extends cenv.blobs s₄ cache ∧
           BlockRecords.recordsOf r = BlockRecords.recordsOf out)) := by
@@ -395,10 +395,10 @@ theorem key_of_tie {a b : Ix.Name} (h : Ix.Name.leanCmp a b = .eq) :
 /-! ## Members at their positions -/
 
 /-- **Members listed at their positions are sorted, distinct and never tie.** -/
-theorem positioned {xs : List MutConst} (pos : ∀ i (hi : i < xs.length), (classKey xs[i]).1 = i) :
-    xs.Nodup ∧ (xs.Pairwise fun a b => Ix.sourceOrderLt (classKey b) (classKey a) = false) ∧
-      ∀ a ∈ xs, ∀ b ∈ xs, Ix.sourceOrderLt (classKey a) (classKey b) = false →
-        Ix.sourceOrderLt (classKey b) (classKey a) = false → a = b := by
+theorem positioned {xs : List MutConst} (pos : ∀ i (hi : i < xs.length), (orderKey xs[i]).1 = i) :
+    xs.Nodup ∧ (xs.Pairwise fun a b => Ix.sourceOrderLt (orderKey b) (orderKey a) = false) ∧
+      ∀ a ∈ xs, ∀ b ∈ xs, Ix.sourceOrderLt (orderKey a) (orderKey b) = false →
+        Ix.sourceOrderLt (orderKey b) (orderKey a) = false → a = b := by
   refine ⟨?_, ?_, ?_⟩
   · rw [List.nodup_iff_pairwise_ne, List.pairwise_iff_getElem]
     intro i j hi hj hij e
@@ -456,7 +456,7 @@ theorem sourceData_name {ci : Ix.ConstantInfo} {d : Ix.Def} (h : EmissionDispatc
   cases ci <;> simp only [EmissionDispatch.sourceData, reduceCtorEq, Option.some.injEq] at h <;> (subst h; rfl)
 
 theorem sourceData_key {ci : Ix.ConstantInfo} {d : Ix.Def} (h : EmissionDispatch.sourceData ci = some d) :
-    classKey (.defn d) = (ci.blockPosition, ci.getCnst.name) := by
+    orderKey (.defn d) = (ci.blockPosition, ci.getCnst.name) := by
   cases ci <;> simp only [EmissionDispatch.sourceData, reduceCtorEq, Option.some.injEq] at h <;> (subst h; rfl)
 
 theorem fromDefinitionVal_eq (v : Ix.DefinitionVal) :
@@ -516,7 +516,7 @@ theorem componentGroup_sorted {E : Ix.Environment} {members : Ix.Set Ix.Name} {m
 
 /-- **A definitions group of two or more runs as its definitions, in its own order**: its
 compile block is a `FoldBlock` holding the group's names, and the block's records are those of
-`compileMutualBlock` over the group's definitions (`defsOf`), one per class, run from the empty
+`compileMutualBlock` over the group's definitions (`defsOf`), in source order, run from the empty
 state at the fold's snapshot. -/
 theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
@@ -528,7 +528,7 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.definitions members)) (two : 2 ≤ members.size) :
     ∃ snap rep all r c, FoldBlock env sub ixe failures snap rep all r c ∧
       (∀ d ∈ TraceSegments.defsOf members, all.contains d.name = true) ∧
-      ∃ out after, rawRun (compileMutualBlock (((TraceSegments.defsOf members).map MutConst.defn).map ([·])))
+      ∃ out after, rawRun (compileMutualBlock ((TraceSegments.defsOf members).map MutConst.defn))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
         BlobWrites.Extends snap.cenv.blobs after c ∧ BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
@@ -632,7 +632,7 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
       rw [← memberOf_congr envCongr ekk, hdm]
   -- quotient Source's order is Lean's
   have sortedX : ((TraceSegments.defsOf members).map MutConst.defn).Pairwise
-      fun a b => Ix.sourceOrderLt (classKey b) (classKey a) = false := by
+      fun a b => Ix.sourceOrderLt (orderKey b) (orderKey a) = false := by
     rw [List.pairwise_map]
     refine sortedM.filterMap _ fun a a' h d hd d' hd' => ?_
     rw [sourceData_key hd, sourceData_key hd']
@@ -644,11 +644,11 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     subst e
     exact defsIn _ hd'
   -- the compile's own list of definitions, for `apart`
-  have hsc := LeanOrder.sourceClasses_def cs
-  generalize hL : (cs.zipIdx.qsort (LeanOrder.zipBefore classKey)).toList.map (·.1) = L at hsc
+  have hsc := LeanOrder.sourceMembers_def cs
+  generalize hL : (cs.zipIdx.qsort (LeanOrder.zipBefore orderKey)).toList.map (·.1) = L at hsc
   have permL : L.Perm cs.toList := by
     rw [← hL]
-    have p := ((Ix.CompileCert.Canon.qsort_perm cs.zipIdx (LeanOrder.zipBefore classKey)).toList).map (·.1)
+    have p := ((Ix.CompileCert.Canon.qsort_perm cs.zipIdx (LeanOrder.zipBefore orderKey)).toList).map (·.1)
     rw [Array.toList_zipIdx, List.zipIdx_map_fst] at p
     exact p
   have defnL : ∀ m ∈ L, GroupBlocks.IsDefn m := fun m hm => by
@@ -676,7 +676,7 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
   -- no two members tie: they would have one key and so one address
   have noTie : ∀ a ∈ (TraceSegments.defsOf members).map MutConst.defn,
       ∀ b ∈ (TraceSegments.defsOf members).map MutConst.defn,
-      Ix.sourceOrderLt (classKey a) (classKey b) = false → Ix.sourceOrderLt (classKey b) (classKey a) = false →
+      Ix.sourceOrderLt (orderKey a) (orderKey b) = false → Ix.sourceOrderLt (orderKey b) (orderKey a) = false →
         a = b := by
     intro a ha b hb h₁ h₂
     obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem (permD.mem_iff.mpr ha)
@@ -696,7 +696,7 @@ theorem definitions_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
     have hij := apartD i hi' j hj' (addr_of_key P si sj (key_of_tie tie))
     subst hij
     rfl
-  have hsc' := LeanOrder.sourceClasses_eq perm sortedX noTie
+  have hsc' := LeanOrder.sourceMembers_eq perm sortedX noTie
   rw [← hsc, hsc'] at hout
   exact hout
 
@@ -840,7 +840,7 @@ theorem types_distinct {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.
 
 /-- **An inductive group's types run as the group's members, in its order**: the compile block
 of its types is a `FoldBlock` holding exactly the group's types and constructors, and its records
-are those of `compileMutualBlock` over `indsOf types ctors`, one per class. -/
+are those of `compileMutualBlock` over `indsOf types ctors`, in source order. -/
 theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyBlocks env)
@@ -852,7 +852,7 @@ theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Enviro
       (∀ x, all.contains x = true ↔
         (∃ (i : Nat) (_ : i < types.size), (types[i].cnst.name == x) = true) ∨
         ∃ (i : Nat) (hi : i < ctors.size) (k : Nat) (_ : k < ctors[i].size), (ctors[i][k].cnst.name == x) = true) ∧
-      ∃ out after, rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·])))
+      ∃ out after, rawRun (compileMutualBlock ((indsOf types ctors).map MutConst.indc))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
         BlobWrites.Extends snap.cenv.blobs after c ∧ BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
@@ -927,7 +927,7 @@ theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Enviro
       obtain ⟨x, hx, e⟩ := listed ((memAll _).mpr (.inl ⟨j, hjT, BEq.rfl⟩))
       refine List.mem_filterMap.mpr ⟨x, hx, ?_⟩
       rw [← memberOf_congr envCongr e, typeMember j hjT, hxs j hj]
-  rw [LeanOrder.sourceClasses_eq perm sortedX noTieX] at hout
+  rw [LeanOrder.sourceMembers_eq perm sortedX noTieX] at hout
   exact hout
 
 /-! ## An inductive group's recursors -/
@@ -1076,7 +1076,7 @@ theorem blockRecursors_names {first : Ix.InductiveVal} {cands recs : Array Ix.Re
 /-- **An inductive group's recursors run as a family in `blockRecursors`' order, or alone under
 their own name when there is one**: the compile block of its recursors is a `FoldBlock` holding
 exactly the group's recursors, and its records are those of `compileMutualBlock` over the
-recursors, one per class, or, for a lone recursor, of its single-constant compile, the block's
+recursors, in source order, or, for a lone recursor, of its single-constant compile, the block's
 key being its name. -/
 theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
@@ -1088,7 +1088,7 @@ theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
     ∃ snap rep all r c, FoldBlock env sub ixe failures snap rep all r c ∧
       (∀ x, all.contains x = true ↔ ∃ (j : Nat) (_ : j < recs.size), (recs[j].cnst.name == x) = true) ∧
       ∃ out after,
-        (rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·])))
+        (rawRun (compileMutualBlock (recs.toList.map MutConst.recr))
             (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
             (.ok out, after) ∨
           ∃ r', recs.toList = [r'] ∧ blockKey rep all = r'.cnst.name ∧
@@ -1217,7 +1217,7 @@ theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
         obtain ⟨j, hj, rfl⟩ := Array.mem_iff_getElem.mp (Array.mem_toList_iff.mp hrv)
         obtain ⟨x, hx, e⟩ := listed ((memAll _).mpr ⟨j, hj, BEq.rfl⟩)
         exact List.mem_filterMap.mpr ⟨x, hx, by rw [← memberOf_congr envCongr e, recMember j hj]⟩
-    rw [LeanOrder.sourceClasses_eq perm sortedX noTieX] at hout
+    rw [LeanOrder.sourceMembers_eq perm sortedX noTieX] at hout
     exact hout
 
 /-! ## In the segment theorems' forms -/
@@ -1249,7 +1249,7 @@ theorem definitions_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub 
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.definitions members)) (two : 2 ≤ members.size) :
     ∃ snap rep all r c, FoldBlock env sub ixe failures snap rep all r c ∧
       (∀ d ∈ TraceSegments.defsOf members, all.contains d.name = true) ∧
-      ∃ out after, rawRun (compileMutualBlock (((TraceSegments.defsOf members).map MutConst.defn).map ([·])))
+      ∃ out after, rawRun (compileMutualBlock ((TraceSegments.defsOf members).map MutConst.defn))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
         TraceSegments.Claimed ixe sub out ∧ TraceSegments.BlobsKept ixe snap.cenv after := by
@@ -1266,7 +1266,7 @@ theorem types_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs))
     (distinct : Canon.KeysDistinct ((indsOf types ctors).map MutConst.indc)) :
     ∃ snap rep all r c, FoldBlock env sub ixe failures snap rep all r c ∧
-      ∃ out after, rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·])))
+      ∃ out after, rawRun (compileMutualBlock ((indsOf types ctors).map MutConst.indc))
           (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
           (.ok out, after) ∧
         TraceSegments.Claimed ixe sub out ∧ TraceSegments.BlobsKept ixe snap.cenv after := by
@@ -1287,7 +1287,7 @@ theorem recursors_family {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix
         (∃ (cenvR₂ : CompileEnv) (all₂ : Ix.Set Ix.Name) (key₂ : Ix.Name) (r₂ : BlockResult) (cache₂ : BlockState),
           runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂) ∧ BlockPublication.Published ixe sub key₂ r₂ ∧
           BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out ∧
-          (rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·])))
+          (rawRun (compileMutualBlock (recs.toList.map MutConst.recr))
               (snap.cenv, { all, current := blockKey rep all, mutCtx := default, univCtx := [] }) {} =
               (.ok out, after) ∨
             ∃ r', recs.toList = [r'] ∧ key₂ = r'.cnst.name ∧

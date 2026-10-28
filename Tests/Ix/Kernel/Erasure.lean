@@ -2,7 +2,7 @@ import Benchmarks.Kernel.CheckIxeMeta
 import Ix.KernelDisplay.Peek
 import Tests.Ix.Kernel.Reader
 
-/-! # The erasure test on fixtures (IXC-PLAN §11, step 6)
+/-! # The erasure test on fixtures
 
 `.meta` never decides: the reported verdict is the `.anon` run's, and the
 `.meta` run explains a failure with names. The erasure property is that the

@@ -3,7 +3,7 @@ module
 public import Ix.CompileCert.Canon.SccState
 
 /-!
-# M7 L1, components: the invariant of Tarjan's loop
+# The invariant of Tarjan's loop
 
 The invariant `Inv G st` of `tarjanLoop` over a graph `G` whose successors are nodes
 (`Bounded G`), in the reading of `SccState.lean`:

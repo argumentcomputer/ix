@@ -104,8 +104,7 @@ def sizeOfInstances : List Name := [`PassO2.SA._sizeOf_inst, `PassO2.SB._sizeOf_
 brings: `SizeOf.sizeOf` is reached only through the constructors'
 `sizeOf_spec` lemmas, which belong to the same unit. Lean 4.34.1 generates
 them eagerly (`Lean.Meta.mkSizeOfInstances`). If a run shows it is not
-carried, drop it from this list. Do not restore O11a's `compilerSupportOf`
-(CQ5.3). -/
+carried, drop it from this list. Do not restore O11a's `compilerSupportOf`. -/
 def sizeOfUnitSupport : List Name := [``SizeOf.sizeOf]
 
 /-- Kernel names as Lean names. -/

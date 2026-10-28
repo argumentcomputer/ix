@@ -502,7 +502,7 @@ fun τ envS envA =>
 
 -- CQP.1: `HashAgreement` (`∀ bytes, Address.blake3 bytes = Address.blake3Pure
 -- bytes`) is gone, as `CompileCorrect`'s hypothesis and as a definition: since
--- CQ2.2 every content address the compiler computes is `Address.admissionHash`,
+-- Every content address the compiler computes is `Address.admissionHash`,
 -- pure BLAKE3 in the logic, so the statement no longer assumes that the Rust
 -- and the pure BLAKE3 agree. That the compiler's records and blobs sit at pure
 -- BLAKE3 of their bytes is a property of `compile`, `CompileAuthentic`.
@@ -521,7 +521,7 @@ fun τ envS envA =>
 -- verbatim. `CompileCovers` (every input constant is published exactly when it
 -- did not fail) is stated, and under it the new and the former statement imply
 -- each other (`CompileCorrect.published`, `CompileCorrect.of_published`).
--- CQ2.27: `CompileCovers` and `CompileAuthentic` are proved
+-- `CompileCovers` and `CompileAuthentic` are proved
 -- (`compileCovers`, `compileAuthentic`), from `compileReport`'s own checks;
 -- their statements are unchanged.
 /-- info: def Ix.Cert.Failures.failed : Ix.Cert.Failures → Ix.Name → Bool :=
@@ -660,7 +660,7 @@ fun binding limits ixe S order envA =>
 -- table are renamed field by field (`Rename.recRuleFire`, `Rename.indCaps`,
 -- `Rename.projTable`), and the lemma is stated for `σ = Key.map f` from Source
 -- keys to Ixon keys with `f` injective on the input's ids (`keyIds`,
--- `InputId`, `RenamingHyp`, IXC-PLAN §12). `Pinned`, `DerivedFrom`, `Built` and
+-- `InputId`, `RenamingHyp`). `Pinned`, `DerivedFrom`, `Built` and
 -- `reservedBasisNames_pinned` went with the old hypotheses: `Key.map` fixes
 -- the role keys and commutes with derived shapes by construction.
 /-- info: @Ix.Cert.Rename.expr.eq_def : ∀ {md md' : Ix.Kernel.Mode} (σ : Ix.Kernel.Key md → Ix.Kernel.Key md')
@@ -853,7 +853,7 @@ constructor:
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Failures
 
--- CQ2.27 (owner, 2026-10-15): `compileReport` checks its own result and
+-- `compileReport` checks its own result and
 -- fails, with no artifact, on any inconsistency. The former body of
 -- `compileReport` is `compileUnchecked`, verbatim; `compileReport` runs it,
 -- then `checkReport`: coverage (`uncovered`: every input constant published
@@ -863,7 +863,7 @@ constructor:
 -- the bytes do not change. `Failures.failed` moved here from
 -- `Ix.Cert.Statement`, unchanged, because the check reads it.
 --
--- CQ2.14: the driver is the pure wave fold `Ix.CompileM.compileEnvFold`, the
+-- The driver is the pure wave fold `Ix.CompileM.compileEnvFold`, the
 -- one driver of `compile` and of the IO pipeline (`compileDecoratedConsts`);
 -- the queue drivers `compileEnvAux` (sequential, live state) and
 -- `compileEnvParallelAux` (waves applied in completion order) go. Only the
@@ -1378,7 +1378,7 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.noFailure_iff
 
--- CQ2.27: coverage and authenticity, by construction.
+-- coverage and authenticity, by construction.
 /-- info: @Ix.Cert.compileReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
   Ix.Cert.compileReport env = Except.ok out →
     ∃ cenv,
@@ -1636,19 +1636,16 @@ What ties the shared `Ix.Environment` to Lean's: the cache-free
 specification of `Ix.CanonM` (`nameS`, `levelS`, `exprS`, `constS`), the
 direct reading of Lean's terms (`leanName`, `leanLevel`, `leanExpr`,
 `leanPos`), and the cache-free universe compiler (`compileUnivS`).
-`CanonMCorrect` and `CanonChunkCorrect` (C1) are **proved** (`canonMCorrect`,
-`canonChunkCorrect`), from every state: since CQ2.26 `Ix.CanonM` confirms
+`CanonMCorrect` and `CanonChunkCorrect` are **proved** (`canonMCorrect`,
+`canonChunkCorrect`), from every state: `Ix.CanonM` confirms
 every memo hit (`withPtrEq`) against an entry that carries its proof, has no
 hash-keyed cache, and has a total `canonSyntax`. So `ingressExpr_canonExpr`
-holds without a hypothesis. CQ2.26 re-froze this section: `Reachable` is
-gone (C1 holds from every state, which is stronger), `CanonMCorrect` is
-stated over every state, and `ingressExpr_canonExpr` lost its two premises.
+holds without a hypothesis, and `CanonMCorrect` is stated over every state.
 The universe bridge from Lean is proved (`universeBridge`, under the wire's
-bound only). CQ2.25's ingress part re-froze this section: `Numbering.pos`
-compares names structurally (`Ix.Name.beqRaw`), so `HashEqAgrees` is gone,
-`numbering_nameS` and `UniverseBridge` lost that premise and
-`lower_eq_compileUnivS` its `agree` premise, and `compileUnivS` finds a
-parameter structurally (stronger, every one). The proved theorems are at the
+bound only). `Numbering.pos` compares names structurally (`Ix.Name.beqRaw`),
+so `numbering_nameS`, `UniverseBridge` and `lower_eq_compileUnivS` require no
+hash-agreement premise. `compileUnivS` also finds parameters structurally.
+The proved theorems are at the
 three standard axioms or fewer. -/
 
 /-- info: Ix.Cert.Canon.nameS.eq_def : ∀ (x : Lean.Name),
@@ -1887,7 +1884,7 @@ fun names large n =>
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.Canon.ingressExpr_canonExpr
 
--- CQ2.26: C1, proved.
+-- Canonicalization correctness is proved.
 /-- info: Ix.Cert.Canon.canonMCorrect : Ix.Cert.Canon.CanonMCorrect -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Canon.canonMCorrect
@@ -2072,7 +2069,7 @@ raw universe's (`canonicalTail_read`). -/
 
 /-! ## Component theorems: the raw universe compiler and the whole universe pipeline
 
-Since CQ2.8 the raw universe compiler's memo is keyed by the exact level and
+The raw universe compiler's memo is keyed by the exact level and
 its parameter context. Every run keeps the memo exact, and a successful run
 returns the exact positional lowering of the source level
 (`Ix.CompileCert.UniverseMeaning.compileUniv_exact`), the specification
@@ -2468,7 +2465,7 @@ table final, after which universe compilation does not grow it
 /-! ## Component theorems: successful compilation keeps the tables on the wire
 
 A successful run of the production expression compiler, under an
-environment without Pass 3 records, or of any payload emitter (definition,
+compile environment, or of any payload emitter (definition,
 axiom, quotient, recursor, constructor, inductive, mutual members and
 classes) keeps the primary reference and universe tables representable by
 the constant wire format, from a state whose tables are on the wire and
@@ -2498,7 +2495,7 @@ fun {α} action post =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionWire.Safe.expression
 
-/-- info: Ix.CompileCert.EmissionWire.Safe.mutConsts : ∀ (sources : List (List Ix.MutConst)),
+/-- info: Ix.CompileCert.EmissionWire.Safe.mutConsts : ∀ (sources : List Ix.MutConst),
   Ix.CompileCert.EmissionWire.Safe (Ix.CompileM.compileMutConsts sources) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.EmissionWire.Safe.mutConsts
@@ -2525,7 +2522,7 @@ fun {α} action post =>
 
 /-! ## Component theorems: canonical sharing preserves the reading of every root
 
-One theorem for every payload kind (R07-01/02): a successful root
+One theorem for every payload kind: a successful root
 write-back replaces exactly the roots, in order, and keeps the rest of the
 payload (`SharingRoots.withRoots_inv`, over `erase`, which replaces every
 root by one placeholder); the sharing builder keeps the payload but its
@@ -2605,7 +2602,7 @@ fun {md} reader related sources roots =>
 Every declaration emitter (definition-like, axiom, quotient, constructor and
 the constructor loop, inductive, recursor and the rule loop), from a state
 satisfying the expression invariant for the declaration's own relation and
-under an environment without Pass 3 records, returns on success the
+returns on success the
 payload its source describes, whose expression roots the in-flight reader
 reads as terms `Related` to the source's, in order
 (`SharingRoots.RootsRead`); it ends `Emission.Clean` (the invariant's state
@@ -2714,7 +2711,7 @@ fun bindings state => Ix.CompileCert.ExpressionState.StateSound bindings state �
 
 The preseeded singleton block compilers (definition-like, axiom, quotient,
 recursor, standalone inductive family), from a clean state and under an
-environment without Pass 3 records, return on success a block whose
+compile environment, return on success a block whose
 payload keeps the source's skeleton (`SharingRoots.erase`: every field but
 the expression roots) and whose actual member reader (the block's blobs
 overlaid on the context's) reads the roots as terms `Related` to the
@@ -2794,7 +2791,7 @@ fun source =>
 
 /-! ## Component theorems: every public dispatch kind decodes exactly
 
-Since the call-site surgery was deleted (CQ3.5), public dispatch
+Since the call-site surgery was deleted, public dispatch
 (`Ix.CompileM.compileConstantInfo`) is the kind's preseeded block compiler
 in the singleton mutual context (`EmissionDispatch.*_run`); for every kind,
 and for a mutual block, a successful compile from tables on the wire returns a
@@ -2810,7 +2807,7 @@ block that decodes exactly. Every lemma behind them is audited in
 #check @Ix.CompileCert.EmissionDispatch.constant_codec
 
 /-- info: Ix.CompileCert.EmissionDispatch.mutualBlock_codec : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
-  (classes : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  (classes : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
   Ix.Sharing.Verify.BlockWireTablesWF before →
     Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock classes) context before = (Except.ok output, after) →
       Ix.Sharing.Verify.BlockResultCodecWF output -/
@@ -2838,7 +2835,7 @@ block that decodes exactly. Every lemma behind them is audited in
 /-! ## Component theorems: compiled singleton records are read back as their sources
 
 Public dispatch of a definition, theorem, opaque, axiom or quotient, under
-an environment without Pass 3 records, from a clean state whose tables
+from a clean state whose tables
 are on the wire returns a block that decodes exactly and that the certified
 reader's `readRecord` (over the block's blobs overlaid on the context's)
 reads as exactly the declaration the source describes: under the record's
@@ -3060,7 +3057,7 @@ recursor's result-variable walk is the source's
 
 /-! ## Component theorems: the mutual layout
 
-A mutual block keeps one payload per class, the class's first member, with
+A mutual block keeps one payload per source member, with
 that member's kind and constructor positions, and the sharing build's
 write-back keeps both (`ProjectionLayout.mutual_block_shape`); the standalone inductive
 family's block keeps the source's constructor positions, so its projection
@@ -3069,10 +3066,10 @@ constructors (`inductive_projection_resolves`,
 `constructor_projection_resolves`). Every lemma behind them is audited in
 `Ix.CompileCert.ReadingAudit`. -/
 
-/-- info: Ix.CompileCert.ProjectionLayout.mutual_block_shape : ∀ (sources : List (List Ix.MutConst)),
+/-- info: Ix.CompileCert.ProjectionLayout.mutual_block_shape : ∀ (sources : List Ix.MutConst),
   Ix.CompileCert.Emission.Yields (Ix.CompileM.compileMutualBlock sources) fun output =>
     Ix.CompileCert.ProjectionLayout.blockShape output.block.info =
-      some (List.map Ix.CompileCert.ProjectionLayout.sourceShape (List.filterMap List.head? sources)) -/
+      some (List.map Ix.CompileCert.ProjectionLayout.sourceShape sources) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.ProjectionLayout.mutual_block_shape
 
@@ -3113,37 +3110,20 @@ constructors (`inductive_projection_resolves`,
 /-! ## Component theorems: a mutual block's projections
 
 A compiled mutual block either keeps the mutual wrapper, whose rows are a
-member projection per source member at its class index and a constructor
+member projection per source member at its own index and a constructor
 projection per constructor position, or collapses a lone definition or
 recursor, every source name registered to the block itself
-(`MutualArtifact.build_cases`). Under an environment without Pass 3
-records, a successful mutual block from a state whose tables are on the wire
+(`MutualArtifact.build_cases`). A successful mutual block from a state whose tables are on the wire
 decodes exactly, so do its projections, and in any store holding the block
 its rows read under the certified reader as their source-indexed references
-(`MutualArtifact.mutual_correct`), given non-empty classes whose members
-agree in shape (`MutualProjections.ClassesAgree`, discharged from the class
-sort in R9b, below) and source constructors declaring their positions. Every lemma
+(`MutualArtifact.mutual_correct`), given source constructors declaring their positions. Every lemma
 behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
-/-- info: def Ix.CompileCert.MutualProjections.ClassesAgree : List (List Ix.MutConst) → Prop :=
-fun sources =>
-  ∀ (members : List Ix.MutConst),
-    members ∈ sources →
-      ∀ (left : Ix.MutConst),
-        left ∈ members →
-          ∀ (right : Ix.MutConst),
-            right ∈ members →
-              Ix.CompileCert.ProjectionLayout.sourceShape left = Ix.CompileCert.ProjectionLayout.sourceShape right -/
-#guard_msgs (whitespace := lax) in
-#print Ix.CompileCert.MutualProjections.ClassesAgree
-
 /-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)
-  (sources : List (List Ix.MutConst)) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
+  (sources : List Ix.MutConst) {before after : Ix.CompileM.BlockState} {output : Ix.CompileM.BlockResult},
   Ix.Sharing.Verify.BlockWireTablesWF before →
-    (∀ (members : List Ix.MutConst), members ∈ sources → members ≠ []) →
-      Ix.CompileCert.MutualProjections.ClassesAgree sources →
-        (∀ (source : Ix.MutConst),
-            source ∈ sources.flatten → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
+    (∀ (source : Ix.MutConst),
+        source ∈ sources → Ix.CompileCert.MutualProjections.ConstructorPositions source) →
           Ix.CompileCert.rawRun (Ix.CompileM.compileMutualBlock sources) context before = (Except.ok output, after) →
             Ix.Sharing.Verify.BlockResultCodecWF output ∧
               Ix.CompileCert.MutualProjections.ProjectionWire output ∧
@@ -3239,8 +3219,7 @@ and the index holds one recursor per block and motive
 
 /-! ## Component theorems: compiled standalone inductives are read back as their sources
 
-Public dispatch of an inductive, under an environment without Pass 3
-records, from a clean state whose tables are on the wire, returns a block
+Public dispatch of an inductive, from a clean state whose tables are on the wire, returns a block
 that decodes exactly and that the certified reader's `readRecord` (over the
 block's blobs overlaid on the context's) reads as `lowerInductive` of the
 `BlockRead` the source describes (`InductiveReading.sourceBlock`): the
@@ -3248,10 +3227,10 @@ inductive under its key with the level parameters `0, …, n - 1` and a type
 `Related` to the source's, its constructors in source order under their
 keys with related types, and the recursors the reader reads from their own
 records (`readRecursors`, whose correspondence with the compiled recursors
-is R10b); given the index shaping the block at member 0 (derived from the
+is proved separately); given the index shaping the block at member 0 (derived from the
 reader's own index in `inductive_reads_indexed`), the keys reading, the
-self references (the family's name related to its key, R13's half, and no
-constructor of the family in its types, `NoCtorIn`, N-READS N4: proved from
+self references (the family's name related to its key, and no
+constructor of the family in its types, `NoCtorIn`, proved from
 Source acceptance by `Ix.Cert.NoCtor.inductive_reads_sourceAccepts`), and a
 well-formed source. Without a recursor in the input the block declines.
 Every lemma behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
@@ -3371,7 +3350,7 @@ fun constructors =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.InductiveReading.inductive_declines_unindexed
 
-/-! ## Component theorems: what Source mode admits of an inductive block (R12)
+/-! ## Component theorems: what Source mode admits of an inductive block
 
 Source mode's group and conversion of an inductive block
 (`Ix.LeanIngress.inductiveGroup`, `convertInductive`) check every
@@ -3383,9 +3362,9 @@ its environment (`collect_lookups`, `mkIndc_lookups`). So where the compile
 environment resolves a Source-admitted block's constructor names as
 Source's input does (`Ix.Cert.compile` compiles the environment Source mode
 checks), `InductiveReading.inductive_reads`' safety, position and telescope
-premises hold (`source_premises`, `inductive_reads_source`), and so do R9a's
+premises hold (`source_premises`, `inductive_reads_source`), and so do the
 `ConstructorPositions` for the compiler's mutual members
-(`mkIndc_positions`). The self references stay premises (N-READS). Every
+(`mkIndc_positions`). The self references stay premises. Every
 lemma behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
 /-- info: def Ix.CompileCert.SourceConstructorPositions.Admits : Ix.Environment → Ix.InductiveVal → Prop :=
@@ -3472,11 +3451,19 @@ task's value is its function's, so the split (`width`) and the trace
 (`dbg`) change nothing (`compileEnvFold_width`); the IO pipeline's
 `IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Blocks of one wave
 being independent (the reference schedule) stays a test
-(`compile-schedule-identity`, `cert-compile-parity-initstd`). -/
+(`compile-schedule-identity`, `cert-compile-parity-initstd`).
 
-/-- info: [cert-audit] schedule: 13 roots; axioms used: [propext, Classical.choice, Quot.sound]
+The runtime projects each worker snapshot before spawning its tasks. The
+exact block read frame and task equality add two proof roots. The original
+task constructor retains a separate safety check with its exact reviewed
+replacement; the projected constructor and projection join the other safe
+definitions, increasing that group from five to six. -/
+
+/-- info: [cert-audit] schedule: 15 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] schedule: 5 safe definitions, no runtime substitution -/
+info: [cert-audit] schedule: 6 safe definitions, no runtime substitution
+---
+info: [cert-audit] schedule: exact worker projection substitution, safe source -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
@@ -3485,10 +3472,24 @@ run_cmd do
       (`Ix.Compile.Parallel ++ ·)) ++
     (#[`waveTasks_flatten, `applyTasks_eq,
       `foldWave_eq_with, `foldWave_eq, `foldWaves_eq, `compileEnvFold_eq_seq, `compileEnvFold_width,
-      `lazyPure_eq].map (`Ix.Cert.Schedule ++ ·)))
+      `lazyPure_eq].map (`Ix.Cert.Schedule ++ ·)) ++
+    #[``Ix.CompileM.WorkerSnapshot.runBlock_same, ``Ix.CompileM.waveTasks_eq_projected])
   checkRuntime (tag := "cert-audit") "schedule"
-    #[``Ix.Compile.Parallel.map, ``Ix.CompileM.waveTasks, ``Ix.CompileM.foldWave,
+    #[``Ix.Compile.Parallel.map, ``Ix.Compile.WorkerContext.project,
+      ``Ix.CompileM.waveTasksProjected, ``Ix.CompileM.foldWave,
       ``Ix.CompileM.foldWaves, ``Ix.CompileM.compileEnvFold]
+  let env ← Lean.getEnv
+  let some entry := (Lean.Compiler.CSimp.ext.getState env).map.find? ``Ix.CompileM.waveTasks
+    | throwError "schedule: missing worker projection replacement"
+  unless entry.toDeclName == ``Ix.CompileM.waveTasksProjected &&
+      entry.thmName == ``Ix.CompileM.waveTasks_eq_projected &&
+      (Lean.Compiler.getImplementedBy? env ``Ix.CompileM.waveTasks).isNone do
+    throwError "schedule: worker projection replacement changed"
+  let some (.defnInfo definition) := env.find? ``Ix.CompileM.waveTasks
+    | throwError "schedule: task constructor is not a definition"
+  unless definition.safety == .safe do
+    throwError "schedule: task constructor is not safe"
+  Lean.logInfo "[cert-audit] schedule: exact worker projection substitution, safe source"
 
 /-- info: def Ix.Cert.Schedule.applySeq : Ix.CompileM.CompileEnv →
   Array (Ix.Name × Ix.Name × Ix.Set Ix.Name) → Ix.CompileM.DriverAcc → Ix.CompileM.DriverAcc :=
@@ -3540,7 +3541,7 @@ they check (`Ix.Cert.Hybrid.groupOrder`). So two environments with the same
 lookups and the same group order compile alike under
 every schedule (`compileEnvFold_lookups`), and the IO pipeline's hybrid
 environment (`hybridEnv`), whose fallback computes the canonicalization's
-specification (`fallback_spec`, from C1), folds as `Ix.Cert.compile`'s
+specification (`fallback_spec`, from canonicalization correctness), folds as `Ix.Cert.compile`'s
 materialized environment does (`pipeline_fold`), given that the latter is
 the input's canonicalization and the code constants are its own and hold
 exactly its inductives; the validations' group order follows
@@ -3639,9 +3640,9 @@ the converse of IxC's `readRecords_spec`) whose final state keeps the
 prelude's entries (`State.keepsPrelude`, required by `readStream_complete`).
 With the fold's acceptance under
 the committed prelude that is `IxonAccepts` (`closure_accepts`).
-`StoredCanonical` (R13, from R7e's per-block codec), the stream reading
-(N-READS), and final-state preservation (`keeps`) stay obligations. Preservation
-at every earlier reader state needs its own compiled-output proof. -/
+The component theorem takes canonical stored records, successful stream
+reading and final-state preservation (`keeps`) as premises. The compiler's
+composition supplies these facts from its emitted records and reading proofs. -/
 
 /-- info: [cert-audit] stream: 22 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -3896,9 +3897,9 @@ fun t ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.PublishedRolesBound
 
-/-! ## N-READS, N1: Source acceptance admits every inductive block
+/-! ## Source acceptance admits every inductive block
 
-R12 reads `inductive_reads`' Source premises and R9a's `ConstructorPositions`
+`SourceConstructorPositions` reads `inductive_reads`' Source premises and `ConstructorPositions`
 off `Admits` (the block's group converts). An accepted Source check admits
 every inductive block stored under its first member: the block's group is one
 of the ingress's groups, and every one of those converts
@@ -3922,7 +3923,7 @@ run_cmd do
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Admits.admits_of_sourceAccepts
 
-/-! ## N-READS, N2: levels read syntactically
+/-! ## Levels read syntactically
 
 The reader's level is the Source level in the compiler's canonical form
 (`Ix.LeanIngress.canonLevelIn`, what IxC's U lowers Source levels to), when the
@@ -3945,7 +3946,7 @@ reader's parameter map is the constant's level parameters; roots in
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.CanonLevelReading.related_ingress_canon
 
-/-! ## N-READS, N3 (a): the state every block starts from
+/-! ## The state every block starts from
 
 The driver compiles every block from the empty `BlockState`; it is clean and
 its wire tables are well formed. -/
@@ -3994,14 +3995,14 @@ run_cmd do
       `defaultAdmits_sound, `preludeAgrees_sound].map
       (`Ix.Cert.RoleClosure ++ ·))
 
-/-! ## N-READS, N4 (b): no constructor of a Source-accepted family in its types
+/-! ## No constructor of a Source-accepted family in its types
 
 IxC checks every accepted `.indDecl`'s declared shape before its route
 (`Ix.Kernel.Semantics.checkDecl_noCtor`). The ingress carries the sources'
 constants to their keys, so no constructor of a Source-accepted family occurs
 in the family's types (`Ix.Cert.NoCtor.noCtor_of_checkSourceWith`), and
 `inductive_reads` holds of a Source-accepted closure with only the family's
-name related to its key (R13's half) left of its self references
+name related to its key left of its self references
 (`inductive_reads_sourceAccepts`). -/
 
 /-- info: Ix.Cert.NoCtor.noCtor_of_checkSourceWith : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V]
@@ -5002,7 +5003,7 @@ run_cmd do
   checkRuntime (tag := "cert-audit") "definition hints"
     #[``Ix.Cert.unhintedDefinition]
 
-/-! ## S1's units, (R1): each record's and each group's lowering
+/-! ## S1's units,: each record's and each group's lowering
 
 `Ix.Cert.ReaderUnits`: the stream the Ixon reader decodes is its records'
 lowerings concatenated, one per record (`readRecords_units`), and the Source

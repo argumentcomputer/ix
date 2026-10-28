@@ -2,11 +2,11 @@ module
 public import LSpec
 public import Ix.PrimAddrs
 
-/-! Exact ordered Lean/Rust primitive-table equality retained from
-Tests.Ix.Tc.Substrate, using only the Tc-free address table. -/
+/-! Exact ordered Lean/Rust primitive-table equality using the shared
+address-only table. -/
 
 namespace Tests.Ix.Kernel.PrimitiveTable
-open LSpec Ix.Tc
+open LSpec _root_.Ix
 
 @[extern "rs_prim_addrs_canonical"]
 private opaque rsPrimAddrsCanonicalFFI : IO (Array (String × String))
