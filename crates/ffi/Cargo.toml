@@ -50,7 +50,7 @@ default = []
 parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
 cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
-test-ffi = ["ixon/sharing-reference", "ix-kernel/canonical-order-test"]
+test-ffi = ["ixon/sharing-reference"]
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 
 [lints]

@@ -127,7 +127,7 @@ pub fn of_ixon(expr: &Expr) -> Option<Contract> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::compile::{BlockCache, CompileState, compare_expr, compile_expr};
+  use crate::compile::{BlockCache, CompileState, compile_expr};
   use crate::mutual::MutCtx;
   use ix_common::env::{BinderInfo, Level};
   #[test]
@@ -233,7 +233,6 @@ mod tests {
       domain.clone(),
       BinderInfo::Default,
     );
-    let mut lambdas = vec![];
     for code in 0..16 {
       let contract = decode(0, code).unwrap();
       let source = contract.attach(lambda.clone());
@@ -246,7 +245,6 @@ mod tests {
       );
       let key = crate::compile::ExprKey(source.clone());
       assert_eq!(cache.exprs.get(&key).unwrap().expr, output);
-      lambdas.push(source);
     }
     for code in 0..64 {
       let contract = decode(1, code).unwrap();
@@ -265,13 +263,6 @@ mod tests {
       );
       let key = crate::compile::ExprKey(source.clone());
       assert_eq!(cache.exprs.get(&key).unwrap().expr, output);
-    }
-    for (i, a) in lambdas.iter().enumerate() {
-      for (j, b) in lambdas.iter().enumerate() {
-        let order =
-          compare_expr(a, b, &MutCtx::default(), &[], &[], &stt).unwrap();
-        assert_eq!(order.ordering == std::cmp::Ordering::Equal, i == j);
-      }
     }
     let plain = Source::letE(
       Name::anon(),

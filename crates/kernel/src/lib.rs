@@ -133,7 +133,6 @@ pub mod anon_env;
 pub mod anon_work;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod artifact_checker;
-pub mod canonical_check;
 pub mod check;
 pub mod claim;
 pub mod congruence;

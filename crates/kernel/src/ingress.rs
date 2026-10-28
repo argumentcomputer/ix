@@ -4629,23 +4629,6 @@ pub(crate) fn ingress_anon_block_input(
   convert_anon_muts(kenv, anon_env, block_constant, block_addr, members)
 }
 
-/// Convert arbitrary mutual payloads for the test-only canonical-order
-/// oracle, whose comparator domain includes empty and mixed-kind blocks.
-/// This reports no admission or typing verdict. Production entry points
-/// continue through `ingress_anon_block` and its serialized-unit guard.
-#[cfg(feature = "canonical-order-test")]
-pub fn convert_anon_order_fixture(
-  kenv: &mut KEnv<Anon>,
-  anon_env: &IxonEnv,
-  block_constant: &Constant,
-  block_addr: &Address,
-) -> Result<Vec<KId<Anon>>, String> {
-  let IxonCI::Muts(members) = &block_constant.info else {
-    return Err("canonical-order fixture must be a mutual block".into());
-  };
-  convert_anon_muts(kenv, anon_env.into(), block_constant, block_addr, members)
-}
-
 fn convert_anon_muts(
   kenv: &mut KEnv<Anon>,
   anon_env: crate::input::Input<'_>,

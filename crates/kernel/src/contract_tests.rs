@@ -340,47 +340,6 @@ fn local_open_close_preserves_dependent_domains_results_and_let_payload() {
 }
 
 #[test]
-fn canonical_order_ignores_contracts_but_retains_let_non_dep() {
-  use crate::canonical_check::{KMutCtx, compare_kexpr};
-  use std::cmp::Ordering;
-  let ctx = KMutCtx::default();
-  for c in 0..16 {
-    for r in 0..4 {
-      let a = all::<Anon>(input(7), ValueContract::shared(), sort());
-      let b =
-        all::<Anon>(input(c), ValueContract::from_bits(r).unwrap(), sort());
-      assert_eq!(
-        compare_kexpr(&a, &b, &ctx).unwrap().ordering,
-        Ordering::Equal
-      );
-      assert_eq!(
-        compare_kexpr(
-          &lam::<Anon>(input(7), var(0)),
-          &lam::<Anon>(input(c), var(0)),
-          &ctx
-        )
-        .unwrap()
-        .ordering,
-        Ordering::Equal
-      );
-    }
-  }
-  let make = |c| KExpr::<Anon>::let_contract((), c, sort(), sort(), var(0));
-  let plain = make(LetContract::plain(false));
-  let borrow = make(LetContract::borrow(false, Uses::Linear));
-  assert_eq!(
-    compare_kexpr(&plain, &borrow, &ctx).unwrap().ordering,
-    Ordering::Equal
-  );
-  assert_ne!(
-    compare_kexpr(&plain, &make(LetContract::plain(true)), &ctx)
-      .unwrap()
-      .ordering,
-    Ordering::Equal
-  );
-}
-
-#[test]
 fn direct_source_ingress_preserves_frames_and_refuses_wrong_attachment() {
   use crate::ingress::lean_expr_to_zexpr_with_kenv;
   use ix_common::env::{Expr as Source, Level};

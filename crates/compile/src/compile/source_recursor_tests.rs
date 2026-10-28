@@ -637,37 +637,6 @@ fn assert_source_recursors_check(
 }
 
 #[test]
-fn test_alpha_collapse_sort_consts_groups_inductives() {
-  use crate::compile::{BlockCache, mk_indc, sort_consts};
-  use crate::mutual::MutConst;
-  use ix_common::env::ConstantInfo as LeanCI;
-
-  let (env, a, b) = build_alpha_collapse_env();
-  let stt = crate::compile::CompileState::default();
-  let mut cache = BlockCache::default();
-
-  let mut cs = Vec::new();
-  for name in [&a, &b] {
-    match env.get(name).as_deref() {
-      Some(LeanCI::InductInfo(v)) => {
-        cs.push(MutConst::Indc(
-          mk_indc(v, &std::sync::Arc::new(env.clone())).unwrap(),
-        ));
-      },
-      _ => panic!("missing inductive {}", name.pretty()),
-    }
-  }
-
-  let refs: Vec<&MutConst> = cs.iter().collect();
-  let classes = sort_consts(&refs, &mut cache, &stt).unwrap();
-  assert_eq!(classes.len(), 1, "A and B should alpha-collapse to one class");
-  let collapsed: Vec<Name> = classes[0].iter().map(|c| c.name()).collect();
-  assert_eq!(collapsed.len(), 2);
-  assert!(collapsed.contains(&a), "collapsed class should contain A");
-  assert!(collapsed.contains(&b), "collapsed class should contain B");
-}
-
-#[test]
 #[ignore = "expected to retire: members of one block no longer collapse"]
 fn test_alpha_collapse_compile_env_addresses_inductives_and_ctors() {
   use crate::compile::env::compile_env;
