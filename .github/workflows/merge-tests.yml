@@ -213,7 +213,8 @@ jobs:
       # The certified kernel gate (docs/kernel.md): the standalone IxC
       # package build, which has no dependencies and so proves the kernel needs
       # only the toolchain, then the host tests, the Rust differentials, the
-      # set-theory model, the fences, the entry cases and the reader fidelity.
+      # set-theory model, the fences, the entry cases, the reader fidelity, the
+      # `.meta` and `.source` names, and quotient Source on Init and Std.
       # The kernel artifacts come from .lake/kernel on the sticky disk. The
       # model lives in its own workspace so Mathlib stays out of the root
       # package; its objects come from Mathlib's cache and persist on the
@@ -225,7 +226,7 @@ jobs:
             Mathlib.SetTheory.Cardinal.Regular \
             Mathlib.SetTheory.ZFC.VonNeumann \
             Mathlib.SetTheory.ZFC.Cardinal
-      - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
+      - name: Check certified kernel, codec and order differentials, model, entry cases, reader fidelity and quotient Source
         if: ${{ matrix.kind == 'kernel' }}
         run: lake run check-kernel --with-model
 
