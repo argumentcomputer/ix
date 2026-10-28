@@ -163,28 +163,40 @@ def put (t : AssumptionTree) : PutM Unit := do
   putTagN 4 FLAG VARIANT
   putBody t
 
-partial def getBody : GetM AssumptionTree := do
-  let tag : UInt8 ← getU8
-  if tag == BODY_LEAF then
-    return .leaf (← Serialize.get)
-  else if tag == BODY_PADDING then
-    return .padding
-  else if tag == BODY_NODE then
-    let l ← getBody
-    let r ← getBody
-    return .node l r
-  else
-    throw s!"AssumptionTree.getBody: invalid body tag {tag.toNat}"
+/-- The deepest tree a reader accepts, in nodes on a path. A canonical tree is
+logarithmic in its leaves and joins add a level each, so real trees stay far below
+this; the bound keeps the decoder and every recursive walk of a decoded tree
+shallow. The Rust reader (`assumption_tree::MAX_DEPTH`) uses the same. -/
+def maxDepth : Nat := 4096
+
+/-- A body with at most `depth` nodes on any path. -/
+def getBody : Nat → GetM AssumptionTree
+  | 0 => do
+    let tag : UInt8 ← getU8
+    if tag == BODY_LEAF then return .leaf (← Serialize.get)
+    else if tag == BODY_PADDING then return .padding
+    else if tag == BODY_NODE then throw s!"AssumptionTree.getBody: deeper than {maxDepth} levels"
+    else throw s!"AssumptionTree.getBody: invalid body tag {tag.toNat}"
+  | depth + 1 => do
+    let tag : UInt8 ← getU8
+    if tag == BODY_LEAF then return .leaf (← Serialize.get)
+    else if tag == BODY_PADDING then return .padding
+    else if tag == BODY_NODE then
+      let l ← getBody depth
+      let r ← getBody depth
+      return .node l r
+    else throw s!"AssumptionTree.getBody: invalid body tag {tag.toNat}"
 
 def get : GetM AssumptionTree := do
   let tag ← getTagN 4
   if tag.flag != FLAG || tag.value != VARIANT then
     throw s!"AssumptionTree.get: expected header 0xE/2, got {tag.flag.toNat}/{tag.value}"
-  getBody
+  getBody maxDepth
 
 def ser (t : AssumptionTree) : ByteArray := runPut (put t)
+/-- Decode exactly one tree: trailing bytes are refused. -/
 def de (bytes : ByteArray) : Except String AssumptionTree :=
-  runGet get bytes
+  runGetExact get bytes
 
 end AssumptionTree
 

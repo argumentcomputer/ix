@@ -207,7 +207,7 @@ partial def proveBlocksWithinBudget (envHandle : Aiur.EnvHandle)
       -- Rust returns the canonical CheckEnv claim's wire bytes; deserialize
       -- back to `Ix.Claim` to persist alongside the proof. Avoids
       -- recomputing the closure walk + canonical AssumptionTree Lean-side.
-      match Ixon.runGet Ix.Claim.get claimBytes with
+      match Ix.Claim.de claimBytes with
       | .error e => return .error s!"{label}: Claim wire-decode failed: {e}"
       | .ok claim => do
         let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
@@ -424,7 +424,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
             return 0
           IO.eprintln "proveEnvDistributed returned no proof"; return 1
         | .ok { claimBytes, proof := some proof, .. } =>
-          match Ixon.runGet Ix.Claim.get claimBytes with
+          match Ix.Claim.de claimBytes with
           | .error e => IO.eprintln s!"Claim wire-decode failed: {e}"; return 1
           | .ok claim =>
             let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))

@@ -13,6 +13,7 @@ public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
 public import IxC.Ixon.Codec
+public import IxC.Ixon.Bounded.Constant
 import all IxC.Ixon.Codec
 public import Ix.Merkle
 
@@ -1746,6 +1747,18 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
     Serialize.put addr
     putComm comm
 
+/-- The most universe constructors one record's universes may expand to when the
+    loaders below decode it: the host admission limit
+    (`artifactLimits.maxRecordUnivNodes` in `Ix/Cli/CheckLeanCmd.lean`) and the
+    Rust decoder's (`MAX_UNIV_NODES`). A successor run is stored as one count,
+    so the production decoder would expand a few bytes to billions of nodes. -/
+def loadMaxUnivNodes : Nat := 1 <<< 26
+
+/-- A §2 record for the loaders below: exactly its bytes, decoded under
+    `loadMaxUnivNodes` (`Ixon.Bounded.deConstant`). -/
+def deConstantLoaded (bytes : ByteArray) : Except String Constant :=
+  Bounded.deConstant bytes.size loadMaxUnivNodes bytes
+
 /-- Deserialize an Env from bytes (pure Lean, full metadata). Used for
     round-trip (`deEnv`) on small/in-memory envs. The lazy/anon `.ixe` check
     path does **not** go through here — it uses the Rust parser via
@@ -1817,7 +1830,7 @@ def getEnv : GetM Env := do
       if !(compare prev addr).isLT then
         throw "Env.get: §2 constants not in strictly ascending address order"
     constOrder := constOrder.push addr
-    match deConstant bytes with
+    match deConstantLoaded bytes with
     | .ok constant => env := env.storeConst addr constant
     | .error e =>
       throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
@@ -1858,6 +1871,9 @@ def getEnv : GetM Env := do
   for _ in [:numNames.toNat] do
     let addr ← Serialize.get
     let name ← getNameComponent namesLookup
+    -- §5 and the metadata name a name by this address: it must be the hash
+    if name.getHash != addr then
+      throw s!"Env.get: §4 name stored under {reprStr (toString addr)} hashes elsewhere"
     nameRev := nameRev.push addr
     namesLookup := namesLookup.insert addr name
     env := { env with names := env.names.insert addr name }
@@ -2120,7 +2136,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     constOrder := constOrder.push addr
     if constOrder.size % 100000 == 0 then
       loadTrace s!"§2 at {constOrder.size}/{numConsts} (byte {eStart})"
-    match deConstant bytes with
+    match Env.deConstantLoaded bytes with
     | .ok constant =>
       reserCheck "§2 const" eStart <| runPut do
         Serialize.put addr

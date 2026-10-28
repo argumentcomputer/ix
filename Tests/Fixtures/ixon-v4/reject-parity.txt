@@ -1,0 +1,66 @@
+# Byte strings every reader of their kind must refuse, in Rust
+# (crates/ixon/tests/reject_parity.rs, crates/kernel/tests/reject_parity.rs)
+# and in Lean (Tests/Ix/IxonRejectParity.lean, the `ixon-reject-parity`
+# suite), with accepted controls beside them.
+#
+# One case per line: <kind> <name> <tokens…>. A token is hex bytes, or XX*N
+# for the byte XX repeated N times. Kinds, and the readers each must agree on:
+#
+#   record        every constant decoder (Rust Constant::get on exactly the
+#                 bytes; Lean's canonical, bounded and window decoders)
+#   noncanonical  the canonical constant decoders (Rust Constant::get on
+#                 exactly the bytes; Lean Canonical.deConstant)
+#   env           the environment readers that read every section (Rust
+#                 Env::get and Env::parse_lazy_index; Lean deEnv and the
+#                 verified loader)
+#   ixes          the shard-manifest readers
+#   tree          the assumption-tree readers (exactly the bytes)
+#   claim         the claim readers (exactly the bytes)
+#
+# A kind with an `-accept` suffix is a control every such reader accepts.
+
+# A canonical axiom record: `axiom : Sort u₀`, its universe table [zero].
+record-accept axiom D2 00 00 00 00 00 01 00
+# Its universe a successor run of 4,311,814,175: a few bytes that expand to
+# billions of universe nodes, beyond every reader's per-record budget.
+record univ-run-bomb D2 00 00 00 00 00 01 32 FFFFFFFF 00
+record truncated D2 00 00 00 00 00 01
+record trailing-bytes D2 00 00 00 00 00 01 00 00
+
+# Universes in non-canonical forms: Max and IMax with a nonzero tag value, and
+# one successor run split in two (01 01 00 for the canonical 02 00).
+noncanonical univ-max-value D2 00 00 00 00 00 01 41 00 00
+noncanonical univ-imax-value D2 00 00 00 00 00 01 81 00 00
+noncanonical univ-split-run D2 00 00 00 00 00 01 01 01 00
+
+# An environment holding the axiom record above (and the anonymous name).
+env-accept one-constant E4 BB651EE637018CCCD3D156EC6730FA83BB615CDD18EDFAAF58312951B8D4B9A8 00 00 00 01 2B2D31A29F10197C5D91B12E8B5CF5912BEE4E8487B653F8209F9A585EB48708 08 D2 00 00 00 00 00 01 00 00 01 2D3ADEDFF11B61F14C886E35AFA036736DCD87A74D27B5C1510225D0F592E213 00 00 00
+# The same with one byte of the record changed: the root covers addresses
+# only, so only the per-record hash check refuses it.
+env tampered-record E4 BB651EE637018CCCD3D156EC6730FA83BB615CDD18EDFAAF58312951B8D4B9A8 00 00 00 01 2B2D31A29F10197C5D91B12E8B5CF5912BEE4E8487B653F8209F9A585EB48708 08 D2 00 00 00 00 00 01 01 00 01 2D3ADEDFF11B61F14C886E35AFA036736DCD87A74D27B5C1510225D0F592E213 00 00 00
+# An empty environment declaring 2^40-odd names in 47 bytes.
+env name-count E4 00*32 00 00 00 00 00 C3 80 BF FE FE FE 00 00 00
+# A name stored under an address that is not its hash.
+env name-hash E4 00*32 00 00 00 00 00 01 11*32 00 00 00
+
+# A manifest of one shard with no blocks.
+ixes-accept one-shard 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 00 00000000 00000000
+ixes count-bomb 49 58 45 53 00 00 00 00 00*16 FFFFFFFF
+ixes no-shards 49 58 45 53 00 00 00 00 00*16 00000000
+ixes shard-id 49 58 45 53 00 00 00 00 00*16 01000000 01000000 00*24 00 00000000 00000000
+ixes presence-tag 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 02 00000000 00000000
+ixes address-count 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 00 FFFFFFFF
+ixes tree-tag 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 00 00000000 00000000 02
+ixes tree-repeats 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 00 00000000 00000000 01 01 00 00000000 00 00000000
+ixes deep-tree 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 00 00000000 00000000 01 01*5000 00 00000000
+ixes peaks-tag 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 00 00000000 00000000 00 02
+ixes trailing-bytes 49 58 45 53 00 00 00 00 00*16 01000000 00000000 00*24 00 00000000 00000000 00 00 00
+
+# The padding tree; a well-formed chain deeper than every reader's bound.
+tree-accept padding E2 01
+tree deep E2 02*5000 01*5001
+tree trailing-bytes E2 01 00
+tree body-tag E2 03
+
+# A Reveal claim declaring 2^40-odd components in a few bytes.
+claim reveal-count E6 04 00 00*32 08 01 C3 80 BF FE FE FE 00 00 00

@@ -24,7 +24,7 @@ use super::contract::{
 use super::expr::Expr;
 use super::metadata::IxonByteSerde;
 use super::tag::TagN;
-use super::univ::{Univ, get_univ, put_univ};
+use super::univ::{MAX_UNIV_NODES, Univ, get_univ_within, put_univ};
 
 // ============================================================================
 // Primitive helpers
@@ -36,6 +36,34 @@ use super::univ::{Univ, get_univ, put_univ};
 #[inline]
 fn capped_capacity(count: u64, buf: &[u8]) -> usize {
   (count as usize).min(buf.len())
+}
+
+/// A §4 entry is stored under its name's hash; the §5 rows and the metadata
+/// name it by that address, so a mismatch would rename them.
+fn check_name_address(
+  addr: &Address,
+  name: &Name,
+  ctx: &str,
+) -> Result<(), String> {
+  let computed = Address::from_blake3_hash(*name.get_hash());
+  if computed != *addr {
+    return Err(format!(
+      "{ctx}: §4 name stored under {} hashes to {}",
+      addr.hex(),
+      computed.hex()
+    ));
+  }
+  Ok(())
+}
+
+/// A §4 entry is an address and at least one byte of name component, so a
+/// count the remaining buffer cannot hold is corruption: refuse it before
+/// allocating for it.
+fn check_name_count(count: u64, buf: &[u8], ctx: &str) -> Result<(), String> {
+  if count > (buf.len() / 33) as u64 {
+    return Err(format!("{ctx}: name count {count} exceeds remaining buffer"));
+  }
+  Ok(())
 }
 
 fn put_u8(x: u8, buf: &mut Vec<u8>) {
@@ -1035,11 +1063,15 @@ fn put_univs(univs: &[Arc<Univ>], buf: &mut Vec<u8>) {
   }
 }
 
+/// A record's universe table, its universes' expanded constructors charged
+/// to one budget (`MAX_UNIV_NODES`), as IxC's bounded decoder charges a
+/// record's.
 fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
   let num = get_u64(buf)?;
   let mut univs = Vec::with_capacity(capped_capacity(num, buf));
+  let mut budget = MAX_UNIV_NODES;
   for _ in 0..num {
-    univs.push(get_univ(buf)?);
+    univs.push(get_univ_within(buf, &mut budget)?);
   }
   Ok(univs)
 }
@@ -2311,6 +2343,7 @@ impl Env {
 
     // Section 4: Names (build lookup table and reverse index for metadata)
     let num_names = get_u64(buf)?;
+    check_name_count(num_names, buf, "Env::get")?;
     // Pre-size the lookup: growth rehashes of a multi-million-entry
     // map are a measurable slice of the parse.
     let mut names_lookup: FxHashMap<Address, Name> =
@@ -2329,6 +2362,7 @@ impl Env {
     for _ in 0..num_names {
       let addr = get_address(buf)?;
       let name = get_name_component(buf, &names_lookup)?;
+      check_name_address(&addr, &name, "Env::get")?;
       name_reverse_index.push(addr.clone());
       names_lookup.insert(addr.clone(), name.clone());
       env.names.insert(addr, name);
@@ -2602,6 +2636,7 @@ impl Env {
     // entries can be re-parsed standalone later (the diff meta sweep);
     // the Address→Name lookup is dropped (LazyNamed carries the Names).
     let num_names = get_u64(&mut buf)?;
+    check_name_count(num_names, buf, "parse_lazy_index")?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
       Vec::with_capacity(num_names as usize + 1);
@@ -2610,6 +2645,7 @@ impl Env {
     for _ in 0..num_names {
       let addr = get_address(&mut buf)?;
       let name = get_name_component(&mut buf, &names_lookup)?;
+      check_name_address(&addr, &name, "parse_lazy_index")?;
       name_reverse_index.push(addr.clone());
       names_lookup.insert(addr, name);
     }

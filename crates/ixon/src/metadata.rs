@@ -19,7 +19,7 @@ use super::env::AuxLayout;
 use super::expr::Expr;
 use super::serialize::{get_expr, put_expr};
 use super::tag::TagN;
-use super::univ::{Univ, get_univ, put_univ};
+use super::univ::{MAX_UNIV_NODES, Univ, get_univ_within, put_univ};
 
 // ===========================================================================
 // Types (use Address internally)
@@ -440,8 +440,9 @@ impl ConstantMeta {
     }
     let univs_len = get_vec_len(buf)?;
     let mut meta_univs = Vec::with_capacity(univs_len);
+    let mut budget = MAX_UNIV_NODES;
     for _ in 0..univs_len {
-      meta_univs.push(get_univ(buf)?);
+      meta_univs.push(get_univ_within(buf, &mut budget)?);
     }
     let patches_len = get_vec_len(buf)?;
     let mut univ_patches = Vec::with_capacity(patches_len);
@@ -623,7 +624,7 @@ fn deser_preresolved(
     1 => {
       let name = ixon_env.get_name(&deser_addr(buf)?)?;
       let count = deser_tagn0(buf)? as usize;
-      let mut fields = Vec::with_capacity(count);
+      let mut fields = Vec::with_capacity(count.min(buf.len()));
       for _ in 0..count {
         let addr = deser_addr(buf)?;
         fields.push(String::from_utf8(ixon_env.get_blob(&addr)?).ok()?);
@@ -644,7 +645,7 @@ fn deser_syntax(
       let info = deser_source_info(buf, ixon_env)?;
       let kind = ixon_env.get_name(&deser_addr(buf)?)?;
       let arg_count = deser_tagn0(buf)? as usize;
-      let mut args = Vec::with_capacity(arg_count);
+      let mut args = Vec::with_capacity(arg_count.min(buf.len()));
       for _ in 0..arg_count {
         args.push(deser_syntax(buf, ixon_env)?);
       }
@@ -661,7 +662,7 @@ fn deser_syntax(
       let raw_val = deser_substring(buf, ixon_env)?;
       let val = ixon_env.get_name(&deser_addr(buf)?)?;
       let pr_count = deser_tagn0(buf)? as usize;
-      let mut preresolved = Vec::with_capacity(pr_count);
+      let mut preresolved = Vec::with_capacity(pr_count.min(buf.len()));
       for _ in 0..pr_count {
         preresolved.push(deser_preresolved(buf, ixon_env)?);
       }
@@ -729,8 +730,18 @@ pub(super) fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
   TagN::put(0, 0, len as u64, buf);
 }
 
+/// A vector length, refused when the remaining buffer cannot hold that many
+/// elements of at least one byte each, so no count allocates more than its
+/// input could fill.
 pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
-  Ok(TagN::get(0, buf)?.value as usize)
+  let len = TagN::get(0, buf)?.value;
+  if len > buf.len() as u64 {
+    return Err(format!(
+      "metadata: vector length {len} exceeds the {} remaining bytes",
+      buf.len()
+    ));
+  }
+  Ok(len as usize)
 }
 
 // ===========================================================================
@@ -1434,7 +1445,7 @@ impl ConstantMetaInfo {
       }),
       6 => {
         let n = get_u64(buf)? as usize;
-        let mut all = Vec::with_capacity(n);
+        let mut all = Vec::with_capacity(n.min(buf.len()));
         for _ in 0..n {
           all.push(get_idx_vec(buf, rev)?);
         }
@@ -1442,17 +1453,18 @@ impl ConstantMetaInfo {
           0 => None,
           1 => {
             let n_perm = get_u64(buf)? as usize;
-            let mut perm = Vec::with_capacity(n_perm);
+            let mut perm = Vec::with_capacity(n_perm.min(buf.len()));
             for _ in 0..n_perm {
               perm.push(get_u64(buf)? as usize);
             }
             let n_counts = get_u64(buf)? as usize;
-            let mut source_ctor_counts = Vec::with_capacity(n_counts);
+            let mut source_ctor_counts =
+              Vec::with_capacity(n_counts.min(buf.len()));
             for _ in 0..n_counts {
               source_ctor_counts.push(get_u64(buf)? as usize);
             }
             let n_evap = get_u64(buf)? as usize;
-            let mut evaporated = Vec::with_capacity(n_evap);
+            let mut evaporated = Vec::with_capacity(n_evap.min(buf.len()));
             for _ in 0..n_evap {
               evaporated.push(match get_u8(buf)? {
                 0 => false,
