@@ -536,7 +536,7 @@ theorem Holds.step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (sourc
         Holds.seq (each value (by simp; omega) fun env m r => cov env m (.projStruct r)) fun _ =>
           Holds.seq (Holds.alloc _) fun _ => Holds.pure _
   | mdata data value hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     dsimp only
     have child := each value (by simp; omega) fun env m r => cov env m (.mdata r)
     split
@@ -549,25 +549,24 @@ theorem Holds.step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (sourc
     · exact Holds.seq (Holds.kvmap _) fun _ => Holds.seq child fun _ => Holds.seq (Holds.alloc _) fun _ =>
         Holds.pure _
   | fvar name hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     exact Triple.throw _
   | mvar name hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     exact Triple.throw _
 
 /-- **The expression compiler keeps the invariant** on success, for a term it covers. -/
 theorem Holds.expression (source : Ix.Expr) (cov : Covers M source) :
     Holds (RefsOK M B) (compileExpr source) := by
-  unfold compileExpr
   induction source using (measure (fun e : Ix.Expr => sizeOf e)).wf.induction with
   | h source ih =>
-    rw [compileExprNoSurgery]
+    rw [compileExpr]
     refine Holds.seq Holds.get (fun state => ?_)
     split
     · exact Holds.pure _
-    · rw [show (compileExprNoSurgeryStep source fun x _h => compileExprNoSurgery x) =
-        ExpressionState.step compileExprNoSurgery source from rfl]
-      refine Holds.seq (Holds.step compileExprNoSurgery source cov (fun child smaller c => ih child smaller c))
+    · rw [show (compileExprStep source fun x _h => compileExpr x) =
+        ExpressionState.step compileExpr source from rfl]
+      refine Holds.seq (Holds.step compileExpr source cov (fun child smaller c => ih child smaller c))
         (fun value => ?_)
       exact Holds.seq (Holds.modify _ (fun _ => rfl)) (fun _ => Holds.pure _)
 

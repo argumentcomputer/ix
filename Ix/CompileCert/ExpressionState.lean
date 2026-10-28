@@ -5,7 +5,7 @@ import Batteries.Data.List.Basic
 
 /-! # The ordinary expression compiler: state, source relation, effects
 
-The state and source/reader contracts of `Ix.CompileM.compileExprNoSurgery`
+The state and source/reader contracts of `Ix.CompileM.compileExpr`
 (CT-13's expression core, re-derived for this tree):
 
 * **The source relation** `Related names levels`: an `Ix.Expr` and the

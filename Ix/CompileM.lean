@@ -735,7 +735,7 @@ def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap :
 /-- Decompose an application spine: `f a1 a2 ... an` → `(f, #[a1, ..., an])`
     (Rust `decompose_apps`). The structural tail recursion keeps the
     push/reverse traversal while exposing its subterm bounds to the ordinary
-    expression compiler (`compileExprNoSurgeryStep`). -/
+    expression compiler (`compileExprStep`). -/
 def decomposeApps.go (expr : Expr) (args : Array Expr) : Expr × Array Expr :=
   match expr with
   | .app f a _ => decomposeApps.go f (args.push a)
@@ -788,7 +788,7 @@ theorem decomposeApps_app_mem_lt (fn arg : Expr) (hash : Address) {x : Expr}
     `e` (the bound is its argument). Factoring the constructor transition
     from cache lookup/insertion keeps the executable behavior unchanged while
     exposing a small kernel-visible proof boundary. -/
-def compileExprNoSurgeryStep (e : Expr)
+def compileExprStep (e : Expr)
     (compile : (x : Expr) → sizeOf x < sizeOf e → CompileM (Ixon.Expr × UInt64)) :
     CompileM (Ixon.Expr × UInt64) :=
   match e with
@@ -909,20 +909,19 @@ def compileExprNoSurgeryStep (e : Expr)
     | .fvar _ _ => throw (.unsupportedExpr "free variable")
     | .mvar _ _ => throw (.unsupportedExpr "metavariable")
 
-/-- The ordinary (no call-site surgery) expression compiler: the cache, then
-    one step (`compileExprNoSurgeryStep`), whose recursive calls are on
+/-- Compile an expression through its cache and then
+    one step (`compileExprStep`), whose recursive calls are on
     strict source subterms. The App arm flattens the complete telescope
     first, so inner partial-spine nodes are allocated but not
-    expression-cached, exactly as in the Rust compiler and the surgery
-    implementation's normal path. Total by well-founded recursion on
-    `sizeOf e`: no fuel, and no walk of the expression to size one (the
-    former fuel, `exprCompileDepth`, was an unmemoized tree walk, exponential
-    on a DAG-shared proof term). -/
-def compileExprNoSurgery (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+    expression-cached, matching the Rust compiler. Total by well-founded
+    recursion on `sizeOf e`, without fuel or an executable walk of the
+    source tree to compute a bound. Such a walk would be exponential on
+    DAG-shared proof terms. -/
+def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   let state ← getBlockState
   if let some cached := state.exprCache.get? e then
     return cached
-  let (result, root) ← compileExprNoSurgeryStep e fun x _h => compileExprNoSurgery x
+  let (result, root) ← compileExprStep e fun x _h => compileExpr x
   modifyBlockState fun c =>
     { c with exprCache := c.exprCache.insert e (result, root) }
   pure (result, root)
@@ -955,11 +954,6 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
     let root ← allocArenaNode (.ref nameAddr)
     recordPatch root
     pure (.ref refIdx univIndices, root)
-
-/-- Production expression compiler: the total ordinary implementation, which
-    the ordinary refinement proofs read through kernel-visible equations. -/
-def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
-  compileExprNoSurgery e
 
 /-! ## Table Preseeding
 

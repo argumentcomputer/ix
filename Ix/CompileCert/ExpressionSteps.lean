@@ -2,7 +2,7 @@ import Ix.CompileCert.ExpressionState
 
 /-! # The ordinary expression compiler's steps
 
-One lemma per constructor of `Ix.CompileM.compileExprNoSurgeryStep`, with a
+One lemma per constructor of `Ix.CompileM.compileExprStep`, with a
 non-dependent callback `compile` (`step compile e`): every run keeps `Good`
 and extends the in-flight reader, and a successful one returns a value that
 reads as a term related to the source, given the same of each child's
@@ -23,7 +23,7 @@ open Ix.Kernel.Reader (Ctx CName CExpr ReadM)
 callback. -/
 def step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (e : Ix.Expr) :
     CompileM (Ixon.Expr × UInt64) :=
-  compileExprNoSurgeryStep e (fun x _ => compile x)
+  compileExprStep e (fun x _ => compile x)
 
 /-! ## The steps as sequences of named finishers -/
 
@@ -772,7 +772,7 @@ theorem metadata_step_checked (compile : Ix.Expr → CompileM (Ixon.Expr × UInt
         related (.mdata data source hash) result) :
     Checked cx param self related bindings (.mdata data source hash) before
       (rawRun (step compile (.mdata data source hash)) context before) := by
-  unfold step compileExprNoSurgeryStep
+  unfold step compileExprStep
   dsimp only
   split
   · rename_i frame

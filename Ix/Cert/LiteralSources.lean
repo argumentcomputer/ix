@@ -365,7 +365,7 @@ theorem step_lits (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
       Triple.seqHolds (cacheFrame (frame_alloc _)) fun _ => Triple.returns fun _ _ _ _ =>
         litsFrom_mono hv (fun h => by simp [hasNatLit, h]) (fun h => by simp [hasStrLit, h])
   | mdata data value hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     dsimp only
     have child := each value (by simp; omega)
     have up : ∀ out, LitsFrom value out → LitsFrom (.mdata data value hash) out := fun out h =>
@@ -382,10 +382,10 @@ theorem step_lits (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
         Triple.andThen child fun v hv => Triple.seqHolds (cacheFrame (frame_alloc _)) fun _ =>
           Triple.returns fun _ _ _ _ => up _ hv
   | fvar name hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     exact Triple.throw _
   | mvar name hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     exact Triple.throw _
 
 /-- Reading the state returns a state with the cache invariant. -/
@@ -399,17 +399,16 @@ theorem get_lits : Triple LI (fun _ _ => True) getBlockState (fun _ _ v => Cache
 /-- **The expression compiler returns its source's literals**, under the cache invariant. -/
 theorem expression_lits (source : Ix.Expr) :
     Triple LI (fun _ _ => True) (compileExpr source) (fun _ _ r => LitsFrom source r.1) := by
-  unfold compileExpr
   induction source using (measure (fun e : Ix.Expr => sizeOf e)).wf.induction with
   | h source ih =>
-    rw [compileExprNoSurgery]
+    rw [compileExpr]
     refine Triple.andThen get_lits fun state hstate => ?_
     split
     · rename_i cached hc
       exact Triple.returns fun _ _ _ _ => hstate _ cached hc
-    · rw [show (compileExprNoSurgeryStep source fun x _h => compileExprNoSurgery x) =
-        ExpressionState.step compileExprNoSurgery source from rfl]
-      refine Triple.andThen (step_lits compileExprNoSurgery source fun child smaller => ih child smaller)
+    · rw [show (compileExprStep source fun x _h => compileExpr x) =
+        ExpressionState.step compileExpr source from rfl]
+      refine Triple.andThen (step_lits compileExpr source fun child smaller => ih child smaller)
         fun value hvalue => ?_
       refine Triple.bind (I := LI) (Q := fun _ _ _ => True) ?_ fun _ => Triple.returns fun _ _ _ _ => hvalue
       intro context before v after hI _ ran

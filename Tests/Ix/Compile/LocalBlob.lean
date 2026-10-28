@@ -41,8 +41,8 @@ def controls : List (String × Bool) := Id.run do
   let (namesResult, namesAfter) := raw (compileNames #[Name.fromLeanName `Safe, name]) poisoned
   let (parentResult, parentAfter) := raw (compileName (Name.fromLeanName `new.child)) poisoned
   let literal := Expr.mkLit (.strVal "new")
-  let (direct, directAfter) := raw (compileExprNoSurgery literal) poisoned
-  let (driver, driverAfter) := raw (compileExpr literal) poisoned
+  let (direct, directAfter) := raw (compileExpr literal) poisoned
+  let (retried, retriedAfter) := raw (compileExpr literal) directAfter
   let (structural, structuralAfter) :=
     raw (collectExprTablesStructural default default [] literal (#[], #[], {})) poisoned
   let (runtime, runtimeAfter) := raw (collectExprTables literal default (#[], #[], {})) poisoned
@@ -51,7 +51,7 @@ def controls : List (String × Bool) := Id.run do
   let naturalAddress := Address.admissionHash natural
   let naturalPoisoned : BlockState := {
     blockBlobs := ({} : Std.HashMap Address ByteArray).insert naturalAddress old }
-  let (natResult, natAfter) := raw (compileExprNoSurgery (Expr.mkLit (.natVal 42))) naturalPoisoned
+  let (natResult, natAfter) := raw (compileExpr (Expr.mkLit (.natVal 42))) naturalPoisoned
   let (natDatum, natDatumAfter) := raw (compileDataValue (.ofNat 42)) naturalPoisoned
   let (intDatum, intAfter) := raw (compileDataValue (.ofInt (.negSucc 41))) {
     blockBlobs := ({} : Std.HashMap Address ByteArray).insert
@@ -87,10 +87,10 @@ def controls : List (String × Bool) := Id.run do
       conflict namesResult && namesAfter.blockNames.isEmpty && namesAfter.blockBlobs.size == 1),
     ("ancestor conflict rolls back earlier child writes",
       conflict parentResult && parentAfter.blockNames.isEmpty && parentAfter.blockBlobs.size == 1),
-    ("ordinary expression compiler preserves the conflicting payload",
+    ("expression compiler preserves the conflicting payload",
       conflict direct && directAfter.blockBlobs.get? address == some old),
-    ("dispatching expression compiler also refuses",
-      conflict driver && driverAfter.blockBlobs.get? address == some old),
+    ("retry after a failed literal also refuses",
+      conflict retried && retriedAfter.blockBlobs.get? address == some old),
     ("failed literal is not cached or allocated",
       directAfter.exprCache.isEmpty && directAfter.arena.nodes.isEmpty),
     ("structural preseed walk refuses",

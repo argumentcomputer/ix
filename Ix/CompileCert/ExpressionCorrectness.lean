@@ -1,22 +1,21 @@
 import Ix.CompileCert.ExpressionSteps
 
-/-! # The ordinary expression compiler reads back as its source
+/-! # The expression compiler reads back as its source
 
-`Ix.CompileM.compileExprNoSurgery` is one well-founded function: the memo,
-then one step (`compileExprNoSurgeryStep`) whose recursive calls are on
-strict subterms. Its correctness is proved by strong induction on `sizeOf`
-(CT-13's top induction, re-derived for this tree):
+`Ix.CompileM.compileExpr` is one well-founded function: the memo,
+then one step (`compileExprStep`) whose recursive calls are on
+strict subterms. Its correctness is proved by strong induction on `sizeOf`:
 
 * `cached_checked`: a memo hit returns an entry whose meaning the invariant
-  carries (exact keys, CQ2.8); a miss runs the step, and inserting its
+  carries at exact source keys; a miss runs the step, and inserting its
   result keeps the memo's meaning;
-* `compileExprNoSurgery_checked`: from every state satisfying `Good`, every
+* `compileExpr_checked`: from every state satisfying `Good`, every
   run keeps `Good` and every earlier reading, and a successful run returns
   a value the certified reader reads as a term `Related` to the source,
   under the declaration prefix's bindings (`BindingsCorrect`), the block's
   own members (`SelfCorrect`) and blobs aligned with the published store;
-* `compileExpr_surgeryFree`: the production entry `compileExpr` is
-  `compileExprNoSurgery`, so `compileExpr_read` holds for it. -/
+* `compileExpr_read`: a successful run reads back as a term related to
+  its source. -/
 
 namespace Ix.CompileCert.ExpressionState
 
@@ -36,10 +35,10 @@ theorem cached_checked (source : Ix.Expr) (context : CompileEnv × BlockEnv) (be
     (good : Good cx param self related bindings before)
     (stepCorrect : before.exprCache.get? ⟨source⟩ = none →
       Checked cx param self related bindings source before
-        (rawRun (step compileExprNoSurgery source) context before)) :
+        (rawRun (step compileExpr source) context before)) :
     Checked cx param self related bindings source before
-      (rawRun (compileExprNoSurgery source) context before) := by
-  rw [compileExprNoSurgery]
+      (rawRun (compileExpr source) context before) := by
+  rw [compileExpr]
   simp only [rawRun_bind, rawRun_get]
   cases found : before.exprCache.get? ⟨source⟩ with
   | some value =>
@@ -49,11 +48,11 @@ theorem cached_checked (source : Ix.Expr) (context : CompileEnv × BlockEnv) (be
     exact good.2 ⟨source⟩ value found
   | none =>
     dsimp only
-    rw [show (compileExprNoSurgeryStep source fun x _h => compileExprNoSurgery x) =
-      step compileExprNoSurgery source from rfl]
+    rw [show (compileExprStep source fun x _h => compileExpr x) =
+      step compileExpr source from rfl]
     rw [rawRun_bind]
     have stepResult := stepCorrect found
-    cases ran : rawRun (step compileExprNoSurgery source) context before with
+    cases ran : rawRun (step compileExpr source) context before with
     | mk outcome middle =>
       rw [ran] at stepResult
       cases outcome with
@@ -79,7 +78,7 @@ member of the block reads as a related key, every run keeps `Good` and every
 earlier reading, and a successful run returns a value the certified reader
 reads as a term `Related` to the source, with levels meaning the source
 levels. -/
-theorem compileExprNoSurgery_scoped {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
+theorem compileExpr_scoped {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -87,7 +86,7 @@ theorem compileExprNoSurgery_scoped {md : Mode} (cx : Ctx md) (param : Nat → L
     ∀ source, ConstsSatisfy (SelfName context.2 self names) source → ∀ before,
       Good cx param self (Related names (LevelMeaning context.2.univCtx σ param)) bindings before →
       Checked cx param self (Related names (LevelMeaning context.2.univCtx σ param)) bindings source before
-        (rawRun (compileExprNoSurgery source) context before) := by
+        (rawRun (compileExpr source) context before) := by
   intro source
   induction source using (measure (fun e : Ix.Expr => sizeOf e)).wf.induction with
   | h source ih =>
@@ -96,7 +95,7 @@ theorem compileExprNoSurgery_scoped {md : Mode} (cx : Ctx md) (param : Nat → L
         ConstsSatisfy (SelfName context.2 self names) child → ∀ state,
         Good cx param self (Related names (LevelMeaning context.2.univCtx σ param)) bindings state →
         Checked cx param self (Related names (LevelMeaning context.2.univCtx σ param)) bindings child state
-          (rawRun (compileExprNoSurgery child) context state) :=
+          (rawRun (compileExpr child) context state) :=
       fun child smaller childScope => ih child smaller childScope
     apply cached_checked cx param self _ bindings source context before good
     intro _
@@ -155,7 +154,7 @@ theorem compileExprNoSurgery_scoped {md : Mode} (cx : Ctx md) (param : Nat → L
 
 /-- **The ordinary expression compiler reads back as its source**, for a
 self map that is correct on every member of the block. -/
-theorem compileExprNoSurgery_checked {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
+theorem compileExpr_checked {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
@@ -163,34 +162,11 @@ theorem compileExprNoSurgery_checked {md : Mode} (cx : Ctx md) (param : Nat → 
     ∀ source before,
       Good cx param self (Related names (LevelMeaning context.2.univCtx σ param)) bindings before →
       Checked cx param self (Related names (LevelMeaning context.2.univCtx σ param)) bindings source before
-        (rawRun (compileExprNoSurgery source) context before) :=
-  fun source => compileExprNoSurgery_scoped cx param self names σ bindings context aligned external source
+        (rawRun (compileExpr source) context before) :=
+  fun source => compileExpr_scoped cx param self names σ bindings context aligned external source
     (constsSatisfy_of_forall (fun name => selfSound name) source)
 
 /-- A successful run of the ordinary compiler reads as a related term. -/
-theorem compileExprNoSurgery_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
-    (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
-    (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)
-    (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
-    (external : BindingsCorrect context.1 bindings cx names) (selfSound : SelfCorrect context.2 self names)
-    (source : Ix.Expr) (before : BlockState)
-    (good : Good cx param self (Related names (LevelMeaning context.2.univCtx σ param)) bindings before)
-    {value : Ixon.Expr × UInt64} {after : BlockState}
-    (ran : rawRun (compileExprNoSurgery source) context before = (.ok value, after)) :
-    ∃ target, Related names (LevelMeaning context.2.univCtx σ param) source target ∧
-      (ExpressionRead.blockReader cx param self after).read value.1 = .ok target := by
-  have checked := compileExprNoSurgery_checked cx param self names σ bindings context aligned external
-    selfSound source before good
-  rw [ran] at checked
-  exact checked.2.2 value rfl
-
-/-- **The production expression compiler is the ordinary one.** -/
-theorem compileExpr_surgeryFree (source : Ix.Expr) (context : CompileEnv × BlockEnv)
-    (before : BlockState) :
-    rawRun (compileExpr source) context before = rawRun (compileExprNoSurgery source) context before :=
-  rfl
-
-/-- **The production expression compiler reads back as its source.** -/
 theorem compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (bindings : Bindings) (context : CompileEnv × BlockEnv)
@@ -202,9 +178,10 @@ theorem compileExpr_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (ran : rawRun (compileExpr source) context before = (.ok value, after)) :
     ∃ target, Related names (LevelMeaning context.2.univCtx σ param) source target ∧
       (ExpressionRead.blockReader cx param self after).read value.1 = .ok target := by
-  rw [compileExpr_surgeryFree source context] at ran
-  exact compileExprNoSurgery_read cx param self names σ bindings context aligned external selfSound source
-    before good ran
+  have checked := compileExpr_checked cx param self names σ bindings context aligned external
+    selfSound source before good
+  rw [ran] at checked
+  exact checked.2.2 value rfl
 
 /-- Fresh memos and tables; the binding view and blobs are the seed's. -/
 def initialState (seed : BlockState) : BlockState :=
@@ -221,17 +198,17 @@ theorem initialState_good {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
 
 /-- **No state premise**: from fresh memos and tables, a successful run of
 the ordinary compiler reads as a related term. -/
-theorem compileExprNoSurgery_initial_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
+theorem compileExpr_initial_read {md : Mode} (cx : Ctx md) (param : Nat → LevelParam)
     (self : Nat → Option (ReadM (CName md))) (names : Ix.Name → CName md → Prop)
     (σ : Ix.Name → LevelParam) (context : CompileEnv × BlockEnv) (seed : BlockState)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 (bindingView seed) cx names)
     (selfSound : SelfCorrect context.2 self names) (source : Ix.Expr)
     {value : Ixon.Expr × UInt64} {after : BlockState}
-    (ran : rawRun (compileExprNoSurgery source) context (initialState seed) = (.ok value, after)) :
+    (ran : rawRun (compileExpr source) context (initialState seed) = (.ok value, after)) :
     ∃ target, Related names (LevelMeaning context.2.univCtx σ param) source target ∧
       (ExpressionRead.blockReader cx param self after).read value.1 = .ok target :=
-  compileExprNoSurgery_read cx param self names σ (bindingView seed) context aligned external selfSound source
+  compileExpr_read cx param self names σ (bindingView seed) context aligned external selfSound source
     (initialState seed) (initialState_good cx param self _ seed) ran
 
 end Ix.CompileCert.ExpressionState

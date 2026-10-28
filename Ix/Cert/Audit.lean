@@ -2218,17 +2218,16 @@ constructor:
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.lower_eq_compileUnivS
 
-/-! ## Component theorems: the ordinary expression compiler reads back as its source
+/-! ## Component theorems: the expression compiler reads back as its source
 
-`Ix.CompileM.compileExprNoSurgery` (the memo, then one step per constructor,
+`Ix.CompileM.compileExpr` (the memo, then one step per constructor,
 by well-founded recursion on `sizeOf`) is proved by strong induction: from
 every state satisfying the expression invariant (`ExpressionState.Good`:
 the universe invariants, the reference index, the declaration prefix's
-binding view and the memo's meaning at CQ2.8's exact keys), every run keeps
+binding view and the memo's meaning at exact source keys), every run keeps
 it and every earlier reading, and a successful run's value reads, through
-the certified reader, as a term `Related` to the source. Without Pass 3
-records the production entry `compileExpr` is that compiler
-(`compileExpr_read`). The relation is Source mode's own reading up to keys
+the certified reader, as a term `Related` to the source (`compileExpr_read`).
+The relation is Source mode's own reading up to keys
 and level values (`related_ingress_value`). Every lemma behind them is
 audited in `Ix.CompileCert.ReadingAudit`. -/
 
@@ -2359,9 +2358,9 @@ Ix.CompileCert.ExpressionState.Related.contract : ∀ {md : Ix.Kernel.Mode}
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.ExpressionState.related_ingress_value
 
-/-- info: 'Ix.CompileCert.ExpressionState.compileExprNoSurgery_scoped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Ix.CompileCert.ExpressionState.compileExpr_scoped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
-#print axioms Ix.CompileCert.ExpressionState.compileExprNoSurgery_scoped
+#print axioms Ix.CompileCert.ExpressionState.compileExpr_scoped
 
 /-- info: 'Ix.CompileCert.ExpressionState.compileExpr_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

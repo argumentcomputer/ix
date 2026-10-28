@@ -191,9 +191,9 @@ def expressionRoots : Array Lean.Name :=
     `projection_step_refuses, `read_lam, `read_all, `read_letE, `lowerContract_read,
     `metadata_step_checked, `decomposeApps_go, `decomposeApps_app, `constsSatisfy_spine,
     `forall₂_snoc, `spine_related, `app_step_eq, `appLoop_checked, `app_step_checked,
-    `cached_checked, `compileExprNoSurgery_scoped, `compileExprNoSurgery_checked,
-    `compileExprNoSurgery_read, `compileExpr_surgeryFree, `compileExpr_read, `initialState_good,
-    `compileExprNoSurgery_initial_read, `withContract_matches, `levels_ingress, `related_ingress,
+    `cached_checked, `compileExpr_scoped, `compileExpr_checked,
+    `compileExpr_read, `initialState_good,
+    `compileExpr_initial_read, `withContract_matches, `levels_ingress, `related_ingress,
     `related_ingress_value].map (`Ix.CompileCert.ExpressionState ++ ·)
 
 /-- The preseed (CT-14): it keeps the expression invariant and the binding
@@ -226,7 +226,7 @@ def emissionWireRoots : Array Lean.Name :=
     `Safe.checkedIndex, `Safe.checkedCount, `Safe.mapM_list, `Safe.mapM_array, `Safe.forIn_list,
     `Safe.forIn_array, `Safe.compileLevel, `Safe.internRef, `Safe.lookup, `Safe.blob, `Safe.namesBlobs,
     `Safe.compileName, `Safe.compileNames, `Safe.kvmap, `Safe.alloc, `Safe.patch, `Safe.finishReference,
-    `Safe.step, `Safe.noSurgery, `Safe.expression, `Safe.takeArena,
+    `Safe.step, `Safe.expression, `Safe.takeArena,
     `Safe.takeUnivPatches, `Safe.clearExprCache, `Safe.resetArena, `Safe.recordDefHints,
     `Safe.mutCtxAddrs, `Safe.finishDefinition, `Safe.definitionData, `Safe.finishAxiom,
     `Safe.axiomPayload, `Safe.finishQuotient, `Safe.quotientPayload, `Safe.rule, `Safe.rules,
@@ -436,7 +436,7 @@ def preseedRuntime : Array Lean.Name :=
 /-- The expression compiler's definitions the expression proofs unfold, and
 Source mode's term conversion the correspondence is about. -/
 def expressionRuntime : Array Lean.Name :=
-  #[``Ix.CompileM.compileExprNoSurgery, ``Ix.CompileM.compileExprNoSurgeryStep, ``Ix.CompileM.compileExpr,
+  #[``Ix.CompileM.compileExpr, ``Ix.CompileM.compileExprStep,
     ``Ix.CompileM.compileConstExprRaw, ``Ix.CompileM.lookupConstAddr,
     ``Ix.CompileM.allocArenaNode, ``Ix.CompileM.pushUnivPatch, ``Ix.CompileM.compileAndInternUnivCanon,
     ``Ix.CompileM.decomposeApps, ``Ix.CompileM.decomposeApps.go, ``Ix.SemanticContract.hasMetadata,

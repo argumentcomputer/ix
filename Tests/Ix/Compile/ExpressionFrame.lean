@@ -1,12 +1,11 @@
 import LSpec
 import Ix.CompileM
 
-/-! Controls for the ordinary expression compiler's frame
-(`Ix.CompileM.compileExprNoSurgery`, through the dispatching `compileExpr` on
-an environment without call-site plans): App spines are flattened, partial
+/-! Controls for the expression compiler's frame (`Ix.CompileM.compileExpr`):
+App spines are flattened, partial
 spines are allocated but never cached, cache hits reuse roots, failures keep
 their completed children's effects, and a DAG-shared term compiles without a
-walk of its tree (the former fuel `exprCompileDepth` was exponential on it). -/
+walk of its exponentially larger tree. -/
 
 namespace Tests.Ix.Compile.ExpressionFrame
 

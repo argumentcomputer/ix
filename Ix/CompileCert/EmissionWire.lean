@@ -17,11 +17,9 @@ when they were before and the preseed has finalized the universe table
 
 The facts are success-only (`Safe`): a failing universe miss may write its
 candidate before the guard refuses it, so wire validity is not an invariant
-of every run (unlike `ExpressionState.Good`), and this is a traversal of its
-own (R6, finding 6). The production entry `compileExpr` is the ordinary
-compiler (`ExpressionState.compileExpr_surgeryFree`). A successful preseed establishes `Valid`
-(`seeded_valid`). CT-14's `EmissionWire` and CT-15's `FamilyWire` traversal,
-re-derived over the well-founded expression compiler. -/
+of every run (unlike `ExpressionState.Good`). This traversal follows the
+well-founded expression compiler, with a successful preseed establishing
+`Valid` (`seeded_valid`). -/
 
 namespace Ix.CompileCert.EmissionWire
 
@@ -306,7 +304,7 @@ theorem Safe.step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
       Safe.bind (Safe.lookup _) fun address _ => Safe.seq (Safe.internRef address) fun _ =>
         Safe.seq (each value (by simp; omega)) fun _ => Safe.seq (Safe.alloc _) fun _ => Safe.pure _
   | mdata data value hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     dsimp only
     have child := each value (by simp; omega)
     split
@@ -319,34 +317,26 @@ theorem Safe.step (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
     · exact Safe.seq (Safe.kvmap _) fun _ => Safe.seq child fun _ => Safe.seq (Safe.alloc _) fun _ =>
         Safe.pure _
   | fvar name hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     exact Safe.throw _
   | mvar name hash =>
-    unfold ExpressionState.step compileExprNoSurgeryStep
+    unfold ExpressionState.step compileExprStep
     exact Safe.throw _
 
-/-- **The ordinary expression compiler keeps the tables on the wire** on
+/-- **The expression compiler keeps the tables on the wire** on
 success. -/
-theorem Safe.noSurgery : ∀ source, Safe (compileExprNoSurgery source) := by
-  intro source
+theorem Safe.expression (source : Ix.Expr) : Safe (compileExpr source) := by
   induction source using (measure (fun e : Ix.Expr => sizeOf e)).wf.induction with
   | h source ih =>
-    rw [compileExprNoSurgery]
+    rw [compileExpr]
     refine Safe.seq Safe.get (fun state => ?_)
     split
     · exact Safe.pure _
-    · rw [show (compileExprNoSurgeryStep source fun x _h => compileExprNoSurgery x) =
-        ExpressionState.step compileExprNoSurgery source from rfl]
-      refine Safe.seq (Safe.step compileExprNoSurgery source (fun child smaller => ih child smaller))
+    · rw [show (compileExprStep source fun x _h => compileExpr x) =
+        ExpressionState.step compileExpr source from rfl]
+      refine Safe.seq (Safe.step compileExpr source (fun child smaller => ih child smaller))
         (fun value => ?_)
       exact Safe.seq (Safe.modify _ (fun _ => rfl)) (fun _ => Safe.pure _)
-
-/-- **The production expression compiler keeps the tables on the wire** on
-success. -/
-theorem Safe.expression (source : Ix.Expr) : Safe (compileExpr source) := by
-  intro context before value after valid ran
-  rw [ExpressionState.compileExpr_surgeryFree source context] at ran
-  exact Safe.noSurgery source context before value after valid ran
 
 /-! ## The drains -/
 

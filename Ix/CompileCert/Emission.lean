@@ -482,7 +482,7 @@ theorem reset_good {related : Ix.Expr → CExpr md → Prop} {state : BlockState
     good.1.2.1, good.1.2.2⟩, good.2⟩
 
 /-- The production entry compiles a source expression to a value the
-reader reads as a related term (`ExpressionState.compileExprNoSurgery_scoped`). -/
+reader reads as a related term (`ExpressionState.compileExpr_scoped`). -/
 theorem compileExpr_checked (context : CompileEnv × BlockEnv)
     (aligned : ∀ address, cx.blob address = context.1.blobs.get? address)
     (external : BindingsCorrect context.1 bindings cx names) (source : Ix.Expr)
@@ -490,8 +490,7 @@ theorem compileExpr_checked (context : CompileEnv × BlockEnv)
     (good : Good cx param self (related param names σ context) bindings before) :
     Checked cx param self (related param names σ context) bindings source before
       (rawRun (compileExpr source) context before) := by
-  rw [compileExpr_surgeryFree source context]
-  exact compileExprNoSurgery_scoped cx param self names σ bindings context aligned external source scope
+  exact compileExpr_scoped cx param self names σ bindings context aligned external source scope
     before good
 
 /-- One compiled root: a successful run of `compileExpr` keeps `Good`,

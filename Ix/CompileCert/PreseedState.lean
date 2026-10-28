@@ -14,7 +14,7 @@ Every run of it keeps the expression compiler's invariant
 included (`preseed_good`): the raw universe memo stays exact, the canonical
 memo exact, both index maps sound, the binding view fixed, and every
 earlier reading and expression-memo meaning survives. So the expression
-compiler's correctness (`ExpressionState.compileExprNoSurgery_scoped`)
+compiler's correctness (`ExpressionState.compileExpr_scoped`)
 applies after preseeding. A successful run leaves the primary universe
 table final (`preseed_final`).
 
