@@ -32,7 +32,6 @@ static_assert(sizeof(affine_t) == 64 && sizeof(point_t) == 96);
 static_assert(sizeof(ix_plonk_bn254_fr) == sizeof(fr_t));
 static_assert(sizeof(ix_plonk_bn254_affine) == sizeof(affine_t));
 static_assert(sizeof(ix_plonk_bn254_jacobian) == sizeof(point_t));
-static_assert(sizeof(ix_plonk_bn254_config) == 32);
 static_assert(MAX_LG_DOMAIN_SIZE == 28);
 
 namespace {
@@ -274,13 +273,13 @@ struct Workspace {
 };
 
 struct alignas(32) NumeratorParameters {
-    fr_t omega, coset, identity_coset, alpha, beta, gamma, vanishing, vanishing_inverse;
+    fr_t omega, coset, identity_coset, alpha, beta, gamma, vanishing;
     fr_t bl[2], br[2], bo[2], bz[3];
     const fr_t* columns[MAX_SLOTS];
     const fr_t* boundary;
     fr_t* output;
     uint64_t n;
-    uint32_t commitments, ratio, coset_index, log_m, fused;
+    uint32_t commitments, ratio, coset_index, log_m;
 };
 
 struct Quotient {
@@ -415,7 +414,6 @@ __global__ void numerator(NumeratorParameters p) {
                         * (o + u * u * id + p.gamma);
         fr_t boundary = (z - fr_t::one()) * p.boundary[j];
         fr_t value = gate + p.alpha * (left - right + p.alpha * boundary);
-        if (p.fused) value *= p.vanishing_inverse;
         uint32_t destination = __brev(static_cast<uint32_t>(p.ratio*j + p.coset_index)) >> (32-p.log_m);
         p.output[destination] = value;
         x *= step;
@@ -511,10 +509,8 @@ extern "C" int ix_plonk_bn254_context_create(const ix_plonk_bn254_config* config
     int ordinal = -1;
     try {
         require(config && out, "missing CUDA context configuration");
-        require(config->abi_version == IX_PLONK_BN254_ABI_VERSION
-            && config->struct_bytes == sizeof(*config)
-            && config->msm_strategy <= IX_PLONK_BN254_MSM_MASK,
-            "CUDA context ABI mismatch");
+        require(config->msm_strategy <= IX_PLONK_BN254_MSM_MASK,
+            "unsupported CUDA MSM strategy");
         require(config->budget_bytes > NTT_BYTES, "CUDA budget is too small");
         const gpu_t* gpu = nullptr;
         for (const auto* candidate : all_gpus())
@@ -770,11 +766,11 @@ extern "C" int ix_plonk_bn254_quotient_put(ix_plonk_bn254_context* context,
 }
 
 extern "C" int ix_plonk_bn254_quotient_finish(ix_plonk_bn254_context* context,
-    ix_plonk_bn254_quotient id, uint32_t fused, ix_plonk_bn254_fr* output,
+    ix_plonk_bn254_quotient id, ix_plonk_bn254_fr* output,
     uint64_t count, ix_plonk_bn254_error* error) {
     return guarded(context, error, [&] {
         auto& q = session(*context, id);
-        require(output && !q.finished && fused <= 1 && count == q.config.m
+        require(output && !q.finished && count == q.config.m
                 && std::all_of(q.present.begin(), q.present.end(), [](bool v) { return v; }),
                 "incomplete quotient session");
         NumeratorParameters p{};
@@ -787,7 +783,7 @@ extern "C" int ix_plonk_bn254_quotient_finish(ix_plonk_bn254_context* context,
         for (unsigned i = 0; i < 3; ++i) p.bz[i] = field(q.config.bz[i]);
         p.n = q.config.n; p.commitments = q.config.commitments;
         p.ratio = static_cast<uint32_t>(q.config.m / q.config.n);
-        p.log_m = log_size(q.config.m); p.fused = fused;
+        p.log_m = log_size(q.config.m);
         p.output = q.output.as<fr_t>(); p.boundary = q.boundary.as<fr_t>();
         for (uint32_t i = 0; i < q.present.size(); ++i)
             p.columns[i] = q.evaluations.as<fr_t>() + uint64_t(i) * p.n;
@@ -797,7 +793,6 @@ extern "C" int ix_plonk_bn254_quotient_finish(ix_plonk_bn254_context* context,
             context->ready(); p.coset_index = i; p.coset = coset;
             p.vanishing = (coset ^ static_cast<uint32_t>(p.n)) - fr_t::one();
             require(!p.vanishing.is_zero(), "quotient coset intersects the base domain");
-            p.vanishing_inverse = p.vanishing.reciprocal();
             for (uint32_t slot = 0; slot < q.present.size(); ++slot) {
                 context->ready();
                 fr_t* destination = q.evaluations.as<fr_t>() + uint64_t(slot) * p.n;
@@ -811,10 +806,7 @@ extern "C" int ix_plonk_bn254_quotient_finish(ix_plonk_bn254_context* context,
             CUDA_OK(cudaGetLastError());
             coset *= omega_big;
         }
-        if (fused) {
-            transform(*context, q.output.as<fr_t>(), q.config.m, true, true, field(q.config.coset));
-            ++context->stats.quotient_calls;
-        } else { ++context->stats.numerator_calls; }
+        ++context->stats.numerator_calls;
         context->download(output, q.output.as<void>(), q.config.m * 32);
         q.finished = true;
     });

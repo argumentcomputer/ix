@@ -54,12 +54,12 @@ func structuredScalars(count int, kind string) []fr.Element {
 }
 
 func TestCUDAStructuredMSMMatchesRegisteredArrays(t *testing.T) {
-	gpuConfig(t, AllFeatures)
+	gpuConfig(t)
 	pk := kernelKey(t, 128)
 	// The generic MSM contract applies to the registered arrays independently of
 	// whether their labels satisfy a proving-key basis relation.
 	pk.KzgLagrange.G1[0].Neg(&pk.KzgLagrange.G1[0])
-	a := attachForTest(t, pk, AllFeatures)
+	a := attachForTest(t, pk)
 	ranges := [][]curve.G1Affine{pk.KzgLagrange.G1, pk.Kzg.G1, pk.KzgLagrange.G1[:64], pk.KzgLagrange.G1[1:65], pk.KzgLagrange.G1[:96]}
 	for _, points := range ranges {
 		for _, kind := range []string{"shifted-binary", "signed-zero", "three-hot"} {

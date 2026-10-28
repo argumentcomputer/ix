@@ -85,8 +85,8 @@ func TestCUDAProvingBackendFactory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.MSMCalls == 0 || stats.QuotientCalls != 1 || stats.NumeratorCalls != 0 {
-		t.Fatalf("factory proof did not execute fused CUDA operations: %+v", stats)
+	if stats.MSMCalls == 0 || stats.NumeratorCalls != 1 {
+		t.Fatalf("factory proof did not execute CUDA operations: %+v", stats)
 	}
 	for range 2 {
 		if err := cleanup(); err != nil {

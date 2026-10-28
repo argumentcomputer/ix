@@ -45,7 +45,11 @@ otherwise (October 2026, one RTX PRO 6000 Blackwell, 48 logical CPUs).
 
 ## The pipeline as it stands
 
-Warm BN254 Init figures with admitted Ignition parameters. Each stage is a
+The terminal helper now uses stock gnark with GPU numerator evaluation; see the
+[stock gnark comparison](proof-benchmark-comparison.md#stock-gnark-comparison).
+The timings below precede that change and include the fused quotient extension.
+
+Historical BN254 Init figures with admitted Ignition parameters. Each stage is a
 separate process.
 
 | Stage | Prover | Output | Wall time | Share |

@@ -154,9 +154,6 @@ func checkWitness(dir, path string) error {
 }
 
 func run(args []string) error {
-	if len(args) == 5 && args[0] == "import-lagrange-sp1" {
-		return importLagrangeSP1(args[1], args[2], args[3], args[4])
-	}
 	if len(args) == 3 && args[0] == "compile" {
 		return compileProfile(args[1], args[2])
 	}
@@ -175,7 +172,7 @@ func run(args []string) error {
 	if len(args) == 6 && args[0] == "verify" {
 		return verify(args[1], args[2], args[3], args[4], args[5])
 	}
-	return fmt.Errorf("usage: PLONK helper compile <verifying key.json> <artifacts> | check-witness <artifacts> <witness.json> | import-lagrange-sp1 <artifacts> <ix-srs.bin> <trusted-srs-blake3> <plonk_pk.bin> | prepare <artifacts> <ix-srs.bin> <trusted-srs-blake3> | prove <artifacts> <witness.json> <out> | verify <key.bin> <trusted-key-sha256> <proof.bin> <expected-claim-digest>")
+	return fmt.Errorf("usage: PLONK helper compile <verifying key.json> <artifacts> | check-witness <artifacts> <witness.json> | prepare <artifacts> <ix-srs.bin> <trusted-srs-blake3> | prove <artifacts> <witness.json> <out> | verify <key.bin> <trusted-key-sha256> <proof.bin> <expected-claim-digest>")
 }
 
 func main() {

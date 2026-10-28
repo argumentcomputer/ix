@@ -86,8 +86,6 @@ func getNativeParameters(logSize int) (nativeParameters, error) {
 
 func createNativeContext(config Config) (*nativeContext, error) {
 	c := C.ix_plonk_bn254_config{
-		abi_version:           C.IX_PLONK_BN254_ABI_VERSION,
-		struct_bytes:          C.uint32_t(C.sizeof_ix_plonk_bn254_config),
 		device:                C.int32_t(config.Device),
 		msm_strategy:          C.uint32_t(config.MSMStrategy),
 		budget_bytes:          C.uint64_t(config.MemoryBytes),
@@ -196,13 +194,9 @@ func (c *nativeContext) putQuotient(handle quotientHandle, slot int, values []fr
 	return nativeError("quotient polynomial upload", status, &detail)
 }
 
-func (c *nativeContext) finishQuotient(handle quotientHandle, fused bool, values []fr.Element) error {
-	var flag C.uint32_t
-	if fused {
-		flag = 1
-	}
+func (c *nativeContext) finishQuotient(handle quotientHandle, values []fr.Element) error {
 	var detail C.ix_plonk_bn254_error
-	status := C.ix_plonk_bn254_quotient_finish(c.pointer, C.ix_plonk_bn254_quotient(handle), flag,
+	status := C.ix_plonk_bn254_quotient_finish(c.pointer, C.ix_plonk_bn254_quotient(handle),
 		(*C.ix_plonk_bn254_fr)(unsafe.Pointer(&values[0])), C.uint64_t(len(values)), &detail)
 	runtime.KeepAlive(values)
 	return nativeError("quotient computation", status, &detail)
@@ -222,7 +216,7 @@ func (c *nativeContext) stats() (Stats, error) {
 		PoolUsedBytes: uint64(native.pool_used_bytes), PoolUsedHighBytes: uint64(native.pool_used_high_bytes),
 		PoolReservedBytes: uint64(native.pool_reserved_bytes), PoolReservedHighBytes: uint64(native.pool_reserved_high_bytes),
 		AccountedBytes: uint64(native.accounted_bytes), AccountedHighBytes: uint64(native.accounted_high_bytes), BudgetBytes: uint64(native.budget_bytes),
-		MSMCalls: uint64(native.msm_calls), FFTCalls: uint64(native.fft_calls), NumeratorCalls: uint64(native.numerator_calls), QuotientCalls: uint64(native.quotient_calls),
+		MSMCalls: uint64(native.msm_calls), FFTCalls: uint64(native.fft_calls), NumeratorCalls: uint64(native.numerator_calls),
 		UploadBytes: uint64(native.upload_bytes), DownloadBytes: uint64(native.download_bytes),
 		UploadCalls: uint64(native.upload_calls), DownloadCalls: uint64(native.download_calls),
 		UploadWallMS: float64(native.upload_wall_ms), DownloadWallMS: float64(native.download_wall_ms),

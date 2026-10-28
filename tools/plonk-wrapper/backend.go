@@ -136,7 +136,7 @@ func prepare(dir, path, digest string) error {
 		cacheRoot = filepath.Join(filepath.Dir(dir), "lagrange")
 	}
 	fmt.Fprintln(os.Stderr, "stage=lagrange")
-	lagrangeSRS, reused, err := lagrangeParameters(cacheRoot, srs, m.Domain, p.SetupID, digest, m.ExecutableSHA256)
+	lagrangeSRS, reused, err := lagrangeParameters(cacheRoot, srs, m.Domain, p.SetupID, digest)
 	if err != nil {
 		return err
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 func provingCUDAConfig() (cuda.Config, error) {
-	config := cuda.Config{MemoryBytes: 64 << 30, HeadroomBytes: 8 << 30, Features: cuda.AllFeatures}
+	config := cuda.Config{MemoryBytes: 64 << 30, HeadroomBytes: 8 << 30}
 	switch os.Getenv("IX_PLONK_CUDA_MSM_STRATEGY") {
 	case "", "split":
 		config.MSMStrategy = cuda.MSMSplit

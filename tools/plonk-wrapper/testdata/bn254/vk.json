@@ -5044,5 +5044,401 @@
   "publicMaxDegree": 100799999,
   "seed": "0x6d756c74692d737461726b2f6b7a672f626e3235342f626c616b65332f76311a000000000000000200000000000000ff1502060000000007f80d0dc28ec7865299e8dcb795bf17f53de459d315416fd3c55fed475cd90b3bb0c91a284ca49f0e31d84e308b6399ab4f55639b05d574e6f7e7b593bea49fedf692d95cbdde46ddda5ef7d422436779445c5e66006a42761e1f12efde0018c212f3aeb785e49712e7a9353349aaf1255dfb31b7bf60723a480d9293938e19098493b799904a0b1919123a0c9434d2c133c78e655f1588a6a8c2faf1eb689fcbe108231cc23c1041b9f6f3c615a5ae9e425217ae4231d70eedc201ad4f342a484a95db8d70c3dc4f502412ebf3f9cde76558f30a43c2608750c403bbacf122",
   "setupId": "0x07f80d0dc28ec7865299e8dcb795bf17f53de459d315416fd3c55fed475cd90b",
-  "witnessOffset": 12
+  "witnessOffset": 12,
+  "accumulatorCount": 1,
+  "claims": [
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x0"
+      },
+      {
+        "public": 0
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "public": 1
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x2"
+      },
+      {
+        "public": 2
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x3"
+      },
+      {
+        "public": 3
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x4"
+      },
+      {
+        "public": 4
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x5"
+      },
+      {
+        "public": 5
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x6"
+      },
+      {
+        "public": 6
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x7"
+      },
+      {
+        "public": 7
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x8"
+      },
+      {
+        "public": 8
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x9"
+      },
+      {
+        "public": 9
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0xa"
+      },
+      {
+        "public": 10
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0xb"
+      },
+      {
+        "public": 11
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0xc"
+      },
+      {
+        "public": 12
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0xd"
+      },
+      {
+        "public": 13
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0xe"
+      },
+      {
+        "public": 14
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0xf"
+      },
+      {
+        "public": 15
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x10"
+      },
+      {
+        "public": 16
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x11"
+      },
+      {
+        "public": 17
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x12"
+      },
+      {
+        "public": 18
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x13"
+      },
+      {
+        "public": 19
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x14"
+      },
+      {
+        "public": 20
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x15"
+      },
+      {
+        "public": 21
+      }
+    ],
+    [
+      {
+        "constant": "0x5e"
+      },
+      {
+        "constant": "0x1"
+      },
+      {
+        "constant": "0x16"
+      },
+      {
+        "public": 22
+      }
+    ]
+  ],
+  "publics": [
+    {
+      "constant": "0x0"
+    },
+    {
+      "prefix": 0
+    },
+    {
+      "prefix": 1
+    },
+    {
+      "prefix": 2
+    },
+    {
+      "prefix": 3
+    },
+    {
+      "prefix": 4
+    },
+    {
+      "prefix": 5
+    },
+    {
+      "prefix": 6
+    },
+    {
+      "prefix": 7
+    },
+    {
+      "prefix": 8
+    },
+    {
+      "prefix": 9
+    },
+    {
+      "digestWord": 0
+    },
+    {
+      "digestWord": 1
+    },
+    {
+      "digestWord": 2
+    },
+    {
+      "digestWord": 3
+    },
+    {
+      "digestWord": 4
+    },
+    {
+      "digestWord": 5
+    },
+    {
+      "digestWord": 6
+    },
+    {
+      "digestWord": 7
+    },
+    {
+      "deferredHalf": 0
+    },
+    {
+      "deferredHalf": 1
+    },
+    {
+      "deferredHalf": 2
+    },
+    {
+      "deferredHalf": 3
+    }
+  ]
 }

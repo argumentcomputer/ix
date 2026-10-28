@@ -14,7 +14,7 @@ import (
 )
 
 func TestCUDAMaskedMSMTransparencyAndRangeCache(t *testing.T) {
-	config := gpuConfig(t, AllFeatures)
+	config := gpuConfig(t)
 	config.MSMStrategy = MSMMask
 	pk := kernelKey(t, 8192)
 	a, err := Attach(pk, config)

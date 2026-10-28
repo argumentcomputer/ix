@@ -103,3 +103,15 @@ It uses the historical gas average rather than a live gas quote.
 
 Implementation context is in the
 [KZG compression README](../crates/proof-compression/README.md).
+
+## Stock gnark comparison
+
+On October 28, 2026, the same `2^24` Init circuit was measured on 32 logical
+Xeon Platinum 8559C CPUs and one RTX PRO 6000 Blackwell GPU, with Go 1.26.8
+and CUDA 13.3. Five proofs per mode after one warmup gave medians of 11.550 s
+for stock gnark with CUDA, 11.671 s patched/unfused, and 11.439 s patched/fused.
+All 18 proofs verified and rejected altered claims. Fusion saved 4 GiB of
+transfers but only 0.96% versus stock gnark; stock gnark is now the supported
+integration. The implementation was `cfc35206e`, matching `sb/bn254` at
+`0a713fbf`; detailed reports and archive pins are in `target/quotient-benchmark/`
+in the measurement worktree.

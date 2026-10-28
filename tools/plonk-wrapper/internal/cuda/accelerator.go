@@ -22,8 +22,6 @@ import (
 	native "github.com/consensys/gnark/backend/plonk/bn254"
 )
 
-const AllFeatures = native.AcceleratorFeatureMSMV1 | native.AcceleratorFeatureToCanonicalV1 | native.AcceleratorFeatureNumeratorV1 | native.AcceleratorFeatureQuotientV1
-
 type MSMStrategy uint32
 
 const (
@@ -42,14 +40,13 @@ type Config struct {
 	MSMStrategy                MSMStrategy
 	Device                     int
 	MemoryBytes, HeadroomBytes uint64
-	Features                   native.AcceleratorFeatureFlagsV1
 }
 
 type Stats struct {
 	DriverFreeBytes, DriverTotalBytes                                          uint64
 	PoolUsedBytes, PoolUsedHighBytes, PoolReservedBytes, PoolReservedHighBytes uint64
 	AccountedBytes, AccountedHighBytes, BudgetBytes                            uint64
-	MSMCalls, FFTCalls, NumeratorCalls, QuotientCalls                          uint64
+	MSMCalls, FFTCalls, NumeratorCalls                                         uint64
 	UploadBytes, DownloadBytes                                                 uint64
 	UploadCalls, DownloadCalls                                                 uint64
 	// Wall times include waiting for queued predecessor GPU work.
@@ -58,7 +55,7 @@ type Stats struct {
 	TransferTimingEnabled                                                bool
 	SmallCPUCalls, CPUTailPoints                                         uint64
 	MSMCallbackSeconds, CanonicalCallbackSeconds                         float64
-	NumeratorCallbackSeconds, QuotientCallbackSeconds                    float64
+	NumeratorCallbackSeconds                                             float64
 	QueueWaitSeconds                                                     float64
 	MaskedMSMCalls, MaskSumCalls, MaskCacheHits                          uint64
 	SplitMSMCalls, SplitUnitPoints                                       uint64
@@ -77,27 +74,26 @@ type registeredBasis struct {
 // Accelerator serializes mutable native workspaces. The proving key keeps both
 // registered host arrays alive until every borrowed native call has returned.
 type Accelerator struct {
-	mu                                                              sync.Mutex
-	pk                                                              *native.ProvingKey
-	context                                                         *nativeContext
-	bases                                                           [2]registeredBasis
-	features                                                        native.AcceleratorFeatureFlagsV1
-	domain                                                          uint64
-	parameters                                                      [27]nativeParameters
-	closed                                                          bool
-	closeErr                                                        error
-	finalStats                                                      Stats
-	smallCPUCalls, cpuTailPoints                                    uint64
-	msmSeconds, canonicalSeconds, numeratorSeconds, quotientSeconds float64
-	queueWaitSeconds                                                float64
-	trace                                                           bool
-	strategy                                                        MSMStrategy
+	mu                                             sync.Mutex
+	pk                                             *native.ProvingKey
+	context                                        *nativeContext
+	bases                                          [2]registeredBasis
+	domain                                         uint64
+	parameters                                     [27]nativeParameters
+	closed                                         bool
+	closeErr                                       error
+	finalStats                                     Stats
+	smallCPUCalls, cpuTailPoints                   uint64
+	msmSeconds, canonicalSeconds, numeratorSeconds float64
+	queueWaitSeconds                               float64
+	trace                                          bool
+	strategy                                       MSMStrategy
 }
 
 var _ native.Accelerator = (*Accelerator)(nil)
-var _ native.AcceleratorFeaturesV1 = (*Accelerator)(nil)
-var _ native.QuotientAcceleratorV1 = (*Accelerator)(nil)
 
+// Attach installs the GPU implementation. The caller must keep the attachment
+// unchanged until every proof using pk has returned.
 func Attach(pk *native.ProvingKey, config Config) (*Accelerator, error) {
 	if pk == nil || pk.Vk == nil || pk.Accelerator() != nil {
 		return nil, fmt.Errorf("CUDA PLONK needs an unattached proving key")
@@ -106,8 +102,8 @@ func Attach(pk *native.ProvingKey, config Config) (*Accelerator, error) {
 	if n < 2 || n > 1<<24 || n&(n-1) != 0 || uint64(len(pk.Kzg.G1)) != n+3 || uint64(len(pk.KzgLagrange.G1)) != n {
 		return nil, fmt.Errorf("CUDA PLONK requires N<=2^24 and exact N+3/N proving bases")
 	}
-	if config.Device < 0 || config.Device > math.MaxInt32 || config.Features & ^AllFeatures != 0 || config.MSMStrategy > MSMMask {
-		return nil, fmt.Errorf("invalid CUDA PLONK device or features")
+	if config.Device < 0 || config.Device > math.MaxInt32 || config.MSMStrategy > MSMMask {
+		return nil, fmt.Errorf("invalid CUDA PLONK device or MSM strategy")
 	}
 	if config.MemoryBytes == 0 {
 		config.MemoryBytes = 64 << 30
@@ -120,7 +116,7 @@ func Attach(pk *native.ProvingKey, config Config) (*Accelerator, error) {
 	if err := checkFieldABI(); err != nil {
 		return nil, err
 	}
-	a := &Accelerator{pk: pk, features: config.Features, domain: n, trace: os.Getenv("IX_PLONK_CUDA_TRACE") == "1", strategy: config.MSMStrategy}
+	a := &Accelerator{pk: pk, domain: n, trace: os.Getenv("IX_PLONK_CUDA_TRACE") == "1", strategy: config.MSMStrategy}
 	for logSize := range a.parameters {
 		parameters, err := getNativeParameters(logSize)
 		if err != nil {
@@ -159,8 +155,6 @@ func Attach(pk *native.ProvingKey, config Config) (*Accelerator, error) {
 	return a, nil
 }
 
-func (a *Accelerator) FeaturesV1() native.AcceleratorFeatureFlagsV1 { return a.features }
-
 func (a *Accelerator) withContext(fn func(*nativeContext) error) error {
 	queued := time.Now()
 	a.mu.Lock()
@@ -179,7 +173,7 @@ func (a *Accelerator) withContext(fn func(*nativeContext) error) error {
 func (a *Accelerator) hostStats(stats Stats) Stats {
 	stats.SmallCPUCalls, stats.CPUTailPoints = a.smallCPUCalls, a.cpuTailPoints
 	stats.MSMCallbackSeconds, stats.CanonicalCallbackSeconds = a.msmSeconds, a.canonicalSeconds
-	stats.NumeratorCallbackSeconds, stats.QuotientCallbackSeconds = a.numeratorSeconds, a.quotientSeconds
+	stats.NumeratorCallbackSeconds = a.numeratorSeconds
 	stats.QueueWaitSeconds = a.queueWaitSeconds
 	return stats
 }
@@ -395,7 +389,7 @@ func (a *Accelerator) numeratorConfig(in *native.NumeratorInput) (quotientConfig
 	return config, nil
 }
 
-func (a *Accelerator) compute(in *native.NumeratorInput, fused bool) (*iop.Polynomial, error) {
+func (a *Accelerator) ComputeNumerator(in *native.NumeratorInput) (*iop.Polynomial, error) {
 	config, err := a.numeratorConfig(in)
 	if err != nil {
 		return nil, err
@@ -404,23 +398,15 @@ func (a *Accelerator) compute(in *native.NumeratorInput, fused bool) (*iop.Polyn
 	err = a.withContext(func(context *nativeContext) (err error) {
 		transfers := a.startTransferTrace(context)
 		started := time.Now()
-		operation := "numerator"
-		if fused {
-			operation = "quotient"
-		}
 		fields := map[string]any{"n": config.n, "m": config.m, "commitments": config.commitments}
-		a.traceEvent("start", operation, fields)
+		a.traceEvent("start", "numerator", fields)
 		defer func() {
 			elapsed := time.Since(started).Seconds()
 			fields["elapsed_seconds"] = elapsed
 			fields["failed"] = err != nil
-			if fused {
-				a.quotientSeconds += elapsed
-			} else {
-				a.numeratorSeconds += elapsed
-			}
+			a.numeratorSeconds += elapsed
 			transfers.finish(context, fields)
-			a.traceEvent("end", operation, fields)
+			a.traceEvent("end", "numerator", fields)
 		}()
 		handle, err := context.beginQuotient(config)
 		if err != nil {
@@ -434,21 +420,11 @@ func (a *Accelerator) compute(in *native.NumeratorInput, fused bool) (*iop.Polyn
 			polynomial.Basis, polynomial.Layout = iop.Canonical, iop.Regular
 		}
 		output = make([]fr.Element, int(config.m))
-		return context.finishQuotient(handle, fused, output)
+		return context.finishQuotient(handle, output)
 	})
 	if err != nil {
 		return nil, err
 	}
 	form := iop.Form{Basis: iop.LagrangeCoset, Layout: iop.BitReverse}
-	if fused {
-		form = iop.Form{Basis: iop.Canonical, Layout: iop.Regular}
-	}
 	return iop.NewPolynomial(&output, form), nil
-}
-
-func (a *Accelerator) ComputeNumerator(in *native.NumeratorInput) (*iop.Polynomial, error) {
-	return a.compute(in, false)
-}
-func (a *Accelerator) ComputeQuotientV1(in *native.NumeratorInput) (*iop.Polynomial, error) {
-	return a.compute(in, true)
 }

@@ -95,10 +95,9 @@ func TestBN254CanonicalVectors(t *testing.T) {
 }
 
 type completeMSMCircuit struct {
-	Points     [2]circuitG1
-	Scalars    [2]frontend.Variable
-	Expected   circuitG1
-	ClassicGLV bool `gnark:"-"`
+	Points   [2]circuitG1
+	Scalars  [2]frontend.Variable
+	Expected circuitG1
 }
 
 func (c *completeMSMCircuit) Define(api frontend.API) error {
@@ -107,7 +106,7 @@ func (c *completeMSMCircuit) Define(api frontend.API) error {
 		return err
 	}
 	parameters := curveParameters()
-	parameters.PreferClassicGLV = c.ClassicGLV
+	parameters.PreferClassicGLV = true
 	curve, err := sw_emulated.New[baseField, scalarField](api, parameters)
 	if err != nil {
 		return err
@@ -158,14 +157,14 @@ func TestBN254ClassicGLVMatchesNativeMSM(t *testing.T) {
 			a.ScalarMultiplication(&pair[0], s1)
 			b.ScalarMultiplication(&pair[1], s2)
 			want.Add(&a, &b)
-			w := &completeMSMCircuit{Points: [2]circuitG1{newCircuitG1(pair[0]), newCircuitG1(pair[1])}, Scalars: [2]frontend.Variable{s1, s2}, Expected: newCircuitG1(want), ClassicGLV: true}
-			if err := test.IsSolved(&completeMSMCircuit{ClassicGLV: true}, w, curveID.ScalarField()); err != nil {
+			w := &completeMSMCircuit{Points: [2]circuitG1{newCircuitG1(pair[0]), newCircuitG1(pair[1])}, Scalars: [2]frontend.Variable{s1, s2}, Expected: newCircuitG1(want)}
+			if err := test.IsSolved(&completeMSMCircuit{}, w, curveID.ScalarField()); err != nil {
 				t.Fatalf("pair %d scalar %d: %v", i, j, err)
 			}
 		}
 	}
-	w := &completeMSMCircuit{Points: [2]circuitG1{newCircuitG1(g), newCircuitG1(neg)}, Scalars: [2]frontend.Variable{1, 1}, Expected: newCircuitG1(g), ClassicGLV: true}
-	if err := test.IsSolved(&completeMSMCircuit{ClassicGLV: true}, w, curveID.ScalarField()); err == nil {
+	w := &completeMSMCircuit{Points: [2]circuitG1{newCircuitG1(g), newCircuitG1(neg)}, Scalars: [2]frontend.Variable{1, 1}, Expected: newCircuitG1(g)}
+	if err := test.IsSolved(&completeMSMCircuit{}, w, curveID.ScalarField()); err == nil {
 		t.Fatal("accepted incorrect MSM result")
 	}
 }

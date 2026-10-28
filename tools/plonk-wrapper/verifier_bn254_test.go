@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"math/big"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -55,7 +57,7 @@ func TestBN254FullVerifierRejectsTampering(t *testing.T) {
 	if err := test.IsSolved(newCircuit(p), assignment(), curveID.ScalarField()); err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{"claim", "evaluation", "commitment", "deferred-key", "outer-key"} {
+	for _, kind := range []string{"claim", "evaluation", "commitment", "deferred", "deferred-key", "outer-key"} {
 		w := assignment()
 		vkCopy := *p
 		switch kind {
@@ -66,6 +68,9 @@ func TestBN254FullVerifierRejectsTampering(t *testing.T) {
 		case "commitment":
 			_, _, g, _ := bn.Generators()
 			w.Points[0] = newCircuitG1(g)
+		case "deferred":
+			_, _, g, _ := bn.Generators()
+			w.Deferred[0] = newCircuitG1(g)
 		case "deferred-key":
 			vkCopy.DeferredKeys = []string{p.DeferredKeys[0], p.DeferredKeys[0]}
 		case "outer-key":
@@ -73,6 +78,37 @@ func TestBN254FullVerifierRejectsTampering(t *testing.T) {
 		}
 		if err := test.IsSolved(newCircuit(&vkCopy), w, curveID.ScalarField()); err == nil {
 			t.Fatalf("accepted %s mutation", kind)
+		}
+	}
+}
+
+func TestVerifyingKeyRequiresExplicitSchema(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "bn254", "vk.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"accumulatorCount", "claims", "publics"} {
+		for _, null := range []bool{false, true} {
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if null {
+				fields[field] = json.RawMessage("null")
+			} else {
+				delete(fields, field)
+			}
+			encoded, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "vk.json")
+			if err := os.WriteFile(path, encoded, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadVerifyingKey(path); err == nil {
+				t.Fatalf("accepted missing or null %s", field)
+			}
 		}
 	}
 }

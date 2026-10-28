@@ -28,12 +28,11 @@ func TestLagrangeCacheAndBasisConversion(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	executable := strings.Repeat("a", 64)
-	first, reused, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3, executable)
+	first, reused, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3)
 	if err != nil || reused {
 		t.Fatalf("initial derivation: reused=%t error=%v", reused, err)
 	}
-	second, reused, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3, executable)
+	second, reused, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3)
 	if err != nil || !reused {
 		t.Fatalf("cached derivation: reused=%t error=%v", reused, err)
 	}
@@ -79,10 +78,19 @@ func TestLagrangeCacheAndBasisConversion(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3, executable); err == nil {
+	if _, _, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3); err == nil {
 		t.Fatal("accepted corrupted Lagrange cache")
 	}
-	if _, reused, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3, strings.Repeat("b", 64)); err != nil || reused {
-		t.Fatalf("new backend reused old cache: %t %v", reused, err)
+	for _, identity := range []struct {
+		domain         uint64
+		setup, receipt string
+	}{
+		{16, p.SetupID, receipt.Blake3},
+		{8, strings.Repeat("b", 64), receipt.Blake3},
+		{8, p.SetupID, strings.Repeat("c", 64)},
+	} {
+		if _, reused, err := lagrangeParameters(root, srs, identity.domain, identity.setup, identity.receipt); err != nil || reused {
+			t.Fatalf("different setup, receipt or domain reused old cache: %t %v", reused, err)
+		}
 	}
 }

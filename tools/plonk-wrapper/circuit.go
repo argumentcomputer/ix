@@ -43,7 +43,7 @@ func littleEndian(api frontend.API, u *uints.BinaryField[uints.U32], bytes []uin
 	return value
 }
 
-func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints.U32], encoded [][]uints.U8, publics []frontend.Variable) ([]frontend.Variable, []uints.U8) {
+func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints.U32], encoded [][]uints.U8, publics []frontend.Variable) []frontend.Variable {
 	p := c.VK
 	seed, _ := unhex(p.Seed, -1)
 	t := newTranscript(api, u, seed)
@@ -72,7 +72,7 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 	for _, circuit := range p.Circuits {
 		field(circuit.LogDegree)
 	}
-	rows := p.claimRows()
+	rows := p.Claims
 	field(len(rows))
 	for _, row := range rows {
 		field(len(row))
@@ -90,7 +90,7 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 	ch[1] = t.sample()
 	field(ch[1])
 	commitment(1)
-	accumulators := p.accumulators()
+	accumulators := p.AccumulatorCount
 	for k := 0; k < accumulators; k++ {
 		field(c.Values[k])
 	}
@@ -112,7 +112,7 @@ func (c *wrapperCircuit) challenges(api frontend.API, u *uints.BinaryField[uints
 		t.observe(point)
 	}
 	ch[5] = t.sample()
-	return ch, t.state
+	return ch
 }
 
 func (p *scalarProgram) constrain(api frontend.API, challenges, values, publics []frontend.Variable) ([]frontend.Variable, []frontend.Variable) {
@@ -150,19 +150,6 @@ func (p *scalarProgram) constrain(api frontend.API, challenges, values, publics 
 }
 
 func (c *wrapperCircuit) Define(api frontend.API) error {
-	return c.constrain(api, 6)
-}
-
-func (c *wrapperCircuit) constrain(api frontend.API, phase int) error {
-	return c.constrainWithOptions(api, phase, circuitOptions{classicGLV: true})
-}
-
-type circuitOptions struct {
-	batchPairings bool
-	classicGLV    bool
-}
-
-func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, options circuitOptions) error {
 	p := c.VK
 	if p == nil {
 		return fmt.Errorf("missing trusted verifying key")
@@ -183,9 +170,7 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 		return err
 	}
 	parameters := curveParameters()
-	if options.classicGLV {
-		parameters.PreferClassicGLV = true
-	}
+	parameters.PreferClassicGLV = true
 	curve, err := sw_emulated.New[baseField, scalarField](api, parameters)
 	if err != nil {
 		return err
@@ -227,7 +212,7 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 		bytes := pointBytes(api, u, f, &c.Deferred[i])
 		deferredHalves = append(deferredHalves, littleEndian(api, u, bytes[:pointLimbBytes]), littleEndian(api, u, bytes[pointLimbBytes:]))
 	}
-	sources := p.publicSources()
+	sources := p.Publics
 	publics := make([]frontend.Variable, len(sources))
 	for i, source := range sources {
 		switch {
@@ -241,17 +226,8 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 			publics[i] = deferredHalves[*source.DeferredHalf]
 		}
 	}
-	if phase == 1 {
-		return nil
-	}
-	challenges, packetDigest := c.challenges(api, u, encoded, publics)
-	if phase == 2 {
-		return nil
-	}
+	challenges := c.challenges(api, u, encoded, publics)
 	coefficients, witnessCoefficients := p.Program.constrain(api, challenges, c.Values, publics)
-	if phase == 3 {
-		return nil
-	}
 	leftPoints, leftCoefficients := foldFixedBases(api, p, points, coefficients)
 	left, err := completeMSM(api, curve, s, leftPoints, leftCoefficients)
 	if err != nil {
@@ -261,21 +237,12 @@ func (c *wrapperCircuit) constrainWithOptions(api frontend.API, phase int, optio
 	if err != nil {
 		return err
 	}
-	if phase == 4 {
-		return nil
-	}
-	if options.batchPairings {
-		if len(c.Deferred) != 2 {
-			return fmt.Errorf("pairing batching requires two deferred operands")
-		}
-		return c.batchedPairing(api, u, f, s, curve, packetDigest, left, right)
-	}
 	outer, _ := g2Keys(p.OuterKeys)
 	h, tauH := newCircuitG2Fixed(outer[0]), newCircuitG2Fixed(outer[1])
 	if err := pairing.PairingCheck([]*circuitG1{left, curve.Neg(right)}, []*circuitG2{&h, &tauH}); err != nil {
 		return err
 	}
-	if phase == 5 || len(c.Deferred) == 0 {
+	if len(c.Deferred) == 0 {
 		return nil
 	}
 	inner, _ := g2Keys(p.DeferredKeys)

@@ -110,11 +110,6 @@
             file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
               || file.name == "go.mod" || file.name == "go.sum"
           ) ./tools/plonk-wrapper;
-          plonkCudaSources = pkgs.lib.fileset.fileFilter (
-            file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
-              || file.hasExt "py" || file.hasExt "patch"
-              || file.name == "go.mod" || file.name == "go.sum"
-          ) ./tools/plonk-wrapper;
           plonkSppark = pkgs.fetchFromGitHub {
             owner = "argumentcomputer";
             repo = "sppark";
@@ -160,7 +155,7 @@
             version = "0.1.0";
             src = pkgs.lib.fileset.toSource {
               root = ./tools/plonk-wrapper;
-              fileset = if cuda then plonkCudaSources else plonkSources;
+              fileset = plonkSources;
             };
             vendorHash = "sha256-atTpFnSORqh5A+LzECBF9gR0qCr7G2lNXpVuFFSS5to=";
             subPackages = [ "." ];
@@ -168,12 +163,7 @@
             env.GOTOOLCHAIN = "local";
             env.CGO_CFLAGS = pkgs.lib.optionalString cuda "-I${plonkCudaNative}/include";
             env.CGO_LDFLAGS = pkgs.lib.optionalString cuda "-L${plonkCudaNative}/lib -Wl,-rpath,${plonkCudaNative}/lib -lix_plonk_bn254_cuda";
-            nativeBuildInputs = pkgs.lib.optionals cuda [ pkgs.python3 pkgs.patch ];
             buildInputs = pkgs.lib.optional cuda plonkCudaNative;
-            postConfigure = pkgs.lib.optionalString cuda ''
-              chmod -R u+w vendor/github.com/consensys/gnark
-              python3 build_cuda.py --patch-vendor vendor/github.com/consensys/gnark
-            '';
             postInstall = ''
               mv "$out/bin/plonk-wrapper" "$out/bin/ix-bn254-plonk-wrapper"
             '' + pkgs.lib.optionalString cuda ''

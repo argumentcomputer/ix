@@ -53,55 +53,13 @@ type verifyingKey struct {
 	Generator                                           pointJSON
 	OuterKeys, DeferredKeys                             []string
 	Program                                             scalarProgram
-	// Absent in verifying keys exported before first-stage wrapping: the
-	// recursive packet then implies one accumulator, 23 claim rows
-	// `[94, 1, i, public_i]` and two deferred operands.
-	AccumulatorCount *int
-	Claims           [][]claimSlot
-	Publics          []publicSource
-}
-
-func (p *verifyingKey) accumulators() int {
-	if p.AccumulatorCount == nil {
-		return 1
-	}
-	return *p.AccumulatorCount
+	AccumulatorCount                                    int
+	Claims                                              [][]claimSlot
+	Publics                                             []publicSource
 }
 
 func (p *verifyingKey) deferredCount() int {
 	return len(p.DeferredKeys)
-}
-
-func intPtr(v int) *int { return &v }
-
-func (p *verifyingKey) claimRows() [][]claimSlot {
-	if p.Claims != nil {
-		return p.Claims
-	}
-	rows := make([][]claimSlot, 23)
-	for i := range rows {
-		ns, one, index := "0x5e", "0x1", fmt.Sprintf("0x%x", i)
-		rows[i] = []claimSlot{{Constant: &ns}, {Constant: &one}, {Constant: &index}, {Public: intPtr(i)}}
-	}
-	return rows
-}
-
-func (p *verifyingKey) publicSources() []publicSource {
-	if p.Publics != nil {
-		return p.Publics
-	}
-	zero := "0x0"
-	sources := []publicSource{{Constant: &zero}}
-	for i := 0; i < 10; i++ {
-		sources = append(sources, publicSource{Prefix: intPtr(i)})
-	}
-	for i := 0; i < 8; i++ {
-		sources = append(sources, publicSource{DigestWord: intPtr(i)})
-	}
-	for i := 0; i < 4; i++ {
-		sources = append(sources, publicSource{DeferredHalf: intPtr(i)})
-	}
-	return sources
 }
 
 type witnessJSON struct {
@@ -190,11 +148,11 @@ func loadVerifyingKey(path string) (*verifyingKey, error) {
 }
 
 func (p *verifyingKey) validate() error {
-	if p.Format != vkFormat || len(p.Prefix) != 10 || len(p.Circuits) < 2 || len(p.Matrices) != 4*len(p.Circuits) || p.PointCount < 1 || p.PointCount > 4096 || p.FieldCount < 1 || p.FieldCount > 65536 || len(p.Fixed) > 4096 || p.WitnessOffset < 0 || p.WitnessOffset > p.PointCount || p.OpeningCount < 2 || p.OpeningCount > 16 || p.WitnessOffset+p.OpeningCount != p.PointCount || p.accumulators() != len(p.Circuits)-1 || (p.deferredCount() != 0 && p.deferredCount() != 2) {
+	if p.Claims == nil || p.Publics == nil || p.Format != vkFormat || len(p.Prefix) != 10 || len(p.Circuits) < 2 || len(p.Matrices) != 4*len(p.Circuits) || p.PointCount < 1 || p.PointCount > 4096 || p.FieldCount < 1 || p.FieldCount > 65536 || len(p.Fixed) > 4096 || p.WitnessOffset < 0 || p.WitnessOffset > p.PointCount || p.OpeningCount < 2 || p.OpeningCount > 16 || p.WitnessOffset+p.OpeningCount != p.PointCount || p.AccumulatorCount != len(p.Circuits)-1 || (p.deferredCount() != 0 && p.deferredCount() != 2) {
 		return fmt.Errorf("invalid wrapper verifying key dimensions")
 	}
-	publicCount := len(p.publicSources())
-	for i, source := range p.publicSources() {
+	publicCount := len(p.Publics)
+	for i, source := range p.Publics {
 		set := 0
 		if source.Constant != nil {
 			set++
@@ -224,7 +182,7 @@ func (p *verifyingKey) validate() error {
 			return fmt.Errorf("public source %d must have exactly one kind", i)
 		}
 	}
-	for r, row := range p.claimRows() {
+	for r, row := range p.Claims {
 		if len(row) == 0 || len(row) > 16 {
 			return fmt.Errorf("invalid claim row %d", r)
 		}

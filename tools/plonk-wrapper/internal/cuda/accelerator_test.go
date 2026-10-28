@@ -25,12 +25,12 @@ import (
 	"github.com/consensys/gnark/frontend/cs/scs"
 )
 
-func gpuConfig(t *testing.T, features native.AcceleratorFeatureFlagsV1) Config {
+func gpuConfig(t *testing.T) Config {
 	t.Helper()
 	if os.Getenv("IX_PLONK_CUDA_TEST") != "1" {
 		t.Skip("set IX_PLONK_CUDA_TEST=1 for bounded native CUDA tests")
 	}
-	config := Config{MemoryBytes: 8 << 30, HeadroomBytes: 8 << 30, Features: features}
+	config := Config{MemoryBytes: 8 << 30, HeadroomBytes: 8 << 30}
 	if value := os.Getenv("IX_PLONK_CUDA_DEVICE"); value != "" {
 		device, err := strconv.Atoi(value)
 		if err != nil {
@@ -72,9 +72,9 @@ func kernelKey(t *testing.T, n int) *native.ProvingKey {
 	return &native.ProvingKey{Kzg: srs.Pk, KzgLagrange: kzg.ProvingKey{G1: lagrange}, Vk: &native.VerifyingKey{Size: uint64(n), Kzg: srs.Vk}}
 }
 
-func attachForTest(t *testing.T, pk *native.ProvingKey, features native.AcceleratorFeatureFlagsV1) *Accelerator {
+func attachForTest(t *testing.T, pk *native.ProvingKey) *Accelerator {
 	t.Helper()
-	accelerator, err := Attach(pk, gpuConfig(t, features))
+	accelerator, err := Attach(pk, gpuConfig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,9 +87,9 @@ func attachForTest(t *testing.T, pk *native.ProvingKey, features native.Accelera
 }
 
 func TestCUDAMSMRangesTailsConcurrencyAndLifecycle(t *testing.T) {
-	gpuConfig(t, AllFeatures)
+	gpuConfig(t)
 	pk := kernelKey(t, 64)
-	a := attachForTest(t, pk, AllFeatures)
+	a := attachForTest(t, pk)
 	for _, basis := range [][]curve.G1Affine{pk.Kzg.G1, pk.KzgLagrange.G1} {
 		for _, span := range [][2]int{{0, len(basis)}, {2, 17}, {len(basis) - 4, 4}, {len(basis) - 3, 3}, {0, 0}} {
 			points := basis[span[0] : span[0]+span[1]]
@@ -182,8 +182,8 @@ func TestCUDAMSMRangesTailsConcurrencyAndLifecycle(t *testing.T) {
 }
 
 func TestCUDAFFTCanonicalFormsAndRoots(t *testing.T) {
-	gpuConfig(t, AllFeatures)
-	a := attachForTest(t, kernelKey(t, 64), AllFeatures)
+	gpuConfig(t)
+	a := attachForTest(t, kernelKey(t, 64))
 	for _, n := range []int{2, 8, 64, 512, 4096} {
 		domain := fft.NewDomain(uint64(n))
 		coefficients := make([]fr.Element, n)
@@ -336,73 +336,51 @@ func numeratorOracle(in *native.NumeratorInput, canonical [][]fr.Element) []fr.E
 	return result
 }
 
-func TestCUDANumeratorAndFusedQuotientAgainstDirectOracle(t *testing.T) {
-	gpuConfig(t, AllFeatures)
+func TestCUDANumeratorAgainstDirectOracle(t *testing.T) {
+	gpuConfig(t)
 	for _, shape := range [][3]int{{2, 8, 0}, {4, 8, 1}, {8, 4, 0}, {16, 4, 1}, {32, 4, 2}} {
 		n, rho, commitments := shape[0], shape[1], shape[2]
 		t.Run(fmt.Sprint(shape), func(t *testing.T) {
-			a := attachForTest(t, kernelKey(t, n), AllFeatures)
-			for _, fused := range []bool{false, true} {
-				in, canonical := numeratorFixture(n, rho, commitments)
-				blinds := [][]fr.Element{append([]fr.Element(nil), in.Bl.Coefficients()...), append([]fr.Element(nil), in.Br.Coefficients()...), append([]fr.Element(nil), in.Bo.Coefficients()...), append([]fr.Element(nil), in.Bz.Coefficients()...)}
-				want := numeratorOracle(in, canonical)
-				var got *iop.Polynomial
-				var err error
-				if fused {
-					x := in.Domain1.FrMultiplicativeGen
-					one := fr.One()
-					for i := range want {
-						var zh fr.Element
-						zh.Exp(x, new(big.Int).SetUint64(uint64(n))).Sub(&zh, &one)
-						want[i].Div(&want[i], &zh)
-						x.Mul(&x, &in.Domain1.Generator)
-					}
-					p := iop.NewPolynomial(&want, iop.Form{Basis: iop.LagrangeCoset, Layout: iop.Regular}).ToCanonical(in.Domain1).ToRegular()
-					want = p.Coefficients()
-					got, err = a.ComputeQuotientV1(in)
-				} else {
-					fft.BitReverse(want)
-					got, err = a.ComputeNumerator(in)
+			a := attachForTest(t, kernelKey(t, n))
+			in, canonical := numeratorFixture(n, rho, commitments)
+			blinds := [][]fr.Element{append([]fr.Element(nil), in.Bl.Coefficients()...), append([]fr.Element(nil), in.Br.Coefficients()...), append([]fr.Element(nil), in.Bo.Coefficients()...), append([]fr.Element(nil), in.Bz.Coefficients()...)}
+			want := numeratorOracle(in, canonical)
+			fft.BitReverse(want)
+			got, err := a.ComputeNumerator(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(got.Coefficients(), want) {
+				t.Fatal("numerator differs from direct oracle")
+			}
+			if got.Form != (iop.Form{Basis: iop.LagrangeCoset, Layout: iop.BitReverse}) {
+				t.Fatalf("false result form: %+v", got.Form)
+			}
+			for i, p := range numeratorPolynomials(in) {
+				if p.Basis != iop.Canonical || p.Layout != iop.Regular || !slices.Equal(p.Coefficients(), canonical[i]) {
+					t.Fatalf("input %d not restored", i)
 				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !slices.Equal(got.Coefficients(), want) {
-					t.Fatalf("fused=%t numerator/quotient differs", fused)
-				}
-				form := iop.Form{Basis: iop.LagrangeCoset, Layout: iop.BitReverse}
-				if fused {
-					form = iop.Form{Basis: iop.Canonical, Layout: iop.Regular}
-				}
-				if got.Form != form {
-					t.Fatalf("false result form: %+v", got.Form)
-				}
-				for i, p := range numeratorPolynomials(in) {
-					if p.Basis != iop.Canonical || p.Layout != iop.Regular || !slices.Equal(p.Coefficients(), canonical[i]) {
-						t.Fatalf("input %d not restored", i)
-					}
-				}
-				for i, p := range []*iop.Polynomial{in.Bl, in.Br, in.Bo, in.Bz} {
-					if p.Basis != iop.Canonical || p.Layout != iop.Regular || !slices.Equal(p.Coefficients(), blinds[i]) {
-						t.Fatalf("blinding polynomial %d changed", i)
-					}
+			}
+			for i, p := range []*iop.Polynomial{in.Bl, in.Br, in.Bo, in.Bz} {
+				if p.Basis != iop.Canonical || p.Layout != iop.Regular || !slices.Equal(p.Coefficients(), blinds[i]) {
+					t.Fatalf("blinding polynomial %d changed", i)
 				}
 			}
 			stats, err := a.Stats()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stats.NumeratorCalls != 1 || stats.QuotientCalls != 1 {
-				t.Fatalf("wrong quotient dispatch: %+v", stats)
+			if stats.NumeratorCalls != 1 {
+				t.Fatalf("wrong numerator dispatch: %+v", stats)
 			}
 		})
 	}
 }
 
 func TestCUDARejectsMalformedInputBeforeMutation(t *testing.T) {
-	config := gpuConfig(t, AllFeatures)
+	config := gpuConfig(t)
 	pk := kernelKey(t, 16)
-	a := attachForTest(t, pk, AllFeatures)
+	a := attachForTest(t, pk)
 	before, err := a.Stats()
 	if err != nil {
 		t.Fatal(err)
@@ -420,7 +398,7 @@ func TestCUDARejectsMalformedInputBeforeMutation(t *testing.T) {
 		in.Domain1 = &domainCopy
 		mutate(in)
 		original := append([]fr.Element(nil), in.L.Coefficients()...)
-		if _, err := a.ComputeQuotientV1(in); err == nil {
+		if _, err := a.ComputeNumerator(in); err == nil {
 			t.Fatal("accepted malformed numerator input")
 		}
 		if !slices.Equal(original, in.L.Coefficients()) {
@@ -431,7 +409,7 @@ func TestCUDARejectsMalformedInputBeforeMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.MSMCalls != before.MSMCalls || after.FFTCalls != before.FFTCalls || after.NumeratorCalls != before.NumeratorCalls || after.QuotientCalls != before.QuotientCalls {
+	if after.MSMCalls != before.MSMCalls || after.FFTCalls != before.FFTCalls || after.NumeratorCalls != before.NumeratorCalls {
 		t.Fatal("malformed input reached a native computation")
 	}
 	if err := a.Close(); err != nil {
@@ -465,7 +443,7 @@ func (c *proofCircuit) Define(api frontend.API) error {
 }
 
 func TestCUDAShiftedPLONKProofsVerifyOnCPU(t *testing.T) {
-	gpuConfig(t, AllFeatures)
+	gpuConfig(t)
 	for commitments := range 3 {
 		ccs, err := frontend.Compile(ecc.BN254.ScalarField(), scs.NewBuilder, &proofCircuit{Commitments: commitments})
 		if err != nil {
@@ -508,39 +486,26 @@ func TestCUDAShiftedPLONKProofsVerifyOnCPU(t *testing.T) {
 			if err := plonk.Verify(cpu, vk, public, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK)); err != nil {
 				t.Fatal(err)
 			}
-			for _, features := range []native.AcceleratorFeatureFlagsV1{native.AcceleratorFeatureMSMV1, AllFeatures &^ native.AcceleratorFeatureQuotientV1, AllFeatures} {
-				t.Run(fmt.Sprintf("commitments%d-zk%t-features%d", commitments, zk, features), func(t *testing.T) {
-					a := attachForTest(t, pk.(*native.ProvingKey), features)
-					proof, err := plonk.Prove(ccs, pk, w, opts...)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err := plonk.Verify(proof, vk, public, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK)); err != nil {
-						t.Fatal(err)
-					}
-					if err := plonk.Verify(proof, vk, wrong, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK)); err == nil {
-						t.Fatal("accepted wrong expected public inputs")
-					}
-					stats, err := a.Stats()
-					if err != nil {
-						t.Fatal(err)
-					}
-					if stats.MSMCalls == 0 {
-						t.Fatal("proof dispatched no CUDA MSMs")
-					}
-					if features&native.AcceleratorFeatureQuotientV1 != 0 {
-						if stats.QuotientCalls != 1 || stats.NumeratorCalls != 0 {
-							t.Fatalf("fused proof dispatched incorrectly: %+v", stats)
-						}
-					} else if features&native.AcceleratorFeatureNumeratorV1 != 0 {
-						if stats.NumeratorCalls != 1 || stats.QuotientCalls != 0 {
-							t.Fatalf("numerator proof dispatched incorrectly: %+v", stats)
-						}
-					} else if stats.NumeratorCalls != 0 || stats.QuotientCalls != 0 || stats.FFTCalls != 0 {
-						t.Fatalf("MSM-only proof dispatched extra operations: %+v", stats)
-					}
-				})
-			}
+			t.Run(fmt.Sprintf("commitments%d-zk%t", commitments, zk), func(t *testing.T) {
+				a := attachForTest(t, pk.(*native.ProvingKey))
+				proof, err := plonk.Prove(ccs, pk, w, opts...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := plonk.Verify(proof, vk, public, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK)); err != nil {
+					t.Fatal(err)
+				}
+				if err := plonk.Verify(proof, vk, wrong, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK)); err == nil {
+					t.Fatal("accepted wrong expected public inputs")
+				}
+				stats, err := a.Stats()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if stats.MSMCalls == 0 || stats.FFTCalls == 0 || stats.NumeratorCalls != 1 {
+					t.Fatalf("proof dispatched incorrectly: %+v", stats)
+				}
+			})
 		}
 	}
 }

@@ -71,7 +71,7 @@ func checkSplitMSM(t *testing.T, accelerator *Accelerator, points []curve.G1Affi
 }
 
 func TestCUDASplitBucketBoundariesAndSignedDigits(t *testing.T) {
-	config := gpuConfig(t, AllFeatures)
+	config := gpuConfig(t)
 	if config.MSMStrategy != MSMSplit {
 		t.Fatal("default CUDA MSM policy is not split-bucket accumulation")
 	}

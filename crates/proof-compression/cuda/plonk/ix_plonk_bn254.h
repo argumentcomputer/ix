@@ -10,7 +10,6 @@
 extern "C" {
 #endif
 
-#define IX_PLONK_BN254_ABI_VERSION 7u
 #define IX_PLONK_BN254_MAX_MSM_POINTS (UINT64_C(1) << 24)
 
 typedef struct { uint64_t limbs[4]; } ix_plonk_bn254_fr;
@@ -38,8 +37,6 @@ typedef struct {
 } ix_plonk_bn254_error;
 
 typedef struct {
-    uint32_t abi_version;
-    uint32_t struct_bytes;
     int32_t device;
     uint32_t msm_strategy;
     uint64_t budget_bytes;
@@ -65,7 +62,7 @@ typedef struct {
     uint64_t pool_used_bytes, pool_used_high_bytes;
     uint64_t pool_reserved_bytes, pool_reserved_high_bytes;
     uint64_t accounted_bytes, accounted_high_bytes, budget_bytes;
-    uint64_t msm_calls, fft_calls, numerator_calls, quotient_calls;
+    uint64_t msm_calls, fft_calls, numerator_calls;
     uint64_t upload_bytes, download_bytes;
     /* Successful logical transfers; each can contain multiple DMA chunks. */
     uint64_t upload_calls, download_calls;
@@ -128,10 +125,9 @@ int ix_plonk_bn254_quotient_put(ix_plonk_bn254_context *context,
     ix_plonk_bn254_quotient quotient, uint32_t slot,
     ix_plonk_bn254_fr *values, uint64_t count,
     ix_plonk_bn254_error *error);
-/* fused=0 yields numerator LagrangeCoset/BitReverse; fused=1 yields canonical/
- * regular H, including division by ZH and the inverse coset transform. */
+/* Yields the numerator in LagrangeCoset/BitReverse form. */
 int ix_plonk_bn254_quotient_finish(ix_plonk_bn254_context *context,
-    ix_plonk_bn254_quotient quotient, uint32_t fused,
+    ix_plonk_bn254_quotient quotient,
     ix_plonk_bn254_fr *output, uint64_t count,
     ix_plonk_bn254_error *error);
 int ix_plonk_bn254_quotient_destroy(ix_plonk_bn254_context *context,

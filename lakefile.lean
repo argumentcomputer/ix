@@ -247,8 +247,7 @@ target ix_plonk_wrapper pkg : Array FilePath := do
     return pure #[]
   let mut sources ← inputDir (pkg.dir / "tools/plonk-wrapper") false fun path =>
     path.extension == some "go" || path.extension == some "json" ||
-    path.extension == some "py" || path.extension == some "patch" ||
-    path.extension == some "h" ||
+    path.extension == some "py" || path.extension == some "h" ||
     path.extension == some "bin" || path.fileName == "go.mod" || path.fileName == "go.sum"
   if cuda then
     let native ← inputDir (pkg.dir / "crates/proof-compression/cuda") true fun path =>

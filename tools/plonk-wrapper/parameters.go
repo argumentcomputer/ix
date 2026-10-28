@@ -13,9 +13,9 @@ import (
 )
 
 type lagrangeManifest struct {
-	Format, SetupID, MonomialBLAKE3, ExecutableSHA256 string
-	Domain                                            uint64
-	Points                                            artifact
+	Format, SetupID, MonomialBLAKE3 string
+	Domain                          uint64
+	Points                          artifact
 }
 
 func readAffinePoints(r io.Reader, count uint64) ([]nativeG1, error) {
@@ -49,8 +49,8 @@ func writeAffinePoints(w io.Writer, points []nativeG1) error {
 	return b.Flush()
 }
 
-func lagrangeLocation(root string, domain uint64, setupID, receipt, executable string) (lagrangeManifest, string, error) {
-	want := lagrangeManifest{Format: lagrangeFormat, SetupID: setupID, MonomialBLAKE3: receipt, ExecutableSHA256: executable, Domain: domain}
+func lagrangeLocation(root string, domain uint64, setupID, receipt string) (lagrangeManifest, string, error) {
+	want := lagrangeManifest{Format: lagrangeFormat, SetupID: setupID, MonomialBLAKE3: receipt, Domain: domain}
 	identity, err := json.Marshal(want)
 	if err != nil {
 		return want, "", err
@@ -76,11 +76,11 @@ func publishLagrange(dir string, want lagrangeManifest, points []nativeG1) error
 	return nil
 }
 
-func lagrangeParameters(root string, srs *nativeSRS, domain uint64, setupID, receipt, executable string) (*nativeSRS, bool, error) {
+func lagrangeParameters(root string, srs *nativeSRS, domain uint64, setupID, receipt string) (*nativeSRS, bool, error) {
 	if domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || uint64(len(srs.Pk.G1)) < domain+3 {
 		return nil, false, fmt.Errorf("invalid Lagrange domain or monomial prefix")
 	}
-	want, dir, err := lagrangeLocation(root, domain, setupID, receipt, executable)
+	want, dir, err := lagrangeLocation(root, domain, setupID, receipt)
 	if err != nil {
 		return nil, false, err
 	}
