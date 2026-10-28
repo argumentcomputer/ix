@@ -216,7 +216,7 @@ def preseedStateRoots : Array Lean.Name :=
     `compile_no_growth].map (`Ix.CompileCert.FinalUniverses ++ ·))
 
 
-/-- Successful compilation keeps the primary tables on the wire (CT-14's
+/-- Successful compilation keeps the primary tables on the wire (
 `EmissionWire`, `FamilyWire` traversal): the combinators, the
 leaves, the well-founded expression compiler, every emitter and the preseed. -/
 def emissionWireRoots : Array Lean.Name :=
@@ -277,7 +277,7 @@ def blockRoots : Array Lean.Name :=
 
 /-- Public constant dispatch: dispatch is the kind's block compiler in the
 singleton context,
-every kind's block decodes exactly, and so does a mutual block (CT-15's
+every kind's block decodes exactly, and so does a mutual block (
 `FamilyWire` and `PayloadArrays`). -/
 def dispatchRoots : Array Lean.Name :=
   #[`compileDefinitionInfo_eq, `definition_run,
@@ -286,7 +286,7 @@ def dispatchRoots : Array Lean.Name :=
     `member_state, `mutual_state, `standalone_header, `build_mutual_codec, `finish_mutual_codec,
     `mutualBlock_codec].map (`Ix.CompileCert.EmissionDispatch ++ ·)
 
-/-- Compiled singleton records are read back as their sources (CT-16's
+/-- Compiled singleton records are read back as their sources (
 definition and header reading): the reader on definition, axiom and
 quotient records, the skeletons' inversions, and public dispatch composed
 with `readRecord`. -/
@@ -363,8 +363,8 @@ def indexRoots : Array Lean.Name :=
     `buildIndex_unique_reference, `one_push, `candidate_unique, `collect_unique, `collect_backed,
     `buildIndex_role_unique].map (`Ix.CompileCert.ReaderIndexDiscovery ++ ·))
 
-/-- Compiled standalone inductives are read back as their sources (CT-16,
-R10a): the reader's inductive block as named steps, its loops on a
+/-- Compiled standalone inductives are read back as their sources:
+the reader's inductive block as named steps, its loops on a
 one-member block, what the compiled family keeps of the source, and public
 dispatch composed with `readRecord` = `lowerInductive` of the source's
 `BlockRead`, its self references from `NoCtorIn` and the family's name related

@@ -10,10 +10,10 @@ This module proves:
 
 * the dispatch equations, for every `ConstantInfo` kind;
 * `constant_codec`: for every kind, a successful compile from a state whose
-  tables are on the wire returns a block that decodes exactly (CT-15's
+  tables are on the wire returns a block that decodes exactly (
   `FamilyWire.constant_codec`);
 * the mutual payload's count guards (`PayloadArrays`: the outer and nested
-  array counts the wire format needs) and `mutualBlock_codec` (CT-15's
+  array counts the wire format needs) and `mutualBlock_codec` (
   `FamilyWire.mutualBlock_codec`). -/
 
 namespace Ix.CompileCert.EmissionDispatch

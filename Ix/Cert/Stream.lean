@@ -36,7 +36,7 @@ the preparation **succeeds** on the compiled closure.
 
 What stays an obligation: `StoredCanonical` (R7e's per-block codec over the
 published store, R13), the stream reading itself (every record of the
-closure reads, N-READS: R8, R10a/R10b, R13), and `keeps` (the reading's final
+closure readings), and `keeps` (the reading's final
 state keeps the prelude's entries). The compiled-output argument that each
 earlier reader state also keeps those entries is a separate composition
 obligation; the final-state check alone does not establish it. -/

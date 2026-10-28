@@ -34,7 +34,7 @@ sides of `CompileCorrect` read the same `Ix.Environment`.
    numbering of Lean's names, with no hypothesis.
 5. **Universes** (`universeBridge`, proved, under the wire's bound only).
    Ixon's reading of the canonical compiled universe of `levelS l` has the
-   value of Lean's level `l`, read directly. It composes CT-12's
+   value of Lean's level `l`, read directly. It composes 
    `Ix.CompileCert.CanonUnivScope.convCanon_eval` (`universe_bridge`) with
    `UnivMeaningS` (proved: `univMeaningS`), the pure half of the
    `UniverseMeaning`, about `compileUnivS`: the cache-free universe
@@ -376,9 +376,9 @@ theorem numbering_nameS (names : Array Lean.Name) (large : Bool) (n : Lean.Name)
   rw [key]
   rfl
 
-/-! ## 5. Universes: composing with CT-12
+/-! ## 5. Universes: composing with canonical universe evaluation
 
-The Ixon side is CT-12's: `Ix.CompileCert.univEval` is the value of a wire
+The Ixon side is the canonical universe semantics: `Ix.CompileCert.univEval` is the value of a wire
 universe, and `Ix.CompileCert.CanonUnivScope.convCanon_eval` says that the
 certified reader's reading of a canonical universe has the raw universe's
 value. -/

@@ -3,10 +3,10 @@ import Ix.CondenseM
 import Ix.CompileCert.Canon.SccMain
 import Ix.Cert.CondenseRoots
 
-/-! # The condensation's blocks and references (Route A, B9b, `HookFree`'s discharge, step 2)
+/-! # The condensation's blocks and references
 
 The driver compiles the strongly connected components of the ground reference
-graph (`Ix.CondenseM.run (groundSplit env).1`), and Pass 3's hook 2 reads each
+graph (`Ix.CondenseM.run (groundSplit env).1`). The scheduler uses each
 block's references (`CondensedBlocks.blockRefs`, installed by
 `FoldState.init` under the block's key). This file relates them to the
 closure relation (`Ix.Cert.DependsOn`):

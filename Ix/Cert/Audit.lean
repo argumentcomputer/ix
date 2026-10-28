@@ -3212,7 +3212,7 @@ records (`readRecursors`, whose correspondence with the compiled recursors
 is R10b); given the index shaping the block at member 0 (derived from the
 reader's own index in `inductive_reads_indexed`), the keys reading, the
 self references (the family's name related to its key, R13's half, and no
-constructor of the family in its types, `NoCtorIn`, N-READS N4: proved from
+constructor of the family in its types, `NoCtorIn`, proved from
 Source acceptance by `Ix.Cert.NoCtor.inductive_reads_sourceAccepts`), and a
 well-formed source. Without a recursor in the input the block declines.
 Every lemma behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
@@ -3597,9 +3597,9 @@ the converse of IxC's `readRecords_spec`) whose final state keeps the
 prelude's entries (`State.keepsPrelude`, required by `readStream_complete`).
 With the fold's acceptance under
 the committed prelude that is `IxonAccepts` (`closure_accepts`).
-`StoredCanonical` (R13, from R7e's per-block codec), the stream reading
-(N-READS), and final-state preservation (`keeps`) stay obligations. Preservation
-at every earlier reader state needs its own compiled-output proof. -/
+The component theorem takes canonical stored records, successful stream
+reading and final-state preservation (`keeps`) as premises. The compiler's
+composition supplies these facts from its emitted records and reading proofs. -/
 
 /-- info: [cert-audit] stream: 22 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -3854,7 +3854,7 @@ fun t ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.PublishedRolesBound
 
-/-! ## N-READS, N1: Source acceptance admits every inductive block
+/-! ## Source acceptance admits every inductive block
 
 R12 reads `inductive_reads`' Source premises and `ConstructorPositions`
 off `Admits` (the block's group converts). An accepted Source check admits
@@ -3903,7 +3903,7 @@ reader's parameter map is the constant's level parameters; roots in
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.CanonLevelReading.related_ingress_canon
 
-/-! ## N-READS, N3 (a): the state every block starts from
+/-! ## The state every block starts from
 
 The driver compiles every block from the empty `BlockState`; it is clean and
 its wire tables are well formed. -/
@@ -3952,7 +3952,7 @@ run_cmd do
       `defaultAdmits_sound, `preludeAgrees_sound].map
       (`Ix.Cert.RoleClosure ++ ·))
 
-/-! ## N-READS, N4 (b): no constructor of a Source-accepted family in its types
+/-! ## No constructor of a Source-accepted family in its types
 
 IxC checks every accepted `.indDecl`'s declared shape before its route
 (`Ix.Kernel.Semantics.checkDecl_noCtor`). The ingress carries the sources'

@@ -2,7 +2,7 @@ import Ix.Cert.Schedule
 import Ix.CompileCert.Emission
 import Ix.CompileCert.WireTables
 
-/-! # The state every block of the fold starts from (N-READS, N3)
+/-! # The state every block of the fold starts from
 
 The driver compiles every block from the empty `BlockState`
 (`Ix.CompileM.runBlock`: `CompileM.run cenv … {}`),

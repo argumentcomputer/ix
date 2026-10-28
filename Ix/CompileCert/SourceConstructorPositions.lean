@@ -5,9 +5,8 @@ import Ix.LeanIngress
 
 /-! # What Source mode admits of an inductive block
 
-The donor's `SourceConstructorPositions` read constructor positions off the
-old source export (`SourceExportFast`). Source mode is now
-`Ix.LeanIngress`, which reads the compiler's own input, an `Ix.Environment`:
+Source mode uses `Ix.LeanIngress` to read the compiler's own input,
+an `Ix.Environment`:
 an inductive block is a group (`inductiveGroup`, Lean's layout checked) and
 its conversion (`convertInductive`, the reader's checks). This file reads
 what those two functions check:
@@ -34,17 +33,15 @@ the block (`Admits`: the block's group converts). `mkIndc_positions` gives
 `MutualProjections.ConstructorPositions` for the compiler's mutual
 members.
 
-**What remains**: the self references: that the family's name
-is related to its key (`selfKey`, the published maps), and that no
+**Self references** require the family's name
+to be related to its key (`selfKey`, the published maps), and no
 constructor of the family occurs in the family's own types
 (`InductiveReading.NoCtorIn`). The ingress does not check the latter; the
 fold does, through IxC's route-independent shape guard on every accepted
 `.indDecl`, and `Ix.Cert.NoCtor.inductive_reads_sourceAccepts` discharges it
-from Source acceptance. And
-Source acceptance (`checkSource … = .ok _`) reaches a group's conversion
-only through the schedule (`Ix.LeanIngress.scheduleOf`), whose order
-(`orderOf`) is a `while` loop and so has no unfolding: `Admits` is the
-group's own conversion, which is what the schedule requires of it. -/
+from Source acceptance. Source acceptance (`checkSource … = .ok _`)
+reaches a group's conversion through `Ix.LeanIngress.scheduleOf`;
+`Admits` states that the group's own conversion succeeds. -/
 
 namespace Ix.CompileCert.SourceConstructorPositions
 

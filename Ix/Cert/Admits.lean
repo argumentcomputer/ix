@@ -1,7 +1,7 @@
 import Ix.Cert.Statement
 import Ix.CompileCert.SourceConstructorPositions
 
-/-! # Source acceptance admits every inductive block (N-READS, N1)
+/-! # Source acceptance admits every inductive block
 
 R12 (`Ix.CompileCert.SourceConstructorPositions`) reads the Source premises of
 `inductive_reads` (safety, constructor positions, telescope arity) and R9a's
