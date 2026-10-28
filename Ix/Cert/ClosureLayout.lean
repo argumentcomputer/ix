@@ -119,7 +119,8 @@ structure Lowered (g : Graph) (ρ : FiberMap) (xs ls : List Scheduled) (kb : Kep
   kept : ∀ k, (kb.blockOf[k]?).isSome = true → ∃ y ∈ ls, ∃ n₀ ∈ namesAt g y, k = qkey ρ n₀
 
 /-- **The lowered items' steps**, one per read: each item's conversion, lowering at the state
-the reads before it leave, collapse and step. -/
+the reads before it leave, collapse and step; every key of the lowering is declared by the reads up
+to its own, and no key the read keeps is declared by an earlier read. -/
 abbrev Steps (g : Graph) (start : State .source) (ls : List Scheduled) (rs : List (Read .source)) : Prop :=
   ls.length = rs.length ∧ ∀ ℓ y r, ls[ℓ]? = some y → rs[ℓ]? = some r →
     ∃ conv raw s s' kb kb' dropped, y.1.2 = .ok conv ∧
@@ -127,7 +128,8 @@ abbrev Steps (g : Graph) (start : State .source) (ls : List Scheduled) (rs : Lis
       collapseRead s g.groups[y.1.1]!.name raw = (s', .ok (r, dropped)) ∧
       collapseGroup ((rs.take ℓ).foldl State.commit start) s kb g.groups[y.1.1]!.name y.2 y.1.2 =
         .lowered s' kb' r dropped ∧
-      ∀ d ∈ raw.decls.toList, ∀ k ∈ d.names, ∃ d' ∈ (rs.take (ℓ + 1)).flatMap (·.decls.toList), k ∈ d'.names
+      (∀ d ∈ raw.decls.toList, ∀ k ∈ d.names, ∃ d' ∈ (rs.take (ℓ + 1)).flatMap (·.decls.toList), k ∈ d'.names) ∧
+      ∀ d ∈ r.decls.toList, ∀ k ∈ d.names, ∀ d' ∈ (rs.take ℓ).flatMap (·.decls.toList), k ∉ d'.names
 
 /-- The keys a quotient renaming gives a converted group are its keys renamed. -/
 theorem convKeys_quotient_inv {ρ : FiberMap} {c : Converted} {k : Ix.Kernel.Reader.CName .source}
@@ -315,14 +317,23 @@ theorem trace_lowered {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source �
         rw [htake, ← ht.fold]
         have htake1 : (rs ++ [r]).take (ls.length + 1) = rs ++ [r] :=
           List.take_of_length_le (by simp [hlen])
-        refine ⟨conv, raw, s, s', kb, kb', dropped, hc, hl, hr, hcol, fun d hd k hk => ?_⟩
-        have owned := (SourcePrelude.collapseRead_facts hr).2.1 d hd k hk
-        obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp owned
-        have ht' := SourcePrelude.Trace.lowered ht hc hl hr hcol
-        obtain ⟨d', hd', hk'⟩ := (SourceReplay.trace_ownerExact ht' k v).mp hv
-        refine ⟨d', ?_, hk'⟩
-        rw [htake1, ← SourcePrelude.Trace.decls ht']
-        exact Array.mem_toList_iff.mpr (Array.mem_of_getElem? hd')
+        refine ⟨conv, raw, s, s', kb, kb', dropped, hc, hl, hr, hcol, fun d hd k hk => ?_,
+          fun d hd k hk d' hd' hk' => ?_⟩
+        · have owned := (SourcePrelude.collapseRead_facts hr).2.1 d hd k hk
+          obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp owned
+          have ht' := SourcePrelude.Trace.lowered ht hc hl hr hcol
+          obtain ⟨d', hd', hk'⟩ := (SourceReplay.trace_ownerExact ht' k v).mp hv
+          refine ⟨d', ?_, hk'⟩
+          rw [htake1, ← SourcePrelude.Trace.decls ht']
+          exact Array.mem_toList_iff.mpr (Array.mem_of_getElem? hd')
+        · -- a kept key is fresh before the read, and the earlier reads' keys are owned there
+          have fresh := ((SourcePrelude.collapseRead_facts hr).2.2.1 d hd k hk).1
+          rw [← SourcePrelude.Trace.decls ht] at hd'
+          obtain ⟨i, hi, hdi⟩ := List.mem_iff_getElem.mp hd'
+          have hown := (SourceReplay.trace_ownerExact ht k i).mpr
+            ⟨d', by rw [← hdi]; exact (Array.getElem?_eq_getElem (by simpa using hi)).trans (by simp), hk'⟩
+          rw [fresh] at hown
+          cases hown
 
 /-! ## The keys a lowered group declares -/
 
@@ -434,6 +445,21 @@ theorem segmentsOf_get_nil (L : List Address) :
       · exact .inl (List.mem_append_right _ h)
       · exact .inr h
 
+/-- **A segment is the order restricted to its candidates that `seen` and no earlier list holds.** -/
+theorem segmentsOf_get (L : List Address) :
+    ∀ (Cs : List (List Address)) (seen : List Address) (ℓ : Nat) (C : List Address), Cs[ℓ]? = some C →
+      (segmentsOf L Cs seen)[ℓ]? = some (L.filter fun a => decide (a ∈ C ∧ a ∉ seen ++ (Cs.take ℓ).flatten))
+  | [], _, _, _, h => by simp at h
+  | C' :: Cs, seen, 0, C, h => by
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+    subst h
+    simp [segmentsOf]
+  | C' :: Cs, seen, ℓ + 1, C, h => by
+    simp only [List.getElem?_cons_succ] at h
+    simp only [segmentsOf, List.getElem?_cons_succ]
+    rw [segmentsOf_get L Cs (seen ++ C') ℓ C h]
+    simp [List.take_succ_cons, List.flatten_cons, List.append_assoc]
+
 /-! ## The compiled closure's records -/
 
 /-- The address the artifact publishes a name at. -/
@@ -490,6 +516,21 @@ theorem contains_of_get {ixe : Ixon.Env} {a : Address} {lc : Ixon.LazyConstant} 
     ixe.consts.contains a = true := by
   rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, h]; rfl
 
+/-- **A converted group's names are constants of the closure, stored under those names.** -/
+theorem converted_names_stored {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ)
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat} {gr : Group} {c : Converted}
+    (hgr : (quotientGraph ixe t hints sub).groups[i]? = some gr) (hc : convert gr = .ok c) :
+    ∀ n ∈ gr.names, ∃ ci, (n, ci) ∈ sub.consts.toList := by
+  intro n hn
+  have hmemg : gr ∈ groupsOf sub (blocksOf sub) := Array.mem_of_getElem? hgr
+  obtain ⟨k, ci, hk, hown⟩ := SourceStoredNames.groupsOf_stored sub _ gr hmemg c hc n hn
+  have hname := inputsNamed P.compiled k ci (SourceStoredNames.stored_input P hk)
+  rw [hown] at hname
+  subst hname
+  exact ⟨ci, hk⟩
+
 /-- **The compiled closure in quotient Source's order is a closure order.** For quotient
 Source's trace of an accepted closure and the compile's layout of it, the lowered items of the
 trace (`Steps`: one per read) cut the compile's record order into segments, one per read,
@@ -506,6 +547,7 @@ theorem closureOrder_segments {env : Ix.Environment} {roots : List Ix.Name} {sub
     (layout : Layout ixe (quotientGraph ixe t hints sub)) :
     ∃ (ls : List Scheduled) (L : List Address),
       Steps (quotientGraph ixe t hints sub) start ls rs ∧
+      (∀ y ∈ ls, y ∈ (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList) ∧
       L.Nodup ∧ (∀ a, a ∈ L ↔ ixe.consts.contains a = true) ∧ L.Pairwise (fun a b => ¬ RecordRef ixe a b) ∧
       ClosureOrder ixe (Seed ixe sub)
         (segmentsOf L (ls.map fun y => groupRecords ixe (namesAt (quotientGraph ixe t hints sub) y)) []).flatten ∧
@@ -702,7 +744,7 @@ theorem closureOrder_segments {env : Ix.Environment} {roots : List Ix.Name} {sub
       obtain ⟨gr, c', hgr, -, hnm⟩ := groupOf y (low.sub.subset hy)
       obtain ⟨j, gr', hgr', m, hm, hb⟩ := layout.extra _ gr hgr n (hnm ▸ hn) a hrec b (.inr hedge)
       exact ⟨hedge.1, ofGroup j gr' hgr' m hm b hb⟩
-  refine ⟨ls, L, steps, hnd, hmem, hpw, ⟨segmentsOf_nodup hnd _ _, fun a => ?_, ?_⟩, ?_⟩
+  refine ⟨ls, L, steps, fun y hy => low.sub.subset hy, hnd, hmem, hpw, ⟨segmentsOf_nodup hnd _ _, fun a => ?_, ?_⟩, ?_⟩
   · rw [mem_segmentsOf]
     constructor
     · rintro ⟨-, -, C, hC, ha⟩
@@ -759,7 +801,7 @@ theorem closureOrder_segments {env : Ix.Environment} {roots : List Ix.Name} {sub
     have hℓ : ℓ < ls.length := by rw [hlen]; exact (List.getElem?_eq_some_iff.mp hr).1
     obtain ⟨y, hy⟩ : ∃ y, ls[ℓ]? = some y := ⟨_, List.getElem?_eq_getElem hℓ⟩
     refine segmentsOf_get_nil L _ [] ℓ _ (by rw [List.getElem?_map, hy]; rfl) fun a ha => .inr ?_
-    obtain ⟨conv, raw, -, -, -, -, -, hc, hl, -, -, hraw⟩ := stepsAt ℓ y r hy hr
+    obtain ⟨conv, raw, -, -, -, -, -, hc, hl, -, -, hraw, -⟩ := stepsAt ℓ y r hy hr
     have hyx := low.sub.subset (List.mem_of_getElem? hy)
     obtain ⟨n, hn, ha⟩ := List.mem_flatMap.mp ha
     obtain ⟨d, hd, hkd⟩ := lowered_declares hyx hc hl n (Array.mem_toList_iff.mp hn)
@@ -773,7 +815,7 @@ theorem closureOrder_segments {env : Ix.Environment} {roots : List Ix.Name} {sub
         rw [← hr'eq, List.getElem_take]
         exact List.getElem?_eq_getElem _
       obtain ⟨y', hy'⟩ : ∃ y', ls[ℓ']? = some y' := ⟨_, List.getElem?_eq_getElem (by omega)⟩
-      obtain ⟨conv', raw', s0, s1, kb0, kb1, dr, hc', hl', hcol', -, -⟩ := stepsAt ℓ' y' r' hy' hr''
+      obtain ⟨conv', raw', s0, s1, kb0, kb1, dr, hc', hl', hcol', -, -, -⟩ := stepsAt ℓ' y' r' hy' hr''
       have hy'x := low.sub.subset (List.mem_of_getElem? hy')
       have hraw' := (SourcePrelude.collapseRead_facts hcol').2.2.2.1 d' hd'r
       obtain ⟨n₀, hn₀, hkey⟩ := lowered_keys hy'x hc' hl' d' hraw' _ hkd' (qkey_not_aux n)
@@ -808,7 +850,13 @@ theorem unitsRead_of_layout {env : Ix.Environment} {roots : List Ix.Name} {sub :
       (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList rs fin s kb)
     (layout : Layout ixe (quotientGraph ixe t hints sub))
     (reads : ∀ (ls : List Scheduled) (L : List Address), Steps (quotientGraph ixe t hints sub) pre.state ls rs →
+      (∀ y ∈ ls, y ∈ (scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList) →
       L.Nodup → (∀ a, a ∈ L ↔ ixe.consts.contains a = true) → L.Pairwise (fun a b => ¬ RecordRef ixe a b) →
+      ClosureOrder ixe (Seed ixe sub)
+        (segmentsOf L (ls.map fun y => groupRecords ixe (namesAt (quotientGraph ixe t hints sub) y)) []).flatten →
+      (∀ (ℓ : Nat) (r : Read .source), rs[ℓ]? = some r → r.decls = #[] →
+        (segmentsOf L (ls.map fun y => groupRecords ixe (namesAt (quotientGraph ixe t hints sub) y)) [])[ℓ]? =
+          some []) →
       Stream.StoredCanonical ixe
           (segmentsOf L (ls.map fun y => groupRecords ixe (namesAt (quotientGraph ixe t hints sub) y)) []).flatten ∧
         ClosureSegments.SegmentsRead (evAddr ixe b) (Ix.Kernel.KeyScope.ofId (QRepAt ixe (roleAtMap t)))
@@ -817,8 +865,8 @@ theorem unitsRead_of_layout {env : Ix.Environment} {roots : List Ix.Name} {sub :
           ixe pre.state rs
           (segmentsOf L (ls.map fun y => groupRecords ixe (namesAt (quotientGraph ixe t hints sub) y)) [])) :
     ReaderStreamsUnits.UnitsRead ixe sub t preA b pre rs := by
-  obtain ⟨ls, L, steps, hnd, hmem, hpw, order, -⟩ := closureOrder_segments P htrace layout
-  obtain ⟨canonical, segs⟩ := reads ls L steps hnd hmem hpw
+  obtain ⟨ls, L, steps, inTrace, hnd, hmem, hpw, order, empty⟩ := closureOrder_segments P htrace layout
+  obtain ⟨canonical, segs⟩ := reads ls L steps inTrace hnd hmem hpw order empty
   exact ClosureSegments.unitsRead_of_segments [] _ order canonical (fun _ h => nomatch h) segs
 
 /--

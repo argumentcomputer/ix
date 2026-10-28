@@ -225,7 +225,7 @@ theorem forIn_out_inv {α S D ε : Type} (f : α → S → Except ε (ForInStep 
 /-- **Quotient Source on a group of several definitions**: each member lowered in turn. -/
 theorem lower_defs {st : State .source} {ms : Array Ix.LeanIngress.DefMember}
     {r : Read .source} (h : Ix.LeanIngress.lower st (.definitions ms) = .ok r) :
-    ∃ ds : List (CDecl .source), r.decls = ds.toArray ∧ List.Forall₂ (fun m decl => ∃ rw,
+    ∃ ds : List (CDecl .source), r.decls = ds.toArray ∧ StreamRename.Plain r ∧ List.Forall₂ (fun m decl => ∃ rw,
       lowerDefinition (some m.hint) st (st.heights.getD · 0) m.cv m.value m.kind m.safety = .ok (decl, rw))
         ms.toList ds := by
   unfold Ix.LeanIngress.lower at h
@@ -240,7 +240,7 @@ theorem lower_defs {st : State .source} {ms : Array Ix.LeanIngress.DefMember}
       obtain ⟨⟨decl, rw⟩, hd, h⟩ := RecordTransfer.bind_ok h
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
-      exact ⟨[decl], rfl, .cons ⟨rw, hd⟩ .nil⟩
+      exact ⟨[decl], rfl, ⟨rfl, rfl, rfl⟩, .cons ⟨rw, hd⟩ .nil⟩
     · simp at hsz
   · obtain ⟨s, hs, h⟩ := RecordTransfer.bind_ok h
     simp only [pure, Except.pure, Except.ok.injEq] at h
@@ -255,7 +255,7 @@ theorem lower_defs {st : State .source} {ms : Array Ix.LeanIngress.DefMember}
           · simp only [pure, Except.pure, Except.ok.injEq] at hq
             subst hq
             exact ⟨_, _, rfl, rfl, rw, hd⟩) _ _ _ hs
-    exact ⟨ds, by rw [ho]; simp, hr⟩
+    exact ⟨ds, by rw [ho]; simp, ⟨rfl, rfl, rfl⟩, hr⟩
 
 /-! ## One member -/
 
@@ -533,7 +533,10 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
       (.ok output, after))
     (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a)
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f))
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
+    (self : ∀ k (hk : k < defs.length), names defs[k].name ((Ix.LeanIngress.Key.subst ρ (ingressKey defs[k].name)).map f))
+    (agree : ∀ k (hk : k < defs.length), ∀ n key, (GraphWalk.Refs n defs[k].type ∨ GraphWalk.Refs n defs[k].value) →
+      names n key → sourceNames ρ f n key)
     (refs : RecordTransfer.RefsLe output.block (ExpressionRead.withBlockBlobs cx₁ after) cx)
     {owner : Address}
     (keys : ∀ k (hk : k < defs.length),
@@ -588,7 +591,7 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
   -- the compiled block, read in the closure's names
   have scopesA : ∀ m ∈ defs.map MutConst.defn, ∀ e ∈ BlockEmission.memberSources m,
       ConstsSatisfy (SelfName (BlockEmission.mutContext ((defs.map MutConst.defn).map ([·])) context).2
-        (blockSelf cx owner defs.length) (sourceNames ρ f)) e := by
+        (blockSelf cx owner defs.length) names) e := by
     intro _ _ e _
     refine constsSatisfy_of_forall (fun n index found => ?_) e
     change (MutConst.ctx ((defs.map MutConst.defn).map ([·]))).get? n = some index at found
@@ -597,9 +600,9 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     refine ⟨(Ix.LeanIngress.Key.subst ρ (ingressKey defs[index].name)).map f,
       by simp only [blockSelf, hj, ↓reduceIte, keys index hj], ?_⟩
     rw [← hname]
-    rfl
+    exact self index hj
   obtain ⟨ts, hinfo, each⟩ := DefinitionEmission.defsBlock_each cx₁ id (blockSelf cx owner defs.length)
-    (sourceNames ρ f) bindings (fun m => (Numbering.mk m.levelParams false).pos) context free aligned external
+    names bindings (fun m => (Numbering.mk m.levelParams false).pos) context free aligned external
     defs (by omega) scopesA clean ran
   have hlenT : ts.length = defs.length := (DefinitionBlocks.forall₂_length each).symm
   -- the compiled block, read with each member as a fresh key
@@ -686,7 +689,7 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
     rw [hm]
     exact (hinted k hk').2)
   rw [hq] at lowered good
-  obtain ⟨ds, hds, hdsF⟩ := lower_defs lowered
+  obtain ⟨ds, hds, -, hdsF⟩ := lower_defs lowered
   rw [Array.toList_map] at hdsF
   let G : Ix.LeanIngress.DefMember → ReadM (CDecl .source × Bool) := fun m =>
     lowerDefinition (some m.hint) stS (stS.heights.getD · 0) m.cv m.value m.kind m.safety
@@ -736,7 +739,9 @@ theorem definition_block_reads {ρ : FiberMap} {f : Mode.Id .source → Mode.Id 
       have hlp := lowerDefinition_nodup lowS' (levels _ hmem)
       rw [quotientMember_levelParams, hm] at hlp
       exact nodup_of_params hlp
-    exact member_lower hP hf nodup hTrel hVrel ht' hv' hm hst ownersGood hgood.1 hgood.2 lowS')
+    exact member_lower hP hf nodup (RecordReadings.related_mono hTrel fun n k r hn => agree i hi n k (.inl r) hn)
+      (RecordReadings.related_mono hVrel fun n k r hn => agree i hi n k (.inr r) hn) ht' hv' hm hst ownersGood hgood.1
+      hgood.2 lowS')
   refine ⟨rA, hread, hplain, ?_⟩
   rw [hdecls, hds, hdsEq, List.map_map]
   simp [List.map_toArray]

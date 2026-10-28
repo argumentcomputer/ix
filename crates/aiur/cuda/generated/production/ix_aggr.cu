@@ -2790,12 +2790,252 @@ extern "C" int aiur_trace_ix_aggr_230(int device, const uint8_t* seeds, uint32_t
   return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ix_aggr_230);
 }
 
+template<bool Typed> struct Seed_ix_aggr_266 {
+  const uint8_t* data;
+  __device__ __forceinline__ uint64_t word(size_t index) const {
+    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
+    switch (index) {
+      case 0: return load_u64(data + 0);
+      case 1: return load_u32(data + 8);
+      case 2: return load_u8(data + 44);
+      case 3: return load_u32(data + 12);
+      case 4: return load_u8(data + 45);
+      case 5: return load_u32(data + 16);
+      case 6: return load_u8(data + 46);
+      case 7: return load_u32(data + 20);
+      case 8: return load_u8(data + 47);
+      case 9: return load_u32(data + 24);
+      case 10: return load_u32(data + 28);
+      case 11: return load_u32(data + 32);
+      case 12: return load_u32(data + 36);
+      case 13: return load_u32(data + 40);
+      case 14: return load_u8(data + 48);
+      case 15: return load_u8(data + 49);
+      case 16: return load_u8(data + 50);
+      default: return 0;
+    }
+  }
+};
+template<bool Typed> __device__ __forceinline__ uint32_t row_ix_aggr_266(Seed_ix_aggr_266<Typed> seed, Layout layout, uint64_t* row) {
+  const uint64_t v_0 = seed.word(1);
+  row[0] = v_0;
+  const uint64_t v_1 = seed.word(2);
+  const uint64_t v_2 = seed.word(3);
+  row[layout.auxiliaries + 1] = v_1;
+  row[layout.auxiliaries + 2] = v_2;
+  const uint64_t v_4 = seed.word(4);
+  const uint64_t v_5 = seed.word(5);
+  row[layout.auxiliaries + 3] = v_4;
+  row[layout.auxiliaries + 4] = v_5;
+  const uint64_t v_7 = seed.word(6);
+  const uint64_t v_8 = seed.word(7);
+  row[layout.auxiliaries + 5] = v_7;
+  row[layout.auxiliaries + 6] = v_8;
+  const uint64_t v_10 = seed.word(8);
+  const uint64_t v_11 = seed.word(9);
+  row[layout.auxiliaries + 7] = v_10;
+  row[layout.auxiliaries + 8] = v_11;
+  const uint64_t v_13 = seed.word(10);
+  const uint64_t v_14 = seed.word(11);
+  row[layout.auxiliaries + 9] = v_13;
+  row[layout.auxiliaries + 10] = v_14;
+  const uint64_t v_15 = seed.word(12);
+  const uint64_t v_16 = seed.word(13);
+  row[layout.auxiliaries + 11] = v_15;
+  row[layout.auxiliaries + 12] = v_16;
+  const uint64_t v_17 = seed.word(14);
+  const uint64_t v_18 = seed.word(15);
+  const uint64_t v_19 = seed.word(16);
+  row[layout.auxiliaries + 13] = v_17;
+  row[layout.auxiliaries + 14] = v_18;
+  row[layout.auxiliaries + 15] = v_19;
+  row[layout.selectors + 0] = 1;
+  return 0;
+}
+template<bool Typed> __global__ void kernel_ix_aggr_266(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (r >= real) return;
+  uint64_t* row = output + r * layout.width;
+  constexpr size_t stride = Typed ? 56 : 136;
+  const Seed_ix_aggr_266<Typed> seed{seeds + r * stride};
+  row[layout.auxiliaries] = seed.word(0);
+  const uint32_t status = row_ix_aggr_266(seed, layout, row);
+  if (status) atomicCAS(error, 0U, status);
+}
+cudaError_t launch_ix_aggr_266(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_ix_aggr_266<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_ix_aggr_266<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  return cudaGetLastError();
+}
+extern "C" int aiur_trace_ix_aggr_266(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+  if (selectors < 1 || auxiliaries < selectors || auxiliaries - selectors < 1 || width < auxiliaries || width - auxiliaries < 16) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 56 : encoding == 0 ? 136 : 0;
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ix_aggr_266);
+}
+
+template<bool Typed> struct Seed_ix_aggr_267 {
+  const uint8_t* data;
+  __device__ __forceinline__ uint64_t word(size_t index) const {
+    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
+    switch (index) {
+      case 0: return load_u64(data + 0);
+      case 1: return load_u8(data + 16);
+      case 2: return load_u32(data + 8);
+      case 3: return load_u8(data + 17);
+      case 4: return load_u32(data + 12);
+      case 5: return load_u8(data + 18);
+      default: return 0;
+    }
+  }
+};
+template<bool Typed> __device__ __forceinline__ uint32_t row_ix_aggr_267(Seed_ix_aggr_267<Typed> seed, Layout layout, uint64_t* row) {
+  const uint64_t v_0 = seed.word(1);
+  row[0] = v_0;
+  const uint64_t v_1 = seed.word(2);
+  row[1] = v_1;
+  const uint64_t v_2 = seed.word(3);
+  row[2] = v_2;
+  const uint64_t v_3 = seed.word(4);
+  row[3] = v_3;
+  switch (v_0) {
+    case 1ULL: {
+      switch (v_2) {
+        case 1ULL: {
+          row[layout.selectors + 0] = 1;
+          return 0;
+        }
+        case 0ULL: {
+          row[layout.selectors + 1] = 1;
+          return 0;
+        }
+        default: {
+          return 2;
+        }
+      }
+    }
+    case 0ULL: {
+      switch (v_2) {
+        case 1ULL: {
+          row[layout.selectors + 2] = 1;
+          return 0;
+        }
+        case 0ULL: {
+          const uint64_t v_7 = seed.word(5);
+          row[layout.auxiliaries + 1] = v_7;
+          row[layout.selectors + 3] = 1;
+          return 0;
+        }
+        default: {
+          return 2;
+        }
+      }
+    }
+    default: {
+      return 2;
+    }
+  }
+}
+template<bool Typed> __global__ void kernel_ix_aggr_267(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (r >= real) return;
+  uint64_t* row = output + r * layout.width;
+  constexpr size_t stride = Typed ? 24 : 48;
+  const Seed_ix_aggr_267<Typed> seed{seeds + r * stride};
+  row[layout.auxiliaries] = seed.word(0);
+  const uint32_t status = row_ix_aggr_267(seed, layout, row);
+  if (status) atomicCAS(error, 0U, status);
+}
+cudaError_t launch_ix_aggr_267(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_ix_aggr_267<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_ix_aggr_267<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  return cudaGetLastError();
+}
+extern "C" int aiur_trace_ix_aggr_267(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+  if (selectors < 4 || auxiliaries < selectors || auxiliaries - selectors < 4 || width < auxiliaries || width - auxiliaries < 2) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 24 : encoding == 0 ? 48 : 0;
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ix_aggr_267);
+}
+
+template<bool Typed> struct Seed_ix_aggr_268 {
+  const uint8_t* data;
+  __device__ __forceinline__ uint64_t word(size_t index) const {
+    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
+    switch (index) {
+      case 0: return load_u64(data + 0);
+      case 1: return load_u32(data + 24);
+      case 2: return load_u32(data + 28);
+      case 3: return load_u8(data + 48);
+      case 4: return load_u32(data + 32);
+      case 5: return load_u64(data + 8);
+      case 6: return load_u32(data + 36);
+      case 7: return load_u32(data + 40);
+      case 8: return load_u8(data + 49);
+      case 9: return load_u32(data + 44);
+      case 10: return load_u64(data + 16);
+      case 11: return load_u8(data + 50);
+      case 12: return load_u8(data + 51);
+      case 13: return load_u8(data + 52);
+      default: return 0;
+    }
+  }
+};
+template<bool Typed> __device__ __forceinline__ uint32_t row_ix_aggr_268(Seed_ix_aggr_268<Typed> seed, Layout layout, uint64_t* row) {
+  const uint64_t v_0 = seed.word(1);
+  row[0] = v_0;
+  const uint64_t v_1 = seed.word(2);
+  row[1] = v_1;
+  const uint64_t v_2 = seed.word(3);
+  row[2] = v_2;
+  const uint64_t v_3 = seed.word(4);
+  row[3] = v_3;
+  const uint64_t v_4 = seed.word(5);
+  row[4] = v_4;
+  const uint64_t v_5 = seed.word(6);
+  row[5] = v_5;
+  const uint64_t v_6 = seed.word(7);
+  row[6] = v_6;
+  const uint64_t v_7 = seed.word(8);
+  row[7] = v_7;
+  const uint64_t v_8 = seed.word(9);
+  row[8] = v_8;
+  const uint64_t v_9 = seed.word(10);
+  row[9] = v_9;
+  const uint64_t v_10 = seed.word(11);
+  row[layout.auxiliaries + 1] = v_10;
+  const uint64_t v_12 = seed.word(12);
+  row[layout.auxiliaries + 2] = v_12;
+  const uint64_t v_13 = seed.word(13);
+  row[layout.auxiliaries + 3] = v_13;
+  row[layout.selectors + 0] = 1;
+  return 0;
+}
+template<bool Typed> __global__ void kernel_ix_aggr_268(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (r >= real) return;
+  uint64_t* row = output + r * layout.width;
+  constexpr size_t stride = Typed ? 56 : 112;
+  const Seed_ix_aggr_268<Typed> seed{seeds + r * stride};
+  row[layout.auxiliaries] = seed.word(0);
+  const uint32_t status = row_ix_aggr_268(seed, layout, row);
+  if (status) atomicCAS(error, 0U, status);
+}
+cudaError_t launch_ix_aggr_268(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_ix_aggr_268<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_ix_aggr_268<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  return cudaGetLastError();
+}
+extern "C" int aiur_trace_ix_aggr_268(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+  if (selectors < 10 || auxiliaries < selectors || auxiliaries - selectors < 1 || width < auxiliaries || width - auxiliaries < 4) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 56 : encoding == 0 ? 112 : 0;
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ix_aggr_268);
+}
+
 extern "C" const uint8_t* aiur_trace_ix_aggr_contract() {
-  static const uint8_t hash[32] = {187, 28, 234, 211, 2, 117, 245, 27, 105, 215, 208, 29, 121, 223, 99, 160, 204, 146, 145, 61, 215, 153, 253, 154, 131, 64, 84, 54, 111, 142, 52, 188};
+  static const uint8_t hash[32] = {109, 185, 185, 180, 234, 236, 244, 40, 141, 169, 218, 90, 119, 95, 105, 98, 156, 184, 62, 87, 53, 15, 13, 55, 255, 16, 155, 136, 133, 77, 5, 233};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_ix_aggr_schema() {
-  static const uint8_t hash[32] = {249, 214, 235, 36, 170, 180, 109, 126, 100, 46, 206, 6, 228, 84, 34, 205, 31, 35, 197, 64, 229, 223, 94, 246, 213, 87, 208, 102, 251, 132, 31, 243};
+  static const uint8_t hash[32] = {86, 66, 46, 83, 106, 64, 43, 228, 120, 93, 204, 240, 139, 130, 69, 102, 231, 110, 16, 140, 34, 40, 73, 226, 52, 8, 93, 200, 58, 237, 81, 191};
   return hash;
 }
 }

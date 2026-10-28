@@ -85,9 +85,12 @@ def roles := ⟦
 
   type RoleTable = &RoleTableNode
 
-  -- A role context: a table, and the number of groups usable under it.
+  -- A role context: a table, and the number of groups usable under it; or
+  -- a table assumed to meet the specifications (a claim that assumes its
+  -- binding), under which every bound role is usable and none is admitted.
   enum RoleCtxNode {
-    Mk(RoleTable, G)
+    Mk(RoleTable, G),
+    Assumed(RoleTable)
   }
 
   type RoleCtx = &RoleCtxNode
@@ -112,21 +115,32 @@ def roles := ⟦
     assert_eq!(to_field(version), spec_version(),
       "role table: made for another specification version");
     let (n, s) = read_byte(s);
-    let (by_role, by_addr, s) =
-      read_role_bindings(s, to_field(n), 0, RBTreeMap.Nil, RBTreeMap.Nil);
+    let (by_role, by_addr, _next, s) =
+      read_role_bindings(s, to_field(n), 0, RBTreeMap.Nil);
     let (m, s) = read_byte(s);
-    let (evidence, s) = read_role_evidence(s, to_field(m), 0, RBTreeMap.Nil);
+    let (evidence, _next, s) = read_role_evidence(s, to_field(m), 0);
     assert_eq!(load(s), ListNode.Nil, "role table: trailing bytes");
     store(RoleTableNode.Mk(binding, by_role, by_addr, evidence))
   }
 
-  -- `count` bindings, each role index at least `next`.
-  fn read_role_bindings(s: ByteStream, count: G, next: G,
-      by_role: RBTreeMap‹Addr›, by_addr: RBTreeMap‹G›)
-      -> (RBTreeMap‹Addr›, RBTreeMap‹G›, ByteStream) {
+  -- The two maps keyed by role are read straight into balanced trees: the
+  -- entries arrive in strictly increasing role order, so the first half of
+  -- a run is the left subtree, the next entry the root and the rest the
+  -- right subtree, and no insertion or rebalancing is needed. Lookups ignore
+  -- colours, and nothing inserts into a table once it is read. The index by
+  -- address is keyed by interned pointers, in no particular order, so it is
+  -- built by insertion.
+
+  -- `count` bindings, in order, each role index at least `next`: the tree
+  -- by role, the index by address extended, and the least role index the
+  -- next binding may have.
+  fn read_role_bindings(s: ByteStream, count: G, next: G, by_addr: RBTreeMap‹G›)
+      -> (RBTreeMap‹Addr›, RBTreeMap‹G›, G, ByteStream) {
     match count {
-      0 => (by_role, by_addr, s),
+      0 => (RBTreeMap.Nil, by_addr, next, s),
       _ =>
+        let half = to_field(u8_shift_right(u8_from_field_unsafe(count)));
+        let (left, by_addr, next, s) = read_role_bindings(s, half, next, by_addr);
         let (rb, s) = read_byte(s);
         let r = to_field(rb);
         assert_eq!(u32_less_than(r, role_count()), 1, "role table: unknown role");
@@ -134,26 +148,30 @@ def roles := ⟦
         let (a, s) = get_address(s);
         assert_eq!(rbtree_map_lookup_or_default(ptr_val(a), by_addr, 0), 0,
           "role table: an address is bound to two roles");
-        read_role_bindings(s, count - 1, r + 1,
-          rbtree_map_insert(r, a, by_role),
-          rbtree_map_insert(ptr_val(a), r + 1, by_addr)),
+        let by_addr = rbtree_map_insert(ptr_val(a), r + 1, by_addr);
+        let (right, by_addr, next, s) =
+          read_role_bindings(s, count - (half + 1), r + 1, by_addr);
+        (RBTreeMap.Node(1, r, a, store(left), store(right)), by_addr, next, s),
     }
   }
 
-  fn read_role_evidence(s: ByteStream, count: G, next: G,
-      evidence: RBTreeMap‹List‹RoleEvidence››)
-      -> (RBTreeMap‹List‹RoleEvidence››, ByteStream) {
+  -- `count` evidence entries, in order, each role index at least `next`:
+  -- the tree by role and the least role index the next entry may have.
+  fn read_role_evidence(s: ByteStream, count: G, next: G)
+      -> (RBTreeMap‹List‹RoleEvidence››, G, ByteStream) {
     match count {
-      0 => (evidence, s),
+      0 => (RBTreeMap.Nil, next, s),
       _ =>
+        let half = to_field(u8_shift_right(u8_from_field_unsafe(count)));
+        let (left, next, s) = read_role_evidence(s, half, next);
         let (rb, s) = read_byte(s);
         let r = to_field(rb);
         assert_eq!(u32_less_than(r, role_count()), 1, "role table: unknown role");
         assert_eq!(u32_less_than(r, next), 0, "role table: evidence out of order");
         let (kb, s) = read_byte(s);
         let (entries, s) = read_evidence_entries(s, to_field(kb));
-        read_role_evidence(s, count - 1, r + 1,
-          rbtree_map_insert(r, entries, evidence)),
+        let (right, next, s) = read_role_evidence(s, count - (half + 1), r + 1);
+        (RBTreeMap.Node(1, r, entries, store(left), store(right)), next, s),
     }
   }
 
@@ -184,9 +202,42 @@ def roles := ⟦
     store(RoleCtxNode.Mk(load_role_table(binding), group_count()))
   }
 
+  -- The context of a claim that assumes its binding meets the
+  -- specifications: its binding's table, read but not validated.
+  fn role_ctx_assumed(binding: Addr) -> RoleCtx {
+    store(RoleCtxNode.Assumed(load_role_table(binding)))
+  }
+
+  -- The context of a claim, by its validator: 3 validates the binding, 4
+  -- assumes it.
+  fn role_ctx_for_validator(binding: Addr, validator: G) -> RoleCtx {
+    match validator {
+      3 => role_ctx_of_binding(binding),
+      4 => role_ctx_assumed(binding),
+      _ =>
+        assert_eq!(0, 1, "claim: wrong validator identity");
+        role_ctx_of_binding(binding),
+    }
+  }
+
+  -- The validator a claim checked under `rc` names: 3, or 4 when it
+  -- assumes its binding.
+  fn role_ctx_validator(rc: RoleCtx) -> G {
+    3 + role_ctx_is_assumed(rc)
+  }
+
   fn role_ctx_table(rc: RoleCtx) -> RoleTable {
     match load(rc) {
       RoleCtxNode.Mk(tbl, _) => tbl,
+      RoleCtxNode.Assumed(tbl) => tbl,
+    }
+  }
+
+  -- 1 iff `rc` assumes its binding.
+  fn role_ctx_is_assumed(rc: RoleCtx) -> G {
+    match load(rc) {
+      RoleCtxNode.Mk(_, _) => 0,
+      RoleCtxNode.Assumed(_) => 1,
     }
   }
 
@@ -232,7 +283,8 @@ def roles := ⟦
   -- 1 + the role bound at `a` when its group is usable under `rc`, after
   -- admitting that group; 0 when `a` plays no usable role. Every use of a
   -- role's meaning goes through here or `role_addr`, so nothing is read from
-  -- a role that has not been validated.
+  -- a role that has not been validated, or, under an assumed binding, that
+  -- the claim's condition does not cover.
   fn role_of(rc: RoleCtx, a: Addr) -> G {
     match load(rc) {
       RoleCtxNode.Mk(tbl, limit) =>
@@ -247,6 +299,8 @@ def roles := ⟦
               _ => 0,
             },
         },
+      RoleCtxNode.Assumed(tbl) =>
+        rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0),
     }
   }
 
@@ -269,6 +323,7 @@ def roles := ⟦
         let a = role_bound_addr(tbl, r);
         group_admit(tbl, role_group(r));
         a,
+      RoleCtxNode.Assumed(tbl) => role_bound_addr(tbl, r),
     }
   }
 
@@ -291,6 +346,7 @@ def roles := ⟦
             group_admit(tbl, role_group(r));
             1,
         },
+      RoleCtxNode.Assumed(tbl) => role_is_bound(tbl, r),
     }
   }
 
@@ -347,6 +403,51 @@ def roles := ⟦
               _ => store(RoleCtxNode.Mk(tbl, group_validation_limit(g))),
             },
         },
+      RoleCtxNode.Assumed(_) => rc,
+    }
+  }
+
+  -- 1 iff a walk under `rc` leaves the constant at `a` to the binding claim:
+  -- under an assumed binding, a role whose admission checks it with its
+  -- dependencies (a basis inductive, constructor or recursor, or an
+  -- operation). The claim's condition, that the binding meets the
+  -- specifications, covers that check; anchors, quotient members and axioms,
+  -- which are validated by type, are still checked as dependencies.
+  fn walk_covered(rc: RoleCtx, a: Addr) -> G {
+    match load(rc) {
+      RoleCtxNode.Mk(_, _) => 0,
+      RoleCtxNode.Assumed(tbl) =>
+        let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
+        match r1 {
+          0 => 0,
+          _ => role_admission_checks(r1 - 1),
+        },
+    }
+  }
+
+  -- Validate every group of the binding `binding`, which must bind every
+  -- role: what a `binding` claim states.
+  fn validate_binding(binding: Addr) {
+    let tbl = load_role_table(binding);
+    assert_all_roles_bound(tbl, 0);
+    admit_all_groups(tbl, 0)
+  }
+
+  fn assert_all_roles_bound(tbl: RoleTable, r: G) {
+    match r - role_count() {
+      0 => (),
+      _ =>
+        assert_eq!(role_is_bound(tbl, r), 1, "binding claim: a role is unbound");
+        assert_all_roles_bound(tbl, r + 1),
+    }
+  }
+
+  fn admit_all_groups(tbl: RoleTable, g: G) {
+    match g - group_count() {
+      0 => (),
+      _ =>
+        group_admit(tbl, g);
+        admit_all_groups(tbl, g + 1),
     }
   }
 

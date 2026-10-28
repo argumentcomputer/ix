@@ -118,9 +118,11 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the
     digest `prove --shard K` produced, so a proof can be bound to its shard. -/
-def shardClaimDigest (ixonEnv : Ixon.Env) (blocks : Array Address) : Except String Address := do
+def shardClaimDigest (ixonEnv : Ixon.Env) (blocks : Array Address)
+    (assumeBinding : Bool := false) : Except String Address := do
   let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv
     (ownedConstsForBlocks ixonEnv blocks)
+  let claim := if assumeBinding then Ix.Claim.assumingBinding claim else claim
   pure (Address.blake3 (Ix.Claim.ser claim))
 
 /-- Load the `.ixe` env and the `.ixes` shard partition together (each file

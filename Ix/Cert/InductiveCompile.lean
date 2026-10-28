@@ -59,6 +59,12 @@ theorem forall₂_imp {α β : Type} {R S : α → β → Prop} (h : ∀ a b, R 
   | [], [], .nil => .nil
   | _ :: _, _ :: _, .cons h₁ r₁ => .cons (h _ _ h₁) (forall₂_imp h r₁)
 
+theorem forall₂_imp_mem {α β : Type} {R S : α → β → Prop} :
+    ∀ {l : List α} {m : List β}, (∀ a b, a ∈ l → R a b → S a b) → List.Forall₂ R l m → List.Forall₂ S l m
+  | [], [], _, .nil => .nil
+  | _ :: _, _ :: _, h, .cons h₁ r₁ =>
+    .cons (h _ _ List.mem_cons_self h₁) (forall₂_imp_mem (fun a b ha => h a b (List.mem_cons_of_mem _ ha)) r₁)
+
 theorem forall₂_length {α β : Type} {R : α → β → Prop} :
     ∀ {l : List α} {m : List β}, List.Forall₂ R l m → l.length = m.length
   | [], [], .nil => rfl
@@ -182,16 +188,18 @@ theorem blockSelf_eq (cx : Ctx .anon) (owner : Address) (ts : List Ixon.Inductiv
 
 variable (ρ : FiberMap) (f : Mode.Id .source → Mode.Id .anon)
 
-/-- **The block's self references**: a member's name is its key in the closure's context; no
-constructor of the block occurs. -/
+/-- **The block's self references**: a member's name is its key in the closure's context, which
+the names relate it to; no constructor of the block occurs. -/
 theorem scopes_of_noCtor (context : CompileEnv × BlockEnv) (cx : Ctx .anon) (owner : Address) (inds : List Ix.Ind)
+    {names : Ix.Name → CName .anon → Prop}
+    (self : ∀ k (h : k < inds.length), names inds[k].name (srcKey ρ f inds[k].name))
     (keys : ∀ k (h : k < inds.length), cx.memberKey (.member owner k) = .ok (srcKey ρ f inds[k].name))
     (distinct : Canon.KeysDistinct (inds.map MutConst.indc))
     (noCtor : ∀ i ∈ inds, ∀ e ∈ memberSources (.indc i),
       ConstsSatisfy (fun n => ∀ i' ∈ inds, ∀ c ∈ i'.ctors.toList, n ≠ c.cnst.name) e) :
     ∀ m ∈ inds.map MutConst.indc, ∀ e ∈ memberSources m,
       ConstsSatisfy (SelfName (mutContext ((inds.map MutConst.indc).map ([·])) context).2
-        (selfOf cx owner inds.length) (sourceNames ρ f)) e := by
+        (selfOf cx owner inds.length) names) e := by
   intro m hm e he
   obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hm
   refine constsSatisfy_mono (fun n hn index found => ?_) e (noCtor i hi e he)
@@ -209,9 +217,9 @@ theorem scopes_of_noCtor (context : CompileEnv × BlockEnv) (cx : Ctx .anon) (ow
   have hxj : inds[j] = x := (List.getElem?_eq_some_iff.mp hx).2
   rcases hcase with ⟨hname, rfl⟩ | ⟨k, c, hc, hcn, -⟩
   · refine ⟨srcKey ρ f inds[index].name, by simp [selfOf, hj, keys index hj], ?_⟩
-    show srcKey ρ f inds[index].name = (Ix.LeanIngress.Key.subst ρ (Ix.LeanIngress.ingressKey n)).map f
-    rw [hxj, ← hname]
-    rfl
+    have e : inds[index].name = n := by rw [hxj, ← hname]; rfl
+    rw [← e]
+    exact self index hj
   · exfalso
     have hcm : c ∈ x.ctors.toList := by
       have hc' : x.ctors[k]? = some c := hc
@@ -228,10 +236,16 @@ of inductives keeping their sources' headers, and in the closure's context its m
 reads every type and every constructor's type as a term related to its Lean type, given the
 compile run, the members' keys in the closure's context, distinct names, no constructor of
 the block in its members' types, and the closure's context reading the record's references
-as the compile environment's does. -/
+as the compile environment's does. The compile is read under any name relation that relates each
+member to its key and agrees with quotient Source's names renamed on the names the members'
+terms mention. -/
 theorem inductiveBlock_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a) {bindings : Bindings}
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f)) (inds : List Ix.Ind)
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
+    (inds : List Ix.Ind)
+    (self : ∀ k (h : k < inds.length), names inds[k].name (srcKey ρ f inds[k].name))
+    (agree : ∀ i ∈ inds, ∀ e ∈ memberSources (.indc i), ∀ n key, GraphWalk.Refs n e → names n key →
+      sourceNames ρ f n key)
     (lps : Array Ix.Name) (hlps : ∀ i ∈ inds, i.levelParams = lps) (owner : Address)
     (keys : ∀ k (h : k < inds.length), cx.memberKey (.member owner k) = .ok (srcKey ρ f inds[k].name))
     (distinct : Canon.KeysDistinct (inds.map MutConst.indc))
@@ -248,12 +262,12 @@ theorem inductiveBlock_reads (context : CompileEnv × BlockEnv) (free : context.
           ∃ type, (blockReader cx owner output.block targets).read ct.typ = .ok type ∧
             blockRel ρ f lps c.cnst.type type) i.ctors.toList t.ctors.toList) inds targets := by
   obtain ⟨ps, payloads, erased, roots⟩ := BlockEmission.mutualBlock_correct cx₁ id (selfOf cx owner inds.length)
-    (sourceNames ρ f) (Numbering.mk lps false).pos bindings context free aligned external (inds.map MutConst.indc)
+    names (Numbering.mk lps false).pos bindings context free aligned external (inds.map MutConst.indc)
     lps.toList (by
       intro m hm
       obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hm
       simp [memberLps, hlps i hi])
-    (scopes_of_noCtor ρ f context cx owner inds keys distinct noCtor) clean ran
+    (scopes_of_noCtor ρ f context cx owner inds self keys distinct noCtor) clean ran
   -- the payloads are inductives keeping their sources' headers
   have hps : ∀ {is : List Ix.Ind} {qs : List Ixon.MutConst}, List.Forall₂ PayloadOf (is.map MutConst.indc) qs →
       ∃ ts : List Ixon.Inductive, qs = ts.map Ixon.MutConst.indc ∧ List.Forall₂ IndFacts is ts := by
@@ -281,15 +295,18 @@ theorem inductiveBlock_reads (context : CompileEnv × BlockEnv) (free : context.
   have reader : blockReader cx owner output.block ts' = MemberReader.mk' cx output.block id (selfOf cx owner inds.length) := by
     unfold blockReader
     rw [blockSelf_eq, ← forall₂_length facts]
-  refine ⟨ts', hinfo, forall₂_imp (fun i t h => ?_) (forall₂_and facts members)⟩
+  refine ⟨ts', hinfo, forall₂_imp_mem (fun i t hi h => ?_) (forall₂_and facts members)⟩
   obtain ⟨hf, hr⟩ := h
   simp only [memberSources, mutConstRootExprs] at hr
   obtain ⟨⟨type, rel, read⟩, rest⟩ := InductiveReading.rootsRead_cons hr
   rw [reader]
-  refine ⟨hf, ⟨type, RecordTransfer.read_le refs id _ _ read, rel⟩, ?_⟩
-  refine forall₂_imp (fun c ct hc => ?_) (forall₂_map_map.mp rest)
+  refine ⟨hf, ⟨type, RecordTransfer.read_le refs id _ _ read,
+    RecordReadings.related_mono rel fun n k r hn => agree i hi _ (by simp [memberSources]) n k r hn⟩, ?_⟩
+  refine forall₂_imp_mem (fun c ct hc' hc => ?_) (forall₂_map_map.mp rest)
   obtain ⟨type, rel, read⟩ := hc
-  exact ⟨type, RecordTransfer.read_le refs id _ _ read, rel⟩
+  exact ⟨type, RecordTransfer.read_le refs id _ _ read, RecordReadings.related_mono rel fun n k r hn =>
+    agree i hi _ (by simp only [memberSources]; exact List.mem_cons_of_mem _ (List.mem_map.mpr ⟨c, hc', rfl⟩))
+      n k r hn⟩
 
 /--
 info: 'Ix.Cert.InductiveCompile.inductiveBlock_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -408,13 +425,14 @@ theorem recSelf_eq (cx : Ctx .anon) (owner : Address) (key : CName .anon) {rc : 
 
 /-- **A recursor family's self references**: a member's name is read as its key. -/
 theorem rec_scopes (context : CompileEnv × BlockEnv) (cx : Ctx .anon) (owner : Address) (key : CName .anon)
-    (recs : List Ix.RecursorVal)
+    (recs : List Ix.RecursorVal) {names : Ix.Name → CName .anon → Prop}
+    (self : ∀ k (h : k < recs.length), names recs[k].cnst.name (srcKey ρ f recs[k].cnst.name))
     (selfKeys : ∀ k (h : k < recs.length),
       recSelfOf cx owner key recs.length k = some (.ok (srcKey ρ f recs[k].cnst.name)))
     (distinct : Canon.KeysDistinct (recs.map MutConst.recr)) :
     ∀ m ∈ recs.map MutConst.recr, ∀ e ∈ memberSources m,
       ConstsSatisfy (SelfName (mutContext ((recs.map MutConst.recr).map ([·])) context).2
-        (recSelfOf cx owner key recs.length) (sourceNames ρ f)) e := by
+        (recSelfOf cx owner key recs.length) names) e := by
   intro m _ e _
   refine constsSatisfy_of_forall (fun n index found => ?_) e
   have hk : Canon.KeysDistinct ((recs.map MutConst.recr).map ([·])).flatten := by
@@ -431,9 +449,9 @@ theorem rec_scopes (context : CompileEnv × BlockEnv) (cx : Ctx .anon) (owner : 
   have hxj : recs[j] = x := (List.getElem?_eq_some_iff.mp hx).2
   rcases hcase with ⟨hname, rfl⟩ | ⟨k, c, hc, -, -⟩
   · refine ⟨srcKey ρ f recs[index].cnst.name, selfKeys index hj, ?_⟩
-    show srcKey ρ f recs[index].cnst.name = (Ix.LeanIngress.Key.subst ρ (Ix.LeanIngress.ingressKey n)).map f
-    rw [hxj, ← hname]
-    rfl
+    have e : recs[index].cnst.name = n := by rw [hxj, ← hname]; rfl
+    rw [← e]
+    exact self index hj
   · exact absurd hc (by simp [MutConst.ctors])
 
 /-- The relation a recursor family's terms are read in: related to their Lean terms, at
@@ -450,7 +468,11 @@ context, distinct names, and the closure's context reading the record's referenc
 compile environment's does. -/
 theorem recursorBlock_reads (context : CompileEnv × BlockEnv) (free : context.1.surgeryFree = true)
     {cx₁ cx : Ctx .anon} (aligned : ∀ a, cx₁.blob a = context.1.blobs.get? a) {bindings : Bindings}
-    (external : BindingsCorrect context.1 bindings cx₁ (sourceNames ρ f)) (recs : List Ix.RecursorVal)
+    {names : Ix.Name → CName .anon → Prop} (external : BindingsCorrect context.1 bindings cx₁ names)
+    (recs : List Ix.RecursorVal)
+    (self : ∀ k (h : k < recs.length), names recs[k].cnst.name (srcKey ρ f recs[k].cnst.name))
+    (agree : ∀ r ∈ recs, ∀ e ∈ memberSources (.recr r), ∀ n key, GraphWalk.Refs n e → names n key →
+      sourceNames ρ f n key)
     (hne : recs ≠ []) (lps : Array Ix.Name) (hlps : ∀ r ∈ recs, r.cnst.levelParams = lps) (large : Bool)
     (owner : Address) (key : CName .anon)
     (selfKeys : ∀ k (h : k < recs.length),
@@ -468,12 +490,12 @@ theorem recursorBlock_reads (context : CompileEnv × BlockEnv) (free : context.1
             .ok rhs ∧ recRel ρ f lps large rule.rhs rhs) r.rules.toList rI.rules.toList) recs rIs := by
   obtain ⟨ps, payloads, erased, roots⟩ := BlockEmission.mutualBlock_correct cx₁
     (recParam (Numbering.mk lps large).params) (recSelfOf cx owner key recs.length)
-    (sourceNames ρ f) (Numbering.mk lps large).pos bindings context free aligned external (recs.map MutConst.recr)
+    names (Numbering.mk lps large).pos bindings context free aligned external (recs.map MutConst.recr)
     lps.toList (by
       intro m hm
       obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
       simp [memberLps, hlps r hr])
-    (rec_scopes ρ f context cx owner key recs selfKeys distinct) clean ran
+    (rec_scopes ρ f context cx owner key recs self selfKeys distinct) clean ran
   have hps : ∀ {rs : List Ix.RecursorVal} {qs : List Ixon.MutConst},
       List.Forall₂ PayloadOf (rs.map MutConst.recr) qs →
       ∃ ts : List Ixon.Recursor, qs = ts.map Ixon.MutConst.recr ∧ List.Forall₂ RecPayload rs ts := by
@@ -509,15 +531,18 @@ theorem recursorBlock_reads (context : CompileEnv × BlockEnv) (free : context.1
         (recSelfOf cx owner key recs.length) := by
     unfold RecursorReads.recReader
     rw [recSelf_eq cx owner key hne' hinfo, hlen]
-  refine ⟨ts', hinfo, forall₂_imp (fun r t h => ?_) (forall₂_and facts members)⟩
+  refine ⟨ts', hinfo, forall₂_imp_mem (fun r t hr' h => ?_) (forall₂_and facts members)⟩
   obtain ⟨hf, hr⟩ := h
   simp only [memberSources, mutConstRootExprs] at hr
   obtain ⟨⟨type, rel, read⟩, rest⟩ := InductiveReading.rootsRead_cons hr
   rw [reader]
-  refine ⟨hf, ⟨type, RecordTransfer.read_le refs _ _ _ read, rel⟩, ?_⟩
-  refine forall₂_imp (fun rule rr hc => ?_) (forall₂_map_map.mp rest)
+  refine ⟨hf, ⟨type, RecordTransfer.read_le refs _ _ _ read,
+    RecordReadings.related_mono rel fun n k e hn => agree r hr' _ (by simp [memberSources]) n k e hn⟩, ?_⟩
+  refine forall₂_imp_mem (fun rule rr hrule hc => ?_) (forall₂_map_map.mp rest)
   obtain ⟨rhs, rel, read⟩ := hc
-  exact ⟨rhs, RecordTransfer.read_le refs _ _ _ read, rel⟩
+  exact ⟨rhs, RecordTransfer.read_le refs _ _ _ read, RecordReadings.related_mono rel fun n k e hn =>
+    agree r hr' _ (by simp only [memberSources]; exact List.mem_cons_of_mem _ (List.mem_map.mpr ⟨rule, hrule, rfl⟩))
+      n k e hn⟩
 
 /--
 info: 'Ix.Cert.InductiveCompile.recursorBlock_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -775,13 +800,19 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     (recDistinct : Canon.KeysDistinct (recs.toList.map MutConst.recr))
     (context₁ : CompileEnv × BlockEnv) (free₁ : context₁.1.surgeryFree = true) {cx₁ : Ctx .anon}
     (aligned₁ : ∀ a, cx₁.blob a = context₁.1.blobs.get? a) {bindings₁ : Bindings}
-    (external₁ : BindingsCorrect context₁.1 bindings₁ cx₁ (sourceNames ρ f))
+    {names₁ : Ix.Name → CName .anon → Prop} (external₁ : BindingsCorrect context₁.1 bindings₁ cx₁ names₁)
+    (self₁ : ∀ i (hi : i < types.size), names₁ types[i].cnst.name (srcKey ρ f types[i].cnst.name))
+    (agree₁ : ∀ i ∈ indsOf types ctors, ∀ e ∈ memberSources (.indc i), ∀ n key, GraphWalk.Refs n e →
+      names₁ n key → sourceNames ρ f n key)
     {before₁ after₁ : BlockState} {out₁ : BlockResult} (clean₁ : Emission.Clean bindings₁ before₁)
     (ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) context₁ before₁ =
       (.ok out₁, after₁))
     (context₂ : CompileEnv × BlockEnv) (free₂ : context₂.1.surgeryFree = true) {cx₂ : Ctx .anon}
     (aligned₂ : ∀ a, cx₂.blob a = context₂.1.blobs.get? a) {bindings₂ : Bindings}
-    (external₂ : BindingsCorrect context₂.1 bindings₂ cx₂ (sourceNames ρ f))
+    {names₂ : Ix.Name → CName .anon → Prop} (external₂ : BindingsCorrect context₂.1 bindings₂ cx₂ names₂)
+    (self₂ : ∀ j (hj : j < recs.size), names₂ recs[j].cnst.name (srcKey ρ f recs[j].cnst.name))
+    (agree₂ : ∀ r ∈ recs.toList, ∀ e ∈ memberSources (.recr r), ∀ n key, GraphWalk.Refs n e →
+      names₂ n key → sourceNames ρ f n key)
     {before₂ after₂ : BlockState} {out₂ : BlockResult} (clean₂ : Emission.Clean bindings₂ before₂)
     (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) context₂ before₂ =
       (.ok out₂, after₂))
@@ -815,7 +846,11 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
   have hlenI := indsOf_length hcsize
   -- the inductive block
   obtain ⟨targets, hinfo, hT⟩ := inductiveBlock_reads ρ f context₁ free₁ aligned₁ external₁ (indsOf types ctors)
-    first.cnst.levelParams (by
+    (by
+      intro k hk
+      rw [indsOf_getElem hcsize hk]
+      exact self₁ k _)
+    agree₁ first.cnst.levelParams (by
       intro i hi
       obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hi
       rw [indsOf_getElem hcsize hk]
@@ -833,7 +868,8 @@ theorem compiled_inductive_unit_reads {P : KeyScope .source} (hP : P.Pre) (hf : 
     · have := congrArg List.length h
       simp only [Array.length_toList, List.length_cons] at this
       omega
-  obtain ⟨rIs, hrinfo, hR⟩ := recursorBlock_reads ρ f context₂ free₂ aligned₂ external₂ recs.toList hrne rlps
+  obtain ⟨rIs, hrinfo, hR⟩ := recursorBlock_reads ρ f context₂ free₂ aligned₂ external₂ recs.toList
+    (fun k hk => by simpa using self₂ k (by simpa using hk)) agree₂ hrne rlps
     recLpsEq (rlps.size == first.cnst.levelParams.size + 1) rOwner (srcKey ρ f (recs[0]'hrsize).cnst.name)
     (by
       intro k hk

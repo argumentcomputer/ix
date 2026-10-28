@@ -740,6 +740,16 @@ which no constant may use (`axiom_standing`, the one place a standard axiom
 is recognized), and an unsafe axiom is typed only. Nothing reduces natively:
 `Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and a
 claim that uses them depends on `Lean.trustCompiler`, which is declined.
+A `check` or `checkEnv` claim may instead assume its binding (validator
+`4`, `ClaimContext.bindingAssumed`): it reads roles through the same table
+but validates no group, and a walk leaves a bound basis member or operation
+to the condition, that the table meets the specifications. The `binding`
+claim states that condition: the table binds every role and every group is
+admitted, under the same contexts. It depends only on the specification
+digest and the table hash, so one proof serves every aggregate over the
+binding; `ix_aggr` discharges an aggregate's condition once with it (shapes
+13 and 14), and the discharged claim is the one a claim that validates its
+binding states.
 
 **IxC's reader obligations at IxVM's boundary.** Six obligations of IxC's
 frontend and reader are recorded for every second checker to mirror or rule

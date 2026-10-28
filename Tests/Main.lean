@@ -98,6 +98,7 @@ import Tests.Keccak
 import Tests.MultiStark
 import Tests.Aggr
 import Tests.AggrProof
+import Tests.AggrBindingReuse
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
@@ -267,7 +268,7 @@ def registry : List Entry := [
   -- factorial-prove → recursive-verify → reject-tampering pipeline.
   .runner "multi-stark" .primary Tests.MultiStark.selfTestSuite,
   .runner "recursive-verifier" .primary Tests.MultiStark.endToEndSuite,
-  -- Converged heterogeneous aggregation circuit: all ten `ix_aggr` shapes,
+  -- Converged heterogeneous aggregation circuit: all fifteen `ix_aggr` shapes,
   -- driver/cache semantics, and one negative case per broken binding.
   .runner "ix-aggr" .primary Tests.Aggr.convergedSuite,
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
@@ -321,6 +322,7 @@ def registry : List Entry := [
   .suite "cert-evidence-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.evidenceInitStdSuite,
   .suite "cert-noctor-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.noCtorInitStdSuite,
   .runner "aggregate-proof" (.manual "a proof round trip through the production ix_aggr circuit; minutes of proving") Tests.Aggr.proofRoundTrip,
+  .env "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of proving, needs `lake build ix`") Tests.Aggr.BindingReuse.run,
   .runner "kernel-dependencies" (.manual "the IxVM definition-dependency checks alone; `ixvm` runs them too") (do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1
@@ -404,8 +406,8 @@ def registry : List Entry := [
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_229_188_031, got {actual}"
-              (actual = 6_229_188_031))
+              s!"Shard pipeline FFT matches: expected 9_283_737_916, got {actual}"
+              (actual = 9_283_737_916))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,
