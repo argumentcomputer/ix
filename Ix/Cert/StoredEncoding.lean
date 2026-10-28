@@ -151,23 +151,13 @@ theorem compileReport_start {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
   generalize validateMutualSafety _ _ = safety at hf
   cases missing <;> cases flags <;> cases safety <;>
     simp only [bind, Except.bind, pure, Except.pure, Functor.map, Except.map] at hf <;> try cases hf
-  generalize Ix.Compile.Pass.Clique.scheduleCliques _ _ = sc at hf
   generalize hr : foldWavesSeq _ _ _ _ = r at hf
   cases r with
   | error => cases hf
   | ok st =>
-    simp only [bind, Except.bind, finalizeEnv] at hf
-    generalize hfin : Ix.Compile.OriginalData.finalizeOriginals _ _ = finalized at hf
-    cases finalized with
-    | error => cases hf
-    | ok out =>
-      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hf
-      obtain ⟨rfl, -, -⟩ := hf
-      have frame := Ix.Compile.OriginalData.finalizeOriginals_frame hfin
-      refine ⟨_, _, st, ⟨rfl, rfl, rfl, rfl, by simp [CompileEnv.surgeryFree, CompileEnv.new], rfl⟩, hr,
-        fun a lc hlc => ?_⟩
-      rw [frame.consts] at hlc
-      exact assembleEnv_consts_inv _ hlc
+    simp only [finalizeEnv, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hf
+    obtain ⟨rfl, -, -⟩ := hf
+    exact ⟨_, _, st, ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩, hr, fun a lc hlc => assembleEnv_consts_inv _ hlc⟩
 
 /-- **A compile whose fold keeps its store encoded is stored canonically**, in every order:
 from a start like the fold's (`FoldStart`), every outcome the fold applies keeps the store
