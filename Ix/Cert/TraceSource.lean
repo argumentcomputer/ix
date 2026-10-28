@@ -26,7 +26,13 @@ that come from quotient Source's acceptance of its prepared stream.
   canonical levels.
 * `inductive_shape` (`InductiveNeeds.hcsize`, `positions`): a lowered inductive group has one
   constructor list per type, each constructor at its position, as `inductiveGroup` reads them
-  off the block (`FamilyGroups.inductiveGroup_shape`). -/
+  off the block (`FamilyGroups.inductiveGroup_shape`).
+* `inductive_nodup` (`InductiveNeeds.nodup`, and `recLevels` with `recLevels_of`): a kept inductive
+  group's first type and its recursors have distinct level parameters. The checker installs the
+  group's `indDecl` as a pinned block, whose members match the pins canonically (a pin's member
+  with two parameters has a canonical type that mentions the second, which a term numbered under
+  two equal names cannot), or through its modeled or native route, which checks every type
+  former's and recursor's level positions distinct (`member_names_nodup`). -/
 
 namespace Ix.Cert.TraceSource
 
@@ -337,9 +343,9 @@ theorem canonLevelIn_defined {lps ps : List LevelParam}
   obtain ⟨p, hp, rfl⟩ := univOfLevel_occurs hl v (Ix.CompileCert.CanonUnivScope.canonUniv_occurs _ v hv)
   exact hrt p hp
 
-theorem canonLevel_defined {m : LevelParam → LevelParam} {ps : List LevelParam}
-    (hm : ∀ p, ps.contains p = true → ps.contains (m p) = true) :
-    ∀ {l : Ix.Kernel.Level}, l.allParamsDefined ps = true → (Ix.Kernel.canonLevel m l).allParamsDefined ps = true
+theorem canonLevel_defined {m : LevelParam → LevelParam} {ps qs : List LevelParam}
+    (hm : ∀ p, ps.contains p = true → qs.contains (m p) = true) :
+    ∀ {l : Ix.Kernel.Level}, l.allParamsDefined ps = true → (Ix.Kernel.canonLevel m l).allParamsDefined qs = true
   | .zero, _ => rfl
   | .succ l, h => canonLevel_defined hm (l := l) h
   | .max _ _, h => by
@@ -350,11 +356,11 @@ theorem canonLevel_defined {m : LevelParam → LevelParam} {ps : List LevelParam
     exact ⟨canonLevel_defined hm h.1, canonLevel_defined hm h.2⟩
   | .param p, h => hm p h
 
-/-- **The pins' canonical form keeps a term's level parameters among `ps`** when its renaming
-maps `ps` into itself. -/
-theorem canonExpr_defined {md : Ix.Kernel.Mode} {m : LevelParam → LevelParam} {ps : List LevelParam}
-    (hm : ∀ p, ps.contains p = true → ps.contains (m p) = true) :
-    ∀ {e : Ix.Kernel.Expr md}, e.allLevelParamsDefined ps = true → (canonExpr m e).allLevelParamsDefined ps = true
+/-- **The pins' canonical form keeps a term's level parameters among `qs`** when its renaming
+maps `ps` into `qs`. -/
+theorem canonExpr_defined {md : Ix.Kernel.Mode} {m : LevelParam → LevelParam} {ps qs : List LevelParam}
+    (hm : ∀ p, ps.contains p = true → qs.contains (m p) = true) :
+    ∀ {e : Ix.Kernel.Expr md}, e.allLevelParamsDefined ps = true → (canonExpr m e).allLevelParamsDefined qs = true
   | .bvar _, _ => rfl
   | .fvar _ t, h => canonExpr_defined hm (e := t) h
   | .sort _, h => canonLevel_defined hm h
@@ -367,10 +373,10 @@ theorem canonExpr_defined {md : Ix.Kernel.Mode} {m : LevelParam → LevelParam} 
     exact ⟨canonExpr_defined hm h.1, canonExpr_defined hm h.2⟩
   | .lam t b _, h => by
     simp only [canonExpr, Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at h ⊢
-    exact ⟨⟨canonExpr_defined hm h.1.1, canonExpr_defined hm h.1.2⟩, never_defined ps⟩
+    exact ⟨⟨canonExpr_defined hm h.1.1, canonExpr_defined hm h.1.2⟩, never_defined qs⟩
   | .forallE t b _, h => by
     simp only [canonExpr, Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at h ⊢
-    exact ⟨⟨canonExpr_defined hm h.1.1, canonExpr_defined hm h.1.2⟩, never_defined ps⟩
+    exact ⟨⟨canonExpr_defined hm h.1.1, canonExpr_defined hm h.1.2⟩, never_defined qs⟩
   | .letE t v b _, h => by
     simp only [canonExpr, Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true] at h ⊢
     exact ⟨⟨canonExpr_defined hm h.1.1, canonExpr_defined hm h.1.2⟩, canonExpr_defined hm h.2⟩
@@ -442,7 +448,7 @@ theorem pinned_quot_nodup {k : Ix.Kernel.QuotKind} {names : Array Ix.Name} {ρ :
         (mapLevels (canonLevelIn (Numbering.mk ⟨[a, a]⟩ false).params)
           (Ix.LeanIngress.Expr.substKeys ρ t'))).allLevelParamsDefined [0, 2] = true := by
       rw [hparams]
-      refine canonExpr_defined ?_ (mapLevels_defined (fun l hl => canonLevelIn_defined ?_ hl) ?_)
+      refine canonExpr_defined (ps := [0, 2]) ?_ (mapLevels_defined (fun l hl => canonLevelIn_defined ?_ hl) ?_)
       · intro p hp
         simp at hp
         rcases hp with rfl | rfl <;> decide
@@ -557,7 +563,8 @@ theorem inductive_noCtor {μ : CheckMode} {ev : Evidences .source} {envS : Env .
   obtain ⟨rb, rfl, typeEntries, ctorEntries⟩ := NoCtor.convertInductive_entries types ctors recs c hconv
   have hl' : lowerInductive stS (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb)) =
       .ok raw := hl
-  obtain ⟨recInfos, hdecl⟩ := NoCtor.lowerInductive_decl hl'
+  have hdecl := NoCtor.lowerInductive_decl hl'
+  generalize NoCtor.recInfosOf _ = recInfos at hdecl
   subst kept
   have hmem := kept_mem hflat hds hr (Array.mem_toList_iff.mpr hdecl)
   obtain ⟨F, e₀, e₂, checked⟩ := NoCtor.acceptsRef_decl acc hmem
@@ -679,6 +686,355 @@ theorem inductive_shape {ixe : Ixon.Env} {t : RoleTable} {hints : CName .source 
   simp only [Array.getElem_toList] at hidx
   simpa [Array.toList_zipIdx, List.getElem_zipIdx] using hidx
 
+/-! ## Inductive groups: distinct level parameters
+
+The checker installs a lowered inductive group's `indDecl` either as one of the pinned blocks,
+which it compares with the pin canonically member by member, or through its modeled or native
+route, which checks each type former's and recursor's level positions distinct
+(`ConstantValRun`, `checkConstantVal`). Either way the group's first type and its recursors have
+distinct level-parameter names (`inductive_nodup`). -/
+
+section Families
+
+open Ix.LeanIngress (Numbering ingressExpr mapLevels canonLevelIn)
+
+/-- **Distinct positions under a numbering are distinct names**, for any numbering. -/
+theorem names_nodup {σ : Numbering} (h : LevelParam.nodup σ.params = true) : σ.names.toList.Nodup := by
+  rw [DefinitionBlockReads.levelParam_nodup_iff] at h
+  simp only [Numbering.params] at h
+  exact List.Pairwise.of_map _ (fun a b hab e => hab (by rw [e])) h
+
+/-- Under a numbering of two equal names, every position is among `[0, 2]`, or among `[1, 2]`
+for a recursor's large numbering (whose first name is the elimination level `1`). -/
+theorem pos_dup_any (a n : Ix.Name) (large : Bool) :
+    (if large then [1, 2] else [0, 2]).contains ((Numbering.mk ⟨[a, a]⟩ large).pos n) = true := by
+  unfold Numbering.pos
+  cases h : (Numbering.mk ⟨[a, a]⟩ large).names.findIdx? (Ix.Name.beqRaw · n) with
+  | none => cases large <;> rfl
+  | some j =>
+    cases j with
+    | zero => cases large <;> rfl
+    | succ i =>
+      obtain ⟨hi, hp, hbefore⟩ := Array.findIdx?_eq_some_iff_getElem.mp h
+      have hi' : i + 1 < 2 := hi
+      obtain rfl : i = 0 := by omega
+      exact absurd hp (hbefore 0 (by decide))
+
+theorem params_dup (a : Ix.Name) (large : Bool) :
+    (Numbering.mk ⟨[a, a]⟩ large).params = if large then [1, 1] else [0, 0] := by
+  have hf : (Numbering.mk ⟨[a, a]⟩ large).names.findIdx? (Ix.Name.beqRaw · a) = some 0 :=
+    Array.findIdx?_eq_some_iff_getElem.mpr
+      ⟨(by decide : 0 < 2), Ix.Name.beqRaw_iff.mpr rfl, fun _ h => absurd h (Nat.not_lt_zero _)⟩
+  have hpos : (Numbering.mk ⟨[a, a]⟩ large).pos a = if large then 1 else 0 := by
+    unfold Numbering.pos
+    rw [hf]
+    cases large <;> rfl
+  show [a, a].map (Numbering.mk ⟨[a, a]⟩ large).pos = _
+  simp only [List.map_cons, List.map_nil, hpos]
+  cases large <;> rfl
+
+/-- **A term numbered under two equal names has its canonical form among `[0, 2]`**, under its
+own numbering or a recursor's large one: the canonical levels keep its positions, and the pins'
+renaming sends them there. -/
+theorem dup_canon_defined (a : Ix.Name) (large : Bool) (ρ : FiberMap) {e : Ix.Expr}
+    {t' : Ix.Kernel.Expr .source} (ht' : ingressExpr (Numbering.mk ⟨[a, a]⟩ large).pos e = .ok t') :
+    (canonExpr (canonNameMap (Numbering.mk ⟨[a, a]⟩ large).params)
+      (mapLevels (canonLevelIn (Numbering.mk ⟨[a, a]⟩ large).params)
+        (Ix.LeanIngress.Expr.substKeys ρ t'))).allLevelParamsDefined [0, 2] = true := by
+  have hdef := ingressExpr_defined (fun n => pos_dup_any a n large) ht'
+  rw [← substKeys_defined ρ] at hdef
+  rw [params_dup]
+  cases large
+  · refine canonExpr_defined (ps := [0, 2]) ?_
+      (mapLevels_defined (fun l hl => canonLevelIn_defined ?_ hl) (by simpa using hdef))
+    · intro p hp
+      simp at hp
+      rcases hp with rfl | rfl <;> decide
+    · intro p hp
+      simp at hp
+      rcases hp with rfl | rfl <;> decide
+  · refine canonExpr_defined (ps := [1, 2]) ?_
+      (mapLevels_defined (fun l hl => canonLevelIn_defined ?_ hl) (by simpa using hdef))
+    · intro p hp
+      simp at hp
+      rcases hp with rfl | rfl <;> decide
+    · intro p hp
+      simp at hp
+      rcases hp with rfl | rfl <;> decide
+
+/-- **The pinned blocks' members**: each has at most two level parameters, and one with two
+(`Eq.rec`, `PUnit.rec`) has a canonical type that mentions the second. -/
+theorem pin_members : ∀ k ∈ [BasisKind.eqK, .natK, .punitK, .emptyK, .falseK],
+    ∀ y ∈ (k.decls (md := .source)), y.toConstantVal.levelParams.length ≤ 1 ∨
+      (y.toConstantVal.levelParams.length = 2 ∧
+        (canonExpr (canonNameMap y.toConstantVal.levelParams) y.toConstantVal.type).allLevelParamsDefined
+          [0, 2] = false) := by
+  decide
+
+/-- **A member of a pinned block, numbered under its names, has distinct names**: it matches a
+pin's member canonically, so it has at most two names, and two equal names would put its
+canonical type among `[0, 2]` (`dup_canon_defined`), where a pin's member with two names does
+not lie (`pin_members`). -/
+theorem pinned_member_nodup {block : List (Ix.Kernel.ConstantInfo .source)} {k : BasisKind}
+    (hpin : basisPinHit block = some k) {ci : Ix.Kernel.ConstantInfo .source} (hci : ci ∈ block)
+    (hnp : ∀ t, ci ≠ .projInfo t) {σ : Numbering} {ρ : FiberMap} {e : Ix.Expr}
+    {t' : Ix.Kernel.Expr .source} (ht' : ingressExpr σ.pos e = .ok t')
+    (hlps : ci.toConstantVal.levelParams = σ.params)
+    (hty : ci.toConstantVal.type = mapLevels (canonLevelIn σ.params) (Ix.LeanIngress.Expr.substKeys ρ t')) :
+    σ.names.toList.Nodup := by
+  unfold basisPinHit at hpin
+  obtain ⟨hfind, hcanon⟩ := Option.filter_eq_some_iff.mp hpin
+  have hk := List.mem_of_find?_eq_some hfind
+  unfold canonEqList at hcanon
+  have hmap := of_decide_eq_true hcanon
+  obtain ⟨y, hy, hcy⟩ : ∃ y ∈ k.decls, Ix.Kernel.ConstantInfo.canon y = Ix.Kernel.ConstantInfo.canon ci := by
+    have h : Ix.Kernel.ConstantInfo.canon ci ∈ k.decls.map Ix.Kernel.ConstantInfo.canon :=
+      hmap ▸ List.mem_map_of_mem hci
+    exact List.mem_map.mp h
+  have hynp : ∀ t, y ≠ .projInfo t := by
+    rintro t rfl
+    apply hnp t
+    cases ci <;> simp_all [Ix.Kernel.ConstantInfo.canon]
+  have hcv := congrArg Ix.Kernel.ConstantInfo.toConstantVal hcy
+  rw [Ix.Kernel.ConstantInfo.canon_toConstantVal hynp, Ix.Kernel.ConstantInfo.canon_toConstantVal hnp] at hcv
+  have hlen : y.toConstantVal.levelParams.length = ci.toConstantVal.levelParams.length := by
+    have h := congrArg (fun c => c.levelParams.length) hcv
+    simpa [Ix.Kernel.ConstantVal.canon] using h
+  have htype : canonExpr (canonNameMap y.toConstantVal.levelParams) y.toConstantVal.type =
+      canonExpr (canonNameMap ci.toConstantVal.levelParams) ci.toConstantVal.type :=
+    congrArg Ix.Kernel.ConstantVal.type hcv
+  have hsize : σ.names.toList.length = y.toConstantVal.levelParams.length := by
+    rw [hlen, hlps]
+    simp [Numbering.params]
+  have hpm := pin_members k hk y hy
+  obtain ⟨⟨l⟩, large⟩ := σ
+  change l.length = _ at hsize
+  show l.Nodup
+  rcases l with _ | ⟨a, _ | ⟨b, _ | ⟨c, l⟩⟩⟩
+  · exact List.nodup_nil
+  · simp
+  · refine List.nodup_cons.mpr ⟨fun hab => ?_, by simp⟩
+    have hab' : a = b := List.mem_singleton.mp hab
+    subst hab'
+    rcases hpm with h1 | ⟨-, hmention⟩
+    · simp at hsize
+      omega
+    · have hd := dup_canon_defined a large ρ ht'
+      rw [← hty, ← hlps, ← htype, hmention] at hd
+      cases hd
+  · rcases hpm with h1 | ⟨h2, -⟩ <;> simp at hsize <;> omega
+
+/-- A block the native route recognises is its former, then constructors closed by its
+recursor. -/
+theorem nativeShape?_block {nP : Nat} {block : List (Ix.Kernel.ConstantInfo .source)}
+    {s : Ix.Kernel.InductiveShape .source}
+    (hs : nativeShape? nP block = some s) :
+    ∃ caps rest cs mI rP rules, block = .indInfo s.cvT caps :: rest ∧
+      sumSplit rest = some (cs, s.cvR, mI, rP, rules) := by
+  unfold nativeShape? at hs
+  split at hs
+  · rename_i cvT caps rest
+    split at hs
+    · rename_i cs cvR mI rP rules hsplit
+      dsimp only at hs
+      split at hs
+      · cases hs
+      · split at hs
+        · have key : s.cvT = cvT ∧ s.cvR = cvR := by
+            split at hs <;> (simp only [Option.some.injEq] at hs; subst hs; exact ⟨rfl, rfl⟩)
+          obtain ⟨k1, k2⟩ := key
+          exact ⟨caps, rest, cs, mI, rP, rules, by rw [k1], by rw [k2, hsplit]⟩
+        · cases hs
+    · cases hs
+  · cases hs
+
+/-- The modeled route's member fold checks each member's level positions distinct. -/
+theorem indMembers_nodup {μ : CheckMode} {F : Nat} {names : List (Ix.Kernel.Key .source)}
+    {caps : Ix.Kernel.IndCaps .source} :
+    ∀ {env : Env .source} {l : List (Ix.Kernel.ConstantInfo .source)} {env₂ : Env .source},
+      Semantics.IndMembersRun μ F names caps env l env₂ →
+      ∀ ci ∈ l, LevelParam.nodup ci.toConstantVal.levelParams = true
+  | _, [], _, _, _, hci => nomatch hci
+  | _, c :: rest, _, h, ci, hci => by
+    obtain ⟨cvA, ⟨type', run, -⟩, hrest⟩ := h
+    rcases List.mem_cons.mp hci with rfl | hin
+    · exact run.2.2.2.1
+    · cases c with
+      | indInfo => exact indMembers_nodup hrest ci hin
+      | ctorInfo => exact indMembers_nodup hrest ci hin
+      | _ => exact (hrest : False).elim
+
+/-- The modeled route's recursor provisioning checks each recursor's level positions distinct. -/
+theorem provisionRecs_nodup {μ : CheckMode} {F : Nat} {names : List (Ix.Kernel.Key .source)} :
+    ∀ {envAcc : Env .source} {l : List (Ix.Kernel.ConstantInfo .source)} {envSelf : Env .source}
+      {checked : List (Ix.Kernel.ConstantVal .source × Nat × Nat × List (Ix.Kernel.RecRule .source))},
+      Semantics.ProvisionRecsRun μ F names envAcc l envSelf checked →
+      ∀ ci ∈ l, LevelParam.nodup ci.toConstantVal.levelParams = true
+  | _, [], _, _, _, _, hci => nomatch hci
+  | _, c :: rest, _, _, h, ci, hci => by
+    obtain ⟨cvA, mI, rP, rules, rest', -, ⟨type', run, -⟩, hrest, -⟩ := h
+    rcases List.mem_cons.mp hci with rfl | hci
+    · exact run.2.2.2.1
+    · exact provisionRecs_nodup hrest ci hci
+
+/-- **The modeled route checks every member's level positions distinct.** -/
+theorem declIndRun_nodup {μ : CheckMode} {F : Nat} {env env₂ : Env .source}
+    {block : List (Ix.Kernel.ConstantInfo .source)}
+    (h : Semantics.DeclIndRun μ F env block env₂) :
+    ∀ ci ∈ block, LevelParam.nodup ci.toConstantVal.levelParams = true := by
+  intro ci hci
+  dsimp only [Semantics.DeclIndRun] at h
+  obtain ⟨hsplit, h⟩ := h
+  rw [hsplit] at hci
+  rcases h with ⟨_, _, _, _, _, -, -, _, _, members, recsRun, -⟩ | ⟨-, _, members, recsRun⟩
+  all_goals
+    rcases List.mem_append.mp hci with hm | hm
+    · exact indMembers_nodup members ci hm
+    · rcases recsRun with ⟨hnil, -⟩ | ⟨-, -, _, _, prov, -⟩
+      · rw [hnil] at hm
+        cases hm
+      · exact provisionRecs_nodup prov ci hm
+
+/-- **An installed inductive block that is not pinned has its type formers' and recursors' level
+positions distinct**: the modeled route checks every member's, the native route its one
+former's and its one recursor's. -/
+theorem unpinned_nodup {μ : CheckMode} {F : Nat} {ev : Evidences .source} {env env₂ : Env .source}
+    {block : List (Ix.Kernel.ConstantInfo .source)} {nP : Nat}
+    (h : checkDecl μ (fueledOps μ F) ev env (.indDecl block nP) = .ok env₂) (hpin : basisPinHit block = none)
+    {ci : Ix.Kernel.ConstantInfo .source} (hci : ci ∈ block)
+    (hkind : (∃ cv caps, ci = .indInfo cv caps) ∨ ∃ cv mI rP rules, ci = .recInfo cv mI rP rules) :
+    LevelParam.nodup ci.toConstantVal.levelParams = true := by
+  have run := Semantics.checkDeclRun_ofEnvFactsE h
+  simp only [Semantics.DeclRun, hpin] at run
+  unfold Semantics.DeclIndRunDispatch at run
+  cases hnp : nativeParts? nP block with
+  | none =>
+    rw [hnp] at run
+    exact declIndRun_nodup run ci hci
+  | some p₀ =>
+    rw [hnp] at run
+    obtain ⟨-, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
+      hind, hp, -, -, -, -, -, -, -, -, hrec, -⟩ := run
+    obtain ⟨cvT, s, -, hlpsT, hccv, hp₁, -, -⟩ := checkSumInd_shape hind
+    obtain ⟨cvRi, -, -, -, hccvR, -⟩ := checkNativeRec_shape hrec
+    obtain ⟨hshape, -⟩ := nativeParts?_inv hnp
+    obtain ⟨caps, rest, cs, mI, rP, rules, hblock, hsplit⟩ := nativeShape?_block hshape
+    rw [hblock] at hci
+    rcases List.mem_cons.mp hci with rfl | hci
+    · show LevelParam.nodup p₀.cvT.levelParams = true
+      rw [← hlpsT]
+      exact (checkConstantVal_inv hccv).2.2.2.1
+    · rcases SourceInstalls.sumSplit_cover hsplit ci hci with rfl | ⟨c, -, rfl⟩
+      · have hR : p.cvR = p₀.cvR := by
+          rw [hp, hp₁]
+          rfl
+        show LevelParam.nodup p₀.cvR.levelParams = true
+        rw [← hR]
+        exact (checkConstantVal_inv hccvR).2.2.2.1
+      · rcases hkind with ⟨_, _, h⟩ | ⟨_, _, _, _, h⟩ <;> cases h
+
+/-- **A type former or recursor of an installed inductive block, numbered under its names, has
+distinct names**, pinned or not. -/
+theorem member_names_nodup {μ : CheckMode} {F : Nat} {ev : Evidences .source} {env env₂ : Env .source}
+    {block : List (Ix.Kernel.ConstantInfo .source)} {nP : Nat}
+    (h : checkDecl μ (fueledOps μ F) ev env (.indDecl block nP) = .ok env₂)
+    {ci : Ix.Kernel.ConstantInfo .source} (hci : ci ∈ block)
+    (hkind : (∃ cv caps, ci = .indInfo cv caps) ∨ ∃ cv mI rP rules, ci = .recInfo cv mI rP rules)
+    {σ : Numbering} {ρ : FiberMap} {e : Ix.Expr} {t' : Ix.Kernel.Expr .source}
+    (ht' : ingressExpr σ.pos e = .ok t') (hlps : ci.toConstantVal.levelParams = σ.params)
+    (hty : ci.toConstantVal.type = mapLevels (canonLevelIn σ.params) (Ix.LeanIngress.Expr.substKeys ρ t')) :
+    σ.names.toList.Nodup := by
+  cases hpin : basisPinHit block with
+  | some k =>
+    have hnp : ∀ t, ci ≠ .projInfo t := by
+      rintro t rfl
+      rcases hkind with ⟨_, _, h⟩ | ⟨_, _, _, _, h⟩ <;> cases h
+    exact pinned_member_nodup hpin hci hnp ht' hlps hty
+  | none =>
+    have hn := unpinned_nodup h hpin hci hkind
+    rw [hlps] at hn
+    exact names_nodup hn
+
+/-- `canonInfo` of a recursor: its constant in canonical levels, its rules in some form. -/
+theorem canonInfo_rec (cv : Ix.Kernel.ConstantVal .source) (m p : Nat) (rules : List (Ix.Kernel.RecRule .source)) :
+    ∃ rules', Ix.LeanIngress.canonInfo (.recInfo cv m p rules) =
+      .recInfo ((Ix.LeanIngress.canonValM cv).run' {}) m p rules' :=
+  ⟨_, rfl⟩
+
+/-- **A kept inductive group's first type and its recursors have distinct level parameters**
+(`InductiveNeeds.nodup`, and `recLevels`' distinctness), when the prepared stream is accepted:
+the group lowers to an `indDecl` whose first former and recursors carry the group's types and
+recursors under their numberings (`SourceConversion.convertInductive_exact`), renamed and with
+canonical levels, and the checker installed it (`member_names_nodup`). -/
+theorem inductive_nodup {μ : CheckMode} {ev : Evidences .source} {envS : Env .source} {pre : Prelude .source}
+    {decls ds : Array (Declaration .source)} {rs : List (Read .source)}
+    (acc : Cached.AcceptsRef μ ev ds.toList envS)
+    (hflat : decls.toList = rs.flatMap (·.decls.toList)) (hds : ds = Frontend.preparePrelude pre.ix decls)
+    {g : Graph} {ρ : FiberMap} {hints : CName .source → Option ReducibilityHint} {start : State .source}
+    {ls : List Scheduled} {ℓ : Nat} {y : Scheduled} {types : Array Ix.InductiveVal}
+    {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal} {c : Converted} {stS : State .source}
+    {raw rd : Read .source}
+    (low : LoweredAt g ρ hints start ls rs ℓ y (.inductive types ctors recs) c stS raw rd) (kept : rd = raw)
+    {first : Ix.InductiveVal} (hfirst : types[0]? = some first) :
+    first.cnst.levelParams.toList.Nodup ∧ ∀ r ∈ recs.toList, r.cnst.levelParams.toList.Nodup := by
+  obtain ⟨-, hr, -, hconv, -, -, hl, -⟩ := low
+  obtain ⟨first', rb, hfirst', rfl, -, htypes, -, -, hrecs⟩ := SourceConversion.convertInductive_exact hconv
+  rw [hfirst] at hfirst'
+  cases hfirst'
+  have hl' : lowerInductive stS (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb)) =
+      .ok raw := hl
+  have hdecl := NoCtor.lowerInductive_decl hl'
+  subst kept
+  have hmem := kept_mem hflat hds hr (Array.mem_toList_iff.mpr hdecl)
+  obtain ⟨F, e₀, e₂, checked⟩ := NoCtor.acceptsRef_decl acc hmem
+  refine ⟨?_, ?_⟩
+  · have hmemF : first ∈ types.toList := Array.mem_toList_iff.mpr (Array.mem_of_getElem? hfirst)
+    obtain ⟨⟨cv, nP, nI⟩, hentry, rel⟩ := Ix.CompileCert.SourceConstructorPositions.forall₂_mem htypes hmemF
+    have hin := NoCtor.mem_blockOf_type
+      (rb := Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb))
+      (recInfos := NoCtor.recInfosOf (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb)))
+      (entry := ((Ix.LeanIngress.canonValM (Ix.LeanIngress.ConstantVal.substKeys ρ cv)).run' {}, nP, nI)) (by
+        simp only [Ix.LeanIngress.BlockRead.canon, Ix.LeanIngress.BlockRead.substKeys, Array.toList_map,
+          List.map_map, List.mem_map]
+        exact ⟨_, hentry, rfl⟩)
+    refine member_names_nodup (ρ := ρ) checked hin (.inl ⟨_, _, rfl⟩) rel.2.2.1 ?_ ?_
+    · simp only [RecordReadings.canonValM_run, Ix.Kernel.ConstantInfo.toConstantVal,
+        Ix.LeanIngress.ConstantVal.substKeys]
+      exact rel.2.1
+    · simp only [RecordReadings.canonValM_run, Ix.Kernel.ConstantInfo.toConstantVal,
+        Ix.LeanIngress.ConstantVal.substKeys]
+      rw [rel.2.1]
+  · intro r hrmem
+    obtain ⟨⟨cv, rc, rules⟩, hentry, rel⟩ := Ix.CompileCert.SourceConstructorPositions.forall₂_mem hrecs hrmem
+    obtain ⟨rules', hcanon⟩ := canonInfo_rec (Ix.LeanIngress.ConstantVal.substKeys ρ cv) 0 0
+      (rules.map (Ix.LeanIngress.RecRule.substKeys ρ))
+    obtain ⟨mI, rP, hin⟩ := NoCtor.mem_blockOf_rec
+      (rb := Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb))
+      (entry := ((Ix.LeanIngress.canonValM (Ix.LeanIngress.ConstantVal.substKeys ρ cv)).run' {}, rc, rules')) (by
+        simp only [Ix.LeanIngress.BlockRead.canon, Ix.LeanIngress.BlockRead.substKeys, Array.toList_map,
+          List.map_map, List.mem_map]
+        refine ⟨_, hentry, ?_⟩
+        simp only [Function.comp_apply, hcanon])
+    refine member_names_nodup (ρ := ρ) checked hin (.inr ⟨_, _, _, _, rfl⟩) rel.2.2.1 ?_ ?_
+    · simp only [RecordReadings.canonValM_run, Ix.Kernel.ConstantInfo.toConstantVal,
+        Ix.LeanIngress.ConstantVal.substKeys]
+      exact rel.2.1
+    · simp only [RecordReadings.canonValM_run, Ix.Kernel.ConstantInfo.toConstantVal,
+        Ix.LeanIngress.ConstantVal.substKeys]
+      rw [rel.2.1]
+
+/-- **The recursors share distinct level parameters** (`InductiveNeeds.recLevels`), given that
+they share them. -/
+theorem recLevels_of {recs : Array Ix.RecursorVal} (nodup : ∀ r ∈ recs.toList, r.cnst.levelParams.toList.Nodup)
+    (share : ∀ r ∈ recs.toList, ∀ r' ∈ recs.toList, r.cnst.levelParams = r'.cnst.levelParams) :
+    ∃ rlps : Array Ix.Name, (∀ r ∈ recs.toList, r.cnst.levelParams = rlps) ∧ rlps.toList.Nodup := by
+  by_cases hne : recs.toList = []
+  · exact ⟨#[], fun r hr => (by rw [hne] at hr; cases hr), by simp⟩
+  · obtain ⟨r₀, h₀⟩ := List.exists_mem_of_ne_nil _ hne
+    exact ⟨r₀.cnst.levelParams, fun r hr => share r hr r₀ h₀, nodup r₀ h₀⟩
+
+end Families
+
 
 /--
 info: 'Ix.Cert.TraceSource.kept_levels' depends on axioms: [propext, Classical.choice, Quot.sound]
@@ -709,5 +1065,11 @@ info: 'Ix.Cert.TraceSource.inductive_shape' depends on axioms: [propext, Classic
 -/
 #guard_msgs in
 #print axioms inductive_shape
+
+/--
+info: 'Ix.Cert.TraceSource.inductive_nodup' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms inductive_nodup
 
 end Ix.Cert.TraceSource

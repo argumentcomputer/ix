@@ -396,11 +396,22 @@ theorem mem_blockOf_ctor {md : Ix.Kernel.Mode} {rb : Ix.Kernel.Reader.BlockRead 
     Ix.Kernel.ConstantInfo.ctorInfo entry.1 entry.2.1 entry.2.2 ∈ blockOf rb recInfos :=
   List.mem_append_left _ (List.mem_append_right _ (List.mem_map.mpr ⟨entry, h, rfl⟩))
 
-/-- **A lowered inductive block declares its `indDecl`** (`blockOf`). -/
+/-- The recursors of an inductive block's `indDecl`, as `lowerInductive` builds them. -/
+def recInfosOf {md : Ix.Kernel.Mode} (rb : Ix.Kernel.Reader.BlockRead md) : List (Ix.Kernel.ConstantInfo md) :=
+  rb.recs.toList.map fun (cv, r, rules) =>
+    .recInfo cv (r.params + r.motives + r.minors + r.indices) (r.params + r.motives + r.minors) rules
+
+theorem mem_blockOf_rec {md : Ix.Kernel.Mode} {rb : Ix.Kernel.Reader.BlockRead md}
+    {entry : Ix.Kernel.Reader.CVal md × Ix.Kernel.Reader.RecCounts × List (Ix.Kernel.RecRule md)}
+    (h : entry ∈ rb.recs.toList) :
+    ∃ mI rP, Ix.Kernel.ConstantInfo.recInfo entry.1 mI rP entry.2.2 ∈ blockOf rb (recInfosOf rb) :=
+  ⟨_, _, List.mem_append_right _ (List.mem_map.mpr ⟨entry, h, rfl⟩)⟩
+
+/-- **A lowered inductive block declares its `indDecl`** (`blockOf`, with its recursors). -/
 theorem lowerInductive_decl {md : Ix.Kernel.Mode} {st : Ix.Kernel.Reader.State md}
     {rb : Ix.Kernel.Reader.BlockRead md} {r : Ix.Kernel.Reader.Read md}
     (h : Ix.Kernel.Reader.lowerInductive st rb = .ok r) :
-    ∃ recInfos, Ix.Kernel.Declaration.indDecl (blockOf rb recInfos) rb.numParams ∈ r.decls := by
+    Ix.Kernel.Declaration.indDecl (blockOf rb (recInfosOf rb)) rb.numParams ∈ r.decls := by
   obtain ⟨nPd, types, ctors, ctorNames, recs⟩ := rb
   unfold Ix.Kernel.Reader.lowerInductive at h
   dsimp only at h
@@ -414,8 +425,8 @@ theorem lowerInductive_decl {md : Ix.Kernel.Mode} {st : Ix.Kernel.Reader.State m
   all_goals cases wants
   all_goals cases gen
   all_goals (cases h <;> first
-    | exact ⟨_, Array.mem_push_self⟩
-    | exact ⟨_, Array.mem_toList_iff.mp (List.mem_singleton_self _)⟩)
+    | exact Array.mem_push_self
+    | exact Array.mem_toList_iff.mp (List.mem_singleton_self _))
 
 /-- A loop in `Except` that only yields and keeps what it collects, run to
 success: everything the start collected is in the result, and every element's
@@ -537,7 +548,8 @@ theorem noCtor_of_checkSourceWith (V : Type w) [Ix.Kernel.SetTheory V] {pre : Ix
   rw [layout] at hconv'
   obtain ⟨rb, rfl, typeEntries, ctorEntries⟩ := convertInductive_entries types ctors recs conv hconv'
   obtain ⟨st₀, rd, hlow, kept⟩ := lowerAll_mem hr hsched
-  obtain ⟨recInfos, hdecl⟩ := lowerInductive_decl hlow
+  have hdecl := lowerInductive_decl hlow
+  generalize recInfosOf _ = recInfos at hdecl
   have inPrepared := Ix.Kernel.Frontend.mem_preparePrelude (pre := pre.ix) (kept _ hdecl)
   obtain ⟨F, e, e₂, checked⟩ := acceptsRef_decl href (Array.mem_toList_iff.mpr inPrepared)
   -- the family's members and constructors in the group
