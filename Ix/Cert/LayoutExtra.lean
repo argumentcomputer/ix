@@ -1,4 +1,6 @@
 import Ix.Cert.ReportChecks
+import Ix.Cert.LiteralSources
+import Ix.Cert.FreshSnapshot
 import Ix.Cert.ClosureLayout
 import Ix.Cert.ClosureClaims
 import Ix.Cert.LayoutRefs
@@ -41,7 +43,16 @@ an operation's key by a definition (`stream_defn`): a group's names are stored c
 group's kind (`groupsOf_kinded`), so an inductive, axiom or quotient group has no definition
 with the key, and a definitions group lowers each member at its own kind. Together they give
 `OpsDeclared` (`opsDeclared_of`), so the ground edges follow from the claims
-(`ground_extra_of`). A name with `sorryAx`'s key sits at the role's axiom record (`not_sorryAx`). -/
+(`ground_extra_of`). A name with `sorryAx`'s key sits at the role's axiom record (`not_sorryAx`).
+
+**Literals.** A group name's records are its block's record or bare projections, which hold no
+literal (`claimed_records`, `RowsMuts`). The block's record holds a literal only where a term its
+compile reads does (`LiteralSources.runBlock_lits`): a term of the block's key or members, which
+are closure names (`ClaimedIn`'s `MembersIn`), or of a constructor an inductive member lists.
+That constant depends on the literal's support names (`literalSupport`), so they are reached
+(`literal_reaches`), and a support role's stored record is its name's (`LiteralRolesNamed`, a
+compile-report check), so the edge's target is a closure name's record (`literal_extra`). The
+three cases together are `layout_extra`. -/
 
 namespace Ix.Cert.LayoutExtra
 
@@ -577,9 +588,11 @@ section Rows
 open Ix.CompileM Ix.CompileCert
 open Ix.Cert.BlockRecords (Returns)
 
-/-- **A block whose rows include a projection is a block record** (`muts`). -/
+/-- **A block whose rows include a projection is a block record** (`muts`), and the projection
+holds no literal (a bare projection: no sharing table, no expressions). -/
 def RowsMuts (r : BlockResult) : Prop :=
-  ∀ p ∈ r.projections, p.2.1 ≠ r.block → ∃ ms, r.block.info = .muts ms
+  ∀ p ∈ r.projections, p.2.1 ≠ r.block →
+    (∃ ms, r.block.info = .muts ms) ∧ Ix.Kernel.Reader.literalKinds p.2.1 = (false, false)
 
 theorem finishConstant_rows (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta) :
     Returns RowsMuts (finishConstantInfoWithSharing info blockMeta) := by
@@ -603,10 +616,20 @@ theorem finishInductive_rows (i : Ix.InductiveVal) (ind : Ixon.Inductive) (indMe
   obtain ⟨block, mid', hb, ran⟩ := bind_ok ran
   rw [rawRun_pure] at ran
   cases ran
-  intro _ _ _
+  intro p hp _
   obtain ⟨targets, h, -⟩ :=
     ProjectionLayout.sharing_mutual_shape _ _ _ _ _ (BlockLayout.buildBlockConstant_ok hb)
-  exact ⟨targets, h⟩
+  refine ⟨⟨targets, h⟩, ?_⟩
+  simp only [BlockResult.mk'] at hp
+  unfold buildInductiveProjections at hp
+  rcases Array.mem_append.mp hp with hp | hp
+  · simp at hp
+    subst hp
+    rfl
+  · obtain ⟨j, hj, rfl⟩ := Array.getElem_of_mem hp
+    rw [Array.getElem_mapIdx]
+    split
+    rfl
 
 theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
     {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
@@ -631,9 +654,22 @@ theorem buildMutual_rows {limits : Ix.Sharing.Exact.Limits} {classes : List (Lis
     rw [hs] at ran
     obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
     cases Except.ok.inj returned
-    intro _ _ _
+    intro p hp _
     obtain ⟨targets, h, -⟩ := ProjectionLayout.sharing_mutual_shape _ _ _ _ _ hb
-    exact ⟨targets, h⟩
+    refine ⟨⟨targets, h⟩, ?_⟩
+    have logical : (p.1, p.2.1) ∈ MutualProjections.logicalRows
+        (buildMutualProjections classes (Address.admissionHash (Ixon.ser block)) metas) :=
+      List.mem_map.mpr ⟨p, Array.mem_toList_iff.mpr hp, rfl⟩
+    rw [MutualProjections.build_rows, MutualProjections.expectedRows] at logical
+    obtain ⟨⟨members, index⟩, -, inClass⟩ := List.mem_flatMap.mp logical
+    obtain ⟨source, -, generated⟩ := List.mem_flatMap.mp inClass
+    unfold MutualProjections.sourceRows at generated
+    rcases List.mem_cons.mp generated with e | rest
+    · rw [(Prod.mk.inj e).2]
+      cases source <;> rfl
+    · obtain ⟨⟨ctor, ctorIndex⟩, -, e⟩ := List.mem_map.mp rest
+      rw [← (Prod.mk.inj e).2]
+      rfl
 
 theorem compileMutualBlock_rows (classes : List (List MutConst)) :
     Returns RowsMuts (compileMutualBlock classes) := by
@@ -713,8 +749,10 @@ theorem runBlock_rows {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} 
       rw [← hrows]; exact Array.mem_map.mpr ⟨p, hp, rfl⟩
     obtain ⟨q, hq, e⟩ := Array.mem_map.mp hm
     have he : q.2.1 = p.2.1 := (Prod.mk.inj e).2
+    have row := rows q hq (by rw [he, ← hblock]; exact hne)
+    rw [he] at row
     rw [hblock]
-    exact rows q hq (by rw [he, ← hblock]; exact hne)
+    exact row
   rcases rest with ⟨r', s₂, run, same⟩ | ⟨cs, out, s₄, run, same⟩
   · exact transfer r' (compileConstantInfo_rows const _ _ _ _ run) same
   · exact transfer out (compileMutualBlock_rows _ _ _ _ _ run) same
@@ -760,7 +798,7 @@ theorem block_role {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} (htable : Ix.Kerne
         rw [prec]
         exact powner _
       rw [hat] at hrole
-      obtain ⟨ms, hms⟩ := runBlock_rows hr q hq same
+      obtain ⟨⟨ms, hms⟩, -⟩ := runBlock_rows hr q hq same
       obtain ⟨d, hd, -⟩ := (kinds t htable r _ _ hrole blockRec).1 hspec
       rw [hms] at hd
       cases hd
@@ -1265,20 +1303,25 @@ theorem members_defn {ctx : CompileEnv × BlockEnv} {all : Ix.Set Ix.Name} {s s'
     cases ran
     exact hacc
 
+/-- **A block's member names are closure names**: every name of the compiled block's member set
+is a key of the closure. -/
+def MembersIn (sub : Ix.Environment) (A : Ix.Set Ix.Name) : Prop :=
+  ∀ x, A.contains x = true → ∃ ci, (x, ci) ∈ sub.consts.toList
+
 /-- **A group name's published record is a primary claim of its block's compile**, run in a
 compile environment that reads the input's constants: `BlockLayout.ClaimedAt` with the
-environment the fold's states keep. -/
-def ClaimedIn (env : Ix.Environment) (ixe : Ixon.Env) (n : Ix.Name) (a : Address) : Prop :=
+environment the fold's states keep, and with the block's key and members closure names. -/
+def ClaimedIn (env sub : Ix.Environment) (ixe : Ixon.Env) (n : Ix.Name) (a : Address) : Prop :=
   ∃ (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult) (c : BlockState)
     (b : ByteArray),
-    (∀ x, cenv.env.get? x = env.consts.get? x) ∧
+    (∀ x, cenv.env.get? x = env.consts.get? x) ∧ A.contains k = true ∧ MembersIn sub A ∧
     runBlock cenv A k = .ok (r, c) ∧ (n, a, b) ∈ Resolution.claimWrites k r ∧
     ixe.consts.get? a = some { buf := b, len := b.size } ∧
     ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size }
 
-theorem ClaimedIn.claimedAt {env : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {a : Address}
-    (h : ClaimedIn env ixe n a) : BlockLayout.ClaimedAt ixe n a := by
-  obtain ⟨cenv, A, k, r, c, b, -, rest⟩ := h
+theorem ClaimedIn.claimedAt {env sub : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {a : Address}
+    (h : ClaimedIn env sub ixe n a) : BlockLayout.ClaimedAt ixe n a := by
+  obtain ⟨cenv, A, k, r, c, b, -, -, -, rest⟩ := h
   exact ⟨cenv, A, k, r, c, b, rest⟩
 
 /-- A definition record is its own owner, so it projects into no block. -/
@@ -1302,12 +1345,12 @@ theorem defn_not_projects {c : Ixon.Constant} {d : Ixon.Definition} (hd : c.info
 definition.** The record is the claim's block itself: a lone constant's compile makes one only
 of a definition (`lone_defn`), a mutual block's only of a single member that the block's members'
 loop made of an input definition (`compileMutualBlock_defn`, `members_defn`). -/
-theorem claimed_definition {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+theorem claimed_definition {env sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (compiled : compileReport env = .ok (ixe, failures)) {n : Ix.Name} {A : Address}
-    (claimed : ClaimedIn env ixe n A) {c : Ixon.Constant} (hc : recordAt ixe A = some c)
+    (claimed : ClaimedIn env sub ixe n A) {c : Ixon.Constant} (hc : recordAt ixe A = some c)
     {d : Ixon.Definition} (hd : c.info = .defn d) (hk : d.kind = .defn) :
     ∃ v, env.consts.get? n = some (.defnInfo v) := by
-  obtain ⟨cenv, all, k, res, cst, bytes, henv, hr, hclaim, hstored, hblock⟩ := claimed
+  obtain ⟨cenv, all, k, res, cst, bytes, henv, -, -, hr, hclaim, hstored, hblock⟩ := claimed
   have shape := BlockLayout.runBlock_shape hr
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have blockRec : recordAt ixe res.blockAddr = some res.block := by
@@ -1871,9 +1914,9 @@ theorem stream_defn {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
     exact absurd (List.mem_flatten.mpr ⟨rs, hrs, hs'⟩) (ops_not_prelude r hspec)
 
 /-- A claimed record is stored and decodes. -/
-theorem claimed_record {env : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {A : Address}
-    (claimed : ClaimedIn env ixe n A) : ∃ c, recordAt ixe A = some c := by
-  obtain ⟨cenv, all, k, res, cst, bytes, -, hr, hclaim, hstored, hblock⟩ := claimed
+theorem claimed_record {env sub : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {A : Address}
+    (claimed : ClaimedIn env sub ixe n A) : ∃ c, recordAt ixe A = some c := by
+  obtain ⟨cenv, all, k, res, cst, bytes, -, -, -, hr, hclaim, hstored, hblock⟩ := claimed
   have shape := BlockLayout.runBlock_shape hr
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   unfold Resolution.claimWrites at hclaim
@@ -1898,7 +1941,7 @@ theorem opsDeclared_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (kinds : RoleRecordKinds ixe)
     (claimed : ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, ClosureLayout.addrOf ixe m = some a →
-      ClaimedIn env ixe m a) :
+      ClaimedIn env sub ixe m a) :
     ∀ pre ds, Ix.Kernel.Reader.builtinPrelude = .ok pre →
       Ix.LeanIngress.prepareSourceCollapsedAt ixe t ((Ix.LeanIngress.fiberHintsMap ixe)[·]?) pre sub
         (blocksOf sub) = .ok ds → OpsDeclared ds.toList := by
@@ -1929,7 +1972,7 @@ claims of the closure's names. -/
 theorem ground_extra_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (kinds : RoleRecordKinds ixe)
-    (claimed : ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, addrOf ixe m = some a → ClaimedIn env ixe m a)
+    (claimed : ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, addrOf ixe m = some a → ClaimedIn env sub ixe m a)
     (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint) :
     ∀ (i : Nat) (gr : Group), (quotientGraph ixe t hints sub).groups[i]? = some gr → ∀ n ∈ gr.names,
       ∀ a ∈ nameRecords ixe n, ∀ (b : Address) (t' : Ix.Kernel.RoleTable), Ix.Kernel.Reader.defaultTable = .ok t' →
@@ -1940,6 +1983,260 @@ theorem ground_extra_of {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
   ground_extra P kinds (opsDeclared_of P kinds claimed) hints fun _ _ hgr n hn a ha => by
     obtain ⟨ci, hci⟩ := groupName_stored P hgr hn
     exact (claimed n ci hci a ha).claimedAt
+
+/-! ## Literal edges -/
+
+section Literals
+
+open Ix.CompileM Ix.CompileCert
+
+/-- The input name `literalSupport` gives a literal-support role (`supportNames`' spelling). -/
+def literalRoleName (s : Ix.Kernel.Role) : Ix.Name :=
+  Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName (Ix.Kernel.Key.role s : Ix.Kernel.Key .source))
+
+/-- **A stored literal-support role's record is its name's**, under the default role table:
+when the artifact stores a record at the address of a role a literal is checked against (the
+`Nat` basis and the string support, `Ix.Kernel.Reader.strLitSupportNames`), that role's name
+is an input constant published at that address. Every other address, and every unbound role,
+is unconstrained. -/
+def LiteralRolesNamed (env : Ix.Environment) (ixe : Ixon.Env) : Prop :=
+  ∀ t, Ix.Kernel.Reader.defaultTable = .ok t →
+    ∀ s ∈ keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)), ∀ b,
+      t.addressOf? s = some b → ixe.consts.contains b = true →
+        env.consts.contains (literalRoleName s) = true ∧ addrOf ixe (literalRoleName s) = some b
+
+/-- A role among a list's keys is one of its keys. -/
+theorem role_of_keyRoles {md : Ix.Kernel.Mode} {L : List (Ix.Kernel.Key md)} {s : Ix.Kernel.Role}
+    (h : s ∈ keyRoles L) : (Ix.Kernel.Key.role s : Ix.Kernel.Key md) ∈ L := by
+  unfold keyRoles at h
+  obtain ⟨k, hk, e⟩ := List.mem_filterMap.mp h
+  cases k with
+  | role r =>
+    simp only [Option.some.injEq] at e
+    subst e
+    exact hk
+  | _ => simp at e
+
+/-- A support role's name is among the support names. -/
+theorem supportNames_contains {L : List (Ix.Kernel.Key .source)} {s : Ix.Kernel.Role}
+    (h : (Ix.Kernel.Key.role s : Ix.Kernel.Key .source) ∈ L) :
+    (supportNames L).contains (literalRoleName s) = true :=
+  Array.contains_iff_exists_mem_beq.mpr ⟨literalRoleName s,
+    Array.mem_map.mpr ⟨_, by simpa using h, rfl⟩,
+    show ((literalRoleName s).getHash == (literalRoleName s).getHash) = true from beq_self_eq_true _⟩
+
+/-- **A constant with a literal of a kind depends on the roles that kind is checked against**,
+by name (`literalSupport`). -/
+theorem support_contains {ci : Ix.ConstantInfo} {e : Ix.Expr} (he : e ∈ termsOf ci) (k : Bool)
+    {s : Ix.Kernel.Role} (hk : LiteralSources.hasK k e = true)
+    (hs : s ∈ keyRoles (if k then (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon))
+      else Ix.Kernel.Reader.natLitSupportNames)) :
+    (literalSupport ci).contains (literalRoleName s) = true := by
+  have hany : ∀ (f : Ix.Expr → Bool), f e = true → (termsOf ci).any f = true :=
+    fun f hf => List.any_eq_true.mpr ⟨e, he, hf⟩
+  have nat_str : ∀ x, x ∈ (Ix.Kernel.Reader.natLitSupportNames : List (Ix.Kernel.Key .source)) →
+      x ∈ (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .source)) :=
+    fun x hx => List.mem_append_left _ hx
+  cases k
+  · have hrole : (Ix.Kernel.Key.role s : Ix.Kernel.Key .source) ∈ Ix.Kernel.Reader.natLitSupportNames :=
+      role_of_keyRoles (L := (Ix.Kernel.Reader.natLitSupportNames : List (Ix.Kernel.Key .source))) hs
+    unfold literalSupport
+    split
+    · exact supportNames_contains (nat_str _ hrole)
+    · simp only [hany hasNatLit (by simpa [LiteralSources.hasK] using hk), ↓reduceIte]
+      exact supportNames_contains hrole
+  · have hrole : (Ix.Kernel.Key.role s : Ix.Kernel.Key .source) ∈ Ix.Kernel.Reader.strLitSupportNames :=
+      role_of_keyRoles (L := (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .source))) hs
+    unfold literalSupport
+    simp only [hany hasStrLit (by simpa [LiteralSources.hasK] using hk), ↓reduceIte]
+    exact supportNames_contains hrole
+
+/-- **A record's literal roles come from a literal of one kind**: `literalRoles c` is the
+string support's when `c` holds a `String` literal, the `Nat` basis's when it holds only a `Nat`
+literal, and empty otherwise. -/
+theorem literalRoles_kind {c : Ixon.Constant} {s : Ix.Kernel.Role} (hs : s ∈ literalRoles c) :
+    ∃ k, LiteralSources.kindOf k (Ix.Kernel.Reader.literalKinds c) = true ∧
+      s ∈ keyRoles (if k then (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon))
+        else Ix.Kernel.Reader.natLitSupportNames) := by
+  unfold literalRoles at hs
+  dsimp only at hs
+  split at hs
+  · rename_i h2
+    exact ⟨true, h2, hs⟩
+  · split at hs
+    · rename_i _ h1
+      exact ⟨false, h1, hs⟩
+    · simp [keyRoles] at hs
+
+/-- The support roles of either kind are among the string support's. -/
+theorem kind_roles_str {k : Bool} {s : Ix.Kernel.Role}
+    (hs : s ∈ keyRoles (if k then (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon))
+      else Ix.Kernel.Reader.natLitSupportNames)) :
+    s ∈ keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)) := by
+  cases k
+  · unfold keyRoles at hs ⊢
+    exact List.mem_filterMap.mpr (by
+      obtain ⟨x, hx, e⟩ := List.mem_filterMap.mp hs
+      exact ⟨x, List.mem_append_left _ hx, e⟩)
+  · exact hs
+
+/-- **The records of a claimed name are its block's record or bare projections.** -/
+theorem claimed_records {ixe : Ixon.Env} {n : Ix.Name} {A : Address} {cenv : CompileEnv}
+    {all : Ix.Set Ix.Name} {k : Ix.Name} {r : BlockResult} {cst : BlockState} {bytes : ByteArray}
+    (hr : runBlock cenv all k = .ok (r, cst)) (hclaim : (n, A, bytes) ∈ Resolution.claimWrites k r)
+    (hstored : ixe.consts.get? A = some { buf := bytes, len := bytes.size })
+    (hblock : ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size })
+    {a : Address} (ha : a = A ∨ a = blockAt ixe A) {c : Ixon.Constant} (hc : recordAt ixe a = some c) :
+    c = r.block ∨ Ix.Kernel.Reader.literalKinds c = (false, false) := by
+  have shape := BlockLayout.runBlock_shape hr
+  have wire := BlockWire.blocksWire _ _ _ _ _ hr
+  have blockRec : recordAt ixe r.blockAddr = some r.block := by
+    rw [shape.bytes] at hblock
+    exact BlockLayout.recordAt_ser wire hblock
+  have selfBlock : blockAt ixe r.blockAddr = r.blockAddr := by
+    unfold blockAt
+    rw [blockRec]
+    exact shape.built.owner _
+  have key : (recordAt ixe A = some r.block ∧ blockAt ixe A = r.blockAddr) ∨
+      ∃ q, recordAt ixe A = some q ∧ blockAt ixe A = r.blockAddr ∧
+        Ix.Kernel.Reader.literalKinds q = (false, false) := by
+    unfold Resolution.claimWrites at hclaim
+    split at hclaim
+    · simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at hclaim
+      obtain ⟨-, rfl, rfl⟩ := hclaim
+      exact .inl ⟨blockRec, selfBlock⟩
+    · obtain ⟨q, hq, e⟩ := Array.mem_map.mp hclaim
+      simp only [Prod.mk.injEq] at e
+      obtain ⟨-, rfl, rfl⟩ := e
+      by_cases same : q.2.1 = r.block
+      · rw [same, ← shape.bytes, ← shape.addr]
+        exact .inl ⟨blockRec, selfBlock⟩
+      · rcases shape.rows q hq with h | ⟨pwire, -, powner⟩
+        · exact absurd h same
+        have prec := BlockLayout.recordAt_ser pwire hstored
+        refine .inr ⟨q.2.1, prec, ?_, (runBlock_rows hr q hq same).2⟩
+        unfold blockAt
+        rw [prec]
+        exact powner _
+  rcases ha with rfl | rfl
+  · rcases key with ⟨h, -⟩ | ⟨q, h, -, hq⟩
+    · rw [h] at hc
+      cases hc
+      exact .inl rfl
+    · rw [h] at hc
+      cases hc
+      exact .inr hq
+  · rcases key with ⟨-, h⟩ | ⟨q, -, h, -⟩
+    · rw [h, blockRec] at hc
+      cases hc
+      exact .inl rfl
+    · rw [h, blockRec] at hc
+      cases hc
+      exact .inl rfl
+
+/-- **A literal role of a claimed block's record is reached by name**: the block's record holds
+a literal only where a term its compile reads does (`LiteralSources.runBlock_lits`), that term
+is a constant's of the closure (the block's key and members, or a constructor an inductive
+member lists), and the constant depends on the role's name (`literalSupport`). -/
+theorem literal_reaches {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    (hcl : IsClosure env roots sub) {cenv : CompileEnv} {all : Ix.Set Ix.Name} {k : Ix.Name}
+    {r : BlockResult} {cst : BlockState} (henv : ∀ x, cenv.env.get? x = env.consts.get? x)
+    (hk : all.contains k = true) (hmembers : MembersIn sub all) (hr : runBlock cenv all k = .ok (r, cst))
+    {s : Ix.Kernel.Role} (hs : s ∈ literalRoles r.block) :
+    Reaches env roots (literalRoleName s) ∧
+      s ∈ keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)) := by
+  obtain ⟨kk, hkind, hroles⟩ := literalRoles_kind hs
+  refine ⟨?_, kind_roles_str hroles⟩
+  obtain ⟨src, ⟨x, hx, ci, hci, hterm⟩, hsrc⟩ := LiteralSources.runBlock_lits hr kk hkind
+  have hxsub : ClosureClaims.InSub sub x := by
+    have hxa : all.contains x = true := by
+      rcases hx with hx | rfl
+      · exact hx
+      · exact hk
+    obtain ⟨ci₀, hci₀⟩ := hmembers x hxa
+    unfold ClosureClaims.InSub
+    rw [SourceStoredNames.stored_get hci₀]
+    rfl
+  have hrx := ClosureClaims.reaches_of_sub hcl hxsub
+  rw [henv] at hci
+  rcases hterm with hterm | ⟨iv, c, cv, rfl, hc, hcv, rfl⟩
+  · exact .step hrx ⟨ci, hci, .inr (.inl (support_contains hterm kk hsrc hroles))⟩
+  · rw [henv] at hcv
+    have hrc : Reaches env roots c := .step hrx ⟨_, hci, .inl (FreshSnapshot.refsOf_induct iv hc)⟩
+    exact .step hrc ⟨_, hcv, .inr (.inl (support_contains (by simp [termsOf, Ix.ConstantInfo.getCnst]) kk hsrc
+      hroles))⟩
+
+/-- **`Layout.extra` for literal edges**: from a record of a group's name that holds a literal,
+the record of a role the literal is checked against is a record of a name of a group.
+
+A group name's records are its block's record or bare projections (`claimed_records`), so the
+literal is the block record's. The literal's role is then reached by name (`literal_reaches`),
+and that name is an input constant published at the role's address (`LiteralRolesNamed`), so it
+is a closure name, which a group holds. -/
+theorem literal_extra {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (named : LiteralRolesNamed env ixe)
+    (claimed : ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, addrOf ixe m = some a → ClaimedIn env sub ixe m a)
+    (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint) :
+    ∀ (i : Nat) (gr : Group), (quotientGraph ixe t hints sub).groups[i]? = some gr → ∀ n ∈ gr.names,
+      ∀ a ∈ nameRecords ixe n, ∀ (b : Address) (t' : Ix.Kernel.RoleTable), Ix.Kernel.Reader.defaultTable = .ok t' →
+        ∀ (s : Ix.Kernel.Role), t'.addressOf? s = some b → ixe.consts.contains b = true →
+          ∀ c, recordAt ixe a = some c → s ∈ literalRoles c →
+            ∃ (j : Nat) (gr' : Group), (quotientGraph ixe t hints sub).groups[j]? = some gr' ∧
+              ∃ m ∈ gr'.names, b ∈ nameRecords ixe m := by
+  intro i gr hgr n hn a ha b t' ht' s hsb hcb c hc hs
+  have tt : t = t' := by
+    rw [P.table] at ht'
+    exact Except.ok.inj ht'
+  subst tt
+  have hcl : IsClosure env roots sub := P.source.1
+  obtain ⟨ci, hci⟩ := groupName_stored P hgr hn
+  obtain ⟨named', -, hget⟩ := SourceStoredNames.stored_published P hci
+  have hA : addrOf ixe n = some named'.addr := by
+    unfold addrOf
+    rw [hget]
+    rfl
+  obtain ⟨cenv, all, k, r, cst, bytes, henv, hk, hmembers, hr, hclaim, hstored, hblock⟩ :=
+    claimed n ci hci named'.addr hA
+  have ha' : a = named'.addr ∨ a = blockAt ixe named'.addr := by
+    simpa [nameRecords, hA] using ha
+  rcases claimed_records hr hclaim hstored hblock ha' hc with rfl | bare
+  · obtain ⟨hreach, hrole⟩ := literal_reaches hcl henv hk hmembers hr hs
+    obtain ⟨hin, haddr⟩ := named t P.table s hrole b hsb hcb
+    have hsub : ClosureClaims.InSub sub (literalRoleName s) := ClosureClaims.sub_of_reaches hcl hreach
+      (by rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact hin)
+    obtain ⟨m, cm, hm, hbeq⟩ := stored_key hsub
+    obtain ⟨j, gr', hgr', hmg⟩ := name_grouped (ixe := ixe) (t := t) (hints := hints) hm
+    refine ⟨j, gr', hgr', m, hmg, ?_⟩
+    rw [← nameRecords_congr hbeq]
+    simp [nameRecords, haddr]
+  · exfalso
+    unfold literalRoles at hs
+    dsimp only at hs
+    rw [bare] at hs
+    simp [keyRoles] at hs
+
+/-- **`Layout.extra`**: the ground, literal and recursor edges from a record of a group's name
+lead to records of names of groups, given the compile-report checks `RoleRecordKinds`,
+`RecursorsOwned` and `LiteralRolesNamed`, and each closure name's claim (`ClaimedIn`). -/
+theorem layout_extra {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (kinds : RoleRecordKinds ixe)
+    (owned : RecursorsOwned env ixe) (named : LiteralRolesNamed env ixe)
+    (claimed : ∀ m ci, (m, ci) ∈ sub.consts.toList → ∀ a, addrOf ixe m = some a → ClaimedIn env sub ixe m a)
+    (hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint) :
+    ∀ (i : Nat) (gr : Group), (quotientGraph ixe t hints sub).groups[i]? = some gr → ∀ n ∈ gr.names,
+      ∀ a ∈ nameRecords ixe n, ∀ b, (GroundEdge ixe a b ∨ RecursorEdge ixe a b) →
+        ∃ (j : Nat) (gr' : Group), (quotientGraph ixe t hints sub).groups[j]? = some gr' ∧
+          ∃ m ∈ gr'.names, b ∈ nameRecords ixe m := by
+  intro i gr hgr n hn a ha b hedge
+  rcases hedge with ⟨hcb, t', ht', s, hsb, ⟨r, p, hrp, hs, hpa⟩ | ⟨c, hc, hs⟩⟩ | hrec
+  · exact ground_extra_of P kinds claimed hints i gr hgr n hn a ha b t' ht' s r p hsb hrp hs hpa
+  · exact literal_extra P named claimed hints i gr hgr n hn a ha b t' ht' s hsb hcb c hc hs
+  · exact recursor_extra P owned hints i gr hgr n hn a ha b hrec
+
+end Literals
+
 end Ix.Cert.LayoutExtra
 
 /--
@@ -1977,3 +2274,15 @@ info: 'Ix.Cert.LayoutExtra.ground_extra_of' depends on axioms: [propext, Classic
 -/
 #guard_msgs in
 #print axioms Ix.Cert.LayoutExtra.ground_extra_of
+
+/--
+info: 'Ix.Cert.LayoutExtra.literal_extra' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.literal_extra
+
+/--
+info: 'Ix.Cert.LayoutExtra.layout_extra' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LayoutExtra.layout_extra
