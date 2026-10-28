@@ -7,7 +7,7 @@ use ix_common::env::Name;
 use ix_kernel::anon_work::{build_artifact_work, closure_addrs};
 use ix_kernel::artifact_checker::ArtifactChecker;
 use ix_kernel::mode::{Anon, Meta};
-use ix_kernel::role_admission::{ArtifactSource, PRELUDE};
+use ix_kernel::role_admission::{ArtifactSource, PRELUDE, SPEC_VERSION};
 use ixon::constant::{
   Constant, ConstantInfo, MutConst, defn_proj_address, defn_proj_constant,
 };
@@ -62,8 +62,9 @@ fn prelude_binding(env: &mut Env) {
     })
     .collect();
   bound.sort_by_key(|(role, _)| role.index());
-  let raw =
-    RoleTable { version: 2, bound, evidence: vec![] }.to_bytes().unwrap();
+  let raw = RoleTable { version: SPEC_VERSION, bound, evidence: vec![] }
+    .to_bytes()
+    .unwrap();
   env.role_binding =
     Some(RoleBinding { address: Address::hash(&raw), bytes: raw.into() });
 }
