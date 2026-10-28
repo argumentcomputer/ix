@@ -26,17 +26,58 @@ taken from where it lives (`Role.spec_*` below are `rfl`):
 | Kind | Roles | The checker's comparison |
 | --- | --- | --- |
 | `block` | the basis blocks `Eq`, `Nat`, `PUnit`, `Empty`, `False`, `Quot` (every member) | `basisPinHit`/`quotPinHit`: the stream's declarations equal these up to `ConstantInfo.canon`; the block installed is their annotation (`BasisKind.declsA`) |
-| `anchor` | the literal support (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`), the standard axioms' families (`Iff`, `Nonempty` and their constructors and recursors), `True`, `True.intro`, `Bool`, `Bool.false`, `Bool.true` | the constant's type, up to binder data and level-parameter names (`listTyOk` …, `ConstantVal.matchesPin`) |
+| `block` | the standard axioms' families `Iff` and `Nonempty` (every member: the inductive, its constructor and its recursor) | `stdAxiomOk` (`stdAxiomOkF`), before `propext` or `Classical.choice` is installed: each member is stored as a kernel-checked inductive, constructor or recursor with these parameter, field and binder counts and this type, up to binder data and level-parameter names (`ConstantVal.matchesPin`); the constructors and the recursor's rules are then the kernel's own for that inductive |
+| `anchor` | the literal support (`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat`), `True`, `True.intro`, `Bool`, `Bool.false`, `Bool.true`, `Bool.rec`, `And`, `And.intro`, `And.rec` | the constant's type, up to binder data and level-parameter names (`listTyOk` …, `ConstantVal.matchesPin`) |
 | `ops` | the certified `Nat` operations | the type (`natOpTyPinned`) and the characterizing equations (`natOpEquations`, `divModCertStmts`), each certified by its evidence in the pre-insertion environment with the operation's self-references replaced by its value |
-| `axiom` | `propext`, `Classical.choice`; `sorryAx` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); an inert axiom installs nothing and has no type constraint |
+| `axiom` | `propext`, `Classical.choice`; `sorryAx` (inert) | the axiom's exact type (`ConstantVal.matchesPin`); the inert `sorryAx` is matched at install, installs nothing, and any use of it declines |
 
-Four anchors have no use site that validates them: `Bool.rec`, `And`,
-`And.intro` and `And.rec` (the `And` rescue relies on `And`'s projection
-table and proof irrelevance at use, `andRescueSlots`, and needs nothing of
-`And`'s type). The fold's step validates them at install (owner, 2026-10-15;
-`installAnchors`, `Cached.annotDeclStep`): a declaration that declares one
-whose type is not its specification's, up to binder data and level-parameter
-names (`matchesPin`), declines.
+**The standard axioms' families are blocks, never anchors.** Every role that
+occurs in a standard axiom's type, transitively, is a `block` role: an
+admitted axiom is true only of the declarations its type quantifies over, so
+those declarations must be pinned whole, not by type. A type alone does not
+pin a family's meaning: with `Nonempty := fun _ => True` (a definition of
+`Nonempty`'s type) the axiom `Classical.choice` of the specified type over it
+proves `False` (`choice False True.intro`), and `Iff := fun _ _ => True` does
+the same for `propext`. `propext` mentions `Iff` and `Eq`, `Classical.choice`
+mentions `Nonempty`, and those blocks mention only their own members
+(`Role.stdAxiom_deps_blocks`). The quotient package is a basis block, so
+`Quot.sound` is covered as well.
+
+**The anchors, and why a type suffices for each.** An anchor is trusted for
+nothing beyond its type: no admitted axiom mentions one, and every native rule
+over one is certified against the bound constants themselves.
+- `Bool`, `Bool.false`, `Bool.true`: the results of `Nat.beq` and `Nat.ble`.
+  Their fast paths are admitted only with their equations, which are checked
+  by definitional equality against the bound `Bool.true`/`Bool.false` and the
+  bound operation's value, so a fast-path answer is the definition's.
+- The literal support: a literal denotes its unfolding through the bound
+  constants (`String.ofList [Char.ofNat …]`, `Nat.succ`/`Nat.zero`), and no
+  rule asserts that two literals' unfoldings differ.
+- `Bool.rec`, `And`, `And.intro`, `And.rec`: validated at install (below);
+  the `And` rescue reads `And`'s projection table and proof irrelevance at
+  use, not `And`'s meaning.
+- `True`, `True.intro`: nothing in the checker reads them, so nothing
+  validates them either; a table may bind them to anything of their types.
+- `sorryAx`'s type mentions `Bool`. `sorryAx` is inert, never installed and
+  never usable, so its type only fixes which declaration is tolerated.
+
+**`sorryAx` in the fold.** The record at `sorryAx`'s key installs nothing,
+and every use of the key declines (`unknownConstError`,
+`unresolvedConstsError`), so consistency never depends on its type. Its type
+is still matched at install (below): otherwise a table that binds `sorryAx`
+to another axiom (`axiom evil : False`) would let that one record pass as the
+tolerated declaration, and an accepted stream would no longer declare only
+the standard axioms and Lean's `sorryAx`. IxVM's binding validation and the
+Rust kernel's group admission compare the bound axiom with this type too.
+
+Five roles have no use site that validates them: the anchors `Bool.rec`,
+`And`, `And.intro` and `And.rec` (the `And` rescue relies on `And`'s
+projection table and proof irrelevance at use, `andRescueSlots`, and needs
+nothing of `And`'s type), and the inert `sorryAx`. The fold's step validates
+them at install (owner, 2026-10-15; `installAnchors`,
+`Cached.annotDeclStep`): a declaration that declares one whose type is not
+its specification's, up to binder data and level-parameter names
+(`matchesPin`), declines.
 
 **Evidence.** An operation's equations are certified by evidence the role
 table supplies, one entry per equation (`Evidence`): an unconditional
@@ -72,8 +113,10 @@ inductive Spec (md : Mode) where
   `fvar 3` in the certificate's telescope); the operation's self-reference is
   `.const (roleKey r) []`. -/
   | ops (type : Expr md) (eqs : List (List (Expr md) × Expr md × Expr md))
-  /-- An axiom of the given type; `none` is an inert axiom (`sorryAx`): it is
-  tolerated as a declaration, installs nothing, and any use declines. -/
+  /-- An axiom of the given type (`none`: of any type, which no role has since
+  version 3). Whether it is installed is the role's: `propext` and
+  `Classical.choice` are, while `sorryAx` is inert: tolerated as a
+  declaration, it installs nothing, and any use declines. -/
   | axiom (levels : Nat) (type : Option (Expr md))
   deriving Repr, Inhabited
 
@@ -306,6 +349,9 @@ def trueIntroCvA : ConstantVal md := ⟨trueIntroName, [], .const trueName []⟩
 /-- `Bool : Type` (shape only). -/
 def boolCvA : ConstantVal md := ⟨boolName, [], .sort (.succ .zero)⟩
 
+/-- `sorryAx.{u} (α : Sort u) (synthetic : Bool) : α`. -/
+def sorryAxSpecTy : Expr md := pi "α" (srt u) <| pi "synthetic" (cnst boolName) (bv 1)
+
 /-! ## The specification of every role -/
 
 /-- **The specification set.** -/
@@ -325,12 +371,8 @@ def Role.spec : Role → Spec md
   | .and => .anchor 0 andSpecTy
   | .andIntro => .anchor 0 andIntroSpecTy
   | .andRec => .anchor 1 andRecSpecTy
-  | .iff => .anchor 0 iffRaw.toConstantVal.type
-  | .iffIntro => .anchor 0 iffIntroRaw.toConstantVal.type
-  | .iffRec => .anchor 1 iffRecRaw.toConstantVal.type
-  | .nonempty => .anchor 1 nonemptyRaw.toConstantVal.type
-  | .nonemptyIntro => .anchor 1 nonemptyIntroRaw.toConstantVal.type
-  | .nonemptyRec => .anchor 1 nonemptyRecRaw.toConstantVal.type
+  | .iff | .iffIntro | .iffRec => .block iffFamily
+  | .nonempty | .nonemptyIntro | .nonemptyRec => .block nonemptyFamily
   | .list => .anchor 1 listSpecTy
   | .listNil => .anchor 1 listNilSpecTy
   | .listCons => .anchor 1 listConsSpecTy
@@ -355,7 +397,7 @@ def Role.spec : Role → Spec md
   | .natShiftRight => divModSpec natShiftRightName
   | .propext => .axiom 0 (some propextRaw.type)
   | .choice => .axiom 1 (some choiceRaw.type)
-  | .sorryAx => .axiom 1 none
+  | .sorryAx => .axiom 1 (some sorryAxSpecTy)
 
 /-- **The roles bound together with `r`**: the members of its block (itself
 included), in the block's order. A role table binds all of them or none. -/
@@ -399,6 +441,7 @@ def Role.deps : Role → List Role
   | .natShiftRight => [.nat, .natSub, .natBle, .natDiv, .bool, .eq]
   | .propext => [.iff, .eq]
   | .choice => [.nonempty]
+  | .sorryAx => [.bool]
   | _ => []
 
 /-- **The version of the specification set.** It changes exactly when
@@ -408,8 +451,11 @@ freezes (`Ix/SpecDigest.lean`). Version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2
 the five compiler-trust roles (`Lean.trustCompiler`, `Lean.reduceBool`,
 `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) and the `identity`
 specification kind are gone; the certified theory is Lean with its three
-standard axioms. -/
-def specVersion : Nat := 2
+standard axioms. Version 3: the standard axioms' families (`Iff`, `Nonempty`,
+their constructors and recursors) are `block` roles, as the checker already
+compares them (`stdAxiomOk`), not type-only anchors; `sorryAx` has its type,
+which depends on `Bool`. -/
+def specVersion : Nat := 3
 
 /-! ## The evidence of an operation, as the fold reads it -/
 
@@ -599,6 +645,19 @@ theorem Role.spec_false : (Role.spec (md := md)) .false = .block (BasisKind.decl
 theorem Role.spec_quot : (Role.spec (md := md)) .quot = .block (BasisKind.decls .quotK) := rfl
 theorem Role.spec_propext : (Role.spec (md := md)) .propext = .axiom 0 (some propextRaw.type) := rfl
 theorem Role.spec_choice : (Role.spec (md := md)) .choice = .axiom 1 (some choiceRaw.type) := rfl
+theorem Role.spec_iff : (Role.spec (md := md)) .iff = .block iffFamily := rfl
+theorem Role.spec_nonempty : (Role.spec (md := md)) .nonempty = .block nonemptyFamily := rfl
+theorem Role.spec_sorryAx : (Role.spec (md := md)) .sorryAx = .axiom 1 (some sorryAxSpecTy) := rfl
+
+/-- **No standard axiom is specified over an anchor**: the roles the types of
+`propext`, `Classical.choice` and `Quot.sound` mention are `block` roles, and
+so are the roles those blocks mention, which mention no others. -/
+theorem Role.stdAxiom_deps_blocks :
+    [Role.propext, .choice, .quotSound].all (fun r => r.deps.all fun s =>
+      ((Role.spec (md := md)) s).kind == .block &&
+        s.deps.all fun t => ((Role.spec (md := md)) t).kind == .block && t.deps.isEmpty) =
+      Bool.true := by
+  cases md <;> decide
 
 /-- Every role's block contains it. -/
 theorem Role.mem_block (r : Role) : r ∈ r.block := by cases r <;> decide
@@ -639,31 +698,39 @@ relies on `And`'s projection table and on proof irrelevance at use,
 (`Cached.annotDeclStep`): a constant bound to one of them must have its
 specification's type up to binder data and level-parameter names
 (`ConstantVal.matchesPin`, as the standard axioms' families are matched,
-`stdAxiomOkF`), or the declaration declines. -/
+`stdAxiomOkF`), or the declaration declines.
+
+The inert `sorryAx` is validated the same way: it installs nothing and every
+use of it declines, so no use site reads it, but a constant bound to it must
+have its specification's type, or a table could make any one axiom (`axiom
+evil : False`) the tolerated declaration. -/
 
 /-- The roles whose constants the fold's step matches against their
 specifications at install. -/
-def installAnchors : List Role := [.boolRec, .and, .andIntro, .andRec]
+def installAnchors : List Role := [.boolRec, .and, .andIntro, .andRec, .sorryAx]
 
 /-- **The pin of an anchor validated at install**: the role's key, its
 specification's level count (positional) and type. Spelled out rather than
-read from `Role.spec`, so that the fold's code reaches these four terms and
-not the whole specification set; `installAnchorPin?_role` relates the two. -/
+read from `Role.spec`, so that the fold's code reaches these terms and not
+the whole specification set; `installAnchorPin?_role` relates the two. -/
 def installAnchorPin? : Key md → Option (ConstantVal md)
   | .role .boolRec => some { name := .role .boolRec, levelParams := [0], type := boolRecSpecTy }
   | .role .and => some { name := .role .and, levelParams := [], type := andSpecTy }
   | .role .andIntro => some { name := .role .andIntro, levelParams := [], type := andIntroSpecTy }
   | .role .andRec => some { name := .role .andRec, levelParams := [0], type := andRecSpecTy }
+  | .role .sorryAx =>
+    some { name := .role .sorryAx, levelParams := [0], type := sorryAxSpecTy }
   | _ => none
 
 /-- The pins are the specifications: at a role of `installAnchors` the pin is
-the role's `anchor` specification (its level count positional, its type);
-at any other role there is none. -/
+the role's `anchor` or typed `axiom` specification (its level count
+positional, its type); at any other role there is none. -/
 theorem installAnchorPin?_role (r : Role) :
     (installAnchorPin? (md := md) (.role r)) =
       if r ∈ installAnchors then
         match (Role.spec (md := md)) r with
-        | .anchor n ty => some { name := .role r, levelParams := List.range n, type := ty }
+        | .anchor n ty | .axiom n (some ty) =>
+          some { name := .role r, levelParams := List.range n, type := ty }
         | _ => none
       else none := by
   cases r <;> rfl

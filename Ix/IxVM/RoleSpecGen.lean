@@ -192,14 +192,14 @@ def ctorCount (r : Role) : Except String Nat := do
     | _, _ => pure ()
   pure count
 
-/-- 0 block member, 1 anchor, 2 operation, 3 typed axiom, 4 inert axiom. -/
+/-- 0 block member, 1 anchor, 2 operation, 3 standard axiom, 4 the inert
+axiom `sorryAx` (tolerated as a declaration, never usable). -/
 def specKind (r : Role) : Nat :=
   match r.spec (md := .anon) with
   | .block _ => 0
   | .anchor .. => 1
   | .ops .. => 2
-  | .axiom _ (some _) => 3
-  | .axiom _ none => 4
+  | .axiom .. => if r == .sorryAx then 4 else 3
 
 def levels (r : Role) : Except String Nat := do
   match r.spec (md := .anon) with
@@ -208,7 +208,7 @@ def levels (r : Role) : Except String Nat := do
   | .ops .. => pure 0
   | .axiom n _ => pure n
 
-/-- The specified type; an inert axiom has none (`Sort 0` stands in). -/
+/-- The specified type; an axiom of any type has none (`Sort 0` stands in). -/
 def specType (r : Role) : Except String String := do
   match r.spec (md := .anon) with
   | .block _ =>

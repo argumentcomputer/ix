@@ -36,19 +36,27 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- `lowerInductiveDecls`) adds 11 compiled functions to each of the four closures, the entry's
 -- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6036 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+-- Specification version 3 adds four, the entry's (`IxC/Kernel/Audit/Roots.lean`): `iffFamily`,
+-- `nonemptyFamily`, `sorryAxSpecTy` and its two closed terms in, `Role.spec._closed_1` out.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 6040 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6170 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+-- Specification version 3 adds four, the entry's (`IxC/Kernel/Audit/Roots.lean`): `iffFamily`,
+-- `nonemptyFamily`, `sorryAxSpecTy` and its two closed terms in, `Role.spec._closed_1` out.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 6174 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6036 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+-- Specification version 3 adds four, the entry's (`IxC/Kernel/Audit/Roots.lean`): `iffFamily`,
+-- `nonemptyFamily`, `sorryAxSpecTy` and its two closed terms in, `Role.spec._closed_1` out.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 6040 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6170 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+-- Specification version 3 adds four, the entry's (`IxC/Kernel/Audit/Roots.lean`): `iffFamily`,
+-- `nonemptyFamily`, `sorryAxSpecTy` and its two closed terms in, `Role.spec._closed_1` out.
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 6174 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 

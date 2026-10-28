@@ -22,17 +22,18 @@ from `Ix.Kernel.Role.spec`). Roles are validated by group, as the
 specifications group them (`Role.block`), in the order of the rendered
 `group_roles`, and a group is admitted whole or not at all:
 
-- a basis block member must be a safe constant of the kind IxVM expects
+- a block member (the basis blocks and the standard axioms' families `Iff`
+  and `Nonempty`) must be a safe constant of the kind IxVM expects
   (inductive, constructor, recursor, quotient or axiom) with the specified
   level count and type, and its constructors must be the block's own; the
   member is then checked like any constant, so its recursor's rules are the
   canonical ones for the specified inductive;
-- an anchor (the literal support, `Bool` and the standard axioms' families)
-  must be safe, with the specified level count and type: its type alone, as
-  IxC and the Rust kernel validate it;
+- an anchor (the literal support, `Bool`, `True` and `And`) must be safe,
+  with the specified level count and type: its type alone, as IxC and the
+  Rust kernel validate it;
 - a standard axiom (`propext`, `Classical.choice`) must be a safe axiom of
-  the specified type; `sorryAx` must be an axiom with one universe
-  parameter, and no use of it is accepted;
+  the specified type, over its families as blocks; `sorryAx` must be a safe
+  axiom of its specified type, and no use of it is accepted;
 - an operation must be a safe level-0 definition of the specified type that
   checks, and its equations must hold: each structural equation by
   definitional equality, each well-founded one by a theorem of the
@@ -483,7 +484,7 @@ def roles := ⟦
       1 => validate_anchor(rc, tbl, r, ci),
       2 => validate_op(rc, tbl, r, a, ci),
       3 => validate_standard_axiom(rc, tbl, r, ci),
-      4 => validate_inert_axiom(rc, ci),
+      4 => validate_inert_axiom(rc, tbl, r, ci),
     }
   }
 
@@ -587,14 +588,17 @@ def roles := ⟦
     }
   }
 
-  -- `sorryAx`: an axiom with one universe parameter; its type is free and
-  -- any use of it declines.
-  fn validate_inert_axiom(rc: RoleCtx, ci: KConstantInfo) {
+  -- `sorryAx`: a safe axiom of its specified type, `(α : Sort u) → Bool → α`.
+  -- It is tolerated as a declaration and any use of it declines; its type
+  -- fixes which declaration is tolerated.
+  fn validate_inert_axiom(rc: RoleCtx, tbl: RoleTable, r: G,
+      ci: KConstantInfo) {
     match ci {
-      KConstantInfo.Axiom(nlvls, ty, _) =>
+      KConstantInfo.Axiom(nlvls, ty, u) =>
+        assert_eq!(u, 0, "a bound inert axiom is unsafe");
         validate_expr_well_scoped(ty, 0, nlvls);
         k_ensure_sort(rc, ty, store(ListNode.Nil));
-        (),
+        assert_type_meets(rc, ty, role_type(tbl, r)),
     }
   }
 

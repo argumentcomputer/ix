@@ -121,9 +121,11 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- `lowerInductiveDecls`) adds 11 compiled functions, the entry's
 -- (`IxC/Kernel/Audit/Roots.lean`). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Specification version 3 adds four, the entry's (`IxC/Kernel/Audit/Roots.lean`): `iffFamily`,
+-- `nonemptyFamily`, `sorryAxSpecTy` and its two closed terms in, `Role.spec._closed_1` out.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6022 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ixon.Projection.checkBytes]: 6026 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

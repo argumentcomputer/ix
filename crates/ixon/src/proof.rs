@@ -1126,7 +1126,7 @@ impl ClaimContext {
 /// canonical encoding of the role specifications. Pinned here and checked
 /// against the Lean value by the `claim` test suite.
 pub const SPEC_DIGEST_HEX: &str =
-  "52049b9d09530c92cd2b02115a00ef79f64d99e8b279ee14c42b8b3dc9a94b3f";
+  "f09825902503729718c7ab437405b9f87efb97024085f8f2ea10e1e3ca378ba3";
 
 /// [`SPEC_DIGEST_HEX`] as an address.
 pub fn spec_digest() -> Address {
@@ -1726,7 +1726,7 @@ mod tests {
     // two serializers cannot drift on the large-tag path unnoticed.
     assert_eq!(
       addr.hex(),
-      "5f6f427ffe393beabc12bf64df64c32657d79d0dd925ec7a3e2ea9180fa85e03",
+      "72eadc8676a4b86a6c829087b2aaf7c56674e0dec42a356cf70c47c654c37066",
       "catalog claim digest drifted"
     );
     // Unconditional form: trailing 0x00, same 2-byte tag.

@@ -121,11 +121,13 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- `lowerInductiveDecls`) adds 11, the entry's (`IxC/Kernel/Audit/Roots.lean`). Measured
 -- against a walk that stops at the guard; externs, implemented_by, unsafe, csimp and all ruling
 -- counts are unchanged.
+-- Specification version 3 adds four, the entry's (`IxC/Kernel/Audit/Roots.lean`): `iffFamily`,
+-- `nonemptyFamily`, `sorryAxSpecTy` and its two closed terms in, `Role.spec._closed_1` out.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 5997 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkBytes]: 6001 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

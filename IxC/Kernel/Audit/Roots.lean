@@ -600,7 +600,10 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 #guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Audit.Roots Ix.Kernel.Audit.kernelImportDenylist
 #guard Ix.Kernel.Audit.allowed Ix.Kernel.Audit.kernelImportAllowlist `IxC.Kernel.Ixon.Reader Ix.Kernel.Audit.kernelImportDenylist
 
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3496 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 23 -/
+-- Matching `sorryAx` against its type at install (`installAnchorPin?`, specification
+-- version 3) adds three: `sorryAxSpecTy` and its two closed terms. Externs,
+-- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3499 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 23 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -626,10 +629,15 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- for `Declaration.names` and `ConstantInfo.name` (with their arity-reduced forms), which the
 -- checker reaches already. Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Specification version 3 moved it from 6000, 5 in and 1 out: the standard axioms'
+-- families as blocks (`iffFamily`, `nonemptyFamily`) and `sorryAx`'s type
+-- (`sorryAxSpecTy` and its two closed terms) in, and the closed term of the families'
+-- former anchor types (`Role.spec._closed_1`) out. Externs, implemented_by, unsafe,
+-- csimp and all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6000 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstants]: 6004 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -673,8 +681,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- implemented_by 0, unsafe 26 and csimp 7 are unchanged.
 -- Declining an inductive read whose declarations repeat a name moved it from 6099 by the
 -- entry's change (11 in, the same functions; measured against a walk that stops at the guard).
+-- Specification version 3 moved it from 6110 by the entry's change (5 in, 1 out).
+-- entry's change (11 in, the same functions; measured against a walk that stops at the guard).
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6110 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6114 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

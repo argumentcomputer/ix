@@ -348,8 +348,9 @@ Not proved:
 - that a bound role's constant meets its specification (`Role.spec`)
   beyond what the fold checks: the block roles are checked against their
   specifications by the basis install, the operations by their evidence,
-  the axioms by `matchesPin`; the anchors (`Bool`, `True`, `Iff`, `Nonempty`,
-  `List`, `String`, `Char`, ...) by their uses, and `Bool.rec`, `And`,
+  the standard axioms with their `Iff` and `Nonempty` families by
+  `stdAxiomOk`; the anchors (`Bool`, `True`, `List`, `String`, `Char`, ...)
+  by their uses, and `Bool.rec`, `And`,
   `And.intro`, `And.rec` by the fold's step at install (`matchesPin`). That the
   default table binds Init's own constants is the generator's
   verification, not a theorem; the no-False theorems are stated at
@@ -379,8 +380,8 @@ uses Lean's three standard axioms: `propext`, `Classical.choice` and
 decline. There are no native-evaluation roles for these declarations or for
 `Lean.reduceBool` and `Lean.reduceNat`; opaque definitions follow the ordinary
 checking rules. Native evaluation is outside this certified theory.
-`sorryAx` is tolerated as a declaration and installs nothing; any use of it
-declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
+`sorryAx` is tolerated as a declaration of its own type and installs
+nothing; any use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
 operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
 
@@ -588,23 +589,29 @@ knows 59 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
 `xor`, `shiftLeft`, `shiftRight` well-founded), the standard axioms and
 `sorryAx`.
 Each has a fixed specification (`Role.spec`): a closed term over role keys
-and positional levels, of one of four kinds (a basis `block`'s declarations;
-an `anchor`'s type; an operation's type and characterizing equations,
-`ops`; an `axiom`'s exact type, or none for the inert `sorryAx`), its block
+and positional levels, of one of four kinds (a `block`'s declarations, for
+the basis and the standard axioms' families `Iff` and `Nonempty`; an
+`anchor`'s type; an operation's type and characterizing equations, `ops`;
+an `axiom`'s exact type, which for the inert `sorryAx` fixes only which
+declaration is tolerated), its block
 (`Role.block`, the roles bound together) and its dependencies (`Role.deps`).
 The specifications are today's checks
 respelled, not new ones (`Role.spec_*` are `rfl` against the data the
 checker compares). They carry no address and no input key, so one set
 serves every toolchain. Specification version 2 removes the five
 compiler-trust/native-evaluation roles and the `identity` specification
-kind. The canonical encoding (`Ix.SpecDigest.specBytes`) is 8696 bytes.
+kind. Version 3 makes `Iff`, `Nonempty` and their constructors and
+recursors `block` roles (every role a standard axiom's type mentions,
+transitively, is a block role: a type-only `Nonempty` would let
+`Classical.choice` prove `False`) and gives `sorryAx` its type. The
+canonical encoding (`Ix.SpecDigest.specBytes`) is 9365 bytes.
 Its BLAKE3 digest, computed in the root library because the kernel admits
 no hasher, is
-`52049b9d09530c92cd2b02115a00ef79f64d99e8b279ee14c42b8b3dc9a94b3f`
+`f09825902503729718c7ab437405b9f87efb97024085f8f2ea10e1e3ca378ba3`
 (`Ix/SpecDigest.lean` freezes it; `IxC/Kernel/Audit/Roles.lean` freezes the
 set's shape). Four anchors that no use site validates, `Bool.rec`, `And`,
-`And.intro` and `And.rec`, are validated at install (owner, 2026-10-15): the
-fold's step (`Cached.annotDeclStep`) matches a constant bound to one against
+`And.intro` and `And.rec`, and the inert `sorryAx` are validated at install
+(owner, 2026-10-15): the fold's step (`Cached.annotDeclStep`) matches a constant bound to one against
 its specification's type up to binder data and level-parameter names
 (`installAnchorPin?`, `matchesPin`) before installing its declaration, and a
 mismatch declines (`role specification mismatch`). The Rust kernel does not
@@ -638,8 +645,9 @@ one). An unbound role affects coverage only: inputs that need it decline.
 **Validation.** The reader names every bound reference by its role key; the
 fold validates each bound constant against its role's specification when it
 installs it, and a mismatch declines. Basis blocks are compared with their
-specification up to `canon`, with a reserved-name reject otherwise; anchors
-and axioms by type (`matchesPin`); an operation's type exactly, and its
+specification up to `canon`, with a reserved-name reject otherwise; the
+standard axioms' families, before their axiom is installed, by kind and type
+(`stdAxiomOk`); anchors and axioms by type (`matchesPin`); an operation's type exactly, and its
 equations certified by its evidence in the environment before the
 operation's insertion, with the operation's self-references replaced by its
 value: a `.defeq` entry by definitional equality after opening
@@ -739,8 +747,8 @@ operation under the context its group is validated in, whether or not the
 claim uses the role: the check is the group's own when it does, and admits
 nothing when it does not. Under the standard axiom policy this declines a
 reference to such a constant whose dependencies use a standard axiom whose
-group comes after its own. Basis block members are checked as constants, an
-operation must check and meet its equations (definitionally, or by its
+group comes after its own. Block members (the basis and the standard
+axioms' families) are checked as constants, an operation must check and meet its equations (definitionally, or by its
 certificate theorems, which are checked), and anchors and axioms are
 validated by type, as here. One difference follows from what a claim covers: an IxVM claim
 checks a constant with its dependencies, not a whole environment, so the
