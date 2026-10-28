@@ -68,6 +68,7 @@ import Tests.Ix.Kernel.TierInd
 import Tests.Ix.Kernel.BundleEvidence
 import Tests.Ix.Cert.Statement
 import Tests.Ix.InitStd
+import Tests.RoleTableWire
 import Tests.Ix.ResourceHints
 import Tests.Ix.Kernel.ReadCache
 import Tests.Ix.Kernel.RecordCheck
@@ -177,6 +178,9 @@ def registry : List Entry := [
   .suite "aiur-cost" .primary [AiurTests.Cost.tests],
   .suite "aiur-trace-plan" .primary [AiurTests.TracePlan.tests],
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
+  -- the role table's wire vectors (Tests/Fixtures/ixon-v4/role-table.tsv), which
+  -- Rust's codec is tested against, are IxC's codec's
+  .runner "role-table-wire" .primary Tests.RoleTableWire.run,
   -- the Ixon reader against a direct translation of compiled Lean constants
   .suite "kernel-reader-roundtrip" .primary Tests.Ix.Kernel.ReaderRoundtrip.suite,
   .suite "kernel-fidelity-access" .primary Tests.Ix.Kernel.FidelityAccess.suite,
@@ -468,6 +472,7 @@ def required : List (String × String) := [
   ("compiler-reports", "primary"),
   ("ground-unit", "primary"),
   ("prim-addrs", "primary"),
+  ("role-table-wire", "primary"),
   ("exact-sharing", "primary"),
   -- the Lean decoders' reject-parity entry, required once it is registered:
   -- ("ixon-reject-parity", "primary"),
