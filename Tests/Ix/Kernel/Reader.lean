@@ -898,6 +898,41 @@ def natCopy (withRec : Bool) : List (Address × Ixon.Constant) :=
   | .error (.read _ (.declined _)) => true
   | _ => false
 
+/-! ## A recursor of a block only the fallback supplies
+
+A recursor record is read with its block. A record the analysis files under a block the input
+does not supply is read by nothing, so it is admitted only as the fallback's own record at its
+address; any other declines, whatever its rules say. -/
+
+/-- The prelude's `Nat.rec` record. -/
+def natRecRecord : Option Ixon.Constant := (preludeRecord (bound .natRec)).head?.map (·.2)
+
+/-- `Nat.rec`'s record with the right-hand sides of its two rules swapped: its type, and so its
+analysis, is the prelude's, and its rules are ill-typed. -/
+def swappedNatRec : Option Ixon.Constant := do
+  let c ← natRecRecord
+  let .recr r := c.info | none
+  let (some r0, some r1) := (r.rules[0]?, r.rules[1]?) | none
+  pure { c with info := .recr { r with rules := #[{ r0 with rhs := r1.rhs }, { r1 with rhs := r0.rhs }] } }
+
+#guard natRecRecord.isSome && swappedNatRec.isSome && swappedNatRec != natRecRecord
+-- the prelude's own record, alone, is accepted
+#guard natRecRecord.any fun c => accepts [(address 71, c)]
+-- the swapped record declines, alone and as a block of recursors
+#guard swappedNatRec.any fun c =>
+  declineReason [(address 71, c)] == some "recursor whose inductive block is not in the input"
+#guard swappedNatRec.any fun c => match c.info with
+  | .recr r => declineReason [(address 71, { c with info := .muts #[.recr r] })] ==
+      some "recursor whose inductive block is not in the input"
+  | _ => false
+-- beside a copy of its block, the swapped record is read, and its rules fail
+#guard swappedNatRec.any fun c =>
+  match boundRef .nat with
+  | some r =>
+    let cs := ([r.block, nat, natZero, natSucc].flatMap preludeRecord) ++ [(address 71, c)]
+    !accepts cs && (declineReason cs).isNone
+  | none => false
+
 -- The keys are computed ahead (`Ctx.keys`): every record address has its key,
 -- an unbound singleton its own address and a bound reference its role's, and
 -- every reference its address
