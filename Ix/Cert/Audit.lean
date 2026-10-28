@@ -60,6 +60,7 @@ import Ix.Cert.UnchangedRules
 import Ix.Cert.RunOwnership
 import Ix.Cert.EvidenceTransfer
 import Ix.Cert.SourceTotality
+import Ix.Cert.CompileCorrectProof
 
 /-! # The certification statements, frozen
 
@@ -6490,7 +6491,7 @@ run_cmd do
 
 /-! ## The composition skeleton
 
-`Ix.Cert.Composition` proves the final statement from named open obligations, each a
+`Ix.Cert.Composition` proves the final statement from named obligations, each a
 `def … : Prop` on the compiler's actual objects (`compileReport`, the driver's fold,
 the certified reader, quotient Source's prepared stream): Source totality, the reader
 against the Source stream (streams and keys), scheduler ownership, the table's
@@ -6527,7 +6528,18 @@ lemmas (`causeKind_reason`, `causeKind_ne_cascade`, `kindRoot_of_reason`,
 avoids the changed set, `ClaimsOwned` drops its conjunct that the rewriting hooks are
 identities, and `claimsOwned` its argument for it; their prints are re-frozen.
 `ClosureClaims.compileReport_owned` replaces `HookFree.compileReport_hookFree`.
-The skeleton's roots: 50 → 25. -/
+The skeleton's roots: 50 → 25.
+
+**`CompileCorrect` is proved outright.** Every obligation is proved, and
+`ReaderStreamsTrace.compileCorrect` (in `Ix.Cert.CompileCorrectProof`) proves
+`CompileCorrect` with no premises: `compileCorrect_unchanged` at Source totality
+(`SourceTotality.sourceTotal`), the reader's streams (`ReaderStreamsTrace.readerStreams`, at
+the closure's record layout, `LayoutsHold.layouts_hold`, and the definitions' hints,
+`ReaderStreamsTrace.singletonsHinted` and `ReaderStreamsTrace.blocksHinted`), its keys
+(`ReadingKeys.readingKeys`), ownership (`StepKeeps.scheduleOwnership`), the table's evidence
+(`EvidenceTransfer.evidenceTransfer`) and the Source laws (`unchangedRules`). Its statement is
+frozen below, next to `compileCorrect_unchanged`'s, and the skeleton's roots gain it and
+`ReaderStreamsTrace.readerStreams`: 25 → 27. -/
 
 /-- info: structure Ix.Cert.Premises (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
   (failures : Ix.Cert.Failures) (t : Ix.Kernel.RoleTable) (envQ : Ix.Kernel.Env Ix.Kernel.Mode.source) : Prop
@@ -6805,7 +6817,11 @@ fun blocks sched st₀ acc =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.compileCorrect_unchanged
 
-/-- info: [cert-audit] composition skeleton: 25 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: Ix.Cert.ReaderStreamsTrace.compileCorrect : Ix.Cert.CompileCorrect -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.ReaderStreamsTrace.compileCorrect
+
+/-- info: [cert-audit] composition skeleton: 27 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -6834,7 +6850,9 @@ run_cmd do
       `compileCorrect_unchanged,
       `ClosureClaims.compileReport_owned,
       `Resolution.compileReport_claim,
-      `Resolution.compileUnchecked_provenance].map
+      `Resolution.compileUnchecked_provenance,
+      `ReaderStreamsTrace.compileCorrect,
+      `ReaderStreamsTrace.readerStreams].map
       (`Ix.Cert ++ ·))
 
 -- The Source laws of a renamed environment (`Obligation.UnchangedRules`): strong models

@@ -33,7 +33,8 @@ The states' goodness (`TraceStates.trace_states_good`) and the definitions' hint
 `ReaderStreamsUnits.readerStreams_of_units`, from three statements about the compile: the
 closure's record layout (`LayoutsHold`) and the definitions' hints (`SingletonsHinted`,
 `BlocksHinted`). `compileCorrect_of` composes it with the other obligations of
-`compileCorrect_unchanged`. -/
+`compileCorrect_unchanged`. The three statements are proved, and `compileCorrect` proves
+`CompileCorrect` with no premises, in `Ix.Cert.CompileCorrectProof`. -/
 
 namespace Ix.Cert.ReaderStreamsTrace
 

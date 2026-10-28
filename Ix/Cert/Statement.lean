@@ -46,12 +46,12 @@ Statements (`def … : Prop`) and the theorems proved now:
 * `CompileCorrect` (in `Ix.Cert.CompileCorrect`, over the definitions here):
   if quotient Source accepts a closure at the compiled artifact
   (`SourceAcceptsQ`), no constant of it failed in the compiler's report
-  (`NoFailure`, decidable), and the changed records pass their validation
-  hypotheses (`Ix.Cert.KindAccepted`, `Ix.Cert.SourceFormInfers`), then the
-  compiler published the closure, Ixon accepts the compiled closure, every
-  constant of the closure reads as a compiled constant, and every strong model
-  of the compiled environment gives one value model of quotient Source through
-  that reading. Stated, not proved;
+  (`NoFailure`, decidable), and the artifact's role binding, address map and
+  evidence check out, then the compiler published the closure, Ixon accepts the
+  compiled closure, every constant of the closure reads as a compiled constant,
+  and every strong model of the compiled environment gives one value model of
+  quotient Source through that reading. Proved
+  (`Ix.Cert.ReaderStreamsTrace.compileCorrect`, in `Ix.Cert.CompileCorrectProof`);
 * `CompileCovers`: the compiler publishes an input constant exactly when its
   report does not list it as failed. Proved (`compileCovers`), by
   construction: `compileReport` checks it and fails otherwise (CQ2.27). So

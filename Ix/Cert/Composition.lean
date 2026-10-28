@@ -32,7 +32,10 @@ composes the obligations with the existing leaves: the closure's claims
 (`ClosureClaims.compileReport_owned`), the renamed quotient Source run
 (`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`), the reader's preparation
 (`Stream.closure_prepares`), coverage (`compileCovers`) and the pulled-back value model
-(`ValueModel.pullback`, `ValueRows.ofStrong`). -/
+(`ValueModel.pullback`, `ValueRows.ofStrong`).
+
+Every obligation is proved; `Ix.Cert.ReaderStreamsTrace.compileCorrect` (in
+`Ix.Cert.CompileCorrectProof`) discharges them and proves `CompileCorrect` with no premises. -/
 
 namespace Ix.Cert
 
