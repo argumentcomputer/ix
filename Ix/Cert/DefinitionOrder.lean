@@ -51,6 +51,74 @@ theorem defOrder_congr {d₁ d₂ : Array (Std.HashSet Nat)} (hsize : d₁.size 
   simp only [key]
   rw [hsize]
 
+/-- A loop in `Id` keeps an invariant its steps keep. -/
+theorem forIn_id_inv {α S : Type} (Inv : S → Prop) (f : α → S → Id (ForInStep S)) :
+    ∀ (l : List α) (s : S), Inv s → (∀ a ∈ l, ∀ s, Inv s → Inv (f a s).value) → Inv (forIn l s f)
+  | [], s, hs, _ => by rw [List.forIn_nil]; exact hs
+  | a :: l, s, hs, step => by
+    rw [List.forIn_cons]
+    have ha := step a List.mem_cons_self s hs
+    cases hfa : f a s with
+    | done b =>
+      rw [hfa] at ha
+      exact ha
+    | yield b =>
+      rw [hfa] at ha
+      exact forIn_id_inv Inv f l b ha (fun x hx => step x (List.mem_cons_of_mem _ hx))
+/-- **The order lists members only.** -/
+theorem defOrder_lt (deps : Array (Std.HashSet Nat)) (out : Array Nat) (h : defOrder deps = some out) :
+    ∀ i ∈ out, i < deps.size := by
+  unfold defOrder at h
+  simp only [Id.run, Std.Legacy.Range.forIn_eq_forIn_range'] at h
+  have hsize : [:deps.size].size = deps.size := by simp [Std.Legacy.Range.size]
+  generalize hS : forIn (m := Id) (List.range' 0 [:deps.size].size) _ _ = S at h
+  have inv : (∀ x ∈ S.2.2, x < deps.size) ∧ ∀ o, S.1 = some (some o) → ∀ x ∈ o, x < deps.size := by
+    rw [← hS]
+    refine forIn_id_inv (fun s : Option (Option (Array Nat)) × Array Bool × Array Nat =>
+      (∀ x ∈ s.2.2, x < deps.size) ∧ ∀ o, s.1 = some (some o) → ∀ x ∈ o, x < deps.size) _ _ _
+      ⟨by simp, by simp⟩ ?_
+    intro a _ s hs
+    generalize hT : forIn (m := Id) (List.range' 0 [:deps.size].size) (s.2.1, s.2.2, false) _ = T
+    have tinv : ∀ x ∈ T.2.1, x < deps.size := by
+      rw [← hT]
+      refine forIn_id_inv (fun t : Array Bool × Array Nat × Bool => ∀ x ∈ t.2.1, x < deps.size) _ _ _ hs.1 ?_
+      intro i hi t ht
+      rw [List.mem_range', hsize] at hi
+      split
+      · intro x hx
+        rcases Array.mem_push.mp hx with hx | rfl
+        · exact ht x hx
+        · omega
+      · exact ht
+    rw [show ∀ {β γ : Type} (x : Id β) (g : β → Id γ), x >>= g = g x from fun _ _ => rfl]
+    split
+    · refine ⟨tinv, fun o ho => ?_⟩
+      have ho' : some (some T.2.1) = some (some o) := ho
+      cases ho'
+      exact tinv
+    · split
+      · exact ⟨tinv, fun o ho => by cases ho⟩
+      · exact ⟨tinv, fun o ho => by cases ho⟩
+  obtain ⟨r, dn, o⟩ := S
+  cases r with
+  | some r =>
+    cases r with
+    | some o' =>
+      have := inv.2 o' rfl
+      have h' : some o' = some out := h
+      cases h'
+      exact this
+    | none =>
+      have h' : (none : Option (Array Nat)) = some out := h
+      cases h'
+  | none =>
+    have h' : (if (o.size == deps.size) = true then some o else none) = some out := h
+    clear h
+    split at h'
+    · cases h'
+      exact inv.1
+    · cases h'
+
 /-! ## `recur` references -/
 
 theorem mem_foldl_insert : ∀ (l : List Nat) (acc : Std.HashSet Nat) (j : Nat),

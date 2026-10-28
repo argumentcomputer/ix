@@ -76,6 +76,10 @@ variable {md : Mode} (cx : Ctx md) (param : Nat → LevelParam) (self : Nat → 
 
 local notation "reader" => ExpressionRead.blockReader cx param self
 
+/-- A definition member's payload declares as many level parameters as its source has. -/
+def LvlsOf (m : MutConst) (p : Ixon.MutConst) : Prop :=
+  ∀ d q, m = .defn d → p = .defn q → q.lvls.toNat = d.levelParams.size
+
 /-- The relation member `m`'s roots are read in: at its own level parameters, under its own
 numbering `σOf m`. -/
 abbrev relOf (σOf : MutConst → Ix.Name → LevelParam) (m : MutConst) : Ix.Expr → CExpr md → Prop :=
@@ -93,7 +97,7 @@ theorem classes_each (σOf : MutConst → Ix.Name → LevelParam) (context : Com
       rawRun (compileMutConstClasses (ms.map ([·])) acc) context before = (.ok state, after) →
       ExpressionRead.Extends (reader before).ecx (reader after).ecx ∧
         ∃ ps : List Ixon.MutConst, state.payloads = acc.payloads ++ ps.toArray ∧
-          List.Forall₂ (fun m p => PayloadOf m p ∧
+          List.Forall₂ (fun m p => PayloadOf m p ∧ LvlsOf m p ∧
             SharingRoots.RootsRead (reader after) (relOf param names σOf m) (memberSources m)
               (mutConstRootExprs p)) ms ps
   | [], acc, before, after, state, _, _, ran => by
@@ -110,10 +114,17 @@ theorem classes_each (σOf : MutConst → Ix.Name → LevelParam) (context : Com
     obtain ⟨clean₁, growth₁, payload₁, roots₁⟩ := BlockEmission.member_correct cx param self names (σOf m)
       bindings context free aligned external m (scopes m List.mem_cons_self) (good m List.mem_cons_self)
       memberRan
+    have lvls₁ : LvlsOf m member.payload := by
+      intro d q hm hq
+      subst hm
+      obtain ⟨out, outRan, hp⟩ := BlockEmission.member_defn d memberRan
+      rw [hp] at hq
+      cases hq
+      exact Emission.definitionData_header d _ _ _ _ outRan
     obtain ⟨growth₂, ps, hps, rest⟩ := classes_each σOf context free aligned external ms _
       (fun m' hm => scopes m' (List.mem_cons_of_mem _ hm)) (fun _ _ => clean₁.good cx param self _) restRan
     refine ⟨extends_trans growth₁ growth₂, member.payload :: ps, ?_,
-      .cons ⟨payload₁, SharingRoots.RootsRead.grow growth₂ roots₁⟩ rest⟩
+      .cons ⟨payload₁, lvls₁, SharingRoots.RootsRead.grow growth₂ roots₁⟩ rest⟩
     rw [hps]
     simp [MutConstCompileState.addRepresentative]
 
@@ -192,7 +203,7 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
     {before after : BlockState} {output : BlockResult} (clean : Emission.Clean bindings before)
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after)) :
     ∃ targets : List Ixon.Definition, output.block.info = .muts (targets.map Ixon.MutConst.defn).toArray ∧
-      List.Forall₂ (fun d t => t = Emission.definitionPayload d t.typ t.value ∧
+      List.Forall₂ (fun d t => t = Emission.definitionPayload d t.typ t.value ∧ t.lvls.toNat = d.levelParams.size ∧
         (∃ type, (EmissionBlocks.recordReader cx param self after output.block).read t.typ = .ok type ∧
           relOf param names σOf (.defn d) d.type type) ∧
         (∃ value, (EmissionBlocks.recordReader cx param self after output.block).read t.value = .ok value ∧
@@ -256,18 +267,19 @@ theorem defsBlock_each (σOf : MutConst → Ix.Name → LevelParam) (context : C
     Ixon.Definition.value (forall₂_of_map_eq reads)
   -- each payload keeps its source's header and its roots read as related terms
   have each' : List.Forall₂ (fun d q => q = Emission.definitionPayload d q.typ q.value ∧
+      q.lvls.toNat = d.levelParams.size ∧
       (∃ t, relOf param names σOf (.defn d) d.type t ∧
         (ExpressionRead.blockReader cx param self after).read q.typ = .ok t) ∧
       (∃ t, relOf param names σOf (.defn d) d.value t ∧
         (ExpressionRead.blockReader cx param self after).read q.value = .ok t)) defs qs :=
     forall₂_imp (fun d q h => by
-      obtain ⟨⟨target, ht, hp⟩, roots⟩ := h
+      obtain ⟨⟨target, ht, hp⟩, lv, roots⟩ := h
       cases ht
       simp only [SharingRoots.RootsRead, memberSources, mutConstRootExprs, List.forall₂_cons] at roots
-      exact ⟨hp, roots.1, roots.2.1⟩) (forall₂_defns defs qs each)
+      exact ⟨hp, lv d _ rfl rfl, roots.1, roots.2.1⟩) (forall₂_defns defs qs each)
   refine ⟨ts, hinfo, forall₂_imp (fun d t h => ?_) (forall₂_join each' (forall₂_and headers readsF))⟩
-  obtain ⟨q, ⟨hq, ⟨tT, rT, hT⟩, ⟨tV, rV, hV⟩⟩, ⟨hk, hs, hl⟩, eT, eV⟩ := h
-  refine ⟨?_, ⟨tT, eT.trans hT, rT⟩, ⟨tV, eV.trans hV, rV⟩⟩
+  obtain ⟨q, ⟨hq, hlv, ⟨tT, rT, hT⟩, ⟨tV, rV, hV⟩⟩, ⟨hk, hs, hl⟩, eT, eV⟩ := h
+  refine ⟨?_, by rw [hl]; exact hlv, ⟨tT, eT.trans hT, rT⟩, ⟨tV, eV.trans hV, rV⟩⟩
   rw [hq] at hk hs hl
   obtain ⟨kind, safety, lvls, typ, value⟩ := t
   simp only [Emission.definitionPayload] at hk hs hl ⊢
