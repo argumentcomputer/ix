@@ -41,6 +41,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     package.trace.groups = aiur::decode_artifact(&std::fs::read(path)?)?;
   }
   let counts_only = cli.iter().any(|a| a == "--counts-only");
+  let reuse_execution =
+    std::env::var("IX_BENCH_REUSE_EXECUTION").is_ok_and(|v| v == "1");
   let functions: Vec<_> = package
     .program
     .functions
@@ -72,11 +74,19 @@ fn main() -> Result<(), Box<dyn Error>> {
   let mut circuits = vec![];
   let mut proof_report = serde_json::Value::Null;
   let mut function_rows = vec![];
+  let mut cached_record = None;
+  let mut initial_execute = None;
   let iterations = if counts_only { 1 } else { samples + 2 };
   for sample in 0..iterations {
-    let start = Instant::now();
-    let record = hints.execute(&invocation.entry, args.clone())?;
-    let execute = start.elapsed().as_secs_f64();
+    let (record, execute) = if let Some(record) = cached_record.take() {
+      (record, None)
+    } else {
+      let start = Instant::now();
+      let record = hints.execute(&invocation.entry, args.clone())?;
+      let execute = start.elapsed().as_secs_f64();
+      initial_execute.get_or_insert(execute);
+      (record, Some(execute))
+    };
     if counts_only {
       let mut counts = vec![0_usize; functions.len()];
       for key in record.queries.keys() {
@@ -149,9 +159,11 @@ fn main() -> Result<(), Box<dyn Error>> {
           ))?,
         )?;
       }
+    } else if reuse_execution {
+      cached_record = Some(record);
     }
   }
-  let report = json!({"backend":"new-bytecode","thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"samples":times,"circuits":circuits,"function_rows":function_rows,"proof":proof_report});
+  let report = json!({"backend":"new-bytecode","thp_disabled":thp_disabled,"prepare_seconds":prepare,"setup_seconds":setup,"reused_execution":reuse_execution,"initial_execute_seconds":initial_execute,"samples":times,"circuits":circuits,"function_rows":function_rows,"proof":proof_report});
   std::fs::write(&cli[3], serde_json::to_vec_pretty(&report)?)?;
   println!("Wrote {}", cli[3]);
   Ok(())

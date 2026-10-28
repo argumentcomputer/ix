@@ -17,9 +17,13 @@ for path in sorted(directory.glob('*.json')):
     if not isinstance(data, dict) or 'samples' not in data or 'circuits' not in data:
         continue
     rows = data['circuits']
+    executions = [s['execute_seconds'] for s in data['samples']
+                  if s['execute_seconds'] is not None]
     summary.append(dict(run=path.stem, backend=data['backend'], samples=len(data['samples']),
                         thp_disabled=data.get('thp_disabled'),
-                        execute_seconds=statistics.median(s['execute_seconds'] for s in data['samples']),
+                        reused_execution=data.get('reused_execution', False),
+                        initial_execute_seconds=data.get('initial_execute_seconds'),
+                        execute_seconds=statistics.median(executions) if executions else None,
                         trace_with_lookups_seconds=statistics.median(s['trace_with_lookups_seconds'] for s in data['samples']),
                         circuits=len(rows), active_circuits=sum(r['height'] > 0 for r in rows),
                         stage1_columns=sum(r['stage1_width'] for r in rows),

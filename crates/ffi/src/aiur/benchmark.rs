@@ -62,6 +62,8 @@ extern "C" fn rs_aiur_benchmark(
   ffi_catch_unwind_except("legacy benchmark", || {
     let run = || -> Result<Value, String> {
       let thp_disabled = ix_bench::configure_benchmark_memory()?;
+      let reuse_execution =
+        std::env::var("IX_BENCH_REUSE_EXECUTION").is_ok_and(|v| v == "1");
       let input: Value =
         serde_json::from_slice(input.as_bytes()).map_err(|e| e.to_string())?;
       let args = words(&input["args"])?;
@@ -87,14 +89,23 @@ extern "C" fn rs_aiur_benchmark(
       let mut times = vec![];
       let mut circuits = vec![];
       let mut proof_report = Value::Null;
+      let mut cached_execution = None;
+      let mut initial_execute = None;
       for sample in 0..samples + 2 {
-        let mut io = buffer(&input["streams"])?;
-        let start = Instant::now();
-        let (record, output) = system
-          .toplevel()
-          .execute(function, args.clone(), &mut io)
-          .map_err(|e| e.to_string())?;
-        let execute = start.elapsed().as_secs_f64();
+        let (record, output, io, execute) =
+          if let Some((record, output, io)) = cached_execution.take() {
+            (record, output, io, None)
+          } else {
+            let mut io = buffer(&input["streams"])?;
+            let start = Instant::now();
+            let (record, output) = system
+              .toplevel()
+              .execute(function, args.clone(), &mut io)
+              .map_err(|e| e.to_string())?;
+            let execute = start.elapsed().as_secs_f64();
+            initial_execute.get_or_insert(execute);
+            (record, output, io, Some(execute))
+          };
         let start = Instant::now();
         let plan = system.single_shard_plan(&record);
         let index = system.row_index(&record, &plan);
@@ -130,10 +141,12 @@ extern "C" fn rs_aiur_benchmark(
             .map_err(|e| format!("legacy proof rejected: {e:?}"))?;
           let seconds = start.elapsed().as_secs_f64();
           proof_report = json!({"prove_including_trace_seconds":seconds,"bytes":proof.to_bytes().map_err(|e|e.to_string())?.len(),"verified":true});
+        } else if reuse_execution {
+          cached_execution = Some((record, output, io));
         }
       }
       Ok(
-        json!({"backend":"legacy-bytecode","thp_disabled":thp_disabled,"setup_seconds":setup,"samples":times,"circuits":circuits,"proof":proof_report}),
+        json!({"backend":"legacy-bytecode","thp_disabled":thp_disabled,"setup_seconds":setup,"reused_execution":reuse_execution,"initial_execute_seconds":initial_execute,"samples":times,"circuits":circuits,"proof":proof_report}),
       )
     };
     match run() {

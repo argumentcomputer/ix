@@ -6,6 +6,10 @@ row counts. They replace the direct translation of legacy's grouping policy.
 The source programs, bytecode, hints, accelerators, ROMs and fixed tables are
 unchanged. This is a grouping/compiler change.
 
+The [CPU scaling follow-up](formal-aiur-trace-scaling.md) measures 1, 8, 32 and
+64 threads. New Aiur scales better than legacy on IxVM, but not on the real
+recursive verifier; the results below all use eight threads.
+
 ## Results
 
 Widths include provider multiplicities, ROMs and fixed tables. Stage two is
