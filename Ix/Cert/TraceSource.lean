@@ -1,6 +1,7 @@
 import Ix.Cert.TraceSegments
 import Ix.Cert.DefinitionPremises
 import Ix.CompileCert.CanonUnivScope
+import Ix.Cert.NoCtor
 
 /-! # Quotient Source's side of the trace's segments
 
@@ -17,7 +18,11 @@ that come from quotient Source's acceptance of its prepared stream.
 * `quotient_nodup` (`HeaderNeeds.nodup` for quotient constants): a kept quotient constant's
   level parameters are distinct. Its record matches its pin canonically; `Quot.lift`'s pin has
   two parameters and its canonical type mentions the second, which a term numbered under two
-  equal names cannot (`pinned_quot_nodup`). -/
+  equal names cannot (`pinned_quot_nodup`).
+* `inductive_noCtor` (`InductiveNeeds.noCtor`): no constructor of a kept inductive group occurs in
+  its types or its constructors' types, for any number of types: the checker's shape guard on
+  the group's `indDecl` (`Semantics.checkDecl_noCtor`), back through the renaming and the
+  canonical levels. -/
 
 namespace Ix.Cert.TraceSource
 
@@ -487,6 +492,154 @@ theorem quotient_nodup {μ : CheckMode} {ev : Evidences .source} {envS : Env .so
 
 end Positions
 
+/-! ## Inductive groups: no constructor in the family's types -/
+
+/-- Renaming keys keeps a mentioned key, renamed. -/
+theorem mentionsConst_substKeys (ρ : FiberMap) (k : Ix.Kernel.Key .source) :
+    ∀ e : Ix.Kernel.Expr .source, e.mentionsConst k = true →
+      (Ix.LeanIngress.Expr.substKeys ρ e).mentionsConst (Ix.LeanIngress.Key.subst ρ k) = true := by
+  intro e
+  induction e with
+  | bvar => intro h; cases h
+  | fvar _ t ih => exact ih
+  | sort => intro h; cases h
+  | const n _ =>
+    intro h
+    simp only [Ix.LeanIngress.Expr.substKeys, Ix.Kernel.Expr.mentionsConst, beq_iff_eq] at h ⊢
+    rw [h]
+  | app a b iha ihb =>
+    intro h
+    simp only [Ix.LeanIngress.Expr.substKeys, Ix.Kernel.Expr.mentionsConst, Bool.or_eq_true] at h ⊢
+    exact h.imp iha ihb
+  | lam t b _ iht ihb =>
+    intro h
+    simp only [Ix.LeanIngress.Expr.substKeys, Ix.Kernel.Expr.mentionsConst, Bool.or_eq_true] at h ⊢
+    exact h.imp iht ihb
+  | forallE t b _ iht ihb =>
+    intro h
+    simp only [Ix.LeanIngress.Expr.substKeys, Ix.Kernel.Expr.mentionsConst, Bool.or_eq_true] at h ⊢
+    exact h.imp iht ihb
+  | letE t v b _ iht ihv ihb =>
+    intro h
+    simp only [Ix.LeanIngress.Expr.substKeys, Ix.Kernel.Expr.mentionsConst, Bool.or_eq_true] at h ⊢
+    exact h.imp (fun h' => h'.imp iht ihv) ihb
+  | lit => intro h; cases h
+  | proj s _ e ih =>
+    intro h
+    simp only [Ix.LeanIngress.Expr.substKeys, Ix.Kernel.Expr.mentionsConst, Bool.or_eq_true, beq_iff_eq] at h ⊢
+    exact h.imp (fun hs => by rw [hs]) ih
+
+/-- **No constructor of a kept inductive group occurs in its types or its constructors' types**
+(`InductiveNeeds.noCtor`), when the prepared stream is accepted: the group lowers to an
+`indDecl` whose formers and constructors carry its members' types renamed to representatives
+with canonical levels, and the checker's shape guard (`Semantics.checkDecl_noCtor`) refuses a
+block one of whose constructor keys occurs in a former's or constructor's type. A constructor's
+Lean name in a source type would give its renamed key there. -/
+theorem inductive_noCtor {μ : CheckMode} {ev : Evidences .source} {envS : Env .source} {pre : Prelude .source}
+    {decls ds : Array (Declaration .source)} {rs : List (Read .source)}
+    (acc : Cached.AcceptsRef μ ev ds.toList envS)
+    (hflat : decls.toList = rs.flatMap (·.decls.toList)) (hds : ds = Frontend.preparePrelude pre.ix decls)
+    {g : Graph} {ρ : FiberMap} {hints : CName .source → Option ReducibilityHint} {start : State .source}
+    {ls : List Scheduled} {ℓ : Nat} {y : Scheduled} {types : Array Ix.InductiveVal}
+    {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal} {c : Converted} {stS : State .source}
+    {raw rd : Read .source}
+    (low : LoweredAt g ρ hints start ls rs ℓ y (.inductive types ctors recs) c stS raw rd) (kept : rd = raw)
+    (hcsize : ctors.size = types.size) :
+    ∀ i ∈ Ix.Cert.InductiveCompile.indsOf types ctors, ∀ e ∈ BlockEmission.memberSources (.indc i),
+      Ix.CompileCert.ExpressionState.ConstsSatisfy (fun n =>
+        ∀ i' ∈ Ix.Cert.InductiveCompile.indsOf types ctors, ∀ c ∈ i'.ctors.toList,
+        n ≠ c.cnst.name) e := by
+  obtain ⟨-, hr, -, hconv, -, -, hl, -⟩ := low
+  obtain ⟨rb, rfl, typeEntries, ctorEntries⟩ := NoCtor.convertInductive_entries types ctors recs c hconv
+  have hl' : lowerInductive stS (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb)) =
+      .ok raw := hl
+  obtain ⟨recInfos, hdecl⟩ := NoCtor.lowerInductive_decl hl'
+  subst kept
+  have hmem := kept_mem hflat hds hr (Array.mem_toList_iff.mpr hdecl)
+  obtain ⟨F, e₀, e₂, checked⟩ := NoCtor.acceptsRef_decl acc hmem
+  -- an entry of the block read, renamed and with canonical levels
+  let canonOf (entry : CVal .source × Nat × Nat) : CVal .source × Nat × Nat :=
+    ((Ix.LeanIngress.canonValM (Ix.LeanIngress.ConstantVal.substKeys ρ entry.1)).run' {}, entry.2.1, entry.2.2)
+  have canonOf_eq : ∀ entry : CVal .source × Nat × Nat, (canonOf entry).1 =
+      ⟨Ix.LeanIngress.Key.subst ρ entry.1.name, entry.1.levelParams,
+        Ix.LeanIngress.mapLevels (Ix.LeanIngress.canonLevelIn entry.1.levelParams)
+          (Ix.LeanIngress.Expr.substKeys ρ entry.1.type)⟩ := by
+    intro entry
+    simp only [canonOf, RecordReadings.canonValM_run, Ix.LeanIngress.ConstantVal.substKeys]
+  have typeIn : ∀ entry ∈ rb.types.toList, canonOf entry ∈
+      (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb)).types.toList := by
+    intro entry h
+    simp only [Ix.LeanIngress.BlockRead.canon, Ix.LeanIngress.BlockRead.substKeys, Array.toList_map, List.map_map,
+      List.mem_map]
+    exact ⟨entry, h, rfl⟩
+  have ctorIn : ∀ entry ∈ rb.ctors.toList, canonOf entry ∈
+      (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb)).ctors.toList := by
+    intro entry h
+    simp only [Ix.LeanIngress.BlockRead.canon, Ix.LeanIngress.BlockRead.substKeys, Array.toList_map, List.map_map,
+      List.mem_map]
+    exact ⟨entry, h, rfl⟩
+  -- every constructor's renamed key is a constructor name of the checked block
+  have keyIn : ∀ cs ∈ ctors.toList, ∀ ct ∈ cs.toList,
+      Ix.LeanIngress.Key.subst ρ (Ix.LeanIngress.ingressKey ct.cnst.name) ∈ Ix.Kernel.indCtorNames
+        (NoCtor.blockOf (Ix.LeanIngress.BlockRead.canon (Ix.LeanIngress.BlockRead.substKeys ρ rb)) recInfos) := by
+    intro cs hcs ct hct
+    obtain ⟨entry, entryIn, named, -⟩ := ctorEntries cs hcs ct hct
+    unfold Ix.Kernel.indCtorNames
+    refine List.mem_filterMap.mpr ⟨.ctorInfo (canonOf entry).1 entry.2.1 entry.2.2,
+      NoCtor.mem_blockOf_ctor (ctorIn entry entryIn), ?_⟩
+    simp only [canonOf_eq, named]
+  -- a former's or constructor's type mentions no constructor key
+  have absent : ∀ entry, (entry ∈ rb.types.toList ∨ entry ∈ rb.ctors.toList) →
+      ∀ cs ∈ ctors.toList, ∀ ct ∈ cs.toList,
+        entry.1.type.mentionsConst (Ix.LeanIngress.ingressKey ct.cnst.name) = false := by
+    intro entry entryIn cs hcs ct hct
+    have hno := Ix.Kernel.Semantics.checkDecl_noCtor (cv := (canonOf entry).1) checked (keyIn cs hcs ct hct) (by
+      rcases entryIn with h | h
+      · exact .inl ⟨{}, NoCtor.mem_blockOf_type (typeIn entry h)⟩
+      · exact .inr ⟨entry.2.1, entry.2.2, NoCtor.mem_blockOf_ctor (ctorIn entry h)⟩)
+    rw [canonOf_eq] at hno
+    simp only [NoCtor.mentionsConst_mapLevels] at hno
+    cases hm : entry.1.type.mentionsConst (Ix.LeanIngress.ingressKey ct.cnst.name) with
+    | false => rfl
+    | true => rw [mentionsConst_substKeys ρ _ _ hm] at hno; cases hno
+  -- the constructors of the group, together
+  have allCtors : ∀ i' ∈ Ix.Cert.InductiveCompile.indsOf types ctors, ∀ ct ∈ i'.ctors.toList,
+      ∃ cs ∈ ctors.toList, ct ∈ cs.toList := by
+    intro i' hi' ct hct
+    obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hi'
+    rw [Ix.Cert.InductiveCompile.indsOf_getElem hcsize hk] at hct
+    exact ⟨_, Array.getElem_mem_toList _, hct⟩
+  have hC : ∀ ct ∈ ctors.flatten.toList, ∃ cs ∈ ctors.toList, ct ∈ cs.toList := by
+    intro ct h
+    simp only [Array.toList_flatten, List.mem_flatten, List.mem_map] at h
+    obtain ⟨_, ⟨cs, hcs, rfl⟩, hct⟩ := h
+    exact ⟨cs, hcs, hct⟩
+  have hC' : ∀ cs ∈ ctors.toList, ∀ ct ∈ cs.toList, ct ∈ ctors.flatten.toList := by
+    intro cs hcs ct hct
+    simp only [Array.toList_flatten, List.mem_flatten, List.mem_map]
+    exact ⟨_, ⟨cs, hcs, rfl⟩, hct⟩
+  have conclude : ∀ (item : Ix.LeanIngress.Numbering × Ix.Expr) (entry : CVal .source × Nat × Nat),
+      (entry ∈ rb.types.toList ∨ entry ∈ rb.ctors.toList) →
+      Ix.CompileCert.SourceConstructorPositions.Converts item entry.1.type →
+      Ix.CompileCert.ExpressionState.ConstsSatisfy (fun n => ∀ i' ∈ Ix.Cert.InductiveCompile.indsOf types ctors,
+        ∀ c ∈ i'.ctors.toList, n ≠ c.cnst.name) item.2 := by
+    intro item entry entryIn ⟨τ, conv⟩
+    have h := NoCtor.noCtorIn_of_ingress (C := ctors.flatten) conv (fun ct hct => by
+      obtain ⟨cs, hcs, hct'⟩ := hC ct hct
+      exact absent entry entryIn cs hcs ct hct')
+    exact Ix.CompileCert.ExpressionState.constsSatisfy_mono (fun name hn i' hi' ct hct => by
+      obtain ⟨cs, hcs, hct'⟩ := allCtors i' hi' ct hct
+      exact hn ct (hC' cs hcs ct hct')) _ h
+  intro i hi e he
+  obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hi
+  rw [Ix.Cert.InductiveCompile.indsOf_getElem hcsize hk] at he
+  simp only [BlockEmission.memberSources, Ix.Cert.InductiveCompile.indOf, List.mem_cons, List.mem_map] at he
+  rcases he with rfl | ⟨ct, hct, rfl⟩
+  · obtain ⟨entry, entryIn, -, conv⟩ := typeEntries _ (Array.getElem_mem_toList _)
+    exact conclude _ entry (.inl entryIn) conv
+  · obtain ⟨entry, entryIn, -, conv⟩ := ctorEntries _ (Array.getElem_mem_toList _) ct hct
+    exact conclude _ entry (.inr entryIn) conv
+
 /--
 info: 'Ix.Cert.TraceSource.kept_levels' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
@@ -504,5 +657,11 @@ info: 'Ix.Cert.TraceSource.quotient_nodup' depends on axioms: [propext, Classica
 -/
 #guard_msgs in
 #print axioms quotient_nodup
+
+/--
+info: 'Ix.Cert.TraceSource.inductive_noCtor' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms inductive_noCtor
 
 end Ix.Cert.TraceSource
