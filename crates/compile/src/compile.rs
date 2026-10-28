@@ -69,6 +69,9 @@ pub struct CompileOptions {
 pub struct CompileState {
   /// Ixon environment being built
   pub env: IxonEnv,
+  /// Serializes complete block publication and direct compiler writes.
+  /// Do not mutate the published tables concurrently outside these methods.
+  pub publication_lock: std::sync::Mutex<()>,
   /// Map from Lean constant name to Ixon address
   pub name_to_addr: DashMap<Name, Address>,
   /// Mutual block class ordering, keyed by any inductive name in the block.
@@ -188,47 +191,67 @@ impl CompileState {
 
   /// Claim `name` for the block that compiles it at `addr`.
   ///
-  /// Returns whether the caller owns `name`'s `Named` entry: its claim
-  /// entered `name_to_addr`, now or earlier in the same block
-  /// (`block_txn`). An identical re-claim of a name another block compiled
-  /// owns nothing (`claim_and_register_compiled`).
+  /// Returns whether the caller may stage `name`'s `Named` entry. A block's
+  /// claims remain private until commit, which rechecks concurrent claims.
+  /// An identical published claim keeps its existing owner.
   pub fn claim_compiled_name(
     &self,
     name: &Name,
     addr: &Address,
   ) -> Result<bool, CompileError> {
-    // A second claim at another address is a conflict (a name assigned
-    // twice is an error unless both assignments are equal), not an
-    // overwrite whose surviving address would depend on which block claimed
-    // last; an identical re-claim stays a no-op, so valid input registers
-    // the same values.
-    let owns = match self.name_to_addr.entry(name.clone()) {
-      dashmap::mapref::entry::Entry::Occupied(e) => {
-        if e.get() != addr {
-          return Err(name_claim_conflict(name, e.get(), addr));
+    block_txn::with(|txn| {
+      if let Some(txn) = txn {
+        if let Some(existing) = txn.claims.get(name)
+          && existing != addr
+        {
+          return Err(name_claim_conflict(name, existing, addr));
         }
-        block_txn::holds_compiled_claim(name)
-      },
-      dashmap::mapref::entry::Entry::Vacant(e) => {
-        e.insert(addr.clone());
-        block_txn::log_compiled(name);
-        true
-      },
-    };
-    Ok(owns)
+        let owns = if let Some(existing) = self.name_to_addr.get(name) {
+          if existing.value() != addr {
+            return Err(name_claim_conflict(name, existing.value(), addr));
+          }
+          false
+        } else {
+          true
+        };
+        txn.claims.insert(name.clone(), addr.clone());
+        return Ok(owns);
+      }
+      let _publication = self.publication_lock.lock().unwrap();
+      match self.name_to_addr.entry(name.clone()) {
+        dashmap::mapref::entry::Entry::Occupied(e) => {
+          if e.get() != addr {
+            return Err(name_claim_conflict(name, e.get(), addr));
+          }
+          Ok(false)
+        },
+        dashmap::mapref::entry::Entry::Vacant(e) => {
+          e.insert(addr.clone());
+          Ok(true)
+        },
+      }
+    })
   }
 
-  /// Register `name`'s `Named` entry, logging it for the failed-block
-  /// rollback when the entry is new (`block_txn`).
+  /// Stage `name`'s metadata for the active block, or publish it directly
+  /// outside a transaction.
   ///
   /// A claimed name is registered through `claim_and_register_compiled`, so
   /// that only its owner writes the entry. The unclaimed synthetic `Muts`
   /// entries are registered here directly.
-  pub fn register_named(&self, name: Name, named: Named) {
-    if !self.env.named.contains_key(&name) {
-      block_txn::log_named(&name);
+  pub fn register_named(&self, name: Name, mut named: Named) {
+    // Demotion can serialize a large arena; keep it outside the commit lock.
+    if *ixon::env::DEMOTE {
+      named.demote();
     }
-    self.env.register_name(name, named);
+    block_txn::with(|txn| {
+      if let Some(txn) = txn {
+        txn.named.insert(name, named);
+      } else {
+        let _publication = self.publication_lock.lock().unwrap();
+        self.env.named.insert(name, named);
+      }
+    });
   }
 
   /// Claim `name` at `named.addr` for the block that compiles it
@@ -244,41 +267,100 @@ impl CompileState {
   pub fn claim_and_register_compiled(
     &self,
     name: &Name,
-    named: Named,
+    mut named: Named,
   ) -> Result<(), CompileError> {
-    if self.claim_compiled_name(name, &named.addr)? {
-      self.register_named(name.clone(), named);
+    if block_txn::with(|txn| txn.is_some()) {
+      if self.claim_compiled_name(name, &named.addr)? {
+        self.register_named(name.clone(), named);
+      }
+      return Ok(());
+    }
+    if *ixon::env::DEMOTE {
+      named.demote();
+    }
+    let _publication = self.publication_lock.lock().unwrap();
+    match self.name_to_addr.entry(name.clone()) {
+      dashmap::mapref::entry::Entry::Occupied(entry) => {
+        if entry.get() != &named.addr {
+          return Err(name_claim_conflict(name, entry.get(), &named.addr));
+        }
+      },
+      dashmap::mapref::entry::Entry::Vacant(entry) => {
+        let addr = named.addr.clone();
+        self.env.named.insert(name.clone(), named);
+        entry.insert(addr);
+      },
     }
     Ok(())
   }
 
   /// Look up a compiled constant's address by name.
   pub fn resolve_addr(&self, name: &Name) -> Option<Address> {
-    self.name_to_addr.get(name).map(|r| r.value().clone())
+    block_txn::with(|txn| {
+      txn
+        .and_then(|txn| txn.claims.get(name).cloned())
+        .or_else(|| self.name_to_addr.get(name).map(|r| r.value().clone()))
+    })
+  }
+
+  fn contains_name(&self, addr: &Address) -> bool {
+    block_txn::with(|txn| {
+      txn.is_some_and(|txn| txn.names.contains_key(addr))
+        || self.env.names.contains_key(addr)
+    })
+  }
+
+  fn store_name(&self, addr: Address, name: Name) {
+    block_txn::with(|txn| {
+      if let Some(txn) = txn {
+        txn.names.insert(addr, name);
+      } else {
+        let _publication = self.publication_lock.lock().unwrap();
+        self.env.names.entry(addr).or_insert(name);
+      }
+    });
+  }
+
+  pub(crate) fn register_block(&self, name: Name, classes: Vec<Vec<Name>>) {
+    block_txn::with(|txn| {
+      if let Some(txn) = txn {
+        txn.blocks.insert(name, classes);
+      } else {
+        let _publication = self.publication_lock.lock().unwrap();
+        self.blocks.insert(name, classes);
+      }
+    });
   }
 
   /// Record `name`'s reducibility hint (`None` removes it). Scheduled
   /// blocks publish hints only after the whole block has compiled
-  /// (`block_txn::commit`); direct callers write immediately.
+  /// (`block_txn::finish`); direct callers write immediately.
   pub fn record_hint(&self, name: &Name, hint: Option<ReducibilityHints>) {
-    if block_txn::defer_hint(name, hint) {
-      return;
-    }
-    match hint {
-      Some(h) => {
-        self.def_hints.insert(name.clone(), h);
-      },
-      None => {
-        self.def_hints.remove(name);
-      },
-    }
+    block_txn::with(|txn| {
+      if let Some(txn) = txn {
+        txn.hints.insert(name.clone(), hint);
+        return;
+      }
+      let _publication = self.publication_lock.lock().unwrap();
+      match hint {
+        Some(h) => {
+          self.def_hints.insert(name.clone(), h);
+        },
+        None => {
+          self.def_hints.remove(name);
+        },
+      }
+    });
   }
 
   /// The hint `name` carries for this thread: the active block's own last
   /// write, else the published one.
   pub fn recorded_hint(&self, name: &Name) -> Option<ReducibilityHints> {
-    block_txn::hint(name)
-      .unwrap_or_else(|| self.def_hints.get(name).map(|r| *r))
+    block_txn::with(|txn| {
+      txn
+        .and_then(|txn| txn.hints.get(name).copied())
+        .unwrap_or_else(|| self.def_hints.get(name).map(|r| *r))
+    })
   }
 
   /// Resolve the per-name hints recorded by `compile_definition` into
@@ -359,7 +441,7 @@ pub fn compile_name(
   let addr = Address::from_blake3_hash(*name.get_hash());
 
   // Check if already stored
-  if stt.env.names.contains_key(&addr) {
+  if stt.contains_name(&addr) {
     return Ok(addr);
   }
 
@@ -377,7 +459,7 @@ pub fn compile_name(
   }
 
   // Store Name struct directly in env.names
-  stt.env.names.insert(addr.clone(), name.clone());
+  stt.store_name(addr.clone(), name.clone());
   Ok(addr)
 }
 
@@ -2370,7 +2452,7 @@ fn compile_mutual(
     .collect();
   for class in &sorted_classes {
     for cnst in class {
-      stt.blocks.insert(cnst.name(), class_ordering.clone());
+      stt.register_block(cnst.name(), class_ordering.clone());
     }
   }
 
@@ -5009,7 +5091,7 @@ mod tests {
   /// A block refused for a conflicting claim leaves the owner's `Named`
   /// entry as it was (the claim comes before the registration, as the Lean
   /// drivers merge a block's state only after its claims check), and its
-  /// rollback removes what it entered.
+  /// failed transaction discards all of its staged writes.
   #[test]
   fn refused_conflicting_claim_keeps_the_owner_named() {
     use ix_common::env::{
@@ -5048,8 +5130,7 @@ mod tests {
       compile_const(&f, &all, &lean_env, &mut BlockCache::default(), &stt)
         .unwrap_err()
         .to_string();
-    let txn = block_txn::take().unwrap();
-    block_txn::rollback(&stt, &txn);
+    block_txn::finish(&stt, true).unwrap();
     assert!(err.contains("conflicting claims for name 'g'"), "{err}");
     let kept = stt.env.named.get(&g).map(|r| r.clone()).expect("owner named");
     assert_eq!(kept.addr, owner);
@@ -5087,7 +5168,7 @@ mod tests {
         Named::new(addr.clone(), axio_meta(b"owner")),
       )
       .unwrap();
-    block_txn::finish(&stt, false);
+    block_txn::finish(&stt, false).unwrap();
     {
       let mut entry = stt.env.named.get_mut(&n).unwrap();
       entry
@@ -5117,7 +5198,7 @@ mod tests {
       .unwrap();
     check("after the identical re-claim");
     // ... and fails: its rollback has nothing of the owner's to undo
-    block_txn::finish(&stt, true);
+    block_txn::finish(&stt, true).unwrap();
     check("after the re-claiming block's rollback");
     // outside a block transaction (direct callers) the same holds
     stt
@@ -5150,9 +5231,12 @@ mod tests {
         Named::new(addr.clone(), axio_meta(b"second")),
       )
       .unwrap();
-    let named = stt.env.named.get(&n).map(|r| r.clone()).expect("own named");
+    let named = block_txn::with(|txn| {
+      txn.unwrap().named.get(&n).cloned().expect("own staged named")
+    });
     assert_eq!(*named.meta(), axio_meta(b"second"));
-    block_txn::finish(&stt, true);
+    assert!(!stt.env.named.contains_key(&n));
+    block_txn::finish(&stt, true).unwrap();
     assert!(!stt.env.named.contains_key(&n));
     assert!(stt.resolve_addr(&n).is_none());
   }

@@ -8,9 +8,9 @@ use dashmap::mapref::entry::Entry;
 use ix_common::address::Address;
 use ixon::{CompileError, LazyConstant, constant::Constant, env::DEMOTE};
 
-use super::CompileState;
+use super::{CompileState, block_txn};
 
-fn conflict(kind: &str) -> CompileError {
+pub(super) fn conflict(kind: &str) -> CompileError {
   CompileError::InvalidMutualBlock {
     reason: format!("anonymous publication: conflicting {kind} payload"),
   }
@@ -40,17 +40,34 @@ impl CompileState {
     // Built outside the map lock. Both storage policies compare the actual
     // bytes; neither overwrites nor silently accepts a conflicting key.
     let pending = LazyConstant::from_serialized(constant, bytes, !demote);
-    match self.env.consts.entry(addr) {
-      Entry::Occupied(entry) => {
-        if entry.get().raw_bytes() != pending.raw_bytes() {
-          return Err(conflict("constant"));
+    block_txn::with(|txn| {
+      if let Some(txn) = txn {
+        if let Some(existing) = txn.constants.get(&addr) {
+          if existing.raw_bytes() != pending.raw_bytes() {
+            return Err(conflict("constant"));
+          }
+        } else if let Some(existing) = self.env.consts.get(&addr) {
+          if existing.raw_bytes() != pending.raw_bytes() {
+            return Err(conflict("constant"));
+          }
+        } else {
+          txn.constants.insert(addr, pending);
         }
-      },
-      Entry::Vacant(entry) => {
-        entry.insert(pending);
-      },
-    }
-    Ok(())
+        return Ok(());
+      }
+      let _publication = self.publication_lock.lock().unwrap();
+      match self.env.consts.entry(addr) {
+        Entry::Occupied(entry) => {
+          if entry.get().raw_bytes() != pending.raw_bytes() {
+            return Err(conflict("constant"));
+          }
+        },
+        Entry::Vacant(entry) => {
+          entry.insert(pending);
+        },
+      }
+      Ok(())
+    })
   }
 
   /// Store a blob under its content address: an existing entry must hold the
@@ -60,17 +77,34 @@ impl CompileState {
     bytes: Vec<u8>,
   ) -> Result<Address, CompileError> {
     let addr = Address::hash(&bytes);
-    match self.env.blobs.entry(addr.clone()) {
-      Entry::Occupied(entry) => {
-        if *entry.get() != bytes {
-          return Err(conflict("blob"));
+    block_txn::with(|txn| {
+      if let Some(txn) = txn {
+        if let Some(existing) = txn.blobs.get(&addr) {
+          if existing != &bytes {
+            return Err(conflict("blob"));
+          }
+        } else if let Some(existing) = self.env.blobs.get(&addr) {
+          if existing.value() != &bytes {
+            return Err(conflict("blob"));
+          }
+        } else {
+          txn.blobs.insert(addr.clone(), bytes);
         }
-      },
-      Entry::Vacant(entry) => {
-        entry.insert(bytes);
-      },
-    }
-    Ok(addr)
+        return Ok(addr);
+      }
+      let _publication = self.publication_lock.lock().unwrap();
+      match self.env.blobs.entry(addr.clone()) {
+        Entry::Occupied(entry) => {
+          if *entry.get() != bytes {
+            return Err(conflict("blob"));
+          }
+        },
+        Entry::Vacant(entry) => {
+          entry.insert(bytes);
+        },
+      }
+      Ok(addr)
+    })
   }
 }
 
@@ -178,7 +212,7 @@ mod tests {
       &mut BlockCache::default(),
       &stt,
     );
-    block_txn::finish(&stt, result.is_err());
+    block_txn::finish(&stt, result.is_err()).unwrap();
     let error = result.unwrap_err().to_string();
     assert!(error.contains("conflicting claims for name 'existingOwner'"));
     assert_eq!(stt.resolve_addr(&g), Some(owner.clone()));
@@ -196,8 +230,8 @@ mod tests {
     let mut success = LeanEnv::default();
     success.insert(owner.clone(), axiom(&owner));
     let options = CompileOptions { max_workers: Some(2) };
-    let expected = compile_env_with_options(&Arc::new(success.clone()), options)
-      .unwrap();
+    let expected =
+      compile_env_with_options(&Arc::new(success.clone()), options).unwrap();
     let mut input = success;
     input.insert(
       bad.clone(),
@@ -221,11 +255,192 @@ mod tests {
     );
     let actual = compile_env_with_options(&Arc::new(input), options).unwrap();
     assert_eq!(actual.ungrounded.len(), 2);
-    assert!(actual.ungrounded.get(&bad).unwrap().contains("proj index too large"));
+    assert!(
+      actual.ungrounded.get(&bad).unwrap().contains("proj index too large")
+    );
     assert!(actual.ungrounded.contains_key(&dependent));
     assert_eq!(actual.env.consts.len(), expected.env.consts.len());
     assert_eq!(actual.env.named.len(), expected.env.named.len());
     assert_eq!(artifact(&actual), artifact(&expected));
+  }
+
+  #[test]
+  fn successful_mutual_block_publishes_all_tables_with_identical_bytes() {
+    let (f, g) = (name("firstMember"), name("secondMember"));
+    let mut env = LeanEnv::default();
+    let all = vec![f.clone(), g.clone()];
+    env.insert(
+      f.clone(),
+      definition(&f, LeanExpr::cnst(g.clone(), vec![]), all.clone()),
+    );
+    env.insert(
+      g.clone(),
+      definition(&g, LeanExpr::cnst(f.clone(), vec![]), all.clone()),
+    );
+    let env = Arc::new(env);
+    let all: NameSet = all.into_iter().collect();
+    let run = |stt: &CompileState| {
+      compile_const(&f, &all, &env, &mut BlockCache::default(), stt).unwrap()
+    };
+    let direct = CompileState::default();
+    let expected = run(&direct);
+    direct.finalize_hints();
+    let staged = CompileState::default();
+    block_txn::start();
+    assert_eq!(run(&staged), expected);
+    assert_eq!(staged.resolve_addr(&f), Some(expected));
+    assert_eq!(artifact(&staged), artifact(&CompileState::default()));
+    assert!(staged.blocks.is_empty());
+    assert!(staged.def_hints.is_empty());
+    block_txn::finish(&staged, false).unwrap();
+    staged.finalize_hints();
+    assert_eq!(staged.blocks.len(), 2);
+    assert_eq!(staged.def_hints.len(), 2);
+    assert_eq!(artifact(&staged), artifact(&direct));
+  }
+
+  fn store_named_record(stt: &CompileState, n: &Name, lvls: u64) -> Address {
+    let c = constant(lvls);
+    let key = Address::hash(&bytes(&c));
+    stt.store_const(key.clone(), c).unwrap();
+    compile_name(n, stt).unwrap();
+    stt
+      .claim_and_register_compiled(n, ixon::env::Named::with_addr(key.clone()))
+      .unwrap();
+    stt.record_hint(n, Some(ReducibilityHints::Abbrev));
+    stt.register_block(n.clone(), vec![vec![n.clone()]]);
+    key
+  }
+
+  #[test]
+  fn concurrent_identical_success_survives_either_failure_order() {
+    for failure_first in [false, true] {
+      let stt = CompileState::default();
+      let n = name("sharedOwner");
+      let ready = Barrier::new(2);
+      let ordered = Barrier::new(2);
+      std::thread::scope(|scope| {
+        let successful = scope.spawn(|| {
+          block_txn::start();
+          store_named_record(&stt, &n, 0);
+          ready.wait();
+          if failure_first {
+            ordered.wait();
+          }
+          block_txn::finish(&stt, false).unwrap();
+          if !failure_first {
+            ordered.wait();
+          }
+        });
+        let failed = scope.spawn(|| {
+          block_txn::start();
+          store_named_record(&stt, &n, 0);
+          store_named_record(&stt, &name("failedOnly"), 1);
+          store_string("failed-only-literal", &stt).unwrap();
+          ready.wait();
+          if !failure_first {
+            ordered.wait();
+          }
+          block_txn::finish(&stt, true).unwrap();
+          if failure_first {
+            ordered.wait();
+          }
+        });
+        successful.join().unwrap();
+        failed.join().unwrap();
+      });
+      stt.finalize_hints();
+      let expected = CompileState::default();
+      store_named_record(&expected, &n, 0);
+      expected.finalize_hints();
+      assert_eq!(artifact(&stt), artifact(&expected));
+      assert_eq!(stt.blocks.len(), 1);
+      assert_eq!(stt.def_hints.len(), 1);
+      assert_eq!(stt.name_to_addr.len(), 1);
+    }
+  }
+
+  #[test]
+  fn concurrent_conflicting_batches_publish_only_the_winner() {
+    let stt = CompileState::default();
+    let key = Address::hash(b"forced shared batch key");
+    let ready = Barrier::new(2);
+    let stage = |stt: &CompileState, side: u64| {
+      stt.store_const(key.clone(), constant(side)).unwrap();
+      let n = name(if side == 0 { "leftBatch" } else { "rightBatch" });
+      compile_name(&n, stt).unwrap();
+      stt
+        .claim_and_register_compiled(
+          &n,
+          ixon::env::Named::with_addr(key.clone()),
+        )
+        .unwrap();
+    };
+    let winner = std::thread::scope(|scope| {
+      let run = |side| {
+        block_txn::start();
+        stage(&stt, side);
+        ready.wait();
+        block_txn::finish(&stt, false)
+      };
+      let left = scope.spawn(move || run(0));
+      let right = scope.spawn(move || run(1));
+      let left = left.join().unwrap();
+      let right = right.join().unwrap();
+      assert_ne!(left.is_ok(), right.is_ok());
+      let winner = if left.is_ok() { 0 } else { 1 };
+      assert_eq!(
+        left.err().or_else(|| right.err()),
+        Some(conflict("constant"))
+      );
+      winner
+    });
+    let expected = CompileState::default();
+    stage(&expected, winner);
+    assert_eq!(artifact(&stt), artifact(&expected));
+  }
+
+  #[test]
+  fn late_conflicts_refuse_the_entire_batch_without_partial_publication() {
+    for kind in ["constant", "blob", "claim"] {
+      let stt = CompileState::default();
+      let claimed = name("lateClaim");
+      block_txn::start();
+      let key = store_named_record(&stt, &claimed, 0);
+      store_named_record(&stt, &name("unrelatedStagedName"), 2);
+      let blob = store_string("late-blob", &stt).unwrap();
+      assert!(stt.env.consts.is_empty());
+      std::thread::scope(|scope| {
+        scope
+          .spawn(|| match kind {
+            "constant" => stt.store_const(key, constant(1)).unwrap(),
+            "blob" => {
+              // Deliberately poison the address after the block staged it.
+              let _publication = stt.publication_lock.lock().unwrap();
+              stt.env.blobs.insert(blob, b"existing bytes".to_vec());
+            },
+            "claim" => {
+              store_named_record(&stt, &claimed, 1);
+            },
+            _ => unreachable!(),
+          })
+          .join()
+          .unwrap();
+      });
+      let before = artifact(&stt);
+      let error = block_txn::finish(&stt, false).unwrap_err();
+      if kind == "claim" {
+        assert!(error.to_string().contains("conflicting claims for name"));
+      } else {
+        assert_eq!(error, conflict(kind));
+      }
+      assert_eq!(artifact(&stt), before, "late {kind} conflict leaked output");
+      let expected_names = usize::from(kind == "claim");
+      assert_eq!(stt.name_to_addr.len(), expected_names);
+      assert_eq!(stt.blocks.len(), expected_names);
+      assert_eq!(stt.def_hints.len(), expected_names);
+      assert!(block_txn::with(|txn| txn.is_none()));
+    }
   }
 
   impl CompileState {
@@ -345,8 +560,7 @@ mod tests {
     stt.env.store_const_lazy(key.clone(), vec![0xff].into());
     block_txn::start();
     let result = run(&stt);
-    let txn = block_txn::take().unwrap();
-    block_txn::rollback(&stt, &txn);
+    block_txn::finish(&stt, true).unwrap();
     assert_eq!(result, Err(conflict("constant")));
     assert!(!stt.env.named.contains_key(&name));
     assert!(!stt.name_to_addr.contains_key(&name));
