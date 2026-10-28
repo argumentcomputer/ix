@@ -1073,7 +1073,12 @@ fun ixe =>
 -- and under the default role table the stored record at a bound `Nat` operation's address
 -- is a standalone definition and at a bound axiom role's address an axiom (checkReport
 -- refuses a record of the wrong kind at a bound Nat-operation or axiom role address).
--- Sixteen checks; `checkReport_ok` concludes `CheckReportOk`, one field each.
+-- Re-frozen for a seventeenth check: under the default role table, a literal-support
+-- role whose address the artifact stores a record at must be an input constant published
+-- at that address (checkReport refuses a stored literal-support role's record that its
+-- name does not publish: a literal's support is then reached by name). `CheckReportOk`
+-- gains `literals`.
+-- Seventeen checks; `checkReport_ok` concludes `CheckReportOk`, one field each.
 /-- info: def Ix.Cert.checkReport : Ix.Environment → Ix.CompileM.CompileEnv → Ixon.Env × Ix.Cert.Failures → Except String Unit :=
 fun env cenv out =>
   match Ix.Cert.uncovered env out.fst out.snd, Ix.Cert.unauthentic out.fst with
@@ -1102,16 +1107,27 @@ fun env cenv out =>
                         | none =>
                           match Ix.Cert.blobRecordCollision out.fst with
                           | none =>
-                            match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst with
-                            | none, none => Except.ok ()
-                            | none, some (r, p) =>
+                            match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst,
+                              Ix.Cert.literalRoleUnnamed env out.fst with
+                            | none, none, none => Except.ok ()
+                            | none, none, some (s, b) =>
+                              Except.error
+                                (toString
+                                              "compileReport: literal-role check failed: the artifact stores a record at " ++
+                                            toString b ++
+                                          toString ", the default role table's address of the literal-support role " ++
+                                        toString (repr s) ++
+                                      toString ", but " ++
+                                    toString (Ix.Cert.literalRoleIxName s).pretty ++
+                                  toString " is not an input constant published there")
+                            | none, some (r, p), x =>
                               Except.error
                                 (toString "compileReport: role check failed: the record stored at " ++ toString p ++
                                       toString ", the default role table's address of the role " ++
                                     toString (repr r) ++
                                   toString
                                     ", is not of its specification's kind (a standalone definition for a Nat operation, an axiom for an axiom role)")
-                            | some (b, x, none), x_1 =>
+                            | some (b, x, none), x_1, x_2 =>
                               Except.error
                                 (toString "compileReport: recursor check failed: the input name " ++
                                         toString x.pretty ++
@@ -1119,7 +1135,7 @@ fun env cenv out =>
                                     toString b ++
                                   toString
                                     " that the recursor index attaches recursors to, is not an inductive, constructor or recursor of a family")
-                            | some (b, x, some r), x_1 =>
+                            | some (b, x, some r), x_1, x_2 =>
                               have pos :=
                                 match r with
                                 | Ix.Kernel.ConstRef.member b j => j
@@ -1348,6 +1364,7 @@ fields:
   Ix.Cert.CheckReportOk.blobs : Ix.Cert.blobRecordCollision out.fst = none
   Ix.Cert.CheckReportOk.recursors : Ix.Cert.unownedRecursor env out.fst = none
   Ix.Cert.CheckReportOk.roles : Ix.Cert.roleRecordKind out.fst = none
+  Ix.Cert.CheckReportOk.literals : Ix.Cert.literalRoleUnnamed env out.fst = none
 constructor:
   Ix.Cert.CheckReportOk.mk {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Ix.Cert.Failures}
     (covered : Ix.Cert.uncovered env out.fst out.snd = []) (authentic : Ix.Cert.unauthentic out.fst = [])
@@ -1360,8 +1377,8 @@ constructor:
     (failures : Ix.Cert.strayFailure env cenv.ungrounded = none)
     (projections : Ix.Cert.projectionCollision out.fst = none)
     (readable : Ix.Cert.unreadablePublished env out.fst = none) (blobs : Ix.Cert.blobRecordCollision out.fst = none)
-    (recursors : Ix.Cert.unownedRecursor env out.fst = none) (roles : Ix.Cert.roleRecordKind out.fst = none) :
-    Ix.Cert.CheckReportOk env cenv out -/
+    (recursors : Ix.Cert.unownedRecursor env out.fst = none) (roles : Ix.Cert.roleRecordKind out.fst = none)
+    (literals : Ix.Cert.literalRoleUnnamed env out.fst = none) : Ix.Cert.CheckReportOk env cenv out -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CheckReportOk
 
@@ -4918,6 +4935,48 @@ fun ixe =>
   (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.RoleRecordKinds ixe -/
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.roleRecordKinds
+
+/-! ## Literal-support roles are named
+
+The default role table binds the roles a literal is checked against (the `Nat` basis and
+the string support). `compileReport` refuses an artifact that stores a record at such a
+role's address while the role's name is not an input constant published there
+(`checkReport`'s seventeenth check, `literalRoleUnnamed`, over every bound entry of the
+decoded table, `roleTableBound`): a literal's support is then reached by its name. Its
+meaning, `LiteralRolesNamed`, holds of every artifact `compileReport` returns
+(`literalRolesNamed`). -/
+
+/-- info: [cert-audit] literal roles named: 4 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] literal roles named: 4 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "literal roles named"
+    #[``Ix.Cert.keyRoles_strLitSupportNames, ``Ix.Cert.literalRoleName_eq,
+      ``Ix.Cert.literalRoleUnnamed_none, ``Ix.Cert.literalRolesNamed]
+  checkRuntime (tag := "cert-audit") "literal roles named"
+    #[``Ix.Cert.literalSupportRoles, ``Ix.Cert.literalLeanName, ``Ix.Cert.literalRoleIxName,
+      ``Ix.Cert.literalRoleUnnamed]
+
+/-- info: def Ix.Cert.LiteralRolesNamed : Ix.Environment → Ixon.Env → Prop :=
+fun env ixe =>
+  ∀ (t : Ix.Kernel.RoleTable),
+    Ix.Kernel.Reader.defaultTable = Except.ok t →
+      ∀ (s : Ix.Kernel.Role),
+        s ∈ Ix.Cert.keyRoles Ix.Kernel.Reader.strLitSupportNames →
+          ∀ (b : Address),
+            t.addressOf? s = some b →
+              ixe.consts.contains b = true →
+                env.consts.contains (Ix.Cert.literalRoleName s) = true ∧
+                  Ix.Cert.ClosureLayout.addrOf ixe (Ix.Cert.literalRoleName s) = some b -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.LiteralRolesNamed
+
+/-- info: Ix.Cert.literalRolesNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+  (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.LiteralRolesNamed env ixe -/
+#guard_msgs (whitespace := lax) in
+#check Ix.Cert.literalRolesNamed
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

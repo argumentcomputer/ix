@@ -842,6 +842,43 @@ axiom role's address an axiom (`Ix.Cert.RoleRecordKinds`). -/
       | none => none
     else none
 
+/-- The roles a literal is checked against: the `Nat` basis and the string support
+(the roles of `Ix.Kernel.Reader.strLitSupportNames`). -/
+@[expose] def literalSupportRoles : List Ix.Kernel.Role :=
+  [.nat, .natZero, .natSucc, .string, .stringOfList, .list, .listNil, .listCons, .char, .charOfNat]
+
+/-- The Lean name of a literal-support role, as `Ix.RoleEvidence.toLeanName` spells the
+role's key (`Ix.Cert.literalRoleName_eq`), written out so that the check does not evaluate
+the kernel's name keys. -/
+@[expose] def literalLeanName : Ix.Kernel.Role → Lean.Name
+  | .nat => `Nat
+  | .natZero => `Nat.zero
+  | .natSucc => `Nat.succ
+  | .string => `String
+  | .stringOfList => `String.ofList
+  | .list => `List
+  | .listNil => `List.nil
+  | .listCons => `List.cons
+  | .char => `Char
+  | .charOfNat => `Char.ofNat
+  | _ => .anonymous
+
+/-- The input name of a literal-support role. -/
+@[expose] def literalRoleIxName (s : Ix.Kernel.Role) : Ix.Name :=
+  Ix.Name.fromLeanName (literalLeanName s)
+
+/-- A literal-support role of the default role table (`roleTableBound`) at whose address
+the artifact stores a record while the role's name (`literalRoleIxName`) is not an input
+constant published at that address, with that address, the first met, if any. With none,
+a stored literal-support role's record is its name's (`Ix.Cert.LiteralRolesNamed`). -/
+@[expose] def literalRoleUnnamed (env : Ix.Environment) (ixe : Ixon.Env) :
+    Option (Ix.Kernel.Role × Address) :=
+  roleTableBound.toList.findSome? fun (s, b) =>
+    if literalSupportRoles.contains s && ixe.consts.contains b &&
+        !(env.consts.contains (literalRoleIxName s) &&
+          (ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b)
+    then some (s, b) else none
+
 /-- A stored record's definition projection: the member it projects (its block's
 address and its index) and the record's address. -/
 @[expose] def definitionProjection (e : Address × Ixon.LazyConstant) : Option ((Address × Nat) × Address) :=
@@ -906,7 +943,7 @@ an input name. -/
       | none => some n
     else none
 
-/-- `compileReport`'s sixteen checks on a compile's result, each an error on
+/-- `compileReport`'s seventeen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -939,7 +976,10 @@ block the recursor index attaches recursors to has a family, and each of those
 recursors is a published recursor of it (`unownedRecursor`). **Bound roles'
 records have their kinds:** under the default role table, the stored record at a
 bound `Nat` operation's address is a standalone definition, and at a bound axiom
-role's address an axiom (`roleRecordKind`). -/
+role's address an axiom (`roleRecordKind`). **Literal-support roles are named:**
+under the default role table, a literal-support role whose address the artifact
+stores a record at is an input constant published at that address
+(`literalRoleUnnamed`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures) : Except String Unit :=
   match uncovered env out.1 out.2, unauthentic out.1 with
@@ -968,19 +1008,25 @@ role's address an axiom (`roleRecordKind`). -/
                         | none =>
                           match blobRecordCollision out.1 with
                           | none =>
-                            match unownedRecursor env out.1, roleRecordKind out.1 with
-                            | none, none => .ok ()
-                            | none, some (r, p) =>
+                            match unownedRecursor env out.1, roleRecordKind out.1,
+                                literalRoleUnnamed env out.1 with
+                            | none, none, none => .ok ()
+                            | none, none, some (s, b) =>
+                              .error s!"compileReport: literal-role check failed: the artifact stores \
+                                a record at {b}, the default role table's address of the literal-support \
+                                role {repr s}, but {(literalRoleIxName s).pretty} is not an input constant \
+                                published there"
+                            | none, some (r, p), _ =>
                               .error s!"compileReport: role check failed: the record stored at {p}, \
                                 the default role table's address of the role {repr r}, is not of its \
                                 specification's kind (a standalone definition for a Nat operation, \
                                 an axiom for an axiom role)"
-                            | some (b, x, none), _ =>
+                            | some (b, x, none), _, _ =>
                               .error s!"compileReport: recursor check failed: the input name \
                                 {x.pretty}, published in the inductive block at {b} that the recursor \
                                 index attaches recursors to, is not an inductive, constructor or \
                                 recursor of a family"
-                            | some (b, x, some r), _ =>
+                            | some (b, x, some r), _, _ =>
                               let pos := match r with
                                 | .member _ j => j
                                 | .ctor _ i _ => i
@@ -1038,7 +1084,7 @@ role's address an axiom (`roleRecordKind`). -/
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with sixteen checks (`checkReport`):
+condensation it cannot schedule). It ends with seventeen checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -1057,7 +1103,8 @@ attaches recursors to has a family, and each of those recursors is a published
 recursor of it;
 and under the default role table, the stored record at a bound `Nat` operation's
 address is a standalone definition and at a bound axiom role's address an
-axiom. Any inconsistency is an error, and no artifact is returned. So
+axiom, and a literal-support role whose address holds a stored record is an input
+constant published there. Any inconsistency is an error, and no artifact is returned. So
 coverage, authenticity, an order of the records in which none precedes a
 record it references, distinct name hashes, `Muts` entries that agree with
 their blocks, resolved names published where they resolve, found inductive
