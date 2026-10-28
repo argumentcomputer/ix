@@ -166,16 +166,23 @@ def commitDef (compileEnv : CompileM.CompileEnv) (leanEnv : Lean.Environment)
 -- Build claims
 -- ============================================================================
 
+/-- Build an evaluation claim and retain both anonymous definitions and their
+literal blobs, so callers can transport the output in an ordinary `.ixe` bundle. -/
+def evalClaimWithEnv (compileEnv : CompileM.CompileEnv)
+    (lvls : List Lean.Name) (input output type : Lean.Expr)
+    : Except String (Claim × CompileM.CompileEnv) := do
+  let (inputAddr, compileEnv') ← compileDef compileEnv lvls type input
+  let (outputAddr, compileEnv') ← compileDef compileEnv' lvls type output
+  return (.eval inputAddr outputAddr none, compileEnv')
+
 /-- Build an unconditional evaluation claim from input and output
-    expressions. Compiles both to get their content addresses. The
+    expressions. Both are anonymous definitions with the same type. The
     `assumptions` field is `none`; higher-level builders can compute
     transitive-dep assumptions when available. -/
 def evalClaim (compileEnv : CompileM.CompileEnv)
     (lvls : List Lean.Name) (input output type : Lean.Expr)
     : Except String Claim := do
-  let (inputAddr, compileEnv') ← compileDef compileEnv lvls type input
-  let (outputAddr, _) ← compileDef compileEnv' lvls type output
-  return .eval inputAddr outputAddr none
+  return (← evalClaimWithEnv compileEnv lvls input output type).1
 
 /-- Build an unconditional check claim: asserts that the compiled
     definition is well-typed. -/

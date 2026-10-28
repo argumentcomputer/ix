@@ -20,6 +20,7 @@ namespace IxVM
   assumption cutoff and a strict owned-membership rule.
 * `run_reveal` — selective field revelation of a committed constant.
 * `run_contains` — merkle membership of a target in a tree.
+* `run_eval` (in `Kernel.Eval`) — checked normalization to an output definition.
 -/
 
 def claim := ⟦
@@ -1272,6 +1273,7 @@ def claim := ⟦
 
   -- Claim dispatch. Loads claim bytes at ch 0 keyed by digest,
   -- blake3-verifies, and dispatches:
+  --   variant 3 (Eval input output asm?) → checked normalization.
   --   variant 4 (Check target asm?)  → transitive check; with asm the
   --     walk stops at frontier members (no owned-membership rule —
   --     Check claims target + everything reachable, no ownership set).
@@ -1285,9 +1287,7 @@ def claim := ⟦
   --     resource validation is native, not proved here.
   -- Variant 8 (Catalog, `E8 00`) has no arm by design: a Catalog claim is
   -- verified by host or aggregate composition, not by this circuit. Other
-  -- variants without an arm (notably 3, Eval) have no defined semantics
-  -- upstream. In both cases the match falls through and aborts rather than
-  -- accepting the claim.
+  -- unknown variants have no arm and abort rather than accepting the claim.
   fn run_claim(digest: [G; 8]) {
     -- `digest` is the packed-4-byte public claim digest; the ch-0 key uses
     -- the same packed form (io keys are execution-side only — no columns).
@@ -1298,13 +1298,13 @@ def claim := ⟦
     let h = @blake3(bytes);
     assert_eq!(@b3_pack(h), digest,
       "claim: bytes do not hash to the public claim digest");
-    -- The claim header is TagN4(0xE, variant): variants 4-7 are the one
-    -- byte 0xE4-0xE7, and Resource (9) is rung 2, `E8 01`.
+    -- The claim header is TagN4(0xE, variant): variants 3-7 are the one
+    -- byte 0xE3-0xE7, and Resource (9) is rung 2, `E8 01`.
     let (tag, s) = get_tagn4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE, "claim: wrong TagN flag");
     -- Dispatch on the FULL TagN value, matching Rust `Claim::get`, which
-    -- matches `tag.value: u64`. The variant is only ever 4-9, so the high 7
+    -- matches `tag.value: u64`. The variant is only ever 3-9, so the high 7
     -- bytes must be zero; a value >= 256 whose low byte is a variant would
     -- otherwise dispatch here while Rust rejects it as an unknown variant.
     -- Sum is 0 iff every high byte is 0 (7 bytes, max sum 1785, no wrap).
@@ -1319,6 +1319,13 @@ def claim := ⟦
     assert_eq!(format, 4u8, "claim: unsupported object format");
     let (validator, s) = read_byte(s);
     match variant {
+      3 =>
+        assert_eq!(validator, 1u8, "claim: wrong validator identity");
+        let (input, s) = get_address(s);
+        let (output, s) = get_address(s);
+        let (asm, rest) = get_opt_addr(s);
+        assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
+        run_eval(input, output, asm),
       4 =>
         assert_eq!(validator, 1u8, "claim: wrong validator identity");
         let (target, s2) = get_address(s);

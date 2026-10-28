@@ -152,6 +152,9 @@ pub enum RevealConstantInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Claim {
   /// `input` evaluates to `output`, optionally modulo `assumptions`.
+  /// Check the input, then normalize its body to the output definition's body.
+  /// The output is a safe standalone definition with the same universe parameter
+  /// count and structurally equal erased type. Assumptions cover input dependencies.
   Eval { input: Address, output: Address, assumptions: Option<Address> },
   /// The constant at `const_addr` is well-typed, optionally modulo
   /// `assumptions`.
