@@ -1,15 +1,12 @@
-//! Reductions outside the certified checker's specification set.
+//! Optional reductions enabled by checked role specifications.
 //!
-//! The certified checker (IxC) specifies Lean's kernel rules plus a fixed set
-//! of primitive roles: the `Nat` basis with literals and fifteen operations on
-//! literals, `Eq`, `Quot`, and the string-literal support. The groups below
-//! are further shortcuts that this kernel implements. Each is sound, but none
-//! is specified there, so the kernel does not take them: every group is off
-//! and the terms they would shortcut reduce by ordinary delta and iota. A
-//! group returns once the certified checker specifies it. Until then only
-//! unit tests of the reducers themselves turn them on.
+//! A bound source can enable the String and BitVec families after semantic
+//! admission. Each reducer also checks admission of its own head and stays
+//! within the input shapes covered by that head's equations. Decision-procedure
+//! proof construction and the Nat offset/linear-recursion shortcuts remain
+//! disabled in production. Unbound checking retains ordinary delta and iota.
 
-/// One group of reductions outside the certified specification set.
+/// One group of optional reductions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtraReduction {
   /// `Nat.decEq`, `Nat.decLe` and `Nat.decLt` on literals, which build
@@ -48,12 +45,36 @@ impl ExtraReduction {
 pub struct ExtraReductions(u8);
 
 impl ExtraReductions {
-  /// No group: the production setting.
+  /// No optional reductions, including the unbound production setting.
   pub const NONE: Self = ExtraReductions(0);
 
   /// Every group, for unit tests of the reducers.
   #[cfg(test)]
   pub(crate) const ALL: Self = ExtraReductions(0b1_1111);
+
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn from_admitted(
+    admitted: impl Fn(ixon::role_table::Role) -> bool,
+  ) -> Self {
+    use ixon::role_table::Role;
+    let mut bits = 0;
+    if admitted(Role::BitVecToNat) {
+      bits |= ExtraReduction::BitVec.bit();
+    }
+    if [
+      Role::StringAppend,
+      Role::StringDecEq,
+      Role::StringBack,
+      Role::StringUtf8ByteSize,
+      Role::StringToByteArray,
+    ]
+    .into_iter()
+    .any(admitted)
+    {
+      bits |= ExtraReduction::String.bit();
+    }
+    Self(bits)
+  }
 
   pub fn allows(self, group: ExtraReduction) -> bool {
     self.0 & group.bit() != 0

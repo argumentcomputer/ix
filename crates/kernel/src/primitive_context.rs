@@ -95,6 +95,20 @@ impl<M: KernelMode> PrimitiveContext<M> {
     }
   }
 
+  /// Optional reducers follow semantic admission, never candidate addresses.
+  pub(crate) fn extra_reductions(
+    &self,
+  ) -> crate::extra_reductions::ExtraReductions {
+    use crate::extra_reductions::ExtraReductions;
+    match self {
+      #[cfg(not(target_arch = "riscv64"))]
+      Self::Bound(_, _, roles) => {
+        ExtraReductions::from_admitted(|role| roles.admitted.contains(&role))
+      },
+      _ => ExtraReductions::NONE,
+    }
+  }
+
   /// Whether the safe axiom at `address` may be used: any axiom in unbound
   /// input; in a bound artifact only an admitted standard axiom. The
   /// certified theory is Lean with its three standard axioms; unsafe axioms
