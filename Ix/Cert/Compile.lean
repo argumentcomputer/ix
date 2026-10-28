@@ -778,8 +778,8 @@ of that family (`Ix.Cert.RecursorsOwned`). -/
 `Ix.Cert.roleKind_eq`), without building the specification's expressions. -/
 @[expose] def roleKind : Ix.Kernel.Role → Ix.Kernel.SpecKind
   | .nat | .natZero | .natSucc | .natRec | .eq | .eqRefl | .eqRec | .punit | .punitUnit | .punitRec
-  | .empty | .emptyRec | .false | .falseRec | .quot | .quotMk | .quotLift | .quotInd | .quotSound =>
-    .block
+  | .empty | .emptyRec | .false | .falseRec | .quot | .quotMk | .quotLift | .quotInd | .quotSound
+  | .iff | .iffIntro | .iffRec | .nonempty | .nonemptyIntro | .nonemptyRec => .block
   | .natPred | .natAdd | .natSub | .natMul | .natPow | .natBeq | .natBle | .natDiv | .natMod
   | .natGcd | .natLand | .natLor | .natXor | .natShiftLeft | .natShiftRight => .ops
   | .propext | .choice | .sorryAx => .axiom

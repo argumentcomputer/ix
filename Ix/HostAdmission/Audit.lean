@@ -23,8 +23,11 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- the predicate and the derived equality of `Ixon.Constant` that compares a record with the
 -- fallback's. Measured before refreezing; externs, implemented_by, unsafe, csimp and all
 -- ruling counts are unchanged.
+-- The role-shape validation merge adds the entry's four compiled functions
+-- (`IxC/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
+-- Execution allowances are unchanged.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 6461 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Ix.HostAdmission.verifyAddressed]: 6465 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

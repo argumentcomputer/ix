@@ -15,7 +15,12 @@ set, and bumps `specVersion` and the digest together.
 Re-frozen at version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2, owner's
 approval): the five compiler-trust roles (`Lean.trustCompiler`,
 `Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`,
-formerly 59–63) and the `identity` kind are gone; roles 0–58 are unchanged. -/
+formerly 59–63) and the `identity` kind are gone; roles 0–58 are unchanged.
+
+Re-frozen at version 3: `Iff`, `Nonempty` and their constructors and
+recursors (23–28) are `block` roles, three declarations each, no longer
+anchors; `sorryAx` (58), still inert, has its type and so depends on `Bool`
+(4). -/
 
 namespace Ix.Kernel.Audit
 
@@ -28,7 +33,7 @@ def roleLine (r : Role) : String :=
     | .block decls => s!"block {decls.length}"
     | .anchor levels _ => s!"anchor {levels}"
     | .ops _ eqs => s!"ops {eqs.length}"
-    | .axiom levels type => s!"axiom {levels}{if type.isNone then " inert" else ""}"
+    | .axiom levels _ => s!"axiom {levels}{if r == Role.sorryAx then " inert" else ""}"
   let ev := String.ofList ((r.spec (md := .anon)).evidenceKinds.map fun b => if b then 'd' else 'p')
   let names (rs : List Role) := ",".intercalate (rs.map fun s => s!"{s.idx}")
   s!"{r.idx} {r.leanName}: {shape}{if ev.isEmpty then "" else " " ++ ev} block [{names r.block}] \
@@ -36,7 +41,7 @@ def roleLine (r : Role) : String :=
 
 end Ix.Kernel.Audit
 
-/-- info: 2 -/
+/-- info: 3 -/
 #guard_msgs in #eval Ix.Kernel.specVersion
 
 /--
@@ -63,12 +68,12 @@ info: 0 Nat: block 4 block [0,1,2,3] deps []
 20 And: anchor 0 block [20,21,22] deps []
 21 And.intro: anchor 0 block [20,21,22] deps []
 22 And.rec: anchor 1 block [20,21,22] deps []
-23 Iff: anchor 0 block [23,24,25] deps []
-24 Iff.intro: anchor 0 block [23,24,25] deps []
-25 Iff.rec: anchor 1 block [23,24,25] deps []
-26 Nonempty: anchor 1 block [26,27,28] deps []
-27 Nonempty.intro: anchor 1 block [26,27,28] deps []
-28 Nonempty.rec: anchor 1 block [26,27,28] deps []
+23 Iff: block 3 block [23,24,25] deps []
+24 Iff.intro: block 3 block [23,24,25] deps []
+25 Iff.rec: block 3 block [23,24,25] deps []
+26 Nonempty: block 3 block [26,27,28] deps []
+27 Nonempty.intro: block 3 block [26,27,28] deps []
+28 Nonempty.rec: block 3 block [26,27,28] deps []
 29 List: anchor 1 block [29,30,31] deps []
 30 List.nil: anchor 1 block [29,30,31] deps []
 31 List.cons: anchor 1 block [29,30,31] deps []
@@ -98,6 +103,6 @@ info: 0 Nat: block 4 block [0,1,2,3] deps []
 55 Nat.shiftRight: ops 2 pp block [55] deps [0,43,47,48,4,8]
 56 propext: axiom 0 block [56] deps [23,8]
 57 Classical.choice: axiom 1 block [57] deps [26]
-58 sorryAx: axiom 1 inert block [58] deps []
+58 sorryAx: axiom 1 inert block [58] deps [4]
 -/
 #guard_msgs in #eval IO.println ("\n".intercalate (Ix.Kernel.Role.all.map Ix.Kernel.Audit.roleLine))

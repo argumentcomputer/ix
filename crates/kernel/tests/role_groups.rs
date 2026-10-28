@@ -7,7 +7,7 @@ use ix_common::env::{DefinitionSafety, Name};
 use ix_kernel::anon_work::{build_artifact_work, verdict_work};
 use ix_kernel::artifact_checker::ArtifactChecker;
 use ix_kernel::mode::Anon;
-use ix_kernel::role_admission::{ArtifactSource, PRELUDE};
+use ix_kernel::role_admission::{ArtifactSource, PRELUDE, SPEC_VERSION};
 use ixon::constant::{Axiom, Constant, ConstantInfo, DefKind, Definition};
 use ixon::contract::{BinderContract, ValueContract};
 use ixon::env::{Env, RoleBinding};
@@ -48,7 +48,8 @@ fn bind_with_evidence(
 ) {
   bound.sort_by_key(|(role, _)| role.index());
   evidence.sort_by_key(|(role, _)| role.index());
-  let raw = RoleTable { version: 2, bound, evidence }.to_bytes().unwrap();
+  let raw =
+    RoleTable { version: SPEC_VERSION, bound, evidence }.to_bytes().unwrap();
   env.role_binding =
     Some(RoleBinding { address: Address::hash(&raw), bytes: raw.into() });
 }
@@ -648,11 +649,14 @@ fn an_operation_whose_equations_fail_is_refused_with_its_dependents() {
   }
 }
 
-/// The `True`, `And`, `Iff` and `Nonempty` anchors at their specified
-/// types, the type formers and introductions as impredicative encodings and
-/// the recursors as axioms (never used here), and the axioms `propext`,
-/// `Classical.choice` and `sorryAx`.
-fn axiom_roles(env: &Env) -> Vec<(Role, Address)> {
+/// `True`, `And`, `Iff` and `Nonempty` declared at their specified types,
+/// the type formers and introductions as impredicative encodings and the
+/// recursors as axioms (never used here), with the axioms `propext` and
+/// `Classical.choice` of their specified types over them and a `sorryAx` of
+/// type `∀ α, α`. The `True` and `And` anchors are specified by type alone,
+/// so these serve; `Iff` and `Nonempty` are blocks, and `sorryAx` has its
+/// type, so those are refused.
+fn definitional_axiom_roles(env: &Env) -> Vec<(Role, Address)> {
   let eq = address_of(env, "Eq");
   let zero = Arc::new(Univ::Zero);
   let one = Arc::new(Univ::Succ(zero.clone()));
@@ -890,6 +894,222 @@ fn axiom_roles(env: &Env) -> Vec<(Role, Address)> {
   ]
 }
 
+/// The `True` and `And` anchors as in [`definitional_axiom_roles`], with
+/// the compiled `Iff` and `Nonempty` families, `propext`,
+/// `Classical.choice` and `sorryAx`.
+fn axiom_roles(env: &Env) -> Vec<(Role, Address)> {
+  let mut roles: Vec<(Role, Address)> = definitional_axiom_roles(env)
+    .into_iter()
+    .filter(|(role, _)| {
+      matches!(
+        role,
+        Role::True
+          | Role::TrueIntro
+          | Role::And
+          | Role::AndIntro
+          | Role::AndRec
+      )
+    })
+    .collect();
+  for role in [
+    Role::Iff,
+    Role::IffIntro,
+    Role::IffRec,
+    Role::Nonempty,
+    Role::NonemptyIntro,
+    Role::NonemptyRec,
+    Role::Propext,
+    Role::Choice,
+    Role::SorryAx,
+  ] {
+    roles.push((role, address_of(env, role.lean_name())));
+  }
+  roles
+}
+
+/// Bind the basis, the prelude and `roles`, and return the snapshot.
+fn bound_with_basis(
+  env: &mut Env,
+  roles: &[(Role, Address)],
+) -> ArtifactSource {
+  let mut bound = basis_roles(env);
+  bound.extend(roles.iter().cloned());
+  let bound = with_prelude(env, bound);
+  bind(env, bound);
+  ArtifactSource::snapshot(env).unwrap()
+}
+
+fn refused_roles(source: &ArtifactSource) -> Vec<Role> {
+  source.admission().refused().iter().map(|(role, _)| *role).collect()
+}
+
+#[test]
+fn families_specified_by_type_alone_are_refused() {
+  // `Iff` and `Nonempty` must be the inductives the standard axioms
+  // quantify over, and `sorryAx` must have its type: definitions of the
+  // families' types, and an axiom `∀ α, α`, are refused, and so are the
+  // axioms over those families.
+  let mut env = loaded();
+  let roles = definitional_axiom_roles(&env);
+  let source = bound_with_basis(&mut env, &roles);
+  assert_eq!(
+    refused_roles(&source),
+    [Role::Iff, Role::Nonempty, Role::Propext, Role::Choice, Role::SorryAx]
+  );
+  let refused = source.admission().refused();
+  for (_, reason) in &refused[..2] {
+    assert!(reason.contains("not a member of a carried unit"), "{reason}");
+  }
+  for (_, reason) in &refused[2..4] {
+    assert!(reason.contains("needs the unadmitted"), "{reason}");
+  }
+  assert!(refused[4].1.contains("differs from the specification: type"));
+  for role in [Role::True, Role::And] {
+    assert!(source.is_admitted(role), "{role:?}");
+  }
+}
+
+/// `Nonempty.{u} := fun _ => True`, `Nonempty.intro := fun _ _ =>
+/// True.intro`, an axiom `choice'.{u} (α : Sort u) : Nonempty α → α` (the
+/// specified type of `Classical.choice` over that `Nonempty`), and
+/// `Nonempty.rec := fun α motive h t => h (choice' α t)`, well typed by
+/// proof irrelevance since `Nonempty α` is `True`; with `theorem bad : False
+/// := choice'.{0} False True.intro`. Returns the roles and `bad`.
+fn nonempty_as_true(env: &Env) -> (Vec<(Role, Address)>, Address) {
+  let true_t = address_of(env, "True");
+  let true_intro = address_of(env, "True.intro");
+  let v = |i: u64| arc(Expr::Var(i));
+  // Universe 0 is `Prop`, universe 1 is `u`.
+  let prop = || arc(Expr::Sort(0));
+  let sort_u = || arc(Expr::Sort(1));
+  let props = || vec![Arc::new(Univ::Zero), Arc::new(Univ::Var(0))];
+  let nonempty_u = |e| app(reference(0, vec![1]), e);
+  let nonempty = definition(
+    env,
+    1,
+    pi(sort_u(), prop()),
+    lambda(sort_u(), reference(0, vec![])),
+    vec![true_t.clone()],
+    props(),
+  );
+  let intro = definition(
+    env,
+    1,
+    pi(sort_u(), pi(v(0), nonempty_u(v(1)))),
+    lambda(sort_u(), lambda(v(0), reference(1, vec![]))),
+    vec![nonempty.clone(), true_intro.clone()],
+    props(),
+  );
+  let choice = axiom(
+    env,
+    1,
+    pi(sort_u(), pi(nonempty_u(v(0)), v(1))),
+    vec![nonempty.clone()],
+    props(),
+  );
+  let motive = || pi(nonempty_u(v(0)), prop());
+  let minor =
+    || pi(v(1), app(v(1), app(app(reference(1, vec![1]), v(2)), v(0))));
+  let major = || nonempty_u(v(2));
+  let rec = definition(
+    env,
+    1,
+    pi(sort_u(), pi(motive(), pi(minor(), pi(major(), app(v(2), v(0)))))),
+    lambda(
+      sort_u(),
+      lambda(
+        motive(),
+        lambda(
+          minor(),
+          lambda(
+            major(),
+            app(v(1), app(app(reference(2, vec![1]), v(3)), v(0))),
+          ),
+        ),
+      ),
+    ),
+    vec![nonempty.clone(), intro.clone(), choice.clone()],
+    props(),
+  );
+  let bad = store(
+    env,
+    ConstantInfo::Defn(Definition {
+      kind: DefKind::Theorem,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      typ: reference(0, vec![]),
+      value: app(
+        app(reference(1, vec![0]), reference(0, vec![])),
+        reference(2, vec![]),
+      ),
+    }),
+    vec![address_of(env, "False"), choice.clone(), true_intro.clone()],
+    vec![Arc::new(Univ::Zero)],
+  );
+  let roles = vec![
+    (Role::True, true_t),
+    (Role::TrueIntro, true_intro),
+    (Role::Nonempty, nonempty),
+    (Role::NonemptyIntro, intro),
+    (Role::NonemptyRec, rec),
+    (Role::Choice, choice),
+  ];
+  (roles, bad)
+}
+
+#[test]
+fn nonempty_as_true_does_not_admit_choice() {
+  // With `Nonempty` specified by its type alone, every group here was
+  // admitted, every unit checked, and `bad : False` with them.
+  let mut env = loaded();
+  let (roles, bad) = nonempty_as_true(&env);
+  let source = bound_with_basis(&mut env, &roles);
+  assert_eq!(refused_roles(&source), [Role::Nonempty, Role::Choice]);
+  let role = |r: Role| roles.iter().find(|(x, _)| *x == r).unwrap().1.clone();
+  let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
+  for r in
+    [Role::Nonempty, Role::NonemptyIntro, Role::NonemptyRec, Role::Choice]
+  {
+    let error = checker.check_const(&role(r)).unwrap_err();
+    assert!(
+      format!("{error}").contains("requires unadmitted role"),
+      "{r:?}: {error}"
+    );
+  }
+  let error = checker.check_const(&bad).unwrap_err();
+  assert!(
+    format!("{error}").contains("is not an admitted standard axiom"),
+    "{error}"
+  );
+}
+
+#[test]
+fn sorry_bound_to_another_axiom_is_refused() {
+  // `sorryAx` is inert, but it has its type: a binding cannot make
+  // `axiom evil.{u} : False` the one tolerated axiom.
+  let mut env = loaded();
+  let evil = axiom(
+    &env,
+    1,
+    reference(0, vec![]),
+    vec![address_of(&env, "False")],
+    vec![],
+  );
+  let bound = with_prelude(&env, vec![(Role::SorryAx, evil.clone())]);
+  bind(&mut env, bound);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  assert_eq!(refused_roles(&source), [Role::SorryAx]);
+  let reason = &source.admission().refused()[0].1;
+  assert!(reason.contains("differs from the specification: type"), "{reason}");
+  let error = ArtifactChecker::<Anon>::from_source(Ok(source))
+    .check_const(&evil)
+    .unwrap_err();
+  assert!(
+    format!("{error}").contains("requires unadmitted role SorryAx"),
+    "{error}"
+  );
+}
+
 /// `theorem : True := e`, with `refs` for `e`'s references.
 fn proof_of_true(
   env: &Env,
@@ -919,13 +1139,13 @@ fn only_the_standard_axioms_may_be_used() {
   let roles = axiom_roles(&env);
   let role = |r: Role| roles.iter().find(|(x, _)| *x == r).unwrap().1.clone();
   let true_t = role(Role::True);
-  // `sorryAx.{0} True`, and a nonstandard `axiom : True`.
+  // `sorryAx.{0} True false`, and a nonstandard `axiom : True`.
   let zero = Arc::new(Univ::Zero);
   let uses_sorry = proof_of_true(
     &env,
     &true_t,
-    app(reference(1, vec![0]), reference(0, vec![])),
-    vec![role(Role::SorryAx)],
+    app(app(reference(1, vec![0]), reference(0, vec![])), reference(2, vec![])),
+    vec![role(Role::SorryAx), address_of(&env, "Bool.false")],
     vec![zero.clone()],
   );
   let nonstandard =

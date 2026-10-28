@@ -47,7 +47,7 @@ use ixon::role_table::{Evidence, Role, RoleTable};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Current IxC specification version; the wire codec deliberately accepts more.
-pub const SPEC_VERSION: u8 = 2;
+pub const SPEC_VERSION: u8 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -131,7 +131,7 @@ fn dependencies(role: Role) -> &'static [Role] {
     Bool, Char, CharOfNat, Choice, Eq, Iff, List, Nat, NatAdd, NatBeq, NatBle,
     NatDiv, NatGcd, NatLand, NatLor, NatMod, NatMul, NatPow, NatPred,
     NatShiftLeft, NatShiftRight, NatSub, NatXor, Nonempty, Propext, Quot,
-    QuotInd, QuotLift, QuotMk, QuotSound, String, StringOfList,
+    QuotInd, QuotLift, QuotMk, QuotSound, SorryAx, String, StringOfList,
   };
   match role {
     Quot | QuotMk | QuotLift | QuotInd | QuotSound => &[Eq],
@@ -152,6 +152,7 @@ fn dependencies(role: Role) -> &'static [Role] {
     NatShiftRight => &[Nat, NatSub, NatBle, NatDiv, Bool, Eq],
     Propext => &[Iff, Eq],
     Choice => &[Nonempty],
+    SorryAx => &[Bool],
     _ => &[],
   }
 }

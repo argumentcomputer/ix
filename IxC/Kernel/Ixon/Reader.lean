@@ -64,16 +64,19 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
   `Empty`, `False`, the `Quot` package), `And` and `Bool`, the literal
   support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`), the
   certified `Nat` operations, the standard axioms with `Iff` and
-  `Nonempty`, the compiler-trust family with `True`, and `sorryAx`. The table
+  `Nonempty`, `True`, and `sorryAx`. The table
   is input: it is authenticated and checked for well-formedness at admission
   (`RoleTable.check`), and its bound addresses are resolved here
   (`bindingsOf`); the reader never reads Ixon metadata. The checker itself
-  validates every role-keyed declaration against the role's specification
-  (`Role.spec`: basis blocks up to `canon`, with a reserved-name reject
-  otherwise; literal support and `Nat` operations by exact type shapes and
-  their evidence; the standard and trust axioms by `matchesPin`), so a table
-  entry on a constant of another shape is rejected or declined, never
-  accepted under the role.
+  validates every role-keyed declaration it relies on against the role's
+  specification, where it relies on it (`Role.spec`: basis blocks up to
+  `canon`, with a reserved-name reject otherwise; literal support and `Nat`
+  operations by exact type shapes and their evidence; `Bool.rec` and the `And`
+  family at install; the standard axioms, with the `Iff` and `Nonempty`
+  families, by `stdAxiomOk`), so a table entry on a constant of another shape
+  is rejected or declined wherever the checker would use it. `True` and
+  `True.intro` are used nowhere and so validated nowhere, and `sorryAx` is
+  matched against its type at install and installs nothing (`Roles.lean`).
 * **Evidence** (`evidenceOf`): a proof entry of the table names a theorem
   record; the reader resolves it to the record's key and its value's
   reading, which is what the fold checks the operation's certificates with.

@@ -1,4 +1,4 @@
-# Role.block/deps and Spec.evidenceKinds, version2
+# Role.block/deps and Spec.evidenceKinds, version3
 0	0,1,2,3		
 1	0,1,2,3		
 2	0,1,2,3		
@@ -57,4 +57,4 @@
 55	55	0,43,47,48,4,8	proof,proof
 56	56	23,8	
 57	57	26	
-58	58		
+58	58	4	

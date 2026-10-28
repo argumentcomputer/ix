@@ -994,7 +994,7 @@ def refuses (t : Ix.Kernel.RoleTable) (why : String) : Bool :=
   | .error e => (e.splitOn why).length > 1
   | .ok () => false
 
-#guard refuses { builtinTable with version := 3 } "version 3"
+#guard refuses { builtinTable with version := 4 } "version 4"
 #guard refuses { builtinTable with bound := builtinTable.bound.push (.nat, address 1) } "bound twice"
 #guard refuses (rebind [(.natAdd, bound .natSub)]) "bound to two roles"
 #guard refuses (drop builtinTable [.eqRefl]) "its block's"
@@ -1025,7 +1025,8 @@ formed (`admitBinding`), before it reads any record. -/
 #guard match checkBytesWith hash ⟨address 1, builtinTable.toBytes⟩ builtinPre limits [] [] with
   | .error (.binding (.mismatch a)) => a == address 1
   | _ => false
-#guard match checkBytesWith hash (bindingOf { builtinTable with version := 3 }) builtinPre limits [] [] with
+#guard match checkBytesWith hash (bindingOf { builtinTable with version := Ix.Kernel.specVersion + 1 })
+    builtinPre limits [] [] with
   | .error (.binding (.malformed _)) => true
   | _ => false
 #guard match checkBytesWith hash ⟨hash ⟨#[0xe8]⟩, ⟨#[0xe8]⟩⟩ builtinPre limits [] [] with

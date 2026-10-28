@@ -2,18 +2,25 @@
 //! source, or refuses it with a reason. The groups and their specifications
 //! are the certified checker's:
 //!
-//! - a basis block (`Nat`, `Eq`, `PUnit`, `Empty`, `False`, `Quot`) is
-//!   admitted only when every bound role authenticates as the carried record
-//!   at the position the specification fixes (an inductive's unit holding
-//!   nothing else, its constructors by index, the quotient records by kind);
-//!   the declarations, read into a fresh anonymous environment, are exactly
-//!   the specified ones built from the bound addresses; and the kernel checks
-//!   them there with only the groups admitted before this one;
-//! - an anchor (the literal support) is admitted only when its record
-//!   authenticates, is not unsafe, has exactly the specified level count and
-//!   type, and that type checks as a type with only the groups admitted
-//!   before it. An anchor is specified by its type alone; its declaration is
-//!   checked like any other once admitted.
+//! - a basis block (`Nat`, `Eq`, `PUnit`, `Empty`, `False`, `Quot`) or a
+//!   standard axiom's family (`Iff`, `Nonempty`) is admitted only when
+//!   every bound role authenticates as the carried record at the position
+//!   the specification fixes (an inductive's unit holding nothing else, its
+//!   constructors by index, the quotient records by kind); the
+//!   declarations, read into a fresh anonymous environment, are exactly the
+//!   specified ones built from the bound addresses; and the kernel checks
+//!   them there with only the groups admitted before this one. Every role a
+//!   standard axiom's type mentions is such a block: an admitted axiom is
+//!   true only of the declarations it quantifies over, so a type does not
+//!   pin them;
+//! - an anchor (the literal support, `Bool`, `True`, `And`) is admitted only
+//!   when its record authenticates, is not unsafe, has exactly the specified
+//!   level count and type, and that type checks as a type with only the
+//!   groups admitted before it. An anchor is specified by its type alone;
+//!   its declaration is checked like any other once admitted;
+//! - an axiom (`propext`, `Classical.choice`, the inert `sorryAx`) is
+//!   admitted only when its record is a safe axiom of exactly the specified
+//!   level count and type over the admitted groups, and checks.
 //!
 //! A group is admitted whole or not at all, after the groups it needs.
 //! Nothing outside this module creates an admission.
@@ -202,7 +209,11 @@ const GROUPS: &[Group] = &[
     needs: &[Role::Nonempty],
     validate: validate_choice,
   },
-  Group { roles: &[Role::SorryAx], needs: &[], validate: validate_sorry },
+  Group {
+    roles: &[Role::SorryAx],
+    needs: &[Role::Bool],
+    validate: validate_sorry,
+  },
   Group {
     roles: &[Role::NatDiv],
     needs: &[
@@ -1915,102 +1926,192 @@ fn validate_and(
   )
 }
 
-/// `Iff (a b : Prop) : Prop`, `Iff.intro (a b : Prop) (mp : a → b)
-/// (mpr : b → a) : Iff a b` and `Iff.rec.{u} (a b : Prop)
-/// (motive : Iff a b → Sort u) (intro : ∀ mp mpr, motive (Iff.intro a b mp
-/// mpr)) (t : Iff a b) : motive t`.
+/// `Iff (a b : Prop) : Prop` with `Iff.intro {a b : Prop} (mp : a → b)
+/// (mpr : b → a) : Iff a b` and `Iff.rec.{u} {a b : Prop}
+/// {motive : Iff a b → Sort u} (intro : ∀ mp mpr, motive (Iff.intro mp mpr))
+/// (t : Iff a b) : motive t`, whose rule returns `intro mp mpr`. A block,
+/// not an anchor: `propext` is true only of this inductive.
 fn validate_iff(
   source: &ArtifactSource,
   admitted: &Admission,
 ) -> Result<(), String> {
-  let [iff, intro] = bound(source, [Role::Iff, Role::IffIntro])?;
+  let [iff, intro, rec] =
+    bound(source, [Role::Iff, Role::IffIntro, Role::IffRec])?;
+  locate_inductive_unit(source, &iff, &[&intro], &[&rec])?;
+  let mut kenv = ingress_records(source, &[&iff, &rec])?;
+
   let iff2 = |a: E, b: E| apps(cnst(&iff, &[]), vec![a, b]);
-  let intro_ty = pi(
-    prop(),
-    pi(
-      prop(),
-      pi(pi(var(1), var(1)), pi(pi(var(1), var(3)), iff2(var(3), var(2)))),
-    ),
-  );
-  let minor = pi(
-    pi(var(2), var(2)),
-    pi(
-      pi(var(2), var(4)),
-      app(
-        var(2),
-        apps(cnst(&intro, &[]), vec![var(4), var(3), var(1), var(0)]),
+  expect_inductive(
+    &kenv,
+    &iff,
+    &InductiveSpec {
+      lvls: 0,
+      params: 2,
+      indices: 0,
+      ty: pi(prop(), pi(prop(), prop())),
+      constructors: vec![intro.clone()],
+    },
+  )?;
+  expect_constructor(
+    &kenv,
+    &intro,
+    &iff,
+    &ConstructorSpec {
+      lvls: 0,
+      cidx: 0,
+      params: 2,
+      fields: 2,
+      ty: pi(
+        prop(),
+        pi(
+          prop(),
+          pi(pi(var(1), var(1)), pi(pi(var(1), var(3)), iff2(var(3), var(2)))),
+        ),
       ),
-    ),
-  );
-  let rec_ty = pi(
-    prop(),
+    },
+  )?;
+
+  // In the `a`, `b` binder context.
+  let motive = || pi(iff2(var(1), var(0)), sort(param(0)));
+  // In the `a`, `b`, `motive` binder context.
+  let minor = || {
     pi(
-      prop(),
+      pi(var(2), var(2)),
       pi(
-        pi(iff2(var(1), var(0)), sort(param(0))),
-        pi(minor, pi(iff2(var(3), var(2)), app(var(2), var(0)))),
+        pi(var(2), var(4)),
+        app(
+          var(2),
+          apps(cnst(&intro, &[]), vec![var(4), var(3), var(1), var(0)]),
+        ),
+      ),
+    )
+  };
+  let ty = pi(
+    prop(),
+    pi(
+      prop(),
+      pi(motive(), pi(minor(), pi(iff2(var(3), var(2)), app(var(2), var(0))))),
+    ),
+  );
+  let rule = lam(
+    prop(),
+    lam(
+      prop(),
+      lam(
+        motive(),
+        lam(
+          minor(),
+          lam(
+            pi(var(3), var(3)),
+            lam(pi(var(3), var(5)), app(app(var(2), var(1)), var(0))),
+          ),
+        ),
       ),
     ),
   );
-  validate_anchors(
-    source,
-    admitted,
-    &[
-      (Role::Iff, 0, pi(prop(), pi(prop(), prop()))),
-      (Role::IffIntro, 0, intro_ty),
-      (Role::IffRec, 1, rec_ty),
-    ],
-  )
+  expect_recursor(
+    &kenv,
+    &rec,
+    &RecursorSpec {
+      lvls: 1,
+      params: 2,
+      indices: 0,
+      motives: 1,
+      minors: 1,
+      k: false,
+      ty,
+      rules: vec![(2, rule)],
+    },
+  )?;
+  check_units(source, admitted, &mut kenv, &[&iff, &rec])
 }
 
-/// `Nonempty.{u} (α : Sort u) : Prop`, `Nonempty.intro.{u} (α : Sort u)
-/// (val : α) : Nonempty α` and `Nonempty.rec.{u} (α : Sort u)
-/// (motive : Nonempty α → Prop) (intro : ∀ val, motive (Nonempty.intro α
-/// val)) (t : Nonempty α) : motive t`.
+/// `Nonempty.{u} (α : Sort u) : Prop` with `Nonempty.intro.{u} {α : Sort u}
+/// (val : α) : Nonempty α` and `Nonempty.rec.{u} {α : Sort u}
+/// {motive : Nonempty α → Prop} (intro : ∀ val, motive (Nonempty.intro val))
+/// (t : Nonempty α) : motive t`, whose rule returns `intro val`. A block, not
+/// an anchor: `Classical.choice` is true only of this inductive.
 fn validate_nonempty(
   source: &ArtifactSource,
   admitted: &Admission,
 ) -> Result<(), String> {
-  let [nonempty, intro] = bound(source, [Role::Nonempty, Role::NonemptyIntro])?;
+  let [nonempty, intro, rec] =
+    bound(source, [Role::Nonempty, Role::NonemptyIntro, Role::NonemptyRec])?;
+  locate_inductive_unit(source, &nonempty, &[&intro], &[&rec])?;
+  let mut kenv = ingress_records(source, &[&nonempty, &rec])?;
+
   let u = param(0);
   let nonempty_u = |e: E| app(cnst(&nonempty, std::slice::from_ref(&u)), e);
-  let intro_ty = pi(sort(u.clone()), pi(var(0), nonempty_u(var(1))));
-  let rec_ty = pi(
-    sort(u.clone()),
+  expect_inductive(
+    &kenv,
+    &nonempty,
+    &InductiveSpec {
+      lvls: 1,
+      params: 1,
+      indices: 0,
+      ty: pi(sort(u.clone()), prop()),
+      constructors: vec![intro.clone()],
+    },
+  )?;
+  expect_constructor(
+    &kenv,
+    &intro,
+    &nonempty,
+    &ConstructorSpec {
+      lvls: 1,
+      cidx: 0,
+      params: 1,
+      fields: 1,
+      ty: pi(sort(u.clone()), pi(var(0), nonempty_u(var(1)))),
+    },
+  )?;
+
+  // In the `α` binder context.
+  let motive = || pi(nonempty_u(var(0)), prop());
+  // In the `α`, `motive` binder context.
+  let minor = || {
     pi(
-      pi(nonempty_u(var(0)), prop()),
-      pi(
-        pi(
-          var(1),
-          app(
-            var(1),
-            apps(cnst(&intro, std::slice::from_ref(&u)), vec![var(2), var(0)]),
-          ),
-        ),
-        pi(nonempty_u(var(2)), app(var(2), var(0))),
+      var(1),
+      app(
+        var(1),
+        apps(cnst(&intro, std::slice::from_ref(&u)), vec![var(2), var(0)]),
       ),
-    ),
+    )
+  };
+  let ty = pi(
+    sort(u.clone()),
+    pi(motive(), pi(minor(), pi(nonempty_u(var(2)), app(var(2), var(0))))),
   );
-  validate_anchors(
-    source,
-    admitted,
-    &[
-      (Role::Nonempty, 1, pi(sort(u.clone()), prop())),
-      (Role::NonemptyIntro, 1, intro_ty),
-      (Role::NonemptyRec, 1, rec_ty),
-    ],
-  )
+  let rule = lam(
+    sort(u.clone()),
+    lam(motive(), lam(minor(), lam(var(2), app(var(1), var(0))))),
+  );
+  expect_recursor(
+    &kenv,
+    &rec,
+    &RecursorSpec {
+      lvls: 1,
+      params: 1,
+      indices: 0,
+      motives: 1,
+      minors: 1,
+      k: false,
+      ty,
+      rules: vec![(1, rule)],
+    },
+  )?;
+  check_units(source, admitted, &mut kenv, &[&nonempty, &rec])
 }
 
-/// An axiom of the specified level count and, unless inert, type, checked
-/// as a declaration with only the groups admitted before (and itself as an
-/// axiom the policy allows).
+/// An axiom of the specified level count and type, checked as a declaration
+/// with only the groups admitted before (and itself as an axiom the policy
+/// allows).
 fn validate_axiom(
   source: &ArtifactSource,
   admitted: &Admission,
   role: Role,
   lvls: u64,
-  ty: Option<E>,
+  ty: &E,
 ) -> Result<(), String> {
   let address =
     source.required_role(role).map_err(|error| error.to_string())?.clone();
@@ -2025,7 +2126,7 @@ fn validate_axiom(
     KConst::Axio { is_unsafe: false, lvls: found, ty: found_ty, .. }
       if found == lvls =>
     {
-      if ty.is_some_and(|ty| ty != found_ty) {
+      if &found_ty != ty {
         return Err(differs(&address, "type"));
       }
     },
@@ -2056,7 +2157,7 @@ fn validate_propext(
       ),
     ),
   );
-  validate_axiom(source, admitted, Role::Propext, 0, Some(ty))
+  validate_axiom(source, admitted, Role::Propext, 0, &ty)
 }
 
 /// `Classical.choice.{u} {α : Sort u} : Nonempty α → α`.
@@ -2071,16 +2172,19 @@ fn validate_choice(
     sort(u.clone()),
     pi(app(cnst(nonempty, std::slice::from_ref(&u)), var(0)), var(1)),
   );
-  validate_axiom(source, admitted, Role::Choice, 1, Some(ty))
+  validate_axiom(source, admitted, Role::Choice, 1, &ty)
 }
 
-/// `sorryAx.{u}`: an inert axiom, tolerated as a declaration and refused at
-/// every use.
+/// `sorryAx.{u} (α : Sort u) (synthetic : Bool) : α`: an inert axiom,
+/// tolerated as a declaration and refused at every use. Its type fixes which
+/// declaration is tolerated.
 fn validate_sorry(
   source: &ArtifactSource,
   admitted: &Admission,
 ) -> Result<(), String> {
-  validate_axiom(source, admitted, Role::SorryAx, 1, None)
+  let bool_t = admitted.address(Role::Bool).ok_or("Bool is not admitted")?;
+  let ty = pi(sort(param(0)), pi(cnst(bool_t, &[]), var(1)));
+  validate_axiom(source, admitted, Role::SorryAx, 1, &ty)
 }
 
 #[cfg(test)]

@@ -124,11 +124,14 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- Leaving out of the index an input recursor filed under a block only the fallback supplies
 -- (`inputIndexed`) adds 32, the entry's (`IxC/Kernel/Audit/Roots.lean`). Measured before
 -- refreezing; externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Specification version 3 adds the admission entry's four functions
+-- (`IxC/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
+-- Execution allowances are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6029 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkBytes]: 6033 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
