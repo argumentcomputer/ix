@@ -46,9 +46,9 @@ def claimUnits : TestSeq :=
   -- Contains
   ++ test "Contains roundtrip" (claimSerde (.contains addr1 addr2))
   -- Catalog (the first multi-byte claim tag)
-  ++ test "Catalog no-asm roundtrip" (claimSerde (.catalog ctx addr1 addr2 none))
-  ++ test "Catalog with-asm roundtrip"
-       (claimSerde (.catalog ctx addr1 addr2 (some addr3)))
+  ++ test "Catalog roundtrip" (claimSerde (.catalog addr1))
+  ++ test "CheckEnv under a literal class roundtrip"
+       (claimSerde (.checkEnv { ctx with literalClass := true } addr1 none))
   -- Reveal claim variants (carried over from previous suite)
   ++ test "Reveal defn safety-only" (claimSerde (.reveal addr1
     (.defn none (some .safe) none none none)))
@@ -140,33 +140,41 @@ def claimEncodingTests : TestSeq :=
 -/
 
 private def catMembers : Address := Address.blake3 "members".toUTF8
-private def catContent : Address := Address.blake3 "content".toUTF8
-private def catAsm : Address := Address.blake3 "assumptions".toUTF8
 
 /-- Must equal the Rust pin in `proof.rs::catalog_claim_wire_bytes_pinned`. -/
 private def catalogDigestPin : String :=
-  "72eadc8676a4b86a6c829087b2aaf7c56674e0dec42a356cf70c47c654c37066"
+  "4f5686bd1a8386231370703d58223aca769c82c835964d4914ca41305a8030f3"
 
 def catalogClaimTests : TestSeq :=
-  let someBytes := Claim.ser (.catalog ctx catMembers catContent (some catAsm))
-  let noneBytes := Claim.ser (.catalog ctx catMembers catContent none)
-  let proof : Ixon.Proof := { claim := .catalog ctx catMembers catContent none
-                              proof := .empty }
+  let bytes := Claim.ser (.catalog catMembers)
+  let proof : Ixon.Proof := { claim := .catalog catMembers, proof := .empty }
   let proofBytes := Ixon.Proof.ser proof
   let proofRoundtrips : Bool := match Ixon.Proof.de proofBytes with
     | .ok p => p.claim == proof.claim && p.proof == proof.proof
     | .error _ => false
   test "Catalog tag is 2 bytes 0xE8 0x00 (TagN 4 0xE 8)"
-    (someBytes.data[0]! == 0xE8 && someBytes.data[1]! == 0x00)
+    (bytes.data[0]! == 0xE8 && bytes.data[1]! == 0x00)
   ++ test "Catalog scope is object format 4, erased-lean-v2"
-       (someBytes.data[2]! == 4 && someBytes.data[3]! == 3)
-  ++ test "Catalog no-asm size is 134" (noneBytes.size == 4 + 65 + 64 + 1)
-  ++ test "Catalog with-asm size is 166" (someBytes.size == 4 + 65 + 64 + 33)
+       (bytes.data[2]! == 4 && bytes.data[3]! == 3)
+  ++ test "Catalog is the scope and the members root, 36 bytes" (bytes.size == 4 + 32)
   ++ test "Catalog digest parity with Rust pin"
-       (toString (Address.blake3 someBytes) == catalogDigestPin)
+       (toString (Address.blake3 bytes) == catalogDigestPin)
   ++ test "Catalog proof wrapper tag is single-byte 0xF5"
        (proofBytes.data[0]! == 0xF5)
   ++ test "Catalog proof wrapper roundtrips" proofRoundtrips
+
+/-- A reveal mask bit beyond the variant's fields is refused, so one claim has
+one encoding. The Rust reader refuses the same bytes
+(`proof.rs::reveal_mask_refuses_unknown_bits`): a Reveal claim over the zero
+commitment, its variant byte, then the one-byte mask. -/
+def revealMaskTests : TestSeq :=
+  let header : Array UInt8 := #[0xE6, 0x04, 0x00] ++ Array.replicate 32 0
+  let bytes (variant mask : UInt8) : ByteArray := ⟨header ++ #[variant, mask]⟩
+  test "Reveal defn with no fields reads" (Ix.Claim.de (bytes 0 0) matches .ok _)
+  ++ test "Reveal defn mask bit 5 refused" (Ix.Claim.de (bytes 0 0x20) matches .error _)
+  ++ test "Reveal axio with no fields reads" (Ix.Claim.de (bytes 2 0) matches .ok _)
+  ++ test "Reveal axio mask bit 3 refused" (Ix.Claim.de (bytes 2 0x08) matches .error _)
+  ++ test "Reveal dprj mask bit 2 refused" (Ix.Claim.de (bytes 7 0x04) matches .error _)
 
 /-! ## Suite -/
 
@@ -174,6 +182,7 @@ public def Tests.Claim.suite : List TestSeq := [
   claimUnits,
   claimEncodingTests,
   catalogClaimTests,
+  revealMaskTests,
   checkIO "Claim serde roundtrips" (∀ c : Claim, claimSerde c),
 ]
 

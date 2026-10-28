@@ -34,10 +34,13 @@
 //!
 //! Wire format: Convention B (own magic + explicit version, the
 //! `.ixes`/`.ixprof` precedent). Fixed-width little-endian integers —
-//! deliberately unlike `.ixe`'s TagN varints. Trailing bytes after the
-//! storage section are preserved opaquely (future sections: 0x01 agg
-//! tree, 0x02 per-unit assumption roots); readers of this version stop
-//! after storage, the `.ixes` trick.
+//! deliberately unlike `.ixe`'s TagN varints. The manifest ends with
+//! the storage section: trailing bytes are refused, since no root
+//! covers them. A later section needs a new version.
+//!
+//! Only fat catalogs verify. A chunked manifest's member env roots are
+//! not tied to its chunks, so [`verify`] refuses it after the
+//! structural checks rather than vouch for members it cannot see.
 //!
 //! On disk, a `.ixc` is a DIRECTORY — self-contained, no separate
 //! pieces dir:
@@ -79,6 +82,10 @@ pub struct CatalogMember {
   /// Anon env root: `merkle_root_canonical` over the piece's §2
   /// addresses. Name-independent semantic identity.
   pub env_root: Address,
+  /// The piece's role binding hash: which constants play the checker's
+  /// roles in this member. Members compiled on different Lean toolchains
+  /// have different bindings; `verify` checks it against the piece.
+  pub binding: Address,
   /// §2 entry count of the piece.
   pub const_count: u64,
   /// Qualifier, e.g. `"Mathlib"`. Doubles as the piece filename stem
@@ -137,9 +144,6 @@ pub struct Catalog {
   pub content_root: Address,
   pub members: Vec<CatalogMember>,
   pub storage: CatalogStorage,
-  /// Bytes after the storage section, preserved verbatim (future
-  /// trailing sections; opaque to this version).
-  pub trailing: Vec<u8>,
 }
 
 /// Reject a label that cannot double as a filename stem: empty, path
@@ -155,8 +159,31 @@ fn validate_label(label: &str) -> Result<(), String> {
   Ok(())
 }
 
+/// Reject two members with one env root or one label. The members root
+/// is a set root, so a repeated env root would vanish from it; a label is
+/// a filename stem, so a repeated label would name one piece twice.
+fn check_unique<'a>(
+  members: impl IntoIterator<Item = (&'a Address, &'a str)>,
+) -> Result<(), String> {
+  let mut roots = std::collections::HashSet::new();
+  let mut labels = std::collections::HashSet::new();
+  for (root, label) in members {
+    if !roots.insert(root) {
+      return Err(format!(
+        "catalog: duplicate member env root {} ({label})",
+        root.hex()
+      ));
+    }
+    if !labels.insert(label) {
+      return Err(format!("catalog: duplicate member label {label:?}"));
+    }
+  }
+  Ok(())
+}
+
 /// `merkle_root_canonical` over the entries' env roots (the members
-/// commitment). Canonical-set semantics: duplicates collapse.
+/// commitment). Canonical-set semantics: duplicates collapse, which is
+/// why a manifest with duplicate members is refused on load.
 pub fn members_root_of(members: &[CatalogMember]) -> Address {
   let roots: Vec<Address> =
     members.iter().map(|m| m.env_root.clone()).collect();
@@ -241,6 +268,7 @@ impl Catalog {
     out.extend_from_slice(&count.to_le_bytes());
     for m in &self.members {
       out.extend_from_slice(m.env_root.as_bytes());
+      out.extend_from_slice(m.binding.as_bytes());
       out.extend_from_slice(&m.const_count.to_le_bytes());
       put_string(&m.label, &mut out)?;
       put_string(&m.toolchain, &mut out)?;
@@ -285,16 +313,17 @@ impl Catalog {
         }
       },
     }
-    out.extend_from_slice(&self.trailing);
     Ok(out)
   }
 
   /// Deserialize and structurally validate: magic, version, no
   /// unknown flags, deps strictly before their member (topo), labels
-  /// filename-safe, chunk owners in range — and `members_root`
-  /// recomputed from the entries (a mismatch is rejected on load, the
-  /// `.ixe` root discipline one level up). `content_root` needs the
-  /// storage bytes and is verified by [`verify`].
+  /// filename-safe, no two members with one env root or label, a
+  /// preimage tag of 0 or 1, chunk owners in range, no trailing bytes —
+  /// and `members_root` recomputed from the entries (a mismatch is
+  /// rejected on load, the `.ixe` root discipline one level up).
+  /// `content_root` needs the storage bytes and is verified by
+  /// [`verify`].
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
     let mut c = Cur { buf: bytes, pos: 0 };
     if c.take(8)? != CATALOG_MAGIC {
@@ -329,6 +358,7 @@ impl Catalog {
     let mut members = Vec::with_capacity(member_count.min(4096));
     for idx in 0..member_count {
       let env_root = c.addr()?;
+      let binding = c.addr()?;
       let const_count = c.u64()?;
       let label = c.string()?;
       validate_label(&label)?;
@@ -347,9 +377,18 @@ impl Catalog {
         }
         deps.push(d);
       }
-      let preimage = if c.u8()? == 1 { Some(c.addr()?) } else { None };
+      let preimage = match c.u8()? {
+        0 => None,
+        1 => Some(c.addr()?),
+        tag => {
+          return Err(format!(
+            "catalog: member {idx} ({label}): bad preimage tag {tag}"
+          ));
+        },
+      };
       members.push(CatalogMember {
         env_root,
+        binding,
         const_count,
         label,
         toolchain,
@@ -358,6 +397,7 @@ impl Catalog {
         preimage,
       });
     }
+    check_unique(members.iter().map(|m| (&m.env_root, m.label.as_str())))?;
     let storage = if flags & FLAG_CHUNKED == 0 {
       let mut pieces = Vec::with_capacity(member_count.min(4096));
       for _ in 0..member_count {
@@ -384,9 +424,13 @@ impl Catalog {
       }
       CatalogStorage::Chunked(chunks)
     };
-    let trailing = bytes[c.pos..].to_vec();
-    let catalog =
-      Catalog { members_root, content_root, members, storage, trailing };
+    if c.pos != bytes.len() {
+      return Err(format!(
+        "catalog: {} trailing bytes after the storage section",
+        bytes.len() - c.pos
+      ));
+    }
+    let catalog = Catalog { members_root, content_root, members, storage };
     let recomputed = members_root_of(&catalog.members);
     if recomputed != catalog.members_root {
       return Err(format!(
@@ -591,6 +635,15 @@ mod host {
     if specs.is_empty() {
       return Err("catalog: no members".into());
     }
+    let mut labels = std::collections::HashSet::new();
+    for spec in specs {
+      if !labels.insert(spec.label.as_str()) {
+        return Err(format!(
+          "catalog: duplicate member label {:?}",
+          spec.label
+        ));
+      }
+    }
     std::fs::create_dir_all(dir)
       .map_err(|e| format!("catalog: create {}: {e}", dir.display()))?;
     let mut members = Vec::with_capacity(specs.len());
@@ -622,8 +675,22 @@ mod host {
       // (and any later use) reference the catalog's own copy.
       let piece =
         if ingested == spec.path { source } else { open_piece(&ingested)? };
+      let binding = piece
+        .index
+        .role_binding
+        .as_ref()
+        .ok_or_else(|| {
+          format!(
+            "catalog: {} carries no role binding; a member must be a bound \
+             environment",
+            spec.path.display()
+          )
+        })?
+        .address
+        .clone();
       members.push(CatalogMember {
         env_root: piece.env_root.clone(),
+        binding,
         const_count: piece.index.consts.len() as u64,
         label: spec.label.clone(),
         toolchain: spec.toolchain.clone(),
@@ -637,6 +704,7 @@ mod host {
       });
       opened.push(piece);
     }
+    check_unique(members.iter().map(|m| (&m.env_root, m.label.as_str())))?;
     let refs: Vec<&OpenPiece> = opened.iter().collect();
     // Fat profile: overlaps are expected; the union collapses them.
     let union = sweep_union(&refs, |_a, _c| Ok(()))?;
@@ -648,7 +716,6 @@ mod host {
       content_root,
       members,
       storage: CatalogStorage::Fat(pieces),
-      trailing: Vec::new(),
     };
     write_manifest(dir, &catalog)?;
     Ok(catalog)
@@ -705,7 +772,8 @@ mod host {
   /// by `from_bytes` — and `content` by the k-way sweep), every
   /// storage unit's env root, const count, and file size checked, and
   /// the profile's dedup rule enforced (chunked: an address in two
-  /// chunks is a hard error naming both). `deep` additionally
+  /// chunks is a hard error naming both). A chunked catalog is then
+  /// refused: its members are not tied to its chunks. `deep` additionally
   /// re-hashes every file against its manifest `file_hash` and fully
   /// loads each unit through `get_anon_mmap` (per-constant blake3
   /// verification).
@@ -739,6 +807,15 @@ mod host {
               path.display(),
               piece.env_root.hex(),
               m.env_root.hex()
+            ));
+          }
+          let binding = piece.index.role_binding.as_ref().map(|b| &b.address);
+          if binding != Some(&m.binding) {
+            return Err(format!(
+              "catalog: {}: role binding {} does not match the manifest's {}",
+              path.display(),
+              binding.map_or_else(|| "(none)".to_string(), |b| b.hex()),
+              m.binding.hex()
             ));
           }
           if piece.index.consts.len() as u64 != m.const_count {
@@ -836,10 +913,19 @@ mod host {
         content_root.hex()
       ));
     }
-    // Chunked coverage half: every member's preimage must be a subset
-    // of the union — with disjointness above and count equality this
-    // pins exact coverage. Fat pieces ARE the members, so the sweep
-    // already equals the member union by construction.
+    // Fat pieces ARE the members, so the sweep equals the member union by
+    // construction. A chunked manifest's member env roots are not tied to
+    // its chunks: nothing here can show that a member's constants are in
+    // the union, or that the members are what the chunks hold. Refuse it
+    // rather than vouch for members it cannot see.
+    if chunked {
+      return Err(
+        "catalog: a chunked catalog cannot be verified: its member env \
+         roots are not tied to its chunks; only fat catalogs, whose pieces \
+         are the members, verify"
+          .into(),
+      );
+    }
     if deep {
       for piece in &opened {
         // Full anon load: per-constant blake3 on every slice.
@@ -1025,16 +1111,32 @@ mod tests {
     dir
   }
 
+  /// A canonical, empty role binding section, so that pieces are bound.
+  fn test_binding() -> crate::env::RoleBinding {
+    let bytes = crate::role_table::RoleTable {
+      version: 2,
+      bound: vec![],
+      evidence: vec![],
+    }
+    .to_bytes()
+    .unwrap();
+    crate::env::RoleBinding {
+      address: Address::hash(&bytes),
+      bytes: bytes.into(),
+    }
+  }
+
   fn write_piece(
     dir: &std::path::Path,
     name: &str,
     seeds: &[&[u8]],
   ) -> PathBuf {
-    let env = Env::new();
+    let mut env = Env::new();
     for s in seeds {
       let (addr, bytes) = fab(s);
       env.store_const_lazy(addr, bytes);
     }
+    env.role_binding = Some(test_binding());
     let path = dir.join(format!("{name}.ixe"));
     env.put_file(&path).unwrap();
     path
@@ -1159,6 +1261,94 @@ mod tests {
 
     // Truncation.
     assert!(Catalog::from_bytes(&good[..good.len() - 1]).is_err());
+
+    // Trailing bytes: no root covers them.
+    let mut bad = good.clone();
+    bad.push(0);
+    assert!(Catalog::from_bytes(&bad).unwrap_err().contains("trailing"));
+
+    // A preimage tag other than 0 or 1. With one member, it is the byte
+    // before the fat storage row (file hash and size).
+    let tag_off = good.len() - 32 - 8 - 1;
+    assert_eq!(good[tag_off], 0);
+    let mut bad = good.clone();
+    bad[tag_off] = 2;
+    assert!(Catalog::from_bytes(&bad).unwrap_err().contains("preimage tag"));
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  fn manifest_member(label: &str, env_root: &Address) -> CatalogMember {
+    CatalogMember {
+      env_root: env_root.clone(),
+      binding: test_binding().address,
+      const_count: 1,
+      label: label.to_string(),
+      toolchain: "test".to_string(),
+      source_pin: String::new(),
+      deps: vec![],
+      preimage: None,
+    }
+  }
+
+  fn fat_manifest(members: Vec<CatalogMember>) -> Catalog {
+    let pieces = members
+      .iter()
+      .map(|_| FatPiece { file_hash: Address::hash(b"file"), file_bytes: 1 })
+      .collect();
+    Catalog {
+      members_root: members_root_of(&members),
+      content_root: Address::hash(b"content"),
+      members,
+      storage: CatalogStorage::Fat(pieces),
+    }
+  }
+
+  /// Two members with one env root collapse in the members root, and
+  /// two with one label name one piece file: both are refused on load.
+  #[test]
+  fn from_bytes_rejects_duplicate_members() {
+    let (a, b) = (Address::hash(b"rootA"), Address::hash(b"rootB"));
+    let ok =
+      fat_manifest(vec![manifest_member("A", &a), manifest_member("B", &b)]);
+    assert!(Catalog::from_bytes(&ok.to_bytes().unwrap()).is_ok());
+    let same_root =
+      fat_manifest(vec![manifest_member("A", &a), manifest_member("B", &a)]);
+    let err = Catalog::from_bytes(&same_root.to_bytes().unwrap()).unwrap_err();
+    assert!(err.contains("duplicate member env root"), "{err}");
+    let same_label =
+      fat_manifest(vec![manifest_member("A", &a), manifest_member("A", &b)]);
+    let err = Catalog::from_bytes(&same_label.to_bytes().unwrap()).unwrap_err();
+    assert!(err.contains("duplicate member label"), "{err}");
+  }
+
+  /// The writer refuses a string its `u16` length cannot carry.
+  #[test]
+  fn to_bytes_refuses_oversized_strings() {
+    let mut cat =
+      fat_manifest(vec![manifest_member("A", &Address::hash(b"r"))]);
+    cat.members[0].source_pin = "x".repeat(usize::from(u16::MAX) + 1);
+    assert!(cat.to_bytes().unwrap_err().contains("64 KiB"));
+    cat.members[0].source_pin = "x".repeat(usize::from(u16::MAX));
+    assert!(cat.to_bytes().is_ok());
+  }
+
+  #[test]
+  fn assemble_refuses_duplicate_members() {
+    let dir = tmp_dir("dupmember");
+    let a = write_piece(&dir, "A", &[b"a"]);
+    let b = write_piece(&dir, "B", &[b"b"]);
+    let err = assemble_into(
+      &dir.join("labels.ixc"),
+      &[spec(&a, "M", vec![]), spec(&b, "M", vec![])],
+    )
+    .unwrap_err();
+    assert!(err.contains("duplicate member label"), "{err}");
+    let err = assemble_into(
+      &dir.join("roots.ixc"),
+      &[spec(&a, "M", vec![]), spec(&a, "N", vec![])],
+    )
+    .unwrap_err();
+    assert!(err.contains("duplicate member env root"), "{err}");
     std::fs::remove_dir_all(&dir).ok();
   }
 
@@ -1218,6 +1408,7 @@ mod tests {
     };
     let member = CatalogMember {
       env_root: union_root.clone(),
+      binding: test_binding().address,
       const_count: 3,
       label: "M".to_string(),
       toolchain: "test".to_string(),
@@ -1244,10 +1435,49 @@ mod tests {
           owner: 0,
         },
       ]),
-      trailing: Vec::new(),
     };
     let err = verify(&cat, &dir, false).unwrap_err();
     assert!(err.contains("redeclared across chunks"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+  }
+
+  /// A chunked manifest can name any member env roots beside disjoint
+  /// chunks whose union matches its content root; nothing ties the two.
+  /// `verify` refuses it instead of passing it.
+  #[test]
+  fn verify_refuses_chunked_catalogs() {
+    let dir = tmp_dir("chunkmembers");
+    let c0 = write_piece(&dir, "M.chunk0", &[b"a"]);
+    let c1 = write_piece(&dir, "M.chunk1", &[b"b"]);
+    let p0 = open_piece(&c0).unwrap();
+    let p1 = open_piece(&c1).unwrap();
+    let mut all: Vec<Address> = p0
+      .index
+      .consts
+      .iter()
+      .chain(p1.index.consts.iter())
+      .map(|c| c.addr.clone())
+      .collect();
+    all.sort_unstable();
+    let members = vec![
+      manifest_member("M", &Address::hash(b"some library's env root")),
+      manifest_member("N", &Address::hash(b"another env root")),
+    ];
+    let chunk = |p: &OpenPiece| Chunk {
+      chunk_root: p.env_root.clone(),
+      file_hash: p.file_hash.clone(),
+      file_bytes: p.file_bytes,
+      owner: 0,
+    };
+    let cat = Catalog {
+      members_root: members_root_of(&members),
+      content_root: merkle_root_canonical(&all).unwrap(),
+      members,
+      storage: CatalogStorage::Chunked(vec![chunk(&p0), chunk(&p1)]),
+    };
+    let parsed = Catalog::from_bytes(&cat.to_bytes().unwrap()).unwrap();
+    let err = verify(&parsed, &dir, false).unwrap_err();
+    assert!(err.contains("chunked catalog cannot be verified"), "{err}");
     std::fs::remove_dir_all(&dir).ok();
   }
 

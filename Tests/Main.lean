@@ -102,6 +102,7 @@ import Tests.MultiStark
 import Tests.Aggr
 import Tests.AggrProof
 import Tests.AggrBindingReuse
+import Tests.AggrToolchains
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
@@ -329,6 +330,7 @@ def registry : List Entry := [
   .suite "cert-noctor-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.noCtorInitStdSuite,
   .runner "aggregate-proof" (.manual "a proof round trip through the production ix_aggr circuit; minutes of proving") Tests.Aggr.proofRoundTrip,
   .env "aggregate-binding-reuse" (.manual "one binding proof file discharges two aggregates, end to end through the `ix` binary; minutes of recursion and about 190 GB, needs `lake build ix`; `binding-proof-cli` runs it without the aggregates") Tests.Aggr.BindingReuse.run,
+  .runner "aggregate-toolchains" (.manual "libraries from four Lean toolchains proven with one IxVM key and joined into one catalog root, end to end through the `ix` binary; tens of minutes of proving, needs `lake build ix` and `zstd`") Tests.Aggr.Toolchains.run,
   .runner "kernel-dependencies" (.manual "the IxVM definition-dependency checks alone; `ixvm` runs them too") (do
     match AiurTestEnv.build IxVM.ixVM IxVM.functionGroups with
     | .error e => IO.eprintln s!"IxVM setup failed: {e}"; return 1

@@ -59,6 +59,18 @@ opaque proveIxAggr (system : @& AiurSystem)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)
 
+/-- `proveIxAggr` with the generated executor, planned as trace shards whose
+projected host peak fits `maxBytes`: a driver that proves single aggregation
+steps holds each one to its RAM budget this way, as the Stage 2 controller
+holds its slots. An execution no shard count fits is an error. -/
+@[extern "rs_aiur_ix_aggr_prove_within"]
+opaque proveIxAggrWithin (system : @& AiurSystem)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
+  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (maxBytes : @& Nat) :
+    Except String (Array G × Proof)
+
 /-- Run the production aggregate-first Stage 2 pipeline natively after Lean
 has compiled the IxVM and `ix_aggr` systems. Rust owns all data-dependent
 orchestration: manifest/environment binding, shard-claim reconstruction,

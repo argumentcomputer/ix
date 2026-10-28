@@ -21,6 +21,7 @@ public import Ix.Claim
 public import Ix.ClaimContext
 public import Ix.Store
 public import Ix.Cli.CatalogCmd
+public import Ix.Aggr.Host
 
 public section
 
@@ -182,42 +183,31 @@ def claimEvalCmd : Cli.Cmd := `[Cli|
 /-! ## `ix claim catalog` -/
 
 def runClaimCatalog (p : Cli.Parsed) : IO UInt32 := do
-  let some ixcArg := p.positionalArg? "ixc"
-    | p.printError "error: must specify <cat.ixc>"; return 1
-  let ixc := ixcArg.as! String
-  -- Both roots come from the manifest (members_root is recomputed
-  -- from the entries on load; content_root is bound to the pieces by
-  -- `ix catalog verify`).
-  let summary ← Ix.Cli.CatalogCmd.rsCatalogInfoFFI ixc
-  let json ← match Lean.Json.parse summary with
-    | .ok j => pure j
-    | .error e => throw <| IO.userError s!"error: bad catalog info JSON: {e}"
-  let rootOf (key : String) : IO Address := do
-    match (json.getObjVal? key).bind (·.getStr?) with
-    | .ok hex => addrOfHex! key hex
-    | .error e => throw <| IO.userError s!"error: {ixc}: {e}"
-  let members ← rootOf "membersRoot"
-  let content ← rootOf "contentRoot"
-  let asm ← match p.flag? "asm" with
-    | none => pure none
-    | some flag => do
-      let r ← addrOfHex! "asm" (flag.as! String)
-      pure (some r)
-  let claim := Ix.Claim.catalog (← contextOf p) members content asm
-  let digest ← persistClaim claim
+  let args : Array String := p.variableArgsAs! String
+  if args.isEmpty then
+    p.printError "error: must specify <member-claim>..."
+    return 1
+  let mut members : Array Ix.Claim := #[]
+  for hex in args do
+    let digest ← addrOfHex! "member claim" hex
+    let bytes ← StoreIO.toIO (Store.read digest)
+    match Ix.Claim.de bytes with
+    | .ok claim => members := members.push claim
+    | .error e => IO.eprintln s!"error: {hex}: not a claim: {e}"; return 1
+  let catalog ← match Aggr.CatalogTrees.ofMembers members with
+    | .ok catalog => pure catalog
+    | .error e => IO.eprintln s!"error: {e}"; return 1
+  StoreIO.toIO (Store.writeAt catalog.members.root (Ix.AssumptionTree.ser catalog.members))
+  let digest ← persistClaim catalog.claim
   IO.println (toString digest)
   return 0
 
 def claimCatalogCmd : Cli.Cmd := `[Cli|
   catalog VIA runClaimCatalog;
-  "Build and persist a `Catalog` claim from a .ixc directory's manifest: the content root is exactly the union of the member envs, and every constant in it is well-typed (optionally modulo an assumption tree). Verification is by composition of per-piece claims — run `ix catalog verify` for the artifact-level checks."
-
-  FLAGS:
-    asm : String; "32-byte hex address of an assumption-tree merkle root (the catalog's declared trust leaves). The tree must already live in `~/.ix/store/`."
-    binding : String; "32-byte hex binding hash of the role table the claim reads primitives through (default: the default role table of the compiled Init)."
+  "Build and persist a `Catalog` claim over persisted member claims: every one of them holds. Each member is an unconditional `CheckEnv` claim that validates its binding or names a literal class, so members may come from different Lean toolchains. The members tree is persisted under its root. A catalog claim is proven by aggregating its members (`ix aggregate --ixc`)."
 
   ARGS:
-    ixc : String; "Path to the .ixc directory whose roots the claim binds."
+    ...members : String; "32-byte hex digests of persisted member claims in `~/.ix/store/`."
 ]
 
 /-! ## `ix claim binding` -/

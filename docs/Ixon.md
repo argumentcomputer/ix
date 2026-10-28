@@ -1687,6 +1687,7 @@ content_root      32 bytes
 member_count      u32
 per member:
   env_root        32 bytes            # anon semantic identity
+  binding         32 bytes            # the piece's role binding hash
   const_count     u64
   label           u16 len + utf8      # qualifier; doubles as the piece
                                       #   filename stem (<label>.ixe)
@@ -1694,7 +1695,8 @@ per member:
   source_pin      u16 len + utf8      # e.g. git:<url>@<rev>; empty = local
   deps            u32 count + [u32]*  # member indices, all < self (topo)
   preimage        0x00 | 0x01+32      # store key of the member's const-set
-                                      #   AssumptionTree (`ix tree env`)
+                                      #   AssumptionTree (`ix tree env`);
+                                      #   any other tag is refused
 storage (by flags bit0):
   fat:     per member: file_hash 32 + file_bytes u64
            # self-contained pieces; closures may overlap (identity
@@ -1703,17 +1705,26 @@ storage (by flags bit0):
            chunk_root 32 + file_hash 32 + file_bytes u64 + owner u32
            # disjoint chunks partitioning the union; an address in two
            #   chunks is a HARD error (no-redeclaration invariant)
-trailing bytes: reserved future sections, preserved opaquely
 ```
+
+The manifest ends with the storage section: readers refuse trailing
+bytes, since no root covers them, and a later section needs a new
+version. Readers also refuse two members with one env root (the
+members root is a set root, so one of them would vanish from it) or
+one label (a label names a piece file). Writers refuse a string longer
+than 65,535 bytes rather than truncate its length.
 
 Both roots are recomputed against a stored manifest: `members_root`
 from the entries on every parse, `content_root` by the k-way sweep in
 `ix catalog verify` (which also enforces the profile's dedup rule and
-every piece's env root, counts, and sizes; `--deep` re-hashes files
-and fully verifies each piece load — all against the pieces inside
-the directory). `ix merge` materializes any subset as one ordinary
-anonymous `.ixe` (a derived view — the catalog directory stays the
-source of truth). The `Catalog` claim (below) binds both roots.
+every piece's env root, binding, counts, and sizes; `--deep` re-hashes
+files and fully verifies each piece load — all against the pieces
+inside the directory). Only fat catalogs verify: a chunked manifest's
+member env roots are not tied to its chunks, so `ix catalog verify`
+refuses it after the structural checks. `ix merge` materializes any
+subset as one ordinary anonymous `.ixe` (a derived view — the catalog
+directory stays the source of truth). The roots are artifact identity:
+the `Catalog` claim (below) names member claims, not these roots.
 
 ---
 
@@ -1753,19 +1764,19 @@ and proof statement. A claim with another object format is rejected with
 | 5 | `0xE5` | CheckEnv claim | context + 1 addr (env root) + opt assumptions |
 | 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
-| 8 | `0xE8 0x00` | Catalog claim | context + 2 addr (members root, content root) + opt assumptions |
+| 8 | `0xE8 0x00` | Catalog claim | 1 addr (members root over member claim digests) |
 | 9 | `0xE8 0x01` | Resource claim | 2 addr (complete env root, resource profile) |
 | 10 | `0xE8 0x02` | Binding claim | 2 addr (specification digest, binding hash) |
 
 The claim payloads in this table follow the two scope bytes. Reveal and
 Contains require validator `0`; Eval, Catalog and Binding require validator
-`3`; Check and CheckEnv take validator `3` or `4`; Resource requires validator
-`2`.
+`3`; Check takes validator `3` or `4`; CheckEnv takes `3`, `4` or `5`;
+Resource requires validator `2`.
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
 
-The typing claims (Eval, Check, CheckEnv, Catalog) are relative to a
+The typing claims (Eval, Check, CheckEnv) are relative to a
 **context**, which follows the scope bytes:
 
 ```
@@ -1795,11 +1806,26 @@ same claim bytes with validator `3`. Validator `4` names no axiom and no
 typing assumption: the reserved axioms field and `assumptions` keep their
 meaning.
 
-The Catalog claim's two roots use two DISTINCT leaf vocabularies,
-never mixed: `members` leaves are member ENV ROOTS; `content` (and
-`assumptions`) leaves are CONSTANT ADDRESSES. See
-`crates/ixon/src/catalog.rs` for the `.ixc` artifact it binds. The
-exact wire bytes are pinned by twin tests
+A CheckEnv claim with validator `5` (erased-lean-v2-class) names a **literal
+class** in the context's second address instead of a binding hash. A binding's
+literal class is BLAKE3 of `E8 04` followed by the addresses it binds to the
+roles the checker uses without a reference to them, in role order: `Nat`,
+`Nat.zero`, `Nat.succ`, `List`, `List.nil`, `List.cons`, `String`,
+`String.ofList`, `Char`, `Char.ofNat`, `propext` and `Classical.choice`
+(`Ix.ClaimContext.classRoles`; the binding must bind every role). The claim
+states its typing under every binding of that class that meets the
+specifications: roles referenced by address are ordinary dependencies, so
+typing transfers between bindings that bind the class roles alike. Only
+aggregation produces such claims (`ix_aggr` shape 15, from claims of one class
+that validate their bindings); IxVM never reads one.
+
+The Catalog claim is the conjunction of unconditional CheckEnv claims (validator
+`3` or `5`), each under its own context: its one address is the canonical
+merkle root over those claims' digests (BLAKE3 of their bytes), and it states
+that every one of them holds. Members compiled under different role bindings,
+as libraries from different Lean toolchains are, meet in one Catalog claim.
+Only aggregation forms one (`ix_aggr` shape 16). The exact wire bytes are
+pinned by twin tests
 (`proof.rs::catalog_claim_wire_bytes_pinned` and the `claim` suite's
 digest-parity test) so the Rust and Lean serializers cannot drift on
 the multi-byte-tag path.
@@ -1822,8 +1848,9 @@ paths for Contains) is prover-side scratch consumed by the ZK circuit
 and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
 IxVM supports Eval, Check, CheckEnv, Reveal, and Contains; Resource is currently
 validated by the native Lean/Rust boundary and is explicitly rejected as an
-IxVM proof request. Catalog proofs compose erased CheckEnv claims under one
-context; aggregation folds only children whose contexts are equal.
+IxVM proof request. Aggregation folds only children whose contexts are equal,
+except for shape 15, which joins claims whose bindings share a literal class,
+and shape 16, which collects member claims under any contexts into a Catalog.
 
 ### Claim Types
 
@@ -1832,6 +1859,8 @@ pub struct ClaimContext {
     pub spec: Address, pub binding: Address, pub axioms: Option<Address>,
     /// Validator 4 on the wire (Check and CheckEnv only).
     pub binding_assumed: bool,
+    /// Validator 5 on the wire (CheckEnv only): `binding` is a literal class.
+    pub literal_class: bool,
 }
 
 pub enum Claim {
@@ -1847,12 +1876,9 @@ pub enum Claim {
     Reveal { comm: Address, info: RevealConstantInfo },
     /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
     Contains { tree: Address, const_addr: Address },
-    /// The `.ixc` catalog claim: `content` is exactly the union of the
-    /// member envs committed at `members`, and every constant in it is
-    /// well-typed, optionally modulo `assumptions`. Verified by
-    /// COMPOSITION of per-piece CheckEnv claims with set discharge —
-    /// there is deliberately no whole-catalog interpreter arm.
-    Catalog { ctx: ClaimContext, members: Address, content: Address, assumptions: Option<Address> },
+    /// Every unconditional CheckEnv claim whose digest is a leaf of the
+    /// canonical tree `members` holds. Formed only by aggregation.
+    Catalog { members: Address },
     /// Complete closure passes resource-v1 under the committed profile.
     Resource { root: Address, profile: Address },
     /// The role table with hash `binding` binds every role and each bound

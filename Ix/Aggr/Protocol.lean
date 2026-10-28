@@ -81,6 +81,15 @@ the top. -/
 /-- The binding-discharge shape for a child of kind `kind`. -/
 def dischargeShapeCode (kind : ChildKind) : Nat := 13 + kind.code
 
+/-- The cross-binding structural pair: two `ix_aggr` children whose role
+bindings have one literal class, joined into a claim under that class. -/
+def crossBindingShapeCode : Nat := 15
+
+/-- The catalog join: two `ix_aggr` children, each an unconditional `CheckEnv`
+claim or a `Catalog` claim, joined into the `Catalog` of all their member
+statements. -/
+def catalogShapeCode : Nat := 16
+
 /-- The byte that opens every range statement; no `Ix.Claim` starts with it,
 so a range statement never parses as a `CheckEnv` claim. -/
 def rangeStatementTag : UInt8 := 0x52

@@ -461,6 +461,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
             if let some dir := indexDir? then
               if let .ok (claim, _) :=
                   IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv ownedPer[k]! then
+                let claim :=
+                  if p.hasFlag "assume-binding" then Ix.Claim.assumingBinding claim else claim
                 if let some addr ← Ix.Cli.ShardProofIndex.verifiedProof
                     aiurSystem compiled dir claim then
                   let digest := Address.blake3 (Ix.Claim.ser claim)
@@ -480,7 +482,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         (← IO.getStdout).flush
         match aiurSystem.shardProveAheadWithEnv funIdx envHandle
             (todo.map (ownedPer[·]!)) todo maxRamBytes retention execJobs
-            storeDir.toString indexDir with
+            storeDir.toString indexDir (p.hasFlag "assume-binding") with
         | .error e =>
           IO.eprintln s!"[prove] FAILED: {e} (finished proofs are in the \
             store and the shard-proof index; rerun with --skip-proven)"

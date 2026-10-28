@@ -125,20 +125,27 @@ def run (cmd : String) (args : Array String) (cwd : Option System.FilePath := no
 def certificateHelper : String :=
   "/-- Case analysis on a `Decidable` instance, false case first: the argument
 order of `Decidable.casesOn` when `Decidable` was an inductive with the two
-constructors `isFalse` and `isTrue`. -/
+constructors `isFalse` and `isTrue`. It cases on the instance's fields, as
+`dite` does, so that a closed proof reaches `Decidable` only through its
+projections and constructor (structure eta), never through its recursor, which
+is outside the operations' dependency closures. -/
 private abbrev decCases {c : Prop} {motive : Decidable c → Sort u} (d : Decidable c)
     (isFalse : ∀ h, motive (Decidable.isFalse h)) (isTrue : ∀ h, motive (Decidable.isTrue h)) :
     motive d :=
-  Decidable.falseTrueCases isFalse isTrue d
+  Bool.casesOn (motive := fun b => ∀ r : b.Reflects c, motive ⟨b, r⟩) d.decide isFalse isTrue
+    d.reflects_decide
 
 "
 
 /-- The 4.35.0 certificate variant, from `Certs.lean`: in 4.35.0 `Decidable` is
 a structure (`decide : Bool` with a proof that it reflects the proposition), so
-`Decidable.casesOn` takes one case, not two. The variant adds `decCases`,
-4.35.0's two-case eliminator `Decidable.falseTrueCases` in the old argument
-order, and uses it wherever `Certs.lean` uses `Decidable.casesOn`. The theorems'
-statements are unchanged. -/
+`Decidable.casesOn` takes one case, not two. The variant adds `decCases`, a
+two-case eliminator in the old argument order, and uses it wherever `Certs.lean`
+uses `Decidable.casesOn`. `decCases` cases on the instance's `decide` field with
+`Bool.casesOn`, as 4.35.0's `dite` does, rather than through `Decidable`'s
+recursor (`Decidable.falseTrueCases`): the role binding closes each certificate
+over its operation's dependency closure, which holds `Decidable`'s projections
+and constructor but not its recursor. The theorems' statements are unchanged. -/
 def certificateVariant (certs : String) : String :=
   let anchor := "/-- `dite` at a true condition. -/"
   let withHelper := certs.replace anchor (certificateHelper ++ anchor)
