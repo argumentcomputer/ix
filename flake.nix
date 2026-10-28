@@ -352,7 +352,7 @@
             IX_PLONK_PREBUILT = "${plonkHelper}/bin/ix-bn254-plonk-wrapper";
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
-              substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
+              substituteInPlace lakefile.lean --replace-fail 'cmd := "cargo"' 'cmd := "true"'
             '';
             # Preserve workspace-relative paths instead of shadowing local packages.
             preConfigure = ''
