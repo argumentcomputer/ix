@@ -1,5 +1,6 @@
 import Ix.Cert.GroupRuns
 import Ix.Cert.BindingsResolve
+import Ix.Cert.ProjectionOwners
 
 /-! # The fold's facts in the trace's forms
 
@@ -815,6 +816,68 @@ theorem quot_single {ig : Nat} {v : Ix.QuotVal}
   rw [← inputsNamed P.compiled k _ (SourceStoredNames.stored_input P hk)] at hk
   exact hk
 
+
+/-- **A singleton definition's hint** (`DefinitionNeeds.compiled`'s second conjunct): the reader
+reads it at the lone record's own address, where no stored projection projects it
+(`ProjectionOwners.no_projection_of_lone`), quotient Source reads the same `anonHints` entry
+(`CtxAgree.hints_agree`), and the compile report's hint check makes it present
+(`definitionsHinted`). Two α-equivalent definitions published at one address share that entry,
+which the compile's assembly merges, so both sides still read one hint. -/
+theorem singleton_hint (P : Premises env roots sub ixe failures t envQ) {n : Ix.Name} {ci : Ix.ConstantInfo}
+    (hst : (n, ci) ∈ sub.consts.toList) (hdef : Ix.LeanIngress.isDefinition ci = true)
+    {B : Address} {c : Ixon.Constant} (stored : recordAt ixe B = some c) (lone : BlockContext.lone c.info = true)
+    (addr : addrOf ixe n = some B) :
+    ∃ h, hintsOf ixe (.member B 0) = some h ∧
+      (Ix.LeanIngress.fiberHintsMap ixe)[Ix.LeanIngress.ingressKey n]? = some h := by
+  obtain ⟨d, hmem, hget⟩ := SourceStoredNames.stored_published P hst
+  have hdB : d.addr = B := by
+    unfold addrOf at addr
+    rw [hget] at addr
+    exact Option.some.inj addr
+  have hr : hintsOf ixe (.member B 0) = hintOf <$> ixe.anonHints.get? d.addr := by
+    rw [hdB]
+    exact CtxAgree.hintsOf_block (ProjectionOwners.no_projection_of_lone P.compiled stored lone 0)
+  have hci := SourceStoredNames.stored_get (SourceStoredNames.stored_input P hst)
+  obtain ⟨h0, h0eq⟩ := Option.isSome_iff_exists.mp (definitionsHinted P.compiled n d ci hmem hci hdef)
+  refine ⟨hintOf h0, by rw [hr, h0eq]; rfl, ?_⟩
+  rw [CtxAgree.hints_agree P.agree hmem hr, hr, h0eq]
+  rfl
+
+/-- **`DefinitionNeeds.compiled` for a singleton definition group**: `lone_compiled` with the hint
+pair (`singleton_hint`), at quotient Source's hints `(fiberHintsMap ixe)[·]?`. -/
+theorem definition_compiled (P : Premises env roots sub ixe failures t envQ)
+    (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf (quotientGraph ixe t hints sub)).zipIdx.toList,
+      ∃ conv, x.1.2 = .ok conv)
+    (idx : ConstructorIndices env) {ig : Nat} {ci : Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions #[ci])) :
+    ∃ cenv benv output after,
+      TraceSegments.LoneCompiled ixe sub ci (TraceSegments.defMentions ci) cenv benv output after ∧
+      ∃ h, hintsOf ixe (.member output.blockAddr 0) = some h ∧
+        (Ix.LeanIngress.fiberHintsMap ixe)[Ix.LeanIngress.ingressKey ci.getCnst.name]? = some h := by
+  obtain ⟨hnames, hst, hi, hct⟩ := definition_single hgr P
+  obtain ⟨snap, rep, all, r, c, fb, ran, stored, addr, blobs⟩ :=
+    singleton_compiled P scheduled hgr trivial hnames hst hi hct
+  have lone := (ClosureResolve.constantInfo_lone ci (fun v e => hi v e) (fun v e => hct v e) _ _ _ _ ran).2
+  have hdef : Ix.LeanIngress.isDefinition ci = true := by
+    obtain ⟨_, _, -, hcomp⟩ := GroupBlocks.component_of_groups sub (blocksOf sub) _ (Array.mem_of_getElem? hgr) trivial
+    exact (GroupRuns.componentGroup_sorted hcomp).2 ci (by simp)
+  exact ⟨snap.cenv, _, r, c, ⟨ran, stored, addr, fb.bound idx, blobs,
+    fb.mentionsPublished P fun m hm => definition_mentioned P hgr (by simp) hm⟩,
+    singleton_hint P hst hdef stored lone addr⟩
+
+
+/-- **`DefinitionNeeds` for a singleton definition group**, at Trace's hints
+`(fiberHintsMap ixe)[·]?`. -/
+theorem definition_needs (P : Premises env roots sub ixe failures t envQ)
+    (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf
+      (quotientGraph ixe t (fun k => (Ix.LeanIngress.fiberHintsMap ixe)[k]?) sub)).zipIdx.toList,
+      ∃ conv, x.1.2 = .ok conv)
+    (idx : ConstructorIndices env) {i : Nat} {ci : Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t (fun k => (Ix.LeanIngress.fiberHintsMap ixe)[k]?) sub).groups[i]? =
+      some (.definitions #[ci])) :
+    TraceSegments.DefinitionNeeds ixe sub (fun k => (Ix.LeanIngress.fiberHintsMap ixe)[k]?) ci :=
+  ⟨definition_compiled P scheduled idx hgr⟩
+
 end Lone
 
 end Ix.Cert.TraceFold
@@ -842,3 +905,7 @@ end Ix.Cert.TraceFold
 /-- info: 'Ix.Cert.TraceFold.types_mentioned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Ix.Cert.TraceFold.types_mentioned
+
+/-- info: 'Ix.Cert.TraceFold.definition_needs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.TraceFold.definition_needs
