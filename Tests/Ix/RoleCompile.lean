@@ -92,7 +92,7 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
   require (!(Ix.RoleBinding.Compile.supportInput empty {}).isOk)
     "missing actual prelude source was silently replaced"
   let refused ← try
-    let _ ← Ix.RoleBinding.Compile.finalize (fun _ _ => pure {}) empty
+    let _ ← Ix.RoleBinding.Compile.finalize (fun _ _ => pure {}) empty (pure empty)
       (Ix.Compile.CompileInput.plain []) {} Ix.Resource.typingLimits
     pure false
   catch _ => pure true

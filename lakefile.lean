@@ -328,7 +328,13 @@ def moduleExclusions : Array ModuleExclusion := #[
     kind := .script },
   { module := `Benchmarks.Kernel.IxEnv
     reason := "`import Ix` as an `ix compile` input: the environment of Ix itself"
-    kind := .compileInput }]
+    kind := .compileInput },
+  { module := `Tests.Fixtures.toolchains.«Certs-4.35.0»
+    reason := "the certificate theorems for Lean 4.35.0, compiled by that toolchain's own `lean` when the toolchain fixtures are regenerated; it does not elaborate on ix's toolchain"
+    kind := .data },
+  { module := `Tests.Fixtures.toolchains.Regenerate
+    reason := "the toolchain fixtures' regeneration recipe, run with `lean --run`"
+    kind := .script }]
 
 /-- The directories whose modules `check-modules` builds, with the root files.
 `IxC/` (its own package, globbed, `lake -d IxC build --wfail`) and

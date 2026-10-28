@@ -210,7 +210,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     if !allowPartial && !status.ungrounded.isEmpty then return status
     let original ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rawPath))
     let artifact ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend
-      leanEnv input original Ix.Resource.typingLimits
+      leanEnv Ix.RoleBinding.Compile.nativeCertSource input original Ix.Resource.typingLimits
     let artifact := if strictAnon then { artifact with
       named := {}, names := {}, comms := {}, addrToName := {} } else artifact
     let bytes ← IO.ofExcept (Ixon.serEnv artifact)

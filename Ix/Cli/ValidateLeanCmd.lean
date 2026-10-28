@@ -223,7 +223,8 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok out =>
       let bound : Except String Ix.CompileM.LeanPipelineOut ← try
           let artifact ← Ix.RoleBinding.Compile.finalize
-            (Ix.RoleBinding.Compile.leanBackend compileWorkers opts) leanEnv input out.env
+            (Ix.RoleBinding.Compile.leanBackend compileWorkers opts) leanEnv
+            Ix.RoleBinding.Compile.nativeCertSource input out.env
             Ix.Resource.typingLimits
           let finalized := { out with env := artifact, bytes := ← IO.ofExcept (Ixon.serEnv artifact) }
           IO.ofExcept (Ix.CompileM.resourcePostStep finalized)

@@ -15,6 +15,7 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.RoleCompile
+import Tests.Ix.LeanExport
 import Tests.Ix.HostAdmissionCli
 import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.Compile.AuxiliaryClosure
@@ -136,6 +137,7 @@ def registry : List Entry := [
   .suite "meta-env" .primary Tests.Ix.MetaEnv.suite,
   .suite "catalog" .primary Tests.Ix.Catalog.suite,
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
+  .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
   .suite "import-ixe-collapsed"
     (expectedToRetire "the alpha-equivalent mutual pair no longer collapses to one class, \
       and its recursors are no longer `_ix` support")
