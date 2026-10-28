@@ -521,13 +521,15 @@ def Ctx.memberKey (cx : Ctx md) (r : ConstRef Address) : ReadM (CName md) :=
       | none => declined s!"a member of block {r.block} is not bound to a role"
 
 /-- The reader's context over `store`, whose records are `records`: the role
-bindings of the table `t`, the recursor index and the keys computed ahead. -/
+bindings of the table `t`, the recursor index over the records `indexed` (by
+default `records`) and the keys computed ahead. -/
 def contextWith (store : Store) (blob : Address → Option ByteArray) (t : Ix.Kernel.RoleTable)
     (records : Array (Address × Ixon.Constant))
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none)
-    (reconstruct : ConstRef Address → Option Address := fun _ => none) : Ctx md :=
+    (reconstruct : ConstRef Address → Option Address := fun _ => none)
+    (indexed : Array (Address × Ixon.Constant) := records) : Ctx md :=
   let roles := bindingsOf store t
-  { store, blob, roles, index := buildIndex store records, hint, reconstruct,
+  { store, blob, roles, index := buildIndex store indexed, hint, reconstruct,
     keys := keysOf store roles records }
 
 /-- A recursor's level parameters: its block's `blockLps`, behind the

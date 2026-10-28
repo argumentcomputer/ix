@@ -39,13 +39,23 @@ theorem stream_store_agrees {old next : Ingress.Constants}
   rw [recordMap_agrees unique same address]
   rfl
 
+/-- Two stream contexts read blobs alike: by unfolding them, not by `rfl` between them, which has
+the kernel compare the two contexts whole. -/
+theorem stream_blob_agrees (old next : Ingress.Constants) : (context old).blob = (context next).blob := by
+  simp only [streamContext, contextOf, contextWith]
+
+/-- Two stream contexts carry one hint function (as `stream_blob_agrees`). -/
+theorem stream_hint_agrees (old next : Ingress.Constants) : (context old).hint = (context next).hint := by
+  simp only [streamContext, contextOf, contextWith]
+
 /-- All non-table functions agree universally by actual construction and the
 proved input-store equality, not by probing finitely many source addresses. -/
 theorem stream_agrees {old next : Ingress.Constants}
     (unique : (old.map Prod.fst).Nodup) (same : old.Perm next)
     (tables : Tables (context old) (context next)) : Agrees (context old) (context next) := by
   have store := stream_store_agrees hash table pre blobs hint unique same
-  refine { toTables := tables, store, blob := rfl, hint := rfl, reconstruct := ?_ }
+  refine { toTables := tables, store, blob := stream_blob_agrees hash table pre blobs hint old next,
+           hint := stream_hint_agrees hash table pre blobs hint old next, reconstruct := ?_ }
   change projectionAddress hash (context old).store = projectionAddress hash (context next).store
   rw [store]
 
