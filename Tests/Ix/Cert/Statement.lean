@@ -1569,31 +1569,160 @@ def roleKindCase (leanEnv : Lean.Environment) : IO (Array String × Array String
   return (errors, #[])
 
 /-- `LiteralRolesNamed`: an α-copy of `Nat` under another name (`AdvNat`), compiled without
-`Nat` itself, is stored at the default role table's address of `Nat`; `checkReport` refuses it
-by the literal-role check, since `Nat` is not an input constant published there. (The
-closures of the other cases, which hold `Nat`, pass the check.) -/
+`Nat` itself, is stored at the default role table's address of `Nat`.
+- Alone, it holds no literal, so no literal is checked against that address, and the copy
+  compiles.
+- Beside a record that holds a `Nat` literal (`AdvNat.lit`, whose value is the literal `5`
+  at type `AdvNat`: crafted, since `AdvNat` is not `Nat` by name, but well typed once the
+  literal's type is read at `Nat`'s address), `checkReport` refuses it by the literal-role
+  check, since `Nat` is not an input constant published there.
+
+(The closures of the other cases, which hold `Nat`, pass the check.) -/
 def literalRoleCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
   let t ← match Ix.Kernel.Reader.defaultTable with
     | .ok t => pure t
     | .error e => return (#[s!"literal roles: the default role table failed: {e}"], #[])
   let some natAddr := t.addressOf? .nat
     | return (#["literal roles: the default role table binds no Nat"], #[])
-  let closed ← IO.ofExcept
-    (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[`Tests.Ix.Kernel.TutorialDefs.AdvNat])
-  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  let advNat := `Tests.Ix.Kernel.TutorialDefs.AdvNat
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[advNat])
+  -- the copy alone: no literal, accepted
+  let plain ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  match Ix.Cert.compileReport plain with
+  | .error e =>
+    return (#[s!"literal roles: the copy of Nat without a literal is refused: {e}"], #[])
+  | .ok (ixe, _) =>
+    unless ixe.consts.contains natAddr do
+      return (#[s!"literal roles: the copy of Nat is not stored at Nat's role address {natAddr}"], #[])
+  -- the copy beside a Nat literal: refused
+  let litName := advNat ++ `lit
+  let lit : Lean.ConstantInfo := .defnInfo {
+    name := litName, levelParams := [], type := .const advNat [], value := .lit (.natVal 5),
+    hints := .abbrev, safety := .safe, all := [litName] }
+  let env ← IO.lazyPure fun _ =>
+    Tests.Ix.Kernel.SourceIngressStep.canon (closed.toArray.push (litName, lit)) 2
   let (ixe, failures, cenv) ← match Ix.Cert.compileUnchecked env with
     | .ok out => pure out
-    | .error e => return (#[s!"literal roles: the copy of Nat failed to compile: {e}"], #[])
+    | .error e => return (#[s!"literal roles: the copy of Nat with a literal failed to compile: {e}"], #[])
   unless ixe.consts.contains natAddr do
-    return (#[s!"literal roles: the copy of Nat is not stored at Nat's role address {natAddr}"], #[])
+    return (#[s!"literal roles: the copy of Nat with a literal is not stored at Nat's role address \
+      {natAddr}"], #[])
   match Ix.Cert.checkReport env cenv (ixe, failures) with
   | .error e =>
     if (e.splitOn "literal-role check failed").length > 1 then
-      return (#[], #["literal roles: checkReport refuses a copy of Nat at Nat's role address \
-        without Nat"])
-    return (#[s!"literal roles: the copy of Nat is refused, but not by the literal-role check: {e}"], #[])
+      return (#[], #["literal roles: checkReport accepts a copy of Nat at Nat's role address \
+        without Nat and without a literal, and refuses it beside a Nat literal"])
+    return (#[s!"literal roles: the copy of Nat with a literal is refused, but not by the \
+      literal-role check: {e}"], #[])
   | .ok () =>
-    return (#["literal roles: checkReport accepts a copy of Nat at Nat's role address without Nat"], #[])
+    return (#["literal roles: checkReport accepts a copy of Nat at Nat's role address without \
+      Nat beside a Nat literal"], #[])
+
+/-- An inductive input-shape case: the closure of `roots` compiles and passes `compileReport` as
+Lean gives it; with `edit` applied to its Lean constants, `compileReport` refuses it by the
+inductive input check, with a message containing `expected`. -/
+def shapeCase (label : String) (leanEnv : Lean.Environment) (roots : Array Lean.Name)
+    (edit : Lean.Name → Lean.ConstantInfo → Lean.ConstantInfo) (expected : String) :
+    IO (Array String × Array String) := do
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv roots)
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  if let .error e := Ix.Cert.compileReport env then
+    return (#[s!"{label}: the closure as Lean gives it is refused: {e}"], #[])
+  let edited := closed.toArray.map fun (n, ci) => (n, edit n ci)
+  let env' ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon edited 2
+  match Ix.Cert.compileReport env' with
+  | .error e =>
+    if (e.splitOn "inductive input check failed").length > 1 && (e.splitOn expected).length > 1 then
+      return (#[], #[s!"{label}: accepted as given, refused when crafted: {e}"])
+    return (#[s!"{label}: refused, but not by the expected inductive input check: {e}"], #[])
+  | .ok _ => return (#[s!"{label}: compileReport accepts the crafted input"], #[])
+
+/-- The mutual data types `Tm` and `Args` of the reader's fixtures. -/
+def tmName : Lean.Name := defsModule ++ `Tm
+def argsName : Lean.Name := defsModule ++ `Args
+
+/-- `ConstructorIndices`: `Tm.var` and `Tm.app` declare each other's index. -/
+def constructorIndexCase (leanEnv : Lean.Environment) : IO (Array String × Array String) :=
+  shapeCase "constructor indices" leanEnv #[tmName] (fun n ci =>
+    match ci with
+    | .ctorInfo v =>
+      if n == tmName ++ `var then .ctorInfo { v with cidx := 1 }
+      else if n == tmName ++ `app then .ctorInfo { v with cidx := 0 } else ci
+    | _ => ci) "declares another index than its position"
+
+/-- `FamilyLevelParams`: `Prod.mk` lists `Prod`'s level parameters in the other order. -/
+def levelParamsCase (leanEnv : Lean.Environment) : IO (Array String × Array String) :=
+  shapeCase "level parameters" leanEnv #[``Prod] (fun n ci =>
+    match ci with
+    | .ctorInfo v => if n == ``Prod.mk then .ctorInfo { v with levelParams := v.levelParams.reverse } else ci
+    | _ => ci) "does not have the level parameters of its family"
+
+/-- `FamilyLevelParams`' count: `Prod.rec` carries two level parameters more than its own, so it
+has neither its family's count nor one more. -/
+def recursorLevelCountCase (leanEnv : Lean.Environment) : IO (Array String × Array String) :=
+  shapeCase "recursor level count" leanEnv #[``Prod] (fun n ci =>
+    match ci with
+    | .recInfo v =>
+      if n == ``Prod.rec then .recInfo { v with levelParams := v.levelParams ++ [`w₁, `w₂] } else ci
+    | _ => ci) "does not have the level parameters of its family"
+
+/-- `FamilyNamesStored`: `Tm.rec`'s first rule names `Tm.var'`, a name stored nowhere that carries
+`Tm.var`'s stored hash (`Ix.Name`'s `==` compares stored hashes only, so every lookup of it finds
+`Tm.var`, and the compile is unchanged). -/
+def familyNameCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[tmName])
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  if let .error e := Ix.Cert.compileReport env then
+    return (#[s!"family names: the closure as Lean gives it is refused: {e}"], #[])
+  let recName := Ix.Name.fromLeanName (tmName ++ `rec)
+  let varName := Ix.Name.fromLeanName (tmName ++ `var)
+  let some (.recInfo rv) := env.consts.get? recName
+    | return (#["family names: Tm.rec is not a recursor of the closure"], #[])
+  let some rule := rv.rules[0]?
+    | return (#["family names: Tm.rec has no rule"], #[])
+  let ghost : Ix.Name := .str (Ix.Name.fromLeanName tmName) "var'" varName.getHash
+  let env' : Ix.Environment :=
+    { consts := env.consts.insert recName (.recInfo { rv with rules := rv.rules.set! 0 { rule with ctor := ghost } }) }
+  match Ix.Cert.compileReport env' with
+  | .error e =>
+    if (e.splitOn "inductive input check failed").length > 1 &&
+        (e.splitOn "which is not an input constant's own name").length > 1 then
+      return (#[], #[s!"family names: accepted as given, refused when crafted: {e}"])
+    return (#[s!"family names: refused, but not by the family-name check: {e}"], #[])
+  | .ok _ => return (#["family names: compileReport accepts a rule naming a hash twin of Tm.var"], #[])
+
+/-- `FamilyBlocks`: `Tm.rec`'s `all` lists `Tm` twice, not its family's `[Tm, Args]`. -/
+def familyBlockCase (leanEnv : Lean.Environment) : IO (Array String × Array String) :=
+  shapeCase "family blocks" leanEnv #[tmName] (fun n ci =>
+    match ci with
+    | .recInfo v => if n == tmName ++ `rec then .recInfo { v with all := [tmName, tmName] } else ci
+    | _ => ci) "is not exactly its family's types and constructors"
+
+/-- The types of `Tm.rec` and `Args.rec`. -/
+def tmRecTypes (leanEnv : Lean.Environment) : Except String (Lean.Expr × Lean.Expr) := do
+  let some (.recInfo tm) := leanEnv.find? (tmName ++ `rec) | throw "Tm.rec is not a recursor"
+  let some (.recInfo args) := leanEnv.find? (argsName ++ `rec) | throw "Args.rec is not a recursor"
+  return (tm.type, args.type)
+
+/-- `RecursorSlotsUnique`: `Args.rec` carries `Tm.rec`'s type, so both are filed at `Tm`'s
+motive. -/
+def recursorSlotCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let (tmType, _) ← IO.ofExcept (tmRecTypes leanEnv)
+  shapeCase "recursor slots" leanEnv #[tmName] (fun n ci =>
+    match ci with
+    | .recInfo v => if n == argsName ++ `rec then .recInfo { v with type := tmType } else ci
+    | _ => ci) "two stored recursor records fall on motive 0"
+
+/-- `RecursorShapes`: `Tm.rec` and `Args.rec` carry each other's types, so each is filed at the
+other's motive (the two slots stay distinct). -/
+def recursorShapeCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let (tmType, argsType) ← IO.ofExcept (tmRecTypes leanEnv)
+  shapeCase "recursor shapes" leanEnv #[tmName] (fun n ci =>
+    match ci with
+    | .recInfo v =>
+      if n == tmName ++ `rec then .recInfo { v with type := argsType }
+      else if n == argsName ++ `rec then .recInfo { v with type := tmType } else ci
+    | _ => ci) "is not filed at its family's block and the motive its name gives it"
 
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
@@ -1624,8 +1753,22 @@ def suite : List TestSeq := [
     recursorFamilyCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "a record of the wrong kind at a bound role's address is refused (role check)" (do
     roleKindCase (← getCompileEnv #[defsModule, ownModule])) 1,
-  report "a copy of Nat at Nat's role address without Nat is refused (literal-role check)" (do
-    literalRoleCase (← getCompileEnv #[`Tests.Ix.Kernel.TutorialDefs])) 1]
+  report "a copy of Nat without Nat: accepted alone, refused beside a Nat literal" (do
+    literalRoleCase (← getCompileEnv #[`Tests.Ix.Kernel.TutorialDefs])) 1,
+  report "a recursor rule naming a hash twin of its constructor is refused (inductive input check)" (do
+    familyNameCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "constructors declaring each other's index are refused (inductive input check)" (do
+    constructorIndexCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "a constructor with its inductive's level parameters reordered is refused (inductive input check)" (do
+    levelParamsCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "a recursor with two level parameters too many is refused (inductive input check)" (do
+    recursorLevelCountCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "a recursor whose all is not its family's is refused (inductive input check)" (do
+    familyBlockCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "two recursors filed at one motive are refused (inductive input check)" (do
+    recursorSlotCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "recursors with each other's types are refused (inductive input check)" (do
+    recursorShapeCase (← getCompileEnv #[defsModule, ownModule])) 1]
 
 /-- `cert-evidence-agreement` (landing): the role table's evidence against quotient Source's on the
 well-founded operations' closure (`evidenceAgreement`); it compiles and reads the closure, so it

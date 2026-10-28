@@ -2188,8 +2188,8 @@ theorem literal_extra {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
   have ha' : a = named'.addr ∨ a = blockAt ixe named'.addr := by
     simpa [nameRecords, hA] using ha
   rcases claimed_records hr hclaim hstored hblock ha' hc with rfl | bare
-  · obtain ⟨hreach, hrole⟩ := literal_reaches hcl henv hk hmembers hr hs
-    obtain ⟨hin, haddr⟩ := named t P.table s hrole b hsb hcb
+  · obtain ⟨hreach, -⟩ := literal_reaches hcl henv hk hmembers hr hs
+    obtain ⟨hin, haddr⟩ := named t P.table _ _ hc s hs b hsb hcb
     have hsub : ClosureClaims.InSub sub (literalRoleName s) := ClosureClaims.sub_of_reaches hcl hreach
       (by rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact hin)
     obtain ⟨m, cm, hm, hbeq⟩ := stored_key hsub

@@ -11,11 +11,12 @@ compile report therefore checks that every component holding a family member is 
 (`FamilyBlocks`, a named premise here until the report check lands). With it:
 
 * the compile block of a Source inductive group's first type holds exactly the group's types and
-  constructors (`inductive_block`);
+  constructors (`inductive_block`; any block holding one of its types does, `inductive_block_at`);
 * the compile block of one of its recursors holds exactly the group's recursors
   (`recursor_block`): every input recursor whose block's first member is the group's is in the
   closure (`DependsOn`), in some group (`SourceDeclares.stored_grouped`) that converts, and that
-  group can only be this one (`groups_origin`, `recsTable`).
+  group can only be this one (`groups_origin`, `recsTable`). Any block holding one of its
+  recursors does (`recursor_block_at`).
 
 The group's shape is read off its loops (`inductiveGroup_shape`: `TypesOf`, `CtorsOf`), and a
 group of `groupsOf` is an inductive block's, a component's or an unplaced constant's
@@ -414,20 +415,34 @@ theorem reaches_of_sub {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
     rw [(hcl n).2 hr] at h
     cases h
 
+/-- An input constant is stored under its own name. -/
+theorem get_own {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (compiled : compileReport env = .ok (ixe, failures)) {x : Ix.Name} {ci : Ix.ConstantInfo}
+    (h : env.consts.get? x = some ci) : env.consts.get? ci.getCnst.name = some ci := by
+  obtain ⟨k, hk⟩ := SourceStoredNames.lookup_stored h
+  rw [inputsNamed compiled k ci hk]
+  exact SourceStoredNames.stored_get hk
+
+/-- Two arrays of names equal up to `beqRaw` are equal. -/
+theorem eq_of_isEqv_raw {xs ys : Array Ix.Name} (h : xs.isEqv ys Ix.Name.beqRaw = true) : xs = ys := by
+  obtain ⟨hsize, hall⟩ := Array.isEqv_iff_rel.mp h
+  exact Array.ext hsize fun i h₁ h₂ => Ix.Name.beqRaw_iff.mp (hall i h₁)
+
 /-! ## The two blocks -/
 
-/-- **The compile block of a Source inductive group's first type holds exactly the group's types
-and constructors.** -/
-theorem inductive_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+/-- **A compile block holding one of a Source inductive group's types holds exactly the group's
+types and constructors.** -/
+theorem inductive_block_at {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (fb : FamilyBlocks env)
     {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
-    (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs)) :
-    ∃ (rep₁ : Ix.Name) (all₁ : Ix.Set Ix.Name), (CompiledRefs.envBlocks env).blocks.get? rep₁ = some all₁ ∧
-      ∀ x, all₁.contains x = true ↔
-        (∃ (i : Nat) (_ : i < types.size), (types[i].cnst.name == x) = true) ∨
-        ∃ (i : Nat) (hi : i < ctors.size) (k : Nat) (_ : k < ctors[i].size), (ctors[i][k].cnst.name == x) = true := by
+    (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs))
+    {rep : Ix.Name} {all : Ix.Set Ix.Name} (hall : (CompiledRefs.envBlocks env).blocks.get? rep = some all)
+    {j : Nat} (hj : j < types.size) (hn : all.contains types[j].cnst.name = true) :
+    ∀ x, all.contains x = true ↔
+      (∃ (i : Nat) (_ : i < types.size), (types[i].cnst.name == x) = true) ∨
+      ∃ (i : Nat) (hi : i < ctors.size) (k : Nat) (_ : k < ctors[i].size), (ctors[i][k].cnst.name == x) = true := by
   have hcl : IsClosure env roots sub := P.source.1
   have hmem : Group.inductive types ctors recs ∈ groupsOf sub (blocksOf sub) := Array.mem_of_getElem? hgr
   obtain ⟨n, v, hnv, -, hg⟩ := inductive_origin hmem
@@ -436,20 +451,20 @@ theorem inductive_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
   obtain ⟨e₁, e₂, -⟩ := Group.inductive.inj e
   rw [← e₁] at htypes hctors
   rw [← e₂] at hctors
-  have hnS : sub.consts.get? n = some (.inductInfo v) := SourceStoredNames.stored_get hnv
-  have hnE : env.consts.get? n = some (.inductInfo v) := hcl.mem_env hnS
   -- a looked-up closure constant's name is the lookup's
   have nameS : ∀ {m : Ix.Name} {ci : Ix.ConstantInfo}, sub.consts.get? m = some ci →
       (ci.getCnst.name == m) = true := fun hm => named_of_get P.compiled (hcl.mem_env hm)
-  obtain ⟨rep, all, hall, hn⟩ := GroupBlocks.member_of_claim P (by rw [hnS]; rfl)
-    (fun cv h => by rw [hnE] at h; cases h)
-  have fam := (fb rep all hall n hn).1 v hnE
-  refine ⟨rep, all, hall, fun x => (fam x).trans ?_⟩
   -- the types and the block's names
   have T1 := ReaderUnits.forall₂_mem_right htypes
   have T2 := SourceDeclares.forall₂_mem_left htypes
   have C1 := ReaderUnits.forall₂_mem_right hctors
   have C2 := SourceDeclares.forall₂_mem_left hctors
+  obtain ⟨m₀, -, hget₀, heqv₀⟩ := T1 types[j] (Array.mem_toList_iff.mpr (Array.getElem_mem hj))
+  have hjE : env.consts.get? types[j].cnst.name = some (.inductInfo types[j]) :=
+    get_own P.compiled (hcl.mem_env hget₀)
+  have fam := (fb rep all hall _ hn).1 types[j] hjE
+  rw [eq_of_isEqv_raw heqv₀] at fam
+  refine fun x => (fam x).trans ?_
   constructor
   · rintro (⟨m, hm, hmx⟩ | ⟨m, hm, iv, hiv, c, hc, hcx⟩)
     · obtain ⟨ty, hty, hget, -⟩ := T2 m (Array.mem_toList_iff.mpr hm)
@@ -479,16 +494,46 @@ theorem inductive_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.
       exact .inr ⟨m, Array.mem_toList_iff.mp hm, ty, hcl.mem_env hget, p.1, hpc,
         BEq.trans (BEq.symm (nameS hpget)) hbx⟩
 
-/-- **The compile block of a Source inductive group's recursor holds exactly the group's
-recursors.** -/
-theorem recursor_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+/-- **The compile block of a Source inductive group's first type holds exactly the group's types
+and constructors.** -/
+theorem inductive_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
     (P : Premises env roots sub ixe failures t envQ) (fb : FamilyBlocks env)
     {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs)) :
-    ∃ (rep₂ : Ix.Name) (all₂ : Ix.Set Ix.Name), (CompiledRefs.envBlocks env).blocks.get? rep₂ = some all₂ ∧
-      ∀ x, all₂.contains x = true ↔ ∃ (j : Nat) (_ : j < recs.size), (recs[j].cnst.name == x) = true := by
+    ∃ (rep₁ : Ix.Name) (all₁ : Ix.Set Ix.Name), (CompiledRefs.envBlocks env).blocks.get? rep₁ = some all₁ ∧
+      ∀ x, all₁.contains x = true ↔
+        (∃ (i : Nat) (_ : i < types.size), (types[i].cnst.name == x) = true) ∨
+        ∃ (i : Nat) (hi : i < ctors.size) (k : Nat) (_ : k < ctors[i].size), (ctors[i][k].cnst.name == x) = true := by
+  have hcl : IsClosure env roots sub := P.source.1
+  have hmem : Group.inductive types ctors recs ∈ groupsOf sub (blocksOf sub) := Array.mem_of_getElem? hgr
+  obtain ⟨n, v, hnv, head, hg⟩ := inductive_origin hmem
+  rcases inductiveGroup_shape hg with ⟨_, _, e⟩ | ⟨_, _, _, e, htypes, -, -⟩
+  · cases e
+  rw [← (Group.inductive.inj e).1] at htypes
+  have hnS : sub.consts.get? n = some (.inductInfo v) := SourceStoredNames.stored_get hnv
+  have hnE : env.consts.get? n = some (.inductInfo v) := hcl.mem_env hnS
+  obtain ⟨rep, all, hall, hn⟩ := GroupBlocks.member_of_claim P (by rw [hnS]; rfl)
+    (fun cv h => by rw [hnE] at h; cases h)
+  -- the block's first member is a type of the group
+  obtain ⟨ty, hty, hget, -⟩ := SourceDeclares.forall₂_mem_left htypes n
+    (Array.mem_toList_iff.mpr (Array.mem_of_getElem? head))
+  obtain ⟨j, hj, rfl⟩ := Array.mem_iff_getElem.mp (Array.mem_toList_iff.mp hty)
+  have hjn : (types[j].cnst.name == n) = true := named_of_get P.compiled (hcl.mem_env hget)
+  exact ⟨rep, all, hall, inductive_block_at P fb hgr hall hj (by rw [Std.HashSet.contains_congr hjn]; exact hn)⟩
+
+/-- **A compile block holding one of a Source inductive group's recursors holds exactly the group's
+recursors.** -/
+theorem recursor_block_at {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (fb : FamilyBlocks env)
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
+    {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
+    (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs))
+    {rep : Ix.Name} {all : Ix.Set Ix.Name} (hall : (CompiledRefs.envBlocks env).blocks.get? rep = some all)
+    {j₀ : Nat} (hj₀ : j₀ < recs.size) (hx₀ : all.contains recs[j₀].cnst.name = true) :
+    ∀ x, all.contains x = true ↔ ∃ (j : Nat) (_ : j < recs.size), (recs[j].cnst.name == x) = true := by
   have hcl : IsClosure env roots sub := P.source.1
   obtain ⟨-, pre, ds, -, hprep, -⟩ := P.source
   have hcol := SourceDeclares.preparedAt_collapsed hprep
@@ -504,16 +549,14 @@ theorem recursor_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
   -- the group's recursors are stored recursors of the block
   have cand : ∀ r ∈ recs, ∃ k, (k, Ix.ConstantInfo.recInfo r) ∈ sub.consts.toList ∧ r.all[0]? = some n :=
     fun r hr => recsTable_mem (SourceStoredNames.blockRecursors_mem hrecs r hr)
-  obtain ⟨r₀, hr₀⟩ := blockRecursors_nonempty hrecs head
-  obtain ⟨k₀, hk₀, hr₀n⟩ := cand r₀ hr₀
+  obtain ⟨k₀, hk₀, hr₀n⟩ := cand recs[j₀] (Array.getElem_mem hj₀)
   have hk₀E := SourceStoredNames.stored_input P hk₀
-  obtain ⟨rep, all, hall, hk₀all⟩ := GroupBlocks.member_of_claim P
-    (by rw [SourceStoredNames.stored_get hk₀]; rfl)
-    (fun cv h => by rw [SourceStoredNames.stored_get hk₀E] at h; cases h)
-  obtain ⟨first, _, hfirst, -, -, -, fam⟩ := (fb rep all hall k₀ hk₀all).2.2 r₀ (SourceStoredNames.stored_get hk₀E)
+  have hk₀name : recs[j₀].cnst.name = k₀ := inputsNamed P.compiled k₀ _ hk₀E
+  obtain ⟨first, _, hfirst, -, -, -, fam⟩ := (fb rep all hall _ hx₀).2.2 recs[j₀]
+    (by rw [hk₀name]; exact SourceStoredNames.stored_get hk₀E)
   have hfn : first = n := Option.some.inj (hfirst.symm.trans hr₀n)
   rw [hfn] at fam
-  refine ⟨rep, all, hall, fun x => (fam x).trans ⟨?_, ?_⟩⟩
+  refine fun x => (fam x).trans ⟨?_, ?_⟩
   · rintro ⟨rv, hx, hrv⟩
     -- the recursor is in the closure
     have reach : Reaches env roots x :=
@@ -572,5 +615,32 @@ theorem recursor_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
     refine ⟨recs[j], ?_, hkn⟩
     rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_congr (BEq.symm hjx), ← Std.HashMap.get?_eq_getElem?]
     exact SourceStoredNames.stored_get hkE
+
+/-- **The compile block of a Source inductive group's recursor holds exactly the group's
+recursors.** -/
+theorem recursor_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+    (P : Premises env roots sub ixe failures t envQ) (fb : FamilyBlocks env)
+    {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
+    {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
+    (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs)) :
+    ∃ (rep₂ : Ix.Name) (all₂ : Ix.Set Ix.Name), (CompiledRefs.envBlocks env).blocks.get? rep₂ = some all₂ ∧
+      ∀ x, all₂.contains x = true ↔ ∃ (j : Nat) (_ : j < recs.size), (recs[j].cnst.name == x) = true := by
+  have hmem : Group.inductive types ctors recs ∈ groupsOf sub (blocksOf sub) := Array.mem_of_getElem? hgr
+  obtain ⟨n, v, -, head, hg⟩ := inductive_origin hmem
+  have hrecs : blockRecursors v ((recsTable sub).getD n #[]) = .ok recs := by
+    rcases inductiveGroup_shape hg with ⟨_, _, e⟩ | ⟨_, _, _, e, -, -, hrecs⟩
+    · cases e
+    · rw [(Group.inductive.inj e).2.2]
+      exact hrecs
+  obtain ⟨r₀, hr₀⟩ := blockRecursors_nonempty hrecs head
+  obtain ⟨j₀, hj₀, rfl⟩ := Array.mem_iff_getElem.mp hr₀
+  obtain ⟨k₀, hk₀, -⟩ := recsTable_mem (SourceStoredNames.blockRecursors_mem hrecs _ hr₀)
+  have hk₀E := SourceStoredNames.stored_input P hk₀
+  have hk₀name : recs[j₀].cnst.name = k₀ := inputsNamed P.compiled k₀ _ hk₀E
+  obtain ⟨rep, all, hall, hk₀all⟩ := GroupBlocks.member_of_claim P
+    (by rw [SourceStoredNames.stored_get hk₀]; rfl)
+    (fun cv h => by rw [SourceStoredNames.stored_get hk₀E] at h; cases h)
+  exact ⟨rep, all, hall, recursor_block_at P fb hgr hall hj₀ (by rw [hk₀name]; exact hk₀all)⟩
 
 end Ix.Cert.FamilyGroups

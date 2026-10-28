@@ -670,6 +670,11 @@ structure CheckReportOk (env : Ix.Environment) (cenv : Ix.CompileM.CompileEnv)
   recursors : unownedRecursor env out.1 = none
   roles : roleRecordKind out.1 = none
   literals : literalRoleUnnamed env out.1 = none
+  familyNames : unstoredFamilyName env = none
+  constructorIndices : misplacedConstructor env = none
+  levelParams : strayLevelParams env = none
+  families : strayFamilyMember env (compileBlocks env) = none
+  recursorShapes : recursorShapeError env out.1 = none
 
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
 unauthentic, no stored record is on a reference cycle, no two different
@@ -683,8 +688,11 @@ records, every published input name's address holds a stored record that is
 not a block, no address holds both a blob and a record, every input name
 published in an inductive block the recursor index attaches recursors to has a
 family of which each of those recursors is a published recursor, every stored
-record at a bound role's address has its specification's kind, and every
-literal-support role's stored record is published under the role's name. -/
+record at a bound role's address has its specification's kind, every stored
+support role of a stored literal is published under the role's name, and the
+input's inductives have Lean's shapes: family names stored exactly, constructor
+indices, shared level parameters and counts, family blocks of the compile's condensation, and recursors filed at
+slots of their own, by their names. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
     (h : checkReport env cenv out = .ok ()) : CheckReportOk env cenv out := by
   unfold checkReport at h
