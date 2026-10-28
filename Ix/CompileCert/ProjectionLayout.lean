@@ -261,10 +261,10 @@ theorem members_shapes (sources : List MutConst) (initial : MutConstCompileState
   | nil => exact Emission.Yields.pure (by simp)
   | cons source rest ih =>
     rw [compileMutConstMembers]
-    apply Emission.Yields.bind (member_shape source)
-    intro member shape context before output after ran
-    have restShape := ih (initial.addMember member) context before output after ran
-    simpa [MutConstCompileState.addMember, shape, List.append_assoc] using restShape
+    exact Emission.Yields.bind (member_shape source) fun member shape =>
+      fun context before output after ran => by
+        have restShape := ih (initial.addMember member) context before output after ran
+        simpa [MutConstCompileState.addMember, shape, List.append_assoc] using restShape
 
 /-- The payloads have their sources' shapes in the same order. -/
 theorem payload_shapes (sources : List MutConst) : Emission.Yields (compileMutConsts sources)

@@ -1090,10 +1090,10 @@ theorem members_kinds (sources : List MutConst) (initial : MutConstCompileState)
   | nil => exact Yields.pure (by simp)
   | cons source rest ih =>
     rw [compileMutConstMembers]
-    apply Yields.bind (member_kind source)
-    intro member kind context before output after ran
-    have restKinds := ih (initial.addMember member) context before output after ran
-    simpa [MutConstCompileState.addMember, kind, List.append_assoc] using restKinds
+    exact Yields.bind (member_kind source) fun member kind =>
+      fun context before output after ran => by
+        have restKinds := ih (initial.addMember member) context before output after ran
+        simpa [MutConstCompileState.addMember, kind, List.append_assoc] using restKinds
 
 /-- The payloads keep every source member's definition kind, in order. -/
 theorem payload_kinds (sources : List MutConst) : Yields (compileMutConsts sources)
