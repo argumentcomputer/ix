@@ -2263,7 +2263,7 @@ impl Env {
     // `Env::get` and surface much later as a misleading parse error
     // inside `LazyConstant::get`. Runs after the framing pass so the
     // hashing goes wide (serial on the guest target).
-    verify_const_hashes(&const_windows)?;
+    verify_const_hashes(&const_windows, "Env::get")?;
     for (addr, bytes) in const_windows {
       env
         .consts
@@ -2511,6 +2511,7 @@ impl Env {
   ///
   /// - constants are recorded as `(addr, offset, len)` windows into `data`
   ///   rather than copied/stored, and their bodies are never parsed here;
+  ///   each window is hash-verified against its address, as in [`Env::get`];
   /// - the `names` table and each `Named`'s `ExprMetaArena` are parsed only to
   ///   advance the cursor and are then dropped, keeping just `name → addr` and
   ///   the per-`Defn` reducibility hint;
@@ -2575,6 +2576,16 @@ impl Env {
       }
       index.consts.push(LazyConstSlice { addr, offset, len });
     }
+    // Per-entry integrity, as in `Env::get`: every window's bytes hash to
+    // the address it is stored under. The windows are handed out as the
+    // records of those addresses, so an unauthenticated window would let a
+    // record's content depend on the file rather than on its address.
+    let windows: Vec<(Address, &[u8])> = index
+      .consts
+      .iter()
+      .map(|c| (c.addr.clone(), &data[c.offset..c.offset + c.len]))
+      .collect();
+    verify_const_hashes(&windows, "parse_lazy_index")?;
 
     // Section 3: anon_hints — kept verbatim (resolved to addresses) on
     // the index for full-reader parity. The §2 windows are the
@@ -3240,18 +3251,21 @@ impl Env {
 /// up each Name via `DashMap::get` in the DFS loop). It was 22s slower on
 /// Mathlib because 4.7M shard-lock acquisitions dominate vs the one-time
 /// ~150 MB tuple-clone allocation.
-/// §2 per-entry integrity for the full readers: every constant's bytes
-/// must hash to the address they're stored under. Parallel on host —
-/// this is a pure sweep over ~GBs of blake3 input; serial on the guest
-/// target.
+/// §2 per-entry integrity for the full readers and the lazy index: every
+/// constant's bytes must hash to the address they're stored under.
+/// Parallel on host — this is a pure sweep over ~GBs of blake3 input;
+/// serial on the guest target.
 #[cfg(not(target_arch = "riscv64"))]
-fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+fn verify_const_hashes(
+  windows: &[(Address, &[u8])],
+  label: &str,
+) -> Result<(), String> {
   use rayon::prelude::*;
   windows.par_iter().enumerate().try_for_each(|(i, (addr, bytes))| {
     let computed = Address::hash(bytes);
     if computed != *addr {
       return Err(format!(
-        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        "{label}: const at idx {i} bytes hash to {} but stored under {}",
         computed.hex(),
         addr.hex()
       ));
@@ -3261,12 +3275,15 @@ fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "riscv64")]
-fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+fn verify_const_hashes(
+  windows: &[(Address, &[u8])],
+  label: &str,
+) -> Result<(), String> {
   for (i, (addr, bytes)) in windows.iter().enumerate() {
     let computed = Address::hash(bytes);
     if computed != *addr {
       return Err(format!(
-        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        "{label}: const at idx {i} bytes hash to {} but stored under {}",
         computed.hex(),
         addr.hex()
       ));
@@ -4317,6 +4334,34 @@ mod tests {
       "expected per-entry verify error, got: {err}"
     );
     std::fs::remove_file(&tmp).ok();
+  }
+
+  /// The lazy index hands its windows out as the records of their
+  /// addresses (Lean's anonymous load), so it verifies them as the full
+  /// reader does.
+  #[test]
+  fn env_const_bytes_tampering_rejected_by_parse_lazy_index() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    assert!(Env::parse_lazy_index(&buf).is_err(), "the key is not the hash");
+    let env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    Env::parse_lazy_index(&buf).expect("authentic windows are accepted");
+    let off = first_const_payload_offset(&buf) + 3;
+    assert!(off < buf.len());
+    buf[off] ^= 0xFF;
+    let err = Env::parse_lazy_index(&buf)
+      .expect_err("tampered const bytes should be rejected");
+    assert!(
+      err.contains("parse_lazy_index")
+        && err.contains("bytes hash to")
+        && err.contains("but stored under"),
+      "expected per-entry verify error, got: {err}"
+    );
   }
 
   // ---------------------------------------------------------------------------

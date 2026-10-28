@@ -341,15 +341,22 @@ structure Comm where
   payload : Address
   deriving BEq, Repr, Inhabited
 
-/-- Parse a `Constant` starting at byte offset `off` within `buf`, WITHOUT
-    copying out a sub-buffer. The window length bounds the constant, so any
-    bytes after it in `buf` are simply left unread (no trailing-bytes check).
-    Zero-copy apart from the small interior string/nat reads `getConstant`
-    performs regardless. -/
-def deConstantAt (buf : ByteArray) (off : Nat) : Except String Constant :=
-  match getConstant.run { idx := off, bytes := buf } with
-  | .ok a _ => .ok a
-  | .error e _ => .error e
+/-- Parse the `Constant` serialized exactly in the window `buf[off, off + len)`,
+    WITHOUT copying the window out. The window must lie inside `buf`, and the
+    decode must end exactly at `off + len`. The decoder only reads forward, so
+    a decode that ends there has read nothing outside the window: the result
+    depends on the window's bytes alone. A window holding a truncated record
+    (whose decode would run on into the bytes after it), or a record followed
+    by other bytes, is refused. Zero-copy apart from the small interior
+    string/nat reads `getConstant` performs regardless. -/
+def deConstantAt (buf : ByteArray) (off len : Nat) : Except String Constant :=
+  if off + len ≤ buf.size then
+    match getConstant.run { idx := off, bytes := buf } with
+    | .ok a s =>
+      if s.idx = off + len then .ok a
+      else .error s!"constant window: the record is {s.idx - off} bytes, the window {len}"
+    | .error e _ => .error e
+  else .error s!"constant window: {off} + {len} exceeds the buffer's {buf.size} bytes"
 
 /-- Lazily-materialized constant: an offset window `(buf, off, len)` into a
     shared backing `ByteArray` plus an optional pre-materialized `Constant`.
@@ -397,17 +404,18 @@ def ofSlice (buf : ByteArray) (off len : Nat) : LazyConstant :=
   { buf, off, len, cache := none }
 
 /-- Materialize the constant, surfacing parse errors. Returns the cached value
-    when present, otherwise parses the window in place (no copy). -/
+    when present, otherwise parses exactly the window in place (no copy;
+    `deConstantAt`). -/
 def get (lc : LazyConstant) : Except String Constant :=
   match lc.cache with
   | some c => .ok c
-  | none => deConstantAt lc.buf lc.off
+  | none => deConstantAt lc.buf lc.off lc.len
 
 /-- Materialize the constant, discarding parse errors. -/
 def get? (lc : LazyConstant) : Option Constant :=
   match lc.cache with
   | some c => some c
-  | none => (deConstantAt lc.buf lc.off).toOption
+  | none => (deConstantAt lc.buf lc.off lc.len).toOption
 
 /-- Raw serialized bytes (the TagN-headed constant body). Returns the backing buffer
     directly when the window spans all of it (the standalone case), and only

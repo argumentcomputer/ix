@@ -35,12 +35,13 @@ theorem encoded_empty : Encoded ({} : Std.HashMap Address ByteArray) := fun a b 
 
 /-- A wire-valid constant's canonical encoding parses back to it in place. -/
 theorem deConstantAt_serConstant {c : Ixon.Constant} (h : c.wireWF) :
-    Ixon.deConstantAt (Ixon.serConstant c) 0 = .ok c := by
+    Ixon.deConstantAt (Ixon.serConstant c) 0 (Ixon.serConstant c).size = .ok c := by
   have exact := Ixon.Verify.deConstantExact_serConstant c h
   unfold Ixon.deConstantExact at exact
-  obtain ⟨state, hrun, -⟩ := Ixon.Verify.runGetExact_complete exact
+  obtain ⟨state, hrun, hidx⟩ := Ixon.Verify.runGetExact_complete exact
   unfold Ixon.deConstantAt
-  rw [hrun]
+  rw [ite_eq_left (Nat.le_of_eq (Nat.zero_add _)), hrun]
+  simp [hidx]
 
 /-- **A wire-valid constant's canonical encoding, held as its own buffer, decodes to it**,
 and is its own raw bytes. -/
@@ -49,7 +50,7 @@ theorem get?_serConstant {c : Ixon.Constant} (h : c.wireWF) :
       ({ buf := Ixon.serConstant c, len := (Ixon.serConstant c).size } : Ixon.LazyConstant).rawBytes =
         Ixon.serConstant c := by
   refine ⟨?_, by simp [Ixon.LazyConstant.rawBytes]⟩
-  show (Ixon.deConstantAt (Ixon.serConstant c) 0).toOption = some c
+  show (Ixon.deConstantAt (Ixon.serConstant c) 0 (Ixon.serConstant c).size).toOption = some c
   rw [deConstantAt_serConstant h]
   rfl
 

@@ -930,6 +930,8 @@ fun ixe =>
 -- `recordRefs`, `recordGraph`, `referenceCycle`, `RecordRefs.lazyRefs`,
 -- `RecordRefs.refsAt`, `RecordRefs.getRefs`. On a consistent run the
 -- result is unchanged.
+-- Re-frozen: `RecordRefs.lazyRefs` and `RecordRefs.refsAt` read exactly a lazy record's
+-- window (its length too), as `Ixon.LazyConstant.get?` now decodes it (`RefsRead.lazyRefs_eq`).
 /-- info: def Ix.Cert.storedRecord : Ixon.Env → Address → Option Ixon.Constant :=
 fun ixe a => (ixe.consts.get? a).bind fun x => x.get? -/
 #guard_msgs (whitespace := lax) in
@@ -960,15 +962,17 @@ fun a lc =>
       (fun x =>
         match x with
         | (refs, block) => (refs, block.getD a))
-      (Ix.Cert.RecordRefs.refsAt lc.buf lc.off) -/
+      (Ix.Cert.RecordRefs.refsAt lc.buf lc.off lc.len) -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RecordRefs.lazyRefs
 
-/-- info: def Ix.Cert.RecordRefs.refsAt : ByteArray → Nat → Option (Array Address × Option Address) :=
-fun buf off =>
-  match EStateM.run Ix.Cert.RecordRefs.getRefs { idx := off, bytes := buf } with
-  | EStateM.Result.ok r a => some r
-  | EStateM.Result.error a a_1 => none -/
+/-- info: def Ix.Cert.RecordRefs.refsAt : ByteArray → Nat → Nat → Option (Array Address × Option Address) :=
+fun buf off len =>
+  if off + len ≤ buf.size then
+    match EStateM.run Ix.Cert.RecordRefs.getRefs { idx := off, bytes := buf } with
+    | EStateM.Result.ok r s => if s.idx = off + len then some r else none
+    | EStateM.Result.error a a_1 => none
+  else none -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.RecordRefs.refsAt
 

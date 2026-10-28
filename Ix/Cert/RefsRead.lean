@@ -280,12 +280,16 @@ theorem getRefs_eq : getRefs = (fun c => (c.refs, infoBlock c.info)) <$> getCons
   simp only [skipInfo_eq, skipExpr_eq, skipUniv_eq, skipMany_eq, map_bind, bind_map_left,
     bind_pure_comp, Functor.map_map]
 
-theorem refsAt_eq (buf : ByteArray) (off : Nat) :
-    refsAt buf off = (deConstantAt buf off).toOption.map fun c => (c.refs, infoBlock c.info) := by
+theorem refsAt_eq (buf : ByteArray) (off len : Nat) :
+    refsAt buf off len = (deConstantAt buf off len).toOption.map fun c => (c.refs, infoBlock c.info) := by
   unfold refsAt deConstantAt
-  rw [getRefs_eq]
-  simp only [Functor.map, EStateM.map, EStateM.run]
-  cases getConstant { idx := off, bytes := buf } <;> rfl
+  split
+  · rw [getRefs_eq]
+    simp only [Functor.map, EStateM.map, EStateM.run]
+    cases getConstant { idx := off, bytes := buf } with
+    | ok a s => by_cases h : s.idx = off + len <;> simp [h, Except.toOption]
+    | error e s => rfl
+  · rfl
 
 /-- **A stored record's references and owner, read without its expressions,
 are those of the decoded record.** -/
@@ -296,7 +300,7 @@ theorem lazyRefs_eq (a : Address) (lc : Ixon.LazyConstant) :
   | some c => rfl
   | none =>
     simp only [refsAt_eq]
-    cases Ixon.deConstantAt lc.buf lc.off <;> simp [Except.toOption, refOwner_eq_infoBlock]
+    cases Ixon.deConstantAt lc.buf lc.off lc.len <;> simp [Except.toOption, refOwner_eq_infoBlock]
 
 /-- **The check's `storedRefs` is the decoded record's references and owner.** -/
 theorem storedRefs_eq (ixe : Ixon.Env) (a : Address) :

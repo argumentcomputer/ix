@@ -283,7 +283,7 @@ def openCommitment (compileEnv : CompileM.CompileEnv) (commitAddr : Address)
   let bytes ← match compileEnv.constants.get? named.addr with
     | some b => pure b
     | none => .error s!"openCommitment: payload {named.addr} not found"
-  let constant ← match Ixon.deConstantAt bytes 0 with
+  let constant ← match Ixon.deConstantAt bytes 0 bytes.size with
     | .ok c => pure c
     | .error e => .error s!"openCommitment: payload parse failed: {e}"
   return openConstantInfo constant.info

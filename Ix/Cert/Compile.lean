@@ -448,11 +448,15 @@ inductive Head where
   skipMany skipUniv numUnivs
   return (refs, block)
 
-/-- `getRefs` at offset `off` of `buf` (`Ixon.deConstantAt`). -/
-@[expose] def refsAt (buf : ByteArray) (off : Nat) : Option (Array Address × Option Address) :=
-  match getRefs.run { idx := off, bytes := buf } with
-  | .ok r _ => some r
-  | .error _ _ => none
+/-- `getRefs` over exactly the window `buf[off, off + len)`, as
+`Ixon.deConstantAt` decodes it: the window inside `buf`, and the read ending at
+`off + len`. -/
+@[expose] def refsAt (buf : ByteArray) (off len : Nat) : Option (Array Address × Option Address) :=
+  if off + len ≤ buf.size then
+    match getRefs.run { idx := off, bytes := buf } with
+    | .ok r s => if s.idx = off + len then some r else none
+    | .error _ _ => none
+  else none
 
 /-- The references and the owner (`Ix.Cert.refOwner`) of the record `lc`
 stored at `a`, read without its expressions; `none` exactly when `lc.get?`
@@ -460,7 +464,7 @@ is (`Ix.Cert.RefsRead.lazyRefs_eq`). -/
 @[expose] def lazyRefs (a : Address) (lc : Ixon.LazyConstant) : Option (Array Address × Address) :=
   match lc.cache with
   | some c => some (c.refs, refOwner a c)
-  | none => (refsAt lc.buf lc.off).map fun (refs, block) => (refs, block.getD a)
+  | none => (refsAt lc.buf lc.off lc.len).map fun (refs, block) => (refs, block.getD a)
 
 end RecordRefs
 
