@@ -48,8 +48,8 @@ inductive CiJob where
   decompile roundtrip over the test environment. -/
   | landingCompilers
   /-- End-to-end checks on Init+Std: the certified compiler against the
-  pipeline and the Rust compiler, role binding, a reading premise on every
-  inductive, the changed set, and the admission hash. -/
+  pipeline and the Rust compiler, role binding and evidence, a reading
+  premise on every inductive, and the admission hash. -/
   | landingInitStd
   deriving DecidableEq, Repr
 

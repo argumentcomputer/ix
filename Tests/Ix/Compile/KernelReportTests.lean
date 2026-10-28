@@ -1,7 +1,6 @@
 /-
   compiler-reports: the strict readers of the checkers' reports
-  (`Tests.Ix.Compile.KernelReport`), which the `pass3` kernel legs and the
-  closure suites use. The certified checker's JSONL rows: coverage by owning
+  (`Tests.Ix.Compile.KernelReport`), which the closure suites use. The certified checker's JSONL rows: coverage by owning
   record address, every verdict kept for the caller's policy, an incomplete
   process or a malformed, truncated, duplicate or unknown row refused.
   `check-rs`'s fail-out rows and summary: messages per label, header and

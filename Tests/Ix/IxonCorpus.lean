@@ -12,8 +12,8 @@ Real-corpus gate for the Lean↔Rust Ixon sync (`ixon-corpus`, ignored).
 The generator-driven properties (`Tests.Ixon.suite`) cover the wire grammar
 compositionally; this suite covers whatever hand-written generators miss,
 because its input is the production Rust compiler's real output over the
-ENTIRE current Lean environment — including Pass 3 decompile records, extension
-tables, aux layouts, `original` metadata, and every §-section interaction.
+ENTIRE current Lean environment — every block kind, its metadata, and every
+§-section interaction.
 
 Gate:
 1. Rust-compile the whole `get_env!` to `.ixe` bytes.

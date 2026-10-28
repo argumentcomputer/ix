@@ -163,11 +163,10 @@ def testRustCheckEnv : TestSeq :=
 def focusConsts : Array Lean.Name := #[
   -- 2026-08-22: `.eq_def` proofs of mutual structural defs over a
   -- Type-level mutual inductive reference `X.brecOn.go` / `X.brecOn.eq`
-  -- directly; those heads need the same call-site motive permutation as
-  -- `X.brecOn` when the canonical class order differs from source order
-  -- (torchlean.ixe `NN.GraphSpec.DAG.*.eq_def` failure family). The twin
-  -- fixture blocks have opposite source orders, so pre-fix exactly one
-  -- family's eq_defs FAIL with AppTypeMismatch.
+  -- directly, so a compiler that reorders the block must permute those
+  -- call sites (torchlean.ixe `NN.GraphSpec.DAG.*.eq_def` failure family).
+  -- The two fixture blocks have opposite source orders, so any reordering
+  -- breaks one family's eq_defs with AppTypeMismatch.
   Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
     `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.Ar.wk.eq_def,
   Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
@@ -185,11 +184,10 @@ def focusConsts : Array Lean.Name := #[
 
   -- 2026-08-22: user proofs that apply a mutual `.rec` DIRECTLY with
   -- explicit motives (`induction … using X.rec (motive_N := …)`). The
-  -- motive/minor arguments follow Lean's source order, so when the
-  -- canonical class order differs the call site needs the
-  -- `call_site_plans` permutation (phiconfluence.ixe `parB_*`/`par_*`/
-  -- `nf_*` AppTypeMismatch failure family). Twin blocks have opposite
-  -- source orders, so pre-fix exactly one twin's theorems FAIL.
+  -- motive/minor arguments follow Lean's source order, so a compiler that
+  -- reorders the block must permute the call site (phiconfluence.ixe
+  -- `parB_*`/`par_*`/`nf_*` AppTypeMismatch failure family). The two blocks
+  -- have opposite source orders, so any reordering breaks one of them.
   -- PropRecMotives: mutual Prop-valued predicates (the `Par`/`ParB` shape).
   -- NestedMutualRecMotives: Type-valued nested mutual with an aux motive
   -- (the `Term`/`Binding` shape behind `nf_devel`/`nf_false_reducible`).

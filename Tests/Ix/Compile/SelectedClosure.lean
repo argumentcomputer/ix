@@ -43,7 +43,7 @@
   Ported from a9cf3607 `Tests/Ix/Compile/SelectedClosure.lean`:
   - The "ordinary and scoped collectors agree" checks are replaced by
     fixed-point and seed-order checks: there is one collector (R01-17).
-  - The `Twins.Cliques` loop waits for CQ2.13.
+  - The `Twins.Cliques` loop is dropped with the twins corpus.
   - The donor's `introducedSupport` (LC-15b) and Pass 3 harness are gone:
     the e2e runner compiles through the ordinary compiler
     (`ClosureHarness`).

@@ -220,14 +220,11 @@ public inductive Tree where
 
 end NestedSimple
 
--- Nested + alpha-collapse: TreeA ≅ TreeB (identical structure under renaming),
--- both nesting through List. Mutual references (fromB/fromA) ensure they form
--- a single SCC so sort_consts can collapse them.
--- Exercises:
---   1. Alpha-collapse merges {TreeA, TreeB} into one equivalence class
---   2. build_compile_flat_block detects List as a nested auxiliary
---   3. generate_canonical_recursors builds a recursor with auxiliary rules for List
---   4. TreeB's auxiliaries are aliased to TreeA's
+-- Nested, α-equivalent members: TreeA ≅ TreeB (identical structure under
+-- renaming), both nesting through List, in one SCC through fromB/fromA. The
+-- compiler keeps both members, in Lean's order, with Lean's auxiliaries; the
+-- kernel's flat block (`build_flat_block`) finds List as a nested auxiliary,
+-- and `generate_block_recursors` generates the recursor with its List rules.
 namespace NestedAlphaCollapse
 mutual
   public inductive TreeA where
@@ -619,13 +616,9 @@ end AuxOwnership
 -- a generated mutual-inductive family (IndPredBelow) — the HaskellSpec
 -- `dict`/`pat`/`type` shape. The mutual theorems by structural
 -- pattern-matching force Lean to generate `EvenP.below`/`OddP.below`
--- (plus `.below.casesOn`, defined via `.below.rec`), exercising:
--- (a) the below-rec block's class-order key — its storage order must
---     follow the below inductive block (canonicity §6.2), and
--- (b) the `.below.casesOn` regeneration against the canonical below-rec
---     (compile + decompile Phase 3b; Lean's authored wrapper applies
---     motives in Lean's member order and would be ill-typed against the
---     canonical rec).
+-- (plus `.below.casesOn`, defined via `.below.rec`). Lean's `.below.casesOn`
+-- applies motives in Lean's member order, so it type-checks only against a
+-- `.below.rec` stored in that order, which the compiler keeps.
 namespace BelowPredicate
 mutual
   public inductive EvenP : Nat → Prop where
@@ -651,8 +644,8 @@ public def evenpBelowPartial (n : Nat) :=
     (motive_2 := fun _ _ => True) n
 end BelowPredicate
 
--- Mirrored source order for the `.below` Tier-A fixture. Exactly one of
--- this block and `BelowPredicate` disagrees with canonical class order.
+-- Mirrored source order for the `.below` fixture: `BelowPredicate` with its
+-- members in the other order. Each block compiles in its own order.
 namespace BelowPredicate2
 mutual
   public inductive OddP2 : Nat → Prop where
@@ -680,15 +673,12 @@ end BelowPredicate2
 -- forced `.eq_def` equation lemmas (the TorchLean `NN.GraphSpec.DAG`
 -- `Term`/`Args` shape, torchlean.ixe check-rs failure of 2026-08-22).
 --
--- The mutual defs compile through `X.brecOn`, and when the canonical
--- (`sort_consts`) class order differs from Lean's source order the
--- regenerated `.brecOn`/`.brecOn.go`/`.brecOn.eq` carry canonical motive
--- and handler order. User references to `X.brecOn` are permuted by
--- `brec_on_call_site_plans` — but the auto-generated `.eq_def` proofs
--- reference `X.brecOn.go` and `X.brecOn.eq` DIRECTLY, and those heads
--- need the same call-site permutation. The block is declared twice with
--- opposite source orders so exactly one twin disagrees with the
--- canonical order regardless of content-hash values.
+-- The mutual defs compile through `X.brecOn`, and the auto-generated
+-- `.eq_def` proofs reference `X.brecOn.go` and `X.brecOn.eq` directly. A
+-- compiler that reorders the block must permute those call sites too; the
+-- block is declared twice, with opposite source orders, so that any
+-- reordering disagrees with one copy. The compiler keeps each copy in its
+-- own order.
 namespace TypeBrecOnEqDef
 
 -- Two ctors, deliberately NOT unit-like: with a 0-field single-ctor `Sh`,
@@ -854,12 +844,10 @@ end TypeBrecOnForwardDepOrder
 --
 -- `induction h using Pb.rec (motive_1 := fun _ _ _ => True)` elaborates to a
 -- DIRECT `Pb.rec` application whose motive/minor arguments follow Lean's
--- source order (`all = [Pa, Pb]`). When the canonical (`sort_consts`) class
--- order differs from source order, the regenerated `.rec` carries canonical
--- motive/minor order, so the user proof's call site needs the
--- `call_site_plans` permutation. The block is declared twice with opposite
--- source orders so exactly one twin disagrees with the canonical order
--- regardless of content-hash values.
+-- source order (`all = [Pa, Pb]`). A compiler that reorders the block must
+-- permute this call site too; the block is declared twice, with opposite
+-- source orders, so that any reordering disagrees with one copy. The
+-- compiler keeps Lean's `.rec`, in Lean's order.
 namespace PropRecMotives
 
 mutual

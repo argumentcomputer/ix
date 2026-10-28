@@ -183,7 +183,7 @@ def constantMetaTests : TestSeq :=
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let emptyArena : ExprMetaArena := {}
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
-  -- An arena with an mdata node over a reference (the shape of a Pass 3
+  -- An arena with an mdata node over a reference (the shape of a retired
   -- decompile record's metadata).
   let recordArena : ExprMetaArena := { nodes := #[
     .ref testAddr,
