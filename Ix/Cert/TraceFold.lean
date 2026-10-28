@@ -26,7 +26,10 @@ rest, in the forms the segment theorems take:
   names, and a name a member mentions with a member's ingress key is that member;
 * `singleton_compiled`, `lone_compiled`: a singleton group's constant compiles alone at its fold
   block, published at its record;
-* `definitions_occ_input`: a name a block of definitions applies is an input constant. -/
+* `definitions_occ_input`: a name a block of definitions applies is an input constant;
+* `definition_needs`, `block_compiled`: a definition compiles, alone or in a block of several,
+  with the hint the reader reads at its record the one quotient Source lowers it at
+  (`singleton_hint`, `projection_hint`). -/
 
 namespace Ix.Cert.TraceFold
 
@@ -880,6 +883,129 @@ theorem definition_needs (P : Premises env roots sub ixe failures t envQ)
 
 end Lone
 
+
+/-! ## Blocks of several definitions: each member's compile and hint -/
+
+section Blocks
+
+open Ix.LeanIngress (Group)
+open Ix.Cert.ClosureLayout (addrOf quotientGraph)
+
+variable {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
+  {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
+  {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
+
+/-- **A definition published at a projection record reads its hint there**: the reader reads it
+at the member the record projects, whose one stored projection record it is
+(`CtxAgree.hintsOf_projection_compileReport`), quotient Source reads the same `anonHints` entry
+(`CtxAgree.hints_agree`), and the compile report's hint check makes it present
+(`definitionsHinted`). -/
+theorem projection_hint (P : Premises env roots sub ixe failures t envQ) {n : Ix.Name} {ci : Ix.ConstantInfo}
+    (hst : (n, ci) ∈ sub.consts.toList) (hdef : Ix.LeanIngress.isDefinition ci = true)
+    {a : Address} {c : Ixon.Constant} {p : Ixon.DefinitionProj} (stored : recordAt ixe a = some c)
+    (hinfo : c.info = .dPrj p) (addr : addrOf ixe n = some a) :
+    ∃ h, hintsOf ixe (.member p.block p.idx.toNat) = some h ∧
+      (Ix.LeanIngress.fiberHintsMap ixe)[Ix.LeanIngress.ingressKey n]? = some h := by
+  obtain ⟨d, hmem, hget⟩ := SourceStoredNames.stored_published P hst
+  have hda : d.addr = a := by
+    unfold addrOf at addr
+    rw [hget] at addr
+    exact Option.some.inj addr
+  obtain ⟨lc, hlc, hlcc⟩ : ∃ lc, ixe.consts.get? a = some lc ∧ lc.get? = some c := by
+    unfold recordAt at stored
+    cases hla : ixe.consts.get? a with
+    | none => rw [hla] at stored; cases stored
+    | some lc => rw [hla] at stored; exact ⟨lc, rfl, stored⟩
+  have hin : (a, lc) ∈ ixe.consts.toList :=
+    Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr (by rw [← Std.HashMap.get?_eq_getElem?]; exact hlc)
+  have proj : CtxAgree.projEntry (a, lc) = some (.member p.block p.idx.toNat, a) := by
+    unfold CtxAgree.projEntry
+    simp only [hlcc, hinfo]
+  have hr : hintsOf ixe (.member p.block p.idx.toNat) = hintOf <$> ixe.anonHints.get? d.addr := by
+    rw [hda]
+    exact CtxAgree.hintsOf_projection_compileReport P.compiled hin proj
+  have hci := SourceStoredNames.stored_get (SourceStoredNames.stored_input P hst)
+  obtain ⟨h0, h0eq⟩ := Option.isSome_iff_exists.mp (definitionsHinted P.compiled n d ci hmem hci hdef)
+  refine ⟨hintOf h0, by rw [hr, h0eq]; rfl, ?_⟩
+  rw [CtxAgree.hints_agree P.agree hmem hr, hr, h0eq]
+  rfl
+
+/-- A definitions group's sources are closure definitions' under their own names. -/
+theorem defs_definitions (P : Premises env roots sub ixe failures t envQ) {ig : Nat}
+    {members : Array Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t hints sub).groups[ig]? = some (.definitions members)) :
+    ∀ j (hj : j < (TraceSegments.defsOf members).length), ∃ ci,
+      ((TraceSegments.defsOf members)[j].name, ci) ∈ sub.consts.toList ∧ Ix.LeanIngress.isDefinition ci = true := by
+  obtain ⟨_, _, -, hcomp⟩ := GroupBlocks.component_of_groups sub (blocksOf sub) _ (Array.mem_of_getElem? hgr) trivial
+  obtain ⟨-, defsM⟩ := GroupRuns.componentGroup_sorted hcomp
+  intro j hj
+  have hmem : (TraceSegments.defsOf members)[j] ∈ members.toList.filterMap EmissionDispatch.sourceData :=
+    List.getElem_mem hj
+  obtain ⟨ci, hci, hd⟩ := List.mem_filterMap.mp hmem
+  refine ⟨ci, ?_, defsM ci (Array.mem_toList_iff.mp hci)⟩
+  rw [GroupRuns.sourceData_name hd]
+  exact members_stored P hgr ci (Array.mem_toList_iff.mp hci)
+
+/-- **`BlockCompiled` for a block of several definitions**, at quotient Source's hints
+`(fiberHintsMap ixe)[·]?`: the fold's run of the block (`GroupRuns.definitions_run`), and each
+member's hint read at its projection record (`BlockPublication.member_published`,
+`projection_hint`), the closure context's hints being the artifact's (`hintsOf ixe`). -/
+theorem block_compiled (P : Premises env roots sub ixe failures t envQ)
+    (scheduled : ∀ x ∈ (Ix.LeanIngress.scheduleOf
+      (quotientGraph ixe t (fun k => (Ix.LeanIngress.fiberHintsMap ixe)[k]?) sub)).zipIdx.toList,
+      ∃ conv, x.1.2 = .ok conv)
+    (idx : ConstructorIndices env) {i : Nat} {members : Array Ix.ConstantInfo}
+    (hgr : (quotientGraph ixe t (fun k => (Ix.LeanIngress.fiberHintsMap ixe)[k]?) sub).groups[i]? =
+      some (.definitions members)) (two : 2 ≤ members.size)
+    {preA : Ix.Kernel.Reader.Prelude .anon} (order : List Address) :
+    ∃ cenv benv output after, TraceSegments.BlockCompiled ixe sub t preA order
+      (fun k => (Ix.LeanIngress.fiberHintsMap ixe)[k]?) (TraceSegments.defsOf members) cenv benv output after := by
+  obtain ⟨snap, rep, all, r, c, fb, mem, out, after, ran, ext, hrec⟩ := GroupRuns.definitions_run P scheduled hgr two
+  have two' : 2 ≤ (TraceSegments.defsOf members).length := by rw [defsOf_length hgr]; exact two
+  have ddefs := defs_definitions P hgr
+  have insub : ∀ j (hj : j < (TraceSegments.defsOf members).length),
+      (sub.consts.get? (TraceSegments.defsOf members)[j].name).isSome = true := fun j hj => by
+    obtain ⟨ci, hci, -⟩ := ddefs j hj
+    rw [SourceStoredNames.stored_get hci]
+    rfl
+  obtain ⟨count, rows⟩ := BlockPublication.member_published fb.ran fb.published two' ran hrec insub
+  have haddr : r.blockAddr = out.blockAddr := by
+    have h := hrec
+    simp only [BlockRecords.recordsOf, Prod.mk.injEq] at h
+    exact h.2.2.1
+  have hint : ∀ k (hk : k < (TraceSegments.defsOf members).length), ∃ h,
+      hintsOf ixe (.member out.blockAddr k) = some h ∧
+        (Ix.LeanIngress.fiberHintsMap ixe)[Ix.LeanIngress.ingressKey (TraceSegments.defsOf members)[k].name]? =
+          some h := by
+    intro k hk
+    obtain ⟨ci, hci, hdef⟩ := ddefs k hk
+    obtain ⟨ha, hr⟩ := rows k hk
+    have hkU : k.toUInt64.toNat = k := by
+      simp only [Nat.toUInt64_eq, UInt64.toNat_ofNat', Nat.mod_eq_of_lt (Nat.lt_trans hk count)]
+    have := projection_hint P hci hdef hr (p := ⟨k.toUInt64, r.blockAddr⟩) rfl ha
+    rw [hkU, haddr] at this
+    exact this
+  have hall : ∀ k, ∃ h : Ix.Kernel.ReducibilityHint, ∀ hk : k < (TraceSegments.defsOf members).length,
+      hintsOf ixe (.member out.blockAddr k) = some h ∧
+        (Ix.LeanIngress.fiberHintsMap ixe)[Ix.LeanIngress.ingressKey (TraceSegments.defsOf members)[k].name]? =
+          some h := by
+    intro k
+    by_cases hk : k < (TraceSegments.defsOf members).length
+    · obtain ⟨h, h₁, h₂⟩ := hint k hk
+      exact ⟨h, fun _ => ⟨h₁, h₂⟩⟩
+    · exact ⟨default, fun hk' => absurd hk' hk⟩
+  obtain ⟨H, hH⟩ := Classical.axiomOfChoice hall
+  exact ⟨snap.cenv, _, out, after,
+    { ran
+      fresh := fb.fresh_of (name := Ix.Def.name) mem
+      claimed := fb.claimed hrec
+      bound := fb.bound idx
+      blobs := fb.blobsKept ext
+      published := fb.mentionsPublished P fun _ hm => definitions_mentioned P hgr hm
+      hinted := ⟨H, fun k hk => hH k hk⟩ }⟩
+
+end Blocks
+
 end Ix.Cert.TraceFold
 
 /-- info: 'Ix.Cert.TraceFold.cacheRefs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -909,3 +1035,7 @@ end Ix.Cert.TraceFold
 /-- info: 'Ix.Cert.TraceFold.definition_needs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Ix.Cert.TraceFold.definition_needs
+
+/-- info: 'Ix.Cert.TraceFold.block_compiled' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Ix.Cert.TraceFold.block_compiled
