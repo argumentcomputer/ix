@@ -11,8 +11,7 @@ definition block takes (`BlockRefs.exactNames_of`):
 * `owned`: each member of a block of several definitions is published at its projection, which
   the block owns;
 * `apart`: members are published at distinct addresses;
-* `published`: a closure name the block's snapshot resolves outside the aux map is published
-  at that address;
+* `published`: a closure name the block's snapshot resolves is published at that address;
 * `sameKey`: two closure names with one ingress key are published alike (Source totality).
 
 The block's own facts come from `compileReport_owned_block`, packed as `Published`: the block's
@@ -34,8 +33,7 @@ structure Published (ixe : Ixon.Env) (sub : Ix.Environment) (k : Ix.Name) (r : B
 
 /-- **`stored`: the block's record decodes to the block.** -/
 theorem stored {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all : Ix.Set Ix.Name}
-    {k : Ix.Name} {r : BlockResult} {c : BlockState} {layout : Option Ixon.AuxLayout}
-    (hr : runBlock cenv all k = .ok (r, c, layout)) (pub : Published ixe sub k r) :
+    {k : Ix.Name} {r : BlockResult} {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r) :
     recordAt ixe r.blockAddr = some r.block := by
   have shape := BlockLayout.runBlock_shape hr
   have hb := pub.block
@@ -107,8 +105,7 @@ theorem row_claim {k : Ix.Name} {r : BlockResult} {name : Ix.Name} {proj : Ixon.
 /-- **A member of a claimed block of several definitions is published at its projection,
 whose record the artifact stores.** -/
 theorem member_published {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all : Ix.Set Ix.Name}
-    {k : Ix.Name} {r : BlockResult} {c : BlockState} {layout : Option Ixon.AuxLayout}
-    (hr : runBlock cenv all k = .ok (r, c, layout)) (pub : Published ixe sub k r)
+    {k : Ix.Name} {r : BlockResult} {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult} {defs : List Ix.Def}
     (two : 2 ≤ defs.length)
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
@@ -139,8 +136,7 @@ theorem member_published {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : Compile
 
 /-- **`owned`: each member is published at a record the block owns.** -/
 theorem owned {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all : Ix.Set Ix.Name}
-    {k : Ix.Name} {r : BlockResult} {c : BlockState} {layout : Option Ixon.AuxLayout}
-    (hr : runBlock cenv all k = .ok (r, c, layout)) (pub : Published ixe sub k r)
+    {k : Ix.Name} {r : BlockResult} {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult} {defs : List Ix.Def}
     (two : 2 ≤ defs.length)
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
@@ -155,8 +151,7 @@ theorem owned {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all :
 /-- **`apart`: members are published at distinct addresses**: one address holds one record, and
 the members' projections differ in their index. -/
 theorem apart {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all : Ix.Set Ix.Name}
-    {k : Ix.Name} {r : BlockResult} {c : BlockState} {layout : Option Ixon.AuxLayout}
-    (hr : runBlock cenv all k = .ok (r, c, layout)) (pub : Published ixe sub k r)
+    {k : Ix.Name} {r : BlockResult} {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r)
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult} {defs : List Ix.Def}
     (two : 2 ≤ defs.length)
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
@@ -182,21 +177,19 @@ theorem apart {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all :
   simp only [Nat.toUInt64_eq, UInt64.toNat_ofNat', Nat.mod_eq_of_lt hj', Nat.mod_eq_of_lt hi'] at this
   exact this
 
-/-- **`published`: a closure name a state of the run resolves outside the aux map is published
-there**, from `compileReport_owned_block`'s resolution conjunct, at the block's snapshot with
+/-- **`published`: a closure name a state of the run resolves is published there**, from `compileReport_owned_block`'s resolution conjunct, at the block's snapshot with
 the empty block bindings. -/
 theorem published {ixe : Ixon.Env} {sub : Ix.Environment} {acc : DriverAcc}
     (resolved : ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true →
       acc.cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a)
     {bindings : ExpressionState.Bindings} (n : Ix.Name) (a : Address) (hs : (sub.consts.get? n).isSome = true)
-    (local₁ : bindings.1.get? n = none) (local₂ : bindings.2.get? n = none)
-    (unaliased : acc.cenv.auxNameToAddr.get? n = none)
+    (hlocal : bindings.get? n = none)
     (h : ExpressionState.lookupBinding acc.cenv bindings n = some a) : addrOf ixe n = some a := by
   cases hn : acc.cenv.nameToAddr.get? n with
   | none =>
-    simp [ExpressionState.lookupBinding, local₁, local₂, hn, unaliased] at h
+    simp [ExpressionState.lookupBinding, hlocal, hn] at h
   | some a' =>
-    simp only [ExpressionState.lookupBinding, local₁, hn, Option.orElse_none, Option.orElse_some] at h
+    simp only [ExpressionState.lookupBinding, hlocal, hn, Option.orElse_none] at h
     obtain rfl : a' = a := by simpa using h
     exact resolved n a' hs hn
 
@@ -226,12 +219,10 @@ theorem exactNames_of_published (context : CompileEnv × BlockEnv) (free : conte
     (distinct : Canon.KeysDistinct (defs.map MutConst.defn))
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before =
       (.ok output, after))
-    (unresolved : ∀ d ∈ defs, bindings.1.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
-    (unaliased : ∀ d ∈ defs, bindings.2.get? d.name = none ∧ context.1.auxNameToAddr.get? d.name = none)
+    (unresolved : ∀ d ∈ defs, bindings.get? d.name = none ∧ context.1.nameToAddr.get? d.name = none)
     {ixe : Ixon.Env} (acyclic : referenceCycle ixe = none)
     {sub : Ix.Environment} {cenv : CompileEnv} {all : Ix.Set Ix.Name} {k : Ix.Name} {r : BlockResult}
-    {c : BlockState} {layout : Option Ixon.AuxLayout}
-    (hr : runBlock cenv all k = .ok (r, c, layout)) (pub : Published ixe sub k r)
+    {c : BlockState} (hr : runBlock cenv all k = .ok (r, c)) (pub : Published ixe sub k r)
     (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (insub : ∀ j (hj : j < defs.length), (sub.consts.get? defs[j].name).isSome = true)
     (published : ∀ n a, ExpressionState.lookupBinding context.1 bindings n = some a → addrOf ixe n = some a)
@@ -244,7 +235,7 @@ theorem exactNames_of_published (context : CompileEnv × BlockEnv) (free : conte
   have hblock : r.block = output.block := by
     simp only [BlockRecords.recordsOf, Prod.mk.injEq] at hrec
     exact hrec.1
-  exact BlockRefs.exactNames_of context free clean two distinct ran unresolved unaliased acyclic
+  exact BlockRefs.exactNames_of context free clean two distinct ran unresolved acyclic
     (hblock ▸ stored hr pub) (owned hr pub two ran hrec insub) (apart hr pub two ran hrec insub) published
     sameKey
 
