@@ -199,6 +199,62 @@ def leanCompile (env : Environment) (closure : List (Name × ConstantInfo)) (wor
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")
 
+/-- A block fails after interning a literal and metadata. Partial output must
+equal compilation of the successful subset, while complete output must leave
+the destination untouched. This exercises the production file-writing FFI. -/
+private def partialOutputCheck (env : Environment) : IO Unit := do
+  let owner := `PartialPublication.owner
+  let bad := `PartialPublication.badProjection
+  let dependent := `PartialPublication.dependent
+  let typ := Expr.sort (.succ .zero)
+  let ownerInfo : ConstantInfo := .axiomInfo
+    { name := owner, levelParams := [], type := typ, isUnsafe := false }
+  let mkDef (name : Name) (value : Expr) : ConstantInfo := .defnInfo
+    { name, levelParams := [], type := typ, value, hints := .opaque,
+      safety := .safe, all := [name] }
+  let success := [(owner, ownerInfo)]
+  let input := success ++ [
+    (bad, mkDef bad (.proj owner (2^64) (.lit (.strVal "failed-block-literal")))),
+    (dependent, mkDef dependent (.const bad []))]
+  let success ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env success)
+  let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env input)
+  let dir ← IO.FS.createTempDir
+  try
+    for anonymous in [false, true] do
+      let compile := if anonymous then Ix.CompileM.rsCompileEnvBytesAnonFFI
+        else Ix.CompileM.rsCompileEnvBytesFFI
+      let expectedPath := dir / "expected.ixe"
+      let partialPath := dir / "partial.ixe"
+      let closedPath := dir / "complete.ixe"
+      let expected ← compile success expectedPath.toString false
+      let partialStatus ← compile prepared partialPath.toString true
+      let expectedBytes ← IO.FS.readBinFile expectedPath
+      let partialBytes ← IO.FS.readBinFile partialPath
+      unless expected.ungrounded.isEmpty && partialStatus.ungrounded.size == 2 &&
+          partialStatus.ungrounded.any (·.1 == bad.toString) &&
+          partialStatus.ungrounded.any (·.1 == dependent.toString) do
+        throw (IO.userError s!"partial output has wrong refusals: {partialStatus.ungrounded}")
+      unless partialBytes == expectedBytes && partialStatus.root == expected.root &&
+          partialStatus.named == expected.named && partialStatus.uniqueAnon == expected.uniqueAnon &&
+          partialStatus.bytes == expected.bytes && partialStatus.bytes > 0 do
+        throw (IO.userError s!"failed block changed partial output (anonymous={anonymous})")
+      let closed ← compile prepared closedPath.toString false
+      unless closed.bytes == 0 && !(← closedPath.pathExists) &&
+          closed.ungrounded == partialStatus.ungrounded && closed.root == expected.root do
+        throw (IO.userError "complete output wrote a file or changed failure accounting")
+      IO.FS.writeBinFile closedPath expectedBytes
+      let closedAgain ← compile prepared closedPath.toString false
+      unless closedAgain.bytes == 0 && (← IO.FS.readBinFile closedPath) == expectedBytes do
+        throw (IO.userError "complete output replaced an existing destination")
+      IO.FS.removeFile closedPath
+      unless anonymous do
+        let lean ← leanCompile env input 2
+        let leanBytes ← IO.ofExcept (Ixon.serEnv lean.env)
+        unless lean.cenv.ungrounded.size == 2 && leanBytes == partialBytes do
+          throw (IO.userError "Rust and Lean partial output differ")
+    IO.println "[claim-conflict] partial output: named/anonymous bytes, refusals, and fail-closed files PASS"
+  finally IO.FS.removeDirAll dir
+
 def run : IO UInt32 := do
   let mut failures := 0
   match ownerNamedCheck with
@@ -223,6 +279,7 @@ got {actual.getD "accepted"}"
       IO.println s!"[claim-conflict] readiness: {label}: FAIL"
   -- Part 2
   let env ← get_env!
+  partialOutputCheck env
   let closure ← IO.ofExcept (conflictClosure env)
   IO.println s!"[claim-conflict] constructed closure: {closure.length} constants"
   -- Rust (the `ix compile` FFI), partial output allowed so the status
