@@ -16,7 +16,7 @@ what Plan A would be optimizing, so it should run first.
 
 Source references pin ix `faba9bdd4445295f08dfbcf773ada80afe3f0c35` and its
 working-tree wrapper status in
-[`bls-plonk-wrapper-status.md`](bls-plonk-wrapper-status.md), multi-stark
+[`plonk-wrapper-status.md`](plonk-wrapper-status.md), multi-stark
 `sb/kzg-core`, and ZisK pil2-proofman PR 610 at
 `971579d5ea1b5ec3f7b1233aac3342d90686b844`.
 
@@ -33,7 +33,7 @@ working-tree wrapper status in
 
 KZG stage timings are the one-GPU warm runs recorded in multi-stark
 `docs/kzg-merge-plan.md`. PLONK timings are the separate native CPU measurements
-in the [wrapper status](bls-plonk-wrapper-status.md). The partition rule is
+in the [wrapper status](plonk-wrapper-status.md). The partition rule is
 [`MIN_PARTITIONS = 11`](../crates/proof-compression/src/pipeline/first.rs)
 with heights checked in
 [`wrap/saved.rs`](../crates/proof-compression/src/pipeline/wrap/saved.rs).
@@ -322,7 +322,7 @@ subsequent classic-GLV circuit has 14,689,440 constraints plus two public rows,
 fitting `2^24` with 2,087,774 rows of headroom. That smaller circuit now proves
 and verifies the full Init packet: 53.79 seconds core proving, 73.70 seconds
 for the fresh prover process and 25.19 GiB peak RSS. See the
-[full benchmark and BLS comparison](bls-plonk-wrapper-status.md#bn254-224-full-init-proof-benchmark).
+[full benchmark and BLS comparison](plonk-wrapper-status.md#bn254-224-full-init-proof-benchmark).
 The shared exporter, curve-specific helper selection, SRS/cache formats and
 pinned-admission verifier catalog are implemented. SP1's complete `2^25`
 Lagrange basis passed validation against our admitted monomial powers and was

@@ -44,8 +44,8 @@ jobs:
           use-github-cache: "false"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/bls-plonk-wrapper/go.mod
-          cache-dependency-path: tools/bls-plonk-wrapper/go.sum
+          go-version-file: tools/plonk-wrapper/go.mod
+          cache-dependency-path: tools/plonk-wrapper/go.sum
       # lean-action runs `lake build`, then `lake test`, then `lake lint`.
       # The build-all lint driver compiles every lib/exe target with --wfail,
       # so a warning in any target (exes, benchmarks, Apps) — not just the
@@ -76,12 +76,8 @@ jobs:
       - name: Test Ix CLI
         if: github.event_name != 'push'
         run: lake test --wfail -- cli
-      # The default build is BN254; the bundled verifying keys and packets
-      # are BLS12-381, so the CLI's bundled-proof checks run in a BLS build.
-      - name: Test the BLS12-381 compression CLI
+      - name: Test the compression CLI
         if: github.event_name != 'push'
-        env:
-          IX_KZG_CURVE: bls12-381
         run: |
           lake build ix compression-cli-tests
           lake exe compression-cli-tests
@@ -99,16 +95,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/bls-plonk-wrapper/go.mod
-          cache-dependency-path: tools/bls-plonk-wrapper/go.sum
+          go-version-file: tools/plonk-wrapper/go.mod
+          cache-dependency-path: tools/plonk-wrapper/go.sum
       - name: Test the BN254 CPU wrapper
-        working-directory: tools/bls-plonk-wrapper
+        working-directory: tools/plonk-wrapper
         run: go test ./...
-      - name: Test the BLS12-381 CPU wrapper and authenticated Filecoin adapter
-        working-directory: tools/bls-plonk-wrapper
-        run: go test -tags bls12381 ./...
       - name: Check Go formatting
-        working-directory: tools/bls-plonk-wrapper
+        working-directory: tools/plonk-wrapper
         run: test -z "$(gofmt -l .)"
 
   rust-test:
@@ -152,10 +145,6 @@ jobs:
         run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile
       - name: Tests
         run: cargo nextest run --release --profile ci --workspace ${{ github.event_name == 'push' && '--no-run' || '' }}
-      - name: Check BLS12-381 KZG
-        run: cargo clippy --release --locked -p ix-proof-compression --no-default-features --features bls12-381,parallel,solidity,plonk --all-targets -- -D warnings
-      - name: Test BLS12-381 KZG
-        run: cargo nextest run --release --locked --profile ci -p ix-proof-compression --no-default-features --features bls12-381,parallel,solidity,plonk ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version
         if: github.event_name != 'push'
         run: |
@@ -204,8 +193,8 @@ jobs:
           cache-key: cuda-13.3.1-ubuntu26
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/bls-plonk-wrapper/go.mod
-          cache-dependency-path: tools/bls-plonk-wrapper/go.sum
+          go-version-file: tools/plonk-wrapper/go.mod
+          cache-dependency-path: tools/plonk-wrapper/go.sum
       # S3 caching keeps the container independent of host bind mounts.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -219,7 +208,6 @@ jobs:
       - name: Compile CUDA Rust targets
         run: |
           cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda
-          cargo check --release --locked -p ix-proof-compression --all-targets --no-default-features --features bls12-381,parallel,solidity,plonk,cuda
       - name: Check CPU runtime linkage without a CUDA compiler
         run: IX_CUDA=0 IX_CUDA_TRACE_CODEGEN=0 NVCC=/nonexistent/nvcc lake build ix_cuda_runtime
       - name: Link CUDA-enabled Lean executables
@@ -233,9 +221,9 @@ jobs:
           set -o pipefail
           cc -std=gnu17 -Wall -Wextra -Werror -shared -fPIC tests/cuda_link_smoke.c -ldl \
             -o .lake/build/lib/cuda_link_smoke.so
-          CUDA_VISIBLE_DEVICES= LD_PRELOAD="$PWD/.lake/build/lib/cuda_link_smoke.so" \
+          CUDA_VISIBLE_DEVICES='' LD_PRELOAD="$PWD/.lake/build/lib/cuda_link_smoke.so" \
             .lake/build/bin/ix compress --help
-          CUDA_VISIBLE_DEVICES= .lake/build/bin/ix-compression-worker fri capabilities | \
+          CUDA_VISIBLE_DEVICES='' .lake/build/bin/ix-compression-worker fri capabilities | \
             python3 -c 'import json, sys; assert json.load(sys.stdin)["cuda"] is True'
 
   lints:

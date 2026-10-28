@@ -10,4 +10,4 @@ hardfork = "osaka"
 optimizer = true
 optimizer_runs = 200
 via_ir = true
-fs_permissions = [{ access = "read", path = "./generated" }]
+fs_permissions = [{ access = "read", path = "./bn254/testdata" }]

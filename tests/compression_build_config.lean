@@ -11,7 +11,7 @@ def main : IO Unit := do
     ("test", Lean.toJson test),
     ("worker", Lean.toJson (compressionWorkerArgs features)),
     ("terminal_plonk", Lean.toJson ((← compressionFeatures).contains "plonk")),
-    ("plonk_helper", Lean.toJson (compressionHelperName features)),
-    ("plonk_cuda", Lean.toJson (← compressionHelperCuda features)),
-    ("plonk_build", Lean.toJson (compressionHelperArgs features "helper-output"))
+    ("plonk_helper", Lean.toJson (compressionHelperName)),
+    ("plonk_cuda", Lean.toJson (← compressionHelperCuda)),
+    ("plonk_build", Lean.toJson (compressionHelperArgs "helper-output"))
   ]).compress

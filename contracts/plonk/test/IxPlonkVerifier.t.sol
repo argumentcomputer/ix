@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {IxPlonkVerifier, IPlonkVerifier} from "../src/IxPlonkVerifier.sol";
-import {PlonkVerifier} from "../generated/PlonkVerifier.sol";
+import {PlonkVerifier} from "../bn254/src/PlonkVerifier.sol";
 
 interface Vm {
     function projectRoot() external view returns (string memory);
@@ -20,14 +20,14 @@ contract IxPlonkVerifierTest {
     event log_named_uint(string key, uint256 value);
 
     function setUp() public {
-        string memory fixture = vm.readFile(string.concat(vm.projectRoot(), "/generated/proof.json"));
+        string memory fixture = vm.readFile(string.concat(vm.projectRoot(), "/bn254/testdata/init.json"));
         proof = vm.parseJsonBytes(fixture, ".proof");
-        digest = vm.parseJsonBytes32(fixture, ".digest");
+        digest = vm.parseJsonBytes32(fixture, ".claimDigest");
         plonk = new PlonkVerifier();
         adapter = new IxPlonkVerifier(IPlonkVerifier(address(plonk)));
     }
 
-    function testValidFilecoinBackendProof() public {
+    function testValidInitProof() public {
         bytes memory bytes_ = proof;
         uint256 start = gasleft();
         require(adapter.verify{gas: 2_000_000}(bytes_, digest), "valid proof rejected");

@@ -218,7 +218,7 @@ impl FqGadget {
   /// coefficient has magnitude below A=4*L*B^2+3*B+4. Pairing coefficients
   /// bounds an integer equality by (B+1)*A+(B^2+1)*2^88 < Fr, so a zero
   /// field equation is also an integer equality. The integer-bound test
-  /// checks these inequalities against the selected curve's exact moduli.
+  /// checks these inequalities against BN254's exact moduli.
   pub fn relation(
     &self,
     b: &mut Builder,

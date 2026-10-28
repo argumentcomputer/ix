@@ -38,15 +38,9 @@ pub(super) fn fq(value: Fq) -> Vec<u8> {
 
 pub(super) fn g1(point: G1Affine) -> Vec<u8> {
   if point.is_zero() {
-    return vec![0; if cfg!(feature = "bn254") { 64 } else { 128 }];
+    return vec![0; 64];
   }
-  [
-    vec![0; if cfg!(feature = "bn254") { 0 } else { 16 }],
-    fq(point.x),
-    vec![0; if cfg!(feature = "bn254") { 0 } else { 16 }],
-    fq(point.y),
-  ]
-  .concat()
+  [fq(point.x), fq(point.y)].concat()
 }
 
 pub(super) fn proof_points(proof: &Proof<KzgConfig>) -> Vec<G1Affine> {
@@ -133,10 +127,6 @@ pub(super) enum GraphInstruction {
 
 pub(super) struct GraphProgram {
   pub(super) instructions: Vec<GraphInstruction>,
-  #[cfg(feature = "solidity")]
-  pub(super) uses_proof: bool,
-  #[cfg(feature = "solidity")]
-  pub(super) uses_view: bool,
 }
 
 impl GraphProgram {
@@ -152,13 +142,8 @@ impl GraphProgram {
         return Err("invalid Solidity graph opening window".into());
       }
     }
-    let mut program = Self {
-      instructions: Vec::with_capacity(graph.nodes.len()),
-      #[cfg(feature = "solidity")]
-      uses_proof: false,
-      #[cfg(feature = "solidity")]
-      uses_view: false,
-    };
+    let mut program =
+      Self { instructions: Vec::with_capacity(graph.nodes.len()) };
     for (index, node) in graph.nodes.iter().enumerate() {
       let child = |id: multi_stark::graph::NodeId| -> Result<usize> {
         let child = id.index();
@@ -180,10 +165,6 @@ impl GraphProgram {
             .checked_mul(matrix.width)
             .and_then(|base| base.checked_add(column))
             .ok_or("graph opening offset overflow")?;
-          #[cfg(feature = "solidity")]
-          {
-            program.uses_proof = true;
-          }
           GraphInstruction::Opening { matrix: matrix.index, offset }
         },
         Node::Public(index) => {
@@ -191,33 +172,11 @@ impl GraphProgram {
           if index >= inputs.public_count {
             return Err("graph public index out of range".into());
           }
-          #[cfg(feature = "solidity")]
-          {
-            program.uses_view = true;
-          }
           GraphInstruction::Public(index)
         },
-        Node::IsFirstRow => {
-          #[cfg(feature = "solidity")]
-          {
-            program.uses_view = true;
-          }
-          GraphInstruction::First
-        },
-        Node::IsLastRow => {
-          #[cfg(feature = "solidity")]
-          {
-            program.uses_view = true;
-          }
-          GraphInstruction::Last
-        },
-        Node::IsTransition => {
-          #[cfg(feature = "solidity")]
-          {
-            program.uses_view = true;
-          }
-          GraphInstruction::Transition
-        },
+        Node::IsFirstRow => GraphInstruction::First,
+        Node::IsLastRow => GraphInstruction::Last,
+        Node::IsTransition => GraphInstruction::Transition,
         Node::Add(a, b) => GraphInstruction::Add(child(a)?, child(b)?),
         Node::Sub(a, b) => GraphInstruction::Sub(child(a)?, child(b)?),
         Node::Mul(a, b) => GraphInstruction::Mul(child(a)?, child(b)?),
@@ -262,52 +221,6 @@ impl GraphProgram {
       });
     }
     values
-  }
-
-  #[cfg(feature = "solidity")]
-  pub(super) fn write_function(
-    &self,
-    out: &mut String,
-    circuit: usize,
-  ) -> Result<()> {
-    let proof = if self.uses_proof { " proof" } else { "" };
-    let view = if self.uses_view { " view_" } else { "" };
-    writeln!(
-      out,
-      "\n    function _evaluateCircuit{circuit}(Proof memory{proof}, EvaluationView memory{view})\n        private pure returns (uint256[] memory values) {{"
-    )?;
-    writeln!(
-      out,
-      "        values = new uint256[]({});",
-      self.instructions.len()
-    )?;
-    for (index, instruction) in self.instructions.iter().enumerate() {
-      let expression = match *instruction {
-        GraphInstruction::Constant(value) => scalar(value),
-        GraphInstruction::Opening { matrix, offset } => {
-          let extra =
-            if offset == 0 { String::new() } else { format!(" + {offset}") };
-          format!("proof.values[proof.matrices[{matrix}].valueOffset{extra}]")
-        },
-        GraphInstruction::Public(index) => format!("view_.publics[{index}]"),
-        GraphInstruction::First => "view_.first".into(),
-        GraphInstruction::Last => "view_.last".into(),
-        GraphInstruction::Transition => "view_.transition".into(),
-        GraphInstruction::Add(a, b) => {
-          format!("addmod(values[{a}], values[{b}], R)")
-        },
-        GraphInstruction::Sub(a, b) => {
-          format!("Scalar.sub(values[{a}], values[{b}])")
-        },
-        GraphInstruction::Mul(a, b) => {
-          format!("mulmod(values[{a}], values[{b}], R)")
-        },
-        GraphInstruction::Neg(a) => format!("Scalar.negate(values[{a}])"),
-      };
-      writeln!(out, "        values[{index}] = {expression};")?;
-    }
-    out.push_str("    }\n");
-    Ok(())
   }
 }
 

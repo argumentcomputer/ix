@@ -2,17 +2,12 @@
 //! portable verifier its packets are checked with.
 #[cfg(feature = "plonk")]
 mod plonk_export;
-#[cfg(any(feature = "plonk", feature = "solidity"))]
+#[cfg(feature = "plonk")]
 mod relation;
-#[cfg(all(feature = "solidity", not(feature = "bn254")))]
-mod solidity;
 #[cfg(feature = "plonk")]
 pub(in crate::pipeline) use plonk_export::{
   export as plonk_export, export_first as plonk_export_first,
-  fixture as plonk_fixture,
 };
-#[cfg(all(feature = "solidity", not(feature = "bn254")))]
-pub use solidity::{export_solidity_verifier, write_solidity_fixture};
 
 use super::super::stages::{
   construct::{self, Lowered},
@@ -42,13 +37,7 @@ use multi_stark::{
 };
 use std::{fs, path::Path};
 
-#[cfg(not(feature = "bn254"))]
-pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-v1";
-#[cfg(feature = "bn254")]
 pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-bn254-v1";
-#[cfg(not(feature = "bn254"))]
-const OUTER_VK_VERSION: u32 = 6;
-#[cfg(feature = "bn254")]
 const OUTER_VK_VERSION: u32 = 7;
 const PAIRING_BYTES: usize = 2 * G1_COMPRESSED_BYTES;
 const RECURSIVE_PUBLIC_VALUES: usize = statement::WORDS + PUBLIC_VALUES;
@@ -128,7 +117,6 @@ impl Frontend {
       .setup
       .for_stage(OUTER_SEED, height)?
       .with_transcript(TranscriptKind::Blake3);
-    #[cfg(feature = "bn254")]
     if let Some(admission) = setup.ignition_admission()
       && decode_pairing_keys(&self.pairings)? != admission.pairing_keys()
     {
@@ -219,7 +207,7 @@ fn packet_body<'a>(
   Ok(&packet[offset..])
 }
 
-#[cfg(any(test, feature = "plonk", feature = "solidity"))]
+#[cfg(any(test, feature = "plonk"))]
 fn packet_claims(
   packet: &[u8],
   vk: &[u8; 32],
@@ -424,17 +412,6 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
 }
 
 impl VerifyingKey {
-  #[cfg(all(not(feature = "bn254"), any(test, feature = "plonk")))]
-  pub(crate) fn reencode_blake3(
-    bytes: &[u8],
-  ) -> PipelineResult<(Vec<u8>, [u8; 32])> {
-    let mut vk = Self::from_bytes(bytes)?;
-    vk.version = OUTER_VK_VERSION;
-    vk.prepare()?;
-    let id = vk.id();
-    Ok((bincode::serde::encode_to_vec(vk, bincode::config::standard())?, id))
-  }
-
   pub(crate) fn from_bytes(bytes: &[u8]) -> PipelineResult<Self> {
     let vk: Self = decode(bytes)?;
     vk.prepare()?;
@@ -445,9 +422,6 @@ impl VerifyingKey {
     let mut hash = blake3::Hasher::new();
     // The label predates the verifying-key naming and is part of every
     // published id; changing it would re-key every bundled verifying key.
-    #[cfg(not(feature = "bn254"))]
-    let namespace = "init-kzg-recursive-profile";
-    #[cfg(feature = "bn254")]
     let namespace = "init-kzg-recursive-bn254-profile";
     hash.update(format!("{namespace}/v{}", self.version).as_bytes());
     hash.update(OUTER_SEED);
@@ -471,13 +445,12 @@ impl VerifyingKey {
     Ok(crate::kzg::VerifierParams::from_bytes(&self.parameters)?)
   }
 
-  /// Filecoin classification covers both the outer proof and the deferred
+  /// Setup classification covers both the outer proof and the deferred
   /// inner opening equation. Development stages may use different seeds.
   pub(crate) fn check_setup_class(
     &self,
     expected: SetupClass,
   ) -> PipelineResult<()> {
-    #[cfg(feature = "bn254")]
     if expected == SetupClass::Ignition {
       return Err(
         "Ignition verification requires an explicit trusted admission".into(),
@@ -487,18 +460,10 @@ impl VerifyingKey {
     if SetupClass::of(&parameters) != expected {
       return Err("bundled verifier setup class differs".into());
     }
-    if expected == SetupClass::Filecoin
-      && self.keys()? != [parameters.g2, parameters.tau_g2]
-    {
-      return Err(
-        "Filecoin verifier has different inner pairing anchors".into(),
-      );
-    }
     Ok(())
   }
 
   /// Admit both opening equations against independently pinned ceremony data.
-  #[cfg(feature = "bn254")]
   pub(crate) fn check_ignition_admission(
     &self,
     admission: &crate::kzg::srs::ignition::IgnitionAdmission,
@@ -515,9 +480,6 @@ impl VerifyingKey {
   fn system(&self) -> storage::Result<multi_stark::system::System<KzgConfig>> {
     use crate::kzg::VerifierParams;
     use multi_stark::system::{Circuit, System};
-    #[cfg(not(feature = "bn254"))]
-    let supported = matches!(self.version, 5 | OUTER_VK_VERSION);
-    #[cfg(feature = "bn254")]
     let supported = self.version == OUTER_VK_VERSION;
     if !supported {
       return Err("unsupported recursive verifying key".into());
@@ -553,13 +515,8 @@ impl VerifyingKey {
       fixed.0.append(&mut commit.0);
     }
     Ok(System {
-      config: KzgConfig::verifier_only(params, 2).with_transcript(
-        if self.version == 5 {
-          TranscriptKind::Keccak256
-        } else {
-          TranscriptKind::Blake3
-        },
-      ),
+      config: KzgConfig::verifier_only(params, 2)
+        .with_transcript(TranscriptKind::Blake3),
       circuits,
       preprocessed_commit: Some(fixed),
       preprocessed_indices: vec![Some(0), Some(1)],
@@ -643,68 +600,6 @@ mod tests {
   };
   use std::sync::Arc;
 
-  #[cfg(not(feature = "bn254"))]
-  #[test]
-  fn bundled_and_public_recursive_verifiers_share_transport_validation()
-  -> storage::Result<()> {
-    let wire = VerifyingKey::from_bytes(include_bytes!(
-      "../../../verifying-keys/aggregate-filecoin-v5.bin"
-    ))?;
-    let prepared = wire.prepare()?;
-    let public = super::super::super::stages::RecursiveVerifier::from_bytes(
-      &prepared.verifier.to_bytes()?,
-    )?;
-    let packet = include_bytes!(
-      "../../../tests/fixtures/aggregate-kzg/filecoin-v5-packet.bin"
-    );
-    let words = init_claim::INIT_PUBLIC_WORDS;
-    let expected = words.map(Scalar::from_u64);
-    prepared.verify(packet, &words)?;
-    public.verify_scalar_bytes(&packet[32 + 18 * 8..], &expected)?;
-    let mut wrong = expected;
-    wrong[0] += Scalar::ONE;
-    assert!(
-      public.verify_scalar_bytes(&packet[32 + 18 * 8..], &wrong).is_err()
-    );
-    let mut corrupt = packet.to_vec();
-    let last = corrupt.len() - 1;
-    corrupt[last] ^= 1;
-    assert!(prepared.verify(&corrupt, &words).is_err());
-    assert!(
-      public.verify_scalar_bytes(&corrupt[32 + 18 * 8..], &expected).is_err()
-    );
-    assert!(
-      public
-        .verify_scalar_bytes(&packet[32 + 18 * 8..packet.len() - 1], &expected)
-        .is_err()
-    );
-    Ok(())
-  }
-
-  #[cfg(not(feature = "bn254"))]
-  #[test]
-  fn filecoin_bundle_requires_filecoin_inner_pairing_anchors() {
-    use ark_serialize::CanonicalSerialize;
-    let mut vk = VerifyingKey::from_bytes(include_bytes!(
-      "../../../verifying-keys/aggregate-filecoin-v5.bin"
-    ))
-    .unwrap();
-    vk.check_setup_class(SetupClass::Filecoin).unwrap();
-    assert!(vk.check_setup_class(SetupClass::Development).is_err());
-    let development = Srs::unsafe_dev_setup(2, b"mixed-pairing-setup");
-    let mut keys = Vec::new();
-    vec![development.g2, development.tau_g2]
-      .serialize_compressed(&mut keys)
-      .unwrap();
-    vk.pairings = bincode::serde::encode_to_vec(
-      Pairings { keys },
-      bincode::config::standard(),
-    )
-    .unwrap();
-    assert!(vk.check_setup_class(SetupClass::Filecoin).is_err());
-  }
-
-  #[cfg(feature = "bn254")]
   fn ignition_vk_fixture() -> storage::Result<(
     crate::kzg::srs::ignition::IgnitionAdmission,
     VerifyingKey,
@@ -772,7 +667,6 @@ mod tests {
     Ok((admission, vk, packet))
   }
 
-  #[cfg(feature = "bn254")]
   #[test]
   #[cfg(feature = "plonk")]
   fn plonk_recursive_export_includes_anchor_and_deferred_publics()
@@ -809,7 +703,6 @@ mod tests {
     Ok(())
   }
 
-  #[cfg(feature = "bn254")]
   #[test]
   fn ignition_staging_rejects_other_inner_keys_before_creating_files()
   -> storage::Result<()> {
@@ -857,7 +750,6 @@ mod tests {
     Ok(())
   }
 
-  #[cfg(feature = "bn254")]
   #[test]
   fn ignition_admission_authenticates_both_openings_without_a_cache()
   -> storage::Result<()> {
@@ -867,9 +759,7 @@ mod tests {
       srs::ignition::{IgnitionAdmission, test_admission},
     };
     let (admission, vk, packet) = ignition_vk_fixture()?;
-    let claim = include_bytes!(
-      "../../../tests/fixtures/aggregate-kzg/filecoin-claim.bin"
-    );
+    let claim = include_bytes!("../../../tests/fixtures/init-fri/claim.bin");
     let expected = init_claim::INIT_PUBLIC_WORDS;
     let portable =
       bincode::serde::encode_to_vec(&vk, bincode::config::standard())?;
@@ -1183,9 +1073,7 @@ mod tests {
     assert!(staged_publics(&bad, keys.len()).is_err());
     assert!(staged_publics(&claims[..claims.len() - 1], keys.len()).is_err());
     let portable = fs::read(first.join("vk.bin"))?;
-    let claim = include_bytes!(
-      "../../../tests/fixtures/aggregate-kzg/filecoin-claim.bin"
-    );
+    let claim = include_bytes!("../../../tests/fixtures/init-fri/claim.bin");
     let trusted = *blake3::hash(&portable).as_bytes();
     let verify_local = |claim: &[u8], expected, trusted: &[u8; 32], allow| {
       super::super::super::verifier::verify_with_vk(
@@ -1217,9 +1105,6 @@ mod tests {
     assert_eq!(vk.version, OUTER_VK_VERSION);
     assert_eq!(vk.system()?.config.transcript_kind(), TranscriptKind::Blake3);
 
-    #[cfg(not(feature = "bn254"))]
-    let unsupported_versions = [0, 4, 7];
-    #[cfg(feature = "bn254")]
     let unsupported_versions = [0, 5, 6];
     for version in unsupported_versions {
       let mut unsupported: VerifyingKey = decode(&portable)?;
@@ -1237,7 +1122,6 @@ mod tests {
     let mut wrong_range: VerifyingKey = decode(&portable)?;
     wrong_range.heights[0] *= 2;
     assert!(wrong_range.system().is_err());
-    #[cfg(feature = "bn254")]
     {
       let max_domain = 1usize << Scalar::TWO_ADICITY;
       let anchors =

@@ -62,7 +62,6 @@ fn publish(
   let vk_path = out.join("final-kzg/vk.bin");
   let vk = fs::read(&vk_path)?;
   let vk_digest = *blake3::hash(&vk).as_bytes();
-  #[cfg(feature = "bn254")]
   let verified_setup = if let Some(admission) = setup.ignition_admission() {
     super::verify_with_ignition_admission(
       envelope, claim, expected, &vk, &vk_digest, admission,
@@ -77,15 +76,6 @@ fn publish(
       setup.class() == SetupClass::Development,
     )?
   };
-  #[cfg(not(feature = "bn254"))]
-  let verified_setup = super::verify_with_vk(
-    envelope,
-    claim,
-    expected,
-    &vk,
-    &vk_digest,
-    setup.class() == SetupClass::Development,
-  )?;
   if verified_setup != setup.class() {
     return Err("completed proof differs from the selected setup class".into());
   }
@@ -157,7 +147,6 @@ pub(super) fn run(args: &[String]) -> Result<()> {
       )?;
       publish(out, &envelope, &claim, &expected, "fri", &setup)
     },
-    #[cfg(feature = "bn254")]
     (
       "verify-ignition",
       [proof, claim, expected, vk, trusted, admission, admitted],

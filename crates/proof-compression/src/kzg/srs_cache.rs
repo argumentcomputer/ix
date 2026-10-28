@@ -21,9 +21,6 @@ use std::{
   time::Instant,
 };
 
-#[cfg(not(feature = "bn254"))]
-const MAGIC: &[u8] = b"ix/bls12-381/dev-srs/v1\0";
-#[cfg(feature = "bn254")]
 const MAGIC: &[u8] = b"ix/bn254/dev-srs/v1\0";
 const BLOCK_POINTS: usize = 1 << 18;
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
@@ -265,11 +262,8 @@ mod directory_tests {
     let mut legacy_header = b"ix/bls12-381/dev-srs/v1\0".to_vec();
     legacy_header.extend_from_slice(&16u64.to_le_bytes());
     legacy_header.extend_from_slice(blake3::hash(seed).as_bytes());
-    assert_eq!(header(16, seed) == legacy_header, !cfg!(feature = "bn254"));
-    assert_eq!(
-      blake3::hash(&header(16, seed)) == blake3::hash(&legacy_header),
-      !cfg!(feature = "bn254")
-    );
+    assert_ne!(header(16, seed), legacy_header);
+    assert_ne!(blake3::hash(&header(16, seed)), blake3::hash(&legacy_header));
   }
 
   #[test]

@@ -104,5 +104,5 @@ It uses the historical gas average rather than a live gas quote.
 The [recorded results](benchmarks/init-proof-comparison-2026-10-17.json)
 preserve exact timings, memory measurements, proof and artifact identities,
 verification results, daily gas-price inputs and source-report hashes.
-Implementation context is in the [PLONK status record](bls-plonk-wrapper-status.md)
+Implementation context is in the [PLONK status record](plonk-wrapper-status.md)
 and [KZG compression README](../crates/proof-compression/README.md).

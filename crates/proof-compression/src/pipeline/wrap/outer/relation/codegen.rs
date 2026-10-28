@@ -1,21 +1,11 @@
 //! Fixed opening layouts and scalar arithmetic for authenticated verifying keys.
 
-#[cfg(feature = "solidity")]
-use super::VerifyingKey;
 use super::{KzgConfig, Result, Scalar, System};
-#[cfg(feature = "solidity")]
-use super::{hex_json, scalar};
-#[cfg(feature = "solidity")]
-use ark_ff::{BigInteger, PrimeField};
 use multi_stark::{
   config::ProofConfig,
   expr::Source,
   traits::{Algebra, Field, Pcs},
 };
-#[cfg(feature = "solidity")]
-use std::collections::BTreeSet;
-#[cfg(feature = "solidity")]
-use std::fmt::Write as _;
 
 #[derive(Clone, Copy)]
 struct CircuitShape {
@@ -83,19 +73,6 @@ fn quotient_width(max_degree: usize) -> Result<usize> {
 }
 
 impl OpeningLayout {
-  #[cfg(feature = "solidity")]
-  pub(in crate::pipeline::wrap::outer) fn new(
-    vk: &VerifyingKey,
-    system: &System<KzgConfig>,
-  ) -> Result<Self> {
-    let logs = vk
-      .heights
-      .iter()
-      .map(|h| u8::try_from(h.ilog2()))
-      .collect::<std::result::Result<Vec<_>, _>>()?;
-    Self::new_for_system(system, &logs)
-  }
-
   pub(in crate::pipeline::wrap::outer) fn new_for_system(
     system: &System<KzgConfig>,
     logs: &[u8],
@@ -212,145 +189,6 @@ impl OpeningLayout {
       coefficient_count,
       accumulator_count,
     })
-  }
-
-  #[cfg(feature = "solidity")]
-  pub(in crate::pipeline::wrap::outer) fn write_functions(
-    &self,
-    out: &mut String,
-  ) -> Result<()> {
-    let count = self.factors.len();
-    if count > 3 || self.accumulator_count != 1 {
-      return Err(
-        "Solidity export requires the two-circuit recursive layout".into(),
-      );
-    }
-    out.push_str(concat!(
-      "\n    function _proofLayout(VerifyingKey memory, Proof memory proof)\n",
-      "        internal pure override returns (uint256 fieldCount, uint256 fixedCount)\n",
-      "    {\n",
-    ));
-    writeln!(
-      out,
-      "        if (proof.openingCount != {count}) revert InvalidPacket();"
-    )?;
-    for (index, matrix) in self.matrices.iter().enumerate() {
-      writeln!(
-        out,
-        "        proof.matrices[{index}] = Matrix({}, {}, {}, {});",
-        matrix.width, matrix.rows, matrix.point_offset, matrix.value_offset,
-      )?;
-    }
-    writeln!(out, "        proof.witnessOffset = {};", self.commitment_count)?;
-    writeln!(out, "        proof.pointCount = {};", self.point_count)?;
-    writeln!(
-      out,
-      "        return ({}, {});",
-      self.field_count, self.fixed_count
-    )?;
-    out.push_str(concat!(
-      "    }\n\n",
-      "    function _openingCoefficients(VerifyingKey memory, Proof memory proof, uint256[6] memory ch)\n",
-      "        internal pure override returns (uint256[] memory coefficients, uint256[] memory witnessCoefficients)\n",
-      "    {\n",
-      "        if (ch[3] == 0) revert InvalidChallenge();\n",
-    ));
-    writeln!(
-      out,
-      "        if (proof.openingCount != {count} || proof.values.length != {}) revert InvalidPacket();",
-      self.field_count,
-    )?;
-    writeln!(
-      out,
-      "        coefficients = new uint256[]({});",
-      self.coefficient_count
-    )?;
-    writeln!(out, "        witnessCoefficients = new uint256[]({count});")?;
-    out.push_str(concat!(
-      "        uint256[] memory values = proof.values;\n",
-      "        assembly (\"memory-safe\") {\n",
-    ));
-    let modulus = hex_json(&ark_bls12_381::Fr::MODULUS.to_bytes_be());
-    writeln!(out, "            let modulus := {modulus}")?;
-    out.push_str(concat!(
-      "            let zeta := mload(add(ch, 96))\n",
-      "            let v := mload(add(ch, 128))\n",
-      "            let r := mload(add(ch, 160))\n",
-      "            let generatorSum := 0\n",
-    ));
-    if count == 3 {
-      out.push_str("            let rSquared := mulmod(r, r, modulus)\n");
-    }
-    let powers = ["1", "r", "rSquared"];
-    for (group, power) in powers.iter().enumerate().take(count) {
-      writeln!(out, "            let weight{group} := {power}")?;
-    }
-    let mut remaining = vec![0; count];
-    for matrix in &self.matrices {
-      for &group in &matrix.groups[..matrix.rows] {
-        remaining[group] = add(remaining[group], matrix.width)?;
-      }
-    }
-    let mut seen = BTreeSet::new();
-    for matrix in &self.matrices {
-      for (row, &group) in matrix.groups[..matrix.rows].iter().enumerate() {
-        for column in 0..matrix.width {
-          let point = add(matrix.point_offset, column)?;
-          let value =
-            add(add(matrix.value_offset, mul(row, matrix.width)?)?, column)?;
-          let destination =
-            format!("add(coefficients, {})", word_offset(point)?);
-          let expression = if seen.insert(point) {
-            format!("weight{group}")
-          } else {
-            format!("addmod(mload({destination}), weight{group}, modulus)")
-          };
-          writeln!(out, "            mstore({destination}, {expression})")?;
-          writeln!(
-            out,
-            "            generatorSum := addmod(generatorSum, mulmod(weight{group}, mload(add(values, {})), modulus), modulus)",
-            word_offset(value)?,
-          )?;
-          remaining[group] -= 1;
-          if remaining[group] != 0 {
-            writeln!(
-              out,
-              "            weight{group} := mulmod(weight{group}, v, modulus)"
-            )?;
-          }
-        }
-      }
-    }
-    writeln!(
-      out,
-      "            mstore(add(coefficients, {}), mod(sub(modulus, generatorSum), modulus))",
-      word_offset(self.generator_index)?,
-    )?;
-    for (group, &factor) in self.factors.iter().enumerate() {
-      let point = if factor == Scalar::ONE {
-        "zeta".to_owned()
-      } else {
-        format!("mulmod(zeta, {}, modulus)", scalar(factor))
-      };
-      let coefficient = if group == 0 {
-        point
-      } else {
-        format!("mulmod({}, {point}, modulus)", powers[group])
-      };
-      writeln!(
-        out,
-        "            mstore(add(coefficients, {}), {coefficient})",
-        word_offset(add(self.commitment_count, group)?)?,
-      )?;
-      writeln!(
-        out,
-        "            mstore(add(witnessCoefficients, {}), {})",
-        word_offset(group)?,
-        powers[group],
-      )?;
-    }
-    out.push_str("        }\n    }\n");
-    Ok(())
   }
 }
 

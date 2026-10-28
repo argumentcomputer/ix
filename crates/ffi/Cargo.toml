@@ -47,10 +47,7 @@ bincode = { version = "2.0.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
-default = ["bn254", "plonk"]
-bls12-381 = ["ix-proof-compression/bls12-381"]
-bn254 = ["ix-proof-compression/bn254"]
-solidity = ["bls12-381", "ix-proof-compression/solidity"]
+default = ["plonk"]
 plonk = ["ix-proof-compression/plonk"]
 parallel = ["aiur/parallel", "ix-proof-compression/parallel"]
 # The KZG prover's CUDA code is compiled into the ix-compression-worker

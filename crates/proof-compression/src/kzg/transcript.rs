@@ -169,9 +169,6 @@ impl Transcript for Blake3Transcript {
   }
 }
 
-#[cfg(not(feature = "bn254"))]
-const KECCAK256_DOMAIN: &[u8] = b"multi-stark/kzg/keccak256/v1";
-#[cfg(feature = "bn254")]
 const KECCAK256_DOMAIN: &[u8] = b"ix/kzg/bn254/keccak256/v1";
 
 fn keccak256(parts: &[&[u8]]) -> [u8; 32] {
@@ -355,47 +352,6 @@ mod tests {
       hex(&keccak256(&[b"abc"])),
       "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
     );
-  }
-
-  #[test]
-  #[cfg(not(feature = "bn254"))]
-  fn keccak_transcript_matches_independent_vectors() {
-    // PyCryptodome 3.23.0 Crypto.Hash.keccak, digest_bits=256, independently
-    // generates each digest from the documented concatenation. Challenges
-    // are int.from_bytes(digest0 + digest1, "big") % Fr::MODULUS; the field
-    // observations 7 and 42 are 32-byte little-endian canonical encodings.
-    let mut t = Keccak256Transcript::new();
-    t.observe_bytes(b"kzg-vector-v1");
-    t.observe_field(Scalar::from_u64(7));
-    t.observe_bytes(&(0u8..160).collect::<Vec<_>>());
-
-    let vectors = [
-      (
-        "2e3429e71d42335d9ea681622711b7ef2468c1db8c0245dd805deed360bbcf25",
-        "c400066185add659881d303d8b0cd914429b2b1ba9e0addc4a50dacaf049d608",
-      ),
-      (
-        "1f261b89afb3b219e30be06c7518ccb5038337b3168ed83bdba29a36699b5c27",
-        "510f0c6412d976b7224d04cac918bd5fcbef2ca2dfe08f7aa371be709e9a71e5",
-      ),
-      (
-        "67e1777e4d2a526c9c905e84eaf3cc6b6e0764c42dc7bcff1c8e6dee350e6fdc",
-        "64c9ce0b0dc5ff29a58487ebd39827848fae8c0e46e7850c64e2e2f5cbbd2475",
-      ),
-    ];
-    for (round, (challenge, state)) in vectors.iter().enumerate() {
-      if round == 2 {
-        t.observe_bytes(b"after-squeeze");
-        t.observe_canonical(&Fr::from(42u64));
-      }
-      assert_eq!(
-        hex(&t.sample_challenge().0.into_bigint().to_bytes_be()),
-        *challenge,
-        "round {round} challenge"
-      );
-      assert_eq!(hex(&t.state), *state, "round {round} state");
-      assert!(t.buffer.is_empty());
-    }
   }
 
   #[test]

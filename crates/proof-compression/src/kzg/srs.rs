@@ -14,24 +14,11 @@ use ark_ff::{Field, PrimeField, Zero};
 use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 
-#[cfg(not(feature = "bn254"))]
-pub mod filecoin;
-#[cfg(feature = "bn254")]
 pub mod ignition;
 
-#[cfg(not(feature = "bn254"))]
-const PUBLIC_SETUP_DOMAIN: &[u8] =
-  b"multi-stark/kzg/known-trapdoor-public-degree/v1";
-#[cfg(feature = "bn254")]
 const PUBLIC_SETUP_DOMAIN: &[u8] =
   b"multi-stark/kzg/bn254/known-trapdoor-public-degree/v1";
-#[cfg(not(feature = "bn254"))]
-const DEV_TAU_DOMAIN: &[u8] = b"multi-stark/kzg/dev-srs";
-#[cfg(feature = "bn254")]
 const DEV_TAU_DOMAIN: &[u8] = b"multi-stark/kzg/bn254/dev-srs";
-#[cfg(not(feature = "bn254"))]
-const VALIDATION_DOMAIN: &[u8] = b"multi-stark/kzg/srs-validate/v4";
-#[cfg(feature = "bn254")]
 const VALIDATION_DOMAIN: &[u8] = b"multi-stark/kzg/bn254/srs-validate/v4";
 
 /// Identity and maximum polynomial degree of the complete public parameter set.
@@ -248,10 +235,7 @@ mod tests {
     legacy_id.update(b"multi-stark/kzg/known-trapdoor-public-degree/v1");
     legacy_id.update(&3u64.to_le_bytes());
     legacy_id.update(blake3::hash(seed).as_bytes());
-    assert_eq!(
-      srs.public_setup.id == *legacy_id.finalize().as_bytes(),
-      !cfg!(feature = "bn254")
-    );
+    assert_ne!(srs.public_setup.id, *legacy_id.finalize().as_bytes());
 
     let mut wide = [0; 64];
     blake3::Hasher::new()
@@ -260,14 +244,14 @@ mod tests {
       .finalize_xof()
       .fill(&mut wide);
     let legacy_tau = Fr::from_le_bytes_mod_order(&wide);
-    assert_eq!(dev_tau(seed) == legacy_tau, !cfg!(feature = "bn254"));
-    assert_eq!(
-      srs.g1[1] == (G1Projective::generator() * legacy_tau).into_affine(),
-      !cfg!(feature = "bn254")
+    assert_ne!(dev_tau(seed), legacy_tau);
+    assert_ne!(
+      srs.g1[1],
+      (G1Projective::generator() * legacy_tau).into_affine()
     );
-    assert_eq!(
-      srs.tau_g2 == (G2Projective::generator() * legacy_tau).into_affine(),
-      !cfg!(feature = "bn254")
+    assert_ne!(
+      srs.tau_g2,
+      (G2Projective::generator() * legacy_tau).into_affine()
     );
     srs.validate().unwrap();
   }

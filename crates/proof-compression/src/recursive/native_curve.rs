@@ -35,7 +35,7 @@ impl Affine {
   }
   pub fn on_curve(self, b: &mut Builder, f: &FqGadget) {
     let xx = f.mul(b, self.x, self.x);
-    let coefficient = if cfg!(feature = "bn254") { 3 } else { 4 };
+    let coefficient = 3;
     f.relation(b, &[(1, xx, self.x), (-1, self.y, self.y)], &[], coefficient);
   }
   pub fn double(self, b: &mut Builder, f: &FqGadget) -> Self {
@@ -144,25 +144,8 @@ impl Affine {
     f.equal(b, self.x, rhs.x);
     f.equal(b, self.y, rhs.y);
   }
-  #[cfg(not(feature = "bn254"))]
-  pub fn subgroup(self, b: &mut Builder, f: &FqGadget) {
-    // Same endomorphism criterion as ark-bls12-381's native checker.
-    let xp = self.constant_mul(b, f, 0xd201000000010000);
-    let inv = f.hint_pure(
-      b,
-      "reject exceptional subgroup point",
-      &[xp.x, self.x],
-      |v| (v[0] - v[1]).inverse().ok_or("exceptional subgroup point".into()),
-    );
-    f.relation(b, &[(1, xp.x, inv), (-1, self.x, inv)], &[], -1);
-    let x2p = xp.constant_mul(b, f, 0xd201000000010000);
-    let beta = f.constant(b, ark_bls12_381::g1::BETA);
-    f.relation(b, &[(1, beta, self.x)], &[(-1, x2p.x)], 0);
-    f.relation(b, &[], &[(1, self.y), (1, x2p.y)], 0);
-  }
 
   /// BN254 G1 has cofactor one, so `on_curve` already proves membership.
-  #[cfg(feature = "bn254")]
   pub fn subgroup(self, _b: &mut Builder, _f: &FqGadget) {}
 }
 
@@ -287,27 +270,6 @@ mod tests {
       let point = (G1Affine::generator() * Fr::from(n)).into_affine();
       run(point).unwrap();
       run(-point).unwrap();
-    }
-    #[cfg(not(feature = "bn254"))]
-    {
-      let torsion = G1Affine::new_unchecked(Fq::from(0u8), Fq::from(2u8));
-      assert!(torsion.is_on_curve());
-      assert!(!torsion.is_in_correct_subgroup_assuming_on_curve());
-      assert!(run(torsion).is_err());
-      let mut checked = 0;
-      for x in 1..100u64 {
-        if let Some(point) =
-          G1Affine::get_point_from_x_unchecked(Fq::from(x), false)
-        {
-          assert!(!point.is_in_correct_subgroup_assuming_on_curve());
-          assert!(run(point).is_err());
-          checked += 1;
-          if checked == 8 {
-            break;
-          }
-        }
-      }
-      assert_eq!(checked, 8);
     }
     assert!(
       run(G1Affine::new_unchecked(Fq::from(7u8), Fq::from(9u8))).is_err()

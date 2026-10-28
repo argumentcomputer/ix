@@ -122,7 +122,7 @@ what result to expect from it.
    eleven partitions (`pipeline/first.rs`, `MIN_PARTITIONS`;
    `pipeline/wrap/saved.rs`), and the PLONK exporter and Go circuit hardcode
    the two-circuit recursive packet with its deferred pairing operands
-   (`wrap/outer/relation/codegen.rs`, `tools/bls-plonk-wrapper/circuit.go`).
+   (`wrap/outer/relation/codegen.rs`, `tools/plonk-wrapper/circuit.go`).
    Every change re-derives the verifying keys and fixed preprocessing.
    Every candidate must preserve the current proven security bound under
    the same assumptions and accounting as the baseline.
@@ -631,7 +631,7 @@ Relevant to this pipeline:
   commitment and quotient decides how much the fused worker is worth.
 
 Sources: `crates/proof-compression/README.md`,
-`docs/proof-benchmark-comparison.md`, `docs/bls-plonk-wrapper-status.md`,
+`docs/proof-benchmark-comparison.md`, `docs/plonk-wrapper-status.md`,
 `docs/compression-architecture-options.md`,
 `docs/benchmarks/init-proof-comparison-2026-10-17.json`, the pipeline,
 recursive verifier and wrapper sources on `sb/bn254`, multi-stark

@@ -231,11 +231,8 @@ fn prove(
     .prove(&manifest.claims)?;
   let output_span = tracing::info_span!("compression/write_output").entered();
   // The label is part of every published verifying key id and predates the
-  // Filecoin setup; the setup class is bound through the transcript seed.
+  // Ignition setup; the setup class is bound through the transcript seed.
   let mut vk = blake3::Hasher::new();
-  #[cfg(not(feature = "bn254"))]
-  vk.update(b"init-fri-kzg-ordinary-v1/development-srs/quotient2");
-  #[cfg(feature = "bn254")]
   vk.update(b"init-fri-kzg-bn254/v1/development-srs/quotient2");
   vk.update(system.config.transcript_seed());
   vk.update(&plan_id);

@@ -53,9 +53,6 @@ use super::field::Scalar;
 use super::srs::Srs;
 use super::transcript::KzgTranscript;
 
-#[cfg(not(feature = "bn254"))]
-const CHECKPOINT_MAGIC: &[u8; 8] = b"IXKZGCP4";
-#[cfg(feature = "bn254")]
 const CHECKPOINT_MAGIC: &[u8; 8] = b"IXBNCP01";
 
 /// Per-matrix column commitments.
@@ -1397,8 +1394,7 @@ mod tests {
     assert_eq!(decoded.commitment, commitment);
 
     let mut wrong_curve = bytes.clone();
-    let other_magic =
-      if cfg!(feature = "bn254") { b"IXKZGCP4" } else { b"IXBNCP01" };
+    let other_magic = b"IXKZGCP4";
     wrong_curve[..8].copy_from_slice(other_magic);
     assert!(KzgProverData::read_checkpoint(wrong_curve.as_slice()).is_err());
 

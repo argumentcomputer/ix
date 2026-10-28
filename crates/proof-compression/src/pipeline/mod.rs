@@ -28,9 +28,6 @@ use std::{
   process::{Command, Stdio},
 };
 
-#[cfg(not(feature = "bn254"))]
-pub const PROOF_TAG: &[u8; 8] = b"IXCMP\0\0\x04";
-#[cfg(feature = "bn254")]
 pub const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x01";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -322,7 +319,6 @@ pub fn verify_with_vk(
 /// Verify with an independently authorized verifying key and Ignition admission.
 /// Both outer and deferred pairing keys must match the admitted parameters.
 /// No proving cache or setup environment variables are read.
-#[cfg(feature = "bn254")]
 pub fn verify_with_ignition_admission(
   proof: &[u8],
   claim: &[u8],
@@ -398,10 +394,7 @@ fn validate_compression_options(
         .into(),
     );
   }
-  #[cfg(feature = "bn254")]
   let ignition = setup.ignition_admission().is_some();
-  #[cfg(not(feature = "bn254"))]
-  let ignition = false;
   check_worker_curve(ignition)?;
   Ok(setup)
 }
@@ -511,14 +504,11 @@ fn finish_kzg(
   let packet = &result[PROOF_TAG.len()..];
   let vk =
     wrap::VerifyingKey::from_bytes(&fs::read(final_dir.join("vk.bin"))?)?;
-  #[cfg(feature = "bn254")]
   if let Some(admission) = setup.ignition_admission() {
     vk.check_ignition_admission(admission)?;
   } else {
     vk.check_setup_class(setup.class())?;
   }
-  #[cfg(not(feature = "bn254"))]
-  vk.check_setup_class(setup.class())?;
   vk.verify(packet, words)?;
   // A bundled verifying key pins the aggregation program its proofs attest; the
   // backend this run proved under must be that program, or the bundle is
@@ -559,9 +549,6 @@ fn finish_kzg(
   Ok(result)
 }
 
-#[cfg(feature = "solidity")]
-pub use wrap::{export_solidity_verifier, write_solidity_fixture};
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -577,7 +564,7 @@ mod tests {
       .unwrap()
     };
     check_worker_capabilities(&capabilities(crate::kzg::curve::NAME)).unwrap();
-    let other = if cfg!(feature = "bn254") { "bls12-381" } else { "bn254" };
+    let other = "bls12-381";
     assert!(check_worker_capabilities(&capabilities(other)).is_err());
     assert!(check_worker_capabilities(b"{}").is_err());
     assert!(check_worker_capabilities(b"not-json").is_err());
@@ -605,11 +592,7 @@ mod tests {
   fn explicit_vk_verification_rejects_other_curve_envelopes() {
     let expected =
       statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"claim"));
-    let other = if cfg!(feature = "bn254") {
-      b"IXCMP\0\0\x04"
-    } else {
-      b"IXBN\0\0\0\x01"
-    };
+    let other = b"IXCMP\0\0\x04";
     let error = verify_with_vk(other, b"claim", &expected, b"", &[0; 32], true)
       .unwrap_err();
     assert!(error.to_string().contains("curve or version"));

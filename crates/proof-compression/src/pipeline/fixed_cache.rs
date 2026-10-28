@@ -59,9 +59,6 @@ impl FixedCache {
   /// dependency versions, SRS recipe, and all circuit implementation choices.
   pub(crate) fn from_identity(root: &Path, vk: &[u8]) -> Result<Self> {
     let mut hasher = blake3::Hasher::new();
-    #[cfg(not(feature = "bn254"))]
-    hasher.update(b"ix/kzg-fixed-cache/v5");
-    #[cfg(feature = "bn254")]
     hasher.update(b"ix/kzg-fixed-cache/bn254/v1");
     hasher.update(&executable_digest()?);
     hasher.update(vk);

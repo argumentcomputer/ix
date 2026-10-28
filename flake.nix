@@ -109,12 +109,12 @@
           plonkSources = pkgs.lib.fileset.fileFilter (
             file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
               || file.name == "go.mod" || file.name == "go.sum"
-          ) ./tools/bls-plonk-wrapper;
+          ) ./tools/plonk-wrapper;
           plonkCudaSources = pkgs.lib.fileset.fileFilter (
             file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
               || file.hasExt "py" || file.hasExt "patch"
               || file.name == "go.mod" || file.name == "go.sum"
-          ) ./tools/bls-plonk-wrapper;
+          ) ./tools/plonk-wrapper;
           plonkSppark = pkgs.fetchFromGitHub {
             owner = "argumentcomputer";
             repo = "sppark";
@@ -153,16 +153,16 @@
             '';
             meta.platforms = [ "x86_64-linux" ];
           };
-          mkPlonkHelper = { bn254, cuda ? false }: (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
-            pname = (if bn254 then "ix-bn254-plonk-wrapper" else "ix-bls-plonk-wrapper")
+          mkPlonkHelper = { cuda ? false }: (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
+            pname = "ix-bn254-plonk-wrapper"
               + pkgs.lib.optionalString cuda "-cuda";
-            tags = pkgs.lib.optional (!bn254) "bls12381" ++ pkgs.lib.optional cuda "cuda";
+            tags = pkgs.lib.optional cuda "cuda";
             version = "0.1.0";
             src = pkgs.lib.fileset.toSource {
-              root = ./tools/bls-plonk-wrapper;
+              root = ./tools/plonk-wrapper;
               fileset = if cuda then plonkCudaSources else plonkSources;
             };
-            vendorHash = "sha256-bmRyQn7iMLGRATQStghs1KmlXwln70Sxzu5oSWR5pRU=";
+            vendorHash = "sha256-atTpFnSORqh5A+LzECBF9gR0qCr7G2lNXpVuFFSS5to=";
             subPackages = [ "." ];
             env.CGO_ENABLED = if cuda then "1" else "0";
             env.GOTOOLCHAIN = "local";
@@ -175,16 +175,15 @@
               python3 build_cuda.py --patch-vendor vendor/github.com/consensys/gnark
             '';
             postInstall = ''
-              mv "$out/bin/bls-plonk-wrapper" "$out/bin/${if bn254 then "ix-bn254-plonk-wrapper" else "ix-bls-plonk-wrapper"}"
+              mv "$out/bin/plonk-wrapper" "$out/bin/ix-bn254-plonk-wrapper"
             '' + pkgs.lib.optionalString cuda ''
               mkdir -p "$out/lib"
               ln -s ${plonkCudaNative}/lib/libix_plonk_bn254_cuda.so "$out/lib/"
             '';
           };
 
-          plonkHelper = mkPlonkHelper { bn254 = true; };
-          plonkCudaHelper = mkPlonkHelper { bn254 = true; cuda = true; };
-          blsPlonkHelper = mkPlonkHelper { bn254 = false; };
+          plonkHelper = mkPlonkHelper { };
+          plonkCudaHelper = mkPlonkHelper { cuda = true; };
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -193,7 +192,6 @@
           # Profiles are embedded in the verifier; compression tests also read
           # binary fixtures that Cargo's source filter does not retain.
           compressionData = pkgs.lib.fileset.unions [
-            ./crates/proof-compression/verifying-keys
             ./crates/proof-compression/tests/fixtures
           ];
           # The Rust tests `include_bytes!` the `.ixe` files under
@@ -451,7 +449,6 @@
             ix = ixCLI;
             plonk-wrapper = plonkHelper;
             plonk-wrapper-cuda = plonkCudaHelper;
-            plonk-wrapper-bls12-381 = blsPlonkHelper;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
             # adding it to the default check set.
@@ -470,7 +467,6 @@
 
           checks = {
             plonk-wrapper = plonkHelper;
-            plonk-wrapper-bls12-381 = blsPlonkHelper;
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
               craneArgs

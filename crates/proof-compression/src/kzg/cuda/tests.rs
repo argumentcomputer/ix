@@ -4,7 +4,6 @@ use ark_ff::PrimeField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 
 mod constraints;
-#[cfg(feature = "bn254")]
 mod plonk_scale;
 
 unsafe extern "C" {
