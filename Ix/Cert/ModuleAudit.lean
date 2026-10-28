@@ -7,6 +7,7 @@ import Ix.HostAdmission.Theorems
 import Ix.RoleBinding.ArtifactOrderTheorems
 import Ix.RoleBinding.ArtifactTheorems
 import Ix.RoleBinding.ArtifactTieredTheorems
+import Ix.RoleBinding.Generate
 
 /-! # Axioms of the proof modules outside the statement roots
 
@@ -15,7 +16,9 @@ bounds every declaration they reach. The modules named here are reached by
 none of them, or only in part:
 * the computed closure (`Ix.Cert.Closure`);
 * the theorems of the artifact and host admission entries
-  (`Ix.RoleBinding.Artifact*Theorems`, `Ix.HostAdmission.Theorems`).
+  (`Ix.RoleBinding.Artifact*Theorems`, `Ix.HostAdmission.Theorems`);
+* parallel canonical record decoding used by artifact-specific generation
+  (`Ix.RoleBinding.RecordDecoding`).
 
 `lake lint` (`check-modules`) and `lake run check-kernel` build this module.
 
@@ -34,5 +37,9 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
   Ix.RoleBinding.ArtifactOrderTheorems
   Ix.RoleBinding.ArtifactTheorems
   Ix.RoleBinding.ArtifactTieredTheorems
+  Ix.RoleBinding.RecordDecoding
+
+#guard_kernel_axioms Ix.RoleBinding.RecordDecoding.parallel_eq [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.recordStore_eq_parallel [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms_under Ix.Cert Ix.CompileCert

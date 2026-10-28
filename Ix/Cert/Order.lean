@@ -77,10 +77,7 @@ theorem index_mem {a : Address} (ha : a ∈ ixe.consts.keys) :
 /-- **`parMap` is `Array.map`**, whatever the tasks: `(Task.spawn f).get =
 f ()`, and the chunks cover the array (`Ix.Cert.Schedule.slices_map`). -/
 theorem parMap_eq {α β : Type} (f : α → β) (xs : Array α) : parMap f xs = xs.map f := by
-  unfold parMap
-  simp only [Array.map_map, Function.comp_def]
-  exact Ix.Cert.Schedule.slices_map _ xs _ _
-    (Ix.Cert.Schedule.chunks_cover xs.size recordTasks (by decide))
+  exact Ix.Compile.Parallel.map_eq recordTasks f xs
 
 /-- **`recordRefs` reads each record once, in order**, whatever the tasks. -/
 theorem recordRefs_eq (addrs : Array Address) :

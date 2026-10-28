@@ -1050,10 +1050,7 @@ theorem publishedReadable {env : Ix.Environment} {ixe : Ixon.Env} {failures : Fa
 
 /-- `parMap` is `Array.map`, whatever the tasks (`Ix.Cert.Schedule.slices_map`). -/
 theorem parMap_map {α β : Type} (f : α → β) (xs : Array α) : parMap f xs = xs.map f := by
-  unfold parMap
-  simp only [Array.map_map, Function.comp_def]
-  exact Ix.Cert.Schedule.slices_map _ xs _ _
-    (Ix.Cert.Schedule.chunks_cover xs.size recordTasks (by decide))
+  exact Ix.Compile.Parallel.map_eq recordTasks f xs
 
 /-! ## The theorems that hold now -/
 

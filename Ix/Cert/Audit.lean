@@ -1001,15 +1001,21 @@ fun maxUnivNodes => do
 #print Ix.Cert.recordTasks
 
 /-- info: def Ix.Cert.parMap : {α β : Type} → (α → β) → Array α → Array β :=
-fun {α β} f xs =>
+fun {α β} f xs => Ix.Compile.Parallel.map Ix.Cert.recordTasks f xs -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.parMap
+
+/-- info: def Ix.Compile.Parallel.map : {α β : Type} → Nat → (α → β) → Array α → Array β :=
+fun {α β} width f xs =>
+  have width := max 1 width;
   have n := xs.size;
-  have size := (n + Ix.Cert.recordTasks - 1) / Ix.Cert.recordTasks;
+  have size := (n + width - 1) / width;
   have chunks := if (size == 0) = true then 0 else (n + size - 1) / size;
   (Array.map Task.get
       (Array.map (fun c => Task.spawn fun x => Array.map f (xs.extract (c * size) ((c + 1) * size)))
         (Array.range chunks))).flatten -/
 #guard_msgs (whitespace := lax) in
-#print Ix.Cert.parMap
+#print Ix.Compile.Parallel.map
 
 /-- info: def Ix.Cert.recordRefs : Array (Address × Option Ixon.LazyConstant) → Array (Option (Array Address × Address)) :=
 fun recs =>
@@ -1439,6 +1445,18 @@ constructor:
 #check @Ix.Cert.compileAuthentic
 
 /-! ## Axioms -/
+
+/-- info: 'Ix.Compile.FrontEnd.graph_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Compile.FrontEnd.graph_eq
+
+/-- info: 'Ix.Compile.FrontEnd.ground_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Compile.FrontEnd.ground_eq
+
+/-- info: 'Ix.Cert.groundSplit_eq_lazy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.groundSplit_eq_lazy
 
 /-- info: 'Ix.Cert.sourceConsistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -3456,18 +3474,21 @@ task's value is its function's, so the split (`width`) and the trace
 being independent (the reference schedule) stays a test
 (`compile-schedule-identity`, `cert-compile-parity-initstd`). -/
 
-/-- info: [cert-audit] schedule: 12 roots; axioms used: [propext, Classical.choice, Quot.sound]
+/-- info: [cert-audit] schedule: 13 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
-info: [cert-audit] schedule: 4 safe definitions, no runtime substitution -/
+info: [cert-audit] schedule: 5 safe definitions, no runtime substitution -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
 run_cmd do
   checkRoots (tag := "cert-audit") "schedule"
-    (#[`slices_flatten, `ceil_mul_ge, `chunks_cover, `slices_map, `waveTasks_flatten, `applyTasks_eq,
+    ((#[`slices_flatten, `ceil_mul_ge, `chunks_cover, `slices_map, `map_eq].map
+      (`Ix.Compile.Parallel ++ ·)) ++
+    (#[`waveTasks_flatten, `applyTasks_eq,
       `foldWave_eq_with, `foldWave_eq, `foldWaves_eq, `compileEnvFold_eq_seq, `compileEnvFold_width,
-      `lazyPure_eq].map (`Ix.Cert.Schedule ++ ·))
+      `lazyPure_eq].map (`Ix.Cert.Schedule ++ ·)))
   checkRuntime (tag := "cert-audit") "schedule"
-    #[``Ix.CompileM.waveTasks, ``Ix.CompileM.foldWave, ``Ix.CompileM.foldWaves, ``Ix.CompileM.compileEnvFold]
+    #[``Ix.Compile.Parallel.map, ``Ix.CompileM.waveTasks, ``Ix.CompileM.foldWave,
+      ``Ix.CompileM.foldWaves, ``Ix.CompileM.compileEnvFold]
 
 /-- info: def Ix.Cert.Schedule.applySeq : Ix.CompileM.CompileEnv →
   Array (Ix.Name × Ix.Name × Ix.Set Ix.Name) → Ix.CompileM.DriverAcc → Ix.CompileM.DriverAcc :=
