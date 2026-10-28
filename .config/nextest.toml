@@ -8,5 +8,7 @@ status-level = "skip"
 fail-fast = false
 # Mark tests as slow after 5mins, kill them after 20mins
 slow-timeout = { period = "300s", terminate-after = 4 }
-# Retry failed tests once, marked flaky if test then passes
-retries = 1
+# No retries: a test that fails once fails the run. A retry would let a
+# nondeterministic failure (parallel compilation, sharing, the kernel's
+# caches) pass as "flaky".
+retries = 0
