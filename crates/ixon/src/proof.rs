@@ -349,6 +349,18 @@ fn compute_mask(flags: &[bool]) -> u64 {
   mask
 }
 
+/// Refuse a reveal mask with a bit at or above `width`: the variant has `width`
+/// fields, and a mask bit naming none of them would give one claim two
+/// encodings.
+fn require_mask(mask: u64, width: u32) -> Result<(), String> {
+  if width < 64 && mask >> width != 0 {
+    return Err(format!(
+      "claim: reveal mask {mask} sets bits beyond its {width} fields"
+    ));
+  }
+  Ok(())
+}
+
 fn put_def_kind(k: DefKind, buf: &mut Vec<u8>) {
   buf.push(match k {
     DefKind::Definition => 0,
@@ -452,6 +464,7 @@ impl RevealConstructorInfo {
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let mask = TagN::get(0, buf)?.value;
+    require_mask(mask, 6)?;
     let is_unsafe =
       if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
     let lvls =
@@ -650,6 +663,15 @@ impl RevealMutConstInfo {
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let variant = get_u8(buf)?;
     let mask = TagN::get(0, buf)?.value;
+    require_mask(
+      mask,
+      match variant {
+        0 => 5,
+        1 => 6,
+        2 => 9,
+        _ => 64,
+      },
+    )?;
     match variant {
       0 => {
         let kind = if mask & 1 != 0 { Some(get_def_kind(buf)?) } else { None };
@@ -889,6 +911,17 @@ impl RevealConstantInfo {
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let variant = get_u8(buf)?;
     let mask = TagN::get(0, buf)?.value;
+    require_mask(
+      mask,
+      match variant {
+        0 => 5,
+        1 => 9,
+        2..=4 => 3,
+        5..=7 => 2,
+        8 => 1,
+        _ => 64,
+      },
+    )?;
     match variant {
       0 => {
         // Defn
@@ -1727,6 +1760,25 @@ mod tests {
         eprintln!("proof_roundtrip error: {e}");
         false
       },
+    }
+  }
+
+  /// A reveal mask bit beyond the variant's fields is refused, so one claim
+  /// has one encoding. The Lean reader refuses the same bytes
+  /// (`Tests/Ix/Claim.lean`, `revealMaskTests`): a Reveal claim over the zero
+  /// commitment, its variant byte, then the one-byte mask.
+  #[test]
+  fn reveal_mask_refuses_unknown_bits() {
+    let mut header = vec![0xE6, 0x04, 0x00];
+    header.extend_from_slice(&[0u8; 32]);
+    for (variant, unknown) in [(0u8, 0x20u8), (2, 0x08), (7, 0x04)] {
+      let mut bytes = header.clone();
+      bytes.extend_from_slice(&[variant, 0x00]);
+      assert!(Claim::from_bytes(&bytes).is_ok(), "variant {variant}");
+      let last = bytes.len() - 1;
+      bytes[last] = unknown;
+      let err = Claim::from_bytes(&bytes).unwrap_err();
+      assert!(err.contains("reveal mask"), "{err}");
     }
   }
 

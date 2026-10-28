@@ -69,6 +69,12 @@ private def getTagN0Value : GetM UInt64 := return (← getTagN 0).value
 private def getOpt (mask : UInt64) (bit : UInt64) (read : GetM α) : GetM (Option α) :=
   if mask &&& bit != 0 then some <$> read else pure none
 
+/-- Refuse a reveal mask with a bit at or above `width`: the variant has `width`
+fields, and a mask bit naming none of them would give one claim two encodings. -/
+private def requireMask (mask : UInt64) (width : Nat) : GetM Unit :=
+  unless mask.toNat < 2 ^ width do
+    throw s!"claim: reveal mask {mask} sets bits beyond its {width} fields"
+
 -- ============================================================================
 -- Types
 -- ============================================================================
@@ -243,6 +249,7 @@ def put (info : RevealConstructorInfo) : PutM Unit := do
 
 def get : GetM RevealConstructorInfo := do
   let mask := (← getTagN 0).value
+  requireMask mask 6
   let isUnsafe ← getOpt mask 1 getBoolField
   let lvls ← getOpt mask 2 getTagN0Value
   let cidx ← getOpt mask 4 getTagN0Value
@@ -347,6 +354,7 @@ def put : RevealMutConstInfo → PutM Unit
 def get : GetM RevealMutConstInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
+  requireMask mask (match variant with | 0 => 5 | 1 => 6 | 2 => 9 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
@@ -461,6 +469,8 @@ def put : RevealConstantInfo → PutM Unit
 def get : GetM RevealConstantInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
+  requireMask mask (match variant with
+    | 0 => 5 | 1 => 9 | 2 | 3 | 4 => 3 | 5 | 6 | 7 => 2 | 8 => 1 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind

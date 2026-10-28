@@ -163,12 +163,26 @@ def catalogClaimTests : TestSeq :=
        (proofBytes.data[0]! == 0xF5)
   ++ test "Catalog proof wrapper roundtrips" proofRoundtrips
 
+/-- A reveal mask bit beyond the variant's fields is refused, so one claim has
+one encoding. The Rust reader refuses the same bytes
+(`proof.rs::reveal_mask_refuses_unknown_bits`): a Reveal claim over the zero
+commitment, its variant byte, then the one-byte mask. -/
+def revealMaskTests : TestSeq :=
+  let header : Array UInt8 := #[0xE6, 0x04, 0x00] ++ Array.replicate 32 0
+  let bytes (variant mask : UInt8) : ByteArray := ⟨header ++ #[variant, mask]⟩
+  test "Reveal defn with no fields reads" (Ix.Claim.de (bytes 0 0) matches .ok _)
+  ++ test "Reveal defn mask bit 5 refused" (Ix.Claim.de (bytes 0 0x20) matches .error _)
+  ++ test "Reveal axio with no fields reads" (Ix.Claim.de (bytes 2 0) matches .ok _)
+  ++ test "Reveal axio mask bit 3 refused" (Ix.Claim.de (bytes 2 0x08) matches .error _)
+  ++ test "Reveal dprj mask bit 2 refused" (Ix.Claim.de (bytes 7 0x04) matches .error _)
+
 /-! ## Suite -/
 
 public def Tests.Claim.suite : List TestSeq := [
   claimUnits,
   claimEncodingTests,
   catalogClaimTests,
+  revealMaskTests,
   checkIO "Claim serde roundtrips" (∀ c : Claim, claimSerde c),
 ]
 
