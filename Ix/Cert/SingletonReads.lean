@@ -109,14 +109,14 @@ theorem closure_blob {t : RoleTable} {preA : Prelude .anon} {B : Address} {c : I
 every name the compile binds at the key the block's context reads at its binding. -/
 def blockNames (cenv : CompileEnv) (cx₁ : Ctx .anon) (self : Ix.Name) (selfKey : CName .anon) (m : Ix.Name)
     (k : CName .anon) : Prop :=
-  (m = self ∧ k = selfKey) ∨ ∃ a, lookupBinding cenv ({}, {}) m = some a ∧ cx₁.keyAt a = .ok k
+  (m = self ∧ k = selfKey) ∨ ∃ a, lookupBinding cenv {} m = some a ∧ cx₁.keyAt a = .ok k
 
 /-- **The block's context keys every name the compile binds.** -/
 theorem external {t : RoleTable} {preA : Prelude .anon} {S : Address → Prop} (corder : ClosureOrder ixe S order)
     {blob : Address → Option ByteArray} {B : Address} {cB : Ixon.Constant} (hB : B ∈ order)
     (hcB : recordAt ixe B = some cB) {cenv : CompileEnv} (bound : BoundResolve ixe cenv) (self : Ix.Name)
     (selfKey : CName .anon) :
-    BindingsCorrect cenv ({}, {}) (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob)
+    BindingsCorrect cenv {} (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob)
       (blockNames cenv (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob) self selfKey) := by
   intro m a hb
   obtain ⟨c, hc, hres⟩ := bound m a hb
@@ -131,7 +131,7 @@ theorem agree {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environmen
     (canonical : Stream.StoredCanonical ixe order) (b : Ix.RoleEvidence.Bundle) {blob : Address → Option ByteArray}
     {cB : Ixon.Constant} {cenv : CompileEnv} (bound : BoundResolve ixe cenv) (self : Ix.Name)
     {M : Ix.Name → Prop}
-    (published : ∀ m a, M m → lookupBinding cenv ({}, {}) m = some a →
+    (published : ∀ m a, M m → lookupBinding cenv {} m = some a →
       ∃ named, (m, named) ∈ ixe.named.toList ∧ named.addr = a ∧ (sub.consts.get? m).isSome = true) :
     ∀ m k, M m →
       blockNames cenv (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob) self
@@ -263,7 +263,7 @@ theorem closure_definition_reads {env : Ix.Environment} {roots : List Ix.Name} {
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
     (published : ∀ m a, (GraphWalk.Refs m source.type ∨ GraphWalk.Refs m source.value) →
-      lookupBinding cenv ({}, {}) m = some a →
+      lookupBinding cenv {} m = some a →
         ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     {h : ReducibilityHint} (hint : hintsOf ixe (.member output.blockAddr 0) = some h)
     {m0 : Ix.LeanIngress.DefMember} (conv : Ix.LeanIngress.convertDefinitions #[ci] = .ok (.definitions #[m0]))
@@ -318,7 +318,7 @@ theorem closure_axiom_reads {env : Ix.Environment} {roots : List Ix.Name} {sub :
     {named : Ixon.Named} (hn : (v.cnst.name, named) ∈ ixe.named.toList) (haddr : named.addr = output.blockAddr)
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
-    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv ({}, {}) m = some a →
+    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv {} m = some a →
       ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     (noSelf : ConstsSatisfy (fun m => m ≠ v.cnst.name) v.cnst.type)
     {cv0 : CVal .source} (conv : Ix.LeanIngress.convert (.axiom v) = .ok (.axiom cv0))
@@ -349,7 +349,7 @@ theorem closure_quotient_reads {env : Ix.Environment} {roots : List Ix.Name} {su
     {named : Ixon.Named} (hn : (v.cnst.name, named) ∈ ixe.named.toList) (haddr : named.addr = output.blockAddr)
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
-    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv ({}, {}) m = some a →
+    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv {} m = some a →
       ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     (noSelf : ConstsSatisfy (fun m => m ≠ v.cnst.name) v.cnst.type)
     {kind : Ix.Kernel.QuotKind} {cv0 : CVal .source} (conv : Ix.LeanIngress.convert (.quot v) = .ok (.quot kind cv0))

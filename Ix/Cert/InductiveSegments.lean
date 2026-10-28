@@ -259,7 +259,7 @@ theorem row_published {sub : Ix.Environment} {key : Ix.Name} {r : BlockResult}
 
 /-- A claimed block's facts: its address is its bytes' hash, it is built, and it is wire-valid. -/
 theorem claimed_block {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult}
-    {cache : BlockState} {layout : Option Ixon.AuxLayout} (hr : runBlock cenvR all key = .ok (r, cache, layout))
+    {cache : BlockState} (hr : runBlock cenvR all key = .ok (r, cache))
     {output : BlockResult} (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output) :
     output.blockAddr = Address.admissionHash (Ixon.ser output.block) ∧ output.blockAddr.hash.size = 32 ∧
       BlockLayout.Built output.block ∧ output.block.wireWF := by
@@ -270,7 +270,7 @@ theorem claimed_block {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name
   have e : output.blockAddr = Address.admissionHash (Ixon.ser output.block) := by
     rw [← haddr, ← hblock, shape.addr, shape.bytes]
   refine ⟨e, by rw [e]; exact Ixon.Authenticated.admissionHash_width _, hblock ▸ shape.built,
-    hblock ▸ BlockWire.blocksWire _ _ _ _ _ _ hr⟩
+    hblock ▸ BlockWire.blocksWire _ _ _ _ _ hr⟩
 
 /-- **An inductive block's publications**: each type and each constructor is published at its
 projection of the block, which the artifact holds. -/
@@ -278,7 +278,7 @@ theorem inductive_published {sub : Ix.Environment} {context : CompileEnv × Bloc
     {output : BlockResult} {inds : List Ix.Ind}
     (ran : rawRun (compileMutualBlock ((inds.map MutConst.indc).map ([·]))) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
-    {layout : Option Ixon.AuxLayout} (hr : runBlock cenvR all key = .ok (r, cache, layout))
+    (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (typesIn : ∀ i (hi : i < inds.length), (sub.consts.get? inds[i].name).isSome = true)
     (ctorsIn : ∀ i (hi : i < inds.length) k (hk : k < inds[i].ctors.size),
@@ -315,7 +315,7 @@ theorem recursor_published {sub : Ix.Environment} (resolves : SingletonSegments.
     {recs : List Ix.RecursorVal} (hne : recs ≠ [])
     (ran : rawRun (compileMutualBlock ((recs.map MutConst.recr).map ([·]))) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
-    {layout : Option Ixon.AuxLayout} (hr : runBlock cenvR all key = .ok (r, cache, layout))
+    (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (recsIn : ∀ j (hj : j < recs.length), ∃ ci, (recs[j].cnst.name, ci) ∈ sub.consts.toList) :
     ∀ j (hj : j < recs.length), ∃ Q c, ClosureLayout.addrOf ixe recs[j].cnst.name = some Q ∧
@@ -550,24 +550,24 @@ theorem closure_inductive_reads {env : Ix.Environment} {roots : List Ix.Name} {s
     (ran₁ : rawRun (compileMutualBlock (((indsOf types ctors).map MutConst.indc).map ([·]))) (cenv₁, benv₁) {} =
       (.ok out₁, after₁))
     {cenvR₁ : CompileEnv} {all₁ : Ix.Set Ix.Name} {key₁ : Ix.Name} {r₁ : BlockResult} {cache₁ : BlockState}
-    {layout₁ : Option Ixon.AuxLayout} (hr₁ : runBlock cenvR₁ all₁ key₁ = .ok (r₁, cache₁, layout₁))
+    (hr₁ : runBlock cenvR₁ all₁ key₁ = .ok (r₁, cache₁))
     (pub₁ : BlockPublication.Published ixe sub key₁ r₁) (hrec₁ : BlockRecords.recordsOf r₁ = BlockRecords.recordsOf out₁)
     (bound₁ : BoundResolve ixe cenv₁)
     (blobs₁ : ∀ a bytes, BlobWrites.readBlob cenv₁.blobs after₁ a = some bytes → ixe.blobs.get? a = some bytes)
     (published₁ : ∀ m a, (∃ i ∈ indsOf types ctors, ∃ e ∈ BlockEmission.memberSources (.indc i), GraphWalk.Refs m e) →
-      lookupBinding cenv₁ ({}, {}) m = some a →
+      lookupBinding cenv₁ {} m = some a →
         ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     -- the recursor family
     {cenv₂ : CompileEnv} {benv₂ : BlockEnv} {out₂ : BlockResult} {after₂ : BlockState}
     (ran₂ : rawRun (compileMutualBlock ((recs.toList.map MutConst.recr).map ([·]))) (cenv₂, benv₂) {} =
       (.ok out₂, after₂))
     {cenvR₂ : CompileEnv} {all₂ : Ix.Set Ix.Name} {key₂ : Ix.Name} {r₂ : BlockResult} {cache₂ : BlockState}
-    {layout₂ : Option Ixon.AuxLayout} (hr₂ : runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂, layout₂))
+    (hr₂ : runBlock cenvR₂ all₂ key₂ = .ok (r₂, cache₂))
     (pub₂ : BlockPublication.Published ixe sub key₂ r₂) (hrec₂ : BlockRecords.recordsOf r₂ = BlockRecords.recordsOf out₂)
     (bound₂ : BoundResolve ixe cenv₂)
     (blobs₂ : ∀ a bytes, BlobWrites.readBlob cenv₂.blobs after₂ a = some bytes → ixe.blobs.get? a = some bytes)
     (published₂ : ∀ m a, (∃ r ∈ recs.toList, ∃ e ∈ BlockEmission.memberSources (.recr r), GraphWalk.Refs m e) →
-      lookupBinding cenv₂ ({}, {}) m = some a →
+      lookupBinding cenv₂ {} m = some a →
         ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     -- the closure's recursor index at the block
     {shape : BlockShape} (hindexed : (closureContext ixe t preA order).index.blocks[out₁.blockAddr]? = some shape)

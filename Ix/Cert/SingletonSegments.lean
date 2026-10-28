@@ -126,7 +126,7 @@ theorem definition_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Env
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
     (published : ∀ m a, (GraphWalk.Refs m source.type ∨ GraphWalk.Refs m source.value) →
-      lookupBinding cenv ({}, {}) m = some a →
+      lookupBinding cenv {} m = some a →
         ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     {h : ReducibilityHint} (hint : hintsOf ixe (.member output.blockAddr 0) = some h)
     {m0 : Ix.LeanIngress.DefMember} (conv : Ix.LeanIngress.convertDefinitions #[ci] = .ok (.definitions #[m0]))
@@ -176,7 +176,7 @@ theorem axiom_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Environm
     {named : Ixon.Named} (hn : (v.cnst.name, named) ∈ ixe.named.toList) (haddr : named.addr = output.blockAddr)
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
-    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv ({}, {}) m = some a →
+    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv {} m = some a →
       ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     (noSelf : ConstsSatisfy (fun m => m ≠ v.cnst.name) v.cnst.type)
     {cv0 : CVal .source} (conv : Ix.LeanIngress.convert (.axiom v) = .ok (.axiom cv0))
@@ -222,7 +222,7 @@ theorem quotient_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Envir
     {named : Ixon.Named} (hn : (v.cnst.name, named) ∈ ixe.named.toList) (haddr : named.addr = output.blockAddr)
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
-    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv ({}, {}) m = some a →
+    (published : ∀ m a, GraphWalk.Refs m v.cnst.type → lookupBinding cenv {} m = some a →
       ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     (noSelf : ConstsSatisfy (fun m => m ≠ v.cnst.name) v.cnst.type)
     {kind : Ix.Kernel.QuotKind} {cv0 : CVal .source} (conv : Ix.LeanIngress.convert (.quot v) = .ok (.quot kind cv0))

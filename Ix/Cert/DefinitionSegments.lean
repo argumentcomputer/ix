@@ -38,14 +38,14 @@ variable {ixe : Ixon.Env} {order : List Address}
 every name the compile binds at the key the block's context reads at its binding. -/
 def ownNames (cenv : CompileEnv) (cx₁ : Ctx .anon) (selves : Ix.Name → Prop) (key : Ix.Name → CName .anon)
     (m : Ix.Name) (k : CName .anon) : Prop :=
-  (selves m ∧ k = key m) ∨ ∃ a, lookupBinding cenv ({}, {}) m = some a ∧ cx₁.keyAt a = .ok k
+  (selves m ∧ k = key m) ∨ ∃ a, lookupBinding cenv {} m = some a ∧ cx₁.keyAt a = .ok k
 
 /-- **The block's context keys every name the compile binds.** -/
 theorem own_external {t : RoleTable} {preA : Prelude .anon} {S : Address → Prop} (corder : ClosureOrder ixe S order)
     {blob : Address → Option ByteArray} {B : Address} {cB : Ixon.Constant} (hB : B ∈ order)
     (hcB : recordAt ixe B = some cB) {cenv : CompileEnv} (bound : BoundResolve ixe cenv) (selves : Ix.Name → Prop)
     (key : Ix.Name → CName .anon) :
-    BindingsCorrect cenv ({}, {}) (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob)
+    BindingsCorrect cenv {} (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob)
       (ownNames cenv (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob) selves key) := by
   intro m a hb
   obtain ⟨c, hc, hres⟩ := bound m a hb
@@ -61,7 +61,7 @@ theorem own_agree {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Enviro
     (canonical : Stream.StoredCanonical ixe order) (b : Ix.RoleEvidence.Bundle) {blob : Address → Option ByteArray}
     {cB : Ixon.Constant} {cenv : CompileEnv} (bound : BoundResolve ixe cenv) (selves : Ix.Name → Prop)
     {M : Ix.Name → Prop}
-    (published : ∀ m a, M m → lookupBinding cenv ({}, {}) m = some a →
+    (published : ∀ m a, M m → lookupBinding cenv {} m = some a →
       ∃ named, (m, named) ∈ ixe.named.toList ∧ named.addr = a ∧ (sub.consts.get? m).isSome = true) :
     ∀ m k, M m →
       ownNames cenv (blockCtx (closureContext ixe t preA order) ixe order cB.refs blob) selves
@@ -181,7 +181,7 @@ theorem block_members {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.En
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
-    {layout : Option Ixon.AuxLayout} (hr : runBlock cenvR all key = .ok (r, cache, layout))
+    (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output) :
     output.blockAddr ∈ order ∧ recordAt ixe output.blockAddr = some output.block ∧
       ∀ j (hj : j < defs.length), ∃ Pa, ClosureLayout.addrOf ixe defs[j].name = some Pa ∧ Pa ∈ order ∧
@@ -240,14 +240,13 @@ theorem closure_block_reads {env : Ix.Environment} {roots : List Ix.Name} {sub :
     {cenv : CompileEnv} {benv : BlockEnv} {output : BlockResult} {after : BlockState}
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) (cenv, benv) {} = (.ok output, after))
     (fresh : ∀ d ∈ defs, cenv.nameToAddr.get? d.name = none)
-    (unaliased : ∀ d ∈ defs, cenv.auxNameToAddr.get? d.name = none)
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
-    {layout : Option Ixon.AuxLayout} (hr : runBlock cenvR all key = .ok (r, cache, layout))
+    (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
     (published : ∀ m a, (∃ (j : Nat) (hj : j < defs.length), GraphWalk.Refs m defs[j].type ∨ GraphWalk.Refs m defs[j].value) →
-      lookupBinding cenv ({}, {}) m = some a →
+      lookupBinding cenv {} m = some a →
         ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     {hints : CName .source → Option ReducibilityHint} {H : Nat → ReducibilityHint}
     (hinted : ∀ k (hk : k < defs.length),
@@ -272,7 +271,6 @@ theorem closure_block_reads {env : Ix.Environment} {roots : List Ix.Name} {sub :
   exact DefinitionBlockReads.definition_block_reads (P := KeyScope.ofId (QRepAt ixe (roleAtMap t)))
     (fun _ _ => trivial) hf two views distinct exactNames (cenv, benv) rfl BlockStart.clean_empty ran
     (fun d hd => ⟨Std.HashMap.get?_eq_getElem?.trans Std.HashMap.getElem?_empty, fresh d hd⟩)
-    (fun d hd => ⟨Std.HashMap.get?_eq_getElem?.trans Std.HashMap.getElem?_empty, unaliased d hd⟩)
     (cx₁ := blockCtx (closureContext ixe t preA order) ixe order output.block.refs (fun a => cenv.blobs.get? a))
     (fun _ => rfl)
     (own_external corder hB stored bound (fun m => ∃ (j : Nat) (hj : j < defs.length), defs[j].name = m)
@@ -387,14 +385,13 @@ theorem definition_block_segment {env : Ix.Environment} {roots : List Ix.Name} {
     {cenv : CompileEnv} {benv : BlockEnv} {output : BlockResult} {after : BlockState}
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) (cenv, benv) {} = (.ok output, after))
     (fresh : ∀ d ∈ defs, cenv.nameToAddr.get? d.name = none)
-    (unaliased : ∀ d ∈ defs, cenv.auxNameToAddr.get? d.name = none)
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult} {cache : BlockState}
-    {layout : Option Ixon.AuxLayout} (hr : runBlock cenvR all key = .ok (r, cache, layout))
+    (hr : runBlock cenvR all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output)
     (bound : BoundResolve ixe cenv)
     (blobs : ∀ a bytes, BlobWrites.readBlob cenv.blobs after a = some bytes → ixe.blobs.get? a = some bytes)
     (published : ∀ m a, (∃ (j : Nat) (hj : j < defs.length), GraphWalk.Refs m defs[j].type ∨ GraphWalk.Refs m defs[j].value) →
-      lookupBinding cenv ({}, {}) m = some a →
+      lookupBinding cenv {} m = some a →
         ∃ named', (m, named') ∈ ixe.named.toList ∧ named'.addr = a ∧ (sub.consts.get? m).isSome = true)
     {hints : CName .source → Option ReducibilityHint} {H : Nat → ReducibilityHint}
     (hinted : ∀ k (hk : k < defs.length),
@@ -421,7 +418,7 @@ theorem definition_block_segment {env : Ix.Environment} {roots : List Ix.Name} {
     simpa using DefinitionBlocks.forall₂_length views
   obtain ⟨-, stored, each⟩ := block_members P prelude corder canonical b resolves (by omega) insub ran hr pub hrec
   have reads := closure_block_reads P prelude corder canonical hf resolves two views insub distinct exactNames ran
-    fresh unaliased hr pub hrec bound blobs published hinted conv ownersGood good lowered levels
+    fresh hr pub hrec bound blobs published hinted conv ownersGood good lowered levels
   obtain ⟨plain, scope⟩ := block_read two views (fun k hk => (hinted k hk).2) conv lowered
   refine partner_segment plain collapse (fun d hd => (scope d hd).1) (fun d hd e he => ?_) stored reads
     (fun e => ?_) empty
@@ -664,7 +661,7 @@ theorem block_place {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
     {context : CompileEnv × BlockEnv} {before after : BlockState} {output : BlockResult}
     (ran : rawRun (compileMutualBlock ((defs.map MutConst.defn).map ([·]))) context before = (.ok output, after))
     {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r' : BlockResult} {cache : BlockState}
-    {layout : Option Ixon.AuxLayout} (hr' : runBlock cenvR all key = .ok (r', cache, layout))
+    (hr' : runBlock cenvR all key = .ok (r', cache))
     (pub : BlockPublication.Published ixe sub key r') (hrec : BlockRecords.recordsOf r' = BlockRecords.recordsOf output)
     (hdecl : ∀ j (hj : j < defs.length),
       ∃ d ∈ r.decls.toList, ClosureLayout.qkey (fiberAliasAt ixe (roleAtMap t)) defs[j].name ∈ d.names) :
