@@ -56,6 +56,18 @@ the shard proofs that assume it, their composition with it, and the refusals
 without it; the aggregation circuit's handling of the binding is tested in
 `ix-aggr` (primary).
 
+`aggregate-toolchains` is also manual: it proves the committed library fixtures
+from Lean 4.29.0, 4.33.1, 4.34.1 and 4.35.0 with one IxVM key, discharges each
+piece's binding assumptions, and joins their roots into one catalog root.
+It verifies that root against the catalog and checks refusals for missing
+members. Run `lake build ix`, then `lake test -- aggregate-toolchains`, with
+`zstd` available. Allow tens of minutes. `IX_TOOLCHAINS_MAX_RAM` sets the
+aggregate jobs' RAM budget in GiB (default 140); the shard and shard-proof
+commands use 64 GiB. The runner keeps its store and caches in a temporary
+home directory. Its registration and manual-run reason live in
+`Tests/Main.lean`; its full flow is in
+[`Tests/AggrToolchains.lean`](../Tests/AggrToolchains.lean).
+
 `lake test -- --tier <tier>` runs one tier; `--tier landing` runs the three
 landing partitions. The registry's primary self-test, `ixtests-registry`,
 fails when a CI tier has no entry, when no workflow runs a CI tier (comments
