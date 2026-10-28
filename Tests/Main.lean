@@ -325,7 +325,8 @@ def registry : List Entry := [
   -- Rust compiler on Init+Std
   .suite "cert-compile-parity-initstd" (.ci .landingInitStd) Tests.Ix.Cert.Statement.initStdSuite,
   -- `ix compile-lean` on Init+Std: its report checks, the Rust compiler byte for
-  -- byte, and the reference digest (Tests/Fixtures/initstd-reference.txt)
+  -- byte, the reference digest (Tests/Fixtures/initstd-reference.txt), and the
+  -- Rust kernel on the artifact with every bound role admitted
   .runner "initstd-reference" (.ci .landingInitStd) Tests.Ix.InitStd.reference,
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
   -- decompile fidelity

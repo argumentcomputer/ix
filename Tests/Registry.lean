@@ -52,7 +52,8 @@ inductive CiJob where
   | landingCompilers
   /-- End-to-end checks on Init+Std: the certified compile with its report
   checks against the pipeline and the Rust compiler, in process and through
-  `ix compile-lean` (whose artifact must match the reference digest),
+  `ix compile-lean` (whose artifact must match the reference digest, and
+  which the Rust kernel checks with every bound role admitted),
   `ix validate-lean` fidelity, role binding and evidence, a reading premise
   on every inductive, and the admission hash. -/
   | landingInitStd

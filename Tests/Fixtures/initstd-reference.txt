@@ -5,8 +5,13 @@
 # `ix compile-lean Benchmarks/Compile/CompileInitStd.lean --rust-check` writes:
 # the certified compile with its report checks and the default role binding,
 # byte-identical with the Rust compiler's output.
+# `rust-kernel-passed` of `rust-kernel-checked` constants pass
+# `ix check-rs <artifact> --anon`, which must also admit every role the default
+# table binds.
 #
-# A change that moves the compiler's bytes updates these lines in the same
-# commit and says why.
+# A change that moves the compiler's bytes, or the Rust kernel's verdicts on
+# this artifact, updates these lines in the same commit and says why.
 sha256	eb059d46b0f8136c90d85cad5f8a6e8b779453e725ffd523d524815ff9e63d0f
 bytes	253648555
+rust-kernel-passed	99427
+rust-kernel-checked	99432
