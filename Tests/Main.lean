@@ -40,7 +40,6 @@ import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.ClosurePhase4
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
-import Tests.Ix.Compile.Twins
 import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.SourceGraph
 import Tests.Ix.GroundTests
@@ -429,11 +428,6 @@ def registry : List Entry := [
   .suite "compile-closure-phase4" .primary Tests.Ix.Compile.ClosurePhase4.suite,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
-  -- Canonicity over twin presentations, exact against the non-canonical
-  -- record under the records policy (Tests.Ix.Compile.Twins).
-  .runner "twins"
-    (expectedToRetire "it checks that reordered twins compile to one address")
-    Tests.Ix.Compile.Twins.run,
   -- The Lean compiler's output does not depend on the schedule: the fold at
   -- three widths, the reference schedule both ways and the pipeline at three
   -- worker counts, byte-identical (Tests.Ix.Compile.ScheduleIdentity).

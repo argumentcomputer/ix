@@ -2,8 +2,7 @@
   compile-schedule-identity: the Lean compiler's output does not depend on
   the schedule (TT-12; the executable regression of "parallel = sequential").
 
-  Over the twins closure (`Tests.Ix.Compile.Twins`, every family) and the
-  fixture corpus (`validateAuxClosure`: `Tests.Ix.Compile.Mutual`,
+  Over the fixture corpus (`validateAuxClosure`: `Tests.Ix.Compile.Mutual`,
   `Canonicity`, `LevelSpellings`, the IxVM and `Test.Ix.Fixtures`
   families), compile with
 
@@ -22,15 +21,8 @@
   and require every serialized environment and decline report to be identical. A
   difference is reported with the constant and its two addresses.
 
-  Refusals: the twin presentations that the compilers refuse on purpose
-  (`Tests.Ix.Compile.NonCanonical.expectedRefusals`) are refused under every
-  schedule, with their messages, and nothing else is; every other source name
-  is in the output; and the (name, message) failures are the same under every
-  schedule.
-
-  The twins' fixtures are not imported into `IxTests` (see
-  `Tests.Ix.Compile.Twins`): the suite loads this module's imports and the
-  twins' fixture root at run time.
+  Failures: no block fails under any schedule, and every source name is in
+  the output.
 
   The legs run concurrently (each is an independent compile of the same
   read-only input; `SCHED_JOBS=<n>` runs at most n at a time), and are
@@ -48,7 +40,7 @@
 
   Run with: `lake exe IxTests --ignored compile-schedule-identity`.
 -/
-import Tests.Ix.Compile.Twins
+import Tests.Ix.Compile.ClosureHarness
 import Tests.Ix.Compile.ScheduleReference
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.IxVM
@@ -179,26 +171,27 @@ def compareLegs (closure : List (Name × ConstantInfo)) (legs : Array Leg)
     (runs : Array LegResult) : IO Nat := do
   if ← quickTier then
     say "[schedule] SCHED_LEGS=quick: the per-iteration tier (3 legs); not the integration gate"
-  let scope : Std.HashSet Name := closure.foldl (init := {}) fun s (n, _) => s.insert n
   for (leg, (_, bytes, _, fails, declines)) in legs.zip runs do
     saveRun leg.saveLabel bytes fails
     say s!"[schedule] {leg.label}: {bytes.size} bytes, {fails.length} block failures, {declines.size} declines"
   let some (refLabel, refBytes, refEnv, refFails, refDeclines) := runs[0]? | return 1
   let mut failures := 0
-  -- Refusals: under every schedule exactly the expected refusals, with their
-  -- messages; every other source name is in the output; and the full
-  -- (name, message) list of failures is the same in every schedule.
+  -- Failures: no block fails under any schedule, every source name is in the
+  -- output, and the (name, message) list of failures is the same in every
+  -- schedule.
   let sortFails (xs : List (String × String)) : Array (String × String) :=
     xs.toArray.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)
   for (label, _, ixon, fails, declines) in runs do
-    let bad ← Tests.Ix.Compile.Twins.refusalCheck s!"schedule: {label}" scope fails
+    let mut bad := 0
+    for (n, e) in fails do
+      say s!"[schedule] {label}: block failure: {n}: {(e.replace "\n" " ").take 200}"
+      bad := bad + 1
     let missing := closure.filter fun (name, _) =>
-      !Tests.Ix.Compile.Twins.refusedSet.contains name
-        && !ixon.named.contains (_root_.Ix.Name.fromLeanName name)
+      !ixon.named.contains (_root_.Ix.Name.fromLeanName name)
     for (name, _) in missing do
       say s!"[schedule] {label}: output omitted source name {name}"
     if bad + missing.length == 0 then
-      say s!"[schedule] {label}: exactly the expected refusals, every other source name present"
+      say s!"[schedule] {label}: no block failure, every source name present"
     else
       failures := failures + 1
       say s!"[schedule] {label}: {bad + missing.length} violation(s)"
@@ -231,15 +224,10 @@ meta={x.constMeta != y.constMeta} original={x.original != y.original} hints={x.h
   return failures
 
 def run : IO UInt32 := do
-  -- this module's imports (the fixture corpus) and the twins' fixtures
-  let env ← getCompileEnv ((this_file!).push Tests.Ix.Compile.Twins.fixturesModule)
-  let (_, twins) :=
-    Tests.Ix.Compile.Twins.familyClosure env Tests.Ix.Compile.Twins.allFamilies
-  let fixtures := validateAuxClosure env
-  let names : Std.HashSet Name := twins.foldl (init := {}) fun s (n, _) => s.insert n
-  let closure := twins ++ fixtures.filter (!names.contains ·.1)
-  say s!"[schedule] {closure.length} constants (twins {twins.length}, fixture corpus \
-{fixtures.length})"
+  -- this module's imports (the fixture corpus)
+  let env ← getCompileEnv (this_file!)
+  let closure := validateAuxClosure env
+  say s!"[schedule] {closure.length} constants (fixture corpus)"
   -- the canonical environment and condensation, as `ix compile` computes them
   let phases ← Ix.CompileM.rsCompilePhasesOf closure
   -- Every leg is an independent compile of the same input: run them

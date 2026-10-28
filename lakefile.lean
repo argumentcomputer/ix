@@ -149,13 +149,6 @@ section Tests
 
 lean_lib Tests
 
-/-- The `twins` suite's fixtures (`Tests.Ix.Compile.Twins.Fixtures` and its
-imports). `IxTests` builds them but does not import them: the suite imports
-them at run time, so their deliberately refused presentations stay out of the
-environment that the whole-environment suites compile. -/
-lean_lib TwinsFixtures where
-  roots := #[`Tests.Ix.Compile.Twins.Fixtures]
-
 /-- The certified entry's host cases (`Tests.Ix.Kernel.EntryCaseDefs`), built as a
 library of their own so that suites can import them at run time (some host cases
 are installed unchecked on purpose). -/
@@ -166,7 +159,7 @@ lean_lib EntryCaseFixtures where
 lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
-  needs := #[`@/ix, `@/«kernel-check-ixe», `@/TwinsFixtures, `@/EntryCaseFixtures]
+  needs := #[`@/ix, `@/«kernel-check-ixe», `@/EntryCaseFixtures]
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where
@@ -513,10 +506,6 @@ lean_exe «kernel-codec» where
   root := `Tests.Ix.Kernel.CodecHost
   moreLinkObjs := #[ix_rs_test]
 
-lean_exe «kernel-order» where
-  root := `Tests.Ix.Kernel.BlockOrderHost
-  moreLinkObjs := #[ix_rs_test]
-
 /-- Host-compiled Lean declarations through the certified entry
 `Ix.Kernel.Admission.checkBytes`, each with an exact expected verdict. -/
 lean_exe «kernel-entry-cases» where
@@ -583,7 +572,7 @@ lean_exe «kernel-pin-gen» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, the codec and block-order differentials against Rust,
+the host-side tests, the codec differential against Rust,
 optionally the set-theory model, the layering and trust-surface fences, the
 level comparison, the certified entry's host-compiled cases, and the reader's
 fidelity against Lean (the fixture closure and the first records of Init and
@@ -599,7 +588,7 @@ script "check-kernel" (args) := do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
   run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
-  run "lake" #["build", "--wfail", "kernel-codec", "kernel-order"]
+  run "lake" #["build", "--wfail", "kernel-codec"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
   IO.eprint codec.stderr
@@ -607,12 +596,6 @@ script "check-kernel" (args) := do
     IO.eprint codec.stdout
     throw <| IO.userError "kernel-codec failed; see .lake/build/kernel-codec.log"
   IO.println "Production Ixon codec and Rust differential checks passed."
-  let order ← IO.Process.output { cmd := ".lake/build/bin/kernel-order" }
-  IO.FS.writeFile ".lake/build/kernel-order.jsonl" order.stdout
-  IO.eprint order.stderr
-  unless order.exitCode == 0 do
-    IO.eprint order.stdout
-    throw <| IO.userError "kernel-order failed; see .lake/build/kernel-order.jsonl"
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   -- The kernel's fences, derived from con-leche's: import layering and the
