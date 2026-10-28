@@ -76,16 +76,24 @@ impl CompileState {
 
 #[cfg(test)]
 mod tests {
-  use std::sync::Barrier;
+  use std::sync::{Arc, Barrier};
 
-  use ix_common::env::{DataValue, Name, SourceInfo, Syntax};
+  use ix_common::env::{
+    AxiomVal, ConstantInfo as LeanConstantInfo, ConstantVal, DataValue,
+    DefinitionSafety, DefinitionVal, Env as LeanEnv, Expr as LeanExpr, Level,
+    Literal, Name, ReducibilityHints, SourceInfo, Syntax,
+  };
   use ixon::{
     constant::{Axiom, ConstantInfo},
     expr::Expr,
   };
 
   use super::*;
-  use crate::compile::{compile_data_value, compile_name, store_string};
+  use crate::compile::{
+    BlockCache, CompileOptions, block_txn, compile_const, compile_data_value,
+    compile_env_with_options, compile_name, store_string,
+  };
+  use crate::graph::NameSet;
 
   fn constant(lvls: u64) -> Constant {
     Constant::new(ConstantInfo::Axio(Axiom {
@@ -99,6 +107,125 @@ mod tests {
     let mut out = Vec::new();
     c.put(&mut out);
     out
+  }
+
+  fn name(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_owned())
+  }
+
+  fn axiom(n: &Name) -> LeanConstantInfo {
+    LeanConstantInfo::AxiomInfo(AxiomVal {
+      cnst: ConstantVal {
+        name: n.clone(),
+        level_params: vec![],
+        typ: LeanExpr::sort(Level::succ(Level::zero())),
+      },
+      is_unsafe: false,
+    })
+  }
+
+  fn definition(n: &Name, value: LeanExpr, all: Vec<Name>) -> LeanConstantInfo {
+    LeanConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal {
+        name: n.clone(),
+        level_params: vec![],
+        typ: LeanExpr::sort(Level::succ(Level::zero())),
+      },
+      value,
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Safe,
+      all,
+    })
+  }
+
+  fn artifact(stt: &CompileState) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    stt.env.put(&mut bytes).unwrap();
+    bytes
+  }
+
+  #[test]
+  fn refused_mutual_block_preserves_the_complete_owner_artifact() {
+    let (f, g) = (name("refusedMember"), name("existingOwner"));
+    let mut owner_env = LeanEnv::default();
+    owner_env.insert(g.clone(), axiom(&g));
+    let stt = CompileState::default();
+    let owner = compile_const(
+      &g,
+      &[g.clone()].into_iter().collect(),
+      &Arc::new(owner_env),
+      &mut BlockCache::default(),
+      &stt,
+    )
+    .unwrap();
+    let before = artifact(&stt);
+    let mut members = LeanEnv::default();
+    let all = vec![f.clone(), g.clone()];
+    members.insert(
+      f.clone(),
+      definition(&f, LeanExpr::cnst(g.clone(), vec![]), all.clone()),
+    );
+    members.insert(
+      g.clone(),
+      definition(&g, LeanExpr::cnst(f.clone(), vec![]), all.clone()),
+    );
+    let all: NameSet = all.into_iter().collect();
+    block_txn::start();
+    let result = compile_const(
+      &f,
+      &all,
+      &Arc::new(members),
+      &mut BlockCache::default(),
+      &stt,
+    );
+    block_txn::finish(&stt, result.is_err());
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("conflicting claims for name 'existingOwner'"));
+    assert_eq!(stt.resolve_addr(&g), Some(owner.clone()));
+    assert_eq!(stt.env.named.get(&g).unwrap().addr, owner.clone());
+    let keys: Vec<_> = stt.env.consts.iter().map(|e| e.key().clone()).collect();
+    assert_eq!(keys, vec![owner], "failed block leaked anonymous records");
+    assert!(stt.blocks.is_empty(), "failed block leaked class ordering");
+    assert_eq!(artifact(&stt), before, "failed block changed partial output");
+  }
+
+  #[test]
+  fn scheduled_failure_preserves_the_successful_subset_artifact() {
+    let (owner, bad, dependent) =
+      (name("owner"), name("badProjection"), name("dependent"));
+    let mut success = LeanEnv::default();
+    success.insert(owner.clone(), axiom(&owner));
+    let options = CompileOptions { max_workers: Some(2) };
+    let expected = compile_env_with_options(&Arc::new(success.clone()), options)
+      .unwrap();
+    let mut input = success;
+    input.insert(
+      bad.clone(),
+      definition(
+        &bad,
+        LeanExpr::proj(
+          owner.clone(),
+          bignat::Nat(num_bigint::BigUint::from(1u64) << 64u32),
+          LeanExpr::lit(Literal::StrVal("failed-block-literal".to_owned())),
+        ),
+        vec![bad.clone()],
+      ),
+    );
+    input.insert(
+      dependent.clone(),
+      definition(
+        &dependent,
+        LeanExpr::cnst(bad.clone(), vec![]),
+        vec![dependent.clone()],
+      ),
+    );
+    let actual = compile_env_with_options(&Arc::new(input), options).unwrap();
+    assert_eq!(actual.ungrounded.len(), 2);
+    assert!(actual.ungrounded.get(&bad).unwrap().contains("proj index too large"));
+    assert!(actual.ungrounded.contains_key(&dependent));
+    assert_eq!(actual.env.consts.len(), expected.env.consts.len());
+    assert_eq!(actual.env.named.len(), expected.env.named.len());
+    assert_eq!(artifact(&actual), artifact(&expected));
   }
 
   impl CompileState {
