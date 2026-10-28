@@ -141,19 +141,20 @@ def defMentions (ci : Ix.ConstantInfo) (m : Ix.Name) : Prop :=
     (GraphWalk.Refs m source.type ∨ GraphWalk.Refs m source.value)
 
 /-- **What a singleton definition's segment needs**: its compile, with its record's hint the one
-quotient Source lowers it at, and distinct level parameters. -/
+quotient Source lowers it at. (Its level parameters are distinct where the collapse keeps it:
+`TraceNeeds.levels`.) -/
 structure DefinitionNeeds (hints : CName .source → Option ReducibilityHint) (ci : Ix.ConstantInfo) : Prop where
   compiled : ∃ cenv benv output after, LoneCompiled ixe sub ci (defMentions ci) cenv benv output after ∧
     ∃ h, hintsOf ixe (.member output.blockAddr 0) = some h ∧ hints (ingressKey ci.getCnst.name) = some h
-  nodup : ci.getCnst.levelParams.toList.Nodup
 
-/-- **What an axiom's or a quotient constant's segment needs**: its compile, distinct level
-parameters, and a type that does not name the constant itself. -/
-structure HeaderNeeds (ci : Ix.ConstantInfo) : Prop where
+/-- **What an axiom's or a quotient constant's segment needs**: its compile, and, where the
+collapse keeps its declaration `raw` as the read `rd`, distinct level parameters and a type that
+does not name the constant itself. -/
+structure HeaderNeeds (ci : Ix.ConstantInfo) (raw rd : Read .source) : Prop where
   compiled : ∃ cenv benv output after,
     LoneCompiled ixe sub ci (fun m => GraphWalk.Refs m ci.getCnst.type) cenv benv output after
-  nodup : ci.getCnst.levelParams.toList.Nodup
-  noSelf : ConstsSatisfy (fun m => m ≠ ci.getCnst.name) ci.getCnst.type
+  nodup : rd = raw → ci.getCnst.levelParams.toList.Nodup
+  noSelf : rd = raw → ConstsSatisfy (fun m => m ≠ ci.getCnst.name) ci.getCnst.type
 
 /-- A group of definitions' sources, in the group's order. -/
 def defsOf (members : Array Ix.ConstantInfo) : List Ix.Def :=
@@ -178,8 +179,9 @@ structure BlockCompiled (t : RoleTable) (preA : Prelude .anon) (order : List Add
       hints (ingressKey defs[k].name) = some (H k)
 
 /-- **What a block of several definitions' segment needs**: its compile; distinct members; every
-name its sources mention with a member's key is that member; quotient Source's declarations of
-it with distinct level parameters; and the collapse keeping or dropping it whole. -/
+name its sources mention with a member's key is that member; and the collapse keeping or dropping
+it whole. (Its declarations' level parameters are distinct where the collapse keeps them:
+`TraceNeeds.levels`.) -/
 structure BlockNeeds (t : RoleTable) (preA : Prelude .anon) (order : List Address)
     (hints : CName .source → Option ReducibilityHint) (members : Array Ix.ConstantInfo) (raw rd : Read .source) :
     Prop where
@@ -188,7 +190,6 @@ structure BlockNeeds (t : RoleTable) (preA : Prelude .anon) (order : List Addres
   exactNames : ∀ i (hi : i < (defsOf members).length) j (hj : j < (defsOf members).length) n,
     ConstOcc n (defsOf members)[i].type ∨ ConstOcc n (defsOf members)[i].value →
       ingressKey n = ingressKey (defsOf members)[j].name → n = (defsOf members)[j].name
-  levels : ∀ d ∈ raw.decls, DefinitionBlockReads.DeclNodup d
   collapse : rd = raw ∨ rd = { raw with decls := #[], generated := 0 }
 
 /-- **An inductive group compiled in Lean's order**: the inductive block's run, the fold's claim,
@@ -356,6 +357,15 @@ theorem empty_at {ixe : Ixon.Env} {cx : Ctx .anon} {f : Mode.Id .source → Mode
   rw [empty rfl]
   exact .inl ⟨⟨⟨rfl, plain.owners, plain.blocks⟩, rfl⟩, fun _ h => nomatch h⟩
 
+/-- **A read the collapse drops whole has an empty segment, read as nothing.** -/
+theorem dropped_reads {f : md.Id → md'.Id} {P : KeyScope md} {cx : Ctx md'} {ixe : Ixon.Env} {stS : State md}
+    {raw rd : Read md} {seg : List Address} (plain : StreamRename.Plain raw)
+    (h : rd = { raw with decls := #[], generated := 0 }) (empty : rd.decls = #[] → seg = []) :
+    SegmentReads f P cx ixe stS rd seg := by
+  subst h
+  rw [empty rfl]
+  exact .inl ⟨⟨⟨rfl, plain.owners, plain.blocks⟩, rfl⟩, fun _ h => nomatch h⟩
+
 /-! ## A segment of each kind -/
 
 section Kinds
@@ -379,6 +389,7 @@ theorem definition_at (P : Premises env roots sub ixe failures t envQ) {preA : P
       stS raw rd)
     (needs : DefinitionNeeds ixe sub hints ci) (stGood : StateGood (scope ixe t) stS)
     (good : ConvGood (scope ixe t) ((c.withHints hints).quotient (fibers ixe t)))
+    (levels : rd = raw → ∀ d ∈ raw.decls.toList, DefinitionBlockReads.DeclNodup d)
     {seg : List Address} (hseg : (cutOf ixe t hints sub ls L)[ℓ]? = some seg) (empty : rd.decls = #[] → seg = []) :
     SegmentReads (evAddr ixe b) (scope ixe t) (closureContext ixe t preA (cutOf ixe t hints sub ls L).flatten) ixe
       stS rd seg := by
@@ -392,10 +403,11 @@ theorem definition_at (P : Premises env roots sub ixe failures t envQ) {preA : P
   have declares := ClosureLayout.lowered_declares hyx hc hl ci.getCnst.name (by rw [hnm]; simp)
   obtain ⟨cenv, benv, output, after, ⟨ran, stored, haddr, bound, blobs, published⟩, h, hint, hhint⟩ :=
     needs.compiled
-  obtain ⟨m0, rfl, hm0⟩ : ∃ m0 : Ix.LeanIngress.DefMember, c = .definitions #[m0] ∧
-      m0.cv.name = ingressKey ci.getCnst.name := by
+  obtain ⟨m0, rfl, hm0, hm0l⟩ : ∃ m0 : Ix.LeanIngress.DefMember, c = .definitions #[m0] ∧
+      m0.cv.name = ingressKey ci.getCnst.name ∧
+      m0.cv.levelParams = (Ix.LeanIngress.Numbering.mk ci.getCnst.levelParams false).params := by
     obtain ⟨_, _, _, _, _, _, _, _, rfl⟩ := RecordReadings.convertDefinitions_single hconv
-    exact ⟨_, rfl, rfl⟩
+    exact ⟨_, rfl, rfl, rfl⟩
   have hconv' : Ix.LeanIngress.convertDefinitions #[ci] = .ok (.definitions #[m0]) := hconv
   obtain ⟨source, view⟩ : ∃ source, EmissionDispatch.sourceData ci = some source := by
     obtain ⟨s0, -, -, -, hs0, -⟩ := RecordReadings.convertDefinitions_single hconv'
@@ -408,6 +420,19 @@ theorem definition_at (P : Premises env roots sub ixe failures t envQ) {preA : P
       List.map_toArray, List.map_cons, List.map_nil, hm0, hhint, RecordReadings.quotientMember]
   rw [hq] at hl good
   obtain ⟨typeGood, valueGood⟩ := good _ List.mem_cons_self
+  -- a dropped definition reads to nothing
+  obtain ⟨decl, rw', lowS, hraw⟩ := RecordReadings.lower_definition hl
+  have plain : StreamRename.Plain raw := by subst hraw; exact ⟨rfl, rfl, rfl⟩
+  rcases SingletonSegments.collapseRead_one hcol (by rw [hraw]) plain.generated with e | e
+  rotate_left
+  · exact dropped_reads plain e empty
+  -- a kept one has distinct level parameters
+  have nodup : source.levelParams.toList.Nodup := by
+    have hd := levels e decl (by rw [hraw]; simp)
+    have hn := DefinitionBlockReads.lowerDefinition_nodup lowS hd
+    rw [DefinitionBlockReads.quotientMember_levelParams, hm0l] at hn
+    rw [← hlps]
+    exact DefinitionBlockReads.nodup_of_params hn
   -- the definition is a closure constant published at its record
   obtain ⟨ci', hci'⟩ := ClosureLayout.converted_names_stored P hgr hconv ci.getCnst.name (by
     simp [Group.names])
@@ -421,9 +446,9 @@ theorem definition_at (P : Premises env roots sub ixe failures t envQ) {preA : P
     exact contains_of_mem (SourceStoredNames.stored_input P hci')
   have hB := InductiveSegments.published_in_order P corder hci' haddr stored
   have hn : (source.name, named) ∈ ixe.named.toList := hname ▸ hmemN
-  refine SingletonSegments.definition_segment P prelude corder canonical hf view input (hlps ▸ needs.nodup) ran hB
+  refine SingletonSegments.definition_segment P prelude corder canonical hf view input nodup ran hB
     stored hn haddr' bound blobs (fun m a hm => published m a ⟨source, view, hm⟩) hint hconv' stGood.owners
-    typeGood valueGood hl hcol (fun e => ?_) empty
+    typeGood valueGood hl hcol (fun _ => ?_) empty
   -- a kept definition's segment is its record
   have shape := BlockLayout.compileConstantInfo_shape ci _ _ _ _ ran
   obtain ⟨-, -, single⟩ := SingletonReads.lone_keys P prelude corder canonical b
@@ -444,7 +469,7 @@ theorem axiom_at (P : Premises env roots sub ixe failures t envQ) {preA : Prelud
     (canonical : Stream.StoredCanonical ixe (cutOf ixe t hints sub ls L).flatten)
     {ℓ : Nat} {y : Scheduled} {v : Ix.AxiomVal} {c : Converted} {stS : State .source} {raw rd : Read .source}
     (low : LoweredAt (quotientGraph ixe t hints sub) (fibers ixe t) hints start ls rs ℓ y (.axiom v) c stS raw rd)
-    (needs : HeaderNeeds ixe sub (.axiomInfo v))
+    (needs : HeaderNeeds ixe sub (.axiomInfo v) raw rd)
     {seg : List Address} (hseg : (cutOf ixe t hints sub ls L)[ℓ]? = some seg) (empty : rd.decls = #[] → seg = []) :
     SegmentReads (evAddr ixe b) (scope ixe t) (closureContext ixe t preA (cutOf ixe t hints sub ls L).flatten) ixe
       stS rd seg := by
@@ -460,6 +485,15 @@ theorem axiom_at (P : Premises env roots sub ixe failures t envQ) {preA : Prelud
   obtain ⟨cv0, rfl⟩ : ∃ cv0, c = .axiom cv0 := by
     obtain ⟨_, -, -, rfl⟩ := RecordReadings.convert_axiom hconv
     exact ⟨_, rfl⟩
+  -- a dropped axiom reads to nothing
+  have hraw : raw = { decls := #[.axiomDecl (RecordReadings.quotientHeader (fibers ixe t) cv0)] } := by
+    have unfolded : Ix.LeanIngress.lower stS (((Converted.axiom cv0).withHints hints).quotient (fibers ixe t)) =
+        .ok { decls := #[.axiomDecl (RecordReadings.quotientHeader (fibers ixe t) cv0)] } := rfl
+    exact (Except.ok.inj (unfolded.symm.trans hl)).symm
+  have plain : StreamRename.Plain raw := by subst hraw; exact ⟨rfl, rfl, rfl⟩
+  rcases SingletonSegments.collapseRead_one hcol (by rw [hraw]) plain.generated with e | e
+  rotate_left
+  · exact dropped_reads plain e empty
   obtain ⟨ci', hci'⟩ := ClosureLayout.converted_names_stored P hgr hconv v.cnst.name (by
     simp [Group.names])
   obtain ⟨named, hn, hget⟩ := SourceStoredNames.stored_published P hci'
@@ -469,8 +503,8 @@ theorem axiom_at (P : Premises env roots sub ixe failures t envQ) {preA : Prelud
     exact Option.some.inj haddr
   have input : env.consts.contains v.cnst.name = true := contains_of_mem (SourceStoredNames.stored_input P hci')
   have hB := InductiveSegments.published_in_order P corder hci' haddr stored
-  refine SingletonSegments.axiom_segment (b := b) P prelude corder canonical input needs.nodup ran hB stored hn haddr'
-    bound blobs published needs.noSelf hconv hl hcol (fun e => ?_) empty
+  refine SingletonSegments.axiom_segment (b := b) P prelude corder canonical input (needs.nodup e) ran hB stored hn
+    haddr' bound blobs published (needs.noSelf e) hconv hl hcol (fun _ => ?_) empty
   have shape := BlockLayout.compileConstantInfo_shape _ _ _ _ _ ran
   obtain ⟨-, -, single⟩ := SingletonReads.lone_keys P prelude corder canonical b
     (blob := fun a => cenv.blobs.get? a) shape hB stored hn haddr' input
@@ -490,7 +524,7 @@ theorem quotient_at (P : Premises env roots sub ixe failures t envQ) {preA : Pre
     (canonical : Stream.StoredCanonical ixe (cutOf ixe t hints sub ls L).flatten)
     {ℓ : Nat} {y : Scheduled} {v : Ix.QuotVal} {c : Converted} {stS : State .source} {raw rd : Read .source}
     (low : LoweredAt (quotientGraph ixe t hints sub) (fibers ixe t) hints start ls rs ℓ y (.quot v) c stS raw rd)
-    (needs : HeaderNeeds ixe sub (.quotInfo v))
+    (needs : HeaderNeeds ixe sub (.quotInfo v) raw rd)
     {seg : List Address} (hseg : (cutOf ixe t hints sub ls L)[ℓ]? = some seg) (empty : rd.decls = #[] → seg = []) :
     SegmentReads (evAddr ixe b) (scope ixe t) (closureContext ixe t preA (cutOf ixe t hints sub ls L).flatten) ixe
       stS rd seg := by
@@ -506,6 +540,15 @@ theorem quotient_at (P : Premises env roots sub ixe failures t envQ) {preA : Pre
   obtain ⟨kind, cv0, rfl⟩ : ∃ kind cv0, c = .quot kind cv0 := by
     obtain ⟨_, -, rfl⟩ := RecordReadings.convert_quot hconv
     exact ⟨_, _, rfl⟩
+  -- a dropped quotient constant reads to nothing
+  have hraw : raw = { decls := #[.quotDecl kind (RecordReadings.quotientHeader (fibers ixe t) cv0)] } := by
+    have unfolded : Ix.LeanIngress.lower stS (((Converted.quot kind cv0).withHints hints).quotient (fibers ixe t)) =
+        .ok { decls := #[.quotDecl kind (RecordReadings.quotientHeader (fibers ixe t) cv0)] } := rfl
+    exact (Except.ok.inj (unfolded.symm.trans hl)).symm
+  have plain : StreamRename.Plain raw := by subst hraw; exact ⟨rfl, rfl, rfl⟩
+  rcases SingletonSegments.collapseRead_one hcol (by rw [hraw]) plain.generated with e | e
+  rotate_left
+  · exact dropped_reads plain e empty
   obtain ⟨ci', hci'⟩ := ClosureLayout.converted_names_stored P hgr hconv v.cnst.name (by
     simp [Group.names])
   obtain ⟨named, hn, hget⟩ := SourceStoredNames.stored_published P hci'
@@ -515,8 +558,8 @@ theorem quotient_at (P : Premises env roots sub ixe failures t envQ) {preA : Pre
     exact Option.some.inj haddr
   have input : env.consts.contains v.cnst.name = true := contains_of_mem (SourceStoredNames.stored_input P hci')
   have hB := InductiveSegments.published_in_order P corder hci' haddr stored
-  refine SingletonSegments.quotient_segment (b := b) P prelude corder canonical input needs.nodup ran hB stored hn
-    haddr' bound blobs published needs.noSelf hconv hl hcol (fun e => ?_) empty
+  refine SingletonSegments.quotient_segment (b := b) P prelude corder canonical input (needs.nodup e) ran hB stored hn
+    haddr' bound blobs published (needs.noSelf e) hconv hl hcol (fun _ => ?_) empty
   have shape := BlockLayout.compileConstantInfo_shape _ _ _ _ _ ran
   obtain ⟨-, -, single⟩ := SingletonReads.lone_keys P prelude corder canonical b
     (blob := fun a => cenv.blobs.get? a) shape hB stored hn haddr' input
@@ -542,6 +585,7 @@ theorem block_at (P : Premises env roots sub ixe failures t envQ) {preA : Prelud
     (two : 2 ≤ members.size)
     (needs : BlockNeeds ixe sub t preA (cutOf ixe t hints sub ls L).flatten hints members raw rd)
     (stGood : StateGood (scope ixe t) stS) (good : ConvGood (scope ixe t) ((c.withHints hints).quotient (fibers ixe t)))
+    (levels : rd = raw → ∀ d ∈ raw.decls.toList, DefinitionBlockReads.DeclNodup d)
     {seg : List Address} (hseg : (cutOf ixe t hints sub ls L)[ℓ]? = some seg) (empty : rd.decls = #[] → seg = []) :
     SegmentReads (evAddr ixe b) (scope ixe t) (closureContext ixe t preA (cutOf ixe t hints sub ls L).flatten) ixe
       stS rd seg := by
@@ -572,9 +616,15 @@ theorem block_at (P : Premises env roots sub ixe failures t envQ) {preA : Prelud
     fun j hj => ClosureLayout.converted_names_stored P hgr hconv _ (hnm ▸ (hnames _).mpr ⟨j, hj, rfl⟩)
   obtain ⟨cenv, benv, output, after, ran, fresh, ⟨cenvR, all, key, r, cache, hr', pub, hrec⟩, bound, blobs,
     published, H, hinted⟩ := needs.compiled
+  -- a dropped block reads to nothing
+  obtain ⟨plain, -⟩ := DefinitionSegments.block_read two views (fun k hk => (hinted k hk).2) hconv' hl
+  rcases needs.collapse with e | e
+  rotate_left
+  · exact dropped_reads plain e empty
   refine DefinitionSegments.definition_block_segment P prelude corder canonical hf resolves two views insub
     needs.distinct needs.exactNames ran fresh hr' pub hrec bound blobs published hinted hconv' stGood.owners
-    (fun qms e => by rw [e] at good; exact good) hl needs.levels needs.collapse (fun e => ?_) empty
+    (fun qms e => by rw [e] at good; exact good) hl (fun d hd => levels e d (Array.mem_toList_iff.mpr hd))
+    (.inl e) (fun _ => ?_) empty
   subst e
   obtain ⟨before, after', hplace, hin⟩ := DefinitionSegments.block_place P prelude corder canonical b steps inTrace hnd
     hmem resolves hy hr (by omega) hnames insub ran hr' pub hrec
@@ -654,22 +704,24 @@ end Kinds
 /-! ## Every segment -/
 /-- **What the trace's lowered groups need**, for the lowered items `ls` of a trace from `start`
 with reads `rs`, read in the order the record order `L` is cut into: every group's quotient
-terms and every state's entries in the scope, and each lowered group what its kind needs. -/
+terms and every state's entries in the scope, distinct level positions for every kept definition
+(`TraceSource.kept_levels`), and each lowered group what its kind needs. -/
 structure TraceNeeds (ixe : Ixon.Env) (sub : Ix.Environment) (t : RoleTable) (preA : Prelude .anon)
     (b : Ix.RoleEvidence.Bundle) (hints : CName .source → Option ReducibilityHint) (start : State .source)
     (ls : List Scheduled) (rs : List (Read .source)) (L : List Address) : Prop where
   good : ∀ (i : Nat) (gr : Group) (c : Converted), (quotientGraph ixe t hints sub).groups[i]? = some gr →
     Ix.LeanIngress.convert gr = .ok c → ConvGood (scope ixe t) ((c.withHints hints).quotient (fibers ixe t))
   states : ∀ ℓ, StateGood (scope ixe t) ((rs.take ℓ).foldl State.commit start)
+  levels : ∀ (ℓ : Nat) (r : Read .source), rs[ℓ]? = some r → ∀ d ∈ r.decls.toList, DefinitionBlockReads.DeclNodup d
   definitions : ∀ ℓ y ci c stS raw rd,
     LoweredAt (quotientGraph ixe t hints sub) (fibers ixe t) hints start ls rs ℓ y (.definitions #[ci]) c stS raw rd →
     DefinitionNeeds ixe sub hints ci
   axioms : ∀ ℓ y v c stS raw rd,
     LoweredAt (quotientGraph ixe t hints sub) (fibers ixe t) hints start ls rs ℓ y (.axiom v) c stS raw rd →
-    HeaderNeeds ixe sub (.axiomInfo v)
+    HeaderNeeds ixe sub (.axiomInfo v) raw rd
   quotients : ∀ ℓ y v c stS raw rd,
     LoweredAt (quotientGraph ixe t hints sub) (fibers ixe t) hints start ls rs ℓ y (.quot v) c stS raw rd →
-    HeaderNeeds ixe sub (.quotInfo v)
+    HeaderNeeds ixe sub (.quotInfo v) raw rd
   blocks : ∀ ℓ y members c stS raw rd,
     LoweredAt (quotientGraph ixe t hints sub) (fibers ixe t) hints start ls rs ℓ y (.definitions members) c
       stS raw rd →
@@ -712,6 +764,8 @@ theorem segmentsRead_of_needs {env : Ix.Environment} {roots : List Ix.Name} {sub
     ⟨hy, hr, hgr, hconv, hc, rfl, hl, s, s', dropped, hcol⟩
   have hempty : r.decls = #[] → seg = [] := fun h => Option.some.inj (hseg.symm.trans (empty ℓ r hr h))
   have cgood := needs.good y.1.1 gr c hgr hconv
+  have hlevels : r = raw → ∀ d ∈ raw.decls.toList, DefinitionBlockReads.DeclNodup d := fun e d hd =>
+    needs.levels ℓ r hr d (by rw [e]; exact hd)
   cases gr with
   | invalid ns e => simp [Ix.LeanIngress.convert, throw, throwThe, MonadExceptOf.throw] at hconv
   | «axiom» v =>
@@ -725,9 +779,9 @@ theorem segmentsRead_of_needs {env : Ix.Environment} {roots : List Ix.Name} {sub
     rcases l with _ | ⟨ci, _ | ⟨ci', rest⟩⟩
     · exact empty_at low hempty
     · exact definition_at P prelude hf resolves steps inTrace hnd hmem corder canonical low
-        (needs.definitions _ _ _ _ _ _ _ low) (needs.states ℓ) cgood hseg hempty
+        (needs.definitions _ _ _ _ _ _ _ low) (needs.states ℓ) cgood hlevels hseg hempty
     · exact block_at P prelude hf resolves steps inTrace hnd hmem corder canonical low (by simp)
-        (needs.blocks _ _ _ _ _ _ _ low (by simp)) (needs.states ℓ) cgood hseg hempty
+        (needs.blocks _ _ _ _ _ _ _ low (by simp)) (needs.states ℓ) cgood hlevels hseg hempty
   | «inductive» types ctors recs =>
     obtain ⟨first, hfirst, -⟩ := InductiveUnits.convertInductive_src
       (show Ix.LeanIngress.convertInductive types ctors recs = .ok c from hconv)
