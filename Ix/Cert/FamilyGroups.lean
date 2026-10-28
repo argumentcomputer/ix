@@ -369,14 +369,17 @@ def InRecursors (env : Ix.Environment) (first x : Ix.Name) : Prop :=
 A block that holds an inductive holds exactly its family's types and constructors (its `all`,
 and their constructors). So does a block that holds a constructor, for the constructor's
 inductive, which must be an input inductive. A block that holds a recursor holds exactly the
-input recursors with that recursor's `all[0]`, which must exist. (A compile-report check.) -/
+input recursors with that recursor's `all[0]`, which must be an input inductive whose `all` is the
+recursor's and whose family has fewer than 2^63 members and auxiliaries (positions are 64-bit). (A
+compile-report check.) -/
 def FamilyBlocks (env : Ix.Environment) : Prop :=
   ∀ rep all, (CompiledRefs.envBlocks env).blocks.get? rep = some all → ∀ y, all.contains y = true →
     (∀ iv, env.consts.get? y = some (.inductInfo iv) →
       ∀ x, all.contains x = true ↔ InFamily env iv.all x) ∧
     (∀ cv, env.consts.get? y = some (.ctorInfo cv) → ∃ iv, env.consts.get? cv.induct = some (.inductInfo iv) ∧
       ∀ x, all.contains x = true ↔ InFamily env iv.all x) ∧
-    (∀ rv, env.consts.get? y = some (.recInfo rv) → ∃ first, rv.all[0]? = some first ∧
+    (∀ rv, env.consts.get? y = some (.recInfo rv) → ∃ first iv, rv.all[0]? = some first ∧
+      env.consts.get? first = some (.inductInfo iv) ∧ rv.all = iv.all ∧ iv.all.size + iv.numNested < 2 ^ 63 ∧
       ∀ x, all.contains x = true ↔ InRecursors env first x)
 
 /-! ## Stored names -/
@@ -507,7 +510,7 @@ theorem recursor_block {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
   obtain ⟨rep, all, hall, hk₀all⟩ := GroupBlocks.member_of_claim P
     (by rw [SourceStoredNames.stored_get hk₀]; rfl)
     (fun cv h => by rw [SourceStoredNames.stored_get hk₀E] at h; cases h)
-  obtain ⟨first, hfirst, fam⟩ := (fb rep all hall k₀ hk₀all).2.2 r₀ (SourceStoredNames.stored_get hk₀E)
+  obtain ⟨first, _, hfirst, -, -, -, fam⟩ := (fb rep all hall k₀ hk₀all).2.2 r₀ (SourceStoredNames.stored_get hk₀E)
   have hfn : first = n := Option.some.inj (hfirst.symm.trans hr₀n)
   rw [hfn] at fam
   refine ⟨rep, all, hall, fun x => (fam x).trans ⟨?_, ?_⟩⟩
