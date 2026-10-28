@@ -155,8 +155,11 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       p.printError s!"error: {e}"
       return 2
 
-  IO.println s!"[compile-lean] building {pathStr}..."
-  buildFile pathStr
+  -- Reuse existing imports when the caller already built them: the input file
+  -- is still elaborated; only Lake's dependency build and cache step is skipped.
+  unless p.hasFlag "no-build" do
+    IO.println s!"[compile-lean] building {pathStr}..."
+    buildFile pathStr
   let fe ← getFileEnvCore pathStr
   let constList ← if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers, \
@@ -212,6 +215,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
   FLAGS:
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
+    "no-build" ;           "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env. --rust-check compiles the same list."
     "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
