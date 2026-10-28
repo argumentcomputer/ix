@@ -81,10 +81,14 @@ structure Generated where
 
 /-- Generate evidence for the required, actually published roles. The
 certificate module's bound operations must have the artifact's addresses.
-Missing proofs, unreadable closure records and noncanonical output refuse. -/
+Missing proofs, unreadable closure records and noncanonical output refuse.
+`store?` is `recordStore limits env` when the caller has built it. -/
 def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
-    (required : List Role) (groups : List (List Role)) : Except String Generated := do
-  let store ← recordStore limits env
+    (required : List Role) (groups : List (List Role))
+    (store? : Option RecordStore := none) : Except String Generated := do
+  let store ← match store? with
+    | some store => pure store
+    | none => recordStore limits env
   let published ← publication env (store[·]?) required
   let boundOnly := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList []
   let preRecords ← preludeRecords boundOnly (store[·]?) groups
@@ -202,12 +206,16 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
 This explicitly regenerates a binding: any previous binding is replaced only
 after the new table's source publications match this artifact. Existing record
 and blob bytes cannot be overwritten. The caller must still check the resulting
-artifact at the certified entry; a previous certificate does not transfer. -/
+artifact at the certified entry; a previous certificate does not transfer.
+`store?` is `recordStore limits env` when the caller has built it (as for
+`generate`), so that one artifact is authenticated and decoded once. -/
 def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
-    (env : Ixon.Env) : Except String Ixon.Env := do
+    (env : Ixon.Env) (store? : Option RecordStore := none) : Except String Ixon.Env := do
   generated.table.check
   unless generated.table.wireWF do throw "role emission: noncanonical binding table"
-  let store ← recordStore limits env
+  let store ← match store? with
+    | some store => pure store
+    | none => recordStore limits env
   let actual ← Ix.RoleBinding.publication env (store[·]?) (generated.table.bound.toList.map (·.1))
   unless actual.bound == generated.table.bound do
     throw "role emission: binding differs from this artifact's published roles"
