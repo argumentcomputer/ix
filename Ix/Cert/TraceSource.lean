@@ -2,6 +2,7 @@ import Ix.Cert.TraceSegments
 import Ix.Cert.DefinitionPremises
 import Ix.CompileCert.CanonUnivScope
 import Ix.Cert.NoCtor
+import Ix.Cert.FamilyGroups
 
 /-! # Quotient Source's side of the trace's segments
 
@@ -22,7 +23,10 @@ that come from quotient Source's acceptance of its prepared stream.
 * `inductive_noCtor` (`InductiveNeeds.noCtor`): no constructor of a kept inductive group occurs in
   its types or its constructors' types, for any number of types: the checker's shape guard on
   the group's `indDecl` (`Semantics.checkDecl_noCtor`), back through the renaming and the
-  canonical levels. -/
+  canonical levels.
+* `inductive_shape` (`InductiveNeeds.hcsize`, `positions`): a lowered inductive group has one
+  constructor list per type, each constructor at its position, as `inductiveGroup` reads them
+  off the block (`FamilyGroups.inductiveGroup_shape`). -/
 
 namespace Ix.Cert.TraceSource
 
@@ -640,6 +644,42 @@ theorem inductive_noCtor {μ : CheckMode} {ev : Evidences .source} {envS : Env .
   · obtain ⟨entry, entryIn, -, conv⟩ := ctorEntries _ (Array.getElem_mem_toList _) ct hct
     exact conclude _ entry (.inr entryIn) conv
 
+/-! ## Inductive groups: one constructor list per type, constructors at their positions -/
+
+/-- **A lowered inductive group of quotient Source's graph has one constructor list per type,
+each constructor declaring its position** (`InductiveNeeds.hcsize`, `positions`): the group is
+`inductiveGroup`'s for a block of the closure (`FamilyGroups.inductive_origin`), which reads them
+off the block or refuses it (`FamilyGroups.inductiveGroup_shape`). -/
+theorem inductive_shape {ixe : Ixon.Env} {t : RoleTable} {hints : CName .source → Option ReducibilityHint}
+    {sub : Ix.Environment} {ρ : FiberMap} {start : State .source} {ls : List Scheduled} {rs : List (Read .source)}
+    {ℓ : Nat} {y : Scheduled} {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)}
+    {recs : Array Ix.RecursorVal} {c : Converted} {stS : State .source} {raw rd : Read .source}
+    (low : LoweredAt (ClosureLayout.quotientGraph ixe t hints sub) ρ hints start ls rs ℓ y
+      (.inductive types ctors recs) c stS raw rd) :
+    ctors.size = types.size ∧
+      ∀ i (hi : i < ctors.size) j (hj : j < ctors[i].size), ctors[i][j].cidx = j := by
+  have hmem : Ix.LeanIngress.Group.inductive types ctors recs ∈ Ix.LeanIngress.groupsOf sub (blocksOf sub) := by
+    have hgroups : (ClosureLayout.quotientGraph ixe t hints sub).groups =
+        Ix.LeanIngress.groupsOf sub (blocksOf sub) := ReaderUnits.graph_groups sub (blocksOf sub)
+    rw [← hgroups]
+    exact Array.mem_of_getElem? low.group
+  obtain ⟨n, v, -, -, hg⟩ := FamilyGroups.inductive_origin hmem
+  rcases FamilyGroups.inductiveGroup_shape hg with ⟨_, _, e⟩ | ⟨types', ctors', recs', e, -, hctors, -⟩
+  · cases e
+  cases e
+  have hlen : types.toList.length = ctors.toList.length := InductiveCompile.forall₂_length hctors
+  refine ⟨by simpa using hlen.symm, fun i hi j hj => ?_⟩
+  have hiT : i < types.toList.length := by rw [hlen]; simpa using hi
+  have hiC : i < ctors.toList.length := by simpa using hi
+  have row := InductiveCompile.forall₂_getElem hctors i hiT hiC
+  have hjC : j < ctors.toList[i].toList.length := by simpa using hj
+  have hjV : j < types.toList[i].ctors.zipIdx.toList.length := by
+    rw [InductiveCompile.forall₂_length row]; exact hjC
+  obtain ⟨-, -, hidx⟩ := InductiveCompile.forall₂_getElem row j hjV hjC
+  simp only [Array.getElem_toList] at hidx
+  simpa [Array.toList_zipIdx, List.getElem_zipIdx] using hidx
+
+
 /--
 info: 'Ix.Cert.TraceSource.kept_levels' depends on axioms: [propext, Classical.choice, Quot.sound]
 -/
@@ -663,5 +703,11 @@ info: 'Ix.Cert.TraceSource.inductive_noCtor' depends on axioms: [propext, Classi
 -/
 #guard_msgs in
 #print axioms inductive_noCtor
+
+/--
+info: 'Ix.Cert.TraceSource.inductive_shape' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms inductive_shape
 
 end Ix.Cert.TraceSource
