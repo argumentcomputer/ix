@@ -9,7 +9,6 @@ public import IxC.Kernel.Ixon.Prelude
 public import IxC.Kernel.Cached.Installed
 public import Ix.RoleEvidence
 public import IxC.Kernel.Tier.Check
-public import IxC.Kernel.Tier.Ind
 
 /-! # Source mode: Lean environments as the checker's declarations
 
@@ -1522,44 +1521,6 @@ def convertTier : Group → Except ReadError (TierDecl .source)
       ((⟨ingressKey ci.getCnst.name, σ.params, ks[2 * j]!⟩ : CVal .source), ks[2 * j + 1]!)
     return .defs s ms.toList
   | _ => throw (.declined "tier: not a tier group")
-
-/-! ### Inductive blocks for the typing tier
-
-An unsafe inductive group stays logical in the tiered check above, where it
-declines. These helpers read such a group as the typing-only tier takes it
-(`Ix.Kernel.Tier.indC`). The tier's tests use them
-(`Tests/Ix/Kernel/TierInd.lean`); resource typing reads Ixon blocks with its
-own copy (`Ix.Resource.tierIndOf`, in `Ix/Resource/Typing.lean`). Nothing
-here is a verdict. -/
-
-/-- **An unsafe inductive group**: a member, a constructor or a recursor is
-unsafe. -/
-def isTierInductive : Group → Bool
-  | .inductive types ctors recs =>
-    types.any (·.isUnsafe) || ctors.any (·.any (·.isUnsafe)) || recs.any (·.isUnsafe)
-  | _ => false
-
-/-- A block read as the tier takes it: each constructor with its former's
-position (by `ctorNames`), each recursor with its counts. -/
-def tierIndOf (rb : Ix.Kernel.Reader.BlockRead .source) : Ix.Kernel.Tier.TierInd .source :=
-  { numParams := rb.numParams
-    types := rb.types.toList.map fun (cv, _, nIdx) => (cv, nIdx)
-    ctors := rb.ctors.toList.map fun (cv, _, nF) =>
-      (cv, (rb.ctorNames.findIdx? (·.contains cv.name)).getD rb.types.size, nF)
-    recs := rb.recs.toList.map fun (cv, c, rules) =>
-      (cv, ⟨c.params, c.motives, c.minors, c.indices⟩, rules) }
-
-/-- **An inductive group's conversion for the tier**: `convertInductive`'s,
-unsafe or not (the safety flags are the only thing it reads that the tier
-does not), as the tier takes it. A block without recursors converts too. -/
-def convertTierInductive (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal))
-    (recs : Array Ix.RecursorVal) : Except ReadError (Ix.Kernel.Tier.TierInd .source) := do
-  let c ← convertInductive (types.map fun v => { v with isUnsafe := false })
-    (ctors.map (·.map fun v => { v with isUnsafe := false }))
-    (recs.map fun v => { v with isUnsafe := false })
-  match c with
-  | .inductive rb => pure (tierIndOf rb)
-  | _ => throw (.malformed "tier: an inductive group converted to something else")
 
 /-- Failures of the tiered Source-mode check, kept apart. -/
 inductive TierSourceError where

@@ -216,8 +216,8 @@ def uncertifiedOwners (roles : Bindings .anon) (ordered : Array (Address × Ixon
 /-- **An unsafe inductive block read for the tier** (the separate tier entry
 for Ixon): `Reader.readInductive`'s reading of the block, its constructors
 and its recursor records, without its safety declines and without lowering
-(no modeller, no `indDecl`), as T1's Source conversion
-(`Ix.LeanIngress.convertTierInductive`) reads a block for the tier. -/
+(no modeller, no `indDecl`), as the tier's Source-side tests read a block
+(`Tests.Ix.Kernel.TierInd.convertTierInductive`). -/
 def readTierBlock (cx : Ctx .anon) (owner : Address) (c : Ixon.Constant) (ms : Array Ixon.MutConst) :
     ReadM (BlockRead .anon) := do
   let some shape := cx.index.blocks[owner]?
@@ -279,7 +279,8 @@ def readTierBlock (cx : Ctx .anon) (owner : Address) (c : Ixon.Constant) (ms : A
       some entry.motive⟩, rules)
   return ⟨nPd, types, ctors, ctorNames, recs⟩
 
-/-- A block as the tier takes it (`Ix.LeanIngress.tierIndOf`'s, at any mode). -/
+/-- A block as the tier takes it: each constructor with its former's position (by
+`ctorNames`), each recursor with its counts. -/
 def tierIndOf (rb : BlockRead md) : Ix.Kernel.Tier.TierInd md :=
   { numParams := rb.numParams
     types := rb.types.toList.map fun (cv, _, nIdx) => (cv, nIdx)
