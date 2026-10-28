@@ -1568,6 +1568,33 @@ def roleKindCase (leanEnv : Lean.Environment) : IO (Array String × Array String
       address of {refused.toList}"])
   return (errors, #[])
 
+/-- `LiteralRolesNamed`: an α-copy of `Nat` under another name (`AdvNat`), compiled without
+`Nat` itself, is stored at the default role table's address of `Nat`; `checkReport` refuses it
+by the literal-role check, since `Nat` is not an input constant published there. (The
+closures of the other cases, which hold `Nat`, pass the check.) -/
+def literalRoleCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let t ← match Ix.Kernel.Reader.defaultTable with
+    | .ok t => pure t
+    | .error e => return (#[s!"literal roles: the default role table failed: {e}"], #[])
+  let some natAddr := t.addressOf? .nat
+    | return (#["literal roles: the default role table binds no Nat"], #[])
+  let closed ← IO.ofExcept
+    (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[`Tests.Ix.Kernel.TutorialDefs.AdvNat])
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  let (ixe, failures, cenv) ← match Ix.Cert.compileUnchecked env with
+    | .ok out => pure out
+    | .error e => return (#[s!"literal roles: the copy of Nat failed to compile: {e}"], #[])
+  unless ixe.consts.contains natAddr do
+    return (#[s!"literal roles: the copy of Nat is not stored at Nat's role address {natAddr}"], #[])
+  match Ix.Cert.checkReport env cenv (ixe, failures) with
+  | .error e =>
+    if (e.splitOn "literal-role check failed").length > 1 then
+      return (#[], #["literal roles: checkReport refuses a copy of Nat at Nat's role address \
+        without Nat"])
+    return (#[s!"literal roles: the copy of Nat is refused, but not by the literal-role check: {e}"], #[])
+  | .ok () =>
+    return (#["literal roles: checkReport accepts a copy of Nat at Nat's role address without Nat"], #[])
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -1596,7 +1623,9 @@ def suite : List TestSeq := [
   report "a recursor with all = [J] in I's motive slot is refused (recursor check)" (do
     recursorFamilyCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "a record of the wrong kind at a bound role's address is refused (role check)" (do
-    roleKindCase (← getCompileEnv #[defsModule, ownModule])) 1]
+    roleKindCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "a copy of Nat at Nat's role address without Nat is refused (literal-role check)" (do
+    literalRoleCase (← getCompileEnv #[`Tests.Ix.Kernel.TutorialDefs])) 1]
 
 /-- `cert-evidence-agreement` (landing): the role table's evidence against quotient Source's on the
 well-founded operations' closure (`evidenceAgreement`); it compiles and reads the closure, so it

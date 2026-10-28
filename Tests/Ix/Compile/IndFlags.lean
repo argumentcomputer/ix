@@ -33,10 +33,12 @@ namespace Tests.Ix.Compile.IndFlags
 
 namespace Fixture
 
-/-- A recursive inductive: Lean's stored `isRec` is `true`. -/
+/-- A recursive inductive: Lean's stored `isRec` is `true`. (A binary tree: a unary one would be
+α-equal to `Nat`, and a closure without `Nat` that stores it at `Nat`'s role address is refused
+by the certified compile's literal-role check, which is not what this test is about.) -/
 inductive T where
   | leaf : T
-  | node : T → T
+  | node : T → T → T
 
 -- Safe mutual inductives, each referring to the other.
 mutual

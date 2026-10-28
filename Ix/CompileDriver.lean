@@ -295,7 +295,9 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
         let (namesMap, blobs) :=
           Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
         (addrMap, namesMap, blobs)
-  let allBlobs := nameBlobs.fold (fun m k v => m.insert k v) cenv.blobs
+  -- The stored blobs are inserted last, so at an address both hold, the payload the
+  -- compile stored (and checked, `checkBlobContent`) wins over a name component's.
+  let allBlobs := cenv.blobs.fold (fun m k v => m.insert k v) nameBlobs
   let namedWithHints := cenv.nameToNamed.fold (init := {})
     fun m name named =>
       m.insert name { named with hints := acc.defHints.get? name }
