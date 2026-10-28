@@ -6,7 +6,7 @@ import Ix.CompileCert.BlobWrites
 
 The fold computes each wave's ready blocks against the wave's start (the snapshot) and then
 applies them. This module shows that a block's members are not in the snapshot's resolution
-map, except as aux names: outside the aux map, a block member is resolved only by a claim of
+map: a block member is resolved only by a claim of
 its own block (a block's claims name its members, and the constructors its inductives list,
 which are in the block too), and a block is applied once, after its snapshot.
 
@@ -14,17 +14,20 @@ which are in the block too), and a block is applied once, after its snapshot.
   representative;
 * `foldWaveWith_spec`: what one wave does to the fold state;
 * `WaveInv`: at each wave start, the candidates and waiting blocks have no settled member,
-  and every resolved block member outside the aux map is settled;
+  and every resolved block member is settled;
 * `ctorsInBlock`: an inductive and the constructors it lists share a block, since they
   reference each other;
 * `Ix.Cert.compileReport_owned_fresh`: `ClosureClaims.compileReport_owned`, and a member of
-  the claim's block is resolved at the block's snapshot only through the aux map;
+  the claim's block is unresolved at the block's snapshot;
 * `Ix.Cert.compileReport_owned_stored`: that, and the claiming block's own record is stored
   in the artifact (`mergeCompiledBlock_stored`, carried to the end by `StepKeeps`);
 * `Ix.Cert.compileReport_owned_block`: that, and the closure names a state of the run resolves
   and the block's claims for closure names are published;
-* `Ix.Cert.compileReport_owned_blobs`: that, and every blob the claiming block reads is stored
-  in the artifact (`onRun_grows`, `StepKeeps.stepBlobs`). -/
+* `Ix.Cert.compileReport_owned_blobs`: that, and every blob the claiming block reads is the
+  fold's final store's, with its bytes, and stored in the artifact (`onRun_grows`,
+  `StepKeeps.stepBlobs`: a merge refuses a blob the store holds with other bytes). The
+  artifact's own bytes are not exact: `assembleEnv` folds the name-component blobs over the
+  store, unchecked. -/
 
 namespace Ix.Cert.FreshSnapshot
 
@@ -339,13 +342,12 @@ def Unsettled (blocks : Ix.CondensedBlocks) (settled : Ix.Set Ix.Name) (rep : Ix
   ∀ all, blocks.blocks.get? rep = some all → ∀ x, all.contains x = true → settled.contains x = false
 
 /-- **The invariant of a wave start**: a candidate block has no settled member and is not
-waiting; a waiting block has no settled member; and a block member resolved outside the aux
-map is settled. -/
+waiting; a waiting block has no settled member; and a resolved block member is settled. -/
 structure WaveInv (blocks : Ix.CondensedBlocks) (st : FoldState) : Prop where
   cand : ∀ p ∈ st.candidates, Unsettled blocks st.settled p ∧ st.unmet.contains p = false
   waiting : ∀ p, st.unmet.contains p = true → Unsettled blocks st.settled p
   resolved : ∀ (n : ExactName) (a : Address), st.acc.cenv.nameToAddr.get? n = some a →
-    st.acc.cenv.auxNameToAddr.contains n = true ∨ (Member blocks n → st.settled.contains n = true)
+    Member blocks n → st.settled.contains n = true
 
 /-- **A ready block's outcome claims, among block members, only its own members.** -/
 def ClaimsOwn (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldState) : Prop :=
@@ -412,10 +414,9 @@ theorem applySeqList_resolved {blocks : Ix.CondensedBlocks} {sched : FoldSchedul
     (claims : ClaimsOwn blocks sched st) (Q : Ix.Name → Prop) :
     ∀ (l : List (Ix.Name × Ix.Name × Ix.Set Ix.Name)) (acc : DriverAcc),
       (∀ x ∈ l, ReadyIn blocks sched st x ∧ ∀ y, x.2.2.contains y = true → Q y) →
-      (∀ (n : ExactName) (a : Address), acc.cenv.nameToAddr.get? n = some a →
-        acc.cenv.auxNameToAddr.contains n = true ∨ (Member blocks n → Q n)) →
+      (∀ (n : ExactName) (a : Address), acc.cenv.nameToAddr.get? n = some a → Member blocks n → Q n) →
       ∀ (n : ExactName) (a : Address), (applySeqList st.acc.cenv l acc).cenv.nameToAddr.get? n = some a →
-        (applySeqList st.acc.cenv l acc).cenv.auxNameToAddr.contains n = true ∨ (Member blocks n → Q n)
+        Member blocks n → Q n
   | [], _, _, h => h
   | x :: l, acc, hl, h => by
     obtain ⟨key, rep, all⟩ := x
@@ -423,12 +424,9 @@ theorem applySeqList_resolved {blocks : Ix.CondensedBlocks} {sched : FoldSchedul
     refine applySeqList_resolved claims Q l _ (fun y hy => hl y (List.mem_cons_of_mem _ hy)) ?_
     intro n a hn
     have st' := applyAuxBlockOutcome_step acc key all (auxBlockOutcome st.acc.cenv key all)
-    rcases st'.2 n a hn with ⟨hold, keep⟩ | haux | ⟨b, hclaim, -⟩
-    · rcases h n a hold with h | h
-      · exact .inl (keep h)
-      · exact .inr h
-    · exact .inl haux
-    · exact .inr fun hm => hx.2 n (claims _ hx.1 n a b hclaim hm)
+    rcases st'.2 n a hn with hold | ⟨b, hclaim, -⟩
+    · exact h n a hold
+    · exact fun hm => hx.2 n (claims _ hx.1 n a b hclaim hm)
 
 theorem waveInv_step {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st st' : FoldState}
     (hd : Disjoint blocks) (inv : WaveInv blocks st) (claims : ClaimsOwn blocks sched st)
@@ -459,33 +457,31 @@ theorem waveInv_step {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st st
     · exact keep p (inv.waiting p hp') (waitNe p hp')
   · have hp' := u1 p hp
     exact keep p (inv.waiting p hp') (waitNe p hp')
-  · intro n a hn
-    rw [hacc, applySeq_eq_list] at hn ⊢
+  · intro n a hn hm
+    rw [hacc, applySeq_eq_list] at hn
     rcases applySeqList_resolved claims
         (fun y => st.settled.contains y = true ∨ ∃ x ∈ ready, x.2.2.contains y = true)
         ready.toList st.acc (fun x hx => ⟨hready x (Array.mem_toList_iff.mp hx),
           fun y hy => .inr ⟨x, Array.mem_toList_iff.mp hx, hy⟩⟩)
-        (fun n a hn => (inv.resolved n a hn).imp id fun h hm => .inl (h hm)) n a hn with h | h
-    · exact .inl h
-    · refine .inr fun hm => ?_
-      rcases h hm with h | ⟨x, hx, hy⟩
-      · exact s0 n h
-      · exact s1 x hx n hy
+        (fun n a hn hm => .inl (inv.resolved n a hn hm)) n a hn hm with h | ⟨x, hx, hy⟩
+    · exact s0 n h
+    · exact s1 x hx n hy
 
 /-! ## Freshness of the snapshots -/
 
-/-- **`c` resolves the block's members only as aux names.** -/
+/-- **`c` resolves none of the block's members.** -/
 def FreshFor (c : CompileEnv) (all : Ix.Set Ix.Name) : Prop :=
-  ∀ x, all.contains x = true → ∀ a', c.nameToAddr.get? x = some a' → c.auxNameToAddr.contains x = true
+  ∀ x, all.contains x = true → c.nameToAddr.get? x = none
 
 /-- **A ready block is fresh at its wave's start.** -/
 theorem ready_fresh {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st : FoldState}
     {x : Ix.Name × Ix.Name × Ix.Set Ix.Name} (inv : WaveInv blocks st) (hx : ReadyIn blocks sched st x) :
     FreshFor st.acc.cenv x.2.2 := by
-  intro y hy a' ha
-  rcases inv.resolved y a' ha with h | h
-  · exact h
-  · have hs := h ⟨x.2.1, x.2.2, hx.2.1, hy⟩
+  intro y hy
+  cases ha : st.acc.cenv.nameToAddr.get? y with
+  | none => rfl
+  | some a' =>
+    have hs := inv.resolved y a' ha ⟨x.2.1, x.2.2, hx.2.1, hy⟩
     rw [(inv.cand x.2.1 hx.1).1 x.2.2 hx.2.1 y hy] at hs
     cases hs
 
@@ -506,16 +502,11 @@ theorem keep_record {s : Std.HashMap Address ByteArray} {k ka : Address} {v va :
     exact h
 
 set_option hygiene false in
-/-- `mergeCompiledBlock`'s loops after its primary registrations: the auxiliary records
-(each write agreeing with the record `k ↦ v` at its address) and writes that leave the
-stored records. -/
+/-- `mergeCompiledBlock`'s loops after its primary registrations, which leave the stored
+records: the block's `Muts` entry and the class registry. -/
 local macro "record_tail" k:term:max v:term:max held:term:max : tactic => `(tactic| (
   refine loop_bind (P := fun d : DriverAcc => d.cenv.constants.get? $k = some $v)
-    (I := fun c : CompileEnv => c.constants.get? $k = some $v) _ _ _ _ $held
-    (fun x hx s hs => keep_record hs (agree _ _ (write_aux hx))) ?_
-  intro L hL
-  refine loop_bind (P := fun d : DriverAcc => d.cenv.constants.get? $k = some $v)
-    (I := fun c : CompileEnv => c.constants.get? $k = some $v) _ _ _ _ hL ?_ ?_
+    (I := fun c : CompileEnv => c.constants.get? $k = some $v) _ _ _ _ $held ?_ ?_
   · intro _ _ _ h; split <;> exact h
   · intro L' hL'
     split
@@ -525,12 +516,8 @@ local macro "record_tail" k:term:max v:term:max held:term:max : tactic => `(tact
         exact forIn_inv_array (fun c : CompileEnv => c.constants.get? $k = some $v)
           _ cls (by intros; assumption) s hs
       · intro _ h
-        refine loop_bind (P := fun d : DriverAcc => d.cenv.constants.get? $k = some $v)
-          (I := fun _ : Array Ix.Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
-        intro _ _; exact h
-    · refine loop_bind (P := fun d : DriverAcc => d.cenv.constants.get? $k = some $v)
-        (I := fun _ : Array Ix.Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
-      intro _ _; exact hL'))
+        exact h
+    · exact hL'))
 
 /-- **A checked merge stores its block's record**: the merge writes it first, and every
 later write at its address agrees with it (the content check). -/
@@ -539,7 +526,7 @@ theorem mergeCompiledBlock_stored {acc : DriverAcc} {lo : Ix.Name} {result : Blo
     (mergeCompiledBlock acc lo result cache).cenv.constants.get? result.blockAddr =
       some result.blockBytes := by
   have ag := checkAnonymousWrites_agrees (checkCompiledBlock_content hc)
-  have agree : ∀ k v, (k, v) ∈ blockRecordWrites result cache → k = result.blockAddr →
+  have agree : ∀ k v, (k, v) ∈ blockRecordWrites result → k = result.blockAddr →
       v = result.blockBytes := fun k v hk e => by
     subst e
     exact ag.own _ _ _ hk write_block
@@ -580,55 +567,20 @@ theorem applyCompiled_stored (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.N
         fun _ => loopNames_any (Q := fun d => d.cenv.constants.get? r.blockAddr = some r.blockBytes) _ _ _ _
           fun _ => merged
 
-/-- **Applying a compiled block whose check fails leaves the resolution and aux maps.** -/
+/-- **Applying a compiled block whose check fails leaves the resolution map.** -/
 theorem applyCompiled_failed (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
     (c : BlockState) (hc : checkCompiledBlock acc.cenv lo r c ≠ .ok ()) :
-    (applyAuxBlockOutcome acc lo all (.compiled r c)).1.cenv.nameToAddr = acc.cenv.nameToAddr ∧
-      (applyAuxBlockOutcome acc lo all (.compiled r c)).1.cenv.auxNameToAddr = acc.cenv.auxNameToAddr := by
+    (applyAuxBlockOutcome acc lo all (.compiled r c)).1.cenv.nameToAddr = acc.cenv.nameToAddr := by
   unfold applyAuxBlockOutcome
   simp only [Id.run]
   split
   · exact loop_bind _ _ _ _
-      (fun d : DriverAcc => d.cenv.nameToAddr = acc.cenv.nameToAddr ∧ d.cenv.auxNameToAddr = acc.cenv.auxNameToAddr)
-      (fun d : DriverAcc => d.cenv.nameToAddr = acc.cenv.nameToAddr ∧ d.cenv.auxNameToAddr = acc.cenv.auxNameToAddr)
-      ⟨rfl, rfl⟩ (fun _ _ _ h => h) (fun _ h => h)
+      (fun d : DriverAcc => d.cenv.nameToAddr = acc.cenv.nameToAddr)
+      (fun d : DriverAcc => d.cenv.nameToAddr = acc.cenv.nameToAddr)
+      rfl (fun _ _ _ h => h) (fun _ h => h)
   · next h' => exact absurd h' hc
 
 /-! ## A checked application publishes its block's claims -/
-
-/-- **An inserting fold over consistent writes holds each write**: where writes with one key
-carry one value, the fold maps each write's key to its value. -/
-theorem foldl_insert_consistent {α β γ : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (key : γ → α) (val : γ → β) (g : Std.HashMap α β → γ → Std.HashMap α β)
-    (hg : ∀ t x, g t x = t.insert (key x) (val x)) :
-    ∀ (L : List γ) (t : Std.HashMap α β), (∀ p ∈ L, ∀ q ∈ L, key p = key q → val p = val q) →
-      ∀ p ∈ L, (L.foldl g t).get? (key p) = some (val p) := by
-  have keep : ∀ (L : List γ) (t : Std.HashMap α β) (k : α), (∀ q ∈ L, key q ≠ k) →
-      (L.foldl g t).get? k = t.get? k := by
-    intro L
-    induction L with
-    | nil => intro t k _; rfl
-    | cons q L ih =>
-      intro t k hq
-      rw [List.foldl_cons, ih _ k (fun r hr => hq r (List.mem_cons_of_mem _ hr)), hg,
-        Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert, Std.HashMap.get?_eq_getElem?]
-      have : (key q == k) = false := beq_eq_false_iff_ne.mpr (hq q List.mem_cons_self)
-      simp only [this, Bool.false_eq_true, ↓reduceIte]
-  intro L
-  induction L with
-  | nil => intro _ _ p hp; cases hp
-  | cons x L ih =>
-    intro t hc p hp
-    rw [List.foldl_cons]
-    by_cases h : ∃ q ∈ L, key q = key p
-    · obtain ⟨q, hq, e⟩ := h
-      rw [← e, hc p hp q (List.mem_cons_of_mem _ hq) e.symm]
-      exact ih _ (fun p' hp' q' hq' => hc p' (List.mem_cons_of_mem _ hp') q' (List.mem_cons_of_mem _ hq'))
-        q hq
-    · rcases List.mem_cons.mp hp with rfl | hp'
-      · rw [keep L _ _ (fun q hq e => h ⟨q, hq, e⟩), hg, Std.HashMap.get?_eq_getElem?,
-          Std.HashMap.getElem?_insert_self]
-      · exact absurd ⟨p, hp', rfl⟩ h
 
 /-- `PrimaryAddressFrame`'s loop over a merge's projections, read as a fold of one field. -/
 theorem loop_field_bind' {α σ β γ : Type} (xs : Array α) (init : σ)
@@ -648,7 +600,7 @@ theorem mergeCompiledBlock_projection {acc : DriverAcc} {lo : Ix.Name} {result :
     (mergeCompiledBlock acc lo result cache).cenv.constants.get? (Address.admissionHash (Ixon.ser x.2.1)) =
       some (Ixon.ser x.2.1) := by
   have ag := checkAnonymousWrites_agrees (checkCompiledBlock_content hc)
-  have agree : ∀ k v, (k, v) ∈ blockRecordWrites result cache →
+  have agree : ∀ k v, (k, v) ∈ blockRecordWrites result →
       k = Address.admissionHash (Ixon.ser x.2.1) → v = Ixon.ser x.2.1 := fun k v hk e => by
     subst e
     exact ag.own _ _ _ hk (write_projection hx)
@@ -669,10 +621,10 @@ theorem mergeCompiledBlock_projection {acc : DriverAcc} {lo : Ix.Name} {result :
     · intro L hL
       have init : L.constants.get? (Address.admissionHash (Ixon.ser x.2.1)) = some (Ixon.ser x.2.1) := by
         rw [hL, ← Array.foldl_toList]
-        exact foldl_insert_consistent (fun y : Ix.Name × Ixon.Constant × Ixon.ConstantMeta =>
+        exact StepKeeps.foldl_insert_consistent (fun y : Ix.Name × Ixon.Constant × Ixon.ConstantMeta =>
             Address.admissionHash (Ixon.ser y.2.1)) (fun y => Ixon.ser y.2.1) _ (fun _ _ => rfl) _ _
           (fun p hp q hq e => by
-            have hq' := write_projection (result := result) (cache := cache) (Array.mem_toList_iff.mp hq)
+            have hq' := write_projection (result := result) (Array.mem_toList_iff.mp hq)
             rw [← e] at hq'
             exact ag.own _ _ _ (write_projection (Array.mem_toList_iff.mp hp)) hq')
           x (Array.mem_toList_iff.mpr hx)
@@ -705,7 +657,7 @@ theorem mergeCompiledBlock_claims {acc : DriverAcc} {lo : Ix.Name} {result : Blo
     obtain ⟨_, claims, _⟩ := Ix.CompileCert.Loop.except_bind_ok.mp hc
     obtain ⟨checked, valid⟩ := Ix.CompileCert.PrimaryAddressFrame.checkBlockClaims_walk claims
     rw [← Array.foldl_toList]
-    exact foldl_insert_consistent (α := ExactName) (β := Address) (γ := Ix.Name × Address)
+    exact StepKeeps.foldl_insert_consistent (α := ExactName) (β := Address) (γ := Ix.Name × Address)
       (fun y => y.1) Prod.snd _
       (fun _ _ => rfl) _ _
       (fun p hp q hq e => by
@@ -750,10 +702,10 @@ theorem applyCompiled_claims (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.N
 theorem applySeqList_grows (snapshot : CompileEnv) :
     ∀ (l : List (Ix.Name × Ix.Name × Ix.Set Ix.Name)) (acc : DriverAcc),
       StepKeeps.BlobsGrow acc.cenv (applySeqList snapshot l acc).cenv
-  | [], _ => fun _ h => h
+  | [], _ => fun _ _ h => h
   | x :: l, acc => by
     obtain ⟨key, rep, all⟩ := x
-    exact fun a h => applySeqList_grows snapshot l _ a (StepKeeps.stepBlobs acc key all _ a h)
+    exact fun a v h => applySeqList_grows snapshot l _ a v (StepKeeps.stepBlobs acc key all _ a v h)
 
 theorem foldWaveSeq_grows {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st st' : FoldState}
     (h : foldWaveSeq blocks sched st = .ok st') : StepKeeps.BlobsGrow st.acc.cenv st'.acc.cenv := by
@@ -770,17 +722,17 @@ theorem foldWavesSeq_grows {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} 
     intro st fin h
     unfold foldWavesSeq at h
     split at h
-    · cases h; exact fun _ h => h
+    · cases h; exact fun _ _ h => h
     · cases h
   | succ fuel ih =>
     intro st fin h
     unfold foldWavesSeq at h
     split at h
-    · cases h; exact fun _ h => h
+    · cases h; exact fun _ _ h => h
     · split at h
       · cases h
       · rename_i st₁ h₁
-        exact fun a ha => ih st₁ fin h a (foldWaveSeq_grows h₁ a ha)
+        exact fun a v ha => ih st₁ fin h a v (foldWaveSeq_grows h₁ a v ha)
 
 /-- **A state of the run's blobs are the run's final state's.** -/
 theorem onRun_grows {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ fin : FoldState} {fuel : Nat}
@@ -809,7 +761,7 @@ theorem onRun_grows {blocks : Ix.CondensedBlocks} {sched : FoldSchedule} {st₀ 
     have wave : StepKeeps.BlobsGrow (applySeqList st.acc.cenv pre st.acc).cenv st'.acc.cenv := by
       rw [hacc, applySeq_eq_list, e, applySeqList_append]
       exact applySeqList_grows _ _ _
-    exact fun a ha => foldWavesSeq_grows fuel'' st' fin h'' a (wave a ha)
+    exact fun a v ha => foldWavesSeq_grows fuel'' st' fin h'' a v (wave a v ha)
 
 /-- **The environment stores the driver's blobs.** -/
 theorem assembleEnv_blobs (acc : DriverAcc) {a : Address} (h : acc.cenv.blobs.contains a = true) :
@@ -819,22 +771,22 @@ theorem assembleEnv_blobs (acc : DriverAcc) {a : Address} (h : acc.cenv.blobs.co
   rw [hX, Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]
   exact StepKeeps.fold_insert_keep h
 
-/-- **A checked compiled application holds the block's blobs.** -/
+/-- **A checked compiled application holds the block's blobs, with their bytes.** -/
 theorem applyCompiled_blobs (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
-    (c : BlockState) (hc : checkCompiledBlock acc.cenv lo r c = .ok ()) {a : Address}
-    (ha : c.blockBlobs.contains a = true) :
-    (applyAuxBlockOutcome acc lo all (.compiled r c)).1.cenv.blobs.contains a = true := by
-  have merged : (mergeCompiledBlock acc lo r c).cenv.blobs.contains a = true := by
+    (c : BlockState) (hc : checkCompiledBlock acc.cenv lo r c = .ok ()) {a : Address} {v : ByteArray}
+    (ha : c.blockBlobs.get? a = some v) :
+    (applyAuxBlockOutcome acc lo all (.compiled r c)).1.cenv.blobs.get? a = some v := by
+  have merged : (mergeCompiledBlock acc lo r c).cenv.blobs.get? a = some v := by
     rw [StepKeeps.mergeCompiledBlock_blobs]
-    exact StepKeeps.fold_insert_add ha
+    exact (StepKeeps.fold_insert_exact (StepKeeps.checkCompiledBlock_blobs hc)).2 a v ha
   unfold applyAuxBlockOutcome
   simp only [Id.run]
   split
   · next e h' => rw [hc] at h'; cases h'
   · split
-    · exact loopNames_any (Q := fun d => d.cenv.blobs.contains a = true) _ _ _ _ fun _ => merged
-    · exact loopNames_any (Q := fun d => d.cenv.blobs.contains a = true) _ _ _ _ fun _ =>
-        loopNames_any (Q := fun d => d.cenv.blobs.contains a = true) _ _ _ _ fun _ => merged
+    · exact loopNames_any (Q := fun d => d.cenv.blobs.get? a = some v) _ _ _ _ fun _ => merged
+    · exact loopNames_any (Q := fun d => d.cenv.blobs.get? a = some v) _ _ _ _ fun _ =>
+        loopNames_any (Q := fun d => d.cenv.blobs.get? a = some v) _ _ _ _ fun _ => merged
 
 /-- `Resolution.CompiledIn`, with the block fresh at the snapshot its outcome was computed
 against, and the state the application made a state of `R`, where a compiled block's check
@@ -860,8 +812,7 @@ theorem CompiledFresh.mono {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop
 /-- `Resolution.ProvenanceIn`, with fresh snapshots. -/
 def ProvenanceFresh (blocks : Ix.CondensedBlocks) (R : DriverAcc → Prop) (acc : DriverAcc) : Prop :=
   ∀ (n : ExactName) (a : Address), acc.cenv.nameToAddr.get? n = some a →
-    acc.cenv.auxNameToAddr.contains n = true ∨
-      ∃ b, CompiledFresh blocks R acc.cenv n a b ∧ acc.cenv.constants.get? a = some b
+    ∃ b, CompiledFresh blocks R acc.cenv n a b ∧ acc.cenv.constants.get? a = some b
 
 theorem provenanceFresh_of_empty {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {acc : DriverAcc}
     (h : acc.cenv.nameToAddr = {}) : ProvenanceFresh blocks R acc := by
@@ -880,22 +831,19 @@ theorem provenanceFresh_step {blocks : Ix.CondensedBlocks} {R : DriverAcc → Pr
   intro n a hn
   have st := applyAuxBlockOutcome_step acc (blockKey rep all) all
     (auxBlockOutcome snap.cenv (blockKey rep all) all)
-  rcases st.2 n a hn with ⟨hold, keep⟩ | haux | ⟨b, hclaim, hb⟩
-  · rcases ih n a hold with haux | ⟨b, hc, hb⟩
-    · exact .inl (keep haux)
-    · exact .inr ⟨b, hc.mono st.1.2.2, st.1.1 a b hb⟩
-  · exact .inl haux
+  rcases st.2 n a hn with hold | ⟨b, hclaim, hb⟩
+  · obtain ⟨b, hc, hb⟩ := ih n a hold
+    exact ⟨b, hc.mono st.1.2.2, st.1.1 a b hb⟩
   · by_cases hf : ∃ (r : BlockResult) (cs : BlockState),
         auxBlockOutcome snap.cenv (blockKey rep all) all = .compiled r cs ∧
           checkCompiledBlock acc.cenv (blockKey rep all) r cs ≠ .ok ()
     · obtain ⟨r, cs, ho, hne⟩ := hf
-      obtain ⟨hmap, haux⟩ := applyCompiled_failed acc (blockKey rep all) all r cs hne
-      rw [← ho] at hmap haux
+      have hmap := applyCompiled_failed acc (blockKey rep all) all r cs hne
+      rw [← ho] at hmap
       rw [hmap] at hn
-      rcases ih n a hn with hx | ⟨b', hc, hb'⟩
-      · exact .inl (by rw [haux]; exact hx)
-      · exact .inr ⟨b', hc.mono st.1.2.2, st.1.1 a b' hb'⟩
-    · refine .inr ⟨b, ⟨snap, acc, rep, all, hsnap, hacc, hm, hall, Mono.refl _, hclaim, fresh, hpost,
+      obtain ⟨b', hc, hb'⟩ := ih n a hn
+      exact ⟨b', hc.mono st.1.2.2, st.1.1 a b' hb'⟩
+    · exact ⟨b, ⟨snap, acc, rep, all, hsnap, hacc, hm, hall, Mono.refl _, hclaim, fresh, hpost,
         fun r cs ho => Classical.byContradiction fun hne => hf ⟨r, cs, ho, hne⟩⟩, hb⟩
 
 theorem applySeqList_provenanceFresh {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop}
@@ -944,14 +892,41 @@ theorem waveStart_provenanceFresh {blocks : Ix.CondensedBlocks} {sched : FoldSch
         ready_fresh inv (hready x (Array.mem_toList_iff.mp hx))⟩) (fun pre post e => ?_) (Mono.refl _) prov
     exact ⟨st, hst, .inr ⟨st', ready, pre, post, hr, hw, good, hacc, e, rfl⟩⟩
 
+/-- `Resolution.compileEnvFold_final`, with the returned environment's blobs the fold's. -/
+theorem compileEnvFold_final_blobs {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
+    {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
+    {bytes : Nat} {cenv : CompileEnv}
+    (h : compileEnvFold env blocks dbg sharingLimits width = .ok (ixe, bytes, cenv)) :
+    ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
+      cenv₀.nameToAddr = {} ∧
+      (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
+      foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
+      (assembleEnv st.acc).1 = ixe ∧
+      cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
+      cenv.constants = st.acc.cenv.constants ∧ Mono st.acc.cenv cenv ∧ cenv.blobs = st.acc.cenv.blobs := by
+  rw [compileEnvFold_eq_seq] at h
+  unfold compileEnvFoldSeq at h
+  generalize missingBlockRefs? blocks = missing at h
+  generalize validateInductiveFlags env = flags at h
+  generalize validateMutualSafety env blocks = safety at h
+  cases missing <;> cases flags <;> cases safety <;>
+    simp only [bind, Except.bind, pure, Except.pure] at h <;> try cases h
+  generalize hr : foldWavesSeq _ _ _ _ = r at h
+  cases r with
+  | error => cases h
+  | ok st =>
+    simp only [finalizeEnv, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -, rfl⟩ := h
+    exact ⟨_, _, st, rfl, rfl, hr, rfl, rfl, rfl, Mono.of_eq rfl, rfl⟩
+
 /-- **The fold's final resolution map has fresh provenance**: `Resolution.compileEnvFold_provenance`,
 with each claim's block fresh at its snapshot, when the condensation's blocks are disjoint
 and every wave's ready blocks claim, among block members, only their own. Every record a
 state of the run stores is the artifact's. -/
 theorem compileEnvFold_provenanceFresh {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
-    {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
+    {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
     {bytes : Nat} {cenv : CompileEnv}
-    (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv))
+    (h : compileEnvFold env blocks dbg sharingLimits width = .ok (ixe, bytes, cenv))
     (hd : Disjoint blocks)
     (claimsAt : ∀ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } →
@@ -961,30 +936,32 @@ theorem compileEnvFold_provenanceFresh {env : Ix.Environment} {blocks : Ix.Conde
       (∀ (acc : DriverAcc) (a : Address) (b : ByteArray),
         OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc → acc.cenv.constants.get? a = some b →
           ixe.consts.get? a = some { buf := b, len := b.size }) ∧
-      (∀ (acc : DriverAcc) (a : Address), OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc →
-        acc.cenv.blobs.contains a = true → (ixe.blobs.get? a).isSome = true) ∧
+      (∀ (acc : DriverAcc) (a : Address) (v : ByteArray), OnRun blocks sched (FoldState.init cenv₀ blocks sched) acc →
+        acc.cenv.blobs.get? a = some v → cenv.blobs.get? a = some v ∧ (ixe.blobs.get? a).isSome = true) ∧
       ∀ (n : ExactName) (a : Address),
-        cenv.nameToAddr.get? n = some a → cenv.auxNameToAddr.contains n = true ∨
+        cenv.nameToAddr.get? n = some a →
           ∃ b, CompiledFresh blocks (OnRun blocks sched (FoldState.init cenv₀ blocks sched)) cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
-  obtain ⟨cenv₀, sched, st, h₀, henv, hst, finalized, hmap, haux, hconsts, hm⟩ :=
-    compileEnvFold_final h
+  obtain ⟨cenv₀, sched, st, h₀, henv, hst, finalized, hmap, hconsts, hm, hblobs⟩ :=
+    compileEnvFold_final_blobs h
   have kept : ∀ a b, st.acc.cenv.constants.get? a = some b → cenv.constants.get? a = some b :=
     fun a b hb => by rw [hconsts]; exact hb
   refine ⟨cenv₀, sched, ⟨st, h₀, henv, hst, hmap, kept, hm⟩, henv, fun acc a b hacc hb => ?_,
-    fun acc a hacc hb => ?_, fun n a hn => ?_⟩
+    fun acc a v hacc hb => ?_, fun n a hn => ?_⟩
   · rw [← finalized]
     exact assembleEnv_consts _ ((RunOwnership.onRun_persists StepKeeps.stepKeeps hst hacc).consts a b hb)
-  · rw [← finalized]
-    exact assembleEnv_blobs _ (onRun_grows hst hacc a hb)
+  · have hv := onRun_grows hst hacc a v hb
+    refine ⟨by rw [hblobs]; exact hv, ?_⟩
+    rw [← finalized]
+    exact assembleEnv_blobs _ (by
+      rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hv]; rfl)
   rw [hmap] at hn
-  rw [haux]
-  rcases (waveStart_provenanceFresh hd (waveInv_init h₀) (fun st' hst' => claimsAt cenv₀ sched st' henv hst')
+  obtain ⟨b, hc, hb⟩ := (waveStart_provenanceFresh hd (waveInv_init h₀)
+    (fun st' hst' => claimsAt cenv₀ sched st' henv hst')
     (provenanceFresh_of_empty ((init_nameToAddr _ _ _).trans h₀))
-    (foldWavesSeq_waveStart _ _ _ hst)).2 n a hn with haux | ⟨b, hc, hb⟩
-  · exact .inl haux
-  · rw [← finalized]
-    exact .inr ⟨b, hc.mono hm, assembleEnv_consts _ hb⟩
+    (foldWavesSeq_waveStart _ _ _ hst)).2 n a hn
+  rw [← finalized]
+  exact ⟨b, hc.mono hm, assembleEnv_consts _ hb⟩
 
 /-! ## A block's claims name its own members -/
 
@@ -994,34 +971,6 @@ def CtorsInBlock (blocks : Ix.CondensedBlocks) (E : Ix.Environment) : Prop :=
   ∀ (rep : Ix.Name) (all : Ix.Set Ix.Name) (I : Ix.Name) (iv : Ix.InductiveVal) (c : Ix.Name),
     blocks.blocks.get? rep = some all → all.contains I = true → E.get? I = some (.inductInfo iv) →
     c ∈ iv.ctors → Member blocks c → all.contains c = true
-
-/-- A promoted block's cross-SCC names are members of the block. -/
-theorem auxBlockOutcome_cross_sub {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
-    {clo : Ix.Name} {r : BlockResult} {c : BlockState}
-    {cn : Array Ix.Name} {cf : Option (Array Ix.Name × String)} {im : Option String}
-    {na : Option (BlockResult × BlockState)} {nf : Option String}
-    (h : auxBlockOutcome cenv lo all = .promoted (some (clo, r, c)) cn cf im na nf) :
-    ∀ y ∈ cn, all.contains y = true := by
-  unfold auxBlockOutcome at h
-  simp only [Id.run] at h
-  split at h
-  · revert h
-    refine loop_bind_mem _ _ _ _ (fun L : Array Ix.Name => ∀ x ∈ L, all.contains x = true)
-      (fun o : AuxBlockOutcome => o = .promoted (some (clo, r, c)) cn cf im na nf →
-        ∀ y ∈ cn, all.contains y = true) (fun _ h => by simp at h) ?_ ?_
-    · intro x hx s hs
-      split
-      · exact hs
-      · split
-        · exact hs
-        · intro y hy
-          rcases Array.mem_push.mp hy with hy | hy
-          · exact hs y hy
-          · exact hy ▸ hx
-    · intro L hL h'
-      repeat' (first | (focus (cases h'; done)) | split at h')
-      all_goals (cases h'; exact hL)
-  · split at h <;> cases h
 
 /-- **A ready block's claims name, among block members, only its own members**, when an
 inductive's constructors are in its block. -/
@@ -1044,25 +993,11 @@ theorem claims_members {blocks : Ix.CondensedBlocks} {cenv : CompileEnv}
   generalize ho : auxBlockOutcome cenv (blockKey rep all) all = o at h
   cases o with
   | compiled r c =>
-    obtain ⟨layout, hr⟩ := auxBlockOutcome_compiled ho
+    have hr := auxBlockOutcome_compiled ho
     rcases ClosureClaims.claim_name h with e | ⟨row, hrow, e⟩
     · rw [e]; exact blockKey_mem hne
     · rw [← e]
       exact owned all (fun _ h => h) row.1 (Ix.Cert.Claims.runBlock_owned hn hr row hrow) (e ▸ hm)
-  | promoted cs cn cf im na nf =>
-    cases cs with
-    | none => exact h.elim
-    | some x =>
-      obtain ⟨clo, r, c⟩ := x
-      obtain ⟨layout, hclo, hr⟩ := ClosureClaims.auxBlockOutcome_cross_names ho
-      have sub := auxBlockOutcome_cross_sub ho
-      rcases ClosureClaims.claim_name h with e | ⟨row, hrow, e⟩
-      · rw [e]; exact sub clo hclo
-      · rw [← e]
-        refine owned _ (fun x hx => ?_) row.1 (Ix.Cert.Claims.runBlock_owned hn hr row hrow) (e ▸ hm)
-        obtain ⟨y, hy, ey⟩ := ClosureClaims.foldl_insert_mem hx
-        rw [← Std.HashSet.contains_congr ey]
-        exact sub y hy
   | failed msg => exact h.elim
 
 /-! ## An inductive and its constructors share a block
@@ -1386,25 +1321,24 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
         ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true →
           acc.cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a) ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
+        (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
-          (c : BlockState) (layout : Option Ixon.AuxLayout) (b : ByteArray),
+          (c : BlockState) (b : ByteArray),
           OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧
           blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧ (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
-          runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout) ∧
+          runBlock snap.cenv all (blockKey rep all) = .ok (r, c) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
           BlockCompiled snap.cenv all (blockKey rep all) n a b ∧
-          (∀ x, all.contains x = true → ∀ a', snap.cenv.nameToAddr.get? x = some a' →
-            snap.cenv.auxNameToAddr.contains x = true) ∧
+          (∀ x, all.contains x = true → snap.cenv.nameToAddr.get? x = none) ∧
           ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size } ∧
           (∀ (m : Ix.Name) (a' : Address) (b' : ByteArray), (m, a', b') ∈ claimWrites (blockKey rep all) r →
             (sub.consts.get? m).isSome = true →
             (ixe.named.get? m).map (·.addr) = some a' ∧ ixe.consts.get? a' = some { buf := b', len := b'.size }) ∧
-          ∀ (a' : Address), (Ix.CompileCert.BlobWrites.readBlob snap.cenv.blobs c a').isSome = true →
-            (ixe.blobs.get? a').isSome = true := by
+          ∀ (a' : Address) (v : ByteArray), Ix.CompileCert.BlobWrites.readBlob snap.cenv.blobs c a' = some v →
+            cenv.blobs.get? a' = some v ∧ (ixe.blobs.get? a').isSome = true := by
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold hu
   have claimsAt : ∀ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
@@ -1435,12 +1369,11 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
     · rw [← hmapF] at h'
       exact pub n a h'
     · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
-      have failed := compileUnchecked_ungrounded hu (hmonoF.1 n h')
+      have failed := compileUnchecked_ungrounded hu (hmonoF n h')
       rw [nofail n ci hci] at failed
       cases failed
-  refine ⟨cenv, _, cenv₀, sched, hu, rfl, hrun, pubOnRun, fun n a hn hnaux hs => ⟨pub n a hn, ?_⟩⟩
-  rcases prov n a hn with hx | ⟨b, hc, hb⟩
-  · rw [hnaux] at hx; cases hx
+  refine ⟨cenv, _, cenv₀, sched, hu, rfl, hrun, pubOnRun, fun n a hn hs => ⟨pub n a hn, ?_⟩⟩
+  obtain ⟨b, hc, hb⟩ := prov n a hn
   obtain ⟨snap, pre, rep, all, hrun_snap, -, hm, hall, hpost, hclaim, fresh, hrun_post, hblock⟩ := hc
   have hsnap := onRun_reach hrun_snap
   have hE : ∀ x, snap.cenv.env.get? x = env.consts.get? x := fun x => by
@@ -1452,7 +1385,7 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
   generalize ho : auxBlockOutcome snap.cenv (blockKey rep all) all = o at hclaim hpost
   cases o with
   | compiled r c =>
-    obtain ⟨layout, hr⟩ := auxBlockOutcome_compiled ho
+    have hr := auxBlockOutcome_compiled ho
     obtain ⟨m, hmA, hms⟩ : ∃ m, all.contains m = true ∧ ClosureClaims.InSub sub m := by
       rcases ClosureClaims.claim_name hclaim with e | ⟨row, hrow, e⟩
       · exact ⟨_, blockKey_mem (Condense.condense_nonempty hall), e ▸ hs⟩
@@ -1473,35 +1406,23 @@ theorem compileReport_owned_block_of {env : Ix.Environment} {ixe : Ixon.Env}
         (auxBlockOutcome snap.cenv (blockKey rep all) all)).1.cenv.constants.get? r.blockAddr = some r.blockBytes := by
       rw [ho]
       exact applyCompiled_stored pre _ all r c (hblock r c ho)
-    refine ⟨snap, rep, all, r, c, layout, b, hrun_snap, hall, hfinal, hsub, hr, hclaim, hb,
+    refine ⟨snap, rep, all, r, c, b, hrun_snap, hall, hfinal, hsub, hr, hclaim, hb,
       runBlock_compiled hr hclaim, fresh, stored _ _ _ hrun_post blockRec,
       fun m a' b' hm' hs' => ⟨pubOnRun _ hrun_post m a' hs' (post hm').1, stored _ _ _ hrun_post (post hm').2⟩,
-      fun a' ha' => ?_⟩
+      fun a' v ha' => ?_⟩
     cases hb' : c.blockBlobs.get? a' with
-    | some v =>
-      have hc' : c.blockBlobs.contains a' = true := by
-        rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?, hb']; rfl
+    | some v' =>
+      simp only [Ix.CompileCert.BlobWrites.readBlob, hb'] at ha'
+      have e : v' = v := Option.some.inj ha'
+      rw [e] at hb'
       have hpost : (applyAuxBlockOutcome pre (blockKey rep all) all
-          (auxBlockOutcome snap.cenv (blockKey rep all) all)).1.cenv.blobs.contains a' = true := by
+          (auxBlockOutcome snap.cenv (blockKey rep all) all)).1.cenv.blobs.get? a' = some v := by
         rw [ho]
-        exact applyCompiled_blobs pre _ all r c (hblock r c ho) hc'
-      exact blobsOnRun _ a' hrun_post hpost
+        exact applyCompiled_blobs pre _ all r c (hblock r c ho) hb'
+      exact blobsOnRun _ a' v hrun_post hpost
     | none =>
       simp only [Ix.CompileCert.BlobWrites.readBlob, hb', Option.orElse_none] at ha'
-      have hs : snap.cenv.blobs.contains a' = true := by
-        rw [Std.HashMap.contains_eq_isSome_getElem?, ← Std.HashMap.get?_eq_getElem?]; exact ha'
-      exact blobsOnRun _ a' hrun_snap hs
-  | promoted cs cn cf im na nf =>
-    rcases cs with _ | ⟨clo, r, c⟩
-    · exact False.elim hclaim
-    · exfalso
-      obtain ⟨layout, hclo, hr⟩ := ClosureClaims.auxBlockOutcome_cross_names ho
-      have marks : ∀ y ∈ cn, ClosureClaims.ExtraOrFail cenv y := fun y hy =>
-        (ClosureClaims.applyAuxBlockOutcome_cross_extras pre _ all clo r c cn cf im na nf hy).mono hpost
-      refine ClosureClaims.cross_refuted h hu hcl nofail hE marks hn hnaux hs ?_
-      rcases ClosureClaims.claim_name hclaim with e | ⟨row, hrow, e⟩
-      · exact .inl (e ▸ hclo)
-      · exact .inr (e ▸ Ix.Cert.Claims.runBlock_owned hnamed hr row hrow)
+      exact blobsOnRun _ a' v hrun_snap ha'
   | failed msg => exact False.elim hclaim
 
 end Ix.Cert.FreshSnapshot
@@ -1510,8 +1431,8 @@ open Ix.CompileM Ix.Cert.Resolution Ix.Cert.Schedule
 open Ix.Compile.ExactKey (ExactName)
 
 /-- **The closure's claims, with their blocks and blobs published**: `compileReport_owned_block`,
-and every blob the claiming block reads (its own table, then the snapshot's store) is stored
-in the artifact. -/
+and every blob the claiming block reads (its own table, then the snapshot's store) is in the
+fold's final store with the bytes it read, and is stored in the artifact. -/
 theorem Ix.Cert.compileReport_owned_blobs {env : Ix.Environment} {ixe : Ixon.Env}
     {failures : Failures} {roots : List Ix.Name} {sub : Ix.Environment}
     (h : compileReport env = .ok (ixe, failures)) (hcl : IsClosure env roots sub)
@@ -1524,25 +1445,24 @@ theorem Ix.Cert.compileReport_owned_blobs {env : Ix.Environment} {ixe : Ixon.Env
         ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true →
           acc.cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a) ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
+        (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
-          (c : BlockState) (layout : Option Ixon.AuxLayout) (b : ByteArray),
+          (c : BlockState) (b : ByteArray),
           OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧
           blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧ (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
-          runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout) ∧
+          runBlock snap.cenv all (blockKey rep all) = .ok (r, c) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
           BlockCompiled snap.cenv all (blockKey rep all) n a b ∧
-          (∀ x, all.contains x = true → ∀ a', snap.cenv.nameToAddr.get? x = some a' →
-            snap.cenv.auxNameToAddr.contains x = true) ∧
+          (∀ x, all.contains x = true → snap.cenv.nameToAddr.get? x = none) ∧
           ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size } ∧
           (∀ (m : Ix.Name) (a' : Address) (b' : ByteArray), (m, a', b') ∈ claimWrites (blockKey rep all) r →
             (sub.consts.get? m).isSome = true →
             (ixe.named.get? m).map (·.addr) = some a' ∧ ixe.consts.get? a' = some { buf := b', len := b'.size }) ∧
-          ∀ (a' : Address), (Ix.CompileCert.BlobWrites.readBlob snap.cenv.blobs c a').isSome = true →
-            (ixe.blobs.get? a').isSome = true :=
+          ∀ (a' : Address) (v : ByteArray), Ix.CompileCert.BlobWrites.readBlob snap.cenv.blobs c a' = some v →
+            cenv.blobs.get? a' = some v ∧ (ixe.blobs.get? a').isSome = true :=
   FreshSnapshot.compileReport_owned_block_of h hcl nofail fun _ hE => FreshSnapshot.ctorsInBlock h hE
 
 /-- **The closure's claims, with their blocks published**: `compileReport_owned_stored`; a
@@ -1561,33 +1481,32 @@ theorem Ix.Cert.compileReport_owned_block {env : Ix.Environment} {ixe : Ixon.Env
         ∀ (n : Ix.Name) (a : Address), (sub.consts.get? n).isSome = true →
           acc.cenv.nameToAddr.get? n = some a → (ixe.named.get? n).map (·.addr) = some a) ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
+        (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
-          (c : BlockState) (layout : Option Ixon.AuxLayout) (b : ByteArray),
+          (c : BlockState) (b : ByteArray),
           OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧
           blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧ (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
-          runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout) ∧
+          runBlock snap.cenv all (blockKey rep all) = .ok (r, c) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
           BlockCompiled snap.cenv all (blockKey rep all) n a b ∧
-          (∀ x, all.contains x = true → ∀ a', snap.cenv.nameToAddr.get? x = some a' →
-            snap.cenv.auxNameToAddr.contains x = true) ∧
+          (∀ x, all.contains x = true → snap.cenv.nameToAddr.get? x = none) ∧
           ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size } ∧
           ∀ (m : Ix.Name) (a' : Address) (b' : ByteArray), (m, a', b') ∈ claimWrites (blockKey rep all) r →
             (sub.consts.get? m).isSome = true →
             (ixe.named.get? m).map (·.addr) = some a' ∧ ixe.consts.get? a' = some { buf := b', len := b'.size } :=
   by
   obtain ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, hpub, rest⟩ := Ix.Cert.compileReport_owned_blobs h hcl nofail
-  refine ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, hpub, fun n a hn hnaux hs => ?_⟩
-  obtain ⟨hp, snap, rep, all, r, c, layout, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀, h₁₁, -⟩ :=
-    rest n a hn hnaux hs
-  exact ⟨hp, snap, rep, all, r, c, layout, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀, h₁₁⟩
+  refine ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, hpub, fun n a hn hs => ?_⟩
+  obtain ⟨hp, snap, rep, all, r, c, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀, h₁₁, -⟩ :=
+    rest n a hn hs
+  exact ⟨hp, snap, rep, all, r, c, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀, h₁₁⟩
 
 /-- **The closure's claims, with fresh snapshots and their blocks' records**:
-`ClosureClaims.compileReport_owned`; a member of the claim's block is resolved at the block's
-snapshot (the start of the wave that applied it) only through the aux map; and the claiming
+`ClosureClaims.compileReport_owned`; a member of the claim's block is unresolved at the block's
+snapshot (the start of the wave that applied it); and the claiming
 block's own record is stored in the artifact. -/
 theorem Ix.Cert.compileReport_owned_stored {env : Ix.Environment} {ixe : Ixon.Env}
     {failures : Failures} {roots : List Ix.Name} {sub : Ix.Environment}
@@ -1598,30 +1517,29 @@ theorem Ix.Cert.compileReport_owned_stored {env : Ix.Environment} {ixe : Ixon.En
       blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
       FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
+        (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
-          (c : BlockState) (layout : Option Ixon.AuxLayout) (b : ByteArray),
+          (c : BlockState) (b : ByteArray),
           OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧
           blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧ (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
-          runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout) ∧
+          runBlock snap.cenv all (blockKey rep all) = .ok (r, c) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
           BlockCompiled snap.cenv all (blockKey rep all) n a b ∧
-          (∀ x, all.contains x = true → ∀ a', snap.cenv.nameToAddr.get? x = some a' →
-            snap.cenv.auxNameToAddr.contains x = true) ∧
+          (∀ x, all.contains x = true → snap.cenv.nameToAddr.get? x = none) ∧
           ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size } :=
   by
   obtain ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, -, rest⟩ := Ix.Cert.compileReport_owned_block h hcl nofail
-  refine ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, fun n a hn hnaux hs => ?_⟩
-  obtain ⟨hpub, snap, rep, all, r, c, layout, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀, -⟩ :=
-    rest n a hn hnaux hs
-  exact ⟨hpub, snap, rep, all, r, c, layout, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀⟩
+  refine ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, fun n a hn hs => ?_⟩
+  obtain ⟨hpub, snap, rep, all, r, c, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀, -⟩ :=
+    rest n a hn hs
+  exact ⟨hpub, snap, rep, all, r, c, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, h₁₀⟩
 
 /-- **The closure's claims, with fresh snapshots**: `ClosureClaims.compileReport_owned`, and
-a member of the claim's block is resolved at the block's snapshot (the start of the wave
-that applied it) only through the aux map. -/
+a member of the claim's block is unresolved at the block's snapshot (the start of the wave
+that applied it). -/
 theorem Ix.Cert.compileReport_owned_fresh {env : Ix.Environment} {ixe : Ixon.Env}
     {failures : Failures} {roots : List Ix.Name} {sub : Ix.Environment}
     (h : compileReport env = .ok (ixe, failures)) (hcl : IsClosure env roots sub)
@@ -1631,23 +1549,22 @@ theorem Ix.Cert.compileReport_owned_fresh {env : Ix.Environment} {ixe : Ixon.Env
       blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
       FoldRun { consts := env.consts } blocks cenv cenv₀ sched ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
-        cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
+        (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult)
-          (c : BlockState) (layout : Option Ixon.AuxLayout) (b : ByteArray),
+          (c : BlockState) (b : ByteArray),
           OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧
           blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧ (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
-          runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout) ∧
+          runBlock snap.cenv all (blockKey rep all) = .ok (r, c) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
           BlockCompiled snap.cenv all (blockKey rep all) n a b ∧
-          (∀ x, all.contains x = true → ∀ a', snap.cenv.nameToAddr.get? x = some a' →
-            snap.cenv.auxNameToAddr.contains x = true) := by
+          (∀ x, all.contains x = true → snap.cenv.nameToAddr.get? x = none) := by
   obtain ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, rest⟩ := Ix.Cert.compileReport_owned_stored h hcl nofail
-  refine ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, fun n a hn hnaux hs => ?_⟩
-  obtain ⟨hpub, snap, rep, all, r, c, layout, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, -⟩ := rest n a hn hnaux hs
-  exact ⟨hpub, snap, rep, all, r, c, layout, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉⟩
+  refine ⟨cenv, blocks, cenv₀, sched, hu, hb, hrun, fun n a hn hs => ?_⟩
+  obtain ⟨hpub, snap, rep, all, r, c, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉, -⟩ := rest n a hn hs
+  exact ⟨hpub, snap, rep, all, r, c, b, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, h₉⟩
 
 /-- info: 'Ix.Cert.compileReport_owned_stored' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

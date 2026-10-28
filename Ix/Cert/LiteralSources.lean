@@ -215,9 +215,9 @@ theorem litsFrom_two {s : Ix.Expr} {a b out : Ixon.Expr} (ha : LitsFrom s a) (hb
 theorem decompose_lits : ∀ (expr : Ix.Expr) (args : Array Ix.Expr) (whole : Ix.Expr),
     (hasNatLit expr = true → hasNatLit whole = true) → (hasStrLit expr = true → hasStrLit whole = true) →
     (∀ x ∈ args, (hasNatLit x = true → hasNatLit whole = true) ∧ (hasStrLit x = true → hasStrLit whole = true)) →
-    ((hasNatLit (Ix.AuxGen.decomposeApps.go expr args).1 = true → hasNatLit whole = true) ∧
-      (hasStrLit (Ix.AuxGen.decomposeApps.go expr args).1 = true → hasStrLit whole = true)) ∧
-    ∀ x ∈ (Ix.AuxGen.decomposeApps.go expr args).2,
+    ((hasNatLit (Ix.CompileM.decomposeApps.go expr args).1 = true → hasNatLit whole = true) ∧
+      (hasStrLit (Ix.CompileM.decomposeApps.go expr args).1 = true → hasStrLit whole = true)) ∧
+    ∀ x ∈ (Ix.CompileM.decomposeApps.go expr args).2,
       (hasNatLit x = true → hasNatLit whole = true) ∧ (hasStrLit x = true → hasStrLit whole = true) := by
   intro expr
   induction expr
@@ -288,18 +288,18 @@ theorem step_lits (compile : Ix.Expr → CompileM (Ixon.Expr × UInt64)) (source
   | app fn arg hash =>
     rw [ExpressionState.app_step_eq]
     have parts := decompose_lits (.app fn arg hash) #[] (.app fn arg hash) id id (fun x hx => by simp at hx)
-    refine Triple.andThen (each _ (Ix.AuxGen.decomposeApps_app_head_lt fn arg hash)) fun head hhead => ?_
+    refine Triple.andThen (each _ (Ix.CompileM.decomposeApps_app_head_lt fn arg hash)) fun head hhead => ?_
     rw [forIn'_eq_forIn _ _ _ (fun x acc => ExpressionState.appBody compile acc x) (fun _ _ _ => rfl)]
     rw [← Array.forIn_toList]
     refine Triple.bind (Triple.pre (Triple.forIn_list (fun acc : Ixon.Expr × UInt64 =>
         LitsFrom (.app fn arg hash) acc.1) _ _ _ fun x member acc => ?_) fun _ _ _ _ =>
           litsFrom_mono hhead parts.1.1 parts.1.2) fun spine => Triple.returns fun _ _ _ h => h
     have hx := parts.2 x (by
-      have hm : x ∈ (Ix.AuxGen.decomposeApps (.app fn arg hash)).2 := by simpa using member
+      have hm : x ∈ (Ix.CompileM.decomposeApps (.app fn arg hash)).2 := by simpa using member
       exact hm)
     unfold ExpressionState.appBody
     refine Triple.of_imp fun hacc => ?_
-    refine Triple.andThen (each x (Ix.AuxGen.decomposeApps_app_mem_lt fn arg hash (by simpa using member)))
+    refine Triple.andThen (each x (Ix.CompileM.decomposeApps_app_mem_lt fn arg hash (by simpa using member)))
       fun child hchild => ?_
     refine Triple.seqHolds (cacheFrame (frame_alloc _)) fun _ => Triple.returns fun _ _ _ _ => ?_
     exact litsFrom_two hacc (litsFrom_mono hchild hx.1 hx.2) (ixLits_app _ _)
@@ -1296,11 +1296,11 @@ theorem members_lits (ctx : CompileEnv × BlockEnv) (all : Ix.Set Ix.Name) {N : 
 /-- **A compiled block's record holds only literals of the terms its compile reads**: those of
 its members' constants (or of its key's, for a lone constant), and of the constructors their
 inductives list. -/
-theorem compileBlockWithAux_lits {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
-    {r : BlockResult} {layout? : Option Ixon.AuxLayout} {s' : BlockState}
-    (h : rawRun (compileBlockWithAux lo all) ctx {} = (.ok (r, layout?), s')) :
+theorem compileBlock_lits {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
+    {r : BlockResult} {s' : BlockState}
+    (h : rawRun (compileBlock lo all) ctx {} = (.ok r, s')) :
     BlockLits (ReadTerm ctx.1.env (fun x => all.contains x = true ∨ x = lo)) r := by
-  unfold compileBlockWithAux at h
+  unfold compileBlock at h
   obtain ⟨const, s₁, hc, h⟩ := bind_ok h
   have found := BlockRecords.findConst_ok hc
   have h₁ : s₁ = {} := by
@@ -1317,8 +1317,7 @@ theorem compileBlockWithAux_lits {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {
        have same : BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
          revert h
          refine BlockRecords.Returns.elim
-           (P := fun (x : BlockResult × Option Ixon.AuxLayout) =>
-             BlockRecords.recordsOf x.1 = BlockRecords.recordsOf out) ?_
+           (P := fun (x : BlockResult) => BlockRecords.recordsOf x = BlockRecords.recordsOf out) ?_
          repeat returns_step
        have block : r.block = out.block := (Prod.mk.inj same).1
        have members := members_lits ctx all (N := fun x => all.contains x = true ∨ x = lo)
@@ -1335,20 +1334,17 @@ theorem compileBlockWithAux_lits {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {
        intro k hk
        rw [block] at hk
        exact lits k hk)
-    | (obtain ⟨result, s₂, hr, h⟩ := bind_ok h
-       rw [rawRun_pure] at h
-       simp only [Prod.mk.injEq, Except.ok.injEq] at h
-       obtain ⟨-, lits⟩ := constantInfo_lits (N := fun x => all.contains x = true ∨ x = lo) found (Or.inr rfl)
-         (by assumption) (by assumption) ctx {} result s₂ cacheLits_empty trivial hr
-       rw [← h.1.1]
+    | (obtain ⟨-, lits⟩ := constantInfo_lits (N := fun x => all.contains x = true ∨ x = lo) found (Or.inr rfl)
+         (by assumption) (by assumption) ctx {} r s' cacheLits_empty trivial h
        exact lits)
 
 /-- **A compiled block's record holds only literals of the terms its compile reads**, for
 `runBlock`. -/
 theorem runBlock_lits {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} {r : BlockResult}
-    {c : BlockState} {layout : Option Ixon.AuxLayout} (h : runBlock cenv all lo = .ok (r, c, layout)) :
+    {c : BlockState} (h : runBlock cenv all lo = .ok (r, c)) :
     BlockLits (ReadTerm cenv.env (fun x => all.contains x = true ∨ x = lo)) r :=
-  compileBlockWithAux_lits (Ix.CompileCert.run_success (BlockRecords.runBlockWithAux_compiles h))
+  compileBlock_lits (Ix.CompileCert.run_success (BlockRecords.runBlock_compiles h))
+
 end Ix.Cert.LiteralSources
 
 /--

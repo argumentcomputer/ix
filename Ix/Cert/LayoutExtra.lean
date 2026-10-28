@@ -282,18 +282,6 @@ theorem recursor_extra {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
 
 /-! ## Ground edges: the premises -/
 
-/-- **The stored record at a bound role's address has its specification's kind**, under the
-default table: at a `Nat` operation's address (an `ops` specification) a standalone definition,
-at an axiom role's address an axiom. Every other role, and an address the artifact stores
-nothing at, is unconstrained. -/
-def RoleRecordKinds (ixe : Ixon.Env) : Prop :=
-  ∀ t, Ix.Kernel.Reader.defaultTable = .ok t →
-    ∀ (r : Ix.Kernel.Role) (p : Address) (c : Ixon.Constant),
-      t.addressOf? r = some p → (ixe.consts.get? p).bind (·.get?) = some c →
-        ((Ix.Kernel.Role.spec (md := .anon) r).kind = .ops →
-            ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn) ∧
-        ((Ix.Kernel.Role.spec (md := .anon) r).kind = .axiom → ∃ ax : Ixon.Axiom, c.info = .axio ax)
-
 /-- **A stream declares a `Nat` operation's role only by a definition**: every declaration
 that names the key of a role with an `ops` specification is a definition. -/
 def OpsDeclared (ds : List (Ix.Kernel.Declaration .source)) : Prop :=
@@ -713,9 +701,9 @@ theorem compileConstantInfo_rows (const : Ix.ConstantInfo) :
 
 /-- **A block `runBlock` returns with a projection row is a block record.** -/
 theorem runBlock_rows {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} {r : BlockResult}
-    {c : BlockState} {layout : Option Ixon.AuxLayout} (h : runBlock cenv all lo = .ok (r, c, layout)) :
+    {c : BlockState} (h : runBlock cenv all lo = .ok (r, c)) :
     RowsMuts r := by
-  obtain ⟨const, -, rest⟩ := BlockRecords.runBlockWithAux_records h
+  obtain ⟨const, -, rest⟩ := BlockRecords.runBlock_records h
   have transfer : ∀ out, RowsMuts out → BlockRecords.recordsOf r = BlockRecords.recordsOf out → RowsMuts r := by
     intro out rows same
     simp only [BlockRecords.recordsOf, Prod.mk.injEq] at same
@@ -742,9 +730,9 @@ theorem block_role {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} (htable : Ix.Kerne
     (kinds : RoleRecordKinds ixe) {n : Ix.Name} {A : Address} (claimed : BlockLayout.ClaimedAt ixe n A)
     {r : Ix.Kernel.Role} (hspec : (Ix.Kernel.Role.spec (md := .anon) r).kind = .ops)
     (hrole : t.addressOf? r = some (blockAt ixe A)) : blockAt ixe A = A := by
-  obtain ⟨cenv, all, k, res, c, layout, bytes, hr, hclaim, hstored, hblock⟩ := claimed
+  obtain ⟨cenv, all, k, res, c, bytes, hr, hclaim, hstored, hblock⟩ := claimed
   have shape := BlockLayout.runBlock_shape hr
-  have wire := BlockWire.blocksWire _ _ _ _ _ _ hr
+  have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have blockRec : recordAt ixe res.blockAddr = some res.block := by
     rw [shape.bytes] at hblock
     exact BlockLayout.recordAt_ser wire hblock
@@ -1282,16 +1270,16 @@ compile environment that reads the input's constants: `BlockLayout.ClaimedAt` wi
 environment the fold's states keep. -/
 def ClaimedIn (env : Ix.Environment) (ixe : Ixon.Env) (n : Ix.Name) (a : Address) : Prop :=
   ∃ (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult) (c : BlockState)
-    (layout : Option Ixon.AuxLayout) (b : ByteArray),
+    (b : ByteArray),
     (∀ x, cenv.env.get? x = env.consts.get? x) ∧
-    runBlock cenv A k = .ok (r, c, layout) ∧ (n, a, b) ∈ Resolution.claimWrites k r ∧
+    runBlock cenv A k = .ok (r, c) ∧ (n, a, b) ∈ Resolution.claimWrites k r ∧
     ixe.consts.get? a = some { buf := b, len := b.size } ∧
     ixe.consts.get? r.blockAddr = some { buf := r.blockBytes, len := r.blockBytes.size }
 
 theorem ClaimedIn.claimedAt {env : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {a : Address}
     (h : ClaimedIn env ixe n a) : BlockLayout.ClaimedAt ixe n a := by
-  obtain ⟨cenv, A, k, r, c, layout, b, -, rest⟩ := h
-  exact ⟨cenv, A, k, r, c, layout, b, rest⟩
+  obtain ⟨cenv, A, k, r, c, b, -, rest⟩ := h
+  exact ⟨cenv, A, k, r, c, b, rest⟩
 
 /-- A definition record is its own owner, so it projects into no block. -/
 theorem defn_not_projects {c : Ixon.Constant} {d : Ixon.Definition} (hd : c.info = .defn d) (owner : Address) :
@@ -1319,9 +1307,9 @@ theorem claimed_definition {env : Ix.Environment} {ixe : Ixon.Env} {failures : F
     (claimed : ClaimedIn env ixe n A) {c : Ixon.Constant} (hc : recordAt ixe A = some c)
     {d : Ixon.Definition} (hd : c.info = .defn d) (hk : d.kind = .defn) :
     ∃ v, env.consts.get? n = some (.defnInfo v) := by
-  obtain ⟨cenv, all, k, res, cst, layout, bytes, henv, hr, hclaim, hstored, hblock⟩ := claimed
+  obtain ⟨cenv, all, k, res, cst, bytes, henv, hr, hclaim, hstored, hblock⟩ := claimed
   have shape := BlockLayout.runBlock_shape hr
-  have wire := BlockWire.blocksWire _ _ _ _ _ _ hr
+  have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have blockRec : recordAt ixe res.blockAddr = some res.block := by
     rw [shape.bytes] at hblock
     exact BlockLayout.recordAt_ser wire hblock
@@ -1348,8 +1336,8 @@ theorem claimed_definition {env : Ix.Environment} {ixe : Ixon.Env} {failures : F
         cases hc
         exact (defn_not_projects hd _ proj).elim
   obtain ⟨hinfo, hname⟩ := claimBlock
-  obtain ⟨const, s₁, hfind, rest⟩ := BlockRecords.compileBlockWithAux_result
-    (Ix.CompileCert.run_success (BlockRecords.runBlockWithAux_compiles hr))
+  obtain ⟨const, s₁, hfind, rest⟩ := BlockRecords.compileBlock_result
+    (Ix.CompileCert.run_success (BlockRecords.runBlock_compiles hr))
   have hconst := BlockRecords.findConst_ok hfind
   rcases rest with ⟨s₂, lone⟩ | ⟨cs, s₂, out, s₄, loop, hmut, same⟩
   · obtain ⟨⟨v, rfl⟩, hempty⟩ := lone_defn const _ _ _ _ lone d hinfo hk
@@ -1885,9 +1873,9 @@ theorem stream_defn {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Envi
 /-- A claimed record is stored and decodes. -/
 theorem claimed_record {env : Ix.Environment} {ixe : Ixon.Env} {n : Ix.Name} {A : Address}
     (claimed : ClaimedIn env ixe n A) : ∃ c, recordAt ixe A = some c := by
-  obtain ⟨cenv, all, k, res, cst, layout, bytes, -, hr, hclaim, hstored, hblock⟩ := claimed
+  obtain ⟨cenv, all, k, res, cst, bytes, -, hr, hclaim, hstored, hblock⟩ := claimed
   have shape := BlockLayout.runBlock_shape hr
-  have wire := BlockWire.blocksWire _ _ _ _ _ _ hr
+  have wire := BlockWire.blocksWire _ _ _ _ _ hr
   unfold Resolution.claimWrites at hclaim
   split at hclaim
   · simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at hclaim

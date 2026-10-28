@@ -15,8 +15,9 @@ the step makes to the resolution map keeps it so, for every outcome:
 With `RunOwnership.scheduleOwnership_of_stepKeeps` this proves
 `Obligation.ScheduleOwnership` (`scheduleOwnership`).
 
-A step also keeps every blob (`stepBlobs`): only a merge writes blobs, and it folds the
-block's blobs into the store (`mergeCompiledBlock_blobs`). -/
+A step also keeps every blob with its bytes (`stepBlobs`): only a merge writes blobs, it folds
+the block's blobs into the store (`mergeCompiledBlock_blobs`), and its check refused a block
+blob the store holds with other bytes (`checkCompiledBlock_blobs`, `fold_insert_exact`). -/
 
 namespace Ix.Cert.StepKeeps
 
@@ -57,8 +58,8 @@ theorem get?_insert_cases {t : Std.HashMap ExactName Address} {m n : ExactName} 
 
 /-! ## The relation a step keeps -/
 
-/-- `c'` holds every blob `c` holds. -/
-def BlobsGrow (c c' : CompileEnv) : Prop := ∀ a, c.blobs.contains a = true → c'.blobs.contains a = true
+/-- `c'` holds every blob `c` holds, with the same bytes. -/
+def BlobsGrow (c c' : CompileEnv) : Prop := ∀ a v, c.blobs.get? a = some v → c'.blobs.get? a = some v
 
 /-- An inserting fold keeps every key of its start. -/
 theorem fold_insert_keep {m src : Std.HashMap Address ByteArray} {a : Address} (h : m.contains a = true) :
@@ -102,15 +103,96 @@ theorem fold_insert_add {m src : Std.HashMap Address ByteArray} {a : Address} (h
     · exact keep _ _ Std.HashMap.contains_insert_self
     · exact ih _ hp
 
+/-- **An inserting fold over consistent writes holds each write**: where writes with one key
+carry one value, the fold maps each write's key to its value. -/
+theorem foldl_insert_consistent {α β γ : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    (key : γ → α) (val : γ → β) (g : Std.HashMap α β → γ → Std.HashMap α β)
+    (hg : ∀ t x, g t x = t.insert (key x) (val x)) :
+    ∀ (L : List γ) (t : Std.HashMap α β), (∀ p ∈ L, ∀ q ∈ L, key p = key q → val p = val q) →
+      ∀ p ∈ L, (L.foldl g t).get? (key p) = some (val p) := by
+  have keep : ∀ (L : List γ) (t : Std.HashMap α β) (k : α), (∀ q ∈ L, key q ≠ k) →
+      (L.foldl g t).get? k = t.get? k := by
+    intro L
+    induction L with
+    | nil => intro t k _; rfl
+    | cons q L ih =>
+      intro t k hq
+      rw [List.foldl_cons, ih _ k (fun r hr => hq r (List.mem_cons_of_mem _ hr)), hg,
+        Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert, Std.HashMap.get?_eq_getElem?]
+      have : (key q == k) = false := beq_eq_false_iff_ne.mpr (hq q List.mem_cons_self)
+      simp only [this, Bool.false_eq_true, ↓reduceIte]
+  intro L
+  induction L with
+  | nil => intro _ _ p hp; cases hp
+  | cons x L ih =>
+    intro t hc p hp
+    rw [List.foldl_cons]
+    by_cases h : ∃ q ∈ L, key q = key p
+    · obtain ⟨q, hq, e⟩ := h
+      rw [← e, hc p hp q (List.mem_cons_of_mem _ hq) e.symm]
+      exact ih _ (fun p' hp' q' hq' => hc p' (List.mem_cons_of_mem _ hp') q' (List.mem_cons_of_mem _ hq'))
+        q hq
+    · rcases List.mem_cons.mp hp with rfl | hp'
+      · rw [keep L _ _ (fun q hq e => h ⟨q, hq, e⟩), hg, Std.HashMap.get?_eq_getElem?,
+          Std.HashMap.getElem?_insert_self]
+      · exact absurd ⟨p, hp', rfl⟩ h
+
+
+/-- An inserting fold over writes that agree with each other and with the start's store:
+the start's entries stay, and each write's key holds its value. -/
+theorem fold_insert_exact {m src : Std.HashMap Address ByteArray} (ag : Agrees m src.toList) :
+    (∀ a v, m.get? a = some v → (src.fold (fun m k v => m.insert k v) m).get? a = some v) ∧
+      ∀ a v, src.get? a = some v → (src.fold (fun m k v => m.insert k v) m).get? a = some v := by
+  rw [Std.HashMap.fold_eq_foldl_toList]
+  have absent : ∀ (l : List (Address × ByteArray)) (t : Std.HashMap Address ByteArray) (k : Address),
+      (∀ q ∈ l, q.1 ≠ k) → (l.foldl (fun m p => m.insert p.1 p.2) t).get? k = t.get? k := by
+    intro l
+    induction l with
+    | nil => intro t k _; rfl
+    | cons q l ih =>
+      intro t k hq
+      rw [List.foldl_cons, ih _ k (fun r hr => hq r (List.mem_cons_of_mem _ hr)),
+        Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert, Std.HashMap.get?_eq_getElem?]
+      have : (q.1 == k) = false := beq_eq_false_iff_ne.mpr (hq q List.mem_cons_self)
+      simp only [this, Bool.false_eq_true, ↓reduceIte]
+  have added : ∀ p ∈ src.toList, (src.toList.foldl (fun m p => m.insert p.1 p.2) m).get? p.1 = some p.2 :=
+    foldl_insert_consistent (fun p : Address × ByteArray => p.1) (fun p => p.2) _
+      (fun _ _ => rfl) _ _ (fun p hp q hq e => ag.own p.1 p.2 q.2 hp (e ▸ hq))
+  refine ⟨fun a v h => ?_, fun a v h => ?_⟩
+  · by_cases hin : ∃ q ∈ src.toList, q.1 = a
+    · obtain ⟨q, hq, rfl⟩ := hin
+      rw [added q hq, ag.old q.1 q.2 hq v h]
+    · rw [absent _ _ a fun q hq e => hin ⟨q, hq, e⟩]
+      exact h
+  · have hm : (a, v) ∈ src.toList := by
+      rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]; exact h
+    exact added (a, v) hm
+
+/-- A merge runs only after `checkCompiledBlock`, whose blob check covers the block's blobs. -/
+theorem checkCompiledBlock_blobs {cenv : CompileEnv} {lo : Ix.Name} {result : BlockResult}
+    {cache : BlockState} (h : checkCompiledBlock cenv lo result cache = .ok ()) :
+    Agrees cenv.blobs cache.blockBlobs.toList := by
+  unfold checkCompiledBlock at h
+  simp only [bind, Except.bind] at h
+  split at h
+  · cases h
+  · unfold checkBlockContent at h
+    split at h
+    · unfold checkBlobContent at h
+      split at h
+      · exact checkAnonymousWrites_agrees (by assumption)
+      · cases h
+    · cases h
+
 /-- **`c'` keeps `c`'s resolution, moves its failures as `Mono` says, and keeps its
 blobs.** -/
 def KR (c c' : CompileEnv) : Prop := Keeps c c' ∧ Mono c c' ∧ BlobsGrow c c'
 
-theorem KR.refl (c : CompileEnv) : KR c c := ⟨fun _ _ h => .inl h, Mono.refl c, fun _ h => h⟩
+theorem KR.refl (c : CompileEnv) : KR c c := ⟨fun _ _ h => .inl h, Mono.refl c, fun _ _ h => h⟩
 
 theorem KR.trans {c₁ c₂ c₃ : CompileEnv} (h₁ : KR c₁ c₂) (h₂ : KR c₂ c₃) : KR c₁ c₃ :=
   ⟨fun n a h => (h₁.1 n a h).elim (fun h => h₂.1 n a h) (fun f => .inr (h₂.2.1 n f)),
-    h₁.2.1.trans h₂.2.1, fun a h => h₂.2.2 a (h₁.2.2 a h)⟩
+    h₁.2.1.trans h₂.2.1, fun a v h => h₂.2.2 a v (h₁.2.2 a v h)⟩
 
 /-- An operation that leaves the resolution map and grows the blobs. -/
 theorem KR.grow {c c' : CompileEnv} (hn : c'.nameToAddr = c.nameToAddr) (hm : Mono c c')
@@ -120,14 +202,14 @@ theorem KR.grow {c c' : CompileEnv} (hn : c'.nameToAddr = c.nameToAddr) (hm : Mo
 /-- An operation that leaves the resolution map and the blobs. -/
 theorem KR.keep {c c' : CompileEnv} (hn : c'.nameToAddr = c.nameToAddr) (hm : Mono c c')
     (hb : c'.blobs = c.blobs := by rfl) : KR c c' :=
-  KR.grow hn hm fun a h => by rw [hb]; exact h
+  KR.grow hn hm fun a v h => by rw [hb]; exact h
 
 /-- An operation that erases a name from the resolution map while recording it as
 failed. -/
 theorem KR.erase {c c' : CompileEnv} {m : ExactName} (h₁ : c'.nameToAddr = c.nameToAddr.erase m)
     (hf : c'.ungrounded.contains m = true) (hm : Mono c c') (hb : c'.blobs = c.blobs := by rfl) :
     KR c c' := by
-  refine ⟨fun n a h => ?_, hm, fun a h => by rw [hb]; exact h⟩
+  refine ⟨fun n a h => ?_, hm, fun a v h => by rw [hb]; exact h⟩
   by_cases e : m = n
   · subst e
     exact .inr hf
@@ -141,7 +223,7 @@ theorem KR.insert {c c' : CompileEnv} {m : ExactName} {v : Address}
     (h₁ : c'.nameToAddr = c.nameToAddr.insert m v)
     (agree : ∀ a, c.nameToAddr.get? m = some a → a = v) (hm : Mono c c')
     (hb : c'.blobs = c.blobs := by rfl) : KR c c' := by
-  refine ⟨fun n a h => .inl ?_, hm, fun a h => by rw [hb]; exact h⟩
+  refine ⟨fun n a h => .inl ?_, hm, fun a v h => by rw [hb]; exact h⟩
   rw [h₁]
   refine get?_insert_of_agree (fun e => ?_) h
   subst e
@@ -189,7 +271,7 @@ theorem mergeCompiledBlock_kr {acc : DriverAcc} {lo : Ix.Name} {result : BlockRe
     KR acc.cenv (mergeCompiledBlock acc lo result cache).cenv := by
   refine ⟨fun n a h => .inl ?_,
     (mergeCompiledBlock_step acc lo result cache (checkCompiledBlock_content hc)).1.2.2,
-    fun a h => by rw [mergeCompiledBlock_blobs]; exact fold_insert_keep h⟩
+    fun a v h => by rw [mergeCompiledBlock_blobs]; exact (fold_insert_exact (checkCompiledBlock_blobs hc)).1 a v h⟩
   rw [Ix.CompileCert.PrimaryAddressFrame.mergeCompiledBlock_primary]
   exact (Ix.CompileCert.PrimaryAddressFrame.checkCompiledBlock_primary_agrees hc).foldl_keeps h
 

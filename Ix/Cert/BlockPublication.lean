@@ -38,7 +38,7 @@ theorem stored {ixe : Ixon.Env} {sub : Ix.Environment} {cenv : CompileEnv} {all 
   have shape := BlockLayout.runBlock_shape hr
   have hb := pub.block
   rw [shape.bytes] at hb
-  exact BlockLayout.recordAt_ser (BlockWire.blocksWire _ _ _ _ _ _ hr) hb
+  exact BlockLayout.recordAt_ser (BlockWire.blocksWire _ _ _ _ _ hr) hb
 
 /-- **The rows of a block of several definitions**: member `j`'s row is its projection at
 index `j`, and the members' count fits the wire. -/
