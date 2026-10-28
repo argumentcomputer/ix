@@ -1433,6 +1433,18 @@ constructor:
 
 /-! ## Axioms -/
 
+/-- info: 'Ix.Compile.FrontEnd.graph_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Compile.FrontEnd.graph_eq
+
+/-- info: 'Ix.Compile.FrontEnd.ground_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Compile.FrontEnd.ground_eq
+
+/-- info: 'Ix.Cert.groundSplit_eq_lazy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms Ix.Cert.groundSplit_eq_lazy
+
 /-- info: 'Ix.Cert.sourceConsistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.sourceConsistent
