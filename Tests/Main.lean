@@ -16,6 +16,7 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.RoleCompile
+import Tests.Ix.RecordDecoding
 import Tests.Ix.LeanExport
 import Tests.Ix.HostAdmissionCli
 import Tests.Ix.Compile.DecompileDiff
@@ -145,6 +146,7 @@ def registry : List Entry := [
     Tests.Ix.ImportIxe.collapsedSuite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
   .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
+  .suite "record-decoding" .primary Tests.Ix.RecordDecoding.suite,
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
   .suite "claim" .primary Tests.Claim.suite,
   .suite "merkle" .primary Tests.Merkle.suite,
