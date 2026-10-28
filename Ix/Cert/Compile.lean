@@ -1,7 +1,7 @@
 module
 
 public import Ix.CompileDriver
-public import Ix.Compile.Parallel
+public import Ix.Compile.FrontEnd
 public import IxC.Kernel.Ixon.Reader
 public import IxC.Kernel.Ixon.Prelude
 public import Ix.LeanIngress

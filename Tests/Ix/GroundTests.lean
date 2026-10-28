@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.Ground
+public import Ix.Compile.FrontEnd
 
 /-!
 Unit tests for `Ix.Ground` (the pure-Lean port of
@@ -311,8 +312,64 @@ def proliferationTests : TestSeq :=
         && kindAt? out "A" == some .ref
         && kindAt? out "B" == some .ref : Bool))
 
+/-- Keep a literal serial loop so a compiler substitution cannot make the
+runtime parity check compare the batched implementation with itself. -/
+def serialGraph (env : Environment) : Ix.Map Name (Ix.Set Name) := Id.run do
+  let mut out : Ix.Map Name (Ix.Set Name) := {}
+  for (name, ci) in env.consts do
+    let (refs, _) := Ix.GraphM.run env .init (Ix.graphConst ci)
+    out := out.insert name refs
+  return out
+
+def serialGround (env : Environment) (reverse : Ix.Map Name (Ix.Set Name)) :
+    Ix.Map Name GroundError := Id.run do
+  let mut out : Ix.Map Name GroundError := {}
+  for (name, ci) in env.consts do
+    match groundConstCheck ci env with
+    | .error error => out := out.insert name error
+    | .ok _ => pure ()
+  return proliferateUngrounded out reverse
+
+def frontEndParity (env : Environment) : Bool := Id.run do
+  let expected := serialGraph env
+  let actual := Ix.Compile.FrontEnd.graph env
+  -- Repr retains complete names, stored hashes and error payloads, and the
+  -- list order checks that insertion and propagation order stayed unchanged.
+  if reprStr expected.toList != reprStr actual.toList then return false
+  let reverse := expected.fold (init := ({} : Ix.Map Name (Ix.Set Name))) fun out name refs =>
+    refs.fold (init := out) fun out ref => out.alter ref fun
+      | some names => some (names.insert name)
+      | none => some (({} : Ix.Set Name).insert name)
+  return reprStr (serialGround env reverse).toList ==
+    reprStr (Ix.Compile.FrontEnd.ground env reverse).toList
+
+def frontEndParityTests : TestSeq := Id.run do
+  let missing := Expr.mkConst (nm "missing") #[]
+  let badLevel := Expr.mkSort (Level.mkParam (nm "undeclared"))
+  let fixtures : List (Name × ConstantInfo) :=
+    [(nm "Valid", axiomC "Valid" sort0),
+     (nm "Missing", axiomC "Missing" missing),
+     (nm "Bound", axiomC "Bound" (Expr.mkBVar 0)),
+     (nm "Level", axiomC "Level" badLevel),
+     (nm "TypeFirst", defnC "TypeFirst" missing (Expr.mkBVar 1)),
+     (nm "CtorMissing", inductC "CtorMissing" #[nm "absentCtor"]),
+     (nm "CtorWrong", inductC "CtorWrong" #[nm "Valid"]),
+     (nm "Choice", defnC "Choice" (Expr.mkConst (nm "Missing") #[])
+       (Expr.mkConst (nm "Bound") #[])),
+     (nm "CycleA", defnC "CycleA" (Expr.mkConst (nm "CycleB") #[]) missing),
+     (nm "CycleB", axiomC "CycleB" (Expr.mkConst (nm "CycleA") #[]))]
+  let many := (List.range 1025).map fun i =>
+    let name := s!"entry{i}"
+    let typ := if i % 17 == 0 then missing
+      else if i % 3 == 0 then Expr.mkConst (nm s!"entry{i - 1}") #[]
+      else sort0
+    (nm name, axiomC name typ)
+  return test "batched graph and ground preserve complete refusals and insertion order"
+    ([mkEnv [], mkEnv [(nm "Valid", axiomC "Valid" sort0)], mkEnv fixtures,
+      mkEnv fixtures.reverse, mkEnv many, mkEnv many.reverse].all frontEndParity)
+
 public def suite : List TestSeq :=
-  [groundedTests, immediateErrorTests, orderingCacheTests, proliferationTests]
+  [groundedTests, immediateErrorTests, orderingCacheTests, proliferationTests, frontEndParityTests]
 
 end Tests.Ground
 
