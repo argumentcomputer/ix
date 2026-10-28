@@ -189,12 +189,10 @@ theorem all_members {n : Nat} {o : Array Nat} (size : o.size = n) (nodup : o.toL
   simp only [List.length_cons, Array.length_toList, List.length_range] at this
   omega
 
-/-- **`defOrder` orders every member**: the order it returns holds every index
-below the number of members. -/
-theorem defOrder_complete {deps : Array (Std.HashSet Nat)} {out : Array Nat} (h : defOrder deps = some out) :
-    ∀ j < deps.size, j ∈ out := by
-  suffices good : out.size = deps.size ∧ out.toList.Nodup ∧ ∀ i ∈ out, i < deps.size from
-    all_members good.1 good.2.1 good.2.2
+/-- **`defOrder` orders the members once each**: the order it returns has one
+index per member, no index twice, and only members' indices. -/
+theorem defOrder_perm {deps : Array (Std.HashSet Nat)} {out : Array Nat} (h : defOrder deps = some out) :
+    out.size = deps.size ∧ out.toList.Nodup ∧ ∀ i ∈ out, i < deps.size := by
   unfold defOrder at h
   revert h
   apply ReaderUnits.forIn_range_value_inv (OrderMarked deps.size)
@@ -262,6 +260,13 @@ theorem defOrder_complete {deps : Array (Std.HashSet Nat)} {out : Array Nat} (h 
         cases hro
         exact ⟨beq_iff_eq.mp hsz, hu.1.2.2, fun i hi => (hu.1.2.1 i hi).1⟩
       · cases hro
+
+/-- **`defOrder` orders every member**: the order it returns holds every index
+below the number of members. -/
+theorem defOrder_complete {deps : Array (Std.HashSet Nat)} {out : Array Nat} (h : defOrder deps = some out) :
+    ∀ j < deps.size, j ∈ out :=
+  have good := defOrder_perm h
+  all_members good.1 good.2.1 good.2.2
 
 theorem forall₂_mem_left {α β : Type} {R : α → β → Prop} :
     ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ → ∀ x ∈ l₁, ∃ y ∈ l₂, R x y
