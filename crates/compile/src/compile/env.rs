@@ -1282,7 +1282,8 @@ pub fn compile_env_with_profile(
     let profile = match profile {
       Some(profile) => profile,
       None => {
-        default_profile = ix_kernel::resource::standard_profile(&stt.env);
+        default_profile = ix_kernel::resource::standard_profile(&stt.env)
+          .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
         &default_profile
       },
     };

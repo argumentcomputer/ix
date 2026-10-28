@@ -876,8 +876,9 @@ The output depends only on those expanded expressions:
 selection. Its [proof inventory](Ixon.md#what-is-proved-and-what-is-not)
 distinguishes the production K16 family from the retained exact reference.
 Successful production runs have input-expansion, meaning, format and
-serialized-length proofs. Totality, output-domain closure and cost bounds
-remain follow-ups; no global byte minimum or universal Rust refinement is
+serialized-length proofs. Under a sufficient budget no run refuses on the
+stated input domain, and the output expands again; a cost bound for that budget
+remains a follow-up. No global byte minimum or universal Rust refinement is
 claimed. Rust/Lean agreement is checked by differential tests.
 
 A failed construction, for example one that exceeds a resource limit, is a
@@ -2476,8 +2477,8 @@ The current implementation separates these obligations:
    nested expansion uses canonical dependency identities.
 3. Pass 3 images and occurrence passes rewrite references to changed
    auxiliary families. The retired call-site surgery is documented in §8.
-4. Canonical sharing uses the fixed K16 rule, with successful-run proofs
-   and explicit remaining totality/cost obligations (§6.7).
+4. Canonical sharing uses the fixed K16 rule, with successful-run and
+   totality proofs and an explicit remaining cost obligation (§6.7).
 5. Metadata and original records support source reconstruction under the
    distinct Lean and Rust paths (§9.3); they are outside certification.
 6. Kernel checks independently constrain stored block order and recursor
@@ -2493,7 +2494,7 @@ remains unproved and required in this PR.
 - [Ixon](Ixon.md) — checked payload grammar, metadata and v4/v5 environment envelopes.
 - [Canonical sharing](sharing-minimum.md#14-canonical-rule-revision-sharing-k16-greedy-v1)
   and [its proof inventory](Ixon.md#what-is-proved-and-what-is-not) — the fixed
-  family, successful-run contracts and remaining totality/cost work.
+  family, successful-run and totality contracts and remaining cost work.
 - [Compiler driver](../Ix/CompileDriver.lean) and
   [Rust compiler](../crates/compile/src/compile.rs) — scheduling, block compilation,
   record assembly and publication.

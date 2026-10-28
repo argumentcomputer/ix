@@ -128,14 +128,42 @@ pub enum RevealConstantInfo {
 // Claim and Proof types
 // ============================================================================
 
+/// What a typing claim is relative to. The typing claims (`Eval`, `Check`,
+/// `CheckEnv`, `Catalog`) state that constants are well-typed in Lean's
+/// theory with its primitives read through a role binding, and these three
+/// fields say which:
+///
+/// - `spec`: the specification digest ([`SPEC_DIGEST_HEX`]), naming the
+///   specifications every bound role is validated against;
+/// - `binding`: the binding hash, the BLAKE3 hash of the role table's section
+///   bytes ([`crate::env::RoleBinding`]'s address), naming which constant
+///   plays each role;
+/// - `axioms`: the axioms the claim depends on beyond the standard three
+///   (`propext`, `Classical.choice`, `Quot.sound`), as the canonical merkle
+///   root of their sorted addresses. `None` means the standard three only. No
+///   checker admits another axiom yet, so every claim made today carries
+///   `None`; the field is reserved so that admitting declared axioms later
+///   needs no second format change.
+///
+/// Typing assumptions (each claim's `assumptions`) are a different thing:
+/// constants assumed well-typed and discharged by other claims. An axiom is
+/// never discharged by typing, so axioms are never listed there.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ClaimContext {
+  pub spec: Address,
+  pub binding: Address,
+  pub axioms: Option<Address>,
+}
+
 /// A claim that can be proven.
 ///
 /// Four families:
 ///
-/// - **Typechecking claims** (`Eval`, `Check`, `CheckEnv`): assert that a
-///   constant evaluates, a constant is well-typed, or every constant in
-///   an env is well-typed. Each carries `assumptions: Option<Address>`:
-///   - `None` → unconditional (constructive proof, no axioms).
+/// - **Typechecking claims** (`Eval`, `Check`, `CheckEnv`, `Catalog`):
+///   assert that a constant evaluates, a constant is well-typed, or every
+///   constant in an env or catalog is well-typed, relative to their
+///   [`ClaimContext`]. Each carries `assumptions: Option<Address>`:
+///   - `None` → unconditional.
 ///   - `Some(root)` → conditional on every leaf in the merkle tree
 ///     rooted at `root` being a well-typed constant.
 /// - **Reveal**: selective field revelation of a committed constant.
@@ -155,14 +183,19 @@ pub enum Claim {
   /// Check the input, then normalize its body to the output definition's body.
   /// The output is a safe standalone definition with the same universe parameter
   /// count and structurally equal erased type. Assumptions cover input dependencies.
-  Eval { input: Address, output: Address, assumptions: Option<Address> },
+  Eval {
+    ctx: ClaimContext,
+    input: Address,
+    output: Address,
+    assumptions: Option<Address>,
+  },
   /// The constant at `const_addr` is well-typed, optionally modulo
   /// `assumptions`.
-  Check { const_addr: Address, assumptions: Option<Address> },
+  Check { ctx: ClaimContext, const_addr: Address, assumptions: Option<Address> },
   /// Every constant in the env merkle-rooted at `root` is well-typed,
   /// optionally modulo `assumptions` (typically the env's axiom
   /// leaves).
-  CheckEnv { root: Address, assumptions: Option<Address> },
+  CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
   /// Selective field revelation of a committed constant.
   Reveal { comm: Address, info: RevealConstantInfo },
   /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
@@ -177,7 +210,12 @@ pub enum Claim {
   /// of per-piece/chunk `CheckEnv` claims with set discharge (the
   /// shard protocol one level up) — there is deliberately no
   /// whole-catalog interpreter arm.
-  Catalog { members: Address, content: Address, assumptions: Option<Address> },
+  Catalog {
+    ctx: ClaimContext,
+    members: Address,
+    content: Address,
+    assumptions: Option<Address>,
+  },
   /// Combined erased typing and resource admission of a complete addressed closure.
   Resource { root: Address, profile: Address },
 }
@@ -962,11 +1000,25 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
   }
 }
 
+/// The validator a claim's scope names, after the object format.
+///
+/// - `0`, structural-v1: `Reveal` and `Contains`, which read bytes only.
+/// - `1`, erased-lean-v1: retired. It named typing claims whose primitives
+///   were recognized by fixed addresses and which admitted any axiom; readers
+///   refuse it rather than read such a claim as a newer one.
+/// - `2`, resource-v1: `Resource`.
+/// - `3`, erased-lean-v2: the typing claims, relative to their
+///   [`ClaimContext`].
+pub const VALIDATOR_STRUCTURAL: u8 = 0;
+pub const VALIDATOR_ERASED_LEAN_RETIRED: u8 = 1;
+pub const VALIDATOR_RESOURCE: u8 = 2;
+pub const VALIDATOR_ERASED_LEAN: u8 = 3;
+
 fn validator_for_variant(variant: u64) -> u8 {
   match variant {
-    VARIANT_REVEAL_CLAIM | VARIANT_CONTAINS_CLAIM => 0,
-    VARIANT_RESOURCE_CLAIM => 2,
-    _ => 1,
+    VARIANT_REVEAL_CLAIM | VARIANT_CONTAINS_CLAIM => VALIDATOR_STRUCTURAL,
+    VARIANT_RESOURCE_CLAIM => VALIDATOR_RESOURCE,
+    _ => VALIDATOR_ERASED_LEAN,
   }
 }
 fn put_scope(validator: u8, buf: &mut Vec<u8>) {
@@ -981,27 +1033,78 @@ fn get_scope(validator: u8, buf: &mut &[u8]) -> Result<(), String> {
       Env::OBJECT_FORMAT
     ));
   }
-  if get_u8(buf)? != validator {
-    return Err("claim: wrong validator identity".into());
+  let found = get_u8(buf)?;
+  if found == validator {
+    return Ok(());
   }
-  Ok(())
+  if validator == VALIDATOR_ERASED_LEAN
+    && found == VALIDATOR_ERASED_LEAN_RETIRED
+  {
+    return Err(
+      "claim: validator erased-lean-v1 is retired — regenerate the claim"
+        .into(),
+    );
+  }
+  Err("claim: wrong validator identity".into())
+}
+
+impl ClaimContext {
+  pub fn put(&self, buf: &mut Vec<u8>) {
+    buf.extend_from_slice(self.spec.as_bytes());
+    buf.extend_from_slice(self.binding.as_bytes());
+    put_opt_addr(&self.axioms, buf);
+  }
+
+  pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    let spec = get_address(buf)?;
+    let binding = get_address(buf)?;
+    let axioms = get_opt_addr(buf)?;
+    Ok(ClaimContext { spec, binding, axioms })
+  }
+
+  /// The context of a claim made today over `env`'s own role binding: this
+  /// specification set ([`SPEC_DIGEST`]) and no axiom beyond the standard
+  /// three. Fails when the environment carries no binding.
+  pub fn for_env(env: &Env) -> Result<Self, String> {
+    let binding = env.role_binding.as_ref().ok_or_else(|| {
+      "claim context: the environment carries no role binding".to_string()
+    })?;
+    Ok(ClaimContext {
+      spec: spec_digest(),
+      binding: binding.address.clone(),
+      axioms: None,
+    })
+  }
+}
+
+/// The specification digest (`Ix.SpecDigest.specDigest`): BLAKE3 of the
+/// canonical encoding of the role specifications. Pinned here and checked
+/// against the Lean value by the `claim` test suite.
+pub const SPEC_DIGEST_HEX: &str =
+  "52049b9d09530c92cd2b02115a00ef79f64d99e8b279ee14c42b8b3dc9a94b3f";
+
+/// [`SPEC_DIGEST_HEX`] as an address.
+pub fn spec_digest() -> Address {
+  Address::from_hex(SPEC_DIGEST_HEX).expect("SPEC_DIGEST_HEX is 32 hex bytes")
 }
 
 impl Claim {
-  pub fn put(&self, buf: &mut Vec<u8>) {
-    TagN::put(4, FLAG_CLAIM, self.proof_variant_size() + 3, buf);
-    put_scope(validator_for_variant(self.proof_variant_size() + 3), buf);
+  /// The bytes after the scope, shared by claims and proofs.
+  fn put_payload(&self, buf: &mut Vec<u8>) {
     match self {
-      Claim::Eval { input, output, assumptions } => {
+      Claim::Eval { ctx, input, output, assumptions } => {
+        ctx.put(buf);
         buf.extend_from_slice(input.as_bytes());
         buf.extend_from_slice(output.as_bytes());
         put_opt_addr(assumptions, buf);
       },
-      Claim::Check { const_addr, assumptions } => {
+      Claim::Check { ctx, const_addr, assumptions } => {
+        ctx.put(buf);
         buf.extend_from_slice(const_addr.as_bytes());
         put_opt_addr(assumptions, buf);
       },
-      Claim::CheckEnv { root, assumptions } => {
+      Claim::CheckEnv { ctx, root, assumptions } => {
+        ctx.put(buf);
         buf.extend_from_slice(root.as_bytes());
         put_opt_addr(assumptions, buf);
       },
@@ -1013,8 +1116,9 @@ impl Claim {
         buf.extend_from_slice(tree.as_bytes());
         buf.extend_from_slice(const_addr.as_bytes());
       },
-      Claim::Catalog { members, content, assumptions } => {
+      Claim::Catalog { ctx, members, content, assumptions } => {
         // A two-byte claim tag: `E8 00` on the wire.
+        ctx.put(buf);
         buf.extend_from_slice(members.as_bytes());
         buf.extend_from_slice(content.as_bytes());
         put_opt_addr(assumptions, buf);
@@ -1026,31 +1130,27 @@ impl Claim {
     }
   }
 
-  pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let tag = TagN::get(4, buf)?;
-    if tag.flag != FLAG_CLAIM {
-      return Err(format!(
-        "Claim::get: expected flag 0x{:X}, got 0x{:X}",
-        FLAG_CLAIM, tag.flag
-      ));
-    }
-    get_scope(validator_for_variant(tag.value), buf)?;
-    match tag.value {
+  /// Read the bytes after the scope of claim variant `variant`.
+  fn get_payload(variant: u64, buf: &mut &[u8]) -> Result<Self, String> {
+    match variant {
       VARIANT_EVAL_CLAIM => {
+        let ctx = ClaimContext::get(buf)?;
         let input = get_address(buf)?;
         let output = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
-        Ok(Claim::Eval { input, output, assumptions })
+        Ok(Claim::Eval { ctx, input, output, assumptions })
       },
       VARIANT_CHECK_CLAIM => {
+        let ctx = ClaimContext::get(buf)?;
         let const_addr = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
-        Ok(Claim::Check { const_addr, assumptions })
+        Ok(Claim::Check { ctx, const_addr, assumptions })
       },
       VARIANT_CHECK_ENV_CLAIM => {
+        let ctx = ClaimContext::get(buf)?;
         let root = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
-        Ok(Claim::CheckEnv { root, assumptions })
+        Ok(Claim::CheckEnv { ctx, root, assumptions })
       },
       VARIANT_REVEAL_CLAIM => {
         let comm = get_address(buf)?;
@@ -1063,10 +1163,11 @@ impl Claim {
         Ok(Claim::Contains { tree, const_addr })
       },
       VARIANT_CATALOG_CLAIM => {
+        let ctx = ClaimContext::get(buf)?;
         let members = get_address(buf)?;
         let content = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
-        Ok(Claim::Catalog { members, content, assumptions })
+        Ok(Claim::Catalog { ctx, members, content, assumptions })
       },
       VARIANT_RESOURCE_CLAIM => Ok(Claim::Resource {
         root: get_address(buf)?,
@@ -1076,6 +1177,24 @@ impl Claim {
         Err(format!("Claim::get: invalid claim variant {x} under flag 0xE",))
       },
     }
+  }
+
+  pub fn put(&self, buf: &mut Vec<u8>) {
+    TagN::put(4, FLAG_CLAIM, self.proof_variant_size() + 3, buf);
+    put_scope(validator_for_variant(self.proof_variant_size() + 3), buf);
+    self.put_payload(buf);
+  }
+
+  pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    let tag = TagN::get(4, buf)?;
+    if tag.flag != FLAG_CLAIM {
+      return Err(format!(
+        "Claim::get: expected flag 0x{:X}, got 0x{:X}",
+        FLAG_CLAIM, tag.flag
+      ));
+    }
+    get_scope(validator_for_variant(tag.value), buf)?;
+    Self::get_payload(tag.value, buf)
   }
 
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -1093,6 +1212,19 @@ impl Claim {
     self.put(&mut buf);
     let addr = Address::hash(&buf);
     (addr, buf)
+  }
+
+  /// The claim's context, for the typing claims.
+  pub fn context(&self) -> Option<&ClaimContext> {
+    match self {
+      Claim::Eval { ctx, .. }
+      | Claim::Check { ctx, .. }
+      | Claim::CheckEnv { ctx, .. }
+      | Claim::Catalog { ctx, .. } => Some(ctx),
+      Claim::Reveal { .. }
+      | Claim::Contains { .. }
+      | Claim::Resource { .. } => None,
+    }
   }
 
   /// Map a claim to its corresponding proof variant size (under flag 0xF).
@@ -1124,38 +1256,7 @@ impl Proof {
     // matching Claim variant.
     TagN::put(4, FLAG_PROOF, proof_size, buf);
     put_scope(validator_for_variant(proof_size + 3), buf);
-    match &self.claim {
-      Claim::Eval { input, output, assumptions } => {
-        buf.extend_from_slice(input.as_bytes());
-        buf.extend_from_slice(output.as_bytes());
-        put_opt_addr(assumptions, buf);
-      },
-      Claim::Check { const_addr, assumptions } => {
-        buf.extend_from_slice(const_addr.as_bytes());
-        put_opt_addr(assumptions, buf);
-      },
-      Claim::CheckEnv { root, assumptions } => {
-        buf.extend_from_slice(root.as_bytes());
-        put_opt_addr(assumptions, buf);
-      },
-      Claim::Reveal { comm, info } => {
-        buf.extend_from_slice(comm.as_bytes());
-        info.put(buf);
-      },
-      Claim::Contains { tree, const_addr } => {
-        buf.extend_from_slice(tree.as_bytes());
-        buf.extend_from_slice(const_addr.as_bytes());
-      },
-      Claim::Catalog { members, content, assumptions } => {
-        buf.extend_from_slice(members.as_bytes());
-        buf.extend_from_slice(content.as_bytes());
-        put_opt_addr(assumptions, buf);
-      },
-      Claim::Resource { root, profile } => {
-        buf.extend_from_slice(root.as_bytes());
-        buf.extend_from_slice(profile.as_bytes());
-      },
-    }
+    self.claim.put_payload(buf);
     // Opaque ZK proof bytes: length prefix + data
     TagN::put(0, 0, self.proof.len() as u64, buf);
     buf.extend_from_slice(&self.proof);
@@ -1169,49 +1270,14 @@ impl Proof {
         FLAG_PROOF, tag.flag
       ));
     }
-    get_scope(validator_for_variant(tag.value.wrapping_add(3)), buf)?;
-    let claim = match tag.value {
-      VARIANT_EVAL_PROOF => {
-        let input = get_address(buf)?;
-        let output = get_address(buf)?;
-        let assumptions = get_opt_addr(buf)?;
-        Claim::Eval { input, output, assumptions }
-      },
-      VARIANT_CHECK_PROOF => {
-        let const_addr = get_address(buf)?;
-        let assumptions = get_opt_addr(buf)?;
-        Claim::Check { const_addr, assumptions }
-      },
-      VARIANT_CHECK_ENV_PROOF => {
-        let root = get_address(buf)?;
-        let assumptions = get_opt_addr(buf)?;
-        Claim::CheckEnv { root, assumptions }
-      },
-      VARIANT_REVEAL_PROOF => {
-        let comm = get_address(buf)?;
-        let info = RevealConstantInfo::get(buf)?;
-        Claim::Reveal { comm, info }
-      },
-      VARIANT_CONTAINS_PROOF => {
-        let tree = get_address(buf)?;
-        let const_addr = get_address(buf)?;
-        Claim::Contains { tree, const_addr }
-      },
-      VARIANT_CATALOG_PROOF => {
-        let members = get_address(buf)?;
-        let content = get_address(buf)?;
-        let assumptions = get_opt_addr(buf)?;
-        Claim::Catalog { members, content, assumptions }
-      },
-      VARIANT_RESOURCE_PROOF => {
-        Claim::Resource { root: get_address(buf)?, profile: get_address(buf)? }
-      },
-      x => {
-        return Err(format!(
-          "Proof::get: invalid proof variant {x} under flag 0xF"
-        ));
-      },
-    };
+    if tag.value > VARIANT_RESOURCE_PROOF {
+      return Err(format!(
+        "Proof::get: invalid proof variant {} under flag 0xF",
+        tag.value
+      ));
+    }
+    get_scope(validator_for_variant(tag.value + 3), buf)?;
+    let claim = Claim::get_payload(tag.value + 3, buf)?;
 
     // Opaque ZK proof bytes
     let len = usize::try_from(TagN::get(0, buf)?.value)
@@ -1440,19 +1506,42 @@ mod tests {
     }
   }
 
+  impl Arbitrary for ClaimContext {
+    fn arbitrary(g: &mut Gen) -> Self {
+      ClaimContext {
+        spec: Address::arbitrary(g),
+        binding: Address::arbitrary(g),
+        axioms: gen_opt_addr(g),
+      }
+    }
+  }
+
+  /// A fixed context: this specification set, a stand-in binding hash, the
+  /// standard axioms only.
+  fn test_ctx() -> ClaimContext {
+    ClaimContext {
+      spec: spec_digest(),
+      binding: Address::hash(b"binding"),
+      axioms: None,
+    }
+  }
+
   impl Arbitrary for Claim {
     fn arbitrary(g: &mut Gen) -> Self {
       match u8::arbitrary(g) % 7 {
         0 => Claim::Eval {
+          ctx: ClaimContext::arbitrary(g),
           input: Address::arbitrary(g),
           output: Address::arbitrary(g),
           assumptions: gen_opt_addr(g),
         },
         1 => Claim::Check {
+          ctx: ClaimContext::arbitrary(g),
           const_addr: Address::arbitrary(g),
           assumptions: gen_opt_addr(g),
         },
         2 => Claim::CheckEnv {
+          ctx: ClaimContext::arbitrary(g),
           root: Address::arbitrary(g),
           assumptions: gen_opt_addr(g),
         },
@@ -1461,6 +1550,7 @@ mod tests {
           info: RevealConstantInfo::arbitrary(g),
         },
         4 => Claim::Catalog {
+          ctx: ClaimContext::arbitrary(g),
           members: Address::arbitrary(g),
           content: Address::arbitrary(g),
           assumptions: gen_opt_addr(g),
@@ -1514,20 +1604,23 @@ mod tests {
   /// The catalog claim's exact wire form is a cross-serializer
   /// commitment (the Rust↔Lean digest-parity gate pins the same bytes
   /// from the Lean side): the first multi-byte claim tag, TagN `0xE8 0x00`,
-  /// then members ‖ content ‖ opt-assumptions. A drift here changes
-  /// every catalog digest.
+  /// the scope (object format, validator erased-lean-v2), the context, then
+  /// members ‖ content ‖ opt-assumptions. A drift here changes every catalog
+  /// digest.
   #[test]
   fn catalog_claim_wire_bytes_pinned() {
     let members = Address::hash(b"members");
     let content = Address::hash(b"content");
     let asm = Address::hash(b"assumptions");
     let claim = Claim::Catalog {
+      ctx: test_ctx(),
       members: members.clone(),
       content: content.clone(),
       assumptions: Some(asm.clone()),
     };
     let (addr, bytes) = claim.commit();
-    let mut expected = vec![0xE8, 0x00, 4, 1];
+    let mut expected = vec![0xE8, 0x00, 4, VALIDATOR_ERASED_LEAN];
+    test_ctx().put(&mut expected);
     expected.extend_from_slice(members.as_bytes());
     expected.extend_from_slice(content.as_bytes());
     expected.push(0x01);
@@ -1539,14 +1632,15 @@ mod tests {
     // two serializers cannot drift on the large-tag path unnoticed.
     assert_eq!(
       addr.hex(),
-      "8c4fa4fa2e88fc73c72fbb624696485ec252c6685247541b40a59b221f83dbf4",
+      "5f6f427ffe393beabc12bf64df64c32657d79d0dd925ec7a3e2ea9180fa85e03",
       "catalog claim digest drifted"
     );
     // Unconditional form: trailing 0x00, same 2-byte tag.
-    let claim_none = Claim::Catalog { members, content, assumptions: None };
+    let claim_none =
+      Claim::Catalog { ctx: test_ctx(), members, content, assumptions: None };
     let mut buf = Vec::new();
     claim_none.put(&mut buf);
-    assert_eq!(buf.len(), 2 + 2 + 32 + 32 + 1);
+    assert_eq!(buf.len(), 2 + 2 + 65 + 32 + 32 + 1);
     assert_eq!(&buf[0..2], &[0xE8, 0x00]);
     assert_eq!(*buf.last().unwrap(), 0x00);
     // The proof wrapper stays a single-byte tag: 0xF5.
@@ -1556,6 +1650,23 @@ mod tests {
     assert_eq!(pbuf[0], 0xF5, "catalog proof wrapper tag drifted");
     let back = Proof::get(&mut pbuf.as_slice()).expect("proof roundtrip");
     assert_eq!(back, proof);
+  }
+
+  /// A typing claim made for the retired erased-lean-v1 validator is refused,
+  /// never read as an erased-lean-v2 claim.
+  #[test]
+  fn retired_validator_refused() {
+    let claim = Claim::Check {
+      ctx: test_ctx(),
+      const_addr: Address::hash(b"value"),
+      assumptions: None,
+    };
+    let mut bytes = Vec::new();
+    claim.put(&mut bytes);
+    assert_eq!(bytes[2], VALIDATOR_ERASED_LEAN);
+    bytes[2] = VALIDATOR_ERASED_LEAN_RETIRED;
+    let err = Claim::from_bytes(&bytes).unwrap_err();
+    assert!(err.contains("erased-lean-v1 is retired"), "{err}");
   }
 
   fn reveal_info_roundtrip(info: &RevealConstantInfo) -> bool {
@@ -1597,6 +1708,7 @@ mod tests {
   #[test]
   fn test_eval_claim_no_asm_roundtrip() {
     let claim = Claim::Eval {
+      ctx: test_ctx(),
       input: Address::hash(b"input"),
       output: Address::hash(b"output"),
       assumptions: None,
@@ -1607,6 +1719,7 @@ mod tests {
   #[test]
   fn test_eval_claim_with_asm_roundtrip() {
     let claim = Claim::Eval {
+      ctx: test_ctx(),
       input: Address::hash(b"input"),
       output: Address::hash(b"output"),
       assumptions: Some(Address::hash(b"asm")),
@@ -1616,14 +1729,18 @@ mod tests {
 
   #[test]
   fn test_check_claim_no_asm_roundtrip() {
-    let claim =
-      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None };
+    let claim = Claim::Check {
+      ctx: test_ctx(),
+      const_addr: Address::hash(b"value"),
+      assumptions: None,
+    };
     assert!(claim_roundtrip(&claim));
   }
 
   #[test]
   fn test_check_claim_with_asm_roundtrip() {
     let claim = Claim::Check {
+      ctx: test_ctx(),
       const_addr: Address::hash(b"value"),
       assumptions: Some(Address::hash(b"asm")),
     };
@@ -1632,14 +1749,18 @@ mod tests {
 
   #[test]
   fn test_check_env_claim_no_asm_roundtrip() {
-    let claim =
-      Claim::CheckEnv { root: Address::hash(b"env-root"), assumptions: None };
+    let claim = Claim::CheckEnv {
+      ctx: test_ctx(),
+      root: Address::hash(b"env-root"),
+      assumptions: None,
+    };
     assert!(claim_roundtrip(&claim));
   }
 
   #[test]
   fn test_check_env_claim_with_asm_roundtrip() {
     let claim = Claim::CheckEnv {
+      ctx: test_ctx(),
       root: Address::hash(b"env-root"),
       assumptions: Some(Address::hash(b"asm")),
     };
@@ -1655,7 +1776,11 @@ mod tests {
     let right = merkle_root_canonical(std::slice::from_ref(&c)).unwrap();
     let root = merkle_join(&left, &right);
     assert_ne!(root, merkle_root_canonical(&[a, b, c]).unwrap());
-    assert!(claim_roundtrip(&Claim::CheckEnv { root, assumptions: None }));
+    assert!(claim_roundtrip(&Claim::CheckEnv {
+      ctx: test_ctx(),
+      root,
+      assumptions: None
+    }));
   }
 
   #[test]
@@ -1673,6 +1798,7 @@ mod tests {
   fn test_eval_proof_roundtrip() {
     let proof = Proof::new(
       Claim::Eval {
+        ctx: test_ctx(),
         input: Address::hash(b"input"),
         output: Address::hash(b"output"),
         assumptions: None,
@@ -1685,7 +1811,11 @@ mod tests {
   #[test]
   fn test_check_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None },
+      Claim::Check {
+        ctx: test_ctx(),
+        const_addr: Address::hash(b"value"),
+        assumptions: None,
+      },
       vec![5, 6, 7, 8, 9],
     );
     assert!(proof_roundtrip(&proof));
@@ -1694,7 +1824,11 @@ mod tests {
   #[test]
   fn test_check_env_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::CheckEnv { root: Address::hash(b"env-root"), assumptions: None },
+      Claim::CheckEnv {
+        ctx: test_ctx(),
+        root: Address::hash(b"env-root"),
+        assumptions: None,
+      },
       vec![0x11, 0x22],
     );
     assert!(proof_roundtrip(&proof));
@@ -1704,6 +1838,7 @@ mod tests {
   fn test_check_proof_with_asm_roundtrip() {
     let proof = Proof::new(
       Claim::Check {
+        ctx: test_ctx(),
         const_addr: Address::hash(b"const"),
         assumptions: Some(Address::hash(b"asm")),
       },
@@ -1728,6 +1863,7 @@ mod tests {
   fn test_empty_proof_data() {
     let proof = Proof::new(
       Claim::Eval {
+        ctx: test_ctx(),
         input: Address::hash(b"c"),
         output: Address::hash(b"d"),
         assumptions: None,
@@ -1800,15 +1936,24 @@ mod tests {
 
     let cases: Vec<(Claim, u64)> = vec![
       (
-        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        Claim::Eval {
+          ctx: test_ctx(),
+          input: a.clone(),
+          output: b.clone(),
+          assumptions: None,
+        },
         VARIANT_EVAL_CLAIM,
       ),
       (
-        Claim::Check { const_addr: a.clone(), assumptions: None },
+        Claim::Check {
+          ctx: test_ctx(),
+          const_addr: a.clone(),
+          assumptions: None,
+        },
         VARIANT_CHECK_CLAIM,
       ),
       (
-        Claim::CheckEnv { root: a.clone(), assumptions: None },
+        Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
         VARIANT_CHECK_ENV_CLAIM,
       ),
       (
@@ -1839,15 +1984,24 @@ mod tests {
 
     let cases: Vec<(Claim, u64)> = vec![
       (
-        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        Claim::Eval {
+          ctx: test_ctx(),
+          input: a.clone(),
+          output: b.clone(),
+          assumptions: None,
+        },
         VARIANT_EVAL_PROOF,
       ),
       (
-        Claim::Check { const_addr: a.clone(), assumptions: None },
+        Claim::Check {
+          ctx: test_ctx(),
+          const_addr: a.clone(),
+          assumptions: None,
+        },
         VARIANT_CHECK_PROOF,
       ),
       (
-        Claim::CheckEnv { root: a.clone(), assumptions: None },
+        Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
         VARIANT_CHECK_ENV_PROOF,
       ),
       (
@@ -1879,47 +2033,59 @@ mod tests {
     let b = Address::hash(b"b");
     let asm = Address::hash(b"asm");
 
-    // Single-byte TagN + payload + 1 opt byte (+ 32 if Some).
+    // Single-byte TagN + scope + context (spec, binding, no axioms) +
+    // payload + 1 opt byte (+ 32 if Some).
     assert_eq!(
       claim_bytes(&Claim::Eval {
+        ctx: test_ctx(),
         input: a.clone(),
         output: b.clone(),
         assumptions: None
       })
       .len(),
-      1 + 2 + 64 + 1,
-      "Eval no-asm = 68 bytes"
+      1 + 2 + 65 + 64 + 1,
+      "Eval no-asm = 133 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Eval {
+        ctx: test_ctx(),
         input: a.clone(),
         output: b.clone(),
         assumptions: Some(asm.clone())
       })
       .len(),
-      1 + 2 + 64 + 1 + 32,
-      "Eval with-asm = 100 bytes"
-    );
-    assert_eq!(
-      claim_bytes(&Claim::Check { const_addr: a.clone(), assumptions: None })
-        .len(),
-      1 + 2 + 32 + 1,
-      "Check no-asm = 36 bytes"
+      1 + 2 + 65 + 64 + 1 + 32,
+      "Eval with-asm = 165 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Check {
+        ctx: test_ctx(),
+        const_addr: a.clone(),
+        assumptions: None
+      })
+      .len(),
+      1 + 2 + 65 + 32 + 1,
+      "Check no-asm = 101 bytes"
+    );
+    assert_eq!(
+      claim_bytes(&Claim::Check {
+        ctx: test_ctx(),
         const_addr: a.clone(),
         assumptions: Some(asm.clone())
       })
       .len(),
-      1 + 2 + 32 + 1 + 32,
-      "Check with-asm = 68 bytes"
+      1 + 2 + 65 + 32 + 1 + 32,
+      "Check with-asm = 133 bytes"
     );
     assert_eq!(
-      claim_bytes(&Claim::CheckEnv { root: a.clone(), assumptions: None })
-        .len(),
-      1 + 2 + 32 + 1,
-      "CheckEnv no-asm = 36 bytes"
+      claim_bytes(&Claim::CheckEnv {
+        ctx: test_ctx(),
+        root: a.clone(),
+        assumptions: None
+      })
+      .len(),
+      1 + 2 + 65 + 32 + 1,
+      "CheckEnv no-asm = 101 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Contains { tree: a, const_addr: b }).len(),
@@ -1943,11 +2109,26 @@ mod tests {
 
     let cases: Vec<(Claim, u8)> = vec![
       (
-        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        Claim::Eval {
+          ctx: test_ctx(),
+          input: a.clone(),
+          output: b.clone(),
+          assumptions: None,
+        },
         0xE3,
       ),
-      (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xE4),
-      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xE5),
+      (
+        Claim::Check {
+          ctx: test_ctx(),
+          const_addr: a.clone(),
+          assumptions: None,
+        },
+        0xE4,
+      ),
+      (
+        Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
+        0xE5,
+      ),
       (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xE6),
       (Claim::Contains { tree: a, const_addr: b }, 0xE7),
     ];
@@ -1970,11 +2151,26 @@ mod tests {
     };
     let cases: Vec<(Claim, u8)> = vec![
       (
-        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        Claim::Eval {
+          ctx: test_ctx(),
+          input: a.clone(),
+          output: b.clone(),
+          assumptions: None,
+        },
         0xF0,
       ),
-      (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xF1),
-      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xF2),
+      (
+        Claim::Check {
+          ctx: test_ctx(),
+          const_addr: a.clone(),
+          assumptions: None,
+        },
+        0xF1,
+      ),
+      (
+        Claim::CheckEnv { ctx: test_ctx(), root: a.clone(), assumptions: None },
+        0xF2,
+      ),
       (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xF3),
       (Claim::Contains { tree: a, const_addr: b }, 0xF4),
     ];

@@ -812,7 +812,7 @@ Complete old/new bytes agree when both routes succeed with the same limits,
 all initial components at all three widths have at most 16 members, and the old
 route uses `uniformSubsetSearch = false`. Old-route success alone is not yet a proof
 of new-route success. [Sharing-minimum §14.3](sharing-minimum.md#143-proof-scope-and-follow-up)
-records the remaining totality, output-domain and cost obligations.
+records the totality and output-domain theorems and the remaining cost obligations.
 
 The detailed exact-search theorem inventory below describes the retained reference
 route and the common later phases. Its phase-1 global optimum must not be read as a
@@ -965,17 +965,23 @@ Not claimed:
   and requires identical serialized environments
   ([performance](sharing-minimum-performance.md)).
 - **Length range in Rust.** Lean computes lengths with arbitrary-precision
-  `Nat`. Rust retains checked 128-bit general costs and signed deltas, so
-  their overflow remains a possible refusal. The measured classification-only
-  overflow on small valid doubling DAGs is repaired: all 11 fixtures, including
-  depths 127–256, now have complete Rust/Lean byte parity. That predicate uses
-  a sufficient cap, not a saturated replacement for general costs; wider
-  arithmetic remains follow-up work (§14.3 of sharing-minimum).
-- **Failure.** The theorems describe successful runs. A run that exceeds a
-  limit returns an error. The follow-up totality domain includes ingestion/wire
-  conditions and fewer than `2^64` bytes per framed constant body; standalone and
-  structured APIs must state that bound explicitly. Input framing alone does not
-  prove output framing or that the remaining guards cannot fail.
+  `Nat`. Rust computes phase-1 costs and signed deltas in 128-bit integers
+  and, where a value leaves that range, again in exact integers, with the
+  same result wherever the 128-bit run succeeds (§12.18 of sharing-minimum),
+  so a long unshared length is no refusal. All 11 doubling fixtures,
+  including depths 127–256, have complete Rust/Lean byte parity, and the
+  Lean/Rust sharing suite compares four towers whose unshared length exceeds
+  `2^127` byte for byte.
+- **Failure.** A run that exceeds a limit returns an error. On the totality
+  domain (fewer than `2^64` input nodes and universes per reference, implied by
+  the framed constant-body bound) no guard is reachable under a sufficient
+  budget, a larger budget never changes a successful result, and the output
+  expands again (`IxSharingVerify.NeverFails`). One such budget is
+  `limitsFor N`, polynomial in the input size `N`: the expression nodes plus
+  universe arguments of the table and the roots as written, when table
+  entries reference only earlier entries and roots only entries
+  (`IxSharingVerify.SufficientBudget`). Standalone and structured APIs must
+  state that domain explicitly.
 
 ### Example
 
@@ -1696,10 +1702,10 @@ fixed-width little-endian like `.ixes`; source of truth
 
 ```
 magic    b"IXC\0\0\0\0\0"            (8)
-version  u32 = 2
+version  u32 = 3
 flags    u32                          # bit0: storage profile (0 = fat, 1 = chunked)
 object_format     u8 = 4              # ixon-v4
-validator         u8 = 1              # erased-lean-v1 catalog claims
+validator         u8 = 3              # erased-lean-v2 catalog claims
 members_root      32 bytes
 content_root      32 bytes
 member_count      u32
@@ -1746,9 +1752,12 @@ environment header is `0xE4`, the same byte as the Check claim tag. The
 enclosing protocol must identify the object kind.
 
 Every claim and proof payload starts with two bytes immediately after its
-header: object format `4`, then validator `0` (structural-v1),
-`1` (erased-lean-v1), or `2` (resource-v1). Readers require the validator
-assigned to that variant. Whole-object readers reject trailing bytes and
+header: object format `4`, then validator `0` (structural-v1), `2`
+(resource-v1) or `3` (erased-lean-v2). Readers require the validator
+assigned to that variant. Validator `1` (erased-lean-v1) is retired: it named
+typing claims whose primitives were recognized by fixed addresses and which
+admitted any axiom, and readers refuse it (`claim: validator erased-lean-v1 is
+retired — regenerate the claim`) rather than read it as erased-lean-v2. Whole-object readers reject trailing bytes and
 earlier unscoped encodings. These bytes are included in the claim digest
 and proof statement. A claim with another object format is rejected with
 `claim: unsupported object format N, expected 4 — regenerate the claim`
@@ -1763,20 +1772,39 @@ and proof statement. A claim with another object format is rejected with
 | 5 (envelope) | `0xE5` | Environment with binding (`.ixe` context) | root + main/assumptions + binding + 6 sections |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
-| 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |
-| 4 | `0xE4` | Check claim | 1 addr (const) + opt assumptions |
-| 5 | `0xE5` | CheckEnv claim | 1 addr (env root) + opt assumptions |
+| 3 | `0xE3` | Eval claim | context + 2 addr (input, output) + opt assumptions |
+| 4 | `0xE4` | Check claim | context + 1 addr (const) + opt assumptions |
+| 5 | `0xE5` | CheckEnv claim | context + 1 addr (env root) + opt assumptions |
 | 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
-| 8 | `0xE8 0x00` | Catalog claim | 2 addr (members root, content root) + opt assumptions |
+| 8 | `0xE8 0x00` | Catalog claim | context + 2 addr (members root, content root) + opt assumptions |
 | 9 | `0xE8 0x01` | Resource claim | 2 addr (complete env root, resource profile) |
 
 The claim payloads in this table follow the two scope bytes. Reveal and
 Contains require validator `0`; Eval, Check, CheckEnv, and Catalog require
-validator `1`; Resource requires validator `2`.
+validator `3`; Resource requires validator `2`.
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
+
+The typing claims (Eval, Check, CheckEnv, Catalog) are relative to a
+**context**, which follows the scope bytes:
+
+```
+[32 bytes]            -- specification digest (`Ix.SpecDigest.specDigest`)
+[32 bytes]            -- binding hash: BLAKE3 of the role table's E8 03 section
+00                    -- axioms beyond the standard three = None
+                      --   (or 01 + [32 bytes]: merkle root of their addresses)
+```
+
+The claim states that its constants are well-typed in Lean's theory over
+the standard axioms (`propext`, `Classical.choice`, `Quot.sound`), with the
+primitives read through the bound roles, each validated against the named
+specifications. The axioms field is reserved: no checker admits another axiom
+yet, and IxVM refuses a claim that lists any. It is a separate commitment from
+`assumptions`, which names constants assumed well-typed and discharged by
+other claims; an axiom is never discharged by typing. A context is 65 bytes
+when there are no further axioms.
 
 The Catalog claim's two roots use two DISTINCT leaf vocabularies,
 never mixed: `members` leaves are member ENV ROOTS; `content` (and
@@ -1804,20 +1832,23 @@ paths for Contains) is prover-side scratch consumed by the ZK circuit
 and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
 IxVM supports Eval, Check, CheckEnv, Reveal, and Contains; Resource is currently
 validated by the native Lean/Rust boundary and is explicitly rejected as an
-IxVM proof request. Catalog proofs compose erased CheckEnv claims.
+IxVM proof request. Catalog proofs compose erased CheckEnv claims under one
+context; aggregation folds only children whose contexts are equal.
 
 ### Claim Types
 
 ```rust
+pub struct ClaimContext { pub spec: Address, pub binding: Address, pub axioms: Option<Address> }
+
 pub enum Claim {
     /// `input` evaluates to `output`, optionally modulo `assumptions`.
-    Eval { input: Address, output: Address, assumptions: Option<Address> },
+    Eval { ctx: ClaimContext, input: Address, output: Address, assumptions: Option<Address> },
     /// The constant at `const_addr` is well-typed, optionally modulo
     /// `assumptions`.
-    Check { const_addr: Address, assumptions: Option<Address> },
+    Check { ctx: ClaimContext, const_addr: Address, assumptions: Option<Address> },
     /// Every constant in the env merkle-rooted at `root` is well-typed,
-    /// optionally modulo `assumptions` (typically the env's axiom leaves).
-    CheckEnv { root: Address, assumptions: Option<Address> },
+    /// optionally modulo `assumptions`.
+    CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
     /// Selective field revelation of a committed constant.
     Reveal { comm: Address, info: RevealConstantInfo },
     /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
@@ -1827,7 +1858,7 @@ pub enum Claim {
     /// well-typed, optionally modulo `assumptions`. Verified by
     /// COMPOSITION of per-piece CheckEnv claims with set discharge —
     /// there is deliberately no whole-catalog interpreter arm.
-    Catalog { members: Address, content: Address, assumptions: Option<Address> },
+    Catalog { ctx: ClaimContext, members: Address, content: Address, assumptions: Option<Address> },
     /// Complete closure passes resource-v1 under the committed profile.
     Resource { root: Address, profile: Address },
 }
@@ -1888,7 +1919,7 @@ pub struct Proof {
 
 ### Serialization Examples
 
-**Eval claim** (0xE3, 2 addresses + opt assumptions byte):
+**Eval claim** (0xE3, context + 2 addresses + opt assumptions byte):
 
 Both addresses identify constants. The input is typechecked and normalized;
 the output is a safe standalone definition with the same type and universe
@@ -1898,7 +1929,8 @@ the exact comparison and assumption rules.
 
 ```
 E3                    -- N4(0xE, 3) (Eval)
-04 01                 -- object format 4, erased-lean-v1
+04 03                 -- object format 4, erased-lean-v2
+[65 bytes]            -- context: spec digest, binding hash, 00 (no further axioms)
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 00                    -- assumptions = None (or 01 + [32 bytes] for Some)
@@ -1907,7 +1939,8 @@ E3                    -- N4(0xE, 3) (Eval)
 **Eval proof** (0xF0, claim payload + opaque ZK bytes):
 ```
 F0                    -- N4(0xF, 0) (Eval proof)
-04 01                 -- object format 4, erased-lean-v1
+04 03                 -- object format 4, erased-lean-v2
+[65 bytes]            -- context
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 00                    -- assumptions = None
@@ -1915,10 +1948,11 @@ F0                    -- N4(0xF, 0) (Eval proof)
 01 02 03 04           -- opaque ZK proof bytes
 ```
 
-**Check claim** (0xE4, 1 address + opt assumptions byte):
+**Check claim** (0xE4, context + 1 address + opt assumptions byte):
 ```
 E4                    -- N4(0xE, 4) (Check)
-04 01                 -- object format 4, erased-lean-v1
+04 03                 -- object format 4, erased-lean-v2
+[65 bytes]            -- context
 [32 bytes]            -- const address
 00                    -- assumptions = None
 ```

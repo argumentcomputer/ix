@@ -35,6 +35,7 @@ public import Ix.Aiur.Stages.TraceCodegen
 public import Ix.Aiur.Stages.TraceCuda
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
+public import Ix.IxVM.RoleSpecGen
 public import MultiStark
 
 public section
@@ -104,6 +105,27 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
     ({compiled.bytecode.functions.size} aiur fns)"
   return true
 
+/-- Where the IxVM role specifications are rendered (`IxVM.RoleSpecGen`). -/
+def roleSpecPath : String := "Ix/IxVM/Kernel/RoleSpec.lean"
+
+/-- Render the IxVM role specifications from IxC's; in `--check` mode,
+    compare against the file instead of writing it. The kernel reads the file,
+    so a regenerated file takes effect after the next build. -/
+def emitRoleSpecs (checkOnly : Bool) : IO Bool := do
+  let source ← match IxVM.RoleSpecGen.render with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"role specifications: {e}"; return false
+  if checkOnly then
+    let existing ← try pure (some (← IO.FS.readFile roleSpecPath)) catch _ => pure none
+    if existing == some source then
+      IO.println s!"[codegen --check] {roleSpecPath} up to date"
+      return true
+    IO.eprintln s!"[codegen --check] {roleSpecPath} STALE: re-run `ix codegen` and commit the result."
+    return false
+  IO.FS.writeFile roleSpecPath source
+  IO.println s!"[codegen] wrote {roleSpecPath}"
+  return true
+
 /-- Circuits generated beyond the static rule, by circuit name per target:
 the IxVM circuits whose host trace building dominates a proof, small rows
 in very large numbers whose typed seed is a fraction of the row. The list
@@ -111,7 +133,7 @@ was chosen from one environment's measurements; revisit it when a heavier
 one is profiled. -/
 def weightedCircuits : List (String × Array String) := [
   ("ixvm", #[
-    "blake3_compress_chunks", "get_tagn4", "get_u64_le", "g_list_has", "list_snoc.G",
+    "blake3_compress_chunks", "get_tagn4", "get_u64_le", "g_list_has",
     "expr_glb_walk", "expr_inst_many_walk", "get_app_telescope", "expr_glb", "expr_lower",
     "get_expr", "expr_lbr", "k_infer_app_spine_loop", "list_drop.G", "expr_inst_many_bvar",
     "expr_lower_walk", "bytes_to_block", "expr_inst_many", "get_expr_list", "collect_spine",
@@ -235,6 +257,8 @@ def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok source => IO.print source; return 0
     | .error error => IO.eprintln s!"{target.label} trace codegen: {error}"; return 1
   let mut ok := true
+  if selected.any (·.label == "ixvm") then
+    ok := (← emitRoleSpecs checkOnly) && ok
   for t in selected do
     ok := (← emitTarget checkOnly t) && ok
   return if ok then 0 else 1

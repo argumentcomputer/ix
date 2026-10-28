@@ -1,5 +1,6 @@
 import Ix.Claim
 import Ix.Commit
+import Ix.ClaimContext
 import Ix.Address
 import Ix.Meta
 import Ix.CompileM
@@ -52,6 +53,7 @@ def main : IO UInt32 := do
   let arg : Lean.Expr ← runMeta (metaMakeList voteType as) env
   let (lvls, input, output, type, _sort) ←
     runMeta (metaMakeEvalClaim ``runElection [arg]) env
-  let claim ← IO.ofExcept <| Ix.Commit.evalClaim compileEnv lvls input output type
+  let ctx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
+  let claim ← IO.ofExcept <| Ix.Commit.evalClaim ctx compileEnv lvls input output type
   IO.println s!"{claim}"
   return 0

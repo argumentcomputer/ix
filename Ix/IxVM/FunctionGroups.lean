@@ -34,7 +34,7 @@ def functionGroups : Array (String × Array String) := #[
     "ctor_at",
     "load_verified_blob",
     "get_ci",
-    "check_canonical_block",
+    "check_block_member_kinds",
     "peer_agree_walk",
     "ind_is_solo",
     "flat_originals_walk",
@@ -45,13 +45,8 @@ def functionGroups : Array (String × Array String) := #[
     "relaxed_u64_succ",
     "quot_kind_tag",
     "klimbs_mod",
-    "str_addr",
     "convert_axiom",
-    "convert_quotient",
-    "quot_ctor_addr",
-    "quot_lift_addr_iota",
-    "quot_ind_addr",
-    "quot_type_addr"
+    "convert_quotient"
   ]),
   ("ixvm_group_03", #[
     "u64_add",
@@ -82,7 +77,7 @@ def functionGroups : Array (String × Array String) := #[
     "get_constructor",
     "get_mut_const",
     "is_unit_like_type",
-    "canon_muts_has_kind",
+    "muts_has_kind",
     "is_muts_block",
     "muts_indc_count_is_one",
     "const_idxs_ctors"
@@ -116,20 +111,11 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_10", #[
     "put_u64_le",
-    "check_native_nat",
     "utf8_last_go",
     "char_lit_codepoint",
     "mk_nat_binop_stuck",
-    "canon_cmp_krec_rule_ctx",
-    "canon_kind_ord",
-    "canon_ctor_ctx_entries",
-    "canon_refine_one",
-    "canon_ins_sort",
-    "canon_flatten",
-    "canon_all_singleton",
     "extract_aux_spec_params_from_rec",
     "check_opt_u64",
-    "list_concat.Tup.Ptr.U8_32.G",
     "rbtree_map_insert.G"
   ]),
   ("ixvm_group_11", #[
@@ -153,8 +139,6 @@ def functionGroups : Array (String × Array String) := #[
     "u64_or",
     "u64_xor_kbits",
     "defn_member_recur_addrs",
-    "canon_cmp_member_ctx",
-    "canon_sort_loop",
     "aux_already_in",
     "spec_params_dom_prefix_match",
     "addr_set_build",
@@ -166,30 +150,18 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_13", #[
     "put_u64_list",
     "put_recursor_rule_list",
-    "canon_g_list_eq",
-    "canon_ctx_class_idx",
-    "canon_cmp_kexpr_ctx",
-    "canon_member_ci",
-    "canon_member_num_ctors",
-    "canon_refine_classes",
-    "canon_group_consec",
     "level_list_struct_eq",
     "spec_params_ptr_eq",
     "flat_find_pos",
     "get_opt_rule_list_masked",
-    "get_opt_ctor_entry_list_masked",
-    "list_length.U8_8"
+    "get_opt_ctor_entry_list_masked"
   ]),
   ("ixvm_group_14", #[
     "put_quot_kind",
     "pack_def_kind_safety",
-    "char_of_nat_addr",
-    "char_type_addr",
     "byte_array_empty_addr",
     "utf8_last_codepoint",
     "utf8_cont",
-    "canon_ord_then",
-    "canon_sord_then",
     "def_safety_tag",
     "check_opt_bool",
     "check_opt_recr_rules",
@@ -200,8 +172,6 @@ def functionGroups : Array (String × Array String) := #[
     "put_all_mode",
     "klimbs_shl",
     "np_whnf_inner_bv",
-    "canon_addr_chunk",
-    "canon_cmp_kliteral",
     "leaf_hash",
     "node_hash",
     "addr_set_member",
@@ -225,8 +195,6 @@ def functionGroups : Array (String × Array String) := #[
     "put_constructor",
     "put_inductive",
     "str_lit_delta_step",
-    "canon_cmp_ctor_range_ctx",
-    "canon_group_walk",
     "get_reveal_rule_list_inner",
     "check_recr_rules",
     "rbtree_map_lookup_or_default.G",
@@ -248,7 +216,6 @@ def functionGroups : Array (String × Array String) := #[
     "put_mut_const_list",
     "klimbs_lor",
     "klimbs_xor_op",
-    "canon_cmp_klimbs_tail",
     "extract_aux_occ_us",
     "detect_aux_from_recrs_ex",
     "get_ctor_entry",
@@ -261,7 +228,6 @@ def functionGroups : Array (String × Array String) := #[
     "put_expr_list",
     "get_recursor_rule_list",
     "get_inductive",
-    "canon_indc_positions",
     "check_block_peer_param_agreement",
     "flat_find_pos_kind",
     "build_rec_type",
@@ -292,9 +258,6 @@ def functionGroups : Array (String × Array String) := #[
     "put_recursor",
     "klimbs_scalar_value",
     "str_dec_eq_build",
-    "canon_addr_cmp",
-    "canon_cmp_member_same_kind_ctx",
-    "canon_cmp_ctor_pair_ctx",
     "get_reveal_ctor_info",
     "get_ctor_entry_list_inner",
     "check_opt_expr_addr",
@@ -388,8 +351,7 @@ def functionGroups : Array (String × Array String) := #[
     "bitvec_prep_spine",
     "quot_extract_arg",
     "struct_block_member_addrs",
-    "try_eta_expand",
-    "check_eq_type"
+    "try_eta_expand"
   ]),
   ("ixvm_group_33", #[
     "get_constructor_list",
@@ -485,21 +447,11 @@ def functionGroups : Array (String × Array String) := #[
     "try_int_prim_second",
     "try_quot_lift",
     "k_synth_gate",
-    "dec_finish",
-    "canon_cprj_addr"
+    "dec_finish"
   ]),
   ("ixvm_group_43", #[
-    "nat_zero_addr",
-    "nat_succ_addr_iota",
-    "nat_pred_addr",
-    "nat_sub_addr",
-    "nat_xor_addr",
-    "nat_shift_right_addr",
-    "reduce_bool_addr",
-    "reduce_nat_addr",
     "string_utf8_byte_size_addr",
     "string_append_addr",
-    "string_of_list_addr",
     "string_back_addr",
     "string_legacy_back_addr",
     "string_to_byte_array_addr",
@@ -508,17 +460,12 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_44", #[
     "int_of_nat_addr",
     "int_neg_succ_addr_dec",
-    "bool_true_addr",
-    "bool_false_addr",
     "bit_vec_of_nat_addr",
     "decidable_is_true_addr_dec",
     "decidable_is_false_addr_dec",
     "nat_le_of_ble_eq_true_addr_dec",
     "nat_eq_of_beq_eq_true_addr_dec",
-    "nat_ne_of_beq_eq_false_addr_dec",
-    "bool_type_addr_dec",
-    "eq_refl_addr_dec",
-    "eq_type_addr"
+    "nat_ne_of_beq_eq_false_addr_dec"
   ]),
   ("ixvm_group_45", #[
     "int_add_addr",
@@ -538,18 +485,6 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_46", #[
     "int_sub_addr",
-    "nat_add_addr",
-    "nat_mul_addr",
-    "nat_pow_addr",
-    "nat_gcd_addr",
-    "nat_mod_addr",
-    "nat_div_addr",
-    "nat_land_addr",
-    "nat_lor_addr",
-    "nat_shift_left_addr",
-    "nat_beq_addr",
-    "nat_ble_addr",
-    "nat_addr_io",
     "nat_dec_le_addr_dec",
     "nat_dec_eq_addr_dec",
     "nat_dec_lt_addr_dec"
@@ -567,21 +502,18 @@ def functionGroups : Array (String × Array String) := #[
     "is_rec_field"
   ]),
   ("ixvm_group_48", #[
-    "is_native_prim_addr",
     "nl_add_var",
     "expr_lbr_let",
     "expr_lift_bvar",
     "validate_univ_params_seen"
   ]),
   ("ixvm_group_49", #[
-    "try_native_dispatch",
     "try_str_dispatch",
     "str_lit_to_ctor",
     "nlvars_add",
     "nlvars_subsume"
   ]),
   ("ixvm_group_50", #[
-    "check_native_bool",
     "bitvec_prep_spine_ult",
     "build_char_list",
     "char_lit_codepoint_syn",
@@ -589,8 +521,6 @@ def functionGroups : Array (String × Array String) := #[
     "int_bmod_prim",
     "nlvars_max_offset",
     "nlvars_any_offset_geq",
-    "canon_ord_cmp_g",
-    "canon_cmp_krec_rule_list_ctx",
     "run_check_env"
   ]),
   ("ixvm_group_51", #[
@@ -607,10 +537,7 @@ def functionGroups : Array (String × Array String) := #[
     "walk_char_list_bytes",
     "int_bdiv_prim",
     "try_quot_ind",
-    "try_str_dec_eq",
-    "canon_cmp_u64_lex",
-    "canon_build_ctx_members",
-    "canon_insert_sorted"
+    "try_str_dec_eq"
   ]),
   ("ixvm_group_53", #[
     "try_bitvec_dispatch",
@@ -621,13 +548,7 @@ def functionGroups : Array (String × Array String) := #[
     "try_dec_dispatch"
   ]),
   ("ixvm_group_54", #[
-    "list_nil_addr",
-    "list_cons_addr",
-    "nat_not_le_of_not_ble_eq_true_addr_dec",
-    "canon_sord_lt_strong",
-    "canon_sord_eq_strong",
-    "canon_sord_gt_strong",
-    "canon_sord_of_g"
+    "nat_not_le_of_not_ble_eq_true_addr_dec"
   ]),
   ("ixvm_group_55", #[
     "utf8_validate",
@@ -655,8 +576,6 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_58", #[
     "klimbs_from_g",
-    "canon_cmp_kuniv_list",
-    "canon_cmp_bytes",
     "kexpr_struct_eq",
     "parse_atree_body"
   ]),
@@ -688,16 +607,10 @@ def functionGroups : Array (String × Array String) := #[
     "apply_n_projs",
     "se_peel_tol",
     "se_mentions",
-    "count_foralls_at_least",
     "check_large_prop_ctor"
   ]),
   ("ixvm_group_62", #[
     "int_emod_prim",
-    "canon_ctx_cmp_addr",
-    "canon_cmp_kuniv",
-    "canon_cmp_klimbs",
-    "canon_build_ctx_classes",
-    "canon_classes_eq",
     "extract_aux_spec_params",
     "spec_params_lower",
     "apply_spec_params_lifted",

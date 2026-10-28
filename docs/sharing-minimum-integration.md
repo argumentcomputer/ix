@@ -34,7 +34,7 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
 | Sharing pricing and tie-break bytes at TagN widths; count threshold θmax (finding 7); telescope-spine guard (finding 8) | implemented; guards can still refuse |
 | Canonical construction as the only compiler route in Lean and Rust; heuristic removed | done (§3.2, §8) |
 | Compiler limits as a safety net with a CLI override | done (§8) |
-| Successful-run proofs for the production family, input expansion, format and builder codec; audited fast twins | proved with the conditions described in §4; totality, output-domain closure and cost remain follow-ups |
+| Successful-run proofs for the production family, input expansion, format and builder codec; audited fast twins | proved with the conditions described in §4, with totality and output-domain closure; a cost bound remains a follow-up |
 | Checked object format 4 and `ixon-v4` identifiers; v4/v5 environment envelopes | implemented; see [Ixon](Ixon.md#environment) for the envelope distinction |
 | `.ixe` caches keyed by the format version | done (§6) |
 | Metadata `Share` reader rule in both decompilers | done; no metadata construction (§5.3) |
@@ -228,8 +228,8 @@ and compiled implementation of each stage.
 
 These are successful-run contracts. Old-route success does not imply
 new-route success at an arbitrarily tight budget; idempotence does not
-silently supply second-run success. Totality on the stated framed-input
-domain, output-domain closure and cost bounds remain follow-up work
+silently supply second-run success. Totality on the stated input domain and
+output-domain closure are proved; a cost bound remains follow-up work
 ([§14.3](sharing-minimum.md#143-proof-scope-and-follow-up)). There is no global
 minimum claim or phase-2 optimum for tables above 1,032 entries. Rust has
 differential evidence, not a universal refinement proof. Sharing preserves

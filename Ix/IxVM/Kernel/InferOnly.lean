@@ -15,7 +15,7 @@ namespace IxVM
 Mirror `with_infer_only` (crates/kernel/src/infer.rs).
 
 Type synthesis ONLY. Skips inner validations: App drops
-`k_check(a, dom)`, Lam drops `k_ensure_sort(ty)`, Let drops val/ty
+`k_check(rc, a, dom)`, Lam drops `k_ensure_sort(rc, ty)`, Let drops val/ty
 checks, Proj drops prop-field checks.
 
 Called by `try_proof_irrel` inside `k_is_def_eq` — placing it in
@@ -58,23 +58,9 @@ def inferOnly := ⟦
     }
   }
 
-  fn nat_addr_io() -> Addr {
-    store([0x35u8, 0xe1u8, 0xccu8, 0x80u8, 0x9fu8, 0x6fu8, 0x07u8, 0x65u8,
-     0x21u8, 0xa4u8, 0x3fu8, 0x85u8, 0x06u8, 0x8du8, 0x55u8, 0x92u8,
-     0x22u8, 0x04u8, 0x07u8, 0xc0u8, 0x53u8, 0x2bu8, 0x6au8, 0x08u8,
-     0x95u8, 0x2fu8, 0x40u8, 0xd8u8, 0x52u8, 0x3du8, 0x04u8, 0xbcu8])
-  }
-
-  fn str_addr_io() -> Addr {
-    store([0x22u8, 0x16u8, 0x25u8, 0xa0u8, 0x0eu8, 0xe2u8, 0xd6u8, 0xb9u8,
-     0x62u8, 0x97u8, 0xe3u8, 0x4du8, 0x7eu8, 0x05u8, 0xbfu8, 0x7eu8,
-     0x4fu8, 0xd3u8, 0x8du8, 0x8du8, 0x99u8, 0xd3u8, 0xe1u8, 0xd6u8,
-     0x4au8, 0x7cu8, 0xd2u8, 0xe0u8, 0x6cu8, 0xa0u8, 0x75u8, 0x2du8])
-  }
-
   -- k_infer_only: type-synthesis-only (mirror Rust `with_infer_only`).
-  -- Skips inner validations: App drops `k_check(a, dom)`; Lam drops
-  -- `k_ensure_sort(ty)`; Let drops val/ty checks. Distinct Aiur memo from
+  -- Skips inner validations: App drops `k_check(rc, a, dom)`; Lam drops
+  -- `k_ensure_sort(rc, ty)`; Let drops val/ty checks. Distinct Aiur memo from
   -- `k_infer` (parity with Rust's separate infer_cache / infer_only_cache).
   -- Used at try_proof_irrel / is_prop_type / try_unit_like where only the
   -- synthesized type is needed.
@@ -85,7 +71,7 @@ def inferOnly := ⟦
   -- happens after typechecking. `k_infer_only` evaluates types (e.g. the
   -- substitution `B[a/x]` on an `App` arm) WITHOUT first checking that the
   -- substituted-in argument `a` has the proper type (the dropped
-  -- `k_check(a, dom)`). On an untyped or ill-typed term, that substitution
+  -- `k_check(rc, a, dom)`). On an untyped or ill-typed term, that substitution
   -- can take us out of the well-typed fragment, after which subsequent
   -- `whnf` / `def_eq` work is unsound.
   -- The current call sites (`try_proof_irrel`, `is_prop_type`,
@@ -110,11 +96,11 @@ def inferOnly := ⟦
   -- where available and fall back to `k_infer_only` only when the cheaper
   -- path won't pay off, instead of unconditionally paying the parallel
   -- `infer_only` memo cost.
-  fn k_infer_only(e: KExpr, types: List‹KExpr›) -> KExpr {
-    @k_infer_only_core(e, ctx_trim(types, expr_lbr(e)))
+  fn k_infer_only(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KExpr {
+    @k_infer_only_core(rc, e, ctx_trim(types, expr_lbr(e)))
   }
 
-  fn k_infer_only_core(e: KExpr, types: List‹KExpr›) -> KExpr {
+  fn k_infer_only_core(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => @io_types_lookup(types, i),
 
@@ -130,11 +116,11 @@ def inferOnly := ⟦
         expr_inst_levels(ty, lvls),
 
       KExprNode.App(f, a) =>
-        let f_ty = k_infer_only(f, types);
+        let f_ty = k_infer_only(rc, f, types);
         match load(f_ty) {
           KExprNode.Forall(_, cod) => expr_inst1(cod, a, 0),
           _ =>
-            let f_ty_whnf = whnf(f_ty, types);
+            let f_ty_whnf = whnf(rc, f_ty, types);
             match load(f_ty_whnf) {
               KExprNode.Forall(_, cod) => expr_inst1(cod, a, 0),
             },
@@ -142,31 +128,31 @@ def inferOnly := ⟦
 
       KExprNode.Lam(ty, body) =>
         let types2 = store(ListNode.Cons(ty, types));
-        let body_ty = k_infer_only(body, types2);
+        let body_ty = k_infer_only(rc, body, types2);
         store(KExprNode.Forall(ty, body_ty)),
 
       KExprNode.Forall(ty, body) =>
-        let u1 = ensure_sort_only(ty, types);
+        let u1 = ensure_sort_only(rc, ty, types);
         let types2 = store(ListNode.Cons(ty, types));
-        let u2 = ensure_sort_only(body, types2);
+        let u2 = ensure_sort_only(rc, body, types2);
         store(KExprNode.Srt(level_imax(u1, u2))),
 
       KExprNode.Let(_, val, body) =>
         let body_substed = expr_inst1(body, val, 0);
-        k_infer_only(body_substed, types),
+        k_infer_only(rc, body_substed, types),
 
       KExprNode.Lit(lit) =>
         match lit {
           KLiteral.Nat(_) =>
-            store(KExprNode.Const(nat_addr_io(), store(ListNode.Nil))),
+            store(KExprNode.Const(role_addr(rc, role_nat()), store(ListNode.Nil))),
           KLiteral.Str(_) =>
-            store(KExprNode.Const(str_addr_io(), store(ListNode.Nil))),
+            store(KExprNode.Const(role_used_implicitly(rc, role_string()), store(ListNode.Nil))),
         },
 
       -- Proj arm: minimal, mirrors k_infer_proj without prop checks.
       KExprNode.Proj(struct_addr, fidx, e1) =>
-        let val_ty = k_infer_only(e1, types);
-        let wty = whnf(val_ty, types);
+        let val_ty = k_infer_only(rc, e1, types);
+        let wty = whnf(rc, val_ty, types);
         match collect_spine(wty) {
           (head, args) =>
             match load(head) {
@@ -195,12 +181,12 @@ def inferOnly := ⟦
     }
   }
 
-  fn ensure_sort_only(e: KExpr, types: List‹KExpr›) -> KLevel {
-    let ty = k_infer_only(e, types);
+  fn ensure_sort_only(rc: RoleCtx, e: KExpr, types: List‹KExpr›) -> KLevel {
+    let ty = k_infer_only(rc, e, types);
     match load(ty) {
       KExprNode.Srt(l) => l,
       _ =>
-        let ty_whnf = whnf(ty, types);
+        let ty_whnf = whnf(rc, ty, types);
         match load(ty_whnf) {
           KExprNode.Srt(l) => l,
         },

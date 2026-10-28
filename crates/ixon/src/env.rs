@@ -857,13 +857,10 @@ impl Env {
   /// Collect `c`'s outgoing closure edges: Expr-level `refs`, a
   /// projection's structural `block` pointer, and — for a `Muts`
   /// block at `addr` — every member/constructor projection address
-  /// (derived, not stored anywhere; `ingress_anon_block` computes
-  /// these and requires them present in the env).
-  pub(crate) fn closure_edges(
-    addr: &Address,
-    c: &Constant,
-    edges: &mut Vec<Address>,
-  ) {
+  /// (derived even when their projection records are not physically carried).
+  /// This is closure accounting, not a requirement that every derived address
+  /// have a separate raw record.
+  pub fn closure_edges(addr: &Address, c: &Constant, edges: &mut Vec<Address>) {
     edges.extend(c.refs.iter().cloned());
     match &c.info {
       ConstantInfo::IPrj(p) => edges.push(p.block.clone()),

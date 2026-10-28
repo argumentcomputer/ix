@@ -131,6 +131,8 @@ impl std::ops::Deref for EnvOptU64 {
 
 pub mod anon_env;
 pub mod anon_work;
+#[cfg(not(target_arch = "riscv64"))]
+pub mod artifact_checker;
 pub mod canonical_check;
 pub mod check;
 pub mod claim;
@@ -146,12 +148,14 @@ pub mod id;
 pub mod inductive;
 pub mod infer;
 pub mod ingress;
+mod input;
 pub mod ixon_checker;
 pub mod lctx;
 pub mod level;
 pub mod mode;
 pub mod perf;
 pub mod primitive;
+mod primitive_context;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod role_admission;
 // Sharding cost model + partitioner (out-of-circuit). `profile` records

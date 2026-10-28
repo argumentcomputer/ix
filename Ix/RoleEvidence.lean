@@ -15,8 +15,8 @@ the dependency closure of the operation's value and of its dependencies'
 roles.
 
 The theorems are those of `IxC/Kernel/PinGen/Certs.lean` (`certTheorems`).
-As elaborated they reach constants outside that closure (`Nat.div.go.eq_def`,
-`Nat.le_of_ble_eq_true`, their own private helpers), so a proof is first
+As elaborated they reach constants outside that closure (their own private
+helpers, such as `natFixGoCongr`, and `Eq.trans`), so a proof is first
 **closed** over the closure (`closeProof`, upstream con-leche's pinner's
 rule): every constant outside it is replaced by its value, with beta, `let`
 and projection-of-constructor redexes reduced, to a fixpoint. The closure is

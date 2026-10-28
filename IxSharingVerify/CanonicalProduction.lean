@@ -40,7 +40,7 @@ theorem canonicalSharingTiered_family_least {layout : ShareLayout} {limits : Lim
         UniformFinished width limits expanded out.phase1 := by
   obtain ⟨expanded, before, after⟩ := canonicalSharingTiered_parts run
   have domain := familyExpanded_domain after
-  exact ⟨expanded, before, (familyExpanded_checked domain.wf domain.spines domain.roots domain.reachable after).1⟩
+  exact ⟨expanded, before, (familyExpanded_checked domain.wf domain.roots domain.reachable after).1⟩
 
 theorem canonicalSharingTiered_output {layout : ShareLayout} {limits : Limits} {roots : Array Ixon.Expr}
     {out : TieredSharingResult} (run : canonicalSharingTiered layout roots limits = .ok out) :

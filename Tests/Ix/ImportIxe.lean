@@ -540,12 +540,14 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
     let input := Lean.mkApp (.const `TIxImp.dbl []) (.const commitName [])
     let output := Lean.mkApp (.const nSucc [])
       (Lean.mkApp (.const nSucc []) (.const nZero []))
-    let claim ← match Ix.Commit.evalClaim compileEnv' [] input output
+    let ctx : Ix.ClaimContext :=
+      { spec := default, binding := default, axioms := none }
+    let claim ← match Ix.Commit.evalClaim ctx compileEnv' [] input output
         voteType with
       | .ok claim => pure claim
       | .error e => return (false, 0, 0, some s!"evalClaim failed: {e}")
     match claim with
-    | .eval i o _ =>
+    | .eval _ i o _ =>
       if i == o then
         return (false, 0, 0, some "degenerate claim: input addr = output addr")
       return (true, 0, 0, none)

@@ -469,13 +469,27 @@ pub enum DataValue {
   OfSyntax(Address),
 }
 
-/// Resolve an Ixon KVMap (address-based) to Lean-level MData (name/value pairs).
-///
-/// Used by kernel ingress to convert expression metadata from the
-/// content-addressed Ixon representation to the named kernel representation.
+/// Read-only dependencies of metadata decoding. Checked callers can retain
+/// authentication failures while preserving the ordinary decoration decoder.
+pub trait MetadataSource {
+  fn get_blob(&self, address: &Address) -> Option<Vec<u8>>;
+  fn get_name(&self, address: &Address) -> Option<Name>;
+}
+
+impl MetadataSource for super::env::Env {
+  fn get_blob(&self, address: &Address) -> Option<Vec<u8>> {
+    super::env::Env::get_blob(self, address)
+  }
+  fn get_name(&self, address: &Address) -> Option<Name> {
+    super::env::Env::get_name(self, address)
+  }
+}
+
+/// Resolve address-based metadata. Env callers keep their existing behavior;
+/// admission callers supply an authenticated read-only blob/name source.
 pub fn resolve_kvmap(
   kvm: &KVMap,
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Vec<(Name, env::DataValue)> {
   kvm
     .iter()
@@ -560,7 +574,7 @@ fn deser_int(bytes: &[u8]) -> Option<env::Int> {
 
 fn deser_substring(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::Substring> {
   let str_addr = deser_addr(buf)?;
   let s = String::from_utf8(ixon_env.get_blob(&str_addr)?).ok()?;
@@ -571,7 +585,7 @@ fn deser_substring(
 
 fn deser_source_info(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::SourceInfo> {
   match deser_u8(buf)? {
     0 => {
@@ -599,7 +613,7 @@ fn deser_source_info(
 
 fn deser_preresolved(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::SyntaxPreresolved> {
   match deser_u8(buf)? {
     0 => {
@@ -622,7 +636,7 @@ fn deser_preresolved(
 
 fn deser_syntax(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::Syntax> {
   match deser_u8(buf)? {
     0 => Some(env::Syntax::Missing),

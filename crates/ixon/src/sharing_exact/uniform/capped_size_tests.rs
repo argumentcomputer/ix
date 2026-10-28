@@ -120,13 +120,13 @@ fn empty_recurrence_matches_biguint_on_payloads_spines_and_random_dags() {
     Node::Let(LetContract::plain(false), 1, 2, 3),
   ];
   for _ in 0..300 {
-    let t = tid(nodes.len() - 1);
+    let t = nodes.len() - 1;
     nodes.push(Node::App(t, t));
   }
   check(&nodes); // exact costs exceed 2^300; never expand an occurrence tree
   let mut spine = vec![Node::Var(0)];
   for _ in 0..1100 {
-    spine.push(Node::App(tid(spine.len() - 1), 0));
+    spine.push(Node::App(spine.len() - 1, 0));
   }
   check(&spine); // includes TagN length-rung changes
   for seed in 0..1000u64 {
@@ -134,8 +134,8 @@ fn empty_recurrence_matches_biguint_on_payloads_spines_and_random_dags() {
     let mut ns = vec![Node::Var(0), Node::Sort(0)];
     for _ in 0..80 {
       rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
-      let a = u32::try_from(rng % len64(ns.len())).unwrap();
-      let b = u32::try_from((rng >> 16) % len64(ns.len())).unwrap();
+      let a = usize::try_from(rng % len64(ns.len())).unwrap();
+      let b = usize::try_from((rng >> 16) % len64(ns.len())).unwrap();
       ns.push(match rng % 5 {
         0 => Node::App(a, b),
         1 => Node::Lam(BinderContract::default(), a, b),

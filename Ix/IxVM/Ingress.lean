@@ -49,6 +49,19 @@ def ingress := ⟦
     constant
   }
 
+  -- The reducibility hint of a definition at `addr`. Only a `Definition`
+  -- unfolds by its hint, so a theorem or an opaque faults none from ch 3:
+  -- an environment need not carry hints for them.
+  fn definition_hint(addr: Addr, d: Definition) -> G {
+    match d {
+      Definition.Mk(kind, _, _, _, _) =>
+        match kind {
+          DefKind.Definition => #load_constant_hint(addr),
+          _ => 0,
+        },
+    }
+  }
+
   -- Load reducibility hint G for a Defn at `addr` (ch 3).
   -- Encoding: 0 = Opaque, 1+h = Regular(h), 0xFFFFFFFF = Abbrev.
   fn load_constant_hint(addr: Addr) -> G {
@@ -138,7 +151,7 @@ def ingress := ⟦
       Constant.Mk(info, sharing, refs, univs) =>
         match info {
           ConstantInfo.Defn(defn) =>
-            let hint = #load_constant_hint(addr);
+            let hint = definition_hint(addr, defn);
             -- Standalone Defn: a single recur slot naming ITSELF, and only
             -- for an unsafe definition.
             --
@@ -241,7 +254,7 @@ def ingress := ⟦
             let mc = list_lookup_u64(members, idx);
             match mc {
               MutConst.Defn(d) =>
-                let hint = #load_constant_hint(dprj_addr);
+                let hint = definition_hint(dprj_addr, d);
                 let recur_addrs =
                   defn_member_recur_addrs(d, members, block_addr);
                 store(convert_definition(d, sharing, refs, recur_addrs, univs, hint)),

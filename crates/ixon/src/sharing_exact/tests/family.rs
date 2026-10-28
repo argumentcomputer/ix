@@ -22,17 +22,17 @@ fn run(w: u64, dag: &SharingDag, k: usize) -> UniformSharingResult {
   out
 }
 
-fn flags(n: usize, set: &[u32]) -> Vec<bool> {
-  (0..n as u32).map(|t| set.contains(&t)).collect()
+fn flags(n: usize, set: &[TermId]) -> Vec<bool> {
+  (0..n).map(|t| set.contains(&t)).collect()
 }
 
-fn merged(a: &[u32], b: &[u32]) -> Vec<u32> {
+fn merged(a: &[TermId], b: &[TermId]) -> Vec<TermId> {
   let mut out = [a, b].concat();
   out.sort_unstable();
   out
 }
 
-fn body(dag: &SharingDag, w: u64, set: &[u32]) -> i128 {
+fn body(dag: &SharingDag, w: u64, set: &[TermId]) -> i128 {
   i128::from(uniform_set_len(dag, w, set))
     - i128::from(tag0_len(set.len() as u64))
 }
@@ -40,10 +40,10 @@ fn body(dag: &SharingDag, w: u64, set: &[u32]) -> i128 {
 fn oracle_family(
   dag: &SharingDag,
   w: u64,
-  cs: &[u32],
-  members: &[u32],
+  cs: &[TermId],
+  members: &[TermId],
   k: usize,
-) -> Vec<Vec<u32>> {
+) -> Vec<Vec<TermId>> {
   if members.len() <= k {
     assert!(members.len() <= 12);
     return (0..1u64 << members.len())
@@ -56,7 +56,7 @@ fn oracle_family(
       })
       .collect();
   }
-  let mut chain: Vec<Vec<u32>> = vec![Vec::new()];
+  let mut chain: Vec<Vec<TermId>> = vec![Vec::new()];
   for q in 1..=members.len() {
     let previous = chain.last().unwrap();
     let extensions: Vec<_> = members
@@ -117,8 +117,12 @@ fn check_product(
       rows.push((delta, selected.clone()));
     }
     let best = rows.iter().map(|r| r.0).min().unwrap();
-    let expected: Vec<_> =
-      rows.into_iter().map(|r| (r.0 <= best + slack).then_some(r)).collect();
+    let expected: Vec<_> = rows
+      .into_iter()
+      .map(|r| {
+        (r.0 <= best + slack).then(|| (num_bigint::BigInt::from(r.0), r.1))
+      })
+      .collect();
     assert_eq!(retained, &expected, "retained per-count rows w={w} k={k}");
     product = product
       .iter()

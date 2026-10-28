@@ -10,6 +10,8 @@ use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 
 use ix_common::address::Address;
+use ix_common::env::DefinitionSafety;
+use ixon::constant::DefKind;
 use ixon::env::Env as IxonEnv;
 
 use super::constant::{KConst, RecRule};
@@ -20,8 +22,7 @@ use super::expr::{ExprData, FVarId, KExpr};
 use super::extra_reductions::{ExtraReduction, ExtraReductions};
 use super::id::KId;
 use super::ingress::{
-  IxonIngressLookups, ingress_addr_shallow_into_kenv_with_lookups,
-  ingress_anon_addr_shallow,
+  IxonIngressLookups, ingress_addr_with_input, ingress_anon_addr_shallow_input,
 };
 use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData};
@@ -127,7 +128,7 @@ pub struct IotaInfo<M: KernelMode> {
 }
 
 pub struct LazyIxonIngress<'a> {
-  ixon_env: &'a IxonEnv,
+  input: super::input::Input<'a>,
   lookups: &'a IxonIngressLookups,
   faulted_addrs: FxHashSet<Address>,
 }
@@ -138,7 +139,7 @@ pub struct LazyIxonIngress<'a> {
 /// `Env::get_anon` (which discards metadata sections), but the
 /// implementation never consults those sections regardless.
 pub struct LazyAnonIngress<'a> {
-  anon_env: &'a IxonEnv,
+  input: super::input::Input<'a>,
   faulted_addrs: FxHashSet<Address>,
 }
 
@@ -158,9 +159,9 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// `lazy_ingress_addr` dispatcher uses whichever is set. The anon path
   /// never reads `Env::named`/`Env::names`.
   lazy_anon: Option<LazyAnonIngress<'a>>,
-  /// Primitive constant KIds. Copied from `env.prims()` at construction;
-  /// overridable for tests via `tc.prims = custom`.
-  pub prims: Primitives<M>,
+  /// Explicit legacy identities or a bound context. Candidate IDs alone
+  /// provide no permission to execute a native reduction/conversion rule.
+  pub(crate) prims: super::primitive_context::PrimitiveContext<M>,
 
   // -- Thread-local context --
   /// Local variable types, indexed by de Bruijn level.
@@ -262,7 +263,16 @@ pub struct TypeChecker<'a, M: KernelMode> {
 
 impl<'a, M: KernelMode> TypeChecker<'a, M> {
   pub fn new(env: &'a mut KEnv<M>) -> Self {
-    let prims = env.prims().clone();
+    let prims = super::primitive_context::PrimitiveContext::Legacy(
+      std::sync::Arc::new(env.prims().clone()),
+    );
+    Self::with_primitive_context(env, prims)
+  }
+
+  fn with_primitive_context(
+    env: &'a mut KEnv<M>,
+    prims: super::primitive_context::PrimitiveContext<M>,
+  ) -> Self {
     TypeChecker {
       env,
       lazy_ixon: None,
@@ -299,11 +309,97 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
+  pub fn primitives(&self) -> Result<&Primitives<M>, TcError<M>> {
+    self.prims.table().ok_or_else(|| TcError::Other(self.prims.unavailable()))
+  }
+
+  pub(super) fn optional_primitives(&self) -> Option<&Primitives<M>> {
+    self.prims.table()
+  }
+
+  /// Refuse unless rules that need `role` may run: always for unbound input,
+  /// and for a bound artifact only once its binding's group for `role` has
+  /// been admitted. Support that a check cannot do without (literal typing,
+  /// literal/constructor conversion) calls this; an optional acceleration
+  /// instead finds the role absent from the table and does not fire.
+  pub(crate) fn require_role(
+    &self,
+    role: ixon::role_table::Role,
+  ) -> Result<(), TcError<M>> {
+    if self.prims.admits(role) {
+      Ok(())
+    } else {
+      Err(TcError::Other(format!(
+        "{} support is not admitted for this bound artifact",
+        role.lean_name()
+      )))
+    }
+  }
+
+  /// Whether a definition of this kind and safety may be unfolded: a
+  /// definition or theorem, and under the safety tier not a partial one.
+  ///
+  /// The certified checker keeps unsafe definitions opaque too, but it also
+  /// declines unsafe inductives, which this kernel checks as Lean does. The
+  /// unsafe definitions over them (their generated recursion helpers and
+  /// equations, as in Mathlib's Aesop) are checked by unfolding; kept
+  /// opaque, their checks exhaust memory instead of failing. So unsafe
+  /// definitions unfold here, beside the unsafe-inductive divergence.
+  pub(crate) fn unfolds(
+    &self,
+    kind: DefKind,
+    safety: DefinitionSafety,
+  ) -> bool {
+    matches!(kind, DefKind::Definition | DefKind::Theorem)
+      && (safety != DefinitionSafety::Partial
+        || !self.prims.follows_safety_tier())
+  }
+
+  /// Under the safety tier, a safe inductive's or constructor's type may
+  /// not mention a partial or unsafe constant.
+  pub(crate) fn fence_safe_type(
+    &mut self,
+    ty: &KExpr<M>,
+    is_unsafe: bool,
+  ) -> Result<(), TcError<M>> {
+    if is_unsafe || !self.prims.follows_safety_tier() {
+      return Ok(());
+    }
+    self.check_no_unsafe_refs(ty, DefinitionSafety::Safe)
+  }
+
+  /// Whether `id` is one of the table's four quotient primitives.
+  pub(crate) fn is_quot_primitive(
+    &self,
+    id: &KId<M>,
+  ) -> Result<bool, TcError<M>> {
+    let p = self.primitives()?;
+    Ok(
+      [&p.quot_type, &p.quot_ctor, &p.quot_lift, &p.quot_ind]
+        .iter()
+        .any(|primitive| primitive.addr == id.addr),
+    )
+  }
+
+  pub(super) fn check_input_context(&self) -> Result<(), TcError<M>> {
+    match self.prims.entry_error() {
+      Some(error) => Err(TcError::Other(error.into())),
+      None => Ok(()),
+    }
+  }
+
   pub fn new_with_lazy_ixon(
     env: &'a mut KEnv<M>,
     ixon_env: &'a IxonEnv,
     lookups: &'a IxonIngressLookups,
   ) -> Self {
+    #[cfg(not(target_arch = "riscv64"))]
+    if ixon_env.role_binding.is_some() {
+      return Self::with_primitive_context(
+        env,
+        super::primitive_context::PrimitiveContext::UnpreparedBound,
+      );
+    }
     if !env.has_prims() {
       let prims = Primitives::from_addr_names(|addr| {
         lookups.name_for_addr(addr).cloned()
@@ -317,7 +413,24 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     // traversal is therefore redundant here, as it is for `IxonChecker`.
     tc.ixon_ingress = true;
     tc.lazy_ixon = Some(LazyIxonIngress {
-      ixon_env,
+      input: super::input::Input::Legacy(ixon_env),
+      lookups,
+      faulted_addrs: FxHashSet::default(),
+    });
+    tc
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn for_artifact_named(
+    env: &'a mut KEnv<M>,
+    source: &'a super::role_admission::ArtifactSource,
+    lookups: &'a IxonIngressLookups,
+    prims: super::primitive_context::PrimitiveContext<M>,
+  ) -> Self {
+    let mut tc = Self::with_primitive_context(env, prims);
+    tc.ixon_ingress = true;
+    tc.lazy_ixon = Some(LazyIxonIngress {
+      input: super::input::Input::Artifact(source),
       lookups,
       faulted_addrs: FxHashSet::default(),
     });
@@ -328,6 +441,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     &mut self,
     id: &KId<M>,
   ) -> Result<Option<KConst<M>>, TcError<M>> {
+    self.check_input_context()?;
     if let Some(c) = self.env.get(id) {
       return Ok(Some(c));
     }
@@ -354,6 +468,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     &mut self,
     id: &KId<M>,
   ) -> Result<Option<Vec<KId<M>>>, TcError<M>> {
+    self.check_input_context()?;
     if let Some(members) = self.env.get_block(id) {
       return Ok(Some(members));
     }
@@ -378,7 +493,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       let env_anon: &mut KEnv<super::mode::Anon> = unsafe {
         &mut *(self.env as *mut KEnv<M>).cast::<KEnv<super::mode::Anon>>()
       };
-      return ingress_anon_addr_shallow(env_anon, lazy.anon_env, addr)
+      return ingress_anon_addr_shallow_input(env_anon, lazy.input, addr)
         .map(|_| ())
         .map_err(|msg| {
           TcError::Other(format!("lazy anon ingress {}: {msg}", addr.hex()))
@@ -390,16 +505,11 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     if !lazy.faulted_addrs.insert(addr.clone()) {
       return Ok(());
     }
-    ingress_addr_shallow_into_kenv_with_lookups(
-      self.env,
-      lazy.ixon_env,
-      lazy.lookups,
-      addr,
-    )
-    .map(|_| ())
-    .map_err(|msg| {
-      TcError::Other(format!("lazy ingress {}: {msg}", addr.hex()))
-    })
+    ingress_addr_with_input(self.env, lazy.input, lazy.lookups, addr)
+      .map(|_| ())
+      .map_err(|msg| {
+        TcError::Other(format!("lazy ingress {}: {msg}", addr.hex()))
+      })
   }
 
   // -----------------------------------------------------------------------
@@ -1164,10 +1274,13 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
 
   /// Check if expression is of the form `eagerReduce _ _` (2 args applied to the eagerReduce const).
   pub fn is_eager_reduce(&self, e: &KExpr<M>) -> bool {
+    let Some(primitives) = self.optional_primitives() else {
+      return false;
+    };
     let ExprData::App(f, _, _) = e.data() else { return false };
     let ExprData::App(head, _, _) = f.data() else { return false };
     matches!(head.data(), ExprData::Const(id, _, _)
-      if id.addr == self.prims.eager_reduce.addr)
+      if id.addr == primitives.eager_reduce.addr)
   }
 
   /// Intern an expression through the mutable intern environment.
@@ -1250,13 +1363,38 @@ impl<'a> TypeChecker<'a, super::mode::Anon> {
     env: &'a mut KEnv<super::mode::Anon>,
     anon_env: &'a IxonEnv,
   ) -> Self {
+    #[cfg(not(target_arch = "riscv64"))]
+    if anon_env.role_binding.is_some() {
+      return Self::with_primitive_context(
+        env,
+        super::primitive_context::PrimitiveContext::UnpreparedBound,
+      );
+    }
     if !env.has_prims() {
       let prims = Primitives::from_addr_names(|_addr| None);
       let _ = env.set_prims(prims);
     }
     let mut tc = Self::new(env);
-    tc.lazy_anon =
-      Some(LazyAnonIngress { anon_env, faulted_addrs: FxHashSet::default() });
+    tc.lazy_anon = Some(LazyAnonIngress {
+      input: super::input::Input::Legacy(anon_env),
+      faulted_addrs: FxHashSet::default(),
+    });
+    tc
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn for_artifact_anon(
+    env: &'a mut KEnv<super::mode::Anon>,
+    source: &'a super::role_admission::ArtifactSource,
+    _lookups: &'a IxonIngressLookups,
+    prims: super::primitive_context::PrimitiveContext<super::mode::Anon>,
+  ) -> Self {
+    let mut tc = Self::with_primitive_context(env, prims);
+    tc.ixon_ingress = true;
+    tc.lazy_anon = Some(LazyAnonIngress {
+      input: super::input::Input::Artifact(source),
+      faulted_addrs: FxHashSet::default(),
+    });
     tc
   }
 }
