@@ -66,17 +66,32 @@ artifact from the executed quotient check, and `CompileCorrect.nominal` takes
 it as a hypothesis. That link concerns acceptance only: it supplies no
 relation between nominal and quotient value models.
 
-The command-line paths are distinct. `ix compile` runs the Rust compiler,
-which has no counterpart of the report checks. `ix compile-lean` runs the
-Lean driver followed by `compileLeanInputValidated` in
-[`Ix/CompileResource.lean`](../Ix/CompileResource.lean): it validates resources
+On the command line, `ix compile` and `ix compile-lean` run the certified
+compiler: the Lean driver followed by `compileLeanInputValidated` in
+[`Ix/CompileResource.lean`](../Ix/CompileResource.lean). It validates resources
 when semantic contracts or a resource profile require them, then runs the
 compile-report checks (`Ix.Cert.checkReport`, the checks behind
 `compileReport`) on the compile; a failed check refuses the compile and
-nothing is written. Bare compiler APIs remain unvalidated. `--rust-check`
-compares the two serialized outputs for that input; byte parity is empirical
-evidence, not a compiler-refinement theorem for the Rust compiler. Metadata
-is outside the certification claim.
+nothing is written. The role support, certificates and binding are then added
+(`Ix.RoleBinding.Compile.finalize`), and the finalized artifact is checked
+again (`checkFinalized`: the original's publications and hints unchanged, and
+every report check that reads the artifact alone) before it is written. So are
+`ix prove`, `ix check` and `ix addr-of` given a name and no `.ixe`.
+
+The Rust compiler is opt-in and uncertified: `ix compile --rust` (and `--rust`
+on `prove`, `check` and `addr-of`). It has no counterpart of the report
+checks; only the finalized-artifact checks run on its output. Bare compiler
+APIs remain unvalidated. `ix compile-lean --rust-check` compares the two
+serialized outputs for that input; byte parity is empirical evidence, not a
+compiler-refinement theorem for the Rust compiler. Metadata is outside the
+certification claim.
+
+What the theorem covers on these paths: `CompileCorrect` is about the pure
+function `Ix.Cert.compileReport`. The command line runs the streamed driver,
+whose canonicalization, reference graph, ground filter and condensation are
+tested equal to the pure ones (`cert-compile-parity-init`), not proved; its fold
+over the hybrid environment is proved equal to the pure fold
+(`Ix/Cert/Hybrid.lean`). `finalize`'s additions are outside the theorem.
 
 ## The certified entry
 

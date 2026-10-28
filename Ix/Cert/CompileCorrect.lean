@@ -21,9 +21,12 @@ fibers collapsed, obtained per artifact from the executed quotient check
   the pinned data, decided once by `RoleClosure.roleEvidenceCheck`).
 
 Its conclusion: the compiler published the closure, Ixon accepts the compiled
-closure at the reference level, every constant of the closure, a dropped alias
-included, reads as a compiled constant, except the constants represented by the inert
-`sorryAx` role (`sorryAx` and the axioms α-equal to it)
+closure at the reference level, the environment Ixon installs from it is quotient
+Source's environment with its names renamed injectively to the artifact's addresses,
+every constant reading as its own renamed key (`RenamesSource`: the same types and
+values, theorem statements and proofs included), every constant of the closure, a
+dropped alias included, reads as a compiled constant, except the constants represented
+by the inert `sorryAx` role (`sorryAx` and the axioms α-equal to it)
 (`ReadingCovers`), and for every strong
 model of the compiled environment there is one value model of quotient Source,
 for the whole closure, all levels and valuations, in which every constant
@@ -107,19 +110,63 @@ def ReadingCovers (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (cx : Ix.Kernel.Rea
       keyAddress ixe t c.name = (ixe.named.get? n).map (·.addr) ∧
       (readingAt ixe t cx c).isSome = true
 
-/-- **The compiled closure is accepted, read totally, and commutes**: Ixon accepts,
-at the reference level, the compiled closure of the addresses `ixe` publishes for
-`sub`, under the default role table, within some resource limits and in some order
-that respects its references; in the reader's context of that run, every constant
-of `sub` reads (`ReadingCovers`); and every strong model of the compiled environment
-gives one value model of quotient Source's `envQ` through the reading
-(`CommutesStrong`). -/
+/-- **The compiled closure is quotient Source, renamed.** Let `f` be the renaming of
+quotient Source's names to the artifact's addresses (`Ix.LeanIngress.evAddr` at the
+committed quotient bundle `b`: a name the artifact publishes goes to its published address,
+a name only the bundle holds to its bundle address). Then:
+
+* `f` is injective on every name `envQ` mentions, and the environment `envA` that Ixon's
+  check installs from the compiled closure is exactly `envQ` with every name renamed by `f`
+  (`Ix.Kernel.EnvRel`): the same constants in the same order, each with the same type, the
+  same value (a definition's, and a theorem's proof), the same inductive, constructor and
+  recursor data, and nothing added or dropped;
+* every constant `c` of quotient Source reads (`readingAt`, in the reader's context `cx`) as
+  its own renamed key `f c.name` at its own level parameters, and `envA` holds `c` renamed
+  there.
+
+This is the syntactic half of correctness, and it needs no model. A compiler that published
+`theorem foo : True := trivial` for Lean's `theorem foo : 2 + 2 = 4 := rfl` would install a
+theorem whose type is `True`, which is not `2 + 2 = 4` renamed. `CommutesStrong` alone does
+not exclude that: a proposition denotes a truth value and every proof denotes the proof
+point, so it only says that the source statement holds in the model.
+
+Why this form. It is the strongest fact the proof already holds: the composition obtains it
+from the reader's streams (`Obligation.ReaderStreams`: the reader's prepared declarations are
+quotient Source's, renamed by `f`) through the renamed Source run, and its reading clause from
+the reader's keys (`Obligation.ReadingKeys`). It is stated over the installed environment
+rather than the reader's declaration stream because that environment is what the acceptance
+conjunct (`IxonAcceptsRef`) and the commutation conjunct read, and the stream would put the
+reader's prelude and preparation into the statement. "Quotient Source" is Lean's constants
+ingressed, renamed onto their alias fibers and lowered by IxC's reader
+(`Ix.Kernel.Reader.lowerInductive`, `lowerDefinition`), so the equality is with that lowering,
+not with Lean's kernel objects themselves. -/
+def RenamesSource (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (cx : Ix.Kernel.Reader.Ctx .anon)
+    (envQ : Env .source) (envA : Env .anon) : Prop :=
+  ∃ b, Ix.RoleEvidence.quotientBundle () = .ok b ∧
+    Ix.Kernel.EnvRel
+      (fun n => Ix.LeanIngress.QRepAt ixe (Ix.LeanIngress.roleAtMap t) n ∨
+        Ix.LeanIngress.BundleOnly ixe b n)
+      (Ix.LeanIngress.evAddr ixe b) envQ envA ∧
+    ∀ c ∈ envQ.consts, ∀ e, readingAt ixe t cx c = some e →
+      e = .const (c.name.map (Ix.LeanIngress.evAddr ixe b)) (c.toConstantVal.levelParams.map .param) ∧
+      envA.find? (c.name.map (Ix.LeanIngress.evAddr ixe b)) =
+        some (c.mapKeys (Ix.LeanIngress.evAddr ixe b))
+
+/-- **The compiled closure is accepted, is quotient Source renamed, is read totally, and
+commutes**: Ixon accepts, at the reference level, the compiled closure of the addresses `ixe`
+publishes for `sub`, under the default role table, within some resource limits and in some
+order that respects its references; the environment it installs is quotient Source's `envQ`
+renamed to the artifact's addresses, every constant reading as its renamed key
+(`RenamesSource`); in the reader's context of that run, every constant of `sub` reads
+(`ReadingCovers`); and every strong model of the compiled environment gives one value model
+of quotient Source's `envQ` through the reading (`CommutesStrong`). -/
 def IxonCommutesCovering (ixe : Ixon.Env) (sub : Ix.Environment) (t : Ix.Kernel.RoleTable)
     (envQ : Env .source) : Prop :=
   ∃ binding, Ix.Kernel.Admission.defaultBinding = .ok binding ∧
     ∃ limits order envA cx,
       IxonAcceptsRef binding limits ixe (Seed ixe sub) order envA ∧
       admissionContext binding limits ixe order = some cx ∧
+      RenamesSource ixe t cx envQ envA ∧
       CommutesStrong.{w} (readingAt ixe t cx) envQ envA ∧
       ReadingCovers ixe t cx sub envQ
 
@@ -200,9 +247,16 @@ published role names sit at the table's addresses, the published names agree wit
 the artifact's address map, quotient Source's evidence bundle agrees with the table's
 evidence on the artifact (`EvidenceCheck.EvidenceAgrees`); and the table's certificates
 check. Then `ixe` publishes every
-constant of `sub`, and the compiled closure is accepted, reads every constant of
-`sub`, and commutes with `envQ` for every strong target model
-(`IxonCommutesCovering`). -/
+constant of `sub`, and the compiled closure is accepted, installs `envQ` renamed to the
+artifact's addresses, with every type and value its source's (`RenamesSource`), reads every
+constant of `sub`, and commutes with `envQ` for every strong target model
+(`IxonCommutesCovering`).
+
+The renaming conjunct is what ties each compiled statement to its source statement; the
+commutation conjunct alone could not, since propositions denote truth values. It holds
+without any model or set theory. The commutation conjunct quantifies over every set theory
+`V` with a strong model, which Lean cannot construct: it says something only in a
+metatheory with such a `V`. -/
 def CompileCorrect : Prop :=
   ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env)
     (failures : Failures) (t : Ix.Kernel.RoleTable) (envQ : Env .source),
@@ -265,7 +319,7 @@ theorem IxonCommutesCovering.toStrongRef {ixe : Ixon.Env} {sub : Ix.Environment}
     {t : Ix.Kernel.RoleTable} {envQ : Env .source} (agree : PublishedAgree ixe)
     (bound : PublishedRolesBound t ixe) (h : IxonCommutesCovering.{w} ixe sub t envQ) :
     IxonCommutesStrongRef.{w} ixe sub envQ := by
-  obtain ⟨binding, pinned, limits, order, envA, cx, accepted, context, values, -⟩ := h
+  obtain ⟨binding, pinned, limits, order, envA, cx, accepted, context, -, values, -⟩ := h
   refine ⟨binding, pinned, limits, order, envA, cx, accepted, context, ?_⟩
   intro V _ M
   obtain ⟨N, hN⟩ := values V M

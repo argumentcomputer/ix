@@ -69,7 +69,7 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
         "the original partial companion was removed to make logical-only checking pass"
       for anon in [false, true] do
         let rustPath := dir / (if anon then "rust-anon.ixe" else "rust-named.ixe")
-        let args := #["compile", source, "--local", "--no-build", "--out", rustPath.toString]
+        let args := #["compile", source, "--local", "--no-build", "--rust", "--out", rustPath.toString]
         let result ← IO.Process.output {
           cmd := executable.toString
           args := if anon then args.push "--anon" else args
@@ -97,6 +97,21 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
     pure false
   catch _ => pure true
   require refused "missing source unexpectedly finalized"
+  -- Support may not change a reducibility hint the original stores, and the finalized
+  -- artifact keeps the original's hints.
+  let a := Address.blake3 (ByteArray.mk #[1])
+  let hinted (h : Lean.ReducibilityHints) : Ixon.Env := { anonHints := ({} : Std.HashMap _ _).insert a h }
+  let original := hinted (.regular 1)
+  require (!(Ix.RoleBinding.Compile.mergeSupport Ix.Resource.typingLimits original (hinted .opaque)).isOk)
+    "a support hint that changes the original's hint was merged"
+  match Ix.RoleBinding.Compile.mergeSupport Ix.Resource.typingLimits original (hinted (.regular 5)) with
+  | .ok merged =>
+    require (merged.anonHints[a]? == some (.regular 1)) "the original's hint was not kept"
+  | .error e => throw (IO.userError s!"a support hint that keeps the original's was refused: {e}")
+  require (Ix.RoleBinding.Compile.checkFinalized original original).isOk
+    "an unchanged artifact failed the finalized-artifact check"
+  require (!(Ix.RoleBinding.Compile.checkFinalized original (hinted .opaque)).isOk)
+    "a changed hint passed the finalized-artifact check"
   return true
 
 public def suite : List LSpec.TestSeq := [

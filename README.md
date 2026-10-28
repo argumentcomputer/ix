@@ -230,6 +230,18 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 - Build and test the Ix library with `lake build` and `lake test`
 - Install the `ix` binary with `lake run install`, or run with `lake exe ix`
 
+### Compiling Lean to Ixon
+
+`ix compile <file>.lean --out <file>.ixe` (and `ix compile-lean`) runs the
+certified compiler: the Lean pipeline with the compile-report checks, whose
+pure counterpart `Ix.Cert.compileReport` is proved correct
+(`Ix.Cert.CompileCorrect`). `ix prove`, `ix check` and `ix addr-of` given a
+name and no `--ixe` compile its closure the same way. `--rust` selects the
+Rust compiler instead: faster and lighter, but **uncertified**. It runs none
+of the report checks, and its output is held to the Lean compiler's only by
+byte equality on the reference corpora (`ix compile-lean --rust-check`). See
+[docs/kernel.md](docs/kernel.md) for what the theorem covers on these paths.
+
 ### Testing
 
 **Lean tests:** `lake test`

@@ -607,7 +607,8 @@ def runAiurJoin (out : String) (spawn : String → IO UInt32) : IO Unit := do
 
 /-- Resolve the env's `.ixe`: an explicit `--ixe` path is used as-is (and
     must exist — no silent recompile of a mistyped path); otherwise the
-    env is compiled fresh to `<repo>/<env>.ixe`. -/
+    env is compiled fresh to `<repo>/<env>.ixe`, by the Rust compiler (its
+    bytes match the certified compiler's on the reference corpora). -/
 def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
     IO String := do
   if let some path := explicit then
@@ -617,7 +618,7 @@ def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
   let ixe := s!"{repo}/{info.name}.ixe"
   let ix ← resolveBin repo "ix"
   let exit ← runGuarded false 0 ix
-    #["compile", s!"{repo}/{info.module}", "--out", ixe]
+    #["compile", s!"{repo}/{info.module}", "--out", ixe, "--rust"]
   if exit != 0 then
     throw <| IO.userError s!"ix compile {info.module} failed (exit {exit})"
   return ixe
@@ -715,9 +716,12 @@ is not a benchmark run"
   match backend with
   | "compile" =>
     -- The compile IS the benchmark: always fresh, row keyed by the env name.
+    -- It measures the Rust compiler (`--rust`), as the series always has: the
+    -- certified Lean pipeline takes several times as long, and about 135 GB, at
+    -- Mathlib scale.
     let ix ← resolveBin repo "ix"
     let exit ← runGuarded watchdog ceilingGb ix
-      #["compile", s!"{repo}/{info.module}", "--out", s!"{repo}/{env}.ixe",
+      #["compile", s!"{repo}/{info.module}", "--rust", "--out", s!"{repo}/{env}.ixe",
         "--json", out, "--json-name", info.name]
     if exit != 0 then
       IO.eprintln s!"[bench] ix compile failed (exit {exit})"

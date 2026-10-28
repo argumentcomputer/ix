@@ -72,7 +72,12 @@ def supportInput (source : Lean.Environment) (artifact : Ixon.Env) :
   throw "artifact support: role closure exceeded its finite domain"
 
 /-- Merge authenticated support without replacing any original publication or
-its metadata. Structural names, rather than stored name hashes, decide overlap. -/
+its metadata. Structural names, rather than stored name hashes, decide overlap.
+A reducibility hint the support carries at an address the original already
+hints is refused when merging it would change the original's hint (the reader
+checks a definition at the hint stored at its address, so a changed hint would
+change how the original's definitions are checked); otherwise the original's
+hint is kept. -/
 def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.Env) :
     Except String Ixon.Env := do
   let _ ← recordStore limits original
@@ -109,11 +114,65 @@ def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.
     unless out.addrToName.contains address do
       out := { out with addrToName := out.addrToName.insert address name }
   for (address, hint) in support.anonHints.toList do
-    let hint := match out.anonHints[address]? with
-      | some old => Ixon.mergeHints old hint
-      | none => hint
-    out := { out with anonHints := out.anonHints.insert address hint }
+    match out.anonHints[address]? with
+    | some old =>
+      unless Ixon.mergeHints old hint == old do
+        throw s!"artifact support: the support's reducibility hint at {address} would change \
+          the artifact's hint there"
+    | none => out := { out with anonHints := out.anonHints.insert address hint }
   return out
+
+/-- **The finalized artifact keeps the original's artifact-level checks.**
+`finalize` adds support records, certificate records, evidence records and a
+binding after the compile's checks (`Ix.Cert.checkReport`) ran on `original`.
+This runs again, on the finalized artifact `final`, every check of
+`checkReport` that reads the artifact alone, and checks that the original's
+publications and hints are unchanged:
+
+* every name `original` publishes is published at the same address, and every
+  reducibility hint `original` stores is stored unchanged. With the records
+  only ever added, the checks that read the input as well as the artifact
+  (published input definitions hinted, published input names at readable
+  records, resolved names published where they resolve) carry over from
+  `original`;
+* every record and blob is stored at the admission hash of its bytes
+  (`Ix.Cert.unauthentic`);
+* no record is on a reference cycle (`Ix.Cert.referenceCycle`);
+* no two published names share a stored hash (`Ix.Cert.nameHashCollision`);
+* every `Muts` entry agrees with its block's projections (`Ix.Cert.mutsMismatch`);
+* no member has two stored definition projection records
+  (`Ix.Cert.projectionCollision`);
+* no address holds both a blob and a record (`Ix.Cert.blobRecordCollision`);
+* every stored recursor member is filed at a slot of its own
+  (`Ix.Cert.recursorSlotError`);
+* the record at an address the default role table binds has its role's kind
+  (`Ix.Cert.roleRecordKind`). -/
+def checkFinalized (original final : Ixon.Env) : Except String Unit := do
+  for (name, named) in original.named.toList do
+    unless (final.named.get? name).map (·.addr) == some named.addr do
+      throw s!"artifact finalization: the published address of {name.pretty} changed"
+  for (address, hint) in original.anonHints.toList do
+    unless final.anonHints[address]? == some hint do
+      throw s!"artifact finalization: the reducibility hint at {address} changed"
+  if let some a := (Ix.Cert.unauthentic final).head? then
+    throw s!"artifact finalization: the record or blob at {a} is not stored at the hash of its bytes"
+  if let some cycle := Ix.Cert.referenceCycle final then
+    throw s!"artifact finalization: the records {cycle.take 4} are on a reference cycle"
+  if let some (n, m) := Ix.Cert.nameHashCollision { consts := {} } final then
+    throw s!"artifact finalization: the published names {n.pretty} and {m.pretty} share a stored hash"
+  if let some (entry, i, _) := Ix.Cert.mutsMismatch final then
+    throw s!"artifact finalization: class {i} of the Muts entry {entry.pretty} lists a name not \
+      published at its member's projection"
+  if let some (block, i) := Ix.Cert.projectionCollision final then
+    throw s!"artifact finalization: member {i} of the block at {block} has more than one stored \
+      definition projection record"
+  if let some a := Ix.Cert.blobRecordCollision final then
+    throw s!"artifact finalization: the address {a} holds both a stored blob and a stored record"
+  if let some e := Ix.Cert.recursorSlotError final then
+    throw s!"artifact finalization: {e.message}"
+  if let some (role, address) := Ix.Cert.roleRecordKind final then
+    throw s!"artifact finalization: the record at {address}, the default role table's address of \
+      {repr role}, is not of its role's kind"
 
 /-- Adding internal support cannot hide a failed original request, change an
 original address, or replace its source contract input. -/
@@ -172,6 +231,7 @@ def finalize (backend : Backend) (source : Lean.Environment)
   let generated ← IO.ofExcept (generate limits merged certificates required Ix.Kernel.preludeShape)
   let emitted ← IO.ofExcept (generated.emit limits merged)
   IO.ofExcept (preserveRequested input artifact emitted)
+  IO.ofExcept (checkFinalized artifact emitted)
   return emitted
 
 /-- Publish only after finalization and serialization succeed. The temporary

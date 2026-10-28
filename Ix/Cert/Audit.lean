@@ -5489,7 +5489,21 @@ change kinds and everything stated over them are deleted (`CallRewrite`,
 `ConeValidator`, `ConeValidator.Sound`). The compile with the artifact checks is
 `compileChecked` (`compileChecked_ok`; it was `compileValidated`, which also ran a
 validator), and `CompileCorrect.artifactChecked` replaces `CompileCorrect.validated`.
-The final statement's roots: 40 → 30. -/
+The final statement's roots: 40 → 30.
+
+**Re-frozen when the conclusion gained the renaming** (`RenamesSource`). The commutation
+conjunct is denotational: a proposition denotes a truth value and every proof the proof
+point, so it did not relate a compiled theorem's statement to its source statement, and a
+compiler that published `True` for a true source proposition met it. `IxonCommutesCovering`
+now also says that the environment Ixon installs from the compiled closure is quotient
+Source's environment renamed injectively to the artifact's addresses (`Ix.Kernel.EnvRel` at
+`Ix.LeanIngress.evAddr`), and that every Source constant reads as its renamed key, where
+that environment holds the constant renamed. The composition already held both facts (the
+renamed Source run's relation and the reader's keys), so only its final step changes.
+Re-frozen with it: `IxonCommutesCovering`'s print; `RenamesSource`'s print is new, and the
+final statement's roots gain it: 30 → 31. The statements that conclude
+`IxonCommutesCovering` (`CompileCorrect`, `CompileCorrectPublished`, `CompileCorrect.checked`,
+`CompileCorrect.nominal`, `CompileCorrect.artifactChecked`) print as before. -/
 
 /-- info: def Ix.Cert.DenoteAlike.{w} : {md : Ix.Kernel.Mode} →
   {V : Type w} →
@@ -5811,9 +5825,32 @@ fun ixe sub t envQ =>
       ∃ limits order envA cx,
         Ix.Cert.IxonAcceptsRef binding limits ixe (Ix.Cert.Seed ixe sub) order envA ∧
           Ix.Cert.admissionContext binding limits ixe order = some cx ∧
-            Ix.Cert.CommutesStrong (Ix.Cert.readingAt ixe t cx) envQ envA ∧ Ix.Cert.ReadingCovers ixe t cx sub envQ -/
+            Ix.Cert.RenamesSource ixe t cx envQ envA ∧
+              Ix.Cert.CommutesStrong (Ix.Cert.readingAt ixe t cx) envQ envA ∧ Ix.Cert.ReadingCovers ixe t cx sub envQ -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.IxonCommutesCovering
+
+/-- info: def Ix.Cert.RenamesSource : Ixon.Env →
+  Ix.Kernel.RoleTable →
+    Ix.Kernel.Reader.Ctx Ix.Kernel.Mode.anon →
+      Ix.Kernel.Env Ix.Kernel.Mode.source → Ix.Kernel.Env Ix.Kernel.Mode.anon → Prop :=
+fun ixe t cx envQ envA =>
+  ∃ b,
+    Ix.RoleEvidence.quotientBundle () = Except.ok b ∧
+      Ix.Kernel.EnvRel
+          (fun n => Ix.LeanIngress.QRepAt ixe (Ix.LeanIngress.roleAtMap t) n ∨ Ix.LeanIngress.BundleOnly ixe b n)
+          (Ix.LeanIngress.evAddr ixe b) envQ envA ∧
+        ∀ (c : Ix.Kernel.ConstantInfo Ix.Kernel.Mode.source),
+          c ∈ envQ.consts →
+            ∀ (e : Ix.Kernel.Expr Ix.Kernel.Mode.anon),
+              Ix.Cert.readingAt ixe t cx c = some e →
+                e =
+                    Ix.Kernel.Expr.const (Ix.Kernel.Key.map (Ix.LeanIngress.evAddr ixe b) c.name)
+                      (List.map Ix.Kernel.Level.param c.toConstantVal.levelParams) ∧
+                  envA.find? (Ix.Kernel.Key.map (Ix.LeanIngress.evAddr ixe b) c.name) =
+                    some (Ix.Kernel.ConstantInfo.mapKeys (Ix.LeanIngress.evAddr ixe b) c) -/
+#guard_msgs (whitespace := lax) in
+#print Ix.Cert.RenamesSource
 
 /-- info: def Ix.Cert.CompileCorrect.{w} : Prop :=
 ∀ (env : Ix.Environment) (roots : List Ix.Name) (sub : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures)
@@ -5936,7 +5973,7 @@ fun ixe sub t envQ =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
-/-- info: [cert-audit] final statement: 30 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] final statement: 31 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -5955,6 +5992,7 @@ run_cmd do
       `CompileCorrect,
       `CompileCorrectPublished,
       `IxonCommutesCovering,
+      `RenamesSource,
       `ReadingCovers,
       `readingAt,
       `keyAddress,
