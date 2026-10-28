@@ -1,0 +1,259 @@
+{
+  "date": "2026-10-28",
+  "base_revision": "5502287489c5a954ef23ad8b766611122c877e3e",
+  "rustflags": "-Ctarget-cpu=native",
+  "features": "parallel",
+  "profile_instrumentation": false,
+  "codegen": false,
+  "warmups": 2,
+  "host_lookups": true,
+  "thp_disabled": true,
+  "affinity": "CPUs 0 through (threads - 1)",
+  "lscpu": {
+    "lscpu": [
+      {
+        "field": "Architecture:",
+        "data": "x86_64"
+      },
+      {
+        "field": "CPU op-mode(s):",
+        "data": "32-bit, 64-bit"
+      },
+      {
+        "field": "Address sizes:",
+        "data": "48 bits physical, 48 bits virtual"
+      },
+      {
+        "field": "Byte Order:",
+        "data": "Little Endian"
+      },
+      {
+        "field": "CPU(s):",
+        "data": "64"
+      },
+      {
+        "field": "On-line CPU(s) list:",
+        "data": "0-63"
+      },
+      {
+        "field": "Vendor ID:",
+        "data": "GenuineIntel"
+      },
+      {
+        "field": "Model name:",
+        "data": "Intel(R) Xeon(R) 6975P-C"
+      },
+      {
+        "field": "CPU family:",
+        "data": "6"
+      },
+      {
+        "field": "Model:",
+        "data": "173"
+      },
+      {
+        "field": "Thread(s) per core:",
+        "data": "2"
+      },
+      {
+        "field": "Core(s) per socket:",
+        "data": "32"
+      },
+      {
+        "field": "Socket(s):",
+        "data": "1"
+      },
+      {
+        "field": "Stepping:",
+        "data": "1"
+      },
+      {
+        "field": "BogoMIPS:",
+        "data": "5400.00"
+      },
+      {
+        "field": "Flags:",
+        "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx_vnni avx512_bf16 wbnoinvd ida arat avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg tme avx512_vpopcntdq rdpid bus_lock_detect cldemote movdiri movdir64b md_clear serialize amx_bf16 avx512_fp16 amx_tile amx_int8 flush_l1d arch_capabilities"
+      },
+      {
+        "field": "Hypervisor vendor:",
+        "data": "KVM"
+      },
+      {
+        "field": "Virtualization type:",
+        "data": "full"
+      },
+      {
+        "field": "L1d cache:",
+        "data": "1.5 MiB (32 instances)"
+      },
+      {
+        "field": "L1i cache:",
+        "data": "2 MiB (32 instances)"
+      },
+      {
+        "field": "L2 cache:",
+        "data": "64 MiB (32 instances)"
+      },
+      {
+        "field": "L3 cache:",
+        "data": "480 MiB (1 instance)"
+      },
+      {
+        "field": "NUMA node(s):",
+        "data": "1"
+      },
+      {
+        "field": "NUMA node0 CPU(s):",
+        "data": "0-63"
+      },
+      {
+        "field": "Vulnerability Gather data sampling:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Ghostwrite:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Indirect target selection:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Itlb multihit:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability L1tf:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Mds:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Meltdown:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Mmio stale data:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Old microcode:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Reg file data sampling:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Retbleed:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Spec rstack overflow:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Spec store bypass:",
+        "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+      },
+      {
+        "field": "Vulnerability Spectre v1:",
+        "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+      },
+      {
+        "field": "Vulnerability Spectre v2:",
+        "data": "Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS Not affected; BHI BHI_DIS_S"
+      },
+      {
+        "field": "Vulnerability Srbds:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Tsa:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Tsx async abort:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Vmscape:",
+        "data": "Not affected"
+      }
+    ]
+  },
+  "artifact_input_sha256": {
+    ".lake/formal-integration/ixvm-tuned.json": "1f8c10da7b10587e985d5166b26ad0c7edd4f4cbdfe0978c7deb237cf6683d9a",
+    ".lake/formal-integration/recursion-tuned.json": "40e88dd1f84e4f119626189e83f8eb181f6ef9875c190f33cdd7853e83c5afe1",
+    ".lake/formal-comparison/final/ixvm-input.json": "2733974cdf8d687799f678140ab967d3ab2c5a9f8768c8c3455bc86b5281a7b8",
+    ".lake/formal-comparison/final/environment-input.json": "14a147c1d6141721547092a9a835249969aa1f82c8f57f9ed0a2b0522f7aaa56",
+    ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json": "2ecf2051d112503637b9d3c1a6201bd66f91df4568a95faff3cef068e3f96a1a"
+  },
+  "binary_sha256": {
+    "before": "fab48b6e03dd59c5a5335c89be2686cbaf4e1d60123d4bb547f430b9222facfc",
+    "after": "5bd2b2fad615d6ccac5d68bc36c716bb26ba35667e31ebe170a99d0783cfe736",
+    "legacy": "becd57658a2d232dc158fada7fc977bdff27ae8834e6a80f5db82f18dea05024"
+  },
+  "source_sha256": {
+    "crates/aiur/src/memory.rs": "c3f7cf99ff4f7ad2050575b3a692e5262d13044f27e540655c47e6f054da6f13",
+    "crates/aiur/src/execute.rs": "5e5b2bd5b0848c99ef509d03baace69f61c282eabdf330a5ae422436b3be8f77",
+    "crates/aiur/src/trace.rs": "e9928c4875ed041cc93040fa18f50a50d7ecce3784c523873da23da57b397443",
+    "crates/aiur/src/trace/plan.rs": "ba27c6fb8f514cc2503af28d23c405fffcdb4c2505185c5b664df49e2305e7f0",
+    "crates/aiur/src/trace/stark.rs": "8f4bb1b92fe8d32593244bb3c6be041ab19a2442b33a7275495449fbf3713865",
+    "crates/aiur/src/trace/stark/rom.rs": "c5481deb55dc05566eee2a11e9179be7da5c982f5fa2db46f9d193496f13d411",
+    "crates/aiur/src/trace/stark/witness.rs": "2aa09d84232e939cdb452fd48732ed1c53e0f86b041ab37eb60937d14b2ee984"
+  },
+  "notes": [
+    "Primary trace runs reuse one execution record, with five measured traces after two warmups; single-thread controls use seven samples.",
+    "Execution controls reexecute every iteration: seven measured samples for environment, three for recursion, after two warmups.",
+    "Peak RSS comes from /usr/bin/time -v and covers the whole benchmark process, not just its trace timer.",
+    "All new-Aiur circuit statistics, heights, cells and FFT estimates are identical before/after and across thread counts for each workload.",
+    "The final before execution controls and single-thread control were repeated immediately before their after run. Earlier controls and implementation experiments remain in .lake/trace-rom-reuse.",
+    "Additional phase profile has three samples after two warmups. Per-circuit spans overlap and are not isolated CPU times; primary benchmarks are uninstrumented."
+  ],
+  "profiled_binary_sha256": "11ffc2ba1bf1ff156b3d119da59ddbd1332b9e83d964167e8e2b987a0a804961",
+  "profile_threads": 64,
+  "profile_samples": 3,
+  "profile_features": "parallel,aiur/trace-profile",
+  "validation": {
+    "serial_tests": {
+      "command": "cargo test --release --locked -p aiur --features stark",
+      "passed": 82
+    },
+    "parallel_tests": {
+      "command": "cargo test --release --locked -p aiur --features parallel,trace-profile",
+      "passed": 82
+    },
+    "clippy_profiled_comparison": true,
+    "proofs": [
+      {
+        "name": "nat-proof-before",
+        "bytes": 5478175,
+        "prove_including_trace_seconds": 0.228871069,
+        "verified": true,
+        "sha256": "536879768e52b1a611089656e5466fdc27db5b281ef729c2296e4a2f389cba28"
+      },
+      {
+        "name": "nat-proof-after",
+        "bytes": 5478175,
+        "prove_including_trace_seconds": 0.232060764,
+        "verified": true,
+        "sha256": "536879768e52b1a611089656e5466fdc27db5b281ef729c2296e4a2f389cba28"
+      },
+      {
+        "name": "recursion-proof-after",
+        "bytes": 3168863,
+        "prove_including_trace_seconds": 35.192673799,
+        "verified": true,
+        "sha256": "e1a67b6847c7770f1f4340253bf5fe8a9c7f1aaa69cca175a9b6e42db6450590"
+      }
+    ],
+    "nat_proof_byte_identical": true,
+    "clippy_default_all_targets": true,
+    "formatting": true,
+    "ordinary_binary_restored": true
+  }
+}

@@ -7,7 +7,6 @@
 use super::{Polynomial, Trace, TracePlan};
 use crate::{
   Execution,
-  bytecode::Type,
   field::{FieldBackend, NativeField, PrimeField},
 };
 use multi_stark::{
@@ -340,9 +339,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     if trace.matrices.len() != self.plan.artifact.chips.len() {
       return Err("trace matrix count mismatch".into());
     }
-    let (table_counts, memory_counts) = self.auxiliary_counts(record)?;
-    let traces =
-      self.convert_traces(record, trace, &table_counts, &memory_counts)?;
+    let table_counts = self.auxiliary_counts(record)?;
+    let traces = self.convert_traces(record, trace, &table_counts)?;
     let (active, degrees) = self.trace_shape(&traces)?;
     self.check_shape(&active, &degrees)?;
     Ok(self.witness_from_main(traces))
@@ -374,7 +372,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   fn auxiliary_counts(
     &self,
     record: &Execution<B>,
-  ) -> Result<(Vec<Vec<u64>>, Vec<u64>), String> {
+  ) -> Result<Vec<Vec<u64>>, String> {
     let program = &self.plan.program.program;
     let counts = |mi: usize| {
       let map = record.queries.tables[program.functions.len() + mi]
@@ -394,16 +392,10 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     #[cfg(not(feature = "parallel"))]
     let table_counts =
       (0..program.maps.len()).map(counts).collect::<Result<_, _>>()?;
-    let memory_counts = record
-      .memory
-      .iter()
-      .map(|entry| {
-        (entry.multiplicity < Val::ORDER_U64)
-          .then_some(entry.multiplicity)
-          .ok_or("ROM count reaches field characteristic")
-      })
-      .collect::<Result<Vec<_>, _>>()?;
-    Ok((table_counts, memory_counts))
+    if record.memory.iter().any(|entry| entry.multiplicity >= Val::ORDER_U64) {
+      return Err("ROM count reaches field characteristic".into());
+    }
+    Ok(table_counts)
   }
 
   fn convert_traces(
@@ -411,7 +403,6 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     record: &Execution<B>,
     trace: &Trace<B::Element>,
     table_counts: &[Vec<u64>],
-    memory_counts: &[u64],
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
     let mut heights = vec![0usize; self.members.len()];
     for (ci, matrix) in trace.matrices.iter().enumerate() {
@@ -493,9 +484,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     for table in &self.tables {
       traces.push(table.witness(table_counts));
     }
-    let rows = self.rom.partition(record, memory_counts)?;
     for i in 0..self.rom.circuit_count() {
-      traces.push(self.rom.witness(&rows, i)?);
+      traces.push(self.rom.witness(record, i)?);
     }
     Ok(traces)
   }

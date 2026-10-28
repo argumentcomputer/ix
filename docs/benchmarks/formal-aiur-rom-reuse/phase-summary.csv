@@ -1,0 +1,7 @@
+phase,median_seconds,min_seconds,max_seconds
+validate_and_root,0.023016797,0.022885727,0.025213235
+auxiliary_counts,0.008883519,0.00880228,0.008982025
+populate_circuits,0.78155053,0.751633568,0.790242744
+check_shape,5.738e-06,5.568e-06,6.821e-06
+cleanup,3.37e-06,2.73e-06,4.31e-06
+total,0.813329478,0.78583799,0.822073557

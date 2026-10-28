@@ -6,10 +6,8 @@ use crate::hints::{BoundHints, HintEntry, HintSite, PreparedHints};
 use crate::memory::Memory;
 use crate::query::QueryMap;
 use crate::value::Value;
-use hashbrown::HashTable;
 use serde::Serialize;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 
 pub(crate) mod dispatch;
 
@@ -79,9 +77,6 @@ struct Machine<'a, 'p, B: FieldBackend> {
   arguments: Vec<B::Element>,
   output_buffer: Vec<B::Element>,
   record: Execution<B>,
-  // The execution record owns cells. Index stable addresses and cached hashes
-  // instead of keeping a second owned copy of every type and payload.
-  memory_index: HashTable<(u64, usize)>,
   hints: &'a [Vec<Option<HintSite<B::Element>>>],
   dispatch: &'a [Vec<dispatch::Dispatch<B::Element>>],
 }
@@ -234,7 +229,6 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
       spare_registers: vec![],
       arguments: vec![],
       output_buffer: vec![],
-      memory_index: HashTable::new(),
       hints: &self.bindings.sites,
       dispatch: &self.dispatch,
       record: Execution {
@@ -559,33 +553,11 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             .1
             .validate_registers(&self.arguments, program.field)
             .map_err(|e| self.error(e))?;
-          let mut hasher = rustc_hash::FxHasher::default();
-          hasher.write_usize(self.arguments.len());
-          for &word in &self.arguments {
-            word.hash(&mut hasher);
-          }
-          let hash = hasher.finish();
-          let index = if let Some(&(_, index)) =
-            self.memory_index.find(hash, |&(_, i)| {
-              self.record.memory.matches(i, &self.arguments)
-            }) {
-            index
-          } else {
-            let address =
-              u64::try_from(self.record.memory.next_address(memory_type))
-                .map_err(|_| self.error("ROM address overflow"))?;
-            if address >= program.field.modulus() {
-              return Err(self.error("ROM exceeds field capacity"));
-            }
-            let index = self.record.memory.len();
-            self.memory_index.insert_unique(
-              hash,
-              (hash, index),
-              |&(hash, _)| hash,
-            );
-            self.record.memory.push(memory_type, &self.arguments);
-            index
-          };
+          let index = self
+            .record
+            .memory
+            .intern(memory_type, &self.arguments, program.field.modulus())
+            .map_err(|e| self.error(e))?;
           let address = self.record.memory.address(index) as u64;
           let count = self.record.memory.multiplicity_mut(index);
           *count = count.checked_add(1).ok_or_else(|| ExecutionError {

@@ -1,6 +1,10 @@
 use super::*;
 use crate::trace::tests::{activate, raw_artifact};
-use crate::{Program, bytecode::CheckedProgram, trace::TraceArtifact};
+use crate::{
+  Program,
+  bytecode::{CheckedProgram, Type},
+  trace::TraceArtifact,
+};
 use serde_json::{Value as Json, json};
 
 fn f() -> Json {
@@ -87,6 +91,29 @@ fn compare_generated<B: WitnessField>(
   for (a, b) in expected.traces.iter().zip(&got.traces) {
     assert_eq!(a.width, b.width);
     assert_eq!(a.values, b.values);
+  }
+  // Reconstruct ROM rows by independently filtering the flat record. This
+  // checks the borrowed width buckets, including counts, empty widths and
+  // padding, without sharing the production bucket/index access path.
+  let rom_start = backend.members.len() + backend.tables.len();
+  for matrix in &got.traces[rom_start..] {
+    let width = matrix.width - 3;
+    let mut expected = vec![];
+    for entry in record.memory.iter().filter(|m| m.cell.value.len() == width) {
+      expected.extend([
+        Val::from_u64(entry.multiplicity),
+        Val::ONE,
+        Val::from_usize(entry.address),
+      ]);
+      expected.extend(entry.cell.value.iter().copied().map(B::into_stark));
+    }
+    let rows = expected.len() / matrix.width;
+    assert_eq!(
+      matrix.height(),
+      if rows == 0 { 0 } else { rows.next_power_of_two() }
+    );
+    expected.resize(matrix.values.len(), Val::ZERO);
+    assert_eq!(matrix.values, expected);
   }
   // Compare every nonzero message directly to the independent dense graph
   // evaluator, including constants, shared expressions and fixed columns.

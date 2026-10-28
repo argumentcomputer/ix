@@ -570,11 +570,18 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       matrix.values.resize(size, self.program.field.zero());
       matrix.multiplicities.resize(matrix.height, 0);
     }
-    let memory: FxHashMap<&[B::Element], usize> =
-      record.memory.iter().map(|m| (m.cell.value, m.address)).collect();
-    if memory.len() != record.memory.len() {
-      return Err("duplicate interned ROM payload".into());
-    }
+    // Keep reference population independent of the retained interning index.
+    // Production population resolves stores from the immutable record itself.
+    let memory: Option<FxHashMap<&[B::Element], usize>> = if reference {
+      let memory: FxHashMap<_, _> =
+        record.memory.iter().map(|m| (m.cell.value, m.address)).collect();
+      if memory.len() != record.memory.len() {
+        return Err("duplicate interned ROM payload".into());
+      }
+      Some(memory)
+    } else {
+      None
+    };
     let mut offsets = vec![0usize; matrices.len()];
     let mut scratch = vec![];
     let mut buffer = vec![];
@@ -599,7 +606,6 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
             .fill(
               record,
               (table.input(query), table.output(query)),
-              &memory,
               &mut scratch,
               &mut buffer,
               row,
@@ -686,6 +692,8 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                 buffer.clear();
                 buffer.extend(values.iter().map(|p| p.eval(&scratch, field)));
                 let address = *memory
+                  .as_ref()
+                  .unwrap()
                   .get(buffer.as_slice())
                   .ok_or("missing recorded store")?;
                 scratch[*dest] = field.from_u64(

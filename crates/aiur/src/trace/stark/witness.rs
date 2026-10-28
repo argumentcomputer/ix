@@ -288,30 +288,20 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     self.plan.root(record, entry, args)?;
     #[cfg(feature = "trace-profile")]
     profile.mark("validate_and_root");
-    let memory: FxHashMap<_, _> =
-      record.memory.iter().map(|m| (m.cell.value, m.address)).collect();
-    if memory.len() != record.memory.len() {
-      return Err("duplicate interned ROM payload".into());
-    }
-    #[cfg(feature = "trace-profile")]
-    profile.mark("rom_index");
-    let (table_counts, memory_counts) = self.auxiliary_counts(record)?;
+    let table_counts = self.auxiliary_counts(record)?;
     #[cfg(feature = "trace-profile")]
     profile.mark("auxiliary_counts");
-    let memory_rows = self.rom.partition(record, &memory_counts)?;
-    #[cfg(feature = "trace-profile")]
-    profile.mark("rom_partition");
     let generate = |ci: usize| {
       #[cfg(feature = "trace-profile")]
       let start = std::time::Instant::now();
       let result = if ci < self.members.len() {
-        self.function_witness::<LOOKUPS>(ci, record, &memory)
+        self.function_witness::<LOOKUPS>(ci, record)
       } else {
         let table = ci - self.members.len();
         let trace = if let Some(table) = self.tables.get(table) {
           table.witness(&table_counts)
         } else {
-          self.rom.witness(&memory_rows, table - self.tables.len())?
+          self.rom.witness(record, table - self.tables.len())?
         };
         let lookups = if LOOKUPS {
           self.auxiliary_lookups(ci, &trace)
@@ -341,7 +331,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     #[cfg(feature = "trace-profile")]
     {
       profile.mark("check_shape");
-      drop((memory_rows, memory_counts, table_counts, memory));
+      drop(table_counts);
       profile.mark("cleanup");
       profile.finish(&self.names, LOOKUPS);
     }
@@ -352,7 +342,6 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     ci: usize,
     record: &Execution<B>,
-    memory: &FxHashMap<&[B::Element], usize>,
   ) -> Result<(RowMajorMatrix<Val>, LookupValues<Val>), String> {
     let mut rows = vec![];
     for &function in &self.members[ci] {
@@ -391,7 +380,6 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           .fill_into(
             record,
             (table.input(query), output),
-            memory,
             &mut worker.scratch,
             &mut worker.buffer,
             |column, value| {

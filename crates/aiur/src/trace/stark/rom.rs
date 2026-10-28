@@ -5,40 +5,23 @@ use super::*;
 use crate::trace::MemoryLookup;
 
 pub(super) struct Rom {
-  // The type chooses a width at compile time; no type ID enters the trace.
-  types: FxHashMap<Type, usize>,
   widths: Vec<usize>,
-}
-
-struct Row<'a, F> {
-  address: usize,
-  count: u64,
-  values: &'a [F],
-}
-
-pub(super) struct Rows<'a, B: WitnessField> {
-  buckets: Vec<Vec<Row<'a, B::Element>>>,
 }
 
 impl Rom {
   pub(super) fn new<B: WitnessField>(plan: &TracePlan<'_, B>) -> Self {
     if !plan.artifact.chips.iter().any(|c| !c.memory.is_empty()) {
-      return Self { types: FxHashMap::default(), widths: vec![] };
+      return Self { widths: vec![] };
     }
-    let types: Vec<_> = plan
+    let mut widths: Vec<_> = plan
       .program
       .memory_layouts
-      .iter()
-      .map(|(ty, layout)| (ty, layout.width()))
+      .values()
+      .map(|layout| layout.width())
       .collect();
-    let mut widths: Vec<_> = types.iter().map(|(_, w)| *w).collect();
     widths.sort_unstable();
     widths.dedup();
-    let types = types
-      .into_iter()
-      .map(|(ty, width)| (ty.clone(), widths.binary_search(&width).unwrap()))
-      .collect();
-    Self { types, widths }
+    Self { widths }
   }
 
   pub(super) fn circuit_count(&self) -> usize {
@@ -123,52 +106,23 @@ impl Rom {
     Ok(())
   }
 
-  /// One pass partitions borrowed payloads; witness generation never rescans
-  /// the entire memory for each width and never copies a wide padded payload.
-  pub(super) fn partition<'a, B: WitnessField>(
-    &self,
-    record: &'a Execution<B>,
-    counts: &[u64],
-  ) -> Result<Rows<'a, B>, String> {
-    let mut buckets: Vec<Vec<Row<'a, B::Element>>> =
-      (0..self.widths.len()).map(|_| vec![]).collect();
-    if self.widths.is_empty() {
-      return Ok(Rows { buckets });
-    }
-    if counts.len() != record.memory.len() {
-      return Err("ROM count length mismatch".into());
-    }
-    for (cell, &count) in record.memory.iter().zip(counts) {
-      let &bucket =
-        self.types.get(cell.cell.r#type).ok_or("unknown ROM type")?;
-      if cell.cell.value.len() != self.widths[bucket] {
-        return Err("ROM payload width mismatch".into());
-      }
-      if cell.address != buckets[bucket].len() {
-        return Err("nonconsecutive width-local ROM address".into());
-      }
-      buckets[bucket].push(Row {
-        address: cell.address,
-        count,
-        values: cell.cell.value,
-      });
-    }
-    Ok(Rows { buckets })
-  }
-
+  /// Memory's private interning path already guarantees unique payloads and
+  /// consecutive addresses in each width bucket. The backend validates the
+  /// recorded types and counts before reading these immutable rows directly.
   pub(super) fn witness<B: WitnessField>(
     &self,
-    rows: &Rows<'_, B>,
+    record: &Execution<B>,
     index: usize,
   ) -> Result<RowMajorMatrix<Val>, String> {
-    let bucket = &rows.buckets[index];
+    let bucket = record.memory.indices_for_width(self.widths[index]);
     let width = self.widths[index] + 3;
     let mut trace = empty_trace(bucket.len(), width)?;
-    for (cell, row) in bucket.iter().zip(trace.values.chunks_mut(width)) {
-      row[0] = Val::from_u64(cell.count);
+    for (&index, row) in bucket.iter().zip(trace.values.chunks_mut(width)) {
+      let cell = record.memory.get(index).unwrap();
+      row[0] = Val::from_u64(cell.multiplicity);
       row[1] = Val::ONE;
       row[2] = Val::from_usize(cell.address);
-      for (dest, &value) in row[3..].iter_mut().zip(cell.values) {
+      for (dest, &value) in row[3..].iter_mut().zip(cell.cell.value) {
         *dest = B::into_stark(value);
       }
     }

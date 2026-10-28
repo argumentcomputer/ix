@@ -2,7 +2,9 @@
 //! pointers are indices within a width bucket. A representative store type is
 //! retained only for host diagnostics, never for interning or circuit lookups.
 use crate::bytecode::Type;
+use hashbrown::HashTable;
 use serde::{Serialize, Serializer};
+use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct CellRef<'a, F = u64> {
@@ -33,9 +35,12 @@ pub struct Memory<F = u64> {
   widths: Vec<usize>,
   buckets: Vec<Vec<usize>>,
   type_buckets: Vec<usize>,
+  // Stable record indices and cached hashes, with no second payload copy.
+  // Retained after execution so trace population can resolve stores directly.
+  index: HashTable<(u64, usize)>,
 }
 
-impl<F: Copy + Eq + Send + Sync> Memory<F> {
+impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
   pub(crate) fn new(types: impl Iterator<Item = (Type, usize)>) -> Self {
     let types: Vec<_> = types.collect();
     let mut widths: Vec<_> = types.iter().map(|(_, width)| *width).collect();
@@ -44,7 +49,15 @@ impl<F: Copy + Eq + Send + Sync> Memory<F> {
     let type_buckets =
       types.iter().map(|(_, w)| widths.binary_search(w).unwrap()).collect();
     let buckets = vec![vec![]; widths.len()];
-    Self { types, words: vec![], slots: vec![], widths, buckets, type_buckets }
+    Self {
+      types,
+      words: vec![],
+      slots: vec![],
+      widths,
+      buckets,
+      type_buckets,
+      index: HashTable::new(),
+    }
   }
 
   pub fn len(&self) -> usize {
@@ -99,8 +112,11 @@ impl<F: Copy + Eq + Send + Sync> Memory<F> {
     self.get(*self.buckets[bucket].get(address)?)
   }
 
-  pub(crate) fn next_address(&self, type_id: usize) -> usize {
-    self.buckets[self.type_buckets[type_id]].len()
+  /// Record indices in consecutive width-local address order. The caller may
+  /// have an unused circuit width absent from this execution's type layouts.
+  #[cfg(feature = "stark")]
+  pub(crate) fn indices_for_width(&self, width: usize) -> &[usize] {
+    self.widths.binary_search(&width).map_or(&[], |i| &self.buckets[i])
   }
 
   #[inline]
@@ -109,19 +125,58 @@ impl<F: Copy + Eq + Send + Sync> Memory<F> {
   }
 
   #[inline]
-  pub(crate) fn matches(&self, index: usize, words: &[F]) -> bool {
+  fn matches(&self, index: usize, words: &[F]) -> bool {
     let slot = &self.slots[index];
     self.words[slot.offset..slot.offset + self.types[slot.type_id].1] == *words
   }
 
-  pub(crate) fn push(&mut self, type_id: usize, words: &[F]) {
+  // Keep this in the store/population hot loops, as QueryTable::lookup does.
+  // Otherwise returning the hash plus an optional index spills to the stack.
+  #[inline(always)]
+  fn lookup(&self, words: &[F]) -> (u64, Option<usize>) {
+    let mut hasher = rustc_hash::FxHasher::default();
+    hasher.write_usize(words.len());
+    for word in words {
+      word.hash(&mut hasher);
+    }
+    let hash = hasher.finish();
+    let index = self
+      .index
+      .find(hash, |&(cached, i)| cached == hash && self.matches(i, words));
+    (hash, index.map(|&(_, i)| i))
+  }
+
+  #[inline]
+  pub(crate) fn address_of(&self, words: &[F]) -> Option<usize> {
+    self.lookup(words).1.map(|i| self.address(i))
+  }
+
+  /// The only insertion path: equal encodings share one cell, regardless of
+  /// nominal type, and each width's addresses form a consecutive prefix.
+  #[inline]
+  pub(crate) fn intern(
+    &mut self,
+    type_id: usize,
+    words: &[F],
+    modulus: u64,
+  ) -> Result<usize, &'static str> {
     debug_assert_eq!(words.len(), self.types[type_id].1);
-    let offset = self.words.len();
-    self.words.extend_from_slice(words);
+    let (hash, found) = self.lookup(words);
+    if let Some(index) = found {
+      return Ok(index);
+    }
     let bucket = &mut self.buckets[self.type_buckets[type_id]];
     let address = bucket.len();
-    bucket.push(self.slots.len());
+    if u64::try_from(address).map_err(|_| "ROM address overflow")? >= modulus {
+      return Err("ROM exceeds field capacity");
+    }
+    let index = self.slots.len();
+    self.index.insert_unique(hash, (hash, index), |&(hash, _)| hash);
+    let offset = self.words.len();
+    self.words.extend_from_slice(words);
+    bucket.push(index);
     self.slots.push(Slot { address, type_id, offset, multiplicity: 0 });
+    Ok(index)
   }
 
   #[inline]
@@ -130,7 +185,7 @@ impl<F: Copy + Eq + Send + Sync> Memory<F> {
   }
 }
 
-impl<F: Copy + Eq + Send + Sync + Serialize> Serialize for Memory<F> {
+impl<F: Copy + Eq + Hash + Send + Sync + Serialize> Serialize for Memory<F> {
   fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     serializer.collect_seq(self.iter())
   }
@@ -142,12 +197,49 @@ mod tests {
   use crate::execute::{Cell, MemoryEntry};
 
   #[test]
+  fn retained_index_survives_growth_cloning_and_width_aliases() {
+    let mut memory = Memory::new(
+      [
+        (Type::Field, 1),
+        (Type::Tuple { items: vec![Type::Field] }, 1),
+        (Type::Tuple { items: vec![Type::Field; 2] }, 2),
+        (Type::Tuple { items: vec![] }, 0),
+      ]
+      .into_iter(),
+    );
+    for value in 0..1024 {
+      memory.intern(2, &[value, 0], 65537).unwrap();
+      memory.intern(3, &[], 65537).unwrap();
+      let index = memory.intern(0, &[1023 - value], 65537).unwrap();
+      assert_eq!(memory.intern(1, &[1023 - value], 65537).unwrap(), index);
+    }
+    assert_eq!(memory.len(), 2049);
+    let mut copy = memory.clone();
+    for value in 1024..4096 {
+      copy.intern(0, &[value], 65537).unwrap();
+    }
+    // Independently scan the record: indices refer to cells, not allocations
+    // or the other width's local address, even after clone/arena/hash growth.
+    for record in [&memory, &copy] {
+      for entry in record.iter() {
+        assert_eq!(record.address_of(entry.cell.value), Some(entry.address));
+      }
+      assert_eq!(record.address_of(&[7]), Some(1016));
+      assert_eq!(record.address_of(&[7, 0]), Some(7));
+      assert_eq!(record.address_of(&[]), Some(0));
+      assert_eq!(record.address_of(&[7, 0, 0]), None);
+    }
+    assert_eq!(memory.address_of(&[1024]), None);
+    assert_eq!(copy.address_of(&[1024]), Some(1024));
+  }
+
+  #[test]
   fn borrowed_cells_preserve_wire_format_and_zero_width_addresses() {
     let unit = Type::Tuple { items: vec![] };
     let mut memory =
       Memory::new([(Type::Field, 1), (unit.clone(), 0)].into_iter());
-    memory.push(0, &[7]);
-    memory.push(1, &[]);
+    memory.intern(0, &[7], 17).unwrap();
+    memory.intern(1, &[], 17).unwrap();
     *memory.multiplicity_mut(0) = 3;
     *memory.multiplicity_mut(1) = 1;
     assert!(memory.get(2).is_none());

@@ -11,6 +11,8 @@ on both workloads at every measured thread count.
 The [phase-profile follow-up](formal-aiur-trace-profile.md) also measures the
 small `Nat.add_comm` frontier claim, where new Aiur is faster on multiple cores,
 and identifies substantial ROM preparation costs in the recursive trace.
+The subsequent [ROM reuse optimization](formal-aiur-rom-reuse.md) removes those
+passes; the timings and implementation discussion below describe the baseline.
 
 ## Measurements
 

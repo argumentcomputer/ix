@@ -280,12 +280,11 @@ impl<B: FieldBackend> FillPlan<B> {
     &self,
     record: &Execution<B>,
     query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
-    memory: &FxHashMap<&[B::Element], usize>,
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     row: &mut [B::Element],
   ) -> Result<(), String> {
-    self.fill_into(record, query, memory, scratch, buffer, |column, value| {
+    self.fill_into(record, query, scratch, buffer, |column, value| {
       row[column] = value;
     })
   }
@@ -296,7 +295,6 @@ impl<B: FieldBackend> FillPlan<B> {
     &self,
     record: &Execution<B>,
     query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
-    memory: &FxHashMap<&[B::Element], usize>,
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     mut write: impl FnMut(usize, B::Element),
@@ -360,7 +358,7 @@ impl<B: FieldBackend> FillPlan<B> {
           buffer.clear();
           buffer.extend(values.iter().map(|v| v.get(scratch)));
           scratch[k.start] = field.from_u64(
-            *memory.get(buffer.as_slice()).ok_or("missing recorded store")?
+            record.memory.address_of(buffer).ok_or("missing recorded store")?
               as u64,
           );
         },

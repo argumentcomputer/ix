@@ -4,6 +4,10 @@ Measured 2026-10-28 against `1a19788b`. The source programs and grouped circuits
 are unchanged; the only runtime addition is optional phase instrumentation,
 compiled out unless `aiur/trace-profile` is enabled.
 
+The [ROM reuse follow-up](formal-aiur-rom-reuse.md) implements the proposed
+optimization and measures the before/after results. This report preserves the
+original phase measurements.
+
 ## The remembered Nat.add_comm result is correct
 
 The small frontier-assumption claim is different from checking its entire
