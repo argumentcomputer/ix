@@ -85,6 +85,14 @@ It never runs on `merge_group`, and merge-tests.yml never runs on
 `pull_request`, so each commit shows one `merge-gate / pass` check under the
 shared workflow name.
 
+The stub runs nothing: a green `merge-gate / pass` on a pull request says
+nothing about the merge-queue tiers, the certified kernel gate (the only job
+that builds the standalone `IxC` package with its audits, and the set-theory
+model) or Valgrind. They guard `main` only while `main` requires
+`merge-gate / pass` and every merge goes through the queue, which are
+repository settings these files cannot check. To run them on a pull request
+before queueing it, comment `!merge-tests`.
+
 `Report merge tests` runs only for authorized `!merge-tests` comments, after
 the gate finishes. It reports a pending Spot retry when the gate succeeds
 with unsuccessful test jobs, and updates the same comment after the retry.
