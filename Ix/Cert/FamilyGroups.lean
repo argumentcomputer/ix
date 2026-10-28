@@ -1,4 +1,5 @@
 import Ix.Cert.GroupBlocks
+import Ix.Cert.ReportChecks
 
 /-! # An inductive group's compile blocks
 
@@ -8,7 +9,7 @@ compiler compiles the strongly connected components of the input's reference gra
 (`CompiledRefs.envBlocks`). On crafted input the two can differ: a recursor's own `all` joins
 it to another family's recursors in the reference graph, and Source reads only `all[0]`. The
 compile report therefore checks that every component holding a family member is one family's
-(`FamilyBlocks`, a named premise here until the report check lands). With it:
+(`FamilyBlocks`, `familyBlocks`). With it:
 
 * the compile block of a Source inductive group's first type holds exactly the group's types and
   constructors (`inductive_block`; any block holding one of its types does, `inductive_block_at`);
@@ -353,35 +354,6 @@ theorem inductive_origin {E : Ix.Environment} {blocks : Ix.CondensedBlocks}
     · cases e
   · unfold unplaced at hu
     split at hu <;> cases hu
-
-/-! ## The family check -/
-
-/-- `x` is a type or constructor of the family whose Lean block is `block`: a name the block
-lists, or a constructor that an inductive it lists has. -/
-def InFamily (env : Ix.Environment) (block : Array Ix.Name) (x : Ix.Name) : Prop :=
-  (∃ n ∈ block, (n == x) = true) ∨
-    ∃ n ∈ block, ∃ iv, env.consts.get? n = some (.inductInfo iv) ∧ ∃ c ∈ iv.ctors, (c == x) = true
-
-/-- `x` is an input recursor whose block's first member is `first`. -/
-def InRecursors (env : Ix.Environment) (first x : Ix.Name) : Prop :=
-  ∃ rv, env.consts.get? x = some (.recInfo rv) ∧ rv.all[0]? = some first
-
-/-- **Every block of the compile's condensation that holds a family member is one family's.**
-A block that holds an inductive holds exactly its family's types and constructors (its `all`,
-and their constructors). So does a block that holds a constructor, for the constructor's
-inductive, which must be an input inductive. A block that holds a recursor holds exactly the
-input recursors with that recursor's `all[0]`, which must be an input inductive whose `all` is the
-recursor's and whose family has fewer than 2^63 members and auxiliaries (positions are 64-bit). (A
-compile-report check.) -/
-def FamilyBlocks (env : Ix.Environment) : Prop :=
-  ∀ rep all, (CompiledRefs.envBlocks env).blocks.get? rep = some all → ∀ y, all.contains y = true →
-    (∀ iv, env.consts.get? y = some (.inductInfo iv) →
-      ∀ x, all.contains x = true ↔ InFamily env iv.all x) ∧
-    (∀ cv, env.consts.get? y = some (.ctorInfo cv) → ∃ iv, env.consts.get? cv.induct = some (.inductInfo iv) ∧
-      ∀ x, all.contains x = true ↔ InFamily env iv.all x) ∧
-    (∀ rv, env.consts.get? y = some (.recInfo rv) → ∃ first iv, rv.all[0]? = some first ∧
-      env.consts.get? first = some (.inductInfo iv) ∧ rv.all = iv.all ∧ iv.all.size + iv.numNested < 2 ^ 63 ∧
-      ∀ x, all.contains x = true ↔ InRecursors env first x)
 
 /-! ## Stored names -/
 

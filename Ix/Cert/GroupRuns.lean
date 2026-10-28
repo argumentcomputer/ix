@@ -27,7 +27,7 @@ forms the reader's segment theorems take (`TraceSegments`):
 
 The types' and recursors' positions need the group's members to have distinct names (a premise,
 `Canon.KeysDistinct`), and their blocks need the compile report's family check
-(`FamilyGroups.FamilyBlocks`). `definitions_compiled`, `types_compiled` and `recursors_family`
+(`FamilyBlocks`, `familyBlocks`). `definitions_compiled`, `types_compiled` and `recursors_family`
 state the results as `TraceSegments.BlockCompiled`'s and `InductiveCompiled`'s run fields. -/
 
 namespace Ix.Cert.GroupRuns
@@ -843,7 +843,7 @@ of its types is a `FoldBlock` holding exactly the group's types and constructors
 are those of `compileMutualBlock` over `indsOf types ctors`, one per class. -/
 theorem types_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
-    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyGroups.FamilyBlocks env)
+    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyBlocks env)
     {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs))
@@ -1080,7 +1080,7 @@ recursors, one per class, or, for a lone recursor, of its single-constant compil
 key being its name. -/
 theorem recursors_run {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
-    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyGroups.FamilyBlocks env)
+    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyBlocks env)
     {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs))
@@ -1260,7 +1260,7 @@ theorem definitions_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub 
 fold's block of its types. -/
 theorem types_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
-    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyGroups.FamilyBlocks env)
+    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyBlocks env)
     {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs))
@@ -1277,7 +1277,7 @@ theorem types_compiled {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.E
 block of its recursors, with `cenv₂ := snap.cenv`. -/
 theorem recursors_family {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
     {ixe : Ixon.Env} {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
-    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyGroups.FamilyBlocks env)
+    (P : Premises env roots sub ixe failures t envQ) (fbk : FamilyBlocks env)
     {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint} {i : Nat}
     {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)} {recs : Array Ix.RecursorVal}
     (hgr : (quotientGraph ixe t hints sub).groups[i]? = some (.inductive types ctors recs))
