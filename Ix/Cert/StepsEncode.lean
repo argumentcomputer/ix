@@ -10,7 +10,8 @@ one whose check fails, stores nothing. A merged outcome stores its block record 
 projection (`mergeCompiledBlock_constants`): the block record is the serialization of the block
 `runBlock` returned (`BlockLayout.ResultShape.bytes`), which is wire-valid (`BlockWire.blocksWire`),
 and every projection is the block itself or a wire-valid projection of it
-(`BlockLayout.ResultShape.rows`).
+(`BlockLayout.ResultShape.rows`). Every returned record also fits the loader's
+universe budget (`BlockRecords.runBlock_bounded`).
 
 So a compiled artifact is stored canonically in every order (`storedCanonical_of_compile`), from
 the compile alone. -/
@@ -22,13 +23,15 @@ open Ix.Cert.StoredEncoding (Encoded StepsEncode)
 
 /-- Storing a wire-valid constant's canonical encoding keeps a store encoded. -/
 theorem encoded_insert {store : Std.HashMap Address ByteArray} (h : Encoded store) (a : Address)
-    {c : Ixon.Constant} (wire : c.wireWF) {b : ByteArray} (hb : Ixon.serConstant c = b) :
+    {c : Ixon.Constant} (wire : c.wireWF)
+    (fits : Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes)
+    {b : ByteArray} (hb : Ixon.serConstant c = b) :
     Encoded (store.insert a b) := by
   intro k v hk
   rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at hk
   split at hk
   · cases hk
-    exact ⟨c, wire, hb⟩
+    exact ⟨c, wire, fits, hb⟩
   · exact h k v (by rw [Std.HashMap.get?_eq_getElem?]; exact hk)
 
 set_option hygiene false in
@@ -102,13 +105,14 @@ theorem merge_encoded {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} 
     (h : Encoded acc.cenv.constants) : Encoded (mergeCompiledBlock acc lo r c).cenv.constants := by
   have shape := BlockLayout.runBlock_shape hr
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
-  refine mergeCompiledBlock_constants Encoded (encoded_insert h _ wire shape.bytes.symm) ?_
+  have fits := BlockRecords.runBlock_bounded hr
+  refine mergeCompiledBlock_constants Encoded (encoded_insert h _ wire fits.1 shape.bytes.symm) ?_
   intro p hp s hs
   have pwire : p.2.1.wireWF := by
     rcases shape.rows p hp with same | ⟨pw, -, -⟩
     · rw [same]; exact wire
     · exact pw
-  exact encoded_insert hs _ pwire rfl
+  exact encoded_insert hs _ pwire (fits.2 p hp) rfl
 
 /-- **Every outcome the fold applies keeps the store encoded** (`StoredEncoding.StepsEncode`),
 for every condensation and start. -/

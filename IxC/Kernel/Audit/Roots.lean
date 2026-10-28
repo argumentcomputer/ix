@@ -617,8 +617,13 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- `Declaration.names` with `ConstantInfo.name` (each with an arity-reduced form; the entry's
 -- checker already reaches them). Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
+-- Leaving out of the index an input recursor filed under a block only the fallback supplies
+-- (`inputIndexed`, in `indexedRecords`) adds 32: the predicate with its closures, and the
+-- derived equality of `Ixon.Constant` and of the types it holds, which compares such a record
+-- with the fallback's. Measured before refreezing; externs, implemented_by, unsafe, csimp and
+-- all ruling counts are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2230 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
+ Ix.Kernel.Admission.readStream]: 2262 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -629,15 +634,15 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- for `Declaration.names` and `ConstantInfo.name` (with their arity-reduced forms), which the
 -- checker reaches already. Measured against a walk that stops at the guard; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Specification version 3 moved it from 6000, 5 in and 1 out: the standard axioms'
--- families as blocks (`iffFamily`, `nonemptyFamily`) and `sorryAx`'s type
--- (`sorryAxSpecTy` and its two closed terms) in, and the closed term of the families'
--- former anchor types (`Role.spec._closed_1`) out. Externs, implemented_by, unsafe,
--- csimp and all ruling counts are unchanged.
+-- Leaving out of the index an input recursor filed under a block only the fallback supplies
+-- adds the reader's 32. Measured before refreezing; every other count is unchanged.
+-- Specification version 3 adds four more: `iffFamily`, `nonemptyFamily`,
+-- `sorryAxSpecTy` and its two closed terms enter; `Role.spec._closed_1` leaves.
+-- The combined closure is measured; execution allowances are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6004 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstants]: 6036 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -681,10 +686,12 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- implemented_by 0, unsafe 26 and csimp 7 are unchanged.
 -- Declining an inductive read whose declarations repeat a name moved it from 6099 by the
 -- entry's change (11 in, the same functions; measured against a walk that stops at the guard).
--- Specification version 3 moved it from 6110 by the entry's change (5 in, 1 out).
--- entry's change (11 in, the same functions; measured against a walk that stops at the guard).
+-- Leaving out of the index an input recursor filed under a block only the fallback supplies
+-- moved it from 6110 by the entry's change (32 in, the same functions).
+-- Specification version 3 adds the entry's four more functions, measured
+-- with the fallback-record guard. Execution allowances are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6114 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6146 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

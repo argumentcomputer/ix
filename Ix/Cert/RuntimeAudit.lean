@@ -1,5 +1,7 @@
 import Ix.Cert.Compile
+import Ix.Cert.CompileCorrect
 import IxC.Kernel.Audit.Runtime
+import IxC.Kernel.Audit.Roots
 
 /-! # The compiler's runtime closure, frozen
 
@@ -32,8 +34,12 @@ of the flags check is `Ix.IndFlags`'s.
 executable imports it: the runtime audit's controls declare an `@[extern]`
 symbol that no library defines, so a binary that links them fails. -/
 
+-- The audit finds a substitution at its implementation too (2026-10-28): `compile` calls
+-- `Address.blake3`, which implements `Address.admissionHash`, so the list names that substitution
+-- beside the BLAKE3 primitives it reaches. Nothing else changes.
 /-- error: project-level execution replacements reached from [Ix.Cert.compile]:
-[Ix.groundExpr,
+[Address.admissionHash,
+ Ix.groundExpr,
  Ix.groundLevel,
  Ixon.getTagN,
  Blake3.Rust.hasherFinalize,
@@ -59,3 +65,57 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
 /-- info: 'Ix.Cert.compileReport_eq_shared' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Ix.Cert.compileReport_eq_shared
+
+/-! ## The checks that establish `CompileCorrect`'s premises
+
+A user learns that `Ix.Cert.ReaderStreamsTrace.compileCorrect` applies to an
+artifact by running these: quotient Source's check at the artifact
+(`checkSourceCollapsedBundledAt`), the compile with the artifact's checks
+(`compileChecked`, `artifactCheck`), the pinned role closure's certificate
+check (`roleEvidenceCheck`), the closure of the roots (`Ix.Cert.closure`) and
+the default role table (`defaultTable`). Their compiled code is frozen here.
+
+They run the kernel, so the audit takes the kernel's rulings
+(`Ix.Kernel.Audit.runtimeRulings`) with two additions:
+* the `csimp` replacements of `Ix` modules, admitted as for `compile`;
+* the admission hash's substitution, admitted on its assumption
+  (`assumedSubstitutions`).
+
+These are the rulings of the authenticated entries
+(`Ixon.Authenticated.Audit.rulings`). Among them:
+* the kernel's `csimp` replacements, each admitted only when its equation
+  depends on the standard axioms alone;
+* the compiler-generated computed fields of the kernel's expressions, levels,
+  names and keys, admitted in every kernel closure.
+
+The list that remains is a strict subset of `compile`'s list above: its
+`partial` definitions. -/
+
+/-- error: project-level execution replacements reached from [Ix.LeanIngress.checkSourceCollapsedBundledAt,
+ Ix.Cert.compileChecked,
+ Ix.Cert.artifactCheck,
+ Ix.Cert.RoleClosure.roleEvidenceCheck,
+ Ix.Cert.closure,
+ Ix.Kernel.Reader.defaultTable]:
+[Ix.groundExpr,
+ Ix.groundLevel,
+ Ix.IndFlags.hasIndOcc,
+ Ix.IndFlags.replaceAllNested,
+ Ix.IndFlags.replaceCtorResultHeadWithAux,
+ Ix.IndFlags.replaceFVarsMap,
+ Ix.IndFlags.substLevel,
+ Ix.Name.pretty,
+ Ix.Name.toStringAux,
+ Ixon.RawEnv.addNameComponentsWithBlobs,
+ _private.Ix.Environment.0.Address.mutsName.go,
+ _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
+#guard_msgs (whitespace := lax) in
+run_cmd do
+  Ix.Kernel.Audit.checkRuntimeWith
+    #[``Ix.LeanIngress.checkSourceCollapsedBundledAt, ``Ix.Cert.compileChecked,
+      ``Ix.Cert.artifactCheck, ``Ix.Cert.RoleClosure.roleEvidenceCheck, ``Ix.Cert.closure,
+      ``Ix.Kernel.Reader.defaultTable]
+    #[`Init, `Std]
+    { Ix.Kernel.Audit.runtimeRulings with
+      csimpModules := Ix.Kernel.Audit.runtimeRulings.csimpModules.push `Ix,
+      assumed := Ix.Kernel.Audit.assumedSubstitutions }

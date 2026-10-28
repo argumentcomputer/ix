@@ -18,7 +18,10 @@
     Without a filter, every kernel-checkable address is checked (whole
     env). With `--consts` / `--consts-file`, the named constants are
     checked together with their full dependency closures. Add
-    `--skip-deps` for a subject-only check (deps trusted).
+    `--skip-deps` for a subject-only check (deps trusted). On a bound
+    artifact, both also check the closure of the binding's role records
+    and certificates: role admission assumes them, so a verdict on any
+    constant that reaches an admitted role rests on them.
     `--ns` prefix filtering stays meta-only.
 
   Direct Lean → kernel typechecking (compile-and-check from source) is
@@ -262,10 +265,11 @@ private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
 
 /-- Anon-mode per-constant runner: dispatch to `rsCheckAnonConstsFFI`. Checks
     the named constants and (by default) their full dependency closures — the
-    zkVM hosts' semantics — or subject-only under `--skip-deps`. With
-    `--json`, each name runs as its own closure check and records its own
-    per-name row (see `Ix.Benchmark.Results`); without it, the names union
-    into one check set. -/
+    zkVM hosts' semantics — or subject-only under `--skip-deps`. Either way
+    the check set includes the closure of a bound artifact's role records
+    and certificates. With `--json`, each name runs as its own closure check
+    and records its own per-name row (see `Ix.Benchmark.Results`); without
+    it, the names union into one check set. -/
 private def runCheckAnonConsts (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   let verbose := p.flag? "verbose" |>.isSome
   let skipDeps := p.hasFlag "skip-deps"

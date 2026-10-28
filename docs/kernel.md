@@ -1050,7 +1050,13 @@ re-records it states why the closure or the statement moved.
    and the projection output against the compiler's records, on the fixture
    closure (the check the `lake test` suite `kernel-reader-roundtrip` runs)
    and on the first records of Init and Std; the log goes to
-   `.lake/build/kernel-reader-fidelity.log`.
+   `.lake/build/kernel-reader-fidelity.log`;
+10. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
+    ill-typed declarations and the fixtures;
+11. `kernel-source-ingress --collapse --bundle-evidence --compare-prepared`
+    on Init and Std: quotient Source, as `checkSourceCollapsedBundledAt` runs
+    it, on a freshly compiled artifact; it fails when a collapse check fails
+    or the harness's prepared stream differs from production's.
 
 The CI job runs the same gate and keeps the codec, order, entry-case and
 reader-fidelity logs.

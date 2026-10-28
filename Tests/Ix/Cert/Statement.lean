@@ -4,6 +4,7 @@ import Ix.Cert.Audit
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.SourceContract.SyntaxFixture
 import Ix.Ixon.CheckOrder
+import Tests.Ix.Cert.ExecutedChecks
 
 /-! # The certification statements on the Source-mode fixtures (`lake test -- cert-statement`)
 
@@ -22,7 +23,7 @@ import Ix.Ixon.CheckOrder
   reference check (`Ix.Cert.referenceCycle`, Route A, B4) must find four
   planted reference cycles (two decoded, two stored as bytes), and its
   refs-only reader must agree with the decoder on every record.
-  `cert-compile-parity-init` (ignored) does the same on `Init`.
+  `cert-compile-parity-initstd` (merge queue) does the same on Init+Std.
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
   constants):
@@ -173,7 +174,8 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
   | some (e, i, h) => errors := errors.push s!"{label}: mutsMismatch finds {e.pretty}'s class {i} \
       lists {h}, not published at that member's projection, in the compile's result"
   match entries.head? with
-  | none => lines := lines.push s!"{label}: no Muts entry to tamper with"
+  | none => errors := errors.push s!"{label}: no Muts entry to tamper with, so the Muts \
+      check is not shown to refuse one"
   | some (entry, nd) =>
     match nd.constMeta.info with
     | .muts all layout =>
@@ -354,7 +356,8 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           projection check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a second projection record of a \
         definition member"
-  | none => lines := lines.push s!"{label}: no definition projection record to plant a second of"
+  | none => errors := errors.push s!"{label}: no definition projection record to plant a \
+      second of, so the projection check is not shown to refuse one"
   -- the readability check (every published input name at a stored record that
   -- is not a block), timed alone on the compile's result, then refusing, by its
   -- own message, a published input name moved, with its resolution, to a block's
@@ -646,7 +649,8 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
       else
         lines := lines.push s!"{label}: publishedRolesBound catches {m} planted at {repr s}'s address"
     | none => errors := errors.push s!"{label}: no other role's address to plant {m} at"
-  | [] => lines := lines.push s!"{label}: no published role name; the planted role case is skipped"
+  | [] => errors := errors.push s!"{label}: no published role name, so \
+      publishedRolesBound is not shown to refuse a planted one"
   match ixe.named.toList.find? (fun (m, _) => m matches .str ..) with
   | some (m@(.str p s _), d) =>
     match ixe.named.toList.find? fun (_, e) => e.addr != d.addr with
@@ -657,8 +661,10 @@ def publishedCases (label : String) (t : Ix.Kernel.RoleTable) (ixe : Ixon.Env) :
         errors := errors.push s!"{label}: publishedAgree misses a forged copy of {m}"
       else
         lines := lines.push s!"{label}: publishedAgree catches a forged copy of {m} at another address"
-    | none => lines := lines.push s!"{label}: one published address; the forged case is skipped"
-  | _ => lines := lines.push s!"{label}: no published string name; the forged case is skipped"
+    | none => errors := errors.push s!"{label}: one published address, so \
+      publishedAgree is not shown to refuse a forged name"
+  | _ => errors := errors.push s!"{label}: no published string name, so \
+      publishedAgree is not shown to refuse a forged name"
   return (errors, lines)
 
 /-- The role table's bindings in a compile's result (Route A, B5a), decided by ingress
@@ -1661,6 +1667,10 @@ def suite : List TestSeq := [
     sorryAliasCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "the statements' hypotheses and conclusion, per root, on the accepted fixtures" (do
     perRoot (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "CompileCorrect.checked's premises hold on the closures of Nat.add and List.length" (do
+    Tests.Ix.Cert.ExecutedChecks.checkedCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "the evidence check refuses a misbound table and a replaced fallback record" (do
+    Tests.Ix.Cert.ExecutedChecks.evidenceRefusals (← getCompileEnv #[defsModule, ownModule])) 1,
   report "binder contracts on both sides, on the resolved source-contract syntax fixtures" (do
     contractAgreement (← getCompileEnv #[syntaxModule])) 1,
   report "the shipped role table's certificates check on their pinned closure (Route A, B6b)"
@@ -1701,11 +1711,11 @@ def evidenceSuite : List TestSeq := [
   report "the role table's evidence against quotient Source's, on the well-founded operations" (do
     evidenceAgreement (← getCompileEnv #[defsModule, ownModule])) 1]
 
-/-- `cert-compile-parity-init` (ignored): the parity on `Init`. -/
-def initSuite : List TestSeq := [
-  report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on Init" (do
-    let leanEnv ← getCompileEnv #[`Init]
-    parity "Init" leanEnv.constants.toList 6) 1]
+/-- `cert-compile-parity-initstd` (merge queue): the parity on Init+Std. -/
+def initStdSuite : List TestSeq := [
+  report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on Init+Std" (do
+    let leanEnv ← getCompileEnv #[`Init, `Std]
+    parity "Init+Std" leanEnv.constants.toList 16) 1]
 
 /-- `cert-roles-initstd` (ignored): the role table's bindings (Route A, B5a) on Init+Std,
 compiled in process by the Rust compiler (byte-identical to `Ix.Cert.compile`'s, the

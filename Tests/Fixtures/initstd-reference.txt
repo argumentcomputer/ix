@@ -1,0 +1,17 @@
+# The Init+Std reference artifact, checked by the `initstd-reference` test
+# (`lake test -- initstd-reference`, merge queue tier `ci:landing-initstd-cli`).
+#
+# `sha256` and `bytes` are the SHA-256 and the size of the file that
+# `ix compile-lean Benchmarks/Compile/CompileInitStd.lean --rust-check` writes:
+# the certified compile with its report checks and the default role binding,
+# byte-identical with the Rust compiler's output.
+# `rust-kernel-passed` of `rust-kernel-checked` constants pass
+# `ix check-rs <artifact> --anon`, which must also admit every role the default
+# table binds.
+#
+# A change that moves the compiler's bytes, or the Rust kernel's verdicts on
+# this artifact, updates these lines in the same commit and says why.
+sha256	0d21dc6d906a86646deea50629d3367c2ab356dcd9a760c08fcf774ea389efd1
+bytes	253648555
+rust-kernel-passed	99427
+rust-kernel-checked	99432

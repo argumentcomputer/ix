@@ -24,7 +24,7 @@ use super::contract::{
 use super::expr::Expr;
 use super::metadata::IxonByteSerde;
 use super::tag::TagN;
-use super::univ::{Univ, get_univ, put_univ};
+use super::univ::{MAX_UNIV_NODES, Univ, get_univ_within, put_univ};
 
 // ============================================================================
 // Primitive helpers
@@ -36,6 +36,34 @@ use super::univ::{Univ, get_univ, put_univ};
 #[inline]
 fn capped_capacity(count: u64, buf: &[u8]) -> usize {
   (count as usize).min(buf.len())
+}
+
+/// A §4 entry is stored under its name's hash; the §5 rows and the metadata
+/// name it by that address, so a mismatch would rename them.
+fn check_name_address(
+  addr: &Address,
+  name: &Name,
+  ctx: &str,
+) -> Result<(), String> {
+  let computed = Address::from_blake3_hash(*name.get_hash());
+  if computed != *addr {
+    return Err(format!(
+      "{ctx}: §4 name stored under {} hashes to {}",
+      addr.hex(),
+      computed.hex()
+    ));
+  }
+  Ok(())
+}
+
+/// A §4 entry is an address and at least one byte of name component, so a
+/// count the remaining buffer cannot hold is corruption: refuse it before
+/// allocating for it.
+fn check_name_count(count: u64, buf: &[u8], ctx: &str) -> Result<(), String> {
+  if count > (buf.len() / 33) as u64 {
+    return Err(format!("{ctx}: name count {count} exceeds remaining buffer"));
+  }
+  Ok(())
 }
 
 fn put_u8(x: u8, buf: &mut Vec<u8>) {
@@ -1035,11 +1063,15 @@ fn put_univs(univs: &[Arc<Univ>], buf: &mut Vec<u8>) {
   }
 }
 
+/// A record's universe table, its universes' expanded constructors charged
+/// to one budget (`MAX_UNIV_NODES`), as IxC's bounded decoder charges a
+/// record's.
 fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
   let num = get_u64(buf)?;
   let mut univs = Vec::with_capacity(capped_capacity(num, buf));
+  let mut budget = MAX_UNIV_NODES;
   for _ in 0..num {
-    univs.push(get_univ(buf)?);
+    univs.push(get_univ_within(buf, &mut budget)?);
   }
   Ok(univs)
 }
@@ -2263,7 +2295,7 @@ impl Env {
     // `Env::get` and surface much later as a misleading parse error
     // inside `LazyConstant::get`. Runs after the framing pass so the
     // hashing goes wide (serial on the guest target).
-    verify_const_hashes(&const_windows)?;
+    verify_const_hashes(&const_windows, "Env::get")?;
     for (addr, bytes) in const_windows {
       env
         .consts
@@ -2311,6 +2343,7 @@ impl Env {
 
     // Section 4: Names (build lookup table and reverse index for metadata)
     let num_names = get_u64(buf)?;
+    check_name_count(num_names, buf, "Env::get")?;
     // Pre-size the lookup: growth rehashes of a multi-million-entry
     // map are a measurable slice of the parse.
     let mut names_lookup: FxHashMap<Address, Name> =
@@ -2329,6 +2362,7 @@ impl Env {
     for _ in 0..num_names {
       let addr = get_address(buf)?;
       let name = get_name_component(buf, &names_lookup)?;
+      check_name_address(&addr, &name, "Env::get")?;
       name_reverse_index.push(addr.clone());
       names_lookup.insert(addr.clone(), name.clone());
       env.names.insert(addr, name);
@@ -2511,6 +2545,7 @@ impl Env {
   ///
   /// - constants are recorded as `(addr, offset, len)` windows into `data`
   ///   rather than copied/stored, and their bodies are never parsed here;
+  ///   each window is hash-verified against its address, as in [`Env::get`];
   /// - the `names` table and each `Named`'s `ExprMetaArena` are parsed only to
   ///   advance the cursor and are then dropped, keeping just `name → addr` and
   ///   the per-`Defn` reducibility hint;
@@ -2575,6 +2610,16 @@ impl Env {
       }
       index.consts.push(LazyConstSlice { addr, offset, len });
     }
+    // Per-entry integrity, as in `Env::get`: every window's bytes hash to
+    // the address it is stored under. The windows are handed out as the
+    // records of those addresses, so an unauthenticated window would let a
+    // record's content depend on the file rather than on its address.
+    let windows: Vec<(Address, &[u8])> = index
+      .consts
+      .iter()
+      .map(|c| (c.addr.clone(), &data[c.offset..c.offset + c.len]))
+      .collect();
+    verify_const_hashes(&windows, "parse_lazy_index")?;
 
     // Section 3: anon_hints — kept verbatim (resolved to addresses) on
     // the index for full-reader parity. The §2 windows are the
@@ -2591,6 +2636,7 @@ impl Env {
     // entries can be re-parsed standalone later (the diff meta sweep);
     // the Address→Name lookup is dropped (LazyNamed carries the Names).
     let num_names = get_u64(&mut buf)?;
+    check_name_count(num_names, buf, "parse_lazy_index")?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
       Vec::with_capacity(num_names as usize + 1);
@@ -2599,6 +2645,7 @@ impl Env {
     for _ in 0..num_names {
       let addr = get_address(&mut buf)?;
       let name = get_name_component(&mut buf, &names_lookup)?;
+      check_name_address(&addr, &name, "parse_lazy_index")?;
       name_reverse_index.push(addr.clone());
       names_lookup.insert(addr, name);
     }
@@ -3240,18 +3287,21 @@ impl Env {
 /// up each Name via `DashMap::get` in the DFS loop). It was 22s slower on
 /// Mathlib because 4.7M shard-lock acquisitions dominate vs the one-time
 /// ~150 MB tuple-clone allocation.
-/// §2 per-entry integrity for the full readers: every constant's bytes
-/// must hash to the address they're stored under. Parallel on host —
-/// this is a pure sweep over ~GBs of blake3 input; serial on the guest
-/// target.
+/// §2 per-entry integrity for the full readers and the lazy index: every
+/// constant's bytes must hash to the address they're stored under.
+/// Parallel on host — this is a pure sweep over ~GBs of blake3 input;
+/// serial on the guest target.
 #[cfg(not(target_arch = "riscv64"))]
-fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+fn verify_const_hashes(
+  windows: &[(Address, &[u8])],
+  label: &str,
+) -> Result<(), String> {
   use rayon::prelude::*;
   windows.par_iter().enumerate().try_for_each(|(i, (addr, bytes))| {
     let computed = Address::hash(bytes);
     if computed != *addr {
       return Err(format!(
-        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        "{label}: const at idx {i} bytes hash to {} but stored under {}",
         computed.hex(),
         addr.hex()
       ));
@@ -3261,12 +3311,15 @@ fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "riscv64")]
-fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+fn verify_const_hashes(
+  windows: &[(Address, &[u8])],
+  label: &str,
+) -> Result<(), String> {
   for (i, (addr, bytes)) in windows.iter().enumerate() {
     let computed = Address::hash(bytes);
     if computed != *addr {
       return Err(format!(
-        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        "{label}: const at idx {i} bytes hash to {} but stored under {}",
         computed.hex(),
         addr.hex()
       ));
@@ -4317,6 +4370,34 @@ mod tests {
       "expected per-entry verify error, got: {err}"
     );
     std::fs::remove_file(&tmp).ok();
+  }
+
+  /// The lazy index hands its windows out as the records of their
+  /// addresses (Lean's anonymous load), so it verifies them as the full
+  /// reader does.
+  #[test]
+  fn env_const_bytes_tampering_rejected_by_parse_lazy_index() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    assert!(Env::parse_lazy_index(&buf).is_err(), "the key is not the hash");
+    let env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    Env::parse_lazy_index(&buf).expect("authentic windows are accepted");
+    let off = first_const_payload_offset(&buf) + 3;
+    assert!(off < buf.len());
+    buf[off] ^= 0xFF;
+    let err = Env::parse_lazy_index(&buf)
+      .expect_err("tampered const bytes should be rejected");
+    assert!(
+      err.contains("parse_lazy_index")
+        && err.contains("bytes hash to")
+        && err.contains("but stored under"),
+      "expected per-entry verify error, got: {err}"
+    );
   }
 
   // ---------------------------------------------------------------------------

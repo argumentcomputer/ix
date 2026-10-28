@@ -560,7 +560,7 @@ theorem publishedResolve {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix
   have shape := BlockLayout.runBlock_shape hr
   have blockRec : recordAt ixe r.blockAddr = some r.block := by
     rw [shape.bytes] at hblock
-    exact BlockLayout.recordAt_ser wire hblock
+    exact BlockLayout.recordAt_ser wire (BlockRecords.runBlock_bounded hr).1 hblock
   have claims := runBlock_claims hr (closure_block_positions P henv hmembers)
   unfold Resolution.claimWrites at hclaim
   split at hclaim
@@ -578,7 +578,7 @@ theorem publishedResolve {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix
       · rw [same]; exact wire
       · exact pw
     rw [← haddr, ← hbytes] at hstored
-    have prec := BlockLayout.recordAt_ser pwire hstored
+    have prec := BlockLayout.recordAt_ser pwire ((BlockRecords.runBlock_bounded hr).2 p hp) hstored
     rw [← haddr, prec] at hc
     cases hc
     rw [← haddr]

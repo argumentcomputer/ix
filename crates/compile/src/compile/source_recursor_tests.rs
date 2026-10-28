@@ -21,10 +21,6 @@ fn epi(name: Name, domain: LeanExpr, body: LeanExpr) -> LeanExpr {
 /// Both A and B are in Prop (Sort 0), with single constructors that
 /// cross-reference the sibling. `all = [A, B]` on both inductives.
 /// No recursors.
-fn build_alpha_collapse_env() -> (LeanEnv, Name, Name) {
-  build_alpha_collapse_env_named(n("A"), n("B"))
-}
-
 fn build_alpha_collapse_env_named(a: Name, b: Name) -> (LeanEnv, Name, Name) {
   let hyg = Name::num(
     Name::str(Name::anon(), "a._@._internal._hyg".into()),
@@ -634,30 +630,6 @@ fn assert_source_recursors_check(
         .unwrap_or_else(|e| panic!("source fixture {}: {e}", id.name.pretty()));
     }
   }
-}
-
-#[test]
-#[ignore = "expected to retire: members of one block no longer collapse"]
-fn test_alpha_collapse_compile_env_addresses_inductives_and_ctors() {
-  use crate::compile::env::compile_env;
-
-  let (env, a, b) = build_alpha_collapse_env();
-  let lean_env = std::sync::Arc::new(env);
-  let stt = compile_env(&lean_env)
-    .expect("compile_env should compile the minimal AlphaCollapse block");
-
-  let a_addr = stt.resolve_addr(&a).expect("A should resolve");
-  let b_addr = stt.resolve_addr(&b).expect("B should resolve");
-  assert_eq!(a_addr, b_addr, "A and B should share one inductive address");
-
-  let a_ctor = Name::str(a.clone(), "a".into());
-  let b_ctor = Name::str(b.clone(), "b".into());
-  let a_ctor_addr = stt.resolve_addr(&a_ctor).expect("A.a should resolve");
-  let b_ctor_addr = stt.resolve_addr(&b_ctor).expect("B.b should resolve");
-  assert_eq!(
-    a_ctor_addr, b_ctor_addr,
-    "A.a and B.b should share one constructor address",
-  );
 }
 
 #[test]

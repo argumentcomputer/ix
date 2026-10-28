@@ -408,16 +408,22 @@ impl AggNode {
     }
   }
 
-  /// Inverse of [`Self::put`], reading from a cursor.
-  fn get(c: &mut Cur<'_>) -> Result<AggNode, String> {
+  /// Inverse of [`Self::put`], reading from a cursor, with at most `depth`
+  /// internal nodes on any path (see [`AGG_TREE_MAX_DEPTH`]).
+  fn get(c: &mut Cur<'_>, depth: usize) -> Result<AggNode, String> {
     match c.u8()? {
       0 => Ok(AggNode::Leaf(c.u32()?)),
       1 => {
-        let l = AggNode::get(c)?;
-        let r = AggNode::get(c)?;
+        let depth = depth.checked_sub(1).ok_or_else(|| {
+          format!(
+            "ixes: aggregation tree is deeper than {AGG_TREE_MAX_DEPTH} levels"
+          )
+        })?;
+        let l = AggNode::get(c, depth)?;
+        let r = AggNode::get(c, depth)?;
         Ok(AggNode::Internal(Box::new(l), Box::new(r)))
       },
-      t => Err(format!("bad AggNode tag {t}")),
+      t => Err(format!("ixes: invalid aggregation-tree tag {t}")),
     }
   }
 }
@@ -1556,10 +1562,11 @@ impl ShardManifest {
     // Trailing measured-peaks section (same older-readers-ignore contract
     // as the tree): presence byte, then one u64 LE per shard in order.
     // Absent when nothing was measured, so planner manifests stay
-    // byte-identical to the pre-peaks format.
-    if self.shards.iter().any(|s| s.measured_peak_bytes != 0) {
+    // byte-identical to the pre-peaks format. The peaks follow the shard
+    // section, so they are written for the retained shards only.
+    if retained.iter().any(|s| s.measured_peak_bytes != 0) {
       out.push(1);
-      for sh in &self.shards {
+      for sh in &retained {
         out.extend_from_slice(&sh.measured_peak_bytes.to_le_bytes());
       }
     } else {
@@ -1568,7 +1575,12 @@ impl ShardManifest {
     out
   }
 
-  /// Deserialize from the `.ixes` binary format.
+  /// Deserialize from the `.ixes` binary format, exactly as the Lean parser
+  /// (`parseIxesManifest`) does: at least one shard, each shard's id its
+  /// position, presence bytes 0 or 1, a tree whose leaves are the shard ids
+  /// once each, and nothing after the last section. No count allocates more
+  /// than the remaining input could fill, and the tree is read without
+  /// recursion.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
     let mut c = Cur { buf: bytes, pos: 0 };
     if c.take(8)? != SHARD_MAGIC {
@@ -1576,13 +1588,34 @@ impl ShardManifest {
     }
     let total_cross_ingress = c.u128()?;
     let num_shards = c.u32()? as usize;
+    if num_shards == 0 {
+      return Err("ixes: manifest contains no shards".into());
+    }
+    // A shard entry is at least its id, three counters, a presence byte and
+    // two address counts.
+    if num_shards > c.remaining() / SHARD_ENTRY_MIN_BYTES {
+      return Err(format!(
+        "ixes: shard count {num_shards} exceeds the remaining input"
+      ));
+    }
     let mut shards = Vec::with_capacity(num_shards);
-    for _ in 0..num_shards {
+    for index in 0..num_shards {
       let id = c.u32()?;
+      if id as usize != index {
+        return Err(format!("ixes: shard entry {index} has id {id}"));
+      }
       let heartbeats = c.u64()?;
       let own_size = c.u64()?;
       let cross_ingress = c.u64()?;
-      let assumption_root = if c.u8()? == 1 { Some(c.addr()?) } else { None };
+      let assumption_root = match c.u8()? {
+        0 => None,
+        1 => Some(c.addr()?),
+        tag => {
+          return Err(format!(
+            "ixes: invalid assumption-root presence tag {tag}"
+          ));
+        },
+      };
       let blocks = c.addrs()?;
       let foreign_blocks = c.addrs()?;
       shards.push(ShardInfo {
@@ -1598,16 +1631,40 @@ impl ShardManifest {
     }
     // Optional trailing tree section. Absent (end-of-input) on pre-tree
     // manifests, or an explicit `0` presence byte.
-    let tree = if c.pos < c.buf.len() {
-      if c.u8()? == 1 { Some(AggNode::get(&mut c)?) } else { None }
+    let tree = if c.remaining() > 0 {
+      match c.u8()? {
+        0 => None,
+        1 => Some(AggNode::get(&mut c, AGG_TREE_MAX_DEPTH)?),
+        tag => {
+          return Err(format!(
+            "ixes: invalid aggregation-tree presence tag {tag}"
+          ));
+        },
+      }
     } else {
       None
     };
     // Optional trailing measured-peaks section; absent on older manifests.
-    if c.pos < c.buf.len() && c.u8()? == 1 {
-      for sh in &mut shards {
-        sh.measured_peak_bytes = c.u64()?;
+    if c.remaining() > 0 {
+      match c.u8()? {
+        0 => {},
+        1 => {
+          for sh in &mut shards {
+            sh.measured_peak_bytes = c.u64()?;
+          }
+        },
+        tag => {
+          return Err(format!(
+            "ixes: invalid measured-peaks presence tag {tag}"
+          ));
+        },
       }
+    }
+    if c.remaining() > 0 {
+      return Err(format!(
+        "ixes: {} trailing bytes after the measured-peaks section",
+        c.remaining()
+      ));
     }
     // The tree is the aggregation plan: a leaf set that is not exactly the
     // shard id set (each id once) would silently drop or duplicate proven
@@ -1637,6 +1694,17 @@ impl ShardManifest {
 
 /// Magic bytes at the head of every `.ixes` file.
 const SHARD_MAGIC: &[u8; 8] = b"IXES\0\0\0\0";
+
+/// The fewest bytes a shard entry takes: id (4), heartbeats, own size and
+/// cross ingress (8 each), the assumption-root presence byte, and the two
+/// address counts (4 each).
+const SHARD_ENTRY_MIN_BYTES: usize = 4 + 3 * 8 + 1 + 2 * 4;
+
+/// The deepest aggregation tree a manifest may carry, in internal nodes on a
+/// path. A planner tree comes from recursive bisection, so its depth stays
+/// far below this; the bound keeps every recursive walk of a parsed tree (and
+/// its drop) shallow. The Lean parser (`ixesTreeMaxDepth`) uses the same.
+pub const AGG_TREE_MAX_DEPTH: usize = 4096;
 
 /// Minimal little-endian cursor for manifest decoding.
 struct Cur<'a> {
@@ -1669,8 +1737,14 @@ impl<'a> Cur<'a> {
   fn addr(&mut self) -> Result<Address, String> {
     Address::from_slice(self.take(32)?).map_err(|_| "bad address".into())
   }
+  fn remaining(&self) -> usize {
+    self.buf.len() - self.pos
+  }
   fn addrs(&mut self) -> Result<Vec<Address>, String> {
     let n = self.u32()? as usize;
+    if n > self.remaining() / 32 {
+      return Err("truncated .ixes".into());
+    }
     let mut v = Vec::with_capacity(n);
     for _ in 0..n {
       v.push(self.addr()?);

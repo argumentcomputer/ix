@@ -191,7 +191,7 @@ private def openConstantInfoDefn : Bool :=
     | some named =>
       match env'.constants.get? named.addr with
       | some bytes =>
-        match Ixon.deConstantAt bytes 0 with
+        match Ixon.deConstantAt bytes 0 bytes.size with
         | .ok constant =>
           let info := Ix.Commit.openConstantInfo constant.info
           -- Should be a defn variant with all fields some
@@ -211,7 +211,7 @@ private def openConstantInfoRoundtrips : Bool :=
     | some named =>
       match env'.constants.get? named.addr with
       | some bytes =>
-        match Ixon.deConstantAt bytes 0 with
+        match Ixon.deConstantAt bytes 0 bytes.size with
         | .ok constant =>
           let info := Ix.Commit.openConstantInfo constant.info
           -- The fully-revealed RevealConstantInfo should serde roundtrip

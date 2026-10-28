@@ -2609,10 +2609,8 @@ structure CompileEnvStatus where
   /-- `(pretty name, reason)` for every requested constant whose block
       failed to compile, sorted by name. Empty ⇔ complete environment. -/
   ungrounded : Array (String × String)
-  /-- `(pretty name, cause)` of the Rust compiler's Pass 3 non-canonical
-      set (the recorded declines of the definitional passes), sorted by
-      name. O11a records side-condition failures; successful rewrites and
-      pattern misses add no row. Failed blocks publish no decline. -/
+  /-- `(pretty name, cause)` rows the Rust compiler once reported for blocks
+      it rewrote. Always empty: the compiler compiles every block as given. -/
   nonCanonical : Array (String × String)
   /-- Bytes written to `outPath` (0 when nothing was written). -/
   bytes : UInt64

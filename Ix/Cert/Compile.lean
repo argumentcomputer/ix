@@ -64,8 +64,8 @@ statements' coverage and authenticity (`CompileCovers`, `CompileAuthentic`)
 therefore hold by construction, without an invariant of the driver's loop.
 
 `Tests.Ix.Cert.Statement` compares the serialized output of the two on the
-Source-mode fixtures (`cert-statement`) and on `Init`
-(`cert-compile-parity-init`, ignored by default). -/
+Source-mode fixtures (`cert-statement`) and on Init+Std
+(`cert-compile-parity-initstd`, in the merge queue). -/
 
 public section
 
@@ -182,10 +182,11 @@ projection's block, otherwise `a` itself (`Ix.Cert.ownerOf`). -/
 
 The reference check needs, of each stored record, only its `refs` table and,
 for a projection, its block. `RecordRefs.getRefs` reads exactly that. It walks
-the record's bytes by `Ixon.getConstant`'s grammar, step for step and with the
+the record's bytes by `Ixon.Bounded.getConstant`'s grammar, step for step and with the
 same checks and messages, but keeps no expression or universe: of an
 expression only its outermost constructor, where the reader's canonicity
-checks look at it (`Head`). So it succeeds exactly when `Ixon.getConstant`
+checks look at it (`Head`). Universe entries share the loader's node budget.
+So it succeeds exactly when `Ixon.Bounded.getConstant`
 does, at the same position, with the decoded record's `refs` and projection
 block (`Ix.Cert.RefsRead.getRefs_eq`). -/
 
@@ -322,28 +323,41 @@ inductive Head where
   let _ ← skipExprFuel (state.bytes.size - state.idx + 1)
   pure ()
 
-/-- `Ixon.getUnivFromTag`, keeping nothing. -/
-@[expose] def skipUnivFromTag (recur : GetM Unit) (tag : TagN) : GetM Unit := do
-  match tag.flag with
-  | 0 => if tag.value == 0 then pure () else recur
-  | 1 => do
-    recur
-    recur
-  | 2 => do
-    recur
-    recur
-  | 3 => pure ()
-  | f => throw s!"getUniv: invalid flag {f}"
+/-- `Ixon.Bounded.getUnivFromTag`, keeping only the unspent node budget. -/
+@[expose] def skipUnivFromTag (recur : Nat → GetM Nat) (budget : Nat)
+    (tag : TagN) : GetM Nat := do
+  let charge := Bounded.univTagCharge tag
+  if charge ≤ budget then
+    let remaining := budget - charge
+    match tag.flag with
+    | 0 => if tag.value == 0 then pure remaining else recur remaining
+    | 1 => do
+      let remaining ← recur remaining
+      recur remaining
+    | 2 => do
+      let remaining ← recur remaining
+      recur remaining
+    | 3 => pure remaining
+    | f => throw s!"getUniv: invalid flag {f}"
+  else
+    throw "getUnivBounded: expanded-node budget exhausted"
 
-/-- `Ixon.getUnivFuel`, keeping nothing. -/
-@[expose] def skipUnivFuel : Nat → GetM Unit
-  | 0 => throw "getUniv: recursion budget exhausted"
-  | fuel + 1 => getTagN 2 >>= skipUnivFromTag (skipUnivFuel fuel)
+/-- `Ixon.Bounded.getUnivFuel`, keeping only the unspent node budget. -/
+@[expose] def skipUnivFuel : Nat → Nat → GetM Nat
+  | 0, _ => throw "getUniv: recursion budget exhausted"
+  | fuel + 1, budget => getTagN 2 >>= skipUnivFromTag (skipUnivFuel fuel) budget
 
-/-- `Ixon.getUniv`, keeping nothing. -/
-@[expose] def skipUniv : GetM Unit := do
+/-- `Ixon.Bounded.getUniv`, without allocating the expanded universe. -/
+@[expose] def skipUniv (budget : Nat) : GetM Nat := do
   let state ← get
-  skipUnivFuel (state.bytes.size - state.idx + 1)
+  skipUnivFuel (state.bytes.size - state.idx + 1) budget
+
+/-- Skip a universe table with one budget shared by all its entries. -/
+@[expose] def skipUnivArray : Nat → Nat → GetM Nat
+  | 0, budget => pure budget
+  | count + 1, budget => do
+    let remaining ← skipUniv budget
+    skipUnivArray count remaining
 
 /-- `Ixon.getDefinition`, keeping nothing. -/
 @[expose] def skipDefinition : GetM Unit := do
@@ -437,22 +451,28 @@ inductive Head where
     throw s!"getConstantInfo: invalid flag {tag.flag}"
 
 /-- **A record's `refs` table and its projection block**, read by
-`Ixon.getConstant`'s grammar without keeping its expressions or universes. -/
-@[expose] def getRefs : GetM (Array Address × Option Address) := do
+`Ixon.Bounded.getConstant`'s grammar without keeping its expressions or universes. -/
+@[expose] def getRefs (maxUnivNodes : Nat := loadMaxUnivNodes) :
+    GetM (Array Address × Option Address) := do
   let block ← skipInfo
   let numSharing := (← getTagN 0).value.toNat
   skipMany skipExpr numSharing
   let numRefs := (← getTagN 0).value.toNat
   let refs ← getArray Serialize.get numRefs
   let numUnivs := (← getTagN 0).value.toNat
-  skipMany skipUniv numUnivs
+  let _ ← skipUnivArray numUnivs maxUnivNodes
   return (refs, block)
 
-/-- `getRefs` at offset `off` of `buf` (`Ixon.deConstantAt`). -/
-@[expose] def refsAt (buf : ByteArray) (off : Nat) : Option (Array Address × Option Address) :=
-  match getRefs.run { idx := off, bytes := buf } with
-  | .ok r _ => some r
-  | .error _ _ => none
+/-- `getRefs` over exactly the window `buf[off, off + len)`, as
+`Ixon.deConstantAt` decodes it: the window inside `buf`, and the read ending at
+`off + len`. -/
+@[expose] def refsAt (buf : ByteArray) (off len : Nat)
+    (maxUnivNodes : Nat := loadMaxUnivNodes) : Option (Array Address × Option Address) :=
+  if off + len ≤ buf.size then
+    match (getRefs maxUnivNodes).run { idx := off, bytes := buf } with
+    | .ok r s => if s.idx = off + len then some r else none
+    | .error _ _ => none
+  else none
 
 /-- The references and the owner (`Ix.Cert.refOwner`) of the record `lc`
 stored at `a`, read without its expressions; `none` exactly when `lc.get?`
@@ -460,7 +480,7 @@ is (`Ix.Cert.RefsRead.lazyRefs_eq`). -/
 @[expose] def lazyRefs (a : Address) (lc : Ixon.LazyConstant) : Option (Array Address × Address) :=
   match lc.cache with
   | some c => some (c.refs, refOwner a c)
-  | none => (refsAt lc.buf lc.off).map fun (refs, block) => (refs, block.getD a)
+  | none => (refsAt lc.buf lc.off lc.len).map fun (refs, block) => (refs, block.getD a)
 
 end RecordRefs
 

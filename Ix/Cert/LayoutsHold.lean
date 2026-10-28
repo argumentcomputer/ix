@@ -271,7 +271,7 @@ theorem claim_owned {cenv : CompileEnv} {all : Ix.Set Ix.Name} {k : Ix.Name} {r 
     rcases shape.rows p hp with same | ⟨pwire, -, powner⟩
     · rw [same, ← shape.bytes, ← shape.addr]
       exact ⟨r.block, stored, shape.built.owner _⟩
-    · exact ⟨p.2.1, BlockLayout.recordAt_ser pwire hP, powner _⟩
+    · exact ⟨p.2.1, BlockLayout.recordAt_ser pwire ((BlockRecords.runBlock_bounded hr).2 p hp) hP, powner _⟩
 
 section Fold
 

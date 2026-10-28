@@ -266,6 +266,8 @@ theorem family_info {c : Ixon.Constant} {rIs : List Ixon.Recursor}
 /-- **A row of a claimed block is published**: a closure name the block's rows place at a
 wire-valid record is published at that record's address, which holds it. -/
 theorem row_published {sub : Ix.Environment} {key : Ix.Name} {r : BlockResult}
+    {cenv : CompileEnv} {all : Ix.Set Ix.Name} {cache : BlockState}
+    (hr : runBlock cenv all key = .ok (r, cache))
     (pub : BlockPublication.Published ixe sub key r) {output : BlockResult}
     (hrec : BlockRecords.recordsOf r = BlockRecords.recordsOf output) {name : Ix.Name} {proj : Ixon.Constant}
     (row : (name, proj) ∈ MutualProjections.logicalRows output.projections) (wire : proj.wireWF)
@@ -279,7 +281,7 @@ theorem row_published {sub : Ix.Environment} {key : Ix.Name} {r : BlockResult}
     rw [← Array.toList_map, hproj, Array.toList_map]
     exact row
   obtain ⟨ha, hb⟩ := pub.claims _ _ _ (BlockPublication.row_claim row') insub
-  exact ⟨ha, BlockLayout.recordAt_ser wire hb⟩
+  exact ⟨ha, BlockLayout.recordAt_ser wire (BlockPublication.row_bounded hr row') hb⟩
 
 /-- A claimed block's facts: its address is its bytes' hash, it is built, and it is wire-valid. -/
 theorem claimed_block {cenvR : CompileEnv} {all : Ix.Set Ix.Name} {key : Ix.Name} {r : BlockResult}
@@ -316,8 +318,8 @@ theorem inductive_published {sub : Ix.Environment} {context : CompileEnv × Bloc
   obtain ⟨count, members, ctors⟩ := inductive_rows ran
   obtain ⟨-, width, -, -⟩ := claimed_block hr hrec
   refine ⟨count, fun i hi => ?_, fun i hi k hk => ?_⟩
-  · exact ⟨_, row_published pub hrec (members i hi) (MutualProjections.member_wire _ width _ _) (typesIn i hi)⟩
-  · exact ⟨_, row_published pub hrec (ctors i hi k hk) (MutualProjections.constructor_wire _ width _ _)
+  · exact ⟨_, row_published hr pub hrec (members i hi) (MutualProjections.member_wire _ width _ _) (typesIn i hi)⟩
+  · exact ⟨_, row_published hr pub hrec (ctors i hi k hk) (MutualProjections.constructor_wire _ width _ _)
       (ctorsIn i hi k hk)⟩
 
 /-- **The record a closure name is published at resolves**, under `PublishedResolve`. -/
@@ -381,10 +383,11 @@ theorem recursor_published {sub : Ix.Environment} (resolves : SingletonSegments.
     obtain ⟨ha, hc'⟩ := pub.claims _ _ _ (Resolution.claim_of_empty hempty) insub
     rw [haddr] at ha hc'
     rw [hbytes, hser] at hc'
-    exact lone ha (BlockLayout.recordAt_ser wire hc')
+    exact lone ha (BlockLayout.recordAt_ser wire
+      (by rw [← hb]; exact (BlockRecords.runBlock_bounded hr).1) hc')
   obtain ⟨count, rows⟩ := recursor_rows hne ran
   rcases rows with rows | ⟨r₀, hr₀, row⟩
-  · obtain ⟨ha, hc⟩ := row_published pub hrec (rows j hj) (MutualProjections.member_wire _ width _ _) insub
+  · obtain ⟨ha, hc⟩ := row_published hr pub hrec (rows j hj) (MutualProjections.member_wire _ width _ _) insub
     obtain ⟨q, hq⟩ := published_resolves resolves hci ha hc
     have e := resolveSource_rPrj rfl hq
     simp only [Nat.toUInt64_eq, UInt64.toNat_ofNat', Nat.mod_eq_of_lt (Nat.lt_trans hj count)] at e
@@ -393,7 +396,7 @@ theorem recursor_published {sub : Ix.Environment} (resolves : SingletonSegments.
   · subst hr₀
     have hj0 : j = 0 := by simp at hj; omega
     subst hj0
-    obtain ⟨ha, hc⟩ := row_published pub hrec row wire insub
+    obtain ⟨ha, hc⟩ := row_published hr pub hrec row wire insub
     rw [← hblock] at ha hc
     exact lone ha hc
 

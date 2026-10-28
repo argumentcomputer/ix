@@ -1446,8 +1446,9 @@ count (N0)
 
 The `N0` length sidecar is a **section-level** framing integer: it is not
 part of the constant's content-addressed bytes. The address is
-computed as `blake3` over only the constant bytes (verified per
-entry on load). This layout lets a lazy loader slice each constant
+computed as `blake3` over only the constant bytes. Every reader
+verifies it per entry: on load, or, for `get_anon`, at a constant's
+first materialization. This layout lets a lazy loader slice each constant
 directly into a [`LazyConstant`](../crates/ixon/src/lazy.rs) without
 parsing its header, deferring full deserialization until first
 access.

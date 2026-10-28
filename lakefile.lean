@@ -582,7 +582,8 @@ the host-side tests, the codec differential against Rust,
 optionally the set-theory model, the layering and trust-surface fences, the
 level comparison, the certified entry's host-compiled cases, and the reader's
 fidelity against Lean (the fixture closure and the first records of Init and
-Std). -/
+Std), the `.meta` and `.source` names against Lean's, and quotient Source on
+Init and Std. -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -636,6 +637,23 @@ script "check-kernel" (args) := do
       IO.eprint out.stdout
       throw <| IO.userError s!"kernel-reader-fidelity {mode} failed; see .lake/build/kernel-reader-fidelity.log"
   IO.println "Reader fidelity checks passed."
+  -- The `.meta` and `.source` names against Lean's, on ill-typed declarations
+  -- and the fixtures (`Tests/Ix/Kernel/MetaNames.lean`).
+  run "lake" #["build", "--wfail", "kernel-meta-names"]
+  run ".lake/build/bin/kernel-meta-names" #[]
+  -- Quotient Source on Init and Std, as `checkSourceCollapsedBundledAt` runs it:
+  -- the artifact's alias fibers, the committed bundle's evidence, the collapse
+  -- checks, and the harness's prepared stream against production's; it fails
+  -- when a collapse check fails or the streams differ. The artifact is
+  -- compiled afresh, never read from an earlier run.
+  run "lake" #["build", "--wfail", "kernel-source-ingress"]
+  let ingressIxe := ".lake/build/kernel-source-ingress-initstd.ixe"
+  for stale in #[ingressIxe, ingressIxe ++ ".diff", ingressIxe ++ ".rows"] do
+    if ← System.FilePath.pathExists stale then IO.FS.removeFile stale
+  run ".lake/build/bin/kernel-source-ingress"
+    #["--workers", "16", "--collapse", "--bundle-evidence", "--compare-prepared",
+      "--ixe", ingressIxe, "Init", "Std"]
+  IO.println "Meta names and quotient Source on Init and Std passed."
   IO.println "Certified kernel checks passed."
   return 0
 

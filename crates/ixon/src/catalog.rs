@@ -1282,9 +1282,9 @@ mod tests {
     let dir = tmp_dir("corrupt");
     let a = write_piece(&dir, "A", &[b"aaaa", b"bbbb"]);
     // Flip one byte inside a constant BODY (§2 payload, located via
-    // the lazy index). The index still parses — the env root covers
-    // keys, not bodies — so the merge's per-constant re-hash is the
-    // only thing standing between a corrupt piece and a corrupt
+    // the lazy index). The env root covers keys, not bodies, so the
+    // per-constant hash check (the lazy index's at load, or the merge's
+    // re-hash) is what stands between a corrupt piece and a corrupt
     // merged artifact.
     let mut bytes = std::fs::read(&a).unwrap();
     let index = Env::parse_lazy_index(&bytes).unwrap();
@@ -1294,7 +1294,10 @@ mod tests {
     let out = dir.join("union.ixe");
     match merge_anon(&[a], &out) {
       Err(e) => {
-        assert!(e.contains("do not hash"), "unexpected error: {e}")
+        assert!(
+          e.contains("do not hash") || e.contains("bytes hash to"),
+          "unexpected error: {e}"
+        )
       },
       Ok(_) => panic!("corrupt piece must not merge"),
     }

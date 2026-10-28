@@ -13,6 +13,7 @@ public import Ix.Common
 public import Ix.Environment
 public import Ix.IxonContract
 public import IxC.Ixon.Codec
+public import IxC.Ixon.Bounded.Constant
 import all IxC.Ixon.Codec
 public import Ix.Merkle
 
@@ -341,15 +342,29 @@ structure Comm where
   payload : Address
   deriving BEq, Repr, Inhabited
 
-/-- Parse a `Constant` starting at byte offset `off` within `buf`, WITHOUT
-    copying out a sub-buffer. The window length bounds the constant, so any
-    bytes after it in `buf` are simply left unread (no trailing-bytes check).
-    Zero-copy apart from the small interior string/nat reads `getConstant`
-    performs regardless. -/
-def deConstantAt (buf : ByteArray) (off : Nat) : Except String Constant :=
-  match getConstant.run { idx := off, bytes := buf } with
-  | .ok a _ => .ok a
-  | .error e _ => .error e
+/-- The aggregate expanded universe-node limit for one loaded record. This is
+    shared by eager loading, lazy windows, and the compiler's emitted records.
+    It matches host admission and the Rust decoder. -/
+def loadMaxUnivNodes : Nat := 1 <<< 26
+
+/-- Parse the `Constant` serialized exactly in the window `buf[off, off + len)`,
+    WITHOUT copying the window out. The window must lie inside `buf`, and the
+    decode must end exactly at `off + len`. The decoder only reads forward, so
+    a decode that ends there has read nothing outside the window: the result
+    depends on the window's bytes alone. A window holding a truncated record
+    (whose decode would run on into the bytes after it), or a record followed
+    by other bytes, is refused. Zero-copy apart from the small interior
+    string/nat reads the decoder performs regardless. Universe expansion is
+    bounded across the whole record before constructing successor chains. -/
+def deConstantAt (buf : ByteArray) (off len : Nat)
+    (maxUnivNodes : Nat := loadMaxUnivNodes) : Except String Constant :=
+  if off + len ≤ buf.size then
+    match (Bounded.getConstant maxUnivNodes).run { idx := off, bytes := buf } with
+    | .ok a s =>
+      if s.idx = off + len then .ok a
+      else .error s!"constant window: the record is {s.idx - off} bytes, the window {len}"
+    | .error e _ => .error e
+  else .error s!"constant window: {off} + {len} exceeds the buffer's {buf.size} bytes"
 
 /-- Lazily-materialized constant: an offset window `(buf, off, len)` into a
     shared backing `ByteArray` plus an optional pre-materialized `Constant`.
@@ -397,17 +412,18 @@ def ofSlice (buf : ByteArray) (off len : Nat) : LazyConstant :=
   { buf, off, len, cache := none }
 
 /-- Materialize the constant, surfacing parse errors. Returns the cached value
-    when present, otherwise parses the window in place (no copy). -/
+    when present, otherwise parses exactly the window in place (no copy;
+    `deConstantAt`). -/
 def get (lc : LazyConstant) : Except String Constant :=
   match lc.cache with
   | some c => .ok c
-  | none => deConstantAt lc.buf lc.off
+  | none => deConstantAt lc.buf lc.off lc.len
 
 /-- Materialize the constant, discarding parse errors. -/
 def get? (lc : LazyConstant) : Option Constant :=
   match lc.cache with
   | some c => some c
-  | none => (deConstantAt lc.buf lc.off).toOption
+  | none => (deConstantAt lc.buf lc.off lc.len).toOption
 
 /-- Raw serialized bytes (the TagN-headed constant body). Returns the backing buffer
     directly when the window spans all of it (the standalone case), and only
@@ -1766,6 +1782,18 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
     (Task.spawn fun _ => constsSection consts) (Task.spawn fun _ => commsSection env)
     (Task.spawn fun _ => namesSection env)
 
+/-- The most universe constructors one record's universes may expand to when the
+    loaders below decode it: the host admission limit
+    (`artifactLimits.maxRecordUnivNodes` in `Ix/Cli/CheckLeanCmd.lean`) and the
+    Rust decoder's (`MAX_UNIV_NODES`). A successor run is stored as one count,
+    so the production decoder would expand a few bytes to billions of nodes. -/
+abbrev loadMaxUnivNodes : Nat := Ixon.loadMaxUnivNodes
+
+/-- A §2 record for the loaders below: exactly its bytes, decoded under
+    `loadMaxUnivNodes` (`Ixon.Bounded.deConstant`). -/
+def deConstantLoaded (bytes : ByteArray) : Except String Constant :=
+  Bounded.deConstant bytes.size loadMaxUnivNodes bytes
+
 /-- Deserialize an Env from bytes (pure Lean, full metadata). Used for
     round-trip (`deEnv`) on small/in-memory envs. The lazy/anon `.ixe` check
     path does **not** go through here — it uses the Rust parser via
@@ -1837,7 +1865,7 @@ def getEnv : GetM Env := do
       if !(compare prev addr).isLT then
         throw "Env.get: §2 constants not in strictly ascending address order"
     constOrder := constOrder.push addr
-    match deConstant bytes with
+    match deConstantLoaded bytes with
     | .ok constant => env := env.storeConst addr constant
     | .error e =>
       throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
@@ -1878,6 +1906,9 @@ def getEnv : GetM Env := do
   for _ in [:numNames.toNat] do
     let addr ← Serialize.get
     let name ← getNameComponent namesLookup
+    -- §5 and the metadata name a name by this address: it must be the hash
+    if name.getHash != addr then
+      throw s!"Env.get: §4 name stored under {reprStr (toString addr)} hashes elsewhere"
     nameRev := nameRev.push addr
     namesLookup := namesLookup.insert addr name
     env := { env with names := env.names.insert addr name }
@@ -2140,7 +2171,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     constOrder := constOrder.push addr
     if constOrder.size % 100000 == 0 then
       loadTrace s!"§2 at {constOrder.size}/{numConsts} (byte {eStart})"
-    match deConstant bytes with
+    match Env.deConstantLoaded bytes with
     | .ok constant =>
       reserCheck "§2 const" eStart <| runPut do
         Serialize.put addr

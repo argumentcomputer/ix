@@ -65,10 +65,11 @@ theorem storeOf_mono {m m' : Std.HashMap Address ByteArray}
   | some b => rw [hm] at hc; rw [h a b hm]; exact hc
 
 theorem storeOf_ser {m : Std.HashMap Address ByteArray} {a : Address} {c : Ixon.Constant} (wire : c.wireWF)
+    (fits : Ixon.Bounded.univNodes c.univs ≤ Ixon.loadMaxUnivNodes)
     (h : m.get? a = some (Ixon.ser c)) : storeOf m a = some c := by
   unfold storeOf
   rw [h]
-  exact (StoredEncoding.get?_serConstant wire).1
+  exact (StoredEncoding.get?_serConstant wire fits).1
 
 /-- **Every binding of a state holds a record of its store that resolves there.** -/
 def BoundOK (c : CompileEnv) : Prop :=
@@ -81,16 +82,18 @@ theorem claim_resolves {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
     {cache : BlockState} (hr : runBlock cenv all lo = .ok (r, cache)) (pos : PositionsIn cenv.env all)
     {store : Store} (hblock : store r.blockAddr = some r.block) {n : Ix.Name} {a : Address} {b : ByteArray}
     (hclaim : (n, a, b) ∈ claimWrites lo r) :
-    ∃ rc, rc.wireWF ∧ b = Ixon.ser rc ∧ (resolveSource store a rc).isSome = true := by
+    ∃ rc, rc.wireWF ∧ Ixon.Bounded.univNodes rc.univs ≤ Ixon.loadMaxUnivNodes ∧
+      b = Ixon.ser rc ∧ (resolveSource store a rc).isSome = true := by
   have wire := BlockWire.blocksWire _ _ _ _ _ hr
   have shape := BlockLayout.runBlock_shape hr
+  have fits := BlockRecords.runBlock_bounded hr
   have claims := ClosureResolve.runBlock_claims hr pos
   unfold claimWrites at hclaim
   split at hclaim
   · rename_i hempty
     simp only [List.mem_toArray, List.mem_singleton, Prod.mk.injEq] at hclaim
     obtain ⟨-, rfl, rfl⟩ := hclaim
-    exact ⟨r.block, wire, shape.bytes, ClosureResolve.lone_resolves (claims.1 hempty) _ _⟩
+    exact ⟨r.block, wire, fits.1, shape.bytes, ClosureResolve.lone_resolves (claims.1 hempty) _ _⟩
   · obtain ⟨p, hp, e⟩ := Array.mem_map.mp hclaim
     simp only [Prod.mk.injEq] at e
     obtain ⟨-, rfl, rfl⟩ := e
@@ -98,7 +101,7 @@ theorem claim_resolves {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
       rcases shape.rows p hp with same | ⟨pw, -, -⟩
       · rw [same]; exact wire
       · exact pw
-    exact ⟨p.2.1, pwire, rfl, claims.2 p hp store hblock⟩
+    exact ⟨p.2.1, pwire, fits.2 p hp, rfl, claims.2 p hp store hblock⟩
 
 /-- **A step keeps every binding resolving**: old bindings in a larger store, and a new binding
 is a claim of the checked merge, which stores the claiming block's record. -/
@@ -130,10 +133,11 @@ theorem boundOK_step {snap acc : DriverAcc} {lo : Ix.Name} {all : Ix.Set Ix.Name
         have blockRec : storeOf (applyAuxBlockOutcome acc lo all (.compiled r cs)).1.cenv.constants r.blockAddr =
             some r.block := by
           rw [shape.bytes] at stored
-          exact storeOf_ser (BlockWire.blocksWire _ _ _ _ _ hr) stored
-        obtain ⟨rc, wire, hbytes, hres⟩ := claim_resolves hr pos blockRec hclaim
+          exact storeOf_ser (BlockWire.blocksWire _ _ _ _ _ hr)
+            (BlockRecords.runBlock_bounded hr).1 stored
+        obtain ⟨rc, wire, fits, hbytes, hres⟩ := claim_resolves hr pos blockRec hclaim
         rw [hbytes] at hb
-        exact ⟨rc, storeOf_ser wire hb, hres⟩
+        exact ⟨rc, storeOf_ser wire fits hb, hres⟩
       · have same := FreshSnapshot.applyCompiled_failed acc lo all r cs hc
         rw [same] at hn
         exact old n a hn

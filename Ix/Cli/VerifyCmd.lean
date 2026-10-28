@@ -269,7 +269,7 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
             IO.eprintln s!"native aggregate manifest audit failed: {e}"
             return 1
           | .ok expected => pure expected
-        let claim ← match Ixon.runGet Ix.Claim.get native.claimBytes with
+        let claim ← match Ix.Claim.de native.claimBytes with
           | .error e =>
             IO.eprintln s!"native aggregate root claim decode failed: {e}"
             return 1

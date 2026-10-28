@@ -497,7 +497,7 @@ fn put_rules(rules: &[RevealRecursorRule], buf: &mut Vec<u8>) {
 fn get_rules(buf: &mut &[u8]) -> Result<Vec<RevealRecursorRule>, String> {
   let count =
     usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
-  let mut rules = Vec::with_capacity(count);
+  let mut rules = Vec::with_capacity(count.min(buf.len()));
   for _ in 0..count {
     rules.push(RevealRecursorRule::get(buf)?);
   }
@@ -517,7 +517,7 @@ fn get_ctors(
 ) -> Result<Vec<(u64, RevealConstructorInfo)>, String> {
   let count =
     usize::try_from(TagN::get(0, buf)?.value).map_err(|e| e.to_string())?;
-  let mut ctors = Vec::with_capacity(count);
+  let mut ctors = Vec::with_capacity(count.min(buf.len()));
   for _ in 0..count {
     let idx = TagN::get(0, buf)?.value;
     let info = RevealConstructorInfo::get(buf)?;
@@ -979,7 +979,7 @@ impl RevealConstantInfo {
         let components = if mask & 1 != 0 {
           let count = usize::try_from(TagN::get(0, buf)?.value)
             .map_err(|e| e.to_string())?;
-          let mut comps = Vec::with_capacity(count);
+          let mut comps = Vec::with_capacity(count.min(buf.len()));
           for _ in 0..count {
             let idx = TagN::get(0, buf)?.value;
             let info = RevealMutConstInfo::get(buf)?;

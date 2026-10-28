@@ -1,4 +1,5 @@
 import Ix.Cert.Compile
+import IxC.Ixon.Verify.BoundedConstant
 
 /-! # A cheap definition-projection reader, equal on every input
 
@@ -77,18 +78,25 @@ theorem info_header {start finish : GetState} {p : DefinitionProj}
         cases h
     · cases h
 
-theorem header_of_projection {buf : ByteArray} {off : Nat} {c : Constant} {p : DefinitionProj}
-    (h : deConstantAt buf off = .ok c) (hp : c.info = .dPrj p) : definitionProjectionHeader buf off = true := by
+theorem header_of_projection {buf : ByteArray} {off len : Nat} {c : Constant} {p : DefinitionProj}
+    (h : deConstantAt buf off len = .ok c) (hp : c.info = .dPrj p) :
+    definitionProjectionHeader buf off = true := by
   unfold deConstantAt at h
-  cases hc : getConstant.run { idx := off, bytes := buf } with
-  | error e state => simp [hc] at h
-  | ok value state =>
-    simp only [hc, Except.ok.injEq] at h
-    subst value
-    obtain ⟨mid, hi⟩ := constant_info hc
-    rw [hp] at hi
-    obtain ⟨tag, _, ht, hf, hv⟩ := info_header hi
-    simp [definitionProjectionHeader, EStateM.run, ht, hf, hv]
+  split at h
+  · cases hc : (Bounded.getConstant loadMaxUnivNodes).run { idx := off, bytes := buf } with
+    | error e state => simp [hc] at h
+    | ok value state =>
+      simp only [hc] at h
+      split at h
+      · simp only [Except.ok.injEq] at h
+        subst value
+        obtain ⟨mid, hi⟩ := constant_info
+          (Ixon.Verify.BoundedConstant.getConstant_spec _ _ _ _ hc).1
+        rw [hp] at hi
+        obtain ⟨tag, _, ht, hf, hv⟩ := info_header hi
+        simp [definitionProjectionHeader, EStateM.run, ht, hf, hv]
+      · cases h
+  · cases h
 
 theorem fast_eq (e : Address × LazyConstant) : definitionProjectionFast e = definitionProjection e := by
   unfold definitionProjectionFast
@@ -101,7 +109,7 @@ theorem fast_eq (e : Address × LazyConstant) : definitionProjectionFast e = def
       have hheader : definitionProjectionHeader e.2.buf e.2.off = true := by
         unfold definitionProjection LazyConstant.get? at hp
         rw [cache] at hp
-        cases hget : deConstantAt e.2.buf e.2.off with
+        cases hget : deConstantAt e.2.buf e.2.off e.2.len with
         | error err => simp [hget, Except.toOption] at hp
         | ok c =>
           simp only [hget, Except.toOption] at hp

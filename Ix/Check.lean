@@ -38,7 +38,7 @@ def loadClaimAndTrees (claimHex : String) :
     IO (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
   let claimAddr ← addrOfHex! "claim" claimHex
   let claimBytes ← StoreIO.toIO (Store.read claimAddr)
-  let claim ← IO.ofExcept (Ixon.runGet Ix.Claim.get claimBytes)
+  let claim ← IO.ofExcept (Ix.Claim.de claimBytes)
   let computed := Address.blake3 (Ix.Claim.ser claim)
   if computed != claimAddr then
     throw <| IO.userError

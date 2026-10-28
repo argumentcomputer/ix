@@ -25,12 +25,44 @@ def recordsOf (r : BlockResult) :
     Ixon.Constant × ByteArray × Address × Array (Ix.Name × Ixon.Constant) :=
   (r.block, r.blockBytes, r.blockAddr, r.projections.map fun p => (p.1, p.2.1))
 
+/-- Successful block compilation retains the underlying result and has
+checked every emitted record's universe budget. -/
+theorem runBlock_checked {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
+    {r : BlockResult} {cache : BlockState}
+    (h : runBlock cenv all lo = .ok (r, cache)) :
+    CompileM.run cenv { all, current := lo, mutCtx := default, univCtx := [] } {}
+      (compileBlock lo all) = .ok (r, cache) ∧ blockUnivsFit r = true := by
+  unfold runBlock at h
+  cases ran : CompileM.run cenv
+      { all, current := lo, mutCtx := default, univCtx := [] } {} (compileBlock lo all) with
+  | error e => simp [ran, bind, Except.bind] at h
+  | ok result =>
+    simp only [ran, bind, Except.bind] at h
+    split at h
+    · rename_i fits
+      cases h
+      exact ⟨rfl, fits⟩
+    · cases h
+
 /-- **A block compiles as `compileBlock`**, from the empty block state. -/
 theorem runBlock_compiles {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
     {r : BlockResult} {cache : BlockState}
     (h : runBlock cenv all lo = .ok (r, cache)) :
     CompileM.run cenv { all, current := lo, mutCtx := default, univCtx := [] } {}
-      (compileBlock lo all) = .ok (r, cache) := h
+      (compileBlock lo all) = .ok (r, cache) := (runBlock_checked h).1
+
+/-- Every record a successful block emits fits the production loader's
+aggregate expanded-universe budget. -/
+theorem runBlock_bounded {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
+    {r : BlockResult} {cache : BlockState}
+    (h : runBlock cenv all lo = .ok (r, cache)) :
+    Ixon.Bounded.univNodes r.block.univs ≤ Ixon.loadMaxUnivNodes ∧
+      ∀ p ∈ r.projections, Ixon.Bounded.univNodes p.2.1.univs ≤ Ixon.loadMaxUnivNodes := by
+  have fits := (runBlock_checked h).2
+  simp only [blockUnivsFit, Bool.and_eq_true, decide_eq_true_eq, Array.all_eq_true] at fits
+  refine ⟨fits.1, fun p hp => ?_⟩
+  obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.mp hp
+  exact fits.2 i hi
 
 /-! ## What `compileBlock` returns -/
 
