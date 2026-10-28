@@ -6,7 +6,7 @@ public import Ix.PrimAddrs
 address-only table. -/
 
 namespace Tests.Ix.Kernel.PrimitiveTable
-open LSpec Ix
+open LSpec _root_.Ix
 
 @[extern "rs_prim_addrs_canonical"]
 private opaque rsPrimAddrsCanonicalFFI : IO (Array (String × String))
