@@ -90,7 +90,7 @@ theorem input_get (consts : Std.HashMap Ix.Name Ix.ConstantInfo) (x : Ix.Name) :
   unfold Ix.Environment.get?
   split <;> simp_all
 
-/-- **The driver's view of the input carries its names** (the ninth check). -/
+/-- **The driver's view of the input carries its names** (the eighth check). -/
 theorem namedEnv_view {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     Ix.Cert.Claims.NamedEnv { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) } := by

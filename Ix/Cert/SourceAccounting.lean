@@ -103,26 +103,6 @@ theorem produced_uncovered (raw : Array SourcePrepass.Raw)
   rw [← Std.HashMap.map_fst_toList_eq_keys, SourceOrder.produced_keys, Std.HashMap.map_fst_toList_eq_keys]
   rfl
 
-/-- The outside scan agrees with strayFailure on the SAME supplied flat
-map, not on an assumed pure block-failure or grounding argument. -/
-theorem produced_outside_empty_iff (raw : Array SourcePrepass.Raw)
-    (workers : Nat) (named : Ix.Map Name Ixon.Named) (failed : Ix.Map Name String) :
-    (scan (Prepass.produce raw workers).2.facts.nodes named failed).outside.toList = [] ↔
-      strayFailure (SourceGraph.full (SourceStream.canonical raw)) failed = none := by
-  have head : (scan (Prepass.produce raw workers).2.facts.nodes named failed).outside.toList.head? =
-      strayFailure (SourceGraph.full (SourceStream.canonical raw)) failed := by
-    simp only [scan, selectKeys_eq, domain]
-    rw [← Std.HashMap.map_fst_toList_eq_keys, ← List.filterMap_eq_filter,
-      List.filterMap_map, List.head?_filterMap]
-    unfold strayFailure
-    congr 1
-    funext p
-    simp only [Function.comp_def, Option.guard, Std.HashMap.contains_eq_isSome_getElem?, Std.HashMap.get?_eq_getElem?]
-    have flip (b : Bool) : (if !b then some p.1 else none) = (if b then none else some p.1) := by
-      cases b <;> rfl
-    exact flip _
-  rw [← List.head?_eq_none_iff, head]
-
 /-- No failed original key plus successful accounting gives named
 publication. This supplies no authenticated record or admission/value run. -/
 theorem produced_published (raw : Array SourcePrepass.Raw)

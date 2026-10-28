@@ -155,8 +155,6 @@ def run : IO Unit := do
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_check_iff
 /-- info: 'Ix.Cert.SourceAccounting.produced_uncovered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_uncovered
-/-- info: 'Ix.Cert.SourceAccounting.produced_outside_empty_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_outside_empty_iff
 /-- info: 'Ix.Cert.SourceAccounting.produced_published' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms _root_.Ix.Cert.SourceAccounting.produced_published
 /-- info: 'Ix.Cert.SourceAccountingPost.checked' depends on axioms: [propext, Classical.choice, Quot.sound] -/

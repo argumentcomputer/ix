@@ -1095,6 +1095,12 @@ fun ixe =>
 -- theorem or opaque has a reducibility hint at its address (`unhintedDefinition`), which the
 -- reader and quotient Source both read; the compile records every definition's hint, so no
 -- real input trips it. `CheckReportOk` gains `hints`.
+-- Re-frozen when the block-entry and recorded-failure checks were deleted (twenty-one
+-- checks): `unseenInductive` (with `mutsAddrs`) and `strayFailure` guarded the removed
+-- changed-set classifier and rewriting hooks, and no proof reads them: neither their
+-- `CheckReportOk` fields nor their meaning theorems are in the constant closure of
+-- `Ix.Cert.ReaderStreamsTrace.compileCorrect`. `CheckReportOk` loses `inductives` and
+-- `failures`.
 /-- info: def Ix.Cert.checkReport : (env : Ix.Environment) →
   Ix.CompileM.CompileEnv →
     Ixon.Env × Ix.Cert.Failures → optParam Ix.CondensedBlocks (Ix.Cert.compileBlocks env) → Except String Unit :=
@@ -1109,139 +1115,126 @@ fun env cenv out blocks =>
         | none =>
           match Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst with
           | none =>
-            match Ix.Cert.unseenInductive env out.fst with
+            match Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst with
             | none =>
-              match Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst with
+              match Ix.Cert.misnamedInput env with
               | none =>
-                match Ix.Cert.misnamedInput env with
+                match Ix.Cert.strayConstructor env with
                 | none =>
-                  match Ix.Cert.strayConstructor env with
+                  match Ix.Cert.projectionCollision out.fst with
                   | none =>
-                    match Ix.Cert.strayFailure env cenv.ungrounded with
+                    match Ix.Cert.unreadablePublished env out.fst with
                     | none =>
-                      match Ix.Cert.projectionCollision out.fst with
+                      match Ix.Cert.blobRecordCollision out.fst with
                       | none =>
-                        match Ix.Cert.unreadablePublished env out.fst with
-                        | none =>
-                          match Ix.Cert.blobRecordCollision out.fst with
-                          | none =>
-                            match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst,
-                              Ix.Cert.literalRoleUnnamed env out.fst with
-                            | none, none, none =>
-                              match Ix.Cert.unstoredFamilyName env, Ix.Cert.misplacedConstructor env,
-                                Ix.Cert.strayLevelParams env, Ix.Cert.strayFamilyMember env blocks,
-                                Ix.Cert.recursorShapeError env out.fst with
-                              | none, none, none, none, none =>
-                                match Ix.Cert.unhintedDefinition env out.fst with
-                                | none => Except.ok ()
-                                | some n =>
-                                  Except.error
-                                    (toString "compileReport: hint check failed: the published definition " ++
-                                        toString n.pretty ++
-                                      toString " has no reducibility hint at its address")
-                              | some (n, a), x, x_1, x_2, x_3 =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: the input constant " ++
-                                          toString n.pretty ++
-                                        toString " lists " ++
-                                      toString a.pretty ++
-                                    toString " in its family, which is not an input constant's own name")
-                              | none, some c, x, x_1, x_2 =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: the constructor " ++
-                                      toString c.pretty ++
-                                    toString
-                                      " of an input inductive declares another index than its position in the inductive's constructors")
-                              | none, none, some x, x_1, x_2 =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: " ++ toString x.pretty ++
-                                    toString
-                                      " does not have the level parameters of its family (for a recursor: its family's recursors' list, of its family's count or one more)")
-                              | none, none, none, some (fst, y), x =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: the compile block of " ++
-                                      toString y.pretty ++
-                                    toString
-                                      " is not exactly its family's types and constructors, or its family's recursors, or the family has 2^63 members and auxiliary motives or more")
-                              | none, none, none, none, some e =>
-                                Except.error
-                                  (toString "compileReport: inductive input check failed: " ++ toString e.message)
-                            | none, none, some (s, b) =>
+                        match Ix.Cert.unownedRecursor env out.fst, Ix.Cert.roleRecordKind out.fst,
+                          Ix.Cert.literalRoleUnnamed env out.fst with
+                        | none, none, none =>
+                          match Ix.Cert.unstoredFamilyName env, Ix.Cert.misplacedConstructor env,
+                            Ix.Cert.strayLevelParams env, Ix.Cert.strayFamilyMember env blocks,
+                            Ix.Cert.recursorShapeError env out.fst with
+                          | none, none, none, none, none =>
+                            match Ix.Cert.unhintedDefinition env out.fst with
+                            | none => Except.ok ()
+                            | some n =>
                               Except.error
-                                (toString
-                                              "compileReport: literal-role check failed: the artifact stores a record at " ++
-                                            toString b ++
-                                          toString ", the default role table's address of the literal-support role " ++
-                                        toString (repr s) ++
-                                      toString ", which a stored record's literal is checked against, but " ++
-                                    toString (Ix.Cert.literalRoleIxName s).pretty ++
-                                  toString " is not an input constant published there")
-                            | none, some (r, p), x =>
-                              Except.error
-                                (toString "compileReport: role check failed: the record stored at " ++ toString p ++
-                                      toString ", the default role table's address of the role " ++
-                                    toString (repr r) ++
-                                  toString
-                                    ", is not of its specification's kind (a standalone definition for a Nat operation, an axiom for an axiom role)")
-                            | some (b, x, none), x_1, x_2 =>
-                              Except.error
-                                (toString "compileReport: recursor check failed: the input name " ++
-                                        toString x.pretty ++
-                                      toString ", published in the inductive block at " ++
-                                    toString b ++
-                                  toString
-                                    " that the recursor index attaches recursors to, is not an inductive, constructor or recursor of a family")
-                            | some (b, x, some r), x_1, x_2 =>
-                              have pos :=
-                                match r with
-                                | Ix.Kernel.ConstRef.member b j => j
-                                | Ix.Kernel.ConstRef.ctor b i c => i;
-                              Except.error
-                                (toString "compileReport: recursor check failed: the recursor at member " ++
-                                                toString pos ++
-                                              toString " of the record " ++
-                                            toString r.block ++
-                                          toString ", indexed under the inductive block at " ++
-                                        toString b ++
-                                      toString ", is not a published recursor of the family of " ++
-                                    toString x.pretty ++
-                                  toString ", published in that block")
-                          | some a =>
+                                (toString "compileReport: hint check failed: the published definition " ++
+                                    toString n.pretty ++
+                                  toString " has no reducibility hint at its address")
+                          | some (n, a), x, x_1, x_2, x_3 =>
                             Except.error
-                              (toString "compileReport: blob check failed: the address " ++ toString a ++
-                                toString " holds both a stored blob and a stored record")
-                        | some n =>
+                              (toString "compileReport: inductive input check failed: the input constant " ++
+                                      toString n.pretty ++
+                                    toString " lists " ++
+                                  toString a.pretty ++
+                                toString " in its family, which is not an input constant's own name")
+                          | none, some c, x, x_1, x_2 =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: the constructor " ++
+                                  toString c.pretty ++
+                                toString
+                                  " of an input inductive declares another index than its position in the inductive's constructors")
+                          | none, none, some x, x_1, x_2 =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: " ++ toString x.pretty ++
+                                toString
+                                  " does not have the level parameters of its family (for a recursor: its family's recursors' list, of its family's count or one more)")
+                          | none, none, none, some (fst, y), x =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: the compile block of " ++
+                                  toString y.pretty ++
+                                toString
+                                  " is not exactly its family's types and constructors, or its family's recursors, or the family has 2^63 members and auxiliary motives or more")
+                          | none, none, none, none, some e =>
+                            Except.error
+                              (toString "compileReport: inductive input check failed: " ++ toString e.message)
+                        | none, none, some (s, b) =>
                           Except.error
-                            (toString "compileReport: readability check failed: the input name " ++ toString n.pretty ++
-                              toString " is published at an address that holds no stored record, or a block record")
-                      | some (b, i) =>
+                            (toString
+                                          "compileReport: literal-role check failed: the artifact stores a record at " ++
+                                        toString b ++
+                                      toString ", the default role table's address of the literal-support role " ++
+                                    toString (repr s) ++
+                                  toString ", which a stored record's literal is checked against, but " ++
+                                toString (Ix.Cert.literalRoleIxName s).pretty ++
+                              toString " is not an input constant published there")
+                        | none, some (r, p), x =>
+                          Except.error
+                            (toString "compileReport: role check failed: the record stored at " ++ toString p ++
+                                  toString ", the default role table's address of the role " ++
+                                toString (repr r) ++
+                              toString
+                                ", is not of its specification's kind (a standalone definition for a Nat operation, an axiom for an axiom role)")
+                        | some (b, x, none), x_1, x_2 =>
+                          Except.error
+                            (toString "compileReport: recursor check failed: the input name " ++
+                                    toString x.pretty ++
+                                  toString ", published in the inductive block at " ++
+                                toString b ++
+                              toString
+                                " that the recursor index attaches recursors to, is not an inductive, constructor or recursor of a family")
+                        | some (b, x, some r), x_1, x_2 =>
+                          have pos :=
+                            match r with
+                            | Ix.Kernel.ConstRef.member b j => j
+                            | Ix.Kernel.ConstRef.ctor b i c => i;
+                          Except.error
+                            (toString "compileReport: recursor check failed: the recursor at member " ++
+                                            toString pos ++
+                                          toString " of the record " ++
+                                        toString r.block ++
+                                      toString ", indexed under the inductive block at " ++
+                                    toString b ++
+                                  toString ", is not a published recursor of the family of " ++
+                                toString x.pretty ++
+                              toString ", published in that block")
+                      | some a =>
                         Except.error
-                          (toString "compileReport: projection check failed: member " ++ toString i ++
-                                toString " of the block at " ++
-                              toString b ++
-                            toString " has more than one stored definition projection record")
-                    | some f =>
+                          (toString "compileReport: blob check failed: the address " ++ toString a ++
+                            toString " holds both a stored blob and a stored record")
+                    | some n =>
                       Except.error
-                        (toString "compileReport: failure check failed: the driver records the name " ++
-                            toString f.pretty ++
-                          toString " as a failure, but no input constant is stored under it")
-                  | some c =>
+                        (toString "compileReport: readability check failed: the input name " ++ toString n.pretty ++
+                          toString " is published at an address that holds no stored record, or a block record")
+                  | some (b, i) =>
                     Except.error
-                      (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
-                        toString ", a constructor of an input inductive, is not stored as a constructor of it")
-                | some n =>
+                      (toString "compileReport: projection check failed: member " ++ toString i ++
+                            toString " of the block at " ++
+                          toString b ++
+                        toString " has more than one stored definition projection record")
+                | some c =>
                   Except.error
-                    (toString "compileReport: name invariant failed: the input constant stored under " ++
-                        toString n.pretty ++
-                      toString " carries another name")
+                    (toString "compileReport: constructor check failed: the name " ++ toString c.pretty ++
+                      toString ", a constructor of an input inductive, is not stored as a constructor of it")
               | some n =>
                 Except.error
-                  (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
-                    toString " is published but not resolved")
+                  (toString "compileReport: name invariant failed: the input constant stored under " ++
+                      toString n.pretty ++
+                    toString " carries another name")
             | some n =>
               Except.error
-                (toString "compileReport: component check failed: the input inductive " ++ toString n.pretty ++
-                  toString " is not published at an inductive projection of a block with a Muts entry")
+                (toString "compileReport: publication check failed: the input name " ++ toString n.pretty ++
+                  toString " is published but not resolved")
           | some (n, a, published) =>
             have found :=
               match published with
@@ -1410,11 +1403,9 @@ fields:
   Ix.Cert.CheckReportOk.hashes : Ix.Cert.nameHashCollision env out.fst = none
   Ix.Cert.CheckReportOk.muts : Ix.Cert.mutsMismatch out.fst = none
   Ix.Cert.CheckReportOk.resolution : Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none
-  Ix.Cert.CheckReportOk.inductives : Ix.Cert.unseenInductive env out.fst = none
   Ix.Cert.CheckReportOk.resolved : Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst = none
   Ix.Cert.CheckReportOk.named : Ix.Cert.misnamedInput env = none
   Ix.Cert.CheckReportOk.constructors : Ix.Cert.strayConstructor env = none
-  Ix.Cert.CheckReportOk.failures : Ix.Cert.strayFailure env cenv.ungrounded = none
   Ix.Cert.CheckReportOk.projections : Ix.Cert.projectionCollision out.fst = none
   Ix.Cert.CheckReportOk.readable : Ix.Cert.unreadablePublished env out.fst = none
   Ix.Cert.CheckReportOk.blobs : Ix.Cert.blobRecordCollision out.fst = none
@@ -1433,10 +1424,8 @@ constructor:
     (acyclic : Ix.Cert.referenceCycle out.fst = none) (hashes : Ix.Cert.nameHashCollision env out.fst = none)
     (muts : Ix.Cert.mutsMismatch out.fst = none)
     (resolution : Ix.Cert.resolutionMismatch cenv.nameToAddr out.fst = none)
-    (inductives : Ix.Cert.unseenInductive env out.fst = none)
     (resolved : Ix.Cert.unresolvedPublished env cenv.nameToAddr out.fst = none)
     (named : Ix.Cert.misnamedInput env = none) (constructors : Ix.Cert.strayConstructor env = none)
-    (failures : Ix.Cert.strayFailure env cenv.ungrounded = none)
     (projections : Ix.Cert.projectionCollision out.fst = none)
     (readable : Ix.Cert.unreadablePublished env out.fst = none) (blobs : Ix.Cert.blobRecordCollision out.fst = none)
     (recursors : Ix.Cert.unownedRecursor env out.fst = none) (roles : Ix.Cert.roleRecordKind out.fst = none)
@@ -4388,62 +4377,6 @@ fun resolved ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.resolutionMismatch
 
-/-! ## Every inductive component is seen (B9b's (c3); coordinator decision, 2026-10-20)
-
-The changed set reads an inductive component only through its block's `Muts`
-entry (`Ix.Compile.ChangedSet.mutsRecords`), which a later `Named` entry may
-override, so a component could escape the classifier. `compileReport` now refuses a result in
-which a published input inductive is not published at an inductive projection
-of a block with a `Muts` entry at its address (`checkReport`'s seventh check,
-`unseenInductive`). It reads the published input inductives' records, not every
-stored record: finding the stored inductive blocks among the records would mean
-decoding every mutual block record, and the changed set is about the input's
-names. Re-frozen with it: `checkReport`'s print (the seventh check) and
-`checkReport_ok` (a seventh conjunct). On a consistent run the result is
-unchanged. -/
-
-/-- info: [cert-audit] inductive components: 3 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] inductive components: 2 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "inductive components"
-    (#[`mutsAddrs_contains, `unseenInductive_none, `inductivesSeen].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "inductive components"
-    #[``Ix.Cert.mutsAddrs, ``Ix.Cert.unseenInductive]
-
-/-- info: def Ix.Cert.mutsAddrs : Ixon.Env → Std.HashSet Address :=
-fun ixe =>
-  Std.HashMap.fold
-    (fun s x named =>
-      match named.constMeta.info with
-      | Ixon.ConstantMetaInfo.muts all auxLayout => s.insert named.addr
-      | x => s)
-    ∅ ixe.named -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.mutsAddrs
-
-/-- info: def Ix.Cert.unseenInductive : Ix.Environment → Ixon.Env → Option Ix.Name :=
-fun env ixe =>
-  have muts := Ix.Cert.mutsAddrs ixe;
-  List.findSome?
-    (fun x =>
-      match x with
-      | (n, ci) =>
-        match ci with
-        | Ix.ConstantInfo.inductInfo v =>
-          match ixe.named.get? n with
-          | none => none
-          | some named =>
-            match Option.map (fun x => x.info) (Ix.Cert.storedRecord ixe named.addr) with
-            | some (Ixon.ConstantInfo.iPrj p) => if muts.contains p.block = true then none else some n
-            | x => some n
-        | x => none)
-    env.consts.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.unseenInductive
-
 /-! ## Published input names are resolved (B9b, `HookFree`'s discharge, (v); coordinator decision, 2026-10-21)
 
 A `Named` entry can come from a block's `Muts` entry (`BlockState.mutsNamed`),
@@ -4561,40 +4494,6 @@ fun env =>
     env.consts.toList -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.strayConstructor
-
-/-! ## Recorded failures are input names (B9b, `HookFree`'s discharge, (i); coordinator decision, 2026-10-21 ~08:17)
-
-A reference of the block holding a compile's key may name no input constant
-(a ground edge can dangle: `Ix.groundExpr` is `partial`, so no proof shows
-edges land in the input). If such a name was a Pass 3 head when the block
-compiled and was withdrawn later, it is recorded as a failure, and `NoFailure`
-(over the closure only) does not refute it. `compileReport` now refuses a
-driver's final environment that records a failure under a name the input's
-map does not hold (`checkReport`'s fourteenth check, `strayFailure`). The
-proof route not taken: a fold invariant that every recorded failure is a
-condensation member. Re-frozen with it: `checkReport`'s print and
-`checkReport_ok` (a fourteenth conjunct). On a consistent run the result is
-unchanged. -/
-
-/-- info: [cert-audit] recorded failures: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
----
-info: [cert-audit] recorded failures: 1 safe definitions, no runtime substitution -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
-run_cmd do
-  checkRoots (tag := "cert-audit") "recorded failures"
-    (#[`strayFailure_none, `failuresInput].map (`Ix.Cert ++ ·))
-  checkRuntime (tag := "cert-audit") "recorded failures" #[``Ix.Cert.strayFailure]
-
-/-- info: def Ix.Cert.strayFailure : Ix.Environment → Std.HashMap Ix.Name String → Option Ix.Name :=
-fun env ungrounded =>
-  List.findSome?
-    (fun x =>
-      match x with
-      | (n, snd) => if (env.consts.get? n).isSome = true then none else some n)
-    ungrounded.toList -/
-#guard_msgs (whitespace := lax) in
-#print Ix.Cert.strayFailure
 
 /-! ## One projection record per definition member (CtxAgree's hints premise; coordinator decision, 2026-10-21 ~18:20)
 

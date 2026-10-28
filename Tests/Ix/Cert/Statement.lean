@@ -229,39 +229,6 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
       | .ok () => errors := errors.push s!"{label}: checkReport accepts {what}"
     lines := lines.push s!"{label}: checkReport refuses {byCheck} of {planted.length} planted \
       resolutions by the resolution check"
-  -- the component check (every published input inductive at an inductive
-  -- projection of a block with a `Muts` entry), timed alone on the compile's
-  -- result, then refusing, by its own message, the result with the `Muts` entry
-  -- of a published input inductive's block dropped
-  let c0 ← IO.monoMsNow
-  let unseen? ← IO.lazyPure fun _ => Ix.Cert.unseenInductive env ixe
-  let c1 ← IO.monoMsNow
-  let inductives := env.consts.toList.filterMap fun (n, ci) => match ci with
-    | .inductInfo _ => (ixe.named.get? n).map fun nd => (n, nd)
-    | _ => none
-  match unseen? with
-  | none => lines := lines.push s!"{label}: unseenInductive finds every published input inductive at \
-      an inductive projection of a block with a Muts entry ({inductives.length} published inductives, \
-      {c1 - c0} ms)"
-  | some n => errors := errors.push s!"{label}: unseenInductive finds {n.pretty} in the compile's result"
-  let blockOf (nd : Ixon.Named) : Option Address :=
-    match (Ix.Cert.storedRecord ixe nd.addr).map (·.info) with
-    | some (Ixon.ConstantInfo.iPrj p) => some p.block
-    | _ => none
-  match inductives.findSome? fun (_, nd) => blockOf nd with
-  | none => errors := errors.push s!"{label}: no published input inductive at an inductive projection"
-  | some block =>
-    let dropped := ixe.named.filter fun _ nd => match nd.constMeta.info with
-      | .muts .. => nd.addr != block
-      | _ => true
-    match chk resolved ({ ixe with named := dropped }, failures) with
-    | .error e =>
-      if (e.splitOn "component check failed").length > 1 then
-        lines := lines.push s!"{label}: checkReport refuses a block's Muts entry dropped by the \
-          component check ({ixe.named.size - dropped.size} entries dropped)"
-      else
-        errors := errors.push s!"{label}: the dropped Muts entry is refused, but not by the component check: {e}"
-    | .ok () => errors := errors.push s!"{label}: checkReport accepts a block's Muts entry dropped"
   -- the publication check (every published input name resolved), timed alone
   -- on the compile's result, then refusing, by its own message, the result with
   -- a published input name dropped from the resolution map
@@ -356,26 +323,6 @@ def checkReportCases (label : String) (env : Ix.Environment) (ixe : Ixon.Env)
           constructor check: {e}"
     | .ok () => errors := errors.push s!"{label}: checkReport accepts a stray input constructor"
   | [] => errors := errors.push s!"{label}: no input constructor"
-  -- the failure check (every failure the driver records is an input name),
-  -- timed alone, then refusing, by its own message, the driver's final
-  -- environment with a failure recorded under a name no input constant has
-  let f0 ← IO.monoMsNow
-  let strayF? ← IO.lazyPure fun _ => Ix.Cert.strayFailure env cenv.ungrounded
-  let f1 ← IO.monoMsNow
-  match strayF? with
-  | none => lines := lines.push s!"{label}: strayFailure finds every recorded failure an input name \
-      ({cenv.ungrounded.size} failures, {f1 - f0} ms)"
-  | some f => errors := errors.push s!"{label}: strayFailure finds {f.pretty} recorded as a failure"
-  let planted : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "planted-stray-failure"
-  let cenvF := { cenv with ungrounded := cenv.ungrounded.insert planted "planted" }
-  match Ix.Cert.checkReport env cenvF (ixe, failures) with
-  | .error e =>
-    if (e.splitOn "failure check failed").length > 1 then
-      lines := lines.push s!"{label}: checkReport refuses a failure recorded under a name no input \
-        constant has ({planted.pretty})"
-    else
-      errors := errors.push s!"{label}: the stray failure is refused, but not by the failure check: {e}"
-  | .ok () => errors := errors.push s!"{label}: checkReport accepts a failure that is not an input name"
   -- the projection check (one stored definition projection record per member),
   -- timed alone, then refusing, by its own message, a second authentic record
   -- projecting a member (an existing projection with its univs grown, stored at

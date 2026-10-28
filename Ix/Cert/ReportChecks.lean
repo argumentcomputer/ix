@@ -71,7 +71,7 @@ theorem blobRecordCollision_none {ixe : Ixon.Env} (h : blobRecordCollision ixe =
 
 /-- **No address holds both a blob and a record**: when `compileReport`
 returns, its environment's blobs and records are apart (`checkReport`'s
-fourteenth check). -/
+twelfth check). -/
 theorem blobsApart {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) : BlobsApart ixe := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
@@ -278,7 +278,7 @@ theorem unownedRecursor_none {env : Ix.Environment} {ixe : Ixon.Env}
 /-- **Indexed recursors belong to their block's family**: when `compileReport`
 returns, every input name published in an inductive block its artifact's
 recursor index attaches recursors to has a family, and each of those recursors
-is a published recursor of it (`checkReport`'s fifteenth check). -/
+is a published recursor of it (`checkReport`'s thirteenth check). -/
 theorem recursorsOwned {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) : RecursorsOwned env ixe := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
@@ -401,7 +401,7 @@ theorem roleRecordKind_none {ixe : Ixon.Env} (h : roleRecordKind ixe = none) : R
 /-- **Bound roles' records have their kinds**: when `compileReport` returns, under
 the default role table the stored record at a bound `Nat` operation's address is
 a standalone definition and at a bound axiom role's address an axiom
-(`checkReport`'s sixteenth check). -/
+(`checkReport`'s fourteenth check). -/
 theorem roleRecordKinds {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) : RoleRecordKinds ixe := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
@@ -542,7 +542,7 @@ theorem literalRoleUnnamed_none {env : Ix.Environment} {ixe : Ixon.Env}
 
 /-- **Literal-support roles are named**: when `compileReport` returns, under the default
 role table every support role of a stored literal whose address the artifact stores a
-record at is an input constant published at that address (`checkReport`'s seventeenth
+record at is an input constant published at that address (`checkReport`'s fifteenth
 check). -/
 theorem literalRolesNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) : LiteralRolesNamed env ixe := by
