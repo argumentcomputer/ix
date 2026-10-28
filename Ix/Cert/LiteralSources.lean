@@ -17,7 +17,19 @@ postcondition of that form, `LitsFrom source`: the compiled expression holds a l
 kind only if its source term does. Its frame invariant is the cache's (`CacheLits`: every
 cached output satisfies the postcondition at its exact source key), kept by every leaf that
 leaves the cache alone (`cacheFrame`, through `RefTables.Holds.preserves`). Loops carry their
-accumulator's condition (`Triple.forIn_list`). -/
+accumulator's condition (`Triple.forIn_list`).
+
+**The steps.**
+* `expression_lits`: the expression compiler returns a literal of a kind only where its source
+  term has one.
+* `build_has`: the canonical sharing keeps literals, and `literalKinds_has`: a record's literal
+  is in its sharing table or its roots.
+* The payloads (`definitionData_lits` … `inductiveData_lits`, `member_lits`, `classes_lits`): a
+  payload's roots are its source terms' compiled forms. The finishers return the compiled
+  expressions they are given, and the preseed leaves the cache alone (`frame_preseed`).
+* `runBlock_lits`: a compiled block's record holds only literals of the terms its compile reads
+  under its members' names (`ReadTerm`, `RefTables.TermOf`), the same walk as
+  `RefTables.runBlock_refs`. -/
 
 namespace Ix.Cert.LiteralSources
 
@@ -585,6 +597,758 @@ theorem build_has (k : Bool) {limits : Ix.Sharing.Exact.Limits} {info : Ixon.Con
     rw [hxe] at hsub
     exact rootSrc x hx hsub
 
+
+/-! ## A record's literal kinds come from its table and roots -/
+
+/-- The kind `k` component of a pair of literal kinds (`true`: `String`, `false`: `Nat`). -/
+abbrev kindOf (k : Bool) (p : Bool × Bool) : Bool := if k then p.2 else p.1
+
+theorem foldl_go (l : List Ixon.Expr) (acc : Bool × Bool) :
+    l.foldl Ix.Kernel.Reader.literalKinds.go acc =
+      (acc.1 || l.any (fun e => (ixLits e).1), acc.2 || l.any (fun e => (ixLits e).2)) := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons e rest ih =>
+    rw [List.foldl_cons, ih, go_spec]
+    simp [Bool.or_assoc]
+
+theorem fold_has (k : Bool) (xs : Array Ixon.Expr)
+    (h : kindOf k (xs.foldl Ix.Kernel.Reader.literalKinds.go (false, false)) = true) :
+    ∃ e ∈ xs.toList, has k e = true := by
+  rw [← Array.foldl_toList, foldl_go] at h
+  cases k
+  · simp only [kindOf, Bool.false_or, Bool.false_eq_true, ↓reduceIte, List.any_eq_true] at h
+    obtain ⟨e, he, h⟩ := h
+    exact ⟨e, he, h⟩
+  · simp only [kindOf, Bool.false_or, ↓reduceIte, List.any_eq_true] at h
+    obtain ⟨e, he, h⟩ := h
+    exact ⟨e, he, h⟩
+
+/-- **A record's literal of a kind is in its sharing table or its roots.** -/
+theorem literalKinds_has (k : Bool) (c : Ixon.Constant)
+    (h : kindOf k (Ix.Kernel.Reader.literalKinds c) = true) :
+    ∃ e ∈ c.sharing.toList ++ (constantInfoRootExprs c.info).toList, has k e = true := by
+  rcases c with ⟨info, sharing, refs, univs⟩
+  unfold Ix.Kernel.Reader.literalKinds at h
+  obtain ⟨e, he, hk⟩ := fold_has k _ h
+  clear h
+  refine ⟨e, ?_, hk⟩
+  simp only [Array.toList_append, List.mem_append] at he ⊢
+  rcases he with he | he
+  · exact .inl he
+  · right
+    cases info <;> simp_all [constantInfoRootExprs, mutConstRootExprs]
+    obtain ⟨m, hm, he⟩ := he
+    exact ⟨m, hm, by cases m <;> simp_all⟩
+
+/-! ## Terms a compiled expression's literals come from -/
+
+/-- Whether a source term holds a literal of the kind `k`. -/
+abbrev hasK (k : Bool) (s : Ix.Expr) : Bool := if k then hasStrLit s else hasNatLit s
+
+/-- **A compiled expression's literals are among the terms `T` holds of.** -/
+def LitsIn (T : Ix.Expr → Prop) (e : Ixon.Expr) : Prop := ∀ k, has k e = true → ∃ s, T s ∧ hasK k s = true
+
+theorem LitsIn.of_from {s : Ix.Expr} {e : Ixon.Expr} {T : Ix.Expr → Prop} (h : LitsFrom s e) (hs : T s) :
+    LitsIn T e := by
+  intro k hk
+  refine ⟨s, hs, ?_⟩
+  cases k
+  · exact h.1 hk
+  · exact h.2 hk
+
+/-! ## Leaves that keep the cache invariant -/
+
+theorem hold_takeArena : Holds LI takeArena :=
+  cacheFrame (by unfold takeArena; exact Preserves.modifyGet _ _ fun _ => rfl)
+
+theorem hold_takeSurgerySharing : Holds LI takeSurgerySharing :=
+  cacheFrame (by unfold takeSurgerySharing; exact Preserves.modifyGet _ _ fun _ => rfl)
+
+theorem hold_takeUnivPatches : Holds LI takeUnivPatches :=
+  cacheFrame (by unfold takeUnivPatches; exact Preserves.modifyGet _ _ fun _ => rfl)
+
+theorem hold_resetArena : Holds LI resetArena :=
+  cacheFrame (by unfold resetArena; exact Preserves.modify _ _ fun _ => rfl)
+
+theorem hold_recordDefHints (name : Ix.Name) (hints : Lean.ReducibilityHints) : Holds LI (recordDefHints name hints) :=
+  cacheFrame (by unfold recordDefHints; exact Preserves.modify _ _ fun _ => rfl)
+
+theorem hold_mutCtxAddrs : Holds LI getMutCtxAddrs :=
+  cacheFrame (by unfold getMutCtxAddrs; exact Preserves.bind (Preserves.read _) fun _ => Preserves.pure _ _)
+
+/-- Clearing the cache makes the invariant hold. -/
+theorem hold_clear : Holds LI clearExprCache := by
+  intro context before v after _ _ ran
+  have hr := ran
+  rw [show rawRun clearExprCache context before = (.ok (), { before with exprCache := {} }) from rfl] at hr
+  cases hr
+  refine ⟨fun key value found => ?_, trivial⟩
+  simp at found
+
+theorem hold_inductiveMeta : Holds LI takeInductiveTypeCompileMeta := by
+  unfold takeInductiveTypeCompileMeta
+  exact Holds.seq hold_takeArena fun _ => Holds.seq hold_takeSurgerySharing fun _ =>
+    Holds.seq hold_takeUnivPatches fun _ => Holds.seq hold_clear fun _ => Holds.pure _
+
+theorem Triple.withUnivCtxL (params : List Ix.Name) {α : Type} {action : CompileM α}
+    {Q : CompileEnv → BlockState → α → Prop} (h : Triple LI (fun _ _ => True) action Q) :
+    Triple LI (fun _ _ => True) (withUnivCtx params action) Q := by
+  unfold Ix.CompileM.withUnivCtx
+  exact Triple.seqHolds (cacheFrame (Preserves.modify _ _ fun _ => rfl)) fun _ => Triple.withBlockEnv _ h
+
+/-! ## The preseed keeps the cache -/
+
+theorem frame_compileUniv (source : Ix.Level) : Preserves cacheView (compileUniv source) :=
+  fun context before => by
+    have same := congrArg BlockState.exprCache (CanonUnivCache.compileUniv_frame source context before)
+    exact same
+
+theorem frame_blob (bytes : ByteArray) : Preserves cacheView (storeBlob bytes) :=
+  fun context before => by
+    have same := congrArg BlockState.exprCache (BlobWrites.storeBlob_preserves bytes context before).1
+    exact same
+
+theorem frame_collectUnivs (levels : List Ix.Level) (initial : Array Ixon.Univ) :
+    Preserves cacheView (collectExprTableUnivs levels initial) := by
+  induction levels generalizing initial with
+  | nil => exact Preserves.pure _ initial
+  | cons level rest ih =>
+    rw [collectExprTableUnivs]
+    exact Preserves.bind (frame_compileUniv level) (fun value => ih (initial.push value))
+
+theorem frame_structural (context : Address) (mutualContext : MutCtx) (params : List Ix.Name)
+    (expr : Ix.Expr) (acc : ExprTableCollection) :
+    Preserves cacheView (collectExprTablesStructural context mutualContext params expr acc) := by
+  induction expr generalizing acc
+  all_goals try cases ‹Lean.Literal›
+  all_goals
+    rcases acc with ⟨refs, univs, seen⟩
+    rw [collectExprTablesStructural]
+    split
+    · exact Preserves.pure _ _
+    · with_reducible repeat' first
+        | exact Preserves.pure _ _
+        | exact Preserves.throw _ _
+        | exact frame_compileUniv _
+        | exact frame_lookup _
+        | exact frame_blob _
+        | exact frame_collectUnivs _ _
+        | refine Preserves.bind ?_ (fun value => ?_)
+        | dsimp only
+        | split
+        | apply_assumption
+
+theorem frame_collectRoots (roots : List (Ix.Expr × List Ix.Name)) (initial : ExprTableCollection) :
+    Preserves cacheView (collectPreseedExprs roots initial) := by
+  induction roots generalizing initial with
+  | nil => exact Preserves.pure _ initial
+  | cons root rest ih =>
+    rcases root with ⟨expr, params⟩
+    rw [collectPreseedExprs]
+    refine Preserves.bind ?_ (fun next => ih next)
+    unfold Ix.CompileM.withUnivCtx collectExprTables
+    exact Preserves.bind (Preserves.modify _ _ (fun _ => rfl)) (fun _ => Preserves.withBlockEnv (update := _)
+      (Preserves.bind (Preserves.read _) fun block => frame_structural _ block.mutCtx block.univCtx expr initial))
+
+theorem frame_internRefs (refs : List Address) (previous : Option Address) :
+    Preserves cacheView (internPreseedRefs refs previous) := by
+  induction refs generalizing previous with
+  | nil => exact Preserves.pure _ ()
+  | cons address rest ih =>
+    unfold internPreseedRefs
+    split
+    · unfold Functor.discard
+      exact Preserves.bind (Preserves.bind (frame_internRef address) fun _ => Preserves.pure _ ()) fun _ => ih _
+    · exact ih _
+
+theorem frame_canonUnivs (values : List Ixon.Univ) (initial : Array Ixon.Univ) :
+    Preserves cacheView (canonPreseedUnivs values initial) := by
+  induction values generalizing initial with
+  | nil => exact Preserves.pure _ initial
+  | cons value rest ih =>
+    unfold canonPreseedUnivs
+    refine Preserves.bind ?_ (fun canonical => ih (initial.push canonical))
+    intro context before
+    rw [CanonUnivCache.canonUnivCached_run]
+    cases before.canonUnivCache.get? value <;> rfl
+
+theorem frame_internUniv (univ : Ixon.Univ) : Preserves cacheView (internUniv univ) := by
+  intro context before
+  cases found : before.univsIndex.get? univ with
+  | some index => rw [Interning.internUniv_hit univ context before found]
+  | none =>
+    rw [Interning.internUniv_miss univ context before found]
+    split
+    · rfl
+    · rw [Interning.checkedTableCount_state]
+
+theorem frame_internUnivs (entries : List (ByteArray × Ixon.Univ)) (previous : Option ByteArray) :
+    Preserves cacheView (internPreseedUnivs entries previous) := by
+  induction entries generalizing previous with
+  | nil => exact Preserves.pure _ ()
+  | cons entry rest ih =>
+    rcases entry with ⟨key, value⟩
+    unfold internPreseedUnivs
+    split
+    · unfold Functor.discard
+      exact Preserves.bind (Preserves.bind (frame_internUniv value) fun _ => Preserves.pure _ ()) fun _ => ih _
+    · exact ih _
+
+/-- **The preseed leaves the expression cache alone.** -/
+theorem frame_preseed (roots : Array (Ix.Expr × List Ix.Name)) : Preserves cacheView (preseedExprTables roots) := by
+  unfold preseedExprTables
+  refine Preserves.bind (frame_collectRoots _ _) fun collection => ?_
+  obtain ⟨refs, univs, seen⟩ := collection
+  refine Preserves.bind (frame_internRefs _ none) fun _ => ?_
+  refine Preserves.bind (frame_canonUnivs _ _) fun canonical => ?_
+  refine Preserves.bind ?_ fun _ => ?_
+  · unfold checkPreseedUnivs
+    split
+    · exact Preserves.pure _ ()
+    · exact Preserves.throw _ _
+  · exact Preserves.bind (frame_internUnivs _ none) fun _ => Preserves.modify _ _ fun _ => rfl
+
+/-! ## The finishers return the compiled expressions they are given -/
+
+/-- The finishers' steps keep the cache invariant; the returned payload holds the given
+expressions. -/
+local macro "lits_finish" : tactic => `(tactic|
+  with_reducible repeat' first
+    | exact Holds.pure _
+    | exact Triple.returns fun _ _ _ _ => ⟨rfl, rfl⟩
+    | exact Triple.returns fun _ _ _ _ => rfl
+    | exact hold_takeArena
+    | exact hold_takeSurgerySharing
+    | exact hold_takeUnivPatches
+    | exact hold_clear
+    | exact cacheFrame (frame_checkedCount _ _)
+    | exact cacheFrame (frame_checkedIndex _ _)
+    | exact cacheFrame (frame_namesBlobs (Serializers.NamesBlobs.compileName _))
+    | exact cacheFrame (frame_namesBlobs (Serializers.NamesBlobs.compileNames _))
+    | exact hold_recordDefHints _ _
+    | exact hold_mutCtxAddrs
+    | exact cacheFrame (Preserves.read _)
+    | refine Triple.seqHolds ?_ (fun _ => ?_)
+    | dsimp only)
+
+theorem finishDefinitionData_value (source : Ix.Def) (type : Ixon.Expr) (typeRoot : UInt64)
+    (value : Ixon.Expr) (valueRoot : UInt64) :
+    Triple LI (fun _ _ => True) (finishDefinitionDataCompilation source type typeRoot value valueRoot)
+      (fun _ _ r => r.1.typ = type ∧ r.1.value = value) := by
+  unfold finishDefinitionDataCompilation
+  lits_finish
+
+theorem finishAxiom_value (source : AxiomVal) (type : Ixon.Expr) (root : UInt64) :
+    Triple LI (fun _ _ => True) (finishAxiomCompilation source type root) (fun _ _ r => r.1.typ = type) := by
+  unfold finishAxiomCompilation
+  lits_finish
+
+theorem finishQuotient_value (source : QuotVal) (type : Ixon.Expr) (root : UInt64) :
+    Triple LI (fun _ _ => True) (finishQuotientCompilation source type root) (fun _ _ r => r.1.typ = type) := by
+  unfold finishQuotientCompilation
+  lits_finish
+
+theorem finishRecursor_value (source : RecursorVal) (type : Ixon.Expr) (root : UInt64)
+    (rules : RecursorRuleCompileState) :
+    Triple LI (fun _ _ => True) (finishRecursorCompilation source type root rules)
+      (fun _ _ r => r.1.typ = type ∧ r.1.rules = rules.rules) := by
+  unfold finishRecursorCompilation
+  lits_finish
+
+theorem finishConstructor_value (source : ConstructorVal) (type : Ixon.Expr) (root : UInt64) :
+    Triple LI (fun _ _ => True) (finishConstructorCompilation source type root) (fun _ _ r => r.1.typ = type) := by
+  unfold finishConstructorCompilation
+  lits_finish
+
+theorem finishInductive_value (source : InductiveVal) (type : Ixon.Expr) (root : UInt64)
+    (metadata : InductiveTypeCompileMeta) (constructors : InductiveConstructorCompileState) :
+    Triple LI (fun _ _ => True) (finishInductiveCompilation source type root metadata constructors)
+      (fun _ _ r => r.1.typ = type ∧ r.1.ctors = constructors.ctors) := by
+  unfold finishInductiveCompilation
+  lits_finish
+
+theorem finishInductiveData_value (source : Ix.Ind) (type : Ixon.Expr) (root : UInt64)
+    (metadata : InductiveTypeCompileMeta) (constructors : InductiveConstructorCompileState) :
+    Triple LI (fun _ _ => True) (finishInductiveDataCompilation source type root metadata constructors)
+      (fun _ _ r => r.1.typ = type ∧ r.1.ctors = constructors.ctors) := by
+  unfold finishInductiveDataCompilation
+  lits_finish
+
+/-! ## The payloads hold their sources' compiled terms -/
+
+theorem definitionData_lits {T : Ix.Expr → Prop} (d : Ix.Def) (ht : T d.type) (hv : T d.value) :
+    Triple LI (fun _ _ => True) (compileDefinitionData d)
+      (fun _ _ r => ∀ e ∈ mutConstRootExprs (.defn r.1), LitsIn T e) := by
+  unfold compileDefinitionData
+  refine Triple.withCurrent _ (Triple.withUnivCtxL _ ?_)
+  refine Triple.seqHolds hold_resetArena fun _ => ?_
+  refine Triple.andThen (expression_lits d.type) fun type htype => ?_
+  rcases type with ⟨te, tr⟩
+  dsimp only
+  refine Triple.andThen (expression_lits d.value) fun value hvalue => ?_
+  rcases value with ⟨ve, vr⟩
+  dsimp only
+  refine Triple.post (finishDefinitionData_value d te tr ve vr) fun _ _ r _ hr => ?_
+  intro e he
+  simp only [mutConstRootExprs, List.mem_cons, List.not_mem_nil, or_false] at he
+  rcases he with rfl | rfl
+  · rw [hr.1]; exact LitsIn.of_from htype ht
+  · rw [hr.2]; exact LitsIn.of_from hvalue hv
+
+theorem axiom_lits {T : Ix.Expr → Prop} (a : AxiomVal) (ht : T a.cnst.type) :
+    Triple LI (fun _ _ => True) (compileAxiom a) (fun _ _ r => LitsIn T r.1.typ) := by
+  unfold compileAxiom
+  refine Triple.withCurrent _ (Triple.withUnivCtxL _ ?_)
+  refine Triple.seqHolds hold_resetArena fun _ => ?_
+  refine Triple.andThen (expression_lits a.cnst.type) fun type htype => ?_
+  rcases type with ⟨te, tr⟩
+  dsimp only
+  exact Triple.post (finishAxiom_value a te tr) fun _ _ r _ hr => by rw [hr]; exact LitsIn.of_from htype ht
+
+theorem quotient_lits {T : Ix.Expr → Prop} (q : QuotVal) (ht : T q.cnst.type) :
+    Triple LI (fun _ _ => True) (compileQuotient q) (fun _ _ r => LitsIn T r.1.typ) := by
+  unfold compileQuotient
+  refine Triple.withCurrent _ (Triple.withUnivCtxL _ ?_)
+  refine Triple.seqHolds hold_resetArena fun _ => ?_
+  refine Triple.andThen (expression_lits q.cnst.type) fun type htype => ?_
+  rcases type with ⟨te, tr⟩
+  dsimp only
+  exact Triple.post (finishQuotient_value q te tr) fun _ _ r _ hr => by rw [hr]; exact LitsIn.of_from htype ht
+
+theorem rules_lits {T : Ix.Expr → Prop} (sources : List RecursorRule) (initial : RecursorRuleCompileState)
+    (hT : ∀ rule ∈ sources, T rule.rhs) :
+    Triple LI (fun _ _ => ∀ x ∈ initial.rules.toList, LitsIn T x.rhs) (compileRecursorRules sources initial)
+      (fun _ _ r => ∀ x ∈ r.rules.toList, LitsIn T x.rhs) := by
+  induction sources generalizing initial with
+  | nil => exact Triple.returns fun _ _ _ h => h
+  | cons source rest ih =>
+    rw [compileRecursorRules]
+    refine Triple.of_imp fun hinit => ?_
+    refine Triple.andThen (Q := fun out => LitsIn T out.1.rhs) ?_ fun out hout => ?_
+    · unfold compileRecursorRule
+      refine Triple.andThen (expression_lits source.rhs) fun rhs hr => ?_
+      rcases rhs with ⟨e, root⟩
+      dsimp only
+      refine Triple.seqHolds (cacheFrame (frame_checkedCount _ _)) fun _ => ?_
+      exact Triple.returns fun _ _ _ _ => LitsIn.of_from hr (hT source (by simp))
+    · rcases out with ⟨ixonRule, ctorAddr, ruleRoot⟩
+      dsimp only
+      refine Triple.pre (ih _ (fun r hr => hT r (List.mem_cons_of_mem _ hr))) fun _ _ _ _ => ?_
+      intro x hx
+      simp only [Array.toList_push, List.mem_append, List.mem_singleton] at hx
+      rcases hx with hx | rfl
+      · exact hinit x hx
+      · exact hout
+
+theorem recursor_lits {T : Ix.Expr → Prop} (r : RecursorVal) (ht : T r.cnst.type)
+    (hr : ∀ rule ∈ r.rules.toList, T rule.rhs) :
+    Triple LI (fun _ _ => True) (compileRecursor r)
+      (fun _ _ out => ∀ e ∈ mutConstRootExprs (.recr out.1), LitsIn T e) := by
+  unfold compileRecursor
+  refine Triple.withCurrent _ (Triple.withUnivCtxL _ ?_)
+  refine Triple.seqHolds hold_resetArena fun _ => ?_
+  refine Triple.andThen (expression_lits r.cnst.type) fun type htype => ?_
+  rcases type with ⟨te, tr⟩
+  dsimp only
+  refine Triple.andThen (Triple.pre (rules_lits r.rules.toList {} hr) fun _ _ _ _ x hx => by simp at hx)
+    fun rules hrules => ?_
+  refine Triple.post (finishRecursor_value r te tr rules) fun _ _ out _ hout => ?_
+  intro e he
+  simp only [mutConstRootExprs, List.mem_cons, List.mem_map] at he
+  rcases he with rfl | ⟨x, hx, rfl⟩
+  · rw [hout.1]; exact LitsIn.of_from htype ht
+  · rw [hout.2] at hx; exact hrules x hx
+
+theorem constructors_lits {T : Ix.Expr → Prop} (sources : List ConstructorVal)
+    (initial : InductiveConstructorCompileState) (hT : ∀ c ∈ sources, T c.cnst.type) :
+    Triple LI (fun _ _ => ∀ x ∈ initial.ctors.toList, LitsIn T x.typ) (compileInductiveConstructors sources initial)
+      (fun _ _ r => ∀ x ∈ r.ctors.toList, LitsIn T x.typ) := by
+  induction sources generalizing initial with
+  | nil => exact Triple.returns fun _ _ _ h => h
+  | cons source rest ih =>
+    rw [compileInductiveConstructors]
+    refine Triple.of_imp fun hinit => ?_
+    refine Triple.andThen (Q := fun out => LitsIn T out.1.typ) ?_ fun out hout => ?_
+    · unfold compileConstructor
+      refine Triple.withCurrent _ ?_
+      refine Triple.seqHolds hold_resetArena fun _ => ?_
+      refine Triple.andThen (expression_lits source.cnst.type) fun type htype => ?_
+      rcases type with ⟨te, tr⟩
+      dsimp only
+      exact Triple.post (finishConstructor_value source te tr) fun _ _ r _ hr => by
+        rw [hr]; exact LitsIn.of_from htype (hT source (by simp))
+    · rcases out with ⟨ctor, ctorMeta, ctorExpr⟩
+      dsimp only
+      refine Triple.pre (ih _ (fun c hc => hT c (List.mem_cons_of_mem _ hc))) fun _ _ _ _ => ?_
+      intro x hx
+      simp only [Array.toList_push, List.mem_append, List.mem_singleton] at hx
+      rcases hx with hx | rfl
+      · exact hinit x hx
+      · exact hout
+
+theorem inductiveData_lits {T : Ix.Expr → Prop} (i : Ix.Ind) (ht : T i.type)
+    (hc : ∀ c ∈ i.ctors.toList, T c.cnst.type) :
+    Triple LI (fun _ _ => True) (compileInductiveData i)
+      (fun _ _ r => ∀ e ∈ mutConstRootExprs (.indc r.1), LitsIn T e) := by
+  unfold compileInductiveData
+  refine Triple.withCurrent _ (Triple.withUnivCtxL _ ?_)
+  refine Triple.seqHolds hold_resetArena fun _ => ?_
+  refine Triple.andThen (expression_lits i.type) fun type htype => ?_
+  rcases type with ⟨te, tr⟩
+  dsimp only
+  refine Triple.seqHolds hold_inductiveMeta fun metadata => ?_
+  refine Triple.andThen (Triple.pre (constructors_lits i.ctors.toList _ hc) fun _ _ _ _ x hx => by simp at hx)
+    fun built hbuilt => ?_
+  refine Triple.post (finishInductiveData_value i te tr metadata built) fun _ _ out _ hout => ?_
+  intro e he
+  simp only [mutConstRootExprs, List.mem_cons, List.mem_map] at he
+  rcases he with rfl | ⟨x, hx, rfl⟩
+  · rw [hout.1]; exact LitsIn.of_from htype ht
+  · rw [hout.2] at hx; exact hbuilt x hx
+
+/-- `T` holds of every term of a mutual member. -/
+def MutLits (T : Ix.Expr → Prop) : MutConst → Prop
+  | .defn d => T d.type ∧ T d.value
+  | .indc i => T i.type ∧ ∀ c ∈ i.ctors.toList, T c.cnst.type
+  | .recr r => T r.cnst.type ∧ ∀ rule ∈ r.rules.toList, T rule.rhs
+
+theorem member_lits {T : Ix.Expr → Prop} (c : MutConst) (hc : MutLits T c) :
+    Triple LI (fun _ _ => True) (compileMutConstMember c)
+      (fun _ _ m => ∀ e ∈ mutConstRootExprs m.payload, LitsIn T e) := by
+  cases c <;> unfold compileMutConstMember
+  · refine Triple.andThen (Triple.withCurrent _ (definitionData_lits _ hc.1 hc.2)) fun out hout => ?_
+    rcases out with ⟨defn, md, te, ve⟩
+    exact Triple.returns fun _ _ _ _ => hout
+  · refine Triple.andThen (Triple.withCurrent _ (inductiveData_lits _ hc.1 hc.2)) fun out hout => ?_
+    rcases out with ⟨ind, md, pairs, exprs⟩
+    exact Triple.returns fun _ _ _ _ => hout
+  · refine Triple.andThen (Triple.withCurrent _ (recursor_lits _ hc.1 hc.2)) fun out hout => ?_
+    rcases out with ⟨recursor, md, te⟩
+    exact Triple.returns fun _ _ _ _ => hout
+
+/-- Every retained payload's roots have their literals among `T`'s terms. -/
+abbrev PayloadsLits (T : Ix.Expr → Prop) (state : MutConstCompileState) : Prop :=
+  ∀ p ∈ state.payloads.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e
+
+theorem equivalents_lits {T : Ix.Expr → Prop} (sources : List MutConst) (initial : MutConstCompileState)
+    (hc : ∀ c ∈ sources, MutLits T c) :
+    Triple LI (fun _ _ => PayloadsLits T initial) (compileEquivalentMutConsts sources initial)
+      (fun _ _ r => PayloadsLits T r) := by
+  induction sources generalizing initial with
+  | nil => exact Triple.returns fun _ _ _ h => h
+  | cons source rest ih =>
+    rw [compileEquivalentMutConsts]
+    refine Triple.of_imp fun hinit => ?_
+    refine Triple.andThen (member_lits source (hc source (by simp))) fun member _ => ?_
+    exact Triple.pre (ih _ fun c h => hc c (List.mem_cons_of_mem _ h)) fun _ _ _ _ => hinit
+
+theorem constClass_lits {T : Ix.Expr → Prop} (sources : List MutConst) (initial : MutConstCompileState)
+    (hc : ∀ c ∈ sources, MutLits T c) :
+    Triple LI (fun _ _ => PayloadsLits T initial) (compileMutConstClass sources initial)
+      (fun _ _ r => PayloadsLits T r) := by
+  cases sources with
+  | nil => exact Triple.returns fun _ _ _ h => h
+  | cons source rest =>
+    rw [compileMutConstClass]
+    refine Triple.of_imp fun hinit => ?_
+    refine Triple.andThen (member_lits source (hc source (by simp))) fun member hmember => ?_
+    refine Triple.pre (equivalents_lits rest _ fun c h => hc c (List.mem_cons_of_mem _ h)) fun _ _ _ _ => ?_
+    intro p hp
+    simp only [MutConstCompileState.addRepresentative, Array.toList_push, List.mem_append,
+      List.mem_singleton] at hp
+    rcases hp with hp | rfl
+    · exact hinit p hp
+    · exact hmember
+
+theorem classes_lits {T : Ix.Expr → Prop} (sources : List (List MutConst)) (initial : MutConstCompileState)
+    (hc : ∀ cls ∈ sources, ∀ c ∈ cls, MutLits T c) :
+    Triple LI (fun _ _ => PayloadsLits T initial) (compileMutConstClasses sources initial)
+      (fun _ _ r => PayloadsLits T r) := by
+  induction sources generalizing initial with
+  | nil => exact Triple.returns fun _ _ _ h => h
+  | cons source rest ih =>
+    rw [compileMutConstClasses]
+    exact Triple.bind (constClass_lits source initial (hc source (by simp))) fun state =>
+      ih state fun cls h => hc cls (List.mem_cons_of_mem _ h)
+
+/-! ## The block's record holds its payload's literals -/
+
+/-- **The block record's literals are its payload roots'.** -/
+abbrev BlockLits (T : Ix.Expr → Prop) (r : BlockResult) : Prop :=
+  ∀ k, kindOf k (Ix.Kernel.Reader.literalKinds r.block) = true → ∃ s, T s ∧ hasK k s = true
+
+theorem built_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {info : Ixon.ConstantInfo}
+    {refs : Array Address} {univs : Array Ixon.Univ} {block : Ixon.Constant}
+    (ran : buildConstantWithSharing limits info refs univs = .ok block)
+    (roots : ∀ e ∈ (constantInfoRootExprs info).toList, LitsIn T e) :
+    ∀ k, kindOf k (Ix.Kernel.Reader.literalKinds block) = true → ∃ s, T s ∧ hasK k s = true := by
+  intro k hk
+  obtain ⟨e, he, hke⟩ := literalKinds_has k block hk
+  obtain ⟨src, hsrc, hks⟩ := build_has k ran e he hke
+  exact roots src hsrc k hks
+
+theorem finishConstant_lits {T : Ix.Expr → Prop} (info : Ixon.ConstantInfo) (blockMeta : Ixon.ConstantMeta)
+    (roots : ∀ e ∈ (constantInfoRootExprs info).toList, LitsIn T e) :
+    Triple LI (fun _ _ => True) (finishConstantInfoWithSharing info blockMeta) (fun _ _ r => BlockLits T r) := by
+  intro context before value after hI _ ran
+  unfold finishConstantInfoWithSharing finishConstantWithSharing at ran
+  obtain ⟨cache, mid, hc, ran⟩ := bind_ok ran
+  have hc : (Except.ok before, before) = (Except.ok cache, mid) := hc
+  cases hc
+  obtain ⟨block, mid', hb, done⟩ := bind_ok ran
+  have same : mid' = before := by
+    have := RefTables.buildBlockConstant_preserves info before.refs before.univs context before
+    rw [hb] at this
+    exact this
+  subst same
+  rw [rawRun_pure] at done
+  cases done
+  exact ⟨hI, built_lits (BlockLayout.buildBlockConstant_ok hb) roots⟩
+
+theorem mutual_lits {T : Ix.Expr → Prop} {limits : Ix.Sharing.Exact.Limits} {classes : List (List MutConst)}
+    {payloads : Array Ixon.MutConst} {metas : Array (Ix.Name × Ixon.ConstantMeta)} {cache : BlockState}
+    {out : BlockResult} (ran : buildCompiledMutualBlock limits classes payloads metas cache = .ok out)
+    (roots : ∀ p ∈ payloads.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e) : BlockLits T out := by
+  unfold buildCompiledMutualBlock at ran
+  cases hs : standaloneMutConstInfo? payloads with
+  | some info =>
+    rw [hs] at ran
+    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    cases Except.ok.inj returned
+    refine built_lits hb fun e he => ?_
+    rcases payloads with ⟨l⟩
+    rcases l with _ | ⟨m, _ | ⟨m₂, rest⟩⟩
+    · cases hs
+    rotate_left
+    · cases hs
+    cases m with
+    | indc i => cases hs
+    | recr r =>
+      cases hs
+      exact roots (.recr r) (by simp) e (by simpa [constantInfoRootExprs] using he)
+    | defn d =>
+      cases hs
+      exact roots (.defn d) (by simp) e (by simpa [constantInfoRootExprs] using he)
+  | none =>
+    rw [hs] at ran
+    obtain ⟨block, hb, returned⟩ := Ix.Sharing.Verify.except_bind_eq_ok ran
+    cases Except.ok.inj returned
+    refine built_lits hb fun e he => ?_
+    simp only [constantInfoRootExprs, List.toList_toArray, List.mem_flatMap] at he
+    obtain ⟨p, hp, he⟩ := he
+    exact roots p hp e he
+
+theorem mutConsts_lits {T : Ix.Expr → Prop} (classes : List (List MutConst))
+    (hc : ∀ cls ∈ classes, ∀ c ∈ cls, MutLits T c) :
+    Triple LI (fun _ _ => True) (compileMutConsts classes)
+      (fun _ _ out => ∀ p ∈ out.1.toList, ∀ e ∈ mutConstRootExprs p, LitsIn T e) := by
+  unfold compileMutConsts
+  exact Triple.bind (Triple.pre (classes_lits classes {} hc) fun _ _ _ _ p hp => by simp at hp)
+    fun state => Triple.returns fun _ _ _ h => h
+
+theorem mutualPayload_lits {T : Ix.Expr → Prop} (classes : List (List MutConst))
+    (hc : ∀ cls ∈ classes, ∀ c ∈ cls, MutLits T c) :
+    Triple LI (fun _ _ => True) (compileMutualPayload classes) (fun _ _ r => BlockLits T r) := by
+  unfold compileMutualPayload
+  refine Triple.andThen (mutConsts_lits classes hc) fun compiled hcompiled => ?_
+  obtain ⟨payloads, roots, metas⟩ := compiled
+  dsimp only
+  intro context before value after hI _ ran
+  obtain ⟨same, -, built⟩ := ProjectionLayout.finish_mutual_ok context classes payloads metas ran
+  subst same
+  exact ⟨hI, mutual_lits built hcompiled⟩
+
+theorem mutualBlock_lits {T : Ix.Expr → Prop} (classes : List (List MutConst))
+    (hc : ∀ cls ∈ classes, ∀ c ∈ cls, MutLits T c) :
+    Triple LI (fun _ _ => True) (compileMutualBlock classes) (fun _ _ r => BlockLits T r) := by
+  unfold compileMutualBlock
+  dsimp only
+  refine Triple.withMutCtx _ ?_
+  exact Triple.seqHolds (cacheFrame (frame_preseed _)) fun _ => mutualPayload_lits classes hc
+
+/-! ## A block's literals come from the terms its compile reads -/
+
+/-- **A term a block compile reads under a name `N` admits**: one of the constant's terms, or the
+type of a constructor an inductive lists (`RefTables.TermOf`). -/
+abbrev ReadTerm (E : Ix.Environment) (N : Ix.Name → Prop) (e : Ix.Expr) : Prop :=
+  ∃ x, N x ∧ RefTables.TermOf E x e
+
+theorem cacheLits_empty : CacheLits ({} : BlockState) := by
+  intro key value found
+  have empty : ({} : BlockState).exprCache = {} := rfl
+  rw [empty] at found
+  simp at found
+
+theorem definitionDataInfo_lits {T : Ix.Expr → Prop} (d : Ix.Def) (ht : T d.type) (hv : T d.value) :
+    Triple LI (fun _ _ => True) (compileDefinitionDataInfo d) (fun _ _ r => BlockLits T r) := by
+  unfold compileDefinitionDataInfo compileDefinitionDataBlock
+  refine Triple.seqHolds (cacheFrame (frame_preseed _)) fun _ => ?_
+  refine Triple.andThen (definitionData_lits d ht hv) fun out hout => ?_
+  obtain ⟨defn, md, te, ve⟩ := out
+  dsimp only
+  exact finishConstant_lits _ _ fun e he => hout e (by simpa [constantInfoRootExprs] using he)
+
+/-- **A lone constant's block holds only literals of the terms read under its name.** -/
+theorem constantInfo_lits {E : Ix.Environment} {N : Ix.Name → Prop} {x : Ix.Name} {const : ConstantInfo}
+    (found : E.get? x = some const) (hN : N x) (hi : ∀ v, const = .inductInfo v → False)
+    (hc : ∀ v, const = .ctorInfo v → False) :
+    Triple LI (fun _ _ => True) (compileConstantInfo const) (fun _ _ r => BlockLits (ReadTerm E N) r) := by
+  have cov : ∀ e ∈ termsOf const, ReadTerm E N e := fun e he => ⟨x, hN, const, found, .inl he⟩
+  cases const with
+  | defnInfo v =>
+    show RefTables.Triple _ _ (compileDefinitionConstantInfo v) _
+    unfold compileDefinitionConstantInfo
+    rw [EmissionDispatch.compileDefinitionInfo_eq]
+    exact Triple.withMutCtx _ (definitionDataInfo_lits _ (cov _ (by simp [termsOf, definitionValData]))
+      (cov _ (by simp [termsOf, definitionValData])))
+  | thmInfo v =>
+    show RefTables.Triple _ _ (compileTheoremConstantInfo v) _
+    unfold compileTheoremConstantInfo compileTheoremInfo
+    exact Triple.withMutCtx _ (definitionDataInfo_lits _ (cov _ (by simp [termsOf, theoremValData]))
+      (cov _ (by simp [termsOf, theoremValData])))
+  | opaqueInfo v =>
+    show RefTables.Triple _ _ (compileOpaqueConstantInfo v) _
+    unfold compileOpaqueConstantInfo compileOpaqueInfo
+    exact Triple.withMutCtx _ (definitionDataInfo_lits _ (cov _ (by simp [termsOf, opaqueValData]))
+      (cov _ (by simp [termsOf, opaqueValData])))
+  | axiomInfo v =>
+    show RefTables.Triple _ _ (compileConstantInfoCore (.axiomInfo v)) _
+    unfold compileConstantInfoCore
+    refine Triple.withMutCtx _ ?_
+    show RefTables.Triple _ _ (compileAxiomInfo v) _
+    unfold compileAxiomInfo compileAxiomBlock
+    refine Triple.seqHolds (cacheFrame (frame_preseed _)) fun _ => ?_
+    refine Triple.andThen (axiom_lits v (cov _ (by simp [termsOf, ConstantInfo.getCnst]))) fun out hout => ?_
+    obtain ⟨ax, md, te⟩ := out
+    dsimp only
+    refine finishConstant_lits _ _ fun e he => ?_
+    simp only [constantInfoRootExprs, List.toList_toArray, List.mem_singleton] at he
+    rw [he]
+    exact hout
+  | quotInfo v =>
+    show RefTables.Triple _ _ (compileQuotientConstantInfo v) _
+    unfold compileQuotientConstantInfo
+    refine Triple.withMutCtx _ ?_
+    unfold compileQuotientInfo compileQuotientBlock
+    refine Triple.seqHolds (cacheFrame (frame_preseed _)) fun _ => ?_
+    refine Triple.andThen (quotient_lits v (cov _ (by simp [termsOf, ConstantInfo.getCnst]))) fun out hout => ?_
+    obtain ⟨q, md, te⟩ := out
+    dsimp only
+    refine finishConstant_lits _ _ fun e he => ?_
+    simp only [constantInfoRootExprs, List.toList_toArray, List.mem_singleton] at he
+    rw [he]
+    exact hout
+  | recInfo v =>
+    show RefTables.Triple _ _ (compileRecursorConstantInfo v) _
+    unfold compileRecursorConstantInfo
+    refine Triple.withMutCtx _ ?_
+    unfold compileRecursorInfo compileRecursorBlock
+    refine Triple.seqHolds (cacheFrame (frame_preseed _)) fun _ => ?_
+    refine Triple.andThen (recursor_lits v (cov _ (by simp [termsOf]))
+      fun rule hr => cov _ (by simp only [termsOf]; exact List.mem_cons_of_mem _ (List.mem_map_of_mem hr)))
+      fun out hout => ?_
+    obtain ⟨rc, md, te⟩ := out
+    dsimp only
+    exact finishConstant_lits _ _ fun e he => hout e (by simpa [constantInfoRootExprs] using he)
+  | inductInfo v => exact (hi v rfl).elim
+  | ctorInfo v => exact (hc v rfl).elim
+
+/-- **The members a block compile reads hold the terms read under their names.** -/
+theorem members_lits (ctx : CompileEnv × BlockEnv) (all : Ix.Set Ix.Name) {N : Ix.Name → Prop}
+    (hN : ∀ x, all.contains x = true → N x) :
+    Claims.RunPost ctx (fun cs : Array MutConst => ∀ m ∈ cs, MutLits (ReadTerm ctx.1.env N) m)
+      (forIn all #[] fun n (acc : Array Ix.MutConst) => do
+        match ← findConst n with
+        | .inductInfo val => pure (ForInStep.yield (acc.push (← MutConst.mkIndc val)))
+        | .defnInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromDefinitionVal val)))
+        | .opaqueInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromOpaqueVal val)))
+        | .thmInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.fromTheoremVal val)))
+        | .recInfo val => pure (ForInStep.yield (acc.push (Ix.MutConst.recr val)))
+        | _ => pure (ForInStep.yield acc)) := by
+  rw [Std.HashSet.forIn_eq_forIn_toList]
+  refine Claims.RunPost.forIn ctx _ _ all.toList (fun n hn acc hacc => ?_) #[] (by simp)
+  have hin : N n := hN n (Std.HashSet.mem_iff_contains.1 (Std.HashSet.mem_of_mem_toList hn))
+  have push : ∀ m, MutLits (ReadTerm ctx.1.env N) m →
+      ∀ m' ∈ acc.push m, MutLits (ReadTerm ctx.1.env N) m' := by
+    intro m hm m' hm'
+    rcases Array.mem_push.1 hm' with hm' | rfl
+    · exact hacc m' hm'
+    · exact hm
+  refine Claims.RunPost.bind (Claims.RunPost.findConst ctx n) fun ci hci => ?_
+  have cov : ∀ e ∈ termsOf ci, ReadTerm ctx.1.env N e := fun e he => ⟨n, hin, ci, hci, .inl he⟩
+  split
+  · rename_i val
+    refine Claims.RunPost.bind (q := fun m => MutLits (ReadTerm ctx.1.env N) m) ?_
+      fun m hm => Claims.RunPost.pure (push m hm)
+    unfold MutConst.mkIndc
+    refine Claims.RunPost.bind (Claims.collectCtors_post ctx val.ctors.toList _ #[] (by simp) fun _ h => h)
+      fun ctors h => Claims.RunPost.pure ⟨cov _ (by simp [termsOf, ConstantInfo.getCnst]), fun ctor hctor => ?_⟩
+    obtain ⟨c, hc, hcs⟩ := h ctor (by simpa using hctor)
+    exact ⟨n, hin, _, hci, .inr ⟨val, c, ctor, rfl, Array.mem_toList_iff.1 hc, hcs, rfl⟩⟩
+  · exact Claims.RunPost.pure (push _ ⟨cov _ (by simp [termsOf]), cov _ (by simp [termsOf])⟩)
+  · exact Claims.RunPost.pure (push _ ⟨cov _ (by simp [termsOf]), cov _ (by simp [termsOf])⟩)
+  · exact Claims.RunPost.pure (push _ ⟨cov _ (by simp [termsOf]), cov _ (by simp [termsOf])⟩)
+  · exact Claims.RunPost.pure (push _ ⟨cov _ (by simp [termsOf]),
+      fun rule hr => cov _ (by simp only [termsOf]; exact List.mem_cons_of_mem _ (List.mem_map_of_mem hr))⟩)
+  · exact Claims.RunPost.pure hacc
+
+/-- **A compiled block's record holds only literals of the terms its compile reads**: those of
+its members' constants (or of its key's, for a lone constant), and of the constructors their
+inductives list. -/
+theorem compileBlockWithAux_lits {ctx : CompileEnv × BlockEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
+    {r : BlockResult} {layout? : Option Ixon.AuxLayout} {s' : BlockState}
+    (h : rawRun (compileBlockWithAux lo all) ctx {} = (.ok (r, layout?), s')) :
+    BlockLits (ReadTerm ctx.1.env (fun x => all.contains x = true ∨ x = lo)) r := by
+  unfold compileBlockWithAux at h
+  obtain ⟨const, s₁, hc, h⟩ := bind_ok h
+  have found := BlockRecords.findConst_ok hc
+  have h₁ : s₁ = {} := by
+    have := BlockRecords.findConst_preserves lo ctx {}
+    rw [hc] at this
+    exact this
+  subst h₁
+  dsimp only at h
+  split at h <;> split at h
+  all_goals first
+    | (rename_i hcond; simp at hcond; done)
+    | (obtain ⟨cs, s₂, hcs, h⟩ := bind_ok h
+       obtain ⟨out, s₄, hout, h⟩ := bind_ok h
+       have same : BlockRecords.recordsOf r = BlockRecords.recordsOf out := by
+         revert h
+         refine BlockRecords.Returns.elim
+           (P := fun (x : BlockResult × Option Ixon.AuxLayout) =>
+             BlockRecords.recordsOf x.1 = BlockRecords.recordsOf out) ?_
+         repeat returns_step
+       have block : r.block = out.block := (Prod.mk.inj same).1
+       have members := members_lits ctx all (N := fun x => all.contains x = true ∨ x = lo)
+         (fun x hx => .inl hx) {} cs s₂ hcs
+       have h₂ : s₂ = {} := BlockRecords.forIn_set_state hcs fun n acc => by
+         refine Preserves.bind (BlockRecords.findConst_preserves n) fun c => ?_
+         split
+         · exact Preserves.bind (BlockRecords.mkIndc_preserves _) fun _ => Preserves.pure id _
+         all_goals exact Preserves.pure id _
+       subst h₂
+       obtain ⟨-, lits⟩ := mutualBlock_lits (sourceClasses cs)
+         (fun cls hcls c hc => members c (Claims.mem_sourceClasses hcls hc)) ctx {} out s₄ cacheLits_empty
+         trivial hout
+       intro k hk
+       rw [block] at hk
+       exact lits k hk)
+    | (obtain ⟨result, s₂, hr, h⟩ := bind_ok h
+       rw [rawRun_pure] at h
+       simp only [Prod.mk.injEq, Except.ok.injEq] at h
+       obtain ⟨-, lits⟩ := constantInfo_lits (N := fun x => all.contains x = true ∨ x = lo) found (Or.inr rfl)
+         (by assumption) (by assumption) ctx {} result s₂ cacheLits_empty trivial hr
+       rw [← h.1.1]
+       exact lits)
+
+/-- **A compiled block's record holds only literals of the terms its compile reads**, for
+`runBlock`. -/
+theorem runBlock_lits {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name} {r : BlockResult}
+    {c : BlockState} {layout : Option Ixon.AuxLayout} (h : runBlock cenv all lo = .ok (r, c, layout)) :
+    BlockLits (ReadTerm cenv.env (fun x => all.contains x = true ∨ x = lo)) r :=
+  compileBlockWithAux_lits (Ix.CompileCert.run_success (BlockRecords.runBlockWithAux_compiles h))
 end Ix.Cert.LiteralSources
 
 /--
@@ -598,3 +1362,15 @@ info: 'Ix.Cert.LiteralSources.build_has' depends on axioms: [propext, Classical.
 -/
 #guard_msgs in
 #print axioms Ix.Cert.LiteralSources.build_has
+
+/--
+info: 'Ix.Cert.LiteralSources.frame_preseed' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LiteralSources.frame_preseed
+
+/--
+info: 'Ix.Cert.LiteralSources.runBlock_lits' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Cert.LiteralSources.runBlock_lits
