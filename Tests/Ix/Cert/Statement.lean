@@ -1724,6 +1724,29 @@ def recursorShapeCase (leanEnv : Lean.Environment) : IO (Array String × Array S
       else if n == argsName ++ `rec then .recInfo { v with type := tmType } else ci
     | _ => ci) "is not filed at its family's block and the motive its name gives it"
 
+/-- `DefinitionsHinted`: the compiled closure of `Nat.add` passes the hint check; with the hint at
+`Nat.add`'s address erased from the artifact, the check names a published definition at that
+address. No real input can trip it (the compile records every definition's hint), so the decider
+is tested on the artifact directly. -/
+def hintCase (leanEnv : Lean.Environment) : IO (Array String × Array String) := do
+  let closed ← IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv #[``Nat.add])
+  let env ← IO.lazyPure fun _ => Tests.Ix.Kernel.SourceIngressStep.canon closed.toArray 2
+  match Ix.Cert.compileReport env with
+  | .error e => return (#[s!"hints: the closure of Nat.add is refused: {e}"], #[])
+  | .ok (ixe, _) =>
+    if let some n := Ix.Cert.unhintedDefinition env ixe then
+      return (#[s!"hints: the compiled closure has no hint for {n.pretty}"], #[])
+    let name := Ix.Name.fromLeanName ``Nat.add
+    let some named := ixe.named.get? name
+      | return (#["hints: Nat.add is not published"], #[])
+    let erased : Ixon.Env := { ixe with anonHints := ixe.anonHints.erase named.addr }
+    match Ix.Cert.unhintedDefinition env erased with
+    | some n =>
+      if (ixe.named.get? n).map (·.addr) == some named.addr then
+        return (#[], #[s!"hints: passes as compiled, refused with Nat.add's hint erased, naming {n.pretty}"])
+      return (#[s!"hints: refused, but naming {n.pretty}, not a definition at Nat.add's address"], #[])
+    | none => return (#["hints: the check accepts an artifact with Nat.add's hint erased"], #[])
+
 def report (name : String) (action : IO (Array String × Array String)) (count : Nat) : TestSeq :=
   .individualIO name none (do
     let (errors, lines) ← action
@@ -1768,7 +1791,9 @@ def suite : List TestSeq := [
   report "two recursors filed at one motive are refused (inductive input check)" (do
     recursorSlotCase (← getCompileEnv #[defsModule, ownModule])) 1,
   report "recursors with each other's types are refused (inductive input check)" (do
-    recursorShapeCase (← getCompileEnv #[defsModule, ownModule])) 1]
+    recursorShapeCase (← getCompileEnv #[defsModule, ownModule])) 1,
+  report "an artifact with a published definition's hint erased is refused (hint check)" (do
+    hintCase (← getCompileEnv #[defsModule, ownModule])) 1]
 
 /-- `cert-evidence-agreement` (landing): the role table's evidence against quotient Source's on the
 well-founded operations' closure (`evidenceAgreement`); it compiles and reads the closure, so it

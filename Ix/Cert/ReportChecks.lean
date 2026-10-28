@@ -1193,4 +1193,36 @@ theorem recursorShapes {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failu
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h
   exact (recursorShapeError_none (checkReport_ok hc).recursorShapes).2
 
+/-! ### Published definitions have hints -/
+
+/-- **Every published input definition, theorem or opaque has a reducibility hint at its
+address** (`Ixon.Env.anonHints`), where the reader (`hintsOf`) and quotient Source
+(`fiberHintsMap`) both read it. -/
+def DefinitionsHinted (env : Ix.Environment) (ixe : Ixon.Env) : Prop :=
+  ∀ n named ci, (n, named) ∈ ixe.named.toList → env.consts.get? n = some ci →
+    Ix.LeanIngress.isDefinition ci = true → (ixe.anonHints.get? named.addr).isSome = true
+
+theorem unhintedDefinition_none {env : Ix.Environment} {ixe : Ixon.Env} (h : unhintedDefinition env ixe = none) :
+    DefinitionsHinted env ixe := by
+  intro n named ci hmem hci hdef
+  unfold unhintedDefinition at h
+  rw [List.findSome?_eq_none_iff] at h
+  have hfind := h (n, named) hmem
+  dsimp only at hfind
+  rw [hci] at hfind
+  rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]
+  cases ci
+  all_goals first
+    | (simp [Ix.LeanIngress.isDefinition] at hdef; done)
+    | (simp only at hfind
+       split at hfind
+       · assumption
+       · cases hfind)
+
+/-- **`checkReport`'s hint check**: every published input definition has a hint at its address. -/
+theorem definitionsHinted {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+    (h : compileReport env = .ok (ixe, failures)) : DefinitionsHinted env ixe := by
+  obtain ⟨cenv, -, hc⟩ := compileReport_ok h
+  exact unhintedDefinition_none (checkReport_ok hc).hints
+
 end Ix.Cert

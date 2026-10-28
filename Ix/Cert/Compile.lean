@@ -1301,7 +1301,19 @@ an input name. -/
       | none => some n
     else none
 
-/-- `compileReport`'s twenty-two checks on a compile's result, each an error on
+/-- The first published input definition, theorem or opaque whose address has no reducibility
+hint in the artifact (`Ixon.Env.anonHints`), if any. The reader takes a definition's hint from
+`anonHints` at its address (`Ix.Cert.hintsOf`), as quotient Source does (`fiberHintsMap`), so a
+definition without one would be read at no hint. The compile records every definition's hint,
+so a real artifact has one at every published definition's address. -/
+@[expose] def unhintedDefinition (env : Ix.Environment) (ixe : Ixon.Env) : Option Ix.Name :=
+  ixe.named.toList.findSome? fun (n, named) =>
+    match env.consts.get? n with
+    | some (.defnInfo _) | some (.thmInfo _) | some (.opaqueInfo _) =>
+      if ixe.anonHints.contains named.addr then none else some n
+    | _ => none
+
+/-- `compileReport`'s twenty-three checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -1346,7 +1358,9 @@ recursor's of its family's count or one more (`strayLevelParams`); every block o
 compile's, `compileBlocks`) that holds a family member is exactly one family's
 types and constructors, or exactly its recursors (`strayFamilyMember`); and every
 stored recursor member is filed by the recursor index at a slot of its own, every
-published input recursor at the slot its name gives it (`recursorShapeError`). -/
+published input recursor at the slot its name gives it (`recursorShapeError`). **Published
+definitions have hints:** every published input definition, theorem or opaque has a reducibility
+hint at its address (`unhintedDefinition`). -/
 @[expose] def checkReport (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures)
     (blocks : Ix.CondensedBlocks := compileBlocks env) : Except String Unit :=
@@ -1381,7 +1395,12 @@ published input recursor at the slot its name gives it (`recursorShapeError`). -
                             | none, none, none =>
                               match unstoredFamilyName env, misplacedConstructor env, strayLevelParams env,
                                   strayFamilyMember env blocks, recursorShapeError env out.1 with
-                              | none, none, none, none, none => .ok ()
+                              | none, none, none, none, none =>
+                                match unhintedDefinition env out.1 with
+                                | none => .ok ()
+                                | some n =>
+                                  .error s!"compileReport: hint check failed: the published definition \
+                                    {n.pretty} has no reducibility hint at its address"
                               | some (n, a), _, _, _, _ =>
                                 .error s!"compileReport: inductive input check failed: the input constant \
                                   {n.pretty} lists {a.pretty} in its family, which is not an input \
@@ -1474,7 +1493,7 @@ published input recursor at the slot its name gives it (`recursorShapeError`). -
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with twenty-two checks (`checkReport`):
+condensation it cannot schedule). It ends with twenty-three checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -1499,7 +1518,8 @@ Lean's shapes: family names are input keys, constructor indices are positions, a
 family shares its level-parameter names, each compile block holding a family member is exactly
 that family's types and constructors or its recursors, and recursors are filed
 by the recursor index at slots of their own, each published input recursor at
-the one its name gives it. Any inconsistency is an error, and no artifact is
+the one its name gives it; and every published input definition has a reducibility
+hint at its address. Any inconsistency is an error, and no artifact is
 returned. So coverage, authenticity, an order of the records in which none
 precedes a record it references, distinct name hashes, `Muts` entries that agree
 with their blocks, resolved names published where they resolve, found inductive

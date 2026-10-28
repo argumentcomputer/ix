@@ -1090,6 +1090,10 @@ fun ixe =>
 -- condensation is a last argument, by default the compile's (`compileBlocks`), so the
 -- pipeline's post-step passes the driver's own. `CheckReportOk` gains five fields.
 -- Twenty-two checks; `checkReport_ok` concludes `CheckReportOk`, one field each.
+-- Re-frozen for the hint check (twenty-three checks): every published input definition,
+-- theorem or opaque has a reducibility hint at its address (`unhintedDefinition`), which the
+-- reader and quotient Source both read; the compile records every definition's hint, so no
+-- real input trips it. `CheckReportOk` gains `hints`.
 /-- info: def Ix.Cert.checkReport : (env : Ix.Environment) →
   Ix.CompileM.CompileEnv →
     Ixon.Env × Ix.Cert.Failures → optParam Ix.CondensedBlocks (Ix.Cert.compileBlocks env) → Except String Unit :=
@@ -1126,7 +1130,14 @@ fun env cenv out blocks =>
                               match Ix.Cert.unstoredFamilyName env, Ix.Cert.misplacedConstructor env,
                                 Ix.Cert.strayLevelParams env, Ix.Cert.strayFamilyMember env blocks,
                                 Ix.Cert.recursorShapeError env out.fst with
-                              | none, none, none, none, none => Except.ok ()
+                              | none, none, none, none, none =>
+                                match Ix.Cert.unhintedDefinition env out.fst with
+                                | none => Except.ok ()
+                                | some n =>
+                                  Except.error
+                                    (toString "compileReport: hint check failed: the published definition " ++
+                                        toString n.pretty ++
+                                      toString " has no reducibility hint at its address")
                               | some (n, a), x, x_1, x_2, x_3 =>
                                 Except.error
                                   (toString "compileReport: inductive input check failed: the input constant " ++
@@ -1414,6 +1425,7 @@ fields:
   Ix.Cert.CheckReportOk.levelParams : Ix.Cert.strayLevelParams env = none
   Ix.Cert.CheckReportOk.families : Ix.Cert.strayFamilyMember env (Ix.Cert.compileBlocks env) = none
   Ix.Cert.CheckReportOk.recursorShapes : Ix.Cert.recursorShapeError env out.fst = none
+  Ix.Cert.CheckReportOk.hints : Ix.Cert.unhintedDefinition env out.fst = none
 constructor:
   Ix.Cert.CheckReportOk.mk {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Ix.Cert.Failures}
     (covered : Ix.Cert.uncovered env out.fst out.snd = []) (authentic : Ix.Cert.unauthentic out.fst = [])
@@ -1430,7 +1442,8 @@ constructor:
     (literals : Ix.Cert.literalRoleUnnamed env out.fst = none) (familyNames : Ix.Cert.unstoredFamilyName env = none)
     (constructorIndices : Ix.Cert.misplacedConstructor env = none) (levelParams : Ix.Cert.strayLevelParams env = none)
     (families : Ix.Cert.strayFamilyMember env (Ix.Cert.compileBlocks env) = none)
-    (recursorShapes : Ix.Cert.recursorShapeError env out.fst = none) : Ix.Cert.CheckReportOk env cenv out -/
+    (recursorShapes : Ix.Cert.recursorShapeError env out.fst = none)
+    (hints : Ix.Cert.unhintedDefinition env out.fst = none) : Ix.Cert.CheckReportOk env cenv out -/
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CheckReportOk
 
@@ -5297,6 +5310,26 @@ fun ixe n => do
   (h : Ix.Cert.compileReport env = Except.ok (ixe, failures)) : Ix.Cert.RecursorShapes env ixe -/
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.recursorShapes
+
+/-! ## Published definitions have hints
+
+The reader takes a definition's reducibility hint from the artifact's `anonHints` at its address
+(`Ix.Cert.hintsOf`), as quotient Source does (`fiberHintsMap`). `compileReport` refuses an
+artifact in which a published input definition, theorem or opaque has no hint at its address
+(`checkReport`'s last check, `unhintedDefinition`); the compile records every definition's hint,
+so no real input trips it. The meaning, `DefinitionsHinted`, holds of every artifact
+`compileReport` returns. -/
+
+/-- info: [cert-audit] definition hints: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
+---
+info: [cert-audit] definition hints: 1 safe definitions, no runtime substitution -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots checkRuntime) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "definition hints"
+    #[``Ix.Cert.unhintedDefinition_none, ``Ix.Cert.definitionsHinted]
+  checkRuntime (tag := "cert-audit") "definition hints"
+    #[``Ix.Cert.unhintedDefinition]
 
 /-! ## S1's units, (R1): each record's and each group's lowering
 

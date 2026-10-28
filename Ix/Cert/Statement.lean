@@ -675,6 +675,7 @@ structure CheckReportOk (env : Ix.Environment) (cenv : Ix.CompileM.CompileEnv)
   levelParams : strayLevelParams env = none
   families : strayFamilyMember env (compileBlocks env) = none
   recursorShapes : recursorShapeError env out.1 = none
+  hints : unhintedDefinition env out.1 = none
 
 /-- `checkReport` passes exactly when nothing is uncovered, nothing is
 unauthentic, no stored record is on a reference cycle, no two different
@@ -692,7 +693,8 @@ record at a bound role's address has its specification's kind, every stored
 support role of a stored literal is published under the role's name, and the
 input's inductives have Lean's shapes: family names stored exactly, constructor
 indices, shared level parameters and counts, family blocks of the compile's condensation, and recursors filed at
-slots of their own, by their names. -/
+slots of their own, by their names, and every published input definition has a hint at its
+address. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
     (h : checkReport env cenv out = .ok ()) : CheckReportOk env cenv out := by
   unfold checkReport at h

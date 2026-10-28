@@ -56,7 +56,7 @@ input (`LeanPipelineOut.originalSource?`).
 The headers leave the verdict unchanged: `Ix.Cert.checkReport` reads its input
 environment only through its keys (`uncovered`, `nameHashCollision`,
 `unresolvedPublished`, `strayFailure`, `unreadablePublished`), a constant's kind
-and own name (`unseenInductive`, `misnamedInput`), an inductive's constructors
+and own name (`unseenInductive`, `misnamedInput`, `unhintedDefinition`), an inductive's constructors
 and a constructor's inductive (`strayConstructor`), and an inductive family's
 shape: the names it lists, constructor indices, level-parameter names, `all` lists,
 nested counts and recursor rules' constructor names (`unstoredFamilyName`,
