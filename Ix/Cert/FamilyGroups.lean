@@ -87,7 +87,7 @@ theorem inductiveGroup_shape {E : Ix.Environment} {first : Ix.InductiveVal} {can
     {g : Group} (h : inductiveGroup E first cands = g) :
     (∃ ns e, g = .invalid ns e) ∨ ∃ types ctors recs, g = .inductive types ctors recs ∧
       TypesOf E first types ∧ CtorsOf E types ctors ∧ blockRecursors first cands = .ok recs := by
-  rw [Ix.Cert.SourceGroupPlan.inductive_default] at h
+  rw [Ix.Cert.SourceStoredNames.inductive_default] at h
   unfold inductiveGroupUsing at h
   simp only [Id.run, idBind, idPure] at h
   split at h
@@ -313,7 +313,7 @@ theorem groups_origin (E : Ix.Environment) (blocks : Ix.CondensedBlocks) :
 /-- A component group is a component's, or refused. -/
 theorem componentGroup_cases {E : Ix.Environment} {members : Ix.Set Ix.Name} {g : Group}
     (h : componentGroup E members = some g) : Component g ∨ ∃ ns e, g = .invalid ns e := by
-  rw [Ix.Cert.SourceGroupPlan.component_default] at h
+  rw [Ix.Cert.SourceStoredNames.component_default] at h
   unfold componentGroupUsing at h
   generalize (Array.filterMapM (m := Id) (fun x => E.consts.get? x) members.toArray :
     Array Ix.ConstantInfo) = cis at h

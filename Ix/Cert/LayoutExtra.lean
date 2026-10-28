@@ -1475,7 +1475,7 @@ theorem kinded_of_others {env : Ix.Environment} {g : Group} {others : Array Ix.C
 
 theorem componentGroup_kinded {env : Ix.Environment} {members : Ix.Set Ix.Name} {g : Group}
     (h : componentGroup env members = some g) : NamesKinded env g := by
-  rw [Ix.Cert.SourceGroupPlan.component_default] at h
+  rw [Ix.Cert.SourceStoredNames.component_default] at h
   unfold componentGroupUsing at h
   generalize hcis : (Array.filterMapM (m := Id) (fun x => env.consts.get? x) members.toArray :
     Array Ix.ConstantInfo) = cis at h
@@ -1519,7 +1519,7 @@ theorem inductiveGroup_kinded {env : Ix.Environment} {first : Ix.InductiveVal}
     (conv : convert (inductiveGroup env first cands) = .ok c) :
     NamesKinded env (inductiveGroup env first cands) := by
   generalize hg : inductiveGroup env first cands = g at conv ⊢
-  rw [Ix.Cert.SourceGroupPlan.inductive_default] at hg
+  rw [Ix.Cert.SourceStoredNames.inductive_default] at hg
   unfold inductiveGroupUsing at hg
   simp only [Id.run, idBind, idPure] at hg
   split at hg

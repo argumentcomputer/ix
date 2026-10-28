@@ -7,16 +7,12 @@ import Ix.Cert.SourceContext.Maps
 import Ix.Cert.SourceContext.Observations
 import Ix.Cert.SourceContext.Rows
 import Ix.Cert.SourceContext.Stores
-import Ix.Cert.SourceGroupPlan
-import Ix.Cert.SourceGroupView
 import Ix.Cert.SourceInput
 import Ix.Cert.SourceInput.Prepared
 import Ix.Cert.SourceMetadata
 import Ix.Cert.SourceOrder
 import Ix.Cert.SourceOwnership
 import Ix.Cert.SourceUses
-import Ix.Compile.SourceInput.GroupPlan
-import Ix.Compile.SourceInput.GroupView
 import Ix.Compile.SourceInput.Metadata
 import Ix.Compile.SourceInput.Ownership
 import Ix.Compile.SourceInput.Uses
@@ -57,16 +53,12 @@ imported or declares nothing. -/
   Ix.Cert.SourceContext.Observations
   Ix.Cert.SourceContext.Rows
   Ix.Cert.SourceContext.Stores
-  Ix.Cert.SourceGroupPlan
-  Ix.Cert.SourceGroupView
   Ix.Cert.SourceInput
   Ix.Cert.SourceInput.Prepared
   Ix.Cert.SourceMetadata
   Ix.Cert.SourceOrder
   Ix.Cert.SourceOwnership
   Ix.Cert.SourceUses
-  Ix.Compile.SourceInput.GroupPlan
-  Ix.Compile.SourceInput.GroupView
   Ix.Compile.SourceInput.Metadata
   Ix.Compile.SourceInput.Ownership
   Ix.Compile.SourceInput.Uses

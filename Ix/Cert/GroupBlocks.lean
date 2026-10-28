@@ -294,7 +294,7 @@ def Component : Group → Prop
 theorem inductiveGroup_not_component {E : Ix.Environment} {first : Ix.InductiveVal}
     {cands : Array Ix.RecursorVal} : ¬ Component (Ix.LeanIngress.inductiveGroup E first cands) := by
   generalize hg : Ix.LeanIngress.inductiveGroup E first cands = g
-  rw [Ix.Cert.SourceGroupPlan.inductive_default] at hg
+  rw [Ix.Cert.SourceStoredNames.inductive_default] at hg
   unfold Ix.LeanIngress.inductiveGroupUsing at hg
   simp only [Id.run, idBind, idPure] at hg
   split at hg
@@ -401,7 +401,7 @@ theorem component_names {E : Ix.Environment} {members : Ix.Set Ix.Name} {g : Gro
       (∀ k ci, members.contains k = true → E.consts.get? k = some ci → isFamily ci = false) ∧
       ∀ ms, g = .definitions ms → ∀ k ci, members.contains k = true → E.consts.get? k = some ci →
         isDefinition ci = true := by
-  rw [Ix.Cert.SourceGroupPlan.component_default] at h
+  rw [Ix.Cert.SourceStoredNames.component_default] at h
   unfold componentGroupUsing at h
   generalize hcis : (Array.filterMapM (m := Id) (fun x => E.consts.get? x) members.toArray :
     Array Ix.ConstantInfo) = cis at h
