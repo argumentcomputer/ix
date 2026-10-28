@@ -34,9 +34,9 @@ def run (input : Array (Lean.Name × Lean.ConstantInfo)) : Names := input.foldl 
 
 /-- Names and original Lean records are prepared once; complete canonical
 bodies remain transient in Stream's chunk-local producer. -/
-def produce (reserved : Lean.ConstantInfo → Bool) (input : Array (Lean.Name × Lean.ConstantInfo))
+def produce (input : Array (Lean.Name × Lean.ConstantInfo))
     (workers : Nat) : Names × Stream.Output :=
   let p := run input
-  (p, Stream.runLabelled { consts := p.thinConsts } reserved p.labelled workers)
+  (p, Stream.runLabelled { consts := p.thinConsts } p.labelled workers)
 
 end Ix.Compile.SourceGraph.Prepass

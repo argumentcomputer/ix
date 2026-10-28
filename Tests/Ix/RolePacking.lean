@@ -31,8 +31,8 @@ private def verify (source : Env) (root : Address) : IO Unit := do
     if mode == 2 then
       ensure (packed.named.isEmpty && packed.names.size ≤ 1 &&
         packed.names.toList.all (fun (_, name) => match name with | .anonymous _ => true | _ => false) &&
-        packed.comms.isEmpty && packed.originals.isEmpty && packed.originalHintOverrides.isEmpty)
-        "anonymous packing retained names, commitments or original metadata"
+        packed.comms.isEmpty)
+        "anonymous packing retained names or commitments"
     let after ← IO.ofExcept ((prepareRecords packed limits).mapError toString)
     let context := _root_.Ix.Kernel.Admission.streamContext Address.admissionHash
       after.prepared.table after.prepared.pre after.constants after.prepared.blobs after.prepared.hints.lookup

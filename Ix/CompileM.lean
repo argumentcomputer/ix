@@ -29,8 +29,6 @@ public import Ix.CondenseM
 public import Ix.SOrder
 public import Ix.Compile.Canon.Classes
 public import Ix.Compile.ExactKey
-public import Ix.Compile.Pass.ImageView
-public import Ix.Compile.Pass.Clique.Plan
 public import Ix.AuxSource
 public import Ix.CanonM
 
@@ -113,72 +111,6 @@ structure CompileEnv where
       merged from the blocks that compile (`BlockState.auxReport`,
       `mergeCompiledBlock`). No byte depends on it. -/
   auxReport : Ix.AuxGen.CompileReport := {}
-  /-- Pass 3's recorded non-canonical outcomes (CQ5.3a): an O11a decline
-      and the constant whose rewrite recorded it. Report-only; merged from
-      successful block publications and erased when a source name is withdrawn. -/
-  p3NonCanonical : Std.HashMap Ix.Compile.ExactKey.ExactName String := {}
-  /-- Static producer-cycle/groundedness plan, by enclosing source member. -/
-  p3O11aPlans : Std.HashMap Ix.Compile.ExactKey.ExactName
-    (Std.HashMap Ix.Compile.ExactKey.ExactName String) := {}
-  /-- Pass 3: each image-kind auxiliary of a changed Lean block that source
-      recognition admits (`Ix.Compile.Pass.sourceImageHeads`) ↦ the block's
-      key, Lean's first member. Insert-once, merged from the blocks that
-      compile (`Ix.Compile.Pass.Published.heads`, `mergeCompiledBlock`). -/
-  p3Heads : Std.HashMap Ix.Compile.ExactKey.ExactName Name := {}
-  /-- Pass 3: a changed Lean block's key ↦ its `all`. Insert-once. -/
-  p3Blocks : Std.HashMap Ix.Compile.ExactKey.ExactName (Array Name) := {}
-  /-- Pass 3: the canonical recursors (Pass 2) of the changed blocks under
-      aux-gen's names (`rep.rec`, `all₀.rec_j`), the image generator's input
-      (`Ix.Compile.Pass.ViewInput.canonRec?`). Insert-once, compared whole. -/
-  p3CanonRecs : Std.HashMap Ix.Compile.ExactKey.ExactName RecursorVal := {}
-  /-- Pass 3: the view memo, a changed block's key ↦ its view
-      (`Ix.Compile.Pass.viewOf`). Only views built when every member of the
-      Lean block was compiled enter it; such a view is a function of the
-      block and its compiled dependencies, so the first entry of a key is
-      kept (`Ix.Compile.Pass.memoMerge`). Never changes a byte. -/
-  p3Views : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Compile.Pass.BlockView := {}
-  /-- Pass 3: the image memo, entered by the image block that compiles the
-      head (`Ix.Compile.Pass.compileImageBlock`): a Lean recursor of a
-      changed block ↦ its image's expansion and type, and a definitional
-      head ↦ its expansion with Lean's value already rewritten, when every
-      view that rewrite read may enter the view memo
-      (`Ix.Compile.Pass.readsMemoable`). Never changes a byte. -/
-  p3ImageExps : Std.HashMap Ix.Compile.ExactKey.ExactName
-    (Ix.Compile.Pass.Expansion × Expr) := {}
-  /-- Pass 3: each block's key ↦ the names its members reference (the
-      condensation's `blockRefs`), set before the first wave
-      (`FoldState.init`): the cheap test of `Ix.Compile.Pass.prepareBlock`
-      before it walks a block's terms. Empty outside the fold (every block is
-      then walked). -/
-  p3BlockRefs : Std.HashMap Name (Set Name) := {}
-  /-- Pass 3, set per block by `Ix.Compile.Pass.prepareBlock`: the source
-      occurrence of each rewritten call site of the block, keyed by the
-      placeholder index the rewrite left in the term. Compiled into the
-      constant's `metaSharing` as its decompile record
-      (`compileExprWithRecords`). Empty in every other environment. -/
-  p3Sources : Std.HashMap Nat Expr := {}
-  /-- Pass 3, clique transport (CQ5.2): every member of an input clique, and
-      every carried equation lemma, ↦ (Lean's `all`, the carried lemmas), set
-      before the first wave (`Ix.Compile.Pass.Clique.scheduleCliques`). Empty
-      when the input has no clique. -/
-  p3Cliques : Std.HashMap Name (Array Name × Array Name) := {}
-  /-- Pass 3, clique transport: the encoding roots (`all₀._mutual`,
-      `all₀.mutual`, `m._f`) ↦ the clique (`scheduleCliques`). -/
-  p3CliqueRoots : Std.HashMap Name (Array Name) := {}
-  /-- Pass 3, clique transport: the plan table, a memo of `planClique` keyed
-      by the clique's first member, filled by the blocks that computed a plan
-      (first entry wins, `mergeCompiledBlock`). Never changes a byte. -/
-  p3CliquePlans : Std.HashMap Name Ix.Compile.Pass.Clique.CliqueOutcome := {}
-  /-- Pass 3, clique transport: the rows table, each transported plan's rows
-      (`Clique.rowsOf`) as the block that made the plan computed them
-      (`Clique.CliqueOutcome.wfOnlyRows`), by clique key, first entry winning
-      like the plan table, for the rows after the fold
-      (`Ix.Compile.Pass.cliqueRows`, which computes a missing entry and, with
-      `p3CheckPlans`, recomputes every entry). Never changes a byte. -/
-  p3CliqueRows : Std.HashMap Name (Array Ix.ConstantInfo × Array Ix.ConstantInfo) := {}
-  /-- Pass 3, clique transport: recompute every plan the table supplies and
-      fail on a difference (`IX_PASS3_CHECK_PLANS`, the plan-cache suite). -/
-  p3CheckPlans : Bool := false
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -234,13 +166,6 @@ structure BlockResult where
       standalone early return (compile.rs:3872) and is skipped there
       too. -/
   classNames : Array (Array Name) := #[]
-  deriving Inhabited
-
-/-- Pass 3: one constant's extension reference table (`ConstantMeta.metaRefs`),
-    in first-use order, with each address's slot. -/
-structure MetaRefTable where
-  refs : Array Address := #[]
-  index : Std.HashMap Address UInt64 := {}
   deriving Inhabited
 
 /-- Per-block compilation state and tables. -/
@@ -315,40 +240,8 @@ structure BlockState where
   /-- Compiled Ixon expressions for collapsed call-site args, accumulated
       by surgered `compileExpr` calls within the current constant and
       drained into `ConstantMeta.metaSharing` when the constant's
-      metadata is built (Rust `BlockCache.surgery_sharing`). Since Pass 3
-      it holds the compiled source occurrences of the constant's decompile
-      records (`compileExprWithRecords`; Rust `BlockCache.meta_sharing`). -/
+      metadata is built (Rust `BlockCache.surgery_sharing`). -/
   surgerySharing : Array Ixon.Expr := #[]
-  /-- Pass 3: the decompile records of the constant being compiled, by the
-      constant's name (`BlockEnv.current`): placeholder index ↦ (its index
-      in the constant's `metaSharing`, the record's arena root). Reused
-      across the constant's roots; they restart with the first record after
-      the constant's metadata take (`compileRecords`), as Rust clears
-      `p3_records` at the take. -/
-  p3Records : Std.HashMap Ix.Compile.ExactKey.ExactName (Std.HashMap Nat (Nat × UInt64)) := {}
-  /-- Pass 3: each constant's extension references (`ConstantMeta.metaRefs`),
-      by the constant's name: the addresses its decompile records reference
-      outside the block's primary table (virtual index `refs.size + j`). It
-      restarts with the constant's records (`compileRecords`); the driver
-      writes the tables into the constants' metadata at the block's end
-      (`Ix.Compile.Pass.withMetaRefs`; Rust drains `p3_meta_refs` at the
-      per-constant take, which here would change the proved drains and
-      finishers). -/
-  p3MetaRefs : Std.HashMap Ix.Compile.ExactKey.ExactName MetaRefTable := {}
-  /-- Pass 3: the expression cache entries the current decompile record's
-      compile made, read after `exprCache` and dropped when the record is
-      compiled: a record reads the term's cache but never writes it (Rust
-      `BlockCache.p3_meta_undo`). Empty between records. -/
-  p3MetaCache : Std.HashMap Ix.Compile.ExactKey.ExprKey (Ixon.Expr × UInt64) := {}
-  /-- Pass 3, clique transport: the plans this block computed, by clique key,
-      for the driver's plan table (`CompileEnv.p3CliquePlans`). -/
-  p3CliquePlans : Array (Name × Ix.Compile.Pass.Clique.CliqueOutcome) := #[]
-  /-- Pass 3, clique transport: the rows of the transported plans this block
-      computed, by clique key, for the driver's rows table
-      (`CompileEnv.p3CliqueRows`). -/
-  p3CliqueRows : Array (Name × (Array Ix.ConstantInfo × Array Ix.ConstantInfo)) := #[]
-  /-- Pass 3, clique transport: how many plans this block took from the table. -/
-  p3PlanReused : Nat := 0
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/
@@ -920,14 +813,10 @@ def compileKVMap (kvs : Array (Ix.Name × Ix.DataValue)) : CompileM Ixon.KVMap :
 
 /-! ## Expression Compilation -/
 
-/-- Whether expression compilation takes the kernel-visible ordinary path:
-    the block has no Pass 3 decompile records to compile (`p3Sources` empty;
-    a block that references an image-kind head of a changed block has
-    some and takes `compileExprWithRecords`). The name is historical: it
-    also required no call-site plans until the surgery was deleted (CQ3.5),
-    and the theorems that carry it as a premise keep it unchanged. -/
-def CompileEnv.surgeryFree (env : CompileEnv) : Bool :=
-  env.p3Sources.isEmpty
+/-- Whether expression compilation takes the kernel-visible ordinary path.
+    It always does: the compiler writes no decompile records. The reading
+    theorems keep it as a premise, which holds by `rfl`. -/
+def CompileEnv.surgeryFree (_env : CompileEnv) : Bool := true
 
 /-- One cache-miss step of ordinary expression compilation, parameterized by
     the recursive compiler, which it calls only on strict source subterms of
@@ -1074,324 +963,6 @@ def compileExprNoSurgery (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
   pure (result, root)
 termination_by sizeOf e
 
-/-! ## Pass 3: decompile records (`_ix.inline`)
-
-A block that references an image-kind head of a changed block is compiled
-from its members rewritten by `Ix.Compile.Pass.Translate`: each outermost
-rewritten call site is wrapped in the placeholder `[(_ix.inline, n)]`, and
-`CompileEnv.p3Sources` holds its source occurrence `n`. Before a root
-expression of a constant compiles, the source occurrence of every
-placeholder in it that the constant has not compiled yet is compiled into
-the constant's `metaSharing` (the `surgerySharing` accumulator), in **meta
-mode**: a reference or a universe outside the block's primary tables goes to
-the constant's extension tables (`metaRefs`, `metaUnivs`, virtual indices
-after the primary ones), so a record never changes the constant's bytes;
-the record reads the term's expression cache and never writes it. The root
-is then compiled by the ordinary compiler with every placeholder replaced by
-its record `[(_ix.inline, s), (_ix.inline_meta, m)]`: `s` the record's
-`metaSharing` index, `m` its arena root. Records are metadata: the
-constant's anonymous bytes are those of the rewritten term. Mirrors Rust
-`pass3_compile_records` (meta mode) in `compile_expr`. -/
-
-/-- Pass 3: the placeholder indices in `e`, each once, in the order a
-    depth-first walk over distinct subterms meets them (an application's
-    function before its argument, a binder's type before its body, a `let`'s
-    type, value, body). Rust `pass3_placeholders`. -/
-def p3Placeholders (e : Expr) : Array Nat := Id.run do
-  let mut seen : Std.HashSet Ix.Compile.ExactKey.ExprKey := {}
-  let mut out : Array Nat := #[]
-  let mut stack : Array Expr := #[e]
-  while !stack.isEmpty do
-    let some x := stack.back? | break
-    stack := stack.pop
-    if seen.contains x then continue
-    seen := seen.insert x
-    match x with
-    | .mdata kvs inner _ =>
-      if let #[(k, .ofNat n)] := kvs then
-        if k == Ix.Compile.Pass.inlineKey && !out.contains n then out := out.push n
-      stack := stack.push inner
-    | .app f a _ => stack := stack.push a |>.push f
-    | .lam _ t b _ _ | .forallE _ t b _ _ => stack := stack.push b |>.push t
-    | .letE _ t v b _ _ => stack := stack.push b |>.push v |>.push t
-    | .proj _ _ s _ => stack := stack.push s
-    | _ => pure ()
-  return out
-
-/-- Pass 3, meta mode: an address of a decompile record. Its primary index
-    when the block's table holds it (the primary table is final after the
-    preseed); else the virtual index `refs.size + j` of its slot `j` in the
-    current constant's extension references, added at first use. The
-    primary table is never written. Rust `intern_ref` in meta mode. -/
-def internRefMeta (addr : Address) : CompileM UInt64 := do
-  let state ← getBlockState
-  if let some index := state.refsIndex.get? addr then return index
-  let current : Ix.Compile.ExactKey.ExactName := (← getBlockEnv).current
-  let table := (state.p3MetaRefs.get? current).getD {}
-  match table.index.get? addr with
-  | some slot => checkedTableIndex "metadata reference" (state.refs.size + slot.toNat)
-  | none =>
-    let index ← checkedTableIndex "metadata reference" (state.refs.size + table.refs.size)
-    let slot := table.refs.size.toUInt64
-    modifyBlockState fun c => { c with
-      p3MetaRefs := c.p3MetaRefs.insert current
-        { refs := table.refs.push addr, index := table.index.insert addr slot } }
-    return index
-
-/-- Pass 3, meta mode: a level of a decompile record. Its canonical form's
-    primary index when the block's table holds it, else a virtual index in
-    the constant's `metaUnivs`; the source spelling, when it differs, as a
-    virtual index too (the occurrence's patch). The primary table is never
-    written. Rust `compile_univ_idx` in meta mode. -/
-def compileAndInternUnivMeta (lvl : Level) : CompileM (UInt64 × Option UInt64) := do
-  let raw ← compileUniv lvl
-  let canon ← canonUnivCached raw
-  let cidx ← match (← getBlockState).univsIndex.get? canon with
-    | some index => pure index
-    | none => internMetaUniv canon
-  if canon == raw then
-    return (cidx, none)
-  return (cidx, some (← internMetaUniv raw))
-
-/-- One cache-miss step of the meta-mode compiler: `compileExprNoSurgeryStep`
-    with the meta-mode interning (`internRefMeta`, `compileAndInternUnivMeta`)
-    for references, literals, projections and levels. -/
-def compileExprMetaStep (e : Expr)
-    (compile : (x : Expr) → sizeOf x < sizeOf e → CompileM (Ixon.Expr × UInt64)) :
-    CompileM (Ixon.Expr × UInt64) :=
-  match e with
-    | .bvar idx _ => do
-      let index ← checkedTableIndex "bound variable" idx
-      let root ← allocArenaNode .leaf
-      pure (.var index, root)
-
-    | .sort lvl _ => do
-      let (idx, orig?) ← compileAndInternUnivMeta lvl
-      let root ← allocArenaNode .leaf
-      if let some vidx := orig? then
-        pushUnivPatch root #[vidx]
-      pure (.sort idx, root)
-
-    | .const name lvls _ => do
-      let mutCtx := (← getBlockEnv).mutCtx
-      let compiled ← lvls.mapM compileAndInternUnivMeta
-      let univIndices := compiled.map (·.1)
-      compileName name
-      let nameAddr := name.getHash
-      let recordPatch (root : UInt64) : CompileM Unit := do
-        if compiled.any (·.2.isSome) then
-          pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
-      match mutCtx.get? name with
-      | some recIdx =>
-        let index ← checkedTableIndex "mutual reference" recIdx
-        let root ← allocArenaNode (.ref nameAddr)
-        recordPatch root
-        pure (.recur index univIndices, root)
-      | none => do
-        let addr ← lookupConstAddr name
-        let refIdx ← internRefMeta addr
-        let root ← allocArenaNode (.ref nameAddr)
-        recordPatch root
-        pure (.ref refIdx univIndices, root)
-
-    | .app fn arg hash => do
-      let parts := Ix.AuxGen.decomposeApps (.app fn arg hash)
-      let (h, hRoot) ← compile parts.1
-        (Ix.AuxGen.decomposeApps_app_head_lt fn arg hash)
-      let mut acc := h
-      let mut accRoot := hRoot
-      for hmem : x in parts.2 do
-        let (a, aRoot) ← compile x
-          (Ix.AuxGen.decomposeApps_app_mem_lt fn arg hash hmem)
-        let root ← allocArenaNode (.app accRoot aRoot)
-        acc := .app acc a
-        accRoot := root
-      pure (acc, accRoot)
-
-    | .lam name ty body bi _ => do
-      compileName name
-      let nameAddr := name.getHash
-      let (t, tyRoot) ← compile ty (by simp; omega)
-      let (b, bodyRoot) ← compile body (by simp; omega)
-      let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
-      pure (.leanLam t b, root)
-
-    | .forallE name ty body bi _ => do
-      compileName name
-      let nameAddr := name.getHash
-      let (t, tyRoot) ← compile ty (by simp; omega)
-      let (b, bodyRoot) ← compile body (by simp; omega)
-      let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
-      pure (.leanAll t b, root)
-
-    | .letE name ty val body nonDep _ => do
-      compileName name
-      let nameAddr := name.getHash
-      let (t, tyRoot) ← compile ty (by simp; omega)
-      let (v, valRoot) ← compile val (by simp; omega)
-      let (b, bodyRoot) ← compile body (by simp; omega)
-      let root ← allocArenaNode (.letBinder nameAddr tyRoot valRoot bodyRoot)
-      pure (.leanLet nonDep t v b, root)
-
-    | .lit (.natVal n) _ => do
-      let bytes := ByteArray.mk (Nat.toBytesLE n)
-      let addr ← storeBlob bytes
-      let idx ← internRefMeta addr
-      let root ← allocArenaNode .leaf
-      pure (.nat idx, root)
-
-    | .lit (.strVal s) _ => do
-      let bytes := s.toUTF8
-      let addr ← storeBlob bytes
-      let idx ← internRefMeta addr
-      let root ← allocArenaNode .leaf
-      pure (.str idx, root)
-
-    | .proj typeName fieldIdx struct _ => do
-      let field ← checkedTableIndex "projection field" fieldIdx
-      compileName typeName
-      let typeAddr ← lookupConstAddr typeName
-      let typeRefIdx ← internRefMeta typeAddr
-      let structNameAddr := typeName.getHash
-      let (s, sRoot) ← compile struct (by simp; omega)
-      let root ← allocArenaNode (.prj structNameAddr sRoot)
-      pure (.prj typeRefIdx field s, root)
-
-    | .mdata kvData inner _ => do
-      if SemanticContract.hasMetadata kvData then
-        let contract ← match SemanticContract.read kvData with
-          | .ok contract => pure contract
-          | .error error => throw (.unsupportedExpr error)
-        let (value, root) ← compile inner (by simp; omega)
-        match contract.lower inner value with
-        | .ok value => return (value, root)
-        | .error error => throw (.unsupportedExpr error)
-      let kvmap ← compileKVMap kvData
-      let (innerResult, innerRoot) ← compile inner (by simp; omega)
-      let root ← allocArenaNode (.mdata #[kvmap] innerRoot)
-      pure (innerResult, root)
-
-    | .fvar _ _ => throw (.unsupportedExpr "free variable")
-    | .mvar _ _ => throw (.unsupportedExpr "metavariable")
-
-/-- The meta-mode compiler of a decompile record's source occurrence: the
-    term's expression cache, then the record's own entries
-    (`p3MetaCache`), then one step (`compileExprMetaStep`); a miss is
-    entered in the record's entries only. The same cache and arena
-    discipline as `compileExprNoSurgery` (Rust: `compile_expr` in meta mode,
-    with its inserts undone after the record). -/
-def compileExprMeta (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
-  let state ← getBlockState
-  if let some cached := state.exprCache.get? e then
-    return cached
-  if let some cached := state.p3MetaCache.get? e then
-    return cached
-  let (result, root) ← compileExprMetaStep e fun x _h => compileExprMeta x
-  modifyBlockState fun c =>
-    { c with p3MetaCache := c.p3MetaCache.insert e (result, root) }
-  pure (result, root)
-termination_by sizeOf e
-
-/-- Pass 3: compile the decompile records of the placeholders `ns` that the
-    current constant has not compiled yet, in order, each into the
-    constant's `metaSharing` with its arena root; returns the constant's
-    records. A placeholder without a source occurrence is an error naming
-    it. Rust `pass3_compile_records`.
-
-    The constant's first record since its metadata take restarts its records
-    and extension references (Rust clears both at the take): that is exactly
-    when `metaSharing` (`surgerySharing`) is empty, because the take empties
-    it and, in a block with sources, only a record fills it (the surgery
-    never runs there: `compileExpr`). So a constant compiled twice in one
-    block state never reuses the first compile's `(s, m)`. -/
-def compileRecords (ns : Array Nat) : CompileM (Std.HashMap Nat (Nat × UInt64)) := do
-  let sources := (← getCompileEnv).p3Sources
-  let current : Ix.Compile.ExactKey.ExactName := (← getBlockEnv).current
-  if (← getBlockState).surgerySharing.isEmpty then
-    modifyBlockState fun c => { c with
-      p3Records := c.p3Records.erase current
-      p3MetaRefs := c.p3MetaRefs.erase current }
-  let mut records := ((← getBlockState).p3Records.get? current).getD {}
-  for n in ns do
-    if records.contains n then continue
-    let some source := sources.get? n
-      | throw (.invalidMutualBlock s!"Pass 3: no source occurrence for call-site record {n}")
-    let (compiled, root) ← compileExprMeta source
-    let slot := (← getBlockState).surgerySharing.size
-    modifyBlockState fun c => { c with
-      surgerySharing := c.surgerySharing.push compiled
-      p3MetaCache := {} }
-    records := records.insert n (slot, root)
-  modifyBlockState fun c => { c with p3Records := c.p3Records.insert current records }
-  return records
-
-/-- Pass 3: `e` with every placeholder `[(_ix.inline, n)]` replaced by its
-    record `[(_ix.inline, s), (_ix.inline_meta, m)]` (`records`), each
-    distinct subterm once; a subterm without a placeholder is returned as
-    given. -/
-def substRecords (records : Std.HashMap Nat (Nat × UInt64)) (e : Expr) : Expr :=
-  ((go e).run' {}).1
-where
-  /-- The record of a placeholder's metadata, when it is one. -/
-  record? (kvs : Array (Name × Ix.DataValue)) : Option (Array (Name × Ix.DataValue)) :=
-    match kvs with
-    | #[(k, .ofNat n)] =>
-      if k == Ix.Compile.Pass.inlineKey then
-        (records.get? n).map fun (s, m) =>
-          #[(Ix.Compile.Pass.inlineKey, .ofNat s),
-            (Ix.Compile.Pass.inlineMetaKey, .ofNat m.toNat)]
-      else none
-    | _ => none
-  /-- The substituted term and whether it differs from `e`. -/
-  go (e : Expr) : StateM (Std.HashMap Ix.Compile.ExactKey.ExprKey (Expr × Bool)) (Expr × Bool) := do
-    if let some r := (← get).get? e then return r
-    let r : Expr × Bool ← match e with
-      | .mdata kvs inner _ => do
-        let (inner', c) ← go inner
-        match record? kvs with
-        | some kvs' => pure (Expr.mkMData kvs' inner', true)
-        | none => pure (if c then (Expr.mkMData kvs inner', true) else (e, false))
-      | .app f a _ => do
-        let (f', cf) ← go f
-        let (a', ca) ← go a
-        pure (if cf || ca then (Expr.mkApp f' a', true) else (e, false))
-      | .lam n t b bi _ => do
-        let (t', ct) ← go t
-        let (b', cb) ← go b
-        pure (if ct || cb then (Expr.mkLam n t' b' bi, true) else (e, false))
-      | .forallE n t b bi _ => do
-        let (t', ct) ← go t
-        let (b', cb) ← go b
-        pure (if ct || cb then (Expr.mkForallE n t' b' bi, true) else (e, false))
-      | .letE n t v b nd _ => do
-        let (t', ct) ← go t
-        let (v', cv) ← go v
-        let (b', cb) ← go b
-        pure (if ct || cv || cb then (Expr.mkLetE n t' v' b' nd, true) else (e, false))
-      | .proj s i x _ => do
-        let (x', c) ← go x
-        pure (if c then (Expr.mkProj s i x', true) else (e, false))
-      | e => pure (e, false)
-    modify fun m => m.insert e r
-    return r
-
-/-- Pass 3's expression compiler: the decompile records of `e`'s
-    placeholders first (`compileRecords`), then `e` with its placeholders
-    replaced by their records, by the ordinary compiler. An expression
-    without a placeholder compiles exactly as `compileExprNoSurgery` compiles
-    it. A placeholder left without a record is refused, never emitted as a
-    lone `_ix.inline` key (Rust's KV-map arm, same text). -/
-def compileExprWithRecords (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
-  let ns := p3Placeholders e
-  if ns.isEmpty then
-    compileExprNoSurgery e
-  else
-    let records ← compileRecords ns
-    for n in ns do
-      unless records.contains n do
-        throw (.invalidMutualBlock s!"Pass 3: call-site record {n} was not compiled")
-    compileExprNoSurgery (substRecords records e)
-
 /-- Compile a constant reference: a mutual reference into the block, or an
     external reference through the refs table, with its universe arguments
     and its `Ref` metadata. The ordinary step's `.const` arm is this
@@ -1420,18 +991,10 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
     recordPatch root
     pure (.ref refIdx univIndices, root)
 
-/-- Production expression compiler. A block without Pass 3 decompile
-    records (`surgeryFree`: `p3Sources` empty) uses the total ordinary
-    implementation, which the ordinary refinement proofs read through
-    kernel-visible equations. A block with records compiles with
-    `compileExprWithRecords`: the records first, then the term by the
-    ordinary compiler. -/
-def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
-  let env ← getCompileEnv
-  if env.surgeryFree then
-    compileExprNoSurgery e
-  else
-    compileExprWithRecords e
+/-- Production expression compiler: the total ordinary implementation, which
+    the ordinary refinement proofs read through kernel-visible equations. -/
+def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) :=
+  compileExprNoSurgery e
 
 /-! ## Table Preseeding
 

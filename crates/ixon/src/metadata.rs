@@ -179,10 +179,11 @@ pub struct UnivPatch {
 ///
 /// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) extend the
 /// index spaces of the primary `Constant` tables (for a projection, the
-/// tables of its `Muts` block). They are used by Pass 3's decompile records
-/// (`_ix.inline`): a record's expression uses `Ref(idx)` and universe indices
-/// in the extended spaces, and `Share(idx)` as specified on `meta_sharing`.
-/// `univ_patches` holds original level spellings (canonicity §10.6).
+/// tables of its `Muts` block): an expression of `meta_sharing` uses
+/// `Ref(idx)` and universe indices in the extended spaces, and `Share(idx)`
+/// as specified on `meta_sharing`. The compilers write `meta_sharing` and
+/// `meta_refs` empty. `univ_patches` holds original level spellings
+/// (canonicity §10.6).
 ///
 /// At decompile time `meta_refs`/`meta_univs` are appended to the block
 /// cache's primary tables, creating contiguous index spaces; `meta_sharing`
@@ -190,9 +191,7 @@ pub struct UnivPatch {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantMeta {
   pub info: ConstantMetaInfo,
-  /// Compiled Ixon expressions of Pass 3's decompile records (`_ix.inline`),
-  /// indexed DIRECTLY (no offset). (The retired call-site metadata indexed
-  /// its collapsed arguments here too.)
+  /// Per-constant metadata expressions, indexed DIRECTLY (no offset).
   ///
   /// Extended index space for `Share` (a reader rule; the bytes are
   /// unchanged). Let the primary table `sharing` have `p` entries and this

@@ -95,9 +95,9 @@ def saveRun (label : String) (bytes : ByteArray) (failures : List (String × Str
 /-- One leg's result: (label, bytes, environment, block failures as (name, message)). -/
 abbrev Declines := Array (String × String)
 
-/-- Report order is not observable; each name's final cause is. -/
-def declinesOf (cenv : Ix.CompileM.CompileEnv) : Declines :=
-  (cenv.p3NonCanonical.toArray.map fun (n, cause) => (n.pretty, cause)).qsort (·.1 < ·.1)
+/-- The Lean compiler compiles Lean's declarations as given and records no
+    declines, on every leg. -/
+def declinesOf (_cenv : Ix.CompileM.CompileEnv) : Declines := #[]
 
 abbrev LegResult := String × ByteArray × Ixon.Env × List (String × String) × Declines
 

@@ -2,15 +2,13 @@ import Ix.Cert.Resolution
 import Ix.Cert.Claims
 import Ix.Cert.Condense
 import Ix.Cert.Closure
-import Ix.Cert.Unchanged
 
-/-! # `HookFree` discharged (Route A, B9b, `HookFree`'s discharge, step 4)
+/-! # The claims of a closure
 
 `Ix.Cert.Resolution.compileReport_claim` gives each resolved name outside the
-aux map as a primary claim of a block compile, the block compile's under
-`HookFree`. This file discharges `HookFree` for every such name of a closure
-`sub` that avoids the changed set and has no failure
-(`compileReport_hookFree`):
+aux map as a primary claim of a block compile (`BlockCompiled`). This file
+places the block in the closure, for every such name of a closure `sub` that
+has no failure (`compileReport_owned`):
 
 * a claim of a promoted block's cross-SCC subset is refuted: its name, or its
   constructor's inductive, is one of the subset's unresolved names
@@ -21,19 +19,9 @@ aux map as a primary claim of a block compile, the block compile's under
 * a compiled block's claim is its key or a projection name, owned by a member
   (`Claims.runBlock_owned`, the driver's view of the input carrying its names,
   `namedEnv_view`), so the block is in the closure (`owned_sub`,
-  `Condense.condense_scc`, `Condense.closure_path`);
-* at a block of the closure the hooks are identities (`hookFree_of_sub`): no
-  reference of the block holding its key, and no member, is a head of the
-  snapshot (`not_head`: a head the final environment keeps is a regenerated
-  input name in the changed set, the eleventh check; one it withdrew is a
-  recorded failure, an input name by the fourteenth; either is refuted for a
-  name the closure reaches), and no member is in the clique table and no
-  reference is one of Lean's encoding constants of a clique (the changed
-  set's `clique` and `caller` entries, `Unchanged.clique` and
-  `Unchanged.cliqueCaller`, against the tables the fold keeps,
-  `Resolution.reach_cliques`), so the clique step is the identity. -/
+  `Condense.condense_scc`, `Condense.closure_path`). -/
 
-namespace Ix.Cert.HookFree
+namespace Ix.Cert.ClosureClaims
 
 open Ix Ix.CompileM Ix.Cert.Resolution Ix.Cert.Condense
 open Ix.Compile.ExactKey (ExactName)
@@ -65,20 +53,20 @@ theorem foldl_insert_mem {L : Array Ix.Name} {x : Ix.Name}
 /-- **A promoted block's cross-SCC subset is its unresolved names** `cn`, under
 one of them. -/
 theorem auxBlockOutcome_cross_names {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
-    {clo : Ix.Name} {r : BlockResult} {c : BlockState} {p : Ix.Compile.Pass.Published}
+    {clo : Ix.Name} {r : BlockResult} {c : BlockState}
     {cn : Array Ix.Name} {cf : Option (Array Ix.Name × String)} {im : Option String}
     {na : Option (BlockResult × BlockState)} {nf : Option String}
-    (h : auxBlockOutcome cenv lo all = .promoted (some (clo, r, c, p)) cn cf im na nf) :
+    (h : auxBlockOutcome cenv lo all = .promoted (some (clo, r, c)) cn cf im na nf) :
     ∃ layout : Option Ixon.AuxLayout, clo ∈ cn ∧
-      runBlock cenv (cn.foldl (fun s n => s.insert n) {}) clo = .ok (r, c, layout, p) := by
+      runBlock cenv (cn.foldl (fun s n => s.insert n) {}) clo = .ok (r, c, layout) := by
   unfold auxBlockOutcome at h
   simp only [Id.run] at h
   split at h
   · revert h
     refine loop_bind_mem _ _ _ _ (fun _ : Array Ix.Name => True)
-      (fun o : AuxBlockOutcome => o = .promoted (some (clo, r, c, p)) cn cf im na nf →
+      (fun o : AuxBlockOutcome => o = .promoted (some (clo, r, c)) cn cf im na nf →
         ∃ layout : Option Ixon.AuxLayout, clo ∈ cn ∧
-          runBlock cenv (cn.foldl (fun s n => s.insert n) {}) clo = .ok (r, c, layout, p))
+          runBlock cenv (cn.foldl (fun s n => s.insert n) {}) clo = .ok (r, c, layout))
       trivial (fun _ _ _ _ => trivial) ?_
     intro L _ h'
     repeat' (first | (focus (cases h'; done)) | split at h')
@@ -96,7 +84,7 @@ def ExtraOrFail (c : CompileEnv) (y : Ix.Name) : Prop :=
 theorem ExtraOrFail.mono {c c' : CompileEnv} (m : Mono c c') {y : Ix.Name} (h : ExtraOrFail c y) :
     ExtraOrFail c' y := by
   rcases h with h | h
-  · exact m.2.2 y h
+  · exact m.2 y h
   · exact .inr (m.1 y h)
 
 /-- A loop over names whose every step yields, keeps a property of each name
@@ -191,11 +179,11 @@ cross-SCC subset an extra name or a failure**: a conflicting subset records
 them as failures, a merged one adds them to the extra names, and the
 promotion's tail moves them as `Mono` says. -/
 theorem applyAuxBlockOutcome_cross_extras (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
-    (clo : Ix.Name) (result : BlockResult) (cache : BlockState) (published : Ix.Compile.Pass.Published)
+    (clo : Ix.Name) (result : BlockResult) (cache : BlockState)
     (cn : Array Ix.Name) (cf : Option (Array Ix.Name × String)) (im : Option String)
     (na : Option (BlockResult × BlockState)) (nf : Option String) {y : Ix.Name} (hy : y ∈ cn) :
     ExtraOrFail (applyAuxBlockOutcome acc lo all
-      (.promoted (some (clo, result, cache, published)) cn cf im na nf)).1.cenv y := by
+      (.promoted (some (clo, result, cache)) cn cf im na nf)).1.cenv y := by
   unfold applyAuxBlockOutcome
   simp only [Id.run]
   rcases cf with _ | ⟨names, msg⟩ <;> dsimp only <;> split
@@ -273,47 +261,6 @@ theorem claim_name {k n : Ix.Name} {r : BlockResult} {a : Address} {b : ByteArra
     obtain ⟨row, hrow, he⟩ := Array.mem_map.1 h
     exact ⟨row, hrow, (Prod.mk.inj he).1⟩
 
-/-- An `Id` loop that stops with `some false` at the first name failing `q`
-returns `none`, every name passing, or `some false`. -/
-theorem forIn_all_pass (q : Ix.Name → Bool) :
-    ∀ (l : List Ix.Name),
-      ((forIn (m := Id) l ((none : Option Bool), ()) (fun n _ =>
-        if q n = true then pure (ForInStep.done (some false, ())) else pure (ForInStep.yield (none, ())))).1 = none ∧
-          ∀ a ∈ l, q a = false) ∨
-      (forIn (m := Id) l ((none : Option Bool), ()) (fun n _ =>
-        if q n = true then pure (ForInStep.done (some false, ())) else pure (ForInStep.yield (none, ())))).1 = some false
-  | [] => .inl ⟨rfl, fun _ h => nomatch h⟩
-  | a :: l => by
-    rw [List.forIn_cons]
-    cases hq : q a
-    · simp only [Bool.false_eq_true, ↓reduceIte, pure, bind]
-      rcases forIn_all_pass q l with ⟨h, hl⟩ | h
-      · refine .inl ⟨h, fun b hb => ?_⟩
-        rcases List.mem_cons.mp hb with rfl | hb
-        · exact hq
-        · exact hl b hb
-      · exact .inr h
-    · simp only [↓reduceIte, pure, bind]
-      exact .inr trivial
-
-/-- An image block's members are all heads. -/
-theorem isImageBlock_heads {cenv : CompileEnv} {all : Ix.Set Ix.Name}
-    (h : Ix.Compile.Pass.isImageBlock cenv all = true) : ∀ a ∈ all.toList, cenv.p3Heads.contains a = true := by
-  unfold Ix.Compile.Pass.isImageBlock at h
-  simp only [Id.run] at h
-  split at h
-  · cases h
-  · rw [Std.HashSet.forIn_eq_forIn_toList] at h
-    rcases forIn_all_pass (fun n => !cenv.p3Heads.contains n) all.toList with ⟨-, hall⟩ | h0
-    · intro a ha
-      simpa using hall a ha
-    · generalize forIn (m := Id) all.toList _ _ = r at h h0
-      obtain ⟨r1, r2⟩ := r
-      simp only at h0
-      subst h0
-      cases h
-
-
 /-! ## The driver's environment -/
 
 theorem view_get (E : Ix.Environment) (x : Ix.Name) :
@@ -335,147 +282,6 @@ theorem namedEnv_view {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
   obtain ⟨k, hxk, hk⟩ := hx
   rw [inputsNamed h k ci hk]
   exact BEq.symm hxk
-
-/-! ## What the final environment says -/
-
-/-- What `compileReport`'s checks say of the driver's final environment
-`cenv`: each head is an input name in the changed set (the eleventh check),
-and each recorded failure is an input name (the fourteenth) and reported. -/
-structure Final (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) (cenv : CompileEnv) : Prop where
-  changed : ∀ (n : ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k →
-    (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
-      ixe).contains n = true
-  headInput : ∀ (n : ExactName) (k : Ix.Name), cenv.p3Heads.get? n = some k → (env.consts.get? n).isSome = true
-  failInput : ∀ x : Ix.Name, cenv.ungrounded.contains x = true → (env.consts.get? x).isSome = true
-  failed : ∀ x : Ix.Name, cenv.ungrounded.contains x = true → failures.failed x = true
-
-/-- A key an `ExactName` map holds has a value (typed: `Ix.Name` arguments
-elaborate as `ExactName`). -/
-theorem exact_get_of_contains {α : Type} {m : Std.HashMap ExactName α} {x : ExactName}
-    (h : m.contains x = true) : ∃ k, m.get? x = some k := by
-  rw [Std.HashMap.contains_eq_isSome_getElem?] at h
-  rw [Std.HashMap.get?_eq_getElem?]
-  exact Option.isSome_iff_exists.mp h
-
-/-- **No name the closure reaches is a head** of a state the final
-environment follows. -/
-theorem not_head {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {roots : List Ix.Name}
-    {sub : Ix.Environment} {cenv : CompileEnv} (hf : Final env ixe failures cenv)
-    (hcl : IsClosure env roots sub) (nofail : NoFailure failures sub)
-    (avoids : (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
-      ixe).Avoids sub) {c : CompileEnv} (hm : Mono c cenv)
-    {x : Ix.Name} (hx : Reaches env roots x) : c.p3Heads.contains x = false := by
-  cases hc : c.p3Heads.contains x with
-  | false => rfl
-  | true =>
-    exfalso
-    rcases hm.2.1 x hc with hh | hu
-    · obtain ⟨k, hk⟩ := exact_get_of_contains hh
-      obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp (sub_of_reaches hcl hx (hf.headInput x k hk))
-      have := avoids x ci hci
-      rw [hf.changed x k hk] at this
-      cases this
-    · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp (sub_of_reaches hcl hx (hf.failInput x hu))
-      have := nofail x ci hci
-      rw [hf.failed x hu] at this
-      cases this
-
-
-/-- An entry of the ground graph read with a default: an edge of the input. -/
-theorem ground_getD_dependsOn {env : Ix.Environment} {a r : Ix.Name}
-    (h : ((groundSplit { consts := env.consts }).1.getD a {}).contains r = true) : DependsOn env a r := by
-  rw [Std.HashMap.getD_eq_getD_getElem?, ← Std.HashMap.get?_eq_getElem?] at h
-  cases hg : (groundSplit { consts := env.consts }).1.get? a with
-  | none => rw [hg] at h; simp at h
-  | some rs => rw [hg] at h; exact groundSplit_dependsOn (env := { consts := env.consts }) hg h
-
-/-- The clique tables the changed set reads are the ones the driver installs:
-`scheduleCliques` over the driver's view of the input and the compile's
-condensation. -/
-theorem cliqueTables_eq (env : Ix.Environment) :
-    Ix.Compile.ChangedSet.cliqueTables { consts := env.consts } (compileBlocks env) =
-      (Ix.Compile.Pass.Clique.scheduleCliques
-        { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) }
-        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)).2 := by
-  unfold Ix.Compile.ChangedSet.cliqueTables compileBlocks
-  rfl
-
-/-- **`HookFree` at a block of the closure**: no reference of the block
-holding its key is a head (each is reached from the closure), and no member
-is (so it is not an image block); no member is in the clique table, and no
-reference is one of Lean's encoding constants of a clique (the changed set's
-`clique` and `caller` entries, against the tables the fold keeps), so the
-clique step is the identity. -/
-theorem hookFree_of_sub {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures} {roots : List Ix.Name}
-    {sub : Ix.Environment} {cenv : CompileEnv} (hf : Final env ixe failures cenv)
-    (hcl : IsClosure env roots sub) (nofail : NoFailure failures sub)
-    (avoids : (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
-      ixe).Avoids sub) {cenv₀ : CompileEnv} {sched : FoldSchedule}
-    {snap : DriverAcc} {rep : Ix.Name} {all : Ix.Set Ix.Name}
-    (hsnap : Reach (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
-      (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc snap)
-    (htab : ((FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.p3Cliques,
-        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.p3CliqueRoots) =
-      (Ix.Compile.Pass.Clique.scheduleCliques
-        { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) }
-        (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)).2)
-    (hm : Mono snap.cenv cenv)
-    (hall : (Ix.CondenseM.run (groundSplit { consts := env.consts }).1).blocks.get? rep = some all)
-    (hsub : ∀ x, all.contains x = true → InSub sub x) : HookFree snap.cenv all (blockKey rep all) := by
-  have hkey := blockKey_mem (lo := rep) (condense_nonempty hall)
-  obtain ⟨rs, hrs, -⟩ := condense_blockRefs hall
-  obtain ⟨refs, rep', all', hinit, hall', hrefs', hkey'⟩ :=
-    init_p3BlockRefs (cenv := cenv₀) (sched := sched) hall hrs fun _ _ hb => condense_nonempty hb
-  have hsub' : ∀ x, all'.contains x = true → InSub sub x := fun x hx =>
-    closure_path hcl (condense_scc hall' hkey' hx) (hsub _ hkey)
-  have hun : ∀ x, InSub sub x →
-      Ix.Cert.Unchanged.Unchanged { consts := env.consts } (compileBlocks env) (compileTable env) ixe x :=
-    fun x hx => by
-      obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hx
-      exact Ix.Cert.Unchanged.avoids_unchanged avoids hci
-  have tabs : snap.cenv.p3Cliques = (Ix.Compile.ChangedSet.cliqueTables { consts := env.consts } (compileBlocks env)).1 ∧
-      snap.cenv.p3CliqueRoots =
-        (Ix.Compile.ChangedSet.cliqueTables { consts := env.consts } (compileBlocks env)).2 := by
-    rw [(reach_cliques hsnap).1, (reach_cliques hsnap).2, cliqueTables_eq, ← htab]
-    exact ⟨rfl, rfl⟩
-  refine ⟨Ix.Cert.PassHooks.prepareBlock_unreferenced _ _ _ refs (by rw [reach_p3BlockRefs hsnap]; exact hinit)
-    fun r hr => ?_, ?_, Ix.Cert.PassHooks.cliqueStep_inert _ _ _ ?_⟩
-  · obtain ⟨rs', hrs'', hsplit⟩ := condense_blockRefs hall'
-    rw [hrefs'] at hrs''
-    cases hrs''
-    obtain ⟨a, ha, har⟩ := hsplit r (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_of_mem_toList hr))
-    exact not_head hf hcl nofail avoids hm (.step (reaches_of_sub hcl (hsub' a ha)) (ground_getD_dependsOn har))
-  · cases hi : Ix.Compile.Pass.isImageBlock snap.cenv all with
-    | false => rfl
-    | true =>
-      exfalso
-      have hl : all.toList.contains (blockKey rep all) = true := by
-        rw [Std.HashSet.contains_toList]; exact hkey
-      obtain ⟨a, ha, -⟩ := List.contains_iff_exists_mem_beq.mp hl
-      have hin := hsub a (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_of_mem_toList ha))
-      have := not_head hf hcl nofail avoids hm (reaches_of_sub hcl hin)
-      rw [isImageBlock_heads hi a ha] at this
-      cases this
-  · -- no member in the clique table (`Unchanged.clique`)
-    have hmem : all.toList.any snap.cenv.p3Cliques.contains = false := by
-      rw [List.any_eq_false]
-      intro x hx hc
-      have := (hun x (hsub x (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_of_mem_toList hx)))).clique
-      rw [← tabs.1, hc] at this
-      cases this
-    -- no reference that is an encoding constant (`Unchanged.cliqueCaller`, at the key)
-    have hrefs : ((snap.cenv.p3BlockRefs.getD (blockKey rep all) {}).toList.any fun r =>
-        (Ix.Compile.Pass.Clique.encodingOwner? snap.cenv.p3CliqueRoots r).isSome) = false := by
-      rw [List.any_eq_false]
-      intro r hr hsome
-      rw [reach_p3BlockRefs hsnap, Std.HashMap.getD_eq_getD_getElem?, ← Std.HashMap.get?_eq_getElem?,
-        hinit] at hr
-      have := (hun _ (hsub _ hkey)).cliqueCaller rep' all' hall' hkey' refs hrefs' r hr
-      rw [tabs.2, this] at hsome
-      cases hsome
-    unfold Ix.Compile.Pass.cliqueInert
-    rw [hmem, hrefs]
-    simp
 
 /-- **A cross-SCC claim of the closure is refuted** by the tenth check: its
 name, or its constructor's inductive, is an extra name or a failure. -/
@@ -513,40 +319,15 @@ theorem cross_refuted {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failur
 
 
 
-/-! ## `HookFree` discharged -/
-
-/-- **What the checks say of the final environment** (`Final`): the eleventh
-check (`headsChanged`, `foreignHead_regenerated`, `regeneratedNames_spec`),
-the fourteenth (`failuresInput`) and `compileUnchecked_ungrounded`. -/
-theorem final_of_report {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
-    (h : compileReport env = .ok (ixe, failures)) {cenv : CompileEnv}
-    (hu : compileUnchecked env = .ok (ixe, failures, cenv)) : Final env ixe failures cenv := by
-  obtain ⟨c₁, hu₁, hch⟩ := headsChanged h
-  obtain ⟨c₂, hu₂, hin⟩ := failuresInput h
-  obtain ⟨c₃, hu₃, hc⟩ := compileReport_ok h
-  rw [hu] at hu₁ hu₂ hu₃
-  cases hu₁
-  cases hu₂
-  cases hu₃
-  refine ⟨hch, fun n k hk => ?_, hin, fun x hx => compileUnchecked_ungrounded hu hx⟩
-  obtain ⟨_, -, hd⟩ :=
-    regeneratedNames_spec (foreignHead_regenerated (checkReport_ok hc).2.2.2.2.2.2.2.2.2.2.1 n k hk)
-  rw [Bool.and_eq_true, Bool.and_eq_true] at hd
-  exact hd.1.2
-
-/-- **B9b with `HookFree` discharged**: when `compileReport` returns, every
-resolved name `n ↦ a` outside the final aux map that a closure `sub` holds,
-where `sub` avoids the changed set and has no failure, is published at `a`
-and is a primary claim of `runBlock` on a whole condensation block of `sub`
-under its key, against a state of the fold's own run (`OnRun`) that the final environment
-follows; its bytes `b` are stored at `a`; Pass 3's hooks are identities at
-that compile (`HookFree`), and the claim is the block compile's
-(`BlockCompiled`). -/
-theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
+/-- **The claims of a closure**: when `compileReport` returns, every resolved name
+`n ↦ a` outside the final aux map that a closure `sub` with no failure holds is
+published at `a` and is a primary claim of `runBlock` on a whole condensation block
+of `sub` under its key, against a state of the fold's own run (`OnRun`) that the
+final environment follows; its bytes `b` are stored at `a`, and the claim is the
+block compile's (`BlockCompiled`). -/
+theorem compileReport_owned {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {roots : List Ix.Name} {sub : Ix.Environment} (h : compileReport env = .ok (ixe, failures))
-    (hcl : IsClosure env roots sub) (nofail : NoFailure failures sub)
-    (avoids : (Ix.Compile.ChangedSet.ofCompile { consts := env.consts } (compileBlocks env) (compileTable env)
-      ixe).Avoids sub) :
+    (hcl : IsClosure env roots sub) (nofail : NoFailure failures sub) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
       compileUnchecked env = .ok (ixe, failures, cenv) ∧
       blocks = Ix.CondenseM.run (groundSplit { consts := env.consts }).1 ∧
@@ -555,16 +336,15 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
         cenv.auxNameToAddr.contains n = false → (sub.consts.get? n).isSome = true →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all : Ix.Set Ix.Name) (r : BlockResult) (c : BlockState)
-          (layout : Option Ixon.AuxLayout) (p : Ix.Compile.Pass.Published) (b : ByteArray),
+          (layout : Option Ixon.AuxLayout) (b : ByteArray),
           OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧ blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧ (∀ x, all.contains x = true → (sub.consts.get? x).isSome = true) ∧
-          runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout, p) ∧
+          runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
-          HookFree snap.cenv all (blockKey rep all) ∧ BlockCompiled snap.cenv all (blockKey rep all) n a b := by
+          BlockCompiled snap.cenv all (blockKey rep all) n a b := by
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
-  have hf := final_of_report h hu
-  obtain ⟨bytes, cenv₀, sched, -, hrun, henv, htab, prov⟩ := compileUnchecked_provenance hu
+  obtain ⟨bytes, cenv₀, sched, -, hrun, henv, prov⟩ := compileUnchecked_provenance hu
   refine ⟨cenv, _, cenv₀, sched, hu, rfl, hrun, fun n a hn hnaux hs => ⟨pub n a hn, ?_⟩⟩
   rcases prov n a hn with hx | ⟨b, hc, hb⟩
   · rw [hnaux] at hx; cases hx
@@ -578,7 +358,7 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
   have hfinal : Mono snap.cenv cenv := hm.trans ((applyAuxBlockOutcome_mono _ _ _ _).trans hpost)
   generalize ho : auxBlockOutcome snap.cenv (blockKey rep all) all = o at hclaim hpost
   cases o with
-  | compiled r c p =>
+  | compiled r c =>
     obtain ⟨layout, hr⟩ := auxBlockOutcome_compiled ho
     obtain ⟨m, hmA, hms⟩ : ∃ m, all.contains m = true ∧ InSub sub m := by
       rcases claim_name hclaim with e | ⟨row, hrow, e⟩
@@ -588,20 +368,19 @@ theorem compileReport_hookFree {env : Ix.Environment} {ixe : Ixon.Env} {failures
         exact ⟨m, hm, hms⟩
     have hsub : ∀ x, all.contains x = true → InSub sub x := fun x hx =>
       closure_path hcl (condense_scc hall hmA hx) hms
-    have hfree := hookFree_of_sub hf hcl nofail avoids hsnap htab hfinal hall hsub
-    exact ⟨snap, rep, all, r, c, layout, p, b, hrun_snap, hall, hfinal, hsub, hr, hclaim, hb, hfree,
-      hookFree_compiled hfree hr hclaim⟩
+    exact ⟨snap, rep, all, r, c, layout, b, hrun_snap, hall, hfinal, hsub, hr, hclaim, hb,
+      runBlock_compiled hr hclaim⟩
   | promoted cs cn cf im na nf =>
-    rcases cs with _ | ⟨clo, r, c, p⟩
+    rcases cs with _ | ⟨clo, r, c⟩
     · exact False.elim hclaim
     · exfalso
       obtain ⟨layout, hclo, hr⟩ := auxBlockOutcome_cross_names ho
       have marks : ∀ y ∈ cn, ExtraOrFail cenv y := fun y hy =>
-        (applyAuxBlockOutcome_cross_extras pre _ all clo r c p cn cf im na nf hy).mono hpost
+        (applyAuxBlockOutcome_cross_extras pre _ all clo r c cn cf im na nf hy).mono hpost
       refine cross_refuted h hu hcl nofail hE marks hn hnaux hs ?_
       rcases claim_name hclaim with e | ⟨row, hrow, e⟩
       · exact .inl (e ▸ hclo)
       · exact .inr (e ▸ Ix.Cert.Claims.runBlock_owned hnamed hr row hrow)
   | failed msg => exact False.elim hclaim
 
-end Ix.Cert.HookFree
+end Ix.Cert.ClosureClaims

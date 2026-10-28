@@ -263,11 +263,6 @@ def rawEnvEq (a b : RawEnv) : Bool :=
   a.blobs.size == b.blobs.size &&
   a.comms.size == b.comms.size &&
   a.names.size == b.names.size &&
-  a.originals.size == b.originals.size &&
-  a.originals.all (fun r => b.originals.any (fun q => r.addr == q.addr && r.bytes == q.bytes)) &&
-  a.originalHintOverrides.size == b.originalHintOverrides.size &&
-  a.originalHintOverrides.all (fun (n, h) =>
-    b.originalHintOverrides.any (fun (m, k) => Ix.Name.beqRaw n m && h == k)) &&
   -- Size equality + one-directional all/any is sufficient when addresses are unique:
   -- if sizes match and every element in 'a' has a match in 'b', then 'b' cannot
   -- have extra elements (since sizes are equal and addresses uniquely identify items).
@@ -307,17 +302,6 @@ def rawEnvTests : TestSeq :=
     blobs := #[testRawBlob],
     comms := #[testRawComm]
   }
-  let withOriginals := { withData with
-    originals := #[{ addr := testAddr, bytes := ByteArray.mk #[0xff, 0x00, 0x01] }]
-    originalHintOverrides := #[(testName, some .opaque),
-      (Ix.Name.mkStr testName "regular", some (.regular 37)),
-      (Ix.Name.mkStr testName "cleared", none)] }
-  let isolated := { empty with originals := withOriginals.originals }
-  test "RawEnv originals preserve raw bytes and exact optional hints"
-    (rawEnvEq (roundtripRawEnv withOriginals) withOriginals) ++
-  test "RawEnv originals stay separate and preserve unparseable bytes"
-    ((isolated.toEnv.getConst? testAddr).isNone &&
-      isolated.toEnv.toRawEnv.originals == isolated.originals) ++
   test "RawEnv empty" (rawEnvEq (roundtripRawEnv empty) empty) ++
   test "RawEnv with data" (rawEnvEq (roundtripRawEnv withData) withData)
 
@@ -364,45 +348,17 @@ def envDiffTests : TestSeq :=
   let runDiff (a b : Env) (compareMeta : Bool := false) :
       Option Ixon.EnvDiff :=
     (Ixon.rsDiffEnvs (serEnv! a) (serEnv! b) compareMeta).toOption
-  (TestSeq.individualIO "EnvDiff: original storage slots, modes and CLI" none (do
-    let (a, b, oa, ob, ba, bb) ← IO.lazyPure fun _ => Id.run do
-      let ca := mkConst (.var 11)
-      let cb := mkConst (.var 300)
-      let ba := serConstant ca
-      let bb := serConstant cb
-      let oa := Address.blake3 ba
-      let ob := Address.blake3 bb
-      let mut base := envBase
-      for name in #[fooName, barName] do
-        base := { base with names := RawEnv.addNameComponents base.names name }
-        base := base.registerName name { addr := addrA, original := some (addrA, .empty) }
-      let a := { base with
-        originals := ({} : Std.HashMap _ _).insert oa (.ofConstant ca)
-        originalHintOverrides := ({} : Std.HashMap _ _).insert barName (some (.regular 1)) }
-      let b := { base with
-        originals := ({} : Std.HashMap _ _).insert ob (.ofConstant cb)
-        originalHintOverrides := (({} : Std.HashMap _ _).insert barName (some (.regular 2))).insert fooName none }
-      return (a, b, oa, ob, ba, bb)
-    let slots := (runDiff a b true).any fun d => !d.isEmpty &&
-      d.originalsOnlyA == #[oa] && d.originalsOnlyB == #[ob] && d.originalsChanged.isEmpty &&
-      d.originalHintsChanged == #[("bar", "regular(1)", "regular(2)"), ("foo", "absent", "none")] &&
-      d.statsA.consts == 1 && d.statsA.named == 2 && d.statsA.originals == 1 &&
-      d.statsA.originalBytes == ba.size.toUInt64 && d.statsA.originalHintOverrides == 1 &&
-      d.statsB.originalBytes == bb.size.toUInt64 && d.statsB.originalHintOverrides == 2
-    let anon := (runDiff a b).any fun d => d.isEmpty && d.statsA.originals == 1 &&
-      d.statsB.originalHintOverrides == 2
+  (TestSeq.individualIO "EnvDiff: CLI exit codes" none (do
     let dir ← IO.FS.createTempDir
     let pa := dir / "a.ixe"
     let pb := dir / "b.ixe"
-    IO.FS.writeBinFile pa (serEnv! a)
-    IO.FS.writeBinFile pb (serEnv! b)
-    let cliAnon ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pb.toString, "--anon"] }
-    let cliMeta ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pb.toString, "--meta"] }
+    IO.FS.writeBinFile pa (serEnv! envBase)
+    IO.FS.writeBinFile pb (serEnv! envValueChanged)
+    let same ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pa.toString, "--meta"] }
+    let differ ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pb.toString, "--anon"] }
     IO.FS.removeDirAll dir
-    let ok := slots && anon && cliAnon.exitCode == 0 && cliMeta.exitCode == 1 &&
-      cliAnon.stdout.contains "originals (" && cliMeta.stdout.contains "original hints changed: 2" &&
-      cliMeta.stdout.contains "absent → none"
-    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"original diff slots/modes: slots={slots}, anon={anon}; CLI={cliAnon.exitCode}/{cliMeta.exitCode}")) .done) ++
+    let ok := same.exitCode == 0 && same.stdout.contains "identical" && differ.exitCode == 1
+    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"CLI exits {same.exitCode}/{differ.exitCode}")) .done) ++
   test "EnvDiff: self-diff empty (anon)"
     ((runDiff envBase envBase).any (·.isEmpty)) ++
   test "EnvDiff: self-diff empty (meta)"

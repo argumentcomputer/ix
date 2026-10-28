@@ -14,8 +14,7 @@
 
   The two definitions are `Ix.CompileM.precompileAuxGenPrereqs` and
   `Ix.CompileM.compileEnvAux` as of CQ2.13/CQ2.24, renamed, with the
-  `least` switch on the ready queue, and the clique rows emitted after the
-  loop (`emitRows`, CQ5.2 (b)), as in both drivers of the fold.
+  `least` switch on the ready queue.
 -/
 import Ix.CompileDriver
 
@@ -72,12 +71,12 @@ this, a dep relationship isn't captured in the ref graph, or the source \
 env is inconsistent."
     match runBlock acc.cenv all rep with
     | .error e => return .error (failed e)
-    | .ok (result, cache, _, published) =>
+    | .ok (result, cache, _) =>
       -- A conflicting claim fails the pre-compile like a block error (Rust's
       -- claims raise inside `compile_const`).
-      match checkCompiledBlock acc.cenv rep result cache published with
+      match checkCompiledBlock acc.cenv rep result cache with
       | .error e => return .error (failed e)
-      | .ok () => acc := mergeCompiledBlock acc rep result cache published
+      | .ok () => acc := mergeCompiledBlock acc rep result cache
       -- Move compiled names → auxNameToAddr (env.rs:1119-1137). At this
       -- stage `nameToAddr` contains exactly the prereq registrations.
       let moved := acc.cenv.nameToAddr
@@ -89,7 +88,7 @@ env is inconsistent."
 
 /-- Compile an entire environment with the FULL production pipeline
     semantics: aux-gen prereq pre-compilation, per-block aux tails
-    (regeneration and Pass 3's hooks), the scheduler promotion pass with
+    (regeneration), the scheduler promotion pass with
     the no-aux original-form second compile (`Named.original`), and
     pending-aux dependency release. Sequential mirror of Rust
     `compile_env_with_options`' scheduler (env.rs:146-990; grounding and
@@ -110,24 +109,12 @@ def sequential (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if let some msg := missingBlockRefs? blocks then return .error msg
   if let .error e := validateInductiveFlags env then return .error e
   if let .error e := validateMutualSafety env blocks then return .error e
-  -- Pass 3's clique transport, set up as the fold sets it up
-  -- (`compileEnvFoldWithSource`): the clique table and the encoding roots in
-  -- the compile environment, the scheduling edges in the ready order below;
-  -- each block's own references (`p3BlockRefs`, keyed as `FoldState.init`
-  -- keys them) stay the condensation's
-  let sc := Ix.Compile.Pass.Clique.scheduleCliques env blocks
-  let sizePlan := prepareSizeOfPlan env sc.1
-  let scheduled := sizePlan.1
+  -- The schedule is the condensation, as the fold's (`compileEnvFoldWithSource`).
+  let scheduled := blocks
   let ra := Ix.AuxGen.Source.RunAhead.start env.get? blocks
     (scheduleLevels blocks (FoldSchedule.of scheduled)) .recursors
-  let blockRefs : Std.HashMap Name (Set Name) := blocks.blocks.fold (init := {}) fun m rep all =>
-    match blocks.blockRefs.get? rep with
-    | some refs => m.insert (blockKey rep all) refs
-    | none => m
   let cenv₀ : CompileEnv := ({} : AuxIxcOptions).withSourceProviders env.get? blocks ra
-    { CompileEnv.new env with
-    unmaterialized, sharingLimits, p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2,
-    p3BlockRefs := blockRefs, p3O11aPlans := sizePlan.2 }
+    { CompileEnv.new env with unmaterialized, sharingLimits }
   let mut acc : DriverAcc := { cenv := cenv₀ }
   match precompileSeeds blocks acc with
   | .error e => return .error e
@@ -212,11 +199,11 @@ missing canonical aliases: {missing}"
             return acc
           match runBlock acc.cenv crossAll clo with
           | .error e => acc := crossFailed acc e
-          | .ok (result, cache, _, published) =>
-            match checkCompiledBlock acc.cenv clo result cache published with
+          | .ok (result, cache, _) =>
+            match checkCompiledBlock acc.cenv clo result cache with
             | .error e => acc := crossFailed acc e
             | .ok () =>
-              acc := mergeCompiledBlock acc clo result cache published
+              acc := mergeCompiledBlock acc clo result cache
               for n in unresolvedNames do
                 acc := { acc with
                   cenv := { acc.cenv with
@@ -248,12 +235,12 @@ missing canonical aliases: {missing}"
         return acc
       match runBlock acc.cenv all lo with
       | .error e => acc := fail acc e
-      | .ok (result, cache, _, published) =>
+      | .ok (result, cache, _) =>
         -- A conflicting claim is a failure of this block (Rust raises it
         -- inside `compile_const`): nothing of it is merged.
-        match checkCompiledBlock acc.cenv lo result cache published with
+        match checkCompiledBlock acc.cenv lo result cache with
         | .error e => acc := fail acc e
-        | .ok () => acc := mergeCompiledBlock acc lo result cache published
+        | .ok () => acc := mergeCompiledBlock acc lo result cache
 
     -- Release dependents: block members plus drained pending-aux names
     -- (env.rs:838-870).
@@ -289,8 +276,7 @@ missing canonical aliases: {missing}"
     return .error s!"Only compiled {blocksCompleted}/{totalBlocks} blocks \
 - circular dependency?"
 
-  -- the clique rows after the loop, as the fold does (`emitRows`, CQ5.2 (b))
-  return ((emitRows acc).bind finalizeEnv).map fun (ixe, bytes, cenv) =>
+  return (finalizeEnv acc).map fun (ixe, bytes, cenv) =>
     (ixe, bytes, { cenv with auxOracle := none, auxGenerationRetry := none })
 
 

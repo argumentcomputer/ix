@@ -92,12 +92,12 @@ theorem thin_key (input : Array Raw) (n : Name) :
   rw [prepass_thin, prepass_raw]
   exact (inserted_project (keyed input) (fun p : Raw => placeholder p.2)).2 n
 
-theorem produced_facts (reserved : Lean.ConstantInfo → Bool) (input : Array Raw) (workers : Nat) :
-    (produce reserved input workers).2.facts =
+theorem produced_facts (input : Array Raw) (workers : Nat) :
+    (produce input workers).2.facts =
       collect ((SourceStream.canonical input).map fun (n, ci) => rowOfCanonical n ci) := by
   dsimp only [produce]
   rw [prepass_labels]
-  exact SourceStream.runSource_facts _ reserved input workers
+  exact SourceStream.runSource_facts _ input workers
 
 private theorem keys_values_equiv {a b : Ix.Map Name α}
     (keys : ∀ n, a.getKey? n = b.getKey? n) (values : ∀ n, a.get? n = b.get? n) : Std.HashMap.Equiv a b := by
@@ -180,22 +180,22 @@ theorem code_equiv_filter (xs : List (Name × ConstantInfo)) : Std.HashMap.Equiv
     rw [filter_get]
     exact SourceGraph.collect_code_get xs n
 
-theorem code_size (reserved : Lean.ConstantInfo → Bool) (input : Array Raw) (workers : Nat) :
-    (produce reserved input workers).2.facts.code.size ≤ (run input).leanByIx.size := by
+theorem code_size (input : Array Raw) (workers : Nat) :
+    (produce input workers).2.facts.code.size ≤ (run input).leanByIx.size := by
   rw [produced_facts, (code_equiv_filter _).size_eq, ← canonical_size input]
   exact Std.HashMap.size_filterMap_le_size
 
-theorem code_contains (reserved : Lean.ConstantInfo → Bool) (input : Array Raw) (workers : Nat)
-    (n : Name) (h : (produce reserved input workers).2.facts.code.contains n = true) :
+theorem code_contains (input : Array Raw) (workers : Nat)
+    (n : Name) (h : (produce input workers).2.facts.code.contains n = true) :
     (run input).leanByIx.contains n = true := by
   rw [produced_facts, (code_equiv_filter _).contains_eq] at h
   have present := Std.HashMap.contains_of_contains_filterMap h
   simpa only [(canonical_equiv input).contains_eq, Std.HashMap.contains_map] using present
 
-theorem source_count (reserved : Lean.ConstantInfo → Bool) (input : Array Raw) (workers : Nat) :
-    let code := (produce reserved input workers).2.facts.code.size
+theorem source_count (input : Array Raw) (workers : Nat) :
+    let code := (produce input workers).2.facts.code.size
     code + ((run input).leanByIx.size - code) = (SourceGraph.full (SourceStream.canonical input)).consts.size := by
-  have bound := code_size reserved input workers
+  have bound := code_size input workers
   have size := canonical_size input
   dsimp only
   omega
@@ -205,9 +205,9 @@ private theorem full_get (xs : List (Name × ConstantInfo)) (n : Name) :
   unfold Ix.Environment.get?
   cases (SourceGraph.full xs).consts.get? n <;> rfl
 
-theorem produced_hybrid_lookup (reserved : Lean.ConstantInfo → Bool) (input : Array Raw)
+theorem produced_hybrid_lookup (input : Array Raw)
     (workers : Nat) (n : Name) :
-    (Hybrid.hybridEnv (produce reserved input workers).2.facts.code (run input).leanByIx).get? n =
+    (Hybrid.hybridEnv (produce input workers).2.facts.code (run input).leanByIx).get? n =
       (SourceGraph.full (SourceStream.canonical input)).get? n := by
   apply Hybrid.hybrid_lookups
   · intro k
@@ -221,9 +221,9 @@ theorem produced_hybrid_lookup (reserved : Lean.ConstantInfo → Bool) (input : 
     rw [full_get]
     exact stored
 
-theorem stored_inductives (reserved : Lean.ConstantInfo → Bool) (input : Array Raw)
+theorem stored_inductives (input : Array Raw)
     (workers : Nat) (n : Name) (v : Ix.InductiveVal) :
-    (n, ConstantInfo.inductInfo v) ∈ (produce reserved input workers).2.facts.code.toList ↔
+    (n, ConstantInfo.inductInfo v) ∈ (produce input workers).2.facts.code.toList ↔
       (n, ConstantInfo.inductInfo v) ∈ (SourceGraph.full (SourceStream.canonical input)).consts.toList := by
   rw [produced_facts, Std.HashMap.mem_toList_iff_getKey?_eq_some_and_getElem?_eq_some,
     Std.HashMap.mem_toList_iff_getKey?_eq_some_and_getElem?_eq_some]
@@ -242,9 +242,9 @@ theorem stored_inductives (reserved : Lean.ConstantInfo → Bool) (input : Array
 
 /-- All four Hybrid inputs are derived from this producer. The condensation
 is the same argument on both sides; its grounding provenance is not claimed. -/
-theorem produced_fold (reserved : Lean.ConstantInfo → Bool) (input : Array Raw) (workers : Nat)
+theorem produced_fold (input : Array Raw) (workers : Nat)
     (blocks : Ix.CondensedBlocks) (dbg : Bool) (limits : Ix.Sharing.Exact.Limits) (width : Nat) :
-    let code := (produce reserved input workers).2.facts.code
+    let code := (produce input workers).2.facts.code
     let names := (run input).leanByIx
     Ix.CompileM.compileEnvFold (Hybrid.hybridEnv code names) blocks dbg (names.size - code.size) limits width =
       Hybrid.restore (Hybrid.hybridEnv code names) (names.size - code.size) <$>
@@ -253,9 +253,9 @@ theorem produced_fold (reserved : Lean.ConstantInfo → Bool) (input : Array Raw
   apply Hybrid.pipeline_fold
   · intro n; rw [full_get]; exact canonical_lookup input n
   · intro n ci stored
-    rw [← produced_hybrid_lookup reserved input workers n]
+    rw [← produced_hybrid_lookup input workers n]
     simp only [Hybrid.hybridEnv, Ix.Environment.get?, stored]
-  · exact ⟨code_size reserved input workers, canonical_size input⟩
-  · exact stored_inductives reserved input workers
+  · exact ⟨code_size input workers, canonical_size input⟩
+  · exact stored_inductives input workers
 
 end Ix.Cert.SourcePrepass

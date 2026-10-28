@@ -79,10 +79,6 @@ pub struct EnvStats {
   pub named: usize,
   pub blobs: usize,
   pub comms: usize,
-  pub originals: usize,
-  /// Raw record bytes, excluding trailer framing.
-  pub original_bytes: usize,
-  pub original_hint_overrides: usize,
 }
 
 /// One name present in both envs whose constant address changed.
@@ -141,12 +137,6 @@ pub struct EnvDiff {
   pub hints_changed: Vec<(Address, String, String)>,
   pub stats_a: EnvStats,
   pub stats_b: EnvStats,
-  /// Unchecked original-data deltas, metadata mode only.
-  pub originals_only_a: Vec<Address>,
-  pub originals_only_b: Vec<Address>,
-  pub originals_changed: Vec<Address>,
-  /// "absent" distinguishes no override from an explicit "none".
-  pub original_hints_changed: Vec<(String, String, String)>,
   /// Compared in both modes using the exact binding bytes as well as address.
   pub role_binding_changed: Option<(Option<Address>, Option<Address>)>,
 }
@@ -171,10 +161,6 @@ impl EnvDiff {
       && self.blobs_only_a.is_empty()
       && self.blobs_only_b.is_empty()
       && self.hints_changed.is_empty()
-      && self.originals_only_a.is_empty()
-      && self.originals_only_b.is_empty()
-      && self.originals_changed.is_empty()
-      && self.original_hints_changed.is_empty()
   }
 }
 
@@ -836,9 +822,6 @@ fn env_stats(e: &Env) -> EnvStats {
     named: e.named.len(),
     blobs: e.blobs.len(),
     comms: e.comms.len(),
-    originals: e.originals.len(),
-    original_bytes: e.originals.iter().map(|c| c.raw_bytes().len()).sum(),
-    original_hint_overrides: e.original_hint_overrides.len(),
   }
 }
 
@@ -973,8 +956,7 @@ impl MetaSource<'_> {
 
 /// Diff two environments. `meta = false` (anon mode, the default)
 /// compares only anonymous structure; `meta = true` additionally
-/// compares unchecked original records/hint overrides and `Named` metadata
-/// content held in the envs (full-reader
+/// compares `Named` metadata content held in the envs (full-reader
 /// path — for the memory-lean bytes path see [`diff_env_bytes`]). See
 /// the module docs.
 pub fn diff_envs(a: &Env, b: &Env, meta: bool) -> Result<EnvDiff, String> {
@@ -1127,50 +1109,6 @@ fn diff_envs_impl(
     }),
     ..EnvDiff::default()
   };
-  if !matches!(source, MetaSource::None) {
-    for entry in a.originals.iter() {
-      match b.originals.get(entry.key()) {
-        None => d.originals_only_a.push(entry.key().clone()),
-        Some(other) if entry.raw_bytes() != other.raw_bytes() => {
-          d.originals_changed.push(entry.key().clone())
-        },
-        Some(_) => {},
-      }
-    }
-    for entry in b.originals.iter() {
-      if !a.originals.contains_key(entry.key()) {
-        d.originals_only_b.push(entry.key().clone());
-      }
-    }
-    let names: FxHashSet<Name> = a
-      .original_hint_overrides
-      .iter()
-      .chain(b.original_hint_overrides.iter())
-      .map(|h| h.key().clone())
-      .collect();
-    let mut rows = Vec::new();
-    for name in names {
-      let ah = a.original_hint_overrides.get(&name).map(|h| *h);
-      let bh = b.original_hint_overrides.get(&name).map(|h| *h);
-      if ah != bh {
-        let render = |h: Option<ReducibilityHints>| hint_label(h.as_ref());
-        rows.push((
-          name.pretty(),
-          name,
-          (
-            ah.map_or_else(|| "absent".into(), render),
-            bh.map_or_else(|| "absent".into(), render),
-          ),
-        ));
-      }
-    }
-    sort_by_name(&mut rows);
-    d.original_hints_changed =
-      rows.into_iter().map(|(n, _, (a, b))| (n, a, b)).collect();
-    d.originals_only_a.sort_unstable();
-    d.originals_only_b.sort_unstable();
-    d.originals_changed.sort_unstable();
-  }
 
   // Named join on Name. Alpha-equivalent multi-names (several names
   // sharing one constant address) need no special care: each name is
@@ -1471,65 +1409,6 @@ mod tests {
     assert_eq!(d.stats_a, d.stats_b);
     assert_eq!(d.stats_a.consts, 1);
     assert!(diff_meta(&env, &copy).is_empty(), "meta self-diff not empty");
-  }
-
-  #[test]
-  fn original_storage_deltas_are_metadata_only_and_lazy_matches_full() {
-    use crate::lazy::LazyConstant;
-    let (a, canonical) = env1("Foo", &defn_c(Expr::var(3), Expr::var(0)));
-    register_component(&a, &n("Foo"));
-    a.named
-      .get_mut(&n("Foo"))
-      .unwrap()
-      .set_original(canonical, ConstantMeta::default());
-    let b = a.clone();
-    let (oa, ba) = defn_c(Expr::var(3), Expr::var(11)).commit();
-    let (ob, bb) = defn_c(Expr::var(3), Expr::var(300)).commit();
-    a.originals.insert(oa.clone(), LazyConstant::from_bytes(ba.clone().into()));
-    b.originals.insert(ob.clone(), LazyConstant::from_bytes(bb.clone().into()));
-    b.original_hint_overrides.insert(n("Foo"), None);
-    let anon = diff(&a, &b);
-    assert!(anon.is_empty());
-    assert_eq!(
-      (
-        anon.stats_a.consts,
-        anon.stats_a.originals,
-        anon.stats_a.original_bytes
-      ),
-      (1, 1, ba.len())
-    );
-    assert_eq!(
-      (anon.stats_b.original_bytes, anon.stats_b.original_hint_overrides),
-      (bb.len(), 1)
-    );
-    let meta = diff_meta(&a, &b);
-    assert_eq!(meta.originals_only_a, vec![oa.clone()]);
-    assert_eq!(meta.originals_only_b, vec![ob]);
-    assert_eq!(
-      meta.original_hints_changed,
-      vec![("Foo".into(), "absent".into(), "none".into())]
-    );
-    assert!(!meta.is_empty() && meta.named_changed.is_empty());
-    let (mut wa, mut wb) = (Vec::new(), Vec::new());
-    a.put(&mut wa).unwrap();
-    b.put(&mut wb).unwrap();
-    for mode in [false, true] {
-      assert_eq!(
-        diff_envs(&a, &b, mode).unwrap(),
-        diff_env_bytes(&wa, &wb, mode, &mut |_| {}).unwrap()
-      );
-    }
-    // Direct in-memory comparison must not infer byte equality from equal keys.
-    b.originals.insert(oa.clone(), LazyConstant::from_bytes(bb.into()));
-    assert_eq!(diff_meta(&a, &b).originals_changed, vec![oa]);
-    assert!(diff(&a, &b).is_empty());
-    a.original_hint_overrides.insert(n("Foo"), None);
-    b.original_hint_overrides
-      .insert(n("Foo"), Some(ReducibilityHints::Regular(7)));
-    assert_eq!(
-      diff_meta(&a, &b).original_hints_changed,
-      vec![("Foo".into(), "none".into(), "regular(7)".into())]
-    );
   }
 
   #[test]

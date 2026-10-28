@@ -38,11 +38,6 @@
     non-standard axioms permitted to decline.
   - Closure scoping: `only [TIxImp.dbl]` returns the reference closure
     and nothing else.
-  - Source-only materialization: on a hand-built artifact that holds
-    generated support under a reserved `_ix` name, the full import restores
-    exactly the source constants, a scoped one their source closure;
-    requesting the support, or a source constant that references it, is
-    refused.
   - C8: an in-process consumer file `import_ixe`s the artifact and
     defines a term over the materialized constants (interpreter +
     linked FFI, `supportInterpreter`).
@@ -404,15 +399,6 @@ private def roundtripTest (collapsed : Bool := false) : IO (Bool × Nat × Nat �
       if let some e := compareCI n oci ci then
         return (false, 0, 0, some e)
       matMap := matMap.insert n ci
-    -- Recursor and definition support names stay outside source import: an
-    -- explicit refusal, not a silent omission of a requested root.
-    if collapsed then
-      for name in #[`TIxImp.A._ix.rec, `TIxImp.A._ix.casesOn] do
-        match ← (Ix.ImportIxe.materializeIxe path #[name]).toBaseIO with
-        | .ok _ => return (false, 0, 0, some s!"source import unexpectedly exposed {name}")
-        | .error e =>
-          unless (e.toString.splitOn "generated compiler support").length > 1 do
-            return (false, 0, 0, some s!"private support import refused for the wrong reason: {e}")
     -- Root equality: recompiling the complete materialized source output is
     -- a fixed point of the canonical root.
     let path2 := (dir / "rebuilt.ixe").toString
@@ -466,86 +452,6 @@ private def closureTest : IO (Bool × Nat × Nat × Option String) := do
     match checks.find? (!·.2) with
     | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
     | none => return (true, subset.size, 0, none)
-  finally
-    IO.FS.removeDirAll dir
-
-/-! ### Source-only materialization over a hand-built artifact
-
-Generated compiler support lives under reserved `_ix*` names, which no
-compiler input may use; until Pass 3 writes such names, a hand-built
-artifact is the only one that holds one. `IS.src : Sort 0`, the support
-`IS._ix.helper : Sort 1` and `IS.user : IS.src`; with `leak`, also
-`IS.leak : IS._ix.helper`. -/
-
-/-- Add an axiom of type `ty` (tables `refs`, `univs`) whose single
-    metadata node `node` describes `ty`. -/
-private def soAxiom (env : Ixon.Env) (name : Lean.Name) (ty : Ixon.Expr)
-    (refs : Array Address) (univs : Array Ixon.Univ)
-    (node : Ixon.ExprMetaData) : Ixon.Env × Address :=
-  let n := Ix.Name.fromLeanName name
-  let c : Ixon.Constant := ⟨.axio ⟨false, 0, ty⟩, #[], refs, univs⟩
-  let addr := Address.blake3 (Ixon.serConstant c)
-  let env := { env with names := Ixon.RawEnv.addNameComponents env.names n }
-  let env := (env.storeConst addr c).registerName n
-    { addr, constMeta := { info := .axio n.getHash #[] ⟨#[node]⟩ 0 } }
-  (env, addr)
-
-private def sourceOnlyEnv (leak : Bool) : Ixon.Env := Id.run do
-  let (env, srcAddr) := soAxiom {} `IS.src (.sort 0) #[] #[.zero] .leaf
-  let (env, helperAddr) :=
-    soAxiom env `IS._ix.helper (.sort 0) #[] #[.succ .zero] .leaf
-  let (env, _) := soAxiom env `IS.user (.ref 0 #[]) #[srcAddr] #[]
-    (.ref (Ix.Name.fromLeanName `IS.src).getHash)
-  if leak then
-    return (soAxiom env `IS.leak (.ref 0 #[]) #[helperAddr] #[]
-      (.ref (Ix.Name.fromLeanName `IS._ix.helper).getHash)).1
-  return env
-
-/-- `import_ixe` restores only the source declarations: reserved support
-    stays in the artifact, and a request for it, or a source reference to
-    it, is refused before Lean replay. -/
-private def sourceOnlyTest : IO (Bool × Nat × Nat × Option String) := do
-  let dir ← IO.FS.createTempDir
-  try
-    let write (leak : Bool) : IO String := do
-      let path := (dir / s!"source-only-{leak}.ixe").toString
-      match Ixon.serEnv (sourceOnlyEnv leak) with
-      | .ok bytes => IO.FS.writeBinFile path bytes; pure path
-      | .error e => throw (IO.userError s!"serEnv failed: {e}")
-    let refused (path : String) (roots : Array Lean.Name) (msg : String) :
-        IO Bool := do
-      match ← (Ix.ImportIxe.materializeIxe path roots).toBaseIO with
-      | .ok _ => pure false
-      | .error e => pure ((toString e).contains msg)
-    let names (consts : Array (Lean.Name × Lean.ConstantInfo)) :
-        Array Lean.Name :=
-      (consts.map (·.1)).qsort (·.cmp · == .lt)
-    let clean ← write false
-    let leaky ← write true
-    let full ← Ix.ImportIxe.materializeIxe clean
-    let userClosure ← Ix.ImportIxe.materializeIxe clean #[`IS.user]
-    let leakScoped ← Ix.ImportIxe.materializeIxe leaky #[`IS.user]
-    let userType := full.findSome? fun (n, ci) =>
-      if n == `IS.user then some ci.type else none
-    let supportRequested ←
-      refused clean #[`IS._ix.helper] "reserved for generated compiler support"
-    let leakFull ← refused leaky #[] "references generated compiler support"
-    let leakRequested ←
-      refused leaky #[`IS.leak] "references generated compiler support"
-    let checks : List (String × Bool) := [
-      ("full import is exactly the source constants",
-        names full == #[`IS.src, `IS.user]),
-      ("source reference restored", userType == some (.const `IS.src [])),
-      ("scoped import is the source closure",
-        names userClosure == #[`IS.src, `IS.user]),
-      ("requested support refused", supportRequested),
-      ("source reference to support refused", leakFull),
-      ("requested source reference to support refused", leakRequested),
-      ("source closure without support restored",
-        names leakScoped == #[`IS.src, `IS.user]) ]
-    match checks.find? (!·.2) with
-    | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
-    | none => return (true, full.size, 0, none)
   finally
     IO.FS.removeDirAll dir
 
@@ -654,8 +560,6 @@ def suite : List TestSeq := [
     (roundtripTest false) .done,
   .individualIO "only-scoped materialization returns the closure" none
     closureTest .done,
-  .individualIO "materialization restores only source declarations" none
-    sourceOnlyTest .done,
   .individualIO "import_ixe elaborates a consumer file (C8)" none
     elabTest .done,
   .individualIO "commit + eval claim over imported constants (C9)" none

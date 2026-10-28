@@ -17,7 +17,6 @@ public import Ix.Address
 public import Ix.Environment
 public import Ix.Common
 public import Ix.AuxGen.ExprUtils
-public import Ix.Compile.Pass.Names
 
 public section
 
@@ -89,13 +88,6 @@ instance : ToString DecompileError := ⟨DecompileError.toString⟩
 /-- Global decompilation environment (reader, immutable). -/
 structure DecompileEnv where
   ixonEnv : Ixon.Env
-  /-- Read the compiled term under a Pass 3 decompile record (`_ix.inline`,
-      `inlineRecord?`) instead of replaying the recorded source occurrence;
-      the record itself is then dropped. Off by default; the Rust
-      decompiler always replays. For a reader that needs the stored
-      (rewritten) value, such as a check of a transported clique member's
-      compiled value against Lean's. -/
-  compiledTerms : Bool := false
   deriving Inhabited
 
 /-- Per-block context for decompiling a single constant (reader, immutable per-block). -/
@@ -106,9 +98,8 @@ structure BlockCtx where
   mutCtx : Array Ix.Name       -- mutual context: index = Rec index
   univParams : Array Ix.Name   -- universe parameter names
   arena : ExprMetaArena
-  /-- `ConstantMeta.metaSharing` of the constant being decompiled: the
-      source occurrences of its Pass 3 decompile records (`_ix.inline`),
-      distinct from the block's primary `sharing` table. A `share` inside one of these
+  /-- `ConstantMeta.metaSharing` of the constant being decompiled: its
+      metadata expressions, distinct from the block's primary `sharing` table. A `share` inside one of these
       expressions is read in the extended index space
       (`ShareScope.metaEntry`). -/
   metaSharing : Array Ixon.Expr := #[]
@@ -138,8 +129,6 @@ structure BlockCtx where
       strictly decreases along metadata-to-metadata resolution, so
       expansion is well founded.
 
-    Pass 3 decompile records (`inlineRecord?`'s `s`) index `metaSharing`
-    directly (no offset by `p`) and read the entry in scope `metaEntry s`.
     Mirrors Rust `decompile::ShareScope`. -/
 inductive ShareScope where
   | primary
@@ -390,23 +379,6 @@ def decompileKVMap (kvm : Ixon.KVMap) : DecompileM (Array (Ix.Name × Ix.DataVal
     result := result.push (keyName, val)
   pure result
 
-/-! ## Pass 3 decompile records -/
-
-/-- The decompile record of a call site that Pass 3 rewrote: a decompiled
-    KVMap that is exactly `[(_ix.inline, s), (_ix.inline_meta, m)]`
-    (`Ix.Compile.Pass.inlineKey`, `inlineMetaKey`, in this order, both
-    `ofNat`). `s` indexes the compiled source occurrence in
-    `ConstantMeta.metaSharing`, `m` is its metadata-arena root. Any other
-    KVMap, including one with a single `_ix.inline` key, is ordinary
-    metadata. Mirrors Rust `decompile::inline_record`. -/
-def inlineRecord? (data : Array (Ix.Name × Ix.DataValue)) : Option (Nat × Nat) :=
-  match data with
-  | #[(k₁, .ofNat s), (k₂, .ofNat m)] =>
-    if k₁ == Ix.Compile.Pass.inlineKey && k₂ == Ix.Compile.Pass.inlineMetaKey then
-      some (s, m)
-    else none
-  | _ => none
-
 /-! ## Mdata Application -/
 
 /-- Apply collected mdata layers to an Ix.Expr (outermost-first). -/
@@ -500,12 +472,9 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
   let cacheKey := (e, arenaIdx, scope)
   if let some cached := (← get).exprCache.get? cacheKey then return cached
 
-  -- 2. Follow mdata chain. A Pass 3 decompile record (`inlineRecord?`) is
-  -- not a layer: the first one on the chain is replayed below, a later one
-  -- is dropped.
+  -- 2. Follow mdata chain.
   let mut currentIdx := arenaIdx
   let mut mdataLayers : Array (Array (Ix.Name × Ix.DataValue)) := #[]
-  let mut inlineRecord : Option (Nat × Nat) := none
   let mut done := false
   while !done do
     match ← getArenaNode currentIdx with
@@ -514,39 +483,9 @@ partial def decompileExprIn (scope : ShareScope) (e : Ixon.Expr) (arenaIdx : UIn
         let data ← decompileKVMap kvm
         if Ix.SemanticContract.hasMetadata data then
           throw (.badConstantFormat "semantic contracts cannot come from optional metadata")
-        match inlineRecord? data with
-        | some record => if inlineRecord.isNone then inlineRecord := some record
-        | none => mdataLayers := mdataLayers.push data
+        mdataLayers := mdataLayers.push data
       currentIdx := child
     | _ => done := true
-
-  -- Pass 3 replay: the decompiled term is the recorded source occurrence,
-  -- `metaSharing[s]` read in its own metadata scope at arena root `m`,
-  -- under the chain's other layers. The compiled (rewritten) term is not
-  -- read, unless `compiledTerms`. The replay is optional metadata, so it
-  -- may not drop a semantic contract: a compiled term that carries one,
-  -- also behind sharing, is refused (the guard the retired call-site
-  -- replay had, CQ3.6). Rust `decompile_expr` replays the same, with the
-  -- same two range checks and the same guard.
-  if (← getEnv).compiledTerms then inlineRecord := none
-  if let some (s, m) := inlineRecord then
-    let ctx ← getCtx
-    let some shared := ctx.metaSharing[s]?
-      | throw (.badConstantFormat s!"Pass 3 inline record {s} out of range \
-          ({ctx.metaSharing.size} metadata entries)")
-    unless m < ctx.arena.nodes.size do
-      throw (.badConstantFormat s!"Pass 3 inline record arena root {m} out of range \
-        ({ctx.arena.nodes.size} arena nodes)")
-    let annotated ← match Ix.SemanticContract.containsIxon
-        (fun s idx => resolveShareIn ctx s idx "semantic scan") scope e with
-      | .ok annotated => pure annotated
-      | .error error => throw error
-    if annotated then
-      throw (.badConstantFormat "Pass 3 inline record replay would drop a semantic contract")
-    let source ← decompileExprIn (.metaEntry s) shared m.toUInt64
-    let result := applyMdata source mdataLayers
-    modify fun st => { st with exprCache := st.exprCache.insert cacheKey result }
-    return result
 
   let node ← getArenaNode currentIdx
 
@@ -753,8 +692,7 @@ def decompileMetaCtx (cMeta : ConstantMeta) : DecompileM (Array Ix.Name) := do
 /-- Build a BlockCtx from a Constant plus its per-constant metadata
     wrapper. `metaRefs`/`metaUnivs` extend the primary tables — the
     documented virtual-address contract (mirrors Rust
-    `load_meta_extensions`); `metaSharing` rides its own dedicated field
-    (Pass 3's decompile records; the call-site surgery replay), and
+    `load_meta_extensions`); `metaSharing` rides its own dedicated field, and
     `share` nodes inside it are read in the extended index space
     (`ShareScope`), never appended to `sharing`. The
     context is rebuilt per constant, so extensions never leak across
@@ -952,36 +890,33 @@ def decompileProjection (cnst : Constant) (cMeta : ConstantMeta)
 
 /-! ## Main Entry Points -/
 
-/-- Select the source address, metadata (including constructors), and exact
-    per-name hints. Keep the canonical address-to-name index: original bodies
-    still refer to canonical addresses. This view never adds checker records. -/
+/-- Select the source address and metadata (including constructors). Keep the
+    canonical address-to-name index: original bodies still refer to canonical
+    addresses. This view never adds checker records. -/
 def originalView (ixonEnv : Ixon.Env) : Ixon.Env :=
   let named := ixonEnv.named.fold (init := {}) fun m name entry =>
     let selected := match entry.original with
       | none => entry
-      | some (addr, constMeta) =>
-        { entry with
-          addr := addr
-          constMeta := constMeta
-          hints := ixonEnv.originalHintOverrides[name]?.getD entry.hints }
+      | some (addr, constMeta) => { entry with addr := addr, constMeta := constMeta }
     m.insert name selected
   { ixonEnv with named }
 
-/-- Read exact bytes from the canonical store first, then unchecked original
-    data. Validate the address and canonical encoding, ignoring a lazy value's
-    cache. This is a decoding check, not a typing judgment. -/
+/-- Read exact bytes from the canonical store. Validate the address and
+    canonical encoding, ignoring a lazy value's cache. This is a decoding check,
+    not a typing judgment. -/
 def readConstant (ixonEnv : Ixon.Env) (addr : Address) : Except String Constant := do
-  let some lc := ixonEnv.consts[addr]? <|> ixonEnv.originals[addr]?
-    | throw s!"missing constant/original at {addr}; recompile the artifact with original data"
+  let some lc := ixonEnv.consts[addr]?
+    | throw s!"missing constant at {addr}"
   let bytes := lc.rawBytes
-  if let some original := ixonEnv.originals[addr]? then
-    if original.rawBytes != bytes then
-      throw s!"conflicting original bytes at {addr}"
-  Ixon.Env.checkOriginalPayload addr bytes
-  Ixon.deConstantExact bytes
+  if Address.blake3 bytes != addr then
+    throw s!"constant bytes hash mismatch for {addr}"
+  let constant ← Ixon.deConstantExact bytes
+  if Ixon.serConstant constant != bytes then
+    throw s!"noncanonical constant bytes at {addr}"
+  pure constant
 
-/-- A compiler-created mutual container, not a source declaration. Pass 3
-    may rename its member metadata while retaining its `Ix.<addr>.*` label.
+/-- A compiler-created mutual container, not a source declaration, labelled
+    `Ix.<addr>.*`.
     Original-bearing entries must still decode as declarations. -/
 private def isMutsContainer (ixName : Ix.Name) (named : Ixon.Named)
     (mutuals : Array Ixon.MutConst) : Bool :=
@@ -1045,7 +980,7 @@ def decompileChunk (env : DecompileEnv) (ixonEnv : Ixon.Env)
 /-- Decompile all constants in parallel using chunked pure Tasks. Returns Ix types.
 
     `skip` filters named entries out of the pass entirely. The full driver
-    passes `originalView` and skips only reserved compiler-support names.
+    passes `originalView`.
     Default skips nothing (standalone whole-env use). -/
 def decompileAllParallel (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
     (skip : Ix.Name → Ixon.Named → Bool := fun _ _ => false)

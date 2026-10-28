@@ -14,11 +14,7 @@
   and replays them with `Lean.addDecl`.
 
   Semantics:
-  - Import restores the original Lean source declarations. Generated
-    compiler support under reserved `_ix*` names stays in the Ixon
-    artifact for execution and checking; it is not replayed as additional
-    Lean source. Requesting such a name, or a restored source declaration
-    that refers to one, is an error.
+  - Import restores the original Lean source declarations.
   - Names already present in the environment are skipped, trusting the
     shared toolchain base (the `.ixe` carries its complete base; the
     consumer already has one). Genuine content drift surfaces as
@@ -59,13 +55,9 @@ namespace Ix.ImportIxe
     `Lean.ConstantInfo`s, in Rust
     (`crates/ffi/src/compile.rs::rs_decompile_env_consts`, construction
     in `crates/ffi/src/lean_build.rs`). Empty `only` ⇒ every
-    original-source constant; nonempty ⇒ the requested source constants
-    plus their reference closure. Names with a reserved `_ix*` component
-    are compiler support and are excluded (`Ix.Compile.Pass.hasReserved`,
-    the rule that refuses them as compiler input). Fails on thin bundles,
-    broken source closures, absent or reserved requested names, and source
-    references to support after decompilation. Pairs return sorted by
-    name. -/
+    decompiled constant; nonempty ⇒ the requested source constants plus
+    their reference closure. Fails on thin bundles, broken source closures
+    and absent requested names. Pairs return sorted by name. -/
 @[extern "rs_decompile_env_consts"]
 opaque rsDecompileEnvConstsFFI : @& String → @& Array Lean.Name →
     IO (Array (Lean.Name × Lean.ConstantInfo))

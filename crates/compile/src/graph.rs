@@ -57,9 +57,6 @@ pub struct SetupScan {
   pub ind_groups: FxHashMap<Name, Vec<Name>>,
   /// Source contracts that the current conservative emitter cannot preserve.
   pub source_contracts: Vec<Name>,
-  /// Constants with a metadata key that has the reserved component `_ix`
-  /// (D14).
-  pub reserved_metadata: Vec<Name>,
   /// Semantic declarations validated during the same lazy decode as the graph.
   pub semantic_sources: Result<Vec<Name>, ixon::CompileError>,
 }
@@ -83,7 +80,6 @@ pub fn setup_scan(env: &Env) -> SetupScan {
     ungrounded: FxHashMap<Name, crate::ground::GroundError>,
     ind_groups: FxHashMap<Name, Vec<Name>>,
     source_contracts: Vec<Name>,
-    reserved_metadata: Vec<Name>,
     semantic_sources: Vec<Name>,
     semantic_error: Option<ixon::CompileError>,
   }
@@ -103,9 +99,6 @@ pub fn setup_scan(env: &Env) -> SetupScan {
       let (deps, keys) = inspect_constant_references(&constant);
       if keys.source_contract {
         acc.source_contracts.push(name.clone());
-      }
-      if keys.reserved {
-        acc.reserved_metadata.push(name.clone());
       }
       // Keep an empty reverse-edge entry even for an isolated constant.
       // Missing referenced names also retain their incoming edges, as in
@@ -133,7 +126,6 @@ pub fn setup_scan(env: &Env) -> SetupScan {
       l.in_refs = merge_ref_maps(l.in_refs, r.in_refs);
       l.ungrounded.extend(r.ungrounded);
       l.source_contracts.extend(r.source_contracts);
-      l.reserved_metadata.extend(r.reserved_metadata);
       l.semantic_sources.extend(r.semantic_sources);
       l.semantic_error = l.semantic_error.or(r.semantic_error);
       for (k, v) in r.ind_groups {
@@ -147,7 +139,6 @@ pub fn setup_scan(env: &Env) -> SetupScan {
     immediate_ungrounded: acc.ungrounded,
     ind_groups: acc.ind_groups,
     source_contracts: acc.source_contracts,
-    reserved_metadata: acc.reserved_metadata,
     semantic_sources: match acc.semantic_error {
       Some(error) => Err(error),
       None => Ok(acc.semantic_sources),
@@ -300,15 +291,11 @@ pub fn recursor_family_names(all: &[Name], num_motives: u64) -> Vec<Name> {
 pub(crate) struct MdataKeys {
   /// A source-contract key (`ix.source.binder`).
   source_contract: bool,
-  /// A key with the reserved component `_ix` (D14), which could stand for a
-  /// Pass 3 placeholder or decompile record.
-  reserved: bool,
 }
 
 impl std::ops::BitOrAssign for MdataKeys {
   fn bitor_assign(&mut self, other: Self) {
     self.source_contract |= other.source_contract;
-    self.reserved |= other.reserved;
   }
 }
 
@@ -375,7 +362,6 @@ pub(crate) fn collect_expr_references<'a>(
       ExprData::Mdata(data, inner, _) => {
         for (key, _) in data.iter() {
           keys.source_contract |= is_source_contract_key(key);
-          keys.reserved |= crate::compile::pass3::names::has_reserved(key);
         }
         stack.push(inner);
       },
@@ -487,40 +473,6 @@ mod tests {
     assert_eq!(setup_scan(&env).source_contracts, vec![name]);
   }
 
-  /// A metadata key with a reserved component (`_ix`, or a component
-  /// starting with it) marks its constant; an ordinary key does not.
-  #[test]
-  fn setup_scan_finds_reserved_metadata_keys() {
-    let key = |parts: &[&str]| {
-      parts.iter().fold(Name::anon(), |p, s| Name::str(p, (*s).to_owned()))
-    };
-    let mut env = Env::default();
-    for (label, k) in [
-      ("Inline", key(&["_ix", "inline"])),
-      ("Prefixed", key(&["user", "_ixfoo"])),
-      ("Ordinary", key(&["user", "key"])),
-    ] {
-      let name = n(label);
-      env.insert(
-        name.clone(),
-        ConstantInfo::DefnInfo(DefinitionVal {
-          cnst: ConstantVal {
-            name: name.clone(),
-            level_params: vec![],
-            typ: Expr::sort(Level::succ(Level::zero())),
-          },
-          value: Expr::mdata(vec![(k, DataValue::OfBool(true))], sort0()),
-          hints: ReducibilityHints::Abbrev,
-          safety: DefinitionSafety::Safe,
-          all: vec![name],
-        }),
-      );
-    }
-    let mut found = setup_scan(&env).reserved_metadata;
-    found.sort_by_key(|n| n.pretty());
-    assert_eq!(found, vec![n("Inline"), n("Prefixed")]);
-  }
-
   #[test]
   fn setup_scan_preserves_semantic_validation() {
     use crate::semantic_contract::{Contract, Kind};
@@ -596,7 +548,6 @@ mod tests {
       immediate_ungrounded: FxHashMap::default(),
       ind_groups: FxHashMap::default(),
       source_contracts: Vec::new(),
-      reserved_metadata: Vec::new(),
       semantic_sources: Ok(Vec::new()),
     };
     let names: Vec<_> = env.keys().collect();

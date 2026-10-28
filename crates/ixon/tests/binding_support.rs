@@ -10,7 +10,6 @@ use ixon::constant::{
 use ixon::contract::{BinderContract, ValueContract};
 use ixon::env::{Env, Named, RoleBinding};
 use ixon::expr::Expr;
-use ixon::lazy::LazyConstant;
 use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
 use ixon::role_table::{Evidence, Role, RoleTable};
 use ixon::univ::Univ;
@@ -186,43 +185,26 @@ fn binding_proofs_and_reverse_recursors_reach_a_real_fixed_point() {
 }
 
 #[test]
-fn bound_support_keeps_original_channels_and_anonymous_policy() {
+fn bound_support_keeps_original_provenance_and_anonymous_policy() {
   let f = fixture();
-  let original = definition(vec![], 42);
-  let original_address = original.commit().0;
+  let original_address = definition(vec![], 42).commit().0;
   assert!(!f.env.consts.contains_key(&original_address));
-  f.env
-    .originals
-    .insert(original_address.clone(), LazyConstant::from_constant(original));
   let name = Name::str(Name::anon(), "BoundRoot".into());
   f.env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
   let mut named = Named::new(f.main.clone(), ConstantMeta::default());
   named.set_original(original_address.clone(), ConstantMeta::default());
   f.env.register_name(name.clone(), named);
-  f.env.original_hint_overrides.insert(name.clone(), None);
   let packed =
     modes(&f.env, &f.main, &FxHashSet::default()).map(Result::unwrap);
   assert_eq!(encode(&packed[0]).unwrap(), encode(&packed[1]).unwrap());
   for output in &packed[..2] {
     assert!(!output.consts.contains_key(&original_address));
     assert_eq!(
-      output.originals.get(&original_address).unwrap().raw_bytes(),
-      f.env.originals.get(&original_address).unwrap().raw_bytes()
-    );
-    assert_eq!(
-      output.original_hint_overrides.get(&name).as_deref(),
-      Some(&None)
-    );
-    assert_eq!(
       output.named.get(&name).unwrap().original().map(|(a, _)| a),
       Some(original_address.clone())
     );
   }
-  assert!(
-    packed[2].named.is_empty()
-      && packed[2].names.is_empty()
-      && packed[2].originals.is_empty()
-  );
+  assert!(packed[2].named.is_empty() && packed[2].names.is_empty());
 }
 
 #[test]
@@ -233,10 +215,6 @@ fn missing_bound_members_proofs_owners_recursors_and_proof_support_refuse() {
     bad.consts.remove(address);
     all_fail(&bad, &f.main, &FxHashSet::default(), "binding support:");
   }
-  let misplaced = f.env.clone();
-  let (_, proof) = misplaced.consts.remove(&f.proof).unwrap();
-  misplaced.originals.insert(f.proof.clone(), proof);
-  all_fail(&misplaced, &f.main, &FxHashSet::default(), "missing constant");
 }
 
 #[test]

@@ -1,5 +1,5 @@
 import Ix.Cert.Schedule
-import Ix.Cert.PassHooks
+import Ix.Cert.BlockRecords
 import Ix.CompileCert.Canon.QSort
 
 /-! # Where the driver's resolution map comes from (Route A, B9b, piece 2)
@@ -27,8 +27,7 @@ assumed.
   (`Mono`); `foldWavesSeq_reach` (with `foldWaveWith_ready`: a wave's ready
   blocks are condensation blocks under their keys);
 * `Mono`: from one state to a later one, a recorded failure (`ungrounded`)
-  stays recorded, and a Pass 3 head or an extra name stays one or is recorded
-  as a failure (only `failAuxPromotion` removes them, recording each);
+  stays recorded, and an extra name stays one or is recorded as a failure (only `failAuxPromotion` removes them, recording each);
   `compileUnchecked_ungrounded`: a failure recorded at the end is reported;
 * `Step`: how one driver operation moves the resolution map (and, by `Mono`,
   the failures, heads and extra names); it composes (`Step.trans`), and every
@@ -46,13 +45,11 @@ assumed.
 * `compiled_runBlock` (with `auxBlockOutcome_cross`): a `Compiled` claim is a
   claim of `runBlock` on a subset of a condensation block's members, under a
   key, against a reached state that the final one follows (`Mono`);
-  `reach_p3BlockRefs`: the block references never change during the fold;
-* `HookFree` and `hookFree_compiled`: where Pass 3's hooks are identities at
-  that compile, the claim is one of the block compile's (`BlockCompiled`,
-  via `Ix.Cert.PassHooks.runBlockWithAux_records`);
+* `runBlock_compiled`: the claim is one of the block compile's
+  (`BlockCompiled`, via `Ix.Cert.BlockRecords.runBlockWithAux_records`);
 * `compileReport_claim` (B9b): a resolved name outside the aux map is
   published at its address, its record's bytes are stored there, and it is a
-  claim of its block's compile, the block compile's under `HookFree`. -/
+  claim of its block's compile. -/
 
 namespace Ix.Cert.Resolution
 
@@ -149,103 +146,78 @@ theorem foldWaveWith_ready (apply : CompileEnv → Ready → DriverAcc → Drive
 
 open Ix.Compile.ExactKey (ExactName)
 
-/-- **Failures stay, and a head or an extra name leaves only as a failure**,
-from `c` to `c'`: a recorded failure (`ungrounded`) stays recorded, and a
-Pass 3 head (`p3Heads`) or an extra name (`auxGenExtraNames`) stays one or
-is recorded as a failure. Only a withdrawal (`failAuxPromotion`) removes
-heads and extra names, each while recording it as a failure. -/
+/-- **Failures stay, and an extra name leaves only as a failure**, from `c` to
+`c'`: a recorded failure (`ungrounded`) stays recorded, and an extra name
+(`auxGenExtraNames`) stays one or is recorded as a failure. Only a withdrawal
+(`failAuxPromotion`) removes extra names, each while recording it as a
+failure. -/
 def Mono (c c' : CompileEnv) : Prop :=
   (∀ x : Ix.Name, c.ungrounded.contains x = true → c'.ungrounded.contains x = true) ∧
-  (∀ x : ExactName, c.p3Heads.contains x = true →
-    c'.p3Heads.contains x = true ∨ c'.ungrounded.contains x = true) ∧
   (∀ x : Ix.Name, c.auxGenExtraNames.contains x = true →
     c'.auxGenExtraNames.contains x = true ∨ c'.ungrounded.contains x = true)
 
 theorem Mono.refl (c : CompileEnv) : Mono c c :=
-  ⟨fun _ h => h, fun _ h => .inl h, fun _ h => .inl h⟩
+  ⟨fun _ h => h, fun _ h => .inl h⟩
 
 theorem Mono.trans {c₁ c₂ c₃ : CompileEnv} (h₁ : Mono c₁ c₂) (h₂ : Mono c₂ c₃) : Mono c₁ c₃ := by
-  refine ⟨fun x h => h₂.1 x (h₁.1 x h), fun x h => ?_, fun x h => ?_⟩
-  · rcases h₁.2.1 x h with h | h
-    · exact h₂.2.1 x h
-    · exact .inr (h₂.1 x h)
-  · rcases h₁.2.2 x h with h | h
-    · exact h₂.2.2 x h
-    · exact .inr (h₂.1 x h)
+  refine ⟨fun x h => h₂.1 x (h₁.1 x h), fun x h => ?_⟩
+  rcases h₁.2 x h with h | h
+  · exact h₂.2 x h
+  · exact .inr (h₂.1 x h)
 
-/-- An operation that only grows the failures, the heads and the extra names. -/
+/-- An operation that only grows the failures and the extra names. -/
 theorem Mono.grow {c c' : CompileEnv}
     (hu : ∀ x : Ix.Name, c.ungrounded.contains x = true → c'.ungrounded.contains x = true)
-    (hh : ∀ x : ExactName, c.p3Heads.contains x = true → c'.p3Heads.contains x = true)
     (he : ∀ x : Ix.Name, c.auxGenExtraNames.contains x = true → c'.auxGenExtraNames.contains x = true) :
     Mono c c' :=
-  ⟨hu, fun x h => .inl (hh x h), fun x h => .inl (he x h)⟩
+  ⟨hu, fun x h => .inl (he x h)⟩
 
-/-- An operation that leaves the failures, the heads and the extra names. -/
-theorem Mono.of_eq {c c' : CompileEnv} (hu : c'.ungrounded = c.ungrounded) (hh : c'.p3Heads = c.p3Heads)
+/-- An operation that leaves the failures and the extra names. -/
+theorem Mono.of_eq {c c' : CompileEnv} (hu : c'.ungrounded = c.ungrounded)
     (he : c'.auxGenExtraNames = c.auxGenExtraNames) : Mono c c' :=
-  Mono.grow (fun _ h => by rw [hu]; exact h) (fun _ h => by rw [hh]; exact h) (fun _ h => by rw [he]; exact h)
+  Mono.grow (fun _ h => by rw [hu]; exact h) (fun _ h => by rw [he]; exact h)
 
 /-- Recording a failure. -/
 theorem Mono.fail {c c' : CompileEnv} {m : Ix.Name} {msg : String}
-    (hu : c'.ungrounded = c.ungrounded.insert m msg) (hh : c'.p3Heads = c.p3Heads := by rfl)
+    (hu : c'.ungrounded = c.ungrounded.insert m msg)
     (he : c'.auxGenExtraNames = c.auxGenExtraNames := by rfl) : Mono c c' :=
   Mono.grow (fun _ h => by rw [hu, Std.HashMap.contains_insert, h, Bool.or_true])
-    (fun _ h => by rw [hh]; exact h) (fun _ h => by rw [he]; exact h)
+    (fun _ h => by rw [he]; exact h)
 
 /-- Adding an extra name. -/
 theorem Mono.extra {c c' : CompileEnv} {m : Ix.Name}
-    (he : c'.auxGenExtraNames = c.auxGenExtraNames.insert m) (hu : c'.ungrounded = c.ungrounded := by rfl)
-    (hh : c'.p3Heads = c.p3Heads := by rfl) : Mono c c' :=
-  Mono.grow (fun _ h => by rw [hu]; exact h) (fun _ h => by rw [hh]; exact h)
+    (he : c'.auxGenExtraNames = c.auxGenExtraNames.insert m) (hu : c'.ungrounded = c.ungrounded := by rfl) :
+    Mono c c' :=
+  Mono.grow (fun _ h => by rw [hu]; exact h)
     (fun _ h => by rw [he, Std.HashSet.contains_insert, h, Bool.or_true])
 
-/-- Erasing a head keeps every other head (the keys compared exactly). -/
-theorem erase_contains_or {M : Std.HashMap ExactName Ix.Name} {k y : ExactName} (h : M.contains y = true) :
-    (M.erase k).contains y = true ∨ k = y := by
-  rw [Std.HashMap.contains_erase]
-  cases e : (k == y)
-  · exact .inl (by rw [h]; rfl)
-  · exact .inr (beq_iff_eq.mp e)
-
-/-- Publishing a head keeps every head. -/
-theorem insert_contains {M : Std.HashMap ExactName Ix.Name} {k y : ExactName} {v : Ix.Name}
-    (h : M.contains y = true) : (M.insert k v).contains y = true := by
-  rw [Std.HashMap.contains_insert, h, Bool.or_true]
-
-/-- Withdrawing a name: it leaves the heads and the extra names and is
-recorded as a failure. -/
+/-- Withdrawing a name: it leaves the extra names and is recorded as a
+failure. -/
 theorem Mono.withdraw {c c' : CompileEnv} {m : Ix.Name} {msg : String}
-    (hu : c'.ungrounded = c.ungrounded.insert m msg) (hh : c'.p3Heads = c.p3Heads.erase m)
+    (hu : c'.ungrounded = c.ungrounded.insert m msg)
     (he : c'.auxGenExtraNames = c.auxGenExtraNames.erase m) : Mono c c' := by
-  refine ⟨fun _ h => by rw [hu, Std.HashMap.contains_insert, h, Bool.or_true], fun x h => ?_, fun x h => ?_⟩
-  · rcases erase_contains_or (k := m) h with h' | same
-    · exact .inl ((congrArg (·.contains x) hh).trans h')
-    · subst same
-      exact .inr ((congrArg (·.contains m) hu).trans Std.HashMap.contains_insert_self)
-  · rw [he, Std.HashSet.contains_erase]
-    cases e : (m == x)
-    · exact .inl (by rw [h]; rfl)
-    · exact .inr (by rw [hu, Std.HashMap.contains_insert, e]; rfl)
+  refine ⟨fun _ h => by rw [hu, Std.HashMap.contains_insert, h, Bool.or_true], fun x h => ?_⟩
+  rw [he, Std.HashSet.contains_erase]
+  cases e : (m == x)
+  · exact .inl (by rw [h]; rfl)
+  · exact .inr (by rw [hu, Std.HashMap.contains_insert, e]; rfl)
 
 /-- **One driver operation's effect on the resolution map and the stored
 records**, from `c` to `c'`: a stored record stays stored, with the same
-bytes, the block references (`p3BlockRefs`), the input environment (`env`) and
-Pass 3's clique tables (`p3Cliques`, `p3CliqueRoots`) stay as they are, and
-failures, heads and extra names move as `Mono` says; and every entry of `c'`'s resolution map is one of `c`'s, whose name keeps its
+bytes, the input environment (`env`) stays as it is, and failures and extra
+names move as `Mono` says; and every entry of `c'`'s resolution map is one of `c`'s, whose name keeps its
 aux address if it had one, or its name has an aux address in `c'`, or it is
 one of the operation's own claims (`F`), with the claimed bytes stored at its
 address. -/
 def Step (c c' : CompileEnv) (F : Ix.Name → Address → ByteArray → Prop) : Prop :=
   ((∀ (a : Address) (b : ByteArray), c.constants.get? a = some b → c'.constants.get? a = some b) ∧
-    (c'.p3BlockRefs = c.p3BlockRefs ∧ c'.env = c.env ∧
-      (c'.p3Cliques = c.p3Cliques ∧ c'.p3CliqueRoots = c.p3CliqueRoots)) ∧ Mono c c') ∧
+    c'.env = c.env ∧ Mono c c') ∧
   ∀ (n : ExactName) (a : Address), c'.nameToAddr.get? n = some a →
     (c.nameToAddr.get? n = some a ∧ (c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true)) ∨
       c'.auxNameToAddr.contains n = true ∨ ∃ b, F n a b ∧ c'.constants.get? a = some b
 
 theorem Step.refl (c : CompileEnv) (F : Ix.Name → Address → ByteArray → Prop) : Step c c F :=
-  ⟨⟨fun _ _ h => h, ⟨rfl, rfl, rfl, rfl⟩, Mono.refl c⟩, fun _ _ h => .inl ⟨h, id⟩⟩
+  ⟨⟨fun _ _ h => h, rfl, Mono.refl c⟩, fun _ _ h => .inl ⟨h, id⟩⟩
 
 theorem Step.mono {c c' : CompileEnv} {F G : Ix.Name → Address → ByteArray → Prop} (h : Step c c' F)
     (FG : ∀ n a b, F n a b → G n a b) : Step c c' G := by
@@ -258,8 +230,7 @@ theorem Step.mono {c c' : CompileEnv} {F G : Ix.Name → Address → ByteArray �
 theorem Step.trans {c₁ c₂ c₃ : CompileEnv} {F : Ix.Name → Address → ByteArray → Prop} (h₁ : Step c₁ c₂ F)
     (h₂ : Step c₂ c₃ F) : Step c₁ c₃ F := by
   refine ⟨⟨fun a b h => h₂.1.1 a b (h₁.1.1 a b h),
-    ⟨h₂.1.2.1.1.trans h₁.1.2.1.1, h₂.1.2.1.2.1.trans h₁.1.2.1.2.1,
-      h₂.1.2.1.2.2.1.trans h₁.1.2.1.2.2.1, h₂.1.2.1.2.2.2.trans h₁.1.2.1.2.2.2⟩, h₁.1.2.2.trans h₂.1.2.2⟩,
+    h₂.1.2.1.trans h₁.1.2.1, h₁.1.2.2.trans h₂.1.2.2⟩,
     fun n a hn => ?_⟩
   rcases h₂.2 n a hn with ⟨h, keep₂⟩ | h | h
   · rcases h₁.2 n a h with ⟨h, keep₁⟩ | h | ⟨b, hF, hb⟩
@@ -274,22 +245,20 @@ keeps every aux name. -/
 theorem Step.keep {c c' : CompileEnv} {F : Ix.Name → Address → ByteArray → Prop}
     (h₁ : c'.nameToAddr = c.nameToAddr)
     (h₂ : ∀ n : ExactName, c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true)
-    (h₃ : c'.constants = c.constants := by rfl) (h₄ : c'.p3BlockRefs = c.p3BlockRefs := by rfl) (h₆ : c'.env = c.env := by rfl)
-    (h₇ : c'.p3Cliques = c.p3Cliques := by rfl) (h₈ : c'.p3CliqueRoots = c.p3CliqueRoots := by rfl)
-    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl rfl) :
+    (h₃ : c'.constants = c.constants := by rfl) (h₆ : c'.env = c.env := by rfl)
+    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl) :
     Step c c' F := by
-  refine ⟨⟨fun a b h => by rw [h₃]; exact h, ⟨h₄, h₆, h₇, h₈⟩, h₅⟩, fun n a hn => ?_⟩
+  refine ⟨⟨fun a b h => by rw [h₃]; exact h, h₆, h₅⟩, fun n a hn => ?_⟩
   rw [h₁] at hn
   exact .inl ⟨hn, h₂ n⟩
 
 /-- An operation that erases one name from the resolution map and the aux map. -/
 theorem Step.erase {c c' : CompileEnv} {F : Ix.Name → Address → ByteArray → Prop} {m : ExactName}
     (h₁ : c'.nameToAddr = c.nameToAddr.erase m) (h₂ : c'.auxNameToAddr = c.auxNameToAddr.erase m)
-    (h₃ : c'.constants = c.constants := by rfl) (h₄ : c'.p3BlockRefs = c.p3BlockRefs := by rfl) (h₆ : c'.env = c.env := by rfl)
-    (h₇ : c'.p3Cliques = c.p3Cliques := by rfl) (h₈ : c'.p3CliqueRoots = c.p3CliqueRoots := by rfl)
-    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl rfl) :
+    (h₃ : c'.constants = c.constants := by rfl) (h₆ : c'.env = c.env := by rfl)
+    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl) :
     Step c c' F := by
-  refine ⟨⟨fun a b h => by rw [h₃]; exact h, ⟨h₄, h₆, h₇, h₈⟩, h₅⟩, fun n a hn => ?_⟩
+  refine ⟨⟨fun a b h => by rw [h₃]; exact h, h₆, h₅⟩, fun n a hn => ?_⟩
   rw [h₁, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_erase] at hn
   split at hn
   · cases hn
@@ -304,11 +273,10 @@ theorem Step.insert {c c' : CompileEnv} {F : Ix.Name → Address → ByteArray �
     {b : Address} (h₁ : c'.nameToAddr = c.nameToAddr.insert m b)
     (h₂ : ∀ n : ExactName, c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true)
     (hm : (∃ bytes, F m b bytes ∧ c'.constants.get? b = some bytes) ∨ c'.auxNameToAddr.contains m = true)
-    (h₃ : c'.constants = c.constants := by rfl) (h₄ : c'.p3BlockRefs = c.p3BlockRefs := by rfl) (h₆ : c'.env = c.env := by rfl)
-    (h₇ : c'.p3Cliques = c.p3Cliques := by rfl) (h₈ : c'.p3CliqueRoots = c.p3CliqueRoots := by rfl)
-    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl rfl) :
+    (h₃ : c'.constants = c.constants := by rfl) (h₆ : c'.env = c.env := by rfl)
+    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl) :
     Step c c' F := by
-  refine ⟨⟨fun a b h => by rw [h₃]; exact h, ⟨h₄, h₆, h₇, h₈⟩, h₅⟩, fun n a hn => ?_⟩
+  refine ⟨⟨fun a b h => by rw [h₃]; exact h, h₆, h₅⟩, fun n a hn => ?_⟩
   rw [h₁, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at hn
   split at hn
   · rename_i same
@@ -339,10 +307,9 @@ theorem Step.write {c c' : CompileEnv} {F : Ix.Name → Address → ByteArray �
     {v : ByteArray} (h₁ : c'.nameToAddr = c.nameToAddr)
     (h₂ : ∀ n : ExactName, c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true)
     (h₃ : c'.constants = c.constants.insert k v) (agree : ∀ v₀, c.constants.get? k = some v₀ → v₀ = v)
-    (h₄ : c'.p3BlockRefs = c.p3BlockRefs := by rfl) (h₆ : c'.env = c.env := by rfl)
-    (h₇ : c'.p3Cliques = c.p3Cliques := by rfl) (h₈ : c'.p3CliqueRoots = c.p3CliqueRoots := by rfl)
-    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl rfl) : Step c c' F := by
-  refine ⟨⟨grow_insert h₃ agree, ⟨h₄, h₆, h₇, h₈⟩, h₅⟩, fun n a hn => ?_⟩
+    (h₆ : c'.env = c.env := by rfl)
+    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl) : Step c c' F := by
+  refine ⟨⟨grow_insert h₃ agree, h₆, h₅⟩, fun n a hn => ?_⟩
   rw [h₁] at hn
   exact .inl ⟨hn, h₂ n⟩
 
@@ -353,12 +320,11 @@ theorem Step.claim {c c' : CompileEnv} {F : Ix.Name → Address → ByteArray �
     {k : Address} {v : ByteArray} (h₁ : c'.nameToAddr = c.nameToAddr.insert m k)
     (h₂ : ∀ n : ExactName, c.auxNameToAddr.contains n = true → c'.auxNameToAddr.contains n = true)
     (h₃ : c'.constants = c.constants.insert k v) (agree : ∀ v₀, c.constants.get? k = some v₀ → v₀ = v)
-    (hF : F m k v) (h₄ : c'.p3BlockRefs = c.p3BlockRefs := by rfl) (h₆ : c'.env = c.env := by rfl)
-    (h₇ : c'.p3Cliques = c.p3Cliques := by rfl) (h₈ : c'.p3CliqueRoots = c.p3CliqueRoots := by rfl)
-    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl rfl) : Step c c' F := by
+    (hF : F m k v) (h₆ : c'.env = c.env := by rfl)
+    (h₅ : Mono c c' := by exact Mono.of_eq rfl rfl) : Step c c' F := by
   have stored : c'.constants.get? k = some v := by
     rw [h₃, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert_self]
-  refine ⟨⟨grow_insert h₃ agree, ⟨h₄, h₆, h₇, h₈⟩, h₅⟩, fun n a hn => ?_⟩
+  refine ⟨⟨grow_insert h₃ agree, h₆, h₅⟩, fun n a hn => ?_⟩
   rw [h₁, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at hn
   split at hn
   · rename_i same
@@ -389,7 +355,7 @@ theorem failAuxPromotion_step (acc : DriverAcc) (all : Ix.Set Ix.Name) (msg : St
   refine loop_bind_set (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
     (I := fun s : DriverAcc => Step acc.cenv s.cenv F) _ _ _ _ (Step.refl _ _) ?_ ?_
   · intro m s hs
-    exact hs.trans (Step.erase rfl rfl (h₅ := Mono.withdraw rfl rfl rfl))
+    exact hs.trans (Step.erase rfl rfl (h₅ := Mono.withdraw rfl rfl))
   · intro L hL
     exact hL
 
@@ -513,18 +479,6 @@ theorem fold_insert_contains {m src : Std.HashMap ExactName Address} {n : ExactN
     rw [List.foldl_cons]
     exact ih _ (by rw [Std.HashMap.contains_insert]; simp [h])
 
-/-- Publishing heads keeps every head. -/
-theorem heads_insert_contains {hs : Array (Ix.Name × Ix.Name)} {m : Std.HashMap ExactName Ix.Name}
-    {x : ExactName} (h : m.contains x = true) :
-    (hs.foldl (fun m (k, v) => m.insert k v) m).contains x = true := by
-  rw [← Array.foldl_toList]
-  generalize hs.toList = l
-  induction l generalizing m with
-  | nil => exact h
-  | cons y l ih =>
-    rw [List.foldl_cons]
-    exact ih (by obtain ⟨k, v⟩ := y; exact insert_contains h)
-
 /-- Adding extra names keeps every extra name. -/
 theorem extras_insert_contains {s src : Std.HashSet Ix.Name} {x : Ix.Name} (h : s.contains x = true) :
     (src.fold (fun s n => s.insert n) s).contains x = true := by
@@ -619,8 +573,8 @@ theorem checkAnonymousWrites_agrees {before : Std.HashMap Address ByteArray} {W 
 /-- A merge runs only after `checkCompiledBlock`, whose content check covers
 exactly the merge's record writes (`blockRecordWrites`). -/
 theorem checkCompiledBlock_content {cenv : CompileEnv} {lo : Ix.Name} {result : BlockResult}
-    {cache : BlockState} {published : Ix.Compile.Pass.Published}
-    (h : checkCompiledBlock cenv lo result cache published = .ok ()) :
+    {cache : BlockState}
+    (h : checkCompiledBlock cenv lo result cache = .ok ()) :
     checkAnonymousWrites cenv.constants (blockRecordWrites result cache) = true := by
   unfold checkCompiledBlock at h
   simp only [bind, Except.bind] at h
@@ -672,7 +626,7 @@ theorem write_aux {result : BlockResult} {cache : BlockState} {x : Address × Ix
 set_option hygiene false in
 /-- `mergeCompiledBlock`'s loops after its primary registrations, which change
 only the stored records (each write checked), the `Named` table, the aux map
-(it grows), the extra names, Pass 3's records, the class registry and the
+(it grows), the extra names, the class registry and the
 pending names. -/
 local macro "merge_tail" init:term : tactic => `(tactic| (
   refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
@@ -692,7 +646,7 @@ local macro "merge_tail" init:term : tactic => `(tactic| (
       · refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
           (I := fun c : CompileEnv => Step acc.cenv c F) _ _ _ _ ?_ ?_ ?_
         · exact hL₃.trans (Step.keep rfl (fun _ h => fold_insert_contains h)
-              (h₅ := Mono.grow (fun _ h => h) (fun _ h => heads_insert_contains h) (fun _ h => extras_insert_contains h)))
+              (h₅ := Mono.grow (fun _ h => h) (fun _ h => extras_insert_contains h)))
         · intro cls _ s hs
           exact forIn_inv_array (fun c : CompileEnv => Step acc.cenv c F) _ cls (by intro _ _ s hs; exact hs) s hs
         · intro L₄ hL₄
@@ -702,15 +656,15 @@ local macro "merge_tail" init:term : tactic => `(tactic| (
       · refine loop_bind (P := fun d : DriverAcc => Step acc.cenv d.cenv F)
           (I := fun _ : Array Ix.Name => True) _ _ _ _ trivial (fun _ _ _ _ => trivial) ?_
         intro _ _; exact hL₃.trans (Step.keep rfl (fun _ h => fold_insert_contains h)
-              (h₅ := Mono.grow (fun _ h => h) (fun _ h => heads_insert_contains h) (fun _ h => extras_insert_contains h)))))
+              (h₅ := Mono.grow (fun _ h => h) (fun _ h => extras_insert_contains h)))))
 
 /-- **A merge adds only the block's own primary claims** to the resolution
 map, each with its record's bytes stored at its address, only grows the aux
 map, and changes no stored record (its writes passed the content check). -/
 theorem mergeCompiledBlock_step (acc : DriverAcc) (lo : Ix.Name) (result : BlockResult)
-    (cache : BlockState) (published : Ix.Compile.Pass.Published)
+    (cache : BlockState)
     (hchk : checkAnonymousWrites acc.cenv.constants (blockRecordWrites result cache) = true) :
-    Step acc.cenv (mergeCompiledBlock acc lo result cache published).cenv
+    Step acc.cenv (mergeCompiledBlock acc lo result cache).cenv
       (fun n a b => (n, a, b) ∈ claimWrites lo result) := by
   have ag := checkAnonymousWrites_agrees hchk
   have st₀ : Stored acc.cenv.constants (blockRecordWrites result cache) acc.cenv := fun _ _ h => .inl h
@@ -745,8 +699,8 @@ theorem mergeCompiledBlock_step (acc : DriverAcc) (lo : Ix.Name) (result : Block
 compiled block's, at its key; a promoted block's cross-SCC subset's, at its
 own key; none otherwise. -/
 def outcomeClaims (lo : Ix.Name) : AuxBlockOutcome → Ix.Name → Address → ByteArray → Prop
-  | .compiled result _ _ => fun n a b => (n, a, b) ∈ claimWrites lo result
-  | .promoted (some (clo, result, _, _)) _ _ _ _ _ => fun n a b => (n, a, b) ∈ claimWrites clo result
+  | .compiled result _ => fun n a b => (n, a, b) ∈ claimWrites lo result
+  | .promoted (some (clo, result, _)) _ _ _ _ _ => fun n a b => (n, a, b) ∈ claimWrites clo result
   | _ => fun _ _ _ => False
 
 theorem fst_pure {G : Ix.Name → Address → ByteArray → Prop} {c : CompileEnv} {d : DriverAcc} {x : Array Ix.Name}
@@ -772,9 +726,9 @@ theorem loopAcc {G : Ix.Name → Address → ByteArray → Prop} {c : CompileEnv
 resolution map (or, when its claims or payloads conflict, records its
 failures and changes nothing else). -/
 theorem applyAuxBlockOutcome_compiled_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
-    (r : BlockResult) (c : BlockState) (p : Ix.Compile.Pass.Published) :
-    Step acc.cenv (applyAuxBlockOutcome acc lo all (.compiled r c p)).1.cenv
-      (outcomeClaims lo (.compiled r c p)) := by
+    (r : BlockResult) (c : BlockState) :
+    Step acc.cenv (applyAuxBlockOutcome acc lo all (.compiled r c)).1.cenv
+      (outcomeClaims lo (.compiled r c)) := by
     unfold applyAuxBlockOutcome; simp only [Id.run]
     split
     · refine fst_pure ?_
@@ -785,8 +739,8 @@ theorem applyAuxBlockOutcome_compiled_step (acc : DriverAcc) (lo : Ix.Name) (all
       · intro L hL
         exact hL
     · rename_i hc
-      have merged := (mergeCompiledBlock_step acc lo r c p (checkCompiledBlock_content hc)).mono
-        (G := outcomeClaims lo (.compiled r c p)) fun _ _ _ h => h
+      have merged := (mergeCompiledBlock_step acc lo r c (checkCompiledBlock_content hc)).mono
+        (G := outcomeClaims lo (.compiled r c)) fun _ _ _ h => h
       split
       · refine loopNames _ _ _ _ ?_
         intro L
@@ -845,23 +799,23 @@ local macro "prom_tail" x:tactic : tactic => `(tactic| (
 claims** (the original-form promotion and the remaining claims write aux
 addresses, a withdrawal only erases, and recorded failures leave the map). -/
 theorem applyAuxBlockOutcome_promoted_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set Ix.Name)
-    (cs : Option (Ix.Name × BlockResult × BlockState × Ix.Compile.Pass.Published)) (cn : Array Ix.Name)
+    (cs : Option (Ix.Name × BlockResult × BlockState)) (cn : Array Ix.Name)
     (cf : Option (Array Ix.Name × String)) (im : Option String) (na : Option (BlockResult × BlockState))
     (nf : Option String) :
     Step acc.cenv (applyAuxBlockOutcome acc lo all (.promoted cs cn cf im na nf)).1.cenv
       (outcomeClaims lo (.promoted cs cn cf im na nf)) := by
-  rcases cs with _ | ⟨clo, result, cache, published⟩
+  rcases cs with _ | ⟨clo, result, cache⟩
   · rcases cf with _ | ⟨names, msg⟩
     · unfold applyAuxBlockOutcome; simp only [Id.run]
       prom_tail (exact Step.refl _ _)
     · unfold applyAuxBlockOutcome; simp only [Id.run]
       prom_tail (keep_loop; exact Step.refl _ _)
-  · have merged : ∀ X : DriverAcc, checkCompiledBlock X.cenv clo result cache published = .ok () →
+  · have merged : ∀ X : DriverAcc, checkCompiledBlock X.cenv clo result cache = .ok () →
         Step acc.cenv X.cenv
-        (outcomeClaims lo (.promoted (some (clo, result, cache, published)) cn cf im na nf)) →
-        Step acc.cenv (mergeCompiledBlock X clo result cache published).cenv
-          (outcomeClaims lo (.promoted (some (clo, result, cache, published)) cn cf im na nf)) :=
-      fun X hc hX => hX.trans ((mergeCompiledBlock_step X clo result cache published
+        (outcomeClaims lo (.promoted (some (clo, result, cache)) cn cf im na nf)) →
+        Step acc.cenv (mergeCompiledBlock X clo result cache).cenv
+          (outcomeClaims lo (.promoted (some (clo, result, cache)) cn cf im na nf)) :=
+      fun X hc hX => hX.trans ((mergeCompiledBlock_step X clo result cache
         (checkCompiledBlock_content hc)).mono fun _ _ _ h => h)
     rcases cf with _ | ⟨names, msg⟩
     · unfold applyAuxBlockOutcome; simp only [Id.run]
@@ -897,7 +851,7 @@ theorem applyAuxBlockOutcome_step (acc : DriverAcc) (lo : Ix.Name) (all : Ix.Set
     (o : AuxBlockOutcome) :
     Step acc.cenv (applyAuxBlockOutcome acc lo all o).1.cenv (outcomeClaims lo o) := by
   cases o with
-  | compiled r c p => exact applyAuxBlockOutcome_compiled_step acc lo all r c p
+  | compiled r c => exact applyAuxBlockOutcome_compiled_step acc lo all r c
   | promoted cs cn cf im na nf => exact applyAuxBlockOutcome_promoted_step acc lo all cs cn cf im na nf
   | failed msg => exact applyAuxBlockOutcome_failed_step acc lo all msg
 
@@ -1261,46 +1215,9 @@ theorem assembleEnv_consts (acc : DriverAcc) {a : Address} {b : ByteArray}
   rw [Std.HashMap.mem_toList_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
   exact h
 
-/-- **The clique rows' merge only adds aux names** (`mergeRows`,
-`insertIfNew`): every name of the aux map before it is in the aux map after. -/
-theorem mergeRows_aux_contains {acc : DriverAcc} {rows : BlockState} {n : ExactName}
-    (h : acc.cenv.auxNameToAddr.contains n = true) :
-    (mergeRows acc rows).cenv.auxNameToAddr.contains n = true := by
-  show (rows.auxNameToAddr.fold (fun m k v => m.insertIfNew k v) acc.cenv.auxNameToAddr).contains n = true
-  rw [Std.HashMap.fold_eq_foldl_toList]
-  generalize acc.cenv.auxNameToAddr = m at h ⊢
-  induction rows.auxNameToAddr.toList generalizing m with
-  | nil => exact h
-  | cons p ps ih => exact ih _ (by rw [Std.HashMap.contains_insertIfNew]; simp [h])
-
-/-- **The clique rows' merge keeps every stored record** (`mergeRows`,
-`insertIfNew`): a record stored before it is stored after, with its bytes. -/
-theorem mergeRows_constants {acc : DriverAcc} {rows : BlockState} {a : Address} {b : ByteArray}
-    (h : acc.cenv.constants.get? a = some b) :
-    (mergeRows acc rows).cenv.constants.get? a = some b := by
-  show (rows.auxConsts.foldl (fun m (x : Address × Ixon.Constant) => m.insertIfNew x.1 (Ixon.ser x.2))
-    acc.cenv.constants).get? a = some b
-  rw [← Array.foldl_toList]
-  generalize acc.cenv.constants = m at h ⊢
-  induction rows.auxConsts.toList generalizing m with
-  | nil => exact h
-  | cons p ps ih =>
-    apply ih
-    rw [Std.HashMap.get?_eq_getElem?] at h ⊢
-    rw [Std.HashMap.getElem?_insertIfNew]
-    split
-    · rename_i hk
-      obtain ⟨hka, hkn⟩ := hk
-      simp only [beq_iff_eq] at hka
-      subst hka
-      exact absurd (Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [h])) hkn
-    · exact h
-
 /-- **The driver's final state**: a fold that returns ran its waves from an
-initial state whose resolution map is empty, whose environment is the
-driver's view of the input and whose clique tables are the ones
-`scheduleCliques` computes from that view and the blocks, and returns a
-successful original-data finalization of the assembled state the waves
+initial state whose resolution map is empty and whose environment is the
+driver's view of the input, and returns the assembled state the waves
 reached, with its resolution map, aux map and stored records. -/
 theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {dbg : Bool}
     {unmaterialized : Nat} {sharingLimits : Ix.Sharing.Exact.Limits} {width : Nat} {ixe : Ixon.Env}
@@ -1309,11 +1226,8 @@ theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule) (st : FoldState),
       cenv₀.nameToAddr = {} ∧
       (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
-      ((FoldState.init cenv₀ blocks sched).acc.cenv.p3Cliques,
-        (FoldState.init cenv₀ blocks sched).acc.cenv.p3CliqueRoots) =
-        (Ix.Compile.Pass.Clique.scheduleCliques { consts := {}, fallback? := some env.get? } blocks).2 ∧
       foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched) = .ok st ∧
-      Ix.Compile.OriginalData.finalizeOriginals st.acc.originals (assembleEnv st.acc).1 = .ok ixe ∧
+      (assembleEnv st.acc).1 = ixe ∧
       cenv.nameToAddr = st.acc.cenv.nameToAddr ∧
       cenv.auxNameToAddr = st.acc.cenv.auxNameToAddr ∧
       cenv.constants = st.acc.cenv.constants ∧ Mono st.acc.cenv cenv := by
@@ -1324,20 +1238,13 @@ theorem compileEnvFold_final {env : Ix.Environment} {blocks : Ix.CondensedBlocks
   generalize validateMutualSafety env blocks = safety at h
   cases missing <;> cases flags <;> cases safety <;>
     simp only [bind, Except.bind, pure, Except.pure, Functor.map, Except.map] at h <;> try cases h
-  -- the clique tables abstracted, so no check evaluates them
-  generalize Ix.Compile.Pass.Clique.scheduleCliques { consts := {}, fallback? := some env.get? } blocks = sc at h ⊢
   generalize hr : foldWavesSeq _ _ _ _ = r at h
   cases r with
   | error => cases h
   | ok st =>
-    simp only [bind, Except.bind, finalizeEnv] at h
-    generalize hf : Ix.Compile.OriginalData.finalizeOriginals _ _ = finalized at h
-    cases finalized with
-    | error => cases h
-    | ok out =>
-      simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨rfl, -, rfl⟩ := h
-      exact ⟨_, _, st, rfl, rfl, rfl, hr, hf, rfl, rfl, rfl, Mono.of_eq rfl rfl rfl⟩
+    simp only [finalizeEnv, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -, rfl⟩ := h
+    exact ⟨_, _, st, rfl, rfl, hr, rfl, rfl, rfl, rfl, Mono.of_eq rfl rfl⟩
 
 /-- **The fold's run**: the driver ran its waves over the condensation `blocks` of
 `env` from `cenv₀` under `sched`, from an empty resolution map and the input's view, to a
@@ -1365,25 +1272,21 @@ theorem compileEnvFold_provenance {env : Ix.Environment} {blocks : Ix.CondensedB
     (h : compileEnvFold env blocks dbg unmaterialized sharingLimits width = .ok (ixe, bytes, cenv)) :
     ∃ (cenv₀ : CompileEnv) (sched : FoldSchedule), FoldRun env blocks cenv cenv₀ sched ∧
       (FoldState.init cenv₀ blocks sched).acc.cenv.env = { consts := {}, fallback? := some env.get? } ∧
-      ((FoldState.init cenv₀ blocks sched).acc.cenv.p3Cliques,
-        (FoldState.init cenv₀ blocks sched).acc.cenv.p3CliqueRoots) =
-        (Ix.Compile.Pass.Clique.scheduleCliques { consts := {}, fallback? := some env.get? } blocks).2 ∧
       ∀ (n : ExactName) (a : Address),
         cenv.nameToAddr.get? n = some a → cenv.auxNameToAddr.contains n = true ∨
           ∃ b, CompiledIn blocks (OnRun blocks sched (FoldState.init cenv₀ blocks sched)) cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
-  obtain ⟨cenv₀, sched, st, h₀, henv, hcl, hst, finalized, hmap, haux, hconsts, hm⟩ :=
+  obtain ⟨cenv₀, sched, st, h₀, henv, hst, finalized, hmap, haux, hconsts, hm⟩ :=
     compileEnvFold_final h
-  have frame := Ix.Compile.OriginalData.finalizeOriginals_frame finalized
   have kept : ∀ a b, st.acc.cenv.constants.get? a = some b → cenv.constants.get? a = some b :=
     fun a b hb => by rw [hconsts]; exact hb
-  refine ⟨cenv₀, sched, ⟨st, h₀, henv, hst, hmap, kept, hm⟩, henv, hcl, fun n a hn => ?_⟩
+  refine ⟨cenv₀, sched, ⟨st, h₀, henv, hst, hmap, kept, hm⟩, henv, fun n a hn => ?_⟩
   rw [hmap] at hn
   rw [haux]
   rcases waveStart_provenance (provenanceIn_of_empty ((init_nameToAddr _ _ _).trans h₀))
     (foldWavesSeq_waveStart _ _ _ hst) n a hn with haux | ⟨b, hc, hb⟩
   · exact .inl haux
-  · rw [frame.consts]
+  · rw [← finalized]
     exact .inr ⟨b, hc.mono hm, assembleEnv_consts _ hb⟩
 
 /-- **`compileUnchecked` returns the driver's final environment**: a
@@ -1397,13 +1300,11 @@ theorem compileUnchecked_fold {env : Ix.Environment} {ixe : Ixon.Env} {failures 
   simp only [bind, Except.bind, pure, Except.pure] at h
   split at h
   · cases h
-  · split at h
-    · cases h
-    · rename_i r hr
-      obtain ⟨ixe', bytes, cenv⟩ := r
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨rfl, -, rfl⟩ := h
-      exact ⟨bytes, hr⟩
+  · rename_i r hr
+    obtain ⟨ixe', bytes, cenv⟩ := r
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -, rfl⟩ := h
+    exact ⟨bytes, hr⟩
 
 /-- **A failure recorded in the driver's final environment is reported**:
 `compileUnchecked`'s block failures are the final environment's `ungrounded`. -/
@@ -1414,13 +1315,11 @@ theorem compileUnchecked_ungrounded {env : Ix.Environment} {ixe : Ixon.Env} {fai
   simp only [bind, Except.bind, pure, Except.pure] at h
   split at h
   · cases h
-  · split at h
-    · cases h
-    · rename_i r hr
-      obtain ⟨ixe', bytes, cenv'⟩ := r
-      simp only [Except.ok.injEq, Prod.mk.injEq] at h
-      obtain ⟨-, rfl, rfl⟩ := h
-      simp only [Failures.failed, hx, Bool.or_true]
+  · rename_i r hr
+    obtain ⟨ixe', bytes, cenv'⟩ := r
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, rfl, rfl⟩ := h
+    simp only [Failures.failed, hx, Bool.or_true]
 
 /-- **Where the resolution map of `compileUnchecked`'s environment comes
 from**: every entry is an aux name's (in the same environment's aux map),
@@ -1435,11 +1334,6 @@ theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {fai
         cenv₀ sched ∧
       (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.env =
         { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) } ∧
-      ((FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.p3Cliques,
-        (FoldState.init cenv₀ (Ix.CondenseM.run (groundSplit { consts := env.consts }).1) sched).acc.cenv.p3CliqueRoots) =
-        (Ix.Compile.Pass.Clique.scheduleCliques
-          { consts := {}, fallback? := some (Ix.Environment.get? { consts := env.consts }) }
-          (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)).2 ∧
       ∀ (n : ExactName) (a : Address), cenv.nameToAddr.get? n = some a →
         cenv.auxNameToAddr.contains n = true ∨
           ∃ b, CompiledIn (Ix.CondenseM.run (groundSplit { consts := env.consts }).1)
@@ -1448,8 +1342,8 @@ theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {fai
               cenv n a b ∧
             ixe.consts.get? a = some { buf := b, len := b.size } := by
   obtain ⟨bytes, hf⟩ := compileUnchecked_fold h
-  obtain ⟨cenv₀, sched, hrun, henv, hcl, hp⟩ := compileEnvFold_provenance hf
-  exact ⟨bytes, cenv₀, sched, hf, hrun, henv, hcl, hp⟩
+  obtain ⟨cenv₀, sched, hrun, henv, hp⟩ := compileEnvFold_provenance hf
+  exact ⟨bytes, cenv₀, sched, hf, hrun, henv, hp⟩
 
 
 /-! ## The block compile behind a claim -/
@@ -1458,19 +1352,19 @@ theorem compileUnchecked_provenance {env : Ix.Environment} {ixe : Ixon.Env} {fai
 `.compiled` only from `runBlock` on the block itself (a block whose key does
 not resolve yet). -/
 theorem auxBlockOutcome_compiled {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
-    {r : BlockResult} {c : BlockState} {p : Ix.Compile.Pass.Published}
-    (h : auxBlockOutcome cenv lo all = .compiled r c p) :
-    ∃ layout, runBlock cenv all lo = .ok (r, c, layout, p) := by
+    {r : BlockResult} {c : BlockState}
+    (h : auxBlockOutcome cenv lo all = .compiled r c) :
+    ∃ layout, runBlock cenv all lo = .ok (r, c, layout) := by
   unfold auxBlockOutcome at h
   simp only [Id.run] at h
   split at h
-  · refine absurd h (loop_bind_set _ _ _ _ (fun _ => True) (fun o : AuxBlockOutcome => o ≠ .compiled r c p) trivial
+  · refine absurd h (loop_bind_set _ _ _ _ (fun _ => True) (fun o : AuxBlockOutcome => o ≠ .compiled r c) trivial
       (fun _ _ _ => trivial) fun L _ => ?_)
     intro h'
     repeat (first | (split at h') | cases h')
   · split at h
     · cases h
-    · rename_i x result cache layout published hr
+    · rename_i x result cache layout hr
       cases h
       exact ⟨layout, hr⟩
 
@@ -1481,24 +1375,24 @@ promoted block. -/
 theorem compiled_cases {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {fin : CompileEnv} {n : Ix.Name}
     {a : Address} {b : ByteArray} (h : CompiledIn blocks R fin n a b) :
     ∃ snap rep all, R snap ∧ blocks.blocks.get? rep = some all ∧ Mono snap.cenv fin ∧
-      ((∃ r c p layout, runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout, p) ∧
+      ((∃ r c layout, runBlock snap.cenv all (blockKey rep all) = .ok (r, c, layout) ∧
           (n, a, b) ∈ claimWrites (blockKey rep all) r) ∨
-        ∃ clo r c p cn cf im na nf,
-          auxBlockOutcome snap.cenv (blockKey rep all) all = .promoted (some (clo, r, c, p)) cn cf im na nf ∧
+        ∃ clo r c cn cf im na nf,
+          auxBlockOutcome snap.cenv (blockKey rep all) all = .promoted (some (clo, r, c)) cn cf im na nf ∧
           (n, a, b) ∈ claimWrites clo r) := by
   obtain ⟨snap, pre, rep, all, hsnap, -, hm, hall, hpost, hclaim⟩ := h
   refine ⟨snap, rep, all, hsnap, hall, hm.trans ((applyAuxBlockOutcome_mono _ _ _ _).trans hpost), ?_⟩
   generalize ho : auxBlockOutcome snap.cenv (blockKey rep all) all = o at hclaim
   cases o with
-  | compiled r c p =>
+  | compiled r c =>
     obtain ⟨layout, hr⟩ := auxBlockOutcome_compiled ho
-    exact .inl ⟨r, c, p, layout, hr, hclaim⟩
+    exact .inl ⟨r, c, layout, hr, hclaim⟩
   | promoted cs cn cf im na nf =>
     cases cs with
     | none => exact hclaim.elim
     | some x =>
-      obtain ⟨clo, r, c, p⟩ := x
-      exact .inr ⟨clo, r, c, p, cn, cf, im, na, nf, rfl, hclaim⟩
+      obtain ⟨clo, r, c⟩ := x
+      exact .inr ⟨clo, r, c, cn, cf, im, na, nf, rfl, hclaim⟩
   | failed msg => exact hclaim.elim
 
 
@@ -1542,20 +1436,20 @@ theorem foldl_insert_sub {L : Array Ix.Name} {all : Ix.Set Ix.Name}
 /-- **A promoted block's cross-SCC subset is `runBlock`'s compile** of a
 subset of the block's members, under the subset's own key. -/
 theorem auxBlockOutcome_cross {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Set Ix.Name}
-    {clo : Ix.Name} {r : BlockResult} {c : BlockState} {p : Ix.Compile.Pass.Published}
+    {clo : Ix.Name} {r : BlockResult} {c : BlockState}
     {cn : Array Ix.Name} {cf : Option (Array Ix.Name × String)} {im : Option String}
     {na : Option (BlockResult × BlockState)} {nf : Option String}
-    (h : auxBlockOutcome cenv lo all = .promoted (some (clo, r, c, p)) cn cf im na nf) :
+    (h : auxBlockOutcome cenv lo all = .promoted (some (clo, r, c)) cn cf im na nf) :
     ∃ (A : Ix.Set Ix.Name) (layout : Option Ixon.AuxLayout), (∀ x, A.contains x = true → all.contains x = true) ∧
-      runBlock cenv A clo = .ok (r, c, layout, p) := by
+      runBlock cenv A clo = .ok (r, c, layout) := by
   unfold auxBlockOutcome at h
   simp only [Id.run] at h
   split at h
   · revert h
     refine loop_bind_mem _ _ _ _ (fun L : Array Ix.Name => ∀ x ∈ L, all.contains x = true)
-      (fun o : AuxBlockOutcome => o = .promoted (some (clo, r, c, p)) cn cf im na nf →
+      (fun o : AuxBlockOutcome => o = .promoted (some (clo, r, c)) cn cf im na nf →
         ∃ (A : Ix.Set Ix.Name) (layout : Option Ixon.AuxLayout), (∀ x, A.contains x = true → all.contains x = true) ∧
-          runBlock cenv A clo = .ok (r, c, layout, p)) (fun _ h => by simp at h) ?_ ?_
+          runBlock cenv A clo = .ok (r, c, layout)) (fun _ h => by simp at h) ?_ ?_
     · intro x hx s hs
       split
       · exact hs
@@ -1570,18 +1464,13 @@ theorem auxBlockOutcome_cross {cenv : CompileEnv} {lo : Ix.Name} {all : Ix.Set I
       all_goals (cases h'; exact ⟨_, _, foldl_insert_sub hL, ‹_›⟩)
   · split at h <;> cases h
 
-/-! ## Where Pass 3's hooks are identities -/
-
-/-- Off an image block, `runBlock` is `runBlockWithAux`. -/
-theorem runBlock_of_not_image {cenv : CompileEnv} {all : Ix.Set Ix.Name} {lo : Ix.Name}
-    (_h : Ix.Compile.Pass.isImageBlock cenv all = false) :
-    runBlock cenv all lo = runBlockWithAux cenv all lo := rfl
+/-! ## A block.s claims are the block compile.s -/
 
 /-- Two results with the same records make the same primary claims. -/
 theorem claimWrites_records {k : Ix.Name} {r r' : BlockResult}
-    (h : Ix.Cert.PassHooks.recordsOf r = Ix.Cert.PassHooks.recordsOf r') :
+    (h : Ix.Cert.BlockRecords.recordsOf r = Ix.Cert.BlockRecords.recordsOf r') :
     claimWrites k r = claimWrites k r' := by
-  unfold Ix.Cert.PassHooks.recordsOf at h
+  unfold Ix.Cert.BlockRecords.recordsOf at h
   simp only [Prod.mk.injEq] at h
   obtain ⟨-, hbytes, haddr, hproj⟩ := h
   have e₁ : r.projections.isEmpty = r'.projections.isEmpty := by
@@ -1601,22 +1490,13 @@ theorem claimWrites_records {k : Ix.Name} {r r' : BlockResult}
   · rfl
   · exact e₂
 
-/-- **Pass 3's hooks are identities at a compile** of the members `A` under
-the key `k`: hook 2 returns the compile environment as it is and publishes
-nothing, `A` is not an image block, and the clique step returns the compile
-environment as it is, the empty block state and nothing published
-(`Ix.Cert.PassHooks.cliqueStep_inert` gives it from `cliqueInert`). -/
-def HookFree (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k : Ix.Name) : Prop :=
-  Ix.Compile.Pass.prepareBlock cenv A k = .ok (cenv, {}) ∧ Ix.Compile.Pass.isImageBlock cenv A = false ∧
-    Ix.Compile.Pass.cliqueStep cenv A k = .ok (cenv, {}, {})
-
 /-- **A block's claims are the block compile's**: the lone constant's
 `compileConstantInfo`, or `compileMutualBlock` over the members in Lean's order
 (`sourceClasses`), run from the empty block state
-(`Ix.Cert.PassHooks.runBlockWithAux_records`). -/
-theorem hookFree_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {r : BlockResult}
-    {c : BlockState} {layout : Option Ixon.AuxLayout} {p : Ix.Compile.Pass.Published}
-    (hf : HookFree cenv A k) (h : runBlock cenv A k = .ok (r, c, layout, p)) :
+(`Ix.Cert.BlockRecords.runBlockWithAux_records`). -/
+theorem runBlock_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {r : BlockResult}
+    {c : BlockState} {layout : Option Ixon.AuxLayout}
+    (h : runBlock cenv A k = .ok (r, c, layout)) :
     ∃ const, cenv.env.get? k = some const ∧
       ((∃ (r' : BlockResult) (s₂ : BlockState), Ix.CompileCert.rawRun (compileConstantInfo const)
           (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok r', s₂) ∧
@@ -1625,8 +1505,7 @@ theorem hookFree_claims {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k : Ix.Name} {
           Ix.CompileCert.rawRun (compileMutualBlock (sourceClasses cs))
             (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok out, s₄) ∧
           claimWrites k r = claimWrites k out) := by
-  rw [runBlock_of_not_image hf.2.1] at h
-  obtain ⟨const, found, rest⟩ := Ix.Cert.PassHooks.runBlockWithAux_records h
+  obtain ⟨const, found, rest⟩ := Ix.Cert.BlockRecords.runBlockWithAux_records h
   refine ⟨const, found, ?_⟩
   rcases rest with ⟨r', s₂, run, same⟩ | ⟨cs, out, s₄, run, same⟩
   · exact .inl ⟨r', s₂, run, claimWrites_records same⟩
@@ -1647,13 +1526,12 @@ def BlockCompiled (cenv : CompileEnv) (A : Ix.Set Ix.Name) (k n : Ix.Name) (a : 
           (cenv, { all := A, current := k, mutCtx := default, univCtx := [] }) {} = (.ok out, s) ∧
         (n, a, b) ∈ claimWrites k out)
 
-/-- A claim of a compile whose hooks are identities is a claim of the block
-compile. -/
-theorem hookFree_compiled {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k n : Ix.Name} {a : Address}
+/-- A block's claim is a claim of the block compile. -/
+theorem runBlock_compiled {cenv : CompileEnv} {A : Ix.Set Ix.Name} {k n : Ix.Name} {a : Address}
     {b : ByteArray} {r : BlockResult} {c : BlockState} {layout : Option Ixon.AuxLayout}
-    {p : Ix.Compile.Pass.Published} (hf : HookFree cenv A k) (h : runBlock cenv A k = .ok (r, c, layout, p))
+    (h : runBlock cenv A k = .ok (r, c, layout))
     (hc : (n, a, b) ∈ claimWrites k r) : BlockCompiled cenv A k n a b := by
-  obtain ⟨const, found, rest⟩ := hookFree_claims hf h
+  obtain ⟨const, found, rest⟩ := runBlock_claims h
   refine ⟨const, found, ?_⟩
   rcases rest with ⟨r', s₂, run, same⟩ | ⟨cs, out, s₄, run, same⟩
   · exact .inl ⟨r', s₂, run, by rw [← same]; exact hc⟩
@@ -1666,23 +1544,15 @@ a key `k`, against a state the fold reached, which `fin` follows. -/
 theorem compiled_runBlock {blocks : Ix.CondensedBlocks} {R : DriverAcc → Prop} {fin : CompileEnv} {n : Ix.Name}
     {a : Address} {b : ByteArray} (h : CompiledIn blocks R fin n a b) :
     ∃ (snap : DriverAcc) (rep : Ix.Name) (all A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult)
-      (c : BlockState) (layout : Option Ixon.AuxLayout) (p : Ix.Compile.Pass.Published),
+      (c : BlockState) (layout : Option Ixon.AuxLayout),
       R snap ∧ blocks.blocks.get? rep = some all ∧ Mono snap.cenv fin ∧
       (∀ x, A.contains x = true → all.contains x = true) ∧
-      runBlock snap.cenv A k = .ok (r, c, layout, p) ∧ (n, a, b) ∈ claimWrites k r := by
+      runBlock snap.cenv A k = .ok (r, c, layout) ∧ (n, a, b) ∈ claimWrites k r := by
   obtain ⟨snap, rep, all, hsnap, hall, hm, rest⟩ := compiled_cases h
-  rcases rest with ⟨r, c, p, layout, hr, hclaim⟩ | ⟨clo, r, c, p, cn, cf, im, na, nf, ho, hclaim⟩
-  · exact ⟨snap, rep, all, all, _, r, c, layout, p, hsnap, hall, hm, fun _ h => h, hr, hclaim⟩
+  rcases rest with ⟨r, c, layout, hr, hclaim⟩ | ⟨clo, r, c, cn, cf, im, na, nf, ho, hclaim⟩
+  · exact ⟨snap, rep, all, all, _, r, c, layout, hsnap, hall, hm, fun _ h => h, hr, hclaim⟩
   · obtain ⟨A, layout, sub, hr⟩ := auxBlockOutcome_cross ho
-    exact ⟨snap, rep, all, A, clo, r, c, layout, p, hsnap, hall, hm, sub, hr, hclaim⟩
-
-/-- **The block references never change during the fold**: every reached
-state has its initial state's (`FoldState.init` sets them). -/
-theorem reach_p3BlockRefs {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
-    (h : Reach blocks init acc) : acc.cenv.p3BlockRefs = init.cenv.p3BlockRefs := by
-  induction h with
-  | init => rfl
-  | step _ _ _ _ _ ih => exact (applyAuxBlockOutcome_step _ _ _ _).1.2.1.1.trans ih
+    exact ⟨snap, rep, all, A, clo, r, c, layout, hsnap, hall, hm, sub, hr, hclaim⟩
 
 /-- **The input environment never changes during the fold**: every reached
 state has its initial state's. -/
@@ -1690,19 +1560,7 @@ theorem reach_env {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
     (h : Reach blocks init acc) : acc.cenv.env = init.cenv.env := by
   induction h with
   | init => rfl
-  | step _ _ _ _ _ ih => exact (applyAuxBlockOutcome_step _ _ _ _).1.2.1.2.1.trans ih
-
-/-- **Pass 3's clique tables never change during the fold**: every reached
-state has its initial state's (the driver installs them before the first
-wave). -/
-theorem reach_cliques {blocks : Ix.CondensedBlocks} {init acc : DriverAcc}
-    (h : Reach blocks init acc) :
-    acc.cenv.p3Cliques = init.cenv.p3Cliques ∧ acc.cenv.p3CliqueRoots = init.cenv.p3CliqueRoots := by
-  induction h with
-  | init => exact ⟨rfl, rfl⟩
-  | step _ _ _ _ _ ih =>
-    exact ⟨(applyAuxBlockOutcome_step _ _ _ _).1.2.1.2.2.1.trans ih.1,
-      (applyAuxBlockOutcome_step _ _ _ _).1.2.1.2.2.2.trans ih.2⟩
+  | step _ _ _ _ _ ih => exact (applyAuxBlockOutcome_step _ _ _ _).1.2.1.trans ih
 
 /-! ## Block keys -/
 
@@ -1759,131 +1617,6 @@ theorem blockKey_indep {a b : Ix.Name} {all : Ix.Set Ix.Name} (h : all.isEmpty =
   rw [Array.getElem?_eq_getElem ne]
   rfl
 
-/-- `FoldState.init`'s loop state: the unmet counts, the candidates, the
-block references. -/
-abbrev InitState := Std.HashMap Ix.Name Nat × Array Ix.Name × Std.HashMap Ix.Name (Ix.Set Ix.Name)
-
-/-- `FoldState.init`'s loop, as far as the block references go: each step
-continues, and installs a block's references under its key when it has some. -/
-def InitStep (blocks : Ix.CondensedBlocks) (f : Ix.Name × Ix.Set Ix.Name → InitState → Id (ForInStep InitState)) :
-    Prop :=
-  ∀ x s, ∃ u v, f x s = .yield (u, v, match blocks.blockRefs.get? x.1 with
-    | some refs => s.2.2.insert (blockKey x.1 x.2) refs
-    | none => s.2.2)
-
-theorem initStep_refs {blocks : Ix.CondensedBlocks}
-    {f : Ix.Name × Ix.Set Ix.Name → InitState → Id (ForInStep InitState)} (hf : InitStep blocks f)
-    (P : Ix.Name → Ix.Set Ix.Name → Prop)
-    (hP : ∀ x ∈ blocks.blocks.toList, ∀ refs, blocks.blockRefs.get? x.1 = some refs →
-      ∀ key, (blockKey x.1 x.2 == key) = true → P key refs) :
-    ∀ (l : List (Ix.Name × Ix.Set Ix.Name)), (∀ x ∈ l, x ∈ blocks.blocks.toList) → ∀ s : InitState,
-      (∀ key refs, s.2.2.get? key = some refs → P key refs) →
-      ∀ key refs, (forIn (m := Id) l s f).2.2.get? key = some refs → P key refs := by
-  intro l
-  induction l with
-  | nil => intro _ s hs; exact hs
-  | cons x l ih =>
-    intro hl s hs
-    rw [List.forIn_cons]
-    obtain ⟨u, v, hu⟩ := hf x s
-    rw [hu]
-    refine ih (fun y hy => hl y (List.mem_cons_of_mem _ hy)) _ fun key refs h => ?_
-    dsimp only at h
-    split at h
-    · rename_i r hr
-      rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
-      split at h
-      · rename_i same
-        cases h
-        exact hP x (hl x List.mem_cons_self) _ hr key same
-      · rw [← Std.HashMap.get?_eq_getElem?] at h; exact hs key refs h
-    · exact hs key refs h
-
-theorem initStep_contains {blocks : Ix.CondensedBlocks}
-    {f : Ix.Name × Ix.Set Ix.Name → InitState → Id (ForInStep InitState)} (hf : InitStep blocks f)
-    {key : Ix.Name} {x : Ix.Name × Ix.Set Ix.Name} (hx : (blocks.blockRefs.get? x.1).isSome = true)
-    (hk : blockKey x.1 x.2 = key) :
-    ∀ (l : List (Ix.Name × Ix.Set Ix.Name)) (s : InitState), x ∈ l →
-      (forIn (m := Id) l s f).2.2.contains key = true := by
-  have keep : ∀ (l : List (Ix.Name × Ix.Set Ix.Name)) (s : InitState), s.2.2.contains key = true →
-      (forIn (m := Id) l s f).2.2.contains key = true := by
-    intro l
-    induction l with
-    | nil => intro s h; exact h
-    | cons y l ih =>
-      intro s h
-      rw [List.forIn_cons]
-      obtain ⟨u, v, hu⟩ := hf y s
-      rw [hu]
-      refine ih _ ?_
-      dsimp only
-      split
-      · rw [Std.HashMap.contains_insert, h, Bool.or_true]
-      · exact h
-  intro l
-  induction l with
-  | nil => intro _ h; cases h
-  | cons y l ih =>
-    intro s h
-    rw [List.forIn_cons]
-    obtain ⟨u, v, hu⟩ := hf y s
-    rw [hu]
-    rcases List.mem_cons.mp h with rfl | h
-    · refine keep _ _ ?_
-      dsimp only
-      obtain ⟨r, hr⟩ := Option.isSome_iff_exists.mp hx
-      rw [hr]
-      dsimp only
-      rw [Std.HashMap.contains_insert, hk, BEq.rfl, Bool.true_or]
-    · exact ih _ h
-
-/-- **The block references `FoldState.init` installs**: under the key of a
-condensation block with references, the initial state holds the references of
-a condensation block (with references) whose members contain that key, when
-every condensation block is nonempty. -/
-theorem init_p3BlockRefs {cenv : CompileEnv} {blocks : Ix.CondensedBlocks} {sched : FoldSchedule}
-    {rep : Ix.Name} {all rs : Ix.Set Ix.Name} (hb : blocks.blocks.get? rep = some all)
-    (hrs : blocks.blockRefs.get? rep = some rs)
-    (nonempty : ∀ rep all, blocks.blocks.get? rep = some all → all.isEmpty = false) :
-    ∃ (refs : Ix.Set Ix.Name) (rep' : Ix.Name) (all' : Ix.Set Ix.Name),
-      (FoldState.init cenv blocks sched).acc.cenv.p3BlockRefs.get? (blockKey rep all) = some refs ∧
-      blocks.blocks.get? rep' = some all' ∧ blocks.blockRefs.get? rep' = some refs ∧
-      all'.contains (blockKey rep all) = true := by
-  have hb' := hb
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList] at hb'
-  obtain ⟨k, rk, hk⟩ := hb'
-  have get_of : ∀ e ∈ blocks.blocks.toList, blocks.blocks.get? e.1 = some e.2 := fun e he => by
-    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_eq_some_iff_exists_beq_and_mem_toList]
-    exact ⟨e.1, BEq.rfl, he⟩
-  have hrk : blocks.blockRefs.get? k = some rs := by
-    rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.getElem?_congr rk, ← Std.HashMap.get?_eq_getElem?]
-    exact hrs
-  have hkey : blockKey k all = blockKey rep all := blockKey_indep (nonempty rep all hb)
-  unfold FoldState.init
-  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList]
-  generalize hR : forIn (m := Id) blocks.blocks.toList ((∅, #[], ∅) : InitState) _ = R
-  have contains : R.2.2.contains (blockKey rep all) = true := by
-    rw [← hR]
-    refine initStep_contains ?_ (x := (k, all)) (by rw [hrk]; rfl) hkey _ _ hk
-    intro x s
-    dsimp only
-    cases hg : blocks.blockRefs.get? x.fst <;> split <;> exact ⟨_, _, rfl⟩
-  have values : ∀ key refs, R.2.2.get? key = some refs → ∃ rep' all', blocks.blocks.get? rep' = some all' ∧
-      blocks.blockRefs.get? rep' = some refs ∧ all'.contains key = true := by
-    rw [← hR]
-    refine initStep_refs ?_ _ (fun x hx refs h key same => ⟨x.1, x.2, get_of x hx, h, ?_⟩)
-      blocks.blocks.toList (fun x hx => hx) _ (fun key refs h => by
-        simp only [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
-    · intro x s
-      dsimp only
-      cases hg : blocks.blockRefs.get? x.fst <;> split <;> exact ⟨_, _, rfl⟩
-    · rw [← Std.HashSet.contains_congr same]
-      exact blockKey_mem (nonempty _ _ (get_of x hx))
-  obtain ⟨refs, hrefs⟩ := Option.isSome_iff_exists.mp
-    (show (R.2.2.get? (blockKey rep all)).isSome = true by
-      rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.contains_eq_isSome_getElem?]; exact contains)
-  obtain ⟨rep', all', h₁, h₂, h₃⟩ := values _ refs hrefs
-  exact ⟨refs, rep', all', hrefs, h₁, h₂, h₃⟩
 /-! ## B9b: a resolved primary name's record -/
 
 /-- **B9b, a resolved primary name's record.** For `compileReport env =
@@ -1894,14 +1627,10 @@ theorem init_p3BlockRefs {cenv : CompileEnv} {blocks : Ix.CondensedBlocks} {sche
   `runBlock` on a subset `A` of a condensation block's members (all of them,
   or a promoted block's cross-SCC subset) under a key `k`, against a state
   `snap` of the fold's own run (`OnRun`), which the final environment
-  follows (`Mono`: a head of `snap` is a final head or a recorded failure);
+  follows (`Mono`);
 * `ixe.consts` stores `b` at `a`;
-* where Pass 3's hooks are identities at that compile (`HookFree`), the claim
-  is one of the block compile's (`BlockCompiled`), the form N-READS takes.
-
-`HookFree` is this lemma's premise; `Ix.Cert.HookFree.compileReport_hookFree`
-discharges it for a closure that avoids the changed set and has no failure,
-from `Avoids`, `NoFailure` and the decided checks of the discharge. -/
+* the claim is one of the block compile's (`BlockCompiled`), the form the
+  reading theorems take. -/
 theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) :
     ∃ (cenv : CompileEnv) (blocks : Ix.CondensedBlocks) (cenv₀ : CompileEnv) (sched : FoldSchedule),
@@ -1912,20 +1641,20 @@ theorem compileReport_claim {env : Ix.Environment} {ixe : Ixon.Env} {failures : 
         cenv.auxNameToAddr.contains n = false →
         (ixe.named.get? n).map (·.addr) = some a ∧
         ∃ (snap : DriverAcc) (rep : Ix.Name) (all A : Ix.Set Ix.Name) (k : Ix.Name) (r : BlockResult)
-          (c : BlockState) (layout : Option Ixon.AuxLayout) (p : Ix.Compile.Pass.Published) (b : ByteArray),
+          (c : BlockState) (layout : Option Ixon.AuxLayout) (b : ByteArray),
           OnRun blocks sched (FoldState.init cenv₀ blocks sched) snap ∧ blocks.blocks.get? rep = some all ∧
           Mono snap.cenv cenv ∧
           (∀ x, A.contains x = true → all.contains x = true) ∧
-          runBlock snap.cenv A k = .ok (r, c, layout, p) ∧ (n, a, b) ∈ claimWrites k r ∧
+          runBlock snap.cenv A k = .ok (r, c, layout) ∧ (n, a, b) ∈ claimWrites k r ∧
           ixe.consts.get? a = some { buf := b, len := b.size } ∧
-          (HookFree snap.cenv A k → BlockCompiled snap.cenv A k n a b) := by
+          BlockCompiled snap.cenv A k n a b := by
   obtain ⟨cenv, hu, pub⟩ := Ix.Cert.resolvedPublished h
-  obtain ⟨bytes, cenv₀, sched, -, hrun, -, -, prov⟩ := compileUnchecked_provenance hu
+  obtain ⟨bytes, cenv₀, sched, -, hrun, -, prov⟩ := compileUnchecked_provenance hu
   refine ⟨cenv, _, cenv₀, sched, hu, rfl, hrun, fun n a hn hnaux => ⟨pub n a hn, ?_⟩⟩
   rcases prov n a hn with hx | ⟨b, hc, hb⟩
   · rw [hnaux] at hx; cases hx
-  · obtain ⟨snap, rep, all, A, k, r, c, layout, p, hsnap, hall, hm, sub, hr, hclaim⟩ := compiled_runBlock hc
-    exact ⟨snap, rep, all, A, k, r, c, layout, p, b, hsnap, hall, hm, sub, hr, hclaim, hb,
-      fun hf => hookFree_compiled hf hr hclaim⟩
+  · obtain ⟨snap, rep, all, A, k, r, c, layout, hsnap, hall, hm, sub, hr, hclaim⟩ := compiled_runBlock hc
+    exact ⟨snap, rep, all, A, k, r, c, layout, b, hsnap, hall, hm, sub, hr, hclaim, hb,
+      runBlock_compiled hr hclaim⟩
 
 end Ix.Cert.Resolution

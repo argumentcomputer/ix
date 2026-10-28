@@ -54,7 +54,7 @@ private def rightMap : Map Name Nat := .ofList [(last, 7)]
 #guard !decide (leftMap.getKey? first = rightMap.getKey? first)
 #guard !decide (leftMap.toList = rightMap.toList)
 #guard [0, 1, 2, 8].all fun w =>
-  let out := (produce (fun _ => false) input w).2
+  let out := (produce input w).2
   let hybrid := _root_.Ix.Cert.Hybrid.hybridEnv out.facts.code prep.leanByIx
   out.facts.code.size == 3 && prep.leanByIx.size - out.facts.code.size == 1 &&
   (hybrid.get? (Name.fromLeanName opaq.name)).any (fun | .opaqueInfo _ => true | _ => false) &&

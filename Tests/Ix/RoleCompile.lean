@@ -48,8 +48,8 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
     require (result.stdout.contains "ALIGNED:") "the actual Rust/Lean artifact comparison did not run"
     let bytes ← IO.FS.readBinFile path
     let artifact ← IO.ofExcept (Ixon.deEnv bytes)
-    require (bytes[0]? == some 0xE6 && artifact.roleBinding.isSome) "production output has no v6 binding"
-    require ((← Ix.Cli.publishedEnvelopeVersion true path) == some 6) "published envelope report lost v6"
+    require (bytes[0]? == some 0xE5 && artifact.roleBinding.isSome) "production output has no v5 binding"
+    require ((← Ix.Cli.publishedEnvelopeVersion true path) == some 5) "published envelope report lost v5"
     let names := if fixture == "RoleCompileProof" then #[`artifactQuotient] else #[`artifactIncrement, `artifactLabel]
     let roots ← names.mapM fun name => do
       let some named := artifact.named[Ix.Name.fromLeanName name]?
@@ -82,9 +82,8 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
           -- The wire grammar always carries the anonymous name at index zero.
           let onlyAnonymous := rustArtifact.names.size == 1 && rustArtifact.names.toList.all
             (fun (_, name) => match name with | .anonymous _ => true | _ => false)
-          require (rustArtifact.named.isEmpty && onlyAnonymous && rustArtifact.comms.isEmpty &&
-            rustArtifact.originals.isEmpty && rustArtifact.originalHintOverrides.isEmpty)
-            "strict anonymous publication retained named metadata or original data"
+          require (rustArtifact.named.isEmpty && onlyAnonymous && rustArtifact.comms.isEmpty)
+            "strict anonymous publication retained named metadata"
         else
           require (rustBytes == bytes)
             s!"Rust named publication differs from Lean: {rustBytes.size} versus {bytes.size} bytes"

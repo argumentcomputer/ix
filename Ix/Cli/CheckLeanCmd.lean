@@ -68,7 +68,7 @@ display modes. These are the host's whole-library byte/expansion bounds. -/
 def artifactLimits : Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
 
 /-- Authenticate first; retain raw windows and reader skeletons. No metadata
-or original-data field is rebuilt through an incomplete Env literal. -/
+field is rebuilt through an incomplete Env literal. -/
 def prepareInput (bytes : ByteArray) (anon : Bool := false) : IO (Except DriverError PreparedInput) := do
   let start ← IO.monoMsNow
   let result : Except DriverError PreparedInput ← IO.lazyPure fun _ => do

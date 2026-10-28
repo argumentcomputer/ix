@@ -1,7 +1,6 @@
 module
 
 public import Ix.CompileDriver
-public import Ix.Compile.ChangedSet
 
 /-! # The compiler as a pure function
 
@@ -120,67 +119,19 @@ structure Failures where
 @[expose] def Failures.isEmpty (f : Failures) : Bool :=
   f.ungrounded.isEmpty && f.blocks.isEmpty
 
-/-! ### Reserved input (D14)
-
-`_ix` names Pass 3's auxiliaries and images, and `_ix.inline`/`_ix.inline_meta`
-its placeholders and decompile records (`Ix.Compile.Pass.Names`). The compile
-refuses, before the fold, a grounded input constant with a metadata key that has
-a reserved component, then a grounded input name with one, each by its least
-message (`reservedRefusal`): the IO pipeline's refusals
-(`Ix.CompileM.reservedMetadataRefusal?` and `reservedInputRefusal?`, in
-`compileDecoratedConsts`) and the Rust compiler's (`compile_env`), so all three
-name the same input. The metadata keys are read from the expressions the
-reference graph walks (`Ix.CompileM.sourceHasReservedMetadata`'s, here on the
-canonical constants). -/
-
-/-- Some metadata key in `e` has a reserved component. -/
-@[expose] def exprHasReservedMetadata : Ix.Expr → Bool
-  | .mdata data e _ => data.any (Ix.Compile.Pass.hasReserved ·.1) || exprHasReservedMetadata e
-  | .app f a _ => exprHasReservedMetadata f || exprHasReservedMetadata a
-  | .lam _ t b _ _ => exprHasReservedMetadata t || exprHasReservedMetadata b
-  | .forallE _ t b _ _ => exprHasReservedMetadata t || exprHasReservedMetadata b
-  | .letE _ t v b _ _ =>
-    exprHasReservedMetadata t || exprHasReservedMetadata v || exprHasReservedMetadata b
-  | .proj _ _ e _ => exprHasReservedMetadata e
-  | _ => false
-
-/-- Some expression of the constant has a metadata key with a reserved
-component: its type, a definition's, theorem's or opaque's value, and a
-recursor's rule right-hand sides. -/
-@[expose] def constHasReservedMetadata (ci : Ix.ConstantInfo) : Bool :=
-  exprHasReservedMetadata ci.getCnst.type ||
-    match ci with
-    | .defnInfo v => exprHasReservedMetadata v.value
-    | .thmInfo v => exprHasReservedMetadata v.value
-    | .opaqueInfo v => exprHasReservedMetadata v.value
-    | .recInfo v => v.rules.any (exprHasReservedMetadata ·.rhs)
-    | _ => false
-
-/-- **The refusal of reserved input**, before the fold: a grounded input
-constant with a reserved metadata key, then a grounded input name with a
-reserved component (the names of `blocks`), each by its least message. -/
-@[expose] def reservedRefusal (env : Ix.Environment) (ungrounded : Ix.Map Ix.Name Ix.GroundError)
-    (blocks : Ix.CondensedBlocks) : Except String Unit := do
-  let reservedMetadata : Array Ix.Name := env.consts.fold (init := #[]) fun acc n ci =>
-    if !ungrounded.contains n && constHasReservedMetadata ci then acc.push n else acc
-  if let some msg := Ix.CompileM.reservedMetadataRefusal? reservedMetadata then throw msg
-  if let some msg := Ix.CompileM.reservedInputRefusal? blocks then throw msg
-
 /-- The compile and its failures, before `compileReport`'s checks, with the
 driver's compile environment at the end of the fold, whose maps the checks
 read: the resolution map (`CompileEnv.nameToAddr`: the address each name the
 compile registered resolves to), the aux map (`CompileEnv.auxNameToAddr`), the
-extra names (`CompileEnv.auxGenExtraNames`) and Pass 3's heads
-(`CompileEnv.p3Heads`). A block that fails to compile is recorded, with its
+extra names (`CompileEnv.auxGenExtraNames`). A block that fails to compile is recorded, with its
 dependents, and left out of the environment; the result is an error only when
 the driver itself fails (a refused input, or a condensation it cannot
-schedule), or the input is reserved (`reservedRefusal`). -/
+schedule). -/
 @[expose] def compileUnchecked (env : Ix.Environment) :
     Except String (Ixon.Env × Failures × Ix.CompileM.CompileEnv) := do
   let env : Ix.Environment := { consts := env.consts }
   let split := groundSplit env
   let blocks := Ix.CondenseM.run split.1
-  reservedRefusal env split.2 blocks
   let (ixe, _, cenv) ← Ix.CompileM.compileEnvFold env blocks
   let ungrounded := split.2.fold (init := {}) fun m n e =>
     m.insert n (e.refusal split.2.contains)
@@ -190,15 +141,13 @@ schedule), or the input is reserved (`reservedRefusal`). -/
 compiles, and their references (the strongly connected components of the
 grounded reference graph of the input's map). `compileUnchecked` compiles
 exactly these blocks (its `blocks`, by `rfl`; it computes the ground split
-once, for its failures too), and the statements pass them to the changed set
-(`Ix.Compile.ChangedSet.ofCompile`). -/
+once, for its failures too). -/
 @[expose] def compileBlocks (env : Ix.Environment) : Ix.CondensedBlocks :=
   Ix.CondenseM.run (groundSplit { consts := env.consts }).1
 
 /-- **The compile's aux table**: the driver's verdicts, on bytes, on the
 regenerated auxiliaries (`Ix.AuxGen.AuxTable`, from the report of
-`compileUnchecked`'s final compile environment), which the changed set reads
-for its `regenerated` cause (`Ix.Compile.ChangedSet.ofCompile`); the empty
+`compileUnchecked`'s final compile environment); the empty
 table when the compile fails (every regenerated auxiliary then counts as not
 identical). -/
 @[expose] def compileTable (env : Ix.Environment) : Ix.AuxGen.AuxTable :=
@@ -661,7 +610,7 @@ name the compile resolves is published at that address. -/
 the first met, if any: one whose published record is not an inductive
 projection, or whose block has no `Muts` entry published at its address
 (`mutsAddrs`). The changed set reads an inductive component only through its
-block's `Muts` entry (`Ix.Compile.ChangedSet.mutsRecords`), which the aux tail
+block's `Muts` entry, which the aux tail
 registers before code no proof can follow (AuxGen's `partial` definitions),
 and a later `Named` entry may override. With none, every published input
 inductive's block has its `Muts` entry, so no component escapes the changed
@@ -735,40 +684,6 @@ resolved name outside the aux map is a cross-SCC subset's claim. -/
   let ctors := extraCtors env extras
   resolved.toList.findSome? fun (n, _) =>
     if !aux.contains n && (extras.contains n || ctors.contains n) then some n else none
-
-/-- The published input names whose record is not known to be their
-original form: a `Named` entry with an original-form record
-(`Named.original`), of a name the input holds, that the aux table (`table`,
-the driver's verdicts on bytes, `Ix.AuxGen.AuxTable.identical`) does not find
-identical. These are the changed set's `regenerated` entries
-(`Ix.Compile.ChangedSet.ofCompile`'s last loop, over the input's map and the
-compile's table), which it computes from the published names alone, without
-the changed components. -/
-@[expose] def regeneratedNames (env : Ix.Environment) (table : Ix.AuxGen.AuxTable) (ixe : Ixon.Env) :
-    Std.HashSet Ix.Compile.ExactKey.ExactName :=
-  ixe.named.fold (init := {}) fun s n named =>
-    if (named.original.isSome && (env.consts.get? n).isSome && !table.identical n) = true then s.insert n
-    else s
-
-/-- The first key of the driver's final Pass 3 heads (`heads`,
-`CompileEnv.p3Heads`) that is not a regenerated published input name
-(`regeneratedNames`, under the compile's aux table `table`), if any (none
-without heads, and then nothing is computed). A head is published by a block's merge from Pass 3's hook 1
-(`editBlock`), whose inputs come from the aux tail (AuxGen's `partial` code,
-which no proof follows), and hook 2 (`prepareBlock`) rewrites every block that
-references one. Every regenerated name is in the compile's changed set (its
-`regenerated` entry), so with no such key no head is outside the changed set,
-and a block whose members and references avoid the set compiles with hook 2
-the identity. The check reads the regenerated names, one pass over the
-published names, instead of the whole changed set, whose changed components
-and callers cost about half of Mathlib's compile phase
-(`ports/20261021T065228Z-hookprobe`). -/
-@[expose] def foreignHead (env : Ix.Environment) (table : Ix.AuxGen.AuxTable)
-    (heads : Std.HashMap Ix.Compile.ExactKey.ExactName Ix.Name) (ixe : Ixon.Env) : Option Ix.Name :=
-  if heads.isEmpty then none
-  else
-    let regenerated := regeneratedNames env table ixe
-    heads.toList.findSome? fun (h, _) => if regenerated.contains h then none else some h
 
 /-- The first input constant whose own name (`ConstantVal.name`) is not the
 name it is stored under, spelled exactly (`Ix.nameCompareExact`, stored hashes
@@ -885,7 +800,7 @@ an input name. -/
       | none => some n
     else none
 
-/-- `compileReport`'s seventeen checks on a compile's result, each an error on
+/-- `compileReport`'s sixteen checks on a compile's result, each an error on
 any inconsistency. **Coverage:** every input constant is published or listed
 as failed, exactly one of the two. **Authenticity:** every record and blob is
 stored at the admission hash of its bytes. **Acyclic references:** no stored
@@ -905,10 +820,7 @@ map (`cenv.auxNameToAddr`) is published with `Named.original`
 (`unoriginalAux`). **Published input names are resolved:** each published
 input name is in the resolution map or in the aux map (`unresolvedPublished`).
 **No cross-SCC claims:** no resolved name outside the aux map is among the
-extra names, nor a constructor of an inductive among them (`crossClaimed`).
-**Heads are changed:** each of the driver's final
-Pass 3 heads (`cenv.p3Heads`) is a regenerated published input name, under
-the final aux table (`regeneratedNames`), so in the changed set (`foreignHead`). **Input
+extra names, nor a constructor of an inductive among them (`crossClaimed`). **Input
 constants carry their names:** each input constant's own name is spelled as the
 name it is stored under (`misnamedInput`). **Input constructors belong to their
 inductive:** each constructor an input inductive lists is stored as a
@@ -941,43 +853,38 @@ published input name's address holds a stored record that is not a block
                 | none =>
                   match crossClaimed env cenv.nameToAddr cenv.auxNameToAddr cenv.auxGenExtraNames with
                   | none =>
-                    match foreignHead env cenv.auxReport.table cenv.p3Heads out.1 with
+                    match misnamedInput env with
                     | none =>
-                      match misnamedInput env with
+                      match strayConstructor env with
                       | none =>
-                        match strayConstructor env with
+                        match strayFailure env cenv.ungrounded with
                         | none =>
-                          match strayFailure env cenv.ungrounded with
+                          match identityMismatch cenv.auxReport.identity out.1 with
                           | none =>
-                            match identityMismatch cenv.auxReport.identity out.1 with
+                            match projectionCollision out.1 with
                             | none =>
-                              match projectionCollision out.1 with
-                              | none =>
-                                match unreadablePublished env out.1 with
-                                | none => .ok ()
-                                | some n =>
-                                  .error s!"compileReport: readability check failed: the input name \
-                                    {n.pretty} is published at an address that holds no stored record, \
-                                    or a block record"
-                              | some (b, i) =>
-                                .error s!"compileReport: projection check failed: member {i} of the block at \
-                                  {b} has more than one stored definition projection record"
-                            | some (n, same, a) =>
-                              .error s!"compileReport: identity check failed: the identity row of \
-                                {n.pretty} ({if same then "identical" else "not identical"} at {a}) \
-                                disagrees with another row of that name, or the name is not published at that address"
-                          | some f =>
-                            .error s!"compileReport: failure check failed: the driver records the name \
-                              {f.pretty} as a failure, but no input constant is stored under it"
-                        | some c =>
-                          .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
-                            constructor of an input inductive, is not stored as a constructor of it"
-                      | some n =>
-                        .error s!"compileReport: name invariant failed: the input constant stored \
-                          under {n.pretty} carries another name"
-                    | some h =>
-                      .error s!"compileReport: heads check failed: the Pass 3 head {h.pretty} is not \
-                        a regenerated published input name, so not known to be in the changed set"
+                              match unreadablePublished env out.1 with
+                              | none => .ok ()
+                              | some n =>
+                                .error s!"compileReport: readability check failed: the input name \
+                                  {n.pretty} is published at an address that holds no stored record, \
+                                  or a block record"
+                            | some (b, i) =>
+                              .error s!"compileReport: projection check failed: member {i} of the block at \
+                                {b} has more than one stored definition projection record"
+                          | some (n, same, a) =>
+                            .error s!"compileReport: identity check failed: the identity row of \
+                              {n.pretty} ({if same then "identical" else "not identical"} at {a}) \
+                              disagrees with another row of that name, or the name is not published at that address"
+                        | some f =>
+                          .error s!"compileReport: failure check failed: the driver records the name \
+                            {f.pretty} as a failure, but no input constant is stored under it"
+                      | some c =>
+                        .error s!"compileReport: constructor check failed: the name {c.pretty}, a \
+                          constructor of an input inductive, is not stored as a constructor of it"
+                    | some n =>
+                      .error s!"compileReport: name invariant failed: the input constant stored \
+                        under {n.pretty} carries another name"
                   | some n =>
                     .error s!"compileReport: cross-SCC check failed: the name {n.pretty} resolves \
                       outside the aux map and is among the extra names or is a constructor of an inductive \
@@ -1016,7 +923,7 @@ published input name's address holds a stored record that is not a block
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
 result is an error when the driver itself fails (a refused input, or a
-condensation it cannot schedule). It ends with seventeen checks (`checkReport`):
+condensation it cannot schedule). It ends with sixteen checks (`checkReport`):
 every input constant is published or reported as failed, exactly one of the
 two; every record and blob is stored at the admission hash of its bytes; no
 stored record is on a reference cycle; no two different input or
@@ -1027,7 +934,7 @@ published input inductive is published at an inductive projection of a
 block with a `Muts` entry; and every input name of the driver's final aux map
 is published with an original-form record; every published input name is
 resolved or in the aux map; no resolved name outside the aux map is a cross-SCC
-subset's claim; every Pass 3 head is in the changed set; every input
+subset's claim; every input
 constant carries the name it is stored under; every constructor an input
 inductive lists is stored as a constructor of it; every failure the driver
 records is an input name; identity rows agree with each other and identical

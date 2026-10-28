@@ -689,7 +689,7 @@ mod tests {
   use crate::univ::Univ;
 
   /// Validator identity follows checked grammar, independently of the storage
-  /// envelope version used for unchecked original data.
+  /// envelope version.
   #[test]
   fn validator_id_follows_the_wire_format() {
     assert_eq!(

@@ -35,7 +35,7 @@ private def check : IO Nat := do
   let mut named : Std.HashMap Lean.Name NamedFacts := {}
   for n in access.names do
     let nd ← IO.ofExcept (access.metadata (_root_.Ix.Name.fromLeanName n))
-    named := named.insert n { addr := nd.addr, original := nd.original.isSome, inlineRecord := false }
+    named := named.insert n { addr := nd.addr, original := nd.original.isSome }
   let cx : Cx := {
     lean := lean.find?, rcx, named, byName := {}, foreign := {}, keep := fun _ => false
     advisory := fun _ => none, aliases := fun _ => 0, recursorKey := canonicalRecursor s.cx }

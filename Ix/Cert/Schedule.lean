@@ -237,11 +237,9 @@ def compileEnvFoldWithSourceSeq (env : Ix.Environment) (blocks : Ix.CondensedBlo
   validateInductiveFlags env
   validateMutualSafety env blocks
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
-  let sc := Ix.Compile.Pass.Clique.scheduleCliques view blocks
   let sched := FoldSchedule.of blocks
   let cenv₀ := { CompileEnv.new view with
-    unmaterialized := env.consts.size + unmaterialized, sharingLimits
-    p3Cliques := sc.2.1, p3CliqueRoots := sc.2.2, p3CheckPlans := false }
+    unmaterialized := env.consts.size + unmaterialized, sharingLimits }
   let st ← foldWavesSeq blocks sched (blocks.blocks.size + 1) (FoldState.init cenv₀ blocks sched)
   let (ixe, bytes, cenv) ← finalizeEnv st.acc
   return ((ixe, bytes, { cenv with env, unmaterialized, auxOracle := none, auxGenerationRetry := none }), {})

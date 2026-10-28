@@ -250,7 +250,7 @@ pub struct Proof {
 /// - 9: Resource claim (`E8 01`)
 ///
 /// The `.ixe` header also uses flag 0xE, with its storage envelope version:
-/// legacy 4 is `0xE4` and original-data 5 is `0xE5`. Checked claims still bind
+/// legacy 4 is `0xE4` and the role-bound 5 is `0xE5`. Checked claims still bind
 /// object format 4. Readers know which object they read; nothing dispatches
 /// on the first byte alone.
 pub const FLAG_CLAIM: u8 = 0xE;

@@ -25,8 +25,8 @@ theorem collected_keys (rows : List (Name × ConstantInfo)) :
   rw [nodes_fold]
   exact Map.inserted_keys rows capture
 
-theorem produced_keys (reserved : Lean.ConstantInfo → Bool) (raw : Array SourcePrepass.Raw) (workers : Nat) :
-    (Prepass.produce reserved raw workers).2.facts.nodes.toList.map (·.1) =
+theorem produced_keys (raw : Array SourcePrepass.Raw) (workers : Nat) :
+    (Prepass.produce raw workers).2.facts.nodes.toList.map (·.1) =
       (SourceGraph.full (SourceStream.canonical raw)).consts.toList.map (·.1) := by
   rw [SourcePrepass.produced_facts]
   exact collected_keys _

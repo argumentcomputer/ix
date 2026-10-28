@@ -79,25 +79,25 @@ theorem failures_toMap_contains (f : Failures) (n : Name) : f.toMap.contains n =
     simp only [List.contains_map]
   rw [same]
 
-private theorem domain (reserved : Lean.ConstantInfo → Bool) (raw : Array SourcePrepass.Raw)
+private theorem domain (raw : Array SourcePrepass.Raw)
     (workers : Nat) (n : Name) :
-    (Prepass.produce reserved raw workers).2.facts.nodes.contains n =
+    (Prepass.produce raw workers).2.facts.nodes.contains n =
       (SourceGraph.full (SourceStream.canonical raw)).consts.contains n := by
   rw [← Std.HashMap.contains_keys, ← Std.HashMap.contains_keys,
     ← Std.HashMap.map_fst_toList_eq_keys, ← Std.HashMap.map_fst_toList_eq_keys, SourceOrder.produced_keys]
 
-theorem produced_check_iff (reserved : Lean.ConstantInfo → Bool) (raw : Array SourcePrepass.Raw)
+theorem produced_check_iff (raw : Array SourcePrepass.Raw)
     (workers : Nat) (named : Ix.Map Name Ixon.Named) (failed : Ix.Map Name String) :
-    check (Prepass.produce reserved raw workers).2.facts.nodes named failed = .ok () ↔
+    check (Prepass.produce raw workers).2.facts.nodes named failed = .ok () ↔
       Accounted (SourceGraph.full (SourceStream.canonical raw)).consts.contains named.contains failed.contains := by
   rw [check_success_iff]
   simp only [Accounted, domain]
 
 /-- Exact ordered reference coverage list, at the same supplied report.
 No live ground/cenv failure argument equality is assumed or concluded. -/
-theorem produced_uncovered (reserved : Lean.ConstantInfo → Bool) (raw : Array SourcePrepass.Raw)
+theorem produced_uncovered (raw : Array SourcePrepass.Raw)
     (workers : Nat) (ixe : Ixon.Env) (f : Failures) :
-    (scan (Prepass.produce reserved raw workers).2.facts.nodes ixe.named f.toMap).uncovered.toList =
+    (scan (Prepass.produce raw workers).2.facts.nodes ixe.named f.toMap).uncovered.toList =
       Ix.Cert.uncovered (SourceGraph.full (SourceStream.canonical raw)) ixe f := by
   simp only [scan, selectKeys_eq, failures_toMap_contains]
   rw [← Std.HashMap.map_fst_toList_eq_keys, SourceOrder.produced_keys, Std.HashMap.map_fst_toList_eq_keys]
@@ -105,11 +105,11 @@ theorem produced_uncovered (reserved : Lean.ConstantInfo → Bool) (raw : Array 
 
 /-- The outside scan agrees with strayFailure on the SAME supplied flat
 map, not on an assumed pure block-failure or grounding argument. -/
-theorem produced_outside_empty_iff (reserved : Lean.ConstantInfo → Bool) (raw : Array SourcePrepass.Raw)
+theorem produced_outside_empty_iff (raw : Array SourcePrepass.Raw)
     (workers : Nat) (named : Ix.Map Name Ixon.Named) (failed : Ix.Map Name String) :
-    (scan (Prepass.produce reserved raw workers).2.facts.nodes named failed).outside.toList = [] ↔
+    (scan (Prepass.produce raw workers).2.facts.nodes named failed).outside.toList = [] ↔
       strayFailure (SourceGraph.full (SourceStream.canonical raw)) failed = none := by
-  have head : (scan (Prepass.produce reserved raw workers).2.facts.nodes named failed).outside.toList.head? =
+  have head : (scan (Prepass.produce raw workers).2.facts.nodes named failed).outside.toList.head? =
       strayFailure (SourceGraph.full (SourceStream.canonical raw)) failed := by
     simp only [scan, selectKeys_eq, domain]
     rw [← Std.HashMap.map_fst_toList_eq_keys, ← List.filterMap_eq_filter,
@@ -125,9 +125,9 @@ theorem produced_outside_empty_iff (reserved : Lean.ConstantInfo → Bool) (raw 
 
 /-- No failed original key plus successful accounting gives named
 publication. This supplies no authenticated record or admission/value run. -/
-theorem produced_published (reserved : Lean.ConstantInfo → Bool) (raw : Array SourcePrepass.Raw)
+theorem produced_published (raw : Array SourcePrepass.Raw)
     (workers : Nat) (ixe : Ixon.Env) (failed : Ix.Map Name String)
-    (checked : check (Prepass.produce reserved raw workers).2.facts.nodes ixe.named failed = .ok ())
+    (checked : check (Prepass.produce raw workers).2.facts.nodes ixe.named failed = .ok ())
     (noFailure : ∀ n ci, (SourceGraph.full (SourceStream.canonical raw)).consts.get? n = some ci →
       failed.contains n = false) : Published ixe (SourceGraph.full (SourceStream.canonical raw)) := by
   intro n ci found
@@ -135,7 +135,7 @@ theorem produced_published (reserved : Lean.ConstantInfo → Bool) (raw : Array 
     rw [Std.HashMap.contains_eq_isSome_getElem?]
     change ((SourceGraph.full (SourceStream.canonical raw)).consts.get? n).isSome = true
     rw [found]; rfl
-  have pub := ((produced_check_iff reserved raw workers ixe.named failed).mp checked).1 n present
+  have pub := ((produced_check_iff raw workers ixe.named failed).mp checked).1 n present
   rw [noFailure n ci found, Std.HashMap.contains_eq_isSome_getElem?] at pub
   exact Option.isSome_iff_exists.mp pub
 

@@ -33,7 +33,7 @@ private def emptySections : PutM Unit := do
   putTagN 0 0 0
   putTagN 0 0 0
 
-private def checks (original : Constant) : Except String Unit := do
+private def checks (_fixture : Constant) : Except String Unit := do
   let table : RoleTable := { version := Ix.Kernel.specVersion, bound := #[], evidence := #[] }
   let binding := tableBinding table
   need "canonical empty table admits" (admitted binding).isOk
@@ -49,7 +49,7 @@ private def checks (original : Constant) : Except String Unit := do
   let bound := { legacy with roleBinding := some binding }
   let bytes ← serEnv bound
   let expected := runPut do
-    putTagN 4 Env.FLAG 6
+    putTagN 4 Env.FLAG 5
     Serialize.put Ix.Merkle.zeroAddress
     putU8 0
     putTagN 0 0 0
@@ -57,9 +57,12 @@ private def checks (original : Constant) : Except String Unit := do
     putTagN 0 0 binding.bytes.size.toUInt64
     putBytes binding.bytes
     emptySections
-    putTagN 0 0 0
-    putTagN 0 0 0
-  need "v6 header and empty original trailer have exact layout" (bytes == expected)
+  need "v5 header has exact layout and nothing follows the comms section" (bytes == expected)
+  for extra in [ByteArray.mk #[0], ByteArray.mk #[0, 0]] do
+    let padded := bytes ++ extra
+    for parsed in [deEnv padded, (deEnvVerifiedLazy padded).map (·.env), rsDeEnv padded,
+        deEnvAnon padded] do
+      need "readers refuse bytes after the comms section" (parsed matches .error _)
   need "Rust writer agrees exactly" ((← rsSerEnv bound) == bytes)
   for parsed in readers bytes do
     let env ← parsed
@@ -78,23 +81,6 @@ private def checks (original : Constant) : Except String Unit := do
       (!difference.isEmpty && difference.roleBindingChanged.isSome &&
         difference.constsOnlyA.isEmpty && difference.constsOnlyB.isEmpty)
 
-  let originalBytes := serConstant original
-  let originalAddress := Address.admissionHash originalBytes
-  let originals : Std.HashMap Address LazyConstant :=
-    ({} : Std.HashMap Address LazyConstant).insert originalAddress (LazyConstant.ofConstant original)
-  let withOriginal := { bound with originals }
-  let withOriginalBytes ← serEnv withOriginal
-  need "bound originals serialize identically" ((← rsSerEnv withOriginal) == withOriginalBytes)
-  for parsed in [deEnv withOriginalBytes, (deEnvVerifiedLazy withOriginalBytes).map (·.env),
-      rsDeEnv withOriginalBytes] do
-    let env ← parsed
-    need "v6 retains the exact original bytes"
-      (env.roleBinding == bound.roleBinding &&
-        (env.originals[originalAddress]?).map LazyConstant.rawBytes == some originalBytes)
-  let unboundOriginal := { withOriginal with roleBinding := none }
-  let v5 ← serEnv unboundOriginal
-  need "unbound originals retain v5" (v5.data[0]? == some 0xE5 && (← rsSerEnv unboundOriginal) == v5)
-
   let wrong := { binding with address := Address.admissionHash (ByteArray.mk #[1, 2, 3]) }
   need "writer rejects wrong binding hash" (!(serEnv { bound with roleBinding := some wrong }).isOk)
   need "admission distinguishes hash failure" (match admitted wrong with | .error (.mismatch _) => true | _ => false)
@@ -105,7 +91,7 @@ private def checks (original : Constant) : Except String Unit := do
   need "duplicate role bytes fail canonical admission" (match admitted duplicate with | .error .decode => true | _ => false)
   let empty := raw .empty
   let presentEmpty ← serEnv { bound with roleBinding := some empty }
-  need "present empty payload does not downgrade to absent" (presentEmpty.data[0]? == some 0xE6)
+  need "present empty payload does not downgrade to absent" (presentEmpty.data[0]? == some 0xE5)
   need "empty payload fails actual role admission" (match admitted empty with | .error .decode => true | _ => false)
   for parsed in readers presentEmpty do
     need "raw loaders preserve malformed payload until admission" ((← parsed).roleBinding == some empty)
@@ -117,9 +103,9 @@ private def checks (original : Constant) : Except String Unit := do
       need "every header reader rejects bad framing or hash" (!parsed.isOk)
 
 /-- The parameter keeps foreign calls out of module initialization. -/
-public def units (original : Constant) : LSpec.TestSeq :=
-  .individualIO "role binding: exact legacy/v6 bytes, all loaders, FFI and admission boundary" none (do
-    let result ← IO.lazyPure fun _ => checks original
+public def units (fixture : Constant) : LSpec.TestSeq :=
+  .individualIO "role binding: exact v4/v5 bytes, all loaders, FFI and admission boundary" none (do
+    let result ← IO.lazyPure fun _ => checks fixture
     return match result with
       | .ok _ => (true, 0, 0, none)
       | .error message => (false, 0, 0, some message)) .done

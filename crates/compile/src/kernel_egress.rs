@@ -500,12 +500,12 @@ impl EgressCtx {
   }
 
   /// Install the ORIGINAL constant's refs table, for the same reason as
-  /// [`Self::preseed_univs`]: Pass 3's decompile records (`_ix.inline`)
-  /// store their source occurrences in `ConstantMeta.meta_sharing`, whose
-  /// `Ref`/`Str`/`Nat` indices address the original table (primary
-  /// indices, then `refs.len() + j` into `meta_refs`), and the roundtrip
-  /// pairs the rebuilt constant with that original meta. Traversal interns
-  /// then hit the original positions instead of a first-use order.
+  /// [`Self::preseed_univs`]: the expressions of `ConstantMeta.meta_sharing`
+  /// address the original table with their `Ref`/`Str`/`Nat` indices
+  /// (primary indices, then `refs.len() + j` into `meta_refs`), and the
+  /// roundtrip pairs the rebuilt constant with that original meta.
+  /// Traversal interns then hit the original positions instead of a
+  /// first-use order.
   fn preseed_refs(&mut self, refs: &[Address]) {
     for r in refs {
       self.refs.insert(r.clone());
@@ -2061,7 +2061,7 @@ mod tests {
     let rebuilt = ixon_egress(&kenv, &original, &limits).unwrap();
     assert_eq!(rebuilt.role_binding, Some(binding.clone()));
     assert_eq!(rebuilt.consts.len(), 1);
-    assert_eq!(rebuilt.envelope_version(), 6);
+    assert_eq!(rebuilt.envelope_version(), 5);
 
     // The same named constant now has different content and a new address.
     kenv.insert(

@@ -3,6 +3,8 @@ module
 public import LSpec
 public import Ix.CompileDriver
 public import Ix.CompileResource
+public import Ix.Compile.Image.Develop
+public import Ix.Compile.Image.RawExact
 public import Ix.Meta
 
 public section

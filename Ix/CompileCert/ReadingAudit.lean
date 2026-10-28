@@ -5,11 +5,7 @@ import Ix.CompileCert.PreseedValidation
 import Ix.CompileCert.WireTables
 import Ix.CompileCert.UniversePipeline
 import Ix.CompileCert.ExpressionCorrectness
-import Ix.CompileCert.RecordState
-import Ix.CompileCert.RecordRead
 import Ix.CompileCert.RecordSourceShape
-import Ix.CompileCert.RecordSubst
-import Ix.CompileCert.RecordSubstReading
 import Ix.CompileCert.RewriteArityPrimitives
 import Ix.CompileCert.DevelopmentArity
 import Ix.CompileCert.SemanticFrames
@@ -17,13 +13,6 @@ import Ix.CompileCert.SemanticPresence
 import Ix.CompileCert.FramePrimitives
 import Ix.CompileCert.DevelopmentFrames
 import Ix.CompileCert.DevelopmentState
-import Ix.CompileCert.RewriteCalls
-import Ix.CompileCert.CurrentInputs
-import Ix.CompileCert.BlockStates
-import Ix.CompileCert.OptFrames
-import Ix.CompileCert.O11aMinorFrames
-import Ix.CompileCert.O11aFrames
-import Ix.CompileCert.FrontendReceipts
 import Ix.CompileCert.ExpressionIngress
 import Ix.CompileCert.PreseedWire
 import Ix.CompileCert.FinalUniverses
@@ -761,22 +750,6 @@ run_cmd do
   checkRoots (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRoots
   checkRuntime (tag := "reading-audit") "driver inductives" Ix.CompileCert.ReadingAudit.driverInductiveRuntime
 
-/-- info: [reading-audit] metadata state: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "metadata state"
-    #[`Ix.CompileCert.RecordState.Step.pure, `Ix.CompileCert.RecordState.Step.bind,
-      `Ix.CompileCert.RecordState.compileExprMeta_preserves]
-
-/-- info: [reading-audit] record subrun: 3 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "record subrun"
-    #[`Ix.CompileCert.RecordState.compileRecords_preserves, `Ix.CompileCert.RecordRead.ordinary_subrun,
-      `Ix.CompileCert.RecordRead.withRecords_read]
-
 /-- info: [reading-audit] decorated contract arity: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
@@ -791,20 +764,6 @@ run_cmd do
   checkRoots (tag := "reading-audit") "source contract arity"
     #[`Ix.CompileCert.RecordSourceShape.decorate_constant, `Ix.CompileCert.RecordSourceShape.ingress,
       `Ix.CompileCert.RecordSourceShape.canonical_ingress]
-
-/-- info: [reading-audit] record substitution producer: 1 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "record substitution producer"
-    #[`Ix.CompileCert.RecordSubst.produced]
-
-/-- info: [reading-audit] record substitution reading: 2 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "record substitution reading"
-    #[`Ix.CompileCert.RecordSubst.substRecords_related, `Ix.CompileCert.RecordSubst.withRecords_read]
 
 /-- info: [reading-audit] rewrite arity primitives: 9 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
@@ -894,14 +853,6 @@ run_cmd do
     (#[`history_sound, `instantiateWith_produced, `instantiateWith_fresh, `instantiate_fresh,
       `instantiateWith_inspected, `instantiateWith_fresh_inspected].map (`Ix.CompileCert.DevelopmentFrames ++ ·))
 
-/-- info: [reading-audit] frontend and development call receipts: 5 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "frontend and development call receipts"
-    (#[`compileLeanInput_prefix, `compileDecoratedConsts_guards, `compileLeanInput_members,
-      `compileLeanInput_frames, `development_call].map (`Ix.CompileCert.FrontendReceipts ++ ·))
-
 /-- info: [reading-audit] unconditional development cache preservation: 4 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
@@ -909,53 +860,3 @@ run_cmd do
   checkRoots (tag := "reading-audit") "unconditional development cache preservation"
     (#[`insert_invalid, `hinst_state, `happ_state, `instantiateWith_state].map
       (`Ix.CompileCert.DevelopmentState ++ ·))
-
-/-- info: [reading-audit] actual rewrite development call chains: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "actual rewrite development call chains"
-    (#[`Chain.append, `Chain.preserves, `expansionOf_calls, `rw_calls,
-      `expansionOf_state, `rw_state].map (`Ix.CompileCert.RewriteCalls ++ ·))
-
-/-- info: [reading-audit] current image inputs and wrapper state: 8 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "current image inputs and wrapper state"
-    (#[`instantiateWith_frames, `rewriteConstM_state, `imageDecl_receipt, `imageDecl_state,
-      `expansion_defn_current, `expansion_thm_current, `expansion_defn_frames, `expansion_thm_frames].map
-      (`Ix.CompileCert.CurrentInputs ++ ·))
-
-/-- info: [reading-audit] actual block prefix states: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "actual block prefix states"
-    (#[`rewriteBlock_eq, `compileImageBlock_eq, `rewritePrefix_state, `imagePrefix_state,
-      `rewriteBlock_receipt, `compileImageBlock_receipt].map (`Ix.CompileCert.BlockStates ++ ·))
-
-/-- info: [reading-audit] actual O3 O4 O6 output frames: 10 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "actual O3 O4 O6 output frames"
-    (#[`mkAppN_frames, `append_frames, `extract_frames, `pick_frames, `O3_frames, `O4_frames, `O6_frames,
-      `branch_frames, `engineN_frame_cases, `passConfig_frame_cases].map (`Ix.CompileCert.OptFrames ++ ·))
-
-/-- info: [reading-audit] actual O11a adapted minor frames: 7 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "actual O11a adapted minor frames"
-    (#[`instantiate1At_frames, `instantiate1_frames, `batchAbstractWith_frames,
-      `mkBinderChain_frames, `mkLambda_frames, `fresh_frames, `sizeOfMinor_frames].map
-      (`Ix.CompileCert.O11aMinorFrames ++ ·))
-
-/-- info: [reading-audit] actual O11a output and hook frames: 6 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs (whitespace := lax) in
-open Ix.CompileCert.UniverseAudit (checkRoots) in
-run_cmd do
-  checkRoots (tag := "reading-audit") "actual O11a output and hook frames"
-    (#[`applyWithE_frames, `applyWith_frames, `O11a_frames, `branch_frames,
-      `engineN_frame_cases, `passConfig_frame_cases].map (`Ix.CompileCert.O11aFrames ++ ·))

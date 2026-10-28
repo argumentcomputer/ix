@@ -51,21 +51,19 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
             isReflexive := flags.isReflexive })
   return .ok result
 
-/-- Read source records without changing canonical reference resolution.
-    Reserved `_ix` names are compiler support, not source declarations. -/
+/-- Read source records without changing canonical reference resolution. -/
 private def decompileOriginals (ixonEnv : Ixon.Env) (numWorkers : Nat)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) × Unit :=
   let (decoded, errors) := decompileAllParallel (originalView ixonEnv) numWorkers
-    (skip := fun n _ => Ix.Compile.Pass.hasReserved n)
   match fixupInductiveFlags decoded with
   | .ok fixed => (fixed, errors, ())
   | .error err => (decoded, errors.push (Ix.Name.mkAnon, err), ())
 
-/-- Full source decompile: read every stored original, then restore inductive
+/-- Full source decompile: read every stored record, then restore inductive
     flags. The historical sharing-limit/source-oracle arguments and triple
     shape remain for callers; decoding uses neither argument, and the retired
-    regeneration state is now `Unit`. Missing originals require recompilation
-    of the artifact and never trigger a kernel fallback. -/
+    regeneration state is now `Unit`. A missing record is an error and never
+    triggers a kernel fallback. -/
 def decompileEnvFull (ixonEnv : Ixon.Env)
     (sharingLimits : Ix.Sharing.Exact.Limits)
     (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)

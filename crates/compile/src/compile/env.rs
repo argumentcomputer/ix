@@ -415,24 +415,6 @@ pub fn compile_env_with_profile(
     );
   }
 
-  // Reserved input: a grounded input constant with a reserved metadata
-  // key, then a grounded input name with a reserved component, is refused
-  // before compiling, naming the least message as the Lean IO pipeline does.
-  if let Some(desc) = scan
-    .reserved_metadata
-    .iter()
-    .filter(|n| !ungrounded_map.contains_key(*n))
-    .map(crate::compile::pass3::names::reserved_metadata_input)
-    .min()
-  {
-    return Err(CompileError::UnsupportedExpr { desc });
-  }
-  if let Some(desc) = crate::compile::pass3::names::reserved_input_in(
-    condensed.blocks.values().flat_map(|block| block.iter()),
-  ) {
-    return Err(CompileError::UnsupportedExpr { desc });
-  }
-
   // Domain restriction: reject environments with non-canonical inductive
   // flags. Groups come from the fused scan; only inductive families are
   // re-read here.
@@ -461,7 +443,7 @@ pub fn compile_env_with_profile(
 
   // Lean's declarations compile as given: the schedule is the
   // condensation's (Lean `compileEnvFoldWithSource`).
-  let mut stt = CompileState {
+  let stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
@@ -1278,7 +1260,6 @@ pub fn compile_env_with_profile(
   }
 
   stt.finalize_hints();
-  stt.finalize_original_data()?;
 
   if !semantic_sources.is_empty() || profile.is_some() {
     if !stt.ungrounded.is_empty() {
@@ -1503,7 +1484,6 @@ fn precompile_aux_gen_prereqs(
 #[cfg(test)]
 mod promotion_tests {
   use super::*;
-  use crate::compile::original_data::{Captured, Payload};
   use crate::compile::{block_txn, compile_name};
   use ix_common::env::ReducibilityHints;
   use ixon::env::Named;
@@ -1515,14 +1495,6 @@ mod promotion_tests {
 
   fn addr(s: &str) -> Address {
     Address::hash(s.as_bytes())
-  }
-
-  fn capture(s: &str, hints: Option<ReducibilityHints>) -> Captured {
-    Captured {
-      original: Payload { addr: addr(s), bytes: Arc::from(s.as_bytes()) },
-      hints,
-      block: None,
-    }
   }
 
   fn seed(stt: &CompileState, n: &Name, canonical: &Address) {
@@ -1562,19 +1534,9 @@ mod promotion_tests {
     }
     stt.record_hint(&other, Some(ReducibilityHints::Opaque));
     block_txn::start();
+    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
     stt
-      .promote_original(
-        &a,
-        ConstantMeta::default(),
-        capture("a-original", None),
-      )
-      .unwrap();
-    stt
-      .promote_original(
-        &other,
-        ConstantMeta::default(),
-        capture("other-original", None),
-      )
+      .promote_aux(&other, addr("other-original"), ConstantMeta::default())
       .unwrap();
     stt.record_hint(&other, Some(ReducibilityHints::Abbrev));
     let e = stt
@@ -1588,7 +1550,6 @@ mod promotion_tests {
     assert!(!stt.env.named.get(&other).unwrap().has_original());
     assert_eq!(stt.recorded_hint(&other), Some(ReducibilityHints::Opaque));
     assert_eq!(stt.resolve_addr(&other), Some(canonical));
-    assert!(stt.original_receipts.lock().unwrap().is_empty());
   }
 
   #[test]
@@ -1600,43 +1561,30 @@ mod promotion_tests {
     seed(&stt, &b, &canonical);
     stt.name_to_addr.insert(b.clone(), addr("conflicting-main"));
     block_txn::start();
-    stt
-      .promote_original(
-        &a,
-        ConstantMeta::default(),
-        capture("a-original", None),
-      )
-      .unwrap();
-    stt
-      .promote_original(
-        &b,
-        ConstantMeta::default(),
-        capture("b-original", None),
-      )
-      .unwrap();
+    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
+    stt.promote_aux(&b, addr("b-original"), ConstantMeta::default()).unwrap();
     let e = block_txn::commit(&stt).unwrap_err();
     assert!(!stt.env.named.get(&a).unwrap().has_original());
     assert!(!stt.env.named.get(&b).unwrap().has_original());
-    assert!(stt.original_receipts.lock().unwrap().is_empty());
     let txn = block_txn::take().unwrap();
     block_txn::rollback(&stt, &txn);
     let all = [a.clone(), b.clone()].into_iter().collect();
     fail_aux_promotion(&stt, &all, &e.to_string());
     assert_withdrawn(&stt, &all);
-    // A retry publishes one new receipt per member, never the discarded data.
+    // A retry publishes the retry's original metadata, never the discarded
+    // one.
     for n in [&a, &b] {
       seed(&stt, n, &canonical);
     }
     block_txn::start();
     for n in [&a, &b] {
-      stt
-        .promote_original(n, ConstantMeta::default(), capture("retry", None))
-        .unwrap();
+      stt.promote_aux(n, addr("retry"), ConstantMeta::default()).unwrap();
     }
     block_txn::finish(&stt, false).unwrap();
-    let rows = stt.original_receipts.lock().unwrap();
-    assert_eq!(rows.len(), 2);
-    assert!(rows.iter().all(|r| r.original.addr == addr("retry")));
+    for n in [&a, &b] {
+      let named = stt.env.named.get(n).unwrap();
+      assert_eq!(named.original().unwrap().0, addr("retry"));
+    }
   }
 
   #[test]
@@ -1648,18 +1596,12 @@ mod promotion_tests {
       seed(&stt, n, &canonical);
     }
     block_txn::start();
-    let block = capture("shared-block", None).original;
-    let mut a_data = capture("a-original", Some(ReducibilityHints::Regular(7)));
-    a_data.block = Some(block.clone());
-    let mut b_data = capture("b-original", None);
-    b_data.block = Some(block.clone());
-    stt.promote_original(&a, ConstantMeta::default(), a_data).unwrap();
-    stt.promote_original(&b, ConstantMeta::default(), b_data).unwrap();
-    // The image writes different hints after the original has been captured.
+    stt.promote_aux(&a, addr("a-original"), ConstantMeta::default()).unwrap();
+    stt.promote_aux(&b, addr("b-original"), ConstantMeta::default()).unwrap();
+    // The image writes different hints after the original was promoted.
     for n in [&a, &b] {
       stt.record_hint(n, Some(ReducibilityHints::Abbrev));
     }
-    assert!(stt.original_receipts.lock().unwrap().is_empty());
     assert!(!stt.name_to_addr.contains_key(&a));
     assert!(!stt.env.named.get(&a).unwrap().has_original());
     block_txn::commit(&stt).unwrap();
@@ -1671,16 +1613,6 @@ mod promotion_tests {
       assert_eq!(stt.name_to_addr.get(n).unwrap().value(), &canonical);
     }
     assert!(stt.ungrounded.is_empty());
-    let rows = stt.original_receipts.lock().unwrap();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].hints, Some(Some(ReducibilityHints::Regular(7))));
-    assert_eq!(rows[1].hints, Some(None));
-    assert!(rows.iter().all(|r| r.published == canonical));
-    assert!(Arc::ptr_eq(
-      &rows[0].block.as_ref().unwrap().bytes,
-      &rows[1].block.as_ref().unwrap().bytes
-    ));
-    assert_eq!(rows[0].original.bytes.as_ref(), b"a-original");
     assert_eq!(stt.recorded_hint(&a), Some(ReducibilityHints::Abbrev));
   }
 
@@ -1747,20 +1679,12 @@ mod promotion_tests {
     seed(&stt, &n, &canonical);
     block_txn::start();
     stt
-      .promote_original(
-        &n,
-        ConstantMeta::default(),
-        capture("discarded-original", None),
-      )
+      .promote_aux(&n, addr("discarded-original"), ConstantMeta::default())
       .unwrap();
     thread::scope(|s| {
       s.spawn(|| {
         stt
-          .promote_original(
-            &n,
-            ConstantMeta::default(),
-            capture("successful-original", None),
-          )
+          .promote_aux(&n, addr("successful-original"), ConstantMeta::default())
           .unwrap();
       })
       .join()
@@ -1771,30 +1695,22 @@ mod promotion_tests {
     let named = stt.env.named.get(&n).unwrap();
     assert_eq!(named.original().unwrap().0, addr("successful-original"));
     assert_eq!(stt.resolve_addr(&n), Some(canonical));
-    let rows = stt.original_receipts.lock().unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].original.addr, addr("successful-original"));
   }
 
   #[test]
-  fn captured_original_binds_only_when_its_name_is_published() {
+  fn staged_original_binds_only_when_its_name_is_published() {
     let stt = CompileState::default();
     let n = name("latePublication");
-    stt
-      .promote_original(&n, ConstantMeta::default(), capture("absent", None))
-      .unwrap();
-    assert!(stt.original_receipts.lock().unwrap().is_empty());
+    stt.promote_aux(&n, addr("absent"), ConstantMeta::default()).unwrap();
+    assert!(!stt.env.named.contains_key(&n));
     block_txn::start();
-    stt
-      .promote_original(&n, ConstantMeta::default(), capture("staged", None))
-      .unwrap();
+    stt.promote_aux(&n, addr("staged"), ConstantMeta::default()).unwrap();
     let canonical = addr("published-after-staging");
     seed(&stt, &n, &canonical);
     block_txn::finish(&stt, false).unwrap();
-    let rows = stt.original_receipts.lock().unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].published, canonical);
-    assert_eq!(rows[0].original.addr, addr("staged"));
+    let named = stt.env.named.get(&n).unwrap();
+    assert_eq!(named.addr, canonical);
+    assert_eq!(named.original().unwrap().0, addr("staged"));
   }
 }
 
@@ -1871,79 +1787,5 @@ mod safety_tests {
     env.insert(h.clone(), axiom(&h, true));
     let groups = FxHashMap::default();
     assert!(validate_mutual_safety(&groups, &block(&[&f, &h]), &env).is_ok());
-  }
-}
-
-#[cfg(test)]
-mod reserved_input_tests {
-  use super::*;
-  use crate::compile::pass3::names::{
-    inline_key, reserved_input, reserved_metadata_input,
-  };
-  use bignat::Nat;
-  use ix_common::env::{
-    ConstantVal, DataValue, DefinitionVal, Expr as LeanExpr, Level,
-    ReducibilityHints,
-  };
-
-  fn dotted(s: &str) -> Name {
-    s.split('.').fold(Name::anon(), |p, c| Name::str(p, c.to_string()))
-  }
-
-  /// `n : Sort 1 := Sort 0`, the value wrapped in `kvs` when there are any.
-  fn defn(n: &Name, kvs: Vec<(Name, DataValue)>) -> LeanConstantInfo {
-    let value = LeanExpr::sort(Level::zero());
-    LeanConstantInfo::DefnInfo(DefinitionVal {
-      cnst: ConstantVal {
-        name: n.clone(),
-        level_params: vec![],
-        typ: LeanExpr::sort(Level::succ(Level::zero())),
-      },
-      value: if kvs.is_empty() { value } else { LeanExpr::mdata(kvs, value) },
-      hints: ReducibilityHints::Opaque,
-      safety: DefinitionSafety::Safe,
-      all: vec![n.clone()],
-    })
-  }
-
-  fn compile(
-    consts: Vec<LeanConstantInfo>,
-  ) -> Result<CompileState, CompileError> {
-    let mut env = LeanEnv::default();
-    for c in consts {
-      env.insert(c.get_name().clone(), c);
-    }
-    compile_env(&Arc::new(env))
-  }
-
-  fn refusal(result: Result<CompileState, CompileError>) -> String {
-    match result {
-      Err(CompileError::UnsupportedExpr { desc }) => desc,
-      Err(e) => panic!("another refusal: {e:?}"),
-      Ok(_) => panic!("compiled"),
-    }
-  }
-
-  fn key(k: Name) -> Vec<(Name, DataValue)> {
-    vec![(k, DataValue::OfNat(Nat::from(0u64)))]
-  }
-
-  /// Reserved input names and metadata keys are refused by the least
-  /// message (a metadata message is less than any name message, so it
-  /// comes first); an ordinary key and the neighbour `_i` compile.
-  #[test]
-  fn compile_env_refuses_reserved_input() {
-    let (b, a) = (dotted("R.b._ix"), dotted("R.a._ixd"));
-    let names = vec![defn(&b, vec![]), defn(&a, vec![])];
-    assert_eq!(refusal(compile(names)), reserved_input(&a).unwrap());
-    let (d, c) = (dotted("M.d"), dotted("M.c"));
-    let keyed = vec![
-      defn(&d, key(inline_key())),
-      defn(&c, key(inline_key())),
-      defn(&b, vec![]),
-    ];
-    assert_eq!(refusal(compile(keyed)), reserved_metadata_input(&c));
-    let ordinary = vec![defn(&dotted("N._i"), key(dotted("user.key")))];
-    assert!(compile(ordinary).is_ok());
   }
 }
