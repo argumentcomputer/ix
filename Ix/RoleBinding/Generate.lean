@@ -38,6 +38,21 @@ def recordStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
   let decoded ← (Ix.Kernel.Admission.decodeRecords limits records.toList).mapError byteError
   return decoded.foldl (fun out (a, c) => out.insert a c) {}
 
+/-- An authenticated, canonical record store for exactly this environment and
+these admission limits. Reusing it cannot substitute records from another
+artifact or validation under weaker limits. -/
+structure CheckedStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) where
+  records : RecordStore
+  checked : recordStore limits env = .ok records
+
+/-- Authenticate and decode an artifact, retaining the association needed to
+reuse its record store during generation and emission. -/
+def checkedStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
+    Except String (CheckedStore limits env) :=
+  match checked : recordStore limits env with
+  | .error error => .error error
+  | .ok records => .ok ⟨records, checked⟩
+
 /-- Structural source spelling for certificate names, including duplicate
 spellings that a forged stored Ix.Name hash would otherwise distinguish. -/
 def sourceAddresses (env : Ixon.Env) : Except String (Std.HashMap Ix.Kernel.Name Address) := do
@@ -82,12 +97,13 @@ structure Generated where
 /-- Generate evidence for the required, actually published roles. The
 certificate module's bound operations must have the artifact's addresses.
 Missing proofs, unreadable closure records and noncanonical output refuse.
-`store?` is `recordStore limits env` when the caller has built it. -/
+`store?` carries a checked store for this artifact and these limits when the
+caller has already built it. -/
 def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     (required : List Role) (groups : List (List Role))
-    (store? : Option RecordStore := none) : Except String Generated := do
+    (store? : Option (CheckedStore limits env) := none) : Except String Generated := do
   let store ← match store? with
-    | some store => pure store
+    | some store => pure store.records
     | none => recordStore limits env
   let published ← publication env (store[·]?) required
   let boundOnly := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList []
@@ -207,14 +223,14 @@ This explicitly regenerates a binding: any previous binding is replaced only
 after the new table's source publications match this artifact. Existing record
 and blob bytes cannot be overwritten. The caller must still check the resulting
 artifact at the certified entry; a previous certificate does not transfer.
-`store?` is `recordStore limits env` when the caller has built it (as for
+`store?` carries a checked store for this artifact and these limits (as for
 `generate`), so that one artifact is authenticated and decoded once. -/
 def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
-    (env : Ixon.Env) (store? : Option RecordStore := none) : Except String Ixon.Env := do
+    (env : Ixon.Env) (store? : Option (CheckedStore limits env) := none) : Except String Ixon.Env := do
   generated.table.check
   unless generated.table.wireWF do throw "role emission: noncanonical binding table"
   let store ← match store? with
-    | some store => pure store
+    | some store => pure store.records
     | none => recordStore limits env
   let actual ← Ix.RoleBinding.publication env (store[·]?) (generated.table.bound.toList.map (·.1))
   unless actual.bound == generated.table.bound do

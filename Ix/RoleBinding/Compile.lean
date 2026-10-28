@@ -215,9 +215,9 @@ def finalize (backend : Backend) (source : Lean.Environment)
   let (required, selected) ← IO.ofExcept (supportInput source artifact)
   let support ← compileRequired backend source selected
   let merged ← IO.ofExcept (mergeSupport limits artifact support)
-  -- The merged artifact authenticated and decoded once (`recordStore`), for both
-  -- generation and emission: the original's records are authenticated here.
-  let store ← IO.ofExcept (recordStore limits merged)
+  -- Validate the whole artifact, including records outside the role closure.
+  -- Emission reuses the store associated with these exact bytes and limits.
+  let store ← IO.ofExcept (checkedStore limits merged)
   IO.ofExcept (preserveRequested input artifact merged)
   let actual := publishedRoles merged
   unless actual == required do
@@ -232,8 +232,10 @@ def finalize (backend : Backend) (source : Lean.Environment)
     let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
     let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
     compileRequired backend certSource selected
-  let generated ← IO.ofExcept (generate limits merged certificates required Ix.Kernel.preludeShape
-    (store? := some store))
+  -- The support already contains every selected role and its source closure.
+  -- Evidence generation needs only that closure and the certificate closure;
+  -- emission below checks its binding against the complete merged artifact.
+  let generated ← IO.ofExcept (generate limits support certificates required Ix.Kernel.preludeShape)
   let emitted ← IO.ofExcept (generated.emit limits merged (store? := some store))
   IO.ofExcept (preserveRequested input artifact emitted)
   IO.ofExcept (checkFinalized artifact emitted)
