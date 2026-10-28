@@ -213,7 +213,7 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Verify.ExprCache.ingestExpr_hit_meaning, standardAxioms := standard },
   -- The compiler's sharing builder (`Ix.Sharing.Verify.Builder`) and the
   -- stored-byte wrapper `BlockResult.mk'`, which hashes the block with
-  -- `Address.admissionHash` (pure BLAKE3 in the logic; since CQ2.1 no hash
+  -- `Address.admissionHash` (pure BLAKE3 in the logic; no hash
   -- reaches a `native_decide` axiom). These assert no hash-injectivity or
   -- FFI-agreement law.
   { root := ``Ix.Sharing.Verify.BlockResult.mk'_codec_roundtrip,
@@ -469,7 +469,7 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.canonicalTieredExpanded_eq_C,
     standardAxioms := standard },
-  -- The compiler's preseed table walks (CQ2.9, `Ix.CompileM.TableWorklist`):
+  -- The compiler's preseed table walks (`Ix.CompileM.TableWorklist`):
   -- compiled code runs the total worklists, proved equal to the structural
   -- walks (`@[csimp]`), in place of the former `implemented_by` code.
   { root := ``Ix.CompileM.collectExprTables_eq_worklist,
@@ -489,7 +489,7 @@ def roots : Array RootAllowance := #[
     standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.csBase_eq_fast,
     standardAxioms := noChoice },
-  -- The compiler's exact cache keys (CQ2.8, `Ix.Compile.ExactKey`): compiled
+  -- The compiler's exact cache keys (`Ix.Compile.ExactKey`): compiled
   -- code compares expressions, levels and names pointer-first with a memo,
   -- proved equal to `decide (a = b)` over the raw terms (`@[csimp]`).
   { root := ``Ix.Compile.ExactKey.exprEq_eq_impl,

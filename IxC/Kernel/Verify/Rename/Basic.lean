@@ -7,7 +7,7 @@ public import IxC.Kernel.Roles
 /-!
 # Renaming the input keys (IxC step 7.3, the data)
 
-The renaming lemma (IXC-PLAN §12; LOCALITY §7 (d2)) says that the
+The renaming lemma says that the
 reference fold commutes with a renaming of the input keys `Key.map f`,
 `f : md.Id → md'.Id`, injective on the ids the run can meet. Locality is
 the same statement at `f = id` with two environments that agree on the

@@ -21,7 +21,7 @@ Rows are JSONL with the fields of `kernel-check-ixe` (`address, names, kind,
 outcome, reason, micros, readMicros`; a blocked row's reason is its root's
 address), so `kernel-check-ixe --report` and `--summary` read them unchanged.
 The verdict is the `.anon` run's; a checker failure's reason is rendered by
-`.meta` (IXC-PLAN §11): its keys spelled with the names the `.ixe`'s metadata
+`.meta`: its keys spelled with the names the `.ixe`'s metadata
 gives them and their addresses, `Nat.add@a1b2c3d4` (`Reader.spellWith` over
 `CheckIxeMeta.displayTable`; a run from the read cache spells them as
 `Key.toName` does). `kernel-check-ixe --meta` runs the check at `.meta` too

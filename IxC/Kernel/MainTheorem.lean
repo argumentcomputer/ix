@@ -56,7 +56,7 @@ consistency does not depend on the evidence the install gates are
 handed (none included: then every stream that declares a certified
 `Nat` operation declines). It is stated at the certified modes
 (`Mode.Certified`: `.anon`, the Ixon entry's, and `.source`, the Lean
-ingress's); `.meta`'s verdicts are never reported (IXC-PLAN §11). -/
+ingress's); `.meta`'s verdicts are never reported. -/
 theorem model_exists {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
     (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
     (accepted : checkDecls .verified ev ds = .ok env) :

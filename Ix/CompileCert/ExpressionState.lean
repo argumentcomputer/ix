@@ -20,7 +20,7 @@ The state and source/reader contracts of `Ix.CompileM.compileExpr`
 * **The state invariant** `Good`: the universe invariants
   (`UniversePipeline.Sound`), the reference index, the fixed binding view
   of the declaration prefix, and the expression memo's meaning
-  (`CacheSound` over `ExpressionRead.KeyReading`, at CQ2.8's exact keys).
+  (`CacheSound` over `ExpressionRead.KeyReading`, at exact cache keys).
 * **`Checked`**: a run keeps `Good`, extends the in-flight reader, and a
   successful one returns a value that reads as a related term.
 * Each effect the compiler's steps perform keeps `Good` and extends the

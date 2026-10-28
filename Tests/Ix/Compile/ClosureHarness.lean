@@ -7,7 +7,7 @@
   - `compileClosure`: the ordinary Lean compile of a closure, as
     `ix compile-lean` runs it (`compileInputFromEnv`, then
     `compileLeanInput`). It is the unvalidated entry, which is fine for
-    fixtures without source contracts (CQ2.22(d)).
+    fixtures without source contracts.
   - `rustClosure`/`rustCheck`: the Rust compile (`ix compile`'s FFI,
     `rsCompileEnvBytesFFI`) of the same prepared constants, and the check
     that it gives the Lean compile's artifact byte for byte.

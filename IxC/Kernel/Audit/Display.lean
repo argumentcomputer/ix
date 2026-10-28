@@ -2,7 +2,7 @@ import Lean.Elab.Command
 import IxC.Kernel.Admission
 import IxC.Kernel.Audit.Runtime
 
-/-! # The display-use audit (IXC-PLAN §11, steps 6 and 6b)
+/-! # The display-use audit
 
 `.meta` carries display data that the checker never reads: a field of type
 `Mode.D α` holds a value in `.meta` and `()` in the certified modes; the

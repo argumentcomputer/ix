@@ -1389,7 +1389,7 @@ separate from correctness. The old exact output for this capture remains unknown
 The 2026-10-23 guarded area implementation reduced that Lean normalization to
 133.245 s with identical complete output bytes and charges. A controlled Init+Std
 comparison measured 70.515 s before the integrated compiler changes, 71.287 s after
-M6/CQ5.3a, and 127.940 s with the initial K16 evaluator. Area evaluation then measured
+integration, and 127.940 s with the initial K16 evaluator. Area evaluation then measured
 89.962 s under concurrent validation load, again with full Rust byte parity; this last
 measurement is not an isolated timing comparison.
 

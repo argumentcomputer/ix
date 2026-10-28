@@ -626,7 +626,7 @@ def getMdataStackIndexed (rev : NameReverseIndex) : GetM (Array KVMap) := do
 `arena := len node₀ … node_{len-1}`; node `i` is a tag byte
 `kind <<< 3 ||| mask` followed by its fields in declaration order. Kinds:
 0 leaf, 1 app, 2–5 binder (2 + binder info), 6 letBinder, 7 ref, 8 prj,
-9 mdata; kinds 10 and 11 (the retired callSite and etaCallSite, CQ3.6) are
+9 mdata; kinds 10 and 11 (the retired callSite and etaCallSite) are
 refused. Child references are never absolute:
 
 * The *structural* slots (app fun/arg, binder type/body, let

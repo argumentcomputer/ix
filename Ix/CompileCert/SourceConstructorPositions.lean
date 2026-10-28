@@ -231,7 +231,7 @@ under its name, naming the block (`memberValue`); and each member's
 constructors, each the constructor the environment has under the member's
 constructor name at that position, naming the member, with that position as
 its index (`classValue`, `ctorValue`). The names are compared structurally
-(`Ix.Name.beqRaw`, CQ2.25), the positions exactly. -/
+(`Ix.Name.beqRaw`), the positions exactly. -/
 theorem inductiveGroup_spec (env : Ix.Environment) (first : Ix.InductiveVal) (cands : Array Ix.RecursorVal)
     (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal)) (recs : Array Ix.RecursorVal)
     (h : inductiveGroup env first cands = .inductive types ctors recs) :

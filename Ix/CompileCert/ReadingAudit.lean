@@ -420,7 +420,7 @@ def canonMemberRoots : Array Lean.Name :=
     `slot_disjoint].map (`Ix.CompileCert.Canon ++ ·)
 
 /-- The preseed's definitions the preseed proofs unfold. `preseedExprTables` and
-`collectExprTables` run as their proved-equal worklists (the CQ2.9 `@[csimp]`
+`collectExprTables` run as their proved-equal worklists (the `@[csimp]`
 theorems `preseedExprTables_eq_worklist`, `collectExprTables_eq_worklist`,
 roots of `IxSharingVerify.Audit.Statements`), so they are not listed. -/
 def preseedRuntime : Array Lean.Name :=

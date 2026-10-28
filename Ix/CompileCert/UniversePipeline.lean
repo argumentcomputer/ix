@@ -24,7 +24,7 @@ raw compile (`canonicalTail`), and then the whole operation:
   successful reading survives (`canonicalTail_reading`).
 
 The raw compile computes the exact lowering of the source level
-(`UniverseMeaning.compileUniv_exact`, which needs CQ2.8's exact memo keys),
+(`UniverseMeaning.compileUniv_exact`, which needs exact memo keys),
 and `compileAndInternUnivCanon_eq` composes it with the tail:
 
 * every run keeps the universe invariants (`Sound`) and every old primary
@@ -418,7 +418,7 @@ theorem canonicalTail_cache_sound {md : Mode} (raw : Ixon.Univ) (compileContext 
     (by have same := congrArg BlockState.exprCache (canonicalTail_frame raw compileContext before); exact same)
     valid
 
-/-! ## The whole operation (R4: after CQ2.8's exact universe memo)
+/-! ## The whole operation with exact universe memoization
 
 `compileAndInternUnivCanon = compileUniv >>= canonicalTail` (by `rfl`), so the
 whole operation composes the raw compiler's exactness

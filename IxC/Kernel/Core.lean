@@ -50,7 +50,7 @@ moves can name them without importing the bodies.
 
 namespace Ix.Kernel
 
-/-! ## Failure messages (IXC-PLAN §7, step 6) -/
+/-! ## Failure messages -/
 
 /-- **What a failure shows beside its message** (step 6b, display only): the
 terms it is about, each with its role (`"argument"`, `"has type"`, …), and the
@@ -185,7 +185,7 @@ the record's position in the list the fold folds
 the driver chains the steps, and the main corollary states that chain
 (`IxC/Kernel/MainTheorem.lean`).
 
-**Structured** (IXC-PLAN §7, step 6): a failure's message is a `Msg md`,
+**Structured**: a failure's message is a `Msg md`,
 fixed prose around the keys it is about (`MsgPart`), and the checker never
 spells a key. Each mode's renderer does (`CheckError.render`: `.anon` short
 hexadecimal, `.meta` names with their address, `.source` Lean names), and a
@@ -215,7 +215,7 @@ spelled by `spell` (the mode's spelling: `Key.toName` for `.anon` and
 def render (spell : Key md → String) (e : CheckError md) : String :=
   e.verdictPrefix ++ e.msg.render spell
 
-/-- **Renaming the keys of a failure** (IXC-PLAN §12: the renaming lemma maps
+/-- **Renaming the keys of a failure** (the renaming lemma maps
 errors): the verdict and the prose stay. -/
 def mapKeys (σ : Key md → Key md') : CheckError md → CheckError md'
   | .notImplemented m => .notImplemented (Msg.mapKeys σ m)

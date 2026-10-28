@@ -34,7 +34,7 @@
   - The mode loop is gone (R11-16).
   - The "collectors agree" check is gone: there is one collector (R01-17).
     It is replaced by the seed-order check.
-  - The raw control no longer has compiler support (O11a, CQ5.3).
+  - The raw control no longer has compiler support.
   - Pass 3 is replaced by the closure harness.
   - Files go to a temporary directory, not `out/checker-support` (R11-24).
   - The decline text is re-recorded against this tree's checker

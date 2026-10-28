@@ -502,7 +502,7 @@ fun τ envS envA =>
 
 -- CQP.1: `HashAgreement` (`∀ bytes, Address.blake3 bytes = Address.blake3Pure
 -- bytes`) is gone, as `CompileCorrect`'s hypothesis and as a definition: since
--- CQ2.2 every content address the compiler computes is `Address.admissionHash`,
+-- Every content address the compiler computes is `Address.admissionHash`,
 -- pure BLAKE3 in the logic, so the statement no longer assumes that the Rust
 -- and the pure BLAKE3 agree. That the compiler's records and blobs sit at pure
 -- BLAKE3 of their bytes is a property of `compile`, `CompileAuthentic`.
@@ -521,7 +521,7 @@ fun τ envS envA =>
 -- verbatim. `CompileCovers` (every input constant is published exactly when it
 -- did not fail) is stated, and under it the new and the former statement imply
 -- each other (`CompileCorrect.published`, `CompileCorrect.of_published`).
--- CQ2.27: `CompileCovers` and `CompileAuthentic` are proved
+-- `CompileCovers` and `CompileAuthentic` are proved
 -- (`compileCovers`, `compileAuthentic`), from `compileReport`'s own checks;
 -- their statements are unchanged.
 /-- info: def Ix.Cert.Failures.failed : Ix.Cert.Failures → Ix.Name → Bool :=
@@ -660,7 +660,7 @@ fun binding limits ixe S order envA =>
 -- table are renamed field by field (`Rename.recRuleFire`, `Rename.indCaps`,
 -- `Rename.projTable`), and the lemma is stated for `σ = Key.map f` from Source
 -- keys to Ixon keys with `f` injective on the input's ids (`keyIds`,
--- `InputId`, `RenamingHyp`, IXC-PLAN §12). `Pinned`, `DerivedFrom`, `Built` and
+-- `InputId`, `RenamingHyp`). `Pinned`, `DerivedFrom`, `Built` and
 -- `reservedBasisNames_pinned` went with the old hypotheses: `Key.map` fixes
 -- the role keys and commutes with derived shapes by construction.
 /-- info: @Ix.Cert.Rename.expr.eq_def : ∀ {md md' : Ix.Kernel.Mode} (σ : Ix.Kernel.Key md → Ix.Kernel.Key md')
@@ -853,7 +853,7 @@ constructor:
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Failures
 
--- CQ2.27 (owner, 2026-10-15): `compileReport` checks its own result and
+-- `compileReport` checks its own result and
 -- fails, with no artifact, on any inconsistency. The former body of
 -- `compileReport` is `compileUnchecked`, verbatim; `compileReport` runs it,
 -- then `checkReport`: coverage (`uncovered`: every input constant published
@@ -863,7 +863,7 @@ constructor:
 -- the bytes do not change. `Failures.failed` moved here from
 -- `Ix.Cert.Statement`, unchanged, because the check reads it.
 --
--- CQ2.14: the driver is the pure wave fold `Ix.CompileM.compileEnvFold`, the
+-- The driver is the pure wave fold `Ix.CompileM.compileEnvFold`, the
 -- one driver of `compile` and of the IO pipeline (`compileDecoratedConsts`);
 -- the queue drivers `compileEnvAux` (sequential, live state) and
 -- `compileEnvParallelAux` (waves applied in completion order) go. Only the
@@ -1372,7 +1372,7 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.noFailure_iff
 
--- CQ2.27: coverage and authenticity, by construction.
+-- coverage and authenticity, by construction.
 /-- info: @Ix.Cert.compileReport_ok : ∀ {env : Ix.Environment} {out : Ixon.Env × Ix.Cert.Failures},
   Ix.Cert.compileReport env = Except.ok out →
     ∃ cenv,
@@ -1618,19 +1618,16 @@ What ties the shared `Ix.Environment` to Lean's: the cache-free
 specification of `Ix.CanonM` (`nameS`, `levelS`, `exprS`, `constS`), the
 direct reading of Lean's terms (`leanName`, `leanLevel`, `leanExpr`,
 `leanPos`), and the cache-free universe compiler (`compileUnivS`).
-`CanonMCorrect` and `CanonChunkCorrect` (C1) are **proved** (`canonMCorrect`,
-`canonChunkCorrect`), from every state: since CQ2.26 `Ix.CanonM` confirms
+`CanonMCorrect` and `CanonChunkCorrect` are **proved** (`canonMCorrect`,
+`canonChunkCorrect`), from every state: `Ix.CanonM` confirms
 every memo hit (`withPtrEq`) against an entry that carries its proof, has no
 hash-keyed cache, and has a total `canonSyntax`. So `ingressExpr_canonExpr`
-holds without a hypothesis. CQ2.26 re-froze this section: `Reachable` is
-gone (C1 holds from every state, which is stronger), `CanonMCorrect` is
-stated over every state, and `ingressExpr_canonExpr` lost its two premises.
+holds without a hypothesis, and `CanonMCorrect` is stated over every state.
 The universe bridge from Lean is proved (`universeBridge`, under the wire's
-bound only). CQ2.25's ingress part re-froze this section: `Numbering.pos`
-compares names structurally (`Ix.Name.beqRaw`), so `HashEqAgrees` is gone,
-`numbering_nameS` and `UniverseBridge` lost that premise and
-`lower_eq_compileUnivS` its `agree` premise, and `compileUnivS` finds a
-parameter structurally (stronger, every one). The proved theorems are at the
+bound only). `Numbering.pos` compares names structurally (`Ix.Name.beqRaw`),
+so `numbering_nameS`, `UniverseBridge` and `lower_eq_compileUnivS` require no
+hash-agreement premise. `compileUnivS` also finds parameters structurally.
+The proved theorems are at the
 three standard axioms or fewer. -/
 
 /-- info: Ix.Cert.Canon.nameS.eq_def : ∀ (x : Lean.Name),
@@ -1869,7 +1866,7 @@ fun names large n =>
 #guard_msgs (whitespace := lax) in
 #check Ix.Cert.Canon.ingressExpr_canonExpr
 
--- CQ2.26: C1, proved.
+-- Canonicalization correctness is proved.
 /-- info: Ix.Cert.Canon.canonMCorrect : Ix.Cert.Canon.CanonMCorrect -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Canon.canonMCorrect
@@ -2054,7 +2051,7 @@ raw universe's (`canonicalTail_read`). -/
 
 /-! ## Component theorems: the raw universe compiler and the whole universe pipeline
 
-Since CQ2.8 the raw universe compiler's memo is keyed by the exact level and
+The raw universe compiler's memo is keyed by the exact level and
 its parameter context. Every run keeps the memo exact, and a successful run
 returns the exact positional lowering of the source level
 (`Ix.CompileCert.UniverseMeaning.compileUniv_exact`), the specification
@@ -2776,7 +2773,7 @@ fun source =>
 
 /-! ## Component theorems: every public dispatch kind decodes exactly
 
-Since the call-site surgery was deleted (CQ3.5), public dispatch
+Since the call-site surgery was deleted, public dispatch
 (`Ix.CompileM.compileConstantInfo`) is the kind's preseeded block compiler
 in the singleton mutual context (`EmissionDispatch.*_run`); for every kind,
 and for a mutual block, a successful compile from tables on the wire returns a
@@ -3042,7 +3039,7 @@ recursor's result-variable walk is the source's
 
 /-! ## Component theorems: the mutual layout
 
-A mutual block keeps one payload per class, the class's first member, with
+A mutual block keeps one payload per source member, with
 that member's kind and constructor positions, and the sharing build's
 write-back keeps both (`ProjectionLayout.mutual_block_shape`); the standalone inductive
 family's block keeps the source's constructor positions, so its projection
@@ -3095,16 +3092,13 @@ constructors (`inductive_projection_resolves`,
 /-! ## Component theorems: a mutual block's projections
 
 A compiled mutual block either keeps the mutual wrapper, whose rows are a
-member projection per source member at its class index and a constructor
+member projection per source member at its own index and a constructor
 projection per constructor position, or collapses a lone definition or
 recursor, every source name registered to the block itself
-(`MutualArtifact.build_cases`). Under an environment without Pass 3
-records, a successful mutual block from a state whose tables are on the wire
+(`MutualArtifact.build_cases`). A successful mutual block from a state whose tables are on the wire
 decodes exactly, so do its projections, and in any store holding the block
 its rows read under the certified reader as their source-indexed references
-(`MutualArtifact.mutual_correct`), given non-empty classes whose members
-agree in shape (`MutualProjections.ClassesAgree`, discharged from the class
-sort in R9b, below) and source constructors declaring their positions. Every lemma
+(`MutualArtifact.mutual_correct`), given source constructors declaring their positions. Every lemma
 behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
 /-- info: Ix.CompileCert.MutualArtifact.mutual_correct : ∀ (context : Ix.CompileM.CompileEnv × Ix.CompileM.BlockEnv)

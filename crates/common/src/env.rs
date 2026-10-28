@@ -1991,7 +1991,7 @@ mod scalar_structure_tests {
   /// Name tables (`name_to_addr`, `MutCtx`) hash a
   /// name by its digest and confirm a hit with the derived `==`, which
   /// compares the components: two names that share a digest are two keys.
-  /// The Lean compiler's tables are keyed the same way since CQ2.25
+  /// The Lean compiler's tables are keyed the same way
   /// (`Ix.Compile.ExactKey.ExactName`, `Ix.nameCompareExact`).
   #[test]
   fn name_tables_keep_names_with_one_digest_apart() {

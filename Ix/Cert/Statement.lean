@@ -54,13 +54,13 @@ Statements (`def … : Prop`) and the theorems proved now:
   (`Ix.Cert.ReaderStreamsTrace.compileCorrect`, in `Ix.Cert.CompileCorrectProof`);
 * `CompileCovers`: the compiler publishes an input constant exactly when its
   report does not list it as failed. Proved (`compileCovers`), by
-  construction: `compileReport` checks it and fails otherwise (CQ2.27). So
+  construction: `compileReport` checks it and fails otherwise. So
   `CompileCorrect` is equivalent to the same statement hypothesised on the
   artifact publishing the closure (`Ix.Cert.compileCorrect_iff_published`);
 * `CompileAuthentic`: every record and blob `compile` returns is stored under
   the pure BLAKE3 hash of its bytes. Proved (`compileAuthentic`), by
   construction: `compileReport` re-hashes them with the admission hash and
-  fails on a mismatch (CQ2.27);
+  fails on a mismatch;
 * `ClosureCorrect`: the computed closure is the closure. Proved
   (`closureCorrect`, in `Ix.Cert.Closure`).
 
@@ -459,11 +459,10 @@ instance NoFailure.instDecidable (failures : Failures) (sub : Ix.Environment) :
 /-- **Coverage.** `compileReport` accounts for every input constant once:
 it is published (`Ixon.Env.named`) exactly when it did not fail. The ground
 filter records what it removes; the driver records every member of a block
-that failed, including a refused claim or payload
-(CQ2.3, CQ2.4, CQ2.6); and the readiness rule (CQ2.6) fails a block whose
+that failed, including a refused claim or payload; and the readiness rule fails a block whose
 dependency failed instead of leaving it unscheduled. A failed block publishes
-nothing (CQ2.4b, CQ2.6). Proved (`compileCovers`): `compileReport` checks it
-on its own result and fails otherwise (`checkReport`, CQ2.27), so it holds by
+nothing. Proved (`compileCovers`): `compileReport` checks it
+on its own result and fails otherwise (`checkReport`), so it holds by
 construction, whatever the driver's loop does. So `NoFailure` and
 `Published` agree on every closure (`CompileCorrect.published`,
 `CompileCorrect.of_published`, `compileCorrect_iff_published`). -/
@@ -553,8 +552,8 @@ blob) with `Address.admissionHash`, which is `Address.blake3Pure` in the logic
 (`Address.admissionHash_eq`) and runs as the Rust BLAKE3, so this is a
 property of `compile`, not an assumption that the two BLAKE3s agree. Proved
 (`compileAuthentic`): `compileReport` re-hashes every record and blob of its
-result with the admission hash and fails on any mismatch (`checkReport`,
-CQ2.27), so it holds by construction. Its definitional steps
+result with the admission hash and fails on any mismatch (`checkReport`),
+so it holds by construction. Its definitional steps
 (`blockAddr_mk'`, `storedRecord_authentic`) say why the check passes. -/
 def CompileAuthentic : Prop :=
   ∀ (env : Ix.Environment) (ixe : Ixon.Env), compile env = .ok ixe →
@@ -611,7 +610,7 @@ theorem IsClosure.mem_env {env sub : Ix.Environment} {roots : List Ix.Name}
   · rw [← (h n).1 hr]; exact hn
   · rw [(h n).2 hr] at hn; cases hn
 
-/-! ### Coverage and authenticity, by construction (CQ2.27)
+/-! ### Coverage and authenticity, by construction
 
 `compileReport` checks its own result (`checkReport`) and fails on any
 inconsistency, so both properties follow from the checks alone, with no
@@ -710,7 +709,7 @@ theorem compileReport_checks {env : Ix.Environment} {out : Ixon.Env × Failures}
   have ok := checkReport_ok hc
   exact ⟨ok.covered, ok.authentic, ok.acyclic, ok.hashes, ok.muts⟩
 
-/-- **Coverage, proved** (CQ2.27): `compileReport` publishes an input
+/-- **Coverage, proved**: `compileReport` publishes an input
 constant exactly when it does not report it as failed. -/
 theorem compileCovers : CompileCovers := by
   intro env ixe failures h n ci hn
@@ -730,7 +729,7 @@ theorem compileCovers : CompileCovers := by
   revert hne
   cases ixe.named.contains n <;> cases failures.failed n <;> simp
 
-/-- **Authenticity, proved** (CQ2.27): every record and blob `compile`
+/-- **Authenticity, proved**: every record and blob `compile`
 returns is stored under the pure BLAKE3 hash of its bytes. -/
 theorem compileAuthentic : CompileAuthentic := by
   intro env ixe hc
@@ -1263,8 +1262,7 @@ theorem nominalQuotientAgreeAt_of_check (V : Type w) [SetTheory V] {env : Ix.Env
 /-! The Source theorems hold for every grouping function, which is stronger
 than for the compiler's. At the compiler's own grouping, `blocksOf` (the one
 `CompileCorrect` names), they stand on the three standard axioms as well:
-`blocksOf` is total (CQ1.15) and reaches no `native_decide` axiom (CQ1.2,
-CQ2.1), which was the reason the statements quantify over the grouping. -/
+`blocksOf` is total and reaches no `native_decide` axiom. -/
 
 /-- `sourceConsistent` at the compiler's grouping, `blocksOf`. -/
 theorem sourceConsistent_blocksOf (V : Type w) [SetTheory V] (env : Ix.Environment)

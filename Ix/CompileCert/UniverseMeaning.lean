@@ -8,7 +8,7 @@ import Std.Data.HashMap.Lemmas
 
 `Ix.CompileM.compileUniv` compiles a source level under the constant's
 universe-parameter context `univCtx`, through the block memo `univCache`.
-Since CQ2.8 the memo is keyed by `Ix.Compile.ExactKey.UnivKey`, the exact
+The memo is keyed by `Ix.Compile.ExactKey.UnivKey`, the exact
 source level together with its complete parameter context, so a hit is
 confirmed structurally; a parameter compiles to its first structural
 position in the context (`nameIndex`), refused when it does not fit the
