@@ -4,7 +4,7 @@ import Ix.RoleEvidence
 
 /-! # The meanings of `compileReport`'s artifact checks
 
-Three of `checkReport`'s checks constrain the artifact beyond what its records
+Four of `checkReport`'s checks constrain the artifact beyond what its records
 say of themselves. Each meaning is stated here with the theorem that
 `compileReport`'s result has it:
 
@@ -22,6 +22,11 @@ say of themselves. Each meaning is stated here with the theorem that
   `roleRecordKinds`): under the default role table, the stored record at a
   bound `Nat` operation's address is a standalone definition and at a bound
   axiom role's address an axiom (`roleRecordKind`).
+* **Literal-support roles are named** (`LiteralRolesNamed`, `literalRolesNamed`):
+  under the default role table, a role a stored record's literal is checked
+  against (the `Nat` basis, and the string support for a `String` literal) whose
+  address the artifact stores a record at is an input constant published at that
+  address (`literalRoleUnnamed`).
 
 `RecursorsOwned` is stated over `Ix.Cert.ClosureLayout`'s published records
 (`addrOf`, `blockAt`, `nameRecords`), and `ClosureLayout` imports the
@@ -411,16 +416,17 @@ theorem literalRoleName_eq {s : Ix.Kernel.Role} (hs : s ∈ literalSupportRoles)
   congr 1
   rcases hs with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
 
-/-- **A stored literal-support role's record is its name's**, under the default role
-table: when the artifact stores a record at the address of a role a literal is
-checked against (the `Nat` basis and the string support,
-`Ix.Kernel.Reader.strLitSupportNames`), that role's name is an input constant
-published at that address. Every other address, and every unbound role, is
-unconstrained. -/
+/-- **A literal's stored support role's record is its name's**, under the default role
+table: when a stored record holds a literal and the artifact stores a record at the
+address of a role that literal is checked against (`literalRoles`: the `Nat` basis for a
+`Nat` literal, with the string support for a `String` literal), that role's name is an
+input constant published at that address. A support role no stored literal is checked
+against, every other address, and every unbound role are unconstrained: an artifact whose
+records hold no literal may store an α-copy of `Nat` at `Nat`'s address. -/
 def LiteralRolesNamed (env : Ix.Environment) (ixe : Ixon.Env) : Prop :=
   ∀ t, Ix.Kernel.Reader.defaultTable = .ok t →
-    ∀ s ∈ keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)), ∀ b,
-      t.addressOf? s = some b → ixe.consts.contains b = true →
+    ∀ (a : Address) (c : Ixon.Constant), recordAt ixe a = some c →
+      ∀ s ∈ literalRoles c, ∀ b, t.addressOf? s = some b → ixe.consts.contains b = true →
         env.consts.contains (literalRoleName s) = true ∧ addrOf ixe (literalRoleName s) = some b
 
 /-- The check's roles are the literal-support roles of `strLitSupportNames`. -/
@@ -428,35 +434,110 @@ theorem keyRoles_strLitSupportNames :
     keyRoles (Ix.Kernel.Reader.strLitSupportNames : List (Ix.Kernel.Key .anon)) = literalSupportRoles :=
   rfl
 
-/-- What `literalRoleUnnamed = none` says: every stored literal-support role's
-record is published under the role's name. -/
+/-- The check's `Nat` roles are the roles of `natLitSupportNames`. -/
+theorem keyRoles_natLitSupportNames :
+    keyRoles (Ix.Kernel.Reader.natLitSupportNames : List (Ix.Kernel.Key .anon)) = natLiteralRoles :=
+  rfl
+
+/-- A stored record's literal kinds are among the stored records' (`storedLiteralKinds`). -/
+theorem storedLiteralKinds_of {ixe : Ixon.Env} {a : Address} {c : Ixon.Constant}
+    (hc : recordAt ixe a = some c) :
+    ((Ix.Kernel.Reader.literalKinds c).1 = true → (storedLiteralKinds ixe).1 = true) ∧
+    ((Ix.Kernel.Reader.literalKinds c).2 = true → (storedLiteralKinds ixe).2 = true) := by
+  obtain ⟨lc, hlc, hget⟩ : ∃ lc, ixe.consts.get? a = some lc ∧ lc.get? = some c := by
+    unfold recordAt at hc
+    cases hl : ixe.consts.get? a with
+    | none => rw [hl] at hc; cases hc
+    | some lc => rw [hl] at hc; exact ⟨lc, rfl, hc⟩
+  have hin : (a, lc) ∈ ixe.consts.toArray := by
+    rw [Std.HashMap.mem_toArray_iff_getElem?_eq_some, ← Std.HashMap.get?_eq_getElem?]
+    exact hlc
+  unfold storedLiteralKinds
+  simp only [parMap_map, Array.any_map]
+  refine ⟨fun h1 => Array.any_eq_true'.mpr ⟨(a, lc), hin, ?_⟩,
+    fun h2 => Array.any_eq_true'.mpr ⟨(a, lc), hin, ?_⟩⟩
+  · simp only [Function.comp_apply, hget]
+    exact h1
+  · simp only [Function.comp_apply, hget]
+    exact h2
+
+/-- A stored record's literals are checked against roles among `storedLiteralRoles`. -/
+theorem literalRoles_stored {ixe : Ixon.Env} {a : Address} {c : Ixon.Constant}
+    (hc : recordAt ixe a = some c) {s : Ix.Kernel.Role} (hs : s ∈ literalRoles c) :
+    s ∈ storedLiteralRoles ixe := by
+  obtain ⟨k1, k2⟩ := storedLiteralKinds_of hc
+  unfold literalRoles at hs
+  unfold storedLiteralRoles
+  dsimp only at hs ⊢
+  cases hs2 : (Ix.Kernel.Reader.literalKinds c).2
+  · cases hs1 : (Ix.Kernel.Reader.literalKinds c).1
+    · simp [hs2, hs1, keyRoles] at hs
+    · simp only [hs2, hs1, Bool.false_eq_true, ↓reduceIte, keyRoles_natLitSupportNames] at hs
+      rw [k1 hs1]
+      cases (storedLiteralKinds ixe).2
+      · exact hs
+      · simp only [natLiteralRoles, List.mem_cons, List.not_mem_nil, or_false] at hs
+        simp only [↓reduceIte, literalSupportRoles, List.mem_cons]
+        rcases hs with rfl | rfl | rfl <;> simp
+  · simp only [hs2, ↓reduceIte, keyRoles_strLitSupportNames] at hs
+    rw [k2 hs2]
+    exact hs
+
+/-- A role a stored literal is checked against is a literal-support role. -/
+theorem literalRoles_support {c : Ixon.Constant} {s : Ix.Kernel.Role} (hs : s ∈ literalRoles c) :
+    s ∈ literalSupportRoles := by
+  unfold literalRoles at hs
+  dsimp only at hs
+  split at hs
+  · rwa [keyRoles_strLitSupportNames] at hs
+  · split at hs
+    · rw [keyRoles_natLitSupportNames] at hs
+      simp only [natLiteralRoles, List.mem_cons, List.not_mem_nil, or_false] at hs
+      rcases hs with rfl | rfl | rfl <;> simp [literalSupportRoles]
+    · simp [keyRoles] at hs
+
+/-- What `literalRoleUnnamed = none` says: every stored support role of a stored literal
+is published under the role's name. -/
 theorem literalRoleUnnamed_none {env : Ix.Environment} {ixe : Ixon.Env}
     (h : literalRoleUnnamed env ixe = none) : LiteralRolesNamed env ixe := by
-  intro t ht s hs b hb hc
+  intro t ht a c hc s hs b hb hcb
   have hmem : (s, b) ∈ roleTableBound.toList := by
     rw [roleTableBound_eq ht]
     exact bound_of_addressOf hb
-  rw [keyRoles_strLitSupportNames] at hs
-  have hrole : literalSupportRoles.contains s = true := List.elem_iff.mpr hs
-  rw [literalRoleName_eq hs]
-  simp only [literalRoleUnnamed, List.findSome?_eq_none_iff] at h
-  have found : (if (literalSupportRoles.contains s && ixe.consts.contains b &&
-      !(env.consts.contains (literalRoleIxName s) &&
-        (ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b)) = true
-      then some (s, b) else none) = none := h (s, b) hmem
-  rw [hrole, hc] at found
-  by_cases hx : env.consts.contains (literalRoleIxName s) = true
-  · by_cases hy : ((ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b) = true
-    · exact ⟨hx, beq_iff_eq.mp hy⟩
-    · rw [hx, Bool.eq_false_iff.mpr hy] at found
-      simp at found
-  · rw [Bool.eq_false_iff.mpr hx] at found
-    simp at found
+  have hsL := literalRoles_support hs
+  have hrole : literalSupportRoles.contains s = true := List.elem_iff.mpr hsL
+  rw [literalRoleName_eq hsL]
+  by_contra hne
+  have hpub : (env.consts.contains (literalRoleIxName s) &&
+      (ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b) = false := by
+    cases hx : env.consts.contains (literalRoleIxName s)
+    · rfl
+    · cases hy : ((ixe.named.get? (literalRoleIxName s)).map (·.addr) == some b)
+      · rfl
+      · exact (hne ⟨hx, beq_iff_eq.mp hy⟩).elim
+  have hin : (s, b) ∈ roleTableBound.toList.filter (fun (e : Ix.Kernel.Role × Address) =>
+      literalSupportRoles.contains e.1 && ixe.consts.contains e.2 &&
+        !(env.consts.contains (literalRoleIxName e.1) &&
+          (ixe.named.get? (literalRoleIxName e.1)).map (·.addr) == some e.2)) := by
+    rw [List.mem_filter]
+    refine ⟨hmem, ?_⟩
+    simp only [hrole, hcb, hpub, Bool.not_false, Bool.and_self]
+  have hstored : (storedLiteralRoles ixe).contains s = true :=
+    List.elem_iff.mpr (literalRoles_stored hc hs)
+  unfold literalRoleUnnamed at h
+  dsimp only at h
+  split at h
+  · rename_i hempty
+    rw [List.isEmpty_iff] at hempty
+    rw [hempty] at hin
+    cases hin
+  · rw [List.find?_eq_none] at h
+    exact absurd hstored (by simpa using h (s, b) hin)
 
-/-- **Literal-support roles are named**: when `compileReport` returns, under the
-default role table every literal-support role whose address the artifact stores a
-record at is an input constant published at that address (`checkReport`'s
-seventeenth check). -/
+/-- **Literal-support roles are named**: when `compileReport` returns, under the default
+role table every support role of a stored literal whose address the artifact stores a
+record at is an input constant published at that address (`checkReport`'s seventeenth
+check). -/
 theorem literalRolesNamed {env : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     (h : compileReport env = .ok (ixe, failures)) : LiteralRolesNamed env ixe := by
   obtain ⟨cenv, -, hc⟩ := compileReport_ok h

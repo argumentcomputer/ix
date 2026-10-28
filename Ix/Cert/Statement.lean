@@ -683,8 +683,8 @@ records, every published input name's address holds a stored record that is
 not a block, no address holds both a blob and a record, every input name
 published in an inductive block the recursor index attaches recursors to has a
 family of which each of those recursors is a published recursor, every stored
-record at a bound role's address has its specification's kind, and every
-literal-support role's stored record is published under the role's name. -/
+record at a bound role's address has its specification's kind, and every stored
+support role of a stored literal is published under the role's name. -/
 theorem checkReport_ok {env : Ix.Environment} {cenv : Ix.CompileM.CompileEnv} {out : Ixon.Env × Failures}
     (h : checkReport env cenv out = .ok ()) : CheckReportOk env cenv out := by
   unfold checkReport at h
