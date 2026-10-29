@@ -2,27 +2,25 @@
 //! stage directory is read: each stage's verifier is built by the
 //! construction its proving path uses, so a derived key is the key every
 //! compression under the same inputs proves to.
-use super::{FixedRoot, Result, SetupConfig, first, root, wrap};
+use super::{
+  FixedRoot, Result, SetupConfig, first, root, verifying_keys, wrap,
+};
 
 /// Derive the recursive verifying key, as `compress` writes it to
 /// `final-kzg/vk.bin`, for roots of the aggregation backend whose serialized
 /// key is `root_vk`, normalized to the fixed layout `layout` (JSON), and
-/// compressed under `setup` with a first KZG stage of `2^log_height` rows.
+/// compressed under `setup`.
 pub fn derive_recursive_vk(
   root_vk: &[u8],
   layout: &str,
   setup: &SetupConfig,
-  log_height: u32,
 ) -> Result<Vec<u8>> {
-  if !matches!(log_height, 24 | 25) {
-    return Err("the first KZG stage's log-height must be 24 or 25".into());
-  }
   let fri = {
     let key = aiur::vk_codec::AiurVerifyingKey::from_bytes(root_vk)?;
     root::verifier(&key, &FixedRoot::from_json(layout)?)?
   };
   let (manifest, parts) =
-    first::setup(&fri, usize::try_from(log_height)?, setup)?;
+    first::setup(&fri, verifying_keys::FIRST_LOG_HEIGHT, setup)?;
   drop(fri);
   let vk = wrap::verifying_key(&manifest, parts, setup)?;
   match setup.ignition_admission() {
@@ -54,8 +52,7 @@ mod tests {
     let root_vk =
       std::fs::read(std::env::var_os("IX_ROOT_VK").unwrap()).unwrap();
     let layout = verifying_keys::release_root_layout(&root_vk).unwrap();
-    let derived =
-      derive_recursive_vk(&root_vk, layout, &ignition(), 24).unwrap();
+    let derived = derive_recursive_vk(&root_vk, layout, &ignition()).unwrap();
     eprintln!("derived recursive key BLAKE3 {}", blake3::hash(&derived));
     assert!(derived == RECURSIVE_VK, "derived recursive key differs");
   }
@@ -66,10 +63,10 @@ mod tests {
     use sha2::{Digest, Sha256};
     let vk = wrap::VerifyingKey::from_bytes(RECURSIVE_VK).unwrap();
     let description =
-      wrap::plonk_description(&vk, &verifying_keys::STATEMENT_PREFIX).unwrap();
+      wrap::final_description(&vk, &verifying_keys::STATEMENT_PREFIX).unwrap();
     assert_eq!(
       Sha256::digest(&description).as_slice(),
-      verifying_keys::decode(verifying_keys::TERMINAL_SCHEMA_SHA256)
+      verifying_keys::decode(verifying_keys::FINAL_SCHEMA_SHA256).unwrap()
     );
   }
 

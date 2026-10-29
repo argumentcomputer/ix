@@ -1,5 +1,5 @@
 {
-  "scope": "actual Init recursive KZG verifier and witness; terminal proving only",
+  "scope": "actual Init recursive KZG verifier and witness; final proving only",
   "setup": "Groth16 development setup; PLONK cached Ignition parameters",
   "schema": {
     "SHA256": "b86e203bcc2dcd87a67c1e325e24328e12534676ada7ea9602ac319568139c29",
@@ -194,5 +194,5 @@
   },
   "date": "2026-10-29",
   "samplePolicy": "one first proof and three warm proofs per case, separate processes, default parallelism",
-  "limits": "Terminal proving only. Prove includes gnark witness solving. Key opening, previous Ix/KZG stages and witness export are excluded from warm proving. Groth16 CUDA pins key vectors; PLONK CUDA uses its existing sppark adapter."
+  "limits": "Final proving only. Prove includes gnark witness solving. Key opening, previous Ix/KZG stages and witness export are excluded from warm proving. Groth16 CUDA pins key vectors; PLONK CUDA uses its existing sppark adapter."
 }

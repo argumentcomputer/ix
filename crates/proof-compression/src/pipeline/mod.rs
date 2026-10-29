@@ -8,9 +8,12 @@ pub use stages::{
 
 mod compress;
 mod derive;
-pub use derive::derive_recursive_vk;
+mod development;
 pub(crate) use compress::StageConfig;
 pub use compress::{CompressConfig, CompressInput, compress};
+pub use derive::derive_recursive_vk;
+pub use development::verify_with_development_verifier;
+mod final_proof;
 mod first;
 mod fixed_cache;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
@@ -20,8 +23,7 @@ pub mod groth16;
 mod init_claim;
 mod init_fri;
 pub mod plonk;
-mod terminal;
-pub use terminal::{Artifact, TerminalOptions, TerminalSystem};
+pub use final_proof::{Artifact, FinalOptions, FinalSystem};
 mod prover;
 mod root;
 mod verifying_keys;
@@ -50,9 +52,13 @@ pub fn check_claim(
   Ok(words)
 }
 
-/// Describe the setup a new run would prove under, or why none is allowed.
-pub fn setup_description(development: bool) -> Result<&'static str> {
-  Ok(SetupConfig::from_env(development)?.class().description())
+/// Describe the inner KZG setup selected for a compression run.
+pub fn setup_description(
+  development_kzg: bool,
+  final_proof: FinalOptions,
+) -> Result<&'static str> {
+  final_proof.validate_setup(development_kzg)?;
+  Ok(SetupConfig::from_env(development_kzg)?.class().description())
 }
 
 /// Verify a compressed proof of `claim` under the release key its tag selects.
@@ -198,12 +204,13 @@ mod tests {
   fn invalid_requests_are_rejected_before_io() {
     let statement =
       statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"claim"));
-    let config = |log_height, terminal: TerminalSystem| CompressConfig {
+    let config = |final_proof: FinalSystem| CompressConfig {
       setup: SetupConfig::Development { cache_directory: None },
       fixed_cache: "/does-not-exist".into(),
       plonk_cache: "/does-not-exist".into(),
-      log_height,
-      terminal: terminal.into(),
+      groth16_cache: "/does-not-exist".into(),
+      final_proof: final_proof.into(),
+      fresh: false,
       prefetch_bytes: 0,
       #[cfg(feature = "cuda")]
       cuda: crate::kzg::cuda::Settings::default(),
@@ -216,20 +223,17 @@ mod tests {
       fixed_root: None,
       out: Path::new("/does-not-exist"),
     };
-    let error = |claim, log_height, terminal| {
-      compress(input(claim), &config(log_height, terminal))
-        .unwrap_err()
-        .to_string()
+    let error = |claim, final_proof| {
+      compress(input(claim), &config(final_proof)).unwrap_err().to_string()
     };
-    assert!(error(b"other", 24, TerminalSystem::None).contains("claim"));
-    assert!(error(b"claim", 23, TerminalSystem::None).contains("log-height"));
-    assert!(error(b"claim", 24, TerminalSystem::Plonk).contains("--dev-srs"));
+    assert!(error(b"other", FinalSystem::None).contains("claim"));
+    assert!(error(b"claim", FinalSystem::Plonk).contains("--dev-final-srs"));
     assert!(!Path::new("/does-not-exist").exists());
     assert!(verify(PROOF_TAG, b"wrong", true).is_err());
   }
 
   #[test]
-  fn terminal_proofs_without_their_feature_name_the_build_switch() {
+  fn final_proofs_without_their_feature_name_the_build_switch() {
     let mut plonk = plonk::PROOF_TAG.to_vec();
     plonk.extend([0; 64]);
     let mut groth16 = groth16::PROOF_TAG.to_vec();

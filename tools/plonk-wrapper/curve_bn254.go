@@ -7,7 +7,6 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/kzg"
-	backend "github.com/consensys/gnark/backend/plonk/bn254"
 	"github.com/consensys/gnark/frontend"
 	sw "github.com/consensys/gnark/std/algebra/emulated/sw_bn254"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_emulated"
@@ -21,8 +20,6 @@ type nativeG1 = native.G1Affine
 type nativeG2 = native.G2Affine
 type nativeSRS = kzg.SRS
 type nativeKzgProvingKey = kzg.ProvingKey
-type nativeVerifyingKey = backend.VerifyingKey
-type nativeProof = backend.Proof
 type circuitG1 = sw.G1Affine
 type circuitG2 = sw.G2Affine
 type circuitScalar = sw.Scalar
@@ -80,14 +77,6 @@ func decodeG2(b []byte) (nativeG2, error) {
 		return p, fmt.Errorf("invalid G2 anchor")
 	}
 	return p, nil
-}
-func encodeAnchors(vk *nativeVerifyingKey) []byte {
-	out := make([]byte, 0, 320)
-	for _, v := range []*fp.Element{&vk.Kzg.G1.X, &vk.Kzg.G1.Y, &vk.Kzg.G2[0].X.A0, &vk.Kzg.G2[0].X.A1, &vk.Kzg.G2[0].Y.A0, &vk.Kzg.G2[0].Y.A1, &vk.Kzg.G2[1].X.A0, &vk.Kzg.G2[1].X.A1, &vk.Kzg.G2[1].Y.A0, &vk.Kzg.G2[1].Y.A1} {
-		b := v.Bytes()
-		out = append(out, b[:]...)
-	}
-	return out
 }
 func pointBytes(api frontend.API, u *uints.BinaryField[uints.U32], f *emulated.Field[baseField], p *circuitG1) []uints.U8 {
 	f.AssertIsInRange(&p.X)

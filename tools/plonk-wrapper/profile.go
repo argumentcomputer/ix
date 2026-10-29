@@ -323,3 +323,19 @@ func digestLimbs(digest []byte) [2]frontend.Variable {
 	}
 	return result
 }
+
+type circuitInfo struct {
+	Domain                                 uint64
+	Constraints, PublicInputs, Commitments int
+}
+
+type publicClaim struct {
+	Claim [2]frontend.Variable `gnark:",public"`
+}
+
+func (*publicClaim) Define(frontend.API) error { return nil }
+
+type retainedProver interface {
+	prove([]byte, []byte) ([]byte, []byte, error)
+	close() error
+}

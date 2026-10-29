@@ -146,7 +146,7 @@ fn development_refused<T>() -> storage::Result<T> {
      {IGNITION_CACHE_VAR}, {IGNITION_CACHE_MANIFEST_VAR}, \
      {IGNITION_ADMISSION_VAR} and {IGNITION_ADMISSION_DIGEST_VAR}, run \
      `ix compress fetch-params` to install the pinned release, or pass \
-     --dev-srs to use the known-trapdoor development setup \
+     --dev-kzg-srs to use the known-trapdoor development setup \
      (not production-secure)"
   );
   Err(message.into())
@@ -602,7 +602,7 @@ mod tests {
     if IGNITION_ENV_VARS.iter().all(|name| std::env::var_os(name).is_none()) {
       let error = SetupConfig::from_env(false).err().unwrap().to_string();
       assert!(error.contains("BN254"));
-      assert!(error.contains("--dev-srs"));
+      assert!(error.contains("--dev-kzg-srs"));
     }
     let source = SetupConfig::from_env(true)?.for_stage(FIRST_SEED, 8)?;
     assert_eq!(source.class(), SetupClass::Development);

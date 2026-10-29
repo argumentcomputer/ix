@@ -1,3 +1,5 @@
+//go:build groth16 || !plonk
+
 package main
 
 import (
@@ -129,4 +131,24 @@ func TestGroth16BackendSelection(t *testing.T) {
 			t.Fatal("silently accepted unavailable CUDA")
 		}
 	}
+}
+
+func verifyGroth16Files(keyPath, pin, proofPath, claim string) error {
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return err
+	}
+	proof, err := os.ReadFile(proofPath)
+	if err != nil {
+		return err
+	}
+	trusted, err := unhex(pin, 32)
+	if err != nil {
+		return err
+	}
+	expected, err := unhex(claim, 32)
+	if err != nil {
+		return err
+	}
+	return verifyGroth16(key, trusted, proof, expected)
 }

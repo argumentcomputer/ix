@@ -1,9 +1,11 @@
 //! Owned gnark objects behind the gnark archive's C ABI.
 use super::Result;
-use serde::{Deserialize, Serialize};
-use std::{
-  collections::BTreeMap, ffi::c_void, marker::PhantomData, path::Path, rc::Rc,
-};
+use serde::Deserialize;
+#[cfg(feature = "plonk")]
+use serde::Serialize;
+#[cfg(feature = "plonk")]
+use std::collections::BTreeMap;
+use std::{ffi::c_void, marker::PhantomData, path::Path, rc::Rc};
 
 #[allow(
   non_camel_case_types,
@@ -16,8 +18,9 @@ mod raw {
   include!(concat!(env!("OUT_DIR"), "/gnark_bindings.rs"));
 }
 
-pub use super::terminal::Artifact;
+pub use super::final_proof::Artifact;
 
+#[cfg(feature = "plonk")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Manifest {
@@ -42,6 +45,7 @@ pub struct CircuitInfo {
   pub commitments: usize,
 }
 
+#[cfg(feature = "plonk")]
 #[derive(Clone, Copy, Debug, Default)]
 pub enum Backend {
   #[default]
@@ -96,6 +100,7 @@ impl Response {
   }
 }
 
+#[cfg(feature = "plonk")]
 pub fn compile(schema: &[u8], circuit_path: &Path) -> Result<CircuitInfo> {
   // Inputs remain borrowed until the synchronous C call returns.
   let result =
@@ -103,6 +108,7 @@ pub fn compile(schema: &[u8], circuit_path: &Path) -> Result<CircuitInfo> {
   Ok(serde_json::from_slice(Response::checked(result)?.bytes())?)
 }
 
+#[cfg(feature = "plonk")]
 pub struct Preparation<'a> {
   pub schema: &'a [u8],
   pub circuit: &'a Path,
@@ -115,6 +121,7 @@ pub struct Preparation<'a> {
   pub output: &'a Path,
 }
 
+#[cfg(feature = "plonk")]
 pub fn prepare(request: &Preparation<'_>) -> Result<()> {
   // The adapter retains no Rust pointers after this call.
   let result = unsafe {
@@ -142,6 +149,7 @@ pub struct Prover {
   _thread: PhantomData<Rc<()>>,
 }
 impl Prover {
+  #[cfg(feature = "plonk")]
   pub fn open(
     directory: &Path,
     manifest: &Manifest,
@@ -205,6 +213,7 @@ impl Drop for Prover {
   }
 }
 
+#[cfg(feature = "plonk")]
 pub fn verify(
   key: &[u8],
   trusted_digest: &[u8; 32],
@@ -228,13 +237,13 @@ pub fn verify(
 #[cfg(all(test, feature = "plonk"))]
 mod tests {
   use super::*;
-  use crate::pipeline::terminal::{decode_hex, digest};
+  use crate::pipeline::final_proof::{decode_hex, digest};
   const KEY: &[u8] =
-    include_bytes!("../../tests/fixtures/gnark/verifying-key.bin");
-  const PROOF: &[u8] = include_bytes!("../../tests/fixtures/gnark/proof.bin");
+    include_bytes!("../../tests/fixtures/plonk/verifying-key.bin");
+  const PROOF: &[u8] = include_bytes!("../../tests/fixtures/plonk/proof.bin");
   fn fixture() -> ([u8; 32], [u8; 32], Vec<u8>) {
     let p: serde_json::Value = serde_json::from_str(include_str!(
-      "../../tests/fixtures/gnark/provenance.json"
+      "../../tests/fixtures/plonk/provenance.json"
     ))
     .unwrap();
     (
@@ -286,7 +295,7 @@ mod tests {
   #[ignore = "compiles the full Init verifier circuit"]
   fn compiles_init_without_changing_constraints() -> Result<()> {
     use sha2::Digest;
-    let directory = crate::pipeline::terminal::Scratch::new()?;
+    let directory = crate::pipeline::final_proof::Scratch::new()?;
     let schema =
       include_bytes!("../../../../tools/plonk-wrapper/testdata/bn254/vk.json");
     let path = directory.0.join("circuit.bin");
@@ -296,7 +305,7 @@ mod tests {
     assert_eq!(info.public_inputs, 2);
     let digest = sha2::Sha256::digest(std::fs::read(&path)?);
     assert_eq!(
-      crate::pipeline::terminal::hex(&digest),
+      crate::pipeline::final_proof::hex(&digest),
       "a684964f61296fcda0df427980275764df242590373ce5680f70b0ac5dcfbded"
     );
     Ok(())
@@ -311,7 +320,7 @@ mod tests {
     let expected = std::env::var("IX_GNARK_INIT_MANIFEST_SHA256")?;
     use sha2::Digest;
     assert_eq!(
-      crate::pipeline::terminal::hex(&sha2::Sha256::digest(&data)),
+      crate::pipeline::final_proof::hex(&sha2::Sha256::digest(&data)),
       expected
     );
     let metadata: Manifest = serde_json::from_slice(&data)?;
@@ -386,7 +395,6 @@ pub(super) enum Groth16Backend {
   Cpu,
   Cuda {
     device: i32,
-    pin_keys: bool,
     library: String,
   },
 }
@@ -398,16 +406,15 @@ impl Prover {
     metadata: &super::groth16::Metadata,
     backend: &Groth16Backend,
   ) -> Result<Self> {
-    let (cuda, device, pin_keys, library) = match backend {
-      Groth16Backend::Cpu => (0, 0, 0, ""),
-      Groth16Backend::Cuda { device, pin_keys, library } => {
-        (1, *device, u32::from(*pin_keys), library.as_str())
+    let (cuda, device, library) = match backend {
+      Groth16Backend::Cpu => (0, 0, ""),
+      Groth16Backend::Cuda { device, library } => {
+        (1, *device, library.as_str())
       },
     };
     let options = raw::ix_gnark_groth16_backend {
       cuda,
       device,
-      pin_keys,
       library: view(library.as_bytes()),
     };
     let encoded = serde_json::to_vec(metadata)?;

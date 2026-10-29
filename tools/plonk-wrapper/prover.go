@@ -1,3 +1,5 @@
+//go:build plonk || !groth16
+
 package main
 
 import (
@@ -6,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"runtime/debug"
 	"sync"
@@ -19,11 +20,6 @@ import (
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/scs"
 )
-
-type circuitInfo struct {
-	Domain                                 uint64
-	Constraints, PublicInputs, Commitments int
-}
 
 type backendConfig struct {
 	CUDA        bool
@@ -50,11 +46,10 @@ func compileCircuit(schema []byte, path string) (circuitInfo, error) {
 }
 
 func prepareCircuit(schema []byte, circuitPath string, circuitHash artifact, domain uint64, srsPath, receipt, lagrangePath, lagrangeDigest, output string) error {
-	key, err := decodeVerifyingKey(schema)
-	if err != nil {
+	if _, err := decodeVerifyingKey(schema); err != nil {
 		return err
 	}
-	srs, err := readSRS(srsPath, receipt, domain, key)
+	srs, err := readSRS(srsPath, receipt, domain)
 	if err != nil {
 		return err
 	}
@@ -210,18 +205,26 @@ func (p *prover) close() error {
 	return err
 }
 
-func readDescription(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+type manifest struct {
+	InnerVKSHA256                          string
+	SRSBLAKE3                              string
+	KeysReady                              bool
+	Domain                                 uint64
+	Constraints, PublicInputs, Commitments int
+	Files                                  map[string]artifact
+}
+
+func (m *manifest) validate() error {
+	if m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.Commitments < 0 || m.Commitments > 1024 || m.Files == nil {
+		return fmt.Errorf("invalid wrapper artifact metadata")
 	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, (16<<20)+1))
-	if err != nil {
-		return nil, err
+	if m.KeysReady {
+		if _, err := unhex(m.SRSBLAKE3, 32); err != nil {
+			return err
+		}
 	}
-	if len(data) > 16<<20 {
-		return nil, fmt.Errorf("verifier description is too large")
+	if m.Files["vk.json"].SHA256 != m.InnerVKSHA256 {
+		return fmt.Errorf("verifying key identity differs")
 	}
-	return data, nil
+	return nil
 }

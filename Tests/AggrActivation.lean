@@ -19,8 +19,8 @@ arms. The deterministic matrix crosses:
 That produces 4 wrap executions plus 128 pair executions. The runner executes
 the complete 132-case matrix twice through the generated native path, compares
 every per-circuit query count, and emits a Markdown report. It records
-activation only; dummy-call policy remains deferred until a static terminal is
-selected.
+activation only; dummy-call policy remains deferred until a static final circuit
+is selected.
 -/
 
 public section
@@ -455,7 +455,7 @@ private def report (compiled : Aiur.CompiledToplevel)
       represented in the execute FFI's query-count array."
     |>.push s!"- Catalog summary: {catalog.size} circuits; {alwaysActive} active \
       in every case; {variableCount} input-dependent; {neverObserved} never observed."
-    |>.push "- Dummy calls remain deferred until a static terminal circuit is selected."
+    |>.push "- Dummy calls remain deferred until a static final circuit is selected."
     |>.push ""
     |>.push "## Trace-height control"
     |>.push ""

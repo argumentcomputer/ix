@@ -1,23 +1,22 @@
-//! Terminal BN254 Groth16 proofs under the release key.
+//! Final BN254 Groth16 proofs under the release key.
+#[cfg(all(test, feature = "groth16"))]
+use super::final_proof::Scratch;
+#[cfg(feature = "groth16")]
+use super::final_proof::{hex, sha256};
 #[cfg(feature = "groth16")]
 use super::gnark;
 #[cfg(feature = "groth16")]
 use super::storage;
-#[cfg(all(test, feature = "groth16"))]
-use super::terminal::Scratch;
-#[cfg(feature = "groth16")]
-use super::terminal::{hex, sha256};
 use super::{
   Result,
+  final_proof::{Artifact, digest, load_json},
   setup::SetupClass,
-  statement,
-  terminal::{Artifact, digest, load_json},
-  verifying_keys,
+  statement, verifying_keys,
 };
 #[cfg(feature = "groth16")]
 use super::{
+  final_proof::{claim_digest, read_bounded},
   setup::SetupConfig,
-  terminal::{claim_digest, read_bounded},
   wrap,
 };
 #[cfg(feature = "groth16")]
@@ -45,7 +44,8 @@ pub(super) fn verify(
   allow_development: bool,
 ) -> Result<SetupClass> {
   check_length(packet)?;
-  if packet[..32] != verifying_keys::decode(verifying_keys::GROTH16_VK_SHA256) {
+  if packet[..32] != verifying_keys::decode(verifying_keys::GROTH16_VK_SHA256)?
+  {
     return Err(
       "Groth16 proof uses a verifying key other than the release key".into(),
     );
@@ -56,8 +56,76 @@ pub(super) fn verify(
   {
     return Err("bundled Groth16 verifying key differs from its pin".into());
   }
+  let setup = verifying_keys::groth16_setup(allow_development)?;
   verify_under(verifying_keys::GROTH16_VK, packet, claim)?;
-  verifying_keys::groth16_setup(allow_development)
+  Ok(setup)
+}
+
+/// Verify the stage against the key prepared for the independently reconstructed
+/// inner verifier. Development stages additionally bind their exported bundle.
+#[cfg(feature = "groth16")]
+pub(super) fn check_stage(
+  dir: &Path,
+  expected: &statement::Statement,
+  allow_development: bool,
+  bundled: bool,
+  verifier: &Path,
+  setup: &SetupConfig,
+  cache_root: &Path,
+) -> Result<()> {
+  let schema = super::final_proof::description(verifier, expected, setup)?;
+  let artifacts = prepared_for_schema(&schema, allow_development, cache_root)?;
+  let metadata: Metadata = load_json(&artifacts.join("manifest.json"))?;
+  let envelope = fs::read(dir.join("proof.envelope.bin"))?;
+  let packet = envelope
+    .strip_prefix(PROOF_TAG.as_slice())
+    .ok_or("not a Groth16 proof envelope")?;
+  check_length(packet)?;
+  let key = fs::read(dir.join("verifying-key.bin"))?;
+  if <sha2::Sha256 as sha2::Digest>::digest(&key).as_slice() != &packet[..32] {
+    return Err("Groth16 proof names another verifying key".into());
+  }
+  if packet[..32] != digest(&metadata.artifact("verifying-key.bin")?.sha256)? {
+    return Err("Groth16 stage uses another prepared circuit key".into());
+  }
+  if bundled
+    && !allow_development
+    && packet[..32]
+      != verifying_keys::decode(verifying_keys::GROTH16_VK_SHA256)?
+  {
+    return Err("Groth16 verifying key differs from the bundled key".into());
+  }
+  if allow_development {
+    super::development::Verifier::new(
+      super::FinalSystem::Groth16,
+      verifier,
+      &schema,
+      expected,
+      setup,
+      &key,
+      None,
+    )?
+    .check_saved(dir)?;
+  }
+  gnark::verify_groth16(
+    &key,
+    packet[..32].try_into()?,
+    &packet[32..],
+    &claim_digest(expected)?,
+  )
+}
+
+#[cfg(not(feature = "groth16"))]
+pub(super) fn check_stage(
+  _dir: &std::path::Path,
+  _expected: &statement::Statement,
+  _allow_development: bool,
+  _bundled: bool,
+  _verifier: &std::path::Path,
+  _setup: &super::SetupConfig,
+  _cache_root: &std::path::Path,
+) -> Result<()> {
+  Err("this ix was built without Groth16; rebuild with IX_GROTH16=1".into())
 }
 
 #[cfg(feature = "groth16")]
@@ -166,7 +234,7 @@ fn prepared(allow_development: bool) -> Result<PathBuf> {
   }
   if m.artifact("verifying-key.bin")?.sha256
     != verifying_keys::GROTH16_VK_SHA256
-    || m.inner_vk != verifying_keys::TERMINAL_SCHEMA_SHA256
+    || m.inner_vk != verifying_keys::FINAL_SCHEMA_SHA256
     || m.artifact("circuit.bin")?.sha256
       != verifying_keys::GROTH16_CIRCUIT_SHA256
     || m.setup != "development"
@@ -175,9 +243,6 @@ fn prepared(allow_development: bool) -> Result<PathBuf> {
     return Err(
       "Groth16 artifacts differ from the release circuit and key".into(),
     );
-  }
-  for name in ["proving-key.bin", "Groth16Verifier.sol"] {
-    m.artifact(name)?;
   }
   verifying_keys::groth16_setup(allow_development)?;
   Ok(dir)
@@ -188,15 +253,15 @@ pub(super) fn preflight(allow_development: bool) -> Result<()> {
     Err(std::env::VarError::NotPresent) | Ok("" | "cpu" | "cuda") => {},
     _ => return Err("IX_GROTH16_BACKEND must be cpu or cuda".into()),
   }
-  prepared(allow_development)?;
+  if !allow_development {
+    prepared(false)?;
+  }
   Ok(())
 }
 
-pub(super) fn check_statement(
-  expected: &statement::Statement,
-  allow_development: bool,
-) -> Result<()> {
-  prepared(allow_development)?;
+/// The release Groth16 key proves `expected`'s aggregation program. The
+/// artifacts themselves are checked by `preflight`.
+pub(super) fn check_statement(expected: &statement::Statement) -> Result<()> {
   if expected[..10] != verifying_keys::STATEMENT_PREFIX {
     return Err(
       "the release Groth16 key proves another aggregation program".into(),
@@ -205,9 +270,8 @@ pub(super) fn check_statement(
   Ok(())
 }
 
-/// Prove the recursive KZG packet in `packet` in Groth16 under the prepared
-/// artifacts `IX_GROTH16_ARTIFACTS` names, and write its envelope, verifying
-/// key and Solidity verifier to the empty directory `out`.
+/// Prove the recursive KZG packet with release artifacts or a cached local
+/// development key, and publish its envelope, key and Solidity verifier.
 #[cfg(feature = "groth16")]
 pub(super) fn wrap_packet(
   verifier: &Path,
@@ -217,51 +281,52 @@ pub(super) fn wrap_packet(
   out: &Path,
   allow_development: bool,
   setup: &SetupConfig,
+  cache_root: &Path,
 ) -> Result<()> {
   statement::from_claims_bytes(&statement::to_claims_bytes(expected))?;
-  let artifacts = prepared(allow_development)?;
-  if expected[..10] != verifying_keys::STATEMENT_PREFIX {
-    return Err(
-      "the release Groth16 key proves another aggregation program".into(),
-    );
+  if !allow_development {
+    check_statement(expected)?;
   }
   fs::create_dir_all(out)?;
   if fs::read_dir(out)?.next().is_some() {
     return Err("Groth16 output directory must be empty".into());
   }
   let input = out.join("input");
-  wrap::plonk_export(verifier, packet, trusted, expected, &input, setup)?;
-  let exported: serde_json::Value = load_json(&input.join("vk.json"))?;
-  let inner_id =
-    exported["vkId"].as_str().ok_or("missing exported inner key identity")?;
-  if digest(inner_id)?
-    != verifying_keys::decode(verifying_keys::RECURSIVE_VK_ID)
-    || sha256(&input.join("vk.json"))?
-      != verifying_keys::decode(verifying_keys::TERMINAL_SCHEMA_SHA256)
-  {
+  wrap::final_export(verifier, packet, trusted, expected, &input, setup)?;
+  let schema = super::final_proof::description(verifier, expected, setup)?;
+  if fs::read(input.join("vk.json"))? != schema {
     return Err(
-      "Groth16 circuit was compiled for a different verifier description"
-        .into(),
+      "Groth16 witness export differs from the expected verifier".into(),
     );
   }
+  let artifacts = prepared_for_schema(&schema, allow_development, cache_root)?;
   let claim = claim_digest(expected)?;
   prove(&artifacts, &input.join("witness.json"), &claim, out)?;
-  let key_id = verifying_keys::decode(verifying_keys::GROTH16_VK_SHA256);
-  gnark::verify_groth16(
-    verifying_keys::GROTH16_VK,
-    &key_id,
-    &read_bounded(&out.join("proof.bin"), MAX_PROOF_BYTES)?,
-    &claim,
-  )?;
-  let proof = fs::read(out.join("proof.bin"))?;
+  let metadata: Metadata = load_json(&artifacts.join("manifest.json"))?;
+  let key_id = digest(&metadata.artifact("verifying-key.bin")?.sha256)?;
+  let key = read_bounded(&artifacts.join("verifying-key.bin"), 1 << 20)?;
+  let proof = read_bounded(&out.join("proof.bin"), MAX_PROOF_BYTES)?;
   if !matches!(proof.len(), 164 | MAX_PROOF_BYTES) {
     return Err("invalid native Groth16 proof length".into());
   }
+  gnark::verify_groth16(&key, &key_id, &proof, &claim)?;
   let mut envelope = PROOF_TAG.to_vec();
   envelope.extend(key_id);
   envelope.extend(proof);
   for name in ["verifying-key.bin", "Groth16Verifier.sol"] {
     storage::write_atomic(&out.join(name), &fs::read(artifacts.join(name))?)?;
+  }
+  if allow_development {
+    super::development::Verifier::new(
+      super::FinalSystem::Groth16,
+      verifier,
+      &schema,
+      expected,
+      setup,
+      &key,
+      None,
+    )?
+    .write(out)?;
   }
   storage::write_atomic(&out.join("proof.envelope.bin"), &envelope)?;
   Ok(())
@@ -276,10 +341,15 @@ fn artifact(path: &Path) -> Result<Artifact> {
 /// description `schema` into the empty directory `out`, without keys.
 #[cfg(feature = "groth16")]
 pub fn compile(schema: &Path, out: &Path) -> Result<()> {
-  super::prepare_output(out)?;
   let schema = read_bounded(schema, 16 << 20)?;
-  let info = gnark::compile_groth16(&schema, &out.join("circuit.bin"))?;
-  storage::write_atomic(&out.join("vk.json"), &schema)?;
+  compile_bytes(&schema, out)
+}
+
+#[cfg(feature = "groth16")]
+fn compile_bytes(schema: &[u8], out: &Path) -> Result<()> {
+  super::prepare_output(out)?;
+  let info = gnark::compile_groth16(schema, &out.join("circuit.bin"))?;
+  storage::write_atomic(&out.join("vk.json"), schema)?;
   let mut files = std::collections::BTreeMap::new();
   for name in ["vk.json", "circuit.bin"] {
     files.insert(name.into(), artifact(&out.join(name))?);
@@ -303,7 +373,49 @@ pub fn compile(schema: &Path, out: &Path) -> Result<()> {
   Ok(())
 }
 
-/// Prepare known-trapdoor development keys for the circuit compiled in
+#[cfg(feature = "groth16")]
+fn prepared_for_schema(
+  schema: &[u8],
+  allow_development: bool,
+  cache_root: &Path,
+) -> Result<PathBuf> {
+  use sha2::{Digest, Sha256};
+  let schema_hash = hex(&Sha256::digest(schema));
+  let dir = if !allow_development
+    || (schema_hash == verifying_keys::FINAL_SCHEMA_SHA256
+      && std::env::var_os(ARTIFACTS_VAR).is_some())
+  {
+    prepared(allow_development)?
+  } else {
+    let mut identity = blake3::Hasher::new();
+    identity.update(b"ix/groth16-development-circuit/v1");
+    identity.update(env!("IX_GNARK_SOURCE_BLAKE3").as_bytes());
+    identity.update(schema_hash.as_bytes());
+    let dir = cache_root
+      .join("development")
+      .join(identity.finalize().to_hex().as_str());
+    storage::prepare_cached_directory(&dir, |temporary| {
+      compile_bytes(schema, temporary)?;
+      setup_development(temporary)
+    })?;
+    dir
+  };
+  let metadata: Metadata = load_json(&dir.join("manifest.json"))?;
+  metadata.validate()?;
+  if !metadata.keys_ready
+    || metadata.inner_vk != schema_hash
+    || fs::read(dir.join("vk.json"))? != schema
+    || (allow_development
+      && (metadata.setup != "development" || metadata.ceremony.is_some()))
+  {
+    return Err(
+      "Groth16 cache differs from the selected circuit and setup".into(),
+    );
+  }
+  Ok(dir)
+}
+
+/// Prepare local development keys for the circuit compiled in
 /// `dir`. Proofs under them are accepted only with explicit development
 /// verification.
 #[cfg(feature = "groth16")]
@@ -362,11 +474,6 @@ fn proving_backend() -> Result<gnark::Groth16Backend> {
       if device < 0 {
         return Err("invalid Groth16 device".into());
       }
-      let pin_keys = match std::env::var("IX_GROTH16_PIN_KEY").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("" | "0") => false,
-        Ok("1") => true,
-        _ => return Err("IX_GROTH16_PIN_KEY must be 0 or 1".into()),
-      };
       let library = std::env::var("ICICLE_BACKEND_INSTALL_DIR")
         .ok()
         .filter(|s| !s.is_empty())
@@ -380,7 +487,7 @@ fn proving_backend() -> Result<gnark::Groth16Backend> {
         })
         .or_else(|| option_env!("IX_GROTH16_ICICLE_BACKEND").map(str::to_owned))
         .unwrap_or_default();
-      Ok(gnark::Groth16Backend::Cuda { device, pin_keys, library })
+      Ok(gnark::Groth16Backend::Cuda { device, library })
     },
     _ => Err("IX_GROTH16_BACKEND must be cpu or cuda".into()),
   }

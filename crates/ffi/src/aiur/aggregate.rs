@@ -75,6 +75,7 @@ struct RunConfig<'a> {
   plan_only: bool,
   cache_fri_bytes: &'a [u8],
   use_cache: bool,
+  fresh: bool,
   write_outputs: bool,
   trace_shards: bool,
   range_width: usize,
@@ -166,7 +167,7 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   if config.plan_only && config.reprove_slot.is_some() {
     return Err("--plan-only cannot be combined with --reprove-slot".into());
   }
-  if config.reprove_slot.is_some() && !config.use_cache {
+  if config.reprove_slot.is_some() && (!config.use_cache || config.fresh) {
     return Err("--reprove-slot requires aggregate cache reads".into());
   }
   let started = Instant::now();
@@ -386,6 +387,7 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     aggr_idx: config.aggr_idx,
     store_dir: &store_dir,
     cache_dir,
+    cache_read_dir: if config.fresh { None } else { cache_dir },
     reprove_slot: config.reprove_slot,
     write_outputs: config.write_outputs,
     // Slots share the run's budget evenly across the concurrent jobs; with

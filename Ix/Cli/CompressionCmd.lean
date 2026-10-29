@@ -14,10 +14,8 @@ public import Ix.Aggr.Backend
 public section
 namespace Ix.Cli.CompressionCmd
 
-private def loadRoot (hex : String) : IO (Address × Ixon.Proof) := do
-  let some addr := Address.fromString hex
-    | throw <| IO.userError s!"expected a 64-character proof address: {hex}"
-  let wrapper ← Compression.readProof addr
+private def loadRoot (input : String) : IO (Address × Ixon.Proof) := do
+  let (addr, wrapper) ← Compression.readProofInput input
   if Compression.isCompressed wrapper.proof then
     throw <| IO.userError s!"proof {addr} is already compressed"
   let .checkEnv _ _ := wrapper.claim
@@ -32,7 +30,7 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
     let out := p.positionalArg! "out" |>.as! String
     let proofs := (p.variableArgsAs! String).toList
     if proofs.isEmpty then
-      throw <| IO.userError "expected at least one aggregate proof address"
+      throw <| IO.userError "expected at least one aggregate proof file or address"
     let headroom := ((p.flag? "headroom").map (·.as! Nat)).getD 0
     let backend ← backend
     let mut rows := #[]
@@ -79,7 +77,7 @@ def layoutCmd : Cli.Cmd := `[Cli|
 
   ARGS:
     out : String; "Output layout JSON file."
-    ...proofs : String; "Addresses of aggregate Ixon.Proof roots in the ix store."
+    ...proofs : String; "Aggregate Ixon.Proof files or content addresses in the ix store."
 ]
 
 def normalizeCmd : Cli.Cmd := `[Cli|
@@ -87,7 +85,7 @@ def normalizeCmd : Cli.Cmd := `[Cli|
   "Prove a root's wrap in a fixed layout and write the FRI worker's root input directory."
 
   ARGS:
-    proof : String; "Address of an aggregate Ixon.Proof in the ix store."
+    proof : String; "Aggregate Ixon.Proof file or content address in the ix store."
     layout : String; "Layout JSON from `ix compress layout`."
     out : String; "Empty output directory for root-vk.bin, root-proof.bin, root-claims.bin and fixed-root.json."
 ]
@@ -132,7 +130,7 @@ def runFetchParams (_ : Cli.Parsed) : IO UInt32 := do
     if (← IO.getEnv "IX_KZG_IGNITION_CACHE").isSome then
       IO.eprintln "IX_KZG_IGNITION_* is set and takes precedence over the downloaded release."
     IO.eprintln s!"Authenticating the configured parameters."
-    IO.eprintln s!"Using {← Compression.describeSetup false}."
+    IO.eprintln s!"Using {← Compression.describeSetup false false 0}."
     IO.println target
     return 0
   catch e =>

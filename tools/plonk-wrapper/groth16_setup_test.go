@@ -1,3 +1,5 @@
+//go:build groth16 || !plonk
+
 package main
 
 import (

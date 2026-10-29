@@ -5,6 +5,7 @@
 //! in-circuit verifier and cannot be sized this way.
 //!
 //! Usage: fri_sizing <saved-fri-dir> [queries,...] [log-height]
+//!        fri_sizing --statistics <outer-vk.bin>
 
 use ix_proof_compression::foreign::GoldilocksCircuit;
 use ix_proof_compression::fri::{
@@ -116,6 +117,14 @@ fn with_queries(key: &VerifierKey, queries: usize) -> VerifierKey {
 
 fn main() -> Result<()> {
   let args: Vec<String> = std::env::args().collect();
+  if args.get(1).map(String::as_str) == Some("--statistics") {
+    if args.len() != 3 {
+      return Err("usage: fri_sizing --statistics <outer-vk.bin>".into());
+    }
+    let key = VerifierKey::from_bytes(&fs::read(&args[2])?)?;
+    println!("{}", key.statistics());
+    return Ok(());
+  }
   let dir = Path::new(
     args
       .get(1)

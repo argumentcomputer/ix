@@ -3,12 +3,18 @@
 //! for and the Ignition admission that authenticates their setup. A proof
 //! verifies only under these keys; there is no catalog of alternatives.
 use super::{
-  FixedRoot, Result, setup::SetupClass, statement, wrap::VerifyingKey,
+  FixedRoot, Result,
+  setup::SetupClass,
+  statement,
+  wrap::{PreparedVerifyingKey, VerifyingKey},
 };
 use crate::kzg::srs::ignition::IgnitionAdmission;
 
 /// Version of the bundled verifying keys and the layout they were derived for.
 const VERSION: &str = "0.1";
+
+/// Log2 of the first KZG stage's partition height the keys were derived for.
+pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 
 /// Serialized aggregation backend key whose roots the layout normalizes.
 const ROOT_VK_BLAKE3: &str =
@@ -43,9 +49,9 @@ pub(super) const PLONK_VK: &[u8] =
 pub(super) const PLONK_VK_SHA256: &str =
   "7123a80f9c56b25138ffe8ec47a53c6b0b22b64bf183380d63e5c80a7e3144a9";
 
-/// SHA-256 of the exported recursive verifier description that both terminal
+/// SHA-256 of the exported recursive verifier description that both final
 /// circuits prove.
-pub(super) const TERMINAL_SCHEMA_SHA256: &str =
+pub(super) const FINAL_SCHEMA_SHA256: &str =
   "d5d07c29ad8c3c795146fe728f73e30812a344c6b62a8f32888033b1a6aba4bf";
 
 /// The release Groth16 key comes from a development setup: whoever ran it can
@@ -63,17 +69,14 @@ pub(super) const GROTH16_CIRCUIT_SHA256: &str =
 /// The setup class of the release Groth16 key, if `allow_development` admits it.
 pub(super) fn groth16_setup(allow_development: bool) -> Result<SetupClass> {
   if !allow_development {
-    return Err("the release Groth16 key uses a development setup; pass --dev-srs to accept it (not production-secure)".into());
+    return Err("the release Groth16 key uses a development setup; use --dev-final-srs for compression or --dev-srs for verification (not production-secure)".into());
   }
   Ok(SetupClass::Development)
 }
 
-pub(super) fn decode(hex: &str) -> [u8; 32] {
-  let mut bytes = [0; 32];
-  for (byte, pair) in bytes.iter_mut().zip(hex.as_bytes().chunks(2)) {
-    *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
-  }
-  bytes
+/// A pinned digest, decoded strictly.
+pub(super) fn decode(hex: &str) -> Result<[u8; 32]> {
+  super::final_proof::digest(hex)
 }
 
 /// The layout for an aggregation backend's serialized key. Circuit order and
@@ -91,19 +94,21 @@ pub fn release_root_layout(root_vk: &[u8]) -> Result<&'static str> {
 
 /// The Ignition admission that authenticates the release keys' setup.
 pub(super) fn admission() -> Result<IgnitionAdmission> {
-  Ok(IgnitionAdmission::from_bytes(ADMISSION, decode(ADMISSION_BLAKE3))?)
+  Ok(IgnitionAdmission::from_bytes(ADMISSION, decode(ADMISSION_BLAKE3)?)?)
 }
 
-fn recursive_vk() -> Result<VerifyingKey> {
+/// The bundled recursive key's prepared verifier, after checking the key
+/// against its pins and the admission.
+fn recursive_vk() -> Result<PreparedVerifyingKey> {
   if blake3::hash(RECURSIVE_VK).to_hex().as_str() != RECURSIVE_VK_BLAKE3 {
     return Err("bundled recursive verifying key differs from its pin".into());
   }
-  let vk = VerifyingKey::from_bytes(RECURSIVE_VK)?;
-  if vk.id() != decode(RECURSIVE_VK_ID) {
+  let (vk, prepared) = VerifyingKey::prepared_from_bytes(RECURSIVE_VK)?;
+  if vk.id() != decode(RECURSIVE_VK_ID)? {
     return Err("bundled recursive verifying key identifier differs".into());
   }
   vk.check_ignition_admission(&admission()?)?;
-  Ok(vk)
+  Ok(prepared)
 }
 
 /// Verify a recursive KZG packet of `claim` under the release key.
@@ -112,7 +117,7 @@ pub(super) fn verify_recursive(
   claim: &[u8],
 ) -> Result<SetupClass> {
   let id = packet.get(..32).ok_or("truncated compressed proof")?;
-  if id != decode(RECURSIVE_VK_ID) {
+  if id != decode(RECURSIVE_VK_ID)? {
     return Err(format!(
       "compressed proof uses a verifying key other than the version {VERSION} key"
     )
@@ -123,13 +128,36 @@ pub(super) fn verify_recursive(
   Ok(SetupClass::Ignition)
 }
 
+/// Whether a compression of a `root_vk` root under `setup` must produce the
+/// bundled keys: the root is this version's backend and the setup is Ignition.
+pub(super) fn bundled_for(root_vk: &[u8], setup: &super::SetupConfig) -> bool {
+  blake3::hash(root_vk).to_hex().as_str() == ROOT_VK_BLAKE3
+    && setup.class() == SetupClass::Ignition
+}
+
+/// A recursive key proved for this version's backend under Ignition must be
+/// the bundled key.
+pub(super) fn check_recursive_key(
+  root_vk: &[u8],
+  setup: &super::SetupConfig,
+  vk: &[u8],
+) -> Result<()> {
+  if bundled_for(root_vk, setup) && vk != RECURSIVE_VK {
+    return Err(
+      format!("recursive verifying key differs from version {VERSION}'s")
+        .into(),
+    );
+  }
+  Ok(())
+}
+
 /// Check a compression's statement belongs to the release when its recursive
 /// key is the release key.
 pub(super) fn check_statement(
   id: &[u8],
   words: &statement::Statement,
 ) -> Result<()> {
-  if id == decode(RECURSIVE_VK_ID) && words[..10] != STATEMENT_PREFIX {
+  if id == decode(RECURSIVE_VK_ID)? && words[..10] != STATEMENT_PREFIX {
     return Err(format!(
       "the version {VERSION} key compresses a different aggregation program than this build's backend"
     )
@@ -145,12 +173,18 @@ mod tests {
 
   #[test]
   fn bundled_release_files_match_their_pins() {
-    assert_eq!(blake3::hash(ADMISSION).as_bytes(), &decode(ADMISSION_BLAKE3));
+    assert_eq!(
+      blake3::hash(ADMISSION).as_bytes(),
+      &decode(ADMISSION_BLAKE3).unwrap()
+    );
     recursive_vk().unwrap();
-    assert_eq!(Sha256::digest(PLONK_VK).as_slice(), decode(PLONK_VK_SHA256));
+    assert_eq!(
+      Sha256::digest(PLONK_VK).as_slice(),
+      decode(PLONK_VK_SHA256).unwrap()
+    );
     assert_eq!(
       Sha256::digest(GROTH16_VK).as_slice(),
-      decode(GROTH16_VK_SHA256)
+      decode(GROTH16_VK_SHA256).unwrap()
     );
     assert!(groth16_setup(false).is_err());
     assert_eq!(groth16_setup(true).unwrap(), SetupClass::Development);
@@ -165,7 +199,7 @@ mod tests {
   fn other_keys_and_backends_are_rejected() {
     let mut packet = vec![0; 64];
     assert!(verify_recursive(&packet, b"claim").is_err());
-    packet[..32].copy_from_slice(&decode(RECURSIVE_VK_ID));
+    packet[..32].copy_from_slice(&decode(RECURSIVE_VK_ID).unwrap());
     assert!(verify_recursive(&packet, b"claim").is_err());
     assert!(release_root_layout(b"another backend").is_err());
   }

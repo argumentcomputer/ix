@@ -1746,7 +1746,7 @@ mod tests {
     );
     system.verify(&claim, &proof).expect("xor split outputs must verify");
 
-    // The terminal zkVM receives only the serialized verifier key, not the
+    // The compression verifier receives only the serialized verifier key, not the
     // prover-side `AiurSystem`. Exercise that exact path against a real proof
     // so codec round trips alone cannot mask a transcript/config mismatch.
     let vk_bytes = crate::vk_codec::aiur_system_to_bytes(&system)

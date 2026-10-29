@@ -1,4 +1,4 @@
-//! Canonical verifier programs and witnesses for terminal circuits.
+//! Canonical verifier programs and witnesses for final circuits.
 use super::relation::{codegen, *};
 use super::*;
 use crate::kzg::curve::G1Affine;
@@ -44,10 +44,11 @@ pub(in crate::pipeline) fn export(
     return Err("trusted verifier digest differs".into());
   }
   let vk = VerifyingKey::from_bytes(&bytes)?;
-  let admission = setup
-    .ignition_admission()
-    .ok_or("terminal export requires admitted Ignition parameters")?;
-  vk.check_ignition_admission(admission)?;
+  match setup.ignition_admission() {
+    Some(admission) => vk.check_ignition_admission(admission)?,
+    None => vk.check_setup_class(setup.class())?,
+  }
+  vk.verify(&fs::read(packet)?, expected)?;
   write_export(&vk, &fs::read(packet)?, expected, directory, "witness", true)
 }
 
@@ -129,10 +130,9 @@ fn recursive_statement() -> (Vec<Vec<ir::ClaimSlot>>, Vec<PublicSource>) {
   (slots, publics)
 }
 
-/// The verifier description (`vk.json`) terminal circuits are compiled from:
+/// The verifier description (`vk.json`) final circuits are compiled from:
 /// it depends on the recursive key `vk` and the statement prefix `prefix`
 /// its claims carry, never on a proof.
-#[cfg(feature = "plonk")]
 pub(in crate::pipeline) fn describe(
   vk: &VerifyingKey,
   prefix: &[u64],

@@ -37,19 +37,20 @@ def main():
     (out / 'typecheck.log').write_text(result.stdout)
     if result.returncode:
         raise RuntimeError(f'Lake configuration typecheck failed: {out / "typecheck.log"}')
-    cases = [('default', {}, 'bn254', False, True)]
-    for curve in ['bn254']:
-        for cuda in [False, True]:
-            cases.append((f'{curve}-{"cuda" if cuda else "cpu"}',
-                {'IX_KZG_CURVE': curve, 'IX_CUDA': str(int(cuda))}, curve, cuda, True))
+    cases = [('default', {}, False, True, set())]
+    for cuda in [False, True]:
+        for selected in [set(), {'plonk'}, {'groth16'}, {'plonk', 'groth16'}]:
+            name = ('cuda' if cuda else 'cpu') + '-' + ('-'.join(sorted(selected)) or 'kzg')
+            selection = {'IX_CUDA': str(int(cuda)), 'IX_PLONK': str(int('plonk' in selected)), 'IX_GROTH16': str(int('groth16' in selected))}
+            cases.append((name, selection, cuda, True, selected))
     cases += [
-        ('trace-codegen', {'IX_KZG_CURVE': 'bn254', 'IX_CUDA_TRACE_CODEGEN': '1'}, 'bn254', True, True),
-        ('no-parallel', {'IX_KZG_CURVE': 'bn254', 'IX_NO_PAR': '1'}, 'bn254', False, False),
+        ('trace-codegen', {'IX_CUDA_TRACE_CODEGEN': '1'}, True, True, set()),
+        ('no-parallel', {'IX_NO_PAR': '1'}, False, False, set()),
     ]
     report = {'lean': version, 'typecheck_passed': True, 'cases': []}
-    for name, selection, curve, cuda, parallel in cases:
+    for name, selection, cuda, parallel, final in cases:
         environment = dict(os.environ, LEAN_PATH=str(out))
-        for variable in ['IX_KZG_CURVE', 'IX_CUDA', 'IX_CUDA_TRACE_CODEGEN', 'IX_NO_PAR']:
+        for variable in ['IX_PLONK', 'IX_GROTH16', 'IX_CUDA', 'IX_CUDA_TRACE_CODEGEN', 'IX_NO_PAR']:
             environment.pop(variable, None)
         environment.update(selection)
         result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
@@ -58,49 +59,36 @@ def main():
         if result.returncode:
             raise RuntimeError(f'configuration evaluation failed: {name}')
         actual = json.loads(result.stdout.splitlines()[-1])
-        required = {'plonk', 'groth16'}
-        required |= {'parallel'} if parallel else set()
-        worker = required | ({'cuda'} if cuda else set())
-        ffi = (required - {'plonk', 'groth16'}) | ({'cuda-trace-codegen'} if name == 'trace-codegen' else ({'cuda'} if cuda else set()))
+        ffi = ({'parallel'} if parallel else set()) | ({'cuda-trace-codegen'} if name == 'trace-codegen' else ({'cuda'} if cuda else set()))
         for target, expected in [
-            ('worker', worker), ('ffi', ffi),
-            ('net', ffi | ({'net'} if sys.platform != 'darwin' else set())),
+            ('ffi', ffi),
+            ('net', ffi | final | ({'net'} if sys.platform != 'darwin' else set())),
             ('test', ffi | {'test-ffi'}),
         ]:
             arguments = actual[target]
-            package = 'ix-proof-compression' if target == 'worker' else 'ix-ffi'
-            if arguments[arguments.index('-p') + 1] != package:
+            if arguments[arguments.index('-p') + 1] != 'ix-ffi':
                 raise RuntimeError(f'{name}: wrong package for {target}')
             if '--no-default-features' not in arguments or features(arguments) != expected:
                 raise RuntimeError(f'{name}: unexpected {target} features: {arguments}')
-        if actual['worker'][actual['worker'].index('--bin') + 1] != 'ix-compression-worker':
-            raise RuntimeError(f'{name}: wrong worker executable')
-        if actual['terminal_plonk'] is not True or actual['terminal_groth16'] is not True:
-            raise RuntimeError(f'{name}: wrong terminal backend selection')
-        if actual['plonk_cuda'] != cuda:
+        if actual['final_plonk'] != ('plonk' in final) or actual['final_groth16'] != ('groth16' in final):
+            raise RuntimeError(f'{name}: wrong final backend selection')
+        if actual['plonk_cuda'] != (cuda and 'plonk' in final):
             raise RuntimeError(f'{name}: PLONK CUDA requires both plonk and cuda')
         report['cases'].append({'name': name, 'environment': selection, 'arguments': actual, 'passed': True})
-    environment.update(IX_KZG_CURVE='invalid')
+    environment.update(IX_PLONK='invalid')
     result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
         env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     (out / 'invalid.log').write_text(result.stdout)
-    if result.returncode != 1 or 'IX_KZG_CURVE must be bn254' not in result.stdout:
-        raise RuntimeError('invalid curve was not rejected as expected')
-    report['invalid_curve_rejected'] = True
-    environment.update(IX_KZG_CURVE='bls12-381')
-    result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
-        env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    (out / 'retired-curve.log').write_text(result.stdout)
-    if result.returncode != 1 or 'IX_KZG_CURVE must be bn254' not in result.stdout:
-        raise RuntimeError('retired curve configuration was not rejected')
-    report['retired_curve_rejected'] = True
+    if result.returncode != 1 or 'IX_PLONK must be' not in result.stdout:
+        raise RuntimeError('invalid final feature flag was not rejected')
+    report['invalid_feature_flag_rejected'] = True
     report['source_sha256'] = {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in [
         'lakefile.lean', 'tests/compression_build_config.lean', 'tests/check_compression_build.py',
         'crates/ffi/Cargo.toml', 'crates/proof-compression/Cargo.toml', 'lean-toolchain',
     ]}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({'report': str(out / 'report.json'), 'typecheck': 'passed',
-        'configurations_passed': len(cases), 'invalid_curve_rejected': True}))
+        'configurations_passed': len(cases), 'invalid_feature_flag_rejected': True}))
 
 
 if __name__ == '__main__':

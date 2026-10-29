@@ -7,6 +7,39 @@ use std::{
   process::Command,
 };
 
+/// BLAKE3 over the module definition and every non-test Go source, in path
+/// order: what compiles the final circuits and serializes their keys.
+fn source_digest(source: &std::path::Path) -> String {
+  let mut files = vec![source.join("go.mod"), source.join("go.sum")];
+  let mut directories = vec![source.to_path_buf()];
+  let mut sources = Vec::new();
+  while let Some(directory) = directories.pop() {
+    for entry in fs::read_dir(&directory).unwrap() {
+      let path = entry.unwrap().path();
+      let name = path.file_name().unwrap().to_string_lossy().into_owned();
+      if path.is_dir() {
+        if name != "vendor" && name != "testdata" {
+          directories.push(path);
+        }
+      } else if name.ends_with(".go") && !name.ends_with("_test.go") {
+        sources.push(path);
+      }
+    }
+  }
+  sources.sort();
+  files.extend(sources);
+  let mut hasher = blake3::Hasher::new();
+  for file in files {
+    let relative = file.strip_prefix(source).unwrap().to_string_lossy();
+    hasher.update(relative.as_bytes());
+    hasher.update(&[0]);
+    let bytes = fs::read(&file).unwrap();
+    hasher.update(&(bytes.len() as u64).to_le_bytes());
+    hasher.update(&bytes);
+  }
+  hasher.finalize().to_hex().to_string()
+}
+
 pub(super) fn build() -> Vec<super::RuntimeArtifact> {
   let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
   let source =
@@ -37,6 +70,10 @@ pub(super) fn build() -> Vec<super::RuntimeArtifact> {
       .unwrap_or_else(|| panic!("cannot find {go:?} in PATH"))
   };
   println!("cargo:rerun-if-changed={}", executable.display());
+  println!(
+    "cargo:rustc-env=IX_GNARK_SOURCE_BLAKE3={}",
+    source_digest(&source)
+  );
   let toolchain = Command::new(&go)
     .current_dir(&source)
     .env("GOTOOLCHAIN", "local")
@@ -99,6 +136,12 @@ pub(super) fn build() -> Vec<super::RuntimeArtifact> {
   });
   let cuda = env::var_os("CARGO_FEATURE_CUDA").is_some();
   let mut tags = Vec::new();
+  if env::var_os("CARGO_FEATURE_PLONK").is_some() {
+    tags.push("plonk");
+  }
+  if env::var_os("CARGO_FEATURE_GROTH16").is_some() {
+    tags.push("groth16");
+  }
   let mut linker_flags = env::var("CGO_LDFLAGS").unwrap_or_default();
   let mut artifacts = Vec::new();
   if cuda && env::var_os("CARGO_FEATURE_PLONK").is_some() {
@@ -148,10 +191,8 @@ pub(super) fn build() -> Vec<super::RuntimeArtifact> {
         file.display()
       );
       println!("cargo:rerun-if-changed={}", file.display());
-      artifacts.push(super::RuntimeArtifact {
-        source: file,
-        path: name.to_owned(),
-      });
+      artifacts
+        .push(super::RuntimeArtifact { source: file, path: name.to_owned() });
     }
     for name in ["icicle_device", "icicle_field_bn254", "icicle_curve_bn254"] {
       println!("cargo:rustc-link-lib=dylib={name}");

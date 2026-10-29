@@ -1,13 +1,16 @@
-# BN254 terminal gnark backends
+# BN254 final gnark backends
 
-This Go module implements the terminal Ix verifier circuit and calls stock
+This Go module implements the final Ix verifier circuit and calls stock
 gnark. Cargo builds it as a C archive linked into `ix`;
 `pipeline/gnark.rs` owns the Rust bindings and loaded prover handles.
 There is no separate Go executable.
+Go builds without backend tags include both CPU backends. Selecting just
+`plonk` or `groth16` excludes the other implementation and C exports; Cargo
+supplies these tags from its feature selection.
 
-The circuit binds the expected claim digest and checks outer and deferred
-pairing obligations. It uses classic GLV, separate pairing checks, and explicit
-`accumulatorCount`, `claims`, and `publics` in the verifier description.
+The circuit binds the expected claim digest, outer pairing and deferred pairing
+obligations. Its schema explicitly describes accumulator counts, claim rows and
+public-input mappings.
 
 ## Build and use
 
@@ -28,10 +31,10 @@ ix compress ROOT_PROOF_ADDRESS --plonk --out /path/to/empty-output
 ```
 
 Rust authenticates the setup and inner proof, selects the cache, calls gnark,
-and publishes the native proof, Solidity payload, key, verifier contract,
-admission, and candidate catalog. The proof envelope is written last, after
-verification succeeds. Rerunning the command with the same output directory
-resumes from the last complete stage.
+and publishes the native proof, Solidity payload, key and verifier contract.
+The proof envelope is written last, after verification succeeds. Rerunning the
+command with the same output directory reuses every stage whose proof still
+verifies.
 
 ## CUDA
 
@@ -43,21 +46,23 @@ proof encodings.
 
 ```sh
 export CUDA_HOME=/usr/local/cuda
-IX_CUDA=1 lake build ix
+export IX_KZG_CUDA_ARCHS=120
+IX_CUDA=1 IX_PLONK=1 lake build ix
 ```
 
-The CUDA primitives in `crates/proof-compression/cuda/plonk` are built with
-the KZG kernels into `libix_bn254_cuda.so`, against the sppark and BLST
-sources of the crate's `cuda` dependencies. `IX_KZG_CUDA_ARCHS` (or
-`MULTI_STARK_CUDA_ARCHS`) selects the SM architectures. cgo links this
-library, which carries a private C++ runtime and exports only its C entry
-points; Lake installs it in `../lib` beside the executable.
+The KZG and PLONK kernels share `libix_bn254_cuda.so`, built against the configured
+sppark dependency. Rust and cgo link that library; no source patching, private
+sppark copy, or separate PLONK builder is involved. Cargo reports the runtime
+libraries to Lake for installation beside `ix`.
 
-Select execution separately with `IX_PLONK_BACKEND=cpu` or `cuda`.
+`IX_KZG_CUDA_ARCHS` overrides `MULTI_STARK_CUDA_ARCHS`; otherwise the shared Rust
+build helper detects GPU architectures and checks nvcc support.
+
+PLONK proving uses CUDA when built with `IX_CUDA=1`; CPU-only builds use CPU.
 `IX_PLONK_CUDA_DEVICE` selects the visible GPU ordinal; the default is zero.
 `IX_PLONK_CUDA_MEMORY_GIB` sets the budget, defaulting to 64 GiB with 8 GiB
 additional headroom. `IX_PLONK_CUDA_MSM_STRATEGY` accepts `split` (default) or
-`mask`. `IX_CUDA` enables CUDA for Aiur, FRI, KZG, and terminal PLONK.
+`mask`. `IX_CUDA` enables CUDA for Aiur, FRI, KZG, and final PLONK.
 
 A loaded prover retains its keys and optional accelerator across calls. Rust
 requires exclusive access for each proof and releases the Go handle on drop.
@@ -77,24 +82,25 @@ domain and monomial receipt. Go checks the sizes and digests of decoded native
 artifacts and rejects a witness whose claim differs from the independent digest
 supplied by Rust. Retaining a prover avoids loading its circuit and keys again.
 
-Verification uses the bundled PLONK verifying key and Ignition admission
+Default verification uses the bundled PLONK verifying key and Ignition admission
 (`crates/proof-compression/verifying-keys/`); a proof whose key identifier
 names any other key is rejected. Verification requires neither a proving SRS
 nor a GPU.
 
 Release tooling is library code with no CLI: `pipeline::plonk::export` writes
 the verifier description and witness for a recursive KZG packet, and
-`pipeline::plonk::export_parameters` writes the Ignition SRS prefix a circuit
-needs. `ix verify` checks PLONK proofs against the configured catalog.
+`pipeline::plonk::export_parameters` writes the selected final setup's SRS prefix.
+Default `ix verify` uses the release keys; local final keys require an explicitly
+pinned development verifier bundle.
 
-Internal metadata has no helper-executable identity. Rebuild old artifact caches
-and regenerate candidate catalogs instead of editing or translating them.
+Regenerate internal artifact metadata through the Rust preparation APIs when
+changing implementations.
 
 ## Tests
 
 ```sh
 cd tools/plonk-wrapper
-go test ./...
+go test -tags plonk,groth16 ./...
 ```
 
 Go tests cover circuit tampering, canonical encodings, exceptional MSM inputs,
@@ -110,11 +116,10 @@ cargo test --release -p ix-proof-compression --no-default-features \
 The full compile and retained-prover tests are ignored by default. The latter
 requires `IX_GNARK_INIT_ARTIFACTS`, `IX_GNARK_INIT_MANIFEST_SHA256`, and
 `IX_GNARK_INIT_WITNESS`; run it explicitly only after budgeting memory and time.
-The Go `TestBN254CUDAInit` remains an opt-in arithmetic integration/profiling
-entry point. The [contract guide](../../contracts/plonk/README.md) covers
+The [contract guide](../../contracts/plonk/README.md) covers
 Solidity verification of the unchanged proof encoding.
 
-## BN254 Groth16 terminal
+## BN254 Groth16 final
 
 The `groth16` feature implements Groth16 over the same KZG verifier circuit and
 witness schema. It compiles R1CS instead of PLONK's sparse constraints. The two
@@ -143,7 +148,7 @@ respectively. These measurements use Solidity 0.8.33, via-IR, 200 optimizer runs
 and Prague; Groth16 uses development keys and PLONK uses Ignition. The adapters
 receive a claim digest, so these costs exclude hashing raw claim bytes.
 Receipts, traces and proof vectors are retained in
-`target/terminal-solidity-20261029-xso7clim/` at the repository root.
+`target/final-solidity-20261029-xso7clim/` at the repository root.
 
 SP1's Groth16 path uses direct bit constraints for range checks and an ordinary
 A/B/C verifier. Ix also uses gnark's emulated BN254 arithmetic for KZG pairings,
@@ -156,31 +161,40 @@ the current circuit and verifier.
 
 ### Preparing and using development keys
 
-Keys are prepared with library functions; there is no CLI for them. Export an
+With `--dev-final-srs`, compression prepares and caches local keys automatically.
+The underlying library functions can also prepare keys explicitly. Export an
 already verified recursive KZG packet with the shared exporter
 (`pipeline::plonk::export`), compile the Groth16 circuit from its `vk.json`
 with `pipeline::groth16::compile`, then create development keys with
 `pipeline::groth16::setup_development`.
 
 The exporter takes the BLAKE3 digest that authenticates the serialized KZG
-verifier file and the independently expected statement, and requires admitted
-Ignition parameters for the inner KZG proof; local Groth16 setup does not
-change the inner setup policy. Compilation writes a fresh circuit into an empty
+verifier file and the independently expected statement. It checks the selected
+setup's Ignition admission or development class and verifies the inner proof.
+Compilation writes a fresh circuit into an empty
 artifact directory.
 
-The prepared artifacts must be the bundled circuit and key: `IX_GROTH16_ARTIFACTS`
-names a directory whose verifying key, circuit and verifier description match
-the bundled pins. The bundled key comes from a development setup, so proving
-needs `--dev-groth16` and verifying needs `--dev-srs`:
+`IX_GROTH16_ARTIFACTS` optionally reuses the release circuit's prepared artifacts,
+which must match its pins. For a different inner verifier, or without those
+artifacts, development keys are generated and cached automatically:
 
 ```sh
-export IX_GROTH16_ARTIFACTS=/path/to/groth16-keys
-ix compress ROOT --groth16 --dev-groth16
-ix verify COMPRESSED_PROOF --dev-srs
+ix compress /path/to/aggregate-proof.bin --groth16 \
+  --dev-kzg-srs --dev-final-srs --out ./development-groth16
+ix verify COMPRESSED_PROOF --dev-srs \
+  --verifier-bundle ./development-groth16/groth16/development-verifier.json \
+  --verifier-bundle-blake3 TRUSTED_BLAKE3_DIGEST
 ```
 
-`--dev-groth16` permits development outer keys and requires `--groth16`.
-`--dev-srs` on verification is the existing permission for development proofs.
+`--groth16` selects the proof system; `--dev-final-srs` permits its development
+outer keys. `--dev-kzg-srs` is a separate inner-setup choice. Together the flags
+need no Ignition parameters; the combination also works with `--plonk`.
+PLONK's final powers and Lagrange parameters are independent of the inner KZG
+verifier's parameters. A proof-file
+input contains a serialized `Ixon.Proof`, including its claim, and is read without
+importing it into the store. Verification's `--dev-srs` permits development proofs,
+but an unknown final key also requires a separately pinned development bundle.
+See [local development compression](../../docs/development-compression.md).
 Rerunning `ix compress` into an output directory whose recursive KZG stage is
 complete proves only the Groth16 stage.
 
@@ -205,10 +219,11 @@ reviewed key bundle. The release binds both keys, the circuit and verifier-schem
 hashes, the commitment hash, and the ceremony digest. Import relies on the
 independently trusted release digest; it does not re-run the contribution chain.
 
-Production catalog entries use `"setup": "mpc"` and a `ceremony_sha256` field.
-The circuit, setup transcript provenance, and resulting key must be independently
-admitted before adding that entry. Contributions generated by one local test
-process are useful tests of the setup machinery, not a production ceremony.
+A production key from such a ceremony replaces the bundled development key in
+`crates/proof-compression/verifying-keys/`. The circuit, setup transcript
+provenance, and resulting key must be independently reviewed first.
+Contributions generated by one local test process are useful tests of the
+setup machinery, not a production ceremony.
 
 ### CUDA
 
@@ -220,11 +235,12 @@ proof format, SHA-256 commitment hash, and CPU verifier.
 ```sh
 export IX_GROTH16_BACKEND=cuda
 export IX_GROTH16_DEVICE=0
-export IX_GROTH16_PIN_KEY=1
 ```
 
-`IX_GROTH16_PIN_KEY` defaults to `0`, streaming key vectors as needed. Set it to
-`1` only when persistent key vectors and working memory fit on the selected GPU.
+ICICLE loads proving-key vectors on demand and frees their device memory after
+use. Compression produces one proof per prover handle, so retaining the entire
+key in VRAM would not save transfers across proofs and would increase its
+persistent memory footprint.
 Each prover handle stays on one device; operations and cleanup are serialized
 per device. `ix` does not warm other GPUs or silently fall back to CPU.
 
@@ -251,13 +267,13 @@ compile and setup functions when changing the implementation.
 `contracts/groth16/src/IxGroth16Verifier.sol` fixes its address and code hash,
 converts the independently expected digest, and returns false for malformed
 proofs. Verification calls have a bounded gas budget. The contract fixtures
-cover plain Groth16, commitment-augmented Groth16, and the actual Init wrapper.
+cover plain Groth16 and the commitment-augmented Init wrapper.
 The commitment hash must remain SHA-256 in proving, native verification and
 Solidity export.
 
 ```sh
-go test -run '^TestGroth16(BackendInterop|BackendSelection|MPCAndAdmission)$' .
-IX_GROTH16_CUDA_TEST=1 go test -tags icicle -run '^TestGroth16CUDAInterop$' .
+go test -tags groth16 -run '^TestGroth16(BackendInterop|BackendSelection|MPCAndAdmission)$' .
+IX_GROTH16_CUDA_TEST=1 go test -tags groth16,icicle -run '^TestGroth16CUDAInterop$' .
 cd contracts/groth16 && forge test
 ```
 
@@ -266,38 +282,19 @@ Rust tests verify the checked-in Init proof through FFI by default. The ignored
 checks the full circuit identity. `retained_init_prover_reuses_keys` uses prepared
 keys in `IX_GROTH16_ARTIFACTS`, proves twice, checks independent verification,
 and tests rejection and cleanup; it requires several GiB of memory.
-The matched performance harness is `TestBN254TerminalComparison`. It accepts
-`IX_TERMINAL_COMPARE=1`, `IX_TERMINAL_COMPARE_OUT`,
-`IX_TERMINAL_GROTH16_ARTIFACTS`, and optionally
-`IX_TERMINAL_PLONK_ARTIFACTS` plus `IX_TERMINAL_PLONK_MANIFEST_SHA256` to reuse
-an authenticated PLONK cache for the identical verifier schema. Select systems
-and devices with `IX_TERMINAL_COMPARE_SYSTEMS` and
-`IX_TERMINAL_COMPARE_DEVICES`; `IX_TERMINAL_COMPARE_REPEATS` defaults to three.
-It separates opening the retained key/circuit, the first proof, warm proofs,
-and verification. Proving includes gnark's witness solving; earlier Ix/KZG
-stages and witness export are excluded. Compare CPU and GPU proofs by acceptance
-and statement, not by bytes, because proofs are randomized.
+The opt-in `TestBN254FinalComparison` benchmark uses the retained production
+provers for both backends. It requires prepared artifacts and pins in
+`IX_FINAL_PLONK_ARTIFACTS`, `IX_FINAL_PLONK_MANIFEST_SHA256`,
+`IX_FINAL_GROTH16_ARTIFACTS`, and `IX_FINAL_GROTH16_MANIFEST_SHA256`.
+Set `IX_FINAL_COMPARE=1` and `IX_FINAL_COMPARE_OUT` to run it. Optional
+`IX_FINAL_COMPARE_SYSTEMS` and `IX_FINAL_COMPARE_DEVICES` select comma-separated
+backends and `cpu,cuda`; `IX_FINAL_COMPARE_REPEATS` defaults to three.
 
-### Matched Init terminal measurements
+Each result separates opening the circuit/key from warm proving, which is
+timed together with verification and serialization. One unmeasured proof warms the prover before measurements.
+`IX_FINAL_COMPARE_CPU_PROFILE=1` records a profile and marks the measurements
+as profiled. Earlier compression stages, witness export, compilation and setup
+are excluded. Proofs are randomized; compare their statements and acceptance.
 
-Measured on 2026-10-29 with Go 1.26.8, 32 logical CPUs and an RTX PRO 6000
-Blackwell Server Edition. Both systems use exactly the same checked-in Init
-verifier description and witness. Values are medians of three warm proofs in
-separate processes at default parallelism; no other GPU compute process was
-present when either CUDA run started.
-
-| Backend | CPU proving | CUDA proving | Native proof | Ix envelope | Solidity payload |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Groth16 | 7.35 s | 2.61 s | 196 B | 236 B | 384 B |
-| PLONK | 66.07 s | 11.59 s | 584 B | 624 B | 864 B |
-
-Groth16 CUDA uses ICICLE with pinned key vectors; PLONK CUDA uses the existing
-sppark adapter and retained bases. Proving includes gnark witness solving.
-Opening the key/circuit takes about 27 seconds for Groth16 and 22 seconds for
-PLONK, separately from the table. Earlier compression stages and witness export
-are excluded. Groth16 uses development keys; PLONK reuses its pinned Ignition
-cache. These are one-workload measurements, not predictions for every circuit.
-Raw samples, file identities, opening times and peak process RSS are recorded
-in `testdata/terminal-comparison.json`. The actual Groth16 Init proof also passes
-the Solidity adapter test, at 318,490 execution gas excluding transaction
-intrinsic gas and calldata.
+The [performance record](../../docs/proof-benchmark-comparison.md) contains
+the matched Init measurements and the stock-gnark decision.

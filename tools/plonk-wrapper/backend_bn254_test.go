@@ -1,3 +1,5 @@
+//go:build plonk || !groth16
+
 package main
 
 import (
@@ -6,11 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark-crypto/ecc/bn254/kzg"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/plonk"
@@ -21,30 +25,7 @@ import (
 	"github.com/zeebo/blake3"
 )
 
-type backendCircuit struct {
-	Claim  [2]frontend.Variable `gnark:",public"`
-	X      frontend.Variable
-	Commit bool `gnark:"-"`
-}
-
-func (c *backendCircuit) Define(api frontend.API) error {
-	api.AssertIsEqual(api.Mul(c.X, c.X), c.Claim[0])
-	api.AssertIsEqual(c.Claim[1], 1)
-	if c.Commit {
-		challenge, err := api.(frontend.Committer).Commit(c.X)
-		if err != nil {
-			return err
-		}
-		api.AssertIsDifferent(challenge, 0)
-	}
-	return nil
-}
-
 func TestIgnitionBackendAndProofCodec(t *testing.T) {
-	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var receipt struct {
 		Format, Blake3, SetupID, IgnitionManifest string
 		PublicMaxDegree, Powers                   uint64
@@ -53,14 +34,14 @@ func TestIgnitionBackendAndProofCodec(t *testing.T) {
 		t.Fatal(err)
 	}
 	srsPath := filepath.Join("testdata", "bn254", "srs.bin")
-	srs, err := readSRS(srsPath, receipt.Blake3, 128, p)
+	srs, err := readSRS(srsPath, receipt.Blake3, 128)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readSRS(srsPath, receipt.Blake3, 64, p); err == nil {
+	if _, err := readSRS(srsPath, receipt.Blake3, 64); err == nil {
 		t.Fatal("accepted wrong power count")
 	}
-	if _, err := readSRS(srsPath, string(bytes.Repeat([]byte{'0'}, 64)), 128, p); err == nil {
+	if _, err := readSRS(srsPath, string(bytes.Repeat([]byte{'0'}, 64)), 128); err == nil {
 		t.Fatal("accepted wrong export receipt")
 	}
 	for _, commit := range []bool{false, true} {
@@ -173,7 +154,7 @@ func verifyFixture(keyPath, trusted, proofPath string, claim []byte) error {
 	return verifyProof(key, hash, proof, claim, encodeAnchors(vk))
 }
 
-func TestPrepareCircuitMatchesGnarkSetup(t *testing.T) {
+func TestPrepareCircuitWithIndependentFinalSRS(t *testing.T) {
 	schema, err := os.ReadFile(filepath.Join("testdata", "bn254", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -192,27 +173,49 @@ func TestPrepareCircuitMatchesGnarkSetup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := os.ReadFile(filepath.Join("testdata", "bn254", "srs.bin"))
+	development, err := kzg.NewSRS(domain+3, big.NewInt(42))
 	if err != nil {
 		t.Fatal(err)
 	}
-	powers := domain + 3
-	source = source[:88+2*g2ExportBytes+2*baseBytes*powers]
-	binary.LittleEndian.PutUint64(source[80:88], powers)
-	receipt := blake3.Sum256(source)
+	inner, err := decodeVerifyingKey(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	innerAnchors, err := g2Keys(inner.OuterKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if development.Vk.G2[1].Equal(&innerAnchors[1]) {
+		t.Fatal("development final SRS unexpectedly matches the inner verifier")
+	}
+	var source bytes.Buffer
+	var header [88]byte
+	copy(header[:8], srsMagic)
+	identity := blake3.Sum256([]byte("independent-final-test-parameters"))
+	copy(header[8:40], identity[:])
+	binary.LittleEndian.PutUint64(header[40:48], domain+2)
+	copy(header[48:80], identity[:])
+	binary.LittleEndian.PutUint64(header[80:88], domain+3)
+	source.Write(header[:])
+	for _, point := range development.Vk.G2 {
+		for _, coordinate := range []*fp.Element{&point.X.A0, &point.X.A1, &point.Y.A0, &point.Y.A1} {
+			encoded := coordinate.Bytes()
+			source.Write(encoded[:])
+		}
+	}
+	if err := writeAffinePoints(&source, development.Pk.G1); err != nil {
+		t.Fatal(err)
+	}
+	receipt := blake3.Sum256(source.Bytes())
 	srsPath := filepath.Join(dir, "srs.bin")
-	if err := os.WriteFile(srsPath, source, 0600); err != nil {
+	if err := os.WriteFile(srsPath, source.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
 	lagrangePath := filepath.Join(dir, "lagrange.bin")
 	if err := prepareCircuit(schema, circuit, circuitHash, domain, srsPath, hex.EncodeToString(receipt[:]), lagrangePath, "", dir); err != nil {
 		t.Fatal(err)
 	}
-	key, err := decodeVerifyingKey(schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srs, err := readSRS(srsPath, hex.EncodeToString(receipt[:]), domain, key)
+	srs, err := readSRS(srsPath, hex.EncodeToString(receipt[:]), domain)
 	if err != nil {
 		t.Fatal(err)
 	}

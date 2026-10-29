@@ -1,4 +1,4 @@
-//go:build icicle
+//go:build (groth16 || !plonk) && icicle
 
 package main
 
@@ -39,7 +39,6 @@ func onGroth16Device(device *cr.Device, call func() error) error {
 
 func newGroth16CUDAEngine(config groth16Backend) (*groth16Engine, error) {
 	deviceID := config.Device
-	pin := config.PinKeys
 	groth16CUDAInit.Do(func() {
 		var status cr.EIcicleError
 		if config.Library != "" {
@@ -71,7 +70,7 @@ func newGroth16CUDAEngine(config groth16Backend) (*groth16Engine, error) {
 	engine.prove = func(ccs constraint.ConstraintSystem, w witness.Witness) (proof groth16.Proof, err error) {
 		lock.Lock()
 		defer lock.Unlock()
-		config, err := icicle.NewConfig(icicle.WithDeviceID(deviceID), icicle.WithPinKeysToGPU(pin),
+		config, err := icicle.NewConfig(icicle.WithDeviceID(deviceID), icicle.WithPinKeysToGPU(false),
 			icicle.WithProverOptions(backend.WithProverHashToFieldFunction(sha256.New())))
 		if err != nil {
 			return nil, err

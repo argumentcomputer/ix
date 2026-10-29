@@ -167,6 +167,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
   exec_ahead: LeanNat<LeanBorrowed<'_>>,
   verify_only: bool,
   subtree_code: LeanNat<LeanBorrowed<'_>>,
+  fresh: bool,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
@@ -188,6 +189,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       plan_only,
       cache_fri_bytes: cache_fri_bytes.as_bytes(),
       use_cache,
+      fresh,
       write_outputs,
       trace_shards,
       range_width: lean_unbox_nat_as_usize(range_width.inner()),

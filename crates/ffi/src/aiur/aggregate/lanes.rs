@@ -52,6 +52,7 @@ pub struct Config {
   pub structural_above: usize,
   pub cache_fri_bytes: Vec<u8>,
   pub out_manifest: Option<PathBuf>,
+  pub fresh: bool,
 }
 
 /// The default ceiling on one execution record's counted bytes: large
@@ -413,22 +414,26 @@ pub fn run(
   let checkpoint_path = cache_root
     .join("refined-manifests")
     .join(format!("{}.ixes", Address::hash(&manifest_bytes).hex()));
-  let mut manifest = match fs::read(&checkpoint_path) {
-    Ok(bytes) => {
-      let refined = ShardManifest::from_bytes(&bytes).map_err(|error| {
-        format!("refined manifest {}: {error}", checkpoint_path.display())
-      })?;
-      say(&format!(
-        "resuming refined partition with {} claims from {}",
-        refined.num_shards,
-        checkpoint_path.display()
-      ));
-      refined
-    },
-    Err(error) if error.kind() == std::io::ErrorKind::NotFound => source,
-    Err(error) => {
-      return Err(format!("read {}: {error}", checkpoint_path.display()));
-    },
+  let mut manifest = if cfg.fresh {
+    source
+  } else {
+    match fs::read(&checkpoint_path) {
+      Ok(bytes) => {
+        let refined = ShardManifest::from_bytes(&bytes).map_err(|error| {
+          format!("refined manifest {}: {error}", checkpoint_path.display())
+        })?;
+        say(&format!(
+          "resuming refined partition with {} claims from {}",
+          refined.num_shards,
+          checkpoint_path.display()
+        ));
+        refined
+      },
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => source,
+      Err(error) => {
+        return Err(format!("read {}: {error}", checkpoint_path.display()));
+      },
+    }
   };
   let record_max_bytes = match std::env::var("AIUR_RECORD_MAX_BYTES") {
     Ok(value) => value
@@ -519,6 +524,7 @@ struct Pass {
   store_dir: PathBuf,
   cache_dir: PathBuf,
   index_dir: PathBuf,
+  fresh: bool,
   /// CPU execution threads shared by every lane.
   executions: usize,
   /// The process-wide host limit, the prover budget of every slot.
@@ -551,6 +557,7 @@ impl Pass {
         aggr_idx: self.aggr_idx,
         store_dir: &self.store_dir,
         cache_dir: Some(&self.cache_dir),
+        cache_read_dir: (!self.fresh).then_some(self.cache_dir.as_path()),
         reprove_slot: None,
         write_outputs: true,
         wrap_budget: self.wrap_budget,
@@ -717,6 +724,7 @@ fn plan_pass(
     store_dir,
     cache_dir,
     index_dir,
+    fresh: cfg.fresh,
     executions,
     wrap_budget: Some(host.limit),
     pool,
@@ -735,6 +743,16 @@ struct Resumed {
 fn resume_pass(pass: &Pass, ctx: ProveContext<'_>) -> Resumed {
   let count = pass.specs.len();
   let shards = pass.shards();
+  if pass.fresh {
+    say(&format!(
+      "{shards} claims: fresh proving, no indexed proofs or cached joins reused"
+    ));
+    return Resumed {
+      slots: vec![None; count],
+      retired: vec![false; count],
+      claim_done: vec![false; shards],
+    };
+  }
   // Cached joins from the root down retire their subtrees.
   let mut slots: Vec<Option<Arc<Slot>>> = vec![None; count];
   let mut retired = vec![false; count];
@@ -743,9 +761,13 @@ fn resume_pass(pass: &Pass, ctx: ProveContext<'_>) -> Resumed {
     if retired[index] || spec.kind != ChildKind::Aggr {
       continue;
     }
-    let Some((proof, address)) =
-      load_cached(ctx.aggr_system, ctx.store_dir, ctx.cache_dir, index, spec)
-    else {
+    let Some((proof, address)) = load_cached(
+      ctx.aggr_system,
+      ctx.store_dir,
+      ctx.cache_read_dir,
+      index,
+      spec,
+    ) else {
       continue;
     };
     slots[index] = Some(Arc::new(Slot {
@@ -1244,6 +1266,7 @@ extern "C" fn rs_aiur_prove_lanes(
   structural_above: LeanNat<LeanBorrowed<'_>>,
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   out_manifest: LeanString<LeanBorrowed<'_>>,
+  fresh: bool,
 ) -> LeanExcept<LeanOwned> {
   let lanes = match lean_unbox_nat_as_usize(lanes.inner()) {
     0 => visible_gpus(),
@@ -1257,6 +1280,7 @@ extern "C" fn rs_aiur_prove_lanes(
     cache_fri_bytes: cache_fri_bytes.as_bytes().to_vec(),
     out_manifest: (!out_manifest.as_str().is_empty())
       .then(|| PathBuf::from(out_manifest.as_str())),
+    fresh,
   };
   if cfg.lanes == 0 {
     return LeanExcept::error_string("no visible GPU to prove on");

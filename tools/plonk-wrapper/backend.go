@@ -1,3 +1,5 @@
+//go:build plonk || !groth16
+
 package main
 
 import (
@@ -9,8 +11,10 @@ import (
 	"io"
 	"os"
 
+	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/plonk"
+	plonkbn254 "github.com/consensys/gnark/backend/plonk/bn254"
 	"github.com/consensys/gnark/backend/solidity"
 	"github.com/consensys/gnark/frontend"
 	"github.com/zeebo/blake3"
@@ -18,7 +22,8 @@ import (
 
 // readSRS consumes ix's authenticated export. The expected digest comes from
 // the Rust parameter loader, independently of this file's contents.
-func readSRS(path, expectedDigest string, domain uint64, p *verifyingKey) (*nativeSRS, error) {
+// These parameters belong to PLONK, independently of the KZG verifier circuit.
+func readSRS(path, expectedDigest string, domain uint64) (*nativeSRS, error) {
 	expected, err := unhex(expectedDigest, 32)
 	if err != nil {
 		return nil, err
@@ -43,12 +48,9 @@ func readSRS(path, expectedDigest string, domain uint64, p *verifyingKey) (*nati
 	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return nil, err
 	}
-	setup, err := unhex(p.SetupID, 32)
-	if err != nil {
-		return nil, err
-	}
 	count := binary.LittleEndian.Uint64(header[80:])
-	if string(header[:8]) != srsMagic || !bytes.Equal(header[8:40], setup) || binary.LittleEndian.Uint64(header[40:48]) != p.PublicMaxDegree || count != domain+3 || domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || count-1 > p.PublicMaxDegree {
+	maxDegree := binary.LittleEndian.Uint64(header[40:48])
+	if string(header[:8]) != srsMagic || count != domain+3 || domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || count-1 > maxDegree {
 		return nil, fmt.Errorf("SRS identity, degree or required power count differs")
 	}
 	stat, err := f.Stat()
@@ -69,24 +71,13 @@ func readSRS(path, expectedDigest string, domain uint64, p *verifyingKey) (*nati
 		}
 		srs.Vk.Lines[i] = precomputeLines(srs.Vk.G2[i])
 	}
-	anchors, err := g2Keys(p.OuterKeys)
-	if err != nil {
-		return nil, err
-	}
-	if !srs.Vk.G2[0].Equal(&anchors[0]) || !srs.Vk.G2[1].Equal(&anchors[1]) {
-		return nil, fmt.Errorf("SRS G2 anchors differ")
-	}
 	srs.Pk.G1, err = readAffinePoints(r, count)
 	if err != nil {
 		return nil, err
 	}
 	srs.Vk.G1 = srs.Pk.G1[0]
-	g, err := p.Generator.native()
-	if err != nil {
-		return nil, err
-	}
-	if !srs.Vk.G1.Equal(&g) {
-		return nil, fmt.Errorf("SRS G1 anchor differs")
+	if srs.Vk.G1.IsInfinity() || !srs.Vk.G1.IsOnCurve() || !srs.Vk.G1.IsInSubGroup() {
+		return nil, fmt.Errorf("invalid SRS G1 anchor")
 	}
 	return srs, nil
 }
@@ -127,12 +118,6 @@ func decodeProof(data []byte, commitments int) (*nativeProof, error) {
 	return proof, nil
 }
 
-type publicClaim struct {
-	Claim [2]frontend.Variable `gnark:",public"`
-}
-
-func (*publicClaim) Define(frontend.API) error { return nil }
-
 func verifyProof(key, trustedDigest, data, digest, expectedAnchors []byte) error {
 	if len(key) > 1<<20 || len(data) > 1<<20 || len(trustedDigest) != 32 || len(digest) != 32 || len(expectedAnchors) != anchorBytesLen {
 		return fmt.Errorf("invalid verification input length")
@@ -161,4 +146,16 @@ func verifyProof(key, trustedDigest, data, digest, expectedAnchors []byte) error
 		return err
 	}
 	return plonk.Verify(proof, vk, public, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK))
+}
+
+type nativeVerifyingKey = plonkbn254.VerifyingKey
+type nativeProof = plonkbn254.Proof
+
+func encodeAnchors(vk *nativeVerifyingKey) []byte {
+	out := make([]byte, 0, 320)
+	for _, v := range []*fp.Element{&vk.Kzg.G1.X, &vk.Kzg.G1.Y, &vk.Kzg.G2[0].X.A0, &vk.Kzg.G2[0].X.A1, &vk.Kzg.G2[0].Y.A0, &vk.Kzg.G2[0].Y.A1, &vk.Kzg.G2[1].X.A0, &vk.Kzg.G2[1].X.A1, &vk.Kzg.G2[1].Y.A0, &vk.Kzg.G2[1].Y.A1} {
+		b := v.Bytes()
+		out = append(out, b[:]...)
+	}
+	return out
 }

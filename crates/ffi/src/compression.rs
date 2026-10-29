@@ -22,24 +22,27 @@ extern "C" fn rs_compression_run(
   fixed_root: LeanString<LeanBorrowed<'_>>,
   dir: LeanString<LeanBorrowed<'_>>,
   cache_root: LeanString<LeanBorrowed<'_>>,
-  dev_srs: bool,
-  log_height: u32,
-  terminal: u8,
+  dev_kzg_srs: bool,
+  dev_final_srs: bool,
+  final_proof: u8,
+  fresh: bool,
 ) -> LeanIOResult<LeanOwned> {
   let dir = dir.to_string();
   let cache_root = cache_root.to_string();
-  let terminal = match pipeline::TerminalOptions::try_from(terminal) {
-    Ok(system) => system,
+  let final_proof = match pipeline::FinalSystem::try_from(final_proof) {
+    Ok(system) => {
+      pipeline::FinalOptions { system, allow_development: dev_final_srs }
+    },
     Err(error) => return LeanIOResult::error_string(error),
   };
   let fixed_root = optional(&fixed_root);
   let result = pipeline::CompressConfig::from_env(
     std::path::Path::new(&cache_root),
-    dev_srs,
-    log_height,
-    terminal,
+    dev_kzg_srs,
+    final_proof,
   )
-  .and_then(|config| {
+  .and_then(|mut config| {
+    config.fresh = fresh;
     pipeline::compress(
       pipeline::CompressInput {
         vk: vk.as_bytes(),
@@ -71,13 +74,52 @@ extern "C" fn rs_compression_verify(
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn rs_compression_verify_development(
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  bundle: LeanByteArray<LeanBorrowed<'_>>,
+  trusted_digest: LeanString<LeanBorrowed<'_>>,
+  allow_development: bool,
+) -> LeanIOResult<LeanOwned> {
+  let pin_text = trusted_digest.to_string();
+  let pin = match blake3::Hash::from_hex(pin_text.as_bytes()) {
+    Ok(pin) => pin,
+    Err(error) => {
+      return LeanIOResult::error_string(&format!(
+        "invalid verifier bundle BLAKE3 pin: {error}"
+      ));
+    },
+  };
+  match pipeline::verify_with_development_verifier(
+    proof.as_bytes(),
+    claim.as_bytes(),
+    bundle.as_bytes(),
+    pin.as_bytes(),
+    allow_development,
+  ) {
+    Ok(class) => LeanIOResult::ok(LeanString::new(class.label())),
+    Err(error) => LeanIOResult::error_string(&error.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn rs_compression_curve() -> LeanIOResult<LeanOwned> {
   LeanIOResult::ok(LeanString::new(ix_proof_compression::kzg::curve::NAME))
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn rs_compression_setup(dev_srs: bool) -> LeanIOResult<LeanOwned> {
-  match pipeline::setup_description(dev_srs) {
+extern "C" fn rs_compression_setup(
+  dev_kzg_srs: bool,
+  dev_final_srs: bool,
+  final_proof: u8,
+) -> LeanIOResult<LeanOwned> {
+  let final_proof = match pipeline::FinalSystem::try_from(final_proof) {
+    Ok(system) => {
+      pipeline::FinalOptions { system, allow_development: dev_final_srs }
+    },
+    Err(error) => return LeanIOResult::error_string(error),
+  };
+  match pipeline::setup_description(dev_kzg_srs, final_proof) {
     Ok(description) => LeanIOResult::ok(LeanString::new(description)),
     Err(e) => LeanIOResult::error_string(&e.to_string()),
   }

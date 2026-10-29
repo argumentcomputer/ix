@@ -1,4 +1,4 @@
-//! Shared transport and artifact checks for terminal proof backends.
+//! Shared transport and artifact checks for final proof backends.
 use super::Result;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 use super::statement;
@@ -23,48 +23,83 @@ pub struct Artifact {
   pub bytes: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+  Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 #[repr(u8)]
-pub enum TerminalSystem {
+pub enum FinalSystem {
   #[default]
   None = 0,
   Plonk = 1,
   Groth16 = 2,
 }
 
-impl TryFrom<u8> for TerminalSystem {
+impl TryFrom<u8> for FinalSystem {
   type Error = &'static str;
   fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
     match value {
       0 => Ok(Self::None),
       1 => Ok(Self::Plonk),
       2 => Ok(Self::Groth16),
-      _ => Err("unknown terminal proof system"),
+      _ => Err("unknown final proof system"),
     }
   }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct TerminalOptions {
-  pub system: TerminalSystem,
+pub struct FinalOptions {
+  pub system: FinalSystem,
   pub allow_development: bool,
 }
 
-impl From<TerminalSystem> for TerminalOptions {
-  fn from(system: TerminalSystem) -> Self {
+impl From<FinalSystem> for FinalOptions {
+  fn from(system: FinalSystem) -> Self {
     Self { system, allow_development: false }
   }
 }
 
-impl TryFrom<u8> for TerminalOptions {
-  type Error = &'static str;
-  fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
-    if value == 3 {
-      Ok(Self { system: TerminalSystem::Groth16, allow_development: true })
-    } else {
-      Ok(TerminalSystem::try_from(value)?.into())
+impl FinalOptions {
+  /// A development inner verifier needs separately prepared final keys; the
+  /// production final keys remain bound to the admitted inner verifier.
+  pub(super) fn validate_setup(
+    self,
+    development_kzg: bool,
+  ) -> std::result::Result<(), &'static str> {
+    if development_kzg
+      && self.system != FinalSystem::None
+      && !self.allow_development
+    {
+      return Err(
+        "development inner KZG requires --dev-final-srs with a final proof",
+      );
     }
+    if self.allow_development {
+      match self.system {
+        FinalSystem::None => {
+          return Err("--dev-final-srs requires a final proof system");
+        },
+        FinalSystem::Plonk | FinalSystem::Groth16 => {},
+      }
+    }
+    Ok(())
   }
+}
+
+/// Reconstruct the final circuit from the authenticated inner key and expected
+/// program prefix, independently of any saved final proof or witness.
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub(super) fn description(
+  verifier: &Path,
+  expected: &statement::Statement,
+  setup: &super::SetupConfig,
+) -> Result<Vec<u8>> {
+  let vk = super::wrap::VerifyingKey::from_bytes(&fs::read(verifier)?)?;
+  match setup.ignition_admission() {
+    Some(admission) => vk.check_ignition_admission(admission)?,
+    None => vk.check_setup_class(setup.class())?,
+  }
+  super::wrap::final_description(&vk, &expected[..10])
 }
 
 #[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
@@ -72,8 +107,7 @@ pub(super) struct Scratch(pub(super) PathBuf);
 #[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
 impl Scratch {
   pub(super) fn new() -> Result<Self> {
-    let path =
-      storage::temporary_path(&std::env::temp_dir().join("ix-terminal"));
+    let path = storage::temporary_path(&std::env::temp_dir().join("ix-final"));
     fs::create_dir(&path)?;
     Ok(Self(path))
   }
@@ -131,7 +165,7 @@ pub(super) fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
   let mut bytes = Vec::new();
   fs::File::open(path)?.take((limit + 1) as u64).read_to_end(&mut bytes)?;
   if bytes.len() > limit {
-    return Err("terminal input exceeds its size limit".into());
+    return Err("final input exceeds its size limit".into());
   }
   Ok(bytes)
 }
@@ -160,21 +194,31 @@ mod tests {
   use super::*;
 
   #[test]
-  fn terminal_selection_keeps_development_explicit() {
-    assert_eq!(
-      TerminalOptions::try_from(0).unwrap().system,
-      TerminalSystem::None
-    );
-    assert_eq!(
-      TerminalOptions::try_from(1).unwrap().system,
-      TerminalSystem::Plonk
-    );
-    let production = TerminalOptions::try_from(2).unwrap();
-    let development = TerminalOptions::try_from(3).unwrap();
-    assert_eq!(production.system, TerminalSystem::Groth16);
-    assert!(!production.allow_development);
-    assert!(development.allow_development);
-    assert_eq!(development.system, TerminalSystem::Groth16);
-    assert!(TerminalOptions::try_from(4).is_err());
+  fn final_selection_keeps_development_explicit() {
+    for (tag, system) in [
+      (0, FinalSystem::None),
+      (1, FinalSystem::Plonk),
+      (2, FinalSystem::Groth16),
+    ] {
+      assert_eq!(FinalSystem::try_from(tag).unwrap(), system);
+      assert!(!FinalOptions::from(system).allow_development);
+    }
+    assert!(FinalSystem::try_from(3).is_err());
+    assert!(FinalSystem::try_from(4).is_err());
+    for system in [FinalSystem::None, FinalSystem::Plonk, FinalSystem::Groth16]
+    {
+      for development_kzg in [false, true] {
+        for allow_development in [false, true] {
+          let options = FinalOptions { system, allow_development };
+          let allowed = match system {
+            FinalSystem::None => !allow_development,
+            FinalSystem::Plonk | FinalSystem::Groth16 => {
+              !development_kzg || allow_development
+            },
+          };
+          assert_eq!(options.validate_setup(development_kzg).is_ok(), allowed);
+        }
+      }
+    }
   }
 }

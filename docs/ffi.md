@@ -54,5 +54,5 @@ call's goroutine become errors; fatal Go runtime and device failures end the
 There is no ABI version or compatibility dispatcher.
 
 The [backend guide](../tools/plonk-wrapper/README.md) describes builds and tests.
-The [backend feature proposal](gnark-backend-features.md) describes matching
-Go compilation to the `plonk` and `groth16` Cargo features.
+Cargo forwards `plonk` and `groth16` to Go build tags so unselected native
+backends are excluded. Direct Go builds without tags include both CPU backends.

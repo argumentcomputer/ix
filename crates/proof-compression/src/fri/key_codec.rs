@@ -31,6 +31,24 @@ struct KeyData {
 }
 
 impl VerifierKey {
+  /// Instance statistics for parameter sizing, decoded through the native key codec.
+  pub fn statistics(&self) -> serde_json::Value {
+    use multi_stark::config::StarkGenericConfig;
+    let system = self.system();
+    let fri = system.config.fri_parameters();
+    serde_json::json!({
+      "log_blowup": system.config.log_blowup(), "cap": system.config.cap_height(),
+      "num_queries": fri.num_queries, "commit_pow": fri.commit_proof_of_work_bits,
+      "query_pow": fri.query_proof_of_work_bits, "max_log_arity": fri.max_log_arity,
+      "circuits": system.circuits.iter().map(|c| serde_json::json!({
+        "main": c.main_width, "pre": c.preprocessed_width, "height": c.preprocessed_height,
+        "lookups": c.num_lookups, "stage2": c.stage_2_width, "group": c.lookup_group_size,
+        "max_degree": c.max_constraint_degree, "zeros": c.graph.zeros.len(),
+        "max_lookup_width": c.graph.lookups.iter().map(|lookup| lookup.args.len()).max().unwrap_or(0),
+      })).collect::<Vec<_>>()
+    })
+  }
+
   /// Canonical versioned encoding for trusted key transport and fingerprints.
   pub fn to_bytes(&self) -> Result<Vec<u8>, VerifierError> {
     let s = self.system();

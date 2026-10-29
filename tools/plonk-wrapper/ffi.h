@@ -10,5 +10,5 @@ typedef struct {
  uintptr_t handle;
 } ix_gnark_result;
 typedef struct { uint32_t cuda; int32_t device; uint64_t memory_bytes; uint32_t mask_msm; } ix_gnark_backend;
-typedef struct { uint32_t cuda; int32_t device; uint32_t pin_keys; ix_gnark_view library; } ix_gnark_groth16_backend;
+typedef struct { uint32_t cuda; int32_t device; ix_gnark_view library; } ix_gnark_groth16_backend;
 #endif

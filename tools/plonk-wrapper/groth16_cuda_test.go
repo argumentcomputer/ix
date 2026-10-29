@@ -1,4 +1,4 @@
-//go:build icicle
+//go:build (groth16 || !plonk) && icicle
 
 package main
 
@@ -40,27 +40,24 @@ func TestGroth16CUDAInterop(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, pin := range []string{"0", "1"} {
-			t.Setenv("IX_GROTH16_PIN_KEY", pin)
-			engine, err := newGroth16Engine(groth16Backend{CUDA: true, PinKeys: pin == "1", Library: os.Getenv("ICICLE_BACKEND_INSTALL_DIR")})
-			if err != nil {
+		engine, err := newGroth16Engine(groth16Backend{CUDA: true, Library: os.Getenv("ICICLE_BACKEND_INSTALL_DIR")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		func() {
+			defer engine.close()
+			if _, err := engine.key.ReadFrom(bytes.NewReader(encoded.Bytes())); err != nil {
 				t.Fatal(err)
 			}
-			func() {
-				defer engine.close()
-				if _, err := engine.key.ReadFrom(bytes.NewReader(encoded.Bytes())); err != nil {
+			for range 2 {
+				proof, err := engine.prove(ccs, w)
+				if err != nil {
 					t.Fatal(err)
 				}
-				for range 2 {
-					proof, err := engine.prove(ccs, w)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err := groth16.Verify(proof, vk, public, backend.WithVerifierHashToFieldFunction(sha256.New())); err != nil {
-						t.Fatal(err)
-					}
+				if err := groth16.Verify(proof, vk, public, backend.WithVerifierHashToFieldFunction(sha256.New())); err != nil {
+					t.Fatal(err)
 				}
-			}()
-		}
+			}
+		}()
 	}
 }

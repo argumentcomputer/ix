@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {IxGroth16Verifier, IGroth16Verifier} from "../src/IxGroth16Verifier.sol";
 import {Verifier as PlainVerifier} from "../testdata/plain/Verifier.sol";
-import {Verifier as CommittedVerifier} from "../testdata/committed/Verifier.sol";
 import {Verifier as WrapperVerifier} from "../testdata/wrapper/Verifier.sol";
 
 interface Vm {
@@ -37,22 +36,9 @@ contract IxGroth16VerifierTest {
         require(!verifier.verify(proof, claim), "invalid point accepted");
     }
 
-    function testCommittedProofAndCommitmentBinding() public {
-        IxGroth16Verifier verifier = facade(address(new CommittedVerifier()));
-        (bytes memory proof, bytes32 claim) = vector("committed");
-        require(proof.length == 384, "unexpected committed encoding");
-        require(verifier.verify(proof, claim), "valid committed proof rejected");
-        require(!verifier.verify(proof, bytes32(uint256(claim) ^ (1 << 128))), "wrong claim half accepted");
-        proof[256] ^= bytes1(0x01);
-        require(!verifier.verify(proof, claim), "changed commitment accepted");
-        proof[256] ^= bytes1(0x01);
-        proof[383] ^= bytes1(0x01);
-        require(!verifier.verify(proof, claim), "changed commitment proof accepted");
-    }
-
     function testDifferentVerifierRejectsProof() public {
         IxGroth16Verifier verifier = facade(address(new PlainVerifier()));
-        (bytes memory proof, bytes32 claim) = vector("committed");
+        (bytes memory proof, bytes32 claim) = vector("wrapper");
         require(!verifier.verify(proof, claim), "proof for another key accepted");
     }
 
@@ -65,6 +51,13 @@ contract IxGroth16VerifierTest {
         emit log_named_uint("KZG wrapper verification gas", used);
         require(used < verifier.VERIFICATION_GAS(), "verification exceeds its gas budget");
         require(!verifier.verify(proof, bytes32(uint256(claim) ^ 1)), "wrong KZG claim accepted");
+        require(proof.length == 384, "unexpected committed encoding");
+        require(!verifier.verify(proof, bytes32(uint256(claim) ^ (1 << 128))), "wrong claim half accepted");
+        proof[256] ^= bytes1(0x01);
+        require(!verifier.verify(proof, claim), "changed commitment accepted");
+        proof[256] ^= bytes1(0x01);
+        proof[383] ^= bytes1(0x01);
+        require(!verifier.verify(proof, claim), "changed commitment proof accepted");
     }
 
     function testMissingOrDifferentVerifierCodeRejected() public {

@@ -10,36 +10,33 @@ namespace Ix.Cli.CompressCmd
 /-- Selected compression output: the proof system after recursive KZG and the
 setup policy. -/
 structure Options where
-  terminal : UInt8 := 0
-  devSrs : Bool := false
-  logHeight : Nat := 24
+  finalProof : UInt8 := 0
+  devKzgSrs : Bool := false
+  devFinalSrs : Bool := false
   out : Option String := none
   rootVk : Option String := none
   fixedRoot : Option String := none
+  fresh : Bool := false
 
-/-- `kzg`, `plonk` or `groth16` (`dev-groth16` allows development Groth16 keys). -/
-def terminalOf : String → Except String UInt8
+/-- Select the proof system independently of its setup policy. -/
+def finalOf : String → Except String UInt8
   | "kzg" => .ok 0
   | "plonk" => .ok 1
   | "groth16" => .ok 2
-  | "dev-groth16" => .ok 3
   | other => .error s!"unknown compression output {other}: expected kzg, plonk or groth16"
 
 /-- Check what can be checked before proving: the setup is configured and
 authenticates, and the options are consistent. Returns the setup description. -/
 def preflight (opts : Options) : IO String := do
-  unless opts.logHeight == 24 || opts.logHeight == 25 do
-    throw <| IO.userError "--log-height must be 24 or 25"
   if let some path := opts.fixedRoot then
     unless ← System.FilePath.pathExists path do
       throw <| IO.userError s!"fixed root layout {path} does not exist"
-  Compression.describeSetup opts.devSrs
+  Compression.describeSetup opts.devKzgSrs opts.devFinalSrs opts.finalProof
 
 /-- Compress the aggregate root `addr`, persist the compressed proof under the
 same claim and return its address. -/
-def compressRoot (addr : Address) (opts : Options) : IO Address := do
-  let setup ← preflight opts
-  let wrapper ← Compression.readProof addr
+private def compressProof (addr : Address) (wrapper : Ixon.Proof)
+    (opts : Options) (setup : String) : IO Address := do
   if Compression.isCompressed wrapper.proof then
     throw <| IO.userError "proof is already compressed"
   let .checkEnv _ _ := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
@@ -52,7 +49,8 @@ def compressRoot (addr : Address) (opts : Options) : IO Address := do
     | some path => pure path
     | none =>
       let dir := (← StoreIO.toIO Store.getHomeDir) / ".ix/compression"
-      pure (dir / toString addr / toString opts.logHeight).toString
+      pure (dir / toString addr).toString
+  if opts.fresh then IO.eprintln s!"[compress] fresh: replacing stage artifacts in {out}"
   let vk ← match opts.rootVk with
     | some path => IO.FS.readBinFile path
     | none => pure backend.system.vkBytes
@@ -65,28 +63,33 @@ def compressRoot (addr : Address) (opts : Options) : IO Address := do
   IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
   let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
     layout out (← Compression.cacheDir).toString
-    opts.devSrs opts.logHeight.toUInt32 opts.terminal
+    opts.devKzgSrs opts.devFinalSrs opts.finalProof opts.fresh
   let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
   StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
+
+/-- Compress a stored aggregate proof and return the compressed proof address. -/
+def compressRoot (addr : Address) (opts : Options) : IO Address := do
+  let setup ← preflight opts
+  compressProof addr (← Compression.readProof addr) opts setup
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   try
     if p.hasFlag "plonk" && p.hasFlag "groth16" then
       throw <| IO.userError "choose at most one of --plonk and --groth16"
-    if p.hasFlag "dev-groth16" && !p.hasFlag "groth16" then
-      throw <| IO.userError "--dev-groth16 requires --groth16"
-    let terminal : UInt8 := if p.hasFlag "groth16" then
-        (if p.hasFlag "dev-groth16" then 3 else 2)
+    let finalProof : UInt8 := if p.hasFlag "groth16" then 2
       else if p.hasFlag "plonk" then 1 else 0
-    let hex := p.positionalArg! "proof" |>.as! String
-    let some addr := Address.fromString hex | throw <| IO.userError "expected a 64-character proof address"
-    let result ← compressRoot addr {
-      terminal
-      devSrs := p.hasFlag "dev-srs"
-      logHeight := ((p.flag? "log-height").map (·.as! Nat)).getD 24
+    let opts : Options := {
+      finalProof
+      fresh := p.hasFlag "fresh"
+      devKzgSrs := p.hasFlag "dev-kzg-srs"
+      devFinalSrs := p.hasFlag "dev-final-srs"
       out := (p.flag? "out").map (·.as! String)
       rootVk := (p.flag? "root-vk").map (·.as! String)
       fixedRoot := (p.flag? "fixed-root").map (·.as! String) }
+    let setup ← preflight opts
+    let input := p.positionalArg! "proof" |>.as! String
+    let (addr, wrapper) ← Compression.readProofInput input
+    let result ← compressProof addr wrapper opts setup
     IO.println (toString result)
     return 0
   catch e =>
@@ -100,16 +103,16 @@ def compressCmd : Cli.Cmd := `[Cli|
   compress VIA runCompressCmd;
   "Compress an aggregate CheckEnv proof; preserve its claim and print the new proof address."
   FLAGS:
-    "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>/<height>). Rerunning with the same directory resumes from the last completed stage."
-    "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
+    "fresh"; "Replace prior compression stages in --out (or the default output) with newly generated proofs. Reuse parameters, proving keys and fixed preprocessing."
+    "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
     "fixed-root" : String; "Override the bundled release normalization layout with a layout from `ix compress layout`."
-    "dev-srs"; "Use known-trapdoor development parameters; results are not production-secure."
-    "plonk"; "Add a terminal PLONK proof using the compiled curve and selected setup."
-    "groth16"; "Add a terminal BN254 Groth16 proof using prepared, independently admitted circuit keys."
-    "dev-groth16"; "Allow development Groth16 keys; inner KZG still requires admitted Ignition parameters."
+    "dev-kzg-srs"; "Generate local development parameters for inner KZG. With --groth16 or --plonk, also requires --dev-final-srs."
+    "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no Ignition parameters are required."
+    "plonk"; "Add a final PLONK proof using the compiled curve and selected setup."
+    "groth16"; "Add a final BN254 Groth16 proof using prepared, independently admitted circuit keys."
   ARGS:
-    proof : String; "Address of an aggregate Ixon.Proof in the ix store."
+    proof : String; "Aggregate Ixon.Proof file (including its claim), or its 64-character content address in the ix store. A hexadecimal filename needs a ./ prefix."
 
   SUBCOMMANDS:
     Ix.Cli.CompressionCmd.layoutCmd;

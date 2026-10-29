@@ -13,17 +13,17 @@ opaque checkClaim (claim statement : @& ByteArray) : IO Unit
 @[extern "rs_compression_curve"]
 opaque curve : IO String
 
-/-- Select development parameters when `devSrs` is set; otherwise require
-authenticated production parameters for the compiled curve. -/
+/-- Describe the inner KZG setup and validate the independent final-setup
+selection. Development inner KZG needs development keys for a final proof. -/
 @[extern "rs_compression_setup"]
-opaque describeSetup (devSrs : Bool) : IO String
+opaque describeSetup (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) : IO String
 
-/-- Run every stage into the empty directory `dir`, reusing the fixed
-preprocessing and development SRS caches under `cacheRoot`. A nonempty
-`fixedRoot` is the JSON layout `proof` was normalized to. -/
+/-- Run the stages in `dir`, resuming checked proofs unless `fresh` replaces
+them. Fixed preprocessing, parameters and proving keys under `cacheRoot`
+remain reusable. A nonempty `fixedRoot` is the JSON layout of `proof`. -/
 @[extern "rs_compression_run"]
 opaque compress (vk proof claim statement : @& ByteArray) (fixedRoot dir cacheRoot : @& String)
-  (devSrs : Bool) (logHeight : UInt32) (terminal : UInt8) : IO ByteArray
+  (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) (fresh : Bool := false) : IO ByteArray
 
 /-- The versioned normalization layout for the aggregation backend's key. -/
 @[extern "rs_compression_release_root_layout"]
@@ -56,12 +56,16 @@ def normalize (backend : Aggr.VerificationBackend) (wrapper : Ixon.Proof)
   normalizeRoot backend.system backend.aggrIdx backend.allowed backend.ixvmVk
     (Ix.Claim.ser wrapper.claim) wrapper.proof layout
 
-/-- Verify a terminal proof with an independently configured verifier catalog and
-return its setup class. Development proofs need `devSrs`. Recursive KZG proofs
-require explicit pinned-key verification and are unsupported by this entry point.
-Needs neither the aggregation backend nor a GPU. -/
+/-- Verify a compressed proof under the bundled release keys. Development
+proofs require `devSrs`; verification needs no proving setup or GPU. -/
 @[extern "rs_compression_verify"]
 opaque verify (proof claim : @& ByteArray) (devSrs : Bool) : IO String
+
+/-- Verify a final development proof with the caller's independent bundle pin.
+The proof itself cannot authorize its key or a different circuit. -/
+@[extern "rs_compression_verify_development"]
+opaque verifyDevelopment (proof claim bundle : @& ByteArray)
+  (trustedDigest : @& String) (devSrs : Bool) : IO String
 
 /-- Return the GPU memory this process's Aiur prover retains between proofs to
 the driver. The compression worker is another process and cannot reuse it. -/
@@ -80,6 +84,17 @@ def isCompressed (proof : ByteArray) : Bool :=
 def readProof (addr : Address) : IO Ixon.Proof := do
   let bytes ← StoreIO.toIO (Store.read addr)
   IO.ofExcept (Aggr.decodeAggregateWrapperAt addr bytes)
+
+/-- A 64-character content address loads from the store; other inputs are
+serialized proof-wrapper files. Prefix a hexadecimal filename with `./` to
+select it as a path. File inputs do not require a store entry. -/
+def readProofInput (input : String) : IO (Address × Ixon.Proof) := do
+  if let some addr := Address.fromString input then
+    return (addr, ← readProof addr)
+  let bytes ← IO.FS.readBinFile input
+  let addr := Address.blake3 bytes
+  let wrapper ← IO.ofExcept (Aggr.decodeAggregateWrapperAt addr bytes)
+  return (addr, wrapper)
 
 /-- The root statement a compressed proof of `claim` must expose: the public
 claim of the backend's `ix_aggr` entrypoint, serialized as one batch claim. -/

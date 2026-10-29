@@ -2,29 +2,13 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"github.com/consensys/gnark/frontend"
 	"io"
 	"os"
-	"path/filepath"
 )
 
 func writeJSON(path string, value any) error {
 	return atomicFile(path, func(w io.Writer) error { enc := json.NewEncoder(w); enc.SetIndent("", "  "); return enc.Encode(value) })
-}
-
-func (m *manifest) checkFile(dir, name string) error {
-	want, ok := m.Files[name]
-	if !ok {
-		return fmt.Errorf("artifact %s missing from manifest", name)
-	}
-	got, err := fileHash(filepath.Join(dir, name))
-	if err != nil {
-		return err
-	}
-	if got != want {
-		return fmt.Errorf("artifact %s checksum or size differs", name)
-	}
-	return nil
 }
 
 func decodeJSON(path string, out any) error {
@@ -55,32 +39,21 @@ func witnessAssignment(p *verifyingKey, path string) (*wrapperCircuit, error) {
 	return assignWitness(p, &w)
 }
 
-func readBinary(path string, value io.ReaderFrom) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = value.ReadFrom(f)
-	return err
+type backendCircuit struct {
+	Claim  [2]frontend.Variable `gnark:",public"`
+	X      frontend.Variable
+	Commit bool `gnark:"-"`
 }
 
-func verifyGroth16Files(keyPath, pin, proofPath, claim string) error {
-	key, err := os.ReadFile(keyPath)
-	if err != nil {
-		return err
+func (c *backendCircuit) Define(api frontend.API) error {
+	api.AssertIsEqual(api.Mul(c.X, c.X), c.Claim[0])
+	api.AssertIsEqual(c.Claim[1], 1)
+	if c.Commit {
+		challenge, err := api.(frontend.Committer).Commit(c.X)
+		if err != nil {
+			return err
+		}
+		api.AssertIsDifferent(challenge, 0)
 	}
-	proof, err := os.ReadFile(proofPath)
-	if err != nil {
-		return err
-	}
-	trusted, err := unhex(pin, 32)
-	if err != nil {
-		return err
-	}
-	expected, err := unhex(claim, 32)
-	if err != nil {
-		return err
-	}
-	return verifyGroth16(key, trusted, proof, expected)
+	return nil
 }

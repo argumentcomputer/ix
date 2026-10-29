@@ -1,3 +1,5 @@
+//go:build groth16 || !plonk
+
 package main
 
 import (
@@ -23,18 +25,6 @@ import (
 )
 
 const groth16MaxProofBytes = 196
-
-func decodeGroth16JSON(data []byte, out any) error {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(out); err != nil {
-		return err
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return fmt.Errorf("trailing Groth16 JSON data")
-	}
-	return nil
-}
 
 type groth16Manifest struct {
 	InnerVK      string              `json:"innerVKSHA256"`
@@ -239,7 +229,6 @@ type groth16Engine struct {
 type groth16Backend struct {
 	CUDA    bool
 	Device  int
-	PinKeys bool
 	Library string
 }
 
@@ -268,7 +257,7 @@ type groth16Session struct {
 
 func openGroth16(dir string, metadata []byte, config groth16Backend) (*groth16Session, error) {
 	var m groth16Manifest
-	if err := decodeGroth16JSON(metadata, &m); err != nil {
+	if err := decodeReader(bytes.NewReader(metadata), &m); err != nil {
 		return nil, err
 	}
 	p, ccs, err := groth16Load(dir, &m)
@@ -466,7 +455,7 @@ func (p *groth16Session) prove(data, claim []byte) ([]byte, []byte, error) {
 
 func setupGroth16(dir string, metadata []byte, kind uint32, descriptor, pin string) ([]byte, error) {
 	var m groth16Manifest
-	if err := decodeGroth16JSON(metadata, &m); err != nil {
+	if err := decodeReader(bytes.NewReader(metadata), &m); err != nil {
 		return nil, err
 	}
 	var err error

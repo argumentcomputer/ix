@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build cgo && (groth16 || !plonk)
 
 package main
 
@@ -8,33 +8,13 @@ package main
 import "C"
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime/cgo"
 )
 
 //export ix_gnark_groth16_compile
 func ix_gnark_groth16_compile(schema, path C.ix_gnark_view) C.ix_gnark_result {
-	return guarded(func() (result C.ix_gnark_result, err error) {
-		data, err := borrowed(schema, 16<<20)
-		if err != nil {
-			return result, err
-		}
-		output, err := text(path)
-		if err != nil {
-			return result, err
-		}
-		info, err := compileGroth16(data, output)
-		if err != nil {
-			return result, err
-		}
-		encoded, err := json.Marshal(info)
-		if err != nil {
-			return result, err
-		}
-		result.data, result.len = buffer(encoded)
-		return result, nil
-	})
+	return compileFFI(schema, path, compileGroth16)
 }
 
 //export ix_gnark_groth16_setup
@@ -80,10 +60,10 @@ func ix_gnark_groth16_open(directory, metadata C.ix_gnark_view, options C.ix_gna
 		if err != nil {
 			return result, err
 		}
-		if options.cuda > 1 || options.pin_keys > 1 || options.device < 0 {
+		if options.cuda > 1 || options.device < 0 {
 			return result, fmt.Errorf("invalid Groth16 backend configuration")
 		}
-		p, err := openGroth16(dir, data, groth16Backend{CUDA: options.cuda == 1, Device: int(options.device), PinKeys: options.pin_keys == 1, Library: library})
+		p, err := openGroth16(dir, data, groth16Backend{CUDA: options.cuda == 1, Device: int(options.device), Library: library})
 		if err != nil {
 			return result, err
 		}

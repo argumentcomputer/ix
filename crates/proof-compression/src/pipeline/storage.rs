@@ -95,6 +95,42 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
   persist(&temp, path)
 }
 
+/// Publish a complete cache directory without exposing partially prepared
+/// keys. Concurrent writers retain the first complete directory, including its
+/// randomly generated Groth16 key, instead of replacing it with another key.
+#[cfg(feature = "groth16")]
+pub(crate) fn prepare_cached_directory(
+  path: &Path,
+  prepare: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+  if path.try_exists()? {
+    return Ok(());
+  }
+  let parent = path.parent().ok_or("cache directory has no parent")?;
+  fs::create_dir_all(parent)?;
+  let temporary = temporary_path(path);
+  fs::create_dir(&temporary)?;
+  let result = prepare(&temporary).and_then(|()| {
+    sync_directory(&temporary)?;
+    match fs::rename(&temporary, path) {
+      Ok(()) => sync_directory(parent).map_err(Into::into),
+      Err(error)
+        if matches!(
+          error.kind(),
+          io::ErrorKind::AlreadyExists | io::ErrorKind::DirectoryNotEmpty
+        ) && path.is_dir() =>
+      {
+        Ok(())
+      },
+      Err(error) => Err(error.into()),
+    }
+  });
+  if temporary.exists() {
+    let _ = fs::remove_dir_all(&temporary);
+  }
+  result
+}
+
 pub(crate) fn save<T: Serialize>(path: &Path, value: &T) -> Result<()> {
   let temp = temporary_path(path);
   let mut f = BufWriter::new(File::create(&temp)?);
@@ -118,4 +154,31 @@ pub(crate) fn load<T: DeserializeOwned>(path: &Path) -> Result<T> {
     return Err("trailing metadata".into());
   }
   Ok(value)
+}
+
+#[cfg(all(test, feature = "groth16"))]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn key_cache_publishes_only_complete_keys_and_preserves_the_first()
+  -> Result<()> {
+    let temporary = crate::pipeline::final_proof::Scratch::new()?;
+    let directory = temporary.0.join("keys");
+    let failed = prepare_cached_directory(&directory, |staging| {
+      write_atomic(&staging.join("key"), b"incomplete")?;
+      Err("setup failed".into())
+    });
+    assert!(failed.is_err());
+    assert!(!directory.exists());
+    prepare_cached_directory(&directory, |staging| {
+      write_atomic(&staging.join("key"), b"first complete key")?;
+      Ok(())
+    })?;
+    prepare_cached_directory(&directory, |_| {
+      panic!("must reuse the completed key")
+    })?;
+    assert_eq!(fs::read(directory.join("key"))?, b"first complete key");
+    Ok(())
+  }
 }

@@ -16,14 +16,6 @@ type artifact struct {
 	SHA256 string
 	Bytes  int64
 }
-type manifest struct {
-	InnerVKSHA256                          string
-	SRSBLAKE3                              string
-	KeysReady                              bool
-	Domain                                 uint64
-	Constraints, PublicInputs, Commitments int
-	Files                                  map[string]artifact
-}
 
 func fileHash(path string) (artifact, error) {
 	f, err := os.Open(path)
@@ -66,21 +58,6 @@ func atomicFile(path string, write func(io.Writer) error) error {
 	return d.Sync()
 }
 
-func (m *manifest) validate() error {
-	if m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.Commitments < 0 || m.Commitments > 1024 || m.Files == nil {
-		return fmt.Errorf("invalid wrapper artifact metadata")
-	}
-	if m.KeysReady {
-		if _, err := unhex(m.SRSBLAKE3, 32); err != nil {
-			return err
-		}
-	}
-	if m.Files["vk.json"].SHA256 != m.InnerVKSHA256 {
-		return fmt.Errorf("verifying key identity differs")
-	}
-	return nil
-}
-
 func readVerified(path string, expected artifact, value io.ReaderFrom) error {
 	if expected.Bytes < 1 {
 		return fmt.Errorf("missing artifact %s", path)
@@ -103,4 +80,20 @@ func readVerified(path string, expected artifact, value io.ReaderFrom) error {
 		return fmt.Errorf("trailing artifact bytes: %s", path)
 	}
 	return nil
+}
+
+func readDescription(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, (16<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > 16<<20 {
+		return nil, fmt.Errorf("verifier description is too large")
+	}
+	return data, nil
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Soundness estimate for a saved FRI compression key under candidate parameters.
 
-Decodes the circuit shapes from an `outer-vk.bin`, derives the instance facts
+Reads JSON from `fri_sizing --statistics`, derives the instance facts
 the bounds need (largest trace, batched columns, folded constraints, maximum
 constraint degree, lookup rows and width) and prints every error term for the
 unique-decoding, Johnson and conjectured regimes. Hypothetical shapes use the
@@ -16,66 +16,13 @@ union bound is reported as the minimum term, as p3-security does.
 """
 import argparse
 import math
+import json
+import sys
 from pathlib import Path
 
 log2 = math.log2
 FIELD_BITS = 128  # degree-2 Goldilocks extension
 COLLISION_BITS = 128  # BLAKE3
-
-
-def decode_key(path):
-    data = Path(path).read_bytes()
-    pos = 0
-
-    def varint():
-        nonlocal pos
-        b = data[pos]
-        pos += 1
-        if b < 251:
-            return b
-        width = {251: 2, 252: 4, 253: 8}[b]
-        v = int.from_bytes(data[pos:pos + width], 'little')
-        pos += width
-        return v
-
-    version = varint()
-    assert version == 1, version
-    log_blowup, cap = varint(), varint()
-    fri = [varint() for _ in range(5)]
-    circuits = []
-    for _ in range(varint()):
-        for _ in range(varint()):
-            v = varint()
-            if v == 0:
-                pos += 8
-            elif v == 1:
-                varint(), varint(), varint()
-            elif v == 2:
-                varint()
-            elif v in (6, 7, 8):
-                varint(), varint()
-            elif v == 9:
-                varint()
-        for _ in range(varint()):
-            varint()
-        zeros = varint()
-        for _ in range(zeros):
-            varint()
-        widths = []
-        for _ in range(varint()):
-            varint()
-            args = varint()
-            for _ in range(args):
-                varint()
-            widths.append(args)
-        varint()
-        varint()
-        meta = [varint() for _ in range(8)]
-        circuits.append(dict(
-            main=meta[0], pre=meta[1], height=meta[2], lookups=meta[3], stage2=meta[4],
-            group=meta[6], max_degree=meta[7], zeros=zeros, max_lookup_width=max(widths, default=0)))
-    return dict(log_blowup=log_blowup, cap=cap, num_queries=fri[2], commit_pow=fri[3],
-                query_pow=fri[4], max_log_arity=fri[1], circuits=circuits)
 
 
 def apply_overrides(circuits, drop, sets):
@@ -154,7 +101,7 @@ def terms(inst, log_blowup, queries, query_pow, log_arity, commit_pow):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('key', help='outer-vk.bin of a saved FRI compression stage')
+    parser.add_argument('statistics', help='Rust-exported key statistics JSON, or - for stdin')
     parser.add_argument('--queries', type=int)
     parser.add_argument('--query-pow', type=int)
     parser.add_argument('--commit-pow', type=int)
@@ -163,7 +110,7 @@ def main():
     parser.add_argument('--drop', default='', help='comma-separated circuit indices to omit')
     parser.add_argument('--set', default='', help='comma-separated index:log_height:main_width overrides')
     args = parser.parse_args()
-    key = decode_key(args.key)
+    key = json.load(sys.stdin) if args.statistics == '-' else json.loads(Path(args.statistics).read_text())
     drop = {int(i) for i in args.drop.split(',') if i}
     sets = {}
     for item in args.set.split(','):

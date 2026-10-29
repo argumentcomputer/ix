@@ -1,6 +1,9 @@
+//go:build groth16 || !plonk
+
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -81,7 +84,7 @@ func groth16PinnedJSON(path, pin string, out any) error {
 	if hex.EncodeToString(h[:]) != pin {
 		return fmt.Errorf("Groth16 setup metadata differs from the independently trusted digest")
 	}
-	return decodeGroth16JSON(data, out)
+	return decodeReader(bytes.NewReader(data), out)
 }
 
 func groth16MPCSetup(dir string, m *groth16Manifest, path, trusted string) error {

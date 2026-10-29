@@ -1,4 +1,4 @@
-//go:build !icicle
+//go:build (groth16 || !plonk) && !icicle
 
 package main
 

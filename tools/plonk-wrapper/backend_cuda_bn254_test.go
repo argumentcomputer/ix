@@ -1,4 +1,4 @@
-//go:build cuda
+//go:build (plonk || !groth16) && cuda
 
 package main
 
@@ -22,10 +22,6 @@ func TestCUDAProvingBackendFactory(t *testing.T) {
 	if os.Getenv("IX_PLONK_CUDA_TEST") != "1" {
 		t.Skip("set IX_PLONK_CUDA_TEST=1 for the native CUDA backend factory proof test")
 	}
-	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var receipt struct {
 		Format, Blake3, SetupID, IgnitionManifest string
 		PublicMaxDegree, Powers                   uint64
@@ -33,7 +29,7 @@ func TestCUDAProvingBackendFactory(t *testing.T) {
 	if err := decodeJSON(filepath.Join("testdata", "bn254", "srs.json"), &receipt); err != nil {
 		t.Fatal(err)
 	}
-	srs, err := readSRS(filepath.Join("testdata", "bn254", "srs.bin"), receipt.Blake3, 128, p)
+	srs, err := readSRS(filepath.Join("testdata", "bn254", "srs.bin"), receipt.Blake3, 128)
 	if err != nil {
 		t.Fatal(err)
 	}

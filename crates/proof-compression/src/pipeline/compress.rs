@@ -1,16 +1,15 @@
 //! Compression of a normalized aggregate root through FRI, first KZG,
-//! recursive KZG and an optional terminal proof, in this process.
+//! recursive KZG and an optional final proof, in this process.
 //!
 //! Each stage reads its predecessor's directory under the output directory
-//! and writes its own, ending with a `complete` marker that names the
-//! configuration it was proved under. A rerun into the same directory loads
-//! and checks every marked stage up to the first unmarked one, then deletes
-//! and reruns that stage and all after it.
+//! and writes its own. A stage's directory is reused when the proof in it
+//! verifies for the expected statement, setup and keys, the same check that
+//! follows proving; otherwise that stage and every later one is proved again.
 use super::{
-  FixedRoot, Result, TerminalOptions, TerminalSystem, first, fixed_cache,
-  groth16, init_fri, plonk, root,
+  FinalOptions, FinalSystem, FixedRoot, Result, first, fixed_cache, groth16,
+  init_fri, plonk, root,
   setup::{SetupClass, SetupConfig},
-  stages, statement, storage, wrap,
+  stages, statement, storage, verifying_keys, wrap,
 };
 use std::{
   fs, io,
@@ -21,8 +20,6 @@ use std::{
 
 /// The proof `compress` returns, also left in its output directory.
 const COMPRESSED_PROOF: &str = "compressed.bin";
-/// Written last into a stage directory, once its output has been checked.
-const COMPLETE: &str = "complete";
 /// The root input directory under the output directory.
 const ROOT: &str = "root";
 
@@ -47,14 +44,16 @@ pub struct CompressInput<'a> {
 /// Everything the stages read besides their input directories.
 pub struct CompressConfig {
   pub setup: SetupConfig,
-  /// Fixed preprocessing shared between runs, keyed by executable and
-  /// stage verifying key.
+  /// Fixed preprocessing shared between runs, keyed by format and stage
+  /// verifying key.
   pub fixed_cache: PathBuf,
   /// Compiled PLONK circuits, keys and parameter exports.
   pub plonk_cache: PathBuf,
-  /// Log2 of the first KZG stage's trace height: 24 or 25.
-  pub log_height: u32,
-  pub terminal: TerminalOptions,
+  /// Locally prepared Groth16 circuits and development keys.
+  pub groth16_cache: PathBuf,
+  pub final_proof: FinalOptions,
+  /// Ignore prior stage proofs and replace their artifacts in the output directory.
+  pub fresh: bool,
   /// Host memory the first KZG stage may spend prefetching partitions.
   pub prefetch_bytes: usize,
   /// KZG CUDA backend settings, installed once before the first KZG stage.
@@ -63,18 +62,21 @@ pub struct CompressConfig {
 }
 
 impl CompressConfig {
-  /// The configuration `ix compress` runs with. `development` selects the
-  /// known-trapdoor setup. Cross-run caches live under `cache_root` unless
+  /// The configuration `ix compress` runs with. `development_kzg` selects local
+  /// inner KZG parameters independently of `final_proof.allow_development`.
+  /// Development inner KZG requires development final keys; the two setups
+  /// are generated and cached independently.
+  /// Cross-run caches live under `cache_root` unless
   /// `IX_KZG_FIXED_CACHE` or `IX_KZG_SRS_CACHE` name other directories; the
   /// setup, prefetch budget (`IX_KZG_PREFETCH_GIB`) and CUDA settings
   /// (`IX_KZG_CUDA_*`, `IX_KZG_MSM_CHUNK_POINTS`) come from the environment.
   pub fn from_env(
     cache_root: &Path,
-    development: bool,
-    log_height: u32,
-    terminal: TerminalOptions,
+    development_kzg: bool,
+    final_proof: FinalOptions,
   ) -> Result<Self> {
-    let mut setup = SetupConfig::from_env(development)?;
+    final_proof.validate_setup(development_kzg)?;
+    let mut setup = SetupConfig::from_env(development_kzg)?;
     if let SetupConfig::Development { cache_directory: directory @ None } =
       &mut setup
     {
@@ -90,8 +92,9 @@ impl CompressConfig {
       fixed_cache: std::env::var_os("IX_KZG_FIXED_CACHE")
         .map_or_else(|| cache_root.join("fixed-preprocessing"), PathBuf::from),
       plonk_cache: cache_root.join("plonk"),
-      log_height,
-      terminal,
+      groth16_cache: cache_root.join("groth16"),
+      final_proof,
+      fresh: false,
       prefetch_bytes: prefetch_gib
         .checked_mul(1 << 30)
         .ok_or("prefetch budget overflow")?,
@@ -102,50 +105,24 @@ impl CompressConfig {
 
   /// Reject unsupported combinations before any checkpoint is written.
   fn validate(&self) -> Result<()> {
-    let terminal = self.terminal;
-    if terminal.allow_development && terminal.system != TerminalSystem::Groth16
-    {
-      return Err(
-        "development terminal keys are supported only for Groth16".into(),
-      );
-    }
-    if terminal.system != TerminalSystem::None
-      && self.setup.class() == SetupClass::Development
-    {
-      return Err(
-        "terminal proofs require admitted inner KZG parameters; omit --dev-srs"
-          .into(),
-      );
-    }
-    match terminal.system {
-      TerminalSystem::Plonk if !cfg!(feature = "plonk") => {
+    let final_proof = self.final_proof;
+    final_proof
+      .validate_setup(self.setup.class() == SetupClass::Development)?;
+    match final_proof.system {
+      FinalSystem::Plonk if !cfg!(feature = "plonk") => {
         return Err(
           "this ix was built without PLONK; rebuild with IX_PLONK=1".into(),
         );
       },
-      TerminalSystem::Plonk
-        if std::env::var("IX_PLONK_BACKEND").as_deref() == Ok("cuda")
-          && !cfg!(feature = "cuda") =>
-      {
-        return Err(
-          "IX_PLONK_BACKEND=cuda requires a build with IX_CUDA=1".into(),
-        );
-      },
-      TerminalSystem::Groth16 if !cfg!(feature = "groth16") => {
+      FinalSystem::Groth16 if !cfg!(feature = "groth16") => {
         return Err(
           "this ix was built without Groth16; rebuild with IX_GROTH16=1".into(),
         );
       },
-      TerminalSystem::Groth16 => {
-        groth16::preflight(terminal.allow_development)?
+      FinalSystem::Groth16 => {
+        groth16::preflight(final_proof.allow_development)?
       },
       _ => {},
-    }
-    if !matches!(self.log_height, 24 | 25) {
-      return Err(
-        "--log-height must be 24 or 25 for the supported recursive verifying keys"
-          .into(),
-      );
     }
     if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
       return Err(
@@ -154,17 +131,6 @@ impl CompressConfig {
       );
     }
     Ok(())
-  }
-
-  /// The setup a KZG stage's marker records: a stage proved under other
-  /// parameters is rerun.
-  fn setup_key(&self) -> String {
-    match &self.setup {
-      SetupConfig::Ignition { manifest, .. } => {
-        format!("ignition {}", blake3::Hash::from_bytes(*manifest).to_hex())
-      },
-      SetupConfig::Development { .. } => "development".into(),
-    }
   }
 }
 
@@ -286,9 +252,14 @@ pub(super) fn root_files(
 
 /// Prepare `out` to hold the stages of the root in `files`. An empty or
 /// missing directory starts a new compression; any other must hold a `root/`
-/// whose files match these, or it is refused unchanged. Root files an
-/// interrupted run did not write are written.
-fn open_output(out: &Path, files: &[(&'static str, Vec<u8>)]) -> Result<()> {
+/// whose files match these, or it is refused unchanged. A fresh run replaces
+/// recognized root/stage artifacts; unrelated output files and shared key
+/// caches are left alone. Root files an interrupted run did not write are written.
+fn open_output(
+  out: &Path,
+  files: &[(&'static str, Vec<u8>)],
+  fresh: bool,
+) -> Result<()> {
   fs::create_dir_all(out)?;
   let root = out.join(ROOT);
   if fs::read_dir(out)?.next().is_some() {
@@ -310,6 +281,9 @@ fn open_output(out: &Path, files: &[(&'static str, Vec<u8>)]) -> Result<()> {
       root::FIXED_ROOT_LAYOUT,
     ] {
       let expected = files.iter().find(|(file, _)| *file == name);
+      if fresh {
+        continue;
+      }
       match fs::read(root.join(name)) {
         Ok(bytes) => match expected {
           Some((_, expected))
@@ -319,6 +293,20 @@ fn open_output(out: &Path, files: &[(&'static str, Vec<u8>)]) -> Result<()> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {},
         Err(error) => return Err(error.into()),
       }
+    }
+  }
+  if fresh {
+    for name in [ROOT, "fri", "first-kzg", "final-kzg", "plonk", "groth16"] {
+      match fs::remove_dir_all(out.join(name)) {
+        Ok(()) => {},
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+        Err(e) => return Err(e.into()),
+      }
+    }
+    match fs::remove_file(out.join(COMPRESSED_PROOF)) {
+      Ok(()) => {},
+      Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+      Err(e) => return Err(e.into()),
     }
   }
   fs::create_dir_all(&root)?;
@@ -332,7 +320,7 @@ fn open_output(out: &Path, files: &[(&'static str, Vec<u8>)]) -> Result<()> {
 }
 
 /// Compress the normalized root in `input` to a recursive KZG proof, or with
-/// a terminal system to that system's proof envelope, and return it. Stages
+/// a final system to that system's proof envelope, and return it. Stages
 /// run in this process and keep their directories under `input.out`, so an
 /// interrupted run resumes from its last complete stage when rerun with the
 /// same input and output directory.
@@ -342,14 +330,16 @@ pub fn compress(
 ) -> Result<Vec<u8>> {
   let words = super::check_claim(input.claim, input.statement)?;
   config.validate()?;
-  if config.terminal.system == TerminalSystem::Groth16 {
-    groth16::check_statement(&words, config.terminal.allow_development)?;
+  if config.final_proof.system == FinalSystem::Groth16
+    && !config.final_proof.allow_development
+  {
+    groth16::check_statement(&words)?;
   }
   let files = root_files(input.vk, input.proof, &words, input.fixed_root)?;
-  open_output(input.out, &files)?;
+  open_output(input.out, &files, config.fresh)?;
   drop(files);
   let _monitor = MemoryMonitor::start();
-  let mut checkpoints = Checkpoints { out: input.out, rerun: false };
+  let mut checkpoints = Checkpoints { out: input.out, rerun: config.fresh };
   let proof = run_stages(&mut checkpoints, config, &words)?;
   storage::write_atomic(&input.out.join(COMPRESSED_PROOF), &proof)?;
   Ok(proof)
@@ -362,57 +352,68 @@ fn run_stages(
   words: &statement::Statement,
 ) -> Result<Vec<u8>> {
   let root = checkpoints.out.join(ROOT);
+  let root_vk = fs::read(root.join("root-vk.bin"))?;
+  let bundled = verifying_keys::bundled_for(&root_vk, &config.setup);
   let fri = checkpoints.stage(
     "fri",
-    "fri/v1",
     &tracing::info_span!("compression/fri"),
     |dir| root::run(&root, dir, true),
-    |dir| check_fri(dir, words),
+    |dir| check_fri(dir, words, &root),
   )?;
   #[cfg(feature = "cuda")]
   crate::kzg::cuda::configure(config.cuda.clone());
   let stage = StageConfig::from_config(config);
-  let setup = config.setup_key();
-  let log_height = usize::try_from(config.log_height)?;
   let first = checkpoints.stage(
     "first-kzg",
-    &format!("first-kzg/v1 log-height={log_height} setup={setup}"),
     &tracing::info_span!("compression/kzg"),
-    |dir| first::run(&fri, dir, log_height, &stage),
-    |dir| check_first(dir, words),
+    |dir| first::run(&fri, dir, verifying_keys::FIRST_LOG_HEIGHT, &stage),
+    |dir| wrap::check_first(dir, words, &stage),
   )?;
   let final_dir = checkpoints.stage(
     "final-kzg",
-    &format!("final-kzg/v1 setup={setup}"),
     &tracing::info_span!("compression/wrap"),
     |dir| wrap::run(&first, dir, &stage),
-    |dir| check_final(dir, words, &config.setup),
+    |dir| check_final(dir, words, &config.setup, &root_vk),
   )?;
   drop(stage);
-  let terminal = config.terminal;
-  let key = format!(
-    "{:?}/v1 allow-development={} setup={setup}",
-    terminal.system, terminal.allow_development
-  );
-  let dir = match terminal.system {
-    TerminalSystem::None => {
+  let final_proof = config.final_proof;
+  let dir = match final_proof.system {
+    FinalSystem::None => {
       let mut proof = super::PROOF_TAG.to_vec();
       proof.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
       return Ok(proof);
     },
-    TerminalSystem::Plonk => checkpoints.stage(
+    FinalSystem::Plonk => checkpoints.stage(
       "plonk",
-      &key,
       &tracing::info_span!("compression/plonk"),
       |dir| prove_plonk(&final_dir, dir, words, config),
-      |dir| check_envelope(dir, plonk::PROOF_TAG),
+      |dir| {
+        plonk::check_stage(
+          dir,
+          words,
+          &config.setup,
+          bundled,
+          &final_dir.join("vk.bin"),
+          final_proof.allow_development,
+          &config.plonk_cache,
+        )
+      },
     )?,
-    TerminalSystem::Groth16 => checkpoints.stage(
+    FinalSystem::Groth16 => checkpoints.stage(
       "groth16",
-      &key,
       &tracing::info_span!("compression/groth16"),
       |dir| prove_groth16(&final_dir, dir, words, config),
-      |dir| check_envelope(dir, groth16::PROOF_TAG),
+      |dir| {
+        groth16::check_stage(
+          dir,
+          words,
+          final_proof.allow_development,
+          bundled,
+          &final_dir.join("vk.bin"),
+          &config.setup,
+          &config.groth16_cache,
+        )
+      },
     )?,
   };
   Ok(fs::read(dir.join("proof.envelope.bin"))?)
@@ -426,37 +427,27 @@ struct Checkpoints<'a> {
 }
 
 impl Checkpoints<'_> {
-  /// The directory of stage `name`. When it is marked complete under `key`
-  /// and no earlier stage ran, it is checked and reused; otherwise it is
-  /// deleted, proved again, checked and marked. Pooled GPU memory is
-  /// returned to the driver after the stage proves, whether or not it
-  /// succeeded.
+  /// The directory of stage `name`. Unless an earlier stage ran, it is
+  /// reused when `check` accepts its contents; otherwise it is deleted, proved
+  /// again and checked. Pooled GPU memory is returned to the driver after the
+  /// stage proves, whether or not it succeeded.
   fn stage(
     &mut self,
     name: &str,
-    key: &str,
     span: &tracing::Span,
     prove: impl FnOnce(&Path) -> Result<()>,
-    check: impl FnOnce(&Path) -> Result<()>,
+    check: impl Fn(&Path) -> Result<()>,
   ) -> Result<PathBuf> {
     let dir = self.out.join(name);
-    let marker = dir.join(COMPLETE);
-    if !self.rerun {
-      match fs::read(&marker) {
-        Ok(recorded) if recorded == key.as_bytes() => {
-          check(&dir).map_err(|error| {
-            format!(
-              "completed compression {name} stage in {} fails its check: \
-               {error}; delete it to prove it again",
-              dir.display()
-            )
-          })?;
-          tracing::info!("compression {name}: reusing the completed stage");
+    if !self.rerun && dir.is_dir() {
+      match check(&dir) {
+        Ok(()) => {
+          eprintln!("compression {name}: reusing the verified stage");
           return Ok(dir);
         },
-        Ok(_) => {},
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {},
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+          eprintln!("compression {name}: proving again: {error}");
+        },
       }
     }
     self.rerun = true;
@@ -470,67 +461,59 @@ impl Checkpoints<'_> {
     multi_stark::cuda::release_device_memory();
     proved.and_then(|()| check(&dir)).map_err(|error| {
       format!(
-        "compression {name} failed: {error}; completed stages are kept for a \
+        "compression {name} failed: {error}; earlier stages are kept for a \
          rerun"
       )
     })?;
-    storage::write_atomic(&marker, key.as_bytes())?;
     Ok(dir)
   }
 }
 
-/// The saved FRI proof exposes the expected root statement.
-fn check_fri(dir: &Path, words: &statement::Statement) -> Result<()> {
+/// The saved FRI proof verifies, exposes the expected root statement, and
+/// was proved for the root's layout and backend.
+fn check_fri(
+  dir: &Path,
+  words: &statement::Statement,
+  root: &Path,
+) -> Result<()> {
   let fixture = init_fri::load(dir)?;
   let actual =
     statement::from_scalars(&stages::scalar_statement(&fixture.public))?;
   if actual != *words {
-    return Err(
-      "saved FRI statement differs from the expected root statement".into(),
-    );
+    return Err("FRI proof proves another statement".into());
+  }
+  let layout = root.join(root::FIXED_ROOT_LAYOUT);
+  if layout.is_file() {
+    let key = aiur::vk_codec::AiurVerifyingKey::from_bytes(&fs::read(
+      root.join("root-vk.bin"),
+    )?)?;
+    let fixed = FixedRoot::from_json(&fs::read_to_string(layout)?)?;
+    if fs::read(dir.join("plan-id.bin"))? != fixed.identity(&key) {
+      return Err("FRI proof was made for another layout or backend".into());
+    }
   }
   Ok(())
 }
 
-/// The first KZG packet carries the expected statement after its verifying
-/// key id. The recursive stage verifies its proof.
-fn check_first(dir: &Path, words: &statement::Statement) -> Result<()> {
-  let packet = fs::read(dir.join("kzg/packet.bin"))?;
-  let encoded: Vec<u8> =
-    words.iter().flat_map(|word| word.to_le_bytes()).collect();
-  if packet.get(32..32 + encoded.len()) != Some(encoded.as_slice()) {
-    return Err(
-      "first KZG packet differs from the expected root statement".into(),
-    );
-  }
-  Ok(())
-}
-
-/// The recursive verifying key is admitted by the setup and verifies the
-/// recursive packet for the expected statement, and a release key compresses
-/// the release's aggregation program.
+/// The recursive verifying key is admitted by the setup, is the bundled key
+/// for this version's backend under Ignition, and verifies the recursive
+/// packet for the expected statement.
 fn check_final(
   dir: &Path,
   words: &statement::Statement,
   setup: &SetupConfig,
+  root_vk: &[u8],
 ) -> Result<()> {
-  let vk = wrap::VerifyingKey::from_bytes(&fs::read(dir.join("vk.bin"))?)?;
+  let bytes = fs::read(dir.join("vk.bin"))?;
+  verifying_keys::check_recursive_key(root_vk, setup, &bytes)?;
+  let vk = wrap::VerifyingKey::from_bytes(&bytes)?;
   if let Some(admission) = setup.ignition_admission() {
     vk.check_ignition_admission(admission)?;
   } else {
     vk.check_setup_class(setup.class())?;
   }
   vk.verify(&fs::read(dir.join("kzg/packet.bin"))?, words)?;
-  super::verifying_keys::check_statement(&vk.id(), words)
-}
-
-/// The terminal stage left a proof envelope of its system.
-fn check_envelope(dir: &Path, tag: &[u8]) -> Result<()> {
-  let envelope = fs::read(dir.join("proof.envelope.bin"))?;
-  if envelope.len() <= tag.len() + 32 || !envelope.starts_with(tag) {
-    return Err("terminal proof envelope is malformed".into());
-  }
-  Ok(())
+  verifying_keys::check_statement(&vk.id(), words)
 }
 
 #[cfg(feature = "plonk")]
@@ -550,6 +533,7 @@ fn prove_plonk(
     &config.plonk_cache,
     out,
     &config.setup,
+    config.final_proof.allow_development,
   )
 }
 
@@ -578,8 +562,9 @@ fn prove_groth16(
     trusted.as_str(),
     words,
     out,
-    config.terminal.allow_development,
+    config.final_proof.allow_development,
     &config.setup,
+    &config.groth16_cache,
   )
 }
 
@@ -640,27 +625,52 @@ mod tests {
   #[test]
   fn output_resumes_only_the_same_root() -> Result<()> {
     let out = scratch("open-output");
-    open_output(&out, &files(b"proof"))?;
+    open_output(&out, &files(b"proof"), false)?;
     assert_eq!(fs::read(out.join("root/root-proof.bin"))?, b"proof");
     // An interrupted root write is completed.
     fs::remove_file(out.join("root/root-claims.bin"))?;
-    open_output(&out, &files(b"proof"))?;
+    open_output(&out, &files(b"proof"), false)?;
     assert!(out.join("root/root-claims.bin").is_file());
     // Another proof, or a layout the earlier run did not have, is refused
     // without changing the directory.
     fs::create_dir(out.join("fri"))?;
-    assert!(open_output(&out, &files(b"other")).is_err());
+    assert!(open_output(&out, &files(b"other"), false).is_err());
     fs::write(out.join("root").join(root::FIXED_ROOT_LAYOUT), b"{}")?;
-    assert!(open_output(&out, &files(b"proof")).is_err());
+    assert!(open_output(&out, &files(b"proof"), false).is_err());
     fs::remove_file(out.join("root").join(root::FIXED_ROOT_LAYOUT))?;
     assert_eq!(fs::read(out.join("root/root-proof.bin"))?, b"proof");
     assert!(out.join("fri").is_dir());
     // A non-empty directory without a root is refused.
     let other = scratch("open-output-foreign");
     fs::create_dir_all(other.join("data"))?;
-    assert!(open_output(&other, &files(b"proof")).is_err());
+    assert!(open_output(&other, &files(b"proof"), false).is_err());
+    assert!(open_output(&other, &files(b"proof"), true).is_err());
     assert!(!other.join(ROOT).exists());
     fs::remove_dir_all(other)?;
+    fs::remove_dir_all(out)?;
+    Ok(())
+  }
+
+  #[test]
+  fn fresh_output_replaces_stages_without_touching_unrelated_files()
+  -> Result<()> {
+    let out = scratch("fresh-output");
+    open_output(&out, &files(b"old proof"), false)?;
+    fs::write(out.join("notes"), b"keep")?;
+    fs::write(out.join(COMPRESSED_PROOF), b"old final proof")?;
+    fs::write(out.join(ROOT).join(root::FIXED_ROOT_LAYOUT), b"old layout")?;
+    for name in ["fri", "first-kzg", "final-kzg", "plonk", "groth16"] {
+      fs::create_dir(out.join(name))?;
+      fs::write(out.join(name).join("proof"), b"old stage")?;
+    }
+    open_output(&out, &files(b"new proof"), true)?;
+    assert_eq!(fs::read(out.join(ROOT).join("root-proof.bin"))?, b"new proof");
+    assert_eq!(fs::read(out.join("notes"))?, b"keep");
+    assert!(!out.join(COMPRESSED_PROOF).exists());
+    assert!(!out.join(ROOT).join(root::FIXED_ROOT_LAYOUT).exists());
+    for name in ["fri", "first-kzg", "final-kzg", "plonk", "groth16"] {
+      assert!(!out.join(name).exists());
+    }
     fs::remove_dir_all(out)?;
     Ok(())
   }
@@ -670,62 +680,55 @@ mod tests {
   }
 
   #[test]
-  fn completed_stages_are_reused_until_one_reruns() -> Result<()> {
+  fn stages_are_reused_while_their_output_checks() -> Result<()> {
     let out = scratch("checkpoints");
     let proved = std::cell::RefCell::new(Vec::new());
-    let run =
-      |checkpoints: &mut Checkpoints<'_>, keys: [&str; 3]| -> Result<()> {
-        for (name, key) in ["a", "b", "c"].into_iter().zip(keys) {
-          checkpoints.stage(
-            name,
-            key,
-            &tracing::Span::none(),
-            |dir| {
-              proved.borrow_mut().push(name);
-              fs::create_dir_all(dir)?;
-              Ok(fs::write(dir.join("output"), name)?)
-            },
-            |dir| {
-              if fs::read(dir.join("output"))? == name.as_bytes() {
-                Ok(())
-              } else {
-                Err("damaged".into())
-              }
-            },
-          )?;
-        }
-        Ok(())
-      };
-    run(&mut checkpoints(&out), ["1", "1", "1"])?;
+    let run = |checkpoints: &mut Checkpoints<'_>| -> Result<()> {
+      for name in ["a", "b", "c"] {
+        checkpoints.stage(
+          name,
+          &tracing::Span::none(),
+          |dir| {
+            proved.borrow_mut().push(name);
+            fs::create_dir_all(dir)?;
+            Ok(fs::write(dir.join("output"), name)?)
+          },
+          |dir| {
+            if fs::read(dir.join("output"))? == name.as_bytes() {
+              Ok(())
+            } else {
+              Err("damaged".into())
+            }
+          },
+        )?;
+      }
+      Ok(())
+    };
+    run(&mut checkpoints(&out))?;
     assert_eq!(proved.take(), ["a", "b", "c"]);
-    run(&mut checkpoints(&out), ["1", "1", "1"])?;
+    run(&mut checkpoints(&out))?;
     assert!(proved.take().is_empty());
-    // A stage without its marker reruns, and so does every later stage.
-    fs::remove_file(out.join("b").join(COMPLETE))?;
+    run(&mut Checkpoints { out: &out, rerun: true })?;
+    assert_eq!(proved.take(), ["a", "b", "c"]);
+    // A stage whose output fails its check is proved again, and so is every
+    // later stage.
+    fs::write(out.join("b/output"), "x")?;
     fs::write(out.join("b/stale"), "")?;
-    run(&mut checkpoints(&out), ["1", "1", "1"])?;
+    run(&mut checkpoints(&out))?;
     assert_eq!(proved.take(), ["b", "c"]);
     assert!(!out.join("b/stale").exists());
-    // A stage marked under another configuration reruns.
-    run(&mut checkpoints(&out), ["1", "1", "2"])?;
+    // So is a missing stage.
+    fs::remove_dir_all(out.join("c"))?;
+    run(&mut checkpoints(&out))?;
     assert_eq!(proved.take(), ["c"]);
-    // A marked stage that fails its check is reported, not overwritten.
-    fs::write(out.join("a/output"), "x")?;
-    assert!(run(&mut checkpoints(&out), ["1", "1", "2"]).is_err());
-    assert!(proved.take().is_empty());
-    // A failed stage is left unmarked.
+    // A stage whose fresh output fails its check is an error.
     let failing = checkpoints(&out).stage(
       "d",
-      "1",
       &tracing::Span::none(),
-      |dir| {
-        fs::create_dir_all(dir)?;
-        Err("failed".into())
-      },
-      |_dir| Ok(()),
+      |dir| Ok(fs::create_dir_all(dir)?),
+      |_dir| Err("unverifiable".into()),
     );
     assert!(failing.is_err());
-    assert!(!out.join("d").join(COMPLETE).exists());
     fs::remove_dir_all(out)?;
     Ok(())
   }

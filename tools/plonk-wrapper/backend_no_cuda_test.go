@@ -1,4 +1,4 @@
-//go:build !cuda
+//go:build (plonk || !groth16) && !cuda
 
 package main
 

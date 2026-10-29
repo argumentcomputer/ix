@@ -37,7 +37,7 @@ The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` 
 - Other application targets inherit `ix_rs` (`parallel`, plus opt-in `cuda`)
   from the `Ix` `lean_lib`.
 
-Compression runs inside `ix`. Its terminal backends (`plonk`, `groth16`) are
+Compression runs inside `ix`. Its final backends (`plonk`, `groth16`) are
 compiled into `ix_rs_net` only, so other executables never build Go. With
 `cuda`, the native libraries (multi-stark's, the BN254 KZG/PLONK library and,
 for Groth16, ICICLE) are copied to `.lake/build/lib` and found through
@@ -60,7 +60,7 @@ def envFlag (name : String) (default : Bool) : IO Bool := do
   | some "0" | some "false" | some "no" => pure false
   | some _ => throw <| IO.userError s!"{name} must be 0/1, false/true or no/yes"
 
-/-- Terminal backends of `ix`'s compression, mirroring the Cargo features of the
+/-- Final backends of `ix`'s compression, mirroring the Cargo features of the
 same names: `IX_PLONK` and `IX_GROTH16`, both off by default, so compression
 ends at the recursive KZG proof. With `IX_CUDA`, each also enables its GPU
 backend; Groth16 links an installed ICICLE library. -/
@@ -306,10 +306,10 @@ target ix_rs_net pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs (net := true)) "net" (some (← ix_rs.fetch))
 
 /-- ICICLE, which only `ix` links, when it compresses to Groth16 on CUDA. -/
-target ix_terminal_runtime pkg : FilePath := do
+target ix_final_runtime pkg : FilePath := do
   let all := runtimeLibraries (← cargoFeatures (net := true))
   let shared := runtimeLibraries (← cargoFeatures)
-  linkRuntime pkg "ix_terminal_runtime" (all.filter (!shared.contains ·)) (← ix_rs_net.fetch)
+  linkRuntime pkg "ix_final_runtime" (all.filter (!shared.contains ·)) (← ix_rs_net.fetch)
 
 end FFI
 
@@ -336,7 +336,7 @@ lean_lib Ix where
 lean_exe ix where
   root := `Main
   supportInterpreter := true
-  moreLinkObjs := #[ix_rs_net, ix_terminal_runtime]
+  moreLinkObjs := #[ix_rs_net, ix_final_runtime]
 
 section Tests
 

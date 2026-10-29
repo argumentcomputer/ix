@@ -38,6 +38,7 @@ p3-util = { git = "https://github.com/Plonky3/Plonky3", rev = "3152b14a89067c837
 
 [build-dependencies]
 bindgen = { version = "=0.72.1", optional = true }
+blake3 = { workspace = true }
 
 [dev-dependencies]
 rayon = { workspace = true }

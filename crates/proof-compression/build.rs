@@ -14,6 +14,9 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
+#[path = "../build_support/cuda.rs"]
+mod cuda;
+use cuda::{cuda_library_directories, nvcc_path};
 use std::process::Command;
 
 const SOURCES: &[&str] = &[
@@ -50,6 +53,7 @@ mod gnark;
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
+  println!("cargo:rerun-if-changed=../build_support/cuda.rs");
   for source in SOURCES {
     println!("cargo:rerun-if-changed={source}");
   }
@@ -126,7 +130,10 @@ fn build_bn254_cuda() -> PathBuf {
     "the BN254 CUDA backend supports x86_64 targets only"
   );
   let nvcc = nvcc_path();
-  let architectures = cuda_architectures(&nvcc);
+  let architectures = cuda::architectures(
+    &nvcc,
+    &["IX_KZG_CUDA_ARCHS", "MULTI_STARK_CUDA_ARCHS"],
+  );
   let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
   let architecture_header = out.join("kzg_architectures.h");
   std::fs::write(
@@ -158,7 +165,8 @@ fn build_bn254_cuda() -> PathBuf {
   }
   let mut objects = Vec::new();
   for source in sources {
-    let object = out.join(Path::new(source).with_extension("o").file_name().unwrap());
+    let object =
+      out.join(Path::new(source).with_extension("o").file_name().unwrap());
     let mut command = cuda_compile_command(&nvcc, &architectures);
     command.args([
       "-c",
@@ -186,32 +194,36 @@ fn build_bn254_cuda() -> PathBuf {
     (blst_root.join("build/assembly.S"), "blst_assembly.o"),
   ] {
     let object = out.join(name);
-    run(Command::new(&compiler)
-      .args(["-O3", "-fPIC", "-fvisibility=hidden", "-D__BLST_PORTABLE__"])
-      .arg(format!("-I{}", blst.display()))
-      .arg("-c")
-      .arg(source)
-      .arg("-o")
-      .arg(&object));
+    run(
+      Command::new(&compiler)
+        .args(["-O3", "-fPIC", "-fvisibility=hidden", "-D__BLST_PORTABLE__"])
+        .arg(format!("-I{}", blst.display()))
+        .arg("-c")
+        .arg(source)
+        .arg("-o")
+        .arg(&object),
+    );
     objects.push(object);
   }
   let exports = out.join("ix_bn254_cuda.map");
   std::fs::write(&exports, EXPORTS).expect("write BN254 CUDA export map");
   let library = out.join(LIBRARY);
-  run(Command::new(&nvcc)
-    .args([
-      "--shared",
-      "--cudart=static",
-      "--compiler-options=-static-libstdc++,-static-libgcc",
-    ])
-    .arg(format!(
-      "-Xlinker=-z,defs,-soname,{LIBRARY},--version-script,{}",
-      exports.display()
-    ))
-    .arg("-o")
-    .arg(&library)
-    .args(&objects)
-    .args(["-ldl", "-lrt", "-lpthread"]));
+  run(
+    Command::new(&nvcc)
+      .args([
+        "--shared",
+        "--cudart=static",
+        "--compiler-options=-static-libstdc++,-static-libgcc",
+      ])
+      .arg(format!(
+        "-Xlinker=-z,defs,-soname,{LIBRARY},--version-script,{}",
+        exports.display()
+      ))
+      .arg("-o")
+      .arg(&library)
+      .args(&objects)
+      .args(["-ldl", "-lrt", "-lpthread"]),
+  );
   println!("cargo:rustc-link-search=native={}", out.display());
   println!("cargo:rustc-link-lib=dylib=ix_bn254_cuda");
   println!("cargo:rustc-link-arg=-Wl,-rpath,{}", out.display());
@@ -252,108 +264,4 @@ fn cuda_compile_command(
     ));
   }
   command
-}
-
-fn nvcc_path() -> std::ffi::OsString {
-  if let Some(nvcc) = env::var_os("NVCC") {
-    return nvcc;
-  }
-  if let Some(root) =
-    env::var_os("CUDA_HOME").or_else(|| env::var_os("CUDA_PATH"))
-  {
-    let candidate = PathBuf::from(root).join("bin/nvcc");
-    if candidate.is_file() {
-      return candidate.into_os_string();
-    }
-  }
-  "nvcc".into()
-}
-
-/// `IX_KZG_CUDA_ARCHS` selects the SM architectures; `MULTI_STARK_CUDA_ARCHS`
-/// is honored as a fallback so one variable configures both CUDA backends of a
-/// Lake build. Without either, the installed GPU architectures are detected.
-fn cuda_architectures(nvcc: &std::ffi::OsStr) -> Vec<String> {
-  let supported = supported_architectures(nvcc);
-  let configured = env::var("IX_KZG_CUDA_ARCHS")
-    .or_else(|_| env::var("MULTI_STARK_CUDA_ARCHS"))
-    .ok()
-    .or_else(detect_nvidia_architectures)
-    .expect("no NVIDIA GPU detected; set IX_KZG_CUDA_ARCHS or MULTI_STARK_CUDA_ARCHS for the target GPU");
-  let architectures: Vec<_> = configured
-    .split(',')
-    .map(str::trim)
-    .filter(|architecture| !architecture.is_empty())
-    .map(|architecture| {
-      assert!(
-        (2..=3).contains(&architecture.len())
-          && architecture.chars().all(|character| character.is_ascii_digit()),
-        "invalid CUDA architecture {architecture:?}; expected comma-separated numbers such as 80,90"
-      );
-      assert!(
-        supported.is_empty()
-          || supported.iter().any(|item| item == architecture),
-        "nvcc does not support CUDA architecture sm_{architecture}"
-      );
-      architecture.to_owned()
-    })
-    .collect();
-  assert!(
-    !architectures.is_empty(),
-    "IX_KZG_CUDA_ARCHS must contain at least one architecture"
-  );
-  architectures
-}
-
-fn supported_architectures(nvcc: &std::ffi::OsStr) -> Vec<String> {
-  let Ok(output) = Command::new(nvcc).arg("--list-gpu-code").output() else {
-    return Vec::new();
-  };
-  if !output.status.success() {
-    return Vec::new();
-  }
-  String::from_utf8_lossy(&output.stdout)
-    .split_whitespace()
-    .filter_map(|code| code.strip_prefix("sm_"))
-    .filter(|code| code.chars().all(|character| character.is_ascii_digit()))
-    .map(str::to_owned)
-    .collect()
-}
-
-fn detect_nvidia_architectures() -> Option<String> {
-  let output = Command::new("nvidia-smi")
-    .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
-    .output()
-    .ok()?;
-  if !output.status.success() {
-    return None;
-  }
-  let capabilities = String::from_utf8(output.stdout).ok()?;
-  let mut architectures: Vec<String> = capabilities
-    .lines()
-    .map(|capability| {
-      capability
-        .chars()
-        .filter(|character| character.is_ascii_digit())
-        .collect()
-    })
-    .filter(|architecture: &String| !architecture.is_empty())
-    .collect();
-  architectures.sort_unstable();
-  architectures.dedup();
-  (!architectures.is_empty()).then(|| architectures.join(","))
-}
-
-fn cuda_library_directories(nvcc: &std::ffi::OsStr) -> Vec<PathBuf> {
-  let root = env::var_os("CUDA_HOME")
-    .or_else(|| env::var_os("CUDA_PATH"))
-    .map(PathBuf::from)
-    .or_else(|| {
-      let nvcc = Path::new(nvcc);
-      nvcc
-        .is_absolute()
-        .then(|| nvcc.parent()?.parent().map(Path::to_path_buf))
-        .flatten()
-    })
-    .unwrap_or_else(|| PathBuf::from("/usr/local/cuda"));
-  vec![root.join("lib64"), root.join("targets/x86_64-linux/lib")]
 }

@@ -35,7 +35,8 @@ impl RootWrap<'_> {
   /// Execute a wrap of `proof`: shape 1 verifies one `ix_aggr` proof and
   /// passes its claim through. The root proof is verified natively first.
   fn execute(&self, proof: &AiurProof) -> Result<Executed, String> {
-    let expected = aggregate_outer_claim(self.aggr_idx, self.allowed, self.claim);
+    let expected =
+      aggregate_outer_claim(self.aggr_idx, self.allowed, self.claim);
     let advice = self
       .system
       .proof_to_advice_bytes(&expected, proof)

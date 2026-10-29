@@ -1,13 +1,13 @@
 //! Recursive KZG wrapper: staging and proving in one process, and the
 //! portable verifier its packets are checked with.
 #[cfg(any(feature = "plonk", feature = "groth16"))]
-mod plonk_export;
+mod final_export;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 mod relation;
-#[cfg(feature = "plonk")]
-pub(in crate::pipeline) use plonk_export::describe as plonk_description;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
-pub(in crate::pipeline) use plonk_export::export as plonk_export;
+pub(in crate::pipeline) use final_export::describe as final_description;
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub(in crate::pipeline) use final_export::export as final_export;
 
 use super::super::stages::{
   construct::{self, Lowered},
@@ -479,9 +479,16 @@ impl VerifyingKey {
   }
 
   pub(crate) fn from_bytes(bytes: &[u8]) -> PipelineResult<Self> {
+    Ok(Self::prepared_from_bytes(bytes)?.0)
+  }
+
+  /// Decode a key and its prepared verifier, preparing it once.
+  pub(crate) fn prepared_from_bytes(
+    bytes: &[u8],
+  ) -> PipelineResult<(Self, PreparedVerifyingKey)> {
     let vk: Self = decode(bytes)?;
-    vk.prepare()?;
-    Ok(vk)
+    let prepared = vk.prepare()?;
+    Ok((vk, prepared))
   }
 
   pub(crate) fn id(&self) -> [u8; 32] {
@@ -742,7 +749,7 @@ mod tests {
     let directory = std::env::temp_dir()
       .join(format!("plonk-recursive-claims-{}", std::process::id()));
     fs::create_dir(&directory)?;
-    plonk_export::write_export(
+    final_export::write_export(
       &vk, &packet, &expected, &directory, "witness", true,
     )?;
     let exported: serde_json::Value =
@@ -760,7 +767,7 @@ mod tests {
     let mut wrong = expected;
     wrong[10] ^= 1;
     assert!(
-      plonk_export::write_export(
+      final_export::write_export(
         &vk, &packet, &wrong, &directory, "wrong", true,
       )
       .is_err()

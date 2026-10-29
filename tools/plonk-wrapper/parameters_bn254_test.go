@@ -1,3 +1,5 @@
+//go:build plonk || !groth16
+
 package main
 
 import (
@@ -11,10 +13,6 @@ import (
 )
 
 func TestLagrangeCacheAndBasisConversion(t *testing.T) {
-	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	var receipt struct {
 		Format, Blake3, SetupID, IgnitionManifest string
 		PublicMaxDegree, Powers                   uint64
@@ -22,7 +20,7 @@ func TestLagrangeCacheAndBasisConversion(t *testing.T) {
 	if err := decodeJSON(filepath.Join("testdata", "bn254", "srs.json"), &receipt); err != nil {
 		t.Fatal(err)
 	}
-	srs, err := readSRS(filepath.Join("testdata", "bn254", "srs.bin"), receipt.Blake3, 128, p)
+	srs, err := readSRS(filepath.Join("testdata", "bn254", "srs.bin"), receipt.Blake3, 128)
 	if err != nil {
 		t.Fatal(err)
 	}

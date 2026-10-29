@@ -84,7 +84,7 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
   (wrapRoot : Bool) (execAhead : @& Nat) (verifyOnly : Bool)
-  (subtreeCode : @& Nat) :
+  (subtreeCode : @& Nat) (fresh : Bool := false) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
@@ -118,12 +118,14 @@ budget (0 detects); `execJobs` the claim executions ahead of each prover;
 `lanes` the GPU count (0 uses every visible GPU).
 Oversized environment claims are bisected and checkpointed; completed
 proofs are reused. A nonempty `outManifest` receives the final partition.
+`fresh` bypasses earlier proof indexes and refinement checkpoints while
+publishing newly verified results to the usual cache locations.
 Returns the verified root address; progress is printed on stderr. -/
 @[extern "rs_aiur_prove_lanes"]
 opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath : @& String)
   (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
-  (cacheFriBytes : @& ByteArray) (outManifest : @& String) : Except String String
+  (cacheFriBytes : @& ByteArray) (outManifest : @& String) (fresh : Bool := false) : Except String String
 
 end AiurSystem
 end Aiur

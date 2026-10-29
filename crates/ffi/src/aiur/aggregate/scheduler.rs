@@ -86,8 +86,13 @@ impl SlotWorker for ProveWorker<'_> {
     if spec.kind != ChildKind::Aggr {
       return None;
     }
-    let (proof, address) =
-      load_cached(ctx.aggr_system, ctx.store_dir, ctx.cache_dir, index, spec)?;
+    let (proof, address) = load_cached(
+      ctx.aggr_system,
+      ctx.store_dir,
+      ctx.cache_read_dir,
+      index,
+      spec,
+    )?;
     Some(Arc::new(Slot {
       kind: ChildKind::Aggr,
       statement: spec.statement.clone(),

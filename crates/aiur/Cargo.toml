@@ -3,6 +3,8 @@ name = "aiur"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# The build script includes ../build_support, outside the package.
+publish = false
 
 [dependencies]
 blake3 = { workspace = true }
