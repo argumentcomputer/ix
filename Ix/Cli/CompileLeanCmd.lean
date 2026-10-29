@@ -17,16 +17,17 @@
   graph, ground filter and condensation are only tested to be. It is kept for
   comparison.
 
-  `--rust-check` additionally compiles the same environment through the
-  Rust FFI compiler (`rs_compile_env_bytes` — the exact bytes
-  `ix compile --rust` writes) and byte-compares the two outputs: this is the
-  ALIGNED gate. The comparison covers both compilers and serializers
-  (Rust `Env::put` and Lean `Ixon.serEnv`) on this input. It is measured
-  whole-output parity, not a universal refinement or value-preservation
-  proof.
+  `--rust-check` additionally compiles the same prepared constants through
+  the Rust FFI compiler (`rs_compile_env_bytes`). Lean decodes that raw
+  artifact, finalizes it with the Rust backend, then serializes it with
+  `Ixon.serEnv`. The ALIGNED gate compares these finalized bytes with the
+  selected Lean path's output. Rust's serializer participates in the raw
+  handoff; both final envelopes use Lean serialization. This is byte-parity
+  evidence for the selected input, not a universal refinement or
+  value-preservation proof.
 
   Exit codes: 0 success (including an explicitly allowed partial output,
-  and aligned when checked); 1 pipeline error, an unallowed block failure,
+  and aligned when checked); 1 pipeline error, an unallowed compilation failure,
   or divergence; 2 usage. The Lean output is written before `--rust-check`,
   so a later divergence leaves that output on disk.
 -/
@@ -64,8 +65,9 @@ private structure Compiled where
   failures : Std.HashMap Ix.Name String
   summary : String
 
-/-- Fail-closed by default, as `ix compile`: any failure means a nonzero exit
-and no output file, unless `--allow-partial` opts into the grounded subset. -/
+/-- Fail-closed by default, as `ix compile`: a recorded compilation failure
+causes a nonzero exit and leaves the output path untouched. `--allow-partial`
+permits writing the successfully compiled subset. -/
 private def refusePartial (allowPartial : Bool) (outPath : String)
     (failures : Std.HashMap Ix.Name String) : IO Bool := do
   if allowPartial || failures.isEmpty then return false
@@ -216,9 +218,9 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "no-build" ;           "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
-    "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
+    "rust-check" ;         "Also compile via the Rust FFI compiler, finalize its artifact, and compare the final bytes (the ALIGNED gate; both final envelopes use Lean serialization). Exit 1 on divergence; the already-written Lean output remains."
     "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env. --rust-check compiles the same list."
-    "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
+    "allow-partial" ;      "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     streamed ;             "Compile with the streamed pipeline instead of the certified compiler. UNCERTIFIED: only its fold is proved to be the certified compiler's; its streamed front end is tested, not proved. Kept for comparison."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); only with --streamed, since the certified compiler's theorem fixes the default limits. Applies to --rust-check too. Sets IX_SHARING_LIMITS."
 

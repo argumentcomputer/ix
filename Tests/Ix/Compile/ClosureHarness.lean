@@ -1,16 +1,16 @@
 /-
   The closure suites' shared harness (`compiler-selected-closure`,
   `compiler-selected-closure-e2e`, `checker-support-regression`,
-  `compile-closure-whole`, `pack-units`): one copy of what each of them
-  needs (R11-08).
+  `compile-closure-whole`, `pack-units`).
 
-  - `compileClosure`: the ordinary Lean compile of a closure, as
-    `ix compile-lean` runs it (`compileInputFromEnv`, then
-    `compileLeanInput`). It is the unvalidated entry, which is fine for
-    fixtures without source contracts.
-  - `rustClosure`/`rustCheck`: the Rust compile (`ix compile`'s FFI,
-    `rsCompileEnvBytesFFI`) of the same prepared constants, and the check
-    that it gives the Lean compile's artifact byte for byte.
+  - `compileClosure`: the unvalidated streamed Lean entry
+    (`compileInputFromEnv`, then `compileLeanInput`) for fixtures without
+    source contracts, with the configured sharing limits. The harness
+    compares raw artifacts before CLI role finalization and resource checks.
+  - `rustClosure`/`rustCheck`: the raw Rust compile
+    (`rsCompileEnvBytesFFI`, used by `ix compile --rust` before finalization)
+    of the same prepared constants, and its byte comparison with the Lean
+    artifact.
   - `decompileCheck`: decompile fidelity of an output against its source
     closure, as `ix validate-lean --full-oracle` phase 5 checks it.
   - `certify`/`verdictOf`: the certified checker (`kernel-check-ixe`) on an
@@ -18,17 +18,8 @@
   - `ixN`, `toLeanName`, `nameSet`, `sameNames`, `ownConstants`,
     `namedDiff`, `readIxe`.
 
-  Every file goes to a directory the caller made with `IO.FS.createTempDir`,
-  never under `out/` (R11-24).
-
-  Ported from a9cf3607: `Tests/Ix/Compile/Pass3.lean` (`compileUnit`, `ixN`,
-  `toLeanName`, `decompileCheck`, the certified leg of `kernelRun`), the
-  `certify` of `Tests/Ix/Compile/CheckerSupport.lean`, the `rustLeg` of
-  `Tests/Ix/Compile/ClosureWhole.lean`, and `readIxe`/`ixToLeanName` of
-  `Ix/Cli/PackCmd.lean` (TT-13 keeps them out of the CLI). Pass 3 does not
-  exist on this line, so a closure is compiled by the ordinary compiler.
-  The `check-rs` and `check-lean` legs of `kernelRun` are dropped: the
-  suites keep the certified leg only (plan §4.1).
+  Callers provide output paths in temporary directories made with
+  `IO.FS.createTempDir`.
 -/
 import Ix.Meta
 import Ix.EnvScope
@@ -67,15 +58,14 @@ def ownConstants (env : Environment) : List Name :=
 
 /-! ## Compiles -/
 
-/-- The sharing limits the Rust compiler reads (`IX_SHARING_LIMITS`, read by
-Rust at every compile and decompile entry point and by no Lean driver), so
-that the Lean legs run under the same limits as the Rust leg. -/
+/-- Read `IX_SHARING_LIMITS` for the Lean fixture legs with the shared parser.
+The Rust FFI reads the same setting for its comparison leg. -/
 def compilerLimits : IO Ix.Sharing.Exact.Limits := do
   IO.ofExcept (← Ix.CompileM.compilerSharingLimitsFromEnv)
 
-/-- The ordinary Lean compile of `closure`, as `ix compile-lean` runs it
-(`compileInputFromEnv`, then `compileLeanInput`). Per-block failures are
-in `out.cenv.ungrounded`; the caller decides what to do with them. -/
+/-- Compile `closure` through the unvalidated streamed Lean entry
+(`compileInputFromEnv`, then `compileLeanInput`), before CLI finalization.
+Recorded failures are in `out.cenv.ungrounded`; the caller checks them. -/
 def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
     (workers : Nat := 32) : IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
@@ -84,9 +74,9 @@ def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")
 
-/-- The Rust compile (`ix compile`'s FFI) of the same prepared constants as
-`compileClosure`, written to `path`. Partial output is allowed, so the status
-lists every refused constant. Returns the written bytes and the status. -/
+/-- The raw Rust compile of the same prepared constants as `compileClosure`,
+written to `path` before CLI finalization. Partial output is allowed, so the
+status lists every refused constant. Returns the written bytes and status. -/
 def rustClosure (env : Environment) (closure : List (Name × ConstantInfo))
     (path : System.FilePath) : IO (ByteArray × Ix.CompileM.CompileEnvStatus) := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)

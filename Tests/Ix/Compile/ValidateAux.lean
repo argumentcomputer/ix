@@ -81,8 +81,7 @@ def validateAuxClosure (env : Lean.Environment)
     `IxVMInd,
     -- Partial/WellFounded fixture families: `partial def` mutual blocks
     -- whose opaques + `_unsafe_rec` witnesses form SCCs through the
-    -- implementation edges — the alpha-collapse shape testCrossImpl
-    -- caught diverging (Test.Ix.Fixtures.Partial.H._unsafe_rec, A9).
+    -- implementation edges, including `Test.Ix.Fixtures.Partial.H._unsafe_rec`.
     `Test.Ix.Fixtures,
     --`Init,
     --`_private.Init,

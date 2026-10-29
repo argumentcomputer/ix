@@ -190,8 +190,8 @@ def conflictClosure (env : Environment) : Except String (List (Name × ConstantI
     else some (n, ci)
   return (belowName, userBelow) :: rest
 
-/-- The `ix compile-lean` pipeline on a closure (`compileInputFromEnv`, then
-    `compileLeanInput`). -/
+/-- The streamed Lean pipeline on a closure (`compileInputFromEnv`, then
+    `compileLeanInput`), before CLI finalization. -/
 def leanCompile (env : Environment) (closure : List (Name × ConstantInfo)) (workers : Nat) :
     IO Ix.CompileM.LeanPipelineOut := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
