@@ -47,8 +47,12 @@ private def prepareCases (samples : Array Sample) : Array WidthCase := Id.run do
     let facts := graphFacts sample.expanded.dag sample.expanded.roots
     let parents := parentsOf sample.expanded.dag
     for width in #[1, 2, 3] do
-      cases := cases.push { address := sample.address, expanded := sample.expanded,
-        stage := uniformStageF width sample.expanded prep facts, width, parents }
+      cases := cases.push {
+        address := sample.address
+        expanded := sample.expanded
+        stage := uniformStageF width sample.expanded prep facts
+        width := width
+        parents := parents }
   return cases
 
 private def runCase (mode : String) (config : Config) (limits : Limits) (sample : WidthCase) :
