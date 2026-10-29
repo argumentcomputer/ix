@@ -62,7 +62,7 @@ claim still needs verification.
 
 The existing `ixvm` suite covers reductions, output type and safety checks,
 malformed/authenticated bytes, assumptions, dependent and recursive programs,
-24 generated arithmetic programs, and bytecode/generated-backend parity.
+24 generated arithmetic programs, and exact FFT-cost pins for successful evaluations.
 The command regression packs both endpoints into ordinary bundles before
 executing its printed claim. These tests execute Aiur without proving:
 

@@ -266,13 +266,13 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
     | .ok vmEnv, .ok fullVmEnv =>
       IO.eprintln "[ixvm] eval: reduction, output contracts, and compiled fixtures"
-      let evalSeq ← Tests.Ix.IxVM.Eval.tests vmEnv.compiled
-      let evalCompiledSeq ← Tests.Ix.IxVM.Eval.compiledTests env vmEnv.compiled
-      let evalCommandSeq ← Tests.Ix.IxVM.Eval.commandTests env vmEnv.compiled
+      let evalSeq ← Tests.Ix.IxVM.Eval.tests vmEnv
+      let evalCompiledSeq ← Tests.Ix.IxVM.Eval.compiledTests env vmEnv
+      let evalCommandSeq ← Tests.Ix.IxVM.Eval.commandTests env vmEnv
       IO.eprintln "[ixvm] eval: dependent, recursive, and neutral-term fixtures"
-      let evalDifficultSeq ← Tests.Ix.IxVM.Eval.difficultTests env vmEnv.compiled
+      let evalDifficultSeq ← Tests.Ix.IxVM.Eval.difficultTests env vmEnv
       IO.eprintln "[ixvm] eval: generated differential corpus (24 samples)"
-      let evalDifferentialSeq ← Tests.Ix.IxVM.Eval.differentialTests env vmEnv.compiled
+      let evalDifferentialSeq ← Tests.Ix.IxVM.Eval.differentialTests env vmEnv
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug
