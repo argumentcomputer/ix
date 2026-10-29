@@ -107,7 +107,7 @@
             };
           });
           plonkSources = pkgs.lib.fileset.fileFilter (
-            file: file.hasExt "go" || file.hasExt "json" || file.hasExt "bin"
+            file: file.hasExt "go" || file.hasExt "h" || file.hasExt "json" || file.hasExt "bin"
               || file.name == "go.mod" || file.name == "go.sum"
           ) ./tools/plonk-wrapper;
           plonkSppark = pkgs.fetchFromGitHub {
@@ -168,12 +168,8 @@
             ];
             meta.platforms = [ "x86_64-linux" ];
           };
-          mkPlonkHelper = { cuda ? false, groth16Cuda ? false }: (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
-            pname = "ix-bn254-plonk-wrapper"
-              + pkgs.lib.optionalString cuda "-cuda"
-              + pkgs.lib.optionalString groth16Cuda "-groth16-cuda";
-            tags = pkgs.lib.optional cuda "cuda" ++ pkgs.lib.optional groth16Cuda "icicle";
-            ldflags = pkgs.lib.optional groth16Cuda "-X=main.groth16LibraryDefault=${icicleBn254}/lib/backend";
+          gnarkGo = (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
+            pname = "ix-gnark-tests";
             version = "0.1.0";
             src = pkgs.lib.fileset.toSource {
               root = ./tools/plonk-wrapper;
@@ -181,24 +177,14 @@
             };
             vendorHash = "sha256-RJNclxTYY6UQBG6f7Kwt0XspL7DZruLdsYKubHlUOvg=";
             subPackages = [ "." ];
-            env.CGO_ENABLED = if cuda || groth16Cuda then "1" else "0";
-            env.GOTOOLCHAIN = "local";
-            env.CGO_CFLAGS = pkgs.lib.optionalString cuda "-I${plonkCudaNative}/include";
-            env.CGO_LDFLAGS = pkgs.lib.optionalString cuda "-L${plonkCudaNative}/lib -Wl,-rpath,${plonkCudaNative}/lib -lix_plonk_bn254_cuda "
-              + pkgs.lib.optionalString groth16Cuda "-L${icicleBn254}/lib -Wl,-rpath,${icicleBn254}/lib";
-            buildInputs = pkgs.lib.optional cuda plonkCudaNative ++ pkgs.lib.optional groth16Cuda icicleBn254;
-            postInstall = ''
-              mv "$out/bin/plonk-wrapper" "$out/bin/ix-bn254-plonk-wrapper"
-            '' + pkgs.lib.optionalString cuda ''
-              mkdir -p "$out/lib"
-              ln -s ${plonkCudaNative}/lib/libix_plonk_bn254_cuda.so "$out/lib/"
+            buildPhase = "runHook preBuild; runHook postBuild";
+            installPhase = ''
+              mkdir -p "$out"
+              touch "$out/checked"
             '';
+            env.CGO_ENABLED = "0";
+            env.GOTOOLCHAIN = "local";
           };
-
-          plonkHelper = mkPlonkHelper { };
-          plonkCudaHelper = mkPlonkHelper { cuda = true; };
-          groth16CudaHelper = mkPlonkHelper { groth16Cuda = true; };
-          terminalCudaHelper = mkPlonkHelper { cuda = true; groth16Cuda = true; };
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -271,6 +257,23 @@
                   pkgs.libiconv
                 ];
             };
+          gnarkArgs = craneArgs // {
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                cargoSource
+                compressionData
+                ./Tests/Fixtures/ixon-v4
+                plonkSources
+                ./crates/proof-compression/cuda
+              ];
+            };
+            nativeBuildInputs = [ plonkGo ];
+            GO = "${plonkGo}/bin/go";
+            postPatch = ''
+              cp -r ${gnarkGo.goModules} tools/plonk-wrapper/vendor
+            '';
+          };
           # Build dependencies once with every host feature enabled so the
           # `net` stack (tokio/iroh) is compiled and cached here, then shared
           # by the package builds and clippy. CUDA remains opt-in and is
@@ -278,7 +281,7 @@
           cargoArtifacts = craneLib.buildDepsOnly (
             craneArgs
             // {
-              cargoExtraArgs = "--locked --features parallel,test-ffi,net";
+              cargoExtraArgs = "--locked -p ix-ffi --features parallel,test-ffi,net";
             }
           );
 
@@ -289,7 +292,7 @@
             craneArgs
             // {
               inherit cargoArtifacts;
-              cargoExtraArgs = "--locked --features parallel,test-ffi";
+              cargoExtraArgs = "--locked -p ix-ffi --features parallel,test-ffi";
               doCheck = false;
             }
           );
@@ -299,7 +302,7 @@
             craneArgs
             // {
               inherit cargoArtifacts;
-              cargoExtraArgs = "--locked --features parallel";
+              cargoExtraArgs = "--locked -p ix-ffi --features parallel";
               doCheck = false;
             }
           );
@@ -312,10 +315,35 @@
             // {
               inherit cargoArtifacts;
               cargoExtraArgs =
-                "--locked --features parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
+                "--locked -p ix-ffi --features parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
               doCheck = false;
             }
           );
+
+          mkCompressionWorker = { cuda ? false }: craneLib.buildPackage (
+            gnarkArgs // {
+              inherit cargoArtifacts;
+              pname = "ix-compression-worker";
+              cargoExtraArgs = "--locked -p ix-proof-compression --bin ix-compression-worker --no-default-features --features parallel,plonk,groth16"
+                + pkgs.lib.optionalString cuda ",cuda";
+              doCheck = false;
+              nativeBuildInputs = [ plonkGo ] ++ pkgs.lib.optional cuda cudaToolkit;
+              CUDA_HOME = pkgs.lib.optionalString cuda "${cudaToolkit}";
+              NVCC = pkgs.lib.optionalString cuda "${cudaToolkit}/bin/nvcc";
+              IX_GROTH16_ICICLE_ROOT = pkgs.lib.optionalString cuda "${icicleBn254}";
+              IX_PLONK_CUDA_LIBRARY = pkgs.lib.optionalString cuda "${plonkCudaNative}/lib/libix_plonk_bn254_cuda.so";
+              postInstall = pkgs.lib.optionalString cuda ''
+                mkdir -p "$out/lib"
+                ln -s ${plonkCudaNative}/lib/libix_plonk_bn254_cuda.so "$out/lib/"
+                cudaOutput=$(${pkgs.jq}/bin/jq -r 'select(.reason == "build-script-executed" and (.linked_libs | index("dylib=multi_stark_cuda"))) | .out_dir' "$cargoBuildLog")
+                cp "$cudaOutput/libmulti_stark_cuda.so" "$out/lib/"
+                ln -s ${icicleBn254}/lib/libicicle_{device,field_bn254,curve_bn254}.so "$out/lib/"
+                ln -s ${icicleBn254}/lib/backend "$out/lib/backend"
+              '';
+            }
+          );
+          compressionWorker = mkCompressionWorker { };
+          compressionWorkerCuda = mkCompressionWorker { cuda = true; };
 
           # Lake package
           lake2nix = pkgs.callPackage lean4-nix.lake { inherit lean; };
@@ -363,8 +391,8 @@
           # Shared Lake build args: patches out the Cargo build (Crane handles it)
           mkLakeBuildArgs = rustLib: {
             inherit lakeDeps;
+            GO = "${plonkGo}/bin/go";
             src = leanSrc;
-            IX_PLONK_PREBUILT = "${plonkHelper}/bin/ix-bn254-plonk-wrapper";
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
               substituteInPlace lakefile.lean --replace-fail 'cmd := "cargo"' 'cmd := "true"'
@@ -379,7 +407,7 @@
             postConfigure = ''
               mkdir -p target/release
               ln -s ${rustLib}/lib/libix_ffi.a target/release/
-              ln -s ${rustLib}/bin/ix-compression-worker target/release/
+              ln -s ${compressionWorker}/bin/ix-compression-worker target/release/
             '';
             buildInputs = [
               pkgs.gmp
@@ -462,16 +490,14 @@
           packages = {
             default = ixLib;
             ix = ixCLI;
-            plonk-wrapper = plonkHelper;
-            plonk-wrapper-cuda = plonkCudaHelper;
-            groth16-wrapper-cuda = groth16CudaHelper;
-            terminal-wrapper-cuda = terminalCudaHelper;
             icicle-bn254 = icicleBn254;
+            compression-worker = compressionWorker;
+            compression-worker-cuda = compressionWorkerCuda;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
             # adding it to the default check set.
             nextest-ignored = craneLib.cargoNextest (
-              craneArgs
+              gnarkArgs
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--locked --workspace";
@@ -484,19 +510,19 @@
           };
 
           checks = {
-            plonk-wrapper = plonkHelper;
+            gnark = gnarkGo;
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
-              craneArgs
+              gnarkArgs
               // {
                 inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --features parallel,test-ffi,net";
+                cargoExtraArgs = "--locked --workspace --features ix-ffi/parallel,ix-ffi/test-ffi,ix-ffi/net";
                 cargoClippyExtraArgs = "--all-targets -- -D warnings";
               }
             );
             # Non-ignored Rust unit tests across the host workspace.
             nextest = craneLib.cargoNextest (
-              craneArgs
+              gnarkArgs
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--locked --workspace";

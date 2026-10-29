@@ -2090,6 +2090,7 @@ dependencies = [
  "ark-poly",
  "ark-serialize",
  "bincode",
+ "bindgen",
  "blake2b_simd",
  "blake3",
  "blst",

@@ -1,16 +1,29 @@
 //! Terminal BN254 Groth16 proofs under independently admitted circuit keys.
+#[cfg(feature = "groth16")]
+use super::gnark;
+use super::storage;
+#[cfg(any(not(feature = "groth16"), test))]
+use super::terminal::Scratch;
+#[cfg(not(feature = "groth16"))]
+use super::terminal::checked;
+#[cfg(any(feature = "groth16", test))]
+use super::terminal::sha256;
 use super::{
   Result,
   setup::SetupClass,
-  statement, storage,
-  terminal::{Scratch, checked, claim_digest, digest, hex, load_json, sha256},
+  statement,
+  terminal::{Artifact, digest, hex, load_json},
+};
+#[cfg(feature = "groth16")]
+use super::{
+  terminal::{claim_digest, read_bounded},
   wrap,
 };
-use std::{
-  fs,
-  path::{Path, PathBuf},
-  process::Command,
-};
+#[cfg(any(feature = "groth16", test))]
+use std::fs;
+use std::path::{Path, PathBuf};
+#[cfg(not(feature = "groth16"))]
+use std::process::Command;
 
 pub(super) const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x03";
 const CATALOG_FORMAT: &str = "ix-bn254-groth16-verifiers-v1";
@@ -107,80 +120,107 @@ pub(super) fn verify(
   claim: &[u8],
   allow_development: bool,
 ) -> Result<SetupClass> {
-  if !matches!(packet.len(), 196 | 228) {
+  if packet.len() != 164 + 32 && packet.len() != MAX_PROOF_BYTES + 32 {
     return Err("invalid Groth16 packet length".into());
   }
-  verify_with_catalog(
-    packet,
-    claim,
-    &catalog_path()?,
-    &super::terminal::helper_executable("IX_GROTH16_HELPER")?,
-    allow_development,
-  )
+  verify_with_catalog(packet, claim, &catalog_path()?, allow_development)
 }
 
 fn verify_with_catalog(
   packet: &[u8],
   claim: &[u8],
   catalog: &Path,
-  helper: &Path,
   allow_development: bool,
 ) -> Result<SetupClass> {
-  if !matches!(packet.len(), 196 | 228) {
+  if packet.len() != 164 + 32 && packet.len() != MAX_PROOF_BYTES + 32 {
     return Err("invalid Groth16 packet length".into());
   }
   let id = packet[..32].try_into()?;
   let key = select_key(catalog, id, allow_development)?;
-  if fs::metadata(&key.path)?.len() > 1 << 20 || sha256(&key.path)? != *id {
-    return Err(
-      "Groth16 verifying key differs from the trusted catalog".into(),
-    );
-  }
-  let scratch = Scratch::new()?;
-  let proof = scratch.0.join("proof.bin");
-  storage::write_atomic(&proof, &packet[32..])?;
-  checked(
-    Command::new(helper)
-      .arg("groth16")
-      .arg("verify")
-      .env("CUDA_VISIBLE_DEVICES", "")
-      .arg(&key.path)
-      .arg(hex(id))
-      .arg(proof)
-      .arg(blake3::hash(claim).to_hex().as_str()),
+  let expected = *blake3::hash(claim).as_bytes();
+  #[cfg(feature = "groth16")]
+  gnark::verify_groth16(
+    &read_bounded(&key.path, 1 << 20)?,
+    id,
+    &packet[32..],
+    &expected,
   )?;
+  #[cfg(not(feature = "groth16"))]
+  {
+    let scratch = Scratch::new()?;
+    let proof = scratch.0.join("proof.bin");
+    storage::write_atomic(&proof, &packet[32..])?;
+    checked(
+      Command::new(super::worker_executable()?)
+        .args(["groth16", "verify-key"])
+        .arg(&key.path)
+        .arg(hex(id))
+        .arg(proof)
+        .arg(hex(&expected)),
+    )?;
+  }
   key.setup_class(allow_development)
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct Metadata {
-  format: String,
-  curve: String,
+pub(super) struct Metadata {
   #[serde(rename = "innerVKSHA256")]
   inner_vk: String,
-  commitment_hash: String,
   constraints: usize,
   domain: u64,
   public_inputs: usize,
   commitments: usize,
   setup: String,
-  #[serde(default, rename = "ceremonySHA256")]
+  #[serde(
+    default,
+    rename = "ceremonySHA256",
+    skip_serializing_if = "Option::is_none"
+  )]
   ceremony: Option<String>,
   keys_ready: bool,
   files: std::collections::BTreeMap<String, Artifact>,
 }
 
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Artifact {
-  #[serde(rename = "SHA256")]
-  sha256: String,
-  #[serde(rename = "Bytes")]
-  bytes: u64,
-}
-
 impl Metadata {
+  fn validate(&self) -> Result<()> {
+    if self.public_inputs != 2
+      || self.commitments > 1
+      || self.constraints == 0
+      || self.constraints > 1 << 27
+      || self.domain != u64::try_from(self.constraints)?.next_power_of_two()
+    {
+      return Err("unsupported Groth16 circuit metadata".into());
+    }
+    digest(&self.inner_vk)?;
+    if self.artifact("vk.json")?.sha256 != self.inner_vk {
+      return Err("Groth16 schema identity differs".into());
+    }
+    self.artifact("circuit.bin")?;
+    if self.keys_ready {
+      match self.setup.as_str() {
+        "mpc" => {
+          digest(
+            self
+              .ceremony
+              .as_deref()
+              .ok_or("missing Groth16 ceremony identity")?,
+          )?;
+        },
+        "development" if self.ceremony.is_none() => {},
+        _ => return Err("invalid Groth16 setup metadata".into()),
+      }
+      for name in
+        ["proving-key.bin", "verifying-key.bin", "Groth16Verifier.sol"]
+      {
+        self.artifact(name)?;
+      }
+    } else if !self.setup.is_empty() || self.ceremony.is_some() {
+      return Err("unprepared Groth16 circuit carries setup metadata".into());
+    }
+    Ok(())
+  }
+
   fn artifact(&self, name: &str) -> Result<&Artifact> {
     let value = self
       .files
@@ -200,17 +240,9 @@ fn prepared(allow_development: bool) -> Result<(PathBuf, TrustedKey)> {
       format!("set {ARTIFACTS_VAR} to prepared Groth16 circuit artifacts")
     })?;
   let m: Metadata = load_json(&dir.join("manifest.json"))?;
-  if m.format != "ix-bn254-groth16-artifacts-v1"
-    || m.curve != "bn254"
-    || m.commitment_hash != "sha256"
-    || !m.keys_ready
-    || m.public_inputs != 2
-    || m.commitments > 1
-    || m.constraints == 0
-    || m.constraints > 1 << 27
-    || m.domain != u64::try_from(m.constraints)?.next_power_of_two()
-  {
-    return Err("unsupported or unprepared Groth16 artifact metadata".into());
+  m.validate()?;
+  if !m.keys_ready {
+    return Err("Groth16 keys are not prepared".into());
   }
   let key = select_key(
     &catalog_path()?,
@@ -234,26 +266,8 @@ fn prepared(allow_development: bool) -> Result<(PathBuf, TrustedKey)> {
 }
 
 pub(super) fn preflight(allow_development: bool) -> Result<()> {
-  let helper = super::terminal::helper_executable("IX_GROTH16_HELPER")?;
-  let output =
-    Command::new(helper).args(["groth16", "capabilities"]).output()?;
-  if !output.status.success() {
-    return Err("terminal helper does not support Groth16".into());
-  }
-  let capabilities: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-  if capabilities["system"] != "groth16" || capabilities["curve"] != "bn254" {
-    return Err(
-      "terminal helper reports another Groth16 system or curve".into(),
-    );
-  }
   match std::env::var("IX_GROTH16_BACKEND").as_deref() {
-    Err(_) | Ok("" | "cpu") => {},
-    Ok("cuda") if capabilities["cuda"] == true => {},
-    Ok("cuda") => {
-      return Err(
-        "terminal helper was built without CUDA Groth16 support".into(),
-      );
-    },
+    Err(std::env::VarError::NotPresent) | Ok("" | "cpu" | "cuda") => {},
     _ => return Err("IX_GROTH16_BACKEND must be cpu or cuda".into()),
   }
   prepared(allow_development)?;
@@ -273,6 +287,7 @@ pub(super) fn check_statement(
   Ok(())
 }
 
+#[cfg(feature = "groth16")]
 fn wrap_packet(
   verifier: &Path,
   packet: &Path,
@@ -304,24 +319,12 @@ fn wrap_packet(
     );
   }
   let claim = claim_digest(expected)?;
-  let helper = super::terminal::helper_executable("IX_GROTH16_HELPER")?;
-  checked(
-    Command::new(&helper)
-      .arg("groth16")
-      .arg("prove")
-      .arg(&artifacts)
-      .arg(input.join("witness.json"))
-      .arg(hex(&claim))
-      .arg(out),
-  )?;
-  checked(
-    Command::new(&helper)
-      .arg("groth16")
-      .arg("verify")
-      .arg(&key.path)
-      .arg(&key.sha256)
-      .arg(out.join("proof.bin"))
-      .arg(hex(&claim)),
+  prove(&artifacts, &input.join("witness.json"), &claim, out)?;
+  gnark::verify_groth16(
+    &read_bounded(&key.path, 1 << 20)?,
+    &digest(&key.sha256)?,
+    &read_bounded(&out.join("proof.bin"), MAX_PROOF_BYTES)?,
+    &claim,
   )?;
   let proof = fs::read(out.join("proof.bin"))?;
   if !matches!(proof.len(), 164 | MAX_PROOF_BYTES) {
@@ -337,6 +340,7 @@ fn wrap_packet(
   Ok(())
 }
 
+#[cfg(feature = "groth16")]
 pub(crate) fn run(args: &[String]) -> Result<()> {
   let development_flags =
     args.iter().filter(|s| s.as_str() == "--allow-development").count();
@@ -355,12 +359,18 @@ pub(crate) fn run(args: &[String]) -> Result<()> {
     .map(String::as_str)
     .collect();
   match positional.as_slice() {
+    ["compile", schema, out] => compile(Path::new(schema), Path::new(out)),
+    ["setup-development", dir] => setup(Path::new(dir), gnark::Groth16Setup::Development),
+    ["setup-mpc", dir, descriptor, pin] => { digest(pin)?; setup(Path::new(dir), gnark::Groth16Setup::Ceremony { path:Path::new(descriptor),digest:pin }) },
+    ["import", dir, descriptor, pin] => { digest(pin)?; setup(Path::new(dir), gnark::Groth16Setup::Import { path:Path::new(descriptor),digest:pin }) },
+    ["prove", dir, witness, claim, out] => prove(Path::new(dir),Path::new(witness),&digest(claim)?,Path::new(out)),
+    ["verify-key", key, pin, proof, claim] => gnark::verify_groth16(&read_bounded(Path::new(key), 1<<20)?, &digest(pin)?, &read_bounded(Path::new(proof), MAX_PROOF_BYTES)?, &digest(claim)?),
     ["export", verifier, packet, trusted, expected, out] => {
       let expected = load_json(Path::new(expected))?;
       wrap::plonk_export(Path::new(verifier), Path::new(packet), trusted, &expected, Path::new(out))
     },
     ["verify", proof, claim] => {
-      let bytes = fs::read(proof)?;
+      let bytes = read_bounded(Path::new(proof), MAX_PROOF_BYTES + 32 + PROOF_TAG.len())?;
       let packet = bytes.strip_prefix(PROOF_TAG).ok_or("unsupported Groth16 proof curve or version")?;
       let setup = verify(packet, &fs::read(claim)?, allow_development)?;
       println!("{}", serde_json::json!({"verified": true, "curve": "bn254", "setup": setup.label()}));
@@ -370,8 +380,134 @@ pub(crate) fn run(args: &[String]) -> Result<()> {
       let expected = load_json(Path::new(expected))?;
       wrap_packet(Path::new(verifier), Path::new(packet), trusted, &expected, Path::new(out), allow_development)
     },
-    _ => Err("usage: ix-compression-worker groth16 export <verifier.bin> <packet.bin> <trusted-inner-blake3> <expected-statement.json> <out> | wrap <verifier.bin> <packet.bin> <trusted-inner-blake3> <expected-statement.json> <out> [--allow-development] | verify <proof.envelope.bin> <claim.bin> [--allow-development]".into()),
+    _ => Err("usage: ix-compression-worker groth16 compile <vk.json> <empty-dir> | setup-development <dir> | setup-mpc <dir> <ceremony.json> <trusted-sha256> | import <dir> <release.json> <trusted-sha256> | prove <dir> <witness.json> <expected-claim-digest> <out> | export <verifier.bin> <packet.bin> <trusted-inner-blake3> <expected-statement.json> <out> | wrap <verifier.bin> <packet.bin> <trusted-inner-blake3> <expected-statement.json> <out> [--allow-development] | verify <proof.envelope.bin> <claim.bin> [--allow-development]".into()),
   }
+}
+
+#[cfg(feature = "groth16")]
+fn artifact(path: &Path) -> Result<Artifact> {
+  Ok(Artifact { sha256: hex(&sha256(path)?), bytes: fs::metadata(path)?.len() })
+}
+
+#[cfg(feature = "groth16")]
+fn compile(schema: &Path, out: &Path) -> Result<()> {
+  super::prepare_output(out)?;
+  let schema = read_bounded(schema, 16 << 20)?;
+  let info = gnark::compile_groth16(&schema, &out.join("circuit.bin"))?;
+  storage::write_atomic(&out.join("vk.json"), &schema)?;
+  let mut files = std::collections::BTreeMap::new();
+  for name in ["vk.json", "circuit.bin"] {
+    files.insert(name.into(), artifact(&out.join(name))?);
+  }
+  let metadata = Metadata {
+    inner_vk: files["vk.json"].sha256.clone(),
+    constraints: info.constraints,
+    domain: info.domain,
+    public_inputs: info.public_inputs,
+    commitments: info.commitments,
+    setup: String::new(),
+    ceremony: None,
+    keys_ready: false,
+    files,
+  };
+  metadata.validate()?;
+  storage::write_atomic(
+    &out.join("manifest.json"),
+    &serde_json::to_vec_pretty(&metadata)?,
+  )?;
+  Ok(())
+}
+
+#[cfg(feature = "groth16")]
+fn setup(dir: &Path, request: gnark::Groth16Setup<'_>) -> Result<()> {
+  let metadata: Metadata = load_json(&dir.join("manifest.json"))?;
+  metadata.validate()?;
+  if metadata.keys_ready {
+    return Err("Groth16 keys are already prepared".into());
+  }
+  let prepared = gnark::setup_groth16(dir, &metadata, request)?;
+  prepared.validate()?;
+  if !prepared.keys_ready {
+    return Err("Groth16 setup did not return prepared keys".into());
+  }
+  storage::write_atomic(
+    &dir.join("manifest.json"),
+    &serde_json::to_vec_pretty(&prepared)?,
+  )?;
+  Ok(())
+}
+
+#[cfg(feature = "groth16")]
+fn proving_backend() -> Result<gnark::Groth16Backend> {
+  match std::env::var("IX_GROTH16_BACKEND").as_deref() {
+    Err(std::env::VarError::NotPresent) | Ok("" | "cpu") => {
+      Ok(gnark::Groth16Backend::Cpu)
+    },
+    Ok("cuda") => {
+      if !cfg!(feature = "cuda") {
+        return Err("Groth16 CUDA requires groth16 and cuda features".into());
+      }
+      let device = std::env::var("IX_GROTH16_DEVICE")
+        .unwrap_or_else(|_| "0".into())
+        .parse()?;
+      if device < 0 {
+        return Err("invalid Groth16 device".into());
+      }
+      let pin_keys = match std::env::var("IX_GROTH16_PIN_KEY").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("" | "0") => false,
+        Ok("1") => true,
+        _ => return Err("IX_GROTH16_PIN_KEY must be 0 or 1".into()),
+      };
+      let library = std::env::var("ICICLE_BACKEND_INSTALL_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+          let installed = std::env::current_exe()
+            .ok()?
+            .parent()?
+            .parent()?
+            .join("lib/backend");
+          installed.is_dir().then(|| installed.to_string_lossy().into_owned())
+        })
+        .or_else(|| option_env!("IX_GROTH16_ICICLE_BACKEND").map(str::to_owned))
+        .unwrap_or_default();
+      Ok(gnark::Groth16Backend::Cuda { device, pin_keys, library })
+    },
+    _ => Err("IX_GROTH16_BACKEND must be cpu or cuda".into()),
+  }
+}
+
+#[cfg(feature = "groth16")]
+fn prove(
+  dir: &Path,
+  witness: &Path,
+  claim: &[u8; 32],
+  out: &Path,
+) -> Result<()> {
+  let metadata: Metadata = load_json(&dir.join("manifest.json"))?;
+  metadata.validate()?;
+  let backend = proving_backend()?;
+  let start = std::time::Instant::now();
+  let mut prover = gnark::Prover::open_groth16(dir, &metadata, &backend)?;
+  let load_seconds = start.elapsed().as_secs_f64();
+  let witness = read_bounded(witness, 16 << 20)?;
+  let start = std::time::Instant::now();
+  let proof = prover.prove(&witness, claim)?;
+  let prove_seconds = start.elapsed().as_secs_f64();
+  prover.close()?;
+  fs::create_dir_all(out)?;
+  storage::write_atomic(&out.join("proof.bin"), &proof.native)?;
+  storage::write_atomic(&out.join("proof.solidity.bin"), &proof.solidity)?;
+  storage::write_atomic(
+    &out.join("report.json"),
+    &serde_json::to_vec_pretty(&serde_json::json!({
+      "system":"groth16", "curve":"bn254", "backend":match backend { gnark::Groth16Backend::Cpu=>"cpu",gnark::Groth16Backend::Cuda{..}=>"cuda" },
+      "setup":metadata.setup, "loadSeconds":load_seconds, "proveVerifySeconds":prove_seconds,
+      "nativeBytes":proof.native.len(), "solidityBytes":proof.solidity.len(), "claimDigest":hex(claim),
+      "verifyingKeySHA256":metadata.artifact("verifying-key.bin")?.sha256,
+    }))?,
+  )?;
+  Ok(())
 }
 
 #[cfg(test)]
@@ -379,10 +515,8 @@ mod tests {
   use super::*;
 
   #[test]
-  #[ignore = "requires a compiled terminal helper in IX_GROTH16_HELPER"]
+  #[cfg(feature = "groth16")]
   fn saved_init_groth16_proof_verifies_without_gpu() -> Result<()> {
-    let helper =
-      super::super::terminal::helper_executable("IX_GROTH16_HELPER")?;
     let dir =
       Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/groth16");
     let provenance: serde_json::Value =
@@ -390,6 +524,10 @@ mod tests {
     let bytes = fs::read(dir.join("proof.bin"))?;
     let vk = dir.join("verifying-key.bin");
     let id = sha256(&vk)?;
+    assert_eq!(
+      hex(&id),
+      provenance["files"]["verifying-key.bin"].as_str().unwrap()
+    );
     let claim = include_bytes!("../../tests/fixtures/init-fri/claim.bin");
     assert_eq!(
       blake3::hash(claim).to_hex().as_str(),
@@ -399,7 +537,7 @@ mod tests {
     packet.extend(bytes);
     let key = TrustedKey {
       sha256: hex(&id),
-      path: vk,
+      path: vk.clone(),
       inner_vk_id: provenance["inner_vk_id"].as_str().unwrap().into(),
       inner_schema_sha256: provenance["inner_schema_sha256"]
         .as_str()
@@ -421,21 +559,27 @@ mod tests {
         keys: vec![key],
       })?,
     )?;
-    assert!(
-      verify_with_catalog(&packet, claim, &catalog, &helper, false).is_err()
-    );
+    assert!(verify_with_catalog(&packet, claim, &catalog, false).is_err());
     assert_eq!(
-      verify_with_catalog(&packet, claim, &catalog, &helper, true)?,
+      verify_with_catalog(&packet, claim, &catalog, true)?,
       SetupClass::Development
     );
     assert!(
-      verify_with_catalog(&packet, b"another claim", &catalog, &helper, true)
-        .is_err()
+      verify_with_catalog(&packet, b"another claim", &catalog, true).is_err()
+    );
+    let mut wrong_key = fs::read(&vk)?;
+    wrong_key[0] ^= 1;
+    assert!(
+      gnark::verify_groth16(
+        &wrong_key,
+        &id,
+        &packet[32..],
+        &digest(provenance["claim_digest"].as_str().unwrap())?
+      )
+      .is_err()
     );
     packet[32] = 0;
-    assert!(
-      verify_with_catalog(&packet, claim, &catalog, &helper, true).is_err()
-    );
+    assert!(verify_with_catalog(&packet, claim, &catalog, true).is_err());
     Ok(())
   }
 
@@ -484,7 +628,7 @@ mod tests {
   }
 
   #[test]
-  fn malformed_envelopes_fail_before_key_or_helper_access() {
+  fn malformed_envelopes_fail_before_key_access() {
     for length in [0, 32, 195, 197, 227, 229, 1 << 20] {
       assert!(
         verify(&vec![0; length], b"claim", false)
@@ -493,5 +637,72 @@ mod tests {
           .contains("packet length")
       );
     }
+  }
+}
+
+#[cfg(all(test, feature = "groth16"))]
+mod native_tests {
+  use super::*;
+
+  #[test]
+  #[ignore = "compiles the full Init verifier circuit"]
+  fn compiles_init_without_changing_constraints() -> Result<()> {
+    let directory = Scratch::new()?;
+    let schema =
+      include_bytes!("../../../../tools/plonk-wrapper/testdata/bn254/vk.json");
+    let path = directory.0.join("circuit.bin");
+    let info = gnark::compile_groth16(schema, &path)?;
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+      "../../tests/fixtures/groth16/provenance.json"
+    ))?;
+    assert_eq!(
+      u64::try_from(info.constraints)?,
+      expected["constraints"].as_u64().unwrap()
+    );
+    assert_eq!(info.domain, expected["domain"].as_u64().unwrap());
+    assert_eq!(info.commitments, 1);
+    assert_eq!(info.public_inputs, 2);
+    assert_eq!(
+      hex(&sha256(&path)?),
+      expected["circuit_sha256"].as_str().unwrap()
+    );
+    Ok(())
+  }
+
+  #[test]
+  #[ignore = "requires prepared Init proving artifacts and several GiB of memory"]
+  fn retained_init_prover_reuses_keys() -> Result<()> {
+    let dir = PathBuf::from(std::env::var("IX_GROTH16_ARTIFACTS")?);
+    let metadata: Metadata = load_json(&dir.join("manifest.json"))?;
+    metadata.validate()?;
+    let provenance: serde_json::Value = serde_json::from_str(include_str!(
+      "../../tests/fixtures/groth16/provenance.json"
+    ))?;
+    assert_eq!(
+      metadata.artifact("verifying-key.bin")?.sha256,
+      provenance["files"]["verifying-key.bin"].as_str().unwrap()
+    );
+    let key = include_bytes!("../../tests/fixtures/groth16/verifying-key.bin");
+    let expected_key = digest(&metadata.artifact("verifying-key.bin")?.sha256)?;
+    let claim = digest(provenance["claim_digest"].as_str().unwrap())?;
+    let witness = include_bytes!(
+      "../../../../tools/plonk-wrapper/testdata/bn254/witness.json"
+    );
+    let mut prover =
+      gnark::Prover::open_groth16(&dir, &metadata, &proving_backend()?)?;
+    let first = prover.prove(witness, &claim)?;
+    let second = prover.prove(witness, &claim)?;
+    for proof in [&first, &second] {
+      gnark::verify_groth16(key, &expected_key, &proof.native, &claim)?;
+      assert_eq!(proof.native.len(), 196);
+      assert_eq!(proof.solidity.len(), 384);
+    }
+    assert_ne!(first.native, second.native);
+    let mut wrong = claim;
+    wrong[0] ^= 1;
+    assert!(prover.prove(witness, &wrong).is_err());
+    assert!(prover.prove(witness, &claim).is_err());
+    prover.close()?;
+    Ok(())
   }
 }

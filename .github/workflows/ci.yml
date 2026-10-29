@@ -133,6 +133,10 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/plonk-wrapper/go.mod
+          cache-dependency-path: tools/plonk-wrapper/go.sum
       # A push to main already passed the lints and tests in the merge
       # queue; that run only builds, so the sticky disk holds the check,
       # clippy and test-binary artifacts the next PR run will fingerprint.
@@ -171,6 +175,7 @@ jobs:
       # link without paying for a GPU runner. One explicit architecture
       # is sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
+      IX_PLONK_CUDA_ARCHS: "80"
     steps:
       # No sccache here yet. Once the GPU benchmark lands after #644, wire
       # it for both compilers: `sccache: s3` plus the sccache action for
@@ -186,7 +191,7 @@ jobs:
         run: |
           apt-get update
           apt-get install --yes --no-install-recommends \
-            build-essential ca-certificates curl git libclang-dev python3 sudo
+            build-essential ca-certificates cmake curl git libclang-dev ninja-build python3 sudo
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: portable
@@ -205,9 +210,21 @@ jobs:
         with:
           auto-config: false
           use-github-cache: false
+      - name: Build pinned BN254 ICICLE libraries
+        run: |
+          go -C tools/plonk-wrapper mod download github.com/ingonyama-zk/icicle-gnark/v3
+          icicleSource=$(go -C tools/plonk-wrapper list -m -f '{{.Dir}}' github.com/ingonyama-zk/icicle-gnark/v3)
+          cmake -S "$icicleSource/icicle" -B "$RUNNER_TEMP/icicle-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/icicle" \
+            -DCURVE=bn254 -DMSM=ON -DNTT=ON -DG2=ON -DCPU_BACKEND=OFF \
+            -DCUDA_BACKEND=ON -DBUILD_TESTS=OFF -DCUDA_ARCH=80-real \
+            -DCMAKE_CUDA_ARCHITECTURES=80-real
+          cmake --build "$RUNNER_TEMP/icicle-build" --parallel
+          cmake --install "$RUNNER_TEMP/icicle-build"
+          echo "IX_GROTH16_ICICLE_ROOT=$RUNNER_TEMP/icicle" >> "$GITHUB_ENV"
       - name: Compile CUDA Rust targets
         run: |
-          cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda
+          cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda,ix-proof-compression/plonk,ix-proof-compression/groth16
       - name: Check CPU runtime linkage without a CUDA compiler
         run: IX_CUDA=0 IX_CUDA_TRACE_CODEGEN=0 NVCC=/nonexistent/nvcc lake build ix_cuda_runtime
       - name: Link CUDA-enabled Lean executables

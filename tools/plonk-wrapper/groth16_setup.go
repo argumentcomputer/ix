@@ -46,33 +46,7 @@ func readGroth16Artifact(path string, expected artifact, value io.ReaderFrom) er
 	if expected.Bytes < 1 || expected.Bytes > 1<<42 {
 		return fmt.Errorf("invalid Groth16 artifact size")
 	}
-	if _, err := unhex(expected.SHA256, 32); err != nil {
-		return err
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(f, expected.Bytes+1))
-	if err != nil {
-		return err
-	}
-	if n != expected.Bytes || hex.EncodeToString(h.Sum(nil)) != expected.SHA256 {
-		return fmt.Errorf("Groth16 artifact identity differs: %s", path)
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	n, err = value.ReadFrom(f)
-	if err != nil {
-		return err
-	}
-	if n != expected.Bytes {
-		return fmt.Errorf("Groth16 artifact has trailing data: %s", path)
-	}
-	return nil
+	return readVerified(path, expected, value)
 }
 
 func groth16BundlePath(metadata string, item groth16CeremonyFile) (string, error) {
@@ -110,8 +84,8 @@ func groth16PinnedJSON(path, pin string, out any) error {
 	return decodeGroth16JSON(data, out)
 }
 
-func groth16MPCSetup(dir, path, trusted string) error {
-	_, ccs, m, err := groth16Load(dir)
+func groth16MPCSetup(dir string, m *groth16Manifest, path, trusted string) error {
+	_, ccs, err := groth16Load(dir, m)
 	if err != nil {
 		return err
 	}
@@ -171,8 +145,8 @@ func groth16MPCSetup(dir, path, trusted string) error {
 	return groth16SaveKeys(dir, m, pk, vk, "mpc", trusted)
 }
 
-func groth16Import(dir, path, trusted string) error {
-	_, _, m, err := groth16Load(dir)
+func groth16Import(dir string, m *groth16Manifest, path, trusted string) error {
+	_, _, err := groth16Load(dir, m)
 	if err != nil {
 		return err
 	}
@@ -184,7 +158,7 @@ func groth16Import(dir, path, trusted string) error {
 		return err
 	}
 	if release.Format != "ix-bn254-groth16-release-v1" || release.Curve != "bn254" ||
-		release.Circuit != m.Files["circuit.bin"].SHA256 || release.InnerVK != m.InnerVK || release.CommitmentHash != m.CommitmentHash {
+		release.Circuit != m.Files["circuit.bin"].SHA256 || release.InnerVK != m.InnerVK || release.CommitmentHash != "sha256" {
 		return fmt.Errorf("Groth16 release does not match this circuit")
 	}
 	if _, err := unhex(release.Ceremony, 32); err != nil {

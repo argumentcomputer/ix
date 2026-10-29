@@ -9,15 +9,15 @@ pub use stages::{
 mod driver;
 mod first;
 mod fixed_cache;
-#[cfg(feature = "groth16")]
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub mod gnark;
 mod groth16;
 #[cfg(test)]
 mod init_claim;
 mod init_fri;
-#[cfg(feature = "plonk")]
 mod plonk;
 mod terminal;
-pub use terminal::{TerminalOptions, TerminalSystem};
+pub use terminal::{Artifact, TerminalOptions, TerminalSystem};
 mod prover;
 mod root;
 mod setup;
@@ -253,6 +253,18 @@ fn check_worker_curve(ignition: bool, terminal: TerminalSystem) -> Result<()> {
   if capabilities[flag] != true {
     return Err(format!("compression worker does not support {flag}").into());
   }
+  let backend = match terminal {
+    TerminalSystem::Plonk => "IX_PLONK_BACKEND",
+    TerminalSystem::Groth16 => "IX_GROTH16_BACKEND",
+    TerminalSystem::None => unreachable!(),
+  };
+  if std::env::var(backend).as_deref() == Ok("cuda")
+    && capabilities[format!("{flag}_cuda")] != true
+  {
+    return Err(
+      format!("compression worker lacks CUDA support for {flag}").into(),
+    );
+  }
   Ok(())
 }
 
@@ -298,11 +310,9 @@ pub fn verify(
   claim: &[u8],
   allow_development: bool,
 ) -> Result<setup::SetupClass> {
-  #[cfg(feature = "groth16")]
   if let Some(packet) = proof.strip_prefix(groth16::PROOF_TAG) {
     return groth16::verify(packet, claim, allow_development);
   }
-  #[cfg(feature = "plonk")]
   if let Some(packet) = proof.strip_prefix(plonk::PROOF_TAG) {
     return plonk::verify(packet, claim);
   }
@@ -391,29 +401,14 @@ fn validate_compression_options(
       "development terminal keys are supported only for Groth16".into(),
     );
   }
-  if terminal.system == TerminalSystem::Groth16 {
-    #[cfg(not(feature = "groth16"))]
-    return Err("this build does not include terminal Groth16 support".into());
-    #[cfg(feature = "groth16")]
-    {
-      if development {
-        return Err("terminal Groth16 requires admitted inner KZG parameters; omit --dev-srs".into());
-      }
-      groth16::preflight(terminal.allow_development)?;
-    }
+  if terminal.system != TerminalSystem::None && development {
+    return Err(
+      "terminal proofs require admitted inner KZG parameters; omit --dev-srs"
+        .into(),
+    );
   }
-  if terminal.system == TerminalSystem::Plonk {
-    #[cfg(not(feature = "plonk"))]
-    return Err("this build does not include terminal PLONK support".into());
-    #[cfg(feature = "plonk")]
-    {
-      if development {
-        return Err(
-          "terminal PLONK requires admitted ceremony parameters; omit --dev-srs".into(),
-        );
-      }
-      plonk::helper_executable()?;
-    }
+  if terminal.system == TerminalSystem::Groth16 {
+    groth16::preflight(terminal.allow_development)?;
   }
   if !matches!(log_height, 24 | 25) {
     return Err(
@@ -532,7 +527,6 @@ pub fn compress_with_terminal(
 ) -> Result<Vec<u8>> {
   let words = check_claim(claim, statement)?;
   let setup = validate_compression_options(development, log_height, terminal)?;
-  #[cfg(feature = "groth16")]
   if terminal.system == TerminalSystem::Groth16 {
     groth16::check_statement(&words, terminal.allow_development)?;
   }
@@ -639,56 +633,50 @@ fn finish_kzg(
     );
   }
   if terminal.system == TerminalSystem::Groth16 {
-    #[cfg(feature = "groth16")]
-    {
-      let terminal_out = out.join("groth16");
-      let expected_path = final_dir.join("expected-statement.json");
-      storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
-      let verifier = final_dir.join("vk.bin");
-      let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-      child(
-        "groth16",
-        &[
-          "wrap",
-          &path(&verifier)?,
-          &path(&final_dir.join("kzg/packet.bin"))?,
-          trusted.as_str(),
-          &path(&expected_path)?,
-          &path(&terminal_out)?,
-          if terminal.allow_development {
-            "--allow-development"
-          } else {
-            "--production"
-          },
-        ],
-        &caches,
-      )?;
-      return Ok(fs::read(terminal_out.join("proof.envelope.bin"))?);
-    }
+    let terminal_out = out.join("groth16");
+    let expected_path = final_dir.join("expected-statement.json");
+    storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
+    let verifier = final_dir.join("vk.bin");
+    let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
+    child(
+      "groth16",
+      &[
+        "wrap",
+        &path(&verifier)?,
+        &path(&final_dir.join("kzg/packet.bin"))?,
+        trusted.as_str(),
+        &path(&expected_path)?,
+        &path(&terminal_out)?,
+        if terminal.allow_development {
+          "--allow-development"
+        } else {
+          "--production"
+        },
+      ],
+      &caches,
+    )?;
+    return Ok(fs::read(terminal_out.join("proof.envelope.bin"))?);
   }
   if terminal.system == TerminalSystem::Plonk {
-    #[cfg(feature = "plonk")]
-    {
-      let out_plonk = out.join("plonk");
-      let expected_path = final_dir.join("expected-statement.json");
-      storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
-      let verifier = final_dir.join("vk.bin");
-      let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-      child(
-        "plonk",
-        &[
-          "wrap",
-          &path(&verifier)?,
-          &path(&final_dir.join("kzg/packet.bin"))?,
-          trusted.as_str(),
-          &path(&expected_path)?,
-          &path(&cache_root.join("plonk"))?,
-          &path(&out_plonk)?,
-        ],
-        &caches,
-      )?;
-      return Ok(fs::read(out_plonk.join("proof.envelope.bin"))?);
-    }
+    let out_plonk = out.join("plonk");
+    let expected_path = final_dir.join("expected-statement.json");
+    storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
+    let verifier = final_dir.join("vk.bin");
+    let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
+    child(
+      "plonk",
+      &[
+        "wrap",
+        &path(&verifier)?,
+        &path(&final_dir.join("kzg/packet.bin"))?,
+        trusted.as_str(),
+        &path(&expected_path)?,
+        &path(&cache_root.join("plonk"))?,
+        &path(&out_plonk)?,
+      ],
+      &caches,
+    )?;
+    return Ok(fs::read(out_plonk.join("proof.envelope.bin"))?);
   }
   Ok(result)
 }

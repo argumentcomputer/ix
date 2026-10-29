@@ -3,15 +3,11 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"runtime/debug"
-	"strings"
-	"time"
 
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/plonk"
@@ -95,162 +91,6 @@ func readSRS(path, expectedDigest string, domain uint64, p *verifyingKey) (*nati
 	return srs, nil
 }
 
-func prepare(dir, path, digest string) error {
-	decodedDigest, err := unhex(digest, 32)
-	if err != nil {
-		return err
-	}
-	digest = hex.EncodeToString(decodedDigest)
-	metadata, err := loadManifest(dir)
-	if err != nil {
-		return err
-	}
-	if metadata.KeysReady {
-		if metadata.SRSBLAKE3 != digest {
-			return fmt.Errorf("prepared keys belong to a different SRS export")
-		}
-		if err := metadata.checkKeys(dir); err != nil {
-			return err
-		}
-		fmt.Printf("reused_keys=true verifying_key_sha256=%s\n", metadata.Files["verifying-key.bin"].SHA256)
-		return nil
-	}
-	m := metadata
-	if err := m.checkFile(dir, "circuit.bin"); err != nil {
-		return err
-	}
-	p, err := loadVerifyingKey(filepath.Join(dir, "vk.json"))
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "stage=srs_import domain=%d\n", m.Domain)
-	start := time.Now()
-	srs, err := readSRS(path, digest, m.Domain, p)
-	if err != nil {
-		return err
-	}
-	m.Seconds["srsImport"] = time.Since(start).Seconds()
-	start = time.Now()
-	cacheRoot := os.Getenv("IX_PLONK_LAGRANGE_CACHE")
-	if cacheRoot == "" {
-		cacheRoot = filepath.Join(filepath.Dir(dir), "lagrange")
-	}
-	fmt.Fprintln(os.Stderr, "stage=lagrange")
-	lagrangeSRS, reused, err := lagrangeParameters(cacheRoot, srs, m.Domain, p.SetupID, digest)
-	if err != nil {
-		return err
-	}
-	m.Seconds["lagrange"] = time.Since(start).Seconds()
-	// The group FFT's temporary arrays must not overlap circuit deserialization.
-	debug.FreeOSMemory()
-	fmt.Fprintln(os.Stderr, "stage=load_circuit")
-	_, ccs, _, err := loadCircuit(dir)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(os.Stderr, "stage=index")
-	start = time.Now()
-	pk, vk, err := plonk.Setup(ccs, srs, lagrangeSRS)
-	if err != nil {
-		return err
-	}
-	m.Seconds["index"] = time.Since(start).Seconds()
-	m.Commitments = len(vk.(*nativeVerifyingKey).Qcp)
-	debug.FreeOSMemory()
-	fmt.Fprintln(os.Stderr, "stage=write_keys")
-	if err := saveBinary(dir, "proving-key.bin", pk, m); err != nil {
-		return err
-	}
-	if err := saveBinary(dir, "verifying-key.bin", vk, m); err != nil {
-		return err
-	}
-	if err := atomicFile(filepath.Join(dir, "PlonkVerifier.sol"), func(w io.Writer) error { return vk.ExportSolidity(w) }); err != nil {
-		return err
-	}
-	m.Files["PlonkVerifier.sol"], err = fileHash(filepath.Join(dir, "PlonkVerifier.sol"))
-	if err != nil {
-		return err
-	}
-	m.SRSBLAKE3, m.KeysReady = digest, true
-	if err := writeJSON(filepath.Join(dir, "manifest.json"), m); err != nil {
-		return err
-	}
-	fmt.Printf("domain=%d extra_commitments=%d reused_lagrange=%t verifying_key_sha256=%s\n", m.Domain, m.Commitments, reused, m.Files["verifying-key.bin"].SHA256)
-	return nil
-}
-
-func prove(dir, path, out string) error {
-	if err := validateProvingBackend(); err != nil {
-		return err
-	}
-	p, ccs, m, err := loadCircuit(dir)
-	if err != nil {
-		return err
-	}
-	if err := m.checkKeys(dir); err != nil {
-		return err
-	}
-	pk := plonk.NewProvingKey(curveID)
-	if err := readBinary(filepath.Join(dir, "proving-key.bin"), pk); err != nil {
-		return err
-	}
-	vk := plonk.NewVerifyingKey(curveID)
-	if err := readBinary(filepath.Join(dir, "verifying-key.bin"), vk); err != nil {
-		return err
-	}
-	assignment, err := witnessAssignment(p, path)
-	if err != nil {
-		return err
-	}
-	w, err := frontend.NewWitness(assignment, curveID.ScalarField())
-	if err != nil {
-		return err
-	}
-	setupStarted := time.Now()
-	cleanup, err := configureProvingBackend(pk)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = cleanup() }()
-	backendSetupSeconds := time.Since(setupStarted).Seconds()
-	start := time.Now()
-	proof, err := plonk.Prove(ccs, pk, w, solidity.WithProverTargetSolidityVerifier(backend.PLONK))
-	seconds := time.Since(start).Seconds()
-	cleanupErr := cleanup()
-	if err != nil {
-		return err
-	}
-	if cleanupErr != nil {
-		return cleanupErr
-	}
-	public, err := w.Public()
-	if err != nil {
-		return err
-	}
-	start = time.Now()
-	if err := plonk.Verify(proof, vk, public, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK)); err != nil {
-		return err
-	}
-	verifySeconds := time.Since(start).Seconds()
-	if err := atomicFile(filepath.Join(out, "proof.bin"), func(w io.Writer) error { _, err := proof.WriteTo(w); return err }); err != nil {
-		return err
-	}
-	solidityBytes := proof.(*nativeProof).MarshalSolidity()
-	if err := atomicFile(filepath.Join(out, "proof.solidity.bin"), func(w io.Writer) error { _, err := w.Write(solidityBytes); return err }); err != nil {
-		return err
-	}
-	selectedBackend := os.Getenv("IX_PLONK_BACKEND")
-	if selectedBackend == "" {
-		selectedBackend = "cpu"
-	}
-	report := map[string]any{"backend": selectedBackend, "backendSetupSeconds": backendSetupSeconds, "proveSeconds": seconds, "verifySeconds": verifySeconds, "solidityBytes": len(solidityBytes), "verifyingKeySHA256": m.Files["verifying-key.bin"].SHA256}
-	if err := writeJSON(filepath.Join(out, "report.json"), report); err != nil {
-		return err
-	}
-	fmt.Printf("prove_seconds=%.3f verify_seconds=%.6f solidity_bytes=%d\n", seconds, verifySeconds, len(solidityBytes))
-	return nil
-}
-
 func decodeProof(data []byte, commitments int) (*nativeProof, error) {
 	if commitments < 0 || commitments > 1024 || len(data) != 9*pointBytesLen+232+(32+pointBytesLen)*commitments {
 		return nil, fmt.Errorf("invalid PLONK proof length")
@@ -293,59 +133,32 @@ type publicClaim struct {
 
 func (*publicClaim) Define(frontend.API) error { return nil }
 
-func verify(keyPath, trustedDigest, proofPath, expectedClaim string, expectedAnchors ...string) error {
-	key, err := fileHash(keyPath)
-	if err != nil {
-		return err
+func verifyProof(key, trustedDigest, data, digest, expectedAnchors []byte) error {
+	if len(key) > 1<<20 || len(data) > 1<<20 || len(trustedDigest) != 32 || len(digest) != 32 || len(expectedAnchors) != anchorBytesLen {
+		return fmt.Errorf("invalid verification input length")
 	}
-	if key.SHA256 != strings.TrimPrefix(trustedDigest, "0x") {
+	actual := sha256.Sum256(key)
+	if !bytes.Equal(actual[:], trustedDigest) {
 		return fmt.Errorf("trusted wrapper verification key digest differs")
 	}
 	vk := new(nativeVerifyingKey)
-	if err := readBinary(keyPath, vk); err != nil {
+	reader := bytes.NewReader(key)
+	if _, err := vk.ReadFrom(reader); err != nil {
 		return err
 	}
-	if vk.NbPublicVariables != 2 {
-		return fmt.Errorf("wrapper key has wrong public-input schema")
+	if reader.Len() != 0 || vk.NbPublicVariables != 2 {
+		return fmt.Errorf("invalid wrapper verifying key")
 	}
-	if len(expectedAnchors) > 1 {
-		return fmt.Errorf("expected one anchor encoding")
+	if !bytes.Equal(encodeAnchors(vk), expectedAnchors) {
+		return fmt.Errorf("wrapper verification key setup anchors differ")
 	}
-	if len(expectedAnchors) == 1 {
-		expected, err := unhex(expectedAnchors[0], anchorBytesLen)
-		if err != nil {
-			return err
-		}
-		actual := encodeAnchors(vk)
-		if !bytes.Equal(actual, expected) {
-			return fmt.Errorf("wrapper verification key setup anchors differ")
-		}
-	}
-	digest, err := unhex(expectedClaim, 32)
-	if err != nil {
-		return err
-	}
-	f, err := os.Open(proofPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, 1<<20))
-	if err != nil {
-		return err
-	}
-	start := time.Now()
 	proof, err := decodeProof(data, len(vk.Qcp))
 	if err != nil {
 		return err
 	}
-	w, err := frontend.NewWitness(&publicClaim{Claim: digestLimbs(digest)}, curveID.ScalarField(), frontend.PublicOnly())
+	public, err := frontend.NewWitness(&publicClaim{Claim: digestLimbs(digest)}, curveID.ScalarField(), frontend.PublicOnly())
 	if err != nil {
 		return err
 	}
-	if err := plonk.Verify(proof, vk, w, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK)); err != nil {
-		return err
-	}
-	fmt.Printf("verified claim=%s verify_seconds=%.6f\n", hex.EncodeToString(digest), time.Since(start).Seconds())
-	return nil
+	return plonk.Verify(proof, vk, public, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK))
 }

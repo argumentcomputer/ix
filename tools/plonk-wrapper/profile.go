@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
-	"os"
 	"strings"
 
 	"github.com/consensys/gnark/frontend"
@@ -68,13 +68,8 @@ type witnessJSON struct {
 	Values           []string
 }
 
-func decodeJSON(path string, out any) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	d := json.NewDecoder(io.LimitReader(f, 16<<20))
+func decodeReader(reader io.Reader, out any) error {
+	d := json.NewDecoder(reader)
 	d.DisallowUnknownFields()
 	if err := d.Decode(out); err != nil {
 		return err
@@ -83,6 +78,20 @@ func decodeJSON(path string, out any) error {
 		return fmt.Errorf("trailing JSON data")
 	}
 	return nil
+}
+
+func decodeVerifyingKey(data []byte) (*verifyingKey, error) {
+	var key verifyingKey
+	if len(data) > 16<<20 {
+		return nil, fmt.Errorf("verifying key description is too large")
+	}
+	if err := decodeReader(bytes.NewReader(data), &key); err != nil {
+		return nil, err
+	}
+	if err := key.validate(); err != nil {
+		return nil, err
+	}
+	return &key, nil
 }
 
 func unhex(s string, length int) ([]byte, error) {
@@ -134,17 +143,6 @@ func g2Keys(encoded []string) ([2]nativeG2, error) {
 		}
 	}
 	return result, nil
-}
-
-func loadVerifyingKey(path string) (*verifyingKey, error) {
-	var p verifyingKey
-	if err := decodeJSON(path, &p); err != nil {
-		return nil, err
-	}
-	if err := p.validate(); err != nil {
-		return nil, err
-	}
-	return &p, nil
 }
 
 func (p *verifyingKey) validate() error {
@@ -280,11 +278,7 @@ func newCircuit(p *verifyingKey) *wrapperCircuit {
 	return &wrapperCircuit{VK: p, Points: make([]circuitG1, p.PointCount), Deferred: make([]circuitG1, p.deferredCount()), Values: make([]frontend.Variable, p.FieldCount)}
 }
 
-func witnessAssignment(p *verifyingKey, path string) (*wrapperCircuit, error) {
-	var w witnessJSON
-	if err := decodeJSON(path, &w); err != nil {
-		return nil, err
-	}
+func assignWitness(p *verifyingKey, w *witnessJSON) (*wrapperCircuit, error) {
 	if len(w.Points) != p.PointCount || len(w.Deferred) != p.deferredCount() || len(w.Values) != p.FieldCount {
 		return nil, fmt.Errorf("witness dimensions differ from verifying key")
 	}

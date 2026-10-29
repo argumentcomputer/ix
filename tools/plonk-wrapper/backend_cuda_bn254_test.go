@@ -22,8 +22,6 @@ func TestCUDAProvingBackendFactory(t *testing.T) {
 	if os.Getenv("IX_PLONK_CUDA_TEST") != "1" {
 		t.Skip("set IX_PLONK_CUDA_TEST=1 for the native CUDA backend factory proof test")
 	}
-	t.Setenv("IX_PLONK_BACKEND", "cuda")
-	t.Setenv("IX_PLONK_CUDA_MEMORY_GIB", "8")
 	p, err := loadVerifyingKey(filepath.Join("testdata", "bn254", "vk.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +58,7 @@ func TestCUDAProvingBackendFactory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleanup, err := configureProvingBackend(pk)
+	cleanup, err := configureBackend(pk, backendConfig{CUDA: true, MemoryBytes: 8 << 30})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,19 +4,10 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strconv"
 )
-
-type lagrangeManifest struct {
-	Format, SetupID, MonomialBLAKE3 string
-	Domain                          uint64
-	Points                          artifact
-}
 
 func readAffinePoints(r io.Reader, count uint64) ([]nativeG1, error) {
 	points := make([]nativeG1, count)
@@ -49,79 +40,43 @@ func writeAffinePoints(w io.Writer, points []nativeG1) error {
 	return b.Flush()
 }
 
-func lagrangeLocation(root string, domain uint64, setupID, receipt string) (lagrangeManifest, string, error) {
-	want := lagrangeManifest{Format: lagrangeFormat, SetupID: setupID, MonomialBLAKE3: receipt, Domain: domain}
-	identity, err := json.Marshal(want)
-	if err != nil {
-		return want, "", err
-	}
-	digest := sha256.Sum256(identity)
-	dir := filepath.Join(root, strconv.FormatUint(domain, 10), hex.EncodeToString(digest[:]))
-	return want, dir, nil
-}
-
-func publishLagrange(dir string, want lagrangeManifest, points []nativeG1) error {
-	pointsPath, metadata := filepath.Join(dir, "points.bin"), filepath.Join(dir, "manifest.json")
-	var err error
-	if err := atomicFile(pointsPath, func(w io.Writer) error { return writeAffinePoints(w, points) }); err != nil {
-		return err
-	}
-	want.Points, err = fileHash(pointsPath)
-	if err != nil {
-		return err
-	}
-	if err := writeJSON(metadata, want); err != nil {
-		return err
-	}
-	return nil
-}
-
-func lagrangeParameters(root string, srs *nativeSRS, domain uint64, setupID, receipt string) (*nativeSRS, bool, error) {
+func loadLagrange(srs *nativeSRS, domain uint64, path, expected string) (*nativeSRS, error) {
 	if domain < 2 || domain > 1<<26 || domain&(domain-1) != 0 || uint64(len(srs.Pk.G1)) < domain+3 {
-		return nil, false, fmt.Errorf("invalid Lagrange domain or monomial prefix")
+		return nil, fmt.Errorf("invalid Lagrange domain")
 	}
-	want, dir, err := lagrangeLocation(root, domain, setupID, receipt)
-	if err != nil {
-		return nil, false, err
-	}
-	metadata := filepath.Join(dir, "manifest.json")
-	pointsPath := filepath.Join(dir, "points.bin")
-	if _, err := os.Stat(metadata); err == nil {
-		var stored lagrangeManifest
-		if err := decodeJSON(metadata, &stored); err != nil {
-			return nil, false, err
-		}
-		pointsInfo := stored.Points
-		stored.Points = artifact{}
-		if stored != want || pointsInfo.Bytes != int64(2*baseBytes*domain) {
-			return nil, false, fmt.Errorf("Lagrange cache identity differs")
-		}
-		got, err := fileHash(pointsPath)
+	if expected != "" {
+		f, err := os.Open(path)
 		if err != nil {
-			return nil, false, err
-		}
-		if got != pointsInfo {
-			return nil, false, fmt.Errorf("Lagrange cache checksum differs")
-		}
-		f, err := os.Open(pointsPath)
-		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		defer f.Close()
-		points, err := readAffinePoints(bufio.NewReaderSize(f, 1<<20), domain)
+		info, err := f.Stat()
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
-		return &nativeSRS{Pk: nativeKzgProvingKey{G1: points}, Vk: srs.Vk}, true, nil
-	} else if !os.IsNotExist(err) {
-		return nil, false, err
+		if info.Size() != int64(2*baseBytes*domain) {
+			return nil, fmt.Errorf("Lagrange cache size differs")
+		}
+		hash := sha256.New()
+		reader := bufio.NewReaderSize(io.TeeReader(f, hash), 1<<20)
+		points, err := readAffinePoints(reader, domain)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := reader.ReadByte(); err != io.EOF {
+			return nil, fmt.Errorf("trailing Lagrange cache data")
+		}
+		if hex.EncodeToString(hash.Sum(nil)) != expected {
+			return nil, fmt.Errorf("Lagrange cache checksum differs")
+		}
+		return &nativeSRS{Pk: nativeKzgProvingKey{G1: points}, Vk: srs.Vk}, nil
 	}
 	points, err := toLagrange(srs.Pk.G1[:domain])
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if err := publishLagrange(dir, want, points); err != nil {
-		return nil, false, err
+	if err := atomicFile(path, func(w io.Writer) error { return writeAffinePoints(w, points) }); err != nil {
+		return nil, err
 	}
-	return &nativeSRS{Pk: nativeKzgProvingKey{G1: points}, Vk: srs.Vk}, false, nil
+	return &nativeSRS{Pk: nativeKzgProvingKey{G1: points}, Vk: srs.Vk}, nil
 }

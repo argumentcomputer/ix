@@ -45,8 +45,6 @@ const g2ExportBytes = 128
 const anchorBytesLen = 320
 const srsMagic = "IXBPSR01"
 const vkFormat = "ix-bn254-plonk-vk-v1"
-const artifactFormat = "ix-bn254-plonk-artifacts-v1"
-const lagrangeFormat = "ix-bn254-plonk-lagrange-v1"
 
 var curveParameters = sw_emulated.GetBN254Params
 

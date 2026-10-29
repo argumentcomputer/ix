@@ -5,9 +5,7 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"runtime"
-	"strconv"
 	"sync"
 
 	"github.com/consensys/gnark/backend"
@@ -23,7 +21,6 @@ import (
 var groth16CUDAInit sync.Once
 var groth16CUDAInitError error
 var groth16CUDADevices sync.Map
-var groth16LibraryDefault string
 
 func groth16CUDAAvailable() bool { return true }
 
@@ -40,27 +37,13 @@ func onGroth16Device(device *cr.Device, call func() error) error {
 	return call()
 }
 
-func newGroth16CUDAEngine() (*groth16Engine, error) {
-	deviceID := 0
-	if value := os.Getenv("IX_GROTH16_DEVICE"); value != "" {
-		id, err := strconv.ParseUint(value, 10, 31)
-		if err != nil {
-			return nil, fmt.Errorf("invalid IX_GROTH16_DEVICE: %w", err)
-		}
-		deviceID = int(id)
-	}
-	var pin bool
-	switch os.Getenv("IX_GROTH16_PIN_KEY") {
-	case "", "0":
-	case "1":
-		pin = true
-	default:
-		return nil, fmt.Errorf("IX_GROTH16_PIN_KEY must be 0 or 1")
-	}
+func newGroth16CUDAEngine(config groth16Backend) (*groth16Engine, error) {
+	deviceID := config.Device
+	pin := config.PinKeys
 	groth16CUDAInit.Do(func() {
 		var status cr.EIcicleError
-		if os.Getenv("ICICLE_BACKEND_INSTALL_DIR") == "" && groth16LibraryDefault != "" {
-			status = cr.LoadBackend(groth16LibraryDefault, true)
+		if config.Library != "" {
+			status = cr.LoadBackend(config.Library, true)
 		} else {
 			status = cr.LoadBackendFromEnvOrDefault()
 		}

@@ -42,7 +42,7 @@ func TestGroth16CUDAInterop(t *testing.T) {
 		}
 		for _, pin := range []string{"0", "1"} {
 			t.Setenv("IX_GROTH16_PIN_KEY", pin)
-			engine, err := newGroth16Engine()
+			engine, err := newGroth16Engine(groth16Backend{CUDA: true, PinKeys: pin == "1", Library: os.Getenv("ICICLE_BACKEND_INSTALL_DIR")})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,16 +1,26 @@
 //! Shared transport and artifact checks for terminal proof backends.
-#![cfg_attr(
-  not(any(feature = "plonk", feature = "groth16")),
-  allow(dead_code, unused_imports)
-)]
-use super::{Result, statement, storage};
+use super::Result;
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+use super::statement;
+#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
+use super::storage;
+use serde::{Deserialize, Serialize};
+#[cfg(any(feature = "plonk", feature = "groth16", test))]
 use sha2::{Digest, Sha256};
-use std::{
-  fs,
-  io::Read,
-  path::{Path, PathBuf},
-  process::{Command, Stdio},
-};
+use std::{fs, io::Read, path::Path};
+
+#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
+use std::path::PathBuf;
+#[cfg(any(not(feature = "plonk"), not(feature = "groth16")))]
+use std::process::{Command, Stdio};
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+pub struct Artifact {
+  #[serde(rename = "SHA256")]
+  pub sha256: String,
+  pub bytes: u64,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
@@ -56,7 +66,9 @@ impl TryFrom<u8> for TerminalOptions {
   }
 }
 
+#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
 pub(super) struct Scratch(pub(super) PathBuf);
+#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
 impl Scratch {
   pub(super) fn new() -> Result<Self> {
     let path =
@@ -65,6 +77,7 @@ impl Scratch {
     Ok(Self(path))
   }
 }
+#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
 impl Drop for Scratch {
   fn drop(&mut self) {
     let _ = fs::remove_dir_all(&self.0);
@@ -80,18 +93,24 @@ pub(super) fn hex(bytes: &[u8]) -> String {
   output
 }
 
-pub(super) fn digest(text: &str) -> Result<[u8; 32]> {
+pub(super) fn decode_hex(text: &str) -> Result<Vec<u8>> {
   let text = text.strip_prefix("0x").unwrap_or(text);
-  if text.len() != 64 || !text.is_ascii() {
-    return Err("expected a 32-byte hexadecimal digest".into());
+  if !text.is_ascii() || !text.len().is_multiple_of(2) {
+    return Err("invalid hexadecimal bytes".into());
   }
-  let mut bytes = [0; 32];
-  for (index, byte) in bytes.iter_mut().enumerate() {
-    *byte = u8::from_str_radix(&text[2 * index..2 * index + 2], 16)?;
-  }
-  Ok(bytes)
+  (0..text.len())
+    .step_by(2)
+    .map(|i| Ok(u8::from_str_radix(&text[i..i + 2], 16)?))
+    .collect()
 }
 
+pub(super) fn digest(text: &str) -> Result<[u8; 32]> {
+  decode_hex(text)?
+    .try_into()
+    .map_err(|_bytes| "expected a 32-byte hexadecimal digest".into())
+}
+
+#[cfg(any(feature = "plonk", feature = "groth16", test))]
 pub(super) fn sha256(path: &Path) -> Result<[u8; 32]> {
   let mut file = fs::File::open(path)?;
   let mut hash = Sha256::new();
@@ -106,33 +125,22 @@ pub(super) fn sha256(path: &Path) -> Result<[u8; 32]> {
   Ok(hash.finalize().into())
 }
 
+pub(super) fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
+  let mut bytes = Vec::new();
+  fs::File::open(path)?.take((limit + 1) as u64).read_to_end(&mut bytes)?;
+  if bytes.len() > limit {
+    return Err("terminal input exceeds its size limit".into());
+  }
+  Ok(bytes)
+}
+
 pub(super) fn load_json<T: serde::de::DeserializeOwned>(
   path: &Path,
 ) -> Result<T> {
-  let mut bytes = Vec::new();
-  fs::File::open(path)?.take((1 << 20) + 1).read_to_end(&mut bytes)?;
-  if bytes.len() > 1 << 20 {
-    return Err("terminal metadata exceeds its size limit".into());
-  }
-  Ok(serde_json::from_slice(&bytes)?)
+  Ok(serde_json::from_slice(&read_bounded(path, 1 << 20)?)?)
 }
 
-pub(super) fn helper_executable(variable: &str) -> Result<PathBuf> {
-  let path = if let Some(path) = std::env::var_os(variable) {
-    PathBuf::from(path)
-  } else if let Some(path) = std::env::var_os("IX_PLONK_HELPER") {
-    PathBuf::from(path)
-  } else {
-    std::env::current_exe()?.with_file_name("ix-bn254-plonk-wrapper")
-  };
-  if !path.is_file() {
-    return Err(
-      format!("gnark terminal helper is missing; set {variable}").into(),
-    );
-  }
-  Ok(path)
-}
-
+#[cfg(any(not(feature = "plonk"), not(feature = "groth16")))]
 pub(super) fn checked(command: &mut Command) -> Result<()> {
   let status = command
     .stdout(Stdio::from(std::io::stderr()))
@@ -144,6 +152,7 @@ pub(super) fn checked(command: &mut Command) -> Result<()> {
   Ok(())
 }
 
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(super) fn claim_digest(
   expected: &statement::Statement,
 ) -> Result<[u8; 32]> {

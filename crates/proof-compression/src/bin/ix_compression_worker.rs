@@ -1,7 +1,6 @@
-//! The stage worker `ix compress` spawns: `ix-compression-worker <stage>
-//! <args...>` runs one FRI, first KZG or recursive KZG stage. Stages run in
-//! their own executable so the Lean executable links no KZG proving code or
-//! its CUDA runtime, and so each heavy phase exits before the next starts.
+//! Compression stages run in separate processes so each heavy phase releases
+//! its memory before the next starts. Native gnark and CUDA support belong to
+//! this worker; the Lean-facing Rust library launches it without those runtimes.
 use tracing_subscriber::{
   Layer, filter::FilterFn, layer::SubscriberExt, util::SubscriberInitExt,
 };
@@ -10,7 +9,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let args: Vec<String> = std::env::args().skip(1).collect();
   let Some((stage, rest)) = args.split_first() else {
     return Err(
-      "usage: ix-compression-worker <fri|kzg|wrap|pipeline> <args...>".into(),
+      "usage: ix-compression-worker <fri|kzg|wrap|pipeline|plonk> <args...>"
+        .into(),
     );
   };
   let texray = std::env::var("IX_TEXRAY").as_deref() == Ok("1");

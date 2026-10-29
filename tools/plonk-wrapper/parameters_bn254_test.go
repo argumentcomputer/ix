@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -27,14 +26,18 @@ func TestLagrangeCacheAndBasisConversion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := t.TempDir()
-	first, reused, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3)
-	if err != nil || reused {
-		t.Fatalf("initial derivation: reused=%t error=%v", reused, err)
+	path := filepath.Join(t.TempDir(), "points.bin")
+	first, err := loadLagrange(srs, 8, path, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	second, reused, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3)
-	if err != nil || !reused {
-		t.Fatalf("cached derivation: reused=%t error=%v", reused, err)
+	identity, err := fileHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := loadLagrange(srs, 8, path, identity.SHA256)
+	if err != nil {
+		t.Fatal(err)
 	}
 	for i := range first.Pk.G1 {
 		if !first.Pk.G1[i].Equal(&second.Pk.G1[i]) {
@@ -59,11 +62,7 @@ func TestLagrangeCacheAndBasisConversion(t *testing.T) {
 	if !a.Equal(&b) {
 		t.Fatal("monomial and Lagrange commitments differ")
 	}
-	files, err := filepath.Glob(filepath.Join(root, "8", "*", "points.bin"))
-	if err != nil || len(files) != 1 {
-		t.Fatalf("cache files: %v %v", files, err)
-	}
-	f, err := os.OpenFile(files[0], os.O_RDWR, 0)
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,19 +77,10 @@ func TestLagrangeCacheAndBasisConversion(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := lagrangeParameters(root, srs, 8, p.SetupID, receipt.Blake3); err == nil {
+	if _, err := loadLagrange(srs, 8, path, identity.SHA256); err == nil {
 		t.Fatal("accepted corrupted Lagrange cache")
 	}
-	for _, identity := range []struct {
-		domain         uint64
-		setup, receipt string
-	}{
-		{16, p.SetupID, receipt.Blake3},
-		{8, strings.Repeat("b", 64), receipt.Blake3},
-		{8, p.SetupID, strings.Repeat("c", 64)},
-	} {
-		if _, reused, err := lagrangeParameters(root, srs, identity.domain, identity.setup, identity.receipt); err != nil || reused {
-			t.Fatalf("different setup, receipt or domain reused old cache: %t %v", reused, err)
-		}
+	if _, err := loadLagrange(srs, 16, path, identity.SHA256); err == nil {
+		t.Fatal("accepted wrong Lagrange domain")
 	}
 }

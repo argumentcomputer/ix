@@ -182,10 +182,7 @@ func TestBN254CUDAInit(t *testing.T) {
 			var accelerator *cuda.Accelerator
 			var cudaConfig *cuda.Config
 			if mode != "cpu" {
-				config, err := provingCUDAConfig()
-				if err != nil {
-					t.Fatal(err)
-				}
+				config := cuda.Config{MemoryBytes: 64 << 30, HeadroomBytes: 8 << 30}
 				cudaConfig = &config
 				accelerator, err = cuda.Attach(nativePK, config)
 				if err != nil {
@@ -352,10 +349,10 @@ func initManifest(dir, expectedSHA256 string) (*manifest, error) {
 	if err := d.Decode(new(any)); err != io.EOF {
 		return nil, fmt.Errorf("trailing Init manifest data")
 	}
-	if m.Format != artifactFormat || !m.KeysReady || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.PublicInputs != 2 || m.Commitments < 0 || m.Commitments > 1024 || len(m.Files) != 5 {
+	if !m.KeysReady || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.PublicInputs != 2 || m.Commitments < 0 || m.Commitments > 1024 || len(m.Files) != 5 {
 		return nil, fmt.Errorf("Init requires prepared BN254 wrapper artifacts")
 	}
-	for _, digest := range []string{m.ExecutableSHA256, m.InnerVKSHA256, m.SRSBLAKE3} {
+	for _, digest := range []string{m.InnerVKSHA256, m.SRSBLAKE3} {
 		if _, err := initDigest(digest); err != nil {
 			return nil, fmt.Errorf("invalid Init manifest identity: %w", err)
 		}

@@ -29,6 +29,16 @@ fn worker_traces_early_failures_and_keeps_stdout_machine_readable() {
     assert_eq!(capabilities["curve"], ix_proof_compression::kzg::curve::NAME);
     assert_eq!(capabilities["development_setup_only"], false);
     assert_eq!(capabilities["ignition_setup"], true);
+    assert_eq!(capabilities["terminal_plonk"], cfg!(feature = "plonk"));
+    assert_eq!(capabilities["terminal_groth16"], cfg!(feature = "groth16"));
+    assert_eq!(
+      capabilities["terminal_groth16_cuda"],
+      cfg!(all(feature = "groth16", feature = "cuda"))
+    );
+    assert_eq!(
+      capabilities["terminal_plonk_cuda"],
+      cfg!(all(feature = "plonk", feature = "cuda"))
+    );
     assert_eq!(
       String::from_utf8_lossy(&output.stderr)
         .contains("[texray] compression/fri:"),

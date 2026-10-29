@@ -11,6 +11,8 @@ import sys
 
 
 def features(arguments):
+    if '--features' not in arguments:
+        return set()
     index = arguments.index('--features')
     return set(arguments[index + 1].split(','))
 
@@ -43,17 +45,11 @@ def main():
     cases += [
         ('trace-codegen', {'IX_KZG_CURVE': 'bn254', 'IX_CUDA_TRACE_CODEGEN': '1'}, 'bn254', True, True),
         ('no-parallel', {'IX_KZG_CURVE': 'bn254', 'IX_NO_PAR': '1'}, 'bn254', False, False),
-        ('plonk-cuda-only', {'IX_KZG_CURVE': 'bn254', 'IX_PLONK_CUDA': '1'}, 'bn254', False, True),
-        ('both-cuda', {'IX_KZG_CURVE': 'bn254', 'IX_PLONK_CUDA': '1', 'IX_CUDA': '1'}, 'bn254', True, True),
-    ]
-    cases += [
-        ('groth16-cuda-only', {'IX_GROTH16_CUDA': '1'}, 'bn254', False, True),
-        ('all-cuda', {'IX_GROTH16_CUDA': '1', 'IX_PLONK_CUDA': '1', 'IX_CUDA': '1'}, 'bn254', True, True),
     ]
     report = {'lean': version, 'typecheck_passed': True, 'cases': []}
     for name, selection, curve, cuda, parallel in cases:
         environment = dict(os.environ, LEAN_PATH=str(out))
-        for variable in ['IX_KZG_CURVE', 'IX_CUDA', 'IX_CUDA_TRACE_CODEGEN', 'IX_NO_PAR', 'IX_PLONK_CUDA', 'IX_GROTH16_CUDA']:
+        for variable in ['IX_KZG_CURVE', 'IX_CUDA', 'IX_CUDA_TRACE_CODEGEN', 'IX_NO_PAR']:
             environment.pop(variable, None)
         environment.update(selection)
         result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
@@ -65,7 +61,7 @@ def main():
         required = {'plonk', 'groth16'}
         required |= {'parallel'} if parallel else set()
         worker = required | ({'cuda'} if cuda else set())
-        ffi = required | ({'cuda-trace-codegen'} if name == 'trace-codegen' else ({'cuda'} if cuda else set()))
+        ffi = (required - {'plonk', 'groth16'}) | ({'cuda-trace-codegen'} if name == 'trace-codegen' else ({'cuda'} if cuda else set()))
         for target, expected in [
             ('worker', worker), ('ffi', ffi),
             ('net', ffi | ({'net'} if sys.platform != 'darwin' else set())),
@@ -79,17 +75,10 @@ def main():
                 raise RuntimeError(f'{name}: unexpected {target} features: {arguments}')
         if actual['worker'][actual['worker'].index('--bin') + 1] != 'ix-compression-worker':
             raise RuntimeError(f'{name}: wrong worker executable')
-        if actual['terminal_groth16'] is not True:
-            raise RuntimeError(f'{name}: Groth16 terminal is missing')
-        if actual['groth16_cuda'] != (selection.get('IX_GROTH16_CUDA') == '1'):
-            raise RuntimeError(f'{name}: Groth16 CUDA selection depends on another backend')
-        if actual['terminal_plonk'] is not True:
+        if actual['terminal_plonk'] is not True or actual['terminal_groth16'] is not True:
             raise RuntimeError(f'{name}: wrong terminal backend selection')
-        if actual['plonk_cuda'] != (selection.get('IX_PLONK_CUDA') == '1'):
-            raise RuntimeError(f'{name}: PLONK CUDA selection depends on inner CUDA selection')
-        helper = 'ix-bn254-plonk-wrapper'
-        if actual['plonk_helper'] != helper or '-tags' in actual['plonk_build']:
-            raise RuntimeError(f'{name}: wrong PLONK helper or Go build tags')
+        if actual['plonk_cuda'] != cuda:
+            raise RuntimeError(f'{name}: PLONK CUDA requires both plonk and cuda')
         report['cases'].append({'name': name, 'environment': selection, 'arguments': actual, 'passed': True})
     environment.update(IX_KZG_CURVE='invalid')
     result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
@@ -98,10 +87,10 @@ def main():
     if result.returncode != 1 or 'IX_KZG_CURVE must be bn254' not in result.stdout:
         raise RuntimeError('invalid curve was not rejected as expected')
     report['invalid_curve_rejected'] = True
-    environment.update(IX_KZG_CURVE='bls12-381', IX_PLONK_CUDA='1')
+    environment.update(IX_KZG_CURVE='bls12-381')
     result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
         env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    (out / 'invalid-plonk-cuda.log').write_text(result.stdout)
+    (out / 'retired-curve.log').write_text(result.stdout)
     if result.returncode != 1 or 'IX_KZG_CURVE must be bn254' not in result.stdout:
         raise RuntimeError('retired curve configuration was not rejected')
     report['retired_curve_rejected'] = True

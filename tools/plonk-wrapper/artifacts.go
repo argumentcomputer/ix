@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -15,13 +14,12 @@ type artifact struct {
 	Bytes  int64
 }
 type manifest struct {
-	Format, ExecutableSHA256, InnerVKSHA256 string
-	SRSBLAKE3                               string
-	KeysReady                               bool
-	Domain                                  uint64
-	Constraints, PublicInputs, Commitments  int
-	Files                                   map[string]artifact
-	Seconds                                 map[string]float64
+	InnerVKSHA256                          string
+	SRSBLAKE3                              string
+	KeysReady                              bool
+	Domain                                 uint64
+	Constraints, PublicInputs, Commitments int
+	Files                                  map[string]artifact
 }
 
 func fileHash(path string) (artifact, error) {
@@ -65,108 +63,41 @@ func atomicFile(path string, write func(io.Writer) error) error {
 	return d.Sync()
 }
 
-func writeJSON(path string, value any) error {
-	return atomicFile(path, func(w io.Writer) error { enc := json.NewEncoder(w); enc.SetIndent("", "  "); return enc.Encode(value) })
-}
-
-func saveBinary(dir, name string, value io.WriterTo, m *manifest) error {
-	path := filepath.Join(dir, name)
-	if err := atomicFile(path, func(w io.Writer) error { _, err := value.WriteTo(w); return err }); err != nil {
-		return err
-	}
-	entry, err := fileHash(path)
-	if err != nil {
-		return err
-	}
-	m.Files[name] = entry
-	return nil
-}
-
-func (m *manifest) checkFile(dir, name string) error {
-	want, ok := m.Files[name]
-	if !ok {
-		return fmt.Errorf("artifact %s missing from manifest", name)
-	}
-	got, err := fileHash(filepath.Join(dir, name))
-	if err != nil {
-		return err
-	}
-	if got != want {
-		return fmt.Errorf("artifact %s checksum or size differs", name)
-	}
-	return nil
-}
-
-func loadManifest(dir string) (*manifest, error) {
-	var m manifest
-	if err := decodeJSON(filepath.Join(dir, "manifest.json"), &m); err != nil {
-		return nil, err
-	}
-	if m.Format != artifactFormat || m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.Commitments < 0 || m.Commitments > 1024 || m.Files == nil || m.Seconds == nil {
-		return nil, fmt.Errorf("invalid wrapper artifact manifest")
+func (m *manifest) validate() error {
+	if m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<26 || m.Domain < uint64(m.Constraints+2) || m.Domain > 1<<26 || m.Domain&(m.Domain-1) != 0 || m.Commitments < 0 || m.Commitments > 1024 || m.Files == nil {
+		return fmt.Errorf("invalid wrapper artifact metadata")
 	}
 	if m.KeysReady {
 		if _, err := unhex(m.SRSBLAKE3, 32); err != nil {
-			return nil, fmt.Errorf("invalid parameter receipt: %w", err)
-		}
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	identity, err := fileHash(executable)
-	if err != nil {
-		return nil, err
-	}
-	if identity.SHA256 != m.ExecutableSHA256 {
-		return nil, fmt.Errorf("wrapper executable changed; recompile circuit and keys")
-	}
-	if err := m.checkFile(dir, "vk.json"); err != nil {
-		return nil, err
-	}
-	if m.Files["vk.json"].SHA256 != m.InnerVKSHA256 {
-		return nil, fmt.Errorf("verifying key identity differs")
-	}
-	return &m, nil
-}
-
-func executableHash() (string, error) {
-	path, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	entry, err := fileHash(path)
-	return entry.SHA256, err
-}
-
-func (m *manifest) checkKeys(dir string) error {
-	if !m.KeysReady {
-		return fmt.Errorf("PLONK keys are not prepared")
-	}
-	for _, name := range []string{"proving-key.bin", "verifying-key.bin", "PlonkVerifier.sol"} {
-		if err := m.checkFile(dir, name); err != nil {
 			return err
 		}
+	}
+	if m.Files["vk.json"].SHA256 != m.InnerVKSHA256 {
+		return fmt.Errorf("verifying key identity differs")
 	}
 	return nil
 }
 
-func readBinary(path string, value io.ReaderFrom) error {
+func readVerified(path string, expected artifact, value io.ReaderFrom) error {
+	if expected.Bytes < 1 {
+		return fmt.Errorf("missing artifact %s", path)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	n, err := value.ReadFrom(f)
+	hash := sha256.New()
+	n, err := value.ReadFrom(io.TeeReader(io.LimitReader(f, expected.Bytes+1), hash))
 	if err != nil {
 		return err
 	}
-	stat, err := f.Stat()
-	if err != nil {
-		return err
+	if n != expected.Bytes || hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
+		return fmt.Errorf("decoded artifact differs: %s", path)
 	}
-	if n != stat.Size() {
-		return fmt.Errorf("trailing binary data in %s", path)
+	var extra [1]byte
+	if n, err := f.Read(extra[:]); n != 0 || err != io.EOF {
+		return fmt.Errorf("trailing artifact bytes: %s", path)
 	}
 	return nil
 }

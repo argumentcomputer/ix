@@ -28,6 +28,8 @@ fn print_capabilities() {
       "ignition_setup": true,
       "terminal_plonk": cfg!(feature = "plonk"),
       "terminal_groth16": cfg!(feature = "groth16"),
+      "terminal_plonk_cuda": cfg!(all(feature = "plonk", feature = "cuda")),
+      "terminal_groth16_cuda": cfg!(all(feature = "groth16", feature = "cuda")),
     })
   );
 }

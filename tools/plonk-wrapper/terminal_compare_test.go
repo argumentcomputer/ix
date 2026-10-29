@@ -224,7 +224,7 @@ func TestBN254TerminalComparison(t *testing.T) {
 			var close func()
 			if system == "groth16" {
 				t.Setenv("IX_GROTH16_BACKEND", device)
-				engine, err := newGroth16Engine()
+				engine, err := newGroth16Engine(groth16Backend{CUDA: device == "cuda", PinKeys: measurement.PinKeys, Library: os.Getenv("ICICLE_BACKEND_INSTALL_DIR")})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -270,7 +270,7 @@ func TestBN254TerminalComparison(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				cleanup, err := configureProvingBackend(pk)
+				cleanup, err := configureBackend(pk, backendConfig{CUDA: device == "cuda", MemoryBytes: 64 << 30})
 				if err != nil {
 					t.Fatal(err)
 				}

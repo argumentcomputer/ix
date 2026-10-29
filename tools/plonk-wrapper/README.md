@@ -1,191 +1,98 @@
-# BN254 PLONK wrapper
+# BN254 terminal gnark backends
 
-This helper proves the exported Ix KZG verifier using BN254 PLONK. It binds
-the expected claim digest and checks both outer and deferred pairing
-obligations. The checked-in verifier witness comes from an authenticated
-Ignition Init proof.
+This Go module implements the terminal Ix verifier circuit and calls stock
+gnark. Cargo builds it as a C archive inside `ix-compression-worker`;
+`pipeline/gnark.rs` owns the Rust bindings and loaded prover handles.
+There is no separate Go executable.
 
-## Build and use through ix
+The circuit binds the expected claim digest and checks outer and deferred
+pairing obligations. It uses classic GLV, separate pairing checks, and explicit
+`accumulatorCount`, `claims`, and `publics` in the verifier description.
 
-`lake build ix` builds the CLI, compression worker, and
-`ix-bn254-plonk-wrapper`. The Go module builds BN254 unconditionally;
-the optional `cuda` tag enables GPU arithmetic. Nix provides
-`.#plonk-wrapper`, `.#plonk-wrapper-cuda`, and the complete `.#ix` CLI.
+## Build and use
 
-Configure `IX_KZG_IGNITION_CACHE`, `IX_KZG_IGNITION_CACHE_BLAKE3`,
-`IX_KZG_IGNITION_ADMISSION`, and `IX_KZG_IGNITION_ADMISSION_BLAKE3` using the
-[compression setup guide](../../crates/proof-compression/README.md).
+`lake build ix` builds the Lean CLI and native Rust compression worker. The
+worker enables `plonk` and `groth16`; the Lean-facing `ix-ffi` library does not. CPU
+builds need Go and a C compiler, but no CUDA toolkit. A direct worker build is:
+
+```sh
+cargo build --release -p ix-proof-compression --bin ix-compression-worker \
+  --no-default-features --features parallel,plonk,groth16
+```
+
+Configure the four Ignition environment variables from the
+[compression setup guide](../../crates/proof-compression/README.md), then run:
 
 ```sh
 ix compress ROOT_PROOF_ADDRESS --plonk --out /path/to/empty-output
 ```
 
-Terminal PLONK requires authenticated ceremony parameters. The output's
-`plonk` directory contains native/Solidity proofs, the generated verifier,
-verifying key, admission, and candidate verifier catalog. `IX_PLONK_HELPER`
-can override the executable location.
+Rust authenticates the setup and inner proof, selects the cache, calls gnark,
+and publishes the native proof, Solidity payload, key, verifier contract,
+admission, and candidate catalog. The proof envelope is written last, after
+verification succeeds. `IX_COMPRESSION_WORKER` overrides the worker location.
+Nix provides `.#compression-worker`, `.#compression-worker-cuda`, and
+`.#ix`.
 
-## Optional BN254 CUDA backend
+## CUDA
 
-CPU is the default. The experimental CUDA helper supports BN254 domains through
-`2^24`, including the current Init circuit, with GPU MSMs, FFTs and PLONK
-numerator evaluation through stock gnark's `Accelerator` interface. CPU and CUDA
-builds use the same pinned `go.mod` and `go.sum`. Gnark retains quotient division,
-witness solving, randomness, transcript challenges, opening construction and
-verification. Proof encoding and the verifying key are independent of the
-selected arithmetic backend.
-
-The source build uses explicit copies of sppark revision
-`114feb69ebfe029e2caa5e6c2d372c695e5d4da8` and blst 0.3.16. The blst source root
-must contain `src/server.c` and `build/assembly.S`. No Rust build archive is
-required. Provide these source roots and a CUDA toolkit supporting the chosen
-GPU architecture:
+Enabling both `plonk` and `cuda` Cargo features enables GPU MSMs, FFTs and numerator
+evaluation through gnark's upstream `Accelerator` interface. Gnark retains
+quotient division, witness solving, randomness, transcript challenges, opening
+construction, and verification. CPU and CUDA use the same module graph and
+proof encodings.
 
 ```sh
-export IX_PLONK_SPPARK_SOURCE=/path/to/pinned-sppark
-export IX_PLONK_BLST_SOURCE=/path/to/blst-0.3.16/blst
 export CUDA_HOME=/usr/local/cuda
-export NVCC="$CUDA_HOME/bin/nvcc"
 export IX_PLONK_CUDA_ARCHS=120
-IX_PLONK_CUDA=1 lake build ix_plonk_wrapper
+IX_CUDA=1 lake build ix
 ```
 
-The standalone equivalent is:
+Cargo obtains the pinned sppark and BLST sources from its `cuda` dependencies. `IX_PLONK_SPPARK_SOURCE` and
+`IX_PLONK_BLST_SOURCE` optionally override those roots. Alternatively,
+`IX_PLONK_CUDA_LIBRARY` names an already-built `libix_plonk_bn254_cuda.so`.
+Lake installs that library beside the worker in `../lib`. Nix supplies its
+pinned native library directly. Primitive source ownership and build details
+are in `crates/proof-compression/cuda/plonk`.
 
-```sh
-python3 tools/plonk-wrapper/build_cuda.py \
-  --out .lake/build/bin/ix-bn254-plonk-wrapper \
-  --build-dir .lake/build/plonk-cuda \
-  --sppark "$IX_PLONK_SPPARK_SOURCE" --blst "$IX_PLONK_BLST_SOURCE"
-```
+Select execution separately with `IX_PLONK_BACKEND=cpu` or `cuda`.
+`IX_PLONK_CUDA_DEVICE` selects the visible GPU ordinal; the default is zero.
+`IX_PLONK_CUDA_MEMORY_GIB` sets the budget, defaulting to 64 GiB with 8 GiB
+additional headroom. `IX_PLONK_CUDA_MSM_STRATEGY` accepts `split` (default) or
+`mask`. `IX_CUDA` enables CUDA for Aiur, FRI, KZG, and terminal PLONK.
 
-The native build checks source receipts and applies the tracked sppark patch
-to a private build copy. The helper uses ordinary `go build -tags=cuda` against
-the pinned upstream modules and records executable/library hashes. The native
-library is installed in `../lib` relative to the helper. Keep both artifacts together when installing; `lake run install`
-does this when `IX_PLONK_CUDA=1`. The optional Nix package is
-`.#plonk-wrapper-cuda`, targeting SM120. CPU packages remain independent of
-the CUDA toolkit.
-
-Select the runtime backend separately from building it:
-
-```sh
-CUDA_VISIBLE_DEVICES=0 IX_PLONK_BACKEND=cuda \
-  .lake/build/bin/ix-bn254-plonk-wrapper prove artifacts input/witness.json proof-output
-```
-
-`IX_PLONK_CUDA_DEVICE` selects the visible ordinal (default 0), and
-`IX_PLONK_CUDA_MEMORY_GIB` sets the allocation budget (default 64 GiB), with
-8 GiB additional device headroom. Use one visible physical GPU per helper.
-`IX_PLONK_CUDA` does not imply the inner prover's `IX_CUDA`, or vice versa.
-Requesting CUDA from a CPU-only helper fails explicitly. CUDA errors abort that
-proof; they do not silently switch its arithmetic to CPU.
-
-The helper emits callback times, dispatch counts, transferred bytes, allocation
-accounting and CUDA pool high-water marks. Callback times include transfers;
-numerator timing includes its internal transforms and host restoration. Pool
-high-water marks exclude allocations outside the pool. Complete-process timing
-also includes artifact authentication/loading and backend setup.
-Queue wait and nested native timings overlap callback timings; they are not
-independent stages to add to the total.
-Set `IX_PLONK_CUDA_TRACE=1` for operation start/end diagnostics without scalar
-values. Transfer counters cover explicit adapter transfers; internal sppark
-result transfers may add traffic.
-
-Transfer metrics report per-callback byte/call deltas and separate inclusive
-transfer wall time, host staging and DMA event time. Wall time can include
-previously queued kernels; host staging and DMA overlap. DMA timings are valid
-only when `TransferTimingEnabled` is true. The shared transfer implementation
-currently enables those events with `IX_KZG_CUDA_PROFILE=1`.
-
-The opt-in full Init test supports `IX_PLONK_CUDA_INIT_MODES=cpu,cuda`,
-`IX_PLONK_CUDA_INIT_REPEATS` and `IX_PLONK_CUDA_INIT_CPU_PROFILE=1`, in addition
-to its required artifact/claim pins. CPU sampling covers only the first selected
-proof. Reports separate backend setup and profiler startup/shutdown from core
-proving.
-
-`IX_PLONK_CUDA_MSM_STRATEGY=split` is the default: large Pippenger buckets are
-split into bounded tasks while retaining the zero and ±1 fast paths. The
-explicit `mask` comparison strategy computes `MSM(s+r)-MSM(r)` and caches its
-correction points by registered range. Neither path applies whole-scalar
-affine normalization. Both preserve the original commitment exactly.
-
-Artifact manifests still bind their producer executable. Compile and prepare
-artifacts with the frozen helper used for proving; CPU/CUDA mode changes within
-that helper do not require different keys. A changed helper does not authorize
-editing an old manifest. The full Init test harness accepts an independently
-pinned existing manifest without changing production loading rules.
+A loaded prover retains its keys and optional accelerator across calls. Rust
+requires exclusive access for each proof and releases the Go handle on drop.
+CUDA failures abort the proof; they do not select CPU fallback. Metrics on
+stderr report arithmetic calls, transfers and memory use when the accelerator
+closes. `IX_PLONK_CUDA_TRACE=1` enables callback diagnostics; DMA event timing
+uses `IX_KZG_CUDA_PROFILE=1`.
 
 The [stock gnark comparison](../../docs/proof-benchmark-comparison.md#stock-gnark-comparison)
-records the Init measurements behind the upstream integration choice.
+records why the backend uses the upstream interface without fused extensions.
 
-The persistent worker protocol, immutable selector caching across proofs,
-shared admission with KZG workers, and cancellation/restart policy remain
-future service work.
+## Trust and artifacts
 
-## Authorize verification keys independently
+Rust owns artifact and Lagrange-cache metadata. Circuit caches bind the worker
+build, verifier description and admitted setup. Lagrange caches bind the setup,
+domain and monomial receipt. Go checks the sizes and digests of decoded native
+artifacts and rejects a witness whose claim differs from the independent digest
+supplied by Rust. Retaining a prover avoids loading its circuit and keys again.
 
-`IX_PLONK_VERIFIER_CATALOG` names an independently trusted JSON catalog.
-Generating a proof does not authorize its candidate catalog. The format is
-`ix-bn254-plonk-verifiers-v1`; entries use `setup: "ignition"` and pin the
-verifying-key SHA-256, inner verifying-key identity, program prefix, circuit
-hash, helper hash, and Ignition admission BLAKE3 digest. Relative paths are
-resolved beside the catalog. Verification needs neither a proving SRS nor a
-GPU, and derives the expected public digest from the caller's claim.
+`IX_PLONK_VERIFIER_CATALOG` selects an independently authorized catalog. A proof's
+candidate catalog is not automatically trusted. Entries bind the verifying-key
+SHA-256, inner verifier identity, program prefix, circuit hash, and Ignition
+admission. Verification requires neither a proving SRS nor a GPU.
 
-## Standalone operations
-
-`ix-compression-worker plonk export` authenticates a portable BLAKE3 verifying key,
-verifies its packet against an independently expected statement, and exports
-the fixed scalar program and canonical witness:
+The worker retains the `plonk export`, `export-first`, `srs`, `wrap`, and
+`verify` commands. For example:
 
 ```sh
-ix-compression-worker plonk export \
-  vk.bin packet.bin TRUSTED_VERIFIER_BLAKE3 expected-statement.json input
-ix-bn254-plonk-wrapper compile input/vk.json artifacts
-ix-bn254-plonk-wrapper check-witness artifacts input/witness.json
+ix-compression-worker plonk verify proof.envelope.bin claim.bin
 ```
 
-`check-witness` is an assignment diagnostic, not a proof. It uses diagnostic
-commitment challenges. Production `prove` uses gnark's real KZG commitment
-computation and verifies the resulting PLONK proof before publishing it.
-
-Read the padded `Domain` from `artifacts/manifest.json`, then export the required
-parameters through ix:
-
-```sh
-ix-compression-worker plonk srs DOMAIN parameters.bin
-ix-bn254-plonk-wrapper prepare artifacts parameters.bin TRUSTED_EXPORT_BLAKE3
-ix-bn254-plonk-wrapper prove artifacts input/witness.json proof-output
-ix-bn254-plonk-wrapper verify \
-  artifacts/verifying-key.bin TRUSTED_KEY_SHA256 \
-  proof-output/proof.bin EXPECTED_CLAIM_DIGEST
-```
-
-The parameter export receipt is written beside `parameters.bin` as
-`parameters.json`. Obtain `TRUSTED_EXPORT_BLAKE3` from that authenticated Rust
-operation, independently of an untrusted parameter file. Gnark requires `N+3`
-monomial powers and `N` Lagrange points; the adapter requests the next power of
-two from ix and retains the ceremony's full public degree. Its current maximum
-PLONK domain is `2^26` when a sufficient authenticated parameter prefix is available.
-
-Circuit and key artifacts bind the verifying key, executable and parameter receipt.
-The helper checks hashes before reuse. Lagrange points are cached separately
-by setup, domain and monomial receipt; `IX_PLONK_LAGRANGE_CACHE` can
-select the shared directory. A changed executable needs a new artifact
-directory. Corrupt artifacts fail closed.
-
-## BN254 Ignition parameters
-
-Export requires `IX_KZG_IGNITION_CACHE`, `IX_KZG_IGNITION_CACHE_BLAKE3`,
-`IX_KZG_IGNITION_ADMISSION` and `IX_KZG_IGNITION_ADMISSION_BLAKE3`, as described
-in the [compression setup documentation](../../crates/proof-compression/README.md).
-The provisioned `2^26` monomial cache supports PLONK domain `2^25`, which
-requires `2^25+3` powers. The Init wrapper uses classic GLV and separate pairing
-checks: 14,689,440 constraints plus two public rows fit a `2^24` domain.
-`prepare` derives and caches its Lagrange basis from the authenticated monomial
-powers. The exported verifier must explicitly supply `accumulatorCount`,
-`claims`, and `publics`.
+Internal metadata has no helper-executable identity. Rebuild old artifact caches
+and regenerate candidate catalogs instead of editing or translating them.
 
 ## Tests
 
@@ -194,22 +101,26 @@ cd tools/plonk-wrapper
 go test ./...
 ```
 
-The ordinary tests cover Blake3 boundaries, canonical point encodings,
-the actual Init verifier witness and tampering, exceptional MSM inputs,
-small PLONK proofs, explicit verifier schemas, and parameter-cache integrity.
-The opt-in full Init test above is the common CPU/CUDA profiling and integration
-entry point. Its loader validates the supplied artifact dimensions instead of
-assuming a fixed historical constraint count.
+Go tests cover circuit tampering, canonical encodings, exceptional MSM inputs,
+small PLONK proofs, SRS/basis conversion and cache corruption. Rust FFI tests use
+the authenticated Init proof and exercise bad claims, keys, proofs, buffers and
+handles:
 
-Current Init proofs use a `2^24` PLONK domain. Recorded native, envelope, and
-Solidity proof sizes are 584, 624, and 864 bytes. See the
-[benchmark comparison](../../docs/proof-benchmark-comparison.md) for hardware,
-timings, and measurement boundaries, and the
-[contract guide](../../contracts/plonk/README.md) for on-chain validation.
+```sh
+cargo test --release -p ix-proof-compression --no-default-features \
+  --features parallel,plonk --lib pipeline::gnark::tests
+```
+
+The full compile and retained-prover tests are ignored by default. The latter
+requires `IX_GNARK_INIT_ARTIFACTS`, `IX_GNARK_INIT_MANIFEST_SHA256`, and
+`IX_GNARK_INIT_WITNESS`; run it explicitly only after budgeting memory and time.
+The Go `TestBN254CUDAInit` remains an opt-in arithmetic integration/profiling
+entry point. The [contract guide](../../contracts/plonk/README.md) covers
+Solidity verification of the unchanged proof encoding.
 
 ## BN254 Groth16 terminal
 
-The helper also implements `groth16` over the same KZG verifier circuit and
+The worker also implements `groth16` over the same KZG verifier circuit and
 witness schema. It compiles R1CS instead of PLONK's sparse constraints. The two
 public inputs remain the little-endian 128-bit halves of the expected BLAKE3
 claim digest. The circuit retains the outer and deferred KZG pairing checks.
@@ -228,16 +139,16 @@ exporter, then compile the Groth16 circuit:
 
 ```sh
 ix-compression-worker groth16 export verifier.bin packet.bin TRUSTED_VERIFIER_BLAKE3 expected-statement.json input
-ix-bn254-plonk-wrapper groth16 compile input/vk.json groth16-keys
-ix-bn254-plonk-wrapper groth16 setup-development groth16-keys
-ix-bn254-plonk-wrapper groth16 prove groth16-keys input/witness.json EXPECTED_CLAIM_DIGEST proof
+ix-compression-worker groth16 compile input/vk.json groth16-keys
+ix-compression-worker groth16 setup-development groth16-keys
+ix-compression-worker groth16 prove groth16-keys input/witness.json EXPECTED_CLAIM_DIGEST proof
 ```
 
 `TRUSTED_VERIFIER_BLAKE3` authenticates the serialized KZG verifier file.
 `EXPECTED_CLAIM_DIGEST` is obtained independently of the witness. The exporter
 requires admitted Ignition parameters for the inner KZG proof; local Groth16
-setup does not change the inner setup policy. Explicit compilation checks a
-fresh circuit digest before reusing an existing artifact directory.
+setup does not change the inner setup policy. Compilation writes a fresh
+circuit into an empty artifact directory.
 
 The CLI uses prepared keys and an independently approved catalog:
 
@@ -313,8 +224,8 @@ G1/G2 MSMs and QAP polynomial work. CPU and CUDA use the same serialized keys,
 proof format, SHA-256 commitment hash, and CPU verifier.
 
 ```sh
-nix build .#groth16-wrapper-cuda
-export IX_GROTH16_HELPER="$PWD/result/bin/ix-bn254-plonk-wrapper"
+nix build .#compression-worker-cuda
+export IX_COMPRESSION_WORKER="$PWD/result/bin/ix-compression-worker"
 export IX_GROTH16_BACKEND=cuda
 export IX_GROTH16_DEVICE=0
 export IX_GROTH16_PIN_KEY=1
@@ -323,20 +234,20 @@ export IX_GROTH16_PIN_KEY=1
 `IX_GROTH16_PIN_KEY` defaults to `0`, streaming key vectors as needed. Set it to
 `1` only when persistent key vectors and working memory fit on the selected GPU.
 Each prover handle stays on one device; operations and cleanup are serialized
-per device. The helper does not warm other GPUs or silently fall back to CPU.
+per device. The worker does not warm other GPUs or silently fall back to CPU.
 
 For a manual ICICLE installation, build only BN254 with MSM, NTT and G2 enabled,
-and use the native source revision above. Then:
+using the pinned revision above. Set `IX_GROTH16_ICICLE_ROOT` to its installation
+prefix, then build with `IX_CUDA=1 lake build ix` or Cargo features
+`parallel,plonk,groth16,cuda`. The native build checks the libraries and packages
+both the core libraries and CUDA backend modules beside the worker. Nix supplies
+these dependencies in `.#compression-worker-cuda`; `.#icicle-bn254` builds ICICLE
+alone. Verification remains CPU-only and does not initialize a device.
 
-```sh
-python3 tools/plonk-wrapper/build_groth16_cuda.py --out /path/to/bin/ix-bn254-plonk-wrapper --icicle-root /persistent/icicle-installation
-```
-
-The installation remains a runtime dependency. `IX_GROTH16_ICICLE_ROOT` supplies
-it to Lake when `IX_GROTH16_CUDA=1`. The terminal CUDA choice is independent of
-`IX_CUDA` and `IX_PLONK_CUDA`. `.#terminal-wrapper-cuda` includes both terminal
-accelerators; `.#icicle-bn254` builds the native dependency alone. These CUDA
-packages target Linux x86-64 and SM 120. CPU-only builds require no CUDA libraries.
+Rust parses device selection and key-pinning options and passes them explicitly
+through FFI. The retained handle owns its native circuit, keys and device memory.
+Artifact manifests are internal metadata; regenerate them with the worker's
+compile/setup commands when changing the implementation.
 
 ### Solidity and tests
 
@@ -354,8 +265,11 @@ IX_GROTH16_CUDA_TEST=1 go test -tags icicle -run '^TestGroth16CUDAInterop$' .
 cd contracts/groth16 && forge test
 ```
 
-The full CPU fixture check is opt-in with `IX_GROTH16_WRAPPER_TEST=1` and
-`IX_GROTH16_WRAPPER_PROVE=1`; it includes local setup and takes several minutes.
+Rust tests verify the checked-in Init proof through FFI by default. The ignored
+`pipeline::groth16::native_tests::compiles_init_without_changing_constraints`
+checks the full circuit identity. `retained_init_prover_reuses_keys` uses prepared
+keys in `IX_GROTH16_ARTIFACTS`, proves twice, checks independent verification,
+and tests rejection and cleanup; it requires several GiB of memory.
 The matched performance harness is `TestBN254TerminalComparison`. It accepts
 `IX_TERMINAL_COMPARE=1`, `IX_TERMINAL_COMPARE_OUT`,
 `IX_TERMINAL_GROTH16_ARTIFACTS`, and optionally

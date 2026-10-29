@@ -8,10 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend"
@@ -24,7 +22,6 @@ import (
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 )
 
-const groth16ArtifactFormat = "ix-bn254-groth16-artifacts-v1"
 const groth16MaxProofBytes = 196
 
 func decodeGroth16JSON(data []byte, out any) error {
@@ -40,18 +37,15 @@ func decodeGroth16JSON(data []byte, out any) error {
 }
 
 type groth16Manifest struct {
-	Format         string              `json:"format"`
-	Curve          string              `json:"curve"`
-	InnerVK        string              `json:"innerVKSHA256"`
-	CommitmentHash string              `json:"commitmentHash"`
-	Constraints    int                 `json:"constraints"`
-	Domain         uint64              `json:"domain"`
-	PublicInputs   int                 `json:"publicInputs"`
-	Commitments    int                 `json:"commitments"`
-	Setup          string              `json:"setup"`
-	Ceremony       string              `json:"ceremonySHA256,omitempty"`
-	KeysReady      bool                `json:"keysReady"`
-	Files          map[string]artifact `json:"files"`
+	InnerVK      string              `json:"innerVKSHA256"`
+	Constraints  int                 `json:"constraints"`
+	Domain       uint64              `json:"domain"`
+	PublicInputs int                 `json:"publicInputs"`
+	Commitments  int                 `json:"commitments"`
+	Setup        string              `json:"setup"`
+	Ceremony     string              `json:"ceremonySHA256,omitempty"`
+	KeysReady    bool                `json:"keysReady"`
+	Files        map[string]artifact `json:"files"`
 }
 
 func groth16Shape(ccs constraint.ConstraintSystem) (uint64, int, error) {
@@ -66,8 +60,7 @@ func groth16Shape(ccs constraint.ConstraintSystem) (uint64, int, error) {
 }
 
 func (m *groth16Manifest) validate() error {
-	if m.Format != groth16ArtifactFormat || m.Curve != "bn254" || m.CommitmentHash != "sha256" ||
-		m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<27 ||
+	if m.PublicInputs != 2 || m.Constraints < 1 || m.Constraints > 1<<27 ||
 		m.Domain != ecc.NextPowerOfTwo(uint64(m.Constraints)) || m.Commitments < 0 || m.Commitments > 1 || m.Files == nil {
 		return fmt.Errorf("invalid Groth16 artifact manifest")
 	}
@@ -111,100 +104,52 @@ func (m *groth16Manifest) checkFile(dir, name string) error {
 	return nil
 }
 
-func groth16Load(dir string) (*verifyingKey, constraint.ConstraintSystem, *groth16Manifest, error) {
-	var m groth16Manifest
-	if err := decodeJSON(filepath.Join(dir, "manifest.json"), &m); err != nil {
-		return nil, nil, nil, err
-	}
+func groth16Load(dir string, m *groth16Manifest) (*verifyingKey, constraint.ConstraintSystem, error) {
 	if err := m.validate(); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	for _, name := range []string{"vk.json", "circuit.bin"} {
-		if err := m.checkFile(dir, name); err != nil {
-			return nil, nil, nil, err
-		}
-	}
-	if m.Files["vk.json"].SHA256 != m.InnerVK {
-		return nil, nil, nil, fmt.Errorf("Groth16 inner verifier identity differs")
-	}
-	p, err := loadVerifyingKey(filepath.Join(dir, "vk.json"))
+	data, err := readDescription(filepath.Join(dir, "vk.json"))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
+	}
+	hash := sha256.Sum256(data)
+	if hex.EncodeToString(hash[:]) != m.InnerVK || m.Files["vk.json"].SHA256 != m.InnerVK || m.Files["vk.json"].Bytes != int64(len(data)) {
+		return nil, nil, fmt.Errorf("Groth16 inner verifier identity differs")
+	}
+	key, err := decodeVerifyingKey(data)
+	if err != nil {
+		return nil, nil, err
 	}
 	ccs := groth16.NewCS(curveID)
-	if err := readBinary(filepath.Join(dir, "circuit.bin"), ccs); err != nil {
-		return nil, nil, nil, err
+	if err := readVerified(filepath.Join(dir, "circuit.bin"), m.Files["circuit.bin"], ccs); err != nil {
+		return nil, nil, err
 	}
 	domain, commitments, err := groth16Shape(ccs)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	if domain != m.Domain || commitments != m.Commitments || ccs.GetNbConstraints() != m.Constraints {
-		return nil, nil, nil, fmt.Errorf("Groth16 circuit dimensions differ")
+		return nil, nil, fmt.Errorf("Groth16 circuit dimensions differ")
 	}
-	return p, ccs, &m, nil
+	return key, ccs, nil
 }
 
-func groth16Compile(path, dir string) error {
-	p, err := loadVerifyingKey(path)
+func compileGroth16(schema []byte, path string) (circuitInfo, error) {
+	var info circuitInfo
+	key, err := decodeVerifyingKey(schema)
 	if err != nil {
-		return err
+		return info, err
 	}
-	identity, err := fileHash(path)
+	ccs, err := frontend.Compile(curveID.ScalarField(), r1cs.NewBuilder, newCircuit(key))
 	if err != nil {
-		return err
-	}
-	var existing *groth16Manifest
-	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err == nil {
-		_, _, m, err := groth16Load(dir)
-		if err != nil {
-			return err
-		}
-		if m.InnerVK != identity.SHA256 {
-			return fmt.Errorf("Groth16 circuit belongs to another inner verifier")
-		}
-		existing = m
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	ccs, err := frontend.Compile(curveID.ScalarField(), r1cs.NewBuilder, newCircuit(p))
-	if err != nil {
-		return err
+		return info, err
 	}
 	domain, commitments, err := groth16Shape(ccs)
 	if err != nil {
-		return err
+		return info, err
 	}
-	if existing != nil {
-		hash := sha256.New()
-		if _, err := ccs.WriteTo(hash); err != nil {
-			return err
-		}
-		if hex.EncodeToString(hash.Sum(nil)) != existing.Files["circuit.bin"].SHA256 {
-			return fmt.Errorf("compiled Groth16 circuit changed; use a new artifact directory and setup")
-		}
-		return nil
-	}
-	m := groth16Manifest{Format: groth16ArtifactFormat, Curve: "bn254", InnerVK: identity.SHA256,
-		CommitmentHash: "sha256", Domain: domain, Constraints: ccs.GetNbConstraints(), PublicInputs: 2,
-		Commitments: commitments, Files: make(map[string]artifact)}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if err := atomicFile(filepath.Join(dir, "vk.json"), func(w io.Writer) error { _, err := w.Write(data); return err }); err != nil {
-		return err
-	}
-	if err := atomicFile(filepath.Join(dir, "circuit.bin"), func(w io.Writer) error { _, err := ccs.WriteTo(w); return err }); err != nil {
-		return err
-	}
-	for _, name := range []string{"vk.json", "circuit.bin"} {
-		m.Files[name], err = fileHash(filepath.Join(dir, name))
-		if err != nil {
-			return err
-		}
-	}
-	return writeJSON(filepath.Join(dir, "manifest.json"), m)
+	info = circuitInfo{Domain: domain, Constraints: ccs.GetNbConstraints(), PublicInputs: 2, Commitments: commitments}
+	return info, atomicFile(path, func(w io.Writer) error { _, err := ccs.WriteTo(w); return err })
 }
 
 func groth16CheckKey(vk *g16.VerifyingKey, commitments int) error {
@@ -236,16 +181,23 @@ func groth16SaveKeys(dir string, m *groth16Manifest, pk groth16.ProvingKey, vk g
 		name  string
 		value io.WriterTo
 	}{{"proving-key.bin", pk}, {"verifying-key.bin", vk}} {
-		if err := atomicFile(filepath.Join(dir, item.name), func(w io.Writer) error { _, err := item.value.WriteTo(w); return err }); err != nil {
+		hash := sha256.New()
+		var size int64
+		if err := atomicFile(filepath.Join(dir, item.name), func(w io.Writer) error {
+			var err error
+			size, err = item.value.WriteTo(io.MultiWriter(w, hash))
+			return err
+		}); err != nil {
 			return err
 		}
+		m.Files[item.name] = artifact{SHA256: hex.EncodeToString(hash.Sum(nil)), Bytes: size}
 	}
 	if err := atomicFile(filepath.Join(dir, "Groth16Verifier.sol"), func(w io.Writer) error {
 		return vk.ExportSolidity(w, solidity.WithHashToFieldFunction(sha256.New()), solidity.WithPragmaVersion("^0.8.28"))
 	}); err != nil {
 		return err
 	}
-	for _, name := range []string{"proving-key.bin", "verifying-key.bin", "Groth16Verifier.sol"} {
+	for _, name := range []string{"Groth16Verifier.sol"} {
 		entry, err := fileHash(filepath.Join(dir, name))
 		if err != nil {
 			return err
@@ -256,11 +208,11 @@ func groth16SaveKeys(dir string, m *groth16Manifest, pk groth16.ProvingKey, vk g
 	if err := m.validate(); err != nil {
 		return err
 	}
-	return writeJSON(filepath.Join(dir, "manifest.json"), m)
+	return nil
 }
 
-func groth16DevelopmentSetup(dir string) error {
-	_, ccs, m, err := groth16Load(dir)
+func groth16DevelopmentSetup(dir string, m *groth16Manifest) error {
+	_, ccs, err := groth16Load(dir, m)
 	if err != nil {
 		return err
 	}
@@ -281,18 +233,24 @@ type groth16Engine struct {
 	close  func()
 }
 
-func newGroth16Engine() (*groth16Engine, error) {
-	switch os.Getenv("IX_GROTH16_BACKEND") {
-	case "", "cpu":
-		pk := groth16.NewProvingKey(curveID)
-		return &groth16Engine{key: pk, native: pk.(*g16.ProvingKey), close: func() {}, prove: func(ccs constraint.ConstraintSystem, w witness.Witness) (groth16.Proof, error) {
-			return groth16.Prove(ccs, pk, w, backend.WithProverHashToFieldFunction(sha256.New()))
-		}}, nil
-	case "cuda":
-		return newGroth16CUDAEngine()
-	default:
-		return nil, fmt.Errorf("IX_GROTH16_BACKEND must be cpu or cuda")
+type groth16Backend struct {
+	CUDA    bool
+	Device  int
+	PinKeys bool
+	Library string
+}
+
+func newGroth16Engine(config groth16Backend) (*groth16Engine, error) {
+	if config.Device < 0 {
+		return nil, fmt.Errorf("invalid Groth16 device")
 	}
+	if config.CUDA {
+		return newGroth16CUDAEngine(config)
+	}
+	pk := groth16.NewProvingKey(curveID)
+	return &groth16Engine{key: pk, native: pk.(*g16.ProvingKey), close: func() {}, prove: func(ccs constraint.ConstraintSystem, w witness.Witness) (groth16.Proof, error) {
+		return groth16.Prove(ccs, pk, w, backend.WithProverHashToFieldFunction(sha256.New()))
+	}}, nil
 }
 
 type groth16Session struct {
@@ -305,20 +263,24 @@ type groth16Session struct {
 	closed, failed bool
 }
 
-func openGroth16(dir string) (*groth16Session, error) {
-	p, ccs, m, err := groth16Load(dir)
+func openGroth16(dir string, metadata []byte, config groth16Backend) (*groth16Session, error) {
+	var m groth16Manifest
+	if err := decodeGroth16JSON(metadata, &m); err != nil {
+		return nil, err
+	}
+	p, ccs, err := groth16Load(dir, &m)
 	if err != nil {
 		return nil, err
 	}
 	if !m.KeysReady {
 		return nil, fmt.Errorf("Groth16 keys are not prepared")
 	}
-	for _, name := range []string{"proving-key.bin", "verifying-key.bin", "Groth16Verifier.sol"} {
+	for _, name := range []string{"Groth16Verifier.sol"} {
 		if err := m.checkFile(dir, name); err != nil {
 			return nil, err
 		}
 	}
-	engine, err := newGroth16Engine()
+	engine, err := newGroth16Engine(config)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +289,7 @@ func openGroth16(dir string) (*groth16Session, error) {
 		name  string
 		value io.ReaderFrom
 	}{{"proving-key.bin", engine.key}, {"verifying-key.bin", vk}} {
-		if err := readBinary(filepath.Join(dir, item.name), item.value); err != nil {
+		if err := readVerified(filepath.Join(dir, item.name), m.Files[item.name], item.value); err != nil {
 			engine.close()
 			return nil, err
 		}
@@ -340,10 +302,10 @@ func openGroth16(dir string) (*groth16Session, error) {
 		engine.close()
 		return nil, err
 	}
-	return &groth16Session{key: p, ccs: ccs, vk: vk, engine: engine, manifest: m}, nil
+	return &groth16Session{key: p, ccs: ccs, vk: vk, engine: engine, manifest: &m}, nil
 }
 
-func (p *groth16Session) close() {
+func (p *groth16Session) close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.closed {
@@ -352,6 +314,7 @@ func (p *groth16Session) close() {
 		p.engine, p.ccs, p.key, p.vk = nil, nil, nil, nil
 		engine.close()
 	}
+	return nil
 }
 
 func groth16Public(digest []byte) (witness.Witness, error) {
@@ -361,7 +324,7 @@ func groth16Public(digest []byte) (witness.Witness, error) {
 	return frontend.NewWitness(&publicClaim{Claim: digestLimbs(digest)}, curveID.ScalarField(), frontend.PublicOnly())
 }
 
-func (p *groth16Session) prove(assignment frontend.Circuit, expected []byte) (native, solidityBytes []byte, err error) {
+func (p *groth16Session) proveAssignment(assignment frontend.Circuit, expected []byte) (native, solidityBytes []byte, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	defer func() {
@@ -449,109 +412,73 @@ func decodeGroth16Proof(data []byte, commitments int) (*g16.Proof, error) {
 	return proof, nil
 }
 
-func groth16Verify(keyPath, keyHash, proofPath, claim string) error {
-	if _, err := unhex(keyHash, 32); err != nil {
-		return err
+func verifyGroth16(key, trusted, data, claim []byte) error {
+	if len(key) > 1<<20 || len(trusted) != 32 {
+		return fmt.Errorf("invalid Groth16 verifying key")
 	}
-	key, err := fileHash(keyPath)
-	if err != nil {
-		return err
-	}
-	if key.Bytes > 1<<20 || key.SHA256 != keyHash {
+	hash := sha256.Sum256(key)
+	if !bytes.Equal(hash[:], trusted) {
 		return fmt.Errorf("Groth16 key differs from the trusted digest")
 	}
 	vk := new(g16.VerifyingKey)
-	if err := readBinary(keyPath, vk); err != nil {
+	n, err := vk.ReadFrom(bytes.NewReader(key))
+	if err != nil {
 		return err
+	}
+	if n != int64(len(key)) {
+		return fmt.Errorf("trailing Groth16 verifying key data")
 	}
 	commitments := len(vk.PublicAndCommitmentCommitted)
 	if err := groth16CheckKey(vk, commitments); err != nil {
-		return err
-	}
-	digest, err := unhex(claim, 32)
-	if err != nil {
-		return err
-	}
-	f, err := os.Open(proofPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, groth16MaxProofBytes+1))
-	if err != nil {
 		return err
 	}
 	proof, err := decodeGroth16Proof(data, commitments)
 	if err != nil {
 		return err
 	}
-	public, err := groth16Public(digest)
+	public, err := groth16Public(claim)
 	if err != nil {
 		return err
 	}
 	return groth16.Verify(proof, vk, public, backend.WithVerifierHashToFieldFunction(sha256.New()))
 }
 
-func groth16Prove(dir, path, claim, out string) error {
-	expected, err := unhex(claim, 32)
+func (p *groth16Session) prove(data, claim []byte) ([]byte, []byte, error) {
+	var witness witnessJSON
+	if err := decodeReader(bytes.NewReader(data), &witness); err != nil {
+		return nil, nil, err
+	}
+	p.mu.Lock()
+	if p.closed || p.failed {
+		p.mu.Unlock()
+		return nil, nil, fmt.Errorf("Groth16 prover is closed or failed")
+	}
+	assignment, err := assignWitness(p.key, &witness)
+	p.mu.Unlock()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	p, err := openGroth16(dir)
-	if err != nil {
-		return err
-	}
-	defer p.close()
-	assignment, err := witnessAssignment(p.key, path)
-	if err != nil {
-		return err
-	}
-	started := time.Now()
-	native, payload, err := p.prove(assignment, expected)
-	if err != nil {
-		return err
-	}
-	for _, item := range []struct {
-		name string
-		data []byte
-	}{{"proof.bin", native}, {"proof.solidity.bin", payload}} {
-		if err := atomicFile(filepath.Join(out, item.name), func(w io.Writer) error { _, err := w.Write(item.data); return err }); err != nil {
-			return err
-		}
-	}
-	selected := os.Getenv("IX_GROTH16_BACKEND")
-	if selected == "" {
-		selected = "cpu"
-	}
-	return writeJSON(filepath.Join(out, "report.json"), map[string]any{
-		"system": "groth16", "curve": "bn254", "backend": selected, "setup": p.manifest.Setup,
-		"proveVerifySeconds": time.Since(started).Seconds(), "nativeBytes": len(native), "solidityBytes": len(payload),
-		"claimDigest": hex.EncodeToString(expected), "verifyingKeySHA256": p.manifest.Files["verifying-key.bin"].SHA256,
-	})
+	return p.proveAssignment(assignment, claim)
 }
 
-func runGroth16(args []string) error {
-	if len(args) == 4 && args[0] == "setup-mpc" {
-		return groth16MPCSetup(args[1], args[2], args[3])
+func setupGroth16(dir string, metadata []byte, kind uint32, descriptor, pin string) ([]byte, error) {
+	var m groth16Manifest
+	if err := decodeGroth16JSON(metadata, &m); err != nil {
+		return nil, err
 	}
-	if len(args) == 4 && args[0] == "import" {
-		return groth16Import(args[1], args[2], args[3])
+	var err error
+	switch kind {
+	case 0:
+		err = groth16DevelopmentSetup(dir, &m)
+	case 1:
+		err = groth16MPCSetup(dir, &m, descriptor, pin)
+	case 2:
+		err = groth16Import(dir, &m, descriptor, pin)
+	default:
+		return nil, fmt.Errorf("unknown Groth16 setup operation")
 	}
-	if len(args) == 1 && args[0] == "capabilities" {
-		fmt.Printf("{\"system\":\"groth16\",\"curve\":\"bn254\",\"cuda\":%t}\n", groth16CUDAAvailable())
-		return nil
+	if err != nil {
+		return nil, err
 	}
-	if len(args) == 3 && args[0] == "compile" {
-		return groth16Compile(args[1], args[2])
-	}
-	if len(args) == 2 && args[0] == "setup-development" {
-		return groth16DevelopmentSetup(args[1])
-	}
-	if len(args) == 5 && args[0] == "prove" {
-		return groth16Prove(args[1], args[2], args[3], args[4])
-	}
-	if len(args) == 5 && args[0] == "verify" {
-		return groth16Verify(args[1], args[2], args[3], args[4])
-	}
-	return fmt.Errorf("usage: groth16 compile <vk.json> <artifacts> | setup-development <artifacts> | setup-mpc <artifacts> <ceremony.json> <trusted-sha256> | import <artifacts> <release.json> <trusted-sha256> | prove <artifacts> <witness.json> <expected-claim-digest> <out> | verify <key.bin> <trusted-key-sha256> <proof.bin> <expected-claim-digest> | capabilities")
+	return json.Marshal(m)
 }

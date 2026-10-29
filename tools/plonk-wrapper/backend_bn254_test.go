@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/consensys/gnark/backend/solidity"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/scs"
+	"github.com/zeebo/blake3"
 )
 
 type backendCircuit struct {
@@ -126,11 +128,11 @@ func TestIgnitionBackendAndProofCodec(t *testing.T) {
 			}
 			var digest [32]byte
 			digest[0], digest[16] = 49, 1
-			if err := verify(keyPath, keyHash.SHA256, proofPath, hex.EncodeToString(digest[:])); err != nil {
+			if err := verifyFixture(keyPath, keyHash.SHA256, proofPath, digest[:]); err != nil {
 				t.Fatal(err)
 			}
 			digest[31] = 1
-			if err := verify(keyPath, keyHash.SHA256, proofPath, hex.EncodeToString(digest[:])); err == nil {
+			if err := verifyFixture(keyPath, keyHash.SHA256, proofPath, digest[:]); err == nil {
 				t.Fatal("accepted changed public digest")
 			}
 			digest[31] = 0
@@ -148,5 +150,100 @@ func TestIgnitionBackendAndProofCodec(t *testing.T) {
 			}
 		}
 		t.Logf("Ignition PLONK backend: N=%d commitments=%d native_bytes=%d solidity_bytes=%d", n, m, encoded.Len(), len(proof.(*plonkbn254.Proof).MarshalSolidity()))
+	}
+}
+
+func verifyFixture(keyPath, trusted, proofPath string, claim []byte) error {
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return err
+	}
+	proof, err := os.ReadFile(proofPath)
+	if err != nil {
+		return err
+	}
+	hash, err := hex.DecodeString(trusted)
+	if err != nil {
+		return err
+	}
+	vk := new(nativeVerifyingKey)
+	if _, err := vk.ReadFrom(bytes.NewReader(key)); err != nil {
+		return err
+	}
+	return verifyProof(key, hash, proof, claim, encodeAnchors(vk))
+}
+
+func TestPrepareCircuitMatchesGnarkSetup(t *testing.T) {
+	schema, err := os.ReadFile(filepath.Join("testdata", "bn254", "vk.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ccs, err := frontend.Compile(curveID.ScalarField(), scs.NewBuilder, &backendCircuit{Commit: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	domain := ecc.NextPowerOfTwo(uint64(ccs.GetNbConstraints() + 2))
+	dir := t.TempDir()
+	circuit := filepath.Join(dir, "circuit.bin")
+	if err := atomicFile(circuit, func(w io.Writer) error { _, err := ccs.WriteTo(w); return err }); err != nil {
+		t.Fatal(err)
+	}
+	circuitHash, err := fileHash(circuit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile(filepath.Join("testdata", "bn254", "srs.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	powers := domain + 3
+	source = source[:88+2*g2ExportBytes+2*baseBytes*powers]
+	binary.LittleEndian.PutUint64(source[80:88], powers)
+	receipt := blake3.Sum256(source)
+	srsPath := filepath.Join(dir, "srs.bin")
+	if err := os.WriteFile(srsPath, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	lagrangePath := filepath.Join(dir, "lagrange.bin")
+	if err := prepareCircuit(schema, circuit, circuitHash, domain, srsPath, hex.EncodeToString(receipt[:]), lagrangePath, "", dir); err != nil {
+		t.Fatal(err)
+	}
+	key, err := decodeVerifyingKey(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srs, err := readSRS(srsPath, hex.EncodeToString(receipt[:]), domain, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lagrange, err := kzg.ToLagrangeG1(srs.Pk.G1[:domain])
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, expected, err := plonk.Setup(ccs, srs, &kzg.SRS{Pk: kzg.ProvingKey{G1: lagrange}, Vk: srs.Vk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var encoded bytes.Buffer
+	if _, err := expected.WriteTo(&encoded); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(filepath.Join(dir, "verifying-key.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, encoded.Bytes()) {
+		t.Fatal("prepared verifying key differs from gnark Setup")
+	}
+	cached, err := fileHash(lagrangePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareCircuit(schema, circuit, circuitHash, domain, srsPath, hex.EncodeToString(receipt[:]), lagrangePath, cached.SHA256, dir); err != nil {
+		t.Fatal(err)
+	}
+	circuitHash.SHA256 = hex.EncodeToString(make([]byte, 32))
+	if err := prepareCircuit(schema, circuit, circuitHash, domain, srsPath, hex.EncodeToString(receipt[:]), lagrangePath, cached.SHA256, dir); err == nil {
+		t.Fatal("accepted a different circuit digest")
 	}
 }

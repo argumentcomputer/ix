@@ -1,31 +1,35 @@
 # Ix proof compression
 
 The pipeline is Goldilocks/Blake3 FRI → BN254 KZG → recursive BN254 KZG,
-with an optional terminal BN254 PLONK proof. FRI uses Goldilocks and its
+with an optional terminal BN254 PLONK or Groth16 proof. FRI uses Goldilocks and its
 quadratic extension with Blake3 Merkle commitments. Curve arithmetic starts
 when the FRI verifier is translated into BN254 scalar-field constraints.
 
 BN254 is unconditional, including builds with `--no-default-features`.
-The remaining Cargo features are `parallel`, `plonk`, and `cuda`.
-Lake builds the CLI, worker, and matching `ix-bn254-plonk-wrapper` together.
+The main Cargo features are `parallel`, `plonk`, `groth16`, and `cuda`. Either
+terminal feature builds one shared gnark C archive. Combining a terminal
+feature with `cuda` enables its GPU backend.
+Lake builds the CLI and worker separately so `ix-ffi` does not link Go.
 An explicit `IX_KZG_CURVE=bn254` is accepted; other values are rejected.
 
 ```sh
 lake build ix
 IX_CUDA=1 lake build ix
-IX_PLONK_CUDA=1 lake build ix
 ```
 
-`IX_CUDA` selects the Aiur/FRI and KZG CUDA backends. `IX_PLONK_CUDA`
-independently selects the terminal PLONK CUDA helper. Native BN254 arithmetic
-uses shared sppark/BLST support, and the Go helper uses gnark. Those libraries
-may contain other curves; Ix exposes only BN254.
+`IX_CUDA` enables CUDA for Aiur, FRI, KZG, and both terminal backends. Native BN254
+arithmetic uses shared sppark/BLST support, and Rust calls stock gnark through
+its C archive. Groth16 CUDA additionally requires the pinned ICICLE installation
+via `IX_GROTH16_ICICLE_ROOT`; Nix provides it in `.#compression-worker-cuda`.
+Those libraries may contain other curves; Ix exposes only BN254.
 
 KZG uses authenticated Ignition parameters or explicit known-trapdoor
 development parameters. Terminal PLONK requires authenticated Ignition.
 The BN254 KZG release catalog is empty: local verification requires an
 independently pinned verifying key and expected statement. PLONK verification
-requires an independently authorized `IX_PLONK_VERIFIER_CATALOG`.
+requires an independently authorized `IX_PLONK_VERIFIER_CATALOG`. Groth16
+requires its own circuit-specific setup and `IX_GROTH16_VERIFIER_CATALOG`;
+see the [terminal backend guide](../../tools/plonk-wrapper/README.md#bn254-groth16-terminal).
 
 BN254 supports radix-2 domains through `2^28`; traces and quotient domains
 must both fit. Existing BN254 proof, verifier, and SRS encodings are retained.
@@ -319,9 +323,8 @@ Use the four Ignition environment variables described above. The result
 includes the proof envelope, native and Solidity proof encodings, generated
 Solidity verifier, verifying key, admission, and candidate verifier catalog.
 The candidate must be reviewed independently before configuring it for
-`ix verify`. See the [helper guide](../../tools/plonk-wrapper/README.md)
-for standalone proving, validated Lagrange import, CUDA configuration, and
-artifact cache rules. On-chain verification uses the terminal PLONK verifier
+`ix verify`. See the [gnark backend guide](../../tools/plonk-wrapper/README.md)
+for worker commands, Rust FFI tests, CUDA configuration, and artifact cache rules. On-chain verification uses the terminal PLONK verifier
 and [claim adapter](../../contracts/plonk/README.md).
 
 ## CUDA and profiling

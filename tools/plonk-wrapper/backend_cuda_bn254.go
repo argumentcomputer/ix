@@ -5,9 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
-	"strconv"
 	"sync"
 
 	"github.com/argumentcomputer/ix/tools/plonk-wrapper/internal/cuda"
@@ -15,55 +13,13 @@ import (
 	plonkbn254 "github.com/consensys/gnark/backend/plonk/bn254"
 )
 
-func provingCUDAConfig() (cuda.Config, error) {
-	config := cuda.Config{MemoryBytes: 64 << 30, HeadroomBytes: 8 << 30}
-	switch os.Getenv("IX_PLONK_CUDA_MSM_STRATEGY") {
-	case "", "split":
-		config.MSMStrategy = cuda.MSMSplit
-	case "mask":
-		config.MSMStrategy = cuda.MSMMask
-	default:
-		return config, fmt.Errorf("IX_PLONK_CUDA_MSM_STRATEGY must be split or mask")
-	}
-	if value := os.Getenv("IX_PLONK_CUDA_DEVICE"); value != "" {
-		device, err := strconv.ParseUint(value, 10, 31)
-		if err != nil {
-			return config, fmt.Errorf("invalid IX_PLONK_CUDA_DEVICE: %w", err)
-		}
-		config.Device = int(device)
-	}
-	if value := os.Getenv("IX_PLONK_CUDA_MEMORY_GIB"); value != "" {
-		gib, err := strconv.ParseUint(value, 10, 64)
-		if err != nil || gib == 0 || gib > math.MaxUint64>>30 {
-			return config, fmt.Errorf("IX_PLONK_CUDA_MEMORY_GIB must be a positive bounded integer")
-		}
-		config.MemoryBytes = gib << 30
-	}
-	return config, nil
-}
-
-func validateProvingBackend() error {
-	switch os.Getenv("IX_PLONK_BACKEND") {
-	case "", "cpu":
-		return nil
-	case "cuda":
-		_, err := provingCUDAConfig()
-		return err
-	default:
-		return fmt.Errorf("IX_PLONK_BACKEND must be cpu or cuda")
-	}
-}
-
-func configureProvingBackend(pk plonk.ProvingKey) (func() error, error) {
-	if err := validateProvingBackend(); err != nil {
-		return nil, err
-	}
-	if os.Getenv("IX_PLONK_BACKEND") != "cuda" {
+func configureBackend(pk plonk.ProvingKey, options backendConfig) (func() error, error) {
+	if !options.CUDA {
 		return func() error { return nil }, nil
 	}
-	config, err := provingCUDAConfig()
-	if err != nil {
-		return nil, err
+	config := cuda.Config{Device: options.Device, MemoryBytes: options.MemoryBytes, HeadroomBytes: 8 << 30}
+	if options.MaskMSM {
+		config.MSMStrategy = cuda.MSMMask
 	}
 	nativePK, ok := pk.(*plonkbn254.ProvingKey)
 	if !ok {

@@ -38,8 +38,8 @@ func TestGroth16BackendInterop(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			m := &groth16Manifest{Format: groth16ArtifactFormat, Curve: "bn254", InnerVK: hex.EncodeToString(make([]byte, 32)),
-				CommitmentHash: "sha256", Domain: domain, Constraints: ccs.GetNbConstraints(), PublicInputs: 2,
+			m := &groth16Manifest{InnerVK: hex.EncodeToString(make([]byte, 32)),
+				Domain: domain, Constraints: ccs.GetNbConstraints(), PublicInputs: 2,
 				Commitments: commitments, Files: make(map[string]artifact)}
 			engine := &groth16Engine{key: pk, close: func() {}, prove: func(c constraint.ConstraintSystem, w witness.Witness) (groth16.Proof, error) {
 				return groth16.Prove(c, pk, w, backend.WithProverHashToFieldFunction(sha256.New()))
@@ -51,7 +51,7 @@ func TestGroth16BackendInterop(t *testing.T) {
 			assignment := &backendCircuit{Claim: [2]frontend.Variable{49, 1}, X: 7, Commit: committed}
 			var native, payload []byte
 			for range 2 {
-				native, payload, err = p.prove(assignment, digest[:])
+				native, payload, err = p.proveAssignment(assignment, digest[:])
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -75,15 +75,15 @@ func TestGroth16BackendInterop(t *testing.T) {
 				t.Fatal(err)
 			}
 			keyPath, keyHash := filepath.Join(dir, "verifying-key.bin"), m.Files["verifying-key.bin"].SHA256
-			if err := groth16Verify(keyPath, keyHash, proofPath, hex.EncodeToString(digest[:])); err != nil {
+			if err := verifyGroth16Files(keyPath, keyHash, proofPath, hex.EncodeToString(digest[:])); err != nil {
 				t.Fatal(err)
 			}
 			wrong := digest
 			wrong[31] ^= 1
-			if err := groth16Verify(keyPath, keyHash, proofPath, hex.EncodeToString(wrong[:])); err == nil {
+			if err := verifyGroth16Files(keyPath, keyHash, proofPath, hex.EncodeToString(wrong[:])); err == nil {
 				t.Fatal("accepted another claim")
 			}
-			if err := groth16Verify(keyPath, hex.EncodeToString(make([]byte, 32)), proofPath, hex.EncodeToString(digest[:])); err == nil {
+			if err := verifyGroth16Files(keyPath, hex.EncodeToString(make([]byte, 32)), proofPath, hex.EncodeToString(digest[:])); err == nil {
 				t.Fatal("accepted another key")
 			}
 			for _, malformed := range [][]byte{native[:len(native)-1], append(append([]byte(nil), native...), 0)} {
@@ -107,10 +107,10 @@ func TestGroth16BackendInterop(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, err := p.prove(assignment, wrong[:]); err == nil {
+			if _, _, err := p.proveAssignment(assignment, wrong[:]); err == nil {
 				t.Fatal("accepted mismatched independently expected claim")
 			}
-			if _, _, err := p.prove(assignment, digest[:]); err == nil {
+			if _, _, err := p.proveAssignment(assignment, digest[:]); err == nil {
 				t.Fatal("reused failed prover")
 			}
 			t.Logf("constraints=%d domain=%d commitments=%d native=%d solidity=%d", m.Constraints, domain, commitments, len(native), len(payload))
@@ -118,57 +118,14 @@ func TestGroth16BackendInterop(t *testing.T) {
 	}
 }
 
-func TestGroth16WrapperCircuit(t *testing.T) {
-	if os.Getenv("IX_GROTH16_WRAPPER_TEST") != "1" {
-		t.Skip("set IX_GROTH16_WRAPPER_TEST=1 for the complete KZG verifier circuit")
-	}
-	dir := t.TempDir()
-	if root := os.Getenv("IX_GROTH16_TEST_OUTPUT"); root != "" {
-		dir = filepath.Join(root, "wrapper")
-	}
-	if err := groth16Compile(filepath.Join("testdata", "bn254", "vk.json"), dir); err != nil {
-		t.Fatal(err)
-	}
-	_, _, m, err := groth16Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("wrapper constraints=%d domain=%d commitments=%d", m.Constraints, m.Domain, m.Commitments)
-	if os.Getenv("IX_GROTH16_WRAPPER_PROVE") != "1" {
-		return
-	}
-	if !m.KeysReady {
-		if err := groth16DevelopmentSetup(dir); err != nil {
-			t.Fatal(err)
-		}
-	} else if m.Setup != "development" {
-		t.Fatal("wrapper test requires development keys")
-	}
-	var input witnessJSON
-	witness := filepath.Join("testdata", "bn254", "witness.json")
-	if err := decodeJSON(witness, &input); err != nil {
-		t.Fatal(err)
-	}
-	if err := groth16Prove(dir, witness, input.ClaimDigest, dir); err != nil {
-		t.Fatal(err)
-	}
-	mData := new(groth16Manifest)
-	if err := decodeJSON(filepath.Join(dir, "manifest.json"), mData); err != nil {
-		t.Fatal(err)
-	}
-	if err := groth16Verify(filepath.Join(dir, "verifying-key.bin"), mData.Files["verifying-key.bin"].SHA256, filepath.Join(dir, "proof.bin"), input.ClaimDigest); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestGroth16BackendSelection(t *testing.T) {
-	t.Setenv("IX_GROTH16_BACKEND", "invalid")
-	if _, err := newGroth16Engine(); err == nil {
+
+	if _, err := newGroth16Engine(groth16Backend{Device: -1}); err == nil {
 		t.Fatal("accepted invalid backend")
 	}
 	if !groth16CUDAAvailable() {
-		t.Setenv("IX_GROTH16_BACKEND", "cuda")
-		if _, err := newGroth16Engine(); err == nil {
+
+		if _, err := newGroth16Engine(groth16Backend{CUDA: true}); err == nil {
 			t.Fatal("silently accepted unavailable CUDA")
 		}
 	}

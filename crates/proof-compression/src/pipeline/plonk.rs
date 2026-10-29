@@ -1,18 +1,28 @@
 //! Terminal PLONK worker operations and authenticated parameter interchange.
-use super::terminal::{
-  Scratch, checked, claim_digest, digest, hex, load_json, sha256,
-};
-use super::{
-  Result, fixed_cache,
-  setup::{SetupClass, SetupConfig},
-  statement, storage, wrap,
-};
+#[cfg(feature = "plonk")]
+use super::fixed_cache;
+#[cfg(feature = "plonk")]
+use super::gnark;
+#[cfg(any(not(feature = "plonk"), test))]
+use super::terminal::Scratch;
+#[cfg(not(feature = "plonk"))]
+use super::terminal::checked;
+#[cfg(feature = "plonk")]
+use super::terminal::{claim_digest, decode_hex, read_bounded, sha256};
+use super::terminal::{digest, hex, load_json};
+use super::{Result, setup::SetupClass, statement, storage};
+#[cfg(feature = "plonk")]
+use super::{setup::SetupConfig, wrap};
 use ark_ff::{BigInteger, PrimeField};
+#[cfg(feature = "plonk")]
+use sha2::{Digest, Sha256};
+#[cfg(feature = "plonk")]
+use std::io::Write;
+#[cfg(not(feature = "plonk"))]
+use std::process::Command;
 use std::{
   fs,
-  io::Write,
   path::{Path, PathBuf},
-  process::Command,
 };
 
 pub(super) const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x02";
@@ -36,7 +46,6 @@ struct TrustedKey {
   inner_vk_id: String,
   statement_prefix: [u64; 10],
   circuit_sha256: String,
-  helper_sha256: String,
   setup: String,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   admission: Option<PathBuf>,
@@ -44,10 +53,7 @@ struct TrustedKey {
   admission_blake3: Option<String>,
 }
 
-pub(super) fn helper_executable() -> Result<PathBuf> {
-  super::terminal::helper_executable("IX_PLONK_HELPER")
-}
-
+#[cfg(feature = "plonk")]
 fn setup_manifest(config: &SetupConfig) -> Result<[u8; 32]> {
   match config {
     SetupConfig::Ignition { manifest, .. } => Ok(*manifest),
@@ -55,6 +61,7 @@ fn setup_manifest(config: &SetupConfig) -> Result<[u8; 32]> {
   }
 }
 
+#[cfg(feature = "plonk")]
 fn anchors(config: &SetupConfig) -> Result<crate::kzg::Srs> {
   setup_manifest(config)?;
   Ok(config.ignition_admission().ok_or("missing Ignition admission")?.anchors())
@@ -68,14 +75,14 @@ fn encode_g2(point: crate::kzg::curve::G2Affine) -> Vec<u8> {
   bytes
 }
 
-fn anchor_encoding(srs: &crate::kzg::Srs) -> String {
+fn anchor_encoding(srs: &crate::kzg::Srs) -> Vec<u8> {
   let mut bytes = Vec::new();
   for value in [srs.g1[0].x, srs.g1[0].y] {
     bytes.extend(value.into_bigint().to_bytes_be());
   }
   bytes.extend(encode_g2(srs.g2));
   bytes.extend(encode_g2(srs.tau_g2));
-  hex(&bytes)
+  bytes
 }
 
 fn key_anchors(key: &TrustedKey) -> Result<crate::kzg::Srs> {
@@ -106,7 +113,6 @@ fn select_key(path: &Path, id: &[u8; 32]) -> Result<TrustedKey> {
     let key_id = digest(&key.sha256)?;
     digest(&key.inner_vk_id)?;
     digest(&key.circuit_sha256)?;
-    digest(&key.helper_sha256)?;
     if !seen.insert(key_id) {
       return Err("duplicate PLONK verifier key in catalog".into());
     }
@@ -157,28 +163,44 @@ pub(super) fn verify(packet: &[u8], claim: &[u8]) -> Result<SetupClass> {
   if fs::metadata(&key.path)?.len() > 1 << 20 {
     return Err("PLONK verification key is too large".into());
   }
-  let helper = helper_executable()?;
-  let scratch = Scratch::new()?;
-  let proof = scratch.0.join("proof.bin");
-  storage::write_atomic(&proof, &packet[32..])?;
-  checked(
-    Command::new(helper)
-      .arg("verify")
-      .arg(&key.path)
-      .arg(hex(id))
-      .arg(&proof)
-      .arg(blake3::hash(claim).to_hex().as_str())
-      .arg(anchor_encoding(&key_anchors(&key)?)),
+  let expected = *blake3::hash(claim).as_bytes();
+  let anchor_bytes = anchor_encoding(&key_anchors(&key)?);
+  #[cfg(feature = "plonk")]
+  gnark::verify(
+    &read_bounded(&key.path, 1 << 20)?,
+    id,
+    &packet[32..],
+    &expected,
+    &anchor_bytes,
   )?;
+  #[cfg(not(feature = "plonk"))]
+  {
+    let scratch = Scratch::new()?;
+    let proof = scratch.0.join("proof.bin");
+    storage::write_atomic(&proof, &packet[32..])?;
+    checked(
+      Command::new(super::worker_executable()?)
+        .args(["plonk", "verify-key"])
+        .arg(&key.path)
+        .arg(hex(id))
+        .arg(&proof)
+        .arg(hex(&expected))
+        .arg(hex(&anchor_bytes)),
+    )?;
+  }
   Ok(SetupClass::Ignition)
 }
 
+#[cfg(feature = "plonk")]
 pub(crate) fn run(args: &[String]) -> Result<()> {
   let development = args.iter().any(|arg| arg == "--dev-srs");
   let args: Vec<_> = args.iter().filter(|arg| *arg != "--dev-srs").collect();
   match args.iter().map(|s| s.as_str()).collect::<Vec<_>>().as_slice() {
+    ["verify-key", key, trusted, proof, claim, anchors] => {
+      gnark::verify(&read_bounded(Path::new(key), 1 << 20)?, &digest(trusted)?, &read_bounded(Path::new(proof), MAX_PROOF_BYTES)?, &digest(claim)?, &decode_hex(anchors)?)
+    },
     ["verify", proof, claim] => {
-      let bytes = fs::read(proof)?;
+      let bytes = read_bounded(Path::new(proof), MAX_PROOF_BYTES + 32 + PROOF_TAG.len())?;
       let packet = bytes.strip_prefix(PROOF_TAG).ok_or("unsupported PLONK proof curve or version")?;
       let setup = verify(packet, &fs::read(claim)?)?;
       println!("{}", serde_json::json!({"verified": true, "curve": crate::kzg::curve::NAME, "setup": setup.label()}));
@@ -201,10 +223,12 @@ pub(crate) fn run(args: &[String]) -> Result<()> {
   }
 }
 
+#[cfg(feature = "plonk")]
 fn export_srs(domain: usize, path: &Path) -> Result<()> {
   export_parameters(domain, path, &SetupConfig::from_env(false)?)
 }
 
+#[cfg(feature = "plonk")]
 fn export_parameters(
   domain: usize,
   path: &Path,
@@ -253,6 +277,7 @@ fn export_parameters(
   Ok(())
 }
 
+#[cfg(feature = "plonk")]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ParameterReceipt {
@@ -265,6 +290,7 @@ struct ParameterReceipt {
   setup_manifest: String,
 }
 
+#[cfg(feature = "plonk")]
 fn cached_parameters(
   domain: usize,
   root: &Path,
@@ -300,6 +326,7 @@ fn cached_parameters(
   Ok((path, receipt.blake3))
 }
 
+#[cfg(feature = "plonk")]
 fn metadata_string<'a>(
   value: &'a serde_json::Value,
   field: &str,
@@ -310,6 +337,166 @@ fn metadata_string<'a>(
     .ok_or_else(|| format!("missing PLONK metadata field {field}").into())
 }
 
+#[cfg(feature = "plonk")]
+fn artifact(path: &Path) -> Result<gnark::Artifact> {
+  Ok(gnark::Artifact {
+    sha256: hex(&sha256(path)?),
+    bytes: fs::metadata(path)?.len(),
+  })
+}
+
+#[cfg(feature = "plonk")]
+pub(super) fn proving_backend() -> Result<gnark::Backend> {
+  match std::env::var("IX_PLONK_BACKEND").as_deref().unwrap_or("cpu") {
+    "" | "cpu" => Ok(gnark::Backend::Cpu),
+    "cuda" => {
+      let device: i32 = std::env::var("IX_PLONK_CUDA_DEVICE")
+        .unwrap_or_else(|_| "0".into())
+        .parse()?;
+      if device < 0 {
+        return Err("IX_PLONK_CUDA_DEVICE must be nonnegative".into());
+      }
+      let gib: u64 = std::env::var("IX_PLONK_CUDA_MEMORY_GIB")
+        .unwrap_or_else(|_| "64".into())
+        .parse()?;
+      let memory_bytes = gib
+        .checked_mul(1 << 30)
+        .filter(|n| *n > 0)
+        .ok_or("invalid PLONK CUDA memory budget")?;
+      let mask_msm = match std::env::var("IX_PLONK_CUDA_MSM_STRATEGY")
+        .as_deref()
+        .unwrap_or("split")
+      {
+        "" | "split" => false,
+        "mask" => true,
+        _ => {
+          return Err(
+            "IX_PLONK_CUDA_MSM_STRATEGY must be split or mask".into(),
+          );
+        },
+      };
+      Ok(gnark::Backend::Cuda { device, memory_bytes, mask_msm })
+    },
+    _ => Err("IX_PLONK_BACKEND must be cpu or cuda".into()),
+  }
+}
+
+#[cfg(feature = "plonk")]
+fn prepare_artifacts(
+  vk: &Path,
+  setup: &SetupConfig,
+  cache_root: &Path,
+) -> Result<(PathBuf, gnark::Manifest)> {
+  let schema = fs::read(vk)?;
+  let schema_hash = hex(&Sha256::digest(&schema));
+  let mut identity = blake3::Hasher::new();
+  identity.update(&fixed_cache::executable_digest()?);
+  identity.update(schema_hash.as_bytes());
+  identity.update(&setup_manifest(setup)?);
+  let dir =
+    cache_root.join("circuits").join(identity.finalize().to_hex().as_str());
+  fs::create_dir_all(&dir)?;
+  let metadata_path = dir.join("manifest.json");
+  let mut metadata: gnark::Manifest = if metadata_path.is_file() {
+    let metadata: gnark::Manifest = load_json(&metadata_path)?;
+    // Go authenticates the large native artifacts while decoding them.
+    if metadata.inner_vk_sha256 != schema_hash
+      || metadata.files.get("vk.json") != Some(&artifact(&dir.join("vk.json"))?)
+    {
+      return Err("PLONK circuit cache identity differs".into());
+    }
+    metadata
+  } else {
+    storage::write_atomic(&dir.join("vk.json"), &schema)?;
+    let info = gnark::compile(&schema, &dir.join("circuit.bin"))?;
+    let metadata = gnark::Manifest {
+      inner_vk_sha256: schema_hash,
+      srs_blake3: String::new(),
+      keys_ready: false,
+      domain: info.domain,
+      constraints: info.constraints,
+      public_inputs: info.public_inputs,
+      commitments: info.commitments,
+      files: std::collections::BTreeMap::from([
+        ("vk.json".into(), artifact(&dir.join("vk.json"))?),
+        ("circuit.bin".into(), artifact(&dir.join("circuit.bin"))?),
+      ]),
+    };
+    storage::write_atomic(
+      &metadata_path,
+      &serde_json::to_vec_pretty(&metadata)?,
+    )?;
+    metadata
+  };
+  let domain = usize::try_from(metadata.domain)?;
+  if !(2..=1 << 26).contains(&domain)
+    || !domain.is_power_of_two()
+    || metadata.public_inputs != 2
+  {
+    return Err("invalid PLONK circuit dimensions".into());
+  }
+  if !metadata.keys_ready {
+    let (srs, receipt) =
+      cached_parameters(domain, &cache_root.join("parameters"), setup)?;
+    let mut identity = Sha256::new();
+    identity.update(setup_manifest(setup)?);
+    identity.update(domain.to_le_bytes());
+    identity.update(receipt.as_bytes());
+    let lagrange_root =
+      cache_root.join("lagrange").join(hex(&identity.finalize()));
+    fs::create_dir_all(&lagrange_root)?;
+    let lagrange = lagrange_root.join("points.bin");
+    let lagrange_metadata = lagrange_root.join("manifest.json");
+    let cached_lagrange = lagrange_metadata.is_file();
+    let lagrange_hash = if cached_lagrange {
+      let saved: gnark::Artifact = load_json(&lagrange_metadata)?;
+      if saved.bytes != 64 * metadata.domain {
+        return Err("Lagrange cache identity differs".into());
+      }
+      digest(&saved.sha256)?;
+      saved.sha256
+    } else {
+      String::new()
+    };
+    gnark::prepare(&gnark::Preparation {
+      schema: &schema,
+      circuit: &dir.join("circuit.bin"),
+      circuit_hash: metadata
+        .files
+        .get("circuit.bin")
+        .ok_or("missing circuit hash")?,
+      domain: metadata.domain,
+      srs: &srs,
+      srs_digest: &receipt,
+      lagrange: &lagrange,
+      lagrange_digest: &lagrange_hash,
+      output: &dir,
+    })?;
+    if !cached_lagrange {
+      storage::write_atomic(
+        &lagrange_metadata,
+        &serde_json::to_vec(&artifact(&lagrange)?)?,
+      )?;
+    }
+    for name in ["proving-key.bin", "verifying-key.bin", "PlonkVerifier.sol"] {
+      metadata.files.insert(name.into(), artifact(&dir.join(name))?);
+    }
+    metadata.srs_blake3 = receipt;
+    metadata.keys_ready = true;
+    storage::write_atomic(
+      &metadata_path,
+      &serde_json::to_vec_pretty(&metadata)?,
+    )?;
+  }
+  if metadata.files.get("PlonkVerifier.sol")
+    != Some(&artifact(&dir.join("PlonkVerifier.sol"))?)
+  {
+    return Err("Solidity verifier cache identity differs".into());
+  }
+  Ok((dir, metadata))
+}
+
+#[cfg(feature = "plonk")]
 fn wrap_packet(
   verifier: &Path,
   packet: &Path,
@@ -318,11 +505,12 @@ fn wrap_packet(
   cache_root: &Path,
   out: &Path,
 ) -> Result<()> {
+  use std::time::Instant;
   statement::from_claims_bytes(&statement::to_claims_bytes(expected))?;
   let expected_digest = claim_digest(expected)?;
   let setup = SetupConfig::from_env(false)?;
-  let manifest = setup_manifest(&setup)?;
-  let helper = helper_executable()?;
+  setup_manifest(&setup)?;
+  let backend = proving_backend()?;
   fs::create_dir_all(out)?;
   if fs::read_dir(out)?.next().is_some() {
     return Err("PLONK output directory must be empty".into());
@@ -331,71 +519,37 @@ fn wrap_packet(
   wrap::plonk_export(verifier, packet, trusted_digest, expected, &input)?;
   let vk_path = input.join("vk.json");
   let exported: serde_json::Value = load_json(&vk_path)?;
-  let mut identity = blake3::Hasher::new();
-  identity.update(b"ix/bn254-plonk-cache/v1");
-  identity.update(&fixed_cache::executable_digest()?);
-  identity.update(&sha256(&helper)?);
-  identity.update(&sha256(&vk_path)?);
-  identity.update(&manifest);
-  let cache =
-    cache_root.join("circuits").join(identity.finalize().to_hex().as_str());
-  checked(Command::new(&helper).arg("compile").arg(&vk_path).arg(&cache))?;
-  let mut metadata: serde_json::Value =
-    load_json(&cache.join("manifest.json"))?;
-  let domain = usize::try_from(
-    metadata
-      .get("Domain")
-      .and_then(serde_json::Value::as_u64)
-      .ok_or("missing PLONK domain")?,
-  )?;
-  if domain < 2 || !domain.is_power_of_two() || domain > 1 << 26 {
-    return Err(
-      "PLONK domain exceeds the authenticated adapter capacity".into(),
-    );
-  }
-  if metadata.get("KeysReady").and_then(serde_json::Value::as_bool)
-    != Some(true)
-  {
-    let (srs, receipt) =
-      cached_parameters(domain, &cache_root.join("parameters"), &setup)?;
-    checked(
-      Command::new(&helper)
-        .arg("prepare")
-        .arg(&cache)
-        .arg(srs)
-        .arg(receipt)
-        .env("IX_PLONK_LAGRANGE_CACHE", cache_root.join("lagrange")),
-    )?;
-    metadata = load_json(&cache.join("manifest.json"))?;
-  }
-  checked(
-    Command::new(&helper)
-      .arg("prove")
-      .arg(&cache)
-      .arg(input.join("witness.json"))
-      .arg(out),
-  )?;
-  let key_hash =
-    metadata_string(&metadata["Files"]["verifying-key.bin"], "SHA256")?;
-  let key_id = digest(key_hash)?;
+  let (cache, metadata) = prepare_artifacts(&vk_path, &setup, cache_root)?;
+  let started = Instant::now();
+  let mut prover = gnark::Prover::open(&cache, &metadata, backend)?;
+  let load_seconds = started.elapsed().as_secs_f64();
+  let witness = fs::read(input.join("witness.json"))?;
+  let started = Instant::now();
+  let proof = prover.prove(&witness, &expected_digest)?;
+  let prove_seconds = started.elapsed().as_secs_f64();
+  prover.close()?;
   let key = cache.join("verifying-key.bin");
-  checked(
-    Command::new(&helper)
-      .arg("verify")
-      .arg(&key)
-      .arg(key_hash)
-      .arg(out.join("proof.bin"))
-      .arg(hex(&expected_digest))
-      .arg(anchor_encoding(&anchors(&setup)?)),
+  let key_hash = &metadata
+    .files
+    .get("verifying-key.bin")
+    .ok_or("missing verifying key hash")?
+    .sha256;
+  let key_id = digest(key_hash)?;
+  gnark::verify(
+    &fs::read(&key)?,
+    &key_id,
+    &proof.native,
+    &expected_digest,
+    &anchor_encoding(&anchors(&setup)?),
   )?;
-  let proof = fs::read(out.join("proof.bin"))?;
-  if proof.is_empty() || proof.len() > MAX_PROOF_BYTES {
+  if proof.native.is_empty() || proof.native.len() > MAX_PROOF_BYTES {
     return Err("invalid native PLONK proof length".into());
   }
   let mut envelope = PROOF_TAG.to_vec();
   envelope.extend(key_id);
-  envelope.extend(proof);
-  storage::write_atomic(&out.join("proof.envelope.bin"), &envelope)?;
+  envelope.extend(&proof.native);
+  storage::write_atomic(&out.join("proof.bin"), &proof.native)?;
+  storage::write_atomic(&out.join("proof.solidity.bin"), &proof.solidity)?;
   storage::write_atomic(&out.join("verifying-key.bin"), &fs::read(&key)?)?;
   storage::write_atomic(
     &out.join("PlonkVerifier.sol"),
@@ -409,16 +563,16 @@ fn wrap_packet(
   let candidate = TrustedCatalog {
     format: CATALOG_FORMAT.into(),
     keys: vec![TrustedKey {
-      sha256: key_hash.into(),
+      sha256: key_hash.clone(),
       path: "verifying-key.bin".into(),
       inner_vk_id: metadata_string(&exported, "vkId")?.into(),
       statement_prefix: expected[..10].try_into()?,
-      circuit_sha256: metadata_string(
-        &metadata["Files"]["circuit.bin"],
-        "SHA256",
-      )?
-      .into(),
-      helper_sha256: metadata_string(&metadata, "ExecutableSHA256")?.into(),
+      circuit_sha256: metadata
+        .files
+        .get("circuit.bin")
+        .ok_or("missing circuit hash")?
+        .sha256
+        .clone(),
       setup: SETUP_NAME.into(),
       admission: Some("admission.json".into()),
       admission_blake3: Some(
@@ -430,6 +584,13 @@ fn wrap_packet(
     &out.join("verifier-catalog.candidate.json"),
     &serde_json::to_vec_pretty(&candidate)?,
   )?;
+  storage::write_atomic(
+    &out.join("report.json"),
+    &serde_json::to_vec_pretty(
+      &serde_json::json!({"backend":match backend { gnark::Backend::Cpu => "cpu", gnark::Backend::Cuda { .. } => "cuda" },"loadSeconds":load_seconds,"proveSeconds":prove_seconds,"verifyingKeySHA256":key_hash,"solidityBytes":proof.solidity.len()}),
+    )?,
+  )?;
+  storage::write_atomic(&out.join("proof.envelope.bin"), &envelope)?;
   Ok(())
 }
 
@@ -453,7 +614,6 @@ mod bn254_tests {
         inner_vk_id: hex(&[2; 32]),
         statement_prefix: [0; 10],
         circuit_sha256: hex(&[3; 32]),
-        helper_sha256: hex(&[4; 32]),
         setup: "ignition".into(),
         admission: Some("admission.json".into()),
         admission_blake3: Some(pin),

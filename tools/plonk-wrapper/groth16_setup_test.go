@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func groth16TestArtifacts(t *testing.T, dir string) (*cs.R1CS, *groth16Manifest)
 	if err := atomicFile(filepath.Join(dir, "circuit.bin"), func(w io.Writer) error { _, err := ccs.WriteTo(w); return err }); err != nil {
 		t.Fatal(err)
 	}
-	m := &groth16Manifest{Format: groth16ArtifactFormat, Curve: "bn254", CommitmentHash: "sha256",
+	m := &groth16Manifest{
 		Constraints: ccs.GetNbConstraints(), Domain: domain, PublicInputs: 2, Commitments: commitments, Files: make(map[string]artifact)}
 	for _, name := range []string{"vk.json", "circuit.bin"} {
 		m.Files[name], err = fileHash(filepath.Join(dir, name))
@@ -91,24 +92,24 @@ func TestGroth16MPCAndAdmission(t *testing.T) {
 		return entry.SHA256
 	}
 	pin := publish()
-	if err := groth16MPCSetup(dir, metadata, hex.EncodeToString(make([]byte, 32))); err == nil {
+	if err := groth16MPCSetup(dir, m, metadata, hex.EncodeToString(make([]byte, 32))); err == nil {
 		t.Fatal("accepted untrusted ceremony metadata")
 	}
 	ceremony.Circuit = hex.EncodeToString(make([]byte, 32))
-	if err := groth16MPCSetup(dir, metadata, publish()); err == nil {
+	if err := groth16MPCSetup(dir, m, metadata, publish()); err == nil {
 		t.Fatal("accepted ceremony for another circuit")
 	}
 	ceremony.Circuit = m.Files["circuit.bin"].SHA256
 	ceremony.Phase2 = append(ceremony.Phase2, ceremony.Phase2[0])
-	if err := groth16MPCSetup(dir, metadata, publish()); err == nil {
+	if err := groth16MPCSetup(dir, m, metadata, publish()); err == nil {
 		t.Fatal("accepted duplicated contribution")
 	}
 	ceremony.Phase2 = ceremony.Phase2[:1]
 	pin = publish()
-	if err := groth16MPCSetup(dir, metadata, pin); err != nil {
+	if err := groth16MPCSetup(dir, m, metadata, pin); err != nil {
 		t.Fatal(err)
 	}
-	_, _, m, err = groth16Load(dir)
+	_, _, err = groth16Load(dir, m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,19 +129,23 @@ func TestGroth16MPCAndAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	imported := t.TempDir()
-	groth16TestArtifacts(t, imported)
-	if err := groth16Import(imported, releasePath, releaseHash.SHA256); err != nil {
+	_, importedMetadata := groth16TestArtifacts(t, imported)
+	if err := groth16Import(imported, importedMetadata, releasePath, releaseHash.SHA256); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("IX_GROTH16_BACKEND", "cpu")
-	p, err := openGroth16(imported)
+	encoded, err := json.Marshal(importedMetadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := openGroth16(imported, encoded, groth16Backend{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.close()
 	var digest [32]byte
 	digest[0], digest[16] = 49, 1
-	if _, _, err := p.prove(&backendCircuit{Claim: [2]frontend.Variable{49, 1}, X: 7, Commit: true}, digest[:]); err != nil {
+	if _, _, err := p.proveAssignment(&backendCircuit{Claim: [2]frontend.Variable{49, 1}, X: 7, Commit: true}, digest[:]); err != nil {
 		t.Fatal(err)
 	}
 	if p.manifest.Files["verifying-key.bin"].SHA256 != m.Files["verifying-key.bin"].SHA256 {

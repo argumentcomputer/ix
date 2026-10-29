@@ -1,6 +1,6 @@
-//! KZG CUDA kernels for the compression crate.
+//! Native proving backends for the compression worker.
 //!
-//! Without the `cuda` feature this script does nothing, so CPU builds need
+//! Without the `cuda` feature KZG builds need
 //! neither nvcc nor the CUDA headers and libraries. With it, the selected
 //! sppark instantiation and the KZG kernels are compiled into their own
 //! archive, isolated from multi-stark's Goldilocks instantiation by the
@@ -24,7 +24,13 @@ const SOURCES: &[&str] = &[
   "cuda/kzg_sppark.cuh",
 ];
 
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+#[path = "build/gnark.rs"]
+mod gnark;
+
 fn main() {
+  #[cfg(any(feature = "plonk", feature = "groth16"))]
+  gnark::build();
   println!("cargo:rerun-if-changed=build.rs");
   for source in SOURCES {
     println!("cargo:rerun-if-changed={source}");
