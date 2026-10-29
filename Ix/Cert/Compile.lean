@@ -829,6 +829,11 @@ of that family (`Ix.Cert.RecursorsOwned`). -/
   | .natPred | .natAdd | .natSub | .natMul | .natPow | .natBeq | .natBle | .natDiv | .natMod
   | .natGcd | .natLand | .natLor | .natXor | .natShiftLeft | .natShiftRight => .ops
   | .propext | .choice | .sorryAx => .axiom
+  | .decidableDecide | .natDecEq | .natDecLe | .natDecLt | .intNegOfNat | .intSubNatNat | .intNeg
+  | .intAdd | .intSub | .intMul | .intNatAbs | .intEdiv | .intEmod | .intPow | .bitVecToNat
+  | .bitVecUlt | .stringDecEq | .stringToByteArray | .listAppend | .stringAppend | .ifThenElse
+  | .intDecEq | .intDecLe | .intDecLt | .intBmod | .intBdiv | .charUtf8Size | .stringUtf8ByteSize
+  | .stringBack => .eqns
   | _ => .anchor
 
 /-- Whether the record `c` has the kind the specification of the role `r` asks

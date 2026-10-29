@@ -149,26 +149,34 @@ def quotLift := bound .quotLift
 #guard defaultTable.isOk && (builtinPrelude (md := .anon)).isOk && defaultBinding.isOk
 -- the default table: every role bound, well formed, its section canonical and
 -- committed under its BLAKE3 hash
-#guard builtinTable.bound.size == 59 && builtinTable.check.isOk
+#guard builtinTable.bound.size == 103 && builtinTable.check.isOk
 #guard (Ix.Kernel.RoleTable.ofBytes builtinTable.toBytes).isSome
 #guard match defaultBinding with
   | .ok b => hash b.bytes == b.address && b.bytes == builtinTable.toBytes
   | .error _ => false
--- its evidence: one entry per equation of each of the fifteen operations, of
--- the kind the equation fixes (a proof for each well-founded operation's)
-#guard builtinTable.evidence.size == 15 && builtinTable.evidence.all fun (r, es) =>
-  es.size == (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.length &&
-    (es.toList.zip (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds).all fun (e, k) => e.isDefeqKind k
+-- Every equation has evidence of an allowed kind: the original fifteen Nat
+-- operations retain their fixed kinds; twenty-nine definitions add equations
+-- whose unconditional entries may be definitional or checked proofs.
+#guard builtinTable.evidence.size == 44 && builtinTable.evidence.all fun (r, es) =>
+  let allowed := (Ix.Kernel.Role.spec (md := .anon) r).evidenceAllowed
+  es.size == allowed.length &&
+    (es.toList.zip allowed).all fun (e, kind) => kind.all e.isDefeqKind
+#guard
+  let operations := builtinTable.evidence.filter fun (r, _) =>
+    r.spec (md := .anon) matches .ops ..
+  operations.size == 15 && operations.all fun (r, es) =>
+    let kinds := (r.spec (md := .anon)).evidenceKinds
+    es.size == kinds.length && (es.toList.zip kinds).all fun (e, kind) => e.isDefeqKind kind
 -- over the prelude alone, the structural operations' evidence resolves and
 -- the well-founded operations' does not: their theorems reference the
 -- operations, whose records only a stream supplies
 #guard
   let ev := evidenceOf (contextOf builtinTable #[] [] (builtinPre.records ++ builtinPre.evidence) builtinPre.blobs)
     builtinPre.state builtinTable
-  ev.length == 15 && ev.all fun (r, es) =>
-    if (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.all id then
-      es.length == (Ix.Kernel.Role.spec (md := .anon) r).evidenceKinds.length
-    else es.isEmpty
+  ev.length == 44 && ev.all fun (r, es) =>
+    let declared := ((builtinTable.evidence.find? (·.1 == r)).map (·.2)).getD #[]
+    let definitional := declared.toList.filter fun | .defeq => true | .proof _ => false
+    es.length == definitional.length && es.all fun | .defeq => true | .proof _ => false
 #guard (builtinPre.ix.decls.toList.map (fun d => toString <$> Ix.Kernel.Frontend.preludeKey d)) ==
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
    "And", "Bool"].map some

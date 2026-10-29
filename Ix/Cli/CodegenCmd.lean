@@ -36,6 +36,7 @@ public import Ix.Aiur.Stages.TraceCuda
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
 public import Ix.IxVM.RoleSpecGen
+public import Ix.RoleBinding.RustSpecGen
 public import MultiStark
 
 public section
@@ -125,6 +126,29 @@ def emitRoleSpecs (checkOnly : Bool) : IO Bool := do
   IO.FS.writeFile roleSpecPath source
   IO.println s!"[codegen] wrote {roleSpecPath}"
   return true
+
+/-- Keep the Rust validator and the shared shape fixture derived from the
+same specification data used by the verified kernel and circuit renderer. -/
+def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
+  let source ← match Ix.RoleBinding.RustSpecGen.render with
+    | .ok source => pure source
+    | .error error => IO.eprintln s!"Rust role specifications: {error}"; return false
+  let outputs := #[
+    ("crates/kernel/src/role_admission/specs.rs", source),
+    ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", Ix.RoleBinding.RustSpecGen.shape)]
+  let mut ok := true
+  for (path, contents) in outputs do
+    if checkOnly then
+      let existing ← try pure (some (← IO.FS.readFile path)) catch _ => pure none
+      if existing == some contents then
+        IO.println s!"[codegen --check] {path} up to date"
+      else
+        IO.eprintln s!"[codegen --check] {path} STALE: re-run `ix codegen` and commit the result."
+        ok := false
+    else
+      IO.FS.writeFile path contents
+      IO.println s!"[codegen] wrote {path}"
+  return ok
 
 /-- Circuits generated beyond the static rule, by circuit name per target:
 the IxVM circuits whose host trace building dominates a proof, small rows
@@ -259,6 +283,7 @@ def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut ok := true
   if selected.any (·.label == "ixvm") then
     ok := (← emitRoleSpecs checkOnly) && ok
+    ok := (← emitRustRoleSpecs checkOnly) && ok
   for t in selected do
     ok := (← emitTarget checkOnly t) && ok
   return if ok then 0 else 1

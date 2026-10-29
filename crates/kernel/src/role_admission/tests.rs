@@ -50,18 +50,17 @@ fn full_candidate() -> (Env, RoleTable) {
   let evidence = Role::ALL
     .into_iter()
     .filter_map(|role| {
-      let (count, defeq) = evidence_shape(role);
-      (count != 0).then(|| {
+      let allowed = evidence_allowed(role);
+      (!allowed.is_empty()).then(|| {
         (
           role,
-          vec![
-            if defeq {
-              Evidence::DefEq
-            } else {
-              Evidence::Proof(proof.clone())
-            };
-            count
-          ],
+          allowed
+            .iter()
+            .map(|kind| match kind {
+              Some(false) => Evidence::Proof(proof.clone()),
+              _ => Evidence::DefEq,
+            })
+            .collect(),
         )
       })
     })
@@ -99,14 +98,21 @@ fn candidates_preserve_exact_binding_without_admitting_role_types() {
 #[test]
 fn table_shape_matches_current_lean_specification_for_all_roles() {
   let mut actual = format!(
-    "# Role.block/deps and Spec.evidenceKinds, version{SPEC_VERSION}\n"
+    "# Role.block/deps and Spec.evidenceAllowed, version{SPEC_VERSION}\n"
   );
   let indices = |roles: &[Role]| {
     roles.iter().map(|r| r.index().to_string()).collect::<Vec<_>>().join(",")
   };
   for role in Role::ALL {
-    let (count, defeq) = evidence_shape(role);
-    let kinds = vec![if defeq { "defeq" } else { "proof" }; count].join(",");
+    let kinds = evidence_allowed(role)
+      .iter()
+      .map(|kind| match kind {
+        Some(true) => "defeq",
+        Some(false) => "proof",
+        None => "either",
+      })
+      .collect::<Vec<_>>()
+      .join(",");
     actual.push_str(&format!(
       "{}\t{}\t{}\t{kinds}\n",
       role.index(),

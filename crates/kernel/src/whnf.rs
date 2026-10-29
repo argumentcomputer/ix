@@ -10,6 +10,7 @@ use crate::def_eq::IX_STEP_TRACE;
 
 use ix_common::address::Address;
 use ixon::constant::DefKind;
+use ixon::role_table::Role;
 
 /// When set, emit a `[iota stuck]` line whenever `try_iota` can't resolve
 /// its major premise to a constructor. Set `IX_IOTA_STUCK=1` to activate
@@ -189,7 +190,6 @@ fn prim_family_uncached<M: KernelMode>(
     return PrimFamily::BitVec;
   }
   if *addr == p.string_back.addr
-    || *addr == p.string_legacy_back.addr
     || *addr == p.string_utf8_byte_size.addr
     || *addr == p.string_to_byte_array.addr
     || *addr == p.string_of_list.addr
@@ -2302,7 +2302,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Convert a Nat literal to constructor form: 0 → Nat.zero, n+1 → Nat.succ(n-1).
   fn nat_to_constructor(&mut self, val: &Nat) -> Result<KExpr<M>, TcError<M>> {
-    self.require_role(ixon::role_table::Role::Nat)?;
+    self.require_role(Role::Nat)?;
     Ok({
       use num_bigint::BigUint;
       // Global diagnostic: count expansions and log every 100k. A legitimate
@@ -3229,6 +3229,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
 
     if id.addr == self.primitives()?.bit_vec_to_nat.addr && args.len() >= 2 {
+      if !self.prims.admits(Role::BitVecToNat) {
+        return Ok(None);
+      }
+      if self.prims.follows_safety_tier() {
+        let Some((width, _)) = self.bitvec_of_nat_args(&args[1]) else {
+          return Ok(None);
+        };
+        if !self.is_def_eq(&args[0], &width)? {
+          return Ok(None);
+        }
+      }
       if let Some(result) = self.try_reduce_bitvec_to_nat(&args[1])? {
         return Ok(Some(self.finish_app_result(result, &args, 2)));
       }
@@ -3236,6 +3247,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     if id.addr == self.primitives()?.bit_vec_ult.addr && args.len() >= 3 {
+      if !self.prims.admits(Role::BitVecUlt)
+        || !self.prims.admits(Role::BitVecToNat)
+      {
+        return Ok(None);
+      }
+      if self.prims.follows_safety_tier() {
+        // The specification covers matching ofNat operands. A bound BitVec
+        // anchor need not make ofNat surjective, or its width injective.
+        for operand in &args[1..3] {
+          let Some((width, _)) = self.bitvec_of_nat_args(operand) else {
+            return Ok(None);
+          };
+          if !self.is_def_eq(&args[0], &width)? {
+            return Ok(None);
+          }
+        }
+      }
       if let Some(result) =
         self.try_reduce_bitvec_ult(&args[0], &args[1], &args[2])?
       {
@@ -3441,6 +3469,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *addr == self.primitives()?.string_of_list.addr
       || *addr == self.primitives()?.string_mk.addr
     {
+      if !self.prims.admits(Role::StringOfList) {
+        return Ok(None);
+      }
       if args.len() != 1 {
         return Ok(None);
       }
@@ -3453,6 +3484,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     if *addr == self.primitives()?.string_append.addr {
+      if !self.prims.admits(Role::StringAppend) {
+        return Ok(None);
+      }
       if args.len() != 2 {
         return Ok(None);
       }
@@ -3465,20 +3499,32 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     if *addr == self.primitives()?.string_dec_eq.addr {
+      if !self.prims.admits(Role::StringDecEq) {
+        return Ok(None);
+      }
       if args.len() != 2 {
         return Ok(None);
       }
       return self.try_reduce_string_dec_eq(e, &args);
     }
 
-    let is_back = *addr == self.primitives()?.string_back.addr
-      || *addr == self.primitives()?.string_legacy_back.addr;
+    let is_back = *addr == self.primitives()?.string_back.addr;
     let is_utf8_byte_size =
       *addr == self.primitives()?.string_utf8_byte_size.addr;
     let is_to_byte_array =
       *addr == self.primitives()?.string_to_byte_array.addr;
     if (!is_back && !is_utf8_byte_size && !is_to_byte_array) || args.len() != 1
     {
+      return Ok(None);
+    }
+    let role = if is_back {
+      Role::StringBack
+    } else if is_utf8_byte_size {
+      Role::StringUtf8ByteSize
+    } else {
+      Role::StringToByteArray
+    };
+    if !self.prims.admits(role) {
       return Ok(None);
     }
 
@@ -4294,16 +4340,14 @@ mod tests {
   }
 
   #[test]
-  fn whnf_string_legacy_back_empty_literal() {
+  fn whnf_string_back_empty_literal() {
     use super::super::testing as kt;
 
     let mut env = KEnv::new();
     let mut tc = TypeChecker::new(&mut env);
     tc.enable_extra_reductions();
-    let back = kt::ME::cnst(
-      tc.primitives().unwrap().string_legacy_back.clone(),
-      Box::new([]),
-    );
+    let back =
+      kt::ME::cnst(tc.primitives().unwrap().string_back.clone(), Box::new([]));
     let empty = kt::ME::str(String::new(), Address::hash(b""));
     let result = tc.whnf(&kt::ME::app(back, empty)).unwrap();
     let (head, args) = collect_app_spine(&result);
@@ -7389,3 +7433,7 @@ mod tests {
       if v.0 == num_bigint::BigUint::from(99u64)));
   }
 }
+
+#[cfg(test)]
+#[path = "bound_primitive_tests.rs"]
+mod bound_primitive_tests;

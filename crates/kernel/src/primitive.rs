@@ -143,7 +143,6 @@ pub struct Primitives<M: KernelMode> {
   pub punit_size_of_1: KId<M>,
   pub size_of_size_of: KId<M>,
   pub string_back: KId<M>,
-  pub string_legacy_back: KId<M>,
   pub string_utf8_byte_size: KId<M>,
 
   // -- Native string-value fast paths --
@@ -293,8 +292,8 @@ impl<M: KernelMode> Primitives<M> {
       char_mk: absent.clone(),
       char_of_nat: role(R::CharOfNat),
       string_of_list: role(R::StringOfList),
-      string_to_byte_array: absent.clone(),
-      byte_array_empty: absent.clone(),
+      string_to_byte_array: role(R::StringToByteArray),
+      byte_array_empty: role(R::ByteArrayEmpty),
       list: role(R::List),
       list_nil: role(R::ListNil),
       list_cons: role(R::ListCons),
@@ -310,54 +309,53 @@ impl<M: KernelMode> Primitives<M> {
       system_platform_num_bits: absent.clone(),
       system_platform_get_num_bits: absent.clone(),
       subtype_val: absent.clone(),
-      nat_dec_le: absent.clone(),
-      nat_dec_eq: absent.clone(),
-      nat_dec_lt: absent.clone(),
+      nat_dec_le: role(R::NatDecLe),
+      nat_dec_eq: role(R::NatDecEq),
+      nat_dec_lt: role(R::NatDecLt),
       decidable_rec: absent.clone(),
-      decidable_is_true: absent.clone(),
-      decidable_is_false: absent.clone(),
+      decidable_is_true: role(R::DecidableIsTrue),
+      decidable_is_false: role(R::DecidableIsFalse),
       nat_le_of_ble_eq_true: absent.clone(),
       nat_not_le_of_not_ble_eq_true: absent.clone(),
       nat_eq_of_beq_eq_true: absent.clone(),
       nat_ne_of_beq_eq_false: absent.clone(),
       fin: absent.clone(),
       bool_no_confusion: absent.clone(),
-      int: absent.clone(),
-      int_of_nat: absent.clone(),
-      int_neg_succ: absent.clone(),
-      int_add: absent.clone(),
-      int_sub: absent.clone(),
-      int_mul: absent.clone(),
-      int_neg: absent.clone(),
-      int_emod: absent.clone(),
-      int_ediv: absent.clone(),
-      int_bmod: absent.clone(),
-      int_bdiv: absent.clone(),
-      int_nat_abs: absent.clone(),
-      int_pow: absent.clone(),
-      int_dec_eq: absent.clone(),
-      int_dec_le: absent.clone(),
-      int_dec_lt: absent.clone(),
+      int: role(R::Int),
+      int_of_nat: role(R::IntOfNat),
+      int_neg_succ: role(R::IntNegSucc),
+      int_add: role(R::IntAdd),
+      int_sub: role(R::IntSub),
+      int_mul: role(R::IntMul),
+      int_neg: role(R::IntNeg),
+      int_emod: role(R::IntEmod),
+      int_ediv: role(R::IntEdiv),
+      int_bmod: role(R::IntBmod),
+      int_bdiv: role(R::IntBdiv),
+      int_nat_abs: role(R::IntNatAbs),
+      int_pow: role(R::IntPow),
+      int_dec_eq: role(R::IntDecEq),
+      int_dec_le: role(R::IntDecLe),
+      int_dec_lt: role(R::IntDecLt),
       punit: role(R::PUnit),
       pprod: absent.clone(),
       pprod_mk: absent.clone(),
       nat_rec: role(R::NatRec),
       nat_cases_on: absent.clone(),
-      bit_vec: absent.clone(),
-      bit_vec_to_nat: absent.clone(),
-      bit_vec_of_nat: absent.clone(),
-      bit_vec_ult: absent.clone(),
-      decidable_decide: absent.clone(),
+      bit_vec: role(R::BitVec),
+      bit_vec_to_nat: role(R::BitVecToNat),
+      bit_vec_of_nat: role(R::BitVecOfNat),
+      bit_vec_ult: role(R::BitVecUlt),
+      decidable_decide: role(R::DecidableDecide),
       lt_lt: absent.clone(),
       of_nat_of_nat: absent.clone(),
       unit: absent.clone(),
       punit_size_of_1: absent.clone(),
       size_of_size_of: absent.clone(),
-      string_back: absent.clone(),
-      string_legacy_back: absent.clone(),
-      string_utf8_byte_size: absent.clone(),
-      string_append: absent.clone(),
-      string_dec_eq: absent,
+      string_back: role(R::StringBack),
+      string_utf8_byte_size: role(R::StringUtf8ByteSize),
+      string_append: role(R::StringAppend),
+      string_dec_eq: role(R::StringDecEq),
     };
     Self::from_addrs_with(&a, |addr| {
       name_for_addr(addr)
@@ -505,7 +503,6 @@ impl<M: KernelMode> Primitives<M> {
       punit_size_of_1: r(&a.punit_size_of_1),
       size_of_size_of: r(&a.size_of_size_of),
       string_back: r(&a.string_back),
-      string_legacy_back: r(&a.string_legacy_back),
       string_utf8_byte_size: r(&a.string_utf8_byte_size),
       string_append: r(&a.string_append),
       string_dec_eq: r(&a.string_dec_eq),
@@ -622,7 +619,6 @@ mod tests {
       ("punit_size_of_1", &a.punit_size_of_1),
       ("size_of_size_of", &a.size_of_size_of),
       ("string_back", &a.string_back),
-      ("string_legacy_back", &a.string_legacy_back),
       ("string_utf8_byte_size", &a.string_utf8_byte_size),
       ("string_append", &a.string_append),
       ("string_dec_eq", &a.string_dec_eq),
@@ -805,5 +801,34 @@ mod tests {
       assert_eq!(name_a, name_d);
       assert_eq!(addr_a.hex(), addr_d.hex());
     }
+  }
+
+  #[test]
+  fn bound_extra_identities_require_admission_and_leave_legacy_helpers_absent()
+  {
+    use ixon::role_table::Role;
+    let key = Address::hash(b"admitted string append");
+    let p = Primitives::<Anon>::from_admitted(
+      |role| (role == Role::StringAppend).then(|| key.clone()),
+      |_| None,
+    );
+    assert_eq!(p.string_append.addr, key);
+    for absent in [
+      &p.string_dec_eq,
+      &p.string_back,
+      &p.string_utf8_byte_size,
+      &p.bit_vec_to_nat,
+      &p.int_add,
+      &p.nat_dec_eq,
+      &p.nat_le_of_ble_eq_true,
+      &p.nat_not_le_of_not_ble_eq_true,
+      &p.nat_eq_of_beq_eq_true,
+      &p.nat_ne_of_beq_eq_false,
+      &p.decidable_rec,
+    ] {
+      assert_eq!(absent.addr, absent_primitive());
+    }
+    let none = Primitives::<Anon>::from_admitted(|_| None, |_| None);
+    assert_eq!(none.string_append.addr, absent_primitive());
   }
 }

@@ -50,13 +50,15 @@ private def inputs (operation : Role) (complete : Bool := false) :
   for (a, c) in proofs do
     certificates := { certificates with consts := certificates.consts.insert a (LazyConstant.ofConstant c) }
   let mut addresses := #[]
-  for (role, names) in Ix.RoleEvidence.certTheorems do
+  for (role, names) in Ix.RoleEvidence.allCertTheorems do
     unless required.contains role do continue
     let some (_, evidence) := table.evidence.find? (·.1 == role)
       | throw "fixture: operation has no evidence entries"
-    need "fixture: certificate count" (names.length == evidence.size)
-    for (name, entry) in names.zip evidence.toList do
-      let .proof address := entry | throw "fixture: expected proof evidence"
+    let proofEntries := evidence.toList.filterMap fun
+      | .proof address => some address
+      | .defeq => none
+    need "fixture: certificate count" (names.length == proofEntries.length)
+    for (name, address) in names.zip proofEntries do
       let name := Ix.Name.fromLeanName name
       certificates := { certificates with
         named := certificates.named.insert name { addr := address }
@@ -178,6 +180,21 @@ private def checks (operation : Role) : Except String Unit := do
     (!(separate.emit { limits with maxRecordBytes := smallBytes.size - 1 } {}).isOk)
   need "new records obey the emission universe-node limit"
     (!(separate.emit { limits with maxRecordUnivNodes := 0 } {}).isOk)
+  let retained := { separate with evidence := #[], support := separate.evidence }
+  let retainedEnv ← retained.emit limits {}
+  need "retained certificate dependencies are emitted with their exact bytes"
+    ((retainedEnv.consts[smallAddress]?).any (·.rawBytes == smallBytes))
+  need "retained certificate dependencies obey the same byte bound"
+    (!(retained.emit { limits with maxRecordBytes := smallBytes.size - 1 } {}).isOk)
+  need "retained certificate dependencies obey the same universe bound"
+    (!(retained.emit { limits with maxRecordUnivNodes := 0 } {}).isOk)
+  let conflicted := { retainedEnv with consts := retainedEnv.consts.insert smallAddress malformedRecord }
+  need "retained certificate dependencies cannot overwrite different bytes"
+    (!(retained.emit limits conflicted).isOk)
+  let originalHint := { retainedEnv with anonHints := retainedEnv.anonHints.insert smallAddress (.regular 10) }
+  let strongerHint := { retained with supportHints := #[(smallAddress, .opaque)] }
+  need "certificate support cannot change an original reducibility hint"
+    (!(strongerHint.emit limits originalHint).isOk)
 
 public def units (operation : Role) : LSpec.TestSeq :=
   .individualIO "role generation: actual proof records, source bindings, emission and refusals" none (do

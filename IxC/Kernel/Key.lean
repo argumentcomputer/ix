@@ -75,6 +75,14 @@ inductive Role where
   | natPred | natAdd | natSub | natMul | natPow | natBeq | natBle
   | natDiv | natMod | natGcd | natLand | natLor | natXor | natShiftLeft | natShiftRight
   | propext | choice | sorryAx
+  | decidable | decidableIsTrue | decidableIsFalse | notProp | ofDecideEqTrue | ofDecideEqFalse
+  | decidableDecide | natLe | natDecEq | natDecLe | natDecLt
+  | int | intOfNat | intNegSucc | intNegOfNat | intSubNatNat | intNeg | intAdd | intSub | intMul
+  | intNatAbs | intEdiv | intEmod | intPow
+  | bitVec | bitVecOfNat | bitVecToNat | bitVecUlt
+  | stringDecEq | byteArray | byteArrayEmpty | stringToByteArray | listAppend | stringAppend
+  | ifThenElse | intLe | intDecEq | intDecLe | intDecLt | intBmod | intBdiv
+  | charUtf8Size | stringUtf8ByteSize | stringBack
   deriving DecidableEq, Hashable, Ord, Repr, Inhabited
 
 namespace Role
@@ -147,6 +155,50 @@ role key's rendering. -/
   | .propext => topName "propext"
   | .choice => subName "Classical" "choice"
   | .sorryAx => topName "sorryAx"
+  | .decidable => topName "Decidable"
+  | .decidableIsTrue => subName "Decidable" "isTrue"
+  | .decidableIsFalse => subName "Decidable" "isFalse"
+  | .notProp => topName "Not"
+  | .ofDecideEqTrue => topName "of_decide_eq_true"
+  | .ofDecideEqFalse => topName "of_decide_eq_false"
+  | .decidableDecide => subName "Decidable" "decide"
+  | .natLe => subName "Nat" "le"
+  | .natDecEq => subName "Nat" "decEq"
+  | .natDecLe => subName "Nat" "decLe"
+  | .natDecLt => subName "Nat" "decLt"
+  | .int => topName "Int"
+  | .intOfNat => subName "Int" "ofNat"
+  | .intNegSucc => subName "Int" "negSucc"
+  | .intNegOfNat => subName "Int" "negOfNat"
+  | .intSubNatNat => subName "Int" "subNatNat"
+  | .intNeg => subName "Int" "neg"
+  | .intAdd => subName "Int" "add"
+  | .intSub => subName "Int" "sub"
+  | .intMul => subName "Int" "mul"
+  | .intNatAbs => subName "Int" "natAbs"
+  | .intEdiv => subName "Int" "ediv"
+  | .intEmod => subName "Int" "emod"
+  | .intPow => subName "Int" "pow"
+  | .bitVec => topName "BitVec"
+  | .bitVecOfNat => subName "BitVec" "ofNat"
+  | .bitVecToNat => subName "BitVec" "toNat"
+  | .bitVecUlt => subName "BitVec" "ult"
+  | .stringDecEq => subName "String" "decEq"
+  | .byteArray => topName "ByteArray"
+  | .byteArrayEmpty => subName "ByteArray" "empty"
+  | .stringToByteArray => subName "String" "toByteArray"
+  | .listAppend => subName "List" "append"
+  | .stringAppend => subName "String" "append"
+  | .ifThenElse => topName "ite"
+  | .intLe => subName "Int" "le"
+  | .intDecEq => subName "Int" "decEq"
+  | .intDecLe => subName "Int" "decLe"
+  | .intDecLt => subName "Int" "decLt"
+  | .intBmod => subName "Int" "bmod"
+  | .intBdiv => subName "Int" "bdiv"
+  | .charUtf8Size => subName "Char" "utf8Size"
+  | .stringUtf8ByteSize => subName "String" "utf8ByteSize"
+  | .stringBack => subName "String" "back"
 
 /-- Every role, in declaration order. -/
 def all : List Role :=
@@ -157,7 +209,15 @@ def all : List Role :=
    .quot, .quotMk, .quotLift, .quotInd, .quotSound, .string, .stringOfList, .char, .charOfNat,
    .natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq, .natBle,
    .natDiv, .natMod, .natGcd, .natLand, .natLor, .natXor, .natShiftLeft, .natShiftRight,
-   .propext, .choice, .sorryAx]
+   .propext, .choice, .sorryAx,
+   .decidable, .decidableIsTrue, .decidableIsFalse, .notProp, .ofDecideEqTrue, .ofDecideEqFalse,
+   .decidableDecide, .natLe, .natDecEq, .natDecLe, .natDecLt,
+   .int, .intOfNat, .intNegSucc, .intNegOfNat, .intSubNatNat, .intNeg, .intAdd, .intSub, .intMul,
+   .intNatAbs, .intEdiv, .intEmod, .intPow,
+   .bitVec, .bitVecOfNat, .bitVecToNat, .bitVecUlt,
+   .stringDecEq, .byteArray, .byteArrayEmpty, .stringToByteArray, .listAppend, .stringAppend,
+   .ifThenElse, .intLe, .intDecEq, .intDecLe, .intDecLt, .intBmod, .intBdiv,
+   .charUtf8Size, .stringUtf8ByteSize, .stringBack]
 
 theorem mem_all (r : Role) : r ∈ all := by cases r <;> decide
 

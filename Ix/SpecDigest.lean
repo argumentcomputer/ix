@@ -27,11 +27,13 @@ closedness it relies on. Level parameters are positions; binder data are the
 `PropWhen` datum and the two contracts' bits, a let's data its contract.
 
     specs     := N0(specVersion) N0(#roles) role*            (in `Role.all` order)
-    role      := N0(index) spec N0(#block) index* N0(#deps) index*
+    role      := N0(index) spec N0(#block) index* N0(#deps) index* bool(implicit)
     spec      := 00 N0(#decls) info*                         block
                | 01 N0(levels) expr                          anchor
                | 02 expr N0(#eqs) (N0(#hyps) expr* expr expr)*   ops
                | 03 N0(levels) (00 | 01 expr)                axiom (inert | typed)
+               | 04 N0(levels) expr N0(#eqs) eqn*              eqns
+    eqn       := N0(#vars) expr* N0(#hyps) expr* level expr expr expr
     info      := 00 val | 01 val expr hint | 02 val expr | 03 val caps
                | 04 val N0 N0 | 05 val N0 N0 N0(#rules) rule* | 06 table
     val       := key N0(#lps) N0* expr
@@ -163,6 +165,12 @@ def spec : Spec md → EncM Unit
     match type with
     | none => byte 0
     | some t => do byte 1; expr t
+  | .eqns levels type eqs => do
+    byte 4
+    nat levels
+    expr type
+    list eqs fun e => do
+      list e.vars expr; list e.hyps expr; level e.level; expr e.carrier; expr e.lhs; expr e.rhs
 
 /-- **The specification set's canonical bytes.** -/
 def specBytes : Except String ByteArray := do
@@ -173,6 +181,7 @@ def specBytes : Except String ByteArray := do
       spec (r.spec (md := .anon))
       list r.block fun s => nat (Role.all.idxOf s)
       list r.deps fun s => nat (Role.all.idxOf s)
+      bool r.usedImplicitly
   let ((), bytes) ← act.run .empty
   pure bytes
 

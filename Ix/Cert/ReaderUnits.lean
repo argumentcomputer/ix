@@ -652,6 +652,7 @@ def ConvertedKeys (K : CName .source → Prop) : Converted → Prop
   | .quot _ cv => K cv.name
 
 open Ix.LeanIngress in
+set_option maxRecDepth 8192 in
 /-- **A converted inductive block's entries carry the group's keys**: each
 type's, constructor's and recursor's name is the ingress key of the source
 constant it was read from. -/
@@ -742,6 +743,7 @@ theorem array_mapM_ok {α β ε : Type} {f : α → Except ε β} {xs : Array α
     simpa using Ix.CompileCert.Loop.mapM_forall₂ f hl
 
 open Ix.LeanIngress in
+set_option maxRecDepth 8192 in
 /-- **A converted definition group's members carry the group's keys**: each
 member's name is the ingress key of one of the group's constants (the block
 order `defOrder` returns names only members, `defOrder_lt`). -/
@@ -783,6 +785,7 @@ theorem convertDefinitions_keys {members : Array Ix.ConstantInfo} {conv : Conver
       · cases ran
 
 open Ix.LeanIngress in
+set_option maxRecDepth 8192 in
 /-- **A group's conversion carries the group's keys.** -/
 theorem convert_keys {gr : Group} {c : Converted} (h : convert gr = .ok c) :
     ConvertedKeys (GroupKeyOf gr) c := by
@@ -1050,6 +1053,7 @@ theorem ingressKey_not_derived (n : Ix.Name) : Ix.Kernel.Key.isAux (ingressKey n
   unfold ingressKey Ix.Kernel.Key.ofName
   split <;> rfl
 
+set_option maxRecDepth 8192 in
 /-- A group's key is not derived. -/
 theorem GroupKeyOf.not_derived {gr : Ix.LeanIngress.Group} {k : CName .source} (h : GroupKeyOf gr k) :
     Ix.Kernel.Key.isAux k = false := by

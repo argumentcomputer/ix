@@ -579,6 +579,376 @@ fn bind_structural(env: &mut Env, swap_add_and_mul: bool) {
   bind_with_evidence(env, roles, evidence);
 }
 
+#[derive(Clone, Copy, Debug)]
+enum DefinitionMutation {
+  None,
+  AnchorAxiom,
+  WrongValue,
+  WrongType,
+  ExtraUniverse,
+  Opaque,
+  Unsafe,
+}
+
+/// A small alternate representation: Int is Nat, ofNat is identity, and
+/// negSucc is successor. A beta-expanded identity satisfies negOfNat's
+/// actual generated equations; the mutants remain separately addressed.
+fn equation_candidate(
+  env: &Env,
+  mutation: DefinitionMutation,
+) -> Vec<(Role, Address)> {
+  let nat = address_of(env, "Nat");
+  let zero = address_of(env, "Nat.zero");
+  let succ = address_of(env, "Nat.succ");
+  let one = Arc::new(Univ::Succ(Arc::new(Univ::Zero)));
+  let integer = if matches!(mutation, DefinitionMutation::AnchorAxiom) {
+    axiom(env, 0, arc(Expr::Sort(0)), vec![], vec![one])
+  } else {
+    definition(
+      env,
+      0,
+      arc(Expr::Sort(0)),
+      app(lambda(arc(Expr::Sort(0)), arc(Expr::Var(0))), reference(0, vec![])),
+      vec![nat.clone()],
+      vec![one],
+    )
+  };
+  let typ = pi(reference(0, vec![]), reference(1, vec![]));
+  let of_nat = definition(
+    env,
+    0,
+    typ.clone(),
+    lambda(reference(0, vec![]), arc(Expr::Var(0))),
+    vec![nat.clone(), integer.clone()],
+    vec![],
+  );
+  let negative = definition(
+    env,
+    0,
+    typ.clone(),
+    reference(2, vec![]),
+    vec![nat.clone(), integer.clone(), succ],
+    vec![],
+  );
+  let body = match mutation {
+    DefinitionMutation::WrongValue => reference(2, vec![]),
+    _ => {
+      app(lambda(reference(0, vec![]), arc(Expr::Var(0))), arc(Expr::Var(0)))
+    },
+  };
+  let (typ, value) = match mutation {
+    DefinitionMutation::WrongType => {
+      (reference(0, vec![]), reference(2, vec![]))
+    },
+    _ => (typ, lambda(reference(0, vec![]), body)),
+  };
+  let operation = store(
+    env,
+    ConstantInfo::Defn(Definition {
+      kind: if matches!(mutation, DefinitionMutation::Opaque) {
+        DefKind::Opaque
+      } else {
+        DefKind::Definition
+      },
+      safety: if matches!(mutation, DefinitionMutation::Unsafe) {
+        DefinitionSafety::Unsafe
+      } else {
+        DefinitionSafety::Safe
+      },
+      lvls: u64::from(matches!(mutation, DefinitionMutation::ExtraUniverse)),
+      typ,
+      value,
+    }),
+    vec![nat, integer.clone(), zero],
+    vec![],
+  );
+  vec![
+    (Role::Int, integer),
+    (Role::IntOfNat, of_nat),
+    (Role::IntNegSucc, negative),
+    (Role::IntNegOfNat, operation),
+  ]
+}
+
+fn bind_equation_candidate(
+  env: &mut Env,
+  extra: &[(Role, Address)],
+  evidence: Vec<Evidence>,
+) {
+  let mut roles = basis_roles(env);
+  roles.extend(extra.iter().cloned());
+  let roles = with_prelude(env, roles);
+  bind_with_evidence(env, roles, vec![(Role::IntNegOfNat, evidence)]);
+}
+
+#[test]
+fn generated_equations_admit_actual_definitions_and_refuse_semantic_mutants() {
+  for (mutation, expected) in [
+    (DefinitionMutation::None, None),
+    (
+      DefinitionMutation::WrongValue,
+      Some("definitional equation does not hold"),
+    ),
+    (DefinitionMutation::WrongType, Some("definition type")),
+    (DefinitionMutation::ExtraUniverse, Some("universe parameter count")),
+    (DefinitionMutation::Opaque, Some("not a safe definition")),
+    (DefinitionMutation::Unsafe, Some("not a safe definition")),
+  ] {
+    let mut env = loaded();
+    let roles = equation_candidate(&env, mutation);
+    bind_equation_candidate(&mut env, &roles, vec![Evidence::DefEq; 2]);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    for role in
+      [Role::Nat, Role::Eq, Role::Int, Role::IntOfNat, Role::IntNegSucc]
+    {
+      assert!(
+        source.is_admitted(role),
+        "{mutation:?}: {:?}",
+        source.admission().refused()
+      );
+    }
+    let refused = source.admission().refused();
+    if let Some(expected) = expected {
+      assert_eq!(refused.len(), 1, "{mutation:?}: {refused:?}");
+      assert_eq!(refused[0].0, Role::IntNegOfNat);
+      assert!(refused[0].1.contains(expected), "{mutation:?}: {refused:?}");
+      assert!(!source.is_admitted(Role::IntNegOfNat));
+      ArtifactChecker::<Anon>::from_source(Ok(source))
+        .check_const(&roles[3].1)
+        .unwrap_err();
+    } else {
+      assert!(refused.is_empty(), "{refused:?}");
+      assert!(source.is_admitted(Role::IntNegOfNat));
+      ArtifactChecker::<Anon>::from_source(Ok(source))
+        .check_const(&roles[3].1)
+        .unwrap();
+    }
+  }
+}
+
+#[test]
+fn generated_support_anchors_cannot_admit_a_new_axiom() {
+  let mut env = loaded();
+  let roles = equation_candidate(&env, DefinitionMutation::AnchorAxiom);
+  bind_equation_candidate(&mut env, &roles, vec![Evidence::DefEq; 2]);
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  let refused = source.admission().refused();
+  assert_eq!(refused.len(), 2, "{refused:?}");
+  assert_eq!(refused[0].0, Role::Int);
+  assert!(
+    refused[0].1.contains("not an admitted standard axiom"),
+    "{refused:?}"
+  );
+  assert_eq!(refused[1].0, Role::IntNegOfNat);
+  assert!(!source.is_admitted(Role::Int));
+  assert!(!source.is_admitted(Role::IntNegOfNat));
+}
+
+#[test]
+fn equation_rhs_anchors_require_their_helpers_to_be_well_typed() {
+  for ill_typed in [false, true] {
+    let mut env = loaded();
+    let mut roles = equation_candidate(&env, DefinitionMutation::None);
+    let nat = address_of(&env, "Nat");
+    let integer = roles[0].1.clone();
+    let discarded =
+      address_of(&env, if ill_typed { "True.intro" } else { "Nat.zero" });
+    // Both helpers reduce to successor. In the negative case the erased
+    // argument is a proof of True where the lambda requires a Nat.
+    let helper = definition(
+      &env,
+      0,
+      pi(reference(0, vec![]), reference(1, vec![])),
+      lambda(
+        reference(0, vec![]),
+        app(
+          lambda(
+            reference(0, vec![]),
+            app(reference(2, vec![]), arc(Expr::Var(1))),
+          ),
+          reference(3, vec![]),
+        ),
+      ),
+      vec![
+        nat.clone(),
+        integer.clone(),
+        address_of(&env, "Nat.succ"),
+        discarded,
+      ],
+      vec![],
+    );
+    let rhs_anchor = definition(
+      &env,
+      0,
+      pi(reference(0, vec![]), reference(1, vec![])),
+      reference(2, vec![]),
+      vec![nat, integer, helper.clone()],
+      vec![],
+    );
+    assert_eq!(roles[2].0, Role::IntNegSucc);
+    roles[2].1 = rhs_anchor.clone();
+    bind_equation_candidate(&mut env, &roles, vec![Evidence::DefEq; 2]);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    let actual_closure = source.closure(&[roles[3].1.clone()]).unwrap();
+    assert!(!actual_closure.contains(&rhs_anchor));
+    assert!(!actual_closure.contains(&helper));
+    let checked_helper =
+      ArtifactChecker::<Anon>::from_source(Ok(source.clone()))
+        .check_const(&helper);
+    assert_eq!(checked_helper.is_ok(), !ill_typed, "{checked_helper:?}");
+    let admitted = source.admission();
+    if ill_typed {
+      assert!(
+        !source.is_admitted(Role::IntNegSucc),
+        "{:?}",
+        admitted.refused()
+      );
+      assert!(
+        !source.is_admitted(Role::IntNegOfNat),
+        "{:?}",
+        admitted.refused()
+      );
+    } else {
+      assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
+      assert!(source.is_admitted(Role::IntNegSucc));
+      assert!(source.is_admitted(Role::IntNegOfNat));
+    }
+  }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ProofMutation {
+  None,
+  ValidHelper,
+  WrongStatement,
+  WrongBody,
+  BadHelper,
+  ExtraUniverse,
+}
+
+/// Ordinary reflexivity witnesses for the alternate representation above.
+/// A wrong-statement mutant is itself a valid theorem; it must fail the
+/// generated equation check, independently of ordinary declaration checking.
+fn equation_proofs(
+  env: &Env,
+  roles: &[(Role, Address)],
+  mutation: ProofMutation,
+) -> Vec<Evidence> {
+  let integer = roles[0].1.clone();
+  let of_nat = roles[1].1.clone();
+  let negative = roles[2].1.clone();
+  let operation = roles[3].1.clone();
+  let mut refs = vec![
+    address_of(env, "Eq"),
+    address_of(env, "Eq.refl"),
+    integer,
+    operation,
+    address_of(env, "Nat.zero"),
+    of_nat,
+    address_of(env, "Nat"),
+    address_of(env, "Nat.succ"),
+    negative,
+  ];
+  let r = |i| reference(i, vec![]);
+  let equality =
+    |lhs, rhs| app(app(app(reference(0, vec![0]), r(2)), lhs), rhs);
+  let refl = |term| app(app(reference(1, vec![0]), r(2)), term);
+  let first = app(r(5), r(4));
+  let mut statements = [
+    equality(app(r(3), r(4)), first.clone()),
+    pi(
+      r(6),
+      equality(
+        app(r(3), app(r(7), arc(Expr::Var(0)))),
+        app(r(8), arc(Expr::Var(0))),
+      ),
+    ),
+  ];
+  let mut values =
+    [refl(first), lambda(r(6), refl(app(r(8), arc(Expr::Var(0)))))];
+  if matches!(mutation, ProofMutation::WrongStatement) {
+    let one = app(r(7), r(4));
+    statements[0] = equality(one.clone(), one.clone());
+    values[0] = refl(one);
+  }
+  if matches!(mutation, ProofMutation::WrongBody) {
+    values[0] = arc(Expr::Var(0));
+  }
+  if matches!(mutation, ProofMutation::ValidHelper | ProofMutation::BadHelper) {
+    let helper = store(
+      env,
+      ConstantInfo::Defn(Definition {
+        kind: DefKind::Theorem,
+        safety: DefinitionSafety::Safe,
+        lvls: 0,
+        typ: statements[0].clone(),
+        value: if matches!(mutation, ProofMutation::ValidHelper) {
+          values[0].clone()
+        } else {
+          arc(Expr::Var(0))
+        },
+      }),
+      refs.clone(),
+      vec![Arc::new(Univ::Succ(Arc::new(Univ::Zero)))],
+    );
+    values[0] = reference(u64::try_from(refs.len()).unwrap(), vec![]);
+    refs.push(helper);
+  }
+  statements
+    .into_iter()
+    .zip(values)
+    .map(|(typ, value)| {
+      Evidence::Proof(store(
+        env,
+        ConstantInfo::Defn(Definition {
+          kind: DefKind::Theorem,
+          safety: DefinitionSafety::Safe,
+          lvls: u64::from(matches!(mutation, ProofMutation::ExtraUniverse)),
+          typ,
+          value,
+        }),
+        refs.clone(),
+        vec![Arc::new(Univ::Succ(Arc::new(Univ::Zero)))],
+      ))
+    })
+    .collect()
+}
+
+#[test]
+fn generated_equations_check_proof_bodies_statements_and_universes() {
+  for mutation in [
+    ProofMutation::None,
+    ProofMutation::ValidHelper,
+    ProofMutation::WrongStatement,
+    ProofMutation::WrongBody,
+    ProofMutation::BadHelper,
+    ProofMutation::ExtraUniverse,
+  ] {
+    let mut env = loaded();
+    let roles = equation_candidate(&env, DefinitionMutation::None);
+    let evidence = equation_proofs(&env, &roles, mutation);
+    bind_equation_candidate(&mut env, &roles, evidence);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    assert!(
+      source.is_admitted(Role::Int),
+      "{:?}",
+      source.admission().refused()
+    );
+    let refused = source.admission().refused();
+    if matches!(mutation, ProofMutation::None | ProofMutation::ValidHelper) {
+      assert!(refused.is_empty(), "{refused:?}");
+      assert!(source.is_admitted(Role::IntNegOfNat));
+    } else {
+      assert_eq!(refused.len(), 1, "{mutation:?}: {refused:?}");
+      assert_eq!(refused[0].0, Role::IntNegOfNat);
+      assert!(!source.is_admitted(Role::IntNegOfNat));
+      if matches!(mutation, ProofMutation::WrongStatement) {
+        assert!(refused[0].1.contains("different statement"), "{refused:?}");
+      }
+    }
+  }
+}
+
 /// `theorem : @Eq.{1} Nat (Nat.pow 2 64) 18446744073709551616 := Eq.refl _`,
 /// which only the admitted `Nat.pow` fast path checks in reasonable time.
 fn power_theorem(env: &Env) -> Address {

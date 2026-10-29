@@ -305,6 +305,13 @@ def roles := ⟦
     }
   }
 
+  -- 1 + the role the table of `rc` binds at `a`, whether or not its group
+  -- is usable; 0 when it binds none. Admits nothing: a caller that uses the
+  -- role's meaning goes through `role_of`.
+  fn role_index_of(rc: RoleCtx, a: Addr) -> G {
+    rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(role_ctx_table(rc)), 0)
+  }
+
   -- 1 iff `a` is the bound address of role `r`, usable under `rc` (and so
   -- admitted).
   fn role_is(rc: RoleCtx, a: Addr, r: G) -> G {
@@ -372,7 +379,9 @@ def roles := ⟦
 
   -- 1 iff role `r`'s admission checks its bound constant with its
   -- dependencies: a basis inductive, constructor or recursor, or an
-  -- operation. Anchors, quotient members and axioms are validated by type.
+  -- operation, or a
+  -- definition specified by its equations. Anchors, quotient members and
+  -- axioms are validated by type.
   fn role_admission_checks(r: G) -> G {
     match role_spec_kind(r) {
       0 =>
@@ -383,6 +392,7 @@ def roles := ⟦
           _ => 0,
         },
       2 => 1,
+      5 => 1,
       _ => 0,
     }
   }
@@ -485,6 +495,7 @@ def roles := ⟦
       2 => validate_op(rc, tbl, r, a, ci),
       3 => validate_standard_axiom(rc, tbl, r, ci),
       4 => validate_inert_axiom(rc, tbl, r, ci),
+      5 => validate_eqns(rc, tbl, r, a, ci),
     }
   }
 
@@ -660,6 +671,60 @@ def roles := ⟦
             },
         };
         validate_op_equations(rc, tbl, r, rest, k + 1),
+    }
+  }
+
+  -- A definition specified by its equations: a safe definition whose type
+  -- meets the specified type, checked with its dependencies, and one evidence
+  -- entry per equation. A definitional entry is allowed only for an
+  -- unconditional equation, whose sides, closed over its variables, must be
+  -- definitionally equal; a proof entry, for any equation, is a theorem of the
+  -- definition's level count, checked with its dependencies, whose type meets
+  -- the equation's statement.
+  fn validate_eqns(rc: RoleCtx, tbl: RoleTable, r: G, a: Addr,
+      ci: KConstantInfo) {
+    match ci {
+      KConstantInfo.Defn(nlvls, ty, _, safety, _) =>
+        match safety {
+          DefinitionSafety.Safe => (),
+          _ =>
+            assert_eq!(0, 1, "a bound definition is not safe");
+            (),
+        };
+        assert_eq!(nlvls, role_levels(r),
+          "a bound definition has another number of universe parameters");
+        assert_type_meets(rc, ty, role_type(tbl, r));
+        run_check_transitive(rc, a);
+        let ev = role_evidence(tbl, r);
+        assert_eq!(list_length(ev), eqns_equation_count(r),
+          "a definition's evidence does not match its equations");
+        validate_eqns_equations(rc, tbl, r, ev, 0),
+    }
+  }
+
+  fn validate_eqns_equations(rc: RoleCtx, tbl: RoleTable, r: G,
+      ev: List‹RoleEvidence›, k: G) {
+    match load(ev) {
+      ListNode.Nil => (),
+      ListNode.Cons(e, rest) =>
+        match e {
+          RoleEvidence.Defeq =>
+            assert_eq!(eqns_conditional(r, k), 0,
+              "a conditional equation's evidence must be a proof");
+            assert_eq!(k_is_def_eq(rc, eqns_lhs(tbl, r, k), eqns_rhs(tbl, r, k),
+                store(ListNode.Nil)), 1,
+              "a definition's equation does not hold by definition");
+            (),
+          RoleEvidence.Proof(thm) =>
+            match load(get_ci(thm)) {
+              KConstantInfo.Thm(nlvls, tty, _) =>
+                assert_eq!(nlvls, role_levels(r),
+                  "an equation's proof has another number of universe parameters");
+                run_check_transitive(rc, thm);
+                assert_type_meets(rc, tty, eqns_statement(tbl, r, k)),
+            },
+        };
+        validate_eqns_equations(rc, tbl, r, rest, k + 1),
     }
   }
 

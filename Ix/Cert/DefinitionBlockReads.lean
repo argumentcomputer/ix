@@ -259,6 +259,7 @@ theorem lower_defs {st : State .source} {ms : Array Ix.LeanIngress.DefMember}
 
 /-! ## One member -/
 
+set_option maxRecDepth 8192 in
 /-- **A member read as related terms lowers as quotient Source's member renamed**, at its hint,
 whatever the heights on either side. -/
 theorem member_lower {ρ : FiberMap} {f : Mode.Id .source → Mode.Id .anon} {P : KeyScope .source}
@@ -496,6 +497,7 @@ section Main
 open Ix.CompileM Ix.CompileCert Ix.CompileCert.ExpressionState
 open Ix.Cert.DefinitionDeps (ConstOcc)
 
+set_option maxRecDepth 8192 in
 /-- **A compiled definition block reads, in a closure's context and from any state related to
 quotient Source's, as quotient Source's group renamed.**
 

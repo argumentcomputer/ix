@@ -567,6 +567,7 @@ theorem readingAt_renamed {env : Ix.Environment} {roots : List Ix.Name} {sub : I
 
 /-! ## Every published name's representative reads -/
 
+set_option maxRecDepth 8192 in
 /-- A fiber's representative under the table rule that is a role key is the role bound at
 the fiber's address. -/
 theorem rep_role_bound {ixe : Ixon.Env} {roles : Std.HashMap Address Role}

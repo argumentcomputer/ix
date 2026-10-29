@@ -273,6 +273,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     env: &'a mut KEnv<M>,
     prims: super::primitive_context::PrimitiveContext<M>,
   ) -> Self {
+    let extra_reductions = prims.extra_reductions();
     TypeChecker {
       env,
       lazy_ixon: None,
@@ -291,7 +292,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       in_app_congruence: false,
       in_binder_batch: false,
       eager_reduce: false,
-      extra_reductions: ExtraReductions::NONE,
+      extra_reductions,
       def_eq_depth: 0,
       def_eq_trace_depth: 0,
       def_eq_peak: 0,

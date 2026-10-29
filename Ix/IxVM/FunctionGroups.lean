@@ -50,8 +50,6 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_03", #[
     "u64_add",
-    "is_str_prim_addr",
-    "is_dec_prim_addr",
     "check_const"
   ]),
   ("ixvm_group_04", #[
@@ -159,7 +157,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_14", #[
     "put_quot_kind",
     "pack_def_kind_safety",
-    "byte_array_empty_addr",
     "utf8_last_codepoint",
     "utf8_cont",
     "def_safety_tag",
@@ -257,7 +254,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_21", #[
     "put_recursor",
     "klimbs_scalar_value",
-    "str_dec_eq_build",
     "get_reveal_ctor_info",
     "get_ctor_entry_list_inner",
     "check_opt_expr_addr",
@@ -378,7 +374,6 @@ def functionGroups : Array (String × Array String) := #[
     "convert_rec_rules",
     "nl_eq",
     "nlvars_dominates",
-    "dec_dispatch_le_eq",
     "ctors_before_pos",
     "projection_addr_ctor"
   ]),
@@ -386,7 +381,6 @@ def functionGroups : Array (String × Array String) := #[
     "u64_sub_with_borrow",
     "try_nat_offset_dispatch",
     "nl_covers_const",
-    "normalize_int_dec_rebuild",
     "check_valid_ind_app",
     "is_large_eliminator",
     "compute_k_target",
@@ -436,7 +430,6 @@ def functionGroups : Array (String × Array String) := #[
     "se_parent_addr",
     "struct_is_rec",
     "struct_scan_ctors",
-    "intern_int_lit",
     "all_bvars_in_args",
     "args_contain_bvar"
   ]),
@@ -446,48 +439,7 @@ def functionGroups : Array (String × Array String) := #[
     "try_str_to_byte_array",
     "try_int_prim_second",
     "try_quot_lift",
-    "k_synth_gate",
-    "dec_finish"
-  ]),
-  ("ixvm_group_43", #[
-    "string_utf8_byte_size_addr",
-    "string_append_addr",
-    "string_back_addr",
-    "string_legacy_back_addr",
-    "string_to_byte_array_addr",
-    "string_dec_eq_addr"
-  ]),
-  ("ixvm_group_44", #[
-    "int_of_nat_addr",
-    "int_neg_succ_addr_dec",
-    "bit_vec_of_nat_addr",
-    "decidable_is_true_addr_dec",
-    "decidable_is_false_addr_dec",
-    "nat_le_of_ble_eq_true_addr_dec",
-    "nat_eq_of_beq_eq_true_addr_dec",
-    "nat_ne_of_beq_eq_false_addr_dec"
-  ]),
-  ("ixvm_group_45", #[
-    "int_add_addr",
-    "int_mul_addr",
-    "int_neg_addr",
-    "int_emod_addr",
-    "int_ediv_addr",
-    "int_bmod_addr",
-    "int_bdiv_addr",
-    "int_nat_abs_addr",
-    "int_pow_addr",
-    "bit_vec_to_nat_addr",
-    "bit_vec_ult_addr",
-    "int_dec_eq_addr_dec",
-    "int_dec_le_addr_dec",
-    "int_dec_lt_addr_dec"
-  ]),
-  ("ixvm_group_46", #[
-    "int_sub_addr",
-    "nat_dec_le_addr_dec",
-    "nat_dec_eq_addr_dec",
-    "nat_dec_lt_addr_dec"
+    "k_synth_gate"
   ]),
   ("ixvm_group_47", #[
     "mk_nat_lit",
@@ -524,7 +476,6 @@ def functionGroups : Array (String × Array String) := #[
     "run_check_env"
   ]),
   ("ixvm_group_51", #[
-    "is_bitvec_prim_addr",
     "try_extract_nat_app",
     "nl_skip_empty",
     "whnf_get_ctor_or_none",
@@ -544,11 +495,7 @@ def functionGroups : Array (String × Array String) := #[
     "try_nat_binop_dispatch",
     "glist_cmp",
     "nl_add_const_go",
-    "try_normalize_int_decidable",
     "try_dec_dispatch"
-  ]),
-  ("ixvm_group_54", #[
-    "nat_not_le_of_not_ble_eq_true_addr_dec"
   ]),
   ("ixvm_group_55", #[
     "utf8_validate",
@@ -563,7 +510,6 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_56", #[
     "utf8_decode_one",
-    "is_int_prim_addr",
     "try_int_prim_dispatch",
     "glist_ordered_insert",
     "try_iota",
@@ -591,8 +537,6 @@ def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_60", #[
     "try_extract_int_prim",
     "literal_eq",
-    "is_int_dec_prim_addr",
-    "try_extract_int",
     "check_quot",
     "check_nested_ctors_positivity",
     "check_large_walk_fields",
@@ -622,7 +566,6 @@ def functionGroups : Array (String × Array String) := #[
     "lazy_delta_step_const_const",
     "try_lazy_delta_app",
     "dec_rewrite_lt_to_le",
-    "dec_build_proof",
     "compare_rules",
     "apply_ihs_full",
     "build_minor_at_depth",

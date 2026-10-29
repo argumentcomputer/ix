@@ -173,6 +173,7 @@ abbrev ctorItem (c : Ix.ConstructorVal) : Numbering × Ix.Expr := (ownNum c.cnst
 def recItems (first : Ix.InductiveVal) (r : Ix.RecursorVal) : List (Numbering × Ix.Expr) :=
   (recNum first r, r.cnst.type) :: r.rules.toList.map fun x => (recNum first r, x.rhs)
 
+set_option maxRecDepth 8192 in
 /-- **What quotient Source's conversion of an inductive group is**: a block of the first
 type's parameter count, each type, constructor and recursor converted under its own
 numbering under its ingress key, in order, the recursors' rules after them. -/

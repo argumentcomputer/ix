@@ -603,7 +603,10 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 -- Matching `sorryAx` against its type at install (`installAnchorPin?`, specification
 -- version 3) adds three: `sorryAxSpecTy` and its two closed terms. Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3499 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 23 -/
+-- Expanding the specification set from 59 to 103 roles adds 168 compiled
+-- specification functions/closed terms and retires four, all in Roles.
+-- The measured closure grows from 3499 to 3663; execution trust is unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3663 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 23 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -622,8 +625,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 -- derived equality of `Ixon.Constant` and of the types it holds, which compares such a record
 -- with the fallback's. Measured before refreezing; externs, implemented_by, unsafe, csimp and
 -- all ruling counts are unchanged.
+-- The expanded role/key metadata adds 76 compiled functions from Key.
+-- Externs, replacements, unsafe declarations and all rulings are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Reader.readRecords,
- Ix.Kernel.Admission.readStream]: 2262 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
+ Ix.Kernel.Admission.readStream]: 2338 compiled functions; inherited externs 89, implemented_by 0, unsafe 26, csimp 1; ruled computed_field 21, csimp 8 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -639,10 +644,13 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 -- Specification version 3 adds four more: `iffFamily`, `nonemptyFamily`,
 -- `sorryAxSpecTy` and its two closed terms enter; `Role.spec._closed_1` leaves.
 -- The combined closure is measured; execution allowances are unchanged.
+-- The 103-role specification and evidence add 811 compiled functions:
+-- 495 from Roles, 208 from Key and 108 from RoleData; eight old functions
+-- leave. Exact extern/unsafe/replacement/partial entry sets are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6036 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstants]: 6839 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -690,8 +698,10 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- moved it from 6110 by the entry's change (32 in, the same functions).
 -- Specification version 3 adds the entry's four more functions, measured
 -- with the fallback-record guard. Execution allowances are unchanged.
+-- The tiered closure has the same 811 additions and eight removals as the
+-- logical entry above, with exactly the same execution-trust entries.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6146 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6949 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

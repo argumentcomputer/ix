@@ -583,4 +583,222 @@ theorem xorBaseCert : ∀ (x y : Nat),
   | zero => with_unfolding_all rfl
   | succ n => exact Bool.noConfusion h1x
 
+/-! ## The definitions specified by their equations
+
+The certificates of the `eqns` specifications' equations that do not hold by
+definition on every toolchain: `Decidable` extensionality, the `Nat`
+decision procedures (definitional where `Decidable` is a structure), the `Int`
+decision procedures where an argument's sign does not decide them, the guarded
+`Int.subNatNat` and `Int.pow` cases, `BitVec.ult`, `Char.utf8Size` over the ranges of
+scalar values, `String.decEq` on equal arguments, `String.append`,
+`String.utf8ByteSize` and `String.back` over `String.ofList`. The statements spell
+the specifications (`Ix.Kernel.Role.spec`): small numerals as `Nat.succ`/`Nat.zero`,
+decisions through `Decidable.decide`; the code-point bounds are literals, which the
+checkers compare with the specifications' doubling terms by evaluation. The
+proofs never case on `Decidable` in their source, so the same text elaborates
+whichever shape `Decidable` has; only their closed forms
+(`Ix.RoleEvidence.closeProof`) do. -/
+
+/-- `decide` determines a `Decidable p` value. -/
+theorem decideExtCert : ∀ (p : Prop) (a b : Decidable p),
+    @Decidable.decide p a = @Decidable.decide p b → a = b :=
+  fun _ a b _ => Subsingleton.elim a b
+
+/-- `decide (Nat.decEq x y) = Nat.beq x y`. -/
+theorem natDecEqCert : ∀ (x y : Nat), @Decidable.decide (@Eq Nat x y) (Nat.decEq x y) = Nat.beq x y :=
+  fun x y =>
+  match h : Nat.beq x y with
+  | true => @decide_eq_true _ (Nat.decEq x y) (Nat.eq_of_beq_eq_true h)
+  | false => @decide_eq_false _ (Nat.decEq x y) (Nat.ne_of_beq_eq_false h)
+
+/-- `decide (Nat.decLe x y) = Nat.ble x y`. -/
+theorem natDecLeCert : ∀ (x y : Nat), @Decidable.decide (Nat.le x y) (Nat.decLe x y) = Nat.ble x y :=
+  fun x y =>
+  match h : Nat.ble x y with
+  | true => @decide_eq_true _ (Nat.decLe x y) (Nat.le_of_ble_eq_true h)
+  | false => @decide_eq_false _ (Nat.decLe x y) (Nat.not_le_of_not_ble_eq_true (fun h' => Bool.noConfusion (h'.symm.trans h)))
+
+/-- `y ≤ x → Int.subNatNat x y = Int.ofNat (x - y)`. -/
+theorem intSubNatNatGeCert : ∀ (x y : Nat), Nat.ble y x = Bool.true →
+    Int.subNatNat x y = Int.ofNat (Nat.sub x y) := fun x y h => by
+  unfold Int.subNatNat; rw [Nat.sub_eq_zero_of_le (Nat.le_of_ble_eq_true h)]; rfl
+
+/-- `x < y → Int.subNatNat x y = Int.negSucc (pred (y - x))`. -/
+theorem intSubNatNatLtCert : ∀ (x y : Nat), Nat.ble y x = Bool.false →
+    Int.subNatNat x y = Int.negSucc (Nat.pred (Nat.sub y x)) := fun x y h => by
+  have hlt : x < y := Nat.gt_of_not_le
+    (Nat.not_le_of_not_ble_eq_true (fun h' => Bool.noConfusion (h'.symm.trans h)))
+  have hs : Nat.sub y x = Nat.succ (Nat.pred (Nat.sub y x)) :=
+    (Nat.succ_pred_eq_of_pos (Nat.sub_pos_of_lt hlt)).symm
+  unfold Int.subNatNat; rw [show y - x = Nat.sub y x from rfl, hs]; rfl
+
+/-- An even power of `negSucc x`. -/
+theorem intPowEvenCert : ∀ (x y : Nat),
+    Nat.beq (Nat.mod y (Nat.succ (Nat.succ Nat.zero))) Nat.zero = Bool.true →
+    Int.pow (Int.negSucc x) y = Int.ofNat (Nat.pow (Nat.succ x) y) := fun x y h => by
+  show (if y % 2 = 0 then Int.ofNat ((Int.negSucc x).natAbs ^ y)
+    else -Int.ofNat ((Int.negSucc x).natAbs ^ y)) = _
+  rw [if_pos (show y % 2 = 0 from Nat.eq_of_beq_eq_true h)]; rfl
+
+/-- An odd power of `negSucc x`. -/
+theorem intPowOddCert : ∀ (x y : Nat),
+    Nat.beq (Nat.mod y (Nat.succ (Nat.succ Nat.zero))) Nat.zero = Bool.false →
+    Int.pow (Int.negSucc x) y = Int.neg (Int.ofNat (Nat.pow (Nat.succ x) y)) := fun x y h => by
+  show (if y % 2 = 0 then Int.ofNat ((Int.negSucc x).natAbs ^ y)
+    else -Int.ofNat ((Int.negSucc x).natAbs ^ y)) = _
+  rw [if_neg (show ¬ y % 2 = 0 from Nat.ne_of_beq_eq_false h)]; rfl
+
+/-- `BitVec.ult` on `BitVec.ofNat` values: `ble (succ (x % 2^w)) (y % 2^w)`. -/
+theorem bitVecUltCert : ∀ (w x y : Nat),
+    @BitVec.ult w (BitVec.ofNat w x) (BitVec.ofNat w y) =
+      Nat.ble (Nat.succ (Nat.mod x (Nat.pow (Nat.succ (Nat.succ Nat.zero)) w)))
+        (Nat.mod y (Nat.pow (Nat.succ (Nat.succ Nat.zero)) w)) :=
+  fun w x y => natDecLeCert (Nat.succ (x % 2 ^ w)) (y % 2 ^ w)
+
+/-- `String.decEq s s` decides `true`. -/
+theorem stringDecEqCert : ∀ (s : String), @Decidable.decide (@Eq String s s) (String.decEq s s) = Bool.true :=
+  fun s => @decide_eq_true _ (String.decEq s s) rfl
+
+/-- `String.append` on `String.ofList` values. -/
+theorem stringAppendCert : ∀ (xs ys : List Char),
+    String.append (String.ofList xs) (String.ofList ys) = String.ofList (@List.append Char xs ys) :=
+  fun _ _ => String.ofList_append.symm
+
+/-- `decide (Int.decEq (ofNat x) (ofNat y)) = Nat.beq x y`. -/
+theorem intDecEqOfNatCert : ∀ (x y : Nat),
+    @Decidable.decide (@Eq Int (Int.ofNat x) (Int.ofNat y)) (Int.decEq (Int.ofNat x) (Int.ofNat y)) =
+      Nat.beq x y :=
+  fun x y =>
+  match h : Nat.beq x y with
+  | true => @decide_eq_true _ (Int.decEq _ _) (congrArg Int.ofNat (Nat.eq_of_beq_eq_true h))
+  | false => @decide_eq_false _ (Int.decEq _ _) (fun e => Nat.ne_of_beq_eq_false h (Int.ofNat.inj e))
+
+/-- `decide (Int.decEq (negSucc x) (negSucc y)) = Nat.beq x y`. -/
+theorem intDecEqNegSuccCert : ∀ (x y : Nat),
+    @Decidable.decide (@Eq Int (Int.negSucc x) (Int.negSucc y))
+      (Int.decEq (Int.negSucc x) (Int.negSucc y)) = Nat.beq x y :=
+  fun x y =>
+  match h : Nat.beq x y with
+  | true => @decide_eq_true _ (Int.decEq _ _) (congrArg Int.negSucc (Nat.eq_of_beq_eq_true h))
+  | false => @decide_eq_false _ (Int.decEq _ _) (fun e => Nat.ne_of_beq_eq_false h (Int.negSucc.inj e))
+
+/-- `decide (Int.decLe (ofNat x) (ofNat y)) = Nat.ble x y`. -/
+theorem intDecLeOfNatCert : ∀ (x y : Nat),
+    @Decidable.decide (Int.le (Int.ofNat x) (Int.ofNat y)) (Int.decLe (Int.ofNat x) (Int.ofNat y)) =
+      Nat.ble x y :=
+  fun x y =>
+  match h : Nat.ble x y with
+  | true => @decide_eq_true _ (Int.decLe _ _) (Int.ofNat_le.mpr (Nat.le_of_ble_eq_true h))
+  | false => @decide_eq_false _ (Int.decLe _ _) (fun e =>
+      Nat.not_le_of_not_ble_eq_true (fun h' => Bool.noConfusion (h'.symm.trans h)) (Int.ofNat_le.mp e))
+
+/-- `decide (Int.decLe (ofNat x) (negSucc y)) = false`, by cases on `x`. -/
+theorem intDecLeOfNatNegSuccCert : ∀ (x y : Nat),
+    @Decidable.decide (Int.le (Int.ofNat x) (Int.negSucc y)) (Int.decLe (Int.ofNat x) (Int.negSucc y)) =
+      Bool.false :=
+  fun x _ => by cases x <;> rfl
+
+/-- `decide (Int.decLe (negSucc x) (negSucc y)) = Nat.ble y x`. -/
+theorem intDecLeNegSuccCert : ∀ (x y : Nat),
+    @Decidable.decide (Int.le (Int.negSucc x) (Int.negSucc y))
+      (Int.decLe (Int.negSucc x) (Int.negSucc y)) = Nat.ble y x :=
+  fun x y => by
+  show @Decidable.decide _ (Int.decNonneg (Int.subNatNat (Nat.succ x) (Nat.succ y))) = _
+  cases h : Nat.ble y x with
+  | true =>
+    have hle : Nat.succ y ≤ Nat.succ x := Nat.succ_le_succ (Nat.le_of_ble_eq_true h)
+    rw [Int.subNatNat, Nat.sub_eq_zero_of_le hle]; rfl
+  | false =>
+    have hlt : Nat.succ x < Nat.succ y := Nat.succ_lt_succ (Nat.gt_of_not_le
+      (Nat.not_le_of_not_ble_eq_true (fun h' => Bool.noConfusion (h'.symm.trans h))))
+    have hs : Nat.sub (Nat.succ y) (Nat.succ x) =
+        Nat.succ (Nat.pred (Nat.sub (Nat.succ y) (Nat.succ x))) :=
+      (Nat.succ_pred_eq_of_pos (Nat.sub_pos_of_lt hlt)).symm
+    rw [Int.subNatNat, show Nat.succ y - Nat.succ x = Nat.sub (Nat.succ y) (Nat.succ x) from rfl, hs]
+    rfl
+
+/-- `Char.ofNat n` at a scalar value. -/
+theorem charOfNatValid (n : Nat) (h : n.isValidChar) : Char.ofNat n = Char.ofNatAux n h := by
+  unfold Char.ofNat; exact dif_pos h
+
+/-- `Char.utf8Size (Char.ofNat n) = 1` below `0x80`. -/
+theorem charUtf8Size1Cert : ∀ (n : Nat), Nat.ble (Nat.succ n) 128 = Bool.true →
+    Char.utf8Size (Char.ofNat n) = 1 :=
+  fun n h => by
+  have hn : n < 128 := Nat.le_of_ble_eq_true h
+  have hv : n.isValidChar := Or.inl (Nat.lt_of_lt_of_le hn (Nat.le_of_ble_eq_true rfl))
+  rw [charOfNatValid n hv]
+  exact if_pos (Nat.le_of_lt_succ hn)
+
+/-- `Char.utf8Size (Char.ofNat n) = 2` in `[0x80, 0x800)`. -/
+theorem charUtf8Size2Cert : ∀ (n : Nat), Nat.ble 128 n = Bool.true → Nat.ble (Nat.succ n) 2048 = Bool.true →
+    Char.utf8Size (Char.ofNat n) = 2 :=
+  fun n h1 h2 => by
+  have h1 : 128 ≤ n := Nat.le_of_ble_eq_true h1
+  have hn : n < 2048 := Nat.le_of_ble_eq_true h2
+  have hv : n.isValidChar := Or.inl (Nat.lt_of_lt_of_le hn (Nat.le_of_ble_eq_true rfl))
+  rw [charOfNatValid n hv]
+  exact (if_neg (Nat.not_le_of_gt h1)).trans (if_pos (Nat.le_of_lt_succ hn))
+
+/-- `Char.utf8Size (Char.ofNat n) = 3` in `[0x800, 0xD800)`. -/
+theorem charUtf8Size3Cert : ∀ (n : Nat), Nat.ble 2048 n = Bool.true → Nat.ble (Nat.succ n) 55296 = Bool.true →
+    Char.utf8Size (Char.ofNat n) = 3 :=
+  fun n h1 h2 => by
+  have h1 : 2048 ≤ n := Nat.le_of_ble_eq_true h1
+  have hn : n < 55296 := Nat.le_of_ble_eq_true h2
+  have hv : n.isValidChar := Or.inl hn
+  rw [charOfNatValid n hv]
+  exact (if_neg (Nat.not_le_of_gt (Nat.lt_of_lt_of_le (Nat.le_of_ble_eq_true rfl) h1))).trans
+    ((if_neg (Nat.not_le_of_gt h1)).trans
+      (if_pos (Nat.le_of_lt_succ (Nat.lt_of_lt_of_le hn (Nat.le_of_ble_eq_true rfl)))))
+
+/-- `Char.utf8Size (Char.ofNat n) = 3` in `[0xE000, 0x10000)`. -/
+theorem charUtf8Size3HighCert : ∀ (n : Nat), Nat.ble 57344 n = Bool.true →
+    Nat.ble (Nat.succ n) 65536 = Bool.true → Char.utf8Size (Char.ofNat n) = 3 :=
+  fun n h1 h2 => by
+  have h1 : 57344 ≤ n := Nat.le_of_ble_eq_true h1
+  have hn : n < 65536 := Nat.le_of_ble_eq_true h2
+  have hv : n.isValidChar := Or.inr ⟨h1, Nat.lt_of_lt_of_le hn (Nat.le_of_ble_eq_true rfl)⟩
+  rw [charOfNatValid n hv]
+  exact (if_neg (Nat.not_le_of_gt (Nat.lt_of_lt_of_le (Nat.le_of_ble_eq_true rfl) h1))).trans
+    ((if_neg (Nat.not_le_of_gt (Nat.lt_of_lt_of_le (Nat.le_of_ble_eq_true rfl) h1))).trans
+      (if_pos (Nat.le_of_lt_succ hn)))
+
+/-- `Char.utf8Size (Char.ofNat n) = 4` in `[0x10000, 0x110000)`. -/
+theorem charUtf8Size4Cert : ∀ (n : Nat), Nat.ble 65536 n = Bool.true →
+    Nat.ble (Nat.succ n) 1114112 = Bool.true → Char.utf8Size (Char.ofNat n) = 4 :=
+  fun n h1 h2 => by
+  have h1 : 65536 ≤ n := Nat.le_of_ble_eq_true h1
+  have hn : n < 1114112 := Nat.le_of_ble_eq_true h2
+  have hv : n.isValidChar := Or.inr ⟨Nat.lt_of_lt_of_le (Nat.le_of_ble_eq_true rfl) h1, hn⟩
+  rw [charOfNatValid n hv]
+  exact (if_neg (Nat.not_le_of_gt (Nat.lt_of_lt_of_le (Nat.le_of_ble_eq_true rfl) h1))).trans
+    ((if_neg (Nat.not_le_of_gt (Nat.lt_of_lt_of_le (Nat.le_of_ble_eq_true rfl) h1))).trans
+      (if_neg (Nat.not_le_of_gt h1)))
+
+/-- `String.utf8ByteSize (ofList (c :: cs)) = c.utf8Size + String.utf8ByteSize (ofList cs)`. -/
+theorem stringUtf8ByteSizeConsCert : ∀ (c : Char) (cs : List Char),
+    String.utf8ByteSize (String.ofList (@List.cons Char c cs)) =
+      Nat.add (Char.utf8Size c) (String.utf8ByteSize (String.ofList cs)) :=
+  fun c cs => by
+  rw [show @List.cons Char c cs = [c] ++ cs from rfl, String.ofList_append, String.utf8ByteSize_append,
+    ← String.singleton_eq_ofList, String.utf8ByteSize_singleton]; rfl
+
+/-- `String.back (ofList xs)` is the last element of `xs`, or the default `Char`. -/
+theorem stringBackOfList (xs : List Char) :
+    String.back (String.ofList xs) = (xs.getLast?).getD default := by
+  rw [String.back_eq, String.back?_eq, String.toList_ofList]
+
+/-- `String.back (ofList [c]) = c`. -/
+theorem stringBackOneCert : ∀ (c : Char), String.back (String.ofList (@List.cons Char c List.nil)) = c :=
+  fun c => (stringBackOfList [c]).trans rfl
+
+/-- `String.back (ofList (c :: d :: ds)) = String.back (ofList (d :: ds))`. -/
+theorem stringBackConsCert : ∀ (c d : Char) (ds : List Char),
+    String.back (String.ofList (@List.cons Char c (@List.cons Char d ds))) =
+      String.back (String.ofList (@List.cons Char d ds)) :=
+  fun c d ds => (stringBackOfList (c :: d :: ds)).trans ((congrArg (fun o => Option.getD o default)
+    (List.getLast?_cons_cons (a := c) (b := d) (l := ds))).trans (stringBackOfList (d :: ds)).symm)
+
+
 end Ix.Kernel.PinGen

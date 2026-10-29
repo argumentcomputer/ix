@@ -17,7 +17,7 @@ macro_rules! roles {
     pub enum Role { $($role),+ }
 
     impl Role {
-      pub const ALL: [Self; 59] = [$(Self::$role),+];
+      pub const ALL: [Self; 103] = [$(Self::$role),+];
       pub const fn index(self) -> u8 { self as u8 }
       pub fn from_index(index: u8) -> Option<Self> {
         Self::ALL.get(usize::from(index)).copied()
@@ -90,6 +90,50 @@ roles! {
   Propext => "propext",
   Choice => "Classical.choice",
   SorryAx => "sorryAx",
+  Decidable => "Decidable",
+  DecidableIsTrue => "Decidable.isTrue",
+  DecidableIsFalse => "Decidable.isFalse",
+  Not => "Not",
+  OfDecideEqTrue => "of_decide_eq_true",
+  OfDecideEqFalse => "of_decide_eq_false",
+  DecidableDecide => "Decidable.decide",
+  NatLe => "Nat.le",
+  NatDecEq => "Nat.decEq",
+  NatDecLe => "Nat.decLe",
+  NatDecLt => "Nat.decLt",
+  Int => "Int",
+  IntOfNat => "Int.ofNat",
+  IntNegSucc => "Int.negSucc",
+  IntNegOfNat => "Int.negOfNat",
+  IntSubNatNat => "Int.subNatNat",
+  IntNeg => "Int.neg",
+  IntAdd => "Int.add",
+  IntSub => "Int.sub",
+  IntMul => "Int.mul",
+  IntNatAbs => "Int.natAbs",
+  IntEdiv => "Int.ediv",
+  IntEmod => "Int.emod",
+  IntPow => "Int.pow",
+  BitVec => "BitVec",
+  BitVecOfNat => "BitVec.ofNat",
+  BitVecToNat => "BitVec.toNat",
+  BitVecUlt => "BitVec.ult",
+  StringDecEq => "String.decEq",
+  ByteArray => "ByteArray",
+  ByteArrayEmpty => "ByteArray.empty",
+  StringToByteArray => "String.toByteArray",
+  ListAppend => "List.append",
+  StringAppend => "String.append",
+  IfThenElse => "ite",
+  IntLe => "Int.le",
+  IntDecEq => "Int.decEq",
+  IntDecLe => "Int.decLe",
+  IntDecLt => "Int.decLt",
+  IntBmod => "Int.bmod",
+  IntBdiv => "Int.bdiv",
+  CharUtf8Size => "Char.utf8Size",
+  StringUtf8ByteSize => "String.utf8ByteSize",
+  StringBack => "String.back",
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

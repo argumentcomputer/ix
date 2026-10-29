@@ -277,6 +277,7 @@ theorem forall₂_mem_left {α β : Type} {R : α → β → Prop} :
     · obtain ⟨y, hy, r⟩ := forall₂_mem_left t x hx
       exact ⟨y, List.mem_cons_of_mem _ hy, r⟩
 
+set_option maxRecDepth 8192 in
 /-- **A converted definition group declares every member's ingress key** (the block
 order `defOrder` returns holds every member, `defOrder_complete`). -/
 theorem convertDefinitions_declares {members : Array Ix.ConstantInfo} {conv : Converted}
@@ -326,6 +327,7 @@ theorem convertDefinitions_declares {members : Array Ix.ConstantInfo} {conv : Co
         rw [(Array.getElem?_eq_some_iff.mp (Array.mem_zipIdx_iff_getElem?.mp hj)).2]
       · cases ran
 
+set_option maxRecDepth 8192 in
 /-- **A converted inductive block declares every source constant's ingress key**:
 each type's, constructor's and recursor's. -/
 theorem convertInductive_declares {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.ConstructorVal)}
@@ -390,6 +392,7 @@ theorem convertInductive_declares {types : Array Ix.InductiveVal} {ctors : Array
       · cases ran
   · cases ran
 
+set_option maxRecDepth 8192 in
 /-- **A group's conversion declares the ingress key of each of its names.** -/
 theorem convert_declares {gr : Group} {c : Converted} (h : convert gr = .ok c) :
     ∀ n ∈ gr.names, ingressKey n ∈ convKeys c := by

@@ -101,6 +101,7 @@ theorem items_facts {types : Array Ix.InductiveVal} {ctors : Array (Array Ix.Con
       List.getElem?_append_left (by simpa using bound), Array.toList_map, List.getElem?_map, found]
     rfl
 
+set_option maxRecDepth 8192 in
 /-- **The entries of a converted inductive block**: every member of the group
 has an entry among the block's types, and every constructor one among its
 constructors, under the member's key with a conversion of its type. -/

@@ -18,6 +18,7 @@ import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.RoleCompile
 import Tests.Ix.RecordDecoding
+import Tests.Ix.RoleEquations
 import Tests.Ix.LeanExport
 import Tests.Ix.HostAdmissionCli
 import Tests.Ix.Compile.DecompileDiff
@@ -139,6 +140,7 @@ def registry : List Entry := [
   .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
   .suiteIO "ixon-reject-parity" .primary Tests.Ix.IxonRejectParity.suite,
   .suite "record-decoding" .primary Tests.Ix.RecordDecoding.suite,
+  .suite "role-equations" .primary Tests.Ix.RoleEquations.suite,
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
   .suite "claim" .primary Tests.Claim.suite,
   .suite "merkle" .primary Tests.Merkle.suite,
@@ -485,6 +487,7 @@ def required : List (String × String) := [
   ("ixon-reject-parity", "primary"),
   ("record-decoding", "primary"),
   ("worker-snapshot", "primary"),
+  ("role-equations", "primary"),
   ("ixvm-tagn", "primary"),
   ("ixes-manifest", "primary"),
   ("rust-compile-coverage", "primary"),

@@ -193,44 +193,21 @@ def whnf := ⟦
   -- Primitive-family classification (mirror prim_family,
   -- Primitive.lean:1419): map a Const-head address to the ONE reducer
   -- family that could fire on it — 0 = none, 1 = nat, 2 = str,
-  -- 3 = bitvec, 5 = decidable, 6 = Int. Roles come from the
-  -- binding (`role_is`); the other families are the extras, which fire only
-  -- while `extras_usable`, asked only of an extra's address so that a claim
-  -- using none validates no group for them. Keyed on the role context and the ADDRESS ALONE:
-  -- one memo row per distinct constant address in the run, and the
-  -- inner addr-set chains collapse after each address's first
-  -- occurrence. Replaces running the is_* gauntlet from
-  -- try_prim_dispatch, whose key includes the spine and context —
-  -- 5 wide rows per Const-head whnf, almost all guaranteed misses.
+  -- 3 = bitvec, 5 = decidable, 6 = Int. A role's family is rendered from
+  -- the specification's roles (`role_prim_family`), and the role is read
+  -- through `role_of` only when it has one, so that a claim whose terms
+  -- merely mention a role's constant validates no group for it. Keyed on
+  -- the role context and the ADDRESS ALONE: one memo row per distinct
+  -- constant address in the run.
+  -- Replaces running the is_* gauntlet from try_prim_dispatch, whose key
+  -- includes the spine and context — 5 wide rows per Const-head whnf,
+  -- almost all guaranteed misses.
   fn prim_family(rc: RoleCtx, a: Addr) -> G {
-    match @is_nat_prim_addr(rc, a) {
-      1 => 1,
-      _ =>
-        match role_is(rc, a, role_string_of_list()) {
-          1 => 2,
-          _ =>
-            let f = extras_family(rc, a);
-            match f {
-              0 => 0,
-              _ => match extras_usable(rc) { 0 => 0, _ => f, },
-            },
-        },
-    }
-  }
-
-  -- The family of an extra (see `extras_usable`), or 0.
-  fn extras_family(rc: RoleCtx, a: Addr) -> G {
-    match is_str_prim_addr(rc, a) {
-      1 => 2,
-      _ =>
-        match is_bitvec_prim_addr(rc, a) {
-          1 => 3,
-          _ =>
-            match is_dec_prim_addr(rc, a) {
-              1 => 5,
-              _ => match is_int_prim_addr(rc, a) { 1 => 6, _ => 0, },
-            },
-        },
+    let r1 = role_index_of(rc, a);
+    let f = match r1 { 0 => 0, _ => role_prim_family(r1 - 1), };
+    match f {
+      0 => 0,
+      _ => match role_of(rc, a) { 0 => 0, _ => f, },
     }
   }
 

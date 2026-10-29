@@ -41,10 +41,11 @@ hash a claim commits to.
 reject. A table is well formed when its version is `specVersion`, it is
 injective in both directions (no role and no address twice), it is closed
 under `Role.block` (a block's roles are bound together) and `Role.deps`, and
-the evidence is exactly the bound operations': one entry per equation of the
-role's `ops` specification, of the kind `Spec.evidenceKinds` fixes, and none
-for any other role. This replaces the reader's checks on its committed pin
-table (`pinMap`'s `rootComponent` and `derivedShape`, SP3's D6). -/
+the evidence is exactly that of the bound roles with equations: one entry per
+equation of the role's `ops` or `eqns` specification, of a kind
+`Spec.evidenceAllowed` allows, and none for any other role. This replaces the
+reader's checks on its committed pin table (`pinMap`'s `rootComponent` and
+`derivedShape`, SP3's D6). -/
 
 @[expose] public section
 
@@ -58,20 +59,23 @@ def Role.idx (r : Role) : Nat := Role.all.idxOf r
 /-- The role at a binding-section index. -/
 def Role.ofIdx? (i : Nat) : Option Role := Role.all[i]?
 
+set_option maxRecDepth 8192 in
 theorem Role.ofIdx?_idx (r : Role) : Role.ofIdx? r.idx = some r := by
   cases r <;> rfl
 
-theorem Role.idx_lt (r : Role) : r.idx < 59 := by
+set_option maxRecDepth 8192 in
+theorem Role.idx_lt (r : Role) : r.idx < 103 := by
   cases r <;> decide
 
-/-- Every index below 59 names a role whose index it is (checked). -/
+set_option maxRecDepth 8192 in
+/-- Every index below 103 names a role whose index it is (checked). -/
 theorem Role.ofIdx?_idx_below :
-    ∀ i, i < 59 → (match Role.ofIdx? i with | some r => r.idx == i | none => Bool.false) = Bool.true := by
+    ∀ i, i < 103 → (match Role.ofIdx? i with | some r => r.idx == i | none => Bool.false) = Bool.true := by
   decide
 
 theorem Role.idx_ofIdx? {i : Nat} {r : Role} (h : Role.ofIdx? i = some r) : r.idx = i := by
-  have hi : i < 59 := by
-    rcases Nat.lt_or_ge i 59 with hlt | hge
+  have hi : i < 103 := by
+    rcases Nat.lt_or_ge i 103 with hlt | hge
     · exact hlt
     · have : Role.all.length ≤ i := by simpa [Role.all] using hge
       simp [Role.ofIdx?, List.getElem?_eq_none this] at h
@@ -476,8 +480,9 @@ def firstRepeat (as : List Address) : Option Address :=
 
 /-- **Well-formedness**, with the reason a table fails it: the version is
 `specVersion`; no role and no address is bound twice; every bound role's
-block and dependencies are bound; the evidence is exactly the bound
-operations', one entry per equation of the kind the specification fixes. -/
+block and dependencies are bound; the evidence is exactly that
+of the bound roles with equations, one entry per equation of a kind the
+specification allows (`Spec.evidenceAllowed`). -/
 def check (t : RoleTable) : Except String Unit := do
   unless t.version == specVersion do
     throw s!"role table version {t.version}, the specification set is version {specVersion}"
@@ -494,13 +499,13 @@ def check (t : RoleTable) : Except String Unit := do
   unless evRoles.Nodup do throw "a role has two evidence entries"
   for (r, es) in t.evidence do
     unless roles.contains r do throw s!"evidence for {repr r}, which is not bound"
-    let kinds := ((Role.spec (md := .anon)) r).evidenceKinds
-    if kinds.isEmpty then throw s!"evidence for {repr r}, which is not an operation"
-    unless es.size == kinds.length && (es.toList.zip kinds).all (fun (e, k) => e.isDefeqKind k) do
+    let kinds := ((Role.spec (md := .anon)) r).evidenceAllowed
+    if kinds.isEmpty then throw s!"evidence for {repr r}, which has no equations"
+    unless es.size == kinds.length && (es.toList.zip kinds).all (fun (e, k) => e.allowedBy k) do
       throw s!"the evidence of {repr r} does not match its equations"
   for r in roles do
-    unless ((Role.spec (md := .anon)) r).evidenceKinds.isEmpty || evRoles.contains r do
-      throw s!"operation {repr r} is bound without evidence"
+    unless ((Role.spec (md := .anon)) r).evidenceAllowed.isEmpty || evRoles.contains r do
+      throw s!"{repr r} is bound without evidence for its equations"
 
 /-- **A well-formed table** (`check`, decided). -/
 def wf (t : RoleTable) : Bool := (check t).isOk

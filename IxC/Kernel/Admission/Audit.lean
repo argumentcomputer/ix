@@ -127,11 +127,14 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- Specification version 3 adds the admission entry's four functions
 -- (`IxC/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
 -- Execution allowances are unchanged.
+-- Expanding the table to 103 roles adds the same 811 compiled functions
+-- and removes the same eight as the public entry audit: Roles 495, Key 208,
+-- RoleData 108 additions. Exact execution-trust entries are unchanged.
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6033 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkBytes]: 6836 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

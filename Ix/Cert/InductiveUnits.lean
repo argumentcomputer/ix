@@ -201,6 +201,7 @@ def tgtBlock (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.Constructo
    (ctors.toList.map fun cs => cs.toList.map fun c => (Ix.LeanIngress.Key.subst ρ (ingressKey c.cnst.name)).map f).toArray,
    (recs.toList.map fun r => tgtRec ρ f types first r (motives r)).toArray⟩
 
+set_option maxRecDepth 8192 in
 /-- **Quotient Source's block of an inductive group, renamed**, item by item. -/
 theorem quotient_src (types : Array Ix.InductiveVal) (ctors : Array (Array Ix.ConstructorVal))
     (recs : Array Ix.RecursorVal) (first : Ix.InductiveVal) :
@@ -354,6 +355,7 @@ theorem ctor_read {mr : MemberReader .anon} {c : Ix.ConstructorVal} {typ : Ixon.
   rw [hread, tgtCtor_type, convOf_eq hconv]
   rfl
 
+set_option maxRecDepth 8192 in
 theorem type_item {cx : Ctx .anon} {owner : Address} {mr : MemberReader .anon} {i : Nat} {v : Ix.InductiveVal}
     {cs : Array Ix.ConstructorVal} {t : Ixon.Inductive} (h : TypeFacts ρ f cx owner mr i v cs t) :
     ((⟨srcKey ρ f v.cnst.name, List.range t.lvls.toNat, (tgtType ρ f v).1.type⟩ : CVal .anon),
@@ -362,6 +364,7 @@ theorem type_item {cx : Ctx .anon} {owner : Address} {mr : MemberReader .anon} {
   simp only [tgtType, srcType, quotientHeader_eq]
   rfl
 
+set_option maxRecDepth 8192 in
 theorem ctor_item {cx : Ctx .anon} {owner : Address} {mr : MemberReader .anon} {i j : Nat}
     {c : Ix.ConstructorVal} {ct : Ixon.Constructor} (h : CtorFacts ρ f cx owner mr i j c ct) :
     ((⟨srcKey ρ f c.cnst.name, List.range ct.lvls.toNat, (tgtCtor ρ f c).1.type⟩ : CVal .anon),
@@ -453,6 +456,7 @@ def ruleKeyOf (r : Ix.RecursorVal) (k : Nat) : CName .anon :=
 def rhsOf (first : Ix.InductiveVal) (r : Ix.RecursorVal) (k : Nat) : CExpr .anon :=
   ((r.rules[k]?).map fun rule => (tgtRule ρ f (recNum first r) rule).rhs).getD (.sort .zero)
 
+set_option maxRecDepth 8192 in
 /-- **A recursor reads as quotient Source's, renamed**, at the index's motive. -/
 theorem rec_facts {cx : Ctx .anon} {blockLps : List LevelParam} {types : Array Ix.InductiveVal}
     {first : Ix.InductiveVal} {nested : Prop} {ref : ConstRef Address} {r : Ix.RecursorVal}
@@ -569,6 +573,7 @@ def ctorKeyAt (ctors : Array (Array Ix.ConstructorVal)) (first : Ix.InductiveVal
 def ctorTypesAt (ctors : Array (Array Ix.ConstructorVal)) (i : Nat) : List (CExpr .anon) :=
   ((ctors[i]?).map fun cs => cs.toList.map fun c => (tgtCtor ρ f c).1.type).getD []
 
+set_option maxRecDepth 8192 in
 theorem tgtCtor_name (c : Ix.ConstructorVal) : (tgtCtor ρ f c).1.name = srcKey ρ f c.cnst.name := by
   simp only [tgtCtor, srcCtor, quotientHeader_eq]
   rfl
