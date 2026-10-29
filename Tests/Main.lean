@@ -8,6 +8,7 @@ import Tests.Ix.IxVM
 import Tests.Ix.IxVM.Eval
 import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
+import Tests.Ix.IxVM.BindingAnchors
 import Tests.Ix.IxVM.TagN
 import Tests.Ix.IOIngress
 import Tests.Ix.Claim
@@ -386,6 +387,9 @@ def registry : List Entry := [
       -- except where accepting is the specified claim semantics.
       let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env vmEnv.compiled
       let dependencySeq ← Tests.Ix.IxVM.DefinitionDependencies.tests vmEnv.compiled
+      let bindingAnchorChecks ← Tests.Ix.IxVM.BindingAnchors.defaultChecks vmEnv.compiled
+      let bindingAnchorSeq := bindingAnchorChecks.foldl
+        (fun tests (name, passed) => tests ++ LSpec.test name passed) LSpec.TestSeq.done
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealModes, revealCPrj, containsTc]).foldl
@@ -430,7 +434,7 @@ def registry : List Entry := [
       LSpec.lspecIO
         (.ofList [("ixvm",
           [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,
-           fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, paritySeq, shardSeq])]) [],
+           fullSeq, aiurSeq, arenaSeq, exploitSeq, dependencySeq, bindingAnchorSeq, paritySeq, shardSeq])]) [],
   -- The Rust compiler's output over the fixture corpus decompiled by the
   -- pure-Lean decompiler, compared with the source (Tests.Ix.Compile.DecompileDiff).
   .env "decompile-diff" (.ci .compilePipeline) Tests.Compile.DecompileDiff.run,
