@@ -373,6 +373,7 @@ section Kinds
 variable {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
   {failures : Failures} {t : RoleTable} {envQ : Env .source}
 
+set_option maxRecDepth 4096 in
 /-- **A singleton definition's segment reads as its read.** -/
 theorem definition_at (P : Premises env roots sub ixe failures t envQ) {preA : Prelude .anon}
     (prelude : preludeFor t = .ok preA) {b : Ix.RoleEvidence.Bundle}
