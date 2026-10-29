@@ -77,7 +77,7 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
   -- Changes to the new Aiur/IxVM packages do not invalidate legacy FFI builds.
   -- Generated kernels are inputs only when their optional dependency is enabled.
   let mut crates := #["aiur-legacy", "bench", "common", "compile", "ffi",
-    "ixvm-legacy", "ixon", "kernel"]
+    "ixvm-legacy", "ixon", "kernel", "record-pool"]
   if args.any (fun arg => (arg.splitOn ",").contains "legacy-native") then
     crates := crates.push "ixvm-legacy-native"
   let sources := Job.collectArray (← crates.mapM fun name =>

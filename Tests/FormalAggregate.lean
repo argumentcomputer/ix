@@ -25,6 +25,21 @@ private def test (ctx : Context) (label : String) (bytes : ByteArray) (io : Lega
     ("invocation", FormalAiur.invocation (pubInput ctx.allowed bytes) io "MultiStark::ix_aggr")]
 
 def main (args : List String) : IO Unit := do
+  let started ← IO.mkRef false
+  let completed ← IO.mkRef false
+  let failed ← try
+      let _ ← FormalAiur.boundedMap 2 #[false, true] fun _ sibling => do
+        if sibling then
+          started.set true
+          IO.sleep 30
+          completed.set true
+        else
+          while !(← started.get) do IO.sleep 1
+          throw (IO.userError "intentional scheduler failure")
+      pure false
+    catch _ => pure true
+  unless failed && (← completed.get) do
+    throw (IO.userError "failed scheduler returned before its admitted peer finished")
   let reservation : FormalAiur.HostOptions := { ram := 1024, threads := 4 }
   unless (reservation.forWave 2 1).ram == 2048 && (reservation.forWave 2 2).threads == 4 do
     throw (IO.userError "partial waves lost their RAM/CPU reservations")

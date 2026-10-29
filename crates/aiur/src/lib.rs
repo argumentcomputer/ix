@@ -2,6 +2,7 @@
 //! evaluates it and records memoized queries. Companion population plans fill
 //! the final optimized circuit rows from these records.
 
+pub mod budget;
 pub mod bytecode;
 pub mod execute;
 mod ffi;

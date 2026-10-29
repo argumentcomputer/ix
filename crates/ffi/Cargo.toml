@@ -8,6 +8,7 @@ license.workspace = true
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
+record-pool = { workspace = true }
 aiur = { package = "aiur-legacy", path = "../aiur-legacy" }
 anyhow = { workspace = true }
 bignat = { workspace = true }

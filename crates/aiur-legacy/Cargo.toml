@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+record-pool = { workspace = true }
 stark-key = { workspace = true }
 blake3 = { workspace = true }
 bincode = { version = "2", features = ["serde"] }

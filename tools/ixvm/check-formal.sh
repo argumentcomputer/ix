@@ -23,8 +23,8 @@ python3 tools/ixvm/recursion.py --aggregate --check
 lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests \
   aiur/grouping_example aiur/Aiur.Library.U8Facts
 lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.json --check
-cargo build --release --locked -p ixvm -p stark-verifier --features parallel \
-  --bin ixvm-proof --bin stark-verifier --example claim_fixture
+cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features parallel \
+  --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
 
 if [[ -z ${IX_AIUR_ARTIFACT:-} ]]; then
   IX_AIUR_ARTIFACT="$formal_tmp/ixvm.json"
@@ -75,12 +75,21 @@ target/release/stark-verifier cases "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation
 target/release/stark-verifier prove "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.json.wrap.json" "$formal_tmp/aggregate"
 target/release/stark-verifier verify "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregate/public.json" "$formal_tmp/aggregate/proof.bin"
 
+python3 tools/ixvm/check-controller.py "$formal_tmp" \
+  --ixvm-artifact "$IX_AIUR_ARTIFACT" \
+  --recursion-artifact "$IX_RECURSION_ARTIFACT" \
+  --aggregate-artifact "$IX_AGGR_ARTIFACT"
+
 # Optional hardware gate: prove with CUDA and independently verify with CPU
 # binaries. The separate target directory is the same one the CLI selects.
 cuda_check_args=()
 if [[ ${IX_TEST_CUDA:-0} == 1 ]]; then
   cargo build --release --locked --target-dir target/formal-cuda \
-    -p ixvm -p stark-verifier --features parallel,cuda --bin ixvm-proof --bin stark-verifier
+    -p ixvm -p stark-verifier -p ix-prover --features parallel,cuda --bin ixvm-proof --bin stark-verifier --bin ix-prover
+  python3 tools/ixvm/check-controller.py "$formal_tmp" \
+    --ixvm-artifact "$IX_AIUR_ARTIFACT" \
+    --recursion-artifact "$IX_RECURSION_ARTIFACT" \
+    --aggregate-artifact "$IX_AGGR_ARTIFACT" --devices "${MULTI_STARK_CUDA_DEVICE:-0}"
 else
   cuda_check_args+=(--cpu-only)
 fi

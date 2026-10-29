@@ -32,6 +32,7 @@ pub struct QueryOutputRef<'a, F = u64> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
+  budget: crate::budget::Budget,
   field: B,
   pub(crate) static_map: Option<crate::maps::MapRecord<B>>,
   input_width: usize,
@@ -59,6 +60,7 @@ impl<B: FieldBackend> QueryTable<B> {
         .ilog2()
         .min(12);
     Self {
+      budget: Default::default(),
       field,
       counts: vec![],
       static_map: None,
@@ -129,16 +131,30 @@ impl<B: FieldBackend> QueryTable<B> {
 
   /// A zero count marks a pending query, which must never supply an output.
   #[inline(always)]
-  pub(crate) fn start(&mut self, args: &[B::Element], hash: u64) -> usize {
+  pub(crate) fn start(
+    &mut self,
+    args: &[B::Element],
+    hash: u64,
+  ) -> Result<usize, crate::budget::BudgetError> {
     debug_assert!(self.static_map.is_none());
     debug_assert_eq!(args.len(), self.input_width);
     let row = self.len();
     if row & self.chunk_mask == 0 {
+      self.budget.vector(&self.rows, 1)?;
+      self.budget.reserve(
+        self
+          .stride
+          .saturating_mul(self.chunk_mask + 1)
+          .saturating_mul(std::mem::size_of::<B::Element>()),
+      )?;
       self.rows.push(Vec::with_capacity(self.stride * (self.chunk_mask + 1)));
     }
     let values = self.rows.last_mut().unwrap();
     values.extend_from_slice(args);
     values.resize(values.len() + self.output_width, self.field.zero());
+    self.budget.vector(&self.counts, 1)?;
+    self.budget.vector(&self.hashes, 1)?;
+    self.budget.hash::<usize>(self.index.len(), self.index.capacity())?;
     self.counts.push(0);
     self.hashes.push(hash);
     let hashes = &self.hashes;
@@ -152,6 +168,9 @@ impl<B: FieldBackend> QueryTable<B> {
       let limit = row.saturating_mul(2).clamp(64, 1 << 20);
       if key < limit {
         if key >= self.dense_index.len() {
+          let extra =
+            (key + 1).next_power_of_two().min(limit) - self.dense_index.len();
+          self.budget.vector(&self.dense_index, extra)?;
           self
             .dense_index
             .resize((key + 1).next_power_of_two().min(limit), usize::MAX);
@@ -159,7 +178,7 @@ impl<B: FieldBackend> QueryTable<B> {
         self.dense_index[key] = row;
       }
     }
-    row
+    Ok(row)
   }
 
   #[inline(always)]
@@ -178,6 +197,18 @@ impl<B: FieldBackend> QueryTable<B> {
       return map.counts[row];
     }
     self.counts[row]
+  }
+
+  pub(crate) fn adjust_count(
+    &mut self,
+    row: usize,
+    count: u64,
+    add: bool,
+  ) -> Option<()> {
+    let value = &mut self.counts[row];
+    *value =
+      if add { value.checked_add(count)? } else { value.checked_sub(count)? };
+    Some(())
   }
 
   /// Number of stored slots. Fixed tables include rows with zero uses.
@@ -213,6 +244,7 @@ impl<B: FieldBackend> QueryTable<B> {
 #[derive(Clone, Debug)]
 pub struct QueryMap<B: FieldBackend = PrimeField> {
   pub(crate) tables: Vec<QueryTable<B>>,
+  pub(crate) budget: crate::budget::Budget,
 }
 
 impl<B: FieldBackend> QueryMap<B> {
@@ -220,7 +252,19 @@ impl<B: FieldBackend> QueryMap<B> {
     widths: impl Iterator<Item = (usize, usize)>,
     field: B,
   ) -> Self {
-    Self { tables: widths.map(|(a, b)| QueryTable::new(a, b, field)).collect() }
+    Self {
+      tables: widths.map(|(a, b)| QueryTable::new(a, b, field)).collect(),
+      budget: Default::default(),
+    }
+  }
+  pub(crate) fn reserve_with(
+    &mut self,
+    reservation: Option<&crate::budget::RecordReservation>,
+  ) {
+    self.budget = crate::budget::Budget(reservation.cloned());
+    for table in &mut self.tables {
+      table.budget = self.budget.clone();
+    }
   }
   pub fn len(&self) -> usize {
     self
@@ -352,13 +396,13 @@ mod tests {
   #[test]
   fn dense_front_index_keeps_sparse_keys_and_arity_checks() {
     let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
-    let early = table.start(&[80], table.lookup(&[80]).0);
+    let early = table.start(&[80], table.lookup(&[80]).0).unwrap();
     table.finish(early, &[5]);
-    let large = table.start(&[u64::MAX], table.lookup(&[u64::MAX]).0);
+    let large = table.start(&[u64::MAX], table.lookup(&[u64::MAX]).0).unwrap();
     table.finish(large, &[6]);
     for key in 0..200 {
       if key != 80 {
-        let row = table.start(&[key], table.lookup(&[key]).0);
+        let row = table.start(&[key], table.lookup(&[key]).0).unwrap();
         table.finish(row, &[key]);
       }
     }
@@ -372,11 +416,11 @@ mod tests {
   #[test]
   fn pending_rows_survive_growth_and_counts_do_not_wrap() {
     let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
-    let first = table.start(&[0], table.lookup(&[0]).0);
+    let first = table.start(&[0], table.lookup(&[0]).0).unwrap();
     for i in 1..10_000 {
       let (hash, found) = table.lookup(&[i]);
       assert!(found.is_none());
-      let row = table.start(&[i], hash);
+      let row = table.start(&[i], hash).unwrap();
       table.finish(row, &[i + 1]);
     }
     assert_eq!(table.lookup(&[0]).1, Some(first));

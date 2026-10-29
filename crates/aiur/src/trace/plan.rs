@@ -349,9 +349,12 @@ impl<B: FieldBackend> FillPlan<B> {
               .binding
               .evaluate(buffer, &mut scratch[k.start..k.start + k.width])?;
           } else {
-            let id = table.lookup(buffer).1.ok_or("missing recorded callee")?;
-            scratch[k.start..k.start + k.width]
-              .copy_from_slice(table.output(id).output);
+            if let Some(id) = table.lookup(buffer).1 {
+              scratch[k.start..k.start + k.width]
+                .copy_from_slice(table.output(id).output);
+            } else if k.width != 0 || !record.is_deferred(*callable, buffer) {
+              return Err("missing recorded callee".into());
+            }
           }
         },
         Node::Store { values, .. } => {

@@ -676,13 +676,19 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                 let values = if let Some(map) = &table.static_map {
                   map.binding.output(map.binding.row(&buffer)?)
                 } else {
-                  let id =
-                    table.lookup(&buffer).1.ok_or("missing recorded callee")?;
-                  let answer = table.output(id);
-                  if answer.multiplicity == 0 {
-                    return Err("pending recorded callee".into());
+                  if let Some(id) = table.lookup(&buffer).1 {
+                    let answer = table.output(id);
+                    if answer.multiplicity == 0 {
+                      return Err("pending recorded callee".into());
+                    }
+                    answer.output
+                  } else if dest.is_empty()
+                    && record.is_deferred(self.callables[name], &buffer)
+                  {
+                    &[]
+                  } else {
+                    return Err("missing recorded callee".into());
                   }
-                  answer.output
                 };
                 for (&d, &v) in dest.iter().zip(values) {
                   scratch[d] = v;

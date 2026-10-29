@@ -6,6 +6,7 @@ use crate::{
   trace::TraceArtifact,
 };
 use serde_json::{Value as Json, json};
+mod partition;
 
 fn f() -> Json {
   json!({"kind":"field"})

@@ -3,6 +3,14 @@
 use super::*;
 use multi_stark::batch::{BatchMessage, Retention};
 
+/// A streamed batch authenticates one public claim across independently
+/// executed records. Memory intervals are half-open and width-separated.
+pub struct StreamPlan {
+  pub shards: usize,
+  pub memory_intervals: Vec<(u64, u64, u64)>,
+  pub retention: Retention,
+}
+
 fn commitment_parameters(p: Parameters) -> CommitmentParameters {
   CommitmentParameters { log_blowup: p.log_blowup, cap_height: 0 }
 }
@@ -131,6 +139,124 @@ fn verify(
 }
 
 impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
+  /// Fallible two-round streaming. The supplier may replay a record and keep
+  /// only its current trace matrices; no whole-environment trace is retained.
+  pub fn prove_streamed_stage_1(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    mut plan: StreamPlan,
+    mut supply: impl FnMut(usize) -> Result<Vec<RowMajorMatrix<Val>>, String>,
+  ) -> Result<BatchProof, String> {
+    if !self.segmented_memory || !(1..=65536).contains(&plan.shards) {
+      return Err("invalid streamed batch".into());
+    }
+    let claim = self.claim(entry, args, output)?;
+    plan.memory_intervals.sort_unstable();
+    let mut previous = None;
+    let mut messages = Vec::new();
+    for (width, start, end) in plan.memory_intervals {
+      if start >= end
+        || end >= Val::ORDER_U64
+        || previous.is_some_and(|(w, e)| w == width && start < e)
+        || !self.system.circuits[self.members.len() + self.tables.len()..]
+          .iter()
+          .any(|c| (c.main_width - 3) as u64 == width)
+      {
+        return Err("invalid streamed memory intervals".into());
+      }
+      previous = Some((width, end));
+      messages.push(BatchMessage::pull(vec![
+        Val::from_u64(MEMSEG),
+        Val::from_u64(width),
+        Val::from_u64(start),
+      ]));
+      messages.push(BatchMessage::push(vec![
+        Val::from_u64(MEMSEG),
+        Val::from_u64(width),
+        Val::from_u64(end),
+      ]));
+    }
+    let mut headers = Vec::new();
+    let mut retained = Vec::new();
+    let retain =
+      !self.gpu_lookup_only && matches!(plan.retention, Retention::Retain);
+    for shard in 0..plan.shards {
+      let traces = supply(shard)?;
+      let (active, degrees) = self.trace_shape(&traces)?;
+      self.check_shape(&active, &degrees)?;
+      let stage = self.system.prove_stage_1(self.witness_from_main(traces));
+      let claims = if shard == 0 { vec![claim.as_slice()] } else { vec![] };
+      headers.push(stage.header(&claims));
+      retained.push(if retain { Some(stage) } else { None });
+    }
+    let preamble = multi_stark::batch::BatchPreamble { headers, messages };
+    let mut proofs = Vec::new();
+    for (shard, cached) in retained.into_iter().enumerate() {
+      let claims = if shard == 0 { vec![claim.as_slice()] } else { vec![] };
+      let stage = if let Some(stage) = cached {
+        stage
+      } else {
+        let traces = supply(shard)?;
+        let (active, degrees) = self.trace_shape(&traces)?;
+        self.check_shape(&active, &degrees)?;
+        let stage = self.system.prove_stage_1(self.witness_from_main(traces));
+        if stage.header(&claims) != preamble.headers[shard] {
+          return Err(format!("streamed shard {shard} changed between rounds"));
+        }
+        stage
+      };
+      proofs.push(
+        self
+          .system
+          .prove_batch_shard(&self.key, stage, &claims, &preamble, shard),
+      );
+    }
+    let proof = BatchProof { preamble, proofs };
+    self.verify_batch(entry, args, output, &proof)?;
+    Ok(proof)
+  }
+
+  pub fn slice_stage_1(
+    &self,
+    traces: &[RowMajorMatrix<Val>],
+    shard: usize,
+    max_rows: usize,
+  ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
+    if max_rows == 0
+      || !max_rows.is_power_of_two()
+      || traces.len() != self.system.circuits.len()
+    {
+      return Err("invalid stage-one slice".into());
+    }
+    let begin = shard.checked_mul(max_rows).ok_or("shard offset overflow")?;
+    Ok(
+      traces
+        .iter()
+        .zip(&self.system.circuits)
+        .map(|(trace, circuit)| {
+          if circuit.preprocessed_height != 0 {
+            return if shard == 0 {
+              trace.clone()
+            } else {
+              RowMajorMatrix::new(
+                Val::zero_vec(trace.values.len()),
+                trace.width,
+              )
+            };
+          }
+          let begin = begin.min(trace.height());
+          let end = begin.saturating_add(max_rows).min(trace.height());
+          RowMajorMatrix::new(
+            trace.values[begin * trace.width..end * trace.width].to_vec(),
+            trace.width,
+          )
+        })
+        .collect(),
+    )
+  }
+
   pub fn verifying_key_bytes(&self) -> Result<Vec<u8>, String> {
     if !self.segmented_memory {
       return Err("export a batch backend key for recursion".into());

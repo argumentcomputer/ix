@@ -27,6 +27,7 @@
 module
 public import Cli
 public import Ix.Cli.FormalAiur
+public import Ix.Cli.FormalAggregate
 public import LegacyAiur.Compiler
 public import LegacyAiur.Protocol
 public import Ix.Aggr
@@ -250,7 +251,11 @@ def reportPartition (proven : Array (Array Address × Nat)) (planned : Nat) : IO
       skip the splits next run"
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
-  if ← FormalAiur.selected p then return ← FormalAiur.run p true
+  if ← FormalAiur.selected p then
+    return ← if p.hasFlag "lanes" || p.hasFlag "aggregate" then FormalAggregate.runPipeline p else FormalAiur.run p true
+  if p.hasFlag "aggregate" then throw (IO.userError "--aggregate uses the default Aiur controller; legacy combined proving uses --lanes")
+  for flag in #["direct-joins", "structural-above", "range", "no-cache", "aggr-artifact"] do
+    if p.hasFlag flag then throw (IO.userError s!"--{flag} on prove requires the default Aiur controller")
   if p.hasFlag "jobs" || p.hasFlag "report" then
     throw (IO.userError "--jobs/--report use the default Aiur controller; legacy uses --exec-jobs")
   -- Streamed `[texray] <span>: <dur> ── RAM Δ/peak` lines on stderr as
@@ -534,7 +539,13 @@ def proveCmd : Cli.Cmd := `[Cli|
     "legacy"; "Use the retained legacy Aiur backend instead of the default certified backend."
     "formal"; "Compatibility alias for the default certified Aiur backend; conflicts with --legacy."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
-    "jobs" : Nat; "Aiur: concurrent manifest claims (default 1; 0 uses available cores). The RAM budget and CPU threads are divided among jobs."
+    "aggr-artifact" : String; "Trusted formal aggregation artifact for --aggregate/--lanes; otherwise compile/cache local sources."
+    "direct-joins"; "With --aggregate/--lanes: join raw IxVM leaves directly instead of wrapping each leaf first (higher RAM)."
+    "structural-above" : Nat; "With --aggregate/--lanes: use structural joins above N subject leaves (default 4096; 0 means every join)."
+    "range" : Nat; "With --aggregate/--lanes: wrap a leaf proof with more than N trace shards through a range-sum tree (default 0: wrap whole)."
+    "no-cache"; "With --aggregate/--lanes: bypass aggregate cache reads and writes; leaf proofs still follow --no-index."
+    "jobs" : Nat; "Aiur: CPU prover lanes for manifest claims or --aggregate (default 1; 0 uses available cores). One shared execution pool; the RAM budget and prover threads are divided among lanes."
+    "aggregate"; "Aiur: prove manifest leaves and ready recursive joins through one resident controller, then verify and print the root. Requires --ixe, --ixes and --trace-shards. --lanes selects this automatically on GPUs."
     "report" : String; "Aiur: write per-part plans, timings and persisted proof addresses to this JSON file."
     "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 65536; 0 lets the RAM planner choose)."
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
@@ -551,7 +562,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
     "lanes" : Nat;      "With --ixes and --trace-shards: prove on N GPUs using a shared execution pool. --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition. Prints the verified root address on stdout."
-    "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core, or each worker's share of the cores with --lanes); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
+    "exec-jobs" : Nat;  "Concurrent executions ahead of the provers. Aiur defaults to --jobs (or available cores with --lanes); 0 uses available cores. Positive values are per GPU with --lanes. Records and prover workspaces share --max-ram. Distributed Aiur first measures call counts and trace shapes, then replays one record at a time; regenerate replays again for round two. Legacy retains its caller-ordered execution pipeline."
     "plan-only";        "Aiur: print selected manifest leaves and RAM reservations without execution. Legacy with --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."

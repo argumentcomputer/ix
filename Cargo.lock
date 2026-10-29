@@ -54,6 +54,7 @@ dependencies = [
  "hashbrown 0.17.0",
  "multi-stark",
  "rayon",
+ "record-pool",
  "rustc-hash",
  "serde",
  "serde_json",
@@ -75,6 +76,7 @@ dependencies = [
  "p3-commit",
  "p3-symmetric",
  "rayon",
+ "record-pool",
  "rustc-hash",
  "serde_json",
  "stark-key",
@@ -1858,6 +1860,7 @@ dependencies = [
  "n0-error",
  "num-bigint 0.4.6",
  "rayon",
+ "record-pool",
  "rustc-hash",
  "serde",
  "serde_json",
@@ -1887,6 +1890,25 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "smallvec",
+]
+
+[[package]]
+name = "ix-prover"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "blake3",
+ "ixvm",
+ "multi-stark",
+ "rayon",
+ "record-pool",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "stark-verifier",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-texray",
 ]
 
 [[package]]
@@ -3280,6 +3302,10 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
 ]
+
+[[package]]
+name = "record-pool"
+version = "0.1.0"
 
 [[package]]
 name = "redox_syscall"

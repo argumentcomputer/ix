@@ -1,5 +1,7 @@
 [workspace]
 members = [
+  "crates/ix-prover",
+  "crates/record-pool",
   "crates/aiur",
   "crates/stark-key",
   "crates/stark-verifier",
@@ -15,6 +17,8 @@ members = [
   "crates/kernel",
 ]
 default-members = [
+  "crates/ix-prover",
+  "crates/record-pool",
   "crates/aiur", "crates/stark-key", "crates/stark-verifier", "crates/ixvm", "crates/aiur-legacy", "crates/ixvm-legacy",
   "crates/bench", "crates/common", "crates/compile", "crates/ffi", "crates/ixon", "crates/kernel",
 ]
@@ -37,6 +41,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates
+record-pool = { path = "crates/record-pool" }
 aiur = { path = "crates/aiur" }
 stark-key = { path = "crates/stark-key" }
 ixvm-legacy = { path = "crates/ixvm-legacy" }

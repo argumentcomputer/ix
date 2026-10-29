@@ -25,11 +25,30 @@ private def evalCases : Except String (Array Json) := do
   return #[caseJson "Eval beta normal form" good,
     caseJson "Eval rejects an unreduced claimed result" unreduced false]
 
+/-- Small, dependency-bearing environment for the orchestration gate. This
+exercises real IxVM checking and cross-record calls without importing Init. -/
+private def controllerEnv : Ixon.Env := Id.run do
+  let ty : Ixon.Expr := .leanAll (.sort 0) (.leanAll (.var 0) (.var 1))
+  let value : Ixon.Expr := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0))
+  let mut env : Ixon.Env := {}
+  let mut prior : Option Address := none
+  for i in [:3] do
+    let body := if i == 0 then value else if i == 1 then .ref 0 #[]
+      else .app (.leanLam ty (.var 0)) (.ref 0 #[])
+    let c : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, ty, body⟩,
+      #[], prior.toArray, #[.zero]⟩
+    let addr := Address.blake3 (Ixon.ser c)
+    env := env.storeConst addr c
+    env := { env with anonHints := env.anonHints.insert addr (.regular 0) }
+    prior := some addr
+  return env
+
 def main (args : List String) : IO Unit := do
   let path := args.headD "/tmp/ix-formal-claims.json"
   let env ← get_env!
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
+  IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv controllerEnv))
   let mut cases := ← IO.ofExcept evalCases
   for build in [claimCheckWithAsm,
       claimCheckEnvFull, claimCheckEnvFrontier,

@@ -32,7 +32,7 @@ mod tables;
 #[cfg(test)]
 mod tests;
 mod witness;
-pub use batch::VerifyingKey;
+pub use batch::{StreamPlan, VerifyingKey};
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.

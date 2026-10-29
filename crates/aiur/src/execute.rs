@@ -41,12 +41,117 @@ pub struct Execution<B: FieldBackend = PrimeField> {
   pub memory: Memory<B::Element>,
   pub instructions: u64,
   pub(crate) hints: std::sync::Arc<BoundHints<B::Element>>,
+  pub(crate) deferred: Option<Deferred<B::Element>>,
+}
+
+/// Unit calls owned by another record remain lookup demands in the circuit.
+/// The host may defer only this callable; no result or pointer is fabricated.
+#[derive(Clone, Debug)]
+pub struct Partition<F> {
+  pub function: usize,
+  pub owned: Vec<Vec<F>>,
+  pub memory_start: u64,
+  pub memory_end: u64,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct Deferred<F: Eq + std::hash::Hash> {
+  function: usize,
+  calls: rustc_hash::FxHashMap<Vec<F>, u64>,
+  edges: rustc_hash::FxHashSet<(Vec<F>, Vec<F>)>,
+  // First owned calls reachable through a non-owned query. Cache hits must
+  // replay these dependencies even though they do not execute the query.
+  dependencies:
+    rustc_hash::FxHashMap<(usize, usize), rustc_hash::FxHashSet<Vec<F>>>,
+}
+impl<F: Copy + Eq + std::hash::Hash> Deferred<F> {
+  fn dependency(
+    &mut self,
+    function: usize,
+    row: usize,
+    source: &[F],
+    target: &[F],
+    budget: &crate::budget::Budget,
+  ) -> Result<(), crate::budget::BudgetError> {
+    if function == self.function {
+      let edge = (source.to_vec(), target.to_vec());
+      if !self.edges.contains(&edge) {
+        budget.reserve(
+          (source.len() + target.len())
+            .saturating_mul(std::mem::size_of::<F>())
+            + 192,
+        )?;
+        self.edges.insert(edge);
+      }
+    } else {
+      if !self.dependencies.contains_key(&(function, row)) {
+        budget.reserve(256)?;
+      }
+      let set = self.dependencies.entry((function, row)).or_default();
+      if !set.contains(target) {
+        budget.reserve(
+          target.len().saturating_mul(std::mem::size_of::<F>()) + 96,
+        )?;
+        set.insert(target.to_vec());
+      }
+    }
+    Ok(())
+  }
+}
+impl<B: FieldBackend> Execution<B> {
+  pub fn deferred_calls(&self) -> impl Iterator<Item = (&[B::Element], u64)> {
+    self
+      .deferred
+      .iter()
+      .flat_map(|d| d.calls.iter().map(|(k, &n)| (k.as_slice(), n)))
+  }
+  pub fn partition_edges(
+    &self,
+  ) -> impl Iterator<Item = (&[B::Element], &[B::Element])> {
+    self
+      .deferred
+      .iter()
+      .flat_map(|d| d.edges.iter().map(|(a, b)| (a.as_slice(), b.as_slice())))
+  }
+  pub(crate) fn is_deferred(
+    &self,
+    function: usize,
+    args: &[B::Element],
+  ) -> bool {
+    self
+      .deferred
+      .as_ref()
+      .is_some_and(|d| d.function == function && d.calls.contains_key(args))
+  }
+  /// Absorb callers' counts only after all owned calls have completed. Missing
+  /// owners, overflow and a deferred answer cannot become a completed query.
+  pub fn absorb_deferred(
+    &mut self,
+    function: usize,
+    args: &[B::Element],
+    count: u64,
+  ) -> Result<(), String> {
+    if self.is_deferred(function, args) {
+      return Err("owner deferred its own call".into());
+    }
+    let table =
+      self.queries.tables.get_mut(function).ok_or("unknown owner function")?;
+    if table.widths().1 != 0 {
+      return Err("deferred call has a non-unit result".into());
+    }
+    let row = table.lookup(args).1.ok_or("deferred call has no owning row")?;
+    table
+      .adjust_count(row, count, true)
+      .ok_or("deferred multiplicity overflow")?;
+    Ok(())
+  }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ExecutionError {
   pub function: String,
   pub instruction: usize,
   pub message: String,
+  #[serde(skip)]
+  pub resource: Option<crate::budget::BudgetError>,
 }
 impl fmt::Display for ExecutionError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,6 +163,16 @@ impl fmt::Display for ExecutionError {
   }
 }
 impl std::error::Error for ExecutionError {}
+impl From<crate::budget::BudgetError> for ExecutionError {
+  fn from(error: crate::budget::BudgetError) -> Self {
+    Self {
+      function: "<storage>".into(),
+      instruction: 0,
+      message: error.to_string(),
+      resource: Some(error),
+    }
+  }
+}
 
 struct Frame<'a, F> {
   function: usize,
@@ -79,6 +194,13 @@ struct Machine<'a, 'p, B: FieldBackend> {
   record: Execution<B>,
   hints: &'a [Vec<Option<HintSite<B::Element>>>],
   dispatch: &'a [Vec<dispatch::Dispatch<B::Element>>],
+  ownership: Option<(usize, rustc_hash::FxHashSet<Vec<B::Element>>)>,
+}
+
+enum Request {
+  Started,
+  Cached(usize),
+  Deferred,
 }
 impl<F: Copy> Frame<'_, F> {
   #[inline]
@@ -114,6 +236,7 @@ impl<B: FieldBackend> CheckedProgram<B> {
     let error = |message| ExecutionError {
       function: entry.into(),
       instruction: 0,
+      resource: None,
       message,
     };
     let selected = self.entry(entry).map_err(error)?;
@@ -141,6 +264,7 @@ impl<B: FieldBackend> CheckedProgram<B> {
     let error = |message| ExecutionError {
       function: entry.into(),
       instruction: 0,
+      resource: None,
       message,
     };
     let selected = self.entry(entry).map_err(error)?;
@@ -178,6 +302,43 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
     self.execute_inner(
       entry,
       args,
+      None,
+      None,
+      #[cfg(feature = "function-profile")]
+      None,
+    )
+  }
+
+  /// Execute under a shared record reservation. Its storage keeps the charge
+  /// alive after the worker hands the record to a prover on another thread.
+  pub fn execute_reserved(
+    &self,
+    entry: &str,
+    args: Vec<B::Element>,
+    reservation: &crate::budget::RecordReservation,
+  ) -> Result<Execution<B>, ExecutionError> {
+    self.execute_inner(
+      entry,
+      args,
+      Some(reservation),
+      None,
+      #[cfg(feature = "function-profile")]
+      None,
+    )
+  }
+
+  pub fn execute_partition(
+    &self,
+    entry: Option<(&str, Vec<B::Element>)>,
+    partition: Partition<B::Element>,
+    reservation: Option<&crate::budget::RecordReservation>,
+  ) -> Result<Execution<B>, ExecutionError> {
+    let (name, args) = entry.unwrap_or(("", vec![]));
+    self.execute_inner(
+      name,
+      args,
+      reservation,
+      Some(partition),
       #[cfg(feature = "function-profile")]
       None,
     )
@@ -190,13 +351,15 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
     args: Vec<B::Element>,
     profile: &mut crate::function_profile::FunctionProfiler,
   ) -> Result<Execution<B>, ExecutionError> {
-    self.execute_inner(entry, args, Some(profile))
+    self.execute_inner(entry, args, None, None, Some(profile))
   }
 
   fn execute_inner(
     &self,
     entry: &str,
     args: Vec<B::Element>,
+    reservation: Option<&crate::budget::RecordReservation>,
+    partition: Option<Partition<B::Element>>,
     #[cfg(feature = "function-profile")] profile: Option<
       &mut crate::function_profile::FunctionProfiler,
     >,
@@ -204,12 +367,35 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
     let error = |message| ExecutionError {
       function: entry.into(),
       instruction: 0,
+      resource: None,
       message,
     };
-    let selected = self.program.entry(entry).map_err(error)?;
-    self.program.inputs[selected.function]
-      .validate(&args, self.program.field)
-      .map_err(error)?;
+    let root = if partition.is_some() && entry.is_empty() {
+      None
+    } else {
+      let selected = self.program.entry(entry).map_err(error)?;
+      self.program.inputs[selected.function]
+        .validate(&args, self.program.field)
+        .map_err(error)?;
+      Some(QueryInput { function: selected.function, args })
+    };
+    if let Some(p) = &partition {
+      if p.function >= self.program.program.functions.len()
+        || self.program.outputs[p.function].width() != 0
+      {
+        return Err(error(
+          "partition requires an ordinary unit-returning function".into(),
+        ));
+      }
+      if p.memory_end > self.program.field.modulus() {
+        return Err(error("partition exceeds field".into()));
+      }
+      for args in &p.owned {
+        self.program.inputs[p.function]
+          .validate(args, self.program.field)
+          .map_err(error)?;
+      }
+    }
     let mut queries = QueryMap::new(
       self
         .program
@@ -219,8 +405,27 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
         .map(|(a, b)| (a.width(), b.width())),
       self.program.field,
     );
+    queries.reserve_with(reservation);
+    for map in &self.maps {
+      queries
+        .budget
+        .reserve(map.rows().saturating_mul(std::mem::size_of::<u64>()))?;
+    }
     queries.bind_maps(&self.maps);
-    Machine {
+    let mut memory = Memory::new(
+      self
+        .program
+        .memory_types
+        .iter()
+        .map(|(ty, layout)| (ty.clone(), layout.width())),
+    );
+    memory.budget = queries.budget.clone();
+    if let Some(p) = &partition {
+      memory
+        .set_range(p.memory_start, p.memory_end)
+        .map_err(|e| error(e.into()))?;
+    }
+    let mut machine = Machine {
       #[cfg(feature = "function-profile")]
       profile,
       _profile_lifetime: std::marker::PhantomData,
@@ -231,21 +436,53 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
       output_buffer: vec![],
       hints: &self.bindings.sites,
       dispatch: &self.dispatch,
+      ownership: partition
+        .as_ref()
+        .map(|p| (p.function, p.owned.iter().cloned().collect())),
       record: Execution {
         hints: self.bindings.clone(),
         output: vec![],
         queries,
-        memory: Memory::new(
-          self
-            .program
-            .memory_types
-            .iter()
-            .map(|(ty, layout)| (ty.clone(), layout.width())),
-        ),
+        memory,
         instructions: 0,
+        deferred: partition.as_ref().map(|p| Deferred {
+          function: p.function,
+          calls: Default::default(),
+          edges: Default::default(),
+          dependencies: Default::default(),
+        }),
       },
+    };
+    if let Some(root) = root {
+      machine.run_query(root)?;
     }
-    .run(QueryInput { function: selected.function, args })
+    if let Some(partition) = partition {
+      let output = std::mem::take(&mut machine.record.output);
+      let mut artificial = Vec::new();
+      for args in partition.owned {
+        if machine.record.queries.tables[partition.function]
+          .lookup(&args)
+          .1
+          .is_some()
+        {
+          continue;
+        }
+        machine.run_query(QueryInput {
+          function: partition.function,
+          args: args.clone(),
+        })?;
+        artificial.push(args);
+      }
+      let table = &mut machine.record.queries.tables[partition.function];
+      for args in artificial {
+        let row = table.lookup(&args).1.unwrap();
+        table
+          .adjust_count(row, 1, false)
+          .ok_or_else(|| error("missing artificial root count".into()))?;
+      }
+      machine.record.output = output;
+    }
+    Ok(machine.record)
   }
 }
 impl<'a, B: FieldBackend> Machine<'a, '_, B> {
@@ -256,6 +493,9 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       .validate_registers(&self.arguments, self.program.field)
       .map_err(|e| self.error(e))?;
     let frame = self.frames.pop().unwrap();
+    if self.record.deferred.is_some() {
+      self.propagate_dependencies(frame.function, frame.query)?;
+    }
     if let Some(parent) = self.frames.last_mut() {
       parent.write(frame.destination, &self.arguments);
     } else {
@@ -286,7 +526,39 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
         )
       })
       .unwrap_or(("<entry>".into(), 0));
-    ExecutionError { function, instruction, message: message.into() }
+    ExecutionError {
+      function,
+      instruction,
+      message: message.into(),
+      resource: None,
+    }
+  }
+
+  fn propagate_dependencies(
+    &mut self,
+    function: usize,
+    row: usize,
+  ) -> Result<(), ExecutionError> {
+    let Some(deferred) = &mut self.record.deferred else { return Ok(()) };
+    if function != deferred.function
+      && let Some(dependencies) = deferred.dependencies.remove(&(function, row))
+    {
+      if let Some(parent) = self.frames.last() {
+        let source =
+          self.record.queries.tables[parent.function].input(parent.query);
+        for target in &dependencies {
+          deferred.dependency(
+            parent.function,
+            parent.query,
+            source,
+            target,
+            &self.record.queries.budget,
+          )?;
+        }
+      }
+      deferred.dependencies.insert((function, row), dependencies);
+    }
+    Ok(())
   }
 
   /// Hit: return the existing output and increment only this query's count.
@@ -297,12 +569,50 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     &mut self,
     function_id: usize,
     destination: &'a [usize],
-  ) -> Result<Option<usize>, ExecutionError> {
+  ) -> Result<Request, ExecutionError> {
     debug_assert!(function_id < self.program.program.functions.len());
     #[cfg(feature = "function-profile")]
     if let Some(profile) = &mut self.profile {
       profile.enter(function_id);
     }
+    if let Some(deferred) = &mut self.record.deferred
+      && deferred.function == function_id
+      && let Some(parent) = self.frames.last()
+    {
+      let source =
+        self.record.queries.tables[parent.function].input(parent.query);
+      deferred.dependency(
+        parent.function,
+        parent.query,
+        source,
+        &self.arguments,
+        &self.record.queries.budget,
+      )?;
+    }
+    if let Some((callee, owned)) = &self.ownership
+      && *callee == function_id
+      && !owned.contains(&self.arguments)
+    {
+      let calls = &mut self.record.deferred.as_mut().unwrap().calls;
+      if !calls.contains_key(&self.arguments) {
+        self.record.queries.budget.reserve(
+          self
+            .arguments
+            .len()
+            .saturating_mul(std::mem::size_of::<B::Element>())
+            + 96,
+        )?;
+      }
+      let count = calls.entry(self.arguments.clone()).or_default();
+      *count = count.checked_add(1).ok_or_else(|| ExecutionError {
+        function: "<deferred>".into(),
+        instruction: 0,
+        resource: None,
+        message: "deferred count overflow".into(),
+      })?;
+      return Ok(Request::Deferred);
+    }
+    let budget = &self.record.queries.budget;
     let table = &mut self.record.queries.tables[function_id];
     let (hash, found) = table.lookup(&self.arguments);
     if let Some(id) = found {
@@ -312,9 +622,13 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       table.bump(id).ok_or_else(|| ExecutionError {
         function: "<query>".into(),
         instruction: 0,
+        resource: None,
         message: "query multiplicity overflow".into(),
       })?;
-      return Ok(Some(id));
+      if self.record.deferred.is_some() {
+        self.propagate_dependencies(function_id, id)?;
+      }
+      return Ok(Request::Cached(id));
     }
     let function = &self.program.program.functions[function_id];
     let mut registers = self.spare_registers.pop().unwrap_or_default();
@@ -322,13 +636,15 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     // Keep already initialized spare slots when reusing a larger buffer.
     // Static definite-assignment checking prevents stale slots being read.
     if registers.len() < function.registers {
+      budget.vector(&registers, function.registers - registers.len())?;
       registers.resize(function.registers, self.program.field.zero());
     }
     for &(reg, value) in &self.program.initial_registers[function_id] {
       registers[reg] = value;
     }
     registers[..self.arguments.len()].copy_from_slice(&self.arguments);
-    let query = table.start(&self.arguments, hash);
+    let query = table.start(&self.arguments, hash)?;
+    budget.vector(&self.frames, 1)?;
     self.frames.push(Frame {
       function: function_id,
       query,
@@ -337,13 +653,13 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       cursor: 0,
       destination,
     });
-    Ok(None)
+    Ok(Request::Started)
   }
 
-  fn run(
-    mut self,
+  fn run_query(
+    &mut self,
     root: QueryInput<B::Element>,
-  ) -> Result<Execution<B>, ExecutionError> {
+  ) -> Result<(), ExecutionError> {
     if root.function >= self.program.program.functions.len() {
       #[cfg(feature = "function-profile")]
       if let Some(profile) = &mut self.profile {
@@ -363,17 +679,21 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       if let Some(profile) = &mut self.profile {
         profile.exit(false);
       }
-      return Ok(self.record);
+      return Ok(());
     }
     self.arguments = root.args;
-    if let Some(id) = self.request(root.function, &[])? {
-      self.record.output =
-        self.record.queries.tables[root.function].output(id).output.to_vec();
+    let request = self.request(root.function, &[])?;
+    if !matches!(request, Request::Started) {
+      self.record.output = if let Request::Cached(id) = request {
+        self.record.queries.tables[root.function].output(id).output.to_vec()
+      } else {
+        vec![]
+      };
       #[cfg(feature = "function-profile")]
       if let Some(profile) = &mut self.profile {
         profile.exit(true);
       }
-      return Ok(self.record);
+      return Ok(());
     }
     while !self.frames.is_empty() {
       let frame = self.frames.last().unwrap();
@@ -409,6 +729,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             ExecutionError {
               function: program.callable_name(frame.function).unwrap().into(),
               instruction: frame.pc,
+              resource: None,
               message,
             }
           })?;
@@ -424,6 +745,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
           call(&mut frame.registers).map_err(|message| ExecutionError {
             function: program.callable_name(frame.function).unwrap().into(),
             instruction: frame.pc,
+            resource: None,
             message,
           })?;
           frame.pc += 1;
@@ -523,6 +845,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             result.map_err(|message| ExecutionError {
               function: program.callable_name(frame.function).unwrap().into(),
               instruction: frame.pc,
+              resource: None,
               message,
             })?;
             frame.pc += 1;
@@ -535,10 +858,12 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
           let output = self.request(*function, dest)?;
           self.frames[parent].pc += 1;
           self.frames[parent].cursor = step.next;
-          if let Some(id) = output {
-            let output =
-              self.record.queries.tables[*function].output(id).output;
-            self.frames[parent].write(dest, output);
+          if !matches!(output, Request::Started) {
+            if let Request::Cached(id) = output {
+              let output =
+                self.record.queries.tables[*function].output(id).output;
+              self.frames[parent].write(dest, output);
+            }
             #[cfg(feature = "function-profile")]
             if let Some(profile) = &mut self.profile {
               profile.exit(true);
@@ -557,12 +882,18 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             .record
             .memory
             .intern(memory_type, &self.arguments, program.field.modulus())
-            .map_err(|e| self.error(e))?;
+            .map_err(|e| match e {
+              crate::budget::StorageError::Resource(e) => {
+                ExecutionError::from(e)
+              },
+              crate::budget::StorageError::Invalid(e) => self.error(e),
+            })?;
           let address = self.record.memory.address(index) as u64;
           let count = self.record.memory.multiplicity_mut(index);
           *count = count.checked_add(1).ok_or_else(|| ExecutionError {
             function: "<ROM>".into(),
             instruction: 0,
+            resource: None,
             message: "ROM multiplicity overflow".into(),
           })?;
           self.frames.last_mut().unwrap().registers[*dest] =
@@ -581,6 +912,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
           *count = count.checked_add(1).ok_or_else(|| ExecutionError {
             function: "<ROM>".into(),
             instruction: 0,
+            resource: None,
             message: "ROM multiplicity overflow".into(),
           })?;
           let entry = self.record.memory.get(index).unwrap();
@@ -601,6 +933,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
               .name
               .clone(),
             instruction: frame.pc,
+            resource: None,
             message,
           })?;
         },
@@ -628,6 +961,6 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       frame.pc += 1;
       frame.cursor = step.next;
     }
-    Ok(self.record)
+    Ok(())
   }
 }

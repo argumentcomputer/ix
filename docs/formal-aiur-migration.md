@@ -173,22 +173,23 @@ and `input.json` for feeding the proof into another recursive-verifier run.
 ## Legacy support and native builds
 
 `--legacy` retains the old execution, proving and verification paths, including
-old proof formats and caches. Distributed cross-record execution, the shared
-execution-ahead pool, multi-GPU lane orchestration, and texray remain behind
-that boundary; requesting their flags on the new backend fails explicitly.
-These are not silently replaced by independent claim proofs.
+old proof formats and caches. The default backend now also has a resident
+execution/proving controller, CPU execution ahead of proving, GPU lanes,
+checkpointed leaf refinement, recursive aggregation, cross-record distributed
+execution, and texray. See [the orchestration guide](formal-aiur-orchestration.md)
+for commands, resource accounting, recovery, and validation results.
 
 The new hosts select multi-stark's CUDA prover with `--gpu-device N` or
 `IX_CUDA=1` (device from `MULTI_STARK_CUDA_DEVICE`, otherwise zero). CPU binaries
 live in `target/release`; CUDA binaries live in `target/formal-cuda/release` and
 are built with `--features parallel,cuda`. Override them independently with
-`IX_AIUR_HOST_CUDA` / `IX_STARK_HOST_CUDA`. Verification and key export use the
+`IX_AIUR_HOST_CUDA` / `IX_STARK_HOST_CUDA` / `IX_PROVER_HOST_CUDA`. Verification and key export use the
 CPU hosts. Device choice does not enter the verifying key or proof protocol.
 An explicit device request to a CPU-only Rust host fails.
 
 The current trace writer populates stage-one matrices on the CPU. CUDA
 accelerates multi-stark's prover phases; this does not add GPU trace codegen.
-The CUDA CI job checks and links both separate hosts. On a machine with an
+The CUDA CI job checks and links both application hosts and `ix-prover`. On a machine with an
 NVIDIA driver and CUDA toolkit, run this from the repository root:
 
 ```sh

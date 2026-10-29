@@ -29,6 +29,9 @@ struct Slot {
 
 #[derive(Clone, Debug)]
 pub struct Memory<F = u64> {
+  pub(crate) budget: crate::budget::Budget,
+  base: usize,
+  end: u64,
   types: Vec<(Type, usize)>,
   words: Vec<F>,
   slots: Vec<Slot>,
@@ -50,6 +53,9 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
       types.iter().map(|(_, w)| widths.binary_search(w).unwrap()).collect();
     let buckets = vec![vec![]; widths.len()];
     Self {
+      budget: Default::default(),
+      base: 0,
+      end: u64::MAX,
       types,
       words: vec![],
       slots: vec![],
@@ -65,6 +71,19 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
   }
   pub fn is_empty(&self) -> bool {
     self.slots.is_empty()
+  }
+
+  pub(crate) fn set_range(
+    &mut self,
+    start: u64,
+    end: u64,
+  ) -> Result<(), &'static str> {
+    if !self.is_empty() || start >= end {
+      return Err("invalid empty ROM range");
+    }
+    self.base = usize::try_from(start).map_err(|_| "ROM base overflow")?;
+    self.end = end;
+    Ok(())
   }
 
   #[inline]
@@ -100,7 +119,9 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     type_id: usize,
     address: usize,
   ) -> Option<usize> {
-    self.buckets[self.type_buckets[type_id]].get(address).copied()
+    self.buckets[self.type_buckets[type_id]]
+      .get(address.checked_sub(self.base)?)
+      .copied()
   }
 
   pub fn get_by_width(
@@ -109,7 +130,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     address: usize,
   ) -> Option<MemoryEntryRef<'_, F>> {
     let bucket = self.widths.binary_search(&width).ok()?;
-    self.get(*self.buckets[bucket].get(address)?)
+    self.get(*self.buckets[bucket].get(address.checked_sub(self.base)?)?)
   }
 
   /// Record indices in consecutive width-local address order. The caller may
@@ -159,16 +180,25 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     type_id: usize,
     words: &[F],
     modulus: u64,
-  ) -> Result<usize, &'static str> {
+  ) -> Result<usize, crate::budget::StorageError> {
     debug_assert_eq!(words.len(), self.types[type_id].1);
     let (hash, found) = self.lookup(words);
     if let Some(index) = found {
       return Ok(index);
     }
+    self.budget.vector(&self.words, words.len())?;
+    self.budget.vector(&self.slots, 1)?;
+    self
+      .budget
+      .hash::<(u64, usize)>(self.index.len(), self.index.capacity())?;
     let bucket = &mut self.buckets[self.type_buckets[type_id]];
-    let address = bucket.len();
-    if u64::try_from(address).map_err(|_| "ROM address overflow")? >= modulus {
-      return Err("ROM exceeds field capacity");
+    self.budget.vector(bucket, 1)?;
+    let address =
+      self.base.checked_add(bucket.len()).ok_or("ROM address overflow")?;
+    if u64::try_from(address).map_err(|_| "ROM address overflow")?
+      >= modulus.min(self.end)
+    {
+      return Err("ROM exceeds field capacity".into());
     }
     let index = self.slots.len();
     self.index.insert_unique(hash, (hash, index), |&(hash, _)| hash);

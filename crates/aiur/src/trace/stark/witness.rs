@@ -261,7 +261,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     if self.gpu_lookup_only {
       Ok(self.witness_from_main(self.generate_stage_1(record, entry, args)?))
     } else {
-      self.generate_with::<true>(record, entry, args)
+      self.generate_with::<true>(record, Some((entry, args)))
     }
   }
 
@@ -273,19 +273,29 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     entry: &str,
     args: &[B::Element],
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
-    Ok(self.generate_with::<false>(record, entry, args)?.traces)
+    Ok(self.generate_with::<false>(record, Some((entry, args)))?.traces)
+  }
+
+  /// A worker record may have no public entrypoint of its own. Its unresolved
+  /// calls are checked by the combined batch, never by a separate claim.
+  pub fn generate_record_stage_1(
+    &self,
+    record: &Execution<B>,
+  ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
+    Ok(self.generate_with::<false>(record, None)?.traces)
   }
 
   fn generate_with<const LOOKUPS: bool>(
     &self,
     record: &Execution<B>,
-    entry: &str,
-    args: &[B::Element],
+    root: Option<(&str, &[B::Element])>,
   ) -> Result<SystemWitness<Val>, String> {
     #[cfg(feature = "trace-profile")]
     let mut profile = super::profile::Phases::new();
     self.plan.validate_record(record)?;
-    self.plan.root(record, entry, args)?;
+    if let Some((entry, args)) = root {
+      self.plan.root(record, entry, args)?;
+    }
     #[cfg(feature = "trace-profile")]
     profile.mark("validate_and_root");
     let table_counts = self.auxiliary_counts(record)?;

@@ -16,6 +16,21 @@ def Valid (rom : WidthROM F) : Prop :=
   ∀ a ∈ rom.entries, ∀ b ∈ rom.entries,
     a.1 = b.1 → a.2.length = b.2.length → a.2 = b.2
 
+/-- Independently generated ROMs compose when their address ranges are
+disjoint within each width. Distributed execution uses this boundary; it
+does not require globally distinct addresses across different widths. -/
+theorem append_valid {left right : WidthROM F} (hl : left.Valid) (hr : right.Valid)
+    (separate : ∀ a ∈ left.entries, ∀ b ∈ right.entries,
+      a.2.length = b.2.length → a.1 ≠ b.1) :
+    (WidthROM.mk (left.entries ++ right.entries)).Valid := by
+  intro a ha b hb address size
+  simp only [List.mem_append] at ha hb
+  rcases ha with ha | ha <;> rcases hb with hb | hb
+  · exact hl a ha b hb address size
+  · exact (separate a ha b hb size address).elim
+  · exact (separate b hb a ha size.symm address.symm).elim
+  · exact hr a ha b hb address size
+
 /-- Expand raw words into their static typed views for the existing compiler
 model. This is a proof construction, not witness data or runtime validation.
 Unused views may have invalid tags; the provenance theorem needs only the view
