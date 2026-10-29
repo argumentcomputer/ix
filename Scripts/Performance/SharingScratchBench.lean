@@ -84,8 +84,11 @@ private def checkRows (sample : WidthCase) : IO Nat := do
           { cost := Array.replicate (n + 3) (2 ^ 90), inl := #[999],
             sides := Array.replicate (n + 1) 37, below := Array.replicate (n + 2) 91 }
         let mut scratch := poison
-        for flags in #[Array.replicate (n + 4) false, Array.replicate (n + 4) true,
-            Array.ofFn (n := n + 4) (fun i => i.val % 2 == 0)] do
+        let flagSize := 2 * n + 4
+        unless positions.all (fun position => position == 0 || position - 1 < flagSize) do
+          throw (IO.userError s!"row-control flags do not cover positions at {sample.address}")
+        for flags in #[Array.replicate flagSize false, Array.replicate flagSize true,
+            Array.ofFn (n := flagSize) (fun i => i.val % 2 == 0)] do
           let reference := areaFold stage.up.prep stage.up.opaq base sample.width
             full.area positions flags
           scratch := Ix.Sharing.Scratch.evaluateRows stage.up.prep stage.up.opaq base
@@ -110,6 +113,8 @@ private def checkRows (sample : WidthCase) : IO Nat := do
 private def controls (cases : Array WidthCase) : IO Unit := do
   let mut rows := 0
   for (sample, index) in cases.zipIdx do
+    IO.println s!"control begin index={index} address={sample.address} width={sample.width}"
+    (← IO.getStdout).flush
     let reference := runCase "reference" canonicalFamilyConfig {} sample
     for mode in ["fresh", "reuse"] do
       unless sameMeter reference (runCase mode canonicalFamilyConfig {} sample) do
@@ -126,6 +131,8 @@ private def controls (cases : Array WidthCase) : IO Unit := do
       for mode in ["fresh", "reuse"] do
         unless sameMeter reference (runCase mode greedy {} sample) do
           throw (IO.userError s!"greedy table mismatch {mode} at {sample.address}")
+    IO.println s!"control pass index={index} rows={rows}"
+    (← IO.getStdout).flush
   IO.println s!"scratch controls PASS width_cases={cases.size} row_cases={rows}"
 
 @[noinline] private def timed (mode : String) (cases : Array WidthCase)
