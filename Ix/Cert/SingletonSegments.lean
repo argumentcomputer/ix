@@ -90,6 +90,7 @@ theorem lowerDefinition_decl {md : Mode} {hint : Option ReducibilityHint} {st : 
     simp only [hs, pure, Except.pure] at h
     cases kind <;> (simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, -⟩ := h; simp [CtxAgree.noteEntries])
 
+set_option maxRecDepth 4096 in
 /-- A key quotient Source gives a published name is in the scope of representatives. -/
 theorem qkey_good {ixe : Ixon.Env} {t : RoleTable} (checked : t.check = .ok ()) (bound : PublishedRolesBound t ixe)
     (agree : PublishedAgree ixe) {n : Ix.Name} {named : Ixon.Named} (hn : (n, named) ∈ ixe.named.toList) :
@@ -111,6 +112,7 @@ theorem definition_raw {ixe : Ixon.Env} {t : RoleTable} {stS : State .source} {m
   rw [names e he, RecordReadings.quotientMember, RecordReadings.defMember_canon]
   rfl
 
+set_option maxRecDepth 4096 in
 /-- **A compiled singleton definition's segment reads as quotient Source's read.** -/
 theorem definition_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Environment} {roots : List Ix.Name}
     {sub : Ix.Environment} {failures : Failures} {t : RoleTable} {envQ : Env .source}
@@ -163,6 +165,7 @@ theorem definition_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Env
   rw [names e he, hname]
   exact qkey_good (defaultTable_check P.table) P.bound P.agree hn
 
+set_option maxRecDepth 4096 in
 /-- **A compiled axiom's segment reads as quotient Source's read.** -/
 theorem axiom_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Environment} {roots : List Ix.Name}
     {sub : Ix.Environment} {failures : Failures} {t : RoleTable} {envQ : Env .source}
@@ -209,6 +212,7 @@ theorem axiom_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Environm
     rw [RecordReadings.quotientHeader_eq]
     exact qkey_good (defaultTable_check P.table) P.bound P.agree hn
 
+set_option maxRecDepth 4096 in
 /-- **A compiled quotient constant's segment reads as quotient Source's read.** -/
 theorem quotient_segment {ixe : Ixon.Env} {order : List Address} {env : Ix.Environment} {roots : List Ix.Name}
     {sub : Ix.Environment} {failures : Failures} {t : RoleTable} {envQ : Env .source}
