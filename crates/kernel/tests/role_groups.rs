@@ -792,6 +792,10 @@ fn equation_rhs_anchors_require_their_helpers_to_be_well_typed() {
     let actual_closure = source.closure(&[roles[3].1.clone()]).unwrap();
     assert!(!actual_closure.contains(&rhs_anchor));
     assert!(!actual_closure.contains(&helper));
+    let checked_helper =
+      ArtifactChecker::<Anon>::from_source(Ok(source.clone()))
+        .check_const(&helper);
+    assert_eq!(checked_helper.is_ok(), !ill_typed, "{checked_helper:?}");
     let admitted = source.admission();
     if ill_typed {
       assert!(
@@ -804,16 +808,10 @@ fn equation_rhs_anchors_require_their_helpers_to_be_well_typed() {
         "{:?}",
         admitted.refused()
       );
-      ArtifactChecker::<Anon>::from_source(Ok(source))
-        .check_const(&helper)
-        .unwrap_err();
     } else {
       assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
       assert!(source.is_admitted(Role::IntNegSucc));
       assert!(source.is_admitted(Role::IntNegOfNat));
-      ArtifactChecker::<Anon>::from_source(Ok(source))
-        .check_const(&helper)
-        .unwrap();
     }
   }
 }

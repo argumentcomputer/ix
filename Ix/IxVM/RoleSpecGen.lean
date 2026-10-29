@@ -1,6 +1,7 @@
 module
 
 public import IxC.Kernel.Roles
+public import IxC.Kernel.RoleEquations
 public import Ix.SpecDigest
 
 /-! # The role specifications, rendered for the circuit
@@ -69,8 +70,49 @@ def groupOf (r : Role) : Nat := (groups.findIdx? (·.contains r)).getD groups.le
 def groupNeeds (g : List Role) : List Role :=
   (g.flatMap Role.deps).eraseDups.filter (!g.contains ·)
 
-/-- The group order covers every role once, each group is a block, and every
-role a group needs is in an earlier group. -/
+/-- The role keys actually read by a closed generated term, including
+projection heads and binder domains. Open variables and non-role keys do not
+describe a closed role specification. -/
+def referencedRoles : Expr .anon → Except String (List Role)
+  | .bvar _ | .sort _ => pure []
+  | .const (.role r) _ => pure [r]
+  | .const _ _ => throw "a generated specification references a non-role key"
+  | .proj (.role r) _ value => return r :: (← referencedRoles value)
+  | .proj _ _ _ => throw "a generated specification projects a non-role key"
+  | .app a b | .lam a b _ | .forallE a b _ =>
+    return (← referencedRoles a) ++ (← referencedRoles b)
+  | .letE type value body _ =>
+    return (← referencedRoles type) ++ (← referencedRoles value) ++ (← referencedRoles body)
+  | .fvar .. => throw "an open variable in a generated specification"
+  | .lit _ => throw "a literal in a generated specification"
+
+/-- The closed terms emitted for anchors and definitions specified by
+equations. These use the equation checker's own telescope-closing functions. -/
+def closedSpecTerms (r : Role) : List (Expr .anon) :=
+  match r.spec (md := .anon) with
+  | .anchor _ type => [type]
+  | .eqns _ type equations =>
+    type :: equations.flatMap fun equation =>
+      equation.statement ::
+        if equation.hyps.isEmpty then
+          [equation.closedSide equation.lhs, equation.closedSide equation.rhs]
+        else []
+  | _ => []
+
+/-- Every external generated reference is covered by a declared dependency
+group. A group may refer to its own candidates, and naming any member of a
+dependency group covers that whole group. -/
+def checkReferenceGroups (g needs : List Role) (terms : List (Expr .anon)) :
+    Except String Unit := do
+  let allowed := g ++ needs.flatMap Role.block
+  for term in terms do
+    for role in ← referencedRoles term do
+      unless allowed.contains role do
+        throw s!"generated specification references {repr role} outside its declared dependency groups"
+
+/-- The group order covers every role once, each group is a block, every
+dependency group is earlier, and its metadata covers the actual generated
+anchor and equation references. -/
 def checkGroups : Except String Unit := do
   let flat := groups.flatten
   unless flat.length == Role.all.length && Role.all.all flat.contains do
@@ -80,6 +122,7 @@ def checkGroups : Except String Unit := do
       unless Role.block r == g do throw s!"role group {i} is not {repr r}'s block"
     for r in groupNeeds g do
       unless groupOf r < i do throw s!"role group {i} needs {repr r}, which is not earlier"
+    checkReferenceGroups g (groupNeeds g) (g.flatMap closedSpecTerms)
 
 /-- `natZero` ↦ `nat_zero`. -/
 def snake (s : String) : String :=
