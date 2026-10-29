@@ -1,9 +1,9 @@
-/- Fixture of `compile-closure-whole`'s local-scope check (7), elaborated at run time and in no
-Lake library: an alpha-collapsed mutual Prop block (`PA`/`PB` have the same shape), and one in
-`Type`, each with a user of its recursor. Pass 3 compiles the Lean recursors of a changed block to
-their images, packed with `And`/`True` for a Prop block and with `PProd`/`PUnit` for a Type
-block: constants these declarations' own closure need not contain, so the `--local` closure must
-carry them (the compiler's introduced references, `Ix.EnvScope.introducedSupport`). -/
+/- Fixture of `compile-closure-whole`'s local-scope check, elaborated at run
+time outside the Lake libraries: symmetric mutual members in `Prop` and in
+`Type`, each with a user of its recursor. Every member keeps its own slot and
+Lean's original recursor interface. The runner checks source reconstruction,
+complete source/reader coverage, and that compilation introduces no references;
+the closure with recursors alone must also compile without added support. -/
 set_option Elab.async false
 
 namespace LocalCollapse
