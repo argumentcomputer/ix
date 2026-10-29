@@ -112,15 +112,20 @@ def sha256 (path : System.FilePath) : IO String := do
   let out ← IO.Process.output { cmd := "sha256sum", args := #["--", path.toString] }
   return (out.stdout.splitOn " ").headD ""
 
-/-- Keep large generated arrays within the elaborator's ordinary recursion
-limit without changing their entries or order. -/
-def fixtureArray (rows : Array String) : String :=
+/-- Separate large data initializers so elaboration does not keep every row
+on one recursion stack. The public array retains the entries in order. -/
+def fixtureDefinition (name : String) (rows : Array String) : String := Id.run do
   let literal (items : Array String) := "#[\n" ++ ",\n".intercalate items.toList ++ "]"
-  if rows.size ≤ 128 then literal rows else
-    let chunks := (Array.range ((rows.size + 127) / 128)).map fun index =>
-      let chunk := literal (rows.extract (index * 128) ((index + 1) * 128))
-      "  " ++ chunk.replace "\n" "\n  "
-    "(" ++ literal chunks ++ ").flatten"
+  if rows.size ≤ 64 then return s!"def {name} : Array (String × String) := {literal rows}"
+  let mut out := ""
+  let mut names : Array String := #[]
+  for index in [:((rows.size + 63) / 64)] do
+    let part := s!"{name}Chunk{index}"
+    out := out ++ s!"def {part} : Array (String × String) := \
+      {literal (rows.extract (index * 64) ((index + 1) * 64))}\n\n"
+    names := names.push part
+  return out ++ s!"def {name} : Array (String × String) := \
+    (#[{", ".intercalate names.toList}]).flatten"
 
 /-- An `.ixe`'s records, decoded. -/
 def loadStore (path : System.FilePath) : IO (Ixon.Env × RecordStore) := do
@@ -412,11 +417,13 @@ def quotientOnly (input output : String) : IO UInt32 := do
   IO.ofExcept ((checkQuotientBundle s.cx pre.state t pre.evidence names pre.blobs.toArray).mapError
     (s!"pin-gen: " ++ ·))
   let lines := ((← IO.FS.readFile output).splitOn "\n").toArray
+  let closureParagraph := (lines.find? (·.startsWith "`closure`: ")).getD ""
   let lines ← IO.ofExcept (putBlock lines (quotientParagraph.splitOn "\n").head!
-    "`closure`: the well-founded `Nat` operations' dependency closure in the"
+    closureParagraph
     (quotientParagraph.splitOn "\n").toArray)
   let header := "def quotientNames : Array (String × Lean.Name) := #["
-  let lines ← IO.ofExcept (putBlock lines header "def closure : Array (String × String) := #["
+  let closureHeader := (lines.find? (·.startsWith "def closure : ")).getD ""
+  let lines ← IO.ofExcept (putBlock lines header closureHeader
     (#[header] ++ ((nameRows names ++ "]").splitOn "\n").toArray))
   IO.FS.writeFile output ("\n".intercalate lines.toList)
   IO.eprintln s!"pin-gen: quotient names: {names.size} names of {records.size} records' addresses; \
@@ -838,13 +845,12 @@ def sourceBlobs : Array (String × String) := #[
 def quotientNames : Array (String × Lean.Name) := #[
 {nameRows qNames}]
 
-def closure : Array (String × String) := {fixtureArray (rowTerms
-    (closureRecords.map fun (a, c) => (a, Ixon.serConstant c)))}
+{fixtureDefinition "closure" (rowTerms (closureRecords.map fun (a, c) => (a, Ixon.serConstant c)))}
 
 def closureBlobs : Array (String × String) := #[
 {rowsOf closureBlobs}]
 
-def closureHints : Array (String × String) := {fixtureArray (closureHints.map fun (a, h) =>
+{fixtureDefinition "closureHints" (closureHints.map fun (a, h) =>
     s!"  ({(toString a).quote}, {(Ix.Cert.RoleClosure.hintString h).quote})")}
 
 end Ix.Kernel.Reader.RoleData
