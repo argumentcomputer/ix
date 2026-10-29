@@ -52,6 +52,7 @@ theorem own_external {t : RoleTable} {preA : Prelude .anon} {S : Address → Pro
   obtain ⟨k, hk⟩ := BlockContext.keyAt_stored corder hB hcB hc hres
   exact ⟨k, hk, .inr ⟨a, hb, hk⟩⟩
 
+set_option maxRecDepth 4096 in
 /-- **At a mentioned closure name, the block's names are quotient Source's names renamed**, when
 the compile binds the name at its published address and the members are keyed by their quotient
 keys renamed. -/
@@ -368,6 +369,7 @@ theorem member_inert {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Env
     exact h
   exact ClosureSegments.projection_inert _ _ _ (.inl ⟨_, rfl⟩) (by rw [h2]; rfl)
 
+set_option maxRecDepth 4096 in
 /-- **A group of several definitions' segment reads as quotient Source's read**, when the collapse
 keeps the read whole or drops it whole, and a kept read's segment holds the block's record among
 the members' projections. -/
