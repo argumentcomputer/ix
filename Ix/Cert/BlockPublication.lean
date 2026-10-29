@@ -200,6 +200,7 @@ theorem published {ixe : Ixon.Env} {sub : Ix.Environment} {acc : DriverAcc}
     obtain rfl : a' = a := by simpa using h
     exact resolved n a' hs hn
 
+set_option maxRecDepth 4096 in
 /-- **`sameKey`: two closure names with one ingress key are published alike**, from Source
 totality (`Obligation.SourceTotal`'s second conjunct), where their key is not the `sorryAx`
 role's. -/

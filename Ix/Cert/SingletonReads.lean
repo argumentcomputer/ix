@@ -123,6 +123,7 @@ theorem external {t : RoleTable} {preA : Prelude .anon} {S : Address → Prop} (
   obtain ⟨k, hk⟩ := BlockContext.keyAt_stored corder hB hcB hc hres
   exact ⟨k, hk, .inr ⟨a, hb, hk⟩⟩
 
+set_option maxRecDepth 4096 in
 /-- **At a mentioned closure name, the block's names are quotient Source's names renamed**, when
 the compile binds the name at its published address. -/
 theorem agree {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {failures : Failures}
@@ -247,6 +248,7 @@ theorem safe_of_lower {ci : Ix.ConstantInfo} {source : Ix.Def} (view : EmissionD
     simp [Ix.LeanIngress.DefMember.substKeys, hd, declined, throw, throwThe, MonadExceptOf.throw, bind,
       Except.bind] at lowS
 
+set_option maxRecDepth 4096 in
 /-- **A compiled definition reads in the closure's context, from every state related to quotient
 Source's, as quotient Source's unit renamed.** -/
 theorem closure_definition_reads {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
@@ -305,6 +307,7 @@ theorem scope_of {name : Ix.Name} {context : CompileEnv × BlockEnv} {names : Ix
     obtain ⟨same, -⟩ := DefinitionReading.singleton_lookup name m index found
     exact absurd (Ix.CompileCert.Canon.nameCompareExact_eq_iff.mp same) hm) e h
 
+set_option maxRecDepth 4096 in
 /-- **A compiled axiom reads in the closure's context, from every state related to quotient
 Source's, as quotient Source's unit renamed.** -/
 theorem closure_axiom_reads {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
@@ -336,6 +339,7 @@ theorem closure_axiom_reads {env : Ix.Environment} {roots : List Ix.Name} {sub :
     (scope_of noSelf) (fun n k hm hk => agree P prelude corder canonical b bound v.cnst.name published n k hm hk)
     (lone_refs hB stored blobs) (mk.trans mk₁.symm) rfl conv lowered
 
+set_option maxRecDepth 4096 in
 /-- **A compiled quotient constant reads in the closure's context, from every state related to
 quotient Source's, as quotient Source's unit renamed.** -/
 theorem closure_quotient_reads {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}

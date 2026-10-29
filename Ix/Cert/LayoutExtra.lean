@@ -440,6 +440,7 @@ theorem blockRec_names {rb : Ix.Kernel.Reader.BlockRead .source} {y : Ix.Kernel.
   · exact .inr (.inl ⟨e, Array.mem_def.mpr he, rfl⟩)
   · exact .inr (.inr ⟨e, Array.mem_def.mpr he, rfl⟩)
 
+set_option maxRecDepth 4096 in
 /-- **A scheduled group's lowering declares only keys over its names' quotient keys**, derived
 ones included (the generator roots every name it emits at a block name). -/
 theorem lowered_bases {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
@@ -1665,6 +1666,7 @@ theorem groupsOf_kinded (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
         exact absurd hg (Array.not_mem_empty _)
 
 
+set_option maxRecDepth 4096 in
 /-- **A definitions group converts each member at its own kind**: every converted member has
 a member's key and the kind `definitionShape` gives that member. -/
 theorem convertDefinitions_kinds {members : Array Ix.ConstantInfo} {conv : Converted}
