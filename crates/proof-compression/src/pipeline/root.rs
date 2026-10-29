@@ -11,6 +11,9 @@ use p3_field::TwoAdicField;
 use p3_symmetric::CryptographicHasher;
 use std::{fs, path::PathBuf, time::Instant};
 
+/// Layout file a normalized root carries beside its proof.
+pub(super) const FIXED_ROOT_LAYOUT: &str = "fixed-root.json";
+
 /// Compiled worker features for deployment checks.
 fn print_capabilities() {
   println!(
@@ -113,19 +116,30 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     return Ok(());
   }
   let verifier_key = VerifierKey::from_system(system);
-  let plan = super::stages::root::RootPlan::new(
-    &verifier_key,
-    &proof,
-    VerifierLimits::default(),
-  )?;
-  let compact = std::env::var_os("IX_ROOT_GENERIC_HASHES").is_none();
-  let options = ImplementationOptions { compact_blake3: compact };
   fs::write(out.join("inner-vk.bin"), verifier_key.to_bytes()?)?;
-  fs::write(out.join("plan-id.bin"), plan.identity()?)?;
-  fs::write(out.join("build-id.bin"), plan.build_identity(options)?)?;
-  fs::write(out.join("statement-schema.txt"), plan.description())?;
+  // A normalized root carries its layout; the verifier circuit then depends
+  // only on the backend and layout, never on this proof's geometry.
+  let layout_path = dir.join(FIXED_ROOT_LAYOUT);
   let start = Instant::now();
-  let prepared = plan.prepare(&proof, &claims[0], options)?;
+  let prepared = if layout_path.exists() {
+    let fixed =
+      super::stages::FixedRoot::from_json(&fs::read_to_string(&layout_path)?)?;
+    fs::write(out.join(FIXED_ROOT_LAYOUT), fixed.to_json())?;
+    fs::write(out.join("plan-id.bin"), fixed.identity(&native_key))?;
+    fixed.prepare(&native_key, &proof, &claims[0], VerifierLimits::default())?
+  } else {
+    let plan = super::stages::root::RootPlan::new(
+      &verifier_key,
+      &proof,
+      VerifierLimits::default(),
+    )?;
+    let compact = std::env::var_os("IX_ROOT_GENERIC_HASHES").is_none();
+    let options = ImplementationOptions { compact_blake3: compact };
+    fs::write(out.join("plan-id.bin"), plan.identity()?)?;
+    fs::write(out.join("build-id.bin"), plan.build_identity(options)?)?;
+    fs::write(out.join("statement-schema.txt"), plan.description())?;
+    plan.prepare(&proof, &claims[0], options)?
+  };
   let max_trace_height = 1usize << 24;
   let layout =
     prepared.circuit().multi_stark_layout_with_max_height(max_trace_height)?;
@@ -176,7 +190,6 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         );
   }
   drop(proof);
-  drop(plan);
   drop(verifier_key);
   let public = prepared.public_values().to_vec();
   let start = Instant::now();

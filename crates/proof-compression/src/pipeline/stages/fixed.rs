@@ -10,6 +10,8 @@ use multi_stark::{
 };
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
+const LAYOUT_FORMAT: &str = "ix-fixed-root-layout-v1";
+
 #[derive(Clone)]
 pub struct FixedRoot {
   log_heights: Vec<u8>,
@@ -53,6 +55,53 @@ impl FixedRoot {
       return Err("invalid fixed root configuration".into());
     }
     Ok(Self { log_heights, memory_traces, claim_len })
+  }
+
+  /// Log-heights in system circuit order.
+  pub fn log_heights(&self) -> &[u8] {
+    &self.log_heights
+  }
+
+  /// `(memory width, circuit index)` pairs, ascending by width.
+  pub fn memory_traces(&self) -> &[(usize, usize)] {
+    &self.memory_traces
+  }
+
+  /// Canonical JSON layout, readable by [`Self::from_json`].
+  pub fn to_json(&self) -> String {
+    serde_json::to_string_pretty(&serde_json::json!({
+      "format": LAYOUT_FORMAT,
+      "log_heights": self.log_heights,
+      "memory_traces": self.memory_traces,
+      "claim_len": self.claim_len,
+    }))
+    .expect("layout JSON serializes")
+  }
+
+  pub fn from_json(text: &str) -> Result<Self> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Layout {
+      format: String,
+      log_heights: Vec<u8>,
+      memory_traces: Vec<(usize, usize)>,
+      claim_len: usize,
+    }
+    let layout: Layout = serde_json::from_str(text)?;
+    if layout.format != LAYOUT_FORMAT {
+      return Err("unsupported fixed root layout format".into());
+    }
+    Self::new(layout.log_heights, layout.memory_traces, layout.claim_len)
+  }
+
+  /// Identity of the fixed verifier under `key`. It covers the backend and
+  /// layout only: no claim, proof or memory end affects it.
+  pub fn identity(&self, key: &AiurVerifyingKey) -> [u8; 32] {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"ix/fixed-root/v1");
+    hash.update(blake3::hash(&key.to_bytes()).as_bytes());
+    hash.update(self.to_json().as_bytes());
+    *hash.finalize().as_bytes()
   }
 
   fn preamble(
@@ -315,7 +364,11 @@ mod tests {
     for memories in [vec![(1, 4)], vec![(1, 1), (2, 1)], vec![(2, 1), (1, 0)]] {
       assert!(FixedRoot::new(vec![4, 1, 8, 16], memories, 5).is_err());
     }
+    assert_eq!(system.memory_circuits(), fixed.memory_traces());
+    assert_eq!(FixedRoot::from_json(&fixed.to_json())?.to_json(), fixed.to_json());
+    assert!(FixedRoot::from_json(&fixed.to_json().replace("-v1", "-v0")).is_err());
     let other = FixedRoot::new(vec![4, 2, 8, 16], vec![(1, 1)], 5)?;
+    assert_ne!(fixed.identity(&key), other.identity(&key));
     let config = || GoldilocksBlake3Config::new(cp, fp);
     let local =
       setup::fri(fixed.circuit(&key, Default::default())?, config(), 1 << 16)?;
@@ -325,6 +378,10 @@ mod tests {
         IOBuffer { data: Default::default(), map: Default::default() };
       let (record, output) =
         system.toplevel().execute(0, input.clone(), &mut io)?;
+      let logs =
+        system.normalized_log_heights(&system.execution_rows(&record), 0)?;
+      assert_eq!(&logs[2..], &[8, 16]);
+      assert!(logs.iter().zip(fixed.log_heights()).all(|(a, b)| a <= b));
       let (claim, proof) = system.prove_from_execution_normalized(
         0,
         &input,

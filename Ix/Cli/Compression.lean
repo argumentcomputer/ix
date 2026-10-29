@@ -19,10 +19,38 @@ authenticated production parameters for the compiled curve. -/
 opaque describeSetup (devSrs : Bool) : IO String
 
 /-- Run every stage into the empty directory `dir`, reusing the fixed
-preprocessing and development SRS caches under `cacheRoot`. -/
+preprocessing and development SRS caches under `cacheRoot`. A nonempty
+`fixedRoot` is the JSON layout `proof` was normalized to. -/
 @[extern "rs_compression_run"]
-opaque compress (vk proof claim statement : @& ByteArray) (dir cacheRoot : @& String)
+opaque compress (vk proof claim statement : @& ByteArray) (fixedRoot dir cacheRoot : @& String)
   (devSrs : Bool) (logHeight : UInt32) (terminalPlonk : Bool) : IO ByteArray
+
+/-- Per-circuit rows of one root wrap execution of `proof`, as a JSON array. -/
+@[extern "rs_compression_root_rows"]
+opaque rootRows (system : @& Aiur.AiurSystem) (aggrIdx : @& Nat)
+  (allowed ixvmVk claim proof : @& ByteArray) : IO String
+
+/-- The fixed root layout holding every row-count array in the JSON array
+`rows`, with `headroom` extra doublings per circuit. -/
+@[extern "rs_compression_root_layout"]
+opaque rootLayout (system : @& Aiur.AiurSystem) (rows : @& String)
+  (headroom claimLen : UInt32) : IO String
+
+/-- Wrap the aggregate root `proof` once more and prove the wrap in the fixed
+shape of `layout`; returns the normalized proof bytes. -/
+@[extern "rs_compression_normalize_root"]
+opaque normalizeRoot (system : @& Aiur.AiurSystem) (aggrIdx : @& Nat)
+  (allowed ixvmVk claim proof : @& ByteArray) (layout : @& String) : IO ByteArray
+
+/-- Write the FRI worker's root input directory `dir` without compressing. -/
+@[extern "rs_compression_write_root"]
+opaque writeRoot (vk proof claim statement : @& ByteArray) (fixedRoot dir : @& String) : IO Unit
+
+/-- Normalize `wrapper`'s aggregate root to `layout` under `backend`. -/
+def normalize (backend : Aggr.VerificationBackend) (wrapper : Ixon.Proof)
+    (layout : String) : IO ByteArray :=
+  normalizeRoot backend.system backend.aggrIdx backend.allowed backend.ixvmVk
+    (Ix.Claim.ser wrapper.claim) wrapper.proof layout
 
 /-- Verify with the verifying key compiled in under the packet's id, whose pinned
 aggregation program fixes the statement for `claim`, and return the setup

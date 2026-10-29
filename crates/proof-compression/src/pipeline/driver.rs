@@ -117,11 +117,15 @@ pub(super) fn run(args: &[String]) -> Result<()> {
       let out = Path::new(out);
       let claim = fs::read(claim)?;
       let expected = fs::read(root.join("root-claims.bin"))?;
+      let layout = root.join(super::root::FIXED_ROOT_LAYOUT);
+      let fixed_root =
+        layout.exists().then(|| fs::read_to_string(&layout)).transpose()?;
       let envelope = super::compress(
         &fs::read(root.join("root-vk.bin"))?,
         &fs::read(root.join("root-proof.bin"))?,
         &claim,
         &expected,
+        fixed_root.as_deref(),
         out,
         &out.join("cache"),
         development,

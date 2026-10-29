@@ -409,17 +409,55 @@ fn prepare_output(out: &Path) -> Result<()> {
   Ok(())
 }
 
+/// Write the FRI worker's root input for `claim` without compressing it.
+pub fn write_root_input(
+  dir: &Path,
+  vk: &[u8],
+  proof: &[u8],
+  claim: &[u8],
+  statement: &[u8],
+  fixed_root: Option<&str>,
+) -> Result<()> {
+  let words = check_claim(claim, statement)?;
+  prepare_output(dir)?;
+  write_root(dir, vk, proof, &words, fixed_root)
+}
+
+/// Write the FRI worker's root input: the backend key, root proof, expected
+/// statement and, for a normalized root, its fixed layout.
+fn write_root(
+  dir: &Path,
+  vk: &[u8],
+  proof: &[u8],
+  words: &statement::Statement,
+  fixed_root: Option<&str>,
+) -> Result<()> {
+  fs::create_dir_all(dir)?;
+  fs::write(dir.join("root-vk.bin"), vk)?;
+  fs::write(dir.join("root-proof.bin"), proof)?;
+  fs::write(dir.join("root-claims.bin"), statement::to_claims_bytes(words))?;
+  if let Some(layout) = fixed_root {
+    let fixed = FixedRoot::from_json(layout)?;
+    fs::write(dir.join(root::FIXED_ROOT_LAYOUT), fixed.to_json())?;
+  }
+  Ok(())
+}
+
 fn path_string(path: &Path) -> Result<String> {
   Ok(path.to_str().ok_or("non-UTF8 artifact path")?.to_owned())
 }
 
 /// Run FRI, first KZG and recursive KZG in separate worker processes.
 /// The output directory must be empty; interrupted stages retain checkpoints.
+/// With `fixed_root`, the root must be normalized to that layout, and the FRI
+/// verifier depends only on the backend and layout.
+#[allow(clippy::too_many_arguments)]
 pub fn compress(
   vk: &[u8],
   proof: &[u8],
   claim: &[u8],
   statement: &[u8],
+  fixed_root: Option<&str>,
   out: &Path,
   cache_root: &Path,
   development: bool,
@@ -432,10 +470,7 @@ pub fn compress(
   prepare_output(out)?;
   let caches = Caches::under(cache_root);
   let root = out.join("root");
-  fs::create_dir_all(&root)?;
-  fs::write(root.join("root-vk.bin"), vk)?;
-  fs::write(root.join("root-proof.bin"), proof)?;
-  fs::write(root.join("root-claims.bin"), statement::to_claims_bytes(&words))?;
+  write_root(&root, vk, proof, &words, fixed_root)?;
   let fri = out.join("fri");
   child(
     "fri",
@@ -606,6 +641,7 @@ mod tests {
         b"",
         b"wrong",
         &statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"wrong")),
+        None,
         Path::new("/does-not-exist"),
         Path::new("/does-not-exist"),
         true,

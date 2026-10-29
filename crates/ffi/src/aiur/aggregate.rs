@@ -36,6 +36,7 @@ use store::{load_input_proofs, persist_wrapper, wrapper_address};
 
 mod ffi;
 pub mod lanes;
+pub(crate) mod normalize;
 mod plan;
 mod prepare;
 pub(crate) mod protocol;

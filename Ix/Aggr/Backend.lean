@@ -46,6 +46,7 @@ structure VerificationBackend where
   system : Aiur.AiurSystem
   aggrIdx : Aiur.Bytecode.FunIdx
   allowed : ByteArray
+  ixvmVk : ByteArray
 
 /-- Build the two deterministic systems whose identities are committed by an
 aggregate root: the IxVM vk and the single-entrypoint recursion vk. -/
@@ -67,6 +68,7 @@ def buildVerificationBackend
     system := aggr.system
     aggrIdx
     allowed
+    ixvmVk := ixvm.vk
   }
 
 end Aggr

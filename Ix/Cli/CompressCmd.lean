@@ -31,9 +31,15 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     let vk ← match (p.flag? "root-vk").map (·.as! String) with
       | some path => IO.FS.readBinFile path
       | none => pure backend.system.vkBytes
+    let (root, layout) ← match (p.flag? "fixed-root").map (·.as! String) with
+      | some path =>
+        let layout ← IO.FS.readFile path
+        IO.eprintln s!"Normalizing aggregate root {addr} to {path}."
+        pure (← Compression.normalize backend wrapper layout, layout)
+      | none => pure (wrapper.proof, "")
     IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
-    let proof ← Compression.compress vk wrapper.proof (Ix.Claim.ser wrapper.claim) statement
-      out (← Compression.cacheDir).toString
+    let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
+      layout out (← Compression.cacheDir).toString
       (p.hasFlag "dev-srs") height.toUInt32 (p.hasFlag "plonk")
     let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
     let result ← StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
@@ -52,6 +58,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "out" : String; "Empty output directory for the stage proofs; defaults to a new directory under ~/.ix/compression."
     "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
+    "fixed-root" : String; "Normalize the root to this layout (from `ix compression layout`) first, so the verifier does not depend on the root's shape."
     "dev-srs"; "Use known-trapdoor development parameters; results are not production-secure."
     "plonk"; "Add a terminal PLONK proof using the compiled curve and selected setup."
   ARGS:

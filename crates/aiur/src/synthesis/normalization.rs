@@ -4,6 +4,60 @@ use super::*;
 use multi_stark::{batch::ShardInput, system::SystemWitness};
 
 impl AiurSystem {
+  /// Rows each circuit needs to hold `record` in one shard, in system order.
+  pub fn execution_rows(&self, record: &QueryRecord) -> Vec<usize> {
+    let plan = self.single_shard_plan(record);
+    plan.shards[0].rows.iter().map(|rows| rows.len()).collect()
+  }
+
+  /// The smallest normalization log-heights holding `rows` in each circuit,
+  /// raised by `headroom` doublings and capped at `2^26`. Fixed byte tables
+  /// keep their native heights.
+  pub fn normalized_log_heights(
+    &self,
+    rows: &[usize],
+    headroom: u8,
+  ) -> Result<Vec<u8>, String> {
+    if rows.len() != self.system.circuits.len() {
+      return Err("normalization needs one row count per circuit".into());
+    }
+    self
+      .system
+      .circuits
+      .iter()
+      .zip(rows)
+      .enumerate()
+      .map(|(i, (circuit, &rows))| {
+        if circuit.preprocessed_height != 0 {
+          return Ok(u8::try_from(circuit.preprocessed_height.ilog2())
+            .expect("log of a usize fits in u8"));
+        }
+        let log = rows.max(2).next_power_of_two().ilog2() + u32::from(headroom);
+        if log > 26 {
+          return Err(format!(
+            "normalization circuit {i} needs 2^{log} rows; at most 2^26 is supported"
+          ));
+        }
+        Ok(u8::try_from(log).expect("log is at most 26"))
+      })
+      .collect()
+  }
+
+  /// `(width, circuit index)` of every memory circuit, ascending by width.
+  pub fn memory_circuits(&self) -> Vec<(usize, usize)> {
+    let mut memories: Vec<_> = self
+      .circuit_types()
+      .iter()
+      .enumerate()
+      .filter_map(|(i, ct)| match ct {
+        CircuitType::Memory { width } => Some((*width, i)),
+        _ => None,
+      })
+      .collect();
+    memories.sort_unstable();
+    memories
+  }
+
   /// Prove one invocation in a fixed, all-active trace layout. Function and
   /// memory tables have their configured power-of-two heights; fixed byte
   /// tables retain their native heights. Empty tables are zero-padded. Memory
