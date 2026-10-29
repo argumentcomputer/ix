@@ -382,7 +382,7 @@ def compileCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
-    rust;                     "Compile with the Rust compiler instead of the certified compiler. UNCERTIFIED: the Rust compiler runs none of the certified compiler's checks, and its output is not covered by the compiler's correctness theorem (its bytes match the Lean compiler's on the reference corpora, checked by `ix compile-lean --rust-check`). Faster, especially at Mathlib scale."
+    rust;                     "Compile with the uncertified Rust compiler instead of Ix.Cert.compileReport. Shared finalization and artifact checks still run before writing the output. This backend is outside CompileCorrect; `ix compile-lean --rust-check` provides byte-comparison evidence for a selected input."
     streamed;                 "Compile with the streamed Lean pipeline instead of the certified compiler. UNCERTIFIED: only its fold is proved to be the certified compiler's; its streamed front end is tested, not proved. Kept for comparison."
     workers        : Nat;    "Worker count for the certified compiler's parallel phases (default 32). Ignored with --rust."
     "no-build";               "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
