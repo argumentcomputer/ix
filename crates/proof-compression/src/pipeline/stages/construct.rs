@@ -200,19 +200,25 @@ pub(in crate::pipeline) fn assign_foreign(
   Ok(witness.generate()?)
 }
 
+/// The first KZG stage's lowered circuit for a FRI verifier circuit, with the
+/// inputs that carry a source assignment into it.
+pub(in crate::pipeline) fn first_circuit(
+  source: Circuit<Val>,
+  height: usize,
+) -> Result<(MultiStarkCircuit<Scalar>, GoldilocksInputs)> {
+  let translated = translate(&source);
+  drop(source);
+  let compiled = lower_first(translated.circuit, height, TABLE_HEIGHT)?;
+  Ok((compiled, translated.inputs))
+}
+
 pub(in crate::pipeline) fn prepare_first(
   prepared: Prepared<Val>,
   height: usize,
-  table_height: usize,
 ) -> Result<Lowered> {
-  let translated = translate(&prepared.circuit);
-  drop(prepared.circuit);
-  let compiled = lower_first(translated.circuit, height, table_height)?;
-  let assignment = assign_foreign(
-    &translated.inputs,
-    compiled.circuit(),
-    &prepared.assignment,
-  )?;
+  let (compiled, inputs) = first_circuit(prepared.circuit, height)?;
+  let assignment =
+    assign_foreign(&inputs, compiled.circuit(), &prepared.assignment)?;
   Ok(Lowered { compiled, assignment })
 }
 

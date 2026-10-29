@@ -1,21 +1,19 @@
-//! Terminal PLONK proofs and authenticated parameter interchange.
-#[cfg(feature = "plonk")]
-#[cfg(feature = "plonk")]
-use super::gnark;
-#[cfg(any(feature = "plonk", feature = "groth16", test))]
+//! Terminal PLONK proofs under the release key, and authenticated parameter
+//! interchange.
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 use super::statement;
-#[cfg(any(feature = "plonk", test))]
-use super::storage;
-#[cfg(test)]
-use super::terminal::Scratch;
 #[cfg(feature = "plonk")]
-use super::terminal::{claim_digest, read_bounded, sha256};
-#[cfg(any(feature = "plonk", test))]
+use super::storage;
+#[cfg(feature = "plonk")]
+use super::terminal::{claim_digest, sha256};
+#[cfg(feature = "plonk")]
 use super::terminal::{digest, hex, load_json};
 use super::{Result, setup::SetupClass};
+#[cfg(feature = "plonk")]
+use super::{gnark, verifying_keys};
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 use super::{setup::SetupConfig, wrap};
-#[cfg(any(feature = "plonk", test))]
+#[cfg(feature = "plonk")]
 use ark_ff::{BigInteger, PrimeField};
 #[cfg(feature = "plonk")]
 use sha2::{Digest, Sha256};
@@ -23,43 +21,13 @@ use sha2::{Digest, Sha256};
 use std::fs;
 #[cfg(feature = "plonk")]
 use std::io::Write;
-#[cfg(any(feature = "plonk", feature = "groth16", test))]
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 use std::path::Path;
-#[cfg(any(feature = "plonk", test))]
+#[cfg(feature = "plonk")]
 use std::path::PathBuf;
 
 pub(super) const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x02";
-#[cfg(any(feature = "plonk", test))]
-const CATALOG_FORMAT: &str = "ix-bn254-plonk-verifiers-v1";
-#[cfg(any(feature = "plonk", test))]
-const SETUP_NAME: &str = "ignition";
-#[cfg(feature = "plonk")]
-const CATALOG_VAR: &str = "IX_PLONK_VERIFIER_CATALOG";
 const MAX_PROOF_BYTES: usize = 1 << 20;
-
-#[cfg(any(feature = "plonk", test))]
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TrustedCatalog {
-  format: String,
-  keys: Vec<TrustedKey>,
-}
-
-#[cfg(any(feature = "plonk", test))]
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TrustedKey {
-  sha256: String,
-  path: PathBuf,
-  inner_vk_id: String,
-  statement_prefix: [u64; 10],
-  circuit_sha256: String,
-  setup: String,
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  admission: Option<PathBuf>,
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  admission_blake3: Option<String>,
-}
 
 #[cfg(feature = "plonk")]
 fn setup_manifest(config: &SetupConfig) -> Result<[u8; 32]> {
@@ -75,7 +43,7 @@ fn anchors(config: &SetupConfig) -> Result<crate::kzg::Srs> {
   Ok(config.ignition_admission().ok_or("missing Ignition admission")?.anchors())
 }
 
-#[cfg(any(feature = "plonk", test))]
+#[cfg(feature = "plonk")]
 fn encode_g2(point: crate::kzg::curve::G2Affine) -> Vec<u8> {
   let mut bytes = Vec::new();
   for value in [point.x.c0, point.x.c1, point.y.c0, point.y.c1] {
@@ -84,7 +52,7 @@ fn encode_g2(point: crate::kzg::curve::G2Affine) -> Vec<u8> {
   bytes
 }
 
-#[cfg(any(feature = "plonk", test))]
+#[cfg(feature = "plonk")]
 fn anchor_encoding(srs: &crate::kzg::Srs) -> Vec<u8> {
   let mut bytes = Vec::new();
   for value in [srs.g1[0].x, srs.g1[0].y] {
@@ -95,71 +63,6 @@ fn anchor_encoding(srs: &crate::kzg::Srs) -> Vec<u8> {
   bytes
 }
 
-#[cfg(any(feature = "plonk", test))]
-fn key_anchors(key: &TrustedKey) -> Result<crate::kzg::Srs> {
-  {
-    Ok(
-      crate::kzg::srs::ignition::IgnitionAdmission::read(
-        key.admission.as_ref().ok_or("missing trusted admission path")?,
-        digest(
-          key
-            .admission_blake3
-            .as_ref()
-            .ok_or("missing trusted admission pin")?,
-        )?,
-      )?
-      .anchors(),
-    )
-  }
-}
-
-#[cfg(any(feature = "plonk", test))]
-fn select_key(path: &Path, id: &[u8; 32]) -> Result<TrustedKey> {
-  let catalog: TrustedCatalog = load_json(path)?;
-  if catalog.format != CATALOG_FORMAT {
-    return Err("unsupported PLONK verifier catalog".into());
-  }
-  let mut selected = None;
-  let mut seen = std::collections::BTreeSet::new();
-  for key in catalog.keys {
-    let key_id = digest(&key.sha256)?;
-    digest(&key.inner_vk_id)?;
-    digest(&key.circuit_sha256)?;
-    if !seen.insert(key_id) {
-      return Err("duplicate PLONK verifier key in catalog".into());
-    }
-    if key.setup != SETUP_NAME {
-      return Err("PLONK catalog setup class differs".into());
-    }
-    {
-      digest(
-        key.admission_blake3.as_ref().ok_or("missing trusted admission pin")?,
-      )?;
-      if key.admission.is_none() {
-        return Err("missing trusted admission path".into());
-      }
-    }
-    let words = statement::with_claim(&key.statement_prefix, b"");
-    statement::from_claims_bytes(&statement::to_claims_bytes(&words))?;
-    if key_id == *id {
-      selected = Some(key);
-    }
-  }
-  let mut key = selected.ok_or(
-    "PLONK proof uses a verification key not authorized by the catalog",
-  )?;
-  if key.path.is_relative() {
-    key.path = path.parent().unwrap_or_else(|| Path::new(".")).join(&key.path);
-  }
-  if let Some(admission) = &mut key.admission
-    && admission.is_relative()
-  {
-    *admission =
-      path.parent().unwrap_or_else(|| Path::new(".")).join(&*admission);
-  }
-  Ok(key)
-}
-
 #[cfg(not(feature = "plonk"))]
 pub(super) fn verify(packet: &[u8], _claim: &[u8]) -> Result<SetupClass> {
   if packet.len() <= 32 || packet.len() > MAX_PROOF_BYTES + 32 {
@@ -168,30 +71,28 @@ pub(super) fn verify(packet: &[u8], _claim: &[u8]) -> Result<SetupClass> {
   Err("PLONK proofs are verified by gnark, and this ix was built without PLONK; rebuild with IX_PLONK=1".into())
 }
 
+/// Verify a PLONK packet of `claim` under the release's PLONK key.
 #[cfg(feature = "plonk")]
 pub(super) fn verify(packet: &[u8], claim: &[u8]) -> Result<SetupClass> {
   if packet.len() <= 32 || packet.len() > MAX_PROOF_BYTES + 32 {
     return Err("invalid PLONK packet length".into());
   }
-  let id = packet[..32].try_into()?;
-  let catalog =
-    std::env::var_os(CATALOG_VAR).map(PathBuf::from).ok_or_else(|| {
-      format!(
-        "set {CATALOG_VAR} to an independently trusted PLONK verifier catalog"
-      )
-    })?;
-  let key = select_key(&catalog, id)?;
-  if fs::metadata(&key.path)?.len() > 1 << 20 {
-    return Err("PLONK verification key is too large".into());
+  let id: [u8; 32] = packet[..32].try_into()?;
+  if id != digest(verifying_keys::PLONK_VK_SHA256)? {
+    return Err(
+      "PLONK proof uses a verifying key other than the release key".into(),
+    );
   }
-  let expected = *blake3::hash(claim).as_bytes();
-  let anchor_bytes = anchor_encoding(&key_anchors(&key)?);
+  if Sha256::digest(verifying_keys::PLONK_VK).as_slice() != id {
+    return Err("bundled PLONK verifying key differs from its pin".into());
+  }
+  let anchors = anchor_encoding(&verifying_keys::admission()?.anchors());
   gnark::verify(
-    &read_bounded(&key.path, 1 << 20)?,
-    id,
+    verifying_keys::PLONK_VK,
+    &id,
     &packet[32..],
-    &expected,
-    &anchor_bytes,
+    blake3::hash(claim).as_bytes(),
+    &anchors,
   )?;
   Ok(SetupClass::Ignition)
 }
@@ -313,17 +214,6 @@ fn cached_parameters(
 }
 
 #[cfg(feature = "plonk")]
-fn metadata_string<'a>(
-  value: &'a serde_json::Value,
-  field: &str,
-) -> Result<&'a str> {
-  value
-    .get(field)
-    .and_then(serde_json::Value::as_str)
-    .ok_or_else(|| format!("missing PLONK metadata field {field}").into())
-}
-
-#[cfg(feature = "plonk")]
 fn artifact(path: &Path) -> Result<gnark::Artifact> {
   Ok(gnark::Artifact {
     sha256: hex(&sha256(path)?),
@@ -369,12 +259,11 @@ pub(super) fn proving_backend() -> Result<gnark::Backend> {
 
 #[cfg(feature = "plonk")]
 fn prepare_artifacts(
-  vk: &Path,
+  schema: &[u8],
   setup: &SetupConfig,
   cache_root: &Path,
 ) -> Result<(PathBuf, gnark::Manifest)> {
-  let schema = fs::read(vk)?;
-  let schema_hash = hex(&Sha256::digest(&schema));
+  let schema_hash = hex(&Sha256::digest(schema));
   // `go.sum` pins the gnark that compiles the circuit and serializes its keys.
   let mut identity = blake3::Hasher::new();
   identity.update(b"ix/plonk-circuit-cache/v2");
@@ -395,8 +284,8 @@ fn prepare_artifacts(
     }
     metadata
   } else {
-    storage::write_atomic(&dir.join("vk.json"), &schema)?;
-    let info = gnark::compile(&schema, &dir.join("circuit.bin"))?;
+    storage::write_atomic(&dir.join("vk.json"), schema)?;
+    let info = gnark::compile(schema, &dir.join("circuit.bin"))?;
     let metadata = gnark::Manifest {
       inner_vk_sha256: schema_hash,
       srs_blake3: String::new(),
@@ -447,7 +336,7 @@ fn prepare_artifacts(
       String::new()
     };
     gnark::prepare(&gnark::Preparation {
-      schema: &schema,
+      schema,
       circuit: &dir.join("circuit.bin"),
       circuit_hash: metadata
         .files
@@ -484,9 +373,41 @@ fn prepare_artifacts(
   Ok((dir, metadata))
 }
 
+/// Derive the PLONK verifying key for the recursive verifying key
+/// `recursive_vk` and statement prefix `prefix` without a proof: compile the
+/// verifier description `wrap_packet` proves and set its keys up under
+/// `setup`'s Ignition parameters, caching them under `cache_root` as
+/// `wrap_packet` does.
+#[cfg(feature = "plonk")]
+pub fn derive_verifying_key(
+  recursive_vk: &[u8],
+  prefix: &[u64; 10],
+  setup: &SetupConfig,
+  cache_root: &Path,
+) -> Result<Vec<u8>> {
+  let vk = wrap::VerifyingKey::from_bytes(recursive_vk)?;
+  vk.check_ignition_admission(
+    setup
+      .ignition_admission()
+      .ok_or("PLONK requires admitted Ignition parameters")?,
+  )?;
+  let schema = wrap::plonk_description(&vk, prefix)?;
+  let (dir, metadata) = prepare_artifacts(&schema, setup, cache_root)?;
+  let key = fs::read(dir.join("verifying-key.bin"))?;
+  let recorded = &metadata
+    .files
+    .get("verifying-key.bin")
+    .ok_or("missing verifying key hash")?
+    .sha256;
+  if hex(&Sha256::digest(&key)) != *recorded {
+    return Err("cached PLONK verifying key differs from its manifest".into());
+  }
+  Ok(key)
+}
+
 /// Prove the recursive KZG packet in `packet` in PLONK and write its
-/// envelope, native and Solidity proofs, verifying key and candidate catalog
-/// entry to the empty directory `out`. Compiled circuits, keys and parameter
+/// envelope, native and Solidity proofs and verifying key to the empty
+/// directory `out`. Compiled circuits, keys and parameter
 /// exports are cached under `cache_root`.
 #[cfg(feature = "plonk")]
 pub(super) fn wrap_packet(
@@ -516,9 +437,8 @@ pub(super) fn wrap_packet(
     &input,
     setup,
   )?;
-  let vk_path = input.join("vk.json");
-  let exported: serde_json::Value = load_json(&vk_path)?;
-  let (cache, metadata) = prepare_artifacts(&vk_path, setup, cache_root)?;
+  let (cache, metadata) =
+    prepare_artifacts(&fs::read(input.join("vk.json"))?, setup, cache_root)?;
   let started = Instant::now();
   let mut prover = gnark::Prover::open(&cache, &metadata, backend)?;
   let load_seconds = started.elapsed().as_secs_f64();
@@ -554,35 +474,6 @@ pub(super) fn wrap_packet(
     &out.join("PlonkVerifier.sol"),
     &fs::read(cache.join("PlonkVerifier.sol"))?,
   )?;
-  let admission_bytes = setup
-    .ignition_admission()
-    .ok_or("missing Ignition admission")?
-    .to_bytes()?;
-  storage::write_atomic(&out.join("admission.json"), &admission_bytes)?;
-  let candidate = TrustedCatalog {
-    format: CATALOG_FORMAT.into(),
-    keys: vec![TrustedKey {
-      sha256: key_hash.clone(),
-      path: "verifying-key.bin".into(),
-      inner_vk_id: metadata_string(&exported, "vkId")?.into(),
-      statement_prefix: expected[..10].try_into()?,
-      circuit_sha256: metadata
-        .files
-        .get("circuit.bin")
-        .ok_or("missing circuit hash")?
-        .sha256
-        .clone(),
-      setup: SETUP_NAME.into(),
-      admission: Some("admission.json".into()),
-      admission_blake3: Some(
-        blake3::hash(&admission_bytes).to_hex().to_string(),
-      ),
-    }],
-  };
-  storage::write_atomic(
-    &out.join("verifier-catalog.candidate.json"),
-    &serde_json::to_vec_pretty(&candidate)?,
-  )?;
   storage::write_atomic(
     &out.join("report.json"),
     &serde_json::to_vec_pretty(
@@ -598,50 +489,15 @@ mod bn254_tests {
   use super::*;
 
   #[test]
-  fn catalog_requires_pinned_ignition_anchors_without_a_proving_cache()
-  -> Result<()> {
-    let scratch = Scratch::new()?;
-    let (admission, _) = crate::kzg::srs::ignition::test_admission(7, 8, 41);
-    let bytes = admission.to_bytes()?;
-    let pin = blake3::hash(&bytes).to_hex().to_string();
-    storage::write_atomic(&scratch.0.join("admission.json"), &bytes)?;
-    let mut catalog = TrustedCatalog {
-      format: CATALOG_FORMAT.into(),
-      keys: vec![TrustedKey {
-        sha256: hex(&[1; 32]),
-        path: "key.bin".into(),
-        inner_vk_id: hex(&[2; 32]),
-        statement_prefix: [0; 10],
-        circuit_sha256: hex(&[3; 32]),
-        setup: "ignition".into(),
-        admission: Some("admission.json".into()),
-        admission_blake3: Some(pin),
-      }],
-    };
-    let path = scratch.0.join("catalog.json");
-    let write = |catalog: &TrustedCatalog| {
-      storage::write_atomic(&path, &serde_json::to_vec(catalog).unwrap())
-    };
-    write(&catalog)?;
-    let key = select_key(&path, &[1; 32])?;
-    assert_eq!(
-      anchor_encoding(&key_anchors(&key)?),
-      anchor_encoding(&admission.anchors())
-    );
-    assert!(select_key(&path, &[9; 32]).is_err());
-    catalog.keys[0].admission_blake3 = Some(hex(&[0; 32]));
-    write(&catalog)?;
-    assert!(key_anchors(&select_key(&path, &[1; 32])?).is_err());
-    catalog.keys[0].admission = None;
-    write(&catalog)?;
-    assert!(select_key(&path, &[1; 32]).is_err());
-    catalog.keys[0].setup = "filecoin".into();
-    write(&catalog)?;
-    assert!(select_key(&path, &[1; 32]).is_err());
-    catalog.format = "ix-bls-plonk-verifiers-v1".into();
-    write(&catalog)?;
-    assert!(select_key(&path, &[1; 32]).is_err());
+  fn plonk_packets_are_tagged_and_bounded() {
     assert_eq!(PROOF_TAG, b"IXBN\0\0\0\x02");
-    Ok(())
+    assert!(verify(&[0; 32], b"claim").is_err());
+  }
+
+  #[test]
+  #[cfg(feature = "plonk")]
+  fn other_keys_are_rejected() {
+    let error = verify(&[1; 64], b"claim").unwrap_err();
+    assert!(error.to_string().contains("other than the release key"));
   }
 }

@@ -13,16 +13,19 @@ use multi_stark::plonkish::{Assignment, MultiStarkCircuit};
 #[cfg(test)]
 use multi_stark::traits::Field;
 use multi_stark::traits::TwoAdicField;
+use multi_stark::types::Val;
+use p3_field::PrimeCharacteristicRing;
 use std::{fs, path::Path, time::Instant};
 
+#[cfg(test)]
+use super::init_claim;
 use super::stages::construct::{self, FriConstruction, Lowered, max_height};
 use super::{
   fixed_cache::FixedCache,
-  setup::{FIRST_SEED, SetupClass},
+  prover::FixedSetup,
+  setup::{FIRST_SEED, SetupClass, SetupSource},
   storage,
 };
-#[cfg(test)]
-use super::{init_claim, setup::SetupSource};
 use super::{init_fri, prover};
 
 /// Partitions of the supported Init layout: ten carry the public words and
@@ -57,8 +60,7 @@ pub(super) fn run(
   )?;
   assert_eq!(prepared.public_values(), fixture.public);
   let public = super::stages::scalar_statement(&fixture.public);
-  let lowered =
-    construct::prepare_first(prepared, trace_height, construct::TABLE_HEIGHT)?;
+  let lowered = construct::prepare_first(prepared, trace_height)?;
   assert_eq!(lowered.assignment.public_values(), public);
   eprintln!(
     "Scalar translation and lowering of {} circuits: {:?}; {:?}",
@@ -82,6 +84,48 @@ pub(super) fn run(
   prove(out, lowered, &cache, config)?;
   eprintln!("RUN COMPLETE: {:?}", start.elapsed());
   Ok(())
+}
+
+/// The KZG configuration the first stage commits and proves under.
+fn proving_config(
+  setup: &SetupSource,
+  height: usize,
+) -> storage::Result<crate::kzg::KzgConfig> {
+  Ok(
+    setup
+      .config(height, 2, false)?
+      .with_streaming_lookups()
+      .with_streaming_quotient(),
+  )
+}
+
+/// The first stage's fixed setup for the FRI stage `fri` at trace height
+/// `2^log_height`, derived without a proof: its manifest, with claims for a
+/// zero statement, and each partition's circuit and fixed commitment, as
+/// `run` stages and commits them.
+pub(super) fn setup(
+  fri: &super::stages::FriVerifier,
+  log_height: usize,
+  config: &super::SetupConfig,
+) -> storage::Result<(storage::Manifest, Vec<FixedSetup>)> {
+  let plan = VerifierPlan::validate(
+    &fri.key,
+    construct::fri_profile(&fri.key, &fri.statement.template)?,
+    VerifierLimits::default(),
+  )?;
+  let circuit = FriConstruction::build(&plan, fri.statement.schema())?.circuit;
+  drop(plan);
+  let (compiled, _inputs) = construct::first_circuit(circuit, 1 << log_height)?;
+  let height = max_height(&compiled)?;
+  let setup = config.for_stage(FIRST_SEED, height)?;
+  let public = super::stages::scalar_statement(&[Val::ZERO; 18]);
+  let manifest = storage::Manifest::for_compiled(
+    &compiled,
+    compiled.claims(&public)?,
+    None,
+  )?;
+  let parts = prover::fixed_setup(&proving_config(&setup, height)?, &compiled)?;
+  Ok((manifest, parts))
 }
 
 /// Commit the fixed and witness traces of every partition, prove them
@@ -138,34 +182,33 @@ fn prove(
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let start = Instant::now();
   let prefetch_bytes = config.prefetch_bytes;
-  let config = setup
-    .config(height, 2, false)?
-    .with_streaming_lookups()
-    .with_streaming_quotient();
+  let config = proving_config(&setup, height)?;
   eprintln!("KZG parameters ready: {:?}", start.elapsed());
   eprintln!("Partition prefetch budget: {} GiB", prefetch_bytes >> 30);
   let prover::Proved { system, bytes, verify_seconds, .. } = lowered
     .commit(config, Some(&out), prefetch_bytes)?
     .prove(&manifest.claims)?;
   let output_span = tracing::info_span!("compression/write_output").entered();
-  // The label is part of every published verifying key id and predates the
-  // Ignition setup; the setup class is bound through the transcript seed.
-  let mut vk = blake3::Hasher::new();
-  vk.update(b"init-fri-kzg-bn254/v1/development-srs/quotient2");
-  vk.update(system.config.transcript_seed());
-  vk.update(&plan_id);
-  vk.update(&fs::read(dir.join("manifest.bin"))?);
+  // Identifies this proof instance, not its key: the manifest holds the claim
+  // rows. Recursion verifies the proof against the setup files, so the
+  // identity need not be claim-independent. The label predates the Ignition
+  // setup; the setup class is bound through the transcript seed.
+  let mut instance = blake3::Hasher::new();
+  instance.update(b"init-fri-kzg-bn254/v1/development-srs/quotient2");
+  instance.update(system.config.transcript_seed());
+  instance.update(&plan_id);
+  instance.update(&fs::read(dir.join("manifest.bin"))?);
   for i in 0..count {
-    vk.update(&fs::read(out.join(format!("setup-{i}.bin")))?);
+    instance.update(&fs::read(out.join(format!("setup-{i}.bin")))?);
   }
-  let vk = *vk.finalize().as_bytes();
-  let mut packet = vk.to_vec();
+  let instance = *instance.finalize().as_bytes();
+  let mut packet = instance.to_vec();
   for claim in &manifest.claims[1..19] {
     packet.extend_from_slice(&claim[3].canonical_limbs_le()[0].to_le_bytes());
   }
   packet.extend_from_slice(&bytes);
   storage::write_atomic(&out.join("proof.compact.bin"), &bytes)?;
-  storage::write_atomic(&out.join("vk-id.bin"), &vk)?;
+  storage::write_atomic(&out.join("instance-id.bin"), &instance)?;
   storage::write_atomic(&out.join("packet.bin"), &packet)?;
   let development = setup.class() == SetupClass::Development;
   let public_setup = system.config.pcs().public_setup();
@@ -213,7 +256,7 @@ mod tests {
 
   fn artifacts(directory: &Path) -> storage::Result<Vec<Vec<u8>>> {
     Ok(
-      ["proof.compact.bin", "packet.bin", "vk-id.bin"]
+      ["proof.compact.bin", "packet.bin", "instance-id.bin"]
         .into_iter()
         .map(|name| fs::read(directory.join("kzg").join(name)))
         .collect::<Result<_, _>>()?,

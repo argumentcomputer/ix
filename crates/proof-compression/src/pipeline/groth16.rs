@@ -1,17 +1,18 @@
-//! Terminal BN254 Groth16 proofs under independently admitted circuit keys.
+//! Terminal BN254 Groth16 proofs under the release key.
 #[cfg(feature = "groth16")]
 use super::gnark;
-#[cfg(any(feature = "groth16", test))]
+#[cfg(feature = "groth16")]
 use super::storage;
-#[cfg(test)]
+#[cfg(all(test, feature = "groth16"))]
 use super::terminal::Scratch;
 #[cfg(feature = "groth16")]
-use super::terminal::sha256;
+use super::terminal::{hex, sha256};
 use super::{
   Result,
   setup::SetupClass,
   statement,
-  terminal::{Artifact, digest, hex, load_json},
+  terminal::{Artifact, digest, load_json},
+  verifying_keys,
 };
 #[cfg(feature = "groth16")]
 use super::{
@@ -21,108 +22,52 @@ use super::{
 };
 #[cfg(feature = "groth16")]
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "groth16")]
+use std::path::Path;
+use std::path::PathBuf;
 
 pub(super) const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x03";
-const CATALOG_FORMAT: &str = "ix-bn254-groth16-verifiers-v1";
-const CATALOG_VAR: &str = "IX_GROTH16_VERIFIER_CATALOG";
 const ARTIFACTS_VAR: &str = "IX_GROTH16_ARTIFACTS";
 const MAX_PROOF_BYTES: usize = 196;
 
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TrustedCatalog {
-  format: String,
-  keys: Vec<TrustedKey>,
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TrustedKey {
-  sha256: String,
-  path: PathBuf,
-  inner_vk_id: String,
-  inner_schema_sha256: String,
-  statement_prefix: [u64; 10],
-  circuit_sha256: String,
-  setup: String,
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  ceremony_sha256: Option<String>,
-}
-
-impl TrustedKey {
-  fn setup_class(&self, allow_development: bool) -> Result<SetupClass> {
-    match self.setup.as_str() {
-      "mpc" => {
-        digest(self.ceremony_sha256.as_deref().ok_or("missing Groth16 ceremony identity")?)?;
-        Ok(SetupClass::Groth16)
-      },
-      "development" if allow_development && self.ceremony_sha256.is_none() => Ok(SetupClass::Development),
-      "development" => Err("development Groth16 keys require explicit --allow-development or --dev-srs verification".into()),
-      _ => Err("unsupported Groth16 setup class".into()),
-    }
+fn check_length(packet: &[u8]) -> Result<()> {
+  if packet.len() != 164 + 32 && packet.len() != MAX_PROOF_BYTES + 32 {
+    return Err("invalid Groth16 packet length".into());
   }
+  Ok(())
 }
 
-fn catalog_path() -> Result<PathBuf> {
-  std::env::var_os(CATALOG_VAR).map(PathBuf::from).ok_or_else(|| {
-    format!(
-      "set {CATALOG_VAR} to an independently trusted Groth16 verifier catalog"
-    )
-    .into()
-  })
-}
-
-fn select_key(
-  path: &Path,
-  id: &[u8; 32],
-  allow_development: bool,
-) -> Result<TrustedKey> {
-  let catalog: TrustedCatalog = load_json(path)?;
-  if catalog.format != CATALOG_FORMAT {
-    return Err("unsupported Groth16 verifier catalog".into());
-  }
-  let mut selected = None;
-  let mut seen = std::collections::BTreeSet::new();
-  for mut key in catalog.keys {
-    let key_id = digest(&key.sha256)?;
-    key.sha256 = hex(&key_id);
-    key.inner_vk_id = hex(&digest(&key.inner_vk_id)?);
-    key.inner_schema_sha256 = hex(&digest(&key.inner_schema_sha256)?);
-    key.circuit_sha256 = hex(&digest(&key.circuit_sha256)?);
-    if let Some(value) = &mut key.ceremony_sha256 {
-      *value = hex(&digest(value)?);
-    }
-    if !seen.insert(key_id) {
-      return Err("duplicate Groth16 verifying key in catalog".into());
-    }
-    let words = statement::with_claim(&key.statement_prefix, b"");
-    statement::from_claims_bytes(&statement::to_claims_bytes(&words))?;
-    key.setup_class(true)?;
-    if key_id == *id {
-      key.setup_class(allow_development)?;
-      if key.path.is_relative() {
-        key.path =
-          path.parent().unwrap_or_else(|| Path::new(".")).join(&key.path);
-      }
-      selected = Some(key);
-    }
-  }
-  selected.ok_or(
-    "Groth16 proof uses a verifying key not authorized by the catalog".into(),
-  )
-}
-
+/// Verify a Groth16 packet of `claim` under the release key.
 #[cfg(feature = "groth16")]
 pub(super) fn verify(
   packet: &[u8],
   claim: &[u8],
   allow_development: bool,
 ) -> Result<SetupClass> {
-  if packet.len() != 164 + 32 && packet.len() != MAX_PROOF_BYTES + 32 {
-    return Err("invalid Groth16 packet length".into());
+  check_length(packet)?;
+  if packet[..32] != verifying_keys::decode(verifying_keys::GROTH16_VK_SHA256) {
+    return Err(
+      "Groth16 proof uses a verifying key other than the release key".into(),
+    );
   }
-  verify_with_catalog(packet, claim, &catalog_path()?, allow_development)
+  if <sha2::Sha256 as sha2::Digest>::digest(verifying_keys::GROTH16_VK)
+    .as_slice()
+    != &packet[..32]
+  {
+    return Err("bundled Groth16 verifying key differs from its pin".into());
+  }
+  verify_under(verifying_keys::GROTH16_VK, packet, claim)?;
+  verifying_keys::groth16_setup(allow_development)
+}
+
+#[cfg(feature = "groth16")]
+fn verify_under(key: &[u8], packet: &[u8], claim: &[u8]) -> Result<()> {
+  gnark::verify_groth16(
+    key,
+    packet[..32].try_into()?,
+    &packet[32..],
+    blake3::hash(claim).as_bytes(),
+  )
 }
 
 #[cfg(not(feature = "groth16"))]
@@ -131,32 +76,8 @@ pub(super) fn verify(
   _claim: &[u8],
   _allow_development: bool,
 ) -> Result<SetupClass> {
-  if packet.len() != 164 + 32 && packet.len() != MAX_PROOF_BYTES + 32 {
-    return Err("invalid Groth16 packet length".into());
-  }
+  check_length(packet)?;
   Err("Groth16 proofs are verified by gnark, and this ix was built without Groth16; rebuild with IX_GROTH16=1".into())
-}
-
-#[cfg(feature = "groth16")]
-fn verify_with_catalog(
-  packet: &[u8],
-  claim: &[u8],
-  catalog: &Path,
-  allow_development: bool,
-) -> Result<SetupClass> {
-  if packet.len() != 164 + 32 && packet.len() != MAX_PROOF_BYTES + 32 {
-    return Err("invalid Groth16 packet length".into());
-  }
-  let id = packet[..32].try_into()?;
-  let key = select_key(catalog, id, allow_development)?;
-  let expected = *blake3::hash(claim).as_bytes();
-  gnark::verify_groth16(
-    &read_bounded(&key.path, 1 << 20)?,
-    id,
-    &packet[32..],
-    &expected,
-  )?;
-  key.setup_class(allow_development)
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -231,7 +152,9 @@ impl Metadata {
   }
 }
 
-fn prepared(allow_development: bool) -> Result<(PathBuf, TrustedKey)> {
+/// The prepared artifacts `IX_GROTH16_ARTIFACTS` names, which must be the
+/// release circuit and key.
+fn prepared(allow_development: bool) -> Result<PathBuf> {
   let dir =
     std::env::var_os(ARTIFACTS_VAR).map(PathBuf::from).ok_or_else(|| {
       format!("set {ARTIFACTS_VAR} to prepared Groth16 circuit artifacts")
@@ -241,25 +164,23 @@ fn prepared(allow_development: bool) -> Result<(PathBuf, TrustedKey)> {
   if !m.keys_ready {
     return Err("Groth16 keys are not prepared".into());
   }
-  let key = select_key(
-    &catalog_path()?,
-    &digest(&m.artifact("verifying-key.bin")?.sha256)?,
-    allow_development,
-  )?;
-  if m.inner_vk != key.inner_schema_sha256
-    || m.artifact("vk.json")?.sha256 != key.inner_schema_sha256
-    || m.artifact("circuit.bin")?.sha256 != key.circuit_sha256
-    || m.setup != key.setup
-    || m.ceremony != key.ceremony_sha256
+  if m.artifact("verifying-key.bin")?.sha256
+    != verifying_keys::GROTH16_VK_SHA256
+    || m.inner_vk != verifying_keys::TERMINAL_SCHEMA_SHA256
+    || m.artifact("circuit.bin")?.sha256
+      != verifying_keys::GROTH16_CIRCUIT_SHA256
+    || m.setup != "development"
+    || m.ceremony.is_some()
   {
     return Err(
-      "Groth16 artifacts differ from the admitted circuit and setup".into(),
+      "Groth16 artifacts differ from the release circuit and key".into(),
     );
   }
   for name in ["proving-key.bin", "Groth16Verifier.sol"] {
     m.artifact(name)?;
   }
-  Ok((dir, key))
+  verifying_keys::groth16_setup(allow_development)?;
+  Ok(dir)
 }
 
 pub(super) fn preflight(allow_development: bool) -> Result<()> {
@@ -275,10 +196,10 @@ pub(super) fn check_statement(
   expected: &statement::Statement,
   allow_development: bool,
 ) -> Result<()> {
-  let (_, key) = prepared(allow_development)?;
-  if expected[..10] != key.statement_prefix {
+  prepared(allow_development)?;
+  if expected[..10] != verifying_keys::STATEMENT_PREFIX {
     return Err(
-      "Groth16 catalog authorizes another aggregation program".into(),
+      "the release Groth16 key proves another aggregation program".into(),
     );
   }
   Ok(())
@@ -298,9 +219,11 @@ pub(super) fn wrap_packet(
   setup: &SetupConfig,
 ) -> Result<()> {
   statement::from_claims_bytes(&statement::to_claims_bytes(expected))?;
-  let (artifacts, key) = prepared(allow_development)?;
-  if expected[..10] != key.statement_prefix {
-    return Err("Groth16 key does not authorize this inner verifier and aggregation program".into());
+  let artifacts = prepared(allow_development)?;
+  if expected[..10] != verifying_keys::STATEMENT_PREFIX {
+    return Err(
+      "the release Groth16 key proves another aggregation program".into(),
+    );
   }
   fs::create_dir_all(out)?;
   if fs::read_dir(out)?.next().is_some() {
@@ -311,8 +234,10 @@ pub(super) fn wrap_packet(
   let exported: serde_json::Value = load_json(&input.join("vk.json"))?;
   let inner_id =
     exported["vkId"].as_str().ok_or("missing exported inner key identity")?;
-  if digest(inner_id)? != digest(&key.inner_vk_id)?
-    || sha256(&input.join("vk.json"))? != digest(&key.inner_schema_sha256)?
+  if digest(inner_id)?
+    != verifying_keys::decode(verifying_keys::RECURSIVE_VK_ID)
+    || sha256(&input.join("vk.json"))?
+      != verifying_keys::decode(verifying_keys::TERMINAL_SCHEMA_SHA256)
   {
     return Err(
       "Groth16 circuit was compiled for a different verifier description"
@@ -321,9 +246,10 @@ pub(super) fn wrap_packet(
   }
   let claim = claim_digest(expected)?;
   prove(&artifacts, &input.join("witness.json"), &claim, out)?;
+  let key_id = verifying_keys::decode(verifying_keys::GROTH16_VK_SHA256);
   gnark::verify_groth16(
-    &read_bounded(&key.path, 1 << 20)?,
-    &digest(&key.sha256)?,
+    verifying_keys::GROTH16_VK,
+    &key_id,
     &read_bounded(&out.join("proof.bin"), MAX_PROOF_BYTES)?,
     &claim,
   )?;
@@ -332,7 +258,7 @@ pub(super) fn wrap_packet(
     return Err("invalid native Groth16 proof length".into());
   }
   let mut envelope = PROOF_TAG.to_vec();
-  envelope.extend(digest(&key.sha256)?);
+  envelope.extend(key_id);
   envelope.extend(proof);
   for name in ["verifying-key.bin", "Groth16Verifier.sol"] {
     storage::write_atomic(&out.join(name), &fs::read(artifacts.join(name))?)?;
@@ -518,100 +444,21 @@ mod tests {
     );
     let mut packet = id.to_vec();
     packet.extend(bytes);
-    let key = TrustedKey {
-      sha256: hex(&id),
-      path: vk.clone(),
-      inner_vk_id: provenance["inner_vk_id"].as_str().unwrap().into(),
-      inner_schema_sha256: provenance["inner_schema_sha256"]
-        .as_str()
-        .unwrap()
-        .into(),
-      statement_prefix: serde_json::from_value(
-        provenance["statement_prefix"].clone(),
-      )?,
-      circuit_sha256: provenance["circuit_sha256"].as_str().unwrap().into(),
-      setup: "development".into(),
-      ceremony_sha256: None,
-    };
-    let scratch = Scratch::new()?;
-    let catalog = scratch.0.join("catalog.json");
-    storage::write_atomic(
-      &catalog,
-      &serde_json::to_vec(&TrustedCatalog {
-        format: CATALOG_FORMAT.into(),
-        keys: vec![key],
-      })?,
-    )?;
-    assert!(verify_with_catalog(&packet, claim, &catalog, false).is_err());
-    assert_eq!(
-      verify_with_catalog(&packet, claim, &catalog, true)?,
-      SetupClass::Development
-    );
-    assert!(
-      verify_with_catalog(&packet, b"another claim", &catalog, true).is_err()
-    );
-    let mut wrong_key = fs::read(&vk)?;
+    let key = fs::read(&vk)?;
+    verify_under(&key, &packet, claim)?;
+    assert!(verify_under(&key, &packet, b"another claim").is_err());
+    assert!(verify(&packet, claim, true).is_err());
+    let mut wrong_key = key.clone();
     wrong_key[0] ^= 1;
-    assert!(
-      gnark::verify_groth16(
-        &wrong_key,
-        &id,
-        &packet[32..],
-        &digest(provenance["claim_digest"].as_str().unwrap())?
-      )
-      .is_err()
-    );
+    assert!(verify_under(&wrong_key, &packet, claim).is_err());
     packet[32] = 0;
-    assert!(verify_with_catalog(&packet, claim, &catalog, true).is_err());
-    Ok(())
-  }
-
-  #[test]
-  fn catalog_requires_exact_key_identity_and_explicit_development() -> Result<()>
-  {
-    let scratch = Scratch::new()?;
-    let path = scratch.0.join("catalog.json");
-    let mut catalog = TrustedCatalog {
-      format: CATALOG_FORMAT.into(),
-      keys: vec![TrustedKey {
-        sha256: hex(&[1; 32]),
-        path: "key.bin".into(),
-        inner_vk_id: hex(&[2; 32]),
-        inner_schema_sha256: hex(&[3; 32]),
-        statement_prefix: [0; 10],
-        circuit_sha256: hex(&[4; 32]),
-        setup: "development".into(),
-        ceremony_sha256: None,
-      }],
-    };
-    let save = |value: &TrustedCatalog| {
-      storage::write_atomic(&path, &serde_json::to_vec(value).unwrap())
-    };
-    save(&catalog)?;
-    assert!(select_key(&path, &[1; 32], false).is_err());
-    assert_eq!(
-      select_key(&path, &[1; 32], true)?.path,
-      scratch.0.join("key.bin")
-    );
-    assert!(select_key(&path, &[9; 32], true).is_err());
-    catalog.keys[0].setup = "mpc".into();
-    save(&catalog)?;
-    assert!(select_key(&path, &[1; 32], false).is_err());
-    catalog.keys[0].ceremony_sha256 = Some(hex(&[5; 32]));
-    save(&catalog)?;
-    assert_eq!(
-      select_key(&path, &[1; 32], false)?.setup_class(false)?,
-      SetupClass::Groth16
-    );
-    catalog.keys.push(catalog.keys[0].clone());
-    save(&catalog)?;
-    assert!(select_key(&path, &[1; 32], false).is_err());
-    assert_eq!(PROOF_TAG, b"IXBN\0\0\0\x03");
+    assert!(verify_under(&key, &packet, claim).is_err());
     Ok(())
   }
 
   #[test]
   fn malformed_envelopes_fail_before_key_access() {
+    assert_eq!(PROOF_TAG, b"IXBN\0\0\0\x03");
     for length in [0, 32, 195, 197, 227, 229, 1 << 20] {
       assert!(
         verify(&vec![0; length], b"claim", false)

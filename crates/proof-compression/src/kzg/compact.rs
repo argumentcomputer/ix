@@ -38,18 +38,6 @@ pub struct FixedProofCodec {
 }
 
 impl FixedProofCodec {
-  /// Shape-only input for deterministic verifier construction. This is not
-  /// a valid proof and must never be used as a verification shortcut.
-  pub(crate) fn template(&self) -> Proof<KzgConfig> {
-    let mut proof = self.template.clone();
-    let mut next = proof.log_degrees.clone();
-    next.sort_unstable();
-    next.dedup();
-    next.retain(|&log| log != 0);
-    proof.opening_proof.0.resize(1 + next.len(), G1Affine::default());
-    proof
-  }
-
   pub fn new(
     system: &System<KzgConfig>,
     log_degrees: &[u8],

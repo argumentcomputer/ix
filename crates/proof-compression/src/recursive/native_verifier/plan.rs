@@ -259,6 +259,14 @@ impl<'a> Plan<'a> {
     })
   }
 
+  /// The verifier circuit and its deferred pairing keys, without a request.
+  pub(crate) fn circuit(
+    &self,
+  ) -> Result<(Circuit<Scalar>, Vec<G2Affine>), String> {
+    let Compiled { circuit, bindings } = self.compile()?;
+    Ok((circuit, bindings.pairing_keys))
+  }
+
   pub(crate) fn compile(&self) -> Result<Compiled, String> {
     let construction =
       construct(&self.vk, &self.shape, &self.claims, Builder::new())?;

@@ -209,19 +209,37 @@ impl Committed {
   }
 }
 
+/// A partition's circuit metadata and fixed commitment, as its
+/// `setup-{i}.bin` checkpoint records them.
+pub(super) type FixedSetup = (Circuit<Scalar>, KzgCommitment);
+
 /// Commit each fixed partition without allocating a witness.
-pub(super) fn setup(
-  config: KzgConfig,
+pub(super) fn fixed_setup(
+  config: &KzgConfig,
   compiled: &MultiStarkCircuit<Scalar>,
+) -> Result<Vec<FixedSetup>> {
+  (0..compiled.num_circuits())
+    .map(|i| {
+      let (circuit, data) = fixed_partition(config, compiled, i, None)?;
+      Ok((circuit, KzgProverData::concatenate([data]).0))
+    })
+    .collect()
+}
+
+/// The system of fixed partitions in canonical order under `config`.
+pub(super) fn fixed_system(
+  config: KzgConfig,
+  parts: Vec<FixedSetup>,
 ) -> Result<System<KzgConfig>> {
-  let count = compiled.num_circuits();
+  let count = parts.len();
   let mut circuits = Vec::with_capacity(count);
   let mut fixed = KzgCommitment(vec![]);
-  for i in 0..count {
-    let (circuit, data) = fixed_partition(&config, compiled, i, None)?;
-    let (commitment, _data) = KzgProverData::concatenate([data]);
-    fixed.0.extend(commitment.0);
+  for (circuit, mut commitment) in parts {
+    if circuit.preprocessed.is_some() || commitment.0.len() != 1 {
+      return Err("inconsistent setup metadata".into());
+    }
     circuits.push(circuit);
+    fixed.0.append(&mut commitment.0);
   }
   Ok(System {
     config,
@@ -229,6 +247,16 @@ pub(super) fn setup(
     preprocessed_commit: Some(fixed),
     preprocessed_indices: (0..count).map(Some).collect(),
   })
+}
+
+/// Commit each fixed partition without allocating a witness.
+#[cfg(test)]
+pub(super) fn setup(
+  config: KzgConfig,
+  compiled: &MultiStarkCircuit<Scalar>,
+) -> Result<System<KzgConfig>> {
+  let parts = fixed_setup(&config, compiled)?;
+  fixed_system(config, parts)
 }
 
 fn fixed_partition(

@@ -507,7 +507,8 @@ fn check_first(dir: &Path, words: &statement::Statement) -> Result<()> {
 }
 
 /// The recursive verifying key is admitted by the setup and verifies the
-/// recursive packet for the expected statement.
+/// recursive packet for the expected statement, and a release key compresses
+/// the release's aggregation program.
 fn check_final(
   dir: &Path,
   words: &statement::Statement,
@@ -520,7 +521,7 @@ fn check_final(
     vk.check_setup_class(setup.class())?;
   }
   vk.verify(&fs::read(dir.join("kzg/packet.bin"))?, words)?;
-  Ok(())
+  super::verifying_keys::check_statement(&vk.id(), words)
 }
 
 /// The terminal stage left a proof envelope of its system.

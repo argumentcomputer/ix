@@ -196,10 +196,10 @@ def rustSources (pkg : Package) : SpawnM (Job Unit) := do
     ← inputTextFile (pkg.dir / "Cargo.lock"),
     ← inputTextFile (pkg.dir / ".cargo/config.toml")
   ]
-  let layouts ← inputDir (pkg.dir / "crates/proof-compression/root-layouts") true fun path =>
-    path.extension == some "json"
+  let verifyingKeys ← inputDir (pkg.dir / "crates/proof-compression/verifying-keys") false fun path =>
+    path.extension == some "json" || path.extension == some "bin"
   let sources := sources.zipWith (fun _ _ => ()) fixtures
-  let sources := sources.zipWith (fun _ _ => ()) layouts
+  let sources := sources.zipWith (fun _ _ => ()) verifyingKeys
   return sources.zipWith (fun _ _ => ()) manifests
 
 /-- Cargo's archive or executable and its native library are one build output.

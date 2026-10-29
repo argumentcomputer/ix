@@ -4,6 +4,8 @@
 mod plonk_export;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 mod relation;
+#[cfg(feature = "plonk")]
+pub(in crate::pipeline) use plonk_export::describe as plonk_description;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(in crate::pipeline) use plonk_export::export as plonk_export;
 
@@ -69,6 +71,57 @@ pub(crate) struct Frontend {
 }
 
 impl Frontend {
+  /// The setup this circuit is proved under. Ignition parameters must also
+  /// be the ones the inner pairing keys come from.
+  fn setup(
+    &self,
+    config: &super::super::SetupConfig,
+  ) -> storage::Result<SetupSource> {
+    let setup = config
+      .for_stage(OUTER_SEED, self.compiled.main_height())?
+      .with_transcript(TranscriptKind::Blake3);
+    if let Some(admission) = setup.ignition_admission()
+      && decode_pairing_keys(&self.pairings)? != admission.pairing_keys()
+    {
+      return Err(
+        "recursive inner pairing anchors differ from Ignition admission".into(),
+      );
+    }
+    Ok(setup)
+  }
+
+  /// The verifying key proofs of this circuit verify under, derived from its
+  /// fixed setup alone; `prove` assembles the same key from the setup it
+  /// commits.
+  pub(crate) fn verifying_key(
+    &self,
+    config: &super::super::SetupConfig,
+  ) -> storage::Result<VerifyingKey> {
+    let setup = self.setup(config)?;
+    let height = self.compiled.main_height();
+    let parts =
+      prover::fixed_setup(&proving_config(&setup, height)?, &self.compiled)?;
+    let heights = parts
+      .iter()
+      .map(|(circuit, _)| circuit.preprocessed_height)
+      .collect::<Vec<_>>();
+    let setup_bytes = parts
+      .iter()
+      .map(|part| {
+        bincode::serde::encode_to_vec(part, bincode::config::standard())
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+    VerifyingKey::new(
+      heights.try_into().map_err(|_heights| "expected two partitions")?,
+      setup_bytes.try_into().map_err(|_bytes| "expected two partitions")?,
+      bincode::serde::encode_to_vec(
+        &self.pairings,
+        bincode::config::standard(),
+      )?,
+      &setup,
+    )
+  }
+
   fn from_built(built: Built, vk: &[u8]) -> storage::Result<Self> {
     Self::new(built.circuit, &built.pairing_keys, vk, MAX_TRACE_LEN)
   }
@@ -111,17 +164,7 @@ impl Frontend {
     }
     let start = std::time::Instant::now();
     let height = self.compiled.main_height();
-    let setup = config
-      .setup
-      .for_stage(OUTER_SEED, height)?
-      .with_transcript(TranscriptKind::Blake3);
-    if let Some(admission) = setup.ignition_admission()
-      && decode_pairing_keys(&self.pairings)? != admission.pairing_keys()
-    {
-      return Err(
-        "recursive inner pairing anchors differ from Ignition admission".into(),
-      );
-    }
+    let setup = self.setup(&config.setup)?;
     let setup_id = setup.identity(height, 2)?;
     fs::create_dir_all(dir)?;
     setup.bind_stage(dir, height, 2)?;
@@ -254,6 +297,19 @@ fn staged_publics(
   StageStatement::recursive(RECURSIVE_PUBLIC_VALUES).public_values(claims)
 }
 
+/// The KZG configuration the recursive stage commits and proves under.
+fn proving_config(
+  setup: &SetupSource,
+  height: usize,
+) -> storage::Result<KzgConfig> {
+  Ok(
+    setup
+      .config(height, 2, false)?
+      .with_streaming_lookups()
+      .with_streaming_quotient(),
+  )
+}
+
 /// Commit the fixed and witness traces from memory, prove, verify the
 /// packet and write it with the portable verifier. Fixed columns are
 /// checkpointed because every proof of the verifying key shares them through the
@@ -307,27 +363,19 @@ fn prove(
   setup.check_binding(dir, height, 2)?;
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let setup_id = setup.identity(height, 2)?;
-  let verifier_params = setup.verifier_params(height)?;
   let config_started = Instant::now();
-  let config = setup
-    .config(height, 2, false)?
-    .with_streaming_lookups()
-    .with_streaming_quotient();
+  let config = proving_config(setup, height)?;
   let srs_config_load_seconds = config_started.elapsed().as_secs_f64();
   eprintln!("Outer KZG parameters ready: {:?}", start.elapsed());
   let prover::Proved { system, codec, bytes, .. } =
     lowered.commit(config, Some(&out), 0)?.prove(&manifest.claims)?;
   let output_span = tracing::info_span!("compression/write_output").entered();
-  let verifier = VerifyingKey {
-    version: OUTER_VK_VERSION,
-    heights: [manifest.heights[0], manifest.heights[1]],
-    setup: [
-      fs::read(out.join("setup-0.bin"))?,
-      fs::read(out.join("setup-1.bin"))?,
-    ],
-    pairings: fs::read(dir.join("pairings.bin"))?,
-    parameters: verifier_params.to_bytes()?,
-  };
+  let verifier = VerifyingKey::new(
+    [manifest.heights[0], manifest.heights[1]],
+    [fs::read(out.join("setup-0.bin"))?, fs::read(out.join("setup-1.bin"))?],
+    fs::read(dir.join("pairings.bin"))?,
+    setup,
+  )?;
   let vk = verifier.id();
   let mut packet = vk.to_vec();
   for word in statement {
@@ -345,8 +393,7 @@ fn prove(
     verify_packet(&system, &codec, &packet, &vk, &keys, &statement)
   })?;
   let verify_seconds = verify_start.elapsed().as_secs_f64();
-  let encoded =
-    bincode::serde::encode_to_vec(&verifier, bincode::config::standard())?;
+  let encoded = verifier.to_bytes()?;
   storage::write_atomic(&out.join("proof.compact.bin"), &bytes)?;
   storage::write_atomic(&dir.join("vk.bin"), &encoded)?;
   storage::write_atomic(&out.join("vk-id.bin"), &vk)?;
@@ -410,6 +457,27 @@ fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> storage::Result<T> {
 }
 
 impl VerifyingKey {
+  /// The key of a recursive circuit whose two partitions have `heights` and
+  /// encoded fixed setups `setup`, proved under `source`.
+  fn new(
+    heights: [usize; 2],
+    setup: [Vec<u8>; 2],
+    pairings: Vec<u8>,
+    source: &SetupSource,
+  ) -> storage::Result<Self> {
+    Ok(Self {
+      version: OUTER_VK_VERSION,
+      heights,
+      setup,
+      pairings,
+      parameters: source.verifier_params(heights[0])?.to_bytes()?,
+    })
+  }
+
+  pub(crate) fn to_bytes(&self) -> storage::Result<Vec<u8>> {
+    Ok(bincode::serde::encode_to_vec(self, bincode::config::standard())?)
+  }
+
   pub(crate) fn from_bytes(bytes: &[u8]) -> PipelineResult<Self> {
     let vk: Self = decode(bytes)?;
     vk.prepare()?;

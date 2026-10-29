@@ -3,10 +3,12 @@ mod stages;
 pub use stages::{
   FixedRoot, FriVerifier, KzgVerifier, Prepared, RecursiveProof,
   RecursiveStage, RecursiveVerifier, prepare_kzg, prepare_recursive,
-  prepare_root, setup,
+  prepare_root,
 };
 
 mod compress;
+mod derive;
+pub use derive::derive_recursive_vk;
 pub(crate) use compress::StageConfig;
 pub use compress::{CompressConfig, CompressInput, compress};
 mod first;
@@ -22,8 +24,8 @@ mod terminal;
 pub use terminal::{Artifact, TerminalOptions, TerminalSystem};
 mod prover;
 mod root;
-mod root_layout;
-pub use root_layout::release_root_layout;
+mod verifying_keys;
+pub use verifying_keys::release_root_layout;
 mod setup;
 pub use setup::{SetupClass, SetupConfig};
 mod statement;
@@ -53,8 +55,7 @@ pub fn setup_description(development: bool) -> Result<&'static str> {
   Ok(SetupConfig::from_env(development)?.class().description())
 }
 
-/// Verify a terminal proof using an independently configured verifier catalog.
-/// Recursive KZG requires an explicitly pinned key and expected statement.
+/// Verify a compressed proof of `claim` under the release key its tag selects.
 /// Proving parameters are not required.
 pub fn verify(
   proof: &[u8],
@@ -67,8 +68,8 @@ pub fn verify(
   if let Some(packet) = proof.strip_prefix(plonk::PROOF_TAG) {
     return plonk::verify(packet, claim);
   }
-  if proof.starts_with(PROOF_TAG) {
-    return Err("bundled recursive KZG verification is unsupported in this build; use an independently pinned verifying key and expected statement".into());
+  if let Some(packet) = proof.strip_prefix(PROOF_TAG) {
+    return verifying_keys::verify_recursive(packet, claim);
   }
   Err("unsupported compressed proof version".into())
 }
@@ -184,16 +185,12 @@ mod tests {
   }
 
   #[test]
-  fn bundled_kzg_verification_is_explicitly_unsupported() {
+  fn recursive_kzg_proofs_must_use_the_release_key() {
     let mut proof = PROOF_TAG.to_vec();
     proof.extend([0; 32]);
     for allow_development in [false, true] {
       let error = verify(&proof, b"claim", allow_development).unwrap_err();
-      assert!(
-        error
-          .to_string()
-          .contains("bundled recursive KZG verification is unsupported")
-      );
+      assert!(error.to_string().contains("other than the"));
     }
   }
 

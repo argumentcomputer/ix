@@ -77,10 +77,10 @@ domain and monomial receipt. Go checks the sizes and digests of decoded native
 artifacts and rejects a witness whose claim differs from the independent digest
 supplied by Rust. Retaining a prover avoids loading its circuit and keys again.
 
-`IX_PLONK_VERIFIER_CATALOG` selects an independently authorized catalog. A proof's
-candidate catalog is not automatically trusted. Entries bind the verifying-key
-SHA-256, inner verifier identity, program prefix, circuit hash, and Ignition
-admission. Verification requires neither a proving SRS nor a GPU.
+Verification uses the bundled PLONK verifying key and Ignition admission
+(`crates/proof-compression/verifying-keys/`); a proof whose key identifier
+names any other key is rejected. Verification requires neither a proving SRS
+nor a GPU.
 
 Release tooling is library code with no CLI: `pipeline::plonk::export` writes
 the verifier description and witness for a recursive KZG packet, and
@@ -168,33 +168,13 @@ Ignition parameters for the inner KZG proof; local Groth16 setup does not
 change the inner setup policy. Compilation writes a fresh circuit into an empty
 artifact directory.
 
-The CLI uses prepared keys and an independently approved catalog:
-
-```json
-{
-  "format": "ix-bn254-groth16-verifiers-v1",
-  "keys": [{
-    "sha256": "SHA256_OF_GROTH16_VERIFYING_KEY",
-    "path": "groth16-keys/verifying-key.bin",
-    "inner_vk_id": "VK_ID_FROM_EXPORTED_vkId",
-    "inner_schema_sha256": "SHA256_OF_EXPORTED_vk.json",
-    "statement_prefix": [0, 293, 0, 0, 0, 0, 0, 0, 0, 0],
-    "circuit_sha256": "SHA256_OF_circuit.bin",
-    "setup": "development"
-  }]
-}
-```
-
-The hashes above are placeholders. Copy the complete ten-word `prefix` from
-the exported verifier description; the example prefix is not an approved
-program. `inner_vk_id` is the description's `vkId`, which differs from the
-BLAKE3 digest of the serialized verifier file. Relative key paths resolve against
-the catalog directory. A proof or generated manifest never authorizes its own
-verifying key.
+The prepared artifacts must be the bundled circuit and key: `IX_GROTH16_ARTIFACTS`
+names a directory whose verifying key, circuit and verifier description match
+the bundled pins. The bundled key comes from a development setup, so proving
+needs `--dev-groth16` and verifying needs `--dev-srs`:
 
 ```sh
 export IX_GROTH16_ARTIFACTS=/path/to/groth16-keys
-export IX_GROTH16_VERIFIER_CATALOG=/path/to/approved-catalog.json
 ix compress ROOT --groth16 --dev-groth16
 ix verify COMPRESSED_PROOF --dev-srs
 ```

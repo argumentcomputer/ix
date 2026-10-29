@@ -13,6 +13,26 @@ use std::{fs, path::Path, time::Instant};
 
 /// Layout file a normalized root carries beside its proof.
 pub(super) const FIXED_ROOT_LAYOUT: &str = "fixed-root.json";
+/// Largest trace of the FRI stage's lowered verifier circuit.
+const MAX_TRACE_HEIGHT: usize = 1 << 24;
+
+/// The FRI stage's verifier for roots of the aggregation backend `key`
+/// normalized to `layout`, derived without a proof: `run` proves the same
+/// circuit, lowered and committed under the same parameters.
+pub(super) fn verifier(
+  key: &aiur::vk_codec::AiurVerifyingKey,
+  layout: &super::stages::FixedRoot,
+) -> Result<super::FriVerifier, Box<dyn std::error::Error>> {
+  super::stages::setup::fri(
+    layout.circuit(key, VerifierLimits::default())?,
+    config(key),
+    MAX_TRACE_HEIGHT,
+  )
+}
+
+fn config(key: &aiur::vk_codec::AiurVerifyingKey) -> GoldilocksBlake3Config {
+  GoldilocksBlake3Config::new(key.commitment_parameters(), key.fri_parameters())
+}
 
 /// Verify the root input in `dir`, build its FRI verifier circuit and check
 /// its constraints, writing the circuit's identity and cost to `out`. With
@@ -91,9 +111,8 @@ pub(super) fn run(
     fs::write(out.join("statement-schema.txt"), plan.description())?;
     plan.prepare(&proof, &claims[0], options)?
   };
-  let max_trace_height = 1usize << 24;
   let layout =
-    prepared.circuit().multi_stark_layout_with_max_height(max_trace_height)?;
+    prepared.circuit().multi_stark_layout_with_max_height(MAX_TRACE_HEIGHT)?;
   eprintln!(
     "Circuit preparation: {:?}; {:?}",
     start.elapsed(),
@@ -144,8 +163,8 @@ pub(super) fn run(
   drop(verifier_key);
   let public = prepared.public_values().to_vec();
   let start = Instant::now();
-  let (verifier, outer_proof) = prepared
-    .prove_fri(GoldilocksBlake3Config::new(cp, fp), max_trace_height)?;
+  let (verifier, outer_proof) =
+    prepared.prove_fri(config(&native_key), MAX_TRACE_HEIGHT)?;
   eprintln!("FRI proving and verification: {:?}", start.elapsed());
   let _output_span = tracing::info_span!("compression/write_output").entered();
   let bytes = outer_proof.to_bytes()?;

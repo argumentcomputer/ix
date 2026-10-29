@@ -2,14 +2,14 @@
 use super::Result;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 use super::statement;
-#[cfg(test)]
+#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
 use super::storage;
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
 use std::path::PathBuf;
 
 // TODO: Decide between SHA-256 and BLAKE3 for artifact/cache metadata.
@@ -67,9 +67,9 @@ impl TryFrom<u8> for TerminalOptions {
   }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
 pub(super) struct Scratch(pub(super) PathBuf);
-#[cfg(test)]
+#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
 impl Scratch {
   pub(super) fn new() -> Result<Self> {
     let path =
@@ -78,13 +78,14 @@ impl Scratch {
     Ok(Self(path))
   }
 }
-#[cfg(test)]
+#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
 impl Drop for Scratch {
   fn drop(&mut self) {
     let _ = fs::remove_dir_all(&self.0);
   }
 }
 
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(super) fn hex(bytes: &[u8]) -> String {
   use std::fmt::Write as _;
   let mut output = String::with_capacity(bytes.len() * 2);

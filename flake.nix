@@ -156,7 +156,7 @@
           # binary fixtures that Cargo's source filter does not retain.
           compressionData = pkgs.lib.fileset.unions [
             ./crates/proof-compression/tests/fixtures
-            ./crates/proof-compression/root-layouts
+            ./crates/proof-compression/verifying-keys
           ];
           # The Rust tests `include_bytes!` the `.ixe` files under
           # `Tests/Fixtures`: environments serialized by Lean, read back to check

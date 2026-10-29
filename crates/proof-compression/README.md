@@ -34,13 +34,16 @@ Those libraries may contain other curves; Ix exposes only BN254.
 
 KZG uses authenticated Ignition parameters or explicit known-trapdoor
 development parameters. Terminal PLONK requires authenticated Ignition.
-This build ships no bundled recursive KZG verifying keys. `ix verify` reports
-that verification of these proofs is unsupported; use the library's
-`verify_with_vk` or `verify_with_ignition_admission` with an independently
-pinned verifying key and expected statement. PLONK verification
-requires an independently authorized `IX_PLONK_VERIFIER_CATALOG`. Groth16
-requires its own circuit-specific setup and `IX_GROTH16_VERIFIER_CATALOG`;
-see the [terminal backend guide](../../tools/plonk-wrapper/README.md#bn254-groth16-terminal).
+Each build pins one version of the verifying keys,
+[`0.1`](verifying-keys/0.1): one key per proof system, with the root layout,
+statement prefix and Ignition admission they were derived for. `ix verify` selects the key by the proof's tag and requires
+the packet's key identifier to name it; there is no catalog of alternatives.
+Recursive KZG and PLONK proofs verify under Ignition. The release Groth16 key
+comes from a development setup, so Groth16 proofs verify only with
+`--dev-srs`; see the
+[terminal backend guide](../../tools/plonk-wrapper/README.md#bn254-groth16-terminal).
+The library's `verify_with_vk` and `verify_with_ignition_admission` still
+verify recursive KZG proofs under an independently pinned key and statement.
 
 BN254 supports radix-2 domains through `2^28`; traces and quotient domains
 must both fit. Existing BN254 proof, verifier, and SRS encodings are retained.
@@ -227,7 +230,7 @@ setup artifact does not authorize it for another verifier.
 
 `ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
 normalize the aggregate root using the versioned
-[`ixvm-2026-10-29` layout](root-layouts/ixvm-2026-10-29.json).
+[version 0.1 layout](verifying-keys/0.1/layout.json).
 `--fixed-root` is an optional layout override. The default layout is the one
 shared by the saved Nat.add_comm, Init and Mathlib normalization runs; it has
 101 circuit heights, 18 claim elements and no additional headroom beyond those
@@ -286,9 +289,8 @@ ix compress ROOT_PROOF_ADDRESS --plonk --out /path/to/empty-output
 
 Use the four Ignition environment variables described above. The result
 includes the proof envelope, native and Solidity proof encodings, generated
-Solidity verifier, verifying key, admission, and candidate verifier catalog.
-The candidate must be reviewed independently before configuring it for
-`ix verify`. See the [gnark backend guide](../../tools/plonk-wrapper/README.md)
+Solidity verifier and verifying key, which must equal the bundled key for
+`ix verify` to accept the proof. See the [gnark backend guide](../../tools/plonk-wrapper/README.md)
 for Rust FFI tests, CUDA configuration, and artifact cache rules. On-chain verification uses the terminal PLONK verifier
 and [claim adapter](../../contracts/plonk/README.md).
 

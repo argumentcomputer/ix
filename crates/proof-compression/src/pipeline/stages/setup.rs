@@ -1,28 +1,11 @@
-//! Deterministic verifier construction. No proof or witness is an input.
+//! Verifier construction without a proof or witness.
 use super::*;
-use aiur::vk_codec::AiurVerifyingKey;
+#[cfg(test)]
 use multi_stark::traits::TwoAdicField;
 
-/// Derive a complete fixed compression verifier from locally trusted inputs.
-/// This performs circuit construction and preprocessing commitments, but no
-/// proof generation. The supplied SRS must have been authenticated/validated.
-pub fn setup(
-  root_key: &AiurVerifyingKey,
-  root: &FixedRoot,
-  srs: Arc<Srs>,
-  fri_config: GoldilocksBlake3Config,
-  fri_height: usize,
-  kzg_height: usize,
-  recursive_height: usize,
-) -> Result<RecursiveVerifier> {
-  let circuit = root.circuit(root_key, Default::default())?;
-  let fri = fri(circuit, fri_config, fri_height)?;
-  let circuit = foreign(&fri)?;
-  let kzg = kzg(circuit, srs.clone(), kzg_height)?;
-  wrap::setup_recursive(&kzg, srs, recursive_height)
-}
-
-pub(super) fn fri(
+/// The FRI stage's verifier for `circuit`, with the commitments
+/// `Prepared::prove_fri` derives, built without a witness.
+pub(in crate::pipeline) fn fri(
   circuit: Circuit<Val>,
   config: GoldilocksBlake3Config,
   height: usize,
@@ -45,15 +28,7 @@ pub(super) fn fri(
   Ok(FriVerifier { key: VerifierKey::new(system), statement })
 }
 
-pub(super) fn foreign(verifier: &FriVerifier) -> Result<Circuit<Scalar>> {
-  let vk = construct::fri_profile(&verifier.key, &verifier.statement.template)?;
-  let plan =
-    fri::VerifierPlan::validate(&verifier.key, vk, Default::default())?;
-  let built =
-    construct::FriConstruction::build(&plan, verifier.statement.schema())?;
-  Ok(construct::translate(&built.circuit).circuit)
-}
-
+#[cfg(test)]
 pub(super) fn kzg(
   circuit: Circuit<Scalar>,
   srs: Arc<Srs>,
@@ -79,7 +54,8 @@ pub(super) fn kzg(
   kzg_lowered(compiled, config, public_count)
 }
 
-pub(super) fn kzg_lowered(
+#[cfg(test)]
+fn kzg_lowered(
   compiled: multi_stark::plonkish::MultiStarkCircuit<Scalar>,
   config: KzgConfig,
   public_count: usize,

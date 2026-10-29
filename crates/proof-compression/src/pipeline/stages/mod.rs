@@ -10,7 +10,7 @@ pub(in crate::pipeline) mod statement;
 use statement::Statement;
 mod fixed;
 pub(in crate::pipeline) mod root;
-mod setup;
+pub(in crate::pipeline) mod setup;
 #[cfg(test)]
 mod tests;
 pub(in crate::pipeline) mod verification;
@@ -19,7 +19,6 @@ pub use verification::RecursiveVerifier;
 
 pub use fixed::FixedRoot;
 pub use root::prepare_root;
-pub use setup::setup;
 pub use wrap::{RecursiveProof, RecursiveStage, prepare_recursive};
 
 use crate::fri::{self, VerifierKey};

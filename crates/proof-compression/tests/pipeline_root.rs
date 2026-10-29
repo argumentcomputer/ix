@@ -3,7 +3,7 @@ use aiur::vk_codec::{AiurVerifyingKey, to_bytes};
 use ix_proof_compression::kzg::Srs;
 use ix_proof_compression::pipeline::{
   FixedRoot, FriVerifier, KzgVerifier, RecursiveVerifier, prepare_kzg,
-  prepare_recursive, prepare_root, setup,
+  prepare_recursive, prepare_root,
 };
 use multi_stark::batch::ShardInput;
 use multi_stark::expr::Expr;
@@ -314,12 +314,6 @@ fn complete_compression_chain() -> Result<(), Box<dyn std::error::Error>> {
       FriParameters { num_queries: 1, ..fp },
     )
   };
-  eprintln!("deriving the local verifier without a proof");
-  let local =
-    setup(&key, &fixed, srs.clone(), config(), 1 << 20, height, height)?;
-  let local_bytes = local.to_bytes()?;
-  drop(local);
-  eprintln!("local verifier ready; generating the root proof");
   let expected: Vec<_> = (0..18).map(|i| Val::from_u32(71 + i)).collect();
   let mut row = expected.clone();
   row.push(Val::ONE);
@@ -347,8 +341,7 @@ fn complete_compression_chain() -> Result<(), Box<dyn std::error::Error>> {
   let recursive = prepare_recursive(&kzg, &proof, &expected)?;
   eprintln!("recursive verifier: {:?}", recursive.circuit().stats());
   let (verifier, proof) = recursive.prove(srs, height)?;
-  assert_eq!(verifier.to_bytes()?, local_bytes);
-  let verifier = RecursiveVerifier::from_bytes(&local_bytes)?;
+  let verifier = RecursiveVerifier::from_bytes(&verifier.to_bytes()?)?;
   verifier.verify(&proof, &expected)?;
   let bytes = verifier.encode_proof(&proof)?;
   verifier.verify_bytes(&bytes, &expected)?;

@@ -365,8 +365,13 @@ mod tests {
       assert!(FixedRoot::new(vec![4, 1, 8, 16], memories, 5).is_err());
     }
     assert_eq!(system.memory_circuits(), fixed.memory_traces());
-    assert_eq!(FixedRoot::from_json(&fixed.to_json())?.to_json(), fixed.to_json());
-    assert!(FixedRoot::from_json(&fixed.to_json().replace("-v1", "-v0")).is_err());
+    assert_eq!(
+      FixedRoot::from_json(&fixed.to_json())?.to_json(),
+      fixed.to_json()
+    );
+    assert!(
+      FixedRoot::from_json(&fixed.to_json().replace("-v1", "-v0")).is_err()
+    );
     let other = FixedRoot::new(vec![4, 2, 8, 16], vec![(1, 1)], 5)?;
     assert_ne!(fixed.identity(&key), other.identity(&key));
     let config = || GoldilocksBlake3Config::new(cp, fp);

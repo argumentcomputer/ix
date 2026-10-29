@@ -1,27 +1,71 @@
 use super::super::{
-  setup::{BINDING_FILE, FIRST_SEED, SetupClass},
+  prover::FixedSetup,
+  setup::{BINDING_FILE, FIRST_SEED, SetupClass, SetupConfig, SetupSource},
   statement,
+  storage::Manifest,
 };
 use crate::{
-  kzg::{KzgCommitment, KzgConfig, Scalar, compact::FixedProofCodec},
+  kzg::{KzgConfig, Scalar, compact::FixedProofCodec},
   recursive::native_verifier::{ClaimSchema, Plan},
 };
 #[cfg(test)]
 use multi_stark::traits::Field;
-use multi_stark::{
-  prover::Proof,
-  system::{Circuit, System},
-};
+use multi_stark::{prover::Proof, system::System};
 use serde::de::DeserializeOwned;
 use std::{collections::BTreeMap, fs, path::Path, time::Instant};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-#[derive(serde::Deserialize)]
-struct Manifest {
-  widths: Vec<usize>,
-  heights: Vec<usize>,
-  claims: Vec<Vec<Scalar>>,
+/// Check a first stage's manifest has a supported shape and claim rows, and
+/// return its largest partition height.
+fn check_manifest(manifest: &Manifest) -> Result<usize> {
+  let count = manifest.heights.len();
+  let height =
+    *manifest.heights.iter().max().ok_or("empty recursive verifying key")?;
+  // The partition count follows the outer FRI proof's layout; the trace
+  // height is the supported verifying key's. InnerVerifyingKey identity is bound separately
+  // through the verifying key id and the application's bundled verifier.
+  if ![1 << 24, 1 << 25].contains(&height)
+    || count < super::super::first::MIN_PARTITIONS
+    || manifest.widths.len() != count
+    || manifest.widths.contains(&0)
+    || manifest.heights.iter().any(|h| *h < 2 || !h.is_power_of_two())
+  {
+    return Err("unsupported partition verifying key".into());
+  }
+  let statement = statement::from_rows(&manifest.claims)?;
+  if manifest.claims != super::super::first::expected_claims(count, &statement)
+  {
+    return Err("claim rows differ from the statement and anchors".into());
+  }
+  Ok(height)
+}
+
+/// The recursive stage's verifying key for a first stage with `manifest`'s
+/// shape and fixed setup `parts`, derived without a proof: `prove` builds the
+/// same plan and circuit from a loaded first stage.
+pub(in crate::pipeline) fn verifying_key(
+  manifest: &Manifest,
+  parts: Vec<FixedSetup>,
+  config: &SetupConfig,
+) -> Result<super::outer::VerifyingKey> {
+  let height = check_manifest(manifest)?;
+  let setup = config.for_stage(FIRST_SEED, height)?;
+  let system =
+    inner_system(&setup, &manifest.widths, &manifest.heights, parts)?;
+  let plan = super::super::stages::construct::recursive_plan(
+    &system,
+    &logs(&manifest.heights),
+    claim_schema(&manifest.claims)?,
+  )?;
+  let (circuit, keys) = plan.circuit()?;
+  super::outer::Frontend::new(
+    circuit,
+    &keys,
+    &plan.identity(),
+    super::outer::MAX_TRACE_LEN,
+  )?
+  .verifying_key(config)
 }
 
 fn read_recorded(
@@ -60,6 +104,33 @@ pub(super) fn claim_schema(claims: &[Vec<Scalar>]) -> Result<ClaimSchema> {
   Ok(ClaimSchema::from_claims(claims, &public)?)
 }
 
+/// The first stage's verifier system as the recursive stage verifies it:
+/// verifier-only parameters at the largest partition height, and each
+/// partition's fixed setup, checked against the staged dimensions.
+pub(super) fn inner_system(
+  setup: &SetupSource,
+  widths: &[usize],
+  heights: &[usize],
+  parts: Vec<FixedSetup>,
+) -> Result<System<KzgConfig>> {
+  let height = *heights.iter().max().ok_or("empty recursive verifying key")?;
+  if parts.len() != heights.len()
+    || widths.len() != heights.len()
+    || parts.iter().zip(widths.iter().zip(heights)).any(
+      |((circuit, _), (&width, &height))| {
+        circuit.preprocessed_height != height || circuit.main_width != width
+      },
+    )
+  {
+    return Err("inconsistent setup metadata".into());
+  }
+  super::super::prover::fixed_system(setup.config(height, 2, true)?, parts)
+}
+
+pub(super) fn logs(heights: &[usize]) -> Vec<u8> {
+  heights.iter().map(|h| u8::try_from(h.ilog2()).unwrap()).collect()
+}
+
 pub(super) struct Input {
   pub(super) system: System<KzgConfig>,
   pub(super) proof: Proof<KzgConfig>,
@@ -94,25 +165,7 @@ impl Input {
     let mut input_blake3 = BTreeMap::new();
     let manifest: Manifest = load(dir, "manifest.bin", &mut input_blake3)?;
     let count = manifest.heights.len();
-    let height =
-      *manifest.heights.iter().max().ok_or("empty recursive verifying key")?;
-    // The partition count follows the outer FRI proof's layout; the trace
-    // height is the supported verifying key's. InnerVerifyingKey identity is bound separately
-    // through the verifying key id and the application's bundled verifier.
-    if ![1 << 24, 1 << 25].contains(&height)
-      || count < super::super::first::MIN_PARTITIONS
-      || manifest.widths.len() != count
-      || manifest.widths.contains(&0)
-      || manifest.heights.iter().any(|h| *h < 2 || !h.is_power_of_two())
-    {
-      return Err("unsupported partition verifying key".into());
-    }
-    let statement = statement::from_rows(&manifest.claims)?;
-    if manifest.claims
-      != super::super::first::expected_claims(count, &statement)
-    {
-      return Err("claim rows differ from the statement and anchors".into());
-    }
+    let height = check_manifest(&manifest)?;
     eprintln!("Loading authenticated verifier parameters and saved proof");
     let proof_dir = if dir.join("kzg").is_dir() {
       dir.join("kzg")
@@ -125,33 +178,12 @@ impl Input {
     if read_recorded(dir, BINDING_FILE, &mut input_blake3)? != setup_id {
       return Err("setup binding changed while loading saved metadata".into());
     }
-    let config = setup.config(height, 2, true)?;
-    let mut circuits = vec![];
-    let mut commitment = KzgCommitment(vec![]);
-    for i in 0..count {
-      let (circuit, mut part): (Circuit<Scalar>, KzgCommitment) =
-        load(&proof_dir, &format!("setup-{i}.bin"), &mut input_blake3)?;
-      if circuit.preprocessed_height != manifest.heights[i]
-        || circuit.main_width != manifest.widths[i]
-        || circuit.preprocessed.is_some()
-        || part.0.len() != 1
-      {
-        return Err("inconsistent setup metadata".into());
-      }
-      circuits.push(circuit);
-      commitment.0.append(&mut part.0);
-    }
-    let system = System {
-      config,
-      circuits,
-      preprocessed_commit: Some(commitment),
-      preprocessed_indices: (0..count).map(Some).collect(),
-    };
-    let logs: Vec<_> = manifest
-      .heights
-      .iter()
-      .map(|h| u8::try_from(h.ilog2()).unwrap())
-      .collect();
+    let parts = (0..count)
+      .map(|i| load(&proof_dir, &format!("setup-{i}.bin"), &mut input_blake3))
+      .collect::<Result<Vec<_>>>()?;
+    let system =
+      inner_system(&setup, &manifest.widths, &manifest.heights, parts)?;
+    let logs = logs(&manifest.heights);
     let plan = super::super::stages::construct::recursive_plan(
       &system,
       &logs,

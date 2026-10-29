@@ -53,11 +53,9 @@ struct IgnitionRelease {
 const IGNITION_RELEASE: IgnitionRelease = IgnitionRelease {
   name: "bn254-ignition-main-197",
   cache_file: "ix-prefix-26.bin",
-  cache_manifest_blake3:
-    "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b",
+  cache_manifest_blake3: "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b",
   admission_file: "admission.json",
-  admission_blake3:
-    "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
+  admission_blake3: "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
 };
 
 impl IgnitionRelease {
@@ -91,7 +89,8 @@ fn parameters_directory_from(
   mut lookup: impl FnMut(&str) -> Option<OsString>,
 ) -> Option<PathBuf> {
   lookup(PARAMETERS_DIR_VAR).map(PathBuf::from).or_else(|| {
-    lookup("HOME").map(|home| PathBuf::from(home).join(".ix/compression/params"))
+    lookup("HOME")
+      .map(|home| PathBuf::from(home).join(".ix/compression/params"))
   })
 }
 

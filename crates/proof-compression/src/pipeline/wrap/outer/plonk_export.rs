@@ -91,40 +91,27 @@ struct Export<'a> {
   diagnostic: Json,
 }
 
-pub(super) fn write_export(
-  vk: &VerifyingKey,
-  packet: &[u8],
-  expected: &Statement,
-  directory: &Path,
-  name: &str,
-  valid_pairing: bool,
-) -> Result<()> {
+/// The recursive verifier system of `vk` and its partitions' log heights.
+fn verifier_system(vk: &VerifyingKey) -> Result<(System<KzgConfig>, Vec<u8>)> {
   let system = vk.system()?;
   if system.config.transcript_kind() != TranscriptKind::Blake3 {
     return Err(
       "PLONK wrapping requires a BLAKE3 final KZG verifying key".into(),
     );
   }
-  let (claims, offset) = packet_claims(packet, &vk.id(), 2, expected)?;
   let logs = vk
     .heights
     .iter()
     .map(|h| u8::try_from(h.ilog2()))
     .collect::<std::result::Result<Vec<_>, _>>()?;
-  let proof =
-    FixedProofCodec::new(&system, &logs)?.decode(&packet[offset..])?;
-  let diagnostic = diagnostics(&system, &proof, &claims)?;
-  let deferred_bytes = &packet[32 + 18 * 8..offset];
-  if check_pairings(deferred_bytes, &vk.keys()?).is_ok() != valid_pairing {
-    return Err("unexpected deferred pairing result".into());
-  }
-  // The zero-anchor row precedes the public prefix, claim digest and
-  // deferred pairing operands in the recursive statement.
-  let claim_count = RECURSIVE_PUBLIC_VALUES + 1;
-  if claims.len() != claim_count {
-    return Err("recursive packet claim count".into());
-  }
-  let slots = (0..claim_count)
+  Ok((system, logs))
+}
+
+/// The claim slots of the recursive statement and the source of each public.
+/// The zero-anchor row precedes the public prefix, claim digest and deferred
+/// pairing operands.
+fn recursive_statement() -> (Vec<Vec<ir::ClaimSlot>>, Vec<PublicSource>) {
+  let slots = (0..=RECURSIVE_PUBLIC_VALUES)
     .map(|i| {
       vec![
         ir::ClaimSlot::Constant(Scalar::from_u8(94)),
@@ -139,6 +126,52 @@ pub(super) fn write_export(
     .chain((0..8).map(PublicSource::DigestWord))
     .chain((0..PUBLIC_VALUES).map(PublicSource::DeferredHalf))
     .collect();
+  (slots, publics)
+}
+
+/// The verifier description (`vk.json`) terminal circuits are compiled from:
+/// it depends on the recursive key `vk` and the statement prefix `prefix`
+/// its claims carry, never on a proof.
+#[cfg(feature = "plonk")]
+pub(in crate::pipeline) fn describe(
+  vk: &VerifyingKey,
+  prefix: &[u64],
+) -> Result<Vec<u8>> {
+  let (system, logs) = verifier_system(vk)?;
+  let (slots, publics) = recursive_statement();
+  let (description, _layout) = description(
+    &system,
+    &logs,
+    &slots,
+    &publics,
+    vk.id(),
+    &vk.keys()?,
+    prefix,
+  )?;
+  Ok(serde_json::to_vec_pretty(&description)?)
+}
+
+pub(super) fn write_export(
+  vk: &VerifyingKey,
+  packet: &[u8],
+  expected: &Statement,
+  directory: &Path,
+  name: &str,
+  valid_pairing: bool,
+) -> Result<()> {
+  let (system, logs) = verifier_system(vk)?;
+  let (claims, offset) = packet_claims(packet, &vk.id(), 2, expected)?;
+  let proof =
+    FixedProofCodec::new(&system, &logs)?.decode(&packet[offset..])?;
+  let diagnostic = diagnostics(&system, &proof, &claims)?;
+  let deferred_bytes = &packet[32 + 18 * 8..offset];
+  if check_pairings(deferred_bytes, &vk.keys()?).is_ok() != valid_pairing {
+    return Err("unexpected deferred pairing result".into());
+  }
+  if claims.len() != RECURSIVE_PUBLIC_VALUES + 1 {
+    return Err("recursive packet claim count".into());
+  }
+  let (slots, publics) = recursive_statement();
   write_vk(
     &Export {
       system: &system,
@@ -181,61 +214,15 @@ fn write_vk(
     diagnostic["pointEncodings"] = json!(encodings);
     diagnostic
   };
-  let layout = codegen::OpeningLayout::new_for_system(system, logs)?;
-  let program = ir::build(system, &layout, &export.slots)?;
-  let params = system.config.pcs().verifier_params();
-  let fixed: Vec<_> = system
-    .preprocessed_commit
-    .as_ref()
-    .ok_or("missing fixed commitment")?
-    .0
-    .iter()
-    .flatten()
-    .copied()
-    .map(point)
-    .collect();
-  if fixed.len() != layout.fixed_count {
-    return Err("fixed commitment count differs from layout".into());
-  }
-  let circuits: Vec<_> = system.circuits.iter().enumerate().map(|(i, c)| {
-    json!({
-      "logDegree": logs[i],
-      "shape": [c.constraint_count(), c.max_constraint_degree(), 1usize << logs[i],
-        c.preprocessed_width, c.main_width, c.stage_2_width, c.lookup_group_size],
-    })
-  }).collect();
-  let matrices: Vec<_> = layout
-    .matrices
-    .iter()
-    .map(|m| {
-      json!({
-        "width": m.width, "rows": m.rows, "pointOffset": m.point_offset,
-        "valueOffset": m.value_offset,
-      })
-    })
-    .collect();
-  let exported = json!({
-    "format": "ix-bn254-plonk-vk-v1",
-    "vkId": hex_json(&export.vk_id),
-    "setupId": hex_json(&params.public_setup.id),
-    "publicMaxDegree": params.public_setup.max_degree,
-    "prefix": &expected[..10],
-    "seed": hex_json(system.config.transcript_seed()),
-    "circuits": circuits,
-    "matrices": matrices,
-    "pointCount": layout.point_count,
-    "fieldCount": layout.field_count,
-    "witnessOffset": layout.commitment_count,
-    "openingCount": layout.factors.len(),
-    "accumulatorCount": layout.accumulator_count,
-    "claims": export.slots.iter().map(|row| row.iter().copied().map(slot_json).collect::<Vec<_>>()).collect::<Vec<_>>(),
-    "publics": export.publics.iter().copied().map(PublicSource::json).collect::<Vec<_>>(),
-    "fixed": fixed,
-    "generator": point(params.g1[0]),
-    "outerKeys": [key(&params.g2), key(&params.tau_g2)],
-    "deferredKeys": export.deferred_keys.iter().map(key).collect::<Vec<_>>(),
-    "program": program,
-  });
+  let (exported, layout) = description(
+    system,
+    logs,
+    &export.slots,
+    &export.publics,
+    export.vk_id,
+    &export.deferred_keys,
+    &expected[..10],
+  )?;
   let mut values: Vec<Scalar> =
     proof.intermediate_accumulators[..layout.accumulator_count].to_vec();
   for round in [
@@ -291,4 +278,72 @@ fn write_vk(
     &serde_json::to_vec_pretty(expected)?,
   )?;
   Ok(())
+}
+
+/// The verifier description of `system` and the opening layout it follows.
+fn description(
+  system: &System<KzgConfig>,
+  logs: &[u8],
+  slots: &[Vec<ir::ClaimSlot>],
+  publics: &[PublicSource],
+  vk_id: [u8; 32],
+  deferred_keys: &[G2Affine],
+  prefix: &[u64],
+) -> Result<(Json, codegen::OpeningLayout)> {
+  let layout = codegen::OpeningLayout::new_for_system(system, logs)?;
+  let program = ir::build(system, &layout, slots)?;
+  let params = system.config.pcs().verifier_params();
+  let fixed: Vec<_> = system
+    .preprocessed_commit
+    .as_ref()
+    .ok_or("missing fixed commitment")?
+    .0
+    .iter()
+    .flatten()
+    .copied()
+    .map(point)
+    .collect();
+  if fixed.len() != layout.fixed_count {
+    return Err("fixed commitment count differs from layout".into());
+  }
+  let circuits: Vec<_> = system.circuits.iter().enumerate().map(|(i, c)| {
+    json!({
+      "logDegree": logs[i],
+      "shape": [c.constraint_count(), c.max_constraint_degree(), 1usize << logs[i],
+        c.preprocessed_width, c.main_width, c.stage_2_width, c.lookup_group_size],
+    })
+  }).collect();
+  let matrices: Vec<_> = layout
+    .matrices
+    .iter()
+    .map(|m| {
+      json!({
+        "width": m.width, "rows": m.rows, "pointOffset": m.point_offset,
+        "valueOffset": m.value_offset,
+      })
+    })
+    .collect();
+  let exported = json!({
+    "format": "ix-bn254-plonk-vk-v1",
+    "vkId": hex_json(&vk_id),
+    "setupId": hex_json(&params.public_setup.id),
+    "publicMaxDegree": params.public_setup.max_degree,
+    "prefix": prefix,
+    "seed": hex_json(system.config.transcript_seed()),
+    "circuits": circuits,
+    "matrices": matrices,
+    "pointCount": layout.point_count,
+    "fieldCount": layout.field_count,
+    "witnessOffset": layout.commitment_count,
+    "openingCount": layout.factors.len(),
+    "accumulatorCount": layout.accumulator_count,
+    "claims": slots.iter().map(|row| row.iter().copied().map(slot_json).collect::<Vec<_>>()).collect::<Vec<_>>(),
+    "publics": publics.iter().copied().map(PublicSource::json).collect::<Vec<_>>(),
+    "fixed": fixed,
+    "generator": point(params.g1[0]),
+    "outerKeys": [key(&params.g2), key(&params.tau_g2)],
+    "deferredKeys": deferred_keys.iter().map(key).collect::<Vec<_>>(),
+    "program": program,
+  });
+  Ok((exported, layout))
 }

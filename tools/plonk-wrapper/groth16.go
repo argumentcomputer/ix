@@ -134,6 +134,9 @@ func groth16Load(dir string, m *groth16Manifest) (*verifyingKey, constraint.Cons
 	return key, ccs, nil
 }
 
+// TODO: Evaluate commitment-free arithmetic and range-check gadgets for Groth16.
+// The commitment extension adds a pairing check and 128 Solidity proof bytes;
+// a replacement must preserve the soundness of the deferred arithmetic checks.
 func compileGroth16(schema []byte, path string) (circuitInfo, error) {
 	var info circuitInfo
 	key, err := decodeVerifyingKey(schema)

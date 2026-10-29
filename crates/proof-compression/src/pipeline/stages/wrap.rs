@@ -1,9 +1,8 @@
 use super::verification::{Pairings, RecursiveVerifier};
 use super::{KzgVerifier, Prepared, Result, scalar_statement};
 use crate::kzg::{KzgConfig, Scalar, Srs};
-use crate::recursive::{native_verifier, pairing::PUBLIC_VALUES};
+use crate::recursive::native_verifier;
 use multi_stark::prover::Proof;
-use multi_stark::traits::Algebra;
 use multi_stark::types::Val;
 use std::sync::Arc;
 
@@ -100,38 +99,6 @@ impl RecursiveStage {
       RecursiveProof { proof, pairing_values },
     ))
   }
-}
-
-pub(super) fn setup_recursive(
-  verifier: &KzgVerifier,
-  srs: Arc<Srs>,
-  height: usize,
-) -> Result<RecursiveVerifier> {
-  let claim_len = verifier.statement.locations.len();
-  let claims = verifier.statement.claims(&vec![Scalar::ZERO; claim_len])?;
-  let template = verifier.codec.template();
-  let built = build_recursive(verifier, &template, &claims)?;
-  let compiled = super::construct::lower_recursive(built.circuit, height)?;
-  let height = super::construct::max_height(&compiled)?;
-  if height > srs.max_len() {
-    return Err("recursive trace exceeds the SRS range".into());
-  }
-  let config = KzgConfig::with_max_trace_len(srs, height, 2)
-    .with_transcript(crate::kzg::TranscriptKind::Blake3)
-    .with_streaming_lookups()
-    .with_streaming_quotient();
-  let outer =
-    super::setup::kzg_lowered(compiled, config, claim_len + PUBLIC_VALUES)?;
-  Ok(RecursiveVerifier {
-    verifier: outer,
-    pairings: Pairings {
-      keys: built
-        .pairing_keys
-        .try_into()
-        .map_err(|_keys| "expected two pairing keys")?,
-    },
-    claim_len,
-  })
 }
 
 #[cfg(test)]
