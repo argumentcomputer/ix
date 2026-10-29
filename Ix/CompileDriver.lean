@@ -706,6 +706,7 @@ theorem runBlock_same (left right : CompileEnv) (same : SameReads left right)
       { all, current := name, mutCtx := default, univCtx := [] } {} (compileBlock name all) := by
     rw [run_eq, run_eq, runs]
   unfold runBlock
+  dsimp only
   rw [compiled]
 
 theorem outcome_projected (snapshot : CompileEnv) (name : Ix.Name) (all : Ix.Set Ix.Name) :
