@@ -213,6 +213,7 @@ theorem scheduled_conversion {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .so
     List.fst_mem_of_mem_zipIdx (by simpa only [Array.toList_zipIdx] using hx)
   exact SourceTrace.graph_conversion (ReaderUnits.scheduleOf_ok hx1 hc)
 
+set_option maxRecDepth 4096 in
 /-- **Quotient Source's trace covers every name by a lowered item at or before it.** -/
 theorem trace_lowered {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
     {env : Ix.Environment} {blocks : Ix.CondensedBlocks} {start st : State .source}
@@ -397,6 +398,7 @@ theorem qkey_not_aux {ixe : Ixon.Env} {roles : Std.HashMap Address Ix.Kernel.Rol
   | role r => rfl
   | aux k d => rw [h] at base; cases base
 
+set_option maxRecDepth 4096 in
 /-- **A scheduled group's lowering declares only its names' quotient keys**, besides derived
 keys. -/
 theorem lowered_keys {ρ : FiberMap} {hints : Ix.Kernel.Reader.CName .source → Option Ix.Kernel.ReducibilityHint}
@@ -559,6 +561,7 @@ theorem converted_names_stored {env : Ix.Environment} {roots : List Ix.Name} {su
   subst hname
   exact ⟨ci, hk⟩
 
+set_option maxRecDepth 4096 in
 /-- **The compiled closure in quotient Source's order is a closure order.** For quotient
 Source's trace of an accepted closure and the compile's layout of it, the lowered items of the
 trace (`Steps`: one per read) cut the compile's record order into segments, one per read,

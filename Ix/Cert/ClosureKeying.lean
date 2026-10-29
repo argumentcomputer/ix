@@ -66,6 +66,7 @@ theorem ingressKey_good {ixe : Ixon.Env} (agree : PublishedAgree ixe) {m : Ix.Na
     rw [Ix.LeanIngress.roleOf_eq_none hr]
     exact ⟨hr, by rw [agree m named hm]; rfl⟩
 
+set_option maxRecDepth 4096 in
 /-- **The closure context keys a published name by its quotient key renamed**, at the name's
 published address, wherever that address resolves. -/
 theorem closure_keyAt {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}

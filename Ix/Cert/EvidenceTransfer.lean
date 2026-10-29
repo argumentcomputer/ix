@@ -493,6 +493,7 @@ theorem evidenceSubst_of (ρ : Ix.LeanIngress.FiberMap) (ev : Evidences .source)
     | some p => rfl
   · intro p; rfl
 
+set_option maxRecDepth 4096 in
 /-- **At a role whose proof records read as the bundle's proofs, renamed, the two evidences
 have the same entries up to the theorems' keys.** -/
 theorem strip_eq {cx : Ctx .anon} {st : State .anon} {b : Bundle}
