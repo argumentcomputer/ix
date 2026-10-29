@@ -3,7 +3,12 @@ public import Lean
 
 namespace Tests.Ix.Compile.Mutual
 
--- Alpha-equivalent pair (A ≅ B under renaming)
+-- Mutual and auxiliary shapes in the shared compiler fixture corpus.
+-- Members retain their source positions even when their shapes agree under
+-- renaming. Reordered declarations are separate inputs; the compiler does
+-- not promise equal addresses across different member orders.
+
+-- Symmetric pair (A ≅ B under renaming), with two distinct member slots.
 namespace AlphaCollapse
 mutual
   public inductive A | a : B → A
@@ -25,7 +30,7 @@ mutual
   public inductive C2 | c : B2 → C2
 end
 
--- Self-referential: collapses to same compiled form as A and B
+-- Self-referential singleton: a different block layout from the pair above.
 mutual
   public inductive A' | a' : A' → A'
   --public inductive B' | a' : B' → B'
@@ -109,7 +114,7 @@ mutual
 end
 end OverMerge2Split
 
--- Over-merged + alpha-collapse: A ≅ B, C is external. Equivalent to BLE/BLI/BLO.
+-- Symmetric A/B pair with a dependent C in the same source declaration.
 namespace OverMergeAlphaCollapse
 mutual
   public inductive A | a : B → A
@@ -130,7 +135,7 @@ end
 public inductive C3 where | c : A3 → B3 → C3
 end OverMergeAlphaCollapse
 
--- Alpha-collapse n=3: A→B→C→A cycle, all collapse to one.
+-- Symmetric A→B→C→A cycle, retaining all three member slots.
 namespace AlphaCollapse3
 mutual
   public inductive A | a : B → A
@@ -146,7 +151,7 @@ mutual
 end
 end AlphaCollapse3
 
--- Alpha-collapse n=4: W→X→Y→Z→W cycle, all collapse to one.
+-- Symmetric W→X→Y→Z→W cycle, retaining all four member slots.
 namespace AlphaCollapse4
 mutual
   public inductive W | w : X → W
@@ -238,10 +243,9 @@ mutual
 end
 end NestedAlphaCollapse
 
--- Nested + alpha-collapse with a parameter: Rose α nests through List.
--- Mutual references ensure SCC formation. Tests that spec_params (containing
--- the block parameter α) are correctly detected, hashed for dedup, and
--- abstracted back to BVars.
+-- Symmetric nested members with a parameter: Rose α nests through List.
+-- Both members and Lean's auxiliary declarations retain their source layout;
+-- their parameter references must survive compilation and reconstruction.
 namespace NestedParam
 mutual
   public inductive RoseA (α : Type) where
@@ -271,18 +275,9 @@ mutual
 end
 end NestedOverMerge
 
--- Nested aux ordering: verify that auxiliary recursors generated for
--- nested inductive occurrences are ordered canonically (by content hash)
--- rather than by Lean's source-walk discovery order. Two semantically
--- equivalent blocks declared in different orders should compile to the
--- SAME canonical Ixon form.
---
--- The fixture declares three types {A, B, C} each with three nested
--- occurrences `Array`, `Option`, `List`, then re-declares the same block
--- with the types in a permuted order (C2, A2, B2). Without hash-sort of
--- aux recs, the source-walk order of `_nested.Array/Option/List_N`
--- differs between the two blocks, and so do the resulting aux recursor
--- numberings — which leaks into addresses and breaks content-addressing.
+-- Three members with nested `Array`, `Option` and `List` occurrences,
+-- followed by a reordered declaration. Each input keeps its own member
+-- and auxiliary positions, including references to Lean's nested recursors.
 namespace NestedAuxOrdering
 mutual
   public inductive A where | mk : Array B → Option C → List A → A
@@ -297,10 +292,8 @@ mutual
 end
 end NestedAuxOrdering
 
--- Nested aux ordering with alpha-collapse: A and B have identical
--- semantic structure under renaming (A ≅ B), nesting through two
--- different containers (`Array`, `Option`). The block is declared
--- unreordered, then reordered.
+-- Symmetric members nesting through `Array` and `Option`, declared in
+-- both source orders. Each declaration retains both members.
 namespace NestedAuxOrderingAlpha
 mutual
   public inductive A where | mk : Array B → Option A → A
@@ -313,10 +306,8 @@ mutual
 end
 end NestedAuxOrderingAlpha
 
--- Nested aux ordering with a binary nesting container (`Prod`). Exercises
--- spec_params with multiple arguments, so the hash-based ordering
--- depends on more than a single type argument. Declared twice with
--- different source orderings.
+-- Binary nesting through `Prod`, whose arguments refer to several members.
+-- The two declarations exercise reconstruction in different source orders.
 namespace NestedAuxOrderingProd
 mutual
   public inductive A where | mk : Prod A B → Prod B C → Prod C A → A
@@ -331,10 +322,9 @@ mutual
 end
 end NestedAuxOrderingProd
 
--- Nested + over-merge + alpha-collapse: A ≅ B (identical structure under
--- renaming), C is in a separate SCC referencing both. All nest through List.
--- Exercises the combination of alpha-collapse AND nested detection in the
--- same block — the canonical recursor for {A,B} needs auxiliary List rules.
+-- Symmetric A/B pair and a dependent C, all nesting through List. Compare
+-- the source shapes with C in the same mutual declaration and separately;
+-- each keeps Lean's original recursors and their List rules.
 namespace NestedOverMergeAlphaCollapse
 mutual
   public inductive A where
@@ -365,8 +355,7 @@ end
 end NestedOverMergeAlphaCollapse
 
 -- Higher-order recursive fields: constructors with `(A → I) → I` pattern.
--- Exercises the `build_below_minor` path for IH fields whose domain has
--- inner foralls. The `.below` minor must distribute PProd inside the forall:
+-- Lean's `.below` declarations for these fields put PProd inside the forall:
 --   `∀ (a : A), PProd(motive (f a), ih a)`
 -- NOT flatten it outside:
 --   `PProd(∀ (a : A), motive (f a), ih)`
@@ -387,8 +376,8 @@ public inductive MTree where
   | leaf : Nat → MTree
   | branch : MTree → (Nat → MTree) → MTree
 
--- Alpha-collapse with higher-order recursive fields: FA ≅ FB under renaming.
--- Tests that collapsed aliases inherit the correct `.below` structure.
+-- Symmetric members with higher-order recursive fields. Each keeps its own
+-- member slot and the corresponding source `.below` declarations.
 mutual
   public inductive FA where
     | leaf : FA
@@ -408,39 +397,11 @@ public inductive HOTree2 where
 
 end HigherOrderRec
 
--- Inductives whose target type is a reducible alias. Minimal reproducers
--- (no Mathlib dependency) for the `build_below_def` mismatch on Mathlib's
--- `FiniteInter.finiteInterClosure` and `εNFA.εClosure`.
---
--- Context: Lean computes `num_indices` by walking the target type with
--- `whnf` — unfolding reducible aliases like `MySet α = α → Prop`. So the
--- target `MySet α` exposes one Pi after unfolding, and Lean stores
--- `num_indices = 1`. The recursor type is then built from `info.m_indices`
--- via the kernel's `mk_pi`, which should produce a matching physical
--- forall. But in practice the physical forall count sometimes disagrees
--- with `num_indices` — either because of how the motive is elaborated in
--- the presence of the reducible alias, or because the motive's argument
--- count vs binder count itself depends on how Lean resolves `motive t`
--- where `t`'s type reduces to a Pi.
---
--- These fixtures keep the shape in the fixture corpus: Lean's `.rec` /
--- `.below` / `.brecOn` of these blocks compile and check as given.
--- Inductives whose target type is a reducible alias. Minimal reproducers
--- (no Mathlib dependency) for the `build_below_def` mismatch on Mathlib's
--- `εNFA.εClosure` and `FiniteInter.finiteInterClosure`.
---
--- Context: Lean computes `num_indices` by walking the target type with
--- `whnf` — unfolding reducible aliases like `MySet α = α → Prop`. The
--- recursor type is then built from `info.m_indices` via the kernel's
--- `mk_pi`. In practice the physical forall count of the stored recursor
--- type can disagree with the stored `num_indices` by the number of
--- arrows hidden inside reducible aliases, because the motive's binder
--- arity is determined syntactically (the motive binds `t : MySet α S`)
--- while `num_indices` counts post-reduction arrows. Our arity-based
--- binder-chain peeling in `build_below_def` trips on this mismatch.
---
--- These fixtures keep the shape in the fixture corpus: Lean's `.rec` /
--- `.below` / `.brecOn` of these blocks compile and check as given.
+-- Inductives with reducible target aliases, mirroring Mathlib's
+-- `εNFA.εClosure` and `FiniteInter.finiteInterClosure` without importing it.
+-- Reducing `MySet α` exposes an index hidden by the target's spelling.
+-- The corpus compiles Lean's stored `.rec`, `.below` and `.brecOn`
+-- declarations for these shapes as given.
 namespace ReducibleAliasTarget
 
 public abbrev MySet (α : Type) := α → Prop
@@ -478,11 +439,8 @@ end
 
 end AuxDedup2
 
--- Mixed nested auxiliaries: `List M` stays a genuine nested occurrence of
--- M's split SCC (M is recursive through it), while `List B` evaporates
--- (B splits into its own SCC). Exercises the expand/restore path with a
--- perm mixing a canonical slot and PERM_OUT_OF_SCC for the same owner:
--- `M.rec_1` is a canonical aux patch, `M.rec_2` aliases `List.rec`.
+-- Mixed nested occurrences: `List M` is recursive through M, while `List B`
+-- refers to a nonrecursive sibling. Both source auxiliary families remain.
 namespace AuxDedupMixed
 
 mutual
@@ -494,24 +452,19 @@ end AuxDedupMixed
 
 -- Source-indexed auxiliary names across SCCs.
 --
--- Lean hangs every nested-aux name off `InductiveVal.all[0]` of the
--- ORIGINAL mutual block, so when the block splits into SCCs the owner's and
--- the spec inductive's components carry auxiliaries named off one prefix
--- (`all0.rec_N`). The compiler compiles each as Lean declares it.
+-- Lean names nested auxiliaries from `InductiveVal.all[0]` of the original
+-- mutual declaration, even when their references lie in different SCCs.
+-- The compiler compiles each declaration and reference as Lean stores it.
 namespace AuxOwnership
 
 -- External single-motive container (the HaskellSpec `NonEmpty` shape).
--- Declared OUTSIDE the mutuals: its own generic 1-motive `NE.rec` is the
--- evaporation target.
+-- Declared outside the mutuals, with its own single-motive `NE.rec`.
 public structure NE (α : Type) where
   head : α
   tail : List α
 
--- A: minimal conflict. all = [O, X] so aux names hang off `O`; the walk
--- discovers `NE X` first from O.mk (owner = O), but X's OWN ctor also
--- mentions `NE X`, so {X}'s canonical block contains the aux and claims
--- `O.rec_1` (and `O.rec_2` for the inner `List X`). {O} then tries to
--- evaporate the same names to `NE.rec` / `List.rec`.
+-- With all = [O, X], auxiliary names start with O. Both constructors use
+-- `NE X`, including its inner `List X`, while only X recurs through it.
 namespace ConflictMin
 mutual
   public inductive O where
@@ -522,10 +475,8 @@ mutual
 end
 end ConflictMin
 
--- B: two distinct specs in two different spec SCCs (the rec_2/rec_3
--- analog). {Q} claims P.rec_1/P.rec_2, {R} claims P.rec_3/P.rec_4,
--- {P} tries to evaporate all four. R differs from Q structurally so the
--- two spec SCCs aren't cross-block alpha-twins.
+-- P depends on two recursive siblings with different constructor shapes.
+-- Their nested `NE` and `List` auxiliaries share the source naming prefix.
 namespace TwoSpecs
 mutual
   public inductive P where
@@ -540,12 +491,8 @@ mutual
 end
 end TwoSpecs
 
--- C: legitimate evaporation regression guard. {B} never discovers
--- `NE B` (B.leaf mentions nothing), so nobody claims `M.rec_1`/`M.rec_2`
--- canonically and {M}'s evaporation to `NE.rec`/`List.rec` is correct.
--- Unlike AuxDedupMixed, {M}'s own expansion has NO nested occurrence at
--- all (`NE B` doesn't mention M), exercising the metadata-only
--- disagreement path.
+-- M is directly recursive, while its `NE B` field refers only to a
+-- nonrecursive sibling. The source recursors still belong to this family.
 namespace Evap
 mutual
   public inductive M where
@@ -555,12 +502,8 @@ mutual
 end
 end Evap
 
--- D: DQ2 probe — spec params spanning two SCCs. `List (S × T)` and the
--- inner `Prod S T` mention S (⇒ {S}'s canonical expansion contains both
--- auxes) but also T, an original member outside {S} (⇒ compute_aux_perm's
--- in_scc pre-filter skips every source position). Predicted to hard-error
--- with "canonical aux #0 has no source mapping" — an adjacent latent bug
--- in the same ownership family, scoped by plan §3 DQ2.
+-- Nested parameters span two reference components: `List (S × T)` and
+-- `Prod S T` refer to both recursive S and nonrecursive T.
 namespace SplitSpecs
 mutual
   public inductive S where
@@ -570,13 +513,8 @@ mutual
 end
 end SplitSpecs
 
--- F: alpha-twin claim routing. X1 ≅ X2 (alpha-identical, one content
--- address) sit in DIFFERENT SCCs; W mentions only `NE X2`. Ownership
--- matching must compare other-SCC original members NAME-strictly:
--- with the address fallback, {X1} would match W's `NE X2` position
--- against its own `NE X1` signature and both twin SCCs would claim
--- `W.rec_1`. Expected claims: {X2} → W.rec_1/W.rec_2,
--- {X1} → W.rec_3/W.rec_4, {W} → nothing (canonical-elsewhere).
+-- Symmetric recursive siblings in different reference components; W uses
+-- only X2. Source references distinguish their members and auxiliaries.
 namespace TwinClaim
 mutual
   public inductive W where
@@ -590,11 +528,9 @@ mutual
 end
 end TwinClaim
 
--- E: the real block shape — a 3-member owner SCC (O1→O2→O3→O1) whose
--- perm mixes a canonical slot (`List O2`, specs in-SCC → claims O1.rec_3)
--- with conflicting evaporations (`NE X3` / `List X3` claimed canonically
--- by {X3} as O1.rec_1/O1.rec_2). Mirrors the failing
--- `HaskellSpec.Source.Binding (3 members)` block.
+-- A three-member cycle O1→O2→O3→O1 with a recursive X3 dependency.
+-- It combines `List O2` with `NE X3` and its inner `List X3`, mirroring
+-- the source shape of `HaskellSpec.Source.Binding`.
 namespace ThreeMember
 mutual
   public inductive O1 where
@@ -636,8 +572,8 @@ mutual
     | _, .succ h => Nat.le_trans (evenp_nonneg h) (Nat.le_succ _)
 end
 
--- Tier A for `.below`: both motive arguments form the complete permuted
--- band, while the implicit major remains unapplied (3 of 4 source args).
+-- Partially applied `.below`: both motives and the index are supplied,
+-- while the implicit major remains unapplied (3 of 4 source arguments).
 public def evenpBelowPartial (n : Nat) :=
   @EvenP.below
     (motive_1 := fun _ _ => True)
@@ -744,9 +680,8 @@ def ar2WkEqDef := @Ar2.wk.eq_def
 set_option linter.defProp false in
 def tm2WkEqDef := @Tm2.wk.eq_def
 
--- Tier B for `.brecOn`: the handler band trails the major, so a bare
--- reference or a prefix ending at the major needs a source-interface
--- eta adapter. The two inductive blocks above have opposite source order.
+-- Bare and partially applied `.brecOn` references, with the handler band
+-- unapplied after the major. Both source orders keep the original interface.
 public noncomputable def arBrecAlias := @Ar.brecOn
 public noncomputable def ar2BrecAlias := @Ar2.brecOn
 
@@ -879,15 +814,12 @@ public theorem pa_eq {a b : Nat} (h : Pa a b) : a = b := by
   | nil => rfl
   | cons hpa hpb ihpa ihpb => exact congrArg (· + 1) ihpb
 
--- Call-site shape coverage for the OTHER apply paths (see
--- plans/callsite-adapter-generalization.md §fixture-catalog). All three
--- are handled by shipped code; they pin the paths a tactic proof never
--- produces. Telescope order for `@Pb.rec` (all = [Pa, Pb]): motive_1 =
--- Pa's motive, motive_2 = Pb's; minors refl, zero, nil, cons; indices
--- and major explicit under `@`.
+-- Explicit recursor application shapes beyond the tactic-generated calls.
+-- Telescope order for `@Pb.rec` (all = [Pa, Pb]): motive_1 = Pa's motive,
+-- motive_2 = Pb's; minors refl, zero, nil, cons; indices and major explicit
+-- under `@`. The compiler preserves this source interface.
 --
--- Full application written directly at the Const head (taxonomy #1 in a
--- USER term — normally only Lean-generated auxiliaries exercise it).
+-- Full application written directly at the constant head in a user term.
 public theorem pb_len_direct {ns ns' : List Nat} (h : Pb ns ns') :
     ns.length = ns'.length :=
   @Pb.rec (fun _ _ _ => True) (fun a b _ => a.length = b.length)
@@ -895,9 +827,7 @@ public theorem pb_len_direct {ns ns' : List Nat} (h : Pb ns ns') :
     rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
     ns ns' h
 
--- Inner-FULL redex (taxonomy #3 / finding F1): the lambda-abstracted
--- major with a complete spine inside the body. Phase 3 leaves the source
--- lambda intact and applies ordinary in-body Const-head surgery.
+-- A lambda-abstracted major with a complete recursor application in its body.
 public theorem pb_len_lam {ns ns' : List Nat} (h : Pb ns ns') :
     ns.length = ns'.length :=
   (fun (p : Pb ns ns') =>
@@ -906,10 +836,8 @@ public theorem pb_len_lam {ns ns' : List Nat} (h : Pb ns ns') :
       rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
       ns ns' p) h
 
--- Dead-binder SPLIT redex: the binder value is unused. Phase 3 preserves
--- the outer redex verbatim while Tier B adapts the inner motives-only
--- spine (args=2 of 9); the elaborator inserts the implicit indices into
--- the outer spine.
+-- An unused lambda binder around a motives-only recursor application
+-- (2 of 9 arguments); the remaining arguments occur outside the redex.
 public theorem pb_len_dead {ns ns' : List Nat} (h : Pb ns ns') :
     ns.length = ns'.length :=
   (fun (_ : Nat) =>
@@ -918,8 +846,8 @@ public theorem pb_len_dead {ns ns' : List Nat} (h : Pb ns ns') :
     rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)
     h
 
--- Tier A: motives+minors are present, while the identity indices/major
--- suffix remains unapplied (stored source spine: 6 of 9 args).
+-- Motives and minors are supplied; the indices and major remain unapplied
+-- (6 of 9 source arguments).
 set_option linter.defProp false in
 public def pbLenFn : ∀ (ns ns' : List Nat),
     Pb ns ns' → ns.length = ns'.length :=
@@ -947,7 +875,7 @@ public theorem pb_len_arg {ns ns' : List Nat} (h : Pb ns ns') :
     (fun _ => trivial) (fun _ _ => trivial)
     rfl (fun _ _ _ ihpb => congrArg (· + 1) ihpb)) h
 
--- Tier B: the permuted minor band is still unapplied (2 of 9 args).
+-- Only the two motives are supplied (2 of 9 source arguments).
 set_option linter.defProp false in
 public def pbCases :
     (∀ (_ : Nat), True) →
@@ -1141,8 +1069,8 @@ public theorem forall2V_ok {xs ys : List Nat} : Forall2 V xs ys → True
   | .cons h hs => (V.ok h).elim (fun _ => forall2V_ok hs) (fun _ => forall2V_ok hs)
 end
 
--- Two auxiliaries (`Forall2 W`, `W 0 1 ∧ W 1 0`) in an order other than
--- the canonical one, the second with no indices.
+-- Two auxiliaries (`Forall2 W`, `W 0 1 ∧ W 1 0`) in source order,
+-- the second with no indices.
 public inductive W : Nat → Nat → Prop
   | base : W 0 0
   | node {xs ys : List Nat} : Forall2 W xs ys → W 0 1 ∧ W 1 0 → W xs.length ys.length
@@ -1177,8 +1105,8 @@ public inductive MB : Nat → Prop
   | mk {n : Nat} : MA n → MB (n + 1)
 end
 
--- An alpha-collapsing nested pair: one class, the two source auxiliaries
--- (`Forall2 CB`, `Forall2 CA`) one canonical auxiliary.
+-- Symmetric nested members with separate slots and source auxiliaries
+-- (`Forall2 CB` and `Forall2 CA`).
 mutual
 public inductive CA : Nat → Nat → Prop
   | base : CA 0 0
