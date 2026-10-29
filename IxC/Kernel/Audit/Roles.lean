@@ -73,12 +73,12 @@ info: 0 Nat: block 4 block [0,1,2,3] deps [] implicit
 20 And: anchor 0 block [20,21,22] deps []
 21 And.intro: anchor 0 block [20,21,22] deps []
 22 And.rec: anchor 1 block [20,21,22] deps []
-23 Iff: anchor 0 block [23,24,25] deps []
-24 Iff.intro: anchor 0 block [23,24,25] deps []
-25 Iff.rec: anchor 1 block [23,24,25] deps []
-26 Nonempty: anchor 1 block [26,27,28] deps []
-27 Nonempty.intro: anchor 1 block [26,27,28] deps []
-28 Nonempty.rec: anchor 1 block [26,27,28] deps []
+23 Iff: block 3 block [23,24,25] deps []
+24 Iff.intro: block 3 block [23,24,25] deps []
+25 Iff.rec: block 3 block [23,24,25] deps []
+26 Nonempty: block 3 block [26,27,28] deps []
+27 Nonempty.intro: block 3 block [26,27,28] deps []
+28 Nonempty.rec: block 3 block [26,27,28] deps []
 29 List: anchor 1 block [29,30,31] deps [] implicit
 30 List.nil: anchor 1 block [29,30,31] deps [] implicit
 31 List.cons: anchor 1 block [29,30,31] deps [] implicit
@@ -108,7 +108,7 @@ info: 0 Nat: block 4 block [0,1,2,3] deps [] implicit
 55 Nat.shiftRight: ops 2 pp block [55] deps [0,43,47,48,4,8]
 56 propext: axiom 0 block [56] deps [23,8] implicit
 57 Classical.choice: axiom 1 block [57] deps [26] implicit
-58 sorryAx: axiom 1 inert block [58] deps []
+58 sorryAx: axiom 1 inert block [58] deps [4]
 59 Decidable: anchor 0 block [59,60,61] deps []
 60 Decidable.isTrue: anchor 0 block [59,60,61] deps []
 61 Decidable.isFalse: anchor 0 block [59,60,61] deps [62]

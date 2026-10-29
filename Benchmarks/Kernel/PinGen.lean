@@ -43,7 +43,8 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    the closed proof, with a sharing table over the proof's DAG). The
    evidence names each record by its address, BLAKE3 of its bytes. The two
    compiles must agree: each operation's address in the certificates' `.ixe`
-   is its address in the Init `.ixe`.
+   is its address in the Init `.ixe`. Definition equations retain their
+   ordinary theorem dependencies instead of expanding them into each proof.
 4. **Verification by the verified fold.** The evidence records are read back
    (`Reader.evidenceOf`) and must give the closed proofs; then the dependency
    closure of every bound constant is checked record by record
@@ -53,7 +54,9 @@ in IxC: the specifications (`Role.spec`), `specVersion` and their digest stay.
    to `canon`, the literal support has its exact types, the structural `Nat`
    operations are certified by their recurrences and the well-founded ones by
    the evidence) and both literal capabilities hold in the final
-   environment.
+   environment. Definition-equation theorems and their support are checked
+   as ordinary declarations before `eqnsCheck` validates their statements
+   or the requested definitional equalities.
 5. **Output.** `RoleData.lean`: the table's binding section (canonical, well
    formed, checked by decoding it back) and its address, the evidence
    records and blobs, and the prelude's records, each as canonical bytes;
@@ -108,6 +111,16 @@ def regenerate : List String :=
 def sha256 (path : System.FilePath) : IO String := do
   let out ← IO.Process.output { cmd := "sha256sum", args := #["--", path.toString] }
   return (out.stdout.splitOn " ").headD ""
+
+/-- Keep large generated arrays within the elaborator's ordinary recursion
+limit without changing their entries or order. -/
+def fixtureArray (rows : Array String) : String :=
+  let literal (items : Array String) := "#[\n" ++ ",\n".intercalate items.toList ++ "]"
+  if rows.size ≤ 128 then literal rows else
+    let chunks := (Array.range ((rows.size + 127) / 128)).map fun index =>
+      let chunk := literal (rows.extract (index * 128) ((index + 1) * 128))
+      "  " ++ chunk.replace "\n" "\n  "
+    "(" ++ literal chunks ++ ").flatten"
 
 /-- An `.ixe`'s records, decoded. -/
 def loadStore (path : System.FilePath) : IO (Ixon.Env × RecordStore) := do
@@ -610,7 +623,8 @@ def run (args : List String) : IO UInt32 := do
     let a := ((refOfRole[r]?).map (·.block)).getD default
     let micros := ((rows.find? (·.address == a)).map (·.micros)).getD 0
     IO.eprintln s!"pin-gen: {repr r}: accepted with the generated evidence, {micros} µs"
-  -- 4c: the well-founded operations' dependency closure, pinned for
+  -- The bound roles and equation theorems' complete dependency closure,
+  -- including the well-founded operation evidence checked by
   -- `Ix.Cert.RoleClosure.RoleEvidenceChecks` (with the blobs its literals
   -- reference and its definitions' hints), and checked as that statement
   -- reads it: the Ixon entry's reading behind the prelude, the verified fold
@@ -737,8 +751,10 @@ def run (args : List String) : IO UInt32 := do
   -- 5: output
   let digest ← sha256 input
   let certDigest ← sha256 certInput
+  let rowTerms (xs : Array (Address × ByteArray)) : Array String :=
+    xs.map fun (a, b) => s!"  ({(toString a).quote},\n   {(hexOfBytes b).quote})"
   let rowsOf (xs : Array (Address × ByteArray)) : String :=
-    ",\n".intercalate (xs.toList.map fun (a, b) => s!"  ({(toString a).quote},\n   {(hexOfBytes b).quote})")
+    ",\n".intercalate (rowTerms xs).toList
   let namesOf (xs : Array (Address × Lean.Name)) : String :=
     ",\n".intercalate (xs.toList.map fun (a, n) => s!"  ({(toString a).quote},\n   {nameTerm n})")
   let recipe := "\n".intercalate (regenerate.map ("    " ++ ·))
@@ -758,7 +774,10 @@ the theorems of `IxC/Kernel/PinGen/Certs.lean` (compiled, sha256 {certDigest})
 closed over the operation's dependency closure and written as theorem
 records. Every bound constant's record, the evidence and both literal
 capabilities were checked by the verified fold through the Ixon reader under
-this table when this file was generated. The table is untrusted: every
+this table when this file was generated. Definition equations retain ordinary
+theorem dependencies in the checked closure; `eqnsCheck` validates their
+statements and definitional evidence after those declarations are checked.
+The table is untrusted: every
 theorem holds for every table (`Ix.Kernel.Admission.checkBytes`), and it is
 for tests and the command line only.
 
@@ -769,7 +788,7 @@ bytes). `prelude`: (record address, canonical record bytes), in the checker's
 prelude order.
 
 `sourceEvidence`: Source mode's evidence (`Ix.RoleEvidence.bundleEvidence`,
-for an input without the certificate theorems): the same theorems closed in
+for an input without the certificate theorems): the well-founded Nat theorems closed in
 Source mode over the certificate module's own environment, as theorem records
 (address, canonical bytes) whose references are names: `sourceNames` names
 each reference's address (the generator's `nameAddress`) and each record (its theorem), and
@@ -778,8 +797,8 @@ closed proofs when this file was generated.
 
 {quotientParagraph}
 
-`closure`: the well-founded `Nat` operations' dependency closure in the
-compiled Init, less the prelude (record address, canonical record bytes), in
+`closure`: the bound roles and equation theorems' dependency closure from the
+compiled Init and certificates, less the prelude (record address, canonical record bytes), in
 check order; `closureBlobs`: the blobs its literals reference; `closureHints`:
 its definitions' hints (record address, `opaque`, `abbrev` or a height). Read
 by the Ixon entry's reader behind the prelude, it defines every well-founded
@@ -819,15 +838,14 @@ def sourceBlobs : Array (String × String) := #[
 def quotientNames : Array (String × Lean.Name) := #[
 {nameRows qNames}]
 
-def closure : Array (String × String) := #[
-{rowsOf (closureRecords.map fun (a, c) => (a, Ixon.serConstant c))}]
+def closure : Array (String × String) := {fixtureArray (rowTerms
+    (closureRecords.map fun (a, c) => (a, Ixon.serConstant c)))}
 
 def closureBlobs : Array (String × String) := #[
 {rowsOf closureBlobs}]
 
-def closureHints : Array (String × String) := #[
-{",\n".intercalate (closureHints.toList.map fun (a, h) =>
-    s!"  ({(toString a).quote}, {(Ix.Cert.RoleClosure.hintString h).quote})")}]
+def closureHints : Array (String × String) := {fixtureArray (closureHints.map fun (a, h) =>
+    s!"  ({(toString a).quote}, {(Ix.Cert.RoleClosure.hintString h).quote})")}
 
 end Ix.Kernel.Reader.RoleData
 "
