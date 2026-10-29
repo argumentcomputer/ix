@@ -1,13 +1,13 @@
 //! Recursive KZG wrapper: staging and proving in one process, and the
 //! portable verifier its packets are checked with.
-#[cfg(feature = "plonk")]
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 mod plonk_export;
-#[cfg(feature = "plonk")]
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 mod relation;
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub(in crate::pipeline) use plonk_export::export as plonk_export;
 #[cfg(feature = "plonk")]
-pub(in crate::pipeline) use plonk_export::{
-  export as plonk_export, export_first as plonk_export_first,
-};
+pub(in crate::pipeline) use plonk_export::export_first as plonk_export_first;
 
 use super::super::stages::{
   construct::{self, Lowered},
@@ -207,7 +207,7 @@ fn packet_body<'a>(
   Ok(&packet[offset..])
 }
 
-#[cfg(any(test, feature = "plonk"))]
+#[cfg(any(test, feature = "plonk", feature = "groth16"))]
 fn packet_claims(
   packet: &[u8],
   vk: &[u8; 32],
@@ -668,7 +668,7 @@ mod tests {
   }
 
   #[test]
-  #[cfg(feature = "plonk")]
+  #[cfg(any(feature = "plonk", feature = "groth16"))]
   fn plonk_recursive_export_includes_anchor_and_deferred_publics()
   -> storage::Result<()> {
     let (_, vk, packet) = ignition_vk_fixture()?;

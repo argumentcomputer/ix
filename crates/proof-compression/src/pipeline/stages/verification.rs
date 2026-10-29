@@ -174,7 +174,7 @@ fn pairing_points(mut bytes: &[u8]) -> Result<[G1Affine; 2]> {
   Ok([read_g1_compressed(&mut bytes)?, read_g1_compressed(&mut bytes)?])
 }
 
-#[cfg(any(test, feature = "plonk"))]
+#[cfg(any(test, feature = "plonk", feature = "groth16"))]
 pub(in crate::pipeline) fn unpack_pairings(
   bytes: &[u8],
 ) -> Result<Vec<Scalar>> {

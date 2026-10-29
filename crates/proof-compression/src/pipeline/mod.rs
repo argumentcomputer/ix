@@ -9,11 +9,15 @@ pub use stages::{
 mod driver;
 mod first;
 mod fixed_cache;
+#[cfg(feature = "groth16")]
+mod groth16;
 #[cfg(test)]
 mod init_claim;
 mod init_fri;
 #[cfg(feature = "plonk")]
 mod plonk;
+mod terminal;
+pub use terminal::{TerminalOptions, TerminalSystem};
 mod prover;
 mod root;
 mod setup;
@@ -32,13 +36,15 @@ pub const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x01";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub fn command(stage: &str, args: &[String]) -> Result<()> {
-  if !matches!(stage, "plonk" | "pipeline") {
+  if !matches!(stage, "plonk" | "groth16" | "pipeline") {
     configure_backend(stage)?;
   }
   match stage {
     "pipeline" => driver::run(args),
     #[cfg(feature = "plonk")]
     "plonk" => plonk::run(args),
+    #[cfg(feature = "groth16")]
+    "groth16" => groth16::run(args),
     "fri" => root::run(args),
     "kzg" | "wrap" => {
       let config = WorkerConfig::from_env(
@@ -224,7 +230,7 @@ fn check_worker_setup_capabilities(bytes: &[u8], ignition: bool) -> Result<()> {
   Ok(())
 }
 
-fn check_worker_curve(ignition: bool) -> Result<()> {
+fn check_worker_curve(ignition: bool, terminal: TerminalSystem) -> Result<()> {
   let output = Command::new(worker_executable()?)
     .args(["fri", "capabilities"])
     .output()?;
@@ -237,7 +243,17 @@ fn check_worker_curve(ignition: bool) -> Result<()> {
       .into(),
     );
   }
-  check_worker_setup_capabilities(&output.stdout, ignition)
+  check_worker_setup_capabilities(&output.stdout, ignition)?;
+  let capabilities: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+  let flag = match terminal {
+    TerminalSystem::None => return Ok(()),
+    TerminalSystem::Plonk => "terminal_plonk",
+    TerminalSystem::Groth16 => "terminal_groth16",
+  };
+  if capabilities[flag] != true {
+    return Err(format!("compression worker does not support {flag}").into());
+  }
+  Ok(())
 }
 
 fn child(stage: &str, args: &[&str], caches: &Caches) -> Result<()> {
@@ -282,6 +298,10 @@ pub fn verify(
   claim: &[u8],
   allow_development: bool,
 ) -> Result<setup::SetupClass> {
+  #[cfg(feature = "groth16")]
+  if let Some(packet) = proof.strip_prefix(groth16::PROOF_TAG) {
+    return groth16::verify(packet, claim, allow_development);
+  }
   #[cfg(feature = "plonk")]
   if let Some(packet) = proof.strip_prefix(plonk::PROOF_TAG) {
     return plonk::verify(packet, claim);
@@ -364,9 +384,25 @@ impl Caches {
 fn validate_compression_options(
   development: bool,
   log_height: u32,
-  terminal_plonk: bool,
+  terminal: TerminalOptions,
 ) -> Result<setup::SetupConfig> {
-  if terminal_plonk {
+  if terminal.allow_development && terminal.system != TerminalSystem::Groth16 {
+    return Err(
+      "development terminal keys are supported only for Groth16".into(),
+    );
+  }
+  if terminal.system == TerminalSystem::Groth16 {
+    #[cfg(not(feature = "groth16"))]
+    return Err("this build does not include terminal Groth16 support".into());
+    #[cfg(feature = "groth16")]
+    {
+      if development {
+        return Err("terminal Groth16 requires admitted inner KZG parameters; omit --dev-srs".into());
+      }
+      groth16::preflight(terminal.allow_development)?;
+    }
+  }
+  if terminal.system == TerminalSystem::Plonk {
     #[cfg(not(feature = "plonk"))]
     return Err("this build does not include terminal PLONK support".into());
     #[cfg(feature = "plonk")]
@@ -395,7 +431,7 @@ fn validate_compression_options(
     );
   }
   let ignition = setup.ignition_admission().is_some();
-  check_worker_curve(ignition)?;
+  check_worker_curve(ignition, terminal.system)?;
   Ok(setup)
 }
 
@@ -464,9 +500,42 @@ pub fn compress(
   log_height: u32,
   terminal_plonk: bool,
 ) -> Result<Vec<u8>> {
+  compress_with_terminal(
+    vk,
+    proof,
+    claim,
+    statement,
+    fixed_root,
+    out,
+    cache_root,
+    development,
+    log_height,
+    if terminal_plonk { TerminalSystem::Plonk } else { TerminalSystem::None }
+      .into(),
+  )
+}
+
+/// Compress an aggregate proof with an explicitly selected terminal proof system.
+/// With `fixed_root`, the root must be normalized to that layout.
+#[allow(clippy::too_many_arguments)]
+pub fn compress_with_terminal(
+  vk: &[u8],
+  proof: &[u8],
+  claim: &[u8],
+  statement: &[u8],
+  fixed_root: Option<&str>,
+  out: &Path,
+  cache_root: &Path,
+  development: bool,
+  log_height: u32,
+  terminal: TerminalOptions,
+) -> Result<Vec<u8>> {
   let words = check_claim(claim, statement)?;
-  let setup =
-    validate_compression_options(development, log_height, terminal_plonk)?;
+  let setup = validate_compression_options(development, log_height, terminal)?;
+  #[cfg(feature = "groth16")]
+  if terminal.system == TerminalSystem::Groth16 {
+    groth16::check_statement(&words, terminal.allow_development)?;
+  }
   prepare_output(out)?;
   let caches = Caches::under(cache_root);
   let root = out.join("root");
@@ -477,7 +546,7 @@ pub fn compress(
     &[&path_string(&root)?, &path_string(&fri)?, "--prove-outer"],
     &caches,
   )?;
-  finish_kzg(&fri, &words, out, cache_root, &setup, log_height, terminal_plonk)
+  finish_kzg(&fri, &words, out, cache_root, &setup, log_height, terminal)
 }
 
 /// Compress an already saved FRI stage while binding its statement to a
@@ -493,7 +562,11 @@ pub fn compress_fri(
   log_height: u32,
 ) -> Result<Vec<u8>> {
   let words = check_claim(claim, expected_claims)?;
-  let setup = validate_compression_options(development, log_height, false)?;
+  let setup = validate_compression_options(
+    development,
+    log_height,
+    TerminalSystem::None.into(),
+  )?;
   prepare_output(out)?;
   {
     let fixture = init_fri::load(fri)?;
@@ -503,7 +576,15 @@ pub fn compress_fri(
       return Err("saved FRI statement differs from the independently expected root statement".into());
     }
   }
-  finish_kzg(fri, &words, out, cache_root, &setup, log_height, false)
+  finish_kzg(
+    fri,
+    &words,
+    out,
+    cache_root,
+    &setup,
+    log_height,
+    TerminalSystem::None.into(),
+  )
 }
 
 fn finish_kzg(
@@ -513,7 +594,7 @@ fn finish_kzg(
   cache_root: &Path,
   setup: &setup::SetupConfig,
   log_height: u32,
-  terminal_plonk: bool,
+  terminal: TerminalOptions,
 ) -> Result<Vec<u8>> {
   let development = setup.class() == setup::SetupClass::Development;
   let caches = Caches::under(cache_root);
@@ -557,7 +638,35 @@ fn finish_kzg(
         .into(),
     );
   }
-  if terminal_plonk {
+  if terminal.system == TerminalSystem::Groth16 {
+    #[cfg(feature = "groth16")]
+    {
+      let terminal_out = out.join("groth16");
+      let expected_path = final_dir.join("expected-statement.json");
+      storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
+      let verifier = final_dir.join("vk.bin");
+      let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
+      child(
+        "groth16",
+        &[
+          "wrap",
+          &path(&verifier)?,
+          &path(&final_dir.join("kzg/packet.bin"))?,
+          trusted.as_str(),
+          &path(&expected_path)?,
+          &path(&terminal_out)?,
+          if terminal.allow_development {
+            "--allow-development"
+          } else {
+            "--production"
+          },
+        ],
+        &caches,
+      )?;
+      return Ok(fs::read(terminal_out.join("proof.envelope.bin"))?);
+    }
+  }
+  if terminal.system == TerminalSystem::Plonk {
     #[cfg(feature = "plonk")]
     {
       let out_plonk = out.join("plonk");

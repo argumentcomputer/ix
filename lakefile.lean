@@ -54,7 +54,7 @@ section FFI
 /-- Curve selection shared by the CLI library and compression worker. -/
 def compressionFeatures : IO (Array String) := do
   match (← IO.getEnv "IX_KZG_CURVE").getD "bn254" with
-  | "bn254" => return #["plonk"]
+  | "bn254" => return #["plonk", "groth16"]
   | other => throw <| IO.userError s!"IX_KZG_CURVE must be bn254, got {other}"
 
 /-- Rust feature selection shared by compilation and native runtime linkage. -/
@@ -107,7 +107,7 @@ def usesCuda (features : Array String) : Bool :=
 /-- Worker features follow the CLI's curve while omitting CLI-only features. -/
 def compressionWorkerArgs (features : Array String) : Array String := Id.run do
   let mut selected := features.filter fun name =>
-    #["plonk", "parallel"].contains name
+    #["plonk", "groth16", "parallel"].contains name
   if usesCuda features then selected := selected.push "cuda"
   return #["build", "--release", "-p", "ix-proof-compression",
     "--bin", "ix-compression-worker", "--no-default-features",
@@ -229,21 +229,25 @@ def compressionHelperArgs (output : FilePath) : Array String :=
   #["build", "-buildvcs=false", "-trimpath", "-mod=readonly"] ++
     #["-o", output.toString, "."]
 
+private def compressionCudaFlag (name : String) : IO Bool := do
+  match (← IO.getEnv name).getD "0" with
+  | "1" | "true" | "yes" => pure true
+  | "0" | "false" | "no" | "" => pure false
+  | _ => throw <| IO.userError s!"{name} must be 0/1, false/true or no/yes"
+
 /-- PLONK arithmetic selection is independent of the inner KZG CUDA backend. -/
-def compressionHelperCuda : IO Bool := do
-  let value := (← IO.getEnv "IX_PLONK_CUDA").getD "0"
-  let enabled ← match value with
-    | "1" | "true" | "yes" => pure true
-    | "0" | "false" | "no" | "" => pure false
-    | _ => throw <| IO.userError "IX_PLONK_CUDA must be 0/1, false/true or no/yes"
-  return enabled
+def compressionHelperCuda : IO Bool := compressionCudaFlag "IX_PLONK_CUDA"
+
+/-- Groth16 uses the pinned ICICLE backend when explicitly enabled. -/
+def compressionGroth16Cuda : IO Bool := compressionCudaFlag "IX_GROTH16_CUDA"
 
 def plonkCudaLibraryName := "libix_plonk_bn254_cuda.so"
 
 target ix_plonk_wrapper pkg : Array FilePath := do
   let features ← compressionFeatures
   let cuda ← compressionHelperCuda
-  unless features.contains "plonk" do
+  let groth16Cuda ← compressionGroth16Cuda
+  unless features.contains "plonk" || features.contains "groth16" do
     return pure #[]
   let mut sources ← inputDir (pkg.dir / "tools/plonk-wrapper") false fun path =>
     path.extension == some "go" || path.extension == some "json" ||
@@ -265,13 +269,13 @@ target ix_plonk_wrapper pkg : Array FilePath := do
       let native ← inputBinFile ((FilePath.mk path).parent.get!.parent.get! / "lib" / plonkCudaLibraryName)
       sources := sources.zipWith (fun paths _ => paths) native
   let environment ← #["IX_PLONK_CUDA_ARCHS", "IX_PLONK_SPPARK_SOURCE", "IX_PLONK_BLST_SOURCE",
-    "NVCC", "CUDA_HOME", "NVCC_CCBIN", "CC", "CXX"].mapM fun name =>
+    "NVCC", "CUDA_HOME", "NVCC_CCBIN", "CC", "CXX", "IX_GROTH16_ICICLE_ROOT"].mapM fun name =>
       return (name, ← IO.getEnv name)
   sources.mapM fun _ => do
     let compiler ← match prebuilt with
       | some path => pure path
       | none => (·.stdout) <$> captureProc' { cmd := "go", args := #["version"] }
-    addPureTrace (prebuilt, compiler, features, cuda, environment) s!"PLONK helper compiler: {compiler}"
+    addPureTrace (prebuilt, compiler, features, cuda, groth16Cuda, environment) s!"PLONK helper compiler: {compiler}"
     buildUnlessUpToDate outputs (← getTrace) (output.addExtension "trace") do
       match prebuilt with
       | some path =>
@@ -287,11 +291,24 @@ target ix_plonk_wrapper pkg : Array FilePath := do
             | error "IX_PLONK_SPPARK_SOURCE must name the pinned sppark source tree"
           let some blst ← IO.getEnv "IX_PLONK_BLST_SOURCE"
             | error "IX_PLONK_BLST_SOURCE must name the pinned blst source tree"
+          let grothArgs ← if groth16Cuda then do
+              let some icicle ← IO.getEnv "IX_GROTH16_ICICLE_ROOT"
+                | error "IX_GROTH16_ICICLE_ROOT must name the pinned ICICLE v3.2.2 installation"
+              pure #["--groth16-icicle-root", icicle]
+            else pure #[]
           proc {
             cmd := "python3"
             args := #["tools/plonk-wrapper/build_cuda.py", "--out", temporary.toString,
               "--build-dir", (pkg.buildDir / "plonk-cuda").toString,
-              "--sppark", sppark, "--blst", blst]
+              "--sppark", sppark, "--blst", blst] ++ grothArgs
+            cwd := pkg.dir
+          }
+        else if groth16Cuda then
+          let some icicle ← IO.getEnv "IX_GROTH16_ICICLE_ROOT"
+            | error "IX_GROTH16_ICICLE_ROOT must name the pinned ICICLE v3.2.2 installation"
+          proc {
+            cmd := "python3"
+            args := #["tools/plonk-wrapper/build_groth16_cuda.py", "--out", temporary.toString, "--icicle-root", icicle]
             cwd := pkg.dir
           }
         else

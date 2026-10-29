@@ -148,22 +148,45 @@
             '';
             meta.platforms = [ "x86_64-linux" ];
           };
-          mkPlonkHelper = { cuda ? false }: (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
+          icicleBn254 = pkgs.stdenv.mkDerivation {
+            pname = "ix-icicle-bn254";
+            version = "3.2.2";
+            src = pkgs.fetchFromGitHub {
+              owner = "ingonyama-zk";
+              repo = "icicle-gnark";
+              rev = "b62bbbe518a73214da10ece26969ad55e6fa0cd0";
+              hash = "sha256-kbXwg1cF72flzpl1+20D+smYKgl7Aslbf1KSCi6ur34=";
+            };
+            sourceRoot = "source/icicle";
+            nativeBuildInputs = [ cudaPkgs.cmake cudaPkgs.ninja cudaToolkit ];
+            cmakeFlags = [
+              "-DCURVE=bn254" "-DMSM=ON" "-DNTT=ON" "-DG2=ON"
+              "-DCPU_BACKEND=OFF" "-DCUDA_BACKEND=ON" "-DBUILD_TESTS=OFF"
+              "-DCUDA_ARCH=120-real" "-DCMAKE_CUDA_ARCHITECTURES=120-real"
+              "-DCMAKE_CUDA_COMPILER=${cudaToolkit}/bin/nvcc"
+              "-DCMAKE_CUDA_HOST_COMPILER=${pkgs.stdenv.cc}/bin/c++"
+            ];
+            meta.platforms = [ "x86_64-linux" ];
+          };
+          mkPlonkHelper = { cuda ? false, groth16Cuda ? false }: (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
             pname = "ix-bn254-plonk-wrapper"
-              + pkgs.lib.optionalString cuda "-cuda";
-            tags = pkgs.lib.optional cuda "cuda";
+              + pkgs.lib.optionalString cuda "-cuda"
+              + pkgs.lib.optionalString groth16Cuda "-groth16-cuda";
+            tags = pkgs.lib.optional cuda "cuda" ++ pkgs.lib.optional groth16Cuda "icicle";
+            ldflags = pkgs.lib.optional groth16Cuda "-X=main.groth16LibraryDefault=${icicleBn254}/lib/backend";
             version = "0.1.0";
             src = pkgs.lib.fileset.toSource {
               root = ./tools/plonk-wrapper;
               fileset = plonkSources;
             };
-            vendorHash = "sha256-atTpFnSORqh5A+LzECBF9gR0qCr7G2lNXpVuFFSS5to=";
+            vendorHash = "sha256-RJNclxTYY6UQBG6f7Kwt0XspL7DZruLdsYKubHlUOvg=";
             subPackages = [ "." ];
-            env.CGO_ENABLED = if cuda then "1" else "0";
+            env.CGO_ENABLED = if cuda || groth16Cuda then "1" else "0";
             env.GOTOOLCHAIN = "local";
             env.CGO_CFLAGS = pkgs.lib.optionalString cuda "-I${plonkCudaNative}/include";
-            env.CGO_LDFLAGS = pkgs.lib.optionalString cuda "-L${plonkCudaNative}/lib -Wl,-rpath,${plonkCudaNative}/lib -lix_plonk_bn254_cuda";
-            buildInputs = pkgs.lib.optional cuda plonkCudaNative;
+            env.CGO_LDFLAGS = pkgs.lib.optionalString cuda "-L${plonkCudaNative}/lib -Wl,-rpath,${plonkCudaNative}/lib -lix_plonk_bn254_cuda "
+              + pkgs.lib.optionalString groth16Cuda "-L${icicleBn254}/lib -Wl,-rpath,${icicleBn254}/lib";
+            buildInputs = pkgs.lib.optional cuda plonkCudaNative ++ pkgs.lib.optional groth16Cuda icicleBn254;
             postInstall = ''
               mv "$out/bin/plonk-wrapper" "$out/bin/ix-bn254-plonk-wrapper"
             '' + pkgs.lib.optionalString cuda ''
@@ -174,6 +197,8 @@
 
           plonkHelper = mkPlonkHelper { };
           plonkCudaHelper = mkPlonkHelper { cuda = true; };
+          groth16CudaHelper = mkPlonkHelper { groth16Cuda = true; };
+          terminalCudaHelper = mkPlonkHelper { cuda = true; groth16Cuda = true; };
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -439,6 +464,9 @@
             ix = ixCLI;
             plonk-wrapper = plonkHelper;
             plonk-wrapper-cuda = plonkCudaHelper;
+            groth16-wrapper-cuda = groth16CudaHelper;
+            terminal-wrapper-cuda = terminalCudaHelper;
+            icicle-bn254 = icicleBn254;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
             # adding it to the default check set.

@@ -1,7 +1,9 @@
 mod outer;
 mod saved;
+#[cfg(any(feature = "plonk", feature = "groth16"))]
+pub(super) use outer::plonk_export;
 #[cfg(feature = "plonk")]
-pub(super) use outer::{plonk_export, plonk_export_first};
+pub(super) use outer::plonk_export_first;
 
 /// Device bytes the recursive prover keeps resident per device unless
 /// `IX_KZG_CUDA_RESIDENT_GIB` overrides it. Its traces are the largest

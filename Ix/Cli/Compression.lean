@@ -23,7 +23,7 @@ preprocessing and development SRS caches under `cacheRoot`. A nonempty
 `fixedRoot` is the JSON layout `proof` was normalized to. -/
 @[extern "rs_compression_run"]
 opaque compress (vk proof claim statement : @& ByteArray) (fixedRoot dir cacheRoot : @& String)
-  (devSrs : Bool) (logHeight : UInt32) (terminalPlonk : Bool) : IO ByteArray
+  (devSrs : Bool) (logHeight : UInt32) (terminal : UInt8) : IO ByteArray
 
 /-- Per-circuit rows of one root wrap execution of `proof`, as a JSON array. -/
 @[extern "rs_compression_root_rows"]
@@ -87,6 +87,8 @@ def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UIn
     IO.println s!"ok: development proof {addr} verifies claim {Address.blake3 claim} (not production-secure)"
   | "ignition" =>
     IO.println s!"ok: proof {addr} verifies claim {Address.blake3 claim} under the Aztec Ignition powers of tau"
+  | "groth16" =>
+    IO.println s!"ok: Groth16 proof {addr} verifies claim {Address.blake3 claim} under the admitted circuit-specific setup"
   | _ =>
     throw <| IO.userError s!"unsupported compression setup: {setup}"
   return 0

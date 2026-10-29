@@ -24,11 +24,15 @@ extern "C" fn rs_compression_run(
   cache_root: LeanString<LeanBorrowed<'_>>,
   dev_srs: bool,
   log_height: u32,
-  terminal_plonk: bool,
+  terminal: u8,
 ) -> LeanIOResult<LeanOwned> {
   let dir = dir.to_string();
   let cache_root = cache_root.to_string();
-  match pipeline::compress(
+  let terminal = match pipeline::TerminalOptions::try_from(terminal) {
+    Ok(system) => system,
+    Err(error) => return LeanIOResult::error_string(error),
+  };
+  match pipeline::compress_with_terminal(
     vk.as_bytes(),
     proof.as_bytes(),
     claim.as_bytes(),
@@ -38,7 +42,7 @@ extern "C" fn rs_compression_run(
     std::path::Path::new(&cache_root),
     dev_srs,
     log_height,
-    terminal_plonk,
+    terminal,
   ) {
     Ok(bytes) => LeanIOResult::ok(LeanByteArray::from_bytes(bytes.as_slice())),
     Err(e) => LeanIOResult::error_string(&e.to_string()),

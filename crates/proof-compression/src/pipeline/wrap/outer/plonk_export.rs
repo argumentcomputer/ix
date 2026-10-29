@@ -1,4 +1,4 @@
-//! Canonical verifier programs and witnesses for terminal PLONK circuits.
+//! Canonical verifier programs and witnesses for terminal circuits.
 use super::relation::{codegen, *};
 use super::*;
 use crate::kzg::curve::G1Affine;
@@ -47,7 +47,7 @@ pub(in crate::pipeline) fn export(
     let setup = super::super::super::setup::SetupConfig::from_env(false)?;
     let admission = setup
       .ignition_admission()
-      .ok_or("PLONK export requires admitted Ignition parameters")?;
+      .ok_or("terminal export requires admitted Ignition parameters")?;
     vk.check_ignition_admission(admission)?;
   }
   write_export(&vk, &fs::read(packet)?, expected, directory, "witness", true)
@@ -163,6 +163,7 @@ pub(super) fn write_export(
 /// Export the relation verifying a saved first KZG stage directly: every
 /// partition's circuit, the first-stage claim rows and no deferred pairing.
 /// The stage's setup is selected from the environment as the worker does.
+#[cfg(feature = "plonk")]
 pub(in crate::pipeline) fn export_first(
   stage: &Path,
   expected: &Statement,

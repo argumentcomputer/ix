@@ -27,6 +27,7 @@ fn print_capabilities() {
       "development_setup_only": false,
       "ignition_setup": true,
       "terminal_plonk": cfg!(feature = "plonk"),
+      "terminal_groth16": cfg!(feature = "groth16"),
     })
   );
 }

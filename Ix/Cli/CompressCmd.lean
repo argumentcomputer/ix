@@ -8,6 +8,13 @@ namespace Ix.Cli.CompressCmd
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   try
+    if p.hasFlag "plonk" && p.hasFlag "groth16" then
+      throw <| IO.userError "choose at most one of --plonk and --groth16"
+    if p.hasFlag "dev-groth16" && !p.hasFlag "groth16" then
+      throw <| IO.userError "--dev-groth16 requires --groth16"
+    let terminal : UInt8 := if p.hasFlag "groth16" then
+        (if p.hasFlag "dev-groth16" then 3 else 2)
+      else if p.hasFlag "plonk" then 1 else 0
     let setup ← Compression.describeSetup (p.hasFlag "dev-srs")
     let hex := p.positionalArg! "proof" |>.as! String
     let some addr := Address.fromString hex | throw <| IO.userError "expected a 64-character proof address"
@@ -40,7 +47,7 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
     let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
       layout out (← Compression.cacheDir).toString
-      (p.hasFlag "dev-srs") height.toUInt32 (p.hasFlag "plonk")
+      (p.hasFlag "dev-srs") height.toUInt32 terminal
     let compressed : Ixon.Proof := { claim := wrapper.claim, proof }
     let result ← StoreIO.toIO (Store.write (Ixon.Proof.ser compressed))
     IO.println (toString result)
@@ -61,6 +68,8 @@ def compressCmd : Cli.Cmd := `[Cli|
     "fixed-root" : String; "Normalize the root to this layout (from `ix compression layout`) first, so the verifier does not depend on the root's shape."
     "dev-srs"; "Use known-trapdoor development parameters; results are not production-secure."
     "plonk"; "Add a terminal PLONK proof using the compiled curve and selected setup."
+    "groth16"; "Add a terminal BN254 Groth16 proof using prepared, independently admitted circuit keys."
+    "dev-groth16"; "Allow development Groth16 keys; inner KZG still requires admitted Ignition parameters."
   ARGS:
     proof : String; "Address of an aggregate Ixon.Proof in the ix store."
 ]

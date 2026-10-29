@@ -1,0 +1,198 @@
+{
+  "scope": "actual Init recursive KZG verifier and witness; terminal proving only",
+  "setup": "Groth16 development setup; PLONK cached Ignition parameters",
+  "schema": {
+    "SHA256": "b86e203bcc2dcd87a67c1e325e24328e12534676ada7ea9602ac319568139c29",
+    "Bytes": 100463
+  },
+  "witness": {
+    "SHA256": "2034aff3138764b878280bb210dc15dadff693f8753f35a5be1fcc73d9ac06b3",
+    "Bytes": 5841
+  },
+  "goVersion": "go1.26.8",
+  "cpus": 32,
+  "gomaxprocs": 32,
+  "plonkCompileSeconds": 0,
+  "plonkSRSSeconds": 0,
+  "plonkSetupSeconds": 0,
+  "groth16KeysReused": true,
+  "plonkKeysReused": true,
+  "results": [
+    {
+      "system": "groth16",
+      "device": "cpu",
+      "pinKeys": false,
+      "constraints": 4340068,
+      "domain": 8388608,
+      "commitments": 1,
+      "openSeconds": 26.581690542,
+      "first": {
+        "proveSeconds": 7.396492302,
+        "verifySeconds": 0.001264361,
+        "nativeBytes": 196,
+        "solidityBytes": 384,
+        "envelopeBytes": 236
+      },
+      "warm": [
+        {
+          "proveSeconds": 7.351981283,
+          "verifySeconds": 0.001336093,
+          "nativeBytes": 196,
+          "solidityBytes": 384,
+          "envelopeBytes": 236
+        },
+        {
+          "proveSeconds": 7.360199898,
+          "verifySeconds": 0.001261378,
+          "nativeBytes": 196,
+          "solidityBytes": 384,
+          "envelopeBytes": 236
+        },
+        {
+          "proveSeconds": 7.252605044,
+          "verifySeconds": 0.00125139,
+          "nativeBytes": 196,
+          "solidityBytes": 384,
+          "envelopeBytes": 236
+        }
+      ],
+      "medianProveSeconds": 7.351981283,
+      "processWallSeconds": 57.01165986061096,
+      "peakRSSKiB": 11072360
+    },
+    {
+      "system": "plonk",
+      "device": "cpu",
+      "pinKeys": false,
+      "constraints": 14689440,
+      "domain": 16777216,
+      "commitments": 1,
+      "openSeconds": 21.671423315,
+      "first": {
+        "proveSeconds": 66.134217717,
+        "verifySeconds": 0.001294276,
+        "nativeBytes": 584,
+        "solidityBytes": 864,
+        "envelopeBytes": 624
+      },
+      "warm": [
+        {
+          "proveSeconds": 65.649812204,
+          "verifySeconds": 0.001343556,
+          "nativeBytes": 584,
+          "solidityBytes": 864,
+          "envelopeBytes": 624
+        },
+        {
+          "proveSeconds": 66.074696389,
+          "verifySeconds": 0.001293747,
+          "nativeBytes": 584,
+          "solidityBytes": 864,
+          "envelopeBytes": 624
+        },
+        {
+          "proveSeconds": 66.305890957,
+          "verifySeconds": 0.0012877,
+          "nativeBytes": 584,
+          "solidityBytes": 864,
+          "envelopeBytes": 624
+        }
+      ],
+      "medianProveSeconds": 66.074696389,
+      "processWallSeconds": 286.9556610584259,
+      "peakRSSKiB": 35717024
+    },
+    {
+      "system": "groth16",
+      "device": "cuda",
+      "pinKeys": true,
+      "constraints": 4340068,
+      "domain": 8388608,
+      "commitments": 1,
+      "openSeconds": 26.868449825,
+      "first": {
+        "proveSeconds": 3.019795109,
+        "verifySeconds": 0.00127077,
+        "nativeBytes": 196,
+        "solidityBytes": 384,
+        "envelopeBytes": 236
+      },
+      "warm": [
+        {
+          "proveSeconds": 2.611417335,
+          "verifySeconds": 0.001242067,
+          "nativeBytes": 196,
+          "solidityBytes": 384,
+          "envelopeBytes": 236
+        },
+        {
+          "proveSeconds": 2.601822482,
+          "verifySeconds": 0.001300448,
+          "nativeBytes": 196,
+          "solidityBytes": 384,
+          "envelopeBytes": 236
+        },
+        {
+          "proveSeconds": 2.622148637,
+          "verifySeconds": 0.001263595,
+          "nativeBytes": 196,
+          "solidityBytes": 384,
+          "envelopeBytes": 236
+        }
+      ],
+      "medianProveSeconds": 2.611417335,
+      "processWallSeconds": 38.89270997047424,
+      "peakRSSKiB": 9981472
+    },
+    {
+      "system": "plonk",
+      "device": "cuda",
+      "pinKeys": false,
+      "constraints": 14689440,
+      "domain": 16777216,
+      "commitments": 1,
+      "openSeconds": 21.971979662,
+      "first": {
+        "proveSeconds": 11.797483120999999,
+        "verifySeconds": 0.001282142,
+        "nativeBytes": 584,
+        "solidityBytes": 864,
+        "envelopeBytes": 624
+      },
+      "warm": [
+        {
+          "proveSeconds": 11.589227596,
+          "verifySeconds": 0.001343848,
+          "nativeBytes": 584,
+          "solidityBytes": 864,
+          "envelopeBytes": 624
+        },
+        {
+          "proveSeconds": 11.491523968,
+          "verifySeconds": 0.001277949,
+          "nativeBytes": 584,
+          "solidityBytes": 864,
+          "envelopeBytes": 624
+        },
+        {
+          "proveSeconds": 11.747093688,
+          "verifySeconds": 0.001288847,
+          "nativeBytes": 584,
+          "solidityBytes": 864,
+          "envelopeBytes": 624
+        }
+      ],
+      "medianProveSeconds": 11.589227596,
+      "processWallSeconds": 69.80385398864746,
+      "peakRSSKiB": 32730092
+    }
+  ],
+  "hardware": {
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+    "logicalCPUs": 32,
+    "gpuOtherProcessesAtRunStart": false
+  },
+  "date": "2026-10-29",
+  "samplePolicy": "one first proof and three warm proofs per case, separate processes, default parallelism",
+  "limits": "Terminal proving only. Prove includes gnark witness solving. Key opening, previous Ix/KZG stages and witness export are excluded from warm proving. Groth16 CUDA pins key vectors; PLONK CUDA uses its existing sppark adapter."
+}

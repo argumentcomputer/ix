@@ -46,6 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     "pipeline" => tracing::info_span!("compression/pipeline"),
     #[cfg(feature = "plonk")]
     "plonk" => tracing::info_span!("compression/plonk"),
+    #[cfg(feature = "groth16")]
+    "groth16" => tracing::info_span!("compression/groth16"),
     _ => return Err("unknown compression stage".into()),
   };
   let span = if texray { tracing_texray::examine(span) } else { span };

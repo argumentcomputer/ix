@@ -196,7 +196,7 @@ impl GraphProgram {
     Ok(program)
   }
 
-  #[cfg(feature = "plonk")]
+  #[cfg(any(feature = "plonk", feature = "groth16"))]
   pub(super) fn evaluate<A: Algebra<Scalar> + Copy + From<Scalar>>(
     &self,
     opening: impl Fn(usize, usize) -> A,

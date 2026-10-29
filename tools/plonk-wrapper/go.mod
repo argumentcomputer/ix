@@ -5,6 +5,7 @@ go 1.26.8
 require (
 	github.com/consensys/gnark v0.16.5-0.20261015185324-262cf453c107
 	github.com/consensys/gnark-crypto v0.22.1-0.20261009142911-8911ee45d22b
+	github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2
 	github.com/zeebo/blake3 v0.2.4
 )
 

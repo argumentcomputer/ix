@@ -46,10 +46,14 @@ def main():
         ('plonk-cuda-only', {'IX_KZG_CURVE': 'bn254', 'IX_PLONK_CUDA': '1'}, 'bn254', False, True),
         ('both-cuda', {'IX_KZG_CURVE': 'bn254', 'IX_PLONK_CUDA': '1', 'IX_CUDA': '1'}, 'bn254', True, True),
     ]
+    cases += [
+        ('groth16-cuda-only', {'IX_GROTH16_CUDA': '1'}, 'bn254', False, True),
+        ('all-cuda', {'IX_GROTH16_CUDA': '1', 'IX_PLONK_CUDA': '1', 'IX_CUDA': '1'}, 'bn254', True, True),
+    ]
     report = {'lean': version, 'typecheck_passed': True, 'cases': []}
     for name, selection, curve, cuda, parallel in cases:
         environment = dict(os.environ, LEAN_PATH=str(out))
-        for variable in ['IX_KZG_CURVE', 'IX_CUDA', 'IX_CUDA_TRACE_CODEGEN', 'IX_NO_PAR', 'IX_PLONK_CUDA']:
+        for variable in ['IX_KZG_CURVE', 'IX_CUDA', 'IX_CUDA_TRACE_CODEGEN', 'IX_NO_PAR', 'IX_PLONK_CUDA', 'IX_GROTH16_CUDA']:
             environment.pop(variable, None)
         environment.update(selection)
         result = subprocess.run(prefix + ['--run', 'tests/compression_build_config.lean'],
@@ -58,7 +62,7 @@ def main():
         if result.returncode:
             raise RuntimeError(f'configuration evaluation failed: {name}')
         actual = json.loads(result.stdout.splitlines()[-1])
-        required = {'plonk'}
+        required = {'plonk', 'groth16'}
         required |= {'parallel'} if parallel else set()
         worker = required | ({'cuda'} if cuda else set())
         ffi = required | ({'cuda-trace-codegen'} if name == 'trace-codegen' else ({'cuda'} if cuda else set()))
@@ -75,6 +79,10 @@ def main():
                 raise RuntimeError(f'{name}: unexpected {target} features: {arguments}')
         if actual['worker'][actual['worker'].index('--bin') + 1] != 'ix-compression-worker':
             raise RuntimeError(f'{name}: wrong worker executable')
+        if actual['terminal_groth16'] is not True:
+            raise RuntimeError(f'{name}: Groth16 terminal is missing')
+        if actual['groth16_cuda'] != (selection.get('IX_GROTH16_CUDA') == '1'):
+            raise RuntimeError(f'{name}: Groth16 CUDA selection depends on another backend')
         if actual['terminal_plonk'] is not True:
             raise RuntimeError(f'{name}: wrong terminal backend selection')
         if actual['plonk_cuda'] != (selection.get('IX_PLONK_CUDA') == '1'):

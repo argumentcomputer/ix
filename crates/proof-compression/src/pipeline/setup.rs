@@ -41,6 +41,8 @@ pub enum SetupClass {
   Ignition,
   /// A trapdoor derived from a seed; anyone can forge proofs.
   Development,
+  /// A circuit-specific Groth16 key admitted independently of the proof.
+  Groth16,
 }
 
 impl SetupClass {
@@ -61,6 +63,7 @@ impl SetupClass {
   pub fn label(self) -> &'static str {
     match self {
       Self::Ignition => "ignition",
+      Self::Groth16 => "groth16",
       Self::Development => "development",
     }
   }
@@ -68,6 +71,7 @@ impl SetupClass {
   pub fn description(self) -> &'static str {
     match self {
       Self::Ignition => "the admitted Aztec Ignition BN254 powers of tau",
+      Self::Groth16 => "an admitted BN254 Groth16 circuit-specific ceremony",
       Self::Development => {
         "a known-trapdoor development SRS (not production-secure)"
       },
@@ -292,11 +296,11 @@ impl SetupSource {
   }
 
   pub(crate) fn security_description(&self) -> &'static str {
-    match self.class() {
-      SetupClass::Ignition => {
+    match self.policy {
+      Policy::Ignition { .. } => {
         "Aztec Ignition BN254 powers of tau, with setup identity, full public degree and shifted-basis anchors authorized by an independently pinned admission. Proving prefixes are authenticated against a separate cache receipt. Ceremony provenance depends on the admission's trusted source pins.\n"
       },
-      SetupClass::Development => {
+      Policy::Development { .. } => {
         "Known-trapdoor development public-degree KZG. Not ceremony parameters. For development and testing only.\n"
       },
     }

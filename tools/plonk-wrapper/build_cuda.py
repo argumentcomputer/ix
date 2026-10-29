@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,7 @@ def main():
     parser.add_argument("--test-binary", action="store_true")
     parser.add_argument("--package", choices=[".", "./internal/cuda"], default=".")
     parser.add_argument("--reuse-native", action="store_true")
+    parser.add_argument("--groth16-icicle-root", type=Path)
     args = parser.parse_args()
     output = args.out.resolve()
     build = args.build_dir.resolve()
@@ -98,8 +100,17 @@ def build_helper(args, output, build):
         + f" -L{library_dir} -Wl,-rpath,$ORIGIN/../lib -lix_plonk_bn254_cuda").strip()
     command = [args.go, "test", "-c"] if args.test_binary else [args.go, "build"]
     temporary_output = output.with_suffix(output.suffix + ".tmp")
+    tags = "cuda"
+    if args.groth16_icicle_root:
+        icicle = args.groth16_icicle_root.resolve(strict=True) / "lib"
+        for name in ["libicicle_device.so", "libicicle_field_bn254.so", "libicicle_curve_bn254.so"]:
+            if not (icicle / name).is_file():
+                raise ValueError(f"missing ICICLE v3.2.2 library: {icicle / name}")
+        environment["CGO_LDFLAGS"] += f" -L{shlex.quote(str(icicle))} -Wl,-rpath,{shlex.quote(str(icicle))}"
+        command += ["-ldflags", "-X " + shlex.quote("main.groth16LibraryDefault=" + str(icicle / "backend"))]
+        tags += ",icicle"
     command += ["-buildvcs=false", "-trimpath", "-mod=readonly",
-                "-tags", "cuda",
+                "-tags", tags,
                 "-o", str(temporary_output), args.package]
     run(command, cwd=HERE, env=environment)
     temporary_output.replace(output)

@@ -45,6 +45,10 @@ public def run : IO Unit := do
     let old ← putProof home (Ixon.Proof.ser native)
     let addr ← putProof home (Ixon.Proof.ser compressed)
     let otherAddr ← putProof home (Ixon.Proof.ser other)
+    rejects home #["compress", toString old, "--groth16", "--plonk"]
+      "choose at most one"
+    rejects home #["compress", toString old, "--dev-groth16"]
+      "--dev-groth16 requires --groth16"
     unless old != addr && native.claim == compressed.claim do
       throw <| IO.userError "compression must preserve claim identity and change proof identity"
     rejects home #["compress", toString old] "--dev-srs"

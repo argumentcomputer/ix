@@ -55,7 +55,8 @@ features = ["cuda"]
 
 [features]
 plonk = []
-default = ["parallel", "plonk"]
+groth16 = []
+default = ["parallel", "plonk", "groth16"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
 # KZG kernels here. Needs the CUDA toolkit at build time and a visible GPU
 # at runtime; CPU-only builds neither compile sppark nor link CUDA.

@@ -154,6 +154,9 @@ func checkWitness(dir, path string) error {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "groth16" {
+		return runGroth16(args[1:])
+	}
 	if len(args) == 3 && args[0] == "compile" {
 		return compileProfile(args[1], args[2])
 	}
