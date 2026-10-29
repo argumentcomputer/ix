@@ -76,7 +76,9 @@ verdict of `ix verify --ixes`). `subtreeCode` is zero for a full run and
 `slot + 1` to prove only the plan subtree rooted at that slot from the
 proofs of the leaves under it, returning that slot's proof address; the
 root-only steps (root validation, wrapping) are skipped, and the run fails
-unless that proof was persisted and cached. -/
+unless that proof was persisted and cached. A nonempty `baseIxe` names a base
+library's `.ixe`: its constants are external, owned by no shard, and every
+shard keeps its edges to them as assumptions, as for an extension manifest. -/
 @[extern "rs_aiur_stage2_aggregate"]
 opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
@@ -84,16 +86,40 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
   (wrapRoot : Bool) (execAhead : @& Nat) (verifyOnly : Bool)
-  (subtreeCode : @& Nat) (fresh : Bool := false) :
+  (subtreeCode : @& Nat) (fresh : Bool := false) (baseIxe : @& String := "") :
     Except String String
+
+/-- Extend a closed base aggregate and rebase the extension onto it.
+`envHandle` holds the extension's constants plus the base constants they
+reference, and `manifestPath` partitions only the extension's own constants.
+Stage 2 runs as in `aggregateStage2` over the whole root, with outputs
+written, except that base constants are external: every shard keeps its edges
+to them as assumptions, and the root proves `CheckEnv(R_d, some A_d)`. The base
+root is rebuilt from `baseIxe` and `baseManifestPath` under
+`baseStructuralAbove` and must be closed. The rebase (shape 13) then discharges
+every leaf of `A_d` by a membership path into the base subjects root `R_base`
+and proves `CheckEnv(R_d, some R_base)`. Returns the rebased proof's address. -/
+@[extern "rs_aiur_aggregate_rebase"]
+opaque aggregateRebase (ixvmSystem aggrSystem : @& AiurSystem)
+  (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
+  (verifyIdx aggrIdx jobs ramBudgetBytes structuralAbove : @& Nat)
+  (directJoins : Bool) (cacheFriBytes : @& ByteArray)
+  (useCache traceShards : Bool) (rangeWidth : @& Nat)
+  (wrapRoot : Bool) (execAhead : @& Nat) (fresh : Bool)
+  (baseIxe baseManifestPath : @& String)
+  (baseStructuralAbove : @& Nat) : Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
 Rust, using the same ownership, frontier, pruning, and statement-fold code as
 `aggregateStage2`. This is the native orchestration path for `ix verify` and
-does not construct shard statements or schedule Lean tasks. -/
+does not construct shard statements or schedule Lean tasks. With `baseIxe` and
+`baseManifest`, the manifest extends that base as in `proveLanes`, and the
+claim is the rebased root `CheckEnv(R_d, some R_base)`; `constantCount` then
+counts the extension's own constants. -/
 @[extern "rs_aiur_aggregate_expected"]
 opaque aggregateExpected (envHandle : @& EnvHandle)
-  (manifestPath : @& String) (structuralAbove : @& Nat) :
+  (manifestPath : @& String) (structuralAbove : @& Nat)
+  (baseIxe baseManifest : @& String := "") (baseStructuralAbove : @& Nat := 0) :
     Except String AggregateExpected
 
 
@@ -120,12 +146,19 @@ Oversized environment claims are bisected and checkpointed; completed
 proofs are reused. A nonempty `outManifest` receives the final partition.
 `fresh` bypasses earlier proof indexes and refinement checkpoints while
 publishing newly verified results to the usual cache locations.
-Returns the verified root address; progress is printed on stderr. -/
+Returns the verified root address; progress is printed on stderr.
+With `baseIxe` and `baseManifest`, the environment extends that closed base:
+`manifestPath` partitions only the constants outside it, every claim keeps its
+edges to base constants as assumptions, and the root
+`CheckEnv(R_d, some A_d)` is rebased (shape 13) onto the base's subjects root,
+rebuilt under `baseStructuralAbove`; the rebased root's address is returned. -/
 @[extern "rs_aiur_prove_lanes"]
 opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath : @& String)
   (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
-  (cacheFriBytes : @& ByteArray) (outManifest : @& String) (fresh : Bool := false) : Except String String
+  (cacheFriBytes : @& ByteArray) (outManifest : @& String) (fresh : Bool := false)
+  (baseIxe baseManifest : @& String := "") (baseStructuralAbove : @& Nat := 0) :
+    Except String String
 
 end AiurSystem
 end Aiur

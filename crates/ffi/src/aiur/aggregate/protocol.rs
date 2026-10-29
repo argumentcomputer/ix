@@ -12,6 +12,10 @@ pub(super) const RANGE_LEAF_SHAPE: u8 = 10;
 pub(super) const RANGE_JOIN_SHAPE: u8 = 11;
 pub(super) const RANGE_ROOT_SHAPE: u8 = 12;
 
+/// The rebase shape (`Aggr.rebaseShape`): one `ix_aggr` child's canonical
+/// assumptions discharged into an external subjects root.
+pub(super) const REBASE_SHAPE: u8 = 13;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ChildKind {
   Ixvm,

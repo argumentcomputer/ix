@@ -252,12 +252,14 @@ def reportPartition (proven : Array (Array Address × Nat)) (planned : Nat) : IO
       skip the splits next run"
 
 /-- The aggregate root of a one-shard manifest: the shard's proof, wrapped
-into `ix_aggr` until it is a single trace shard. -/
+into `ix_aggr` until it is a single trace shard. With
+`base? := (ixe, ixes, structuralAbove)`, the manifest extends that base, whose
+root is rebuilt under `structuralAbove`, and the root is rebased onto it. -/
 def proveOneShardRoot (ixe manifest : String) (ixvmSystem : Aiur.AiurSystem)
     (ixvmCompiled : Aiur.CompiledToplevel) (aggrSystem : Aiur.AiurSystem)
     (envHandle : Aiur.EnvHandle) (verifyIdx aggrIdx maxRamBytes : Nat)
     (retention : Aiur.AiurSystem.ShardRetention) (cacheFriBytes : ByteArray)
-    (fresh : Bool) :
+    (fresh : Bool) (base? : Option (String × String × Nat) := none) :
     IO (Except String String) := do
   let .ok (ixonEnv, shards) ← Ix.Shard.loadEnvAndShards manifest ixe
     | return .error s!"{manifest}: cannot load the shard"
@@ -273,10 +275,18 @@ def proveOneShardRoot (ixe manifest : String) (ixvmSystem : Aiur.AiurSystem)
   let some proof ← Ix.Cli.ShardProofIndex.verifiedProof ixvmSystem ixvmCompiled index claim
     | return .error s!"shard {k}: its proof is not in the shard-proof index"
   let ramBudget ← if maxRamBytes == 0 then Aggr.defaultAggregateRamBudgetBytes else pure maxRamBytes
-  IO.lazyPure fun _ =>
-    Aiur.AiurSystem.aggregateStage2 ixvmSystem aggrSystem envHandle manifest
-      (toString proof) verifyIdx aggrIdx 0 ramBudget Aggr.defaultStructuralAbove 0
-      false false cacheFriBytes true true true 0 true 1 false 0 fresh
+  match base? with
+  | none =>
+    IO.lazyPure fun _ =>
+      Aiur.AiurSystem.aggregateStage2 ixvmSystem aggrSystem envHandle manifest
+        (toString proof) verifyIdx aggrIdx 0 ramBudget Aggr.defaultStructuralAbove 0
+        false false cacheFriBytes true true true 0 true 1 false 0 fresh
+  | some (baseIxe, baseIxes, baseStructuralAbove) =>
+    IO.lazyPure fun _ =>
+      Aiur.AiurSystem.aggregateRebase ixvmSystem aggrSystem envHandle manifest
+        (toString proof) verifyIdx aggrIdx 0 ramBudget Aggr.defaultStructuralAbove
+        false cacheFriBytes true true 0 true 1 fresh baseIxe baseIxes
+        baseStructuralAbove
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Streamed `[texray] <span>: <dur> ── RAM Δ/peak` lines on stderr as
@@ -333,6 +343,29 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     && !p.hasFlag "shard" && !p.hasFlag "shards" && !p.hasFlag "distributed" && !execOnly
   if p.hasFlag "gpus" && !aggregate then
     IO.eprintln "--gpus applies only to aggregating a whole environment (--ixe and --ixes)"
+    return 1
+  -- An extension of a closed base: its root is rebased onto the base's.
+  let base? ← match (p.flag? "base-ixe").map (·.as! String),
+      (p.flag? "base-ixes").map (·.as! String) with
+    | none, none => pure none
+    | some baseIxe, some baseIxes =>
+      if !aggregate then
+        IO.eprintln "--base-ixe and --base-ixes apply only to aggregating a whole \
+          environment (--ixe and --ixes)"
+        return 1
+      if p.hasFlag "compress" then
+        IO.eprintln "--compress cannot yet compress a root rebased onto a base"
+        return 1
+      let some baseStructuralAbove := (p.flag? "base-structural-above").map (·.as! Nat)
+        | IO.eprintln "--base-ixe requires --base-structural-above, the threshold \
+            the base was aggregated with"
+          return 1
+      pure (some (baseIxe, baseIxes, baseStructuralAbove))
+    | _, _ =>
+      IO.eprintln "--base-ixe and --base-ixes must be given together"
+      return 1
+  if base?.isNone && p.hasFlag "base-structural-above" then
+    IO.eprintln "--base-structural-above requires --base-ixe and --base-ixes"
     return 1
   -- `--compress` continues from the aggregate root, so its parameters are
   -- checked before any proving starts.
@@ -393,12 +426,13 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         -- One shard has no join for the GPU scheduler to run: prove it, then
         -- wrap it into the aggregate root as `ix aggregate --wrap-root` does.
         proveOneShardRoot ixe manifest ixvmSystem ixvmCompiled aggrSystem envHandle
-          verifyIdx aggrIdx maxRamBytes retention rp.cacheFriBytes fresh
+          verifyIdx aggrIdx maxRamBytes retention rp.cacheFriBytes fresh base?
       else IO.lazyPure fun _ =>
         (Aiur.AiurSystem.proveLanes ixvmSystem aggrSystem envHandle manifest
           verifyIdx aggrIdx gpus maxRamBytes
           (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0) 0 rp.cacheFriBytes
-          (outIxes.getD "") fresh)
+          (outIxes.getD "") fresh ((base?.map (·.1)).getD "")
+          ((base?.map (·.2.1)).getD "") ((base?.map (·.2.2)).getD 0))
     match result with
     | .error e => IO.eprintln s!"[prove] {e}"; return 1
     | .ok root =>
@@ -619,6 +653,9 @@ def proveCmd : Cli.Cmd := `[Cli|
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
     "gpus" : Nat;       "With --ixe and --ixes: the number of GPUs to prove and aggregate on (default: every visible GPU). --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition."
     "shards-only";      "With --ixe and --ixes: prove each shard's claim and stop, instead of aggregating the environment into one root."
+    "base-ixe" : String; "With --ixe, --ixes and --base-ixes: the `--ixe` environment extends this closed base library, and contains the base constants it references. The `--ixes` manifest partitions only the other constants; each claim keeps its edges to base constants as assumptions. The aggregate root is then rebased onto the base's subjects root, and the rebased root's address is printed: a proof of `CheckEnv(R, some R_base)`, conditional on the base. Not yet combinable with --compress."
+    "base-ixes" : String; "With --base-ixe: the base's `.ixes` manifest, from which its root is rebuilt. The base root must have no assumptions."
+    "base-structural-above" : Nat; "Required with --base-ixe: the structural threshold the base root was aggregated with (`ix prove` uses 0 for a multi-shard environment; `ix aggregate --structural-above`). A different value rebuilds a different root."
     "exec-jobs" : Nat;  "With --ixes and --trace-shards: how many shards execute at once ahead of the prover (default 0: one per core, or each GPU's share of the cores when aggregating); peak host memory is the prover's budget plus the records in flight. With --distributed: how many workers execute at once (default 0: one per core). Workers are proven in an order that lets each commit as soon as its callers have executed; a committed record is dropped and re-executed for its second round."
     "plan-only";        "With --distributed: report the static caller graph, the commit order and the largest group of mutually calling workers (how many records the first round holds at once) for this manifest, and stop before executing anything. The way to compare layouts without a run."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."

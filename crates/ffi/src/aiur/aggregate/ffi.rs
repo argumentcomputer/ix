@@ -15,23 +15,33 @@ use lean_ffi::object::{
 
 use super::{
   PlanOp, RunConfig, build_statement_specs, expected_from_manifest, panic_text,
-  prepare_run, run, subtree_plan,
+  prepare_run,
+  rebase::{Base, BaseSource, RebaseConfig, plan_rebase, run_rebase},
+  run, subtree_plan,
 };
 use crate::lean::LeanAiurAggregateExpected;
 use aiur::execute::IOBuffer;
+use ix_common::address::Address;
 use ix_kernel::shard::ShardManifest;
 use ixvm_codegen::env_handle::EnvHandle;
 use lean_ffi::object::LeanString;
+use rustc_hash::FxHashSet;
 use std::{fs, path::Path};
 
 /// Native manifest/environment binding for `ix verify --aggregate --ixes`.
 /// The returned claim comes from the exact statement builder used by Stage 2,
-/// after a full constant/shard/assumption audit.
+/// after a full constant/shard/assumption audit. With a base (both paths
+/// nonempty), the manifest is an extension of it and the claim is the rebased
+/// root `CheckEnv(R_d, some R_base)` that `rs_aiur_prove_lanes` and
+/// `rs_aiur_aggregate_rebase` prove; the count is the extension's constants.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_aggregate_expected(
   env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
   manifest_path: LeanString<LeanBorrowed<'_>>,
   structural_above: LeanNat<LeanBorrowed<'_>>,
+  base_ixe_path: LeanString<LeanBorrowed<'_>>,
+  base_manifest_path: LeanString<LeanBorrowed<'_>>,
+  base_structural_above: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let manifest_bytes =
@@ -40,11 +50,25 @@ extern "C" fn rs_aiur_aggregate_expected(
       })?;
     let manifest = ShardManifest::from_bytes(&manifest_bytes)
       .map_err(|error| format!("manifest parse failed: {error}"))?;
-    expected_from_manifest(
-      &env_handle.get().env,
-      &manifest,
-      lean_unbox_nat_as_usize(structural_above.inner()),
-    )
+    let env = &env_handle.get().env;
+    let structural_above = lean_unbox_nat_as_usize(structural_above.inner());
+    match (base_ixe_path.as_str(), base_manifest_path.as_str()) {
+      ("", "") => expected_from_manifest(env, &manifest, structural_above),
+      ("", _) | (_, "") => {
+        Err("a base needs both its environment and its manifest".to_string())
+      },
+      (ixe, base_manifest) => {
+        let base = Base::load(BaseSource {
+          ixe_path: Path::new(ixe),
+          manifest_path: Path::new(base_manifest),
+          structural_above: lean_unbox_nat_as_usize(
+            base_structural_above.inner(),
+          ),
+        })?;
+        let plan = plan_rebase(env, &manifest, structural_above, &base)?;
+        Ok((plan.output().clone(), plan.subject_count()))
+      },
+    }
   }));
   match result {
     Ok(Ok((statement, constant_count))) => {
@@ -168,8 +192,24 @@ extern "C" fn rs_aiur_stage2_aggregate(
   verify_only: bool,
   subtree_code: LeanNat<LeanBorrowed<'_>>,
   fresh: bool,
+  base_ixe_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let base_constants = match base_ixe_path.as_str() {
+      "" => None,
+      path => {
+        let base = EnvHandle::from_ixe_path(Path::new(path))
+          .map_err(|error| format!("base environment {path}: {error}"))?;
+        Some(
+          base
+            .env
+            .consts
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<FxHashSet<Address>>(),
+        )
+      },
+    };
     let reprove_slot =
       lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
     let subtree = lean_unbox_nat_as_usize(subtree_code.inner()).checked_sub(1);
@@ -197,6 +237,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
       verify_only,
       subtree,
+      base_constants: base_constants.as_ref(),
     })
   }));
   match result {
@@ -204,6 +245,82 @@ extern "C" fn rs_aiur_stage2_aggregate(
     Ok(Err(error)) => LeanExcept::error_string(&error),
     Err(payload) => LeanExcept::error_string(&format!(
       "native Stage 2 orchestration panicked: {}",
+      panic_text(&payload)
+    )),
+  }
+}
+
+/// `AiurSystem.aggregateRebase`: run Stage 2 over an extension environment
+/// whose base constants are external, then prove the rebase (shape 13) of its
+/// root onto the closed base aggregate. The Stage 2 parameters are those of
+/// `rs_aiur_stage2_aggregate`, for the whole root with outputs written.
+/// Returns the rebased proof's store address.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_aggregate_rebase(
+  ixvm_system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  aggr_system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  proof_hexes: LeanString<LeanBorrowed<'_>>,
+  verify_idx: LeanNat<LeanBorrowed<'_>>,
+  aggr_idx: LeanNat<LeanBorrowed<'_>>,
+  jobs: LeanNat<LeanBorrowed<'_>>,
+  ram_budget_bytes: LeanNat<LeanBorrowed<'_>>,
+  structural_above: LeanNat<LeanBorrowed<'_>>,
+  direct_joins: bool,
+  cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  use_cache: bool,
+  trace_shards: bool,
+  range_width: LeanNat<LeanBorrowed<'_>>,
+  wrap_root: bool,
+  exec_ahead: LeanNat<LeanBorrowed<'_>>,
+  fresh: bool,
+  base_ixe_path: LeanString<LeanBorrowed<'_>>,
+  base_manifest_path: LeanString<LeanBorrowed<'_>>,
+  base_structural_above: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    run_rebase(RebaseConfig {
+      extension: RunConfig {
+        ixvm_system: ixvm_system.get(),
+        aggr_system: aggr_system.get(),
+        env_handle: env_handle.get(),
+        manifest_path: Path::new(manifest_path.as_str()),
+        proof_hexes: proof_hexes.as_str(),
+        verify_idx: lean_unbox_nat_as_usize(verify_idx.inner()),
+        aggr_idx: lean_unbox_nat_as_usize(aggr_idx.inner()),
+        jobs: lean_unbox_nat_as_usize(jobs.inner()),
+        ram_budget_bytes: lean_unbox_nat_as_usize(ram_budget_bytes.inner()),
+        structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
+        reprove_slot: None,
+        direct_joins,
+        plan_only: false,
+        cache_fri_bytes: cache_fri_bytes.as_bytes(),
+        use_cache,
+        fresh,
+        write_outputs: true,
+        trace_shards,
+        range_width: lean_unbox_nat_as_usize(range_width.inner()),
+        wrap_root,
+        exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
+        verify_only: false,
+        subtree: None,
+        base_constants: None,
+      },
+      base: BaseSource {
+        ixe_path: Path::new(base_ixe_path.as_str()),
+        manifest_path: Path::new(base_manifest_path.as_str()),
+        structural_above: lean_unbox_nat_as_usize(
+          base_structural_above.inner(),
+        ),
+      },
+    })
+  }));
+  match result {
+    Ok(Ok(address)) => LeanExcept::ok(LeanString::new(&address)),
+    Ok(Err(error)) => LeanExcept::error_string(&error),
+    Err(payload) => LeanExcept::error_string(&format!(
+      "native aggregate rebase panicked: {}",
       panic_text(&payload)
     )),
   }

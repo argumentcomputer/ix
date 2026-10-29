@@ -32,6 +32,7 @@ use multi_stark::{
 use std::collections::BTreeMap;
 
 mod bindings;
+mod merge;
 #[cfg(test)]
 mod parallel_prefix_tests;
 mod plan;
@@ -41,6 +42,11 @@ mod shape;
 
 pub(crate) use bindings::{Bindings, Compiled};
 use bindings::{PointBinding, PointSource, ScalarSource};
+pub(crate) use merge::{
+  CHILD_PUBLIC_VALUES, ChildKey, ChildPlan, ChildRequest, ClaimOpening,
+  ClaimWitness, HEAD_WORDS, MergePlan, MergeRequest, MergeRule, Output,
+  PREFIX_WORDS, family_digest, key_digest,
+};
 pub(crate) use plan::{ClaimSchema, ClaimSlot, LayoutPolicy, Plan};
 use shape::{MatrixShape, Round, Shape};
 
@@ -209,6 +215,17 @@ impl Context {
       })
       .collect()
   }
+  fn key_commitment(&mut self, c: &KzgCommitment) -> Commitment {
+    c.0
+      .iter()
+      .enumerate()
+      .map(|(matrix, row)| {
+        (0..row.len())
+          .map(|column| self.point(PointSource::Key { matrix, column }))
+          .collect()
+      })
+      .collect()
+  }
   fn commitment(&mut self, round: Round, shape: &MatrixShape) -> Commitment {
     shape
       .widths
@@ -341,51 +358,169 @@ pub fn count(
   plan.count()
 }
 
+/// One inner proof's curve inputs, in allocation order.
+struct ProofPoints {
+  fixed: Commitment,
+  main: Commitment,
+  stage2: Commitment,
+  quotient: Commitment,
+  witnesses: Vec<usize>,
+  generator: usize,
+}
+
+/// One inner proof's scalar inputs: accumulators and opened values.
+struct ProofScalars {
+  accs: Vec<Value>,
+  main: Openings,
+  stage2: Openings,
+  quotient: Openings,
+  fixed: Openings,
+}
+
+/// The two pairing operands' MSM terms of one verified opening, before
+/// combination, and the transcript after its last challenge.
+struct Opening {
+  lhs: Vec<(usize, Value)>,
+  rhs: Vec<(usize, Value)>,
+  transcript: Transcript,
+}
+
+impl Context {
+  /// With `committed_key`, the fixed commitments are request inputs of
+  /// `vk.fixed`'s shape rather than its constant points.
+  fn proof_points(
+    &mut self,
+    vk: &InnerVerifyingKey<'_>,
+    shape: &Shape,
+    committed_key: bool,
+  ) -> ProofPoints {
+    let fixed = if committed_key {
+      self.key_commitment(vk.fixed)
+    } else {
+      self.fixed_commitment(vk.fixed)
+    };
+    let main = self.commitment(Round::Main, &shape.rounds[Round::Main.index()]);
+    let stage2 =
+      self.commitment(Round::Stage2, &shape.rounds[Round::Stage2.index()]);
+    let quotient =
+      self.commitment(Round::Quotient, &shape.rounds[Round::Quotient.index()]);
+    let witnesses = (0..shape.opening_generators.len())
+      .map(|index| self.point(PointSource::Witness(index)))
+      .collect();
+    let generator = self.point(PointSource::Fixed(vk.generator));
+    ProofPoints { fixed, main, stage2, quotient, witnesses, generator }
+  }
+
+  /// Close the curve-input prefix and start the phase counts.
+  fn seal_curve_inputs(&mut self) -> Vec<PhaseCounts> {
+    let prefix_blocks = self.point_ends.len();
+    let prefix_values = self.b.stats().values;
+    let parallel_prefix = self.seal_point_prefix();
+    let phases =
+      vec![PhaseCounts { name: "curve_inputs", stats: self.b.stats() }];
+    eprintln!("Curve inputs complete: {:?}", self.b.stats());
+    eprintln!(
+      "Point witness prefix: admitted={parallel_prefix}, blocks={prefix_blocks}, values={prefix_values}"
+    );
+    phases
+  }
+
+  fn proof_scalars(&mut self, shape: &Shape) -> Result<ProofScalars, String> {
+    let accs: Vec<_> = (0..shape.logs.len())
+      .map(|i| self.scalar(&format!("acc{i}"), ScalarSource::Accumulator(i)))
+      .collect();
+    self.b.assert_zero(*accs.last().ok_or("empty accumulators")?);
+    let main =
+      self.openings("main", Round::Main, &shape.rounds[Round::Main.index()]);
+    let stage2 = self.openings(
+      "stage2",
+      Round::Stage2,
+      &shape.rounds[Round::Stage2.index()],
+    );
+    let quotient = self.openings(
+      "quotient",
+      Round::Quotient,
+      &shape.rounds[Round::Quotient.index()],
+    );
+    let fixed =
+      self.openings("fixed", Round::Fixed, &shape.rounds[Round::Fixed.index()]);
+    Ok(ProofScalars { accs, main, stage2, quotient, fixed })
+  }
+
+  /// Combine an opening's terms into the two pairing operands' MSMs, the
+  /// second negated so both pair against the verifier's G2 keys.
+  fn opening_terms(
+    &mut self,
+    lhs: Vec<(usize, Value)>,
+    rhs: Vec<(usize, Value)>,
+  ) -> [Vec<(usize, Value)>; 2] {
+    let lhs = combine(&mut self.b, lhs);
+    let rhs = rhs
+      .into_iter()
+      .map(|(id, v)| (id, self.b.scale(v, Scalar::NEG_ONE)))
+      .collect();
+    [lhs, combine(&mut self.b, rhs)]
+  }
+
+  /// Evaluate both pairing operands and expose their canonical encodings.
+  fn expose_pairing(
+    &mut self,
+    terms: &[Vec<(usize, Value)>; 2],
+    phases: &mut Vec<PhaseCounts>,
+  ) -> Vec<PointInput> {
+    let mut outputs = vec![];
+    for (i, terms) in terms.iter().enumerate() {
+      eprintln!("MSM {i}/2: {} bases", terms.len());
+      let point = native_msm::msm(
+        &mut self.b,
+        &self.f,
+        &self.bytes,
+        &mut self.bases,
+        terms,
+        &format!("pairing{i}"),
+      );
+      let point = point.canonical(&mut self.b, &self.f);
+      let encoded =
+        native_transcript::point_bytes(&mut self.b, &self.bytes, point);
+      for chunk in encoded.as_chunks::<{ pairing::POINT_LIMB_BYTES }>().0 {
+        let packed = pack_bytes(&mut self.b, chunk);
+        self.b.expose_public(packed);
+      }
+      outputs.push(point);
+      phases.push(PhaseCounts {
+        name: ["opening_msm_0", "opening_msm_1"][i],
+        stats: self.b.stats(),
+      });
+      eprintln!("MSM {i} complete: {:?}", self.b.stats());
+    }
+    outputs
+  }
+}
+
+/// The little-endian integer of constrained bytes.
+fn pack_bytes(b: &mut Builder, bytes: &[ByteValue]) -> Value {
+  let mut coefficient = Scalar::ONE;
+  let terms: Vec<_> = bytes
+    .iter()
+    .map(|v| {
+      let term = (coefficient, v.value());
+      coefficient *= Scalar::from_u16(256);
+      term
+    })
+    .collect();
+  b.linear_combination(&terms, Scalar::ZERO)
+}
+
 fn construct(
   vk: &InnerVerifyingKey<'_>,
   shape: &Shape,
   claims: &ClaimSchema,
   builder: Builder,
 ) -> Result<Construction, String> {
-  let circuits = vk.circuits;
-  let quotients: Vec<_> =
-    circuits.iter().map(|c| c.quotient_degree()).collect();
-  let logs = &shape.logs;
   let mut c = Context::new(builder);
-  let fixed = c.fixed_commitment(vk.fixed);
-  let main = c.commitment(Round::Main, &shape.rounds[Round::Main.index()]);
-  let stage2 =
-    c.commitment(Round::Stage2, &shape.rounds[Round::Stage2.index()]);
-  let quotient =
-    c.commitment(Round::Quotient, &shape.rounds[Round::Quotient.index()]);
-  let witnesses: Vec<_> = (0..shape.opening_generators.len())
-    .map(|index| c.point(PointSource::Witness(index)))
-    .collect();
-  let generator = c.point(PointSource::Fixed(vk.generator));
-  let prefix_blocks = c.point_ends.len();
-  let prefix_values = c.b.stats().values;
-  let parallel_prefix = c.seal_point_prefix();
-  let mut phases =
-    vec![PhaseCounts { name: "curve_inputs", stats: c.b.stats() }];
-  eprintln!("Curve inputs complete: {:?}", c.b.stats());
-  eprintln!(
-    "Point witness prefix: admitted={parallel_prefix}, blocks={prefix_blocks}, values={prefix_values}"
-  );
-  let accs: Vec<_> = (0..logs.len())
-    .map(|i| c.scalar(&format!("acc{i}"), ScalarSource::Accumulator(i)))
-    .collect();
-  c.b.assert_zero(*accs.last().ok_or("empty accumulators")?);
-  let main_open =
-    c.openings("main", Round::Main, &shape.rounds[Round::Main.index()]);
-  let stage2_open =
-    c.openings("stage2", Round::Stage2, &shape.rounds[Round::Stage2.index()]);
-  let quotient_open = c.openings(
-    "quotient",
-    Round::Quotient,
-    &shape.rounds[Round::Quotient.index()],
-  );
-  let fixed_open =
-    c.openings("fixed", Round::Fixed, &shape.rounds[Round::Fixed.index()]);
+  let points = c.proof_points(vk, shape, false);
+  let mut phases = c.seal_curve_inputs();
+  let scalars = c.proof_scalars(shape)?;
   let mut claim_vars: Vec<Vec<_>> = claims
     .rows
     .iter()
@@ -417,6 +552,53 @@ fn construct(
         .collect()
     })
     .collect();
+  let opening = verify_opening(
+    &mut c,
+    vk,
+    shape,
+    &points,
+    &scalars,
+    &claim_vars,
+    &mut phases,
+  )?;
+  let Opening { lhs, rhs, .. } = opening;
+  let terms = c.opening_terms(lhs, rhs);
+  phases.push(PhaseCounts { name: "scalar_checks", stats: c.b.stats() });
+  let outputs = c.expose_pairing(&terms, &mut phases);
+  Ok(Construction {
+    context: c,
+    pairing_outputs: outputs,
+    pairing_keys: vec![vk.g2, vk.tau_g2],
+    terms: terms.into(),
+    phases,
+  })
+}
+
+/// Constrain one inner proof against `vk` and its claim rows, except for the
+/// final pairing, whose MSM terms are returned.
+fn verify_opening(
+  c: &mut Context,
+  vk: &InnerVerifyingKey<'_>,
+  shape: &Shape,
+  points: &ProofPoints,
+  scalars: &ProofScalars,
+  claim_vars: &[Vec<Value>],
+  phases: &mut Vec<PhaseCounts>,
+) -> Result<Opening, String> {
+  let circuits = vk.circuits;
+  let quotients: Vec<_> =
+    circuits.iter().map(|c| c.quotient_degree()).collect();
+  let logs = &shape.logs;
+  let ProofPoints { fixed, main, stage2, quotient, witnesses, generator } =
+    points;
+  let generator = *generator;
+  let ProofScalars {
+    accs,
+    main: main_open,
+    stage2: stage2_open,
+    quotient: quotient_open,
+    fixed: fixed_open,
+  } = scalars;
   let mut t = Transcript::new(&mut c.b, &c.bytes, vk.transcript_seed);
   c.observe_constant(&mut t, circuits.len());
   for circuit in circuits {
@@ -435,13 +617,13 @@ fn construct(
   for _ in logs {
     c.observe_constant(&mut t, 1);
   }
-  c.observe_commitment(&mut t, &fixed);
-  c.observe_commitment(&mut t, &main);
+  c.observe_commitment(&mut t, fixed);
+  c.observe_commitment(&mut t, main);
   for &log in logs {
     c.observe_constant(&mut t, usize::from(log));
   }
-  c.observe_constant(&mut t, claims.rows.len());
-  for row in &claim_vars {
+  c.observe_constant(&mut t, claim_vars.len());
+  for row in claim_vars {
     c.observe_constant(&mut t, row.len());
     for &v in row {
       c.observe_scalar(&mut t, v);
@@ -452,25 +634,25 @@ fn construct(
   let gamma = c.sample(&mut t);
   c.observe_scalar(&mut t, gamma);
   let mut initial_acc = c.b.constant(Scalar::ZERO);
-  for row in &claim_vars {
+  for row in claim_vars {
     let hash = fp(&mut c.b, gamma, row.iter().copied());
     let message = c.b.add(beta, hash);
     let inv = c.b.inverse(message);
     initial_acc = c.b.add(initial_acc, inv);
   }
-  c.observe_commitment(&mut t, &stage2);
-  for &v in &accs {
+  c.observe_commitment(&mut t, stage2);
+  for &v in accs {
     c.observe_scalar(&mut t, v);
   }
   let alpha = c.sample(&mut t);
-  c.observe_commitment(&mut t, &quotient);
+  c.observe_commitment(&mut t, quotient);
   let zeta = c.sample(&mut t);
   c.b.inverse(zeta); // fixes distinct-point batch shape (all generators differ).
   let rounds = [
-    (&main, &main_open),
-    (&stage2, &stage2_open),
-    (&quotient, &quotient_open),
-    (&fixed, &fixed_open),
+    (main, main_open),
+    (stage2, stage2_open),
+    (quotient, quotient_open),
+    (fixed, fixed_open),
   ];
   for (commit, _) in rounds {
     c.observe_commitment(&mut t, commit);
@@ -507,7 +689,7 @@ fn construct(
     return Err("opening witness count".into());
   }
   let v = c.sample(&mut t);
-  for &id in &witnesses {
+  for &id in witnesses {
     t.observe(&c.encodings[id]);
   }
   let r = c.sample(&mut t);
@@ -516,7 +698,7 @@ fn construct(
   let mut lhs = vec![];
   let mut rhs = vec![];
   let mut r_power = c.b.constant(Scalar::ONE);
-  for ((g, points, values), &witness) in batches.iter().zip(&witnesses) {
+  for ((g, points, values), &witness) in batches.iter().zip(witnesses) {
     let mut v_power = c.b.constant(Scalar::ONE);
     let mut y = c.b.constant(Scalar::ZERO);
     for (&id, &value) in points.iter().zip(values) {
@@ -642,57 +824,7 @@ fn construct(
     acc = accs[i];
   }
   eprintln!("AIR checks complete: {:?}", c.b.stats());
-  let mut terms = vec![];
-  let mut keys = vec![];
-  terms.push(combine(&mut c.b, lhs));
-  keys.push(vk.g2);
-  let rhs = rhs
-    .into_iter()
-    .map(|(id, v)| (id, c.b.scale(v, Scalar::NEG_ONE)))
-    .collect();
-  terms.push(combine(&mut c.b, rhs));
-  keys.push(vk.tau_g2);
-  let mut outputs = vec![];
-  phases.push(PhaseCounts { name: "scalar_checks", stats: c.b.stats() });
-  for (i, terms) in terms.iter().enumerate() {
-    eprintln!("MSM {i}/{}: {} bases", keys.len(), terms.len());
-    let point = native_msm::msm(
-      &mut c.b,
-      &c.f,
-      &c.bytes,
-      &mut c.bases,
-      terms,
-      &format!("pairing{i}"),
-    );
-    let point = point.canonical(&mut c.b, &c.f);
-    let encoded = native_transcript::point_bytes(&mut c.b, &c.bytes, point);
-    for chunk in encoded.as_chunks::<{ pairing::POINT_LIMB_BYTES }>().0 {
-      let mut coefficient = Scalar::ONE;
-      let terms: Vec<_> = chunk
-        .iter()
-        .map(|v| {
-          let term = (coefficient, v.value());
-          coefficient *= Scalar::from_u16(256);
-          term
-        })
-        .collect();
-      let packed = c.b.linear_combination(&terms, Scalar::ZERO);
-      c.b.expose_public(packed);
-    }
-    outputs.push(point);
-    phases.push(PhaseCounts {
-      name: ["opening_msm_0", "opening_msm_1"][i],
-      stats: c.b.stats(),
-    });
-    eprintln!("MSM {i} complete: {:?}", c.b.stats());
-  }
-  Ok(Construction {
-    context: c,
-    pairing_outputs: outputs,
-    pairing_keys: keys,
-    terms,
-    phases,
-  })
+  Ok(Opening { lhs, rhs, transcript: t })
 }
 
 impl Built {

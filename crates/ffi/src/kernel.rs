@@ -2411,7 +2411,10 @@ fn static_block_dependencies(
 /// over the walk-edge nets with the predicted-cost rebalance post-pass
 /// (`ix_kernel::shard::shard_static`, `layout` = `mincut`) or contiguous
 /// ranges of a dependency order (`ix_kernel::shard::shard_static_ordered`,
-/// `layout` = `ordered`). Writes a `.ixes` manifest.
+/// `layout` = `ordered`). Writes a `.ixes` manifest. A nonempty `base_path`
+/// names a base library's `.ixe`: its constants are removed before profiling,
+/// so the manifest partitions only the extension's own constants and leaves
+/// the base's external.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
@@ -2422,6 +2425,7 @@ pub extern "C" fn rs_shard_env_static(
   layout: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
   exec_ahead: usize,
+  base_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
   let layout = layout.to_string();
@@ -2447,6 +2451,30 @@ pub extern "C" fn rs_shard_env_static(
       ));
     },
   };
+  let base_path = base_path.to_string();
+  if !base_path.is_empty() {
+    let base = match IxonEnv::get_anon_mmap(std::path::Path::new(&base_path)) {
+      Ok(e) => e,
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_shard_env_static: failed to load base {base_path}: {e}"
+        ));
+      },
+    };
+    let before = env.consts.len();
+    for entry in base.consts.iter() {
+      env.consts.remove(entry.key());
+    }
+    eprintln!(
+      "[rs_shard_static] base {base_path}: {} of {before} constants are external",
+      before - env.consts.len()
+    );
+    if env.consts.is_empty() {
+      return LeanIOResult::error_string(
+        "rs_shard_env_static: the environment adds no constant to its base",
+      );
+    }
+  }
   let t_load = t0.elapsed();
   let t1 = Instant::now();
   let profile = static_block_profile(&env);

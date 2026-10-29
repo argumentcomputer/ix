@@ -17,13 +17,33 @@ pub(super) struct PreparedShard {
   pub(super) statement: Arc<Statement>,
 }
 
+/// The owner recorded for a base constant of an extension run. No shard has
+/// this index, so a base constant is never a subject, and every edge to one is
+/// carried as an assumption by every fold.
+pub(super) const EXTERNAL_OWNER: usize = usize::MAX;
+
 pub(super) struct PreparedRun {
   pub(super) shards: Vec<PreparedShard>,
+  /// Retained shard index of every environment constant, or
+  /// [`EXTERNAL_OWNER`] for a base constant of an extension run.
   pub(super) owner_by_address: FxHashMap<Address, usize>,
   pub(super) tree: AggNode,
   pub(super) env_root: Address,
   pub(super) env_count: usize,
   pub(super) expected_shards: ShardSet,
+  /// Prepared against a base library ([`prepare_run_with_base`]).
+  pub(super) extension: bool,
+}
+
+impl PreparedRun {
+  /// The assumptions this run's aggregate root may keep before any rebase.
+  pub(super) fn root_assumptions(&self) -> RootAssumptions<'static> {
+    if self.extension {
+      RootAssumptions::External
+    } else {
+      RootAssumptions::Closed
+    }
+  }
 }
 
 pub(super) fn projection_block(addr: &Address, constant: &Constant) -> Address {
@@ -40,6 +60,22 @@ pub(super) fn prepare_run(
   env: &ixon::Env,
   manifest: &ShardManifest,
 ) -> Result<PreparedRun, String> {
+  prepare_run_with_base(env, manifest, None)
+}
+
+/// [`prepare_run`], optionally as an extension of a base library. With
+/// `base`, environment constants in it are external: the manifest partitions
+/// only the others, the subjects and environment root cover only the others,
+/// and every shard's edge to a base constant is one of its assumptions, so the
+/// root folds to `CheckEnv(R_d, some A_d)` with `A_d` the base constants the
+/// extension references. A manifest block that is a base constant is rejected.
+pub(super) fn prepare_run_with_base(
+  env: &ixon::Env,
+  manifest: &ShardManifest,
+  base: Option<&FxHashSet<Address>>,
+) -> Result<PreparedRun, String> {
+  let is_base =
+    |address: &Address| base.is_some_and(|set| set.contains(address));
   if manifest.shards.is_empty() {
     return Err("manifest contains no shards".into());
   }
@@ -51,6 +87,13 @@ pub(super) fn prepare_run(
       return Err(format!("manifest repeats shard id {}", shard.id));
     }
     for block in &shard.blocks {
+      if is_base(block) {
+        return Err(format!(
+          "manifest shard {} owns {}, which is already a base constant",
+          shard.id,
+          block.hex()
+        ));
+      }
       if let Some(previous) = block_to_shard.insert(block.clone(), index) {
         return Err(format!(
           "manifest block {} is owned by shards {} and {}",
@@ -65,8 +108,11 @@ pub(super) fn prepare_run(
   // DashMap iteration is deliberately unordered. Sort first so indexed Rayon
   // collection and the later sequential fold retain deterministic errors and
   // output independent of worker scheduling.
-  let mut all_addresses: Vec<Address> =
-    env.consts.iter().map(|entry| entry.key().clone()).collect();
+  let (external, mut all_addresses): (Vec<Address>, Vec<Address>) = env
+    .consts
+    .iter()
+    .map(|entry| entry.key().clone())
+    .partition(|address| is_base(address));
   all_addresses.par_sort_unstable();
 
   // Materializing an .ixe constant parses its serialized representation, and
@@ -111,7 +157,7 @@ pub(super) fn prepare_run(
     walk_edges_by_shard[owner].extend(edges);
     owners_old.push(owner);
   }
-  if owners_old.len() != env.consts.len() {
+  if owners_old.len() + external.len() != env.consts.len() {
     return Err(
       "manifest ownership did not cover every environment constant".into(),
     );
@@ -144,6 +190,7 @@ pub(super) fn prepare_run(
     .cloned()
     .zip(owners_old)
     .map(|(address, old)| (address, old_to_retained[&old]))
+    .chain(external.into_iter().map(|address| (address, EXTERNAL_OWNER)))
     .collect();
 
   let shard_inputs: Vec<(usize, u32, Vec<Address>, Vec<Address>)> =
@@ -163,10 +210,11 @@ pub(super) fn prepare_run(
   let shard_results: Vec<Result<PreparedShard, String>> = shard_inputs
     .into_par_iter()
     .map(|(retained, original_id, subjects, candidates)| {
-      // Every environment constant has exactly one retained owner. Thus this
-      // is the thin-frontier predicate without rebuilding a subject hash set:
-      // retain present walk edges owned by another shard, exclude local and
-      // absent (including blob-sentinel) edges.
+      // Every environment constant has exactly one retained owner, external
+      // for a base constant. Thus this is the thin-frontier predicate without
+      // rebuilding a subject hash set: retain present walk edges owned by
+      // another shard or the base, exclude local and absent (including
+      // blob-sentinel) edges.
       let mut frontier_set = FxHashSet::default();
       for candidate in candidates {
         if owner_by_address
@@ -209,16 +257,70 @@ pub(super) fn prepare_run(
     env_root,
     env_count: all_addresses.len(),
     expected_shards,
+    extension: base.is_some(),
   })
+}
+
+/// The assumptions a root may keep.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum RootAssumptions<'a> {
+  /// A standalone root: none survives.
+  Closed,
+  /// An extension root before its rebase: a canonical tree whose every leaf
+  /// is a base constant of the run, or none.
+  External,
+  /// A conditional root, such as a rebase (shape 13) onto the subjects root
+  /// `base`: exactly `some base`. It holds only provided every leaf under
+  /// `base` is well-typed.
+  Base(&'a Address),
+}
+
+/// Check that a root's assumptions are exactly what `mode` declares.
+pub(super) fn validate_root_assumptions(
+  prepared: &PreparedRun,
+  root: &Statement,
+  mode: RootAssumptions<'_>,
+) -> Result<(), String> {
+  match (mode, root.assumptions_root()) {
+    (RootAssumptions::Closed | RootAssumptions::External, None) => Ok(()),
+    (RootAssumptions::Closed, Some(_)) => {
+      Err("aggregate root retains undischarged assumptions".into())
+    },
+    (RootAssumptions::External, Some(actual)) => {
+      let tree = root.assumptions.as_ref().ok_or_else(|| {
+        format!("extension root assumes {}, not a base tree", actual.hex())
+      })?;
+      match tree.leaves.iter().find(|leaf| {
+        prepared.owner_by_address.get(*leaf) != Some(&EXTERNAL_OWNER)
+      }) {
+        Some(leaf) => Err(format!(
+          "extension root assumes {}, which is not a base constant",
+          leaf.hex()
+        )),
+        None => Ok(()),
+      }
+    },
+    (RootAssumptions::Base(base), None) => Err(format!(
+      "aggregate root has no assumptions, but base {} was declared",
+      base.hex()
+    )),
+    (RootAssumptions::Base(base), Some(actual)) if actual == base => Ok(()),
+    (RootAssumptions::Base(base), Some(actual)) => Err(format!(
+      "aggregate root assumes {}, not the declared base {}",
+      actual.hex(),
+      base.hex()
+    )),
+  }
 }
 
 /// Check the semantic certificate attached to the root statement independently
 /// of any proof: every environment constant occurs exactly once, every retained
 /// shard contributes, the canonicalized subject root is the environment root,
-/// and no assumption survives.
+/// and the assumptions are as `mode` declares ([`validate_root_assumptions`]).
 pub(super) fn validate_root_statement(
   prepared: &PreparedRun,
   root: &Statement,
+  mode: RootAssumptions<'_>,
 ) -> Result<(), String> {
   if root.subjects.count != prepared.env_count {
     return Err(format!(
@@ -242,10 +344,12 @@ pub(super) fn validate_root_statement(
   if root_leaves.windows(2).any(|pair| pair[0] == pair[1]) {
     return Err("aggregate root contains a duplicate subject".into());
   }
-  if let Some(foreign) = root_leaves
-    .iter()
-    .find(|addr| !prepared.owner_by_address.contains_key(*addr))
-  {
+  if let Some(foreign) = root_leaves.iter().find(|addr| {
+    prepared
+      .owner_by_address
+      .get(*addr)
+      .is_none_or(|owner| *owner == EXTERNAL_OWNER)
+  }) {
     return Err(format!(
       "aggregate root contains foreign subject {}",
       foreign.hex()
@@ -260,8 +364,5 @@ pub(super) fn validate_root_statement(
       prepared.env_root.hex()
     ));
   }
-  if root.assumptions.is_some() {
-    return Err("aggregate root retains undischarged assumptions".into());
-  }
-  Ok(())
+  validate_root_assumptions(prepared, root, mode)
 }

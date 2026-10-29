@@ -23,7 +23,11 @@ use std::{
   sync::Arc,
 };
 
-pub(crate) const FIRST_SEED: &[u8] = b"init-fri-kzg-ordinary-v1";
+/// The first KZG stage's development seed. It is the recursive stage's seed,
+/// so under development setups the first, recursive and merge stages share
+/// one trapdoor and a merge can fold the pairings they defer. Ignition
+/// setups ignore stage seeds.
+pub(crate) const FIRST_SEED: &[u8] = b"init-kzg-recursive-bn254-v1";
 pub(crate) const BINDING_FILE: &str = "kzg-setup-id.bin";
 pub(crate) const IGNITION_CACHE_VAR: &str = "IX_KZG_IGNITION_CACHE";
 pub(crate) const IGNITION_CACHE_MANIFEST_VAR: &str =

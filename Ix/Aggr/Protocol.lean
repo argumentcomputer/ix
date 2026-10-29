@@ -69,6 +69,11 @@ def rangeLeafShape : Nat := 10
 def rangeJoinShape : Nat := 11
 def rangeRootShape : Nat := 12
 
+/-- Shape `13` restates one `ix_aggr` child `CheckEnv(R, some A)` as
+`CheckEnv(R, some base)`, discharging every leaf of the canonical `A` by a
+channel-6 membership path into the external root `base`. -/
+def rebaseShape : Nat := 13
+
 /-- The byte that opens every range statement; no `Ix.Claim` starts with it,
 so a range statement never parses as a `CheckEnv` claim. -/
 def rangeStatementTag : UInt8 := 0x52

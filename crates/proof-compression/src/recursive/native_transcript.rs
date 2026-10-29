@@ -185,6 +185,12 @@ impl Transcript {
   ) {
     self.buffer.extend(data.iter().map(|&v| bytes.constant(b, v)));
   }
+  /// The chaining state after the last sample. Every byte observed before
+  /// that sample determines it, so it binds the whole transcript.
+  pub fn finish(self) -> [ByteValue; 32] {
+    assert!(self.buffer.is_empty(), "observations after the last sample");
+    self.state
+  }
   #[cfg(test)]
   pub fn scalar(&mut self, b: &mut Builder, bytes: &ByteGadgets, v: Value) {
     self.observe(&scalar_bytes(b, bytes, v));

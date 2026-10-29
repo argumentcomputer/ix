@@ -24,10 +24,13 @@ use aiur::synthesis::ShardRetention as Retention;
 use ixvm_codegen::aiur_ixvm_runner::execute_ixvm;
 use ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness;
 
-use super::prepare::PreparedRun;
+use super::prepare::{PreparedRun, prepare_run_with_base};
 use super::protocol::serialize_claims;
 use super::prove::{
   PrepareFailure, Slot, StagedSlot, finish_slot, prepare_slot,
+};
+use super::rebase::{
+  Base, BaseSource, RebaseSystems, plan_rebase, prove_rebase,
 };
 use super::store::{decode_wrapper, load_cached, read_store};
 use super::*;
@@ -53,6 +56,10 @@ pub struct Config {
   pub cache_fri_bytes: Vec<u8>,
   pub out_manifest: Option<PathBuf>,
   pub fresh: bool,
+  /// Prove an extension of this base: its constants stay external, the
+  /// extension root keeps its edges to them as assumptions, and that root is
+  /// then rebased (shape 13) onto the base's subjects root.
+  pub(super) base: Option<Base>,
 }
 
 /// The default ceiling on one execution record's counted bytes: large
@@ -319,7 +326,11 @@ fn prove_loop(
       Item::Root { slot, staged } => {
         let result = (|| -> Result<String, String> {
           let root = finish_slot(ctx, slot, *staged)?;
-          validate_root_statement(prepared_run, &root.statement)?;
+          validate_root_statement(
+            prepared_run,
+            &root.statement,
+            prepared_run.root_assumptions(),
+          )?;
           // Wrap until the final proof is a single trace shard.
           let mut wrapped: Option<AiurProof> = None;
           loop {
@@ -410,7 +421,7 @@ pub fn run(
     .map_err(|error| format!("manifest parse failed: {error}"))?;
   let home = std::env::var_os("HOME").ok_or("no HOME environment variable")?;
   let cache_root = std::env::var_os("AIUR_LANES_CACHE_DIR")
-    .map_or_else(|| PathBuf::from(home).join(".ix/cache"), PathBuf::from);
+    .map_or_else(|| PathBuf::from(&home).join(".ix/cache"), PathBuf::from);
   let checkpoint_path = cache_root
     .join("refined-manifests")
     .join(format!("{}.ixes", Address::hash(&manifest_bytes).hex()));
@@ -444,6 +455,10 @@ pub fn run(
     Err(std::env::VarError::NotPresent) => DEFAULT_RECORD_MAX_BYTES,
     Err(error) => return Err(format!("AIUR_RECORD_MAX_BYTES: {error}")),
   };
+  // A rebase that cannot succeed fails before anything is proven.
+  if let Some(base) = &cfg.base {
+    plan_rebase(env, &manifest, cfg.structural_above, base)?;
+  }
   let mut profile = None;
   let mut pool_stats = PoolStats::default();
   loop {
@@ -483,7 +498,26 @@ pub fn run(
           "root {root} verified; composed verdict OK{coverage}; end to end {}s",
           started.elapsed().as_secs()
         ));
-        return Ok(root);
+        let Some(base) = &cfg.base else {
+          return Ok(root);
+        };
+        let plan = plan_rebase(env, &manifest, cfg.structural_above, base)?;
+        let rebased = prove_rebase(
+          RebaseSystems {
+            ixvm_system: ixvm,
+            aggr_system: aggr,
+            verify_idx,
+            aggr_idx,
+          },
+          &plan,
+          &root,
+          &PathBuf::from(&home).join(".ix").join("store"),
+        )?;
+        say(&format!(
+          "rebased root {rebased} onto base {}",
+          base.subjects_root().hex()
+        ));
+        return Ok(rebased);
       },
       PassOutcome::Refine(ids) => {
         let profile = profile
@@ -583,7 +617,11 @@ fn plan_pass(
   cache_root: &Path,
   record_max_bytes: usize,
 ) -> Result<Pass, String> {
-  let prepared = prepare_run(env, manifest)?;
+  let prepared = prepare_run_with_base(
+    env,
+    manifest,
+    cfg.base.as_ref().map(|base| &base.constants),
+  )?;
   let ixvm_vk = aiur::vk_codec::aiur_system_to_bytes(ixvm)
     .map_err(|error| format!("IxVM VK serialization failed: {error}"))?;
   let aggr_vk = aiur::vk_codec::aiur_system_to_bytes(aggr)
@@ -1267,25 +1305,44 @@ extern "C" fn rs_aiur_prove_lanes(
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   out_manifest: LeanString<LeanBorrowed<'_>>,
   fresh: bool,
+  base_ixe_path: LeanString<LeanBorrowed<'_>>,
+  base_manifest_path: LeanString<LeanBorrowed<'_>>,
+  base_structural_above: LeanNat<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let lanes = match lean_unbox_nat_as_usize(lanes.inner()) {
     0 => visible_gpus(),
     n => n,
   };
-  let cfg = Config {
-    lanes,
-    max_ram_bytes: lean_unbox_nat_as_usize(max_ram_bytes.inner()),
-    exec_jobs: lean_unbox_nat_as_usize(exec_jobs.inner()),
-    structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
-    cache_fri_bytes: cache_fri_bytes.as_bytes().to_vec(),
-    out_manifest: (!out_manifest.as_str().is_empty())
-      .then(|| PathBuf::from(out_manifest.as_str())),
-    fresh,
-  };
-  if cfg.lanes == 0 {
+  if lanes == 0 {
     return LeanExcept::error_string("no visible GPU to prove on");
   }
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let base = match (base_ixe_path.as_str(), base_manifest_path.as_str()) {
+      ("", "") => None,
+      ("", _) | (_, "") => {
+        return Err(
+          "a base needs both its environment and its manifest".to_string(),
+        );
+      },
+      (ixe, manifest) => Some(Base::load(BaseSource {
+        ixe_path: Path::new(ixe),
+        manifest_path: Path::new(manifest),
+        structural_above: lean_unbox_nat_as_usize(
+          base_structural_above.inner(),
+        ),
+      })?),
+    };
+    let cfg = Config {
+      lanes,
+      max_ram_bytes: lean_unbox_nat_as_usize(max_ram_bytes.inner()),
+      exec_jobs: lean_unbox_nat_as_usize(exec_jobs.inner()),
+      structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
+      cache_fri_bytes: cache_fri_bytes.as_bytes().to_vec(),
+      out_manifest: (!out_manifest.as_str().is_empty())
+        .then(|| PathBuf::from(out_manifest.as_str())),
+      fresh,
+      base,
+    };
     run(
       &cfg,
       ixvm_system.get(),

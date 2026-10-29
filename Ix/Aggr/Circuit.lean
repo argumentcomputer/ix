@@ -7,7 +7,7 @@ public import MultiStark.Verifier
 # Heterogeneous recursive aggregation circuit
 
 One entrypoint, `ix_aggr`, subsumes wrapping and joining. A non-deterministic
-shape hint (IO channel 6) selects one of thirteen verified forms:
+shape hint (IO channel 6) selects one of fourteen verified forms:
 
 | shape | children                  | statement fold                          |
 |-------|---------------------------|-----------------------------------------|
@@ -24,6 +24,7 @@ shape hint (IO channel 6) selects one of thirteen verified forms:
 | 10    | shards `[lo, hi)` of an IxVM batch | range leaf: residual sum        |
 | 11    | `ix_aggr`, `ix_aggr` (ranges) | range join: adjacent ranges added   |
 | 12    | one `ix_aggr` range proof | range root: whole batch, IxVM claim     |
+| 13    | one `ix_aggr` proof       | rebase: assumptions onto an external root |
 
 Shapes 10–12 are the range-sum recursion (see the section of that name in
 the circuit): together they verify one large IxVM batch across several
@@ -69,6 +70,12 @@ Structural pair shapes instead bind
 input assumption by either carrying it into the canonical output assumptions
 or discharging it with a strict Merkle inclusion path on channel 6.
 
+The rebase shape restates a child `CheckEnv(R, some A)`, `A` canonical, as
+`CheckEnv(R, some R_ext)` for an external root `R_ext` named only by the
+output claim. Every leaf of `A` must be discharged by a channel-6 path into
+`R_ext`; none is carried. `R_ext` is a free-form root, so a rebased statement
+is never a pair child: pair shapes open assumptions as canonical trees.
+
 All address-list operations use bytewise address comparison. Pointer identity
 is never used as set equality: Aiur memory constrains pointers to be unique,
 not stored values to be globally deduplicated.
@@ -83,7 +90,7 @@ not stored values to be globally deduplicated.
 | 3       | `[0]`                | 80-byte allowed blob                     |
 | 4       | packed digest        | `CheckEnv` claim and range statement preimages |
 | 5       | raw 32-byte root     | serialized canonical `AssumptionTree`s   |
-| 6       | `[0]` / address      | shape byte (0–12) / structural path choice |
+| 6       | `[0]` / address      | shape byte (0–13) / structural path choice |
 -/
 
 public section
@@ -757,6 +764,43 @@ def circuit := ⟦
     ()
   }
 
+  fn aggr_assert_all_discharged(leaves: List‹Addr›, root: Addr) {
+    match load(leaves) {
+      ListNode.Nil => (),
+      ListNode.Cons(leaf, rest) =>
+        assert_eq!(aggr_discharge_choice(leaf, root), 1,
+          "aggr rebase: an assumption is carried instead of discharged");
+        aggr_assert_all_discharged(rest, root),
+    }
+  }
+
+  -- Rebase: one self child `CheckEnv(R, some A)` with canonical `A`, output
+  -- `CheckEnv(R, some R_ext)`. The output claim is the only source of
+  -- `R_ext`; every leaf of `A` must reach it by a channel-6 path.
+  fn aggr_rebase(ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let child_digest = aggr_child_check_env_digest(1, 0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let (child_root, child_asm) =
+      aggr_parse_check_env(aggr_load_preimage(child_digest));
+
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = #read_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "aggr rebase: output claim digest mismatch");
+    let (output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    assert_eq!(address_eq(output_root, child_root), 1,
+      "aggr rebase: output subject root is not the child's");
+
+    -- A child without assumptions has nothing to rebase, and an output
+    -- without assumptions would claim more than the child proves.
+    let Option.Some(child_asm_root) = child_asm;
+    let Option.Some(base_root) = output_asm;
+    aggr_assert_all_discharged(aggr_load_canonical_tree(child_asm_root),
+      base_root)
+  }
+
   /- ## Range-sum recursion over one IxVM batch
 
   A batch of K trace shards balances when the shards' residuals plus the
@@ -1030,6 +1074,7 @@ def circuit := ⟦
     --   2–5 = flat pairs:       2 + 2·left + right
     --   6–9 = structural pairs: 6 + 2·left + right
     --   10 = range leaf      11 = range join      12 = range root
+    --   13 = rebase onto an external root
     let (hidx, hlen) = io_get_info(6, [0]);
     assert_eq!(hlen, 1, "aggr: shape hint must be exactly one byte");
     let hint = #read_byte_stream(6, hidx, hlen);
@@ -1061,6 +1106,8 @@ def circuit := ⟦
       11 => aggr_range_join(ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
       12 => aggr_range_root(ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      13 => aggr_rebase(ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
     }
   }

@@ -13,16 +13,21 @@
 //! `contains` traversals that made the former Lean startup super-linear.
 
 use aiur::synthesis::{AiurProof, AiurSystem};
+use ix_common::address::Address;
 use ix_kernel::shard::ShardManifest;
 use ixvm_codegen::env_handle::EnvHandle;
 use plan::{
   FoldPolicy, PlanIdentity, PlanOp, SlotSpec, build_specs,
   build_statement_specs, plan_replay, subtree_plan,
 };
-use prepare::{PreparedShard, prepare_run, validate_root_statement};
+use prepare::{
+  PreparedShard, RootAssumptions, prepare_run, prepare_run_with_base,
+  validate_root_statement,
+};
 use protocol::{ChildKind, allowed_blob, inner_claim};
 use prove::{ProveContext, run_replay, wrap_root};
 use rayon::prelude::*;
+use rustc_hash::FxHashSet;
 use scheduler::run_scheduler;
 use statement::Statement;
 use std::{
@@ -41,6 +46,7 @@ mod plan;
 mod prepare;
 pub(crate) mod protocol;
 mod prove;
+mod rebase;
 mod scheduler;
 mod statement;
 mod store;
@@ -94,6 +100,9 @@ struct RunConfig<'a> {
   /// the leaves under it, and report that slot's proof; the root-only steps
   /// (root validation, wrapping) are skipped. `None` proves the whole plan.
   subtree: Option<usize>,
+  /// Prove an extension of the library with these constants: they stay
+  /// external, and the root keeps its edges to them as assumptions.
+  base_constants: Option<&'a FxHashSet<Address>>,
 }
 
 fn expected_from_manifest(
@@ -108,7 +117,7 @@ fn expected_from_manifest(
     .ok_or("aggregate manifest produced no root statement")?
     .statement
     .clone();
-  validate_root_statement(&prepared, &root)?;
+  validate_root_statement(&prepared, &root, RootAssumptions::Closed)?;
   Ok((root, prepared.env_count))
 }
 
@@ -177,7 +186,11 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   let manifest = ShardManifest::from_bytes(&manifest_bytes)
     .map_err(|error| format!("manifest parse failed: {error}"))?;
   let parsed_at = Instant::now();
-  let prepared = prepare_run(&config.env_handle.env, &manifest)?;
+  let prepared = prepare_run_with_base(
+    &config.env_handle.env,
+    &manifest,
+    config.base_constants,
+  )?;
   let prepared_at = Instant::now();
 
   let ixvm_vk = aiur::vk_codec::aiur_system_to_bytes(config.ixvm_system)
@@ -457,7 +470,11 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
   if root.kind != ChildKind::Aggr {
     return Err("aggregate plan produced a raw IxVM root".into());
   }
-  validate_root_statement(&prepared, &root.statement)?;
+  validate_root_statement(
+    &prepared,
+    &root.statement,
+    prepared.root_assumptions(),
+  )?;
   // Wrap until the final proof is a single trace shard: each wrap verifies
   // the previous proof, so its own execution shrinks with that proof's
   // shard count until one shard verifies it.

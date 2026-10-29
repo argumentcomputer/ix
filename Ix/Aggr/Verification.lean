@@ -20,11 +20,29 @@ def decodeAggregateWrapperAt (proofAddr : Address) (bytes : ByteArray) :
 /-- Establish the per-constant interpretation of an aggregate root. A valid
 proof of `CheckEnv(subjects.root, none)` certifies every subject leaf, so this
 single linear audit checks that those leaves are exactly the constants in the
-supplied environment: no omissions, foreign leaves, or duplicates. -/
-def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
+supplied environment: no omissions, foreign leaves, or duplicates.
+
+With `base := some R`, the root is instead conditional: its assumptions must be
+exactly `some R`, as a rebase (shape 13) onto the subjects root `R` outputs,
+and the audit certifies the subjects only provided every leaf under `R` is
+well-typed. The default rejects any assumption.
+
+For an extension environment, `baseConstants` are the base constants it holds:
+they are excluded from the constants the subjects must cover, and a subject
+that is one of them counts as foreign. -/
+def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees)
+    (base : Option Address := none) (baseConstants : Std.HashSet Address := {}) :
     Except String Nat := do
-  if let some assumptions := statement.assumptions then
+  match base, statement.assumptions with
+  | none, none => pure ()
+  | none, some assumptions =>
     throw s!"aggregate root retains undischarged assumptions {assumptions.root}"
+  | some base, none =>
+    throw s!"aggregate root has no assumptions, but base {base} was declared"
+  | some base, some assumptions =>
+    if assumptions.root != base then
+      throw s!"aggregate root assumes {assumptions.root}, not the declared \
+        base {base}"
   let leaves := statement.subjects.leaves
   let mut seen : Std.HashSet Address := {}
   let mut duplicates := 0
@@ -37,12 +55,15 @@ def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
       if firstDuplicate.isNone then firstDuplicate := some address
     else
       seen := seen.insert address
-    if !env.consts.contains address then
+    if !env.consts.contains address || baseConstants.contains address then
       foreign := foreign + 1
       if firstForeign.isNone then firstForeign := some address
   let mut missing := 0
   let mut firstMissing : Option Address := none
+  let mut owned := 0
   for (address, _) in env.consts do
+    if baseConstants.contains address then continue
+    owned := owned + 1
     if !seen.contains address then
       missing := missing + 1
       if firstMissing.isNone then firstMissing := some address
@@ -51,12 +72,12 @@ def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
     throw s!"aggregate constant audit failed: {missing} missing \
       (first {sample firstMissing}), {foreign} foreign \
       (first {sample firstForeign}), {duplicates} duplicate occurrence(s) \
-      (first {sample firstDuplicate}); environment has {env.consts.size} constants, \
+      (first {sample firstDuplicate}); environment has {owned} constants, \
       subject tree has {leaves.size} leaves"
-  if leaves.size != env.consts.size then
+  if leaves.size != owned then
     throw s!"aggregate constant audit cardinality mismatch: environment has \
-      {env.consts.size} constants, subject tree has {leaves.size} leaves"
-  pure env.consts.size
+      {owned} constants, subject tree has {leaves.size} leaves"
+  pure owned
 
 
 end Aggr

@@ -210,6 +210,9 @@ impl SubjectTree {
 #[derive(Debug)]
 pub(super) struct Statement {
   pub(super) subjects: Arc<SubjectTree>,
+  /// The canonical assumption tree the claim commits to. A rebased statement
+  /// has none here although its claim has assumptions (an external subjects
+  /// root, see [`Statement::rebased`]), so the claim is authoritative.
   pub(super) assumptions: Option<Arc<CanonicalTree>>,
   pub(super) claim: Claim,
   pub(super) claim_bytes: Vec<u8>,
@@ -227,6 +230,30 @@ impl Statement {
     let mut claim_bytes = Vec::new();
     claim.put(&mut claim_bytes);
     Arc::new(Self { subjects, assumptions, claim, claim_bytes })
+  }
+
+  /// The output of a rebase (shape 13): `subjects`, conditional on every leaf
+  /// of the tree rooted at `base`. It opens no assumption tree, so it is never
+  /// a pair child.
+  pub(super) fn rebased(
+    subjects: Arc<SubjectTree>,
+    base: &Address,
+  ) -> Arc<Self> {
+    let claim = Claim::CheckEnv {
+      root: subjects.root.clone(),
+      assumptions: Some(base.clone()),
+    };
+    let mut claim_bytes = Vec::new();
+    claim.put(&mut claim_bytes);
+    Arc::new(Self { subjects, assumptions: None, claim, claim_bytes })
+  }
+
+  /// The assumptions root the claim commits to, canonical or external.
+  pub(super) fn assumptions_root(&self) -> Option<&Address> {
+    match &self.claim {
+      Claim::CheckEnv { assumptions, .. } => assumptions.as_ref(),
+      _ => None,
+    }
   }
 
   pub(super) fn join(

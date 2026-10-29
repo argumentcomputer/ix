@@ -22,6 +22,7 @@ pub mod groth16;
 #[cfg(test)]
 mod init_claim;
 mod init_fri;
+mod merge;
 pub mod plonk;
 pub use final_proof::{Artifact, FinalOptions, FinalSystem};
 mod prover;

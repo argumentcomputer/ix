@@ -139,13 +139,19 @@ def loadEnvAndShards (manifestPath ixePath : String) :
     once, and every shard's frontier (closure minus owned) is therefore owned
     (checked) by some other shard. Prints the per-shard report; returns whether
     the partition is a valid disjoint cover (no block owned by two shards, no
-    constant whose block no shard owns). -/
-def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool := do
+    constant whose block no shard owns).
+
+    For an extension partition, `external` holds the base library's
+    constants: they must be owned by no shard and are not counted as gaps. -/
+def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address))
+    (external : Std.HashSet Address := {}) : IO Bool := do
   -- block → shard, detecting blocks claimed by more than one shard.
   let mut blockToShard : Std.HashMap Address Nat := {}
   let mut dup : Nat := 0
+  let mut ownedBase : Nat := 0
   for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
     for blk in blocks do
+      if external.contains blk then ownedBase := ownedBase + 1
       match blockToShard.get? blk with
       | some _ => dup := dup + 1
       | none => blockToShard := blockToShard.insert blk k
@@ -153,7 +159,11 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
   let mut counts : Array Nat := Array.replicate shards.size 0
   let mut unowned : Nat := 0
   let mut unparsed : Nat := 0
+  let mut externalCount : Nat := 0
   for (addr, lc) in ixonEnv.consts do
+    if external.contains addr then
+      externalCount := externalCount + 1
+      continue
     -- A constant whose bytes do not parse must FAIL the gate, not be
     -- skipped. `.ixe` loading is lazy and `LazyConstant.get?` discards
     -- the error, so such a constant sits in `consts` with its key
@@ -173,12 +183,18 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     IO.eprintln s!"[shards] FAIL: {dup} block(s) owned by >1 shard (not disjoint)"
   if unowned != 0 then
     IO.eprintln s!"[shards] FAIL: {unowned} const(s) with no owning shard (coverage gap)"
+  if ownedBase != 0 then
+    IO.eprintln s!"[shards] FAIL: {ownedBase} block(s) are base constants owned by a shard"
   if unparsed != 0 then
     IO.eprintln s!"[shards] FAIL: {unparsed} const(s) whose bytes do not parse \
       (cannot be assigned to a shard)"
-  let ok := dup == 0 && unowned == 0 && unparsed == 0
+  let ok := dup == 0 && unowned == 0 && unparsed == 0 && ownedBase == 0
   if ok then
-    IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
+    if externalCount == 0 then
+      IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
+    else
+      IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size - externalCount} \
+        non-base consts, disjoint; {externalCount} base consts are external"
   pure ok
 
 

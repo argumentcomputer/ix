@@ -33,7 +33,7 @@ const ADMISSION: &[u8] =
 const ADMISSION_BLAKE3: &str =
   "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46";
 
-const RECURSIVE_VK: &[u8] =
+pub(super) const RECURSIVE_VK: &[u8] =
   include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
   "b4c58f798380d2fd91594763613874fdaf2d407631cee98fe361a287265d074a";

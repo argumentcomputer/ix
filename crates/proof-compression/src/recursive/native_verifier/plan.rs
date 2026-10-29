@@ -109,6 +109,35 @@ impl LayoutPolicy {
     }
   }
 
+  /// Check a compiled verifier fits one computation trace and one merged
+  /// table within the caps.
+  pub(super) fn admit(self, circuit: &Circuit<Scalar>) -> Result<(), String> {
+    let layout =
+      circuit.multi_stark_layout().map_err(|error| error.to_string())?;
+    if layout.main_heights.len() != 1
+      || layout.main_height > self.max_computation_height
+    {
+      return Err(
+        "recursive computation does not fit one admitted trace".into(),
+      );
+    }
+    let table_rows =
+      circuit.tables().iter().try_fold(0usize, |sum, table| {
+        sum.checked_add(table.rows().len()).ok_or("merged table size overflow")
+      })?;
+    let table_height = table_rows
+      .max(2)
+      .checked_next_power_of_two()
+      .ok_or("merged table height overflow")?;
+    if table_height > self.max_table_height || !layout.custom_traces.is_empty()
+    {
+      return Err(
+        "recursive tables do not fit one admitted merged table".into(),
+      );
+    }
+    Ok(())
+  }
+
   fn validate(self) -> Result<(), String> {
     if [self.max_computation_height, self.max_table_height].iter().any(
       |&height| {
@@ -271,32 +300,7 @@ impl<'a> Plan<'a> {
     let construction =
       construct(&self.vk, &self.shape, &self.claims, Builder::new())?;
     let compiled = construction.finish(self);
-    let layout = compiled
-      .circuit
-      .multi_stark_layout()
-      .map_err(|error| error.to_string())?;
-    if layout.main_heights.len() != 1
-      || layout.main_height > self.layout.max_computation_height
-    {
-      return Err(
-        "recursive computation does not fit one admitted trace".into(),
-      );
-    }
-    let table_rows =
-      compiled.circuit.tables().iter().try_fold(0usize, |sum, table| {
-        sum.checked_add(table.rows().len()).ok_or("merged table size overflow")
-      })?;
-    let table_height = table_rows
-      .max(2)
-      .checked_next_power_of_two()
-      .ok_or("merged table height overflow")?;
-    if table_height > self.layout.max_table_height
-      || !layout.custom_traces.is_empty()
-    {
-      return Err(
-        "recursive tables do not fit one admitted merged table".into(),
-      );
-    }
+    self.layout.admit(&compiled.circuit)?;
     Ok(compiled)
   }
 

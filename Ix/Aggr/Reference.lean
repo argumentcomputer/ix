@@ -72,6 +72,7 @@ def aggregateShapeRamBytes (shape subjectCount : Nat) : Nat :=
   | 5 => aggregateStructuralJoinRamBytes +
       subjectCount * aggregateFlatJoinRamPerSubjectBytes
   | 9 => aggregateStructuralJoinRamBytes
+  | 13 => aggregateWrapRamBytes
   | _ => aggregateDirectJoinRamBytes
 
 /-- Reference per-slot RAM weight, also used by the policy benchmark. -/
@@ -230,10 +231,20 @@ private def shardStatement (env : Ixon.Env) (owned : Array Address) :
 manifest. Zero-constant leaves are pruned exactly as in `ix aggregate`; no proof
 data is needed. Ownership is assigned for every retained shard in one
 environment pass; verification must not reintroduce the old shard-by-shard
-full-environment scan. -/
+full-environment scan.
+
+With a nonempty `baseConstants`, the manifest is an extension of that base, as
+in the native extension mode: base constants are owned by no shard and never
+subjects, each shard's edges to them are assumptions, and the root must assume
+only base constants. A manifest block that is a base constant is rejected. -/
 def expectedFromManifest (env : Ixon.Env)
-    (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat) :
+    (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat)
+    (baseConstants : Std.HashSet Address := {}) :
     Except String Aggr.CheckEnvTrees := do
+  for blocks in view.shards do
+    for block in blocks do
+      if baseConstants.contains block then
+        throw s!"manifest owns {block}, which is already a base constant"
   let (view, counts) ← view.pruneEmpty env
   let owned := Ix.Shard.ownedConstsPer env view.shards
   let plan ← Aggr.Reference.schedulePlan view.aggregationTree.foldPlan
@@ -255,7 +266,24 @@ def expectedFromManifest (env : Ixon.Env)
       else
         leftStatement.join rightStatement
   let some root := slots.back? | throw "aggregate manifest produced no root"
+  if let some assumptions := root.assumptions then
+    if let some leaf := assumptions.leaves.find? (!baseConstants.contains ·) then
+      throw s!"aggregate root assumes {leaf}, which is not a base constant"
   pure root
+
+/-- The rebased root (shape 13) of an extension manifest over a closed base:
+`CheckEnv(R_d, some R_base)`, with `base` the base's own manifest root. -/
+def rebasedFromManifest (env : Ixon.Env) (view : Ix.Shard.IxesManifestView)
+    (structuralAbove : Nat) (base : Aggr.CheckEnvTrees) :
+    Except String Ix.Claim := do
+  if base.assumptions.isSome then
+    throw "a rebase base must be a closed root"
+  let baseConstants := base.subjects.leaves.foldl (·.insert ·) {}
+  let root ← expectedFromManifest env view structuralAbove baseConstants
+  if root.assumptions.isNone then
+    throw "the extension references no base constant; it needs no rebase"
+  discard <| root.rebasePathAdvice base.subjects
+  pure (root.rebaseClaim base.subjects)
 
 end Aggr.Reference
 end

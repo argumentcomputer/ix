@@ -200,7 +200,9 @@ opaque rsEnvExtractFFI :
     ones (`ix_kernel::shard::shard_static_ordered`; what the distributed
     prover wants). A nonzero `numShards` fixes the count; otherwise `ramGib`
     selects the static block-shape seed after the `.ixe` has been profiled.
-    Writes a `.ixes` manifest; prints the report to stderr. -/
+    Writes a `.ixes` manifest; prints the report to stderr. A nonempty
+    base `.ixe` path makes the manifest an extension of that base: its
+    constants are left out of the partition, owned by no shard. -/
 @[extern "rs_shard_env_static"]
 opaque rsShardEnvStaticFFI :
     @& String →                          -- .ixe path
@@ -210,6 +212,7 @@ opaque rsShardEnvStaticFFI :
     @& String →                          -- layout: "mincut" or "ordered"
     @& String →                          -- .ixes output path ("" = skip)
     USize →                              -- executions ahead of each prover (trace-shard seed)
+    @& String →                          -- base .ixe path ("" = none)
     IO Unit
 
 /-- FFI: dump the static block-level reference graph of a `.ixe` as text:

@@ -160,6 +160,98 @@ private def stage2FixturePinnedAndFenced : IO Bool := do
     IO.eprintln s!"Stage 2 fixture test failed: {e}"
     return false
 
+/-- `auditAggregateConstants` with a declared base, over the shared-closure
+fixture: a rebased root assumes a base subjects root, here a free-form one. -/
+private def conditionalAuditTests : List TestSeq :=
+  let (auditEnv, auditOwned, auditShared) := sharedClosureIxonEnv
+  let auditLeaves := auditOwned.push auditShared
+  let auditBase : Ix.AssumptionTree :=
+    .node (canonicalTree #[Address.blake3 "aggregate-audit-base-l".toUTF8])
+      (.leaf (Address.blake3 "aggregate-audit-base-r".toUTF8))
+  let rebased : Aggr.CheckEnvTrees := {
+    subjects := canonicalTree auditLeaves
+    assumptions := some auditBase
+  }
+  let audit (statement : Aggr.CheckEnvTrees) (base : Option Address) :=
+    Aggr.auditAggregateConstants auditEnv statement base
+  let rejected (result : Except String Nat) : Bool :=
+    match result with
+    | .error _ => true
+    | .ok _ => false
+  let accepted : Bool := match audit rebased (some auditBase.root) with
+    | .ok count => count == 3
+    | .error _ => false
+  [ test "conditional audit accepts assumptions equal to the declared base"
+      accepted,
+    test "strict audit rejects a root conditional on a base"
+      (rejected (audit rebased none)),
+    test "conditional audit rejects assumptions other than the declared base"
+      (rejected (audit rebased (some (canonicalTree #[auditShared]).root))),
+    test "conditional audit rejects a root without assumptions"
+      (rejected (audit { rebased with assumptions := none }
+        (some auditBase.root))),
+    test "conditional audit still rejects an omitted environment constant"
+      (rejected (audit { rebased with subjects := canonicalTree auditOwned }
+        (some auditBase.root))) ]
+
+/-- An extension of the base `{shared}` by the two constants that reference
+it, one per shard: base constants are external, the root assumes exactly the
+base constants referenced, and the rebased root assumes the base's root. -/
+private def extensionTests : List TestSeq :=
+  let (env, owned, shared) := sharedClosureIxonEnv
+  let pairTree := #[1, 1, 0] ++ u32le4 0 ++ #[0] ++ u32le4 1
+  let base : Aggr.CheckEnvTrees :=
+    { subjects := canonicalTree #[shared], assumptions := none }
+  let baseConstants : Std.HashSet Address := ({} : Std.HashSet Address).insert shared
+  let view := Ix.Shard.parseIxesManifest
+    (minimalIxesFor #[#[owned[0]!], #[owned[1]!]] pairTree)
+  let root := view.bind fun view =>
+    Aggr.Reference.expectedFromManifest env view 0 baseConstants
+  let rootCorrect : Bool := match root with
+    | .ok root =>
+      root.subjects.leaves.size == owned.size &&
+        owned.all root.subjects.leaves.contains &&
+        (root.assumptions.map (·.leaves)) == some #[shared]
+    | .error _ => false
+  let closedRejected : Bool := match view.bind fun view =>
+      Aggr.Reference.expectedFromManifest env view 0 with
+    | .ok root => root.assumptions.isSome
+    | .error _ => false
+  let rebasedCorrect : Bool := match root, view.bind fun view =>
+      Aggr.Reference.rebasedFromManifest env view 0 base with
+    | .ok root, .ok claim =>
+      claim == .checkEnv root.subjects.root (some base.subjects.root)
+    | _, _ => false
+  let baseBlockRejected : Bool := match (Ix.Shard.parseIxesManifest
+      (minimalIxesFor #[owned, #[shared]] pairTree)).bind fun view =>
+        Aggr.Reference.expectedFromManifest env view 0 baseConstants with
+    | .ok _ => false
+    | .error _ => true
+  let auditAccepted : Bool := match root with
+    | .ok root =>
+      match Aggr.auditAggregateConstants env
+          { root with assumptions := some base.subjects }
+          (some base.subjects.root) baseConstants with
+      | .ok count => count == 2
+      | .error _ => false
+    | .error _ => false
+  let auditRejectsBaseSubject : Bool := match Aggr.auditAggregateConstants env
+      { subjects := canonicalTree (owned.push shared),
+        assumptions := some base.subjects }
+      (some base.subjects.root) baseConstants with
+    | .ok _ => false
+    | .error _ => true
+  [ test "extension root keeps exactly its edges to base constants" rootCorrect,
+    test "without the base, those edges are undischarged assumptions"
+      closedRejected,
+    test "rebased extension claim assumes the base subjects root" rebasedCorrect,
+    test "extension manifest owning a base constant is rejected"
+      baseBlockRejected,
+    test "conditional audit covers exactly the extension's own constants"
+      auditAccepted,
+    test "conditional audit rejects a base constant as a subject"
+      auditRejectsBaseSubject ]
+
 def semanticSuite : IO UInt32 := do
   let childCompiled ← match childProgram.compile with
     | .error e => IO.eprintln s!"aggr semantic child compilation failed: {e}"; return 1
@@ -613,7 +705,8 @@ def semanticSuite : IO UInt32 := do
       (selfSystem.verify leftOuter leftProof),
     expectOk "second stand-in aggregate proof verifies independently"
       (selfSystem.verify rightOuter rightProof)
-  ])]) []
+  ]), ("ix-aggr-conditional-audit", conditionalAuditTests),
+    ("ix-aggr-extension", extensionTests)]) []
 
 def convergedSuite : IO UInt32 := do
   let shapes ← smokeSuite

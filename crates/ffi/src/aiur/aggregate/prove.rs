@@ -8,7 +8,7 @@ use super::{
     ChildKind, RANGE_JOIN_SHAPE, RANGE_LEAF_SHAPE, RANGE_ROOT_SHAPE,
     inner_claim, packed_digest, serialize_claims, shape_code,
   },
-  statement::{CanonicalTree, Statement, merge_optional_sets},
+  statement::{CanonicalTree, Statement, SubjectTree, merge_optional_sets},
   store::{load_cached, persist_cached, wrapper_address},
 };
 use aiur::{
@@ -170,6 +170,31 @@ pub(super) fn structural_path_advice(
     paths.push((candidate, path_payload(path.as_ref())?));
   }
   Ok(paths)
+}
+
+/// One channel-6 discharge per assumption of `child`, each a membership path
+/// into the base subject tree `base`. A rebase (shape 13) carries nothing, so
+/// an assumption that is not a base subject is an error.
+pub(super) fn rebase_path_advice(
+  child: &Statement,
+  base: &SubjectTree,
+  base_owner_by_address: &FxHashMap<Address, usize>,
+) -> Result<Vec<(Address, Vec<u8>)>, String> {
+  let assumptions =
+    child.assumptions.as_ref().ok_or("rebase child has no assumptions")?;
+  assumptions
+    .leaves
+    .iter()
+    .map(|leaf| {
+      let path = base_owner_by_address
+        .get(leaf)
+        .and_then(|owner| base.merkle_proof(leaf, *owner))
+        .ok_or_else(|| {
+          format!("rebase assumption {} is not a base subject", leaf.hex())
+        })?;
+      Ok((leaf.clone(), path_payload(Some(&path))?))
+    })
+    .collect()
 }
 
 pub(super) fn assumption_count(statement: &Statement) -> usize {

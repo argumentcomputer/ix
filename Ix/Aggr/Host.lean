@@ -108,6 +108,26 @@ def structuralPathAdvice (left right output : CheckEnvTrees) :
   assumptionCandidates left right |>.map fun candidate =>
     (candidate, output.subjects.merkleProof candidate)
 
+/-- The claim a rebase (shape 13) proves from `child`: the same subjects,
+conditional on every leaf of `base`. -/
+def rebaseClaim (child : CheckEnvTrees) (base : Ix.AssumptionTree) : Ix.Claim :=
+  .checkEnv child.subjects.root (some base.root)
+
+/-- One channel-6 choice per assumption of `child`, each a membership path into
+`base`. A rebase carries nothing, so an assumption outside `base`, or one
+deeper than the circuit's 64-step bound, is an error. -/
+def rebasePathAdvice (child : CheckEnvTrees) (base : Ix.AssumptionTree) :
+    Except String (Array (Address × Option Ix.Merkle.MerklePath)) := do
+  let some assumptions := child.assumptions
+    | throw "aggr rebase: the child has no assumptions"
+  assumptions.leaves.mapM fun leaf => do
+    let some path := base.merkleProof leaf
+      | throw s!"aggr rebase: assumption {leaf} is not a leaf of the base"
+    if path.size > 64 then
+      throw s!"aggr rebase: assumption {leaf} is {path.size} steps deep \
+        (maximum 64)"
+    pure (leaf, some path)
+
 /-- The present trees in channel-5 order for one pair fold. Optional empty
 assumption sets contribute no advice entry. -/
 def adviceTrees (left right output : CheckEnvTrees) : Array Ix.AssumptionTree :=

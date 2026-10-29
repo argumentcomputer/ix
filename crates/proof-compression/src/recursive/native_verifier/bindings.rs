@@ -7,18 +7,32 @@ use shape::{Round, Shape};
 #[derive(Clone, Copy)]
 pub(super) enum PointSource {
   Fixed(G1Affine),
-  Commitment { round: Round, matrix: usize, column: usize },
+  Commitment {
+    round: Round,
+    matrix: usize,
+    column: usize,
+  },
   Witness(usize),
+  /// A point supplied with the request rather than read from a proof.
+  Supplied(usize),
+  /// A fixed commitment of a verifying key supplied with the request.
+  Key {
+    matrix: usize,
+    column: usize,
+  },
 }
 
 impl PointSource {
-  fn value(self, proof: &Proof<KzgConfig>) -> G1Affine {
+  pub(super) fn value(self, proof: &Proof<KzgConfig>) -> G1Affine {
     match self {
       Self::Fixed(point) => point,
       Self::Commitment { round, matrix, column } => {
         round.commitment(proof).0[matrix][column]
       },
       Self::Witness(index) => proof.opening_proof.0[index],
+      Self::Supplied(_) | Self::Key { .. } => {
+        unreachable!("supplied points are bound by the request that owns them")
+      },
     }
   }
 }
@@ -35,7 +49,11 @@ pub(super) enum ScalarSource {
 }
 
 impl ScalarSource {
-  fn value(&self, proof: &Proof<KzgConfig>, claims: &[Vec<Scalar>]) -> Scalar {
+  pub(super) fn value(
+    &self,
+    proof: &Proof<KzgConfig>,
+    claims: &[Vec<Scalar>],
+  ) -> Scalar {
     match *self {
       Self::Accumulator(index) => proof.intermediate_accumulators[index],
       Self::Opening { round, matrix, row, column } => {
@@ -147,7 +165,7 @@ impl Bindings {
   }
 }
 
-fn pairing_points(
+pub(super) fn pairing_points(
   assignment: &Assignment<Scalar>,
   pairing_outputs: &[PointInput],
 ) -> Result<Vec<G1Affine>, Box<dyn std::error::Error>> {

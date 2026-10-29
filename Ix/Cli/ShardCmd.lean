@@ -144,6 +144,10 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     | some flag => max 1 (flag.as! Nat)
     | none      => 1
 
+  let baseIxe : String := ((p.flag? "base-ixe").map (·.as! String)).getD ""
+  if profileFlag.isSome && !baseIxe.isEmpty then
+    p.printError "error: --base-ixe requires the static strategy (no --profile)"
+    return 1
   match profileFlag with
   | none =>
     -- STATIC strategy (no out-of-circuit profiling): byte-balanced min-cut
@@ -168,14 +172,14 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"Sharding {envPath} into {n} shards \
         (static strategy, {layout} layout, balance ±{balancePct}%)"
       rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64 layout
-        outPath execJobs.toUSize
+        outPath execJobs.toUSize baseIxe
     | none, some gib =>
       if gib == 0 then
         p.printError "error: --max-ram must be positive"; return 1
       IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
         (static block-shape seed, {layout} layout, balance ±{balancePct}%)"
       rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64 layout
-        outPath execJobs.toUSize
+        outPath execJobs.toUSize baseIxe
     | none, none =>
       p.printError "error: the static strategy (no --profile) requires \
         --shards N or --max-ram G"
@@ -216,6 +220,7 @@ def shardCmd : Cli.Cmd := `[Cli|
     ordered;               "Static strategy: lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
+    "base-ixe"   : String; "Static strategy: the env extends this base library's `.ixe`. Its constants are left out of the partition (owned by no shard), so the manifest is the extension manifest `ix prove --base-ixe` takes; each shard's references to them become assumptions."
 
   ARGS:
     path : String; "Path to a serialized `.ixe` environment"

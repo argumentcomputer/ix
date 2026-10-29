@@ -3,7 +3,7 @@ use ixon::Expr;
 
 use super::super::{
   expected_from_manifest,
-  prepare::{prepare_run, validate_root_statement},
+  prepare::{RootAssumptions, prepare_run, validate_root_statement},
   statement::{CanonicalTree, ShardSet, Statement, SubjectTree},
 };
 use super::{addr, shard, store_axiom};
@@ -68,14 +68,14 @@ fn root_validation_rejects_foreign_subjects_and_surviving_assumptions() {
   let (env, manifest) = singleton();
   let prepared = prepare_run(&env, &manifest).unwrap();
   let valid = &prepared.shards[0].statement;
-  validate_root_statement(&prepared, valid).unwrap();
+  validate_root_statement(&prepared, valid, RootAssumptions::Closed).unwrap();
   let foreign = Statement::new(
     SubjectTree::canonical(vec![addr("foreign")], ShardSet::singleton(0, 1))
       .unwrap(),
     None,
   );
   assert!(
-    validate_root_statement(&prepared, &foreign)
+    validate_root_statement(&prepared, &foreign, RootAssumptions::Closed)
       .unwrap_err()
       .contains("foreign subject")
   );
@@ -84,8 +84,51 @@ fn root_validation_rejects_foreign_subjects_and_surviving_assumptions() {
     CanonicalTree::from_sorted(vec![addr("assumption")]).unwrap(),
   );
   assert!(
-    validate_root_statement(&prepared, &residual)
+    validate_root_statement(&prepared, &residual, RootAssumptions::Closed)
       .unwrap_err()
       .contains("undischarged assumptions")
+  );
+}
+
+#[test]
+fn conditional_root_validation_requires_exactly_the_declared_base() {
+  let (env, manifest) = singleton();
+  let prepared = prepare_run(&env, &manifest).unwrap();
+  let valid = &prepared.shards[0].statement;
+  let base = addr("base");
+  let rebased = Statement::rebased(valid.subjects.clone(), &base);
+  validate_root_statement(&prepared, &rebased, RootAssumptions::Base(&base))
+    .unwrap();
+  assert!(
+    validate_root_statement(&prepared, &rebased, RootAssumptions::Closed)
+      .unwrap_err()
+      .contains("undischarged assumptions")
+  );
+  assert!(
+    validate_root_statement(
+      &prepared,
+      &rebased,
+      RootAssumptions::Base(&addr("other"))
+    )
+    .unwrap_err()
+    .contains("not the declared base")
+  );
+  assert!(
+    validate_root_statement(&prepared, valid, RootAssumptions::Base(&base))
+      .unwrap_err()
+      .contains("no assumptions")
+  );
+  let canonical = Statement::new(
+    valid.subjects.clone(),
+    CanonicalTree::from_sorted(vec![base.clone()]).unwrap(),
+  );
+  assert!(
+    validate_root_statement(
+      &prepared,
+      &canonical,
+      RootAssumptions::Base(&base)
+    )
+    .unwrap_err()
+    .contains("not the declared base")
   );
 }

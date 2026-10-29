@@ -101,7 +101,7 @@ private def verifyAggregateProof (getBackend : IO (Except String Aggr.Verificati
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
     | .error e => IO.eprintln s!"error: {e}"; return 1
-  let .checkEnv _ _ := wrapper.claim | do
+  let .checkEnv _ assumptions? := wrapper.claim | do
     IO.eprintln s!"error: aggregate proof {proofAddr} does not bundle a CheckEnv claim"
     return 1
   match expected? with
@@ -127,11 +127,19 @@ private def verifyAggregateProof (getBackend : IO (Except String Aggr.Verificati
   | .ok () =>
     IO.println s!"[verify] aggregate Aiur proof: {(← IO.monoMsNow) - verifyStarted}ms"
     IO.println s!"ok: aggregate proof {proofAddr} verifies {wrapper.claim}"
+    if let some base := assumptions? then
+      IO.println s!"[verify] conditional: the claim holds only provided every \
+        constant under {base} is well-typed; it is not a standalone certificate"
     if let some expected := expected? then
       IO.println s!"[verify] aggregate coverage: {expected.constantCount}/\
         {expected.constantCount} environment constants committed exactly once"
-      IO.println s!"[verify] all {expected.constantCount} included constants \
-        certified well-typed; 0 undischarged assumptions"
+      match assumptions? with
+      | none =>
+        IO.println s!"[verify] all {expected.constantCount} included constants \
+          certified well-typed; 0 undischarged assumptions"
+      | some base =>
+        IO.println s!"[verify] all {expected.constantCount} included constants \
+          certified well-typed provided the base {base} is"
     return 0
   | .error e =>
     IO.eprintln s!"error: aggregate verification failed: {e}"
@@ -144,10 +152,15 @@ private def verifyAggregateProof (getBackend : IO (Except String Aggr.Verificati
       bundled claim must equal shard K's reconstructed claim).
     - no `--shard`, no proof: off-circuit coverage verdict (disjoint cover).
     - no `--shard` + proofs: composed verdict — coverage, every proof bound to a
-      shard, and every shard covered by a valid proof. -/
+      shard, and every shard covered by a valid proof.
+
+    A nonempty `baseIxe` makes the partition an extension of that base: its
+    constants are external, owned by no shard, and each shard claim assumes
+    its edges to them, so the verdict is conditional on the base. -/
 def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat)
     (proofs : List String) (record : Bool := false)
-    (recursionParameters : Aggr.RecursionParameters := Aggr.defaultRecursionParameters) :
+    (recursionParameters : Aggr.RecursionParameters := Aggr.defaultRecursionParameters)
+    (baseIxe : String := "") :
     IO UInt32 := do
   let (ixonEnv, shards) ← match (← Ix.Shard.loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
@@ -188,7 +201,14 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       else recordProof d proofAddr
     return rc
   | none =>
-    if !(← Ix.Shard.shardsCover ixonEnv shards) then return 1
+    let mut external : Std.HashSet Address := {}
+    if !baseIxe.isEmpty then
+      match Ixon.deEnvAnon (← IO.FS.readBinFile baseIxe) with
+      | .error e => IO.eprintln s!"deserialize {baseIxe} failed: {e}"; return 1
+      | .ok base =>
+        for (addr, _) in base.consts do
+          external := external.insert addr
+    if !(← Ix.Shard.shardsCover ixonEnv shards external) then return 1
     if proofs.isEmpty then return 0
     -- Composed verdict through the native Stage 2 import: Rust reconstructs
     -- every shard claim from the manifest (the Lean reconstruction above is
@@ -211,6 +231,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       ixvmSystem.aggregateStage2 backend.system envHandle manifestPath proofHexes
         verifyIdx backend.aggrIdx 0 0 Aggr.defaultStructuralAbove 0
         true false recursionParameters.cacheFriBytes false false false 0 false 1 true 0
+        false baseIxe
     match verdict with
     | .error e => IO.eprintln s!"[verify] FAIL: {e}"; return 1
     | .ok _ => pure ()
@@ -225,7 +246,7 @@ private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
       throw <| IO.userError "--verifier-bundle and --verifier-bundle-blake3 must be supplied together"
     unless p.hasFlag "dev-srs" do
       throw <| IO.userError "development verifier requires --dev-srs"
-    for flag in #["ixe", "ixes", "shard", "aggregate", "record", "structural-above"] do
+    for flag in #["ixe", "ixes", "shard", "aggregate", "record", "structural-above", "base-ixe", "base-ixes", "base-structural-above"] do
       if p.hasFlag flag then
         throw <| IO.userError s!"--verifier-bundle cannot be combined with --{flag}"
     let inputs := p.variableArgsAs! String
@@ -253,6 +274,10 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
   if p.hasFlag "verifier-bundle" || p.hasFlag "verifier-bundle-blake3" then
     return ← verifyDevelopmentInputs p
   let proofs := (p.variableArgsAs! String).toList
+  if !p.hasFlag "aggregate" && (p.hasFlag "base-ixes" || p.hasFlag "base-structural-above") then
+    p.printError "error: --base-ixes and --base-structural-above apply to --aggregate; \
+      shard-level verification takes --base-ixe alone"
+    return 1
   if p.hasFlag "aggregate" then
     if proofs.isEmpty then
       p.printError "error: --aggregate requires at least one aggregate proof address"
@@ -264,6 +289,15 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
       return 1
     let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
       Aggr.defaultStructuralAbove
+    let baseIxe := ((p.flag? "base-ixe").map (·.as! String)).getD ""
+    let baseIxes := ((p.flag? "base-ixes").map (·.as! String)).getD ""
+    if (baseIxe.isEmpty != baseIxes.isEmpty) || (!baseIxe.isEmpty && manifestPath?.isNone) then
+      p.printError "error: --base-ixe and --base-ixes go together, with --ixe and --ixes"
+      return 1
+    let baseStructuralAbove? := (p.flag? "base-structural-above").map (·.as! Nat)
+    if baseIxe.isEmpty == baseStructuralAbove?.isSome then
+      p.printError "error: --base-structural-above is required with, and only with, --base-ixe"
+      return 1
     let expected? ← match ixePath?, manifestPath? with
       | none, none => pure none
       | some ixePath, none =>
@@ -289,7 +323,8 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
             return 1
           | .ok handle => pure handle
         let native ← match ← IO.lazyPure fun _ =>
-            Aiur.AiurSystem.aggregateExpected envHandle manifestPath structuralAbove with
+            Aiur.AiurSystem.aggregateExpected envHandle manifestPath structuralAbove
+              baseIxe baseIxes (baseStructuralAbove?.getD 0) with
           | .error e =>
             IO.eprintln s!"native aggregate manifest audit failed: {e}"
             return 1
@@ -325,6 +360,7 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
       (p.hasFlag "record") recursionParameters
+      (((p.flag? "base-ixe").map (·.as! String)).getD "")
   | _, _ =>
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
@@ -366,6 +402,9 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
     "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, audit every environment constant and bind the canonical claim; add --ixes for the exact manifest-relative hybrid root."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
+    "base-ixe" : String; "With --ixe + --ixes: the environment extends this base library, whose constants are external (owned by no shard). Without --aggregate: the coverage and composed shard verdicts accept them as external, conditional on the base. With --aggregate (and --base-ixes, --base-structural-above): expect the rebased root `CheckEnv(R, some R_base)` that `ix prove --base-ixe` produces, covering exactly the constants outside the base; such a root is conditional on the base."
+    "base-ixes" : String; "With --base-ixe: the base's `.ixes` manifest, from which its root is rebuilt."
+    "base-structural-above" : Nat; "Required with --base-ixe: the structural threshold the base root was aggregated with, as passed to `ix prove --base-structural-above`."
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it. How already-proved leaves are imported before a refinement."
 
   ARGS:

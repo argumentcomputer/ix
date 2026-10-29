@@ -62,7 +62,11 @@ impl PointFixture {
           inputs.extend(binding.point.inputs(points[index]));
           points[index]
         },
-        PointSource::Commitment { .. } => unreachable!(),
+        PointSource::Commitment { .. }
+        | PointSource::Supplied(_)
+        | PointSource::Key { .. } => {
+          unreachable!()
+        },
       };
       let mut encoded = Vec::new();
       point.serialize_compressed(&mut encoded).unwrap();

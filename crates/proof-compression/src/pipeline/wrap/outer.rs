@@ -37,13 +37,15 @@ use multi_stark::{
 };
 use std::{fs, path::Path};
 
-pub(super) const OUTER_SEED: &[u8] = b"init-kzg-recursive-bn254-v1";
+pub(in crate::pipeline) const OUTER_SEED: &[u8] =
+  b"init-kzg-recursive-bn254-v1";
 const OUTER_VK_VERSION: u32 = 7;
 const PAIRING_BYTES: usize = 2 * G1_COMPRESSED_BYTES;
 const RECURSIVE_PUBLIC_VALUES: usize = statement::WORDS + PUBLIC_VALUES;
 /// Largest admitted recursive computation trace. The development public
 /// degree of a staged verifying key covers exactly its own height.
-pub(super) const MAX_TRACE_LEN: usize = construct::RECURSIVE_HEIGHT;
+pub(in crate::pipeline) const MAX_TRACE_LEN: usize =
+  construct::RECURSIVE_HEIGHT;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Pairings {
@@ -594,6 +596,16 @@ impl VerifyingKey {
       preprocessed_commit: Some(fixed),
       preprocessed_indices: vec![Some(0), Some(1)],
     })
+  }
+
+  /// The outer verifier system and the G2 keys of the deferred pair its
+  /// certificates expose, for verifying them inside another circuit.
+  pub(crate) fn certificate_verifier(
+    &self,
+  ) -> storage::Result<(multi_stark::system::System<KzgConfig>, [G2Affine; 2])>
+  {
+    let keys = self.keys()?;
+    Ok((self.system()?, [keys[0], keys[1]]))
   }
 
   pub(crate) fn prepare(&self) -> PipelineResult<PreparedVerifyingKey> {
