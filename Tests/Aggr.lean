@@ -6,6 +6,7 @@ public import Ix.Aiur.Compiler
 public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.Aggr.Reference
+public import Ix.Aggr.CatalogPlan
 public import Ix.ClaimContext
 public import Tests.ProofHelpers
 
@@ -669,6 +670,26 @@ def smokeSuite : IO UInt32 := do
       (preimages := preimages) (trees := trees)
   let catalogAccepts := runCatalog childA childC #[bytesA, bytesC] #[catalogAC.members]
     catalogBytes
+  let catalogWithPartial := Aggr.CatalogTrees.join (.inl memberA.claim) (.inl memberIncomplete.claim)
+  let catalogPartial := runCatalog childA childIncomplete #[bytesA, bytesIncomplete]
+    #[catalogWithPartial.members] (Ix.Claim.ser catalogWithPartial.claim)
+  let completeMember (label : String) (claim : Ix.Claim) (table : ByteArray) : Aggr.CatalogMember :=
+    { label, toolchain := "fixture", claim, bindingSection := table, literalClass := some klass }
+  let partialMember : Aggr.CatalogMember :=
+    { label := "partial", toolchain := "fixture", claim := memberIncomplete.claim,
+      bindingSection := incompleteTable, literalClass := none }
+  let mixedPlan ← IO.ofExcept (Aggr.catalogPlan #[
+    completeMember "left" memberA.claim tableA, partialMember,
+    completeMember "right" memberB.claim tableB])
+  let anotherPartialClaim := (underTable incompleteTable { leftStatement with assumptions := none }).claim
+  let partialPlan ← IO.ofExcept (Aggr.catalogPlan #[partialMember,
+    { partialMember with label := "another partial", claim := anotherPartialClaim }])
+  let plansKeepPartial := mixedPlan.nodes.size == 5 &&
+    mixedPlan.nodes.any (fun | .crossBinding k 0 2 => k == klass | _ => false) &&
+    partialPlan.nodes.size == 3 &&
+    (match partialPlan.nodes[partialPlan.root]! with | .catalogJoin 0 1 => true | _ => false) &&
+    partialPlan.statements[partialPlan.root]!.claim ==
+      (Aggr.CatalogTrees.join (.inl partialMember.claim) (.inl anotherPartialClaim)).claim
   let childCatalog ← IO.ofExcept (mkSelfChild allowed catalogBytes)
   let catalogACB := Aggr.CatalogTrees.join (.inr catalogAC) (.inl crossAB.claim)
   let catalogNested := runCatalog childCatalog childCross #[catalogBytes, crossBytes]
@@ -882,6 +903,8 @@ def smokeSuite : IO UInt32 := do
       crossValidatorThree,
     expectErr "a pair fold rejects claims under two bindings" pairAcrossBindings,
     expectOk "catalog join of two member claims accepts" catalogAccepts,
+    expectOk "catalog join retains a member with an incomplete binding" catalogPartial,
+    test "catalog plans keep incomplete bindings separate from class folds" plansKeepPartial,
     expectOk "catalog join of a catalog and a class claim accepts" catalogNested,
     expectErr "catalog join rejects an output missing a member" catalogMissing,
     expectErr "catalog join rejects a conditional member claim" catalogConditional,

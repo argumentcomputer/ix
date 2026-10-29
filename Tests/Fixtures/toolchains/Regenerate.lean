@@ -15,7 +15,7 @@ for each toolchain in `toolchains`, or for the versions given. For each one it:
 3. compiles the certificate theorems (`IxC/Kernel/PinGen/Certs.lean`, or the
    variant named below) and `Primitives.lean` with that toolchain's `lean`, under
    the module names ix compiles them under;
-4. exports the closure of `roots` with `lean4export --export-mdata
+4. exports the closure of `rootsFor` with `lean4export --export-mdata
    --export-unsafe`, and fails if the exporter exits nonzero or prints `PANIC`
    (it panics, and still exits 0, on a missing root);
 5. compresses the export with `zstd -19`.
@@ -30,6 +30,8 @@ of subterms (see `Ix/LeanExport.lean`).
 The script also checks that the 4.35.0 certificate variant is still
 `Certs.lean` under the substitution `certificateVariant` describes, so the two
 cannot drift apart.
+Lean 4.29 omits the final `String.back` certificate section and its three
+export roots; all other role and certificate roots remain requested.
 -/
 
 /-- A fixture toolchain: its release version, the `lean4export` commit that
@@ -40,12 +42,14 @@ structure Toolchain where
   exporterTag : String
   exporterCommit : String
   certificates : System.FilePath := "IxC/Kernel/PinGen/Certs.lean"
+  omitStringBack : Bool := false
 
 def fixtureDir : System.FilePath := "Tests/Fixtures/toolchains"
 
 def toolchains : List Toolchain := [
   { version := "4.29.0", exporterTag := "v4.29.0"
-    exporterCommit := "5a53b634f6a3e21e55b4852337c4fcf0781ad1aa" },
+    exporterCommit := "5a53b634f6a3e21e55b4852337c4fcf0781ad1aa"
+    omitStringBack := true },
   { version := "4.33.1", exporterTag := "v4.33.0"
     exporterCommit := "15f6055e299ad5b89345e533cc2192f4cc00f659" },
   { version := "4.34.1", exporterTag := "v4.34.0"
@@ -97,6 +101,28 @@ def literalFactNames : List String :=
    "stringLiteral"].map ("ToolchainFixture." ++ ·)
 
 def roots : List String := roleNames ++ certificateNames ++ libraryNames ++ literalFactNames
+
+/-- Lean 4.29 keeps `String.back` unbound: its implementation needs different
+certificate proofs. The other roles and their certificates remain requested. -/
+def rootsFor (t : Toolchain) : List String :=
+  if t.omitStringBack then roots.filter fun name =>
+    !["String.back", "Ix.Kernel.PinGen.stringBackOneCert",
+      "Ix.Kernel.PinGen.stringBackConsCert"].contains name
+  else roots
+
+/-- Omit exactly the final helper and two `String.back` certificates for the
+older toolchain. Refuse a changed source layout instead of dropping other
+certificate declarations. -/
+def withoutStringBack (certs : String) : Except String String := do
+  let marker := "/-- `String.back (ofList xs)` is the last element of `xs`, or the default `Char`. -/"
+  let [beforeBack, suffix] := certs.splitOn marker
+    | throw "expected one final String.back certificate section"
+  unless suffix.endsWith "end Ix.Kernel.PinGen\n" &&
+      (suffix.splitOn "theorem ").length == 4 &&
+      ["stringBackOfList", "stringBackOneCert", "stringBackConsCert"].all
+        (fun name => (suffix.splitOn s!"theorem {name} ").length == 2) do
+    throw "String.back certificate section has changed"
+  return beforeBack ++ "end Ix.Kernel.PinGen\n"
 
 /-- The changes made to each pinned `lean4export` before it is built, as
 (file, text, replacement); each text must occur exactly once.
@@ -195,16 +221,21 @@ def regenerate (work : System.FilePath) (t : Toolchain) : IO Unit := do
   for (from_, to) in modules do
     IO.FS.createDirAll ((src / to).parent.get!)
     IO.FS.createDirAll ((olean / to).parent.get!)
-    IO.FS.writeFile (src / to) (← IO.FS.readFile (repo / from_))
+    let text ← IO.FS.readFile (repo / from_)
+    let text ← if t.omitStringBack && from_ == t.certificates then
+        IO.ofExcept (withoutStringBack text)
+      else pure text
+    IO.FS.writeFile (src / to) text
     IO.println s!"[{v}] compiling {from_}"
     let _ ← run (bin / "lean").toString #["-E", "warning", "--root=.", "-o", (olean / to.withExtension "olean").toString,
       to.toString] (cwd := src)
   -- The export.
-  IO.println s!"[{v}] exporting {roots.length} roots"
+  let selectedRoots := rootsFor t
+  IO.println s!"[{v}] exporting {selectedRoots.length} roots"
   let out ← IO.Process.output {
     cmd := (exporter / ".lake" / "build" / "bin" / "lean4export").toString
     args := #["--export-mdata", "--export-unsafe", "Init", "IxC.Kernel.PinGen.Certs",
-      "Tests.Fixtures.toolchains.Primitives", "--"] ++ roots.toArray
+      "Tests.Fixtures.toolchains.Primitives", "--"] ++ selectedRoots.toArray
     env := #[("LEAN_PATH", some s!"{olean}:{sysroot}/lib/lean")] }
   if out.exitCode != 0 || (out.stderr.splitOn "PANIC").length > 1 then
     throw (IO.userError s!"[{v}] lean4export exited {out.exitCode}:\n{out.stderr}")

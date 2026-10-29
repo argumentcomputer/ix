@@ -51,9 +51,13 @@ def catalogMembers (ixc : String) (structuralAbove : Nat) :
       | return .error s!"{piece}: the piece carries no role binding"
     unless binding.address == m.binding do
       return .error s!"{piece}: role binding {binding.address} is not the manifest's {m.binding}"
-    let literalClass ← match Ix.ClaimContext.literalClassOfBytes binding.bytes with
-      | .ok k => pure k
-      | .error e => return .error s!"{piece}: {e}"
+    let some table := Ix.Kernel.RoleTable.ofBytes binding.bytes
+      | return .error s!"{piece}: not a canonical role binding section"
+    let literalClass ← if table.bound.size == Ix.Kernel.Role.all.length then
+        match Ix.ClaimContext.literalClassOf table with
+        | .ok k => pure (some k)
+        | .error e => return .error s!"{piece}: {e}"
+      else pure none
     let ixes := dir / s!"{m.label}.ixes"
     let (claim, count) ← if ← ixes.pathExists then
         let handle ← match ← IO.lazyPure fun _ => Aiur.EnvHandle.fromIxe piece.toString with
@@ -92,8 +96,9 @@ def printStatements (members : Array (CatalogMember × Ix.Catalog.Member × Nat)
     (plan : CatalogPlan) : IO Unit := do
   for (m, entry, count) in members do
     let .checkEnv ctx root _ := m.claim | continue
+    let classLabel := m.literalClass.map toString |>.getD "unavailable for an incomplete binding"
     IO.println s!"[catalog] member {m.label} (toolchain {m.toolchain}): {count} constants, \
-      binding {entry.binding}, literal class {m.literalClass}, spec {ctx.spec}, \
+      binding {entry.binding}, literal class {classLabel}, spec {ctx.spec}, \
       subjects {root}"
   for i in [0:plan.nodes.size] do
     match plan.nodes[i]! with

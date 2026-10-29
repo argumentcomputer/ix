@@ -16,13 +16,14 @@ the certificate theorems and a few library theorems from Lean 4.29.0, 4.33.1,
 1. each export is compiled (`ix compile-export`) into a piece with its own
    toolchain's role binding, and the role tables are compared with 4.34.1's:
    4.33.1 binds `Nat.land`, `Nat.lor`, `Nat.xor` and `String.back` to other constants but has
-   4.34.1's literal class; 4.29.0 and 4.35.0 each have a class of their own;
+   4.34.1's literal class; 4.35.0 has another class. 4.29.0 leaves `String.back`
+   unbound and keeps its own binding context, with different literal support;
 2. each piece's binding is proven (`ix prove-binding`), its shards are proven
    assuming the binding (`ix prove --assume-binding`) and aggregated with the
    binding proof (`ix aggregate --binding-proof`), and the root verifies;
 3. the pieces are assembled into a catalog (`ix catalog assemble`), the roots
    are joined (`ix aggregate --ixc`: 4.33.1 and 4.34.1 under their class, then
-   the three classes into a `Catalog` claim), and the root verifies against
+   that class and the remaining members into a `Catalog` claim), and the root verifies against
    the catalog (`ix verify --aggregate --ixc`), printing every member's
    context;
 4. a catalog that drops a member does not verify the root, and the join
@@ -110,7 +111,7 @@ def run : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   try
     -- 1. The pieces, and their role tables against 4.34.1's.
-    let mut tables : Array (String × Ix.Kernel.RoleTable × Address × Address) := #[]
+    let mut tables : Array (String × Ix.Kernel.RoleTable × Address × Option Address) := #[]
     for v in versions do
       let export_ := dir / s!"{v}.ndjson"
       let out ← IO.Process.output { cmd := "zstd", args := #["-dc", "-q", "-o", export_.toString,
@@ -123,26 +124,39 @@ def run : IO UInt32 := do
       if compiled.exitCode != 0 then return 1
       IO.FS.removeFile export_
       let (table, binding, bytes) ← tableOf piece
-      let klass ← IO.ofExcept (Ix.ClaimContext.literalClassOfBytes bytes)
+      let klass ← if v == "4.29.0" then do
+          unless table.bound.toList.map (·.1) == Ix.Kernel.Role.all.filter (· != .stringBack) &&
+              (Ix.ClaimContext.literalClassOfBytes bytes).isError do
+            throw (IO.userError "4.29.0 must leave only String.back unbound and refuse class promotion")
+          pure none
+        else some <$> IO.ofExcept (Ix.ClaimContext.literalClassOfBytes bytes)
       tables := tables.push (v, table, binding, klass)
     let some (_, base, baseBinding, baseClass) := tables[0]? | return 1
     let mut checks : Array (String × Bool) := #[]
     for (v, table, binding, klass) in tables do
-      IO.println s!"[toolchains] {v}: binding {binding}, literal class {klass}"
+      let classLabel := klass.map toString |>.getD "unavailable for an incomplete binding"
+      IO.println s!"[toolchains] {v}: binding {binding}, literal class {classLabel}"
       unless v == "4.34.1" do
         let moved := boundDiff table base
         let same := if klass == baseClass then "equal" else "differs"
         IO.println s!"[toolchains] {v} against 4.34.1: {moved.length} roles bound elsewhere: \
           {moved.map (·.leanName)}; literal class {same}"
     let some (_, t331, b331, k331) := tables.find? (·.1 == "4.33.1") | return 1
-    let classOf (v : String) : Option Address := (tables.find? (·.1 == v)).map (·.2.2.2)
+    let classOf (v : String) : Option Address := (tables.find? (·.1 == v)).bind (·.2.2.2)
     checks := checks.push ("4.33.1 binds exactly Nat.land, Nat.lor, Nat.xor and String.back elsewhere",
       boundDiff t331 base == [.natLand, .natLor, .natXor, .stringBack])
     checks := checks.push ("4.33.1 and 4.34.1 have different bindings", b331 != baseBinding)
-    checks := checks.push ("4.33.1 and 4.34.1 have one literal class", k331 == baseClass)
-    for v in ["4.29.0", "4.35.0"] do
-      checks := checks.push (s!"{v} has another literal class",
-        (classOf v).isSome && classOf v != some baseClass)
+    checks := checks.push ("4.33.1 and 4.34.1 have one literal class",
+      k331.isSome && k331 == baseClass)
+    checks := checks.push ("4.35.0 has another literal class",
+      (classOf "4.35.0").isSome && classOf "4.35.0" != baseClass)
+    let some (_, t429, _, k429) := tables.find? (·.1 == "4.29.0") | return 1
+    checks := checks.push ("4.29.0 leaves only String.back unbound and cannot promote to a class",
+      t429.bound.toList.map (·.1) == Ix.Kernel.Role.all.filter (· != .stringBack) && k429.isNone)
+    let literalAddresses := fun (table : Ix.Kernel.RoleTable) =>
+      Ix.ClaimContext.classRoles.mapM table.addressOf?
+    checks := checks.push ("4.29.0 binds every implicit literal role, differently from 4.34.1",
+      (literalAddresses t429).isSome && literalAddresses t429 != literalAddresses base)
     -- 2. Each member proven and aggregated with its own binding proof.
     let mut roots : Array String := #[]
     for v in versions do

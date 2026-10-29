@@ -14,7 +14,7 @@ aggregate --ixc` and `ix verify --aggregate --ixc` reach the same root:
 
 1. the members are grouped by the literal class of their binding
    (`Ix.ClaimContext.literalClassOf`), the groups in the order of their first
-   member in the manifest;
+   member in the manifest; incomplete bindings each remain a separate member;
 2. a group of two or more members is folded left to right, in manifest order,
    with the cross-binding structural pair (`ix_aggr` shape 15), into one
    `CheckEnv` claim under the class;
@@ -43,8 +43,9 @@ structure CatalogMember where
   /-- The member's role binding section (`E8 03 …`), whose hash the claim's
   context names: a cross-binding join reads the literal class from it. -/
   bindingSection : ByteArray
-  /-- The literal class of that binding. -/
-  literalClass : Address
+  /-- The literal class of a complete binding. An incomplete binding stays
+  under its own context and participates only in catalog joins. -/
+  literalClass : Option Address
   deriving Inhabited
 
 /-- One statement of the plan: a member's or a class's `CheckEnv` claim, or a
@@ -100,7 +101,7 @@ def catalogPlan (members : Array CatalogMember) : Except String CatalogPlan := d
   if members.isEmpty then throw "catalog plan: a catalog has at least one member"
   let mut nodes : Array CatalogNode := #[]
   let mut statements : Array CatalogStatement := #[]
-  let mut classes : Array (Address × Array Nat) := #[]
+  let mut classes : Array (Option Address × Array Nat) := #[]
   for i in [0:members.size] do
     let m := members[i]!
     unless CatalogTrees.isMember m.claim do
@@ -108,13 +109,15 @@ def catalogPlan (members : Array CatalogMember) : Except String CatalogPlan := d
         claim that validates its binding: {m.claim}"
     nodes := nodes.push (.member i)
     statements := statements.push (.checkEnv m.claim)
-    match classes.findIdx? (·.1 == m.literalClass) with
+    match m.literalClass.bind (fun klass => classes.findIdx? (·.1 == some klass)) with
     | some j => classes := classes.modify j fun (k, ixs) => (k, ixs.push i)
     | none => classes := classes.push (m.literalClass, #[i])
   let mut tops : Array Nat := #[]
   for (klass, indices) in classes do
     let mut acc := indices[0]!
     for i in indices[1:] do
+      let some klass := klass
+        | throw "catalog plan: an incomplete binding cannot use a cross-binding join"
       let claim ← crossBindingClaim klass statements[acc]!.claim statements[i]!.claim
       nodes := nodes.push (.crossBinding klass acc i)
       statements := statements.push (.checkEnv claim)
