@@ -1,11 +1,26 @@
 import Tests.Ix.SharingExact
 import Ix.Sharing.FamilyContext
+import Lean.Compiler.CSimpAttr
 
 set_option compiler.extract_closed false
 
 namespace Tests.SharingContext
 
 open LSpec Ixon Ix.Sharing.Exact Ix.Sharing.Family Tests.SharingExact
+
+run_cmd do
+  let entries := (Lean.Compiler.CSimp.ext.getState (← Lean.getEnv)).map
+  let replacements : Array (Lean.Name × Lean.Name) := #[
+    (``familyReferenceExpanded, ``LightContext.expanded),
+    (``familyExpanded, ``LightContext.expanded),
+    (``familyExpandedArea, ``LightContext.expanded),
+    (``normalizeFamily, ``LightContext.normalize),
+    (``normalizeFamilyArea, ``LightContext.normalize)]
+  for (source, target) in replacements do
+    let some entry := entries.find? source
+      | Lean.throwError m!"missing sharing runtime replacement for {source}"
+    unless entry.toDeclName == target do
+      Lean.throwError m!"sharing runtime replacement for {source} is {entry.toDeclName}, expected {target}"
 
 deriving instance BEq for CompResult
 deriving instance BEq for ExactSharingResult

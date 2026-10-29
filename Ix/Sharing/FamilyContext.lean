@@ -448,4 +448,19 @@ and every refusal for every input, layout, family parameter and budget. -/
 @[csimp] theorem normalizeFamilyArea_eq_lightContext :
     @normalizeFamilyArea = @LightContext.normalize := LightContext.normalize_eq_area.symm
 
+/-- Register the original entry directly: earlier compiler simplification
+passes may already have collapsed its intermediate replacement chain. -/
+@[csimp] theorem familyReferenceExpanded_eq_lightContext :
+    @familyReferenceExpanded = @LightContext.expanded :=
+  familyReferenceExpanded_eq_cached.trans
+    (familyExpanded_eq_area.trans LightContext.expanded_eq.symm)
+
+@[csimp] theorem familyExpanded_eq_lightContext :
+    @familyExpanded = @LightContext.expanded :=
+  familyExpanded_eq_area.trans LightContext.expanded_eq.symm
+
+@[csimp] theorem normalizeFamily_eq_lightContext :
+    @normalizeFamily = @LightContext.normalize :=
+  normalizeFamily_eq_area.trans LightContext.normalize_eq_area.symm
+
 end Ix.Sharing.Family
