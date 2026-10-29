@@ -65,14 +65,27 @@ def roleNames : List String :=
    "String", "String.ofList", "Char", "Char.ofNat", "Nat.pred", "Nat.add", "Nat.sub",
    "Nat.mul", "Nat.pow", "Nat.beq", "Nat.ble", "Nat.div", "Nat.mod", "Nat.gcd", "Nat.land",
    "Nat.lor", "Nat.xor", "Nat.shiftLeft", "Nat.shiftRight", "propext", "Classical.choice",
-   "sorryAx"]
+   "sorryAx", "Decidable", "Decidable.isTrue", "Decidable.isFalse", "Not",
+   "of_decide_eq_true", "of_decide_eq_false", "Decidable.decide", "Nat.le", "Nat.decEq",
+   "Nat.decLe", "Nat.decLt", "Int", "Int.ofNat", "Int.negSucc", "Int.negOfNat",
+   "Int.subNatNat", "Int.neg", "Int.add", "Int.sub", "Int.mul", "Int.natAbs", "Int.ediv",
+   "Int.emod", "Int.pow", "BitVec", "BitVec.ofNat", "BitVec.toNat", "BitVec.ult",
+   "String.decEq", "ByteArray", "ByteArray.empty", "String.toByteArray", "List.append",
+   "String.append", "ite", "Int.le", "Int.decEq", "Int.decLe", "Int.decLt", "Int.bmod",
+   "Int.bdiv", "Char.utf8Size", "String.utf8ByteSize", "String.back"]
 
-/-- The certificate theorems (`Ix.RoleEvidence.certTheorems`). -/
+/-- The certificate theorems (`Ix.RoleEvidence.allCertTheorems`). -/
 def certificateNames : List String :=
   ["divBaseZeroCert", "divBaseGtCert", "divRecCert", "modBaseZeroCert", "modBaseGtCert",
    "modRecCert", "gcdBaseCert", "gcdRecCert", "landBaseCert", "landRecCert", "lorBaseCert",
    "lorRecCert", "xorBaseCert", "xorRecCert", "shiftLeftBaseCert", "shiftLeftRecCert",
-   "shiftRightBaseCert", "shiftRightRecCert"].map ("Ix.Kernel.PinGen." ++ ·)
+   "shiftRightBaseCert", "shiftRightRecCert", "decideExtCert", "natDecEqCert", "natDecLeCert",
+   "intSubNatNatGeCert", "intSubNatNatLtCert", "intPowEvenCert", "intPowOddCert",
+   "bitVecUltCert", "stringDecEqCert", "stringAppendCert", "intDecEqOfNatCert",
+   "intDecEqNegSuccCert", "intDecLeOfNatCert", "intDecLeOfNatNegSuccCert",
+   "intDecLeNegSuccCert", "charUtf8Size1Cert", "charUtf8Size2Cert", "charUtf8Size3Cert",
+   "charUtf8Size3HighCert", "charUtf8Size4Cert", "stringUtf8ByteSizeConsCert",
+   "stringBackOneCert", "stringBackConsCert"].map ("Ix.Kernel.PinGen." ++ ·)
 
 /-- The library theorems: present in every fixture toolchain. -/
 def libraryNames : List String :=
@@ -172,7 +185,7 @@ def regenerate (work : System.FilePath) (t : Toolchain) : IO Unit := do
   patchExporter exporter
   IO.FS.writeFile (exporter / "lean-toolchain") s!"leanprover/lean4:v{v}\n"
   IO.println s!"[{v}] building lean4export {t.exporterTag}"
-  let _ ← run "lake" #["build", "lean4export"] (cwd := exporter) (env := #[("PATH", some path)])
+  let _ ← run "lake" #["build", "--wfail", "lean4export"] (cwd := exporter) (env := #[("PATH", some path)])
   -- The certificate theorems and the literal facts, under ix's module names.
   let src := work / s!"src-{v}"
   let olean := work / s!"olean-{v}"
@@ -184,7 +197,7 @@ def regenerate (work : System.FilePath) (t : Toolchain) : IO Unit := do
     IO.FS.createDirAll ((olean / to).parent.get!)
     IO.FS.writeFile (src / to) (← IO.FS.readFile (repo / from_))
     IO.println s!"[{v}] compiling {from_}"
-    let _ ← run (bin / "lean").toString #["--root=.", "-o", (olean / to.withExtension "olean").toString,
+    let _ ← run (bin / "lean").toString #["-E", "warning", "--root=.", "-o", (olean / to.withExtension "olean").toString,
       to.toString] (cwd := src)
   -- The export.
   IO.println s!"[{v}] exporting {roots.length} roots"
