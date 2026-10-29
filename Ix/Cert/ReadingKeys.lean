@@ -588,7 +588,9 @@ theorem rep_role_bound {ixe : Ixon.Env} {roles : Std.HashMap Address Role}
     rw [hr] at h
     simp only [Ix.LeanIngress.repAt] at h
     obtain ⟨k, hk, hkr⟩ := Ix.LeanIngress.fiberRep_mem h
-    have hrole : Ix.LeanIngress.roleOf k = some r := by simp [Ix.LeanIngress.roleOf, hkr]
+    have hrole : Ix.LeanIngress.roleOf k = some r := by
+      unfold Ix.LeanIngress.roleOf
+      rw [hkr]
     have := bound k r a (Ix.LeanIngress.mem_fiberMembers.mp hk) hrole
     rw [hr] at this
     cases this
