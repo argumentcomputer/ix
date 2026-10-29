@@ -127,9 +127,13 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- The role-shape validation merge adds the four compiled functions attributed in
 -- `IxC/Kernel/Audit/Roots.lean`, measured with the fallback-record guard above.
 -- Execution allowances are unchanged.
+-- The expanded role and evidence catalog adds 811 compiled functions (495 role
+-- helpers, 208 key helpers and 108 fixture helpers) and removes eight obsolete
+-- specializations. The complete extern, unsafe, implementation, replacement and
+-- opaque entry sets are identical; only the compiled-function count changes.
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6058 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ixon.Projection.checkBytes]: 6861 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 
