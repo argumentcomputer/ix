@@ -95,9 +95,13 @@ end Ixon.Authenticated.Audit
 -- The role-shape validation merge adds the entry's four compiled functions
 -- (`IxC/Kernel/Audit/Roots.lean`), measured with the fallback-record guard.
 -- Execution allowances are unchanged.
+-- The expanded role and evidence catalog adds 811 compiled functions and removes
+-- eight specializations in both authenticated closures: 495 role helpers, 208
+-- key helpers and 108 fixture helpers are added. Every extern, unsafe, direct
+-- and reached implementation, csimp, replacement and opaque entry is unchanged.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 6074 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Address.admissionHash]: 6877 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -248,7 +252,7 @@ and the prelude-copy check ((b), `State.keepsPrelude` in `readStream`) from 6060
 -- refreezing; externs, implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- The role-shape validation merge adds the same four compiled functions,
 -- measured with the fallback-record guard. Execution allowances are unchanged.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6156 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 6959 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
