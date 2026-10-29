@@ -37,6 +37,10 @@ def roleSpec := ⟦
     33
   }
 
+  fn first_equation_group() -> G {
+    41
+  }
+
   fn role_nat() -> G {
     0
   }

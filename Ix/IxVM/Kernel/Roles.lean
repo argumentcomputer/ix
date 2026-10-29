@@ -41,11 +41,14 @@ specifications group them (`Role.block`), in the order of the rendered
 
 A group is validated under a role context (`RoleCtx`) that admits only the
 groups before it, so an operation's own fast path cannot take part in
-validating it. The well-founded operations' groups come last and share one
-context, the one before the first of them (`group_validation_limit`): no
-well-founded operation's fast path takes part in validating any of them,
-and the dependencies they share (the well-founded recursion and the `Nat`
-lemmas their certificates use) are checked once. Validation is lazy and
+validating it. The well-founded operations form a contiguous block and share
+the context before that block (`group_validation_limit`): no well-founded
+operation's fast path takes part in validating any of them. Later groups
+share the context before the first definition specified by equations. They
+can use the already validated well-founded operations, but no equation
+definition's fast path takes part in validating another. The generator checks
+this group arrangement. Shared dependencies are checked once per context.
+Validation is lazy and
 memoized: it runs the first time a claim uses a role of the group, once per
 claim. A binding that does not meet the specifications makes every claim
 that uses the failing role abort; it never makes a role usable.
@@ -367,13 +370,20 @@ def roles := ⟦
   }
 
   -- The number of groups usable while group `g` is validated: the groups
-  -- before it, or, for a well-founded operation's group, the groups before
-  -- the first of those.
+  -- before it, the prefix before the well-founded block while validating
+  -- that block, or the prefix before the equation groups afterwards. The
+  -- generator checks that the well-founded groups occupy exactly the block
+  -- between these boundaries. Native lookup still admits every usable role.
   fn group_validation_limit(g: G) -> G {
     let first_wf = first_well_founded_group();
     match u32_less_than(g, first_wf) {
       1 => g,
-      _ => first_wf,
+      _ =>
+        let first_equation = first_equation_group();
+        match u32_less_than(g, first_equation) {
+          1 => first_wf,
+          _ => first_equation,
+        },
     }
   }
 

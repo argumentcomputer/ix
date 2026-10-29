@@ -37,9 +37,14 @@ together (`Role.block`), and every role a group needs (`Role.deps`) is in an
 earlier group. The axioms come before the well-founded operations, whose
 certificates use `propext`. The tail comes last: the well-founded operations'
 groups, the groups of the definitions specified by their equations, and the
-groups that need them. The circuit validates every tail group under the groups
-before the tail (`first_well_founded_group`), so that no operation's or
-definition's fast path takes part in validating another. -/
+groups that need them. The well-founded groups occupy a contiguous block
+before the first equation group. The circuit validates that block under the
+groups before it (`first_well_founded_group`), and later groups under the
+prefix before the equation groups (`first_equation_group`). Thus the
+well-founded operations cannot validate each other through native rules,
+while later checks can use them after admission. Equation definitions cannot
+validate each other through their native rules. Both boundaries and the
+contiguous block are checked before rendering. -/
 
 @[expose] public section
 
@@ -295,17 +300,15 @@ which carry hypotheses. -/
 def wellFounded (g : List Role) : Bool :=
   g.any fun r => (equations r).any (!·.1.isEmpty)
 
-/-- A group that must be validated in the tail: a well-founded operation's,
-or a definition's specified by its equations, so that no operation's or
-definition's fast path takes part in validating another. -/
+/-- A group that must follow the initial structural prefix: a well-founded
+operation's, or a definition's specified by its equations. -/
 def tailOnly (g : List Role) : Bool :=
   wellFounded g || g.any fun r => specKind r == 5
 
-/-- The index of the first group of the tail. The tail comes last: the
-circuit validates each of its groups under the groups before the tail, so
-none comes before a group it could otherwise use. Every group that must be
-in the tail is (`tailOnly`), and so is every group that needs a tail group;
-no other group is. -/
+/-- The index of the first group of the tail. Every group that must be in
+the tail is (`tailOnly`), and so is every group that needs a tail group;
+no other group is. `firstEquationGroup` additionally checks that its initial
+block consists exactly of the well-founded operations. -/
 def firstWellFoundedGroup : Except String Nat := do
   let some first := groups.findIdx? tailOnly
     | throw "no well-founded operation's group"
@@ -314,6 +317,23 @@ def firstWellFoundedGroup : Except String Nat := do
     unless (tailOnly g || needsTail) == decide (first ≤ i) do
       throw s!"role group {i}: the tail must be exactly the groups that need it"
   pure first
+
+/-- The first equation group follows a nonempty contiguous block containing
+every well-founded group. This preserves the well-founded validation context
+and excludes equation definitions' native rules from later validation.
+Coverage and dependency order are checked separately by `checkGroups`. -/
+def firstEquationGroup (orderedGroups : List (List Role) := groups) : Except String Nat := do
+  let some firstWf := orderedGroups.findIdx? wellFounded
+    | throw "no well-founded operation's group"
+  let some firstEquation := orderedGroups.findIdx? (fun group =>
+      group.any fun role => specKind role == 5)
+    | throw "no definition-equation group"
+  unless firstWf < firstEquation do
+    throw "equation groups must follow the well-founded validation block"
+  for (group, index) in orderedGroups.zipIdx do
+    unless wellFounded group == decide (firstWf ≤ index ∧ index < firstEquation) do
+      throw s!"role group {index}: well-founded groups must form the block before the equation groups"
+  return firstEquation
 
 /-- An equation's levels: positional, as for its definition. -/
 def eqnLevels (r : Role) : List LevelParam := List.range (levels r |>.toOption.getD 0)
@@ -397,6 +417,8 @@ def aiurFn (sig body : String) : String := s!"  {sig} \{\n{body}\n  }\n\n"
 
 def render : Except String String := do
   checkGroups
+  let firstWf ← firstWellFoundedGroup
+  let firstEquation ← firstEquationGroup
   let digest ← Ix.SpecDigest.specDigest
   let bytes := digest.hash.data.toList.map fun b => s!"0x{hexOfByte b}u8"
   let mut out := header
@@ -405,7 +427,8 @@ def render : Except String String := do
   out := out ++ aiurFn "fn spec_digest() -> Addr" s!"    store([{", ".intercalate bytes}])"
   out := out ++ aiurFn "fn role_count() -> G" s!"    {Role.all.length}"
   out := out ++ aiurFn "fn group_count() -> G" s!"    {groups.length}"
-  out := out ++ aiurFn "fn first_well_founded_group() -> G" s!"    {← firstWellFoundedGroup}"
+  out := out ++ aiurFn "fn first_well_founded_group() -> G" s!"    {firstWf}"
+  out := out ++ aiurFn "fn first_equation_group() -> G" s!"    {firstEquation}"
   for r in Role.all do
     out := out ++ aiurFn s!"fn role_{roleName r}() -> G" s!"    {roleIdx r}"
   out := out ++ aiurFn "fn role_group(r: G) -> G" (← byRole (fun r => pure (toString (groupOf r))) "0")
