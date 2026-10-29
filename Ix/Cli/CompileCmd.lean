@@ -303,8 +303,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let elapsed := (← IO.monoMsNow) - start
 
   let ungroundedCount := status.ungrounded.size
-  -- Fail-closed default: the compile wrote nothing when `!allowPartial` and
-  -- anything requested is ungrounded (the final path was never created).
+  -- Fail-closed default: a requested compilation failure leaves the output
+  -- path untouched when `!allowPartial`; it is neither created nor replaced.
   let failClosed := !allowPartial && ungroundedCount > 0
 
   -- `--report`: machine-readable compile status, written on success,
@@ -395,7 +395,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check --consts-file`."
     json           : String; "Write the compile's benchmark results row (compile-time, file-size, constants, throughput) to this path, merging into any existing rows object."
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
-    "allow-partial" ;        "Serialize the grounded subset and exit 0 even when some requested constants fail to compile. Default is fail-closed: any ungrounded constant means a nonzero exit and NO output file."
+    "allow-partial" ;        "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
     "sharing-limits" : String; "Override resource limits of the canonical sharing construction: comma-separated key=value items (values: digits, 2^k or max) or `unbounded`. Keys: expr_visits, depth, nodes, states, transitions, cost_evals, output_bytes, materialize, materialize_work, knapsack_cells (Lean); input_nodes, distinct_nodes, height, candidates, states, layer_states, transitions, work, output_bytes, knapsack_cells (Rust). The defaults are far above every corpus maximum; a constant that reaches one fails to compile and names the limit. Only with --rust or --streamed: the certified compiler's theorem fixes the default limits. Sets IX_SHARING_LIMITS."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
