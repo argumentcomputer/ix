@@ -744,6 +744,80 @@ fn generated_support_anchors_cannot_admit_a_new_axiom() {
   assert!(!source.is_admitted(Role::IntNegOfNat));
 }
 
+#[test]
+fn equation_rhs_anchors_require_their_helpers_to_be_well_typed() {
+  for ill_typed in [false, true] {
+    let mut env = loaded();
+    let mut roles = equation_candidate(&env, DefinitionMutation::None);
+    let nat = address_of(&env, "Nat");
+    let integer = roles[0].1.clone();
+    let discarded =
+      address_of(&env, if ill_typed { "True.intro" } else { "Nat.zero" });
+    // Both helpers reduce to successor. In the negative case the erased
+    // argument is a proof of True where the lambda requires a Nat.
+    let helper = definition(
+      &env,
+      0,
+      pi(reference(0, vec![]), reference(1, vec![])),
+      lambda(
+        reference(0, vec![]),
+        app(
+          lambda(
+            reference(0, vec![]),
+            app(reference(2, vec![]), arc(Expr::Var(1))),
+          ),
+          reference(3, vec![]),
+        ),
+      ),
+      vec![
+        nat.clone(),
+        integer.clone(),
+        address_of(&env, "Nat.succ"),
+        discarded,
+      ],
+      vec![],
+    );
+    let rhs_anchor = definition(
+      &env,
+      0,
+      pi(reference(0, vec![]), reference(1, vec![])),
+      reference(2, vec![]),
+      vec![nat, integer, helper.clone()],
+      vec![],
+    );
+    assert_eq!(roles[2].0, Role::IntNegSucc);
+    roles[2].1 = rhs_anchor.clone();
+    bind_equation_candidate(&mut env, &roles, vec![Evidence::DefEq; 2]);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    let actual_closure = source.closure(&[roles[3].1.clone()]).unwrap();
+    assert!(!actual_closure.contains(&rhs_anchor));
+    assert!(!actual_closure.contains(&helper));
+    let admitted = source.admission();
+    if ill_typed {
+      assert!(
+        !source.is_admitted(Role::IntNegSucc),
+        "{:?}",
+        admitted.refused()
+      );
+      assert!(
+        !source.is_admitted(Role::IntNegOfNat),
+        "{:?}",
+        admitted.refused()
+      );
+      ArtifactChecker::<Anon>::from_source(Ok(source))
+        .check_const(&helper)
+        .unwrap_err();
+    } else {
+      assert!(admitted.refused().is_empty(), "{:?}", admitted.refused());
+      assert!(source.is_admitted(Role::IntNegSucc));
+      assert!(source.is_admitted(Role::IntNegOfNat));
+      ArtifactChecker::<Anon>::from_source(Ok(source))
+        .check_const(&helper)
+        .unwrap();
+    }
+  }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum ProofMutation {
   None,
