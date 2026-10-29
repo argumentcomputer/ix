@@ -100,7 +100,7 @@ def compressCmd : Cli.Cmd := `[Cli|
   compress VIA runCompressCmd;
   "Compress an aggregate CheckEnv proof; preserve its claim and print the new proof address."
   FLAGS:
-    "out" : String; "Empty output directory for the stage proofs; defaults to a new directory under ~/.ix/compression."
+    "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>/<height>). Rerunning with the same directory resumes from the last completed stage."
     "log-height" : Nat; "First KZG partition height: 24 (default) or 25."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
     "fixed-root" : String; "Override the bundled release normalization layout with a layout from `ix compress layout`."

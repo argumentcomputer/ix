@@ -16,9 +16,10 @@ otherwise (October 2026, one RTX PRO 6000 Blackwell, 48 logical CPUs).
   rows that gnark PLONK on BN254 can reach (`4N` must fit the field's `2^28`
   two-adicity). This is an extrapolation; the compile-and-size gate the
   architecture doc asks for remains the way to close it.
-- **Yes as one process, with a bounded win.** A persistent GPU worker holding
-  both stages is estimated to remove about 30 to 35 s of a 212 s pipeline;
-  the retained-worker path has not been measured.
+- **Yes as one process, with a bounded win.** Every stage now runs inside
+  `ix` ([in-process compression](in-process-compression.md)); additionally
+  retaining both stages' provers warm across requests is estimated to remove
+  about 30 to 35 s of a 212 s pipeline, and has not been measured.
 - **The real collapse is upstream.** Shrinking the first KZG stage until its
   proof can be wrapped directly removes the recursive stage. Sizing from the
   checked-in Init key shows the first stage's cost is almost entirely per
@@ -54,7 +55,7 @@ separate process.
 
 | Stage | Prover | Output | Wall time | Share |
 | --- | --- | --- | ---: | ---: |
-| FRI compression | Goldilocks CUDA worker, root key's own parameters | 1.4 MB FRI proof | ~60 s | — |
+| FRI compression | Goldilocks CUDA, root key's own parameters | 1.4 MB FRI proof | ~60 s | — |
 | First KZG | ix Plonkish prover, BN254 CUDA, 19 partitions of `2^24` | 32,869 B proof, 583-term opening MSM | 136 s | 64% |
 | Recursive KZG | Same prover, one `2^26` trace, 61M frontend rows | 1,917 B envelope, two deferred pairing points | 45 s | 21% |
 | gnark PLONK | Go helper, CUDA MSM, FFT and fused quotient | 584 B proof, 320,091 gas on Anvil | 32 s process, 11.4 s core | 15% |
@@ -122,7 +123,7 @@ what result to expect from it.
    implementation work, not parameter selection: the
    in-circuit verifier rejects folding arity above one and nonzero Merkle
    caps (`fri/plan.rs`, `validate_parameters`; `fri/pcs.rs`,
-   `FixedPcsShape`), the first-stage and recursive workers enforce at least
+   `FixedPcsShape`), the first-stage and recursive stages enforce at least
    eleven partitions (`pipeline/first.rs`, `MIN_PARTITIONS`;
    `pipeline/wrap/saved.rs`), and the PLONK exporter and Go circuit hardcode
    the two-circuit recursive packet with its deferred pairing operands
@@ -130,19 +131,19 @@ what result to expect from it.
    Every change re-derives the verifying keys and fixed preprocessing.
    Every candidate must preserve the current proven security bound under
    the same assumptions and accounting as the baseline.
-2. **Fuse the recursive and PLONK stages into one warm worker** (estimated
+2. **Keep the recursive and PLONK stages warm across requests** (estimated
    30 s; unmeasured). Both fit one GPU at the same time (59 GiB and 19 GiB
    of VRAM). A persistent helper holding the proving key, compiled circuit
    and CUDA context would take the PLONK stage from 32 s toward its 11.4 s
    core time. On the KZG side, authenticating the `2^26` Ignition cache
    (5.5 s, from the Ignition import record) and restoring fixed
-   preprocessing (5.3 s, from the warm development rerun) are per-process
+   preprocessing (5.3 s, from the warm development rerun) are per-run
    costs that would disappear; the two figures come from different runs.
    The recursive verifier already separates compilation from request
    binding (`native_verifier/plan.rs`, `Plan::compile` and
    `Bindings::request_inputs`); `saved.rs` calls `Plan::build`, which does
    both per request, so the remaining work is retaining the compiled
-   circuit across requests in the worker. The wrapper plan already lists
+   circuit across requests. The wrapper plan already lists
    the warm service as gate G6.
 3. **Benchmark a faster proving-key load** (candidate, unmeasured). The
    helper writes the 1 GB key with gnark's `WriteTo`, which compresses
@@ -174,7 +175,7 @@ so it can be re-sized without a proof. The `fri_sizing` example under
 trace heights (`FRI_SIZING_MAX_LOG`), the circuit set (`FRI_SIZING_DROP`) or
 individual circuit shapes (`FRI_SIZING_SET=index:log_height:main_width`),
 builds the verifier, and counts the translated BN254 frontend with the same
-counting pass the worker's `kzg size` preflight uses. With
+counting pass the former `kzg size` preflight used. With
 `FRI_SIZING_LOWER=1` it also materializes the translated circuit and runs
 the partitioning step of the production lowering
 (`multi_stark_layout_with_max_height` at the chosen height), which gives the
@@ -439,9 +440,8 @@ transcript scale the same way.
 
 The first of those rows is now a measurement. The PLONK exporter and the Go
 circuit were generalized to any number of circuits, a claim schema and an
-optional deferred pairing (`ix-compression-worker plonk export-first
-<first-kzg-dir> <expected-statement.json> <out> [--dev-srs]`, then the
-helper's `compile`). Exporting the patched 15-circuit first proof gives a
+optional deferred pairing (exported at the time with the since-removed
+worker's `plonk export-first` command, then compiled by the helper). Exporting the patched 15-circuit first proof gives a
 verifying key with 295 points, 560 scalars, 179 fixed commitments, 9 opening
 groups and a 10,160-node scalar program; gnark compiles it to
 **130,850,185 constraints, domain `2^27`**, in 121 s and 44 GiB. That is
@@ -616,20 +616,20 @@ Relevant to this pipeline:
 
 ## Review notes
 
-- The PLONK CUDA library is a second, independently built sppark
-  instantiation with renamed symbols so it can coexist with the KZG kernels.
-  The split-bucket MSM fix for structured witnesses lives only there. The KZG
+- The KZG and PLONK CUDA kernels now build against one sppark in
+  `libix_bn254_cuda.so`. When this review was written, the PLONK kernels were
+  a second, renamed sppark instantiation carrying a split-bucket MSM fix for
+  structured witnesses. The KZG
   prover's main-trace columns are also byte-structured, so its MSMs may show
   the same bucket concentration.
-- The driver's saved-FRI path never passes the terminal PLONK flag, so the
-  benchmarked PLONK runs were produced by invoking the helper by hand. The CLI
-  help text still describes the flag as BLS12-381 and Filecoin.
-- The PLONK cache identity hashes both the Rust worker and the Go helper
-  executables, so any rebuild of either triggers the six-minute key
-  preparation. The benchmark doc already flags this.
+- The benchmarked PLONK runs were produced by invoking the helper by hand,
+  not through the driver's saved-FRI path.
+- The PLONK cache identity hashed the executable at the time, so any rebuild
+  triggered the six-minute key preparation. It is now keyed by the cache
+  format, verifier description, setup and gnark's `go.sum`.
 - Recursive-stage phase timings for the GPU run are not recorded in the repo,
   only the CPU run's. The split of the 45 s between witness generation,
-  commitment and quotient decides how much the fused worker is worth.
+  commitment and quotient decides how much a warm recursive prover is worth.
 
 Sources: `crates/proof-compression/README.md`,
 `docs/proof-benchmark-comparison.md`, the pipeline, recursive verifier and

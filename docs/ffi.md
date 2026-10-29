@@ -39,16 +39,20 @@ performance-critical applications.
 
 ## Rust to gnark
 
-`ix-proof-compression::pipeline::gnark` wraps a Go C archive inside the
-compression worker. The worker enables `plonk` and/or `groth16`; both
-are excluded from the Lean-facing `ix-ffi` build. Rust owns setup admission,
+`ix-proof-compression::pipeline::gnark` wraps a Go C archive linked into `ix`.
+`IX_PLONK` and `IX_GROTH16` enable the `plonk` and `groth16` features for the
+`ix` executable only; both are off by default, so other executables, tests and
+the default build do not link Go. Rust owns setup admission,
 artifact policy and publication; Go owns gnark objects and the verifier circuit.
 
 The private C interface exchanges byte views, owned output buffers and integer
 `runtime/cgo.Handle` values. `Prover` is neither `Send` nor `Sync`; its mutable
 proof method excludes concurrent use, and drop releases the handle. Returned
 C allocations are copied and freed through the adapter. Go panics on the exported
-call's goroutine become errors; fatal runtime and device failures remain isolated
-by the worker process. There is no ABI version or compatibility dispatcher.
+call's goroutine become errors; fatal Go runtime and device failures end the
+`ix` process, and a rerun resumes compression from its last complete stage.
+There is no ABI version or compatibility dispatcher.
 
 The [backend guide](../tools/plonk-wrapper/README.md) describes builds and tests.
+The [backend feature proposal](gnark-backend-features.md) describes matching
+Go compilation to the `plonk` and `groth16` Cargo features.

@@ -38,12 +38,13 @@ Lean's bundled toolchain does not provide, and the final link would fail on
 `libix_ffi_net.a`. No `CFLAGS` setting is needed. If `nvcc` is not on
 `PATH`, set `NVCC` or `CUDA_HOME`.
 
-CUDA-enabled Lean executables and the compression worker load `libmulti_stark_cuda.so` from `../lib` relative
-to the executable. Multi-stark builds this library
+CUDA-enabled Lean executables load `libmulti_stark_cuda.so` from `../lib` relative
+to the executable; `ix` also loads `libix_bn254_cuda.so`, the KZG and PLONK
+kernels compression uses. Both libraries are built
 with a private static GNU C++ runtime and unwinder; only the C interface
 is exported.
 Lean keeps its bundled libc++. When copying an executable out of the build
-tree, also copy `.lake/build/lib/libmulti_stark_cuda.so` into the matching `lib/`
+tree, also copy the shared libraries in `.lake/build/lib` into the matching `lib/`
 directory.
 
 A binary linked by the Nix Rust toolchain runs on Nix glibc, whose loader
@@ -79,8 +80,8 @@ export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24
 export AIUR_TRACE_SHARD_MAX_CELLS=1500000000
 export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$PWD/cache
 systemd-run --user --scope -q -p MemoryMax=920G -- \
-  ix prove --ixe mathlib.ixe --ixes mathlib.ixes --trace-shards \
-    --lanes 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
+  ix prove --ixe mathlib.ixe --ixes mathlib.ixes \
+    --gpus 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
     > lanes.out 2> lanes.err
 
 # 3. Verify the root against the partition that was actually proven.
@@ -95,14 +96,15 @@ changes the partition, and `ix verify --ixes` must see the one the proofs
 belong to.
 
 The same two stages can still be driven by hand, one device per process,
-with `ix prove --trace-shards --shards <ids>` for a lane's claims and
+with `ix prove --trace-shards --shards <ids>` for a GPU's claims and
 `ix aggregate --trace-shards --subtree <slot>` for its subtree; the lanes
 scheduler is the one-process equivalent and is what the measurements in
 §6 used.
 
 ## 3. Lanes: one resident prover per device
 
-`ix prove --lanes N` builds an `AiurSystem` pair per device from the two
+`ix prove --ixe E --ixes M` (on `--gpus N`, default every visible GPU)
+builds an `AiurSystem` pair per device from the two
 compiled systems (nothing is copied across the FFI; the verifying keys do
 not depend on the device, and every cache key and claim binding derives
 from them) and runs one scheduler over them:
@@ -195,7 +197,7 @@ The ones a run needs, then the ones a measurement might.
 | `--retention retain\|regenerate\|auto` | What a batch keeps between its two rounds. Every real GPU plan runs `regenerate`: round two rebuilds each shard from its seeds, which the resident seed cache makes cheap. |
 | `MULTI_STARK_CUDA_MIN_FREE_BYTES` | Device headroom the backend keeps by spilling LDEs to the host; default a quarter of the card. |
 | `MULTI_STARK_CUDA_MEMORY_LOG=1` | Logs stage-1 placement and per-lookup-job budget and free bytes to stderr. |
-| `--texray` or `IX_TEXRAY=1` | Per-phase wall and RSS lines on stderr, as on the CPU. The environment switch also enables compression-worker TeXRay output. |
+| `--texray` or `IX_TEXRAY=1` | Per-phase wall and RSS lines on stderr, as on the CPU. The environment switch also enables TeXRay output for compression. |
 
 ## 6. Benchmarking a multi-GPU run
 
@@ -205,10 +207,9 @@ measurements below does only this: write the provenance, sample the
 devices, run the one command under the cap, and keep the exit status.
 
 Set `RUNS_DIR` to fast local storage for this script's outputs and lane cache.
-For subsequent KZG compression, use the separate
-[NVMe and cache placement instructions](../crates/proof-compression/README.md#disk-placement)
-and [KZG benchmark recipe](../crates/proof-compression/README.md#kzg-benchmarking).
-`RUNS_DIR` does not configure KZG cache paths.
+For subsequent KZG compression, see
+[the compression guide](../crates/proof-compression/README.md#proving-and-verification)
+for output and cache placement. `RUNS_DIR` does not configure KZG cache paths.
 
 ```sh
 #!/bin/bash
@@ -228,15 +229,15 @@ unset RUST_LOG MULTI_STARK_CUDA_MEMORY_LOG
   echo "ix $(sha256sum "$BIN" | cut -d' ' -f1)"; sha256sum "$IXE" "$IXES"
   echo "driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
   echo "thp $(cat /sys/kernel/mm/transparent_hugepage/enabled) / $(cat /sys/kernel/mm/transparent_hugepage/defrag)"
-  echo "flags --lanes 4 --exec-jobs $EXEC_JOBS --max-ram $MAX_RAM $*  cap $MEM_MAX"
+  echo "flags --gpus 4 --exec-jobs $EXEC_JOBS --max-ram $MAX_RAM $*  cap $MEM_MAX"
   env | grep -E '^(AIUR|MULTI_STARK)_' | sort
 } > "$OUT/meta.txt"
 nvidia-smi --query-gpu=timestamp,index,memory.used,utilization.gpu \
   --format=csv,noheader,nounits --loop-ms=1000 > "$OUT/gpu.csv" 2>/dev/null &
 SMI=$!
 systemd-run --user --scope -q -p MemoryMax=$MEM_MAX -- \
-  /usr/bin/time -v "$BIN" prove --ixe "$IXE" --ixes "$IXES" --trace-shards \
-    --lanes 4 --exec-jobs "$EXEC_JOBS" --max-ram "$MAX_RAM" "$@" \
+  /usr/bin/time -v "$BIN" prove --ixe "$IXE" --ixes "$IXES" \
+    --gpus 4 --exec-jobs "$EXEC_JOBS" --max-ram "$MAX_RAM" "$@" \
     > "$OUT/lanes.out" 2> "$OUT/lanes.err"
 echo "exit $?" >> "$OUT/meta.txt"; kill $SMI 2>/dev/null
 ```

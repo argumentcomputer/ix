@@ -1,7 +1,7 @@
 # BN254 terminal gnark backends
 
 This Go module implements the terminal Ix verifier circuit and calls stock
-gnark. Cargo builds it as a C archive inside `ix-compression-worker`;
+gnark. Cargo builds it as a C archive linked into `ix`;
 `pipeline/gnark.rs` owns the Rust bindings and loaded prover handles.
 There is no separate Go executable.
 
@@ -11,13 +11,13 @@ pairing obligations. It uses classic GLV, separate pairing checks, and explicit
 
 ## Build and use
 
-`lake build ix` builds the Lean CLI and native Rust compression worker. The
-worker enables `plonk` and `groth16`; the Lean-facing `ix-ffi` library does not. CPU
-builds need Go and a C compiler, but no CUDA toolkit. A direct worker build is:
+Compression runs inside `ix`. `IX_PLONK=1` and `IX_GROTH16=1` select the
+`plonk` and `groth16` features for the `ix` executable only; both are off by
+default, and only builds with one of them link Go. CPU builds need Go and a C
+compiler, but no CUDA toolkit:
 
 ```sh
-cargo build --release -p ix-proof-compression --bin ix-compression-worker \
-  --no-default-features --features parallel,plonk,groth16
+IX_PLONK=1 IX_GROTH16=1 lake build ix
 ```
 
 Configure the four Ignition environment variables from the
@@ -30,9 +30,8 @@ ix compress ROOT_PROOF_ADDRESS --plonk --out /path/to/empty-output
 Rust authenticates the setup and inner proof, selects the cache, calls gnark,
 and publishes the native proof, Solidity payload, key, verifier contract,
 admission, and candidate catalog. The proof envelope is written last, after
-verification succeeds. `IX_COMPRESSION_WORKER` overrides the worker location.
-Nix provides `.#compression-worker`, `.#compression-worker-cuda`, and
-`.#ix`.
+verification succeeds. Rerunning the command with the same output directory
+resumes from the last complete stage.
 
 ## CUDA
 
@@ -44,16 +43,15 @@ proof encodings.
 
 ```sh
 export CUDA_HOME=/usr/local/cuda
-export IX_PLONK_CUDA_ARCHS=120
 IX_CUDA=1 lake build ix
 ```
 
-Cargo obtains the pinned sppark and BLST sources from its `cuda` dependencies. `IX_PLONK_SPPARK_SOURCE` and
-`IX_PLONK_BLST_SOURCE` optionally override those roots. Alternatively,
-`IX_PLONK_CUDA_LIBRARY` names an already-built `libix_plonk_bn254_cuda.so`.
-Lake installs that library beside the worker in `../lib`. Nix supplies its
-pinned native library directly. Primitive source ownership and build details
-are in `crates/proof-compression/cuda/plonk`.
+The CUDA primitives in `crates/proof-compression/cuda/plonk` are built with
+the KZG kernels into `libix_bn254_cuda.so`, against the sppark and BLST
+sources of the crate's `cuda` dependencies. `IX_KZG_CUDA_ARCHS` (or
+`MULTI_STARK_CUDA_ARCHS`) selects the SM architectures. cgo links this
+library, which carries a private C++ runtime and exports only its C entry
+points; Lake installs it in `../lib` beside the executable.
 
 Select execution separately with `IX_PLONK_BACKEND=cpu` or `cuda`.
 `IX_PLONK_CUDA_DEVICE` selects the visible GPU ordinal; the default is zero.
@@ -73,8 +71,8 @@ records why the backend uses the upstream interface without fused extensions.
 
 ## Trust and artifacts
 
-Rust owns artifact and Lagrange-cache metadata. Circuit caches bind the worker
-build, verifier description and admitted setup. Lagrange caches bind the setup,
+Rust owns artifact and Lagrange-cache metadata. Circuit caches bind the cache
+format, verifier description, admitted setup and gnark's `go.sum`. Lagrange caches bind the setup,
 domain and monomial receipt. Go checks the sizes and digests of decoded native
 artifacts and rejects a witness whose claim differs from the independent digest
 supplied by Rust. Retaining a prover avoids loading its circuit and keys again.
@@ -84,12 +82,10 @@ candidate catalog is not automatically trusted. Entries bind the verifying-key
 SHA-256, inner verifier identity, program prefix, circuit hash, and Ignition
 admission. Verification requires neither a proving SRS nor a GPU.
 
-The worker retains the `plonk export`, `export-first`, `srs`, `wrap`, and
-`verify` commands. For example:
-
-```sh
-ix-compression-worker plonk verify proof.envelope.bin claim.bin
-```
+Release tooling is library code with no CLI: `pipeline::plonk::export` writes
+the verifier description and witness for a recursive KZG packet, and
+`pipeline::plonk::export_parameters` writes the Ignition SRS prefix a circuit
+needs. `ix verify` checks PLONK proofs against the configured catalog.
 
 Internal metadata has no helper-executable identity. Rebuild old artifact caches
 and regenerate candidate catalogs instead of editing or translating them.
@@ -120,7 +116,7 @@ Solidity verification of the unchanged proof encoding.
 
 ## BN254 Groth16 terminal
 
-The worker also implements `groth16` over the same KZG verifier circuit and
+The `groth16` feature implements Groth16 over the same KZG verifier circuit and
 witness schema. It compiles R1CS instead of PLONK's sparse constraints. The two
 public inputs remain the little-endian 128-bit halves of the expected BLAKE3
 claim digest. The circuit retains the outer and deferred KZG pairing checks.
@@ -132,23 +128,45 @@ commitment and its proof are part of the verified encoding. Development
 verifying keys and a proof of this fixture are retained in
 `crates/proof-compression/tests/fixtures/groth16`; they are not production keys.
 
+### TODO: Reduce Groth16 commitment verification cost
+
+Evaluate a commitment-free Groth16 circuit. The current gnark commitment
+extension adds a separate two-pair pairing check costing **113,000 gas** and
+128 bytes to the Solidity proof payload (384 bytes instead of the ordinary
+256-byte A/B/C proof). The ordinary four-pair Groth16 equation costs another
+181,000 gas. SHA-256's precompile cost in the measured proof is only 84 gas.
+
+Anvil validation of normalized Nat.add_comm, Init and Mathlib under one key per
+backend measured 320,286 execution gas for the Groth16 adapter and 275,438 for
+PLONK. Total transaction gas was 348,262–348,298 and 311,070–311,118,
+respectively. These measurements use Solidity 0.8.33, via-IR, 200 optimizer runs
+and Prague; Groth16 uses development keys and PLONK uses Ignition. The adapters
+receive a claim digest, so these costs exclude hashing raw claim bytes.
+Receipts, traces and proof vectors are retained in
+`target/terminal-solidity-20261029-xso7clim/` at the repository root.
+
+SP1's Groth16 path uses direct bit constraints for range checks and an ordinary
+A/B/C verifier. Ix also uses gnark's emulated BN254 arithmetic for KZG pairings,
+whose deferred checks use commitments; replacing range checks alone may not
+eliminate the extension. Any alternative must preserve both inner KZG pairing
+obligations and claim binding. It needs new circuit-specific keys and Solidity
+validation, with measurements of constraint count, proving cost and verification
+gas. This optimization is deferred; the commitment checks remain required by
+the current circuit and verifier.
+
 ### Preparing and using development keys
 
-Export an already verified recursive KZG packet with the existing shared
-exporter, then compile the Groth16 circuit:
+Keys are prepared with library functions; there is no CLI for them. Export an
+already verified recursive KZG packet with the shared exporter
+(`pipeline::plonk::export`), compile the Groth16 circuit from its `vk.json`
+with `pipeline::groth16::compile`, then create development keys with
+`pipeline::groth16::setup_development`.
 
-```sh
-ix-compression-worker groth16 export verifier.bin packet.bin TRUSTED_VERIFIER_BLAKE3 expected-statement.json input
-ix-compression-worker groth16 compile input/vk.json groth16-keys
-ix-compression-worker groth16 setup-development groth16-keys
-ix-compression-worker groth16 prove groth16-keys input/witness.json EXPECTED_CLAIM_DIGEST proof
-```
-
-`TRUSTED_VERIFIER_BLAKE3` authenticates the serialized KZG verifier file.
-`EXPECTED_CLAIM_DIGEST` is obtained independently of the witness. The exporter
-requires admitted Ignition parameters for the inner KZG proof; local Groth16
-setup does not change the inner setup policy. Compilation writes a fresh
-circuit into an empty artifact directory.
+The exporter takes the BLAKE3 digest that authenticates the serialized KZG
+verifier file and the independently expected statement, and requires admitted
+Ignition parameters for the inner KZG proof; local Groth16 setup does not
+change the inner setup policy. Compilation writes a fresh circuit into an empty
+artifact directory.
 
 The CLI uses prepared keys and an independently approved catalog:
 
@@ -183,12 +201,8 @@ ix verify COMPRESSED_PROOF --dev-srs
 
 `--dev-groth16` permits development outer keys and requires `--groth16`.
 `--dev-srs` on verification is the existing permission for development proofs.
-A saved recursive packet can be wrapped directly, avoiding earlier stages:
-
-```sh
-ix-compression-worker groth16 wrap verifier.bin packet.bin TRUSTED_VERIFIER_BLAKE3 expected-statement.json output --allow-development
-ix-compression-worker groth16 verify output/proof.envelope.bin claim.bin --allow-development
-```
+Rerunning `ix compress` into an output directory whose recursive KZG stage is
+complete proves only the Groth16 stage.
 
 Groth16 uses envelope tag `IXBN\0\0\0\x03`, followed by the 32-byte approved
 verifying-key SHA-256 and canonical native proof. Verification is CPU-only and
@@ -199,14 +213,14 @@ requires neither proving parameters nor a visible GPU.
 Production keys require a Groth16-compatible phase-one setup and a
 circuit-specific phase two. Ignition's KZG cache is not a Groth16 setup.
 
-`groth16 setup-mpc <artifacts> <ceremony.json> <trusted-sha256>` verifies each
+`pipeline::groth16::setup_mpc(artifacts, ceremony, trusted_sha256)` verifies each
 phase-one and phase-two contribution against its predecessor, binds phase two
 to the R1CS digest, applies the recorded beacons, and writes the resulting keys.
 The descriptor includes the curve, domain, circuit digest, two 32-byte beacons,
 and contribution paths with byte counts and SHA-256 receipts. Its exact schema
 is defined by `groth16Ceremony` in `groth16_setup.go`.
 
-`groth16 import <artifacts> <release.json> <trusted-sha256>` imports an already
+`pipeline::groth16::import(artifacts, release, trusted_sha256)` imports an already
 reviewed key bundle. The release binds both keys, the circuit and verifier-schema
 hashes, the commitment hash, and the ceremony digest. Import relies on the
 independently trusted release digest; it does not re-run the contribution chain.
@@ -224,8 +238,6 @@ G1/G2 MSMs and QAP polynomial work. CPU and CUDA use the same serialized keys,
 proof format, SHA-256 commitment hash, and CPU verifier.
 
 ```sh
-nix build .#compression-worker-cuda
-export IX_COMPRESSION_WORKER="$PWD/result/bin/ix-compression-worker"
 export IX_GROTH16_BACKEND=cuda
 export IX_GROTH16_DEVICE=0
 export IX_GROTH16_PIN_KEY=1
@@ -234,20 +246,24 @@ export IX_GROTH16_PIN_KEY=1
 `IX_GROTH16_PIN_KEY` defaults to `0`, streaming key vectors as needed. Set it to
 `1` only when persistent key vectors and working memory fit on the selected GPU.
 Each prover handle stays on one device; operations and cleanup are serialized
-per device. The worker does not warm other GPUs or silently fall back to CPU.
+per device. `ix` does not warm other GPUs or silently fall back to CPU.
 
-For a manual ICICLE installation, build only BN254 with MSM, NTT and G2 enabled,
-using the pinned revision above. Set `IX_GROTH16_ICICLE_ROOT` to its installation
-prefix, then build with `IX_CUDA=1 lake build ix` or Cargo features
-`parallel,plonk,groth16,cuda`. The native build checks the libraries and packages
-both the core libraries and CUDA backend modules beside the worker. Nix supplies
-these dependencies in `.#compression-worker-cuda`; `.#icicle-bn254` builds ICICLE
-alone. Verification remains CPU-only and does not initialize a device.
+Install ICICLE separately using the pinned revision above, with BN254, MSM,
+NTT and G2 enabled. Lake and Cargo default to `/usr/local`, with core libraries
+in `/usr/local/lib` and CUDA modules under `/usr/local/lib/backend`.
+`IX_GROTH16_ICICLE_ROOT` optionally selects another installation prefix.
+Then build with `IX_CUDA=1 IX_GROTH16=1 lake build ix` or Cargo features
+`parallel,groth16,cuda`. Lake checks and tracks the library files, then copies
+the libraries and backend plugins into `.lake/build/lib` beside `ix`; it does not
+compile ICICLE. `ix` discovers the packaged backend first, with the
+installation's `lib/backend` as a fallback; `ICICLE_BACKEND_INSTALL_DIR`
+overrides that runtime selection. `.#icicle-bn254` builds the pinned ICICLE
+with Nix. Verification remains CPU-only and does not initialize a device.
 
 Rust parses device selection and key-pinning options and passes them explicitly
 through FFI. The retained handle owns its native circuit, keys and device memory.
-Artifact manifests are internal metadata; regenerate them with the worker's
-compile/setup commands when changing the implementation.
+Artifact manifests are internal metadata; regenerate them with the library's
+compile and setup functions when changing the implementation.
 
 ### Solidity and tests
 

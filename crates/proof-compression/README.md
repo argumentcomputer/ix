@@ -9,24 +9,35 @@ BN254 is unconditional, including builds with `--no-default-features`.
 The main Cargo features are `parallel`, `plonk`, `groth16`, and `cuda`. Either
 terminal feature builds one shared gnark C archive. Combining a terminal
 feature with `cuda` enables its GPU backend.
-Lake builds the CLI and worker separately so `ix-ffi` does not link Go.
-An explicit `IX_KZG_CURVE=bn254` is accepted; other values are rejected.
+Compression runs inside `ix`. Lake enables the terminal features only for the
+`ix` executable, so other executables and tests never compile Go.
 
 ```sh
 lake build ix
 IX_CUDA=1 lake build ix
+IX_CUDA=1 IX_PLONK=1 IX_GROTH16=1 lake build ix
 ```
 
-`IX_CUDA` enables CUDA for Aiur, FRI, KZG, and both terminal backends. Native BN254
-arithmetic uses shared sppark/BLST support, and Rust calls stock gnark through
-its C archive. Groth16 CUDA additionally requires the pinned ICICLE installation
-via `IX_GROTH16_ICICLE_ROOT`; Nix provides it in `.#compression-worker-cuda`.
+Lake's switches select these Cargo features: `IX_PLONK` and
+`IX_GROTH16` (both off by default, so compression ends at the ~2.1 KB
+recursive KZG proof and the default build needs no Go) select the terminal
+backends, and `IX_CUDA`
+enables CUDA for Aiur, FRI, KZG, and each selected terminal backend. Native
+BN254 arithmetic uses shared sppark/BLST support, and Rust calls stock gnark
+through its C archive. Groth16 CUDA links a separately installed, pinned ICICLE.
+Lake and Cargo default to `/usr/local`; `IX_GROTH16_ICICLE_ROOT` overrides the
+installation prefix. Core libraries belong in `<prefix>/lib` and CUDA modules
+in `<prefix>/lib/backend`. Lake validates and copies those libraries into
+`.lake/build/lib` beside `ix`. Provision ICICLE before building Ix; Lake does
+not compile it. Nix builds the pinned installation as `.#icicle-bn254`.
 Those libraries may contain other curves; Ix exposes only BN254.
 
 KZG uses authenticated Ignition parameters or explicit known-trapdoor
 development parameters. Terminal PLONK requires authenticated Ignition.
-The BN254 KZG release catalog is empty: local verification requires an
-independently pinned verifying key and expected statement. PLONK verification
+This build ships no bundled recursive KZG verifying keys. `ix verify` reports
+that verification of these proofs is unsupported; use the library's
+`verify_with_vk` or `verify_with_ignition_admission` with an independently
+pinned verifying key and expected statement. PLONK verification
 requires an independently authorized `IX_PLONK_VERIFIER_CATALOG`. Groth16
 requires its own circuit-specific setup and `IX_GROTH16_VERIFIER_CATALOG`;
 see the [terminal backend guide](../../tools/plonk-wrapper/README.md#bn254-groth16-terminal).
@@ -123,7 +134,11 @@ copy is at `/opt/dlami/nvme/ix-bn254/parameters/ignition/`:
   independent source, cache and admission pins and the complete setup identity.
 
 Proving needs the prepared cache and admission; the source transcripts are
-needed only to reproduce the import. Restore them onto fast local storage:
+needed only to reproduce the import. `ix compress fetch-params` downloads the
+pinned public cache and admission into `IX_PARAMS_DIR` (default
+`~/.ix/compression/params`) and authenticates them; compression uses them
+automatically when no `IX_KZG_IGNITION_*` variable is set. To restore them
+from S3 onto fast local storage instead:
 
 ```sh
 IGNITION_DATA=/path/to/local-nvme/parameters/ignition
@@ -174,17 +189,14 @@ Produce the descriptor from already trusted source and cache pins:
 ```
 
 Retain the reported `admission_blake3` independently. To select these
-parameters for proving, configure all four settings:
+parameters for proving, configure all four settings before running
+`ix compress` or `ix prove --compress`:
 
 ```sh
 export IX_KZG_IGNITION_CACHE=/path/to/ignition-prefix.bin
 export IX_KZG_IGNITION_CACHE_BLAKE3="$IGNITION_CACHE_MANIFEST_BLAKE3"
 export IX_KZG_IGNITION_ADMISSION=/path/to/new-admission.json
 export IX_KZG_IGNITION_ADMISSION_BLAKE3="$IGNITION_ADMISSION_BLAKE3"
-
-"$IX_COMPRESSION_WORKER" pipeline run-fri \
-  /path/to/fri /path/to/claim.bin /path/to/root/root-claims.bin \
-  /path/to/new-ignition-run 24
 ```
 
 On the validation host, the retained configuration supplies all four settings:
@@ -198,108 +210,61 @@ the receipts above. It does not select or authorize a verifying key.
 
 Partial configuration, incorrect pins, changed anchors/source receipts and
 insufficient prefixes fail closed. `--dev-srs` explicitly selects development
-parameters instead. The worker checks Ignition capability before starting
-stages and binds both KZG stages to the same admitted setup; the recursive
-verifying key must also retain its admitted deferred pairing keys.
+parameters instead. Compression checks the setup before proving and binds
+both KZG stages to the same admitted setup; the recursive verifying key must
+also retain its admitted deferred pairing keys.
 
-For local verification, supply the independently trusted verifying key digest
-as well as the original claim, expected root statement and admitted setup:
-
-```sh
-"$IX_COMPRESSION_WORKER" pipeline verify-ignition \
-  /path/to/run/proof.envelope.bin /path/to/claim.bin \
-  /path/to/root/root-claims.bin /path/to/run/final-kzg/vk.bin \
-  "$BN254_VK_DIGEST" /path/to/new-admission.json \
-  "$IGNITION_ADMISSION_BLAKE3"
-```
-
-This command reads no proving cache or setup environment and rejects
-`--dev-srs`. The library equivalent is `verify_with_ignition_admission`,
-with an `IgnitionAdmission` authenticated using `read` or `from_bytes`.
-Ordinary application verification continues to use its release-bundled
-verifying key catalog. A future BN254 production entry must bundle both
-the verifying key digest and the admitted setup pin; generating either
-artifact does not add that entry. The BN254 catalog remains empty and admits
-no development entries.
+For local verification, `verify_with_ignition_admission` takes the
+independently trusted verifying key digest as well as the original claim,
+expected root statement and an `IgnitionAdmission` authenticated using `read`
+or `from_bytes`. It reads no proving cache or setup environment.
+Ordinary application verification supports terminal PLONK and Groth16 through
+their independently configured catalogs. Recursive KZG verification requires
+one of the explicit pinned-key entry points. Generating a verifying key or
+setup artifact does not authorize it for another verifier.
 
 ## Proving and verification
 
-The worker has two entry points for a complete KZG run. `pipeline run` reads
-`root-vk.bin`, `root-proof.bin` and `root-claims.bin`, performs FRI compression,
-then runs first and recursive KZG stages. `pipeline run-fri` starts from an
-existing `outer-vk.bin`, `outer-proof.bin` and `outer-claims.bin`; it verifies
-that saved FRI proof and compares all eighteen statement words with the
-separately supplied root claims before starting the KZG workers.
+`ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
+normalize the aggregate root using the versioned
+[`ixvm-2026-10-29` layout](root-layouts/ixvm-2026-10-29.json).
+`--fixed-root` is an optional layout override. The default layout is the one
+shared by the saved Nat.add_comm, Init and Mathlib normalization runs; it has
+101 circuit heights, 18 claim elements and no additional headroom beyond those
+measured bounds. Its root verifier BLAKE3 is
+`f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc`.
+The default rejects another backend key, and normalization rejects executions
+that exceed the fixed bounds before allocating traces. A larger supported
+layout is a new release profile; compression does not resize it per proof.
+The profile supplies normalization bounds, not a bundled compression verifier.
 
-Build and execute these commands only when machine time is available. Real
-inputs require tens of millions of rows and substantial RAM; use the
-measurements above when choosing a host and place outputs and caches on fast
-local storage.
+`ix compress` and `ix prove ... --compress` run every stage in the `ix`
+process through `pipeline::compress(CompressInput, &CompressConfig)`: FRI
+compression of the normalized root, first KZG, recursive KZG and, when
+selected, the terminal proof. Real inputs require tens of millions of rows
+and substantial RAM; use the measurements above when choosing a host and
+place outputs and caches on fast local storage.
 
-```sh
-cargo build --release --locked -p ix-proof-compression --bin ix-compression-worker \
-  --no-default-features --features parallel --target-dir target/bn254
-export IX_COMPRESSION_WORKER="$PWD/target/bn254/release/ix-compression-worker"
-"$IX_COMPRESSION_WORKER" fri capabilities
-
-"$IX_COMPRESSION_WORKER" pipeline run \
-  /path/to/root /path/to/claim.bin /path/to/bn254-run 24 --dev-srs
-```
-
-Alternatively, reuse an already saved FRI proof in a separate empty output
-directory:
-
-```sh
-"$IX_COMPRESSION_WORKER" pipeline run-fri \
-  /path/to/fri /path/to/claim.bin /path/to/root/root-claims.bin \
-  /path/to/bn254-from-fri 24 --dev-srs
-```
-
-To verify the saved FRI input and count the translated frontend before
-proving, use:
-
-```sh
-"$IX_COMPRESSION_WORKER" kzg size \
-  /path/to/fri /path/to/kzg-size.json --dev-srs
-```
-
-This retains the source Goldilocks circuit and translation wire map, without
-allocating the translated circuit, proving traces or SRS. Its exact gate,
-lookup and value counts do not estimate total prover memory or padded trace
-sizes. The saved Init and mathlib inputs each used about 8.13 GiB peak RSS
-and 20 seconds wall time for this preflight on the measurement host.
-
-`claim.bin` contains the canonical serialized claim whose digest appears in
-the root statement. The top-level driver admits first-stage log-heights 24
-and 25, matching the saved recursive layout policy. Workers run in separate
-processes and are checked for the selected curve before proving. Each run
-writes `proof.envelope.bin`, `final-kzg/vk.bin`,
-`expected-root-claims.bin` and `pipeline-report.json`; failed stages retain
-their checkpoints. Shared cache environment variables override the default
-per-run `cache/` directory.
+Stages are kept under the output directory, `~/.ix/compression/<root>/<height>`
+by default or `--out`: `root/`, `fri/`, `first-kzg/`, `final-kzg/` (including
+`vk.bin`), then `plonk/` or `groth16/`, and the returned `compressed.bin`.
+Each stage writes a `complete` marker last, after its output is checked.
+Rerunning the same command resumes: marked stages are checked and reused, and
+the first unmarked stage and every later one are rerun. A non-empty directory
+whose `root/` does not match the proof, layout and statement is refused
+unchanged. `--log-height` selects first-stage log-height 24 (default) or 25,
+matching the saved recursive layout policy. Fixed-preprocessing and
+development SRS caches are shared under `~/.ix/compression/cache`;
+`IX_KZG_FIXED_CACHE` and `IX_KZG_SRS_CACHE` override them.
 
 BN254 has no bundled verifying key catalog entry. Its packet and verifying
-key formats identify BN254; generating a key does not authorize
-it. For local verification, set `BN254_VK_DIGEST` to the independently
-reviewed BLAKE3 digest of `final-kzg/vk.bin`, then supply that pin,
-the original claim and independently expected root claims:
-
-```sh
-"$IX_COMPRESSION_WORKER" pipeline verify \
-  /path/to/bn254-run/proof.envelope.bin /path/to/claim.bin \
-  /path/to/root/root-claims.bin /path/to/bn254-run/final-kzg/vk.bin \
-  "$BN254_VK_DIGEST" --dev-srs
-```
-
-Verification needs no proving SRS or cache. It checks the verifying key
+key formats identify BN254; generating a key does not authorize it. For
+local verification, `verify_with_vk` takes the independently reviewed BLAKE3
+digest of `final-kzg/vk.bin`, the original claim and independently expected
+root claims. It needs no proving SRS or cache, and checks the verifying key
 digest, development opt-in, claim digest, all expected statement words, outer
-KZG proof and deferred pairing. The generated report records the verifying
-key digest for inspection; the verifier never obtains its trusted pin from
-the proof.
-The library equivalents are `compress`, `compress_fri` and
-`verify_with_vk`. `ix verify` uses the catalog for its compiled curve;
-BN254 has no authorized entries yet, so use the worker command above with an
-explicit verifying key for development verification.
+KZG proof and deferred pairing; the verifier never obtains its trusted pin
+from the proof.
 
 ### Validation and sizing entry points
 
@@ -324,7 +289,7 @@ includes the proof envelope, native and Solidity proof encodings, generated
 Solidity verifier, verifying key, admission, and candidate verifier catalog.
 The candidate must be reviewed independently before configuring it for
 `ix verify`. See the [gnark backend guide](../../tools/plonk-wrapper/README.md)
-for worker commands, Rust FFI tests, CUDA configuration, and artifact cache rules. On-chain verification uses the terminal PLONK verifier
+for Rust FFI tests, CUDA configuration, and artifact cache rules. On-chain verification uses the terminal PLONK verifier
 and [claim adapter](../../contracts/plonk/README.md).
 
 ## CUDA and profiling
@@ -343,26 +308,27 @@ cargo test --release -p ix-proof-compression --features cuda
 ```
 
 `IX_CUDA=1` enables both multi-stark's Goldilocks backend for the Aiur
-prover and the KZG backend here; there is no separate switch. KZG-specific
-kernels are compiled into `ix-compression-worker`, the stage executable
-built beside `ix`. Both executables use multi-stark's shared CUDA backend.
+prover and the KZG backend here; there is no separate switch. The KZG and
+PLONK kernels build into one `libix_bn254_cuda.so` (one sppark, a private C++
+runtime, C exports only), which Lake copies into `.lake/build/lib` beside
+multi-stark's `libmulti_stark_cuda.so`.
 
 `IX_NO_PAR=1` builds without the `parallel` feature, and
 `IX_CUDA_TRACE_CODEGEN=1` adds the generated CUDA trace kernels described in
 [the GPU proving guide](../../docs/aiur-gpu-proving.md), implying `cuda`.
 
 See [the GPU proving guide](../../docs/aiur-gpu-proving.md) for shared CUDA
-backend packaging and host-toolchain requirements. When deploying the worker,
-copy `.lake/build/lib/libmulti_stark_cuda.so` into `../lib` relative to its
-executable, as for the CUDA-enabled Lean binaries.
+backend packaging and host-toolchain requirements. When deploying `ix`,
+copy both libraries from `.lake/build/lib` into `../lib` relative to the
+executable.
 
 With the feature compiled, every proving operation above the size
 thresholds in the prover runs on the devices and a rejected memory
 admission is an error; tune the residency limit or chunk size below rather
 than expecting a host fallback. A CUDA build keeps every committed column
 in memory; a CPU build serves the fixed columns from their cache files and
-produces identical proof bytes. The worker installs its settings from the
-environment before the first proving operation:
+produces identical proof bytes. `ix` reads these settings from the
+environment and installs them once, before the first KZG stage:
 
 | Variable | Values | Default |
 | --- | --- | --- |
@@ -397,10 +363,10 @@ needs a GPU host; device unit tests are marked ignored and run with
 ### Profiling
 
 The global `IX_TEXRAY=1` switch enables TeXRay for proving, aggregation,
-compression, and the Typecheck benchmark. On `ix compress` or a direct
-worker invocation it reports coarse phase timings and RSS summaries on
-stderr. Each worker installs TeXRay before loading inputs and examines a `compression/fri`,
-`compression/kzg`, or `compression/wrap` root. The tree covers circuit
+compression, and the Typecheck benchmark. On `ix compress` it reports
+coarse phase timings and RSS summaries on stderr, with one root per stage:
+`compression/fri`, `compression/kzg`, `compression/wrap`, and
+`compression/plonk` or `compression/groth16`. The tree covers circuit
 construction, witness generation, lowering, setup, preprocessing caches,
 commitments, proving, verification, and output. The inherited `stark/*`
 lookup, quotient, and opening phases are included; `stark/fri_open` also
@@ -420,13 +386,13 @@ proof witness. `Prepared::prove_fri`, `prepare_kzg`, `Prepared::prove_kzg` and
 `prepare_recursive` compose the stages with caller-selected bounds and SRS.
 These APIs return verifier-only metadata and keep the expected claim separate
 from the proof. They do not register a verifier in the application's bundled
-catalog. The CLI uses the worker and trusted verifying keys described above.
+catalog. The CLI uses `pipeline::compress` and the trusted verifying keys
+described above.
 
 `fri` constrains FRI verification, `foreign` translates Goldilocks arithmetic
 into scalar-field constraints, `kzg` implements the commitment backend, and
 `recursive` constrains KZG verification with public pairing operands.
-`pipeline` runs the stages through the Plonkish API, exposed by
-`ix-compression-worker`.
+`pipeline` runs the stages through the Plonkish API.
 
 Focused CPU checks use the small BN254 fixtures:
 
