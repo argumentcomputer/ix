@@ -20506,7 +20506,7 @@ extern "C" int aiur_trace_ixvm_810(int device, const uint8_t* seeds, uint32_t en
 }
 
 extern "C" const uint8_t* aiur_trace_ixvm_contract() {
-  static const uint8_t hash[32] = {129, 14, 159, 44, 120, 1, 250, 31, 183, 11, 134, 206, 203, 91, 67, 141, 77, 241, 229, 96, 164, 66, 30, 198, 223, 142, 231, 94, 155, 185, 152, 204};
+  static const uint8_t hash[32] = {38, 29, 24, 215, 124, 68, 119, 206, 188, 87, 245, 201, 220, 59, 227, 63, 153, 172, 8, 136, 99, 171, 116, 56, 101, 81, 57, 9, 42, 209, 26, 90};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_ixvm_schema() {
