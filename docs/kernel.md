@@ -48,8 +48,13 @@ certificates check), then:
   then the verified fold at some fuel, under the default binding and in an
   order that respects references. Reference acceptance is not a guarantee
   that the executable checker succeeds at its fixed fuel;
+- the installed environment is quotient Source's environment renamed to
+  the artifact's addresses, injectively on the names that environment
+  mentions (`RenamesSource`); types and values, theorem statements and
+  proofs included, are preserved by that renaming;
 - every constant of the closure reads as a compiled constant
-  (`ReadingCovers`);
+  (`ReadingCovers`), except the constants represented by the inert
+  `sorryAx` role, which install nothing and whose uses decline;
 - every strong model of the compiled environment
   (`Ix.Kernel.Cached.StrongModel`) gives **one value model of quotient
   Source** for the whole closure, in which every constant denotes what its
@@ -58,13 +63,19 @@ certificates check), then:
 The statement is partial correctness: a compile that fails, a closure with a
 failed constant, and a closure quotient Source does not accept are outside
 it. The compiler compiles Lean verbatim (each block in Lean's grouping and
-member order, every declaration as Lean declared it) and collapses
-α-equivalent constants to one address, so acceptance is certified from
+member order, every declaration as Lean declared it). Its internal mutual
+representation is a flat ordered list: one payload and member index per
+source member, with constructors in source order. Singleton groups remain
+only at the serialized metadata boundary. Whole-constant alpha collapse
+still lets identical anonymous encodings share an address; it does not
+merge member positions inside a block. Acceptance is therefore certified from
 quotient Source, where alias fibers are collapsed. The link to nominal Source
 is not assumed for every environment: `CompileCorrect.checked` gets it per
 artifact from the executed quotient check, and `CompileCorrect.nominal` takes
 it as a hypothesis. That link concerns acceptance only: it supplies no
-relation between nominal and quotient value models.
+relation between nominal and quotient value models. The compiler conclusion
+does not assert model existence; `CommutesStrong` retains its quantification
+over every strong model.
 
 On the command line, `ix compile` and `ix compile-lean` run the certified
 compiler, `Ix.Cert.compileReport` itself (`Ix.CompileM.compileCertified` in
@@ -84,13 +95,16 @@ sharing-limit override is refused there.
 `ix compile --streamed` and `ix compile-lean --streamed` select the streamed
 Lean pipeline (`compileLeanInputValidated` in
 [`Ix/CompileResource.lean`](../Ix/CompileResource.lean)), which runs the same
-report checks on the compile. `ix prove`, `ix check` and `ix addr-of` given a
-name and no `.ixe` compile its closure with it.
+report checks on the compile. Name-only `ix prove`, `ix check` and
+`ix addr-of` use `Ix.Check.loadNamedIxonEnv` and its checked streamed loader,
+`compileLeanConstsValidated`. They do not call `compileReport` directly;
+supplying a `.ixe` uses the supplied artifact instead.
 
 The Rust compiler is opt-in and uncertified: `ix compile --rust` (and `--rust`
 on `prove`, `check` and `addr-of`). It has no counterpart of the report
-checks; only the finalized-artifact checks run on its output. Bare compiler
-APIs remain unvalidated. `ix compile-lean --rust-check` compares the two
+checks. The Rust path of `ix compile` checks its finalized artifact before
+writing it; this does not establish the compiler theorem for that backend.
+Bare compiler APIs remain unvalidated. `ix compile-lean --rust-check` compares the two
 serialized outputs for that input; byte parity is empirical evidence, not a
 compiler-refinement theorem for the Rust compiler. Metadata is outside the
 certification claim.
@@ -491,7 +505,7 @@ meta reader (`Benchmarks/Kernel/CheckIxeMeta.lean`), and no checker code
 reads a display field (`IxC/Kernel/Audit/Display.lean`). `.meta` never
 decides: it explains failures with names.
 
-**Names in terms (step 6b).** So that a failure can print a term, a reduced
+**Names in terms.** So that a failure can print a term, a reduced
 one included, with Lean's names, the names travel inside the terms, as in
 Lean, through δ, β and instantiation:
 - a binder carries its Lean name and `BinderInfo`
@@ -579,15 +593,12 @@ after its block's `n`, the shape by which the checker recognises it
 its recursors in motive order, and the stream's index-count check pairs the
 recursor of motive `m` with the block's type `m` (`RecCounts.motive`).
 
-**Roles and their specifications** (`IxC/Kernel/Roles.lean`). The checker
-knows 59 roles (`Ix.Kernel.Role`): the basis blocks (`Eq`, `Nat`, `PUnit`,
-`Empty`, `False`, the `Quot` package, every member), `Bool`, `True`, `And`,
-`Iff`, `Nonempty` with their constructors and recursors, the literal support
-(`String`, `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`,
-`Char.ofNat`), the fifteen certified `Nat` operations (`pred`, `add`, `sub`,
-`mul`, `pow`, `beq`, `ble` structural; `div`, `mod`, `gcd`, `land`, `lor`,
-`xor`, `shiftLeft`, `shiftRight` well-founded), the standard axioms and
-`sorryAx`.
+**Roles and their specifications** (`IxC/Kernel/Roles.lean`).
+`Ix.Kernel.Role` is the fixed vocabulary for basis blocks, literal support,
+verified operations, the standard axioms and the inert `sorryAx` role.
+`Role.all`, `Role.spec`, `Role.block` and `Role.deps` define the exact
+catalog. A role specification and its evidence do not by themselves enable
+a native acceleration; each execution backend has its own admission boundary.
 Each has a fixed specification (`Role.spec`): a closed term over role keys
 and positional levels, of one of four kinds (a `block`'s declarations, for
 the basis and the standard axioms' families `Iff` and `Nonempty`; an
@@ -595,27 +606,20 @@ the basis and the standard axioms' families `Iff` and `Nonempty`; an
 an `axiom`'s exact type, which for the inert `sorryAx` fixes only which
 declaration is tolerated), its block
 (`Role.block`, the roles bound together) and its dependencies (`Role.deps`).
-The specifications are today's checks
-respelled, not new ones (`Role.spec_*` are `rfl` against the data the
-checker compares). They carry no address and no input key, so one set
-serves every toolchain. Specification version 2 removes the five
-compiler-trust/native-evaluation roles and the `identity` specification
-kind. Version 3 makes `Iff`, `Nonempty` and their constructors and
-recursors `block` roles (every role a standard axiom's type mentions,
-transitively, is a block role: a type-only `Nonempty` would let
-`Classical.choice` prove `False`) and gives `sorryAx` its type. The
-canonical encoding (`Ix.SpecDigest.specBytes`) is 9365 bytes.
-Its BLAKE3 digest, computed in the root library because the kernel admits
-no hasher, is
-`f09825902503729718c7ab437405b9f87efb97024085f8f2ea10e1e3ca378ba3`
-(`Ix/SpecDigest.lean` freezes it; `IxC/Kernel/Audit/Roles.lean` freezes the
-set's shape). Four anchors that no use site validates, `Bool.rec`, `And`,
-`And.intro` and `And.rec`, and the inert `sorryAx` are validated at install
-(owner, 2026-10-15): the fold's step (`Cached.annotDeclStep`) matches a constant bound to one against
-its specification's type up to binder data and level-parameter names
-(`installAnchorPin?`, `matchesPin`) before installing its declaration, and a
-mismatch declines (`role specification mismatch`). The Rust kernel does not
-match them yet (its alignment is step 9's).
+The specifications carry no address and no input key, so the same terms
+serve every toolchain. Every role used transitively by a standard axiom's
+type is validated as a block, including the full `Iff` and `Nonempty`
+families. The inert `sorryAx` role has an exact type and supplies no usable
+proof. The specification version, encoding and digest are pinned in
+`IxC/Kernel/Roles.lean`, `Ix/SpecDigest.lean` and
+`IxC/Kernel/Audit/Roles.lean`; those sources define the current values.
+
+For declarations handled by anchor installation, `Cached.annotDeclStep`
+checks the bound type through `installAnchorPin?` and `matchesPin`, up to
+binder data and level-parameter names. A mismatch declines with
+`role specification mismatch`. This is not a general assertion that a
+role address alone validates any declaration stored there; the compiler
+also enforces `RoleRecordKinds` in its report checks.
 
 **The role table** (`IxC/Kernel/Ixon/RoleTable.lean`) is input:
 `RoleTable` has the version of the specification set it was made for, the
@@ -698,16 +702,17 @@ declarations in front of every fold (`preparePrelude`): the basis blocks `Eq`, `
 `Quot.sound`), `And` and `Bool`. Here they are the compiled Init's own Ixon
 records (`RoleData.prelude`, canonical bytes by address), decoded by the
 canonical decoder and read by the same reader under the admitted table
-(`preludeFor`). The empty stream installs 27 constants. A stream that
-declares a prelude constant is checked on its own record (`preparePrelude`
-moves the stream's copy to the front); the prelude's copy fills in where
+(`preludeFor`). The empty stream installs the declarations prescribed by
+the admitted prelude. A stream that declares a prelude constant is checked
+on its own record (`preparePrelude` moves the stream's copy to the front);
+the prelude's copy fills in where
 the stream has none.
 
 **The default table** (`IxC/Kernel/Ixon/RoleData.lean`, generated) binds
 every role to the compiled Init's constant of its Lean name, with the
-evidence: the structural operations' `.defeq` entries and, for the eight
-well-founded operations, theorem records (`RoleData.evidence`, 18 records,
-and the blobs their literals use, `RoleData.blobs`) holding the certificate
+evidence: structural operations' `.defeq` entries and compiled theorem
+records for operations that need certificates (`RoleData.evidence`, with
+the literal blobs in `RoleData.blobs`). These records hold the certificate
 theorems of `IxC/Kernel/PinGen/Certs.lean` compiled by Ix and closed over
 the operations' dependency closure. The evidence records back the reader's
 store (`Prelude.evidence`); they are never read as declarations of their
@@ -721,14 +726,15 @@ through the verified fold under the table before writing:
 
 ```sh
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --no-build --out .lake/envs/initstd.ixe
-lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --out .lake/envs/certs.ixe --consts <the certificate theorems>
+lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --local --out .lake/envs/certs.ixe
 lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \
   IxC/Kernel/Ixon/RoleData.lean
 ```
 
 (`--no-build`: the files import only `Init`, and the root package does not
-know `IxC/Kernel/PinGen/Certs.lean` as a target of its own.) The full
-`--consts` list and the source hashes are in the generated file's header. The
+know `IxC/Kernel/PinGen/Certs.lean` as a target of its own.) The exact
+certificate inputs and source hashes are recorded in the generated file's
+header. The
 table names addresses, so a toolchain, compiler or format change that moves
 Init's addresses requires regeneration; the specifications, `specVersion`
 and the digest stay. Soundness does not depend on the table.
@@ -828,8 +834,8 @@ parser. The entry and its variants hash only through their
 `hash` parameter.
 
 The root library's authenticated entries (`Ixon.Authenticated`) add one
-substitution, admitted on an assumption rather than a proof (owner,
-2026-10-13): the admission hash `Address.admissionHash` is defined as pure
+substitution, admitted on an assumption rather than a proof: the admission
+hash `Address.admissionHash` is defined as pure
 BLAKE3 (`Address.blake3Pure`), which every theorem about those entries is
 stated at, and executes as the Rust BLAKE3 (`Address.blake3`,
 `@[implemented_by]`), whose three foreign primitives
@@ -886,7 +892,7 @@ the root package, and the model audit builds in `Models/SetTheory`.
 
 | Module | Checks |
 | --- | --- |
-| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 20, `fidelityRoots` 22, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
+| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots`, `fidelityRoots`, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
 | `IxC/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
 | `IxC/Kernel/Audit/Roles.lean` | the specification set's shape, frozen: every role's kind, levels or equation count, evidence kinds, block and dependencies, and `specVersion` |
 | `IxC/Kernel/Audit/Modules.lean` | every safe declaration of every kernel module it imports (the kernel, and the theorems no root reaches: non-contradiction, the renaming and union development, unit hoisting, the in-model generators, the prelude shape, role-table injectivity) bounded by the three standard axioms (`#guard_module_axioms_under`, `Audit/Axioms.lean`); exact axioms of `nonContradiction`, `Cached.AcceptsRef.union` and the unit and hoisting theorems |
@@ -898,97 +904,12 @@ the root package, and the model audit builds in `Models/SetTheory`.
 | `IxC/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
 
-Frozen runtime closures (compiled functions; inherited externs), as the audits
-freeze them now; the notes below the table record earlier moves, and each
-audit states the cause of every later one beside its frozen value:
-
-| Roots | Functions | Externs |
-| --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3496 | 67 |
-| reader `readRecords`, `readStream` | 2230 | 89 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 6000 | 113 |
-| byte admission: `preflight`, `uniqueKeys`, `authenticate`, `decodeRecords`, `checkBytes` | 5997 | 113 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 6022 | 113 |
-| recursor block order: `BlockOrder.checkRecord` | 27 | 13 |
-| at BLAKE3: `Authenticated.checkBytes{,Projection}`, `Address.admissionHash` | 6038 | 116 |
-
-Removing the block-order entry (`Authenticated.checkBytesBlockOrder`, and the
-structural order check it ran before the checker) moved the BLAKE3 row from
-6179 functions and 117 externs: `String.compare` was reached only by that
-check (`Ix/Ixon/Authenticated/Audit.lean`).
-
-The validation of the four install anchors (`Bool.rec`, `And`, `And.intro`,
-`And.rec`; owner, 2026-10-15) moved them from 3352, 5788, 5785, 5810, 5944 and
-5963: 11 more everywhere (the guard in the fold's step and its message), and in
-the fold 36 more for the four specification types and their closed terms,
-which the entry reached already.
-
-IxC step 6's structured errors (`CheckError md`: prose and keys, rendered
-outside the checker) moved them from 3446, 5570, 5567, 5592, 5726 and 5745,
-and the externs from 92, 115, 115, 115, 116 and 119; the reader's 2134 is
-unchanged:
-- the fold no longer spells keys or prints terms: `Key.toName`,
-  `Derived.spell`, `Role.leanName`'s 121 closed terms, `Name`'s computed-field
-  overrides, `Repr`/`Std.Format` and 25 string and printing externs left it
-  (130 functions fewer), and every fixed message is a one-part list (two more
-  closed objects per message site, 36 more closed terms);
-- the entry and everything above it: the term printing and two string externs
-  left, the fold's message sites add their closed objects (257 more closed
-  terms), and the key rendering stays, reached from the reader's own
-  `ReadError` messages.
-
-The IxC performance series (PERF P16, P14, P3, P2) moved them from 3439, 2127,
-5552, 5549, 5574, 5708 and 5727, and the externs of all but the reader by two:
-- the memo state reset at every step of the fold (P16): 7 fewer in the fold
-  and everything above it (the converted-constant cache `ienv` went);
-- shared binder metadata (P14): 2 more in the fold, 3 in the reader, 5 in the
-  entry (the shared objects and their closed terms);
-- the codec's TagN twins (P3): 4 more in the reader, 8 in the entry
-  (`getTagNFast`, `putTagNFast` and their copies at widths 0, 2 and 4), with
-  their two `@[csimp]` theorems ruled (`IxC.Ixon.Codec`); the codec's own
-  closure went from 351 to 359;
-- phase B on tasks (P2): 12 more in the fold and above it, among them the
-  `Init` externs `Task.spawn` and `Task.get` (see "Trust surface").
-
-Step 5b's address keys (an `.anon` input key is the address its references
-use) moved them from 3412, 2030, 5578, 5575, 5610, 5745 and 5764, and the
-inherited externs from 82, 79, 111, 111, 111, 112 and 115, all `Init`'s: the
-fold compares, hashes and prints addresses (`ByteArray.decEq`,
-`ByteArray.get!`, the hexadecimal digits of a message); the reader serializes
-the projection record of a member the input omits one of, to key it by that
-record's address; the hexadecimal key spelling and the recursors' spelled
-keys left.
-
-Step 5b's mode index (the kernel's types take a `Mode`) moved them from 3364,
-2066, 5566, 5563, 5598, 5733 and 5752, externs unchanged: the pinned names and
-the basis declarations are generic in the mode, so their closed terms are
-hoisted where they are used rather than where they are defined, and `Key.id`'s
-override left the fold, which never builds an input key.
-
-Step 5b's walk change moved them from 3303, 2025, 5474, 5471, 5505, 5638 and
-5657, externs unchanged: the walk visits the source `f` of every
-arity-reduced `f._redArg` it reaches (`Ix.Kernel.Audit.reducedAritySource?`).
-The code generator calls `f._redArg` directly, and `f` is where an `unsafe`,
-`implemented_by`, `csimp` or `partial` status is recorded; none came in with
-these sources. The codec's closure (`IxC/Ixon/Audit.lean`) moved from 339 to
-351 the same way.
-
-Step 5b's `LetMeta` (a `letE` keeps its Ixon let contract) moved them from
-3274, 2021, 5447, 5444, 5478, 5611 and 5630: the let contract's equality, hash
-and `Repr`.
-
-Step 5a (typed keys) moved them from 3350, 2018, 5656, 5653, 5687, 5820 and
-5839, externs unchanged: `Key`'s three computed-field overrides came in,
-ruled with `Key`; the closed name terms that spelled role and derived keys
-left (a role key is a constructor now), and the rendering that prints keys
-in messages came in (`Key.toName`, `Role.leanName`, `Derived.spell`).
-
-Step 4 (primitives by specification) moved them from 3086, 1886, 5224 (120),
-5222 (120), 5255 (120), 5389 (121) and 5407 (124): the fold gained the
-specification set and the evidence checks, the reader the role bindings and
-the evidence resolution, the entry the binding section's admission; nine
-externs left with the retired Nat-operation pin decoder (eight string
-scanners) and the pin table's derived-shape check (`memcmpStr`).
+Each audit owns the exact inventory of functions, foreign primitives and
+allowed substitutions reachable from its roots. Its source records the
+current counts and explains deliberate changes beside the frozen values.
+These inventories cover the checker, reader, byte admission, projection
+writer, recursor-order check and BLAKE3 entry separately. The compiler's
+runtime audit is a distinct closure rooted at the compiler.
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.
@@ -1020,8 +941,8 @@ re-records it states why the closure or the statement moved.
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
    checker, the theory, the admission hash (`Ix/Address/Admission.lean`) and
-   the display modules (`Ix/KernelDisplay/*`, `Ix/LeanIngress/Names.lean`,
-   step 6b) for compiler escapes (`unsafe`, `implemented_by`,
+   the display modules (`Ix/KernelDisplay/*`, `Ix/LeanIngress/Names.lean`)
+   for compiler escapes (`unsafe`, `implemented_by`,
    `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); the
    escapes in the allowlisted files (`IxC/Kernel/{Expr,Name,Key,Exclusive,
    BasisGen}.lean`, `Ix/Address/Admission.lean`, and the display-only read
@@ -1075,7 +996,7 @@ Mathlib tag but regenerates nothing), the change also does the following.
    refreshes `Models/SetTheory/lake-manifest.json`.
 2. **The default role table.** A new toolchain moves Init's addresses:
    regenerate `RoleData.lean` with the three commands under "Regeneration"
-   above (the full `--consts` list is in the generated header). The
+   above (the exact certificate inputs are recorded in the generated header). The
    specifications, `specVersion` and the digest do not change. Until then
    the moved constants are not bound, and the inputs and entry cases that
    need them decline.
@@ -1199,7 +1120,7 @@ files carry further changes:
 | --- | --- | --- |
 | `IxC/Kernel/{CheckerBase,Checker,DeclCheck}.lean`, `IxC/Kernel/Cached/ParsedC.lean` and the proofs that consume them; the former `TrustAxioms.lean` was removed | `Roles` replaces `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`); compiler-trust support is excluded from the certified theory; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications |
 | `IxC/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
-| `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically |
+| `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Larger container families claim their members first, preventing overlapping nested-model groups from emitting a member twice |
 | `IxC/Kernel/Level.lean`, `IxC/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `IxC/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
@@ -1323,99 +1244,3 @@ Run one environment check at a time, under a memory cap, with no concurrent buil
 Mathlib's `.ixe` comes from `Benchmarks/Compile/CompileMathlib.lean`
 (`Benchmarks/Compile/README.md`).
 
-## The retired intrinsic kernel
-
-Before the con-leche-derived checker, this branch's certified checker was an
-intrinsic, proof-carrying kernel in `IxC/Kernel/**` (`Ix.Kernel.check`,
-`checkDecls`, `checkEnv`), built on a set model and syntax ported from the
-Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6` (with con-leche's
-`SetTheory` at `86cd20a6`). Each admitted declaration constructed its model
-extension (`StepClaim`, `AdmissionClaim`); the public theorems were
-`check_has_model`, the conditional `checkDecls_has_model`, a semantic
-`no_proof_of_False` over `Env.EmptyType`, installation fidelity
-(`Ingress.Installed`) and `checkBytes_unique_keys`. Its supported profile
-covered single definitions, theorems and opaques, ordinary inductive
-families with supplied recursors, structures, `Nat`, equality, quotients
-and the two standard axioms, and declined arbitrary axioms, unsafe and
-partial declarations, and general mutual and nested inductives. It was
-deleted (132 files, 29,805 lines) with its entry points, 19 test modules,
-environment check, benchmark and host differentials (25 files, 4,080
-lines); it never reached `main`. Its level normalizer is the source of
-`IxC/Kernel/LevelGeran.lean`'s algorithm.
-
-## Removal ledger: lean4ix and Ix.Tc
-
-This ledger records what was removed from `main` with the lean4ix/Lean4Lean
-dependency and the `Ix.Tc` and `Ix.Compile` verification trees, and what
-replaced each part. The codec proofs and the proofs of the canonical sharing
-construction were kept and moved, not removed (the rows below say where).
-Where it names `Ix.Kernel` roots, audits or fixtures, it describes the
-retired intrinsic kernel (above); the current gate is described above.
-
-Both dependency paths are removed: the root Lake package `lean4lean`
-fetched `argumentcomputer/lean4ix` at
-`a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and TruthMines independently
-fetched `digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`.
-The old verification trees and their consumers are gone, and so is runtime
-`Ix.Tc`: its compiler consumer (auxiliary generation, since removed) moved
-to IxC, the decompiler needs no kernel, and the primitive addresses moved to
-`Ix/PrimAddrs.lean`.
-
-| Retired or remaining surface | Replacement or disposition | Status |
-| --- | --- | --- |
-| `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots and adversarial fixtures; behavior outside the supported profile remains in runtime tests | Done |
-| `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits supply strict checks and negative controls; obsolete upstream/native/sorry allowances were deleted | Done |
-| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `IxC/Ixon/Verify` (`Basic`, `Expr`, `ExprSpine`, `Constant`, `ConstantTables`, `NonrecursiveConstant`, `RecursorConstant`, `MutualConstant`), for the Ixon v4 codec, with complete wire domains, frozen contracts, and independent audits | Done; old copies deleted |
-| `Ix/Compile/Verify/TagN.lean` (the TagN bijection and rejection laws) | `IxC/Ixon/Verify/TagN.lean` (namespace `Ixon.Verify.TagN`), built with the codec proofs by `lake -d IxC build --wfail` | Done |
-| `Ix/Compile/Verify/{SharingExact,SharingExactCanon,SharingExactPasses}.lean`, `Tiered*`, `Uniform*` and `Audit/CompiledCode.lean` (the canonical sharing construction) | Moved to `IxSharingVerify` (namespace `Ix.Sharing.Verify`; deprecated lemma names replaced for Lean 4.34.0; no statement changed), library `IxSharingVerify` (`lake build --wfail IxSharingVerify`, also built by `lake lint`); audits `IxSharingVerify/Audit/{Statements,SorryFrontier,CompiledCode}.lean` | Done; no theorem of these files dropped |
-| `Ix/Compile/Verify/CompileSharingCodec.lean` | Its builder part (`buildConstantWithSharing_wireWF`, `SharingRunOK`, the singleton-driver tail) is `IxSharingVerify/Builder.lean`; its expression-compilation roundtrips are retired with the compiler chain they rest on | Done |
-| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural predicates live in `IxC/Ixon/Wire`; the intrinsic kernel's exact readings covered resolved values; the old semantic square is retired | Done |
-| Remaining `Ix/Compile/Verify/**`, including `Compile*` (the per-declaration compiler endpoint theorems among them), `Arena`, the former heuristic `Sharing`, `Statements`, and its audits | Retired compiler/specification machinery; no Ix.Kernel compiler-correctness theorem is claimed | Done |
-| Root `lakefile.lean` / `lake-manifest.json` | Removed dependency, proof libraries, replay benchmark, proof loader, and `build-all` exception; Lake regenerated the manifest | Done; the remaining targets build strictly |
-| `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Removed the proof-only crate and loader; ordinary runtime FFI remains | Done; Cargo regenerated the lockfile |
-| `Benchmarks/Lean4Lean.lean`, `Benchmarks/Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Removed replay library, executable, smoke runner and registration; fixture dispositions below | Done |
-| `Ix/Cli/BenchCmd.lean`, `Ix/BenchConstants.lean`, `docs/benchmarking.md` | Removed backend registry, dispatch, help, and active commands; measurements use the existing certified harness and Rust driver | Done; removed backend exits 2 as unknown |
-| `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Removed package/member at the generator source | Done; generator checks pass |
-| `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Regenerated configuration without the independent upstream dependency; deleted the generated driver | Done; 78 retained package entries |
-| `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Removed inherited package entries and generated member; retained unrelated pins | Done; 24 and 80 retained package entries |
-| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the `Certified kernel` partition of merge-tests runs `check-kernel --with-model` on the lean-test sticky-disk lineage in the merge queue; runtime parity jobs remain | Done |
-| `flake.nix` | Removed dependency override | Done |
-| `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Obsolete active commands retired; historical audit labeled explicitly; replacement guarantees stated below | Done |
-| Explanatory attribution in Rust, IxVM, tests and historical documentation | Retained | Preserved |
-
-The retired dependency smoke test replayed `Nat.add_comm` and submitted an
-axiom whose type was the natural-number literal zero. `Nat.add_comm` remains
-the normal CI compiler/zkVM fixture; the certified suite separately covers
-natural-number recursion/literals, non-type declared types, and unsupported
-axioms. The arbitrary-axiom route declines under the current certified
-profile, so this retirement does not claim the old smoke test's exact
-acceptance/rejection behavior or full `Nat.add_comm` certified parity.
-
-### Preserved and retired compiler contracts
-
-| Old contract | Selected replacement | Explicit limits |
-| --- | --- | --- |
-| `deUniv_serUniv` | `Ixon.Verify.deUniv_serUniv` (implemented) | Compressed-successor and UInt64 wire bounds retained |
-| `deExpr_serExpr` | `Ixon.Verify.deExpr_serExpr` (implemented) | Wire-sized vectors, spine counts, binder bits, and whole-buffer consumption retained |
-| `deConstant_serConstant` | `Ixon.Verify.deConstant_serConstant`, plus `deConstantExact_serConstant` (implemented) | All variants and arbitrary side tables retained with count/address/table bounds |
-| `Reads` / `Writes` | `Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
-| Tag0/Tag2/Tag4 integer laws and their minimal-width checks | the TagN writer and reader laws `Ixon.Verify.Codec.{putTagN_writes, getTagN_reads}` over the byte specification `tagNBytes` (`IxC/Ixon/Verify/Basic.lean`), and `Ixon.Verify.TagN`: `runGetExact_getTagN_iff` (a read succeeds exactly on the written bytes), `putTagN_inj`, `getTagN_rejects_code`, `getTagN_rejects_overflow` (implemented) | Ixon v4 has one integer code, and it is bijective, so no minimal-width check remains |
-| `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
-| Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader keeps `lam` and `all` contracts as identity data, conversion compares input contracts and not result contracts, and `let` contracts are erased ("Binder contracts" above) | No Lean4Lean interpretation is retained as a hidden premise; an accept checks no use of a variable against its contract |
-| Production compiler refinement/value-preservation and end-to-end semantic square | Old proofs retired; the new `Ix.Cert` composition and full rewrite value preservation remain required in this PR and unproved ("Relation to compiler certification" above) | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
-
-These contracts are stated about the Ixon v4 codec (TagN integers), with the
-same names and statements as for v3, as is every codec lemma the byte stage
-uses. The byte stage's resource proofs (`IxC/Ixon/Verify/Work*`,
-`ReaderBounds`, `ConstantBounds`) charge a TagN read at most two units per
-consumed byte, which the per-byte budget of `Work.Costs` covers, so
-`checkBytes_resources` has the same statement.
-
-The retained codec chain imports the pure structural `wireWF` predicates,
-so the former `ExprSpineCodec → Catalog → IxonValue → Lean4Lean` dependency
-is gone. The temporary old copies have been deleted. Retained codec roots
-use only the three standard axioms; native hash/name allowances from the
-old compiler proofs are not inherited. For the certified entry, the
-resource bound, canonical decoding and the byte-admission composition are
-proved (`checkBytes_resources`, `decodeRecords_ok_iff`,
-`IxC/Kernel/Admission/Bytes/Theorems.lean`).
