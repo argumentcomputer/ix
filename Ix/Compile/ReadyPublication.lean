@@ -61,7 +61,7 @@ theorem selectOutcome_fst (input : FixedInput) (snapshot : CompileEnv) (key : Ix
   cases candidate with
   | none => rfl
   | some candidate =>
-    unfold selectOutcome outcome checkedOutcome
+    dsimp only [selectOutcome, outcome, checkedOutcome]
     split
     · split
       · cases compiled : candidate.compiled with

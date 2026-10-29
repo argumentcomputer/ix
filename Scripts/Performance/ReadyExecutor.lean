@@ -5,7 +5,7 @@ import Init.System.Promise
 
 /-! Native controls for the ready executor. Constructed source values exercise
 refusal, metadata and resource bounds; they are not claims of admitted Lean
-declarations. Explicit pending-worker drain controls are added separately.
+declarations. Retained, gated tasks distinguish draining from cancellation.
 -/
 
 namespace ReadyExecutor
@@ -226,7 +226,52 @@ private def exactSourceControl : IO Unit := do
       actualState.blockBlobs.toArray == expectedState.blockBlobs.toArray)
   IO.println "PASS exact source identity"
 
+private def drainControl (fail : Bool) : IO Unit := do
+  let data := fixture 8 8
+  let env := { CompileEnv.new data.source with sharingLimits := compilerSharingLimits }
+  let input := FixedInput.ofEnv env
+  let schedule := FoldSchedule.of data.blocks
+  let initial := FoldState.init env data.blocks schedule
+  let controller ← _root_.Ix.Compile.ReadyQueue.create input { workers := 4 }
+    data.blocks schedule initial
+  let release ← IO.Promise.new
+  let gate := release.resultD 0
+  let descriptor := controller.plan.descriptors[7]!
+  let task := Task.spawn fun _ =>
+    (gate.get, speculate input descriptor.key descriptor.members {})
+  controller.state.modify fun state => { state with
+    active := [(7, task)]
+    metrics := { state.metrics with started := 1, maxActive := 1 } }
+  let entered ← IO.Promise.new
+  try
+    let closing ← IO.asTask do
+      IO.Promise.resolve () entered
+      try
+        if fail then throw (IO.userError "controlled publisher IO failure")
+      finally controller.drain
+      return (← controller.state.get).metrics.drained
+    discard <| IO.wait (entered.resultD ())
+    IO.sleep 40
+    need "drain returned while its retained worker was blocked" (!(← IO.hasFinished closing))
+    IO.Promise.resolve 7 release
+    match ← IO.wait closing with
+    | .ok count => need "successful drain had the wrong result" (!fail && count == 1)
+    | .error error => need "IO failure was not preserved after draining"
+        (fail && (toString error).endsWith "controlled publisher IO failure")
+    let after ← controller.state.get
+    need "drain left retained tasks or results"
+      (after.active.isEmpty && after.bank.isEmpty && after.metrics.drained == 1)
+    let (marker, candidate) ← IO.wait task
+    need "gated worker was cancelled or its completion value ignored"
+      (marker == 7 && candidate.compiled.isSome)
+    IO.println s!"PASS retained worker drain, IO failure={fail}"
+  finally
+    IO.Promise.resolve 7 release
+    controller.drain
+
 def run : IO UInt32 := do
+  drainControl false
+  drainControl true
   exactSourceControl
   reuseControl
   parityChecks
