@@ -165,7 +165,7 @@ __global__ __launch_bounds__(128) void quotient_pass_sweep(
 
 } // namespace
 
-extern "C" int ix_kzg_lookup_passes(
+IX_KZG_EXPORT int ix_kzg_lookup_passes(
     int device, const LookupParameters* parameters, const ConstraintPass* passes,
     size_t pass_count, fr_t* const* outputs, fr_t* total
 ) {
@@ -235,7 +235,7 @@ extern "C" int ix_kzg_lookup_passes(
       catch (const std::exception& e) { return failure(cudaErrorUnknown, e.what()); }
 }
 
-extern "C" int ix_kzg_quotient_passes(
+IX_KZG_EXPORT int ix_kzg_quotient_passes(
     int device, const QuotientParameters* parameters, const ConstraintPass* passes, size_t pass_count,
     const fr_t* publics, size_t public_count, const fr_t* shifts, const fr_t* inverse_vanishing,
     fr_t* const* outputs

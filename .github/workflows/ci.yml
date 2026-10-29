@@ -175,7 +175,6 @@ jobs:
       # link without paying for a GPU runner. One explicit architecture
       # is sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
-      IX_PLONK_CUDA_ARCHS: "80"
     steps:
       # No sccache here yet. Once the GPU benchmark lands after #644, wire
       # it for both compilers: `sccache: s3` plus the sccache action for
@@ -228,7 +227,7 @@ jobs:
       - name: Check CPU runtime linkage without a CUDA compiler
         run: IX_CUDA=0 IX_CUDA_TRACE_CODEGEN=0 NVCC=/nonexistent/nvcc lake build ix_cuda_runtime
       - name: Link CUDA-enabled Lean executables
-        run: IX_CUDA=1 lake build ix bench-typecheck
+        run: IX_CUDA=1 IX_PLONK=1 IX_GROTH16=1 lake build ix bench-typecheck
       - name: Check the CUDA runtime stays private
         run: |
           ! readelf -d .lake/build/lib/libmulti_stark_cuda.so | grep -q 'libstdc++\|libc++\|libgcc_s'
@@ -240,8 +239,6 @@ jobs:
             -o .lake/build/lib/cuda_link_smoke.so
           CUDA_VISIBLE_DEVICES='' LD_PRELOAD="$PWD/.lake/build/lib/cuda_link_smoke.so" \
             .lake/build/bin/ix compress --help
-          CUDA_VISIBLE_DEVICES='' .lake/build/bin/ix-compression-worker fri capabilities | \
-            python3 -c 'import json, sys; assert json.load(sys.stdin)["cuda"] is True'
 
   lints:
     name: Lint workflows

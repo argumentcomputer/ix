@@ -30,95 +30,13 @@ use super::{init_fri, prover};
 pub(super) const MIN_PARTITIONS: usize = 11;
 pub(super) use super::stages::statement::first_claims as expected_claims;
 
-fn log_height_arg(arg: Option<&String>) -> storage::Result<usize> {
-  let log_height = arg.map(|s| s.parse::<usize>()).transpose()?.unwrap_or(24);
-  let maximum = 28.min(Scalar::TWO_ADICITY - 1);
-  if !(24..=maximum).contains(&log_height) {
-    return Err(
-      format!(
-        "log-height must be 24..{maximum} for {} with quotient factor 2",
-        crate::kzg::curve::NAME
-      )
-      .into(),
-    );
-  }
-  Ok(log_height)
-}
-
+/// Translate, lower and prove the saved FRI proof in `fri`, writing the
+/// first KZG stage to `out`.
 pub(super) fn run(
-  args: &[String],
-  config: &super::WorkerConfig,
-) -> storage::Result<()> {
-  const USAGE: &str = "usage: ix-compression-worker kzg run <saved-fri-dir> <output-dir> [log-height] [--dev-srs] | kzg size <saved-fri-dir> <report.json> [--dev-srs]";
-  let Some(command) = args.first() else {
-    return Err(USAGE.into());
-  };
-  let rest = &args[1..];
-  match command.as_str() {
-    "size" if rest.len() == 2 => size(Path::new(&rest[0]), Path::new(&rest[1])),
-    "run" if (2..=3).contains(&rest.len()) => {
-      let log_height = log_height_arg(rest.get(2))?;
-      stage_and_prove(
-        Path::new(&rest[0]),
-        Path::new(&rest[1]),
-        log_height,
-        config,
-      )
-    },
-    _ => Err(USAGE.into()),
-  }
-}
-
-fn size(fri: &Path, report: &Path) -> storage::Result<()> {
-  let start = Instant::now();
-  let fixture = init_fri::load(fri)?;
-  let plan = VerifierPlan::validate(
-    &fixture.key,
-    fixture.profile,
-    VerifierLimits::default(),
-  )?;
-  let plan_id = plan.identity(&fixture.schema)?;
-  let source = FriConstruction::build(&plan, fixture.schema)?.circuit;
-  let translated = crate::foreign::GoldilocksCircuit::estimate(&source);
-  let counts = |stats: multi_stark::plonkish::CircuitStats| {
-    serde_json::json!({
-      "values": stats.values,
-      "inputs": stats.inputs,
-      "gates": stats.gates,
-      "lookups": stats.lookups,
-      "tables": stats.tables,
-      "publics": stats.publics,
-      "hint_calls": stats.hint_calls,
-      "hint_outputs": stats.hint_outputs,
-      "hash_calls": stats.hash_calls,
-      "hash_compressions": stats.hash_compressions,
-    })
-  };
-  let result = serde_json::json!({
-    "format": "ix-first-kzg-sizing/v1",
-    "curve": crate::kzg::curve::NAME,
-    "native_input_verified": true,
-    "plan_id": blake3::Hash::from_bytes(plan_id).to_hex().as_str(),
-    "source_frontend": counts(source.stats()),
-    "scalar_frontend": counts(translated),
-    "scalar_bytes": size_of::<Scalar>(),
-    "g1_affine_bytes": size_of::<crate::kzg::curve::G1Affine>(),
-    "max_trace_log_with_quotient2": Scalar::TWO_ADICITY - 1,
-    "elapsed_seconds": start.elapsed().as_secs_f64(),
-    "srs_loaded": false,
-    "proof_generated": false,
-    "scope": "Exact translated frontend counts; retains the source Goldilocks IR and translation wire map, not the translated IR or proving traces. Padded layouts, custom trace widths and total prover memory require separate accounting.",
-  });
-  storage::write_atomic(report, &serde_json::to_vec_pretty(&result)?)?;
-  println!("{}", serde_json::to_string_pretty(&result)?);
-  Ok(())
-}
-
-fn stage_and_prove(
   fri: &Path,
   out: &Path,
   log_height: usize,
-  config: &super::WorkerConfig,
+  config: &super::StageConfig,
 ) -> storage::Result<()> {
   let trace_height = 1usize << log_height;
   fs::create_dir_all(out)?;
@@ -142,7 +60,7 @@ fn stage_and_prove(
   let lowered =
     construct::prepare_first(prepared, trace_height, construct::TABLE_HEIGHT)?;
   assert_eq!(lowered.assignment.public_values(), public);
-  println!(
+  eprintln!(
     "Scalar translation and lowering of {} circuits: {:?}; {:?}",
     lowered.compiled.num_circuits(),
     start.elapsed(),
@@ -152,7 +70,7 @@ fn stage_and_prove(
   let setup = config.setup.for_stage(FIRST_SEED, height)?;
   setup.bind_stage(out, height, 2)?;
   let setup_id = setup.identity(height, 2)?;
-  let cache = config.fixed_cache(out, &[plan_id, setup_id].concat())?;
+  let cache = config.fixed_cache(out, &[plan_id, setup_id].concat());
   let cached = cache.restore(out)?;
   let manifest = storage::Manifest::for_compiled(
     &lowered.compiled,
@@ -160,9 +78,9 @@ fn stage_and_prove(
     cached.as_ref(),
   )?;
   storage::save(&out.join("manifest.bin"), &manifest)?;
-  println!("Generating fixed and witness traces directly into commitment");
+  eprintln!("Generating fixed and witness traces directly into commitment");
   prove(out, lowered, &cache, config)?;
-  println!("RUN COMPLETE: {:?}", start.elapsed());
+  eprintln!("RUN COMPLETE: {:?}", start.elapsed());
   Ok(())
 }
 
@@ -174,7 +92,7 @@ fn prove(
   dir: &Path,
   lowered: Lowered,
   cache: &FixedCache,
-  config: &super::WorkerConfig,
+  config: &super::StageConfig,
 ) -> storage::Result<()> {
   let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
   let count = manifest.heights.len();
@@ -224,8 +142,8 @@ fn prove(
     .config(height, 2, false)?
     .with_streaming_lookups()
     .with_streaming_quotient();
-  println!("KZG parameters ready: {:?}", start.elapsed());
-  println!("Partition prefetch budget: {} GiB", prefetch_bytes >> 30);
+  eprintln!("KZG parameters ready: {:?}", start.elapsed());
+  eprintln!("Partition prefetch budget: {} GiB", prefetch_bytes >> 30);
   let prover::Proved { system, bytes, verify_seconds, .. } = lowered
     .commit(config, Some(&out), prefetch_bytes)?
     .prove(&manifest.claims)?;
@@ -269,7 +187,7 @@ fn prove(
   fs::write(out.join("prove-report.json"), format!("{evidence}\n"))?;
   drop(output_span);
   cache.publish(dir)?;
-  println!(
+  eprintln!(
     "VERIFIED: proof_bytes={} packet_bytes={} verify_seconds={verify_seconds} total_seconds={} development_srs={development}",
     bytes.len(),
     packet.len(),
@@ -285,16 +203,7 @@ mod tests {
   use multi_stark::plonkish::gadgets::blake3;
   use multi_stark::plonkish::{CircuitBuilder, Value};
 
-  #[test]
-  fn first_stage_height_leaves_room_for_quotients() {
-    let maximum = 28.min(Scalar::TWO_ADICITY - 1);
-    assert_eq!(log_height_arg(None).unwrap(), 24);
-    assert_eq!(log_height_arg(Some(&maximum.to_string())).unwrap(), maximum);
-    assert!(log_height_arg(Some(&(maximum + 1).to_string())).is_err());
-    assert!(log_height_arg(Some(&"23".to_owned())).is_err());
-  }
-
-  const OPTIONS: super::super::WorkerConfig = super::super::WorkerConfig {
+  const OPTIONS: super::super::StageConfig = super::super::StageConfig {
     prefetch_bytes: 1 << 20,
     setup: super::super::setup::SetupConfig::Development {
       cache_directory: None,
@@ -357,7 +266,7 @@ mod tests {
     })
   }
 
-  /// Write the metadata `stage_and_prove` produces before proving.
+  /// Write the metadata `run` produces before proving.
   fn stage(
     dir: &Path,
     compiled: &MultiStarkCircuit<Scalar>,
@@ -369,7 +278,7 @@ mod tests {
     SetupSource::development(FIRST_SEED, height - 1)?
       .bind_stage(dir, height, 2)?;
     fs::write(dir.join("plan-id.bin"), [0u8; 32])?;
-    let cache = FixedCache::from_identity(cache_root, b"fixture-v1")?;
+    let cache = FixedCache::from_identity(cache_root, b"fixture-v1");
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       compiled,
@@ -436,7 +345,7 @@ mod tests {
     }
     prove(&warm, &cache, 9)?;
     assert_eq!(first, artifacts(&warm)?);
-    let different = FixedCache::from_identity(&cache_root, b"different-vk")?;
+    let different = FixedCache::from_identity(&cache_root, b"different-vk");
     assert!(different.restore(&root.join("miss"))?.is_none());
 
     // A different witness changes the proof but not the verifying key.
@@ -508,7 +417,7 @@ mod tests {
     let [entry] = entries.as_slice() else {
       panic!("expected one published entry, found {entries:?}");
     };
-    let cache = FixedCache::from_identity(&cache_root, b"fixture-v1")?;
+    let cache = FixedCache::from_identity(&cache_root, b"fixture-v1");
     let damaged = root.join("damaged");
     for name in ["kzg/fixed-0.bin", "kzg/setup-0.bin"] {
       let published = entry.join(name);

@@ -3,7 +3,7 @@
 package cuda
 
 /*
-#cgo LDFLAGS: -lix_plonk_bn254_cuda -lstdc++
+#cgo LDFLAGS: -lix_bn254_cuda
 #include <ix_plonk_bn254.h>
 */
 import "C"

@@ -110,44 +110,6 @@
             file: file.hasExt "go" || file.hasExt "h" || file.hasExt "json" || file.hasExt "bin"
               || file.name == "go.mod" || file.name == "go.sum"
           ) ./tools/plonk-wrapper;
-          plonkSppark = pkgs.fetchFromGitHub {
-            owner = "argumentcomputer";
-            repo = "sppark";
-            rev = "114feb69ebfe029e2caa5e6c2d372c695e5d4da8";
-            hash = "sha256-/KXq6RuAUpRT0xJsXCSZsT1iONhbeHnXWcmTJL4ltQs=";
-          };
-          plonkBlst = pkgs.fetchzip {
-            url = "https://static.crates.io/crates/blst/blst-0.3.16.crate";
-            extension = "tar.gz";
-            hash = "sha256-OHEKeKwl7RhPOiqILiRTZACmRLlmIaRuCE2qwKTfiIc=";
-          };
-          plonkCudaNative = pkgs.stdenv.mkDerivation {
-            pname = "ix-plonk-bn254-cuda";
-            version = "0.1.0";
-            src = pkgs.lib.fileset.toSource {
-              root = ./crates/proof-compression/cuda;
-              fileset = pkgs.lib.fileset.fileFilter (
-                file: builtins.any file.hasExt [ "cu" "cuh" "cpp" "h" "hpp" "py" "map" "json" "patch" ]
-              ) ./crates/proof-compression/cuda;
-            };
-            nativeBuildInputs = [ pkgs.python3 pkgs.patch cudaToolkit ];
-            CUDA_HOME = "${cudaToolkit}";
-            NVCC = "${cudaToolkit}/bin/nvcc";
-            IX_PLONK_CUDA_ARCHS = "120";
-            dontConfigure = true;
-            buildPhase = ''
-              runHook preBuild
-              python3 plonk/build.py --sppark ${plonkSppark} --blst ${plonkBlst}/blst --out native
-              runHook postBuild
-            '';
-            installPhase = ''
-              mkdir -p "$out/lib" "$out/include" "$out/share/ix-plonk-cuda"
-              cp native/libix_plonk_bn254_cuda.so "$out/lib/"
-              cp plonk/ix_plonk_bn254.h "$out/include/"
-              cp native/*.json "$out/share/ix-plonk-cuda/"
-            '';
-            meta.platforms = [ "x86_64-linux" ];
-          };
           icicleBn254 = pkgs.stdenv.mkDerivation {
             pname = "ix-icicle-bn254";
             version = "3.2.2";
@@ -194,6 +156,7 @@
           # binary fixtures that Cargo's source filter does not retain.
           compressionData = pkgs.lib.fileset.unions [
             ./crates/proof-compression/tests/fixtures
+            ./crates/proof-compression/root-layouts
           ];
           # The Rust tests `include_bytes!` the `.ixe` files under
           # `Tests/Fixtures`: environments serialized by Lean, read back to check
@@ -320,31 +283,6 @@
             }
           );
 
-          mkCompressionWorker = { cuda ? false }: craneLib.buildPackage (
-            gnarkArgs // {
-              inherit cargoArtifacts;
-              pname = "ix-compression-worker";
-              cargoExtraArgs = "--locked -p ix-proof-compression --bin ix-compression-worker --no-default-features --features parallel,plonk,groth16"
-                + pkgs.lib.optionalString cuda ",cuda";
-              doCheck = false;
-              nativeBuildInputs = [ plonkGo ] ++ pkgs.lib.optional cuda cudaToolkit;
-              CUDA_HOME = pkgs.lib.optionalString cuda "${cudaToolkit}";
-              NVCC = pkgs.lib.optionalString cuda "${cudaToolkit}/bin/nvcc";
-              IX_GROTH16_ICICLE_ROOT = pkgs.lib.optionalString cuda "${icicleBn254}";
-              IX_PLONK_CUDA_LIBRARY = pkgs.lib.optionalString cuda "${plonkCudaNative}/lib/libix_plonk_bn254_cuda.so";
-              postInstall = pkgs.lib.optionalString cuda ''
-                mkdir -p "$out/lib"
-                ln -s ${plonkCudaNative}/lib/libix_plonk_bn254_cuda.so "$out/lib/"
-                cudaOutput=$(${pkgs.jq}/bin/jq -r 'select(.reason == "build-script-executed" and (.linked_libs | index("dylib=multi_stark_cuda"))) | .out_dir' "$cargoBuildLog")
-                cp "$cudaOutput/libmulti_stark_cuda.so" "$out/lib/"
-                ln -s ${icicleBn254}/lib/libicicle_{device,field_bn254,curve_bn254}.so "$out/lib/"
-                ln -s ${icicleBn254}/lib/backend "$out/lib/backend"
-              '';
-            }
-          );
-          compressionWorker = mkCompressionWorker { };
-          compressionWorkerCuda = mkCompressionWorker { cuda = true; };
-
           # Lake package
           lake2nix = pkgs.callPackage lean4-nix.lake { inherit lean; };
           # Restrict the Lake build inputs to files traced by the Lean and
@@ -402,12 +340,11 @@
               mkdir -p .lake
               ln -sf ${lakePackageOverrides} .lake/package-overrides.json
             '';
-            # Symlink the Crane-built static lib and the compression worker
-            # executable to where Lake expects Cargo to have left them
+            # Symlink the Crane-built static lib to where Lake expects Cargo to
+            # have left it
             postConfigure = ''
               mkdir -p target/release
               ln -s ${rustLib}/lib/libix_ffi.a target/release/
-              ln -s ${compressionWorker}/bin/ix-compression-worker target/release/
             '';
             buildInputs = [
               pkgs.gmp
@@ -491,8 +428,6 @@
             default = ixLib;
             ix = ixCLI;
             icicle-bn254 = icicleBn254;
-            compression-worker = compressionWorker;
-            compression-worker-cuda = compressionWorkerCuda;
             # `checks` are built by `nix flake check`; exposing this derivation
             # as a package keeps the ignored suite available on demand without
             # adding it to the default check set.

@@ -62,7 +62,7 @@ extern "C" fn rs_aiur_aggregate_expected(
 }
 
 /// `AiurSystem.aggregateSubtreePlan`: the plan cut into `subtrees` for
-/// `ix prove --lanes`. Rows in post-order: `[0, slot, ids…]` for a subtree
+/// `ix prove --ixe --ixes`. Rows in post-order: `[0, slot, ids…]` for a subtree
 /// (its root slot, then the manifest ids of the shards under it, sorted;
 /// one id when the subtree is a raw leaf) and `[1, slot, left, right]` for
 /// each join above the frontier, the root last. A tree too small to cut

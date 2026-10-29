@@ -88,7 +88,7 @@ impl Input {
   )]
   pub(super) fn load(
     dir: &Path,
-    config: &super::super::WorkerConfig,
+    config: &super::super::StageConfig,
   ) -> Result<Self> {
     let start = Instant::now();
     let mut input_blake3 = BTreeMap::new();
@@ -185,11 +185,10 @@ impl Input {
   }
 }
 
-pub(crate) fn check(
+pub(super) fn prove(
   dir: &Path,
-  report: &Path,
-  stage: Option<&Path>,
-  config: &super::super::WorkerConfig,
+  stage: &Path,
+  config: &super::super::StageConfig,
 ) -> Result<()> {
   let start = Instant::now();
   let input = Input::load(dir, config)?;
@@ -228,20 +227,20 @@ pub(crate) fn check(
     "development_srs": input.development_srs,
     "scope": "Full saved first-stage KZG proof checked by recursive constraints and external pairings; no outer proof yet",
   });
-  fs::write(report, serde_json::to_vec_pretty(&result)?)?;
-  println!("{}", serde_json::to_string_pretty(&result)?);
-  if let Some(stage) = stage {
-    let statement = statement::from_rows(&input.claims)?;
-    super::outer::stage(
-      built,
-      assignment,
-      stage,
-      &plan_identity,
-      &statement,
-      config,
-    )?;
-  }
-  Ok(())
+  fs::write(
+    stage.join("circuit-report.json"),
+    serde_json::to_vec_pretty(&result)?,
+  )?;
+  eprintln!("{}", serde_json::to_string_pretty(&result)?);
+  let statement = statement::from_rows(&input.claims)?;
+  super::outer::stage(
+    built,
+    assignment,
+    stage,
+    &plan_identity,
+    &statement,
+    config,
+  )
 }
 
 #[cfg(test)]
@@ -400,7 +399,7 @@ mod tests {
     )?;
     fs::write(root.join("setup-0.bin"), [0xff])?;
     let missing =
-      Input::load(&root, &crate::pipeline::WorkerConfig::development())
+      Input::load(&root, &crate::pipeline::StageConfig::development())
         .err()
         .unwrap();
     assert_eq!(
@@ -409,7 +408,7 @@ mod tests {
     );
     fs::write(root.join(BINDING_FILE), [0; 32])?;
     let wrong =
-      Input::load(&root, &crate::pipeline::WorkerConfig::development())
+      Input::load(&root, &crate::pipeline::StageConfig::development())
         .err()
         .unwrap();
     assert!(wrong.to_string().contains("mismatch"));
@@ -420,7 +419,7 @@ mod tests {
         .identity(1 << 24, 2)?,
     )?;
     let malformed =
-      Input::load(&root, &crate::pipeline::WorkerConfig::development())
+      Input::load(&root, &crate::pipeline::StageConfig::development())
         .err()
         .unwrap();
     assert!(malformed.downcast_ref::<bincode::error::DecodeError>().is_some());

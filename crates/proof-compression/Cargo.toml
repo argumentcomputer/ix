@@ -5,10 +5,6 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
-[[bin]]
-name = "ix-compression-worker"
-path = "src/bin/ix_compression_worker.rs"
-
 [dependencies]
 aiur = { workspace = true }
 multi-stark = { workspace = true }
@@ -52,7 +48,7 @@ rayon = { workspace = true }
 # C++ linkage. The revision must match multi-stark's Goldilocks pin.
 [dependencies.sppark]
 git = "https://github.com/argumentcomputer/sppark"
-rev = "114feb69ebfe029e2caa5e6c2d372c695e5d4da8"
+rev = "9326ac014ec5415ebc4eab24c1246276714aee57"
 optional = true
 features = ["cuda"]
 

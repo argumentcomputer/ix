@@ -1,4 +1,4 @@
-//! Owned gnark objects behind the worker's C ABI.
+//! Owned gnark objects behind the gnark archive's C ABI.
 use super::Result;
 use serde::{Deserialize, Serialize};
 use std::{

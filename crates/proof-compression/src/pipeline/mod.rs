@@ -6,285 +6,35 @@ pub use stages::{
   prepare_root, setup,
 };
 
-mod driver;
+mod compress;
+pub(crate) use compress::StageConfig;
+pub use compress::{CompressConfig, CompressInput, compress};
 mod first;
 mod fixed_cache;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub mod gnark;
-mod groth16;
+pub mod groth16;
 #[cfg(test)]
 mod init_claim;
 mod init_fri;
-mod plonk;
+pub mod plonk;
 mod terminal;
 pub use terminal::{Artifact, TerminalOptions, TerminalSystem};
 mod prover;
 mod root;
+mod root_layout;
+pub use root_layout::release_root_layout;
 mod setup;
+pub use setup::{SetupClass, SetupConfig};
 mod statement;
 mod storage;
 mod verifier;
 mod wrap;
 
-use std::{
-  fs,
-  path::{Path, PathBuf},
-  process::{Command, Stdio},
-};
+use std::{fs, path::Path};
 
 pub const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x01";
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-pub fn command(stage: &str, args: &[String]) -> Result<()> {
-  if !matches!(stage, "plonk" | "groth16" | "pipeline") {
-    configure_backend(stage)?;
-  }
-  match stage {
-    "pipeline" => driver::run(args),
-    #[cfg(feature = "plonk")]
-    "plonk" => plonk::run(args),
-    #[cfg(feature = "groth16")]
-    "groth16" => groth16::run(args),
-    "fri" => root::run(args),
-    "kzg" | "wrap" => {
-      let config = WorkerConfig::from_env(
-        stage,
-        args.iter().any(|arg| arg == "--dev-srs"),
-      )?;
-      let args: Vec<_> =
-        args.iter().filter(|arg| *arg != "--dev-srs").cloned().collect();
-      if stage == "kzg" {
-        first::run(&args, &config)
-      } else {
-        wrap::run(&args, &config)
-      }
-    },
-    _ => Err("unknown compression stage".into()),
-  }
-}
-
-pub(crate) struct WorkerConfig {
-  setup: setup::SetupConfig,
-  fixed_cache_root: Option<PathBuf>,
-  prefetch_bytes: usize,
-}
-
-impl WorkerConfig {
-  fn from_env(stage: &str, development: bool) -> Result<Self> {
-    let setup = setup::SetupConfig::from_env(development)?;
-    let prefetch_gib = if stage == "kzg" {
-      match std::env::var("IX_KZG_PREFETCH_GIB") {
-        Ok(value) => value.parse::<usize>()?,
-        Err(std::env::VarError::NotPresent) => 32,
-        Err(error) => return Err(error.into()),
-      }
-    } else {
-      0
-    };
-    Ok(Self {
-      setup,
-      fixed_cache_root: std::env::var_os("IX_KZG_FIXED_CACHE")
-        .map(PathBuf::from),
-      prefetch_bytes: prefetch_gib
-        .checked_mul(1 << 30)
-        .ok_or("prefetch budget overflow")?,
-    })
-  }
-
-  fn fixed_cache(
-    &self,
-    stage: &Path,
-    vk: &[u8],
-  ) -> Result<fixed_cache::FixedCache> {
-    let root = self
-      .fixed_cache_root
-      .clone()
-      .unwrap_or_else(|| stage.join("kzg/fixed-cache"));
-    fixed_cache::FixedCache::from_identity(&root, vk)
-  }
-
-  #[cfg(test)]
-  const fn development() -> Self {
-    Self {
-      setup: setup::SetupConfig::Development { cache_directory: None },
-      fixed_cache_root: None,
-      prefetch_bytes: 0,
-    }
-  }
-}
-
-/// Install the KZG CUDA backend settings from the environment before the
-/// first proving operation. Settings already installed in this process are
-/// kept. The recursive stage caps device residency unless the environment
-/// sets it, so its constraint passes can be admitted beside the resident
-/// columns.
-///
-/// The pipeline proves on one device unless the environment selects more.
-#[cfg(feature = "cuda")]
-fn configure_backend(stage: &str) -> Result<()> {
-  use crate::kzg::cuda::{PassMode, Settings};
-  let var = |name: &str| std::env::var(name).ok();
-  let devices = match var("IX_KZG_CUDA_DEVICES") {
-    Some(list) => list
-      .split(',')
-      .map(|id| id.trim().parse())
-      .collect::<std::result::Result<Vec<i32>, _>>()
-      .map_err(|_error| "IX_KZG_CUDA_DEVICES must list CUDA ordinals")?,
-    None => vec![0],
-  };
-  let mut settings = Settings { devices: Some(devices), ..Settings::default() };
-  if let Some(value) = var("IX_KZG_MSM_CHUNK_POINTS") {
-    settings.msm_chunk_points = value
-      .parse()
-      .ok()
-      .filter(|points| (1..=1 << 28).contains(points))
-      .ok_or("IX_KZG_MSM_CHUNK_POINTS must be in 1..=2^28")?;
-  }
-  if let Some(value) = var("IX_KZG_CUDA_RESIDENT_GIB") {
-    settings.resident_limit_bytes = Some(
-      value
-        .parse::<usize>()
-        .ok()
-        .and_then(|gib| gib.checked_mul(1 << 30))
-        .ok_or("IX_KZG_CUDA_RESIDENT_GIB must be a whole number of GiB")?,
-    );
-  } else if stage == "wrap" {
-    settings.resident_limit_bytes = Some(wrap::DEFAULT_CUDA_RESIDENT_BYTES);
-  }
-  let switch = |name: &str, on: &str, off: &str| -> Result<Option<bool>> {
-    match var(name).as_deref() {
-      None => Ok(None),
-      Some(value) if value == on => Ok(Some(true)),
-      Some(value) if value == off => Ok(Some(false)),
-      Some(other) => {
-        Err(format!("{name} must be {on} or {off}, not {other}").into())
-      },
-    }
-  };
-  if let Some(value) = switch("IX_KZG_CUDA_SRS_CACHE", "1", "0")? {
-    settings.srs_cache = value;
-  }
-  settings.passes = match var("IX_KZG_CUDA_PASSES").as_deref() {
-    None | Some("1") => PassMode::Fallback,
-    Some("0") => PassMode::Off,
-    Some("force") => PassMode::Force,
-    Some(other) => {
-      return Err(
-        format!("IX_KZG_CUDA_PASSES must be 0, 1 or force, not {other}").into(),
-      );
-    },
-  };
-  crate::kzg::cuda::configure(settings);
-  Ok(())
-}
-
-#[cfg(not(feature = "cuda"))]
-#[allow(clippy::unnecessary_wraps)]
-fn configure_backend(_stage: &str) -> Result<()> {
-  Ok(())
-}
-
-/// The stage worker executable installed beside `ix`.
-pub const WORKER_EXECUTABLE: &str = "ix-compression-worker";
-
-/// The stage worker: `IX_COMPRESSION_WORKER` when set, otherwise the
-/// executable of that name beside the running one. Stages run there rather
-/// than in this process so the Lean executable links no KZG proving code or
-/// its CUDA runtime.
-fn worker_executable() -> Result<PathBuf> {
-  if let Some(path) = std::env::var_os("IX_COMPRESSION_WORKER") {
-    return Ok(PathBuf::from(path));
-  }
-  let current = std::env::current_exe()?;
-  let sibling = current.with_file_name(WORKER_EXECUTABLE);
-  if sibling.is_file() {
-    return Ok(sibling);
-  }
-  Err(
-    format!(
-      "{WORKER_EXECUTABLE} not found beside {}; build it with the ix \
-       executable or name it in IX_COMPRESSION_WORKER",
-      current.display()
-    )
-    .into(),
-  )
-}
-
-fn check_worker_capabilities(bytes: &[u8]) -> Result<()> {
-  let capabilities: serde_json::Value = serde_json::from_slice(bytes)?;
-  if capabilities["format"] != "ix-compression-capabilities/v1"
-    || capabilities["binary"] != WORKER_EXECUTABLE
-    || capabilities["curve"] != crate::kzg::curve::NAME
-  {
-    return Err(format!("compression worker must report curve {}; select a matching IX_COMPRESSION_WORKER", crate::kzg::curve::NAME).into());
-  }
-  Ok(())
-}
-
-fn check_worker_setup_capabilities(bytes: &[u8], ignition: bool) -> Result<()> {
-  check_worker_capabilities(bytes)?;
-  let capabilities: serde_json::Value = serde_json::from_slice(bytes)?;
-  if ignition && capabilities["ignition_setup"] != true {
-    return Err("compression worker does not support admitted Ignition parameters; select a matching IX_COMPRESSION_WORKER".into());
-  }
-  Ok(())
-}
-
-fn check_worker_curve(ignition: bool, terminal: TerminalSystem) -> Result<()> {
-  let output = Command::new(worker_executable()?)
-    .args(["fri", "capabilities"])
-    .output()?;
-  if !output.status.success() {
-    return Err(
-      format!(
-        "compression worker capability check failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-      )
-      .into(),
-    );
-  }
-  check_worker_setup_capabilities(&output.stdout, ignition)?;
-  let capabilities: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-  let flag = match terminal {
-    TerminalSystem::None => return Ok(()),
-    TerminalSystem::Plonk => "terminal_plonk",
-    TerminalSystem::Groth16 => "terminal_groth16",
-  };
-  if capabilities[flag] != true {
-    return Err(format!("compression worker does not support {flag}").into());
-  }
-  let backend = match terminal {
-    TerminalSystem::Plonk => "IX_PLONK_BACKEND",
-    TerminalSystem::Groth16 => "IX_GROTH16_BACKEND",
-    TerminalSystem::None => unreachable!(),
-  };
-  if std::env::var(backend).as_deref() == Ok("cuda")
-    && capabilities[format!("{flag}_cuda")] != true
-  {
-    return Err(
-      format!("compression worker lacks CUDA support for {flag}").into(),
-    );
-  }
-  Ok(())
-}
-
-fn child(stage: &str, args: &[&str], caches: &Caches) -> Result<()> {
-  let status = Command::new(worker_executable()?)
-    .arg(stage)
-    .args(args)
-    .env("IX_KZG_FIXED_CACHE", &caches.fixed)
-    .env("IX_KZG_SRS_CACHE", &caches.development_srs)
-    .stdout(Stdio::from(std::io::stderr()))
-    .stderr(Stdio::inherit())
-    .status()?;
-  if !status.success() {
-    return Err(
-      format!("compression {stage} failed ({status}); checkpoints retained")
-        .into(),
-    );
-  }
-  Ok(())
-}
 
 /// The statement a compressed proof of `claim` exposes, as the caller
 /// derived it from its aggregation backend, checked to end in the packed
@@ -300,26 +50,27 @@ pub fn check_claim(
 
 /// Describe the setup a new run would prove under, or why none is allowed.
 pub fn setup_description(development: bool) -> Result<&'static str> {
-  Ok(setup::SetupConfig::from_env(development)?.class().description())
+  Ok(SetupConfig::from_env(development)?.class().description())
 }
 
-/// Verify using a bundled KZG verifying key or an independently configured PLONK
-/// verification key. Proving parameters are not required.
+/// Verify a terminal proof using an independently configured verifier catalog.
+/// Recursive KZG requires an explicitly pinned key and expected statement.
+/// Proving parameters are not required.
 pub fn verify(
   proof: &[u8],
   claim: &[u8],
   allow_development: bool,
-) -> Result<setup::SetupClass> {
+) -> Result<SetupClass> {
   if let Some(packet) = proof.strip_prefix(groth16::PROOF_TAG) {
     return groth16::verify(packet, claim, allow_development);
   }
   if let Some(packet) = proof.strip_prefix(plonk::PROOF_TAG) {
     return plonk::verify(packet, claim);
   }
-  let packet = proof
-    .strip_prefix(PROOF_TAG)
-    .ok_or("unsupported compressed proof version")?;
-  verifier::verify(packet, claim, allow_development)
+  if proof.starts_with(PROOF_TAG) {
+    return Err("bundled recursive KZG verification is unsupported in this build; use an independently pinned verifying key and expected statement".into());
+  }
+  Err("unsupported compressed proof version".into())
 }
 
 /// Verify with a caller-authorized verifying key digest and independently expected
@@ -331,7 +82,7 @@ pub fn verify_with_vk(
   vk: &[u8],
   trusted_vk_digest: &[u8; 32],
   allow_development: bool,
-) -> Result<setup::SetupClass> {
+) -> Result<SetupClass> {
   let words = check_claim(claim, expected_claims)?;
   let packet = proof
     .strip_prefix(PROOF_TAG)
@@ -356,7 +107,7 @@ pub fn verify_with_ignition_admission(
   vk: &[u8],
   trusted_vk_digest: &[u8; 32],
   admission: &crate::kzg::srs::ignition::IgnitionAdmission,
-) -> Result<setup::SetupClass> {
+) -> Result<SetupClass> {
   let words = check_claim(claim, expected_claims)?;
   let packet = proof
     .strip_prefix(PROOF_TAG)
@@ -371,65 +122,6 @@ pub fn verify_with_ignition_admission(
   )
 }
 
-/// Cross-run caches the stages share: fixed preprocessing keyed by the
-/// executable and verifying key, and development SRS files. Variables already set
-/// in the environment take precedence over the directory given to `compress`.
-struct Caches {
-  fixed: PathBuf,
-  development_srs: PathBuf,
-}
-
-impl Caches {
-  fn under(root: &Path) -> Self {
-    let named = |name: &str, default: &str| {
-      std::env::var_os(name).map_or_else(|| root.join(default), PathBuf::from)
-    };
-    Self {
-      fixed: named("IX_KZG_FIXED_CACHE", "fixed-preprocessing"),
-      development_srs: named("IX_KZG_SRS_CACHE", "development-srs"),
-    }
-  }
-}
-
-fn validate_compression_options(
-  development: bool,
-  log_height: u32,
-  terminal: TerminalOptions,
-) -> Result<setup::SetupConfig> {
-  if terminal.allow_development && terminal.system != TerminalSystem::Groth16 {
-    return Err(
-      "development terminal keys are supported only for Groth16".into(),
-    );
-  }
-  if terminal.system != TerminalSystem::None && development {
-    return Err(
-      "terminal proofs require admitted inner KZG parameters; omit --dev-srs"
-        .into(),
-    );
-  }
-  if terminal.system == TerminalSystem::Groth16 {
-    groth16::preflight(terminal.allow_development)?;
-  }
-  if !matches!(log_height, 24 | 25) {
-    return Err(
-      "--log-height must be 24 or 25 for the supported recursive verifying keys"
-        .into(),
-    );
-  }
-  // Child stages re-read the same environment; the policy is enforced once
-  // here so an unconfigured run fails before any checkpoint is written.
-  let setup = setup::SetupConfig::from_env(development)?;
-  if std::env::var_os("IX_ROOT_GENERIC_HASHES").is_some() {
-    return Err(
-      "unset IX_ROOT_GENERIC_HASHES for the supported compression verifying key"
-        .into(),
-    );
-  }
-  let ignition = setup.ignition_admission().is_some();
-  check_worker_curve(ignition, terminal.system)?;
-  Ok(setup)
-}
-
 fn prepare_output(out: &Path) -> Result<()> {
   fs::create_dir_all(out)?;
   if fs::read_dir(out)?.next().is_some() {
@@ -440,7 +132,7 @@ fn prepare_output(out: &Path) -> Result<()> {
   Ok(())
 }
 
-/// Write the FRI worker's root input for `claim` without compressing it.
+/// Write the root input directory for `claim` without compressing it.
 pub fn write_root_input(
   dir: &Path,
   vk: &[u8],
@@ -454,7 +146,14 @@ pub fn write_root_input(
   write_root(dir, vk, proof, &words, fixed_root)
 }
 
-/// Write the FRI worker's root input: the backend key, root proof, expected
+/// Verify the root input in `root`, build its FRI verifier circuit and check
+/// the circuit's constraints, writing its identity and cost to `out` without
+/// proving it.
+pub fn check_root(root: &Path, out: &Path) -> Result<()> {
+  root::run(root, out, false)
+}
+
+/// Write a root input directory: the backend key, root proof, expected
 /// statement and, for a normalized root, its fixed layout.
 fn write_root(
   dir: &Path,
@@ -464,261 +163,15 @@ fn write_root(
   fixed_root: Option<&str>,
 ) -> Result<()> {
   fs::create_dir_all(dir)?;
-  fs::write(dir.join("root-vk.bin"), vk)?;
-  fs::write(dir.join("root-proof.bin"), proof)?;
-  fs::write(dir.join("root-claims.bin"), statement::to_claims_bytes(words))?;
-  if let Some(layout) = fixed_root {
-    let fixed = FixedRoot::from_json(layout)?;
-    fs::write(dir.join(root::FIXED_ROOT_LAYOUT), fixed.to_json())?;
+  for (name, bytes) in compress::root_files(vk, proof, words, fixed_root)? {
+    storage::write_atomic(&dir.join(name), &bytes)?;
   }
   Ok(())
-}
-
-fn path_string(path: &Path) -> Result<String> {
-  Ok(path.to_str().ok_or("non-UTF8 artifact path")?.to_owned())
-}
-
-/// Run FRI, first KZG and recursive KZG in separate worker processes.
-/// The output directory must be empty; interrupted stages retain checkpoints.
-/// With `fixed_root`, the root must be normalized to that layout, and the FRI
-/// verifier depends only on the backend and layout.
-#[allow(clippy::too_many_arguments)]
-pub fn compress(
-  vk: &[u8],
-  proof: &[u8],
-  claim: &[u8],
-  statement: &[u8],
-  fixed_root: Option<&str>,
-  out: &Path,
-  cache_root: &Path,
-  development: bool,
-  log_height: u32,
-  terminal_plonk: bool,
-) -> Result<Vec<u8>> {
-  compress_with_terminal(
-    vk,
-    proof,
-    claim,
-    statement,
-    fixed_root,
-    out,
-    cache_root,
-    development,
-    log_height,
-    if terminal_plonk { TerminalSystem::Plonk } else { TerminalSystem::None }
-      .into(),
-  )
-}
-
-/// Compress an aggregate proof with an explicitly selected terminal proof system.
-/// With `fixed_root`, the root must be normalized to that layout.
-#[allow(clippy::too_many_arguments)]
-pub fn compress_with_terminal(
-  vk: &[u8],
-  proof: &[u8],
-  claim: &[u8],
-  statement: &[u8],
-  fixed_root: Option<&str>,
-  out: &Path,
-  cache_root: &Path,
-  development: bool,
-  log_height: u32,
-  terminal: TerminalOptions,
-) -> Result<Vec<u8>> {
-  let words = check_claim(claim, statement)?;
-  let setup = validate_compression_options(development, log_height, terminal)?;
-  if terminal.system == TerminalSystem::Groth16 {
-    groth16::check_statement(&words, terminal.allow_development)?;
-  }
-  prepare_output(out)?;
-  let caches = Caches::under(cache_root);
-  let root = out.join("root");
-  write_root(&root, vk, proof, &words, fixed_root)?;
-  let fri = out.join("fri");
-  child(
-    "fri",
-    &[&path_string(&root)?, &path_string(&fri)?, "--prove-outer"],
-    &caches,
-  )?;
-  finish_kzg(&fri, &words, out, cache_root, &setup, log_height, terminal)
-}
-
-/// Compress an already saved FRI stage while binding its statement to a
-/// caller-supplied claim and expected root claims. The FRI stage is verified
-/// before starting the KZG workers.
-pub fn compress_fri(
-  fri: &Path,
-  claim: &[u8],
-  expected_claims: &[u8],
-  out: &Path,
-  cache_root: &Path,
-  development: bool,
-  log_height: u32,
-) -> Result<Vec<u8>> {
-  let words = check_claim(claim, expected_claims)?;
-  let setup = validate_compression_options(
-    development,
-    log_height,
-    TerminalSystem::None.into(),
-  )?;
-  prepare_output(out)?;
-  {
-    let fixture = init_fri::load(fri)?;
-    let actual =
-      statement::from_scalars(&stages::scalar_statement(&fixture.public))?;
-    if actual != words {
-      return Err("saved FRI statement differs from the independently expected root statement".into());
-    }
-  }
-  finish_kzg(
-    fri,
-    &words,
-    out,
-    cache_root,
-    &setup,
-    log_height,
-    TerminalSystem::None.into(),
-  )
-}
-
-fn finish_kzg(
-  fri: &Path,
-  words: &statement::Statement,
-  out: &Path,
-  cache_root: &Path,
-  setup: &setup::SetupConfig,
-  log_height: u32,
-  terminal: TerminalOptions,
-) -> Result<Vec<u8>> {
-  let development = setup.class() == setup::SetupClass::Development;
-  let caches = Caches::under(cache_root);
-  let first = out.join("first-kzg");
-  let final_dir = out.join("final-kzg");
-  let path = path_string;
-  let (fri_s, first_s, final_s) =
-    (path(fri)?, path(&first)?, path(&final_dir)?);
-  // Each KZG worker selects its setup from the forwarded development flag
-  // and cache configuration.
-  let kzg = |stage, args: &[&str]| {
-    let mut args = args.to_vec();
-    if development {
-      args.push("--dev-srs");
-    }
-    child(stage, &args, &caches)
-  };
-  let height = log_height.to_string();
-  kzg("kzg", &["run", &fri_s, &first_s, &height])?;
-  kzg("wrap", &["stage-and-prove", &first_s, &final_s])?;
-  let mut result = PROOF_TAG.to_vec();
-  result.extend(fs::read(final_dir.join("kzg/packet.bin"))?);
-  let packet = &result[PROOF_TAG.len()..];
-  let vk =
-    wrap::VerifyingKey::from_bytes(&fs::read(final_dir.join("vk.bin"))?)?;
-  if let Some(admission) = setup.ignition_admission() {
-    vk.check_ignition_admission(admission)?;
-  } else {
-    vk.check_setup_class(setup.class())?;
-  }
-  vk.verify(packet, words)?;
-  // A bundled verifying key pins the aggregation program its proofs attest; the
-  // backend this run proved under must be that program, or the bundle is
-  // stale and verification elsewhere would accept the wrong statement.
-  if let Some(prefix) = verifier::bundled_prefix(packet[..32].try_into()?)
-    && *prefix != words[..10]
-  {
-    return Err(
-      "the bundled verifier vk pins a different aggregation program \
-       than this build's backend; update the bundle"
-        .into(),
-    );
-  }
-  if terminal.system == TerminalSystem::Groth16 {
-    let terminal_out = out.join("groth16");
-    let expected_path = final_dir.join("expected-statement.json");
-    storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
-    let verifier = final_dir.join("vk.bin");
-    let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-    child(
-      "groth16",
-      &[
-        "wrap",
-        &path(&verifier)?,
-        &path(&final_dir.join("kzg/packet.bin"))?,
-        trusted.as_str(),
-        &path(&expected_path)?,
-        &path(&terminal_out)?,
-        if terminal.allow_development {
-          "--allow-development"
-        } else {
-          "--production"
-        },
-      ],
-      &caches,
-    )?;
-    return Ok(fs::read(terminal_out.join("proof.envelope.bin"))?);
-  }
-  if terminal.system == TerminalSystem::Plonk {
-    let out_plonk = out.join("plonk");
-    let expected_path = final_dir.join("expected-statement.json");
-    storage::write_atomic(&expected_path, &serde_json::to_vec(&words)?)?;
-    let verifier = final_dir.join("vk.bin");
-    let trusted = blake3::hash(&fs::read(&verifier)?).to_hex();
-    child(
-      "plonk",
-      &[
-        "wrap",
-        &path(&verifier)?,
-        &path(&final_dir.join("kzg/packet.bin"))?,
-        trusted.as_str(),
-        &path(&expected_path)?,
-        &path(&cache_root.join("plonk"))?,
-        &path(&out_plonk)?,
-      ],
-      &caches,
-    )?;
-    return Ok(fs::read(out_plonk.join("proof.envelope.bin"))?);
-  }
-  Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-
-  #[test]
-  fn worker_capabilities_reject_other_curves_and_missing_identity() {
-    let capabilities = |curve: &str| {
-      serde_json::to_vec(&serde_json::json!({
-        "format": "ix-compression-capabilities/v1",
-        "binary": WORKER_EXECUTABLE,
-        "curve": curve,
-      }))
-      .unwrap()
-    };
-    check_worker_capabilities(&capabilities(crate::kzg::curve::NAME)).unwrap();
-    let other = "bls12-381";
-    assert!(check_worker_capabilities(&capabilities(other)).is_err());
-    assert!(check_worker_capabilities(b"{}").is_err());
-    assert!(check_worker_capabilities(b"not-json").is_err());
-  }
-
-  #[test]
-  fn ignition_runs_require_explicit_worker_support() {
-    let mut capabilities = serde_json::json!({
-      "format": "ix-compression-capabilities/v1",
-      "binary": WORKER_EXECUTABLE,
-      "curve": crate::kzg::curve::NAME,
-    });
-    let bytes = serde_json::to_vec(&capabilities).unwrap();
-    check_worker_setup_capabilities(&bytes, false).unwrap();
-    assert!(check_worker_setup_capabilities(&bytes, true).is_err());
-    capabilities["ignition_setup"] = true.into();
-    check_worker_setup_capabilities(
-      &serde_json::to_vec(&capabilities).unwrap(),
-      true,
-    )
-    .unwrap();
-  }
 
   #[test]
   fn explicit_vk_verification_rejects_other_curve_envelopes() {
@@ -731,22 +184,66 @@ mod tests {
   }
 
   #[test]
-  fn unsupported_claim_is_rejected_before_io() {
-    assert!(
-      compress(
-        b"",
-        b"",
-        b"wrong",
-        &statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"wrong")),
-        None,
-        Path::new("/does-not-exist"),
-        Path::new("/does-not-exist"),
-        true,
-        24,
-        false
-      )
-      .is_err()
-    );
+  fn bundled_kzg_verification_is_explicitly_unsupported() {
+    let mut proof = PROOF_TAG.to_vec();
+    proof.extend([0; 32]);
+    for allow_development in [false, true] {
+      let error = verify(&proof, b"claim", allow_development).unwrap_err();
+      assert!(
+        error
+          .to_string()
+          .contains("bundled recursive KZG verification is unsupported")
+      );
+    }
+  }
+
+  #[test]
+  fn invalid_requests_are_rejected_before_io() {
+    let statement =
+      statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"claim"));
+    let config = |log_height, terminal: TerminalSystem| CompressConfig {
+      setup: SetupConfig::Development { cache_directory: None },
+      fixed_cache: "/does-not-exist".into(),
+      plonk_cache: "/does-not-exist".into(),
+      log_height,
+      terminal: terminal.into(),
+      prefetch_bytes: 0,
+      #[cfg(feature = "cuda")]
+      cuda: crate::kzg::cuda::Settings::default(),
+    };
+    let input = |claim| CompressInput {
+      vk: b"",
+      proof: b"",
+      claim,
+      statement: &statement,
+      fixed_root: None,
+      out: Path::new("/does-not-exist"),
+    };
+    let error = |claim, log_height, terminal| {
+      compress(input(claim), &config(log_height, terminal))
+        .unwrap_err()
+        .to_string()
+    };
+    assert!(error(b"other", 24, TerminalSystem::None).contains("claim"));
+    assert!(error(b"claim", 23, TerminalSystem::None).contains("log-height"));
+    assert!(error(b"claim", 24, TerminalSystem::Plonk).contains("--dev-srs"));
+    assert!(!Path::new("/does-not-exist").exists());
     assert!(verify(PROOF_TAG, b"wrong", true).is_err());
+  }
+
+  #[test]
+  fn terminal_proofs_without_their_feature_name_the_build_switch() {
+    let mut plonk = plonk::PROOF_TAG.to_vec();
+    plonk.extend([0; 64]);
+    let mut groth16 = groth16::PROOF_TAG.to_vec();
+    groth16.extend([0; 196 + 32]);
+    if !cfg!(feature = "plonk") {
+      let error = verify(&plonk, b"claim", false).unwrap_err().to_string();
+      assert!(error.contains("IX_PLONK=1"), "{error}");
+    }
+    if !cfg!(feature = "groth16") {
+      let error = verify(&groth16, b"claim", false).unwrap_err().to_string();
+      assert!(error.contains("IX_GROTH16=1"), "{error}");
+    }
   }
 }

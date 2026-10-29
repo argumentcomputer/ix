@@ -167,7 +167,7 @@ __global__ __launch_bounds__(128) void quotient_sweep(
 
 } // namespace
 
-extern "C" int ix_kzg_quotient(
+IX_KZG_EXPORT int ix_kzg_quotient(
     int device, const QuotientParameters* parameters,
     const QuotientColumn* columns, size_t column_count, size_t evaluation_columns,
     const QuotientInstruction* nodes, size_t node_count,

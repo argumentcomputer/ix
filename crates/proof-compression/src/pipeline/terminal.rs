@@ -2,18 +2,19 @@
 use super::Result;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 use super::statement;
-#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
+#[cfg(test)]
 use super::storage;
 use serde::{Deserialize, Serialize};
-#[cfg(any(feature = "plonk", feature = "groth16", test))]
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};
 
-#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
+#[cfg(test)]
 use std::path::PathBuf;
-#[cfg(any(not(feature = "plonk"), not(feature = "groth16")))]
-use std::process::{Command, Stdio};
 
+// TODO: Decide between SHA-256 and BLAKE3 for artifact/cache metadata.
+// Coordinate Rust/Go encodings and any catalog or envelope key-ID changes;
+// proof-protocol hashes have separate compatibility requirements.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Artifact {
@@ -66,9 +67,9 @@ impl TryFrom<u8> for TerminalOptions {
   }
 }
 
-#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
+#[cfg(test)]
 pub(super) struct Scratch(pub(super) PathBuf);
-#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
+#[cfg(test)]
 impl Scratch {
   pub(super) fn new() -> Result<Self> {
     let path =
@@ -77,7 +78,7 @@ impl Scratch {
     Ok(Self(path))
   }
 }
-#[cfg(any(not(feature = "plonk"), not(feature = "groth16"), test))]
+#[cfg(test)]
 impl Drop for Scratch {
   fn drop(&mut self) {
     let _ = fs::remove_dir_all(&self.0);
@@ -110,7 +111,7 @@ pub(super) fn digest(text: &str) -> Result<[u8; 32]> {
     .map_err(|_bytes| "expected a 32-byte hexadecimal digest".into())
 }
 
-#[cfg(any(feature = "plonk", feature = "groth16", test))]
+#[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(super) fn sha256(path: &Path) -> Result<[u8; 32]> {
   let mut file = fs::File::open(path)?;
   let mut hash = Sha256::new();
@@ -138,18 +139,6 @@ pub(super) fn load_json<T: serde::de::DeserializeOwned>(
   path: &Path,
 ) -> Result<T> {
   Ok(serde_json::from_slice(&read_bounded(path, 1 << 20)?)?)
-}
-
-#[cfg(any(not(feature = "plonk"), not(feature = "groth16")))]
-pub(super) fn checked(command: &mut Command) -> Result<()> {
-  let status = command
-    .stdout(Stdio::from(std::io::stderr()))
-    .stderr(Stdio::inherit())
-    .status()?;
-  if !status.success() {
-    return Err(format!("terminal helper failed ({status})").into());
-  }
-  Ok(())
 }
 
 #[cfg(any(feature = "plonk", feature = "groth16"))]

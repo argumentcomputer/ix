@@ -71,8 +71,8 @@ public def run : IO Unit := do
     let unknownKey := ByteArray.mk #[73, 88, 66, 78, 0, 0, 0, 1] ++
       ByteArray.mk (Array.replicate 32 0)
     let unknownAddr ← putProof home (Ixon.Proof.ser { claim, proof := unknownKey })
-    rejects home #["verify", toString unknownAddr] "not bundled"
-    rejects home #["verify", toString unknownAddr, "--dev-srs"] "not bundled"
+    rejects home #["verify", toString unknownAddr] "bundled recursive KZG verification is unsupported"
+    rejects home #["verify", toString unknownAddr, "--dev-srs"] "bundled recursive KZG verification is unsupported"
     IO.println "compression CLI: BN254 setup and proof rejection checks passed"
   finally
     IO.FS.removeDirAll home

@@ -1215,7 +1215,21 @@ fn run_manifest(
   outcome
 }
 
-/// `AiurSystem.proveLanes`: the whole multi-device run.
+/// The GPUs this process may use: the entries of `CUDA_VISIBLE_DEVICES` when
+/// it is set, else the devices the NVIDIA driver lists. A build without CUDA
+/// proves on one CPU worker.
+fn visible_gpus() -> usize {
+  if !cfg!(feature = "cuda") {
+    return 1;
+  }
+  if let Ok(devices) = std::env::var("CUDA_VISIBLE_DEVICES") {
+    return devices.split(',').filter(|d| !d.trim().is_empty()).count();
+  }
+  fs::read_dir("/proc/driver/nvidia/gpus").map_or(0, |gpus| gpus.count())
+}
+
+/// `AiurSystem.proveLanes`: the whole multi-device run; 0 lanes uses every
+/// visible GPU.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_prove_lanes(
   ixvm_system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -1231,8 +1245,12 @@ extern "C" fn rs_aiur_prove_lanes(
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   out_manifest: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
+  let lanes = match lean_unbox_nat_as_usize(lanes.inner()) {
+    0 => visible_gpus(),
+    n => n,
+  };
   let cfg = Config {
-    lanes: lean_unbox_nat_as_usize(lanes.inner()),
+    lanes,
     max_ram_bytes: lean_unbox_nat_as_usize(max_ram_bytes.inner()),
     exec_jobs: lean_unbox_nat_as_usize(exec_jobs.inner()),
     structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
@@ -1241,7 +1259,7 @@ extern "C" fn rs_aiur_prove_lanes(
       .then(|| PathBuf::from(out_manifest.as_str())),
   };
   if cfg.lanes == 0 {
-    return LeanExcept::error_string("at least one lane is required");
+    return LeanExcept::error_string("no visible GPU to prove on");
   }
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     run(

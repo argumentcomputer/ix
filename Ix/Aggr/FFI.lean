@@ -98,7 +98,7 @@ opaque aggregateExpected (envHandle : @& EnvHandle)
 
 
 
-/-- The Stage 2 plan cut for `ix prove --lanes`: the tree is split from the
+/-- The Stage 2 plan cut for `ix prove --ixe --ixes`: the tree is split from the
 root while any frontier node holds more than `subtreeSize` leaves (a lone
 leaf may then stand as a subtree of its own). Rows in post-order:
 `#[0, slot, ids…]` for a subtree (its root slot, as `ix aggregate --subtree`
@@ -109,12 +109,13 @@ last. -/
 opaque aggregateSubtreePlan (envHandle : @& EnvHandle) (manifestPath : @& String)
   (structuralAbove subtreeSize : @& Nat) : Except String (Array (Array Nat))
 
-/-- `ix prove --lanes`: the whole multi-device run in this process, one
+/-- `ix prove --ixe --ixes`: the whole multi-device run in this process, one
 resident prover per GPU built from these two systems (`AiurSystem.on_device`
 in Rust; nothing is copied across the FFI), every claim and join scheduled
 over them as their inputs become ready, the root wrapped, and every claim
 proof verified natively at the end. `maxRamBytes` is one worker's host
-budget (0 detects); `execJobs` the claim executions ahead of each prover.
+budget (0 detects); `execJobs` the claim executions ahead of each prover;
+`lanes` the GPU count (0 uses every visible GPU).
 Oversized environment claims are bisected and checkpointed; completed
 proofs are reused. A nonempty `outManifest` receives the final partition.
 Returns the verified root address; progress is printed on stderr. -/

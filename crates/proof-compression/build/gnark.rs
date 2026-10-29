@@ -7,7 +7,7 @@ use std::{
   process::Command,
 };
 
-pub(super) fn build() {
+pub(super) fn build() -> Vec<super::RuntimeArtifact> {
   let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
   let source =
     manifest.join("../../tools/plonk-wrapper").canonicalize().unwrap();
@@ -22,17 +22,7 @@ pub(super) fn build() {
     "CGO_LDFLAGS",
     "CC",
     "CXX",
-    "IX_PLONK_CUDA_LIBRARY",
-    "IX_PLONK_SPPARK_SOURCE",
-    "IX_PLONK_BLST_SOURCE",
-    "IX_PLONK_CUDA_ARCHS",
     "IX_GROTH16_ICICLE_ROOT",
-    "NVCC",
-    "CUDA_HOME",
-    "CUDA_PATH",
-    "NVCC_CCBIN",
-    "NVCC_PREPEND_FLAGS",
-    "NVCC_APPEND_FLAGS",
   ] {
     println!("cargo:rerun-if-env-changed={variable}");
   }
@@ -110,50 +100,11 @@ pub(super) fn build() {
   let cuda = env::var_os("CARGO_FEATURE_CUDA").is_some();
   let mut tags = Vec::new();
   let mut linker_flags = env::var("CGO_LDFLAGS").unwrap_or_default();
+  let mut artifacts = Vec::new();
   if cuda && env::var_os("CARGO_FEATURE_PLONK").is_some() {
     assert_eq!(target_os, "linux", "PLONK CUDA requires Linux");
     assert_eq!(target_arch, "x86_64", "PLONK CUDA requires x86_64");
-    let native = manifest.join("cuda/plonk");
-    let library = match env::var_os("IX_PLONK_CUDA_LIBRARY") {
-      Some(path) => PathBuf::from(path),
-      None => {
-        let build = out.join("plonk-native");
-        let sppark = env::var_os("IX_PLONK_SPPARK_SOURCE")
-          .or_else(|| env::var_os("DEP_SPPARK_ROOT"))
-          .expect("set IX_PLONK_SPPARK_SOURCE or IX_PLONK_CUDA_LIBRARY");
-        let blst = env::var_os("IX_PLONK_BLST_SOURCE")
-          .or_else(|| {
-            env::var_os("DEP_BLST_C_SRC").and_then(|path| {
-              PathBuf::from(path).parent().map(|p| p.as_os_str().to_owned())
-            })
-          })
-          .expect("set IX_PLONK_BLST_SOURCE or IX_PLONK_CUDA_LIBRARY");
-        let status = Command::new("python3")
-          .arg(native.join("build.py"))
-          .arg("--sppark")
-          .arg(sppark)
-          .arg("--blst")
-          .arg(blst)
-          .arg("--out")
-          .arg(&build)
-          .status()
-          .expect("native PLONK build");
-        assert!(status.success(), "native PLONK build failed");
-        build.join("libix_plonk_bn254_cuda.so")
-      },
-    }
-    .canonicalize()
-    .expect("PLONK CUDA library is missing");
-    let directory = library.parent().unwrap();
-    let packaged_header =
-      directory.parent().unwrap().join("include/ix_plonk_bn254.h");
-    let header = if packaged_header.is_file() {
-      packaged_header
-    } else {
-      native.join("ix_plonk_bn254.h")
-    };
-    println!("cargo:rerun-if-changed={}", native.display());
-    println!("cargo:rerun-if-changed={}", library.display());
+    let header = manifest.join("cuda/plonk/ix_plonk_bn254.h");
     println!("cargo:rerun-if-changed={}", header.display());
     // cgo does not include headers outside its package in its cache key.
     let mut hash = std::collections::hash_map::DefaultHasher::new();
@@ -166,36 +117,46 @@ pub(super) fn build() {
     );
     tags.push("cuda");
     command.env("CGO_CFLAGS", cflags);
-    linker_flags
-      .push_str(&format!(" -L{} -lix_plonk_bn254_cuda", directory.display()));
-    println!("cargo:rustc-link-search=native={}", directory.display());
-    println!("cargo:rustc-link-lib=dylib=ix_plonk_bn254_cuda");
-    println!("cargo:rustc-link-lib=dylib=stdc++");
-    println!(
-      "cargo:rustc-link-arg-bin=ix-compression-worker=-Wl,-rpath,$ORIGIN/../lib"
-    );
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", directory.display());
-    // A library outside OUT_DIR needs an explicit path for packaging.
-    println!("cargo:rustc-env=IX_PLONK_CUDA_LIBRARY={}", library.display());
+    // build.rs places libix_bn254_cuda.so in OUT_DIR before cgo links.
+    linker_flags.push_str(&format!(" -L{}", out.display()));
   }
   if cuda && env::var_os("CARGO_FEATURE_GROTH16").is_some() {
     assert_eq!(target_os, "linux", "Groth16 CUDA requires Linux");
     assert_eq!(target_arch, "x86_64", "Groth16 CUDA requires x86_64");
-    let root = PathBuf::from(
-      env::var_os("IX_GROTH16_ICICLE_ROOT")
-        .expect("set IX_GROTH16_ICICLE_ROOT to the pinned ICICLE installation"),
-    )
-    .canonicalize()
-    .expect("ICICLE installation is missing");
+    let root = env::var_os("IX_GROTH16_ICICLE_ROOT")
+      .filter(|value| !value.is_empty())
+      .map_or_else(|| PathBuf::from("/usr/local"), PathBuf::from);
+    let root = root.canonicalize().unwrap_or_else(|error| {
+      panic!(
+        "ICICLE installation {} is unavailable: {error}; install the pinned BN254 libraries under /usr/local or set IX_GROTH16_ICICLE_ROOT",
+        root.display()
+      )
+    });
     let library = root.join("lib");
-    for name in ["icicle_device", "icicle_field_bn254", "icicle_curve_bn254"] {
-      let file = library.join(format!("lib{name}.so"));
-      assert!(file.is_file(), "missing ICICLE library {}", file.display());
+    for name in [
+      "libicicle_device.so",
+      "libicicle_field_bn254.so",
+      "libicicle_curve_bn254.so",
+      "backend/cuda/libicicle_backend_cuda_device.so",
+      "backend/bn254/cuda/libicicle_backend_cuda_field_bn254.so",
+      "backend/bn254/cuda/libicicle_backend_cuda_curve_bn254.so",
+    ] {
+      let file = library.join(name);
+      assert!(
+        file.is_file(),
+        "missing ICICLE library {}; install the pinned BN254 libraries under /usr/local or set IX_GROTH16_ICICLE_ROOT",
+        file.display()
+      );
       println!("cargo:rerun-if-changed={}", file.display());
+      artifacts.push(super::RuntimeArtifact {
+        source: file,
+        path: name.to_owned(),
+      });
+    }
+    for name in ["icicle_device", "icicle_field_bn254", "icicle_curve_bn254"] {
       println!("cargo:rustc-link-lib=dylib={name}");
     }
     let backend = library.join("backend");
-    assert!(backend.is_dir(), "ICICLE backend directory is missing");
     println!("cargo:rerun-if-changed={}", backend.display());
     println!("cargo:rustc-link-search=native={}", library.display());
     println!("cargo:rustc-link-lib=dylib=stdc++");
@@ -239,4 +200,5 @@ pub(super) fn build() {
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=dl");
   }
+  artifacts
 }

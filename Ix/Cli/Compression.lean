@@ -25,6 +25,10 @@ preprocessing and development SRS caches under `cacheRoot`. A nonempty
 opaque compress (vk proof claim statement : @& ByteArray) (fixedRoot dir cacheRoot : @& String)
   (devSrs : Bool) (logHeight : UInt32) (terminal : UInt8) : IO ByteArray
 
+/-- The versioned normalization layout for the aggregation backend's key. -/
+@[extern "rs_compression_release_root_layout"]
+opaque releaseRootLayout (vk : @& ByteArray) : IO String
+
 /-- Per-circuit rows of one root wrap execution of `proof`, as a JSON array. -/
 @[extern "rs_compression_root_rows"]
 opaque rootRows (system : @& Aiur.AiurSystem) (aggrIdx : @& Nat)
@@ -52,13 +56,17 @@ def normalize (backend : Aggr.VerificationBackend) (wrapper : Ixon.Proof)
   normalizeRoot backend.system backend.aggrIdx backend.allowed backend.ixvmVk
     (Ix.Claim.ser wrapper.claim) wrapper.proof layout
 
-/-- Verify with the verifying key compiled in under the packet's id, whose pinned
-aggregation program fixes the statement for `claim`, and return the setup
-class: `"ignition"` or `"development"`. Development proofs need
-`devSrs`.
+/-- Verify a terminal proof with an independently configured verifier catalog and
+return its setup class. Development proofs need `devSrs`. Recursive KZG proofs
+require explicit pinned-key verification and are unsupported by this entry point.
 Needs neither the aggregation backend nor a GPU. -/
 @[extern "rs_compression_verify"]
 opaque verify (proof claim : @& ByteArray) (devSrs : Bool) : IO String
+
+/-- Return the GPU memory this process's Aiur prover retains between proofs to
+the driver. The compression worker is another process and cannot reuse it. -/
+@[extern "rs_compression_release_gpu_memory"]
+opaque releaseGpuMemory : IO Unit
 
 /-- Caches shared by every compression run: fixed preprocessing keyed by the
 executable and verifying key, and development SRS files. -/

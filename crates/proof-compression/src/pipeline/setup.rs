@@ -5,6 +5,11 @@
 //! metadata and an authenticated prefix cache. The development policy derives a
 //! known trapdoor from the stage seed, with parameters from a per-stage cache
 //! file or from the shared directory named by `IX_KZG_SRS_CACHE`.
+//!
+//! Without explicit Ignition settings, the pinned Ignition release is used
+//! when its files are present in the parameters directory (`IX_PARAMS_DIR`,
+//! else `~/.ix/compression/params`), as `ix compress fetch-params` leaves
+//! them.
 use super::storage;
 use crate::kzg::srs::ignition::{
   IgnitionAdmission, load_ignition_cache_with_identity,
@@ -32,6 +37,63 @@ const IGNITION_ENV_VARS: [&str; 4] = [
   IGNITION_ADMISSION_VAR,
   IGNITION_ADMISSION_DIGEST_VAR,
 ];
+pub(crate) const PARAMETERS_DIR_VAR: &str = "IX_PARAMS_DIR";
+
+/// Published BN254 Ignition proving parameters and their pins. The objects are
+/// publicly readable from the URL `ix compress fetch-params` downloads; the
+/// pins, not the location, authenticate them.
+struct IgnitionRelease {
+  name: &'static str,
+  cache_file: &'static str,
+  cache_manifest_blake3: &'static str,
+  admission_file: &'static str,
+  admission_blake3: &'static str,
+}
+
+const IGNITION_RELEASE: IgnitionRelease = IgnitionRelease {
+  name: "bn254-ignition-main-197",
+  cache_file: "ix-prefix-26.bin",
+  cache_manifest_blake3:
+    "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b",
+  admission_file: "admission.json",
+  admission_blake3:
+    "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
+};
+
+impl IgnitionRelease {
+  fn directory(&self, parameters: &Path) -> PathBuf {
+    parameters.join(self.name)
+  }
+
+  fn config(&self, directory: &Path) -> storage::Result<SetupConfig> {
+    SetupConfig::ignition(
+      directory.join(self.cache_file),
+      parse_ignition_digest(
+        IGNITION_CACHE_MANIFEST_VAR,
+        OsStr::new(self.cache_manifest_blake3),
+      )?,
+      &directory.join(self.admission_file),
+      parse_ignition_digest(
+        IGNITION_ADMISSION_DIGEST_VAR,
+        OsStr::new(self.admission_blake3),
+      )?,
+    )
+  }
+
+  fn present(&self, directory: &Path) -> bool {
+    directory.join(self.cache_file).is_file()
+      && directory.join(self.admission_file).is_file()
+  }
+}
+
+/// `IX_PARAMS_DIR`, else `$HOME/.ix/compression/params`.
+fn parameters_directory_from(
+  mut lookup: impl FnMut(&str) -> Option<OsString>,
+) -> Option<PathBuf> {
+  lookup(PARAMETERS_DIR_VAR).map(PathBuf::from).or_else(|| {
+    lookup("HOME").map(|home| PathBuf::from(home).join(".ix/compression/params"))
+  })
+}
 
 /// The trust class of verifier parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,28 +145,34 @@ fn development_refused<T>() -> storage::Result<T> {
   let message = format!(
     "no admitted BN254 Ignition setup is configured; set \
      {IGNITION_CACHE_VAR}, {IGNITION_CACHE_MANIFEST_VAR}, \
-     {IGNITION_ADMISSION_VAR} and {IGNITION_ADMISSION_DIGEST_VAR}, or pass \
+     {IGNITION_ADMISSION_VAR} and {IGNITION_ADMISSION_DIGEST_VAR}, run \
+     `ix compress fetch-params` to install the pinned release, or pass \
      --dev-srs to use the known-trapdoor development setup \
      (not production-secure)"
   );
   Err(message.into())
 }
 
-/// Setup policy captured for one worker invocation.
+/// The KZG parameters a compression proves under: admitted Ignition
+/// parameters, or with `development` the known-trapdoor development setup.
 #[derive(Clone)]
-pub(crate) enum SetupConfig {
+pub enum SetupConfig {
+  #[non_exhaustive]
   Ignition {
     cache: PathBuf,
     manifest: [u8; 32],
     admission: Arc<IgnitionAdmission>,
   },
-  Development {
-    cache_directory: Option<PathBuf>,
-  },
+  #[non_exhaustive]
+  Development { cache_directory: Option<PathBuf> },
 }
 
 impl SetupConfig {
-  pub(crate) fn from_env(development: bool) -> storage::Result<Self> {
+  /// Select the setup from the `IX_KZG_IGNITION_*` variables or the
+  /// parameters directory, admitting Ignition parameters before returning.
+  /// With `development`, the development setup caches its SRS files in
+  /// `IX_KZG_SRS_CACHE` when set.
+  pub fn from_env(development: bool) -> storage::Result<Self> {
     Self::from_ignition_env(development, |name| std::env::var_os(name))
   }
 
@@ -119,7 +187,13 @@ impl SetupConfig {
     }
     let values = IGNITION_ENV_VARS.map(&mut lookup);
     if values.iter().all(Option::is_none) {
-      return development_refused();
+      let release = parameters_directory_from(&mut lookup)
+        .map(|parameters| IGNITION_RELEASE.directory(&parameters))
+        .filter(|directory| IGNITION_RELEASE.present(directory));
+      return match release {
+        Some(directory) => IGNITION_RELEASE.config(&directory),
+        None => development_refused(),
+      };
     }
     let [cache, manifest, admission, admission_digest] = values;
     let required = |name, value: Option<OsString>| {
@@ -138,8 +212,17 @@ impl SetupConfig {
       IGNITION_ADMISSION_DIGEST_VAR,
       &required(IGNITION_ADMISSION_DIGEST_VAR, admission_digest)?,
     )?;
+    Self::ignition(cache, manifest, &admission_path, admission_digest)
+  }
+
+  fn ignition(
+    cache: PathBuf,
+    manifest: [u8; 32],
+    admission_path: &Path,
+    admission_digest: [u8; 32],
+  ) -> storage::Result<Self> {
     let admission =
-      Arc::new(IgnitionAdmission::read(&admission_path, admission_digest)?);
+      Arc::new(IgnitionAdmission::read(admission_path, admission_digest)?);
     let (anchors, identity) =
       load_ignition_cache_with_identity(&cache, manifest, 2)?;
     admission.check_cache(&anchors, &identity)?;

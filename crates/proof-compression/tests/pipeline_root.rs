@@ -85,7 +85,7 @@ fn different_root_statements_and_trace_shard_counts() {
     let stage =
       prepare_root(&key, &proof, &expected, Default::default()).unwrap();
     assert_eq!(stage.public_values(), expected);
-    check_cli_root(
+    check_root_directory(
       &key_bytes,
       &proof,
       &expected,
@@ -237,7 +237,7 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
   Ok(())
 }
 
-fn check_cli_root(
+fn check_root_directory(
   key: &[u8],
   proof: &aiur::synthesis::AiurProof,
   expected: &[Val],
@@ -249,7 +249,7 @@ fn check_cli_root(
   use std::fs;
 
   let directory = std::env::temp_dir()
-    .join(format!("ix-cli-root-{}-{shards}", std::process::id()));
+    .join(format!("ix-root-directory-{}-{shards}", std::process::id()));
   fs::create_dir(&directory).unwrap();
   let result = (|| -> Result<(), Box<dyn std::error::Error>> {
     let input = directory.join("input");
@@ -263,14 +263,7 @@ fn check_cli_root(
       claims.extend(value.as_canonical_u64().to_le_bytes());
     }
     fs::write(input.join("root-claims.bin"), claims)?;
-    ix_proof_compression::pipeline::command(
-      "fri",
-      &[
-        input.to_string_lossy().into_owned(),
-        output.to_string_lossy().into_owned(),
-        "--check-only".into(),
-      ],
-    )?;
+    ix_proof_compression::pipeline::check_root(&input, &output)?;
     assert!(output.join("CHECKED").is_file());
     assert!(
       fs::read_to_string(output.join("circuit-cost.txt"))?

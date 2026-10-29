@@ -32,18 +32,27 @@ extern "C" fn rs_compression_run(
     Ok(system) => system,
     Err(error) => return LeanIOResult::error_string(error),
   };
-  match pipeline::compress_with_terminal(
-    vk.as_bytes(),
-    proof.as_bytes(),
-    claim.as_bytes(),
-    statement.as_bytes(),
-    optional(&fixed_root).as_deref(),
-    std::path::Path::new(&dir),
+  let fixed_root = optional(&fixed_root);
+  let result = pipeline::CompressConfig::from_env(
     std::path::Path::new(&cache_root),
     dev_srs,
     log_height,
     terminal,
-  ) {
+  )
+  .and_then(|config| {
+    pipeline::compress(
+      pipeline::CompressInput {
+        vk: vk.as_bytes(),
+        proof: proof.as_bytes(),
+        claim: claim.as_bytes(),
+        statement: statement.as_bytes(),
+        fixed_root: fixed_root.as_deref(),
+        out: std::path::Path::new(&dir),
+      },
+      &config,
+    )
+  });
+  match result {
     Ok(bytes) => LeanIOResult::ok(LeanByteArray::from_bytes(bytes.as_slice())),
     Err(e) => LeanIOResult::error_string(&e.to_string()),
   }
@@ -98,6 +107,17 @@ fn root_wrap<'a>(
     allowed: allowed.as_bytes(),
     ixvm_vk: ixvm_vk.as_bytes(),
     claim: claim.as_bytes(),
+  }
+}
+
+/// The versioned normalization layout for the selected aggregation backend.
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_release_root_layout(
+  vk: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  match pipeline::release_root_layout(vk.as_bytes()) {
+    Ok(layout) => LeanIOResult::ok(LeanString::new(layout)),
+    Err(error) => LeanIOResult::error_string(&error.to_string()),
   }
 }
 
@@ -173,7 +193,7 @@ extern "C" fn rs_compression_normalize_root(
   }
 }
 
-/// Write the FRI worker's root input directory without compressing.
+/// Write the FRI stage's root input directory without compressing.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_write_root(
   vk: LeanByteArray<LeanBorrowed<'_>>,
@@ -194,4 +214,13 @@ extern "C" fn rs_compression_write_root(
     Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
     Err(e) => LeanIOResult::error_string(&e.to_string()),
   }
+}
+
+/// Return the GPU memory the Aiur prover's allocation pool retains to the
+/// driver, so compression starts with the whole device. A CPU build has none.
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_release_gpu_memory() -> LeanIOResult<LeanOwned> {
+  #[cfg(feature = "cuda")]
+  multi_stark::cuda::release_device_memory();
+  LeanIOResult::ok(LeanOwned::box_usize(0))
 }

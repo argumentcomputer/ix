@@ -37,19 +37,17 @@ pub(in crate::pipeline) fn export(
   trusted_digest: &str,
   expected: &Statement,
   directory: &Path,
+  setup: &super::super::super::setup::SetupConfig,
 ) -> Result<()> {
   let bytes = fs::read(verifier)?;
   if blake3::hash(&bytes).to_hex().as_str() != trusted_digest {
     return Err("trusted verifier digest differs".into());
   }
   let vk = VerifyingKey::from_bytes(&bytes)?;
-  {
-    let setup = super::super::super::setup::SetupConfig::from_env(false)?;
-    let admission = setup
-      .ignition_admission()
-      .ok_or("terminal export requires admitted Ignition parameters")?;
-    vk.check_ignition_admission(admission)?;
-  }
+  let admission = setup
+    .ignition_admission()
+    .ok_or("terminal export requires admitted Ignition parameters")?;
+  vk.check_ignition_admission(admission)?;
   write_export(&vk, &fs::read(packet)?, expected, directory, "witness", true)
 }
 
@@ -157,88 +155,6 @@ pub(super) fn write_export(
     expected,
     directory,
     name,
-  )
-}
-
-/// Export the relation verifying a saved first KZG stage directly: every
-/// partition's circuit, the first-stage claim rows and no deferred pairing.
-/// The stage's setup is selected from the environment as the worker does.
-#[cfg(feature = "plonk")]
-pub(in crate::pipeline) fn export_first(
-  stage: &Path,
-  expected: &Statement,
-  directory: &Path,
-  development: bool,
-) -> Result<()> {
-  let config = super::super::super::WorkerConfig::from_env("kzg", development)?;
-  let input = super::super::saved::Input::load(stage, &config)?;
-  let system = &input.system;
-  if system.config.transcript_kind() != TranscriptKind::Blake3 {
-    return Err(
-      "PLONK wrapping requires a BLAKE3 first-stage verifying key".into(),
-    );
-  }
-  if statement::from_rows(&input.claims)? != *expected {
-    return Err("first-stage claims differ from the expected statement".into());
-  }
-  let vk_id: [u8; 32] =
-    fs::read(stage.join("kzg/vk-id.bin"))?.try_into().map_err(
-      |bytes: Vec<u8>| format!("verifying key id of {} bytes", bytes.len()),
-    )?;
-  let packet = fs::read(stage.join("kzg/packet.bin"))?;
-  let mut composed = vk_id.to_vec();
-  for word in expected {
-    composed.extend(word.to_le_bytes());
-  }
-  composed.extend(&input.proof_bytes);
-  if packet != composed {
-    return Err(
-      "first-stage packet differs from its verifying key, statement and proof"
-        .into(),
-    );
-  }
-  let diagnostic = diagnostics(system, &input.proof, &input.claims)?;
-  // Rows 1..=18 carry the statement words at column 3; every other claim
-  // value, including the table and hash-trace anchors, is a constant.
-  let locations =
-    StageStatement::from_claims(&input.claims, statement::WORDS)?.locations;
-  let slots = input
-    .claims
-    .iter()
-    .enumerate()
-    .map(|(row, values)| {
-      values
-        .iter()
-        .enumerate()
-        .map(|(column, &value)| {
-          match locations.iter().position(|&l| l == (row, column)) {
-            Some(index) => ir::ClaimSlot::Public(index),
-            None => ir::ClaimSlot::Constant(value),
-          }
-        })
-        .collect()
-    })
-    .collect();
-  let publics = (0..10)
-    .map(PublicSource::Prefix)
-    .chain((0..8).map(PublicSource::DigestWord))
-    .collect();
-  write_vk(
-    &Export {
-      system,
-      proof: &input.proof,
-      logs: &input.logs,
-      slots,
-      publics,
-      vk_id,
-      deferred_keys: vec![],
-      deferred_bytes: &[],
-      packet: &packet,
-      diagnostic,
-    },
-    expected,
-    directory,
-    "witness",
   )
 }
 

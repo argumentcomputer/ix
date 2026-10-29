@@ -290,3 +290,34 @@ fn ignition_digest_parser_rejects_non_unicode_values() {
     [0xab; 32],
   );
 }
+
+#[test]
+fn installed_release_is_used_only_without_explicit_configuration()
+-> storage::Result<()> {
+  let fixture = Fixture::new(13, 9);
+  let parameters = fixture.directory.join("parameters");
+  let lookup = |name: &str| {
+    (name == PARAMETERS_DIR_VAR).then(|| parameters.as_os_str().to_owned())
+  };
+  let missing = SetupConfig::from_ignition_env(false, lookup).err().unwrap();
+  assert!(missing.to_string().contains("fetch-params"));
+
+  // Files that do not match the release pins fail closed rather than falling
+  // back to the development refusal.
+  let release = IGNITION_RELEASE.directory(&parameters);
+  fs::create_dir_all(&release)?;
+  fs::copy(&fixture.cache, release.join(IGNITION_RELEASE.cache_file))?;
+  fs::copy(
+    &fixture.admission_path,
+    release.join(IGNITION_RELEASE.admission_file),
+  )?;
+  let mismatched = SetupConfig::from_ignition_env(false, lookup).err().unwrap();
+  assert!(!mismatched.to_string().contains("fetch-params"));
+
+  let explicit = fixture.environment();
+  let config = SetupConfig::from_ignition_env(false, |name| {
+    explicit.get(name).cloned().or_else(|| lookup(name))
+  })?;
+  assert_eq!(config.class(), SetupClass::Ignition);
+  Ok(())
+}

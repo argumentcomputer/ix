@@ -370,7 +370,7 @@ extern "C" int ix_kzg_msm_invoke_resident(int device, void* context,
 
 #include "kzg_srs.cuh"
 
-extern "C" int ix_kzg_fft_batch(int device, const FftJob* jobs,
+IX_KZG_EXPORT int ix_kzg_fft_batch(int device, const FftJob* jobs,
                                           size_t job_count, uint32_t lg, bool inverse,
                                           const fr_t* shift, size_t slots) {
     ProfileRange range(inverse ? "kzg/ifft-batch" : "kzg/fft-batch");

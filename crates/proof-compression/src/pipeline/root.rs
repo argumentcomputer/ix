@@ -9,69 +9,20 @@ use multi_stark::types::Val;
 use p3_blake3::Blake3;
 use p3_field::TwoAdicField;
 use p3_symmetric::CryptographicHasher;
-use std::{fs, path::PathBuf, time::Instant};
+use std::{fs, path::Path, time::Instant};
 
 /// Layout file a normalized root carries beside its proof.
 pub(super) const FIXED_ROOT_LAYOUT: &str = "fixed-root.json";
 
-/// Compiled worker features for deployment checks.
-fn print_capabilities() {
-  println!(
-    "{}",
-    serde_json::json!({
-      "format": "ix-compression-capabilities/v1",
-      "binary": "ix-compression-worker",
-      "curve": crate::kzg::curve::NAME,
-      "cuda": cfg!(feature = "cuda"),
-      "parallel": cfg!(feature = "parallel"),
-      "development_setup_only": false,
-      "ignition_setup": true,
-      "terminal_plonk": cfg!(feature = "plonk"),
-      "terminal_groth16": cfg!(feature = "groth16"),
-      "terminal_plonk_cuda": cfg!(all(feature = "plonk", feature = "cuda")),
-      "terminal_groth16_cuda": cfg!(all(feature = "groth16", feature = "cuda")),
-    })
-  );
-}
-
-/// Report the process's resident and virtual size every 30 seconds so a
-/// long stage's memory profile is visible in its log.
-fn spawn_memory_monitor() {
-  std::thread::spawn(|| {
-    loop {
-      std::thread::sleep(std::time::Duration::from_secs(30));
-      if let Ok(status) = fs::read_to_string("/proc/self/status") {
-        eprintln!(
-          "{}",
-          status
-            .lines()
-            .filter(|l| l.starts_with("VmRSS:") || l.starts_with("VmSize:"))
-            .collect::<Vec<_>>()
-            .join(" ")
-        );
-      }
-    }
-  });
-}
-
-pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-  if args.len() == 1 && args[0] == "capabilities" {
-    print_capabilities();
-    return Ok(());
-  }
-  if args.len() < 2 {
-    return Err("usage: ix-compression-worker fri <ix-artifacts> <output-dir> [--native-only | --check-only | --prove-outer]".into());
-  }
-  let dir = PathBuf::from(&args[0]);
-  let out = PathBuf::from(&args[1]);
-  let mode = args.get(2).map_or("--check-only", String::as_str);
-  if args.len() > 3
-    || !matches!(mode, "--native-only" | "--check-only" | "--prove-outer")
-  {
-    return Err("invalid mode".into());
-  }
-  fs::create_dir_all(&out)?;
-  spawn_memory_monitor();
+/// Verify the root input in `dir`, build its FRI verifier circuit and check
+/// its constraints, writing the circuit's identity and cost to `out`. With
+/// `prove`, also prove the circuit and write the outer FRI proof.
+pub(super) fn run(
+  dir: &Path,
+  out: &Path,
+  prove: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+  fs::create_dir_all(out)?;
   let input_span = tracing::info_span!("compression/load_input").entered();
   let vk_bytes = fs::read(dir.join("root-vk.bin"))?;
   let native_key = aiur::vk_codec::AiurVerifyingKey::from_bytes(&vk_bytes)?;
@@ -92,14 +43,14 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
   tracing::info_span!("compression/verify_input")
     .in_scope(|| native_key.verify(&claims[0], &proof))
     .map_err(|e| format!("Aiur policy: {e:?}"))?;
-  println!(
+  eprintln!(
     "Native Ix root batch verified in {:?}: {} bytes, {} circuits, {} shards",
     start.elapsed(),
     bytes.len(),
     system.circuits.len(),
     proof.proofs.len()
   );
-  println!(
+  eprintln!(
     "log_blowup={} cap={} final_log={} arity={} queries={} commit_pow={} query_pow={}",
     cp.log_blowup,
     cp.cap_height,
@@ -109,15 +60,12 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     fp.commit_proof_of_work_bits,
     fp.query_proof_of_work_bits
   );
-  println!("Trusted VK BLAKE3: {:02x?}", Blake3.hash_iter(vk_bytes));
-  println!("Expected public claims: {claims:?}");
-  println!(
+  eprintln!("Trusted VK BLAKE3: {:02x?}", Blake3.hash_iter(vk_bytes));
+  eprintln!("Expected public claims: {claims:?}");
+  eprintln!(
     "Fixed messages (validated Aiur memory-closure policy): {}",
     proof.preamble.messages.len()
   );
-  if mode == "--native-only" {
-    return Ok(());
-  }
   let verifier_key = VerifierKey::from_system(system);
   fs::write(out.join("inner-vk.bin"), verifier_key.to_bytes()?)?;
   // A normalized root carries its layout; the verifier circuit then depends
@@ -146,7 +94,7 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
   let max_trace_height = 1usize << 24;
   let layout =
     prepared.circuit().multi_stark_layout_with_max_height(max_trace_height)?;
-  println!(
+  eprintln!(
     "Circuit preparation: {:?}; {:?}",
     start.elapsed(),
     prepared.circuit().stats()
@@ -167,14 +115,14 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     .max()
     .unwrap();
   let log_lde = largest_trace.ilog2() as usize + cp.log_blowup;
-  println!(
+  eprintln!(
     "Largest outer LDE: 2^{log_lde}; {} computation traces",
     layout.main_heights.len()
   );
   if log_lde > Val::TWO_ADICITY {
     return Err(format!("outer LDE requires 2^{log_lde} points; Goldilocks supports at most 2^{}; a smaller/partitioned layout is required", Val::TWO_ADICITY).into());
   }
-  if mode == "--check-only" {
+  if !prove {
     return Ok(());
   }
   // This estimate excludes stage 2, quotients and scratch; enforce a separate
@@ -183,7 +131,7 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     .trace_field_bytes
     .checked_mul(1usize << cp.log_blowup)
     .ok_or("LDE size overflow")?;
-  println!(
+  eprintln!(
     "Advice + fixed LDE bytes (not total prover memory): {base_lde_bytes}"
   );
   if base_lde_bytes > (192usize << 30) {
@@ -198,10 +146,10 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
   let start = Instant::now();
   let (verifier, outer_proof) = prepared
     .prove_fri(GoldilocksBlake3Config::new(cp, fp), max_trace_height)?;
-  println!("FRI proving and verification: {:?}", start.elapsed());
+  eprintln!("FRI proving and verification: {:?}", start.elapsed());
   let _output_span = tracing::info_span!("compression/write_output").entered();
   let bytes = outer_proof.to_bytes()?;
-  println!("Outer proof: {} bytes", bytes.len());
+  eprintln!("Outer proof: {} bytes", bytes.len());
   fs::write(out.join("outer-proof.bin"), bytes)?;
   fs::write(out.join("outer-vk.bin"), verifier.key.to_bytes()?)?;
   fs::write(

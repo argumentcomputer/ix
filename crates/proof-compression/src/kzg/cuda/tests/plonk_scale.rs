@@ -150,6 +150,9 @@ fn point_hex(point: G1Projective) -> String {
 }
 
 fn memory(device: i32) -> Value {
+  // libix_bn254_cuda.so keeps its CUDA runtime private; these queries read
+  // driver-wide state through a separate static runtime.
+  #[link(name = "cudart_static", kind = "static")]
   unsafe extern "C" {
     fn cudaMemGetInfo(free: *mut usize, total: *mut usize) -> i32;
     fn cudaDeviceGetDefaultMemPool(pool: *mut *mut c_void, device: i32) -> i32;

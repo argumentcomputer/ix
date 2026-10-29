@@ -1,4 +1,0 @@
-IX_PLONK_BN254_1 {
-    global: ix_plonk_bn254_*;
-    local: *;
-};

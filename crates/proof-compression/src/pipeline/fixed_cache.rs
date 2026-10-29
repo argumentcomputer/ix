@@ -1,14 +1,14 @@
 //! Trusted local preprocessing, independent of each proof's witness and
-//! openings. Entries are keyed by the executable digest and the stage
-//! verifying key, so a rebuilt binary never reuses another build's preprocessing.
-//! The root is `IX_KZG_FIXED_CACHE`, or `<stage>/kzg/fixed-cache`.
+//! openings. Entries are keyed by the cache format and the stage verifying
+//! key, which commits to the fixed polynomials, so rebuilding the executable
+//! keeps them valid.
+//! The root is `CompressConfig::fixed_cache`, or `<stage>/kzg/fixed-cache`.
 use super::storage::{self, Manifest, Result};
 use serde::{Deserialize, Serialize};
 use std::{
   fs::{self, File},
   io,
   path::{Path, PathBuf},
-  sync::OnceLock,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -39,15 +39,6 @@ pub(crate) struct FixedCache {
   directory: PathBuf,
 }
 
-pub(crate) fn executable_digest() -> Result<[u8; 32]> {
-  static DIGEST: OnceLock<[u8; 32]> = OnceLock::new();
-  if let Some(digest) = DIGEST.get() {
-    return Ok(*digest);
-  }
-  let digest = file_digest(&std::env::current_exe()?)?;
-  Ok(*DIGEST.get_or_init(|| digest))
-}
-
 fn file_digest(path: &Path) -> io::Result<[u8; 32]> {
   let mut hasher = blake3::Hasher::new();
   hasher.update_mmap_rayon(path)?;
@@ -55,15 +46,15 @@ fn file_digest(path: &Path) -> io::Result<[u8; 32]> {
 }
 
 impl FixedCache {
-  /// The executable digest conservatively binds the compiler, lowering,
-  /// dependency versions, SRS recipe, and all circuit implementation choices.
-  pub(crate) fn from_identity(root: &Path, vk: &[u8]) -> Result<Self> {
+  /// Bump the format tag whenever the cached files' layout or contents change
+  /// for the same verifying key; restores check each file's digest, and a
+  /// stale layout fails the final proof verification.
+  pub(crate) fn from_identity(root: &Path, vk: &[u8]) -> Self {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"ix/kzg-fixed-cache/bn254/v1");
-    hasher.update(&executable_digest()?);
+    hasher.update(b"ix/kzg-fixed-cache/bn254/v2");
     hasher.update(vk);
     let identity = *hasher.finalize().as_bytes();
-    Ok(Self::new(root, identity))
+    Self::new(root, identity)
   }
 
   fn new(root: &Path, identity: [u8; 32]) -> Self {

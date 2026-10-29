@@ -5,6 +5,11 @@
 #include <cstring>
 
 #include <ff/alt_bn128.hpp>
+
+// Entry points whose parameters are ABI structs from an anonymous namespace
+// would otherwise inherit hidden visibility from those types.
+#define IX_KZG_EXPORT extern "C" __attribute__((visibility("default")))
+
 constexpr size_t KZG_FQ_LIMBS = 4;
 static_assert(MAX_LG_DOMAIN_SIZE == 28);
 

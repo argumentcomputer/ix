@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 )
 
+// TODO: Decide between SHA-256 and BLAKE3 for artifact/cache metadata.
+// Coordinate Rust/Go encodings and any catalog or envelope key-ID changes;
+// proof-protocol hashes have separate compatibility requirements.
 type artifact struct {
 	SHA256 string
 	Bytes  int64

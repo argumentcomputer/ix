@@ -6,8 +6,6 @@ mod plonk_export;
 mod relation;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(in crate::pipeline) use plonk_export::export as plonk_export;
-#[cfg(feature = "plonk")]
-pub(in crate::pipeline) use plonk_export::export_first as plonk_export_first;
 
 use super::super::stages::{
   construct::{self, Lowered},
@@ -56,7 +54,7 @@ pub(crate) fn stage(
   dir: &Path,
   vk: &[u8],
   statement: &Statement,
-  config: &super::super::WorkerConfig,
+  config: &super::super::StageConfig,
 ) -> storage::Result<()> {
   let frontend = Frontend::from_built(built, vk)?;
   frontend.stage(assignment, dir, statement, config)
@@ -99,7 +97,7 @@ impl Frontend {
     assignment: Assignment<Scalar>,
     dir: &Path,
     statement: &Statement,
-    config: &super::super::WorkerConfig,
+    config: &super::super::StageConfig,
   ) -> storage::Result<()> {
     if assignment.public_values().len() != RECURSIVE_PUBLIC_VALUES
       || assignment.public_values()[..18]
@@ -129,7 +127,7 @@ impl Frontend {
     setup.bind_stage(dir, height, 2)?;
     storage::save(&dir.join("pairings.bin"), &self.pairings)?;
     let cache_identity = [self.vk.as_slice(), &setup_id].concat();
-    let cache = config.fixed_cache(dir, &cache_identity)?;
+    let cache = config.fixed_cache(dir, &cache_identity);
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       &self.compiled,
@@ -381,7 +379,7 @@ fn prove(
     out.join("prove-report.json"),
     serde_json::to_vec_pretty(&report)?,
   )?;
-  println!("{}", serde_json::to_string_pretty(&report)?);
+  eprintln!("{}", serde_json::to_string_pretty(&report)?);
   drop(output_span);
   cache.publish(dir)?;
   Ok(())
@@ -708,7 +706,7 @@ mod tests {
   -> storage::Result<()> {
     use crate::{
       kzg::srs::ignition::test_admission,
-      pipeline::{WorkerConfig, setup::SetupConfig},
+      pipeline::{StageConfig, setup::SetupConfig},
     };
     let (admission, _) = test_admission(7, 256, 44);
     let inner = Srs::unsafe_dev_setup(2, b"ignition-stage-development-inner");
@@ -733,7 +731,7 @@ mod tests {
     let root = std::env::temp_dir()
       .join(format!("ignition-stage-admission-{}", std::process::id(),));
     assert!(!root.exists());
-    let config = WorkerConfig {
+    let config = StageConfig {
       setup: SetupConfig::Ignition {
         cache: root.join("absent-cache.bin"),
         manifest: [0; 32],
@@ -992,7 +990,7 @@ mod tests {
     let mut encoded = vec![];
     keys.serialize_compressed(&mut encoded)?;
     storage::save(&dir.join("pairings.bin"), &Pairings { keys: encoded })?;
-    let cache = fixed_cache::FixedCache::from_identity(cache_root, b"outer")?;
+    let cache = fixed_cache::FixedCache::from_identity(cache_root, b"outer");
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       compiled,
@@ -1200,7 +1198,7 @@ mod tests {
         &dir,
         b"recursive-fixture",
         &init_claim::INIT_PUBLIC_WORDS,
-        &crate::pipeline::WorkerConfig::development(),
+        &crate::pipeline::StageConfig::development(),
       )?;
       let report: serde_json::Value =
         serde_json::from_slice(&fs::read(dir.join("kzg/prove-report.json"))?)?;
@@ -1319,7 +1317,7 @@ mod tests {
       &dir,
       &plan.identity(),
       &init_claim::INIT_PUBLIC_WORDS,
-      &crate::pipeline::WorkerConfig::development(),
+      &crate::pipeline::StageConfig::development(),
     )?;
     let packet = fs::read(dir.join("kzg/packet.bin"))?;
     verify_saved(&dir, &packet, None)?;

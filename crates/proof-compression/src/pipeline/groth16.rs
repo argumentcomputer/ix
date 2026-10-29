@@ -1,12 +1,11 @@
 //! Terminal BN254 Groth16 proofs under independently admitted circuit keys.
 #[cfg(feature = "groth16")]
 use super::gnark;
-use super::storage;
-#[cfg(any(not(feature = "groth16"), test))]
-use super::terminal::Scratch;
-#[cfg(not(feature = "groth16"))]
-use super::terminal::checked;
 #[cfg(any(feature = "groth16", test))]
+use super::storage;
+#[cfg(test)]
+use super::terminal::Scratch;
+#[cfg(feature = "groth16")]
 use super::terminal::sha256;
 use super::{
   Result,
@@ -16,14 +15,13 @@ use super::{
 };
 #[cfg(feature = "groth16")]
 use super::{
+  setup::SetupConfig,
   terminal::{claim_digest, read_bounded},
   wrap,
 };
-#[cfg(any(feature = "groth16", test))]
+#[cfg(feature = "groth16")]
 use std::fs;
 use std::path::{Path, PathBuf};
-#[cfg(not(feature = "groth16"))]
-use std::process::Command;
 
 pub(super) const PROOF_TAG: &[u8; 8] = b"IXBN\0\0\0\x03";
 const CATALOG_FORMAT: &str = "ix-bn254-groth16-verifiers-v1";
@@ -115,6 +113,7 @@ fn select_key(
   )
 }
 
+#[cfg(feature = "groth16")]
 pub(super) fn verify(
   packet: &[u8],
   claim: &[u8],
@@ -126,6 +125,19 @@ pub(super) fn verify(
   verify_with_catalog(packet, claim, &catalog_path()?, allow_development)
 }
 
+#[cfg(not(feature = "groth16"))]
+pub(super) fn verify(
+  packet: &[u8],
+  _claim: &[u8],
+  _allow_development: bool,
+) -> Result<SetupClass> {
+  if packet.len() != 164 + 32 && packet.len() != MAX_PROOF_BYTES + 32 {
+    return Err("invalid Groth16 packet length".into());
+  }
+  Err("Groth16 proofs are verified by gnark, and this ix was built without Groth16; rebuild with IX_GROTH16=1".into())
+}
+
+#[cfg(feature = "groth16")]
 fn verify_with_catalog(
   packet: &[u8],
   claim: &[u8],
@@ -138,27 +150,12 @@ fn verify_with_catalog(
   let id = packet[..32].try_into()?;
   let key = select_key(catalog, id, allow_development)?;
   let expected = *blake3::hash(claim).as_bytes();
-  #[cfg(feature = "groth16")]
   gnark::verify_groth16(
     &read_bounded(&key.path, 1 << 20)?,
     id,
     &packet[32..],
     &expected,
   )?;
-  #[cfg(not(feature = "groth16"))]
-  {
-    let scratch = Scratch::new()?;
-    let proof = scratch.0.join("proof.bin");
-    storage::write_atomic(&proof, &packet[32..])?;
-    checked(
-      Command::new(super::worker_executable()?)
-        .args(["groth16", "verify-key"])
-        .arg(&key.path)
-        .arg(hex(id))
-        .arg(proof)
-        .arg(hex(&expected)),
-    )?;
-  }
   key.setup_class(allow_development)
 }
 
@@ -287,14 +284,18 @@ pub(super) fn check_statement(
   Ok(())
 }
 
+/// Prove the recursive KZG packet in `packet` in Groth16 under the prepared
+/// artifacts `IX_GROTH16_ARTIFACTS` names, and write its envelope, verifying
+/// key and Solidity verifier to the empty directory `out`.
 #[cfg(feature = "groth16")]
-fn wrap_packet(
+pub(super) fn wrap_packet(
   verifier: &Path,
   packet: &Path,
   trusted: &str,
   expected: &statement::Statement,
   out: &Path,
   allow_development: bool,
+  setup: &SetupConfig,
 ) -> Result<()> {
   statement::from_claims_bytes(&statement::to_claims_bytes(expected))?;
   let (artifacts, key) = prepared(allow_development)?;
@@ -306,7 +307,7 @@ fn wrap_packet(
     return Err("Groth16 output directory must be empty".into());
   }
   let input = out.join("input");
-  wrap::plonk_export(verifier, packet, trusted, expected, &input)?;
+  wrap::plonk_export(verifier, packet, trusted, expected, &input, setup)?;
   let exported: serde_json::Value = load_json(&input.join("vk.json"))?;
   let inner_id =
     exported["vkId"].as_str().ok_or("missing exported inner key identity")?;
@@ -341,56 +342,14 @@ fn wrap_packet(
 }
 
 #[cfg(feature = "groth16")]
-pub(crate) fn run(args: &[String]) -> Result<()> {
-  let development_flags =
-    args.iter().filter(|s| s.as_str() == "--allow-development").count();
-  let production_flags =
-    args.iter().filter(|s| s.as_str() == "--production").count();
-  if development_flags > 1
-    || production_flags > 1
-    || development_flags + production_flags > 1
-  {
-    return Err("conflicting Groth16 setup policy flags".into());
-  }
-  let allow_development = development_flags == 1;
-  let positional: Vec<_> = args
-    .iter()
-    .filter(|s| !matches!(s.as_str(), "--allow-development" | "--production"))
-    .map(String::as_str)
-    .collect();
-  match positional.as_slice() {
-    ["compile", schema, out] => compile(Path::new(schema), Path::new(out)),
-    ["setup-development", dir] => setup(Path::new(dir), gnark::Groth16Setup::Development),
-    ["setup-mpc", dir, descriptor, pin] => { digest(pin)?; setup(Path::new(dir), gnark::Groth16Setup::Ceremony { path:Path::new(descriptor),digest:pin }) },
-    ["import", dir, descriptor, pin] => { digest(pin)?; setup(Path::new(dir), gnark::Groth16Setup::Import { path:Path::new(descriptor),digest:pin }) },
-    ["prove", dir, witness, claim, out] => prove(Path::new(dir),Path::new(witness),&digest(claim)?,Path::new(out)),
-    ["verify-key", key, pin, proof, claim] => gnark::verify_groth16(&read_bounded(Path::new(key), 1<<20)?, &digest(pin)?, &read_bounded(Path::new(proof), MAX_PROOF_BYTES)?, &digest(claim)?),
-    ["export", verifier, packet, trusted, expected, out] => {
-      let expected = load_json(Path::new(expected))?;
-      wrap::plonk_export(Path::new(verifier), Path::new(packet), trusted, &expected, Path::new(out))
-    },
-    ["verify", proof, claim] => {
-      let bytes = read_bounded(Path::new(proof), MAX_PROOF_BYTES + 32 + PROOF_TAG.len())?;
-      let packet = bytes.strip_prefix(PROOF_TAG).ok_or("unsupported Groth16 proof curve or version")?;
-      let setup = verify(packet, &fs::read(claim)?, allow_development)?;
-      println!("{}", serde_json::json!({"verified": true, "curve": "bn254", "setup": setup.label()}));
-      Ok(())
-    },
-    ["wrap", verifier, packet, trusted, expected, out] => {
-      let expected = load_json(Path::new(expected))?;
-      wrap_packet(Path::new(verifier), Path::new(packet), trusted, &expected, Path::new(out), allow_development)
-    },
-    _ => Err("usage: ix-compression-worker groth16 compile <vk.json> <empty-dir> | setup-development <dir> | setup-mpc <dir> <ceremony.json> <trusted-sha256> | import <dir> <release.json> <trusted-sha256> | prove <dir> <witness.json> <expected-claim-digest> <out> | export <verifier.bin> <packet.bin> <trusted-inner-blake3> <expected-statement.json> <out> | wrap <verifier.bin> <packet.bin> <trusted-inner-blake3> <expected-statement.json> <out> [--allow-development] | verify <proof.envelope.bin> <claim.bin> [--allow-development]".into()),
-  }
-}
-
-#[cfg(feature = "groth16")]
 fn artifact(path: &Path) -> Result<Artifact> {
   Ok(Artifact { sha256: hex(&sha256(path)?), bytes: fs::metadata(path)?.len() })
 }
 
+/// Compile the gnark Groth16 verifier circuit for the exported verifier
+/// description `schema` into the empty directory `out`, without keys.
 #[cfg(feature = "groth16")]
-fn compile(schema: &Path, out: &Path) -> Result<()> {
+pub fn compile(schema: &Path, out: &Path) -> Result<()> {
   super::prepare_output(out)?;
   let schema = read_bounded(schema, 16 << 20)?;
   let info = gnark::compile_groth16(&schema, &out.join("circuit.bin"))?;
@@ -416,6 +375,30 @@ fn compile(schema: &Path, out: &Path) -> Result<()> {
     &serde_json::to_vec_pretty(&metadata)?,
   )?;
   Ok(())
+}
+
+/// Prepare known-trapdoor development keys for the circuit compiled in
+/// `dir`. Proofs under them are accepted only with explicit development
+/// verification.
+#[cfg(feature = "groth16")]
+pub fn setup_development(dir: &Path) -> Result<()> {
+  setup(dir, gnark::Groth16Setup::Development)
+}
+
+/// Run the circuit-specific MPC phase for the circuit compiled in `dir` from
+/// the ceremony descriptor `descriptor`, whose SHA-256 must be `pin`.
+#[cfg(feature = "groth16")]
+pub fn setup_mpc(dir: &Path, descriptor: &Path, pin: &str) -> Result<()> {
+  digest(pin)?;
+  setup(dir, gnark::Groth16Setup::Ceremony { path: descriptor, digest: pin })
+}
+
+/// Import released keys for the circuit compiled in `dir` from the release
+/// descriptor `descriptor`, whose SHA-256 must be `pin`.
+#[cfg(feature = "groth16")]
+pub fn import(dir: &Path, descriptor: &Path, pin: &str) -> Result<()> {
+  digest(pin)?;
+  setup(dir, gnark::Groth16Setup::Import { path: descriptor, digest: pin })
 }
 
 #[cfg(feature = "groth16")]

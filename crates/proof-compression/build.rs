@@ -1,10 +1,16 @@
-//! Native proving backends for the compression worker.
+//! Native proving backends.
 //!
-//! Without the `cuda` feature KZG builds need
-//! neither nvcc nor the CUDA headers and libraries. With it, the selected
-//! sppark instantiation and the KZG kernels are compiled into their own
-//! archive, isolated from multi-stark's Goldilocks instantiation by the
-//! symbol renames in `cuda/kzg_sppark.cuh`.
+//! Without the `cuda` feature the crate needs neither nvcc nor the CUDA
+//! toolkit. With it, the BN254 KZG kernels and, with `plonk`, gnark's PLONK
+//! kernels are linked against one sppark source into `libix_bn254_cuda.so`.
+//! The library carries a private C++ runtime, unwinder and CUDA runtime and
+//! exports only its C entry points, so it can join a process that links a
+//! different C++ runtime (the Lean executable links LLVM's libc++).
+//!
+//! `IX_RUNTIME_ARTIFACTS` names every shared library an executable built from
+//! this crate must ship beside itself, as a JSON array of
+//! `{"source": <absolute path>, "path": <path relative to lib/>}`. ICICLE's
+//! CUDA backend plugins are loaded at runtime and appear only here.
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -21,16 +27,28 @@ const SOURCES: &[&str] = &[
   "cuda/kzg_transfer.cuh",
   "cuda/kzg_profile.cuh",
   "cuda/kzg_runtime.cpp",
-  "cuda/kzg_sppark.cuh",
+  "cuda/plonk/plonk.cu",
+  "cuda/plonk/ix_plonk_bn254.h",
 ];
+
+const LIBRARY: &str = "libix_bn254_cuda.so";
+
+const EXPORTS: &str = r"{
+    global: ix_kzg_*; ix_plonk_bn254_*;
+    local: *;
+};";
+
+/// A shared library to install at `lib/<path>` beside the executable.
+struct RuntimeArtifact {
+  source: PathBuf,
+  path: String,
+}
 
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 #[path = "build/gnark.rs"]
 mod gnark;
 
 fn main() {
-  #[cfg(any(feature = "plonk", feature = "groth16"))]
-  gnark::build();
   println!("cargo:rerun-if-changed=build.rs");
   for source in SOURCES {
     println!("cargo:rerun-if-changed={source}");
@@ -42,29 +60,70 @@ fn main() {
     "NVCC_CCBIN",
     "NVCC_PREPEND_FLAGS",
     "NVCC_APPEND_FLAGS",
+    "CC",
     "IX_KZG_CUDA_ARCHS",
     "MULTI_STARK_CUDA_ARCHS",
   ] {
     println!("cargo:rerun-if-env-changed={variable}");
   }
+  let mut artifacts = Vec::new();
   if env::var_os("CARGO_FEATURE_CUDA").is_some() {
-    println!(
-      "cargo:rustc-link-arg-bin=ix-compression-worker=-Wl,-rpath,$ORIGIN/../lib"
-    );
-    build_kzg_cuda();
+    artifacts.push(RuntimeArtifact {
+      source: build_bn254_cuda(),
+      path: LIBRARY.to_owned(),
+    });
   }
+  // cgo links the PLONK entry points against the library built above.
+  #[cfg(any(feature = "plonk", feature = "groth16"))]
+  artifacts.extend(gnark::build());
+  println!("cargo:rustc-env=IX_RUNTIME_ARTIFACTS={}", manifest(&artifacts));
 }
 
-fn build_kzg_cuda() {
+fn manifest(artifacts: &[RuntimeArtifact]) -> String {
+  let entries: Vec<_> = artifacts
+    .iter()
+    .map(|artifact| {
+      let source = artifact.source.to_str().unwrap_or_else(|| {
+        panic!("runtime artifact path {:?} is not UTF-8", artifact.source)
+      });
+      format!(
+        r#"{{"source":{},"path":{}}}"#,
+        json_string(source),
+        json_string(&artifact.path)
+      )
+    })
+    .collect();
+  format!("[{}]", entries.join(","))
+}
+
+fn json_string(value: &str) -> String {
+  let mut quoted = String::with_capacity(value.len() + 2);
+  quoted.push('"');
+  for character in value.chars() {
+    match character {
+      '"' => quoted.push_str("\\\""),
+      '\\' => quoted.push_str("\\\\"),
+      character if character.is_control() => {
+        quoted.push_str(&format!("\\u{:04x}", u32::from(character)));
+      },
+      character => quoted.push(character),
+    }
+  }
+  quoted.push('"');
+  quoted
+}
+
+/// Builds `libix_bn254_cuda.so` in `OUT_DIR` and links it into this crate.
+fn build_bn254_cuda() -> PathBuf {
   assert_eq!(
     env::var("CARGO_CFG_TARGET_OS").as_deref(),
     Ok("linux"),
-    "the KZG CUDA backend supports Linux targets only"
+    "the BN254 CUDA backend supports Linux targets only"
   );
   assert_eq!(
     env::var("CARGO_CFG_TARGET_ARCH").as_deref(),
     Ok("x86_64"),
-    "the KZG CUDA backend supports x86_64 targets only"
+    "the BN254 CUDA backend supports x86_64 targets only"
   );
   let nvcc = nvcc_path();
   let architectures = cuda_architectures(&nvcc);
@@ -77,7 +136,7 @@ fn build_kzg_cuda() {
       architectures.join(",")
     ),
   )
-  .expect("write KZG CUDA architecture list");
+  .expect("write BN254 CUDA architecture list");
   println!(
     "cargo:rustc-env=IX_KZG_CUDA_COMPILED_ARCHS={}",
     architectures.join(",")
@@ -93,47 +152,83 @@ fn build_kzg_cuda() {
   for directory in ["ec", "ff", "msm", "ntt", "polynomial", "util"] {
     println!("cargo:rerun-if-changed={}", root.join(directory).display());
   }
+  let mut sources = vec!["cuda/kzg.cu", "cuda/kzg_runtime.cpp"];
+  if env::var_os("CARGO_FEATURE_PLONK").is_some() {
+    sources.push("cuda/plonk/plonk.cu");
+  }
   let mut objects = Vec::new();
-  for (source, name) in
-    [("cuda/kzg.cu", "kzg.o"), ("cuda/kzg_runtime.cpp", "kzg_runtime.o")]
-  {
-    let object = out.join(name);
+  for source in sources {
+    let object = out.join(Path::new(source).with_extension("o").file_name().unwrap());
     let mut command = cuda_compile_command(&nvcc, &architectures);
     command.args([
       "-c",
       "-DFEATURE_BN254",
       "-D__BLST_PORTABLE__",
       "-DMAX_LG_DOMAIN_SIZE=28",
-      "-include",
-      "cuda/kzg_sppark.cuh",
     ]);
     command.arg(format!("-I{}", root.display()));
     command.arg(format!("-I{}", root.join("util").display()));
     command.arg(format!("-I{}", blst.display()));
     command.arg("-include").arg(&architecture_header);
-    let status = command
-      .arg(source)
-      .arg("-o")
-      .arg(&object)
-      .status()
-      .unwrap_or_else(|error| {
-        panic!("failed to execute {nvcc:?}: {error}; install the CUDA toolkit or set NVCC")
-      });
-    assert!(status.success(), "KZG CUDA compilation failed: {source}");
+    // sppark's MSM sort kernel is an ordinary definition in its header;
+    // kzg.cu supplies the library's only instance.
+    if source != "cuda/kzg.cu" {
+      command.arg("-D__MSM_SORT_DONT_IMPLEMENT__");
+    }
+    run(command.arg(source).arg("-o").arg(&object));
     objects.push(object);
   }
-  let archive = out.join("libix_kzg_cuda.a");
-  let status = Command::new(&nvcc)
-    .arg("--lib")
-    .args(&objects)
+  // The host-side field arithmetic calls blst's portable assembly.
+  let compiler = env::var_os("CC").unwrap_or_else(|| "cc".into());
+  let blst_root = blst.parent().expect("blst sources live under src/");
+  for (source, name) in [
+    (blst.join("server.c"), "blst_server.o"),
+    (blst_root.join("build/assembly.S"), "blst_assembly.o"),
+  ] {
+    let object = out.join(name);
+    run(Command::new(&compiler)
+      .args(["-O3", "-fPIC", "-fvisibility=hidden", "-D__BLST_PORTABLE__"])
+      .arg(format!("-I{}", blst.display()))
+      .arg("-c")
+      .arg(source)
+      .arg("-o")
+      .arg(&object));
+    objects.push(object);
+  }
+  let exports = out.join("ix_bn254_cuda.map");
+  std::fs::write(&exports, EXPORTS).expect("write BN254 CUDA export map");
+  let library = out.join(LIBRARY);
+  run(Command::new(&nvcc)
+    .args([
+      "--shared",
+      "--cudart=static",
+      "--compiler-options=-static-libstdc++,-static-libgcc",
+    ])
+    .arg(format!(
+      "-Xlinker=-z,defs,-soname,{LIBRARY},--version-script,{}",
+      exports.display()
+    ))
     .arg("-o")
-    .arg(&archive)
-    .status()
-    .expect("nvcc archive");
-  assert!(status.success(), "KZG CUDA archive failed");
+    .arg(&library)
+    .args(&objects)
+    .args(["-ldl", "-lrt", "-lpthread"]));
   println!("cargo:rustc-link-search=native={}", out.display());
-  println!("cargo:rustc-link-lib=static=ix_kzg_cuda");
-  link_cuda_runtime(&nvcc);
+  println!("cargo:rustc-link-lib=dylib=ix_bn254_cuda");
+  println!("cargo:rustc-link-arg=-Wl,-rpath,{}", out.display());
+  // Tests query the CUDA runtime directly.
+  for directory in cuda_library_directories(&nvcc) {
+    if directory.is_dir() {
+      println!("cargo:rustc-link-search=native={}", directory.display());
+    }
+  }
+  library
+}
+
+fn run(command: &mut Command) {
+  let status = command
+    .status()
+    .unwrap_or_else(|error| panic!("failed to execute {command:?}: {error}"));
+  assert!(status.success(), "{command:?} failed with {status}");
 }
 
 fn cuda_compile_command(
@@ -157,19 +252,6 @@ fn cuda_compile_command(
     ));
   }
   command
-}
-
-fn link_cuda_runtime(nvcc: &std::ffi::OsStr) {
-  // The standalone worker links the KZG backend with its host runtime.
-  println!("cargo:rustc-link-lib=static=cudart_static");
-  for lib in ["dl", "rt", "pthread", "stdc++"] {
-    println!("cargo:rustc-link-lib=dylib={lib}");
-  }
-  for directory in cuda_library_directories(nvcc) {
-    if directory.is_dir() {
-      println!("cargo:rustc-link-search=native={}", directory.display());
-    }
-  }
 }
 
 fn nvcc_path() -> std::ffi::OsString {
