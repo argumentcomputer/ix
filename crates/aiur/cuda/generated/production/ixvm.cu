@@ -15552,6 +15552,88 @@ extern "C" int aiur_trace_ixvm_439(int device, const uint8_t* seeds, uint32_t en
   return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ixvm_439);
 }
 
+__device__ __constant__ uint64_t inverse_479_0[] = {18446744069414584320ULL, 0ULL};
+__device__ __constant__ uint64_t inverse_479_1[] = {18446744069414584320ULL, 0ULL};
+template<bool Typed> struct Seed_ixvm_479 {
+  const uint8_t* data;
+  __device__ __forceinline__ uint64_t word(size_t index) const {
+    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
+    switch (index) {
+      case 0: return load_u64(data + 0);
+      case 1: return load_u32(data + 8);
+      case 2: return load_u8(data + 12);
+      case 3: return load_u8(data + 13);
+      default: return 0;
+    }
+  }
+};
+template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_479(Seed_ixvm_479<Typed> seed, Layout layout, uint64_t* row) {
+  const uint64_t v_0 = seed.word(1);
+  row[0] = v_0;
+  const uint64_t v_1 = seed.word(2);
+  row[layout.auxiliaries + 1] = v_1;
+  if (v_0 > 0xffffffffULL || v_1 > 0xffffffffULL) return 3;
+  const uint32_t op_1 = uint32_t(v_0) - uint32_t(v_1);
+  const uint64_t v_2 = uint64_t(v_0 < v_1);
+  row[layout.auxiliaries + 2] = (v_0 & 0xffffULL);
+  row[layout.auxiliaries + 3] = ((v_0 >> 16) & 0xffffULL);
+  row[layout.auxiliaries + 4] = (uint64_t(op_1) & 0xffffULL);
+  row[layout.auxiliaries + 5] = ((uint64_t(op_1) >> 16) & 0xffffULL);
+  row[layout.auxiliaries + 6] = (v_1 & 0xffffULL);
+  row[layout.auxiliaries + 7] = ((v_1 >> 16) & 0xffffULL);
+  switch (v_2) {
+    case 1ULL: {
+      row[layout.selectors + 0] = 1;
+      return 0;
+    }
+    default: {
+      row[layout.auxiliaries + 8] = (v_2 <= 1ULL ? inverse_479_0[v_2] : inverse(goldilocks_sub(v_2, 1ULL)));
+      const uint64_t v_3 = seed.word(3);
+      row[layout.auxiliaries + 9] = v_3;
+      if (v_0 > 0xffffffffULL || v_3 > 0xffffffffULL) return 3;
+      const uint32_t op_3 = uint32_t(v_0) - uint32_t(v_3);
+      const uint64_t v_4 = uint64_t(v_0 < v_3);
+      row[layout.auxiliaries + 10] = (v_0 & 0xffffULL);
+      row[layout.auxiliaries + 11] = ((v_0 >> 16) & 0xffffULL);
+      row[layout.auxiliaries + 12] = (uint64_t(op_3) & 0xffffULL);
+      row[layout.auxiliaries + 13] = ((uint64_t(op_3) >> 16) & 0xffffULL);
+      row[layout.auxiliaries + 14] = (v_3 & 0xffffULL);
+      row[layout.auxiliaries + 15] = ((v_3 >> 16) & 0xffffULL);
+      switch (v_4) {
+        case 1ULL: {
+          row[layout.selectors + 1] = 1;
+          return 0;
+        }
+        default: {
+          row[layout.auxiliaries + 16] = (v_4 <= 1ULL ? inverse_479_1[v_4] : inverse(goldilocks_sub(v_4, 1ULL)));
+          row[layout.selectors + 2] = 1;
+          return 0;
+        }
+      }
+    }
+  }
+}
+template<bool Typed> __global__ void kernel_ixvm_479(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (r >= real) return;
+  uint64_t* row = output + r * layout.width;
+  constexpr size_t stride = Typed ? 16 : 32;
+  const Seed_ixvm_479<Typed> seed{seeds + r * stride};
+  row[layout.auxiliaries] = seed.word(0);
+  const uint32_t status = row_ixvm_479(seed, layout, row);
+  if (status) atomicCAS(error, 0U, status);
+}
+cudaError_t launch_ixvm_479(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_ixvm_479<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_ixvm_479<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  return cudaGetLastError();
+}
+extern "C" int aiur_trace_ixvm_479(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+  if (selectors < 1 || auxiliaries < selectors || auxiliaries - selectors < 3 || width < auxiliaries || width - auxiliaries < 17) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 16 : encoding == 0 ? 32 : 0;
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_ixvm_479);
+}
+
 template<bool Typed> struct Seed_ixvm_488 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
@@ -20424,11 +20506,11 @@ extern "C" int aiur_trace_ixvm_810(int device, const uint8_t* seeds, uint32_t en
 }
 
 extern "C" const uint8_t* aiur_trace_ixvm_contract() {
-  static const uint8_t hash[32] = {30, 44, 97, 176, 8, 98, 1, 32, 41, 219, 53, 205, 220, 173, 235, 84, 38, 254, 230, 194, 251, 221, 2, 154, 142, 0, 39, 116, 76, 27, 94, 23};
+  static const uint8_t hash[32] = {129, 14, 159, 44, 120, 1, 250, 31, 183, 11, 134, 206, 203, 91, 67, 141, 77, 241, 229, 96, 164, 66, 30, 198, 223, 142, 231, 94, 155, 185, 152, 204};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_ixvm_schema() {
-  static const uint8_t hash[32] = {175, 52, 38, 179, 105, 254, 254, 82, 8, 113, 118, 49, 35, 157, 76, 221, 59, 2, 29, 203, 223, 194, 225, 92, 62, 3, 21, 251, 76, 83, 218, 60};
+  static const uint8_t hash[32] = {60, 237, 108, 253, 246, 90, 27, 252, 33, 25, 151, 218, 130, 174, 30, 240, 123, 255, 108, 117, 147, 128, 97, 66, 191, 79, 197, 28, 23, 201, 68, 48};
   return hash;
 }
 }
