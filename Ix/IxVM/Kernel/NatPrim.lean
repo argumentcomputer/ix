@@ -283,7 +283,7 @@ def natPrim := ⟦
                 let cp = utf8_last_codepoint(bs);
                 let cp_limbs = klimbs_from_g(cp);
                 let cp_lit = store(KExprNode.Lit(KLiteral.Nat(cp_limbs)));
-                let con = store(KExprNode.Const(role_addr(rc, role_char_of_nat()),
+                let con = store(KExprNode.Const(role_used_implicitly(rc, role_char_of_nat()),
                                                  store(ListNode.Nil)));
                 (1, store(KExprNode.App(con, cp_lit))),
               _ => (0, store(KExprNode.BVar(0))),
