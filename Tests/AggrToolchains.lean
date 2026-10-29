@@ -126,7 +126,7 @@ def run : IO UInt32 := do
       let (table, binding, bytes) ← tableOf piece
       let klass ← if v == "4.29.0" then do
           unless table.bound.toList.map (·.1) == Ix.Kernel.Role.all.filter (· != .stringBack) &&
-              (Ix.ClaimContext.literalClassOfBytes bytes).isError do
+              !(Ix.ClaimContext.literalClassOfBytes bytes).isOk do
             throw (IO.userError "4.29.0 must leave only String.back unbound and refuse class promotion")
           pure none
         else some <$> IO.ofExcept (Ix.ClaimContext.literalClassOfBytes bytes)
