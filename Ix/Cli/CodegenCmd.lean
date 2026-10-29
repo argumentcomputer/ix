@@ -168,10 +168,11 @@ pack into at most half their canonical seeds
 (`ProgramPlan.compactCircuitFunctions`), and the measured `weightedCircuits`.
 Every selected writer is generated from the same bytecode library as its
 host seed packer. -/
-def traceBundle : Except String (Array (String × String)) := do
+@[noinline, never_extract]
+def traceBundle (selectedTargets : List Target) : Except String (Array (String × String)) := do
   let mut files := #[]
   let mut units := #[]
-  for target in targets do
+  for target in selectedTargets do
     let source ← target.source.mapError fun error => s!"{target.label}: {repr error}"
     let compiled ← source.compile
     let grouped ← compiled.groupFunctions target.groups
@@ -203,7 +204,7 @@ def traceBundle : Except String (Array (String × String)) := do
   pure (files.push ("crates/aiur/cuda/generated/production/trace-manifest.json", manifest.pretty ++ "\n"))
 
 def emitTraceBundle (checkOnly : Bool) : IO UInt32 := do
-  let files ← match traceBundle with
+  let files ← match traceBundle targets with
     | .ok files => pure files
     | .error error => IO.eprintln s!"trace bundle: {error}"; return 1
   for (path, source) in files do
