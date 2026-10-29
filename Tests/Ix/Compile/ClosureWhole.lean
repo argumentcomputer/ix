@@ -1,8 +1,7 @@
 /-
   compile-closure-whole: a closure compile agrees with the whole compile,
-  and a closure carries whole logical units. This is the design document's
-  §6.2 (the closure-against-whole theorem, "a block's output is a function
-  of its closure") and §6.3 ("How it is checked").
+  and a closure carries whole logical units. The harness compares each
+  selected closure's compiled names and metadata with the whole artifact.
 
   The whole environment is Init+Std: the environment of
   `Benchmarks/Compile/CompileInitStd.lean` (`import Init`, `import Std` and
@@ -10,15 +9,15 @@
   environment restricted to Init+Std modules. Any later module can realise
   an on-demand auxiliary of an Init block under a private name of its own
   (the test environment has dozens of
-  `_private.<M>.0.PSigma.casesOn._arg_pusher`). By §6.3 those belong to the
+  `_private.<M>.0.PSigma.casesOn._arg_pusher`). These belong to the logical
   unit, so a closure drawn from the larger environment carries them.
 
   The whole compile is read from `CLOSURE_WHOLE_IXE=<ixe>` when it is set.
   That must be a whole-environment compile of that file by this tree, for
-  example the Rust compile
-  `ix compile Benchmarks/Compile/CompileInitStd.lean --out <ixe>`
-  (ALIGNED with `ix compile-lean`, so the same Named entries).
-  Otherwise the whole environment is compiled once by the Lean pipeline.
+  example `ix compile Benchmarks/Compile/CompileInitStd.lean --out <ixe>`.
+  The test compares its stored Named entries with the closure outputs.
+  Otherwise the whole environment is compiled once by the streamed Lean
+  pipeline through `ClosureHarness.compileClosure`.
 
   Roots: a fixed list over the kinds that read their own unit, plus the
   first mutual inductive blocks, size functions of mutual blocks,
@@ -46,29 +45,16 @@
      derived from the output, every constant the closure's output references
      that the closure without that support does not account for is carried
      (the set observed is printed);
-  7. **local scope** of a collapse fixture
+  7. **local scope** of a mutual-inductive fixture
      (`Tests/Ix/Compile/Fixtures/LocalCollapse.lean`): its selected closure
      (the `--local` scope) compiles with no refusal, the Rust compile is
      byte-identical, it decompiles to the source, its output introduces no
-     reference, and `ix validate-lean --ns LocalCollapse` passes its all
+     reference, and `ix validate-lean --ns LocalCollapse` passes all
      five phases, including source/reader fidelity; the same closure with
      recursors only (without that support) also compiles with no refusal;
   8. **the Rust compiler**: the Rust compile of every closure
      (`rsCompileEnvBytesFFI`) is the Lean compile's artifact, byte for
      byte.
-
-  Ported from 940e4fe6 and a9cf3607 `Tests/Ix/Compile/ClosureWhole.lean`:
-  - The donor's numbering is kept.
-  - Checks 6 and 7 (`1a20574b`) came with the flip, whose images reference
-    the support constants: without the transport prerequisites (batch 5),
-    with `ix validate-lean --ns` for the donor's `--local` (this tree's
-    validate-lean has no `--local`), judged per phase from its report, and
-    with the Rust parity of check 8 on the local scope too. M7's source/reader
-    comparison now makes phase 4 a required gate for collapsed blocks.
-  - The `mode` loop is gone, and `CLOSURE_WHOLE_ON` is renamed to
-    `CLOSURE_WHOLE_IXE` (R11-16).
-  - Pass 3 is replaced by the closure harness.
-  - Metadata differences are now classified by field.
 
   Run with: `lake test -- --ignored compile-closure-whole`.
 -/
@@ -198,18 +184,16 @@ def localPhaseProblems (exitCode : UInt32) (phases : Array (String × String × 
         errors := errors.push "local collapse: phase 4 lacks complete nonzero source coverage"
   return errors
 
-/-- 7. The local scope of a collapse fixture: the selected closure of the
-file's own constants (`ix compile --local`) compiles with no refusal, the Rust
-compile is byte-identical, it decompiles to the source, its output introduces
-no reference, and `ix validate-lean --ns LocalCollapse`
-passes all five phases (compile, serde, projection/order fidelity,
-source/reader fidelity, decompile), read from its `--report`. The compile
-keeps Lean's declarations, so the closure with recursors only (the scope
-`--local` had before the compiler introduced references) also compiles with
-no refusal. The reader checks
-the flat collapse through its decoded member and recursor keys; the historical
-BB-F7 meta-roundtrip exclusion is retired. `workers` controls the CLI invocation;
-the full runner retains its existing default. -/
+/-- The local scope of a mutual-inductive fixture: the selected closure of
+the file's own constants (the scope of `ix compile --local`) compiles with
+no refusal through the harness, the Rust compile is byte-identical, it
+decompiles to the source, and its output introduces no reference. The closure
+with recursors only also compiles without refusal or added support.
+
+`ix validate-lean --ns LocalCollapse` must pass all five phases (compile,
+serde, projection/order fidelity, source/reader fidelity, decompile), with
+complete nonzero source coverage in its `--report`. `workers` controls that
+CLI invocation; the harness calls retain their default worker count. -/
 def localCollapse (dir : System.FilePath) (workers : Nat := 8) : IO (Array String) := do
   let file := "Tests/Ix/Compile/Fixtures/LocalCollapse.lean"
   let env ← getFileEnv file
@@ -364,7 +348,7 @@ def run : IO UInt32 := do
   say s!"Rust compiler on the same closures: {rustSame}/{closures.size} byte-identical with the \
     Lean compile"
   say s!"references introduced by the outputs (derived): {sortedNames introduced}"
-  -- 7. the local scope of a collapse fixture
+  -- 7. the local scope of the mutual-inductive fixture
   errors := errors ++ (← localCollapse dir)
   for e in errors do say s!"FAIL {e}"
   say s!"{if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}"

@@ -10,7 +10,7 @@
 module
 public import Ix.Meta
 -- The checker-support ground is derived from the kernel's role table
--- (CQX.3): host → kernel is the layering fence's allowed direction
+-- along the layering fence's allowed host → kernel direction
 -- (`Ix/SpecDigest.lean` does the same). This links `IxC.Kernel.Roles`'s
 -- import closure into the `ix` binary.
 import IxC.Kernel.Roles
@@ -155,7 +155,7 @@ def unitMembers (consts : Lean.ConstMap) (idx : UnitIndex) (n : Lean.Name) : Lis
   let o := (unitAuxOwner? consts n).getD n
   (unitRoots consts o ++ (idx.getD (unitKey consts o) #[]).toList).filter consts.contains
 
-/-! ## Checker-support ground (CQX.3) -/
+/-! ## Checker-support ground -/
 
 /-- Kernel names (`Ix.Kernel.Name`) as Lean names. -/
 private def kernelNameToLean : Ix.Kernel.Name → Lean.Name

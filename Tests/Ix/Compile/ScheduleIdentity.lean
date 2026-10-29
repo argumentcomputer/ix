@@ -1,25 +1,26 @@
 /-
-  compile-schedule-identity: the Lean compiler's output does not depend on
-  the schedule (TT-12; the executable regression of "parallel = sequential").
+  compile-schedule-identity: compare the pure fold and streamed Lean
+  pipeline under different schedules on the same fixture corpus.
 
   Over the fixture corpus (`validateAuxClosure`: `Tests.Ix.Compile.Mutual`,
   `Canonicity`, `LevelSpellings`, the IxVM and `Test.Ix.Fixtures`
   families), compile with
 
   - the driver, the pure wave fold `Ix.CompileM.compileEnvFold`, on the
-    canonical environment and condensation of `rsCompilePhasesOf` (as
-    `ix compile` computes them), at its default width and at widths 1 and
+    canonical environment and condensation of `rsCompilePhasesOf`,
+    at its default width and at widths 1 and
     32 (tasks per wave; the value must not depend on it);
   - the reference schedule (`Tests.Ix.Compile.ScheduleReference.sequential`,
     a sequential driver: live state, one block at a
     time) on the same input,
     with the least and with the greatest ready key first;
-  - the whole `ix compile-lean` pipeline (`compileLeanInput`, with its own
-    canon and condensation, so other block representatives) at 1, 4 and 16
-    workers;
+  - the streamed `compileLeanInput` pipeline through
+    `ClosureHarness.compileClosure`, with its own canonicalization and
+    condensation, at 1, 4 and 16 workers;
 
   and require every serialized environment and decline report to be identical. A
   difference is reported with the constant and its two addresses.
+  These comparisons cover raw compiler artifacts before CLI finalization.
 
   Failures: no block fails under any schedule, and every source name is in
   the output.
@@ -30,13 +31,10 @@
 
   Tiers: the default (`SCHED_LEGS=full`) is the integration gate, all eight
   legs. `SCHED_LEGS=quick` is the per-iteration tier: `fold` (the
-  reference), `reference, least key first` and `compile-lean --workers 16`,
+  reference), `reference, least key first` and the streamed pipeline at 16 workers,
   with every check below; it is never the integration gate.
   `SCHED_OUTPUT_DIR=<dir>` writes each leg's bytes and failures, for
   diagnosis.
-
-  Ported from the old branch (`a9cf3607`) without its Pass 3 mode and
-  phase timers: the compiler here has one mode.
 
   Run with: `lake exe IxTests --ignored compile-schedule-identity`.
 -/
@@ -68,7 +66,7 @@ def say (s : String) : IO Unit := do
   IO.println s!"{s} (t={(← IO.monoMsNow) / 1000}s)"
   (← IO.getStdout).flush
 
-/-- `ix compile-lean` worker counts. -/
+/-- Worker counts for the streamed pipeline legs. -/
 def pipelineWorkers : List Nat := [1, 4, 16]
 
 /-- Optional diagnostic artifact capture (`SCHED_OUTPUT_DIR`). -/
@@ -87,8 +85,8 @@ def saveRun (label : String) (bytes : ByteArray) (failures : List (String × Str
 /-- One leg's result: (label, bytes, environment, block failures as (name, message)). -/
 abbrev Declines := Array (String × String)
 
-/-- The Lean compiler compiles Lean's declarations as given and records no
-    declines, on every leg. -/
+/-- There is no separate decline list; compilation failures are reported
+    through `CompileEnv.ungrounded`. -/
 def declinesOf (_cenv : Ix.CompileM.CompileEnv) : Declines := #[]
 
 abbrev LegResult := String × ByteArray × Ixon.Env × List (String × String) × Declines
@@ -142,7 +140,7 @@ def legsOf (env : Environment) (closure : List (Name × ConstantInfo))
       outcome label (← IO.lazyPure fun _ =>
         ScheduleReference.sequential phases.rawEnv phases.condensed
           (least := least)) }
-  -- the whole `ix compile-lean` pipeline
+  -- the streamed pipeline through the shared closure harness
   for k in (if quick then [16] else pipelineWorkers) do
     legs := legs.push { label := s!"compile-lean --workers {k}", saveLabel := s!"pipeline-{k}",
                         act := do
@@ -228,7 +226,7 @@ def run : IO UInt32 := do
   let env ← getCompileEnv (this_file!)
   let closure := validateAuxClosure env
   say s!"[schedule] {closure.length} constants (fixture corpus)"
-  -- the canonical environment and condensation, as `ix compile` computes them
+  -- the shared fold input: canonical environment and condensation from Rust
   let phases ← Ix.CompileM.rsCompilePhasesOf closure
   -- Every leg is an independent compile of the same input: run them
   -- concurrently (`SCHED_JOBS` bounds it), then compare in leg order.
