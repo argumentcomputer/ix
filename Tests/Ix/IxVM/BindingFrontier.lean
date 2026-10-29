@@ -15,7 +15,7 @@ namespace Tests.Ix.IxVM.BindingFrontier
 open Ix.Kernel (Role RoleTable)
 open BindingAnchors (need address putConstant definition)
 
-private def rebind (env : Ixon.Env) (table : RoleTable) : Except String Ixon.Env := do
+def rebind (env : Ixon.Env) (table : RoleTable) : Except String Ixon.Env := do
   table.check
   let bytes := table.toBytes
   return { env with roleBinding := some ⟨Address.blake3 bytes, bytes⟩ }
@@ -46,7 +46,7 @@ def anchorFixture (base : Ixon.Env) (table : RoleTable) (role : Role)
   need "anchor fixture changed the role count" (replaced.bound.size == Role.all.length)
   return { env := ← rebind env replaced, helper, anchor }
 
-private def theoremClaim (env : Ixon.Env) (refs : Array Address)
+def theoremClaim (env : Ixon.Env) (refs : Array Address)
     (lhs rhs : Ixon.Expr) (assumed : Bool := false) : Except String (Ixon.Env × Ix.Claim) := do
   -- refs[0..2] are Eq, the carrier and Eq.refl, respectively.
   let typ : Ixon.Expr := .app (.app (.app (.ref 0 #[0]) (.ref 1 #[])) lhs) rhs
@@ -78,7 +78,7 @@ def charConsumer (env : Ixon.Env) (table : RoleTable) (assumed : Bool := false) 
   theoremClaim env (refs ++ #[textKey, codepointKey])
     (.app (.ref 3 #[]) (.str 5)) (.app (.ref 4 #[]) (.nat 6)) assumed
 
-private def absentFromConsumer (fixture : AnchorFixture) (env : Ixon.Env)
+def absentFromConsumer (fixture : AnchorFixture) (env : Ixon.Env)
     (claim : Ix.Claim) : Except String Unit := do
   let .check _ target _ := claim | throw "expected a typing claim"
   let closure := IxVM.ClaimHarness.closureFromRoots env #[target]
@@ -107,7 +107,7 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
   table.check
   need "frontier controls require every role" (table.bound.size == Role.all.length)
   let typeError := "inferred type is not def-eq to the expected type"
-  let mut result := #[]
+  let mut result : Array Case := #[]
   for role in [Role.boolFalse, .boolTrue, .charOfNat] do
     for illTyped in [false, true] do
       let fixture ← anchorFixture base table role illTyped
@@ -122,11 +122,13 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
           requiredQuery := if illTyped then none else
             some (if role == .charOfNat then `try_str_back else `mk_bool) }
   let (valid, validClaim) ← charConsumer base table
-  result := result.push { name := "late-equation-valid-earlier-evidence"
+  result := result.push {
+    name := "late-equation-valid-earlier-evidence"
     env := valid, claim := validClaim, requiredQuery := some `try_str_back }
   let invalid ← invalidWfEvidence base table
   let (invalid, invalidClaim) ← charConsumer invalid table
-  result := result.push { name := "late-equation-refuses-invalid-earlier-evidence"
+  result := result.push {
+    name := "late-equation-refuses-invalid-earlier-evidence"
     env := invalid, claim := invalidClaim, expectedError := some typeError }
   return result
 
