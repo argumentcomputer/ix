@@ -591,6 +591,7 @@ section Collapse
 variable {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env}
   {failures : Failures} {t : Ix.Kernel.RoleTable} {envQ : Ix.Kernel.Env .source}
 
+set_option maxRecDepth 4096 in
 /-- **The collapse keeps a block of several definitions whole or drops it whole**
 (`TraceSegments.BlockNeeds.collapse`), for a lowered item of quotient Source's trace. A member's
 key that an earlier read declares is a name of an earlier group published where the member is

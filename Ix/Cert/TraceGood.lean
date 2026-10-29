@@ -26,6 +26,9 @@ their constructors outside its terms; those are input keys by the report's famil
 
 namespace Ix.Cert.TraceGood
 
+-- Scope conversions in this proof module unfold the expanded role-key catalog.
+set_option maxRecDepth 4096
+
 open Ix.Kernel Ix.Kernel.Reader
 open Ix.CompileM Ix.CompileCert Ix.CompileCert.ExpressionState
 open Ix.Cert.Resolution Ix.Cert.Schedule
