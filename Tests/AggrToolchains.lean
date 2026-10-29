@@ -15,7 +15,7 @@ the certificate theorems and a few library theorems from Lean 4.29.0, 4.33.1,
 
 1. each export is compiled (`ix compile-export`) into a piece with its own
    toolchain's role binding, and the role tables are compared with 4.34.1's:
-   4.33.1 binds `Nat.land`, `Nat.lor` and `Nat.xor` to other constants but has
+   4.33.1 binds `Nat.land`, `Nat.lor`, `Nat.xor` and `String.back` to other constants but has
    4.34.1's literal class; 4.29.0 and 4.35.0 each have a class of their own;
 2. each piece's binding is proven (`ix prove-binding`), its shards are proven
    assuming the binding (`ix prove --assume-binding`) and aggregated with the
@@ -136,8 +136,8 @@ def run : IO UInt32 := do
           {moved.map (·.leanName)}; literal class {same}"
     let some (_, t331, b331, k331) := tables.find? (·.1 == "4.33.1") | return 1
     let classOf (v : String) : Option Address := (tables.find? (·.1 == v)).map (·.2.2.2)
-    checks := checks.push ("4.33.1 binds exactly Nat.land, Nat.lor and Nat.xor elsewhere",
-      boundDiff t331 base == [.natLand, .natLor, .natXor])
+    checks := checks.push ("4.33.1 binds exactly Nat.land, Nat.lor, Nat.xor and String.back elsewhere",
+      boundDiff t331 base == [.natLand, .natLor, .natXor, .stringBack])
     checks := checks.push ("4.33.1 and 4.34.1 have different bindings", b331 != baseBinding)
     checks := checks.push ("4.33.1 and 4.34.1 have one literal class", k331 == baseClass)
     for v in ["4.29.0", "4.35.0"] do
