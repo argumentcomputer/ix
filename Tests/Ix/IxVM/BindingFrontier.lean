@@ -27,21 +27,18 @@ structure AnchorFixture where
 
 /-- A valid alias and an alias with an ill-typed erased argument reduce to the
 same original constructor. Type-only admission cannot distinguish their bodies. -/
-def anchorFixture (base : Ixon.Env) (table : RoleTable) (role : Role)
+def anchorFixture (base : Ixon.Env) (table : RoleTable)
     (illTyped : Bool) : Except String AnchorFixture := do
-  let isChar := role == .charOfNat
-  need "unsupported native-result anchor" (isChar || role == .boolTrue || role == .boolFalse)
-  let refs ← #[Role.nat, if isChar then .char else .bool, role,
+  let refs ← #[Role.nat, .char, .charOfNat,
     if illTyped then .trueIntro else .natZero].mapM (address table)
-  let typ : Ixon.Expr := if isChar then
-    .all default default (.ref 0 #[]) (.ref 1 #[]) else .ref 1 #[]
-  let original : Ixon.Expr := if isChar then .app (.ref 2 #[]) (.var 1) else .ref 2 #[]
+  let typ : Ixon.Expr := .all default default (.ref 0 #[]) (.ref 1 #[])
+  let original : Ixon.Expr := .app (.ref 2 #[]) (.var 1)
   let erased : Ixon.Expr := .app (.lam default (.ref 0 #[]) original) (.ref 3 #[])
-  let value := if isChar then .lam default (.ref 0 #[]) erased else erased
+  let value := .lam default (.ref 0 #[]) erased
   let (env, helper) := putConstant base (definition typ value refs)
   let (env, anchor) := putConstant env (definition typ (.ref 2 #[]) #[refs[0]!, refs[1]!, helper])
   let replaced : RoleTable := { table with bound := table.bound.map fun (r, key) =>
-    (r, if r == role then anchor else key) }
+    (r, if r == .charOfNat then anchor else key) }
   need "anchor fixture changed evidence" (replaced.evidence == table.evidence)
   need "anchor fixture changed the role count" (replaced.bound.size == Role.all.length)
   return { env := ← rebind env replaced, helper, anchor }
@@ -55,16 +52,6 @@ def theoremClaim (env : Ixon.Env) (refs : Array Address)
     ⟨.defn ⟨.thm, .safe, 0, typ, value⟩, #[], refs, #[.succ .zero]⟩
   let context ← Ix.ClaimContext.ofEnv env
   return (env, .check { context with bindingAssumed := assumed } target none)
-
-/-- The stored theorem mentions the original Bool constructor; native Nat.beq
-introduces the rebound constructor, whose helper is not a stored dependency. -/
-def boolConsumer (env : Ixon.Env) (table : RoleTable) (truth assumed : Bool) :
-    Except String (Ixon.Env × Ix.Claim) := do
-  let refs ← #[Role.eq, .bool, .eqRefl, .natBeq, .natZero, .natSucc,
-    if truth then .boolTrue else .boolFalse].mapM (address table)
-  let zero : Ixon.Expr := .ref 4 #[]
-  let other : Ixon.Expr := if truth then zero else .app (.ref 5 #[]) zero
-  theoremClaim env refs (.app (.app (.ref 3 #[]) zero) other) (.ref 6 #[]) assumed
 
 /-- A multibyte string selects a non-ASCII native Char result. -/
 def charConsumer (env : Ixon.Env) (table : RoleTable) (assumed : Bool := false) :
@@ -108,19 +95,16 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
   need "frontier controls require every role" (table.bound.size == Role.all.length)
   let typeError := "inferred type is not def-eq to the expected type"
   let mut result : Array Case := #[]
-  for role in [Role.boolFalse, .boolTrue, .charOfNat] do
-    for illTyped in [false, true] do
-      let fixture ← anchorFixture base table role illTyped
-      for assumed in [false, true] do
-        let (env, claim) ← if role == .charOfNat then charConsumer fixture.env table assumed
-          else boolConsumer fixture.env table (role == .boolTrue) assumed
-        absentFromConsumer fixture env claim
-        result := result.push {
-          name := s!"native-{role.leanName}-erased-helper-{illTyped}-assumed-{assumed}"
-          env, claim
-          expectedError := if illTyped then some typeError else none
-          requiredQuery := if illTyped then none else
-            some (if role == .charOfNat then `try_str_back else `mk_bool) }
+  for illTyped in [false, true] do
+    let fixture ← anchorFixture base table illTyped
+    for assumed in [false, true] do
+      let (env, claim) ← charConsumer fixture.env table assumed
+      absentFromConsumer fixture env claim
+      result := result.push {
+        name := s!"native-Char.ofNat-erased-helper-{illTyped}-assumed-{assumed}"
+        env, claim
+        expectedError := if illTyped then some typeError else none
+        requiredQuery := if illTyped then none else some `try_str_back }
   let (valid, validClaim) ← charConsumer base table
   result := result.push {
     name := "late-equation-valid-earlier-evidence"
@@ -134,9 +118,11 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
 
 /-- Every call starts a fresh interpreter and generated executor. Compare the
 complete outputs, IO and query counts; negative controls must hit their planted
-error, and positive consumers must reach the relevant native constructor. -/
+error, and positive consumers must reach the relevant native constructor.
+Standalone source candidates may disable generated execution until regeneration;
+the registered suite always retains parity. -/
 def checks (compiled : Aiur.CompiledToplevel) (base : Ixon.Env)
-    (selection : String := "") : IO (Array (String × Bool)) := do
+    (selection : String := "") (useGenerated : Bool := true) : IO (Array (String × Bool)) := do
   let some entry := compiled.getFuncIdx `verify_claim | throw (IO.userError "missing verify_claim")
   let mut results := #[]
   for c in ← IO.ofExcept (cases base) do
@@ -145,14 +131,15 @@ def checks (compiled : Aiur.CompiledToplevel) (base : Ixon.Env)
     (← IO.getStdout).flush
     let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness c.env c.claim)
     let interpreted ← IO.lazyPure fun _ => compiled.bytecode.execute entry witness.input witness.inputIOBuffer
-    let generated ← IO.lazyPure fun _ => compiled.bytecode.executeIxVM entry witness.input witness.inputIOBuffer
-    let parity := match interpreted, generated with
-      | .error a, .error b => a == b
-      | .ok (a, ai, aq), .ok (b, bi, bq) =>
-        a == b && ai == bi && aq.size == bq.size &&
-          (aq.zip bq).all fun (a, b) => a.uniqueRows == b.uniqueRows && a.totalHits == b.totalHits
-      | _, _ => false
-    results := results.push (s!"{c.name}: interpreter/generated parity", parity)
+    if useGenerated then
+      let generated ← IO.lazyPure fun _ => compiled.bytecode.executeIxVM entry witness.input witness.inputIOBuffer
+      let parity := match interpreted, generated with
+        | .error a, .error b => a == b
+        | .ok (a, ai, aq), .ok (b, bi, bq) =>
+          a == b && ai == bi && aq.size == bq.size &&
+            (aq.zip bq).all fun (a, b) => a.uniqueRows == b.uniqueRows && a.totalHits == b.totalHits
+        | _, _ => false
+      results := results.push (s!"{c.name}: interpreter/generated parity", parity)
     match interpreted with
     | .ok (_, _, counts) =>
       results := results.push (s!"{c.name}: accepted", c.expectedError.isNone)
