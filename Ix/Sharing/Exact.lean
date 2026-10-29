@@ -113,6 +113,7 @@ public import Ix.Sharing.Exact.Uniform
 public import Ix.Sharing.Exact.Tiered
 public import Ix.Sharing.Exact.TieredFast
 public import Ix.Sharing.FamilyNormalizeArea
+public import Ix.Sharing.FamilyContext
 
 public section
 

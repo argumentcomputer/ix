@@ -9,6 +9,7 @@ import IxSharingVerify.FamilyNormalizeSpec
 import IxSharingVerify.FamilyWritingBound
 import IxSharingVerify.UniformCappedSize
 import Ix.LeanIngress.Expr
+import Ix.Sharing.FamilyContext
 
 /-!
 # Trust manifest for the sharing proofs
@@ -24,6 +25,8 @@ traversal of checked types and bodies), and only Lean's `propext`,
 `Classical.choice` and `Quot.sound` may be listed, so a root that reaches
 `sorryAx` or any other axiom fails this module.
 -/
+
+#guard_module_axioms Ix.Sharing.FamilyContext
 
 namespace Ix.Sharing.Verify.Audit.Statements
 
@@ -70,6 +73,12 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.familyAtWidthArea_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.familyExpanded_eq_area, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.normalizeFamily_eq_area, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.LightContext.trace_walk_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.LightContext.step_eq_area, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.LightContext.expanded_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.LightContext.normalize_eq_area, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.familyExpandedArea_eq_lightContext, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.normalizeFamilyArea_eq_lightContext, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.exact_family_iff, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.exact_table_row_least, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.table_tie_coverage, standardAxioms := standard },
