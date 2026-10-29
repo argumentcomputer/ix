@@ -910,7 +910,7 @@ def circuit := ⟦
   1, 2, 29, 30, 31, 37, 38, 39, 40, 56 and 57. A claim that validates its
   binding (validator 3) names the binding hash; its class is read from the
   binding section (channel 4, keyed by the binding hash, so its BLAKE3 is
-  checked), which must bind all 59 roles, one entry per role in order.
+  checked), which must bind all 103 roles, one entry per role in order.
   -/
 
   -- 1 for the role indices of the literal class.
@@ -932,7 +932,7 @@ def circuit := ⟦
     }
   }
 
-  -- The class roles' addresses from the bound entries `i` to 58 of a
+  -- The class roles' addresses from the bound entries `i` to 102 of a
   -- complete binding section, each entry its role index then its address.
   fn aggr_class_walk(stream: ByteStream, i: G, remaining: G) -> List‹Addr› {
     match remaining {
@@ -966,9 +966,9 @@ def circuit := ⟦
     assert_eq!(tag1, 0x03u8, "aggr cross-binding: not a role binding section");
     let (_version, s) = aggr_read_byte(s);
     let (count, s) = aggr_read_byte(s);
-    assert_eq!(count, 59u8,
+    assert_eq!(count, 103u8,
       "aggr cross-binding: the binding does not bind every role");
-    let addrs = aggr_class_walk(s, 0, 59);
+    let addrs = aggr_class_walk(s, 0, 103);
     let body = aggr_put_addresses(addrs, store(ListNode.Nil));
     bytes_to_addr(store(ListNode.Cons(0xE8u8, store(ListNode.Cons(0x04u8, body)))))
   }
