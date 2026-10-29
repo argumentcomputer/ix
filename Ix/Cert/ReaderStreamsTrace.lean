@@ -99,6 +99,7 @@ theorem recs_keys : ∀ (l : List Ix.RecursorVal),
       recs_keys l]
     rfl
 
+set_option maxRecDepth 4096 in
 /-- **A lowered inductive group's members have distinct names** (`InductiveNeeds.distinct`,
 `recDistinct`): the reader's lowering declines a block whose declarations repeat a key
 (`LowerDistinct.lowerInductive_names_nodup`), and the block's `indDecl` declares every type's,
