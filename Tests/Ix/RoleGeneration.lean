@@ -45,7 +45,7 @@ private def inputs (operation : Role) (complete : Bool := false) :
     let name := sourceName role
     env := { env with
       named := env.named.insert name { addr := address }
-      names := env.names.insert name.getHash name }
+      names := RawEnv.addNameComponents env.names name }
   let mut certificates := env
   for (a, c) in proofs do
     certificates := { certificates with consts := certificates.consts.insert a (LazyConstant.ofConstant c) }
@@ -62,7 +62,7 @@ private def inputs (operation : Role) (complete : Bool := false) :
       let name := Ix.Name.fromLeanName name
       certificates := { certificates with
         named := certificates.named.insert name { addr := address }
-        names := certificates.names.insert name.getHash name }
+        names := RawEnv.addNameComponents certificates.names name }
       addresses := addresses.push address
   return (env, certificates, required, addresses)
 

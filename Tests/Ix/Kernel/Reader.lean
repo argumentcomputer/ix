@@ -167,16 +167,17 @@ def quotLift := bound .quotLift
   operations.size == 15 && operations.all fun (r, es) =>
     let kinds := (r.spec (md := .anon)).evidenceKinds
     es.size == kinds.length && (es.toList.zip kinds).all fun (e, kind) => e.isDefeqKind kind
--- over the prelude alone, the structural operations' evidence resolves and
--- the well-founded operations' does not: their theorems reference the
--- operations, whose records only a stream supplies
+-- Over the prelude alone, rows containing only definitional evidence resolve.
+-- A proof needs records supplied by the stream; one unresolved proof declines
+-- its entire row, including any definitional entries beside it.
 #guard
   let ev := evidenceOf (contextOf builtinTable #[] [] (builtinPre.records ++ builtinPre.evidence) builtinPre.blobs)
     builtinPre.state builtinTable
   ev.length == 44 && ev.all fun (r, es) =>
     let declared := ((builtinTable.evidence.find? (·.1 == r)).map (·.2)).getD #[]
-    let definitional := declared.toList.filter fun | .defeq => true | .proof _ => false
-    es.length == definitional.length && es.all fun | .defeq => true | .proof _ => false
+    let onlyDefinitional := declared.all fun | .defeq => true | .proof _ => false
+    es.length == (if onlyDefinitional then declared.size else 0) &&
+      es.all fun | .defeq => true | .proof _ => false
 #guard (builtinPre.ix.decls.toList.map (fun d => toString <$> Ix.Kernel.Frontend.preludeKey d)) ==
   ["Eq", "Nat", "PUnit", "Empty", "False", "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
    "And", "Bool"].map some
@@ -1010,14 +1011,16 @@ def refuses (t : Ix.Kernel.RoleTable) (why : String) : Bool :=
 #guard refuses { builtinTable with evidence := builtinTable.evidence.filter (·.1 != .natDiv) }
   "without evidence"
 #guard refuses { builtinTable with evidence := builtinTable.evidence.push (.nat, #[]) }
-  "not an operation"
+  "has no equations"
 #guard refuses { builtinTable with evidence := builtinTable.evidence.map fun (r, es) =>
     (r, if r == .natDiv then es.map fun _ => .defeq else es) } "does not match"
 #guard refuses { builtinTable with evidence := builtinTable.evidence.map fun (r, es) =>
     (r, if r == .natAdd then es.pop else es) } "does not match"
--- an unbound role is only absent: the table without the string-literal
--- support is well formed
-#guard (drop builtinTable [.string, .stringOfList]).check.isOk
+-- String operations need their literal support. Removing that support alone
+-- fails; removing the operations with it leaves a well-formed partial table.
+#guard refuses (drop builtinTable [.string, .stringOfList]) "a dependency"
+#guard (drop builtinTable [.string, .stringOfList, .stringDecEq,
+  .stringToByteArray, .stringAppend, .stringUtf8ByteSize, .stringBack]).check.isOk
 
 /-! ## The binding section
 
