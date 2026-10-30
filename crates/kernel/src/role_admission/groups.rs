@@ -654,7 +654,10 @@ fn expect_theorem_evidence(
       ..
     } if lvls == levels
   ) {
-    return Err(differs(proof, "not a safe theorem at the specified universes"));
+    return Err(differs(
+      proof,
+      "not a safe theorem at the specified universes",
+    ));
   }
   Ok(())
 }
@@ -704,9 +707,7 @@ fn check_proof_term(
   expected_type: &E,
 ) -> Result<bool, String> {
   let actual = checker.infer(proof_term).map_err(|error| error.to_string())?;
-  checker
-    .is_def_eq(&actual, expected_type)
-    .map_err(|error| error.to_string())
+  checker.is_def_eq(&actual, expected_type).map_err(|error| error.to_string())
 }
 
 fn expect_inductive(

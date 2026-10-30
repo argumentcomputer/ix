@@ -51,9 +51,7 @@ impl MetaRepr {
   /// call for `Bytes` and `Window` (nothing is cached — mirroring
   /// `LazyConstant`).
   fn decode(&self) -> Arc<ConstantMeta> {
-    self
-      .decode_checked()
-      .unwrap_or_else(|_| Arc::new(ConstantMeta::default()))
+    self.decode_checked().unwrap_or_else(|_| Arc::new(ConstantMeta::default()))
   }
 
   fn decode_checked(&self) -> Result<Arc<ConstantMeta>, String> {

@@ -130,11 +130,14 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- Expanding the table to 103 roles adds the same 811 compiled functions
 -- and removes the same eight as the public entry audit: Roles 495, Key 208,
 -- RoleData 108 additions. Exact execution-trust entries are unchanged.
+-- Auditing `@[csimp]` replacements whose target was inlined into its caller
+-- records one more proved `csimp` in `Ix.Kernel.Cached` (26 -> 27; see
+-- `IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,
  Ix.Kernel.Admission.authenticate,
  Ix.Kernel.Admission.decodeRecords,
- Ix.Kernel.Admission.checkBytes]: 6836 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 26 -/
+ Ix.Kernel.Admission.checkBytes]: 6836 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 27 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Admission.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

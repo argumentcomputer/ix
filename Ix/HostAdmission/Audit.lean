@@ -31,7 +31,7 @@ helpers or their specializations; every execution allowance is unchanged. -/
 -- The complete extern, unsafe, direct and reached implementation, csimp,
 -- replacement and opaque entry sets are unchanged, as are all runtime rulings.
 /-- info: runtime closure of [Ix.HostAdmission.certify,
- Ix.HostAdmission.verifyAddressed]: 7163 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 26 -/
+ Ix.HostAdmission.verifyAddressed]: 7162 compiled functions; inherited externs 125, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 27 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith #[``Ix.HostAdmission.certify, ``Ix.HostAdmission.verifyAddressed]

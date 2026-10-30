@@ -57,10 +57,33 @@ structure RuntimeReport where
   source. Each entry is the source and the implementation reached. -/
   implementationsReached : Array (Name × Name) := #[]
 
+/-- All `csimp` entries registered across imported modules and the current
+module. `(Compiler.CSimp.ext.getState env).map` keys by `fromDeclName`, so a
+second `@[csimp]` for the same source in a downstream module overwrites the
+first in `map`; reading `getModuleEntries` keeps every entry. -/
+def allCSimpEntries (env : Environment) : Array Compiler.CSimp.Entry := Id.run do
+  let mut entries : Array Compiler.CSimp.Entry := #[]
+  for idx in [0:env.header.moduleNames.size] do
+    for s in Compiler.CSimp.ext.ext.getModuleEntries env (idx : ModuleIdx) do
+      let e := match s with
+        | .global e => e
+        | .scoped _ e => e
+      unless entries.any (·.thmName == e.thmName) do
+        entries := entries.push e
+  for (_, e) in (Compiler.CSimp.ext.getState env).map do
+    unless entries.any (·.thmName == e.thmName) do
+      entries := entries.push e
+  return entries
+
 /-- `csimp` entries by the name of their replacement. -/
 def csimpByTarget (env : Environment) : NameMap (Array Compiler.CSimp.Entry) :=
-  (Compiler.CSimp.ext.getState env).map.fold (init := {}) fun acc _ entry =>
+  (allCSimpEntries env).foldl (init := {}) fun acc entry =>
     acc.insert entry.toDeclName ((acc.find? entry.toDeclName).getD #[] |>.push entry)
+
+/-- `csimp` entries by the name of the declaration they replace. -/
+def csimpBySource (env : Environment) : NameMap (Array Compiler.CSimp.Entry) :=
+  (allCSimpEntries env).foldl (init := {}) fun acc entry =>
+    acc.insert entry.fromDeclName ((acc.find? entry.fromDeclName).getD #[] |>.push entry)
 
 /-- `implemented_by` entries by their implementation, over every module: the
 walk meets a substitution at its implementation when the source's callers were
@@ -105,15 +128,17 @@ def reducedAritySource? (env : Environment) : Name → Option Name
 
 /-- Compiled code reachable through execution from `roots`. -/
 partial def runtimeClosure (env : Environment) (roots : Array Name) : RuntimeReport :=
-  go (csimpByTarget env) (implementedByTargets env) roots {} {}
+  go (csimpByTarget env) (csimpBySource env) (implementedByTargets env) roots {} {}
 where
-  go (targets : NameMap (Array Compiler.CSimp.Entry)) (implementations : NameMap (Array Name))
+  go (targets : NameMap (Array Compiler.CSimp.Entry))
+      (csimpSources : NameMap (Array Compiler.CSimp.Entry))
+      (implementations : NameMap (Array Name))
       (todo : Array Name) (seen : NameSet) (report : RuntimeReport) : RuntimeReport :=
     match todo.back? with
     | none => report
     | some name =>
       let todo := todo.pop
-      if seen.contains name then go targets implementations todo seen report else
+      if seen.contains name then go targets csimpSources implementations todo seen report else
       let seen := seen.insert name
       let todo := match reducedAritySource? env name with
         | some source => todo.push source
@@ -141,16 +166,39 @@ where
               report.implementationsReached ++ sources.map ((·, name)) }
         | none => report
       match IR.findEnvDecl env name with
-      | none => go targets implementations todo seen { report with uncompiled := report.uncompiled.push name }
+      | none =>
+        go targets csimpSources implementations todo seen
+          { report with uncompiled := report.uncompiled.push name }
       | some decl =>
         let report := { report with visited := report.visited.push name }
         match decl with
-        | .extern .. => go targets implementations todo seen { report with externs := report.externs.push name }
+        | .extern .. =>
+          go targets csimpSources implementations todo seen
+            { report with externs := report.externs.push name }
         | .fdecl .. =>
           let report := match env.find? name, implementation with
             | some (.opaqueInfo _), none => { report with opaqueCode := report.opaqueCode.push name }
             | _, _ => report
-          go targets implementations (todo ++ IR.collectUsedDecls env [decl]) seen report
+          let usedIr := IR.collectUsedDecls env [decl]
+          -- If `name`'s logical body calls a `@[csimp]` source `c` whose replacement
+          -- target was inlined into `name` (leaving neither `c` nor `toDeclName` in
+          -- `usedIr`), record the inlined `@[csimp]` entries in `csimpTargets`.
+          let report := match (env.find? name).bind ConstantInfo.value? with
+            | some val =>
+              val.getUsedConstants.foldl (init := report) fun report c =>
+                match csimpSources.find? c with
+                | some entries =>
+                  if usedIr.contains c || entries.any (fun e => usedIr.contains e.toDeclName) then
+                    report
+                  else
+                    match (Compiler.CSimp.ext.getState env).map.find? c with
+                    | some e =>
+                      { report with
+                        csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
+                    | none => report
+                | none => report
+            | none => report
+          go targets csimpSources implementations (todo ++ usedIr) seen report
 
 /-- The module declaring `name`; the module being elaborated for a local
 declaration. -/
@@ -539,6 +587,30 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``usesSlowId] #[`Init] { csimpModules
 [Ix.Kernel.Audit.RuntimeControls.slowId] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``usesSlowId] #[`Init] { csimpModules := #[`IxC.Kernel.Audit], csimpAxioms := #[] }
+
+/-! A `csimp` replacement whose target is `@[inline]` disappears from
+post-inlining IR, yet the caller's logical definition still references the
+source; the audit catches and rules it the same way. -/
+
+def slowInlineId (n : Nat) : Nat := n
+@[inline] def fastInlineId (n : Nat) : Nat := n + 0
+@[csimp] theorem slowInlineId_eq : @slowInlineId = @fastInlineId := by funext n; rfl
+def usesSlowInlineId (n : Nat) : Nat := slowInlineId n
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.usesSlowInlineId]:
+[Ix.Kernel.Audit.RuntimeControls.slowInlineId] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntime #[``usesSlowInlineId] #[`Init]
+
+/-- info: runtime closure of [Ix.Kernel.Audit.RuntimeControls.usesSlowInlineId]: 1 compiled functions;
+inherited externs 0, implemented_by 0, unsafe 0, csimp 0; ruled csimp 1 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``usesSlowInlineId] #[`Init] { csimpModules := #[`IxC.Kernel.Audit] }
+
+/-- error: project-level execution replacements reached from [Ix.Kernel.Audit.RuntimeControls.usesSlowInlineId]:
+[Ix.Kernel.Audit.RuntimeControls.slowInlineId] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``usesSlowInlineId] #[`Init] { csimpModules := #[`IxC.Kernel.Audit], csimpAxioms := #[] }
 
 /-! The elaboration-time ruling admits `meta` declarations of the named
 modules only; a non-`meta` pair there stays flagged. -/

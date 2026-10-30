@@ -277,11 +277,7 @@ impl Arith for Fast {
 
   #[inline]
   fn sub(a: &u128, b: &u128) -> u128 {
-    if Self::saturated(a) || Self::saturated(b) {
-      u128::MAX
-    } else {
-      a - b
-    }
+    if Self::saturated(a) || Self::saturated(b) { u128::MAX } else { a - b }
   }
 
   #[inline]

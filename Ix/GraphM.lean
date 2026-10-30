@@ -121,6 +121,10 @@ def GraphM.env (env: Ix.Environment) (dbg : Bool := false) (total : Nat := 0)
         lastPct := pct
   return refs
 
+def GraphM.envParallel (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) :=
+  (Ix.Compile.Parallel.map 256 (fun (name, ci) => (name, (GraphM.run { consts := {} } .init (graphConst ci)).1))
+    env.consts.toList.toArray).foldl (fun out (name, refs) => out.insert name refs) {}
+
 def GraphM.envSerial (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run do
   let mut refs: Map Ix.Name (Set Ix.Name) := {}
   for (name, const) in env.consts do

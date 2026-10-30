@@ -13,8 +13,9 @@ beyond `Init` and `Std`: the runtime audit
 modules admitted, each only when its theorem depends on the standard axioms
 alone, and nothing else. It reports every other replacement it reaches:
 * the Rust BLAKE3 primitives (`@[extern]`);
-* the Ixon codec's `getTagN` (`getTagN_eq_fast`), with which the reference
-  check (`Ix.Cert.referenceCycle`) reads the stored records;
+* the Ixon codec's `getTagN` and `putTagN` (`getTagN_eq_fast`,
+  `putTagN_eq_fast`), with which the reference check (`Ix.Cert.referenceCycle`)
+  reads the stored records and the compiler writes them;
 * the `partial` definitions of the ground filter, of the inductive flags check
   (`Ix.IndFlags`: `hasIndOcc`, `replaceAllNested`,
   `replaceCtorResultHeadWithAux`, `replaceFVarsMap` and `substLevel`, which
@@ -43,6 +44,7 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.groundExpr,
  Ix.groundLevel,
  Ixon.getTagN,
+ Ixon.putTagN,
  Blake3.Rust.hasherFinalize,
  Blake3.Rust.hasherInit,
  Blake3.Rust.hasherUpdate,
@@ -64,6 +66,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.groundExpr,
  Ix.groundLevel,
  Ixon.getTagN,
+ Ixon.putTagN,
  Blake3.Rust.hasherFinalize,
  Blake3.Rust.hasherInit,
  Blake3.Rust.hasherUpdate,

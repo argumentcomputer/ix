@@ -15,7 +15,7 @@ unsafe extern "C" {
   pub(super) fn aiur_trace_multi_stark_219(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_multi_stark_229(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([48, 101, 27, 34, 223, 198, 249, 64, 115, 155, 218, 66, 118, 157, 149, 186, 122, 184, 230, 60, 100, 194, 181, 132, 165, 62, 72, 55, 185, 56, 9, 186], aiur_trace_multi_stark_contract, aiur_trace_multi_stark_schema, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([36, 88, 246, 231, 136, 121, 90, 192, 69, 152, 14, 210, 251, 76, 167, 166, 223, 59, 207, 84, 84, 53, 37, 1, 74, 223, 107, 2, 78, 125, 125, 29], aiur_trace_multi_stark_contract, aiur_trace_multi_stark_schema, &[
 None,
 None,
 Some(aiur_trace_multi_stark_2),

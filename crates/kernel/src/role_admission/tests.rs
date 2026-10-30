@@ -373,9 +373,8 @@ fn verdict_closure_includes_role_binding_support_and_evidence() {
   let target_addr = store(&env, record(202, false));
 
   let source = ArtifactSource::snapshot(&env).unwrap();
-  let closure = source
-    .verdict_closure(std::slice::from_ref(&target_addr))
-    .unwrap();
+  let closure =
+    source.verdict_closure(std::slice::from_ref(&target_addr)).unwrap();
   assert!(closure.contains(&target_addr));
   assert!(closure.contains(&role_addr));
   assert!(closure.contains(&helper_addr));

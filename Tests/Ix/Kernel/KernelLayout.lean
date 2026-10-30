@@ -49,7 +49,7 @@ def topLevel : List (String × Part) := [
   ("Env", .checker), ("Exclusive", .checker), ("Expr", .checker), ("ExprOps", .checker),
   ("FEnv", .checker), ("Inductives", .checker), ("Key", .checker), ("Level", .checker),
   ("LevelGeran", .checker), ("Name", .checker),
-  ("PropRead", .checker), ("PropWhen", .checker), ("Roles", .checker),
+  ("PropRead", .checker), ("PropWhen", .checker), ("RoleEquations", .checker), ("Roles", .checker),
   ("StdAxioms", .checker),
   ("TypeChecker", .checker), ("Units", .checker),
   -- the checker: con-leche's cached checker and frontend, and Ix's typing

@@ -523,10 +523,6 @@ def roots : Array RootAllowance := #[
   -- structural one (`@[csimp]`).
   { root := ``Ix.LeanIngress.ingressExprs_eq_shared,
     standardAxioms := standard },
-  { root := ``Ix.CompileM.buildCompiledMutualBlock_eq_fast,
-    standardAxioms := standard },
-  { root := ``Ix.CompileM.finishInductiveFamilyBlock_eq_fast,
-    standardAxioms := standard },
   { root := ``Ix.Sharing.Exact.areaFold_eq_direct,
     standardAxioms := noChoice },
   { root := ``Ix.Sharing.Exact.memberFlags_eq_direct,

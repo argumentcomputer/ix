@@ -338,8 +338,8 @@ impl ArtifactChecker<Anon> {
       .as_ref()
       .map_err(|error| TcError::Other(error.to_string()))?
       .clone();
-    let work = crate::anon_work::build_artifact_work(&source)
-      .map_err(TcError::Other)?;
+    let work =
+      crate::anon_work::build_artifact_work(&source).map_err(TcError::Other)?;
     let selected =
       crate::anon_work::verdict_work(&source, &work, roots, dependencies)
         .map_err(TcError::Other)?;

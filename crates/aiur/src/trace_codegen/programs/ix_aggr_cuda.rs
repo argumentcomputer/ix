@@ -13,7 +13,7 @@ unsafe extern "C" {
   pub(super) fn aiur_trace_ix_aggr_270(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_ix_aggr_271(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([39, 83, 172, 182, 33, 194, 126, 70, 60, 105, 225, 186, 153, 157, 37, 161, 6, 105, 147, 59, 212, 13, 190, 195, 252, 94, 134, 154, 94, 207, 166, 25], aiur_trace_ix_aggr_contract, aiur_trace_ix_aggr_schema, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([78, 142, 232, 48, 22, 153, 38, 161, 110, 60, 82, 245, 203, 223, 166, 139, 91, 252, 58, 192, 15, 203, 251, 21, 128, 10, 57, 104, 20, 108, 124, 36], aiur_trace_ix_aggr_contract, aiur_trace_ix_aggr_schema, &[
 None,
 None,
 None,

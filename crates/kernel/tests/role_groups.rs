@@ -1922,7 +1922,12 @@ fn a_closure_verdict_checks_what_role_admission_assumed() {
 
   let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source.clone()));
   assert!(checker.check_const(&bad).is_err());
-  assert!(checker.verdict_closure(std::slice::from_ref(&bad)).unwrap().contains(&zero_is_one));
+  assert!(
+    checker
+      .verdict_closure(std::slice::from_ref(&bad))
+      .unwrap()
+      .contains(&zero_is_one)
+  );
   assert!(checker.check_const_with_verdict_closure(&bad).is_err());
   assert!(checker.check_verdict(std::slice::from_ref(&bad), true).is_err());
   assert!(checker.check_verdict(std::slice::from_ref(&bad), false).is_err());
@@ -1948,7 +1953,8 @@ fn a_closure_verdict_checks_what_role_admission_assumed() {
 }
 
 #[test]
-fn anchor_and_operation_roles_reject_axiom_and_partial_declarations_and_helpers() {
+fn anchor_and_operation_roles_reject_axiom_and_partial_declarations_and_helpers()
+ {
   let one = || Arc::new(Univ::Succ(Arc::new(Univ::Zero)));
 
   // 1. Anchor role (`Char`) directly bound to an `Axio` or `Partial` definition.
@@ -2054,7 +2060,11 @@ fn anchor_and_operation_roles_reject_axiom_and_partial_declarations_and_helpers(
     roles.extend(bool_roles(&env));
     let mut evidence = vec![];
     for (role, name, equations) in STRUCTURAL {
-      let bound = if role == Role::NatPred { pred.clone() } else { address_of(&env, name) };
+      let bound = if role == Role::NatPred {
+        pred.clone()
+      } else {
+        address_of(&env, name)
+      };
       roles.push((role, bound));
       evidence.push((role, vec![Evidence::DefEq; equations]));
     }
