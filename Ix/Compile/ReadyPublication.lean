@@ -126,43 +126,38 @@ def applyReadyIO (input : FixedInput) (snapshot : CompileEnv) (fixed : input.Mat
   return ⟨result.val, by
     simpa only [applyRows_eq, applyOriginal, Array.foldl_toList] using result.property⟩
 
-/-- The wave calls its publisher exactly once with the original accumulator. -/
-theorem foldWaveUsing_congrAt (left right : CompileEnv → WaveBlocks → DriverAcc → DriverAcc)
-    (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldState)
-    (same : ∀ ready, left st.acc.cenv ready st.acc = right st.acc.cenv ready st.acc) :
-    foldWaveUsing left blocks sched st = foldWaveUsing right blocks sched st := by
-  simp only [foldWaveUsing, same]
-
-private def waveDec : DecidableEq WaveBlocks := fun left right =>
-  letI : DecidableEq (Ix.Set Ix.Name) := fun a b =>
-    withPtrEqDecEq a b (fun _ => memberSetDec a b)
-  withPtrEqDecEq left right (fun _ => inferInstance)
-
-/-- Reuse the checked accumulator only for exactly the rows it published.
-The original readiness/error and settlement code remains authoritative. The
-second readiness pass is inexpensive and avoids assuming that a predictor
-recognizes every malformed input. -/
+/-- Execute one wave via the IO candidate chooser, checking readiness and
+sorting the wave once. -/
 def foldWaveIO (input : FixedInput) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule)
     (width : Nat) (dbg : Bool) (choose : Choose input) (published : Ix.Name → IO Unit)
     (observe : Disposition → IO Unit)
     (st : FoldState) (fixed : input.Matches st.acc.cenv) :
     IO { result : Except String FoldState // result = foldWave blocks sched width dbg st } := do
-  let ready := initialReady blocks sched st
-  let after ← applyReadyIO input st.acc.cenv fixed choose published observe ready st.acc
-  letI : DecidableEq WaveBlocks := waveDec
-  let apply := fun (_ : CompileEnv) (current : WaveBlocks) (_ : DriverAcc) =>
-    if current = ready then after.val else applyOriginal st.acc.cenv current st.acc
-  let result := foldWaveUsing apply blocks sched st
-  return ⟨result, by
-    rw [foldWave_eq_using]
-    apply foldWaveUsing_congrAt
-    intro current
-    simp only [apply, applyChunked_eq]
-    split
-    · rename_i same
-      subst current
-      exact after.property
-    · rfl⟩
+  let final := prepareWaveCandidates blocks sched st
+  match h : final.1 with
+  | some err =>
+    return ⟨err, by
+      simp only [final] at h
+      rw [foldWave_eq_using, foldWaveUsing_eq_split]
+      dsimp only
+      rw [h]⟩
+  | none =>
+    if hEmpty : final.2.1.isEmpty then
+      return ⟨.error s!"Circular dependency detected: {st.remaining} blocks remaining but none ready", by
+        simp only [final] at h hEmpty
+        rw [foldWave_eq_using, foldWaveUsing_eq_split]
+        dsimp only
+        rw [h]
+        simp only [hEmpty, ↓reduceIte]⟩
+    else
+      let sorted := final.2.1.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
+      let after ← applyReadyIO input st.acc.cenv fixed choose published observe sorted st.acc
+      return ⟨.ok (finishWave sched st sorted final.2.2 after.val), by
+        simp only [final] at h hEmpty
+        rw [foldWave_eq_using, foldWaveUsing_eq_split]
+        dsimp only
+        rw [h]
+        simp only [final, hEmpty, Bool.false_eq_true, ↓reduceIte, sorted, after.property, applyChunked_eq]⟩
 
 def foldWavesIO (input : FixedInput) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule)
     (width : Nat) (dbg : Bool) (choose : Choose input) (published : Ix.Name → IO Unit) :

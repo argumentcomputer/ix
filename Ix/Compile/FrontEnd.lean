@@ -3,6 +3,9 @@ module
 public import Ix.GraphM
 public import Ix.Ground
 public import Ix.Compile.Parallel
+import all IxC.Address.Core
+import all Ix.Common
+import all Ix.Environment
 import all Ix.GraphM
 import all Ix.Ground
 import Std.Data.HashMap.Lemmas
@@ -69,5 +72,27 @@ theorem immediate_eq (env : Environment) : immediateSerial env = immediate env :
   change proliferateUngrounded (immediateSerial env) inRefs =
     proliferateUngrounded (immediate env) inRefs
   rw [immediate_eq]
+
+private theorem compare_address_self (h : Address) : compare h h = .eq :=
+  @Std.ReflCmp.compare_self (List UInt8)
+    (@compare (List UInt8) (@List.instOrd UInt8 UInt8.instOrd)) _
+    h.hash.data.toList
+
+private theorem nameCompare_self (a : Ix.Name) : Ix.nameCompare a a = .eq :=
+  compare_address_self a.getHash
+
+private theorem cmpHash_self (h : Address) : Ix.Name.cmpHash h h = .eq := by
+  simp [Ix.Name.cmpHash, compare_address_self]
+
+private theorem cmpRaw_self : ∀ (a : Ix.Name), Ix.Name.cmpRaw a a = .eq
+  | .anonymous h => cmpHash_self h
+  | .str p s h => by simp [Ix.Name.cmpRaw, cmpRaw_self p, cmpHash_self h]
+  | .num p i h => by simp [Ix.Name.cmpRaw, cmpRaw_self p, cmpHash_self h]
+
+theorem nameCompareExact_self (a : Ix.Name) : Ix.nameCompareExact a a = .eq := by
+  simp [Ix.nameCompareExact, nameCompare_self, cmpRaw_self]
+
+theorem nameCompareExact_self_beq (a : Ix.Name) : (Ix.nameCompareExact a a == .eq) = true := by
+  rw [nameCompareExact_self]; decide
 
 end Ix.Compile.FrontEnd

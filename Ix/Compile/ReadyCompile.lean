@@ -21,11 +21,15 @@ def validate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except Strin
   validateInductiveFlags env
   validateMutualSafety env blocks
 
-def initial (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (limits : Ix.Sharing.Exact.Limits) : FoldState :=
+def initialWith (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (sched : FoldSchedule) (limits : Ix.Sharing.Exact.Limits) : FoldState :=
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
   let cenv := { CompileEnv.new view with sharingLimits := limits }
-  FoldState.init cenv blocks (FoldSchedule.of blocks)
+  FoldState.init cenv blocks sched
+
+def initial (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (limits : Ix.Sharing.Exact.Limits) : FoldState :=
+  initialWith env blocks (FoldSchedule.of blocks) limits
 
 def finish (env : Ix.Environment) (result : Except String FoldState) : DriverResult := do
   let state ← result
@@ -38,7 +42,7 @@ theorem driver_decomposition (env : Ix.Environment) (blocks : Ix.CondensedBlocks
       validate env blocks
       finish env (foldWaves blocks (FoldSchedule.of blocks) width dbg
         (blocks.blocks.size + 1) (initial env blocks limits))) := by
-  unfold compileEnvFold validate initial finish
+  unfold compileEnvFold validate initial initialWith finish
   cases missing : missingBlockRefs? blocks with
   | some message => simp
   | none =>
@@ -59,8 +63,9 @@ def driverIO (config : ReadyQueue.Config) (env : Ix.Environment)
       rw [driver_decomposition, ← validation.property, checked]
       rfl⟩, {})
   | .ok _ =>
-    let (state, metrics) ← ReadyQueue.run config blocks (FoldSchedule.of blocks) width dbg
-      (blocks.blocks.size + 1) (initial env blocks limits)
+    let sched := FoldSchedule.of blocks
+    let (state, metrics) ← ReadyQueue.run config blocks sched width dbg
+      (blocks.blocks.size + 1) (initialWith env blocks sched limits)
     let result ← IO.lazyPure fun _ =>
       (⟨finish env state.val, by
         rw [driver_decomposition, ← validation.property, checked]

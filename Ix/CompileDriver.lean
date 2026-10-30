@@ -206,10 +206,10 @@ def checkCompiledBlock (cenv : CompileEnv) (lo : Name) (result : BlockResult)
     every insert of the merge copied its maps (Init+Std's compile phase went
     from 44 s to 388 s). -/
 def reclaimedNames (cenv : CompileEnv) (lo : Name) (result : BlockResult)
-    : Std.HashSet Name := Id.run do
+    : Std.HashSet Ix.Compile.ExactKey.ExactName := Id.run do
   let primaryNames : Array Name :=
     if result.projections.isEmpty then #[lo] else result.projections.map (·.1)
-  let mut reclaimed : Std.HashSet Name := {}
+  let mut reclaimed : Std.HashSet Ix.Compile.ExactKey.ExactName := {}
   for name in primaryNames do
     if cenv.nameToAddr.contains name then
       reclaimed := reclaimed.insert name
@@ -505,11 +505,13 @@ def validateMutualSafety (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
       | some m => if n.getHash.cmpBytes m.getHash == .lt then some n else some m
       | none => some n
   let offenders := blocks.blocks.fold (init := #[]) fun (acc : Array (Name × Array Name)) _ set =>
-    let members := set.toArray
-    if uniformSafety env members then acc
-    else match least members with
-      | some m => acc.push (m, members)
-      | none => acc
+    if set.size ≤ 1 then acc
+    else
+      let members := set.toArray
+      if uniformSafety env members then acc
+      else match least members with
+        | some m => acc.push (m, members)
+        | none => acc
   match (offenders.qsort fun a b => a.1.getHash.cmpBytes b.1.getHash == .lt)[0]? with
   | some (_, members) =>
     return .error (toString (CompileError.invalidMutualBlock (mixedSafetyMessage env members)))

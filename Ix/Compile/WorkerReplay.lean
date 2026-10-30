@@ -598,6 +598,64 @@ theorem foldWaveUsing_congr (left right : CompileEnv → WaveBlocks → DriverAc
     foldWaveUsing left blocks sched st = foldWaveUsing right blocks sched st := by
   simp only [foldWaveUsing, same]
 
+def prepareWaveCandidates (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldState) :
+    Option (Except String FoldState) × Array (Name × Name × Set Name) × Array Name :=
+  let { acc, settled, candidates, .. } := st
+  let sourceOwned := blocks.lowLinks.contains
+  Id.run <| forIn candidates (none, #[], #[]) fun rep r => do
+    let ready := r.2.1
+    let parked := r.2.2
+    let some all := blocks.blocks.get? rep
+      | return .done (some (.error s!"wave driver: block {rep.pretty} is not in the condensation"), ready, parked)
+    let deps := (sched.deps.get? rep).getD {}
+    let depsOk := Id.run do
+      for d in deps do
+        if !auxDependencyReady sourceOwned acc.cenv settled d then return false
+      return true
+    if depsOk then
+      return .yield (none, ready.push (blockKey rep all, rep, all), parked)
+    else
+      return .yield (none, ready, parked.push rep)
+
+def finishWave (sched : FoldSchedule) (st : FoldState)
+    (ready : Array (Name × Name × Set Name)) (parked : Array Name) (acc : DriverAcc) : FoldState := Id.run do
+  let { settled, unmet, remaining, waves, .. } := st
+  let mut settled := settled
+  let mut unmet := unmet
+  let mut next := parked
+  for (_, _, all) in ready do
+    for m in all do
+      settled := settled.insert m
+  for (_, _, all) in ready do
+    for m in all do
+      for w in (sched.waiters.get? m).getD #[] do
+        match unmet.get? w with
+        | some 1 =>
+          unmet := unmet.erase w
+          next := next.push w
+        | some k => unmet := unmet.insert w (k - 1)
+        | none => pure ()
+  return { acc, settled, unmet, candidates := next,
+           remaining := remaining - ready.size, waves := waves + 1 }
+
+theorem foldWaveUsing_eq_split (apply : CompileEnv → Array (Name × Name × Set Name) → DriverAcc → DriverAcc)
+    (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldState) :
+    foldWaveUsing apply blocks sched st =
+      let final := prepareWaveCandidates blocks sched st
+      match final.1 with
+      | some err => err
+      | none =>
+        if final.2.1.isEmpty then
+          .error s!"Circular dependency detected: {st.remaining} blocks remaining but none ready"
+        else
+          let ready := final.2.1.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
+          .ok (finishWave sched st ready final.2.2 (apply st.acc.cenv ready st.acc)) := by
+  unfold foldWaveUsing prepareWaveCandidates finishWave
+  cases st
+  dsimp only [Id.run, Bind.bind, Pure.pure, Monad.toBind, Monad.toApplicative,
+    Applicative.toPure, Id.instMonad]
+  split <;> simp_all
+
 theorem foldWaveUsing_acc (apply : CompileEnv → WaveBlocks → DriverAcc → DriverAcc)
     (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st after : FoldState)
     (success : foldWaveUsing apply blocks sched st = .ok after) :

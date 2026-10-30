@@ -59,6 +59,27 @@ symbol that no library defines, so a binary that links them fails. -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }
 
+/-- error: project-level execution replacements reached from [Ix.Compile.ReadyCompile.reportIO]:
+[Address.admissionHash,
+ Ix.groundExpr,
+ Ix.groundLevel,
+ Ixon.getTagN,
+ Blake3.Rust.hasherFinalize,
+ Blake3.Rust.hasherInit,
+ Blake3.Rust.hasherUpdate,
+ Ix.IndFlags.hasIndOcc,
+ Ix.IndFlags.replaceAllNested,
+ Ix.IndFlags.replaceCtorResultHeadWithAux,
+ Ix.IndFlags.replaceFVarsMap,
+ Ix.IndFlags.substLevel,
+ Ix.Name.pretty,
+ Ix.Name.toStringAux,
+ Ixon.RawEnv.addNameComponentsWithBlobs,
+ _private.Ix.Environment.0.Address.mutsName.go,
+ _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Compile.ReadyCompile.reportIO] #[`Init, `Std] { csimpModules := #[`Ix] }
+
 /-- info: 'Ix.Cert.checkReport_eq_par' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Ix.Cert.checkReport_eq_par
@@ -124,15 +145,16 @@ run_cmd do
 /-! ## The CLI certified compiler and role-binding finalizer
 
 `ix compile` and `ix compile-lean` invoke `Ix.CanonM.canonEnv`,
-`Ix.CompileM.compileCertified`, `Ix.RoleBinding.Compile.finalize`, and
-`Ixon.serEnv`. Beyond `Init`, `Std`, `Lean`, and the `compileChecked` list
-above, their runtime closure reaches the source-contract environment extensions,
-the syntax equality helper, the Merkle tree builder, the name topological sort,
-and the `partial` helpers of role-evidence and role-binding synthesis, frozen
-here. -/
+`Ix.CompileM.compileCertified`, `Ix.CompileM.validateFinalized`,
+`Ix.RoleBinding.Compile.finalize`, and `Ixon.serEnv`. Beyond `Init`, `Std`,
+`Lean`, and the `compileChecked` list above, their runtime closure reaches the
+source-contract environment extensions, the syntax equality helper, the Merkle
+tree builder, the name topological sort, and the `partial` helpers of
+role-evidence and role-binding synthesis, frozen here. -/
 
 /-- error: project-level execution replacements reached from [Ix.CanonM.canonEnv,
  Ix.CompileM.compileCertified,
+ Ix.CompileM.validateFinalized,
  Ix.RoleBinding.Compile.finalize,
  Ixon.serEnv]:
 [Ix.groundExpr,
@@ -163,7 +185,8 @@ here. -/
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
     #[``Ix.CanonM.canonEnv, ``Ix.CompileM.compileCertified,
-      ``Ix.RoleBinding.Compile.finalize, ``Ixon.serEnv]
+      ``Ix.CompileM.validateFinalized, ``Ix.RoleBinding.Compile.finalize,
+      ``Ixon.serEnv]
     #[`Init, `Std, `Lean]
     { Ix.Kernel.Audit.runtimeRulings with
       csimpModules := Ix.Kernel.Audit.runtimeRulings.csimpModules.push `Ix,

@@ -4,6 +4,7 @@ import Ix.Cert.ConversionValues
 import Ix.Cert.Hybrid
 import Ix.Cert.ReaderClosureKeys
 import Ix.Compile.ReadyCompile
+import Ix.CompileCertified
 import Ix.HostAdmission.Theorems
 import Ix.RoleBinding.ArtifactOrderTheorems
 import Ix.RoleBinding.ArtifactTheorems
@@ -24,7 +25,10 @@ none of them, or only in part:
   and the bounded ready-queue scheduler (`Ix.Compile.TaskWindow`,
   `Ix.Compile.WorkerSuccess`, `Ix.Compile.WorkerReplay`,
   `Ix.Compile.ReadyPublication`, `Ix.Compile.ReadyQueue`,
-  `Ix.Compile.ReadyCompile`).
+  `Ix.Compile.ReadyCompile`);
+* the front end, driver, role-binding generator, and certified compiler entry
+  (`Ix.Compile.FrontEnd`, `Ix.CompileDriver`, `Ix.RoleBinding.Generate`,
+  `Ix.CompileCertified`).
 
 `lake lint` (`check-modules`) and `lake run check-kernel` build this module.
 
@@ -44,6 +48,9 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
   Ix.RoleBinding.ArtifactTheorems
   Ix.RoleBinding.ArtifactTieredTheorems
   Ix.RoleBinding.RecordDecoding
+  Ix.RoleBinding.Generate
+  Ix.Compile.FrontEnd
+  Ix.CompileDriver
   Ix.Compile.WorkerContext
   Ix.Compile.TaskWindow
   Ix.Compile.WorkerSuccess
@@ -51,6 +58,7 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
   Ix.Compile.ReadyPublication
   Ix.Compile.ReadyQueue
   Ix.Compile.ReadyCompile
+  Ix.CompileCertified
 
 #guard_kernel_axioms Ix.RoleBinding.RecordDecoding.parallel_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.recordStore_eq_parallel [propext, Classical.choice, Quot.sound]

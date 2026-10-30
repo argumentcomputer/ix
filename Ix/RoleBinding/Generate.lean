@@ -282,7 +282,9 @@ supplies an already-checked role-closure lookup when only the role closure was
 decoded ahead of whole-artifact finalization checks. -/
 def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
     (env : Ixon.Env) (store? : Option (CheckedStore limits env) := none)
-    (roleStore? : Option Store := none) : Except String Ixon.Env := do
+    (roleStore? : Option Store := none)
+    (sourceAddrs? : Option (Std.HashMap Ix.Kernel.Name Address) := none) :
+    Except String Ixon.Env := do
   generated.table.check
   unless generated.table.wireWF do throw "role emission: noncanonical binding table"
   let lookup : Store ← match store?, roleStore? with
@@ -291,7 +293,28 @@ def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
     | none, none =>
       let s ← recordStore limits env
       pure (s[·]?)
-  let actual ← Ix.RoleBinding.publication env lookup (generated.table.bound.toList.map (·.1))
+  let required := generated.table.bound.toList.map (·.1)
+  let actual ← match sourceAddrs? with
+    | some existing => do
+      unless required.Nodup do throw "role publication: a required role occurs twice"
+      let mut bound : Array (Role × Address) := #[]
+      let mut refs : Std.HashMap Role (ConstRef Address) := {}
+      let mut roleOfRef : Std.HashMap (ConstRef Address) Role := {}
+      for role in Role.all do
+        unless required.contains role do continue
+        let some address := existing[role.leanName]?
+          | throw s!"role publication: no published constant for {repr role}"
+        let some record := lookup address
+          | throw s!"role publication: {repr role} has no record at {address}"
+        let some ref := resolveSource lookup address record
+          | throw s!"role publication: {repr role} at {address} does not resolve"
+        if let some other := roleOfRef[ref]? then
+          throw s!"role publication: {repr role} and {repr other} resolve to the same member"
+        roleOfRef := roleOfRef.insert ref role
+        refs := refs.insert role ref
+        bound := bound.push (role, address)
+      pure { bound, refs }
+    | none => Ix.RoleBinding.publication env lookup required
   unless actual.bound == generated.table.bound do
     throw "role emission: binding differs from this artifact's published roles"
   let mut out := env
@@ -302,7 +325,7 @@ def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
     unless Ixon.serConstant decoded == bytes do throw s!"role emission: noncanonical record at {address}"
     if let some old := out.consts[address]? then
       unless old.rawBytes == bytes do throw s!"role emission: conflicting record at {address}"
-    else out := { out with consts := out.consts.insert address (Ixon.LazyConstant.ofConstant record) }
+    else out := { out with consts := out.consts.insert address { buf := bytes, off := 0, len := bytes.size, cache := some record } }
   for (address, bytes) in generated.supportBlobs ++ generated.blobs do
     unless Address.admissionHash bytes == address do throw s!"role emission: bad blob address {address}"
     if let some old := out.blobs[address]? then
@@ -318,8 +341,14 @@ def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
     for dependency in record.refs do
       unless out.consts.contains dependency || out.blobs.contains dependency do
         throw s!"role emission: evidence {address} needs unavailable support {dependency}"
-  (Ix.Kernel.Admission.preflight limits
-    (out.consts.toList.map fun (a, c) => (a, c.rawBytes)) out.blobs.toList).mapError byteError
+  unless out.consts.size ≤ limits.maxRecords do
+    throw (byteError (.limit .records))
+  unless out.blobs.size ≤ limits.maxBlobs do
+    throw (byteError (.limit .blobs))
+  let total := out.consts.fold (init := 0) (fun acc _ c => acc + c.len)
+  let total := out.blobs.fold (init := total) (fun acc _ b => acc + b.size)
+  unless total ≤ limits.maxTotalBytes do
+    throw (byteError (.limit .totalBytes))
   let bytes := generated.table.toBytes
   return { out with roleBinding := some ⟨Address.admissionHash bytes, bytes⟩ }
 

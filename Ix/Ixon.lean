@@ -428,7 +428,7 @@ def get? (lc : LazyConstant) : Option Constant :=
 /-- Raw serialized bytes (the TagN-headed constant body). Returns the backing buffer
     directly when the window spans all of it (the standalone case), and only
     copies out a sub-slice for a true window into a larger shared buffer. -/
-def rawBytes (lc : LazyConstant) : ByteArray :=
+@[inline] def rawBytes (lc : @& LazyConstant) : ByteArray :=
   if lc.off == 0 && lc.len == lc.buf.size then lc.buf
   else lc.buf.extract lc.off (lc.off + lc.len)
 
@@ -1593,24 +1593,44 @@ end RawEnv
     and the list-building comparison was most of the writer's time. -/
 @[inline] def addrLt (a b : Address) : Bool := a.cmpBytes b == .lt
 
-/-- Parallel 32-bucket sort by the top 5 bits of byte 0 of `Address.hash` for
+/-- Parallel 256-bucket sort by byte 0 of `Address.hash` across 32 tasks for
     large arrays (`size ≥ 8192`); falls back to sequential `Array.qsort` on
     smaller arrays. Since `addrLt` compares `Address.hash` lexicographically
     byte-by-byte starting at byte 0, every non-empty address in bucket `b₁` is
     strictly `<` every non-empty address in bucket `b₂` when `b₁ < b₂`. -/
-def qsortByAddrPar (arr : Array α) (addrOf : α → Address) (lt : α → α → Bool) : Array α :=
+@[inline] def qsortByAddrPar (arr : Array α) (addrOf : α → Address) (lt : α → α → Bool) : Array α :=
   if arr.size < 8192 then
     arr.qsort lt
   else Id.run do
+    let initCap := arr.size / 224 + 8
+    let mut buckets : Array (Array α) := (Array.range 256).map fun _ => Array.emptyWithCapacity initCap
     for x in arr do
-      if (addrOf x).hash.size == 0 then
+      let h := (addrOf x).hash
+      if h.size == 0 then
         return arr.qsort lt
-    let initCap := arr.size / 28 + 16
-    let mut buckets : Array (Array α) := (Array.range 32).map fun _ => Array.emptyWithCapacity initCap
-    for x in arr do
-      let b := ((addrOf x).hash.get! 0 >>> 3).toNat
+      let b := (h.get! 0).toNat
       buckets := buckets.modify b (·.push x)
-    let tasks := buckets.map fun bucket => Task.spawn fun _ => bucket.qsort lt
+    let tasks := (Array.range 32).map fun t =>
+      let b0 := buckets[t * 8]!
+      let b1 := buckets[t * 8 + 1]!
+      let b2 := buckets[t * 8 + 2]!
+      let b3 := buckets[t * 8 + 3]!
+      let b4 := buckets[t * 8 + 4]!
+      let b5 := buckets[t * 8 + 5]!
+      let b6 := buckets[t * 8 + 6]!
+      let b7 := buckets[t * 8 + 7]!
+      Task.spawn fun _ => Id.run do
+        let cap := b0.size + b1.size + b2.size + b3.size + b4.size + b5.size + b6.size + b7.size
+        let mut part := Array.emptyWithCapacity cap
+        part := part ++ b0.qsort lt
+        part := part ++ b1.qsort lt
+        part := part ++ b2.qsort lt
+        part := part ++ b3.qsort lt
+        part := part ++ b4.qsort lt
+        part := part ++ b5.qsort lt
+        part := part ++ b6.qsort lt
+        part := part ++ b7.qsort lt
+        return part
     let mut out := Array.emptyWithCapacity arr.size
     for t in tasks do
       out := out ++ t.get
@@ -1718,37 +1738,39 @@ def getNameComponent (namesLookup : Std.HashMap Address Ix.Name) : GetM Ix.Name 
     pure (Ix.Name.mkNat parent (Nat.fromBytesLE nBytes.data))
   | t => throw s!"getNameComponent: invalid tag {t}"
 
-/-- Topologically sort names so parents come before children. -/
-partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (Address × Ix.Name) :=
+/-- Topologically sort names so parents come before children, building the §4
+    name address → index table (`NameIndex`) directly during the traversal. -/
+partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) :
+    Array (Address × Ix.Name) × NameIndex :=
   -- DFS topological sort: visit parent before child
   -- This matches the Rust implementation
   let anonAddr := Ix.Name.mkAnon.getHash
-  let rec visit (name : Ix.Name) (visited : Std.HashSet Address) (result : Array (Address × Ix.Name))
-      : Std.HashSet Address × Array (Address × Ix.Name) :=
+  let rec visit (name : Ix.Name) (nameIdx : NameIndex) (result : Array (Address × Ix.Name))
+      : NameIndex × Array (Address × Ix.Name) :=
     let addr := name.getHash
-    if visited.contains addr then (visited, result)
+    if nameIdx.contains addr then (nameIdx, result)
     else
       -- Visit parent first
-      let (visited, result) := match name with
-        | .anonymous _ => (visited, result)
-        | .str parent _ _ => visit parent visited result
-        | .num parent _ _ => visit parent visited result
-      let visited := visited.insert addr
+      let (nameIdx, result) := match name with
+        | .anonymous _ => (nameIdx, result)
+        | .str parent _ _ => visit parent nameIdx result
+        | .num parent _ _ => visit parent nameIdx result
+      let nameIdx := nameIdx.insert addr result.size.toUInt64
       let result := result.push (addr, name)
-      (visited, result)
+      (nameIdx, result)
   -- Include the anonymous name first so it gets index 0 in the name
   -- index (arena nodes frequently reference it as a binder name).
   -- Matches Rust `topological_sort_names`, which emits it explicitly —
   -- required for byte-identical writer output across the mirrors.
-  let initVisited : Std.HashSet Address :=
-    (Std.HashSet.emptyWithCapacity (names.size + 1)).insert anonAddr
+  let initIdx : NameIndex :=
+    (Std.HashMap.emptyWithCapacity (names.size + 1)).insert anonAddr 0
   let initResult : Array (Address × Ix.Name) :=
     (Array.emptyWithCapacity (names.size + 1)).push (anonAddr, Ix.Name.mkAnon)
   -- Sort names by address before iterating to ensure deterministic DFS order
   let sortedEntries := qsortByAddrPar names.toArray (·.1) fun a b => addrLt a.1 b.1
-  let (_, result) := sortedEntries.foldl (init := (initVisited, initResult)) fun (visited, result) (_, name) =>
-    visit name visited result
-  result
+  let (nameIdx, result) := sortedEntries.foldl (init := (initIdx, initResult)) fun (nameIdx, result) (_, name) =>
+    visit name nameIdx result
+  (result, nameIdx)
 
 /-- Run a `PutM` writer on a pre-allocated buffer of capacity `cap`. -/
 @[inline] def runPutWithCapacity (cap : Nat) (p : PutM Unit) : ByteArray :=
@@ -1825,6 +1847,21 @@ def blobsSection (env : Env) : ByteArray :=
       putTagN 0 0 bytes.size.toUInt64
       putBytes bytes
 
+/-- Encode `consts[lo:hi]` for Section 2. -/
+def encodeConstsChunk (consts : Array (Address × LazyConstant)) (lo hi : Nat) : ByteArray :=
+  let hi := Nat.min hi consts.size
+  let cap := Id.run do
+    let mut c := 0
+    for i in [lo:hi] do
+      c := c + 37 + consts[i]!.2.len
+    return c
+  runPutWithCapacity cap do
+    for (addr, lc) in consts[lo:hi] do
+      Serialize.put addr
+      let bytes := lc.rawBytes
+      putTagN 0 0 bytes.size.toUInt64
+      putBytes bytes
+
 /-- Section 2: Consts (Address -> TagN-length-prefixed constant bytes), of the
     constants sorted by address.
 
@@ -1859,7 +1896,7 @@ def encodeNamesSection (sortedNames : Array (Address × Ix.Name)) : ByteArray :=
     written order: topologically sorted so parents come before children, with
     ties broken by address. -/
 def namesSection (env : Env) : Array (Address × Ix.Name) × ByteArray :=
-  let sortedNames := topologicalSortNames env.names
+  let (sortedNames, _) := topologicalSortNames env.names
   (sortedNames, encodeNamesSection sortedNames)
 
 /-- Section 6: Comms (Address -> Comm). -/
@@ -1872,25 +1909,79 @@ def commsSection (env : Env) : ByteArray :=
       Serialize.put addr
       putComm comm
 
+/-- Background tasks spawned by `putEnv` / `serEnv`. -/
+structure PutTasks where
+  constsSortTask : Task (Array (Address × LazyConstant))
+  constsTasksTask : Task (Nat × Array (Task ByteArray))
+  rootTask : Task Address
+  constIdxTask : Task (Std.HashMap Address UInt64)
+  blobsTask : Task ByteArray
+  commsTask : Task ByteArray
+  sortedNamesTask : Task (Array (Address × Ix.Name) × NameIndex)
+  namesBytesTask : Task ByteArray
+  hintsSortTask : Task (Array (Address × Lean.ReducibilityHints))
+  namedSortTask : Task (Array (Ix.Name × Named))
+  namedTasksTask : Task (Nat × Array (Task (Except String ByteArray)))
+
+/-- Spawn independent section encodings, index builders, and sorts in parallel. -/
+@[noinline] def spawnPutTasks (env : Env) : PutTasks :=
+  let constsSortTask := Task.spawn fun _ =>
+    qsortByAddrPar env.consts.toArray (·.1) fun a b => addrLt a.1 b.1
+  let constsTasksTask := Task.spawn fun _ =>
+    let consts := constsSortTask.get
+    let chunkSize := Nat.max 2048 ((consts.size + 31) / 32)
+    let chunks := (consts.size + chunkSize - 1) / chunkSize
+    let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
+      encodeConstsChunk consts (c * chunkSize) ((c + 1) * chunkSize)
+    (consts.size, tasks)
+  -- Canonical merkle root over consts addresses (matches Rust Env::put).
+  -- Always 32 bytes: for empty const sets, the sentinel
+  -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
+  -- canonical root, which is always a Blake3 hash).
+  let rootTask := Task.spawn fun _ =>
+    (Ix.Merkle.merkleRootCanonical (constsSortTask.get.map (·.1))).getD
+      Ix.Merkle.zeroAddress
+  let constIdxTask := Task.spawn fun _ => buildConstIdx constsSortTask.get
+  let blobsTask := Task.spawn fun _ => blobsSection env
+  let commsTask := Task.spawn fun _ => commsSection env
+  let sortedNamesTask := Task.spawn fun _ => topologicalSortNames env.names
+  let namesBytesTask := Task.spawn fun _ => encodeNamesSection sortedNamesTask.get.1
+  let hintsSortTask := Task.spawn fun _ =>
+    qsortByAddrPar env.anonHints.toArray (·.1) fun a b => addrLt a.1 b.1
+  let namedSortTask := Task.spawn fun _ =>
+    qsortByAddrPar env.named.toArray (·.1.getHash) fun a b => addrLt a.1.getHash b.1.getHash
+  -- The §5 entries are independent given `nameIdx` and `constIdx`: spawn their
+  -- chunk tasks as soon as the sort and two index tables finish, so §5 runs in
+  -- parallel while `namesBytesTask` (§4) is encoding.
+  let namedTasksTask := Task.spawn fun _ =>
+    let named := namedSortTask.get
+    let nameIdx := sortedNamesTask.get.2
+    let constIdx := constIdxTask.get
+    let chunks := (named.size + namedChunk - 1) / namedChunk
+    let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
+      match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
+        constIdx).run).run (ByteArray.emptyWithCapacity (namedChunk * 64)) with
+      | (.ok _, bytes) => Except.ok bytes
+      | (.error e, _) => Except.error e
+    (named.size, tasks)
+  { constsSortTask, constsTasksTask, rootTask, constIdxTask, blobsTask, commsTask,
+    sortedNamesTask, namesBytesTask, hintsSortTask, namedSortTask, namedTasksTask }
+
 /-- Sections 1 to 6 of `putEnv`, sections 1, 2, 4 and 6 and the §3/§5 tasks
     from their tasks. Not inlined, so that `putEnv` starts every task before
-    the first is read. Section 2 (`consts`) is written directly into the
-    destination `PutM` buffer to avoid a 1.6 GB intermediate `ByteArray`. -/
+    the first is read. -/
 @[noinline] def putSections
     (blobsTask commsTask namesBytesTask : Task ByteArray)
-    (constsSortTask : Task (Array (Address × LazyConstant)))
+    (constsTasksTask : Task (Nat × Array (Task ByteArray)))
     (constIdxTask : Task (Std.HashMap Address UInt64))
     (hintsSortTask : Task (Array (Address × Lean.ReducibilityHints)))
     (namedTasksTask : Task (Nat × Array (Task (Except String ByteArray)))) :
     ExceptT String PutM Unit := do
   putBytes blobsTask.get
-  let consts := constsSortTask.get
-  putTagN 0 0 consts.size.toUInt64
-  for (addr, lc) in consts do
-    Serialize.put addr
-    let bytes := lc.rawBytes
-    putTagN 0 0 bytes.size.toUInt64
-    putBytes bytes
+  let (constsSize, constTasks) := constsTasksTask.get
+  putTagN 0 0 constsSize.toUInt64
+  for t in constTasks do
+    putBytes t.get
 
   -- Section 3: anon_hints — the canonical hint channel for the
   -- anon/lazy readers, placed before the metadata sections so they can
@@ -1935,47 +2026,16 @@ def commsSection (env : Env) : ByteArray :=
     by §2/§4 indices, so hints keyed outside `consts` or named entries
     referencing unstored constants/names are unrepresentable and must
     fail at write time (mirrors Rust `Env::put`). -/
-def putEnv (env : Env) : ExceptT String PutM Unit := do
+def putEnv (env : Env) (tasks? : Option PutTasks := none) : ExceptT String PutM Unit := do
   if let some binding := env.roleBinding then
     if let .error e := checkBinding binding then throw e
   putTagN 4 FLAG env.envelopeVersion
 
-  -- Start independent section encodings, index builders, and sorts in parallel.
-  let constsSortTask := Task.spawn fun _ =>
-    qsortByAddrPar env.consts.toArray (·.1) fun a b => addrLt a.1 b.1
-  -- Canonical merkle root over consts addresses (matches Rust Env::put).
-  -- Always 32 bytes: for empty const sets, the sentinel
-  -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
-  -- canonical root, which is always a Blake3 hash).
-  let rootTask := Task.spawn fun _ =>
-    (Ix.Merkle.merkleRootCanonical (constsSortTask.get.map (·.1))).getD
-      Ix.Merkle.zeroAddress
-  let constIdxTask := Task.spawn fun _ => buildConstIdx constsSortTask.get
-  let blobsTask := Task.spawn fun _ => blobsSection env
-  let commsTask := Task.spawn fun _ => commsSection env
-  let sortedNamesTask := Task.spawn fun _ => topologicalSortNames env.names
-  let namesBytesTask := Task.spawn fun _ => encodeNamesSection sortedNamesTask.get
-  let nameIdxTask := Task.spawn fun _ => buildNameIdx sortedNamesTask.get
-  let hintsSortTask := Task.spawn fun _ =>
-    qsortByAddrPar env.anonHints.toArray (·.1) fun a b => addrLt a.1 b.1
-  let namedSortTask := Task.spawn fun _ =>
-    qsortByAddrPar env.named.toArray (·.1.getHash) fun a b => addrLt a.1.getHash b.1.getHash
-  -- The §5 entries are independent given `nameIdx` and `constIdx`: spawn their
-  -- chunk tasks as soon as the sort and two index tables finish, so §5 runs in
-  -- parallel while `namesBytesTask` (§4) is encoding.
-  let namedTasksTask := Task.spawn fun _ =>
-    let named := namedSortTask.get
-    let nameIdx := nameIdxTask.get
-    let constIdx := constIdxTask.get
-    let chunks := (named.size + namedChunk - 1) / namedChunk
-    let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
-      match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
-        constIdx).run).run (ByteArray.emptyWithCapacity (namedChunk * 64)) with
-      | (.ok _, bytes) => Except.ok bytes
-      | (.error e, _) => Except.error e
-    (named.size, tasks)
+  let tasks := match tasks? with
+    | some t => t
+    | none => spawnPutTasks env
 
-  Serialize.put rootTask.get
+  Serialize.put tasks.rootTask.get
 
   -- Bundle header fields: main (Option, 0/1-tagged) + assumptions
   -- (strictly ascending address list). Matches Rust `Env::put`.
@@ -1989,8 +2049,8 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   for addr in assumptions do
     Serialize.put addr
   putBindingHeader env.roleBinding
-  putSections blobsTask commsTask namesBytesTask constsSortTask constIdxTask
-    hintsSortTask namedTasksTask
+  putSections tasks.blobsTask tasks.commsTask tasks.namesBytesTask tasks.constsTasksTask
+    tasks.constIdxTask tasks.hintsSortTask tasks.namedTasksTask
 
 /-- The most universe constructors one record's universes may expand to when the
     loaders below decode it: the host admission limit
@@ -2285,11 +2345,9 @@ the {st.idx - start}-byte span at offset {start}"
     throw s!"serde gate ({label}): writer bytes differ from input in span \
 {start}..{st.idx}"
 
-/-- Coarse progress marker from the pure loader (immediate stderr via
-    `dbgTrace`; the CLI's stdout is block-buffered and useless for
-    locating where a long load is). -/
-@[inline] private def loadTrace (msg : String) : GetM Unit :=
-  dbgTrace s!"[deEnvVerifiedLazy] {msg}" fun _ => pure ()
+/-- Coarse progress marker from the pure loader (silent by default). -/
+@[inline] private def loadTrace (_msg : String) : GetM Unit :=
+  pure ()
 
 /-- Streaming counterpart of `deEnv` + `serEnv` roundtrip verification.
     See the section comment above. -/
@@ -2445,7 +2503,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       Serialize.put addr
       Env.putNameComponent name
   loadTrace "§4 parsed; topological order check"
-  let sortedNames := Env.topologicalSortNames env.names
+  let (sortedNames, _) := Env.topologicalSortNames env.names
   if sortedNames.map (·.1) != nameRev then
     throw "serde gate (§4): name order differs from the writer's \
            topological sort of the same name set"
@@ -2595,11 +2653,12 @@ def LazyEnvParts.materializeAll (parts : LazyEnvParts) : Except String Env := do
     the wire, so keys outside the stored consts/names are
     unrepresentable (see `Env.putEnv`). -/
 def serEnv (env : Env) : Except String ByteArray :=
+  let tasks := Env.spawnPutTasks env
   let cap := env.consts.fold (fun acc _ lc => acc + 37 + lc.len)
     (env.blobs.fold (fun acc _ b => acc + 37 + b.size)
       (env.named.size * 64 + env.names.size * 48 +
         env.anonHints.size * 8 + env.comms.size * 97 + 128))
-  match (Env.putEnv env).run.run (ByteArray.emptyWithCapacity cap) with
+  match (Env.putEnv env (some tasks)).run.run (ByteArray.emptyWithCapacity cap) with
   | (.ok _, bytes) => .ok bytes
   | (.error e, _) => .error e
 
@@ -2646,7 +2705,7 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       prevRank := rank + 1
 
   -- Names section
-  let sortedNames := Env.topologicalSortNames env.names
+  let (sortedNames, nameIdx) := Env.topologicalSortNames env.names
   let namesBytes := runPut do
     putTagN 0 0 sortedNames.size.toUInt64
     for (addr, name) in sortedNames do
@@ -2657,9 +2716,6 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
   -- length-prefixed metadata blob; absolute indices, so per-entry
   -- sizes are iteration-order independent — never delta-code here).
   -- Missing keys fall back to index 0 (diagnostics only).
-  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
-    (Std.HashMap.emptyWithCapacity sortedNames.size)
   let namedBytes := runPut do
     let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
     putTagN 0 0 named.size.toUInt64

@@ -5,10 +5,13 @@ import Ix.EnvScope
 
 open Ix.CompileM
 
-@[noinline] private def keepAlive (α : Type) (_ : α) : IO Unit := pure ()
+@[noinline] private def keepAlive (α : Type) (x : α) : IO α :=
+  pure x
 
 private def dropAsync (α : Type) (x : α) : IO (Task (Except IO.Error Unit)) :=
-  IO.asTask (prio := .dedicated) (keepAlive α x)
+  IO.asTask (prio := .dedicated) do
+    let _ ← keepAlive α x
+    pure ()
 
 private def phase (label : String) (action : IO α) : IO α := do
   let start ← IO.monoMsNow

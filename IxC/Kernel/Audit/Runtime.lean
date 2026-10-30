@@ -5,7 +5,7 @@ import Lean.Compiler.CSimpAttr
 import Lean.Compiler.MetaAttr
 import Lean.Compiler.IR.CompilerM
 import Lean.Compiler.IR.EmitUtil
-import Lean.Util.CollectAxioms
+import IxC.Kernel.Audit.Axioms
 
 /-! # Runtime closure of the public operations
 
@@ -265,7 +265,7 @@ def RuntimeRulings.admits (rulings : RuntimeRulings) (finding : Finding) :
   | .extern _ => return if rulings.assumed.any (·.externs.contains name) then some "assumed" else none
   | .csimp _ _ thm =>
     unless (moduleOf env thm).any (underAny rulings.csimpModules) do return none
-    let axioms ← collectAxioms thm
+    let axioms := (Ix.Kernel.Audit.collect (← getEnv) thm).axioms
     return if axioms.all rulings.csimpAxioms.contains then some "csimp" else none
   | .opaqueCode _ => return if partialIn env rulings.partialModules name then some "partial" else none
   | .implementedBy _ target =>

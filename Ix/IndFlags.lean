@@ -378,7 +378,7 @@ def exprMentionsAnyName (expr : Expr) (names : Std.HashSet Ix.Compile.ExactKey.E
   return false
 
 /-- Substitute free variables by name. -/
-partial def replaceFVarsMap (e : Expr) (fvarMap : Std.HashMap Name Expr) : Expr :=
+partial def replaceFVarsMap (e : Expr) (fvarMap : Std.HashMap Ix.Compile.ExactKey.ExactName Expr) : Expr :=
   match e with
   | .fvar n _ => (fvarMap.get? n).getD e
   | .app f a _ =>
@@ -399,7 +399,7 @@ partial def replaceFVarsMap (e : Expr) (fvarMap : Std.HashMap Name Expr) : Expr 
 def replaceParamsExpr (e : Expr) (asFvars blockParamFvars : Array Expr) : Expr :=
   if asFvars.isEmpty then e
   else Id.run do
-    let mut fvarMap : Std.HashMap Name Expr := {}
+    let mut fvarMap : Std.HashMap Ix.Compile.ExactKey.ExactName Expr := {}
     for (localFv, blockFv) in asFvars.zip blockParamFvars do
       if let .fvar n _ := localFv then
         fvarMap := fvarMap.insert n blockFv
@@ -443,7 +443,7 @@ def hasInvalidSpecRef (expr : Expr) (paramFvarNames : Array Name) : Bool := Id.r
     | .bvar idx _ =>
       if idx ≥ depth then return true
     | .fvar n _ =>
-      if !paramFvarNames.contains n then return true
+      if !paramFvarNames.any (Ix.Compile.ExactKey.nameEq · n) then return true
     | .app f a _ =>
       stack := stack.push (f, depth) |>.push (a, depth)
     | .lam _ t b _ _ | .forallE _ t b _ _ =>

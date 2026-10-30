@@ -61,10 +61,13 @@ def prepareCertified (source : Lean.Environment)
   let prepared ← input.prepare
   return (prepared, ← checkPreparedSource prepared)
 
-@[noinline] private def keepAlive (α : Type) (_ : α) : IO Unit := pure ()
+@[noinline] private def keepAlive (α : Type) (x : α) : IO α :=
+  pure x
 
 private def dropAsync (α : Type) (x : α) : IO (Task (Except IO.Error Unit)) :=
-  IO.asTask (prio := .dedicated) (keepAlive α x)
+  IO.asTask (prio := .dedicated) do
+    let _ ← keepAlive α x
+    pure ()
 
 /-- **The certified compiler's input**: the canonical environment of a prepared
 list, canonicalized on `workers` tasks over consecutive slices, joined in order. -/
@@ -81,14 +84,25 @@ def failureOutside (env : Ix.Environment) (failures : Ix.Cert.Failures) : Option
 
 /-- The first published role name whose address is not the default role table's
 address of that role (`Ix.Cert.PublishedRolesBound`), if any. -/
-def unboundPublishedRole (ixe : Ixon.Env) : Option (Ix.Name × Ix.Kernel.Role × Address) :=
+def unboundPublishedRole (ixe : Ixon.Env)
+    (existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none) :
+    Option (Ix.Name × Ix.Kernel.Role × Address) :=
   let bound : Std.HashMap Ix.Kernel.Role Address :=
     Ix.Cert.roleTableBound.foldl (fun m (r, a) => if m.contains r then m else m.insert r a) {}
-  (Ix.Compile.Parallel.map 32 (fun (n, named) =>
-    match Ix.Kernel.Role.ofLeanName? (Ix.LeanIngress.ingressName n) with
-    | some r =>
-      if bound[r]? == some named.addr then none else some (n, r, named.addr)
-    | none => none) ixe.named.toArray).findSome? id
+  let hasMismatch := match existing? with
+    | some existing =>
+      Ix.Kernel.Role.all.any fun r =>
+        match existing[r.leanName]? with
+        | some addr => bound[r]? != some addr
+        | none => false
+    | none => true
+  if !hasMismatch then none
+  else
+    (Ix.Compile.Parallel.map 32 (fun (n, named) =>
+      match Ix.Kernel.Role.ofLeanName? (Ix.LeanIngress.ingressName n) with
+      | some r =>
+        if bound[r]? == some named.addr then none else some (n, r, named.addr)
+      | none => none) ixe.named.toArray).findSome? id
 
 /-- The certified compile's result. -/
 structure CertifiedOut where
@@ -102,6 +116,8 @@ structure CertifiedOut where
   env : Ixon.Env
   /-- `Ix.Cert.compileReport`'s failures. -/
   failures : Ix.Cert.Failures
+  /-- Pre-validated source-address map from `Ix.RoleBinding.sourceAddresses env`. -/
+  existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none
 
 /-- **The certified compile of a prepared list**: its canonical environment
 (`canonInput`), then `Ix.Cert.compileReport`, then the accounting and, for an
@@ -126,9 +142,10 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   if let some n := failureOutside env failures then
     return .error s!"source accounting: failure name '{n.pretty}' is outside the original input"
   let _ ← dropAsync _ env
-  if let .error e := Ix.RoleBinding.sourceAddresses ixe then
-    return .error e
-  if let some (n, r, addr) := unboundPublishedRole ixe then
+  let existing ← match Ix.RoleBinding.sourceAddresses ixe with
+    | .ok m => pure m
+    | .error e => return .error e
+  if let some (n, r, addr) := unboundPublishedRole ixe (some existing) then
     return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
       not its bound address in the default role table"
   if annotated then
@@ -136,7 +153,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
       return .error "resource compilation requires the complete requested closure"
     if let .error e := Ix.Resource.validate ixe (Ix.Resource.standardProfile ixe) then
       return .error e
-  return .ok { prepared, annotated, inputs, env := ixe, failures }
+  return .ok { prepared, annotated, inputs, env := ixe, failures, existing? := some existing }
 
 /-- **The certified compile** of the constants `constants` of `source`:
 `prepareCertified`, then `compileCertifiedPrepared`. -/

@@ -6,6 +6,7 @@ public import IxC.Kernel.Ixon.Reader
 public import IxC.Kernel.Ixon.Prelude
 public import Ix.LeanIngress
 import all Ix.Ground
+import all Init.Util
 import Init.Internal.Order.While
 
 /-! # The compiler as a pure function
@@ -608,6 +609,77 @@ statements read names structurally (`Ix.nameCompareExact`). -/
         | some m => if Ix.nameCompareExact m n == .eq then acc else (acc.1, some (m, n))
         | none => (acc.1.insert n.getHash n, none)).2
 
+@[expose, inline] def nameCompareExactEqFast (a b : Ix.Name) : Bool :=
+  withPtrEq a b (fun _ => Ix.nameCompareExact a b == .eq)
+    (fun same => by subst b; exact Ix.Compile.FrontEnd.nameCompareExact_self_beq a)
+
+@[simp] private theorem nameCompareExactEqFast_eq (a b : Ix.Name) :
+    nameCompareExactEqFast a b = (Ix.nameCompareExact a b == .eq) := rfl
+
+@[expose] def nameHashStep (acc : Std.HashMap Address Ix.Name × Option (Ix.Name × Ix.Name))
+    (n : Ix.Name) : Std.HashMap Address Ix.Name × Option (Ix.Name × Ix.Name) :=
+  match acc.2 with
+  | some _ => acc
+  | none =>
+    match acc.1.get? n.getHash with
+    | some m => if nameCompareExactEqFast m n then acc else (acc.1, some (m, n))
+    | none => (acc.1.insert n.getHash n, none)
+
+@[expose] def nameHashCollisionFast (env : Ix.Environment) (ixe : Ixon.Env) : Option (Ix.Name × Ix.Name) :=
+  let init : Std.HashMap Address Ix.Name × Option (Ix.Name × Ix.Name) :=
+    (Std.HashMap.emptyWithCapacity (env.consts.size + ixe.named.size), none)
+  (ixe.named.keys.foldl nameHashStep (env.consts.keys.foldl nameHashStep init)).2
+
+private theorem nameHashStep_foldl_eq (l : List Ix.Name)
+    (m₁ m₂ : Std.HashMap Address Ix.Name) (o : Option (Ix.Name × Ix.Name))
+    (hm : ∀ k, m₁.get? k = m₂.get? k) :
+    (l.foldl nameHashStep (m₁, o)).2 = (l.foldl nameHashStep (m₂, o)).2 ∧
+    ∀ k, (l.foldl nameHashStep (m₁, o)).1.get? k = (l.foldl nameHashStep (m₂, o)).1.get? k := by
+  induction l generalizing m₁ m₂ o with
+  | nil => exact ⟨rfl, hm⟩
+  | cons n l ih =>
+    simp only [List.foldl_cons, nameHashStep]
+    cases o with
+    | some p => exact ih m₁ m₂ (some p) hm
+    | none =>
+      simp only [hm n.getHash]
+      cases m₂.get? n.getHash with
+      | some m =>
+        dsimp only
+        cases nameCompareExactEqFast m n
+        · simp only [Bool.false_eq_true, ↓reduceIte]
+          exact ih m₁ m₂ (some (m, n)) hm
+        · simp only [↓reduceIte]
+          exact ih m₁ m₂ none hm
+      | none =>
+        dsimp only
+        refine ih (m₁.insert n.getHash n) (m₂.insert n.getHash n) none fun k => ?_
+        have hmk := hm k
+        simp only [Std.HashMap.get?_eq_getElem?] at hmk ⊢
+        simp only [Std.HashMap.getElem?_insert, hmk]
+
+theorem nameHashCollisionFast_eq (env : Ix.Environment) (ixe : Ixon.Env) :
+    nameHashCollisionFast env ixe = nameHashCollision env ixe := by
+  unfold nameHashCollisionFast nameHashCollision
+  have hStep : (fun (acc : Std.HashMap Address Ix.Name × Option (Ix.Name × Ix.Name)) (n : Ix.Name) =>
+      match acc.2 with
+      | some _ => acc
+      | none =>
+        match acc.1.get? n.getHash with
+        | some m => if Ix.nameCompareExact m n == .eq then acc else (acc.1, some (m, n))
+        | none => (acc.1.insert n.getHash n, none)) = nameHashStep := by
+    funext acc n
+    simp only [nameHashStep, nameCompareExactEqFast_eq]
+    rfl
+  dsimp only
+  rw [hStep, ← List.foldl_append]
+  refine (nameHashStep_foldl_eq (env.consts.keys ++ ixe.named.keys) _ _ none fun k => ?_).1
+  simp [Std.HashMap.get?_eq_getElem?]
+
+@[csimp] theorem nameHashCollision_eq_fast : @nameHashCollision = @nameHashCollisionFast := by
+  funext env ixe
+  exact (nameHashCollisionFast_eq env ixe).symm
+
 /-- The block and member index of a stored member projection record (a
 definition's, an inductive's or a recursor's). -/
 @[expose] def memberProjection (c : Ixon.Constant) : Option (Address × Nat) :=
@@ -1006,6 +1078,12 @@ for its projection to resolve. -/
 (`Ix.Name.beqRaw`, through `Ix.LeanIngress.TableName`'s lawful `==`). -/
 @[expose] def namesEq (a b : Array Ix.Name) : Bool :=
   @BEq.beq (Array Ix.LeanIngress.TableName) _ a b
+
+@[expose, inline] def namesEqFast (a b : Array Ix.Name) : Bool :=
+  withPtrEq a b (fun _ => namesEq a b) (fun same => by subst b; exact BEq.rfl)
+
+@[simp] private theorem namesEqFast_eq (a b : Array Ix.Name) :
+    namesEqFast a b = namesEq a b := rfl
 
 /-- The level parameters of the first input recursor met for each family's first inductive
 (its `all[0]`, compared structurally). -/
@@ -1798,7 +1876,8 @@ theorem parFindSome?_eq {α β : Type} (f : α → Option β) (l : List α) :
 
 /-- `mutsMismatch` computed on tasks (`parFindSome?`). -/
 @[expose] def mutsMismatchPar (ixe : Ixon.Env) : Option (Ix.Name × Nat × Address) :=
-  let byHash : Std.HashMap Address Ix.Name := ixe.named.fold (init := {}) fun m n _ => m.insert n.getHash n
+  let byHash : Std.HashMap Address Ix.Name :=
+    ixe.named.fold (init := Std.HashMap.emptyWithCapacity ixe.named.size) fun m n _ => m.insert n.getHash n
   parFindSome? (fun (entry, named) =>
     match named.constMeta.info with
     | .muts all _ =>
@@ -1806,8 +1885,31 @@ theorem parFindSome?_eq {α β : Type} (f : α → Option β) (l : List α) :
         (cls.toList.find? fun h => !publishedAtMember ixe byHash named.addr i h).map fun h => (entry, i, h)
     | _ => none) ixe.named.toList
 
+private theorem byHash_foldl_get? (l : List (Ix.Name × Ixon.Named))
+    (m₁ m₂ : Std.HashMap Address Ix.Name) (hm : ∀ k, m₁.get? k = m₂.get? k) :
+    ∀ k, (l.foldl (fun (m : Std.HashMap Address Ix.Name) p => m.insert p.1.getHash p.1) m₁).get? k =
+      (l.foldl (fun (m : Std.HashMap Address Ix.Name) p => m.insert p.1.getHash p.1) m₂).get? k := by
+  induction l generalizing m₁ m₂ with
+  | nil => exact hm
+  | cons p l ih =>
+    simp only [List.foldl_cons]
+    refine ih _ _ fun k => ?_
+    have hmk := hm k
+    simp only [Std.HashMap.get?_eq_getElem?] at hmk ⊢
+    simp only [Std.HashMap.getElem?_insert, hmk]
+
 theorem mutsMismatchPar_eq (ixe : Ixon.Env) : mutsMismatchPar ixe = mutsMismatch ixe := by
-  simp only [mutsMismatchPar, mutsMismatch, parFindSome?_eq]
+  have hPub :
+      publishedAtMember ixe (ixe.named.fold (init := Std.HashMap.emptyWithCapacity ixe.named.size) fun m n _ => m.insert n.getHash n) =
+      publishedAtMember ixe (ixe.named.fold (init := {}) fun m n _ => m.insert n.getHash n) := by
+    funext block i h
+    unfold publishedAtMember
+    have hGet := byHash_foldl_get? ixe.named.toList
+      (Std.HashMap.emptyWithCapacity ixe.named.size) {}
+      (fun k => by simp [Std.HashMap.get?_eq_getElem?]) h
+    simp only [Std.HashMap.fold_eq_foldl_toList] at hGet ⊢
+    rw [hGet]
+  simp only [mutsMismatchPar, mutsMismatch, parFindSome?_eq, hPub]
 
 @[csimp] theorem mutsMismatch_eq_par : @mutsMismatch = @mutsMismatchPar := by
   funext ixe
@@ -1847,10 +1949,11 @@ theorem unresolvedPublishedPar_eq (env : Ix.Environment)
 /-- `misnamedInput` computed on tasks (`parFindSome?`). -/
 @[expose] def misnamedInputPar (env : Ix.Environment) : Option Ix.Name :=
   parFindSome? (fun (n, ci) =>
-    if Ix.nameCompareExact ci.getCnst.name n == .eq then none else some n) env.consts.toList
+    if nameCompareExactEqFast ci.getCnst.name n then none else some n) env.consts.toList
 
 theorem misnamedInputPar_eq (env : Ix.Environment) : misnamedInputPar env = misnamedInput env := by
-  simp only [misnamedInputPar, misnamedInput, parFindSome?_eq]
+  simp only [misnamedInputPar, misnamedInput, parFindSome?_eq, nameCompareExactEqFast_eq]
+  rfl
 
 @[csimp] theorem misnamedInput_eq_par : @misnamedInput = @misnamedInputPar := by
   funext env
@@ -1924,12 +2027,12 @@ theorem blobRecordCollisionPar_eq (ixe : Ixon.Env) :
 @[expose] def unstoredFamilyNamePar (env : Ix.Environment) : Option (Ix.Name × Ix.Name) :=
   parFindSome? (fun (n, ci) =>
     ((familyNamesOf ci).find? fun a =>
-      !(env.consts.get? a).any fun ci' => Ix.nameCompareExact ci'.getCnst.name a == .eq).map (n, ·))
+      !(env.consts.get? a).any fun ci' => nameCompareExactEqFast ci'.getCnst.name a).map (n, ·))
     env.consts.toList
 
 theorem unstoredFamilyNamePar_eq (env : Ix.Environment) :
     unstoredFamilyNamePar env = unstoredFamilyName env := by
-  simp only [unstoredFamilyNamePar, unstoredFamilyName, parFindSome?_eq]
+  simp only [unstoredFamilyNamePar, unstoredFamilyName, parFindSome?_eq, nameCompareExactEqFast_eq]
 
 @[csimp] theorem unstoredFamilyName_eq_par : @unstoredFamilyName = @unstoredFamilyNamePar := by
   funext env
@@ -1962,18 +2065,18 @@ theorem misplacedConstructorPar_eq (env : Ix.Environment) :
     | .inductInfo iv =>
       match iv.all.find? (fun m =>
           match env.consts.get? m with
-          | some (.inductInfo iv') => !namesEq iv'.cnst.levelParams iv.cnst.levelParams
+          | some (.inductInfo iv') => !namesEqFast iv'.cnst.levelParams iv.cnst.levelParams
           | _ => false) with
       | some m => some m
       | none =>
         iv.ctors.find? fun c =>
           match env.consts.get? c with
-          | some (.ctorInfo cv) => !namesEq cv.cnst.levelParams iv.cnst.levelParams
+          | some (.ctorInfo cv) => !namesEqFast cv.cnst.levelParams iv.cnst.levelParams
           | _ => false
     | .recInfo rv =>
       match rv.all[0]? with
       | some first =>
-        if (recLps[(first : Ix.LeanIngress.TableName)]?).any (namesEq · rv.cnst.levelParams) &&
+        if (recLps[(first : Ix.LeanIngress.TableName)]?).any (namesEqFast · rv.cnst.levelParams) &&
             recursorLevelCountOk env first rv then none
         else some n
       | none => none
@@ -1981,7 +2084,8 @@ theorem misplacedConstructorPar_eq (env : Ix.Environment) :
 
 theorem strayLevelParamsPar_eq (env : Ix.Environment) :
     strayLevelParamsPar env = strayLevelParams env := by
-  simp only [strayLevelParamsPar, strayLevelParams, parFindSome?_eq]
+  simp only [strayLevelParamsPar, strayLevelParams, parFindSome?_eq, namesEqFast_eq]
+  rfl
 
 @[csimp] theorem strayLevelParams_eq_par : @strayLevelParams = @strayLevelParamsPar := by
   funext env
@@ -2044,7 +2148,7 @@ theorem unhintedDefinitionPar_eq (env : Ix.Environment) (ixe : Ixon.Env) :
     uncovered := Task.spawn fun _ => uncoveredPar env out.1 out.2
     unauthentic := Task.spawn fun _ => unauthenticPar out.1
     referenceCycle := Task.spawn fun _ => referenceCycle out.1
-    nameHashCollision := Task.spawn fun _ => nameHashCollision env out.1
+    nameHashCollision := Task.spawn fun _ => nameHashCollisionFast env out.1
     mutsMismatch := Task.spawn fun _ => mutsMismatchPar out.1
     resolutionMismatch := Task.spawn fun _ => resolutionMismatchPar cenv.nameToAddr out.1
     unresolvedPublished := Task.spawn fun _ => unresolvedPublishedPar env cenv.nameToAddr out.1
@@ -2071,11 +2175,17 @@ function's (`Task.spawn`), so the two are the same function. -/
       strayFamilyMemberWith env blocks (Task.spawn fun _ => familyRecursors env).get =
         strayFamilyMember env blocks :=
     strayFamilyMemberPar_eq env blocks
-  simp only [checkReportPar, uncoveredPar_eq, unauthenticPar_eq, mutsMismatchPar_eq,
-    resolutionMismatchPar_eq, unresolvedPublishedPar_eq, misnamedInputPar_eq,
+  have hUnowned :
+      unownedRecursorWith env out.1 (Task.spawn fun _ => storedRecursorRecords out.1).get
+        (Task.spawn fun _ => familyRecursors env).get = unownedRecursor env out.1 := rfl
+  have hRecShape :
+      recursorShapeErrorWith env out.1 (Task.spawn fun _ => storedRecursorRecords out.1).get =
+        recursorShapeError env out.1 := rfl
+  simp only [checkReportPar, uncoveredPar_eq, unauthenticPar_eq, nameHashCollisionFast_eq,
+    mutsMismatchPar_eq, resolutionMismatchPar_eq, unresolvedPublishedPar_eq, misnamedInputPar_eq,
     strayConstructorPar_eq, projectionCollisionPar_eq, unreadablePublishedPar_eq,
-    blobRecordCollisionPar_eq, unstoredFamilyNamePar_eq, misplacedConstructorPar_eq,
-    strayLevelParamsPar_eq, hStray, unhintedDefinitionPar_eq]
+    blobRecordCollisionPar_eq, hUnowned, unstoredFamilyNamePar_eq, misplacedConstructorPar_eq,
+    strayLevelParamsPar_eq, hStray, hRecShape, unhintedDefinitionPar_eq]
   rfl
 
 /-- **The pure compiler, with its failures.** A block that fails to compile

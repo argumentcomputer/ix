@@ -279,19 +279,24 @@ def roleBindingError (ixe : Ixon.Env)
     Option String :=
   match sourceAddrs?.getD (sourceAddresses ixe) with
   | .error e => some e
-  | .ok _ =>
+  | .ok existing =>
     match ixe.roleBinding with
     | none => none
     | some binding =>
       match Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨binding.address, binding.bytes⟩ with
       | .error e => some (toString (Ix.Kernel.Admission.Error.binding e))
       | .ok table =>
-        let roleMismatch := (Ix.Cert.parMap (fun (n, named) =>
-          match Role.ofLeanName? (Ix.LeanIngress.ingressName n) with
-          | some r =>
-            if table.addressOf? r == some named.addr then none
-            else some s!"the published role {n.pretty} ({repr r}) is at {named.addr}, not its bound address"
-          | none => none) ixe.named.toArray).findSome? id
+        let hasRoleMismatch := Role.all.any fun r =>
+          match existing[r.leanName]? with
+          | some addr => table.addressOf? r != some addr
+          | none => false
+        let roleMismatch := if !hasRoleMismatch then none else
+          (Ix.Cert.parMap (fun (n, named) =>
+            match Role.ofLeanName? (Ix.LeanIngress.ingressName n) with
+            | some r =>
+              if table.addressOf? r == some named.addr then none
+              else some s!"the published role {n.pretty} ({repr r}) is at {named.addr}, not its bound address"
+            | none => none) ixe.named.toArray).findSome? id
         if let some msg := roleMismatch then some msg
         else
           let kindMismatch := table.bound.toList.findSome? fun (r, p) =>
@@ -312,6 +317,60 @@ def roleBindingError (ixe : Ixon.Env)
               | some (s, b) =>
                 some s!"the bound address {b} of the literal-support role {repr s} is not published under {(Ix.Cert.literalRoleIxName s).pretty}"
               | none => none
+
+/-- Fast check for `Ix.Cert.roleRecordKind`: probes only the bound addresses in
+`ixe.consts` before falling back to `Ix.Cert.roleRecordKind` on a mismatch. -/
+def fastRoleRecordKind (ixe : Ixon.Env) : Option (Ix.Kernel.Role × Address) :=
+  let bound := Ix.Cert.roleTableBound
+  let hasMismatch := bound.any fun (r, p) =>
+    match (ixe.consts.get? p).bind (·.get?) with
+    | some c => !Ix.Cert.roleRecordKindOk r c
+    | none => false
+  if hasMismatch then Ix.Cert.roleRecordKind ixe else none
+
+/-- Check whether the subgraph of `ixe.consts` reachable from `seeds` contains a
+reference cycle. When `original.consts` is already acyclic, any cycle in
+`final.consts` must contain at least one newly added record, so checking the
+subgraph reachable from the new records is both necessary and sufficient. -/
+def referenceCycleFrom (ixe : Ixon.Env) (seeds : Array Address) : Option (List Address) :=
+  if seeds.isEmpty then none
+  else Id.run do
+    let mut todo := seeds
+    let mut queued : Std.HashSet Address := seeds.foldl (·.insert ·) {}
+    let mut addrs : Array Address := #[]
+    let mut info : Array (Option (Array Address × Address)) := #[]
+    let mut index : Std.HashMap Address Nat := {}
+    for _ in [:ixe.consts.size + 1] do
+      if h : todo.size > 0 then
+        let addr := todo[todo.size - 1]
+        todo := todo.pop
+        unless index.contains addr do
+          let idx := addrs.size
+          index := index.insert addr idx
+          addrs := addrs.push addr
+          let r? := (ixe.consts.get? addr).bind (Ix.Cert.RecordRefs.lazyRefs addr)
+          info := info.push r?
+          if let some (refs, own) := r? then
+            let deps := if own == addr then refs else refs.push own
+            for dep in deps do
+              if ixe.consts.contains dep && !queued.contains dep then
+                queued := queued.insert dep
+                todo := todo.push dep
+      else
+        break
+    if !todo.isEmpty then return some []
+    let ownerAt : Address → Option Address := fun r => do
+      let j ← index.get? r
+      let (_, o) ← (info[j]?).join
+      pure o
+    let adj := info.map fun
+      | none => #[]
+      | some (refs, _) => refs.filterMap fun r => ownerAt r >>= index.get?
+    let cyclic (c : Array Nat) : Bool :=
+      c.size != 1 || c.any fun i => (adj[i]?.getD #[]).contains i
+    match Ix.Compile.Canon.condensation adj with
+    | none => some []
+    | some C => (C.comps.toList.find? cyclic).map fun c => c.toList.filterMap (addrs[·]?)
 
 /-- **The finalized artifact keeps the original's artifact-level checks.**
 `finalize` adds support records, certificate records, evidence records and a
@@ -363,25 +422,69 @@ structure FinalizedCheckTasks where
   roleBindingError : Task (Option String)
 
 def FinalizedCheckTasks.spawn (final : Ixon.Env)
-    (sourceAddrs? : Option (Except String (Std.HashMap Ix.Kernel.Name Address)) := none) :
+    (sourceAddrs? : Option (Except String (Std.HashMap Ix.Kernel.Name Address)) := none)
+    (added? : Option (Array (Address × Ixon.Constant) × Array (Address × ByteArray) × Array (Address × Lean.ReducibilityHints)) := none) :
     FinalizedCheckTasks :=
-  let recRecords := Task.spawn fun _ => Ix.Cert.storedRecursorRecords final
-  { unauthentic := Task.spawn fun _ => Ix.Cert.unauthenticPar final
-    referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
-    nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
-    mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatchPar final
-    unresolvedPublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unresolvedPublished final
-    projectionCollision := Task.spawn fun _ => Ix.Cert.projectionCollisionPar final
-    unreadablePublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unreadablePublished final
-    blobRecordCollision := Task.spawn fun _ => Ix.Cert.blobRecordCollisionPar final
-    unownedRecursor := Task.spawn fun _ =>
-      Ix.RoleBinding.Compile.unownedRecursorWith final recRecords.get
-    roleRecordKind := Task.spawn fun _ => Ix.Cert.roleRecordKind final
-    literalRoleUnnamed := Task.spawn fun _ => Ix.RoleBinding.Compile.literalRoleUnnamed final
-    recursorSlotError := Task.spawn fun _ =>
-      Ix.Cert.recursorSlotErrorWith final recRecords.get
-    unhintedDefinition := Task.spawn fun _ => Ix.RoleBinding.Compile.unhintedDefinition final
-    roleBindingError := Task.spawn fun _ => Ix.RoleBinding.Compile.roleBindingError final sourceAddrs? }
+  match added? with
+  | none =>
+    let recRecords := Task.spawn fun _ => Ix.Cert.storedRecursorRecords final
+    { unauthentic := Task.spawn fun _ => Ix.Cert.unauthenticPar final
+      referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
+      nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
+      mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatchPar final
+      unresolvedPublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unresolvedPublished final
+      projectionCollision := Task.spawn fun _ => Ix.Cert.projectionCollisionPar final
+      unreadablePublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unreadablePublished final
+      blobRecordCollision := Task.spawn fun _ => Ix.Cert.blobRecordCollisionPar final
+      unownedRecursor := Task.spawn fun _ =>
+        Ix.RoleBinding.Compile.unownedRecursorWith final recRecords.get
+      roleRecordKind := Task.spawn fun _ => Ix.RoleBinding.Compile.fastRoleRecordKind final
+      literalRoleUnnamed := Task.spawn fun _ => Ix.RoleBinding.Compile.literalRoleUnnamed final
+      recursorSlotError := Task.spawn fun _ =>
+        Ix.Cert.recursorSlotErrorWith final recRecords.get
+      unhintedDefinition := Task.spawn fun _ => Ix.RoleBinding.Compile.unhintedDefinition final
+      roleBindingError := Task.spawn fun _ => Ix.RoleBinding.Compile.roleBindingError final sourceAddrs? }
+  | some (addedConsts, addedBlobs, _) =>
+    let hasNewRec := addedConsts.any fun (_, c) =>
+      match c.info with | .recr _ | .rPrj _ => true | _ => false
+    let hasNewDPrj := addedConsts.any fun (_, c) =>
+      match c.info with | .dPrj _ => true | _ => false
+    let recRecords? := if hasNewRec then
+        some (Task.spawn fun _ => Ix.Cert.storedRecursorRecords final)
+      else none
+    { unauthentic := Task.spawn fun _ =>
+        ((addedConsts.filterMap fun (a, _) =>
+          match final.consts[a]? with
+          | some lc => if a != Address.admissionHash lc.rawBytes then some a else none
+          | none => some a).toList) ++
+        ((addedBlobs.filterMap fun (a, _) =>
+          match final.blobs[a]? with
+          | some bytes => if a != Address.admissionHash bytes then some a else none
+          | none => some a).toList)
+      referenceCycle := Task.spawn fun _ =>
+        Ix.RoleBinding.Compile.referenceCycleFrom final (addedConsts.map (·.1))
+      nameHashCollision := Task.pure none
+      mutsMismatch := Task.pure none
+      unresolvedPublished := Task.pure none
+      projectionCollision := if hasNewDPrj then
+          Task.spawn fun _ => Ix.Cert.projectionCollisionPar final
+        else Task.pure none
+      unreadablePublished := Task.pure none
+      blobRecordCollision := Task.spawn fun _ =>
+        (addedConsts.findSome? fun (a, _) => if final.blobs.contains a then some a else none).orElse fun _ =>
+          addedBlobs.findSome? fun (a, _) => if final.consts.contains a then some a else none
+      unownedRecursor := match recRecords? with
+        | some recRecords =>
+          Task.spawn fun _ => Ix.RoleBinding.Compile.unownedRecursorWith final recRecords.get
+        | none => Task.pure none
+      roleRecordKind := Task.spawn fun _ => Ix.RoleBinding.Compile.fastRoleRecordKind final
+      literalRoleUnnamed := Task.spawn fun _ => Ix.RoleBinding.Compile.literalRoleUnnamed final
+      recursorSlotError := match recRecords? with
+        | some recRecords =>
+          Task.spawn fun _ => Ix.Cert.recursorSlotErrorWith final recRecords.get
+        | none => Task.pure none
+      unhintedDefinition := Task.pure none
+      roleBindingError := Task.spawn fun _ => Ix.RoleBinding.Compile.roleBindingError final sourceAddrs? }
 
 @[noinline] def checkFinalizedOf (ts : FinalizedCheckTasks) : Except String Unit := do
   if let some a := ts.unauthentic.get.head? then
@@ -426,21 +529,29 @@ def FinalizedCheckTasks.spawn (final : Ixon.Env)
     throw s!"artifact finalization: {msg}"
 
 def checkFinalized (original final : Ixon.Env)
-    (sourceAddrs? : Option (Except String (Std.HashMap Ix.Kernel.Name Address)) := none) :
+    (sourceAddrs? : Option (Except String (Std.HashMap Ix.Kernel.Name Address)) := none)
+    (added? : Option (Array (Address × Ixon.Constant) × Array (Address × ByteArray) × Array (Address × Lean.ReducibilityHints)) := none) :
     Except String Unit := do
-  let tasks := FinalizedCheckTasks.spawn final sourceAddrs?
-  let namedCheck := Task.spawn fun _ =>
-    (Ix.Cert.parMap (fun (name, named) =>
-      if (final.named.get? name).map (·.addr) == some named.addr then none else some name)
-      original.named.toArray).findSome? id
-  let hintsCheck := Task.spawn fun _ =>
-    (Ix.Cert.parMap (fun (address, hint) =>
-      if final.anonHints[address]? == some hint then none else some address)
-      original.anonHints.toArray).findSome? id
-  if let some name := namedCheck.get then
-    throw s!"artifact finalization: the published address of {name.pretty} changed"
-  if let some address := hintsCheck.get then
-    throw s!"artifact finalization: the reducibility hint at {address} changed"
+  let tasks := FinalizedCheckTasks.spawn final sourceAddrs? added?
+  match added? with
+  | none =>
+    let namedCheck := Task.spawn fun _ =>
+      (Ix.Cert.parMap (fun (name, named) =>
+        if (final.named.get? name).map (·.addr) == some named.addr then none else some name)
+        original.named.toArray).findSome? id
+    let hintsCheck := Task.spawn fun _ =>
+      (Ix.Cert.parMap (fun (address, hint) =>
+        if final.anonHints[address]? == some hint then none else some address)
+        original.anonHints.toArray).findSome? id
+    if let some name := namedCheck.get then
+      throw s!"artifact finalization: the published address of {name.pretty} changed"
+    if let some address := hintsCheck.get then
+      throw s!"artifact finalization: the reducibility hint at {address} changed"
+  | some (_, _, addedHints) =>
+    for (address, _) in addedHints do
+      if let some hint := original.anonHints[address]? then
+        unless final.anonHints[address]? == some hint do
+          throw s!"artifact finalization: the reducibility hint at {address} changed"
   checkFinalizedOf tasks
 
 /-- Adding internal support cannot hide a failed original request, change an
@@ -508,6 +619,30 @@ def projectionBlock? (lc : Ixon.LazyConstant) : Option Address :=
     | .ok block? _ => block?
     | .error _ _ => none
 
+/-- All member and constructor projection addresses of a `.muts` block at `b`. -/
+def blockProjectionAddrs (b : Address) (lc : Ixon.LazyConstant) : Array Address :=
+  if !Ix.Cert.blockHeader lc.rawBytes then #[]
+  else
+    match lc.get? with
+    | some ⟨.muts components, _, _, _⟩ => Id.run do
+      let mut out : Array Address := #[]
+      for idx in [:components.size] do
+        match components[idx]! with
+        | .indc iv =>
+          let iProj : Ixon.Constant := ⟨.iPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          out := out.push (Address.admissionHash (Ixon.serConstant iProj))
+          for cidx in [:iv.ctors.size] do
+            let cProj : Ixon.Constant := ⟨.cPrj ⟨idx.toUInt64, cidx.toUInt64, b⟩, #[], #[], #[]⟩
+            out := out.push (Address.admissionHash (Ixon.serConstant cProj))
+        | .defn _ =>
+          let dProj : Ixon.Constant := ⟨.dPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          out := out.push (Address.admissionHash (Ixon.serConstant dProj))
+        | .recr _ =>
+          let rProj : Ixon.Constant := ⟨.rPrj ⟨idx.toUInt64, b⟩, #[], #[], #[]⟩
+          out := out.push (Address.admissionHash (Ixon.serConstant rProj))
+      return out
+    | _ => #[]
+
 /-- Extract the compiled support closure of `selected` from `artifact` when
 every constant in `selected.constants` is already published in `artifact`. -/
 def sliceSupport? (artifact : Ixon.Env)
@@ -515,12 +650,10 @@ def sliceSupport? (artifact : Ixon.Env)
     (selected : Ix.Compile.CompileInput) : Option Ixon.Env := do
   let mut todo : Array Address := #[]
   let mut queued : Std.HashSet Address := {}
-  let mut selectedNames : Std.HashSet Ix.Kernel.Name := {}
   for (name, _) in selected.constants do
     let key := Ix.Kernel.Name.ofLeanName name
     let addr ← existing[key]?
     guard (artifact.consts.contains addr)
-    selectedNames := selectedNames.insert key
     unless queued.contains addr do
       queued := queued.insert addr
       todo := todo.push addr
@@ -550,24 +683,21 @@ def sliceSupport? (artifact : Ixon.Env)
     else
       break
   guard todo.isEmpty
-  let kept := (Ix.Cert.parMap (fun (name, entry) =>
-    match artifact.consts[entry.addr]? with
-    | some lc =>
-      let keep := visited.contains entry.addr ||
-        match projectionBlock? lc with
-        | some b => visited.contains b
-        | none => false
-      if keep then
-        some (name, entry, lc, selectedNames.contains (Ix.LeanIngress.ingressName name))
-      else none
-    | none => none) artifact.named.toArray).filterMap id
+  for (b, lc) in consts.toList do
+    for pAddr in blockProjectionAddrs b lc do
+      if let some pLc := artifact.consts[pAddr]? then
+        consts := consts.insert pAddr pLc
+        if let some hint := artifact.anonHints[pAddr]? then
+          anonHints := anonHints.insert pAddr hint
   let mut named : Std.HashMap Ix.Name Ixon.Named := {}
-  for (name, entry, lc, isSelected) in kept do
-    consts := consts.insert entry.addr lc
-    if let some hint := artifact.anonHints[entry.addr]? then
-      anonHints := anonHints.insert entry.addr hint
-    if isSelected then
-      named := named.insert name entry
+  for (name, _) in selected.constants do
+    let ixName := Ix.Name.fromLeanName name
+    if let some entry := artifact.named[ixName]? then
+      if let some lc := artifact.consts[entry.addr]? then
+        consts := consts.insert entry.addr lc
+        if let some hint := artifact.anonHints[entry.addr]? then
+          anonHints := anonHints.insert entry.addr hint
+        named := named.insert ixName entry
   some { consts, blobs, named, anonHints }
 
 /-- Extract the compiled support closure of `roles` directly from `artifact` when
@@ -578,13 +708,14 @@ def sliceSupportRoles? (source : Lean.Environment) (artifact : Ixon.Env)
     (roles : List Role) : Option Ixon.Env := do
   let mut todo : Array Address := #[]
   let mut queued : Std.HashSet Address := {}
-  let mut selectedNames : Std.HashSet Ix.Kernel.Name := {}
+  let mut selectedLeanNames : List Lean.Name := []
   for r in roles do
-    guard (source.contains (roleName r))
+    let ln := roleName r
+    guard (source.contains ln)
     let key := r.leanName
     let addr ← existing[key]?
     guard (artifact.consts.contains addr)
-    selectedNames := selectedNames.insert key
+    selectedLeanNames := ln :: selectedLeanNames
     unless queued.contains addr do
       queued := queued.insert addr
       todo := todo.push addr
@@ -592,7 +723,7 @@ def sliceSupportRoles? (source : Lean.Environment) (artifact : Ixon.Env)
     let key := Ix.Kernel.Name.ofLeanName name
     if let some addr := existing[key]? then
       if artifact.consts.contains addr then
-        selectedNames := selectedNames.insert key
+        selectedLeanNames := name :: selectedLeanNames
         unless queued.contains addr do
           queued := queued.insert addr
           todo := todo.push addr
@@ -622,29 +753,36 @@ def sliceSupportRoles? (source : Lean.Environment) (artifact : Ixon.Env)
     else
       break
   guard todo.isEmpty
-  let kept := (Ix.Cert.parMap (fun (name, entry) =>
-    match artifact.consts[entry.addr]? with
-    | some lc =>
-      let keep := visited.contains entry.addr ||
-        match projectionBlock? lc with
-        | some b => visited.contains b
-        | none => false
-      if keep then
-        some (name, entry, lc)
-      else none
-    | none => none) artifact.named.toArray).filterMap id
+  for (b, lc) in consts.toList do
+    for pAddr in blockProjectionAddrs b lc do
+      if let some pLc := artifact.consts[pAddr]? then
+        consts := consts.insert pAddr pLc
+        if let some hint := artifact.anonHints[pAddr]? then
+          anonHints := anonHints.insert pAddr hint
   let mut named : Std.HashMap Ix.Name Ixon.Named := {}
   let mut foundRoles : Std.HashSet Role := {}
-  for (name, entry, lc) in kept do
-    consts := consts.insert entry.addr lc
-    if let some hint := artifact.anonHints[entry.addr]? then
-      anonHints := anonHints.insert entry.addr hint
-    let kname := Ix.LeanIngress.ingressName name
-    if let some r := Role.ofLeanName? kname then
-      foundRoles := foundRoles.insert r
-      named := named.insert name entry
-    else if selectedNames.contains kname then
-      named := named.insert name entry
+  for r in Role.all do
+    let ixName := Ix.Name.fromLeanName (roleName r)
+    if let some entry := artifact.named[ixName]? then
+      if let some lc := artifact.consts[entry.addr]? then
+        let keep := consts.contains entry.addr ||
+          match projectionBlock? lc with
+          | some b => visited.contains b
+          | none => false
+        if keep then
+          consts := consts.insert entry.addr lc
+          if let some hint := artifact.anonHints[entry.addr]? then
+            anonHints := anonHints.insert entry.addr hint
+          foundRoles := foundRoles.insert r
+          named := named.insert ixName entry
+  for name in selectedLeanNames do
+    let ixName := Ix.Name.fromLeanName name
+    if let some entry := artifact.named[ixName]? then
+      if let some lc := artifact.consts[entry.addr]? then
+        consts := consts.insert entry.addr lc
+        if let some hint := artifact.anonHints[entry.addr]? then
+          anonHints := anonHints.insert entry.addr hint
+        named := named.insert ixName entry
   guard (closeRoles (roles ++ Role.all.filter foundRoles.contains) == roles)
   some { consts, blobs, named, anonHints }
 
@@ -660,8 +798,11 @@ equations that hold by a certificate) is published. -/
 def finalize (backend : Backend) (source : Lean.Environment)
     (certSource : IO Lean.Environment)
     (input : Ix.Compile.CompileInput) (artifact : Ixon.Env)
-    (limits : Ix.Kernel.Admission.Limits) : IO Ixon.Env := do
-  let existing ← IO.ofExcept (sourceAddresses artifact)
+    (limits : Ix.Kernel.Admission.Limits)
+    (existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none) : IO Ixon.Env := do
+  let existing ← match existing? with
+    | some m => pure m
+    | none => IO.ofExcept (sourceAddresses artifact)
   let initialRoles := publishedRolesFrom existing
   let initRoles := closeRoles (Ix.Kernel.preludeShape.flatten ++ initialRoles)
   let spawnCertificatesTask (roles : List Role) : IO (Task (Except IO.Error Ixon.Env)) := do
@@ -719,14 +860,20 @@ def finalize (backend : Backend) (source : Lean.Environment)
   let generated ← IO.ofExcept (generate limits support certificates required Ix.Kernel.preludeShape
     (store? := some supportStore))
   let emitted ← IO.ofExcept (generated.emit limits merged
-    (roleStore? := some (supportStore.records[·]?)))
+    (roleStore? := some (supportStore.records[·]?))
+    (sourceAddrs? := some mergedNames))
   let _ ← IO.asTask (prio := .dedicated) (dropCheckedStore supportStore)
   unless emitted.roleBinding.isSome do
     throw (IO.userError "artifact finalization: missing emitted role binding")
   let emittedNames := mergedNames
   unless covered do
     IO.ofExcept (preserveRequestedWith input existing emittedNames)
-  IO.ofExcept (checkFinalized artifact emitted (some (.ok emittedNames)))
+  let added? := if covered then
+      some (generated.support ++ generated.evidence,
+            generated.supportBlobs ++ generated.blobs,
+            generated.supportHints)
+    else none
+  IO.ofExcept (checkFinalized artifact emitted (some (.ok emittedNames)) added?)
   return emitted
 
 /-- Publish only after finalization and serialization succeed. The temporary

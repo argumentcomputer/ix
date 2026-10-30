@@ -133,7 +133,8 @@ private def admit (config : Config) (plan : Plan) (st : State input) : State inp
     if st.published.contains i then
       st := { st with next := i + 1 }
       continue
-    if st.bytes ≥ config.payloadBytes then break
+    if st.bytes ≥ config.payloadBytes && i != st.frontier &&
+        (!st.active.isEmpty || !st.ready.isEmpty) then break
     let pending := plan.descriptors[i]!.parents.filter (!st.completed.contains ·)
     if st.edges + pending.size > config.pendingEdges then break
     let admitted := st.admitted
@@ -170,8 +171,10 @@ private def startReady (input : FixedInput) (config : Config) (plan : Plan)
   let mut st := st
   -- One slot is reserved for the publisher's exact fallback computation.
   for _ in [:plan.descriptors.size] do
-    if st.active.length ≥ config.workers - 1 || st.bytes ≥ config.payloadBytes then break
+    if st.active.length ≥ config.workers - 1 then break
     if st.ready.isEmpty then break
+    if st.bytes ≥ config.payloadBytes && !st.active.isEmpty &&
+        st.ready[0]! != st.frontier then break
     let heap := st.ready
     st := { st with ready := #[] }
     let some (i, ready) := popReady heap | break

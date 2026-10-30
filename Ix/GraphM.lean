@@ -246,21 +246,6 @@ theorem graphConst_env (ci : Ix.ConstantInfo) (env₁ env₂ : Ix.Environment) (
   show (graphConst ci env₁).run s = (graphConst ci env₂).run s
   rw [h env₁ env₂]
 
-@[expose] def GraphM.envPar (env : Ix.Environment) : Map Ix.Name (Set Ix.Name) :=
-  (Ix.Compile.Parallel.map 256 (fun (name, ci) => (name, (GraphM.run { consts := {} } .init (graphConst ci)).1))
-    env.consts.toList.toArray).foldl (fun out (name, refs) => out.insert name refs) {}
-
-theorem GraphM.envSerial_eq_par : @GraphM.envSerial = @GraphM.envPar := by
-  funext env
-  simp only [GraphM.envPar, Ix.Compile.Parallel.map_eq, Array.foldl_map, graphConst_env _ { consts := {} } env]
-  unfold GraphM.envSerial
-  simp only [Id.run, bind_pure, Std.HashMap.forIn_eq_forIn_toList,
-    List.forIn_pure_yield_eq_foldl, List.foldl_toArray']
-  rfl
-
-def GraphM.envParallel (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) :=
-  GraphM.envPar env
-
 end Ix
 
 end
