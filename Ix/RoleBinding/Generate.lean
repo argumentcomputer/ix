@@ -39,8 +39,9 @@ def recordStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
   let decoded ← (Ix.Kernel.Admission.decodeRecords limits records.toList).mapError byteError
   return decoded.foldl (fun out (a, c) => out.insert a c) {}
 
-/-- The same store construction with bounded parallel canonical decoding.
-Sorting and each preceding admission phase keep their original order. -/
+/-- The same store construction with bounded parallel authentication and
+canonical decoding. Sorting and each preceding admission phase keep their
+original order. -/
 def recordStoreParallel (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
     Except String RecordStore := do
   let records := (env.consts.toArray.map fun (a, c) => (a, c.rawBytes)).qsort
@@ -48,13 +49,14 @@ def recordStoreParallel (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
   let blobs := (env.blobs.toArray.qsort fun x y => x.1.cmpBytes y.1 == .lt).toList
   (Ix.Kernel.Admission.preflight limits records.toList blobs).mapError byteError
   (Ix.Kernel.Admission.uniqueKeys records.toList blobs).mapError byteError
-  (Ix.Kernel.Admission.authenticate Address.admissionHash records.toList blobs).mapError byteError
+  (RecordDecoding.authenticateParallel 256 Address.admissionHash records.toList blobs).mapError byteError
   let decoded ← (RecordDecoding.parallel 256 limits records.toList).mapError byteError
   return decoded.foldl (fun out (a, c) => out.insert a c) {}
 
 @[csimp] theorem recordStore_eq_parallel : @recordStore = @recordStoreParallel := by
   funext limits env
-  simp only [recordStore, recordStoreParallel, RecordDecoding.parallel_eq]
+  simp only [recordStore, recordStoreParallel, RecordDecoding.authenticateParallel_eq,
+    RecordDecoding.parallel_eq]
 
 /-- An authenticated, canonical record store for exactly this environment and
 these admission limits. Reusing it cannot substitute records from another

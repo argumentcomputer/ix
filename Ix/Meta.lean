@@ -36,6 +36,23 @@ def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
   else
     initSearchPath (← findSysroot)
 
+/-- Ensure `mod` and `Init` are resolvable on `Lean.searchPathRef`, checking the
+current search path and local `.lake` build directories before falling back to
+`initLeanSearchPath`. -/
+def ensureModuleSearchPath (mod : Name) : IO Unit := do
+  if (← (← searchPathRef.get).findWithExt "olean" `Init).isNone then
+    initSearchPath (← findSysroot)
+  if (← (← searchPathRef.get).findWithExt "olean" mod).isNone then
+    let mut localDirs : List FilePath := []
+    for dir in ([".lake/kernel/lib/lean", ".lake/build/lib/lean"] : List FilePath) do
+      if ← dir.pathExists then
+        localDirs := localDirs ++ [dir]
+    unless localDirs.isEmpty do
+      let current ← searchPathRef.get
+      searchPathRef.set (localDirs ++ current)
+    if (← (← searchPathRef.get).findWithExt "olean" mod).isNone then
+      initLeanSearchPath
+
 /-- Walk up from `start` looking for `lake-manifest.json`. -/
 partial def findLakeRoot (start : FilePath) : IO (Option FilePath) := do
   if ← (start / "lake-manifest.json").pathExists then

@@ -185,13 +185,13 @@ def unhintedDefinition (ixe : Ixon.Env) : Option Ix.Name :=
         | none => false
       if isDef && !ixe.anonHints.contains named.addr then some n else none
 
-/-- An inductive block the recursor index (`Ix.Kernel.Reader.buildIndex`)
-attaches recursors to and a non-`Muts` name published in that block whose stored
-record is not an inductive, constructor or recursor, or with an indexed recursor
-attached there whose block is not published at a recursor in `ixe.named`, if any. -/
-def unownedRecursor (ixe : Ixon.Env) :
+/-- `unownedRecursor` given the artifact's stored recursor records
+(`Ix.Cert.storedRecursorRecords ixe`), so callers that also run
+`recursorSlotErrorWith` compute the recursor record array once. -/
+def unownedRecursorWith (ixe : Ixon.Env)
+    (recRecords : Array (Address × Ixon.Constant)) :
     Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
-  let idx := Ix.Kernel.Reader.buildIndex (Ix.Cert.storedRecord ixe) (Ix.Cert.storedRecursorRecords ixe)
+  let idx := Ix.Kernel.Reader.buildIndex (Ix.Cert.storedRecord ixe) recRecords
   if idx.blocks.isEmpty then none
   else
     let publishedRecBlocks : Std.HashSet Address :=
@@ -217,6 +217,14 @@ def unownedRecursor (ixe : Ixon.Env) :
                 (b, x, some r)
             else some (b, x, none)
           | none => some (b, x, none)
+
+/-- An inductive block the recursor index (`Ix.Kernel.Reader.buildIndex`)
+attaches recursors to and a non-`Muts` name published in that block whose stored
+record is not an inductive, constructor or recursor, or with an indexed recursor
+attached there whose block is not published at a recursor in `ixe.named`, if any. -/
+def unownedRecursor (ixe : Ixon.Env) :
+    Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
+  unownedRecursorWith ixe (Ix.Cert.storedRecursorRecords ixe)
 
 /-- A literal-support role of the default role table (`Ix.Cert.roleTableBound`)
 that a stored record's literal is checked against (`Ix.Cert.storedLiteralRoles`),
@@ -323,21 +331,24 @@ structure FinalizedCheckTasks where
   unhintedDefinition : Task (Option Ix.Name)
   roleBindingError : Task (Option String)
 
-def FinalizedCheckTasks.spawn (final : Ixon.Env) : FinalizedCheckTasks where
-  unauthentic := Task.spawn fun _ => Ix.Cert.unauthentic final
-  referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
-  nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
-  mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatch final
-  unresolvedPublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unresolvedPublished final
-  projectionCollision := Task.spawn fun _ => Ix.Cert.projectionCollision final
-  unreadablePublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unreadablePublished final
-  blobRecordCollision := Task.spawn fun _ => Ix.Cert.blobRecordCollision final
-  unownedRecursor := Task.spawn fun _ => Ix.RoleBinding.Compile.unownedRecursor final
-  roleRecordKind := Task.spawn fun _ => Ix.Cert.roleRecordKind final
-  literalRoleUnnamed := Task.spawn fun _ => Ix.RoleBinding.Compile.literalRoleUnnamed final
-  recursorSlotError := Task.spawn fun _ => Ix.Cert.recursorSlotError final
-  unhintedDefinition := Task.spawn fun _ => Ix.RoleBinding.Compile.unhintedDefinition final
-  roleBindingError := Task.spawn fun _ => Ix.RoleBinding.Compile.roleBindingError final
+def FinalizedCheckTasks.spawn (final : Ixon.Env) : FinalizedCheckTasks :=
+  let recRecords := Task.spawn fun _ => Ix.Cert.storedRecursorRecords final
+  { unauthentic := Task.spawn fun _ => Ix.Cert.unauthenticPar final
+    referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
+    nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
+    mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatch final
+    unresolvedPublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unresolvedPublished final
+    projectionCollision := Task.spawn fun _ => Ix.Cert.projectionCollision final
+    unreadablePublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unreadablePublished final
+    blobRecordCollision := Task.spawn fun _ => Ix.Cert.blobRecordCollision final
+    unownedRecursor := Task.spawn fun _ =>
+      Ix.RoleBinding.Compile.unownedRecursorWith final recRecords.get
+    roleRecordKind := Task.spawn fun _ => Ix.Cert.roleRecordKind final
+    literalRoleUnnamed := Task.spawn fun _ => Ix.RoleBinding.Compile.literalRoleUnnamed final
+    recursorSlotError := Task.spawn fun _ =>
+      Ix.Cert.recursorSlotErrorWith final recRecords.get
+    unhintedDefinition := Task.spawn fun _ => Ix.RoleBinding.Compile.unhintedDefinition final
+    roleBindingError := Task.spawn fun _ => Ix.RoleBinding.Compile.roleBindingError final }
 
 @[noinline] def checkFinalizedOf (ts : FinalizedCheckTasks) : Except String Unit := do
   if let some a := ts.unauthentic.get.head? then
@@ -410,10 +421,23 @@ def compileRequired (backend : Backend) (source : Lean.Environment)
       throw (IO.userError s!"artifact support: internal compilation did not publish {name}")
   return out
 
+initialize cachedNativeCertSource : IO.Ref (Option Lean.Environment) ← IO.mkRef none
+
 /-- The certificate theorems of the toolchain ix runs on: its own
 `IxC.Kernel.PinGen.Certs`, elaborated against its own `Init`. -/
-def nativeCertSource : IO Lean.Environment :=
-  getCompileEnv #[`IxC.Kernel.PinGen.Certs]
+def nativeCertSource : IO Lean.Environment := do
+  if let some env ← cachedNativeCertSource.get then
+    return env
+  ensureModuleSearchPath `IxC.Kernel.PinGen.Certs
+  let env ← Lean.importModules #[{ module := `IxC.Kernel.PinGen.Certs }] default (loadExts := false)
+  cachedNativeCertSource.set (some env)
+  return env
+
+/-- Release a `CheckedStore`'s decoded record map on a background task after
+emission has finished reading it. -/
+@[noinline] def dropCheckedStore {limits : Ix.Kernel.Admission.Limits} {env : Ixon.Env}
+    (store : CheckedStore limits env) : IO Nat :=
+  IO.lazyPure fun _ => store.records.size
 
 /-- Extract the compiled support closure of `selected` from `artifact` when
 every constant in `selected.constants` is already published in `artifact`. -/
@@ -477,6 +501,17 @@ def finalize (backend : Backend) (source : Lean.Environment)
     (input : Ix.Compile.CompileInput) (artifact : Ixon.Env)
     (limits : Ix.Kernel.Admission.Limits) : IO Ixon.Env := do
   let (required, selected) ← IO.ofExcept (supportInput source artifact)
+  let theorems := (Ix.RoleEvidence.allCertTheorems.filter (fun (role, _) => required.contains role)).flatMap (·.2)
+  let certificatesTask ← IO.asTask do
+    if theorems.isEmpty then pure ({} : Ixon.Env) else do
+      let certSource ← certSource
+      for name in theorems do
+        match certSource.find? name with
+        | some (.thmInfo _) => pure ()
+        | _ => throw (IO.userError s!"artifact evidence: source theorem unavailable: {name}")
+      let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
+      let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
+      compileRequired backend certSource selected
   let existing ← IO.ofExcept (sourceAddresses artifact)
   let covered := selected.constants.all fun (name, _) =>
     existing.contains (Ix.Kernel.Name.ofLeanName name)
@@ -499,22 +534,14 @@ def finalize (backend : Backend) (source : Lean.Environment)
   let actual := publishedRoles merged
   unless actual == required do
     throw (IO.userError "artifact support: compiled role publications differ from the selected closure")
-  let theorems := (Ix.RoleEvidence.allCertTheorems.filter (fun (role, _) => required.contains role)).flatMap (·.2)
-  let certificates ← if theorems.isEmpty then pure ({} : Ixon.Env) else do
-    let certSource ← certSource
-    for name in theorems do
-      match certSource.find? name with
-      | some (.thmInfo _) => pure ()
-      | _ => throw (IO.userError s!"artifact evidence: source theorem unavailable: {name}")
-    let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
-    let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
-    compileRequired backend certSource selected
+  let certificates ← IO.ofExcept certificatesTask.get
   IO.ofExcept (checkCertificateContent merged certificates)
   -- The support already contains every selected role and its source closure.
   -- Evidence generation needs only that closure and the certificate closure;
   -- emission below checks its binding against the complete merged artifact.
   let generated ← IO.ofExcept (generate limits support certificates required Ix.Kernel.preludeShape)
   let emitted ← IO.ofExcept (generated.emit limits merged (store? := some store))
+  let _ ← IO.asTask (prio := .dedicated) (dropCheckedStore store)
   unless emitted.roleBinding.isSome do
     throw (IO.userError "artifact finalization: missing emitted role binding")
   IO.ofExcept (preserveRequested input artifact emitted)

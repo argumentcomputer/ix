@@ -11,6 +11,52 @@ namespace Ix.RoleBinding.RecordDecoding
 
 open Ix.Kernel.Admission
 
+/-- Check one record or blob address against `hash` of its payload bytes under
+its original input position. -/
+@[expose] def mismatchEntry (hash : ByteArray → Address)
+    (record : (Address × ByteArray) × Nat) : Option (Nat × Address) :=
+  let ((address, bytes), position) := record
+  if hash bytes == address then none else some (position, address)
+
+theorem firstMismatch_eq_findSome? (hash : ByteArray → Address) (records : Records)
+    (position : Nat) :
+    firstMismatch hash position records =
+      ((records.zipIdx position).map (mismatchEntry hash)).findSome? id := by
+  induction records generalizing position with
+  | nil => rfl
+  | cons record rest ih =>
+    obtain ⟨address, bytes⟩ := record
+    simp only [firstMismatch, List.zipIdx_cons, List.map_cons, List.findSome?_cons,
+      mismatchEntry, id_eq]
+    cases hash bytes == address <;> simp [ih]
+
+/-- Bounded parallel scan for the first hash mismatch in a table. -/
+@[expose] def firstMismatchParallel (tasks : Nat) (hash : ByteArray → Address)
+    (records : Records) : Option (Nat × Address) :=
+  (Ix.Compile.Parallel.map tasks (mismatchEntry hash) records.zipIdx.toArray).toList.findSome? id
+
+theorem firstMismatchParallel_eq (tasks : Nat) (hash : ByteArray → Address) (records : Records) :
+    firstMismatchParallel tasks hash records = firstMismatch hash 0 records := by
+  simp only [firstMismatchParallel, Ix.Compile.Parallel.map_eq, Array.toList_map]
+  exact (firstMismatch_eq_findSome? hash records 0).symm
+
+/-- Authenticate record and blob payloads over bounded parallel chunks while
+preserving the exact first mismatch in input order. -/
+@[expose] def authenticateParallel (tasks : Nat) (hash : ByteArray → Address)
+    (records blobs : Records) : Except ByteError Unit :=
+  match firstMismatchParallel tasks hash records with
+  | some (position, address) => .error (.mismatch .records position address)
+  | none =>
+    match firstMismatchParallel tasks hash blobs with
+    | some (position, address) => .error (.mismatch .blobs position address)
+    | none => .ok ()
+
+theorem authenticateParallel_eq (tasks : Nat) (hash : ByteArray → Address)
+    (records blobs : Records) :
+    authenticateParallel tasks hash records blobs = authenticate hash records blobs := by
+  simp only [authenticateParallel, authenticate, firstMismatchParallel_eq]
+  rfl
+
 /-- Decode a record under its original position and address. -/
 @[expose] def entry (limits : Limits) (record : (Address × ByteArray) × Nat) :
     Except ByteError (Address × Ixon.Constant) := do
