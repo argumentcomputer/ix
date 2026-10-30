@@ -1,6 +1,6 @@
 module
 
-import Scripts.Performance.DeferredSharing
+public import Scripts.Performance.DeferredSharing
 import all Ix.Sharing.FamilyContext
 
 public section
