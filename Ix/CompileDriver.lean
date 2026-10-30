@@ -331,6 +331,49 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
   }
   return (ixonEnv, cenv.totalBytes, cenv)
 
+/-- `assembleEnv` with its four independent folds computed on tasks. -/
+@[expose] def assembleEnvPar (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv :=
+  let cenv := acc.cenv
+  let namesAndBlobsTask := Task.spawn fun _ =>
+    let (addrToNameMap, namesMap, nameBlobs) :=
+      cenv.nameToNamed.fold (init := ({}, acc.blockNames, {}))
+        fun (addrMap, namesMap, blobs) name named =>
+          let addrMap := insertCanonicalAlias addrMap named.addr name
+          let (namesMap, blobs) :=
+            Ixon.RawEnv.addNameComponentsWithBlobs namesMap blobs name
+          (addrMap, namesMap, blobs)
+    let allBlobs := cenv.blobs.fold (fun m k v => m.insert k v) nameBlobs
+    (addrToNameMap, namesMap, allBlobs)
+  let namedWithHintsTask := Task.spawn fun _ =>
+    cenv.nameToNamed.fold (init := {})
+      fun m name named =>
+        m.insert name { named with hints := acc.defHints.get? name }
+  let anonHintsTask := Task.spawn fun _ =>
+    cenv.nameToNamed.fold (init := {}) fun m name named =>
+      match acc.defHints.get? name with
+      | some h => m.alter named.addr fun
+        | some h₀ => some (Ixon.mergeHints h₀ h)
+        | none => some h
+      | none => m
+  let constsTask := Task.spawn fun _ =>
+    cenv.constants.fold (init := {})
+      fun m a bytes => m.insert a { buf := bytes, len := bytes.size }
+  let (addrToNameMap, namesMap, allBlobs) := namesAndBlobsTask.get
+  let ixonEnv : Ixon.Env := {
+    consts := constsTask.get
+    named := namedWithHintsTask.get
+    blobs := allBlobs
+    names := namesMap
+    comms := {}
+    addrToName := addrToNameMap
+    anonHints := anonHintsTask.get
+  }
+  (ixonEnv, cenv.totalBytes, cenv)
+
+@[csimp] theorem assembleEnv_eq_par : @assembleEnv = @assembleEnvPar := by
+  funext acc
+  rfl
+
 /-- Assemble the final environment (`assembleEnv`). -/
 def finalizeEnv (acc : DriverAcc) : Except String (Ixon.Env × Nat × CompileEnv) :=
   pure (assembleEnv acc)
