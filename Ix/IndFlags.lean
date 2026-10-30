@@ -34,9 +34,9 @@ open Ix.CompileM (CompileM CompileError arrIdx decomposeApps)
 
 /-! ## Expression helpers -/
 
-/-- Memoization cache for expression rewriters, keyed on the node itself
-    (`Ix.Expr`'s `BEq`/`Hashable` are hash-based). -/
-abbrev ExprCache := Std.HashMap Expr Expr
+/-- Memoization cache for expression rewriters, keyed on the exact expression
+    (`Ix.Compile.ExactKey.ExprKey`). -/
+abbrev ExprCache := Std.HashMap Ix.Compile.ExactKey.ExprKey Expr
 
 /-- A local declaration opened from a binder: its fresh variable's name, the
     binder's name, its domain and its binder information. -/
@@ -459,8 +459,8 @@ def hasInvalidSpecRef (expr : Expr) (paramFvarNames : Array Name) : Bool := Id.r
     `exprMentionsAnyName`, a projection's type name is not consulted, only the
     projected value. -/
 partial def hasIndOcc (e : Expr) (names : Std.HashSet Name)
-    : StateM (Std.HashMap Expr Bool) Bool := do
-  if let some cached := (← get).get? e then
+    : StateM (Std.HashMap Ix.Compile.ExactKey.ExprKey Bool) Bool := do
+  if let some cached := (← get).get? ⟨e⟩ then
     return cached
   let result ← match e with
     | .const name _ _ => pure (names.contains name)
@@ -475,7 +475,7 @@ partial def hasIndOcc (e : Expr) (names : Std.HashSet Name)
     | .proj _ _ s _ => hasIndOcc s names
     | .mdata _ inner _ => hasIndOcc inner names
     | _ => pure false
-  modify (·.insert e result)
+  modify (·.insert ⟨e⟩ result)
   return result
 
 /-! ## Lean's nested expansion -/
@@ -587,10 +587,10 @@ def replaceIfNested (e : Expr) (asFvars : Array Expr) : ExpandM (Option Expr) :=
 /-- Replace every nested occurrence, top-down, memoized per constructor.
     Lean's `replace_all_nested`. -/
 partial def replaceAllNested (e : Expr) (asFvars : Array Expr) : ExpandM Expr := do
-  if let some cached := (← get).walkCache.get? e then
+  if let some cached := (← get).walkCache.get? ⟨e⟩ then
     return cached
   if let some replaced ← replaceIfNested e asFvars then
-    modify fun s => { s with walkCache := s.walkCache.insert e replaced }
+    modify fun s => { s with walkCache := s.walkCache.insert ⟨e⟩ replaced }
     return replaced
   let result ← match e with
     | .app f a _ =>
@@ -608,7 +608,7 @@ partial def replaceAllNested (e : Expr) (asFvars : Array Expr) : ExpandM Expr :=
     | .mdata md inner _ =>
       pure (Expr.mkMData md (← replaceAllNested inner asFvars))
     | _ => pure e
-  modify fun s => { s with walkCache := s.walkCache.insert e result }
+  modify fun s => { s with walkCache := s.walkCache.insert ⟨e⟩ result }
   return result
 
 /-- **Lean's nested expansion** of a group (`orderedOriginals`, the members
@@ -681,7 +681,7 @@ def computeLeanIndFlags (all : Array Name) : CompileM LeanIndFlags := do
   let numNested := types.size - nOriginals
   let blockNames : Std.HashSet Name :=
     types.foldl (init := {}) fun s m => s.insert m.name
-  let mut occCache : Std.HashMap Expr Bool := {}
+  let mut occCache : Std.HashMap Ix.Compile.ExactKey.ExprKey Bool := {}
   let mut isRec := false
   let mut isReflexive := false
   for member in types do

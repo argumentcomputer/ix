@@ -705,16 +705,37 @@ look referenced. With none, no blob address is a record's. -/
 @[expose] def blobRecordCollision (ixe : Ixon.Env) : Option Address :=
   ixe.blobs.toList.findSome? fun (a, _) => if ixe.consts.contains a then some a else none
 
+/-- A stored record, if it has a recursor member (`Ix.Kernel.Reader.recursorMembers`). -/
+@[expose] def recursorRecord (e : Address × Ixon.LazyConstant) : Option (Address × Ixon.Constant) :=
+  match e.2.get? with
+  | some c => if (Ix.Kernel.Reader.recursorMembers c).isEmpty then none else some (e.1, c)
+  | none => none
+
+/-- Whether the uncached decoder's first TagN can introduce a record with a
+recursor member: a block (`FLAG_MUTS`) or a standalone recursor (`FLAG`, `CONST_RECR`). -/
+@[expose] def recursorRecordHeader (buf : ByteArray) (off : Nat) : Bool :=
+  match (Ixon.getTagN 4).run { idx := off, bytes := buf } with
+  | .ok tag _ =>
+    tag.flag == Ixon.Constant.FLAG_MUTS ||
+      (tag.flag == Ixon.Constant.FLAG && tag.value == Ixon.ConstantInfo.CONST_RECR)
+  | .error _ _ => false
+
+/-- The same record as `recursorRecord`, with a header filter before decoding an
+uncached record (`ProjectionRead.recursor_fast_eq`, on every input). -/
+@[expose] def recursorRecordFast (e : Address × Ixon.LazyConstant) : Option (Address × Ixon.Constant) :=
+  match e.2.cache with
+  | some _ => recursorRecord e
+  | none =>
+    if recursorRecordHeader e.2.buf e.2.off then recursorRecord e else none
+
 /-- The stored records with a recursor member
-(`Ix.Kernel.Reader.recursorMembers`), in `ixe.consts`' order: each record
-decoded once, on tasks (`parMap`). The recursor index
+(`Ix.Kernel.Reader.recursorMembers`), in `ixe.consts`' order: each candidate
+record decoded once, on tasks (`parMap`), after the header filter skips
+non-recursor singletons and projections. The recursor index
 (`Ix.Kernel.Reader.buildIndex`) reads nothing of the other records in its scan,
 so over these it is the artifact's index (`Ix.Cert.recursorIndex_eq`). -/
 @[expose] def storedRecursorRecords (ixe : Ixon.Env) : Array (Address × Ixon.Constant) :=
-  (parMap (fun (e : Address × Ixon.LazyConstant) =>
-    match e.2.get? with
-    | some c => if (Ix.Kernel.Reader.recursorMembers c).isEmpty then none else some (e.1, c)
-    | none => none) ixe.consts.toArray).filterMap id
+  (parMap recursorRecordFast ixe.consts.toArray).filterMap id
 
 /-- The block of the record stored at `a`: a projection's block, otherwise
 `a` itself (`Ix.Cert.ClosureLayout.blockAt`), read without the record's

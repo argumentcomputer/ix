@@ -122,11 +122,13 @@ recursor member, in order. -/
 theorem storedRecursorRecords_eq (ixe : Ixon.Env) :
     storedRecursorRecords ixe =
       (storedRecords ixe).filter fun e => !(Ix.Kernel.Reader.recursorMembers e.2).isEmpty := by
+  have hfast : recursorRecordFast = recursorRecord := funext ProjectionRead.recursor_fast_eq
   unfold storedRecursorRecords storedRecords
-  rw [parMap_map, Array.filterMap_map, Array.filter_filterMap]
+  rw [hfast, parMap_map, Array.filterMap_map, Array.filter_filterMap]
   congr 1
   funext e
   obtain ⟨a, lc⟩ := e
+  unfold recursorRecord
   simp only [Function.comp_apply, id_eq]
   cases lc.get? with
   | none => rfl

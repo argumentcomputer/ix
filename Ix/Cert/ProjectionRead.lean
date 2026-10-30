@@ -153,4 +153,126 @@ theorem collision_eq (ixe : Ixon.Env) :
     | none => rfl
     | some p => cases p; rfl
 
+theorem info_header_muts {start finish : GetState} {ms : Array Ixon.MutConst}
+    (h : getConstantInfo start = .ok (.muts ms) finish) :
+    ∃ tag state, getTagN 4 start = .ok tag state ∧ tag.flag = Constant.FLAG_MUTS := by
+  unfold getConstantInfo at h
+  obtain ⟨tag, state, ht, h⟩ := bind_ok h
+  refine ⟨tag, state, ht, ?_⟩
+  split at h
+  · rename_i flag
+    exact beq_iff_eq.mp flag
+  · split at h
+    · by_cases v0 : tag.value = 0
+      · simp only [v0, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v1 : tag.value = 1
+      · simp only [v1, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v2 : tag.value = 2
+      · simp only [v2, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v3 : tag.value = 3
+      · simp only [v3, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v4 : tag.value = 4
+      · simp only [v4, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v5 : tag.value = 5
+      · simp only [v5, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v6 : tag.value = 6
+      · simp only [v6, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v7 : tag.value = 7
+      · simp only [v7, Functor.map, EStateM.map] at h; split at h <;> cases h
+      · simp only at h; cases h
+    · cases h
+
+theorem info_header_recr {start finish : GetState} {r : Recursor}
+    (h : getConstantInfo start = .ok (.recr r) finish) :
+    ∃ tag state, getTagN 4 start = .ok tag state ∧
+      tag.flag = Constant.FLAG ∧ tag.value = ConstantInfo.CONST_RECR := by
+  unfold getConstantInfo at h
+  obtain ⟨tag, state, ht, h⟩ := bind_ok h
+  refine ⟨tag, state, ht, ?_⟩
+  split at h
+  · obtain ⟨_, _, _, h⟩ := bind_ok h
+    cases h
+  · split at h
+    · rename_i flag
+      refine ⟨beq_iff_eq.mp flag, ?_⟩
+      by_cases v0 : tag.value = 0
+      · simp only [v0, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v1 : tag.value = 1
+      · simpa [ConstantInfo.CONST_RECR] using v1
+      by_cases v2 : tag.value = 2
+      · simp only [v2, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v3 : tag.value = 3
+      · simp only [v3, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v4 : tag.value = 4
+      · simp only [v4, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v5 : tag.value = 5
+      · simp only [v5, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v6 : tag.value = 6
+      · simp only [v6, Functor.map, EStateM.map] at h; split at h <;> cases h
+      by_cases v7 : tag.value = 7
+      · simp only [v7, Functor.map, EStateM.map] at h; split at h <;> cases h
+      · simp only at h; cases h
+    · cases h
+
+theorem header_of_muts {buf : ByteArray} {off len : Nat} {c : Constant} {ms : Array Ixon.MutConst}
+    (h : deConstantAt buf off len = .ok c) (hm : c.info = .muts ms) :
+    recursorRecordHeader buf off = true := by
+  unfold deConstantAt at h
+  split at h
+  · cases hc : (Bounded.getConstant loadMaxUnivNodes).run { idx := off, bytes := buf } with
+    | error e state => simp [hc] at h
+    | ok value state =>
+      simp only [hc] at h
+      split at h
+      · simp only [Except.ok.injEq] at h
+        subst value
+        obtain ⟨_, hi⟩ := constant_info
+          (Ixon.Verify.BoundedConstant.getConstant_spec _ _ _ _ hc).1
+        rw [hm] at hi
+        obtain ⟨tag, _, ht, hf⟩ := info_header_muts hi
+        simp [recursorRecordHeader, EStateM.run, ht, hf]
+      · cases h
+  · cases h
+
+theorem header_of_recr {buf : ByteArray} {off len : Nat} {c : Constant} {r : Recursor}
+    (h : deConstantAt buf off len = .ok c) (hr : c.info = .recr r) :
+    recursorRecordHeader buf off = true := by
+  unfold deConstantAt at h
+  split at h
+  · cases hc : (Bounded.getConstant loadMaxUnivNodes).run { idx := off, bytes := buf } with
+    | error e state => simp [hc] at h
+    | ok value state =>
+      simp only [hc] at h
+      split at h
+      · simp only [Except.ok.injEq] at h
+        subst value
+        obtain ⟨_, hi⟩ := constant_info
+          (Ixon.Verify.BoundedConstant.getConstant_spec _ _ _ _ hc).1
+        rw [hr] at hi
+        obtain ⟨tag, _, ht, hf, hv⟩ := info_header_recr hi
+        simp [recursorRecordHeader, EStateM.run, ht, hf, hv]
+      · cases h
+  · cases h
+
+theorem recursor_fast_eq (e : Address × LazyConstant) : recursorRecordFast e = recursorRecord e := by
+  unfold recursorRecordFast
+  cases cache : e.2.cache with
+  | some c => rfl
+  | none =>
+    cases hp : recursorRecord e with
+    | none => simp
+    | some value =>
+      have hheader : recursorRecordHeader e.2.buf e.2.off = true := by
+        unfold recursorRecord LazyConstant.get? at hp
+        rw [cache] at hp
+        cases hget : deConstantAt e.2.buf e.2.off e.2.len with
+        | error err => simp [hget, Except.toOption] at hp
+        | ok c =>
+          simp only [hget, Except.toOption] at hp
+          cases hi : c.info with
+          | recr r => exact header_of_recr hget hi
+          | muts ms => exact header_of_muts hget hi
+          | _ => simp [Ix.Kernel.Reader.recursorMembers, hi] at hp
+      simp [hheader]
+
 end Ix.Cert.ProjectionRead

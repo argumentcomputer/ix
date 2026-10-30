@@ -99,6 +99,8 @@ def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.
   for (name, named) in support.named.toList do
     if let some old := originalNames[Ix.LeanIngress.ingressName name]? then
       unless old == named.addr do throw s!"artifact support: published address changed for {name.pretty}"
+    else if out.named.contains name then
+      throw s!"artifact support: stored name hash collision at {name.pretty}"
     else
       out := { out with named := out.named.insert name named }
   for (address, name) in support.names.toList do
@@ -148,6 +150,37 @@ publications and hints are unchanged:
   (`Ix.Cert.recursorSlotError`);
 * the record at an address the default role table binds has its role's kind
   (`Ix.Cert.roleRecordKind`). -/
+structure FinalizedCheckTasks where
+  unauthentic : Task (List Address)
+  referenceCycle : Task (Option (List Address))
+  nameHashCollision : Task (Option (Ix.Name × Ix.Name))
+  mutsMismatch : Task (Option (Ix.Name × Nat × Address))
+  projectionCollision : Task (Option (Address × Nat))
+  blobRecordCollision : Task (Option Address)
+  recursorSlotError : Task (Option Ix.Cert.RecursorShapeError)
+  roleRecordKind : Task (Option (Ix.Kernel.Role × Address))
+
+@[noinline] def checkFinalizedOf (ts : FinalizedCheckTasks) : Except String Unit := do
+  if let some a := ts.unauthentic.get.head? then
+    throw s!"artifact finalization: the record or blob at {a} is not stored at the hash of its bytes"
+  if let some cycle := ts.referenceCycle.get then
+    throw s!"artifact finalization: the records {cycle.take 4} are on a reference cycle"
+  if let some (n, m) := ts.nameHashCollision.get then
+    throw s!"artifact finalization: the published names {n.pretty} and {m.pretty} share a stored hash"
+  if let some (entry, i, _) := ts.mutsMismatch.get then
+    throw s!"artifact finalization: class {i} of the Muts entry {entry.pretty} lists a name not \
+      published at its member's projection"
+  if let some (block, i) := ts.projectionCollision.get then
+    throw s!"artifact finalization: member {i} of the block at {block} has more than one stored \
+      definition projection record"
+  if let some a := ts.blobRecordCollision.get then
+    throw s!"artifact finalization: the address {a} holds both a stored blob and a stored record"
+  if let some e := ts.recursorSlotError.get then
+    throw s!"artifact finalization: {e.message}"
+  if let some (role, address) := ts.roleRecordKind.get then
+    throw s!"artifact finalization: the record at {address}, the default role table's address of \
+      {repr role}, is not of its role's kind"
+
 def checkFinalized (original final : Ixon.Env) : Except String Unit := do
   for (name, named) in original.named.toList do
     unless (final.named.get? name).map (·.addr) == some named.addr do
@@ -155,25 +188,15 @@ def checkFinalized (original final : Ixon.Env) : Except String Unit := do
   for (address, hint) in original.anonHints.toList do
     unless final.anonHints[address]? == some hint do
       throw s!"artifact finalization: the reducibility hint at {address} changed"
-  if let some a := (Ix.Cert.unauthentic final).head? then
-    throw s!"artifact finalization: the record or blob at {a} is not stored at the hash of its bytes"
-  if let some cycle := Ix.Cert.referenceCycle final then
-    throw s!"artifact finalization: the records {cycle.take 4} are on a reference cycle"
-  if let some (n, m) := Ix.Cert.nameHashCollision { consts := {} } final then
-    throw s!"artifact finalization: the published names {n.pretty} and {m.pretty} share a stored hash"
-  if let some (entry, i, _) := Ix.Cert.mutsMismatch final then
-    throw s!"artifact finalization: class {i} of the Muts entry {entry.pretty} lists a name not \
-      published at its member's projection"
-  if let some (block, i) := Ix.Cert.projectionCollision final then
-    throw s!"artifact finalization: member {i} of the block at {block} has more than one stored \
-      definition projection record"
-  if let some a := Ix.Cert.blobRecordCollision final then
-    throw s!"artifact finalization: the address {a} holds both a stored blob and a stored record"
-  if let some e := Ix.Cert.recursorSlotError final then
-    throw s!"artifact finalization: {e.message}"
-  if let some (role, address) := Ix.Cert.roleRecordKind final then
-    throw s!"artifact finalization: the record at {address}, the default role table's address of \
-      {repr role}, is not of its role's kind"
+  checkFinalizedOf {
+    unauthentic := Task.spawn fun _ => Ix.Cert.unauthentic final
+    referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
+    nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
+    mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatch final
+    projectionCollision := Task.spawn fun _ => Ix.Cert.projectionCollision final
+    blobRecordCollision := Task.spawn fun _ => Ix.Cert.blobRecordCollision final
+    recursorSlotError := Task.spawn fun _ => Ix.Cert.recursorSlotError final
+    roleRecordKind := Task.spawn fun _ => Ix.Cert.roleRecordKind final }
 
 /-- Adding internal support cannot hide a failed original request, change an
 original address, or replace its source contract input. -/
