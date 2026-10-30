@@ -109,7 +109,7 @@
           plonkSources = pkgs.lib.fileset.fileFilter (
             file: file.hasExt "go" || file.hasExt "h" || file.hasExt "json" || file.hasExt "bin"
               || file.name == "go.mod" || file.name == "go.sum"
-          ) ./tools/plonk-wrapper;
+          ) ./tools/gnark;
           icicleBn254 = pkgs.stdenv.mkDerivation {
             pname = "ix-icicle-bn254";
             version = "3.2.2";
@@ -134,7 +134,7 @@
             pname = "ix-gnark-tests";
             version = "0.1.0";
             src = pkgs.lib.fileset.toSource {
-              root = ./tools/plonk-wrapper;
+              root = ./tools/gnark;
               fileset = plonkSources;
             };
             vendorHash = "sha256-JZUh5bcjyiNmCiqc0jer2uiyhvBkx0G9A+p+caoEjZ4=";
@@ -234,7 +234,7 @@
             nativeBuildInputs = [ plonkGo ];
             GO = "${plonkGo}/bin/go";
             postPatch = ''
-              cp -r ${gnarkGo.goModules} tools/plonk-wrapper/vendor
+              cp -r ${gnarkGo.goModules} tools/gnark/vendor
             '';
           };
           # Build dependencies once with every host feature enabled so the

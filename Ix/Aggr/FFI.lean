@@ -115,16 +115,16 @@ in Rust; nothing is copied across the FFI), every claim and join scheduled
 over them as their inputs become ready, the root wrapped, and every claim
 proof verified natively at the end. `maxRamBytes` is one worker's host
 budget (0 detects); `execJobs` the claim executions ahead of each prover;
-`lanes` the GPU count (0 uses every visible GPU).
+`gpus` the GPU count (0 uses every visible GPU).
 Oversized environment claims are bisected and checkpointed; completed
 proofs are reused. A nonempty `outManifest` receives the final partition.
 `fresh` bypasses earlier proof indexes and refinement checkpoints while
 publishing newly verified results to the usual cache locations.
 Returns the verified root address; progress is printed on stderr. -/
-@[extern "rs_aiur_prove_lanes"]
-opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
+@[extern "rs_aiur_prove_multi_gpu"]
+opaque proveMultiGpu (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath : @& String)
-  (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
+  (verifyIdx aggrIdx gpus maxRamBytes execJobs structuralAbove : @& Nat)
   (cacheFriBytes : @& ByteArray) (outManifest : @& String) (fresh : Bool := false) : Except String String
 
 end AiurSystem

@@ -9,7 +9,7 @@ use super::{
   FinalOptions, FinalSystem, FixedRoot, Result, first, fixed_cache, groth16,
   init_fri, plonk, root,
   setup::{SetupClass, SetupConfig},
-  stages, statement, storage, verifying_keys, wrap,
+  stage, statement, storage, verifying_keys, wrap,
 };
 use std::{
   fs, io,
@@ -478,7 +478,7 @@ fn check_fri(
 ) -> Result<()> {
   let fixture = init_fri::load(dir)?;
   let actual =
-    statement::from_scalars(&stages::scalar_statement(&fixture.public))?;
+    statement::from_scalars(&stage::scalar_statement(&fixture.public))?;
   if actual != *words {
     return Err("FRI proof proves another statement".into());
   }
@@ -606,13 +606,7 @@ impl MemoryMonitor {
 #[cfg(test)]
 mod tests {
   use super::*;
-
-  fn scratch(name: &str) -> PathBuf {
-    let path = std::env::temp_dir()
-      .join(format!("ix-compress-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&path);
-    path
-  }
+  use crate::test_support::TempDir;
 
   fn files(proof: &[u8]) -> Vec<(&'static str, Vec<u8>)> {
     root_files(b"vk", proof, &[7; statement::WORDS], None).unwrap()
@@ -620,7 +614,8 @@ mod tests {
 
   #[test]
   fn output_resumes_only_the_same_root() -> Result<()> {
-    let out = scratch("open-output");
+    let scratch = TempDir::new("compress-open-output");
+    let out = scratch.join("out");
     open_output(&out, &files(b"proof"), false)?;
     assert_eq!(fs::read(out.join("root/root-proof.bin"))?, b"proof");
     // An interrupted root write is completed.
@@ -637,20 +632,19 @@ mod tests {
     assert_eq!(fs::read(out.join("root/root-proof.bin"))?, b"proof");
     assert!(out.join("fri").is_dir());
     // A non-empty directory without a root is refused.
-    let other = scratch("open-output-foreign");
+    let other = scratch.join("foreign");
     fs::create_dir_all(other.join("data"))?;
     assert!(open_output(&other, &files(b"proof"), false).is_err());
     assert!(open_output(&other, &files(b"proof"), true).is_err());
     assert!(!other.join(ROOT).exists());
-    fs::remove_dir_all(other)?;
-    fs::remove_dir_all(out)?;
     Ok(())
   }
 
   #[test]
   fn fresh_output_replaces_stages_without_touching_unrelated_files()
   -> Result<()> {
-    let out = scratch("fresh-output");
+    let scratch = TempDir::new("compress-fresh-output");
+    let out = scratch.join("out");
     open_output(&out, &files(b"old proof"), false)?;
     fs::write(out.join("notes"), b"keep")?;
     fs::write(out.join(COMPRESSED_PROOF), b"old final proof")?;
@@ -667,7 +661,6 @@ mod tests {
     for name in ["fri", "first-kzg", "final-kzg", "plonk", "groth16"] {
       assert!(!out.join(name).exists());
     }
-    fs::remove_dir_all(out)?;
     Ok(())
   }
 
@@ -677,7 +670,8 @@ mod tests {
 
   #[test]
   fn stages_are_reused_while_their_output_checks() -> Result<()> {
-    let out = scratch("checkpoints");
+    let scratch = TempDir::new("compress-checkpoints");
+    let out = scratch.join("out");
     let proved = std::cell::RefCell::new(Vec::new());
     let run = |checkpoints: &mut Checkpoints<'_>| -> Result<()> {
       for name in ["a", "b", "c"] {
@@ -725,7 +719,6 @@ mod tests {
       |_dir| Err("unverifiable".into()),
     );
     assert!(failing.is_err());
-    fs::remove_dir_all(out)?;
     Ok(())
   }
 }

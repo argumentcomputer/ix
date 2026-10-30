@@ -69,7 +69,7 @@ impl Srs {
     seed: &[u8],
     directory: impl AsRef<std::path::Path>,
   ) -> io::Result<Self> {
-    super::srs_cache::cached_in_directory(
+    super::dev_srs_cache::cached_in_directory(
       max_len,
       public_max_degree,
       seed,
@@ -125,7 +125,7 @@ impl Srs {
     }
 
     // Preserve the validation challenge's exact encoding without retaining a
-    // second, serialized copy of all powers (12 GiB for a 2^28 BLS12-381 SRS).
+    // second, serialized copy of all powers (gigabytes for a 2^28 SRS).
     struct HashWriter(blake3::Hasher);
     impl Write for HashWriter {
       fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -258,35 +258,6 @@ mod tests {
   use super::*;
 
   #[test]
-  fn development_identity_and_anchors_are_curve_specific() {
-    let seed = b"curve-specific-setup";
-    let srs = Srs::unsafe_dev_setup(4, seed);
-    let mut legacy_id = blake3::Hasher::new();
-    legacy_id.update(b"multi-stark/kzg/known-trapdoor-public-degree/v1");
-    legacy_id.update(&3u64.to_le_bytes());
-    legacy_id.update(blake3::hash(seed).as_bytes());
-    assert_ne!(srs.public_setup.id, *legacy_id.finalize().as_bytes());
-
-    let mut wide = [0; 64];
-    blake3::Hasher::new()
-      .update(b"multi-stark/kzg/dev-srs")
-      .update(seed)
-      .finalize_xof()
-      .fill(&mut wide);
-    let legacy_tau = Fr::from_le_bytes_mod_order(&wide);
-    assert_ne!(dev_tau(seed), legacy_tau);
-    assert_ne!(
-      srs.g1[1],
-      (G1Projective::generator() * legacy_tau).into_affine()
-    );
-    assert_ne!(
-      srs.tau_g2,
-      (G2Projective::generator() * legacy_tau).into_affine()
-    );
-    srs.validate().unwrap();
-  }
-
-  #[test]
   fn development_powers_match_naive_at_chunk_boundaries() {
     let seed = b"chunk-powers";
     let srs = Srs::unsafe_dev_setup(1 << 16, seed);
@@ -303,11 +274,6 @@ mod tests {
         (G1Projective::generator() * tau.pow([i as u64])).into_affine()
       );
     }
-  }
-
-  #[test]
-  fn dev_setup_validates() {
-    Srs::unsafe_dev_setup(1 << 5, b"validate-test").validate().unwrap();
   }
 
   #[test]

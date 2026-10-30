@@ -219,7 +219,7 @@ mod tests {
     anchors: Option<String>,
   ) -> Verifier {
     let schema: serde_json::Value = serde_json::from_slice(include_bytes!(
-      "../../../../tools/plonk-wrapper/testdata/bn254/vk.json"
+      "../../../../tools/gnark/testdata/bn254/vk.json"
     ))
     .unwrap();
     Verifier {
@@ -228,7 +228,7 @@ mod tests {
       inner_setup: "ignition".into(),
       inner_vk_blake3: "00".repeat(32),
       schema_sha256: hex(&Sha256::digest(include_bytes!(
-        "../../../../tools/plonk-wrapper/testdata/bn254/vk.json"
+        "../../../../tools/gnark/testdata/bn254/vk.json"
       ))),
       statement_prefix: serde_json::from_value(schema["prefix"].clone())
         .unwrap(),

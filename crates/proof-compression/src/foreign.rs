@@ -481,16 +481,6 @@ impl GoldilocksCircuit {
     })
   }
 
-  #[cfg(test)]
-  fn translate_with_inputs(
-    source: &Circuit<Val>,
-    b: &mut CircuitBuilder<Scalar>,
-    expand_hashes: bool,
-    input: impl FnMut(&mut CircuitBuilder<Scalar>, usize) -> Value,
-  ) -> GoldilocksInputs {
-    Self::translate_inner(source, b, expand_hashes, 0, input)
-  }
-
   fn translate_inner(
     source: &Circuit<Val>,
     b: &mut CircuitBuilder<Scalar>,

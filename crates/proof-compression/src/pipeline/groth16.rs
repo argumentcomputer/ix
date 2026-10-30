@@ -1,6 +1,4 @@
 //! Final BN254 Groth16 proofs under the release key.
-#[cfg(all(test, feature = "groth16"))]
-use super::final_proof::Scratch;
 #[cfg(feature = "groth16")]
 use super::final_proof::{hex, sha256};
 #[cfg(feature = "groth16")]
@@ -584,10 +582,10 @@ mod native_tests {
   #[test]
   #[ignore = "compiles the full Init verifier circuit"]
   fn compiles_init_without_changing_constraints() -> Result<()> {
-    let directory = Scratch::new()?;
+    let directory = crate::test_support::TempDir::new("groth16-compile");
     let schema =
-      include_bytes!("../../../../tools/plonk-wrapper/testdata/bn254/vk.json");
-    let path = directory.0.join("circuit.bin");
+      include_bytes!("../../../../tools/gnark/testdata/bn254/vk.json");
+    let path = directory.join("circuit.bin");
     let info = gnark::compile_groth16(schema, &path)?;
     let expected: serde_json::Value = serde_json::from_str(include_str!(
       "../../tests/fixtures/groth16/provenance.json"
@@ -622,9 +620,8 @@ mod native_tests {
     let key = include_bytes!("../../tests/fixtures/groth16/verifying-key.bin");
     let expected_key = digest(&metadata.artifact("verifying-key.bin")?.sha256)?;
     let claim = digest(provenance["claim_digest"].as_str().unwrap())?;
-    let witness = include_bytes!(
-      "../../../../tools/plonk-wrapper/testdata/bn254/witness.json"
-    );
+    let witness =
+      include_bytes!("../../../../tools/gnark/testdata/bn254/witness.json");
     let mut prover =
       gnark::Prover::open_groth16(&dir, &metadata, &proving_backend()?)?;
     let first = prover.prove(witness, &claim)?;

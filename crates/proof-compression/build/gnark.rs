@@ -42,8 +42,7 @@ fn source_digest(source: &std::path::Path) -> String {
 
 pub(super) fn build() -> Vec<super::RuntimeArtifact> {
   let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-  let source =
-    manifest.join("../../tools/plonk-wrapper").canonicalize().unwrap();
+  let source = manifest.join("../../tools/gnark").canonicalize().unwrap();
   let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
   println!("cargo:rerun-if-changed={}", source.display());
   for variable in [

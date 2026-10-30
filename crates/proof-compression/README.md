@@ -46,7 +46,7 @@ and verification requires `--dev-srs`. Use
 `ix compress PROOF --groth16 --dev-final-srs`, where `PROOF` is a
 store address or a serialized `Ixon.Proof` file containing its claim. File
 inputs are read without importing them into the store. See the
-[final backend guide](../../tools/plonk-wrapper/README.md#bn254-groth16-final).
+[final backend guide](../../tools/gnark/README.md#bn254-groth16-final).
 The library's `verify_with_vk` can
 verify recursive KZG proofs under an independently pinned key and statement.
 Local final keys use `verify_with_development_verifier`. The CLI requires
@@ -93,7 +93,7 @@ It does not verify contributor signatures. Authenticate the ceremony source as
 part of release review, and distribute the approved SRS alongside the release.
 
 ```sh
-cd tools/plonk-wrapper
+cd tools/gnark
 go run ./cmd/ignition -cache /path/to/transcripts -out /path/to/srs.bin
 ```
 
@@ -154,8 +154,7 @@ from the proof.
 `fri_sizing --statistics <outer-vk.bin>` exports key statistics through the
 Rust decoder without building a circuit. Pipe its JSON to
 `tools/compression/fri_security_estimate.py -` for parameter estimates.
-`fri_sizing` also retains opt-in frontend sizing; the GPU stage supervisor is
-`tools/compression/run_gpu_stage.py`.
+`fri_sizing` also retains opt-in frontend sizing.
 
 Focused entry points include the field primitives and complete verifier
 witness, with additional curve, transcript, MSM and public-pairing modules:
@@ -176,7 +175,7 @@ ix compress ROOT_PROOF_ADDRESS --plonk --out /path/to/empty-output
 Install the released SRS or select a local copy with `IX_KZG_SRS`. The result
 includes the proof envelope, native and Solidity proof encodings, generated
 Solidity verifier and verifying key, which must equal the bundled key for
-`ix verify` to accept the proof. See the [gnark backend guide](../../tools/plonk-wrapper/README.md)
+`ix verify` to accept the proof. See the [gnark backend guide](../../tools/gnark/README.md)
 for Rust FFI tests, CUDA configuration, and artifact cache rules. On-chain verification uses the final PLONK verifier
 and [claim adapter](../../contracts/plonk/README.md).
 
@@ -284,10 +283,8 @@ into scalar-field constraints, `kzg` implements the commitment backend, and
 Focused CPU checks use the small BN254 fixtures:
 
 ```sh
-cargo test --release --locked -p ix-proof-compression --test bn254_kzg
-cargo test --release --locked -p ix-proof-compression --test kzg_transcripts
-python3 tests/check_compression_build.py \
-  --toolchain /path/to/lean-4.34.1-linux --out /tmp/ix-build-config
+cargo test --release --locked -p ix-proof-compression --test integration \
+  -- kzg::
 ```
 
 `tests/kzg_backend_parity.py` compares independent CPU/CUDA builds on small

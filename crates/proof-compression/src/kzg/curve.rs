@@ -40,9 +40,10 @@ pub(crate) fn read_g1_compressed(
 mod tests {
   use super::*;
   use ark_ec::AffineRepr;
+  use ark_ff::{BigInteger, PrimeField};
 
   #[test]
-  fn canonical_point_widths_match_arkworks() {
+  fn point_encodings_match_widths_and_vectors() {
     for point in [G1Affine::identity(), G1Affine::generator()] {
       let mut bytes = Vec::new();
       point.serialize_compressed(&mut bytes).unwrap();
@@ -63,36 +64,7 @@ mod tests {
       assert_eq!(bytes.len(), G2_UNCOMPRESSED_BYTES);
       assert_eq!(G2Affine::deserialize_uncompressed(&*bytes).unwrap(), point);
     }
-  }
 
-  #[test]
-  fn canonical_point_reader_preserves_sign_and_consumes_one_point() {
-    for point in
-      [G1Affine::identity(), G1Affine::generator(), -G1Affine::generator()]
-    {
-      let mut bytes = Vec::new();
-      point.serialize_compressed(&mut bytes).unwrap();
-      bytes.extend([0x12, 0x34]);
-      let mut input = bytes.as_slice();
-      assert_eq!(read_g1_compressed(&mut input).unwrap(), point);
-      assert_eq!(input, &[0x12, 0x34]);
-    }
-  }
-
-  #[test]
-  fn canonical_point_reader_rejects_invalid_and_truncated_encodings() {
-    let mut bytes = Vec::new();
-    G1Affine::generator().serialize_compressed(&mut bytes).unwrap();
-    assert!(
-      read_g1_compressed(&mut &bytes[..G1_COMPRESSED_BYTES - 1]).is_err()
-    );
-    assert!(
-      read_g1_compressed(&mut [0xff; G1_COMPRESSED_BYTES].as_slice()).is_err()
-    );
-  }
-
-  #[test]
-  fn bn254_compressed_point_vectors() {
     let mut positive = [0; 32];
     positive[0] = 1;
     let mut negative = positive;
@@ -107,13 +79,24 @@ mod tests {
       let mut bytes = Vec::new();
       point.serialize_compressed(&mut bytes).unwrap();
       assert_eq!(bytes.as_slice(), expected.as_slice());
-      assert_eq!(read_g1_compressed(&mut expected.as_slice()).unwrap(), point);
+      // The reader consumes exactly one point and leaves what follows.
+      bytes.extend([0x12, 0x34]);
+      let mut input = bytes.as_slice();
+      assert_eq!(read_g1_compressed(&mut input).unwrap(), point);
+      assert_eq!(input, &[0x12, 0x34]);
     }
   }
 
   #[test]
-  fn bn254_point_reader_rejects_infinity_alias_and_noncanonical_x() {
-    use ark_ff::{BigInteger, PrimeField};
+  fn point_reader_rejects_truncated_invalid_aliased_and_noncanonical_points() {
+    let mut bytes = Vec::new();
+    G1Affine::generator().serialize_compressed(&mut bytes).unwrap();
+    assert!(
+      read_g1_compressed(&mut &bytes[..G1_COMPRESSED_BYTES - 1]).is_err()
+    );
+    assert!(
+      read_g1_compressed(&mut [0xff; G1_COMPRESSED_BYTES].as_slice()).is_err()
+    );
 
     let mut alias = [0; 32];
     alias[0] = 1;

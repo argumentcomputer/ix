@@ -5,22 +5,22 @@
 //! headers/libraries.
 
 use std::env;
+use std::ffi::OsString;
 use std::path::PathBuf;
-#[path = "../build_support/cuda.rs"]
-mod cuda;
-use cuda::{cuda_library_directories, nvcc_path};
 use std::process::Command;
+
+/// Toolchain metadata from multi-stark's CUDA build, so the trace writers
+/// target the same compiler and GPUs as the backend they link against.
+fn multi_stark_cuda(key: &str) -> OsString {
+  env::var_os(format!("DEP_MULTI_STARK_CUDA_{key}"))
+    .unwrap_or_else(|| panic!("multi-stark's CUDA build did not report {key}"))
+}
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
-  println!("cargo:rerun-if-changed=../build_support/cuda.rs");
-  println!("cargo:rerun-if-env-changed=NVCC");
   println!("cargo:rerun-if-env-changed=NVCC_CCBIN");
   println!("cargo:rerun-if-env-changed=NVCC_PREPEND_FLAGS");
   println!("cargo:rerun-if-env-changed=NVCC_APPEND_FLAGS");
-  println!("cargo:rerun-if-env-changed=CUDA_HOME");
-  println!("cargo:rerun-if-env-changed=CUDA_PATH");
-  println!("cargo:rerun-if-env-changed=MULTI_STARK_CUDA_ARCHS");
 
   if env::var_os("CARGO_FEATURE_CUDA").is_none() {
     return;
@@ -37,17 +37,21 @@ fn main() {
     "the first-party CUDA backend currently supports x86_64 targets only"
   );
 
-  let nvcc = nvcc_path();
-  let out_dir =
-    PathBuf::from(env::var_os("OUT_DIR").expect("Cargo did not set OUT_DIR"));
-  let library = out_dir.join("libaiur_trace_cuda.a");
-  let architectures = cuda::architectures(&nvcc, &["MULTI_STARK_CUDA_ARCHS"]);
-
   // Every aiur CUDA source belongs to the generated trace writers; the bare
   // `cuda` feature only enables multi-stark's device backend.
   if env::var_os("CARGO_FEATURE_CUDA_TRACE_CODEGEN").is_none() {
     return;
   }
+  let nvcc = multi_stark_cuda("NVCC");
+  let architectures: Vec<String> = multi_stark_cuda("ARCHS")
+    .into_string()
+    .expect("CUDA architectures are ASCII")
+    .split(',')
+    .map(str::to_owned)
+    .collect();
+  let out_dir =
+    PathBuf::from(env::var_os("OUT_DIR").expect("Cargo did not set OUT_DIR"));
+  let library = out_dir.join("libaiur_trace_cuda.a");
   let include = env::var_os("DEP_MULTI_STARK_CUDA_INCLUDE")
     .expect("cuda-trace-codegen requires multi-stark's shared CUDA field header metadata");
   let includes = vec![PathBuf::from("cuda"), PathBuf::from(&include)];
@@ -178,7 +182,7 @@ fn main() {
   println!("cargo:rustc-link-lib=dylib=pthread");
   println!("cargo:rustc-link-lib=dylib=stdc++");
 
-  for directory in cuda_library_directories(&nvcc) {
+  for directory in env::split_paths(&multi_stark_cuda("LIB_DIRS")) {
     if directory.is_dir() {
       println!("cargo:rustc-link-search=native={}", directory.display());
     }

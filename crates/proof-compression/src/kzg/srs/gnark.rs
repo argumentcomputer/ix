@@ -111,7 +111,7 @@ mod tests {
 
   // Only the G1/G2 portion is consumed by Rust; pairing lines are a gnark optimization.
   fn fixture(srs: &Srs) -> Vec<u8> {
-    let mut bytes = (srs.g1.len() as u32).to_be_bytes().to_vec();
+    let mut bytes = u32::try_from(srs.g1.len()).unwrap().to_be_bytes().to_vec();
     let encode_g1 = |p: G1Affine| {
       [p.x, p.y]
         .into_iter()
@@ -127,15 +127,15 @@ mod tests {
       }
     }
     bytes.extend(encode_g1(srs.g1[0]));
-    bytes.resize(4 + srs.g1.len() * 64 + VK_BYTES as usize, 0);
+    bytes.resize(4 + srs.g1.len() * 64 + usize::try_from(VK_BYTES).unwrap(), 0);
     bytes
   }
 
   #[test]
   fn prefix_loading_checks_framing_coordinates_and_anchors() -> io::Result<()> {
     let srs = Srs::unsafe_dev_setup(8, b"gnark-reader");
-    let path =
-      std::env::temp_dir().join(format!("ix-gnark-srs-{}", std::process::id()));
+    let directory = crate::test_support::TempDir::new("gnark-srs");
+    let path = directory.join("srs.bin");
     let mut file =
       std::fs::OpenOptions::new().write(true).create_new(true).open(&path)?;
     let bytes = fixture(&srs);
@@ -154,6 +154,6 @@ mod tests {
     }
     std::fs::write(&path, &bytes[..bytes.len() - 1])?;
     assert!(load(&path, 4, srs.public_setup).is_err());
-    std::fs::remove_file(path)
+    Ok(())
   }
 }

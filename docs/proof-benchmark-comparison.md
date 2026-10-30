@@ -35,6 +35,7 @@ PLONK, separately from the table. Earlier compression stages and witness export
 are excluded. Groth16 uses development keys; PLONK reuses its pinned Ignition
 cache. These are one-workload measurements, not predictions for every circuit.
 Raw samples, file identities, opening times and peak process RSS are recorded
-in [the raw receipt](../tools/plonk-wrapper/testdata/final-comparison.json). The actual Groth16 Init proof also passes
+in `tools/plonk-wrapper/testdata/final-comparison.json` at `c6c6cb95`. The
+actual Groth16 Init proof also passes
 the Solidity adapter test, at 318,490 execution gas excluding transaction
 intrinsic gas and calldata.

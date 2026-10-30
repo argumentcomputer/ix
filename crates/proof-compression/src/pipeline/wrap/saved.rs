@@ -63,7 +63,7 @@ pub(in crate::pipeline) fn frontend(
   let setup = config.for_stage(FIRST_SEED, height)?;
   let system =
     inner_system(&setup, &manifest.widths, &manifest.heights, parts)?;
-  let plan = super::super::stages::construct::recursive_plan(
+  let plan = super::super::lowering::recursive_plan(
     &system,
     &logs(&manifest.heights),
     claim_schema(&manifest.claims)?,
@@ -103,13 +103,12 @@ fn load<T: DeserializeOwned>(
 
 #[cfg(test)]
 pub(super) fn layout() -> crate::recursive::native_verifier::LayoutPolicy {
-  super::super::stages::construct::recursive_layout()
+  super::super::lowering::recursive_layout()
 }
 
 pub(super) fn claim_schema(claims: &[Vec<Scalar>]) -> Result<ClaimSchema> {
   let public =
-    super::super::stages::statement::Statement::from_claims(claims, 18)?
-      .locations;
+    super::super::claims::ClaimTemplate::from_claims(claims, 18)?.locations;
   Ok(ClaimSchema::from_claims(claims, &public)?)
 }
 
@@ -154,7 +153,7 @@ pub(super) struct Input {
 
 impl Input {
   fn plan(&self) -> Result<Plan<'_>> {
-    super::super::stages::construct::recursive_plan(
+    super::super::lowering::recursive_plan(
       &self.system,
       &self.logs,
       claim_schema(&self.claims)?,
@@ -193,7 +192,7 @@ impl Input {
     let system =
       inner_system(&setup, &manifest.widths, &manifest.heights, parts)?;
     let logs = logs(&manifest.heights);
-    let plan = super::super::stages::construct::recursive_plan(
+    let plan = super::super::lowering::recursive_plan(
       &system,
       &logs,
       claim_schema(&manifest.claims)?,
@@ -288,7 +287,7 @@ pub(super) fn prove(
 mod tests {
   use super::*;
   use crate::kzg::Srs;
-  use crate::pipeline::init_claim;
+  use crate::pipeline::init_fri::INIT_PUBLIC_WORDS;
   use crate::pipeline::setup::SetupSource;
   use crate::recursive::native_verifier::LayoutPolicy;
   use multi_stark::traits::Algebra;
@@ -416,12 +415,10 @@ mod tests {
 
   #[test]
   fn saved_loader_requires_binding_before_setup_metadata() -> Result<()> {
-    let root = std::env::temp_dir()
-      .join(format!("ix-saved-binding-{}", std::process::id()));
-    fs::create_dir(&root)?;
+    let root = crate::test_support::TempDir::new("saved-binding");
     let ns = Scalar::from_u8(93);
     let mut claims: Vec<_> = std::iter::once(0)
-      .chain(init_claim::INIT_PUBLIC_WORDS)
+      .chain(INIT_PUBLIC_WORDS)
       .enumerate()
       .map(|(index, word)| {
         vec![ns, Scalar::ONE, Scalar::from_usize(index), Scalar::from_u64(word)]
@@ -464,7 +461,6 @@ mod tests {
         .err()
         .unwrap();
     assert!(malformed.downcast_ref::<bincode::error::DecodeError>().is_some());
-    fs::remove_dir_all(root)?;
     Ok(())
   }
 }

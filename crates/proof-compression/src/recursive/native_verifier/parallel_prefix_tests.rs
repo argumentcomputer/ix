@@ -4,14 +4,12 @@ use crate::recursive::native_field::L;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
 use multi_stark::plonkish::{Assignment, WitnessError};
-use std::time::Instant;
 
 struct PointFixture {
   circuit: Circuit<Scalar>,
   inputs: Vec<(Value, Scalar)>,
   expected_publics: Vec<Scalar>,
   prefix_ends: Vec<usize>,
-  certified: bool,
 }
 
 fn points(count: usize) -> Vec<G1Affine> {
@@ -89,13 +87,7 @@ impl PointFixture {
         .copied()
         .fold(Scalar::ZERO, |sum, value| sum + value),
     );
-    Self {
-      circuit: c.b.finish(),
-      inputs,
-      expected_publics,
-      prefix_ends,
-      certified,
-    }
+    Self { circuit: c.b.finish(), inputs, expected_publics, prefix_ends }
   }
 
   fn generate(&self) -> Result<Assignment<Scalar>, WitnessError> {
@@ -157,19 +149,6 @@ fn same_relation(a: &PointFixture, b: &PointFixture) {
   assert_eq!(a.expected_publics, b.expected_publics);
 }
 
-fn assignment_digest(
-  circuit: &Circuit<Scalar>,
-  assignment: &Assignment<Scalar>,
-) -> String {
-  let mut hash = blake3::Hasher::new();
-  for value in assignment.values(circuit.id()).unwrap() {
-    for limb in value.canonical_limbs_le() {
-      hash.update(&limb.to_le_bytes());
-    }
-  }
-  hash.finalize().to_hex().to_string()
-}
-
 #[test]
 fn point_prefix_matches_serial_inputs_values_and_encodings() {
   let points = points(9);
@@ -209,105 +188,4 @@ fn point_prefix_preserves_earliest_point_error() {
     let actual = parallel.generate_changed(missing, corrupt).err().unwrap();
     assert_eq!(actual, expected, "missing={missing:?}, corrupt={corrupt:?}");
   }
-}
-
-#[test]
-#[ignore = "isolated point-prefix witness comparison; default fixture has 335 dynamic points"]
-fn native_point_prefix_operation_benchmark() {
-  let count = std::env::var("IX_KZG_POINT_PREFIX_POINTS")
-    .map_or(335, |value| value.parse::<usize>().expect("valid point count"));
-  assert!(count >= 2);
-  let points = points(count);
-  let start = Instant::now();
-  let serial = PointFixture::new(&points, false);
-  let parallel = PointFixture::new(&points, true);
-  let construction_seconds = start.elapsed().as_secs_f64();
-  same_relation(&serial, &parallel);
-  let stats = parallel.circuit.stats();
-  println!(
-    "NATIVE_POINT_PREFIX_SETUP {}",
-    serde_json::json!({
-        "dynamic_points": count,
-        "fixed_points": 4,
-        "prefix_blocks": parallel.prefix_ends.len(),
-        "prefix_values": parallel.prefix_ends.last().unwrap(),
-        "values": stats.values,
-        "inputs": stats.inputs,
-        "gates": stats.gates,
-        "lookups": stats.lookups,
-        "hint_calls": stats.hint_calls,
-        "hint_outputs": stats.hint_outputs,
-        "publics": stats.publics,
-        "certified": parallel.certified,
-        "construction_seconds": construction_seconds,
-        "scope": "Point-input subgroup checks and encodings, then a dependent serial suffix; no recursive proof or lowering",
-    })
-  );
-  let mut reference = None::<(Vec<Scalar>, Vec<Scalar>)>;
-  let mut digest = String::new();
-  let mut parallel_digest_checked = false;
-  let mut serial_seconds = Vec::new();
-  let mut parallel_seconds = Vec::new();
-  for sample in 0..5 {
-    let modes = if sample % 2 == 0 {
-      [("serial", &serial), ("parallel", &parallel)]
-    } else {
-      [("parallel", &parallel), ("serial", &serial)]
-    };
-    for (mode, fixture) in modes {
-      let start = Instant::now();
-      let assignment = fixture.generate().unwrap();
-      let seconds = start.elapsed().as_secs_f64();
-      assert_eq!(assignment.public_values(), fixture.expected_publics);
-      if let Some((values, publics)) = &reference {
-        assert!(assignment.values(fixture.circuit.id()).unwrap() == values);
-        assert_eq!(assignment.public_values(), publics);
-      } else {
-        digest = assignment_digest(&fixture.circuit, &assignment);
-      }
-      if fixture.certified && !parallel_digest_checked {
-        assert_eq!(assignment_digest(&fixture.circuit, &assignment), digest);
-        parallel_digest_checked = true;
-      }
-      if fixture.certified {
-        parallel_seconds.push(seconds);
-      } else {
-        serial_seconds.push(seconds);
-      }
-      println!(
-        "NATIVE_POINT_PREFIX_SAMPLE {}",
-        serde_json::json!({
-            "sample": sample,
-            "mode": mode,
-            "seconds": seconds,
-            "full_assignment_equal": true,
-            "input_mapping_equal": true,
-            "public_encodings_equal": true,
-            "full_relation_checked": true,
-            "assignment_blake3": digest,
-        })
-      );
-      if reference.is_none() {
-        reference = Some((
-          assignment.values(fixture.circuit.id()).unwrap().to_vec(),
-          assignment.public_values().to_vec(),
-        ));
-      }
-    }
-  }
-  serial_seconds.sort_by(f64::total_cmp);
-  parallel_seconds.sort_by(f64::total_cmp);
-  println!(
-    "NATIVE_POINT_PREFIX_RESULT {}",
-    serde_json::json!({
-        "dynamic_points": count,
-        "paired_samples": 5,
-        "serial_median_seconds": serial_seconds[2],
-        "parallel_median_seconds": parallel_seconds[2],
-        "speedup": serial_seconds[2] / parallel_seconds[2],
-        "full_assignment_equal": true,
-        "assignment_blake3": digest,
-        "timing_scope": "Input assignment, recipe evaluation and complete frontend relation checks; excludes construction, comparisons, checksums and assignment destruction",
-    })
-  );
 }

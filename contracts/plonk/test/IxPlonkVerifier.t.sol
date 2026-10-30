@@ -2,17 +2,21 @@
 pragma solidity ^0.8.28;
 
 import {IxPlonkVerifier, IPlonkVerifier} from "../src/IxPlonkVerifier.sol";
-import {PlonkVerifier} from "../bn254/src/PlonkVerifier.sol";
+import {PlonkVerifier} from "../src/PlonkVerifier.sol";
 
 interface Vm {
     function projectRoot() external view returns (string memory);
     function readFile(string calldata path) external view returns (string memory);
     function parseJsonBytes(string calldata json, string calldata key) external pure returns (bytes memory);
     function parseJsonBytes32(string calldata json, string calldata key) external pure returns (bytes32);
+    function parseJsonString(string calldata json, string calldata key) external pure returns (string memory);
 }
 
 contract IxPlonkVerifierTest {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    /// SHA-256 of crates/proof-compression/verifying-keys/0.1/plonk-verifying-key.bin,
+    /// the key src/PlonkVerifier.sol is generated from.
+    string private constant RELEASE_KEY_SHA256 = "7123a80f9c56b25138ffe8ec47a53c6b0b22b64bf183380d63e5c80a7e3144a9";
     IxPlonkVerifier private adapter;
     PlonkVerifier private plonk;
     bytes private proof;
@@ -20,7 +24,11 @@ contract IxPlonkVerifierTest {
     event log_named_uint(string key, uint256 value);
 
     function setUp() public {
-        string memory fixture = vm.readFile(string.concat(vm.projectRoot(), "/bn254/testdata/init.json"));
+        string memory fixture = vm.readFile(string.concat(vm.projectRoot(), "/testdata/init.json"));
+        require(
+            keccak256(bytes(vm.parseJsonString(fixture, ".verifyingKeySHA256"))) == keccak256(bytes(RELEASE_KEY_SHA256)),
+            "fixture proof is not under the release PLONK key"
+        );
         proof = vm.parseJsonBytes(fixture, ".proof");
         digest = vm.parseJsonBytes32(fixture, ".claimDigest");
         plonk = new PlonkVerifier();

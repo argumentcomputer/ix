@@ -75,9 +75,8 @@ mod tests {
               longer on CPU)"]
   fn release_plonk_key_derives_without_a_proof() {
     use sha2::{Digest, Sha256};
-    let cache = super::super::storage::temporary_path(
-      &std::env::temp_dir().join("ix-plonk-derive"),
-    );
+    let scratch = crate::test_support::TempDir::new("plonk-derive");
+    let cache = scratch.join("cache");
     let derived = super::super::plonk::derive_verifying_key(
       RECURSIVE_VK,
       &verifying_keys::STATEMENT_PREFIX,
@@ -87,6 +86,5 @@ mod tests {
     .unwrap();
     eprintln!("derived PLONK key SHA-256 {:x}", Sha256::digest(&derived));
     assert!(derived == verifying_keys::PLONK_VK, "derived PLONK key differs");
-    std::fs::remove_dir_all(cache).unwrap();
   }
 }

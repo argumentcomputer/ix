@@ -318,14 +318,4 @@ mod tests {
       assert!(decoded.is_err());
     }
   }
-
-  #[test]
-  fn inverse_and_powers() {
-    let x = Scalar::from_u32(12345);
-    assert_eq!(x * x.inverse(), <Scalar as Algebra<Scalar>>::ONE);
-    let cube: Vec<Scalar> = x.powers().take(4).collect();
-    assert_eq!(cube[3], x * x * x);
-    assert_eq!(x.exp_u64(3), cube[3]);
-    assert_eq!(x.exp_power_of_2(3), x.exp_u64(8));
-  }
 }

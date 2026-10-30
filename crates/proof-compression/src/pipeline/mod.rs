@@ -1,9 +1,11 @@
 //! Compression and verification of aggregate root proofs.
-mod stages;
-pub use stages::{
-  FixedRoot, FriVerifier, KzgVerifier, Prepared, RecursiveProof,
-  RecursiveStage, RecursiveVerifier, prepare_kzg, prepare_recursive,
-  prepare_root,
+mod claims;
+mod lowering;
+mod stage;
+pub use root::{FixedRoot, prepare_root};
+pub use stage::{FriVerifier, KzgVerifier, Prepared, prepare_kzg};
+pub use wrap::{
+  RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
 };
 
 mod compress;
@@ -19,8 +21,6 @@ mod fixed_cache;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub mod gnark;
 pub mod groth16;
-#[cfg(test)]
-mod init_claim;
 mod init_fri;
 pub mod plonk;
 mod prepare;
@@ -34,7 +34,6 @@ mod setup;
 pub use setup::{SetupClass, SetupConfig};
 mod statement;
 mod storage;
-mod verifier;
 mod wrap;
 
 use std::{fs, path::Path};
@@ -96,7 +95,7 @@ pub fn verify_with_vk(
   let packet = proof
     .strip_prefix(PROOF_TAG)
     .ok_or("unsupported compressed proof curve or version")?;
-  verifier::verify_with_vk(
+  verifying_keys::verify_with_vk(
     packet,
     claim,
     &words,
@@ -158,12 +157,14 @@ mod tests {
   use super::*;
 
   #[test]
-  fn explicit_vk_verification_rejects_other_curve_envelopes() {
+  fn explicit_vk_verification_rejects_other_proof_tags() {
     let expected =
       statement::to_claims_bytes(&statement::with_claim(&[0; 10], b"claim"));
-    let other = b"IXCMP\0\0\x04";
-    let error = verify_with_vk(other, b"claim", &expected, b"", &[0; 32], true)
-      .unwrap_err();
+    let mut other = *PROOF_TAG;
+    other[7] ^= 0x80;
+    let error =
+      verify_with_vk(&other, b"claim", &expected, b"", &[0; 32], true)
+        .unwrap_err();
     assert!(error.to_string().contains("curve or version"));
   }
 

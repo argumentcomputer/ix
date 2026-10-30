@@ -2,15 +2,10 @@
 use super::Result;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 use super::statement;
-#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
-use super::storage;
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};
-
-#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
-use std::path::PathBuf;
 
 // TODO: Decide between SHA-256 and BLAKE3 for artifact/cache metadata.
 // Coordinate Rust/Go encodings and any catalog or envelope key-ID changes;
@@ -97,23 +92,6 @@ pub(super) fn description(
   let vk = super::wrap::VerifyingKey::from_bytes(&fs::read(verifier)?)?;
   vk.check_setup_class(setup.class())?;
   super::wrap::final_description(&vk, &expected[..10])
-}
-
-#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
-pub(super) struct Scratch(pub(super) PathBuf);
-#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
-impl Scratch {
-  pub(super) fn new() -> Result<Self> {
-    let path = storage::temporary_path(&std::env::temp_dir().join("ix-final"));
-    fs::create_dir(&path)?;
-    Ok(Self(path))
-  }
-}
-#[cfg(all(test, any(feature = "plonk", feature = "groth16")))]
-impl Drop for Scratch {
-  fn drop(&mut self) {
-    let _ = fs::remove_dir_all(&self.0);
-  }
 }
 
 #[cfg(any(feature = "plonk", feature = "groth16"))]

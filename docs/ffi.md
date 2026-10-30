@@ -53,6 +53,6 @@ call's goroutine become errors; fatal Go runtime and device failures end the
 `ix` process, and a rerun resumes compression from its last complete stage.
 There is no ABI version or compatibility dispatcher.
 
-The [backend guide](../tools/plonk-wrapper/README.md) describes builds and tests.
+The [backend guide](../tools/gnark/README.md) describes builds and tests.
 Cargo forwards `plonk` and `groth16` to Go build tags so unselected native
 backends are excluded. Direct Go builds without tags include both CPU backends.

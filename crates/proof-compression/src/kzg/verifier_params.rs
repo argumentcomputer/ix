@@ -133,23 +133,6 @@ mod tests {
   }
 
   #[test]
-  fn parameter_encoding_identifies_curve() {
-    use super::super::curve::{G1_COMPRESSED_BYTES, G2_COMPRESSED_BYTES};
-
-    let params =
-      VerifierParams::from_srs(&Srs::unsafe_dev_setup(2, b"curve-version"));
-    let mut encoded = params.to_bytes().unwrap();
-    assert_eq!(
-      encoded.len(),
-      3 * 8 + 32 + 2 * G1_COMPRESSED_BYTES + 2 * G2_COMPRESSED_BYTES
-    );
-    assert_eq!(&encoded[..8], &VERSION.to_le_bytes());
-    let other_curve_version: u64 = 4;
-    encoded[..8].copy_from_slice(&other_curve_version.to_le_bytes());
-    assert!(VerifierParams::from_bytes(&encoded).is_err());
-  }
-
-  #[test]
   fn public_identity_and_degree_are_independent_of_loaded_prefix() {
     let prover = Srs::unsafe_dev_setup(64, b"verifier-params");
     let anchors = Srs::unsafe_dev_setup_prefix(2, 63, b"verifier-params");

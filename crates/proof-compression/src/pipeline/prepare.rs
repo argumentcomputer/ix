@@ -12,12 +12,13 @@
 //! pinned plan, but the recursive stage is rebuilt to find its identity,
 //! and only missing entries are committed.
 use super::{
-  CompressConfig, FixedRoot, Result, SetupClass, SetupConfig, first,
+  CompressConfig, FixedRoot, Result, SetupClass, SetupConfig,
+  claims::first_claims,
+  first,
   fixed_cache::{FixedCache, Prepared},
   prover::FixedSetup,
   root,
   setup::IGNITION_SRS_VAR,
-  stages::statement::first_claims,
   storage::Manifest,
   verifying_keys, wrap,
 };
@@ -260,8 +261,8 @@ mod tests {
   #[test]
   fn prepared_preprocessing_is_published_once_in_the_prover_format()
   -> Result<()> {
-    let root = std::env::temp_dir()
-      .join(format!("ix-setup-publish-{}", std::process::id()));
+    let scratch = crate::test_support::TempDir::new("setup-publish");
+    let root = scratch.join("cache");
     let compiled = compiled();
     let setup = crate::pipeline::setup::SetupSource::development(b"setup", 63)?;
     let config = setup.config(16, 2, false)?;
@@ -303,7 +304,6 @@ mod tests {
     fs::remove_file(&checkpoint)?;
     fs::write(&checkpoint, bytes)?;
     assert!(cache.check().is_err());
-    fs::remove_dir_all(root)?;
     Ok(())
   }
 }

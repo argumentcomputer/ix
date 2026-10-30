@@ -9,15 +9,14 @@ pub(in crate::pipeline) use final_export::describe as final_description;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(in crate::pipeline) use final_export::export as final_export;
 
-use super::super::stages::{
-  construct::{self, Lowered},
-  statement::Statement as StageStatement,
-  verification,
-};
+use super::recursive::{self, RecursiveVerifier};
 use super::{
   super::Result as PipelineResult,
   super::{
-    fixed_cache, prover,
+    claims::ClaimTemplate,
+    fixed_cache,
+    lowering::{self, Lowered},
+    prover,
     setup::{SetupClass, SetupSource},
     statement::{self, Statement},
     storage,
@@ -43,7 +42,7 @@ const PAIRING_BYTES: usize = 2 * G1_COMPRESSED_BYTES;
 const RECURSIVE_PUBLIC_VALUES: usize = statement::WORDS + PUBLIC_VALUES;
 /// Largest admitted recursive computation trace. The development public
 /// degree of a staged verifying key covers exactly its own height.
-pub(super) const MAX_TRACE_LEN: usize = construct::RECURSIVE_HEIGHT;
+pub(super) const MAX_TRACE_LEN: usize = lowering::RECURSIVE_HEIGHT;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Pairings {
@@ -172,7 +171,7 @@ impl Frontend {
     }
     let mut encoded = vec![];
     keys.serialize_compressed(&mut encoded)?;
-    let compiled = construct::lower_recursive(circuit, max_height)?;
+    let compiled = lowering::lower_recursive(circuit, max_height)?;
     Ok(Self { compiled, pairings: Pairings { keys: encoded }, vk: vk.to_vec() })
   }
 
@@ -282,10 +281,10 @@ fn decode_pairing_keys(vk: &Pairings) -> storage::Result<Vec<G2Affine>> {
 }
 
 fn pairing_bytes(publics: &[Scalar]) -> storage::Result<Vec<u8>> {
-  verification::pack_pairings(publics)
+  recursive::pack_pairings(publics)
 }
 fn check_pairings(bytes: &[u8], keys: &[G2Affine]) -> storage::Result<()> {
-  verification::Pairings {
+  recursive::Pairings {
     keys: keys.try_into().map_err(|_keys| "pairing point count")?,
   }
   .verify_bytes(bytes)
@@ -322,8 +321,8 @@ fn packet_claims(
   let body = packet_body(packet, vk, expected)?;
   let mut public: Vec<_> =
     expected.iter().copied().map(Scalar::from_u64).collect();
-  public.extend(verification::unpack_pairings(&body[..PAIRING_BYTES])?);
-  let claims = StageStatement::recursive(public.len()).claims(&public)?;
+  public.extend(recursive::unpack_pairings(&body[..PAIRING_BYTES])?);
+  let claims = ClaimTemplate::recursive(public.len()).claims(&public)?;
   Ok((claims, 32 + statement::WORDS * 8 + PAIRING_BYTES))
 }
 fn verify_packet(
@@ -335,13 +334,13 @@ fn verify_packet(
   expected: &Statement,
 ) -> storage::Result<()> {
   let body = packet_body(packet, vk, expected)?;
-  let pairings = verification::Pairings {
+  let pairings = recursive::Pairings {
     keys: keys.try_into().map_err(|_keys| "pairing point count")?,
   };
-  verification::verify_recursive_bytes(
+  recursive::verify_recursive_bytes(
     system,
     codec,
-    &StageStatement::recursive(RECURSIVE_PUBLIC_VALUES),
+    &ClaimTemplate::recursive(RECURSIVE_PUBLIC_VALUES),
     &pairings,
     body,
     &expected.iter().copied().map(Scalar::from_u64).collect::<Vec<_>>(),
@@ -355,7 +354,7 @@ fn staged_publics(
   if pairing_count != 2 {
     return Err("pairing point count".into());
   }
-  StageStatement::recursive(RECURSIVE_PUBLIC_VALUES).public_values(claims)
+  ClaimTemplate::recursive(RECURSIVE_PUBLIC_VALUES).public_values(claims)
 }
 
 /// The KZG configuration the recursive stage commits and proves under.
@@ -651,9 +650,9 @@ impl VerifyingKey {
   pub(crate) fn prepare(&self) -> PipelineResult<PreparedVerifyingKey> {
     Ok(PreparedVerifyingKey {
       id: self.id(),
-      verifier: super::super::stages::RecursiveVerifier::from_parts(
+      verifier: RecursiveVerifier::from_parts(
         self.system()?,
-        StageStatement::recursive(RECURSIVE_PUBLIC_VALUES),
+        ClaimTemplate::recursive(RECURSIVE_PUBLIC_VALUES),
         &self.keys()?,
         18,
       )?,
@@ -671,7 +670,7 @@ impl VerifyingKey {
 
 pub(crate) struct PreparedVerifyingKey {
   id: [u8; 32],
-  verifier: super::super::stages::RecursiveVerifier,
+  verifier: RecursiveVerifier,
 }
 
 impl PreparedVerifyingKey {
@@ -713,9 +712,9 @@ pub(crate) fn verify_saved(
 
 #[cfg(test)]
 mod tests {
-  use super::super::super::init_claim;
+  use super::super::super::init_fri::INIT_PUBLIC_WORDS;
   use super::*;
-  use crate::{foreign::KzgCircuitExt, kzg::Srs};
+  use crate::{foreign::KzgCircuitExt, kzg::Srs, test_support::TempDir};
   use ark_ec::CurveGroup;
   use ark_serialize::CanonicalSerialize;
   use multi_stark::{
@@ -781,7 +780,7 @@ mod tests {
       parameters: parameters.to_bytes()?,
     };
     let mut packet = vk.id().to_vec();
-    for word in init_claim::INIT_PUBLIC_WORDS {
+    for word in INIT_PUBLIC_WORDS {
       packet.extend(word.to_le_bytes());
     }
     packet.extend(pairing_bytes(&publics[18..])?);
@@ -794,10 +793,8 @@ mod tests {
   fn plonk_recursive_export_includes_anchor_and_deferred_publics()
   -> storage::Result<()> {
     let (vk, packet) = recursive_vk_fixture()?;
-    let expected = init_claim::INIT_PUBLIC_WORDS;
-    let directory = std::env::temp_dir()
-      .join(format!("plonk-recursive-claims-{}", std::process::id()));
-    fs::create_dir(&directory)?;
+    let expected = INIT_PUBLIC_WORDS;
+    let directory = TempDir::new("plonk-recursive-claims");
     final_export::write_export(
       &vk, &packet, &expected, &directory, "witness", true,
     )?;
@@ -821,7 +818,6 @@ mod tests {
       )
       .is_err()
     );
-    fs::remove_dir_all(directory)?;
     Ok(())
   }
 
@@ -848,8 +844,8 @@ mod tests {
       b"ignition-stage-anchors",
       128,
     )?;
-    let root = std::env::temp_dir()
-      .join(format!("ignition-stage-anchors-{}", std::process::id(),));
+    let scratch = TempDir::new("ignition-stage-anchors");
+    let root = scratch.join("stage");
     assert!(!root.exists());
     let config = StageConfig {
       setup: SetupConfig::Ignition { srs: root.join("absent-srs.bin") },
@@ -857,7 +853,7 @@ mod tests {
       prefetch_bytes: 0,
     };
     let error = frontend
-      .stage(assignment, &root, &init_claim::INIT_PUBLIC_WORDS, &config)
+      .stage(assignment, &root, &INIT_PUBLIC_WORDS, &config)
       .unwrap_err();
     assert!(error.to_string().contains("inner pairing anchors differ"));
     assert!(!root.exists());
@@ -867,10 +863,10 @@ mod tests {
   #[test]
   fn pinned_recursive_key_binds_claim_and_rejects_tampering()
   -> storage::Result<()> {
-    use super::super::super::verifier::verify_with_vk;
+    use super::super::super::verifying_keys::verify_with_vk;
     let (vk, packet) = recursive_vk_fixture()?;
     let claim = include_bytes!("../../../tests/fixtures/init-fri/claim.bin");
-    let expected = init_claim::INIT_PUBLIC_WORDS;
+    let expected = INIT_PUBLIC_WORDS;
     let portable = vk.to_bytes()?;
     let trusted = *blake3::hash(&portable).as_bytes();
     let verify =
@@ -918,7 +914,7 @@ mod tests {
     let vk = [17u8; 32];
     let packet_prefix = |wrong: bool| {
       let mut packet = vk.to_vec();
-      for v in init_claim::INIT_PUBLIC_WORDS {
+      for v in INIT_PUBLIC_WORDS {
         packet.extend(v.to_le_bytes());
       }
       let lhs = if wrong {
@@ -930,13 +926,8 @@ mod tests {
       (-inner.g1[0]).serialize_compressed(&mut packet).unwrap();
       packet
     };
-    let (claims, _) = packet_claims(
-      &packet_prefix(false),
-      &vk,
-      2,
-      &init_claim::INIT_PUBLIC_WORDS,
-    )
-    .unwrap();
+    let (claims, _) =
+      packet_claims(&packet_prefix(false), &vk, 2, &INIT_PUBLIC_WORDS).unwrap();
     let mut b = CircuitBuilder::new();
     let inputs: Vec<_> = (1..claims.len())
       .map(|i| {
@@ -960,7 +951,7 @@ mod tests {
     for wrong in [false, true] {
       let mut packet = packet_prefix(wrong);
       let (claims, _) =
-        packet_claims(&packet, &vk, 2, &init_claim::INIT_PUBLIC_WORDS).unwrap();
+        packet_claims(&packet, &vk, 2, &INIT_PUBLIC_WORDS).unwrap();
       let mut w = lowered.witness();
       for (&input, claim) in inputs.iter().zip(&claims[1..]) {
         w.set(input, claim[3]).unwrap();
@@ -973,15 +964,8 @@ mod tests {
       );
       packet.extend(codec.encode(&proof).unwrap());
       assert_eq!(
-        verify_packet(
-          &system,
-          &codec,
-          &packet,
-          &vk,
-          &keys,
-          &init_claim::INIT_PUBLIC_WORDS
-        )
-        .is_ok(),
+        verify_packet(&system, &codec, &packet, &vk, &keys, &INIT_PUBLIC_WORDS)
+          .is_ok(),
         !wrong
       );
       if !wrong {
@@ -994,7 +978,7 @@ mod tests {
             &changed,
             &vk,
             &keys,
-            &init_claim::INIT_PUBLIC_WORDS
+            &INIT_PUBLIC_WORDS
           )
           .is_err()
         );
@@ -1015,7 +999,7 @@ mod tests {
             &packet[..packet.len() - 1],
             &vk,
             &keys,
-            &init_claim::INIT_PUBLIC_WORDS
+            &INIT_PUBLIC_WORDS
           )
           .is_err()
         );
@@ -1027,7 +1011,7 @@ mod tests {
             &packet,
             &vk,
             &keys,
-            &init_claim::INIT_PUBLIC_WORDS
+            &INIT_PUBLIC_WORDS
           )
           .is_err()
         );
@@ -1037,14 +1021,12 @@ mod tests {
 
   fn init_packet_claims(inner: &Srs) -> Vec<Vec<Scalar>> {
     let mut prefix = [0u8; 32].to_vec();
-    for word in init_claim::INIT_PUBLIC_WORDS {
+    for word in INIT_PUBLIC_WORDS {
       prefix.extend(word.to_le_bytes());
     }
     inner.g1[1].serialize_compressed(&mut prefix).unwrap();
     (-inner.g1[0]).serialize_compressed(&mut prefix).unwrap();
-    packet_claims(&prefix, &[0u8; 32], 2, &init_claim::INIT_PUBLIC_WORDS)
-      .unwrap()
-      .0
+    packet_claims(&prefix, &[0u8; 32], 2, &INIT_PUBLIC_WORDS).unwrap().0
   }
 
   /// Stage a compiled fixture's metadata the way `Frontend::stage` does.
@@ -1077,9 +1059,7 @@ mod tests {
   #[test]
   fn fused_vks_prove_and_portable_verifiers_round_trip() -> storage::Result<()>
   {
-    let dir = std::env::temp_dir()
-      .join(format!("outer-staged-{}-v{OUTER_VK_VERSION}", std::process::id()));
-    fs::create_dir(&dir)?;
+    let dir = TempDir::new("outer-staged");
     let inner = Srs::unsafe_dev_setup(8, b"staged-inner");
     let keys = vec![inner.g2, inner.tau_g2];
     let claims = init_packet_claims(&inner);
@@ -1149,29 +1129,24 @@ mod tests {
     let claim = include_bytes!("../../../tests/fixtures/init-fri/claim.bin");
     let trusted = *blake3::hash(&portable).as_bytes();
     let verify_local = |claim: &[u8], expected, trusted: &[u8; 32], allow| {
-      super::super::super::verifier::verify_with_vk(
+      super::super::super::verifying_keys::verify_with_vk(
         &packet, claim, expected, &portable, trusted, allow,
       )
     };
     assert_eq!(
-      verify_local(claim, &init_claim::INIT_PUBLIC_WORDS, &trusted, true)?,
+      verify_local(claim, &INIT_PUBLIC_WORDS, &trusted, true)?,
       SetupClass::Development
     );
-    assert!(
-      verify_local(claim, &init_claim::INIT_PUBLIC_WORDS, &trusted, false)
-        .is_err()
-    );
+    assert!(verify_local(claim, &INIT_PUBLIC_WORDS, &trusted, false).is_err());
     let mut wrong_digest = trusted;
     wrong_digest[0] ^= 1;
     assert!(
-      verify_local(claim, &init_claim::INIT_PUBLIC_WORDS, &wrong_digest, true)
-        .is_err()
+      verify_local(claim, &INIT_PUBLIC_WORDS, &wrong_digest, true).is_err()
     );
     assert!(
-      verify_local(b"wrong", &init_claim::INIT_PUBLIC_WORDS, &trusted, true)
-        .is_err()
+      verify_local(b"wrong", &INIT_PUBLIC_WORDS, &trusted, true).is_err()
     );
-    let mut wrong_program = init_claim::INIT_PUBLIC_WORDS;
+    let mut wrong_program = INIT_PUBLIC_WORDS;
     wrong_program[0] ^= 1;
     assert!(verify_local(claim, &wrong_program, &trusted, true).is_err());
     let vk = VerifyingKey::from_bytes(&portable)?;
@@ -1191,7 +1166,7 @@ mod tests {
 
     // Verify using only the portable object after deleting the SRS and all checkpoints.
     fs::remove_dir_all(&dir)?;
-    vk.verify(&packet, &init_claim::INIT_PUBLIC_WORDS)?;
+    vk.verify(&packet, &INIT_PUBLIC_WORDS)?;
     let mut wrong_range: VerifyingKey = decode(&portable)?;
     wrong_range.heights[0] *= 2;
     assert!(wrong_range.system().is_err());
@@ -1259,9 +1234,7 @@ mod tests {
         assignment,
       ))
     };
-    let root = std::env::temp_dir()
-      .join(format!("kzg-recursive-fused-{}", std::process::id()));
-    fs::create_dir(&root)?;
+    let root = TempDir::new("kzg-recursive-fused");
     let mut outputs = vec![];
     for (name, private) in [("first", 7), ("same", 7), ("other", 9)] {
       let dir = root.join(name);
@@ -1272,7 +1245,7 @@ mod tests {
         assignment,
         &dir,
         b"recursive-fixture",
-        &init_claim::INIT_PUBLIC_WORDS,
+        &INIT_PUBLIC_WORDS,
         &crate::pipeline::StageConfig::development(),
       )?;
       let report: serde_json::Value =
@@ -1299,7 +1272,6 @@ mod tests {
     assert_eq!(outputs[0], outputs[1]);
     assert_ne!(outputs[1][0], outputs[2][0]);
     assert_eq!(outputs[1][2], outputs[2][2]);
-    fs::remove_dir_all(root)?;
     Ok(())
   }
 
@@ -1310,7 +1282,7 @@ mod tests {
     use crate::recursive::native_verifier::Plan;
     use multi_stark::{expr::Expr, lookup::Lookup, system::CircuitInputs};
     use p3_matrix::dense::RowMajorMatrix;
-    let words = init_claim::INIT_PUBLIC_WORDS;
+    let words = INIT_PUBLIC_WORDS;
     let srs = Arc::new(Srs::unsafe_dev_setup(8, b"constant-column-inner"));
     let (system, key) = System::new(
       KzgConfig::new(srs.clone(), 2),
@@ -1384,15 +1356,13 @@ mod tests {
     )?;
     let built = plan.build(&proof, &claims)?;
     let assignment = built.check()?;
-    let dir = std::env::temp_dir()
-      .join(format!("kzg-recursive-constant-{}", std::process::id()));
-    fs::create_dir(&dir)?;
+    let dir = TempDir::new("kzg-recursive-constant");
     stage(
       built,
       assignment,
       &dir,
       &plan.identity(),
-      &init_claim::INIT_PUBLIC_WORDS,
+      &INIT_PUBLIC_WORDS,
       &crate::pipeline::StageConfig::development(),
     )?;
     let packet = fs::read(dir.join("kzg/packet.bin"))?;
@@ -1400,7 +1370,6 @@ mod tests {
     let mut bad = packet.clone();
     bad[32 + 18 * 8 + 1] ^= 1;
     assert!(verify_saved(&dir, &bad, None).is_err());
-    fs::remove_dir_all(dir)?;
     Ok(())
   }
 }

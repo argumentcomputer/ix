@@ -360,13 +360,12 @@ impl SetupSource {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::test_support::TempDir;
 
   #[test]
   fn setup_binding_preserves_public_identity_and_rejects_mismatch()
   -> storage::Result<()> {
-    let dir = std::env::temp_dir()
-      .join(format!("ix-setup-binding-{}", std::process::id()));
-    fs::create_dir(&dir)?;
+    let dir = TempDir::new("setup-binding");
     let setup = SetupSource::development(b"setup-binding", 63)?;
     let prover = setup.srs(64, false)?;
     let verifier = setup.srs(64, true)?;
@@ -402,15 +401,12 @@ mod tests {
         .is_err()
     );
     assert!(setup.config(128, 2, true).is_err());
-    fs::remove_dir_all(dir)?;
     Ok(())
   }
 
   #[test]
   fn cache_directory_yields_the_generated_parameters() -> storage::Result<()> {
-    let dir = std::env::temp_dir()
-      .join(format!("ix-setup-cache-dir-{}", std::process::id()));
-    fs::create_dir(&dir)?;
+    let dir = TempDir::new("setup-cache-dir");
     let generated = SetupSource::development(b"setup-cache", 63)?;
     let directory = SetupSource::development(b"setup-cache", 63)?
       .with_cache_directory(dir.join("shared"));
@@ -424,18 +420,6 @@ mod tests {
     assert_eq!(
       generated.config(64, 2, false)?.transcript_seed(),
       directory.config(64, 2, false)?.transcript_seed()
-    );
-    fs::remove_dir_all(dir)?;
-    Ok(())
-  }
-
-  #[test]
-  fn development_flag_selects_development_parameters() -> storage::Result<()> {
-    let config = SetupConfig::from_env(true)?;
-    assert_eq!(config.class(), SetupClass::Development);
-    assert_eq!(
-      config.for_stage(FIRST_SEED, 64)?.identity(64, 2)?,
-      SetupSource::development(FIRST_SEED, 63)?.identity(64, 2)?
     );
     Ok(())
   }

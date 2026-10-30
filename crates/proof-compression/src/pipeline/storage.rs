@@ -159,12 +159,13 @@ pub(crate) fn load<T: DeserializeOwned>(path: &Path) -> Result<T> {
 #[cfg(all(test, feature = "groth16"))]
 mod tests {
   use super::*;
+  use crate::test_support::TempDir;
 
   #[test]
   fn key_cache_publishes_only_complete_keys_and_preserves_the_first()
   -> Result<()> {
-    let temporary = crate::pipeline::final_proof::Scratch::new()?;
-    let directory = temporary.0.join("keys");
+    let temporary = TempDir::new("key-cache");
+    let directory = temporary.join("keys");
     let failed = prepare_cached_directory(&directory, |staging| {
       write_atomic(&staging.join("key"), b"incomplete")?;
       Err("setup failed".into())

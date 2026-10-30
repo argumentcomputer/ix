@@ -107,14 +107,9 @@ static int check_fri(int device) {
 }
 
 static int checked_main(int argc, char **argv, char **envp) {
-    /* KZG proving belongs to the separate worker; the Lean executable keeps
-       only the Goldilocks backend for its aggregate prover. */
-    dlerror();
-    if (dlsym(RTLD_DEFAULT, "ix_kzg_memory")) {
-        fputs("CUDA link smoke: KZG proving code is linked into the Lean executable\n", stderr);
-        return 91;
-    }
-    dlerror();
+    /* Compression runs in process, so the executable carries the KZG
+       backend beside the Goldilocks one. */
+    require_symbol("ix_kzg_memory");
     memory_function memory =
         (memory_function)require_symbol("multi_stark_cuda_memory_info");
     fri_round_trip_function round_trip =

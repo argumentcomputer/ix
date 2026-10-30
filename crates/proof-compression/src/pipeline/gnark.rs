@@ -295,10 +295,10 @@ mod tests {
   #[ignore = "compiles the full Init verifier circuit"]
   fn compiles_init_without_changing_constraints() -> Result<()> {
     use sha2::Digest;
-    let directory = crate::pipeline::final_proof::Scratch::new()?;
+    let directory = crate::test_support::TempDir::new("gnark-compile");
     let schema =
-      include_bytes!("../../../../tools/plonk-wrapper/testdata/bn254/vk.json");
-    let path = directory.0.join("circuit.bin");
+      include_bytes!("../../../../tools/gnark/testdata/bn254/vk.json");
+    let path = directory.join("circuit.bin");
     let info = compile(schema, &path)?;
     assert_eq!(info.constraints, 14689440);
     assert_eq!(info.domain, 1 << 24);

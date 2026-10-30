@@ -213,7 +213,7 @@ def buildCargoArtifact (pkg : Package) (args : Array String) (tag : String)
   let gnark := plonk || groth16
   let groth16Cuda := groth16 && usesCuda args
   if gnark then
-    let go ← inputDir (pkg.dir / "tools/plonk-wrapper") false fun path =>
+    let go ← inputDir (pkg.dir / "tools/gnark") false fun path =>
       #["go", "h", "json", "bin"].contains (path.extension.getD "") ||
       path.fileName == "go.mod" || path.fileName == "go.sum"
     deps := deps.zipWith (fun _ _ => ()) go

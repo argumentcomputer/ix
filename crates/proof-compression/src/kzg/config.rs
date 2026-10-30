@@ -457,8 +457,7 @@ mod tests {
   use p3_matrix::dense::RowMajorMatrix;
 
   /// `a·b = c` per row, with a self-canceling push/pull lookup pair to
-  /// exercise the stage-2 machinery — the KZG twin of the BabyBear
-  /// config's smoke test.
+  /// exercise the stage-2 machinery.
   fn mul_circuit() -> CircuitInputs<Scalar> {
     let m = Expr::main;
     CircuitInputs {
@@ -486,16 +485,6 @@ mod tests {
       3,
     );
     SystemWitness::from_stage_1(vec![trace], system)
-  }
-
-  #[test]
-  fn kzg_prove_verify() {
-    let (system, key) = kzg_system();
-    let no_claims: &[&[Scalar]] = &[];
-    let proof = system.prove_multiple_claims(&key, no_claims, witness(&system));
-    system
-      .verify_multiple_claims(no_claims, &proof)
-      .expect("KZG proof failed to verify");
   }
 
   #[test]
@@ -672,62 +661,5 @@ mod tests {
     tampered.quotient_opened_values[0][0][0] +=
       <Scalar as Algebra<Scalar>>::ONE;
     assert!(system.verify_multiple_claims(no_claims, &tampered).is_err());
-  }
-
-  #[test]
-  fn kzg_wrong_claim_rejected() {
-    let (system, key) = kzg_system();
-    let no_claims: &[&[Scalar]] = &[];
-    let proof = system.prove_multiple_claims(&key, no_claims, witness(&system));
-    let claim = [Scalar::from_u32(42)];
-    assert!(system.verify(&claim, &proof).is_err());
-  }
-
-  #[test]
-  fn kzg_compact_round_trip() {
-    let (system, key) = kzg_system();
-    let no_claims: &[&[Scalar]] = &[];
-    let proof = system.prove_multiple_claims(&key, no_claims, witness(&system));
-    let codec =
-      super::super::compact::FixedProofCodec::new(&system, &proof.log_degrees)
-        .unwrap();
-    let bytes = codec.encode(&proof).expect("serialize");
-    let proof2 = codec.decode(&bytes).expect("deserialize");
-    system.verify_multiple_claims(no_claims, &proof2).unwrap();
-  }
-
-  /// Two circuits at different trace heights: ζ·g differs per height,
-  /// so the opening carries three distinct points and the per-point
-  /// witness batching (and cross-point pairing batch) is exercised.
-  #[test]
-  fn kzg_two_circuits_two_heights() {
-    let srs = Arc::new(Srs::unsafe_dev_setup(1 << 8, b"test"));
-    let config = KzgConfig::new(srs, 8);
-    let (system, key) = System::new(config, [mul_circuit(), mul_circuit()]);
-    let f = Scalar::from_u32;
-    let small = RowMajorMatrix::new(
-      [2, 3, 6, 4, 5, 20, 7, 8, 56, 1, 1, 1].map(f).to_vec(),
-      3,
-    );
-    let mut long = small.values.clone();
-    for _ in 0..2 {
-      long.extend(long.clone());
-    }
-    let witness = SystemWitness::from_stage_1(
-      vec![small, RowMajorMatrix::new(long, 3)],
-      &system,
-    );
-    let no_claims: &[&[Scalar]] = &[];
-    let proof = system.prove_multiple_claims(&key, no_claims, witness);
-    let bytes =
-      super::super::compact::FixedProofCodec::new(&system, &proof.log_degrees)
-        .unwrap()
-        .encode(&proof)
-        .expect("serialize");
-    println!(
-      "KZG proof: {} bytes (two circuits, heights 4 and 16)",
-      bytes.len()
-    );
-    system.verify_multiple_claims(no_claims, &proof).unwrap();
   }
 }

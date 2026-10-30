@@ -6,3 +6,5 @@ pub mod fri;
 pub mod kzg;
 pub mod pipeline;
 pub mod recursive;
+#[cfg(test)]
+mod test_support;

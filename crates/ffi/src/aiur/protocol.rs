@@ -1403,9 +1403,9 @@ fn prove_shards_ahead(
     let mut next = 0usize;
     let mut in_flight = 0usize;
     let mut done = 0usize;
-    // Shards that outgrew their share, to rerun alone once the lane is
-    // empty; while one is pending, nothing new starts ahead, so the lane
-    // drains for it.
+    // Shards that outgrew their share, to rerun alone once nothing else
+    // is executing; while one is pending, nothing new starts ahead, so the
+    // running executions drain for it.
     let mut alone: std::collections::VecDeque<usize> =
       std::collections::VecDeque::new();
     let mut alone_running = false;
@@ -1419,8 +1419,9 @@ fn prove_shards_ahead(
         let _ = done_tx.send((k, is_alone, result));
       });
     };
-    // Admission: an alone rerun waits for an empty lane and runs by
-    // itself; otherwise up to `jobs` executions run ahead at their share.
+    // Admission: an alone rerun waits until nothing else is executing and
+    // runs by itself; otherwise up to `jobs` executions run ahead at their
+    // share.
     // Run before each proof as well as at the start, so a slot freed by a
     // record the prover takes is refilled while that record proves.
     macro_rules! admit {

@@ -44,8 +44,8 @@ jobs:
           use-github-cache: "false"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/plonk-wrapper/go.mod
-          cache-dependency-path: tools/plonk-wrapper/go.sum
+          go-version-file: tools/gnark/go.mod
+          cache-dependency-path: tools/gnark/go.sum
       # lean-action runs `lake build`, then `lake test`, then `lake lint`.
       # The build-all lint driver compiles every lib/exe target with --wfail,
       # so a warning in any target (exes, benchmarks, Apps) — not just the
@@ -95,13 +95,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/plonk-wrapper/go.mod
-          cache-dependency-path: tools/plonk-wrapper/go.sum
+          go-version-file: tools/gnark/go.mod
+          cache-dependency-path: tools/gnark/go.sum
       - name: Test the BN254 CPU wrapper
-        working-directory: tools/plonk-wrapper
+        working-directory: tools/gnark
         run: go test ./...
       - name: Check Go formatting
-        working-directory: tools/plonk-wrapper
+        working-directory: tools/gnark
         run: test -z "$(gofmt -l .)"
 
   rust-test:
@@ -135,8 +135,8 @@ jobs:
           use-github-cache: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/plonk-wrapper/go.mod
-          cache-dependency-path: tools/plonk-wrapper/go.sum
+          go-version-file: tools/gnark/go.mod
+          cache-dependency-path: tools/gnark/go.sum
       # A push to main already passed the lints and tests in the merge
       # queue; that run only builds, so the sticky disk holds the check,
       # clippy and test-binary artifacts the next PR run will fingerprint.
@@ -197,8 +197,8 @@ jobs:
           cache-key: cuda-13.3.1-ubuntu26
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: tools/plonk-wrapper/go.mod
-          cache-dependency-path: tools/plonk-wrapper/go.sum
+          go-version-file: tools/gnark/go.mod
+          cache-dependency-path: tools/gnark/go.sum
       # S3 caching keeps the container independent of host bind mounts.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -211,8 +211,8 @@ jobs:
           use-github-cache: false
       - name: Build pinned BN254 ICICLE libraries
         run: |
-          go -C tools/plonk-wrapper mod download github.com/ingonyama-zk/icicle-gnark/v3
-          icicleSource=$(go -C tools/plonk-wrapper list -m -f '{{.Dir}}' github.com/ingonyama-zk/icicle-gnark/v3)
+          go -C tools/gnark mod download github.com/ingonyama-zk/icicle-gnark/v3
+          icicleSource=$(go -C tools/gnark list -m -f '{{.Dir}}' github.com/ingonyama-zk/icicle-gnark/v3)
           cmake -S "$icicleSource/icicle" -B "$RUNNER_TEMP/icicle-build" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/icicle" \
             -DCURVE=bn254 -DMSM=ON -DNTT=ON -DG2=ON -DCPU_BACKEND=OFF \

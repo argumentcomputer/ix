@@ -628,16 +628,16 @@ pub(super) fn wrap_packet(
 }
 
 #[cfg(test)]
-mod bn254_tests {
+mod tests {
   use super::*;
 
   #[test]
   #[cfg(feature = "plonk")]
   fn development_parameters_need_no_ignition_and_bind_the_cache() -> Result<()>
   {
-    let temporary = super::super::final_proof::Scratch::new()?;
+    let temporary = crate::test_support::TempDir::new("plonk-parameters");
     let setup = SetupConfig::Development { cache_directory: None };
-    let root = temporary.0.join("parameters");
+    let root = temporary.join("parameters");
     let (path, checksum) = cached_parameters(8, &root, &setup)?;
     let (again, same_checksum) = cached_parameters(8, &root, &setup)?;
     assert_eq!((path.clone(), checksum), (again, same_checksum));

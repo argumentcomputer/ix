@@ -18,8 +18,8 @@ use p3_field::PrimeCharacteristicRing;
 use std::{fs, path::Path, time::Instant};
 
 #[cfg(test)]
-use super::init_claim;
-use super::stages::construct::{self, FriConstruction, Lowered, max_height};
+use super::init_fri::INIT_PUBLIC_WORDS;
+use super::lowering::{self, FriConstruction, Lowered, max_height};
 use super::{
   fixed_cache::FixedCache,
   prover::FixedSetup,
@@ -31,7 +31,7 @@ use super::{init_fri, prover};
 /// Partitions of the supported Init layout: ten carry the public words and
 /// the rest are tables, which only exist above eleven partitions.
 pub(super) const MIN_PARTITIONS: usize = 11;
-pub(super) use super::stages::statement::first_claims as expected_claims;
+pub(super) use super::claims::first_claims as expected_claims;
 
 /// Translate, lower and prove the saved FRI proof in `fri`, writing the
 /// first KZG stage to `out`.
@@ -59,8 +59,8 @@ pub(super) fn run(
     fixture.claims,
   )?;
   assert_eq!(prepared.public_values(), fixture.public);
-  let public = super::stages::scalar_statement(&fixture.public);
-  let lowered = construct::prepare_first(prepared, trace_height)?;
+  let public = super::stage::scalar_statement(&fixture.public);
+  let lowered = lowering::prepare_first(prepared, trace_height)?;
   assert_eq!(lowered.assignment.public_values(), public);
   eprintln!(
     "Scalar translation and lowering of {} circuits: {:?}; {:?}",
@@ -129,7 +129,7 @@ pub(super) fn fixed_cache(
 /// fixed preprocessing comes from or is published to its entry, and the
 /// result says which, with the plan identity the entry is keyed by.
 pub(super) fn setup(
-  fri: &super::stages::FriVerifier,
+  fri: &super::FriVerifier,
   log_height: usize,
   config: &super::SetupConfig,
   cache: Option<&Path>,
@@ -140,17 +140,17 @@ pub(super) fn setup(
 )> {
   let plan = VerifierPlan::validate(
     &fri.key,
-    construct::fri_profile(&fri.key, &fri.statement.template)?,
+    lowering::fri_profile(&fri.key, &fri.statement.template)?,
     VerifierLimits::default(),
   )?;
   let schema = fri.statement.schema();
   let plan_id = plan.identity(&schema)?;
   let circuit = FriConstruction::build(&plan, schema)?.circuit;
   drop(plan);
-  let (compiled, _inputs) = construct::first_circuit(circuit, 1 << log_height)?;
+  let (compiled, _inputs) = lowering::first_circuit(circuit, 1 << log_height)?;
   let height = max_height(&compiled)?;
   let setup = config.for_stage(FIRST_SEED, height)?;
-  let public = super::stages::scalar_statement(&[Val::ZERO; 18]);
+  let public = super::stage::scalar_statement(&[Val::ZERO; 18]);
   let manifest = storage::Manifest::for_compiled(
     &compiled,
     compiled.claims(&public)?,
@@ -286,6 +286,7 @@ fn prove(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::test_support::TempDir;
   use multi_stark::plonkish::gadgets::ByteGadgets;
   use multi_stark::plonkish::gadgets::blake3;
   use multi_stark::plonkish::{CircuitBuilder, Value};
@@ -336,7 +337,7 @@ mod tests {
       builder.assert_equal(input.value(), seven);
     }
     let public: Vec<_> =
-      init_claim::INIT_PUBLIC_WORDS.into_iter().map(Scalar::from_u64).collect();
+      INIT_PUBLIC_WORDS.into_iter().map(Scalar::from_u64).collect();
     for &word in &public {
       let value = builder.constant(word);
       builder.expose_public(value);
@@ -386,11 +387,7 @@ mod tests {
   }
 
   fn prove_fixture(log_height: usize) -> storage::Result<usize> {
-    let root = std::env::temp_dir().join(format!(
-      "init-fri-kzg-fixture-{}-{log_height}",
-      std::process::id()
-    ));
-    fs::create_dir(&root)?;
+    let root = TempDir::new(&format!("init-fri-kzg-fixture-{log_height}"));
     let fixture = fixture(log_height)?;
     let (compiled, public) = (&fixture.compiled, &fixture.public);
     assert_eq!(compiled.num_circuits(), if log_height == 16 { 12 } else { 11 });
@@ -531,7 +528,6 @@ mod tests {
     }
     fs::create_dir(&damaged)?;
     assert!(cache.restore(&damaged)?.is_some());
-    fs::remove_dir_all(root)?;
     Ok(first[0].len())
   }
 }

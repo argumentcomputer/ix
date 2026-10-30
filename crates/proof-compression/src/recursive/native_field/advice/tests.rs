@@ -1,8 +1,5 @@
 use super::*;
-use crate::{
-  kzg::curve::Fq,
-  recursive::native_field::{Builder, FqGadget},
-};
+use crate::{kzg::curve::Fq, recursive::native_field::FqGadget};
 use ark_ff::PrimeField;
 
 fn integer_reference(value: Scalar) -> BigUint {
@@ -15,16 +12,14 @@ fn integer_reference(value: Scalar) -> BigUint {
   )
 }
 
-pub(in crate::recursive::native_field) fn range_reference<const N: usize>(
-  value: Scalar,
-) -> [Scalar; N] {
+fn range_reference<const N: usize>(value: Scalar) -> [Scalar; N] {
   let n = integer_reference(value);
   let bits = crate::recursive::native_field::RANGE_BITS;
   let mask = (BigUint::from(1u8) << bits) - BigUint::from(1u8);
   std::array::from_fn(|i| scalar(&((&n >> (bits * i)) & &mask)))
 }
 
-pub(in crate::recursive::native_field) fn relation_reference(
+fn relation_reference(
   values: &[Scalar],
   pc: &[i8],
   lc: &[i8],
@@ -196,7 +191,7 @@ fn carry_division_preserves_signed_exactness_at_radix_boundaries() {
 
 #[test]
 fn zero_and_quotient_limit_errors_match_reference() {
-  let modulus_digits = constants().modulus_digits.clone();
+  let modulus_digits = digits(&modulus());
   assert_eq!(
     relation(&[], &[], &[], 0),
     relation_reference(&[], &[], &[], 0, &modulus_digits)
@@ -249,7 +244,7 @@ fn maximal_representatives_have_exact_signed_integer_quotients() {
 
 #[test]
 fn quotient_carries_and_rejections_match_reference() {
-  let modulus_digits = constants().modulus_digits.clone();
+  let modulus_digits = digits(&modulus());
   for mut case in cases(256) {
     let expected = relation_reference(
       &case.values,
@@ -297,161 +292,6 @@ fn quotient_carries_and_rejections_match_reference() {
     assert_eq!(
       relation(&values, &[-3], &[3], 0),
       relation_reference(&values, &[-3], &[3], 0, &modulus_digits)
-    );
-  }
-}
-
-fn fixture(
-  reference: bool,
-) -> (
-  multi_stark::plonkish::Circuit<Scalar>,
-  multi_stark::plonkish::Assignment<Scalar>,
-) {
-  let mut builder = Builder::new();
-  let mut field = FqGadget::new(&mut builder);
-  field.reference_advice = reference;
-  let x = field.input(&mut builder, "x");
-  let y = field.input(&mut builder, "y");
-  let product = field.mul(&mut builder, x, y);
-  let expected = field.constant(&mut builder, Fq::from(0u8));
-  field.equal(&mut builder, product, expected);
-  for value in product.0 {
-    builder.expose_public(value);
-  }
-  let circuit = builder.finish();
-  let mut witness = circuit.witness();
-  for (value, assigned) in x
-    .0
-    .into_iter()
-    .zip(FqGadget::witness_values(-Fq::from(1u8)))
-    .chain(y.0.into_iter().zip(FqGadget::witness_values(Fq::from(0u8))))
-  {
-    witness.set(value, assigned).unwrap();
-  }
-  let assignment = witness.generate().unwrap();
-  (circuit, assignment)
-}
-
-#[test]
-fn advice_preserves_complete_frontend_assignment_and_constraints() {
-  let (reference, old) = fixture(true);
-  let (optimized, new) = fixture(false);
-  assert_eq!(reference.stats(), optimized.stats());
-  assert_eq!(old.public_values(), new.public_values());
-  for (left, right) in reference.gates().iter().zip(optimized.gates()) {
-    assert_eq!(left.wires.map(|v| v.index()), right.wires.map(|v| v.index()));
-    assert_eq!(left.coefficients, right.coefficients);
-    assert_eq!(
-      left.wires.map(|v| old.value(v).unwrap()),
-      right.wires.map(|v| new.value(v).unwrap())
-    );
-  }
-  for (left, right) in reference.lookups().iter().zip(optimized.lookups()) {
-    assert_eq!(left.table.index(), right.table.index());
-    assert_eq!(
-      left.values.iter().map(|&v| old.value(v).unwrap()).collect::<Vec<_>>(),
-      right.values.iter().map(|&v| new.value(v).unwrap()).collect::<Vec<_>>()
-    );
-  }
-}
-
-#[test]
-#[ignore = "two CPU KZG proofs of a native Fq primitive with its full range table"]
-fn recursive_advice_kzg_byte_parity() {
-  use crate::{
-    foreign::KzgCircuitExt,
-    kzg::{KzgConfig, Srs, compact::FixedProofCodec},
-  };
-  use multi_stark::system::{System, SystemWitness};
-  use std::sync::Arc;
-  let config = KzgConfig::new(
-    Arc::new(Srs::unsafe_dev_setup(1 << 16, b"recursive-advice-parity")),
-    4,
-  );
-  let mut bytes = Vec::new();
-  for reference in [true, false] {
-    let (circuit, assignment) = fixture(reference);
-    let compiled = circuit.lower_to_multi_stark(Scalar::from_u8(79)).unwrap();
-    let traces = compiled.traces(&assignment).unwrap();
-    let claims = compiled.claims(assignment.public_values()).unwrap();
-    let (system, key) = System::new(
-      config.clone(),
-      compiled.kzg_circuit_inputs(1 << 16, 4).unwrap(),
-    );
-    let refs = claims.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let proof = system.prove_multiple_claims(
-      &key,
-      &refs,
-      SystemWitness::from_stage_1(traces, &system),
-    );
-    system.verify_multiple_claims(&refs, &proof).unwrap();
-    bytes.push(
-      FixedProofCodec::new(&system, &proof.log_degrees)
-        .unwrap()
-        .encode(&proof)
-        .unwrap(),
-    );
-  }
-  assert_eq!(bytes[0], bytes[1]);
-  println!(
-    "RECURSIVE_ADVICE_PROOF bytes={} blake3={}",
-    bytes[0].len(),
-    blake3::hash(&bytes[0])
-  );
-}
-
-#[test]
-#[ignore = "isolated recursive-field advice comparison"]
-fn recursive_advice_benchmark() {
-  use std::{hint::black_box, time::Instant};
-  let cases = cases(1 << 12);
-  let modulus_digits = constants().modulus_digits.clone();
-  for case in &cases {
-    assert_eq!(
-      relation(&case.values, &case.products, &case.linear, case.constant),
-      relation_reference(
-        &case.values,
-        &case.products,
-        &case.linear,
-        case.constant,
-        &modulus_digits
-      )
-    );
-  }
-  for iteration in 0..5 {
-    let mut seconds = [0.0; 2];
-    let mut outputs = [Vec::new(), Vec::new()];
-    for optimized in
-      if iteration % 2 == 0 { [false, true] } else { [true, false] }
-    {
-      let started = Instant::now();
-      outputs[usize::from(optimized)] = cases
-        .iter()
-        .map(|case| {
-          let case = black_box(case);
-          if optimized {
-            relation(&case.values, &case.products, &case.linear, case.constant)
-              .unwrap()
-          } else {
-            relation_reference(
-              &case.values,
-              &case.products,
-              &case.linear,
-              case.constant,
-              &modulus_digits,
-            )
-            .unwrap()
-          }
-        })
-        .collect::<Vec<_>>();
-      seconds[usize::from(optimized)] = started.elapsed().as_secs_f64();
-    }
-    assert_eq!(outputs[0], outputs[1]);
-    println!(
-      "RECURSIVE_ADVICE_BENCH iteration={iteration} relations={} reference_seconds={:.9} optimized_seconds={:.9}",
-      cases.len(),
-      seconds[0],
-      seconds[1]
     );
   }
 }

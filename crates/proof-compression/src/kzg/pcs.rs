@@ -417,7 +417,7 @@ pub enum KzgError {
 pub struct KzgPcs {
   srs: Option<Arc<Srs>>,
   #[cfg(feature = "cuda")]
-  srs_owner: Option<Arc<cuda::srs_cache::Owner>>,
+  srs_owner: Option<Arc<cuda::srs_residency::Owner>>,
   verifier: super::VerifierParams,
   max_quotient_degree: usize,
 }
@@ -532,7 +532,7 @@ impl KzgPcs {
     let constants = matrix.constant_columns();
     let width = selected.len();
     let height = domain.size();
-    let mut values = super::buffer::generate(width * height, |index| {
+    let mut values = generate_buffer(width * height, |index| {
       let column = selected[index % width];
       if constants[column] {
         Scalar(views[column].0[0])
@@ -590,7 +590,7 @@ impl KzgPcs {
     Self::validate_quotient_domain(&verifier, max_quotient_degree);
     Self {
       #[cfg(feature = "cuda")]
-      srs_owner: Some(cuda::srs_cache::Owner::new(Arc::clone(&srs))),
+      srs_owner: Some(cuda::srs_residency::Owner::new(Arc::clone(&srs))),
       srs: Some(srs),
       verifier,
       max_quotient_degree,
@@ -628,7 +628,7 @@ impl KzgPcs {
   }
 
   #[cfg(feature = "cuda")]
-  fn srs_owner(&self) -> &Arc<cuda::srs_cache::Owner> {
+  fn srs_owner(&self) -> &Arc<cuda::srs_residency::Owner> {
     self.srs_owner.as_ref().expect("proving requires the full SRS")
   }
 
@@ -711,8 +711,8 @@ impl KzgPcs {
           .map(|&i| (views[i].0, residents.and_then(|r| r[i].as_deref())))
           .collect();
         let started = std::time::Instant::now();
-        let points = if cuda::srs_cache::enabled() {
-          cuda::srs_cache::msm_columns(self.srs_owner(), 0, &inputs)
+        let points = if cuda::srs_residency::enabled() {
+          cuda::srs_residency::msm_columns(self.srs_owner(), 0, &inputs)
         } else {
           cuda::msm_columns_resident(&self.prover_srs().g1[..count], &inputs)
         };
@@ -774,8 +774,8 @@ impl KzgPcs {
     }
     #[cfg(feature = "cuda")]
     if coeffs.len() >= 1 << 12 {
-      if cuda::srs_cache::enabled() {
-        return cuda::srs_cache::msm_columns(
+      if cuda::srs_residency::enabled() {
+        return cuda::srs_residency::msm_columns(
           self.srs_owner(),
           0,
           &[(coeffs, None)],
@@ -826,7 +826,7 @@ impl KzgPcs {
       (0..width)
         .into_par_iter()
         .map(|column| {
-          super::buffer::generate(matrix.height(), |row| {
+          generate_buffer(matrix.height(), |row| {
             matrix.values[row * width + column].0
           })
         })
@@ -1289,8 +1289,12 @@ impl KzgPcs {
   fn witness(&self, combined: Vec<Fr>, z: Fr) -> G1Projective {
     #[cfg(feature = "cuda")]
     if combined.len() >= 1 << 16 {
-      let witness = if cuda::srs_cache::enabled() {
-        cuda::srs_cache::single_device_opening(self.srs_owner(), &combined, z)
+      let witness = if cuda::srs_residency::enabled() {
+        cuda::srs_residency::single_device_opening(
+          self.srs_owner(),
+          &combined,
+          z,
+        )
       } else {
         cuda::single_device_opening(
           &self.prover_srs().g1[..combined.len() - 1],
@@ -1379,6 +1383,26 @@ fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
   p
 }
 
+/// Parallel first-touch initialization of a large field buffer.
+pub(super) fn generate_buffer<T: Copy + Send>(
+  len: usize,
+  value: impl Fn(usize) -> T + Sync,
+) -> Vec<T> {
+  let mut output: Vec<T> = Vec::with_capacity(len);
+  output.spare_capacity_mut()[..len]
+    .par_chunks_mut(1 << 14)
+    .enumerate()
+    .for_each(|(tile, chunk)| {
+      for (offset, slot) in chunk.iter_mut().enumerate() {
+        slot.write(value((tile << 14) + offset));
+      }
+    });
+  // Every slot is initialized after the parallel iterator joins. T is Copy,
+  // so a panic during initialization cannot leak partially constructed values.
+  unsafe { output.set_len(len) };
+  output
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1417,9 +1441,9 @@ mod tests {
   }
 
   #[test]
-  fn checkpoints_reject_other_curves_and_oversized_domains() {
+  fn checkpoints_reject_wrong_magic_and_oversized_domains() {
     let pcs =
-      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(4, b"checkpoint-curve")), 2);
+      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(4, b"checkpoint-magic")), 2);
     let domain = pcs.natural_domain_for_degree(4);
     let (commitment, data) =
       pcs.commit(vec![(domain, RowMajorMatrix::new_col(vec![Scalar::ONE; 4]))]);
@@ -1428,10 +1452,9 @@ mod tests {
     let decoded = KzgProverData::read_checkpoint(bytes.as_slice()).unwrap();
     assert_eq!(decoded.commitment, commitment);
 
-    let mut wrong_curve = bytes.clone();
-    let other_magic = b"IXKZGCP4";
-    wrong_curve[..8].copy_from_slice(other_magic);
-    assert!(KzgProverData::read_checkpoint(wrong_curve.as_slice()).is_err());
+    let mut wrong_magic = bytes.clone();
+    wrong_magic[7] ^= 1;
+    assert!(KzgProverData::read_checkpoint(wrong_magic.as_slice()).is_err());
 
     let log_offset = 8 + commitment.0.compressed_size() + 8;
     bytes[log_offset..log_offset + 8]
@@ -1505,7 +1528,7 @@ mod tests {
   }
 
   #[test]
-  fn constant_coefficients_match_dense_commitments_evaluations_and_openings() {
+  fn constant_columns_match_dense_data_and_survive_checkpoints() {
     let pcs =
       KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(32, b"constant-columns")), 2);
     let domain = pcs.natural_domain_for_degree(16);
@@ -1551,19 +1574,29 @@ mod tests {
       pcs.open(vec![(&compact, points.clone())], &mut KzgTranscript::default()),
       pcs.open(vec![(&dense, points)], &mut KzgTranscript::default())
     );
+
+    // Columns are classified individually, and a checkpoint keeps the split.
+    let (_, mixed) = pcs.commit(vec![(
+      domain,
+      RowMajorMatrix::new(
+        (0..16)
+          .flat_map(|row| [Scalar::from_u8(7), Scalar::from_usize(row)])
+          .collect(),
+        2,
+      ),
+    )]);
+    assert_eq!(mixed.matrices[0].constant_columns(), [true, false]);
+    let mut bytes = Vec::new();
+    mixed.write_checkpoint(&mut bytes).unwrap();
+    let loaded = KzgProverData::read_checkpoint(bytes.as_slice()).unwrap();
+    assert_eq!(loaded.matrices[0].constant_columns(), [true, false]);
   }
 
   #[test]
   fn disk_coefficients_match_resident_and_detect_changes() {
     use std::io::{Seek, SeekFrom, Write};
-    let path = std::env::temp_dir().join(format!(
-      "kzg-columns-{}-{}.bin",
-      std::process::id(),
-      std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
-    ));
+    let directory = crate::test_support::TempDir::new("kzg-columns");
+    let path = directory.join("columns.bin");
     let mut file = std::fs::File::create_new(&path).unwrap();
     let pcs =
       KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(1 << 17, b"disk-columns")), 2);
@@ -1619,9 +1652,6 @@ mod tests {
     file.set_len(0).unwrap();
     assert!(disk.matrices[0].columns[0].load().is_err());
     assert!(KzgProverData::read_checkpoint_file(&path).is_err());
-    drop(file);
-    drop(disk);
-    std::fs::remove_file(path).unwrap();
   }
 
   #[test]
@@ -1668,25 +1698,6 @@ mod tests {
     )
     .unwrap();
     assert_eq!(pcs.msm(&coefficients), expected);
-  }
-
-  #[test]
-  fn constant_columns_are_detected_on_commit_and_checkpoint_load() {
-    let pcs =
-      KzgPcs::new(Arc::new(Srs::unsafe_dev_setup(16, b"constant-columns")), 4);
-    let domain = pcs.natural_domain_for_degree(16);
-    let matrix = RowMajorMatrix::new(
-      (0..16)
-        .flat_map(|row| [Scalar::from_u8(7), Scalar::from_usize(row)])
-        .collect(),
-      2,
-    );
-    let (_, data) = pcs.commit(vec![(domain, matrix)]);
-    assert_eq!(data.matrices[0].constant_columns(), [true, false]);
-    let mut bytes = Vec::new();
-    data.write_checkpoint(&mut bytes).unwrap();
-    let loaded = KzgProverData::read_checkpoint(bytes.as_slice()).unwrap();
-    assert_eq!(loaded.matrices[0].constant_columns(), [true, false]);
   }
 
   #[test]

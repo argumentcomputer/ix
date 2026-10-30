@@ -128,6 +128,3 @@ fn divide_carry(carry: &mut BigInt) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-pub(super) use tests::{range_reference, relation_reference};

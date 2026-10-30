@@ -37,7 +37,7 @@ def run(command, log, environment, *, success=True, expected_error=None):
     }
 
 
-def build(curve, cuda, directory, environment):
+def build(cuda, directory, environment):
     mode = 'cuda' if cuda else 'cpu'
     features = 'parallel' + (',cuda' if cuda else '')
     command = [
@@ -98,11 +98,9 @@ def main():
         parser.error('output directory must be empty')
     root.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ, RUST_LOG='ix_proof_compression=debug')
-    curves = ['bn254']
     report = {
         'baseline_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
-        'scope': 'Two ordinary KZG circuits at 4096/8192 rows with development parameters; no FRI or recursive KZG proving.',
-        'curves': {},
+        'scope': 'Two ordinary BN254 KZG circuits at 4096/8192 rows with development parameters; no FRI or recursive KZG proving.',
     }
     sources = subprocess.check_output([
         'git', 'ls-files', '--cached', '--others', '--exclude-standard', '--',
@@ -111,49 +109,45 @@ def main():
     ], text=True).splitlines()
     report['source_sha256'] = {p: sha256(Path(p)) for p in sorted(set(sources))
         if Path(p).suffix in {'.rs', '.cu', '.cuh', '.cpp', '.h', '.hpp', '.toml', '.lock', '.py'}}
-    for curve in curves:
-        directory = root / curve
-        directory.mkdir()
-        cpu, cpu_build = build(curve, False, directory, environment)
-        cpu_env = dict(environment, CUDA_VISIBLE_DEVICES='')
-        cpu_run = run([str(cpu), 'prove', str(directory / 'cpu'), 'cpu'], directory / 'prove-cpu.log', cpu_env)
-        reference = json.loads((directory / 'cpu' / 'report.json').read_text())
-        gpu, gpu_build = build(curve, True, directory, environment)
-        gpu_env = dict(environment, CUDA_VISIBLE_DEVICES='0')
-        gpu_env['LD_LIBRARY_PATH'] = str(directory / 'lib') + (
-            ':' + environment['LD_LIBRARY_PATH'] if environment.get('LD_LIBRARY_PATH') else '')
-        runs = {'cpu': cpu_run}
-        for mode in ['dense', 'passes', 'cached']:
-            log = directory / f'prove-{mode}.log'
-            runs[mode] = run([str(gpu), 'prove', str(directory / mode), mode], log, gpu_env)
-            runs[mode]['dispatch'] = check_dispatch(log, mode)
-            candidate = json.loads((directory / mode / 'report.json').read_text())
-            for key in ['curve', 'input_blake3', 'proof_blake3', 'verifier_blake3']:
-                if candidate[key] != reference[key]:
-                    raise RuntimeError(f'{curve} {mode}: {key} differs from CPU')
-            for artifact in ['proof.bin', 'vk.bin']:
-                if (directory / mode / artifact).read_bytes() != (directory / 'cpu' / artifact).read_bytes():
-                    raise RuntimeError(f'{curve} {mode}: {artifact} differs from CPU')
-        verifier = directory / 'cpu' / 'vk.bin'
-        pin = reference['verifier_blake3']
-        verified = []
-        for mode in runs:
-            verified.append(run([str(cpu), 'verify', str(directory / mode / 'proof.bin'), str(verifier), pin],
-                directory / f'verify-{mode}-on-cpu.log', cpu_env))
-        verified.append(run([str(gpu), 'verify', str(directory / 'cpu' / 'proof.bin'), str(verifier), pin],
-            directory / 'verify-cpu-on-cuda-binary.log', dict(gpu_env, CUDA_VISIBLE_DEVICES='')))
-        rejected = run([str(cpu), 'verify', str(directory / 'cpu' / 'proof.bin'), str(verifier), '0' * 64],
-            directory / 'reject-verifier-pin.log', cpu_env, success=False,
-            expected_error='verifier differs from the independently supplied pin')
-        report['curves'][curve] = {
-            'builds': [cpu_build, gpu_build], 'proving_runs': runs, 'verification_runs': verified,
-            'wrong_pin_rejection': rejected, 'proof_bytes': reference['proof_bytes'],
-            'proof_blake3': reference['proof_blake3'], 'verifier_blake3': pin,
-            'input_blake3': reference['input_blake3'], 'exact_byte_parity': True,
-        }
-        (root / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+    cpu, cpu_build = build(False, root, environment)
+    cpu_env = dict(environment, CUDA_VISIBLE_DEVICES='')
+    cpu_run = run([str(cpu), 'prove', str(root / 'cpu'), 'cpu'], root / 'prove-cpu.log', cpu_env)
+    reference = json.loads((root / 'cpu' / 'report.json').read_text())
+    gpu, gpu_build = build(True, root, environment)
+    gpu_env = dict(environment, CUDA_VISIBLE_DEVICES='0')
+    gpu_env['LD_LIBRARY_PATH'] = str(root / 'lib') + (
+        ':' + environment['LD_LIBRARY_PATH'] if environment.get('LD_LIBRARY_PATH') else '')
+    runs = {'cpu': cpu_run}
+    for mode in ['dense', 'passes', 'cached']:
+        log = root / f'prove-{mode}.log'
+        runs[mode] = run([str(gpu), 'prove', str(root / mode), mode], log, gpu_env)
+        runs[mode]['dispatch'] = check_dispatch(log, mode)
+        candidate = json.loads((root / mode / 'report.json').read_text())
+        for key in ['curve', 'input_blake3', 'proof_blake3', 'verifier_blake3']:
+            if candidate[key] != reference[key]:
+                raise RuntimeError(f'{mode}: {key} differs from CPU')
+        for artifact in ['proof.bin', 'vk.bin']:
+            if (root / mode / artifact).read_bytes() != (root / 'cpu' / artifact).read_bytes():
+                raise RuntimeError(f'{mode}: {artifact} differs from CPU')
+    verifier = root / 'cpu' / 'vk.bin'
+    pin = reference['verifier_blake3']
+    verified = []
+    for mode in runs:
+        verified.append(run([str(cpu), 'verify', str(root / mode / 'proof.bin'), str(verifier), pin],
+            root / f'verify-{mode}-on-cpu.log', cpu_env))
+    verified.append(run([str(gpu), 'verify', str(root / 'cpu' / 'proof.bin'), str(verifier), pin],
+        root / 'verify-cpu-on-cuda-binary.log', dict(gpu_env, CUDA_VISIBLE_DEVICES='')))
+    rejected = run([str(cpu), 'verify', str(root / 'cpu' / 'proof.bin'), str(verifier), '0' * 64],
+        root / 'reject-verifier-pin.log', cpu_env, success=False,
+        expected_error='verifier differs from the independently supplied pin')
+    report.update({
+        'builds': [cpu_build, gpu_build], 'proving_runs': runs, 'verification_runs': verified,
+        'wrong_pin_rejection': rejected, 'proof_bytes': reference['proof_bytes'],
+        'proof_blake3': reference['proof_blake3'], 'verifier_blake3': pin,
+        'input_blake3': reference['input_blake3'], 'exact_byte_parity': True,
+    })
     (root / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
-    print(json.dumps({'report': str(root / 'report.json'), 'curves': curves, 'exact_byte_parity': True}), flush=True)
+    print(json.dumps({'report': str(root / 'report.json'), 'exact_byte_parity': True}), flush=True)
 
 
 if __name__ == '__main__':

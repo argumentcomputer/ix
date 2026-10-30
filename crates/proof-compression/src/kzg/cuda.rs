@@ -22,7 +22,7 @@ mod abi;
 pub(super) mod lookup;
 mod passes;
 pub(super) mod quotient;
-pub(super) mod srs_cache;
+pub(super) mod srs_residency;
 #[cfg(test)]
 mod tests;
 
@@ -236,7 +236,9 @@ impl Devices {
       unsafe { ix_kzg_memory(self.ids[index], &mut free, &mut total) },
       "memory query",
     );
-    free.saturating_add(srs_cache::reclaimable(index)).saturating_sub(total / 4)
+    free
+      .saturating_add(srs_residency::reclaimable(index))
+      .saturating_sub(total / 4)
   }
 
   fn get() -> &'static Self {
@@ -373,7 +375,7 @@ impl<'a> Device<'a> {
   }
 
   fn prepare_budget(&self, required: usize) -> bool {
-    srs_cache::prepare_budget(self, required)
+    srs_residency::prepare_budget(self, required)
   }
 
   fn id(&self) -> i32 {
@@ -1048,7 +1050,7 @@ pub(super) fn divide(coefficients: &[Fr], z: Fr) -> Vec<Fr> {
   }
   // Parallel first-touch keeps page faults out of the pinned-ring download.
   let mut values =
-    super::buffer::generate(coefficients.len() - 1, |_| Fr::ZERO);
+    super::pcs::generate_buffer(coefficients.len() - 1, |_| Fr::ZERO);
   let device = Devices::get().acquire();
   assert!(
     device

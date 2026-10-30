@@ -1,13 +1,13 @@
 //! KZG backend with BLAKE3 and Keccak-256 transcripts.
 //! Commitments contain one G1 point per column; openings are batched by point.
 
-mod buffer;
 mod coefficients;
 pub mod compact;
 pub mod config;
 #[cfg(feature = "cuda")]
 pub mod cuda;
 pub mod curve;
+mod dev_srs_cache;
 pub mod domain;
 pub mod encoding;
 mod fft_batch;
@@ -16,7 +16,6 @@ pub mod pcs;
 mod quotient;
 mod quotient_plan;
 pub mod srs;
-mod srs_cache;
 pub mod transcript;
 
 pub use config::KzgConfig;

@@ -13,10 +13,8 @@
 //! CUDA backend plugins are loaded at runtime and appear only here.
 
 use std::env;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-#[path = "../build_support/cuda.rs"]
-mod cuda;
-use cuda::{cuda_library_directories, nvcc_path};
 use std::process::Command;
 
 const SOURCES: &[&str] = &[
@@ -53,20 +51,15 @@ mod gnark;
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
-  println!("cargo:rerun-if-changed=../build_support/cuda.rs");
   for source in SOURCES {
     println!("cargo:rerun-if-changed={source}");
   }
   for variable in [
-    "NVCC",
-    "CUDA_HOME",
-    "CUDA_PATH",
     "NVCC_CCBIN",
     "NVCC_PREPEND_FLAGS",
     "NVCC_APPEND_FLAGS",
     "CC",
     "IX_KZG_CUDA_ARCHS",
-    "MULTI_STARK_CUDA_ARCHS",
   ] {
     println!("cargo:rerun-if-env-changed={variable}");
   }
@@ -117,6 +110,38 @@ fn json_string(value: &str) -> String {
   quoted
 }
 
+/// Toolchain metadata from multi-stark's CUDA build, which this crate's
+/// Goldilocks backend links against.
+fn multi_stark_cuda(key: &str) -> OsString {
+  env::var_os(format!("DEP_MULTI_STARK_CUDA_{key}"))
+    .unwrap_or_else(|| panic!("multi-stark's CUDA build did not report {key}"))
+}
+
+/// `IX_KZG_CUDA_ARCHS`, or else the architectures multi-stark compiled its
+/// backend for.
+fn kzg_architectures() -> Vec<String> {
+  let selected = env::var("IX_KZG_CUDA_ARCHS").unwrap_or_else(|_| {
+    multi_stark_cuda("ARCHS")
+      .into_string()
+      .expect("CUDA architectures are ASCII")
+  });
+  let architectures: Vec<String> = selected
+    .split(',')
+    .map(str::trim)
+    .filter(|architecture| !architecture.is_empty())
+    .map(str::to_owned)
+    .collect();
+  assert!(
+    !architectures.is_empty()
+      && architectures.iter().all(|architecture| {
+        (2..=3).contains(&architecture.len())
+          && architecture.chars().all(|c| c.is_ascii_digit())
+      }),
+    "invalid CUDA architectures {selected:?}; expected numbers such as 80,90"
+  );
+  architectures
+}
+
 /// Builds `libix_bn254_cuda.so` in `OUT_DIR` and links it into this crate.
 fn build_bn254_cuda() -> PathBuf {
   assert_eq!(
@@ -129,11 +154,8 @@ fn build_bn254_cuda() -> PathBuf {
     Ok("x86_64"),
     "the BN254 CUDA backend supports x86_64 targets only"
   );
-  let nvcc = nvcc_path();
-  let architectures = cuda::architectures(
-    &nvcc,
-    &["IX_KZG_CUDA_ARCHS", "MULTI_STARK_CUDA_ARCHS"],
-  );
+  let nvcc = multi_stark_cuda("NVCC");
+  let architectures = kzg_architectures();
   let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
   let architecture_header = out.join("kzg_architectures.h");
   std::fs::write(
@@ -228,7 +250,7 @@ fn build_bn254_cuda() -> PathBuf {
   println!("cargo:rustc-link-lib=dylib=ix_bn254_cuda");
   println!("cargo:rustc-link-arg=-Wl,-rpath,{}", out.display());
   // Tests query the CUDA runtime directly.
-  for directory in cuda_library_directories(&nvcc) {
+  for directory in env::split_paths(&multi_stark_cuda("LIB_DIRS")) {
     if directory.is_dir() {
       println!("cargo:rustc-link-search=native={}", directory.display());
     }

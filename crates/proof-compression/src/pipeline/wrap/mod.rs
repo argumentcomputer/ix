@@ -1,9 +1,13 @@
 mod outer;
+mod recursive;
 mod saved;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(super) use outer::final_description;
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub(super) use outer::final_export;
+pub use recursive::{
+  RecursiveProof, RecursiveStage, RecursiveVerifier, prepare_recursive,
+};
 
 /// Recursively verify the first KZG stage in `first` and prove the recursive
 /// stage into `out`, with its circuit report beside it.

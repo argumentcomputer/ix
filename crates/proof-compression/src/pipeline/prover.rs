@@ -484,8 +484,8 @@ mod tests {
       );
       let expected =
         FixedProofCodec::new(&reference, &proof.log_degrees)?.encode(&proof)?;
-      let directory =
-        storage::temporary_path(&std::env::temp_dir().join("ix-kzg-prover"));
+      let scratch = crate::test_support::TempDir::new("kzg-prover");
+      let directory = scratch.join("preprocessing");
       let traces = compiled.trace_shards(&assignment)?;
       for (preprocessing, prefetch) in [
         (None, 0),
@@ -507,7 +507,6 @@ mod tests {
           .verify_multiple_claims(&refs, &result.proof)
           .map_err(|error| format!("reference verification: {error:?}"))?;
       }
-      fs::remove_dir_all(directory)?;
     }
     Ok(compiled.num_circuits())
   }

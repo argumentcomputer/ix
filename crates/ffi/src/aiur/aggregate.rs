@@ -35,7 +35,7 @@ pub(crate) use store::write_store;
 use store::{load_input_proofs, persist_wrapper, wrapper_address};
 
 mod ffi;
-pub mod lanes;
+pub mod multi_gpu;
 pub(crate) mod normalize;
 mod plan;
 mod prepare;
@@ -263,7 +263,7 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     print_plan(&specs, &prepared.shards, config.structural_above);
   }
   if let (true, Some(target)) = (config.plan_only, config.subtree) {
-    // The lane's `ix prove --shards` argument, on stdout as one line.
+    // The subtree run's `ix prove --shards` argument, on stdout as one line.
     let mut ids: Vec<u32> = required
       .iter()
       .enumerate()
@@ -422,7 +422,7 @@ fn run(config: RunConfig<'_>) -> Result<String, String> {
     &active,
   )?;
   if let Some(target) = config.subtree {
-    // A lane's success means its subtree root is proven, verified and
+    // A subtree run's success means its subtree root is proven, verified and
     // published where the final run will look for it.
     let slot = slots
       .get_mut(target)

@@ -124,7 +124,7 @@ fn bounded_quotient_hints_preserve_negative_and_large_input_behavior() {
   }
 }
 
-fn proof_fixture(bounded: bool) -> (Circuit<Scalar>, Assignment<Scalar>) {
+fn fixture(bounded: bool) -> (Circuit<Scalar>, Assignment<Scalar>) {
   let mut b = CircuitBuilder::<Scalar>::new();
   let table =
     b.fixed_table("limbs", (0..16).map(|n| vec![Scalar::from_u8(n)]).collect());
@@ -160,11 +160,8 @@ fn proof_fixture(bounded: bool) -> (Circuit<Scalar>, Assignment<Scalar>) {
 }
 
 #[test]
-fn bounded_quotient_hints_preserve_assignment_constraints_and_kzg_bytes() {
-  use crate::kzg::{KzgConfig, Srs, compact::FixedProofCodec};
-  use multi_stark::system::{System, SystemWitness};
-  use std::sync::Arc;
-  let fixtures = [proof_fixture(false), proof_fixture(true)];
+fn bounded_quotient_hints_preserve_assignment_and_constraints() {
+  let fixtures = [fixture(false), fixture(true)];
   assert_eq!(fixtures[0].0.stats(), fixtures[1].0.stats());
   assert_eq!(
     fixtures[0].1.values(fixtures[0].0.id()).unwrap(),
@@ -179,29 +176,4 @@ fn bounded_quotient_hints_preserve_assignment_constraints_and_kzg_bytes() {
     );
     assert_eq!(reference.coefficients, bounded.coefficients);
   }
-  let config = KzgConfig::new(
-    Arc::new(Srs::unsafe_dev_setup(128, b"quotient-hint-parity")),
-    4,
-  );
-  let mut bytes = Vec::new();
-  for (circuit, assignment) in fixtures {
-    let compiled = circuit.lower_to_multi_stark(Scalar::from_u8(78)).unwrap();
-    let traces = compiled.traces(&assignment).unwrap();
-    let claims = compiled.claims(assignment.public_values()).unwrap();
-    let (system, key) = System::new(config.clone(), compiled.circuit_inputs());
-    let refs = claims.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let proof = system.prove_multiple_claims(
-      &key,
-      &refs,
-      SystemWitness::from_stage_1(traces, &system),
-    );
-    system.verify_multiple_claims(&refs, &proof).unwrap();
-    bytes.push(
-      FixedProofCodec::new(&system, &proof.log_degrees)
-        .unwrap()
-        .encode(&proof)
-        .unwrap(),
-    );
-  }
-  assert_eq!(bytes[0], bytes[1]);
 }

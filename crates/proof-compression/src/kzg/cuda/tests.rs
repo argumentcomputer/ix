@@ -4,7 +4,6 @@ use ark_ff::PrimeField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 
 mod constraints;
-mod plonk_scale;
 
 unsafe extern "C" {
   fn ix_kzg_ntt_parameters(lg: u32, output: *mut [[u64; 4]; 3]) -> i32;
@@ -168,16 +167,6 @@ fn projective_limb_transport_preserves_coordinates_and_infinity() {
     assert_eq!(decoded.into_affine(), point);
   }
   assert!(projective([[0; FQ_LIMBS]; 3]).is_zero());
-}
-
-#[test]
-fn settings_install_once() {
-  // The first installation wins; later ones report that they were ignored.
-  let first = configure(Settings::default());
-  assert!(!configure(Settings { srs_cache: true, ..Settings::default() }));
-  if first {
-    assert_eq!(*settings(), Settings::default());
-  }
 }
 
 fn lease_devices() -> Devices {
@@ -471,7 +460,7 @@ fn cuda_fft_queues_reuse_resident_inputs_and_preserve_order() {
     .get_coset(Fr::from(7))
     .unwrap()
     .fft(&input);
-  // More jobs than lanes forces buffer reuse; mixed inputs exercise both
+  // More jobs than queue slots forces buffer reuse; mixed inputs exercise both
   // device affinity and host-only queues, with repeated immutable handles.
   let jobs: Vec<_> = (0..11)
     .map(|i| {
@@ -538,16 +527,11 @@ fn cuda_interpolation_retains_outputs_for_msm_and_cosets() {
 
 #[test]
 #[ignore = "requires a CUDA GPU"]
-fn cuda_polynomial_evaluation_and_division_match_horner() {
+fn cuda_polynomial_division_matches_horner() {
   for n in [0, 1, 2, 31, 32, 33, 1023, 1024, 1025, 65537] {
     let coefficients = scalars(n);
     for z in [Fr::ZERO, Fr::ONE, -Fr::ONE, Fr::from(918273)] {
       let expected = coefficients.iter().rev().fold(Fr::ZERO, |v, c| v * z + c);
-      assert_eq!(
-        evaluate_many(&coefficients, &[z]),
-        [expected],
-        "evaluation n={n}"
-      );
       let quotient = divide(&coefficients, z);
       assert_eq!(quotient.len(), n.saturating_sub(1));
       if n >= 2 {
@@ -568,14 +552,15 @@ fn cuda_polynomial_evaluation_and_division_match_horner() {
 #[ignore = "requires a CUDA GPU"]
 fn cuda_polynomial_evaluates_all_points_in_order() {
   let mut points = scalars(41);
-  points[..5].copy_from_slice(&[
+  points[..6].copy_from_slice(&[
     Fr::ZERO,
     Fr::ONE,
     -Fr::ONE,
     Fr::ONE,
     Fr::ZERO,
+    Fr::from(918273),
   ]);
-  for n in [0, 1, 2, 31, 1025, 65_537] {
+  for n in [0, 1, 2, 31, 32, 33, 1023, 1024, 1025, 65_537] {
     let coefficients = scalars(n);
     for count in [0, 1, 2, 3, 4, 7, 8, 41] {
       let points = &points[..count];
@@ -612,7 +597,7 @@ fn opening_points(count: usize) -> Vec<G1Affine> {
     })
     .collect();
   let basis = G1Projective::normalize_batch(&basis);
-  crate::kzg::buffer::generate(count, |i| basis[i % basis.len()])
+  crate::kzg::pcs::generate_buffer(count, |i| basis[i % basis.len()])
 }
 
 #[test]
@@ -706,7 +691,7 @@ fn concurrent_uncached_msm_completes() {
 fn concurrent_uncached_msm_body() {
   use std::sync::Barrier;
   assert_eq!(Devices::get().ids.len(), 1, "run with one device selected");
-  assert!(!srs_cache::enabled());
+  assert!(!srs_residency::enabled());
   let n = 1 << 20;
   let basis: Vec<_> = (1u64..=17)
     .map(|i| (G1Affine::generator() * Fr::from(i)).into_affine())

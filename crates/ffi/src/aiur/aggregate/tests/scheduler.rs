@@ -51,7 +51,7 @@ fn check_children(spec: &SlotSpec, children: &[Arc<usize>]) {
 }
 
 /// A worker that completes every slot while preparing it, so the fused
-/// lanes run each slot on one thread as the production worker would.
+/// pools run each slot on one thread as the production worker would.
 struct TestWorker<'a, F> {
   specs: &'a [SlotSpec],
   run: F,

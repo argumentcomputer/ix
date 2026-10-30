@@ -141,10 +141,10 @@ enum SchedulerEvent<S, D> {
   Finished(usize, Result<Arc<D>, String>),
 }
 
-/// Runs the slot plan with two lanes: `ahead` threads prepare ready slots
+/// Runs the slot plan on two thread pools: `ahead` threads prepare ready slots
 /// (children complete) — the CPU half: advice, execution, planning —
 /// while `jobs` threads prove prepared slots — the GPU half — so a join
-/// executes while the previous one proves. `ahead == 0` fuses the lanes:
+/// executes while the previous one proves. `ahead == 0` fuses the pools:
 /// each admitted slot prepares and proves on one thread, `jobs` at a
 /// time. Slots are admitted bottom level first, then by index, so parents
 /// become ready as early as possible; the RAM weights gate admission, a
@@ -171,7 +171,7 @@ pub(super) fn run_scheduler_with<W: SlotWorker>(
   let fused = ahead == 0;
   let max_ahead = if fused { max_jobs } else { ahead };
   // Raw leaves only verify: they hold no record and take no prover, so
-  // they run beside both lanes, a core each.
+  // they run beside both pools, a core each.
   let max_verify = thread::available_parallelism().map_or(1, usize::from);
   let mut level = vec![0usize; count];
   for (index, spec) in specs.iter().enumerate() {
@@ -188,7 +188,7 @@ pub(super) fn run_scheduler_with<W: SlotWorker>(
     let mut retired = vec![false; count];
     let mut completed_count = 0usize;
     // Cache check from the root down: a cached proof retires its whole
-    // subtree, so a resumed run, or the final run over lanes' subtree
+    // subtree, so a resumed run, or the final run over the subtree runs'
     // roots, loads and verifies only the highest cached proofs and never
     // visits what is under them. Specs are in post-order, so walking them
     // backwards meets every parent before its children.
@@ -225,7 +225,7 @@ pub(super) fn run_scheduler_with<W: SlotWorker>(
 
     while completed_count < target {
       if failures.is_empty() {
-        // Prover lane first: prepared slots, in the order prepared.
+        // Provers first: prepared slots, in the order prepared.
         while proving < max_jobs {
           let Some((index, staged)) = prepared.pop_front() else {
             break;
@@ -246,7 +246,7 @@ pub(super) fn run_scheduler_with<W: SlotWorker>(
             let _ = sender.send(SchedulerEvent::Finished(index, result));
           });
         }
-        // Prepare lane: ready slots, bottom level first; a prepared record
+        // Then preparation: ready slots, bottom level first; a prepared record
         // waiting for the prover counts against the lookahead, and raw
         // leaves have their own allowance.
         let mut ready: Vec<usize> = (0..count)

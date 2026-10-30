@@ -45,7 +45,7 @@ the same security requirement. The calculator reports individual terms and the
 assumptions of each regime.
 
 [Operational setup and commands](../crates/proof-compression/README.md),
-[final backends](../tools/plonk-wrapper/README.md), and
+[final backends](../tools/gnark/README.md), and
 [revision-labelled measurements](proof-benchmark-comparison.md) are maintained
 separately. Detailed stage-collapse experiments are preserved in Git history at
 `7b9a7f21`.

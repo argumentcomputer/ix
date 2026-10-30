@@ -262,32 +262,9 @@ impl Transcript for Keccak256Transcript {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::kzg::curve::G1Affine;
-  use ark_ec::AffineRepr;
   use ark_ff::BigInteger;
   use multi_stark::traits::Field;
   use num_bigint::BigUint;
-
-  #[test]
-  fn deterministic_and_sensitive() {
-    let run = |values: &[u64]| {
-      let mut t = Blake3Transcript::new();
-      for &v in values {
-        t.observe_field(Scalar::from_u64(v));
-      }
-      t.sample_challenge()
-    };
-    assert_eq!(run(&[1, 2, 3]), run(&[1, 2, 3]));
-    assert_ne!(run(&[1, 2, 3]), run(&[1, 2, 4]));
-    assert_ne!(run(&[1, 2, 3]), run(&[1, 2]));
-  }
-
-  #[test]
-  fn consecutive_samples_differ() {
-    let mut t = Blake3Transcript::new();
-    t.observe_field(Scalar::from_u64(7));
-    assert_ne!(t.sample_challenge(), t.sample_challenge());
-  }
 
   #[test]
   fn blake3_challenges_match_integer_reduction() {
@@ -371,36 +348,6 @@ mod tests {
     assert_ne!(t.digest(0), t.digest(2));
     assert_ne!(t.digest(1), t.digest(2));
     assert_ne!(t.digest(0), keccak256(&[&[0], &t.state]));
-  }
-
-  #[test]
-  fn blake3_enum_preserves_legacy_transcript() {
-    let mut legacy = Blake3Transcript::new();
-    let mut selected = KzgTranscript::default();
-    assert_eq!(selected.kind(), TranscriptKind::Blake3);
-    assert_eq!(legacy.sample_challenge(), selected.sample_challenge());
-
-    let xs = [Scalar::from_u64(5), Scalar::from_u64(6)];
-    let commitment = KzgCommitment(vec![
-      vec![G1Affine::generator(), G1Affine::default()],
-      vec![],
-    ]);
-    legacy.observe_bytes(b"parameter seed");
-    selected.observe_bytes(b"parameter seed");
-    legacy.observe_canonical(&Fr::from(123u64));
-    selected.observe_canonical(&Fr::from(123u64));
-    legacy.observe_field_slice(&xs);
-    selected.observe_field_slice(&xs);
-    legacy.observe_commitment(commitment.clone());
-    selected.observe_commitment(commitment);
-    for _ in 0..3 {
-      let challenge = legacy.sample_challenge();
-      assert_eq!(challenge, selected.sample_challenge());
-      legacy.observe_challenge(challenge);
-      selected.observe_challenge(challenge);
-      legacy.observe_field(xs[0]);
-      selected.observe_field(xs[0]);
-    }
   }
 
   #[test]

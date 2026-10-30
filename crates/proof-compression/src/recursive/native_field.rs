@@ -30,8 +30,6 @@ pub struct FqVar(pub [Value; L]);
 
 pub struct FqGadget {
   range: Table,
-  #[cfg(test)]
-  reference_advice: bool,
 }
 
 pub fn integer(v: Scalar) -> BigUint {
@@ -77,8 +75,6 @@ impl FqGadget {
         "Fq range",
         (0..1u64 << RANGE_BITS).map(|v| vec![Scalar::from_u64(v)]).collect(),
       ),
-      #[cfg(test)]
-      reference_advice: false,
     }
   }
   pub fn range(&self, b: &mut Builder, value: Value, bits: usize) {
@@ -99,13 +95,7 @@ impl FqGadget {
     bits: usize,
   ) {
     assert!(bits > 0 && bits <= N * RANGE_BITS);
-    #[cfg(test)]
-    let reference_advice = self.reference_advice;
     let limbs = b.hint_many_pure::<N>("bounded integer", &[value], move |v| {
-      #[cfg(test)]
-      if reference_advice {
-        return Ok(advice::range_reference(v[0]));
-      }
       Ok(advice::range_limbs(v[0]))
     });
     for &limb in &limbs {
@@ -253,18 +243,10 @@ impl FqGadget {
     let pc: Vec<_> = products.iter().map(|(c, _, _)| *c).collect();
     let lc: Vec<_> = linear.iter().map(|(c, _)| *c).collect();
     let p = &advice::constants().modulus_digits;
-    #[cfg(test)]
-    let reference_advice = self.reference_advice;
     let advice = b.hint_many_pure::<RELATION_ADVICE_LEN>(
       "Fq quotient and carries",
       &deps,
-      move |values| {
-        #[cfg(test)]
-        if reference_advice {
-          return advice::relation_reference(values, &pc, &lc, constant, p);
-        }
-        advice::relation(values, &pc, &lc, constant)
-      },
+      move |values| advice::relation(values, &pc, &lc, constant),
     );
     for (i, &v) in advice[..L].iter().enumerate() {
       self.range(b, v, if i == L - 1 { QUOTIENT_TOP_BITS } else { W });

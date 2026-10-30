@@ -395,7 +395,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         proveOneShardRoot ixe manifest ixvmSystem ixvmCompiled aggrSystem envHandle
           verifyIdx aggrIdx maxRamBytes retention rp.cacheFriBytes fresh
       else IO.lazyPure fun _ =>
-        (Aiur.AiurSystem.proveLanes ixvmSystem aggrSystem envHandle manifest
+        (Aiur.AiurSystem.proveMultiGpu ixvmSystem aggrSystem envHandle manifest
           verifyIdx aggrIdx gpus maxRamBytes
           (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0) 0 rp.cacheFriBytes
           (outIxes.getD "") fresh)

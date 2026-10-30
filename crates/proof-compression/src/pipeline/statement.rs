@@ -93,7 +93,7 @@ pub(crate) fn from_scalars(values: &[Scalar]) -> Result<Statement> {
 /// The statement carried by a stage's claim rows: rows `1..=18` hold one
 /// word each in their last column, behind the zero anchor of row `0`.
 pub(crate) fn from_rows(claims: &[Vec<Scalar>]) -> Result<Statement> {
-  let schema = super::stages::statement::Statement::from_claims(claims, WORDS)?;
+  let schema = super::claims::ClaimTemplate::from_claims(claims, WORDS)?;
   from_scalars(&schema.public_values(claims)?)
 }
 

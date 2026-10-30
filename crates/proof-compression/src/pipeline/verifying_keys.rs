@@ -1,6 +1,8 @@
 //! The verifying keys this build compresses to and verifies, one per proof
 //! system, with the aggregation backend and fixed root layout they were derived
 //! for. A proof verifies only under these keys; there is no catalog of alternatives.
+//! A caller may instead verify under its own key, authenticated by a digest it
+//! trusts independently of the proof.
 use super::{
   FixedRoot, Result,
   setup::SetupClass,
@@ -147,6 +149,33 @@ pub(super) fn verify_recursive(
   let statement = statement::with_claim(&STATEMENT_PREFIX, claim);
   recursive_vk()?.verify(packet, &statement)?;
   Ok(SetupClass::Ignition)
+}
+
+/// Verify a recursive KZG packet under a verifying key the caller supplies
+/// with an independently trusted digest, against an independently expected
+/// statement.
+pub(super) fn verify_with_vk(
+  packet: &[u8],
+  claim: &[u8],
+  expected: &statement::Statement,
+  vk: &[u8],
+  trusted_digest: &[u8; 32],
+  allow_development: bool,
+) -> Result<SetupClass> {
+  if blake3::hash(vk).as_bytes() != trusted_digest {
+    return Err(
+      "local verifying key digest differs from the trusted digest".into(),
+    );
+  }
+  statement::bind_claim(claim, expected)?;
+  let vk = VerifyingKey::from_bytes(vk)?;
+  let setup = SetupClass::of(&vk.verifier_params()?);
+  vk.check_setup_class(setup)?;
+  if setup == SetupClass::Development && !allow_development {
+    return Err("compressed proof uses the known-trapdoor development setup; pass --dev-srs to accept it (not production-secure)".into());
+  }
+  vk.verify(packet, expected)?;
+  Ok(setup)
 }
 
 /// Whether a compression of a `root_vk` root under `setup` must produce the
