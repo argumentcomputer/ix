@@ -27,6 +27,7 @@ def main (args : List String) : IO UInt32 := do
   let (prepared, annotated) ← phase "source-contracts" do
     IO.ofExcept (← IO.lazyPure fun _ => prepareCertified frontend.env constants)
   let canonical ← phase "canon" (IO.lazyPure fun _ => canonInput prepared.toArray workers)
+  let inputs := canonical.consts.size
   let (report, metrics) ← phase "compileReport" do
     if mode == "reference" then
       let report ← IO.lazyPure fun _ => Ix.Cert.compileReport canonical
@@ -49,9 +50,9 @@ def main (args : List String) : IO UInt32 := do
   IO.ofExcept (validateFinalized annotated final)
   let bytes ← phase "serialize" do IO.ofExcept (← IO.lazyPure fun _ => Ixon.serEnv final)
   let retained ← IO.lazyPure fun _ => (prepared.length, frontend.env.header.mainModule)
-  unless retained.1 ≥ canonical.consts.size do throw (IO.userError "input retention/accounting changed")
+  unless retained.1 ≥ inputs do throw (IO.userError "input retention/accounting changed")
   phase "write" (Ix.RoleBinding.Compile.writeAtomic output bytes)
-  IO.println s!"artifact mode={mode} inputs={canonical.consts.size} failures={failures.toMap.size} bytes={bytes.size} total-ms={(← IO.monoMsNow) - start}"
+  IO.println s!"artifact mode={mode} inputs={inputs} failures={failures.toMap.size} bytes={bytes.size} total-ms={(← IO.monoMsNow) - start}"
   if let some metrics := metrics then
     IO.println s!"ready-metrics {repr metrics}"
     unless metrics.started == metrics.completed + metrics.drained do

@@ -40,9 +40,9 @@ theorem driver_decomposition (env : Ix.Environment) (blocks : Ix.CondensedBlocks
         (blocks.blocks.size + 1) (initial env blocks limits))) := by
   unfold compileEnvFold validate initial finish
   cases missing : missingBlockRefs? blocks with
-  | some message => simp [missing]
+  | some message => simp
   | none =>
-    simp only [missing]
+    dsimp only
     cases validateInductiveFlags env <;> cases validateMutualSafety env blocks <;> rfl
 
 def driverIO (config : ReadyQueue.Config) (env : Ix.Environment)
@@ -85,9 +85,13 @@ theorem report_decomposition (env : Ix.Environment) :
         (Ix.CondenseM.run (Ix.Cert.groundSplit { consts := env.consts }).1)) =
       Ix.Cert.compileReport env := by
   rw [Ix.Cert.compileReport_eq_shared]
-  unfold Ix.Cert.compileReportShared Ix.Cert.compileUncheckedWith reportFromDriver
+  dsimp only [Ix.Cert.compileReportShared, Ix.Cert.compileUncheckedWith, reportFromDriver]
   cases compileEnvFold { consts := env.consts }
-      (Ix.CondenseM.run (Ix.Cert.groundSplit { consts := env.consts }).1) <;> rfl
+      (Ix.CondenseM.run (Ix.Cert.groundSplit { consts := env.consts }).1) with
+  | error message => rfl
+  | ok result =>
+    obtain ⟨artifact, bytes, cenv⟩ := result
+    rfl
 
 /-- The result carries equality to the complete checked pure report, including
 its original failure map and every report check. -/
