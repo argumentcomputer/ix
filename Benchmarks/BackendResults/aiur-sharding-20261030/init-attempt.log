@@ -1,0 +1,40 @@
+[prove] fresh: bypassing earlier proof checkpoints
+Compression will use the admitted Aztec Ignition BN254 powers of tau.
+[lanes] host budget 202.2 GiB process-wide (requested 0.0 GiB per GPU, visible cgroup limit 230.0 GiB): 157.6 GiB shared records, 24.2 GiB workspace per GPU, 20.2 GiB headroom; 32 CPU executions, 1 prepared queue slots; 4.6 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] building 1 resident workers
+[lanes] 3 claims: fresh proving, no indexed proofs or cached joins reused
+[lanes] claim 0 dispatched at +0s
+[lanes] claim 1 dispatched at +0s
+[lanes] claim 2 dispatched at +0s
+[lanes] executor 24: claim 0 execution started at +0s
+[lanes] executor 18: claim 1 execution started at +0s
+[lanes] executor 31: claim 2 execution started at +0s
+[trace-shards] 48 shards, 375000000 committed cells: record 26344312662 B in shared pool, host workspace 17876270374 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 24: claim 0 executed in 128.2s, record 26344312662 B (24.5 GiB) at +128s
+[lanes] worker 0: claim 0 proving started at +128s
+[trace-shards] 46 shards, 375000000 committed cells: record 26393397669 B in shared pool, host workspace 17868422376 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 18: claim 1 executed in 132.2s, record 26393397669 B (24.5 GiB) at +132s
+[trace-shards] 49 shards, 375000000 committed cells: record 27755834102 B in shared pool, host workspace 17895426100 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 31: claim 2 executed in 141.7s, record 27755834102 B (25.8 GiB) at +141s
+[lanes] worker 0: claim 0 proven at +177s (2 left)
+[lanes] worker 0: claim 1 proving started at +177s
+[lanes] worker 0: claim 1 proven at +226s (1 left)
+[lanes] join 2 dispatched at +226s
+[aggregate] structural-joining slots 0, 1 into 2
+[lanes] worker 0: claim 2 proving started at +226s
+[lanes] executor 15: join 2 execution started at +226s
+[lanes] worker 0: claim 2 proven at +278s (0 left)
+[trace-shards] 207 shards, 187500000 committed cells: record 40030984063 B in shared pool, host workspace 13267850552 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 15: join 2 executed in 90.0s, record 40030984063 B (37.2 GiB) at +316s
+[lanes] worker 0: join 2 proving started at +316s
+[aggregate] slot 2: cached proof 7b831571f932eab15dfcedac4edbcabce5ab56c9ae25573c70d5f5dde2d26db8
+[lanes] worker 0: join 2 published at +389s
+[lanes] root dispatched at +389s
+[aggregate] structural-joining slots 2, 3 into 4
+[lanes] executor 10: root execution started at +389s
+[trace-shards] 476 shards, 187500000 committed cells: record 91840419908 B in shared pool, host workspace 15489459037 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 10: root executed in 187.0s, record 91840419908 B (85.5 GiB) at +576s
+[lanes] worker 0: root proving started at +576s
+[aggregate] slot 4: cached proof 11d8886768e40862acb2728d1fd315691eb9041e55954ed45b4cdc224a963e75
+[prove] root: record reached 137438954052 B, over the 137438953472 B record cap; rerun the same command to resume from what was persisted

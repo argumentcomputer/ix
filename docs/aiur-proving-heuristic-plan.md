@@ -2,12 +2,10 @@
 
 Status: proposed implementation and validation plan, based on research on
 2026-10-30. No implementation or benchmark run is authorized by this document.
-Source baselines: `main` at `7a313fdf` and `kzg-bn254` at `2f956090`.
-The shared scheduler is `crates/ffi/src/aiur/aggregate/lanes.rs` on main and
-`multi_gpu.rs` on kzg-bn254. The singleton CLI dispatch and final PLONK flow
-described below are kzg-bn254 additions. PLONK acceptance requires that flow
-to be integrated with the heuristic changes; it is not available on this
-main baseline alone.
+Implementation target: `kzg-bn254`, reviewed at `2f956090`. This plan uses
+that branch's `multi_gpu` scheduler and integrated checking-to-PLONK
+terminology. [Retained calibration evidence](../Benchmarks/BackendResults/aiur-sharding-20261030/README.md)
+includes successful runs, the failed Init attempt and FLT's per-leaf data.
 
 Use the CUDA heuristic as the starting point: its calibration comes from real
 Mathlib proofs. Combine it with dependency-aware partitioning, measured trace
@@ -112,15 +110,15 @@ normal CLI invocation automatic rather than requiring `--shards` or
 Use one plan-and-prove entry point for every automatically selected shard
 count. A one-shard partition is the smallest instance of the same scheduler,
 record pool, memory admission and trace-sizing policy used for larger
-partitions. Remove kzg-bn254's `nonempty == 1` dispatch to `proveOneShardRoot`; the
+partitions. Remove the `nonempty == 1` dispatch to `proveOneShardRoot`; the
 user should never select a single-shard versus multi-shard execution path.
 For one leaf, the scheduler has no binary joins to schedule, while root
 wrapping and final compression follow the same resource policy. Runtime
 refinement can turn one initial shard into several within that same pipeline.
 
-Implement this in the Rust scheduler before removing the CLI dispatch. Both
-source baselines currently require the root plan operation to be a binary
-join, retain `root_left` and `root_right`, and wait for two children. Represent
+Implement this in the Rust scheduler before removing the CLI dispatch. The
+current scheduler requires the root plan operation to be a binary join and
+waits for both `root_left` and `root_right` to become ready. Represent
 the root input explicitly as either one proven leaf or a join. A singleton
 must wrap its IxVM proof into the expected aggregate claim using the shared
 record pool and workspace policy, without inventing a second child or
@@ -350,10 +348,9 @@ toward a root that final compression accepts.
 
 - Shared policy sources: `Ix/Cli/ShardCmd.lean`, `crates/ffi/src/kernel.rs`,
   `crates/kernel/src/shard.rs` and `crates/ffi/src/aiur/protocol.rs`.
-- Scheduler and resource limits: `crates/ffi/src/aiur/aggregate/lanes.rs` and
-  `lanes/limits.rs` on main at `7a313fdf`; `multi_gpu.rs` and
-  `multi_gpu/limits.rs` on kzg-bn254 at `2f956090`. Singleton CLI dispatch:
-  `Ix/Cli/ProveCmd.lean` on that kzg-bn254 revision.
+- Scheduler and resource limits: `crates/ffi/src/aiur/aggregate/multi_gpu.rs`
+  and `multi_gpu/limits.rs`; singleton CLI dispatch: `Ix/Cli/ProveCmd.lean`,
+  on `kzg-bn254` at `2f956090`.
 - Existing memory machinery: `crates/aiur/src/{synthesis.rs,shard.rs,record_pool.rs}`.
 - CUDA seed history: `6377ece4c410058a714619dc91916dc9aa7f69be` and its integration
   through `2ff0e5ce` / PR #643.
@@ -367,13 +364,14 @@ toward a root that final compression accepts.
 - Historical FLT residency at the same `13feef0f` revision:
   `bench/flt-lanes4-2026-09-18/README.md`, including environment memory outside
   the record pool.
-- Local October partition logs:
-  `/home/sam/repos/ix-stack/target/fixed-root-20261029/{shard.log,mathlib-shard.log}`.
-- Local benchmark records in `/home/sam/repos/ix-backend-comparison`, outside
-  this main-based document branch: `target/backend-bench/ix-init-20261030/summary.json`,
-  `Benchmarks/BackendResults/ix-nat-20261029/summary.json` and
-  `Benchmarks/BackendResults/ix-array-20261030/summary.json`. The latter two
-  supply the checking/aggregation versus E2E timing examples above.
-- Supporting local benchmark notes in the same worktree:
-  `docs/backend-benchmark-preliminary-table.md` and
-  `docs/backend-benchmark-source-records.md`.
+- [Calibration data and source notes](../Benchmarks/BackendResults/aiur-sharding-20261030/README.md).
+- October partition logs: [Init](../Benchmarks/BackendResults/aiur-sharding-20261030/init-partition.log)
+  and [Mathlib](../Benchmarks/BackendResults/aiur-sharding-20261030/mathlib-partition.log).
+- Successful aggregate-root logs: [Init](../Benchmarks/BackendResults/aiur-sharding-20261030/init-root.log)
+  and [Mathlib](../Benchmarks/BackendResults/aiur-sharding-20261030/mathlib-root.log).
+- Failed fresh Init attempt: [summary](../Benchmarks/BackendResults/aiur-sharding-20261030/init-attempt.json)
+  and [log](../Benchmarks/BackendResults/aiur-sharding-20261030/init-attempt.log).
+- [Nat/Array stage timings](../Benchmarks/BackendResults/aiur-sharding-20261030/small-workloads.json)
+  underlying the separate checking/aggregation and E2E gates.
+- [FLT per-leaf records and profile features](../Benchmarks/BackendResults/aiur-sharding-20261030/flt-leaves.csv)
+  for replaying heavy-tail predictions.

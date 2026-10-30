@@ -1,0 +1,15 @@
+[rs_shard_static] env load 82.8ms, static graph 193.6ms (55575 blocks, 1068480 edges)
+[shard] trace-shard seed (cuda build): bytes=6.6710e7; round(78 x (bytes/1.4680e9) x (41.4 GiB / 49.9 GiB record share: 200 GiB per worker, 0 cells, 2 executions ahead)) -> 3 shard(s) (heuristic; the record cap names any shard over its share)
+[shard] bisecting 55575 vertices → 3 shards  (1.6µs elapsed, 0/3 shards done)
+[shard] 1/3 shards finalized  (1.5s elapsed)
+[shard] 2/3 shards finalized  (2.4s elapsed)
+[shard] 3/3 shards finalized  (2.4s elapsed)
+[shard] partitioned into 3 shards in 2.4s
+[shard_static] hypergraph 5.2ms, partition 2.4s, rebalance 2.3s (400 moves)
+[rs_shard_static]
+blocks=55575 static_edges=1068480 nets=35645
+shards=3 (empty=0) heartbeats[min=19633372 mean=22236550 max=25243016] imbalance=1.14x cross_ingress_total=10358347 max_shard_cross=4229514
+rebalance moves=400  predicted FFT/shard mean=1.596e12 min=1.591e12 max=1.607e12 spread=1.01x
+Sharding target/fixed-root-20261029/init.ixe for a 200 GiB prover budget (static block-shape seed, mincut layout, balance ±5%)
+[shard] wrote target/fixed-root-20261029/init.ixes
+shard 6.33 s, 515544 KiB

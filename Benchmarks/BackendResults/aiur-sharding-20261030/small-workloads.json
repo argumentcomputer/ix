@@ -1,0 +1,88 @@
+{
+  "scope": "Selected fields from completed fresh Ix Nat/Array runs; no new measurements. Timings are seconds and memory sizes are bytes.",
+  "phase_scope": "Intervals between stderr progress events polled at 10 ms; checking and aggregation include handoffs. Their sum is not a sum of overlapping worker times. E2E wall time is independently measured.",
+  "host": {
+    "instance": "g7e.8xlarge",
+    "gpu": "RTX PRO 6000 Blackwell Server Edition",
+    "logical_cpus": 32,
+    "cgroup_limit_bytes": 246960619520
+  },
+  "runs": [
+    {
+      "workload": "nat-add-comm",
+      "status": "verified",
+      "samples": 1,
+      "covered_constants": 53,
+      "work_items": 38,
+      "environment_shards": 1,
+      "source_revision": "9e46f7e4d8ea647e67b885e3ad8f9596993dcf51",
+      "source_has_uncommitted_changes": true,
+      "input_sha256": "22fe1a7a5e62cc88579162d8d6b887104b7e18fc764dbcb85d4e6c355411b0e4",
+      "executable_sha256": "dd02c04dfd6e86740224427c0dcea957d3b756cdf9584fb6a6319ff465fadf8d",
+      "e2e_wall_seconds": 271.1018650409969,
+      "phase_seconds": {
+        "startup": 1.8418486559967278,
+        "checking_proof": 0.9159227530035423,
+        "aggregation_and_handoff": 10.534364803999779,
+        "root_normalization": 6.047472057995037,
+        "fri": 77.07715588799329,
+        "first_kzg": 85.77535234800598,
+        "recursive_kzg": 52.36693066600128,
+        "plonk": 36.54281786800129
+      },
+      "checking_and_aggregation_seconds": 11.450287557003321,
+      "sampled_tree_peak_rss_bytes": 188806647808,
+      "oom_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "proofs_reused": false,
+      "setup_and_keys_prepared_before_timing": true,
+      "source_summary": "Benchmarks/BackendResults/ix-nat-20261029/summary.json",
+      "source_summary_sha256": "cd4d8136f9391979505bd3487a9ab47338f0eac992a0ef2929cebb408c589140"
+    },
+    {
+      "workload": "array-extract-append",
+      "status": "verified",
+      "samples": 1,
+      "covered_constants": 1693,
+      "work_items": 1518,
+      "environment_shards": 1,
+      "source_revision": "9e46f7e4d8ea647e67b885e3ad8f9596993dcf51",
+      "source_has_uncommitted_changes": true,
+      "input_sha256": "b0b19de60ae182b13c9b8805860d4cadbb4eb147c0ed090f224b5b773d33b53c",
+      "executable_sha256": "dd02c04dfd6e86740224427c0dcea957d3b756cdf9584fb6a6319ff465fadf8d",
+      "e2e_wall_seconds": 298.7067371640005,
+      "phase_seconds": {
+        "startup": 1.962691778986482,
+        "checking_proof": 10.814966206002282,
+        "aggregation_and_handoff": 11.793697790009901,
+        "root_normalization": 6.216306309972424,
+        "fri": 92.40852524401271,
+        "first_kzg": 86.18106202498893,
+        "recursive_kzg": 52.56817134201992,
+        "plonk": 36.76131646800786
+      },
+      "checking_and_aggregation_seconds": 22.608663996012183,
+      "sampled_tree_peak_rss_bytes": 190259978240,
+      "oom_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "sock_throttled": 0
+      },
+      "proofs_reused": false,
+      "setup_and_keys_prepared_before_timing": true,
+      "source_summary": "Benchmarks/BackendResults/ix-array-20261030/summary.json",
+      "source_summary_sha256": "b9fb6046be2fe66b225d00cefc8974f5849b9e6242000091755b2e1bc61b77bb"
+    }
+  ]
+}

@@ -1,0 +1,1148 @@
+[lanes] host budget 180.0 GiB process-wide (requested 180.0 GiB per GPU, visible cgroup limit unlimited or unavailable): 137.7 GiB shared records, 24.2 GiB workspace per GPU, 18.0 GiB headroom; 3 CPU executions, 1 prepared queue slots; 27.5 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] building 1 resident workers
+[lanes] 80 claims (0 reused from the index, 0 retired under cached joins without an indexed proof), 79 joins (0 cached)
+[lanes] claim 0 dispatched at +1s
+[lanes] claim 1 dispatched at +1s
+[lanes] claim 2 dispatched at +1s
+[lanes] executor 0: claim 0 execution started at +1s
+[lanes] executor 2: claim 2 execution started at +1s
+[lanes] executor 1: claim 1 execution started at +1s
+[trace-shards] 8 shards, 1500000000 committed cells: record 19332999859 B in shared pool, host workspace 19008747614 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 1 executed in 89.8s, record 19332999859 B (18.0 GiB) at +91s
+[lanes] claim 3 dispatched at +91s
+[lanes] worker 0: claim 1 proving started at +91s
+[lanes] executor 1: claim 3 execution started at +91s
+[trace-shards] 8 shards, 1500000000 committed cells: record 19437249570 B in shared pool, host workspace 19008769888 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 2 executed in 92.8s, record 19437249570 B (18.1 GiB) at +94s
+[lanes] claim 4 dispatched at +94s
+[lanes] executor 2: claim 4 execution started at +94s
+[trace-shards] 8 shards, 1500000000 committed cells: record 19941092315 B in shared pool, host workspace 19008797408 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 0 executed in 95.5s, record 19941092315 B (18.5 GiB) at +97s
+[lanes] worker 0: claim 1 proven at +126s (79 left)
+[lanes] worker 0: claim 2 proving started at +126s
+[lanes] claim 5 dispatched at +126s
+[lanes] executor 0: claim 5 execution started at +126s
+[lanes] worker 0: claim 2 proven at +157s (78 left)
+[lanes] worker 0: claim 0 proving started at +157s
+[lanes] worker 0: claim 0 proven at +188s (77 left)
+[trace-shards] 9 shards, 1500000000 committed cells: record 20507595991 B in shared pool, host workspace 19008786951 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 4 executed in 118.3s, record 20507595991 B (19.0 GiB) at +212s
+[lanes] join 2 dispatched at +212s
+[aggregate] structural-joining slots 0, 1 into 2
+[lanes] worker 0: claim 4 proving started at +212s
+[lanes] executor 2: join 2 execution started at +212s
+[trace-shards] 10 shards, 1500000000 committed cells: record 22565257382 B in shared pool, host workspace 18418288126 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 3 executed in 127.0s, record 22565257382 B (21.0 GiB) at +218s
+[lanes] claim 6 dispatched at +218s
+[lanes] executor 1: claim 6 execution started at +218s
+[lanes] worker 0: claim 4 proven at +246s (76 left)
+[lanes] worker 0: claim 3 proving started at +246s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13959380154 B in shared pool, host workspace 18765586381 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 2 executed in 34.5s, record 13959380154 B (13.0 GiB) at +247s
+[lanes] claim 7 dispatched at +247s
+[lanes] executor 2: claim 7 execution started at +247s
+[trace-shards] 12 shards, 1500000000 committed cells: record 24603799872 B in shared pool, host workspace 18418272973 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 5 executed in 147.7s, record 24603799872 B (22.9 GiB) at +274s
+[lanes] worker 0: claim 3 proven at +282s (75 left)
+[lanes] worker 0: join 2 proving started at +282s
+[lanes] join 5 dispatched at +282s
+[aggregate] structural-joining slots 3, 4 into 5
+[lanes] executor 0: join 5 execution started at +282s
+[aggregate] slot 2: cached proof 96927719ac93b4522aefc7f48e72344aca97092aa4d7e67cec63525a4589443c
+[lanes] worker 0: join 2 published at +304s
+[lanes] worker 0: claim 5 proving started at +304s
+[trace-shards] 8 shards, 1500000000 committed cells: record 14896993409 B in shared pool, host workspace 18747550874 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 5 executed in 37.2s, record 14896993409 B (13.8 GiB) at +320s
+[lanes] claim 8 dispatched at +320s
+[lanes] executor 0: claim 8 execution started at +320s
+[lanes] worker 0: claim 5 proven at +345s (74 left)
+[lanes] worker 0: join 5 proving started at +345s
+[aggregate] slot 5: cached proof 82477f92c5ac5c40ab81ae814982abfd8715fc27343d4eac97493c3e5e27f08c
+[lanes] worker 0: join 5 published at +368s
+[trace-shards] 11 shards, 1500000000 committed cells: record 26106441179 B in shared pool, host workspace 18427816565 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 6 executed in 152.4s, record 26106441179 B (24.3 GiB) at +370s
+[lanes] join 6 dispatched at +370s
+[aggregate] structural-joining slots 2, 5 into 6
+[lanes] worker 0: claim 6 proving started at +370s
+[lanes] executor 1: join 6 execution started at +370s
+[trace-shards] 11 shards, 1500000000 committed cells: record 23077966205 B in shared pool, host workspace 18386939802 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 7 executed in 141.7s, record 23077966205 B (21.4 GiB) at +388s
+[lanes] join 9 dispatched at +388s
+[aggregate] structural-joining slots 7, 8 into 9
+[lanes] executor 2: join 9 execution started at +388s
+[trace-shards] 6 shards, 1500000000 committed cells: record 11315429252 B in shared pool, host workspace 19152873810 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 6 executed in 30.6s, record 11315429252 B (10.5 GiB) at +401s
+[lanes] worker 0: claim 6 proven at +412s (73 left)
+[lanes] worker 0: claim 7 proving started at +412s
+[lanes] claim 9 dispatched at +412s
+[lanes] executor 1: claim 9 execution started at +412s
+[trace-shards] 9 shards, 1500000000 committed cells: record 15705937906 B in shared pool, host workspace 19473212218 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 9 executed in 37.8s, record 15705937906 B (14.6 GiB) at +426s
+[lanes] worker 0: claim 7 proven at +450s (72 left)
+[lanes] worker 0: join 6 proving started at +450s
+[lanes] claim 10 dispatched at +450s
+[lanes] executor 2: claim 10 execution started at +450s
+[aggregate] slot 6: cached proof a18bc9d7561fd7bd4197a19b0cfaf00c5b56452bbad71dbac1cc1280290fa0f5
+[lanes] worker 0: join 6 published at +468s
+[lanes] worker 0: join 9 proving started at +468s
+[trace-shards] 11 shards, 1500000000 committed cells: record 25126635432 B in shared pool, host workspace 18404122189 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 8 executed in 152.5s, record 25126635432 B (23.4 GiB) at +472s
+[lanes] claim 11 dispatched at +472s
+[lanes] executor 0: claim 11 execution started at +472s
+[aggregate] slot 9: cached proof 1f1323a32a4e9aef7daa676b560a999dc6345479ad7f9fdcf899ad9a2804f824
+[lanes] worker 0: join 9 published at +491s
+[lanes] worker 0: claim 8 proving started at +491s
+[lanes] worker 0: claim 8 proven at +533s (71 left)
+[trace-shards] 12 shards, 1500000000 committed cells: record 26294404337 B in shared pool, host workspace 18418287284 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 9 executed in 151.3s, record 26294404337 B (24.4 GiB) at +563s
+[lanes] join 11 dispatched at +563s
+[aggregate] structural-joining slots 9, 10 into 11
+[lanes] worker 0: claim 9 proving started at +563s
+[lanes] executor 1: join 11 execution started at +563s
+[trace-shards] 10 shards, 1500000000 committed cells: record 22289790913 B in shared pool, host workspace 18404972557 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 10 executed in 124.5s, record 22289790913 B (20.7 GiB) at +574s
+[lanes] join 15 dispatched at +574s
+[aggregate] structural-joining slots 13, 14 into 15
+[lanes] executor 2: join 15 execution started at +574s
+[trace-shards] 8 shards, 1500000000 committed cells: record 14868383464 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 11 executed in 38.3s, record 14868383464 B (13.8 GiB) at +602s
+[lanes] worker 0: claim 9 proven at +607s (70 left)
+[lanes] worker 0: claim 10 proving started at +607s
+[lanes] claim 12 dispatched at +607s
+[lanes] executor 1: claim 12 execution started at +607s
+[trace-shards] 9 shards, 1500000000 committed cells: record 15990682883 B in shared pool, host workspace 19473239600 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 15 executed in 37.8s, record 15990682883 B (14.8 GiB) at +612s
+[trace-shards] 11 shards, 1500000000 committed cells: record 24404152300 B in shared pool, host workspace 18408903514 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 11 executed in 141.5s, record 24404152300 B (22.7 GiB) at +614s
+[lanes] worker 0: claim 10 proven at +642s (69 left)
+[lanes] worker 0: join 11 proving started at +642s
+[lanes] claim 13 dispatched at +642s
+[lanes] executor 2: claim 13 execution started at +642s
+[aggregate] slot 11: cached proof 37f01aba9bea5118da1e30667fb2d7fecef0f890aadbf9709918c0758f1342fd
+[lanes] worker 0: join 11 published at +664s
+[lanes] worker 0: join 15 proving started at +664s
+[lanes] join 12 dispatched at +664s
+[aggregate] structural-joining slots 6, 11 into 12
+[lanes] executor 0: join 12 execution started at +664s
+[aggregate] slot 15: cached proof b707b1b74859f296c4cb346c7d3672a7200ba4c51e7d718f633d4fbfa42a814e
+[lanes] worker 0: join 15 published at +688s
+[lanes] worker 0: claim 11 proving started at +688s
+[trace-shards] 6 shards, 1500000000 committed cells: record 11744317472 B in shared pool, host workspace 19256570856 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 12 executed in 30.2s, record 11744317472 B (10.9 GiB) at +694s
+[aggregate] structural-joining slots 15, 16 into 17
+[lanes] join 17 dispatched at +694s
+[lanes] executor 0: join 17 execution started at +694s
+[lanes] worker 0: claim 11 proven at +728s (68 left)
+[lanes] worker 0: join 12 proving started at +728s
+[trace-shards] 8 shards, 1500000000 committed cells: record 14919567268 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 17 executed in 37.2s, record 14919567268 B (13.8 GiB) at +731s
+[lanes] join 20 dispatched at +731s
+[lanes] executor 0: join 20 execution started at +731s
+[aggregate] structural-joining slots 18, 19 into 20
+[aggregate] slot 12: cached proof 4a6834c4f80a6c0f77f51f5c95307458c8119d7e224f21bb4989d5142d1799c1
+[lanes] worker 0: join 12 published at +746s
+[lanes] worker 0: join 17 proving started at +746s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16078646576 B in shared pool, host workspace 19230000692 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 20 executed in 36.0s, record 16078646576 B (14.9 GiB) at +767s
+[lanes] claim 14 dispatched at +767s
+[lanes] executor 0: claim 14 execution started at +767s
+[aggregate] slot 17: cached proof 60b1f6b08644ebb1de708f295454258f6b1303dbc7a3fe09e4f122377c4ae716
+[lanes] worker 0: join 17 published at +768s
+[lanes] worker 0: join 20 proving started at +768s
+[trace-shards] 9 shards, 1500000000 committed cells: record 21222033722 B in shared pool, host workspace 19008789428 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 13 executed in 126.9s, record 21222033722 B (19.7 GiB) at +769s
+[lanes] claim 15 dispatched at +769s
+[lanes] executor 2: claim 15 execution started at +769s
+[trace-shards] 12 shards, 1500000000 committed cells: record 27587983352 B in shared pool, host workspace 18408900212 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 12 executed in 166.4s, record 27587983352 B (25.6 GiB) at +774s
+[aggregate] slot 20: cached proof 82fbc8b3402d0d8b82e1bc21291f9986be29b4aa8acac6bd54c084fd2e0864c6
+[lanes] worker 0: join 20 published at +792s
+[lanes] worker 0: claim 13 proving started at +792s
+[lanes] claim 16 dispatched at +792s
+[lanes] executor 1: claim 16 execution started at +792s
+[lanes] worker 0: claim 13 proven at +828s (67 left)
+[lanes] worker 0: claim 12 proving started at +828s
+[lanes] worker 0: claim 12 proven at +874s (66 left)
+[trace-shards] 8 shards, 1500000000 committed cells: record 19409416771 B in shared pool, host workspace 19008791904 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 16 executed in 107.4s, record 19409416771 B (18.0 GiB) at +900s
+[lanes] join 22 dispatched at +900s
+[aggregate] structural-joining slots 20, 21 into 22
+[lanes] worker 0: claim 16 proving started at +900s
+[lanes] executor 1: join 22 execution started at +900s
+[trace-shards] 11 shards, 1500000000 committed cells: record 24066861269 B in shared pool, host workspace 18408961581 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 15 executed in 141.7s, record 24066861269 B (22.4 GiB) at +910s
+[lanes] claim 17 dispatched at +910s
+[lanes] executor 2: claim 17 execution started at +910s
+[trace-shards] 11 shards, 1500000000 committed cells: record 25099369942 B in shared pool, host workspace 18403619072 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 14 executed in 150.1s, record 25099369942 B (23.3 GiB) at +917s
+[lanes] worker 0: claim 16 proven at +932s (65 left)
+[lanes] worker 0: claim 15 proving started at +932s
+[lanes] claim 18 dispatched at +932s
+[lanes] executor 0: claim 18 execution started at +932s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15518455541 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 22 executed in 39.5s, record 15518455541 B (14.4 GiB) at +939s
+[lanes] worker 0: claim 15 proven at +972s (64 left)
+[lanes] worker 0: claim 14 proving started at +972s
+[lanes] claim 19 dispatched at +972s
+[lanes] executor 1: claim 19 execution started at +972s
+[lanes] worker 0: claim 14 proven at +1015s (63 left)
+[lanes] worker 0: join 22 proving started at +1015s
+[aggregate] slot 22: cached proof 8cdf5185dbe4ccff6032be6d81eb9681450c6f92b613ebd8975925c3c99af9e3
+[lanes] worker 0: join 22 published at +1038s
+[trace-shards] 10 shards, 1500000000 committed cells: record 22007825579 B in shared pool, host workspace 18404962650 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 17 executed in 130.1s, record 22007825579 B (20.4 GiB) at +1040s
+[lanes] join 23 dispatched at +1040s
+[aggregate] structural-joining slots 17, 22 into 23
+[lanes] worker 0: claim 17 proving started at +1040s
+[lanes] executor 2: join 23 execution started at +1040s
+[trace-shards] 10 shards, 1500000000 committed cells: record 22547394256 B in shared pool, host workspace 18418292014 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 18 executed in 124.6s, record 22547394256 B (20.9 GiB) at +1057s
+[lanes] join 27 dispatched at +1057s
+[lanes] executor 0: join 27 execution started at +1057s
+[aggregate] structural-joining slots 25, 26 into 27
+[trace-shards] 7 shards, 1500000000 committed cells: record 12638305461 B in shared pool, host workspace 19244654541 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 23 executed in 33.2s, record 12638305461 B (11.7 GiB) at +1074s
+[lanes] worker 0: claim 17 proven at +1077s (62 left)
+[lanes] worker 0: claim 18 proving started at +1077s
+[lanes] join 32 dispatched at +1077s
+[aggregate] structural-joining slots 30, 31 into 32
+[lanes] executor 2: join 32 execution started at +1077s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15173935121 B in shared pool, host workspace 18889721275 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 27 executed in 36.4s, record 15173935121 B (14.1 GiB) at +1093s
+[trace-shards] 8 shards, 1500000000 committed cells: record 14615679665 B in shared pool, host workspace 19243640498 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 32 executed in 35.6s, record 14615679665 B (13.6 GiB) at +1112s
+[lanes] worker 0: claim 18 proven at +1113s (61 left)
+[lanes] worker 0: join 23 proving started at +1113s
+[lanes] claim 20 dispatched at +1113s
+[lanes] executor 2: claim 20 execution started at +1113s
+[aggregate] slot 23: cached proof e8ceeaced715a11b875b1ece632eb1ee3741772b0db55dd5155cdb2ab1672b90
+[lanes] worker 0: join 23 published at +1131s
+[lanes] worker 0: join 32 proving started at +1131s
+[lanes] join 24 dispatched at +1131s
+[aggregate] structural-joining slots 12, 23 into 24
+[lanes] executor 0: join 24 execution started at +1131s
+[trace-shards] 12 shards, 1500000000 committed cells: record 26371282467 B in shared pool, host workspace 18417851367 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 19 executed in 167.9s, record 26371282467 B (24.5 GiB) at +1140s
+[aggregate] slot 32: cached proof 7180ce62c4a72790fd07b3747d2066316316bd17f1b07efc7b0d49ae926f8b9a
+[lanes] worker 0: join 32 published at +1153s
+[lanes] worker 0: join 27 proving started at +1153s
+[lanes] join 34 dispatched at +1153s
+[aggregate] structural-joining slots 32, 33 into 34
+[lanes] executor 1: join 34 execution started at +1153s
+[trace-shards] 6 shards, 1500000000 committed cells: record 12958118819 B in shared pool, host workspace 18747550874 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 24 executed in 33.8s, record 12958118819 B (12.0 GiB) at +1165s
+[aggregate] slot 27: cached proof a42732c30684b093fc41e798e3d97c339155db33371467ebdce626f4e30ea21a
+[lanes] worker 0: join 27 published at +1176s
+[lanes] worker 0: claim 19 proving started at +1176s
+[lanes] join 29 dispatched at +1176s
+[aggregate] structural-joining slots 27, 28 into 29
+[lanes] executor 0: join 29 execution started at +1176s
+[trace-shards] 7 shards, 1500000000 committed cells: record 14047408836 B in shared pool, host workspace 19223237376 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 34 executed in 35.3s, record 14047408836 B (13.0 GiB) at +1188s
+[trace-shards] 8 shards, 1500000000 committed cells: record 14123820415 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 29 executed in 37.1s, record 14123820415 B (13.1 GiB) at +1213s
+[lanes] worker 0: claim 19 proven at +1220s (60 left)
+[lanes] worker 0: join 24 proving started at +1220s
+[lanes] claim 21 dispatched at +1220s
+[lanes] executor 1: claim 21 execution started at +1220s
+[aggregate] slot 24: cached proof 29eb3acce4cae13ac582e2312730db2e3caa938de10ac78bbfe365c1a054fa36
+[lanes] worker 0: join 24 published at +1239s
+[lanes] worker 0: join 34 proving started at +1239s
+[lanes] claim 22 dispatched at +1239s
+[lanes] executor 0: claim 22 execution started at +1239s
+[aggregate] slot 34: cached proof 2902eae2986670cbc0135dd8816b757566599bcb339313bdd8235c4e04888a1b
+[lanes] worker 0: join 34 published at +1260s
+[lanes] worker 0: join 29 proving started at +1260s
+[aggregate] slot 29: cached proof 322287499a7da7a1ccd4034f2b503fbdb8d8e0393615c991127e813798497218
+[lanes] worker 0: join 29 published at +1281s
+[trace-shards] 13 shards, 1500000000 committed cells: record 28156748674 B in shared pool, host workspace 17823345613 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 20 executed in 175.4s, record 28156748674 B (26.2 GiB) at +1288s
+[lanes] join 35 dispatched at +1288s
+[aggregate] structural-joining slots 29, 34 into 35
+[lanes] worker 0: claim 20 proving started at +1288s
+[lanes] executor 2: join 35 execution started at +1288s
+[trace-shards] 6 shards, 1500000000 committed cells: record 11705838355 B in shared pool, host workspace 19085716634 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 35 executed in 32.4s, record 11705838355 B (10.9 GiB) at +1320s
+[lanes] claim 23 dispatched at +1320s
+[lanes] executor 2: claim 23 execution started at +1320s
+[lanes] worker 0: claim 20 proven at +1337s (59 left)
+[lanes] worker 0: join 35 proving started at +1337s
+[trace-shards] 10 shards, 1500000000 committed cells: record 22161353366 B in shared pool, host workspace 17827852288 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 21 executed in 127.6s, record 22161353366 B (20.6 GiB) at +1348s
+[aggregate] structural-joining slots 36, 37 into 38
+[lanes] join 38 dispatched at +1348s
+[lanes] executor 1: join 38 execution started at +1348s
+[aggregate] slot 35: cached proof 2776d000d044b628196aaa087511c0dbd01bd31ec4ed39bc07dd79707ca9968d
+[lanes] worker 0: join 35 published at +1354s
+[lanes] worker 0: claim 21 proving started at +1354s
+[trace-shards] 9 shards, 1500000000 committed cells: record 17047560157 B in shared pool, host workspace 19473239944 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 38 executed in 39.3s, record 17047560157 B (15.8 GiB) at +1387s
+[lanes] claim 24 dispatched at +1387s
+[lanes] executor 1: claim 24 execution started at +1387s
+[trace-shards] 11 shards, 1500000000 committed cells: record 25482834391 B in shared pool, host workspace 18697368154 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 22 executed in 151.1s, record 25482834391 B (23.7 GiB) at +1391s
+[lanes] worker 0: claim 21 proven at +1391s (58 left)
+[lanes] worker 0: join 38 proving started at +1391s
+[lanes] claim 25 dispatched at +1391s
+[lanes] executor 0: claim 25 execution started at +1391s
+[aggregate] slot 38: cached proof 9a33e8d81218c172a748be224f76cbf9485ffacc4100ca547518a3b37038f319
+[lanes] worker 0: join 38 published at +1417s
+[lanes] worker 0: claim 22 proving started at +1417s
+[lanes] worker 0: claim 22 proven at +1459s (57 left)
+[trace-shards] 11 shards, 1500000000 committed cells: record 24270914767 B in shared pool, host workspace 18716185006 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 23 executed in 139.1s, record 24270914767 B (22.6 GiB) at +1460s
+[lanes] join 41 dispatched at +1460s
+[lanes] worker 0: claim 23 proving started at +1460s
+[lanes] executor 2: join 41 execution started at +1460s
+[aggregate] structural-joining slots 39, 40 into 41
+[trace-shards] 9 shards, 1500000000 committed cells: record 16200092017 B in shared pool, host workspace 19230000692 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 41 executed in 39.7s, record 16200092017 B (15.0 GiB) at +1499s
+[lanes] claim 26 dispatched at +1499s
+[lanes] executor 2: claim 26 execution started at +1499s
+[lanes] worker 0: claim 23 proven at +1501s (56 left)
+[lanes] worker 0: join 41 proving started at +1501s
+[aggregate] slot 41: cached proof 6fffd275e21ac70b38cd3f0d96982c0940941a07f42f69a8dae4f7c3cb30ffa4
+[lanes] worker 0: join 41 published at +1525s
+[trace-shards] 13 shards, 1500000000 committed cells: record 27946607598 B in shared pool, host workspace 17841163248 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 25 executed in 168.8s, record 27946607598 B (26.0 GiB) at +1560s
+[lanes] join 43 dispatched at +1560s
+[aggregate] structural-joining slots 41, 42 into 43
+[lanes] worker 0: claim 25 proving started at +1560s
+[lanes] executor 0: join 43 execution started at +1560s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15051504618 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 43 executed in 39.5s, record 15051504618 B (14.0 GiB) at +1600s
+[lanes] claim 27 dispatched at +1600s
+[lanes] executor 0: claim 27 execution started at +1600s
+[lanes] worker 0: claim 25 proven at +1609s (55 left)
+[lanes] worker 0: join 43 proving started at +1609s
+[aggregate] slot 43: cached proof a9a0bc58b8ccd1d66e5e956c89264e6d8bacc9e64cd355832774dea25c3f1952
+[lanes] worker 0: join 43 published at +1632s
+[trace-shards] 16 shards, 1500000000 committed cells: record 35186212108 B in shared pool, host workspace 17916553445 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 24 executed in 244.6s, record 35186212108 B (32.7 GiB) at +1632s
+[lanes] join 44 dispatched at +1632s
+[aggregate] structural-joining slots 38, 43 into 44
+[lanes] worker 0: claim 24 proving started at +1632s
+[lanes] executor 1: join 44 execution started at +1632s
+[trace-shards] 13 shards, 1500000000 committed cells: record 28143984972 B in shared pool, host workspace 18418292650 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 26 executed in 165.2s, record 28143984972 B (26.2 GiB) at +1664s
+[trace-shards] 7 shards, 1500000000 committed cells: record 12661236719 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 44 executed in 35.0s, record 12661236719 B (11.7 GiB) at +1667s
+[lanes] claim 28 dispatched at +1667s
+[lanes] executor 2: claim 28 execution started at +1667s
+[lanes] worker 0: claim 24 proven at +1697s (54 left)
+[lanes] worker 0: claim 26 proving started at +1697s
+[lanes] join 49 dispatched at +1697s
+[aggregate] structural-joining slots 47, 48 into 49
+[lanes] executor 1: join 49 execution started at +1697s
+[trace-shards] 10 shards, 1500000000 committed cells: record 18233131984 B in shared pool, host workspace 18810788325 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 49 executed in 45.9s, record 18233131984 B (16.9 GiB) at +1743s
+[lanes] worker 0: claim 26 proven at +1744s (53 left)
+[lanes] worker 0: join 44 proving started at +1744s
+[lanes] claim 29 dispatched at +1744s
+[lanes] executor 1: claim 29 execution started at +1744s
+[aggregate] slot 44: cached proof 94ad8700e53c565de21941bc5f9bbe880d158949c63994619ca556b405c6259e
+[lanes] worker 0: join 44 published at +1763s
+[lanes] worker 0: join 49 proving started at +1763s
+[aggregate] slot 49: cached proof d9c9cdafcdefafde9cb8963f7b394940543b23e3fff20c038bd7ad16eaa84f5e
+[lanes] worker 0: join 49 published at +1790s
+[trace-shards] 13 shards, 1500000000 committed cells: record 30223344222 B in shared pool, host workspace 18454775501 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 27 executed in 193.3s, record 30223344222 B (28.1 GiB) at +1793s
+[lanes] join 45 dispatched at +1793s
+[lanes] worker 0: claim 27 proving started at +1793s
+[lanes] executor 0: join 45 execution started at +1793s
+[aggregate] structural-joining slots 35, 44 into 45
+[trace-shards] 6 shards, 1500000000 committed cells: record 12495882883 B in shared pool, host workspace 18736278682 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 45 executed in 34.1s, record 12495882883 B (11.6 GiB) at +1827s
+[lanes] join 51 dispatched at +1827s
+[aggregate] structural-joining slots 49, 50 into 51
+[lanes] executor 0: join 51 execution started at +1827s
+[trace-shards] 13 shards, 1500000000 committed cells: record 27953715183 B in shared pool, host workspace 17978871935 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 28 executed in 176.8s, record 27953715183 B (26.0 GiB) at +1844s
+[lanes] worker 0: claim 27 proven at +1845s (52 left)
+[lanes] worker 0: join 45 proving started at +1845s
+[lanes] claim 30 dispatched at +1845s
+[lanes] executor 2: claim 30 execution started at +1845s
+[aggregate] slot 45: cached proof 5ade6541df2db92df563da1bfe918005466c225421ab18f99d2837adba2dbf4b
+[lanes] worker 0: join 45 published at +1863s
+[lanes] worker 0: claim 28 proving started at +1863s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15666336289 B in shared pool, host workspace 19255926733 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 51 executed in 35.6s, record 15666336289 B (14.5 GiB) at +1863s
+[lanes] join 46 dispatched at +1863s
+[lanes] executor 0: join 46 execution started at +1863s
+[aggregate] structural-joining slots 24, 45 into 46
+[trace-shards] 12 shards, 1500000000 committed cells: record 25182888733 B in shared pool, host workspace 18418300631 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 29 executed in 149.3s, record 25182888733 B (23.4 GiB) at +1893s
+[trace-shards] 7 shards, 1500000000 committed cells: record 14681299513 B in shared pool, host workspace 19110515456 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 46 executed in 41.9s, record 14681299513 B (13.6 GiB) at +1905s
+[lanes] worker 0: claim 28 proven at +1911s (51 left)
+[lanes] worker 0: join 51 proving started at +1911s
+[lanes] claim 31 dispatched at +1911s
+[lanes] executor 0: claim 31 execution started at +1911s
+[aggregate] slot 51: cached proof d8d520c70ccc7a4449c1a72323e20d75263b4b1a583d175a9d0aed82f3fcaf3c
+[lanes] worker 0: join 51 published at +1934s
+[lanes] worker 0: join 46 proving started at +1934s
+[lanes] claim 32 dispatched at +1934s
+[lanes] executor 1: claim 32 execution started at +1934s
+[aggregate] slot 46: cached proof b3a1897f1e9f8d01a1cac85f457f6b6737ee2c948814a2537a5592519ea1947f
+[lanes] worker 0: join 46 published at +1956s
+[lanes] worker 0: claim 29 proving started at +1956s
+[lanes] worker 0: claim 29 proven at +1998s (50 left)
+[trace-shards] 12 shards, 1500000000 committed cells: record 25897948721 B in shared pool, host workspace 18404137050 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 30 executed in 161.8s, record 25897948721 B (24.1 GiB) at +2006s
+[lanes] join 55 dispatched at +2006s
+[aggregate] structural-joining slots 53, 54 into 55
+[lanes] worker 0: claim 30 proving started at +2006s
+[lanes] executor 2: join 55 execution started at +2006s
+[lanes] worker 0: claim 30 proven at +2051s (49 left)
+[trace-shards] 10 shards, 1500000000 committed cells: record 17473565391 B in shared pool, host workspace 19284107213 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 55 executed in 44.9s, record 17473565391 B (16.2 GiB) at +2051s
+[lanes] claim 33 dispatched at +2051s
+[lanes] worker 0: join 55 proving started at +2051s
+[lanes] executor 2: claim 33 execution started at +2051s
+[aggregate] slot 55: cached proof d523c731778abe694710576e441f33f5168807f7f6eb29359cebf8f378c00a78
+[lanes] worker 0: join 55 published at +2077s
+[trace-shards] 13 shards, 1500000000 committed cells: record 30066640367 B in shared pool, host workspace 17978898010 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 31 executed in 191.2s, record 30066640367 B (28.0 GiB) at +2102s
+[lanes] join 56 dispatched at +2102s
+[lanes] worker 0: claim 31 proving started at +2102s
+[lanes] executor 0: join 56 execution started at +2102s
+[aggregate] structural-joining slots 52, 55 into 56
+[trace-shards] 13 shards, 1500000000 committed cells: record 28057479837 B in shared pool, host workspace 18256100916 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 32 executed in 171.8s, record 28057479837 B (26.1 GiB) at +2106s
+[lanes] claim 34 dispatched at +2106s
+[lanes] executor 1: claim 34 execution started at +2106s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16046284381 B in shared pool, host workspace 19255926733 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 56 executed in 42.2s, record 16046284381 B (14.9 GiB) at +2144s
+[lanes] worker 0: claim 31 proven at +2155s (48 left)
+[lanes] worker 0: claim 32 proving started at +2155s
+[lanes] claim 35 dispatched at +2155s
+[lanes] executor 0: claim 35 execution started at +2155s
+[lanes] worker 0: claim 32 proven at +2204s (47 left)
+[lanes] worker 0: join 56 proving started at +2204s
+[aggregate] slot 56: cached proof bfcd3408766b11fce3db6064efec48b6198120fcf403bed784b2b686f3d29346
+[lanes] worker 0: join 56 published at +2228s
+[trace-shards] 13 shards, 1500000000 committed cells: record 30411131640 B in shared pool, host workspace 18418300493 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 33 executed in 184.6s, record 30411131640 B (28.3 GiB) at +2236s
+[lanes] join 57 dispatched at +2236s
+[lanes] worker 0: claim 33 proving started at +2236s
+[lanes] executor 2: join 57 execution started at +2236s
+[aggregate] structural-joining slots 51, 56 into 57
+[trace-shards] 7 shards, 1500000000 committed cells: record 12958392396 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 57 executed in 35.5s, record 12958392396 B (12.0 GiB) at +2271s
+[lanes] join 61 dispatched at +2271s
+[aggregate] structural-joining slots 59, 60 into 61
+[lanes] executor 2: join 61 execution started at +2271s
+[trace-shards] 12 shards, 1500000000 committed cells: record 27669375846 B in shared pool, host workspace 18485305088 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 34 executed in 175.2s, record 27669375846 B (25.7 GiB) at +2281s
+[lanes] worker 0: claim 33 proven at +2287s (46 left)
+[lanes] worker 0: join 57 proving started at +2287s
+[lanes] claim 36 dispatched at +2287s
+[lanes] executor 1: claim 36 execution started at +2287s
+[aggregate] slot 57: cached proof 239cded4781d7bc708a6e0b9c8bcc542f22729e09bb21ed472569db73fbac1bf
+[lanes] worker 0: join 57 published at +2306s
+[lanes] worker 0: claim 34 proving started at +2306s
+[trace-shards] 10 shards, 1500000000 committed cells: record 17781783812 B in shared pool, host workspace 19261562829 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 61 executed in 40.8s, record 17781783812 B (16.5 GiB) at +2312s
+[lanes] claim 37 dispatched at +2312s
+[lanes] executor 2: claim 37 execution started at +2312s
+[lanes] worker 0: claim 34 proven at +2352s (45 left)
+[lanes] worker 0: join 61 proving started at +2352s
+[aggregate] slot 61: cached proof f5fc04835293b329dc6485ea2a0ee0a42f2a56f07ae2ae8d917ae8bbeddae60d
+[lanes] worker 0: join 61 published at +2379s
+[trace-shards] 16 shards, 1500000000 committed cells: record 34735372158 B in shared pool, host workspace 17915809511 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 35 executed in 240.1s, record 34735372158 B (32.3 GiB) at +2395s
+[lanes] join 62 dispatched at +2395s
+[lanes] worker 0: claim 35 proving started at +2395s
+[lanes] executor 0: join 62 execution started at +2395s
+[aggregate] structural-joining slots 58, 61 into 62
+[trace-shards] 8 shards, 1500000000 committed cells: record 15227946019 B in shared pool, host workspace 19255926733 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 62 executed in 41.6s, record 15227946019 B (14.1 GiB) at +2436s
+[lanes] join 65 dispatched at +2436s
+[aggregate] structural-joining slots 63, 64 into 65
+[lanes] executor 0: join 65 execution started at +2436s
+[trace-shards] 12 shards, 1500000000 committed cells: record 27249684108 B in shared pool, host workspace 18485306894 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 36 executed in 166.8s, record 27249684108 B (25.3 GiB) at +2454s
+[trace-shards] 11 shards, 1500000000 committed cells: record 25084084107 B in shared pool, host workspace 18418285082 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 37 executed in 143.9s, record 25084084107 B (23.3 GiB) at +2456s
+[lanes] worker 0: claim 35 proven at +2458s (44 left)
+[lanes] worker 0: join 62 proving started at +2458s
+[lanes] claim 38 dispatched at +2458s
+[lanes] executor 1: claim 38 execution started at +2458s
+[trace-shards] 10 shards, 1500000000 committed cells: record 17685618096 B in shared pool, host workspace 19284107213 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 65 executed in 40.5s, record 17685618096 B (16.4 GiB) at +2477s
+[aggregate] slot 62: cached proof bf9db0a5bf85c2765785fd16307797db9e6ba703ad52aa75dc3486bd79b00634
+[lanes] worker 0: join 62 published at +2481s
+[lanes] worker 0: claim 36 proving started at +2481s
+[lanes] claim 39 dispatched at +2481s
+[lanes] executor 2: claim 39 execution started at +2481s
+[lanes] worker 0: claim 36 proven at +2527s (43 left)
+[lanes] worker 0: claim 37 proving started at +2527s
+[lanes] join 70 dispatched at +2527s
+[lanes] executor 0: join 70 execution started at +2527s
+[aggregate] structural-joining slots 68, 69 into 70
+[lanes] worker 0: claim 37 proven at +2568s (42 left)
+[lanes] worker 0: join 65 proving started at +2568s
+[trace-shards] 10 shards, 1500000000 committed cells: record 18439254569 B in shared pool, host workspace 19261562829 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 70 executed in 44.6s, record 18439254569 B (17.1 GiB) at +2571s
+[lanes] claim 40 dispatched at +2571s
+[lanes] executor 0: claim 40 execution started at +2571s
+[aggregate] slot 65: cached proof bbb1fe2c29ace928d8e5e0912ed1a99c4b438fdfdcd30eff9bba69edf1db4e8f
+[lanes] worker 0: join 65 published at +2594s
+[lanes] worker 0: join 70 proving started at +2594s
+[aggregate] slot 70: cached proof 717a09746833f8fb24fcfc6be1b3cde192a01ba98f5218f3686517d2bab0bc6a
+[lanes] worker 0: join 70 published at +2622s
+[trace-shards] 15 shards, 1500000000 committed cells: record 34767665781 B in shared pool, host workspace 18485040896 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 39 executed in 215.9s, record 34767665781 B (32.3 GiB) at +2697s
+[lanes] join 66 dispatched at +2697s
+[aggregate] structural-joining slots 62, 65 into 66
+[lanes] worker 0: claim 39 proving started at +2697s
+[lanes] executor 2: join 66 execution started at +2697s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13092925004 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 66 executed in 36.7s, record 13092925004 B (12.1 GiB) at +2733s
+[lanes] join 72 dispatched at +2733s
+[aggregate] structural-joining slots 70, 71 into 72
+[lanes] executor 2: join 72 execution started at +2733s
+[trace-shards] 17 shards, 1500000000 committed cells: record 40210910367 B in shared pool, host workspace 17516991872 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 38 executed in 296.2s, record 40210910367 B (37.4 GiB) at +2754s
+[lanes] worker 0: claim 39 proven at +2758s (41 left)
+[lanes] worker 0: join 66 proving started at +2758s
+[lanes] claim 41 dispatched at +2758s
+[lanes] executor 1: claim 41 execution started at +2758s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15372933096 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 72 executed in 36.8s, record 15372933096 B (14.3 GiB) at +2770s
+[aggregate] slot 66: cached proof 3bfad1b340216fb06728237dec1f2fa7531183c734264aee06f041fe756144ad
+[lanes] worker 0: join 66 published at +2777s
+[lanes] worker 0: claim 38 proving started at +2777s
+[lanes] join 67 dispatched at +2777s
+[lanes] executor 2: join 67 execution started at +2777s
+[aggregate] structural-joining slots 57, 66 into 67
+[trace-shards] 15 shards, 1500000000 committed cells: record 32701121193 B in shared pool, host workspace 17547508388 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 40 executed in 232.9s, record 32701121193 B (30.4 GiB) at +2804s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13010824157 B in shared pool, host workspace 19030940826 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 67 executed in 38.2s, record 13010824157 B (12.1 GiB) at +2816s
+[lanes] worker 0: claim 38 proven at +2849s (40 left)
+[lanes] worker 0: join 72 proving started at +2849s
+[lanes] join 75 dispatched at +2849s
+[aggregate] structural-joining slots 73, 74 into 75
+[lanes] executor 2: join 75 execution started at +2849s
+[aggregate] slot 72: cached proof 7c326c80d9d0ff7d41fc55d8541b55d00a679e66f8478834bad7107239f20ff5
+[lanes] worker 0: join 72 published at +2872s
+[lanes] worker 0: join 67 proving started at +2872s
+[lanes] claim 42 dispatched at +2872s
+[lanes] executor 0: claim 42 execution started at +2872s
+[aggregate] slot 67: cached proof 39d278b8c6ad5c0cd68309c56a343625e458f60191ad025799aa83364f92cd94
+[lanes] worker 0: join 67 published at +2892s
+[lanes] worker 0: claim 40 proving started at +2892s
+[trace-shards] 11 shards, 1500000000 committed cells: record 19984841409 B in shared pool, host workspace 19214341812 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 75 executed in 49.3s, record 19984841409 B (18.6 GiB) at +2899s
+[lanes] claim 43 dispatched at +2899s
+[lanes] executor 2: claim 43 execution started at +2899s
+[lanes] worker 0: claim 40 proven at +2950s (39 left)
+[lanes] worker 0: join 75 proving started at +2950s
+[trace-shards] 14 shards, 1500000000 committed cells: record 31275893313 B in shared pool, host workspace 18470063412 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 41 executed in 207.6s, record 31275893313 B (29.1 GiB) at +2966s
+[lanes] claim 44 dispatched at +2966s
+[lanes] executor 1: claim 44 execution started at +2966s
+[aggregate] slot 75: cached proof 8f9592ae9f7896d29d174a0d5a8e66432fbb7d27d38f2d5d44dbeaa03deb3cfd
+[lanes] worker 0: join 75 published at +2979s
+[lanes] worker 0: claim 41 proving started at +2979s
+[lanes] worker 0: claim 41 proven at +3034s (38 left)
+[trace-shards] 16 shards, 1500000000 committed cells: record 36989476045 B in shared pool, host workspace 17876159159 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 43 executed in 227.0s, record 36989476045 B (34.4 GiB) at +3126s
+[lanes] join 76 dispatched at +3126s
+[lanes] worker 0: claim 43 proving started at +3126s
+[lanes] executor 2: join 76 execution started at +3126s
+[aggregate] structural-joining slots 72, 75 into 76
+[trace-shards] 18 shards, 1500000000 committed cells: record 39609740821 B in shared pool, host workspace 17516368820 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 42 executed in 261.2s, record 39609740821 B (36.8 GiB) at +3134s
+[trace-shards] 13 shards, 1500000000 committed cells: record 29987905637 B in shared pool, host workspace 17823332834 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 44 executed in 181.1s, record 29987905637 B (27.9 GiB) at +3147s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13485688557 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 76 executed in 36.8s, record 13485688557 B (12.5 GiB) at +3162s
+[lanes] worker 0: claim 43 proven at +3191s (37 left)
+[lanes] join 79 dispatched at +3191s
+[lanes] worker 0: claim 42 proving started at +3191s
+[aggregate] structural-joining slots 77, 78 into 79
+[lanes] claim 45 dispatched at +3191s
+[lanes] executor 0: join 79 execution started at +3191s
+[lanes] executor 1: claim 45 execution started at +3191s
+[trace-shards] 10 shards, 1500000000 committed cells: record 18707592937 B in shared pool, host workspace 19214363415 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 79 executed in 48.6s, record 18707592937 B (17.4 GiB) at +3240s
+[lanes] worker 0: claim 42 proven at +3261s (36 left)
+[lanes] worker 0: claim 44 proving started at +3261s
+[lanes] join 82 dispatched at +3261s
+[aggregate] structural-joining slots 80, 81 into 82
+[lanes] executor 2: join 82 execution started at +3261s
+[trace-shards] 12 shards, 1500000000 committed cells: record 20895517376 B in shared pool, host workspace 19677506714 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 82 executed in 51.3s, record 20895517376 B (19.4 GiB) at +3313s
+[lanes] worker 0: claim 44 proven at +3313s (35 left)
+[lanes] worker 0: join 76 proving started at +3313s
+[lanes] claim 46 dispatched at +3313s
+[lanes] executor 2: claim 46 execution started at +3313s
+[aggregate] slot 76: cached proof b9ab185ece02ef462b2bf86119d2058ba805446ea6e3bfb32d1191049872c26c
+[lanes] worker 0: join 76 published at +3333s
+[lanes] worker 0: join 82 proving started at +3333s
+[lanes] claim 47 dispatched at +3333s
+[lanes] executor 0: claim 47 execution started at +3333s
+[aggregate] slot 82: cached proof 8f2af40fd478de411d1f378cbb450e57f3104d834cbea0d039824eac178dfd74
+[lanes] worker 0: join 82 published at +3364s
+[lanes] worker 0: join 79 proving started at +3364s
+[trace-shards] 13 shards, 1500000000 committed cells: record 28395299486 B in shared pool, host workspace 17841135367 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 45 executed in 180.7s, record 28395299486 B (26.4 GiB) at +3372s
+[lanes] claim 48 dispatched at +3372s
+[lanes] executor 1: claim 48 execution started at +3372s
+[aggregate] slot 79: cached proof ec0097391dbfc1947a5a90a29df0594f4eb35323f143c4492389ae719b98b36b
+[lanes] worker 0: join 79 published at +3392s
+[lanes] worker 0: claim 45 proving started at +3392s
+[lanes] worker 0: claim 45 proven at +3441s (34 left)
+[trace-shards] 12 shards, 1500000000 committed cells: record 26659002513 B in shared pool, host workspace 18400455149 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 46 executed in 156.6s, record 26659002513 B (24.8 GiB) at +3470s
+[lanes] join 83 dispatched at +3470s
+[lanes] worker 0: claim 46 proving started at +3470s
+[lanes] executor 2: join 83 execution started at +3470s
+[aggregate] structural-joining slots 79, 82 into 83
+[trace-shards] 8 shards, 1500000000 committed cells: record 14341618175 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 83 executed in 36.8s, record 14341618175 B (13.3 GiB) at +3506s
+[lanes] claim 49 dispatched at +3506s
+[lanes] executor 2: claim 49 execution started at +3506s
+[lanes] worker 0: claim 46 proven at +3515s (33 left)
+[lanes] worker 0: join 83 proving started at +3515s
+[aggregate] slot 83: cached proof eaf562ef43e15ffd7d34d3c77e38c2856e6b6fc57e3a418a898a9d6e29faa530
+[lanes] worker 0: join 83 published at +3536s
+[trace-shards] 14 shards, 1500000000 committed cells: record 32447298628 B in shared pool, host workspace 18454622490 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 48 executed in 199.8s, record 32447298628 B (30.2 GiB) at +3572s
+[lanes] join 84 dispatched at +3572s
+[aggregate] structural-joining slots 76, 83 into 84
+[lanes] worker 0: claim 48 proving started at +3572s
+[lanes] executor 1: join 84 execution started at +3572s
+[trace-shards] 18 shards, 1500000000 committed cells: record 39064604414 B in shared pool, host workspace 17519375104 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 47 executed in 263.8s, record 39064604414 B (36.3 GiB) at +3597s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13047447612 B in shared pool, host workspace 19625654631 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 84 executed in 35.2s, record 13047447612 B (12.1 GiB) at +3607s
+[lanes] join 90 dispatched at +3607s
+[aggregate] structural-joining slots 88, 89 into 90
+[lanes] executor 0: join 90 execution started at +3607s
+[lanes] worker 0: claim 48 proven at +3629s (32 left)
+[lanes] worker 0: claim 47 proving started at +3629s
+[lanes] claim 50 dispatched at +3629s
+[lanes] executor 1: claim 50 execution started at +3629s
+[trace-shards] 9 shards, 1500000000 committed cells: record 17037687073 B in shared pool, host workspace 19499952077 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 90 executed in 41.8s, record 17037687073 B (15.8 GiB) at +3649s
+[trace-shards] 11 shards, 1500000000 committed cells: record 24417174059 B in shared pool, host workspace 18418285082 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 49 executed in 142.7s, record 24417174059 B (22.7 GiB) at +3649s
+[lanes] worker 0: claim 47 proven at +3700s (31 left)
+[lanes] worker 0: join 84 proving started at +3700s
+[lanes] join 94 dispatched at +3700s
+[lanes] executor 0: join 94 execution started at +3700s
+[aggregate] structural-joining slots 92, 93 into 94
+[aggregate] slot 84: cached proof 18b3f0514811a358b3e63e90a1329104666e9df0a8580f0220e43f868aadc64a
+[lanes] worker 0: join 84 published at +3719s
+[lanes] worker 0: join 90 proving started at +3719s
+[lanes] join 85 dispatched at +3719s
+[aggregate] structural-joining slots 67, 84 into 85
+[lanes] executor 2: join 85 execution started at +3719s
+[aggregate] slot 90: cached proof 017614cbbe971d2d844ca7c1b91992564d44342020ed2fe63b367a026afb24f9
+[lanes] worker 0: join 90 published at +3744s
+[lanes] worker 0: claim 49 proving started at +3744s
+[trace-shards] 11 shards, 1500000000 committed cells: record 19547457365 B in shared pool, host workspace 19228531124 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 94 executed in 46.2s, record 19547457365 B (18.2 GiB) at +3746s
+[lanes] join 91 dispatched at +3746s
+[aggregate] structural-joining slots 87, 90 into 91
+[lanes] executor 0: join 91 execution started at +3746s
+[trace-shards] 7 shards, 1500000000 committed cells: record 15005318256 B in shared pool, host workspace 19036118989 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 85 executed in 42.8s, record 15005318256 B (13.9 GiB) at +3761s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15086952890 B in shared pool, host workspace 19255926733 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 91 executed in 36.3s, record 15086952890 B (14.0 GiB) at +3782s
+[lanes] worker 0: claim 49 proven at +3784s (30 left)
+[lanes] worker 0: join 94 proving started at +3784s
+[lanes] claim 51 dispatched at +3784s
+[lanes] executor 2: claim 51 execution started at +3784s
+[trace-shards] 12 shards, 1500000000 committed cells: record 26646079951 B in shared pool, host workspace 18455161332 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 50 executed in 168.9s, record 26646079951 B (24.8 GiB) at +3798s
+[aggregate] slot 94: cached proof 39d5c9db8753ed042bc4dd12242152ad14aa55508aea8e843b20cff484b416df
+[lanes] worker 0: join 94 published at +3813s
+[lanes] worker 0: join 85 proving started at +3813s
+[lanes] claim 52 dispatched at +3813s
+[lanes] executor 0: claim 52 execution started at +3813s
+[aggregate] slot 85: cached proof c29a94fc6ba8a3be182d5665da847bad38c72060db761b641a41fce230005c53
+[lanes] worker 0: join 85 published at +3835s
+[lanes] worker 0: join 91 proving started at +3835s
+[lanes] join 86 dispatched at +3835s
+[aggregate] structural-joining slots 46, 85 into 86
+[lanes] executor 1: join 86 execution started at +3835s
+[aggregate] slot 91: cached proof 06c76243555cb17d5138ed69080a9da25b4dd748270e99724eaa794d93cad55f
+[lanes] worker 0: join 91 published at +3858s
+[lanes] worker 0: claim 50 proving started at +3858s
+[trace-shards] 8 shards, 1500000000 committed cells: record 18044006554 B in shared pool, host workspace 19607184738 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 86 executed in 54.2s, record 18044006554 B (16.8 GiB) at +3889s
+[lanes] join 95 dispatched at +3889s
+[aggregate] structural-joining slots 91, 94 into 95
+[lanes] executor 1: join 95 execution started at +3889s
+[lanes] worker 0: claim 50 proven at +3905s (29 left)
+[lanes] worker 0: join 86 proving started at +3905s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13132006712 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 95 executed in 30.9s, record 13132006712 B (12.2 GiB) at +3920s
+[lanes] join 98 dispatched at +3920s
+[aggregate] structural-joining slots 96, 97 into 98
+[lanes] executor 1: join 98 execution started at +3920s
+[aggregate] slot 86: cached proof e3425ac30a51f31655e2fe583a79a63efa82574b50b62191bc8b926a8b257149
+[lanes] worker 0: join 86 published at +3931s
+[lanes] worker 0: join 95 proving started at +3931s
+[aggregate] slot 95: cached proof c0f8fe0d51af8b6576b55d33abf3d97cbd3acf82723fa1c3296bbe12e9834b1c
+[lanes] worker 0: join 95 published at +3951s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16478025919 B in shared pool, host workspace 19473239944 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 98 executed in 35.7s, record 16478025919 B (15.3 GiB) at +3955s
+[lanes] claim 53 dispatched at +3955s
+[lanes] worker 0: join 98 proving started at +3955s
+[lanes] executor 1: claim 53 execution started at +3955s
+[trace-shards] 13 shards, 1500000000 committed cells: record 29927100525 B in shared pool, host workspace 17877486535 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 51 executed in 188.4s, record 29927100525 B (27.8 GiB) at +3973s
+[lanes] claim 54 dispatched at +3973s
+[lanes] executor 2: claim 54 execution started at +3973s
+[aggregate] slot 98: cached proof 94269b9840c3380665cbd93a868c98706a305523439e758134f1f5b4ef6de0f3
+[lanes] worker 0: join 98 published at +3980s
+[lanes] worker 0: claim 51 proving started at +3980s
+[trace-shards] 13 shards, 1500000000 committed cells: record 29852094139 B in shared pool, host workspace 18484779456 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 52 executed in 191.4s, record 29852094139 B (27.8 GiB) at +4004s
+[lanes] worker 0: claim 51 proven at +4032s (28 left)
+[lanes] claim 55 dispatched at +4032s
+[lanes] worker 0: claim 52 proving started at +4032s
+[lanes] executor 0: claim 55 execution started at +4032s
+[lanes] worker 0: claim 52 proven at +4085s (27 left)
+[trace-shards] 13 shards, 1500000000 committed cells: record 29139862224 B in shared pool, host workspace 18506393320 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 54 executed in 179.9s, record 29139862224 B (27.1 GiB) at +4153s
+[lanes] join 101 dispatched at +4153s
+[lanes] worker 0: claim 54 proving started at +4153s
+[aggregate] structural-joining slots 99, 100 into 101
+[lanes] executor 2: join 101 execution started at +4153s
+[trace-shards] 10 shards, 1500000000 committed cells: record 17984787431 B in shared pool, host workspace 19219403926 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 101 executed in 46.3s, record 17984787431 B (16.7 GiB) at +4199s
+[lanes] claim 56 dispatched at +4199s
+[lanes] executor 2: claim 56 execution started at +4199s
+[lanes] worker 0: claim 54 proven at +4205s (26 left)
+[lanes] worker 0: join 101 proving started at +4205s
+[trace-shards] 17 shards, 1500000000 committed cells: record 37220295278 B in shared pool, host workspace 17429969023 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 53 executed in 251.5s, record 37220295278 B (34.6 GiB) at +4207s
+[lanes] claim 57 dispatched at +4207s
+[lanes] executor 1: claim 57 execution started at +4207s
+[trace-shards] 14 shards, 1500000000 committed cells: record 31206676281 B in shared pool, host workspace 17924680858 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 55 executed in 192.7s, record 31206676281 B (29.0 GiB) at +4225s
+[aggregate] slot 101: cached proof 54491f817f96dd564e608ae0d9081517dad40226a0d21c46bb66d09044b148df
+[lanes] worker 0: join 101 published at +4232s
+[lanes] worker 0: claim 53 proving started at +4232s
+[lanes] worker 0: claim 53 proven at +4300s (25 left)
+[lanes] join 102 dispatched at +4300s
+[lanes] worker 0: claim 55 proving started at +4300s
+[lanes] executor 0: join 102 execution started at +4300s
+[aggregate] structural-joining slots 98, 101 into 102
+[trace-shards] 7 shards, 1500000000 committed cells: record 12881601464 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 102 executed in 33.6s, record 12881601464 B (11.9 GiB) at +4334s
+[lanes] join 106 dispatched at +4334s
+[lanes] executor 0: join 106 execution started at +4334s
+[aggregate] structural-joining slots 104, 105 into 106
+[lanes] worker 0: claim 55 proven at +4356s (24 left)
+[lanes] worker 0: join 102 proving started at +4356s
+[trace-shards] 12 shards, 1500000000 committed cells: record 24391966676 B in shared pool, host workspace 18697605376 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 57 executed in 151.3s, record 24391966676 B (22.7 GiB) at +4358s
+[lanes] claim 58 dispatched at +4358s
+[lanes] executor 1: claim 58 execution started at +4358s
+[trace-shards] 10 shards, 1500000000 committed cells: record 18406591857 B in shared pool, host workspace 18810788325 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 106 executed in 40.9s, record 18406591857 B (17.1 GiB) at +4374s
+[aggregate] slot 102: cached proof d1ce72439c86a28750b4709d69c8557561243b2b4036eaa98b1cf8ea03b49bf0
+[lanes] worker 0: join 102 published at +4375s
+[lanes] worker 0: claim 57 proving started at +4375s
+[lanes] join 103 dispatched at +4375s
+[lanes] executor 0: join 103 execution started at +4375s
+[aggregate] structural-joining slots 95, 102 into 103
+[trace-shards] 6 shards, 1500000000 committed cells: record 12200213021 B in shared pool, host workspace 19294252186 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 103 executed in 33.2s, record 12200213021 B (11.3 GiB) at +4409s
+[lanes] worker 0: claim 57 proven at +4418s (23 left)
+[lanes] worker 0: join 106 proving started at +4418s
+[lanes] claim 59 dispatched at +4418s
+[lanes] executor 0: claim 59 execution started at +4418s
+[trace-shards] 15 shards, 1500000000 committed cells: record 34470624444 B in shared pool, host workspace 17095117978 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 56 executed in 236.7s, record 34470624444 B (32.1 GiB) at +4436s
+[aggregate] slot 106: cached proof f49d25d71fd16592ee9354661b2135b83804bd86941dbb03c1dad8dcd8776805
+[lanes] worker 0: join 106 published at +4445s
+[lanes] worker 0: join 103 proving started at +4445s
+[lanes] claim 60 dispatched at +4445s
+[lanes] executor 2: claim 60 execution started at +4445s
+[aggregate] slot 103: cached proof e2707a53680c8209013956a9e0bd22cd7ab09863a7198f53e31df889d1fe159e
+[lanes] worker 0: join 103 published at +4464s
+[lanes] worker 0: claim 56 proving started at +4464s
+[trace-shards] 12 shards, 1500000000 committed cells: record 25218746808 B in shared pool, host workspace 18408780224 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 58 executed in 152.8s, record 25218746808 B (23.4 GiB) at +4511s
+[lanes] worker 0: claim 56 proven at +4526s (22 left)
+[lanes] join 109 dispatched at +4526s
+[lanes] worker 0: claim 58 proving started at +4526s
+[lanes] executor 1: join 109 execution started at +4526s
+[aggregate] structural-joining slots 107, 108 into 109
+[lanes] worker 0: claim 58 proven at +4570s (21 left)
+[trace-shards] 10 shards, 1500000000 committed cells: record 18570775589 B in shared pool, host workspace 18808322654 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 109 executed in 43.9s, record 18570775589 B (17.2 GiB) at +4570s
+[lanes] join 113 dispatched at +4570s
+[lanes] worker 0: join 109 proving started at +4570s
+[lanes] executor 1: join 113 execution started at +4570s
+[aggregate] structural-joining slots 111, 112 into 113
+[trace-shards] 9 shards, 1500000000 committed cells: record 21588165411 B in shared pool, host workspace 19008946309 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 60 executed in 125.6s, record 21588165411 B (20.1 GiB) at +4571s
+[lanes] claim 61 dispatched at +4571s
+[lanes] executor 2: claim 61 execution started at +4571s
+[trace-shards] 13 shards, 1500000000 committed cells: record 28183477357 B in shared pool, host workspace 18674339968 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 59 executed in 171.6s, record 28183477357 B (26.2 GiB) at +4590s
+[aggregate] slot 109: cached proof 21d71fb05e7ef89ea9063d3712b6843ad19d4657fb743e8ff67193c5f45d8d69
+[lanes] worker 0: join 109 published at +4598s
+[lanes] worker 0: claim 60 proving started at +4598s
+[lanes] join 110 dispatched at +4598s
+[lanes] executor 0: join 110 execution started at +4598s
+[aggregate] structural-joining slots 106, 109 into 110
+[trace-shards] 9 shards, 1500000000 committed cells: record 16773337570 B in shared pool, host workspace 19228421680 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 113 executed in 42.0s, record 16773337570 B (15.6 GiB) at +4612s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13146935699 B in shared pool, host workspace 19099031911 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 110 executed in 33.0s, record 13146935699 B (12.2 GiB) at +4631s
+[lanes] worker 0: claim 60 proven at +4634s (20 left)
+[lanes] worker 0: claim 59 proving started at +4634s
+[lanes] claim 62 dispatched at +4634s
+[lanes] executor 1: claim 62 execution started at +4634s
+[lanes] worker 0: claim 59 proven at +4682s (19 left)
+[lanes] worker 0: join 113 proving started at +4682s
+[lanes] claim 63 dispatched at +4682s
+[lanes] executor 0: claim 63 execution started at +4682s
+[aggregate] slot 113: cached proof c14d2c2b0fdaaeacc6a5e8545845f5a9b6691fa15c06042f7c51e6204d9f3c0c
+[lanes] worker 0: join 113 published at +4707s
+[lanes] worker 0: join 110 proving started at +4707s
+[trace-shards] 12 shards, 1500000000 committed cells: record 25858098488 B in shared pool, host workspace 18485261056 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 61 executed in 154.2s, record 25858098488 B (24.0 GiB) at +4725s
+[lanes] join 115 dispatched at +4725s
+[aggregate] structural-joining slots 113, 114 into 115
+[lanes] executor 2: join 115 execution started at +4725s
+[aggregate] slot 110: cached proof 499c623026bb0695142d8d7f876982aa34f36f84b12514d75259f18639d0f3e5
+[lanes] worker 0: join 110 published at +4728s
+[lanes] worker 0: claim 61 proving started at +4728s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15394682491 B in shared pool, host workspace 19255926733 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 115 executed in 38.6s, record 15394682491 B (14.3 GiB) at +4764s
+[lanes] claim 64 dispatched at +4764s
+[lanes] executor 2: claim 64 execution started at +4764s
+[lanes] worker 0: claim 61 proven at +4772s (18 left)
+[lanes] worker 0: join 115 proving started at +4772s
+[trace-shards] 10 shards, 1500000000 committed cells: record 24496195245 B in shared pool, host workspace 18409138535 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 62 executed in 139.5s, record 24496195245 B (22.8 GiB) at +4773s
+[lanes] join 120 dispatched at +4773s
+[lanes] executor 1: join 120 execution started at +4773s
+[aggregate] structural-joining slots 118, 119 into 120
+[aggregate] slot 115: cached proof fcbaaf3d52ba0bb291352d1a0dd4a4edab17c326b4bbdf95921784eee9389a05
+[lanes] worker 0: join 115 published at +4795s
+[lanes] worker 0: claim 62 proving started at +4795s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16111720511 B in shared pool, host workspace 19230000692 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 120 executed in 39.1s, record 16111720511 B (15.0 GiB) at +4812s
+[lanes] join 116 dispatched at +4812s
+[lanes] executor 1: join 116 execution started at +4812s
+[aggregate] structural-joining slots 110, 115 into 116
+[trace-shards] 11 shards, 1500000000 committed cells: record 24368755288 B in shared pool, host workspace 18400464506 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 63 executed in 147.6s, record 24368755288 B (22.6 GiB) at +4830s
+[lanes] worker 0: claim 62 proven at +4834s (17 left)
+[lanes] worker 0: join 120 proving started at +4834s
+[lanes] claim 65 dispatched at +4834s
+[lanes] executor 0: claim 65 execution started at +4834s
+[trace-shards] 6 shards, 1500000000 committed cells: record 11745344301 B in shared pool, host workspace 19085948507 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 116 executed in 28.1s, record 11745344301 B (10.9 GiB) at +4840s
+[aggregate] slot 120: cached proof 8c27fe71bed1b586331bab59bc158ffedb65de83aecf6d228eefae073c344ac3
+[lanes] worker 0: join 120 published at +4858s
+[lanes] worker 0: claim 63 proving started at +4858s
+[lanes] join 122 dispatched at +4858s
+[lanes] executor 1: join 122 execution started at +4858s
+[aggregate] structural-joining slots 120, 121 into 122
+[trace-shards] 8 shards, 1500000000 committed cells: record 15031898367 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 122 executed in 39.1s, record 15031898367 B (13.9 GiB) at +4897s
+[trace-shards] 10 shards, 1500000000 committed cells: record 22897589866 B in shared pool, host workspace 18408903738 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 64 executed in 134.5s, record 22897589866 B (21.3 GiB) at +4898s
+[lanes] worker 0: claim 63 proven at +4899s (16 left)
+[lanes] worker 0: join 116 proving started at +4899s
+[lanes] claim 66 dispatched at +4899s
+[lanes] executor 2: claim 66 execution started at +4899s
+[aggregate] slot 116: cached proof b2f3ccdfb0a539092b6e76fcb8e7144e41120092185a5139a04a92557623f1af
+[lanes] worker 0: join 116 published at +4917s
+[lanes] worker 0: claim 64 proving started at +4917s
+[lanes] join 117 dispatched at +4917s
+[aggregate] structural-joining slots 103, 116 into 117
+[lanes] executor 1: join 117 execution started at +4917s
+[trace-shards] 6 shards, 1500000000 committed cells: record 12879373834 B in shared pool, host workspace 18747550874 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 117 executed in 35.6s, record 12879373834 B (11.9 GiB) at +4953s
+[lanes] worker 0: claim 64 proven at +4955s (15 left)
+[lanes] worker 0: join 122 proving started at +4955s
+[lanes] join 125 dispatched at +4955s
+[aggregate] structural-joining slots 123, 124 into 125
+[lanes] executor 1: join 125 execution started at +4955s
+[trace-shards] 11 shards, 1500000000 committed cells: record 23945520307 B in shared pool, host workspace 18408291469 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 65 executed in 140.2s, record 23945520307 B (22.3 GiB) at +4974s
+[aggregate] slot 122: cached proof fa243ac9af466893e1f7ed62ae03d92c8776b035d8b8bb4842ecb6078ab2f875
+[lanes] worker 0: join 122 published at +4977s
+[lanes] worker 0: join 117 proving started at +4977s
+[lanes] claim 67 dispatched at +4977s
+[lanes] executor 0: claim 67 execution started at +4977s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16232866436 B in shared pool, host workspace 19230000692 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 125 executed in 37.0s, record 16232866436 B (15.1 GiB) at +4992s
+[aggregate] slot 117: cached proof 3def6c7466809ac86e39fdb8a8cc9555f2e5ed2364512e7a659e0dbd149cf176
+[lanes] worker 0: join 117 published at +4996s
+[lanes] worker 0: claim 65 proving started at +4996s
+[lanes] claim 68 dispatched at +4996s
+[lanes] executor 1: claim 68 execution started at +4996s
+[lanes] worker 0: claim 65 proven at +5037s (14 left)
+[lanes] worker 0: join 125 proving started at +5037s
+[aggregate] slot 125: cached proof b67e1ab4bfc85014394fefda8b944bb2700d0253745d226b2a782fa2df193e53
+[lanes] worker 0: join 125 published at +5062s
+[trace-shards] 16 shards, 1500000000 committed cells: record 38006068027 B in shared pool, host workspace 17078491495 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 66 executed in 247.5s, record 38006068027 B (35.3 GiB) at +5147s
+[lanes] join 127 dispatched at +5147s
+[lanes] worker 0: claim 66 proving started at +5147s
+[lanes] executor 2: join 127 execution started at +5147s
+[aggregate] structural-joining slots 125, 126 into 127
+[trace-shards] 14 shards, 1500000000 committed cells: record 29743610673 B in shared pool, host workspace 18400472005 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 67 executed in 175.3s, record 29743610673 B (27.7 GiB) at +5152s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15168869954 B in shared pool, host workspace 18890707712 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 127 executed in 40.6s, record 15168869954 B (14.1 GiB) at +5187s
+[lanes] claim 69 dispatched at +5187s
+[lanes] executor 0: claim 69 execution started at +5187s
+[trace-shards] 14 shards, 1500000000 committed cells: record 32053846183 B in shared pool, host workspace 17877489631 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 68 executed in 192.7s, record 32053846183 B (29.8 GiB) at +5189s
+[lanes] worker 0: claim 66 proven at +5213s (13 left)
+[lanes] worker 0: claim 67 proving started at +5213s
+[lanes] claim 70 dispatched at +5213s
+[lanes] executor 1: claim 70 execution started at +5213s
+[lanes] worker 0: claim 67 proven at +5264s (12 left)
+[lanes] worker 0: claim 68 proving started at +5264s
+[lanes] join 131 dispatched at +5264s
+[aggregate] structural-joining slots 129, 130 into 131
+[lanes] executor 2: join 131 execution started at +5264s
+[trace-shards] 11 shards, 1500000000 committed cells: record 19304729926 B in shared pool, host workspace 19157858663 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 131 executed in 48.4s, record 19304729926 B (17.9 GiB) at +5312s
+[lanes] worker 0: claim 68 proven at +5319s (11 left)
+[lanes] worker 0: join 127 proving started at +5319s
+[lanes] claim 71 dispatched at +5319s
+[lanes] executor 2: claim 71 execution started at +5319s
+[aggregate] slot 127: cached proof 57b2648fb28e586ce0e5cf87e2e2107412f9366924d0c4064aea3354b8f33842
+[lanes] worker 0: join 127 published at +5342s
+[lanes] worker 0: join 131 proving started at +5342s
+[trace-shards] 12 shards, 1500000000 committed cells: record 25977225330 B in shared pool, host workspace 18417972128 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 69 executed in 158.4s, record 25977225330 B (24.1 GiB) at +5346s
+[lanes] join 128 dispatched at +5346s
+[aggregate] structural-joining slots 122, 127 into 128
+[lanes] executor 0: join 128 execution started at +5346s
+[aggregate] slot 131: cached proof cf46937989b060ec0b59e9d738db0c6f6ad1072ec06145e850f85416cde037a4
+[lanes] worker 0: join 131 published at +5371s
+[lanes] worker 0: claim 69 proving started at +5371s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13064218638 B in shared pool, host workspace 19659471207 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 128 executed in 32.1s, record 13064218638 B (12.1 GiB) at +5378s
+[lanes] join 133 dispatched at +5378s
+[aggregate] structural-joining slots 131, 132 into 133
+[lanes] executor 0: join 133 execution started at +5378s
+[trace-shards] 13 shards, 1500000000 committed cells: record 28757409979 B in shared pool, host workspace 18674144026 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 70 executed in 180.7s, record 28757409979 B (26.7 GiB) at +5394s
+[lanes] worker 0: claim 69 proven at +5415s (10 left)
+[lanes] worker 0: join 128 proving started at +5415s
+[lanes] claim 72 dispatched at +5415s
+[lanes] executor 1: claim 72 execution started at +5415s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16774974765 B in shared pool, host workspace 19284107213 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 133 executed in 40.7s, record 16774974765 B (15.6 GiB) at +5418s
+[trace-shards] 8 shards, 1500000000 committed cells: record 19626412761 B in shared pool, host workspace 19008797150 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 71 executed in 105.3s, record 19626412761 B (18.2 GiB) at +5425s
+[aggregate] slot 128: cached proof 1eeae9c5e142b51faf208c68c8f0dc5f31db9e2c9227c2bc9ddd18c73c246732
+[lanes] worker 0: join 128 published at +5434s
+[lanes] worker 0: claim 70 proving started at +5434s
+[lanes] claim 73 dispatched at +5434s
+[lanes] executor 0: claim 73 execution started at +5434s
+[lanes] worker 0: claim 70 proven at +5484s (9 left)
+[lanes] worker 0: join 133 proving started at +5484s
+[lanes] join 136 dispatched at +5484s
+[aggregate] structural-joining slots 134, 135 into 136
+[lanes] executor 2: join 136 execution started at +5484s
+[aggregate] slot 133: cached proof 41cb9f992ecc74de1df774980c1e72695ce926fd626778f2658ce7f9725d8a6d
+[lanes] worker 0: join 133 published at +5509s
+[lanes] worker 0: claim 71 proving started at +5509s
+[trace-shards] 10 shards, 1500000000 committed cells: record 17452943808 B in shared pool, host workspace 19284107213 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 136 executed in 42.3s, record 17452943808 B (16.2 GiB) at +5526s
+[lanes] claim 74 dispatched at +5526s
+[lanes] executor 2: claim 74 execution started at +5526s
+[trace-shards] 9 shards, 1500000000 committed cells: record 21113678287 B in shared pool, host workspace 19008802792 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 72 executed in 117.4s, record 21113678287 B (19.6 GiB) at +5533s
+[lanes] worker 0: claim 71 proven at +5540s (8 left)
+[lanes] worker 0: join 136 proving started at +5540s
+[lanes] claim 75 dispatched at +5540s
+[lanes] executor 1: claim 75 execution started at +5540s
+[trace-shards] 8 shards, 1500000000 committed cells: record 20334017535 B in shared pool, host workspace 19413080794 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 73 executed in 106.0s, record 20334017535 B (18.9 GiB) at +5541s
+[aggregate] slot 136: cached proof 87ad0d42ca75b10507444246d8a9588ec3d216bdb8495d0986ea5e0b47229fd6
+[lanes] worker 0: join 136 published at +5565s
+[lanes] worker 0: claim 72 proving started at +5565s
+[lanes] join 137 dispatched at +5565s
+[lanes] executor 0: join 137 execution started at +5565s
+[aggregate] structural-joining slots 133, 136 into 137
+[lanes] worker 0: claim 72 proven at +5598s (7 left)
+[lanes] worker 0: claim 73 proving started at +5598s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13561574084 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 137 executed in 35.4s, record 13561574084 B (12.6 GiB) at +5601s
+[lanes] join 141 dispatched at +5601s
+[aggregate] structural-joining slots 139, 140 into 141
+[lanes] executor 0: join 141 execution started at +5601s
+[lanes] worker 0: claim 73 proven at +5629s (6 left)
+[lanes] worker 0: join 137 proving started at +5629s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15030910339 B in shared pool, host workspace 18918888192 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 141 executed in 37.8s, record 15030910339 B (13.9 GiB) at +5638s
+[lanes] claim 76 dispatched at +5638s
+[lanes] executor 0: claim 76 execution started at +5638s
+[aggregate] slot 137: cached proof 342a621d2a907d17560db3b9f65d257741d2273a099d73bd089fa7db1885da5a
+[lanes] worker 0: join 137 published at +5649s
+[lanes] worker 0: join 141 proving started at +5649s
+[trace-shards] 10 shards, 1500000000 committed cells: record 22148926122 B in shared pool, host workspace 19008955597 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 74 executed in 127.4s, record 22148926122 B (20.6 GiB) at +5653s
+[lanes] join 138 dispatched at +5653s
+[aggregate] structural-joining slots 128, 137 into 138
+[lanes] executor 2: join 138 execution started at +5653s
+[aggregate] slot 141: cached proof 632eebbb470d2df817885ccc18f0346dca5c9ba420fa2be2a50062629c6781d7
+[lanes] worker 0: join 141 published at +5672s
+[lanes] worker 0: claim 74 proving started at +5672s
+[trace-shards] 11 shards, 1500000000 committed cells: record 25301067234 B in shared pool, host workspace 18400467258 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 75 executed in 148.5s, record 25301067234 B (23.5 GiB) at +5688s
+[lanes] join 143 dispatched at +5688s
+[aggregate] structural-joining slots 141, 142 into 143
+[lanes] executor 1: join 143 execution started at +5688s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13842658902 B in shared pool, host workspace 18982012468 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 138 executed in 36.8s, record 13842658902 B (12.8 GiB) at +5690s
+[lanes] worker 0: claim 74 proven at +5708s (5 left)
+[lanes] worker 0: claim 75 proving started at +5708s
+[lanes] claim 77 dispatched at +5708s
+[lanes] executor 2: claim 77 execution started at +5708s
+[trace-shards] 7 shards, 1500000000 committed cells: record 13957033267 B in shared pool, host workspace 19223237376 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 143 executed in 34.5s, record 13957033267 B (12.9 GiB) at +5723s
+[lanes] worker 0: claim 75 proven at +5749s (4 left)
+[lanes] worker 0: join 138 proving started at +5749s
+[lanes] join 146 dispatched at +5749s
+[aggregate] structural-joining slots 144, 145 into 146
+[lanes] executor 1: join 146 execution started at +5749s
+[aggregate] slot 138: cached proof c082ca50d344ba7bb90e100e0e44a5be2155da7f0b452c56104030358bc0f533
+[lanes] worker 0: join 138 published at +5770s
+[lanes] worker 0: join 143 proving started at +5770s
+[trace-shards] 10 shards, 1500000000 committed cells: record 23613187587 B in shared pool, host workspace 18637723198 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 76 executed in 140.4s, record 23613187587 B (21.9 GiB) at +5779s
+[lanes] claim 78 dispatched at +5779s
+[lanes] executor 0: claim 78 execution started at +5779s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16003489491 B in shared pool, host workspace 19230000692 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 146 executed in 36.9s, record 16003489491 B (14.9 GiB) at +5786s
+[aggregate] slot 143: cached proof 287843a9f6977955c8b51a2a1e581522540e33e9af9f1696406a8d1c48509482
+[lanes] worker 0: join 143 published at +5790s
+[lanes] worker 0: claim 76 proving started at +5790s
+[lanes] claim 79 dispatched at +5790s
+[lanes] executor 1: claim 79 execution started at +5790s
+[lanes] worker 0: claim 76 proven at +5830s (3 left)
+[lanes] worker 0: join 146 proving started at +5830s
+[trace-shards] 11 shards, 1500000000 committed cells: record 23223944675 B in shared pool, host workspace 18697494196 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: claim 77 executed in 143.2s, record 23223944675 B (21.6 GiB) at +5851s
+[aggregate] slot 146: cached proof 3a6ea7658396a5b4b8a8d7c81d66a1f5e8438aa61efb01badeb1fd975df0d87c
+[lanes] worker 0: join 146 published at +5854s
+[lanes] join 147 dispatched at +5854s
+[lanes] worker 0: claim 77 proving started at +5854s
+[lanes] executor 2: join 147 execution started at +5854s
+[aggregate] structural-joining slots 143, 146 into 147
+[trace-shards] 6 shards, 1500000000 committed cells: record 12316814435 B in shared pool, host workspace 19244654541 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 147 executed in 33.2s, record 12316814435 B (11.4 GiB) at +5887s
+[lanes] worker 0: claim 77 proven at +5895s (2 left)
+[lanes] join 150 dispatched at +5895s
+[lanes] worker 0: join 147 proving started at +5895s
+[lanes] executor 2: join 150 execution started at +5895s
+[aggregate] structural-joining slots 148, 149 into 150
+[trace-shards] 11 shards, 1500000000 committed cells: record 22230787817 B in shared pool, host workspace 18600872576 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 78 executed in 133.5s, record 22230787817 B (20.7 GiB) at +5912s
+[aggregate] slot 147: cached proof 735851611d4d81f083de72d100bd25988ffe3d5d9a85e08fa308842deb5d7a3a
+[lanes] worker 0: join 147 published at +5913s
+[lanes] worker 0: claim 78 proving started at +5913s
+[trace-shards] 8 shards, 1500000000 committed cells: record 15381859965 B in shared pool, host workspace 19468971162 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 150 executed in 37.8s, record 15381859965 B (14.3 GiB) at +5932s
+[trace-shards] 12 shards, 1500000000 committed cells: record 25311728415 B in shared pool, host workspace 18417725119 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 79 executed in 155.9s, record 25311728415 B (23.5 GiB) at +5946s
+[lanes] worker 0: claim 78 proven at +5951s (1 left)
+[lanes] worker 0: join 150 proving started at +5951s
+[aggregate] slot 150: cached proof c375c0e8b6e8bd2d7182069a819ab8dea869b31d8114e940e46e5cd959f98e24
+[lanes] worker 0: join 150 published at +5973s
+[lanes] worker 0: claim 79 proving started at +5973s
+[lanes] worker 0: claim 79 proven at +6015s (0 left)
+[lanes] join 153 dispatched at +6015s
+[aggregate] structural-joining slots 151, 152 into 153
+[lanes] executor 0: join 153 execution started at +6015s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16619251110 B in shared pool, host workspace 19219404270 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 153 executed in 30.9s, record 16619251110 B (15.4 GiB) at +6045s
+[lanes] worker 0: join 153 proving started at +6045s
+[aggregate] slot 153: cached proof cf5dfcf85e463daacc2fe4d64d2b0b374b4fc561b3d5b3bef77ae6d163600efd
+[lanes] worker 0: join 153 published at +6070s
+[lanes] join 154 dispatched at +6070s
+[lanes] executor 1: join 154 execution started at +6070s
+[aggregate] structural-joining slots 150, 153 into 154
+[trace-shards] 6 shards, 1500000000 committed cells: record 12074403719 B in shared pool, host workspace 19227076967 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: join 154 executed in 23.2s, record 12074403719 B (11.2 GiB) at +6093s
+[lanes] worker 0: join 154 proving started at +6093s
+[aggregate] slot 154: cached proof 9857e575c105cf1ef5c5815095fbfc2b1b524f63737fa78748cdd5d781f002a5
+[lanes] worker 0: join 154 published at +6111s
+[lanes] join 155 dispatched at +6111s
+[lanes] executor 0: join 155 execution started at +6111s
+[aggregate] structural-joining slots 147, 154 into 155
+[trace-shards] 6 shards, 1500000000 committed cells: record 12024469292 B in shared pool, host workspace 18736441170 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 155 executed in 23.9s, record 12024469292 B (11.1 GiB) at +6135s
+[lanes] worker 0: join 155 proving started at +6135s
+[aggregate] slot 155: cached proof 04cf88ef6fdfbfb4e704c34cb2c1b68ab51545bf4851e1f7a07281fc9110df4e
+[lanes] worker 0: join 155 published at +6153s
+[lanes] join 156 dispatched at +6153s
+[aggregate] structural-joining slots 138, 155 into 156
+[lanes] executor 0: join 156 execution started at +6153s
+[trace-shards] 7 shards, 1500000000 committed cells: record 14908033503 B in shared pool, host workspace 19110515456 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 156 executed in 31.2s, record 14908033503 B (13.8 GiB) at +6184s
+[lanes] worker 0: join 156 proving started at +6184s
+[aggregate] slot 156: cached proof 11f63190ffe9b8f3830638a7fa712c60c6114d4b872033293586dae88899b97d
+[lanes] worker 0: join 156 published at +6205s
+[lanes] join 157 dispatched at +6205s
+[lanes] executor 2: join 157 execution started at +6205s
+[aggregate] structural-joining slots 117, 156 into 157
+[trace-shards] 8 shards, 1500000000 committed cells: record 18035889544 B in shared pool, host workspace 19652905898 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 2: join 157 executed in 40.7s, record 18035889544 B (16.7 GiB) at +6246s
+[lanes] worker 0: join 157 proving started at +6246s
+[aggregate] slot 157: cached proof 0b34446994302605486bc9dd2eeb8b604cd34f752906760007e30cb8bab4c7ee
+[lanes] worker 0: join 157 published at +6271s
+[lanes] root dispatched at +6271s
+[aggregate] structural-joining slots 86, 157 into 158
+[lanes] executor 0: root execution started at +6271s
+[trace-shards] 11 shards, 1500000000 committed cells: record 25137571224 B in shared pool, host workspace 19461712212 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: root executed in 62.8s, record 25137571224 B (23.4 GiB) at +6334s
+[lanes] worker 0: root proving started at +6334s
+[aggregate] slot 158: cached proof a3ad590a5eeff35a9e9e4e96d53a927ee29bc5424a95355402b809439ba67302
+[trace-shards] 4 shards, 1500000000 committed cells: record 6328799501 B in shared pool, host workspace 19061304433 B of 26088568116 B reserved per prover; regenerating round 2
+[aggregate] root wrap proven in 21.2s (query-record peak 73.4 GiB): 11 shard(s) verified into 4
+[trace-shards] 2 shards, 1500000000 committed cells: record 2882847887 B in shared pool, host workspace 16385778316 B of 26088568116 B reserved per prover; regenerating round 2
+[aggregate] root wrap proven in 9.8s (query-record peak 61.8 GiB): 4 shard(s) verified into 2
+[trace-shards] 1 shards, 1500000000 committed cells: record 1912871781 B in shared pool, host workspace 14304212197 B of 26088568116 B reserved per prover; regenerating round 2
+[aggregate] root wrap proven in 6.6s (query-record peak 53.6 GiB): 2 shard(s) verified into 1
+[lanes] worker 0: root proven at +6403s
+[lanes] final partition: /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib-proven.ixes
+[lanes] record pool: peak granted 137.3 GiB, 0 growth waits (0.0s summed across executions), 0 contention retries
+[lanes] root 7219074ddf316d2a10222ef48bc62fd8ca606e828ce1fd170e1627704b12b27e verified; composed verdict OK; end to end 6403s
+	Command being timed: "/home/sam/repos/ix-stack/.lake/build/bin/ix prove --ixe /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib.ixe --ixes /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib.ixes --trace-shards --lanes 1 --exec-jobs 3 --max-ram 180 --out-ixes /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib-proven.ixes"
+	User time (seconds): 87665.69
+	System time (seconds): 4224.69
+	Percent of CPU this job got: 1434%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:46:47
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 169651748
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 14980
+	Minor (reclaiming a frame) page faults: 78528317
+	Voluntary context switches: 9467468
+	Involuntary context switches: 11552872
+	Swaps: 0
+	File system inputs: 512
+	File system outputs: 5800520
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

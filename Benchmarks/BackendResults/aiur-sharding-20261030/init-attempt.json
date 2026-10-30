@@ -1,0 +1,257 @@
+{
+  "workload": "init",
+  "status": "failed-record-cap",
+  "final_proof_obtained": false,
+  "independent_verification_performed": false,
+  "target_constants": 56811,
+  "work_items": 55575,
+  "environment_shards": 3,
+  "input_sha256": "169ee36c5ada2a0af87734fb2cdb3840b20d01fbe7905f834319fcea4bcabfd0",
+  "partition_sha256": "020ffacf998e5316e139267075567c6eca2a98882223e8c310eb8037443356a4",
+  "source_revision": "9e46f7e4d8ea647e67b885e3ad8f9596993dcf51",
+  "same_frozen_binary_as_nat_and_array": true,
+  "failed_attempt_wall_seconds": 1027.4743078570173,
+  "failed_stage": "aggregation/root wrapping",
+  "record_limit_bytes": 137438953472,
+  "record_bytes_at_failure": 137438954052,
+  "sampled_tree_peak_rss_bytes": 149337092096,
+  "sampled_peak_vram_bytes": 21198012416,
+  "host_memory_limit_bytes": 246960619520,
+  "oom_events": {
+    "low": 0,
+    "high": 0,
+    "max": 0,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0,
+    "sock_throttled": 0
+  },
+  "units": [
+    {
+      "unit": "claim 0",
+      "execution_seconds": 128.2,
+      "record_bytes": 26344312662,
+      "execution_finished_at_lane_seconds": 128,
+      "trace_plan": {
+        "trace_shards": 48,
+        "cells_per_trace_shard": 375000000,
+        "record_bytes": 26344312662,
+        "host_workspace_bytes": 17876270374,
+        "reserved_workspace_bytes": 26088568116
+      }
+    },
+    {
+      "unit": "claim 1",
+      "execution_seconds": 132.2,
+      "record_bytes": 26393397669,
+      "execution_finished_at_lane_seconds": 132,
+      "trace_plan": {
+        "trace_shards": 46,
+        "cells_per_trace_shard": 375000000,
+        "record_bytes": 26393397669,
+        "host_workspace_bytes": 17868422376,
+        "reserved_workspace_bytes": 26088568116
+      }
+    },
+    {
+      "unit": "claim 2",
+      "execution_seconds": 141.7,
+      "record_bytes": 27755834102,
+      "execution_finished_at_lane_seconds": 141,
+      "trace_plan": {
+        "trace_shards": 49,
+        "cells_per_trace_shard": 375000000,
+        "record_bytes": 27755834102,
+        "host_workspace_bytes": 17895426100,
+        "reserved_workspace_bytes": 26088568116
+      }
+    },
+    {
+      "unit": "join 2",
+      "execution_seconds": 90.0,
+      "record_bytes": 40030984063,
+      "execution_finished_at_lane_seconds": 316,
+      "trace_plan": {
+        "trace_shards": 207,
+        "cells_per_trace_shard": 187500000,
+        "record_bytes": 40030984063,
+        "host_workspace_bytes": 13267850552,
+        "reserved_workspace_bytes": 26088568116
+      }
+    },
+    {
+      "unit": "root",
+      "execution_seconds": 187.0,
+      "record_bytes": 91840419908,
+      "execution_finished_at_lane_seconds": 576,
+      "trace_plan": {
+        "trace_shards": 476,
+        "cells_per_trace_shard": 187500000,
+        "record_bytes": 91840419908,
+        "host_workspace_bytes": 15489459037,
+        "reserved_workspace_bytes": 26088568116
+      }
+    }
+  ],
+  "events": [
+    {
+      "elapsed_seconds": 2.216620905994205,
+      "message": "[lanes] executor 24: claim 0 execution started at +0s"
+    },
+    {
+      "elapsed_seconds": 2.2166230250149965,
+      "message": "[lanes] executor 18: claim 1 execution started at +0s"
+    },
+    {
+      "elapsed_seconds": 2.2166258160141297,
+      "message": "[lanes] executor 31: claim 2 execution started at +0s"
+    },
+    {
+      "elapsed_seconds": 130.37345439000637,
+      "message": "[lanes] executor 24: claim 0 executed in 128.2s, record 26344312662 B (24.5 GiB) at +128s"
+    },
+    {
+      "elapsed_seconds": 130.37346090000938,
+      "message": "[lanes] worker 0: claim 0 proving started at +128s"
+    },
+    {
+      "elapsed_seconds": 134.44122243099264,
+      "message": "[lanes] executor 18: claim 1 executed in 132.2s, record 26393397669 B (24.5 GiB) at +132s"
+    },
+    {
+      "elapsed_seconds": 143.95447203499498,
+      "message": "[lanes] executor 31: claim 2 executed in 141.7s, record 27755834102 B (25.8 GiB) at +141s"
+    },
+    {
+      "elapsed_seconds": 179.8794175820076,
+      "message": "[lanes] worker 0: claim 0 proven at +177s (2 left)"
+    },
+    {
+      "elapsed_seconds": 179.87944501501624,
+      "message": "[lanes] worker 0: claim 1 proving started at +177s"
+    },
+    {
+      "elapsed_seconds": 228.5774377360067,
+      "message": "[lanes] worker 0: claim 1 proven at +226s (1 left)"
+    },
+    {
+      "elapsed_seconds": 228.57747891399777,
+      "message": "[aggregate] structural-joining slots 0, 1 into 2"
+    },
+    {
+      "elapsed_seconds": 228.57748328099842,
+      "message": "[lanes] worker 0: claim 2 proving started at +226s"
+    },
+    {
+      "elapsed_seconds": 228.57748756199726,
+      "message": "[lanes] executor 15: join 2 execution started at +226s"
+    },
+    {
+      "elapsed_seconds": 280.30285237400676,
+      "message": "[lanes] worker 0: claim 2 proven at +278s (0 left)"
+    },
+    {
+      "elapsed_seconds": 318.5413858840184,
+      "message": "[lanes] executor 15: join 2 executed in 90.0s, record 40030984063 B (37.2 GiB) at +316s"
+    },
+    {
+      "elapsed_seconds": 318.5413914740202,
+      "message": "[lanes] worker 0: join 2 proving started at +316s"
+    },
+    {
+      "elapsed_seconds": 391.9369146300014,
+      "message": "[aggregate] slot 2: cached proof 7b831571f932eab15dfcedac4edbcabce5ab56c9ae25573c70d5f5dde2d26db8"
+    },
+    {
+      "elapsed_seconds": 391.9369468350196,
+      "message": "[lanes] worker 0: join 2 published at +389s"
+    },
+    {
+      "elapsed_seconds": 391.9369582130166,
+      "message": "[aggregate] structural-joining slots 2, 3 into 4"
+    },
+    {
+      "elapsed_seconds": 391.9369620270154,
+      "message": "[lanes] executor 10: root execution started at +389s"
+    },
+    {
+      "elapsed_seconds": 578.8908846680133,
+      "message": "[lanes] executor 10: root executed in 187.0s, record 91840419908 B (85.5 GiB) at +576s"
+    },
+    {
+      "elapsed_seconds": 578.8908906819997,
+      "message": "[lanes] worker 0: root proving started at +576s"
+    },
+    {
+      "elapsed_seconds": 748.0493380670086,
+      "message": "[aggregate] slot 4: cached proof 11d8886768e40862acb2728d1fd315691eb9041e55954ed45b4cdc224a963e75"
+    },
+    {
+      "elapsed_seconds": 1027.0344112690073,
+      "message": "[prove] root: record reached 137438954052 B, over the 137438953472 B record cap; rerun the same command to resume from what was persisted"
+    }
+  ],
+  "later_stages_reached": {
+    "normalization": false,
+    "fri": false,
+    "first_kzg": false,
+    "recursive_kzg": false,
+    "plonk": false
+  },
+  "trace_configuration_notes": [
+    "Frozen build enabled parallel,cuda for the base FFI and plonk,parallel,cuda,net for the network FFI; cuda-trace-codegen was not enabled.",
+    "The Nat runner does not explicitly enable AIUR_TRACE_ONLY_LOOKUPS or AIUR_MAX_PIECE_LOG_HEIGHT. Historical GPU recipes set these to 1 and 24.",
+    "The actual planner chose 375 million cells for claim proofs and 187.5 million for joins/root, versus 1.5 billion in the historical run.",
+    "Per-unit execution and proving overlap; their times must not be summed into E2E wall time."
+  ],
+  "three_shard_origin": {
+    "source_log": "/home/sam/repos/ix-stack/target/fixed-root-20261029/shard.log",
+    "selection": "automatic byte-scaled CUDA heuristic, not --shards 3",
+    "prover_budget_gib": 200,
+    "executions_ahead": 2,
+    "logged_trace_cells_at_partitioning": 0,
+    "serialized_block_bytes_approx": 66710000,
+    "reference_mathlib_shards": 78,
+    "reference_mathlib_block_bytes": 1468041216,
+    "reference_record_share_gib": 41.4,
+    "selected_record_share_gib_approx": 49.9,
+    "unrounded_seed_approx": 2.940675410444894
+  },
+  "memory_guard": {
+    "outcome": "failed",
+    "exit_code": 1,
+    "unit": "ix-backend-6a20db3306e24915be60a9fac4e63ca3.scope",
+    "limit_bytes": 246960619520,
+    "mem_available_at_start": 255877783552,
+    "wall_seconds": 1028.1407677730022,
+    "memory_events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "sock_throttled": 0
+    },
+    "memory_events_final": false,
+    "systemd": {
+      "LoadState": "not-found",
+      "Result": "success",
+      "MemoryPeak": "[not set]"
+    },
+    "memory_peak_bytes": null,
+    "sampled_memory_peak_bytes": 150760214528,
+    "command": [
+      "python3",
+      "tools/backend-bench/ix_nat.py",
+      "measure",
+      "--base",
+      "target/backend-bench/ix-init-20261030",
+      "--run-id",
+      "fresh-001",
+      "--timeout-seconds",
+      "1800"
+    ]
+  },
+  "evidence_directory": "fresh-001"
+}

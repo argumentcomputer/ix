@@ -1,0 +1,66 @@
+[rs_shard_static] env load 1.2s, static graph 4.1s (672973 blocks, 18593143 edges)
+[shard] trace-shard seed (cuda build): bytes=1.1416e9; round(78 x (bytes/1.4680e9) x (41.4 GiB / 31.4 GiB record share: 180 GiB per worker, 1500000000 cells, 3 executions ahead)) -> 80 shard(s) (heuristic; the record cap names any shard over its share)
+[shard] bisecting 672973 vertices → 80 shards  (3.4µs elapsed, 0/80 shards done)
+[shard] bisecting 314210 vertices → 44 shards  (19.5s elapsed, 0/80 shards done)
+[shard] bisecting 358763 vertices → 36 shards  (19.5s elapsed, 0/80 shards done)
+[shard] bisecting 143543 vertices → 16 shards  (31.0s elapsed, 0/80 shards done)
+[shard] bisecting 215220 vertices → 20 shards  (31.0s elapsed, 0/80 shards done)
+[shard] bisecting 175097 vertices → 24 shards  (34.1s elapsed, 0/80 shards done)
+[shard] bisecting 139113 vertices → 20 shards  (34.1s elapsed, 0/80 shards done)
+[shard] bisecting 72136 vertices → 9 shards  (35.4s elapsed, 0/80 shards done)
+[shard] bisecting 71407 vertices → 7 shards  (35.4s elapsed, 0/80 shards done)
+[shard] bisecting 100207 vertices → 11 shards  (39.0s elapsed, 1/80 shards done)
+[shard] bisecting 115013 vertices → 9 shards  (39.0s elapsed, 1/80 shards done)
+[shard] bisecting 72198 vertices → 11 shards  (39.3s elapsed, 1/80 shards done)
+[shard] bisecting 66915 vertices → 9 shards  (39.3s elapsed, 1/80 shards done)
+[shard] 5/80 shards finalized  (39.8s elapsed)
+[shard] 10/80 shards finalized  (39.9s elapsed)
+[shard] 15/80 shards finalized  (41.4s elapsed)
+[shard] bisecting 72566 vertices → 5 shards  (41.9s elapsed, 16/80 shards done)
+[shard] bisecting 55433 vertices → 6 shards  (43.0s elapsed, 16/80 shards done)
+[shard] bisecting 93972 vertices → 13 shards  (43.1s elapsed, 16/80 shards done)
+[shard] bisecting 81125 vertices → 11 shards  (43.1s elapsed, 16/80 shards done)
+[shard] 20/80 shards finalized  (43.9s elapsed)
+[shard] 25/80 shards finalized  (44.6s elapsed)
+[shard] 30/80 shards finalized  (45.6s elapsed)
+[shard] 35/80 shards finalized  (46.1s elapsed)
+[shard] 40/80 shards finalized  (46.9s elapsed)
+[shard] 45/80 shards finalized  (47.0s elapsed)
+[shard] 50/80 shards finalized  (47.8s elapsed)
+[shard] 55/80 shards finalized  (48.3s elapsed)
+[shard] 60/80 shards finalized  (50.7s elapsed)
+[shard] 65/80 shards finalized  (52.2s elapsed)
+[shard] 70/80 shards finalized  (52.6s elapsed)
+[shard] 75/80 shards finalized  (54.0s elapsed)
+[shard] 80/80 shards finalized  (54.6s elapsed)
+[shard] partitioned into 80 shards in 54.7s
+[shard_static] hypergraph 154.9ms, partition 55.0s, rebalance 16.9s (3095 moves)
+[rs_shard_static]
+blocks=672973 static_edges=18593143 nets=477822
+shards=80 (empty=0) heartbeats[min=10729175 mean=14270012 max=18944780] imbalance=1.33x cross_ingress_total=571234116 max_shard_cross=10986442
+rebalance moves=3095  predicted FFT/shard mean=1.312e12 min=1.306e12 max=1.320e12 spread=1.01x
+Sharding /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib.ixe for a 180 GiB prover budget (static block-shape seed, mincut layout, balance ±5%)
+[shard] wrote /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib.ixes
+	Command being timed: "/home/sam/repos/ix-stack/.lake/build/bin/ix shard /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib.ixe --max-ram 180 --exec-jobs 3 --out /home/sam/repos/ix-stack/target/fixed-root-20261029/mathlib.ixes"
+	User time (seconds): 231.37
+	System time (seconds): 1.39
+	Percent of CPU this job got: 293%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:19.32
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 4341224
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 88700
+	Voluntary context switches: 518
+	Involuntary context switches: 2102
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 82272
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

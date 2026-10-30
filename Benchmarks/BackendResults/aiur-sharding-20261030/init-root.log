@@ -1,0 +1,70 @@
+[lanes] host budget 200.0 GiB process-wide (requested 200.0 GiB per GPU, visible cgroup limit unlimited or unavailable): 155.7 GiB shared records, 24.2 GiB workspace per GPU, 20.0 GiB headroom; 2 CPU executions, 1 prepared queue slots; 38.9 GiB initial reservation, growth waits for shared capacity; 1500000000 trace cells
+[lanes] per-record ceiling 128.0 GiB; oversized environment claims are bisected automatically
+[lanes] building 1 resident workers
+[lanes] 3 claims (0 reused from the index, 0 retired under cached joins without an indexed proof), 2 joins (0 cached)
+[lanes] claim 0 dispatched at +0s
+[lanes] claim 1 dispatched at +0s
+[lanes] executor 1: claim 0 execution started at +0s
+[lanes] executor 0: claim 1 execution started at +0s
+[trace-shards] 11 shards, 1500000000 committed cells: record 26344312662 B in shared pool, host workspace 18408759447 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 0 executed in 124.1s, record 26344312662 B (24.5 GiB) at +124s
+[lanes] claim 2 dispatched at +124s
+[lanes] worker 0: claim 0 proving started at +124s
+[lanes] executor 1: claim 2 execution started at +124s
+[trace-shards] 12 shards, 1500000000 committed cells: record 26393397669 B in shared pool, host workspace 19152963680 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: claim 1 executed in 128.3s, record 26393397669 B (24.5 GiB) at +128s
+[lanes] worker 0: claim 0 proven at +167s (2 left)
+[lanes] worker 0: claim 1 proving started at +167s
+[lanes] worker 0: claim 1 proven at +211s (1 left)
+[lanes] join 2 dispatched at +211s
+[aggregate] structural-joining slots 0, 1 into 2
+[lanes] executor 0: join 2 execution started at +211s
+[trace-shards] 9 shards, 1500000000 committed cells: record 16220116930 B in shared pool, host workspace 19468971162 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: join 2 executed in 30.4s, record 16220116930 B (15.1 GiB) at +241s
+[lanes] worker 0: join 2 proving started at +241s
+[aggregate] slot 2: cached proof 966a984c93ae396472d9f89e4e2079ccb7817796a6ad58790d46fa73e9b648a7
+[lanes] worker 0: join 2 published at +265s
+[trace-shards] 12 shards, 1500000000 committed cells: record 27755834102 B in shared pool, host workspace 19153055047 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 1: claim 2 executed in 152.2s, record 27755834102 B (25.8 GiB) at +276s
+[lanes] worker 0: claim 2 proving started at +276s
+[lanes] worker 0: claim 2 proven at +319s (0 left)
+[lanes] root dispatched at +319s
+[aggregate] structural-joining slots 2, 3 into 4
+[lanes] executor 0: root execution started at +319s
+[trace-shards] 8 shards, 1500000000 committed cells: record 14677197522 B in shared pool, host workspace 18840898714 B of 26088568116 B reserved per prover; regenerating round 2
+[lanes] executor 0: root executed in 27.5s, record 14677197522 B (13.6 GiB) at +347s
+[lanes] worker 0: root proving started at +347s
+[aggregate] slot 4: cached proof 98f4c489a27462f2d0683d4bda93408de338e7ab35e4f16b30d2fe5ad3cb1628
+[trace-shards] 3 shards, 1500000000 committed cells: record 4765306255 B in shared pool, host workspace 18658097922 B of 26088568116 B reserved per prover; regenerating round 2
+[aggregate] root wrap proven in 15.7s (query-record peak 71.5 GiB): 8 shard(s) verified into 3
+[trace-shards] 2 shards, 1500000000 committed cells: record 2392871774 B in shared pool, host workspace 15941600081 B of 26088568116 B reserved per prover; regenerating round 2
+[aggregate] root wrap proven in 8.1s (query-record peak 59.5 GiB): 3 shard(s) verified into 2
+[trace-shards] 1 shards, 1500000000 committed cells: record 1885016632 B in shared pool, host workspace 14049460658 B of 26088568116 B reserved per prover; regenerating round 2
+[aggregate] root wrap proven in 6.3s (query-record peak 52.7 GiB): 2 shard(s) verified into 1
+[lanes] worker 0: root proven at +398s
+[lanes] final partition: /home/sam/repos/ix-stack/target/fixed-root-20261029/init-proven.ixes
+[lanes] record pool: peak granted 102.3 GiB, 0 growth waits (0.0s summed across executions), 0 contention retries
+[lanes] root a99c7df05e4aaeeebbe0909b22c4f96ec05a9a70770f418bcc5edec93f7e72f8 verified; composed verdict OK; end to end 398s
+	Command being timed: ".lake/build/bin/ix prove --ixe /home/sam/repos/ix-stack/target/fixed-root-20261029/init.ixe --ixes /home/sam/repos/ix-stack/target/fixed-root-20261029/init.ixes --trace-shards --lanes 1 --exec-jobs 2 --max-ram 200 --out-ixes /home/sam/repos/ix-stack/target/fixed-root-20261029/init-proven.ixes"
+	User time (seconds): 2921.23
+	System time (seconds): 145.07
+	Percent of CPU this job got: 765%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:40.64
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 91112484
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 296
+	Minor (reclaiming a frame) page faults: 3012941
+	Voluntary context switches: 344699
+	Involuntary context switches: 224879
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 202624
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
