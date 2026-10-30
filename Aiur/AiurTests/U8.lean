@@ -8,7 +8,7 @@ open Aiur
 set_option maxRecDepth 10000
 
 def client : Modules.Program Nat := aiur_library% Library.U8.templates "
-module Bytes {
+module ByteChecks {
     fn checked(value: Field) -> Field { UInt8::to_field(UInt8::from_field(value)) }
     fn less_than(a: Field, b: Field) -> Field { UInt8::raw_lt(a, b) }
     fn and(a: Field, b: Field) -> Field { UInt8::to_field(UInt8::raw_and(a, b)) }
@@ -37,8 +37,8 @@ module Bytes {
     }
 }"
 
-def entries := ["Bytes::checked", "Bytes::less_than", "Bytes::and", "Bytes::or", "Bytes::split", "Bytes::add",
-  "Bytes::sub", "Bytes::mul", "Bytes::join4", "Bytes::join7"]
+def entries := ["ByteChecks::checked", "ByteChecks::less_than", "ByteChecks::and", "ByteChecks::or", "ByteChecks::split", "ByteChecks::add",
+  "ByteChecks::sub", "ByteChecks::mul", "ByteChecks::join4", "ByteChecks::join7"]
 
 run_cmd do
   for (type, raw) in [("UInt8::U8", "0"), ("UInt8::Parts4", "(0, 0)"), ("UInt8::Parts7", "(0, 0)")] do
@@ -115,22 +115,22 @@ def run : IO Unit := do
   IO.ofExcept checkTables
   let prepared ← IO.ofExcept <| Modules.prepare ((Library.U8.source.append client).toField Rat) entries
   for n in ([0, 1, 254, 255] : List Nat) do
-    let (actual, _) ← IO.ofExcept <| prepared.run "Bytes::checked" [.field n]
+    let (actual, _) ← IO.ofExcept <| prepared.run "ByteChecks::checked" [.field n]
     unless actual == .field n do
       throw (IO.userError s!"wrong checked byte at {n}")
   for (a, b) in ([(0, 255), (255, 0), (255, 255)] : List (Nat × Nat)) do
-    let (actual, _) ← IO.ofExcept <| prepared.run "Bytes::less_than" [.field a, .field b]
+    let (actual, _) ← IO.ofExcept <| prepared.run "ByteChecks::less_than" [.field a, .field b]
     unless actual == .field (if a < b then 1 else 0) do
       throw (IO.userError s!"wrong raw byte comparison at {a}, {b}")
   for n in ([0, 255, 256, 510, 511, 512, 767] : List Nat) do
-    let (actual, _) ← IO.ofExcept <| prepared.run "Bytes::split" [.field n]
+    let (actual, _) ← IO.ofExcept <| prepared.run "ByteChecks::split" [.field n]
     unless actual == .tuple [.field ((n % 256 : Nat) : Rat), .field ((n / 256 : Nat) : Rat)] do
       throw (IO.userError s!"wrong split_sum at {n}")
   for (entry, args) in [("checked", [256]), ("checked", [-1]),
       ("less_than", [256, 0]), ("less_than", [0, 256]), ("less_than", [-1, 0]),
       ("less_than", [0, -1]), ("split", [768]), ("split", [-1]), ("add", [256, 0]),
       ("sub", [0, -1]), ("mul", [1, 256]), ("join4", [256, 0]), ("join7", [0, 256])] do
-    unless (prepared.run ("Bytes::" ++ entry) (args.map fun x => .field x)).toOption.isNone do
+    unless (prepared.run ("ByteChecks::" ++ entry) (args.map fun x => .field x)).toOption.isNone do
       throw (IO.userError s!"out-of-domain byte operation accepted: {entry}")
   IO.println "Passed shared U8 tables (65,536 pairs, 768 sums), opacity and raw-domain checks."
 

@@ -1,0 +1,67 @@
+{
+  "baseline_revision": "44ea874244a16dd2347c7f2ff1675bad8bc4a258",
+  "legacy_program_revision": "827550579ea660a4749c520968ad6f58be63acf4",
+  "legacy_program_sources_unchanged_since_pin": true,
+  "comparison": "Complete artifacts equal after global renaming, empty-guard removal with PC relocation, and identity trace assignment removal.",
+  "workloads": {
+    "ixvm": {
+      "equivalent_artifacts_modulo_names_and_noops": true,
+      "functions": 828,
+      "maps": 10,
+      "chips": 778,
+      "groups": 112,
+      "removed_empty_guards": 3404,
+      "before_sha256": "1f8c10da7b10587e985d5166b26ad0c7edd4f4cbdfe0978c7deb237cf6683d9a",
+      "after_sha256": "d2572d9787a384ba6f4e99d45070407182dcbaaa9791480a31c08167120934fa",
+      "ungrouped_function_columns": 19675
+    },
+    "recursion": {
+      "equivalent_artifacts_modulo_names_and_noops": true,
+      "functions": 224,
+      "maps": 10,
+      "chips": 189,
+      "groups": 39,
+      "removed_empty_guards": 390,
+      "before_sha256": "40e88dd1f84e4f119626189e83f8eb181f6ef9875c190f33cdd7853e83c5afe1",
+      "after_sha256": "53a2fe4442dd1db1b082c54ac425930cf4746c1268a2f92f261acfc9e2bba1a3",
+      "ungrouped_function_columns": 5907
+    },
+    "aggregate": {
+      "equivalent_artifacts_modulo_names_and_noops": true,
+      "functions": 285,
+      "maps": 10,
+      "chips": 245,
+      "groups": 39,
+      "removed_empty_guards": 528,
+      "before_sha256": "50638b554026d4db272e725cf07f70d27b280ca9e62b0323a197fa572f21cb60",
+      "after_sha256": "aa69584ed7f0e746094f46f367c27d72c3178030a048be86a960436f0ba08f0d",
+      "ungrouped_function_columns": 7878
+    }
+  },
+  "library_validation": {
+    "native_table_reference_trace_comparisons": 2586,
+    "rejected_dishonest_hint_proofs": 2,
+    "verified_u64_blake3_proofs": 2,
+    "lean_u8_u32_u64_domain_opacity_tests": "passed",
+    "abstract_signature_clients_and_opaque_hint_rejections": "passed"
+  },
+  "integration_validation": {
+    "lean_packages_and_cli_build": "passed",
+    "ixvm_valid_invalid_claims_and_legacy_bytecode_check": "passed",
+    "recursive_proof_and_negative_cases": "passed",
+    "aggregation_shapes_and_negative_cases": "passed",
+    "controller": {
+      "success": true,
+      "commands": 19,
+      "report": ".lake/modular-library/integration/controller-check-wa8xjhpn/report.json"
+    },
+    "cpu_parity": {
+      "success": true,
+      "workloads": 3,
+      "hardware_validated": false,
+      "report": ".lake/modular-library/integration/cuda-check-gmcsnb_g/report.json"
+    },
+    "clippy_and_format": "passed",
+    "note": "Initial controller run found the old check_owned name; after adding old/new name compatibility, the controller gate passed. The CPU parity gate was then completed separately."
+  }
+}

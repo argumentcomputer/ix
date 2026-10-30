@@ -1,6 +1,7 @@
 import AiurTests.U8
 import AiurTests.U64
 import AiurTests.Blake3
+import AiurTests.LibraryInterfaces
 import Aiur.Library.Blake3.Goldilocks
 import Aiur.Execution
 import Aiur.Trace.Export
@@ -15,8 +16,10 @@ def main (args : List String) : IO Unit := do
       |>.append (AiurU8Tests.client.toField Library.U32.Goldilocks.F)
       |>.append (AiurU64Tests.client.toField Library.U32.Goldilocks.F)
       |>.append (AiurBlake3Tests.benchmark.toField Library.U32.Goldilocks.F)
+      |>.append (AiurLibraryInterfaces.clients.toField Library.U32.Goldilocks.F)
     let prepared ← IO.ofExcept <| Modules.prepare source
-      (AiurU8Tests.entries ++ AiurU64Tests.entries ++ ["Benchmark::hash"])
+      (AiurU8Tests.entries ++ AiurU64Tests.entries ++
+        ["Benchmark::hash", "InterfaceBytes::run", "InterfaceWords::run"])
     let exported ← IO.ofExcept prepared.exportExecution
     let compiled ← IO.ofExcept prepared.compileOptimized
     let program ← IO.ofExcept <| exported.toJson Library.U32.Goldilocks.modulus ZMod.val

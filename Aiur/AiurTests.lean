@@ -41,6 +41,7 @@ import AiurTests.Blake3
 import AiurTests.U8
 import AiurTests.U64
 import AiurTests.U32
+import AiurTests.LibraryInterfaces
 import Mathlib.Algebra.Field.Rat
 import Mathlib.Algebra.Field.ZMod
 

@@ -5,6 +5,7 @@ public import Ix.Shard.Check
 public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
+public import Aiur.SourceBundle
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
@@ -36,7 +37,9 @@ def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath m
   if let some path ← IO.getEnv env then return path
   let exporter := System.FilePath.mk exporterPath
   command "lake" #["-q", "build", target]
-  let source ← IO.FS.readBinFile sourcePath
+  let source ← if (System.FilePath.mk sourcePath).extension == some "sources" then
+      pure (← Aiur.SourceBundle.read sourcePath).toUTF8
+    else IO.FS.readBinFile sourcePath
   let compiler ← IO.FS.readBinFile exporter
   let digest := Address.blake3 ((Address.blake3 compiler).hash ++ source)
   let directory := System.FilePath.mk ".lake/aiur"
@@ -55,7 +58,7 @@ def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath m
 
 def artifact (p : Cli.Parsed) : IO String :=
   compiledArtifact p "aiur-artifact" "IX_AIUR_ARTIFACT" "IxVM/.lake/build/bin/ixvm"
-    "ixvm" "IxVM/IxVM/Program.aiur" "export-claim-trace"
+    "ixvm" "IxVM/IxVM/Program.sources" "export-claim-trace"
 
 def rustHost (package binary env : String) (device : Option Nat := none) : IO String := do
   if let some path ← IO.getEnv (env ++ if device.isSome then "_CUDA" else "") then return path

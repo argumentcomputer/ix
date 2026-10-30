@@ -1,5 +1,6 @@
 import Aiur.Library.U8
 import Aiur.Library.Frontend
+import Aiur.Library.U32.Signature
 import Mathlib.Algebra.CharP.Basic
 
 /-! Opaque byte and word arithmetic. The source has no privileged operations:
@@ -31,8 +32,8 @@ theorem compatible_of_charZero (F : Type) [AddMonoidWithOne F] [CharZero F] :
 including through aliases and aggregates. Only checked constructors and typed
 operations below create them. Typed conversions and word operations inline;
 raw field comparison shares a memoized query across callers. -/
-def declarations : Modules.Program Nat := aiur_library% U8.templates r#"
-module UInt32 {
+private def implementation : Modules.Program Nat := aiur_library% (U8.templates.append signature) r#"
+module UInt32: U32Signature {
     type U8 = UInt8::U8;
     opaque type U32 = [U8; 4];
     opaque type Compact = Field;
@@ -141,6 +142,8 @@ module UInt32 {
     }
 }
 "#
+
+def declarations : Modules.Program Nat := signature.append implementation
 
 def templates : Modules.Program Nat := U8.templates.append declarations
 

@@ -143,16 +143,20 @@ fn main() -> Result<(), Box<dyn Error>> {
   let execution_seconds = start.elapsed().as_secs_f64();
   assert!(record.output.is_empty());
   let mut checked_scope = std::collections::BTreeMap::new();
-  for name in [
-    "run_check_transitive",
-    "run_check",
-    "load_verified_constant",
-    "load_verified_blob",
+  for (name, module) in [
+    ("run_check_transitive", "KernelClaim"),
+    ("run_check", "KernelClaim"),
+    ("load_verified_constant", "Ingress"),
+    ("load_verified_blob", "Ingress"),
   ] {
     let mut addresses = std::collections::BTreeSet::new();
-    let full_name = format!("IxVM::{name}");
+    let full_name = format!("{module}::{name}");
+    let old_name = format!("IxVM::{name}");
     for (key, _) in record.queries.iter() {
-      if program.callable_name(key.function) == Some(full_name.as_str()) {
+      let callable = program.callable_name(key.function);
+      if callable == Some(full_name.as_str())
+        || callable == Some(old_name.as_str())
+      {
         let cell = record
           .memory
           .get_by_width(32, program.field().to_u64(key.args[0]) as usize)

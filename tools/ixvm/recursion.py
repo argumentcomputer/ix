@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import adapt
+import modules
 
 ROOT = adapt.ROOT
 FILES = ['LegacyAiur/Library/' + name + '.lean' for name in ['Core', 'ByteStream', 'Blake3']]
@@ -110,14 +111,44 @@ def main():
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--aggregate', action='store_true')
     args = parser.parse_args()
-    result, names = source(args.aggregate)
-    destination = ROOT / 'MultiStark/MultiStark' / ('Aggregate.aiur' if args.aggregate else 'Program.aiur')
-    if args.check:
-        if destination.read_text() != result:
-            raise RuntimeError('recursive verifier source is stale')
-    else:
-        destination.write_text(result)
-    print(f'{len(names)} recursive verifier functions')
+    # Both roots use one copy of every verifier subsystem. --aggregate is kept
+    # for existing automation; either invocation checks/generates both bundles.
+    parts = []
+    for path in FILES + ['Ix/Aggr/Circuit.lean']:
+        text = subprocess.check_output(['git', '-C', str(ROOT), 'show',
+                                       f'{adapt.REVISION}:{path}'], text=True)
+        component = {'Core': 'StarkCore', 'ByteStream': 'StarkIO', 'Blake3': 'StarkHash',
+                     'Goldilocks': 'Goldilocks', 'Deserialize': 'ProofDeserialize',
+                     'SystemDeserialize': 'SystemDeserialize', 'Pcs': 'Pcs',
+                     'Verifier': 'StarkVerifier', 'LegacyMultiStark': 'MultiStark',
+                     'Circuit': 'Aggregation'}[Path(path).stem]
+        parts.append((component, text.split('⟦', 1)[1].split('⟧', 1)[0]))
+    owners = modules.origins(parts)
+    for name in owners:
+        if name.startswith('b3_') or name in ('digest_eq',):
+            owners[name] = 'StarkHash'
+        elif name.startswith('ch_') or name in ('pcs_sample_ext', 'batch_fiat_shamir', 'shard_fiat_shamir'):
+            owners[name] = 'Transcript'
+        elif name.startswith(('mmcs_', 'frontier_')):
+            owners[name] = 'Mmcs'
+    standalone, _ = source(False)
+    aggregate, _ = source(True)
+    modules.check_shared(standalone)
+    modules.check_shared(aggregate)
+    sg, sn = modules.partition(standalone, owners, 'MultiStark', ['verify_multi_stark_proof'])
+    ag, an = modules.partition(aggregate, owners, 'MultiStark', ['ix_aggr'])
+    for module in sg.keys() & ag.keys() - {'MultiStark'}:
+        common = {}
+        for body in sg[module] + ag[module]:
+            decl = modules.declarations(body)[0]
+            if decl.name in common and modules.tokens(common[decl.name]) != modules.tokens(body):
+                raise ValueError(f'different verifier bodies for {module}::{decl.name}')
+            common[decl.name] = body
+        sg[module] = ag[module] = list(common.values())
+    directory = ROOT / 'MultiStark/MultiStark'
+    modules.emit(directory, sg, 'MultiStark', 'Program', sn, args.check)
+    modules.emit(directory, ag, 'MultiStark', 'Aggregate', an, args.check)
+    print(f'{len(sg)} verifier modules; {len(ag)} aggregation modules')
 
 
 if __name__ == '__main__':

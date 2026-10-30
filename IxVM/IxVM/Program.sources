@@ -1,0 +1,23 @@
+# Ordered Aiur source bundle; paths are relative to this file.
+Modules/RBTreeMap.aiur
+Modules/Ixon.aiur
+Modules/KernelTypes.aiur
+Modules/KernelLevels.aiur
+Modules/KernelInfer.aiur
+Modules/KernelClaim.aiur
+Modules/IxByteStream.aiur
+Modules/IxonSerialize.aiur
+Modules/IxonDeserialize.aiur
+Modules/KernelKlimbs.aiur
+Modules/KernelNatPrim.aiur
+Modules/Convert.aiur
+Modules/Ingress.aiur
+Modules/KernelSubst.aiur
+Modules/KernelWhnf.aiur
+Modules/KernelInferOnly.aiur
+Modules/KernelDefEq.aiur
+Modules/KernelCanonicalCheck.aiur
+Modules/KernelCheck.aiur
+Modules/IxVMCompat.aiur
+Modules/KernelEval.aiur
+Program.aiur

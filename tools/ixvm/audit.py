@@ -12,6 +12,7 @@ import re
 import subprocess
 
 import adapt
+import modules
 
 
 def functions(source):
@@ -35,10 +36,14 @@ def libraries():
     """Inventory the shared implementations, including checked table maps."""
     inventory, definitions = [], {}
     for module, filename in [('UInt8', 'U8'), ('UInt32', 'U32'), ('UInt64', 'U64'),
-                             ('Blake3', 'Blake3'), ('Lists', 'List'), ('Fields', 'Field')]:
+                             ('Blake3', 'Blake3'), ('Lists', 'List'), ('Fields', 'Field'),
+                             ('WordLists', 'List/Word'), ('Bytes', 'Bytes'),
+                             ('Goldilocks', 'Field/Goldilocks')]:
         path = f'Aiur/Aiur/Library/{filename}.lean'
         raw = (adapt.ROOT / path).read_text()
-        source = raw[raw.index(f'module {module} {{'):]
+        start = re.search(rf'module {module}(?:\s*:\s*\w+)?\s*\{{', raw)
+        assert start, f'missing module {module} in {path}'
+        source = raw[start.start():]
         end = re.search(r'\n\}\s*"#?', source)
         assert end, f'missing end of embedded module in {path}'
         source = source[:end.start() + 2]
@@ -72,7 +77,12 @@ def main():
     raw = '\n'.join(parts)
     old = functions(raw)
     lexical = functions(adapt.adapt(raw, semantic=False))
-    port_text = (adapt.ROOT / 'IxVM/IxVM/Program.aiur').read_text()
+    # Audit the semantic adaptation independently of namespace relocation.
+    # The actual modular bundle and extracted library bodies must reproduce it.
+    port_text, _, owners = adapt.source(args.ix)
+    groups, renames = modules.partition(port_text, owners, 'IxVM', adapt.ROOTS)
+    modules.emit(adapt.ROOT / 'IxVM/IxVM', groups, 'IxVM', 'Program', renames, check=True)
+    modules.check_shared(port_text)
     port = functions(port_text)
     rebuilt, _ = adapt.prune(adapt.adapt(raw) + (adapt.ROOT / 'IxVM/IxVM/Compatibility.aiur').read_text() + (adapt.ROOT / 'IxVM/IxVM/PortCases.aiur').read_text(),
                             adapt.ROOTS)
@@ -82,7 +92,7 @@ def main():
     for name, body in port.items():
         status = 'adapter' if name not in old else ('lexical-only' if tokens(body) == tokens(lexical[name]) else 'semantic-adaptation')
         calls = re.findall(r'([#@]?)\b(\w+)\s*(?:‹[^›]*›)?\(', old.get(name, ''))
-        rows.append(dict(name=name, origin=origins.get(name), status=status,
+        rows.append(dict(name=name, target=renames.get('IxVM::' + name), origin=origins.get(name), status=status,
                          pointer_comparisons=old.get(name, '').count('ptr_val('),
                          unconstrained_callees=sorted({n for mode, n in calls if mode == '#'}),
                          inlined_callees=sorted({n for mode, n in calls if mode == '@'})))
@@ -92,7 +102,7 @@ def main():
             diffs.append('\n')
     library_files, definitions = libraries()
     replacements = []
-    for name, target in adapt.LIBRARY_FUNCTIONS.items():
+    for name, target in (adapt.LIBRARY_FUNCTIONS | modules.SHARED).items():
         path, body = definitions[target]  # Fail if an adapter names a missing library operation.
         replacements.append(dict(name=name, target=target, origin=origins.get(name), library=path,
                                  definition_sha256=hashlib.sha256(body.encode()).hexdigest()))

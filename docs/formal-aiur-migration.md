@@ -155,10 +155,12 @@ refinement loop without proving. Reports use `ix-formal-run/1` and contain
 per-part plans, timings, failures and proof addresses. A failed run does not
 publish a refined manifest. Ordinary `ix check` only executes.
 
-`MultiStark/MultiStark/Program.aiur` is the ordinary Aiur recursive verifier;
-`Aggregate.aiur` adds all thirteen current aggregation shapes, including range
-leaves, joins and closure. They share the existing opaque word and Blake3
-libraries. Hint closures provide raw advice, and ordinary program assertions
+`MultiStark/MultiStark/Program.sources` composes the ordinary Aiur recursive
+verifier modules; `Aggregate.sources` reuses them and adds all thirteen current
+aggregation shapes, including range leaves, joins and closure. Both reuse the
+checked byte/word, list, address, Blake3, and Goldilocks libraries. See
+[the module layout](formal-aiur-modules.md) for interfaces and compatibility
+checks. Hint closures provide raw advice, and ordinary program assertions
 check it. Digest and duplicate-row equality use full structural comparisons;
 there are no pointer identities or unconstrained calls. Application address
 sets also compare complete address contents, and 64-bit equality compares both

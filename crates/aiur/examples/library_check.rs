@@ -53,26 +53,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     checks += 1;
     Ok(())
   };
+  check("InterfaceBytes::run", vec![173, 99], vec![206])?;
+  check("InterfaceWords::run", vec![u64::from(u32::MAX), 1], vec![0])?;
   for byte in 0..256 {
-    check("Bytes::checked", vec![byte], vec![byte])?;
+    check("ByteChecks::checked", vec![byte], vec![byte])?;
   }
   for sum in 0..768 {
-    check("Bytes::split", vec![sum], vec![sum % 256, sum / 256])?;
+    check("ByteChecks::split", vec![sum], vec![sum % 256, sum / 256])?;
   }
   for a in [0, 1, 15, 16, 127, 128, 254, 255] {
     for b in [0, 1, 15, 16, 127, 128, 254, 255] {
-      check("Bytes::less_than", vec![a, b], vec![u64::from(a < b)])?;
-      check("Bytes::and", vec![a, b], vec![a & b])?;
-      check("Bytes::or", vec![a, b], vec![a | b])?;
-      check("Bytes::add", vec![a, b], vec![(a + b) % 256, (a + b) / 256])?;
+      check("ByteChecks::less_than", vec![a, b], vec![u64::from(a < b)])?;
+      check("ByteChecks::and", vec![a, b], vec![a & b])?;
+      check("ByteChecks::or", vec![a, b], vec![a | b])?;
+      check("ByteChecks::add", vec![a, b], vec![(a + b) % 256, (a + b) / 256])?;
       check(
-        "Bytes::sub",
+        "ByteChecks::sub",
         vec![a, b],
         vec![(a + 256 - b) % 256, u64::from(a < b)],
       )?;
-      check("Bytes::mul", vec![a, b], vec![(a * b) % 256, (a * b) / 256])?;
-      check("Bytes::join4", vec![a, b], vec![a / 16 + (b % 16) * 16])?;
-      check("Bytes::join7", vec![a, b], vec![a / 128 + (b % 128) * 2])?;
+      check("ByteChecks::mul", vec![a, b], vec![(a * b) % 256, (a * b) / 256])?;
+      check("ByteChecks::join4", vec![a, b], vec![a / 16 + (b % 16) * 16])?;
+      check("ByteChecks::join7", vec![a, b], vec![a / 128 + (b % 128) * 2])?;
     }
   }
   let mut values = vec![
@@ -141,19 +143,19 @@ fn main() -> Result<(), Box<dyn Error>> {
   );
 
   for (entry, args) in [
-    ("Bytes::checked", vec![256]),
-    ("Bytes::checked", vec![program.field().modulus() - 1]),
-    ("Bytes::less_than", vec![256, 0]),
-    ("Bytes::less_than", vec![0, 256]),
-    ("Bytes::less_than", vec![program.field().modulus() - 1, 0]),
-    ("Bytes::less_than", vec![0, program.field().modulus() - 1]),
-    ("Bytes::split", vec![768]),
-    ("Bytes::split", vec![program.field().modulus() - 1]),
-    ("Bytes::add", vec![256, 0]),
-    ("Bytes::add", vec![0, 256]),
-    ("Bytes::sub", vec![0, 256]),
-    ("Bytes::join4", vec![256, 0]),
-    ("Bytes::join7", vec![0, 256]),
+    ("ByteChecks::checked", vec![256]),
+    ("ByteChecks::checked", vec![program.field().modulus() - 1]),
+    ("ByteChecks::less_than", vec![256, 0]),
+    ("ByteChecks::less_than", vec![0, 256]),
+    ("ByteChecks::less_than", vec![program.field().modulus() - 1, 0]),
+    ("ByteChecks::less_than", vec![0, program.field().modulus() - 1]),
+    ("ByteChecks::split", vec![768]),
+    ("ByteChecks::split", vec![program.field().modulus() - 1]),
+    ("ByteChecks::add", vec![256, 0]),
+    ("ByteChecks::add", vec![0, 256]),
+    ("ByteChecks::sub", vec![0, 256]),
+    ("ByteChecks::join4", vec![256, 0]),
+    ("ByteChecks::join7", vec![0, 256]),
     ("Wide::add", [vec![256, 0, 0, 0, 0, 0, 0, 0], bytes(0)].concat()),
     ("Wide::from_field", vec![1 << 56]),
     ("Wide::to_field", bytes(1 << 56)),

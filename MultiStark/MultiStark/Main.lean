@@ -2,6 +2,7 @@ import MultiStark
 import MultiStark.FunctionGroups
 import Aiur.Execution.Encode
 import Aiur.Trace.Export
+import Aiur.SourceBundle
 import Aiur.Optimized.Grouping.Snapshot
 
 open Aiur Lean
@@ -14,15 +15,15 @@ unsafe def main (args : List String) : IO Unit := do
   unless ["check", "export", "export-trace", "grouping-snapshot"].contains mode do
     throw (IO.userError "usage: stark-export check|export|export-trace|grouping-snapshot [output.json] [--aggregate]")
   let aggregate := args.contains "--aggregate"
-  let file := if aggregate then "Aggregate.aiur" else "Program.aiur"
+  let file := if aggregate then "Aggregate.sources" else "Program.sources"
   let sourcePath ← [s!"MultiStark/{file}", s!"MultiStark/MultiStark/{file}"].findM?
     fun path => (System.FilePath.mk path).pathExists
-  let some sourcePath := sourcePath | throw (IO.userError "cannot locate MultiStark/Program.aiur")
+  let some sourcePath := sourcePath | throw (IO.userError "cannot locate MultiStark source bundle")
   initSearchPath (← findSysroot)
   enableInitializersExecution
   let env ← importModules (loadExts := true) #[{module := `Aiur.Modules.Frontend}] {} 0
   IO.eprintln "Parsing and checking recursive verifier..."
-  let source ← IO.ofExcept (MultiStark.parse env (← IO.FS.readFile sourcePath))
+  let source ← IO.ofExcept (MultiStark.parse env (← SourceBundle.read sourcePath))
   let entry := if aggregate then "MultiStark::ix_aggr" else "MultiStark::verify_multi_stark_proof"
   let prepared ← IO.ofExcept (Modules.prepare source [entry])
   IO.eprintln "Compiling recursive verifier bytecode..."

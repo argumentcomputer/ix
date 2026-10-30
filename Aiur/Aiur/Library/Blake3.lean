@@ -2,6 +2,7 @@ import Aiur.Library.U32
 import Aiur.Library.U64
 import Aiur.Library.List
 import Aiur.Library.Field
+import Aiur.Library.Bytes
 
 /-! Shared Blake3 implementation, extracted from the audited IxVM port.
 Inputs are finite lists of checked bytes. Ingress must establish finiteness for
@@ -11,13 +12,14 @@ open Aiur
 
 def dependencies : Modules.Program Nat :=
   U32.templates.append U64.declarations |>.append List.declarations |>.append Field.declarations
+    |>.append Bytes.declarations
 
 def declarations : Modules.Program Nat := aiur_library% dependencies r#"
 module Blake3 {
   type U8 = UInt8::U8;
   type U32 = UInt32::U32;
   type U64 = UInt64::U64;
-  type ByteStream = Lists::List<U8>;
+  type ByteStream = Bytes::Stream;
   type Digest = [U32; 8];
   enum LayerNode { Push(Layer, Digest), Nil }
   type Layer = &LayerNode;
@@ -447,6 +449,15 @@ module Blake3 {
     let (b30, b31) = UInt8::from_fields(raw[30], raw[31]);
     [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31]
 }
+
+inline fn pack_word(w: UInt32::U32) -> Field {
+    UInt32::compact_field(UInt32::compact(w))
+  }
+
+inline fn pack_digest(h: [UInt32::U32; 8]) -> [Field; 8] {
+    [pack_word(h[0]), pack_word(h[1]), pack_word(h[2]), pack_word(h[3]),
+     pack_word(h[4]), pack_word(h[5]), pack_word(h[6]), pack_word(h[7])]
+  }
 }
 "#
 
@@ -455,6 +466,7 @@ def templates : Modules.Program Nat :=
 
 def source : Modules.Program Nat :=
   U32.source.append U64.declarations |>.append List.declarations |>.append Field.declarations
+    |>.append Bytes.declarations
     |>.append declarations
 
 end Aiur.Library.Blake3

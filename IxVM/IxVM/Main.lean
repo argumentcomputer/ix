@@ -3,6 +3,7 @@ import IxVM.FunctionGroups
 import Aiur.Execution.Encode
 import Aiur.Optimized.Program
 import Aiur.Trace.Export
+import Aiur.SourceBundle
 import IxVM.PropagationBench
 
 /-! Experimental stage-one port of IxVM. Prepare source, export bytecode and
@@ -78,8 +79,10 @@ private def dumpPropagation {source : Modules.Program F}
   let specialized ← IO.ofExcept (Generic.specialize prepared.environment.source prepared.entries)
   let inlined ← IO.ofExcept (Inlining.prepare specialized.program specialized.inlineNames prepared.entries)
   IO.FS.createDirAll directory
-  for name in ["try_reduce_fin_val_decidable_rec", "put_expr", "get_expr", "blake3_compress"] do
-    let some functionDecl := inlined.program.findFunction? (if name == "blake3_compress" then "Blake3::compress" else "IxVM::" ++ name)
+  for (name, symbol) in [("try_reduce_fin_val_decidable_rec", "KernelWhnf::try_reduce_fin_val_decidable_rec"),
+      ("put_expr", "IxonSerialize::put_expr"), ("get_expr", "IxonDeserialize::get_expr"),
+      ("blake3_compress", "Blake3::compress")] do
+    let some functionDecl := inlined.program.findFunction? symbol
       | throw (IO.userError s!"missing function {name}")
     let start ← IO.monoMsNow
     let logical ← IO.ofExcept (Optimized.Compiler.function inlined.program {} functionDecl)
@@ -166,7 +169,7 @@ unsafe def main (args : List String) : IO Unit := do
     | "constant" => "IxVM::verify_constant"
     | "primitives" | "export-primitives" => "IxVM::check_primitives"
     | _ => "IxVM::verify_transitive"
-  let text ← IO.FS.readFile (← sourcePath "Program.aiur")
+  let text ← SourceBundle.read (← sourcePath "Program.sources")
   initSearchPath (← findSysroot)
   enableInitializersExecution
   let env ← importModules (loadExts := true) #[{module := `Aiur.Modules.Frontend}] {} 0

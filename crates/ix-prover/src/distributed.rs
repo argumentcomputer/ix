@@ -197,7 +197,10 @@ pub fn run(
     .program()
     .functions
     .iter()
-    .position(|f| f.name == "IxVM::check_owned")
+    // Retain compatibility with cached artifacts from before the module split.
+    .position(|f| {
+      matches!(f.name.as_str(), "IxVMCompat::check_owned" | "IxVM::check_owned")
+    })
     .ok_or("IxVM artifact has no check_owned callable")?;
   let mut owners = FxHashMap::default();
   let mut keys = Vec::new();

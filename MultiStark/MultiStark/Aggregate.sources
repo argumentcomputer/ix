@@ -1,0 +1,11 @@
+# Ordered Aiur source bundle; paths are relative to this file.
+Modules/ProofDeserialize.aiur
+Modules/SystemDeserialize.aiur
+Modules/Pcs.aiur
+Modules/Aggregation.aiur
+Modules/StarkIO.aiur
+Modules/StarkHash.aiur
+Modules/Mmcs.aiur
+Modules/StarkVerifier.aiur
+Modules/Transcript.aiur
+Aggregate.aiur

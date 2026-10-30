@@ -1,5 +1,6 @@
 import Aiur.Modules
 import Aiur.Library.Carry
+import Aiur.Library.U8.Signature
 
 /-! Checked byte operations shared by word arithmetic and Blake3.
 Raw operations accept fields and check their domain through the same tables
@@ -111,8 +112,9 @@ def tables : List (Generic.Table Nat) := Id.run do
     ⟨"sum_bytes", byte, sums.map fun (_, byte) => literal byte⟩]
 
 def templates : Modules.Program Nat :=
-  { declarations with modules := declarations.modules.map fun m =>
-    { m with body := match m.body with
+  { declarations with signatures := signature.signatures
+                      modules := declarations.modules.map fun m =>
+    { m with signature := some "U8Signature", body := match m.body with
       | .definitions d => .definitions { d with
           program.consts := d.program.consts ++ (List.range 256).map fun n =>
             ⟨s!"BYTE_{n}", .literal n⟩
