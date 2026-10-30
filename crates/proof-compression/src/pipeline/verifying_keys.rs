@@ -73,16 +73,16 @@ pub(super) const MERGE_FAMILY_BLAKE3: &str =
 
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.1/plonk-verifying-key.bin");
+  include_bytes!("../../verifying-keys/0.2/plonk-verifying-key.bin");
 /// SHA-256 of the gnark PLONK verifying key, which a PLONK packet begins with.
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK_SHA256: &str =
-  "7123a80f9c56b25138ffe8ec47a53c6b0b22b64bf183380d63e5c80a7e3144a9";
+  "5d718829c6ee94bbb55c78771b5ea4395a3ab609d02a81ce28d0215bbf77950d";
 
 /// SHA-256 of the exported recursive verifier description that both final
 /// circuits prove.
 pub(super) const FINAL_SCHEMA_SHA256: &str =
-  "d5d07c29ad8c3c795146fe728f73e30812a344c6b62a8f32888033b1a6aba4bf";
+  "bae1743911f74fa985dcdc8d5bd271d2ffadca7d5853a2a531502da915a52dbe";
 
 /// The release Groth16 key comes from a development setup: whoever ran it can
 /// forge proofs, so it verifies only when development setups are accepted.
