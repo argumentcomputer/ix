@@ -471,7 +471,9 @@ def sliceSupport? (artifact : Ixon.Env)
         consts := consts.insert addr lc
         if let some hint := artifact.anonHints[addr]? then
           anonHints := anonHints.insert addr hint
-        for dep in rec.refs do
+        let own := Ixon.CheckOrder.owner addr rec
+        let deps := if own == addr then rec.refs else rec.refs.push own
+        for dep in deps do
           if artifact.consts.contains dep then
             unless queued.contains dep do
               queued := queued.insert dep
@@ -481,10 +483,17 @@ def sliceSupport? (artifact : Ixon.Env)
     else
       break
   guard todo.isEmpty
-  let named := artifact.named.fold (init := {}) fun acc name entry =>
-    if selectedNames.contains (Ix.LeanIngress.ingressName name) && visited.contains entry.addr then
-      acc.insert name entry
-    else acc
+  let mut named : Std.HashMap Ix.Name Ixon.Named := {}
+  for (name, entry) in artifact.named.toList do
+    if let some lc := artifact.consts[entry.addr]? then
+      if let some rec := records[entry.addr]? then
+        let own := Ixon.CheckOrder.owner entry.addr rec
+        if visited.contains entry.addr || visited.contains own then
+          consts := consts.insert entry.addr lc
+          if let some hint := artifact.anonHints[entry.addr]? then
+            anonHints := anonHints.insert entry.addr hint
+          if selectedNames.contains (Ix.LeanIngress.ingressName name) then
+            named := named.insert name entry
   some { consts, blobs, named, anonHints }
 
 /-- Generate from real certificate source, compiled by the same raw backend.
