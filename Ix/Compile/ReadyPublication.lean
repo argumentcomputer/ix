@@ -68,6 +68,7 @@ theorem selectOutcome_fst (input : FixedInput) (snapshot : CompileEnv) (key : Ix
         | none => rfl
         | some pair =>
           obtain ⟨result, cache⟩ := pair
+          dsimp only
           split
           · rfl
           · split <;> rfl
