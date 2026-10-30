@@ -69,7 +69,12 @@ def prepareCandidate (config : Config) (layout : ShareLayout) (limits : Limits)
       if predicted ≤ phase1Bytes then
         return { width, uniform, allocation, phase1Bytes, predicted, materialized := none }
   let materialized ← rematerializeP prep layout limits expanded allocation.order phase1Bytes
-  return { width, uniform, allocation, phase1Bytes, predicted := materialized.bytes,
+  return {
+    width := width
+    uniform := uniform
+    allocation := allocation
+    phase1Bytes := phase1Bytes
+    predicted := materialized.bytes
     materialized := some materialized }
 
 def better (a b : Candidate) : Bool :=
@@ -99,9 +104,10 @@ def finish (layout : ShareLayout) (limits : Limits) (expanded : Expanded) (prep 
     | none => rematerializeP prep layout limits expanded selected.allocation.order selected.phase1Bytes
   let result := tieredResultF layout selected.width selected.uniform selected.allocation
     materialized count selected.phase1Bytes
-  return { result with stats := { result.stats with
-    candidateLengths := #[(first.width, first.predicted), (second.width, second.predicted),
-      (third.width, third.predicted)] } }
+  let lengths := #[(first.width, first.predicted), (second.width, second.predicted),
+    (third.width, third.predicted)]
+  let stats := { result.stats with candidateLengths := lengths }
+  return { result with stats := stats }
 
 private def expanded (config : Config) (layout : ShareLayout) (limits : Limits)
     (input : Expanded) : Except SharingError TieredSharingResult := do

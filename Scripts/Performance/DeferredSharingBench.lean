@@ -57,6 +57,7 @@ private def controls (samples : Array Sample) : IO Unit := do
     let prep := Prep.ofDag ex.dag
     let facts := graphFacts ex.dag ex.roots
     let parents := parentsOf ex.dag
+    let mut candidates : Array Ix.Sharing.Deferred.Candidate := #[]
     for width in #[1, 2, 3] do
       let candidate ← IO.ofExcept ((Ix.Sharing.Deferred.prepareCandidate canonicalFamilyConfig
         .tagN {} ex prep facts parents (Ix.Sharing.Deferred.wireReady ex) width).mapError toString)
@@ -64,8 +65,28 @@ private def controls (samples : Array Sample) : IO Unit := do
         candidate.allocation.order candidate.phase1Bytes).mapError toString)
       unless candidate.predicted == materialized.bytes do
         throw (IO.userError s!"deferred key differs at {sample.address}, width={width}")
+      let limits : Limits := {}
+      let n := ex.dag.size
+      let length := candidate.phase1Bytes
+      let index := indexOfPrefix n candidate.allocation.order candidate.allocation.order.size
+      let reasons := ([
+        ("wire-domain", !(Ix.Sharing.Deferred.wireReady ex)),
+        ("materialize", length > limits.maxMaterialize),
+        ("materialize-work", (n + 1) * (n * (n + 1)) + length > limits.maxMaterializeWork),
+        ("expr-visits", 2 * length > limits.maxExprVisits),
+        ("depth", 2 * length > limits.maxDepth),
+        ("nodes", n + 2 * length > limits.maxNodes),
+        ("one-pass-order", !onePassOrder prep.dag candidate.allocation.order ex.roots index)
+      ] : List (String × Bool)).filterMap fun (reason, failed) => if failed then some reason else none
+      IO.println s!"candidate address={sample.address} raw_bytes={sample.raw.size} dag_nodes={n} width={width} phase1_bytes={length} final_bytes={candidate.predicted} deferred={candidate.materialized.isNone} fallback_reasons={String.intercalate "," reasons}"
+      candidates := candidates.push candidate
       if candidate.materialized.isNone then planned := planned + 1
       else fallback := fallback + 1
+    let selected := (candidates.extract 1 candidates.size).foldl
+      (fun best next => if Ix.Sharing.Deferred.better next best then next else best) candidates[0]!
+    let finalBuilds := (candidates.filter (·.materialized.isSome)).size +
+      (if selected.materialized.isNone then 1 else 0)
+    IO.println s!"normalizer-build-plan address={sample.address} raw_bytes={sample.raw.size} reference_final_builds=3 deferred_final_builds={finalBuilds} selected_width={selected.width}"
     for limits in #[{ maxStates := 0 : Limits }, { maxCostEvals := 0 : Limits },
         { maxMaterialize := 0 : Limits }, { maxMaterializeWork := 0 : Limits },
         { maxOutputBytes := 0 : Limits }, { maxKnapsackCells := 0 : Limits },
