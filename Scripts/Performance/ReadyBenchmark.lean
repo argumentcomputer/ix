@@ -5,6 +5,11 @@ import Ix.EnvScope
 
 open Ix.CompileM
 
+@[noinline] private def keepAlive (α : Type) (_ : α) : IO Unit := pure ()
+
+private def dropAsync (α : Type) (x : α) : IO (Task (Except IO.Error Unit)) :=
+  IO.asTask (prio := .dedicated) (keepAlive α x)
+
 private def phase (label : String) (action : IO α) : IO α := do
   let start ← IO.monoMsNow
   let result ← action
@@ -26,8 +31,11 @@ def main (args : List String) : IO UInt32 := do
     else Ix.EnvScope.defaultConstList frontend path
   let (prepared, annotated) ← phase "source-contracts" do
     IO.ofExcept (← IO.lazyPure fun _ => prepareCertified frontend.env constants)
+  let preparedLen := prepared.length
   let canonical ← phase "canon" (IO.lazyPure fun _ => canonInput prepared.toArray workers)
+  let _ ← dropAsync _ prepared
   let inputs := canonical.consts.size
+  unless preparedLen ≥ inputs do throw (IO.userError "input retention/accounting changed")
   let (report, metrics) ← phase "compileReport" do
     if mode == "reference" then
       let report ← IO.lazyPure fun _ => Ix.Cert.compileReport canonical
@@ -38,6 +46,7 @@ def main (args : List String) : IO UInt32 := do
   let (artifact, failures) ← IO.ofExcept report
   if let some name := failureOutside canonical failures then
     throw (IO.userError s!"failure outside original input: {name.pretty}")
+  let _ ← dropAsync _ canonical
   unless failures.isEmpty do
     let rows := failures.toMap.toArray.map fun (name, message) => (name.pretty, message)
     throw (IO.userError s!"compiler failures: {repr rows}")
@@ -47,10 +56,10 @@ def main (args : List String) : IO UInt32 := do
     Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend workers)
       frontend.env Ix.RoleBinding.Compile.nativeCertSource (.plain constants) artifact
       Ix.Resource.typingLimits
+  let _ ← dropAsync _ (frontend, constants, artifact)
   IO.ofExcept (validateFinalized annotated final)
   let bytes ← phase "serialize" do IO.ofExcept (← IO.lazyPure fun _ => Ixon.serEnv final)
-  let retained ← IO.lazyPure fun _ => (prepared.length, frontend.env.header.mainModule)
-  unless retained.1 ≥ inputs do throw (IO.userError "input retention/accounting changed")
+  let _ ← dropAsync _ final
   phase "write" (Ix.RoleBinding.Compile.writeAtomic output bytes)
   IO.println s!"artifact mode={mode} inputs={inputs} failures={failures.toMap.size} bytes={bytes.size} total-ms={(← IO.monoMsNow) - start}"
   if let some metrics := metrics then

@@ -61,13 +61,19 @@ def prepareCertified (source : Lean.Environment)
   let prepared ← input.prepare
   return (prepared, ← checkPreparedSource prepared)
 
+@[noinline] private def keepAlive (α : Type) (_ : α) : IO Unit := pure ()
+
+private def dropAsync (α : Type) (x : α) : IO (Task (Except IO.Error Unit)) :=
+  IO.asTask (prio := .dedicated) (keepAlive α x)
+
 /-- **The certified compiler's input**: the canonical environment of a prepared
 list, canonicalized on `workers` tasks over consecutive slices, joined in order. -/
 def canonInput (consts : Array (Lean.Name × Lean.ConstantInfo)) (workers : Nat) :
     Ix.Environment :=
   let tasks := (Ix.Compile.SourceGraph.Stream.partition consts workers).map fun part =>
     Task.spawn fun _ => Ix.CanonM.canonChunk part
-  { consts := tasks.foldl (init := {}) fun m t => t.get.foldl (fun m (n, c) => m.insert n c) m }
+  { consts := tasks.foldl (init := Std.HashMap.emptyWithCapacity consts.size) fun m t =>
+      t.get.foldl (fun m (n, c) => m.insert n c) m }
 
 /-- A failure that `failures` reports for a name that is not an input constant. -/
 def failureOutside (env : Ix.Environment) (failures : Ix.Cert.Failures) : Option Ix.Name :=
@@ -119,6 +125,7 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     | .error e => return .error e
   if let some n := failureOutside env failures then
     return .error s!"source accounting: failure name '{n.pretty}' is outside the original input"
+  let _ ← dropAsync _ env
   if let .error e := Ix.RoleBinding.sourceAddresses ixe then
     return .error e
   if let some (n, r, addr) := unboundPublishedRole ixe then

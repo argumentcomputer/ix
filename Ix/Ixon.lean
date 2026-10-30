@@ -802,7 +802,7 @@ def getExprMetaNode (rev : NameReverseIndex) (i : Nat) (lo : Array Nat) :
 wire format above). -/
 def putExprMetaArenaIndexed (arena : ExprMetaArena) (idx : NameIndex) : PutM Unit := do
   putTagN 0 0 arena.nodes.size.toUInt64
-  let mut lo : Array Nat := #[]
+  let mut lo : Array Nat := Array.emptyWithCapacity arena.nodes.size
   let mut i := 0
   for node in arena.nodes do
     let (mask, top) := exprMetaImplicitMask node i lo
@@ -916,6 +916,137 @@ def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := 
     putTagN 0 0 p.arenaIdx
     putTagN 0 0 p.univIdxs.size.toUInt64
     for i in p.univIdxs do putTagN 0 0 i
+
+/-- Exact byte length written by `putTagN 0 _ v`. -/
+@[inline] def tag0ByteSize (v : UInt64) : Nat := tagNByteWidth 0 v.toNat
+
+/-- Exact byte length written by `putIdx addr idx`. -/
+@[inline] def idxByteSize (addr : Address) (idx : NameIndex) : Nat :=
+  tag0ByteSize (idx.get? addr |>.getD 0)
+
+/-- Exact byte length written by `putIdxVec addrs idx`. -/
+def idxVecByteSize (addrs : Array Address) (idx : NameIndex) : Nat :=
+  addrs.foldl (fun acc a => acc + idxByteSize a idx) (tag0ByteSize addrs.size.toUInt64)
+
+/-- Exact byte length written by `putDataValueIndexed dv idx`. -/
+@[inline] def dataValueIndexedByteSize (dv : DataValue) (idx : NameIndex) : Nat :=
+  match dv with
+  | .ofString _ | .ofNat _ | .ofInt _ | .ofSyntax _ => 1 + 32
+  | .ofBool _ => 1 + 1
+  | .ofName a => 1 + idxByteSize a idx
+
+/-- Exact byte length written by `putKVMapIndexed kvmap idx`. -/
+def kvMapIndexedByteSize (kvmap : KVMap) (idx : NameIndex) : Nat :=
+  kvmap.foldl (fun acc (k, v) => acc + idxByteSize k idx + dataValueIndexedByteSize v idx)
+    (tag0ByteSize kvmap.size.toUInt64)
+
+/-- Exact byte length written by `putMdataStackIndexed mdata idx`. -/
+def mdataStackIndexedByteSize (mdata : Array KVMap) (idx : NameIndex) : Nat :=
+  mdata.foldl (fun acc kv => acc + kvMapIndexedByteSize kv idx)
+    (tag0ByteSize mdata.size.toUInt64)
+
+/-- Exact byte length written by `putExprMetaRef i c`. -/
+@[inline] def exprMetaRefByteSize (i : Nat) (c : UInt64) : Nat :=
+  tag0ByteSize (i.toUInt64 - 1 - c)
+
+/-- Exact byte length written by `putExprMetaNode em i mask idx`. -/
+def exprMetaNodeByteSize (em : ExprMetaData) (i : Nat) (mask : UInt8) (idx : NameIndex) : Nat :=
+  let slot (s : UInt8) (c : UInt64) : Nat :=
+    if mask &&& ((1 : UInt8) <<< s) == 0 then exprMetaRefByteSize i c else 0
+  match em with
+  | .leaf => 1
+  | .app f a => 1 + slot 0 f + slot 1 a
+  | .binder name _ tyChild bodyChild =>
+    1 + idxByteSize name idx + slot 0 tyChild + slot 1 bodyChild
+  | .letBinder name tyChild valChild bodyChild =>
+    1 + idxByteSize name idx + slot 0 tyChild + slot 1 valChild + slot 2 bodyChild
+  | .ref name => 1 + idxByteSize name idx
+  | .prj structName child => 1 + idxByteSize structName idx + slot 0 child
+  | .mdata mdata child => 1 + mdataStackIndexedByteSize mdata idx + slot 0 child
+
+/-- Exact byte length written by `putExprMetaArenaIndexed arena idx`. -/
+def exprMetaArenaIndexedByteSize (arena : ExprMetaArena) (idx : NameIndex) : Nat := Id.run do
+  let mut total := tag0ByteSize arena.nodes.size.toUInt64
+  let mut lo : Array Nat := Array.emptyWithCapacity arena.nodes.size
+  let mut i := 0
+  for node in arena.nodes do
+    let (mask, top) := exprMetaImplicitMask node i lo
+    total := total + exprMetaNodeByteSize node i mask idx
+    lo := lo.push top
+    i := i + 1
+  return total
+
+/-- Exact byte length written by `putUniv u`. -/
+def univByteSize : Univ → Nat
+  | .zero => tagNByteWidth 2 0
+  | u@(.succ _) => tagNByteWidth 2 u.succCount.toNat + univByteSize u.succBase
+  | .max a b => tagNByteWidth 2 0 + univByteSize a + univByteSize b
+  | .imax a b => tagNByteWidth 2 0 + univByteSize a + univByteSize b
+  | .var idx => tagNByteWidth 2 idx.toNat
+termination_by u => sizeOf u
+decreasing_by
+  all_goals simp_wf
+  all_goals try omega
+  rename_i inner heq
+  subst u
+  change sizeOf inner.succBase < 1 + sizeOf inner
+  have hbase := Univ.succBase_sizeOf_le inner
+  omega
+
+/-- Exact byte length written by `putConstantMetaInfoIndexed cm idx`. -/
+def constantMetaInfoIndexedByteSize (cm : ConstantMetaInfo) (idx : NameIndex) : Nat :=
+  match cm with
+  | .empty => 1
+  | .defn name lvls all ctx arena typeRoot valueRoot =>
+    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize all idx +
+      idxVecByteSize ctx idx + exprMetaArenaIndexedByteSize arena idx +
+      tag0ByteSize typeRoot + tag0ByteSize valueRoot
+  | .axio name lvls arena typeRoot =>
+    1 + idxByteSize name idx + idxVecByteSize lvls idx +
+      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+  | .quot name lvls arena typeRoot =>
+    1 + idxByteSize name idx + idxVecByteSize lvls idx +
+      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+  | .indc name lvls ctors all ctx arena typeRoot =>
+    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize ctors idx +
+      idxVecByteSize all idx + idxVecByteSize ctx idx +
+      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+  | .ctor name lvls induct arena typeRoot =>
+    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxByteSize induct idx +
+      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot
+  | .recr name lvls rules all ctx arena typeRoot ruleRoots =>
+    1 + idxByteSize name idx + idxVecByteSize lvls idx + idxVecByteSize rules idx +
+      idxVecByteSize all idx + idxVecByteSize ctx idx +
+      exprMetaArenaIndexedByteSize arena idx + tag0ByteSize typeRoot +
+      ruleRoots.foldl (fun acc r => acc + tag0ByteSize r) (tag0ByteSize ruleRoots.size.toUInt64)
+  | .muts all auxLayout =>
+    let allBytes := all.foldl (fun acc cls => acc + idxVecByteSize cls idx)
+      (1 + tag0ByteSize all.size.toUInt64)
+    match auxLayout with
+    | none => allBytes + 1
+    | some layout =>
+      let permBytes := layout.perm.foldl (fun acc p => acc + tag0ByteSize p)
+        (tag0ByteSize layout.perm.size.toUInt64)
+      let countsBytes := layout.sourceCtorCounts.foldl (fun acc c => acc + tag0ByteSize c)
+        (tag0ByteSize layout.sourceCtorCounts.size.toUInt64)
+      let evapLen := if layout.evaporated.isEmpty && !layout.perm.isEmpty
+        then layout.perm.size else layout.evaporated.size
+      let evapBytes := tag0ByteSize evapLen.toUInt64 + evapLen
+      allBytes + 1 + permBytes + countsBytes + evapBytes
+
+/-- Exact byte length written by `putConstantMetaIndexed cm idx`. -/
+def constantMetaIndexedByteSize (cm : ConstantMeta) (idx : NameIndex) : Nat :=
+  let infoBytes := constantMetaInfoIndexedByteSize cm.info idx
+  let sharingBytes := cm.metaSharing.foldl (fun acc e => acc + (runPut (putExpr e)).size)
+    (tag0ByteSize cm.metaSharing.size.toUInt64)
+  let refsBytes := tag0ByteSize cm.metaRefs.size.toUInt64 + cm.metaRefs.size * 32
+  let univsBytes := cm.metaUnivs.foldl (fun acc u => acc + univByteSize u)
+    (tag0ByteSize cm.metaUnivs.size.toUInt64)
+  let patchesBytes := cm.univPatches.foldl
+    (fun acc p => acc + tag0ByteSize p.arenaIdx +
+      p.univIdxs.foldl (fun a i => a + tag0ByteSize i) (tag0ByteSize p.univIdxs.size.toUInt64))
+    (tag0ByteSize cm.univPatches.size.toUInt64)
+  infoBytes + sharingBytes + refsBytes + univsBytes + patchesBytes
 
 def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo := do
   let cm ← match ← getU8 with
@@ -1462,6 +1593,29 @@ end RawEnv
     and the list-building comparison was most of the writer's time. -/
 @[inline] def addrLt (a b : Address) : Bool := a.cmpBytes b == .lt
 
+/-- Parallel 32-bucket sort by the top 5 bits of byte 0 of `Address.hash` for
+    large arrays (`size ≥ 8192`); falls back to sequential `Array.qsort` on
+    smaller arrays. Since `addrLt` compares `Address.hash` lexicographically
+    byte-by-byte starting at byte 0, every non-empty address in bucket `b₁` is
+    strictly `<` every non-empty address in bucket `b₂` when `b₁ < b₂`. -/
+def qsortByAddrPar (arr : Array α) (addrOf : α → Address) (lt : α → α → Bool) : Array α :=
+  if arr.size < 8192 then
+    arr.qsort lt
+  else Id.run do
+    for x in arr do
+      if (addrOf x).hash.size == 0 then
+        return arr.qsort lt
+    let initCap := arr.size / 28 + 16
+    let mut buckets : Array (Array α) := (Array.range 32).map fun _ => Array.emptyWithCapacity initCap
+    for x in arr do
+      let b := ((addrOf x).hash.get! 0 >>> 3).toNat
+      buckets := buckets.modify b (·.push x)
+    let tasks := buckets.map fun bucket => Task.spawn fun _ => bucket.qsort lt
+    let mut out := Array.emptyWithCapacity arr.size
+    for t in tasks do
+      out := out ++ t.get
+    return out
+
 namespace Env
 
 /-- Convert Env with HashMaps to RawEnv with Arrays for FFI.
@@ -1591,7 +1745,7 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
   let initResult : Array (Address × Ix.Name) :=
     (Array.emptyWithCapacity (names.size + 1)).push (anonAddr, Ix.Name.mkAnon)
   -- Sort names by address before iterating to ensure deterministic DFS order
-  let sortedEntries := names.toArray.qsort fun a b => addrLt a.1 b.1
+  let sortedEntries := qsortByAddrPar names.toArray (·.1) fun a b => addrLt a.1 b.1
   let (_, result) := sortedEntries.foldl (init := (initVisited, initResult)) fun (visited, result) (_, name) =>
     visit name visited result
   result
@@ -1599,6 +1753,13 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
 /-- Run a `PutM` writer on a pre-allocated buffer of capacity `cap`. -/
 @[inline] def runPutWithCapacity (cap : Nat) (p : PutM Unit) : ByteArray :=
   (p.run (ByteArray.emptyWithCapacity cap)).2
+
+/-- Exact byte length of the §5 metadata blob for `namedEntry`. -/
+def namedMetaBlobByteSize (namedEntry : Named) (nameIdx : NameIndex) : Nat :=
+  constantMetaIndexedByteSize namedEntry.constMeta nameIdx +
+    match namedEntry.original with
+    | none => 1
+    | some (_, origMeta) => 1 + 32 + constantMetaIndexedByteSize origMeta nameIdx
 
 /-- §5 entries `named[lo:hi]`, exactly as `putEnv` writes them one after the
     other: the entry's §4 name index, its §2 constant rank, its exact hint,
@@ -1619,17 +1780,17 @@ def putNamedEntries (named : Array (Ix.Name × Named)) (lo hi : Nat)
     | some rank => putTagN 0 0 rank
     putFusedOptHint namedEntry.hints
     -- Metadata blob: ConstantMeta + original as Option (0 = none,
-    -- 1 = some(addr, meta)), length-prefixed.
-    let blob := runPutWithCapacity 128 do
-      putConstantMetaIndexed namedEntry.constMeta nameIdx
-      match namedEntry.original with
-      | none => putU8 0
-      | some (origAddr, origMeta) =>
-        putU8 1
-        Serialize.put origAddr
-        putConstantMetaIndexed origMeta nameIdx
-    putTagN 0 0 blob.size.toUInt64
-    putBytes blob
+    -- 1 = some(addr, meta)), length-prefixed, written directly without
+    -- allocating a temporary ByteArray per entry.
+    let blobLen := namedMetaBlobByteSize namedEntry nameIdx
+    putTagN 0 0 blobLen.toUInt64
+    putConstantMetaIndexed namedEntry.constMeta nameIdx
+    match namedEntry.original with
+    | none => putU8 0
+    | some (origAddr, origMeta) =>
+      putU8 1
+      Serialize.put origAddr
+      putConstantMetaIndexed origMeta nameIdx
 
 /-- Entries per task when §5 is written in parallel (`putEnv`). -/
 def namedChunk : Nat := 2048
@@ -1655,7 +1816,7 @@ those of writing the sections one after the other. -/
 
 /-- Section 1: Blobs (Address -> bytes). -/
 def blobsSection (env : Env) : ByteArray :=
-  let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
+  let blobs := qsortByAddrPar env.blobs.toArray (·.1) fun a b => addrLt a.1 b.1
   let cap := blobs.foldl (fun acc (_, bytes) => acc + 37 + bytes.size) 9
   runPutWithCapacity cap do
     putTagN 0 0 blobs.size.toUInt64
@@ -1703,7 +1864,7 @@ def namesSection (env : Env) : Array (Address × Ix.Name) × ByteArray :=
 
 /-- Section 6: Comms (Address -> Comm). -/
 def commsSection (env : Env) : ByteArray :=
-  let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
+  let comms := qsortByAddrPar env.comms.toArray (·.1) fun a b => addrLt a.1 b.1
   let cap := comms.size * 97 + 9
   runPutWithCapacity cap do
     putTagN 0 0 comms.size.toUInt64
@@ -1713,15 +1874,23 @@ def commsSection (env : Env) : ByteArray :=
 
 /-- Sections 1 to 6 of `putEnv`, sections 1, 2, 4 and 6 and the §3/§5 tasks
     from their tasks. Not inlined, so that `putEnv` starts every task before
-    the first is read. -/
+    the first is read. Section 2 (`consts`) is written directly into the
+    destination `PutM` buffer to avoid a 1.6 GB intermediate `ByteArray`. -/
 @[noinline] def putSections
-    (blobsTask constsTask commsTask namesBytesTask : Task ByteArray)
+    (blobsTask commsTask namesBytesTask : Task ByteArray)
+    (constsSortTask : Task (Array (Address × LazyConstant)))
     (constIdxTask : Task (Std.HashMap Address UInt64))
     (hintsSortTask : Task (Array (Address × Lean.ReducibilityHints)))
     (namedTasksTask : Task (Nat × Array (Task (Except String ByteArray)))) :
     ExceptT String PutM Unit := do
   putBytes blobsTask.get
-  putBytes constsTask.get
+  let consts := constsSortTask.get
+  putTagN 0 0 consts.size.toUInt64
+  for (addr, lc) in consts do
+    Serialize.put addr
+    let bytes := lc.rawBytes
+    putTagN 0 0 bytes.size.toUInt64
+    putBytes bytes
 
   -- Section 3: anon_hints — the canonical hint channel for the
   -- anon/lazy readers, placed before the metadata sections so they can
@@ -1773,7 +1942,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
 
   -- Start independent section encodings, index builders, and sorts in parallel.
   let constsSortTask := Task.spawn fun _ =>
-    env.consts.toArray.qsort fun a b => addrLt a.1 b.1
+    qsortByAddrPar env.consts.toArray (·.1) fun a b => addrLt a.1 b.1
   -- Canonical merkle root over consts addresses (matches Rust Env::put).
   -- Always 32 bytes: for empty const sets, the sentinel
   -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
@@ -1781,7 +1950,6 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   let rootTask := Task.spawn fun _ =>
     (Ix.Merkle.merkleRootCanonical (constsSortTask.get.map (·.1))).getD
       Ix.Merkle.zeroAddress
-  let constsTask := Task.spawn fun _ => constsSection constsSortTask.get
   let constIdxTask := Task.spawn fun _ => buildConstIdx constsSortTask.get
   let blobsTask := Task.spawn fun _ => blobsSection env
   let commsTask := Task.spawn fun _ => commsSection env
@@ -1789,12 +1957,12 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   let namesBytesTask := Task.spawn fun _ => encodeNamesSection sortedNamesTask.get
   let nameIdxTask := Task.spawn fun _ => buildNameIdx sortedNamesTask.get
   let hintsSortTask := Task.spawn fun _ =>
-    env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+    qsortByAddrPar env.anonHints.toArray (·.1) fun a b => addrLt a.1 b.1
   let namedSortTask := Task.spawn fun _ =>
-    env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
+    qsortByAddrPar env.named.toArray (·.1.getHash) fun a b => addrLt a.1.getHash b.1.getHash
   -- The §5 entries are independent given `nameIdx` and `constIdx`: spawn their
   -- chunk tasks as soon as the sort and two index tables finish, so §5 runs in
-  -- parallel while `constsTask` (§2) and `namesBytesTask` (§4) are encoding.
+  -- parallel while `namesBytesTask` (§4) is encoding.
   let namedTasksTask := Task.spawn fun _ =>
     let named := namedSortTask.get
     let nameIdx := nameIdxTask.get
@@ -1821,7 +1989,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   for addr in assumptions do
     Serialize.put addr
   putBindingHeader env.roleBinding
-  putSections blobsTask constsTask commsTask namesBytesTask constIdxTask
+  putSections blobsTask commsTask namesBytesTask constsSortTask constIdxTask
     hintsSortTask namedTasksTask
 
 /-- The most universe constructors one record's universes may expand to when the

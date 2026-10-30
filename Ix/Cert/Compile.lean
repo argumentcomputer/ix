@@ -845,10 +845,10 @@ of that family (`Ix.Cert.RecursorsOwned`). -/
 
 /-- `unownedRecursor` over precomputed `storedRecursorRecords ixe`. -/
 @[expose] def unownedRecursorWith (env : Ix.Environment) (ixe : Ixon.Env)
-    (recs : Array (Address × Ixon.Constant)) :
+    (recs : Array (Address × Ixon.Constant))
+    (cands : Std.HashMap Address (Array Ix.Name) := familyRecursors env) :
     Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
   let idx := Ix.Kernel.Reader.buildIndex (storedRecord ixe) recs
-  let cands := familyRecursors env
   (parMap (fun (e : Ix.Name × Ixon.Named) => unownedRecursorOf env ixe idx cands e.1 e.2)
     ixe.named.toList.toArray).findSome? id
 
@@ -1727,6 +1727,30 @@ structure CheckTasks where
       blob(s) are not stored at the admission hash of their bytes; first: {a}"
 
 
+/-- `uncovered` computed on tasks (`parMap`). -/
+@[expose] def uncoveredPar (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) :
+    List Ix.Name :=
+  ((parMap (fun n => if ixe.named.contains n == failures.failed n then some n else none)
+    env.consts.keys.toArray).filterMap id).toList
+
+private theorem filterMap_if_eq {α : Type} (p : α → Bool) (l : List α) :
+    (l.filterMap fun a => if p a then some a else none) = l.filter p := by
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.filterMap_cons, List.filter_cons]
+    cases p hd <;> simp [ih]
+
+theorem uncoveredPar_eq (env : Ix.Environment) (ixe : Ixon.Env) (failures : Failures) :
+    uncoveredPar env ixe failures = uncovered env ixe failures := by
+  simp only [uncoveredPar, uncovered, parMap, Ix.Compile.Parallel.map_eq,
+    Array.toList_filterMap, Array.toList_map, List.filterMap_map, Function.id_comp]
+  exact filterMap_if_eq (fun n => ixe.named.contains n == failures.failed n) env.consts.keys
+
+@[csimp] theorem uncovered_eq_par : @uncovered = @uncoveredPar := by
+  funext env ixe failures
+  exact (uncoveredPar_eq env ixe failures).symm
+
 /-- `unauthentic` computed on tasks (`parMap`). -/
 @[expose] def unauthenticPar (ixe : Ixon.Env) : List Address :=
   ((parMap (fun (a, lc) => if a != Address.admissionHash lc.rawBytes then some a else none)
@@ -1750,6 +1774,10 @@ theorem unauthenticPar_eq (ixe : Ixon.Env) : unauthenticPar ixe = unauthentic ix
   congr 1
   · exact filterMap_fst_eq (fun a lc => a != Address.admissionHash lc.rawBytes) ixe.consts.toList
   · exact filterMap_fst_eq (fun a bytes => a != Address.admissionHash bytes) ixe.blobs.toList
+
+@[csimp] theorem unauthentic_eq_par : @unauthentic = @unauthenticPar := by
+  funext ixe
+  exact (unauthenticPar_eq ixe).symm
 
 /-- `l.findSome? f` computed on tasks (`parMap`) over `l.toArray`. -/
 @[expose] def parFindSome? {α β : Type} (f : α → Option β) (l : List α) : Option β :=
@@ -1781,6 +1809,10 @@ theorem parFindSome?_eq {α β : Type} (f : α → Option β) (l : List α) :
 theorem mutsMismatchPar_eq (ixe : Ixon.Env) : mutsMismatchPar ixe = mutsMismatch ixe := by
   simp only [mutsMismatchPar, mutsMismatch, parFindSome?_eq]
 
+@[csimp] theorem mutsMismatch_eq_par : @mutsMismatch = @mutsMismatchPar := by
+  funext ixe
+  exact (mutsMismatchPar_eq ixe).symm
+
 /-- `resolutionMismatch` computed on tasks (`parFindSome?`). -/
 @[expose] def resolutionMismatchPar (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
     (ixe : Ixon.Env) : Option (Ix.Name × Address × Option Address) :=
@@ -1791,6 +1823,10 @@ theorem mutsMismatchPar_eq (ixe : Ixon.Env) : mutsMismatchPar ixe = mutsMismatch
 theorem resolutionMismatchPar_eq (resolved : Std.HashMap Ix.Compile.ExactKey.ExactName Address)
     (ixe : Ixon.Env) : resolutionMismatchPar resolved ixe = resolutionMismatch resolved ixe := by
   simp only [resolutionMismatchPar, resolutionMismatch, parFindSome?_eq]
+
+@[csimp] theorem resolutionMismatch_eq_par : @resolutionMismatch = @resolutionMismatchPar := by
+  funext resolved ixe
+  exact (resolutionMismatchPar_eq resolved ixe).symm
 
 /-- `unresolvedPublished` computed on tasks (`parFindSome?`). -/
 @[expose] def unresolvedPublishedPar (env : Ix.Environment)
@@ -1804,6 +1840,10 @@ theorem unresolvedPublishedPar_eq (env : Ix.Environment)
     unresolvedPublishedPar env resolved ixe = unresolvedPublished env resolved ixe := by
   simp only [unresolvedPublishedPar, unresolvedPublished, parFindSome?_eq]
 
+@[csimp] theorem unresolvedPublished_eq_par : @unresolvedPublished = @unresolvedPublishedPar := by
+  funext env resolved ixe
+  exact (unresolvedPublishedPar_eq env resolved ixe).symm
+
 /-- `misnamedInput` computed on tasks (`parFindSome?`). -/
 @[expose] def misnamedInputPar (env : Ix.Environment) : Option Ix.Name :=
   parFindSome? (fun (n, ci) =>
@@ -1811,6 +1851,10 @@ theorem unresolvedPublishedPar_eq (env : Ix.Environment)
 
 theorem misnamedInputPar_eq (env : Ix.Environment) : misnamedInputPar env = misnamedInput env := by
   simp only [misnamedInputPar, misnamedInput, parFindSome?_eq]
+
+@[csimp] theorem misnamedInput_eq_par : @misnamedInput = @misnamedInputPar := by
+  funext env
+  exact (misnamedInputPar_eq env).symm
 
 /-- `strayConstructor` computed on tasks (`parFindSome?`). -/
 @[expose] def strayConstructorPar (env : Ix.Environment) : Option Ix.Name :=
@@ -1826,6 +1870,10 @@ theorem strayConstructorPar_eq (env : Ix.Environment) :
     strayConstructorPar env = strayConstructor env := by
   simp only [strayConstructorPar, strayConstructor, parFindSome?_eq]
 
+@[csimp] theorem strayConstructor_eq_par : @strayConstructor = @strayConstructorPar := by
+  funext env
+  exact (strayConstructorPar_eq env).symm
+
 /-- `projectionCollision` computed on tasks (`parMap`). -/
 @[expose] def projectionCollisionPar (ixe : Ixon.Env) : Option (Address × Nat) :=
   let entries := ((parMap definitionProjectionFast ixe.consts.toList.toArray).filterMap id).toList
@@ -1838,6 +1886,10 @@ theorem projectionCollisionPar_eq (ixe : Ixon.Env) :
   simp only [projectionCollisionPar, projectionCollision, parMap,
     Ix.Compile.Parallel.map_eq, Array.toList_filterMap, Array.toList_map,
     List.filterMap_map, Function.id_comp]
+
+@[csimp] theorem projectionCollision_eq_par : @projectionCollision = @projectionCollisionPar := by
+  funext ixe
+  exact (projectionCollisionPar_eq ixe).symm
 
 /-- `unreadablePublished` computed on tasks (`parFindSome?`). -/
 @[expose] def unreadablePublishedPar (env : Ix.Environment) (ixe : Ixon.Env) : Option Ix.Name :=
@@ -1852,6 +1904,10 @@ theorem unreadablePublishedPar_eq (env : Ix.Environment) (ixe : Ixon.Env) :
     unreadablePublishedPar env ixe = unreadablePublished env ixe := by
   simp only [unreadablePublishedPar, unreadablePublished, parFindSome?_eq]
 
+@[csimp] theorem unreadablePublished_eq_par : @unreadablePublished = @unreadablePublishedPar := by
+  funext env ixe
+  exact (unreadablePublishedPar_eq env ixe).symm
+
 /-- `blobRecordCollision` computed on tasks (`parFindSome?`). -/
 @[expose] def blobRecordCollisionPar (ixe : Ixon.Env) : Option Address :=
   parFindSome? (fun (a, _) => if ixe.consts.contains a then some a else none) ixe.blobs.toList
@@ -1859,6 +1915,10 @@ theorem unreadablePublishedPar_eq (env : Ix.Environment) (ixe : Ixon.Env) :
 theorem blobRecordCollisionPar_eq (ixe : Ixon.Env) :
     blobRecordCollisionPar ixe = blobRecordCollision ixe := by
   simp only [blobRecordCollisionPar, blobRecordCollision, parFindSome?_eq]
+
+@[csimp] theorem blobRecordCollision_eq_par : @blobRecordCollision = @blobRecordCollisionPar := by
+  funext ixe
+  exact (blobRecordCollisionPar_eq ixe).symm
 
 /-- `unstoredFamilyName` computed on tasks (`parFindSome?`). -/
 @[expose] def unstoredFamilyNamePar (env : Ix.Environment) : Option (Ix.Name × Ix.Name) :=
@@ -1870,6 +1930,10 @@ theorem blobRecordCollisionPar_eq (ixe : Ixon.Env) :
 theorem unstoredFamilyNamePar_eq (env : Ix.Environment) :
     unstoredFamilyNamePar env = unstoredFamilyName env := by
   simp only [unstoredFamilyNamePar, unstoredFamilyName, parFindSome?_eq]
+
+@[csimp] theorem unstoredFamilyName_eq_par : @unstoredFamilyName = @unstoredFamilyNamePar := by
+  funext env
+  exact (unstoredFamilyNamePar_eq env).symm
 
 /-- `misplacedConstructor` computed on tasks (`parFindSome?`). -/
 @[expose] def misplacedConstructorPar (env : Ix.Environment) : Option Ix.Name :=
@@ -1885,6 +1949,10 @@ theorem unstoredFamilyNamePar_eq (env : Ix.Environment) :
 theorem misplacedConstructorPar_eq (env : Ix.Environment) :
     misplacedConstructorPar env = misplacedConstructor env := by
   simp only [misplacedConstructorPar, misplacedConstructor, parFindSome?_eq]
+
+@[csimp] theorem misplacedConstructor_eq_par : @misplacedConstructor = @misplacedConstructorPar := by
+  funext env
+  exact (misplacedConstructorPar_eq env).symm
 
 /-- `strayLevelParams` computed on tasks (`parFindSome?`). -/
 @[expose] def strayLevelParamsPar (env : Ix.Environment) : Option Ix.Name :=
@@ -1915,6 +1983,31 @@ theorem strayLevelParamsPar_eq (env : Ix.Environment) :
     strayLevelParamsPar env = strayLevelParams env := by
   simp only [strayLevelParamsPar, strayLevelParams, parFindSome?_eq]
 
+@[csimp] theorem strayLevelParams_eq_par : @strayLevelParams = @strayLevelParamsPar := by
+  funext env
+  exact (strayLevelParamsPar_eq env).symm
+
+/-- `strayFamilyMember` computed on tasks (`parFindSome?`) with precomputed `familyRecursors env`. -/
+@[expose] def strayFamilyMemberWith (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (recs : Std.HashMap Address (Array Ix.Name)) :
+    Option (Ix.Name × Ix.Name) :=
+  parFindSome? (fun (rep, all) =>
+    (all.toList.find? fun y => !familyBlockOk env recs all y).map (rep, ·))
+    blocks.blocks.toList
+
+/-- `strayFamilyMember` computed on tasks (`parFindSome?`). -/
+@[expose] def strayFamilyMemberPar (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    Option (Ix.Name × Ix.Name) :=
+  strayFamilyMemberWith env blocks (familyRecursors env)
+
+theorem strayFamilyMemberPar_eq (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
+    strayFamilyMemberPar env blocks = strayFamilyMember env blocks := by
+  simp only [strayFamilyMemberPar, strayFamilyMemberWith, strayFamilyMember, parFindSome?_eq]
+
+@[csimp] theorem strayFamilyMember_eq_par : @strayFamilyMember = @strayFamilyMemberPar := by
+  funext env blocks
+  exact (strayFamilyMemberPar_eq env blocks).symm
+
 /-- `unhintedDefinition` computed on tasks (`parFindSome?`). -/
 @[expose] def unhintedDefinitionPar (env : Ix.Environment) (ixe : Ixon.Env) : Option Ix.Name :=
   parFindSome? (fun (n, named) =>
@@ -1927,13 +2020,28 @@ theorem unhintedDefinitionPar_eq (env : Ix.Environment) (ixe : Ixon.Env) :
     unhintedDefinitionPar env ixe = unhintedDefinition env ixe := by
   simp only [unhintedDefinitionPar, unhintedDefinition, parFindSome?_eq]
 
+@[csimp] theorem unhintedDefinition_eq_par : @unhintedDefinition = @unhintedDefinitionPar := by
+  funext env ixe
+  exact (unhintedDefinitionPar_eq env ixe).symm
+
+/-- `Ix.LeanIngress.sourceAddrs` computed on tasks (`parMap`). -/
+@[expose] def sourceAddrsPar (ixe : Ixon.Env) : Std.HashMap Ix.Kernel.Name Address :=
+  (parMap (fun (n, named) => (Ix.LeanIngress.ingressName n, named.addr))
+    ixe.named.toList.toArray).foldl (fun m (k, addr) => m.insert k addr) {}
+
+@[csimp] theorem sourceAddrs_eq_par : @Ix.LeanIngress.sourceAddrs = @sourceAddrsPar := by
+  funext ixe
+  simp only [sourceAddrsPar, parMap, Ix.Compile.Parallel.map_eq, Array.foldl_map,
+    List.foldl_toArray', Ix.LeanIngress.sourceAddrs, Std.HashMap.fold_eq_foldl_toList]
+
 /-- `checkReport` with every check started as a task before any result is read. -/
 @[expose] def checkReportPar (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures)
     (blocks : Ix.CondensedBlocks := compileBlocks env) : Except String Unit :=
   let recRecords := Task.spawn fun _ => storedRecursorRecords out.1
+  let famRecs := Task.spawn fun _ => familyRecursors env
   checkReportOf out {
-    uncovered := Task.spawn fun _ => uncovered env out.1 out.2
+    uncovered := Task.spawn fun _ => uncoveredPar env out.1 out.2
     unauthentic := Task.spawn fun _ => unauthenticPar out.1
     referenceCycle := Task.spawn fun _ => referenceCycle out.1
     nameHashCollision := Task.spawn fun _ => nameHashCollision env out.1
@@ -1945,13 +2053,13 @@ theorem unhintedDefinitionPar_eq (env : Ix.Environment) (ixe : Ixon.Env) :
     projectionCollision := Task.spawn fun _ => projectionCollisionPar out.1
     unreadablePublished := Task.spawn fun _ => unreadablePublishedPar env out.1
     blobRecordCollision := Task.spawn fun _ => blobRecordCollisionPar out.1
-    unownedRecursor := Task.spawn fun _ => unownedRecursorWith env out.1 recRecords.get
+    unownedRecursor := Task.spawn fun _ => unownedRecursorWith env out.1 recRecords.get famRecs.get
     roleRecordKind := Task.spawn fun _ => roleRecordKind out.1
     literalRoleUnnamed := Task.spawn fun _ => literalRoleUnnamed env out.1
     unstoredFamilyName := Task.spawn fun _ => unstoredFamilyNamePar env
     misplacedConstructor := Task.spawn fun _ => misplacedConstructorPar env
     strayLevelParams := Task.spawn fun _ => strayLevelParamsPar env
-    strayFamilyMember := Task.spawn fun _ => strayFamilyMember env blocks
+    strayFamilyMember := Task.spawn fun _ => strayFamilyMemberWith env blocks famRecs.get
     recursorShapeError := Task.spawn fun _ => recursorShapeErrorWith env out.1 recRecords.get
     unhintedDefinition := Task.spawn fun _ => unhintedDefinitionPar env out.1 }
 
@@ -1959,11 +2067,15 @@ theorem unhintedDefinitionPar_eq (env : Ix.Environment) (ixe : Ixon.Env) :
 function's (`Task.spawn`), so the two are the same function. -/
 @[csimp] theorem checkReport_eq_par : @checkReport = @checkReportPar := by
   funext env cenv out blocks
-  simp only [checkReportPar, unauthenticPar_eq, mutsMismatchPar_eq,
+  have hStray :
+      strayFamilyMemberWith env blocks (Task.spawn fun _ => familyRecursors env).get =
+        strayFamilyMember env blocks :=
+    strayFamilyMemberPar_eq env blocks
+  simp only [checkReportPar, uncoveredPar_eq, unauthenticPar_eq, mutsMismatchPar_eq,
     resolutionMismatchPar_eq, unresolvedPublishedPar_eq, misnamedInputPar_eq,
     strayConstructorPar_eq, projectionCollisionPar_eq, unreadablePublishedPar_eq,
     blobRecordCollisionPar_eq, unstoredFamilyNamePar_eq, misplacedConstructorPar_eq,
-    strayLevelParamsPar_eq, unhintedDefinitionPar_eq]
+    strayLevelParamsPar_eq, hStray, unhintedDefinitionPar_eq]
   rfl
 
 /-- **The pure compiler, with its failures.** A block that fails to compile

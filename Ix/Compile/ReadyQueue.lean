@@ -1,6 +1,7 @@
 module
 
 public import Ix.Compile.ReadyPublication
+public import Ix.Compile.Parallel
 import all Ix.Compile.WorkerReplay
 
 /-! # Bounded dependency-ready computation
@@ -47,15 +48,15 @@ def makePlan (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldStat
     unmet := nextUnmet
     ready := nextReady
   let indices := rows.zipIdx.foldl (fun indices ((_, rep, _), i) =>
-    indices.insert rep i) ({} : Std.HashMap Ix.Compile.ExactKey.ExactName Nat)
-  let descriptors := rows.map fun (key, representative, members) => Id.run do
+    indices.insert rep i) (Std.HashMap.emptyWithCapacity rows.size)
+  let descriptors := Ix.Compile.Parallel.map 256 (fun (key, representative, members) => Id.run do
     let dependencies := (sched.deps.getD representative {}).toArray
     let mut parents : Array Nat := #[]
     for name in dependencies do
       if let some owner := blocks.lowLinks.get? name then
         if let some index := indices.get? owner then
           if !parents.contains index then parents := parents.push index
-    return { key, representative, members, dependencies, parents : Descriptor }
+    return { key, representative, members, dependencies, parents : Descriptor }) rows
   return { descriptors, indices }
 
 private def pushReady (heap : Array Nat) (value : Nat) : Array Nat := Id.run do

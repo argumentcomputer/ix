@@ -247,6 +247,12 @@ structure CanonState where
   levels : HashMap USize LevelEntry := {}
   exprs : HashMap USize ExprEntry := {}
 
+/-- Pre-sized `CanonState` for a chunk of `numConsts` constants. -/
+@[expose] def CanonState.withCapacity (numConsts : Nat) : CanonState where
+  names := HashMap.emptyWithCapacity (numConsts * 4)
+  levels := HashMap.emptyWithCapacity 1024
+  exprs := HashMap.emptyWithCapacity (numConsts * 16)
+
 abbrev CanonM := StateT CanonState Id
 
 /-- Is `x` `y`? At run time by pointer identity first (`withPtrEqDecEq`); the
@@ -974,6 +980,17 @@ def chunks (arr : Array α) (chunkSize : Nat) : Array (Array α) := Id.run do
     i := endIdx
   result
 
+/-- Process a chunk of constants through one memo (pure), in order, starting
+    from `initState` and returning both the canonicalized constants and the
+    resulting memo state. -/
+@[expose] def canonConstArray (chunk : Array (Lean.Name × Lean.ConstantInfo))
+    (initState : CanonState := CanonState.withCapacity chunk.size)
+    : Array (Ix.Name × Ix.ConstantInfo) × CanonState :=
+  Id.run <| (chunk.mapM (m := CanonM) fun (name, const) => do
+    let name' ← canonName name
+    let const' ← canonConst const
+    pure (name', const')).run initState
+
 /-- Process a chunk of constants through one memo (pure), in order. Returns
     just the canonicalized constants. -/
 @[expose] def canonChunk (chunk : Array (Lean.Name × Lean.ConstantInfo))
@@ -981,7 +998,7 @@ def chunks (arr : Array α) (chunkSize : Nat) : Array (Array α) := Id.run do
   Id.run <| (chunk.mapM (m := CanonM) fun (name, const) => do
     let name' ← canonName name
     let const' ← canonConst const
-    pure (name', const')).run' {}
+    pure (name', const')).run' (CanonState.withCapacity chunk.size)
 
 /-- Canonicalize an entire Lean environment in parallel (pure).
     Returns just the constants map. -/
@@ -993,7 +1010,8 @@ def canonEnvParallel (env : Lean.Environment) (numWorkers : Nat := 8)
   let tasks := chunkArr.map fun chunk =>
     Task.spawn fun _ => canonChunk chunk
   Id.run do
-    let mut consts : HashMap Ix.Name Ix.ConstantInfo := {}
+    let mut consts : HashMap Ix.Name Ix.ConstantInfo :=
+      HashMap.emptyWithCapacity constArr.size
     for task in tasks do
       for (name, const) in task.get do
         consts := consts.insert name const
@@ -1022,7 +1040,8 @@ def uncanonEnvParallel (consts : HashMap Ix.Name Ix.ConstantInfo) (numWorkers : 
   let tasks := chunkArr.map fun chunk =>
     Task.spawn fun _ => uncanonChunk chunk
   Id.run do
-    let mut result : HashMap Lean.Name Lean.ConstantInfo := {}
+    let mut result : HashMap Lean.Name Lean.ConstantInfo :=
+      HashMap.emptyWithCapacity constArr.size
     for task in tasks do
       for (name, const) in task.get do
         result := result.insert name const

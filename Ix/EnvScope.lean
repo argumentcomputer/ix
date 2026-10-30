@@ -9,6 +9,7 @@
 -/
 module
 public import Ix.Meta
+public import Ix.Compile.Parallel
 -- The checker-support ground is derived from the kernel's role table
 -- along the layering fence's allowed host → kernel direction
 -- (`Ix/SpecDigest.lean` does the same). This links `IxC.Kernel.Roles`'s
@@ -58,8 +59,10 @@ inductive UnitOwnerKind where
 
 /-- `s` is `pre` followed by a non-empty run of digits. -/
 private def numberedComponent (s pre : String) : Bool :=
-  let r := s.toList.drop pre.length
-  s.startsWith pre && !r.isEmpty && r.all Char.isDigit
+  if s.startsWith pre then
+    let r := s.toList.drop pre.length
+    !r.isEmpty && r.all Char.isDigit
+  else false
 
 /-- Is `s`, directly under a constant of kind `k`, the first component of a
 Lean-generated auxiliary of it? -/
@@ -89,26 +92,41 @@ def unitOwnerKind? : Lean.ConstantInfo → Option UnitOwnerKind
   | .defnInfo _ | .thmInfo _ | .opaqueInfo _ => some .defn
   | _ => none
 
+/-- Fast pre-check: is `s` an auxiliary component for *some* `UnitOwnerKind`? -/
+private def isAnyAuxComponent (s : String) : Bool :=
+  unitAuxComponent .induct s || unitAuxComponent .ctor s || unitAuxComponent .defn s
+
+/-- Fast pre-check: does `m` have at least one non-root component that is an
+auxiliary component for some `UnitOwnerKind`? -/
+private def hasAuxComponent : Lean.Name → Bool
+  | .str p s =>
+    (!p.isAnonymous && isAnyAuxComponent s) || hasAuxComponent p
+  | .num p _ => hasAuxComponent p
+  | .anonymous => false
+
 /-- The owner of `n` when `n` is an auxiliary by name: the shortest proper
 prefix `X` of `n` that is a constant and whose next component is an
 auxiliary component for `X`'s kind. A private name is tried as itself and
 then through its user name. -/
 def unitAuxOwner? (consts : Lean.ConstMap) (n : Lean.Name) : Option Lean.Name :=
-  let walk (m : Lean.Name) : Option Lean.Name := Id.run do
-    let comps := m.components
-    let mut pre : Lean.Name := .anonymous
-    for c in comps do
-      if !pre.isAnonymous then
-        if let .str .anonymous s := c then
-          if let some ci := consts.find? pre then
-            if let some k := unitOwnerKind? ci then
-              if unitAuxComponent k s then return some pre
-      -- component by component (`Name.append` would interpret macro scopes)
-      pre := match c with
-        | .str _ s => pre.str s
-        | .num _ i => pre.num i
-        | .anonymous => pre
-    return none
+  let walk (m : Lean.Name) : Option Lean.Name :=
+    if !hasAuxComponent m then none
+    else Id.run do
+      let comps := m.components
+      let mut pre : Lean.Name := .anonymous
+      for c in comps do
+        if !pre.isAnonymous then
+          if let .str .anonymous s := c then
+            if isAnyAuxComponent s then
+              if let some ci := consts.find? pre then
+                if let some k := unitOwnerKind? ci then
+                  if unitAuxComponent k s then return some pre
+        -- component by component (`Name.append` would interpret macro scopes)
+        pre := match c with
+          | .str _ s => pre.str s
+          | .num _ i => pre.num i
+          | .anonymous => pre
+      return none
   match walk n with
   | some o => some o
   | none => (Lean.privateToUserName? n).bind walk
@@ -141,11 +159,12 @@ abbrev UnitIndex := Std.HashMap Lean.Name (Array Lean.Name)
 
 /-- Build the `UnitIndex` of an environment. -/
 def unitIndex (consts : Lean.ConstMap) : UnitIndex := Id.run do
-  let mut idx : UnitIndex := {}
-  for (n, _) in consts.toList do
-    if let some o := unitAuxOwner? consts n then
-      let k := unitKey consts o
-      idx := idx.insert k ((idx.getD k #[]).push n)
+  let pairs := (Ix.Compile.Parallel.map 256 (fun (n, _) =>
+    (unitAuxOwner? consts n).map fun o => (unitKey consts o, n))
+    consts.toList.toArray).filterMap id
+  let mut idx : UnitIndex := Std.HashMap.emptyWithCapacity pairs.size
+  for (k, n) in pairs do
+    idx := idx.insert k ((idx.getD k #[]).push n)
   return idx
 
 /-- The logical unit of `n`'s declaration: its roots and every auxiliary of
@@ -235,10 +254,10 @@ discovered, plus what `opts` asks for at every visited declaration. With
 `opts = {}` this is the raw collector of before, unchanged. The returned
 list preserves the source environment's iteration order over the computed
 name set. -/
-partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
-    (opts : ClosureOptions := {}) : List (Lean.Name × Lean.ConstantInfo) := Id.run do
-  let units : UnitIndex := if opts.units then unitIndex env.constants else {}
-  let mut needed : Std.HashSet Lean.Name := {}
+private partial def collectDepsStep (env : Lean.Environment) (units : UnitIndex)
+    (opts : ClosureOptions) (initNeeded : Std.HashSet Lean.Name) (seeds : List Lean.Name) :
+    Std.HashSet Lean.Name := Id.run do
+  let mut needed := initNeeded
   let mut worklist := seeds
   while !worklist.isEmpty do
     match worklist with
@@ -294,6 +313,12 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
         for r in refs do
           if !needed.contains r then
             worklist := r :: worklist
+  return needed
+
+partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
+    (opts : ClosureOptions := {}) : List (Lean.Name × Lean.ConstantInfo) :=
+  let units : UnitIndex := if opts.units then unitIndex env.constants else {}
+  let needed := collectDepsStep env units opts {} seeds
   env.constants.toList.filter fun (n, _) => needed.contains n
 
 /-- The library constants every selected closure carries besides its seeds'
@@ -338,11 +363,13 @@ its fellows are installed, and the literal names none of them). -/
 def collectSelectedDeps (env : Lean.Environment) (seeds : List Lean.Name) :
     List (Lean.Name × Lean.ConstantInfo) :=
   let seeds := seeds ++ introducedSupport env
-  let closed := collectDeps env seeds .selected
+  let units := unitIndex env.constants
+  let needed := collectDepsStep env units .selected {} seeds
   let support := literalSupportLeanNames.filter env.contains
-  let names : Lean.NameSet := closed.foldl (fun s (n, _) => s.insert n) {}
-  if !support.all names.contains && closed.any (hasStringLiteral ·.2) then
-    collectDeps env (seeds ++ support) .selected
+  let closed := env.constants.toList.filter fun (n, _) => needed.contains n
+  if !support.all needed.contains && closed.any (hasStringLiteral ·.2) then
+    let needed2 := collectDepsStep env units .selected needed support
+    env.constants.toList.filter fun (n, _) => needed2.contains n
   else closed
 
 /-- Default (unfiltered) constant list for a file env. Classic files keep the

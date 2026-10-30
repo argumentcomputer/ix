@@ -3,6 +3,8 @@ module
 public import Ix.Common
 public import Ix.Environment
 public import Ix.Compile.ExactKey
+public import Ix.Compile.Parallel
+import Std.Data.HashMap.Lemmas
 
 public section
 
@@ -104,7 +106,7 @@ def GraphM.run (env: Ix.Environment) (stt: GraphState) (g: GraphM α)
 def GraphM.env (env: Ix.Environment) (dbg : Bool := false) (total : Nat := 0)
     : Map Ix.Name (Set Ix.Name) := Id.run do
   let mut stt : GraphState := .init
-  let mut refs: Map Ix.Name (Set Ix.Name) := {}
+  let mut refs: Map Ix.Name (Set Ix.Name) := Std.HashMap.emptyWithCapacity env.consts.size
   let mut i : Nat := 0
   let mut lastPct : Nat := 0
   for (name, const) in env.consts do
@@ -117,18 +119,6 @@ def GraphM.env (env: Ix.Environment) (dbg : Bool := false) (total : Nat := 0)
       if pct >= lastPct + 10 then
         dbg_trace s!"  [Graph] {pct}% ({i}/{total})"
         lastPct := pct
-  return refs
-
-def GraphM.envParallel (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run do
-  let mut tasks : Array (Ix.Name × Task (Set Ix.Name)) := #[]
-  for (name, const) in env.consts do
-    let task := Task.spawn fun () =>
-      let (rs, _) := GraphM.run env .init (graphConst const)
-      rs
-    tasks := tasks.push (name, task)
-  let mut refs : Map Ix.Name (Set Ix.Name) := {}
-  for (name, task) in tasks do
-    refs := refs.insert name task.get
   return refs
 
 def GraphM.envSerial (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run do
@@ -255,6 +245,21 @@ theorem graphConst_env (ci : Ix.ConstantInfo) (env₁ env₂ : Ix.Environment) (
       exact (graphExpr_envFree _).bind fun _ => EnvFree.pure _
   show (graphConst ci env₁).run s = (graphConst ci env₂).run s
   rw [h env₁ env₂]
+
+@[expose] def GraphM.envPar (env : Ix.Environment) : Map Ix.Name (Set Ix.Name) :=
+  (Ix.Compile.Parallel.map 256 (fun (name, ci) => (name, (GraphM.run { consts := {} } .init (graphConst ci)).1))
+    env.consts.toList.toArray).foldl (fun out (name, refs) => out.insert name refs) {}
+
+theorem GraphM.envSerial_eq_par : @GraphM.envSerial = @GraphM.envPar := by
+  funext env
+  simp only [GraphM.envPar, Ix.Compile.Parallel.map_eq, Array.foldl_map, graphConst_env _ { consts := {} } env]
+  unfold GraphM.envSerial
+  simp only [Id.run, bind_pure, Std.HashMap.forIn_eq_forIn_toList,
+    List.forIn_pure_yield_eq_foldl, List.foldl_toArray']
+  rfl
+
+def GraphM.envParallel (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) :=
+  GraphM.envPar env
 
 end Ix
 
