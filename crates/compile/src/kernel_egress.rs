@@ -25,24 +25,28 @@ use ix_kernel::level::{KUniv, UnivData};
 use ix_kernel::mode::Meta;
 
 /// Convert a kernel universe to a Lean level.
-fn egress_level(u: &KUniv<Meta>, level_params: &[Name]) -> env::Level {
+fn egress_level(
+  u: &KUniv<Meta>,
+  level_params: &[Name],
+) -> Result<env::Level, String> {
   match u.data() {
-    UnivData::Zero(_) => env::Level::zero(),
+    UnivData::Zero(_) => Ok(env::Level::zero()),
     UnivData::Succ(inner, _) => {
-      env::Level::succ(egress_level(inner, level_params))
+      Ok(env::Level::succ(egress_level(inner, level_params)?))
     },
-    UnivData::Max(a, b, _) => env::Level::max(
-      egress_level(a, level_params),
-      egress_level(b, level_params),
-    ),
-    UnivData::IMax(a, b, _) => env::Level::imax(
-      egress_level(a, level_params),
-      egress_level(b, level_params),
-    ),
+    UnivData::Max(a, b, _) => Ok(env::Level::max(
+      egress_level(a, level_params)?,
+      egress_level(b, level_params)?,
+    )),
+    UnivData::IMax(a, b, _) => Ok(env::Level::imax(
+      egress_level(a, level_params)?,
+      egress_level(b, level_params)?,
+    )),
     UnivData::Param(idx, _, _) => {
-      let pos = usize::try_from(*idx).expect("level param index exceeds usize");
+      let pos = usize::try_from(*idx)
+        .map_err(|_| format!("level param index {idx} exceeds usize"))?;
       let name = level_params.get(pos).cloned().unwrap_or_else(Name::anon);
-      env::Level::param(name)
+      Ok(env::Level::param(name))
     },
   }
 }
@@ -50,7 +54,7 @@ fn egress_level(u: &KUniv<Meta>, level_params: &[Name]) -> env::Level {
 fn egress_levels(
   levels: &[KUniv<Meta>],
   level_params: &[Name],
-) -> Vec<env::Level> {
+) -> Result<Vec<env::Level>, String> {
   levels.iter().map(|l| egress_level(l, level_params)).collect()
 }
 
@@ -58,24 +62,28 @@ fn egress_levels(
 /// resolving `Var` indices positionally through the constant's level
 /// params (same resolution as `egress_level`). Used to replay
 /// level-spelling decorations (canonicity §10.6).
-fn ixon_univ_to_level(u: &IxonUniv, level_params: &[Name]) -> env::Level {
+fn ixon_univ_to_level(
+  u: &IxonUniv,
+  level_params: &[Name],
+) -> Result<env::Level, String> {
   match u {
-    IxonUniv::Zero => env::Level::zero(),
+    IxonUniv::Zero => Ok(env::Level::zero()),
     IxonUniv::Succ(inner) => {
-      env::Level::succ(ixon_univ_to_level(inner, level_params))
+      Ok(env::Level::succ(ixon_univ_to_level(inner, level_params)?))
     },
-    IxonUniv::Max(a, b) => env::Level::max(
-      ixon_univ_to_level(a, level_params),
-      ixon_univ_to_level(b, level_params),
-    ),
-    IxonUniv::IMax(a, b) => env::Level::imax(
-      ixon_univ_to_level(a, level_params),
-      ixon_univ_to_level(b, level_params),
-    ),
+    IxonUniv::Max(a, b) => Ok(env::Level::max(
+      ixon_univ_to_level(a, level_params)?,
+      ixon_univ_to_level(b, level_params)?,
+    )),
+    IxonUniv::IMax(a, b) => Ok(env::Level::imax(
+      ixon_univ_to_level(a, level_params)?,
+      ixon_univ_to_level(b, level_params)?,
+    )),
     IxonUniv::Var(idx) => {
-      let pos = usize::try_from(*idx).expect("level param index exceeds usize");
+      let pos = usize::try_from(*idx)
+        .map_err(|_| format!("level param index {idx} exceeds usize"))?;
       let name = level_params.get(pos).cloned().unwrap_or_else(Name::anon);
-      env::Level::param(name)
+      Ok(env::Level::param(name))
     },
   }
 }
@@ -114,16 +122,17 @@ fn egress_expr(
     // collapses them.
     ExprData::Sort(u, i) => match &i.univ_decor {
       Some(UnivDecor::Sort(orig)) => {
-        env::Expr::sort(ixon_univ_to_level(orig, level_params))
+        env::Expr::sort(ixon_univ_to_level(orig, level_params)?)
       },
-      _ => env::Expr::sort(egress_level(u, level_params)),
+      _ => env::Expr::sort(egress_level(u, level_params)?),
     },
     ExprData::Const(id, levels, i) => {
       let lvls = match &i.univ_decor {
-        Some(UnivDecor::Const(origs)) => {
-          origs.iter().map(|u| ixon_univ_to_level(u, level_params)).collect()
-        },
-        _ => egress_levels(levels, level_params),
+        Some(UnivDecor::Const(origs)) => origs
+          .iter()
+          .map(|u| ixon_univ_to_level(u, level_params))
+          .collect::<Result<Vec<_>, _>>()?,
+        _ => egress_levels(levels, level_params)?,
       };
       env::Expr::cnst(id.name.clone(), lvls)
     },
@@ -370,7 +379,7 @@ pub fn lean_egress(zenv: &KEnv<Meta>) -> Result<env::Env, String> {
     for member in all {
       if let Some(LeanCI::InductInfo(v)) = lean_env.get_mut(member) {
         v.is_rec = f.is_rec;
-        v.is_rec = f.is_reflexive;
+        v.is_reflexive = f.is_reflexive;
         v.num_nested = Nat::from(f.num_nested);
       }
     }
@@ -1460,13 +1469,13 @@ mod tests {
 
   #[test]
   fn egress_level_zero() {
-    let l = egress_level(&KUniv::<Meta>::zero(), &[]);
+    let l = egress_level(&KUniv::<Meta>::zero(), &[]).unwrap();
     assert!(matches!(l.as_data(), env::LevelData::Zero(_)));
   }
 
   #[test]
   fn egress_level_succ() {
-    let l = egress_level(&KUniv::<Meta>::succ(KUniv::zero()), &[]);
+    let l = egress_level(&KUniv::<Meta>::succ(KUniv::zero()), &[]).unwrap();
     assert!(matches!(l.as_data(), env::LevelData::Succ(..)));
   }
 
@@ -1475,7 +1484,7 @@ mod tests {
     // Param(0) with level_params=["u"] → Level::param("u")
     let u_name = mk_name("u");
     let ku = KUniv::<Meta>::param(0, u_name.clone());
-    let l = egress_level(&ku, std::slice::from_ref(&u_name));
+    let l = egress_level(&ku, std::slice::from_ref(&u_name)).unwrap();
     match l.as_data() {
       env::LevelData::Param(n, _) => assert_eq!(n, &u_name),
       other => panic!("expected Param, got {other:?}"),
@@ -1486,7 +1495,7 @@ mod tests {
   fn egress_level_param_out_of_range_falls_back_to_anon() {
     // Index 5 with only 1 level_param → fallback to Name::anon().
     let ku = KUniv::<Meta>::param(5, mk_name("x"));
-    let l = egress_level(&ku, &[mk_name("u")]);
+    let l = egress_level(&ku, &[mk_name("u")]).unwrap();
     match l.as_data() {
       env::LevelData::Param(n, _) => {
         assert!(matches!(n.as_data(), env::NameData::Anonymous(_)));

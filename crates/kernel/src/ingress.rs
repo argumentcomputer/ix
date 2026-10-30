@@ -436,12 +436,12 @@ fn ingress_univ<M: KernelMode>(
   intern: &mut InternTable<M>,
   cache: &mut UnivCache<M>,
   stats: &mut ConvertStats,
-) -> KUniv<M> {
+) -> Result<KUniv<M>, String> {
   bump_convert_stat!(stats, univ_roots);
   let cache_key = Arc::as_ptr(root) as usize;
   if let Some(cached) = cache.get(&cache_key) {
     bump_convert_stat!(stats, univ_cache_hits);
-    return cached.clone();
+    return Ok(cached.clone());
   }
   bump_convert_stat!(stats, univ_cache_misses);
 
@@ -475,8 +475,8 @@ fn ingress_univ<M: KernelMode>(
         },
         IxonUniv::Var(idx) => {
           bump_convert_stat!(stats, univ_process);
-          let pos =
-            usize::try_from(*idx).expect("univ var index exceeds usize");
+          let pos = usize::try_from(*idx)
+            .map_err(|_e| format!("univ var index {idx} exceeds usize"))?;
           let name = ctx.lvls.get(pos).cloned().unwrap_or_else(Name::anon);
           bump_convert_stat!(stats, univ_interns);
           values.push(timed_intern_univ(
@@ -516,7 +516,7 @@ fn ingress_univ<M: KernelMode>(
     stats.univ_cache_inserts += 1;
     stats.univ_cache_peak = stats.univ_cache_peak.max(cache.len() as u64);
   }
-  result
+  Ok(result)
 }
 
 fn ingress_univ_args<M: KernelMode>(
@@ -533,7 +533,7 @@ fn ingress_univ_args<M: KernelMode>(
     let u = ctx.univs.get(i).ok_or_else(|| {
       format!("universe index {i} out of bounds (len {})", ctx.univs.len())
     })?;
-    result.push(ingress_univ(u, ctx, intern, cache, stats));
+    result.push(ingress_univ(u, ctx, intern, cache, stats)?);
   }
   Ok(result.into_boxed_slice())
 }
@@ -866,7 +866,7 @@ fn ingress_expr<M: KernelMode>(
                   format!("Sort univ index {idx} exceeds usize")
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
-            let zu = ingress_univ(u, ctx, intern, univ_cache, stats);
+            let zu = ingress_univ(u, ctx, intern, univ_cache, stats)?;
             // Spelling decoration (canonicity §10.6): the occurrence's
             // `univ_patches` entry (stage 2) is the primary source of
             // the original spelling; without one, fall back to the

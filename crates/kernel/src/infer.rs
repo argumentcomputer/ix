@@ -137,8 +137,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           });
         }
         let ty = c.ty().clone();
-        let us_vec: Vec<_> = us.to_vec();
-        self.instantiate_univ_params(&ty, &us_vec)?
+        self.instantiate_univ_params(&ty, us)?
       },
 
       ExprData::App(f, _, _) if matches!(f.data(), ExprData::App(..)) => {
@@ -402,8 +401,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
     };
 
-    let i_levels_vec: Vec<_> = i_levels.to_vec();
-    let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels_vec)?;
+    let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels)?;
 
     for i in 0..num_params {
       let (_, body) = self
@@ -511,8 +509,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Err(TcError::Other("projection: not an inductive type".into()));
       },
     };
-    let levels_vec: Vec<_> = levels.to_vec();
-    let mut r = self.instantiate_univ_params(&ind_ty, &levels_vec)?;
+    let mut r = self.instantiate_univ_params(&ind_ty, levels)?;
     for _ in 0..binders {
       let wr = self.whnf(&r)?;
       match wr.data() {

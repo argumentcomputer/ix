@@ -47,6 +47,40 @@ impl Univ {
   pub fn var(idx: u64) -> Arc<Self> {
     Arc::new(Univ::Var(idx))
   }
+
+  /// Move the contents of every uniquely owned child that has children of
+  /// its own to `stack`, leaving a leaf in its place.
+  fn detach_unique_children(&mut self, stack: &mut Vec<Univ>) {
+    let mut detach = |child: &mut Arc<Univ>| {
+      if Arc::strong_count(child) == 1
+        && let Some(inner) = Arc::get_mut(child)
+        && matches!(inner, Univ::Succ(..) | Univ::Max(..) | Univ::IMax(..))
+      {
+        stack.push(std::mem::replace(inner, Univ::Zero));
+      }
+    };
+    match self {
+      Self::Succ(a) => detach(a),
+      Self::Max(a, b) | Self::IMax(a, b) => {
+        detach(a);
+        detach(b);
+      },
+      Self::Zero | Self::Var(_) => {},
+    }
+  }
+}
+
+/// Dropping a universe frees its uniquely owned descendants from an explicit
+/// stack, so the depth of a `Succ`/`Max`/`IMax` chain is bounded by memory,
+/// not by the thread's stack.
+impl Drop for Univ {
+  fn drop(&mut self) {
+    let mut stack: Vec<Univ> = Vec::new();
+    self.detach_unique_children(&mut stack);
+    while let Some(mut u) = stack.pop() {
+      u.detach_unique_children(&mut stack);
+    }
+  }
 }
 
 /// Serialize a universe to bytes (iterative to avoid stack overflow).
@@ -329,5 +363,14 @@ pub mod tests {
   #[test]
   fn test_univ_succ_telescope() {
     assert!(roundtrip(&Univ::succ(Univ::succ(Univ::succ(Univ::zero())))));
+  }
+
+  #[test]
+  fn test_deep_univ_drop_does_not_stack_overflow() {
+    let mut u = Univ::zero();
+    for _ in 0..100_000 {
+      u = Univ::succ(u);
+    }
+    drop(u);
   }
 }

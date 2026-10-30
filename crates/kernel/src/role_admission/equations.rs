@@ -218,7 +218,8 @@ fn validate_definition(
       },
       Evidence::Proof(proof) => {
         let (ty, val) =
-          load_checked_theorem(&mut checker, proof, levels).map_err(&fail)?;
+          load_checked_theorem(source, &mut checker, proof, levels)
+            .map_err(&fail)?;
         if !checker
           .is_def_eq(&ty, &equation.statement)
           .map_err(|e| fail(e.to_string()))?

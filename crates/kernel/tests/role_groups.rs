@@ -1060,43 +1060,28 @@ fn definitional_axiom_roles(env: &Env) -> Vec<(Role, Address)> {
     vec![zero.clone()],
   );
 
-  // `And a b := ∀ c : Prop, (a → b → c) → c`.
+  // `And`, `And.intro`, `And.rec` as non-inductive definitions.
+  let real_and = address_of(env, "And");
+  let real_and_intro = address_of(env, "And.intro");
+  let real_and_rec = address_of(env, "And.rec");
   let binary = || pi(prop(), pi(prop(), prop()));
   let and = definition(
     env,
     0,
     binary(),
-    lambda(
-      prop(),
-      lambda(prop(), pi(prop(), pi(pi(v(2), pi(v(2), v(2))), v(1)))),
-    ),
-    vec![],
+    reference(0, vec![]),
+    vec![real_and],
     vec![zero.clone()],
   );
   let and_intro = definition(
     env,
     0,
     pi(prop(), pi(prop(), pi(v(1), pi(v(1), both(0, 3, 2))))),
-    lambda(
-      prop(),
-      lambda(
-        prop(),
-        lambda(
-          v(1),
-          lambda(
-            v(1),
-            lambda(
-              prop(),
-              lambda(pi(v(4), pi(v(4), v(2))), app(app(v(0), v(3)), v(2))),
-            ),
-          ),
-        ),
-      ),
-    ),
-    vec![and.clone()],
+    reference(1, vec![]),
+    vec![and.clone(), real_and_intro],
     vec![zero.clone()],
   );
-  let and_rec = axiom(
+  let and_rec = definition(
     env,
     1,
     pi(
@@ -1112,7 +1097,8 @@ fn definitional_axiom_roles(env: &Env) -> Vec<(Role, Address)> {
         ),
       ),
     ),
-    vec![and.clone(), and_intro.clone()],
+    reference(2, vec![1]),
+    vec![and.clone(), and_intro.clone(), real_and_rec],
     props.clone(),
   );
 
@@ -1931,12 +1917,11 @@ fn a_closure_verdict_checks_what_role_admission_assumed() {
   let roles = with_prelude(&env, roles);
   bind_with_evidence(&mut env, roles, evidence);
   let source = ArtifactSource::snapshot(&env).unwrap();
-  let refused = source.admission().refused();
-  assert!(refused.is_empty(), "{refused:?}");
-  assert!(source.is_admitted(Role::NatDiv));
+  assert!(!source.is_admitted(Role::NatSub));
+  assert!(!source.is_admitted(Role::NatDiv));
 
   let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source.clone()));
-  checker.check_const(&bad).unwrap();
+  assert!(checker.check_const(&bad).is_err());
   assert!(checker.verdict_closure(std::slice::from_ref(&bad)).unwrap().contains(&zero_is_one));
   assert!(checker.check_const_with_verdict_closure(&bad).is_err());
   assert!(checker.check_verdict(std::slice::from_ref(&bad), true).is_err());
@@ -1949,12 +1934,137 @@ fn a_closure_verdict_checks_what_role_admission_assumed() {
       verdict_work(&source, &work, std::slice::from_ref(&bad), dependencies)
         .unwrap();
     assert!(selected.iter().any(|item| item.primary() == &bad));
+    assert!(selected.iter().any(|item| item.primary() == &zero_is_one));
     let failed: Vec<&Address> = selected
       .iter()
       .map(|item| item.primary())
       .filter(|primary| checker.check_const(primary).is_err())
       .collect();
-    assert_eq!(failed, [&zero_is_one], "dependencies: {dependencies}");
+    assert!(
+      failed.contains(&&zero_is_one) && failed.contains(&&bad),
+      "dependencies: {dependencies}, failed: {failed:?}"
+    );
+  }
+}
+
+#[test]
+fn anchor_and_operation_roles_reject_axiom_and_partial_declarations_and_helpers() {
+  let one = || Arc::new(Univ::Succ(Arc::new(Univ::Zero)));
+
+  // 1. Anchor role (`Char`) directly bound to an `Axio` or `Partial` definition.
+  for use_axiom in [true, false] {
+    let mut env = loaded();
+    let nat = address_of(&env, "Nat");
+    let bad_char = if use_axiom {
+      axiom(&env, 0, arc(Expr::Sort(0)), vec![], vec![one()])
+    } else {
+      declare(
+        &env,
+        DefKind::Definition,
+        DefinitionSafety::Partial,
+        arc(Expr::Sort(0)),
+        reference(0, vec![]),
+        vec![nat],
+        vec![one()],
+      )
+    };
+    let roles = with_prelude(&env, vec![(Role::Char, bad_char.clone())]);
+    bind(&mut env, roles);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    assert!(!source.is_admitted(Role::Char), "use_axiom={use_axiom}");
+    let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
+    assert!(checker.check_const(&bad_char).is_err(), "use_axiom={use_axiom}");
+  }
+
+  // 2. Anchor role (`Char`) with a helper dependency that is `Axio` or `Partial`.
+  for use_axiom in [true, false] {
+    let mut env = loaded();
+    let nat = address_of(&env, "Nat");
+    let helper = if use_axiom {
+      axiom(&env, 0, arc(Expr::Sort(0)), vec![], vec![one()])
+    } else {
+      declare(
+        &env,
+        DefKind::Definition,
+        DefinitionSafety::Partial,
+        arc(Expr::Sort(0)),
+        reference(0, vec![]),
+        vec![nat],
+        vec![one()],
+      )
+    };
+    let char_with_helper = definition(
+      &env,
+      0,
+      arc(Expr::Sort(0)),
+      reference(0, vec![]),
+      vec![helper],
+      vec![one()],
+    );
+    let roles =
+      with_prelude(&env, vec![(Role::Char, char_with_helper.clone())]);
+    bind(&mut env, roles);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    assert!(!source.is_admitted(Role::Char), "use_axiom={use_axiom}");
+    let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
+    assert!(
+      checker.check_const(&char_with_helper).is_err(),
+      "use_axiom={use_axiom}"
+    );
+  }
+
+  // 3. Structural operation (`Nat.pred`) with an `Axio` or `Partial` helper dependency.
+  for use_axiom in [true, false] {
+    let mut env = loaded();
+    let nat = address_of(&env, "Nat");
+    let zero = address_of(&env, "Nat.zero");
+    let real_pred = address_of(&env, "Nat.pred");
+    let helper = if use_axiom {
+      axiom(&env, 0, reference(0, vec![]), vec![nat.clone()], vec![])
+    } else {
+      declare(
+        &env,
+        DefKind::Definition,
+        DefinitionSafety::Partial,
+        reference(0, vec![]),
+        reference(1, vec![]),
+        vec![nat.clone(), zero],
+        vec![],
+      )
+    };
+    // `def pred (n : Nat) : Nat := (fun _ : Nat => Nat.pred n) helper`
+    let pred = definition(
+      &env,
+      0,
+      pi(reference(0, vec![]), reference(0, vec![])),
+      lambda(
+        reference(0, vec![]),
+        app(
+          lambda(
+            reference(0, vec![]),
+            app(reference(1, vec![]), arc(Expr::Var(1))),
+          ),
+          reference(2, vec![]),
+        ),
+      ),
+      vec![nat, real_pred, helper],
+      vec![],
+    );
+    let mut roles = basis_roles(&env);
+    roles.extend(bool_roles(&env));
+    let mut evidence = vec![];
+    for (role, name, equations) in STRUCTURAL {
+      let bound = if role == Role::NatPred { pred.clone() } else { address_of(&env, name) };
+      roles.push((role, bound));
+      evidence.push((role, vec![Evidence::DefEq; equations]));
+    }
+    let roles = with_prelude(&env, roles);
+    bind_with_evidence(&mut env, roles, evidence);
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    assert!(!source.is_admitted(Role::NatPred), "use_axiom={use_axiom}");
+    assert!(!source.is_admitted(Role::NatSub), "use_axiom={use_axiom}");
+    let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source));
+    assert!(checker.check_const(&pred).is_err(), "use_axiom={use_axiom}");
   }
 }
 

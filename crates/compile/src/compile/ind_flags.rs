@@ -14,7 +14,6 @@
 //! BVars and non-parameter FVars cannot enter a specialization.
 
 use bignat::Nat;
-use blake3::Hash;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::LazyLock;
 use std::time::Instant;
@@ -134,10 +133,10 @@ impl ExpandCtx<'_> {
     &mut self,
     e: &LeanExpr,
     as_fvars: &[LeanExpr],
-    cache: &mut FxHashMap<Hash, LeanExpr>,
+    cache: &mut FxHashMap<ExprKey, LeanExpr>,
   ) -> Result<LeanExpr, Cancelled> {
     self.control.visit()?;
-    let key = *e.get_hash();
+    let key = ExprKey(e.clone());
     if let Some(cached) = cache.get(&key) {
       return Ok(cached.clone());
     }
@@ -183,12 +182,11 @@ impl ExpandCtx<'_> {
       ),
       _ => e.clone(),
     };
-    let result =
-      if result.get_hash() == e.get_hash() { e.clone() } else { result };
+    let result = if result.same_raw(e) { e.clone() } else { result };
     cache.insert(key, result.clone());
     self.control.scratch(
       cache.capacity()
-        * (size_of::<(Hash, LeanExpr)>() + size_of::<ExprData>()),
+        * (size_of::<(ExprKey, LeanExpr)>() + size_of::<ExprData>()),
     );
     Ok(result)
   }
@@ -501,7 +499,7 @@ fn expand_nested_block(
       )?;
 
       // Replace all nested occurrences in the peeled body.
-      let mut walk_cache: FxHashMap<Hash, LeanExpr> = FxHashMap::default();
+      let mut walk_cache: FxHashMap<ExprKey, LeanExpr> = FxHashMap::default();
       let replaced =
         ctx.replace_all_nested(&peeled, &as_fvars, &mut walk_cache)?;
 
@@ -616,7 +614,7 @@ fn compute_lean_ind_flags_checked(
   let block_names: FxHashSet<&Name> =
     expanded.types.iter().map(|m| &m.name).collect();
 
-  let mut occ_cache: FxHashMap<Hash, bool> = FxHashMap::default();
+  let mut occ_cache: FxHashMap<ExprKey, bool> = FxHashMap::default();
   let mut is_rec = false;
   let mut is_reflexive = false;
   for member in &expanded.types {
@@ -741,15 +739,15 @@ fn validate_one_group(
 }
 
 // does `expr` mention any block type by name anywhere?
-// hash-memoized: ctor types share subterm DAGs
+// DAG-memoized: ctor types share subterm DAGs
 fn has_ind_occ(
   expr: &LeanExpr,
   names: &FxHashSet<&Name>,
-  cache: &mut FxHashMap<Hash, bool>,
+  cache: &mut FxHashMap<ExprKey, bool>,
   control: &Checkpoint,
 ) -> Result<bool, Cancelled> {
   control.visit()?;
-  let key = *expr.get_hash();
+  let key = ExprKey(expr.clone());
   if let Some(&cached) = cache.get(&key) {
     return Ok(cached);
   }
@@ -774,7 +772,7 @@ fn has_ind_occ(
     _ => false,
   };
   cache.insert(key, result);
-  control.scratch(cache.capacity() * size_of::<(Hash, bool)>());
+  control.scratch(cache.capacity() * size_of::<(ExprKey, bool)>());
   Ok(result)
 }
 

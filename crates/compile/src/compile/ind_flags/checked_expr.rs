@@ -9,6 +9,7 @@ use ix_common::name_table::NameTable;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{LocalDecl, fresh_fvar};
+use crate::compile::ExprKey;
 use crate::compile::nat_conv::nat_to_u64;
 use crate::compile::validation::{Cancelled, Checkpoint};
 
@@ -373,11 +374,11 @@ pub(super) fn any(
   c: &Checkpoint,
   mut predicate: impl FnMut(&LeanExpr, u64) -> bool,
 ) -> Result<bool> {
-  let mut seen = FxHashSet::default();
+  let mut seen: FxHashSet<(ExprKey, u64)> = FxHashSet::default();
   let mut stack = vec![(e, 0)];
   while let Some((e, depth)) = stack.pop() {
     c.visit()?;
-    if !seen.insert((*e.get_hash(), depth)) {
+    if !seen.insert((ExprKey(e.clone()), depth)) {
       continue;
     }
     if predicate(e, depth) {
@@ -403,7 +404,7 @@ pub(super) fn any(
       _ => {},
     }
     c.scratch(
-      seen.capacity() * size_of::<Key>()
+      seen.capacity() * size_of::<(ExprKey, u64)>()
         + stack.capacity() * size_of::<(&LeanExpr, u64)>(),
     );
   }

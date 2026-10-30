@@ -492,11 +492,36 @@ fn check_units_with(
   let mut checker =
     TypeChecker::for_artifact_anon(kenv, source, &lookups, context);
   for member in members {
+    if source.in_safety_tier(member) {
+      return Err(format!("{} is partial or unsafe", member.hex()));
+    }
     checker
       .check_ixon_const(&KId::new((*member).clone(), ()))
       .map_err(|error| format!("{} does not check: {error}", member.hex()))?;
   }
   Ok(())
+}
+
+fn support_targets(
+  source: &ArtifactSource,
+  roots: &[Address],
+) -> Result<Vec<Address>, String> {
+  let mut support: Vec<_> =
+    source.closure(roots).map_err(|e| e.to_string())?.into_iter().collect();
+  support.sort_unstable();
+  let mut targets = Vec::new();
+  for entry in support {
+    if source.contains_record(&entry) {
+      if source.record_tag(&entry).map_err(|e| e.to_string())?
+        != ixon::lazy::ConstVariantTag::Muts
+      {
+        targets.push(entry);
+      }
+    } else {
+      source.blob(&entry).map_err(|e| e.to_string())?;
+    }
+  }
+  Ok(targets)
 }
 
 /// Check every carried declaration in the closure of `roots`, including
@@ -508,22 +533,9 @@ fn check_support(
   env: &mut KEnv<Anon>,
   roots: &[Address],
 ) -> Result<(), String> {
-  let mut support: Vec<_> =
-    source.closure(roots).map_err(|e| e.to_string())?.into_iter().collect();
-  support.sort_unstable();
-  let mut targets = Vec::new();
-  for entry in &support {
-    if source.contains_record(entry) {
-      if source.record_tag(entry).map_err(|e| e.to_string())?
-        != ixon::lazy::ConstVariantTag::Muts
-      {
-        targets.push(entry);
-      }
-    } else {
-      source.blob(entry).map_err(|e| e.to_string())?;
-    }
-  }
-  check_units(source, admitted, env, &targets)
+  let targets = support_targets(source, roots)?;
+  let refs: Vec<&Address> = targets.iter().collect();
+  check_units(source, admitted, env, &refs)
 }
 
 // -----------------------------------------------------------------------
@@ -648,12 +660,20 @@ fn expect_theorem_evidence(
 }
 
 fn load_checked_theorem(
+  source: &ArtifactSource,
   checker: &mut TypeChecker<'_, Anon>,
   proof: &Address,
   levels: u64,
 ) -> Result<(E, E), String> {
+  for member in support_targets(source, std::slice::from_ref(proof))? {
+    if source.in_safety_tier(&member) {
+      return Err(format!("{} is partial or unsafe", member.hex()));
+    }
+    checker
+      .check_ixon_const(&KId::new(member, ()))
+      .map_err(|error| error.to_string())?;
+  }
   let id = KId::new(proof.clone(), ());
-  checker.check_ixon_const(&id).map_err(|error| error.to_string())?;
   let theorem = checker.get_const(&id).map_err(|error| error.to_string())?;
   let KConst::Defn {
     kind: DefKind::Theorem,
@@ -1255,10 +1275,10 @@ fn admitted_eq(admitted: &Admission) -> Result<Address, String> {
 // The literal-support anchors
 // -----------------------------------------------------------------------
 
-/// Whether a declaration is unsafe.
+/// Whether a declaration is unsafe or partial.
 fn is_unsafe(constant: &KConst<Anon>) -> bool {
   match constant {
-    KConst::Defn { safety, .. } => *safety == DefinitionSafety::Unsafe,
+    KConst::Defn { safety, .. } => *safety != DefinitionSafety::Safe,
     KConst::Recr { is_unsafe, .. }
     | KConst::Axio { is_unsafe, .. }
     | KConst::Indc { is_unsafe, .. }
@@ -1311,7 +1331,7 @@ fn validate_anchors(
       format!("{}: the specified type is not a type: {error}", address.hex())
     })?;
   }
-  Ok(())
+  check_support(source, admitted, &mut kenv, &addresses)
 }
 
 /// `Char : Type`.
@@ -1559,7 +1579,7 @@ fn validate_structural_op(
       address.hex()
     ));
   }
-  check_units(source, admitted, &mut kenv, &[&address])?;
+  check_support(source, admitted, &mut kenv, std::slice::from_ref(&address))?;
 
   let nat = admitted_role(admitted, Role::Nat)?;
   let context =
@@ -1569,11 +1589,15 @@ fn validate_structural_op(
     TypeChecker::for_artifact_anon(&mut kenv, source, &lookups, context);
   for (index, (lhs, rhs)) in equations.into_iter().enumerate() {
     let close = |e: E| lam(nat.clone(), lam(nat.clone(), e));
+    let (lhs, rhs) = (close(lhs), close(rhs));
+    let fail = |error: crate::error::TcError<Anon>| {
+      format!("{}: equation {index} does not check: {error}", address.hex())
+    };
     checker.reset();
-    let holds =
-      checker.is_def_eq(&close(lhs), &close(rhs)).map_err(|error| {
-        format!("{}: equation {index} does not check: {error}", address.hex())
-      })?;
+    let lhs_ty = checker.infer(&lhs).map_err(&fail)?;
+    let rhs_ty = checker.infer(&rhs).map_err(&fail)?;
+    let holds = checker.is_def_eq(&lhs_ty, &rhs_ty).map_err(&fail)?
+      && checker.is_def_eq(&lhs, &rhs).map_err(&fail)?;
     if !holds {
       return Err(format!("{}: equation {index} does not hold", address.hex()));
     }
@@ -1912,7 +1936,7 @@ fn validate_wf_op(
       address.hex()
     ));
   }
-  check_units(source, admitted, &mut kenv, &[&address])?;
+  check_support(source, admitted, &mut kenv, std::slice::from_ref(&address))?;
 
   // Locality: the closure of the operation (its unit's references) and of
   // the roles, with their blocks, that its specification depends on.
@@ -1929,7 +1953,7 @@ fn validate_wf_op(
       format!("{}: certificate {index} ({}) {what}", address.hex(), proof.hex())
     };
     let (_, value) =
-      load_checked_theorem(&mut checker, proof, 0).map_err(&fail)?;
+      load_checked_theorem(source, &mut checker, proof, 0).map_err(&fail)?;
     let proof_term =
       replace_constant(&value, &address, &val, &mut FxHashMap::default());
 
