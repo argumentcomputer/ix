@@ -23,6 +23,10 @@ pub mod groth16;
 mod init_claim;
 mod init_fri;
 mod merge;
+pub use merge::{
+  MergeChild, MergeKind, Release, derive_merge_family, merge, merged_claim,
+  parse_prefix, verify_merged,
+};
 pub mod plonk;
 pub use final_proof::{Artifact, FinalOptions, FinalSystem};
 mod prover;
@@ -76,7 +80,14 @@ pub fn verify(
     return plonk::verify(packet, claim);
   }
   if let Some(packet) = proof.strip_prefix(PROOF_TAG) {
-    return verifying_keys::verify_recursive(packet, claim);
+    return verifying_keys::verify_recursive(packet, claim).or_else(|error| {
+      let merged = Release::bundled().and_then(|release| {
+        verify_merged(proof, claim, &release, allow_development)
+      });
+      merged.map_err(|merged| {
+        format!("{error}; as a merged proof: {merged}").into()
+      })
+    });
   }
   Err("unsupported compressed proof version".into())
 }

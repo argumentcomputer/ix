@@ -1,6 +1,8 @@
 //! The verifying keys this build compresses to and verifies, one per proof
 //! system, with the aggregation backend and fixed root layout they were derived
-//! for. A proof verifies only under these keys; there is no catalog of alternatives.
+//! for, and the merge family over them. A proof verifies only under these keys;
+//! there is no catalog of alternatives. The version 0.1 recursive key and
+//! statement prefix stay pinned so 0.1 certificates can be imported.
 use super::{
   FixedRoot, Result,
   setup::SetupClass,
@@ -10,30 +12,55 @@ use super::{
 use crate::kzg::{Srs, VerifierParams};
 
 /// Version of the bundled verifying keys and the layout they were derived for.
-const VERSION: &str = "0.1";
+const VERSION: &str = "0.2";
 
 /// Log2 of the first KZG stage's partition height the keys were derived for.
 pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 
 /// Serialized aggregation backend key whose roots the layout normalizes.
 const ROOT_VK_BLAKE3: &str =
-  "f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc";
-const LAYOUT: &str = include_str!("../../verifying-keys/0.1/layout.json");
+  "fa2aca3874e0e1246dfc9fd3966488dd8a2b2f4f8e4b0d0e429bce09628281f9";
+const LAYOUT: &str = include_str!("../../verifying-keys/0.2/layout.json");
 
 /// Backend and entrypoint words of the aggregation program, the statement
 /// prefix every compressed claim of this release carries.
 pub(super) const STATEMENT_PREFIX: [u64; 10] = [
-  0, 293, 3849420707, 4087085283, 470000540, 2154705852, 3686466056,
-  4052325645, 2284798839, 2062413424,
+  0, 295, 2016458596, 2726416511, 3999037363, 3880722053, 518423282, 277040562,
+  752986824, 3751418772,
 ];
 
 pub(super) const RECURSIVE_VK: &[u8] =
-  include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
+  include_bytes!("../../verifying-keys/0.2/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
-  "b4c58f798380d2fd91594763613874fdaf2d407631cee98fe361a287265d074a";
+  "a2488d06bf3a8eb401c430f6474a436f5b0bf0e4ff941092181e762263ab2950";
 /// The identifier a recursive KZG packet begins with.
 pub(super) const RECURSIVE_VK_ID: &str =
-  "376163d7ec5afa644e393d0d1828b3fc46be2f80cc5e4d122c739e9b28129330";
+  "10d08471278de9d1d2c61fa0ce42f069d5e1f814afe47bb3cd08f2f59e76c671";
+
+/// The version 0.1 statement prefix, which imported certificates carry.
+pub(super) const IMPORTED_STATEMENT_PREFIX: [u64; 10] = [
+  0, 293, 3849420707, 4087085283, 470000540, 2154705852, 3686466056,
+  4052325645, 2284798839, 2062413424,
+];
+/// The version 0.1 recursive key, which imported certificates verify under.
+pub(super) const IMPORTED_RECURSIVE_VK: &[u8] =
+  include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
+#[cfg(test)]
+const IMPORTED_RECURSIVE_VK_BLAKE3: &str =
+  "b4c58f798380d2fd91594763613874fdaf2d407631cee98fe361a287265d074a";
+
+/// The merge family's keys, in `merge::FAMILY` order.
+pub(super) const MERGE_FAMILY: [&[u8]; 5] = [
+  include_bytes!("../../verifying-keys/0.2/join-fresh-fresh.bin"),
+  include_bytes!("../../verifying-keys/0.2/join-merged-fresh.bin"),
+  include_bytes!("../../verifying-keys/0.2/join-fresh-merged.bin"),
+  include_bytes!("../../verifying-keys/0.2/join-merged-merged.bin"),
+  include_bytes!("../../verifying-keys/0.2/relay-imported.bin"),
+];
+/// The family digest over the members' fixed commitments, which every merge
+/// statement carries after its head.
+pub(super) const MERGE_FAMILY_BLAKE3: &str =
+  "f011938591fed554aff2bbe3d270d0f183aed89e27acf88c42786b91a46f8e42";
 
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK: &[u8] =
@@ -66,6 +93,25 @@ pub(super) fn groth16_setup(allow_development: bool) -> Result<SetupClass> {
     return Err("the release Groth16 key uses a development setup; use --dev-final-srs for compression or --dev-srs for verification (not production-secure)".into());
   }
   Ok(SetupClass::Development)
+}
+
+/// The digest a merge statement carries for `family`: the family digest of
+/// its members' fixed-commitment digests.
+#[cfg(test)]
+fn family_digest(family: &[&[u8]]) -> Result<[u8; 32]> {
+  let keys = family
+    .iter()
+    .map(|bytes| {
+      let (system, _) =
+        VerifyingKey::from_bytes(bytes)?.certificate_verifier()?;
+      let fixed = system
+        .preprocessed_commit
+        .as_ref()
+        .ok_or("missing fixed commitment")?;
+      Ok(crate::recursive::native_verifier::key_digest(fixed)?)
+    })
+    .collect::<Result<Vec<_>>>()?;
+  Ok(crate::recursive::native_verifier::family_digest(&keys))
 }
 
 /// A pinned digest, decoded strictly.
@@ -186,6 +232,20 @@ mod tests {
   #[test]
   fn bundled_release_files_match_their_pins() {
     recursive_vk().unwrap();
+    assert_eq!(
+      blake3::hash(IMPORTED_RECURSIVE_VK).to_hex().as_str(),
+      IMPORTED_RECURSIVE_VK_BLAKE3
+    );
+    VerifyingKey::from_bytes(IMPORTED_RECURSIVE_VK)
+      .unwrap()
+      .check_setup_class(SetupClass::Ignition)
+      .unwrap();
+    assert_eq!(
+      blake3::Hash::from_bytes(family_digest(&MERGE_FAMILY).unwrap())
+        .to_hex()
+        .as_str(),
+      MERGE_FAMILY_BLAKE3
+    );
     assert_eq!(
       Sha256::digest(PLONK_VK).as_slice(),
       decode(PLONK_VK_SHA256).unwrap()

@@ -67,6 +67,25 @@ The proof itself cannot authorize its key or a different circuit. -/
 opaque verifyDevelopment (proof claim bundle : @& ByteArray)
   (trustedDigest : @& String) (devSrs : Bool) : IO String
 
+/-- The claim a merge proves by the merge rule alone: kind 0 joins `left`
+and `right`, kind 1 imports `left` unchanged. -/
+@[extern "rs_compression_merged_claim"]
+opaque mergedClaim (kind : UInt8) (left right : @& ByteArray) : IO ByteArray
+
+/-- Merge compressed proofs under the merge release in the key directory
+`keys`, or the bundled one when `keys` is empty: kind 0 joins the left and
+right proofs, kind 1 imports the left one. The merge stage is kept in `dir`
+and reused while its proof verifies, unless `fresh`. Returns the merged
+compressed proof. -/
+@[extern "rs_compression_merge"]
+opaque merge (kind : UInt8) (leftClaim leftProof rightClaim rightProof : @& ByteArray)
+  (keys dir cacheRoot : @& String) (devKzgSrs : Bool) (fresh : Bool := false) : IO ByteArray
+
+/-- Verify a merged compressed proof under the merge release in the key
+directory `keys`, or the bundled one when `keys` is empty. -/
+@[extern "rs_compression_verify_merged"]
+opaque verifyMerged (proof claim : @& ByteArray) (keys : @& String) (devSrs : Bool) : IO String
+
 /-- Return the GPU memory this process's Aiur prover retains between proofs to
 the driver. The compression worker is another process and cannot reuse it. -/
 @[extern "rs_compression_release_gpu_memory"]
@@ -102,9 +121,14 @@ def statementBytes (backend : Aggr.VerificationBackend) (claim : Ix.Claim) : Byt
   MultiStark.serializeClaims
     #[Aggr.aggregateOuterClaim backend.allowed backend.aggrIdx claim]
 
-def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UInt32 := do
+/-- Verify a compressed proof. With `mergeKeys`, it is a merged proof under
+the merge release in that key directory. -/
+def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool)
+    (mergeKeys : Option String := none) : IO UInt32 := do
   let claim := Ix.Claim.ser wrapper.claim
-  let setup ← verify wrapper.proof claim devSrs
+  let setup ← match mergeKeys with
+    | some keys => verifyMerged wrapper.proof claim keys devSrs
+    | none => verify wrapper.proof claim devSrs
   match setup with
   | "development" =>
     IO.println s!"ok: development proof {addr} verifies claim {Address.blake3 claim} (not production-secure)"
@@ -114,6 +138,9 @@ def verifyProof (addr : Address) (wrapper : Ixon.Proof) (devSrs : Bool) : IO UIn
     IO.println s!"ok: Groth16 proof {addr} verifies claim {Address.blake3 claim} under the admitted circuit-specific setup"
   | _ =>
     throw <| IO.userError s!"unsupported compression setup: {setup}"
+  if let .checkEnv _ (some base) := wrapper.claim then
+    IO.println s!"[verify] conditional: the claim holds only provided every \
+      constant under {base} is well-typed; it is not a standalone certificate"
   return 0
 
 end Ix.Cli.Compression

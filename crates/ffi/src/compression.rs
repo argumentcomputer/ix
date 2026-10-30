@@ -266,3 +266,127 @@ extern "C" fn rs_compression_release_gpu_memory() -> LeanIOResult<LeanOwned> {
   multi_stark::cuda::release_device_memory();
   LeanIOResult::ok(LeanOwned::box_usize(0))
 }
+
+fn merge_kind(kind: u8) -> Result<pipeline::MergeKind, String> {
+  match kind {
+    0 => Ok(pipeline::MergeKind::Join),
+    1 => Ok(pipeline::MergeKind::Import),
+    other => Err(format!("unknown merge kind {other}")),
+  }
+}
+
+/// The bundled merge release, or the one in `keys` when it names a key
+/// directory.
+fn merge_release(
+  keys: &LeanString<LeanBorrowed<'_>>,
+) -> pipeline::Result<pipeline::Release> {
+  match optional(keys) {
+    Some(dir) => pipeline::Release::load(std::path::Path::new(&dir)),
+    None => pipeline::Release::bundled(),
+  }
+}
+
+/// The inputs of a merge of `kind`: a join reads both, an import the left.
+fn merge_inputs<'a>(
+  kind: pipeline::MergeKind,
+  left: (&'a [u8], &'a [u8]),
+  right: (&'a [u8], &'a [u8]),
+) -> Vec<(&'a [u8], &'a [u8])> {
+  match kind {
+    pipeline::MergeKind::Join => vec![left, right],
+    pipeline::MergeKind::Import => vec![left],
+  }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_merged_claim(
+  kind: u8,
+  left: LeanByteArray<LeanBorrowed<'_>>,
+  right: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let kind = match merge_kind(kind) {
+    Ok(kind) => kind,
+    Err(error) => return LeanIOResult::error_string(&error),
+  };
+  let claims: Vec<_> =
+    merge_inputs(kind, (left.as_bytes(), &[]), (right.as_bytes(), &[]))
+      .into_iter()
+      .map(|(claim, _)| claim)
+      .collect();
+  match pipeline::merged_claim(kind, &claims) {
+    Ok(claim) => LeanIOResult::ok(LeanByteArray::from_bytes(&claim)),
+    Err(error) => LeanIOResult::error_string(&error.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_merge(
+  kind: u8,
+  left_claim: LeanByteArray<LeanBorrowed<'_>>,
+  left_proof: LeanByteArray<LeanBorrowed<'_>>,
+  right_claim: LeanByteArray<LeanBorrowed<'_>>,
+  right_proof: LeanByteArray<LeanBorrowed<'_>>,
+  keys: LeanString<LeanBorrowed<'_>>,
+  dir: LeanString<LeanBorrowed<'_>>,
+  cache_root: LeanString<LeanBorrowed<'_>>,
+  dev_kzg_srs: bool,
+  fresh: bool,
+) -> LeanIOResult<LeanOwned> {
+  let kind = match merge_kind(kind) {
+    Ok(kind) => kind,
+    Err(error) => return LeanIOResult::error_string(&error),
+  };
+  let dir = dir.to_string();
+  let cache_root = cache_root.to_string();
+  let children: Vec<_> = merge_inputs(
+    kind,
+    (left_claim.as_bytes(), left_proof.as_bytes()),
+    (right_claim.as_bytes(), right_proof.as_bytes()),
+  )
+  .into_iter()
+  .map(|(claim, proof)| pipeline::MergeChild { claim, proof })
+  .collect();
+  let result = merge_release(&keys).and_then(|release| {
+    let mut config = pipeline::CompressConfig::from_env(
+      std::path::Path::new(&cache_root),
+      dev_kzg_srs,
+      pipeline::FinalOptions {
+        system: pipeline::FinalSystem::None,
+        allow_development: dev_kzg_srs,
+      },
+    )?;
+    config.fresh = fresh;
+    pipeline::merge(
+      kind,
+      &children,
+      &release,
+      &config,
+      std::path::Path::new(&dir),
+    )
+  });
+  match result {
+    Ok((_, proof)) => LeanIOResult::ok(LeanByteArray::from_bytes(&proof)),
+    Err(error) => LeanIOResult::error_string(&error.to_string()),
+  }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_verify_merged(
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  keys: LeanString<LeanBorrowed<'_>>,
+  dev_srs: bool,
+) -> LeanIOResult<LeanOwned> {
+  let result = merge_release(&keys).and_then(|release| {
+    pipeline::verify_merged(
+      proof.as_bytes(),
+      claim.as_bytes(),
+      &release,
+      dev_srs,
+    )
+  });
+  match result {
+    Ok(class) => LeanIOResult::ok(LeanString::new(class.label())),
+    Err(error) => LeanIOResult::error_string(&error.to_string()),
+  }
+}

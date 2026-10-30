@@ -9,12 +9,11 @@
 //! proof whose public values are an eighteen-word statement and one deferred
 //! pair), and its statement prefix is the merge head followed by the packed
 //! family digest, which the verifier checks against the family it trusts.
-#![expect(dead_code, reason = "compression and the CLI do not run merges")]
 use super::{
-  Result, SetupConfig,
+  CompressConfig, PROOF_TAG, Result, SetupClass, SetupConfig, StageConfig,
   stages::{construct, statement::Statement as StageStatement},
   statement::{self, Statement},
-  verifying_keys,
+  storage, verifying_keys,
   wrap::{self, VerifyingKey},
 };
 use crate::{
@@ -38,6 +37,7 @@ use multi_stark::{
   system::{Circuit, System},
   traits::Field,
 };
+use std::{fs, io, path::Path};
 /// The header of every `checkEnv` claim: the claim tag (flag `0xE`, variant
 /// 5), the object format and the validator (`Claim.put`, `Ix/Claim.lean`).
 pub(crate) const CHECK_ENV_HEADER: [u8; 3] = [0xe5, 0x04, 0x01];
@@ -156,11 +156,27 @@ pub(crate) const FAMILY: [MergeShape; 5] = {
   ]
 };
 
-/// The constant words of this version's statements: the aggregation prefix
-/// fresh certificates carry, and the head of a merge statement's prefix.
+/// The constant head of every merge statement's prefix. Its first word
+/// matches an aggregation prefix's backend word, and its second differs
+/// from every aggregation entrypoint.
+pub(super) const MERGE_HEAD: [u64; HEAD_WORDS] = [0, 0x4d45];
+
+/// The family's key files, in [`FAMILY`] order.
+pub(super) const FAMILY_FILES: [&str; 5] = [
+  "join-fresh-fresh.bin",
+  "join-merged-fresh.bin",
+  "join-fresh-merged.bin",
+  "join-merged-merged.bin",
+  "relay-imported.bin",
+];
+
+/// The constant words of the statements merges read and write: the prefix
+/// fresh certificates carry, the prefix imported certificates carry, and the
+/// head of a merge statement's prefix.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Prefixes {
   pub(crate) fresh: [u64; PREFIX_WORDS],
+  pub(crate) imported: [u64; PREFIX_WORDS],
   pub(crate) head: [u64; HEAD_WORDS],
 }
 
@@ -184,7 +200,7 @@ impl Prefixes {
     match kind {
       ChildKind::Fresh => self.fresh,
       ChildKind::Merged => self.merge(family),
-      ChildKind::Imported => verifying_keys::STATEMENT_PREFIX,
+      ChildKind::Imported => self.imported,
     }
   }
 }
@@ -199,17 +215,6 @@ pub(crate) struct MergeKeys {
 }
 
 impl MergeKeys {
-  pub(crate) fn release(
-    recursive: VerifyingKey,
-    family: Vec<VerifyingKey>,
-  ) -> Result<Self> {
-    Ok(Self {
-      recursive,
-      imported: VerifyingKey::from_bytes(verifying_keys::RECURSIVE_VK)?,
-      family,
-    })
-  }
-
   /// Each member's key digest and the family digest.
   fn digests(&self) -> Result<(Vec<[u8; 32]>, [u8; 32])> {
     if self.family.len() != FAMILY.len() {
@@ -455,11 +460,9 @@ fn plan<'a>(
       ChildKind::Fresh => {
         child_plan(recursive, ChildKey::Fixed(prefixes.fresh), inherited_keys)
       },
-      ChildKind::Imported => child_plan(
-        imported,
-        ChildKey::Fixed(verifying_keys::STATEMENT_PREFIX),
-        inherited_keys,
-      ),
+      ChildKind::Imported => {
+        child_plan(imported, ChildKey::Fixed(prefixes.imported), inherited_keys)
+      },
       ChildKind::Merged => {
         child_plan(&layout.system, ChildKey::Family, inherited_keys)
       },
@@ -491,8 +494,8 @@ fn certificate(
   Ok(Certificate { proof, public })
 }
 
-/// The merge circuit of `shape` with one request's witness, and the natively
-/// computed result it must expose. Every child is verified natively first,
+/// The merge circuit of `shape` with one request's witness, the natively
+/// computed result it must expose, and the circuit's frontend identity. Every child is verified natively first,
 /// including its deferred pairing.
 pub(crate) fn build(
   shape: MergeShape,
@@ -500,7 +503,7 @@ pub(crate) fn build(
   layout: &FamilyLayout,
   prefixes: &Prefixes,
   children: &[Child<'_>],
-) -> Result<(Built, Reference)> {
+) -> Result<(Built, Reference, [u8; 32])> {
   if children.iter().map(|child| child.kind).ne(shape.kinds().iter().copied()) {
     return Err("children differ from the merge shape".into());
   }
@@ -551,7 +554,7 @@ pub(crate) fn build(
     claims: expected.claims,
     family: &members,
   })?;
-  Ok((built, expected))
+  Ok((built, expected, plan.identity()))
 }
 
 /// Derive the merge family's verifying keys, in [`FAMILY`] order, without a
@@ -631,6 +634,331 @@ pub(crate) fn verify(
   Ok(decoded)
 }
 
+/// Parse a statement prefix written as ten comma-separated words.
+pub fn parse_prefix(text: &str) -> Result<[u64; PREFIX_WORDS]> {
+  let words = text
+    .split(',')
+    .map(|word| word.trim().parse::<u64>())
+    .collect::<std::result::Result<Vec<_>, _>>()?;
+  Ok(
+    words
+      .try_into()
+      .map_err(|_words| "a statement prefix has ten comma-separated words")?,
+  )
+}
+
+/// Derive this version's merge family keys, in [`FAMILY`] order and encoded
+/// as the files [`FAMILY_FILES`] name, from its recursive key and the
+/// statement prefix its fresh certificates carry, without a proof.
+pub fn derive_merge_family(
+  recursive_vk: &[u8],
+  statement_prefix: [u64; PREFIX_WORDS],
+  setup: &SetupConfig,
+) -> Result<Vec<Vec<u8>>> {
+  let keys = MergeKeys {
+    recursive: VerifyingKey::from_bytes(recursive_vk)?,
+    imported: VerifyingKey::from_bytes(verifying_keys::IMPORTED_RECURSIVE_VK)?,
+    family: vec![],
+  };
+  let prefixes = Prefixes {
+    fresh: statement_prefix,
+    imported: verifying_keys::IMPORTED_STATEMENT_PREFIX,
+    head: MERGE_HEAD,
+  };
+  derive_family(&keys, &prefixes, setup)
+}
+
+/// The keys and prefixes merges are proved and verified against.
+pub struct Release {
+  keys: MergeKeys,
+  family: Vec<Vec<u8>>,
+  prefixes: Prefixes,
+  layout: FamilyLayout,
+}
+
+impl Release {
+  /// The release this build bundles.
+  pub fn bundled() -> Result<Self> {
+    let release = Self::new(
+      VerifyingKey::from_bytes(verifying_keys::RECURSIVE_VK)?,
+      verifying_keys::STATEMENT_PREFIX,
+      verifying_keys::MERGE_FAMILY.iter().map(|vk| vk.to_vec()).collect(),
+    )?;
+    if release.keys.digests()?.1
+      != verifying_keys::decode(verifying_keys::MERGE_FAMILY_BLAKE3)?
+    {
+      return Err("bundled merge family differs from its pin".into());
+    }
+    Ok(release)
+  }
+
+  /// A release from a key directory, for development and testing: the
+  /// recursive key fresh certificates verify under (`recursive-vk.bin`),
+  /// their statement prefix (`statement-prefix.txt`, ten comma-separated
+  /// words) and the family members ([`FAMILY_FILES`]). Imported
+  /// certificates verify under the bundled 0.1 key.
+  pub fn load(dir: &Path) -> Result<Self> {
+    let family = FAMILY_FILES
+      .iter()
+      .map(|name| fs::read(dir.join(name)))
+      .collect::<io::Result<Vec<_>>>()?;
+    Self::new(
+      VerifyingKey::from_bytes(&fs::read(dir.join("recursive-vk.bin"))?)?,
+      parse_prefix(&fs::read_to_string(dir.join("statement-prefix.txt"))?)?,
+      family,
+    )
+  }
+
+  fn new(
+    recursive: VerifyingKey,
+    fresh: [u64; PREFIX_WORDS],
+    family: Vec<Vec<u8>>,
+  ) -> Result<Self> {
+    if family.len() != FAMILY.len() {
+      return Err("merge family has the wrong size".into());
+    }
+    let members = family
+      .iter()
+      .map(|bytes| VerifyingKey::from_bytes(bytes))
+      .collect::<Result<Vec<_>>>()?;
+    let (system, _) = members[0].certificate_verifier()?;
+    let heights = [
+      system.circuits.first().ok_or("empty merge key")?.preprocessed_height,
+      system
+        .circuits
+        .get(1)
+        .ok_or("merge key lacks a table")?
+        .preprocessed_height,
+    ];
+    let layout = FamilyLayout::new(
+      &recursive.certificate_verifier()?.0,
+      heights,
+      members[0].verifier_params()?,
+    )?;
+    for member in &members {
+      layout.admit(&member.certificate_verifier()?.0)?;
+    }
+    Ok(Self {
+      keys: MergeKeys {
+        recursive,
+        imported: VerifyingKey::from_bytes(
+          verifying_keys::IMPORTED_RECURSIVE_VK,
+        )?,
+        family: members,
+      },
+      family,
+      prefixes: Prefixes {
+        fresh,
+        imported: verifying_keys::IMPORTED_STATEMENT_PREFIX,
+        head: MERGE_HEAD,
+      },
+      layout,
+    })
+  }
+
+  /// The kind of a joined child: fresh under the recursive key, merged under
+  /// a family key.
+  fn join_kind(&self, packet: &[u8]) -> Result<ChildKind> {
+    let id = packet.get(..32).ok_or("truncated compressed proof")?;
+    if id == self.keys.recursive.id() {
+      Ok(ChildKind::Fresh)
+    } else if self.keys.family.iter().any(|vk| vk.id() == id) {
+      Ok(ChildKind::Merged)
+    } else {
+      Err(
+        "a joined proof must be a compressed proof of this version or a \
+         merged proof of its family"
+          .into(),
+      )
+    }
+  }
+}
+
+/// What a merge does with its inputs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MergeKind {
+  /// Join a closed left certificate with a right one that assumes nothing
+  /// or the left root.
+  Join,
+  /// Carry a version 0.1 certificate into this version's family.
+  Import,
+}
+
+/// One input certificate: its claim and its compressed proof, as `compress`
+/// returns it.
+#[derive(Clone, Copy)]
+pub struct MergeChild<'a> {
+  pub claim: &'a [u8],
+  pub proof: &'a [u8],
+}
+
+/// The claim a merge of `children` proves, by the merge rule alone.
+pub fn merged_claim(kind: MergeKind, children: &[&[u8]]) -> Result<Vec<u8>> {
+  match (kind, children) {
+    (MergeKind::Join, [left, right]) => {
+      let (_, output) =
+        merge_claims(&CheckEnv::decode(left)?, &CheckEnv::decode(right)?)?;
+      Ok(output.encode())
+    },
+    (MergeKind::Import, [claim]) => {
+      CheckEnv::decode(claim)?;
+      Ok(claim.to_vec())
+    },
+    _ => Err("a join takes two proofs and an import one".into()),
+  }
+}
+
+/// The merge stage directory under a merge's output directory.
+const MERGE_STAGE: &str = "merge";
+/// The proof `merge` returns, also left in its output directory.
+const MERGED_PROOF: &str = "compressed.bin";
+/// The claim of that proof.
+const MERGED_CLAIM: &str = "claim.bin";
+
+fn packet(proof: &[u8]) -> Result<&[u8]> {
+  Ok(
+    proof
+      .strip_prefix(PROOF_TAG.as_slice())
+      .ok_or("a merge input must be a recursive KZG compressed proof")?,
+  )
+}
+
+/// The saved merge stage proves `statement` under the family member `index`.
+fn check_merge_stage(
+  dir: &Path,
+  release: &Release,
+  index: usize,
+  statement: &Statement,
+  setup: &SetupConfig,
+) -> Result<()> {
+  let bytes = fs::read(dir.join("vk.bin"))?;
+  if bytes != release.family[index] {
+    return Err(
+      "the merge key differs from the release family member for this shape; \
+       prove under the release setup"
+        .into(),
+    );
+  }
+  let vk = VerifyingKey::from_bytes(&bytes)?;
+  vk.check_setup_class(setup.class())?;
+  vk.verify(&fs::read(dir.join("kzg/packet.bin"))?, statement)?;
+  Ok(())
+}
+
+/// Merge `children` into one certificate under `release`, keeping the merge
+/// stage in `out/merge`, and return the merged claim and its compressed
+/// proof, which are also written to `out`. Every child is verified natively
+/// first. The stage is reused when its proof verifies for the expected
+/// statement under the release key, unless `config.fresh` is set.
+pub fn merge(
+  kind: MergeKind,
+  children: &[MergeChild<'_>],
+  release: &Release,
+  config: &CompressConfig,
+  out: &Path,
+) -> Result<(Vec<u8>, Vec<u8>)> {
+  let packets = children
+    .iter()
+    .map(|child| packet(child.proof))
+    .collect::<Result<Vec<_>>>()?;
+  let shape = match (kind, packets.as_slice()) {
+    (MergeKind::Join, [left, right]) => {
+      MergeShape::Join([release.join_kind(left)?, release.join_kind(right)?])
+    },
+    (MergeKind::Import, [packet]) => {
+      if packet.get(..32) != Some(release.keys.imported.id().as_slice()) {
+        return Err(
+          "an imported proof must be under the 0.1 recursive key".into(),
+        );
+      }
+      MergeShape::Relay(ChildKind::Imported)
+    },
+    _ => return Err("a join takes two proofs and an import one".into()),
+  };
+  let index = FAMILY
+    .iter()
+    .position(|member| *member == shape)
+    .ok_or("no family member merges these kinds")?;
+  let (_, family) = release.keys.digests()?;
+  let claims: Vec<_> = children.iter().map(|child| child.claim).collect();
+  let expected = reference(shape, &release.prefixes, &family, &claims)?;
+  fs::create_dir_all(out)?;
+  let dir = out.join(MERGE_STAGE);
+  let check = |dir: &Path| {
+    check_merge_stage(dir, release, index, &expected.statement, &config.setup)
+  };
+  let reused = !config.fresh
+    && dir.is_dir()
+    && match check(&dir) {
+      Ok(()) => {
+        eprintln!("merge: reusing the verified stage");
+        true
+      },
+      Err(error) => {
+        eprintln!("merge: proving again: {error}");
+        false
+      },
+    };
+  if !reused {
+    match fs::remove_dir_all(&dir) {
+      Ok(()) => {},
+      Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+      Err(error) => return Err(error.into()),
+    }
+    let inputs: Vec<_> = children
+      .iter()
+      .zip(&packets)
+      .zip(shape.kinds())
+      .map(|((child, packet), &kind)| Child {
+        kind,
+        claim: child.claim,
+        packet,
+      })
+      .collect();
+    let (built, _, identity) =
+      build(shape, &release.keys, &release.layout, &release.prefixes, &inputs)?;
+    let assignment = built.assign()?;
+    wrap::stage(
+      built,
+      assignment,
+      &dir,
+      &identity,
+      &expected.statement,
+      &StageConfig::from_config(config),
+    )?;
+    #[cfg(feature = "cuda")]
+    multi_stark::cuda::release_device_memory();
+    check(&dir)?;
+  }
+  let mut proof = PROOF_TAG.to_vec();
+  proof.extend(fs::read(dir.join("kzg/packet.bin"))?);
+  verify_merged(&proof, &expected.claim, release, true)?;
+  storage::write_atomic(&out.join(MERGED_CLAIM), &expected.claim)?;
+  storage::write_atomic(&out.join(MERGED_PROOF), &proof)?;
+  Ok((expected.claim, proof))
+}
+
+/// Verify a merged compressed proof of `claim` under `release`. Development
+/// setups are refused unless `allow_development`.
+pub fn verify_merged(
+  proof: &[u8],
+  claim: &[u8],
+  release: &Release,
+  allow_development: bool,
+) -> Result<SetupClass> {
+  let packet = packet(proof)?;
+  let class =
+    SetupClass::of(&release.keys.family_member(packet)?.verifier_params()?);
+  if class == SetupClass::Development && !allow_development {
+    return Err(
+      "development merged proofs are not production-secure; allow them \
+       explicitly"
+        .into(),
+    );
+  }
+  verify(&release.keys, &release.prefixes, packet, claim)?;
+  Ok(class)
+}
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -642,7 +970,11 @@ mod tests {
   fn prefixes() -> Prefixes {
     let mut fresh = [0; PREFIX_WORDS];
     fresh.copy_from_slice(&INIT_PUBLIC_WORDS[..PREFIX_WORDS]);
-    Prefixes { fresh, head: [1, 2] }
+    Prefixes {
+      fresh,
+      imported: verifying_keys::IMPORTED_STATEMENT_PREFIX,
+      head: MERGE_HEAD,
+    }
   }
 
   #[test]
@@ -739,8 +1071,49 @@ mod tests {
     statement::bind_claim(&right, &relayed.statement).unwrap();
     assert_eq!(
       prefixes.child(ChildKind::Imported, &family),
-      verifying_keys::STATEMENT_PREFIX
+      verifying_keys::IMPORTED_STATEMENT_PREFIX
     );
+  }
+
+  #[test]
+  fn merge_inputs_and_keys_are_checked_before_proving() {
+    let words = [0, 293, 1, 2, 3, 4, 5, 6, 7, 8];
+    assert_eq!(parse_prefix(" 0,293,1,2,3,4,5,6,7, 8\n").unwrap(), words);
+    assert!(parse_prefix("0,293,1,2,3,4,5,6,7").is_err());
+    assert!(parse_prefix("0,293,1,2,3,4,5,6,7,x").is_err());
+    assert_ne!(MERGE_HEAD, verifying_keys::STATEMENT_PREFIX[..HEAD_WORDS]);
+
+    let right = CheckEnv {
+      root: [5; 32],
+      assumptions: Some(CheckEnv::decode(INIT_CLAIM).unwrap().root),
+    }
+    .encode();
+    let joined = merged_claim(MergeKind::Join, &[INIT_CLAIM, &right]).unwrap();
+    assert_eq!(
+      joined,
+      reference(
+        MergeShape::Join([ChildKind::Fresh, ChildKind::Fresh]),
+        &prefixes(),
+        &[0; 32],
+        &[INIT_CLAIM, &right]
+      )
+      .unwrap()
+      .claim
+    );
+    assert!(merged_claim(MergeKind::Join, &[&right, INIT_CLAIM]).is_err());
+    assert!(merged_claim(MergeKind::Join, &[INIT_CLAIM]).is_err());
+    assert_eq!(merged_claim(MergeKind::Import, &[&right]).unwrap(), right);
+    assert!(merged_claim(MergeKind::Import, &[b"not a claim"]).is_err());
+
+    let mut proof = PROOF_TAG.to_vec();
+    proof.extend([7; 40]);
+    assert_eq!(packet(&proof).unwrap(), [7; 40]);
+    assert!(packet(&proof[1..]).is_err());
+
+    Release::bundled().unwrap();
+    let missing = std::env::temp_dir()
+      .join(format!("ix-merge-missing-keys-{}", std::process::id()));
+    assert!(Release::load(&missing).is_err());
   }
 
   #[test]
@@ -762,20 +1135,44 @@ mod tests {
   }
 
   #[test]
-  #[ignore = "needs the release recursive key under IX_RECURSIVE_VK, the \
-              pinned Ignition release under IX_PARAMS_DIR, and commits the \
-              fixed columns of five merge circuits"]
+  #[ignore = "needs the release recursive key under IX_RECURSIVE_VK, its \
+              statement prefix under IX_STATEMENT_PREFIX (ten comma-separated \
+              words; default the bundled prefix), the pinned Ignition \
+              release under IX_PARAMS_DIR (or IX_DEV_SRS), and commits the \
+              fixed columns of five merge circuits; IX_MERGE_KEYS_OUT names \
+              a key directory to write"]
   fn merge_family_keys_derive_without_a_proof() {
-    let setup = SetupConfig::from_env(false).unwrap();
-    let recursive = VerifyingKey::from_bytes(
-      &std::fs::read(std::env::var_os("IX_RECURSIVE_VK").unwrap()).unwrap(),
-    )
-    .unwrap();
-    let keys = MergeKeys::release(recursive, vec![]).unwrap();
-    let family = derive_family(&keys, &prefixes(), &setup).unwrap();
+    let setup =
+      SetupConfig::from_env(std::env::var_os("IX_DEV_SRS").is_some()).unwrap();
+    let recursive =
+      fs::read(std::env::var_os("IX_RECURSIVE_VK").unwrap()).unwrap();
+    let prefix = match std::env::var("IX_STATEMENT_PREFIX") {
+      Ok(words) => parse_prefix(&words).unwrap(),
+      Err(_) => verifying_keys::STATEMENT_PREFIX,
+    };
+    let family = derive_merge_family(&recursive, prefix, &setup).unwrap();
     assert_eq!(family.len(), FAMILY.len());
     for (shape, vk) in FAMILY.iter().zip(&family) {
-      eprintln!("{shape:?}: merge key BLAKE3 {}", blake3::hash(vk));
+      let (verifier, _) =
+        VerifyingKey::from_bytes(vk).unwrap().certificate_verifier().unwrap();
+      let heights: Vec<_> =
+        verifier.circuits.iter().map(|c| c.preprocessed_height).collect();
+      eprintln!(
+        "{shape:?}: heights {heights:?}, key {} bytes, BLAKE3 {}",
+        vk.len(),
+        blake3::hash(vk)
+      );
+    }
+    if let Some(dir) = std::env::var_os("IX_MERGE_KEYS_OUT") {
+      let dir = Path::new(&dir);
+      fs::create_dir_all(dir).unwrap();
+      fs::write(dir.join("recursive-vk.bin"), &recursive).unwrap();
+      let words: Vec<_> = prefix.iter().map(u64::to_string).collect();
+      fs::write(dir.join("statement-prefix.txt"), words.join(",")).unwrap();
+      for (name, vk) in FAMILY_FILES.iter().zip(&family) {
+        fs::write(dir.join(name), vk).unwrap();
+      }
+      Release::load(dir).unwrap();
     }
   }
 }

@@ -90,6 +90,109 @@ def normalizeCmd : Cli.Cmd := `[Cli|
     out : String; "Empty output directory for root-vk.bin, root-proof.bin, root-claims.bin and fixed-root.json."
 ]
 
+/-- The recursive KZG compressed-proof tag `compress` prefixes its packet with. -/
+private def recursiveProofTag : ByteArray := ⟨#[0x49, 0x58, 0x42, 0x4e, 0, 0, 0, 1]⟩
+
+/-- A certificate's claim and compressed proof. A directory is a stage
+directory holding `kzg/packet.bin` (a `final-kzg` or `merge` stage) or a
+compression output holding one under `final-kzg/` or `merge/`; its claim is
+`claimFile`, else the directory's `claim.bin`. Any other input is a
+compressed Ixon.Proof file or content address. -/
+private def loadCertificate (input : String) (claimFile : Option String) :
+    IO (ByteArray × ByteArray) := do
+  let dir : System.FilePath := input
+  if ← dir.isDir then
+    let mut packet? := none
+    for stage in [dir, dir / "final-kzg", dir / "merge"] do
+      if packet?.isNone && (← (stage / "kzg" / "packet.bin").pathExists) then
+        packet? := some (stage / "kzg" / "packet.bin")
+    let some packet := packet?
+      | throw <| IO.userError s!"{input} holds no kzg/packet.bin"
+    let claimPath := claimFile.getD (dir / "claim.bin").toString
+    unless ← System.FilePath.pathExists claimPath do
+      throw <| IO.userError s!"{input} has no claim.bin; pass its claim file"
+    return (← IO.FS.readBinFile claimPath, recursiveProofTag ++ (← IO.FS.readBinFile packet))
+  let (addr, wrapper) ← Compression.readProofInput input
+  unless Compression.isCompressed wrapper.proof do
+    throw <| IO.userError s!"proof {addr} is not compressed"
+  return (Ix.Claim.ser wrapper.claim, wrapper.proof)
+
+/-- Merge `inputs` (kind 0 joins two, kind 1 imports one), store the merged
+proof under its claim and print its address. -/
+private def runMerge (p : Cli.Parsed) (kind : UInt8)
+    (inputs : List (String × Option String)) : IO Unit := do
+  let certificates ← inputs.mapM fun (input, claim) => loadCertificate input claim
+  let empty : ByteArray × ByteArray := (ByteArray.empty, ByteArray.empty)
+  let (leftClaim, leftProof) := certificates.headD empty
+  let (rightClaim, rightProof) := (certificates.drop 1).headD empty
+  let claim ← IO.ofExcept <| Ix.Claim.de
+    (← Compression.mergedClaim kind leftClaim rightClaim)
+  let out ← match (p.flag? "out").map (·.as! String) with
+    | some path => pure path
+    | none =>
+      let dir := (← StoreIO.toIO Store.getHomeDir) / ".ix/compression"
+      let label := if kind == 0 then "join" else "import"
+      pure (dir / s!"{label}-{Address.blake3 (leftProof ++ rightProof)}").toString
+  let keys := ((p.flag? "merge-keys").map (·.as! String)).getD ""
+  IO.eprintln s!"Merging into {claim} in {out}."
+  let proof ← Compression.merge kind leftClaim leftProof rightClaim rightProof
+    keys out (← Compression.cacheDir).toString (p.hasFlag "dev-kzg-srs")
+    (p.hasFlag "fresh")
+  let merged : Ixon.Proof := { claim, proof }
+  IO.println (toString (← StoreIO.toIO (Store.write (Ixon.Proof.ser merged))))
+
+def runJoin (p : Cli.Parsed) : IO UInt32 := do
+  try
+    let claim (flag : String) := (p.flag? flag).map (·.as! String)
+    runMerge p 0 [
+      (p.positionalArg! "left" |>.as! String, claim "left-claim"),
+      (p.positionalArg! "right" |>.as! String, claim "right-claim")]
+    return 0
+  catch e =>
+    IO.eprintln s!"compress join: {e}"
+    return 1
+
+def runImport (p : Cli.Parsed) : IO UInt32 := do
+  try
+    runMerge p 1 [(p.positionalArg! "proof" |>.as! String,
+      (p.flag? "claim").map (·.as! String))]
+    return 0
+  catch e =>
+    IO.eprintln s!"compress import: {e}"
+    return 1
+
+def joinCmd : Cli.Cmd := `[Cli|
+  "join" VIA runJoin;
+  "Join a closed compressed proof (left) with one that assumes nothing or the left root (right) into one merged proof of their Merkle node; print its address."
+
+  FLAGS:
+    "out" : String; "Output directory for the merge stage (default ~/.ix/compression/join-<inputs>). Rerunning with it reuses the stage while its proof verifies."
+    "fresh"; "Prove the merge stage again even if a verified one exists."
+    "merge-keys" : String; "Development key directory (recursive-vk.bin, statement-prefix.txt and the five family keys) instead of the bundled merge family."
+    "dev-kzg-srs"; "Use local development KZG parameters."
+    "left-claim" : String; "Claim file of a left stage directory without claim.bin."
+    "right-claim" : String; "Claim file of a right stage directory without claim.bin."
+
+  ARGS:
+    left : String; "Compressed Ixon.Proof file or content address, or a stage or compression output directory."
+    right : String; "Compressed Ixon.Proof file or content address, or a stage or compression output directory."
+]
+
+def importCmd : Cli.Cmd := `[Cli|
+  "import" VIA runImport;
+  "Carry a version 0.1 compressed proof into this version's merge family as a merged proof of the same claim; print its address."
+
+  FLAGS:
+    "out" : String; "Output directory for the merge stage (default ~/.ix/compression/import-<input>). Rerunning with it reuses the stage while its proof verifies."
+    "fresh"; "Prove the merge stage again even if a verified one exists."
+    "merge-keys" : String; "Development key directory (recursive-vk.bin, statement-prefix.txt and the five family keys) instead of the bundled merge family."
+    "dev-kzg-srs"; "Use local development KZG parameters."
+    "claim" : String; "Claim file of a stage directory without claim.bin."
+
+  ARGS:
+    proof : String; "Version 0.1 compressed Ixon.Proof file or content address, or its stage or compression output directory."
+]
+
 /-- Download `url` to `path` through a `.part` file, resuming a partial one. -/
 private def download (url : String) (path : System.FilePath) : IO Unit := do
   let part := path.toString ++ ".part"

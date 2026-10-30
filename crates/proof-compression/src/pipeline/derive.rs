@@ -33,7 +33,7 @@ mod tests {
   use super::*;
 
   const RECURSIVE_VK: &[u8] =
-    include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
+    include_bytes!("../../verifying-keys/0.2/recursive-vk.bin");
 
   fn ignition() -> SetupConfig {
     let setup = SetupConfig::from_env(false).unwrap();
@@ -44,13 +44,23 @@ mod tests {
   #[test]
   #[ignore = "needs IX_ROOT_VK naming the release aggregation backend key, \
               the pinned Ignition release under IX_PARAMS_DIR and about \
-              90 GB of memory; a CUDA build commits on the GPU"]
+              90 GB of memory; a CUDA build commits on the GPU; \
+              IX_RECURSIVE_VK_OUT names a file to write the derived key to"]
   fn release_recursive_key_derives_without_a_proof() {
     let root_vk =
       std::fs::read(std::env::var_os("IX_ROOT_VK").unwrap()).unwrap();
     let layout = verifying_keys::release_root_layout(&root_vk).unwrap();
     let derived = derive_recursive_vk(&root_vk, layout, &ignition()).unwrap();
-    eprintln!("derived recursive key BLAKE3 {}", blake3::hash(&derived));
+    eprintln!(
+      "derived recursive key BLAKE3 {}, id {}",
+      blake3::hash(&derived),
+      blake3::Hash::from_bytes(
+        wrap::VerifyingKey::from_bytes(&derived).unwrap().id()
+      )
+    );
+    if let Some(path) = std::env::var_os("IX_RECURSIVE_VK_OUT") {
+      std::fs::write(path, &derived).unwrap();
+    }
     assert!(derived == RECURSIVE_VK, "derived recursive key differs");
   }
 
@@ -72,7 +82,8 @@ mod tests {
   #[ignore = "needs the pinned Ignition release under IX_PARAMS_DIR and \
               compiles and sets up the PLONK circuit into a new directory \
               under the temporary directory (minutes on a GPU-backed gnark, \
-              longer on CPU)"]
+              longer on CPU); IX_PLONK_VK_OUT names a file to write the \
+              derived key to"]
   fn release_plonk_key_derives_without_a_proof() {
     use sha2::{Digest, Sha256};
     let cache = super::super::storage::temporary_path(
@@ -85,7 +96,17 @@ mod tests {
       &cache,
     )
     .unwrap();
-    eprintln!("derived PLONK key SHA-256 {:x}", Sha256::digest(&derived));
+    let vk = wrap::VerifyingKey::from_bytes(RECURSIVE_VK).unwrap();
+    let description =
+      wrap::final_description(&vk, &verifying_keys::STATEMENT_PREFIX).unwrap();
+    eprintln!(
+      "derived PLONK key SHA-256 {:x} for final description SHA-256 {:x}",
+      Sha256::digest(&derived),
+      Sha256::digest(&description)
+    );
+    if let Some(path) = std::env::var_os("IX_PLONK_VK_OUT") {
+      std::fs::write(path, &derived).unwrap();
+    }
     assert!(derived == verifying_keys::PLONK_VK, "derived PLONK key differs");
     std::fs::remove_dir_all(cache).unwrap();
   }

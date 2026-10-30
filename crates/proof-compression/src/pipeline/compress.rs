@@ -198,7 +198,7 @@ pub(crate) struct StageConfig {
 }
 
 impl StageConfig {
-  fn from_config(config: &CompressConfig) -> Self {
+  pub(super) fn from_config(config: &CompressConfig) -> Self {
     Self {
       setup: config.setup.clone(),
       fixed_cache_root: Some(config.fixed_cache.clone()),

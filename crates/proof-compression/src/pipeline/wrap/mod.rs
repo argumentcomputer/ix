@@ -32,5 +32,6 @@ pub(super) fn check_first(
 
 pub(super) use outer::{
   Frontend, MAX_TRACE_LEN, OUTER_SEED, PreparedVerifyingKey, VerifyingKey,
+  stage,
 };
 pub(super) use saved::verifying_key;

@@ -96,7 +96,7 @@ structure ExpectedAggregate where
 
 private def verifyAggregateProof (getBackend : IO (Except String Aggr.VerificationBackend))
     (expected? : Option ExpectedAggregate) (proofAddr : Address)
-    (devSrs : Bool := false) : IO UInt32 := do
+    (devSrs : Bool := false) (mergeKeys : Option String := none) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
@@ -111,7 +111,7 @@ private def verifyAggregateProof (getBackend : IO (Except String Aggr.Verificati
       return 1
   | none => pure ()
   if Compression.isCompressed wrapper.proof then
-    return ← Compression.verifyProof proofAddr wrapper devSrs
+    return ← Compression.verifyProof proofAddr wrapper devSrs mergeKeys
   let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
     | .error e =>
@@ -353,7 +353,7 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     for hex in proofs do
       let proofAddr ← addrOfHex! "aggregate proof" hex
       if (← verifyAggregateProof getBackend expected? proofAddr
-          (p.hasFlag "dev-srs")) != 0 then
+          (p.hasFlag "dev-srs") ((p.flag? "merge-keys").map (·.as! String))) != 0 then
         rc := 1
     return rc
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
@@ -371,7 +371,8 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
       let proofAddr ← addrOfHex! "proof" hex
       let wrapper ← Compression.readProof proofAddr
       if Compression.isCompressed wrapper.proof then
-        if (← Compression.verifyProof proofAddr wrapper (p.hasFlag "dev-srs")) != 0 then
+        if (← Compression.verifyProof proofAddr wrapper (p.hasFlag "dev-srs")
+            ((p.flag? "merge-keys").map (·.as! String))) != 0 then
           rc := 1
       else
         let (aiurSystem, compiled) ← match backend? with
@@ -395,6 +396,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "dev-srs"; "Allow development compressed proofs; these are not production-secure."
+    "merge-keys" : String; "Verify merged compressed proofs under the merge keys in this development key directory instead of the bundled merge family."
     "verifier-bundle" : String; "Explicitly trusted development final-verifier JSON. Requires --verifier-bundle-blake3 and --dev-srs; accepts proof-wrapper files or store addresses."
     "verifier-bundle-blake3" : String; "Independent BLAKE3 pin for --verifier-bundle; do not obtain it from an untrusted proof."
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
