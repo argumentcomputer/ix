@@ -1657,6 +1657,51 @@ fn a_well_founded_operation_needs_local_proofs_of_its_statements() {
   );
   let reason = refused_division(env, proof);
   assert!(reason.contains("certificate 0"), "{reason}");
+
+  // An unsafe or partial theorem is refused at snapshot preparation.
+  for safety in [DefinitionSafety::Unsafe, DefinitionSafety::Partial] {
+    let mut env = loaded();
+    let proof = store(
+      &env,
+      ConstantInfo::Defn(Definition {
+        kind: DefKind::Theorem,
+        safety,
+        lvls: 0,
+        typ: reference(0, vec![]),
+        value: reference(1, vec![]),
+      }),
+      vec![address_of(&env, "Nat"), address_of(&env, "Nat.zero")],
+      vec![],
+    );
+    let nat = address_of(&env, "Nat");
+    let div = definition(
+      &env,
+      0,
+      pi(reference(0, vec![]), pi(reference(0, vec![]), reference(0, vec![]))),
+      lambda(
+        reference(0, vec![]),
+        lambda(reference(0, vec![]), arc(Expr::Var(1))),
+      ),
+      vec![nat],
+      vec![],
+    );
+    let mut roles = basis_roles(&env);
+    roles.extend(bool_roles(&env));
+    let mut evidence = vec![];
+    for (role, name, equations) in STRUCTURAL {
+      roles.push((role, address_of(&env, name)));
+      evidence.push((role, vec![Evidence::DefEq; equations]));
+    }
+    roles.push((Role::NatDiv, div));
+    evidence.push((Role::NatDiv, vec![Evidence::Proof(proof.clone()); 3]));
+    bind_with_evidence(&mut env, roles, evidence);
+    match ArtifactSource::snapshot(&env) {
+      Err(ix_kernel::role_admission::Error::NotTheorem(addr)) => {
+        assert_eq!(addr, proof);
+      },
+      other => panic!("expected NotTheorem for {safety:?}, got {other:?}"),
+    }
+  }
 }
 
 fn theorem(

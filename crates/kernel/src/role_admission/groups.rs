@@ -1840,13 +1840,21 @@ fn validate_wf_op(
     let theorem = checker
       .get_const(&KId::new(proof.clone(), ()))
       .map_err(|error| fail(error.to_string()))?;
-    let KConst::Defn { kind: DefKind::Theorem, lvls: 0, val: value, .. } =
-      &theorem
+    let KConst::Defn {
+      kind: DefKind::Theorem,
+      safety: DefinitionSafety::Safe,
+      lvls: 0,
+      val: value,
+      ..
+    } = &theorem
     else {
-      return Err(fail("is not a level-monomorphic theorem".into()));
+      return Err(fail("is not a safe level-monomorphic theorem".into()));
     };
     checker
       .validate_const_well_scoped(&theorem)
+      .map_err(|error| fail(error.to_string()))?;
+    checker
+      .check_no_unsafe_refs(value, DefinitionSafety::Safe)
       .map_err(|error| fail(error.to_string()))?;
     let proof_term =
       replace_constant(value, &address, &val, &mut FxHashMap::default());

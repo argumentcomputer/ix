@@ -1251,7 +1251,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           stack.push(val);
           stack.push(body);
         },
-        ExprData::Prj(_, _, val, _) => {
+        ExprData::Prj(id, _, val, _) => {
+          if seen_consts.insert(id.addr.clone())
+            && let Some(KConst::Indc { is_unsafe: true, .. }) =
+              self.try_get_const(id)?
+          {
+            return Err(TcError::Other(format!(
+              "safe definition references unsafe inductive {}",
+              &id.addr.hex()[..8]
+            )));
+          }
           stack.push(val);
         },
       }
@@ -2345,5 +2354,37 @@ mod tests {
       .with_infer_only(|tc| tc.infer(&reference))
       .expect("inference without validation is unaffected");
     assert_eq!(ty, sort0());
+  }
+
+  #[test]
+  fn safe_definition_rejects_projection_of_unsafe_inductive() {
+    let mut env = KEnv::<Anon>::new();
+    let ind = mk_id("unsafe_struct");
+    let ctor = mk_id("unsafe_struct.mk");
+    env.insert(
+      ind.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        member_idx: 0,
+        is_unsafe: true,
+        ty: sort0(),
+        ctors: vec![ctor],
+        lean_all: (),
+        block: ind.clone(),
+      },
+    );
+    let expr = AE::prj(ind, 0, sort0());
+    let mut tc = TypeChecker::new(&mut env);
+    let err = tc
+      .check_no_unsafe_refs(&expr, DefinitionSafety::Safe)
+      .expect_err("projection from unsafe inductive must be rejected");
+    assert!(
+      err.to_string().contains("safe definition references unsafe inductive"),
+      "unexpected error: {err}"
+    );
   }
 }

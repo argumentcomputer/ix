@@ -644,7 +644,7 @@ fn deserialize_preresolved(
       let name_addr = read_addr_bytes(buf)?;
       let name = decompile_name(&name_addr, stt)?;
       let count = read_tagn0(buf)? as usize;
-      let mut fields = Vec::with_capacity(count);
+      let mut fields = Vec::with_capacity(count.min(buf.len()));
       for _ in 0..count {
         let field_addr = read_addr_bytes(buf)?;
         let field = read_string(&field_addr, stt)?;
@@ -686,7 +686,7 @@ fn deserialize_syntax_inner(
       let kind_addr = read_addr_bytes(buf)?;
       let kind = decompile_name(&kind_addr, stt)?;
       let arg_count = read_tagn0(buf)? as usize;
-      let mut args = Vec::with_capacity(arg_count);
+      let mut args = Vec::with_capacity(arg_count.min(buf.len()));
       for _ in 0..arg_count {
         args.push(deserialize_syntax_inner(buf, stt)?);
       }
@@ -704,7 +704,7 @@ fn deserialize_syntax_inner(
       let val_addr = read_addr_bytes(buf)?;
       let val = decompile_name(&val_addr, stt)?;
       let pr_count = read_tagn0(buf)? as usize;
-      let mut preresolved = Vec::with_capacity(pr_count);
+      let mut preresolved = Vec::with_capacity(pr_count.min(buf.len()));
       for _ in 0..pr_count {
         preresolved.push(deserialize_preresolved(buf, stt)?);
       }
