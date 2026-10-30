@@ -157,6 +157,58 @@ impl<M: KernelMode> ArtifactChecker<M> {
     self.check_id(&id, &source.clone())
   }
 
+  /// The records a verdict on `roots` rests on, including both the reference
+  /// closure of `roots` and the binding's support closure.
+  pub fn verdict_closure(
+    &self,
+    roots: &[Address],
+  ) -> Result<rustc_hash::FxHashSet<Address>, TcError<M>> {
+    let source = self
+      .source
+      .as_ref()
+      .map_err(|error| TcError::Other(error.to_string()))?;
+    source
+      .verdict_closure(roots)
+      .map_err(|error| TcError::Other(error.to_string()))
+  }
+
+  /// Check `address` together with every record and blob in its
+  /// [`ArtifactSource::verdict_closure`].
+  pub fn check_const_with_verdict_closure(
+    &mut self,
+    address: &Address,
+  ) -> Result<(), TcError<M>>
+  where
+    M::MField<Vec<Name>>: CheckDupLevelParams,
+  {
+    let source = self.source_for(address)?.clone();
+    let mut closure: Vec<_> = source
+      .verdict_closure(std::slice::from_ref(address))
+      .map_err(|error| TcError::Other(error.to_string()))?
+      .into_iter()
+      .collect();
+    closure.sort_unstable();
+    for entry in &closure {
+      if source.contains_record(entry) {
+        if source
+          .record_tag(entry)
+          .map_err(|error| TcError::Other(error.to_string()))?
+          != ixon::lazy::ConstVariantTag::Muts
+        {
+          self.check_const(entry)?;
+        }
+      } else {
+        source
+          .blob(entry)
+          .map_err(|error| TcError::Other(error.to_string()))?;
+      }
+    }
+    if !closure.contains(address) {
+      self.check_const(address)?;
+    }
+    Ok(())
+  }
+
   pub fn check_name(&mut self, name: &Name) -> Result<(), TcError<M>>
   where
     M::MField<Vec<Name>>: CheckDupLevelParams,
@@ -271,6 +323,30 @@ impl ArtifactChecker<Anon> {
         self.check_owner(block_addr)
       },
     }
+  }
+
+  /// Check every work item required for a sound verdict on `roots` (including
+  /// the binding's support closure via [`ArtifactSource::verdict_closure`]).
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn check_verdict(
+    &mut self,
+    roots: &[Address],
+    dependencies: bool,
+  ) -> Result<(), TcError<Anon>> {
+    let source = self
+      .source
+      .as_ref()
+      .map_err(|error| TcError::Other(error.to_string()))?
+      .clone();
+    let work = crate::anon_work::build_artifact_work(&source)
+      .map_err(TcError::Other)?;
+    let selected =
+      crate::anon_work::verdict_work(&source, &work, roots, dependencies)
+        .map_err(TcError::Other)?;
+    for item in &selected {
+      self.check_work(item)?;
+    }
+    Ok(())
   }
   /// Capturing from an mmap retains the loader's immutable-file lifetime
   /// requirement. The anonymous worker never constructs metadata lookups.

@@ -1937,6 +1937,10 @@ fn a_closure_verdict_checks_what_role_admission_assumed() {
 
   let mut checker = ArtifactChecker::<Anon>::from_source(Ok(source.clone()));
   checker.check_const(&bad).unwrap();
+  assert!(checker.verdict_closure(std::slice::from_ref(&bad)).unwrap().contains(&zero_is_one));
+  assert!(checker.check_const_with_verdict_closure(&bad).is_err());
+  assert!(checker.check_verdict(std::slice::from_ref(&bad), true).is_err());
+  assert!(checker.check_verdict(std::slice::from_ref(&bad), false).is_err());
   assert!(checker.check_const(&zero_is_one).is_err());
 
   let work = build_artifact_work(&source).unwrap();

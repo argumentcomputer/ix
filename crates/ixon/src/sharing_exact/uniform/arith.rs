@@ -277,7 +277,11 @@ impl Arith for Fast {
 
   #[inline]
   fn sub(a: &u128, b: &u128) -> u128 {
-    a - b
+    if Self::saturated(a) || Self::saturated(b) {
+      u128::MAX
+    } else {
+      a - b
+    }
   }
 
   #[inline]
@@ -375,6 +379,16 @@ mod tests {
           assert_eq!(Fast::saturated(&sum), a + b >= edge);
           if !Fast::saturated(&sum) {
             assert_eq!(BigUint::from(sum), a + b);
+          }
+          if b <= a {
+            let diff = Fast::sub(&x, &y);
+            assert_eq!(
+              Fast::saturated(&diff),
+              Fast::saturated(&x) || Fast::saturated(&y)
+            );
+            if !Fast::saturated(&diff) {
+              assert_eq!(BigUint::from(diff), a - b);
+            }
           }
         }
       }

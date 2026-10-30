@@ -90,33 +90,6 @@ fn specification_references<'a>(
   Ok(roots.into_iter().collect())
 }
 
-/// Check every carried declaration in the closure, including helpers used
-/// only by a specified type or equation side. Inference of a reference alone
-/// uses its declared type and does not validate its body.
-fn check_support(
-  source: &ArtifactSource,
-  admitted: &Admission,
-  env: &mut KEnv<Anon>,
-  roots: &[Address],
-) -> Result<(), String> {
-  let mut support: Vec<_> =
-    source.closure(roots).map_err(|e| e.to_string())?.into_iter().collect();
-  support.sort_unstable();
-  let mut targets = Vec::new();
-  for entry in &support {
-    if source.contains_record(entry) {
-      if source.record_tag(entry).map_err(|e| e.to_string())?
-        != ixon::lazy::ConstVariantTag::Muts
-      {
-        targets.push(entry);
-      }
-    } else {
-      source.blob(entry).map_err(|e| e.to_string())?;
-    }
-  }
-  check_units(source, admitted, env, &targets)
-}
-
 pub(super) fn validate_group(
   source: &ArtifactSource,
   admitted: &Admission,
@@ -188,31 +161,9 @@ fn validate_definition(
   let mut records = vec![address];
   records.extend(proofs.iter());
   let mut env = ingress_records(source, &records)?;
-  let operation = declared(&env, address)?;
-  let KConst::Defn {
-    kind: DefKind::Definition,
-    safety: DefinitionSafety::Safe,
-    lvls,
-    ty,
-    ..
-  } = operation
-  else {
-    return Err(differs(address, "not a safe definition"));
-  };
-  if lvls != levels {
-    return Err(differs(address, "universe parameter count"));
-  }
+  let (ty, _) = expect_safe_definition(&env, address, levels)?;
   for proof in &proofs {
-    let theorem = declared(&env, proof)?;
-    if !matches!(theorem, KConst::Defn {
-      kind: DefKind::Theorem, safety: DefinitionSafety::Safe, lvls, ..
-    } if lvls == levels)
-    {
-      return Err(differs(
-        proof,
-        "not a safe theorem at the specified universes",
-      ));
-    }
+    expect_theorem_evidence(&env, proof, levels)?;
   }
   // A specified RHS can mention an anchor that the actual definition and
   // proof never reference. Include all generated terms, not only actual roots.
@@ -266,22 +217,16 @@ fn validate_definition(
         }
       },
       Evidence::Proof(proof) => {
-        let theorem = checker
-          .get_const(&KId::new(proof.clone(), ()))
-          .map_err(|e| fail(e.to_string()))?;
-        let KConst::Defn { ty, val, .. } = theorem else {
-          return Err(fail("evidence is not a checked theorem".into()));
-        };
+        let (ty, val) =
+          load_checked_theorem(&mut checker, proof, levels).map_err(&fail)?;
         if !checker
           .is_def_eq(&ty, &equation.statement)
           .map_err(|e| fail(e.to_string()))?
         {
           return Err(fail("the theorem has a different statement".into()));
         }
-        let actual = checker.infer(&val).map_err(|e| fail(e.to_string()))?;
-        if !checker
-          .is_def_eq(&actual, &equation.statement)
-          .map_err(|e| fail(e.to_string()))?
+        if !check_proof_term(&mut checker, &val, &equation.statement)
+          .map_err(&fail)?
         {
           return Err(fail("the proof has a different type".into()));
         }

@@ -499,6 +499,33 @@ fn check_units_with(
   Ok(())
 }
 
+/// Check every carried declaration in the closure of `roots`, including
+/// helpers used only by a specified type, equation side, or proof. Inference
+/// of a reference alone uses its declared type and does not validate its body.
+fn check_support(
+  source: &ArtifactSource,
+  admitted: &Admission,
+  env: &mut KEnv<Anon>,
+  roots: &[Address],
+) -> Result<(), String> {
+  let mut support: Vec<_> =
+    source.closure(roots).map_err(|e| e.to_string())?.into_iter().collect();
+  support.sort_unstable();
+  let mut targets = Vec::new();
+  for entry in &support {
+    if source.contains_record(entry) {
+      if source.record_tag(entry).map_err(|e| e.to_string())?
+        != ixon::lazy::ConstVariantTag::Muts
+      {
+        targets.push(entry);
+      }
+    } else {
+      source.blob(entry).map_err(|e| e.to_string())?;
+    }
+  }
+  check_units(source, admitted, env, &targets)
+}
+
 // -----------------------------------------------------------------------
 // Expected declarations
 // -----------------------------------------------------------------------
@@ -576,6 +603,90 @@ fn declared(
 
 fn differs(address: &Address, what: &str) -> String {
   format!("{} differs from the specification: {what}", address.hex())
+}
+
+fn expect_safe_definition(
+  kenv: &KEnv<Anon>,
+  address: &Address,
+  levels: u64,
+) -> Result<(E, E), String> {
+  let KConst::Defn {
+    kind: DefKind::Definition,
+    safety: DefinitionSafety::Safe,
+    lvls,
+    ty,
+    val,
+    ..
+  } = declared(kenv, address)?
+  else {
+    return Err(differs(address, "not a safe definition"));
+  };
+  if lvls != levels {
+    return Err(differs(address, "universe parameter count"));
+  }
+  Ok((ty, val))
+}
+
+fn expect_theorem_evidence(
+  kenv: &KEnv<Anon>,
+  proof: &Address,
+  levels: u64,
+) -> Result<(), String> {
+  let theorem = declared(kenv, proof)?;
+  if !matches!(
+    theorem,
+    KConst::Defn {
+      kind: DefKind::Theorem,
+      safety: DefinitionSafety::Safe,
+      lvls,
+      ..
+    } if lvls == levels
+  ) {
+    return Err(differs(proof, "not a safe theorem at the specified universes"));
+  }
+  Ok(())
+}
+
+fn load_checked_theorem(
+  checker: &mut TypeChecker<'_, Anon>,
+  proof: &Address,
+  levels: u64,
+) -> Result<(E, E), String> {
+  let id = KId::new(proof.clone(), ());
+  checker.check_ixon_const(&id).map_err(|error| error.to_string())?;
+  let theorem = checker.get_const(&id).map_err(|error| error.to_string())?;
+  let KConst::Defn {
+    kind: DefKind::Theorem,
+    safety: DefinitionSafety::Safe,
+    lvls,
+    ty,
+    val,
+    ..
+  } = &theorem
+  else {
+    return Err("is not a safe theorem".into());
+  };
+  if *lvls != levels {
+    return Err("has a different universe parameter count".into());
+  }
+  checker
+    .validate_const_well_scoped(&theorem)
+    .map_err(|error| error.to_string())?;
+  checker
+    .check_no_unsafe_refs(val, DefinitionSafety::Safe)
+    .map_err(|error| error.to_string())?;
+  Ok((ty.clone(), val.clone()))
+}
+
+fn check_proof_term(
+  checker: &mut TypeChecker<'_, Anon>,
+  proof_term: &E,
+  expected_type: &E,
+) -> Result<bool, String> {
+  let actual = checker.infer(proof_term).map_err(|error| error.to_string())?;
+  checker
+    .is_def_eq(&actual, expected_type)
+    .map_err(|error| error.to_string())
 }
 
 fn expect_inductive(
@@ -1433,17 +1544,7 @@ fn validate_structural_op(
     source.required_role(role).map_err(|error| error.to_string())?.clone();
   source.member(&address).map_err(|error| error.to_string())?;
   let mut kenv = ingress_records(source, &[&address])?;
-  let KConst::Defn {
-    kind: DefKind::Definition,
-    safety: DefinitionSafety::Safe,
-    lvls: 0,
-    ty,
-    val,
-    ..
-  } = declared(&kenv, &address)?
-  else {
-    return Err(differs(&address, "not a safe level-monomorphic definition"));
-  };
+  let (ty, val) = expect_safe_definition(&kenv, &address, 0)?;
   let (spec_ty, equations) = structural_spec(role, admitted, &val)?;
   if ty != spec_ty {
     return Err(differs(&address, "type"));
@@ -1797,17 +1898,7 @@ fn validate_wf_op(
   let mut references: Vec<&Address> = vec![&address];
   references.extend(evidence.iter());
   let mut kenv = ingress_records(source, &references)?;
-  let KConst::Defn {
-    kind: DefKind::Definition,
-    safety: DefinitionSafety::Safe,
-    lvls: 0,
-    ty,
-    val,
-    ..
-  } = declared(&kenv, &address)?
-  else {
-    return Err(differs(&address, "not a safe level-monomorphic definition"));
-  };
+  let (ty, val) = expect_safe_definition(&kenv, &address, 0)?;
   let vocabulary = Vocabulary::of(admitted)?;
   let nat = vocabulary.nat.clone();
   if ty != pi(nat.clone(), pi(nat.clone(), nat.clone())) {
@@ -1821,7 +1912,7 @@ fn validate_wf_op(
       address.hex()
     ));
   }
-  check_units(source, admitted, &mut kenv, &references)?;
+  check_units(source, admitted, &mut kenv, &[&address])?;
 
   // Locality: the closure of the operation (its unit's references) and of
   // the roles, with their blocks, that its specification depends on.
@@ -1837,27 +1928,10 @@ fn validate_wf_op(
     let fail = |what: String| {
       format!("{}: certificate {index} ({}) {what}", address.hex(), proof.hex())
     };
-    let theorem = checker
-      .get_const(&KId::new(proof.clone(), ()))
-      .map_err(|error| fail(error.to_string()))?;
-    let KConst::Defn {
-      kind: DefKind::Theorem,
-      safety: DefinitionSafety::Safe,
-      lvls: 0,
-      val: value,
-      ..
-    } = &theorem
-    else {
-      return Err(fail("is not a safe level-monomorphic theorem".into()));
-    };
-    checker
-      .validate_const_well_scoped(&theorem)
-      .map_err(|error| fail(error.to_string()))?;
-    checker
-      .check_no_unsafe_refs(value, DefinitionSafety::Safe)
-      .map_err(|error| fail(error.to_string()))?;
+    let (_, value) =
+      load_checked_theorem(&mut checker, proof, 0).map_err(&fail)?;
     let proof_term =
-      replace_constant(value, &address, &val, &mut FxHashMap::default());
+      replace_constant(&value, &address, &val, &mut FxHashMap::default());
 
     // λ (x y : Nat) (h₁ … hₙ), proof x y h₁ … hₙ, against
     // Π (x y : Nat) (h₁ … hₙ), equation.
@@ -1884,11 +1958,8 @@ fn validate_wf_op(
       pi_type = pi(nat.clone(), pi_type);
     }
     checker.reset();
-    let inferred =
-      checker.infer(&lambda).map_err(|error| fail(error.to_string()))?;
-    let proves = checker
-      .is_def_eq(&inferred, &pi_type)
-      .map_err(|error| fail(error.to_string()))?;
+    let proves =
+      check_proof_term(&mut checker, &lambda, &pi_type).map_err(&fail)?;
     if !proves {
       return Err(fail("does not prove its statement".into()));
     }

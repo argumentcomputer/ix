@@ -599,7 +599,7 @@ fn bound_step<'v, A: Arith>(
       A::add(&A::add(&A::u(side_extra(node)), head(side_child(node))), rest);
     (A::add(&m, &A::u(1)), m)
   };
-  if A::saturated(&i) {
+  if A::saturated(&i) || A::saturated(&m) {
     return Err(overflow());
   }
   let (hl, cl) = if maybe {
