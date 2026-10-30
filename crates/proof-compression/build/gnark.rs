@@ -49,7 +49,6 @@ pub(super) fn build() -> Vec<super::RuntimeArtifact> {
     "GO",
     "PATH",
     "GOROOT",
-    "IX_GNARK_GO_VERSION",
     "CGO_CFLAGS",
     "CGO_LDFLAGS",
     "CC",
@@ -187,8 +186,11 @@ pub(super) fn build() -> Vec<super::RuntimeArtifact> {
         file.display()
       );
       println!("cargo:rerun-if-changed={}", file.display());
-      artifacts
-        .push(super::RuntimeArtifact { source: file, path: name.to_owned() });
+      artifacts.push(super::RuntimeArtifact {
+        source: file,
+        path: name.to_owned(),
+        link: !name.contains('/'),
+      });
     }
     for name in ["icicle_device", "icicle_field_bn254", "icicle_curve_bn254"] {
       println!("cargo:rustc-link-lib=dylib={name}");

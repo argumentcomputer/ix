@@ -3,9 +3,11 @@ open System Lake DSL
 
 package ix where
   version := v!"0.1.0"
-  moreLinkObjs := #[⟨.packageTarget .anonymous `ix_cuda_runtime⟩]
-  -- The CUDA DSO resolves libc against the running system. Lean's link-time
-  -- glibc stubs can be older; the DSO itself is linked with -z defs.
+  -- CUDA builds load their shared libraries from `.lake/build/lib`. Those
+  -- resolve libc against the running system, whose glibc can be newer than
+  -- Lean's link-time stubs; each library is itself linked with -z defs. The
+  -- flags are unconditional because Lake does not re-elaborate this file when
+  -- `IX_CUDA` changes, and they are inert without CUDA.
   moreLinkArgs := if System.Platform.isLinux then
     #["-Wl,--allow-shlib-undefined", "-Wl,-rpath,$ORIGIN/../lib"] else #[]
 
@@ -41,7 +43,7 @@ Compression runs inside `ix`. Its final backends (`plonk`, `groth16`) are
 compiled into `ix_rs_net` only, so other executables never build Go. With
 `cuda`, the native libraries (multi-stark's, the BN254 KZG/PLONK library and,
 for Groth16, ICICLE) are copied to `.lake/build/lib` and found through
-`$ORIGIN/../lib`.
+`$ORIGIN/../lib`; each Rust archive target links them itself.
 
 The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
 before Cargo overwrites its release archive, then snapshot distinct Lake artifacts.
@@ -52,37 +54,23 @@ The archives are built when native targets need them. Keeping Rust linkage on
 -/
 section FFI
 
-/-- `1`/`true`/`yes` or `0`/`false`/`no`; `default` when unset or empty. -/
-def envFlag (name : String) (default : Bool) : IO Bool := do
-  match ← IO.getEnv name with
-  | none | some "" => pure default
-  | some "1" | some "true" | some "yes" => pure true
-  | some "0" | some "false" | some "no" => pure false
-  | some _ => throw <| IO.userError s!"{name} must be 0/1, false/true or no/yes"
+/-- Whether the environment variable `name` is `1`, `true` or `yes`. -/
+def enabled (name : String) : IO Bool :=
+  return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
 
-/-- Final backends of `ix`'s compression, mirroring the Cargo features of the
-same names: `IX_PLONK` and `IX_GROTH16`, both off by default, so compression
-ends at the recursive KZG proof. With `IX_CUDA`, each also enables its GPU
-backend; Groth16 links an installed ICICLE library. -/
-def compressionFeatures : IO (Array String) := do
-  let mut features := #[]
-  if ← envFlag "IX_PLONK" false then features := features.push "plonk"
-  if ← envFlag "IX_GROTH16" false then features := features.push "groth16"
-  return features
-
-/-- Rust feature selection shared by compilation and native runtime linkage. -/
+/-- Rust feature selection shared by compilation and native runtime linkage.
+IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA; IX_CUDA_TRACE_CODEGEN
+enables generated trace kernels and implies CUDA. For `net` (the `ix` CLI),
+IX_PLONK and IX_GROTH16 add those final compression backends, which otherwise
+end at the recursive KZG proof; with CUDA, Groth16 links an installed ICICLE
+library. -/
 def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
-  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
-  -- IX_CUDA_TRACE_CODEGEN=1 enables generated trace kernels and implies CUDA.
-  let ixNoPar ← IO.getEnv "IX_NO_PAR"
-  let ixCuda ← IO.getEnv "IX_CUDA"
-  let ixTraceCodegen ← IO.getEnv "IX_CUDA_TRACE_CODEGEN"
-  let mut features ← if net then compressionFeatures else pure #[]
-  if ixNoPar != some "1" then features := features.push "parallel"
-  if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
-    features := features.push "cuda"
-  if ixTraceCodegen == some "1" || ixTraceCodegen == some "true" || ixTraceCodegen == some "yes" then
-    features := features.push "cuda-trace-codegen"
+  let mut features := #[]
+  if net && (← enabled "IX_PLONK") then features := features.push "plonk"
+  if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
+  if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
+  if ← enabled "IX_CUDA" then features := features.push "cuda"
+  if ← enabled "IX_CUDA_TRACE_CODEGEN" then features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   return features
@@ -92,55 +80,15 @@ Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
   let features ← cargoFeatures testFfi net
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
-  let buildArgs := #["build", "--release", "--no-default-features", "-p", "ix-ffi"]
+  let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
 
-/-- Environment for every Cargo build here. Lean's bundled toolchain links
-against glibc stubs older than 2.38, whose headers in C23 mode, the default
-of recent GCC, redirect `strtol` and its relatives to `__isoc23_*` symbols
-the stubs lack; compiling every C unit as C17 keeps the symbols the link
-can resolve. `CFLAGS` already in the environment are kept. -/
-def cargoEnvironment (environment : Array (String × Option String)) :
-    Array (String × Option String) :=
-  let existing := ((environment.find? (·.1 == "CFLAGS")).bind (·.2)).getD ""
-  let cflags := if existing.isEmpty then "-std=gnu17" else s!"{existing} -std=gnu17"
-  #[("CFLAGS", some cflags)]
-
-/-- The native toolchain settings that change what Cargo produces. -/
-def nativeToolchainVariables : Array String :=
-  #["CFLAGS", "NVCC", "CUDA_HOME", "CUDA_PATH", "NVCC_CCBIN",
-    "NVCC_PREPEND_FLAGS", "NVCC_APPEND_FLAGS", "MULTI_STARK_CUDA_ARCHS",
-    "IX_KZG_CUDA_ARCHS", "GO", "CC", "CXX", "CGO_CFLAGS", "CGO_LDFLAGS",
-    "IX_GROTH16_ICICLE_ROOT"]
-
-def usesCuda (features : Array String) : Bool :=
-  features.any fun feature => (feature.splitOn ",").any fun name =>
-    name == "cuda" || name == "cuda-trace-codegen"
-
-def cudaLibraryName := "libmulti_stark_cuda.so"
-def bn254LibraryName := "libix_bn254_cuda.so"
-
-/-- Cargo reports native build outputs even when the build is already fresh. -/
-def cargoCudaLibrary (messages : String) : Except String FilePath := do
-  for line in messages.splitOn "\n" do
-    let .ok message := Lean.Json.parse line | continue
-    let .ok libs := message.getObjValAs? (Array String) "linked_libs" | continue
-    if libs.contains "dylib=multi_stark_cuda" then
-      let directory ← message.getObjValAs? String "out_dir"
-      return System.FilePath.mk directory / cudaLibraryName
-  throw "Cargo did not report multi-stark's CUDA shared library"
-
-def icicleLibraries : Array String :=
-  #["libicicle_device.so", "libicicle_field_bn254.so", "libicicle_curve_bn254.so",
-    "backend/cuda/libicicle_backend_cuda_device.so",
-    "backend/bn254/cuda/libicicle_backend_cuda_field_bn254.so",
-    "backend/bn254/cuda/libicicle_backend_cuda_curve_bn254.so"]
-
-/-- The other native files the build scripts report: each `source` is copied to
-`lib/<path>`, keeping ICICLE's backend plugins at the relative paths it loads
-them from. -/
-def cargoRuntimeArtifacts (messages : String) : Except String (Array (FilePath × String)) := do
+/-- The shared libraries the build scripts report (`IX_RUNTIME_ARTIFACTS`):
+each `source` is copied to `lib/<path>`, keeping ICICLE's backend plugins at
+the relative paths it loads them from, and the `link` ones are linked. -/
+def cargoRuntimeArtifacts (messages : String) :
+    Except String (Array (FilePath × String × Bool)) := do
   let mut artifacts := #[]
   for line in messages.splitOn "\n" do
     let .ok message := Lean.Json.parse line | continue
@@ -149,167 +97,81 @@ def cargoRuntimeArtifacts (messages : String) : Except String (Array (FilePath �
       if entry.size == 2 && entry[0]! == "IX_RUNTIME_ARTIFACTS" then
         let entries ← (← Lean.Json.parse entry[1]!).getArr?
         for artifact in entries do
-          artifacts := artifacts.push
-            (FilePath.mk (← artifact.getObjValAs? String "source"), ← artifact.getObjValAs? String "path")
+          artifacts := artifacts.push (FilePath.mk (← artifact.getObjValAs? String "source"),
+            ← artifact.getObjValAs? String "path", ← artifact.getObjValAs? Bool "link")
   return artifacts
 
-/-- Native libraries `features` load at runtime, relative to `lib/`; the
-executables link the top-level ones. -/
-def runtimeLibraries (features : Array String) : Array String :=
-  if !usesCuda features then #[] else
-  let groth16 := features.any fun feature => (feature.splitOn ",").contains "groth16"
-  #[cudaLibraryName, bn254LibraryName] ++ (if groth16 then icicleLibraries else #[])
-
-local instance : CheckExists (Array FilePath) where
-  checkExists paths := paths.allM (·.pathExists)
-
-local instance : GetMTime (Array FilePath) where
-  getMTime paths := do
-    paths.foldlM (fun oldest path => return min oldest (← getMTime path))
-      (← getMTime paths[0]!)
-
-/-- The installed ICICLE prefix, shared with Cargo's Groth16 build configuration. -/
-def icicleRoot : BaseIO FilePath := do
-  match ← IO.getEnv "IX_GROTH16_ICICLE_ROOT" with
-  | none | some "" => return "/usr/local"
-  | some path => return FilePath.mk path
-
-/-- Replacing the inode keeps an already-loaded shared library intact. -/
-def copyNativeArtifact (source output : FilePath) (tag : String) : JobM Unit := do
+/-- Copy `source` to `output` with its modification time, unless an identical
+copy is already there. Replacing the inode keeps an already-loaded shared
+library intact. -/
+def snapshot (source output : FilePath) : IO Unit := do
+  if ← output.pathExists then
+    let (old, new) := (← output.metadata, ← source.metadata)
+    if old.modified == new.modified && old.byteSize == new.byteSize then return
   IO.FS.createDirAll output.parent.get!
-  let temporary := output.addExtension s!"{tag}.tmp"
-  proc { cmd := "cp", args := #["-f", source.toString, temporary.toString] } (quiet := true)
+  let temporary := output.addExtension "tmp"
+  discard <| IO.Process.run { cmd := "cp", args := #["-p", source.toString, temporary.toString] }
   IO.FS.rename temporary output
 
-/-- Every source, kernel, manifest and fixture file the Cargo builds read. -/
-def rustSources (pkg : Package) : SpawnM (Job Unit) := do
-  let sources ← inputDir (pkg.dir / "crates") true fun path =>
-    path.extension == some "rs" || path.extension == some "cu" ||
-    path.extension == some "cuh" || path.extension == some "cpp" ||
-    path.extension == some "h" ||
-    path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
-    path.fileName == "trace-manifest.json"
-  let fixtures ← inputDir (pkg.dir / "crates/proof-compression/tests/fixtures") false fun path =>
-    path.extension == some "bin"
-  let manifests := Job.collectArray #[
-    ← inputTextFile (pkg.dir / "Cargo.toml"),
-    ← inputTextFile (pkg.dir / "Cargo.lock"),
-    ← inputTextFile (pkg.dir / ".cargo/config.toml")
-  ]
-  let verifyingKeys ← inputDir (pkg.dir / "crates/proof-compression/verifying-keys") false fun path =>
-    path.extension == some "json" || path.extension == some "bin"
-  let sources := sources.zipWith (fun _ _ => ()) fixtures
-  let sources := sources.zipWith (fun _ _ => ()) verifyingKeys
-  return sources.zipWith (fun _ _ => ()) manifests
+/-- The libraries recorded beside a Rust archive: whether each is linked, and
+its path relative to `lib/`. -/
+def runtimeArtifacts (archive : FilePath) : IO (Array (Bool × String)) := do
+  let lines := (← IO.FS.lines (archive.withExtension "runtime")).filter (!·.isEmpty)
+  lines.mapM fun line => match line.splitOn " " with
+    | ["link", path] => pure (true, path)
+    | ["load", path] => pure (false, path)
+    | _ => throw <| IO.userError s!"malformed runtime manifest line: {line}"
 
-/-- Cargo's archive or executable and its native library are one build output.
-Both must exist before a cached result can be used. -/
-def buildCargoArtifact (pkg : Package) (args : Array String) (tag : String)
-    (built output : FilePath) (before : Option (Job FilePath) := none) :
-    FetchM (Job FilePath) := do
-  let mut deps ← rustSources pkg
-  let plonk := args.any fun argument => (argument.splitOn ",").contains "plonk"
-  let groth16 := args.any fun argument => (argument.splitOn ",").contains "groth16"
-  let gnark := plonk || groth16
-  let groth16Cuda := groth16 && usesCuda args
-  if gnark then
-    let go ← inputDir (pkg.dir / "tools/gnark") false fun path =>
-      #["go", "h", "json", "bin"].contains (path.extension.getD "") ||
-      path.fileName == "go.mod" || path.fileName == "go.sum"
-    deps := deps.zipWith (fun _ _ => ()) go
-  let icicle ← if groth16Cuda then do
-    let root ← icicleRoot
-    pure (some (pkg.dir / "crates/proof-compression" / root))
-  else pure none
-  if let some root := icicle then
-    for name in icicleLibraries do
-      let library := root / "lib" / name
-      unless ← library.pathExists do
-        error s!"Missing ICICLE library {library}. Install the pinned BN254 ICICLE libraries under /usr/local or set IX_GROTH16_ICICLE_ROOT to their installation prefix."
-      deps := deps.zipWith (fun _ _ => ()) (← inputBinFile library)
-  let orderedDeps := match before with
-    | some before => deps.zipWith (fun _ _ => ()) before
-    | none => deps
-  let environment ← nativeToolchainVariables.mapM fun name => return (name, ← IO.getEnv name)
-  let mut cargoEnv := cargoEnvironment environment
-  if let some root := icicle then
-    cargoEnv := cargoEnv.push ("IX_GROTH16_ICICLE_ROOT", some root.toString)
-  let native := pkg.buildDir / "lib" / cudaLibraryName
-  let cuda := usesCuda args
-  let outputs := #[output] ++
-    (runtimeLibraries args).map (pkg.buildDir / "lib" / FilePath.mk ·)
-  orderedDeps.mapM fun _ => do
-    let cargoEnv ← if gnark then do
-      let go := (← IO.getEnv "GO").getD "go"
-      let version ← captureProc' {
-        cmd := go, args := #["version"], env := #[("GOTOOLCHAIN", some "local")]
-      }
-      pure <| cargoEnv.push ("IX_GNARK_GO_VERSION", some version.stdout)
-    else pure cargoEnv
-    addPureTrace (args, environment, cargoEnv) s!"cargo args: {args}; native toolchain: {environment}"
-    buildUnlessUpToDate outputs (← getTrace) (output.addExtension "trace") do
-      let result ← captureProc' {
-        cmd := "cargo"
-        args := args.push "--message-format=json-render-diagnostics"
-        cwd := pkg.dir
-        env := cargoEnv
-      }
-      unless result.stderr.isEmpty do logVerbose result.stderr
-      if cuda then
-        let source ← match cargoCudaLibrary result.stdout with
-          | .ok source => pure source
-          | .error message => error message
-        copyNativeArtifact source native tag
-      let artifacts ← match cargoRuntimeArtifacts result.stdout with
-        | .ok artifacts => pure artifacts
-        | .error message => error message
-      for (source, path) in artifacts do
-        copyNativeArtifact source (pkg.buildDir / "lib" / FilePath.mk path) tag
-      copyNativeArtifact built output tag
-    setTrace (← computeTrace outputs)
-    return output
-
+/-- One feature selection of the Rust static lib, as a target links it. Cargo
+runs on every build and decides what is stale; the archive is snapshotted to
+`lib/libix_ffi_{tag}.a`, so targets relink only when its contents change.
+A static archive does not carry its shared-library dependencies to Lean's
+linker, so with CUDA this is an `ld` script naming the archive together with
+the libraries the build scripts report. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
-    (before : Option (Job FilePath) := none) : FetchM (Job FilePath) :=
-  buildCargoArtifact pkg args tag
-    (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi")
-    (pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a") before
+    (before : Option (Job FilePath) := none) : FetchM (Job FilePath) := do
+  let start := match before with
+    | some before => before.map fun _ => ()
+    | none => Job.nil
+  start.mapM fun _ => do
+    let result ← captureProc' {
+      cmd := "cargo"
+      args := args.push "--message-format=json-render-diagnostics"
+      cwd := pkg.dir
+    }
+    unless result.stderr.isEmpty do logVerbose result.stderr
+    let artifacts ← match cargoRuntimeArtifacts result.stdout with
+      | .ok artifacts => pure artifacts
+      | .error message => error message
+    let lib := pkg.buildDir / "lib"
+    for (source, path, _) in artifacts do
+      snapshot source (lib / FilePath.mk path)
+    let archive := lib / s!"libix_ffi_{tag}.a"
+    snapshot (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi") archive
+    -- One `link <path>` or `load <path>` line per library, relative to `lib/`.
+    IO.FS.writeFile (archive.withExtension "runtime") <| String.join <|
+      artifacts.toList.map fun (_, path, link) => s!"{if link then "link" else "load"} {path}\n"
+    setTrace (← computeTrace archive)
+    let linked := artifacts.filterMap fun (_, path, link) => if link then some path else none
+    if linked.isEmpty then return archive
+    let ldScript := lib / s!"libix_ffi_{tag}_link.so"
+    let paths := #[archive.toString] ++ linked.map fun path => (lib / FilePath.mk path).toString
+    IO.FS.writeFile ldScript s!"INPUT({" ".intercalate paths.toList})\n"
+    addTrace (← computeTrace ldScript)
+    return ldScript
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs) "default"
 
-/-- An `ld` script naming the top-level native libraries in `libraries`, or an
-empty archive when there are none. -/
-def linkRuntime (pkg : Package) (name : String) (libraries : Array String)
-    (after : Job FilePath) : SpawnM (Job FilePath) := do
-  let libraries := libraries.filter (!·.contains '/')
-  if libraries.isEmpty then
-    return ← buildStaticLib (pkg.buildDir / "lib" / s!"lib{name}.a") #[]
-  after.mapM fun _ => do
-    let ldScript := pkg.buildDir / "lib" / s!"lib{name}.so"
-    let paths := libraries.map fun (library : String) => (pkg.buildDir / "lib" / FilePath.mk library).toString
-    IO.FS.writeFile ldScript s!"INPUT({" ".intercalate paths.toList})\n"
-    setTrace (← computeTrace ldScript)
-    return ldScript
-
-/-- multi-stark's and the BN254 library, which every CUDA executable links. -/
-target ix_cuda_runtime pkg : FilePath := do
-  linkRuntime pkg "ix_cuda_runtime" (runtimeLibraries (← cargoFeatures)) (← ix_rs.fetch)
-
-/-- Cargo feature variants wait for the default archive before building. -/
+/-- Cargo feature variants run after the default build, since every
+selection writes Cargo's one release archive. -/
 target ix_rs_test pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs (testFfi := true)) "test" (some (← ix_rs.fetch))
 
 /-- Build the Rust static lib with `net` for the `ix` CLI. -/
 target ix_rs_net pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs (net := true)) "net" (some (← ix_rs.fetch))
-
-/-- ICICLE, which only `ix` links, when it compresses to Groth16 on CUDA. -/
-target ix_final_runtime pkg : FilePath := do
-  let all := runtimeLibraries (← cargoFeatures (net := true))
-  let shared := runtimeLibraries (← cargoFeatures)
-  linkRuntime pkg "ix_final_runtime" (all.filter (!shared.contains ·)) (← ix_rs_net.fetch)
 
 end FFI
 
@@ -336,7 +198,7 @@ lean_lib Ix where
 lean_exe ix where
   root := `Main
   supportInterpreter := true
-  moreLinkObjs := #[ix_rs_net, ix_final_runtime]
+  moreLinkObjs := #[ix_rs_net]
 
 section Tests
 
@@ -359,12 +221,6 @@ against. -/
 lean_exe «trace-fixtures» where
   root := `Tests.Aiur.TraceFixtures
   supportInterpreter := true
-
-/-- Compression CLI and stored-proof identity checks. -/
-lean_exe «compression-cli-tests» where
-  root := `Tests.CompressionCliMain
-  needs := #[`@/ix]
-  moreLinkObjs := #[ix_rs]
 
 /-- Focused source-contract checks, including fresh-module registration export. -/
 lean_exe «source-contract-tests» where
@@ -496,7 +352,7 @@ script install := do
   FS.writeBinFile destination (← FS.readBinFile $ ".lake" / "build" / "bin" / "ix")
   setAccessRights destination fileRight
   let libraryDir := binDir.parent.getD "." / "lib"
-  for name in runtimeLibraries (← cargoFeatures (net := true)) do
+  for (_, name) in ← runtimeArtifacts (".lake" / "build" / "lib" / "libix_ffi_net.a") do
     FS.createDirAll (libraryDir / name).parent.get!
     FS.writeBinFile (libraryDir / name) (← FS.readBinFile $ ".lake" / "build" / "lib" / name)
   return 0

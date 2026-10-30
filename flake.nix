@@ -14,10 +14,6 @@
     # System packages, follows lean4-nix so we stay in sync
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
-    # CUDA-only packages, independently pinned so the ordinary build graph
-    # can retain lean4-nix's older Nixpkgs revision.
-    cuda-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
     # Lean 4 & Lake
     lean4-nix.url = "github:argumentcomputer/lean4-nix";
 
@@ -67,27 +63,6 @@
           ...
         }:
         let
-          # CUDA is opt-in and unfree. Its dedicated package set locks CUDA
-          # 13.2 without changing the default shell or ordinary package/check
-          # graph.
-          cudaPkgs = import inputs.cuda-nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-          cudaToolkit = cudaPkgs.symlinkJoin {
-            name = "ix-cuda-13.2-toolkit";
-            paths = [
-              cudaPkgs.cudaPackages_13_2.cccl
-              cudaPkgs.cudaPackages_13_2.cuda_crt
-              cudaPkgs.cudaPackages_13_2.cuda_cudart
-              cudaPkgs.cudaPackages_13_2.cuda_nvcc
-              cudaPkgs.cudaPackages_13_2.libnvvm
-            ];
-            postBuild = ''
-              ln -s lib "$out/lib64"
-            '';
-          };
-
           # Pins the Lean toolchain; a plain derivation, no overlay involved
           lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
 
@@ -97,56 +72,10 @@
             sha256 = "sha256-p8h3Sl/YRByZfZTAKXdsvF6xEenXKrXSVvpphmZENH4=";
           };
 
-          # gnark requires the 1.26.8 patch release; the newer pinned package
-          # set supplies its matching bootstrap and platform patches.
-          plonkGo = cudaPkgs.go_1_26.overrideAttrs (_: {
-            version = "1.26.8";
-            src = cudaPkgs.fetchurl {
-              url = "https://go.dev/dl/go1.26.8.src.tar.gz";
-              hash = "sha256-Tjm5jkL5RvoFrIvFtxh335fb23y7Gnd7VBZnrXEX/S4=";
-            };
-          });
           plonkSources = pkgs.lib.fileset.fileFilter (
             file: file.hasExt "go" || file.hasExt "h" || file.hasExt "json" || file.hasExt "bin"
               || file.name == "go.mod" || file.name == "go.sum"
           ) ./tools/gnark;
-          icicleBn254 = pkgs.stdenv.mkDerivation {
-            pname = "ix-icicle-bn254";
-            version = "3.2.2";
-            src = pkgs.fetchFromGitHub {
-              owner = "ingonyama-zk";
-              repo = "icicle-gnark";
-              rev = "b62bbbe518a73214da10ece26969ad55e6fa0cd0";
-              hash = "sha256-kbXwg1cF72flzpl1+20D+smYKgl7Aslbf1KSCi6ur34=";
-            };
-            sourceRoot = "source/icicle";
-            nativeBuildInputs = [ cudaPkgs.cmake cudaPkgs.ninja cudaToolkit ];
-            cmakeFlags = [
-              "-DCURVE=bn254" "-DMSM=ON" "-DNTT=ON" "-DG2=ON"
-              "-DCPU_BACKEND=OFF" "-DCUDA_BACKEND=ON" "-DBUILD_TESTS=OFF"
-              "-DCUDA_ARCH=120-real" "-DCMAKE_CUDA_ARCHITECTURES=120-real"
-              "-DCMAKE_CUDA_COMPILER=${cudaToolkit}/bin/nvcc"
-              "-DCMAKE_CUDA_HOST_COMPILER=${pkgs.stdenv.cc}/bin/c++"
-            ];
-            meta.platforms = [ "x86_64-linux" ];
-          };
-          gnarkGo = (cudaPkgs.buildGoModule.override { go = plonkGo; }) {
-            pname = "ix-gnark-tests";
-            version = "0.1.0";
-            src = pkgs.lib.fileset.toSource {
-              root = ./tools/gnark;
-              fileset = plonkSources;
-            };
-            vendorHash = "sha256-JZUh5bcjyiNmCiqc0jer2uiyhvBkx0G9A+p+caoEjZ4=";
-            subPackages = [ "." ];
-            buildPhase = "runHook preBuild; runHook postBuild";
-            installPhase = ''
-              mkdir -p "$out"
-              touch "$out/checked"
-            '';
-            env.CGO_ENABLED = "0";
-            env.GOTOOLCHAIN = "local";
-          };
 
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -220,7 +149,9 @@
                   pkgs.libiconv
                 ];
             };
-          gnarkArgs = craneArgs // {
+          # Sources for the workspace checks, including the gnark test data
+          # the Rust tests embed.
+          testArgs = craneArgs // {
             src = pkgs.lib.fileset.toSource {
               root = ./.;
               fileset = pkgs.lib.fileset.unions [
@@ -231,11 +162,6 @@
                 ./crates/proof-compression/cuda
               ];
             };
-            nativeBuildInputs = [ plonkGo ];
-            GO = "${plonkGo}/bin/go";
-            postPatch = ''
-              cp -r ${gnarkGo.goModules} tools/gnark/vendor
-            '';
           };
           # Build dependencies once with every host feature enabled so the
           # `net` stack (tokio/iroh) is compiled and cached here, then shared
@@ -329,7 +255,6 @@
           # Shared Lake build args: patches out the Cargo build (Crane handles it)
           mkLakeBuildArgs = rustLib: {
             inherit lakeDeps;
-            GO = "${plonkGo}/bin/go";
             src = leanSrc;
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
@@ -427,28 +352,15 @@
           packages = {
             default = ixLib;
             ix = ixCLI;
-            icicle-bn254 = icicleBn254;
-            # `checks` are built by `nix flake check`; exposing this derivation
-            # as a package keeps the ignored suite available on demand without
-            # adding it to the default check set.
-            nextest-ignored = craneLib.cargoNextest (
-              gnarkArgs
-              // {
-                inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --workspace";
-                cargoNextestExtraArgs = "--profile ci --run-ignored only";
-              }
-            );
             zkv-prover = ZKVotingProver // {
               meta.mainProgram = "Apps-ZKVoting-Prover";
             };
           };
 
           checks = {
-            gnark = gnarkGo;
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
-              gnarkArgs
+              testArgs
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--locked --workspace --features ix-ffi/parallel,ix-ffi/test-ffi,ix-ffi/net";
@@ -457,7 +369,7 @@
             );
             # Non-ignored Rust unit tests across the host workspace.
             nextest = craneLib.cargoNextest (
-              gnarkArgs
+              testArgs
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--locked --workspace";
@@ -496,50 +408,7 @@
                 lean
                 cargo-deny
                 valgrind
-                plonkGo
               ];
-            };
-          }
-          // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
-            # CUDA stays separate so CPU development does not fetch NVIDIA's
-            # toolkit. Pinning NVCC/CUDA_HOME prevents a host-level
-            # `/usr/local/cuda` from silently selecting an incompatible
-            # compiler or runtime.
-            cuda = pkgs.mkShell {
-              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-              NVCC = "${cudaToolkit}/bin/nvcc";
-              CUDA_HOME = "${cudaToolkit}";
-              CUDA_PATH = "${cudaToolkit}";
-              packages =
-                (with pkgs; [
-                  pkg-config
-                  openssl
-                  clang
-                  rustToolchain
-                  rust-analyzer
-                  lean
-                  cargo-deny
-                  valgrind
-                  plonkGo
-                ])
-                ++ [ cudaToolkit ];
-              shellHook = ''
-                export PATH="${cudaToolkit}/bin:$PATH"
-                export LD_LIBRARY_PATH="${cudaToolkit}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
-                # Nix's dynamic loader does not search the host driver's
-                # library directory. Preload only libcuda to avoid mixing libc.
-                for ixCudaDriverLib in \
-                  /run/opengl-driver/lib/libcuda.so.1 \
-                  /usr/lib/x86_64-linux-gnu/libcuda.so.1 \
-                  /usr/lib64/libcuda.so.1; do
-                  if [ -e "$ixCudaDriverLib" ]; then
-                    export LD_PRELOAD="$ixCudaDriverLib''${LD_PRELOAD:+:$LD_PRELOAD}"
-                    break
-                  fi
-                done
-                unset ixCudaDriverLib
-              '';
             };
           };
 

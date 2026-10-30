@@ -9,8 +9,10 @@
 //!
 //! `IX_RUNTIME_ARTIFACTS` names every shared library an executable built from
 //! this crate must ship beside itself, as a JSON array of
-//! `{"source": <absolute path>, "path": <path relative to lib/>}`. ICICLE's
-//! CUDA backend plugins are loaded at runtime and appear only here.
+//! `{"source": <absolute path>, "path": <path relative to lib/>, "link": <bool>}`.
+//! A Rust static archive does not carry its shared-library dependencies, so a
+//! final link of one must also link each `"link": true` library. The others,
+//! ICICLE's CUDA backend plugins, are only loaded at runtime.
 
 use std::env;
 use std::ffi::OsString;
@@ -43,6 +45,7 @@ const EXPORTS: &str = r"{
 struct RuntimeArtifact {
   source: PathBuf,
   path: String,
+  link: bool,
 }
 
 #[cfg(any(feature = "plonk", feature = "groth16"))]
@@ -65,9 +68,20 @@ fn main() {
   }
   let mut artifacts = Vec::new();
   if env::var_os("CARGO_FEATURE_CUDA").is_some() {
+    let multi_stark = PathBuf::from(multi_stark_cuda("LIBRARY"));
+    artifacts.push(RuntimeArtifact {
+      path: multi_stark
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("multi-stark's CUDA library has a UTF-8 file name")
+        .to_owned(),
+      source: multi_stark,
+      link: true,
+    });
     artifacts.push(RuntimeArtifact {
       source: build_bn254_cuda(),
       path: LIBRARY.to_owned(),
+      link: true,
     });
   }
   // cgo links the PLONK entry points against the library built above.
@@ -84,9 +98,10 @@ fn manifest(artifacts: &[RuntimeArtifact]) -> String {
         panic!("runtime artifact path {:?} is not UTF-8", artifact.source)
       });
       format!(
-        r#"{{"source":{},"path":{}}}"#,
+        r#"{{"source":{},"path":{},"link":{}}}"#,
         json_string(source),
-        json_string(&artifact.path)
+        json_string(&artifact.path),
+        artifact.link
       )
     })
     .collect();
