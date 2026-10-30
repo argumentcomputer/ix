@@ -80,11 +80,14 @@ impl Frontend {
     let setup = config
       .for_stage(OUTER_SEED, self.compiled.main_height())?
       .with_transcript(TranscriptKind::Blake3);
-    if let Some(admission) = setup.ignition_admission()
-      && decode_pairing_keys(&self.pairings)? != admission.pairing_keys()
+    if setup.class() == SetupClass::Ignition
+      && decode_pairing_keys(&self.pairings)? != {
+        let parameters = setup.verifier_params(2)?;
+        [parameters.g2, parameters.tau_g2]
+      }
     {
       return Err(
-        "recursive inner pairing anchors differ from Ignition admission".into(),
+        "recursive inner pairing anchors differ from the released Ignition parameters".into(),
       );
     }
     Ok(setup)
@@ -524,25 +527,13 @@ impl VerifyingKey {
     &self,
     expected: SetupClass,
   ) -> PipelineResult<()> {
-    if expected == SetupClass::Ignition {
-      return Err(
-        "Ignition verification requires an explicit trusted admission".into(),
-      );
-    }
     let parameters = self.verifier_params()?;
     if SetupClass::of(&parameters) != expected {
-      return Err("bundled verifier setup class differs".into());
+      return Err("verifier setup class differs".into());
     }
-    Ok(())
-  }
-
-  /// Admit both opening equations against independently pinned ceremony data.
-  pub(crate) fn check_ignition_admission(
-    &self,
-    admission: &crate::kzg::srs::ignition::IgnitionAdmission,
-  ) -> PipelineResult<()> {
-    SetupClass::of_with_ignition(&self.verifier_params()?, admission)?;
-    if self.keys()? != admission.pairing_keys() {
+    if expected == SetupClass::Ignition
+      && self.keys()? != [parameters.g2, parameters.tau_g2]
+    {
       return Err(
         "Ignition verifier has different inner pairing anchors".into(),
       );
@@ -673,13 +664,10 @@ mod tests {
   };
   use std::sync::Arc;
 
-  fn ignition_vk_fixture() -> storage::Result<(
-    crate::kzg::srs::ignition::IgnitionAdmission,
-    VerifyingKey,
-    Vec<u8>,
-  )> {
-    use crate::kzg::{VerifierParams, srs::ignition::test_admission};
-    let (admission, srs) = test_admission(7, 256, 41);
+  fn recursive_vk_fixture() -> storage::Result<(VerifyingKey, Vec<u8>)> {
+    use crate::kzg::VerifierParams;
+    let srs = Srs::unsafe_dev_setup(256, b"recursive-verifier-fixture");
+    let pairing_keys = [srs.g2, srs.tau_g2];
     let claims = init_packet_claims(&srs);
     let publics = staged_publics(&claims, 2)?;
     let mut builder = CircuitBuilder::new();
@@ -717,7 +705,7 @@ mod tests {
       )?)
     };
     let mut keys = Vec::new();
-    admission.pairing_keys().to_vec().serialize_compressed(&mut keys)?;
+    pairing_keys.to_vec().serialize_compressed(&mut keys)?;
     let vk = VerifyingKey {
       version: OUTER_VK_VERSION,
       heights: [
@@ -737,14 +725,14 @@ mod tests {
     }
     packet.extend(pairing_bytes(&publics[18..])?);
     packet.extend(&proved.bytes);
-    Ok((admission, vk, packet))
+    Ok((vk, packet))
   }
 
   #[test]
   #[cfg(any(feature = "plonk", feature = "groth16"))]
   fn plonk_recursive_export_includes_anchor_and_deferred_publics()
   -> storage::Result<()> {
-    let (_, vk, packet) = ignition_vk_fixture()?;
+    let (vk, packet) = recursive_vk_fixture()?;
     let expected = init_claim::INIT_PUBLIC_WORDS;
     let directory = std::env::temp_dir()
       .join(format!("plonk-recursive-claims-{}", std::process::id()));
@@ -779,11 +767,7 @@ mod tests {
   #[test]
   fn ignition_staging_rejects_other_inner_keys_before_creating_files()
   -> storage::Result<()> {
-    use crate::{
-      kzg::srs::ignition::test_admission,
-      pipeline::{StageConfig, setup::SetupConfig},
-    };
-    let (admission, _) = test_admission(7, 256, 44);
+    use crate::pipeline::{StageConfig, setup::SetupConfig};
     let inner = Srs::unsafe_dev_setup(2, b"ignition-stage-development-inner");
     let claims = init_packet_claims(&inner);
     let mut builder = CircuitBuilder::new();
@@ -800,18 +784,14 @@ mod tests {
     let frontend = Frontend::new(
       circuit,
       &[inner.g2, inner.tau_g2],
-      b"ignition-stage-admission",
+      b"ignition-stage-anchors",
       128,
     )?;
     let root = std::env::temp_dir()
-      .join(format!("ignition-stage-admission-{}", std::process::id(),));
+      .join(format!("ignition-stage-anchors-{}", std::process::id(),));
     assert!(!root.exists());
     let config = StageConfig {
-      setup: SetupConfig::Ignition {
-        cache: root.join("absent-cache.bin"),
-        manifest: [0; 32],
-        admission: Arc::new(admission),
-      },
+      setup: SetupConfig::Ignition { srs: root.join("absent-srs.bin") },
       fixed_cache_root: None,
       prefetch_bytes: 0,
     };
@@ -824,92 +804,49 @@ mod tests {
   }
 
   #[test]
-  fn ignition_admission_authenticates_both_openings_without_a_cache()
+  fn pinned_recursive_key_binds_claim_and_rejects_tampering()
   -> storage::Result<()> {
-    use super::super::super::verifier::verify_with_ignition_admission;
-    use crate::kzg::{
-      VerifierParams,
-      srs::ignition::{IgnitionAdmission, test_admission},
-    };
-    let (admission, vk, packet) = ignition_vk_fixture()?;
+    use super::super::super::verifier::verify_with_vk;
+    let (vk, packet) = recursive_vk_fixture()?;
     let claim = include_bytes!("../../../tests/fixtures/init-fri/claim.bin");
     let expected = init_claim::INIT_PUBLIC_WORDS;
-    let portable =
-      bincode::serde::encode_to_vec(&vk, bincode::config::standard())?;
+    let portable = vk.to_bytes()?;
     let trusted = *blake3::hash(&portable).as_bytes();
-    let verify = |packet: &[u8],
-                  claim: &[u8],
-                  expected: &_,
-                  trusted: &_,
-                  admission: &IgnitionAdmission| {
-      verify_with_ignition_admission(
-        packet, claim, expected, &portable, trusted, admission,
-      )
-    };
+    let verify =
+      |packet: &[u8], claim: &[u8], expected: &_, pin: &_, development| {
+        verify_with_vk(packet, claim, expected, &portable, pin, development)
+      };
     assert_eq!(
-      verify(&packet, claim, &expected, &trusted, &admission)?,
-      SetupClass::Ignition
+      verify(&packet, claim, &expected, &trusted, true)?,
+      SetupClass::Development
     );
-    assert!(vk.check_setup_class(SetupClass::Ignition).is_err());
-    assert_eq!(SetupClass::of(&vk.verifier_params()?), SetupClass::Development);
-    assert!(verify(&packet, claim, &expected, &[0; 32], &admission).is_err());
-    assert!(
-      verify(&packet, b"wrong", &expected, &trusted, &admission).is_err()
-    );
+    assert!(verify(&packet, claim, &expected, &trusted, false).is_err());
+    assert!(verify(&packet, claim, &expected, &[0; 32], true).is_err());
+    assert!(verify(&packet, b"wrong", &expected, &trusted, true).is_err());
     let mut wrong_statement = expected;
     wrong_statement[0] ^= 1;
-    assert!(
-      verify(&packet, claim, &wrong_statement, &trusted, &admission).is_err()
-    );
-    let mut bad_packet = packet.clone();
+    assert!(verify(&packet, claim, &wrong_statement, &trusted, true).is_err());
+    let mut bad_packet = packet;
     *bad_packet.last_mut().unwrap() ^= 1;
-    assert!(
-      verify(&bad_packet, claim, &expected, &trusted, &admission).is_err()
-    );
-    for (tau, count, marker) in [(11, 256, 41), (7, 512, 41), (7, 256, 42)] {
-      let (other, _) = test_admission(tau, count, marker);
-      assert!(verify(&packet, claim, &expected, &trusted, &other).is_err());
-    }
-    for change in [0, 1, 2] {
-      let mut changed: VerifyingKey = decode(&portable)?;
-      let mut parameters = changed.verifier_params()?;
-      match change {
-        0 => parameters.public_setup.id[0] ^= 1,
-        1 => parameters.public_setup.max_degree += 1,
-        2 => {
-          let (_, other) = test_admission(11, 256, 41);
-          parameters = VerifierParams::with_max_trace_len(
-            &other,
-            parameters.max_trace_len(),
-          );
-        },
-        _ => unreachable!(),
-      }
-      changed.parameters = parameters.to_bytes()?;
-      assert!(changed.check_ignition_admission(&admission).is_err());
-    }
-    let mut mixed: VerifyingKey = decode(&portable)?;
-    let development = Srs::unsafe_dev_setup(2, b"ignition-mixed-inner");
+    assert!(verify(&bad_packet, claim, &expected, &trusted, true).is_err());
+    Ok(())
+  }
+
+  #[test]
+  fn ignition_verifier_rejects_substituted_inner_pairing_keys()
+  -> storage::Result<()> {
+    let mut vk = VerifyingKey::from_bytes(include_bytes!(
+      "../../../verifying-keys/0.1/recursive-vk.bin"
+    ))?;
+    vk.check_setup_class(SetupClass::Ignition)?;
+    let development = Srs::unsafe_dev_setup(2, b"substituted-inner-keys");
     let mut keys = Vec::new();
     vec![development.g2, development.tau_g2].serialize_compressed(&mut keys)?;
-    mixed.pairings = bincode::serde::encode_to_vec(
+    vk.pairings = bincode::serde::encode_to_vec(
       Pairings { keys },
       bincode::config::standard(),
     )?;
-    assert!(
-      mixed
-        .check_ignition_admission(&admission)
-        .unwrap_err()
-        .to_string()
-        .contains("inner pairing anchors")
-    );
-    let mut development_vk: VerifyingKey = decode(&portable)?;
-    let development =
-      Srs::unsafe_dev_setup_prefix(2, 255, b"ignition-existing-development-vk");
-    development_vk.parameters =
-      VerifierParams::with_max_trace_len(&development, vk.heights[0])
-        .to_bytes()?;
-    assert!(development_vk.check_ignition_admission(&admission).is_err());
+    assert!(vk.check_setup_class(SetupClass::Ignition).is_err());
     Ok(())
   }
 

@@ -3,7 +3,7 @@
   of each given aggregate proof and sizes one fixed layout that holds all of
   them; `normalize` proves a root's wrap in that layout and writes the FRI
   worker's root input. Every root normalized to one layout compresses under
-  the same FRI verifier. `fetch-params` installs the pinned Ignition proving
+  the same FRI verifier. `fetch-params` installs the released Ignition proving
   parameters.
 -/
 module
@@ -103,13 +103,11 @@ private def download (url : String) (path : System.FilePath) : IO Unit := do
     throw <| IO.userError s!"curl exited with {status} downloading {url}"
   IO.FS.rename part path
 
-/-- The published Ignition release: its directory name under the parameters
-directory, base URL and files. The pins that authenticate the files live with
-the setup policy in `ix-proof-compression`; this mirrors only their names. -/
+/-- The published gnark SRS selected during release preparation. -/
 private def ignitionRelease := "bn254-ignition-main-197"
 private def ignitionUrl :=
   "https://argument-kzg-params-063002298335-us-east-1-an.s3.us-east-1.amazonaws.com/bn254/ignition/main-197"
-private def ignitionFiles := #["admission.json", "ix-prefix-26.bin"]
+private def ignitionFiles := #["srs.bin"]
 
 /-- `IX_PARAMS_DIR`, else `~/.ix/compression/params`. -/
 private def parametersDir : IO System.FilePath := do
@@ -127,9 +125,9 @@ def runFetchParams (_ : Cli.Parsed) : IO UInt32 := do
       else
         IO.eprintln s!"Downloading {ignitionUrl}/{file}."
         download s!"{ignitionUrl}/{file}" path
-    if (← IO.getEnv "IX_KZG_IGNITION_CACHE").isSome then
-      IO.eprintln "IX_KZG_IGNITION_* is set and takes precedence over the downloaded release."
-    IO.eprintln s!"Authenticating the configured parameters."
+    if (← IO.getEnv "IX_KZG_SRS").isSome then
+      IO.eprintln "IX_KZG_SRS is set and takes precedence over the downloaded release."
+    IO.eprintln s!"Checking the configured parameters against the release key."
     IO.eprintln s!"Using {← Compression.describeSetup false false 0}."
     IO.println target
     return 0
@@ -139,7 +137,7 @@ def runFetchParams (_ : Cli.Parsed) : IO UInt32 := do
 
 def fetchParamsCmd : Cli.Cmd := `[Cli|
   "fetch-params" VIA runFetchParams;
-  "Download the pinned BN254 Ignition proving parameters (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) and authenticate them."
+  "Download the released BN254 Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) and check its anchors."
 ]
 
 end Ix.Cli.CompressionCmd

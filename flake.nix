@@ -137,7 +137,7 @@
               root = ./tools/plonk-wrapper;
               fileset = plonkSources;
             };
-            vendorHash = "sha256-RJNclxTYY6UQBG6f7Kwt0XspL7DZruLdsYKubHlUOvg=";
+            vendorHash = "sha256-JZUh5bcjyiNmCiqc0jer2uiyhvBkx0G9A+p+caoEjZ4=";
             subPackages = [ "." ];
             buildPhase = "runHook preBuild; runHook postBuild";
             installPhase = ''

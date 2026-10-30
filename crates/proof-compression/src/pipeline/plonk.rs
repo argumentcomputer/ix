@@ -33,17 +33,19 @@ const FINAL_SRS_SEED: &[u8] = b"ix/bn254-plonk/srs/v1";
 #[cfg(feature = "plonk")]
 fn setup_identity(config: &SetupConfig) -> [u8; 32] {
   match config {
-    SetupConfig::Ignition { manifest, .. } => *manifest,
+    SetupConfig::Ignition { .. } => {
+      verifying_keys::ignition_parameters()
+        .expect("bundled Ignition parameters")
+        .public_setup
+        .id
+    },
     SetupConfig::Development { .. } => *blake3::hash(FINAL_SRS_SEED).as_bytes(),
   }
 }
 
 #[cfg(feature = "plonk")]
 fn anchors(config: &SetupConfig, domain: usize) -> Result<crate::kzg::Srs> {
-  if let Some(admission) = config.ignition_admission() {
-    return Ok(admission.anchors());
-  }
-  config.for_stage(FINAL_SRS_SEED, parameter_prefix(domain)?)?.srs(2, false)
+  config.for_stage(FINAL_SRS_SEED, parameter_prefix(domain)?)?.srs(2, true)
 }
 
 #[cfg(feature = "plonk")]
@@ -194,7 +196,7 @@ pub(super) fn verify(packet: &[u8], claim: &[u8]) -> Result<SetupClass> {
   if Sha256::digest(verifying_keys::PLONK_VK).as_slice() != id {
     return Err("bundled PLONK verifying key differs from its pin".into());
   }
-  let anchors = anchor_encoding(&verifying_keys::admission()?.anchors());
+  let anchors = anchor_encoding(&verifying_keys::ignition_anchors()?);
   gnark::verify(
     verifying_keys::PLONK_VK,
     &id,
@@ -208,7 +210,7 @@ pub(super) fn verify(packet: &[u8], claim: &[u8]) -> Result<SetupClass> {
 /// Write the gnark verifier description (`vk.json`) and witness
 /// (`witness.json`) for the recursive KZG packet in `packet` to `out`. The
 /// verifying key in `verifier` must have BLAKE3 digest `trusted_digest` and
-/// match `setup`'s admission or explicitly selected development setup.
+/// match the released parameters or explicitly selected development setup.
 #[cfg(any(feature = "plonk", feature = "groth16"))]
 pub fn export(
   verifier: &Path,
@@ -510,10 +512,7 @@ pub fn derive_verifying_key(
   cache_root: &Path,
 ) -> Result<Vec<u8>> {
   let vk = wrap::VerifyingKey::from_bytes(recursive_vk)?;
-  match setup.ignition_admission() {
-    Some(admission) => vk.check_ignition_admission(admission)?,
-    None => vk.check_setup_class(setup.class())?,
-  }
+  vk.check_setup_class(setup.class())?;
   let schema = wrap::final_description(&vk, prefix)?;
   let (dir, metadata) = prepare_artifacts(&schema, setup, cache_root)?;
   let key = fs::read(dir.join("verifying-key.bin"))?;

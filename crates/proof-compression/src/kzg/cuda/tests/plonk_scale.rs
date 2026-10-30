@@ -1,7 +1,7 @@
 //! Opt-in dense primitive measurements for the 2^24 PLONK domain.
 
 use super::*;
-use crate::kzg::srs::ignition::load_ignition_cache_with_identity;
+use crate::pipeline::SetupConfig;
 use ark_serialize::CanonicalSerialize;
 use serde_json::{Value, json};
 use std::{
@@ -12,10 +12,6 @@ use std::{
 };
 
 const N: usize = 1 << 24;
-const CACHE: &str =
-  "/opt/dlami/nvme/ix-bn254/parameters/ignition/ix-prefix-26.bin";
-const CACHE_PIN: &str =
-  "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b";
 const SEED: &[u8] = b"ix/bn254/plonk-scale/dense-primitives/v1";
 
 unsafe extern "C" {
@@ -375,21 +371,19 @@ fn uncached_msm(
 }
 
 fn msm_benchmark(report: &mut Report, cached: bool, repeats: usize) {
-  let pin: [u8; 32] = std::array::from_fn(|i| {
-    u8::from_str_radix(&CACHE_PIN[2 * i..2 * i + 2], 16).unwrap()
-  });
-  // The power-of-two loader must read 2N to authenticate the N+3 range.
-  let ((srs, identity), load_seconds) = timed(|| {
-    load_ignition_cache_with_identity(std::path::Path::new(CACHE), pin, 2 * N)
+  let (srs, load_seconds) = timed(|| {
+    SetupConfig::from_env(false)
+      .unwrap()
+      .for_stage(SEED, 2 * N)
+      .unwrap()
+      .srs(2 * N, false)
       .unwrap()
   });
   report.record(json!({
-    "phase": "authenticated_srs_load", "seconds": load_seconds,
-    "cache": CACHE, "cache_manifest_blake3": CACHE_PIN,
+    "phase": "srs_load", "seconds": load_seconds,
     "loaded_prefix_points": srs.g1.len(), "largest_used_point_end": N+10,
     "public_max_degree": srs.public_setup.max_degree,
     "setup_id": blake3::Hash::from(srs.public_setup.id).to_hex().to_string(),
-    "source_manifest_blake3": blake3::Hash::from(identity.source_manifest_digest).to_hex().to_string(),
   }));
   let (values, generate_seconds) = timed(|| dense(N + 3));
   let (input_hash, hash_seconds) = timed(|| field_hash(&values));

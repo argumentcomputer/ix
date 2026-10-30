@@ -95,10 +95,7 @@ pub(super) fn description(
   setup: &super::SetupConfig,
 ) -> Result<Vec<u8>> {
   let vk = super::wrap::VerifyingKey::from_bytes(&fs::read(verifier)?)?;
-  match setup.ignition_admission() {
-    Some(admission) => vk.check_ignition_admission(admission)?,
-    None => vk.check_setup_class(setup.class())?,
-  }
+  vk.check_setup_class(setup.class())?;
   super::wrap::final_description(&vk, &expected[..10])
 }
 

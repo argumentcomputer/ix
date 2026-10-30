@@ -15,7 +15,7 @@ use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 use std::io::{self, Write};
 
-pub mod ignition;
+pub mod gnark;
 
 const PUBLIC_SETUP_DOMAIN: &[u8] =
   b"multi-stark/kzg/bn254/known-trapdoor-public-degree/v1";

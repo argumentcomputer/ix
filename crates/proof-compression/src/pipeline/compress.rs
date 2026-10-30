@@ -507,11 +507,7 @@ fn check_final(
   let bytes = fs::read(dir.join("vk.bin"))?;
   verifying_keys::check_recursive_key(root_vk, setup, &bytes)?;
   let vk = wrap::VerifyingKey::from_bytes(&bytes)?;
-  if let Some(admission) = setup.ignition_admission() {
-    vk.check_ignition_admission(admission)?;
-  } else {
-    vk.check_setup_class(setup.class())?;
-  }
+  vk.check_setup_class(setup.class())?;
   vk.verify(&fs::read(dir.join("kzg/packet.bin"))?, words)?;
   verifying_keys::check_statement(&vk.id(), words)
 }

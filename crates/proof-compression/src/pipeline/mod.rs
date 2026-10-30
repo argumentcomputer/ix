@@ -104,31 +104,6 @@ pub fn verify_with_vk(
   )
 }
 
-/// Verify with an independently authorized verifying key and Ignition admission.
-/// Both outer and deferred pairing keys must match the admitted parameters.
-/// No proving cache or setup environment variables are read.
-pub fn verify_with_ignition_admission(
-  proof: &[u8],
-  claim: &[u8],
-  expected_claims: &[u8],
-  vk: &[u8],
-  trusted_vk_digest: &[u8; 32],
-  admission: &crate::kzg::srs::ignition::IgnitionAdmission,
-) -> Result<SetupClass> {
-  let words = check_claim(claim, expected_claims)?;
-  let packet = proof
-    .strip_prefix(PROOF_TAG)
-    .ok_or("unsupported compressed proof curve or version")?;
-  verifier::verify_with_ignition_admission(
-    packet,
-    claim,
-    &words,
-    vk,
-    trusted_vk_digest,
-    admission,
-  )
-}
-
 fn prepare_output(out: &Path) -> Result<()> {
   fs::create_dir_all(out)?;
   if fs::read_dir(out)?.next().is_some() {

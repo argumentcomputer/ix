@@ -44,10 +44,7 @@ pub(in crate::pipeline) fn export(
     return Err("trusted verifier digest differs".into());
   }
   let vk = VerifyingKey::from_bytes(&bytes)?;
-  match setup.ignition_admission() {
-    Some(admission) => vk.check_ignition_admission(admission)?,
-    None => vk.check_setup_class(setup.class())?,
-  }
+  vk.check_setup_class(setup.class())?;
   vk.verify(&fs::read(packet)?, expected)?;
   write_export(&vk, &fs::read(packet)?, expected, directory, "witness", true)
 }

@@ -38,7 +38,7 @@ while `--dev-final-srs` prepares local keys for either PLONK or Groth16. With
 `--dev-kzg-srs` as well, neither stage needs Ignition.
 Default verification pins one version of the verifying keys,
 [`0.1`](verifying-keys/0.1): one key per proof system, with the root layout,
-statement prefix and Ignition admission they were derived for. `ix verify` selects the key by the proof's tag and requires
+statement prefix and Ignition parameters they were derived for. `ix verify` selects the key by the proof's tag and requires
 the packet's key identifier to name it; there is no catalog of alternatives.
 Bundled recursive KZG and PLONK proofs verify under Ignition. The release Groth16 key
 comes from a development setup, so Groth16 proving requires `--dev-final-srs`
@@ -47,130 +47,59 @@ and verification requires `--dev-srs`. Use
 store address or a serialized `Ixon.Proof` file containing its claim. File
 inputs are read without importing them into the store. See the
 [final backend guide](../../tools/plonk-wrapper/README.md#bn254-groth16-final).
-The library's `verify_with_vk` and `verify_with_ignition_admission` still
+The library's `verify_with_vk` can
 verify recursive KZG proofs under an independently pinned key and statement.
 Local final keys use `verify_with_development_verifier`. The CLI requires
 `--verifier-bundle`, its independent `--verifier-bundle-blake3` pin, and
 `--dev-srs`; see [local development compression](../../docs/development-compression.md).
 
 BN254 supports radix-2 domains through `2^28`; traces and quotient domains
-must both fit. Existing BN254 proof, verifier, and SRS encodings are retained.
+must both fit. Existing BN254 proof and verifier encodings are retained.
 
 ## Ignition setup
 
-### Ignition parameter import
-
-The BN254-only `kzg_ignition_import` example provides local transcript
-inspection, import and authenticated prefix loading. To build the tool:
-
-```sh
-cargo build --release --locked -p ix-proof-compression \
-  --no-default-features --features parallel --example kzg_ignition_import
-IGNITION_IMPORTER="$PWD/target/release/examples/kzg_ignition_import"
-"$IGNITION_IMPORTER" info
-"$IGNITION_IMPORTER" inspect \
-  /path/to/ignition-downloads /path/to/source-manifest.candidate.json
-```
-
-`inspect` reads the complete local contributions 196 and 197, in the
-`NNN_0xaddress/transcript00.dat` through `transcript19.dat` directories. It
-checks framing and embedded checksums and produces an **untrusted candidate**
-inventory with complete-file BLAKE2b-512 hashes. This importer-specific source
-manifest is different from Aztec's downloaded `manifest.json`. Inspection
-does not authenticate participants or replay the ceremony.
-
-Independently authenticate the selected ceremony bytes before pinning the
-exact source-manifest JSON's BLAKE3 digest in trusted configuration. Then:
+The released recursive KZG and PLONK verifying keys fix the approved Ignition
+parameters. Verification needs no SRS file, source manifest or admission JSON.
+Proving loads a prefix of the release's standard gnark `SRS.WriteRawTo` file:
 
 ```sh
-"$IGNITION_IMPORTER" import \
-  /path/to/ignition-downloads /path/to/source-manifest.json \
-  "$IGNITION_SOURCE_MANIFEST_BLAKE3" /path/to/new-ignition-prefix.bin 26
-"$IGNITION_IMPORTER" verify \
-  /path/to/new-ignition-prefix.bin "$IGNITION_CACHE_MANIFEST_BLAKE3" 26
+ix compress fetch-params
+ix compress ROOT_PROOF_ADDRESS --out /path/to/new-run
 ```
 
-Import reports `cache_manifest_blake3`; retain it separately from the cache
-for subsequent loads. It authenticates all source files, including unused
-suffixes, by hash. It checks canonical coordinates and curve/subgroup
-membership for retained G1 points and G2 anchors, the shifted first power,
-every retained adjacency and the selected predecessor link. The link check
-is not full participant-signature or ceremony verification. Prefixes must be
-powers of two from 2 through `2^26`.
-The default inspection inventory includes both contributions; library
-callers can supply a separately pinned manifest without predecessor evidence.
+The file is `bn254-ignition-main-197/srs.bin` under `IX_PARAMS_DIR` (default
+`~/.ix/compression/params`). `IX_KZG_SRS` can select another local copy of the
+same release SRS. Its G1/G2 anchors must match the released key. Provenance
+comes from release preparation and distribution; these runtime checks do not
+replay the ceremony or verify participant signatures.
 
-The importer preserves the sequence beginning at `tau * G1`; it never
-inserts the canonical generator. A complete 100,800,000-entry source declares
-public polynomial degree 100,799,999 even when fewer points are retained.
-Import memory is bounded by chunks, and cache publication is atomic and
-refuses existing destinations. Normalized G1 payloads occupy 64 bytes per
-point (about 4 GiB for `2^26`), plus metadata. Cache loads authenticate whole
-overlapping chunks; a two-point verifier load reads just the authenticated
-manifest and anchors.
+`--dev-kzg-srs` selects known-trapdoor inner parameters and bypasses Ignition
+loading. Use `--dev-final-srs` as well for development final PLONK/Groth16 keys.
+`verify_with_vk` verifies an independently pinned recursive key and expected
+statement, requiring `allow_development` when its parameters differ from the
+release. The default verifier accepts only the bundled keys.
 
-Library entry points are `kzg::srs::ignition::{inspect_ignition_source,
-read_source_manifest, import_ignition_transcripts, load_ignition_cache}`.
-`load_ignition_cache_with_identity` also returns the source receipt metadata.
-No ceremony pin is built in. The import follows SP1's PLONK setup path,
-Aztec Ignition's `MAIN IGNITION` transcripts through participants 196 and
-197; this selects a candidate, not an authorized production setup.
+### Preparing a parameter release
 
-The public proving cache and admission can be installed with `ix compress fetch-params`.
-They are authenticated and stored under `IX_PARAMS_DIR` (default
-`~/.ix/compression/params`), and selected when no `IX_KZG_IGNITION_*` override
-is configured. The source transcripts are needed only to reproduce the import.
-
-### Admitted Ignition pipeline
-
-An `IgnitionAdmission` carries the exact source-manifest JSON, its pin,
-source-derived setup identity and degree, and four verifier anchors. Its
-independent BLAKE3 pin authorizes those parameters. It contains no proving
-cache path or cache-prefix receipt, so verification can use it without a
-proving cache and different authenticated prefixes can share an admission.
-The source-derived identity prevents relabeling an existing development
-setup as Ignition. Source provenance still depends on the caller's trust in
-the descriptor; creating this file does not independently authenticate a
-ceremony or authorize a verifying key.
-
-Produce the descriptor from already trusted source and cache pins:
+The offline tool uses the same `gnark-ignition-verifier` revision and final two
+contributions as SP1: MAIN IGNITION manifest indices 174 and 175, positions 196
+and 197. It checks both complete contributions and their link, performs a KZG
+opening sanity check, and writes the retained prefix using gnark serialization.
+It does not verify contributor signatures. Authenticate the ceremony source as
+part of release review, and distribute the approved SRS alongside the release.
 
 ```sh
-"$IGNITION_IMPORTER" admission \
-  /path/to/ignition-prefix.bin "$IGNITION_CACHE_MANIFEST_BLAKE3" \
-  /path/to/source-manifest.json "$IGNITION_SOURCE_MANIFEST_BLAKE3" \
-  /path/to/new-admission.json
+cd tools/plonk-wrapper
+go run ./cmd/ignition -cache /path/to/transcripts -out /path/to/srs.bin
 ```
 
-Retain the reported `admission_blake3` independently. To select these
-parameters for proving, configure all four settings before running
-`ix compress` or `ix prove --compress`:
+This is a release operation: it downloads both complete contributions if absent
+and holds their point arrays in memory. It is not run during builds or proving.
+The output retains the shifted basis beginning at `tau * G1`; the release key
+carries the full ceremony's public degree independently of the retained prefix.
 
-```sh
-export IX_KZG_IGNITION_CACHE=/path/to/ignition-prefix.bin
-export IX_KZG_IGNITION_CACHE_BLAKE3="$IGNITION_CACHE_MANIFEST_BLAKE3"
-export IX_KZG_IGNITION_ADMISSION=/path/to/new-admission.json
-export IX_KZG_IGNITION_ADMISSION_BLAKE3="$IGNITION_ADMISSION_BLAKE3"
-
-ix compress ROOT_PROOF_ADDRESS --out /path/to/new-ignition-run
-```
-
-Partial configuration, incorrect pins, changed anchors/source receipts and
-insufficient prefixes fail closed. `--dev-kzg-srs` explicitly selects development
-inner KZG parameters. A final proof then also needs `--dev-final-srs`, which
-prepares independent development PLONK parameters/keys or Groth16 keys.
-Both flags bypass Ignition discovery and downloads. Compression checks setup before
-proving and binds both KZG stages to the same admitted setup; the recursive verifying key must
-also retain its admitted deferred pairing keys.
-
-For local verification, `verify_with_ignition_admission` takes the
-independently trusted verifying key digest as well as the original claim,
-expected root statement and an `IgnitionAdmission` authenticated using `read`
-or `from_bytes`. It reads no proving cache or setup environment.
-`ix verify` checks recursive KZG, PLONK and Groth16 proofs under the bundled
-keys; these entry points serve keys pinned independently of the bundle.
-Generating a verifying key or setup artifact does not authorize it for any
-verifier.
+The parameter publisher must upload `srs.bin` to the existing
+`bn254/ignition/main-197/` release location before `fetch-params` can install it.
 
 ## Proving and verification
 
@@ -239,7 +168,7 @@ cargo test -p ix-proof-compression --no-default-features --features parallel \
 ix compress ROOT_PROOF_ADDRESS --plonk --out /path/to/empty-output
 ```
 
-Use the four Ignition environment variables described above. The result
+Install the released SRS or select a local copy with `IX_KZG_SRS`. The result
 includes the proof envelope, native and Solidity proof encodings, generated
 Solidity verifier and verifying key, which must equal the bundled key for
 `ix verify` to accept the proof. See the [gnark backend guide](../../tools/plonk-wrapper/README.md)
