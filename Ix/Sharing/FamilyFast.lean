@@ -11,8 +11,8 @@ closure rows; the DAG-sized base tables remain read-only. This does not change
 the family, numeric domain or trace counters.
 
 The checks are representation checks, never a choice between families. A
-failed check retains the original evaluator. The area/TBase evaluator and
-hashed availability are deliberately outside this checkpoint. -/
+failed check retains the original evaluator. The area/TBase evaluator is
+layered in `FamilyNormalizeArea` and `FamilyContext`. -/
 
 namespace Ix.Sharing.Family
 

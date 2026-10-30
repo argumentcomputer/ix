@@ -291,7 +291,7 @@ theorem familyAtWidthArea_eq (cfg : Config) (layout : ShareLayout) (limits : Lim
 
 /-- The executed entry check supplies all DAG/stage facts. This replacement
 preserves every error, complete result, charge and serialized output. -/
-@[csimp] theorem familyExpanded_eq_area : @familyExpanded = @familyExpandedArea := by
+theorem familyExpanded_eq_area : @familyExpanded = @familyExpandedArea := by
   funext cfg layout limits ex
   unfold familyExpanded familyExpandedArea
   cases checks : uniformDagChecks ex with
@@ -311,7 +311,7 @@ def normalizeFamilyArea (cfg : Config) (layout : ShareLayout) (constant : Ixon.C
   let info ← withRoots constant.info result.result.roots
   return ({ constant with info, sharing := result.result.sharing }, result)
 
-@[csimp] theorem normalizeFamily_eq_area : @normalizeFamily = @normalizeFamilyArea := by
+theorem normalizeFamily_eq_area : @normalizeFamily = @normalizeFamilyArea := by
   funext cfg layout constant limits
   unfold normalizeFamily normalizeFamilyArea
   rw [familyExpanded_eq_area]

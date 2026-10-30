@@ -92,18 +92,29 @@ def traceParallel (cfg : Config) (width index : Nat) (members : Array Nat) (area
   funext cfg width index members areaSize closureSize eval
   simp only [trace, traceParallel, Parallel.table_eq]
 
+def areaFlagsFast (k : Nat) (posA ts : @& Array Nat) : Array Bool :=
+  ts.foldl (fun f t => let q := posA[t]!; if q != 0 then f.set! (q - 1) true else f)
+    (Array.replicate k false)
+
+def allGuardFast (p : @& Prep) (tb : @& TBase) (w : Nat)
+    (posA C I S storedA : @& Array Nat) : Bool :=
+  storedA.all (fun c => tGuardDirect p tb w posA C I S c)
+
+def sumRdAFast (posA arr baseArr ts : @& Array Nat) : Nat :=
+  ts.foldl (fun acc x => acc + rdA posA arr baseArr x) 0
+
 /-- `phiA` computing member flags directly from `stored` in `O(|stored|)` via
-`areaFlags`, and running `areaFoldDirect` and `tGuardDirect` without closure
+`areaFlagsFast`, and running `areaFoldDirect` and `tGuardDirect` without closure
 allocations. -/
 @[inline] def phiASet (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
     (fb : Unit → SCtx × Array Nat) (avail : Nat → Bool) (stored : Array Nat) : Nat × Nat :=
   let w := cx.up.w
-  match areaFoldDirect cx.up.prep cx.up.opaq tb w cx.area posA (areaFlags cx.area.size posA stored) with
+  match areaFoldDirect cx.up.prep cx.up.opaq tb w cx.area posA (areaFlagsFast cx.area.size posA stored) with
   | (C, I, S, _) =>
-    if aux.storedA.all (fun c => tGuardDirect cx.up.prep tb w posA C I S c) then
-      let roots := aux.rootsA.foldl (fun acc r => acc + rdA posA C tb.cost r) 0
-      let base := aux.storedA.foldl (fun acc c => acc + rdA posA I tb.inl c) 0
-      let entries := stored.foldl (fun acc x => acc + rdA posA I tb.inl x) 0
+    if allGuardFast cx.up.prep tb w posA C I S aux.storedA then
+      let roots := sumRdAFast posA C tb.cost aux.rootsA
+      let base := sumRdAFast posA I tb.inl aux.storedA
+      let entries := sumRdAFast posA I tb.inl stored
       (aux.K + roots + base + entries, aux.csize + stored.size)
     else
       match fb () with
@@ -113,8 +124,9 @@ private theorem phiASet_eq_of_flags (cx : SCtx) (posA : Array Nat) (tb : TBase) 
     (fb : Unit → SCtx × Array Nat) (avail : Nat → Bool) (stored : Array Nat)
     (hfl : areaFlags cx.area.size posA stored = memberFlags cx posA avail) :
     phiASet cx posA tb aux fb avail stored = phiA cx posA tb aux fb avail stored := by
-  unfold phiASet phiA tGuardDirect tGuard
-  rw [hfl, ← areaFold_eq_direct]
+  have hfast : areaFlagsFast cx.area.size posA stored = areaFlags cx.area.size posA stored := rfl
+  unfold phiASet allGuardFast sumRdAFast phiA tGuardDirect tGuard
+  rw [hfast, hfl, ← areaFold_eq_direct]
 
 private theorem areaFlags_size (k : Nat) (posA ts : Array Nat) :
     (areaFlags k posA ts).size = k := by
@@ -526,6 +538,14 @@ theorem trace_walk_eq (cfg : Config) (ex : Expanded) (stage : UStage) (width ind
   rw [sameEval, closureSize]
   rfl
 
+@[noinline] def runStepTrace (cfg : Config) (ex : Expanded) (stage : UStage)
+    (width index : Nat) (light : SCtx) (members area areaPositions : Array Nat)
+    (base : TBase) (found marks : Array Nat) : Except SharingError CompResult :=
+  let aux := auxiliary ex stage base area areaPositions found marks
+  retainedResult stage.slack
+    (trace cfg width index members area.size found.size
+      (phiASet light areaPositions base aux (fun _ => fullContext ex stage members)))
+
 def step (cfg : Config) (limits : Limits) (ex : Expanded) (stage : UStage)
     (width : Nat) (parents : Array (Array Nat)) (base : TBase) (acc : FamilyState)
     (members : Array Nat) : Except SharingError FamilyState := do
@@ -540,12 +560,9 @@ def step (cfg : Config) (limits : Limits) (ex : Expanded) (stage : UStage)
         let light := context stage members area
         if localSearchOK light then
           let nextWork ← bump work (familyWork cfg members.size found.size) limits.maxCostEvals .costEvals
-          let aux := auxiliary ex stage base area areaPositions found marks
           let closurePositions := clearPositions marks found
-          let cached := Thunk.mk fun _ => fullContext ex stage members
-          let result ← retainedResult stage.slack
-            (trace cfg width results.size members area.size found.size
-              (phiASet light areaPositions base aux (forceContext cached)))
+          let result ← runStepTrace cfg ex stage width results.size light
+            members area areaPositions base found marks
           return ((results.push result, nextStates, nextWork),
             clearPositions areaPositions area, closurePositions)
         else
@@ -573,7 +590,7 @@ theorem step_eq_area (cfg : Config) (limits : Limits) (ex : Expanded) (stage : U
   have original := familyStepArea_eq_reference cfg limits ex stage width stageOK base baseEq baseOK acc members
   obtain ⟨results, states, work⟩ := acc
   have clearArea := AreaProof.clear_set_any stage.up.prep.dag.size (componentArea stage.up stage.f members)
-  unfold step
+  unfold step runStepTrace
   dsimp only
   cases stateCharge : bump states (familyCalls cfg members.size) limits.maxStates .states with
   | error error =>
@@ -594,7 +611,9 @@ theorem step_eq_area (cfg : Config) (limits : Limits) (ex : Expanded) (stage : U
           · rename_i localOK
             obtain ⟨sameSize, sameTrace⟩ := trace_walk_eq cfg ex stage width results.size members
               stageOK base baseEq baseOK marks found stack walk membersOK areaReady walkOK localOK
-            rw [trace_phiASet_eq, sameTrace, sameSize, clearArea, clearClosure, original]
+            have hfb : (fun (_ : Unit) => fullContext ex stage members) =
+                forceContext (Thunk.mk fun _ => fullContext ex stage members) := rfl
+            rw [trace_phiASet_eq, hfb, sameTrace, sameSize, clearArea, clearClosure, original]
             unfold familyReferenceStep
             simp only [stateCharge, Bind.bind, Except.bind]
             cases workCharge : bump work (familyWork cfg members.size (componentContext ex stage members).closure.size)
@@ -624,11 +643,14 @@ theorem fold_eq_reference (cfg : Config) (limits : Limits) (ex : Expanded) (stag
 
 def components (cfg : Config) (limits : Limits) (ex : Expanded) (stage : UStage)
     (width : Nat) (parents : Array (Array Nat)) : Except SharingError MeterState :=
-  let base := TBase.ofPrep stage.up.prep stage.up.w stage.up.opaq
-  if tStageOK stage.up.prep stage.up.w stage.up.opaq base then
-    (stage.comps.foldlM (step cfg limits ex stage width parents base)
-      ((#[], 0, 0), Array.replicate stage.up.prep.dag.size 0, Array.replicate ex.dag.size 0)).map (·.1)
-  else familyComponents cfg limits ex stage width parents
+  if stage.comps.isEmpty then
+    .ok (#[], 0, 0)
+  else
+    let base := TBase.ofPrep stage.up.prep stage.up.w stage.up.opaq
+    if tStageOK stage.up.prep stage.up.w stage.up.opaq base then
+      (stage.comps.foldlM (step cfg limits ex stage width parents base)
+        ((#[], 0, 0), Array.replicate stage.up.prep.dag.size 0, Array.replicate ex.dag.size 0)).map (·.1)
+    else familyComponents cfg limits ex stage width parents
 
 theorem components_eq (cfg : Config) (limits : Limits) (ex : Expanded) (stage : UStage)
     (width : Nat) (stageOK : AreaProof.StageOK ex stage.up stage.baseEv stage.widthCs stage.allTrue) :
@@ -637,11 +659,17 @@ theorem components_eq (cfg : Config) (limits : Limits) (ex : Expanded) (stage : 
   unfold components familyComponentsArea
   dsimp only
   split
-  · rename_i baseOK
-    rw [← Array.foldlM_toList, ← Array.foldlM_toList,
-      fold_eq_reference cfg limits ex stage width stageOK _ rfl baseOK,
-      familyFoldArea_eq_reference cfg limits ex stage width stageOK _ rfl baseOK]
-  · rfl
+  · rename_i hEmpty
+    rw [Array.isEmpty_iff] at hEmpty
+    unfold familyComponents
+    simp only [hEmpty]
+    split <;> rfl
+  · split
+    · rename_i baseOK
+      rw [← Array.foldlM_toList, ← Array.foldlM_toList,
+        fold_eq_reference cfg limits ex stage width stageOK _ rfl baseOK,
+        familyFoldArea_eq_reference cfg limits ex stage width stageOK _ rfl baseOK]
+    · rfl
 
 def uniform (cfg : Config) (limits : Limits) (ex : Expanded) (prep : Prep)
     (facts : GraphFacts) (parents : Array (Array Nat)) (reIx : ReIndex) (width : Nat) :
@@ -657,6 +685,30 @@ def uniform (cfg : Config) (limits : Limits) (ex : Expanded) (prep : Prep)
       lowDegree := stage.low, components := stage.comps, stored := mergeSorted stage.cs chosen,
       model, states, costEvals, lowerBracket }
   uniformFinishIx width limits ex prep facts.deg reIx choice
+
+def uniformCached (cfg : Config) (limits : Limits) (ex : Expanded) (prep : Prep)
+    (facts : GraphFacts) (parents : Array (Array Nat)) (reIx : ReIndex)
+    (cache : EmptyCache) (width : Nat) :
+    Except SharingError UniformSharingResult := do
+  let stage := uniformStageCached width ex prep facts cache
+  let (results, states, costEvals) ← components cfg limits ex stage width parents
+  let (delta, chosen, lowerBracket) ← uniformKnapsack limits stage.cs.size results
+  let modelInt : _root_.Int := (csBase ex prep stage : Nat) + delta + tag0Size (stage.cs.size + chosen.size)
+  let model := modelInt.toNat
+  if model > limits.maxOutputBytes then throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
+  let choice : UniformChoice :=
+    { facts, certainStored := stage.cs, certainExcluded := stage.ce, uncertain := stage.unc,
+      lowDegree := stage.low, components := stage.comps, stored := mergeSorted stage.cs chosen,
+      model, states, costEvals, lowerBracket }
+  uniformFinishCached width limits ex prep facts.deg reIx stage cache choice
+
+theorem uniformCached_eq (cfg : Config) (limits : Limits) (ex : Expanded) (facts : GraphFacts)
+    (parents : Array (Array Nat)) (reIx : ReIndex) (width : Nat) :
+    uniformCached cfg limits ex (Prep.ofDag ex.dag) facts parents reIx
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) width =
+      uniform cfg limits ex (Prep.ofDag ex.dag) facts parents reIx width := by
+  unfold uniformCached uniform
+  simp only [uniformStageCached_eq_F, uniformFinishCached_eq_Ix]
 
 theorem uniform_eq (cfg : Config) (limits : Limits) (ex : Expanded) (facts : GraphFacts)
     (width : Nat) (dagOK : AreaProof.DagOK ex.dag) :
@@ -691,6 +743,40 @@ def atWidth (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expand
   let materialized ← rematerializeIx prep reIx parents spines layout limits ex allocation.order phase1
   return tieredResultF layout width uniform allocation materialized candidates phase1
 
+def atWidthCached (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (prep : Prep) (facts : GraphFacts) (parents : Array (Array Nat))
+    (reIx : ReIndex) (spines : Array (Array Nat)) (cache : EmptyCache)
+    (candidates width : Nat) :
+    Except SharingError TieredSharingResult := do
+  let uniform ← uniformCached cfg limits ex prep facts parents reIx cache width
+  let allocation ← allocate layout limits ex.dag facts.deg uniform.result.tableTerms
+    uniform.result.sharing uniform.result.roots
+  let phase1 := uniform.result.variableBytes
+  let materialized ← rematerializeCached prep reIx parents spines layout limits ex
+    allocation.order phase1 cache
+  return tieredResultF layout width uniform allocation materialized candidates phase1
+
+theorem atWidthCached_eq (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (facts : GraphFacts) (parents : Array (Array Nat)) (reIx : ReIndex)
+    (spines : Array (Array Nat)) (candidates width : Nat)
+    (hchecks : uniformDagChecks ex = .ok ()) :
+    atWidthCached cfg layout limits ex (Prep.ofDag ex.dag) facts parents reIx spines
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) candidates width =
+      atWidth cfg layout limits ex (Prep.ofDag ex.dag) facts parents reIx spines
+        candidates width := by
+  unfold atWidthCached atWidth
+  rw [uniformCached_eq]
+  cases uniform cfg limits ex (Prep.ofDag ex.dag) facts parents reIx width with
+  | error e => rfl
+  | ok u =>
+    dsimp only [Bind.bind, Except.bind]
+    cases allocate layout limits ex.dag facts.deg u.result.tableTerms u.result.sharing u.result.roots with
+    | error e => rfl
+    | ok a =>
+      dsimp only []
+      rw [rematerializeCached_eq_Ix layout limits ex reIx parents spines
+        a.order u.result.variableBytes hchecks]
+
 theorem atWidth_eq (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expanded)
     (facts : GraphFacts) (candidates width : Nat) (dagOK : AreaProof.DagOK ex.dag) :
     atWidth cfg layout limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag)
@@ -721,9 +807,10 @@ def expanded (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expan
   let parents := parentsOf ex.dag
   let reIx : ReIndex := { parents, leaves := leafIndex ex.dag }
   let spines := spineParentLists ex.dag prep.family
+  let cache := mkEmptyCache prep limits ex reIx
   let candidates := tieredCandidateCount ex.dag.size prep facts
   let result ← tieredCandidates ex.dag.size
-    (atWidth cfg layout limits ex prep facts parents reIx spines candidates)
+    (atWidthCached cfg layout limits ex prep facts parents reIx spines cache candidates)
   return withExpansionStats ex result
 
 theorem expanded_eq : @expanded = @familyExpandedArea := by
@@ -738,7 +825,10 @@ theorem expanded_eq : @expanded = @familyExpandedArea := by
       unfold ReIndex.ofDag parentsOf parentEdgeLists
       rfl
     have widths := fun facts candidates => funext fun width =>
-      atWidth_eq cfg layout limits ex facts candidates width (dagOK_of_checks checks)
+      (atWidthCached_eq cfg layout limits ex facts (parentsOf ex.dag)
+        (ReIndex.ofDag ex.dag) (spineParentLists ex.dag (Prep.ofDag ex.dag).family)
+        candidates width checks).trans
+      (atWidth_eq cfg layout limits ex facts candidates width (dagOK_of_checks checks))
     simp only [hRe, widths]
 
 def normalize (cfg : Config) (layout : ShareLayout) (constant : Ixon.Constant)

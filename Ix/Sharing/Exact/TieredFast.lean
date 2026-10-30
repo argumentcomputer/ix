@@ -87,10 +87,12 @@ private theorem shareIndices_foldl (e : Ixon.Expr) (acc refs : Array Nat) :
 without allocating `entries1 ++ roots1` or per-expression `shareIndices` arrays. -/
 def tierWeightsFast (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
     Std.HashMap Nat Nat :=
-  let init := Array.replicate order1.size 0
-  let refs := entries1.foldl (fun refs e => countShares e refs) init
-  let refs := roots1.foldl (fun refs e => countShares e refs) refs
-  (List.range order1.size).foldl (fun m i => m.insert order1[i]! refs[i]!) {}
+  if order1.isEmpty then {}
+  else
+    let init := Array.replicate order1.size 0
+    let refs := entries1.foldl (fun refs e => countShares e refs) init
+    let refs := roots1.foldl (fun refs e => countShares e refs) refs
+    (List.range order1.size).foldl (fun m i => m.insert order1[i]! refs[i]!) {}
 
 private theorem array_foldl_append {α β : Type} (f : β → α → β) (init : β) (a b : Array α) :
     (a ++ b).foldl f init = b.foldl f (a.foldl f init) := by
@@ -100,13 +102,23 @@ private theorem array_foldl_append {α β : Type} (f : β → α → β) (init :
 theorem tierWeightsFast_eq (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
     tierWeightsFast order1 entries1 roots1 = tierWeights order1 entries1 roots1 := by
   unfold tierWeightsFast tierWeights shareCounts
-  have hstep : (fun (refs : Array Nat) (e : Ixon.Expr) =>
-      (shareIndices e #[]).foldl
-        (fun refs i => if i < refs.size then refs.modify i (· + 1) else refs) refs) =
-      (fun refs e => countShares e refs) := by
-    funext refs e
-    exact shareIndices_foldl e #[] refs
-  rw [hstep, array_foldl_append]
+  split
+  · rename_i hEmpty
+    rw [Array.isEmpty_iff] at hEmpty
+    subst hEmpty
+    rfl
+  · have hstep : (fun (refs : Array Nat) (e : Ixon.Expr) =>
+        (shareIndices e #[]).foldl
+          (fun refs i => if i < refs.size then refs.modify i (· + 1) else refs) refs) =
+        (fun refs e => countShares e refs) := by
+      funext refs e
+      exact shareIndices_foldl e #[] refs
+    rw [hstep, array_foldl_append]
+
+/-- `checkInternal` with a lazy message thunk so the error string is not
+formatted when `ok` is `true`. -/
+@[inline] def checkInternalLazy (ok : Bool) (msg : Unit → String) : Except SharingError Unit :=
+  if ok then .ok () else .error (.internal (msg ()))
 
 /-- `allocate`, compiled with the fast first tier and direct share counting. -/
 def allocateC (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array Nat)
@@ -120,18 +132,20 @@ def allocateC (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array 
   let (tier, slotStates) ← firstTier order1 weight deps (min 8 order1.size) limits
   let rest := stored.filter (!tier.contains ·)
   let order2 := pinnedOrder dag deg tier ++ kahnOrder weight deps rest
-  checkInternal ((order2.toList.mergeSort (· ≤ ·)).toArray == stored)
-    "the allocated order is not a permutation of the phase-1 table"
+  checkInternalLazy ((order2.toList.mergeSort (· ≤ ·)).toArray == stored)
+    (fun _ => "the allocated order is not a permutation of the phase-1 table")
   let kept : Bool := refCost layout weight order2 > refCost layout weight order1
   let order := if kept then order1 else order2
-  checkInternal (respectsDeps order deps) "the allocated order places a body reference after its user"
+  checkInternalLazy (respectsDeps order deps)
+    (fun _ => "the allocated order places a body reference after its user")
   return { tier, slotStates, order, kept, refCost1 := refCost layout weight order1,
            refCostFinal := refCost layout weight order }
 
 @[csimp] theorem allocate_eq_C : @allocate = @allocateC := by
   funext layout limits dag deg order1 entries1 roots1
-  unfold allocate allocateC
+  unfold allocate allocateC checkInternal checkInternalLazy
   rw [tierWeightsFast_eq]
+  rfl
 
 /-! ## Width-independent tables, computed once per constant
 
@@ -533,22 +547,24 @@ def rematerializeP (p : Prep) (layout : ShareLayout) (limits : Limits) (ex : Exp
   let (entries, roots, predicted, work) ←
     materializeTableOnePass p order ex.roots limits layout.widthAt
   let priced := layoutBytes layout entries roots
-  checkInternal (priced == predicted)
-    s!"layout length {priced} differs from the evaluation {predicted}"
-  checkInternal (predicted ≤ phase1Layout)
-    s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}"
+  checkInternalLazy (priced == predicted)
+    (fun _ => s!"layout length {priced} differs from the evaluation {predicted}")
+  checkInternalLazy (predicted ≤ phase1Layout)
+    (fun _ => s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}")
   let (entryIds, rootIds, _) ← reexpand limits ex.dag entries roots
-  checkInternal (entryIds == order) "re-materialized entries do not expand to the stored terms"
-  checkInternal (rootIds == ex.roots) "re-materialized roots do not expand to the input roots"
-  checkInternal ((entries ++ roots).all fun e => (wireCounts e).isSome)
-    "a re-materialized expression has a count outside the wire domain"
+  checkInternalLazy (entryIds == order)
+    (fun _ => "re-materialized entries do not expand to the stored terms")
+  checkInternalLazy (rootIds == ex.roots)
+    (fun _ => "re-materialized roots do not expand to the input roots")
+  checkInternalLazy ((entries ++ roots).all fun e => (wireCounts e).isSome)
+    (fun _ => "a re-materialized expression has a count outside the wire domain")
   return { entries, roots, bytes := predicted, work, measured := priced }
 
 theorem rematerialize_eq_P (layout : ShareLayout) (limits : Limits) (ex : Expanded)
     (order : Array Nat) (phase1Layout : Nat) :
     rematerialize layout limits ex order phase1Layout =
       rematerializeP (Prep.ofDag ex.dag) layout limits ex order phase1Layout := by
-  unfold rematerialize rematerializeP
+  unfold rematerialize rematerializeP checkInternal checkInternalLazy
   rfl
 
 private theorem array_all_append {α : Type} (a b : Array α) (p : α → Bool) :
@@ -563,16 +579,18 @@ def rematerializeIx (p : Prep) (reIx : ReIndex) (parents sp : Array (Array Nat))
   let (entries, roots, predicted, work) ←
     materializeTableOnePassWithSpines p parents sp order ex.roots limits layout.widthAt
   let priced := layoutBytes layout entries roots
-  checkInternal (priced == predicted)
-    s!"layout length {priced} differs from the evaluation {predicted}"
-  checkInternal (predicted ≤ phase1Layout)
-    s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}"
+  checkInternalLazy (priced == predicted)
+    (fun _ => s!"layout length {priced} differs from the evaluation {predicted}")
+  checkInternalLazy (predicted ≤ phase1Layout)
+    (fun _ => s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}")
   let (entryIds, rootIds, _) ← reexpandWithIndex limits ex.dag reIx entries roots
-  checkInternal (entryIds == order) "re-materialized entries do not expand to the stored terms"
-  checkInternal (rootIds == ex.roots) "re-materialized roots do not expand to the input roots"
-  checkInternal (entries.all (fun e => (wireCounts e).isSome) &&
+  checkInternalLazy (entryIds == order)
+    (fun _ => "re-materialized entries do not expand to the stored terms")
+  checkInternalLazy (rootIds == ex.roots)
+    (fun _ => "re-materialized roots do not expand to the input roots")
+  checkInternalLazy (entries.all (fun e => (wireCounts e).isSome) &&
       roots.all (fun e => (wireCounts e).isSome))
-    "a re-materialized expression has a count outside the wire domain"
+    (fun _ => "a re-materialized expression has a count outside the wire domain")
   return { entries, roots, bytes := predicted, work, measured := priced }
 
 theorem rematerializeIx_eq_P (p : Prep) (layout : ShareLayout) (limits : Limits) (ex : Expanded)
@@ -582,6 +600,380 @@ theorem rematerializeIx_eq_P (p : Prep) (layout : ShareLayout) (limits : Limits)
       rematerializeP p layout limits ex order phase1Layout := by
   unfold rematerializeIx rematerializeP
   simp only [← materializeTableOnePass_eq_withSpines, ← reexpand_eq_withIndex, array_all_append]
+
+/-- Cached unshared (empty-dictionary) evaluation and root materialization,
+shared across widths 1, 2, 3 and between phases 1 and 3 whenever the stored
+table is empty (`#[]`). -/
+structure EmptyCache where
+  noneArr : Array (Option Nat)
+  ev : Thunk DictEval
+  rootCost : Thunk Nat
+  built : Thunk (Except SharingError
+    (Array Ixon.Expr × Except SharingError (Array Nat × Array Nat × Nat) × Nat × Bool))
+
+def mkEmptyCache (p : Prep) (limits : Limits) (ex : Expanded) (reIx : ReIndex) : EmptyCache :=
+  let noneArr := Array.replicate ex.dag.size none
+  let ev := Thunk.mk fun _ => p.evalAll noneArr
+  let rootCost := Thunk.mk fun _ => ex.roots.foldl (fun acc r => acc + ev.get.cost[r]!) 0
+  let built := Thunk.mk fun _ =>
+    (ex.roots.mapM fun r => p.build ev.get noneArr noneArr false (p.dag.size + 1) r).map fun rs =>
+      (rs, reexpandWithIndex limits ex.dag reIx #[] rs,
+       tag0Size 0 + exprsSize #[] + exprsSize rs,
+       rs.all (fun e => (wireCounts e).isSome))
+  { noneArr, ev, rootCost, built }
+
+private theorem widthCs_empty_eq (w n : Nat) (cs : Array Nat) :
+    (if cs.isEmpty then Array.replicate n none
+     else cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)) =
+    cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none) := by
+  split
+  · rename_i h
+    rw [Array.isEmpty_iff] at h
+    subst h
+    rfl
+  · rfl
+
+private theorem baseEv_empty_eq (w : Nat) (ex : Expanded) (cs : Array Nat) :
+    (if cs.isEmpty then (Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none)
+     else (Prep.ofDag ex.dag).eval
+       (cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate ex.dag.size none))
+       (Array.replicate ex.dag.size true)) =
+    (Prep.ofDag ex.dag).eval
+      (cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate ex.dag.size none))
+      (Array.replicate ex.dag.size true) := by
+  split
+  · rename_i h
+    rw [Array.isEmpty_iff] at h
+    subst h
+    rfl
+  · rfl
+
+/-- `uniformStageF` reusing the cached empty-dictionary evaluation when `cs` is empty. -/
+def uniformStageCached (w : Nat) (ex : Expanded) (p : Prep) (f : GraphFacts)
+    (cache : EmptyCache) : UStage :=
+  let n := ex.dag.size
+  let cand := searchCandidates p f w
+  let b0 := uniformBounds p w cand
+  let vis0 := visibleCounts ex.dag ex.roots cand
+  let nCand := (cand.filter id).size
+  let thetaMax : _root_.Int := tag0StepBound nCand + 1
+  let clsMax := classifyWith p f w b0 vis0 thetaMax
+  let nCsMax := (clsMax.filter (· == .certainStored)).size
+  let theta : _root_.Int := if tag0Size nCand == tag0Size nCsMax then 1 else thetaMax
+  let cls := if theta == 1 then classifyWith p f w b0 vis0 1 else clsMax
+  let pick (c : UClass) := (Array.range n).filter (cls[·]! == c)
+  let cs := pick .certainStored
+  let unc := pick .uncertain
+  let opaq := cs.foldl (fun acc t => acc.set! t true) (Array.replicate n false)
+  let widthCs : Array (Option Nat) :=
+    if cs.isEmpty then cache.noneArr
+    else cs.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)
+  let allTrue := Array.replicate n true
+  let baseEv :=
+    if cs.isEmpty then cache.ev.get
+    else p.eval widthCs allTrue
+  { f, cand, b0, vis0, theta, cls, cs, ce := pick .certainExcluded, unc,
+    low := pick .lowDegree, opaq, up := UPrep.mk' p w opaq, widthCs, allTrue,
+    baseEv, comps := uncertainComponents ex.dag cls,
+    slack := tag0Size (cs.size + unc.size) - tag0Size cs.size,
+    rootCount := ex.roots.foldl (fun acc r => acc.modify r (· + 1)) (Array.replicate n 0) }
+
+theorem uniformStageCached_eq_F (w : Nat) (limits : Limits) (ex : Expanded)
+    (f : GraphFacts) (reIx : ReIndex) :
+    uniformStageCached w ex (Prep.ofDag ex.dag) f
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) =
+      uniformStageF w ex (Prep.ofDag ex.dag) f := by
+  unfold uniformStageCached uniformStageF mkEmptyCache
+  dsimp only [Thunk.get]
+  simp only [widthCs_empty_eq, baseEv_empty_eq]
+
+/-- `Prep.materializeDependent` with a precomputed dictionary evaluation `ev`. -/
+def Prep.materializeDependentWithEv (p : Prep) (table roots : Array Nat)
+    (width : Array (Option Nat)) (ev : DictEval) (limits : Limits) :
+    Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) := do
+  if table.size ≥ wordBound then throw (.formatBound "share index" table.size)
+  let index := indexOfPairs p.dag.size table.toList.zipIdx
+  let entryCost := table.foldl (fun acc t => acc + p.inlineCost ev index width t) 0
+  let rootCost := roots.foldl (fun acc r => acc + ev.cost[r]!) 0
+  let total := tag0Size table.size + entryCost + rootCost
+  if total > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let es ← table.mapM fun t => p.build ev index width true (p.dag.size + 1) t
+  let rs ← roots.mapM fun r => p.build ev index width false (p.dag.size + 1) r
+  return (es, rs, total, ev.work + total)
+
+theorem materializeDependent_eq_withEv (p : Prep) (table roots : Array Nat)
+    (width : Array (Option Nat)) (limits : Limits) :
+    p.materializeDependent table roots width limits =
+      p.materializeDependentWithEv table roots width (p.evalAll width) limits := by
+  unfold Prep.materializeDependent Prep.materializeDependentWithEv
+  rfl
+
+/-- `uniformFinishIx` when `c.stored` is empty, reusing `cache`. -/
+def uniformFinishEmpty (limits : Limits) (ex : Expanded) (p : Prep)
+    (c : UniformChoice) (cache : EmptyCache) : Except SharingError UniformSharingResult := do
+  let n := ex.dag.size
+  let model := c.model
+  let total := tag0Size 0 + cache.rootCost.get
+  if total > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let (roots, reex, measured, _) ← cache.built.get
+  let work := cache.ev.get.work + total
+  unless total == model do
+    throw (.internal s!"uniform model length {model} differs from the full evaluation {total}")
+  let (entryIds, rootIds, _) ← reex
+  unless entryIds == #[] do
+    throw (.internal "materialized entries do not expand to the stored terms")
+  unless rootIds == ex.roots do
+    throw (.internal "materialized roots do not expand to the input roots")
+  let unshared := tag0Size 0 + rootsCost p.base ex.roots
+  let stats : Stats :=
+    { exprVisits := ex.visits, internedNodes := ex.internedNodes, distinctSubterms := n,
+      candidates := c.certainStored.size + c.uncertain.size, statesExpanded := c.states,
+      costEvals := c.costEvals, materializedNodes := work, outputBytes := measured }
+  return {
+    result := { roots, sharing := #[], tableTerms := #[], variableBytes := measured,
+                modelBytes := model, unsharedBytes := unshared, stats }
+    stored := #[], certainStored := c.certainStored, certainExcluded := c.certainExcluded,
+    uncertain := c.uncertain, lowDegree := c.lowDegree, components := c.components,
+    statesVisited := c.states, lowerBracket := c.lowerBracket }
+
+theorem uniformFinishEmpty_eq_Ix (w : Nat) (limits : Limits) (ex : Expanded)
+    (deg : Array Nat) (reIx : ReIndex) (c : UniformChoice) (hc : c.stored = #[]) :
+    uniformFinishEmpty limits ex (Prep.ofDag ex.dag) c
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) =
+      uniformFinishIx w limits ex (Prep.ofDag ex.dag) deg reIx c := by
+  unfold uniformFinishEmpty uniformFinishIx mkEmptyCache Prep.materializeDependent
+  rw [hc]
+  have h0 : (#[] : Array Nat).size = 0 := rfl
+  have h1 : ((#[] : Array Nat).all (· < ex.dag.size)) = true := by simp
+  have h2 : inClassCheckD deg #[] = true := by unfold inClassCheckD; simp
+  have h3 : pinnedOrder ex.dag c.facts.deg #[] = #[] := rfl
+  have h4 : (#[] : Array Nat).foldl (fun acc t => acc.set! t (some w))
+      (Array.replicate ex.dag.size none) = Array.replicate ex.dag.size none := by simp
+  have h5 : ¬ (0 ≥ wordBound) := by decide
+  have h6 : indexOfPairs (Prep.ofDag ex.dag).dag.size (#[] : Array Nat).toList.zipIdx =
+      Array.replicate ex.dag.size none := rfl
+  have h8 : (#[] : Array Nat).foldl
+      (fun acc t => acc + (Prep.ofDag ex.dag).inlineCost
+        ((Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none))
+        (Array.replicate ex.dag.size none) (Array.replicate ex.dag.size none) t) 0 = 0 := by simp
+  have h9 : ((#[] : Array Nat).mapM fun t =>
+      (Prep.ofDag ex.dag).build ((Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none))
+        (Array.replicate ex.dag.size none) (Array.replicate ex.dag.size none)
+        true ((Prep.ofDag ex.dag).dag.size + 1) t) =
+      (.ok #[] : Except SharingError (Array Ixon.Expr)) := by simp; rfl
+  dsimp only [Thunk.get, Bind.bind, Except.bind, Pure.pure, Except.pure, Functor.map, Except.map]
+  simp only [h1, h2, h3, h4, h6, h8, h9, Nat.add_zero, ite_true]
+  simp only [h0, h5, ite_false]
+  by_cases hmat :
+      tag0Size 0 +
+        ex.roots.foldl
+          (fun acc r => acc + ((Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none)).cost[r]!) 0 >
+        limits.maxMaterialize
+  · simp only [hmat, ite_true]
+    rfl
+  · simp only [hmat, ite_false]
+    cases ex.roots.mapM fun r =>
+        (Prep.ofDag ex.dag).build ((Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none))
+          (Array.replicate ex.dag.size none) (Array.replicate ex.dag.size none)
+          false ((Prep.ofDag ex.dag).dag.size + 1) r with
+    | error e => rfl
+    | ok rs => rfl
+
+/-- `uniformFinishIx` reusing `cache` when `c.stored` is empty, and reusing
+`(stage.widthCs, stage.baseEv)` when `c.stored == stage.cs`. -/
+def uniformFinishCached (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (deg : Array Nat)
+    (reIx : ReIndex) (stage : UStage) (cache : EmptyCache) (c : UniformChoice) :
+    Except SharingError UniformSharingResult := do
+  if c.stored.isEmpty then
+    uniformFinishEmpty limits ex p c cache
+  else
+    let n := ex.dag.size
+    let stored := c.stored
+    let model := c.model
+    unless stored.all (· < n) do
+      throw (.internal "stored term out of range")
+    unless inClassCheckD deg stored do
+      throw (.internal "stored terms are not increasing terms of in-degree at least 2")
+    let order := pinnedOrder ex.dag c.facts.deg stored
+    let width :=
+      if stored == stage.cs then stage.widthCs
+      else stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)
+    let ev :=
+      if stored == stage.cs then stage.baseEv
+      else p.evalAll width
+    let (entries, roots, predicted, work) ←
+      p.materializeDependentWithEv order ex.roots width ev limits
+    unless predicted == model do
+      throw (.internal s!"uniform model length {model} differs from the full evaluation {predicted}")
+    let (entryIds, rootIds, _) ← reexpandWithIndex limits ex.dag reIx entries roots
+    unless entryIds == order do
+      throw (.internal "materialized entries do not expand to the stored terms")
+    unless rootIds == ex.roots do
+      throw (.internal "materialized roots do not expand to the input roots")
+    let measured := tag0Size entries.size + exprsSize entries + exprsSize roots
+    let unshared := tag0Size 0 + rootsCost p.base ex.roots
+    let stats : Stats :=
+      { exprVisits := ex.visits, internedNodes := ex.internedNodes, distinctSubterms := n,
+        candidates := c.certainStored.size + c.uncertain.size, statesExpanded := c.states,
+        costEvals := c.costEvals, materializedNodes := work, outputBytes := measured }
+    return {
+      result := { roots, sharing := entries, tableTerms := order, variableBytes := measured,
+                  modelBytes := model, unsharedBytes := unshared, stats }
+      stored, certainStored := c.certainStored, certainExcluded := c.certainExcluded,
+      uncertain := c.uncertain, lowDegree := c.lowDegree, components := c.components,
+      statesVisited := c.states, lowerBracket := c.lowerBracket }
+
+theorem uniformFinishCached_eq_Ix (w : Nat) (limits : Limits) (ex : Expanded)
+    (f : GraphFacts) (reIx : ReIndex) (c : UniformChoice) :
+    uniformFinishCached w limits ex (Prep.ofDag ex.dag) f.deg reIx
+        (uniformStageF w ex (Prep.ofDag ex.dag) f)
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) c =
+      uniformFinishIx w limits ex (Prep.ofDag ex.dag) f.deg reIx c := by
+  unfold uniformFinishCached
+  split
+  · rename_i hEmpty
+    exact uniformFinishEmpty_eq_Ix w limits ex f.deg reIx c (Array.isEmpty_iff.mp hEmpty)
+  · unfold uniformFinishIx
+    have hwidth :
+        (if c.stored == (uniformStageF w ex (Prep.ofDag ex.dag) f).cs then
+          (uniformStageF w ex (Prep.ofDag ex.dag) f).widthCs
+        else
+          c.stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate ex.dag.size none)) =
+        c.stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate ex.dag.size none) := by
+      split
+      · rename_i hcs
+        rw [eq_of_beq hcs]
+        rfl
+      · rfl
+    have hev :
+        (if c.stored == (uniformStageF w ex (Prep.ofDag ex.dag) f).cs then
+          (uniformStageF w ex (Prep.ofDag ex.dag) f).baseEv
+        else
+          (Prep.ofDag ex.dag).evalAll
+            (c.stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate ex.dag.size none))) =
+        (Prep.ofDag ex.dag).evalAll
+          (c.stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate ex.dag.size none)) := by
+      split
+      · rename_i hcs
+        rw [eq_of_beq hcs]
+        rfl
+      · rfl
+    dsimp only []
+    simp only [hwidth, hev, materializeDependent_eq_withEv]
+
+private theorem checks_facts {ex : Expanded} (h : uniformDagChecks ex = .ok ()) :
+    childrenPrecede ex.dag.nodes = true ∧
+      (ex.dag.nodes.all fun node => node.children.size == node.head.arity) = true ∧
+      ex.roots.all (· < ex.dag.size) = true := by
+  unfold uniformDagChecks at h
+  by_cases h1 : childrenPrecede ex.dag.nodes = true
+  · by_cases h2 : (ex.dag.nodes.all fun node => node.children.size == node.head.arity) = true
+    · by_cases h3 : ex.roots.all (· < ex.dag.size) = true
+      · exact ⟨h1, h2, h3⟩
+      · simp [h1, h2, h3] at h; cases h
+    · simp [h1, h2] at h; cases h
+  · simp [h1] at h; cases h
+
+/-- `rematerializeIx` when `order` is empty, reusing `cache`. -/
+def rematerializeEmpty (p : Prep) (limits : Limits) (ex : Expanded)
+    (phase1Layout : Nat) (cache : EmptyCache) : Except SharingError Rematerialized := do
+  let rootCost := cache.rootCost.get
+  if rootCost > limits.maxMaterialize then
+    throw (.resourceExhausted .materialize limits.maxMaterialize)
+  let (roots, reex, priced, wireOK) ← cache.built.get
+  let work := p.dag.size + rootCost
+  if work > limits.maxMaterializeWork then
+    throw (.resourceExhausted .materializeWork limits.maxMaterializeWork)
+  let predicted := tag0Size 0 + rootsCost cache.ev.get.cost ex.roots
+  checkInternalLazy (priced == predicted)
+    (fun _ => s!"layout length {priced} differs from the evaluation {predicted}")
+  checkInternalLazy (predicted ≤ phase1Layout)
+    (fun _ => s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}")
+  let (entryIds, rootIds, _) ← reex
+  checkInternalLazy (entryIds == #[])
+    (fun _ => "re-materialized entries do not expand to the stored terms")
+  checkInternalLazy (rootIds == ex.roots)
+    (fun _ => "re-materialized roots do not expand to the input roots")
+  checkInternalLazy wireOK
+    (fun _ => "a re-materialized expression has a count outside the wire domain")
+  return { entries := #[], roots, bytes := predicted, work, measured := priced }
+
+theorem rematerializeEmpty_eq_Ix (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (reIx : ReIndex) (parents sp : Array (Array Nat)) (phase1Layout : Nat)
+    (hchecks : uniformDagChecks ex = .ok ()) :
+    rematerializeEmpty (Prep.ofDag ex.dag) limits ex phase1Layout
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) =
+      rematerializeIx (Prep.ofDag ex.dag) reIx parents sp layout limits ex #[] phase1Layout := by
+  obtain ⟨hcp, har, hrt⟩ := checks_facts hchecks
+  unfold rematerializeEmpty rematerializeIx mkEmptyCache materializeTableOnePassWithSpines
+  have h0 : (#[] : Array Nat).size = 0 := rfl
+  have h1 : ¬ (0 ≥ wordBound) := by decide
+  have h2 : ((#[] : Array Nat).all (· < (Prep.ofDag ex.dag).dag.size)) = true := by simp
+  have h3 : indexOfPrefix (Prep.ofDag ex.dag).dag.size #[] 0 =
+      Array.replicate ex.dag.size none := rfl
+  have h4 : onePassOrder (Prep.ofDag ex.dag).dag #[] ex.roots
+      (Array.replicate ex.dag.size none) = true := by
+    unfold onePassOrder
+    have hd : (Prep.ofDag ex.dag).dag = ex.dag := rfl
+    rw [hd, hcp, har, hrt]
+    rfl
+  have h5 : (Array.replicate ex.dag.size (none : Option Nat)).map (·.map layout.widthAt) =
+      Array.replicate ex.dag.size none := by
+    rw [Array.map_replicate]
+    rfl
+  have h7 : ((#[] : Array Ixon.Expr).all fun e => (wireCounts e).isSome) = true := by simp
+  dsimp only [Thunk.get, Bind.bind, Except.bind, Pure.pure, Except.pure,
+    Functor.map, Except.map]
+  simp only [h2, Bool.not_true, Bool.false_eq_true, ite_false, layoutBytes_eq_measured]
+  simp only [h0, h1, h3, h4, h5, onePassLoop, Bool.not_true, Bool.false_eq_true,
+    ite_false, Nat.zero_add]
+  by_cases hmat :
+      ex.roots.foldl
+        (fun acc r => acc + ((Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none)).cost[r]!) 0 >
+        limits.maxMaterialize
+  · simp only [hmat, ite_true]
+    rfl
+  · simp only [hmat, ite_false]
+    cases ex.roots.mapM fun r =>
+        (Prep.ofDag ex.dag).build ((Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none))
+          (Array.replicate ex.dag.size none) (Array.replicate ex.dag.size none)
+          false ((Prep.ofDag ex.dag).dag.size + 1) r with
+    | error e => rfl
+    | ok rs =>
+      by_cases hwork :
+          (Prep.ofDag ex.dag).dag.size +
+            ex.roots.foldl
+              (fun acc r => acc + ((Prep.ofDag ex.dag).evalAll (Array.replicate ex.dag.size none)).cost[r]!) 0 >
+            limits.maxMaterializeWork
+      · simp only [hwork, ite_true]
+        rfl
+      · simp only [hwork, ite_false, h7, Bool.true_and]
+        rfl
+
+/-- `rematerializeIx` reusing `cache` when `order` is empty. -/
+def rematerializeCached (p : Prep) (reIx : ReIndex) (parents sp : Array (Array Nat))
+    (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (order : Array Nat) (phase1Layout : Nat) (cache : EmptyCache) :
+    Except SharingError Rematerialized :=
+  if order.isEmpty then
+    rematerializeEmpty p limits ex phase1Layout cache
+  else
+    rematerializeIx p reIx parents sp layout limits ex order phase1Layout
+
+theorem rematerializeCached_eq_Ix (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (reIx : ReIndex) (parents sp : Array (Array Nat)) (order : Array Nat) (phase1Layout : Nat)
+    (hchecks : uniformDagChecks ex = .ok ()) :
+    rematerializeCached (Prep.ofDag ex.dag) reIx parents sp layout limits ex order phase1Layout
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) =
+      rematerializeIx (Prep.ofDag ex.dag) reIx parents sp layout limits ex order phase1Layout := by
+  unfold rematerializeCached
+  split
+  · rename_i hEmpty
+    rw [Array.isEmpty_iff.mp hEmpty]
+    exact rematerializeEmpty_eq_Ix layout limits ex reIx parents sp phase1Layout hchecks
+  · rfl
 
 /-- One candidate (`tieredAtWidth`) after the DAG checks, with the
 width-independent tables passed in. -/
@@ -641,6 +1033,84 @@ theorem tieredAtWidthIx_eq_G (layout : ShareLayout) (limits : Limits) (ex : Expa
     simp only [Bind.bind, Except.bind,
       optimizeUniformG_layoutBytes layout w limits ex p f spine hu,
       rematerializeIx_eq_P]
+
+/-- `uniformChooseG` taking a prebuilt `UStage`. -/
+def uniformChooseStage (limits : Limits) (ex : Expanded) (p : Prep) (sg : UStage) :
+    Except SharingError UniformChoice := do
+  unless componentsChecked ex.dag sg.cls sg.opaq sg.comps (componentLabels ex.dag.size sg.comps) do
+    throw (.internal "uncertain components are not a separated partition")
+  let (results, states, costEvals) ← searchComponentsArea limits ex sg.f sg.up sg.cand sg.b0
+    sg.vis0 sg.rootCount sg.slack sg.theta sg.baseEv sg.widthCs sg.allTrue sg.unc sg.opaq sg.comps
+  let (chosenDelta, chosenX, lowerBracket) ← uniformKnapsack limits sg.cs.size results
+  let modelInt : _root_.Int := (csBase ex p sg : Nat) + chosenDelta +
+    (tag0Size (sg.cs.size + chosenX.size) : _root_.Int)
+  if modelInt < 0 then throw (.internal "negative model length")
+  let model := modelInt.toNat
+  if model > limits.maxOutputBytes then
+    throw (.resourceExhausted .outputBytes limits.maxOutputBytes)
+  return { facts := sg.f, certainStored := sg.cs, certainExcluded := sg.ce, uncertain := sg.unc,
+           lowDegree := sg.low, components := sg.comps, stored := mergeSorted sg.cs chosenX, model,
+           states, costEvals, lowerBracket }
+
+/-- `optimizeUniformIx` reusing `EmptyCache`. -/
+def optimizeUniformCached (w : Nat) (limits : Limits) (ex : Expanded)
+    (p : Prep) (f : GraphFacts) (reIx : ReIndex) (spine : Except SharingError Unit)
+    (cache : EmptyCache) : Except SharingError UniformSharingResult := do
+  spine
+  let stage := uniformStageCached w ex p f cache
+  let c ← uniformChooseStage limits ex p stage
+  uniformFinishCached w limits ex p f.deg reIx stage cache c
+
+theorem optimizeUniformCached_eq_Ix (w : Nat) (limits : Limits) (ex : Expanded)
+    (f : GraphFacts) (reIx : ReIndex) (spine : Except SharingError Unit) :
+    optimizeUniformCached w limits ex (Prep.ofDag ex.dag) f reIx spine
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) =
+      optimizeUniformIx w limits ex (Prep.ofDag ex.dag) f reIx spine := by
+  have hchoose : uniformChooseStage limits ex (Prep.ofDag ex.dag)
+      (uniformStageF w ex (Prep.ofDag ex.dag) f) =
+      uniformChooseG w limits ex (Prep.ofDag ex.dag) f := by
+    unfold uniformChooseStage uniformChooseG; rfl
+  unfold optimizeUniformCached optimizeUniformIx
+  dsimp only [Bind.bind, Except.bind]
+  rw [uniformStageCached_eq_F, hchoose]
+  cases spine with
+  | error e => rfl
+  | ok _ =>
+    cases uniformChooseG w limits ex (Prep.ofDag ex.dag) f with
+    | error e => rfl
+    | ok c =>
+      exact uniformFinishCached_eq_Ix w limits ex f reIx c
+
+/-- `tieredAtWidthIx` reusing `EmptyCache` across Phase 1 and Phase 3. -/
+def tieredAtWidthCached (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat)
+    (p : Prep) (f : GraphFacts) (reIx : ReIndex) (parents sp : Array (Array Nat))
+    (spine : Except SharingError Unit) (k : Nat) (cache : EmptyCache) :
+    Except SharingError TieredSharingResult := do
+  let u ← optimizeUniformCached w limits ex p f reIx spine cache
+  let a ← allocate layout limits ex.dag f.deg u.result.tableTerms u.result.sharing u.result.roots
+  let phase1Layout := u.result.variableBytes
+  let m ← rematerializeCached p reIx parents sp layout limits ex a.order phase1Layout cache
+  return tieredResultF layout w u a m k phase1Layout
+
+theorem tieredAtWidthCached_eq_Ix (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (w : Nat) (f : GraphFacts) (reIx : ReIndex) (parents sp : Array (Array Nat))
+    (spine : Except SharingError Unit) (k : Nat)
+    (hchecks : uniformDagChecks ex = .ok ()) :
+    tieredAtWidthCached layout limits ex w (Prep.ofDag ex.dag) f reIx parents sp spine k
+        (mkEmptyCache (Prep.ofDag ex.dag) limits ex reIx) =
+      tieredAtWidthIx layout limits ex w (Prep.ofDag ex.dag) f reIx parents sp spine k := by
+  unfold tieredAtWidthCached tieredAtWidthIx
+  rw [optimizeUniformCached_eq_Ix]
+  cases optimizeUniformIx w limits ex (Prep.ofDag ex.dag) f reIx spine with
+  | error e => rfl
+  | ok u =>
+    dsimp only [Bind.bind, Except.bind]
+    cases allocate layout limits ex.dag f.deg u.result.tableTerms u.result.sharing u.result.roots with
+    | error e => rfl
+    | ok a =>
+      dsimp only []
+      rw [rematerializeCached_eq_Ix layout limits ex reIx parents sp a.order
+        u.result.variableBytes hchecks]
 
 private theorem tieredAtWidth_eq_G (layout : ShareLayout) (limits : Limits) (ex : Expanded)
     (w : Nat) (p : Prep) (f : GraphFacts) (spine : Except SharingError Unit) (k : Nat)
@@ -730,8 +1200,8 @@ theorem tieredCandidates_eq (n : Nat) (run : Nat → Except SharingError TieredS
   · simp [Task.spawn]
 
 /-- `canonicalTieredCore` with the DAG checks run once, the width-independent
-tables computed once for the three candidates, and the candidates of a large
-DAG computed in parallel. -/
+tables and empty-dictionary cache computed once for the three candidates, and
+the candidates of a large DAG computed in parallel. -/
 def canonicalTieredCoreC (layout : ShareLayout) (limits : Limits) (dag : Dag)
     (roots : Array Nat) : Except SharingError TieredSharingResult :=
   let ex : Expanded := { dag, roots, visits := 0, internedNodes := 0 }
@@ -743,8 +1213,9 @@ def canonicalTieredCoreC (layout : ShareLayout) (limits : Limits) (dag : Dag)
     let sp := spineParentLists dag p.family
     let spine := uniformSpineCheck ex p
     let k := tieredCandidateCount dag.size p f
+    let cache := mkEmptyCache p limits ex reIx
     tieredCandidates dag.size fun w =>
-      tieredAtWidthIx layout limits ex w p f reIx parents sp spine k
+      tieredAtWidthCached layout limits ex w p f reIx parents sp spine k cache
 
 @[csimp] theorem canonicalTieredCore_eq_C : @canonicalTieredCore = @canonicalTieredCoreC := by
   funext layout limits dag roots
@@ -757,19 +1228,25 @@ def canonicalTieredCoreC (layout : ShareLayout) (limits : Limits) (dag : Dag)
     have hdag := dagOK_of_checks hc
     have hRe : ({ parents := parentEdgeLists dag, leaves := leafIndex dag } : ReIndex) =
         ReIndex.ofDag dag := rfl
-    have hIx : ∀ w, tieredAtWidthIx layout limits { dag, roots, visits := 0, internedNodes := 0 } w
+    have hCached : ∀ w, tieredAtWidthCached layout limits { dag, roots, visits := 0, internedNodes := 0 } w
         (Prep.ofDag dag) (graphFacts dag roots) (ReIndex.ofDag dag)
         (parentEdgeLists dag) (spineParentLists dag (Prep.ofDag dag).family)
         (uniformSpineCheck { dag, roots, visits := 0, internedNodes := 0 } (Prep.ofDag dag))
-        (tieredCandidateCount dag.size (Prep.ofDag dag) (graphFacts dag roots)) =
+        (tieredCandidateCount dag.size (Prep.ofDag dag) (graphFacts dag roots))
+        (mkEmptyCache (Prep.ofDag dag) limits { dag, roots, visits := 0, internedNodes := 0 }
+          (ReIndex.ofDag dag)) =
         tieredAtWidthF layout limits { dag, roots, visits := 0, internedNodes := 0 } w
         (Prep.ofDag dag) (graphFacts dag roots)
         (uniformSpineCheck { dag, roots, visits := 0, internedNodes := 0 } (Prep.ofDag dag))
         (tieredCandidateCount dag.size (Prep.ofDag dag) (graphFacts dag roots)) :=
-      fun w => (tieredAtWidthIx_eq_G layout limits { dag, roots, visits := 0, internedNodes := 0 }
-        w (Prep.ofDag dag) (graphFacts dag roots) _ _).trans
-        (tieredAtWidth_eq_G _ _ _ w _ _ _ _ rfl hdag)
-    simp only [hRe, hIx]
+      fun w => (tieredAtWidthCached_eq_Ix layout limits
+        { dag, roots, visits := 0, internedNodes := 0 } w (graphFacts dag roots)
+        (ReIndex.ofDag dag) (parentEdgeLists dag)
+        (spineParentLists dag (Prep.ofDag dag).family) _ _ hc).trans
+        ((tieredAtWidthIx_eq_G layout limits { dag, roots, visits := 0, internedNodes := 0 }
+          w (Prep.ofDag dag) (graphFacts dag roots) _ _).trans
+          (tieredAtWidth_eq_G _ _ _ w _ _ _ _ rfl hdag))
+    simp only [hRe, hCached]
     rfl
 
 /-- `canonicalTieredExpanded`, compiled with the parts above. -/
@@ -791,7 +1268,8 @@ def optimizeUniformExpandedC (w : Nat) (limits : Limits) (ex : Expanded) :
   if w == 0 then throw (.formatBound "uniform Share width" 0)
   else (uniformDagChecks ex).bind fun _ =>
     let p := Prep.ofDag ex.dag
-    optimizeUniformG w limits ex p (graphFacts ex.dag ex.roots) (uniformSpineCheck ex p)
+    let reIx : ReIndex := { parents := parentEdgeLists ex.dag, leaves := leafIndex ex.dag }
+    optimizeUniformIx w limits ex p (graphFacts ex.dag ex.roots) reIx (uniformSpineCheck ex p)
 
 @[csimp] theorem optimizeUniformExpanded_eq_C :
     @optimizeUniformExpanded = @optimizeUniformExpandedC := by
@@ -801,8 +1279,11 @@ def optimizeUniformExpandedC (w : Nat) (limits : Limits) (ex : Expanded) :
   by_cases hw : (w == 0) = true
   · simp only [hw, ite_true]
   · simp only [hw, Bool.false_eq_true, ite_false]
-    exact checks_bind ex _ _ (fun hdag =>
-      (optimizeUniform_eq_G w limits ex _ _ _ rfl hdag).symm)
+    exact checks_bind ex _ _ (fun hdag => by
+      have hRe : ({ parents := parentEdgeLists ex.dag, leaves := leafIndex ex.dag } : ReIndex) =
+          ReIndex.ofDag ex.dag := rfl
+      rw [hRe, optimizeUniformIx_eq_G]
+      exact (optimizeUniform_eq_G w limits ex _ _ _ rfl hdag).symm)
 
 end Ix.Sharing.Exact
 

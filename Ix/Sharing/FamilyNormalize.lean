@@ -51,7 +51,7 @@ abbrev FamilyState := (Array CompResult × Nat × Nat) × Array Nat × Array Nat
 
 /-- Precharge before evaluating the component family. State refusal occurs
 before context preparation; work refusal after its closure is known, but
-before the baseline or any subset cost. Buffers are reused as in checkpoint A. -/
+before the baseline or any subset cost. Position buffers are reused across components. -/
 def familyStep (cfg : Config) (limits : Limits) (ex : Expanded) (sg : UStage)
     (width : Nat) (parents : Array (Array Nat)) (acc : FamilyState) (members : Array Nat) :
     Except SharingError FamilyState := do
