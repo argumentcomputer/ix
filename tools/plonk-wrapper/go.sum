@@ -6,6 +6,8 @@ github.com/consensys/gnark v0.16.5-0.20261015185324-262cf453c107 h1:3j1bREIJfIVu
 github.com/consensys/gnark v0.16.5-0.20261015185324-262cf453c107/go.mod h1:Y4orPf3hT0CjoUOyjo22jJN+0TD0gD1tS4BFWL1mkVw=
 github.com/consensys/gnark-crypto v0.22.1-0.20261009142911-8911ee45d22b h1:IDT/Waq2euwKsSOVZGufUN1tjYTN94Jf7FdSqt0XrH0=
 github.com/consensys/gnark-crypto v0.22.1-0.20261009142911-8911ee45d22b/go.mod h1:HL8XflRG4cvau1PEG3CWBTD2kkzUzdlqZF6BBgy57F8=
+github.com/consensys/gnark-ignition-verifier v0.0.0-20230527014722-10693546ab33 h1:z42ewLaLxoTYeQ17arcF4WExZc/eSaN3YVlF7eEaPt4=
+github.com/consensys/gnark-ignition-verifier v0.0.0-20230527014722-10693546ab33/go.mod h1:JdKor28c/KR4BbznP88bz8AAvnCgovzrB3KWsiR7lwk=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

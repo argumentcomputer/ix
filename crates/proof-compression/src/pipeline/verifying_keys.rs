@@ -1,14 +1,13 @@
 //! The verifying keys this build compresses to and verifies, one per proof
 //! system, with the aggregation backend and fixed root layout they were derived
-//! for and the Ignition admission that authenticates their setup. A proof
-//! verifies only under these keys; there is no catalog of alternatives.
+//! for. A proof verifies only under these keys; there is no catalog of alternatives.
 use super::{
   FixedRoot, Result,
   setup::SetupClass,
   statement,
   wrap::{PreparedVerifyingKey, VerifyingKey},
 };
-use crate::kzg::srs::ignition::IgnitionAdmission;
+use crate::kzg::{Srs, VerifierParams};
 
 /// Version of the bundled verifying keys and the layout they were derived for.
 const VERSION: &str = "0.1";
@@ -27,11 +26,6 @@ pub(super) const STATEMENT_PREFIX: [u64; 10] = [
   0, 293, 3849420707, 4087085283, 470000540, 2154705852, 3686466056,
   4052325645, 2284798839, 2062413424,
 ];
-
-const ADMISSION: &[u8] =
-  include_bytes!("../../verifying-keys/0.1/ignition-admission.json");
-const ADMISSION_BLAKE3: &str =
-  "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46";
 
 pub(super) const RECURSIVE_VK: &[u8] =
   include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
@@ -92,13 +86,31 @@ pub fn release_root_layout(root_vk: &[u8]) -> Result<&'static str> {
   Ok(LAYOUT)
 }
 
-/// The Ignition admission that authenticates the release keys' setup.
-pub(super) fn admission() -> Result<IgnitionAdmission> {
-  Ok(IgnitionAdmission::from_bytes(ADMISSION, decode(ADMISSION_BLAKE3)?)?)
+/// The release key fixes the Ignition identity, public degree and anchors.
+pub(crate) fn ignition_parameters() -> Result<VerifierParams> {
+  // Only the parameter section is needed here, not a prepared circuit verifier.
+  let (vk, consumed): (VerifyingKey, usize) =
+    bincode::serde::decode_from_slice(
+      RECURSIVE_VK,
+      bincode::config::standard(),
+    )?;
+  if consumed != RECURSIVE_VK.len() {
+    return Err("trailing bundled recursive key data".into());
+  }
+  vk.verifier_params()
 }
 
-/// The bundled recursive key's prepared verifier, after checking the key
-/// against its pins and the admission.
+pub(super) fn ignition_anchors() -> Result<Srs> {
+  let params = ignition_parameters()?;
+  Ok(Srs {
+    g1: params.g1.to_vec(),
+    g2: params.g2,
+    tau_g2: params.tau_g2,
+    public_setup: params.public_setup,
+  })
+}
+
+/// The bundled recursive key's prepared verifier.
 fn recursive_vk() -> Result<PreparedVerifyingKey> {
   if blake3::hash(RECURSIVE_VK).to_hex().as_str() != RECURSIVE_VK_BLAKE3 {
     return Err("bundled recursive verifying key differs from its pin".into());
@@ -107,7 +119,7 @@ fn recursive_vk() -> Result<PreparedVerifyingKey> {
   if vk.id() != decode(RECURSIVE_VK_ID)? {
     return Err("bundled recursive verifying key identifier differs".into());
   }
-  vk.check_ignition_admission(&admission()?)?;
+  vk.check_setup_class(SetupClass::Ignition)?;
   Ok(prepared)
 }
 
@@ -173,10 +185,6 @@ mod tests {
 
   #[test]
   fn bundled_release_files_match_their_pins() {
-    assert_eq!(
-      blake3::hash(ADMISSION).as_bytes(),
-      &decode(ADMISSION_BLAKE3).unwrap()
-    );
     recursive_vk().unwrap();
     assert_eq!(
       Sha256::digest(PLONK_VK).as_slice(),

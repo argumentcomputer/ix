@@ -18,7 +18,7 @@ fn source_digest(source: &std::path::Path) -> String {
       let path = entry.unwrap().path();
       let name = path.file_name().unwrap().to_string_lossy().into_owned();
       if path.is_dir() {
-        if name != "vendor" && name != "testdata" {
+        if name != "vendor" && name != "testdata" && name != "cmd" {
           directories.push(path);
         }
       } else if name.ends_with(".go") && !name.ends_with("_test.go") {
@@ -70,10 +70,7 @@ pub(super) fn build() -> Vec<super::RuntimeArtifact> {
       .unwrap_or_else(|| panic!("cannot find {go:?} in PATH"))
   };
   println!("cargo:rerun-if-changed={}", executable.display());
-  println!(
-    "cargo:rustc-env=IX_GNARK_SOURCE_BLAKE3={}",
-    source_digest(&source)
-  );
+  println!("cargo:rustc-env=IX_GNARK_SOURCE_BLAKE3={}", source_digest(&source));
   let toolchain = Command::new(&go)
     .current_dir(&source)
     .env("GOTOOLCHAIN", "local")

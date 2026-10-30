@@ -1,22 +1,11 @@
-//! Setup selection and binding for compression checkpoints.
-//!
-//! Every setup declares a public identity and full public degree. The
-//! Ignition policy requires independently pinned admission
-//! metadata and an authenticated prefix cache. The development policy derives a
-//! known trapdoor from the stage seed, with parameters from a per-stage cache
-//! file or from the shared directory named by `IX_KZG_SRS_CACHE`.
-//!
-//! Without explicit Ignition settings, the pinned Ignition release is used
-//! when its files are present in the parameters directory (`IX_PARAMS_DIR`,
-//! else `~/.ix/compression/params`), as `ix compress fetch-params` leaves
-//! them.
-use super::storage;
-use crate::kzg::srs::ignition::{
-  IgnitionAdmission, load_ignition_cache_with_identity,
-};
+//! Compression uses the release's Ignition parameters or an explicitly selected
+//! known-trapdoor development setup. The released verifying keys authorize the
+//! production parameters; ceremony verification belongs to release preparation.
+use super::{storage, verifying_keys};
+use crate::kzg::srs::gnark;
 use crate::kzg::{KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams};
 use multi_stark::traits::TwoAdicField;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::{
   fs,
   path::{Path, PathBuf},
@@ -29,64 +18,10 @@ use std::{
 /// setups ignore stage seeds.
 pub(crate) const FIRST_SEED: &[u8] = b"init-kzg-recursive-bn254-v1";
 pub(crate) const BINDING_FILE: &str = "kzg-setup-id.bin";
-pub(crate) const IGNITION_CACHE_VAR: &str = "IX_KZG_IGNITION_CACHE";
-pub(crate) const IGNITION_CACHE_MANIFEST_VAR: &str =
-  "IX_KZG_IGNITION_CACHE_BLAKE3";
-pub(crate) const IGNITION_ADMISSION_VAR: &str = "IX_KZG_IGNITION_ADMISSION";
-pub(crate) const IGNITION_ADMISSION_DIGEST_VAR: &str =
-  "IX_KZG_IGNITION_ADMISSION_BLAKE3";
-const IGNITION_ENV_VARS: [&str; 4] = [
-  IGNITION_CACHE_VAR,
-  IGNITION_CACHE_MANIFEST_VAR,
-  IGNITION_ADMISSION_VAR,
-  IGNITION_ADMISSION_DIGEST_VAR,
-];
+pub(crate) const IGNITION_SRS_VAR: &str = "IX_KZG_SRS";
 pub(crate) const PARAMETERS_DIR_VAR: &str = "IX_PARAMS_DIR";
-
-/// Published BN254 Ignition proving parameters and their pins. The objects are
-/// publicly readable from the URL `ix compress fetch-params` downloads; the
-/// pins, not the location, authenticate them.
-struct IgnitionRelease {
-  name: &'static str,
-  cache_file: &'static str,
-  cache_manifest_blake3: &'static str,
-  admission_file: &'static str,
-  admission_blake3: &'static str,
-}
-
-const IGNITION_RELEASE: IgnitionRelease = IgnitionRelease {
-  name: "bn254-ignition-main-197",
-  cache_file: "ix-prefix-26.bin",
-  cache_manifest_blake3: "6b4a939d863d026ab045d3da2c8175abb9224889a58ccbf26bacb92f74248e6b",
-  admission_file: "admission.json",
-  admission_blake3: "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
-};
-
-impl IgnitionRelease {
-  fn directory(&self, parameters: &Path) -> PathBuf {
-    parameters.join(self.name)
-  }
-
-  fn config(&self, directory: &Path) -> storage::Result<SetupConfig> {
-    SetupConfig::ignition(
-      directory.join(self.cache_file),
-      parse_ignition_digest(
-        IGNITION_CACHE_MANIFEST_VAR,
-        OsStr::new(self.cache_manifest_blake3),
-      )?,
-      &directory.join(self.admission_file),
-      parse_ignition_digest(
-        IGNITION_ADMISSION_DIGEST_VAR,
-        OsStr::new(self.admission_blake3),
-      )?,
-    )
-  }
-
-  fn present(&self, directory: &Path) -> bool {
-    directory.join(self.cache_file).is_file()
-      && directory.join(self.admission_file).is_file()
-  }
-}
+const IGNITION_DIRECTORY: &str = "bn254-ignition-main-197";
+const IGNITION_FILE: &str = "srs.bin";
 
 /// `IX_PARAMS_DIR`, else `$HOME/.ix/compression/params`.
 fn parameters_directory_from(
@@ -101,8 +36,7 @@ fn parameters_directory_from(
 /// The trust class of verifier parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetupClass {
-  /// Ignition parameters whose identity, degree and anchors match an
-  /// independently pinned admission of the ceremony source.
+  /// Ignition parameters matching the released verifying key.
   Ignition,
   /// A trapdoor derived from a seed; anyone can forge proofs.
   Development,
@@ -111,18 +45,15 @@ pub enum SetupClass {
 }
 
 impl SetupClass {
-  /// Production classification requires independently admitted Ignition
-  /// metadata; verifier parameters alone do not establish provenance.
-  pub fn of(_params: &VerifierParams) -> Self {
-    Self::Development
-  }
-
-  pub fn of_with_ignition(
-    params: &VerifierParams,
-    admission: &IgnitionAdmission,
-  ) -> storage::Result<Self> {
-    admission.check_verifier(params)?;
-    Ok(Self::Ignition)
+  /// Match the complete setup identity and anchors authorized by the release.
+  pub fn of(params: &VerifierParams) -> Self {
+    let matches = verifying_keys::ignition_parameters().is_ok_and(|release| {
+      params.public_setup == release.public_setup
+        && params.g1 == release.g1
+        && params.g2 == release.g2
+        && params.tau_g2 == release.tau_g2
+    });
+    if matches { Self::Ignition } else { Self::Development }
   }
 
   pub fn label(self) -> &'static str {
@@ -135,7 +66,7 @@ impl SetupClass {
 
   pub fn description(self) -> &'static str {
     match self {
-      Self::Ignition => "the admitted Aztec Ignition BN254 powers of tau",
+      Self::Ignition => "the released Aztec Ignition BN254 powers of tau",
       Self::Groth16 => "an admitted BN254 Groth16 circuit-specific ceremony",
       Self::Development => {
         "a known-trapdoor development SRS (not production-secure)"
@@ -145,36 +76,26 @@ impl SetupClass {
 }
 
 fn development_refused<T>() -> storage::Result<T> {
-  let message = format!(
-    "no admitted BN254 Ignition setup is configured; set \
-     {IGNITION_CACHE_VAR}, {IGNITION_CACHE_MANIFEST_VAR}, \
-     {IGNITION_ADMISSION_VAR} and {IGNITION_ADMISSION_DIGEST_VAR}, run \
-     `ix compress fetch-params` to install the pinned release, or pass \
-     --dev-kzg-srs to use the known-trapdoor development setup \
-     (not production-secure)"
-  );
-  Err(message.into())
+  Err(
+    format!(
+      "no BN254 Ignition SRS is installed; run `ix compress fetch-params`, \
+     set {IGNITION_SRS_VAR} to the released gnark SRS, or pass --dev-kzg-srs \
+     to use the known-trapdoor development setup (not production-secure)"
+    )
+    .into(),
+  )
 }
 
-/// The KZG parameters a compression proves under: admitted Ignition
-/// parameters, or with `development` the known-trapdoor development setup.
 #[derive(Clone)]
 pub enum SetupConfig {
   #[non_exhaustive]
-  Ignition {
-    cache: PathBuf,
-    manifest: [u8; 32],
-    admission: Arc<IgnitionAdmission>,
-  },
+  Ignition { srs: PathBuf },
   #[non_exhaustive]
   Development { cache_directory: Option<PathBuf> },
 }
 
 impl SetupConfig {
-  /// Select the setup from the `IX_KZG_IGNITION_*` variables or the
-  /// parameters directory, admitting Ignition parameters before returning.
-  /// With `development`, the development setup caches its SRS files in
-  /// `IX_KZG_SRS_CACHE` when set.
+  /// Select the release SRS or the explicitly requested development setup.
   pub fn from_env(development: bool) -> storage::Result<Self> {
     Self::from_ignition_env(development, |name| std::env::var_os(name))
   }
@@ -188,55 +109,16 @@ impl SetupConfig {
         cache_directory: lookup("IX_KZG_SRS_CACHE").map(PathBuf::from),
       });
     }
-    let values = IGNITION_ENV_VARS.map(&mut lookup);
-    if values.iter().all(Option::is_none) {
-      let release = parameters_directory_from(&mut lookup)
-        .map(|parameters| IGNITION_RELEASE.directory(&parameters))
-        .filter(|directory| IGNITION_RELEASE.present(directory));
-      return match release {
-        Some(directory) => IGNITION_RELEASE.config(&directory),
-        None => development_refused(),
-      };
-    }
-    let [cache, manifest, admission, admission_digest] = values;
-    let required = |name, value: Option<OsString>| {
-      value.ok_or_else(|| {
-        format!("incomplete BN254 Ignition configuration: missing {name}")
-      })
+    let path = lookup(IGNITION_SRS_VAR).map(PathBuf::from).or_else(|| {
+      parameters_directory_from(&mut lookup)
+        .map(|directory| directory.join(IGNITION_DIRECTORY).join(IGNITION_FILE))
+    });
+    let Some(srs) = path.filter(|path| path.is_file()) else {
+      return development_refused();
     };
-    let cache = PathBuf::from(required(IGNITION_CACHE_VAR, cache)?);
-    let manifest = parse_ignition_digest(
-      IGNITION_CACHE_MANIFEST_VAR,
-      &required(IGNITION_CACHE_MANIFEST_VAR, manifest)?,
-    )?;
-    let admission_path =
-      PathBuf::from(required(IGNITION_ADMISSION_VAR, admission)?);
-    let admission_digest = parse_ignition_digest(
-      IGNITION_ADMISSION_DIGEST_VAR,
-      &required(IGNITION_ADMISSION_DIGEST_VAR, admission_digest)?,
-    )?;
-    Self::ignition(cache, manifest, &admission_path, admission_digest)
-  }
-
-  fn ignition(
-    cache: PathBuf,
-    manifest: [u8; 32],
-    admission_path: &Path,
-    admission_digest: [u8; 32],
-  ) -> storage::Result<Self> {
-    let admission =
-      Arc::new(IgnitionAdmission::read(admission_path, admission_digest)?);
-    let (anchors, identity) =
-      load_ignition_cache_with_identity(&cache, manifest, 2)?;
-    admission.check_cache(&anchors, &identity)?;
-    Ok(Self::Ignition { cache, manifest, admission })
-  }
-
-  pub(crate) fn ignition_admission(&self) -> Option<&IgnitionAdmission> {
-    match self {
-      Self::Ignition { admission, .. } => Some(admission),
-      Self::Development { .. } => None,
-    }
+    let config = Self::Ignition { srs };
+    config.for_stage(FIRST_SEED, 2)?.srs(2, false)?;
+    Ok(config)
   }
 
   pub(crate) fn class(&self) -> SetupClass {
@@ -258,9 +140,8 @@ impl SetupConfig {
       return Err("invalid trace height".into());
     }
     match self {
-      Self::Ignition { cache, manifest, admission } => {
-        let source =
-          SetupSource::ignition(cache.clone(), *manifest, admission.clone());
+      Self::Ignition { srs } => {
+        let source = SetupSource::ignition(srs.clone())?;
         source.check_height(height)?;
         Ok(source)
       },
@@ -277,15 +158,8 @@ impl SetupConfig {
 
 #[derive(Clone)]
 enum Policy {
-  Development {
-    seed: Vec<u8>,
-    cache_directory: Option<PathBuf>,
-  },
-  Ignition {
-    cache: PathBuf,
-    manifest: [u8; 32],
-    admission: Arc<IgnitionAdmission>,
-  },
+  Development { seed: Vec<u8>, cache_directory: Option<PathBuf> },
+  Ignition { srs: PathBuf },
 }
 
 #[derive(Clone)]
@@ -293,28 +167,6 @@ pub(crate) struct SetupSource {
   policy: Policy,
   public_setup: PublicSetup,
   transcript_kind: TranscriptKind,
-}
-
-fn parse_ignition_digest(
-  variable: &str,
-  value: &OsStr,
-) -> storage::Result<[u8; 32]> {
-  let text = value
-    .to_str()
-    .ok_or_else(|| format!("{variable} must contain an ASCII BLAKE3 digest"))?
-    .trim();
-  if text.len() != 64 || !text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-    return Err(
-      format!("{variable} must be a 64-character BLAKE3 digest").into(),
-    );
-  }
-  let mut digest = [0; 32];
-  for (byte, pair) in digest.iter_mut().zip(text.as_bytes().as_chunks::<2>().0)
-  {
-    let pair = std::str::from_utf8(pair).expect("validated ASCII hex");
-    *byte = u8::from_str_radix(pair, 16)?;
-  }
-  Ok(digest)
 }
 
 impl SetupSource {
@@ -335,25 +187,12 @@ impl SetupSource {
     })
   }
 
-  /// Verification uses admitted anchors directly. Proving additionally
-  /// authenticates the requested cache prefix and matches its provenance.
-  pub(crate) fn ignition(
-    cache: PathBuf,
-    manifest: [u8; 32],
-    admission: Arc<IgnitionAdmission>,
-  ) -> Self {
-    Self {
-      public_setup: admission.public_setup(),
-      policy: Policy::Ignition { cache, manifest, admission },
+  pub(crate) fn ignition(srs: PathBuf) -> storage::Result<Self> {
+    Ok(Self {
+      public_setup: verifying_keys::ignition_parameters()?.public_setup,
+      policy: Policy::Ignition { srs },
       transcript_kind: TranscriptKind::Blake3,
-    }
-  }
-
-  pub(crate) fn ignition_admission(&self) -> Option<&IgnitionAdmission> {
-    match &self.policy {
-      Policy::Ignition { admission, .. } => Some(admission),
-      Policy::Development { .. } => None,
-    }
+    })
   }
 
   /// Bind checkpoint identity to the selected Fiat-Shamir protocol.
@@ -384,7 +223,7 @@ impl SetupSource {
   pub(crate) fn security_description(&self) -> &'static str {
     match self.policy {
       Policy::Ignition { .. } => {
-        "Aztec Ignition BN254 powers of tau, with setup identity, full public degree and shifted-basis anchors authorized by an independently pinned admission. Proving prefixes are authenticated against a separate cache receipt. Ceremony provenance depends on the admission's trusted source pins.\n"
+        "Aztec Ignition BN254 powers of tau selected during release preparation. Verification uses the fixed release keys.\n"
       },
       Policy::Development { .. } => {
         "Known-trapdoor development public-degree KZG. Not ceremony parameters. For development and testing only.\n"
@@ -412,13 +251,18 @@ impl SetupSource {
     self.check_height(height)?;
     let length = if verify_only { 2 } else { height };
     match &self.policy {
-      Policy::Ignition { admission, .. } if verify_only => {
-        Ok(admission.anchors())
+      Policy::Ignition { .. } if verify_only => {
+        verifying_keys::ignition_anchors()
       },
-      Policy::Ignition { cache, manifest, admission } => {
-        let (srs, identity) =
-          load_ignition_cache_with_identity(cache, *manifest, length)?;
-        admission.check_cache(&srs, &identity)?;
+      Policy::Ignition { srs } => {
+        let srs = gnark::load(srs, length, self.public_setup)?;
+        if SetupClass::of(&VerifierParams::from_srs(&srs))
+          != SetupClass::Ignition
+        {
+          return Err(
+            "SRS anchors differ from the released Ignition parameters".into(),
+          );
+        }
         Ok(srs)
       },
       Policy::Development { seed, cache_directory } => {
@@ -596,23 +440,6 @@ mod tests {
     assert_eq!(
       config.for_stage(FIRST_SEED, 64)?.identity(64, 2)?,
       SetupSource::development(FIRST_SEED, 63)?.identity(64, 2)?
-    );
-    Ok(())
-  }
-
-  #[test]
-  fn bn254_requires_an_admission_or_explicit_development_setup()
-  -> storage::Result<()> {
-    if IGNITION_ENV_VARS.iter().all(|name| std::env::var_os(name).is_none()) {
-      let error = SetupConfig::from_env(false).err().unwrap().to_string();
-      assert!(error.contains("BN254"));
-      assert!(error.contains("--dev-kzg-srs"));
-    }
-    let source = SetupConfig::from_env(true)?.for_stage(FIRST_SEED, 8)?;
-    assert_eq!(source.class(), SetupClass::Development);
-    assert_eq!(
-      SetupClass::of(&source.verifier_params(8)?),
-      SetupClass::Development
     );
     Ok(())
   }

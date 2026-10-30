@@ -25,25 +25,3 @@ pub(super) fn verify_with_vk(
   vk.verify(packet, expected)?;
   Ok(setup)
 }
-
-/// Verify with an independently authenticated verifying key and ceremony admission.
-/// The admission contains the verifier anchors; no proving cache is required.
-pub(super) fn verify_with_ignition_admission(
-  packet: &[u8],
-  claim: &[u8],
-  expected: &statement::Statement,
-  vk: &[u8],
-  trusted_digest: &[u8; 32],
-  admission: &crate::kzg::srs::ignition::IgnitionAdmission,
-) -> Result<SetupClass> {
-  if blake3::hash(vk).as_bytes() != trusted_digest {
-    return Err(
-      "local verifying key digest differs from the trusted digest".into(),
-    );
-  }
-  statement::bind_claim(claim, expected)?;
-  let vk = VerifyingKey::from_bytes(vk)?;
-  vk.check_ignition_admission(admission)?;
-  vk.verify(packet, expected)?;
-  Ok(SetupClass::Ignition)
-}

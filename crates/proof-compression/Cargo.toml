@@ -16,7 +16,6 @@ ark-serialize = { version = "0.5", features = ["std"] }
 bincode = { version = "2", features = ["serde"] }
 blake3 = { workspace = true, features = ["mmap", "rayon"] }
 tiny-keccak = { workspace = true }
-blake2b_simd = "1"
 num-bigint = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
@@ -56,7 +55,7 @@ features = ["cuda"]
 [features]
 plonk = ["dep:bindgen"]
 groth16 = ["dep:bindgen"]
-default = ["parallel", "plonk", "groth16"]
+default = ["parallel"]
 # GPU proving: multi-stark's Goldilocks backend for FRI compression and the
 # KZG kernels here, plus acceleration for the enabled gnark backends. Needs
 # the CUDA toolkit at build time and a visible GPU at runtime; CPU-only

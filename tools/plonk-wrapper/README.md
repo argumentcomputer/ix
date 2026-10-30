@@ -23,7 +23,7 @@ compiler, but no CUDA toolkit:
 IX_PLONK=1 IX_GROTH16=1 lake build ix
 ```
 
-Configure the four Ignition environment variables from the
+Install the released Ignition SRS as described in the
 [compression setup guide](../../crates/proof-compression/README.md), then run:
 
 ```sh
@@ -77,17 +77,17 @@ records why the backend uses the upstream interface without fused extensions.
 ## Trust and artifacts
 
 Rust owns artifact and Lagrange-cache metadata. Circuit caches bind the cache
-format, verifier description, admitted setup and gnark's `go.sum`. Lagrange caches bind the setup,
+format, verifier description, released setup and gnark's `go.sum`. Lagrange caches bind the setup,
 domain and monomial receipt. Go checks the sizes and digests of decoded native
 artifacts and rejects a witness whose claim differs from the independent digest
 supplied by Rust. Retaining a prover avoids loading its circuit and keys again.
 
-Default verification uses the bundled PLONK verifying key and Ignition admission
+Default verification uses the bundled PLONK verifying key and its fixed Ignition anchors
 (`crates/proof-compression/verifying-keys/`); a proof whose key identifier
 names any other key is rejected. Verification requires neither a proving SRS
 nor a GPU.
 
-Release tooling is library code with no CLI: `pipeline::plonk::export` writes
+Circuit release tooling is library code: `pipeline::plonk::export` writes
 the verifier description and witness for a recursive KZG packet, and
 `pipeline::plonk::export_parameters` writes the selected final setup's SRS prefix.
 Default `ix verify` uses the release keys; local final keys require an explicitly
@@ -170,7 +170,7 @@ with `pipeline::groth16::compile`, then create development keys with
 
 The exporter takes the BLAKE3 digest that authenticates the serialized KZG
 verifier file and the independently expected statement. It checks the selected
-setup's Ignition admission or development class and verifies the inner proof.
+setup's released Ignition anchors or development class and verifies the inner proof.
 Compilation writes a fresh circuit into an empty
 artifact directory.
 
@@ -205,7 +205,7 @@ requires neither proving parameters nor a visible GPU.
 ### Ceremony verification and key import
 
 Production keys require a Groth16-compatible phase-one setup and a
-circuit-specific phase two. Ignition's KZG cache is not a Groth16 setup.
+circuit-specific phase two. Ignition's KZG SRS is not a Groth16 setup.
 
 `pipeline::groth16::setup_mpc(artifacts, ceremony, trusted_sha256)` verifies each
 phase-one and phase-two contribution against its predecessor, binds phase two

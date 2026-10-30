@@ -23,10 +23,7 @@ pub fn derive_recursive_vk(
     first::setup(&fri, verifying_keys::FIRST_LOG_HEIGHT, setup)?;
   drop(fri);
   let vk = wrap::verifying_key(&manifest, parts, setup)?;
-  match setup.ignition_admission() {
-    Some(admission) => vk.check_ignition_admission(admission)?,
-    None => vk.check_setup_class(setup.class())?,
-  }
+  vk.check_setup_class(setup.class())?;
   vk.to_bytes()
 }
 
@@ -40,7 +37,7 @@ mod tests {
 
   fn ignition() -> SetupConfig {
     let setup = SetupConfig::from_env(false).unwrap();
-    assert!(setup.ignition_admission().is_some());
+    assert_eq!(setup.class(), super::super::SetupClass::Ignition);
     setup
   }
 
