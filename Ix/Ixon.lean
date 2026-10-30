@@ -1635,14 +1635,20 @@ sorted constants, each on its own task, and writes their bytes in place:
 `putBytes` of a section's bytes is the output of its writes, so the bytes are
 those of writing the sections one after the other. -/
 
+/-- Run a `PutM` writer on a pre-allocated buffer of capacity `cap`. -/
+@[inline] def runPutWithCapacity (cap : Nat) (p : PutM Unit) : ByteArray :=
+  (p.run (ByteArray.emptyWithCapacity cap)).2
+
 /-- Section 1: Blobs (Address -> bytes). -/
-def blobsSection (env : Env) : ByteArray := runPut do
+def blobsSection (env : Env) : ByteArray :=
   let blobs := env.blobs.toArray.qsort fun a b => addrLt a.1 b.1
-  putTagN 0 0 blobs.size.toUInt64
-  for (addr, bytes) in blobs do
-    Serialize.put addr
-    putTagN 0 0 bytes.size.toUInt64
-    putBytes bytes
+  let cap := blobs.foldl (fun acc (_, bytes) => acc + 37 + bytes.size) 9
+  runPutWithCapacity cap do
+    putTagN 0 0 blobs.size.toUInt64
+    for (addr, bytes) in blobs do
+      Serialize.put addr
+      putTagN 0 0 bytes.size.toUInt64
+      putBytes bytes
 
 /-- Section 2: Consts (Address -> TagN-length-prefixed constant bytes), of the
     constants sorted by address.
@@ -1652,40 +1658,48 @@ def blobsSection (env : Env) : ByteArray := runPut do
     The length is NOT part of the content-addressed bytes: the address
     is `Address.hash` over the constant body alone (which is
     exactly what `serConstant` produces). -/
-def constsSection (consts : Array (Address × LazyConstant)) : ByteArray := runPut do
-  putTagN 0 0 consts.size.toUInt64
-  for (addr, lc) in consts do
-    Serialize.put addr
-    -- The lazy entry already holds exactly `serConstant`'s output, so write
-    -- its bytes directly — no re-materialization or re-serialization.
-    let bytes := lc.rawBytes
-    putTagN 0 0 bytes.size.toUInt64
-    putBytes bytes
+def constsSection (consts : Array (Address × LazyConstant)) : ByteArray :=
+  let cap := consts.foldl (fun acc (_, lc) => acc + 37 + lc.len) 9
+  runPutWithCapacity cap do
+    putTagN 0 0 consts.size.toUInt64
+    for (addr, lc) in consts do
+      Serialize.put addr
+      -- The lazy entry already holds exactly `serConstant`'s output, so write
+      -- its bytes directly — no re-materialization or re-serialization.
+      let bytes := lc.rawBytes
+      putTagN 0 0 bytes.size.toUInt64
+      putBytes bytes
 
 /-- Section 4: Names (Address -> Name component), with the names in their
     written order: topologically sorted so parents come before children, with
     ties broken by address. -/
 def namesSection (env : Env) : Array (Address × Ix.Name) × ByteArray :=
   let sortedNames := topologicalSortNames env.names
-  (sortedNames, runPut do
+  let cap := sortedNames.size * 48 + 9
+  (sortedNames, runPutWithCapacity cap do
     putTagN 0 0 sortedNames.size.toUInt64
     for (addr, name) in sortedNames do
       Serialize.put addr
       putNameComponent name)
 
 /-- Section 6: Comms (Address -> Comm). -/
-def commsSection (env : Env) : ByteArray := runPut do
+def commsSection (env : Env) : ByteArray :=
   let comms := env.comms.toArray.qsort fun a b => addrLt a.1 b.1
-  putTagN 0 0 comms.size.toUInt64
-  for (addr, comm) in comms do
-    Serialize.put addr
-    putComm comm
+  let cap := comms.size * 97 + 9
+  runPutWithCapacity cap do
+    putTagN 0 0 comms.size.toUInt64
+    for (addr, comm) in comms do
+      Serialize.put addr
+      putComm comm
 
-/-- Sections 1 to 6 of `putEnv`, sections 1, 2, 4 and 6 from their tasks. Not
-    inlined, so that `putEnv` starts every task before the first is read. -/
-@[noinline] def putSections (env : Env) (consts : Array (Address × LazyConstant))
+/-- Sections 1 to 6 of `putEnv`, sections 1, 2, 4 and 6 and the §3/§5 sorts
+    from their tasks. Not inlined, so that `putEnv` starts every task before
+    the first is read. -/
+@[noinline] def putSections (consts : Array (Address × LazyConstant))
     (blobsTask constsTask commsTask : Task ByteArray)
-    (namesTask : Task (Array (Address × Ix.Name) × ByteArray)) :
+    (namesTask : Task (Array (Address × Ix.Name) × ByteArray))
+    (hintsSortTask : Task (Array (Address × Lean.ReducibilityHints)))
+    (namedSortTask : Task (Array (Ix.Name × Named))) :
     ExceptT String PutM Unit := do
   -- Rank of each constant in §2's ascending-address order — §3 hint
   -- entries and §5 named entries key their constants through it.
@@ -1701,7 +1715,7 @@ def commsSection (env : Env) : ByteArray := runPut do
   -- single home for hints, as delta-coded §2 ranks + fused hints (the
   -- address sort is load-bearing: it makes the ranks strictly
   -- ascending). Matches Rust `Env::put`.
-  let hintPairs := env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+  let hintPairs := hintsSortTask.get
   putTagN 0 0 hintPairs.size.toUInt64
   let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
   for (addr, hints) in hintPairs do
@@ -1727,7 +1741,7 @@ def commsSection (env : Env) : ByteArray := runPut do
   -- then a length-prefixed metadata blob so hint scanners can skip the
   -- bodies. `original` keeps a raw address: it can reference an
   -- assumed constant that is NOT stored in §2 (prune cut bundles).
-  let named := env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
+  let named := namedSortTask.get
   putTagN 0 0 named.size.toUInt64
   -- The entries are independent given the two indices: they are written in
   -- chunks of `namedChunk` on parallel tasks and concatenated in order, which
@@ -1736,7 +1750,7 @@ def commsSection (env : Env) : ByteArray := runPut do
   let chunks := (named.size + namedChunk - 1) / namedChunk
   let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
     match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
-      constIdx).run).run ByteArray.empty with
+      constIdx).run).run (ByteArray.emptyWithCapacity (namedChunk * 64)) with
     | (.ok _, bytes) => Except.ok bytes
     | (.error e, _) => Except.error e
   for t in tasks do
@@ -1757,11 +1771,22 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
     if let .error e := checkBinding binding then throw e
   putTagN 4 FLAG env.envelopeVersion
 
+  -- Start independent section encodings and sorts before sorting `consts`
+  -- and computing the merkle root.
+  let blobsTask := Task.spawn fun _ => blobsSection env
+  let commsTask := Task.spawn fun _ => commsSection env
+  let namesTask := Task.spawn fun _ => namesSection env
+  let hintsSortTask := Task.spawn fun _ =>
+    env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+  let namedSortTask := Task.spawn fun _ =>
+    env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
+
   -- Canonical merkle root over consts addresses (matches Rust Env::put).
   -- Always 32 bytes: for empty const sets, the sentinel
   -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
   -- canonical root, which is always a Blake3 hash).
   let consts := env.consts.toArray.qsort fun a b => addrLt a.1 b.1
+  let constsTask := Task.spawn fun _ => constsSection consts
   let root := (Ix.Merkle.merkleRootCanonical (consts.map (·.1))).getD
     Ix.Merkle.zeroAddress
   Serialize.put root
@@ -1778,9 +1803,7 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   for addr in assumptions do
     Serialize.put addr
   putBindingHeader env.roleBinding
-  putSections env consts (Task.spawn fun _ => blobsSection env)
-    (Task.spawn fun _ => constsSection consts) (Task.spawn fun _ => commsSection env)
-    (Task.spawn fun _ => namesSection env)
+  putSections consts blobsTask constsTask commsTask namesTask hintsSortTask namedSortTask
 
 /-- The most universe constructors one record's universes may expand to when the
     loaders below decode it: the host admission limit
@@ -2385,7 +2408,11 @@ def LazyEnvParts.materializeAll (parts : LazyEnvParts) : Except String Env := do
     the wire, so keys outside the stored consts/names are
     unrepresentable (see `Env.putEnv`). -/
 def serEnv (env : Env) : Except String ByteArray :=
-  match (Env.putEnv env).run.run ByteArray.empty with
+  let cap := env.consts.fold (fun acc _ lc => acc + 37 + lc.len)
+    (env.blobs.fold (fun acc _ b => acc + 37 + b.size)
+      (env.named.size * 64 + env.names.size * 48 +
+        env.anonHints.size * 8 + env.comms.size * 97 + 128))
+  match (Env.putEnv env).run.run (ByteArray.emptyWithCapacity cap) with
   | (.ok _, bytes) => .ok bytes
   | (.error e, _) => .error e
 

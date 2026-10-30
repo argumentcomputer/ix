@@ -26,6 +26,7 @@ traversal of checked types and bodies), and only Lean's `propext`,
 `sorryAx` or any other axiom fails this module.
 -/
 
+#guard_module_axioms Ix.Sharing.FamilyParallel
 #guard_module_axioms Ix.Sharing.FamilyContext
 
 namespace Ix.Sharing.Verify.Audit.Statements
@@ -73,6 +74,11 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.familyAtWidthArea_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.familyExpanded_eq_area, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.normalizeFamily_eq_area, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.Parallel.exactTable_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.Parallel.tableWithDepth_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.Parallel.table_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.Parallel.table_eq_function, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.LightContext.trace_eq_parallel, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.trace_walk_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.step_eq_area, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.expanded_eq, standardAxioms := standard },

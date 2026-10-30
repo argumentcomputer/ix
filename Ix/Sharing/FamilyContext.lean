@@ -1,7 +1,9 @@
 module
 
 public import Ix.Sharing.FamilyNormalizeArea
+public import Ix.Sharing.FamilyParallel
 import all Ix.Sharing.Family
+import all Ix.Sharing.FamilyParallel
 import all Ix.Sharing.FamilyCached
 import all Ix.Sharing.FamilyNormalize
 import all Ix.Sharing.FamilyNormalizeSpec
@@ -72,6 +74,20 @@ def trace (cfg : Config) (width index : Nat) (members : Array Nat) (areaSize clo
   let exact := size ≤ cfg.exactLimit
   { width, index, exact, members, areaSize, closureSize, rows := table cfg cost members.toList,
     evaluations := if exact then 2 ^ size else size * (size + 1) / 2 + size + 1 }
+
+def traceParallel (cfg : Config) (width index : Nat) (members : Array Nat) (areaSize closureSize : Nat)
+    (eval : (Nat → Bool) → Array Nat → Nat × Nat) : ComponentTrace :=
+  let baseline := (eval (fun _ => false) #[]).1
+  let cost : Cost := fun selected => ((eval selected.contains selected).1 : _root_.Int) - baseline
+  let size := members.size
+  let exact := size ≤ cfg.exactLimit
+  { width, index, exact, members, areaSize, closureSize,
+    rows := Parallel.table cfg cost members.toList,
+    evaluations := if exact then 2 ^ size else size * (size + 1) / 2 + size + 1 }
+
+@[csimp] theorem trace_eq_parallel : @trace = @traceParallel := by
+  funext cfg width index members areaSize closureSize eval
+  simp only [trace, traceParallel, Parallel.table_eq]
 
 def auxiliary (ex : Expanded) (stage : UStage) (base : TBase)
     (area positions found marks : Array Nat) : AAux :=
