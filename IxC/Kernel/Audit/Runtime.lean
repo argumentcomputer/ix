@@ -75,14 +75,32 @@ def implementedByTargets (env : Environment) : NameMap (Array Name) := Id.run do
       acc := add acc source target
   return (ext.getState env).2.foldl (fun acc source target => add acc source target) acc
 
-/-- The declaration an arity-reduced auxiliary `f._redArg` was split from.
-The code generator drops erased and unused parameters by moving `f`'s body
-into `f._redArg` and calling that directly, so a closure that reaches
-`f._redArg` executes `f`'s code under another name. The walk visits `f` as
-well, where its `unsafe`, `implemented_by`, `csimp` and `partial` status is
-reported. -/
+/-- Whether `s` is a compiler-generated specialization suffix (`_spec_<n>` or `spec_<n>`). -/
+def isSpecSuffix (s : String) : Bool :=
+  let rest? := if s.startsWith "_spec_" then some (s.drop 6)
+    else if s.startsWith "spec_" then some (s.drop 5)
+    else none
+  match rest? with
+  | some rest => !rest.isEmpty && rest.all Char.isDigit
+  | none => false
+
+/-- Whether `s` is a compiler-generated wrapper/auxiliary suffix. -/
+def isCompilerSuffix (s : String) : Bool :=
+  s == "_redArg" || s == "_boxed" || s == "_impl" || isSpecSuffix s
+
+/-- The source declaration a compiler-generated auxiliary (`_redArg`, `_boxed`,
+`_impl`, `_spec_<n>`) was derived from. The code generator drops erased and
+unused parameters or boxes/specializes calls by moving or wrapping `f`'s body
+under a suffixed name, so a closure that reaches the auxiliary executes `f`'s
+code under another name. The walk visits `f` as well, where its `unsafe`,
+`implemented_by`, `csimp` and `partial` status is reported. -/
 def reducedAritySource? (env : Environment) : Name → Option Name
-  | .str source "_redArg" => if env.contains source then some source else none
+  | .str source s =>
+    if isCompilerSuffix s then
+      match reducedAritySource? env source with
+      | some root => some root
+      | none => if env.contains source then some source else none
+    else none
   | _ => none
 
 /-- Compiled code reachable through execution from `roots`. -/
@@ -575,5 +593,21 @@ run_cmd Ix.Kernel.Audit.checkRuntime #[``externOnly] #[`Init]
 [Ix.Kernel.Audit.RuntimeControls.hashSpec, Ix.Kernel.Audit.RuntimeControls.projectExtern] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntime #[``externAndSubstitution] #[`Init]
+
+-- Stacked compiler suffixes (`_redArg`, `_boxed`, `_impl`, `_spec_<n>`) resolve back to the
+-- underlying declaration in the environment.
+run_cmd do
+  let env ← Lean.getEnv
+  let base := ``plainSquare
+  for suffixed in #[
+    base.str "_redArg",
+    base.str "_boxed",
+    base.str "_impl",
+    base.str "_spec_0",
+    (base.str "_redArg").str "_boxed",
+    ((base.str "_impl").str "_redArg").str "_spec_12"
+  ] do
+    unless Ix.Kernel.Audit.reducedAritySource? env suffixed == some base do
+      Lean.throwError m!"expected {suffixed} to resolve to {base}"
 
 end Ix.Kernel.Audit.RuntimeControls

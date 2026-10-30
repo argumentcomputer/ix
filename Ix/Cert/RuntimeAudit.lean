@@ -1,5 +1,6 @@
 import Ix.Cert.Compile
 import Ix.Cert.CompileCorrect
+import Ix.CompileCertified
 import IxC.Kernel.Audit.Runtime
 import IxC.Kernel.Audit.Roots
 
@@ -116,6 +117,47 @@ run_cmd do
       ``Ix.Cert.artifactCheck, ``Ix.Cert.RoleClosure.roleEvidenceCheck, ``Ix.Cert.closure,
       ``Ix.Kernel.Reader.defaultTable]
     #[`Init, `Std]
+    { Ix.Kernel.Audit.runtimeRulings with
+      csimpModules := Ix.Kernel.Audit.runtimeRulings.csimpModules.push `Ix,
+      assumed := Ix.Kernel.Audit.assumedSubstitutions }
+
+/-! ## The CLI certified compiler and role-binding finalizer
+
+`ix compile` and `ix compile-lean` invoke `Ix.CompileM.compileCertified` and
+`Ix.RoleBinding.Compile.finalize`. Beyond `Init`, `Std`, `Lean`, and the
+`compileChecked` list above, their runtime closure reaches the source-contract
+environment extensions, the syntax equality helper, and the `partial` helpers of
+role-evidence and role-binding synthesis, frozen here. -/
+
+/-- error: project-level execution replacements reached from [Ix.CompileM.compileCertified,
+ Ix.RoleBinding.Compile.finalize]:
+[Ix.groundExpr,
+ Ix.groundLevel,
+ instBEqSyntax_ix.beq,
+ Ix.Compile.sourceContractExtension,
+ Ix.Compile.sourceMeasureExtension,
+ Ix.IndFlags.hasIndOcc,
+ Ix.IndFlags.replaceAllNested,
+ Ix.IndFlags.replaceCtorResultHeadWithAux,
+ Ix.IndFlags.replaceFVarsMap,
+ Ix.IndFlags.substLevel,
+ Ix.Name.pretty,
+ Ix.Name.toStringAux,
+ Ix.RoleEvidence.instGo,
+ Ix.RoleEvidence.instLevelsGo,
+ Ix.RoleEvidence.simpGo,
+ Ix.RoleEvidence.unfoldGo,
+ Ixon.RawEnv.addNameComponentsWithBlobs,
+ _private.Ix.Environment.0.Address.mutsName.go,
+ _private.Ix.Environment.0.Ix.Expr.hashSyntax,
+ Ix.RoleBinding.Evidence.countUses,
+ Ix.RoleBinding.Evidence.egress,
+ Ix.RoleBinding.Evidence.egress.build] -/
+#guard_msgs (whitespace := lax) in
+run_cmd do
+  Ix.Kernel.Audit.checkRuntimeWith
+    #[``Ix.CompileM.compileCertified, ``Ix.RoleBinding.Compile.finalize]
+    #[`Init, `Std, `Lean]
     { Ix.Kernel.Audit.runtimeRulings with
       csimpModules := Ix.Kernel.Audit.runtimeRulings.csimpModules.push `Ix,
       assumed := Ix.Kernel.Audit.assumedSubstitutions }

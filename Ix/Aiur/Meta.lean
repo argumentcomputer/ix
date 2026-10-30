@@ -169,12 +169,13 @@ syntax "#" noWs ident "‹" aiur_typ (", " aiur_typ)* "›" "(" aiur_trm
 syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident "(" ")"       : aiur_trm
 syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident
        "(" aiur_trm (", " aiur_trm)* ")"                                    : aiur_trm
--- Right operands parse at prec 1 (not 0) so the statement-sequencing rule
--- can't swallow `<binop-expr>; rest` from inside the right operand. All
--- other rules have prec ≥ 50, so associativity/precedence are unchanged.
-syntax:50 aiur_trm " + " aiur_trm:1                                         : aiur_trm
-syntax:50 aiur_trm " - " aiur_trm:1                                         : aiur_trm
-syntax aiur_trm " * " aiur_trm:51                                           : aiur_trm
+-- Standard left-associative binary operators (`+`/`-` at prec 50, `*` at
+-- prec 60). Right operands have min-prec ≥ 51 so the statement-sequencing
+-- rule (prec 0) cannot swallow `<binop-expr>; rest` from inside the right
+-- operand.
+syntax:50 aiur_trm:50 " + " aiur_trm:51                                      : aiur_trm
+syntax:50 aiur_trm:50 " - " aiur_trm:51                                      : aiur_trm
+syntax:60 aiur_trm:60 " * " aiur_trm:61                                      : aiur_trm
 syntax "eq_zero" "(" aiur_trm ")"                                            : aiur_trm
 syntax "proj" "(" aiur_trm ", " num ")"                                      : aiur_trm
 syntax aiur_trm "[" num "]"                                                  : aiur_trm
@@ -817,6 +818,28 @@ def elabToplevel : ElabStxCat `aiur_toplevel
   | stx => throw $ .error stx "Invalid syntax for toplevel"
 
 elab "⟦" t:aiur_toplevel "⟧" : term => elabToplevel t
+
+-- Verify left-associativity and relative precedence of `+`, `-`, `*`, and `;`.
+run_cmd do
+  match ← `(aiur_trm| a - b - c) with
+  | `(aiur_trm| $lhs:aiur_trm - $_) =>
+    unless (match lhs with | `(aiur_trm| $_ - $_) => true | _ => false) do
+      throwError "expected `a - b - c` to parse as `(a - b) - c`"
+  | _ => throwError "expected outer `-` in `a - b - c`"
+  match ← `(aiur_trm| a * b * c) with
+  | `(aiur_trm| $lhs:aiur_trm * $_) =>
+    unless (match lhs with | `(aiur_trm| $_ * $_) => true | _ => false) do
+      throwError "expected `a * b * c` to parse as `(a * b) * c`"
+  | _ => throwError "expected outer `*` in `a * b * c`"
+  match ← `(aiur_trm| a - b + c * d; e) with
+  | `(aiur_trm| $expr:aiur_trm; $_) =>
+    match expr with
+    | `(aiur_trm| $sub:aiur_trm + $mul:aiur_trm) =>
+      unless (match sub with | `(aiur_trm| $_ - $_) => true | _ => false) &&
+             (match mul with | `(aiur_trm| $_ * $_) => true | _ => false) do
+        throwError "expected `a - b + c * d` to parse as `(a - b) + (c * d)`"
+    | _ => throwError "expected outer `+` in `a - b + c * d`"
+  | _ => throwError "expected outer `;` in `a - b + c * d; e`"
 
 end Aiur
 
