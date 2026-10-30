@@ -773,6 +773,15 @@ theorem ingestTable_sim (limits : Limits) (dag : Dag) (sharing roots : Array Ixo
 
 /-! ## The fast re-expansion -/
 
+/-- `reexpand` with a precomputed `ReIndex` (`reexpand_eq_withIndex`). -/
+def reexpandWithIndex (limits : Limits) (dag : Dag) (ix : ReIndex) (sharing roots : Array Ixon.Expr) :
+    Except SharingError (Array Nat × Array Nat × Nat) :=
+  if sharing.size ≥ wordBound then .error (.formatBound "sharing table size" sharing.size) else
+  match reIngestTable limits dag ix sharing roots with
+  | .ok (resolved, out) _ visits => .ok (resolved, out, visits)
+  | .error e => .error e
+  | .stop => reexpand limits dag sharing roots
+
 /-- `reexpand` with the DAG's nodes found by `ReIndex.lookup` and the state
 passed explicitly (`reexpand_eq_fast`); when a node is not in the DAG it
 runs `reexpand`. The construction re-expands only its own output, whose
@@ -780,15 +789,11 @@ nodes are all in the DAG, so there that fallback is defensive; a direct
 caller with an encoding of other terms takes it. -/
 def reexpandFast (limits : Limits) (dag : Dag) (sharing roots : Array Ixon.Expr) :
     Except SharingError (Array Nat × Array Nat × Nat) :=
-  if sharing.size ≥ wordBound then .error (.formatBound "sharing table size" sharing.size) else
-  match reIngestTable limits dag (ReIndex.ofDag dag) sharing roots with
-  | .ok (resolved, out) _ visits => .ok (resolved, out, visits)
-  | .error e => .error e
-  | .stop => reexpand limits dag sharing roots
+  reexpandWithIndex limits dag (ReIndex.ofDag dag) sharing roots
 
 @[csimp] theorem reexpand_eq_fast : @reexpand = @reexpandFast := by
   funext limits dag sharing roots
-  unfold reexpandFast
+  unfold reexpandFast reexpandWithIndex
   by_cases hw : sharing.size ≥ wordBound
   · simp only [hw, ite_true]
     unfold reexpand ingestTable
@@ -811,6 +816,12 @@ def reexpandFast (limits : Limits) (dag : Dag) (sharing roots : Array Ixon.Expr)
       simp only [hs]
       rfl
     | stop => rfl
+
+theorem reexpand_eq_withIndex (limits : Limits) (dag : Dag) (sharing roots : Array Ixon.Expr) :
+    reexpand limits dag sharing roots =
+      reexpandWithIndex limits dag (ReIndex.ofDag dag) sharing roots := by
+  rw [reexpand_eq_fast]
+  rfl
 
 end Ix.Sharing.Exact
 

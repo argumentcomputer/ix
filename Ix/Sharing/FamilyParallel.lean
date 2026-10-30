@@ -14,55 +14,6 @@ namespace Ix.Sharing.Family.Parallel
 
 open Ix.Sharing.Exact
 
-theorem sorted_le (xs : List Nat) : (sorted xs).toList.Pairwise (· ≤ ·) := by
-  have h := List.pairwise_mergeSort (le := fun a b : Nat => decide (a ≤ b))
-    (by intro a b c hab hbc; simp only [decide_eq_true_eq] at *; omega)
-    (by intro a b; simp only [Bool.or_eq_true, decide_eq_true_eq]; omega) xs
-  simpa [sorted] using h
-
-theorem reverse_toArray_eq_sorted {chosen : List Nat} (h : chosen.reverse.Pairwise (· ≤ ·)) :
-    chosen.reverse.toArray = sorted chosen := by
-  apply Array.toList_inj.mp
-  simpa [sorted] using List.Perm.eq_of_pairwise (fun a b _ _ hab hba => Nat.le_antisymm hab hba)
-    h (sorted_le chosen) ((List.reverse_perm chosen).trans (List.mergeSort_perm _ _).symm)
-
-/-- When the input member list is already non-decreasing, `chosen` is built in
-reverse ascending order, so `chosen.reverse.toArray` produces the exact sorted
-array at each leaf without running `mergeSort`. -/
-def foldChoicesRev (visit : α → Array Nat → α) : List Nat → List Nat → α → α
-  | [], chosen, acc => visit acc chosen.reverse.toArray
-  | m :: rest, chosen, acc =>
-    foldChoicesRev visit rest (m :: chosen) (foldChoicesRev visit rest chosen acc)
-
-theorem foldChoicesRev_eq (visit : α → Array Nat → α) (remaining chosen : List Nat) (acc : α)
-    (h : (chosen.reverse ++ remaining).Pairwise (· ≤ ·)) :
-    foldChoicesRev visit remaining chosen acc = foldChoices visit remaining chosen acc := by
-  induction remaining generalizing chosen acc with
-  | nil =>
-    simp only [List.append_nil] at h
-    simp only [foldChoicesRev, foldChoices, reverse_toArray_eq_sorted h]
-  | cons m rest ih =>
-    simp only [foldChoicesRev, foldChoices]
-    have h₁ : (chosen.reverse ++ rest).Pairwise (· ≤ ·) :=
-      h.sublist (List.Sublist.append_left (List.sublist_cons_self m rest) chosen.reverse)
-    have h₂ : ((m :: chosen).reverse ++ rest).Pairwise (· ≤ ·) := by
-      simpa only [List.reverse_cons, List.append_assoc, List.singleton_append] using h
-    rw [ih chosen acc h₁, ih (m :: chosen) _ h₂]
-
-def foldChoicesFast (visit : α → Array Nat → α) (members : List Nat) (acc : α) : α :=
-  if decide (members.Pairwise (· ≤ ·)) then
-    foldChoicesRev visit members [] acc
-  else
-    foldChoices visit members [] acc
-
-theorem foldChoicesFast_eq (visit : α → Array Nat → α) (members : List Nat) (acc : α) :
-    foldChoicesFast visit members acc = foldChoices visit members [] acc := by
-  unfold foldChoicesFast
-  split
-  · rename_i h
-    exact foldChoicesRev_eq visit members [] acc (by simpa using of_decide_eq_true h)
-  · rfl
-
 def merge (left right : CTable) : CTable :=
   ParallelTable.merge entryLt left right
 
@@ -145,7 +96,7 @@ def tableWithDepth (depth : Nat) (cfg : Config) (cost : Cost) (members : List Na
   if 12 ≤ members.length ∧ members.length ≤ 16 ∧ members.length ≤ cfg.exactLimit then
     exactTable depth cost members
   else if members.length ≤ cfg.exactLimit then
-    foldChoicesFast (visit cost) members #[]
+    foldChoicesFast (visit cost) members [] #[]
   else Family.table cfg cost members
 
 /-- Complete table equality, including lengths, empty cells and ties. Member

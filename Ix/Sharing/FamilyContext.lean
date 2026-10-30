@@ -14,6 +14,9 @@ import all Ix.Sharing.Exact.AreaSearch
 import all Ix.Sharing.Exact.AreaCostEq
 import all Ix.Sharing.Exact.AreaBlockEq
 import all Ix.Sharing.Exact.AreaSearchEq
+import all Ix.Sharing.Exact.Reexpand
+import all Ix.Sharing.Exact.Search
+import all Ix.Sharing.Exact.Phase3
 import all Ix.Sharing.Exact.TieredFast
 
 @[expose] public section
@@ -88,6 +91,269 @@ def traceParallel (cfg : Config) (width index : Nat) (members : Array Nat) (area
 @[csimp] theorem trace_eq_parallel : @trace = @traceParallel := by
   funext cfg width index members areaSize closureSize eval
   simp only [trace, traceParallel, Parallel.table_eq]
+
+/-- `phiA` computing member flags directly from `stored` in `O(|stored|)` via
+`areaFlags`, and running `areaFoldDirect` and `tGuardDirect` without closure
+allocations. -/
+@[inline] def phiASet (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
+    (fb : Unit → SCtx × Array Nat) (avail : Nat → Bool) (stored : Array Nat) : Nat × Nat :=
+  let w := cx.up.w
+  match areaFoldDirect cx.up.prep cx.up.opaq tb w cx.area posA (areaFlags cx.area.size posA stored) with
+  | (C, I, S, _) =>
+    if aux.storedA.all (fun c => tGuardDirect cx.up.prep tb w posA C I S c) then
+      let roots := aux.rootsA.foldl (fun acc r => acc + rdA posA C tb.cost r) 0
+      let base := aux.storedA.foldl (fun acc c => acc + rdA posA I tb.inl c) 0
+      let entries := stored.foldl (fun acc x => acc + rdA posA I tb.inl x) 0
+      (aux.K + roots + base + entries, aux.csize + stored.size)
+    else
+      match fb () with
+      | (cs, posC) => phiEL2 cs posA posC avail stored
+
+private theorem phiASet_eq_of_flags (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
+    (fb : Unit → SCtx × Array Nat) (avail : Nat → Bool) (stored : Array Nat)
+    (hfl : areaFlags cx.area.size posA stored = memberFlags cx posA avail) :
+    phiASet cx posA tb aux fb avail stored = phiA cx posA tb aux fb avail stored := by
+  unfold phiASet phiA tGuardDirect tGuard
+  rw [hfl, ← areaFold_eq_direct]
+
+private theorem areaFlags_size (k : Nat) (posA ts : Array Nat) :
+    (areaFlags k posA ts).size = k := by
+  unfold areaFlags
+  rw [← Array.foldl_toList]
+  suffices ∀ (l : List Nat) (f : Array Bool), f.size = k →
+      (l.foldl (fun f t => let q := posA[t]!; if q != 0 then f.set! (q - 1) true else f) f).size = k by
+    exact this ts.toList _ Array.size_replicate
+  intro l
+  induction l with
+  | nil => intro f hf; exact hf
+  | cons x l ih =>
+    intro f hf
+    simp only [List.foldl_cons]
+    split <;> apply ih <;> simp [hf]
+
+private theorem areaFlags_congr (k : Nat) (posA ts₁ ts₂ : Array Nat)
+    (h : ∀ x, x ∈ ts₁.toList ↔ x ∈ ts₂.toList) :
+    areaFlags k posA ts₁ = areaFlags k posA ts₂ := by
+  apply Array.ext
+  · rw [areaFlags_size, areaFlags_size]
+  · intro i hi₁ hi₂
+    rw [← getElem!_pos _ i hi₁, ← getElem!_pos _ i hi₂]
+    apply Bool.eq_iff_iff.mpr
+    rw [AreaProof.areaFlags_spec, AreaProof.areaFlags_spec]
+    exact and_congr_right fun _ => exists_congr fun x => and_congr_left fun _ => h x
+
+private theorem memberFlags_eq_areaFlags_filter (cx : SCtx) (posA : Array Nat) (avail : Nat → Bool) :
+    memberFlags cx posA avail = areaFlags cx.area.size posA (cx.members.filter avail) := by
+  unfold memberFlags areaFlags
+  rw [← Array.foldl_toList, ← Array.foldl_toList, Array.toList_filter]
+  suffices ∀ (l : List Nat) (fl : Array Bool),
+      l.foldl (fun fl m => match posOf posA m with
+        | some j => if avail m then fl.set! j true else fl
+        | none => fl) fl =
+      (l.filter avail).foldl (fun f t =>
+        let q := posA[t]!; if q != 0 then f.set! (q - 1) true else f) fl by
+    exact this cx.members.toList _
+  intro l
+  induction l with
+  | nil => intro fl; rfl
+  | cons m l ih =>
+    intro fl
+    simp only [List.foldl_cons, List.filter_cons]
+    have hstep : (match posOf posA m with
+        | some j => if avail m then fl.set! j true else fl
+        | none => fl) =
+        if avail m then (let q := posA[m]!; if q != 0 then fl.set! (q - 1) true else fl) else fl := by
+      unfold posOf
+      by_cases hq : posA[m]! = 0 <;> by_cases ha : avail m = true <;> simp [hq, ha]
+    rw [hstep]
+    cases avail m <;> simp only [ite_true, Bool.false_eq_true, ite_false, List.foldl_cons] <;> exact ih _
+
+private theorem areaFlags_empty_eq_memberFlags (cx : SCtx) (posA : Array Nat) :
+    areaFlags cx.area.size posA #[] = memberFlags cx posA (fun _ => false) := by
+  rw [memberFlags_eq_areaFlags_filter]
+  apply areaFlags_congr
+  intro x
+  simp
+
+private theorem areaFlags_subset_eq_memberFlags (cx : SCtx) (posA : Array Nat)
+    (selected : Array Nat) (hsub : ∀ x ∈ selected.toList, x ∈ cx.members.toList) :
+    areaFlags cx.area.size posA selected = memberFlags cx posA selected.contains := by
+  rw [memberFlags_eq_areaFlags_filter]
+  apply areaFlags_congr
+  intro x
+  rw [Array.toList_filter, List.mem_filter, Array.contains_iff_mem, ← Array.mem_toList_iff]
+  exact ⟨fun hx => ⟨hsub x hx, hx⟩, fun h => h.2⟩
+
+private theorem mem_sorted {xs : List Nat} {x : Nat} (hx : x ∈ (sorted xs).toList) : x ∈ xs := by
+  unfold sorted at hx
+  exact (List.Perm.mem_iff (List.mergeSort_perm xs _)).mp hx
+
+private theorem foldChoices_congr {α : Type} (members : List Nat)
+    (visit₁ visit₂ : α → Array Nat → α)
+    (hvisit : ∀ a (s : Array Nat), (∀ x ∈ s.toList, x ∈ members) → visit₁ a s = visit₂ a s)
+    (remaining chosen : List Nat)
+    (hrem : ∀ x ∈ remaining, x ∈ members) (hch : ∀ x ∈ chosen, x ∈ members) (acc : α) :
+    foldChoices visit₁ remaining chosen acc = foldChoices visit₂ remaining chosen acc := by
+  induction remaining generalizing chosen acc with
+  | nil =>
+    unfold foldChoices
+    exact hvisit acc (sorted chosen) (fun x hx => hch x (mem_sorted hx))
+  | cons m rest ih =>
+    unfold foldChoices
+    have hm : m ∈ members := hrem m List.mem_cons_self
+    have hrest : ∀ x ∈ rest, x ∈ members := fun x hx => hrem x (List.mem_cons_of_mem _ hx)
+    rw [ih chosen hrest hch acc, ih (m :: chosen) hrest
+      (fun x hx => by rcases List.mem_cons.mp hx with rfl | hx; exact hm; exact hch x hx) _]
+
+private theorem score_congr (members : List Nat) (cost₁ cost₂ : Cost)
+    (hcost : ∀ s : Array Nat, (∀ x ∈ s.toList, x ∈ members) → cost₁ s = cost₂ s)
+    (chosen : List Nat) (hch : ∀ x ∈ chosen, x ∈ members) (m : Nat) (hm : m ∈ members) :
+    score cost₁ chosen m = score cost₂ chosen m := by
+  unfold score
+  dsimp only
+  rw [hcost (sorted (m :: chosen))]
+  intro x hx
+  rcases List.mem_cons.mp (mem_sorted hx) with rfl | hx
+  · exact hm
+  · exact hch x hx
+
+private theorem pickTail_congr (members : List Nat) (cost₁ cost₂ : Cost)
+    (hcost : ∀ s : Array Nat, (∀ x ∈ s.toList, x ∈ members) → cost₁ s = cost₂ s)
+    (chosen : List Nat) (hch : ∀ x ∈ chosen, x ∈ members)
+    (best : Nat × Entry) (rest : List Nat) (hrest : ∀ x ∈ rest, x ∈ members) :
+    pickTail cost₁ chosen best rest = pickTail cost₂ chosen best rest := by
+  induction rest generalizing best with
+  | nil => rfl
+  | cons m rest ih =>
+    unfold pickTail
+    dsimp only
+    rw [score_congr members cost₁ cost₂ hcost chosen hch m (hrest m List.mem_cons_self)]
+    exact ih _ (fun x hx => hrest x (List.mem_cons_of_mem _ hx))
+
+private theorem pickTail_fst_mem (cost : Cost) (chosen : List Nat) (best : Nat × Entry)
+    (rest : List Nat) :
+    (pickTail cost chosen best rest).1 = best.1 ∨ (pickTail cost chosen best rest).1 ∈ rest := by
+  induction rest generalizing best with
+  | nil => exact Or.inl rfl
+  | cons m rest ih =>
+    unfold pickTail
+    dsimp only
+    by_cases hb : betterEntry (score cost chosen m) (some best.2) = true
+    · simp only [hb, ite_true]
+      rcases ih (m, score cost chosen m) with h | h
+      · exact Or.inr (by rw [h]; exact List.mem_cons_self)
+      · exact Or.inr (List.mem_cons_of_mem _ h)
+    · simp only [hb, Bool.false_eq_true, ite_false]
+      rcases ih best with h | h
+      · exact Or.inl h
+      · exact Or.inr (List.mem_cons_of_mem _ h)
+
+private theorem greedyOrderAux_congr_and_mem (members : List Nat) (cost₁ cost₂ : Cost)
+    (hcost : ∀ s : Array Nat, (∀ x ∈ s.toList, x ∈ members) → cost₁ s = cost₂ s)
+    (fuel : Nat) (chosen pool : List Nat)
+    (hch : ∀ x ∈ chosen, x ∈ members) (hpool : ∀ x ∈ pool, x ∈ members) :
+    greedyOrderAux cost₁ fuel chosen pool = greedyOrderAux cost₂ fuel chosen pool ∧
+      (∀ x ∈ greedyOrderAux cost₁ fuel chosen pool, x ∈ members) := by
+  induction fuel generalizing chosen pool with
+  | zero =>
+    unfold greedyOrderAux
+    exact ⟨rfl, fun _ h => nomatch h⟩
+  | succ fuel ih =>
+    cases pool with
+    | nil =>
+      unfold greedyOrderAux
+      exact ⟨rfl, fun _ h => nomatch h⟩
+    | cons m rest =>
+      unfold greedyOrderAux
+      dsimp only
+      have hm : m ∈ members := hpool m List.mem_cons_self
+      have hrest : ∀ x ∈ rest, x ∈ members := fun x hx => hpool x (List.mem_cons_of_mem _ hx)
+      have hpick : pick cost₁ chosen m rest = pick cost₂ chosen m rest := by
+        unfold pick
+        rw [score_congr members cost₁ cost₂ hcost chosen hch m hm,
+          pickTail_congr members cost₁ cost₂ hcost chosen hch _ rest hrest]
+      have hnext_mem : pick cost₁ chosen m rest ∈ members := by
+        unfold pick
+        rcases pickTail_fst_mem cost₁ chosen (m, score cost₁ chosen m) rest with h | h
+        · rw [h]; exact hm
+        · exact hrest _ h
+      have hch' : ∀ x ∈ pick cost₁ chosen m rest :: chosen, x ∈ members := by
+        intro x hx
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact hnext_mem
+        · exact hch x hx
+      have hpool' : ∀ x ∈ (m :: rest).erase (pick cost₁ chosen m rest), x ∈ members :=
+        fun x hx => hpool x (List.mem_of_mem_erase hx)
+      obtain ⟨heq, hmem⟩ := ih (pick cost₁ chosen m rest :: chosen)
+        ((m :: rest).erase (pick cost₁ chosen m rest)) hch' hpool'
+      refine ⟨by rw [← hpick, heq], ?_⟩
+      intro x hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact hnext_mem
+      · exact hmem x hx
+
+private theorem table_congr_subset (cfg : Config) (members : List Nat) (cost₁ cost₂ : Cost)
+    (hcost : ∀ s : Array Nat, (∀ x ∈ s.toList, x ∈ members) → cost₁ s = cost₂ s) :
+    table cfg cost₁ members = table cfg cost₂ members := by
+  unfold table foldFamily
+  split
+  · exact foldChoices_congr members _ _
+      (fun tb s hs => by rw [hcost s hs])
+      members [] (fun x hx => hx) (fun _ h => nomatch h) #[]
+  · unfold chain greedyOrder
+    obtain ⟨hord, hmem⟩ := greedyOrderAux_congr_and_mem members cost₁ cost₂ hcost
+      members.length [] members (fun _ h => nomatch h) (fun x hx => hx)
+    rw [hord]
+    have hchain_mem : ∀ s ∈ List.map (fun k => sorted ((greedyOrderAux cost₂ members.length [] members).take k))
+        (List.range (members.length + 1)), ∀ x ∈ s.toList, x ∈ members := by
+      intro s hs x hx
+      rcases List.mem_map.mp hs with ⟨k, _, rfl⟩
+      rw [← hord] at hx
+      exact hmem x (List.mem_of_mem_take (mem_sorted hx))
+    generalize List.map (fun k => sorted ((greedyOrderAux cost₂ members.length [] members).take k))
+      (List.range (members.length + 1)) = ch at hchain_mem
+    suffices ∀ (l : List (Array Nat)), (∀ s ∈ l, ∀ x ∈ s.toList, x ∈ members) →
+        ∀ tb : CTable, l.foldl (fun tb set => tb.add (cost₁ set, set)) tb =
+          l.foldl (fun tb set => tb.add (cost₂ set, set)) tb by
+      exact this ch hchain_mem #[]
+    intro l hl tb
+    induction l generalizing tb with
+    | nil => rfl
+    | cons s l ih =>
+      simp only [List.foldl_cons]
+      rw [hcost s (hl s List.mem_cons_self)]
+      exact ih (fun s' hs' => hl s' (List.mem_cons_of_mem _ hs')) _
+
+theorem trace_phiASet_eq (cfg : Config) (width index : Nat) (stage : UStage)
+    (members area : Array Nat) (closureSize : Nat)
+    (posA : Array Nat) (tb : TBase) (aux : AAux) (fb : Unit → SCtx × Array Nat) :
+    trace cfg width index members area.size closureSize
+        (phiASet (context stage members area) posA tb aux fb) =
+      trace cfg width index members area.size closureSize
+        (phiA (context stage members area) posA tb aux fb) := by
+  let cx := context stage members area
+  have hbase : phiASet cx posA tb aux fb (fun _ => false) #[] =
+      phiA cx posA tb aux fb (fun _ => false) #[] :=
+    phiASet_eq_of_flags cx posA tb aux fb (fun _ => false) #[]
+      (areaFlags_empty_eq_memberFlags cx posA)
+  have hrows : table cfg
+        (fun selected => ((phiASet cx posA tb aux fb selected.contains selected).1 : _root_.Int) -
+          ((phiA cx posA tb aux fb (fun _ => false) #[]).1 : _root_.Int))
+        members.toList =
+      table cfg
+        (fun selected => ((phiA cx posA tb aux fb selected.contains selected).1 : _root_.Int) -
+          ((phiA cx posA tb aux fb (fun _ => false) #[]).1 : _root_.Int))
+        members.toList := by
+    apply table_congr_subset
+    intro selected hsub
+    have hsel : phiASet cx posA tb aux fb selected.contains selected =
+        phiA cx posA tb aux fb selected.contains selected :=
+      phiASet_eq_of_flags cx posA tb aux fb selected.contains selected
+        (areaFlags_subset_eq_memberFlags cx posA selected hsub)
+    rw [hsel]
+  unfold trace
+  dsimp only
+  rw [hbase, hrows]
 
 def auxiliary (ex : Expanded) (stage : UStage) (base : TBase)
     (area positions found marks : Array Nat) : AAux :=
@@ -279,7 +545,7 @@ def step (cfg : Config) (limits : Limits) (ex : Expanded) (stage : UStage)
           let cached := Thunk.mk fun _ => fullContext ex stage members
           let result ← retainedResult stage.slack
             (trace cfg width results.size members area.size found.size
-              (phiA light areaPositions base aux (forceContext cached)))
+              (phiASet light areaPositions base aux (forceContext cached)))
           return ((results.push result, nextStates, nextWork),
             clearPositions areaPositions area, closurePositions)
         else
@@ -328,7 +594,7 @@ theorem step_eq_area (cfg : Config) (limits : Limits) (ex : Expanded) (stage : U
           · rename_i localOK
             obtain ⟨sameSize, sameTrace⟩ := trace_walk_eq cfg ex stage width results.size members
               stageOK base baseEq baseOK marks found stack walk membersOK areaReady walkOK localOK
-            rw [sameTrace, sameSize, clearArea, clearClosure, original]
+            rw [trace_phiASet_eq, sameTrace, sameSize, clearArea, clearClosure, original]
             unfold familyReferenceStep
             simp only [stateCharge, Bind.bind, Except.bind]
             cases workCharge : bump work (familyWork cfg members.size (componentContext ex stage members).closure.size)
@@ -378,7 +644,7 @@ theorem components_eq (cfg : Config) (limits : Limits) (ex : Expanded) (stage : 
   · rfl
 
 def uniform (cfg : Config) (limits : Limits) (ex : Expanded) (prep : Prep)
-    (facts : GraphFacts) (parents : Array (Array Nat)) (width : Nat) :
+    (facts : GraphFacts) (parents : Array (Array Nat)) (reIx : ReIndex) (width : Nat) :
     Except SharingError UniformSharingResult := do
   let stage := uniformStageF width ex prep facts
   let (results, states, costEvals) ← components cfg limits ex stage width parents
@@ -390,32 +656,62 @@ def uniform (cfg : Config) (limits : Limits) (ex : Expanded) (prep : Prep)
     { facts, certainStored := stage.cs, certainExcluded := stage.ce, uncertain := stage.unc,
       lowDegree := stage.low, components := stage.comps, stored := mergeSorted stage.cs chosen,
       model, states, costEvals, lowerBracket }
-  uniformFinishF width limits ex prep facts.deg choice
+  uniformFinishIx width limits ex prep facts.deg reIx choice
 
 theorem uniform_eq (cfg : Config) (limits : Limits) (ex : Expanded) (facts : GraphFacts)
     (width : Nat) (dagOK : AreaProof.DagOK ex.dag) :
-    uniform cfg limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag) width =
+    uniform cfg limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag)
+        (ReIndex.ofDag ex.dag) width =
       familyUniformArea cfg limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag) width := by
   unfold uniform familyUniformArea
   dsimp only
   rw [components_eq cfg limits ex _ width (stageOK_F width ex facts dagOK)]
+  simp only [uniformFinishIx_eq_F]
+
+private theorem familyUniformArea_layoutBytes (cfg : Config) (layout : ShareLayout)
+    (limits : Limits) (ex : Expanded) (p : Prep) (facts : GraphFacts)
+    (parents : Array (Array Nat)) (width : Nat) {u : UniformSharingResult}
+    (hu : familyUniformArea cfg limits ex p facts parents width = .ok u) :
+    u.result.variableBytes = layoutBytes layout u.result.sharing u.result.roots := by
+  unfold familyUniformArea at hu
+  dsimp only [Bind.bind, Except.bind, Pure.pure, Except.pure] at hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  exact uniformFinishF_layoutBytes layout width limits ex p facts.deg _ hu
 
 def atWidth (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expanded)
-    (prep : Prep) (facts : GraphFacts) (parents : Array (Array Nat)) (candidates width : Nat) :
+    (prep : Prep) (facts : GraphFacts) (parents : Array (Array Nat))
+    (reIx : ReIndex) (spines : Array (Array Nat)) (candidates width : Nat) :
     Except SharingError TieredSharingResult := do
-  let uniform ← uniform cfg limits ex prep facts parents width
+  let uniform ← uniform cfg limits ex prep facts parents reIx width
   let allocation ← allocate layout limits ex.dag facts.deg uniform.result.tableTerms
     uniform.result.sharing uniform.result.roots
-  let phase1 := layoutBytes layout uniform.result.sharing uniform.result.roots
-  let materialized ← rematerializeP prep layout limits ex allocation.order phase1
+  let phase1 := uniform.result.variableBytes
+  let materialized ← rematerializeIx prep reIx parents spines layout limits ex allocation.order phase1
   return tieredResultF layout width uniform allocation materialized candidates phase1
 
 theorem atWidth_eq (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expanded)
     (facts : GraphFacts) (candidates width : Nat) (dagOK : AreaProof.DagOK ex.dag) :
-    atWidth cfg layout limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag) candidates width =
-      familyAtWidthArea cfg layout limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag) candidates width := by
+    atWidth cfg layout limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag)
+        (ReIndex.ofDag ex.dag) (spineParentLists ex.dag (Prep.ofDag ex.dag).family)
+        candidates width =
+      familyAtWidthArea cfg layout limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag)
+        candidates width := by
   unfold atWidth familyAtWidthArea
   rw [uniform_eq cfg limits ex facts width dagOK]
+  cases hu : familyUniformArea cfg limits ex (Prep.ofDag ex.dag) facts (parentsOf ex.dag) width with
+  | error e => rfl
+  | ok u =>
+    have hpar : parentsOf ex.dag = parentEdgeLists (Prep.ofDag ex.dag).dag := by
+      unfold parentsOf parentEdgeLists Prep.ofDag
+      rfl
+    have hsp : spineParentLists ex.dag (Prep.ofDag ex.dag).family =
+        spineParentLists (Prep.ofDag ex.dag).dag (Prep.ofDag ex.dag).family := rfl
+    simp only [Bind.bind, Except.bind,
+      familyUniformArea_layoutBytes cfg layout limits ex (Prep.ofDag ex.dag) facts
+        (parentsOf ex.dag) width hu,
+      hpar, hsp, rematerializeIx_eq_P]
 
 def expanded (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expanded) :
     Except SharingError TieredSharingResult := do
@@ -423,9 +719,11 @@ def expanded (cfg : Config) (layout : ShareLayout) (limits : Limits) (ex : Expan
   let prep := Prep.ofDag ex.dag
   let facts := graphFacts ex.dag ex.roots
   let parents := parentsOf ex.dag
+  let reIx : ReIndex := { parents, leaves := leafIndex ex.dag }
+  let spines := spineParentLists ex.dag prep.family
   let candidates := tieredCandidateCount ex.dag.size prep facts
   let result ← tieredCandidates ex.dag.size
-    (atWidth cfg layout limits ex prep facts parents candidates)
+    (atWidth cfg layout limits ex prep facts parents reIx spines candidates)
   return withExpansionStats ex result
 
 theorem expanded_eq : @expanded = @familyExpandedArea := by
@@ -435,9 +733,13 @@ theorem expanded_eq : @expanded = @familyExpandedArea := by
   | error error => rfl
   | ok value =>
     cases value
+    have hRe : ({ parents := parentsOf ex.dag, leaves := leafIndex ex.dag } : ReIndex) =
+        ReIndex.ofDag ex.dag := by
+      unfold ReIndex.ofDag parentsOf parentEdgeLists
+      rfl
     have widths := fun facts candidates => funext fun width =>
       atWidth_eq cfg layout limits ex facts candidates width (dagOK_of_checks checks)
-    simp only [widths]
+    simp only [hRe, widths]
 
 def normalize (cfg : Config) (layout : ShareLayout) (constant : Ixon.Constant)
     (limits : Limits := {}) : Except SharingError (Ixon.Constant × TieredSharingResult) := do

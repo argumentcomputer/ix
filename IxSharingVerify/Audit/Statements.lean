@@ -78,6 +78,7 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.Parallel.tableWithDepth_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.Parallel.table_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.Parallel.table_eq_function, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.foldChoices_eq_fast, standardAxioms := noChoice },
   { root := ``Ix.Sharing.Family.LightContext.trace_eq_parallel, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.trace_walk_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.step_eq_area, standardAxioms := standard },
@@ -521,7 +522,25 @@ def roots : Array RootAllowance := #[
   -- compiled code runs the shared-memo conversion, proved equal to the
   -- structural one (`@[csimp]`).
   { root := ``Ix.LeanIngress.ingressExprs_eq_shared,
-    standardAxioms := standard }
+    standardAxioms := standard },
+  { root := ``Ix.CompileM.buildCompiledMutualBlock_eq_fast,
+    standardAxioms := standard },
+  { root := ``Ix.CompileM.finishInductiveFamilyBlock_eq_fast,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Exact.areaFold_eq_direct,
+    standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Exact.memberFlags_eq_direct,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Exact.phiA_eq_direct,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Exact.placeBucket_eq_fast,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Exact.reboundA_eq_direct,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Exact.revisibleA_eq_direct,
+    standardAxioms := standard },
+  { root := ``Ix.Sharing.Exact.TBase.ofPrep_eq_direct,
+    standardAxioms := noChoice }
 ]
 
 /-- Check every root: no duplicates, only Lean's standard axioms listed, and

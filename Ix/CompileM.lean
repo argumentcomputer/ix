@@ -2121,12 +2121,20 @@ def standaloneMutConstInfo? (payloads : Array Ixon.MutConst) :
   | _ => none
 
 /-- Build a BlockResult from a block constant, serializing once. -/
-def BlockResult.mk' (block : Ixon.Constant)
+@[expose] def BlockResult.mk' (block : Ixon.Constant)
     (blockMeta : Ixon.ConstantMeta := .empty)
     (projections : Array
       (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) : BlockResult :=
   let blockBytes := Ixon.ser block
   let blockAddr := Address.admissionHash blockBytes
+  ⟨block, blockBytes, blockAddr, blockMeta, projections, #[]⟩
+
+/-- Build a BlockResult from pre-computed `blockBytes` and `blockAddr`. -/
+@[inline, expose] def BlockResult.ofBytes (block : Ixon.Constant)
+    (blockBytes : ByteArray) (blockAddr : Address)
+    (blockMeta : Ixon.ConstantMeta := .empty)
+    (projections : Array
+      (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) : BlockResult :=
   ⟨block, blockBytes, blockAddr, blockMeta, projections, #[]⟩
 
 /-- Name-to-block registrations for a collapsed standalone representative. -/
@@ -2182,7 +2190,7 @@ def buildMutualProjections (sources : List MutConst)
 under `limits`; fails exactly when the construction does. Projection arrays do
 not affect the serialized main-block codec but remain part of the exact
 production result. -/
-def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
+@[expose] def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
     (sources : List MutConst) (payloads : Array Ixon.MutConst)
     (metas : Array (Name × Ixon.ConstantMeta))
     (cache : BlockState) : Except CompileError BlockResult := do
@@ -2194,6 +2202,26 @@ def buildCompiledMutualBlock (limits : Ix.Sharing.Exact.Limits)
     let block ← buildConstantWithSharing limits (.muts payloads) cache.refs cache.univs
     pure (BlockResult.mk' block .empty
       (buildMutualProjections sources (Address.admissionHash (Ixon.ser block)) metas))
+
+/-- Runtime implementation of `buildCompiledMutualBlock` that serializes and
+hashes a non-standalone mutual block once. -/
+@[expose] def buildCompiledMutualBlockFast (limits : Ix.Sharing.Exact.Limits)
+    (sources : List MutConst) (payloads : Array Ixon.MutConst)
+    (metas : Array (Name × Ixon.ConstantMeta))
+    (cache : BlockState) : Except CompileError BlockResult := do
+  if let some info := standaloneMutConstInfo? payloads then
+    let block ← buildConstantWithSharing limits info cache.refs cache.univs
+    pure (BlockResult.mk' block .empty
+      (buildStandaloneMutualProjections sources block metas))
+  else
+    let block ← buildConstantWithSharing limits (.muts payloads) cache.refs cache.univs
+    let blockBytes := Ixon.ser block
+    let blockAddr := Address.admissionHash blockBytes
+    pure (BlockResult.ofBytes block blockBytes blockAddr .empty
+      (buildMutualProjections sources blockAddr metas))
+
+@[csimp] theorem buildCompiledMutualBlock_eq_fast :
+    @buildCompiledMutualBlock = @buildCompiledMutualBlockFast := rfl
 
 /-- Check only the non-expression wire counts of a mutual member. Canonical
 sharing validates the rewritten expressions separately. -/
@@ -2284,7 +2312,7 @@ def buildInductiveProjections (i : InductiveVal)
 
 /-- Finish the main block and projections of a compiled standalone inductive
 family. -/
-def finishInductiveFamilyBlock (i : InductiveVal)
+@[expose] def finishInductiveFamilyBlock (i : InductiveVal)
     (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
     (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
   let _ ← checkedTableCount "inductive constructors" i.ctors.size
@@ -2297,6 +2325,25 @@ def finishInductiveFamilyBlock (i : InductiveVal)
   let projections :=
     buildInductiveProjections i indMeta ctorMetaPairs blockAddr
   pure (BlockResult.mk' block .empty projections)
+
+/-- Runtime implementation of `finishInductiveFamilyBlock` that reuses the
+already-computed `blockBytes` and `blockAddr`. -/
+@[expose] def finishInductiveFamilyBlockFast (i : InductiveVal)
+    (ind : Ixon.Inductive) (indMeta : Ixon.ConstantMeta)
+    (ctorMetaPairs : Array (Name × Ixon.ConstantMeta)) : CompileM BlockResult := do
+  let _ ← checkedTableCount "inductive constructors" i.ctors.size
+  let _ ← checkedTableCount "constructor projections" ctorMetaPairs.size
+  let cache ← getBlockState
+  let block ← buildBlockConstant
+    (.muts #[.indc ind]) cache.refs cache.univs
+  let blockBytes := Ixon.ser block
+  let blockAddr := Address.admissionHash blockBytes
+  let projections :=
+    buildInductiveProjections i indMeta ctorMetaPairs blockAddr
+  pure (BlockResult.ofBytes block blockBytes blockAddr .empty projections)
+
+@[csimp] theorem finishInductiveFamilyBlock_eq_fast :
+    @finishInductiveFamilyBlock = @finishInductiveFamilyBlockFast := rfl
 
 /-- Finish a compiled singleton payload using the current block tables, the
 compiler's canonical sharing (`buildBlockConstant`, roots derived from the

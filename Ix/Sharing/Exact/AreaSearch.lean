@@ -143,6 +143,18 @@ def TBase.ofPrep (p : Prep) (w : Nat) (opaq : Array Bool) : TBase :=
         (Array.mkEmpty n, Array.mkEmpty n, Array.mkEmpty n, Array.mkEmpty n) with
     | (C, I, S, B) => { tLen := tLen, tTail := tTail, cost := C, inl := I, sides := S, below := B }
 
+/-- `TBase.ofPrep` with distinct initial capacities so IR CSE does not alias the
+four empty arrays. -/
+def TBase.ofPrepDirect (p : @& Prep) (w : Nat) (opaq : @& Array Bool) : TBase :=
+  let n := p.dag.size
+  match tSpineTables p.dag p.family opaq with
+  | (tLen, tTail) =>
+    match foldRange (tBaseStep p opaq tLen tTail w) 0 n
+        (Array.mkEmpty n, Array.mkEmpty (n + 1), Array.mkEmpty (n + 2), Array.mkEmpty (n + 3)) with
+    | (C, I, S, B) => { tLen := tLen, tTail := tTail, cost := C, inl := I, sides := S, below := B }
+
+@[csimp] theorem TBase.ofPrep_eq_direct : @TBase.ofPrep = @TBase.ofPrepDirect := by rfl
+
 /-- The opacity test of an opaque term on its row: its inline writing and,
 for a telescope, its truncated continuation cost at least `w`. -/
 @[inline] def tGuard (p : Prep) (tTail : Array Nat) (w : Nat) (getC getI getS : Nat → Nat)
@@ -185,6 +197,77 @@ def areaFold (p : Prep) (opaq : Array Bool) (tb : TBase) (w : Nat) (area pos : A
       | (c, inl, s, b) => (C.push c, I.push inl, S.push s, B.push b))
     0 k (Array.mkEmpty k, Array.mkEmpty k, Array.mkEmpty k, Array.mkEmpty k)
 
+/-- `tScan` with direct `rdA` array readers instead of closure parameters. -/
+def tScanDirect (tLen : @& Array Nat) (w : Nat) (pos S baseS B baseB : @& Array Nat) (l s : Nat) :
+    Nat → Nat → Nat → Nat
+  | 0, _, best => best
+  | fuel + 1, cur, best =>
+    if cur = 0 then best
+    else
+      let u := cur - 1
+      let cand := tag4Size (l - tLen[u]!) + (s - rdA pos S baseS u) + w
+      tScanDirect tLen w pos S baseS B baseB l s fuel (rdA pos B baseB u)
+        (if cand < best then cand else best)
+
+theorem tScanDirect_eq (tLen : Array Nat) (w : Nat) (pos S baseS B baseB : Array Nat)
+    (l s : Nat) :
+    ∀ fuel cur best,
+      tScanDirect tLen w pos S baseS B baseB l s fuel cur best =
+        tScan tLen w (rdA pos S baseS) (rdA pos B baseB) l s fuel cur best
+  | 0, _, _ => rfl
+  | fuel + 1, cur, best => by
+    unfold tScanDirect tScan
+    split
+    · rfl
+    · exact tScanDirect_eq tLen w pos S baseS B baseB l s fuel _ _
+
+/-- `tRow` with direct `avA` and `rdA` array readers instead of closure
+parameters. -/
+@[inline] def tRowDirect (p : @& Prep) (opaq : @& Array Bool) (tb : @& TBase) (w : Nat)
+    (pos : @& Array Nat) (fl : @& Array Bool) (C S B : @& Array Nat) (t : Nat) :
+    Nat × Nat × Nat × Nat :=
+  let node := p.dag.node t
+  let fam := p.family[t]!
+  if fam == .none then
+    let inl := node.children.foldl (fun acc c => acc + rdA pos C tb.cost c) node.head.ownBytes
+    (if opaq[t]! then w else if avA pos fl t then min w inl else inl, inl, 0, 0)
+  else
+    let nxt := node.spineNext
+    let same := p.family[nxt]! == fam && !opaq[nxt]!
+    let s := node.sideExtra + rdA pos C tb.cost node.sideChild +
+      (if same then rdA pos S tb.sides nxt else 0)
+    let bl := if same then (if avA pos fl nxt then nxt + 1 else rdA pos B tb.below nxt) else 0
+    let l := tb.tLen[t]!
+    let inl := tScanDirect tb.tLen w pos S tb.sides B tb.below l s l bl
+      (tag4Size l + s + rdA pos C tb.cost tb.tTail[t]!)
+    (if opaq[t]! then w else if avA pos fl t then min w inl else inl, inl, s, bl)
+
+theorem tRowDirect_eq (p : Prep) (opaq : Array Bool) (tb : TBase) (w : Nat)
+    (pos : Array Nat) (fl : Array Bool) (C S B : Array Nat) (t : Nat) :
+    tRowDirect p opaq tb w pos fl C S B t =
+      tRow p opaq tb.tLen tb.tTail w (avA pos fl) (rdA pos C tb.cost) (rdA pos S tb.sides)
+        (rdA pos B tb.below) t := by
+  unfold tRowDirect tRow
+  simp only [tScanDirect_eq]
+
+/-- `areaFold` with `tRowDirect`, eliminating closure allocations at every step. -/
+def areaFoldDirect (p : @& Prep) (opaq : @& Array Bool) (tb : @& TBase) (w : Nat)
+    (area pos : @& Array Nat) (fl : @& Array Bool) :
+    Array Nat × Array Nat × Array Nat × Array Nat :=
+  let k := area.size
+  foldRange (fun (st : Array Nat × Array Nat × Array Nat × Array Nat) i =>
+    match st with
+    | (C, I, S, B) =>
+      match tRowDirect p opaq tb w pos fl C S B area[i]! with
+      | (c, inl, s, b) => (C.push c, I.push inl, S.push s, B.push b))
+    0 k (Array.mkEmpty k, Array.mkEmpty (k + 1), Array.mkEmpty (k + 2), Array.mkEmpty (k + 3))
+
+@[csimp] theorem areaFold_eq_direct : @areaFold = @areaFoldDirect := by
+  funext p opaq tb w area pos fl
+  unfold areaFold areaFoldDirect
+  simp only [tRowDirect_eq]
+  rfl
+
 /-- What the area search keeps per component besides its context: the
 closure's size, the constant `K` (base costs of the roots and base entry costs
 of the opaque terms in the closure but outside the area), the roots in the
@@ -213,6 +296,33 @@ def phiA (cx : SCtx) (posA : Array Nat) (tb : TBase) (aux : AAux)
     else
       match fb () with
       | (cs, posC) => phiEL2 cs posA posC avail stored
+
+/-- `tGuard` with direct `rdA` array readers instead of closure parameters. -/
+@[inline] def tGuardDirect (p : @& Prep) (tb : @& TBase) (w : Nat) (posA C I S : @& Array Nat)
+    (c : Nat) : Bool :=
+  decide (w ≤ rdA posA I tb.inl c) &&
+    (p.family[c]! == .none || decide (w ≤ rdA posA S tb.sides c + rdA posA C tb.cost tb.tTail[c]!))
+
+/-- `phiA` using `areaFoldDirect` and `tGuardDirect` without closure
+allocations. -/
+@[specialize] def phiADirect (cx : @& SCtx) (posA : @& Array Nat) (tb : @& TBase) (aux : @& AAux)
+    (fb : Unit → SCtx × Array Nat) (avail : Nat → Bool) (stored : @& Array Nat) : Nat × Nat :=
+  let w := cx.up.w
+  match areaFoldDirect cx.up.prep cx.up.opaq tb w cx.area posA (memberFlagsDirect cx posA avail) with
+  | (C, I, S, _) =>
+    if aux.storedA.all (fun c => tGuardDirect cx.up.prep tb w posA C I S c) then
+      let roots := aux.rootsA.foldl (fun acc r => acc + rdA posA C tb.cost r) 0
+      let base := aux.storedA.foldl (fun acc c => acc + rdA posA I tb.inl c) 0
+      let entries := stored.foldl (fun acc x => acc + rdA posA I tb.inl x) 0
+      (aux.K + roots + base + entries, aux.csize + stored.size)
+    else
+      match fb () with
+      | (cs, posC) => phiEL2 cs posA posC avail stored
+
+@[csimp] theorem phiA_eq_direct : @phiA = @phiADirect := by
+  funext cx posA tb aux fb avail stored
+  unfold phiA phiADirect memberFlags memberFlagsDirect tGuardDirect tGuard
+  rw [areaFold_eq_direct]
 
 /-! ## Bounds and visible counts without tuples -/
 
@@ -244,6 +354,24 @@ def reboundA (cx : SCtx) (posA : Array Nat) (outAll : Array Nat) : RB :=
         | (a, b, c, d) => (I.push a, M.push b, H.push c, C.push d))
       0 k (Array.mkEmpty k, Array.mkEmpty k, Array.mkEmpty k, Array.mkEmpty k) with
   | (I, M, H, C) => { inl := I, mrg := M, head := H, cont := C }
+
+/-- `reboundA` with distinct initial capacities so IR CSE does not alias the
+four empty arrays. -/
+def reboundADirect (cx : @& SCtx) (posA : @& Array Nat) (outAll : @& Array Nat) : RB :=
+  let b0 := cx.bounds0
+  let k := cx.area.size
+  let of := areaFlags k posA outAll
+  match foldRange (fun (st : Array Nat × Array Nat × Array Nat × Array Nat) i =>
+      match st with
+      | (I, M, H, C) =>
+        let t := cx.area[i]!
+        match boundsValsG cx.up.prep cx.up.w (cx.cand[t]! && !of[i]!) (rdA posA H b0.headLB)
+            (rdA posA C b0.contLB) t with
+        | (a, b, c, d) => (I.push a, M.push b, H.push c, C.push d))
+      0 k (Array.mkEmpty k, Array.mkEmpty (k + 1), Array.mkEmpty (k + 2), Array.mkEmpty (k + 3)) with
+  | (I, M, H, C) => { inl := I, mrg := M, head := H, cont := C }
+
+@[csimp] theorem reboundA_eq_direct : @reboundA = @reboundADirect := by rfl
 
 /-- `opaqueUnderL` on the tables of `reboundA`. -/
 @[inline] def opaqueUnderA (cx : SCtx) (posA : Array Nat) (b : RB) (t : Nat) : Bool :=
@@ -286,6 +414,25 @@ def revisibleA (cx : SCtx) (posA : Array Nat) (outAll : Array Nat) : Array Nat �
       let h := es.foldl (fun acc (e : Nat × Nat × Nat) => acc + e.2.2 * visW cx posA isOut D e.1) r
       (D.push d, Hh.push h))
     0 k (Array.mkEmpty k, Array.mkEmpty k)
+
+/-- `revisibleA` with distinct initial capacities so IR CSE does not alias the
+two empty arrays. -/
+def revisibleADirect (cx : @& SCtx) (posA : @& Array Nat) (outAll : @& Array Nat) :
+    Array Nat × Array Nat :=
+  let k := cx.area.size
+  let isOut := outAt posA (areaFlags k posA outAll) (outAll.all (posA[·]! != 0)) outAll
+  foldRange (fun (st : Array Nat × Array Nat) i =>
+    match st with
+    | (D, Hh) =>
+      let j := k - 1 - i
+      let r := cx.rootOcc[j]!
+      let es := cx.inEdges[j]!
+      let d := es.foldl (fun acc (e : Nat × Nat × Nat) => acc + e.2.1 * visW cx posA isOut D e.1) r
+      let h := es.foldl (fun acc (e : Nat × Nat × Nat) => acc + e.2.2 * visW cx posA isOut D e.1) r
+      (D.push d, Hh.push h))
+    0 k (Array.mkEmpty k, Array.mkEmpty (k + 1))
+
+@[csimp] theorem revisibleA_eq_direct : @revisibleA = @revisibleADirect := by rfl
 
 /-- `reclassifyL` on the tables of `reboundA` and `revisibleA`. -/
 def reclassifyA (cx : SCtx) (posA : Array Nat) (outAll localIn und : Array Nat) :

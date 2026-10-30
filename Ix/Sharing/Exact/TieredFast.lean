@@ -33,17 +33,86 @@ import all Ix.Sharing.Exact.Uniform
 import all Ix.Sharing.Exact.UniformSearch
 import all Ix.Sharing.Exact.Dictionary
 import all Ix.Sharing.Exact.Dag
+import all Ix.Sharing.Exact.Basic
+import all Ix.Sharing.Exact.Reexpand
+import all Ix.Sharing.Exact.Search
+import all Ix.Sharing.Exact.Phase3
 import Ix.Sharing.Exact.AreaSearchEq
 
 public section
 
 namespace Ix.Sharing.Exact
 
-/-- `allocate`, compiled with the fast first tier. -/
+/-- Increment reference counts in `refs` directly for every `Share(i)` in `e`,
+without allocating an intermediate `shareIndices` array. -/
+def countShares : Ixon.Expr → Array Nat → Array Nat
+  | .share i, refs =>
+    let idx := i.toNat
+    if idx < refs.size then refs.modify idx (· + 1) else refs
+  | .prj _ _ v, refs => countShares v refs
+  | .app f a, refs => countShares a (countShares f refs)
+  | .lam _ t b, refs => countShares b (countShares t refs)
+  | .all _ _ t b, refs => countShares b (countShares t refs)
+  | .letE _ t v b, refs => countShares b (countShares v (countShares t refs))
+  | _, refs => refs
+
+private theorem shareIndices_foldl (e : Ixon.Expr) (acc refs : Array Nat) :
+    (shareIndices e acc).foldl
+        (fun refs i => if i < refs.size then refs.modify i (· + 1) else refs) refs =
+      countShares e (acc.foldl
+        (fun refs i => if i < refs.size then refs.modify i (· + 1) else refs) refs) := by
+  induction e generalizing acc refs with
+  | share i =>
+    unfold shareIndices countShares
+    rw [← Array.foldl_toList, Array.toList_push, List.foldl_append, List.foldl_cons,
+      List.foldl_nil, Array.foldl_toList]
+  | prj _ _ v ih =>
+    unfold shareIndices countShares
+    exact ih acc refs
+  | app f a ihf iha =>
+    unfold shareIndices countShares
+    rw [iha, ihf]
+  | lam _ t b iht ihb =>
+    unfold shareIndices countShares
+    rw [ihb, iht]
+  | all _ _ t b iht ihb =>
+    unfold shareIndices countShares
+    rw [ihb, iht]
+  | letE _ t v b iht ihv ihb =>
+    unfold shareIndices countShares
+    rw [ihb, ihv, iht]
+  | _ => rfl
+
+/-- `tierWeights` folding `countShares` directly over `entries1` and `roots1`
+without allocating `entries1 ++ roots1` or per-expression `shareIndices` arrays. -/
+def tierWeightsFast (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
+    Std.HashMap Nat Nat :=
+  let init := Array.replicate order1.size 0
+  let refs := entries1.foldl (fun refs e => countShares e refs) init
+  let refs := roots1.foldl (fun refs e => countShares e refs) refs
+  (List.range order1.size).foldl (fun m i => m.insert order1[i]! refs[i]!) {}
+
+private theorem array_foldl_append {α β : Type} (f : β → α → β) (init : β) (a b : Array α) :
+    (a ++ b).foldl f init = b.foldl f (a.foldl f init) := by
+  rw [← Array.foldl_toList, Array.toList_append, List.foldl_append,
+    Array.foldl_toList, Array.foldl_toList]
+
+theorem tierWeightsFast_eq (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
+    tierWeightsFast order1 entries1 roots1 = tierWeights order1 entries1 roots1 := by
+  unfold tierWeightsFast tierWeights shareCounts
+  have hstep : (fun (refs : Array Nat) (e : Ixon.Expr) =>
+      (shareIndices e #[]).foldl
+        (fun refs i => if i < refs.size then refs.modify i (· + 1) else refs) refs) =
+      (fun refs e => countShares e refs) := by
+    funext refs e
+    exact shareIndices_foldl e #[] refs
+  rw [hstep, array_foldl_append]
+
+/-- `allocate`, compiled with the fast first tier and direct share counting. -/
 def allocateC (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array Nat)
     (order1 : Array Nat) (entries1 roots1 : Array Ixon.Expr) :
     Except SharingError Allocation := do
-  let wm := tierWeights order1 entries1 roots1
+  let wm := tierWeightsFast order1 entries1 roots1
   let dm := tierDeps order1 entries1
   let weight := fun t => wm.getD t 0
   let deps := fun t => dm.getD t []
@@ -62,7 +131,7 @@ def allocateC (layout : ShareLayout) (limits : Limits) (dag : Dag) (deg : Array 
 @[csimp] theorem allocate_eq_C : @allocate = @allocateC := by
   funext layout limits dag deg order1 entries1 roots1
   unfold allocate allocateC
-  rfl
+  rw [tierWeightsFast_eq]
 
 /-! ## Width-independent tables, computed once per constant
 
@@ -301,6 +370,67 @@ theorem uniformFinish_eq_F (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep
   unfold uniformFinish uniformFinishF inClassCheck inClassCheckD
   rfl
 
+/-- `uniformFinishF` with `ReIndex.ofDag` passed in. -/
+def uniformFinishIx (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (deg : Array Nat)
+    (reIx : ReIndex) (c : UniformChoice) : Except SharingError UniformSharingResult := do
+  let n := ex.dag.size
+  let stored := c.stored
+  let model := c.model
+  unless stored.all (· < n) do
+    throw (.internal "stored term out of range")
+  unless inClassCheckD deg stored do
+    throw (.internal "stored terms are not increasing terms of in-degree at least 2")
+  let order := pinnedOrder ex.dag c.facts.deg stored
+  let width := stored.foldl (fun acc t => acc.set! t (some w)) (Array.replicate n none)
+  let (entries, roots, predicted, work) ← p.materializeDependent order ex.roots width limits
+  unless predicted == model do
+    throw (.internal s!"uniform model length {model} differs from the full evaluation {predicted}")
+  let (entryIds, rootIds, _) ← reexpandWithIndex limits ex.dag reIx entries roots
+  unless entryIds == order do
+    throw (.internal "materialized entries do not expand to the stored terms")
+  unless rootIds == ex.roots do
+    throw (.internal "materialized roots do not expand to the input roots")
+  let measured := tag0Size entries.size + exprsSize entries + exprsSize roots
+  let unshared := tag0Size 0 + rootsCost p.base ex.roots
+  let stats : Stats :=
+    { exprVisits := ex.visits, internedNodes := ex.internedNodes, distinctSubterms := n,
+      candidates := c.certainStored.size + c.uncertain.size, statesExpanded := c.states,
+      costEvals := c.costEvals, materializedNodes := work, outputBytes := measured }
+  return {
+    result := { roots, sharing := entries, tableTerms := order, variableBytes := measured,
+                modelBytes := model, unsharedBytes := unshared, stats }
+    stored, certainStored := c.certainStored, certainExcluded := c.certainExcluded,
+    uncertain := c.uncertain, lowDegree := c.lowDegree, components := c.components,
+    statesVisited := c.states, lowerBracket := c.lowerBracket }
+
+theorem uniformFinishIx_eq_F (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep)
+    (deg : Array Nat) (c : UniformChoice) :
+    uniformFinishIx w limits ex p deg (ReIndex.ofDag ex.dag) c =
+      uniformFinishF w limits ex p deg c := by
+  unfold uniformFinishIx uniformFinishF
+  simp only [← reexpand_eq_withIndex]
+
+theorem layoutBytes_eq_measured (layout : ShareLayout) (entries roots : Array Ixon.Expr) :
+    layoutBytes layout entries roots =
+      tag0Size entries.size + exprsSize entries + exprsSize roots := by
+  cases layout
+  rfl
+
+theorem uniformFinishF_layoutBytes (layout : ShareLayout) (w : Nat) (limits : Limits)
+    (ex : Expanded) (p : Prep) (deg : Array Nat) (c : UniformChoice)
+    {u : UniformSharingResult} (hu : uniformFinishF w limits ex p deg c = .ok u) :
+    u.result.variableBytes = layoutBytes layout u.result.sharing u.result.roots := by
+  unfold uniformFinishF at hu
+  dsimp only [Bind.bind, Except.bind, Pure.pure, Except.pure] at hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  exact (layoutBytes_eq_measured layout _ _).symm
+
 /-- `optimizeUniformExpanded` after its DAG checks, with the DAG tables `p`,
 the graph facts `f` and the outcome of the spine check passed in. -/
 def optimizeUniformF (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (f : GraphFacts)
@@ -315,6 +445,31 @@ def optimizeUniformG (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (f :
   spine
   let c ← uniformChooseG w limits ex p f
   uniformFinishF w limits ex p f.deg c
+
+/-- `optimizeUniformG` with `ReIndex.ofDag` passed in. -/
+def optimizeUniformIx (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep) (f : GraphFacts)
+    (reIx : ReIndex) (spine : Except SharingError Unit) :
+    Except SharingError UniformSharingResult := do
+  spine
+  let c ← uniformChooseG w limits ex p f
+  uniformFinishIx w limits ex p f.deg reIx c
+
+theorem optimizeUniformIx_eq_G (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep)
+    (f : GraphFacts) (spine : Except SharingError Unit) :
+    optimizeUniformIx w limits ex p f (ReIndex.ofDag ex.dag) spine =
+      optimizeUniformG w limits ex p f spine := by
+  unfold optimizeUniformIx optimizeUniformG
+  simp only [uniformFinishIx_eq_F]
+
+theorem optimizeUniformG_layoutBytes (layout : ShareLayout) (w : Nat) (limits : Limits)
+    (ex : Expanded) (p : Prep) (f : GraphFacts) (spine : Except SharingError Unit)
+    {u : UniformSharingResult} (hu : optimizeUniformG w limits ex p f spine = .ok u) :
+    u.result.variableBytes = layoutBytes layout u.result.sharing u.result.roots := by
+  unfold optimizeUniformG at hu
+  dsimp only [Bind.bind, Except.bind] at hu
+  split at hu <;> try cases hu
+  split at hu <;> try cases hu
+  exact uniformFinishF_layoutBytes layout w limits ex p f.deg _ hu
 
 private theorem optimizeUniform_eq_G (w : Nat) (limits : Limits) (ex : Expanded) (p : Prep)
     (f : GraphFacts) (spine : Except SharingError Unit) (hp : p = Prep.ofDag ex.dag)
@@ -396,6 +551,38 @@ theorem rematerialize_eq_P (layout : ShareLayout) (limits : Limits) (ex : Expand
   unfold rematerialize rematerializeP
   rfl
 
+private theorem array_all_append {α : Type} (a b : Array α) (p : α → Bool) :
+    (a ++ b).all p = (a.all p && b.all p) := by
+  rw [← Array.all_toList, Array.toList_append, List.all_append, Array.all_toList, Array.all_toList]
+
+/-- `rematerializeP` with `ReIndex.ofDag` and the spine parent lists passed in,
+and avoiding `entries ++ roots` allocation. -/
+def rematerializeIx (p : Prep) (reIx : ReIndex) (parents sp : Array (Array Nat))
+    (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (order : Array Nat) (phase1Layout : Nat) : Except SharingError Rematerialized := do
+  let (entries, roots, predicted, work) ←
+    materializeTableOnePassWithSpines p parents sp order ex.roots limits layout.widthAt
+  let priced := layoutBytes layout entries roots
+  checkInternal (priced == predicted)
+    s!"layout length {priced} differs from the evaluation {predicted}"
+  checkInternal (predicted ≤ phase1Layout)
+    s!"re-materialization {predicted} is longer than phase 1 {phase1Layout}"
+  let (entryIds, rootIds, _) ← reexpandWithIndex limits ex.dag reIx entries roots
+  checkInternal (entryIds == order) "re-materialized entries do not expand to the stored terms"
+  checkInternal (rootIds == ex.roots) "re-materialized roots do not expand to the input roots"
+  checkInternal (entries.all (fun e => (wireCounts e).isSome) &&
+      roots.all (fun e => (wireCounts e).isSome))
+    "a re-materialized expression has a count outside the wire domain"
+  return { entries, roots, bytes := predicted, work, measured := priced }
+
+theorem rematerializeIx_eq_P (p : Prep) (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (order : Array Nat) (phase1Layout : Nat) :
+    rematerializeIx p (ReIndex.ofDag ex.dag) (parentEdgeLists p.dag)
+        (spineParentLists p.dag p.family) layout limits ex order phase1Layout =
+      rematerializeP p layout limits ex order phase1Layout := by
+  unfold rematerializeIx rematerializeP
+  simp only [← materializeTableOnePass_eq_withSpines, ← reexpand_eq_withIndex, array_all_append]
+
 /-- One candidate (`tieredAtWidth`) after the DAG checks, with the
 width-independent tables passed in. -/
 def tieredAtWidthF (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat)
@@ -429,6 +616,32 @@ def tieredAtWidthG (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w :
   let m ← rematerializeP p layout limits ex a.order phase1Layout
   return tieredResultF layout w u a m k phase1Layout
 
+/-- `tieredAtWidthG` with `ReIndex.ofDag` and the spine parent lists passed in,
+and reusing `u.result.variableBytes` instead of recomputing `layoutBytes`. -/
+def tieredAtWidthIx (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w : Nat)
+    (p : Prep) (f : GraphFacts) (reIx : ReIndex) (parents sp : Array (Array Nat))
+    (spine : Except SharingError Unit) (k : Nat) :
+    Except SharingError TieredSharingResult := do
+  let u ← optimizeUniformIx w limits ex p f reIx spine
+  let a ← allocate layout limits ex.dag f.deg u.result.tableTerms u.result.sharing u.result.roots
+  let phase1Layout := u.result.variableBytes
+  let m ← rematerializeIx p reIx parents sp layout limits ex a.order phase1Layout
+  return tieredResultF layout w u a m k phase1Layout
+
+theorem tieredAtWidthIx_eq_G (layout : ShareLayout) (limits : Limits) (ex : Expanded)
+    (w : Nat) (p : Prep) (f : GraphFacts) (spine : Except SharingError Unit) (k : Nat) :
+    tieredAtWidthIx layout limits ex w p f (ReIndex.ofDag ex.dag)
+        (parentEdgeLists p.dag) (spineParentLists p.dag p.family) spine k =
+      tieredAtWidthG layout limits ex w p f spine k := by
+  unfold tieredAtWidthIx tieredAtWidthG
+  rw [optimizeUniformIx_eq_G]
+  cases hu : optimizeUniformG w limits ex p f spine with
+  | error e => rfl
+  | ok u =>
+    simp only [Bind.bind, Except.bind,
+      optimizeUniformG_layoutBytes layout w limits ex p f spine hu,
+      rematerializeIx_eq_P]
+
 private theorem tieredAtWidth_eq_G (layout : ShareLayout) (limits : Limits) (ex : Expanded)
     (w : Nat) (p : Prep) (f : GraphFacts) (spine : Except SharingError Unit) (k : Nat)
     (hp : p = Prep.ofDag ex.dag) (hdag : AreaProof.DagOK ex.dag) :
@@ -453,7 +666,10 @@ def tieredAtWidthC (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w :
     (uniformDagChecks ex).bind fun _ =>
       let p := Prep.ofDag ex.dag
       let f := graphFacts ex.dag ex.roots
-      tieredAtWidthG layout limits ex w p f (uniformSpineCheck ex p)
+      let parents := parentEdgeLists ex.dag
+      let reIx : ReIndex := { parents, leaves := leafIndex ex.dag }
+      let sp := spineParentLists ex.dag p.family
+      tieredAtWidthIx layout limits ex w p f reIx parents sp (uniformSpineCheck ex p)
         (tieredCandidateCount ex.dag.size p f)
 
 @[csimp] theorem tieredAtWidth_eq_C : @tieredAtWidth = @tieredAtWidthC := by
@@ -468,7 +684,9 @@ def tieredAtWidthC (layout : ShareLayout) (limits : Limits) (ex : Expanded) (w :
   · rename_i hw
     rw [tieredAtWidth_eq_F layout limits ex w (by simpa using hw)]
     exact checks_bind ex _ _ (fun hdag =>
-      (tieredAtWidth_eq_G layout limits ex w _ _ _ _ rfl hdag).symm)
+      ((tieredAtWidthIx_eq_G layout limits ex w (Prep.ofDag ex.dag)
+        (graphFacts ex.dag ex.roots) _ _).trans
+        (tieredAtWidth_eq_G layout limits ex w _ _ _ _ rfl hdag)).symm)
 
 /-- The best of the three candidates with every candidate's length (the tail
 of `canonicalTieredCore`). -/
@@ -520,9 +738,13 @@ def canonicalTieredCoreC (layout : ShareLayout) (limits : Limits) (dag : Dag)
   (uniformDagChecks ex).bind fun _ =>
     let p := Prep.ofDag dag
     let f := graphFacts dag roots
+    let parents := parentEdgeLists dag
+    let reIx : ReIndex := { parents, leaves := leafIndex dag }
+    let sp := spineParentLists dag p.family
     let spine := uniformSpineCheck ex p
     let k := tieredCandidateCount dag.size p f
-    tieredCandidates dag.size fun w => tieredAtWidthG layout limits ex w p f spine k
+    tieredCandidates dag.size fun w =>
+      tieredAtWidthIx layout limits ex w p f reIx parents sp spine k
 
 @[csimp] theorem canonicalTieredCore_eq_C : @canonicalTieredCore = @canonicalTieredCoreC := by
   funext layout limits dag roots
@@ -533,16 +755,21 @@ def canonicalTieredCoreC (layout : ShareLayout) (limits : Limits) (dag : Dag)
   | error e => rfl
   | ok u =>
     have hdag := dagOK_of_checks hc
-    have hG : ∀ w, tieredAtWidthG layout limits { dag, roots, visits := 0, internedNodes := 0 } w
-        (Prep.ofDag dag) (graphFacts dag roots)
+    have hRe : ({ parents := parentEdgeLists dag, leaves := leafIndex dag } : ReIndex) =
+        ReIndex.ofDag dag := rfl
+    have hIx : ∀ w, tieredAtWidthIx layout limits { dag, roots, visits := 0, internedNodes := 0 } w
+        (Prep.ofDag dag) (graphFacts dag roots) (ReIndex.ofDag dag)
+        (parentEdgeLists dag) (spineParentLists dag (Prep.ofDag dag).family)
         (uniformSpineCheck { dag, roots, visits := 0, internedNodes := 0 } (Prep.ofDag dag))
         (tieredCandidateCount dag.size (Prep.ofDag dag) (graphFacts dag roots)) =
         tieredAtWidthF layout limits { dag, roots, visits := 0, internedNodes := 0 } w
         (Prep.ofDag dag) (graphFacts dag roots)
         (uniformSpineCheck { dag, roots, visits := 0, internedNodes := 0 } (Prep.ofDag dag))
         (tieredCandidateCount dag.size (Prep.ofDag dag) (graphFacts dag roots)) :=
-      fun w => tieredAtWidth_eq_G _ _ _ w _ _ _ _ rfl hdag
-    simp only [hG]
+      fun w => (tieredAtWidthIx_eq_G layout limits { dag, roots, visits := 0, internedNodes := 0 }
+        w (Prep.ofDag dag) (graphFacts dag roots) _ _).trans
+        (tieredAtWidth_eq_G _ _ _ w _ _ _ _ rfl hdag)
+    simp only [hRe, hIx]
     rfl
 
 /-- `canonicalTieredExpanded`, compiled with the parts above. -/
