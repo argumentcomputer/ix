@@ -4,7 +4,14 @@ Status: proposed design, 2026-10-29. Source baseline: `kzg-bn254` at
 `c6c6cb95`, including the current working-tree experiments. This document is
 not a claim that the import verifiers or closed extension producer exist yet.
 
-## Decision
+The current v1 implementation plan is the
+[direct Aiur KZG verifier design](direct-aiur-kzg-verifier.md). It supersedes
+the initial scope below: v1 uses direct verification, constrained same-basis
+pairing accumulation, native pairing checks, and an explicit recompression
+path. Complete in-Aiur pairing verification remains a longer-term target;
+the experimental findings in this document remain reference material.
+
+## Longer-term verification target
 
 All verification of an imported compressed proof, including every pairing
 check, runs inside Aiur. A FRI proof certifies that execution. Imported
