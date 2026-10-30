@@ -1,6 +1,5 @@
 
 import Ix.Compile.ReadyQueue
-import Ix.Cert.Schedule
 import Init.System.Promise
 
 /-! Native controls for the ready executor. Constructed source values exercise
