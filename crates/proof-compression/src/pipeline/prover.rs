@@ -226,6 +226,21 @@ pub(super) fn fixed_setup(
     .collect()
 }
 
+/// Commit each fixed partition without allocating a witness, writing its
+/// `setup-{i}.bin` and `fixed-{i}.bin` checkpoints into `dir`.
+pub(super) fn fixed_setup_in(
+  config: &KzgConfig,
+  compiled: &MultiStarkCircuit<Scalar>,
+  dir: &Path,
+) -> Result<Vec<FixedSetup>> {
+  (0..compiled.num_circuits())
+    .map(|i| {
+      let (circuit, data) = fixed_partition(config, compiled, i, Some(dir))?;
+      Ok((circuit, KzgProverData::concatenate([data]).0))
+    })
+    .collect()
+}
+
 /// The system of fixed partitions in canonical order under `config`.
 pub(super) fn fixed_system(
   config: KzgConfig,

@@ -9,6 +9,7 @@
 //! proof whose public values are an eighteen-word statement and one deferred
 //! pair), and its statement prefix is the merge head followed by the packed
 //! family digest, which the verifier checks against the family it trusts.
+use super::fixed_cache::Prepared;
 use super::{
   CompressConfig, PROOF_TAG, Result, SetupClass, SetupConfig, StageConfig,
   stages::{construct, statement::Statement as StageStatement},
@@ -566,7 +567,8 @@ pub(crate) fn derive_family(
   keys: &MergeKeys,
   prefixes: &Prefixes,
   setup: &SetupConfig,
-) -> Result<Vec<Vec<u8>>> {
+  cache: Option<&Path>,
+) -> Result<Vec<(Vec<u8>, Option<Prepared>)>> {
   let (recursive, inherited_keys) = keys.recursive.certificate_verifier()?;
   let (imported, _) = keys.imported.certificate_verifier()?;
   let mut heights = [
@@ -600,15 +602,21 @@ pub(crate) fn derive_family(
       .iter()
       .map(|plan| {
         let (circuit, pairing_keys) = plan.circuit()?;
-        let vk = wrap::Frontend::new(
+        let frontend = wrap::Frontend::new(
           circuit,
           &pairing_keys,
           &plan.identity(),
           wrap::MAX_TRACE_LEN,
-        )?
-        .verifying_key(setup)?;
+        )?;
+        let (vk, prepared) = match cache {
+          Some(root) => {
+            let (vk, prepared) = frontend.prepared_key(setup, root)?;
+            (vk, Some(prepared))
+          },
+          None => (frontend.verifying_key(setup)?, None),
+        };
         layout.admit(&vk.certificate_verifier()?.0)?;
-        vk.to_bytes()
+        Ok((vk.to_bytes()?, prepared))
       })
       .collect();
   }
@@ -665,7 +673,106 @@ pub fn derive_merge_family(
     imported: verifying_keys::IMPORTED_STATEMENT_PREFIX,
     head: MERGE_HEAD,
   };
-  derive_family(&keys, &prefixes, setup)
+  Ok(
+    derive_family(&keys, &prefixes, setup, None)?
+      .into_iter()
+      .map(|(vk, _)| vk)
+      .collect(),
+  )
+}
+
+/// Derive the merge family for the recursive key `recursive_vk` under
+/// `setup`, taking each member's fixed preprocessing from, or publishing it
+/// to, the fixed cache under `root`. Returns each member's key and whether
+/// its entry was present.
+pub(super) fn prepare_derived_family(
+  recursive_vk: &[u8],
+  statement_prefix: [u64; PREFIX_WORDS],
+  setup: &SetupConfig,
+  root: &Path,
+) -> Result<Vec<(Vec<u8>, Prepared)>> {
+  let keys = MergeKeys {
+    recursive: VerifyingKey::from_bytes(recursive_vk)?,
+    imported: VerifyingKey::from_bytes(verifying_keys::IMPORTED_RECURSIVE_VK)?,
+    family: vec![],
+  };
+  let prefixes = Prefixes {
+    fresh: statement_prefix,
+    imported: verifying_keys::IMPORTED_STATEMENT_PREFIX,
+    head: MERGE_HEAD,
+  };
+  derive_family(&keys, &prefixes, setup, Some(root))?
+    .into_iter()
+    .map(|(vk, prepared)| {
+      Ok((vk, prepared.ok_or("derived merge key has no cache entry")?))
+    })
+    .collect()
+}
+
+impl Release {
+  /// For each family member, its fixed cache under `root` for `setup`, keyed
+  /// as a merge of that shape proves it. Each identity follows from the
+  /// release keys alone.
+  pub(super) fn member_caches(
+    &self,
+    setup: &SetupConfig,
+    root: &Path,
+  ) -> Result<Vec<super::fixed_cache::FixedCache>> {
+    let (recursive, inherited_keys) =
+      self.keys.recursive.certificate_verifier()?;
+    let (imported, _) = self.keys.imported.certificate_verifier()?;
+    FAMILY
+      .iter()
+      .map(|&shape| {
+        let plan = plan(
+          shape,
+          &self.prefixes,
+          &recursive,
+          &imported,
+          &self.layout,
+          &inherited_keys,
+        )?;
+        wrap::fixed_cache(&plan.identity(), self.layout.heights[0], setup, root)
+      })
+      .collect()
+  }
+
+  /// Commit and publish the fixed preprocessing of family member `index`
+  /// under `setup` to the fixed cache under `root`, checking the key it
+  /// yields is the release's.
+  pub(super) fn prepare_member(
+    &self,
+    index: usize,
+    setup: &SetupConfig,
+    root: &Path,
+  ) -> Result<Prepared> {
+    let (recursive, inherited_keys) =
+      self.keys.recursive.certificate_verifier()?;
+    let (imported, _) = self.keys.imported.certificate_verifier()?;
+    let plan = plan(
+      FAMILY[index],
+      &self.prefixes,
+      &recursive,
+      &imported,
+      &self.layout,
+      &inherited_keys,
+    )?;
+    let (circuit, pairing_keys) = plan.circuit()?;
+    let (vk, prepared) = wrap::Frontend::new(
+      circuit,
+      &pairing_keys,
+      &plan.identity(),
+      wrap::MAX_TRACE_LEN,
+    )?
+    .prepared_key(setup, root)?;
+    if vk.to_bytes()? != self.family[index] {
+      return Err(
+        format!("derived {} differs from its bundled pin", FAMILY_FILES[index])
+          .into(),
+      );
+    }
+    Ok(prepared)
+  }
 }
 
 /// The keys and prefixes merges are proved and verified against.

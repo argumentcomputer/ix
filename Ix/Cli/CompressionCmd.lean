@@ -1,10 +1,10 @@
 /-
-  `ix compress layout|normalize|fetch-params`. `layout` executes a root wrap
+  `ix compress layout|normalize|setup`. `layout` executes a root wrap
   of each given aggregate proof and sizes one fixed layout that holds all of
   them; `normalize` proves a root's wrap in that layout and writes the FRI
   worker's root input. Every root normalized to one layout compresses under
-  the same FRI verifier. `fetch-params` installs the released Ignition proving
-  parameters.
+  the same FRI verifier. `setup` installs the released Ignition proving
+  parameters and the fixed preprocessing every stage reads.
 -/
 module
 public import Cli
@@ -217,30 +217,40 @@ private def parametersDir : IO System.FilePath := do
   if let some dir ← IO.getEnv "IX_PARAMS_DIR" then return dir
   return (← StoreIO.toIO Store.getHomeDir) / ".ix/compression/params"
 
-def runFetchParams (_ : Cli.Parsed) : IO UInt32 := do
+private def backendVk : IO ByteArray := do
+  return (← backend).system.vkBytes
+
+def runSetup (p : Cli.Parsed) : IO UInt32 := do
   try
-    let target := (← parametersDir) / ignitionRelease
-    IO.FS.createDirAll target
-    for file in ignitionFiles do
-      let path := target / file
-      if ← path.pathExists then
-        IO.eprintln s!"{path} exists; skipping download."
-      else
-        IO.eprintln s!"Downloading {ignitionUrl}/{file}."
-        download s!"{ignitionUrl}/{file}" path
-    if (← IO.getEnv "IX_KZG_SRS").isSome then
-      IO.eprintln "IX_KZG_SRS is set and takes precedence over the downloaded release."
-    IO.eprintln s!"Checking the configured parameters against the release key."
-    IO.eprintln s!"Using {← Compression.describeSetup false false 0}."
-    IO.println target
+    let devKzgSrs := p.hasFlag "dev-kzg-srs"
+    if devKzgSrs then
+      IO.eprintln "parameters: development setup, nothing to download"
+    else if (← IO.getEnv "IX_KZG_SRS").isSome then
+      IO.eprintln "parameters: IX_KZG_SRS is set and replaces the release SRS"
+    else
+      let target := (← parametersDir) / ignitionRelease
+      IO.FS.createDirAll target
+      for file in ignitionFiles do
+        let path := target / file
+        if ← path.pathExists then
+          IO.eprintln s!"parameters: {path} present"
+        else
+          IO.eprintln s!"parameters: downloading {ignitionUrl}/{file}"
+          download s!"{ignitionUrl}/{file}" path
+    Compression.prepare (← backendVk) (← Compression.cacheDir).toString
+      devKzgSrs (p.hasFlag "plonk")
     return 0
   catch e =>
-    IO.eprintln s!"compress fetch-params: {e}"
+    IO.eprintln s!"compress setup: {e}"
     return 1
 
-def fetchParamsCmd : Cli.Cmd := `[Cli|
-  "fetch-params" VIA runFetchParams;
-  "Download the released BN254 Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) and check its anchors."
+def setupCmd : Cli.Cmd := `[Cli|
+  "setup" VIA runSetup;
+  "Prepare this machine for compression and merges of the bundled version: download the released BN254 Ignition SRS (4.3 GB, public) into IX_PARAMS_DIR (default ~/.ix/compression/params) if missing and check it against its pin, then publish the fixed preprocessing of the first KZG stage, the recursive stage and every merge family member to the fixed cache, checking each derived key against its bundled pin. Present cache entries are only checked."
+
+  FLAGS:
+    "dev-kzg-srs"; "Prepare the known-trapdoor development setup instead of Ignition (not production-secure)."
+    "plonk"; "Also build the PLONK circuit, keys and parameter exports into the PLONK cache."
 ]
 
 end Ix.Cli.CompressionCmd

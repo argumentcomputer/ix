@@ -106,6 +106,37 @@ impl Frontend {
     let height = self.compiled.main_height();
     let parts =
       prover::fixed_setup(&proving_config(&setup, height)?, &self.compiled)?;
+    self.key_from_parts(&parts, &setup)
+  }
+
+  /// The verifying key, with the fixed preprocessing taken from or published
+  /// to the fixed cache under `root` that `stage` uses for this circuit.
+  pub(crate) fn prepared_key(
+    &self,
+    config: &super::super::SetupConfig,
+    root: &Path,
+  ) -> storage::Result<(VerifyingKey, fixed_cache::Prepared)> {
+    let setup = self.setup(config)?;
+    let height = self.compiled.main_height();
+    let cache = fixed_cache::FixedCache::from_identity(
+      root,
+      &cache_identity(&self.vk, &setup, height)?,
+    );
+    let (parts, prepared) =
+      cache.prepare(&proving_config(&setup, height)?, &self.compiled)?;
+    Ok((self.key_from_parts(&parts, &setup)?, prepared))
+  }
+
+  /// The frontend identity this circuit's fixed cache is keyed by.
+  pub(crate) fn identity(&self) -> &[u8] {
+    &self.vk
+  }
+
+  fn key_from_parts(
+    &self,
+    parts: &[prover::FixedSetup],
+    setup: &SetupSource,
+  ) -> storage::Result<VerifyingKey> {
     let heights = parts
       .iter()
       .map(|(circuit, _)| circuit.preprocessed_height)
@@ -123,7 +154,7 @@ impl Frontend {
         &self.pairings,
         bincode::config::standard(),
       )?,
-      &setup,
+      setup,
     )
   }
 
@@ -170,12 +201,11 @@ impl Frontend {
     let start = std::time::Instant::now();
     let height = self.compiled.main_height();
     let setup = self.setup(&config.setup)?;
-    let setup_id = setup.identity(height, 2)?;
     fs::create_dir_all(dir)?;
     setup.bind_stage(dir, height, 2)?;
     storage::save(&dir.join("pairings.bin"), &self.pairings)?;
-    let cache_identity = [self.vk.as_slice(), &setup_id].concat();
-    let cache = config.fixed_cache(dir, &cache_identity);
+    let cache =
+      config.fixed_cache(dir, &cache_identity(&self.vk, &setup, height)?);
     let cached = cache.restore(dir)?;
     let manifest = storage::Manifest::for_compiled(
       &self.compiled,
@@ -194,6 +224,34 @@ impl Frontend {
     eprintln!("Recursive stage-and-prove complete: {:?}", start.elapsed());
     Ok(())
   }
+}
+
+/// The fixed-cache identity of a recursive or merge stage whose verifier
+/// frontend is `vk`, under `setup` at computation height `height`.
+fn cache_identity(
+  vk: &[u8],
+  setup: &SetupSource,
+  height: usize,
+) -> storage::Result<Vec<u8>> {
+  Ok([vk, &setup.identity(height, 2)?].concat())
+}
+
+/// The fixed cache under `root` of a recursive or merge stage whose verifier
+/// frontend is `vk` and computation height `height`, as `Frontend::stage`
+/// keys it.
+pub(crate) fn fixed_cache(
+  vk: &[u8],
+  height: usize,
+  config: &super::super::SetupConfig,
+  root: &Path,
+) -> storage::Result<fixed_cache::FixedCache> {
+  let setup = config
+    .for_stage(OUTER_SEED, height)?
+    .with_transcript(TranscriptKind::Blake3);
+  Ok(fixed_cache::FixedCache::from_identity(
+    root,
+    &cache_identity(vk, &setup, height)?,
+  ))
 }
 
 fn pairing_keys(dir: &Path) -> storage::Result<Vec<G2Affine>> {
@@ -372,8 +430,9 @@ fn prove(
   let config = proving_config(setup, height)?;
   let srs_config_load_seconds = config_started.elapsed().as_secs_f64();
   eprintln!("Outer KZG parameters ready: {:?}", start.elapsed());
+  let fixed = cache.fixed_directory(dir)?;
   let prover::Proved { system, codec, bytes, .. } =
-    lowered.commit(config, Some(&out), 0)?.prove(&manifest.claims)?;
+    lowered.commit(config, Some(&fixed), 0)?.prove(&manifest.claims)?;
   let output_span = tracing::info_span!("compression/write_output").entered();
   let verifier = VerifyingKey::new(
     [manifest.heights[0], manifest.heights[1]],
@@ -1063,7 +1122,8 @@ mod tests {
     let setup = SetupSource::development(OUTER_SEED, height - 1)?
       .with_transcript(TranscriptKind::Blake3);
     prove(&first, Lowered { compiled, assignment }, &cache, &setup)?;
-    assert!(first.join("kzg/fixed-0.bin").exists());
+    assert!(first.join("kzg/setup-0.bin").exists());
+    assert!(!first.join("kzg/fixed-0.bin").exists());
     assert!(!first.join("kzg/main-0.bin").exists());
     let packet = fs::read(first.join("kzg/packet.bin"))?;
     verify_saved(&first, &packet, None)?;
@@ -1082,7 +1142,8 @@ mod tests {
     let Lowered { compiled, assignment } = make()?;
     let cache =
       stage_fixture(&second, &cache_root, &compiled, &assignment, &keys)?;
-    assert!(second.join("kzg/fixed-0.bin").exists());
+    assert!(second.join("kzg/setup-0.bin").exists());
+    assert!(!second.join("kzg/fixed-0.bin").exists());
     prove(&second, Lowered { compiled, assignment }, &cache, &setup)?;
     assert_eq!(packet, fs::read(second.join("kzg/packet.bin"))?);
     for (row, col) in [(0, 3), (1, 0), (1, 1), (1, 2)] {
@@ -1235,7 +1296,8 @@ mod tests {
         storage::load(&dir.join("manifest.bin"))?;
       for i in 0..manifest.heights.len() {
         assert!(!dir.join(format!("kzg/main-{i}.bin")).exists());
-        assert!(dir.join(format!("kzg/fixed-{i}.bin")).exists());
+        assert!(dir.join(format!("kzg/setup-{i}.bin")).exists());
+        assert!(!dir.join(format!("kzg/fixed-{i}.bin")).exists());
       }
       let packet = fs::read(dir.join("kzg/packet.bin"))?;
       verify_saved(&dir, &packet, None)?;

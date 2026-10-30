@@ -37,6 +37,15 @@ const RECURSIVE_VK_BLAKE3: &str =
 pub(super) const RECURSIVE_VK_ID: &str =
   "10d08471278de9d1d2c61fa0ce42f069d5e1f814afe47bb3cd08f2f59e76c671";
 
+/// Identity of the first stage's FRI verifier plan for the bundled backend
+/// and layout, half of its fixed-cache identity. Independent of the KZG setup.
+pub(super) const FIRST_PLAN_ID: &str =
+  "f21d1afdd9c5dcf482ccb03f8c1fdf7c548212c93a0e7721ddeb6915f4a4449e";
+/// Identity of the recursive stage's verifier frontend over the first stage
+/// under Ignition, half of its fixed-cache identity.
+pub(super) const RECURSIVE_FRONTEND_ID: &str =
+  "481567b50faa9014e32c5c32f5aa3adb3eb60be08bb746796af144416b22ad2a";
+
 /// The version 0.1 statement prefix, which imported certificates carry.
 pub(super) const IMPORTED_STATEMENT_PREFIX: [u64; 10] = [
   0, 293, 3849420707, 4087085283, 470000540, 2154705852, 3686466056,

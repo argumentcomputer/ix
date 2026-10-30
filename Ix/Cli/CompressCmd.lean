@@ -119,6 +119,6 @@ def compressCmd : Cli.Cmd := `[Cli|
     Ix.Cli.CompressionCmd.normalizeCmd;
     Ix.Cli.CompressionCmd.joinCmd;
     Ix.Cli.CompressionCmd.importCmd;
-    Ix.Cli.CompressionCmd.fetchParamsCmd
+    Ix.Cli.CompressionCmd.setupCmd
 ]
 end

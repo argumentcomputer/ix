@@ -3,7 +3,15 @@
 //! key, which commits to the fixed polynomials, so rebuilding the executable
 //! keeps them valid.
 //! The root is `CompressConfig::fixed_cache`, or `<stage>/kzg/fixed-cache`.
-use super::storage::{self, Manifest, Result};
+//! Fixed columns are tens of gigabytes per stage, so stages read them from
+//! the cache in place and never keep their own copy; only the small setup
+//! metadata, which later stages read from the stage directory, is staged.
+use super::{
+  prover::{self, FixedSetup},
+  storage::{self, Manifest, Result},
+};
+use crate::kzg::{KzgConfig, Scalar};
+use multi_stark::plonkish::MultiStarkCircuit;
 use serde::{Deserialize, Serialize};
 use std::{
   fs::{self, File},
@@ -32,6 +40,20 @@ struct Entry {
   identity: [u8; 32],
   shape: Shape,
   files: Vec<CachedFile>,
+}
+
+impl Entry {
+  fn size(&self) -> u64 {
+    self.files.iter().map(|file| file.size).sum()
+  }
+}
+
+/// Whether a stage's fixed preprocessing was already published or has just
+/// been, and its size in bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Prepared {
+  Present { bytes: u64 },
+  Published { bytes: u64 },
 }
 
 pub(crate) struct FixedCache {
@@ -71,9 +93,31 @@ impl FixedCache {
     name = "compression/cache_restore"
   )]
   pub(crate) fn restore(&self, staged: &Path) -> Result<Option<Shape>> {
+    let Some(entry) = self.checked_entry()? else {
+      eprintln!("Fixed preprocessing cache miss: {}", self.directory.display());
+      return Ok(None);
+    };
+    fs::create_dir_all(staged.join("kzg"))?;
+    for CachedFile { name, .. } in
+      entry.files.iter().filter(|f| is_setup(&f.name))
+    {
+      let destination = staged.join(name);
+      if destination.try_exists()? {
+        return Err(
+          format!("refusing to replace {}", destination.display()).into(),
+        );
+      }
+      fs::copy(self.directory.join(name), destination)?;
+    }
+    eprintln!("Reused fixed preprocessing: {}", self.directory.display());
+    Ok(Some(entry.shape))
+  }
+
+  /// The published entry, after checking its identity, shape and every
+  /// file's size and digest, or `None` when nothing is published.
+  fn checked_entry(&self) -> Result<Option<Entry>> {
     let ready = self.directory.join("ready.bin");
     if !ready.try_exists()? {
-      eprintln!("Fixed preprocessing cache miss: {}", self.directory.display());
       return Ok(None);
     }
     let entry: Entry = storage::load(&ready)?;
@@ -94,12 +138,73 @@ impl FixedCache {
         return Err("fixed cache entry is incomplete or damaged".into());
       }
     }
-    fs::create_dir_all(staged.join("kzg"))?;
-    for CachedFile { name, .. } in &entry.files {
-      link_or_copy(&self.directory.join(name), &staged.join(name))?;
+    Ok(Some(entry))
+  }
+
+  /// The published entry's total size, after checking it as a restore does,
+  /// or `None` when nothing is published.
+  pub(crate) fn check(&self) -> Result<Option<u64>> {
+    Ok(self.checked_entry()?.map(|entry| entry.size()))
+  }
+
+  /// The circuit metadata and fixed commitment of every partition of a
+  /// checked entry, as its `setup-{i}.bin` files record them.
+  pub(crate) fn setup_parts(&self) -> Result<Vec<FixedSetup>> {
+    let entry = self.checked_entry()?.ok_or("fixed cache entry is missing")?;
+    entry
+      .files
+      .iter()
+      .filter(|file| is_setup(&file.name))
+      .map(|file| storage::load(&self.directory.join(&file.name)))
+      .collect()
+  }
+
+  /// The fixed setup of `compiled` under `config`, from the published entry
+  /// when it checks, otherwise committed into a staging directory beside the
+  /// entry and published, as a stage's proof would leave it.
+  pub(crate) fn prepare(
+    &self,
+    config: &KzgConfig,
+    compiled: &MultiStarkCircuit<Scalar>,
+  ) -> Result<(Vec<FixedSetup>, Prepared)> {
+    if let Some(bytes) = self.check()? {
+      return Ok((self.setup_parts()?, Prepared::Present { bytes }));
     }
-    eprintln!("Reused fixed preprocessing: {}", self.directory.display());
-    Ok(Some(entry.shape))
+    let staged = storage::temporary_path(&self.directory);
+    let result = (|| -> Result<Vec<FixedSetup>> {
+      fs::create_dir_all(staged.join("kzg"))?;
+      let manifest = Manifest::for_compiled(compiled, vec![], None)?;
+      storage::save(&staged.join("manifest.bin"), &manifest)?;
+      let parts =
+        prover::fixed_setup_in(config, compiled, &staged.join("kzg"))?;
+      self.publish(&staged)?;
+      Ok(parts)
+    })();
+    match fs::remove_dir_all(&staged) {
+      Ok(()) => {},
+      Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+      Err(error) => return Err(error.into()),
+    }
+    let parts = result?;
+    let bytes =
+      self.check()?.ok_or("published fixed cache entry is missing")?;
+    Ok((parts, Prepared::Published { bytes }))
+  }
+
+  #[cfg(test)]
+  pub(crate) fn directory(&self) -> &Path {
+    &self.directory
+  }
+
+  /// The directory the prover reads and writes fixed checkpoints in: the
+  /// published entry when there is one, so its fixed columns are read in
+  /// place, otherwise `staged`, from which `publish` moves them.
+  pub(crate) fn fixed_directory(&self, staged: &Path) -> Result<PathBuf> {
+    Ok(if self.directory.join("ready.bin").try_exists()? {
+      self.directory.join("kzg")
+    } else {
+      staged.join("kzg")
+    })
   }
 
   /// Publish only after the proof using these parameters has verified.
@@ -112,7 +217,7 @@ impl FixedCache {
   )]
   pub(crate) fn publish(&self, staged: &Path) -> Result<()> {
     if self.directory.join("ready.bin").try_exists()? {
-      return Ok(());
+      return remove_staged_fixed(staged);
     }
     let manifest: Manifest = storage::load(&staged.join("manifest.bin"))?;
     let temporary = storage::temporary_path(&self.directory);
@@ -123,7 +228,11 @@ impl FixedCache {
       let size = fs::metadata(&source)?.len();
       let digest = file_digest(&source)?;
       let published = temporary.join(&name);
-      link_or_copy(&source, &published)?;
+      if is_setup(&name) {
+        fs::copy(&source, &published)?;
+      } else {
+        move_file(&source, &published)?;
+      }
       File::open(published)?.sync_all()?;
       files.push(CachedFile { name, size, digest });
     }
@@ -153,16 +262,37 @@ fn file_names(count: usize) -> impl Iterator<Item = String> {
     .flat_map(|i| [format!("kzg/setup-{i}.bin"), format!("kzg/fixed-{i}.bin")])
 }
 
-fn link_or_copy(source: &Path, destination: &Path) -> Result<()> {
+fn is_setup(name: &str) -> bool {
+  name.starts_with("kzg/setup-")
+}
+
+/// Drop the fixed columns a stage wrote while another run published the
+/// same entry first.
+fn remove_staged_fixed(staged: &Path) -> Result<()> {
+  let Ok(entries) = fs::read_dir(staged.join("kzg")) else {
+    return Ok(());
+  };
+  for entry in entries {
+    let path = entry?.path();
+    let name = path.file_name().and_then(|name| name.to_str());
+    if name.is_some_and(|name| name.starts_with("fixed-")) {
+      fs::remove_file(path)?;
+    }
+  }
+  Ok(())
+}
+
+fn move_file(source: &Path, destination: &Path) -> Result<()> {
   if destination.try_exists()? {
     return Err(
       format!("refusing to replace {}", destination.display()).into(),
     );
   }
-  match fs::hard_link(source, destination) {
+  match fs::rename(source, destination) {
     Ok(()) => Ok(()),
     Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
       fs::copy(source, destination)?;
+      fs::remove_file(source)?;
       Ok(())
     },
     Err(error) => Err(error.into()),

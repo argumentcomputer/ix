@@ -28,7 +28,9 @@ pub use merge::{
   parse_prefix, verify_merged,
 };
 pub mod plonk;
+mod prepare;
 pub use final_proof::{Artifact, FinalOptions, FinalSystem};
+pub use prepare::{prepare, prepare_plonk};
 mod prover;
 mod root;
 mod verifying_keys;

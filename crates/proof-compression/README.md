@@ -63,13 +63,16 @@ parameters. Verification needs no SRS file, source manifest or admission JSON.
 Proving loads a prefix of the release's standard gnark `SRS.WriteRawTo` file:
 
 ```sh
-ix compress fetch-params
+ix compress setup
 ix compress ROOT_PROOF_ADDRESS --out /path/to/new-run
 ```
 
-The file is `bn254-ignition-main-197/srs.bin` under `IX_PARAMS_DIR` (default
+`ix compress setup` downloads the file if it is missing and checks it against
+its pinned SHA-256, then publishes every stage's fixed preprocessing to the
+fixed cache; entries already present are only checked. The file is
+`bn254-ignition-main-197/srs.bin` under `IX_PARAMS_DIR` (default
 `~/.ix/compression/params`). `IX_KZG_SRS` can select another local copy of the
-same release SRS. Its G1/G2 anchors must match the released key. Provenance
+same release SRS; it is not pin-checked. Its G1/G2 anchors must match the released key. Provenance
 comes from release preparation and distribution; these runtime checks do not
 replay the ceremony or verify participant signatures.
 
@@ -99,7 +102,7 @@ The output retains the shifted basis beginning at `tau * G1`; the release key
 carries the full ceremony's public degree independently of the retained prefix.
 
 The parameter publisher must upload `srs.bin` to the existing
-`bn254/ignition/main-197/` release location before `fetch-params` can install it.
+`bn254/ignition/main-197/` release location before `ix compress setup` can install it.
 
 ## Proving and verification
 
