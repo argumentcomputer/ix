@@ -256,7 +256,8 @@ private def drainControl (fail : Bool) : IO Unit := do
     IO.Promise.resolve 7 release
     match ← IO.wait closing with
     | .ok count => need "successful drain had the wrong result" (!fail && count == 1)
-    | .error error => need "IO failure was not preserved after draining"
+    | .error error =>
+      need "IO failure was not preserved after draining"
         (fail && (toString error).endsWith "controlled publisher IO failure")
     let after ← controller.state.get
     need "drain left retained tasks or results"
