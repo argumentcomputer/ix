@@ -79,7 +79,8 @@ theorem tableWithDepth_eq (depth : Nat) (cfg : Config) (cost : Cost) (members : 
   split
   · rename_i selected
     rw [exactTable_eq]
-    simp only [Family.table, foldFamily, selected.2.2, ite_true, visit]
+    simp only [Family.table, foldFamily, selected.2.2, ite_true]
+    rfl
   · rfl
 
 def table (cfg : Config) (cost : Cost) (members : List Nat) : CTable :=
