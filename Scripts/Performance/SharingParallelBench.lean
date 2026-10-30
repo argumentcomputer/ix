@@ -51,6 +51,22 @@ private def runCase (mode : String) (config : Config) (limits : Limits) (sample 
     ParallelStage.components (if mode == "four" then 2 else 3) config limits
       sample.expanded sample.stage sample.width sample.parents
 
+/-- Untimed coverage check for the same fast-path guards on prepared cases.
+The normal component loop restores these position buffers between components. -/
+private def selectedComponent (sample : WidthCase) (members : Array Nat) : Bool := Id.run do
+  if members.size < 12 || 16 < members.size then return false
+  let ex := sample.expanded
+  let stage := sample.stage
+  let base := TBase.ofPrep stage.up.prep stage.up.w stage.up.opaq
+  if !(tStageOK stage.up.prep stage.up.w stage.up.opaq base) then return false
+  if !(members.all (fun m => decide (m < ex.dag.size) && !stage.up.opaq[m]!)) then return false
+  let area := componentArea stage.up stage.f members
+  let positions := setPositions (Array.replicate stage.up.prep.dag.size 0) area
+  if !(areaOK ex.dag.size stage.up.opaq sample.parents members area positions) then return false
+  let (marks, _, stack) := upWalk sample.parents members (Array.replicate ex.dag.size 0)
+  return stack.isEmpty && area.all (fun y => marks[y]! != 0) &&
+    localSearchOK (LightContext.context stage members area)
+
 private def tableControls : IO Unit := do
   let left : CTable := #[some (0, #[1]), none, none]
   let right : CTable := #[none, some (-1, #[3]), none, none]
@@ -77,10 +93,14 @@ private def tableControls : IO Unit := do
 private def controls (cases : Array WidthCase) : IO Unit := do
   tableControls
   let mut selected := 0
+  let mut eligible := 0
   for (sample, index) in cases.zipIdx do
-    selected := selected + (sample.stage.comps.filter fun members =>
+    eligible := eligible + (sample.stage.comps.filter fun members =>
       12 ≤ members.size && members.size ≤ 16).size
+    selected := selected + (sample.stage.comps.filter (selectedComponent sample)).size
     let expected := runCase "reference" canonicalFamilyConfig {} sample
+    if let .error error := expected then
+      throw (IO.userError s!"reference family stage refused the corpus: {error}")
     for mode in ["four", "eight"] do
       unless sameMeter expected (runCase mode canonicalFamilyConfig {} sample) do
         throw (IO.userError s!"complete family-stage mismatch {mode} at {sample.address}/{sample.width}")
@@ -95,7 +115,7 @@ private def controls (cases : Array WidthCase) : IO Unit := do
       for mode in ["four", "eight"] do
         unless sameMeter expected (runCase mode greedy {} sample) do
           throw (IO.userError s!"greedy fallback mismatch {mode} at {sample.address}")
-  IO.println s!"parallel stage controls PASS width_cases={cases.size} selected_components={selected}"
+  IO.println s!"parallel stage controls PASS width_cases={cases.size} eligible_components={eligible} selected_components={selected}"
 
 @[noinline] private def timed (mode : String) (cases : Array WidthCase)
     (expected : Array (Except SharingError MeterState)) : IO Unit := do
