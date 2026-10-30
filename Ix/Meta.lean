@@ -44,7 +44,9 @@ def ensureModuleSearchPath (mod : Name) : IO Unit := do
     initSearchPath (← findSysroot)
   if (← (← searchPathRef.get).findWithExt "olean" mod).isNone then
     let mut localDirs : List FilePath := []
-    for dir in ([".lake/kernel/lib/lean", ".lake/build/lib/lean"] : List FilePath) do
+    for dir in ([".lake/kernel/lib/lean", ".lake/build/lib/lean",
+        "../.lake/kernel/lib/lean", "../.lake/build/lib/lean",
+        "../../.lake/kernel/lib/lean", "../../.lake/build/lib/lean"] : List FilePath) do
       if ← dir.pathExists then
         localDirs := localDirs ++ [dir]
     unless localDirs.isEmpty do

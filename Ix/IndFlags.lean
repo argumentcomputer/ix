@@ -345,7 +345,7 @@ def mkForall (body : Expr) (binders : Array LocalDecl) : Expr := Id.run do
   return result
 
 /-- Whether any `const` or `proj` name in `expr` is in `names`. -/
-def exprMentionsAnyName (expr : Expr) (names : Std.HashSet Name) : Bool := Id.run do
+def exprMentionsAnyName (expr : Expr) (names : Std.HashSet Ix.Compile.ExactKey.ExactName) : Bool := Id.run do
   if names.isEmpty then
     return false
   let mut stack : Array Expr := #[expr]
@@ -458,7 +458,7 @@ def hasInvalidSpecRef (expr : Expr) (paramFvarNames : Array Name) : Bool := Id.r
 /-- Memoized "mentions any of these names" check. Unlike
     `exprMentionsAnyName`, a projection's type name is not consulted, only the
     projected value. -/
-partial def hasIndOcc (e : Expr) (names : Std.HashSet Name)
+partial def hasIndOcc (e : Expr) (names : Std.HashSet Ix.Compile.ExactKey.ExactName)
     : StateM (Std.HashMap Ix.Compile.ExactKey.ExprKey Bool) Bool := do
   if let some cached := (← get).get? ⟨e⟩ then
     return cached
@@ -492,7 +492,7 @@ structure Member where
 structure ExpandSt where
   types : Array Member := #[]
   /-- The names of `types`, for membership. -/
-  typeNameSet : Std.HashSet Name := {}
+  typeNameSet : Std.HashSet Ix.Compile.ExactKey.ExactName := {}
   /-- Each occurrence seen, compared exactly, with its auxiliary. -/
   seen : Std.HashMap Ix.Compile.ExactKey.ExprKey Name := {}
   nextAuxIdx : Nat := 1
@@ -679,7 +679,7 @@ structure LeanIndFlags where
 def computeLeanIndFlags (all : Array Name) : CompileM LeanIndFlags := do
   let (types, nOriginals) ← expand all
   let numNested := types.size - nOriginals
-  let blockNames : Std.HashSet Name :=
+  let blockNames : Std.HashSet Ix.Compile.ExactKey.ExactName :=
     types.foldl (init := {}) fun s m => s.insert m.name
   let mut occCache : Std.HashMap Ix.Compile.ExactKey.ExprKey Bool := {}
   let mut isRec := false

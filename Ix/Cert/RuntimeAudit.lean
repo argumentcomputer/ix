@@ -123,14 +123,18 @@ run_cmd do
 
 /-! ## The CLI certified compiler and role-binding finalizer
 
-`ix compile` and `ix compile-lean` invoke `Ix.CompileM.compileCertified` and
-`Ix.RoleBinding.Compile.finalize`. Beyond `Init`, `Std`, `Lean`, and the
-`compileChecked` list above, their runtime closure reaches the source-contract
-environment extensions, the syntax equality helper, and the `partial` helpers of
-role-evidence and role-binding synthesis, frozen here. -/
+`ix compile` and `ix compile-lean` invoke `Ix.CanonM.canonEnv`,
+`Ix.CompileM.compileCertified`, `Ix.RoleBinding.Compile.finalize`, and
+`Ixon.serEnv`. Beyond `Init`, `Std`, `Lean`, and the `compileChecked` list
+above, their runtime closure reaches the source-contract environment extensions,
+the syntax equality helper, the Merkle tree builder, the name topological sort,
+and the `partial` helpers of role-evidence and role-binding synthesis, frozen
+here. -/
 
-/-- error: project-level execution replacements reached from [Ix.CompileM.compileCertified,
- Ix.RoleBinding.Compile.finalize]:
+/-- error: project-level execution replacements reached from [Ix.CanonM.canonEnv,
+ Ix.CompileM.compileCertified,
+ Ix.RoleBinding.Compile.finalize,
+ Ixon.serEnv]:
 [Ix.groundExpr,
  Ix.groundLevel,
  instBEqSyntax_ix.beq,
@@ -150,13 +154,16 @@ role-evidence and role-binding synthesis, frozen here. -/
  Ixon.RawEnv.addNameComponentsWithBlobs,
  _private.Ix.Environment.0.Address.mutsName.go,
  _private.Ix.Environment.0.Ix.Expr.hashSyntax,
+ _private.Ix.Merkle.0.Ix.Merkle.buildTree,
  Ix.RoleBinding.Evidence.countUses,
  Ix.RoleBinding.Evidence.egress,
+ _private.Ix.Ixon.0.Ixon.Env.topologicalSortNames.visit,
  Ix.RoleBinding.Evidence.egress.build] -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
-    #[``Ix.CompileM.compileCertified, ``Ix.RoleBinding.Compile.finalize]
+    #[``Ix.CanonM.canonEnv, ``Ix.CompileM.compileCertified,
+      ``Ix.RoleBinding.Compile.finalize, ``Ixon.serEnv]
     #[`Init, `Std, `Lean]
     { Ix.Kernel.Audit.runtimeRulings with
       csimpModules := Ix.Kernel.Audit.runtimeRulings.csimpModules.push `Ix,
