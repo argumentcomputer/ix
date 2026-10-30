@@ -39,8 +39,12 @@ private def prepareCases (path : String) : IO (Array WidthCase) := do
     let facts := graphFacts expanded.dag expanded.roots
     let parents := parentsOf expanded.dag
     for width in #[1, 2, 3] do
-      cases := cases.push { address, expanded, stage := uniformStageF width expanded prep facts,
-        width, parents }
+      cases := cases.push {
+        address
+        expanded
+        stage := uniformStageF width expanded prep facts
+        width
+        parents }
   return cases
 
 private def runCase (mode : String) (config : Config) (limits : Limits) (sample : WidthCase) :
@@ -83,7 +87,7 @@ private def tableControls : IO Unit := do
           else if costMode == 1 then -((selected.foldl (fun total n => total + n) 0 : Nat) : _root_.Int)
           else (2 ^ 90 : _root_.Int) + selected.size
         let config : Config := ⟨if size == 17 then 32 else 16⟩
-        let expected := Family.table config cost members
+        let expected := Ix.Sharing.Family.table config cost members
         for depth in [2, 3, 20] do
           unless Parallel.tableWithDepth depth config cost members == expected do
             throw (IO.userError s!"exact table mismatch size={size} duplicate={duplicate} cost={costMode} depth={depth}")
