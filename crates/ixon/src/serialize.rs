@@ -1319,12 +1319,12 @@ pub fn put_named_indexed(
   // encodings share the wire format, differing only in how name
   // references are written.
   scratch.clear();
-  named.meta().put_with(NamePut::Indexed(idx), scratch)?;
+  named.meta_checked()?.put_with(NamePut::Indexed(idx), scratch)?;
   // Serialize original as Option: 0 = None, 1 = Some(addr, meta). The
   // original's address stays a raw 32 bytes: it can reference an
   // assumed constant that is NOT stored in §2 (prune cut bundles), so
   // a §2 index cannot represent it.
-  match named.original() {
+  match named.original_checked()? {
     None => scratch.push(0),
     Some((addr, meta)) => {
       scratch.push(1);
@@ -1463,6 +1463,41 @@ pub(crate) fn decode_window_orig_meta(
   let before = slice.len();
   let meta = ConstantMeta::get_with(&mut slice, NameGet::Indexed(rev))?;
   Ok((meta, off + (before - slice.len())))
+}
+
+/// Validate the full interior structure of a §5 metadata window
+/// (`ConstantMeta` + optional `(Address, ConstantMeta)` + exact framing),
+/// returning `(meta_len, orig_addr)` for [`crate::env::LazyMetaWindow`] while
+/// dropping the decoded metadata immediately so lazy/demoted loads reject
+/// corrupt interior §5 bytes at load time without retaining metadata ASTs.
+pub(crate) fn validate_window(
+  window: &[u8],
+  rev: &NameReverseIndex,
+) -> Result<(usize, Option<Address>), String> {
+  let meta_len = window.len();
+  let frame_err = |e: String| {
+    format!(
+      "get_named_indexed: metadata blob length mismatch (header says \
+       {meta_len}; parse failed inside the window: {e}){PRE_NORMAL_LEVELS}"
+    )
+  };
+  let (_meta, m_len) = decode_window_meta(window, rev).map_err(frame_err)?;
+  let (end, orig_addr) =
+    match decode_window_orig_header(window, m_len).map_err(frame_err)? {
+      None => (m_len + 1, None),
+      Some((orig_addr, orig_off)) => {
+        let (_orig_meta, end) =
+          decode_window_orig_meta(window, orig_off, rev).map_err(frame_err)?;
+        (end, Some(orig_addr))
+      },
+    };
+  if end != window.len() {
+    return Err(format!(
+      "get_named_indexed: metadata blob length mismatch (header says \
+       {meta_len}, parsed {end}){PRE_NORMAL_LEVELS}"
+    ));
+  }
+  Ok((m_len, orig_addr))
 }
 
 /// Streaming cursor over an env's §5 named entries: parse one `Named`
@@ -2394,6 +2429,7 @@ impl Env {
         Option<ReducibilityHints>,
         usize,
         usize,
+        (usize, Option<Address>),
       )> = Vec::with_capacity(capped_capacity(num_named, buf));
       for _ in 0..num_named {
         let name_idx = get_u64(buf)? as usize;
@@ -2406,8 +2442,8 @@ impl Env {
             )
           })?;
         // Entry header (outside the framed window), mirroring
-        // `get_named_indexed`; the window itself is copied unparsed —
-        // interior validation happens on first decode.
+        // `get_named_indexed`; the window is validated here without
+        // retaining decoded metadata ASTs, then stored in the shared arena.
         let const_idx = get_u64(buf)? as usize;
         let addr = ConstGet::Addrs(&consts_order)
           .addr(const_idx, "get_named_indexed")?;
@@ -2423,24 +2459,26 @@ impl Env {
         }
         let (window, rest) = buf.split_at(meta_len);
         *buf = rest;
+        let split = validate_window(window, &name_reverse_index)?;
         let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
           format!("Env::get: missing name for addr {:?}", name_addr)
         })?;
         let off = arena.len();
         arena.extend_from_slice(window);
-        pending.push((name, addr, hints, off, meta_len));
+        pending.push((name, addr, hints, off, meta_len, split));
       }
       // Freeze the arena once, then hand every entry an offset into it.
       let arena: Arc<[u8]> = arena.into();
-      for (name, addr, hints, off, len) in pending {
+      for (name, addr, hints, off, len, split) in pending {
         let named = Named::from_indexed_window(
           addr,
           hints,
-          Arc::new(LazyMetaWindow::new(
+          Arc::new(LazyMetaWindow::new_validated(
             arena.clone(),
             off,
             len,
             name_reverse_index.clone(),
+            split,
           )),
         );
         env.named.insert(name, named);

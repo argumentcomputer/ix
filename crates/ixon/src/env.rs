@@ -51,16 +51,23 @@ impl MetaRepr {
   /// call for `Bytes` and `Window` (nothing is cached — mirroring
   /// `LazyConstant`).
   fn decode(&self) -> Arc<ConstantMeta> {
+    self
+      .decode_checked()
+      .unwrap_or_else(|_| Arc::new(ConstantMeta::default()))
+  }
+
+  fn decode_checked(&self) -> Result<Arc<ConstantMeta>, String> {
     match self {
-      MetaRepr::Structured(m) => m.clone(),
+      MetaRepr::Structured(m) => Ok(m.clone()),
       MetaRepr::Bytes(b) => {
         let mut slice: &[u8] = b;
-        Arc::new(
-          ConstantMeta::get_raw(&mut slice)
-            .expect("Named meta bytes produced by put_raw failed to decode"),
-        )
+        let meta = ConstantMeta::get_raw(&mut slice)?;
+        if !slice.is_empty() {
+          return Err("Named.meta: trailing bytes in demoted metadata".into());
+        }
+        Ok(Arc::new(meta))
       },
-      MetaRepr::Window(w) => Arc::new(w.decode_meta()),
+      MetaRepr::Window(w) => w.decode_meta_checked().map(Arc::new),
     }
   }
 }
@@ -82,11 +89,10 @@ pub(crate) struct LazyMetaWindow {
   off: usize,
   len: usize,
   rev: Arc<NameReverseIndex>,
-  /// Filled by the first meta decode: the meta part's encoded length
-  /// and the original's address if the entry carries one. Lets
-  /// `has_original`/`original` skip re-parsing the meta part — the
-  /// muts-plan `meta()` sweep warms it for every entry before the
-  /// decompile passes read originals.
+  /// Validated split of the window: the meta part's encoded length
+  /// and the original's address if the entry carries one. Populated at
+  /// load time by [`Env::get_demoted_named`] (or on first checked access)
+  /// so `has_original`/`original` skip re-parsing the meta part.
   split: OnceLock<(usize, Option<Address>)>,
 }
 
@@ -100,6 +106,7 @@ impl std::fmt::Debug for LazyMetaWindow {
 }
 
 impl LazyMetaWindow {
+  #[cfg(test)]
   pub(crate) fn new(
     arena: Arc<[u8]>,
     off: usize,
@@ -109,59 +116,73 @@ impl LazyMetaWindow {
     LazyMetaWindow { arena, off, len, rev, split: OnceLock::new() }
   }
 
+  pub(crate) fn new_validated(
+    arena: Arc<[u8]>,
+    off: usize,
+    len: usize,
+    rev: Arc<NameReverseIndex>,
+    split_val: (usize, Option<Address>),
+  ) -> Self {
+    let split = OnceLock::new();
+    let _ = split.set(split_val);
+    LazyMetaWindow { arena, off, len, rev, split }
+  }
+
   fn window(&self) -> &[u8] {
     &self.arena[self.off..self.off + self.len]
   }
 
-  /// Decode the meta part, recording the split as a side effect.
-  ///
-  /// Corrupt window bytes are a panic, not an `Err`: `Named::meta` is
-  /// infallible by contract, and the lazy load validated only the
-  /// window framing — interior §5 corruption (which the eager loaders
-  /// would have rejected at load) surfaces here on first decode.
-  fn decode_meta(&self) -> ConstantMeta {
-    let window = self.window();
-    let (meta, meta_len) = decode_window_meta(window, &self.rev)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-    self.fill_split(window, meta_len);
-    meta
-  }
-
-  fn fill_split(&self, window: &[u8], meta_len: usize) {
-    let _ = self.split.get_or_init(|| {
-      let orig = decode_window_orig_header(window, meta_len)
-        .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-      (meta_len, orig.map(|(addr, _)| addr))
-    });
-  }
-
-  fn split(&self) -> &(usize, Option<Address>) {
+  fn split_checked(&self) -> Result<&(usize, Option<Address>), String> {
     if let Some(s) = self.split.get() {
-      return s;
+      return Ok(s);
     }
-    let window = self.window();
-    let (_, meta_len) = decode_window_meta(window, &self.rev)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-    self.fill_split(window, meta_len);
-    self.split.get().expect("split just filled")
+    let validated =
+      crate::serialize::validate_window(self.window(), &self.rev)?;
+    Ok(self.split.get_or_init(|| validated))
   }
 
-  fn has_original(&self) -> bool {
-    self.split().1.is_some()
+  fn decode_meta_checked(&self) -> Result<ConstantMeta, String> {
+    let &(expected_len, _) = self.split_checked()?;
+    let (meta, meta_len) = decode_window_meta(self.window(), &self.rev)?;
+    if meta_len != expected_len {
+      return Err("Named.meta: metadata window length mismatch".into());
+    }
+    Ok(meta)
   }
 
-  fn decode_original(&self) -> Option<(Address, ConstantMeta)> {
-    let s = self.split();
-    let addr = s.1.clone()?;
+  fn decode_original_checked(
+    &self,
+  ) -> Result<Option<(Address, ConstantMeta)>, String> {
+    let &(meta_len, ref orig_addr) = self.split_checked()?;
+    let Some(addr) = orig_addr.clone() else {
+      return Ok(None);
+    };
     let window = self.window();
     // Re-derive the original's offset from its header (one tag byte +
     // address — cheap) rather than caching a second offset.
-    let (header_addr, orig_off) = decode_window_orig_header(window, s.0)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"))?;
+    let Some((header_addr, orig_off)) =
+      decode_window_orig_header(window, meta_len)?
+    else {
+      return Ok(None);
+    };
     debug_assert_eq!(header_addr, addr);
-    let (meta, _end) = decode_window_orig_meta(window, orig_off, &self.rev)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-    Some((addr, meta))
+    let (meta, end) = decode_window_orig_meta(window, orig_off, &self.rev)?;
+    if end != window.len() {
+      return Err("original: trailing bytes in metadata window".into());
+    }
+    Ok(Some((addr, meta)))
+  }
+
+  fn decode_meta(&self) -> ConstantMeta {
+    self.decode_meta_checked().unwrap_or_default()
+  }
+
+  fn has_original(&self) -> bool {
+    self.split_checked().is_ok_and(|s| s.1.is_some())
+  }
+
+  fn decode_original(&self) -> Option<(Address, ConstantMeta)> {
+    self.decode_original_checked().ok().flatten()
   }
 }
 
@@ -224,6 +245,11 @@ impl Named {
     self.meta.decode()
   }
 
+  /// Fallible metadata lookup for checked storage and serialization paths.
+  pub fn meta_checked(&self) -> Result<Arc<ConstantMeta>, String> {
+    self.meta.decode_checked()
+  }
+
   /// The original form, if recorded (see field docs).
   pub fn original(&self) -> Option<(Address, Arc<ConstantMeta>)> {
     if let MetaRepr::Window(w) = &self.meta {
@@ -239,19 +265,14 @@ impl Named {
     &self,
   ) -> Result<Option<(Address, Arc<ConstantMeta>)>, String> {
     if let MetaRepr::Window(w) = &self.meta {
-      let window = w.window();
-      let (_, meta_len) = decode_window_meta(window, &w.rev)?;
-      let Some((addr, off)) = decode_window_orig_header(window, meta_len)?
-      else {
-        return Ok(None);
-      };
-      let (meta, end) = decode_window_orig_meta(window, off, &w.rev)?;
-      if end != window.len() {
-        return Err("original: trailing bytes in metadata window".into());
-      }
-      return Ok(Some((addr, Arc::new(meta))));
+      return w
+        .decode_original_checked()
+        .map(|opt| opt.map(|(a, m)| (a, Arc::new(m))));
     }
-    Ok(self.original.as_ref().map(|(a, m)| (a.clone(), m.decode())))
+    match &self.original {
+      None => Ok(None),
+      Some((a, m)) => Ok(Some((a.clone(), m.decode_checked()?))),
+    }
   }
 
   pub fn has_original(&self) -> bool {
@@ -1256,11 +1277,12 @@ impl Env {
     out.named.insert(name.clone(), named.clone());
     Self::carry_name(out, name);
 
+    let meta = named.meta_checked()?;
     let mut ref_addrs: Vec<Address> = Vec::new();
-    named.meta().named_refs(&mut ref_addrs);
+    meta.named_refs(&mut ref_addrs);
     let original = named.original_checked()?;
-    if let Some((_, meta)) = &original {
-      meta.named_refs(&mut ref_addrs);
+    if let Some((_, orig_meta)) = &original {
+      orig_meta.named_refs(&mut ref_addrs);
     }
     for na in ref_addrs {
       if let Some(n) = resolve_name(&na) {
@@ -1271,7 +1293,7 @@ impl Env {
     let mut name_addrs: Vec<Address> = Vec::new();
     let mut blob_addrs: Vec<Address> = Vec::new();
     let mut dag_addrs: Vec<Address> = Vec::new();
-    named.meta().collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
+    meta.collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
     if let Some((orig_addr, orig_meta)) = original {
       if self.holds_or_assumed(&orig_addr, assumed) {
         dag_addrs.push(orig_addr);
@@ -2238,5 +2260,49 @@ mod tests {
       anon.anon_hints.get(&a).map(|r| *r),
       Some(ReducibilityHints::Regular(2))
     );
+  }
+
+  #[test]
+  fn corrupt_section5_interior_bytes_rejected_without_panic() {
+    let (bytes, _, _, _) = streaming_prune_fixture();
+    let (index, _) = Env::parse_lazy_index_with_names(&bytes).unwrap();
+    assert!(
+      !index.named.is_empty(),
+      "fixture must contain at least one §5 entry"
+    );
+    let rev = Arc::new(index.name_reverse_index);
+
+    // Corrupting any byte in §5 (entry headers, metadata tags, name reference
+    // indices, original presence byte, or original metadata) must be handled
+    // identically by `Env::get` and `Env::get_demoted_named`, and must never
+    // panic if accessed via `LazyMetaWindow` / `Named`.
+    for pos in index.named_section_offset..bytes.len() {
+      let mut tampered = bytes.clone();
+      tampered[pos] ^= 0xff;
+
+      let eager = Env::get(&mut tampered.as_slice());
+      let demoted = Env::get_demoted_named(&mut tampered.as_slice());
+      assert_eq!(
+        eager.is_ok(),
+        demoted.is_ok(),
+        "Env::get and Env::get_demoted_named disagreed at §5 byte offset {pos}"
+      );
+
+      // Even if an unvalidated LazyMetaWindow is constructed over arbitrary
+      // corrupt bytes, neither checked nor infallible accessors may panic.
+      let win_slice = &tampered[pos..];
+      let win = Arc::new(LazyMetaWindow::new(
+        Arc::from(win_slice.to_vec()),
+        0,
+        win_slice.len(),
+        rev.clone(),
+      ));
+      let named = Named::from_indexed_window(Address::hash(b"c"), None, win);
+      let _ = named.meta_checked();
+      let _ = named.original_checked();
+      let _ = named.has_original();
+      let _ = named.meta();
+      let _ = named.original();
+    }
   }
 }

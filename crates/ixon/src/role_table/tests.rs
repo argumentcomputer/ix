@@ -89,7 +89,7 @@ fn lean_interoperability_both_directions() {
       .filter(|l| !l.starts_with('#') && !l.is_empty())
       .collect();
   let cases = cases();
-  assert_eq!(cases.len(), 64);
+  assert_eq!(cases.len(), 5 + Role::ALL.len());
   assert_eq!(lines.len(), cases.len());
   for ((name, table), line) in cases.iter().zip(lines) {
     let (label, hex) = line.split_once('\t').unwrap();
@@ -106,7 +106,7 @@ fn lean_interoperability_both_directions() {
     assert_eq!(usize::from(role.index()), i);
     assert_eq!(Role::from_index(role.index()), Some(*role));
   }
-  for i in 59..=255 {
+  for i in (Role::ALL.len() as u8)..=255 {
     assert_eq!(Role::from_index(i), None);
   }
 }
@@ -134,17 +134,18 @@ fn rejects_all_truncations_and_trailing_bytes() {
 
 #[test]
 fn rejects_malformed_tags_roles_and_ordering() {
+  let unknown = Role::ALL.len() as u8;
   for bytes in [
-    vec![0xe8, 2, 2, 0, 0],             // old profile tag
-    vec![0xe4, 3, 2, 0, 0],             // env tag
-    vec![0xe8, 3, 2, 0, 1, 59, 0],      // unknown evidence role
-    vec![0xe8, 3, 2, 0, 1, 0, 1, 2],    // unknown evidence tag
-    vec![0xe8, 3, 2, 0, 2, 1, 0, 0, 0], // descending evidence
-    vec![0xe8, 3, 2, 0, 2, 0, 0, 0, 0], // duplicate evidence role
+    vec![0xe8, 2, 2, 0, 0],                // old profile tag
+    vec![0xe4, 3, 2, 0, 0],                // env tag
+    vec![0xe8, 3, 2, 0, 1, unknown, 0],    // unknown evidence role
+    vec![0xe8, 3, 2, 0, 1, 0, 1, 2],       // unknown evidence tag
+    vec![0xe8, 3, 2, 0, 2, 1, 0, 0, 0],    // descending evidence
+    vec![0xe8, 3, 2, 0, 2, 0, 0, 0, 0],    // duplicate evidence role
   ] {
     assert!(RoleTable::from_bytes(&bytes).is_err(), "{bytes:?}");
   }
-  for roles in [[59, 60], [1, 0], [0, 0]] {
+  for roles in [[unknown, unknown + 1], [1, 0], [0, 0]] {
     let mut bytes = vec![0xe8, 3, 2, 2];
     for r in roles {
       bytes.push(r);

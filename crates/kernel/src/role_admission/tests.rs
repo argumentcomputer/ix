@@ -357,3 +357,33 @@ fn materialized_cache_cannot_replace_authenticated_payload_in_release() {
     );
   }
 }
+
+#[test]
+fn verdict_closure_includes_role_binding_support_and_evidence() {
+  let (mut env, mut table) = full_candidate();
+  let helper_addr = store(&env, record(200, false));
+
+  let mut role_const = record(201, false);
+  role_const.refs.push(helper_addr.clone());
+  let role_addr = store(&env, role_const);
+  table.bound.iter_mut().find(|(r, _)| *r == Role::Char).unwrap().1 =
+    role_addr.clone();
+  bind(&mut env, &table);
+
+  let target_addr = store(&env, record(202, false));
+
+  let source = ArtifactSource::snapshot(&env).unwrap();
+  let closure = source
+    .verdict_closure(std::slice::from_ref(&target_addr))
+    .unwrap();
+  assert!(closure.contains(&target_addr));
+  assert!(closure.contains(&role_addr));
+  assert!(closure.contains(&helper_addr));
+  for (_, entries) in &table.evidence {
+    for entry in entries {
+      if let Evidence::Proof(proof_addr) = entry {
+        assert!(closure.contains(proof_addr));
+      }
+    }
+  }
+}

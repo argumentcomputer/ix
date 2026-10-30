@@ -62,6 +62,7 @@ impl ExtraReductions {
       bits |= ExtraReduction::BitVec.bit();
     }
     if [
+      Role::StringOfList,
       Role::StringAppend,
       Role::StringDecEq,
       Role::StringBack,
@@ -78,5 +79,28 @@ impl ExtraReductions {
 
   pub fn allows(self, group: ExtraReduction) -> bool {
     self.0 & group.bit() != 0
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{ExtraReduction, ExtraReductions};
+  use ixon::role_table::Role;
+
+  #[test]
+  fn string_of_list_enables_string_extra_reduction_group() {
+    let none = ExtraReductions::from_admitted(|_| false);
+    assert!(!none.allows(ExtraReduction::String));
+    assert!(!none.allows(ExtraReduction::BitVec));
+
+    let only_of_list =
+      ExtraReductions::from_admitted(|role| role == Role::StringOfList);
+    assert!(only_of_list.allows(ExtraReduction::String));
+    assert!(!only_of_list.allows(ExtraReduction::BitVec));
+
+    let only_bv =
+      ExtraReductions::from_admitted(|role| role == Role::BitVecToNat);
+    assert!(!only_bv.allows(ExtraReduction::String));
+    assert!(only_bv.allows(ExtraReduction::BitVec));
   }
 }

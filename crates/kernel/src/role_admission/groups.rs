@@ -1821,7 +1821,7 @@ fn validate_wf_op(
       address.hex()
     ));
   }
-  check_units(source, admitted, &mut kenv, &[&address])?;
+  check_units(source, admitted, &mut kenv, &references)?;
 
   // Locality: the closure of the operation (its unit's references) and of
   // the roles, with their blocks, that its specification depends on.

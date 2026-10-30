@@ -11,6 +11,7 @@ use super::super::tiered::{
   tiered_at_using,
 };
 use super::*;
+use rustc_hash::FxHashSet;
 
 /// Trace schema v1; streamed before slack filtering. Model work is not native
 /// time or a proved operational cost. `closure` is the full upward closure.
@@ -145,11 +146,22 @@ pub(crate) fn classify(
   )?;
   observe(&input_event(c, &dag, &m))?;
   let prep = DagPrep::new(&dag);
+  let n = dag.len();
+  let mut stamp = vec![0u32; n];
+  let mut epoch = 0u32;
+  let mut stack = Vec::new();
   for w in 1..=3 {
     let stage = initial::<Fast>(w, &dag, &prep, &mut m)?;
     observe(&width_event(w, &stage))?;
     for (j, members) in stage.comps.iter().enumerate() {
-      let area = component_area(&stage.up, &prep.facts, members);
+      let area = component_area_with(
+        &stage.up,
+        &prep.facts,
+        members,
+        &mut stamp,
+        &mut epoch,
+        &mut stack,
+      );
       observe(&component_event(
         w,
         j,
@@ -191,10 +203,18 @@ fn uniform_family(
     epoch: 0,
     avail: vec![false; n],
   };
+  let mut stack = Vec::new();
   let mut results = Vec::with_capacity(stage.comps.len());
   for (j, members) in stage.comps.iter().enumerate() {
     let mode = if members.len() <= k { "exact" } else { "greedy" };
-    cx.area = component_area(&stage.up, &prep.facts, members);
+    cx.area = component_area_with(
+      &stage.up,
+      &prep.facts,
+      members,
+      &mut cx.stamp,
+      &mut cx.epoch,
+      &mut stack,
+    );
     observe(&component_event(w, j, mode, members, cx.area.len(), &prep.facts))?;
     let mut roots = std::collections::BTreeMap::<TermId, u128>::new();
     for &r in dag.roots() {
@@ -287,7 +307,6 @@ pub(crate) fn normalize(
 #[cfg(test)]
 mod tests {
   use super::*;
-
   // Independent oracle: complete boolean-vector domain, lexicographically
   // ordered (false before true), then integer cost. No set_prec or family
   // helper participates in choosing a reference row. Odd seeds place the

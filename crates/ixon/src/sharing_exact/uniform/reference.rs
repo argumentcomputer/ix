@@ -1221,12 +1221,10 @@ pub(crate) fn optimize_uniform_with(
   // cleared afterwards, so one buffer serves every component.
   let search_one = |members: &Vec<TermId>,
                     meter: &mut Meter<'_>,
-                    pos: &mut [usize]|
+                    pos: &mut [usize],
+                    stack: &mut Vec<TermId>|
    -> Result<(Choice, CTable), SharingError> {
-    let area = component_area(&up, facts, members);
-    for (j, &t) in area.iter().enumerate() {
-      pos[ix(t)] = j;
-    }
+    let area = component_area_pos(&up, facts, members, pos, NO_POS, stack);
     let res = search_area(members, area.clone(), meter, pos);
     for &t in &area {
       pos[ix(t)] = NO_POS;
@@ -1239,8 +1237,9 @@ pub(crate) fn optimize_uniform_with(
   let mut results: Vec<(Choice, CTable)> = Vec::with_capacity(comps.len());
   if budget <= 1 {
     let mut pos = vec![NO_POS; n];
+    let mut stack = Vec::new();
     for members in &comps {
-      results.push(search_one(members, meter, &mut pos)?);
+      results.push(search_one(members, meter, &mut pos, &mut stack)?);
     }
   } else {
     // Each component on its own meter; the counts are added in component
@@ -1249,9 +1248,10 @@ pub(crate) fn optimize_uniform_with(
     let limits = meter.limits();
     let outs = super::super::par::map_ranges(comps.len(), budget, |r| {
       let mut pos = vec![NO_POS; n];
+      let mut stack = Vec::new();
       r.map(|j| {
         let mut m = Meter::new(limits);
-        let res = search_one(&comps[j], &mut m, &mut pos);
+        let res = search_one(&comps[j], &mut m, &mut pos, &mut stack);
         (res, m.stats)
       })
       .collect()

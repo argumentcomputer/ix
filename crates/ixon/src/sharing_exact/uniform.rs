@@ -99,7 +99,7 @@
 
 use std::sync::Arc;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use super::cost::{Len, exprs_len_with, tag0_len, tag4_len};
 use super::dag::{Node, SharingDag, TermId, ix};
@@ -766,26 +766,85 @@ fn uncertain_components(
   comps
 }
 
-/// Members and their ancestors, not continuing above an opaque term.
-fn component_area<A: Arith>(
+/// Members and their ancestors, not continuing above an opaque term, using
+/// caller-owned `stamp`/`epoch` and `stack` buffers so no hash set is
+/// allocated per component.
+fn component_area_with<A: Arith>(
   up: &UPrep<'_, A>,
   facts: &Facts,
   members: &[TermId],
+  stamp: &mut [u32],
+  epoch: &mut u32,
+  stack: &mut Vec<TermId>,
 ) -> Vec<TermId> {
-  let mut seen: FxHashSet<TermId> = members.iter().copied().collect();
-  let mut stack: Vec<TermId> = members.to_vec();
+  if *epoch == u32::MAX {
+    stamp.fill(0);
+    *epoch = 0;
+  }
+  *epoch += 1;
+  let mark = *epoch;
+  stack.clear();
+  let mut out: Vec<TermId> = Vec::with_capacity(members.len());
+  for &t in members {
+    if stamp[ix(t)] != mark {
+      stamp[ix(t)] = mark;
+      out.push(t);
+      stack.push(t);
+    }
+  }
   while let Some(t) = stack.pop() {
     if up.opaq[ix(t)] {
       continue;
     }
     for &q in &facts.parents[ix(t)] {
-      if seen.insert(q) {
+      if stamp[ix(q)] != mark {
+        stamp[ix(q)] = mark;
+        out.push(q);
         stack.push(q);
       }
     }
   }
-  let mut out: Vec<TermId> = seen.into_iter().collect();
   out.sort_unstable();
+  out
+}
+
+/// Members and their ancestors, not continuing above an opaque term, using
+/// the caller's `pos` table (`no_pos` outside the area) both as the visited
+/// set during traversal and as the final position map of the sorted area.
+#[cfg(any(test, feature = "sharing-reference"))]
+fn component_area_pos<A: Arith>(
+  up: &UPrep<'_, A>,
+  facts: &Facts,
+  members: &[TermId],
+  pos: &mut [usize],
+  no_pos: usize,
+  stack: &mut Vec<TermId>,
+) -> Vec<TermId> {
+  stack.clear();
+  let mut out: Vec<TermId> = Vec::with_capacity(members.len());
+  for &t in members {
+    if pos[ix(t)] == no_pos {
+      pos[ix(t)] = 0;
+      out.push(t);
+      stack.push(t);
+    }
+  }
+  while let Some(t) = stack.pop() {
+    if up.opaq[ix(t)] {
+      continue;
+    }
+    for &q in &facts.parents[ix(t)] {
+      if pos[ix(q)] == no_pos {
+        pos[ix(q)] = 0;
+        out.push(q);
+        stack.push(q);
+      }
+    }
+  }
+  out.sort_unstable();
+  for (j, &t) in out.iter().enumerate() {
+    pos[ix(t)] = j;
+  }
   out
 }
 

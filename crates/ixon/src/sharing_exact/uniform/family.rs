@@ -224,7 +224,14 @@ pub(super) fn optimize_in<A: Arith>(
       meter.limits.max_work,
       Resource::Work,
     )?;
-    cx.area = component_area(&stage.up, &prep.facts, members);
+    cx.area = component_area_with(
+      &stage.up,
+      &prep.facts,
+      members,
+      &mut cx.stamp,
+      &mut cx.epoch,
+      &mut closure.pending,
+    );
     let mut roots = std::collections::BTreeMap::<TermId, u64>::new();
     for &r in dag.roots() {
       if cx.area.binary_search(&r).is_ok() {

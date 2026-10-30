@@ -189,6 +189,14 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
 // =============================================================================
 
 /// FFI function to run the complete compilation pipeline and return all data.
+///
+/// Note on ungrounded constants: `compile_env_with_options` records any
+/// pre-compile or per-block grounding rejections in `compile_stt.ungrounded`
+/// and omits them from `compile_stt.name_to_addr` and `compile_stt.env`.
+/// This legacy phase-inspection entrypoint returns the grounded subset
+/// without a status wrapper; production callers that require fail-closed
+/// semantics or the `ungrounded` diagnostic list must use [`rs_compile_env`]
+/// or [`rs_compile_env_anon`].
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env_full(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
