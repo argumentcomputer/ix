@@ -1596,6 +1596,10 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
     visit name visited result
   result
 
+/-- Run a `PutM` writer on a pre-allocated buffer of capacity `cap`. -/
+@[inline] def runPutWithCapacity (cap : Nat) (p : PutM Unit) : ByteArray :=
+  (p.run (ByteArray.emptyWithCapacity cap)).2
+
 /-- §5 entries `named[lo:hi]`, exactly as `putEnv` writes them one after the
     other: the entry's §4 name index, its §2 constant rank, its exact hint,
     and its length-prefixed metadata blob. -/
@@ -1616,7 +1620,7 @@ def putNamedEntries (named : Array (Ix.Name × Named)) (lo hi : Nat)
     putFusedOptHint namedEntry.hints
     -- Metadata blob: ConstantMeta + original as Option (0 = none,
     -- 1 = some(addr, meta)), length-prefixed.
-    let blob := runPut do
+    let blob := runPutWithCapacity 128 do
       putConstantMetaIndexed namedEntry.constMeta nameIdx
       match namedEntry.original with
       | none => putU8 0
@@ -1630,14 +1634,24 @@ def putNamedEntries (named : Array (Ix.Name × Named)) (lo hi : Nat)
 /-- Entries per task when §5 is written in parallel (`putEnv`). -/
 def namedChunk : Nat := 2048
 
+/-- Build the §2 constant address → rank index from the sorted constants array. -/
+def buildConstIdx (consts : Array (Address × LazyConstant)) : Std.HashMap Address UInt64 := Id.run do
+  let mut acc := Std.HashMap.emptyWithCapacity consts.size
+  for h : i in [:consts.size] do
+    acc := acc.insert consts[i].1 i.toUInt64
+  return acc
+
+/-- Build the §4 name address → index table from the topologically sorted names array. -/
+def buildNameIdx (sortedNames : Array (Address × Ix.Name)) : NameIndex := Id.run do
+  let mut acc := Std.HashMap.emptyWithCapacity sortedNames.size
+  for h : i in [:sortedNames.size] do
+    acc := acc.insert sortedNames[i].1 i.toUInt64
+  return acc
+
 /-! `putEnv` encodes sections 1, 2, 4 and 6, which read only the env and its
 sorted constants, each on its own task, and writes their bytes in place:
 `putBytes` of a section's bytes is the output of its writes, so the bytes are
 those of writing the sections one after the other. -/
-
-/-- Run a `PutM` writer on a pre-allocated buffer of capacity `cap`. -/
-@[inline] def runPutWithCapacity (cap : Nat) (p : PutM Unit) : ByteArray :=
-  (p.run (ByteArray.emptyWithCapacity cap)).2
 
 /-- Section 1: Blobs (Address -> bytes). -/
 def blobsSection (env : Env) : ByteArray :=
@@ -1670,17 +1684,22 @@ def constsSection (consts : Array (Address × LazyConstant)) : ByteArray :=
       putTagN 0 0 bytes.size.toUInt64
       putBytes bytes
 
+/-- Encode Section 4 (Names: Address -> Name component) from topologically
+    sorted names. -/
+def encodeNamesSection (sortedNames : Array (Address × Ix.Name)) : ByteArray :=
+  let cap := sortedNames.size * 48 + 9
+  runPutWithCapacity cap do
+    putTagN 0 0 sortedNames.size.toUInt64
+    for (addr, name) in sortedNames do
+      Serialize.put addr
+      putNameComponent name
+
 /-- Section 4: Names (Address -> Name component), with the names in their
     written order: topologically sorted so parents come before children, with
     ties broken by address. -/
 def namesSection (env : Env) : Array (Address × Ix.Name) × ByteArray :=
   let sortedNames := topologicalSortNames env.names
-  let cap := sortedNames.size * 48 + 9
-  (sortedNames, runPutWithCapacity cap do
-    putTagN 0 0 sortedNames.size.toUInt64
-    for (addr, name) in sortedNames do
-      Serialize.put addr
-      putNameComponent name)
+  (sortedNames, encodeNamesSection sortedNames)
 
 /-- Section 6: Comms (Address -> Comm). -/
 def commsSection (env : Env) : ByteArray :=
@@ -1692,20 +1711,15 @@ def commsSection (env : Env) : ByteArray :=
       Serialize.put addr
       putComm comm
 
-/-- Sections 1 to 6 of `putEnv`, sections 1, 2, 4 and 6 and the §3/§5 sorts
+/-- Sections 1 to 6 of `putEnv`, sections 1, 2, 4 and 6 and the §3/§5 tasks
     from their tasks. Not inlined, so that `putEnv` starts every task before
     the first is read. -/
-@[noinline] def putSections (consts : Array (Address × LazyConstant))
-    (blobsTask constsTask commsTask : Task ByteArray)
-    (namesTask : Task (Array (Address × Ix.Name) × ByteArray))
+@[noinline] def putSections
+    (blobsTask constsTask commsTask namesBytesTask : Task ByteArray)
+    (constIdxTask : Task (Std.HashMap Address UInt64))
     (hintsSortTask : Task (Array (Address × Lean.ReducibilityHints)))
-    (namedSortTask : Task (Array (Ix.Name × Named))) :
+    (namedTasksTask : Task (Nat × Array (Task (Except String ByteArray)))) :
     ExceptT String PutM Unit := do
-  -- Rank of each constant in §2's ascending-address order — §3 hint
-  -- entries and §5 named entries key their constants through it.
-  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
-    (Std.HashMap.emptyWithCapacity consts.size)
   putBytes blobsTask.get
   putBytes constsTask.get
 
@@ -1715,6 +1729,7 @@ def commsSection (env : Env) : ByteArray :=
   -- single home for hints, as delta-coded §2 ranks + fused hints (the
   -- address sort is load-bearing: it makes the ranks strictly
   -- ascending). Matches Rust `Env::put`.
+  let constIdx := constIdxTask.get
   let hintPairs := hintsSortTask.get
   putTagN 0 0 hintPairs.size.toUInt64
   let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
@@ -1728,12 +1743,7 @@ def commsSection (env : Env) : ByteArray :=
       putFusedHint hints
       prevRank := rank + 1
 
-  let (sortedNames, namesBytes) := namesTask.get
-  -- Build name index from sorted positions (matching Rust)
-  let nameIdx : NameIndex := sortedNames.zipIdx.foldl
-    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64)
-    (Std.HashMap.emptyWithCapacity sortedNames.size)
-  putBytes namesBytes
+  putBytes namesBytesTask.get
 
   -- Section 5: Named (name §4-index -> Named with metadata; the
   -- entry's constant is a §2 rank). Entry order stays ascending name
@@ -1741,18 +1751,8 @@ def commsSection (env : Env) : ByteArray :=
   -- then a length-prefixed metadata blob so hint scanners can skip the
   -- bodies. `original` keeps a raw address: it can reference an
   -- assumed constant that is NOT stored in §2 (prune cut bundles).
-  let named := namedSortTask.get
-  putTagN 0 0 named.size.toUInt64
-  -- The entries are independent given the two indices: they are written in
-  -- chunks of `namedChunk` on parallel tasks and concatenated in order, which
-  -- is the sequential loop's output (`putNamedEntries` is its body); the first
-  -- failing entry in order reports, as in the loop.
-  let chunks := (named.size + namedChunk - 1) / namedChunk
-  let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
-    match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
-      constIdx).run).run (ByteArray.emptyWithCapacity (namedChunk * 64)) with
-    | (.ok _, bytes) => Except.ok bytes
-    | (.error e, _) => Except.error e
+  let (namedSize, tasks) := namedTasksTask.get
+  putTagN 0 0 namedSize.toUInt64
   for t in tasks do
     match t.get with
     | .ok bytes => putBytes bytes
@@ -1771,25 +1771,43 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
     if let .error e := checkBinding binding then throw e
   putTagN 4 FLAG env.envelopeVersion
 
-  -- Start independent section encodings and sorts before sorting `consts`
-  -- and computing the merkle root.
-  let blobsTask := Task.spawn fun _ => blobsSection env
-  let commsTask := Task.spawn fun _ => commsSection env
-  let namesTask := Task.spawn fun _ => namesSection env
-  let hintsSortTask := Task.spawn fun _ =>
-    env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
-  let namedSortTask := Task.spawn fun _ =>
-    env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
-
+  -- Start independent section encodings, index builders, and sorts in parallel.
+  let constsSortTask := Task.spawn fun _ =>
+    env.consts.toArray.qsort fun a b => addrLt a.1 b.1
   -- Canonical merkle root over consts addresses (matches Rust Env::put).
   -- Always 32 bytes: for empty const sets, the sentinel
   -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
   -- canonical root, which is always a Blake3 hash).
-  let consts := env.consts.toArray.qsort fun a b => addrLt a.1 b.1
-  let constsTask := Task.spawn fun _ => constsSection consts
-  let root := (Ix.Merkle.merkleRootCanonical (consts.map (·.1))).getD
-    Ix.Merkle.zeroAddress
-  Serialize.put root
+  let rootTask := Task.spawn fun _ =>
+    (Ix.Merkle.merkleRootCanonical (constsSortTask.get.map (·.1))).getD
+      Ix.Merkle.zeroAddress
+  let constsTask := Task.spawn fun _ => constsSection constsSortTask.get
+  let constIdxTask := Task.spawn fun _ => buildConstIdx constsSortTask.get
+  let blobsTask := Task.spawn fun _ => blobsSection env
+  let commsTask := Task.spawn fun _ => commsSection env
+  let sortedNamesTask := Task.spawn fun _ => topologicalSortNames env.names
+  let namesBytesTask := Task.spawn fun _ => encodeNamesSection sortedNamesTask.get
+  let nameIdxTask := Task.spawn fun _ => buildNameIdx sortedNamesTask.get
+  let hintsSortTask := Task.spawn fun _ =>
+    env.anonHints.toArray.qsort fun a b => addrLt a.1 b.1
+  let namedSortTask := Task.spawn fun _ =>
+    env.named.toArray.qsort fun a b => addrLt a.1.getHash b.1.getHash
+  -- The §5 entries are independent given `nameIdx` and `constIdx`: spawn their
+  -- chunk tasks as soon as the sort and two index tables finish, so §5 runs in
+  -- parallel while `constsTask` (§2) and `namesBytesTask` (§4) are encoding.
+  let namedTasksTask := Task.spawn fun _ =>
+    let named := namedSortTask.get
+    let nameIdx := nameIdxTask.get
+    let constIdx := constIdxTask.get
+    let chunks := (named.size + namedChunk - 1) / namedChunk
+    let tasks := (Array.range chunks).map fun c => Task.spawn fun _ =>
+      match ((putNamedEntries named (c * namedChunk) ((c + 1) * namedChunk) nameIdx
+        constIdx).run).run (ByteArray.emptyWithCapacity (namedChunk * 64)) with
+      | (.ok _, bytes) => Except.ok bytes
+      | (.error e, _) => Except.error e
+    (named.size, tasks)
+
+  Serialize.put rootTask.get
 
   -- Bundle header fields: main (Option, 0/1-tagged) + assumptions
   -- (strictly ascending address list). Matches Rust `Env::put`.
@@ -1803,7 +1821,8 @@ def putEnv (env : Env) : ExceptT String PutM Unit := do
   for addr in assumptions do
     Serialize.put addr
   putBindingHeader env.roleBinding
-  putSections consts blobsTask constsTask commsTask namesTask hintsSortTask namedSortTask
+  putSections blobsTask constsTask commsTask namesBytesTask constIdxTask
+    hintsSortTask namedTasksTask
 
 /-- The most universe constructors one record's universes may expand to when the
     loaders below decode it: the host admission limit
