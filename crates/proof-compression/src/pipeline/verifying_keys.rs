@@ -27,13 +27,22 @@ pub(super) const STATEMENT_PREFIX: [u64; 10] = [
   4052325645, 2284798839, 2062413424,
 ];
 
-const RECURSIVE_VK: &[u8] =
+pub(super) const RECURSIVE_VK: &[u8] =
   include_bytes!("../../verifying-keys/0.1/recursive-vk.bin");
 const RECURSIVE_VK_BLAKE3: &str =
   "b4c58f798380d2fd91594763613874fdaf2d407631cee98fe361a287265d074a";
 /// The identifier a recursive KZG packet begins with.
 pub(super) const RECURSIVE_VK_ID: &str =
   "376163d7ec5afa644e393d0d1828b3fc46be2f80cc5e4d122c739e9b28129330";
+
+/// Identity of the first stage's FRI verifier plan for the bundled backend
+/// and layout, half of its fixed-cache identity. Independent of the KZG setup.
+pub(super) const FIRST_PLAN_ID: &str =
+  "99048e124eb0d8bb752c77db7e06ebf7a8254174c05c9140e31c039c4d03a198";
+/// Identity of the recursive stage's verifier frontend over the first stage
+/// under Ignition, half of its fixed-cache identity.
+pub(super) const RECURSIVE_FRONTEND_ID: &str =
+  "2f201f43533d930326e535fb61ee3e8ee8716ebfdaf8ffce7e1083b71ef160f6";
 
 #[cfg(any(feature = "plonk", test))]
 pub(super) const PLONK_VK: &[u8] =

@@ -42,7 +42,7 @@ fn release_identity_does_not_depend_on_path_or_stage() -> storage::Result<()> {
 #[test]
 fn missing_release_requires_explicit_development() -> storage::Result<()> {
   let error = SetupConfig::from_ignition_env(false, |_| None).err().unwrap();
-  assert!(error.to_string().contains("fetch-params"));
+  assert!(error.to_string().contains("compress setup"));
   let config = SetupConfig::from_ignition_env(true, |name| {
     assert_eq!(name, "IX_KZG_SRS_CACHE");
     Some("development-cache".into())

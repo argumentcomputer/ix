@@ -266,3 +266,32 @@ extern "C" fn rs_compression_release_gpu_memory() -> LeanIOResult<LeanOwned> {
   multi_stark::cuda::release_device_memory();
   LeanIOResult::ok(LeanOwned::box_usize(0))
 }
+
+#[unsafe(no_mangle)]
+extern "C" fn rs_compression_prepare(
+  root_vk: LeanByteArray<LeanBorrowed<'_>>,
+  cache_root: LeanString<LeanBorrowed<'_>>,
+  dev_kzg_srs: bool,
+  plonk: bool,
+) -> LeanIOResult<LeanOwned> {
+  let cache_root = cache_root.to_string();
+  let result = pipeline::CompressConfig::from_env(
+    std::path::Path::new(&cache_root),
+    dev_kzg_srs,
+    pipeline::FinalOptions {
+      system: pipeline::FinalSystem::None,
+      allow_development: dev_kzg_srs,
+    },
+  )
+  .and_then(|config| {
+    pipeline::prepare(root_vk.as_bytes(), &config)?;
+    if plonk {
+      pipeline::prepare_plonk(&config)?;
+    }
+    Ok(())
+  });
+  match result {
+    Ok(()) => LeanIOResult::ok(LeanOwned::box_usize(0)),
+    Err(error) => LeanIOResult::error_string(&error.to_string()),
+  }
+}

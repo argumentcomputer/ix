@@ -30,5 +30,5 @@ pub(super) fn check_first(
   Ok(())
 }
 
-pub(super) use outer::{PreparedVerifyingKey, VerifyingKey};
-pub(super) use saved::verifying_key;
+pub(super) use outer::{PreparedVerifyingKey, VerifyingKey, fixed_cache};
+pub(super) use saved::{frontend, verifying_key};

@@ -71,8 +71,8 @@ pub(super) fn run(
   let height = max_height(&lowered.compiled)?;
   let setup = config.setup.for_stage(FIRST_SEED, height)?;
   setup.bind_stage(out, height, 2)?;
-  let setup_id = setup.identity(height, 2)?;
-  let cache = config.fixed_cache(out, &[plan_id, setup_id].concat());
+  let cache =
+    config.fixed_cache(out, &cache_identity(&plan_id, &setup, height)?);
   let cached = cache.restore(out)?;
   let manifest = storage::Manifest::for_compiled(
     &lowered.compiled,
@@ -99,21 +99,53 @@ fn proving_config(
   )
 }
 
+/// The fixed-cache identity of a first stage proved for the FRI verifier
+/// plan `plan_id` under `setup` at trace height `height`.
+pub(super) fn cache_identity(
+  plan_id: &[u8; 32],
+  setup: &SetupSource,
+  height: usize,
+) -> storage::Result<Vec<u8>> {
+  Ok([plan_id.as_slice(), &setup.identity(height, 2)?].concat())
+}
+
+/// The first stage's fixed cache under `config`, at trace height
+/// `2^log_height`, for the FRI verifier plan `plan_id`.
+pub(super) fn fixed_cache(
+  plan_id: &[u8; 32],
+  log_height: usize,
+  config: &super::SetupConfig,
+  root: &Path,
+) -> storage::Result<FixedCache> {
+  let height = 1 << log_height;
+  let setup = config.for_stage(FIRST_SEED, height)?;
+  Ok(FixedCache::from_identity(root, &cache_identity(plan_id, &setup, height)?))
+}
+
 /// The first stage's fixed setup for the FRI stage `fri` at trace height
 /// `2^log_height`, derived without a proof: its manifest, with claims for a
 /// zero statement, and each partition's circuit and fixed commitment, as
-/// `run` stages and commits them.
+/// `run` stages and commits them. With `cache`, a fixed cache root, the
+/// fixed preprocessing comes from or is published to its entry, and the
+/// result says which, with the plan identity the entry is keyed by.
 pub(super) fn setup(
   fri: &super::stages::FriVerifier,
   log_height: usize,
   config: &super::SetupConfig,
-) -> storage::Result<(storage::Manifest, Vec<FixedSetup>)> {
+  cache: Option<&Path>,
+) -> storage::Result<(
+  storage::Manifest,
+  Vec<FixedSetup>,
+  Option<([u8; 32], super::fixed_cache::Prepared)>,
+)> {
   let plan = VerifierPlan::validate(
     &fri.key,
     construct::fri_profile(&fri.key, &fri.statement.template)?,
     VerifierLimits::default(),
   )?;
-  let circuit = FriConstruction::build(&plan, fri.statement.schema())?.circuit;
+  let schema = fri.statement.schema();
+  let plan_id = plan.identity(&schema)?;
+  let circuit = FriConstruction::build(&plan, schema)?.circuit;
   drop(plan);
   let (compiled, _inputs) = construct::first_circuit(circuit, 1 << log_height)?;
   let height = max_height(&compiled)?;
@@ -124,8 +156,19 @@ pub(super) fn setup(
     compiled.claims(&public)?,
     None,
   )?;
-  let parts = prover::fixed_setup(&proving_config(&setup, height)?, &compiled)?;
-  Ok((manifest, parts))
+  let config = proving_config(&setup, height)?;
+  let (parts, prepared) = match cache {
+    Some(root) => {
+      let cache = FixedCache::from_identity(
+        root,
+        &cache_identity(&plan_id, &setup, height)?,
+      );
+      let (parts, prepared) = cache.prepare(&config, &compiled)?;
+      (parts, Some((plan_id, prepared)))
+    },
+    None => (prover::fixed_setup(&config, &compiled)?, None),
+  };
+  Ok((manifest, parts, prepared))
 }
 
 /// Commit the fixed and witness traces of every partition, prove them
@@ -185,8 +228,9 @@ fn prove(
   let config = proving_config(&setup, height)?;
   eprintln!("KZG parameters ready: {:?}", start.elapsed());
   eprintln!("Partition prefetch budget: {} GiB", prefetch_bytes >> 30);
+  let fixed = cache.fixed_directory(dir)?;
   let prover::Proved { system, bytes, verify_seconds, .. } = lowered
-    .commit(config, Some(&out), prefetch_bytes)?
+    .commit(config, Some(&fixed), prefetch_bytes)?
     .prove(&manifest.claims)?;
   let output_span = tracing::info_span!("compression/write_output").entered();
   // Identifies this proof instance, not its key: the manifest holds the claim
@@ -369,8 +413,15 @@ mod tests {
     prove(&dir, &cache, 9)?;
     let first = artifacts(&dir)?;
     let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
+    let entries = fs::read_dir(&cache_root)?
+      .map(|entry| Ok(entry?.path()))
+      .collect::<storage::Result<Vec<_>>>()?;
+    let [entry] = entries.as_slice() else {
+      panic!("expected one published entry, found {entries:?}");
+    };
     for i in 0..manifest.heights.len() {
-      assert!(dir.join(format!("kzg/fixed-{i}.bin")).exists());
+      assert!(!dir.join(format!("kzg/fixed-{i}.bin")).exists());
+      assert!(entry.join(format!("kzg/fixed-{i}.bin")).exists());
       assert!(dir.join(format!("kzg/setup-{i}.bin")).exists());
       assert!(!dir.join(format!("kzg/main-{i}.bin")).exists());
     }
@@ -384,7 +435,8 @@ mod tests {
     let warm = root.join("warm");
     let cache = stage(&warm, compiled, public, &cache_root)?;
     for i in 0..manifest.heights.len() {
-      assert!(warm.join(format!("kzg/fixed-{i}.bin")).exists());
+      assert!(warm.join(format!("kzg/setup-{i}.bin")).exists());
+      assert!(!warm.join(format!("kzg/fixed-{i}.bin")).exists());
     }
     prove(&warm, &cache, 9)?;
     assert_eq!(first, artifacts(&warm)?);
@@ -450,10 +502,8 @@ mod tests {
     let error = prove(&malformed, &cache, 9).unwrap_err();
     assert!(error.to_string().contains("staged claims differ"));
 
-    // A damaged cache entry is rejected before anything is linked into a
-    // stage, whether it is metadata or a fixed checkpoint whose interior
-    // bytes still decode. Files are replaced rather than edited so the
-    // hard links into the proved stages keep their contents.
+    // A damaged cache entry is rejected before anything is staged, whether
+    // it is metadata or a fixed checkpoint whose interior bytes still decode.
     let entries = fs::read_dir(&cache_root)?
       .map(|entry| Ok(entry?.path()))
       .collect::<storage::Result<Vec<_>>>()?;

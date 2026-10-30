@@ -19,8 +19,8 @@ pub fn derive_recursive_vk(
     let key = aiur::vk_codec::AiurVerifyingKey::from_bytes(root_vk)?;
     root::verifier(&key, &FixedRoot::from_json(layout)?)?
   };
-  let (manifest, parts) =
-    first::setup(&fri, verifying_keys::FIRST_LOG_HEIGHT, setup)?;
+  let (manifest, parts, _) =
+    first::setup(&fri, verifying_keys::FIRST_LOG_HEIGHT, setup, None)?;
   drop(fri);
   let vk = wrap::verifying_key(&manifest, parts, setup)?;
   vk.check_setup_class(setup.class())?;

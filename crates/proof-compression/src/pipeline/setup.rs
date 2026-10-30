@@ -74,7 +74,7 @@ impl SetupClass {
 fn development_refused<T>() -> storage::Result<T> {
   Err(
     format!(
-      "no BN254 Ignition SRS is installed; run `ix compress fetch-params`, \
+      "no BN254 Ignition SRS is installed; run `ix compress setup`, \
      set {IGNITION_SRS_VAR} to the released gnark SRS, or pass --dev-kzg-srs \
      to use the known-trapdoor development setup (not production-secure)"
     )

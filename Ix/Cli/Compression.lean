@@ -67,6 +67,13 @@ The proof itself cannot authorize its key or a different circuit. -/
 opaque verifyDevelopment (proof claim bundle : @& ByteArray)
   (trustedDigest : @& String) (devSrs : Bool) : IO String
 
+/-- Check the Ignition SRS against its pin and publish the fixed
+preprocessing of every stage of the bundled version for the aggregation
+backend `vk` to the fixed cache under `cacheRoot`; with `plonk`, also build
+the PLONK cache. Present entries are only checked. -/
+@[extern "rs_compression_prepare"]
+opaque prepare (vk : @& ByteArray) (cacheRoot : @& String) (devKzgSrs plonk : Bool) : IO Unit
+
 /-- Return the GPU memory this process's Aiur prover retains between proofs to
 the driver. The compression worker is another process and cannot reuse it. -/
 @[extern "rs_compression_release_gpu_memory"]

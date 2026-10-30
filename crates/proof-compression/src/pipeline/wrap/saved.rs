@@ -49,6 +49,16 @@ pub(in crate::pipeline) fn verifying_key(
   parts: Vec<FixedSetup>,
   config: &SetupConfig,
 ) -> Result<super::outer::VerifyingKey> {
+  frontend(manifest, parts, config)?.verifying_key(config)
+}
+
+/// The recursive stage's circuit for a first stage with `manifest`'s shape
+/// and fixed setup `parts`, as `prove` builds it from a loaded first stage.
+pub(in crate::pipeline) fn frontend(
+  manifest: &Manifest,
+  parts: Vec<FixedSetup>,
+  config: &SetupConfig,
+) -> Result<super::outer::Frontend> {
   let height = check_manifest(manifest)?;
   let setup = config.for_stage(FIRST_SEED, height)?;
   let system =
@@ -64,8 +74,7 @@ pub(in crate::pipeline) fn verifying_key(
     &keys,
     &plan.identity(),
     super::outer::MAX_TRACE_LEN,
-  )?
-  .verifying_key(config)
+  )
 }
 
 fn read_recorded(
