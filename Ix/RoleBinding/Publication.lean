@@ -1,6 +1,7 @@
 module
 
 public import Ix.Ixon
+public import Ix.Compile.Parallel
 public import Ix.LeanIngress.Expr
 public import IxC.Kernel.Ixon.RoleTable
 public import IxC.Kernel.Ixon.Reader
@@ -34,13 +35,16 @@ the same member, even through different projection records. -/
 def publication (env : Ixon.Env) (store : Store) (required : List Role) :
     Except String Publication := do
   unless required.Nodup do throw "role publication: a required role occurs twice"
+  let matched := (Ix.Compile.Parallel.map 32
+    (fun (name, named) =>
+      (Role.ofLeanName? (Ix.LeanIngress.ingressName name)).map (·, named.addr))
+    env.named.toArray).filterMap id
   let mut published : Std.HashMap Role Address := {}
-  for (name, named) in env.named.toList do
-    let some role := Role.ofLeanName? (Ix.LeanIngress.ingressName name) | continue
+  for (role, addr) in matched do
     unless required.contains role do continue
     if published.contains role then
       throw s!"role publication: multiple published spellings of {repr role}"
-    published := published.insert role named.addr
+    published := published.insert role addr
   let mut bound : Array (Role × Address) := #[]
   let mut refs : Std.HashMap Role (ConstRef Address) := {}
   let mut roleOfRef : Std.HashMap (ConstRef Address) Role := {}

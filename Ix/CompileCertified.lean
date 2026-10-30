@@ -78,11 +78,11 @@ address of that role (`Ix.Cert.PublishedRolesBound`), if any. -/
 def unboundPublishedRole (ixe : Ixon.Env) : Option (Ix.Name × Ix.Kernel.Role × Address) :=
   let bound : Std.HashMap Ix.Kernel.Role Address :=
     Ix.Cert.roleTableBound.foldl (fun m (r, a) => if m.contains r then m else m.insert r a) {}
-  ixe.named.toList.findSome? fun (n, named) =>
+  (Ix.Compile.Parallel.map 32 (fun (n, named) =>
     match Ix.Kernel.Role.ofLeanName? (Ix.LeanIngress.ingressName n) with
     | some r =>
       if bound[r]? == some named.addr then none else some (n, r, named.addr)
-    | none => none
+    | none => none) ixe.named.toArray).findSome? id
 
 /-- The certified compile's result. -/
 structure CertifiedOut where

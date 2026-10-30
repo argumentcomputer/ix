@@ -76,11 +76,13 @@ def checkedStore (limits : Ix.Kernel.Admission.Limits) (env : Ixon.Env) :
 /-- Structural source spelling for certificate names, including duplicate
 spellings that a forged stored Ix.Name hash would otherwise distinguish. -/
 def sourceAddresses (env : Ixon.Env) : Except String (Std.HashMap Ix.Kernel.Name Address) := do
-  let mut out : Std.HashMap Ix.Kernel.Name Address := {}
-  for (name, named) in env.named.toList do
-    let key := Ix.LeanIngress.ingressName name
+  let entries := Ix.Compile.Parallel.map 32
+    (fun (name, named) => (Ix.LeanIngress.ingressName name, named.addr))
+    env.named.toArray
+  let mut out : Std.HashMap Ix.Kernel.Name Address := Std.HashMap.emptyWithCapacity entries.size
+  for (key, addr) in entries do
     if out.contains key then throw s!"role generation: duplicate source spelling {key}"
-    out := out.insert key named.addr
+    out := out.insert key addr
   return out
 
 def mergeRecords (left right : RecordStore) : Except String RecordStore := do
@@ -275,15 +277,21 @@ after the new table's source publications match this artifact. Existing record
 and blob bytes cannot be overwritten. The caller must still check the resulting
 artifact at the certified entry; a previous certificate does not transfer.
 `store?` carries a checked store for this artifact and these limits (as for
-`generate`), so that one artifact is authenticated and decoded once. -/
+`generate`), so that one artifact is authenticated and decoded once; `roleStore?`
+supplies an already-checked role-closure lookup when only the role closure was
+decoded ahead of whole-artifact finalization checks. -/
 def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
-    (env : Ixon.Env) (store? : Option (CheckedStore limits env) := none) : Except String Ixon.Env := do
+    (env : Ixon.Env) (store? : Option (CheckedStore limits env) := none)
+    (roleStore? : Option Store := none) : Except String Ixon.Env := do
   generated.table.check
   unless generated.table.wireWF do throw "role emission: noncanonical binding table"
-  let store ← match store? with
-    | some store => pure store.records
-    | none => recordStore limits env
-  let actual ← Ix.RoleBinding.publication env (store[·]?) (generated.table.bound.toList.map (·.1))
+  let lookup : Store ← match store?, roleStore? with
+    | some store, _ => pure (store.records[·]?)
+    | none, some s => pure s
+    | none, none =>
+      let s ← recordStore limits env
+      pure (s[·]?)
+  let actual ← Ix.RoleBinding.publication env lookup (generated.table.bound.toList.map (·.1))
   unless actual.bound == generated.table.bound do
     throw "role emission: binding differs from this artifact's published roles"
   let mut out := env
