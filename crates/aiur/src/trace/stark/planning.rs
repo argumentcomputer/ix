@@ -190,11 +190,16 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       let (_, retained, _) = self.prove_allocation(heights, rows);
       retained_total += retained * plan.shards as u128;
     }
-    // Includes the current shard twice, conservatively; the same stage-one
-    // allocation model is used for ordinary batches above.
-    let retained_peak = regenerated_peak + margin(retained_total);
+    // For several shards, conservatively include the current commitment in
+    // both terms. For one shard, round two needs exactly the same workspace
+    // whether its commitment is retained or rebuilt.
+    let retained_peak = if shards == 1 {
+      regenerated_peak
+    } else {
+      regenerated_peak + margin(retained_total)
+    };
     let retention = match options.retention {
-      _ if self.gpu_lookup_only => RetentionPolicy::Regenerate,
+      _ if self.requires_regeneration(shards) => RetentionPolicy::Regenerate,
       RetentionPolicy::Auto if retained_peak <= u128::from(budget) => {
         RetentionPolicy::Retain
       },
@@ -341,7 +346,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       let retained_peak =
         margin(base + single + retained * shards.saturating_sub(1) as u128);
       let retention = match options.retention {
-        _ if self.gpu_lookup_only => RetentionPolicy::Regenerate,
+        _ if self.requires_regeneration(shards) => RetentionPolicy::Regenerate,
         RetentionPolicy::Auto if retained_peak <= u128::from(budget) => {
           RetentionPolicy::Retain
         },

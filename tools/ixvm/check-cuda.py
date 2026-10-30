@@ -102,7 +102,7 @@ def main():
             if not planning['fits'] or planning['max_rows'] < 2:
                 raise RuntimeError(f'{name}: fixture cannot exercise trace sharding')
             rows = planning['max_rows'] // 2
-            case = dict(name=name, max_rows=rows, proofs=[])
+            case = dict(name=name, max_rows=rows, proofs=[], single_shard_proofs=[])
             report['cases'].append(case)
 
             variants = [('cpu-retain', cpu, cpu_env, 'retain', None),
@@ -151,6 +151,46 @@ def main():
                 case['proofs'].append(dict(variant=variant, proof_sha256=digest(proof),
                                           key_sha256=digest(key), shards=result['shards'],
                                           proof_bytes=result['proof_bytes']))
+                save()
+
+            # Graph-derived lookups must also work when the only stage-one
+            # commitment is retained. This avoids an entire extra upload/LDE/
+            # Merkle pass without increasing peak device residency.
+            single_rows = planning['max_rows']
+            single_variants = [('cpu-single-retain', cpu, cpu_env, 'retain', None)]
+            if not args.cpu_only:
+                single_variants += [
+                    ('cuda-graph-single-retain', cuda,
+                     dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1'), 'retain', args.device),
+                    ('cuda-graph-single-regenerate', cuda,
+                     dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1'), 'regenerate', args.device),
+                ]
+            single_reference = None
+            for variant, binary, env, retention, device in single_variants:
+                target = directory / variant
+                target.mkdir()
+                product = target / 'proof'
+                options = target / 'options.json'
+                options.write_text(json.dumps(dict(max_rows=single_rows,
+                                                   retention=retention, device=device)))
+                run(f'{name}-{variant}', [binary, 'prove', artifact, invocation, product,
+                                         single_rows, retention, options], env)
+                proof, key, proof_report = files(product, ixvm)
+                result = json.loads(proof_report.read_text())
+                if (not result['verified'] or result['shards'] != 1
+                        or result['plan']['retention'] != retention):
+                    raise RuntimeError(f'{name}-{variant}: single-shard retention was not honored')
+                run(f'{name}-{variant}-verify', [cpu, 'verify', artifact, invocation, proof], verify_env)
+                identity = (proof.read_bytes(), key.read_bytes())
+                if identity[1] != reference[1]:
+                    raise RuntimeError(f'{name}-{variant}: sharding changed the key')
+                if single_reference is None:
+                    single_reference = identity
+                elif identity != single_reference:
+                    raise RuntimeError(f'{name}-{variant}: single-shard CPU/CUDA proof bytes differ')
+                case['single_shard_proofs'].append(dict(variant=variant,
+                    proof_sha256=digest(proof), key_sha256=digest(key), shards=result['shards'],
+                    retention=result['plan']['retention'], proof_bytes=result['proof_bytes']))
                 save()
         report['success'] = True
         report['hardware_validated'] = not args.cpu_only

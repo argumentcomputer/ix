@@ -139,6 +139,14 @@ fn verify(
 }
 
 impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
+  /// Multiple GPU shards still regenerate to bound device residency. A single
+  /// shard needs the same committed state in round two either way: discarding
+  /// it only repeats the upload, LDE and Merkle commitment, without saving peak
+  /// memory. Lookup storage and commitment retention are independent choices.
+  pub(super) fn requires_regeneration(&self, shards: usize) -> bool {
+    self.gpu_lookup_only && shards > 1
+  }
+
   /// Fallible two-round streaming. The supplier may replay a record and keep
   /// only its current trace matrices; no whole-environment trace is retained.
   pub fn prove_streamed_stage_1(
@@ -180,8 +188,8 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
     let mut headers = Vec::new();
     let mut retained = Vec::new();
-    let retain =
-      !self.gpu_lookup_only && matches!(plan.retention, Retention::Retain);
+    let retain = !self.requires_regeneration(plan.shards)
+      && matches!(plan.retention, Retention::Retain);
     for shard in 0..plan.shards {
       let traces = supply(shard)?;
       let (active, degrees) = self.trace_shape(&traces)?;
@@ -343,38 +351,34 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     }
     let mut claims = vec![vec![]; shards];
     claims[0].push(claim);
-    // Lookup rows depend on shard boundaries and are regenerated from each
-    // slice, including the IsFirst/Last/Transition selectors.
-    let retention =
-      if self.gpu_lookup_only { Retention::Regenerate } else { retention };
+    // Build lookup buffers from the sliced rows. LookupPlan::compile rejects
+    // nonlocal lookup expressions; boundary selectors belong to constraints.
+    let retention = if self.requires_regeneration(shards) {
+      Retention::Regenerate
+    } else {
+      retention
+    };
+    let mut traces = Some(traces);
     let proof = self.system.prove_batch_with(
       &self.key,
       &claims,
       messages,
       retention,
       |shard| {
-        let sliced = traces
-          .iter()
-          .zip(&self.system.circuits)
-          .map(|(trace, circuit)| {
-            if circuit.preprocessed_height != 0 {
-              return if shard == 0 {
-                trace.clone()
-              } else {
-                RowMajorMatrix::new(
-                  Val::zero_vec(trace.values.len()),
-                  trace.width,
-                )
-              };
-            }
-            let begin = (shard * max_rows).min(trace.height());
-            let end = (begin + max_rows).min(trace.height());
-            RowMajorMatrix::new(
-              trace.values[begin * trace.width..end * trace.width].to_vec(),
-              trace.width,
-            )
-          })
-          .collect();
+        #[cfg(feature = "trace-profile")]
+        let profile = super::profile::Span::new("shard_copy", 0);
+        let sliced = if shards == 1 && matches!(retention, Retention::Retain) {
+          // The backend owns these matrices and calls the supplier only once.
+          // Move the entire witness instead of cloning a potentially multi-GB
+          // trace while keeping the source resident for the rest of the proof.
+          traces.take().expect("single retained shard supplied once")
+        } else {
+          self
+            .slice_stage_1(traces.as_ref().unwrap(), shard, max_rows)
+            .expect("validated batch dimensions")
+        };
+        #[cfg(feature = "trace-profile")]
+        drop(profile);
         self.witness_from_main(sliced)
       },
     );

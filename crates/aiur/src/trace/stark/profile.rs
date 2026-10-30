@@ -5,6 +5,31 @@ use std::{
   time::{Duration, Instant},
 };
 
+/// Time adapter work around the cryptographic prover separately from row
+/// generation. In particular, batch lookup reconstruction is not part of the
+/// fused `generate` measurement.
+pub(super) struct Span {
+  phase: &'static str,
+  start: Instant,
+  cells: usize,
+}
+
+impl Span {
+  pub(super) fn new(phase: &'static str, cells: usize) -> Self {
+    Self { phase, start: Instant::now(), cells }
+  }
+}
+
+impl Drop for Span {
+  fn drop(&mut self) {
+    eprintln!(
+      "{}",
+      serde_json::json!({"event": "aiur_prover_profile", "phase": self.phase,
+        "elapsed_seconds": self.start.elapsed().as_secs_f64(), "cells": self.cells})
+    );
+  }
+}
+
 pub(super) struct Phases {
   start: Instant,
   last: Instant,

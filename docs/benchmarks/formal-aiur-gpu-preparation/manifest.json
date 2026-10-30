@@ -1,0 +1,68 @@
+{
+  "revision": "e2326c95d746c345e9a2ecc8b19197a4f2a2e043",
+  "threads": 16,
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "gpu_available": false,
+  "cpu": "Intel Xeon 6975P-C",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "cuda_hardware_validated": false,
+  "environment": {
+    "RAYON_NUM_THREADS": "16",
+    "IX_BENCH_NO_THP": "1",
+    "IX_BENCH_REUSE_EXECUTION": "1",
+    "AIUR_TRACE_ONLY_LOOKUPS": "0"
+  },
+  "flags": "--release; -Ctarget-cpu=native; features parallel,aiur/trace-profile",
+  "measurement": "CPU trace generation, batch proving and verification. Execution and setup excluded. Same lookup/copy instrumentation in both binaries. Three process runs per workload/version, each with two trace warmups.",
+  "baseline_changes": "e2326c95 plus optional phase timers only",
+  "local_raw_directory": ".lake/gpu-followup-20261030",
+  "binary_sha256": {
+    "baseline": "e27d665db9f1154fbd5f39161e1289b8ed26d7b65f56dbec97a7492a531fc251",
+    "fixed": "6d1385fd36d2ddc9264b3049a4ae49c0d1a4a4aedb6db1c4c23df86e9ec217f3"
+  },
+  "input_sha256": {
+    ".lake/formal-integration/ixvm-tuned.json": "1f8c10da7b10587e985d5166b26ad0c7edd4f4cbdfe0978c7deb237cf6683d9a",
+    ".lake/formal-integration/recursion-tuned.json": "40e88dd1f84e4f119626189e83f8eb181f6ef9875c190f33cdd7853e83c5afe1",
+    ".lake/formal-comparison/final/environment-input.json": "14a147c1d6141721547092a9a835249969aa1f82c8f57f9ed0a2b0522f7aaa56",
+    ".lake/formal-comparison/final/new-environment-grouped.json.inner/input.json": "2ecf2051d112503637b9d3c1a6201bd66f91df4568a95faff3cef068e3f96a1a"
+  },
+  "identities": {
+    "environment": {
+      "proof.bin": "68c9ab5d23678f921a6af89d2a65dd76356f50b1218d823c2913849b8a708072",
+      "key.bin": "50760291ae2c66b2564f7c494f81a31cf377cc125fbbd9382d86d4c370378143",
+      "claims.bin": "3bf7b58d3da6199546ac0ac885d60323969d3867c08bbfc5ac0e12dacb46a4c9"
+    },
+    "recursion": {
+      "proof.bin": "e1a67b6847c7770f1f4340253bf5fe8a9c7f1aaa69cca175a9b6e42db6450590",
+      "key.bin": "21083c7b19de3e0a83c647e5a5420d34c2df2aab618aa7de327cf96670fc0121",
+      "claims.bin": "b86c6d532256574ab4f3c0d757b301215be733dd5943d105371cd35147907f64"
+    }
+  },
+  "proof_key_claim_and_circuit_shapes_identical": true,
+  "validation": {
+    "parallel_rust_tests_passed": 104,
+    "serial_aiur_tests_passed": 88,
+    "cpu_parity_report": ".lake/orchestration-final/cuda-check-7g951y0z/report.json",
+    "controller_report": ".lake/orchestration-final/controller-check-67ry6a6t/report.json",
+    "cuda_build": "CUDA 13.3.1 development container; SM 80; ixvm-proof, stark-verifier, ix-prover release build/link and all-target Clippy",
+    "cuda_hardware_validated": false,
+    "lean_sources_changed": false
+  }
+}

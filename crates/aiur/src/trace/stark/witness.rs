@@ -456,7 +456,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     Ok((RowMajorMatrix::new(values, width), builder.finish()))
   }
 
-  fn auxiliary_lookups(
+  pub(super) fn auxiliary_lookups(
     &self,
     ci: usize,
     trace: &RowMajorMatrix<Val>,

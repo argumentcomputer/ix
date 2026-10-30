@@ -122,6 +122,114 @@ fn batch_memory_partition_and_persisted_key() {
   assert!(backend.verify_batch("root", &[3], &[9], &bad).is_err());
 }
 
+#[test]
+fn sliced_lookup_writer_matches_graph_and_retained_proof() {
+  use multi_stark::{batch::Retention, lookup::LookupValues, types::ExtVal};
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let record = program.execute("root", vec![3]).unwrap();
+  let mut traces = backend.generate_stage_1(&record, "root", &[3]).unwrap();
+  // Exercise a ROM run spanning two shards, fixed-table padding, zero
+  // multiplicities and circuits inactive in the second shard.
+  traces
+    .last_mut()
+    .unwrap()
+    .values
+    .extend([0, 1, 1, 42, 0, 1, 2, 43, 0, 0, 0, 0].map(Val::from_u64));
+  for shard in 0..2 {
+    let sliced = backend.slice_stage_1(&traces, shard, 2).unwrap();
+    let reference =
+      SystemWitness::from_stage_1(sliced.clone(), &backend.system);
+    let generated = backend.witness_from_main(sliced);
+    let stage2 = |witness: SystemWitness<Val>| {
+      let (lookups, groups): (Vec<_>, Vec<_>) = witness
+        .traces
+        .into_iter()
+        .zip(witness.lookups)
+        .zip(&backend.system.circuits)
+        .filter(|((trace, _), _)| trace.height() != 0)
+        .map(|((_, lookups), circuit)| (lookups, circuit.lookup_group_size))
+        .unzip();
+      LookupValues::stage_2_traces(
+        &lookups,
+        &groups,
+        ExtVal::from_u64(1000000007),
+        &ExtVal::from_u64(1000000009),
+        ExtVal::ZERO,
+      )
+    };
+    let (expected, expected_acc) = stage2(reference);
+    let (actual, actual_acc) = stage2(generated);
+    assert_eq!(actual_acc, expected_acc);
+    for (a, b) in actual.iter().zip(expected) {
+      assert_eq!(a.width, b.width);
+      assert_eq!(a.values, b.values);
+    }
+  }
+  // The move-only supplier for a single retained shard must produce exactly
+  // the same proof as the independent graph evaluator and a replayed shard.
+  let claim = backend.claim("root", &[3], &[9]).unwrap();
+  let messages = vec![
+    multi_stark::batch::BatchMessage::pull(
+      [MEMSEG, 1, 0].map(Val::from_u64).to_vec(),
+    ),
+    multi_stark::batch::BatchMessage::push(
+      [MEMSEG, 1, 3].map(Val::from_u64).to_vec(),
+    ),
+  ];
+  let reference = backend.system.prove_batch_with(
+    &backend.key,
+    &[vec![claim]],
+    messages,
+    Retention::Retain,
+    |_| SystemWitness::from_stage_1(traces.clone(), &backend.system),
+  );
+  for retention in [Retention::Retain, Retention::Regenerate] {
+    let proof = backend
+      .prove_batch_stage_1("root", &[3], &[9], traces.clone(), 4, retention)
+      .unwrap();
+    assert_eq!(proof.to_bytes().unwrap(), reference.to_bytes().unwrap());
+  }
+}
+
+#[test]
+fn gpu_lookup_policy_retains_single_shards_without_growing_multi_shard_residency()
+ {
+  use super::planning::{Options, RetentionPolicy};
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let mut backend = Backend::for_batch(&plan, parameters()).unwrap();
+  // Planning is host-only: exercise the GPU policy without needing a device
+  // or asking the CPU prover to consume shape-only lookup buffers.
+  backend.gpu_lookup_only = true;
+  let record = program.execute("root", vec![3]).unwrap();
+  let heights = backend.record_shape(&record).unwrap().heights;
+  let options = Options { max_ram_bytes: Some(u64::MAX), ..Default::default() };
+  let single = backend.plan_heights(&heights, &options, 0).unwrap();
+  assert_eq!(single.shards, 1);
+  assert_eq!(single.retention, RetentionPolicy::Retain);
+  let streamed = backend.plan_stream(&[(&heights, 1)], &options).unwrap();
+  assert_eq!(streamed.retention, RetentionPolicy::Retain);
+  let regenerated = backend
+    .plan_stream(
+      &[(&heights, 1)],
+      &Options { retention: RetentionPolicy::Regenerate, ..options.clone() },
+    )
+    .unwrap();
+  assert_eq!(streamed.peak_bytes, regenerated.peak_bytes);
+  let mut many = heights;
+  many[0] = 8;
+  let options = Options { max_rows: Some(2), ..options };
+  let batch = backend.plan_heights(&many, &options, 0).unwrap();
+  assert_eq!(batch.shards, 4);
+  assert_eq!(batch.retention, RetentionPolicy::Regenerate);
+  let streamed = backend.plan_stream(&[(&many, 2)], &options).unwrap();
+  assert_eq!(streamed.retention, RetentionPolicy::Regenerate);
+  assert!(!backend.requires_regeneration(1));
+  assert!(backend.requires_regeneration(2));
+}
+
 fn compare_generated<B: WitnessField>(
   backend: &Backend<'_, '_, B>,
   record: &Execution<B>,

@@ -203,6 +203,9 @@ bytes for three grouped applications: the `Nat.add_comm` frontier claim,
 recursive verification, and aggregation wrapping. Each application must use
 multiple trace shards. It checks CPU retain/regenerate, CUDA retain/regenerate
 with host lookup buffers, and CUDA regeneration with graph-derived lookups.
+It also checks single-shard CUDA proofs with graph-derived lookups under both
+retention policies against an independent CPU proof, including that the
+requested retention policy was actually honored.
 Every proof is independently verified by the CPU host. Wrong public inputs and
 explicit GPU requests to CPU-only hosts must fail.
 
@@ -218,7 +221,9 @@ the hardware run remains pending.
 
 `AIUR_TRACE_ONLY_LOOKUPS=1` lets CUDA derive lookup messages from the committed
 stage-one rows using multi-stark's graph evaluator. It avoids host lookup
-buffers and selects regeneration at the batch barrier. Full host buffers remain
+buffers. Multi-shard batches select regeneration to bound device residency;
+single-shard batches can retain their commitment across the barrier, avoiding
+a second upload, LDE and Merkle commitment at the same peak memory. Full host buffers remain
 the default because they support multi-stark's memory-pressure CPU fallback;
 shape-only buffers fail explicitly if a CPU fallback tries to consume them.
 The hardware integration gate exercises both modes and CPU-verifies the proofs.
@@ -226,6 +231,9 @@ CPU verification and key export ignore this prover-only setting, so leaving it
 exported after GPU proving does not break those commands. CPU proving still
 rejects a request for graph-derived device lookups. This separation changes no
 circuit constraints, Lean proofs, verifying keys, or proof formats.
+The [batch preparation follow-up](formal-aiur-gpu-preparation.md) records the
+hardware review and fixes for serial host lookup reconstruction, redundant
+trace copying and unnecessary single-shard commitment regeneration.
 
 `tools/ixvm/adapt.py --check` checks reproducibility against the pinned source
 revision. `tools/ixvm/recursion.py --check` and `--aggregate --check` do the same

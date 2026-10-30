@@ -379,6 +379,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     &self,
     traces: Vec<RowMajorMatrix<Val>>,
   ) -> SystemWitness<Val> {
+    #[cfg(feature = "trace-profile")]
+    let _profile = profile::Span::new(
+      "shard_lookups",
+      traces.iter().map(|t| t.values.len()).sum(),
+    );
     if self.gpu_lookup_only {
       let lookups = traces
         .iter()
@@ -391,7 +396,22 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         .collect();
       SystemWitness { traces, lookups }
     } else {
-      SystemWitness::from_stage_1(traces, &self.system)
+      // The certified adapter accepts only row-local lookup expressions.
+      // Reuse its compiled writer after slicing, just as in fused generation,
+      // instead of serially interpreting the full graph for every padded row.
+      #[cfg(feature = "parallel")]
+      let lookups = traces
+        .par_iter()
+        .enumerate()
+        .map(|(ci, trace)| self.auxiliary_lookups(ci, trace))
+        .collect();
+      #[cfg(not(feature = "parallel"))]
+      let lookups = traces
+        .iter()
+        .enumerate()
+        .map(|(ci, trace)| self.auxiliary_lookups(ci, trace))
+        .collect();
+      SystemWitness { traces, lookups }
     }
   }
 
