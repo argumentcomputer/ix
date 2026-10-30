@@ -105,4 +105,92 @@ theorem merge_assoc (lt : α → α → Bool)
   simp only [row_merge]
   exact choose_assoc lt trans total _ _ _
 
+def better (lt : α → α → Bool) (entry : α) : Option α → Bool
+  | none => true
+  | some previous => lt entry previous
+
+/-- The existing table insertion recipe, parameterized only by the key and
+strict entry order. Its instance is definitionally the component table update. -/
+def add (lt : α → α → Bool) (key : α → Nat) (table : Table α) (entry : α) : Table α :=
+  let index := key entry
+  let table := if table.size ≤ index then
+    table ++ Array.replicate (index + 1 - table.size) none else table
+  if better lt entry table[index]! then table.set! index (some entry) else table
+
+theorem row_eq_bang (table : Table α) (index : Nat) : row table index = table[index]! := by
+  rw [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
+  rfl
+
+theorem row_append_none (table : Table α) (count index : Nat) :
+    row (table ++ Array.replicate count none) index = row table index := by
+  by_cases inside : index < table.size
+  · simp only [row, Array.getElem?_append_left inside]
+  · rw [row, Array.getElem?_append_right (by omega), Array.getElem?_replicate]
+    simp only [row, Array.getElem?_eq_none (by omega : table.size ≤ index), Option.getD_none]
+    split <;> rfl
+
+theorem add_size (lt : α → α → Bool) (key : α → Nat) (table : Table α) (entry : α) :
+    (add lt key table entry).size = max table.size (key entry + 1) := by
+  let expanded := if table.size ≤ key entry then
+    table ++ Array.replicate (key entry + 1 - table.size) none else table
+  have size : expanded.size = max table.size (key entry + 1) := by
+    unfold expanded
+    split
+    · simp only [Array.size_append, Array.size_replicate]; omega
+    · omega
+  change (if better lt entry expanded[key entry]! then
+    expanded.set! (key entry) (some entry) else expanded).size = _
+  split
+  · rw [Array.size_set!]; exact size
+  · exact size
+
+theorem row_add (lt : α → α → Bool) (key : α → Nat) (table : Table α) (entry : α) (index : Nat) :
+    row (add lt key table entry) index =
+      if index = key entry then choose lt (row table index) (some entry) else row table index := by
+  unfold add
+  let expanded := if table.size ≤ key entry then
+    table ++ Array.replicate (key entry + 1 - table.size) none else table
+  have same : ∀ i, row expanded i = row table i := by
+    intro i
+    unfold expanded
+    split
+    · exact row_append_none _ _ _
+    · rfl
+  have bound : key entry < expanded.size := by
+    unfold expanded
+    split
+    · simp only [Array.size_append, Array.size_replicate]; omega
+    · omega
+  have setSelf : row (expanded.set! (key entry) (some entry)) (key entry) = some entry := by
+    rw [row_eq_bang, Array.getElem!_set!_self _ _ _ bound]
+  change row (if better lt entry expanded[key entry]! then
+    expanded.set! (key entry) (some entry) else expanded) index = _
+  rw [← row_eq_bang, same]
+  by_cases atKey : index = key entry
+  · subst index
+    cases old : row table (key entry) with
+    | none => simpa only [better, ite_true, choose] using setSelf
+    | some previous =>
+      by_cases lower : lt entry previous = true
+      · simpa only [better, choose, select, lower, ite_true] using setSelf
+      · simp [better, choose, select, lower]
+        rw [same, old]
+  · simp only [atKey, ite_false]
+    split
+    · rw [row_eq_bang, Array.getElem!_set!_ne _ _ _ _ (Ne.symm atKey), ← row_eq_bang, same]
+    · exact same index
+
+theorem merge_add (lt : α → α → Bool) (key : α → Nat)
+    (trans : ∀ a b c, lt a b = true → lt b c = true → lt a c = true)
+    (total : ∀ a b, a ≠ b → lt a b = true ∨ lt b a = true)
+    (left right : Table α) (entry : α) :
+    merge lt left (add lt key right entry) = add lt key (merge lt left right) entry := by
+  apply ext_rows (by simp only [merge_size, add_size]; omega)
+  intro index
+  rw [row_merge, row_add, row_add]
+  by_cases atKey : index = key entry
+  · simp only [atKey, ite_true, row_merge]
+    exact (choose_assoc lt trans total _ _ _).symm
+  · simp [atKey, row_merge]
+
 end Ix.Sharing.ParallelTable
