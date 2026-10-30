@@ -254,12 +254,11 @@ def runInterp (decls : Aiur.Source.Decls)
     during reduction and the roles' constants (the selection of
     `IxVM.ClaimHarness.loadIxonEnv`), bound to the default role table.
 
-    By default the closure is compiled by the certified compiler's checked
-    Lean pipeline (`Ix.CompileM.compileLeanConstsValidated`: the compile, then
-    its report checks), and any failed constant refuses the load. With `rust`
-    it is compiled by the Rust compiler (`loadIxonEnv`), which runs none of
-    those checks: its output is not covered by the compiler's correctness
-    theorem. -/
+    By default the closure is compiled by the validated streamed Lean pipeline
+    (`Ix.CompileM.compileLeanConstsValidated`: streamed canonicalization and
+    condensation, the compile fold, and `Ix.Cert.checkReport`), and any failed
+    constant refuses the load. With `rust` it is compiled by the Rust compiler
+    (`loadIxonEnv`), which runs none of those checks. -/
 def loadNamedIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) (rust : Bool := false) :
     IO Ixon.Env := do
   if rust then return ← IxVM.ClaimHarness.loadIxonEnv name leanEnv
@@ -274,10 +273,10 @@ def loadNamedIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) (rust : Boo
           seen := seen.insert entry.fst
           deduped := deduped.push entry
   match ← Ix.CompileM.compileLeanConstsValidated deduped.toList with
-  | .error e => throw (IO.userError s!"the certified compile of {name}'s closure failed: {e}")
+  | .error e => throw (IO.userError s!"the validated Lean compile of {name}'s closure failed: {e}")
   | .ok out =>
     unless out.cenv.ungrounded.isEmpty do
-      throw (IO.userError s!"the certified compile of {name}'s closure: \
+      throw (IO.userError s!"the validated Lean compile of {name}'s closure: \
         {out.cenv.ungrounded.size} constant(s) failed to compile: \
         {Ix.CompileM.recordedFailures out.cenv.ungrounded}")
     IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding out.env)
@@ -301,8 +300,8 @@ def loadNamedIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) (rust : Boo
     Lean env (no `.ixe` to mmap) or when the persisted `--claim`
     variant isn't `check addr none`.
 
-    Without a `.ixe`, each name's closure is compiled by the certified
-    compiler's checked Lean pipeline, or with `rust` by the uncertified Rust
+    Without a `.ixe`, each name's closure is compiled by the validated
+    streamed Lean pipeline, or with `rust` by the uncertified Rust
     compiler (`loadNamedIxonEnv`). -/
 def forEachClaim
     (ixePath : Option String) (claimHex : Option String) (names : List String)

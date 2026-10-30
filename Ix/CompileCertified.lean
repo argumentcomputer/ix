@@ -72,6 +72,17 @@ def canonInput (consts : Array (Lean.Name × Lean.ConstantInfo)) (workers : Nat)
 def failureOutside (env : Ix.Environment) (failures : Ix.Cert.Failures) : Option Ix.Name :=
   (failures.toMap.toList.find? fun (n, _) => !env.consts.contains n).map (·.1)
 
+/-- The first published role name whose address is not the default role table's
+address of that role (`Ix.Cert.PublishedRolesBound`), if any. -/
+def unboundPublishedRole (ixe : Ixon.Env) : Option (Ix.Name × Ix.Kernel.Role × Address) :=
+  let bound : Std.HashMap Ix.Kernel.Role Address :=
+    Ix.Cert.roleTableBound.foldl (fun m (r, a) => if m.contains r then m else m.insert r a) {}
+  ixe.named.toList.findSome? fun (n, named) =>
+    match Ix.Kernel.Role.ofLeanName? (Ix.LeanIngress.ingressName n) with
+    | some r =>
+      if bound[r]? == some named.addr then none else some (n, r, named.addr)
+    | none => none
+
 /-- The certified compile's result. -/
 structure CertifiedOut where
   /-- The prepared input, which `--rust-check` compiles too. -/
@@ -95,6 +106,8 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
   let inputs := env.consts.size
+  unless inputs == prepared.length do
+    return .error s!"source accounting: {prepared.length} prepared constants collapsed to {inputs} input entries"
   let t1 ← IO.monoMsNow
   log s!"canon ({inputs} constants): {t1 - t0}ms"
   let report ← IO.lazyPure fun _ => Ix.Cert.compileReport env
@@ -105,6 +118,11 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     | .error e => return .error e
   if let some n := failureOutside env failures then
     return .error s!"source accounting: failure name '{n.pretty}' is outside the original input"
+  if let .error e := Ix.RoleBinding.sourceAddresses ixe then
+    return .error e
+  if let some (n, r, addr) := unboundPublishedRole ixe then
+    return .error s!"role check failed: the published role {n.pretty} ({repr r}) is at {addr}, \
+      not its bound address in the default role table"
   if annotated then
     unless failures.isEmpty do
       return .error "resource compilation requires the complete requested closure"

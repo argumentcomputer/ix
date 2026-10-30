@@ -125,40 +125,219 @@ def mergeSupport (limits : Ix.Kernel.Admission.Limits) (original support : Ixon.
     | none => out := { out with anonHints := out.anonHints.insert address hint }
   return out
 
+/-- Whether stored bytes open with the TagN header of a standalone definition or
+definition projection (`CONST_DEFN` or `CONST_DPRJ`). -/
+def definitionHeader (bytes : ByteArray) : Bool :=
+  match (Ixon.getTagN 4).run { idx := 0, bytes } with
+  | .ok tag _ =>
+    tag.flag == Ixon.Constant.FLAG &&
+      (tag.value == Ixon.ConstantInfo.CONST_DEFN || tag.value == Ixon.ConstantInfo.CONST_DPRJ)
+  | .error _ _ => false
+
+/-- Whether stored bytes open with the TagN header of a standalone recursor or
+recursor projection (`CONST_RECR` or `CONST_RPRJ`). -/
+def recursorHeader (bytes : ByteArray) : Bool :=
+  match (Ixon.getTagN 4).run { idx := 0, bytes } with
+  | .ok tag _ =>
+    tag.flag == Ixon.Constant.FLAG &&
+      (tag.value == Ixon.ConstantInfo.CONST_RECR || tag.value == Ixon.ConstantInfo.CONST_RPRJ)
+  | .error _ _ => false
+
+/-- Whether a record's info is an inductive, constructor or recursor member or
+projection (a constant that can belong to an inductive family). -/
+def isFamilyRecordInfo : Ixon.ConstantInfo → Bool
+  | .iPrj _ | .cPrj _ | .recr _ | .rPrj _ => true
+  | _ => false
+
+/-- The first published name whose address holds no stored record, or whose
+record header disagrees with its entry kind (a block record for a non-`Muts`
+entry, or a non-block record for a `Muts` entry), if any. -/
+def unreadablePublished (ixe : Ixon.Env) : Option Ix.Name :=
+  ixe.named.toList.findSome? fun (n, named) =>
+    match ixe.consts.get? named.addr with
+    | some lc =>
+      match named.constMeta.info with
+      | .muts .. => if Ix.Cert.blockHeader lc.rawBytes then none else some n
+      | _ => if Ix.Cert.blockHeader lc.rawBytes then some n else none
+    | none => some n
+
+/-- The first non-`Muts` published name whose address does not resolve to a
+constant or constructor reference in the artifact's record store, if any. -/
+def unresolvedPublished (ixe : Ixon.Env) : Option Ix.Name :=
+  ixe.named.toList.findSome? fun (n, named) =>
+    match named.constMeta.info with
+    | .muts .. => none
+    | _ =>
+      if (Ix.Kernel.Reader.resolve (Ix.Cert.storedRecord ixe) named.addr).isSome then none
+      else some n
+
+/-- The first published definition, theorem or opaque whose address has no
+reducibility hint in `ixe.anonHints`, if any. -/
+def unhintedDefinition (ixe : Ixon.Env) : Option Ix.Name :=
+  ixe.named.toList.findSome? fun (n, named) =>
+    match named.constMeta.info with
+    | .muts .. => none
+    | info =>
+      let isDef := (match info with | .defn .. => true | _ => false) ||
+        named.hints.isSome ||
+        match ixe.consts.get? named.addr with
+        | some lc => definitionHeader lc.rawBytes
+        | none => false
+      if isDef && !ixe.anonHints.contains named.addr then some n else none
+
+/-- An inductive block the recursor index (`Ix.Kernel.Reader.buildIndex`)
+attaches recursors to and a non-`Muts` name published in that block whose stored
+record is not an inductive, constructor or recursor, or with an indexed recursor
+attached there whose block is not published at a recursor in `ixe.named`, if any. -/
+def unownedRecursor (ixe : Ixon.Env) :
+    Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
+  let idx := Ix.Kernel.Reader.buildIndex (Ix.Cert.storedRecord ixe) (Ix.Cert.storedRecursorRecords ixe)
+  if idx.blocks.isEmpty then none
+  else
+    let publishedRecBlocks : Std.HashSet Address :=
+      ixe.named.fold (init := {}) fun acc n named =>
+        match ixe.consts.get? named.addr with
+        | some lc =>
+          if recursorHeader lc.rawBytes && (Ix.Cert.publishedRecursor? ixe n).isSome then
+            (Ix.Cert.publishedRecords ixe n).foldl (fun s a => s.insert a) acc
+          else acc
+        | none => acc
+    ixe.named.toList.findSome? fun (x, named) =>
+      match named.constMeta.info with
+      | .muts .. => none
+      | _ =>
+        let b := Ix.Cert.recordBlock ixe named.addr
+        match idx.blocks[b]? with
+        | none => none
+        | some shape =>
+          match Ix.Cert.storedRecord ixe named.addr with
+          | some c =>
+            if isFamilyRecordInfo c.info then
+              (shape.recs.find? fun r => !publishedRecBlocks.contains r.block).map fun r =>
+                (b, x, some r)
+            else some (b, x, none)
+          | none => some (b, x, none)
+
+/-- A literal-support role of the default role table (`Ix.Cert.roleTableBound`)
+that a stored record's literal is checked against (`Ix.Cert.storedLiteralRoles`),
+at whose address the artifact stores a record while the role's name
+(`Ix.Cert.literalRoleIxName`) is not published at that address, if any. -/
+def literalRoleUnnamed (ixe : Ixon.Env) : Option (Ix.Kernel.Role × Address) :=
+  let unnamed := Ix.Cert.roleTableBound.toList.filter fun (s, b) =>
+    Ix.Cert.literalSupportRoles.contains s && ixe.consts.contains b &&
+      (ixe.named.get? (Ix.Cert.literalRoleIxName s)).map (·.addr) != some b
+  if unnamed.isEmpty then none
+  else
+    let roles := Ix.Cert.storedLiteralRoles ixe
+    unnamed.find? fun (s, _) => roles.contains s
+
+/-- Check structural name uniqueness (`Ix.Cert.PublishedAgree`) and, when the
+artifact carries a role binding, that the binding admits canonically, every
+published role name is bound at its role's address (`Ix.Cert.PublishedRolesBound`),
+every bound role's stored record has its role's kind (`Ix.Cert.RoleRecordKinds`),
+and every stored literal-support role used by literals is published at its bound
+address. -/
+def roleBindingError (ixe : Ixon.Env) : Option String :=
+  match sourceAddresses ixe with
+  | .error e => some e
+  | .ok _ =>
+    match ixe.roleBinding with
+    | none => none
+    | some binding =>
+      match Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨binding.address, binding.bytes⟩ with
+      | .error e => some (toString (Ix.Kernel.Admission.Error.binding e))
+      | .ok table =>
+        let roleMismatch := ixe.named.toList.findSome? fun (n, named) =>
+          match Role.ofLeanName? (Ix.LeanIngress.ingressName n) with
+          | some r =>
+            if table.addressOf? r == some named.addr then none
+            else some s!"the published role {n.pretty} ({repr r}) is at {named.addr}, not its bound address"
+          | none => none
+        if let some msg := roleMismatch then some msg
+        else
+          let kindMismatch := table.bound.toList.findSome? fun (r, p) =>
+            match (ixe.consts.get? p).bind (·.get?) with
+            | some c =>
+              if Ix.Cert.roleRecordKindOk r c then none
+              else some s!"the record at {p}, the bound address of {repr r}, is not of its role's kind"
+            | none => some s!"the bound address {p} of {repr r} holds no readable record"
+          if let some msg := kindMismatch then some msg
+          else
+            let unnamed := table.bound.toList.filter fun (s, b) =>
+              Ix.Cert.literalSupportRoles.contains s && ixe.consts.contains b &&
+                (ixe.named.get? (Ix.Cert.literalRoleIxName s)).map (·.addr) != some b
+            if unnamed.isEmpty then none
+            else
+              let roles := Ix.Cert.storedLiteralRoles ixe
+              match unnamed.find? fun (s, _) => roles.contains s with
+              | some (s, b) =>
+                some s!"the bound address {b} of the literal-support role {repr s} is not published under {(Ix.Cert.literalRoleIxName s).pretty}"
+              | none => none
+
 /-- **The finalized artifact keeps the original's artifact-level checks.**
 `finalize` adds support records, certificate records, evidence records and a
 binding after the compile's checks (`Ix.Cert.checkReport`) ran on `original`.
 This runs again, on the finalized artifact `final`, every check of
-`checkReport` that reads the artifact alone, and checks that the original's
-publications and hints are unchanged:
+`checkReport` that reads the artifact, checks that the original's publications
+and hints are unchanged, and checks the emitted role binding against `final`:
 
 * every name `original` publishes is published at the same address, and every
-  reducibility hint `original` stores is stored unchanged. With the records
-  only ever added, the checks that read the input as well as the artifact
-  (published input definitions hinted, published input names at readable
-  records, resolved names published where they resolve) carry over from
-  `original`;
+  reducibility hint `original` stores is stored unchanged;
 * every record and blob is stored at the admission hash of its bytes
   (`Ix.Cert.unauthentic`);
 * no record is on a reference cycle (`Ix.Cert.referenceCycle`);
 * no two published names share a stored hash (`Ix.Cert.nameHashCollision`);
 * every `Muts` entry agrees with its block's projections (`Ix.Cert.mutsMismatch`);
+* every non-`Muts` published name resolves in the record store
+  (`unresolvedPublished`);
 * no member has two stored definition projection records
   (`Ix.Cert.projectionCollision`);
+* every published name points to a readable record of its entry's kind
+  (`unreadablePublished`);
 * no address holds both a blob and a record (`Ix.Cert.blobRecordCollision`);
+* every inductive block with indexed recursors has only family records published
+  in it and has its indexed recursors published (`unownedRecursor`);
+* the record at an address the default role table binds has its role's kind
+  (`Ix.Cert.roleRecordKind`), and any stored literal-support role used by
+  literals is published under its name (`literalRoleUnnamed`);
 * every stored recursor member is filed at a slot of its own
   (`Ix.Cert.recursorSlotError`);
-* the record at an address the default role table binds has its role's kind
-  (`Ix.Cert.roleRecordKind`). -/
+* every published definition, theorem or opaque has a reducibility hint at its
+  address (`unhintedDefinition`);
+* no two published names share a structural spelling, and the emitted role
+  binding admits and agrees with `final`'s published roles and records
+  (`roleBindingError`). -/
 structure FinalizedCheckTasks where
   unauthentic : Task (List Address)
   referenceCycle : Task (Option (List Address))
   nameHashCollision : Task (Option (Ix.Name × Ix.Name))
   mutsMismatch : Task (Option (Ix.Name × Nat × Address))
+  unresolvedPublished : Task (Option Ix.Name)
   projectionCollision : Task (Option (Address × Nat))
+  unreadablePublished : Task (Option Ix.Name)
   blobRecordCollision : Task (Option Address)
-  recursorSlotError : Task (Option Ix.Cert.RecursorShapeError)
+  unownedRecursor : Task (Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)))
   roleRecordKind : Task (Option (Ix.Kernel.Role × Address))
+  literalRoleUnnamed : Task (Option (Ix.Kernel.Role × Address))
+  recursorSlotError : Task (Option Ix.Cert.RecursorShapeError)
+  unhintedDefinition : Task (Option Ix.Name)
+  roleBindingError : Task (Option String)
+
+def FinalizedCheckTasks.spawn (final : Ixon.Env) : FinalizedCheckTasks where
+  unauthentic := Task.spawn fun _ => Ix.Cert.unauthentic final
+  referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
+  nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
+  mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatch final
+  unresolvedPublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unresolvedPublished final
+  projectionCollision := Task.spawn fun _ => Ix.Cert.projectionCollision final
+  unreadablePublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unreadablePublished final
+  blobRecordCollision := Task.spawn fun _ => Ix.Cert.blobRecordCollision final
+  unownedRecursor := Task.spawn fun _ => Ix.RoleBinding.Compile.unownedRecursor final
+  roleRecordKind := Task.spawn fun _ => Ix.Cert.roleRecordKind final
+  literalRoleUnnamed := Task.spawn fun _ => Ix.RoleBinding.Compile.literalRoleUnnamed final
+  recursorSlotError := Task.spawn fun _ => Ix.Cert.recursorSlotError final
+  unhintedDefinition := Task.spawn fun _ => Ix.RoleBinding.Compile.unhintedDefinition final
+  roleBindingError := Task.spawn fun _ => Ix.RoleBinding.Compile.roleBindingError final
 
 @[noinline] def checkFinalizedOf (ts : FinalizedCheckTasks) : Except String Unit := do
   if let some a := ts.unauthentic.get.head? then
@@ -170,16 +349,37 @@ structure FinalizedCheckTasks where
   if let some (entry, i, _) := ts.mutsMismatch.get then
     throw s!"artifact finalization: class {i} of the Muts entry {entry.pretty} lists a name not \
       published at its member's projection"
+  if let some n := ts.unresolvedPublished.get then
+    throw s!"artifact finalization: the published name {n.pretty} does not resolve in the record store"
   if let some (block, i) := ts.projectionCollision.get then
     throw s!"artifact finalization: member {i} of the block at {block} has more than one stored \
       definition projection record"
+  if let some n := ts.unreadablePublished.get then
+    throw s!"artifact finalization: the published name {n.pretty} is at an address with no readable \
+      record of its entry's kind"
   if let some a := ts.blobRecordCollision.get then
     throw s!"artifact finalization: the address {a} holds both a stored blob and a stored record"
-  if let some e := ts.recursorSlotError.get then
-    throw s!"artifact finalization: {e.message}"
+  if let some (b, x, r?) := ts.unownedRecursor.get then
+    match r? with
+    | none =>
+      throw s!"artifact finalization: the published name {x.pretty} in the inductive block at {b} \
+        is not an inductive, constructor or recursor"
+    | some r =>
+      throw s!"artifact finalization: the recursor at {r.block}, indexed under the inductive block \
+        at {b} for {x.pretty}, is not published"
   if let some (role, address) := ts.roleRecordKind.get then
     throw s!"artifact finalization: the record at {address}, the default role table's address of \
       {repr role}, is not of its role's kind"
+  if let some (role, address) := ts.literalRoleUnnamed.get then
+    throw s!"artifact finalization: the record at {address}, the default role table's address of \
+      the literal-support role {repr role}, is not published under {(Ix.Cert.literalRoleIxName role).pretty}"
+  if let some e := ts.recursorSlotError.get then
+    throw s!"artifact finalization: {e.message}"
+  if let some n := ts.unhintedDefinition.get then
+    throw s!"artifact finalization: the published definition {n.pretty} has no reducibility hint \
+      at its address"
+  if let some msg := ts.roleBindingError.get then
+    throw s!"artifact finalization: {msg}"
 
 def checkFinalized (original final : Ixon.Env) : Except String Unit := do
   for (name, named) in original.named.toList do
@@ -188,15 +388,7 @@ def checkFinalized (original final : Ixon.Env) : Except String Unit := do
   for (address, hint) in original.anonHints.toList do
     unless final.anonHints[address]? == some hint do
       throw s!"artifact finalization: the reducibility hint at {address} changed"
-  checkFinalizedOf {
-    unauthentic := Task.spawn fun _ => Ix.Cert.unauthentic final
-    referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
-    nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
-    mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatch final
-    projectionCollision := Task.spawn fun _ => Ix.Cert.projectionCollision final
-    blobRecordCollision := Task.spawn fun _ => Ix.Cert.blobRecordCollision final
-    recursorSlotError := Task.spawn fun _ => Ix.Cert.recursorSlotError final
-    roleRecordKind := Task.spawn fun _ => Ix.Cert.roleRecordKind final }
+  checkFinalizedOf (FinalizedCheckTasks.spawn final)
 
 /-- Adding internal support cannot hide a failed original request, change an
 original address, or replace its source contract input. -/
@@ -223,6 +415,54 @@ def compileRequired (backend : Backend) (source : Lean.Environment)
 def nativeCertSource : IO Lean.Environment :=
   getCompileEnv #[`IxC.Kernel.PinGen.Certs]
 
+/-- Extract the compiled support closure of `selected` from `artifact` when
+every constant in `selected.constants` is already published in `artifact`. -/
+def sliceSupport? (artifact : Ixon.Env)
+    (records : Benchmarks.Kernel.CheckIxeStep.RecordStore)
+    (existing : Std.HashMap Ix.Kernel.Name Address)
+    (selected : Ix.Compile.CompileInput) : Option Ixon.Env := do
+  let mut todo : Array Address := #[]
+  let mut queued : Std.HashSet Address := {}
+  let mut selectedNames : Std.HashSet Ix.Kernel.Name := {}
+  for (name, _) in selected.constants do
+    let key := Ix.Kernel.Name.ofLeanName name
+    let addr ← existing[key]?
+    guard (artifact.consts.contains addr)
+    selectedNames := selectedNames.insert key
+    unless queued.contains addr do
+      queued := queued.insert addr
+      todo := todo.push addr
+  let mut visited : Std.HashSet Address := {}
+  let mut consts : Std.HashMap Address Ixon.LazyConstant := {}
+  let mut blobs : Std.HashMap Address ByteArray := {}
+  let mut anonHints : Std.HashMap Address Lean.ReducibilityHints := {}
+  for _ in [:artifact.consts.size + 1] do
+    if h : todo.size > 0 then
+      let addr := todo[todo.size - 1]
+      todo := todo.pop
+      unless visited.contains addr do
+        let lc ← artifact.consts[addr]?
+        let rec ← records[addr]?
+        visited := visited.insert addr
+        consts := consts.insert addr lc
+        if let some hint := artifact.anonHints[addr]? then
+          anonHints := anonHints.insert addr hint
+        for dep in rec.refs do
+          if artifact.consts.contains dep then
+            unless queued.contains dep do
+              queued := queued.insert dep
+              todo := todo.push dep
+          else if let some bytes := artifact.blobs[dep]? then
+            blobs := blobs.insert dep bytes
+    else
+      break
+  guard todo.isEmpty
+  let named := artifact.named.fold (init := {}) fun acc name entry =>
+    if selectedNames.contains (Ix.LeanIngress.ingressName name) && visited.contains entry.addr then
+      acc.insert name entry
+    else acc
+  some { consts, blobs, named, anonHints }
+
 /-- Generate from real certificate source, compiled by the same raw backend.
 No committed/default role table or certificate store supplies missing inputs.
 
@@ -237,11 +477,24 @@ def finalize (backend : Backend) (source : Lean.Environment)
     (input : Ix.Compile.CompileInput) (artifact : Ixon.Env)
     (limits : Ix.Kernel.Admission.Limits) : IO Ixon.Env := do
   let (required, selected) ← IO.ofExcept (supportInput source artifact)
-  let support ← compileRequired backend source selected
-  let merged ← IO.ofExcept (mergeSupport limits artifact support)
+  let existing ← IO.ofExcept (sourceAddresses artifact)
+  let covered := selected.constants.all fun (name, _) =>
+    existing.contains (Ix.Kernel.Name.ofLeanName name)
+  let (merged, compiledSupport?) ← if covered then
+      pure (artifact, none)
+    else do
+      let support ← compileRequired backend source selected
+      let merged ← IO.ofExcept (mergeSupport limits artifact support)
+      pure (merged, some support)
   -- Validate the whole artifact, including records outside the role closure.
   -- Emission reuses the store associated with these exact bytes and limits.
   let store ← IO.ofExcept (checkedStore limits merged)
+  let support ← match compiledSupport? with
+    | some support => pure support
+    | none =>
+      match sliceSupport? merged store.records existing selected with
+      | some support => pure support
+      | none => compileRequired backend source selected
   IO.ofExcept (preserveRequested input artifact merged)
   let actual := publishedRoles merged
   unless actual == required do
@@ -262,6 +515,8 @@ def finalize (backend : Backend) (source : Lean.Environment)
   -- emission below checks its binding against the complete merged artifact.
   let generated ← IO.ofExcept (generate limits support certificates required Ix.Kernel.preludeShape)
   let emitted ← IO.ofExcept (generated.emit limits merged (store? := some store))
+  unless emitted.roleBinding.isSome do
+    throw (IO.userError "artifact finalization: missing emitted role binding")
   IO.ofExcept (preserveRequested input artifact emitted)
   IO.ofExcept (checkFinalized artifact emitted)
   return emitted
