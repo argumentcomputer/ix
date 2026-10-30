@@ -116,8 +116,9 @@ private theorem proliferate_empty (errors : Ix.Map Ix.Name Ix.GroundError)
 The failure branch retains the original propagation and filtering order. -/
 @[expose] def groundSplitLazy (env : Ix.Environment) :
     Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.GroundError :=
-  let outRefs := Ix.GraphM.envSerial env
+  let outRefsTask := Task.spawn fun _ => Ix.GraphM.envSerial env
   let immediate := Ix.Compile.FrontEnd.immediate env
+  let outRefs := outRefsTask.get
   let ungrounded := if immediate.keysArray.isEmpty then immediate else
     let inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := outRefs.fold (init := {}) fun m n refs =>
       refs.fold (init := m) fun m r =>
@@ -136,6 +137,7 @@ The failure branch retains the original propagation and filtering order. -/
   by_cases h : (Ix.Compile.FrontEnd.immediate env).keysArray.isEmpty = true
   · simp only [groundSplit, groundSplitLazy, Ix.Compile.FrontEnd.ground_eq,
       Ix.Compile.FrontEnd.ground, h, ite_true, proliferate_empty _ _ h]
+    rfl
   · simp only [groundSplit, groundSplitLazy, Ix.Compile.FrontEnd.ground_eq,
       Ix.Compile.FrontEnd.ground, h]
     rfl
@@ -841,6 +843,15 @@ of that family (`Ix.Cert.RecursorsOwned`). -/
   (parMap (fun (e : Ix.Name × Ixon.Named) => unownedRecursorOf env ixe idx cands e.1 e.2)
     ixe.named.toList.toArray).findSome? id
 
+/-- `unownedRecursor` over precomputed `storedRecursorRecords ixe`. -/
+@[expose] def unownedRecursorWith (env : Ix.Environment) (ixe : Ixon.Env)
+    (recs : Array (Address × Ixon.Constant)) :
+    Option (Address × Ix.Name × Option (Ix.Kernel.ConstRef Address)) :=
+  let idx := Ix.Kernel.Reader.buildIndex (storedRecord ixe) recs
+  let cands := familyRecursors env
+  (parMap (fun (e : Ix.Name × Ixon.Named) => unownedRecursorOf env ixe idx cands e.1 e.2)
+    ixe.named.toList.toArray).findSome? id
+
 /-- The kind of the specification of the role `r` (`(Ix.Kernel.Role.spec r).kind`,
 `Ix.Cert.roleKind_eq`), without building the specification's expressions. -/
 @[expose] def roleKind : Ix.Kernel.Role → Ix.Kernel.SpecKind
@@ -1294,6 +1305,37 @@ copies; quotient Source reads it by its name. -/
       | .recInfo rv => recursorNameError env ixe e.1 rv
       | _ => none) env.consts.toArray).findSome? id
 
+/-- `recursorSlots` over precomputed `storedRecursorRecords ixe`. -/
+@[expose] def recursorSlotsWith (ixe : Ixon.Env)
+    (recs : Array (Address × Ixon.Constant)) : List ((Address × Nat) × Option (Address × Nat)) :=
+  (parMap (fun (e : Address × Ixon.Constant) =>
+    (Ix.Kernel.Reader.recursorMembers e.2).toList.map fun (j, r) =>
+      ((e.1, j), recursorSlot? (storedRecord ixe) e.1 e.2 r))
+    recs).toList.flatten
+
+/-- `recursorSlotError` over precomputed `storedRecursorRecords ixe`. -/
+@[expose] def recursorSlotErrorWith (ixe : Ixon.Env)
+    (recs : Array (Address × Ixon.Constant)) : Option RecursorShapeError :=
+  let slots := recursorSlotsWith ixe recs
+  match slots.find? (·.2.isNone) with
+  | some ((o, j), _) => some (.unanalysed o j)
+  | none =>
+    let filed := slots.filterMap fun (k, s) => s.map (·, k)
+    let first : Std.HashMap (Address × Nat) (Address × Nat) := filed.foldl (init := {}) fun m (s, k) =>
+      if m.contains s then m else m.insert s k
+    filed.findSome? fun (s, k) => if decide (first[s]? = some k) then none else some (.clash s.1 s.2)
+
+/-- `recursorShapeError` over precomputed `storedRecursorRecords ixe`. -/
+@[expose] def recursorShapeErrorWith (env : Ix.Environment) (ixe : Ixon.Env)
+    (recs : Array (Address × Ixon.Constant)) : Option RecursorShapeError :=
+  match recursorSlotErrorWith ixe recs with
+  | some e => some e
+  | none =>
+    (parMap (fun (e : Ix.Name × Ix.ConstantInfo) =>
+      match e.2 with
+      | .recInfo rv => recursorNameError env ixe e.1 rv
+      | _ => none) env.consts.toArray).findSome? id
+
 /-- A stored record's definition projection: the member it projects (its block's
 address and its index) and the record's address. -/
 @[expose] def definitionProjection (e : Address × Ixon.LazyConstant) : Option ((Address × Nat) × Address) :=
@@ -1685,13 +1727,38 @@ structure CheckTasks where
       blob(s) are not stored at the admission hash of their bytes; first: {a}"
 
 
+/-- `unauthentic` computed on tasks (`parMap`). -/
+@[expose] def unauthenticPar (ixe : Ixon.Env) : List Address :=
+  ((parMap (fun (a, lc) => if a != Address.admissionHash lc.rawBytes then some a else none)
+    ixe.consts.toList.toArray).filterMap id).toList ++
+  ((parMap (fun (a, bytes) => if a != Address.admissionHash bytes then some a else none)
+    ixe.blobs.toList.toArray).filterMap id).toList
+
+private theorem filterMap_fst_eq {α β : Type} (p : α → β → Bool) (l : List (α × β)) :
+    (l.filterMap fun (a, b) => if p a b then some a else none) =
+      (l.filter fun (a, b) => p a b).map (·.1) := by
+  induction l with
+  | nil => rfl
+  | cons hd tl ih =>
+    obtain ⟨a, b⟩ := hd
+    simp only [List.filterMap_cons, List.filter_cons]
+    cases p a b <;> simp [ih]
+
+theorem unauthenticPar_eq (ixe : Ixon.Env) : unauthenticPar ixe = unauthentic ixe := by
+  simp only [unauthenticPar, unauthentic, parMap, Ix.Compile.Parallel.map_eq,
+    Array.toList_filterMap, Array.toList_map, List.filterMap_map, Function.id_comp]
+  congr 1
+  · exact filterMap_fst_eq (fun a lc => a != Address.admissionHash lc.rawBytes) ixe.consts.toList
+  · exact filterMap_fst_eq (fun a bytes => a != Address.admissionHash bytes) ixe.blobs.toList
+
 /-- `checkReport` with every check started as a task before any result is read. -/
 @[expose] def checkReportPar (env : Ix.Environment)
     (cenv : Ix.CompileM.CompileEnv) (out : Ixon.Env × Failures)
     (blocks : Ix.CondensedBlocks := compileBlocks env) : Except String Unit :=
+  let recRecords := Task.spawn fun _ => storedRecursorRecords out.1
   checkReportOf out {
     uncovered := Task.spawn fun _ => uncovered env out.1 out.2
-    unauthentic := Task.spawn fun _ => unauthentic out.1
+    unauthentic := Task.spawn fun _ => unauthenticPar out.1
     referenceCycle := Task.spawn fun _ => referenceCycle out.1
     nameHashCollision := Task.spawn fun _ => nameHashCollision env out.1
     mutsMismatch := Task.spawn fun _ => mutsMismatch out.1
@@ -1702,19 +1769,22 @@ structure CheckTasks where
     projectionCollision := Task.spawn fun _ => projectionCollision out.1
     unreadablePublished := Task.spawn fun _ => unreadablePublished env out.1
     blobRecordCollision := Task.spawn fun _ => blobRecordCollision out.1
-    unownedRecursor := Task.spawn fun _ => unownedRecursor env out.1
+    unownedRecursor := Task.spawn fun _ => unownedRecursorWith env out.1 recRecords.get
     roleRecordKind := Task.spawn fun _ => roleRecordKind out.1
     literalRoleUnnamed := Task.spawn fun _ => literalRoleUnnamed env out.1
     unstoredFamilyName := Task.spawn fun _ => unstoredFamilyName env
     misplacedConstructor := Task.spawn fun _ => misplacedConstructor env
     strayLevelParams := Task.spawn fun _ => strayLevelParams env
     strayFamilyMember := Task.spawn fun _ => strayFamilyMember env blocks
-    recursorShapeError := Task.spawn fun _ => recursorShapeError env out.1
+    recursorShapeError := Task.spawn fun _ => recursorShapeErrorWith env out.1 recRecords.get
     unhintedDefinition := Task.spawn fun _ => unhintedDefinition env out.1 }
 
 /-- **`checkReport` runs as `checkReportPar`**: a spawned task's value is its
 function's (`Task.spawn`), so the two are the same function. -/
-@[csimp] theorem checkReport_eq_par : @checkReport = @checkReportPar := rfl
+@[csimp] theorem checkReport_eq_par : @checkReport = @checkReportPar := by
+  funext env cenv out blocks
+  simp only [checkReportPar, unauthenticPar_eq]
+  rfl
 
 /-- **The pure compiler, with its failures.** A block that fails to compile
 is recorded, with its dependents, and left out of the environment; the
