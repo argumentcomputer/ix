@@ -160,12 +160,16 @@ reference's extra row evaluations to isolate buffer reuse. -/
 def trace (config : Config) (context : SCtx) (positions : Array Nat) (base : TBase)
     (aux : AAux) (fallback : Unit → SCtx × Array Nat) (width index : Nat)
     (members : Array Nat) (reuse : Bool) (scratch : Rows) : ComponentTrace × Rows :=
-  let (baseline, scratch) := phi context positions base aux fallback (fun _ => false) #[]
-    (if reuse then scratch else {})
+  let (baseline, scratch) := if reuse then
+      phi context positions base aux fallback (fun _ => false) #[] scratch
+    else ((phi context positions base aux fallback (fun _ => false) #[] {}).1, {})
   let cost : CostWithState Rows := fun selected state =>
-    let (value, state) := phi context positions base aux fallback selected.contains selected
-      (if reuse then state else {})
-    ((value.1 : _root_.Int) - (baseline.1 : _root_.Int), state)
+    if reuse then
+      let (value, state) := phi context positions base aux fallback selected.contains selected state
+      ((value.1 : _root_.Int) - (baseline.1 : _root_.Int), state)
+    else
+      let value := (phi context positions base aux fallback selected.contains selected {}).1
+      ((value.1 : _root_.Int) - (baseline.1 : _root_.Int), {})
   let (rows, scratch) := tableWithState config cost members.toList scratch
   let count := members.size
   ({ width, index, exact := count ≤ config.exactLimit, members,

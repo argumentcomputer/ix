@@ -156,7 +156,8 @@ public def main (args : List String) : IO Unit := do
     let [count] := rest | throw (IO.userError "expected one trial count")
     let some count := count.toNat? | throw (IO.userError "invalid trial count")
     unless 0 < count && count ≤ 8 do throw (IO.userError "trial count must be 1 to 8")
-    let expected ← IO.lazyPure fun _ => cases.map (runCase "reference" canonicalFamilyConfig {})
+    let expected ← IO.lazyPure fun _ =>
+      (Task.spawn fun _ => cases.map (runCase "reference" canonicalFamilyConfig {})).get
     for trial in [:count] do
       IO.println s!"trial={trial}"
       for mode in (if trial % 2 == 0 then ["reference", "fresh", "reuse"]
