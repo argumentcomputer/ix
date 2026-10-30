@@ -1,0 +1,16 @@
+{
+  "format": "ix-bn254-plonk-fixture-provenance-v1",
+  "source": "Actual Init recursive KZG proof with BLAKE3 and admitted Ignition parameters",
+  "innerVerifierBLAKE3": "a4cf1b3b2489af6c939847d5060452bccb1f87ed8cff0fb90658e477549eafcd",
+  "ignitionAdmissionBLAKE3": "4e16f069766667b6f5b9710b23bbf4fce067053967666db78f34ff058b48ff46",
+  "originalClaimBLAKE3": "c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80",
+  "srsDomain": 128,
+  "srsPowers": 131,
+  "scope": "The witness covers the full Init verifier relation. The small SRS is only for backend and basis-conversion tests, not for proving the full wrapper. The verifying-key JSON explicitly encodes one accumulator, 23 claim rows, and their public-input mappings.",
+  "files": {
+    "vk.json": "b86e203bcc2dcd87a67c1e325e24328e12534676ada7ea9602ac319568139c29",
+    "srs.bin": "5eb78499c386ce2dd170f773eaf6043741c83b9ddbb7c2e463f20532cbac6a29",
+    "witness-diagnostic.json": "16715db5b6a1b6bdaa19ab9a055815981cbd3ed879a981e51a8b5b3eb4e253b2",
+    "witness.json": "2034aff3138764b878280bb210dc15dadff693f8753f35a5be1fcc73d9ac06b3"
+  }
+}

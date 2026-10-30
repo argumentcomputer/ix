@@ -13,6 +13,8 @@ use multi_stark::{
   verifier::VerificationError,
 };
 
+mod normalization;
+
 use crate::{
   G,
   bytecode::{FunIdx, Toplevel},
@@ -67,7 +69,18 @@ pub(crate) fn verify_against(
   claim: &[G],
   proof: &AiurProof,
 ) -> Result<(), AiurVerificationError> {
-  for header in &proof.preamble.headers {
+  validate_preamble(system, commitment_parameters, claim, &proof.preamble)?;
+  system.verify_batch(proof)?;
+  Ok(())
+}
+
+pub(crate) fn validate_preamble(
+  system: &System<AiurConfig>,
+  commitment_parameters: CommitmentParameters,
+  claim: &[G],
+  preamble: &multi_stark::batch::BatchPreamble<AiurConfig>,
+) -> Result<(), AiurVerificationError> {
+  for header in &preamble.headers {
     let well_shaped = fixed_trace_heights(
       system.circuits.iter().map(|circuit| circuit.preprocessed_height),
       &header.active,
@@ -88,9 +101,8 @@ pub(crate) fn verify_against(
       ));
     }
   }
-  check_batch_policy(system.circuits.len(), claim, &proof.preamble)
+  check_batch_policy(system.circuits.len(), claim, preamble)
     .map_err(AiurVerificationError::Policy)?;
-  system.verify_batch(proof)?;
   Ok(())
 }
 
@@ -1571,6 +1583,75 @@ mod tests {
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() }
   }
 
+  #[test]
+  fn fixed_normalization_pads_unused_tables_and_checks_bounds() {
+    let (cp, fp) = test_parameters();
+    let mut toplevel = call_and_memory_toplevel();
+    toplevel.memory_sizes.push(2); // An unused memory table must also be active.
+    let system = AiurSystem::build(toplevel, cp, fp);
+    let mut heights = vec![4; system.system.circuits.len()];
+    let n = heights.len();
+    heights[n - 3] = 1; // Unused memory has its own small bound.
+    heights[n - 2] = 8;
+    heights[n - 1] = 16;
+    let mut previous = None;
+    for input in [
+      vec![G::from_u64(3), G::from_u64(5)],
+      vec![G::from_u64(7), G::from_u64(11)],
+    ] {
+      let mut io = empty_io_buffer();
+      let (record, output) =
+        system.toplevel().execute(0, input.clone(), &mut io).unwrap();
+      let (claim, proof) = system
+        .prove_from_execution_normalized(
+          0, &input, &io, record, &output, &heights,
+        )
+        .unwrap();
+      system.verify(&claim, &proof).unwrap();
+      assert!(proof.preamble.headers[0].active.iter().all(|&v| v));
+      let logs = &proof.preamble.headers[0].log_degrees;
+      assert_eq!(logs, &heights);
+      if let Some(old) = &previous {
+        assert_eq!(old, logs);
+      }
+      previous = Some(logs.clone());
+      assert_eq!(
+        proof.preamble.messages.len(),
+        2 * system.toplevel().memory_sizes.len()
+      );
+      let mut invalid =
+        vec![vec![], vec![0; heights.len()], vec![27; heights.len()]];
+      let mut wrong_fixed = heights.clone();
+      wrong_fixed[n - 1] = 15;
+      invalid.push(wrong_fixed);
+      for wrong in invalid {
+        let (record, output) =
+          system.toplevel().execute(0, input.clone(), &mut io).unwrap();
+        assert!(
+          system
+            .prove_from_execution_normalized(
+              0, &input, &io, record, &output, &wrong
+            )
+            .is_err()
+        );
+      }
+    }
+    let mut io = empty_io_buffer();
+    let mut record = QueryRecord::new(system.toplevel());
+    for i in 0..3 {
+      system
+        .toplevel()
+        .execute_in(0, vec![G::from_usize(i), G::ONE], &mut io, &mut record)
+        .unwrap();
+    }
+    heights[0] = 1;
+    let err = system
+      .prove_from_execution_normalized(0, &[], &io, record, &[], &heights)
+      .err()
+      .expect("oversized execution");
+    assert!(err.contains("needs 3 rows; configured bound is 2"), "{err}");
+  }
+
   /// Hand-build the toplevel for a single constrained function `f(a, b) = a*b`.
   ///
   /// Body: `Mul(0, 1)` (multiplies the two inputs, which live at value indices
@@ -1665,7 +1746,7 @@ mod tests {
     );
     system.verify(&claim, &proof).expect("xor split outputs must verify");
 
-    // The terminal zkVM receives only the serialized verifier key, not the
+    // The compression verifier receives only the serialized verifier key, not the
     // prover-side `AiurSystem`. Exercise that exact path against a real proof
     // so codec round trips alone cannot mask a transcript/config mismatch.
     let vk_bytes = crate::vk_codec::aiur_system_to_bytes(&system)

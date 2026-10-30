@@ -124,7 +124,7 @@ private def runAggregateCmdNativeWith
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok address =>
     -- The root (or subtree root) proof address, alone on stdout, is what
-    -- a driver such as `ix prove --lanes` reads; the log lines are on stderr.
+    -- a driver such as `ix prove --ixe --ixes` reads; the log lines are on stderr.
     if !address.isEmpty then
       IO.println address
       (← IO.getStdout).flush
@@ -138,7 +138,7 @@ def runAggregateCmdWith (recursionParameters : Aggr.RecursionParameters)
 def runAggregateCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Streamed `[texray]` span lines on stderr: the per-node wall and RSS
   -- breakdown of every slot's execution, witness and STARK phases.
-  if p.hasFlag "texray" then TracingTexray.init {}
+  if ← TracingTexray.enabled (p.hasFlag "texray") then TracingTexray.init {}
   runAggregateCmdWith Aggr.defaultRecursionParameters p
 
 end Ix.Cli.AggregateCmd

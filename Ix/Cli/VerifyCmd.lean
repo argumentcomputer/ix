@@ -10,6 +10,7 @@
 -/
 module
 public import Cli
+public import Ix.Cli.Compression
 public import Ix.Address
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
@@ -93,8 +94,9 @@ structure ExpectedAggregate where
   claim : Ix.Claim
   constantCount : Nat
 
-private def verifyAggregateProof (backend : Aggr.VerificationBackend)
-    (expected? : Option ExpectedAggregate) (proofAddr : Address) : IO UInt32 := do
+private def verifyAggregateProof (getBackend : IO (Except String Aggr.VerificationBackend))
+    (expected? : Option ExpectedAggregate) (proofAddr : Address)
+    (devSrs : Bool := false) : IO UInt32 := do
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
@@ -108,11 +110,16 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
       IO.eprintln s!"error: aggregate claim {wrapper.claim} does not match expected {expected.claim}"
       return 1
   | none => pure ()
+  if Compression.isCompressed wrapper.proof then
+    return ← Compression.verifyProof proofAddr wrapper devSrs
   let proof ← match Aiur.Proof.ofBytesChecked wrapper.proof with
     | .ok proof => pure proof
     | .error e =>
       IO.eprintln s!"error: aggregate proof {proofAddr} does not decode: {e}"
       return 1
+  let backend ← match ← getBackend with
+    | .error e => IO.eprintln e; return 1
+    | .ok backend => pure backend
   let outerClaim := Aggr.aggregateOuterClaim
     backend.allowed backend.aggrIdx wrapper.claim
   let verifyStarted ← IO.monoMsNow
@@ -212,10 +219,39 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       recordProof d proofAddr
     return 0
 
+private def verifyDevelopmentInputs (p : Cli.Parsed) : IO UInt32 := do
+  try
+    unless p.hasFlag "verifier-bundle" && p.hasFlag "verifier-bundle-blake3" do
+      throw <| IO.userError "--verifier-bundle and --verifier-bundle-blake3 must be supplied together"
+    unless p.hasFlag "dev-srs" do
+      throw <| IO.userError "development verifier requires --dev-srs"
+    for flag in #["ixe", "ixes", "shard", "aggregate", "record", "structural-above"] do
+      if p.hasFlag flag then
+        throw <| IO.userError s!"--verifier-bundle cannot be combined with --{flag}"
+    let inputs := p.variableArgsAs! String
+    if inputs.isEmpty then
+      throw <| IO.userError "expected a final proof file or store address"
+    let path := p.flag! "verifier-bundle" |>.as! String
+    let pin := p.flag! "verifier-bundle-blake3" |>.as! String
+    let bundle ← IO.FS.readBinFile path
+    for input in inputs do
+      let (addr, wrapper) ← Compression.readProofInput input
+      let claim := Ix.Claim.ser wrapper.claim
+      let setup ← Compression.verifyDevelopment wrapper.proof claim bundle pin true
+      unless setup == "development" do
+        throw <| IO.userError s!"unexpected development verification setup: {setup}"
+      IO.println s!"ok: development proof {addr} verifies claim {Address.blake3 claim} under the pinned verifier (not production-secure)"
+    return 0
+  catch error =>
+    IO.eprintln s!"verify: {error}"
+    return 1
+
 /-- Verify with an explicit aggregate-recursion configuration. Ordinary IxVM
 proof verification remains pinned to its independent canonical parameters. -/
 def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
+  if p.hasFlag "verifier-bundle" || p.hasFlag "verifier-bundle-blake3" then
+    return ← verifyDevelopmentInputs p
   let proofs := (p.variableArgsAs! String).toList
   if p.hasFlag "aggregate" then
     if proofs.isEmpty then
@@ -267,16 +303,22 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
           {(← IO.monoMsNow) - started}ms"
         pure (some { claim, constantCount := native.constantCount })
       | none, some _ => unreachable!
-    let backendStarted ← IO.monoMsNow
-    let backend ← match ← Aggr.buildVerificationBackend recursionParameters with
-      | .error e => IO.eprintln e; return 1
-      | .ok backend => pure backend
-    IO.println s!"[verify] aggregate backend setup: \
-      {(← IO.monoMsNow) - backendStarted}ms"
+    let backendRef ← IO.mkRef (none : Option (Except String Aggr.VerificationBackend))
+    let getBackend : IO (Except String Aggr.VerificationBackend) := do
+      if let some result ← backendRef.get then
+        return result
+      let backendStarted ← IO.monoMsNow
+      let result ← Aggr.buildVerificationBackend recursionParameters
+      backendRef.set (some result)
+      if let .ok _ := result then
+        IO.println s!"[verify] aggregate backend setup: \
+          {(← IO.monoMsNow) - backendStarted}ms"
+      return result
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "aggregate proof" hex
-      if (← verifyAggregateProof backend expected? proofAddr) != 0 then
+      if (← verifyAggregateProof getBackend expected? proofAddr
+          (p.hasFlag "dev-srs")) != 0 then
         rc := 1
     return rc
   match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
@@ -287,13 +329,22 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
       return 1
-    let (aiurSystem, compiled) ← match (← buildBackend) with
-      | .error e => IO.eprintln e; return 1
-      | .ok b => pure b
+    let mut backend? := none
     let mut rc : UInt32 := 0
     for hex in proofs do
       let proofAddr ← addrOfHex! "proof" hex
-      if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
+      let wrapper ← Compression.readProof proofAddr
+      if Compression.isCompressed wrapper.proof then
+        if (← Compression.verifyProof proofAddr wrapper (p.hasFlag "dev-srs")) != 0 then
+          rc := 1
+      else
+        let (aiurSystem, compiled) ← match backend? with
+          | some b => pure b
+          | none =>
+            let b ← IO.ofExcept (← buildBackend)
+            backend? := some b
+            pure b
+        if (← verifyOneProof aiurSystem compiled proofAddr) != 0 then rc := 1
     return rc
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 :=
@@ -304,9 +355,12 @@ end Ix.Cli.VerifyCmd
 open Ix.Cli.VerifyCmd in
 def verifyCmd : Cli.Cmd := `[Cli|
   verify VIA runVerifyCmd;
-  "Verify STARK proof(s) against their bundled claims, or a `.ixes` shard partition"
+  "Verify proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
+    "dev-srs"; "Allow development compressed proofs; these are not production-secure."
+    "verifier-bundle" : String; "Explicitly trusted development final-verifier JSON. Requires --verifier-bundle-blake3 and --dev-srs; accepts proof-wrapper files or store addresses."
+    "verifier-bundle-blake3" : String; "Independent BLAKE3 pin for --verifier-bundle; do not obtain it from an untrusted proof."
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
@@ -315,7 +369,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it. How already-proved leaves are imported before a refinement."
 
   ARGS:
-    ...proofs : String; "32-byte hex address(es) of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. Omit when using --ixe + --ixes."
+    ...proofs : String; "32-byte hex addresses of persisted Ixon.Proof wrappers. With --verifier-bundle, proof-wrapper file paths are also accepted. Omit for --ixe + --ixes partition auditing."
 ]
 
 end

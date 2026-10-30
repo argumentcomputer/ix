@@ -59,6 +59,7 @@ pub(super) struct ProveContext<'a> {
   pub(super) aggr_idx: usize,
   pub(super) store_dir: &'a Path,
   pub(super) cache_dir: Option<&'a Path>,
+  pub(super) cache_read_dir: Option<&'a Path>,
   pub(super) reprove_slot: Option<usize>,
   pub(super) write_outputs: bool,
   /// The prover budget of one slot when its execution is proven as trace
@@ -208,7 +209,7 @@ fn prepare_aggregate(
     if let Some((proof, address)) = load_cached(
       ctx.aggr_system,
       ctx.store_dir,
-      ctx.cache_dir,
+      ctx.cache_read_dir,
       slot_index,
       spec,
     ) {
@@ -604,7 +605,7 @@ fn prove_range_tree(
     && let Some((proof, address)) = load_cached(
       ctx.aggr_system,
       ctx.store_dir,
-      ctx.cache_dir,
+      ctx.cache_read_dir,
       slot_index,
       spec,
     )
@@ -1028,7 +1029,7 @@ pub(super) fn load_replay_child(
   let (proof, proof_address) = load_cached(
     ctx.aggr_system,
     ctx.store_dir,
-    ctx.cache_dir,
+    ctx.cache_read_dir,
     child_index,
     spec,
   )

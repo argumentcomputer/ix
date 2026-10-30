@@ -1,0 +1,348 @@
+//! Fixed opening layouts and scalar arithmetic for authenticated verifying keys.
+
+use super::{KzgConfig, Result, Scalar, System};
+use multi_stark::{
+  config::ProofConfig,
+  expr::Source,
+  traits::{Algebra, Field, Pcs},
+};
+
+#[derive(Clone, Copy)]
+struct CircuitShape {
+  height: usize,
+  // Main, LogUp, quotient, preprocessed.
+  widths: [usize; 4],
+  main_next: bool,
+  preprocessed_next: bool,
+  lookup_group_size: usize,
+  omega: Scalar,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::pipeline::wrap::outer) struct MatrixLayout {
+  pub(in crate::pipeline::wrap::outer) width: usize,
+  pub(in crate::pipeline::wrap::outer) rows: usize,
+  pub(in crate::pipeline::wrap::outer) point_offset: usize,
+  pub(in crate::pipeline::wrap::outer) value_offset: usize,
+  pub(in crate::pipeline::wrap::outer) groups: [usize; 2],
+}
+
+pub(in crate::pipeline::wrap::outer) struct OpeningLayout {
+  pub(in crate::pipeline::wrap::outer) matrices: Vec<MatrixLayout>,
+  pub(in crate::pipeline::wrap::outer) factors: Vec<Scalar>,
+  pub(in crate::pipeline::wrap::outer) commitment_count: usize,
+  pub(in crate::pipeline::wrap::outer) point_count: usize,
+  pub(in crate::pipeline::wrap::outer) field_count: usize,
+  pub(in crate::pipeline::wrap::outer) fixed_count: usize,
+  pub(in crate::pipeline::wrap::outer) generator_index: usize,
+  pub(in crate::pipeline::wrap::outer) coefficient_count: usize,
+  /// Intermediate lookup accumulators carried in the proof: one per circuit
+  /// except the last, whose accumulator is fixed to zero.
+  pub(in crate::pipeline::wrap::outer) accumulator_count: usize,
+}
+
+fn add(a: usize, b: usize) -> Result<usize> {
+  a.checked_add(b).ok_or_else(|| "Solidity opening offset overflow".into())
+}
+
+fn mul(a: usize, b: usize) -> Result<usize> {
+  a.checked_mul(b).ok_or_else(|| "Solidity opening offset overflow".into())
+}
+
+fn word_offset(index: usize) -> Result<usize> {
+  mul(add(index, 1)?, 32)
+}
+
+fn log_degree(height: usize) -> Result<usize> {
+  if height < 2 || !height.is_power_of_two() {
+    return Err(
+      "Solidity trace height must be a power of two above one".into(),
+    );
+  }
+  let log = usize::try_from(height.ilog2())?;
+  if log > 28 {
+    return Err("Solidity trace log degree exceeds 28".into());
+  }
+  Ok(log)
+}
+
+fn quotient_width(max_degree: usize) -> Result<usize> {
+  (max_degree.max(2) - 1)
+    .checked_next_power_of_two()
+    .ok_or_else(|| "Solidity quotient width overflow".into())
+}
+
+impl OpeningLayout {
+  pub(in crate::pipeline::wrap::outer) fn new_for_system(
+    system: &System<KzgConfig>,
+    logs: &[u8],
+  ) -> Result<Self> {
+    if logs.len() != system.circuits.len() {
+      return Err("trace logs must cover every circuit".into());
+    }
+    let mut shapes = Vec::with_capacity(system.circuits.len());
+    for (ci, circuit) in system.circuits.iter().enumerate() {
+      let height = 1usize << logs[ci];
+      log_degree(height)?;
+      let domain = system.config.pcs().natural_domain_for_degree(height);
+      shapes.push(CircuitShape {
+        height,
+        widths: [
+          circuit.main_width,
+          circuit.stage_2_width,
+          quotient_width(circuit.max_constraint_degree())?,
+          circuit.preprocessed_width,
+        ],
+        main_next: system.opens_next_row(ci, Source::Main),
+        preprocessed_next: system.opens_next_row(ci, Source::Preprocessed),
+        lookup_group_size: circuit.lookup_group_size,
+        omega: domain.generator(),
+      });
+    }
+    Self::from_shapes(&shapes)
+  }
+
+  fn from_shapes(shapes: &[CircuitShape]) -> Result<Self> {
+    let circuits = shapes.len();
+    if circuits < 2 {
+      return Err("opening layout requires at least two circuits".into());
+    }
+    let accumulator_count = circuits - 1;
+    for shape in shapes {
+      let log = log_degree(shape.height)?;
+      if shape.widths[1] == 0
+        || shape.widths[3] == 0
+        || !(1..=8).contains(&shape.lookup_group_size)
+      {
+        return Err("invalid Solidity circuit opening shape".into());
+      }
+      if shape.omega.exp_power_of_2(log) != Scalar::ONE
+        || shape.omega.exp_power_of_2(log - 1) == Scalar::ONE
+      {
+        return Err("Solidity domain generator has incorrect order".into());
+      }
+    }
+    let mut matrices = Vec::with_capacity(4 * circuits);
+    let mut factors = Vec::with_capacity(3);
+    let mut commitment_count = 0;
+    let mut fixed_count = 0;
+    let mut field_count = accumulator_count;
+    for round in 0..4 {
+      for shape in shapes {
+        let width = shape.widths[round];
+        let rows = match round {
+          0 => 1 + usize::from(shape.main_next),
+          1 => 2,
+          2 => 1,
+          _ => 1 + usize::from(shape.preprocessed_next),
+        };
+        let mut groups = [0; 2];
+        // Nonzero zeta preserves equality and first-occurrence order of
+        // the row factors, including rows belonging to zero-width matrices.
+        for (row, group) in groups.iter_mut().enumerate().take(rows) {
+          let factor = if row == 0 { Scalar::ONE } else { shape.omega };
+          *group = match factors.iter().position(|&value| value == factor) {
+            Some(index) => index,
+            None => {
+              let index = factors.len();
+              factors.push(factor);
+              index
+            },
+          };
+        }
+        matrices.push(MatrixLayout {
+          width,
+          rows,
+          point_offset: if round == 3 { fixed_count } else { commitment_count },
+          value_offset: field_count,
+          groups,
+        });
+        field_count = add(field_count, mul(width, rows)?)?;
+        if round == 3 {
+          fixed_count = add(fixed_count, width)?;
+        } else {
+          commitment_count = add(commitment_count, width)?;
+        }
+      }
+    }
+    if factors.len() < 2 {
+      return Err("invalid evaluation-point count".into());
+    }
+    let point_count = add(commitment_count, factors.len())?;
+    for matrix in &mut matrices[3 * circuits..] {
+      matrix.point_offset = add(matrix.point_offset, point_count)?;
+    }
+    let generator_index = add(point_count, fixed_count)?;
+    let coefficient_count = add(generator_index, 1)?;
+    // Include the array length word and the final element's full extent.
+    word_offset(field_count)?;
+    word_offset(coefficient_count)?;
+    word_offset(factors.len())?;
+    Ok(Self {
+      matrices,
+      factors,
+      commitment_count,
+      point_count,
+      field_count,
+      fixed_count,
+      generator_index,
+      coefficient_count,
+      accumulator_count,
+    })
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use multi_stark::traits::TwoAdicField;
+
+  fn shapes() -> [CircuitShape; 2] {
+    [
+      CircuitShape {
+        height: 32,
+        widths: [3, 4, 2, 15],
+        main_next: false,
+        preprocessed_next: false,
+        lookup_group_size: 2,
+        omega: Scalar::two_adic_generator(5),
+      },
+      CircuitShape {
+        height: 16,
+        widths: [1, 1, 1, 4],
+        main_next: false,
+        preprocessed_next: false,
+        lookup_group_size: 1,
+        omega: Scalar::two_adic_generator(4),
+      },
+    ]
+  }
+
+  #[test]
+  fn opening_counts_offsets_and_equal_domains() -> Result<()> {
+    let mut shapes = shapes();
+    let layout = OpeningLayout::from_shapes(&shapes)?;
+    assert_eq!(layout.field_count, 37);
+    assert_eq!(layout.commitment_count, 12);
+    assert_eq!(layout.point_count, 15);
+    assert_eq!(layout.fixed_count, 19);
+    assert_eq!(layout.generator_index, 34);
+    assert_eq!(layout.matrices[6].point_offset, 15);
+    assert_eq!(layout.matrices[7].value_offset, 33);
+    shapes[1].height = shapes[0].height;
+    shapes[1].omega = shapes[0].omega;
+    let layout = OpeningLayout::from_shapes(&shapes)?;
+    assert_eq!(layout.factors.len(), 2);
+    assert_eq!(layout.point_count, 14);
+    assert_eq!(layout.generator_index, 33);
+    assert_eq!(layout.matrices[2].groups[1], layout.matrices[3].groups[1]);
+    Ok(())
+  }
+
+  #[test]
+  fn grouping_preserves_first_occurrence_and_zero_width_rows() -> Result<()> {
+    let mut shapes = shapes();
+    shapes[1].main_next = true;
+    let layout = OpeningLayout::from_shapes(&shapes)?;
+    assert_eq!(
+      layout.factors,
+      vec![Scalar::ONE, shapes[1].omega, shapes[0].omega]
+    );
+    assert_eq!(layout.matrices[1].groups[1], 1);
+    assert_eq!(layout.matrices[2].groups[1], 2);
+    shapes[0].widths[0] = 0;
+    shapes[0].main_next = true;
+    let layout = OpeningLayout::from_shapes(&shapes)?;
+    assert_eq!(
+      layout.factors,
+      vec![Scalar::ONE, shapes[0].omega, shapes[1].omega]
+    );
+    assert_eq!(
+      layout.matrices[0].value_offset,
+      layout.matrices[1].value_offset
+    );
+    Ok(())
+  }
+
+  #[test]
+  fn grouping_matches_runtime_points_for_all_row_flags() -> Result<()> {
+    for equal in [false, true] {
+      for flags in 0..16 {
+        let mut shapes = shapes();
+        if equal {
+          shapes[1].height = shapes[0].height;
+          shapes[1].omega = shapes[0].omega;
+        }
+        shapes[0].main_next = flags & 1 != 0;
+        shapes[1].main_next = flags & 2 != 0;
+        shapes[0].preprocessed_next = flags & 4 != 0;
+        shapes[1].preprocessed_next = flags & 8 != 0;
+        let layout = OpeningLayout::from_shapes(&shapes)?;
+        for zeta in [Scalar::ONE, Scalar::from_u8(7), -Scalar::ONE] {
+          let mut points = Vec::new();
+          for (index, matrix) in layout.matrices.iter().enumerate() {
+            for (row, &expected_group) in
+              matrix.groups[..matrix.rows].iter().enumerate()
+            {
+              let point =
+                if row == 0 { zeta } else { zeta * shapes[index % 2].omega };
+              let group = match points.iter().position(|&value| value == point)
+              {
+                Some(group) => group,
+                None => {
+                  points.push(point);
+                  points.len() - 1
+                },
+              };
+              assert_eq!(expected_group, group);
+            }
+          }
+          assert_eq!(
+            points,
+            layout
+              .factors
+              .iter()
+              .map(|&factor| zeta * factor)
+              .collect::<Vec<_>>()
+          );
+        }
+      }
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn rejects_malformed_and_overflowing_shapes() {
+    let valid = shapes();
+    assert!(OpeningLayout::from_shapes(&valid[..1]).is_err());
+    for height in [0, 1, 3, 1 << 29] {
+      let mut bad = valid;
+      bad[0].height = height;
+      assert!(OpeningLayout::from_shapes(&bad).is_err());
+    }
+    for width in [1, 3] {
+      let mut bad = valid;
+      bad[0].widths[width] = 0;
+      assert!(OpeningLayout::from_shapes(&bad).is_err());
+    }
+    for group in [0, 9] {
+      let mut bad = valid;
+      bad[0].lookup_group_size = group;
+      assert!(OpeningLayout::from_shapes(&bad).is_err());
+    }
+    for omega in [Scalar::ZERO, Scalar::ONE, valid[1].omega] {
+      let mut bad = valid;
+      bad[0].omega = omega;
+      assert!(OpeningLayout::from_shapes(&bad).is_err());
+    }
+    for width in [usize::MAX, usize::MAX / 16] {
+      let mut bad = valid;
+      bad[0].widths[0] = width;
+      assert!(OpeningLayout::from_shapes(&bad).is_err());
+    }
+    assert!(quotient_width(usize::MAX).is_err());
+    assert!(word_offset(usize::MAX).is_err());
+    assert_eq!(quotient_width(0).unwrap(), 1);
+    assert_eq!(quotient_width(3).unwrap(), 2);
+  }
+}

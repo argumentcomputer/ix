@@ -43,8 +43,8 @@ use rustc_hash::FxHashSet;
 use std::thread;
 
 pub struct Config {
-  pub lanes: usize,
-  /// Per-GPU host budget in bytes, multiplied by `lanes`; 0 detects one
+  pub gpus: usize,
+  /// Per-GPU host budget in bytes, multiplied by `gpus`; 0 detects one
   /// process-wide allowance.
   pub max_ram_bytes: usize,
   /// Preparation threads per GPU, combined into one process-wide pool.
@@ -52,12 +52,13 @@ pub struct Config {
   pub structural_above: usize,
   pub cache_fri_bytes: Vec<u8>,
   pub out_manifest: Option<PathBuf>,
+  pub fresh: bool,
 }
 
 /// The default ceiling on one execution record's counted bytes: large
 /// enough that any single constant of the environments proven so far
 /// executes as one claim, small enough that one record cannot take most
-/// of a four-lane pool. A claim over it is bisected rather than executed.
+/// of a four-GPU pool. A claim over it is bisected rather than executed.
 /// `AIUR_RECORD_MAX_BYTES` overrides it.
 const DEFAULT_RECORD_MAX_BYTES: usize = 128 << 30;
 
@@ -408,27 +409,31 @@ pub fn run(
   let source = ShardManifest::from_bytes(&manifest_bytes)
     .map_err(|error| format!("manifest parse failed: {error}"))?;
   let home = std::env::var_os("HOME").ok_or("no HOME environment variable")?;
-  let cache_root = std::env::var_os("AIUR_LANES_CACHE_DIR")
+  let cache_root = std::env::var_os("AIUR_PROOF_CACHE_DIR")
     .map_or_else(|| PathBuf::from(home).join(".ix/cache"), PathBuf::from);
   let checkpoint_path = cache_root
     .join("refined-manifests")
     .join(format!("{}.ixes", Address::hash(&manifest_bytes).hex()));
-  let mut manifest = match fs::read(&checkpoint_path) {
-    Ok(bytes) => {
-      let refined = ShardManifest::from_bytes(&bytes).map_err(|error| {
-        format!("refined manifest {}: {error}", checkpoint_path.display())
-      })?;
-      say(&format!(
-        "resuming refined partition with {} claims from {}",
-        refined.num_shards,
-        checkpoint_path.display()
-      ));
-      refined
-    },
-    Err(error) if error.kind() == std::io::ErrorKind::NotFound => source,
-    Err(error) => {
-      return Err(format!("read {}: {error}", checkpoint_path.display()));
-    },
+  let mut manifest = if cfg.fresh {
+    source
+  } else {
+    match fs::read(&checkpoint_path) {
+      Ok(bytes) => {
+        let refined = ShardManifest::from_bytes(&bytes).map_err(|error| {
+          format!("refined manifest {}: {error}", checkpoint_path.display())
+        })?;
+        say(&format!(
+          "resuming refined partition with {} claims from {}",
+          refined.num_shards,
+          checkpoint_path.display()
+        ));
+        refined
+      },
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => source,
+      Err(error) => {
+        return Err(format!("read {}: {error}", checkpoint_path.display()));
+      },
+    }
   };
   let record_max_bytes = match std::env::var("AIUR_RECORD_MAX_BYTES") {
     Ok(value) => value
@@ -519,7 +524,8 @@ struct Pass {
   store_dir: PathBuf,
   cache_dir: PathBuf,
   index_dir: PathBuf,
-  /// CPU execution threads shared by every lane.
+  fresh: bool,
+  /// CPU execution threads shared by every GPU.
   executions: usize,
   /// The process-wide host limit, the prover budget of every slot.
   wrap_budget: Option<usize>,
@@ -551,6 +557,7 @@ impl Pass {
         aggr_idx: self.aggr_idx,
         store_dir: &self.store_dir,
         cache_dir: Some(&self.cache_dir),
+        cache_read_dir: (!self.fresh).then_some(self.cache_dir.as_path()),
         reprove_slot: None,
         write_outputs: true,
         wrap_budget: self.wrap_budget,
@@ -562,7 +569,7 @@ impl Pass {
 }
 
 fn say(message: &str) {
-  eprintln!("[lanes] {message}");
+  eprintln!("[multi-gpu] {message}");
 }
 
 fn plan_pass(
@@ -622,18 +629,17 @@ fn plan_pass(
   fs::create_dir_all(&cache_dir)
     .map_err(|error| format!("create {}: {error}", cache_dir.display()))?;
 
-  if cfg.lanes == 0 {
-    return Err("at least one lane is required".into());
+  if cfg.gpus == 0 {
+    return Err("at least one GPU is required".into());
   }
   let exec_jobs = if cfg.exec_jobs == 0 {
     let cores = thread::available_parallelism().map_or(1, usize::from);
-    (cores / cfg.lanes).max(1)
+    (cores / cfg.gpus).max(1)
   } else {
     cfg.exec_jobs
   };
-  let executions = exec_jobs
-    .checked_mul(cfg.lanes)
-    .ok_or("execution thread count overflow")?;
+  let executions =
+    exec_jobs.checked_mul(cfg.gpus).ok_or("execution thread count overflow")?;
   let cells = match std::env::var("AIUR_TRACE_SHARD_MAX_CELLS") {
     Ok(value) => value
       .parse::<usize>()
@@ -645,7 +651,7 @@ fn plan_pass(
   };
   let cgroup_limit = cgroup_memory_limit();
   let host = HostBudget::new(
-    cfg.lanes,
+    cfg.gpus,
     executions,
     cfg.max_ram_bytes,
     super::super::protocol::detected_ram_budget(),
@@ -669,7 +675,7 @@ fn plan_pass(
     format_gib(host.records),
     format_gib(host.workspace),
     format_gib(host.headroom),
-    cfg.lanes,
+    cfg.gpus,
     format_gib(host.initial.min(pool.record_limit())),
   ));
   say(&format!(
@@ -680,11 +686,11 @@ fn plan_pass(
   // A prover pair per device, sharing the bytecode of the systems the
   // CLI built. The verifying keys must not depend on the device: every
   // cache key and claim binding is derived from them.
-  say(&format!("building {} resident workers", cfg.lanes));
-  let systems: Vec<(AiurSystem, AiurSystem)> = (0..cfg.lanes)
+  say(&format!("building {} resident workers", cfg.gpus));
+  let systems: Vec<(AiurSystem, AiurSystem)> = (0..cfg.gpus)
     .map(|g| {
       let device =
-        i32::try_from(g).map_err(|error| format!("lane {g}: {error}"))?;
+        i32::try_from(g).map_err(|error| format!("GPU {g}: {error}"))?;
       Ok((ixvm.on_device(device), aggr.on_device(device)))
     })
     .collect::<Result<_, String>>()?;
@@ -717,6 +723,7 @@ fn plan_pass(
     store_dir,
     cache_dir,
     index_dir,
+    fresh: cfg.fresh,
     executions,
     wrap_budget: Some(host.limit),
     pool,
@@ -735,6 +742,16 @@ struct Resumed {
 fn resume_pass(pass: &Pass, ctx: ProveContext<'_>) -> Resumed {
   let count = pass.specs.len();
   let shards = pass.shards();
+  if pass.fresh {
+    say(&format!(
+      "{shards} claims: fresh proving, no indexed proofs or cached joins reused"
+    ));
+    return Resumed {
+      slots: vec![None; count],
+      retired: vec![false; count],
+      claim_done: vec![false; shards],
+    };
+  }
   // Cached joins from the root down retire their subtrees.
   let mut slots: Vec<Option<Arc<Slot>>> = vec![None; count];
   let mut retired = vec![false; count];
@@ -743,9 +760,13 @@ fn resume_pass(pass: &Pass, ctx: ProveContext<'_>) -> Resumed {
     if retired[index] || spec.kind != ChildKind::Aggr {
       continue;
     }
-    let Some((proof, address)) =
-      load_cached(ctx.aggr_system, ctx.store_dir, ctx.cache_dir, index, spec)
-    else {
+    let Some((proof, address)) = load_cached(
+      ctx.aggr_system,
+      ctx.store_dir,
+      ctx.cache_read_dir,
+      index,
+      spec,
+    ) else {
       continue;
     };
     slots[index] = Some(Arc::new(Slot {
@@ -1095,7 +1116,7 @@ fn run_manifest(
 
   let (events_tx, events_rx) = mpsc::channel::<Event>();
   let prep_queue = WorkQueue::<Prep>::new(pass.executions);
-  let item_queue = WorkQueue::<Item>::new(cfg.lanes);
+  let item_queue = WorkQueue::<Item>::new(cfg.gpus);
   let outcome = thread::scope(|scope| -> Result<PassOutcome, String> {
     let _shutdown =
       ShutdownRun { pool: &pass.pool, prep: &prep_queue, items: &item_queue };
@@ -1215,33 +1236,53 @@ fn run_manifest(
   outcome
 }
 
-/// `AiurSystem.proveLanes`: the whole multi-device run.
+/// The GPUs this process may use: the entries of `CUDA_VISIBLE_DEVICES` when
+/// it is set, else the devices the NVIDIA driver lists. A build without CUDA
+/// proves on one CPU worker.
+fn visible_gpus() -> usize {
+  if !cfg!(feature = "cuda") {
+    return 1;
+  }
+  if let Ok(devices) = std::env::var("CUDA_VISIBLE_DEVICES") {
+    return devices.split(',').filter(|d| !d.trim().is_empty()).count();
+  }
+  fs::read_dir("/proc/driver/nvidia/gpus").map_or(0, |gpus| gpus.count())
+}
+
+/// `AiurSystem.proveMultiGpu`: the whole multi-device run; 0 GPUs uses every
+/// visible GPU.
 #[unsafe(no_mangle)]
-extern "C" fn rs_aiur_prove_lanes(
+extern "C" fn rs_aiur_prove_multi_gpu(
   ixvm_system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
   aggr_system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
   env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
   manifest_path: LeanString<LeanBorrowed<'_>>,
   verify_idx: LeanNat<LeanBorrowed<'_>>,
   aggr_idx: LeanNat<LeanBorrowed<'_>>,
-  lanes: LeanNat<LeanBorrowed<'_>>,
+  gpus: LeanNat<LeanBorrowed<'_>>,
   max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
   structural_above: LeanNat<LeanBorrowed<'_>>,
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   out_manifest: LeanString<LeanBorrowed<'_>>,
+  fresh: bool,
 ) -> LeanExcept<LeanOwned> {
+  let gpus = match lean_unbox_nat_as_usize(gpus.inner()) {
+    0 => visible_gpus(),
+    n => n,
+  };
   let cfg = Config {
-    lanes: lean_unbox_nat_as_usize(lanes.inner()),
+    gpus,
     max_ram_bytes: lean_unbox_nat_as_usize(max_ram_bytes.inner()),
     exec_jobs: lean_unbox_nat_as_usize(exec_jobs.inner()),
     structural_above: lean_unbox_nat_as_usize(structural_above.inner()),
     cache_fri_bytes: cache_fri_bytes.as_bytes().to_vec(),
     out_manifest: (!out_manifest.as_str().is_empty())
       .then(|| PathBuf::from(out_manifest.as_str())),
+    fresh,
   };
-  if cfg.lanes == 0 {
-    return LeanExcept::error_string("at least one lane is required");
+  if cfg.gpus == 0 {
+    return LeanExcept::error_string("no visible GPU to prove on");
   }
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     run(
@@ -1258,7 +1299,7 @@ extern "C" fn rs_aiur_prove_lanes(
     Ok(Ok(root)) => LeanExcept::ok(LeanString::new(&root)),
     Ok(Err(error)) => LeanExcept::error_string(&error),
     Err(payload) => LeanExcept::error_string(&format!(
-      "lane scheduler panicked: {}",
+      "multi-GPU scheduler panicked: {}",
       panic_text(&payload)
     )),
   }
