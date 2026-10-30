@@ -1,5 +1,6 @@
 module
 public import Ix.Cert.Compile
+public import Ix.Compile.ReadyCompile
 public import Ix.Resource.Validate
 public import Ix.RoleBinding.Compile
 public section
@@ -110,10 +111,10 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     return .error s!"source accounting: {prepared.length} prepared constants collapsed to {inputs} input entries"
   let t1 ← IO.monoMsNow
   log s!"canon ({inputs} constants): {t1 - t0}ms"
-  let report ← IO.lazyPure fun _ => Ix.Cert.compileReport env
+  let (report, _) ← Ix.Compile.ReadyCompile.reportIO { workers, lookahead := 8192 } env
   let t2 ← IO.monoMsNow
   log s!"compileReport: {t2 - t1}ms"
-  let (ixe, failures) ← match report with
+  let (ixe, failures) ← match report.val with
     | .ok out => pure out
     | .error e => return .error e
   if let some n := failureOutside env failures then
