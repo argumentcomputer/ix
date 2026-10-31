@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use ixon::CompileError;
 
 use super::memory::{
-  GIB, MIB, Memory, MemoryReader, Pressure, pressure, reclaiming,
+  GIB, MIB, Memory, MemoryReader, Pressure, pressure, ramp_up, reclaiming,
   resource_error,
 };
 
@@ -115,7 +115,9 @@ impl Options {
       initial_workers: max_workers.min(2),
       process_budget: budget,
       tick: Duration::from_millis(250),
-      ramp_interval: Duration::from_secs(1),
+      // Two ticks: a raised limit is sampled before the next doubling
+      // (`ramp_up`).
+      ramp_interval: Duration::from_millis(500),
       recovery: Duration::from_secs(5),
       idle_timeout: Duration::from_secs(30),
       verbose: *super::env::IX_VERBOSE,
@@ -242,7 +244,7 @@ where
             .is_none_or(|t| now.duration_since(t) >= options.recovery)
           && now.duration_since(ramped) >= options.ramp_interval
         {
-          limit = (limit + 1).min(options.max_workers);
+          limit = ramp_up(limit, options.max_workers);
           ramped = now;
         }
         if options.verbose

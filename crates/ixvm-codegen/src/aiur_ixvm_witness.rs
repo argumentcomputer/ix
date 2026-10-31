@@ -48,7 +48,8 @@ use ix_common::env::ReducibilityHints;
 use ix_common::prim_addrs::PrimAddrs;
 use ixon::Env;
 use ixon::assumption_tree::AssumptionTree;
-use ixon::proof::Claim;
+use ixon::proof::{Claim, ClaimContext};
+use ixon::role_table::{Evidence, RoleTable};
 
 /// Append `data` to the per-channel arena and record `(idx, len)`
 /// in the `(channel, key)` info map.
@@ -183,8 +184,8 @@ fn add_entries_parallel(
   }
 }
 
-/// Build a `Check { const_addr, assumptions=None }` claim witness
-/// directly in Rust. Returns `(claim, claim_digest_input, io_buffer)`
+/// Build a `Check { ctx, const_addr, assumptions=None }` claim witness
+/// directly in Rust, with the context of `env`'s own role binding. Returns `(claim, claim_digest_input, io_buffer)`
 /// ready to feed to `crate::ix::aiur_ixvm_runner::execute_ixvm`.
 ///
 /// Mirrors `IxVM.ClaimHarness.buildClaimWitness` on the
@@ -198,7 +199,11 @@ pub fn build_claim_check_witness(
   let closure: FxHashSet<Address> =
     witness_scope(env, std::slice::from_ref(target));
 
-  let claim = Claim::Check { const_addr: target.clone(), assumptions: None };
+  let claim = Claim::Check {
+    ctx: ClaimContext::for_env(env)?,
+    const_addr: target.clone(),
+    assumptions: None,
+  };
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
@@ -212,6 +217,7 @@ pub fn build_claim_check_witness(
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   // ch 2/3/4: per-const/hint/blob entries — parallel byte conversion.
   add_entries_parallel(env, &closure, &mut io);
+  seed_binding(env, &mut io);
 
   Ok((claim, digest_key, io))
 }
@@ -219,7 +225,7 @@ pub fn build_claim_check_witness(
 /// Every primitive address the kernel can name, as the Lean seeder sees
 /// them: the parity table plus the reserved reduction markers. Built from
 /// `ix_common::prim_addrs::PrimAddrs`, which the `prim-addrs` parity test
-/// pins against `Ix.Tc.PrimAddrs`, so both seeders cover the same set by
+/// pins against `Ix.PrimAddrs`, so both seeders cover the same set by
 /// construction.
 fn prim_addrs() -> Vec<Address> {
   let mut v: Vec<Address> = PrimAddrs::lean_parity_table()
@@ -263,10 +269,60 @@ fn prim_addrs() -> Vec<Address> {
 /// Every witness builder goes through here, so the byte scope cannot
 /// drift apart per call site. Mirrors
 /// `Ix.IxVM.ClaimHarness.closureFrom`.
+/// The constants the role binding names: every bound role and every proof
+/// evidence theorem the environment carries. Role validation reads them.
+fn binding_roots(env: &Env) -> Vec<Address> {
+  let Some(binding) = env.role_binding.as_ref() else {
+    return Vec::new();
+  };
+  let Ok(table) = RoleTable::from_bytes(binding.bytes.as_ref()) else {
+    return Vec::new();
+  };
+  let mut roots: Vec<Address> =
+    table.bound.into_iter().map(|(_, address)| address).collect();
+  for (_, entries) in table.evidence {
+    for entry in entries {
+      if let Evidence::Proof(address) = entry {
+        roots.push(address);
+      }
+    }
+  }
+  roots.retain(|a| env.consts.contains_key(a));
+  roots
+}
+
+/// Seed the role binding's section on channel 6, keyed by its hash, where
+/// the circuit reads the claim's roles.
+fn seed_binding(env: &Env, io: &mut IOBuffer) {
+  if let Some(binding) = env.role_binding.as_ref() {
+    extend(
+      io,
+      G::from_u8(6),
+      addr_key(&binding.address),
+      bytes_to_g(binding.bytes.as_ref()),
+    );
+  }
+}
+
+/// The argument of `check_owned`: the binding hash, one field element per
+/// byte; the claim's validator (3 validates the binding, 4 assumes it); then
+/// the constant's address, one field element per byte.
+pub fn check_owned_key(
+  binding: &Address,
+  validator: u8,
+  addr: &Address,
+) -> Vec<G> {
+  let mut key = addr_key(binding);
+  key.push(G::from_u8(validator));
+  key.extend(addr_key(addr));
+  key
+}
+
 fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
   let mut all_roots: Vec<Address> = roots.to_vec();
   all_roots
     .extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
+  all_roots.extend(binding_roots(env));
   env.bfs_closure(&all_roots)
 }
 
@@ -298,13 +354,33 @@ pub struct EnvCheckStatement {
 }
 
 impl EnvCheckStatement {
+  /// The binding hash the statement is relative to, which every worker's
+  /// `check_owned` calls take.
+  pub fn binding(&self) -> Address {
+    self
+      .claim
+      .context()
+      .map(|ctx| ctx.binding.clone())
+      .expect("an environment statement is a typing claim")
+  }
+
+  /// The statement over `env` that validates its binding.
   pub fn new(env: &Env) -> Result<Self, String> {
+    Self::with_binding(env, false)
+  }
+
+  /// The statement over `env`, assuming its binding meets the
+  /// specifications when `assume_binding` (validator 4) and validating it
+  /// otherwise (validator 3).
+  pub fn with_binding(env: &Env, assume_binding: bool) -> Result<Self, String> {
     let mut all: Vec<Address> =
       env.consts.iter().map(|entry| entry.key().clone()).collect();
     all.sort();
     let tree = AssumptionTree::canonical(&all)
       .ok_or_else(|| "EnvCheckStatement: empty environment".to_string())?;
-    let claim = Claim::CheckEnv { root: tree.root(), assumptions: None };
+    let mut ctx = ClaimContext::for_env(env)?;
+    ctx.binding_assumed = assume_binding;
+    let claim = Claim::CheckEnv { ctx, root: tree.root(), assumptions: None };
     let mut claim_bytes: Vec<u8> = Vec::new();
     claim.put(&mut claim_bytes);
     let digest_key = packed_digest_key(&Address::hash(&claim_bytes));
@@ -339,6 +415,7 @@ impl EnvCheckStatement {
       );
     }
     add_entries_parallel(env, &witness_scope(env, &owners[worker]), &mut io);
+    seed_binding(env, &mut io);
     io
   }
 }
@@ -383,14 +460,27 @@ pub fn build_shard_check_env_witness(
   env: &Env,
   owned: &[Address],
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  build_shard_check_env_witness_with(env, owned, false)
+}
+
+/// [`build_shard_check_env_witness`], whose claim assumes the environment's
+/// binding meets the specifications when `assume_binding` (validator 4) and
+/// validates it otherwise (validator 3).
+pub fn build_shard_check_env_witness_with(
+  env: &Env,
+  owned: &[Address],
+  assume_binding: bool,
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
   // Claim + THIN frontier from the shared convention module — the
   // single source of truth for shard CheckEnv digests (see
   // ixon::shard_claim; Lean mirror:
   // IxVM.ClaimHarness.shardCheckEnvClaimThin).
-  let (claim, frontier) = ixon::shard_claim::shard_check_env_claim(env, owned)
-    .ok_or_else(|| {
-      "build_shard_check_env_witness: empty owned set".to_string()
-    })?;
+  let mut ctx = ClaimContext::for_env(env)?;
+  ctx.binding_assumed = assume_binding;
+  let (claim, frontier) =
+    ixon::shard_claim::shard_check_env_claim(&ctx, env, owned).ok_or_else(
+      || "build_shard_check_env_witness: empty owned set".to_string(),
+    )?;
   let mut owned_sorted: Vec<Address> = owned.to_vec();
   owned_sorted.sort();
   let owned_tree =
@@ -401,6 +491,7 @@ pub fn build_shard_check_env_witness(
   debug_assert_eq!(
     claim,
     Claim::CheckEnv {
+      ctx,
       root: owned_tree.root(),
       assumptions: asm_tree.as_ref().map(|t| t.root()),
     }
@@ -417,6 +508,7 @@ pub fn build_shard_check_env_witness(
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   let byte_scope = witness_scope(env, owned);
   add_entries_parallel(env, &byte_scope, &mut io);
+  seed_binding(env, &mut io);
   extend(
     &mut io,
     G::ONE,
@@ -538,7 +630,12 @@ mod tests {
   /// blob lookup, or the check aborts with `invalid IO key`.
   #[test]
   fn dual_use_address_is_seeded_on_both_channels() {
-    let env = Env::new();
+    let mut env = Env::new();
+    let section: Arc<[u8]> = Arc::from(&b"stand-in role binding section"[..]);
+    env.role_binding = Some(ixon::env::RoleBinding {
+      address: Address::hash(&section),
+      bytes: section,
+    });
     let target = Address::hash(b"target");
     let dual = Address::hash(b"dual");
     env.store_const(target.clone(), const_with_refs(vec![dual.clone()]));

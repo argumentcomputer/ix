@@ -46,6 +46,14 @@ the field's own block-free binders (a nested or non-positive
 occurrence), a `Prop` block with a large eliminator (the auxiliary
 family has ≥ 2 constructors, so it eliminates into `Prop` only).
 
+**Recursive fields are Lean's**: Lean's
+kernel tests positivity after whnf, so a field whose member occurrence a
+reducible alias hides (`Id' B` with `Id' α := α`) is recursive and its
+minor premise carries a hypothesis. The rung reads such fields off the
+first recursor's minor premises (`minorIH?`) and builds the auxiliary
+constructor and the iota hypotheses over the normal form the hypothesis
+names (`MCtor.nty`); the public models keep the declared types.
+
 **Reflexive members are this rung's** (2026-09-21).  The export's
 `isReflexive` flag used to be a decline here, a shortcut of the port:
 lean-inductive-models never looked at the flag — it handed the
@@ -79,63 +87,112 @@ namespace Ix.Kernel.Frontend.InModel
 open Ix.Kernel
 
 /-- One inductive type of a parsed block, with the export's shape data. -/
-structure IndTypeRec where
-  cv : ConstantVal
+structure IndTypeRec (md : Mode) where
+  cv : ConstantVal md
   nP : Nat
   nIdx : Nat
-  ctors : List Name
+  ctors : List (Key md)
   isRec : Bool
   isReflexive : Bool
   numNested : Nat
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- One constructor of a parsed block. -/
-structure IndCtorRec where
-  cv : ConstantVal
+structure IndCtorRec (md : Mode) where
+  cv : ConstantVal md
   nP : Nat
   nF : Nat
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- One recursor of a parsed block (`numParams`, `numMotives`,
 `numMinors`, `numIndices` as exported). -/
-structure IndRecRec where
-  cv : ConstantVal
+structure IndRecRec (md : Mode) where
+  cv : ConstantVal md
   nP : Nat
   nM : Nat
   nm : Nat
   nI : Nat
-  rules : List RecRule
-  deriving Repr, Inhabited
+  rules : List (RecRule md)
+  deriving DecidableEq, Repr, Inhabited
 
 /-- A parsed inductive block. -/
-structure BlockRec where
-  types : List IndTypeRec
-  ctors : List IndCtorRec
-  recs : List IndRecRec
-  deriving Repr, Inhabited
+structure BlockRec (md : Mode) where
+  types : List (IndTypeRec md)
+  ctors : List (IndCtorRec md)
+  recs : List (IndRecRec md)
+  deriving DecidableEq, Repr, Inhabited
 
 /-- What the generator reads besides the block: the declared types of
 the constants so far, and the definitional heights. -/
-structure Ctx where
-  tbl : ConstTable
-  heights : Name → Nat
+structure Ctx (md : Mode) where
+  tbl : ConstTable md
+  heights : Key md → Nat
   /-- the parsed inductive blocks so far, by member type name (the
   nested rung reads a container's shape off it) -/
-  blocks : Name → Option BlockRec := fun _ => none
+  blocks : Key md → Option (BlockRec md) := fun _ => none
 
 /-- A constructor of member `m`, classified: its record, its recursive
 field positions with the target member of each. -/
-structure MCtor where
+structure MCtor (md : Mode) where
   m : Nat
-  c : IndCtorRec
+  /-- its position among member `m`'s constructors -/
+  j : Nat
+  c : IndCtorRec md
   recFields : List (Nat × Nat)
+  /-- the constructor's type with each recursive field Lean recognises only
+  after whnf (`minorIH?`) at its normal form `T_{m'} p⃗ e⃗`: the auxiliary
+  constructor and the iota hypotheses are built over it; the public models
+  keep the declared type (definitionally equal) -/
+  nty : Expr md
   deriving Repr, Inhabited
+
+/-- Replace the domain of the `n`-th leading `∀` binder. -/
+def replacePiDomAt : Nat → Expr md → Expr md → Option (Expr md)
+  | 0, .forallE _ b mt, d => some (.forallE d b mt)
+  | n + 1, .forallE t b mt, d => (replacePiDomAt n b d).map (.forallE t · mt)
+  | _, _, _ => none
+
+/-- No loose `bvar` in `[lo, lo + n)`: the `lowerBVars`/`liftLooseBVars`
+roundtrip (`IxC/Kernel/ExprOps.lean`). -/
+def noBVarsIn (e : Expr md) (lo n : Nat) : Bool :=
+  (e.lowerBVars n lo).liftLooseBVars n lo == e
+
+/-- **Lean's own verdict on a constructor field** (Lean's kernel tests
+positivity after whnf, so a recursive occurrence behind a reducible alias,
+`Id' B`, is one; `mk_rec_infos` then gives it an inductive hypothesis).
+`minor` is the constructor's minor premise in the block's first recursor
+(at its binder: the parameters, the `k` motives and the `J` earlier minors
+above it), `∀ f⃗ ih⃗, motive …`: if one hypothesis is `motive_{m'} e⃗ f_i`
+(a finitary one, no telescope), field `i` is recursive into member `m'`,
+and its index expressions `e⃗` are returned at the field's frame (the
+parameters and the `i` earlier fields), or none if they mention anything
+else. -/
+def minorIH? (k J nF i : Nat) (minor : Expr md) : Option (Nat × List (Expr md)) :=
+  let (bs, _) := minor.piBinders
+  if bs.length < nF || i ≥ nF then none else
+  (bs.drop nF).zipIdx.findSome? fun ((ty, _), k') =>
+    let (tele, body) := ty.piBinders
+    if !tele.isEmpty then none else
+    match body.getAppFn, body.getAppArgs.getLast? with
+    | .bvar mv, some (.bvar fv) =>
+      if fv != k' + (nF - 1 - i) then none
+      else if mv < k' + nF + J || mv ≥ k' + nF + J + k then none
+      else
+        let m' := k - 1 - (mv - k' - nF - J)
+        let idx := body.getAppArgs.take (body.getAppArgs.length - 1)
+        -- the index expressions mention neither a hypothesis, nor field `i`
+        -- or a later one, nor a motive or minor
+        if idx.all fun e => noBVarsIn e 0 (k' + nF - i) && noBVarsIn e (k' + nF) (k + J) then
+          some (m', idx.map fun e =>
+            ((e.lowerBVars k' 0).lowerBVars (nF - i) 0).lowerBVars (k + J) i)
+        else none
+    | _, _ => none
 
 /-- Is `e` member `m'` of the block applied to the parameter variables
 (`o` binders below the parameter frame) and `nIdx_{m'}` index
 expressions?  Returns the member. -/
-def memberApp? (members : List (Name × Nat × Nat)) (lps : List Name) (nP o : Nat)
-    (e : Expr) : Option Nat :=
+def memberApp? (members : List (Key md × Nat × Nat)) (lps : List LevelParam) (nP o : Nat)
+    (e : Expr md) : Option Nat :=
   match e.getAppFn with
   | .const x us =>
     match members.find? (·.1 == x) with
@@ -147,22 +204,31 @@ def memberApp? (members : List (Name × Nat × Nat)) (lps : List Name) (nP o : N
   | _ => none
 
 /-- Classify one constructor's fields: each domain is ordinary (no
-member mentioned) or, under its own `∀`-telescope whose domains do not
+member mentioned, or none once its member applications are rewritten into
+the auxiliary family, `specFam`: an occurrence that whnf may remove, which
+the fold's install of the auxiliary family decides) or, under its own
+`∀`-telescope whose domains do not
 mention the block (empty at a finitary field), exactly a member at the
 parameters and some index expressions (`∀ a⃗, T_{m'} p⃗ e⃗`) — official
 `check_positivity`'s telescope walk, syntactically; anything else is
 not this rung's (nested, non-positive).  `members` lists
 `(T, m, nIdx)`.  A recursive field is recorded by position and target
 member; its telescope is read off the constructor's type again where it
-is needed (`structFieldTeleOf`, the iota right-hand sides). -/
-def classifyCtor (members : List (Name × Nat × Nat)) (lps : List Name) (nP : Nat)
-    (m : Nat) (c : IndCtorRec) : Except String MCtor := do
+is needed (`structFieldTeleOf`, the iota right-hand sides).  A field that
+is not syntactically a member application but that Lean's recursor gives
+an inductive hypothesis (`minorIH?`: a member behind a reducible alias,
+which Lean's kernel sees after whnf) is recursive too, at the normal form
+the hypothesis names (`MCtor.nty`). -/
+def classifyCtor (T : Key md) (members : List (Key md × Nat × Nat)) (lps : List LevelParam)
+    (nP k J : Nat) (minor : Option (Expr md)) (m j : Nat) (c : IndCtorRec md) :
+    Except String (MCtor md) := do
   let memberNames := members.map (·.1)
   let some (bs, resid) := c.cv.type.stripPis (nP + c.nF)
     | throw s!"constructor {c.cv.name} is not a telescope"
   unless memberApp? members lps nP c.nF resid == some m do
     throw s!"constructor {c.cv.name} does not return its member at the parameters"
   let mut recFields : List (Nat × Nat) := []
+  let mut nty := c.cv.type
   for i in List.range c.nF do
     let d := (bs.getD (nP + i) default).1
     if mentionsAny memberNames d then
@@ -174,10 +240,33 @@ def classifyCtor (members : List (Name × Nat × Nat)) (lps : List Name) (nP : N
       match memberApp? members lps nP (i + tele.length) body with
       | some m' => recFields := recFields ++ [(i, m')]
       | none =>
-        throw s!"field {i} of {c.cv.name} mentions the block other than as a plain \
-          member application under the field's own binders (nested or non-positive \
-          occurrence)"
-  pure ⟨m, c, recFields⟩
+        -- not syntactically a recursive field: an ordinary one if the
+        -- auxiliary rewrite of its member applications (`specFam`, as the
+        -- auxiliary constructors' types are rewritten) leaves no member.
+        -- Lean's kernel tests positivity after whnf, so an occurrence that
+        -- reduces away (`K True T` with `K a _ := a`) is not one, and the
+        -- fold's install of the auxiliary family tests the field after whnf
+        -- (CQX.8)
+        if mentionsAny memberNames (specFam T lps nP members d) then
+          throw s!"field {i} of {c.cv.name} mentions the block other than as a plain \
+            member application under the field's own binders (nested or non-positive \
+            occurrence)"
+        -- ... and one that whnf turns INTO a member application (`Id' B`
+        -- with `Id' α := α`) is recursive: Lean's recursor says so with an
+        -- inductive hypothesis, whose motive and index expressions give the
+        -- field's normal form, the domain the auxiliary constructor takes
+        -- (the fold's install of the auxiliary family generates the
+        -- hypothesis from it, as Lean's `mk_rec_infos` does after whnf)
+        if tele.isEmpty then
+          if let some (m', idx) := minor.bind (minorIH? k J c.nF i) then
+            let some (x, _, _) := members[m']?
+              | throw s!"field {i} of {c.cv.name}: hypothesis on no member"
+            let dom := Expr.mkAppN (.const x (lps.map .param)) (varsAt i nP ++ idx)
+            let some nty' := replacePiDomAt (nP + i) nty dom
+              | throw s!"constructor {c.cv.name} is not a telescope"
+            nty := nty'
+            recFields := recFields ++ [(i, m')]
+  pure ⟨m, j, c, recFields, nty⟩
 
 /-- Unwrap a generator step that cannot fail on a well-formed block. -/
 def need (what : String) : Option α → Except String α
@@ -187,7 +276,7 @@ def need (what : String) : Option α → Except String α
 /-- **The mutual rung** (B1 index-free, B2 indexed).  The records, in stream order:
 the tag block, the auxiliary block, the member/constructor/recursor
 models, the iota theorems, the projection artifacts. -/
-def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := do
+def genMutual (ctx : Ctx md) (b : BlockRec md) : Except String (List (Declaration md)) := do
   let t0 :: _ := b.types | throw "empty block"
   let T := t0.cv.name
   let lps := t0.cv.levelParams
@@ -211,37 +300,47 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     | some (_, .sort _) => pure ()
     | _ => throw s!"former {t.cv.name} is not a telescope ending in a sort"
   let memberNames := b.types.map (·.cv.name)
-  let members : List (Name × Nat × Nat) :=
-    (List.range k).map fun m => (memberNames.getD m .anonymous, m, (b.types.getD m default).nIdx)
+  let members : List (Key md × Nat × Nat) :=
+    b.types.zipIdx.map fun (t, m) => (t.cv.name, m, t.nIdx)
   let nIdxOf : Nat → Nat := fun m => (b.types.getD m default).nIdx
+  -- Lean's minor premises, off the first recursor's type, in constructor
+  -- order (members in block order, each member's constructors in order):
+  -- `classifyCtor` reads Lean's own recursive fields off them
+  let minors : List (Expr md) :=
+    match b.recs.head? with
+    | some r =>
+      match r.cv.type.stripPis (nP + k + b.ctors.length) with
+      | some (rbs, _) => (rbs.drop (nP + k)).map (·.1)
+      | none => []
+    | none => []
   -- the constructors, per member, classified
-  let mut mctors : List MCtor := []
+  let mut mctors : List (MCtor md) := []
   for m in List.range k do
     let t := b.types.getD m default
-    for cn in t.ctors do
+    for (cn, j) in t.ctors.zipIdx do
       let some c := b.ctors.find? (·.cv.name == cn)
         | throw s!"constructor {cn} of {t.cv.name} is not in the block"
       unless c.nP == nP && c.cv.levelParams == lps do
         throw s!"constructor {cn}: parameter count or level parameters differ"
-      mctors := mctors ++ [← classifyCtor members lps nP m c]
+      let J := mctors.length
+      mctors := mctors ++ [← classifyCtor T members lps nP k J minors[J]? m j c]
   let n := mctors.length
   unless b.ctors.length == n do throw "constructors not all owned by a member"
-  -- the recursors: `T_m.rec`, one per member, `k` motives, `n` minors,
-  -- no indices, one eliminator shape
+  -- the recursors: one per member, `k` motives, `n` minors, no indices,
+  -- one eliminator shape
   unless b.recs.length == k do throw "recursor count differs from member count"
-  -- the member's recursor, by name (the export's `recs` order is not
-  -- the members' in general)
-  let recOf : Nat → Except String IndRecRec := fun m => do
-    let t := b.types.getD m default
-    match b.recs.find? (·.cv.name == t.cv.name.str "rec") with
+  -- the member's recursor, by motive position: the front ends list a
+  -- block's recursors in motive order, member `m`'s at `m`
+  let recOf : Nat → Except String (IndRecRec md) := fun m => do
+    match b.recs[m]? with
     | some r => pure r
-    | none => throw s!"member {t.cv.name} has no recursor {t.cv.name.str "rec"}"
-  let large? : Option Name :=
+    | none => throw s!"member {(b.types.getD m default).cv.name} has no recursor"
+  let large? : Option LevelParam :=
     match (← recOf 0).cv.levelParams with
     | e :: rest => if rest == lps && !lps.contains e then some e else none
     | [] => none
   let large := large?.isSome
-  let elim := large?.getD (freshLevelName lps)
+  let elim := large?.getD (freshLevelParam lps)
   let rlps := if large then elim :: lps else lps
   for m in List.range k do
     let r ← recOf m
@@ -258,17 +357,17 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     throw "Prop block with a large eliminator (the auxiliary family eliminates into Prop only)"
   let ℓ := structElimLevel elim large
   let rlvls : List Level := if large then ℓ :: lps.map .param else lps.map .param
-  let elimTag := if large then elim else freshLevelName lps
+  let elimTag := if large then elim else freshLevelParam lps
   -- the block renaming of the modeled install (types, constructors, recursors)
   let blockNames := memberNames ++ b.ctors.map (·.cv.name) ++ b.recs.map (·.cv.name)
-  let rn : Expr → Expr := Expr.renameConsts fun x =>
+  let rn : Expr md → Expr md := Expr.renameConsts fun x =>
     if blockNames.contains x then modelName x else x
   let tag := tagName T
   let aux := auxName T
   let ps0 := varsAt 0 nP
-  let mut out : Array Declaration := #[]
-  let mut heights : List (Name × Nat) := []
-  let hOf : List (Name × Nat) → Name → Nat := fun hs x =>
+  let mut out : Array (Declaration md) := #[]
+  let mut heights : List (Key md × Nat) := []
+  let hOf : List (Key md × Nat) → Key md → Nat := fun hs x =>
     match hs.find? (·.1 == x) with
     | some (_, h) => h
     | none => ctx.heights x
@@ -284,11 +383,11 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     for j in List.range t.nIdx do
       let ctxJ := (pbs ++ idxBs.take j).reverse
       let dom := idxBs.getD j default
-      let some ℓj := idxSort ctx.tbl ctxJ dom
+      let some ℓj ← idxSort ctx.tbl ctxJ dom
         | throw s!"cannot bound the sort of index {j} of {t.cv.name} (the tag's universe)"
       W := .max W ℓj
   let tagTy ← need "tag type" (Expr.replacePiBody nP t0.cv.type (.sort W))
-  let tagCtors : List (Name × Nat × Expr × List Nat) ←
+  let tagCtors : List (Key md × Nat × Expr md × List Nat) ←
     (List.range k).mapM fun m => do
       let t := b.types.getD m default
       -- `tag.m : ∀ p⃗_1 ı⃗_m, tag p⃗` — the member's index telescope
@@ -301,12 +400,12 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   let tagRecTy ← need "tag recursor type" (recTy tag lps elimTag true nP 0 tagTy tagCtors)
   let tagRules ← (List.range k).mapM fun m => do
     let rhs ← need "tag rule"
-      (recRhs tag lps elimTag true nP 0 tagTy tagCtors (tag.str "rec") (.param elimTag :: lps.map .param) m)
+      (recRhs tag lps elimTag true nP 0 tagTy tagCtors (auxKey tag .recursor) (.param elimTag :: lps.map .param) m)
     pure (RecRule.mk (tagCtorName T m) (nIdxOf m) 0 .inert rhs false false false)
   out := out.push (.indDecl
     ([.indInfo ⟨tag, lps, tagTy⟩ {}] ++
      tagCtors.map (fun (c, nF, ty, _) => ConstantInfo.ctorInfo ⟨c, lps, ty⟩ nP nF) ++
-     [.recInfo ⟨tag.str "rec", elimTag :: lps, tagRecTy⟩ (nP + 1 + k) (nP + 1 + k) tagRules])
+     [.recInfo ⟨auxKey tag .recursor, elimTag :: lps, tagRecTy⟩ (nP + 1 + k) (nP + 1 + k) tagRules])
     nP)
   -- 2. the auxiliary family
   let auxTy ← need "aux type" (Expr.replacePiBody nP t0.cv.type
@@ -314,20 +413,20 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- `aux.m.C : ∀ p⃗_1 f⃗', aux p⃗ (tag.m p⃗ e⃗)` — the constructor's
   -- telescope over the first member's parameter binders, every member
   -- occurrence rewritten to the auxiliary family
-  let auxCtors : List (Name × Nat × Expr × List Nat) ← mctors.mapM fun mc => do
+  let auxCtors : List (Key md × Nat × Expr md × List Nat) ← mctors.mapM fun mc => do
     let ty ← need "aux constructor type"
-      (overFirstParams nP t0.cv.type (specFam T lps nP members mc.c.cv.type))
-    pure (auxCtorName T mc.m mc.c.cv.name, mc.c.nF, ty, mc.recFields.map (·.1))
+      (overFirstParams nP t0.cv.type (specFam T lps nP members mc.nty))
+    pure (auxCtorName T mc.m mc.j, mc.c.nF, ty, mc.recFields.map (·.1))
   let auxRecTy ← need "aux recursor type" (recTy aux lps elim large nP 1 auxTy auxCtors)
   let auxRules ← (List.range n).mapM fun j => do
     let rhs ← need "aux rule"
-      (recRhs aux lps elim large nP 1 auxTy auxCtors (aux.str "rec") rlvls j)
+      (recRhs aux lps elim large nP 1 auxTy auxCtors (auxKey aux .recursor) rlvls j)
     pure (RecRule.mk (auxCtors.getD j default).1
       (auxCtors.getD j default).2.1 0 .inert rhs false false false)
   out := out.push (.indDecl
     ([.indInfo ⟨aux, lps, auxTy⟩ {}] ++
      auxCtors.map (fun (c, nF, ty, _) => ConstantInfo.ctorInfo ⟨c, lps, ty⟩ nP nF) ++
-     [.recInfo ⟨aux.str "rec", rlps, auxRecTy⟩ (nP + 1 + n + 1) (nP + 1 + n) auxRules])
+     [.recInfo ⟨auxKey aux .recursor, rlps, auxRecTy⟩ (nP + 1 + n + 1) (nP + 1 + n) auxRules])
     nP)
   -- 3. the member models `T_m._model := λ p⃗ ı⃗, aux p⃗ (tag.m p⃗ ı⃗)`
   for m in List.range k do
@@ -344,7 +443,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let nF := mc.c.nF
     let ty := rn mc.c.cv.type
     let value ← need "constructor model" (Expr.pisToLams (nP + nF) ty
-      (Expr.mkAppN (constP (auxCtorName T mc.m mc.c.cv.name) lps)
+      (Expr.mkAppN (constP (auxCtorName T mc.m mc.j) lps)
         (varsAt nF nP ++ (List.range nF).map fun i => Expr.bvar (nF - 1 - i))))
     let h := hintFor (hOf heights) value
     heights := (modelName mc.c.cv.name, hintHeight h) :: heights
@@ -360,17 +459,17 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
     let D := rP + nI + 1
     let e := nI + 1
     -- `Mot := λ (i : tag p⃗) (s : aux p⃗ i), tag.rec p⃗ (λ i', ∀ s, aux p⃗ i' → Sort ℓ) M⃗ i s`
-    let motTag : Expr := .lam
+    let motTag : Expr md := .lam
       (Expr.mkAppN (constP tag lps) (varsAt (k + n + e + 2) nP))
       (.forallE
         (Expr.mkAppN (constP aux lps) (varsAt (k + n + e + 3) nP ++ [.bvar 0])) (.sort ℓ) bm) bm
-    let tagRecApp := Expr.mkAppN (.const (tag.str "rec") (ℓ' :: lps.map .param))
+    let tagRecApp := Expr.mkAppN (.const (auxKey tag .recursor) (ℓ' :: lps.map .param))
       (varsAt (k + n + e + 2) nP ++ [motTag] ++ varsAt (n + e + 2) k ++ [.bvar 1, .bvar 0])
-    let mot : Expr := .lam
+    let mot : Expr md := .lam
       (Expr.mkAppN (constP tag lps) (varsAt (k + n + e) nP))
       (.lam
         (Expr.mkAppN (constP aux lps) (varsAt (k + n + e + 1) nP ++ [.bvar 0])) tagRecApp bm) bm
-    let body := Expr.mkAppN (.const (aux.str "rec") rlvls)
+    let body := Expr.mkAppN (.const (auxKey aux .recursor) rlvls)
       (varsAt (k + n + e) nP ++ [mot] ++ varsAt e n ++
        [Expr.mkAppN (constP (tagCtorName T m) lps) (varsAt (k + n + e) nP ++ varsAt 1 nI),
         .bvar 0])
@@ -395,27 +494,35 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       -- sit above the `k + n` motive and minor binders
       let some (fieldBs, cresid) := (ctele.liftLooseBVars (k + n) 0).stripPis nF
         | throw s!"constructor {mc.c.cv.name}: field telescope"
-      let doms := fieldBs.map (·.1)
+      -- the recursive fields' domains at their normal form (`MCtor.nty`;
+      -- the statement's binders keep the declared ones)
+      let some (_, nctele) := (rn mc.nty).stripPis nP
+        | throw s!"constructor {mc.c.cv.name}: type is not a telescope"
+      let some (nfieldBs, _) := (nctele.liftLooseBVars (k + n) 0).stripPis nF
+        | throw s!"constructor {mc.c.cv.name}: field telescope"
+      let doms := nfieldBs.map (·.1)
       let fields := (List.range nF).map fun i => Expr.bvar (nF - 1 - i)
       let prefixVars := varsAt (nF + k + n) nP ++ varsAt (nF + n) k ++ varsAt nF n
       let ctorApp := Expr.mkAppN (constP (modelName mc.c.cv.name) lps) (varsAt (nF + k + n) nP ++ fields)
       -- the constructor's index expressions, at the statement frame
       let idxC := cresid.getAppArgs.drop nP
-      let α : Expr := Expr.mkAppN (.bvar (nF + n + k - 1 - m)) (idxC ++ [ctorApp])
+      let α : Expr md := Expr.mkAppN (.bvar (nF + n + k - 1 - m)) (idxC ++ [ctorApp])
       let lhs := Expr.mkAppN (.const (modelName r.cv.name) rlvls) (prefixVars ++ idxC ++ [ctorApp])
-      let rhs := Expr.mkAppN (.bvar (nF + n - 1 - J))
-        (fields ++ mc.recFields.map fun (i, tgt) =>
+      let ihs ← mc.recFields.mapM fun (i, tgt) => do
           -- the recursive field's domain `∀ a⃗, T_tgt p⃗ e⃗(a⃗)`, lifted
           -- from its binder to the statement frame; the hypothesis'
-          -- value is `λ a⃗, T_tgt.rec._model p⃗ M⃗ S⃗ e⃗(a⃗) (f_i a⃗)`
-          -- (official `mk_rec_rules`; at a finitary field `a⃗` is
-          -- empty and this is the recursor at the field)
+          -- value is `λ a⃗, R_tgt._model p⃗ M⃗ S⃗ e⃗(a⃗) (f_i a⃗)` at member
+          -- `tgt`'s recursor `R_tgt` (official `mk_rec_rules`; at a
+          -- finitary field `a⃗` is empty and this is the recursor at the
+          -- field)
           let (tele, body) := ((doms.getD i default).liftLooseBVars (nF - i) 0).piBinders
           let a := tele.length
-          Expr.mkLamsOf tele
-            (Expr.mkAppN (.const (modelName ((memberNames.getD tgt .anonymous).str "rec")) rlvls)
+          let rt ← recOf tgt
+          pure <| Expr.mkLamsOf tele
+            (Expr.mkAppN (.const (modelName rt.cv.name) rlvls)
               (prefixVars.map (·.liftLooseBVars a 0) ++ body.getAppArgs.drop nP ++
-                [Expr.mkAppN (.bvar (nF - 1 - i + a)) (structTeleVars a)])))
+                [Expr.mkAppN (.bvar (nF - 1 - i + a)) (structTeleVars a)]))
+      let rhs := Expr.mkAppN (.bvar (nF + n - 1 - J)) (fields ++ ihs)
       let stmt := mkPis (piBinders prefixBs ++ piBinders fieldBs)
         (Expr.mkAppN (.const eqName [ℓ]) [α, lhs, rhs])
       let value ← need "iota proof" (Expr.pisToLams (rP + nF) stmt
@@ -429,10 +536,10 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
   -- lost: official's `is_structure_like` is single-type, so a mutual
   -- member never carries `.proj`; the artifacts only feed the
   -- projection rewrite's levels.
-  let genTypes : List (Name × List Name × Expr) :=
+  let genTypes : List (Key md × List LevelParam × Expr md) :=
     (b.types.map fun t => (modelName t.cv.name, lps, t.cv.type)) ++
     (b.ctors.map fun c => (modelName c.cv.name, lps, rn c.cv.type))
-  let tbl' : ConstTable := fun x =>
+  let tbl' : ConstTable md := fun x =>
     match genTypes.find? (·.1 == x) with
     | some (_, l, ty) => some (l, ty)
     | none => ctx.tbl x
@@ -445,7 +552,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
       let nF := mc.c.nF
       let cty := rn mc.c.cv.type
       let r ← recOf m
-      let owner : ProjRecOwner :=
+      let owner : ProjRecOwner md :=
         ⟨modelName t.cv.name, lps, nP, modelName mc.c.cv.name, nF, modelName r.cv.name,
          rlps, rn r.cv.type, k, n⟩
       let some (cbs, _) := cty.stripPis (nP + nF) | continue
@@ -455,7 +562,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         -- the field's sort, at the constructor frame
         let ctxI := ((cbs.take (nP + i)).map (·.1)).reverse
         let dom := (cbs.getD (nP + i) default).1
-        let some ℓi := sortOf tbl' ctxI dom | stop := true; continue
+        let some ℓi ← sortOf tbl' ctxI dom | stop := true; continue
         -- the projection type `∀ p⃗ (x : T._model p⃗), F_i[f_j := proj_j p⃗ x]`
         let args := structProjPs nP ++ (List.range i).map fun j =>
           Expr.mkAppN (constP (projModelName t.cv.name j) lps) (structProjPs nP ++ [.bvar 0])
@@ -480,7 +587,7 @@ def genMutual (ctx : Ctx) (b : BlockRec) : Except String (List Declaration) := d
         let some pf := Expr.pisToLams (nP + nF) stmt
             (Expr.mkAppN (.const eqReflName [ℓi]) [slot, .bvar (nF - 1 - i)])
           | stop := true; continue
-        out := out.push (.thmDecl ⟨(projModelName t.cv.name i).str "iota", lps, stmt⟩ pf)
+        out := out.push (.thmDecl ⟨auxKey (projModelName t.cv.name i) .projIota, lps, stmt⟩ pf)
   pure out.toList
 
 end Ix.Kernel.Frontend.InModel

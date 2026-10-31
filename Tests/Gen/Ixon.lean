@@ -457,14 +457,6 @@ def genKVMapEntry : Gen (Address × DataValue) :=
 def genKVMap : Gen KVMap :=
   genSmallArray genKVMapEntry
 
-/-- Generate a CallSiteEntry. `genIdx` bounds the arena-subtree index;
-    canonical/sharing indices are free u64s (serde does not validate them). -/
-def genCallSiteEntry (genIdx : Gen UInt64) : Gen CallSiteEntry :=
-  frequency [
-    (2, CallSiteEntry.kept <$> genUInt64Small <*> genIdx),
-    (1, CallSiteEntry.collapsed <$> genUInt64Small <*> genIdx),
-  ]
-
 /-- Generate an optional AuxLayout (nested-aux sidecar on `muts`).
     `evaporated` is canonically one 0/1 flag per perm entry — that is
     what the compiler materializes. The unified encoding serializes the
@@ -498,16 +490,6 @@ def genExprMetaData (arenaSize : Nat := 0) (genAddr : Gen Address := genAddress)
     (15, ExprMetaData.ref <$> genAddr),
     (10, ExprMetaData.prj <$> genAddr <*> genIdx),
     (5, ExprMetaData.mdata <$> genSmallArray (genKVMapWith genAddr) <*> genIdx),
-    (5, ExprMetaData.callSite <$> genAddr
-      <*> genSmallArray (genCallSiteEntry genIdx)
-      <*> genSmallArray genIdx
-      <*> frequency [
-            (2, pure none),
-            (1, (fun a b => some (a, b)) <$> genUInt64Small <*> genIdx),
-          ]),
-    (3, ExprMetaData.etaCallSite <$> genUInt64Small <*> genAddr
-      <*> genSmallArray (genCallSiteEntry genIdx)
-      <*> genSmallArray genIdx <*> genIdx),
   ]
 where
   /-- KVMap whose keys and `ofName` payloads draw from `genAddr` (they are
@@ -576,7 +558,6 @@ def genConstantMeta (genAddr : Gen Address := genAddress) : Gen ConstantMeta := 
   let univPatches ← frequency [(2, pure #[]), (1, genSmallArray genUnivPatch)]
   return { info, metaSharing, metaRefs, metaUnivs, univPatches }
 
-instance : Shrinkable CallSiteEntry where shrink _ := []
 instance : Shrinkable AuxLayout where shrink _ := []
 
 instance : Shrinkable ExprMetaData where
@@ -601,8 +582,6 @@ instance : Shrinkable ConstantMeta where
       else []
     | _ => [{ m with info := .empty }]
 
-instance : SampleableExt CallSiteEntry :=
-  SampleableExt.mkSelfContained (genCallSiteEntry genUInt64Small)
 instance : SampleableExt AuxLayout := SampleableExt.mkSelfContained do
   match ← genAuxLayout? with
   | some l => pure l

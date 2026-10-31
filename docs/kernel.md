@@ -6,36 +6,164 @@ checker: `IxC/Kernel/**` holds a modified copy under the namespace
 `Ix.Kernel` (see "Origin and attribution" below), run on Ixon records by Ix's
 reader in `IxC/Kernel/Ixon/`. The certified API is
 `Ix.Kernel.Admission.checkBytes` (`import IxC.Kernel.Admission`; its theorems
-are in `Ix.Kernel.Admission.Theorems`). This page states what that entry does, what
+are in `Ix.Kernel.Admission.Theorems`), which takes its content hash as a
+parameter; the root library runs it at BLAKE3 as
+`Ixon.Authenticated.checkBytes` (`import Ix.Ixon.Authenticated`). This page
+states what that entry does, what
 is proved about it, what is trusted, how the gate checks the trust boundary,
 where the kernel comes from, and how to check a whole compiled environment.
 This page is the contract: what an accept promises (a set-theoretic model,
-no constant of the pinned `False`, the checked declarations are the ones
-the bytes encode, bounded resources), under which assumptions (an
+no constant of `False`'s role key, every record and blob and the role
+table's binding section stored under the hash of its bytes, the checked
+declarations are the ones the bytes encode, bounded resources), under which assumptions (an
 `Ix.Kernel.SetTheory V`; proofs on `propext`, `Classical.choice` and
 `Quot.sound` only), on which execution foundation ("Trust surface"), and
 with which outcomes (accept, reject, decline; only an accept carries the
 theorems).
 
-Nothing here certifies the Lean-to-Ixon compiler, the Rust checker, `Ix.Tc`
-or IxVM. An accepted environment has a model; that it is the environment
-the original Lean source meant is outside the claim.
+This entry does not by itself certify the Lean-to-Ixon compiler, the Rust
+checker or IxVM. An accepted environment has a model; that it is the
+environment the original Lean source meant is outside this entry's claim;
+for the Lean compiler's output, the compiler theorem (next section) relates
+the two.
+
+## Relation to compiler certification
+
+The Lean compiler is proved correct against this page's entry, in `Ix/Cert`.
+The statement is `Ix.Cert.CompileCorrect`
+([`Ix/Cert/CompileCorrect.lean`](../Ix/Cert/CompileCorrect.lean)), proved by
+`Ix.Cert.ReaderStreamsTrace.compileCorrect`
+([`Ix/Cert/CompileCorrectProof.lean`](../Ix/Cert/CompileCorrectProof.lean))
+on `propext`, `Classical.choice` and `Quot.sound` only. It is stated per
+closure. When quotient Source accepts the closure (`SourceAcceptsQ`), the
+compile (`Ix.Cert.compileReport`) reports no failure for it, and the
+artifact checks hold (the published role names sit at the default table's
+addresses, the published names agree with the artifact's address map,
+quotient Source's evidence agrees with the table's, and the table's
+certificates check), then:
+
+- the artifact publishes every constant of the closure;
+- Ixon accepts the compiled closure at the reference level
+  (`IxonAcceptsRef`): this entry's binding admission, byte stages and reader,
+  then the verified fold at some fuel, under the default binding and in an
+  order that respects references. Reference acceptance is not a guarantee
+  that the executable checker succeeds at its fixed fuel;
+- the installed environment is quotient Source's environment renamed to
+  the artifact's addresses, injectively on the names that environment
+  mentions (`RenamesSource`); types and values, theorem statements and
+  proofs included, are preserved by that renaming;
+- every constant of the closure reads as a compiled constant
+  (`ReadingCovers`), except the constants represented by the inert
+  `sorryAx` role, which install nothing and whose uses decline;
+- every strong model of the compiled environment
+  (`Ix.Kernel.Cached.StrongModel`) gives **one value model of quotient
+  Source** for the whole closure, in which every constant denotes what its
+  reading denotes, at every level and variable valuation (`CommutesStrong`).
+
+The statement is partial correctness: a compile that fails, a closure with a
+failed constant, and a closure quotient Source does not accept are outside
+it. The compiler compiles Lean verbatim (each block in Lean's grouping and
+member order, every declaration as Lean declared it). Its internal mutual
+representation is a flat ordered list: one payload and member index per
+source member, with constructors in source order. Singleton groups remain
+only at the serialized metadata boundary. Whole-constant alpha collapse
+still lets identical anonymous encodings share an address; it does not
+merge member positions inside a block. Acceptance is therefore certified from
+quotient Source, where alias fibers are collapsed. The link to nominal Source
+is not assumed for every environment: `CompileCorrect.checked` gets it per
+artifact from the executed quotient check, and `CompileCorrect.nominal` takes
+it as a hypothesis. That link concerns acceptance only: it supplies no
+relation between nominal and quotient value models. The compiler conclusion
+does not assert model existence; `CommutesStrong` retains its quantification
+over every strong model.
+
+On the command line, `ix compile` and `ix compile-lean` run the certified
+compiler, `Ix.Cert.compileReport` itself (`Ix.CompileM.compileCertified` in
+[`Ix/CompileCertified.lean`](../Ix/CompileCertified.lean)). The input's source
+contracts are resolved, its constants canonicalized (`Ix.CanonM`), and
+`compileReport` compiles them and runs its report checks (`Ix.Cert.checkReport`);
+a failed check refuses the compile and nothing is written. Every reported
+failure must be an input constant's, and an input with semantic contracts must
+compile completely and validate its resources. The role support, certificates
+and binding are then added (`Ix.RoleBinding.Compile.finalize`, which compiles the
+support with `compileReport` too), and the finalized artifact is checked again
+(`checkFinalized`: the original's publications and hints unchanged, and every
+report check that reads the artifact alone) before it is written. The certified
+compiler runs at the default sharing limits, which `compileReport` fixes: a
+sharing-limit override is refused there.
+
+`ix compile --streamed` and `ix compile-lean --streamed` select the streamed
+Lean pipeline (`compileLeanInputValidated` in
+[`Ix/CompileResource.lean`](../Ix/CompileResource.lean)), which runs the same
+report checks on the compile. Name-only `ix prove`, `ix check` and
+`ix addr-of` use `Ix.Check.loadNamedIxonEnv` and its checked streamed loader,
+`compileLeanConstsValidated`. They do not call `compileReport` directly;
+supplying a `.ixe` uses the supplied artifact instead.
+
+The Rust compiler is opt-in and uncertified: `ix compile --rust` (and `--rust`
+on `prove`, `check` and `addr-of`). It has no counterpart of the report
+checks. The Rust path of `ix compile` checks its finalized artifact before
+writing it; this does not establish the compiler theorem for that backend.
+Bare compiler APIs remain unvalidated. `ix compile-lean --rust-check` compares the two
+serialized outputs for that input; byte parity is empirical evidence, not a
+compiler-refinement theorem for the Rust compiler. Metadata is outside the
+certification claim.
+
+What the theorem covers on these paths: `CompileCorrect` is about the pure
+function `Ix.Cert.compileReport`, which `ix compile` and `ix compile-lean` run on
+the canonicalized input. The streamed pipeline's canonicalization, reference
+graph, ground filter and condensation are tested equal to the pure ones
+(`cert-compile-parity-init`), not proved; its fold over the hybrid environment
+is proved equal to the pure fold (`Ix/Cert/Hybrid.lean`). `finalize`'s additions
+are outside the theorem.
 
 ## The certified entry
 
 ```lean
-def Ix.Kernel.Admission.checkBytes (limits : Limits) (records : Records)
-    (blobs : Ix.Kernel.Ingress.Blobs)
+def Ix.Kernel.Admission.checkBytes (hash : ByteArray → Address) (binding : Binding)
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
     Except Error Ix.Kernel.Env
+
+def Ixon.Authenticated.checkBytes (binding : Admission.Binding) (limits : Admission.Limits)
+    (records : Admission.Records) (blobs : Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Admission.Error Ix.Kernel.Env :=
+  Admission.checkBytes Address.admissionHash binding limits records blobs hint
 ```
+
+`binding` is the role table's binding section and the address it claims
+(`Admission.Binding`: `address`, `bytes`; "Roles, the role table and the
+prelude" below). The entry admits it before it reads any record: the
+address must be `hash` of the bytes, the bytes a canonical section
+(`RoleTable.ofBytes`), and the table well formed (`RoleTable.check`). The
+default table of the compiled Init is `Admission.defaultBinding`, for tests
+and the command line; every theorem holds for every table.
+
+`hash` is the content hash every address is authenticated against. The
+kernel admits no hasher (its import fence, below), so the entry and every
+theorem about it are generic in `hash`. The root library instantiates the
+entry and its projection variant at `Address.admissionHash`
+(`Ix/Address/Admission.lean`), which is pure BLAKE3 (`Address.blake3Pure`)
+for every theorem and executes as the Rust BLAKE3 (`Address.blake3`); that
+substitution is an assumption ("Trust surface").
+
+An Ixon address is BLAKE3 of exact bytes, with no tag and no length prefix: a
+record's is BLAKE3 of its complete serialization (`Ixon.serConstant`, the
+bytes an `.ixe` stores for it after its length prefix), a projection
+record's likewise, and a blob's is BLAKE3 of its payload. The compiler
+addresses them so (`Address::hash` over `Constant::put`), the `.ixe` loaders
+verify them so, and the resource adapter commits them so
+(`Ix.Resource.Addressed.commit`).
 
 Each entry has one runnable module, which holds definitions only, and its
 theorems and audit beside it: `IxC/Kernel/Admission.lean` (the entry, its
 `Error` and `Outcome`), `IxC/Kernel/Admission/Bytes.lean` (the byte stage
 and its `ByteError`), `IxC/Kernel/Admission/{Theorems,Bytes/Theorems,
-Audit}.lean`; the variants `Ix/Ixon/{Projection,BlockOrder}.lean` with
-`Ix/Ixon/{Projection,BlockOrder}/{Theorems,Audit}.lean`. Running the entry
+Audit}.lean`; the projection variant `Ix/Ixon/Projection.lean` with
+`Ix/Ixon/Projection/{Theorems,Audit}.lean`; the instantiations
+at BLAKE3 `Ix/Ixon/Authenticated.lean` with
+`Ix/Ixon/Authenticated/{Theorems,Audit}.lean`. Running the entry
 does not build the proof tree: the import closure of
 `Ix.Kernel.Admission` is 76 repository modules and does not reach
 `Ix.Kernel.MainTheorem`.
@@ -51,27 +179,41 @@ The entry runs, in order:
 
 | Stage | Function | Fails with |
 | --- | --- | --- |
-| the committed pin table, prelude and Nat-operation pins load | `defaultPins`, `builtinPrelude`, `builtinNatOpPins` | `.prelude reason` |
+| the role table's admission: its section under `hash` of its bytes, canonical, well formed | `Admission.admitBinding` | `.binding (.mismatch _ \| .decode \| .malformed _)` |
+| the committed prelude, read under the admitted table | `Reader.preludeFor` | `.prelude reason` |
 | batch limits: record and blob counts, total payload bytes | `Admission.preflight` | `.limit resource` |
 | key uniqueness: no two records and no two blobs under one address | `Admission.uniqueKeys` | `.duplicate table position address` |
+| authentication: every record and every blob under `hash` of its bytes, as supplied (a record's payload is hashed before it is decoded, never re-encoded) | `Admission.authenticate` | `.mismatch table position address` |
 | canonical per-record decoding within byte and universe-node limits | `Admission.decodeRecords` | `.decode position address reason` |
-| the Ixon reader: records to `Array Ix.Kernel.Declaration` | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the Ixon reader: records to `Array Ix.Kernel.Declaration`, bound addresses named by their role keys | `Reader.readRecords` | `.read position (.malformed _ / .declined _)` |
+| the table's evidence, each proof entry resolved to its theorem's key and value | `Reader.evidenceOf` | (an unresolved proof leaves its operation without evidence) |
 | the prelude is put in front (`Ix.Kernel.Frontend.preparePrelude`) | | |
-| the verified fold | `Ix.Kernel.Cached.checkDecls .verified natPins` | `.kernel error position` |
+| the verified fold | `Ix.Kernel.Cached.checkDecls .verified ev` | `.kernel error position` |
 
-The pipeline is `Ix.Kernel.Admission.checkBytes`; `checkBytesWith`
-takes the pin table, prelude and Nat-operation pin list as parameters, and
-`checkConstants{,With}` start from decoded records. Two variants share the
-byte stage and the checker: `Ixon.Projection.checkBytes` reconstructs
-omitted projection records (addresses by pure BLAKE3 of their canonical
-bytes) before checking, and `Ixon.BlockOrder.checkBytes` also checks the
-order of mutual blocks: an inductive, definition or mixed block in canonical
-structural order (`canonicalClasses`, as Rust's `canonical_check.rs`), a block
-of recursors in motive order (member `j` eliminates motive `j`, read off its
-type as the reader reads it, `recursorMotive_of_analyse`), which is the order
-the compiler stores it in and not always the structural one (a structural
-check would refuse 2 of the 7 compiled recursor blocks of the fidelity
-fixture, `Rose.rec`/`Rose.rec_1` and `Args.rec`/`Tm.rec`).
+The pipeline is `Ix.Kernel.Admission.checkBytes`: it admits the binding and
+reads the prelude under the table (`checkBytesUsing`), then runs
+`checkBytesWith`, which takes the prelude as a parameter and whose
+`prepareWith` runs the byte stages, admits the binding again (the theorems
+read the table off it), decodes and reads; `checkConstants{,With}`
+start from decoded records under an admitted table, and `checkConstantsAt`
+admits a binding first. One variant shares the byte stage and the checker,
+and takes the same `hash`: `Ixon.Projection.checkBytes` reconstructs omitted
+projection records (addresses by `hash` of their canonical bytes) before
+checking.
+
+**Block order.** The entry does not check the member order of a mutual
+block. The compiler stores every block in Lean's order: an inductive block in
+the order of Lean's `all`, a definition block in its members' order there,
+and a block of recursors in its family's order (`T.rec` for each member,
+then `T.rec_1`, …), which is the order of its motives. The one order the
+root library checks is a recursor block's: `Ixon.BlockOrder.checkRecord`
+(`Ix/Ixon/BlockOrder.lean`, with `Ix/Ixon/BlockOrder/{Theorems,Audit}.lean`)
+accepts a block of recursors only in motive order (member `j` eliminates
+motive `j`, read off its type as the reader reads it,
+`recursorMotive_of_analyse`, and declares one motive per member), and every
+other record as it is (`checkRecord_ok_iff`, `OrderedRecord`). It is not an
+entry: the fidelity suite (`Ix/KernelFidelity/Egress.lean`) runs it over
+compiled environments.
 
 **Outcomes.** `Admission.Error.outcome` (called as `e.outcome`) classifies
 every failure as a reject (the input is wrong) or a decline (the checker
@@ -81,55 +223,69 @@ does not certify it):
 | --- | --- | --- |
 | `.limit` | decline | a coverage bound, not evidence about the input |
 | `.duplicate`, `.decode` | reject | the bytes are malformed |
+| `.mismatch` | reject | a key is not the hash of the bytes stored under it |
 | `.read _ (.malformed _)` | reject | the records describe no declaration (a missing reference or blob, a bad table index, a recursor header that disagrees with its block, ...) |
-| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions, unsafe axioms, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
-| `.prelude` | decline | a corrupted committed table |
+| `.read _ (.declined _)` | decline | unsupported: unsafe or `partial` definitions and unsafe axioms (the tiered entry types them, "The typing tier"), unsafe inductives, an inductive block whose recursor is not in the input, a mutually recursive definition block, a block the in-process modeller declines |
+| `.binding` | reject | the role table's section is not the hash of its bytes, not canonical, or not well formed |
+| `.prelude` | decline | a corrupted committed prelude |
 | `.kernel` | decline | every checker verdict: the checker reports fuel exhaustion as `internal` and a failed conversion search as `invalid`, and neither is independent evidence that the input is wrong |
 
-The variants keep their own errors (`Ixon.Projection.CheckError`,
-`Ixon.BlockOrder.CheckError`) and the same classifier, `e.outcome`: a
-checker failure (`.checker e`) as above, the byte stage
-(`Admission.ByteError.outcome`) as `.limit`, `.duplicate` and `.decode`
-above, and their own failures as follows.
+The projection variant keeps its own error (`Ixon.Projection.CheckError`)
+and the same classifier, `e.outcome`: a checker failure (`.checker e`) as
+above, the byte stage (`Admission.ByteError.outcome`) as `.limit`,
+`.duplicate`, `.mismatch` and `.decode` above, and its own failures as
+follows.
 
 | Error | Outcome | Why |
 | --- | --- | --- |
-| `Projection.Error.limit`, `BlockOrder.Error.exhausted` | decline | coverage bounds (projection requests; comparison and refinement fuel) |
+| `Projection.Error.limit` | decline | a coverage bound (projection requests) |
 | `Projection.Error.ownerWidth`, `.conflict`, `.projection (.malformed _)` | reject | an owner key that is not a 32-byte hash, a supplied record that differs from the derived one at its key, a projection the writer finds malformed |
 | `Projection.Error.projection` (any other search failure) | decline | the writer did not establish the projection |
-| `BlockOrder.Error.malformed`, `.nonCanonical`, `.motiveOrder` | reject | a malformed block, or a block out of canonical (or motive) order |
 
 Only an accept carries the theorems below.
 
 **Host obligations.** The host supplies the order, the address keys and the
-blobs. Addresses are keys, not authenticated hashes (only the projection
-variant derives addresses). The entry does not reorder beyond
+blobs. Every key is authenticated as `hash` of the bytes stored under it, so
+a key names exactly one payload (up to a collision of `hash`); the
+projection variant derives the addresses of omitted projection records with
+the same `hash`. The entry does not reorder beyond
 `preparePrelude`: each record must follow the records it references; a
 record that contains a literal must follow the constants the literal names
 (`Reader.literalEdges`: the `Nat` block, and for a string literal
-`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a pinned `Nat`
-operation must follow its certificate ground. A host order that violates
+`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`); a bound `Nat`
+operation must follow the constants its evidence references. A host order that violates
 this declines; it cannot cause an unsound accept. The environment check's
-order (`Benchmarks/Kernel/CheckIxeStep.lean`, `order`) satisfies it.
+order (`Ix/KernelCheck/Step.lean`, `Ixon.CheckOrder.order`) satisfies it.
 
 ## The theorems
 
 All public theorems are in `IxC/Kernel/Admission/Theorems.lean` (namespace
-`Ix.Kernel.Admission`), about the executed function `checkBytes`, at the
-committed tables. Each follows from the corresponding theorem at
-`checkBytesWith`, where it holds for every pin table, prelude and
-Nat-operation pin list, so no theorem depends on how the tables were
-generated. Every public and fidelity root depends on exactly `propext`,
-`Classical.choice` and `Quot.sound`.
+`Ix.Kernel.Admission`), about the executed function `checkBytes`. Each holds
+at every content hash `hash` and for every role table `binding`, and follows
+from the corresponding theorem at `checkBytesWith`, where it holds for every
+prelude as well, so no theorem depends on which hash executes, which table
+is supplied, or how the committed prelude was generated. Every public and fidelity
+root depends on exactly `propext`, `Classical.choice` and `Quot.sound`.
 
-| Theorem (`Ix.Kernel.Admission.`) | Statement, for `h : checkBytes limits records blobs hint = .ok env` |
+| Theorem (`Ix.Kernel.Admission.`) | Statement, for `h : checkBytes hash binding limits records blobs hint = .ok env` |
 | --- | --- |
 | `checkBytes_has_model` | `∀ V [Ix.Kernel.SetTheory V], Nonempty (Ix.Kernel.Model V env)` |
 | `checkBytes_has_model_values` | there is a model `M` in which every stored `defnInfo cv value _` satisfies `Denotes M.cval env φ ρ value (M.cval cv.name φ)` for all `φ ρ` |
-| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const Ix.Kernel.falseName []` |
-| `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader reads as `.const Ix.Kernel.falseName []` |
-| `checkBytes_reading` | the tables load; `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `RecordsRead limits records constants` for some `constants`; and `Installed pins pre natPins constants blobs hint env` |
+| `checkBytes_no_proof_of_False` | no `ci ∈ env.consts` has type `.const (roleKey .false) []` (`False`'s role key, whatever the table binds) |
+| `checkBytes_no_False_theorem` | no theorem record of the decoded input (`RecordsRead limits records constants`) has a type that the reader, under the admitted table, reads as `.const (roleKey .false) []` |
+| `checkBytes_authentic` | `Authentic hash records blobs` (every record and every blob is stored under `hash` of its bytes, as supplied) and `hash binding.bytes = binding.address` |
+| `checkBytes_binding` | `BindingAdmitted hash binding t` for some table `t`: the section is authentic, `t` is its canonical decoding (`t.wireWF`, `t.toBytes = binding.bytes`) and `t.check = .ok ()` (`admitBinding_ok_iff`) |
+| `checkBytes_reading` | the binding admits as some `t` and the prelude reads under it (`preludeFor t = .ok pre`); `WithinBatch limits records blobs`; `UniqueKeys records blobs`; `Authentic hash records blobs`; `BindingAdmitted hash binding t`; `RecordsRead limits records constants` for some `constants`; `Hashed hash constants`; and `Installed t pre constants blobs hint env` |
 | `checkBytes_resources` | `resourceUnits constants ≤ 2 * limits.maxTotalBytes + limits.maxRecords * limits.maxRecordUnivNodes` |
+
+The projection variant has the same theorems at every `hash`
+(`Ixon.Projection.checkBytes_{ok_iff,reading,authentic,has_model,no_proof_of_False}`);
+its `checkBytes_authentic` adds that every record the checker read, supplied
+or reconstructed, is stored under `hash` of its serialization
+(`Projection.Expanded.hashed`). `Ixon.Authenticated.Theorems` states them at
+the specification hash `Address.blake3Pure` for the BLAKE3 entries (for
+example `Ixon.Authenticated.checkBytes_authentic : … →
+Authentic Address.blake3Pure records blobs`).
 
 `Ix.Kernel.Model V env` (`IxC/Kernel/Denotes.lean`) assigns a set
 `cval c φ` to every constant at every level assignment such that every
@@ -145,11 +301,28 @@ consistency. Definition values come from the kernel's model invariant
 (`IxC/Kernel/Ixon/Values.lean`). Theorem and opaque bodies have no value
 equation, by upstream's design.
 
+**The reference level** (`IxC/Kernel/Verify/Cached/Reference.lean`,
+`PerBlock.lean`, `IxC/Kernel/Admission/Reference.lean`): an accept of the fold
+is an accept of the pure declaration checker at some fuel, of the same
+declarations with the same environment (`Ix.Kernel.Cached.AcceptsRef`,
+`checkDecls_refines_ref`; at the entry `Admission.checkBytes_refines_ref`, in
+Source mode `Ix.LeanIngress.checkSource_refines_ref`). The pure checker is
+monotone in its fuel, so a reference accept determines its environment
+(`AcceptsRef.unique`). Checking each declaration's deferred records right
+after it (`checkDeclsPB`) accepts exactly what the deferred fold accepts
+(`checkDecls_ok_iff_PB`): phase B is deferred for parallelism, not for
+correctness. Statements about the fold that should mention neither the caches
+nor a fuel (renaming, locality) are stated at this level.
+
 **Fidelity** is what `checkBytes_reading` adds to consistency:
 
 - `WithinBatch` and `UniqueKeys` (`IxC/Kernel/Admission/Bytes/Theorems.lean`): the
   batch limits hold, and the record keys and the blob keys are each
   pairwise distinct (`preflight_ok_iff`, `uniqueKeys_ok_iff`).
+- `Authentic` (`authenticate_ok_iff`): every record and blob key is `hash` of
+  the bytes stored under it, exactly as supplied; with `RecordsRead`, every
+  decoded record is stored under `hash` of its canonical encoding (`Hashed`,
+  `RecordsRead.hashed`).
 - `RecordsRead`: each payload is the canonical encoding of its decoded
   constant within the per-record limits, keys unchanged
   (`decodeRecords_ok_iff`, unique by `RecordsRead.deterministic`).
@@ -166,10 +339,14 @@ equation, by upstream's design.
   quotient record is read under its name with its level parameters, its
   type's reading and its value's reading (or the projection rewrite), and
   is installed under that name with its kind (a quotient record,
-  `sorryAx` and `Quot.sound` install as the pinned blocks do).
-- `Ix.Kernel.Reader.keyName_injective` and `Ctx.nameOf_of_pin`/`Ctx.nameOf_of_unpinned`
-  (`IxC/Kernel/Ixon/{Reader,ReaderSpec}.lean`): which name a reference
-  is read under.
+  `sorryAx` and `Quot.sound` install as the basis blocks do).
+- `Ctx.keyAt_eq_ok`, `Ctx.memberKey_of_role` and `Ctx.memberKey_of_unbound`
+  (`IxC/Kernel/Ixon/ReaderSpec.lean`): which key a reference and a member are
+  read under (the role's key where the table binds the reference, otherwise
+  the input key of the address it is keyed by).
+- `RoleTable.ofBytes_eq_some_iff` (`IxC/Kernel/Ixon/RoleTable.lean`): the
+  binding section's decoder is canonical: it returns `t` exactly when `t` is
+  in the format's domain and encodes to the given bytes.
 
 Not proved:
 
@@ -182,16 +359,21 @@ Not proved:
   and recursor headers, rule constructors) through `readInductive`;
 - per-member completeness of definition blocks (`defOrder` is not proved to
   be a permutation);
-- that the committed table pins Init's own constants. That is the
-  generator's verification, not a theorem; the no-False theorems are stated
-  at `falseName` and hold for any table.
+- that a bound role's constant meets its specification (`Role.spec`)
+  beyond what the fold checks: the block roles are checked against their
+  specifications by the basis install, the operations by their evidence,
+  the standard axioms with their `Iff` and `Nonempty` families by
+  `stdAxiomOk`; the anchors (`Bool`, `True`, `List`, `String`, `Char`, ...)
+  by their uses, and `Bool.rec`, `And`,
+  `And.intro`, `And.rec` by the fold's step at install (`matchesPin`). That the
+  default table binds Init's own constants is the generator's
+  verification, not a theorem; the no-False theorems are stated at
+  `False`'s role key and hold for any table.
 
-The projection and block-order variants have the same shape:
+The projection variant has the same shape:
 `Ixon.Projection.checkBytes_{run_iff, ok_iff, of_expansion, reading,
-has_model, no_proof_of_False}` and `Ixon.BlockOrder.checkBytes_{run_iff,
-ok_iff, of_ordered, reading, has_model, no_proof_of_False}`, each with
-`UniqueKeys` in its reading. The separate package `Models/SetTheory`
-(Mathlib) provides `IxSetTheoryModel.zfSetTheoryOfCarneiro`, a
+has_model, no_proof_of_False}`, with `UniqueKeys` in its reading. The
+separate package `Models/SetTheory` (Mathlib) provides `IxSetTheoryModel.zfSetTheoryOfCarneiro`, a
 `Ix.Kernel.SetTheory ZFSet` instance under `OmegaInaccessibles`, and the
 corollaries `IxSetTheoryModel.checkBytes_has_ZFSet_model` and
 `IxSetTheoryModel.checkBytes_no_proof_of_False`.
@@ -204,19 +386,89 @@ increasing ω-chain of Grothendieck universes interpreting the universe
 tower. The Mathlib instance above supplies it from ω inaccessible
 cardinals, which its corollaries take as a hypothesis, not as an axiom.
 
-**Input policy.** The entry never falls back to `Ix.Tc` or the Rust
-checker; neither is in its closure ("Trust surface"). An input may declare
-Init's compiler-trust family (`IxC/Kernel/TrustAxioms.lean`):
-`Lean.trustCompiler` installs as an opaque with value `True.intro`,
-`Lean.reduceBool` and `Lean.reduceNat` as opaques whose stored values are
-pinned against the identity (a drifted value declines), and
-`Lean.ofReduceBool` and `Lean.ofReduceNat` as pinned axioms over them.
-`sorryAx` is tolerated as a declaration and installs nothing; any use of it
-declines (`IxC/Kernel/Core.lean`). The well-founded `Nat` operations are
-admitted through pins and certificates the checker checks itself
-("Nat-operation pins" below).
+**Input policy.** The entry never falls back to the Rust checker, which is
+not in its closure ("Trust surface"). The certified theory
+uses Lean's three standard axioms: `propext`, `Classical.choice` and
+`Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
+`Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
+decline. There are no native-evaluation roles for these declarations or for
+`Lean.reduceBool` and `Lean.reduceNat`; opaque definitions follow the ordinary
+checking rules. Native evaluation is outside this certified theory.
+`sorryAx` is tolerated as a declaration of its own type and installs
+nothing; any use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
+operations are admitted through the role table's evidence, which the
+checker checks itself ("Roles and the role table" below).
 
-## Keys, pins and the prelude
+## The typing tier
+
+The logical fold gives what it accepts a model, so it declines every
+declaration that is not safe. The **typing tier** gives Lean's `partial`
+definitions (the `_unsafe_rec` companions) and its unsafe definitions,
+opaques and axioms a second verdict, `typed`: *the declaration is
+well-typed, with every tier constant opaque, including itself and its own
+block*. It says nothing about meaning. Unsafe inductives still decline.
+
+- **Data and fold** (`IxC/Kernel/Tier/{Basic,Check}.lean`). A tier constant
+  (`TierConst`) is a checked header stored as `axiomInfo`: it is never
+  unfolded. `checkTierC` checks the tier declarations at the index of the
+  accepted logical environment, with the logical fold's cached functions and
+  no change to them, **staged as Lean's lattice** (`staged`): every partial
+  block, then every unsafe opaque, then every unsafe block and axiom, each
+  stage in input order. A definition block (partial or unsafe) is added as
+  Lean's `add_mutual` adds it: its shape (non-empty, distinct keys, equal
+  universe parameters, input keys only), its headers at the index before it,
+  the install, then its values at the extension (annotation, inference,
+  conversion against the header). An unsafe opaque is checked as
+  `add_opaque` checks one, in safe mode: its header and value at the logical
+  view, so it names no tier constant, its key fresh at the full index. An
+  unsafe axiom is its header at the full index, its type a sort there. So a
+  partial block sees the logical environment and the partial constants
+  before and in it, never an unsafe one; an unsafe opaque sees none; unsafe
+  code sees every tier constant before it and its own block.
+- **The guarantee** (`IxC/Kernel/Verify/Tier.lean`). `checkTierC_typed`: at
+  the index of a well-formed environment `env`, an accept returns the index
+  of `env.extendOpaque ts` (the tier constants in front, as `axiomInfo`),
+  which is well formed; no tier constant is a constant of `env`; and every
+  tier constant is the install of its declaration's header and is typed in
+  its scope (`TypedIn`, `DeclTyped`, `ScopeOf`: a block member's scope is
+  its block and the tier constants before it, all partial for a partial
+  block; an unsafe opaque's is the logical environment; an unsafe axiom's,
+  the tier constants before it; typed means its type is a sort and its
+  value annotates to a term whose type converts to it, for an axiom its type
+  a sort; `Rules.Infer`, `Rules.Red`, `Rules.DefEq`).
+- **The fence.** A tier constant is never in the logical environment, and
+  the logical fold's accept is well formed, so every term it stores resolves
+  in it (`checkDecls_closed`): no accepted logical declaration names a tier
+  constant. The entries and the drivers also name the reason (`fence: …`).
+- **Refused relaxations** (fail closed). Lean's kernel unfolds partial and
+  unsafe definitions in conversion (`type_checker.cpp:555-563`); the tier
+  does not, so a declaration that types only by such an unfolding declines.
+  Unsafe inductives stay declined.
+- **Entries.** `Admission.checkBytesTiered` (and `checkConstantsTiered` over
+  decoded records, `Ixon.Authenticated.checkBytesTiered` at BLAKE3): the byte
+  stage over every record, then `checkConstantsWith` over the logical
+  records, unchanged, then the tier reader (the reader's member reader in a
+  context over all records, so keys agree; no projection rewrite, no hints)
+  and the tier fold. `Ix.LeanIngress.checkSourceTiered` is Source mode's.
+  Their theorems (`IxC/Kernel/Admission/TierTheorems.lean`,
+  `Ix/LeanIngress/Theorems.lean`) say the logical part is the existing
+  entry's accept, so every theorem above applies to it as stated, and the
+  tier part is `TypedIn`. Failures: `Admission.TierError` (and
+  `LeanIngress.TierSourceError`) keep the logical entry's errors apart; a
+  fence violation and every tier failure decline, and a malformed tier
+  record rejects. `checkBytes`, `checkConstantsWith` and `checkSource` are
+  unchanged and still decline every tier record: they are the entries
+  whose accept is model-backed in full.
+- **Rows.** The environment check (`kernel-check-ixe`, the per-record path
+  without `--jobs` or the read cache) and `kernel-source-ingress` defer the
+  tier records and check them after the logical walk, from its final index,
+  staged as the fold stages them: outcome `typed`, reason `partial` or
+  `unsafe`; a tier failure declines with reason `tier (<safety>): <message>`; a logical record that names a tier record
+  declines with `fence: …`. `--report` and `--summary` count `typed`
+  separately, `--paired` flags a lost `typed` as a lost acceptance, and the
+  erasure test (`--meta`) runs the tier at both modes.
+
+## Keys, roles and the prelude
 
 **Records** are Ixon v4 constant payloads ([Ixon](Ixon.md), [Ixon v4](Ixon-v4.md)):
 TagN integers, and a sharing table per constant. The reader consumes decoded
@@ -242,94 +494,378 @@ projection variant hashes the records it writes, which carry no table). A
 check of table canonicity, if wanted, belongs in a separate variant, as the
 block-order check is.
 
-**Keys** (`IxC/Kernel/Ixon/Reader.lean`). The kernel's environment is keyed
-by `Ix.Kernel.Name`. A reference `ConstRef Address` is encoded under the
-reserved root `ix`: `.member b i` is `ix.<hex b>.i` and `.ctor b i c` is
-`ix.<hex b>.i.c`, with numeric components (`keyName`, injective). Level
-parameters are positional. Three kinds of names differ:
+**Modes** (`IxC/Kernel/Key.lean`). The kernel's types (`Key`, `Expr`,
+`ConstantInfo`, `Declaration`, `Env` and what is built from them) take a
+`Mode`: `.anon` (Ixon: an input constant is identified by its address),
+`.meta` (the same keys, with display data) and `.source` (Lean through
+`CanonM`: an input constant is identified by its name). `.meta`'s display is
+the reader's output's (`Reader.Read.display`: what the `.ixe`'s metadata says
+of the keys a record declares, its Lean names and level names), filled by the
+meta reader (`Benchmarks/Kernel/CheckIxeMeta.lean`), and no checker code
+reads a display field (`IxC/Kernel/Audit/Display.lean`). `.meta` never
+decides: it explains failures with names.
 
-- recursors are named after what they eliminate, as Lean names them
-  (`T.rec`, and `T.rec_j` for the `j`-th auxiliary motive of a nested
-  block), because the checker finds a block's recursor by name;
-- pinned references take their pinned name;
-- the pinned standard-axiom constants and their recursors carry Lean's own
-  level-parameter names (`Pins.levels`), because the checker's `matchesPin`
-  compares them, and a large eliminator names its extra level parameter
-  so that the checker recognises it.
+**Names in terms.** So that a failure can print a term, a reduced
+one included, with Lean's names, the names travel inside the terms, as in
+Lean, through δ, β and instantiation:
+- a binder carries its Lean name and `BinderInfo`
+  (`BinderMeta.display : Squash BinderDisplay`) and a let its name
+  (`LetMeta.display : Squash Name`). A `Squash` is a subsingleton, so
+  structural `=`, the derived `DecidableEq`, `==`, the hash and every
+  equation and decision of the checker are blind to the annotation: a named
+  term *is* its anonymous erasure, `.meta` and `.source` check exactly what
+  `.anon` checks, and no theorem moved. The type is the same in every mode
+  (the renaming statement `Ix.Cert.Rename.expr` carries a binder's metadata
+  between modes); `.anon` writes none (its reader builds the shared anonymous
+  objects of PERF P14, which `BinderMeta.withPw` keeps only for an anonymous
+  binder, `shareAlwaysImpl`);
+- `.source` names its terms from the Lean terms (`Ix/LeanIngress/Names.lean`,
+  `nameExprs`, after `ingressExprs`; `nameExprs_eq` proves the result is the
+  conversion), and `.meta` from the `.ixe`'s metadata arenas
+  (`Ix/KernelDisplay/MetaNames.lean`, `nameRead`, after the reader): binder,
+  let, application and projection nodes. Missing or inconsistent metadata adds
+  nothing and is never an error;
+- a failure carries the terms it is about and the binders it was thrown under
+  (`FailureDisplay`, a `Squash` on its message's first prose part), written
+  outside `.anon` by `Msg.withTerms` and `withChain` (each a `@[reducible]`
+  identity in the logic with a proved `@[csimp]` substitute), at application
+  type mismatch, function expected, expected a sort, let value type mismatch,
+  declaration type mismatch and theorem-not-a-proposition;
+- the renderer (`Ix/KernelDisplay/Render.lean`, outside the kernel) prints in
+  `ppExpr`'s style (names freshened with safe shadowing, `∀` versus `→`,
+  implicit arguments hidden, no notation, full names); safe code cannot read
+  a `Squash`, so it takes the read as a parameter, and the one display-only
+  `unsafe` read is `Ix/KernelDisplay/Peek.lean` (trust-surface allowlisted;
+  no certified root reaches it, `Tests/Ix/Kernel/DisplayRead.lean`).
 
-**Pins** (`IxC/Kernel/Ixon/PinData.lean`, generated). The table maps 55
-references to the checker's pinned names and no others: the basis (`Eq`,
-`Nat`, `PUnit`, `Empty`, `False`, the `Quot` package), `And` and `Bool`, the
-literal support (`String`, `String.ofList`, `List`, `Char`, `Char.ofNat`),
-the structural and pin-certified `Nat` operations, the standard axioms with
-`Iff` and `Nonempty`, the compiler-trust family with `True`, and `sorryAx`.
-`pinMap` refuses a table that is not a partial injection or that uses the
-`ix` root or a derived name shape. The table decides coverage only:
-the checker compares every pinned name's declaration with its pinned shape
-(basis blocks up to `canon`, with a reserved-name reject otherwise; literal
-support and `Nat` operations by exact type shapes and certified
-recurrences; standard and trust axioms by `matchesPin`), so a pin on a
-constant of another shape is refused, never accepted under the pinned
-name.
+Known limits: `.meta` keys are addresses, so the members of an alias fiber
+(α-equivalent constants, such as `HAdd.hAdd` and `HMul.hMul`) print as its
+first name; a memo hit may return an α-equivalent term whose names come from
+a sibling occurrence, as Lean's caches do. `kernel-meta-names` is the oracle
+against Lean (`ppExpr`, `Kernel.whnf`, the kernel's exceptions).
 
-**Nat-operation pins** (`IxC/Kernel/Ixon/NatOpPinData.lean`, generated).
-One `Ix.Kernel.NatOpPinSet` for the eight pin-certified operations (`div`,
-`mod`, `gcd`, `land`, `lor`, `xor`, `shiftLeft`, `shiftRight`): the pins are
-the operations' stored values in the compiled Init, the certificates are the
-theorems of `IxC/Kernel/PinGen/Certs.lean` compiled by Ix. `model_exists`
-holds at every pin list, so the list is untrusted.
+`Mode.Id md` is what identifies an input constant (an `Address` in `.anon`
+and `.meta`, a `Name` in `.source`), `Mode.D md α` the display data (`Unit`
+outside `.meta`), and `Mode.Certified` holds of the modes the theorems are
+stated at (`.anon`, `.source`; `model_exists` takes it). The checker and its
+proofs are generic in the mode. Source mode installs an `Env .source`; the
+Ixon entry installs an `Env .anon`.
+
+**Keys** (`IxC/Kernel/Key.lean`, `IxC/Kernel/Ixon/Reader.lean`). The kernel's
+environment is keyed by `Ix.Kernel.Key md`, an inductive with a cached hash:
+
+- `.id i`, an input constant. In Ixon mode `i` is the address its references
+  use, the address in a record's `refs` table: a singleton's (`defn`, `recr`,
+  `axio`, `quot`) own record's, a block member's projection record's (`iPrj`,
+  `cPrj`, `rPrj`, `dPrj`); a `muts` block's own address is never a key. A
+  member whose projection record the input omits is keyed by the address that
+  record would have under the entry's hash (`Admission.projectionAddress`).
+  The reader keeps the side map from a member's position to its address
+  (`Reader.Keys.address`) and resolves an address to its block and position
+  (`Reader.resolve`) to group a block. The Lean ingress keys a constant by
+  its Lean name (`Ix.LeanIngress.ingressKey`).
+- `.role r`, the constant a role is bound to: in Ixon mode the reference the
+  role table binds (`Reader.bindingsOf`), in Source mode the constant under
+  the role's Lean name (`Role.leanName`, `Key.ofName`).
+- `.aux k d`, a constant the checker or the front ends' shared back half
+  generates from `k`, of shape `d : Derived` (a model companion, an installed
+  projection function or table, the modeller's families and transports). No
+  front end makes one, so an input is never `.aux`: the front door's
+  reserved-shape tests (`Key.isProjFnShape`, `Key.isModelSuffix`) refuse only
+  generated keys, never an input name.
+
+Equality is structural behind a pointer and hash guard (`Key.beq`, `@[csimp]`
+on `Key.beqPtr_eq`); the cached hash of an input key is its address's first
+eight bytes, or its name's hash. The reader computes every record address's
+key ahead (`Reader.Keys.byAddress`), so every occurrence of an address reads
+one key object. A key prints per mode (`Key.toName`): an address as `#` and
+its first twelve hexadecimal digits, a name as itself, `.role r` as
+`r.leanName`, `.aux k d` as `k`'s spelling with `d`'s suffix
+(`Derived.spell`). Only the renderers, the reader's messages and the front ends'
+name maps read that spelling; the fold never does: a checker failure is a
+`CheckError md`, a verdict and a message of prose and keys (`Msg md`), which
+a renderer spells (`CheckError.render`) and a renaming maps
+(`CheckError.mapKeys`). Level parameters are positions (`LevelParam := Nat`): a
+constant's are `0, …, n-1`, and a large eliminator's are `n :: [0, …, n-1]`
+after its block's `n`, the shape by which the checker recognises it
+(`Reader.recLps`). A recursor is keyed by its own record (a `recr`'s or an
+`rPrj`'s address), never after what it eliminates; an inductive block lists
+its recursors in motive order, and the stream's index-count check pairs the
+recursor of motive `m` with the block's type `m` (`RecCounts.motive`).
+
+**Roles and their specifications** (`IxC/Kernel/Roles.lean`).
+`Ix.Kernel.Role` has 103 roles for basis blocks, literal support, verified
+operations, the standard axioms and the inert `sorryAx` role. This includes
+the fifteen Nat operations and the typed anchors/equations for decision
+procedures, Int, BitVec and String operations. `Role.all`, `Role.spec`,
+`Role.block` and `Role.deps` define the exact catalog. A specification and
+evidence do not by themselves enable a native acceleration; each execution
+backend has its own admission boundary.
+
+Specifications are closed terms over role keys and positional universes, of
+five kinds: exact `block` declarations, an `anchor` type, a Nat operation's
+type and characterizing equations (`ops`), a standard `axiom` type, or a
+definition's type and equations over a typed telescope (`eqns`). An
+unconditional definition equation may use definitional equality or a checked
+certificate; a conditional equation requires a certificate. `Role.block`
+groups roles bound together, `Role.deps` records required groups, and
+`Role.usedImplicitly` identifies roles the checker introduces into terms.
+
+The specifications carry no toolchain address. Standard axioms' supporting
+families, including Iff and Nonempty, are validated as whole blocks. The
+inert `sorryAx` role has an exact type and supplies no usable proof. The
+specification version, encoding and digest are pinned in
+`IxC/Kernel/Roles.lean`, `Ix/SpecDigest.lean` and
+`IxC/Kernel/Audit/Roles.lean`; those sources define the current values.
+
+For anchor installation, `Cached.annotDeclStep` checks the bound type through
+`installAnchorPin?` and `matchesPin`, up to binder data and level-parameter
+names. A mismatch declines with `role specification mismatch`. The compiler
+also enforces `RoleRecordKinds` in its report checks. The equation checker
+used by pin generation validates actual definitions and checked evidence;
+it adds no native rule to IxC. IxVM validates the role specifications for
+its native operations. Rust constructs the same terms from generated data
+and validates their carried support before admission; its optional String
+and BitVec reductions are restricted to admitted heads and specified inputs.
+
+**The role table** (`IxC/Kernel/Ixon/RoleTable.lean`) is input:
+`RoleTable` has the version of the specification set it was made for, the
+bound roles' addresses (`bound`, by role, ascending) and the operations'
+evidence (`evidence`, one entry per equation). Its bytes are a binding
+section of their own:
+
+| bytes | field |
+| --- | --- |
+| `E8 03` | the section's tag |
+| `v` | the specification version |
+| `n`, `n × (r, a)` | the bound roles: a role's index in `Role.all` and its 32-byte address, indices strictly increasing |
+| `m`, `m × (r, k, e₁ … e_k)` | the evidence: a role's index, its entry count and its entries, indices strictly increasing |
+| `e` | `00` for `defeq`, `01` and a 32-byte address for `proof` |
+
+Every integer is one byte. The decoder `RoleTable.ofBytes` is canonical
+(`ofBytes_eq_some_iff`: it returns `t` exactly when `t.wireWF` and
+`t.toBytes` is the input). The entry admits a section (`admitBinding`) when
+its address is `hash` of its bytes (the binding hash), it decodes, and the
+table is well formed (`RoleTable.check`, decidable): the version is
+`specVersion`; no role and no address is bound twice; every bound role's
+block and dependencies are bound; and the evidence is exactly the bound
+operations', one entry per equation, of the kind the equation fixes
+(`.defeq` for an unconditional equation, `.proof thm` for a conditional
+one). An unbound role affects coverage only: inputs that need it decline.
+
+**Validation.** The reader names every bound reference by its role key; the
+fold validates each bound constant against its role's specification when it
+installs it, and a mismatch declines. Basis blocks are compared with their
+specification up to `canon`, with a reserved-name reject otherwise; the
+standard axioms' families, before their axiom is installed, by kind and type
+(`stdAxiomOk`); anchors and axioms by type (`matchesPin`); an operation's type exactly, and its
+equations certified by its evidence in the environment before the
+operation's insertion, with the operation's self-references replaced by its
+value: a `.defeq` entry by definitional equality after opening
+(`certifyNatEqs`), a `.proof` entry by checking the theorem's proof against
+the equation like a theorem declaration (`checkDivModEvidence`), under a
+closure condition (`evidenceLocal`): every constant the proof mentions is
+installed and in the operation's dependency closure. The evidence reaches
+the fold resolved (`Reader.evidenceOf`: each proof entry's theorem record
+read to its key and value); an entry that does not resolve leaves its
+operation without evidence, which declines it. The fast path of an
+operation (`Nat` literal arithmetic) is enabled exactly when the operation
+is installed and validated. `model_exists` holds for every evidence, so the
+evidence is untrusted.
+
+**Binder contracts** (`IxC/Ixon/Types/Contract.lean`). Ixon binders carry
+usage, ownership and locality contracts, inside the committed bytes. The
+reader keeps a `lam`'s in the binder's `BinderMeta` (`contract`) and an
+`all`'s input and result contracts (`contract`, `result`), and a `let`'s
+let contract (`nonDep`, value or shared borrow, and the bound variable's
+contract) in the `letE`'s `LetMeta`; the Lean ingress gives Lean's lets
+`LetContract.lean nonDep`, as the compiler does. They are identity data. A
+`let` never reaches conversion: the annotation pass ζ-reduces it. Structural
+equality, the expression hash and the specification comparisons see them;
+every specification carries the Lean fragment's defaults (`many`, `shared`,
+`unrestricted`), so a constant with other contracts does not meet it.
+Conversion compares input contracts: the binder congruences and η require
+equal input contracts as well as equal `pw` data, so the entry declines
+`f : ∀[erased] (x : Nat), Nat := fun[many] x => x`. It never compares result
+contracts: a `lam` has none, so the type inferred for one carries the
+default, and `fun[linear] x => x` checks against
+`∀[linear] (x : Nat), unique Nat`. The model reads only `pw`, so an
+accepted environment says nothing about how a variable is used
+(`Tests/Ix/Kernel/Contracts.lean`). The kernel imports these data types
+from Ixon, and nothing else
+(`kernel-layering`). Source mode gives Lean's binders the defaults and reads
+the compiler's resolved contract frames as the compiler lowers them
+(`Ix/LeanIngress/Expr.lean`).
+
+**Source mode** uses a fixed table: every role is bound to its own Lean name
+(`Ix.LeanIngress.sourceBinding`), and the evidence is the certificate
+theorems of `IxC/Kernel/PinGen/Certs.lean` as they appear in the checked
+environment, through the same ingress (`Ix.LeanIngress.sourceEvidence`): an
+environment without them declines the well-founded operations.
 
 **Prelude** (`IxC/Kernel/Ixon/Prelude.lean`). The checker puts twelve
 declarations in front of every fold (`preparePrelude`): the basis blocks `Eq`, `Nat`, `PUnit`,
 `Empty`, `False`, the quotient package (four `Quot` constants and
 `Quot.sound`), `And` and `Bool`. Here they are the compiled Init's own Ixon
-records (`PinData.prelude`, canonical bytes by address), decoded by the
-canonical decoder and read by the same reader. The empty stream installs
-27 constants. A stream that declares a prelude constant is checked on its
-own record (`preparePrelude` moves the stream's copy to the front); the
-prelude's copy fills in where the stream has none.
+records (`RoleData.prelude`, canonical bytes by address), decoded by the
+canonical decoder and read by the same reader under the admitted table
+(`preludeFor`). The empty stream installs the declarations prescribed by
+the admitted prelude. A stream that declares a prelude constant is checked
+on its own record (`preparePrelude` moves the stream's copy to the front);
+the prelude's copy fills in where
+the stream has none.
 
-**Regeneration.** Both tables come from `kernel-pin-gen`
-(`Benchmarks/Kernel/PinGen.lean`), which checks every pinned
-constant's record and the literal capabilities through the verified fold
-before writing:
+**The default table** (`IxC/Kernel/Ixon/RoleData.lean`, generated) binds
+every role to the compiled Init's constant of its Lean name, with the
+evidence: structural operations' `.defeq` entries and compiled theorem
+records for operations that need certificates (`RoleData.evidence`, with
+the literal blobs in `RoleData.blobs`). These records hold the certificate
+theorems of `IxC/Kernel/PinGen/Certs.lean` compiled by Ix and closed over
+the operations' dependency closure. The evidence records back the reader's
+store (`Prelude.evidence`); they are never read as declarations of their
+own. Its section is at `RoleData.tableAddress` (BLAKE3 of `RoleData.table`),
+`Admission.defaultBinding`. It is untrusted, for tests and the command line.
+
+**Regeneration.** `kernel-pin-gen` (`Benchmarks/Kernel/PinGen.lean`)
+generates the default table, checks that the evidence reads back as the
+closed proofs, and checks the dependency closure of every bound constant
+through the verified fold under the table before writing:
 
 ```sh
-lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
-lake exe ix compile IxC/Kernel/PinGen/Certs.lean --out .lake/envs/certs.ixe --consts <the certificate theorems>
+lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --no-build --out .lake/envs/initstd.ixe
+lake exe ix compile IxC/Kernel/PinGen/Certs.lean --no-build --local --out .lake/envs/certs.ixe
 lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \
-  IxC/Kernel/Ixon/PinData.lean IxC/Kernel/Ixon/NatOpPinData.lean
+  IxC/Kernel/Ixon/RoleData.lean
 ```
 
-The full `--consts` list and the source hashes are in the generated files'
-headers. The table names addresses, so a toolchain, compiler or format
-change that moves Init's addresses requires regeneration: until then the moved
-constants are not pinned and the inputs that need them (literals, the
-pinned `Nat` operations, the standard axioms) decline. Soundness does not
-depend on the table.
+(`--no-build`: the files import only `Init`, and the root package does not
+know `IxC/Kernel/PinGen/Certs.lean` as a target of its own.) The exact
+certificate inputs and source hashes are recorded in the generated file's
+header. The
+table names addresses, so a toolchain, compiler or format change that moves
+Init's addresses requires regeneration; the specifications, `specVersion`
+and the digest stay. Soundness does not depend on the table.
+
+**In IxVM.** The circuit reads a typing claim's roles through the binding its
+context names (`Ix/IxVM/Kernel/Roles.lean`) and validates each against the
+same specifications, rendered as circuit terms (`Ix/IxVM/Kernel/RoleSpec.lean`,
+generated by `Ix/IxVM/RoleSpecGen.lean`). Groups follow `Role.block`, in an
+order where every `Role.deps` precedes, and a group is validated the first
+time a claim uses one of its roles, under a context that admits only the
+groups before it, so an operation's fast path never takes part in its own
+validation. The well-founded operations' groups come last and share the
+context before the first of them, so their common dependencies are checked
+once. A claim's walk checks a constant bound to a basis member or an
+operation under the context its group is validated in, whether or not the
+claim uses the role: the check is the group's own when it does, and admits
+nothing when it does not. Under the standard axiom policy this declines a
+reference to such a constant whose dependencies use a standard axiom whose
+group comes after its own. Block members (the basis and the standard
+axioms' families) are checked as constants, an operation must check and meet its equations (definitionally, or by its
+certificate theorems, which are checked), and anchors and axioms are
+validated by type, as here. One difference follows from what a claim covers: an IxVM claim
+checks a constant with its dependencies, not a whole environment, so the
+constants the circuit introduces into a claim's terms without the claim
+referencing them (a string literal's type and its constructor form's
+`String.ofList`, `List.nil`, `List.cons`, `Char` and `Char.ofNat`, and the
+constants a native rule builds its result from) are checked as the claim's
+dependencies, under the claim's context. Every native rule fires on a role:
+the `Int`, `BitVec`, `String` and decision rules on definitions validated
+against their `eqns` specifications, each result an instance of the head's
+equations.
+The axiom policy is IxC's: a safe axiom is declared only when the binding
+binds it as `propext`, `Classical.choice` or `Quot.sound`, or as `sorryAx`,
+which no constant may use (`axiom_standing`, the one place a standard axiom
+is recognized), and an unsafe axiom is typed only. Nothing reduces natively:
+`Lean.reduceBool` and `Lean.reduceNat` are opaques that never reduce, and a
+claim that uses them depends on `Lean.trustCompiler`, which is declined.
+A `check` or `checkEnv` claim may instead assume its binding (validator
+`4`, `ClaimContext.bindingAssumed`): it reads roles through the same table
+but validates no group, and a walk leaves a bound basis member or operation
+to the condition, that the table meets the specifications. The `binding`
+claim states that condition: the table binds every role and every group is
+admitted, under the same contexts. It depends only on the specification
+digest and the table hash, so one proof serves every aggregate over the
+binding; `ix_aggr` discharges an aggregate's condition once with it (shapes
+13 and 14), and the discharged claim is the one a claim that validates its
+binding states.
+
+**IxC's reader obligations at IxVM's boundary.** Six obligations of IxC's
+frontend and reader are recorded for every second checker to mirror or rule
+out. IxVM rules each out by what it reads:
+
+- *The rest-only hoist and its split guard* (`hoistNatOpGround`,
+  `splitsUnit`, `IxC/Kernel/Frontend/NatOpGround.lean`) reorder IxC's input
+  stream so that a certified `Nat` operation's ground precedes it, without
+  moving the prelude front or splitting a generated unit. IxVM reads no
+  stream. A claim names constants by address and checks each with its
+  dependencies through the content-addressed reference graph, and an
+  operation's evidence is validated under the role groups before it, so
+  there is no input order to repair or to split.
+- *The whole-unit check* (`checkUnits`, `IxC/Kernel/Units.lean`) keeps a
+  mutual block's generated records together and closed by their block, and
+  refuses a base declared twice. IxVM checks a mutual block as one constant
+  (`check_muts_all`), its members' projections derived from the block's own
+  bytes; a generated auxiliary is an ordinary constant under its own
+  address, and content addressing makes a second declaration of a base the
+  same constant.
+- *The prelude shape and prelude-copy equality* (`checkPreludeShape`,
+  `State.keepsPrelude`) tie the reader's prelude to the role table: a role
+  is read from the prelude's own record, and a stream's own copy of a
+  prelude record must read alike. IxVM has no prelude and no second copy:
+  every role is the constant the binding names, validated against its
+  specification the first time a claim uses it.
+- *The inferer's fuel* (`inferFuel`, 4096, in the in-model generator) bounds
+  a syntactic inferer that runs before the fold and declines a block that
+  exhausts it. IxVM runs no generator. Its one bound, the lazy-delta loop's
+  fuel in definitional equality, only stops unfolding early, and the
+  comparison then falls back to its structural cases, which are sound on
+  their own; an execution that does not terminate yields no trace and so no
+  proof.
 
 ## Trust surface
 
 The theorems are about the Lean functions. Trusted beneath them: Lean's
 kernel, compiler and runtime, and the inherited `Init`/`Std` primitives the
-compiled code reaches (the entry's closure reaches 121 inherited externs,
+compiled code reaches (the entry's closure reaches 113 inherited externs,
 for example `ByteArray` and `String` primitives and `lean_sarray_dec_eq`,
 which implements `ByteArray` equality and therefore `Address` equality).
-Not in the closure: `ix_rs`, C or Rust BLAKE3, `Ix.Tc`, any JSON or
-lean4export parser. The projection variant computes addresses with pure
-Lean BLAKE3 (`Address.blake3Pure`).
+Among them are Lean's task primitives `Task.spawn` and `Task.get`
+(`lean_task_spawn`, `lean_task_get_own`): the fold checks its deferred
+records in chunks on pure tasks (`checkPendingTasks`). As Lean functions they
+are the resolved task `⟨fn ()⟩` and its field, so the theorems read the
+sequential walk (`checkPendingTasks_eq`); execution trusts the runtime to run
+a pure closure on another thread, as it trusts it to run any closure. The
+runtime sizes the pool (`LEAN_NUM_THREADS`), and no size changes a verdict.
+Not in the closure: `ix_rs`, C or Rust BLAKE3, any JSON or lean4export
+parser. The entry and its variants hash only through their
+`hash` parameter.
+
+The root library's authenticated entries (`Ixon.Authenticated`) add one
+substitution, admitted on an assumption rather than a proof: the admission
+hash `Address.admissionHash` is defined as pure
+BLAKE3 (`Address.blake3Pure`), which every theorem about those entries is
+stated at, and executes as the Rust BLAKE3 (`Address.blake3`,
+`@[implemented_by]`), whose three foreign primitives
+(`Blake3.Rust.hasherInit`, `hasherUpdate`, `hasherFinalize`) it brings into
+the compiled closure. The assumption is that the two implementations agree
+on every input; `Tests.Ix.Kernel.AddressPure` checks it on fixture inputs.
+The runtime audit admits it by name (`Ix.Kernel.Audit.assumedSubstitutions`,
+the `assumed` ruling) only for those entries, and the trust-surface fence
+scans `Ix/Address/Admission.lean`.
 
 Project-level execution constructs are admitted only as named by
 `runtimeRulings` (`IxC/Kernel/Audit/Roots.lean`):
 
 | Construct | Where | Why admitted |
 | --- | --- | --- |
-| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name` | cached hashes and packed data; a compiler feature, trusted with the compiler |
+| `@[computed_field]` overrides | `Ix.Kernel.Level`, `Ix.Kernel.Expr`, `Ix.Kernel.Name`, `Ix.Kernel.Key` | cached hashes and packed data; a compiler feature, trusted with the compiler |
 | project `@[csimp]` | `Ix.Kernel` | each replacement theorem depends on the standard axioms only |
+| the codec's TagN `@[csimp]` twins (`getTagN_eq_fast`, `putTagN_eq_fast`) | `IxC.Ixon.Codec` (also `Ixon.Audit.rulings`) | the reader and writer at a fixed flag width with their powers folded; each theorem depends on the standard axioms only |
 | `withPtrEq`, `withPtrAddr`, `ptrEq`, `isExclusiveUnsafe` and their unsafe implementations | Lean's `Init` | the continuation carries the obligation that it does not observe the answer |
 | `Ix.Kernel.withExclusive` `implemented_by` `withExclusiveUnsafe` | `IxC/Kernel/Exclusive.lean` | its type carries `k true = k false`, discharged by `Subsingleton.elim` |
 | elaboration-time `unsafe`, `implemented_by`, `meta import Lean` | `Ix.Kernel.BasisGen` | elaboration only; compiled code cannot reach them |
-| `partial` | `Ix.Kernel.Frontend.InModel*` | the in-process modeller, as upstream con-leche has it |
+| `Address.admissionHash` `implemented_by` `Address.blake3`, with its three Rust externs | `Ix/Address/Admission.lean` (root library; `assumedSubstitutions`, for `Ixon.Authenticated` only) | an explicit, owner-approved assumption that the Rust BLAKE3 equals pure BLAKE3 |
 
 Import allowlists (`IxC/Kernel/Audit/Roots.lean`):
 
@@ -358,27 +894,30 @@ Import allowlists (`IxC/Kernel/Audit/Roots.lean`):
 The audits are Lean modules that fail elaboration on a violation. The core
 kernel and codec audits are built by the strict standalone package `IxC/`
 (`lake -d IxC build --wfail`, sources from the repository, no dependency
-beyond the toolchain). The projection and block-order audits build in the root
-package, and the model audit builds in `Models/SetTheory`.
+beyond the toolchain). The projection, block-order and authenticated-entry
+audits, `Ix/Cert/RuntimeAudit.lean` and `Ix/Cert/ModuleAudit.lean` build in
+the root package, and the model audit builds in `Models/SetTheory`.
 
 | Module | Checks |
 | --- | --- |
-| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots` 15, `fidelityRoots` 16, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements; a control showing the fold fails without the rulings |
+| `IxC/Kernel/Audit/Roots.lean` | presence of every root (`publicRoots`, `fidelityRoots`, the operations); each at exactly the three standard axioms (`#guard_kernel_axioms`); the import closures against the allowlists; frozen runtime closures with their rulings; frozen `#check` statements and the definitions of `Authentic` and `Hashed`; a control showing the fold fails without the rulings |
 | `IxC/Kernel/Admission/Audit.lean` | the byte stage's imports, closure and extern difference, its lemmas' axioms, and the public statements |
-| `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the variants' imports, closures, extern differences and statements, and the projection writer's guards |
+| `IxC/Kernel/Audit/Roles.lean` | the specification set's shape, frozen: every role's kind, levels or equation count, evidence kinds, block and dependencies, and `specVersion` |
+| `IxC/Kernel/Audit/Modules.lean` | every safe declaration of every kernel module it imports (the kernel, and the theorems no root reaches: non-contradiction, the renaming and union development, unit hoisting, the in-model generators, the prelude shape, role-table injectivity) bounded by the three standard axioms (`#guard_module_axioms_under`, `Audit/Axioms.lean`); exact axioms of `nonContradiction`, `Cached.AcceptsRef.union` and the unit and hoisting theorems |
+| `Ix/SpecDigest.lean` | the specification digest (BLAKE3 of the set's canonical encoding), frozen |
+| `Ix/Ixon/Projection/Audit.lean`, `Ix/Ixon/BlockOrder/Audit.lean` | the projection variant's and the recursor-order check's imports (no hasher), closures, extern differences (none for either) and statements, and the projection writer's guards |
+| `Ix/Ixon/Authenticated/Audit.lean` | the BLAKE3 entries' closure with exactly the assumed substitution (and its failure without it), the externs and `implemented_by` they add to the generic entries, their frozen definitions, their theorems' axioms and statements |
+| `Ix/Cert/RuntimeAudit.lean` | the compiler's (`Ix.Cert.compile`) runtime closure: every foreign primitive, `unsafe` implementation and `partial` definition it reaches beyond `Init` and `Std`, frozen by name (its axioms are frozen in `Ix/Cert/Audit.lean`) |
+| `Ix/Cert/ModuleAudit.lean` | every safe declaration of the proof modules that no statement reaches (Source grouping, ownership, metadata and uses; admission fronts; Source family and identity checks; the artifact and host admission theorems), and of every `Ix.Cert` and `Ix.CompileCert` module they import, bounded by the three standard axioms (`#guard_module_axioms`) |
 | `IxC/Ixon/Audit.lean` | the codec's own import, runtime and axiom audit |
 | `Models/SetTheory/IxSetTheoryModel/Audit.lean` | the model package's full dependency closure: standard axioms only |
 
-Frozen runtime closures (compiled functions; inherited externs):
-
-| Roots | Functions | Externs |
-| --- | ---: | ---: |
-| fold `Ix.Kernel.Cached.checkDecls` | 3022 | 83 |
-| reader `readRecords`, `readStream` | 1886 | 82 |
-| entry: `checkBytes{,With}`, `checkConstants{,With}` | 5295 | 121 |
-| byte admission: `preflight`, `uniqueKeys`, `decodeRecords`, `checkBytes` | 5293 | 121 |
-| projection: `address`, `reconstruct`, `Projection.checkBytes` | 5416 | 130 |
-| block order: `checkBytes`, `canonicalClasses`, `compareExpr` | 5549 | 130 |
+Each audit owns the exact inventory of functions, foreign primitives and
+allowed substitutions reachable from its roots. Its source records the
+current counts and explains deliberate changes beside the frozen values.
+These inventories cover the checker, reader, byte admission, projection
+writer, recursor-order check and BLAKE3 entry separately. The compiler's
+runtime audit is a distinct closure rooted at the compiler.
 
 A frozen value or statement changes only deliberately: the change that
 re-records it states why the closure or the statement moved.
@@ -386,12 +925,14 @@ re-records it states why the closure or the statement moved.
 `lake run check-kernel [--with-model]` is the gate. In order:
 
 1. the strict `IxC` build with the core kernel and codec audits;
-2. the host build of the kernel tests (`Tests/Ix/Kernel/{Reader,
-   CertifiedEntry, Projection, BlockOrder, AddressPure, ...}`), whose
-   `#guard`s run at elaboration; the certified fixtures
-   (`IxC/Fixtures/*`) were already built in step 1;
-3. `kernel-codec` (production codec against Rust) and `kernel-order`
-   (canonical block order against Rust);
+2. the host build of the root audits (`Ix/Ixon/{Projection,BlockOrder,
+   Authenticated}/Audit.lean`, `Ix/Cert/{Runtime,Module}Audit.lean`) and the kernel tests
+   (`Tests/Ix/Kernel/{Reader, CertifiedEntry, Authentication, Contracts,
+   Projection, BlockOrder, AddressPure, ...}`), whose `#guard`s run at elaboration on
+   fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
+   (`IxC/Fixtures/*`, authenticated under a hasher-free fixture hash) were
+   already built in step 1;
+3. `kernel-codec` (production codec against Rust);
 4. with `--with-model`, the `Models/SetTheory` build and its audit;
 5. `kernel-layering` (`Tests/Ix/Kernel/Layering.lean`, derived from
    con-leche's `tests/layering.sh`): the kernel's import layering, each file
@@ -399,38 +940,52 @@ re-records it states why the closure or the statement moved.
    an unclassified file fails): the checker never imports the theory, the
    base never imports the model lane, the rules fence and its five recorded
    doors, and the boundary: the checker and the theory import only
-   themselves, `Init`, `Std` and, at elaboration time, `Lean` (Ix's
-   boundary modules `Admission`, `Ixon`, `Audit`, `Ingress`, `Egress`, `Ref`
-   and `Search` import the kernel, not the reverse);
+   themselves, `Init`, `Std`, at elaboration time `Lean`, and of Ixon only
+   the binder-contract data types `IxC.Ixon.Types.{Modes,Contract}` that
+   `BinderMeta` carries (Ix's boundary modules `Admission`, `Ixon`, `Audit`,
+   `Ingress`, `Egress`, `Ref` and `Search` import the kernel, not the
+   reverse);
 6. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
-   checker and the theory for compiler escapes (`unsafe`, `implemented_by`,
-   `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); 11 escapes in four
-   allowlisted files (`IxC/Kernel/{Expr,Name,Exclusive,BasisGen}.lean`)
-   are permitted, each with its justification in the tool's header;
+   checker, the theory, the admission hash (`Ix/Address/Admission.lean`) and
+   the display modules (`Ix/KernelDisplay/*`, `Ix/LeanIngress/Names.lean`)
+   for compiler escapes (`unsafe`, `implemented_by`,
+   `computed_field`, `native_decide`, `extern`, `sorry`, `axiom`, ...); the
+   escapes in the allowlisted files (`IxC/Kernel/{Expr,Name,Key,Exclusive,
+   BasisGen}.lean`, `Ix/Address/Admission.lean`, and the display-only read
+   `Ix/KernelDisplay/Peek.lean`) are permitted, each with its justification
+   in the tool's header;
 7. `kernel-level-comparison`: the level comparison (`Level.leq`,
    `Level.isEquiv` and its Géran fallback) against brute-force evaluation,
    on random levels and on Ixon's canonical forms;
 8. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
-   submitted as canonical bytes to `checkBytes`, each with an exact expected
-   verdict (accepts: a definition, a theorem, an inductive with its
-   recursor, a structure with a projection, a quotient reduction, `Nat`
-   literals and a pinned `Nat` operation, a `String` literal, a nested
+   submitted as canonical bytes to `Ixon.Authenticated.checkBytes`, each with
+   an exact expected verdict (accepts: a definition, a theorem, an inductive
+   with its recursor, a structure with a projection, a quotient reduction,
+   `Nat` literals and a certified `Nat` operation, a `String` literal, a nested
    inductive, a mutual inductive with definitions by structural recursion
    over it, a mutual and nested inductive, the opaque face of a `partial`
-   definition; rejects: truncated
-   bytes, a duplicate constant, a duplicate blob, `Nat.rec` with a wrong K
-   flag; declines: `Nat.add` with another value, a `partial` definition's
-   `_unsafe_rec` body, a non-standard axiom, a theorem of `False`). Rows go
-   to `.lake/build/kernel-entry-cases.jsonl`;
+   definition; rejects: truncated bytes under their own hash, the same bytes
+   under the record's address, a blob changed under its address, a duplicate
+   constant, a duplicate blob, `Nat.rec` with a wrong K flag and `Nat.add`
+   with another value under their addresses (refused at authentication);
+   declines: a `partial` definition's `_unsafe_rec` body, a non-standard
+   axiom, a theorem of `False`). Rows go to
+   `.lake/build/kernel-entry-cases.jsonl`;
 9. `kernel-reader-fidelity --fixture` and `--check-kernel`: the Ixon reader
    against a direct translation of the Lean constants it was compiled from,
    and the projection output against the compiler's records, on the fixture
    closure (the check the `lake test` suite `kernel-reader-roundtrip` runs)
    and on the first records of Init and Std; the log goes to
-   `.lake/build/kernel-reader-fidelity.log`.
+   `.lake/build/kernel-reader-fidelity.log`;
+10. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
+    ill-typed declarations and the fixtures;
+11. `kernel-source-ingress --collapse --bundle-evidence --compare-prepared`
+    on Init and Std: quotient Source, as `checkSourceCollapsedBundledAt` runs
+    it, on a freshly compiled artifact; it fails when a collapse check fails
+    or the harness's prepared stream differs from production's.
 
 The CI job runs the same gate and keeps the codec, order, entry-case and
 reader-fidelity logs.
@@ -447,11 +1002,12 @@ Mathlib tag but regenerates nothing), the change also does the following.
    `rev` in `Models/SetTheory/lakefile.toml` is Mathlib's tag for that
    release; after changing it, `lake -d Models/SetTheory update mathlib`
    refreshes `Models/SetTheory/lake-manifest.json`.
-2. **Pin tables.** A new toolchain moves Init's addresses: regenerate
-   `PinData.lean` and `NatOpPinData.lean` with the three commands under
-   "Regeneration" above (the full `--consts` list is in the generated
-   headers). Until then the moved constants are not pinned, and the
-   inputs and entry cases that need them decline.
+2. **The default role table.** A new toolchain moves Init's addresses:
+   regenerate `RoleData.lean` with the three commands under "Regeneration"
+   above (the exact certificate inputs are recorded in the generated header). The
+   specifications, `specVersion` and the digest do not change. Until then
+   the moved constants are not bound, and the inputs and entry cases that
+   need them decline.
 3. **Frozen audit records.** The runtime closures (`N compiled functions;
    inherited externs M, ...`), the extern differences and the frozen
    `#check` statements are `#guard_msgs` records in
@@ -491,13 +1047,16 @@ interleaved:
    `Tests/Fixtures/ixon-v4/primitives.tsv` differs from the live addresses;
    copy the file it names over the fixture. Mirror every changed address
    into `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`),
-   `Ix/Tc/Primitive.lean` and the IxVM literals in `Ix/IxVM/Kernel/*.lean`
-   (search each old address in hex and in 32-byte array form). The suites
+   `Ix/PrimAddrs.lean`. IxVM reads every primitive through the claim's
+   binding and has no address literal but its specification digest, which
+   `prim-addrs` checks. The suites
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
 3. **Generated IxVM Rust.** `lake exe ix codegen` regenerates
-   `crates/ixvm-codegen/src/*.rs` from the IxVM sources (the literals of step
-   2 among them); `lake exe ix codegen --check` must pass.
+   `crates/ixvm-codegen/src/*.rs` from the IxVM sources and `Ix/IxVM/Kernel/RoleSpec.lean`, the role specifications
+   rendered as circuit terms (`Ix/IxVM/RoleSpecGen.lean`), which also
+   changes with `specVersion` or the specification digest; `lake exe ix
+   codegen --check` must pass.
 4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
    to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
@@ -507,7 +1066,7 @@ interleaved:
    them from the serializers' output. The independent expression vectors
    (`Tests/Fixtures/ixon-v4/expressions.txt`) are written by hand from the
    specification.
-5. **Pin tables**, as step 2 of a toolchain bump: the three commands under
+5. **The default role table**, as step 2 of a toolchain bump: the three commands under
    "Regeneration" above. Write the two environments to fresh files, never
    to paths that are symbolic links to another format's stored environments:
    the commands write through a link.
@@ -552,27 +1111,28 @@ calls and `Verify/Cached/StreamThm.lean`, from
 upstream task #323 changed) at `3ca9e2fe749a51cba4c6e3527aeecba074c29316`.
 The axiom pin `Tests/Ix/Kernel/Axioms.lean` is derived from upstream's
 `tests/ConLecheTests/Axioms.lean`. Upstream's
-`ConLeche/Kernel/NatOpPins.lean` is not included: Ix's Nat-operation pins
-are generated from Ixon records (`IxC/Kernel/Ixon/NatOpPinData.lean`).
+`ConLeche/Kernel/NatOpPins.lean` is not included: Ix validates the bound
+constants against fixed specifications (`IxC/Kernel/Roles.lean`) with the
+role table's evidence (the default table: `IxC/Kernel/Ixon/RoleData.lean`).
 
 **What was changed.** Every file was moved (`ConLeche/Kernel/X` and
 `ConLeche/X` to `IxC/Kernel/X`) and its namespace and module prefix renamed
-(`ConLeche.Kernel` and `ConLeche` to `Ix.Kernel`, as whole names). Seven
+(`ConLeche.Kernel` and `ConLeche` to `Ix.Kernel`, as whole names). These
 files carry further changes:
 
 | File | Change | Why |
 | --- | --- | --- |
-| `IxC/Kernel/CheckerBase.lean` | imports `NatOpPinSet` instead of `NatOpPins` | upstream's `NatOpPins` splices JSON pin dumps; Ix's pins come from Ixon records |
+| `IxC/Kernel/{CheckerBase,Checker,DeclCheck}.lean`, `IxC/Kernel/Cached/ParsedC.lean` and the proofs that consume them; the former `TrustAxioms.lean` was removed | `Roles` replaces `NatOpPins`; the operations' install gate checks the role table's evidence (`checkDivModEvidence`, `evidenceLocal`); compiler-trust support is excluded from the certified theory; the proofs take `Evidences` where they took pin lists | upstream's `NatOpPins` splices JSON pin dumps; Ix binds primitives by a role table and validates them against fixed specifications |
 | `IxC/Kernel/Verify/Cached/{AgreeFloor,PushChain}.lean` | `import all Init.LetFun` | Lean 4.34.0 no longer exposes `letFun`'s body, which these proofs unfold |
-| `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Ix's compiler orders a nested block's auxiliary motives canonically |
+| `IxC/Kernel/Frontend/InModel/Nested.lean` | container groups formed largest family first | Larger container families claim their members first, preventing overlapping nested-model groups from emitting a member twice |
 | `IxC/Kernel/Level.lean`, `IxC/Kernel/Verify/Level.lean` | the `(param, max)` case falls back on Géran's sublevels, with its soundness case | nanoda's comparison is incomplete there, and Ixon's canonical levels reach the gap (Mathlib's `RatFunc.liftOn_def`) |
 | `IxC/Kernel/MainTheorem.lean` | only `model_exists` kept | the NDJSON corollary needs a frontend Ix does not use |
 
 Ix's own files under `IxC/Kernel/` are `Admission.lean` and the `Admission`
 directory (the certified entry, its byte stage, theorems and audit),
-`Ref.lean`, `Search.lean`, the `Audit`, `Ingress`, `Egress` and `Ixon`
-directories (the Ixon reader and its specification, the committed pins and
-prelude, the record store, the projection writer and the audits), and
+`Roles.lean` (the role specifications), `Ref.lean`, `Search.lean`, the `Audit`, `Ingress`, `Egress` and `Ixon`
+directories (the Ixon reader and its specification, the role table, the
+default table and prelude, the record store, the projection writer and the audits), and
 `LevelGeran.lean` and
 `Verify/LevelGeran.lean` (Géran's sublevels and their soundness and
 completeness), which the changed `Level` files import.
@@ -624,7 +1184,7 @@ The environment check measures coverage on a compiled environment (an
 `.ixe`, orders its primary constants (the prelude's first, then dependencies,
 `Nat`-operation grounds and literal edges), reads each constant with the Ixon
 reader and installs and checks it one constant at a time with an incremental
-step of the verified fold (`Benchmarks/Kernel/CheckIxeStep.lean`),
+step of the verified fold (`Ix/KernelCheck/Step.lean`),
 continuing past failures and reporting dependents of a failure as blocked.
 Hints are the compiler's. Each row is JSON (`address, names, kind, outcome,
 reason, micros, readMicros`).
@@ -639,14 +1199,25 @@ CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max
 
 Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
 <output.jsonl> [limit]`. The records are streamed by default
-(`Benchmarks/Kernel/CheckIxeStream.lean`): the order and the record views
+(`Ix/KernelCheck/Stream.lean`): the order and the record views
 are built over record skeletons, and each record is decoded in full at its
 turn and dropped once it is read. `--load eager` decodes and keeps the whole
 environment up front. `--jobs <n>` installs every record first and then runs
 the recorded checks on `n` worker threads
-(`Benchmarks/Kernel/CheckIxePool.lean`). All three write the same rows
+(`Ix/KernelCheck/Pool.lean`). All three write the same rows
 (`kernel-check-ixe --compare` shows it); with `--jobs`, a row's `micros` is
-its install plus its checks. Environment:
+its install plus its checks. A checker failure's reason is rendered by
+`.meta`: its keys spelled with the names the `.ixe`'s metadata gives them and
+the first eight hexadecimal digits of their addresses, `Nat.add@a1b2c3d4`
+(`Reader.spellWith`); the verdict is the `.anon` run's.
+`kernel-check-ixe --meta <input.ixe> <output.jsonl> [limit]` is the erasure
+test: every record read and checked at `.anon` and at `.meta` (named from the
+metadata) and the runs compared record by record (readings by hash and term
+by term, outcome, fold position, failure with its keys mapped), failing on
+any difference or on a name coverage under 99% (Init+Std: 97,906 records, no
+difference, 99.998% of 2,576,066 binders and lets named, about 230 s). Its
+rows print a failure with its terms and Lean's names
+(`Ix.KernelDisplay.renderFailure`). Environment:
 
 - `CHECK_IXE_WATCH_MS` (default 60000) and `CHECK_IXE_WATCH_MB` (default 20000):
   a watchdog ends the run with exit code 3 when one constant's check exceeds
@@ -677,97 +1248,3 @@ Run one environment check at a time, under a memory cap, with no concurrent buil
 Mathlib's `.ixe` comes from `Benchmarks/Compile/CompileMathlib.lean`
 (`Benchmarks/Compile/README.md`).
 
-## The retired intrinsic kernel
-
-Before the con-leche-derived checker, this branch's certified checker was an
-intrinsic, proof-carrying kernel in `IxC/Kernel/**` (`Ix.Kernel.check`,
-`checkDecls`, `checkEnv`), built on a set model and syntax ported from the
-Ix branch `jcb/ix-kernel-consistency` at `ad60e5f6` (with con-leche's
-`SetTheory` at `86cd20a6`). Each admitted declaration constructed its model
-extension (`StepClaim`, `AdmissionClaim`); the public theorems were
-`check_has_model`, the conditional `checkDecls_has_model`, a semantic
-`no_proof_of_False` over `Env.EmptyType`, installation fidelity
-(`Ingress.Installed`) and `checkBytes_unique_keys`. Its supported profile
-covered single definitions, theorems and opaques, ordinary inductive
-families with supplied recursors, structures, `Nat`, equality, quotients
-and the two standard axioms, and declined arbitrary axioms, unsafe and
-partial declarations, and general mutual and nested inductives. It was
-deleted (132 files, 29,805 lines) with its entry points, 19 test modules,
-environment check, benchmark and host differentials (25 files, 4,080
-lines); it never reached `main`. Its level normalizer is the source of
-`IxC/Kernel/LevelGeran.lean`'s algorithm.
-
-## Removal ledger: lean4ix and Ix.Tc
-
-This ledger records what was removed from `main` with the lean4ix/Lean4Lean
-dependency and the `Ix.Tc` and `Ix.Compile` verification trees, and what
-replaced each part. The codec proofs and the proofs of the canonical sharing
-construction were kept and moved, not removed (the rows below say where).
-Where it names `Ix.Kernel` roots, audits or fixtures, it describes the
-retired intrinsic kernel (above); the current gate is described above.
-
-Both dependency paths are removed: the root Lake package `lean4lean`
-fetched `argumentcomputer/lean4ix` at
-`a4188d7c2979378d85c6bb41fdd96c3a48a71371`, and TruthMines independently
-fetched `digama0/lean4lean` at `e0e3f6bcccb840cb0ea6f11c2b274ada93a12e00`.
-The old verification trees and their consumers are gone; runtime `Ix.Tc`
-is unchanged.
-
-| Retired or remaining surface | Replacement or disposition | Status |
-| --- | --- | --- |
-| `Ix/Tc/Verify/**` checker statements and proof frontier | Executed `Ix.Kernel` acceptance/model/fidelity roots and adversarial fixtures; behavior outside the supported profile remains in runtime tests | Done |
-| `Ix/Tc/Verify/Audit/{Basic,Completed,Conditional,Statements,SorryFrontier}.lean` | Kernel axiom/import/runtime audits supply strict checks and negative controls; obsolete upstream/native/sorry allowances were deleted | Done |
-| `Ix/Compile/Verify/{Codec,ExprCodec,ExprSpineCodec,ConstantCodec,ConstantTablesCodec,NonrecursiveConstantCodec,RecursorConstantCodec,MutualConstantCodec}.lean` | Preserved under `IxC/Ixon/Verify` (`Basic`, `Expr`, `ExprSpine`, `Constant`, `ConstantTables`, `NonrecursiveConstant`, `RecursorConstant`, `MutualConstant`), for the Ixon v4 codec, with complete wire domains, frozen contracts, and independent audits | Done; old copies deleted |
-| `Ix/Compile/Verify/TagN.lean` (the TagN bijection and rejection laws) | `IxC/Ixon/Verify/TagN.lean` (namespace `Ixon.Verify.TagN`), built with the codec proofs by `lake -d IxC build --wfail` | Done |
-| `Ix/Compile/Verify/{SharingExact,SharingExactCanon,SharingExactPasses}.lean`, `Tiered*`, `Uniform*` and `Audit/CompiledCode.lean` (the canonical sharing construction) | Moved to `IxSharingVerify` (namespace `Ix.Sharing.Verify`; deprecated lemma names replaced for Lean 4.34.0; no statement changed), library `IxSharingVerify` (`lake build --wfail IxSharingVerify`, also built by `lake lint`); audits `IxSharingVerify/Audit/{Statements,SorryFrontier,CompiledCode}.lean` | Done; no theorem of these files dropped |
-| `Ix/Compile/Verify/CompileSharingCodec.lean` | Its builder part (`buildConstantWithSharing_wireWF`, `SharingRunOK`, the singleton-driver tail) is `IxSharingVerify/Builder.lean`; its expression-compilation roundtrips are retired with the compiler chain they rest on | Done |
-| `Ix/Compile/Verify/{Catalog,IxonValue,SourceValue,Reference}.lean` | Structural predicates live in `IxC/Ixon/Wire`; the intrinsic kernel's exact readings covered resolved values; the old semantic square is retired | Done |
-| Remaining `Ix/Compile/Verify/**`, including `Compile*` (the per-declaration compiler endpoint theorems among them), `Arena`, the former heuristic `Sharing`, `Statements`, and its audits | Retired compiler/specification machinery; no Ix.Kernel compiler-correctness theorem is claimed | Done |
-| Root `lakefile.lean` / `lake-manifest.json` | Removed dependency, proof libraries, replay benchmark, proof loader, and `build-all` exception; Lake regenerated the manifest | Done; the remaining targets build strictly |
-| `ix_ffi_dyn`, `crates/ffi-dyn`, workspace `Cargo.toml` / `Cargo.lock` | Removed the proof-only crate and loader; ordinary runtime FFI remains | Done; Cargo regenerated the lockfile |
-| `Benchmarks/Lean4Lean.lean`, `Benchmarks/Lean4LeanMain.lean`, `Tests/Ix/Lean4Lean.lean`, `Tests/Main.lean` | Removed replay library, executable, smoke runner and registration; fixture dispositions below | Done |
-| `Ix/Cli/BenchCmd.lean`, `Ix/BenchConstants.lean`, `docs/benchmarking.md` | Removed backend registry, dispatch, help, and active commands; measurements use the existing certified harness and Rust driver | Done; removed backend exits 2 as unknown |
-| `Benchmarks/TruthMinesSpec/{Catalog,Spec}.lean` | Removed package/member at the generator source | Done; generator checks pass |
-| `Benchmarks/TruthMines/{lakefile.lean,lake-manifest.json,Drivers/Lean4Lean.lean}` | Regenerated configuration without the independent upstream dependency; deleted the generated driver | Done; 78 retained package entries |
-| `Benchmarks/Compile/{lake-manifest.json,TruthMines/lake-manifest.json,TruthMines/Members/Lean4Lean.lean}` | Removed inherited package entries and generated member; retained unrelated pins | Done; 24 and 80 retained package entries |
-| `.github/workflows/merge-tests.yml`, `.github/workflows/ci.yml` | Removed old proof jobs and runner; the `Certified kernel` partition of merge-tests runs `check-kernel --with-model` on the lean-test sticky-disk lineage in the merge queue; runtime parity jobs remain | Done |
-| `flake.nix` | Removed dependency override | Done |
-| `docs/ffi.md`, `docs/tc-k0-backedge-audit.md`, this ledger | Obsolete active commands retired; historical audit labeled explicitly; replacement guarantees stated below | Done |
-| Explanatory attribution in Rust, IxVM, tests and historical documentation | Retained | Preserved |
-
-The retired dependency smoke test replayed `Nat.add_comm` and submitted an
-axiom whose type was the natural-number literal zero. `Nat.add_comm` remains
-the normal CI compiler/zkVM fixture; the certified suite separately covers
-natural-number recursion/literals, non-type declared types, and unsupported
-axioms. The arbitrary-axiom route declines under the current certified
-profile, so this retirement does not claim the old smoke test's exact
-acceptance/rejection behavior or full `Nat.add_comm` certified parity.
-
-### Preserved and retired compiler contracts
-
-| Old contract | Selected replacement | Explicit limits |
-| --- | --- | --- |
-| `deUniv_serUniv` | `Ixon.Verify.deUniv_serUniv` (implemented) | Compressed-successor and UInt64 wire bounds retained |
-| `deExpr_serExpr` | `Ixon.Verify.deExpr_serExpr` (implemented) | Wire-sized vectors, spine counts, binder bits, and whole-buffer consumption retained |
-| `deConstant_serConstant` | `Ixon.Verify.deConstant_serConstant`, plus `deConstantExact_serConstant` (implemented) | All variants and arbitrary side tables retained with count/address/table bounds |
-| `Reads` / `Writes` | `Ixon.Verify.Codec` cursor and append laws (implemented) | Codec behavior only; exact consumption and suffix rejection added in `Verify.Framing` |
-| Tag0/Tag2/Tag4 integer laws and their minimal-width checks | the TagN writer and reader laws `Ixon.Verify.Codec.{putTagN_writes, getTagN_reads}` over the byte specification `tagNBytes` (`IxC/Ixon/Verify/Basic.lean`), and `Ixon.Verify.TagN`: `runGetExact_getTagN_iff` (a read succeeds exactly on the written bytes), `putTagN_inj`, `getTagN_rejects_code`, `getTagN_rejects_overflow` (implemented) | Ixon v4 has one integer code, and it is bijective, so no minimal-width check remains |
-| `ExprTableWF`, decreasing sharing bounds, reference/universe table resolution | Checked resolution in the canonical decoder and the Ixon reader (a bad index or a missing payload is a malformed record) | Detect bad indexes, missing payloads, sharing cycles/forward entries, and unsupported modes before certification |
-| Binder-mode erasure relation | An explicit accepted mode policy: the Ixon reader erases binder contracts | No Lean4Lean interpretation is retained as a hidden premise |
-| Production compiler refinement/value-preservation and end-to-end semantic square | Retired; a separate compiler-correctness project would need new source semantics and proofs | Ix.Kernel acceptance does not prove that the compiler preserved the original Lean declaration |
-
-These contracts are stated about the Ixon v4 codec (TagN integers), with the
-same names and statements as for v3, as is every codec lemma the byte stage
-uses. The byte stage's resource proofs (`IxC/Ixon/Verify/Work*`,
-`ReaderBounds`, `ConstantBounds`) charge a TagN read at most two units per
-consumed byte, which the per-byte budget of `Work.Costs` covers, so
-`checkBytes_resources` has the same statement.
-
-The retained codec chain imports the pure structural `wireWF` predicates,
-so the former `ExprSpineCodec → Catalog → IxonValue → Lean4Lean` dependency
-is gone. The temporary old copies have been deleted. Retained codec roots
-use only the three standard axioms; native hash/name allowances from the
-old compiler proofs are not inherited. For the certified entry, the
-resource bound, canonical decoding and the byte-admission composition are
-proved (`checkBytes_resources`, `decodeRecords_ok_iff`,
-`IxC/Kernel/Admission/Bytes/Theorems.lean`).

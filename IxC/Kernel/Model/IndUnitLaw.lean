@@ -59,14 +59,14 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint BinderMeta)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
-variable {acval : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
 
 /-! ## The capability statements' type slot, opened
 
@@ -75,7 +75,7 @@ type slot — open to the *same* expression, the model former applied to
 the canonical opener; only the depth they are read at differs.  One
 lemma, parameterised by the cut. -/
 
-theorem instSeq_openSpine (K : Name) (lvls : List Level)
+theorem instSeq_openSpine (K : Key md) (lvls : List Level)
     (nP L t : Nat) (hnL : nP ≤ L) (hnP : nP ≤ t + 1) :
     Expr.instSeq (openFvars 0 L) t
         (Expr.mkAppN (.const K lvls)
@@ -87,20 +87,20 @@ theorem instSeq_openSpine (K : Name) (lvls : List Level)
   rw [List.getElem_map, List.getElem_range]
   show Expr.instSeq (openFvars 0 L) t (Expr.bvar (t - q))
     = (openFvars 0 nP)[q]
-  have hbnd := openFvars_getElem? (d := 0) (k := nP) (i := q) hq
+  have hbnd := openFvars_getElem? (md := md) (d := 0) (k := nP) (i := q) hq
   rw [List.getElem?_eq_getElem h2] at hbnd
   rw [Option.some.inj hbnd]
-  have hhit := Expr.instSeq_bvar (openFvars 0 L) t (t - q)
+  have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 L) t (t - q)
     (openFvars_bounded 0 L) (by omega)
     (by rw [openFvars_length]; omega)
   rw [show t - (t - q) = q from by omega,
-    openFvars_getElem? (d := 0) (k := L) (i := q) (by omega)] at hhit
+    openFvars_getElem? (md := md) (d := 0) (k := L) (i := q) (by omega)] at hhit
   exact (Option.some.inj hhit).symm
 
 /-- The opened slot, read: the model former's leaf applied to the
 descending bound variables at whatever depth the slot sits. -/
-theorem denoteMeta_openSpine {K : Name} {ci : ConstantInfo}
-    {lps : List Name} (hf : env.find? K = some ci)
+theorem denoteMeta_openSpine {K : Key md} {ci : ConstantInfo md}
+    {lps : List LevelParam} (hf : env.find? K = some ci)
     (hlps : ci.toConstantVal.levelParams = lps)
     (nP d : Nat) (hd : nP ≤ d) :
     denoteMeta acval env φ d
@@ -120,20 +120,20 @@ type whose telescope the pins speak about.  Same two-move argument
 (`denoteMeta_renameConsts_resolve` past `denoteMeta_erasedEq`), stated as
 the equality. -/
 
-theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
+theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List (Key md)}
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
-    {ty : Expr} (htr : ty.constsResolve env = true)
-    {cvm : ConstantVal}
+    {ty : Expr md} (htr : ty.constsResolve env = true)
+    {cvm : ConstantVal md}
     (hren : ((ty.renameConsts (fun n' =>
-      if blockNames.contains n' then n'.str "_model" else n')) == cvm.type)
+      if blockNames.contains n' then auxKey n' .model else n')) == cvm.type)
       = true)
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     denoteMeta mp.base2.acval env ψ 0 ty
       = denoteMeta mp.base2.acval env ψ 0 cvm.type := by
   have hup : ∀ n ci, env.find? n = some ci →
       ∃ ci', env.find? ((fun n =>
-          if blockNames.contains n then n.str "_model" else n) n)
+          if blockNames.contains n then auxKey n .model else n) n)
         = some ci' ∧
         ci'.toConstantVal.levelParams = ci.toConstantVal.levelParams := by
     intro n ci hfn
@@ -143,10 +143,10 @@ theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
       exact ⟨.defnInfo cvm₂ mval₂ hint₂, by rw [if_pos hb]; exact hfm₂,
         hlp₂⟩
     · exact ⟨ci, by rw [if_neg hb]; exact hfn, rfl⟩
-  have hval : ∀ (n : Name) (ci : ConstantInfo),
-      env.find? n = some ci → ∀ ψ' : Name → Nat,
+  have hval : ∀ (n : Key md) (ci : ConstantInfo md),
+      env.find? n = some ci → ∀ ψ' : LevelParam → Nat,
       mp.base2.acval ((fun n =>
-        if blockNames.contains n then n.str "_model" else n) n) ψ'
+        if blockNames.contains n then auxKey n .model else n) n) ψ'
         = mp.base2.acval n ψ' := by
     intro n ci hfn ψ'
     dsimp only
@@ -157,15 +157,15 @@ theorem blockTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
   exact (denoteMeta_renameConsts_resolve hup hval ty 0 htr).symm
 
 /-- The member cons's instance: `MemberValR` supplies both data. -/
-theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
-    {cv cvA : ConstantVal}
+theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List (Key md)}
+    {cv cvA : ConstantVal md}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hIB : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
-    {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
-    (hfm : env.find? (cvA.name.str "_model")
+    {cvm : ConstantVal md} {mval : Expr md} {hint : ReducibilityHint}
+    (hfm : env.find? (auxKey cvA.name .model)
       = some (.defnInfo cvm mval hint))
-    (ψ : Name → Nat) :
+    (ψ : LevelParam → Nat) :
     denoteMeta mp.base2.acval env ψ 0 cvA.type
       = denoteMeta mp.base2.acval env ψ 0 cvm.type := by
   obtain ⟨type', hcv, rfl, -, cvm', mval', hint', hfm', hlpm, hren⟩ := hmv
@@ -179,8 +179,8 @@ theorem memberTypeReadEq (mp : EnvModelM V μ env) {blockNames : List Name}
 
 /-- `denoteMeta_eqA_type` at an arbitrary environment: `Eq`'s type has no
 `const` leaf, so its reading does not consult the environment. -/
-theorem denoteMeta_eqA_type_gen (ψ : Name → Nat) :
-    denoteMeta acval env ψ 0 eqA.toConstantVal.type = some (eqTy ψ) := by
+theorem denoteMeta_eqA_type_gen (ψ : LevelParam → Nat) :
+    denoteMeta acval env ψ 0 (eqA (md := md)).toConstantVal.type = some (eqTy ψ) := by
   simp [eqA, ConstantInfo.toConstantVal, denoteMeta_forallE, denoteMeta_sort,
     denoteMeta_fvar, Expr.instantiate1, eqTy, pwBit_never, Level.eval, uN]
 
@@ -188,7 +188,7 @@ theorem denoteMeta_eqA_type_gen (ψ : Name → Nat) :
 `EqLawV.dom`'s P counterpart, and the only place the unit key needs
 rigidity at all. -/
 theorem eqSlot_univ (mp : EnvModelM V μ env)
-    (heqfE : env.find? eqName = some eqA) (χ : Name → Nat)
+    (heqfE : env.find? eqName = some eqA) (χ : LevelParam → Nat)
     {σ : Nat → V} {Sa la ra : AnnotTerm}
     (hok : WellDenotedV V σ
       (.app (.app (.app (mp.base2.acval eqName χ) Sa) la) ra)) :
@@ -204,8 +204,8 @@ theorem eqSlot_univ (mp : EnvModelM V μ env)
   obtain ⟨-, -, v, A, B, hEqIn, hSIn, -⟩ := h2
   -- the pinned type exhibits it in the graph-regime product
   obtain ⟨ea, hea, -, hmem⟩ := mp.acval_memType heqfE χ
-  rw [show (eqA : ConstantInfo).toConstantVal.type
-      = eqA.toConstantVal.type from rfl, denoteMeta_eqA_type_gen] at hea
+  rw [show (eqA : ConstantInfo md).toConstantVal.type
+      = (eqA (md := md)).toConstantVal.type from rfl, denoteMeta_eqA_type_gen] at hea
   obtain rfl : ea = eqTy χ := (Option.some.inj hea).symm
   have hpin : interp V σ (mp.base2.acval eqName χ)
       ∈ˢ piR 1 (univ (χ uN) : V)
@@ -231,7 +231,7 @@ theorem eqSlot_univ (mp : EnvModelM V μ env)
 set_option maxHeartbeats 1600000 in
 /-- **The member cons's unit-like key, P tier** — `unitLawKeyS`'s
 transpose, and the campaign's first `UnitLaw` producer. -/
-theorem memberUnitLaw : MemberUnitLaw V := by
+theorem memberUnitLaw : (MemberUnitLaw (md := md)) V := by
   intro μ F blockNames env mp cv cvA c₀ hmv hIB hIA hc₀cv hc₀name
     cvT caps hceq hcapu hnres hp m₂ hac φ'
   have hcvT : cvT = cvA := by
@@ -250,7 +250,7 @@ theorem memberUnitLaw : MemberUnitLaw V := by
   have hcb : ConstsBound env cvA.type :=
     constsBound_of_constsResolve _ (by rw [htypeA]; exact htr)
   intro us hus
-  obtain ⟨ψ, hψ⟩ : ∃ ψ : Name → Nat,
+  obtain ⟨ψ, hψ⟩ : ∃ ψ : LevelParam → Nat,
       ψ = Level.substFn φ' cvA.levelParams us := ⟨_, rfl⟩
   -- the member's type reading, and its crossing to the extension
   obtain ⟨ta, hta, hokta, -⟩ := memberKey mp hmv hIB hIA ψ
@@ -262,7 +262,7 @@ theorem memberUnitLaw : MemberUnitLaw V := by
   intro ρ ts rest x y hlents hfit hmx hmy
   -- the family's leaf at the extension is the model's
   have hleaf : m₂.acval c₀.name ψ
-      = mp.base2.acval (cvA.name.str "_model") ψ := by
+      = mp.base2.acval (auxKey cvA.name .model) ψ := by
     rw [hac, acvalWith_self]
   rw [← hψ, hleaf] at hmx hmy
   -- the kernel's unit-capability pins
@@ -322,10 +322,10 @@ theorem memberUnitLaw : MemberUnitLaw V := by
   -- ===== the two member slots =====
   have hKle : ∀ d : Nat, caps.unitParams ≤ d →
       denoteMeta mp.base2.acval env ψ d
-        (Expr.mkAppN (.const (cvA.name.str "_model")
+        (Expr.mkAppN (.const (auxKey cvA.name .model)
           (cvA.levelParams.map .param)) (openFvars 0 caps.unitParams))
       = some (AnnotTerm.mkAppN
-          (mp.base2.acval (cvA.name.str "_model") ψ)
+          (mp.base2.acval (auxKey cvA.name .model) ψ)
           ((List.range caps.unitParams).map fun q =>
             AnnotTerm.bvar (d - 1 - (0 + q)))) :=
     fun d hd => denoteMeta_openSpine hTmE hTmlps _ d hd
@@ -334,21 +334,21 @@ theorem memberUnitLaw : MemberUnitLaw V := by
       (∀ q, q < ts.length →
         σ (d - 1 - (0 + q)) = consN ts ρ (ts.length - 1 - q)) →
       interp V σ (AnnotTerm.mkAppN
-          (mp.base2.acval (cvA.name.str "_model") ψ)
+          (mp.base2.acval (auxKey cvA.name .model) ψ)
           ((List.range caps.unitParams).map fun q =>
             AnnotTerm.bvar (d - 1 - (0 + q))))
         = ts.foldl SetTheory.app
-            (interp V ρ (mp.base2.acval (cvA.name.str "_model") ψ)) := by
+            (interp V ρ (mp.base2.acval (auxKey cvA.name .model) ψ)) := by
     intro d σ hσ
     rw [← hlents]
     exact interp_bvarSpine (V := V) ts (ρ := ρ) (σ := σ)
-      (K := mp.base2.acval (cvA.name.str "_model") ψ)
+      (K := mp.base2.acval (auxKey cvA.name .model) ψ)
       (fun q => d - 1 - (0 + q)) hσ
       (acval_interp_closedC mp.base2 _ ψ σ ρ)
   -- the x-slot
   obtain ⟨mx, hxb⟩ := hxdom
   have hAx : Ax = AnnotTerm.mkAppN
-      (mp.base2.acval (cvA.name.str "_model") ψ)
+      (mp.base2.acval (auxKey cvA.name .model) ψ)
       ((List.range caps.unitParams).map fun q =>
         AnnotTerm.bvar (caps.unitParams - 1 - (0 + q))) := by
     have h := hdomsS caps.unitParams _ hxb
@@ -363,7 +363,7 @@ theorem memberUnitLaw : MemberUnitLaw V := by
   -- the y-slot
   obtain ⟨my, hyb⟩ := hydom
   have hAy : Ay = AnnotTerm.mkAppN
-      (mp.base2.acval (cvA.name.str "_model") ψ)
+      (mp.base2.acval (auxKey cvA.name .model) ψ)
       ((List.range caps.unitParams).map fun q =>
         AnnotTerm.bvar (caps.unitParams + 1 - 1 - (0 + q))) := by
     have h := hdomsS (caps.unitParams + 1) _ hyb
@@ -404,8 +404,8 @@ theorem memberUnitLaw : MemberUnitLaw V := by
   -- ===== the opened body is the pinned `Eq` spine =====
   have hCs : Cs = .app (.app (.app
       (mp.base2.acval eqName
-        (Level.substFn ψ eqA.toConstantVal.levelParams [ℓA]))
-      (AnnotTerm.mkAppN (mp.base2.acval (cvA.name.str "_model") ψ)
+        (Level.substFn ψ (eqA (md := md)).toConstantVal.levelParams [ℓA]))
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey cvA.name .model) ψ)
         ((List.range caps.unitParams).map fun q =>
           AnnotTerm.bvar (caps.unitParams + 2 - 1 - (0 + q)))))
       (.bvar 1)) (.bvar 0) := by
@@ -418,26 +418,26 @@ theorem memberUnitLaw : MemberUnitLaw V := by
       (caps.unitParams + 2) (caps.unitParams + 1) (by omega)
       (by omega)] at h
     -- the two member variables, opened
-    have hb1 : Expr.instSeq (openFvars 0 (caps.unitParams + 2))
-        (caps.unitParams + 1) (Expr.bvar 1)
-        = Expr.fvar caps.unitParams (.sort .zero) := by
-      have hhit := Expr.instSeq_bvar (openFvars 0 (caps.unitParams + 2))
+    have hb1 : (Expr.instSeq (md := md)) (openFvars 0 (caps.unitParams + 2))
+        (caps.unitParams + 1) ((Expr.bvar (md := md)) 1)
+        = (Expr.fvar (md := md)) caps.unitParams (.sort .zero) := by
+      have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 (caps.unitParams + 2))
         (caps.unitParams + 1) 1
         (openFvars_bounded 0 (caps.unitParams + 2)) (by omega)
         (by rw [openFvars_length]; omega)
-      rw [openFvars_getElem? (d := 0) (k := caps.unitParams + 2)
+      rw [openFvars_getElem? (md := md) (d := 0) (k := caps.unitParams + 2)
         (i := caps.unitParams + 1 - 1) (by omega),
         show (0 : Nat) + (caps.unitParams + 1 - 1)
           = caps.unitParams from by omega] at hhit
       exact (Option.some.inj hhit).symm
-    have hb0 : Expr.instSeq (openFvars 0 (caps.unitParams + 2))
-        (caps.unitParams + 1) (Expr.bvar 0)
-        = Expr.fvar (caps.unitParams + 1) (.sort .zero) := by
-      have hhit := Expr.instSeq_bvar (openFvars 0 (caps.unitParams + 2))
+    have hb0 : (Expr.instSeq (md := md)) (openFvars 0 (caps.unitParams + 2))
+        (caps.unitParams + 1) ((Expr.bvar (md := md)) 0)
+        = (Expr.fvar (md := md)) (caps.unitParams + 1) (.sort .zero) := by
+      have hhit := Expr.instSeq_bvar (md := md) (openFvars 0 (caps.unitParams + 2))
         (caps.unitParams + 1) 0
         (openFvars_bounded 0 (caps.unitParams + 2)) (by omega)
         (by rw [openFvars_length]; omega)
-      rw [openFvars_getElem? (d := 0) (k := caps.unitParams + 2)
+      rw [openFvars_getElem? (md := md) (d := 0) (k := caps.unitParams + 2)
         (i := caps.unitParams + 1 - 0) (by omega),
         show (0 : Nat) + (caps.unitParams + 1 - 0)
           = caps.unitParams + 1 from by omega] at hhit
@@ -463,11 +463,11 @@ theorem memberUnitLaw : MemberUnitLaw V := by
       (hokua ρ) hfitFull
     rwa [hconsApp] at h
   have hSval : interp V (cons y (cons x (consN ts ρ)))
-      (AnnotTerm.mkAppN (mp.base2.acval (cvA.name.str "_model") ψ)
+      (AnnotTerm.mkAppN (mp.base2.acval (auxKey cvA.name .model) ψ)
         ((List.range caps.unitParams).map fun q =>
           AnnotTerm.bvar (caps.unitParams + 2 - 1 - (0 + q))))
       = ts.foldl SetTheory.app
-          (interp V ρ (mp.base2.acval (cvA.name.str "_model") ψ)) :=
+          (interp V ρ (mp.base2.acval (auxKey cvA.name .model) ψ)) :=
     hspineVal (caps.unitParams + 2) (cons y (cons x (consN ts ρ)))
       (fun q hq => by
         rw [show caps.unitParams + 2 - 1 - (0 + q)

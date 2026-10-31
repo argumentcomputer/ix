@@ -31,7 +31,12 @@ the output body. The output type must preserve the input's syntax after
 table resolution and erasure; a merely definitionally equal type is rejected.
 Different table layouts and sharing choices can still denote the same term.
 
-The validator is `erased-lean-v1`. Resource annotations remain committed in
+The validator is `erased-lean-v2`, and the claim carries its context (the
+specification digest, the role binding's hash and the axioms beyond the
+standard three; see the claim formats in [Ixon](Ixon.md)). Eval claims always
+validate their binding: only `check` and `checkEnv` may assume it (validator
+`erased-lean-v2-assumed`). Resource
+annotations remain committed in
 constant bytes but are erased by the kernel; Eval does not certify resource
 admission or resource preservation. It also does not assert that arbitrary
 inputs terminate or impose an execution-time bound.

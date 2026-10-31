@@ -59,18 +59,19 @@ use ix_compile::compile::{
 use ix_compile::decompile::decompile_env;
 #[cfg(feature = "test-ffi")]
 use ix_compile::kernel_egress::{ixon_egress, lean_egress};
-use ix_kernel::env::KEnv;
+use ix_kernel::artifact_checker::ArtifactChecker;
 use ix_kernel::error::TcError;
 #[cfg(feature = "test-ffi")]
 use ix_kernel::id::KId;
 use ix_kernel::ingress::{
-  IxonIngressLookups, build_ixon_ingress_lookups,
-  ingress_const_shallow_into_kenv_with_lookups, ixon_ingress_owned,
+  IxonIngressLookups, build_ixon_ingress_lookups, ixon_ingress_owned,
 };
 #[cfg(feature = "test-ffi")]
 use ix_kernel::ingress::{ixon_ingress, lean_ingress};
 use ix_kernel::mode::{CheckDupLevelParams, KernelMode, Meta};
 use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
+use ix_kernel::role_admission::ArtifactSource;
+#[cfg(feature = "test-ffi")]
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
 #[cfg(feature = "test-ffi")]
@@ -347,11 +348,9 @@ pub extern "C" fn rs_kernel_check_consts(
 /// recursor rule in the compiled Ixon payload, then check that exact malformed
 /// Ixon with the kernel.
 ///
-/// This is intentionally separate from `rs_kernel_check_consts`: the normal
-/// compile path may regenerate aux recursors, which is correct production
-/// behavior but masks tests whose point is "reject this stored recursor
-/// payload." Mutating after compile gives the tutorial suite a precise
-/// regression hook without weakening aux generation for real inputs.
+/// This is intentionally separate from `rs_kernel_check_consts`: mutating
+/// the compiled payload, rather than the Lean source, gives the tutorial
+/// suite a precise "reject this stored recursor payload" regression hook.
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_check_malformed_rec_rule_ixon(
@@ -760,6 +759,23 @@ pub extern "C" fn rs_prim_addrs_orig() -> LeanIOResult<LeanOwned> {
   build_prim_addrs_table(&table)
 }
 
+/// FFI: expose the canonical addresses of Lean's native-evaluation
+/// constants (`ix_kernel::primitive::native_evaluation_addrs`), which the
+/// kernel declines, as `(lean_name, hex_address)` pairs.
+///
+/// Used by `testNativeEvaluationParity`
+/// (`Tests/Ix/Kernel/BuildPrimitives.lean`) to compare them with a live
+/// compile of the Lean declarations.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_native_evaluation_addrs() -> LeanIOResult<LeanOwned> {
+  let table: Vec<(&'static str, String)> =
+    ix_kernel::primitive::native_evaluation_addrs()
+      .iter()
+      .map(|(name, addr)| (*name, addr.hex()))
+      .collect();
+  build_prim_addrs_table(&table)
+}
+
 fn build_prim_addrs_table(
   table: &[(&'static str, String)],
 ) -> LeanIOResult<LeanOwned> {
@@ -970,7 +986,7 @@ unsafe extern "C" {
   fn lean_internal_set_thread_stack_size(size: usize);
 }
 
-/// `Ix.Tc.setLeanThreadStackSize : USize → BaseIO Unit`
+/// `Ix.Runtime.setLeanThreadStackSize : USize → BaseIO Unit`
 ///
 /// ABI adapter: the runtime setter is a bare `void(size_t)`, so Lean can't
 /// `@[extern]` it directly. The pure-Lean parallel checker calls this before
@@ -991,18 +1007,31 @@ struct CheckWorkItem {
   aliases: Vec<usize>,
 }
 
+/// Group the requested names into kernel work items. Names share an item,
+/// and so a verdict, only when each one's carried record is authentically a
+/// member of the same carried owner (`ArtifactSource::member`, which checks
+/// the record's hash, the owner's record and the member's kind and index). A
+/// projection's own `block` field is not trusted: a projection that fails
+/// authentication gets an item of its own, whose check reports the defect.
 fn build_check_work(
   ixon_env: &IxonEnv,
+  source: &ArtifactSource,
   names: &[Name],
   expect_pass: &[bool],
   ungrounded: &FxHashMap<Name, String>,
 ) -> Vec<CheckWorkItem> {
+  use rayon::prelude::*;
   let mut work: Vec<CheckWorkItem> = Vec::with_capacity(names.len());
   let mut by_block: FxHashMap<(Address, bool), usize> = FxHashMap::default();
+  // Resolving a name's unit authenticates its record: do it in parallel,
+  // then group in order.
+  let block_keys: Vec<Option<Address>> = names
+    .par_iter()
+    .map(|name| check_schedule_block_addr(ixon_env, source, name, ungrounded))
+    .collect();
 
-  for (i, name) in names.iter().enumerate() {
+  for (i, block_key) in block_keys.into_iter().enumerate() {
     let should_pass = expect_pass.get(i).copied().unwrap_or(true);
-    let block_key = check_schedule_block_addr(ixon_env, name, ungrounded);
     if let Some(block_key) = block_key {
       let key = (block_key, should_pass);
       if let Some(work_idx) = by_block.get(&key).copied() {
@@ -1021,6 +1050,7 @@ fn build_check_work(
 
 fn check_schedule_block_addr(
   ixon_env: &IxonEnv,
+  source: &ArtifactSource,
   name: &Name,
   ungrounded: &FxHashMap<Name, String>,
 ) -> Option<Address> {
@@ -1031,19 +1061,12 @@ fn check_schedule_block_addr(
   if matches!(named.meta().info, ConstantMetaInfo::Muts { .. }) {
     return None;
   }
-  let constant = ixon_env.get_const(&named.addr)?;
-  // Only collapse work by actual serialized kernel blocks. Projection
-  // constants carry the SCC block address directly; ordinary constants are
-  // singleton blocks. Do not use declaration-family `all` metadata here: it
-  // can include names that are not checked by the same kernel block.
-  match &constant.info {
-    IxonCI::IPrj(p) => Some(p.block.clone()),
-    IxonCI::CPrj(p) => Some(p.block.clone()),
-    IxonCI::RPrj(p) => Some(p.block.clone()),
-    IxonCI::DPrj(p) => Some(p.block.clone()),
-    IxonCI::Muts(_) => None,
-    _ => Some(named.addr),
-  }
+  // Only collapse work by actual serialized kernel units: a projection's
+  // authenticated owner, or the constant itself. Do not use
+  // declaration-family `all` metadata here: it can include names that are
+  // not checked by the same kernel block.
+  let member = source.member(&named.addr).ok()?;
+  Some(member.owner().map_or(named.addr, |owner| owner.address().clone()))
 }
 
 fn run_checks_on_large_stack<M: KernelMode>(
@@ -1063,7 +1086,17 @@ where
     return Ok(Vec::new());
   }
 
-  let work = build_check_work(&ixon_env, &names, &expect_pass, &ungrounded);
+  // Capture the input once, before planning: the plan and every worker read
+  // this same authenticated source.
+  let snapshot_start = Instant::now();
+  let source =
+    ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
+  eprintln!("[rs_kernel_check] snapshot: {:.1?}", snapshot_start.elapsed());
+  report_admission("rs_kernel_check", &source);
+  let plan_start = Instant::now();
+  let work =
+    build_check_work(&ixon_env, &source, &names, &expect_pass, &ungrounded);
+  eprintln!("[rs_kernel_check] plan: {:.1?}", plan_start.elapsed());
   if work.len() == names.len() {
     eprintln!("[rs_kernel_check] checking {} constants...", names.len());
   } else {
@@ -1075,9 +1108,15 @@ where
   }
 
   let worker_count = resolve_kernel_check_workers(work.len(), quiet);
-  if worker_count == 1 {
-    return run_checks_serial_on_large_stack::<M>(
+  let tier_source = source.clone();
+  let tier_names: Vec<Option<Address>> = names
+    .iter()
+    .map(|name| ixon_env.lookup_name(name).map(|named| named.addr))
+    .collect();
+  let results = if worker_count == 1 {
+    run_checks_serial_on_large_stack::<M>(
       ixon_env,
+      source,
       lookups,
       names,
       expect_pass,
@@ -1085,24 +1124,59 @@ where
       work,
       quiet,
       failure_log,
-    );
-  }
+    )?
+  } else {
+    run_checks_parallel_on_large_stacks::<M>(
+      ixon_env,
+      source,
+      lookups,
+      names,
+      expect_pass,
+      ungrounded,
+      work,
+      quiet,
+      worker_count,
+      failure_log,
+    )?
+  };
+  report_safety_tier(
+    "rs_kernel_check",
+    &tier_source,
+    tier_names.iter().zip(&results).filter_map(|(address, result)| {
+      address.as_ref().filter(|_| result.is_ok())
+    }),
+  );
+  Ok(results)
+}
 
-  run_checks_parallel_on_large_stacks::<M>(
-    ixon_env,
-    lookups,
-    names,
-    expect_pass,
-    ungrounded,
-    work,
-    quiet,
-    worker_count,
-    failure_log,
-  )
+/// Report, for a bound source, how many of the passing declarations are in
+/// the safety tier: partial or unsafe, checked with partial and unsafe
+/// constants opaque (the certified checker's `typed` outcome) rather than
+/// accepted into the logical theory.
+fn report_safety_tier<'a>(
+  label: &str,
+  source: &ArtifactSource,
+  passing: impl Iterator<Item = &'a Address>,
+) {
+  if source.binding().is_none() {
+    return;
+  }
+  let (mut passed, mut typed) = (0usize, 0usize);
+  for address in passing {
+    passed += 1;
+    if source.in_safety_tier(address) {
+      typed += 1;
+    }
+  }
+  eprintln!(
+    "[{label}] of {passed} passing, {} accepted and {typed} typed (partial or unsafe)",
+    passed - typed
+  );
 }
 
 fn run_checks_serial_on_large_stack<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
+  source: ArtifactSource,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
@@ -1119,6 +1193,7 @@ where
     .spawn(move || {
       check_consts_loop::<M>(
         ixon_env,
+        source,
         lookups,
         names,
         expect_pass,
@@ -1138,6 +1213,7 @@ where
 #[allow(clippy::needless_pass_by_value)]
 fn run_checks_parallel_on_large_stacks<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
+  source: ArtifactSource,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
@@ -1150,6 +1226,8 @@ fn run_checks_parallel_on_large_stacks<M: KernelMode>(
 where
   M::MField<Vec<Name>>: CheckDupLevelParams,
 {
+  // Workers share the planner's single capture and cannot mutate the input
+  // or inject a public KEnv success cache.
   let total = names.len();
   let work_total = work.len();
   eprintln!(
@@ -1171,6 +1249,7 @@ where
     Vec::with_capacity(worker_count);
   for worker_idx in 0..worker_count {
     let ixon_env = Arc::clone(&ixon_env);
+    let source = source.clone();
     let lookups = Arc::clone(&lookups);
     let names = Arc::clone(&names);
     let expect_pass = Arc::clone(&expect_pass);
@@ -1185,7 +1264,7 @@ where
       .name(format!("ix-kernel-check-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut kenv = KEnv::<M>::new();
+        let mut checker = ArtifactChecker::<M>::from_named_source(Ok(source));
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         let diag_threshold = kernel_check_diag_threshold();
@@ -1197,7 +1276,7 @@ where
           }
           let item = &work[work_idx];
           if checks_since_clear >= clear_every {
-            kenv.clear_releasing_memory();
+            checker.clear_releasing_memory();
             checks_since_clear = 0;
           }
 
@@ -1210,13 +1289,13 @@ where
             names.as_slice(),
             expect_pass.as_slice(),
             ungrounded.as_ref(),
-            &mut kenv,
+            &mut checker,
             |prefix| progress_worker.begin(worker_idx, prefix),
           );
           progress_worker.finish(worker_idx, &outcome);
           if let Some(threshold) = diag_threshold {
             log_block_diag_if_big(
-              &kenv,
+              checker.cache_sizes(),
               worker_idx,
               work_idx,
               work_total,
@@ -1350,7 +1429,7 @@ enum AnonWorkItem {
   /// the block (each member's projection + each ctor's CPrj of inductive
   /// members), all sharing the same check result via the kernel's
   /// block coordination.
-  Block { primary_addr: Address, result_idxs: Vec<usize> },
+  Block { block_addr: Address, primary_addr: Address, result_idxs: Vec<usize> },
 }
 
 /// One pass over `env.consts`: enumerate work items + the kernel-checkable
@@ -1364,6 +1443,32 @@ enum AnonWorkItem {
 /// Assign result slots to a set of kernel work items — the indexing step
 /// shared by the whole-env check (every item) and the per-constant closure
 /// check (a filtered subset).
+/// Report, for a bound source, which role groups were admitted and why any
+/// bound group was refused.
+fn report_admission(label: &str, source: &ArtifactSource) {
+  if source.binding().is_none() {
+    eprintln!(
+      "[{label}] no role binding: checked under the legacy policy, in which \
+       every axiom is usable"
+    );
+    return;
+  }
+  let start = Instant::now();
+  let admission = source.admission();
+  eprintln!(
+    "[{label}] bound roles: {} admitted, {} group(s) refused ({:.1?})",
+    admission.admitted_count(),
+    admission.refused().len(),
+    start.elapsed()
+  );
+  for (role, reason) in admission.refused() {
+    eprintln!("[{label}]   {} group refused: {reason}", role.lean_name());
+  }
+  if let Some(reason) = source.prelude_refusal() {
+    eprintln!("[{label}] no unit will be checked: {reason}");
+  }
+}
+
 fn index_anon_work(
   kernel_work: Vec<ix_kernel::anon_work::AnonWorkItem>,
 ) -> (Vec<AnonWorkItem>, Vec<Address>) {
@@ -1378,26 +1483,24 @@ fn index_anon_work(
         addrs.push(addr.clone());
         work.push(AnonWorkItem::Standalone { result_idx, addr });
       },
-      KItem::Block { primary, targets, .. } => {
+      KItem::Block { block_addr, primary, targets } => {
         let start = addrs.len();
         let result_idxs: Vec<usize> = (start..start + targets.len()).collect();
         addrs.extend(targets);
-        work.push(AnonWorkItem::Block { primary_addr: primary, result_idxs });
+        work.push(AnonWorkItem::Block {
+          block_addr,
+          primary_addr: primary,
+          result_idxs,
+        });
       },
     }
   }
   (work, addrs)
 }
 
-fn build_anon_work(
-  env: &IxonEnv,
-) -> Result<(Vec<AnonWorkItem>, Vec<Address>), String> {
-  Ok(index_anon_work(ix_kernel::anon_work::build_anon_work(env)?))
-}
-
 #[allow(clippy::needless_pass_by_value)]
 fn run_anon_checks_parallel(
-  env: Arc<IxonEnv>,
+  source: ArtifactSource,
   work: Vec<AnonWorkItem>,
   addrs: Vec<Address>,
   quiet: bool,
@@ -1447,7 +1550,7 @@ fn run_anon_checks_parallel(
   let mut handles: Vec<thread::JoinHandle<()>> =
     Vec::with_capacity(worker_count);
   for worker_idx in 0..worker_count {
-    let env = Arc::clone(&env);
+    let source = source.clone();
     let work = Arc::clone(&work);
     let addrs = Arc::clone(&addrs);
     let next_index = Arc::clone(&next_index);
@@ -1461,7 +1564,7 @@ fn run_anon_checks_parallel(
       .name(format!("ix-kernel-check-anon-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
+        let mut checker = ix_kernel::ixon_checker::IxonChecker::from_source(Ok(source));
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         loop {
@@ -1482,7 +1585,7 @@ fn run_anon_checks_parallel(
             AnonWorkItem::Standalone { result_idx, addr } => {
               (addr.clone(), vec![*result_idx])
             },
-            AnonWorkItem::Block { primary_addr, result_idxs } => {
+            AnonWorkItem::Block { primary_addr, result_idxs, .. } => {
               (primary_addr.clone(), result_idxs.clone())
             },
           };
@@ -1496,7 +1599,10 @@ fn run_anon_checks_parallel(
             // attributes exactly this item (incl. TC setup + lazy ingress).
             let _ = ix_kernel::profile::take_op_counts();
           }
-          let check_res = checker.check_const(&primary_addr);
+          let check_res = match item {
+            AnonWorkItem::Block { block_addr, .. } => checker.check_owner(block_addr),
+            AnonWorkItem::Standalone { addr, .. } => checker.check_const(addr),
+          };
           let item_fuel = checker.last_check().fuel_used;
           let elapsed = tc_start.elapsed();
           if record_per_const {
@@ -1672,7 +1778,16 @@ pub extern "C" fn rs_kernel_check_anon(
   );
 
   let t2 = Instant::now();
-  let (work, addrs) = match build_anon_work(&ixon_env) {
+  // Own one snapshot before workers; the mapped input file must remain
+  // immutable for the lifetime of its shared mmap buffers.
+  let source = match ArtifactSource::prepare(ixon_env) {
+    Ok(source) => source,
+    Err(error) => return LeanIOResult::error_string(&error.to_string()),
+  };
+  report_admission("rs_kernel_check_anon", &source);
+  let (work, addrs) = match ix_kernel::anon_work::build_artifact_work(&source)
+    .map(index_anon_work)
+  {
     Ok(pair) => pair,
     Err(e) => {
       return LeanIOResult::error_string(&format!(
@@ -1707,9 +1822,9 @@ pub extern "C" fn rs_kernel_check_anon(
   // the runner clones internally for worker dispatch.
   let addrs_for_return = addrs.clone();
   let t3 = Instant::now();
-  let ixon_env_arc = Arc::new(ixon_env);
+  let tier_source = source.clone();
   let results = match run_anon_checks_parallel(
-    ixon_env_arc,
+    source,
     work,
     addrs,
     quiet,
@@ -1729,6 +1844,14 @@ pub extern "C" fn rs_kernel_check_anon(
   eprintln!(
     "[rs_kernel_check_anon] {passed}/{total} passed, {failed} failed ({:.1?})",
     t3.elapsed()
+  );
+  report_safety_tier(
+    "rs_kernel_check_anon",
+    &tier_source,
+    addrs_for_return
+      .iter()
+      .zip(&results)
+      .filter_map(|(address, result)| result.is_ok().then_some(address)),
   );
   eprintln!(
     "[rs_kernel_check_anon] total:       {:>8.1?}",
@@ -1750,7 +1873,7 @@ pub extern "C" fn rs_kernel_check_anon(
 /// (standalone → itself; a mutual-block member → the whole block, checked
 /// atomically).
 struct AnonSeedContext {
-  env: Arc<IxonEnv>,
+  source: ArtifactSource,
   kernel_work: Vec<ix_kernel::anon_work::AnonWorkItem>,
   /// One `(displayed name, work-item index)` per requested name, in request
   /// order. Two names may share a work item (same mutual block).
@@ -1766,8 +1889,6 @@ fn load_anon_seed_context(
   path: &str,
   names: &[String],
 ) -> Result<AnonSeedContext, String> {
-  use ix_kernel::anon_work::{block_of_addr, work_block_addr};
-
   let t0 = Instant::now();
   let bytes = std::fs::read(path)
     .map_err(|e| format!("{label}: failed to read {path}: {e}"))?;
@@ -1820,16 +1941,31 @@ fn load_anon_seed_context(
   );
 
   let t2 = Instant::now();
-  let kernel_work = ix_kernel::anon_work::build_anon_work(&ixon_env)
+  let source =
+    ArtifactSource::prepare(ixon_env).map_err(|error| error.to_string())?;
+  report_admission(label, &source);
+  let kernel_work = ix_kernel::anon_work::build_artifact_work(&source)
     .map_err(|e| format!("{label}: build_anon_work: {e}"))?;
   let by_block: FxHashMap<Address, usize> = kernel_work
     .iter()
     .enumerate()
-    .map(|(i, w)| (work_block_addr(&ixon_env, w), i))
+    .map(|(i, w)| {
+      (
+        match w {
+          ix_kernel::anon_work::AnonWorkItem::Standalone { addr } => {
+            addr.clone()
+          },
+          ix_kernel::anon_work::AnonWorkItem::Block { block_addr, .. } => {
+            block_addr.clone()
+          },
+        },
+        i,
+      )
+    })
     .collect();
   let mut seeds: Vec<(String, usize)> = Vec::with_capacity(names.len());
   for (n, addr) in names.iter().zip(&resolved) {
-    let block = block_of_addr(&ixon_env, addr);
+    let block = source.block_of(addr).map_err(|error| error.to_string())?;
     match by_block.get(&block) {
       Some(i) => seeds.push((n.clone(), *i)),
       None => {
@@ -1846,38 +1982,38 @@ fn load_anon_seed_context(
     t2.elapsed(),
     kernel_work.len(),
   );
-  Ok(AnonSeedContext { env: Arc::new(ixon_env), kernel_work, seeds })
+  Ok(AnonSeedContext { source, kernel_work, seeds })
 }
 
-/// Work items inside the seeds' full dependency closure — the same set a
-/// zkVM guest enumerates from its closure sub-env (`build_sub_env` +
-/// `build_anon_work`), computed directly from `closure_addrs` without
-/// serializing a sub-env.
-fn closure_work_items(
+/// The work items a verdict on the seeds rests on
+/// ([`ix_kernel::anon_work::verdict_work`]): with `dependencies`, those
+/// inside the seeds' full dependency closure — the set a zkVM guest
+/// enumerates from its closure sub-env (`build_sub_env` + `build_anon_work`)
+/// — and otherwise the seeds' own items. Both include the closure of the
+/// role binding's records and certificates, whose units role admission
+/// defers.
+fn verdict_work_items(
   ctx: &AnonSeedContext,
   seed_items: &[usize],
-) -> Vec<ix_kernel::anon_work::AnonWorkItem> {
-  use ix_kernel::anon_work::{AnonWorkItem as KItem, closure_addrs};
-
+  dependencies: bool,
+) -> Result<Vec<ix_kernel::anon_work::AnonWorkItem>, String> {
   let roots: Vec<Address> = seed_items
     .iter()
     .flat_map(|&i| ctx.kernel_work[i].proven_targets())
     .collect();
-  let closure = closure_addrs(&ctx.env, &roots);
-  ctx
-    .kernel_work
-    .iter()
-    .filter(|w| match w {
-      KItem::Standalone { addr } => closure.contains(addr),
-      KItem::Block { block_addr, .. } => closure.contains(block_addr),
-    })
-    .cloned()
-    .collect()
+  ix_kernel::anon_work::verdict_work(
+    &ctx.source,
+    &ctx.kernel_work,
+    &roots,
+    dependencies,
+  )
 }
 
 /// FFI: anon-mode type-check of named constants with (by default) their full
 /// dependency closures. `skip_deps` restricts the check to each name's own
-/// work item (subject-only; deps trusted).
+/// work item (subject-only; deps trusted). Every mode also checks the
+/// closure of a bound artifact's role records and certificates, which role
+/// admission assumes and a verdict on an admitted role rests on.
 ///
 /// Names resolve through the env's `named` metadata by displayed form,
 /// then the metadata is dropped and
@@ -1946,15 +2082,14 @@ pub extern "C" fn rs_kernel_check_anon_consts(
     for (name, item_idx) in &ctx.seeds {
       tracing_texray::rss_sampler::reset_peak_tree_rss();
       let t = Instant::now();
-      let selected = if skip_deps {
-        vec![ctx.kernel_work[*item_idx].clone()]
-      } else {
-        closure_work_items(&ctx, &[*item_idx])
+      let selected = match verdict_work_items(&ctx, &[*item_idx], !skip_deps) {
+        Ok(work) => work,
+        Err(error) => return LeanIOResult::error_string(&error),
       };
       let (work, addrs) = index_anon_work(selected);
       let total = addrs.len();
       let results = match run_anon_checks_parallel(
-        Arc::clone(&ctx.env),
+        ctx.source.clone(),
         work,
         addrs.clone(),
         quiet,
@@ -2017,10 +2152,10 @@ pub extern "C" fn rs_kernel_check_anon_consts(
 
   // The check set. Subject-only: the seeds' own items. Full-closure: every
   // work item inside the seeds' dependency closure (union across seeds).
-  let selected = if skip_deps {
-    seed_items.iter().map(|&i| ctx.kernel_work[i].clone()).collect()
-  } else {
-    closure_work_items(&ctx, &seed_items)
+  // Both add the closure of the binding's records and certificates.
+  let selected = match verdict_work_items(&ctx, &seed_items, !skip_deps) {
+    Ok(work) => work,
+    Err(error) => return LeanIOResult::error_string(&error),
   };
   let (work, addrs) = index_anon_work(selected);
   eprintln!(
@@ -2051,7 +2186,7 @@ pub extern "C" fn rs_kernel_check_anon_consts(
   let addrs_for_return = addrs.clone();
   let t3 = Instant::now();
   let results = match run_anon_checks_parallel(
-    ctx.env,
+    ctx.source,
     work,
     addrs,
     quiet,
@@ -2220,7 +2355,8 @@ pub extern "C" fn rs_env_extract(
 // ===========================================================================
 // Sharding profiler: run the anon kernel out of circuit over a `.ixe`,
 // recording per-block heartbeats + the delta-unfold graph into a `.ixprof`.
-// See `plans/sharding.md`.
+// `profile_anon_ixe` below records the profile; `Ix/Cli/ShardCmd.lean`
+// selects its consumer with `--profile`.
 // ===========================================================================
 
 /// Summary returned by [`profile_anon_ixe`].
@@ -2878,7 +3014,7 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
 // `map_err_ignore`: the discarded `Arc`/`PoisonError` carry no useful context.
 #[allow(clippy::needless_pass_by_value, clippy::map_err_ignore)]
 fn run_anon_profile_parallel(
-  env: Arc<IxonEnv>,
+  source: ArtifactSource,
   work: Vec<AnonWorkItem>,
   isolate: bool,
   quiet: bool,
@@ -2897,7 +3033,7 @@ fn run_anon_profile_parallel(
   let mut handles: Vec<thread::JoinHandle<()>> =
     Vec::with_capacity(worker_count);
   for worker_idx in 0..worker_count {
-    let env = Arc::clone(&env);
+    let source = source.clone();
     let work = Arc::clone(&work);
     let next_index = Arc::clone(&next_index);
     let passed = Arc::clone(&passed);
@@ -2907,7 +3043,8 @@ fn run_anon_profile_parallel(
       .name(format!("ix-kernel-profile-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut checker = ix_kernel::ixon_checker::IxonChecker::new(&env);
+        let mut checker =
+          ix_kernel::ixon_checker::IxonChecker::from_source(Ok(source));
         checker.set_profile_sink(ProfileSink::new(isolate));
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
@@ -2922,11 +3059,12 @@ fn run_anon_profile_parallel(
             checker.clear_releasing_memory();
             checks_since_clear = 0;
           }
-          let primary_addr = match &work[work_idx] {
-            AnonWorkItem::Standalone { addr, .. } => addr.clone(),
-            AnonWorkItem::Block { primary_addr, .. } => primary_addr.clone(),
+          let res = match &work[work_idx] {
+            AnonWorkItem::Block { block_addr, .. } => {
+              checker.check_owner(block_addr)
+            },
+            AnonWorkItem::Standalone { addr, .. } => checker.check_const(addr),
           };
-          let res = checker.check_const(&primary_addr);
           if res.is_ok() {
             passed.fetch_add(1, Ordering::Relaxed);
           } else {
@@ -2979,12 +3117,18 @@ pub fn profile_anon_ixe(
     ixon_env.const_count(),
     load_start.elapsed()
   );
-  let (work, addrs) = build_anon_work(&ixon_env)?;
+  // The map capture is quiescent; the original is retained only for reporting.
+  // Its mapped file must remain immutable until profiling and reporting end.
+  let source =
+    ArtifactSource::snapshot(&ixon_env).map_err(|error| error.to_string())?;
+  report_admission("rs_kernel_profile", &source);
+  let (work, addrs) =
+    index_anon_work(ix_kernel::anon_work::build_artifact_work(&source)?);
   let targets = addrs.len();
   let env_arc = Arc::new(ixon_env);
   let run_start = Instant::now();
   let (passed, failed, merged) =
-    run_anon_profile_parallel(Arc::clone(&env_arc), work, isolate, quiet)?;
+    run_anon_profile_parallel(source, work, isolate, quiet)?;
   eprintln!(
     "[rs_kernel_profile] checked {passed}/{} ({} failed) in {:.1?}",
     passed + failed,
@@ -3189,6 +3333,84 @@ mod tests {
   }
 }
 
+#[cfg(test)]
+mod planner_tests {
+  use super::build_check_work;
+  use ix_common::address::Address;
+  use ix_common::env::Name;
+  use ix_kernel::role_admission::ArtifactSource;
+  use ixon::constant::{ConstantInfo, defn_proj_address, defn_proj_constant};
+  use ixon::env::{Env, Named};
+  use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
+  use rustc_hash::FxHashMap;
+
+  const GOOD: &[u8] = include_bytes!(
+    "../../kernel/tests/fixtures/serialized_units/homogeneous-good.ixe"
+  );
+
+  fn register(env: &Env, label: &str, address: Address) -> Name {
+    let name = Name::str(Name::anon(), label.into());
+    let own = Address::from_blake3_hash(*name.get_hash());
+    env.store_name(own.clone(), name.clone());
+    env.register_name(
+      name.clone(),
+      Named::new(
+        address,
+        ConstantMeta {
+          info: ConstantMetaInfo::Def {
+            name: own.clone(),
+            lvls: vec![],
+            all: vec![own.clone()],
+            ctx: vec![own],
+            arena: ExprMeta::default(),
+            type_root: 0,
+            value_root: 0,
+          },
+          ..ConstantMeta::default()
+        },
+      ),
+    );
+    name
+  }
+
+  /// Names share a work item, and so a verdict, only through an
+  /// authenticated owner: a genuinely serialized projection whose `block`
+  /// field names a real owner but whose index that owner lacks is scheduled
+  /// on its own, not as an alias of the owner's valid members.
+  #[test]
+  fn invalid_projection_does_not_alias_its_claimed_owner() {
+    let mut input = GOOD;
+    let env = Env::get(&mut input).unwrap();
+    let owner = env
+      .consts
+      .iter()
+      .find_map(|entry| {
+        matches!(entry.value().get().unwrap().info, ConstantInfo::Muts(_))
+          .then(|| entry.key().clone())
+      })
+      .unwrap();
+    let invalid = defn_proj_constant(99, owner.clone());
+    let invalid_address = invalid.commit().0;
+    env.store_const(invalid_address.clone(), invalid);
+    let names = vec![
+      register(&env, "member0", defn_proj_address(0, &owner)),
+      register(&env, "member1", defn_proj_address(1, &owner)),
+      register(&env, "invalid", invalid_address),
+    ];
+    let source = ArtifactSource::snapshot(&env).unwrap();
+    let work = build_check_work(
+      &env,
+      &source,
+      &names,
+      &[true, true, true],
+      &FxHashMap::default(),
+    );
+    let groups: Vec<Vec<usize>> =
+      work.iter().map(|item| item.aliases.clone()).collect();
+    assert_eq!(groups, vec![vec![0, 1], vec![2]]);
+  }
+}
+
 /// Default threshold at and above which a completed check is "slow" enough to
 /// keep a persistent line in quiet mode. Override with
 /// `IX_KERNEL_CHECK_SLOW_MS`.
@@ -3264,8 +3486,8 @@ fn kernel_check_mem_stats_enabled() -> bool {
 /// pushed any single cache past `threshold` entries, or when this block
 /// set a new per-worker peak. Used only with `IX_KERNEL_CHECK_DIAG=1`.
 #[allow(clippy::too_many_arguments)]
-fn log_block_diag_if_big<M: KernelMode>(
-  kenv: &KEnv<M>,
+fn log_block_diag_if_big(
+  sizes: ix_kernel::env::KEnvCacheSizes,
   worker_idx: usize,
   work_idx: usize,
   work_total: usize,
@@ -3274,7 +3496,6 @@ fn log_block_diag_if_big<M: KernelMode>(
   worker_peak_cache: &mut usize,
   progress: &ParallelProgress,
 ) {
-  let sizes = kenv.cache_sizes();
   let max_cache = sizes.max();
   let is_new_peak = max_cache > *worker_peak_cache;
   let exceeds_threshold = max_cache >= threshold;
@@ -3399,7 +3620,7 @@ fn check_one_const<M: KernelMode, F>(
   names: &[Name],
   expect_pass: &[bool],
   ungrounded: &FxHashMap<Name, String>,
-  kenv: &mut KEnv<M>,
+  checker: &mut ArtifactChecker<M>,
   mut before_kernel_check: F,
 ) -> CheckOutcome
 where
@@ -3441,38 +3662,19 @@ where
   before_kernel_check(&prefix);
 
   let tc_start = Instant::now();
-  let kid = match ingress_const_shallow_into_kenv_with_lookups(
-    kenv, ixon_env, lookups, name,
-  ) {
-    Ok(kid) => kid,
-    Err(msg) => {
-      let elapsed = tc_start.elapsed();
-      let status = if msg.contains("missing Named entry") {
-        CheckStatus::NotFound
-      } else {
-        CheckStatus::Checked
-      };
-      return CheckOutcome {
-        progress_index,
-        progress_total,
-        display,
-        should_pass,
-        result: Err((ErrKind::Kernel, msg)),
-        status,
-        elapsed: Some(elapsed),
-        peak: None,
-      };
-    },
-  };
-
-  let (result, peak): (Result<(), String>, u32) = {
-    let mut tc = TypeChecker::new_with_lazy_ixon(kenv, ixon_env, lookups);
-    tc.set_debug_label(display.clone());
-    let result =
-      tc.check_const(&kid).map_err(|e| format_tc_error(&e, ixon_env, lookups));
-    let peak = tc.def_eq_peak;
-    tc.finish_constant_accounting();
-    (result, peak)
+  checker.set_debug_label(display.clone());
+  let result = checker
+    .check_name(name)
+    .map_err(|error| format_tc_error(&error, ixon_env, lookups));
+  let peak = checker.last_check().def_eq_peak;
+  let status = if result
+    .as_ref()
+    .err()
+    .is_some_and(|message| message.contains("missing Named entry"))
+  {
+    CheckStatus::NotFound
+  } else {
+    CheckStatus::Checked
   };
   let elapsed = tc_start.elapsed();
 
@@ -3482,7 +3684,7 @@ where
     display,
     should_pass,
     result: result.map_err(|msg| (ErrKind::Kernel, msg)),
-    status: CheckStatus::Checked,
+    status,
     elapsed: Some(elapsed),
     peak: Some(peak),
   }
@@ -3494,6 +3696,7 @@ where
 #[allow(clippy::needless_pass_by_value)]
 fn check_consts_loop<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
+  source: ArtifactSource,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
@@ -3513,13 +3716,13 @@ where
   // Terminal width is only needed for ephemeral clearing in quiet mode. In
   // verbose mode we never rewrite, so the value is ignored.
   let mut progress = Progress::new(quiet);
-  let mut kenv = KEnv::<M>::new();
+  let mut checker = ArtifactChecker::<M>::from_named_source(Ok(source));
   let clear_every = kernel_check_clear_every();
   let mut checks_since_clear = clear_every;
 
   for (work_idx, item) in work.iter().enumerate() {
     if checks_since_clear >= clear_every {
-      kenv.clear_releasing_memory();
+      checker.clear_releasing_memory();
       checks_since_clear = 0;
     }
     let outcome = check_one_const(
@@ -3531,7 +3734,7 @@ where
       &names,
       &expect_pass,
       &ungrounded,
-      &mut kenv,
+      &mut checker,
       |prefix| progress.start(prefix),
     );
     let prefix = outcome.prefix();
@@ -4057,7 +4260,7 @@ fn format_tc_error<M: KernelMode>(
       format!("unknown constant {name} ({:.12})", addr.hex())
     },
     // Everything else has a hand-written `Display` impl in
-    // `src/ix/kernel/error.rs` — prefer it over `{:?}` which dumps raw
+    // `crates/kernel/src/error.rs` — prefer it over `{:?}` which dumps raw
     // KExpr internals.
     other => format!("{other}"),
   }
@@ -4145,16 +4348,12 @@ fn build_uniform_error(count: usize, msg: &str) -> LeanIOResult<LeanOwned> {
 // and compare each constant's type/value against the original by content
 // hash.
 //
-// Unlike the earlier direct `KEnv → lean_egress` variant, this path lets the
-// validated `decompile_env` (the same pass `validate-aux` and `rust-compile`
-// cover) regenerate the aux_gen auxiliaries (`.brecOn*`, `.brecOn_N.eq`,
-// etc.) from the kernel-canonicalized Ixon form. That's the critical step
-// for closing the `.brecOn*` binder-name / alpha-collapse drift: the prior
-// direct path was a second decompiler with no aux_gen awareness.
+// The Lean side comes from the same `decompile_env` that `rust-compile`
+// covers, run over the kernel's Ixon form, so the comparison checks the
+// kernel round trip rather than a second decompiler.
 //
 // If `ixon_egress` is structurally faithful (kenv → ixon inversion preserves
-// the original addressing) and decompile_env regenerates aux_gen correctly,
-// this test should report zero mismatches.
+// the original addressing), this test should report zero mismatches.
 //
 // Test-only: this and the no-compile variant below import `egress` and
 // `decompile_env`, which the production CLI path (`rs_kernel_check_consts`)
@@ -4203,6 +4402,8 @@ pub extern "C" fn rs_decompile_roundtrip(
     return build_string_array(&[format!("serialize error: {e}")]);
   }
   let sharing_limits = compile_state.sharing_limits.clone();
+  let ungrounded: rustc_hash::FxHashSet<Name> =
+    compile_state.ungrounded.iter().map(|e| e.key().clone()).collect();
   drop(compile_state);
   let mut slice: &[u8] = &bytes;
   let env = match ixon::env::Env::get_demoted_named(&mut slice) {
@@ -4237,8 +4438,13 @@ pub extern "C" fn rs_decompile_roundtrip(
   );
 
   let t4 = Instant::now();
-  let (errors, checked, not_found) =
+  let (mut errors, checked, not_found) =
     compare_envs(&rust_env_arc, |n| dstt.env.get(n));
+  errors.extend(decompile_completeness_errors(
+    &rust_env_arc,
+    &dstt,
+    &ungrounded,
+  ));
   eprintln!(
     "[rs_decompile_roundtrip] verify:     {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t4.elapsed(),
@@ -4326,9 +4532,7 @@ pub extern "C" fn rs_kernel_roundtrip(
   // reads from `stt.env.named` / `stt.env.get_const` / `stt.env.get_blob` —
   // the egressed env preserves all of those (meta is copied from the
   // original; constants are re-synthesized from kenv; blobs/names are
-  // cloned). `stt.blocks`, `stt.kctx`, `stt.aux_gen_extra_names`, etc.
-  // remain untouched so decompile's Pass 2 (aux_gen regeneration) has the
-  // block structure it expects.
+  // cloned).
   compile_state.env = egressed_ixon;
 
   let t4 = Instant::now();
@@ -4348,8 +4552,15 @@ pub extern "C" fn rs_kernel_roundtrip(
   // content-hash, reading decompile's DashMap directly — a plain-`Env`
   // copy of it would double the resident decompiled env at peak.
   let t6 = Instant::now();
-  let (errors, checked, not_found) =
+  let (mut errors, checked, not_found) =
     compare_envs(&rust_env_arc, |n| dstt.env.get(n));
+  let ungrounded: rustc_hash::FxHashSet<Name> =
+    compile_state.ungrounded.iter().map(|e| e.key().clone()).collect();
+  errors.extend(decompile_completeness_errors(
+    &rust_env_arc,
+    &dstt,
+    &ungrounded,
+  ));
   eprintln!(
     "[rs_kernel_roundtrip] verify:        {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t6.elapsed(),
@@ -4365,6 +4576,24 @@ pub extern "C" fn rs_kernel_roundtrip(
   );
 
   build_string_array(&errors)
+}
+
+/// The round trip's completeness errors besides `compare_envs`' content
+/// diffs: every original constant absent from the decompiled env other than
+/// the compile's ungrounded inputs.
+#[cfg(feature = "test-ffi")]
+fn decompile_completeness_errors(
+  original: &ix_common::env::Env,
+  dstt: &ix_compile::decompile::DecompileState,
+  ungrounded: &rustc_hash::FxHashSet<Name>,
+) -> Vec<String> {
+  let mut absent: Vec<String> = original
+    .iter()
+    .filter(|(n, _)| !dstt.env.contains_key(*n) && !ungrounded.contains(*n))
+    .map(|(n, _)| format!("absent from decompiled: {}", n.pretty()))
+    .collect();
+  absent.sort();
+  absent
 }
 
 /// Compare the original env against a decompiled/egressed side for
@@ -4636,7 +4865,14 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
   // Direct Lean → kernel ingress. No compile, no Ixon.
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let kenv = lean_ingress(&rust_env_arc);
+  let kenv = match lean_ingress(&rust_env_arc) {
+    Ok(kenv) => kenv,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_roundtrip_no_compile: ingress failed {e}"
+      ));
+    },
+  };
   eprintln!(
     "[rs_kernel_roundtrip_no_compile] ingress:     {:>8.1?} ({} consts)",
     t1.elapsed(),

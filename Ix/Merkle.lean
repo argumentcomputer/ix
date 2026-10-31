@@ -71,14 +71,23 @@ tree from witness data.
 
 /-! ## Helpers -/
 
-/-- Sort an Array of Addresses lex-ascending by hash bytes. -/
+/-- Check whether an Array of Addresses is already strictly ascending under
+`Address.cmpBytes` (and therefore sorted and duplicate-free). -/
+private def isStrictlySortedAddrs (xs : Array Address) : Bool := Id.run do
+  for i in [1:xs.size] do
+    if xs[i - 1]!.cmpBytes xs[i]! != .lt then
+      return false
+  return true
+
+/-- Sort an Array of Addresses lex-ascending by hash bytes. `Address.cmpBytes`
+is the order of `Ord Address` without building byte lists per comparison. -/
 private def sortAddrs (xs : Array Address) : Array Address :=
-  xs.qsort fun a b => compare a b == .lt
+  xs.qsort fun a b => a.cmpBytes b == .lt
 
 /-- Deduplicate a sorted Array of Addresses. -/
 private def dedupSortedAddrs (xs : Array Address) : Array Address := Id.run do
   if xs.isEmpty then return #[]
-  let mut result : Array Address := #[xs[0]!]
+  let mut result : Array Address := (Array.emptyWithCapacity xs.size).push xs[0]!
   for i in [1:xs.size] do
     if !(xs[i]! == xs[i-1]!) then
       result := result.push xs[i]!
@@ -88,7 +97,7 @@ private def dedupSortedAddrs (xs : Array Address) : Array Address := Id.run do
 zero sentinel if odd count. -/
 private def reduceLevel (level : Array Address) : Array Address := Id.run do
   let z := zeroAddress
-  let mut next : Array Address := #[]
+  let mut next : Array Address := Array.emptyWithCapacity ((level.size + 1) / 2)
   let mut i := 0
   while i < level.size do
     let l := level[i]!
@@ -96,6 +105,16 @@ private def reduceLevel (level : Array Address) : Array Address := Id.run do
     next := next.push (nodeHash l r)
     i := i + 2
   return next
+
+/-- Hash a contiguous slice `sorted[lo:hi]` (with `1 ≤ hi - lo ≤ 1024`) into leaf
+digests and reduce through 10 canonical tree levels to a single level-10 digest. -/
+private def reduceChunk10 (sorted : Array Address) (lo hi : Nat) : Address := Id.run do
+  let mut level : Array Address := Array.emptyWithCapacity (hi - lo)
+  for i in [lo:hi] do
+    level := level.push (leafHash sorted[i]!)
+  for _ in [:10] do
+    level := reduceLevel level
+  return level[0]!
 
 /-- Reduce a list of nodes to a single root via repeated `reduceLevel`.
 Assumes input is non-empty. -/
@@ -112,13 +131,20 @@ lex-sorted and deduplicated before hashing. Returns:
   `zeroAddress`.
 -/
 def merkleRootCanonical (leaves : Array Address) : Option Address :=
-  let sorted := dedupSortedAddrs (sortAddrs leaves)
+  let sorted := if isStrictlySortedAddrs leaves then leaves else dedupSortedAddrs (sortAddrs leaves)
   if sorted.isEmpty then
     none
   else if sorted.size == 1 then
     some (leafHash sorted[0]!)
-  else
+  else if sorted.size ≤ 512 then
     some (buildTree (sorted.map leafHash))
+  else
+    let numChunks := (sorted.size + 1023) / 1024
+    let tasks := (Array.range numChunks).map fun c =>
+      let lo := c * 1024
+      let hi := Nat.min (lo + 1024) sorted.size
+      Task.spawn fun _ => reduceChunk10 sorted lo hi
+    some (buildTree (tasks.map (·.get)))
 
 /-! ## Membership proofs -/
 
@@ -144,7 +170,7 @@ private def proofStep (level : Array Address) (pos : Nat)
 set. Returns the empty path for a single-leaf tree. -/
 partial def merkleProofCanonical (leaves : Array Address) (target : Address)
     : Option MerklePath :=
-  let sorted := dedupSortedAddrs (sortAddrs leaves)
+  let sorted := if isStrictlySortedAddrs leaves then leaves else dedupSortedAddrs (sortAddrs leaves)
   if sorted.isEmpty then
     none
   else

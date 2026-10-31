@@ -1,7 +1,5 @@
 //! Type checker error types.
 
-use std::cmp::Ordering;
-
 use ix_common::address::Address;
 
 use super::expr::KExpr;
@@ -49,27 +47,16 @@ pub enum TcError<M: KernelMode> {
   DefEqFailed,
   MaxRecDepth,
   MaxRecFuel,
-  /// A stored mutual block fails the kernel's canonicity check: under the
-  /// stored partition, an adjacent pair did not satisfy strict `Less`.
-  ///
-  /// - `Greater`: the stored order disagrees with `sort_consts`.
-  /// - `Equal`: two distinct entries are alpha-equivalent — the
-  ///   compiler should have collapsed them to a single canonical Ixon
-  ///   constant. Two separate addresses for the same alpha-equivalence
-  ///   class is a canonicity violation.
-  ///
-  /// `pos` is the index of the first member of the offending pair.
-  NonCanonicalBlock {
-    block: Address,
-    pos: usize,
-    ordering: Ordering,
-  },
-  /// A free variable reached a comparator (canonical-sort or related)
-  /// that requires de-Bruijn-only inputs. Canonicalization runs over
-  /// closed, egressed expressions before any binder opening; an FVar
-  /// here means a kernel path leaked an open expression into the
-  /// canonical-ordering stage.
-  UnexpectedFVarInComparator,
+  /// The check's recursion came within the checker's stack reserve (see
+  /// [`crate::tc::STACK_RESERVE_MAX`]) of the end of its thread's stack, and
+  /// declined instead of overflowing.
+  StackExhausted,
+  /// The declaration is, or refers to, one of Lean's native-evaluation
+  /// constants (`Lean.trustCompiler` and `Lean.reduceBool`,
+  /// `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`, which are
+  /// built on it). Evaluation by the compiler is outside the checked
+  /// theory, so the kernel declines them as the certified checker does.
+  NativeEvaluation(Address),
   Other(String),
 }
 
@@ -105,22 +92,14 @@ impl<M: KernelMode> std::fmt::Display for TcError<M> {
       TcError::DefEqFailed => write!(f, "definitional equality check failed"),
       TcError::MaxRecDepth => write!(f, "max recursion depth exceeded"),
       TcError::MaxRecFuel => write!(f, "recursive fuel exhausted"),
-      TcError::NonCanonicalBlock { block, pos, ordering } => {
-        let dir = match ordering {
-          Ordering::Less => "Less",
-          Ordering::Equal => "Equal (uncollapsed alpha-equivalence)",
-          Ordering::Greater => "Greater (wrong order)",
-        };
-        write!(
-          f,
-          "non-canonical block {:.12}: adjacent pair at position {pos} compares {dir} (expected strict Less)",
-          block.hex()
-        )
+      TcError::StackExhausted => {
+        write!(f, "recursion too deep for the native stack")
       },
-      TcError::UnexpectedFVarInComparator => write!(
+      TcError::NativeEvaluation(addr) => write!(
         f,
-        "unexpected free variable in canonical-ordering comparator: \
-         canonicalization must run before any binder opening"
+        "native-evaluation constant {:.12}: evaluation by the compiler is \
+         outside the checked theory",
+        addr.hex()
       ),
       TcError::Other(s) => write!(f, "{s}"),
     }

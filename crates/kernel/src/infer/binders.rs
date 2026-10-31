@@ -31,8 +31,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let mut fvars = Vec::new();
       let mut ids = Vec::new();
       let mut domains = Vec::new();
+      let mut contracts = Vec::new();
       let mut body = e;
-      while let ExprData::Lam(name, bi, ty, rest, _) = body.data() {
+      while let ExprData::Lam(name, bi, contract, ty, rest, _) = body.data() {
         if !fvars.is_empty() && tc.has_closed_infer_result(body) {
           break;
         }
@@ -51,11 +52,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             name: name.clone(),
             bi: bi.clone(),
             ty: domain.clone(),
+            contract: *contract,
+            result: ixon::contract::ValueContract::shared(),
           },
         );
         fvars.push(fv);
         ids.push(id);
         domains.push(domain);
+        contracts.push(*contract);
         body = rest;
       }
 
@@ -72,9 +76,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let domain = abstract_fvars(&mut tc.env.intern, domain, &ids[..i]);
         // Inferred Pis deliberately use anonymous/default binder metadata,
         // matching the single-binder path and recursor synthesis exactly.
-        result = tc.env.intern.intern_all(
+        result = tc.env.intern.intern_all_contract(
           M::meta_field(ix_common::env::Name::anon()),
           M::meta_field(ix_common::env::BinderInfo::Default),
+          contracts[i],
+          ixon::contract::ValueContract::shared(),
           &domain,
           &result,
         );
@@ -91,7 +97,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let mut fvars = Vec::new();
       let mut levels = Vec::new();
       let mut body = e;
-      while let ExprData::All(name, bi, ty, rest, _) = body.data() {
+      while let ExprData::All(name, bi, contract, result, ty, rest, _) = body.data() {
         if !fvars.is_empty() && tc.has_closed_infer_result(body) {
           break;
         }
@@ -117,6 +123,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             name: name.clone(),
             bi: bi.clone(),
             ty: domain,
+            contract: *contract,
+            result: *result,
           },
         );
         fvars.push(fv);

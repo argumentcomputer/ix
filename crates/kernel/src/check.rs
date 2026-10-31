@@ -15,7 +15,7 @@ use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::{KUniv, UnivData, univ_eq};
 use super::mode::{CheckDupLevelParams, KernelMode};
-use super::primitive::Primitives;
+use super::primitive::{Primitives, is_native_evaluation_addr};
 use super::tc::TypeChecker;
 
 /// Emit `[decl diff]` when a `Defn`'s value fails the `is_def_eq(val_ty,
@@ -69,9 +69,8 @@ fn definition_dependencies<M: KernelMode>(c: &KConst<M>) -> Vec<KId<M>> {
     match expr.data() {
       ExprData::Const(id, ..) => refs.push(id.clone()),
       ExprData::App(fun, arg, _) => pending.extend([arg, fun]),
-      ExprData::Lam(_, _, dom, body, _) | ExprData::All(_, _, dom, body, _) => {
-        pending.extend([body, dom])
-      },
+      ExprData::Lam(_, _, _, dom, body, _)
+      | ExprData::All(_, _, _, _, dom, body, _) => pending.extend([body, dom]),
       ExprData::Let(_, ty, val, body, _, _) => {
         pending.extend([body, val, ty]);
       },
@@ -90,6 +89,7 @@ enum CheckBlockKind {
   Defn,
   Inductive,
   Recursor,
+  Family,
 }
 
 fn canonical_var<M: KernelMode>(idx: u64) -> KExpr<M> {
@@ -323,6 +323,37 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.check_const_member_fresh(id)
   }
 
+  /// Check the complete serialized unit represented by an Ixon target.
+  /// Whole-unit success is cached only after every family phase succeeds.
+  /// Direct Lean source callers retain `check_const`'s member fallback.
+  pub fn check_ixon_const(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
+  where
+    M::MField<Vec<Name>>: CheckDupLevelParams,
+  {
+    let c = self.get_const(id)?;
+    let block = match c {
+      KConst::Defn { block, .. }
+      | KConst::Indc { block, .. }
+      | KConst::Recr { block, .. } => Some(block),
+      KConst::Ctor { induct, .. } => match self.get_const(&induct)? {
+        KConst::Indc { block, .. } => Some(block),
+        _ => None,
+      },
+      KConst::Axio { .. } | KConst::Quot { .. } => None,
+    };
+    if let Some(block) = block
+      && self.try_get_block(&block)?.is_some()
+    {
+      if let Some(result) = self.env.block_check_results.get(&block).cloned() {
+        return result;
+      }
+      let result = self.check_block_body(&block, id);
+      self.env.block_check_results.insert(block, result.clone());
+      return result;
+    }
+    self.check_const_member_fresh(id)
+  }
+
   fn check_const_member_fresh(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
   where
     M::MField<Vec<Name>>: CheckDupLevelParams,
@@ -342,6 +373,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   where
     M::MField<Vec<Name>>: CheckDupLevelParams,
   {
+    // `Lean.trustCompiler : True` mentions no native-evaluation constant, so
+    // the reference check in `infer` cannot reach it: decline these
+    // declarations by their own address.
+    if is_native_evaluation_addr(&id.addr) {
+      return Err(TcError::NativeEvaluation(id.addr.clone()));
+    }
+
     let phase_timing = *IX_PHASE_TIMING;
     let overall = if phase_timing { Some(Instant::now()) } else { None };
 
@@ -361,7 +399,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let validate_elapsed = validate_start.map(|s| s.elapsed());
 
     match &c {
-      KConst::Axio { ty, .. } => {
+      KConst::Axio { ty, is_unsafe, .. } => {
+        // Under the safety tier a safe axiom, like every safe declaration,
+        // may not mention a partial or unsafe constant.
+        if !is_unsafe && self.prims.follows_safety_tier() {
+          self.check_no_unsafe_refs(ty, DefinitionSafety::Safe)?;
+        }
+        if !is_unsafe && !self.prims.axiom_declarable(&id.addr) {
+          return Err(TcError::Other(format!(
+            "axiom {} is not a standard axiom of the checked theory",
+            id.addr.hex()
+          )));
+        }
         let t = self.infer(ty)?;
         self.ensure_sort(&t)?;
         Ok(())
@@ -414,13 +463,21 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let t_safety_start = overall.map(|_| Instant::now());
         let mut safety_ty_elapsed = None;
         let mut safety_val_elapsed = None;
-        if *safety != DefinitionSafety::Unsafe {
+        // Under the safety tier an opaque is checked as safe whatever its
+        // own safety, as Lean's kernel adds opaques.
+        let fence =
+          if *kind == DefKind::Opaque && self.prims.follows_safety_tier() {
+            DefinitionSafety::Safe
+          } else {
+            *safety
+          };
+        if fence != DefinitionSafety::Unsafe {
           let t_safety_ty_start = overall.map(|_| Instant::now());
-          self.check_no_unsafe_refs(ty, *safety)?;
+          self.check_no_unsafe_refs(ty, fence)?;
           safety_ty_elapsed = t_safety_ty_start.map(|s| s.elapsed());
 
           let t_safety_val_start = overall.map(|_| Instant::now());
-          self.check_no_unsafe_refs(val, *safety)?;
+          self.check_no_unsafe_refs(val, fence)?;
           safety_val_elapsed = t_safety_val_start.map(|s| s.elapsed());
         }
         let safety_elapsed = t_safety_start.map(|s| s.elapsed());
@@ -464,10 +521,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         // `check_recursor` runs the full kernel-driven verification:
         // coherence (major inductive passes A1–A4, K-target flag matches),
         // plus generated-canonical-vs-stored rule comparison via
-        // `is_def_eq`. The rule generator is shared between the kernel and
-        // the compile-time aux_gen, with the nested-aux ordering selected
-        // by `KEnv::recursor_aux_order`, so the syntactic compare is sound
-        // against the canonical aux-restored env produced by `ixon_ingress`.
+        // `is_def_eq`. How nested auxiliaries are opened is selected by
+        // `KEnv::recursor_aux_order`, so the generated auxiliaries line up
+        // with the stored ones in an env produced by `ixon_ingress`.
         self.check_recursor_member(id)?;
         Ok(())
       },
@@ -565,8 +621,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       (true, false, false) => Ok(CheckBlockKind::Defn),
       (false, true, false) => Ok(CheckBlockKind::Inductive),
       (false, false, true) => Ok(CheckBlockKind::Recursor),
+      (false, true, true) => Ok(CheckBlockKind::Family),
       _ => Err(TcError::Other(
-        "unsupported mixed check block: expected only definitions, only inductives/constructors, or only recursors"
+        "unsupported mixed check block: definitions cannot mix with an inductive/recursor family"
           .into(),
       )),
     }
@@ -627,6 +684,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
       CheckBlockKind::Inductive => self.check_inductive_block(block, &members),
       CheckBlockKind::Recursor => self.check_recursor_block(block, &members),
+      CheckBlockKind::Family => {
+        let mut inductives = Vec::new();
+        let mut recursors = Vec::new();
+        for member in &members {
+          match self.get_const(member)? {
+            KConst::Indc { .. } | KConst::Ctor { .. } => {
+              inductives.push(member.clone())
+            },
+            KConst::Recr { .. } => recursors.push(member.clone()),
+            _ => {
+              return Err(TcError::Other(
+                "invalid serialized family member".into(),
+              ));
+            },
+          }
+        }
+        self.check_inductive_block(block, &inductives)?;
+        self.check_recursor_block(block, &recursors)
+      },
     };
     let body_elapsed = body_start.map(|s| s.elapsed());
 
@@ -846,7 +922,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           stack.push((f, depth));
           stack.push((a, depth));
         },
-        ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+        ExprData::Lam(_, _, _, ty, body, _)
+        | ExprData::All(_, _, _, _, ty, body, _) => {
           stack.push((ty, depth));
           let body_depth = depth.checked_add(1).ok_or_else(|| {
             TcError::Other("binder depth overflow during validation".into())
@@ -918,13 +995,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     ty: &KExpr<M>,
   ) -> Result<(), TcError<M>> {
     // Validate address ↔ kind consistency
-    let expected_kind = if id.addr == self.prims.quot_type.addr {
+    let expected_kind = if id.addr == self.primitives()?.quot_type.addr {
       QuotKind::Type
-    } else if id.addr == self.prims.quot_ctor.addr {
+    } else if id.addr == self.primitives()?.quot_ctor.addr {
       QuotKind::Ctor
-    } else if id.addr == self.prims.quot_lift.addr {
+    } else if id.addr == self.primitives()?.quot_lift.addr {
       QuotKind::Lift
-    } else if id.addr == self.prims.quot_ind.addr {
+    } else if id.addr == self.primitives()?.quot_ind.addr {
       QuotKind::Ind
     } else {
       return Err(TcError::Other(format!(
@@ -953,7 +1030,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       )));
     }
 
-    let expected_ty = canonical_quot_type(&self.prims, kind);
+    let expected_ty = canonical_quot_type(self.primitives()?, kind);
     if ty != &expected_ty {
       return Err(TcError::Other(format!(
         "check_quot: {:?} type is not canonical",
@@ -973,12 +1050,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Verify the exact Eq/Eq.refl prerequisite checked by Lean before it
   /// installs the quotient primitives.
   fn check_eq_type(&self) -> Result<(), TcError<M>> {
+    let primitives = self.primitives()?;
     // Find Eq inductive in the environment by address.
     // Search all constants for one matching the Eq address.
     let eq_const = self
       .env
       .iter()
-      .find(|(id, _)| id.addr == self.prims.eq.addr)
+      .find(|(id, _)| id.addr == primitives.eq.addr)
       .map(|(id, c)| (id.clone(), c.clone()));
     let (_eq_id, eq_c) = eq_const.ok_or_else(|| {
       TcError::Other("check_eq_type: Eq not found in environment".into())
@@ -1015,7 +1093,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           )));
         }
         // Verify the constructor is Eq.refl
-        if ctors[0].addr != self.prims.eq_refl.addr {
+        if ctors[0].addr != self.primitives()?.eq_refl.addr {
           return Err(TcError::Other(
             "check_eq_type: Eq's constructor is not Eq.refl".into(),
           ));
@@ -1036,7 +1114,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let refl_c = self
       .env
       .iter()
-      .find(|(id, _)| id.addr == self.prims.eq_refl.addr)
+      .find(|(id, _)| id.addr == primitives.eq_refl.addr)
       .map(|(_, c)| c.clone())
       .ok_or_else(|| {
         TcError::Other("check_eq_type: Eq.refl not found".into())
@@ -1054,7 +1132,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       } => {
         if is_unsafe
           || lvls != 1
-          || induct.addr != self.prims.eq.addr
+          || induct.addr != self.primitives()?.eq.addr
           || cidx != 0
           || params != 2
           || fields != 0
@@ -1063,7 +1141,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             "check_eq_type: Eq.refl metadata is not canonical".into(),
           ));
         }
-        if ty != canonical_eq_refl_type(&self.prims) {
+        if ty != canonical_eq_refl_type(self.primitives()?) {
           return Err(TcError::Other(
             "check_eq_type: Eq.refl type is not canonical".into(),
           ));
@@ -1086,7 +1164,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// `caller_safety` is the safety level of the definition being checked.
   /// - Safe defs cannot reference unsafe or partial constants
   /// - Partial defs cannot reference unsafe constants
-  fn check_no_unsafe_refs(
+  pub(crate) fn check_no_unsafe_refs(
     &mut self,
     e: &KExpr<M>,
     caller_safety: DefinitionSafety,
@@ -1163,7 +1241,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           stack.push(f);
           stack.push(a);
         },
-        ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+        ExprData::Lam(_, _, _, ty, body, _)
+        | ExprData::All(_, _, _, _, ty, body, _) => {
           stack.push(ty);
           stack.push(body);
         },
@@ -1172,7 +1251,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           stack.push(val);
           stack.push(body);
         },
-        ExprData::Prj(_, _, val, _) => {
+        ExprData::Prj(id, _, val, _) => {
+          if seen_consts.insert(id.addr.clone())
+            && let Some(KConst::Indc { is_unsafe: true, .. }) =
+              self.try_get_const(id)?
+          {
+            return Err(TcError::Other(format!(
+              "safe definition references unsafe inductive {}",
+              &id.addr.hex()[..8]
+            )));
+          }
           stack.push(val);
         },
       }
@@ -1196,6 +1284,20 @@ mod tests {
   use ix_common::address::Address;
   use ix_common::env::{DefinitionSafety, QuotKind, ReducibilityHints};
   use ixon::constant::DefKind;
+
+  /// The certified checker bounds its untyped inferer's fuel so that a
+  /// non-terminating head β in a declared type declines. Inference here is
+  /// typed, so the same type, `(fun x : Prop => x x) (fun x : Prop => x x)`,
+  /// declines as ill-typed rather than reducing.
+  #[test]
+  fn non_terminating_head_beta_in_a_declared_type_declines() {
+    use crate::testing as t;
+    let omega = || t::lam(t::sort0(), t::app(t::var(0), t::var(0)));
+    let (id, axiom) = t::mk_axiom("loops", 0, vec![], t::app(omega(), omega()));
+    let mut env = KEnv::new();
+    env.insert(id.clone(), axiom);
+    t::check_rejects(&mut env, &id);
+  }
 
   #[test]
   fn profile_sink_records_delta_edge_and_fuel() {
@@ -2158,5 +2260,131 @@ mod tests {
       Err(TcError::UnknownConst(_)) => {},
       other => panic!("expected UnknownConst, got {other:?}"),
     }
+  }
+
+  // =========================================================================
+  // Native evaluation is outside the checked theory
+  // =========================================================================
+
+  fn native_evaluation_id(name: &str) -> KId<Anon> {
+    let (_, addr) = super::super::primitive::native_evaluation_addrs()
+      .iter()
+      .find(|(n, _)| *n == name)
+      .expect("known native-evaluation constant");
+    KId::new(addr.clone(), ())
+  }
+
+  fn prop_axiom(env: &mut KEnv<Anon>, id: &KId<Anon>) {
+    env.insert(
+      id.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: sort0(),
+      },
+    );
+  }
+
+  fn prop_definition(env: &mut KEnv<Anon>, id: &KId<Anon>, val: AE) {
+    env.insert(
+      id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(0),
+        lvls: 0,
+        ty: sort0(),
+        val,
+        lean_all: (),
+        block: id.clone(),
+      },
+    );
+  }
+
+  /// Each of the five declarations is declined by its own address, even
+  /// when, like `Lean.trustCompiler : True`, its statement mentions none of
+  /// the others. The same axiom at another address is accepted.
+  #[test]
+  fn native_evaluation_declarations_decline() {
+    for (name, addr) in super::super::primitive::native_evaluation_addrs() {
+      let mut env = KEnv::<Anon>::new();
+      let id = KId::new(addr.clone(), ());
+      prop_axiom(&mut env, &id);
+      let control = mk_id("ordinary axiom");
+      prop_axiom(&mut env, &control);
+      let mut tc = TypeChecker::new(&mut env);
+      match tc.check_const(&id) {
+        Err(TcError::NativeEvaluation(declined)) => {
+          assert_eq!(declined, *addr, "{name}")
+        },
+        other => {
+          panic!("{name}: expected a native-evaluation decline, got {other:?}")
+        },
+      }
+      tc.check_const(&control).expect("an ordinary axiom is accepted");
+    }
+  }
+
+  /// A declaration that refers to a native-evaluation constant is declined,
+  /// as the certified checker blocks it; inference without validation still
+  /// reads the declared type.
+  #[test]
+  fn reference_to_native_evaluation_declines() {
+    let mut env = KEnv::<Anon>::new();
+    let trust = native_evaluation_id("Lean.trustCompiler");
+    let other = mk_id("ordinary axiom");
+    prop_axiom(&mut env, &trust);
+    prop_axiom(&mut env, &other);
+    let user = mk_id("user");
+    let control = mk_id("control");
+    prop_definition(&mut env, &user, AE::cnst(trust.clone(), Box::new([])));
+    prop_definition(&mut env, &control, AE::cnst(other, Box::new([])));
+    let mut tc = TypeChecker::new(&mut env);
+    match tc.check_const(&user) {
+      Err(TcError::NativeEvaluation(addr)) => assert_eq!(addr, trust.addr),
+      other => panic!("expected a native-evaluation decline, got {other:?}"),
+    }
+    tc.check_const(&control).expect("the same shape over an ordinary axiom");
+    let reference = AE::cnst(trust, Box::new([]));
+    let ty = tc
+      .with_infer_only(|tc| tc.infer(&reference))
+      .expect("inference without validation is unaffected");
+    assert_eq!(ty, sort0());
+  }
+
+  #[test]
+  fn safe_definition_rejects_projection_of_unsafe_inductive() {
+    let mut env = KEnv::<Anon>::new();
+    let ind = mk_id("unsafe_struct");
+    let ctor = mk_id("unsafe_struct.mk");
+    env.insert(
+      ind.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        member_idx: 0,
+        is_unsafe: true,
+        ty: sort0(),
+        ctors: vec![ctor],
+        lean_all: (),
+        block: ind.clone(),
+      },
+    );
+    let expr = AE::prj(ind, 0, sort0());
+    let mut tc = TypeChecker::new(&mut env);
+    let err = tc
+      .check_no_unsafe_refs(&expr, DefinitionSafety::Safe)
+      .expect_err("projection from unsafe inductive must be rejected");
+    assert!(
+      err.to_string().contains("safe definition references unsafe inductive"),
+      "unexpected error: {err}"
+    );
   }
 }

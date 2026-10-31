@@ -32,7 +32,7 @@ def entrypoints := ⟦
   -- byte consumed, re-encode the value and require the same bytes.
   pub fn tagn_codec(f: G) -> (G, U64) {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     match f {
       0 =>
         let (value, rest) = get_tagn0(bytes);
@@ -60,7 +60,7 @@ def entrypoints := ⟦
   -- Decode only: a rejection here is the reader's alone.
   pub fn tagn_decode(f: G) {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let rest = match f {
       0 =>
         let (_, r) = get_tagn0(bytes);

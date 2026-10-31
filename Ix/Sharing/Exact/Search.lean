@@ -457,6 +457,39 @@ def materializeTableOnePass (p : Prep) (table roots : Array Nat) (limits : Limit
       throw (.resourceExhausted .materializeWork limits.maxMaterializeWork) else
     return (entries, rs, predicted + rootsCost ev.cost roots, work)
 
+/-- `materializeTableOnePass` with precomputed parent and spine-parent lists. -/
+def materializeTableOnePassWithSpines (p : Prep) (parents sp : Array (Array Nat))
+    (table roots : Array Nat) (limits : Limits) (widthAt : Nat → Nat := shareWidth) :
+    Except SharingError (Array Ixon.Expr × Array Ixon.Expr × Nat × Nat) :=
+  if table.size ≥ wordBound then throw (.formatBound "share index" table.size) else
+  if !table.all (· < p.dag.size) then throw (.internal "table term out of range") else
+  let n := p.dag.size
+  let index := indexOfPrefix n table table.size
+  if !onePassOrder p.dag table roots index then materializeTable p table roots limits widthAt else
+  let width := index.map (·.map widthAt)
+  let ev := p.evalAll width
+  match onePassLoop p table limits ev index width (Array.replicate n true) parents
+      sp table.size 0 #[] 0 n (tag0Size table.size)
+      (Array.replicate n 0) (Array.replicate n 0) #[] with
+  | none => materializeTable p table roots limits widthAt
+  | some (.error e) => .error e
+  | some (.ok (entries, work, evWork, predicted)) =>
+    if roots.foldl (fun acc r => acc + ev.cost[r]!) 0 > limits.maxMaterialize then
+      throw (.resourceExhausted .materialize limits.maxMaterialize) else do
+    let rs ← roots.mapM fun r => p.build ev index width false (p.dag.size + 1) r
+    let work := work + evWork + roots.foldl (fun acc r => acc + ev.cost[r]!) 0
+    if work > limits.maxMaterializeWork then
+      throw (.resourceExhausted .materializeWork limits.maxMaterializeWork) else
+    return (entries, rs, predicted + rootsCost ev.cost roots, work)
+
+theorem materializeTableOnePass_eq_withSpines (p : Prep) (table roots : Array Nat) (limits : Limits)
+    (widthAt : Nat → Nat) :
+    materializeTableOnePass p table roots limits widthAt =
+      materializeTableOnePassWithSpines p (parentEdgeLists p.dag) (spineParentLists p.dag p.family)
+        table roots limits widthAt := by
+  unfold materializeTableOnePass materializeTableOnePassWithSpines
+  rfl
+
 /-- Result of an exact optimization. -/
 structure ExactSharingResult where
   /-- Rewritten roots, in input order. -/

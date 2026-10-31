@@ -81,8 +81,11 @@ fn assert_same_expr<M: KernelMode>(a: &KExpr<M>, b: &KExpr<M>) {
       (ExprData::App(f, a, _), ExprData::App(g, b, _)) => {
         pending.extend([(f, g), (a, b)]);
       },
-      (ExprData::Lam(n, bi, t, b, _), ExprData::Lam(m, bj, u, c, _))
-      | (ExprData::All(n, bi, t, b, _), ExprData::All(m, bj, u, c, _)) => {
+      (ExprData::Lam(n, bi, _, t, b, _), ExprData::Lam(m, bj, _, u, c, _))
+      | (
+        ExprData::All(n, bi, _, _, t, b, _),
+        ExprData::All(m, bj, _, _, u, c, _),
+      ) => {
         assert_eq!(n, m);
         assert_eq!(bi, bj);
         pending.extend([(t, u), (b, c)]);
@@ -410,7 +413,7 @@ fn shared_expression_dag_visits_edges_not_expanded_tree() {
     }
     let mut cursor = &result;
     for _ in 0..depth {
-      let ExprData::All(_, _, ty, body, _) = cursor.data() else {
+      let ExprData::All(_, _, _, _, ty, body, _) = cursor.data() else {
         panic!("all")
       };
       assert!(ty.ptr_eq(body));

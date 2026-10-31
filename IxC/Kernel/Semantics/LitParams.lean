@@ -24,8 +24,8 @@ namespace Ix.Kernel.Semantics
 
 /-- The `Nat` family's stored declaration carries no level parameters
 (read off `natLitSupported`'s `natIndOk` conjunct). -/
-theorem natName_levelParams_nil {env : Env}
-    (hg : natLitSupported env = true) {ci : ConstantInfo}
+theorem natName_levelParams_nil {env : Env md}
+    (hg : natLitSupported env = true) {ci : ConstantInfo md}
     (hf : env.find? natName = some ci) :
     ci.toConstantVal.levelParams = [] := by
   simp only [natLitSupported, Bool.and_eq_true] at hg
@@ -39,8 +39,8 @@ theorem natName_levelParams_nil {env : Env}
 
 /-- The `String` family's stored declaration carries no level parameters
 (read off `strLitSupported`'s `stringTyOk` conjunct). -/
-theorem stringName_levelParams_nil {env : Env}
-    (hg : strLitSupported env = true) {ci : ConstantInfo}
+theorem stringName_levelParams_nil {env : Env md}
+    (hg : strLitSupported env = true) {ci : ConstantInfo md}
     (hf : env.find? stringName = some ci) :
     ci.toConstantVal.levelParams = [] := by
   simp only [strLitSupported, Bool.and_eq_true] at hg

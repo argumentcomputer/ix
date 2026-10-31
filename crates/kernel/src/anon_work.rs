@@ -40,7 +40,7 @@ use crate::ingress::{
   anon_recr_proj_addr,
 };
 
-/// A single anon-mode work item — one `tc.check_const(primary)` per
+/// A single anon-mode work item — one Ixon whole-unit check per
 /// item suffices to typecheck every address in `targets`.
 #[derive(Clone, Debug)]
 pub enum AnonWorkItem {
@@ -61,7 +61,7 @@ pub enum AnonWorkItem {
 }
 
 impl AnonWorkItem {
-  /// The address to pass to `tc.check_const`.
+  /// The address to pass to the Ixon whole-unit checking entry.
   pub fn primary(&self) -> &Address {
     match self {
       AnonWorkItem::Standalone { addr } => addr,
@@ -88,8 +88,9 @@ impl AnonWorkItem {
   /// a `Block`'s proven set also includes the block's own `consts` key:
   /// for a `Standalone` it's just its address; for a `Block` it's
   /// `block_addr` plus every projection target (members + ctors). The
-  /// union of `proven_targets()` over a full `build_anon_work` is exactly
-  /// `env.consts.keys()`.
+  /// set includes synthesized semantic members whose projection records the
+  /// input may omit. It is not a physical-record coverage set; a host checks
+  /// carried records separately and does not add synthetic bytes to its input.
   pub fn proven_targets(&self) -> Vec<Address> {
     match self {
       AnonWorkItem::Standalone { addr } => vec![addr.clone()],
@@ -103,19 +104,133 @@ impl AnonWorkItem {
   }
 }
 
+fn mutual_work(
+  address: &Address,
+  members: &[ixon::constant::MutConst],
+) -> Result<AnonWorkItem, String> {
+  use ixon::constant::MutConst;
+  crate::ingress::validate_serialized_muts(members)?;
+  let mut targets = Vec::new();
+  for (index, member) in members.iter().enumerate() {
+    let index = u64::try_from(index).map_err(|error| error.to_string())?;
+    targets.push(match member {
+      MutConst::Defn(_) => anon_defn_proj_addr(address, index),
+      MutConst::Indc(_) => anon_indc_proj_addr(address, index),
+      MutConst::Recr(_) => anon_recr_proj_addr(address, index),
+    });
+    if let MutConst::Indc(inductive) = member {
+      for constructor in 0..inductive.ctors.len() {
+        targets.push(anon_ctor_proj_addr(
+          address,
+          index,
+          u64::try_from(constructor).map_err(|error| error.to_string())?,
+        ));
+      }
+    }
+  }
+  Ok(AnonWorkItem::Block {
+    block_addr: address.clone(),
+    primary: targets[0].clone(),
+    targets,
+  })
+}
+
+/// Bound-host scheduling reads authenticated headers/owners, never cached ASTs.
+/// A whole walk also checks exact key coverage, including carried projections.
+#[cfg(not(target_arch = "riscv64"))]
+pub fn build_artifact_work(
+  source: &crate::role_admission::ArtifactSource,
+) -> Result<Vec<AnonWorkItem>, String> {
+  use ConstVariantTag as Tag;
+  let mut keys = source.addresses();
+  keys.sort_unstable();
+  let mut work = Vec::new();
+  for address in &keys {
+    match source.record_tag(address).map_err(|error| error.to_string())? {
+      Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {
+        // Every carried projection must be genuine and resolve its actual
+        // owner/kind/index, even if no semantic subject selects it directly.
+        source.member(address).map_err(|error| error.to_string())?;
+      },
+      Tag::Muts => {
+        let record =
+          source.record(address).map_err(|error| error.to_string())?;
+        let ixon::constant::ConstantInfo::Muts(members) =
+          &record.constant().info
+        else {
+          return Err(
+            "authenticated mutual header differs from decoded record".into(),
+          );
+        };
+        work.push(mutual_work(address, members)?);
+      },
+      _ => work.push(AnonWorkItem::Standalone { addr: address.clone() }),
+    }
+  }
+  let carried: rustc_hash::FxHashSet<_> = keys.iter().cloned().collect();
+  let mut covered: Vec<_> = work
+    .iter()
+    .flat_map(AnonWorkItem::proven_targets)
+    .filter(|address| carried.contains(address))
+    .collect();
+  covered.sort_unstable();
+  if covered != keys {
+    return Err(
+      "artifact work does not cover the exact raw record set once".into(),
+    );
+  }
+  Ok(work)
+}
+
+/// The items of `work` that a verdict on `roots` must check. With
+/// `dependencies`, these are the items inside
+/// [`ArtifactSource::verdict_closure`]; without, the items covering `roots`
+/// themselves, whose dependencies are trusted. Either way the set includes
+/// the closure of the binding's support: role admission checks a role
+/// against its specification but defers its records' and certificates'
+/// units, so no verdict that may rest on an admitted role omits them.
+///
+/// [`ArtifactSource::verdict_closure`]:
+///   crate::role_admission::ArtifactSource::verdict_closure
+#[cfg(not(target_arch = "riscv64"))]
+pub fn verdict_work(
+  source: &crate::role_admission::ArtifactSource,
+  work: &[AnonWorkItem],
+  roots: &[Address],
+  dependencies: bool,
+) -> Result<Vec<AnonWorkItem>, String> {
+  let selected = if dependencies {
+    source.verdict_closure(roots)
+  } else {
+    source.verdict_closure(&[]).map(|mut support| {
+      support.extend(roots.iter().cloned());
+      support
+    })
+  }
+  .map_err(|error| error.to_string())?;
+  Ok(
+    work
+      .iter()
+      .filter(|item| match item {
+        AnonWorkItem::Standalone { addr } => selected.contains(addr),
+        AnonWorkItem::Block { block_addr, .. } => selected.contains(block_addr),
+      })
+      .cloned()
+      .collect(),
+  )
+}
+
 /// Enumerate the anon-mode kernel work set from `env.consts`.
 ///
 /// Returns one `AnonWorkItem` per kernel-checkable group of
 /// constants. The total number of checked target addresses is
 /// `work.iter().map(|w| w.targets().len()).sum()`.
 ///
-/// Errors only on a corrupted env (missing const at an enumerated
-/// address, or a TagN head byte that doesn't correspond to a known
-/// `ConstantInfo` variant).
+/// Refuses corrupted entries and unsupported serialized mutual shapes before
+/// promising coverage for their member targets.
 pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
   use ConstVariantTag as Tag;
   use ixon::constant::ConstantInfo as CI;
-  use ixon::constant::MutConst as MC;
 
   let mut work: Vec<AnonWorkItem> = Vec::new();
 
@@ -151,30 +266,7 @@ pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
             addr.hex()
           ));
         };
-        let mut targets: Vec<Address> = Vec::new();
-        for (i, member) in members.iter().enumerate() {
-          let i = i as u64;
-          let member_addr = match member {
-            MC::Defn(_) => anon_defn_proj_addr(&addr, i),
-            MC::Indc(_) => anon_indc_proj_addr(&addr, i),
-            MC::Recr(_) => anon_recr_proj_addr(&addr, i),
-          };
-          targets.push(member_addr);
-          if let MC::Indc(ind) = member {
-            for cidx in 0..ind.ctors.len() as u64 {
-              targets.push(anon_ctor_proj_addr(&addr, i, cidx));
-            }
-          }
-        }
-        if targets.is_empty() {
-          continue;
-        }
-        let primary = targets[0].clone();
-        work.push(AnonWorkItem::Block {
-          block_addr: addr.clone(),
-          primary,
-          targets,
-        });
+        work.push(mutual_work(&addr, members)?);
       },
     }
   }
@@ -228,11 +320,22 @@ pub fn build_sub_env(
 
 /// The in-memory closure sub-env behind [`build_sub_env`]: copy the BFS
 /// dependency closure of `roots` (genuine bytes + blobs + reducibility
-/// hints), no Named section.
+/// hints), no Named section. A bound source's binding is copied with the
+/// closure of the records it names, so the sub-env carries every record its
+/// role admission reads and every unit a verdict on `roots` rests on (see
+/// [`verdict_work`]). A binding that does not decode is copied as is, and
+/// the sub-env's reader refuses it.
 #[cfg(not(target_arch = "riscv64"))]
 fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
-  let closure = closure_addrs(source, roots);
-  let sub = IxonEnv::new();
+  let mut roots = roots.to_vec();
+  if let Some(binding) = &source.role_binding
+    && let Ok(table) = ixon::role_table::RoleTable::from_bytes(&binding.bytes)
+  {
+    roots.extend(table.records().cloned());
+  }
+  let closure = closure_addrs(source, &roots);
+  let mut sub = IxonEnv::new();
+  sub.role_binding = source.role_binding.clone();
   for addr in &closure {
     if let Some(bytes) = source.get_const_bytes(addr) {
       sub.store_const_lazy(addr.clone(), bytes);

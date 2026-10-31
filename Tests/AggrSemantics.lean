@@ -40,11 +40,25 @@ private def minimalIxesFor (shards : Array (Array Address))
 private def minimalIxes (treeTail : Array UInt8) : ByteArray :=
   minimalIxesFor #[#[], #[]] treeTail
 
+/-- The test environments carry the default role binding, as every
+    environment a claim is made over must: its section alone. They are
+    partitioned, planned and audited here, never checked, so they leave out
+    the records the circuit validates roles against
+    (`IxVM.ClaimHarness.withDefaultRoleBinding`), which no shard owns. -/
+private def bound (env : Ixon.Env) : Ixon.Env :=
+  match Ix.Kernel.Reader.defaultTableBytes, Ix.Kernel.Reader.defaultTableAddress with
+  | .ok bytes, .ok address => { env with roleBinding := some { address, bytes } }
+  | _, _ => env
+
+/-- The claims' context: the default role table's. -/
+private def envCtx : Ix.ClaimContext :=
+  Ix.ClaimContext.ofDefaultTable.toOption.getD default
+
 private def singletonIxonEnv : Ixon.Env × Address :=
   let constant : Ixon.Constant :=
     ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
   let address := Address.blake3 (Ixon.serConstant constant)
-  (({} : Ixon.Env).storeConst address constant, address)
+  (bound (({} : Ixon.Env).storeConst address constant), address)
 
 private def pairIxonEnv : Ixon.Env × Address × Address :=
   let left : Ixon.Constant :=
@@ -55,7 +69,7 @@ private def pairIxonEnv : Ixon.Env × Address × Address :=
   let rightAddress := Address.blake3 (Ixon.serConstant right)
   let env := (({} : Ixon.Env).storeConst leftAddress left)
     |>.storeConst rightAddress right
-  (env, leftAddress, rightAddress)
+  (bound env, leftAddress, rightAddress)
 
 /-- Two owned constants with one shared dependency exercise the one-pass
 witness-closure union retained by the converged driver. -/
@@ -72,7 +86,7 @@ private def sharedClosureIxonEnv : Ixon.Env × Array Address × Address :=
   let env := (({} : Ixon.Env).storeConst sharedAddress shared)
     |>.storeConst leftAddress left
     |>.storeConst rightAddress right
-  (env, #[leftAddress, rightAddress], sharedAddress)
+  (bound env, #[leftAddress, rightAddress], sharedAddress)
 
 private def stage2FixtureAddressHex : String :=
   "c2fdce660eb66899efa303b41d4ca1611a62a688ef20684fdc327739d38bd67f"
@@ -210,10 +224,12 @@ def semanticSuite : IO UInt32 := do
   let c := Address.blake3 "aggr-semantics-c".toUTF8
   let d := Address.blake3 "aggr-semantics-d".toUTF8
   let left : Aggr.CheckEnvTrees := {
+    ctx := envCtx
     subjects := canonicalTree #[a, b]
     assumptions := some (canonicalTree #[c, d])
   }
   let right : Aggr.CheckEnvTrees := {
+    ctx := envCtx
     subjects := canonicalTree #[c]
     assumptions := some (canonicalTree #[a])
   }
@@ -368,7 +384,7 @@ def semanticSuite : IO UInt32 := do
   let singletonValueRoot : Bool := match singleManifest with
     | .ok view => match Aggr.Reference.expectedFromManifest singleEnv view 0 with
       | .ok statement =>
-        statement.claim == .checkEnv (canonicalTree #[singleAddr]).root none
+        statement.claim == .checkEnv envCtx (canonicalTree #[singleAddr]).root none
       | .error _ => false
     | .error _ => false
   let (nativePlanOnlyFfiWorks, nativeVerifyRootMatches) ← do
@@ -388,7 +404,7 @@ def semanticSuite : IO UInt32 := do
           ixesPath.toString "" verifyIdx fakeAggrIdx 1
           (16 * 1024 * 1024 * 1024) 4096 0 false true
           childRecursionParameters.cacheFriBytes false true false 0 false 1
-          false 0).isOk
+          false 0 "").isOk
         let expectedMatches := match Aiur.AiurSystem.aggregateExpected
             handle ixesPath.toString 4096 with
           | .error _ => false
@@ -396,7 +412,7 @@ def semanticSuite : IO UInt32 := do
             expected.constantCount == 1 && match
                 Ixon.runGet Ix.Claim.get expected.claimBytes with
               | .ok claim =>
-                claim == .checkEnv (canonicalTree #[singleAddr]).root none
+                claim == .checkEnv envCtx (canonicalTree #[singleAddr]).root none
               | .error _ => false
         pure (planWorks, expectedMatches)
 
@@ -411,9 +427,9 @@ def semanticSuite : IO UInt32 := do
     | .ok view =>
       match Aggr.Reference.prepareShards pairEnv view.shards view.shardIds with
       | .ok prepared =>
-        prepared.map (·.claim) == (#[(.checkEnv
+        prepared.map (·.claim) == (#[(.checkEnv envCtx
             (canonicalTree #[pairLeft]).root none : Ix.Claim),
-          .checkEnv (canonicalTree #[pairRight]).root none] : Array Ix.Claim) &&
+          .checkEnv envCtx (canonicalTree #[pairRight]).root none] : Array Ix.Claim) &&
           prepared.all fun item => item.statement.claim == item.claim
       | .error _ => false
     | .error _ => false
@@ -425,9 +441,9 @@ def semanticSuite : IO UInt32 := do
     | .error _ => none
   let canonicalEnvTree := canonicalTree #[pairLeft, pairRight]
   let manifestFlatIsCanonical := flatManifestValue.map (·.claim) ==
-    some (.checkEnv canonicalEnvTree.root none)
+    some (.checkEnv envCtx canonicalEnvTree.root none)
   let manifestStructuralIsHybrid := structuralManifestValue.map (·.claim) ==
-    some (.checkEnv
+    some (.checkEnv envCtx
       (Ix.Merkle.nodeHash (canonicalTree #[pairLeft]).root
         (canonicalTree #[pairRight]).root) none)
   let manifestValuesDiffer := flatManifestValue.map (·.claim) !=
@@ -447,7 +463,7 @@ def semanticSuite : IO UInt32 := do
     | .ok (claimOnly, treesOnly), .ok (claimFull, closure, treesFull) =>
       let sameClosure := closure.size == legacyClosure.size &&
         closure.toArray.all legacyClosure.contains
-      claimOnly == .checkEnv expectedOwned.root (some expectedFrontier.root) &&
+      claimOnly == .checkEnv envCtx expectedOwned.root (some expectedFrontier.root) &&
         claimFull == claimOnly && sameClosure &&
         treesOnly.size == 2 && treesFull.size == 2 &&
         treesOnly.contains expectedOwned.root &&
@@ -493,22 +509,26 @@ def semanticSuite : IO UInt32 := do
     | .ok _ => false
   let missingConstantRejected :=
     rejected (Aggr.auditAggregateConstants auditEnv {
+      ctx := envCtx
       subjects := canonicalTree auditOwned
       assumptions := none
     })
   let foreignConstantRejected :=
     let foreign := Address.blake3 "aggregate-audit-foreign".toUTF8
     rejected (Aggr.auditAggregateConstants auditEnv {
+      ctx := envCtx
       subjects := canonicalTree (auditLeaves.push foreign)
       assumptions := none
     })
   let duplicateConstantRejected :=
     rejected (Aggr.auditAggregateConstants auditEnv {
+      ctx := envCtx
       subjects := .node (canonicalTree auditLeaves) (.leaf auditOwned[0]!)
       assumptions := none
     })
   let residualAssumptionRejected :=
     rejected (Aggr.auditAggregateConstants auditEnv {
+      ctx := envCtx
       subjects := canonicalTree auditLeaves
       assumptions := some (canonicalTree #[auditShared])
     })

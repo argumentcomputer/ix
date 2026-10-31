@@ -190,61 +190,61 @@ was `WFc v' ∧ v' = v`, the invariant conjunct went with `WFc`, and one
 type made the second conjunct an equation between the two sides
 themselves.  The name is kept because the whole `DiscC` family is
 written in it, and it still marks *which* side is which. -/
-@[expose] def RelC (v' : Expr) (v : Expr) : Prop := v' = v
+@[expose] def RelC (v' : Expr md) (v : Expr md) : Prop := v' = v
 
-theorem RelC.erase {v' : Expr} {v : Expr} (h : RelC v' v) : v' = v := h
+theorem RelC.erase {v' : Expr md} {v : Expr md} (h : RelC v' v) : v' = v := h
 
 /-- `RelC` determines the pure value. -/
-theorem RelC.det {v' : Expr} {a b : Expr} (ha : RelC v' a)
+theorem RelC.det {v' : Expr md} {a b : Expr md} (ha : RelC v' a)
     (hb : RelC v' b) : a = b := ha.symm.trans hb
 
 /-- `RelC` determines the cached value. -/
-theorem RelC.det' {a b : Expr} {v : Expr} (ha : RelC a v)
+theorem RelC.det' {a b : Expr md} {v : Expr md} (ha : RelC a v)
     (hb : RelC b v) : a = b := ha.trans hb.symm
 
 /-- Every expression is related to itself (there is one type). -/
-theorem RelC.refl (x : Expr) : RelC x x := by rfl
+theorem RelC.refl (x : Expr md) : RelC x x := by rfl
 
 /-- The list-level relation: the `DiscC` walks' replacement for the
 arena's `DenL`. -/
-@[expose] def RelCL (l : List Expr) (xs : List Expr) : Prop := l = xs
+@[expose] def RelCL (l : List (Expr md)) (xs : List (Expr md)) : Prop := l = xs
 
 namespace RelCL
 
-theorem nil : RelCL [] [] := by rfl
+theorem nil : (RelCL (md := md)) [] [] := by rfl
 
-theorem cons {x : Expr} {v : Expr} {l : List Expr} {xs : List Expr}
+theorem cons {x : Expr md} {v : Expr md} {l : List (Expr md)} {xs : List (Expr md)}
     (hx : RelC x v) (hl : RelCL l xs) : RelCL (x :: l) (v :: xs) := by
   rw [show x = v from hx, show l = xs from hl]; rfl
 
 /-- The list projection. -/
-theorem map {l : List Expr} {xs : List Expr} (h : RelCL l xs) :
+theorem map {l : List (Expr md)} {xs : List (Expr md)} (h : RelCL l xs) :
     l = xs := h
 
-theorem intro {l : List Expr} {xs : List Expr}
+theorem intro {l : List (Expr md)} {xs : List (Expr md)}
     (hm : l = xs) : RelCL l xs := hm
 
-theorem nil_inv {xs : List Expr} (h : RelCL [] xs) : xs = [] := h.symm
+theorem nil_inv {xs : List (Expr md)} (h : RelCL [] xs) : xs = [] := h.symm
 
-theorem cons_inv {x : Expr} {l : List Expr} {xs : List Expr}
+theorem cons_inv {x : Expr md} {l : List (Expr md)} {xs : List (Expr md)}
     (h : RelCL (x :: l) xs) :
     ∃ v vs, xs = v :: vs ∧ RelC x v ∧ RelCL l vs :=
   ⟨x, l, h.symm, rfl, rfl⟩
 
-theorem length {l : List Expr} {xs : List Expr} (h : RelCL l xs) :
+theorem length {l : List (Expr md)} {xs : List (Expr md)} (h : RelCL l xs) :
     l.length = xs.length := by rw [h]
 
-theorem append {l₁ l₂ : List Expr} {xs₁ xs₂ : List Expr}
+theorem append {l₁ l₂ : List (Expr md)} {xs₁ xs₂ : List (Expr md)}
     (h₁ : RelCL l₁ xs₁) (h₂ : RelCL l₂ xs₂) :
     RelCL (l₁ ++ l₂) (xs₁ ++ xs₂) := by
   rw [show l₁ = xs₁ from h₁, show l₂ = xs₂ from h₂]; rfl
 
-theorem reverse {l : List Expr} {xs : List Expr} (h : RelCL l xs) :
+theorem reverse {l : List (Expr md)} {xs : List (Expr md)} (h : RelCL l xs) :
     RelCL l.reverse xs.reverse := by
   rw [show l = xs from h]; rfl
 
 /-- `RelCL` determines the pure list. -/
-theorem det {l : List Expr} {xs ys : List Expr} (hx : RelCL l xs)
+theorem det {l : List (Expr md)} {xs ys : List (Expr md)} (hx : RelCL l xs)
     (hy : RelCL l ys) : xs = ys := hx.symm.trans hy
 
 end RelCL
@@ -259,7 +259,7 @@ no tiers.
 The memo clauses are *erasure-functions of their keys* — the binding
 rule of the P1 freeze — so a `beq` collision, which pins the stored key
 to the query only up to erasure, preserves them. -/
-structure CSOK (mode : CheckMode) (env : Env) (s : CState) : Prop where
+structure CSOK (mode : CheckMode) (env : Env md) (s : CState md) : Prop where
   constTy : ∀ n us i, s.constTyAt[(n, us)]? = some i → ∃ ci,
     env.find? n = some ci ∧
     RelC i (ci.toConstantVal.type.instantiateLevelParams
@@ -297,43 +297,30 @@ structure CSOK (mode : CheckMode) (env : Env) (s : CState) : Prop where
     ∃ F, ∀ d, (Expr.wscopedB d a) = true → (Expr.wscopedB d b) = true →
       isDefEqCore mode env F d a b = .ok r
   lsimp : ∀ u v, s.lsimpC[u]? = some v → v = Level.simplify u
-  lnz : ∀ u b, s.lnzC[u]? = some b → b = Level.isNonZero u
   eqv : ∀ l r b, s.eqvC[(l, r)]? = some b → Level.isEquiv l r = some b
-  /-- The converted-constant cache is self-certifying: each entry's
-  cached term is `RelC`-related to the very `Expr` object it is tagged
-  with.  The clause never mentions `env`, so it survives every flush
-  and every environment transition. -/
-  ienv : ∀ (nm : Name) (ent : CConstE), s.ienv[nm]? = some ent →
-    RelC ent.ty ent.tyE ∧
-    ∀ vE vi, ent.val = some (vE, vi) → RelC vi vE
-  instC : ∀ (k : Expr) (vs : List Expr) (d : Nat) (r : Expr),
+  instC : ∀ (k : Expr md) (vs : List (Expr md)) (d : Nat) (r : Expr md),
     s.instC[(k, vs, d)]? = some r →
       r = (Expr.instantiateList k vs d)
 
 /-- The environment-free residue: exactly the clauses `flushC`
-preserves — the level-operation memos and the self-certifying
-converted-constant cache.  (There is no arena clause: the port of
-`ISOKF` loses `wf` along with the arena.) -/
-structure CSOKF (s : CState) : Prop where
+preserves — the level-operation memos.  (There is no arena clause: the
+port of `ISOKF` loses `wf` along with the arena.) -/
+structure CSOKF (s : CState md) : Prop where
   lsimp : ∀ u v, s.lsimpC[u]? = some v → v = Level.simplify u
-  lnz : ∀ u b, s.lnzC[u]? = some b → b = Level.isNonZero u
   eqv : ∀ l r b, s.eqvC[(l, r)]? = some b → Level.isEquiv l r = some b
-  ienv : ∀ (nm : Name) (ent : CConstE), s.ienv[nm]? = some ent →
-    RelC ent.ty ent.tyE ∧
-    ∀ vE vi, ent.val = some (vE, vi) → RelC vi vE
 
 /-- Every invariant state carries the residue. -/
-theorem CSOK.residue {env : Env} {s : CState} (h : CSOK mode env s) :
-    CSOKF s := ⟨h.lsimp, h.lnz, h.eqv, h.ienv⟩
+theorem CSOK.residue {env : Env md} {s : CState md} (h : CSOK mode env s) :
+    CSOKF s := ⟨h.lsimp, h.eqv⟩
 
 /-- The empty state satisfies the invariant for any environment. -/
-theorem CSOK.empty (env : Env) : CSOK mode env ({} : CState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+theorem CSOK.empty (env : Env md) : CSOK mode env ({} : CState md) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (intros; simp_all)
 
 /-- The empty state carries the residue. -/
-theorem CSOKF.empty : CSOKF ({} : CState) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> (intros; simp_all)
+theorem CSOKF.empty : CSOKF ({} : CState md) := by
+  refine ⟨?_, ?_⟩ <;> (intros; simp_all)
 
 /-! ## Flush
 
@@ -342,20 +329,28 @@ it re-establishes the full invariant *for any environment* — the
 transition lemma the declaration fold uses (the port of
 `flushS_isok`). -/
 
-theorem flushC_run (s : CState) : flushC s = .ok ((), s.flushed) := rfl
+theorem flushC_run (s : CState md) : flushC s = .ok ((), s.flushed) := rfl
 
 /-- After a flush the invariant holds for any environment: the
 surviving components are the residue and the dropped caches' clauses
 are vacuous. -/
-theorem flushC_csok {env' : Env} {s : CState} (hs : CSOKF s) :
+theorem flushC_csok {env' : Env md} {s : CState md} (hs : CSOKF s) :
     CSOK mode env' s.flushed := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hs.lsimp, hs.lnz, hs.eqv,
-    hs.ienv, ?_⟩ <;> (intros; simp_all [CState.flushed])
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, hs.lsimp, hs.eqv, ?_⟩ <;>
+    (intros; simp_all [CState.flushed])
 
 /-- Flushing preserves the residue (it touches none of its
 components). -/
-theorem CSOKF.flushed {s : CState} (hs : CSOKF s) : CSOKF s.flushed :=
-  ⟨hs.lsimp, hs.lnz, hs.eqv, hs.ienv⟩
+theorem CSOKF.flushed {s : CState md} (hs : CSOKF s) : CSOKF s.flushed :=
+  ⟨hs.lsimp, hs.eqv⟩
+
+/-! ## Reset
+
+`resetC` (the start of every step of the declaration fold, LOCALITY
+§6(a)) replaces the state by the empty one, where the invariant holds
+for any environment (`CSOK.empty`). -/
+
+theorem resetC_run (s : CState md) : resetC s = .ok ((), ({} : CState md)) := rfl
 
 /-! ## The simulation and effect relations -/
 
@@ -363,35 +358,35 @@ theorem CSOKF.flushed {s : CState} (hs : CSOKF s) : CSOKF s.flushed :=
 value is `P`-related to the value of a successful fueled run.  The
 port of `SimAt` minus the arena extension and minus the state in the
 value relation. -/
-@[expose] def SimC (mode : CheckMode) (env : Env) (s₀ : CState) {β α : Type}
-    (P : β → α → Prop) (c : CheckCM β) (p : FueledM α) : Prop :=
+@[expose] def SimC (mode : CheckMode) (env : Env md) (s₀ : CState md) {β α : Type}
+    (P : β → α → Prop) (c : (CheckCM md) β) (p : FueledM md α) : Prop :=
   ∀ v' s', c s₀ = .ok (v', s') →
     CSOK mode env s' ∧ ∃ v, P v' v ∧ ∃ F, p.val F = .ok v
 
 /-- A twin-only effect: invariant preservation and a value fact — no
 fueled counterpart. -/
-@[expose] def CEff (mode : CheckMode) (env : Env) (s₀ : CState) {β : Type}
-    (Q : β → Prop) (c : CheckCM β) : Prop :=
+@[expose] def CEff (mode : CheckMode) (env : Env md) (s₀ : CState md) {β : Type}
+    (Q : β → Prop) (c : (CheckCM md) β) : Prop :=
   ∀ v' s', c s₀ = .ok (v', s') → CSOK mode env s' ∧ Q v'
 
 /-- The result relation for expression-valued entry points: the cached
 term is related to the fueled value, well scoped at the ambient
 depth. -/
-@[expose] def RelEC (d : Nat) (v' : Expr) (v : Expr) : Prop :=
+@[expose] def RelEC (d : Nat) (v' : Expr md) (v : Expr md) : Prop :=
   RelC v' v ∧ Expr.WScoped d v
 
 /-- The result relation for `Bool` and other data results. -/
 @[expose] def RelVC {α : Type} (b a : α) : Prop := b = a
 
 /-- The result relation for optional expression results. -/
-@[expose] def RelOC (d : Nat) : Option Expr → Option Expr → Prop
+@[expose] def RelOC (d : Nat) : Option (Expr md) → Option (Expr md) → Prop
   | none, none => True
   | some j, some v => RelEC d j v
   | _, _ => False
 
 namespace SimC
 
-variable {env : Env} {s₀ : CState}
+variable {env : Env md} {s₀ : CState md}
 
 protected theorem pure {β α : Type} {P : β → α → Prop}
     {b : β} {a : α} (hs : CSOK mode env s₀) (h : P b a) :
@@ -402,7 +397,7 @@ protected theorem pure {β α : Type} {P : β → α → Prop}
   exact ⟨hs, a, h, 0, rfl⟩
 
 protected theorem throw {β α : Type} {P : β → α → Prop}
-    {e : CheckError} {p : FueledM α} :
+    {e : CheckError md} {p : FueledM md α} :
     SimC mode env s₀ P (throw e) p := by
   intro v' s' hr
   exact nomatch hr
@@ -411,8 +406,8 @@ protected theorem throw {β α : Type} {P : β → α → Prop}
 intermediate state (with the invariant and the value relation). -/
 protected theorem bind {β β' α α' : Type}
     {P : β → α → Prop} {Q : β' → α' → Prop}
-    {c : CheckCM β} {k : β → CheckCM β'}
-    {p : FueledM α} {q : α → FueledM α'}
+    {c : (CheckCM md) β} {k : β → (CheckCM md) β'}
+    {p : FueledM md α} {q : α → FueledM md α'}
     (hx : SimC mode env s₀ P c p)
     (hf : ∀ s₁ b a, CSOK mode env s₁ → P b a →
       SimC mode env s₁ Q (k b) (q a)) :
@@ -437,7 +432,7 @@ protected theorem bind {β β' α α' : Type}
 /-- Left bind: a twin-only effect before the simulated remainder. -/
 protected theorem bind_left {β β' α : Type}
     {Q : β → Prop} {P : β' → α → Prop}
-    {c : CheckCM β} {k : β → CheckCM β'} {p : FueledM α}
+    {c : (CheckCM md) β} {k : β → (CheckCM md) β'} {p : FueledM md α}
     (hx : CEff mode env s₀ Q c)
     (hf : ∀ s₁ b, CSOK mode env s₁ → Q b → SimC mode env s₁ P (k b) p) :
     SimC mode env s₀ P (c >>= k) p := by
@@ -454,8 +449,8 @@ protected theorem bind_left {β β' α : Type}
 
 /-- Peel a pure value bound on the twin side. -/
 protected theorem bind_pure_left {β β' α : Type}
-    {P : β' → α → Prop} {c : β} {k : β → CheckCM β'}
-    {p : FueledM α}
+    {P : β' → α → Prop} {c : β} {k : β → (CheckCM md) β'}
+    {p : FueledM md α}
     (h : SimC mode env s₀ P (k c) p) :
     SimC mode env s₀ P (pure c >>= k) p := by
   intro v' s' hr
@@ -465,8 +460,8 @@ protected theorem bind_pure_left {β β' α : Type}
 
 /-- Peel a pure value bound on the fueled side. -/
 protected theorem bind_pure_right {β α α' : Type}
-    {P : β → α' → Prop} {c : CheckCM β} {a : α}
-    {k : α → FueledM α'}
+    {P : β → α' → Prop} {c : (CheckCM md) β} {a : α}
+    {k : α → FueledM md α'}
     (h : SimC mode env s₀ P c (k a)) :
     SimC mode env s₀ P c (pure a >>= k) := by
   intro v' s' hr
@@ -475,9 +470,9 @@ protected theorem bind_pure_right {β α α' : Type}
 
 /-- A twin-side `throw` composed with anything never succeeds. -/
 protected theorem throw_bind {β β' α : Type}
-    {P : β' → α → Prop} {er : CheckError}
-    {k : β → CheckCM β'} {p : FueledM α} :
-    SimC mode env s₀ P ((throw er : CheckCM β) >>= k) p := by
+    {P : β' → α → Prop} {er : CheckError md}
+    {k : β → (CheckCM md) β'} {p : FueledM md α} :
+    SimC mode env s₀ P ((throw er : (CheckCM md) β) >>= k) p := by
   intro v' s' hr
   exact nomatch hr
 
@@ -485,9 +480,9 @@ protected theorem throw_bind {β β' α : Type}
 (Task #198: the port of the retired `withStore` peel — the cached
 checker's syntactic reads are plain `pure`s.) -/
 protected theorem pureB {β α γ : Type} {P : β → α → Prop}
-    {x : γ} {k : γ → CheckCM β} {p : FueledM α}
+    {x : γ} {k : γ → (CheckCM md) β} {p : FueledM md α}
     (h : SimC mode env s₀ P (k x) p) :
-    SimC mode env s₀ P ((pure x : CheckCM γ) >>= k) p := by
+    SimC mode env s₀ P ((pure x : (CheckCM md) γ) >>= k) p := by
   intro v' s' hr
   apply h v' s'
   simpa only [Bind.bind, StateT.bind, pure,
@@ -497,8 +492,8 @@ protected theorem pureB {β α γ : Type} {P : β → α → Prop}
 continuation may consume the existence of a successful pure run. -/
 protected theorem bindR {β β' α α' : Type}
     {P : β → α → Prop} {Q : β' → α' → Prop}
-    {c : CheckCM β} {k : β → CheckCM β'}
-    {p : FueledM α} {q : α → FueledM α'}
+    {c : (CheckCM md) β} {k : β → (CheckCM md) β'}
+    {p : FueledM md α} {q : α → FueledM md α'}
     (hx : SimC mode env s₀ P c p)
     (hf : ∀ s₁ b a, CSOK mode env s₁ → P b a → (∃ F, p.val F = .ok a) →
       SimC mode env s₁ Q (k b) (q a)) :
@@ -522,7 +517,7 @@ protected theorem bindR {β β' α α' : Type}
 
 /-- Strengthen the value relation using the fueled run's success. -/
 protected theorem wp {β α : Type} {P Q : β → α → Prop}
-    {c : CheckCM β} {p : FueledM α}
+    {c : (CheckCM md) β} {p : FueledM md α}
     (h : SimC mode env s₀ P c p)
     (himp : ∀ v' v, P v' v → (∃ F, p.val F = .ok v) → Q v' v) :
     SimC mode env s₀ Q c p := by
@@ -533,7 +528,7 @@ protected theorem wp {β α : Type} {P Q : β → α → Prop}
 /-- Weaken the fueled side: any computation whose successful values
 subsume `p`'s (at some fuel) can replace it. -/
 protected theorem wr {β α : Type} {P : β → α → Prop}
-    {c : CheckCM β} {p q : FueledM α}
+    {c : (CheckCM md) β} {p q : FueledM md α}
     (h : SimC mode env s₀ P c p)
     (himp : ∀ (v : α) (F : Nat), p.val F = .ok v → ∃ F', q.val F' = .ok v) :
     SimC mode env s₀ P c q := by
@@ -544,7 +539,7 @@ protected theorem wr {β α : Type} {P : β → α → Prop}
 
 /-- Weaken the value relation. -/
 protected theorem mono {β α : Type} {P Q : β → α → Prop}
-    {c : CheckCM β} {p : FueledM α}
+    {c : (CheckCM md) β} {p : FueledM md α}
     (hPQ : ∀ b a, P b a → Q b a) (h : SimC mode env s₀ P c p) :
     SimC mode env s₀ Q c p := by
   intro v' s' hr
@@ -562,7 +557,7 @@ end SimC
 
 namespace CEff
 
-variable {env : Env} {s₀ : CState}
+variable {env : Env md} {s₀ : CState md}
 
 protected theorem pure {β : Type} {Q : β → Prop} {b : β}
     (hs : CSOK mode env s₀) (h : Q b) : CEff mode env s₀ Q (pure b) := by
@@ -571,13 +566,13 @@ protected theorem pure {β : Type} {Q : β → Prop} {b : β}
   obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. ▸ hr
   exact ⟨hs, h⟩
 
-protected theorem throw {β : Type} {Q : β → Prop} {e : CheckError} :
+protected theorem throw {β : Type} {Q : β → Prop} {e : CheckError md} :
     CEff mode env s₀ Q (throw e) := by
   intro v' s' hr
   exact nomatch hr
 
 protected theorem bind {β β' : Type} {Q : β → Prop} {R : β' → Prop}
-    {c : CheckCM β} {k : β → CheckCM β'}
+    {c : (CheckCM md) β} {k : β → (CheckCM md) β'}
     (hx : CEff mode env s₀ Q c)
     (hf : ∀ s₁ b, CSOK mode env s₁ → Q b → CEff mode env s₁ R (k b)) :
     CEff mode env s₀ R (c >>= k) := by
@@ -594,9 +589,9 @@ protected theorem bind {β β' : Type} {Q : β → Prop} {R : β' → Prop}
 
 @[inherit_doc SimC.pureB]
 protected theorem pureB {β γ : Type} {Q : β → Prop}
-    {x : γ} {k : γ → CheckCM β}
+    {x : γ} {k : γ → (CheckCM md) β}
     (h : CEff mode env s₀ Q (k x)) :
-    CEff mode env s₀ Q ((pure x : CheckCM γ) >>= k) := by
+    CEff mode env s₀ Q ((pure x : (CheckCM md) γ) >>= k) := by
   intro v' s' hr
   apply h v' s'
   simpa only [Bind.bind, StateT.bind, pure,

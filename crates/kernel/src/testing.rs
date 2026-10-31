@@ -249,7 +249,9 @@ pub fn check_accepts_with_prims(
   prims: super::primitive::Primitives<Meta>,
 ) {
   let mut tc = TypeChecker::new(env);
-  tc.prims = prims;
+  tc.prims = super::primitive_context::PrimitiveContext::Legacy(
+    std::sync::Arc::new(prims),
+  );
   match tc.check_const(id) {
     Ok(()) => {},
     Err(e) => panic!("expected {id} to be accepted, got error: {e:?}"),

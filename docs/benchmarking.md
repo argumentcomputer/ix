@@ -109,12 +109,24 @@ measurements and marks the unfinished pair `OOM`.
 |---|---|---|
 | `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
-| `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
+| `compile` | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
+
+The `compile` benchmark switches from the uncertified Rust compiler to the
+certified default in this change. Certified uploads use the distinct
+`ix-compile-certified` workload and testbeds, with the same regression
+thresholds. Historical Rust rows remain in `ix-compile` and appear as separate
+lines on the compile plots; they never enter the certified alert baseline.
+PR comparisons across the switch include the cost of certification and remain
+informational: the table displays the delta without failing on its size.
+Compiler failures, missing rows and kernel rejections still fail their jobs.
+For a separate Rust measurement, run
+`ix compile <env>.lean --rust --out rust.ixe --json rust-compile.json --json-name <env>`;
+keep that row separate from the certified series.
 
 The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
 reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
-and [kernel.md](kernel.md). It is separate from the Rust benchmarks above;
+and [kernel.md](kernel.md). It is separate from the compiler and Rust kernel benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
 ### Aggregate W0 baselines
@@ -177,8 +189,10 @@ its row marked `status: oom`
 constant's death costs one constant. A kill that lands *after* the row
 carries the mode's completion metric hit teardown (the prover releasing
 tens of GB right after the final write), so the finished row stays `ok`.
-ooc and compile run as single processes instead — their checks never
-approach the ceiling, and a kill there means missing rows and a red cell.
+ooc and compile run as single processes instead, and a kill there means
+missing rows and a red cell. Preparing a missing `.ixe` uses the default
+compiler under the same RAM ceiling; that preparation is outside the
+consumer's timed window.
 There are **no per-constant timeouts**; the job-level `timeout-minutes` is
 the only clock.
 
@@ -198,12 +212,11 @@ the only clock.
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
   note.) Runner provisioning lives in the workflows; `IX_BENCH_MACHINE`
   selects the matching Bencher testbed. The watchdog ceiling defaults to
-  the machine's RAM minus 15 GB
-  (`--ceiling-gb` overrides). The heaviest compile/decompile workload is
-  `ix decompile` on Mathlib and FLT, approaching 40 GB now that Pass 2
-  holds its kenv rather than clearing it (compile itself peaks around half
-  that), so the default only clears it on machines with roughly 55 GB or
-  more; cap explicitly below that.
+  the machine's RAM minus 15 GiB (`--ceiling-gb` overrides). Certified
+  compilation can use substantially more RAM than the historical Rust
+  compile series. The benchmark runners have 256 GiB, leaving about
+  240 GiB for the watchdog; smaller hosts should set an explicit ceiling.
+  The same ceiling covers fallback compilation for consumers without `--ixe`.
 
 ## `!benchmark` grammar
 
@@ -239,10 +252,10 @@ single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
 input box can't hold newlines:
 `!benchmark aiur execute BENCH_ENVS=InitStd,Mathlib`.
 
-The `IX_COMPILE_*` settings change compile-time RAM and speed but produce a
-bit-identical `.ixe`, so normal `.ixe` and compile-row caches are keyed only by
-commit and env. Add `fresh` when remeasuring a compile knob on an already
-benchmarked commit.
+The allowlisted `IX_COMPILE_*` settings tune the Rust compiler used by older
+base checkouts; they do not tune the certified compiler. Normal `.ixe` and
+compile-row caches are keyed by commit and env. Add `fresh` when remeasuring
+a compile setting on an already benchmarked commit.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it

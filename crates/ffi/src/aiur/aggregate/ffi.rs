@@ -167,11 +167,14 @@ extern "C" fn rs_aiur_stage2_aggregate(
   exec_ahead: LeanNat<LeanBorrowed<'_>>,
   verify_only: bool,
   subtree_code: LeanNat<LeanBorrowed<'_>>,
+  binding_proof_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
       lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
     let subtree = lean_unbox_nat_as_usize(subtree_code.inner()).checked_sub(1);
+    let binding_proof =
+      super::lanes::read_binding_proof(binding_proof_path.as_str())?;
     run(RunConfig {
       ixvm_system: ixvm_system.get(),
       aggr_system: aggr_system.get(),
@@ -195,6 +198,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       exec_ahead: lean_unbox_nat_as_usize(exec_ahead.inner()),
       verify_only,
       subtree,
+      binding_proof: binding_proof.as_ref(),
     })
   }));
   match result {
@@ -368,4 +372,88 @@ extern "C" fn rs_aiur_ix_aggr_prove(
   let lean_proof: LeanOwned =
     LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
   LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
+}
+
+/// `AiurSystem.proveIxAggrWithin`: prove one valid `ix_aggr` execution, as
+/// `rs_aiur_ix_aggr_prove` does with the generated executor, but planned as
+/// trace shards whose projected host peak fits `max_bytes`. A driver that
+/// proves single aggregation steps (`ix aggregate --ixc`) holds each one to
+/// its RAM budget this way, as the Stage 2 controller holds its slots.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_ix_aggr_prove_within(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  pub_input: LeanArray<LeanBorrowed<'_>>,
+  shape: LeanNat<LeanBorrowed<'_>>,
+  left_proof_advice_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_proof_advice_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  ixvm_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  self_vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  left_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  right_claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  output_claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  allowed_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  preimages_blob: LeanByteArray<LeanBorrowed<'_>>,
+  trees_blob: LeanByteArray<LeanBorrowed<'_>>,
+  paths_blob: LeanByteArray<LeanBorrowed<'_>>,
+  max_bytes: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use aiur::synthesis::GatedProve;
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let max_bytes = lean_unbox_nat_as_usize(max_bytes.inner());
+  let mut io_buffer = match build_ix_aggr_io_buffer(
+    lean_unbox_nat_as_usize(shape.inner()),
+    left_proof_advice_bytes.as_bytes(),
+    right_proof_advice_bytes.as_bytes(),
+    ixvm_vk_bytes.as_bytes(),
+    self_vk_bytes.as_bytes(),
+    left_claims_bytes.as_bytes(),
+    right_claims_bytes.as_bytes(),
+    output_claim_bytes.as_bytes(),
+    allowed_bytes.as_bytes(),
+    preimages_blob.as_bytes(),
+    trees_blob.as_bytes(),
+    paths_blob.as_bytes(),
+  ) {
+    Ok(io) => io,
+    Err(err) => return LeanExcept::error_string(&err),
+  };
+  let args = pub_input.map(|x| lean_unbox_g(&x));
+  let system = aiur_system_obj.get();
+  let gated = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    system.prove_ixvm_within_budget(
+      fun_idx,
+      &args,
+      &mut io_buffer,
+      ixvm_codegen::aiur_ix_aggr_runner::execute_ix_aggr,
+      Some(max_bytes),
+      false,
+      true,
+      None,
+    )
+  }));
+  match gated {
+    Ok(GatedProve::Proved { claim, proof, peak }) => {
+      eprintln!(
+        "[aggregate] proved within {max_bytes} B: projected peak {peak} B"
+      );
+      let lean_proof: LeanOwned =
+        LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+      LeanExcept::ok(LeanProd::new(build_g_array(&claim), lean_proof))
+    },
+    Ok(GatedProve::Split { peak, .. }) => LeanExcept::error_string(&format!(
+      "ix_aggr: no trace-shard count fits the {max_bytes} B budget \
+       (whole-execution peak {peak} B)"
+    )),
+    Ok(GatedProve::Failed(error)) => {
+      LeanExcept::error_string(&format!("ix_aggr: execution failed: {error}"))
+    },
+    Ok(GatedProve::Measured { .. }) => {
+      LeanExcept::error_string("ix_aggr: the prove only measured")
+    },
+    Err(payload) => LeanExcept::error_string(&format!(
+      "ix_aggr: prove panicked: {}",
+      panic_text(&payload)
+    )),
+  }
 }

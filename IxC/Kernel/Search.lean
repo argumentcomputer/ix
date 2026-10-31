@@ -1,3 +1,5 @@
+module
+
 /-! # Bounded search outcomes
 
 Only success carries semantic evidence. A candidate that does not apply is
@@ -5,6 +7,8 @@ different from an exhausted or unresolved search; none of these establishes
 that two terms are unequal. Alternatives preserve a successful later path
 and retain the most informative cause when every path fails.
 -/
+
+@[expose] public section
 
 namespace Ix.Kernel
 
@@ -78,3 +82,5 @@ def remember (cause : Option SearchFailure) (result : Search α) : Search α :=
 
 end Search
 end Ix.Kernel
+
+end

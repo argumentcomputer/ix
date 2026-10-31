@@ -1,6 +1,8 @@
 import Benchmarks.Kernel.CheckIxeReadCache
 import Benchmarks.Kernel.CheckIxeStream
 import Benchmarks.Kernel.CheckIxePool
+import Benchmarks.Kernel.CheckIxeMeta
+import Ix.KernelCheck.Binding
 
 /-! # Environment check of a compiled Ixon environment (untrusted)
 
@@ -18,6 +20,12 @@ compiler's (`Env.anonHints`). Not a certified verdict:
 Rows are JSONL with the fields of `kernel-check-ixe` (`address, names, kind,
 outcome, reason, micros, readMicros`; a blocked row's reason is its root's
 address), so `kernel-check-ixe --report` and `--summary` read them unchanged.
+The verdict is the `.anon` run's; a checker failure's reason is rendered by
+`.meta`: its keys spelled with the names the `.ixe`'s metadata
+gives them and their addresses, `Nat.add@a1b2c3d4` (`Reader.spellWith` over
+`CheckIxeMeta.displayTable`; a run from the read cache spells them as
+`Key.toName` does). `kernel-check-ixe --meta` runs the check at `.meta` too
+and compares the two (`Benchmarks.Kernel.CheckIxeMeta`).
 
 Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
 <output.jsonl> [limit]`.
@@ -105,7 +113,7 @@ where
 
 /-- The order of a run: the setup's, or with `CHECK_IXE_ROOTS` the closure of
 those constants, resolved through the environment's names. -/
-def orderOf (s : Setup) (named : Std.HashMap Ix.Name Ixon.Named) (pre : Prelude)
+def orderOf (s : Setup) (named : Std.HashMap Ix.Name Ixon.Named) (pre : Prelude .anon)
     (roots : Option String) : IO (Array Address) := do
   let some list := roots | return s.ordered
   let mut starts : Array Address := pre.records.map (·.1)
@@ -138,8 +146,8 @@ def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs 
         IO.Process.exit 3
 
 /-- The setup line of a live run. -/
-def setupLine (s : Setup) (blobs pins hints : Nat) (pre : Prelude) : String :=
-  s!"{s.store.size} records, {s.ordered.size} primary, {blobs} blobs, {pins} pins, \
+def setupLine (s : Setup) (blobs roles hints : Nat) (pre : Prelude .anon) : String :=
+  s!"{s.store.size} records, {s.ordered.size} primary, {blobs} blobs, {roles} roles bound, \
     {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, {hints} hints"
 
 /-- Mark a live run's read-only inputs persistent before the loop's thread
@@ -157,7 +165,6 @@ def run (args : List String) : IO UInt32 := do
     | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile options.input
-  let natPins ← IO.ofExcept builtinNatOpPins
   let rootsEnv ← IO.getEnv "CHECK_IXE_ROOTS"
   -- the persistent read cache (`CheckIxeReadCache`): full-order runs only
   let cacheDir ← IO.getEnv "CHECK_IXE_READ_CACHE"
@@ -191,33 +198,36 @@ def run (args : List String) : IO UInt32 := do
     | some n => a.extract 0 (min n a.size)
     | none => a
   -- the loop over a source: the per-record check, or with `--jobs` the pool
-  let check {σ : Type} (src : LoopSource σ) (names : Address → Array String)
+  let check {σ : Type} (ev : Ix.Kernel.Evidences .anon) (src : LoopSource σ) (names : Address → Array String)
       (addresses : Array Address)
-      (onRead : Address → Except ReadError Read → Nat → IO Unit) : IO Counts := do
+      (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit)
+      (spell : Ix.Kernel.Key .anon → String := toString) : IO Counts := do
     let total := addresses.size
     let progress := fun (i : Nat) (counts : Std.HashMap String Nat) => do
       if i % 1000 == 0 then
         IO.eprintln s!"check-ixe: {i}/{total} after {(← IO.monoMsNow) - started} ms; {counts.toList}; \
           RSS {(← statusKb "VmRSS:") / 1024} MB"
     match options.jobs with
-    | some _ => CheckIxePool.run src natPins names addresses skip slots emit log progress onRead
+    | some _ => CheckIxePool.run src ev names addresses skip slots emit log progress onRead spell
     | none => do
       let st ← src.init
-      let out ← checkLoopWith src.view src.read src.commit st (Checker.stepRecord natPins) {}
+      let out ← checkLoopWith src.view src.read src.commit st (Checker.stepRecord ev) {}
         names addresses skip emit
         (before := fun a => do slot0.set (some (a, ← IO.monoMsNow)))
         (after := slot0.set none)
-        (progress := fun i o => progress i o.counts) (onRead := onRead)
+        (progress := fun i o => progress i o.counts) (onRead := onRead) (spell := spell)
+        (tier := if cacheDir.isNone then src.tierHook else none)
       pure (out.counts, out.reasons)
   -- a full-order live run records its readings and writes its plan, on the
   -- loop's own thread: readings handed to another thread would be marked
   -- multi-threaded, and every reference count on them made atomic
   let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
   let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
-      (addresses : Array Address) : IO Counts := do
-    let readings ← IO.mkRef (#[] : Array (Address × Except ReadError Read))
-    let out ← check src (names.getD · #[]) addresses
+      (addresses : Array Address) (display : DisplayTable .anon) : IO Counts := do
+    let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
+    let out ← check s.evidence src (names.getD · #[]) addresses
       (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
+      (spell := spellWith display)
     if let some (path, ixe) := cache then
       if record then
         let t0 ← IO.monoMsNow
@@ -240,10 +250,11 @@ def run (args : List String) : IO UInt32 := do
       let path := (cache.map (·.1.toString)).getD ""
       IO.eprintln s!"{plan.header}; read cache {path}, mapped in {(← IO.monoMsNow) - started} ms"
       let names := plan.nameMap
-      onThread (check plan.source (names.getD · #[]) (plan.addresses options.limit) fun _ _ _ => pure ())
+      onThread (check plan.evidence plan.source (names.getD · #[]) (plan.addresses options.limit)
+        fun _ _ _ => pure ())
     | none => do
-      let pins ← IO.ofExcept defaultPins
-      let pre ← IO.ofExcept builtinPrelude
+      let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
+      let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
       match options.load with
       | .eager => do
         let env ← IO.ofExcept (Ixon.deEnv bytes)
@@ -252,21 +263,21 @@ def run (args : List String) : IO UInt32 := do
           store := store.insert address (← IO.ofExcept lazy.get)
         let names := reportNames env store
         let hints := Hints.ofStore store env.anonHints
-        let s := setup store (env.blobs[·]?) pins pre hints.lookup
-        log s!"eager load: {setupLine s env.blobs.size pins.names.size hints.hints.size pre}"
+        let s := setup store (env.blobs[·]?) table pre hints.lookup
+        log s!"eager load: {setupLine s env.blobs.size s.cx.roles.names.size hints.hints.size pre}"
         let addresses := limited (← orderOf s env.named pre rootsEnv)
         if thread then markInputs s names
-        onThread (live s s.source names addresses)
+        onThread (live s s.source names addresses (CheckIxeMeta.displayTable env s.cx))
       | .stream => do
-        let l ← CheckIxeStream.load bytes pins pre
+        let l ← CheckIxeStream.load bytes table pre
         let s := l.setup
         let names := reportNames l.env s.store
-        log s!"streaming load: {setupLine s l.env.blobs.size pins.names.size l.env.anonHints.size pre}"
+        log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
         let addresses := limited (← orderOf s l.env.named pre rootsEnv)
         -- the setup and the names only: the records' windows go to the loop
         -- unmarked, so that they are freed once it has taken their bytes
         if thread then markInputs s names
-        onThread (live s l.source names addresses)
+        onThread (live s l.source names addresses (CheckIxeMeta.displayTable l.env s.cx))
   running.set false
   let ranked := reasons.toArray.qsort (fun a b => a.2 > b.2)
   IO.eprintln s!"check-ixe: done in {(← IO.monoMsNow) - started} ms; {counts.toList}"

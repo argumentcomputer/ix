@@ -171,6 +171,7 @@ value with `Ixon.getTagN`:
 | `N4(0x2, 256)` (`Ref` with 256 universe arguments) | `28 F8` | 2 |
 | `N4(0xE, 4)` (the version-4 `.ixe` header) | `E4` | 1 |
 | `N4(0xE, 9)` (Resource claim) | `E8 01` | 2 |
+| `N4(0xE, 10)` (Binding claim) | `E8 02` | 2 |
 | `N2(3, 100)` (`Univ::Var(100)`) | `E0 44` | 2 |
 | `N0(42)` | `2A` | 1 |
 | `N0(128)` | `80 00` | 2 |
@@ -648,9 +649,9 @@ cover, and which are checked at run time or by tests, is stated in
 
 Both compilers build every table with this construction
 (`Ix.Sharing.Exact.canonicalSharingTiered .tagN`, Rust
-`canonical_sharing_tiered(ShareLayout::TagN, ..)`): single constants,
-mutual blocks and aux-gen blocks, and in Rust also kernel egress and the
-decompiler's recompile check. It is the only sharing construction.
+`canonical_sharing_tiered(ShareLayout::TagN, ..)`): single constants and
+mutual blocks, and in Rust also kernel egress. It is the only sharing
+construction.
 
 ### Table rules
 
@@ -679,6 +680,13 @@ decompiler's recompile check. It is the only sharing construction.
 
 ### Canonical construction
 
+The adopted canonicalization revision is **`sharing-k16-greedy-v1`**, with K = 16.
+It is recorded here and in [sharing-minimum §14](sharing-minimum.md#14-canonical-rule-revision-sharing-k16-greedy-v1).
+This is a change to the canonical choice of sharing, with no change to the wire grammar,
+checked-object/claim format 4, or the environment envelope versions (4 and 5).
+Both compilers implement this revision. It replaces the previous unbounded
+phase-1 search; the table rules and phases 2 and 3 are unchanged.
+
 The canonical table is the output of `Ix.Sharing.Exact.canonicalSharingTiered
 .tagN` (Lean, `Ix/Sharing/Exact/Tiered.lean`) and of
 `canonical_sharing_tiered(ShareLayout::TagN, ..)` (Rust,
@@ -697,15 +705,22 @@ table normalizes to the same bytes (tested; proved under a hypothesis, see
    of interned terms depends only on the terms the roots denote, not on the
    interner's temporary IDs.
 2. **Phase 1: selection, at each uniform width `w ∈ {1, 2, 3}`.**
-   `optimizeSharingUniform w` finds a stored set that minimizes the
-   constant's length when every `Share` costs `w` bytes and everything else
-   is priced at its encoded length, telescopes and table count included.
+   Select the minimum uniform-width length over a fixed family of stored sets.
+   Every `Share` costs `w` bytes; everything else is priced at its encoded length,
+   telescopes and table count included.
    - Only terms with compact in-degree at least 2 are considered. The
      in-degree counts DAG edges with multiplicity, plus root occurrences.
    - Ties go to the minimum that is least in the pinned order `setPrec`.
-   - Each candidate is classified as certain-stored, certain-excluded or
-     uncertain using DAG bounds. The uncertain ones are searched exhaustively,
-     component by component.
+   - Classify candidates as certain-stored, certain-excluded or uncertain using
+     the existing initial DAG bounds, and partition the uncertain terms before search.
+   - An initial uncertain component of at most 16 members uses every subset.
+     A larger component uses a deterministic greedy chain starting at the empty set.
+     Each step adds the member giving the smallest component delta from the empty
+     baseline; equal deltas add the larger structural ID. Keep every chain row,
+     including the empty and full endpoints.
+   - Keep the `setPrec`-least minimum for each count, then use the existing slack
+     trim, count-bracket knapsack and global tie rule. Resource exhaustion never
+     switches the family. Exactness is relative to this family.
 3. **Phase 2: slot allocation.** Let `ref(t)` be the number of `Share(t)` in
    the phase-1 output.
    - The 1-byte tier (indices 0–7) gets a set of at most 8 stored terms that
@@ -760,9 +775,11 @@ recorded but not limited on this path in either language: Rust's
 a test oracle, which is also the only meter of `transitions`.
 
 `ix compile --sharing-limits SPEC` (also `ix compile-lean --sharing-limits`)
-overrides the defaults. It sets the `IX_SHARING_LIMITS` environment variable,
+overrides the defaults for the uncertified compilers (`--rust`, `--streamed`);
+the certified compiler, whose correctness theorem fixes the defaults, refuses an
+override. It sets the `IX_SHARING_LIMITS` environment variable,
 which both compilers read once per run: Rust once per compile or decompile
-entry point (`CompileState::sharing_limits`), Lean in `compileEnvParallelAux`
+entry point (`CompileState::sharing_limits`), Lean in the CLI's driver options (`Ix.Cli.driverOptionsFromEnv`)
 and `decompileEnvFullParallel`. An invalid value therefore fails the run once,
 before any block is shared. `SPEC` is a comma-separated list of items, each
 `key=value` or the word `unbounded` (every production limit at its maximum). A
@@ -781,23 +798,42 @@ resource exhausted: states (limit 1099511627776); raise it with
 --sharing-limits states=N (IX_SHARING_LIMITS)`. Every other construction
 failure is `CompileError.sharingConstruction`. In Rust, kernel egress and the
 decompiler's recompile name the constant in the message (`egress '<name>':
-…`, `recompile of '<name>' (sharing): …`). There is no fallback to another
-construction, and a partial or best-so-far table is never emitted.
+…`, `recompile of '<name>' (sharing): …`). The structural gate above fixes the
+exact or greedy family before search. A refusal never switches families or emits
+a partial or best-so-far table.
 
 ### What is proved, and what is not
+
+For `sharing-k16-greedy-v1`, the family proof stack proves the minimum within the
+fixed family, successful-output meaning and wire validity, representation congruence,
+and conditional idempotence. The Lean production entry and its audits carry the
+meaning, format and serialized-length contracts without new caller premises.
+The guarded area evaluator is tied to the closure reference by unconditional
+equalities of complete results, work charges and errors; these preserve the same
+family, limits and tie rules.
+Complete old/new bytes agree when both routes succeed with the same limits,
+all initial components at all three widths have at most 16 members, and the old
+route uses `uniformSubsetSearch = false`. Old-route success alone is not yet a proof
+of new-route success. [Sharing-minimum §14.3](sharing-minimum.md#143-proof-scope-and-follow-up)
+records the totality and output-domain theorems and the remaining cost obligations.
+
+The detailed exact-search theorem inventory below describes the retained reference
+route and the common later phases. Its phase-1 global optimum must not be read as a
+claim about components that use the new greedy family.
 
 The following theorems are machine-checked in Lean, in `IxSharingVerify`
 (the `IxSharingVerify` library; the TagN theorems are in
 `IxC/Ixon/Verify/TagN.lean`). They are roots of the audit manifest
-`IxSharingVerify/Audit/Statements.lean` (111 roots), which
+`IxSharingVerify/Audit/Statements.lean` (184 roots including the guarded area evaluator), which
 `lake build --wfail IxSharingVerify` checks: every root uses exactly its
 listed axioms, which are among `propext`, `Classical.choice` and
 `Quot.sound`, and no declaration of an `Ix.Sharing` module uses `sorry`
-(`Audit/SorryFrontier.lean`). `lake lint` builds the library too. The construction theorems are stated for a
-successful run on the canonical DAG of the input (`ex.dag`, `ex.roots`); the
-step that builds that DAG is outside them (see "Expansion" below).
+(`Audit/SorryFrontier.lean`). `lake lint` builds the library too. Lower-level
+theorems describe runs on a canonical DAG (`ex.dag`, `ex.roots`). The production
+wrapper theorems include the actual input expansion and derive their graph and
+format premises from the successful run's checks.
 
-- **Phase 1 minimality** (`IxSharingVerify/UniformOptimality.lean`):
+- **Reference phase 1 minimality** (`IxSharingVerify/UniformOptimality.lean`):
   `optimizeUniform_minimum` and `optimizeUniform_least`. Suppose
   `optimizeUniformExpanded w limits ex` succeeds with the default
   branch-and-bound search (`limits.uniformSubsetSearch = false`; the
@@ -857,15 +893,21 @@ step that builds that DAG is outside them (see "Expansion" below).
   `SharingRunOK`). The theorems about the stored bytes
   (`BlockResult.mk'_codec_roundtrip`,
   `BlockResult.constantInfo_codec_roundtrip`,
-  `finishConstantInfoWithSharing_run_codecWF`) are proved but are not audit
-  roots: `BlockResult.mk'` hashes the block, and the Blake3 package's
-  `HasherOps.hash` carries a `native_decide` axiom, which the manifest does
-  not admit. No theorem covers the compiler's per-declaration drivers
-  before that tail.
+  `finishConstantInfoWithSharing_run_codecWF`) are audit roots with the
+  allowed standard axioms. Hash finalization supplies its 32-byte bound by
+  a kernel-checked proof, with no `native_decide` axiom. These codec statements
+  do not by themselves prove the complete per-declaration compiler or
+  `CompileCorrect`.
 - **Structural IDs** (`SharingExactCanon.lean`: `canonicalize_det`): two
   interner outputs that pass the interner's checks, are hash-consed and
   whose roots denote the same terms canonicalize to the same DAG and root
   IDs.
+- **Input expansion and meaning** (`CanonicalMeaning.lean`, `FamilyDomain.lean`,
+  `CanonicalProduction.lean`): the actual successful ingestion and canonical
+  numbering preserve the ordered source expressions, and the successful family
+  output unfolds to those expressions. Arbitrary prior backward sharing is
+  covered by the shared-input meaning theorem. The pointer cache is an
+  implementation aid; structural confirmation protects term identity.
 - **Integers**: the TagN theorems of [Integer Encoding](#integer-encoding-tagn).
 
 **Compiled code.** The compiler runs faster bodies than the specifications
@@ -876,7 +918,7 @@ every theorem keeps talking about the specification; the module map of
 `Ix/Sharing/Exact.lean` lists them. The audit module
 `IxSharingVerify/Audit/CompiledCode.lean` fails the build unless every
 `@[csimp]` theorem of an `Ix` module on the compiler's import path is an audit
-root (19), and unless no declaration of `Ix.Sharing.*` is
+root (30 including the guarded area evaluator), and unless no declaration of `Ix.Sharing.*` is
 `unsafe`, `partial`, `@[implemented_by]` or `@[extern]`, except the
 interner's pointer-cache key `exprPtr`.
 
@@ -884,35 +926,27 @@ interner's pointer-cache key `exprPtr`.
 [Canonical construction](#canonical-construction) stay in the code: the
 layout length against the evaluated length and against phase 1, the
 re-expansion to the stored terms and the input's root IDs, and the wire
-domain (`phase3_le_phase1` proves that the comparison with phase 1 never
-fails). Rust runs every check listed in the module documentation of
+domain. The retained exact reference has its `phase3_le_phase1` proof; the
+family successful-run theorem obtains that inequality from the executed guard.
+Proving the guard unreachable for the entire family domain remains follow-up.
+Rust runs every check listed in the module documentation of
 `sharing_exact/tiered.rs`. The theorems are stated for successful runs, so a
 failing check turns a run into an error, never into a different table.
 
 Not claimed:
 
 - **No global minimum.** The canonical table is not a global byte minimum
-  over all tables, orders and occurrence choices. Each phase is exact for
-  its own problem; their composition is not claimed to be optimal.
+  over all tables, orders and occurrence choices. Phase 1 is exact only over
+  the fixed family; the composition is not claimed to be optimal.
 - **Phase 2 on larger tables.** For tables of more than 1,032 entries, whose
   indices span the 2- and 3-byte rungs, the Kahn order is not claimed to
   minimize `Σ ref · width`.
-- **Expansion.** The step from the input expressions to the canonical DAG
-  (`expand`: share expansion and interning, with a pointer cache keyed by
-  `exprPtr`, an `unsafe` address read) is not covered: no theorem states
-  that the DAG denotes the input expressions. The round trip to the input is
-  therefore proved only relative to that DAG; the run-time re-expansion
-  check uses the same interner, so it does not check the expansion
-  independently. Logically `exprPtr` is an arbitrary function of the
-  expression; no theorem inspects it, so the theorems hold whatever addresses
-  a run sees. Independence from in-memory pointer sharing is tested, not
-  proved: in `exact-sharing`, pool-shared, deserialized, DAG-shared and
-  re-encoded inputs give identical bytes under the tiered construction and
-  the exact search (120 generated inputs).
-- **Idempotence** is proved only under the hypothesis that expanding the
-  output yields the input's canonical DAG and root IDs
-  (`canonicalSharingTieredTable_idem`). It is tested: re-running the Rust
-  construction on every stored constant reproduces the stored bytes, for
+- **Unconditional output-domain closure and idempotence.** Family representation
+  congruence and conditional idempotence are proved, including complete constant
+  bytes. They still require successful raw expansion of the output; proving that
+  expansion always succeeds on the stated domain remains follow-up. The old
+  exact `Reference.canonicalSharingTieredTable_idem` theorem is retained.
+  Earlier exact-route tests re-ran every stored constant and reproduced its bytes for
   the Init and Init+Std files compiled on Lean 4.34.0 and for the Init and
   Mathlib files compiled on Lean 4.33.1.
 - **Rust.** The Rust implementation is not proved. It is checked against
@@ -920,7 +954,9 @@ Not claimed:
   it runs over a whole `.ixe`). Its phase-1 search evaluates each
   component's area under a truncated cost model, where Lean's specification
   evaluates the component's whole closure; the outputs are equal on every
-  input tested. On corpora compiled with `ix compile` on Lean 4.34.0, with
+  input tested. The following measurements are historical exact-route evidence;
+  §14.4 of sharing-minimum records the K16 prototype evidence, and the production
+  gates remain separate. On corpora compiled with `ix compile` on Lean 4.34.0, with
   Rust in its checked mode, Lean and Rust produce the same bytes for all
   56,783 stored constants of Init and all 100,277 of Init+Std, with no
   resource exhaustion on either side; on Lean 4.33.1 the same held for
@@ -932,14 +968,23 @@ Not claimed:
   and requires identical serialized environments
   ([performance](sharing-minimum-performance.md)).
 - **Length range in Rust.** Lean computes lengths with arbitrary-precision
-  `Nat`. Rust's phase 1 uses 128-bit length arithmetic and fails closed
-  (`format bound: LengthOverflow`) on an input whose phase-1 lengths leave
-  that range, where Lean succeeds: for example the chain
-  `e(i+1) = App(e(i), e(i))` at depth 127 or more (at depth 126 both give the
-  same bytes). No Init or Mathlib constant comes near this bound. This is a
-  known divergence of the two implementations.
-- **Failure.** The theorems describe successful runs. A run that exceeds a
-  limit returns an error.
+  `Nat`. Rust computes phase-1 costs and signed deltas in 128-bit integers
+  and, where a value leaves that range, again in exact integers, with the
+  same result wherever the 128-bit run succeeds (§12.18 of sharing-minimum),
+  so a long unshared length is no refusal. All 11 doubling fixtures,
+  including depths 127–256, have complete Rust/Lean byte parity, and the
+  Lean/Rust sharing suite compares four towers whose unshared length exceeds
+  `2^127` byte for byte.
+- **Failure.** A run that exceeds a limit returns an error. On the totality
+  domain (fewer than `2^64` input nodes and universes per reference, implied by
+  the framed constant-body bound) no guard is reachable under a sufficient
+  budget, a larger budget never changes a successful result, and the output
+  expands again (`IxSharingVerify.NeverFails`). One such budget is
+  `limitsFor N`, polynomial in the input size `N`: the expression nodes plus
+  universe arguments of the table and the roots as written, when table
+  entries reference only earlier entries and roots only entries
+  (`IxSharingVerify.SufficientBudget`). Standalone and structured APIs must
+  state that domain explicitly.
 
 ### Example
 
@@ -977,12 +1022,15 @@ rung end, so v3's integer codes would write the same bytes for this table.
 
 ### Sharing in metadata expressions
 
-Metadata expressions are the entries of `ConstantMeta.metaSharing`: the
-compiled call-site arguments that call-site surgery collapsed, and rewritten
-call-site heads. A `Share(i)` inside them is read in an extended index
-space. This is a reader rule; it adds no bytes. Let `p` be the size of the
-primary `sharing` table (for a projection, the table of its `Muts` block)
-and `q` the size of `metaSharing`.
+Metadata expressions are the entries of `ConstantMeta.metaSharing`. No
+compiler writes any now: they held the source occurrences of rewritten call
+sites, and the compiler no longer rewrites call sites
+([Retired metadata records](#retired-metadata-records)). The readers keep the
+rule below, so a table that has entries reads, or fails, as before.
+A `Share(i)` inside them is read in an extended index space. This is a
+reader rule; it adds no bytes. Let `p` be the size of the primary `sharing`
+table (for a projection, the table of its `Muts` block) and `q` the size of
+`metaSharing`.
 
 - **Primary expressions** (roots and primary entries): `Share(i)` is
   `sharing[i]` and needs `i < p`. Metadata never changes how primary bytes
@@ -997,9 +1045,6 @@ and `q` the size of `metaSharing`.
 
   Every metadata-to-metadata step goes to a lower entry, so expansion
   terminates.
-- **Call-site references.** `CallSiteEntry.collapsed sharingIdx` and
-  `origHead = some (sharingIdx, _)` index `metaSharing` directly, not offset
-  by `p`, and read that entry in its own scope.
 
 Both decompilers implement the rule: Lean `Ix.DecompileM` (`ShareScope`,
 `resolveShareIn`) and Rust `ix_compile::decompile` (`ShareScope`). When a
@@ -1008,12 +1053,13 @@ constant's metadata is loaded, they check the whole table first
 occurring in `metaSharing[j]` must have `i < p + j`. The first violation, in
 entry order and then left-to-right pre-order, is reported as
 `invalidMetaShareIndex` (Rust `DecompileError::InvalidMetaShareIndex`,
-error tag 11). An out-of-range index in a primary expression, or an
-out-of-range call-site `sharingIdx`, is `invalidShareIndex`. The
-semantic-contract scan (`Ix.SemanticContract.containsIxon`, Rust
-`semantic_contract::contains_ixon`) expands Shares with the same scopes.
+error tag 11). An out-of-range index in a primary expression is
+`invalidShareIndex`; a record whose `_ix.inline` or arena root is out of
+range is a bad constant format. The semantic-contract scan
+(`Ix.SemanticContract.containsIxon`, Rust `semantic_contract::contains_ixon`)
+expands Shares with the same scopes.
 Kernel ingress, the IxVM circuit and the resource validators do not read
-`metaSharing` contents. Two older gaps remain: a call site nested inside a
+`metaSharing` contents. Two older gaps remain: a record nested inside a
 metadata expression may reference any `metaSharing` entry, including its own,
 and neither the decompilers nor kernel ingress check that primary entries
 reference only earlier entries. A malformed table of either kind can make
@@ -1067,8 +1113,9 @@ follow in declaration order:
 | 7 | Ref | name_idx | — |
 | 8 | Prj | struct_name_idx, child? | child |
 | 9 | Mdata | kvmap_count + kvmaps, child? | child |
-| 10 | CallSite | name_idx, entries, canon_meta, orig_head | — |
-| 11 | EtaCallSite | n_synth, name_idx, entries, canon_meta, wrapper_meta | — |
+
+Kinds 10 (`CallSite`) and 11 (`EtaCallSite`), the call-site surgery's
+metadata, are retired (a format break): both readers refuse them.
 
 Child references are never absolute indices:
 
@@ -1082,15 +1129,14 @@ Child references are never absolute indices:
   post-order, so an unshared subtree costs one tag byte per App and no
   child bytes at all.
 - **Explicit references.** A structural slot whose bit is clear (a shared
-  node: an expression-cache hit, or any other position), and every
-  call-site reference (entry `meta`, `canon_meta`, `orig_head` meta,
-  `wrapper_meta`), is `N0` of the backward delta `(i − 1 − c) mod 2^64`.
-  Forward references are representable (they wrap), so every arena of
-  `u64` indices has an encoding.
+  node: an expression-cache hit, or any other position) is `N0` of the
+  backward delta `(i − 1 − c) mod 2^64`. Forward references are
+  representable (they wrap), so every arena of `u64` indices has an
+  encoding.
 - **One encoding per arena.** The writer marks a slot implicit exactly
   when its child is `top − 1`; the reader rejects an explicit slot equal to
   `top − 1`, an implicit slot with `top = 0`, mask bits beyond the kind's
-  slot count, and kinds above 11.
+  slot count, and kinds above 9.
 
 The decoded arena (absolute `u64` indices) is identical to the one the
 compiler built, so readers of `ExprMeta` see no difference.
@@ -1114,7 +1160,7 @@ four extension vectors appended after it (the wrapper):
 ```rust
 pub struct ConstantMeta {
     pub info: ConstantMetaInfo,        // variant payload (below)
-    pub meta_sharing: Vec<Arc<Expr>>,  // collapsed call-site args (surgery)
+    pub meta_sharing: Vec<Arc<Expr>>,  // metadata expressions (none written)
     pub meta_refs: Vec<Address>,       // refs-table extension (virtual space)
     pub meta_univs: Vec<Arc<Univ>>,    // univs-table extension (virtual space)
     pub univ_patches: Vec<UnivPatch>,  // original level spellings (§10.6)
@@ -1130,9 +1176,13 @@ pub struct UnivPatch {
 Each wrapper vector serializes as an `N0` count + entries and is
 empty (one zero byte) on most constants. `meta_univs`/`univ_patches`
 restore source level spellings the §10.6 canonicalization displaced
-from content; `meta_sharing` holds call-site surgery's collapsed
-arguments, whose `Share` references use the extended index space of
-[Sharing in metadata expressions](#sharing-in-metadata-expressions). Each `ConstantMetaInfo` variant stores a name, universe
+from content; `meta_sharing` holds metadata expressions, whose `Share`
+references use the extended index space of
+[Sharing in metadata expressions](#sharing-in-metadata-expressions), and
+`meta_refs` their references outside the primary table (virtual index
+`refs.len() + j`). No compiler writes either now.
+
+Each `ConstantMetaInfo` variant stores a name, universe
 parameter names, an `ExprMeta` arena, and root indices pointing into
 the arena:
 
@@ -1167,7 +1217,9 @@ pub enum ConstantMetaInfo {
 
 **`AuxLayout`** (the `Muts` sidecar — nested-auxiliary layout for
 mutual blocks that underwent nested-inductive expansion; metadata
-only, never entering any content hash):
+only, never entering any content hash). The compiler now keeps Lean's
+auxiliaries in Lean's order and always writes `None`; readers still accept
+`Some`:
 
 ```
 0x00                                  -- None (no nested auxes)
@@ -1180,10 +1232,19 @@ only, never entering any content hash):
 The three vectors always serialize together (one unified format), and
 `evaporated` always carries `perm.len()` flags — a flag set means the
 block owns the evaporation of that source position (its alias resolves
-to an external head's generic recursor; call-site surgery keys
-head-rewrite plans off these flags alone). Writers normalize
+to an external head's generic recursor; the retired call-site surgery
+keyed its head-rewrite plans off these flags alone). Writers normalize
 legacy-constructed values with defaulted-empty `evaporated` to
 all-zero flags, so Lean and Rust serializers agree byte-for-byte.
+
+### Retired metadata records
+
+An earlier compiler rewrote applications of a changed block's auxiliaries
+and kept each source occurrence for decompilation as a record: an `Mdata`
+KVMap with exactly the keys `_ix.inline` (an index into `meta_sharing`) and
+`_ix.inline_meta` (the occurrence's root in the metadata arena). The
+compiler now compiles Lean verbatim and rewrites no application, so no compiler writes these
+records and no decompiler replays them: such a KVMap is ordinary metadata.
 
 ### Indexed Serialization
 
@@ -1272,27 +1333,28 @@ these files; the default output name is the lowercased input file stem
 plus `.ixe`. See `crates/ixon/src/serialize.rs` (`Env::put`) for the
 byte-level layout.
 
-The .ixe layout is an `N4(0xE, VERSION)` header byte followed by a
-32-byte canonical merkle root, the bundle header fields, and then 6
-sections (hot data first, metadata last).
+The .ixe layout starts with an `N4(0xE, envelopeVersion)` header byte,
+a 32-byte canonical merkle root and the bundle header fields. Version 5
+then carries an artifact role binding. Six sections follow (hot data first,
+metadata last); nothing follows the last one.
 
-The format has the stable identifier `ixon-v4`. The header value is the
-numeric **format version** (`Env::VERSION`, currently `4`, so the first byte
-of a v4 file is `0xE4`). Any change
-to serialized bytes bumps the version; every reader
-(`read_env_header` on the Rust side, `Ixon.getEnv` /
-`getEnvVerifiedLazy` on the Lean side) rejects a mismatch with an
-error naming both versions and asking for a recompile. There is no
-back-compat reading of old versions — `.ixe` files are regenerated
-artifacts. Versions 0–7 fit in the header byte; later versions use the
+The checked constant grammar retains the stable identifier `ixon-v4`.
+Environment readers accept these two envelope versions:
+
+| Version | First byte | Selected when |
+|---------|------------|---------------|
+| 4 | `0xE4` | No role binding |
+| 5 | `0xE5` | A role binding is present, including a present empty payload |
+
+The writer preserves the exact v4 encoding for unbound environments.
+Unsupported envelope versions are rejected. `Env::VERSION` is a compatibility
+alias for 4; use `envelope_version` (Lean `envelopeVersion`) for the selected
+writer version. Versions 0–7 fit in one header byte; later versions use the
 multi-byte TagN rungs.
 
-Format version 4 also sets the object-format byte of claims, proofs and
-catalog manifests (`Ixon.Env.OBJECT_FORMAT`, Rust `Env::OBJECT_FORMAT`, equal
-to the version). Artifacts that cache `.ixe` files key them by the version:
-the TruthMines piece cache includes `ixe=<VERSION>` in its key, and the test
-environment `tc-parity.ixe` is recompiled when its header carries another
-version.
+The checked object-format byte of claims, proofs and catalog manifests stays
+4 (`Ixon.Env.OBJECT_FORMAT`, Rust `Env::OBJECT_FORMAT`). The envelope version
+does not change individual constant encodings or their content addresses.
 
 The version-4 header byte `0xE4` is the same byte as the Check claim tag
 `N4(0xE, 4)` (see [Proofs and Claims](#proofs-and-claims)), just as
@@ -1302,7 +1364,7 @@ header and a claim reader expects a claim. The byte alone does not identify
 the object kind.
 
 ```
-Header:      N4(0xE, VERSION)            -- 0xE4 for version 4
+Header:      N4(0xE, envelopeVersion)   -- 0xE4 or 0xE5
 Root:        32 bytes                     -- canonical merkle root over
                                             consts.keys(); for empty
                                             const sets this is the
@@ -1314,10 +1376,13 @@ Main:        1 byte (0x00 | 0x01) + 32 bytes if 0x01
 Assumptions: count (N0) + [Address (32 bytes)]*
                                           -- strictly ascending; the
                                             bundle trust boundary.
+Binding:     Address (32 bytes) + len (N0) + bytes
+                                          -- version 5 only; mandatory
+                                            in that version.
 ```
 
-The root is mandatory (non-optional): every env has a unique canonical
-identity recoverable from its file. Two envs with the same const set
+The root is mandatory (non-optional): it identifies the canonical constant
+set, not every field of the environment. Two envs with the same const set
 produce byte-identical roots regardless of construction order.
 Deserialization recomputes the root from `consts` and rejects any
 mismatch as tampered.
@@ -1328,6 +1393,40 @@ consumers holding an externally-expected address must compare), and
 the assumptions root, when a claim needs it, is recomputed as
 `merkle_root_canonical(leaves)` from the section (identical to the
 root `AssumptionTree::canonical` produces over the same leaves).
+
+The version-5 binding is independent of named metadata and the constant-set
+merkle root. Its address must equal BLAKE3 of its exact bytes. The payload
+uses the existing canonical `E8 03` role-table codec: specification version,
+role-to-constant addresses, and operation evidence. Generic environment
+readers check framing and the hash and retain the payload. Certified admission
+must additionally decode the canonical table, validate role/dependency/evidence
+structure, and check the bound declarations against the role specifications.
+A hash-correct payload is not by itself a certified binding; a claim must
+commit to the expected binding separately from the constant-set root.
+
+Full, anonymous, lazy, memory-mapped and FFI paths retain the exact binding.
+Bound closure extraction carries its role members, proof records, projection
+owners, recursors and literal support to a fixed point. It refuses assumption
+cuts through this mandatory support. These availability checks do not replace
+semantic admission. Kernel roundtrip egress
+preserves it only if every constant retains its address and exact bytes;
+changed constants require a newly generated binding and that API refuses them.
+
+Both compiler commands generate the binding and proof records from the actual
+published declarations and certificate sources before writing their output.
+Internal support compilation uses the same backend and preserves the original
+request's publication/failure accounting. Named metadata is removed only after
+generation for anonymous output. The ordinary `compile-lean --rust-check` gate
+compares the complete generated artifacts from both backends.
+
+For bound whole inputs, `check-lean` runs the actual authenticated logical or
+typing-tier entry, selected from record headers before checking. The logical
+part receives the kernel's model guarantee; tier declarations are typed only.
+Selected or capped runs report their narrower scope. Resource validation uses
+the artifact's admitted identities and evidence while retaining its explicit
+uncertified typing policy. Host claim commitments to the specification and
+binding remain separate work; target admission does not establish compiler
+value preservation.
 
 **Section 1: Blobs** (Address → raw bytes)
 ```
@@ -1347,8 +1446,9 @@ count (N0)
 
 The `N0` length sidecar is a **section-level** framing integer: it is not
 part of the constant's content-addressed bytes. The address is
-computed as `blake3` over only the constant bytes (verified per
-entry on load). This layout lets a lazy loader slice each constant
+computed as `blake3` over only the constant bytes. Every reader
+verifies it per entry: on load, or, for `get_anon`, at a constant's
+first materialization. This layout lets a lazy loader slice each constant
 directly into a [`LazyConstant`](../crates/ixon/src/lazy.rs) without
 parsing its header, deferring full deserialization until first
 access.
@@ -1417,11 +1517,12 @@ that instead of parsing and discarding each metadata arena. Full
 readers parse the blob and reject entries whose parsed size disagrees
 with `meta_len`.
 
-The `original` address (aux_gen provenance) stays a **raw 32 bytes**:
-the compiler records the address of Lean's source form but never stores
-that constant, so an original that differs from the entry's address is
-not in §2 (nor, after a prune cut, is an *assumed* one), which a §2
-index cannot represent.
+The `original` address (the provenance the removed auxiliary regeneration
+recorded; no compiler writes it now, and readers still accept it) stays a
+**raw 32 bytes**:
+it may refer to a record that is not stored, or to an assumed record after a
+prune cut. It need not occur in §2, so a
+§2 index cannot represent it.
 
 Because §2 order is load-bearing for §3/§5 index resolution, every
 reader enforces strictly ascending §2 addresses during its scan (this
@@ -1434,8 +1535,8 @@ count (N0)
 [Address (32 bytes) + secret_addr (32 bytes) + payload_addr (32 bytes)]*
 ```
 
-The full reader (`Env::get` / Lean `getEnv`) rejects trailing bytes
-after Section 6.
+Section 6 is the last section in both envelope versions. Full readers reject
+bytes after it.
 
 ### Anonymous-only loading
 
@@ -1460,18 +1561,20 @@ no metadata arena is ever parsed).
 A **bundle** is an `.ixe` whose `main` points at a distinguished
 constant (e.g. an anonymous `Defn` wrapping a value, produced by
 `Ix.Commit.compileDef`) and whose contents are closed up to
-`assumptions`. Because a constant's address is a merkle root over its
-entire dependency DAG (refs tables hold addresses of constants and
-literal blobs, recursively), `main`'s 32 bytes alone pin the value;
-the bundle is the data-availability artifact that ships the bytes
-behind those addresses.
+`assumptions`. The constant address commits to its explicit addressed dependency
+graph. A bound bundle also carries the role binding and checker support needed
+to interpret those records; a claim must commit to that binding separately.
+The bundle supplies the bytes behind the committed addresses.
 
 - `Env::prune_to_closure(main, assumed)` builds a bundle: the 3-edge
   closure of `main` (Expr refs; projection → `Muts` block; `Muts`
   block → member/constructor projections), cut at `assumed`, carrying
   constants (genuine bytes), blobs, per-constant hints, and display
   metadata (named entries, name components + string blobs, `DataValue`
-  payload blobs, `meta_refs` extension edges, aux_gen originals).
+  payload blobs, `meta_refs` extension edges).
+  A present binding additionally roots all of its members/proofs and the
+  reader's structural, recursor and literal support. Mandatory support is
+  carried even when absent from the root's ordinary value references.
 - `Env::validate_closed()` is the receiver-side check: `main ∈ consts`
   and every reachable address is carried (consts ∪ blobs) or assumed.
 - Whole-environment files are the degenerate case (`main` absent,
@@ -1488,17 +1591,22 @@ It resolves `<name>` (displayed form) against the env's `named` table,
 runs the prune, re-validates with `validate_closed`, and writes the
 bundle (default `<name>.ixe`). `--assume` entries — names or 64-hex
 constant addresses — declare trust-boundary cut points; the ones
-actually reached become the bundle's `assumptions` (thin bundle).
+actually reached become the bundle's `assumptions` (thin bundle). A cut reached
+by mandatory bound support is refused. Whole certified admission currently
+declines unresolved thin assumptions; packing does not supply an external
+resolver or certify those assumptions.
 
 The source env is memory-mapped and lazily loaded; display metadata is
 carried by **re-streaming §5 per prune fixpoint round**
 (`Env::prune_to_closure_streaming`) so resident metadata is
 O(survivors), not O(env) — byte-identical output to the in-memory
 `prune_to_closure`, which shares the same carry engine. `--anon` skips
-metadata entirely (`Env::prune_to_closure_anon`): value closure + §3
-hints, empty §4/§5 — the minimal artifact a receiver needs to
-typecheck/evaluate the pinned value, since `validate_closed` checks
-only the value pin. (`ix shard extract` is the non-bundle sibling: a
+metadata entirely (`Env::prune_to_closure_anon`), retaining value closure,
+anonymous hints, binding and mandatory checker support. Named entries
+and commitments are absent; the wire grammar retains
+its anonymous-name sentinel. `validate_closed` checks the value closure;
+the actual artifact consumer checks the role specifications and evidence.
+(`ix shard extract` is the non-bundle sibling: a
 general sub-env for the kernel-check pipeline, no `main` root.)
 
 ### Diffing environments
@@ -1570,15 +1678,16 @@ fixed-width little-endian like `.ixes`; source of truth
 
 ```
 magic    b"IXC\0\0\0\0\0"            (8)
-version  u32 = 2
+version  u32 = 3
 flags    u32                          # bit0: storage profile (0 = fat, 1 = chunked)
 object_format     u8 = 4              # ixon-v4
-validator         u8 = 1              # erased-lean-v1 catalog claims
+validator         u8 = 3              # erased-lean-v2 catalog claims
 members_root      32 bytes
 content_root      32 bytes
 member_count      u32
 per member:
   env_root        32 bytes            # anon semantic identity
+  binding         32 bytes            # the piece's role binding hash
   const_count     u64
   label           u16 len + utf8      # qualifier; doubles as the piece
                                       #   filename stem (<label>.ixe)
@@ -1586,7 +1695,8 @@ per member:
   source_pin      u16 len + utf8      # e.g. git:<url>@<rev>; empty = local
   deps            u32 count + [u32]*  # member indices, all < self (topo)
   preimage        0x00 | 0x01+32      # store key of the member's const-set
-                                      #   AssumptionTree (`ix tree env`)
+                                      #   AssumptionTree (`ix tree env`);
+                                      #   any other tag is refused
 storage (by flags bit0):
   fat:     per member: file_hash 32 + file_bytes u64
            # self-contained pieces; closures may overlap (identity
@@ -1595,17 +1705,26 @@ storage (by flags bit0):
            chunk_root 32 + file_hash 32 + file_bytes u64 + owner u32
            # disjoint chunks partitioning the union; an address in two
            #   chunks is a HARD error (no-redeclaration invariant)
-trailing bytes: reserved future sections, preserved opaquely
 ```
+
+The manifest ends with the storage section: readers refuse trailing
+bytes, since no root covers them, and a later section needs a new
+version. Readers also refuse two members with one env root (the
+members root is a set root, so one of them would vanish from it) or
+one label (a label names a piece file). Writers refuse a string longer
+than 65,535 bytes rather than truncate its length.
 
 Both roots are recomputed against a stored manifest: `members_root`
 from the entries on every parse, `content_root` by the k-way sweep in
 `ix catalog verify` (which also enforces the profile's dedup rule and
-every piece's env root, counts, and sizes; `--deep` re-hashes files
-and fully verifies each piece load — all against the pieces inside
-the directory). `ix merge` materializes any subset as one ordinary
-anonymous `.ixe` (a derived view — the catalog directory stays the
-source of truth). The `Catalog` claim (below) binds both roots.
+every piece's env root, binding, counts, and sizes; `--deep` re-hashes
+files and fully verifies each piece load — all against the pieces
+inside the directory). Only fat catalogs verify: a chunked manifest's
+member env roots are not tied to its chunks, so `ix catalog verify`
+refuses it after the structural checks. `ix merge` materializes any
+subset as one ordinary anonymous `.ixe` (a derived view — the catalog
+directory stays the source of truth). The roots are artifact identity:
+the `Catalog` claim (below) names member claims, not these roots.
 
 ---
 
@@ -1620,9 +1739,12 @@ environment header is `0xE4`, the same byte as the Check claim tag. The
 enclosing protocol must identify the object kind.
 
 Every claim and proof payload starts with two bytes immediately after its
-header: object format `4`, then validator `0` (structural-v1),
-`1` (erased-lean-v1), or `2` (resource-v1). Readers require the validator
-assigned to that variant. Whole-object readers reject trailing bytes and
+header: object format `4`, then validator `0` (structural-v1), `2`
+(resource-v1) or `3` (erased-lean-v2). Readers require the validator
+assigned to that variant. Validator `1` (erased-lean-v1) is retired: it named
+typing claims whose primitives were recognized by fixed addresses and which
+admitted any axiom, and readers refuse it (`claim: validator erased-lean-v1 is
+retired — regenerate the claim`) rather than read it as erased-lean-v2. Whole-object readers reject trailing bytes and
 earlier unscoped encodings. These bytes are included in the claim digest
 and proof statement. A claim with another object format is rejected with
 `claim: unsupported object format N, expected 4 — regenerate the claim`
@@ -1634,28 +1756,76 @@ and proof statement. A claim with another object format is rejected with
 | Value | Bytes | Type | Payload |
 |------|------|------|---------|
 | 4 (format) | `0xE4` | Environment (`.ixe` context) | 32-byte merkle root + main/assumptions + 6 sections |
+| 5 (envelope) | `0xE5` | Environment with binding (`.ixe` context) | root + main/assumptions + binding + 6 sections |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
-| 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |
-| 4 | `0xE4` | Check claim | 1 addr (const) + opt assumptions |
-| 5 | `0xE5` | CheckEnv claim | 1 addr (env root) + opt assumptions |
+| 3 | `0xE3` | Eval claim | context + 2 addr (input, output) + opt assumptions |
+| 4 | `0xE4` | Check claim | context + 1 addr (const) + opt assumptions |
+| 5 | `0xE5` | CheckEnv claim | context + 1 addr (env root) + opt assumptions |
 | 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
 | 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
-| 8 | `0xE8 0x00` | Catalog claim | 2 addr (members root, content root) + opt assumptions |
+| 8 | `0xE8 0x00` | Catalog claim | 1 addr (members root over member claim digests) |
 | 9 | `0xE8 0x01` | Resource claim | 2 addr (complete env root, resource profile) |
+| 10 | `0xE8 0x02` | Binding claim | 2 addr (specification digest, binding hash) |
 
 The claim payloads in this table follow the two scope bytes. Reveal and
-Contains require validator `0`; Eval, Check, CheckEnv, and Catalog require
-validator `1`; Resource requires validator `2`.
+Contains require validator `0`; Eval, Catalog and Binding require validator
+`3`; Check takes validator `3` or `4`; CheckEnv takes `3`, `4` or `5`;
+Resource requires validator `2`.
 
 `opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
 by 32 bytes for `Some(merkle_root)`.
 
-The Catalog claim's two roots use two DISTINCT leaf vocabularies,
-never mixed: `members` leaves are member ENV ROOTS; `content` (and
-`assumptions`) leaves are CONSTANT ADDRESSES. See
-`crates/ixon/src/catalog.rs` for the `.ixc` artifact it binds. The
-exact wire bytes are pinned by twin tests
+The typing claims (Eval, Check, CheckEnv) are relative to a
+**context**, which follows the scope bytes:
+
+```
+[32 bytes]            -- specification digest (`Ix.SpecDigest.specDigest`)
+[32 bytes]            -- binding hash: BLAKE3 of the role table's E8 03 section
+00                    -- axioms beyond the standard three = None
+                      --   (or 01 + [32 bytes]: merkle root of their addresses)
+```
+
+The claim states that its constants are well-typed in Lean's theory over
+the standard axioms (`propext`, `Classical.choice`, `Quot.sound`), with the
+primitives read through the bound roles, each validated against the named
+specifications. The axioms field is reserved: no checker admits another axiom
+yet, and IxVM refuses a claim that lists any. It is a separate commitment from
+`assumptions`, which names constants assumed well-typed and discharged by
+other claims; an axiom is never discharged by typing. A context is 65 bytes
+when there are no further axioms.
+
+A Check or CheckEnv claim with validator `4` (erased-lean-v2-assumed) has the
+same payload but assumes its binding instead of validating it: it states its
+typing only if the role table with the context's binding hash meets the
+context's specifications. The Binding claim states exactly that condition:
+the table binds every role and each bound constant meets its specification.
+Its proof validates every role once, and aggregation discharges the condition
+of a whole aggregate with it (`ix_aggr` shapes 13 and 14), which yields the
+same claim bytes with validator `3`. Validator `4` names no axiom and no
+typing assumption: the reserved axioms field and `assumptions` keep their
+meaning.
+
+A CheckEnv claim with validator `5` (erased-lean-v2-class) names a **literal
+class** in the context's second address instead of a binding hash. A binding's
+literal class is BLAKE3 of `E8 04` followed by the addresses it binds to the
+roles the checker uses without a reference to them, in role order: `Nat`,
+`Nat.zero`, `Nat.succ`, `List`, `List.nil`, `List.cons`, `String`,
+`String.ofList`, `Char`, `Char.ofNat`, `propext` and `Classical.choice`
+(`Ix.ClaimContext.classRoles`; the binding must bind every role). The claim
+states its typing under every binding of that class that meets the
+specifications: roles referenced by address are ordinary dependencies, so
+typing transfers between bindings that bind the class roles alike. Only
+aggregation produces such claims (`ix_aggr` shape 15, from claims of one class
+that validate their bindings); IxVM never reads one.
+
+The Catalog claim is the conjunction of unconditional CheckEnv claims (validator
+`3` or `5`), each under its own context: its one address is the canonical
+merkle root over those claims' digests (BLAKE3 of their bytes), and it states
+that every one of them holds. Members compiled under different role bindings,
+as libraries from different Lean toolchains are, meet in one Catalog claim.
+Only aggregation forms one (`ix_aggr` shape 16). The exact wire bytes are
+pinned by twin tests
 (`proof.rs::catalog_claim_wire_bytes_pinned` and the `claim` suite's
 digest-parity test) so the Rust and Lean serializers cannot drift on
 the multi-byte-tag path.
@@ -1671,38 +1841,49 @@ the multi-byte-tag path.
 | 4 | `0xF4` | Contains proof | claim payload + N0 length + opaque ZK bytes |
 | 5 | `0xF5` | Catalog proof | claim payload + N0 length + opaque ZK bytes |
 | 6 | `0xF6` | Resource proof wrapper | claim payload + N0 length + opaque proof bytes |
+| 7 | `0xF7` | Binding proof | claim payload + N0 length + opaque ZK bytes |
 
 Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
 and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
 IxVM supports Eval, Check, CheckEnv, Reveal, and Contains; Resource is currently
 validated by the native Lean/Rust boundary and is explicitly rejected as an
-IxVM proof request. Catalog proofs compose erased CheckEnv claims.
+IxVM proof request. Aggregation folds only children whose contexts are equal,
+except for shape 15, which joins claims whose bindings share a literal class,
+and shape 16, which collects member claims under any contexts into a Catalog.
 
 ### Claim Types
 
 ```rust
+pub struct ClaimContext {
+    pub spec: Address, pub binding: Address, pub axioms: Option<Address>,
+    /// Validator 4 on the wire (Check and CheckEnv only).
+    pub binding_assumed: bool,
+    /// Validator 5 on the wire (CheckEnv only): `binding` is a literal class.
+    pub literal_class: bool,
+}
+
 pub enum Claim {
     /// `input` evaluates to `output`, optionally modulo `assumptions`.
-    Eval { input: Address, output: Address, assumptions: Option<Address> },
+    Eval { ctx: ClaimContext, input: Address, output: Address, assumptions: Option<Address> },
     /// The constant at `const_addr` is well-typed, optionally modulo
     /// `assumptions`.
-    Check { const_addr: Address, assumptions: Option<Address> },
+    Check { ctx: ClaimContext, const_addr: Address, assumptions: Option<Address> },
     /// Every constant in the env merkle-rooted at `root` is well-typed,
-    /// optionally modulo `assumptions` (typically the env's axiom leaves).
-    CheckEnv { root: Address, assumptions: Option<Address> },
+    /// optionally modulo `assumptions`.
+    CheckEnv { ctx: ClaimContext, root: Address, assumptions: Option<Address> },
     /// Selective field revelation of a committed constant.
     Reveal { comm: Address, info: RevealConstantInfo },
     /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
     Contains { tree: Address, const_addr: Address },
-    /// The `.ixc` catalog claim: `content` is exactly the union of the
-    /// member envs committed at `members`, and every constant in it is
-    /// well-typed, optionally modulo `assumptions`. Verified by
-    /// COMPOSITION of per-piece CheckEnv claims with set discharge —
-    /// there is deliberately no whole-catalog interpreter arm.
-    Catalog { members: Address, content: Address, assumptions: Option<Address> },
+    /// Every unconditional CheckEnv claim whose digest is a leaf of the
+    /// canonical tree `members` holds. Formed only by aggregation.
+    Catalog { members: Address },
     /// Complete closure passes resource-v1 under the committed profile.
     Resource { root: Address, profile: Address },
+    /// The role table with hash `binding` binds every role and each bound
+    /// constant meets its specification in the set with digest `spec`.
+    Binding { spec: Address, binding: Address },
 }
 ```
 
@@ -1761,7 +1942,7 @@ pub struct Proof {
 
 ### Serialization Examples
 
-**Eval claim** (0xE3, 2 addresses + opt assumptions byte):
+**Eval claim** (0xE3, context + 2 addresses + opt assumptions byte):
 
 Both addresses identify constants. The input is typechecked and normalized;
 the output is a safe standalone definition with the same type and universe
@@ -1771,7 +1952,8 @@ the exact comparison and assumption rules.
 
 ```
 E3                    -- N4(0xE, 3) (Eval)
-04 01                 -- object format 4, erased-lean-v1
+04 03                 -- object format 4, erased-lean-v2
+[65 bytes]            -- context: spec digest, binding hash, 00 (no further axioms)
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 00                    -- assumptions = None (or 01 + [32 bytes] for Some)
@@ -1780,7 +1962,8 @@ E3                    -- N4(0xE, 3) (Eval)
 **Eval proof** (0xF0, claim payload + opaque ZK bytes):
 ```
 F0                    -- N4(0xF, 0) (Eval proof)
-04 01                 -- object format 4, erased-lean-v1
+04 03                 -- object format 4, erased-lean-v2
+[65 bytes]            -- context
 [32 bytes]            -- input address
 [32 bytes]            -- output address
 00                    -- assumptions = None
@@ -1788,10 +1971,11 @@ F0                    -- N4(0xF, 0) (Eval proof)
 01 02 03 04           -- opaque ZK proof bytes
 ```
 
-**Check claim** (0xE4, 1 address + opt assumptions byte):
+**Check claim** (0xE4, context + 1 address + opt assumptions byte):
 ```
 E4                    -- N4(0xE, 4) (Check)
-04 01                 -- object format 4, erased-lean-v1
+04 03                 -- object format 4, erased-lean-v2
+[65 bytes]            -- context
 [32 bytes]            -- const address
 00                    -- assumptions = None
 ```
@@ -1824,6 +2008,18 @@ E8 01                 -- N4(0xE, 9) (Resource): two-byte TagN rung
 [32 bytes]            -- resource profile address
 ```
 Total: 68 bytes.
+
+**Binding claim** (`0xE8 0x02`, 2 addresses):
+```
+E8 02                 -- N4(0xE, 10) (Binding): two-byte TagN rung
+04 03                 -- object format 4, erased-lean-v2
+[32 bytes]            -- specification digest
+[32 bytes]            -- binding hash
+```
+Total: 68 bytes.
+
+A Check or CheckEnv claim that assumes its binding is the validator-3 layout
+with `04 04` (object format 4, erased-lean-v2-assumed) as its scope bytes.
 
 The claims fixture `Tests/Fixtures/ixon-v4/claims.tsv` holds the canonical
 bytes and BLAKE3 digest of one claim of every variant; its headers and scope
@@ -1890,8 +2086,8 @@ During compilation, metadata is extracted into `ExprMetas`:
 
 ### Sharing
 
-Every block, whether a single constant, a mutual block or an aux-gen
-block, gets its `sharing` table from the canonical construction of the
+Every block, whether a single constant or a mutual block, gets its
+`sharing` table from the canonical construction of the
 [Sharing System](#sharing-system), applied to the block's roots after
 `refs` and `univs` are allocated. The metadata arena follows the unshared
 expression tree, and a `Share` is transparent to it. Re-sharing a constant

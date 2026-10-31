@@ -91,7 +91,7 @@ def mkStr (pre: Name) (s: String): Name := Id.run <| do
   h := h.update (ByteArray.mk #[TAG_NSTR])
   h := h.update pre.getHash.hash
   h := h.update s.toUTF8
-  .str pre s ⟨(h.finalizeWithLength 32).val⟩
+  .str pre s (Address.ofHasher h)
 
 /-- Construct a numeric name component, hashing the tag, parent hash, and little-endian nat bytes. -/
 def mkNat (pre: Name) (i: Nat): Name := Id.run <| do
@@ -99,7 +99,7 @@ def mkNat (pre: Name) (i: Nat): Name := Id.run <| do
   h := h.update (ByteArray.mk #[TAG_NNUM])
   h := h.update pre.getHash.hash
   h := h.update ⟨i.toBytesLE⟩
-  .num pre i ⟨(h.finalizeWithLength 32).val⟩
+  .num pre i (Address.ofHasher h)
 
 partial def toStringAux : Name → String
   | .anonymous _ => ""
@@ -113,9 +113,9 @@ instance : ToString Name where
 
 /-- Dot-separated bare rendering — byte-for-byte mirror of the Rust
     `Name::pretty` (str components verbatim, num components as plain
-    digits, NO `«»` escaping). The kernel's canonical aux ordering seeds
-    on this exact string (`Ix.Tc.canonicalAuxOrder` ↔ Rust
-    `canonical_aux_order`), so `toString` (which escapes nums as `«n»`)
+    digits, NO `«»` escaping). Names that must agree byte for byte with
+    Rust (the compilers' synthetic `_nested.<Ext>_<N>` auxiliary names
+    are built from it) use this, so `toString` (which escapes nums as `«n»`)
     must not be substituted there. -/
 partial def pretty : Name → String
   | .anonymous _ => ""
@@ -152,6 +152,51 @@ def nameCompare (a b : Name) : Ordering :=
 instance : Ord Name where
   compare := nameCompare
 
+/-- The stored hashes of two name nodes, ordered: equal hashes are decided
+by `==`, so the common case (a confirmed hit) builds no byte lists. -/
+@[expose, inline] def Name.cmpHash (h h' : Address) : Ordering :=
+  if h == h' then .eq else compare h h'
+
+/-- The structural order on names: the components from the root, then the
+stored hash at each node. `.eq` holds exactly on equal names, stored hashes
+included. -/
+@[expose] def Name.cmpRaw : Name → Name → Ordering
+  | .anonymous h, .anonymous h' => Name.cmpHash h h'
+  | .anonymous _, _ => .lt
+  | _, .anonymous _ => .gt
+  | .str p s h, .str p' s' h' =>
+    match Name.cmpRaw p p' with
+    | .eq => if s == s' then Name.cmpHash h h' else compare s s'
+    | o => o
+  | .str .., .num .. => .lt
+  | .num .., .str .. => .gt
+  | .num p i h, .num p' i' h' =>
+    match Name.cmpRaw p p' with
+    | .eq => if i == i' then Name.cmpHash h h' else compare i i'
+    | o => o
+
+/-- `nameCompare` with its ties confirmed: names are ordered by their stored
+hashes, and two names with one hash field by `Name.cmpRaw`, so `.eq` holds
+exactly on equal names. `nameCompare` alone would make two names that share
+a hash field one key. Only a tie pays for the structural walk. -/
+@[expose] def nameCompareExact (a b : Name) : Ordering :=
+  match nameCompare a b with
+  | .eq => Name.cmpRaw a b
+  | o => o
+
+/-- **Structural equality of names**, stored hashes included: `Name`'s `==`
+compares the root's stored hash only, so two names that share it are `==`
+without being equal. The stored hash is compared first, so names
+that differ there answer at once. -/
+@[expose] def Name.beqRaw : Name → Name → Bool
+  | .anonymous h, .anonymous h' => decide (h = h')
+  | .str p s h, .str p' s' h' => decide (h = h') && s == s' && Name.beqRaw p p'
+  | .num p i h, .num p' i' h' => decide (h = h') && i == i' && Name.beqRaw p p'
+  | _, _ => false
+
+theorem Name.beqRaw_iff {a b : Name} : Name.beqRaw a b = true ↔ a = b := by
+  induction a generalizing b <;> cases b <;> simp [Name.beqRaw, *] <;> grind
+
 /-! ## Level -/
 
 /-- Content-addressed universe level. Mirrors `Lean.Level` with a Blake3 hash at each node. -/
@@ -181,33 +226,33 @@ def mkSucc (x: Level) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_USUCC])
   h := h.update x.getHash.hash
-  .succ x ⟨(h.finalizeWithLength 32).val⟩
+  .succ x (Address.ofHasher h)
 
 def mkMax (x y : Level) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UMAX])
   h := h.update x.getHash.hash
   h := h.update y.getHash.hash
-  .max x y ⟨(h.finalizeWithLength 32).val⟩
+  .max x y (Address.ofHasher h)
 
 def mkIMax (x y : Level) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UIMAX])
   h := h.update x.getHash.hash
   h := h.update y.getHash.hash
-  .imax x y ⟨(h.finalizeWithLength 32).val⟩
+  .imax x y (Address.ofHasher h)
 
 def mkParam (n: Name) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UPARAM])
   h := h.update n.getHash.hash
-  .param n ⟨(h.finalizeWithLength 32).val⟩
+  .param n (Address.ofHasher h)
 
 def mkMvar (n: Name) : Level := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_UMVAR])
   h := h.update n.getHash.hash
-  .mvar n ⟨(h.finalizeWithLength 32).val⟩
+  .mvar n (Address.ofHasher h)
 
 instance : BEq Level where
   beq a b := a.getHash == b.getHash
@@ -316,25 +361,25 @@ def mkBVar (x: Nat) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EVAR])
   h := h.update ⟨x.toBytesLE⟩
-  .bvar x ⟨(h.finalizeWithLength 32).val⟩
+  .bvar x (Address.ofHasher h)
 
 def mkFVar (x: Name) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EFVAR])
   h := h.update x.getHash.hash
-  .fvar x ⟨(h.finalizeWithLength 32).val⟩
+  .fvar x (Address.ofHasher h)
 
 def mkMVar (x: Name) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EMVAR])
   h := h.update x.getHash.hash
-  .mvar x ⟨(h.finalizeWithLength 32).val⟩
+  .mvar x (Address.ofHasher h)
 
 def mkSort (x: Level) : Expr := Id.run <| do
   let h := Hasher.init ()
   let h := h.update (ByteArray.mk #[TAG_ESORT])
   let h := h.update x.getHash.hash
-  .sort x ⟨(h.finalizeWithLength 32).val⟩
+  .sort x (Address.ofHasher h)
 
 def mkConst (x: Name) (us: Array Level): Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -342,14 +387,14 @@ def mkConst (x: Name) (us: Array Level): Expr := Id.run <| do
   h := h.update x.getHash.hash
   for u in us do
     h := h.update u.getHash.hash
-  .const x us ⟨(h.finalizeWithLength 32).val⟩
+  .const x us (Address.ofHasher h)
 
 def mkApp (f a : Expr) : Expr := Id.run <| do
   let mut h := Hasher.init ()
   h := h.update (ByteArray.mk #[TAG_EAPP])
   h := h.update f.getHash.hash
   h := h.update a.getHash.hash
-  .app f a ⟨(h.finalizeWithLength 32).val⟩
+  .app f a (Address.ofHasher h)
 
 def mkLam (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -358,7 +403,7 @@ def mkLam (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
   h := h.update t.getHash.hash
   h := h.update b.getHash.hash
   h := h.update (ByteArray.mk #[binderInfoTag bi])
-  .lam n t b bi ⟨(h.finalizeWithLength 32).val⟩
+  .lam n t b bi (Address.ofHasher h)
 
 def mkForallE (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -367,7 +412,7 @@ def mkForallE (n : Name) (t b : Expr) (bi : Lean.BinderInfo) : Expr := Id.run <|
   h := h.update t.getHash.hash
   h := h.update b.getHash.hash
   h := h.update (ByteArray.mk #[binderInfoTag bi])
-  .forallE n t b bi ⟨(h.finalizeWithLength 32).val⟩
+  .forallE n t b bi (Address.ofHasher h)
 
 def mkLetE (n : Name) (t v b : Expr) (nd : Bool) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -377,7 +422,7 @@ def mkLetE (n : Name) (t v b : Expr) (nd : Bool) : Expr := Id.run <| do
   h := h.update v.getHash.hash
   h := h.update b.getHash.hash
   h := h.update (ByteArray.mk #[if nd then 1 else 0])
-  .letE n t v b nd ⟨(h.finalizeWithLength 32).val⟩
+  .letE n t v b nd (Address.ofHasher h)
 
 def mkLit (l : Lean.Literal) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -388,7 +433,7 @@ def mkLit (l : Lean.Literal) : Expr := Id.run <| do
   | .strVal s =>
     h := h.update (ByteArray.mk #[TAG_ESTR])
     h := h.update s.toUTF8
-  .lit l ⟨(h.finalizeWithLength 32).val⟩
+  .lit l (Address.ofHasher h)
 
 def mkProj (n : Name) (i : Nat) (e : Expr) : Expr := Id.run <| do
   let mut h := Hasher.init ()
@@ -396,7 +441,7 @@ def mkProj (n : Name) (i : Nat) (e : Expr) : Expr := Id.run <| do
   h := h.update n.getHash.hash
   h := h.update ⟨i.toBytesLE⟩
   h := h.update e.getHash.hash
-  .proj n i e ⟨(h.finalizeWithLength 32).val⟩
+  .proj n i e (Address.ofHasher h)
 
 def hashInt (h : Hasher) (i : Int) : Hasher := Id.run do
   let mut h := h.update (ByteArray.mk #[TAG_MINT])
@@ -510,7 +555,7 @@ def mkMData (data : Array (Name × DataValue)) (e : Expr) : Expr := Id.run do
     h := h.update name.getHash.hash
     h := hashDataValue h dv
   h := h.update e.getHash.hash
-  .mdata data e ⟨(h.finalizeWithLength 32).val⟩
+  .mdata data e (Address.ofHasher h)
 
 instance : Inhabited Expr where
   default := mkBVar 0
@@ -661,11 +706,47 @@ def Environment.toRaw (env : Environment) : RawEnvironment :=
 
 /-! ## Context Types for Compilation -/
 
-/-- Mutual context mapping Name to index within block. -/
-abbrev MutCtx := Std.TreeMap Name Nat nameCompare
+/-- Mutual context mapping Name to index within block. Keys are compared by
+`nameCompareExact`: a name that only shares a member's hash field is not that
+member. -/
+abbrev MutCtx := Std.TreeMap Name Nat nameCompareExact
 
 instance : Ord MutCtx where
   compare a b := compare a.toList b.toList
+
+/-! ## Lean's order on a block's members -/
+
+/-- **Lean's name order**, structural: a name's prefix first, then its last
+component, a number before a string (`Lean.Name.cmp`). It reads no hash. -/
+def Name.leanCmp : Name → Name → Ordering
+  | .anonymous _, .anonymous _ => .eq
+  | .anonymous _, _ => .lt
+  | _, .anonymous _ => .gt
+  | .num p₁ i₁ _, .num p₂ i₂ _ => (Name.leanCmp p₁ p₂).then (compare i₁ i₂)
+  | .num .., .str .. => .lt
+  | .str .., .num .. => .gt
+  | .str p₁ s₁ _, .str p₂ s₂ _ => (Name.leanCmp p₁ p₂).then (compare s₁ s₂)
+
+/-- A member's position in its Lean block: its index in the block's `all`, or
+`all.size` when `all` does not list it (only on input that is not Lean's). -/
+def blockPosition (all : Array Name) (n : Name) : Nat :=
+  (all.findIdx? (· == n)).getD all.size
+
+/-- **Lean's order on a block's members**, each given by its position (its
+`blockPosition`, or a recursor's position in its family) and its name: by
+position, then by Lean's name order (`Name.leanCmp`), which decides only on
+input that is not Lean's. The compiler lays a block out in this order, and
+Source mode orders a definition group by it. -/
+def sourceOrderLt (a b : Nat × Name) : Bool :=
+  a.1 < b.1 || (a.1 == b.1 && Name.leanCmp a.2 b.2 == .lt)
+
+/-- A definition's, theorem's or opaque's position in its Lean block
+(`blockPosition` over its `all`); `0` for any other constant. -/
+def ConstantInfo.blockPosition : ConstantInfo → Nat
+  | .defnInfo v => Ix.blockPosition v.all v.cnst.name
+  | .thmInfo v => Ix.blockPosition v.all v.cnst.name
+  | .opaqueInfo v => Ix.blockPosition v.all v.cnst.name
+  | _ => 0
 
 end Ix
 

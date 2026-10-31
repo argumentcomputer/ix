@@ -22,6 +22,7 @@ public import Ix.Aggr.Backend
 public import Ix.IxVM
 public import MultiStark
 public import Ix.Store
+public import Ix.Cli.CatalogAggregate
 
 public section
 
@@ -41,6 +42,18 @@ Rust; no Lean statement tree or scheduler task survives on this path. -/
 private def runAggregateCmdNativeWith
     (recursionParameters : Aggr.RecursionParameters)
     (p : Cli.Parsed) : IO UInt32 := do
+  if let some ixc := (p.flag? "ixc").map (·.as! String) then
+    let maxRamGb? := (p.flag? "max-ram").map (·.as! Nat)
+    if maxRamGb? == some 0 then
+      IO.eprintln "error: --max-ram must be positive"
+      return 1
+    let ramBudgetBytes ← match maxRamGb? with
+      | some gib => pure (gib * aggregateGiB)
+      | none => defaultAggregateRamBudgetBytes
+    let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
+      defaultStructuralAbove
+    return ← Ix.Cli.CatalogAggregate.aggregateCatalog ixc (p.variableArgsAs! String)
+      ramBudgetBytes structuralAbove recursionParameters
   let some ixePath := (p.flag? "ixe").map (·.as! String) | do
     p.printError "error: aggregate requires --ixe <env.ixe>"
     return 1
@@ -120,6 +133,7 @@ private def runAggregateCmdNativeWith
       (!(p.hasFlag "no-write")) (p.hasFlag "trace-shards")
       (((p.flag? "range").map (·.as! Nat)).getD 0) (p.hasFlag "wrap-root")
       (((p.flag? "exec-ahead").map (·.as! Nat)).getD 1) false subtreeCode
+      (((p.flag? "binding-proof").map (·.as! String)).getD "")
   match nativeResult with
   | .error e => IO.eprintln s!"aggregate failed: {e}"; return 1
   | .ok address =>
@@ -149,8 +163,9 @@ def aggregateCmd : Cli.Cmd := `[Cli|
   "Wrap shard proofs and fold multi-shard manifests into one recursive aggregate"
 
   FLAGS:
-    "ixe" : String;  "Path to the serialized environment whose shards were proven."
+    "ixe" : String;  "Path to the serialized environment whose shards were proven. It must carry the role binding the shard claims are relative to."
     "ixes" : String; "Path to the shard manifest; its bisection tree determines join order."
+    "ixc" : String;  "A .ixc catalog directory: join the aggregate roots of its members, one per member (`ix aggregate --ixe <piece> --ixes <manifest> --binding-proof <proof>` on each piece), into one root. Members whose role bindings have one literal class are joined first, in manifest order (cross-binding pairs, under the class), then the classes into a Catalog claim. Each join is proven as trace shards within --max-ram. A member's statement is its piece's canonical claim, or the claim of `<label>.ixes` when the catalog directory holds that shard manifest beside the piece."
     "plan-only";     "Validate coverage and print the wrap/join slot plan without loading or proving shard proofs."
     "no-cache";      "Bypass aggregate cache reads and intermediate cache writes; the root wrapper is still persisted unless --no-write."
     "texray";        "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages of every slot) to stderr as each span closes."
@@ -163,6 +178,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
     "exec-ahead" : Nat; "Slots executing ahead of the provers (default 1): a ready join executes and plans while the previous one proves, so one GPU prover never waits for an execution; each slot ahead holds its execution record. 0: each slot executes and proves on one worker, --jobs at a time."
     "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."
+    "binding-proof" : String; "A proof of the `binding` claim for the env's role binding (`ix prove-binding`). The shard claims (proven with `--assume-binding`) assume their binding, and the root discharges that condition once, after any wrap; the final claim is the one an aggregate of claims that validate their binding states."
     "subtree" : Nat; "Prove only the plan subtree rooted at slot N (slot numbers as --plan-only prints them) from the proofs of the leaves under it, and print that slot's proof address; root validation and --wrap-root do not apply. The proof is published through the aggregate cache, where a later full run over every shard proof finds it and proves only what is above it. With --plan-only, print `subtree N shards: <ids>`, the --shards argument for `ix prove` over those leaves."
     "range" : Nat;   "Wrap a shard proof of more than N trace shards as a range-sum tree — leaves verifying at most N shards each (--jobs at a time), joins, and a root with the wrap's statement — instead of one proof verifying every shard. 0 (default): with --trace-shards, two leaves per node slot (2 × --jobs), so each slot executes its next leaf while proving one; without, wrap whole."
 

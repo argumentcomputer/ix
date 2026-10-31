@@ -734,6 +734,45 @@ pub fn univ_geq<M: KernelMode>(u: &KUniv<M>, v: &KUniv<M>) -> bool {
     || norm_level_le(&normalize_level(v), &normalize_level(u))
 }
 
+impl<M: KernelMode> UnivData<M> {
+  /// Move the contents of every uniquely owned child that has children of
+  /// its own to `stack`, leaving a leaf in its place.
+  fn detach_unique_children(&mut self, stack: &mut Vec<UnivData<M>>) {
+    let mut detach = |child: &mut KUniv<M>| {
+      if Arc::strong_count(&child.0) == 1
+        && let Some(inner) = Arc::get_mut(&mut child.0)
+        && matches!(
+          inner,
+          UnivData::Succ(..) | UnivData::Max(..) | UnivData::IMax(..)
+        )
+      {
+        stack.push(std::mem::replace(inner, UnivData::Zero(0)));
+      }
+    };
+    match self {
+      UnivData::Succ(a, _) => detach(a),
+      UnivData::Max(a, b, _) | UnivData::IMax(a, b, _) => {
+        detach(a);
+        detach(b);
+      },
+      UnivData::Zero(_) | UnivData::Param(..) => {},
+    }
+  }
+}
+
+/// Dropping a kernel universe frees its uniquely owned descendants from an
+/// explicit stack, so deep `Succ`/`Max`/`IMax` chains cannot overflow the
+/// call stack on drop.
+impl<M: KernelMode> Drop for UnivData<M> {
+  fn drop(&mut self) {
+    let mut stack: Vec<UnivData<M>> = Vec::new();
+    self.detach_unique_children(&mut stack);
+    while let Some(mut u) = stack.pop() {
+      u.detach_unique_children(&mut stack);
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::super::mode::{Anon, Meta};
@@ -766,6 +805,15 @@ mod tests {
     let z = MU::zero();
     let s = MU::succ(z.clone());
     assert_ne!(z.addr(), s.addr());
+  }
+
+  #[test]
+  fn deep_kuniv_drop_does_not_stack_overflow() {
+    let mut u = AU::zero();
+    for _ in 0..100_000 {
+      u = AU::succ(u);
+    }
+    drop(u);
   }
 
   #[test]

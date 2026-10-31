@@ -168,29 +168,29 @@ def commitDef (compileEnv : CompileM.CompileEnv) (leanEnv : Lean.Environment)
 
 /-- Build an evaluation claim and retain both anonymous definitions and their
 literal blobs, so callers can transport the output in an ordinary `.ixe` bundle. -/
-def evalClaimWithEnv (compileEnv : CompileM.CompileEnv)
+def evalClaimWithEnv (ctx : ClaimContext) (compileEnv : CompileM.CompileEnv)
     (lvls : List Lean.Name) (input output type : Lean.Expr)
     : Except String (Claim × CompileM.CompileEnv) := do
   let (inputAddr, compileEnv') ← compileDef compileEnv lvls type input
   let (outputAddr, compileEnv') ← compileDef compileEnv' lvls type output
-  return (.eval inputAddr outputAddr none, compileEnv')
+  return (.eval ctx inputAddr outputAddr none, compileEnv')
 
 /-- Build an unconditional evaluation claim from input and output
     expressions. Both are anonymous definitions with the same type. The
     `assumptions` field is `none`; higher-level builders can compute
     transitive-dep assumptions when available. -/
-def evalClaim (compileEnv : CompileM.CompileEnv)
+def evalClaim (ctx : ClaimContext) (compileEnv : CompileM.CompileEnv)
     (lvls : List Lean.Name) (input output type : Lean.Expr)
     : Except String Claim := do
-  return (← evalClaimWithEnv compileEnv lvls input output type).1
+  return (← evalClaimWithEnv ctx compileEnv lvls input output type).1
 
 /-- Build an unconditional check claim: asserts that the compiled
     definition is well-typed. -/
-def checkClaim (compileEnv : CompileM.CompileEnv)
+def checkClaim (ctx : ClaimContext) (compileEnv : CompileM.CompileEnv)
     (lvls : List Lean.Name) (type value : Lean.Expr)
     : Except String Claim := do
   let (addr, _) ← compileDef compileEnv lvls type value
-  return .check addr none
+  return .check ctx addr none
 
 /-- Build a reveal claim from a commitment address and revealed field info. -/
 def revealClaim (comm : Address) (info : RevealConstantInfo) : Claim :=
@@ -283,7 +283,7 @@ def openCommitment (compileEnv : CompileM.CompileEnv) (commitAddr : Address)
   let bytes ← match compileEnv.constants.get? named.addr with
     | some b => pure b
     | none => .error s!"openCommitment: payload {named.addr} not found"
-  let constant ← match Ixon.deConstantAt bytes 0 with
+  let constant ← match Ixon.deConstantAt bytes 0 bytes.size with
     | .ok c => pure c
     | .error e => .error s!"openCommitment: payload parse failed: {e}"
   return openConstantInfo constant.info

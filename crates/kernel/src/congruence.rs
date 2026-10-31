@@ -65,6 +65,21 @@ pub fn expr_congruent(
   nr: &NameResolver,
 ) -> Result<(), String> {
   use lean::ExprData as LE;
+  let mut source = lean_expr;
+  let mut layers = Vec::new();
+  while let LE::Mdata(data, inner, _) = source.as_data() {
+    layers.push(data.clone());
+    source = inner;
+  }
+  let frame = ixon::contract::source::source_layers(source, &layers)
+    .map_err(|e| e.to_string())?;
+  let actual = zero_expr.source_contract();
+  if frame.is_some_and(|expected| Some(expected) != actual)
+    || (frame.is_none() && actual.is_some_and(|c| !c.is_default()))
+  {
+    return Err("source/kernel binder contract mismatch".into());
+  }
+  let lean_expr = source;
   match (lean_expr.as_data(), zero_expr.data()) {
     (LE::Bvar(n, _), ExprData::Var(m, _, _)) => {
       let n = n.to_u64().unwrap_or(u64::MAX);
@@ -109,17 +124,22 @@ pub fn expr_congruent(
       expr_congruent(a1, a2, nr)
     },
 
-    (LE::Lam(_, ty1, body1, _, _), ExprData::Lam(_, _, ty2, body2, _))
-    | (LE::ForallE(_, ty1, body1, _, _), ExprData::All(_, _, ty2, body2, _)) =>
-    {
+    (LE::Lam(_, ty1, body1, _, _), ExprData::Lam(_, _, _, ty2, body2, _))
+    | (
+      LE::ForallE(_, ty1, body1, _, _),
+      ExprData::All(_, _, _, _, ty2, body2, _),
+    ) => {
       expr_congruent(ty1, ty2, nr)?;
       expr_congruent(body1, body2, nr)
     },
 
     (
-      LE::LetE(_, ty1, val1, body1, _, _),
-      ExprData::Let(_, ty2, val2, body2, _, _),
+      LE::LetE(_, ty1, val1, body1, non_dep, _),
+      ExprData::Let(_, ty2, val2, body2, contract, _),
     ) => {
+      if *non_dep != contract.non_dep {
+        return Err("source/kernel let nonDep mismatch".into());
+      }
       expr_congruent(ty1, ty2, nr)?;
       expr_congruent(val1, val2, nr)?;
       expr_congruent(body1, body2, nr)

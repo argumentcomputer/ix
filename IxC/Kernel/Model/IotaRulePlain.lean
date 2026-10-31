@@ -48,7 +48,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   BinderMeta RecRule isDefEqCore inferTypeCore DefEqListOk)
 
 universe w
@@ -58,30 +58,30 @@ variable {V : Type w} [SetTheory V]
 set_option maxHeartbeats 12800000 in
 /-- **One checked `.plain` rule's fired law, at the reading**
 (`iotaRuleS`'s canonical branch). -/
-theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
+theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env md}
     (mp : EnvModelM V μ envSelf)
-    (hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F)
-    (hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F)
-    (hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F)
-    {blockNames : List Name} {f : Name → Name}
+    (hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F)
+    (hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F)
+    (hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F)
+    {blockNames : List (Key md)} {f : Key md → Key md}
     (hf : f = fun n =>
-      if blockNames.contains n then n.str "_model" else n)
+      if blockNames.contains n then auxKey n .model else n)
     (hroT : RenameOk mp.base2.acval envSelf f)
     (hIS : BlockInstalledTT blockNames envSelf mp.base2.cvalE)
     -- the rule kits are checked against the running accumulator (see
     -- `iotaRuleS`: a correspondence, not an inclusion)
-    (hup : ∀ (n : Name) (ci : ConstantInfo), env₂.find? n = some ci →
+    (hup : ∀ (n : Key md) (ci : ConstantInfo md), env₂.find? n = some ci →
       envSelf.find? n = some ci ∨
       ∃ cv mI' rP' rules rules',
         ci = .recInfo cv mI' rP' rules ∧
         envSelf.find? n = some (.recInfo cv mI' rP' rules'))
-    {cvA : ConstantVal} {mI rP j : Nat} {r r' : RecRule}
+    {cvA : ConstantVal md} {mI rP j : Nat} {r r' : RecRule md}
     (hbnA : blockNames.contains cvA.name = true)
     (hself : envSelf.find? cvA.name = some (.recInfo cvA mI rP []))
     (heqfind : env₂.find? eqName = some eqA)
     (hkit : IotaRuleRun μ F env₂ envSelf f cvA.name
       cvA.levelParams cvA.type mI rP j r r')
-    (hfireP : RecRule.fire r' = .plain) (φ : Name → Nat) :
+    (hfireP : RecRule.fire r' = .plain) (φ : LevelParam → Nat) :
     RecRuleLaw mp.base2 φ cvA.name cvA mI rP r' := by
   obtain ⟨cvjK, cnPK, cnFK, rhsA, hfcK, hnfK, hrb, hrf, hann, hrlp,
     -- `-` at position 13: `IotaRuleR`'s rule-rhs **derivation** row,
@@ -139,7 +139,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   have hRmlps : (ConstantInfo.defnInfo cvm mval
       hm).toConstantVal.levelParams = cvA.levelParams := hlpsm
   -- the recursor type's grading, at the provisioned entry
-  have htyOk : ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+  have htyOk : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
       denoteMeta mp.base2.acval envSelf ψ 0 cvA.type = some ta →
       ∀ ρ : Nat → V, WellDenotedV V ρ ta :=
     mp.type_wellDenotedV _ (Env.find?_mem hself)
@@ -152,7 +152,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   have hrhsLb : Expr.LeavesBounded rhsA :=
     fun l hl => absurd hl (fun h => hrhsLeafNil l h)
   obtain ⟨t', hrun⟩ := hrun0
-  have hrhsKey : ∀ ψ : Name → Nat, ∃ Ra ta,
+  have hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval envSelf ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta := by
@@ -173,7 +173,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     exact ⟨Ra, ta, hRa, fun ρ =>
       ⟨hokRa ρ (Sat_nil V ρ), hmemRa ρ (Sat_nil V ρ)⟩⟩
   -- the constructor's identification at the law's own lookup
-  have hctorId : ∀ {cvj' : ConstantVal} {cnP' cnF' : Nat},
+  have hctorId : ∀ {cvj' : ConstantVal md} {cnP' cnF' : Nat},
       envSelf.find? (RecRule.ctor r')
         = some (.ctorInfo cvj' cnP' cnF') →
       cvj' = cvjK ∧ cnP' = cnPK ∧ cnF' = cnFK := by
@@ -203,10 +203,10 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
     ldomsL, lrest2, hinstLam, hdeParsRun, hruns⟩ := hthmR
   -- the statement's stored entry and front doors
   obtain ⟨ciT, hciTS, hciTcv⟩ : ∃ ciT, envSelf.find?
-      ((cvA.name.str "_model").str s!"iota_{j}") = some ciT ∧
+      (auxKey (auxKey cvA.name .model) (.iota j)) = some ciT ∧
       ciT.toConstantVal = cvt := by
     unfold Env.findCV? at hcvtE
-    rcases h : env₂.find? ((cvA.name.str "_model").str s!"iota_{j}")
+    rcases h : env₂.find? (auxKey (auxKey cvA.name .model) (.iota j))
       with _ | ci₂
     · rw [h] at hcvtE; exact nomatch hcvtE
     · rw [h] at hcvtE
@@ -221,7 +221,7 @@ theorem iotaRulePlain {μ : CheckMode} {F : Nat} {env₂ envSelf : Env}
   rw [hciTcv] at hSw0 hSb0
   have hSw : cvt.type.hasFvar = false := hSw0
   have hSb : cvt.type.looseBVarsBounded 0 = true := hSb0
-  have hthm : ∀ ψ : Name → Nat, ∃ ta,
+  have hthm : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval envSelf ψ 0 cvt.type = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta := by

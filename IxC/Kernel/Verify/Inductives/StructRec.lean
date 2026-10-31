@@ -42,8 +42,8 @@ open Expr
 
 /-! ## The binder walks -/
 
-theorem replacePisPw_instantiate1 {pw : PropWhen} {v : Expr} :
-    ∀ (k : Nat) {e b r : Expr} (j : Nat),
+theorem replacePisPw_instantiate1 {pw : PropWhen} {v : Expr md} :
+    ∀ (k : Nat) {e b r : Expr md} (j : Nat),
       Expr.replacePisPw pw k e b = some r →
       Expr.replacePisPw pw k (e.instantiate1 v j) (b.instantiate1 v (j + k))
         = some (r.instantiate1 v j)
@@ -61,11 +61,11 @@ theorem replacePisPw_instantiate1 {pw : PropWhen} {v : Expr} :
         replacePisPw_instantiate1 k (j + 1) hr']
       rfl
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.replacePisPw] at h
 
-theorem pisToLamsPw_instantiate1 {pw : PropWhen} {v : Expr} :
-    ∀ (k : Nat) {e b r : Expr} (j : Nat),
+theorem pisToLamsPw_instantiate1 {pw : PropWhen} {v : Expr md} :
+    ∀ (k : Nat) {e b r : Expr md} (j : Nat),
       Expr.pisToLamsPw pw k e b = some r →
       Expr.pisToLamsPw pw k (e.instantiate1 v j) (b.instantiate1 v (j + k))
         = some (r.instantiate1 v j)
@@ -83,13 +83,13 @@ theorem pisToLamsPw_instantiate1 {pw : PropWhen} {v : Expr} :
         pisToLamsPw_instantiate1 k (j + 1) hr']
       rfl
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.pisToLamsPw] at h
 
 /-- An instantiation sequence pushes through the walk: the telescope
 is instantiated at the sequence's own index, the body `k` deeper. -/
 theorem replacePisPw_instSeq {pw : PropWhen} :
-    ∀ (sp : List Expr) (t : Nat) {k : Nat} {e b r : Expr},
+    ∀ (sp : List (Expr md)) (t : Nat) {k : Nat} {e b r : Expr md},
       sp.length ≤ t + 1 →
       Expr.replacePisPw pw k e b = some r →
       Expr.replacePisPw pw k (instSeq sp t e) (instSeq sp (t + k) b)
@@ -107,7 +107,7 @@ theorem replacePisPw_instSeq {pw : PropWhen} :
       rwa [show t - 1 + k = t + k - 1 from by simp at hlen; omega] at this
 
 theorem pisToLamsPw_instSeq {pw : PropWhen} :
-    ∀ (sp : List Expr) (t : Nat) {k : Nat} {e b r : Expr},
+    ∀ (sp : List (Expr md)) (t : Nat) {k : Nat} {e b r : Expr md},
       sp.length ≤ t + 1 →
       Expr.pisToLamsPw pw k e b = some r →
       Expr.pisToLamsPw pw k (instSeq sp t e) (instSeq sp (t + k) b)
@@ -127,9 +127,9 @@ theorem pisToLamsPw_instSeq {pw : PropWhen} :
 /-- The walk keeps the telescope's binders (data reset) over the new
 body. -/
 theorem replacePisPw_stripPis {pw : PropWhen} :
-    ∀ (k : Nat) {e b r : Expr} {bs : List (Expr × BinderMeta)} {body : Expr},
+    ∀ (k : Nat) {e b r : Expr md} {bs : List (Expr md × BinderMeta)} {body : Expr md},
       Expr.replacePisPw pw k e b = some r → e.stripPis k = some (bs, body) →
-      r.stripPis k = some (bs.map fun x => (x.1, (⟨pw⟩ : BinderMeta)), b)
+      r.stripPis k = some (bs.map fun x => (x.1, ({ pw } : BinderMeta)), b)
   | 0, e, b, r, bs, body, h, hs => by
     simp only [Expr.replacePisPw, Option.some.injEq] at h
     simp only [stripPis, Option.some.injEq, Prod.mk.injEq] at hs
@@ -150,13 +150,13 @@ theorem replacePisPw_stripPis {pw : PropWhen} :
         obtain ⟨rfl, rfl⟩ := hs
         simp only [stripPis, replacePisPw_stripPis k hr' hs', Option.map_some, List.map_cons]
     | .bvar _, h, _ | .fvar _ _, h, _ | .sort _, h, _ | .const _ _, h, _
-    | .app _ _, h, _ | .lam _ _ _, h, _ | .letE _ _ _, h, _ | .lit _, h, _
+    | .app _ _, h, _ | .lam _ _ _, h, _ | .letE _ _ _ _, h, _ | .lit _, h, _
     | .proj _ _ _, h, _ => simp [Expr.replacePisPw] at h
 
 /-- Two strips compose. -/
 theorem stripPis_append :
-    ∀ (k : Nat) {m : Nat} {e : Expr} {bs bs' : List (Expr × BinderMeta)}
-      {mid body : Expr},
+    ∀ (k : Nat) {m : Nat} {e : Expr md} {bs bs' : List (Expr md × BinderMeta)}
+      {mid body : Expr md},
       e.stripPis k = some (bs, mid) → mid.stripPis m = some (bs', body) →
       e.stripPis (k + m) = some (bs ++ bs', body)
   | 0, m, e, bs, bs', mid, body, h, h' => by
@@ -176,13 +176,13 @@ theorem stripPis_append :
         rw [show k + 1 + m = (k + m) + 1 from by omega]
         simp only [stripPis, stripPis_append k hs h', Option.map_some, List.cons_append]
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [stripPis] at h
 
 /-- The `instPisAt` peel at a spine is the strip's body instantiated
 along the spine (the `∀` twin of `instLamsAt_rest_of_stripLams`). -/
 theorem instPisAt_of_stripPis :
-    ∀ (sp : List Expr) {e : Expr} {bs : List (Expr × BinderMeta)} {body : Expr},
+    ∀ (sp : List (Expr md)) {e : Expr md} {bs : List (Expr md × BinderMeta)} {body : Expr md},
       e.stripPis sp.length = some (bs, body) →
       ∃ ds, Expr.instPisAt sp e = some (ds, instSeq sp (sp.length - 1) body)
   | [], e, bs, body, h => by
@@ -206,13 +206,13 @@ theorem instPisAt_of_stripPis :
         simp only [Expr.instPisAt, hds, Option.map_some, List.length_cons, Nat.add_sub_cancel]
         rfl
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [stripPis] at h
 
 /-- An instantiation sequence pushes through a `λ` (the twin of
 `instSeq_forallE`). -/
 theorem instSeq_lam :
-    ∀ (args : List Expr) (t : Nat) (d b : Expr)
+    ∀ (args : List (Expr md)) (t : Nat) (d b : Expr md)
       (m : BinderMeta), args.length ≤ t + 1 →
       instSeq args t (.lam d b m) =
         .lam (instSeq args t d) (instSeq args (t + 1) b) m := by
@@ -241,14 +241,14 @@ theorem instSeq_lam :
 
 /-- A bound variable below every cut of a closed-argument sequence is
 untouched. -/
-theorem instSeq_bvar_lt (args : List Expr) (t j : Nat) (h : j + args.length ≤ t) :
+theorem instSeq_bvar_lt (args : List (Expr md)) (t j : Nat) (h : j + args.length ≤ t) :
     instSeq args t (.bvar j) = .bvar j :=
   instSeq_eq_self_of_bounded args t (k := j + 1) (by simp [looseBVarsBounded]) (by omega)
 
 /-- The parameter spine `p⃗`, as seen from under `o` binders,
 instantiated at a sequence whose first `nP` entries are the
 parameters' values. -/
-theorem map_instSeq_structPsAt (sp : List Expr) (o nP : Nat)
+theorem map_instSeq_structPsAt (sp : List (Expr md)) (o nP : Nat)
     (hcl : ∀ a ∈ sp, a.looseBVarsBounded 0 = true) (hlen : nP ≤ sp.length) :
     (structPsAt o nP).map (instSeq sp (o + nP - 1)) = sp.take nP := by
   apply List.ext_getElem
@@ -262,7 +262,7 @@ theorem map_instSeq_structPsAt (sp : List Expr) (o nP : Nat)
     exact (Option.some.inj this).symm
 
 /-- The field spine `f⃗`, instantiated at the field variables. -/
-theorem map_instSeq_fieldBvars (xFvs : List Expr) (nF : Nat)
+theorem map_instSeq_fieldBvars (xFvs : List (Expr md)) (nF : Nat)
     (hcl : ∀ a ∈ xFvs, a.looseBVarsBounded 0 = true) (hlen : xFvs.length = nF) :
     ((List.range nF).map fun j => Expr.bvar (nF - 1 - j)).map (instSeq xFvs (nF - 1)) = xFvs := by
   apply List.ext_getElem
@@ -277,7 +277,7 @@ theorem map_instSeq_fieldBvars (xFvs : List Expr) (nF : Nat)
 
 /-- The field spine is untouched by a sequence whose cuts all sit
 above it. -/
-theorem map_instSeq_fieldBvars_above (sp : List Expr) (t nF : Nat)
+theorem map_instSeq_fieldBvars_above (sp : List (Expr md)) (t nF : Nat)
     (h : nF + sp.length ≤ t + 1) :
     ((List.range nF).map fun j => Expr.bvar (nF - 1 - j)).map (instSeq sp t)
       = (List.range nF).map fun j => Expr.bvar (nF - 1 - j) := by
@@ -293,7 +293,7 @@ telescope of `cty` (`cty.stripPis nP`'s body), lifted under `o`
 binders, instantiated at the parameter variables followed by the
 `o` extra variables, is the field telescope instantiated at the
 parameter variables alone (`instSeq_liftLooseBVars_prefix`). -/
-theorem instSeq_minorTele (tfvs extras : List Expr) {nP : Nat} {crest0 : Expr}
+theorem instSeq_minorTele (tfvs extras : List (Expr md)) {nP : Nat} {crest0 : Expr md}
     (hlenT : tfvs.length = nP) (hclT : ∀ a ∈ tfvs, a.looseBVarsBounded 0 = true)
     (hb : crest0.looseBVarsBounded nP = true) :
     instSeq (tfvs ++ extras) (nP + extras.length - 1) (crest0.liftLooseBVars extras.length 0)
@@ -307,10 +307,10 @@ theorem instSeq_minorTele (tfvs extras : List Expr) {nP : Nat} {crest0 : Expr}
 
 namespace Expr
 
-variable {T : Name} {i : Nat}
+variable {T : Key md} {i : Nat}
 
 theorem NoProjAt.liftLooseBVars {k : Nat} :
-    ∀ {e : Expr} {c : Nat}, NoProjAt T i e → NoProjAt T i (e.liftLooseBVars k c) := by
+    ∀ {e : Expr md} {c : Nat}, NoProjAt T i e → NoProjAt T i (e.liftLooseBVars k c) := by
   intro e
   induction e with
   | bvar j => intro c _; simp only [Expr.liftLooseBVars]; split <;> simp
@@ -333,7 +333,7 @@ theorem NoProjAt.liftLooseBVars {k : Nat} :
     rw [noProjAt_forallE] at h
     simp only [Expr.liftLooseBVars, noProjAt_forallE]
     exact ⟨ihty h.1, ihb h.2⟩
-  | letE t v b iht ihv ihb =>
+  | letE t v b _ iht ihv ihb =>
     intro c h
     rw [noProjAt_letE] at h
     simp only [Expr.liftLooseBVars, noProjAt_letE]
@@ -345,7 +345,7 @@ theorem NoProjAt.liftLooseBVars {k : Nat} :
     exact ⟨h.1, ih h.2⟩
 
 theorem NoProjAt.mkAppN :
-    ∀ {as : List Expr} {f : Expr}, NoProjAt T i f → (∀ a ∈ as, NoProjAt T i a) →
+    ∀ {as : List (Expr md)} {f : Expr md}, NoProjAt T i f → (∀ a ∈ as, NoProjAt T i a) →
       NoProjAt T i (Expr.mkAppN f as)
   | [], _, hf, _ => hf
   | a :: as, f, hf, has => by
@@ -354,7 +354,7 @@ theorem NoProjAt.mkAppN :
       (fun a' ha' => has a' (List.mem_cons_of_mem _ ha'))
 
 theorem NoProjAt.stripPis :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)} {body : Expr},
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)} {body : Expr md},
       e.stripPis k = some (bs, body) → NoProjAt T i e → NoProjAt T i body
   | 0, e, bs, body, h, he => by
     simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at h
@@ -372,11 +372,11 @@ theorem NoProjAt.stripPis :
         rw [noProjAt_forallE] at he
         exact NoProjAt.stripPis k hs he.2
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 theorem NoProjAt.replacePisPw {pw : PropWhen} :
-    ∀ (k : Nat) {e b r : Expr}, Expr.replacePisPw pw k e b = some r →
+    ∀ (k : Nat) {e b r : Expr md}, Expr.replacePisPw pw k e b = some r →
       NoProjAt T i e → NoProjAt T i b → NoProjAt T i r
   | 0, e, b, r, h, _, hb => by
     simp only [Expr.replacePisPw, Option.some.injEq] at h
@@ -389,11 +389,11 @@ theorem NoProjAt.replacePisPw {pw : PropWhen} :
       rw [noProjAt_forallE] at he ⊢
       exact ⟨he.1, NoProjAt.replacePisPw k hr' he.2 hb⟩
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.replacePisPw] at h
 
 theorem NoProjAt.pisToLamsPw {pw : PropWhen} :
-    ∀ (k : Nat) {e b r : Expr}, Expr.pisToLamsPw pw k e b = some r →
+    ∀ (k : Nat) {e b r : Expr md}, Expr.pisToLamsPw pw k e b = some r →
       NoProjAt T i e → NoProjAt T i b → NoProjAt T i r
   | 0, e, b, r, h, _, hb => by
     simp only [Expr.pisToLamsPw, Option.some.injEq] at h
@@ -407,7 +407,7 @@ theorem NoProjAt.pisToLamsPw {pw : PropWhen} :
       rw [noProjAt_lam]
       exact ⟨he.1, NoProjAt.pisToLamsPw k hr' he.2 hb⟩
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.pisToLamsPw] at h
 
 theorem NoProjAt.structPsAt (o nP : Nat) : ∀ a ∈ structPsAt o nP, NoProjAt T i a := by
@@ -415,7 +415,7 @@ theorem NoProjAt.structPsAt (o nP : Nat) : ∀ a ∈ structPsAt o nP, NoProjAt T
   obtain ⟨k, -, rfl⟩ := List.mem_map.mp ha
   simp
 
-theorem NoProjAt.structCtorSpineAt (C : Name) (lps : List Name) (o nP nF : Nat) :
+theorem NoProjAt.structCtorSpineAt (C : Key md) (lps : List LevelParam) (o nP nF : Nat) :
     NoProjAt T i (structCtorSpineAt C lps o nP nF) := by
   unfold Ix.Kernel.structCtorSpineAt
   refine NoProjAt.mkAppN (by simp) ?_

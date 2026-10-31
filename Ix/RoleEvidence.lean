@@ -1,0 +1,548 @@
+module
+
+public import IxC.Kernel.Ixon.Prelude
+
+/-! # Proof evidence for the role table (untrusted)
+
+A well-founded `Nat` operation (`Nat.div`, `Nat.mod`, …) is validated in the
+fold against its `ops` specification by **proof evidence**: one theorem per
+certificate statement (`Ix.Kernel.divModCertStmts`), whose proof the fold
+checks against the statement with the operation's self-references replaced by
+its value, in the environment before the operation is installed
+(`Ix.Kernel.checkDivModEvidence`). The fold also requires the proofs to be
+**local** (`Ix.Kernel.evidenceLocal`): every constant a proof mentions lies in
+the dependency closure of the operation's value and of its dependencies'
+roles.
+
+The theorems are those of `IxC/Kernel/PinGen/Certs.lean` (`certTheorems`).
+As elaborated they reach constants outside that closure (their own private
+helpers, such as `natFixGoCongr`, and `Eq.trans`), so a proof is first
+**closed** over the closure (`closeProof`, upstream con-leche's pinner's
+rule): every constant outside it is replaced by its value, with beta, `let`
+and projection-of-constructor redexes reduced, to a fixpoint. The closure is
+the fold's own (`Ix.Kernel.refClosureGo`), computed over the declarations
+read so far (`declInfos`). A residual outside it fails.
+
+Both front ends use this module: Source mode closes the theorems as it ingests
+them (`Ix.LeanIngress.sourceEvidence`), and the table generator
+(`Benchmarks/Kernel/PinGen.lean`) closes them once and emits the closed proofs
+as theorem records that the default table's evidence names. Nothing here is
+trusted: the fold is sound at every evidence (`Ix.Kernel.model_exists`); a
+proof this module gets wrong only declines its operation. -/
+
+@[expose] public section
+
+namespace Ix.RoleEvidence
+
+open Ix.Kernel.Reader (CName CExpr CLevel CDecl)
+open Ix.Kernel (LevelParam)
+
+/-- The certificate theorems of `IxC/Kernel/PinGen/Certs.lean`: per
+well-founded operation, its theorems in the order of its certificate
+statements (`Ix.Kernel.divModCertStmts`). This is Source mode's fixed
+evidence, and the generator's input. -/
+def certTheorems : List (Ix.Kernel.Role × List Lean.Name) :=
+  [(.natDiv, [`Ix.Kernel.PinGen.divRecCert, `Ix.Kernel.PinGen.divBaseGtCert,
+     `Ix.Kernel.PinGen.divBaseZeroCert]),
+   (.natMod, [`Ix.Kernel.PinGen.modRecCert, `Ix.Kernel.PinGen.modBaseGtCert,
+     `Ix.Kernel.PinGen.modBaseZeroCert]),
+   (.natGcd, [`Ix.Kernel.PinGen.gcdRecCert, `Ix.Kernel.PinGen.gcdBaseCert]),
+   (.natLand, [`Ix.Kernel.PinGen.landRecCert, `Ix.Kernel.PinGen.landBaseCert]),
+   (.natLor, [`Ix.Kernel.PinGen.lorRecCert, `Ix.Kernel.PinGen.lorBaseCert]),
+   (.natXor, [`Ix.Kernel.PinGen.xorRecCert, `Ix.Kernel.PinGen.xorBaseCert]),
+   (.natShiftLeft, [`Ix.Kernel.PinGen.shiftLeftRecCert, `Ix.Kernel.PinGen.shiftLeftBaseCert]),
+   (.natShiftRight, [`Ix.Kernel.PinGen.shiftRightRecCert, `Ix.Kernel.PinGen.shiftRightBaseCert])]
+
+/-- **The evidence of the definitions specified by their equations**
+(`Ix.Kernel.Spec.eqns`): per role, per equation in order, `none` for a
+definitional entry or the certificate theorem of `IxC/Kernel/PinGen/Certs.lean`
+that proves it. An unconditional equation may take either kind; these are the
+kinds that hold on every supported toolchain (the decision procedures' equations
+hold by definition only where `Decidable` is a structure). -/
+def eqnsEvidence : List (Ix.Kernel.Role × List (Option Lean.Name)) :=
+  [(.decidableDecide, [none, none, some `Ix.Kernel.PinGen.decideExtCert]),
+   (.natDecEq, [some `Ix.Kernel.PinGen.natDecEqCert]),
+   (.natDecLe, [some `Ix.Kernel.PinGen.natDecLeCert]),
+   (.natDecLt, [none]),
+   (.intNegOfNat, [none, none]),
+   (.intSubNatNat, [some `Ix.Kernel.PinGen.intSubNatNatGeCert,
+     some `Ix.Kernel.PinGen.intSubNatNatLtCert]),
+   (.intNeg, [none, none]),
+   (.intAdd, [none, none, none, none]),
+   (.intSub, [none]),
+   (.intMul, [none, none, none, none]),
+   (.intNatAbs, [none, none]),
+   (.intEdiv, [none, none, none, none, none]),
+   (.intEmod, [none, none, none, none]),
+   (.intPow, [none, some `Ix.Kernel.PinGen.intPowEvenCert, some `Ix.Kernel.PinGen.intPowOddCert]),
+   (.bitVecToNat, [none]),
+   (.bitVecUlt, [some `Ix.Kernel.PinGen.bitVecUltCert]),
+   (.stringDecEq, [some `Ix.Kernel.PinGen.stringDecEqCert]),
+   (.stringToByteArray, [none]),
+   (.listAppend, [none, none]),
+   (.stringAppend, [some `Ix.Kernel.PinGen.stringAppendCert]),
+   (.ifThenElse, [none, none]),
+   (.intDecEq, [some `Ix.Kernel.PinGen.intDecEqOfNatCert, none, none,
+     some `Ix.Kernel.PinGen.intDecEqNegSuccCert]),
+   (.intDecLe, [some `Ix.Kernel.PinGen.intDecLeOfNatCert,
+     some `Ix.Kernel.PinGen.intDecLeOfNatNegSuccCert, none, some `Ix.Kernel.PinGen.intDecLeNegSuccCert]),
+   (.intDecLt, [none]),
+   (.intBmod, [none]),
+   (.intBdiv, [none]),
+   (.charUtf8Size, [some `Ix.Kernel.PinGen.charUtf8Size1Cert, some `Ix.Kernel.PinGen.charUtf8Size2Cert,
+     some `Ix.Kernel.PinGen.charUtf8Size3Cert, some `Ix.Kernel.PinGen.charUtf8Size3HighCert,
+     some `Ix.Kernel.PinGen.charUtf8Size4Cert]),
+   (.stringUtf8ByteSize, [none, some `Ix.Kernel.PinGen.stringUtf8ByteSizeConsCert]),
+   (.stringBack, [none, some `Ix.Kernel.PinGen.stringBackOneCert,
+     some `Ix.Kernel.PinGen.stringBackConsCert])]
+
+/-- The definitions' certificate theorems (`eqnsEvidence`), per role that has any. -/
+def eqnsTheorems : List (Ix.Kernel.Role × List Lean.Name) :=
+  (eqnsEvidence.map fun (r, es) => (r, es.filterMap id)).filter (!·.2.isEmpty)
+
+/-- Every certificate theorem of the role table: the well-founded operations'
+(`certTheorems`) and the definitions' (`eqnsTheorems`). -/
+def allCertTheorems : List (Ix.Kernel.Role × List Lean.Name) := certTheorems ++ eqnsTheorems
+
+/-- **A role's evidence entries**, given its closed proofs' entries in order: for a
+definition (`eqnsEvidence`), a definitional entry at each `none` and the next
+proof at each certificate; for a well-founded operation, the proofs. -/
+def evidenceEntries {K : Type} (r : Ix.Kernel.Role) (proofs : Array (Ix.Kernel.Evidence K)) :
+    Array (Ix.Kernel.Evidence K) :=
+  match eqnsEvidence.find? (·.1 == r) with
+  | none => proofs
+  | some (_, es) => (es.foldl (init := ((#[] : Array (Ix.Kernel.Evidence K)), 0)) fun (acc, i) e =>
+      match e with
+      | none => (acc.push .defeq, i)
+      | some _ => (acc.push (proofs.getD i .defeq), i + 1)).1
+
+/-- The definitions whose equations all hold by definition, with their evidence. -/
+def defeqDefinitions {K : Type} : List (Ix.Kernel.Role × Array (Ix.Kernel.Evidence K)) :=
+  (eqnsEvidence.filter fun (_, es) => es.all Option.isNone).map fun (r, es) =>
+    (r, (es.map fun _ => Ix.Kernel.Evidence.defeq).toArray)
+
+/-- The structural operations: their evidence is one `defeq` entry per
+recurrence equation. -/
+def defeqRoles : List Ix.Kernel.Role :=
+  [.natPred, .natAdd, .natSub, .natMul, .natPow, .natBeq, .natBle]
+
+/-- The `defeq` evidence of a structural operation, one entry per equation of
+its specification. -/
+def defeqEvidence {K : Type} (r : Ix.Kernel.Role) : List (Ix.Kernel.Evidence K) :=
+  (Ix.Kernel.natOpEquations (md := .anon) 0 (Ix.Kernel.roleKey r)).map fun _ => .defeq
+
+/-- A key's Lean name: its spelling (`Ix.Kernel.Key.toName`). -/
+def toLeanName (k : CName md) : Lean.Name := go k.toName
+where
+  go : Ix.Kernel.Name → Lean.Name
+    | .anonymous => .anonymous
+    | .str p s => .str (go p) s
+    | .num p n => .num (go p) n
+
+/-- The key of a Lean name under Source mode's binding (`Ix.Kernel.Key.ofName`). -/
+def ofLeanName (n : Lean.Name) : CName .source := Ix.Kernel.Key.ofName (Ix.Kernel.Name.ofLeanName n)
+
+/-! ## The declarations read so far, as the closure sees them -/
+
+/-- What the inliner needs about the declarations read: the values of the
+definitions, theorems and opaques (with their level parameters), and the
+parameter counts of the constructors. -/
+structure Universe (md : Ix.Kernel.Mode) where
+  values : Std.HashMap (CName md) (List LevelParam × CExpr md) := {}
+  ctorParams : Std.HashMap (CName md) Nat := {}
+
+def Universe.add (u : Universe md) (d : CDecl md) : Universe md :=
+  match d with
+  | .defnDecl cv v _ | .thmDecl cv v | .opaqueDecl cv v =>
+    { u with values := u.values.insert cv.name (cv.levelParams, v) }
+  | .indDecl block _ => block.foldl (fun u ci => match ci with
+      | .ctorInfo cv nP _ => { u with ctorParams := u.ctorParams.insert cv.name nP }
+      | _ => u) u
+  | _ => u
+
+/-- The constants a declaration installs, as the fold stores them (raw:
+before annotation; an opaque as an axiom, without its value). -/
+def declInfos (d : CDecl md) : List (Ix.Kernel.ConstantInfo md) :=
+  match d with
+  | .axiomDecl cv => [.axiomInfo cv]
+  | .defnDecl cv v hint => [.defnInfo cv v hint]
+  | .thmDecl cv v => [.thmInfo cv v]
+  | .opaqueDecl cv _ => [.axiomInfo cv]
+  | .basisDecl kind => kind.declsA
+  | .indDecl block _ => block
+  | .quotDecl _ cv => [.axiomInfo cv]
+
+/-- A lookup over the declarations read so far. -/
+def lookupOf (decls : Array (CDecl md)) : Std.HashMap (CName md) (Ix.Kernel.ConstantInfo md) :=
+  decls.foldl (fun m d => (declInfos d).foldl (fun m ci => m.insert ci.name ci) m) {}
+
+/-- **What a proof of operation `op` may mention**: the dependency closure of
+`op`'s value and of its dependencies' roles (`Ix.Kernel.evidenceLocal`'s), and
+`op` itself (its self-references, which the fold replaces by the value). -/
+def allowedFor (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (op : CName md) (opValue : CExpr md) :
+    Std.HashSet (CName md) :=
+  (Ix.Kernel.refClosureGo look Ix.Kernel.walkFuel
+    (opValue.constKeyList ++ Ix.Kernel.evidenceDepKeys op) {}).insert op
+
+/-! ## Expression surgery (memoized over the DAG) -/
+
+abbrev Memo (md : Ix.Kernel.Mode) := Std.HashMap (CExpr md) (CExpr md)
+
+/-- The level parameters `ks` instantiated by `us`. -/
+partial def instLevelsGo (ks : List LevelParam) (us : List CLevel) (e : CExpr md) :
+    StateM (Memo md) (CExpr md) := do
+  if !e.hasLP then return e
+  if let some r := (← get)[e]? then return r
+  let r ← match e with
+    | .sort u => pure (.sort (Ix.Kernel.Level.subst ks us u))
+    | .const n ls => pure (.const n (ls.map (Ix.Kernel.Level.subst ks us)))
+    | .app f a => return .app (← instLevelsGo ks us f) (← instLevelsGo ks us a)
+    | .lam t b m => return .lam (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
+    | .forallE t b m => return .forallE (← instLevelsGo ks us t) (← instLevelsGo ks us b) m
+    | .letE t v b l =>
+      return .letE (← instLevelsGo ks us t) (← instLevelsGo ks us v) (← instLevelsGo ks us b) l
+    | .proj s i x => return .proj s i (← instLevelsGo ks us x)
+    | .fvar i t => return .fvar i (← instLevelsGo ks us t)
+    | e => pure e
+  modify (·.insert e r)
+  return r
+
+def instLevels (ks : List LevelParam) (us : List CLevel) (e : CExpr md) : CExpr md :=
+  if ks.isEmpty then e else (instLevelsGo ks us e |>.run {}).1
+
+/-- No loose `bvar` at or above `d`. -/
+def closedAbove (e : CExpr md) (d : Nat) : Bool :=
+  e.bvarBRaw < Ix.Kernel.satRange && e.bvarBRaw ≤ d
+
+/-- `e` with loose `bvar (d + k)` replaced by `vs[n - 1 - k]` (lifted past the
+`d` binders crossed) for `k < n = vs.size`, and the loose `bvar`s above
+lowered by `n`: Lean's `instantiate` of the reversed `vs`, so `vs[n - 1]` is
+`bvar 0`. -/
+partial def instGo (vs : Array (CExpr md)) (d : Nat) (e : CExpr md) :
+    StateM (Std.HashMap (CExpr md × Nat) (CExpr md)) (CExpr md) := do
+  if closedAbove e d then return e
+  if let some r := (← get)[(e, d)]? then return r
+  let n := vs.size
+  let r ← match e with
+    | .bvar i =>
+      if i < d then pure (.bvar i)
+      else if i - d < n then
+        let v := vs[n - 1 - (i - d)]!
+        pure (if d == 0 || closedAbove v 0 then v else Ix.Kernel.Expr.liftLooseBVars d 0 v)
+      else pure (Ix.Kernel.Expr.mkBvar (i - n))
+    | .app f a => return .app (← instGo vs d f) (← instGo vs d a)
+    | .lam t b m => return .lam (← instGo vs d t) (← instGo vs (d + 1) b) m
+    | .forallE t b m => return .forallE (← instGo vs d t) (← instGo vs (d + 1) b) m
+    | .letE t v b l => return .letE (← instGo vs d t) (← instGo vs d v) (← instGo vs (d + 1) b) l
+    | .proj s i x => return .proj s i (← instGo vs d x)
+    | e => pure e
+  modify (·.insert (e, d) r)
+  return r
+
+def instantiate (e : CExpr md) (vs : Array (CExpr md)) : CExpr md :=
+  if vs.isEmpty then e else (instGo vs 0 e |>.run {}).1
+
+/-- The number of leading `fun` binders of `f`, at most `k`, and the body
+under them. -/
+def peelLams : Nat → CExpr md → Nat × CExpr md
+  | k + 1, .lam _ b _ => let (m, body) := peelLams k b; (m + 1, body)
+  | _, e => (0, e)
+
+/-- `f args`, beta-reduced at the head. -/
+def betaApp (f : CExpr md) (args : Array (CExpr md)) : CExpr md :=
+  let (m, body) := peelLams args.size f
+  let head := if m == 0 then f else instantiate body (args.extract 0 m)
+  (args.extract m args.size).foldl .app head
+
+/-- One pass: every constant `inline` selects that has a value is replaced by
+it (levels instantiated, beta-reduced against its arguments), and the result
+is visited again (upstream's `unfoldStep` under `Core.transform`). -/
+partial def unfoldGo (u : Universe md) (inline : CName md → Bool) (e : CExpr md) : StateM (Memo md) (CExpr md) := do
+  if let some r := (← get)[e]? then return r
+  let unfolded : Option (CExpr md) := match e.getAppFn with
+    | .const c us =>
+      if inline c then
+        match u.values[c]? with
+        | some (lps, v) =>
+          if lps.length == us.length then some (betaApp (instLevels lps us v) e.getAppArgs.toArray)
+          else none
+        | none => none
+      else none
+    | _ => none
+  let r ← match unfolded with
+    | some e' => unfoldGo u inline e'
+    | none => match e with
+      | .app f a => return .app (← unfoldGo u inline f) (← unfoldGo u inline a)
+      | .lam t b m => return .lam (← unfoldGo u inline t) (← unfoldGo u inline b) m
+      | .forallE t b m => return .forallE (← unfoldGo u inline t) (← unfoldGo u inline b) m
+      | .letE t v b l =>
+        return .letE (← unfoldGo u inline t) (← unfoldGo u inline v) (← unfoldGo u inline b) l
+      | .proj s i x => return .proj s i (← unfoldGo u inline x)
+      | e => pure e
+  modify (·.insert e r)
+  return r
+
+/-- A projection of a constructor application: its field. -/
+def projOfCtor (u : Universe md) (i : Nat) (x : CExpr md) : Option (CExpr md) :=
+  match x.getAppFn with
+  | .const c _ => do
+    let nP ← u.ctorParams[c]?
+    let args := x.getAppArgs.toArray
+    if h : nP + i < args.size then some args[nP + i] else none
+  | _ => none
+
+/-- One pass of beta, `let` (zeta) and projection-of-constructor reduction
+(upstream's `simpStep`, and the zeta-expansion of its `toConLeche`), each
+result visited again. -/
+partial def simpGo (u : Universe md) (e : CExpr md) : StateM (Memo md) (CExpr md) := do
+  if let some r := (← get)[e]? then return r
+  let reduced : Option (CExpr md) := match e with
+    | .letE _ v b _ => some (instantiate b #[v])
+    | .proj _ i x => projOfCtor u i x
+    | .app .. =>
+      match e.getAppFn with
+      | f@(.lam ..) => some (betaApp f e.getAppArgs.toArray)
+      | _ => none
+    | _ => none
+  let r ← match reduced with
+    | some e' => simpGo u e'
+    | none => match e with
+      | .app f a => return .app (← simpGo u f) (← simpGo u a)
+      | .lam t b m => return .lam (← simpGo u t) (← simpGo u b) m
+      | .forallE t b m => return .forallE (← simpGo u t) (← simpGo u b) m
+      | .proj s i x => return .proj s i (← simpGo u x)
+      | e => pure e
+  modify (·.insert e r)
+  return r
+
+/-- **A proof closed over `allowed`** (upstream's `inlineCertClosure`):
+unfold and simplify to a fixpoint, then require every remaining constant to
+be allowed. -/
+def closeProof (u : Universe md) (allowed : CName md → Bool) (e : CExpr md) : Except String (CExpr md) := do
+  let mut e := e
+  let mut done := false
+  for _ in [0:1000] do
+    let e1 := (unfoldGo u (!allowed ·) e |>.run {}).1
+    let e2 := (simpGo u e1 |>.run {}).1
+    if e2 == e then
+      done := true
+      break
+    e := e2
+  unless done do throw "no fixpoint after 1000 rounds"
+  let bad := e.constKeys.toList.filter (!allowed ·)
+  unless bad.isEmpty do
+    throw s!"residual constants outside the operation's dependency closure \
+      (name, has a value): {bad.map fun n => (n, (u.values[n]?).isSome)}"
+  return e
+
+/-! ## Evidence from declarations -/
+
+/-- The value of the definition `name` among `decls`. -/
+def valueOf (decls : Array (CDecl md)) (name : CName md) : Option (CExpr md) :=
+  decls.findSome? fun
+    | .defnDecl cv v _ => if cv.name == name then some v else none
+    | _ => none
+
+/-- The value of the theorem `name` among `decls`. -/
+def theoremOf (decls : Array (CDecl md)) (name : CName md) : Option (CExpr md) :=
+  decls.findSome? fun
+    | .thmDecl cv v => if cv.name == name then some v else none
+    | _ => none
+
+/-- A role's proof evidence, from declarations. Well-founded operations'
+certificates are closed over the operation's dependency closure. Definition
+equations retain their ordinary theorem dependencies for the consumer to
+check, avoiding expansion of shared library proofs. -/
+def closedProofs (decls : Array (CDecl md)) (uni : Universe md)
+    (look : CName md → Option (Ix.Kernel.ConstantInfo md)) (key : Lean.Name → CName md)
+    (r : Ix.Kernel.Role) : Except String (List (CName md × CExpr md)) := do
+  let op := Ix.Kernel.roleKey r
+  let some opValue := valueOf decls op | throw s!"{op} is not a definition here"
+  let isOperation := certTheorems.any (·.1 == r)
+  let allowed := allowedFor look op opValue
+  -- Keep the computed dependency set outside the per-node predicate.
+  let keep : CName md → Bool := allowed.contains
+  let thms := ((allCertTheorems.find? (·.1 == r)).map (·.2)).getD []
+  thms.mapM fun t => do
+    let k := key t
+    let some v := theoremOf decls k | throw s!"{k} is not a theorem here"
+    -- Only the well-founded operations require local, inlined evidence.
+    -- Definition equations retain ordinary theorem dependencies, which the
+    -- artifact carries and the consumer must check before the evidence.
+    let p ← (if isOperation then closeProof uni keep v else .ok v).mapError (s!"{k}: " ++ ·)
+    pure (k, p)
+
+/-! ## Source evidence from the committed bundle
+
+Source mode keys a constant by its Lean name, and its evidence is the
+certificate theorems closed at Source keys (`closedProofs`). An input that
+does not carry `IxC/Kernel/PinGen/Certs.lean` (the compiler's: Init, Std,
+Mathlib) takes them from the committed bundle instead
+(`RoleData.sourceEvidence`): the generator (`kernel-pin-gen`) closes the
+theorems in Source mode, over the certificate module's own environment, and
+writes each closed proof as a theorem record whose references are names. A
+reference's address is its name's (`RoleData.sourceNames` names it), and a
+literal's is its blob's (`RoleData.blobs`, `RoleData.sourceBlobs`).
+
+The `.anon` evidence (`RoleData.evidence`) cannot be read by name instead:
+an Ixon address is an alias fiber's, several Lean names at once (`HAdd.hAdd`
+and `HMul.hMul`, `Bool` and `Float.Model.UnpackedFloat.Sign`), and a proof
+needs the right one at each occurrence.
+
+A record reads as the Ixon reader reads one (`Reader.convExpr`: sharing
+entries once, contracts on binders, positional universes), with a name for
+every reference. Nothing here is trusted: the fold checks every proof, and
+its locality, at the operation's install gate, so a wrong or stale bundle
+only declines the operation. -/
+
+/-- The committed Source evidence, decoded: the theorem records, the name of
+each address (a record's theorem, a reference), and the literal blobs. -/
+structure Bundle where
+  records : Array (Address × Ixon.Constant) := #[]
+  names : Std.HashMap Address Lean.Name := {}
+  blobs : Std.HashMap Address ByteArray := {}
+
+/-- The key the reference `i` of record `c` reads as: its name's, under Source
+mode's binding (a role's name keys its role). -/
+def Bundle.keyAt (b : Bundle) (c : Ixon.Constant) (i : UInt64) : Except String (CName .source) := do
+  let some a := c.refs[i.toNat]? | throw "reference index is out of bounds"
+  let some n := b.names[a]? | throw s!"reference {a} has no name"
+  pure (ofLeanName n)
+
+/-- The blob the literal reference `i` of record `c` names. -/
+def Bundle.blobAt (b : Bundle) (c : Ixon.Constant) (i : UInt64) : Except String ByteArray := do
+  let some a := c.refs[i.toNat]? | throw "literal reference index is out of bounds"
+  let some bytes := b.blobs[a]? | throw s!"literal blob {a} is missing"
+  pure bytes
+
+/-- One expression of record `c` (its universes `univs`), against the sharing
+entries read before it: `Reader.convExpr`'s cases, with names for references. -/
+def Bundle.conv (b : Bundle) (c : Ixon.Constant) (univs : Array CLevel)
+    (tbl : Array (Except String (CExpr .source))) : Ixon.Expr → Except String (CExpr .source)
+  | .var i => pure (Ix.Kernel.Expr.mkBvar i.toNat)
+  | .sort i => do pure (.sort (← level i))
+  | .ref i us => do pure (.const (← b.keyAt c i) (← us.toList.mapM level))
+  | .recur .. => throw "a recursive reference in a theorem record"
+  | .prj i field v => do pure (.proj (← b.keyAt c i) field.toNat (← b.conv c univs tbl v))
+  | .str i => do
+    let some s := String.fromUTF8? (← b.blobAt c i) | throw "string literal is not valid UTF-8"
+    pure (.lit (.strVal s))
+  | .nat i => do pure (.lit (.natVal (Ix.Kernel.Reader.natural (← b.blobAt c i))))
+  | .app f a => do pure (.app (← b.conv c univs tbl f) (← b.conv c univs tbl a))
+  | .lam ct t bd => do
+    pure (.lam (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
+      (Ix.Kernel.BinderMeta.ofContracts ct .shared))
+  | .all ct r t bd => do
+    pure (.forallE (← b.conv c univs tbl t) (← b.conv c univs tbl bd)
+      (Ix.Kernel.BinderMeta.ofContracts ct r))
+  | .letE ct t v bd => do
+    pure (.letE (← b.conv c univs tbl t) (← b.conv c univs tbl v) (← b.conv c univs tbl bd)
+      { contract := ct })
+  | .share i =>
+    match tbl[i.toNat]? with
+    | some r => r
+    | none => throw "sharing reference is not to an earlier entry"
+where
+  level (i : UInt64) : Except String CLevel :=
+    match univs[i.toNat]? with
+    | some l => pure l
+    | none => throw "universe table index is out of bounds"
+
+/-- **A theorem record's proof**, read: its value, every sharing entry read
+once, against the entries before it. -/
+def Bundle.proofOf (b : Bundle) (c : Ixon.Constant) : Except String (CExpr .source) := do
+  let .defn d := c.info | throw "not a definition record"
+  unless d.kind == .thm do throw "not a theorem record"
+  let univs := c.univs.map (Ix.Kernel.Reader.convUniv id)
+  let mut tbl : Array (Except String (CExpr .source)) := Array.mkEmpty c.sharing.size
+  for e in c.sharing do
+    tbl := tbl.push (b.conv c univs tbl e)
+  b.conv c univs tbl d.value
+
+/-- The bundle from its committed rows: canonical records (address,
+bytes), names by address, blobs (address, bytes). -/
+def Bundle.ofRows (records : Array (String × String)) (names : Array (String × Lean.Name))
+    (blobs : Array (String × String)) : Except String Bundle := do
+  let records ← Ix.Kernel.Reader.decodeCommitted "source evidence" records
+  let mut nameMap : Std.HashMap Address Lean.Name := {}
+  for (hex, n) in names do
+    let some a := Ix.Kernel.Reader.addressOfHex hex | throw s!"source names: bad address {hex}"
+    nameMap := nameMap.insert a n
+  let mut blobMap : Std.HashMap Address ByteArray := {}
+  for (hex, bytes) in blobs do
+    let some a := Ix.Kernel.Reader.addressOfHex hex | throw s!"blobs: bad address {hex}"
+    let some bs := bytesOfHex bytes | throw s!"blobs: bad bytes at {hex}"
+    blobMap := blobMap.insert a bs
+  pure { records, names := nameMap, blobs := blobMap }
+
+/-- **Source mode's evidence from a bundle**: the structural operations'
+`defeq` entries, as `sourceEvidence`'s, and each well-founded operation's
+certificate theorems (`certTheorems`, in order) read from the bundle by
+their names, with the reason each operation without evidence has none. -/
+def Bundle.evidenceReport (b : Bundle) : Ix.Kernel.Evidences .source × List String := Id.run do
+  let byName : Std.HashMap Lean.Name Ixon.Constant := b.records.foldl (init := {}) fun m (a, c) =>
+    match b.names[a]? with
+    | some n => m.insert n c
+    | none => m
+  let mut ev : Ix.Kernel.Evidences .source := defeqRoles.map fun r => (r, defeqEvidence r)
+  let mut why : List String := []
+  for (r, thms) in certTheorems do
+    let proofs : Except String (List (CName .source × CExpr .source)) := thms.mapM fun t => do
+      let some c := byName[t]? | throw s!"{t} is not in the bundle"
+      let p ← (b.proofOf c).mapError (s!"{t}: " ++ ·)
+      pure (ofLeanName t, p)
+    match proofs with
+    | .ok ps => ev := ev ++ [(r, ps.map .proof)]
+    | .error e => why := why ++ [s!"{repr r}: {e}"]
+  return (ev, why)
+
+/-- The committed bundle: `RoleData.sourceEvidence`, `RoleData.sourceNames`,
+and the blobs (`RoleData.blobs`, `RoleData.sourceBlobs`). A function of `()`,
+so that it is decoded when it is asked for, not when a program starts. -/
+def committedBundle (_ : Unit) : Except String Bundle :=
+  Bundle.ofRows Ix.Kernel.Reader.RoleData.sourceEvidence Ix.Kernel.Reader.RoleData.sourceNames
+    (Ix.Kernel.Reader.RoleData.blobs ++ Ix.Kernel.Reader.RoleData.sourceBlobs)
+
+/-- **Source mode's evidence, independent of the input**: the committed
+bundle's (`committedBundle`), with the reason each well-founded operation
+without evidence has none. It is what an input without the certificate
+theorems (the compiler's) checks with, through
+`Ix.LeanIngress.checkSourceWith`. Computed on each call (from the committed
+rows), so a caller asks once. -/
+def bundleEvidenceReport (_ : Unit) : Ix.Kernel.Evidences .source × List String :=
+  match committedBundle () with
+  | .ok b => b.evidenceReport
+  | .error e => (defeqRoles.map fun r => (r, defeqEvidence r), [s!"the committed bundle: {e}"])
+
+/-- Source mode's evidence from the committed bundle (`bundleEvidenceReport`). -/
+def bundleEvidence (_ : Unit) : Ix.Kernel.Evidences .source := (bundleEvidenceReport ()).1
+
+/-! ## Quotient Source's evidence: the table's records, by name
+
+Quotient Source collapses each alias fiber onto one representative, so it can read the
+default table's own evidence records (`RoleData.evidence`) by name: one name per address
+serves it. `RoleData.quotientNames` names each record (its certificate theorem) and each
+address the records cite as a constant (a role's name where the table binds a role
+there, otherwise a Lean name the compiled Init publishes there); a literal's blob is in
+`RoleData.blobs`. Renamed onto an artifact's keys, its proofs are the ones the Ixon
+reader resolves from the table. Plain Source keeps the bundle above (`bundleEvidence`),
+whose proofs are closed at Source's own names. -/
+
+/-- The committed quotient bundle: `RoleData.evidence`, `RoleData.quotientNames` and
+`RoleData.blobs`. A function of `()`, decoded when asked for. -/
+def quotientBundle (_ : Unit) : Except String Bundle :=
+  Bundle.ofRows Ix.Kernel.Reader.RoleData.evidence Ix.Kernel.Reader.RoleData.quotientNames
+    Ix.Kernel.Reader.RoleData.blobs
+
+/-- **Quotient Source's evidence, independent of the input**: the quotient bundle's
+(`quotientBundle`), with the reason each well-founded operation without evidence has
+none. -/
+def quotientEvidenceReport (_ : Unit) : Ix.Kernel.Evidences .source × List String :=
+  match quotientBundle () with
+  | .ok b => b.evidenceReport
+  | .error e => (defeqRoles.map fun r => (r, defeqEvidence r), [s!"the quotient bundle: {e}"])
+
+/-- Quotient Source's evidence from the quotient bundle (`quotientEvidenceReport`). -/
+def quotientEvidence (_ : Unit) : Ix.Kernel.Evidences .source := (quotientEvidenceReport ()).1
+
+end Ix.RoleEvidence

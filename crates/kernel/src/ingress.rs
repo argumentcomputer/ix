@@ -32,11 +32,10 @@ use ixon::constant::DefKind;
 use ixon::constant::{
   Constant, ConstantInfo as IxonCI, MutConst as IxonMutConst,
 };
+use ixon::contract::{BinderContract, LetContract, ValueContract, source};
 use ixon::env::Env as IxonEnv;
 use ixon::expr::Expr as IxonExpr;
-use ixon::metadata::{
-  ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData, resolve_kvmap,
-};
+use ixon::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData};
 use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
@@ -132,8 +131,6 @@ struct ConvertStats {
   share_expansions: u64,
   mdata_nodes: u64,
   mdata_kv_maps: u64,
-  callsites: u64,
-  callsite_args: u64,
   univ_roots: u64,
   univ_cache_hits: u64,
   univ_cache_misses: u64,
@@ -231,8 +228,6 @@ impl ConvertStats {
     self.share_expansions += other.share_expansions;
     self.mdata_nodes += other.mdata_nodes;
     self.mdata_kv_maps += other.mdata_kv_maps;
-    self.callsites += other.callsites;
-    self.callsite_args += other.callsite_args;
     self.univ_roots += other.univ_roots;
     self.univ_cache_hits += other.univ_cache_hits;
     self.univ_cache_misses += other.univ_cache_misses;
@@ -384,7 +379,7 @@ fn resolve_level_params(
 /// `addr` is the **projection-content address** under which the corresponding
 /// KConst is actually stored in `KEnv`.
 ///
-/// The callers (`build_mut_ctx`, `ingress_muts_inductive`'s `ctor_ids`, and
+/// The callers (`ingress_muts_inductive`'s `ctor_ids`, and
 /// `lean_all` reconstruction in `ingress_defn` / `ingress_recursor` /
 /// `ingress_muts_inductive`) pull addresses out of `ConstantMetaInfo::*::{all,
 /// ctx, ctors}`. Those fields store **name-hash** addresses (they were written
@@ -422,23 +417,6 @@ fn resolve_all<M: KernelMode>(
     .collect()
 }
 
-fn get_ctx_addrs(meta: &ConstantMeta) -> &[Address] {
-  match &meta.info {
-    ConstantMetaInfo::Def { ctx, .. }
-    | ConstantMetaInfo::Indc { ctx, .. }
-    | ConstantMetaInfo::Rec { ctx, .. } => ctx,
-    _ => &[],
-  }
-}
-
-fn build_mut_ctx<M: KernelMode>(
-  meta: &ConstantMeta,
-  names: &FxHashMap<Address, Name>,
-  name_to_addr: &FxHashMap<Name, Address>,
-) -> Result<Vec<KId<M>>, String> {
-  resolve_all(get_ctx_addrs(meta), names, name_to_addr)
-}
-
 // ============================================================================
 // Universe ingress (iterative)
 // ============================================================================
@@ -458,12 +436,12 @@ fn ingress_univ<M: KernelMode>(
   intern: &mut InternTable<M>,
   cache: &mut UnivCache<M>,
   stats: &mut ConvertStats,
-) -> KUniv<M> {
+) -> Result<KUniv<M>, String> {
   bump_convert_stat!(stats, univ_roots);
   let cache_key = Arc::as_ptr(root) as usize;
   if let Some(cached) = cache.get(&cache_key) {
     bump_convert_stat!(stats, univ_cache_hits);
-    return cached.clone();
+    return Ok(cached.clone());
   }
   bump_convert_stat!(stats, univ_cache_misses);
 
@@ -497,8 +475,8 @@ fn ingress_univ<M: KernelMode>(
         },
         IxonUniv::Var(idx) => {
           bump_convert_stat!(stats, univ_process);
-          let pos =
-            usize::try_from(*idx).expect("univ var index exceeds usize");
+          let pos = usize::try_from(*idx)
+            .map_err(|_e| format!("univ var index {idx} exceeds usize"))?;
           let name = ctx.lvls.get(pos).cloned().unwrap_or_else(Name::anon);
           bump_convert_stat!(stats, univ_interns);
           values.push(timed_intern_univ(
@@ -538,7 +516,7 @@ fn ingress_univ<M: KernelMode>(
     stats.univ_cache_inserts += 1;
     stats.univ_cache_peak = stats.univ_cache_peak.max(cache.len() as u64);
   }
-  result
+  Ok(result)
 }
 
 fn ingress_univ_args<M: KernelMode>(
@@ -555,7 +533,7 @@ fn ingress_univ_args<M: KernelMode>(
     let u = ctx.univs.get(i).ok_or_else(|| {
       format!("universe index {i} out of bounds (len {})", ctx.univs.len())
     })?;
-    result.push(ingress_univ(u, ctx, intern, cache, stats));
+    result.push(ingress_univ(u, ctx, intern, cache, stats)?);
   }
   Ok(result.into_boxed_slice())
 }
@@ -669,6 +647,7 @@ enum ExprFrame<M: KernelMode> {
   LamDone {
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
+    contract: BinderContract,
     mdata: M::MField<Vec<MData>>,
   },
   AllBody {
@@ -678,6 +657,8 @@ enum ExprFrame<M: KernelMode> {
   AllDone {
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
+    contract: BinderContract,
+    result: ValueContract,
     mdata: M::MField<Vec<MData>>,
   },
   LetVal {
@@ -693,7 +674,7 @@ enum ExprFrame<M: KernelMode> {
   },
   LetDone {
     name: M::MField<Name>,
-    nd: bool,
+    contract: LetContract,
     mdata: M::MField<Vec<MData>>,
   },
   PrjDone {
@@ -720,7 +701,7 @@ fn ingress_expr<M: KernelMode>(
   root_arena: u64,
   ctx: &Ctx<'_, M>,
   intern: &mut InternTable<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   cache: &mut ExprCache<M>,
   univ_cache: &mut UnivCache<M>,
   stats: &mut ConvertStats,
@@ -793,7 +774,13 @@ fn ingress_expr<M: KernelMode>(
           bump_convert_stat!(stats, mdata_kv_maps, mdata.len());
           let kv_t0 = if stats.enabled { Some(Instant::now()) } else { None };
           for kvm in mdata {
-            mdata_layers.push(resolve_kvmap(kvm, ixon_env));
+            let data = ixon_env.mdata(kvm)?;
+            if M::HAS_META && source::has_metadata(&data) {
+              return Err(
+                "semantic contracts cannot come from optional metadata".into(),
+              );
+            }
+            mdata_layers.push(data);
           }
           if let Some(t0) = kv_t0 {
             stats.resolve_kvmap_ns += elapsed_ns(t0);
@@ -825,7 +812,8 @@ fn ingress_expr<M: KernelMode>(
             .map_err(|_e| format!("BVar index {idx} exceeds usize"))?;
           let name = binder_names
             .len()
-            .checked_sub(1 + idx_usize)
+            .checked_sub(1)
+            .and_then(|top| top.checked_sub(idx_usize))
             .and_then(|i| binder_names.get(i))
             .cloned()
             .unwrap_or_else(Name::anon);
@@ -878,7 +866,7 @@ fn ingress_expr<M: KernelMode>(
                   format!("Sort univ index {idx} exceeds usize")
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
-            let zu = ingress_univ(u, ctx, intern, univ_cache, stats);
+            let zu = ingress_univ(u, ctx, intern, univ_cache, stats)?;
             // Spelling decoration (canonicity §10.6): the occurrence's
             // `univ_patches` entry (stage 2) is the primary source of
             // the original spelling; without one, fall back to the
@@ -925,6 +913,7 @@ fn ingress_expr<M: KernelMode>(
               )
               .ok_or_else(|| format!("invalid Ref index {ref_idx}"))?
               .clone();
+            ixon_env.require_reference(&addr)?;
             // Meta mode: walk the arena to find the Ref's Lean name.
             // Anon mode: the closure is never invoked — no arena walk,
             // no name construction, no resolve_name call.
@@ -995,246 +984,21 @@ fn ingress_expr<M: KernelMode>(
 
           IxonExpr::App(f, a) => {
             bump_convert_stat!(stats, app_nodes);
-            // CallSite at the outermost App of a surgery spine. The
-            // arena replaces the spine's N+1 App/Ref nodes with one
-            // flat node whose `canon_meta` carries per-canonical-arg
-            // arena indices and whose `name` holds the head's Ref name.
-            // Walk the IXON App telescope here and distribute each
-            // canonical arg's arena index from `canon_meta`; a plain App
-            // descent (`_` arm below) would propagate the CallSite arena
-            // down every child, losing per-arg binder names and failing
-            // the head's Ref metadata lookup (see
-            // `ingress_expr` Ref arm — no `CallSite` matching branch).
-            //
-            // The head is `IxonExpr::Ref | IxonExpr::Rec`. We build its
-            // KExpr here using `cs_name` so the normal Ref arm's
-            // `(_, Expr::Ref) => Err(...)` fallback never fires. The
-            // compile side's `BuildCallSite` drops the head's own
-            // arena root on the floor (the comment there reads
-            // "head's Ref metadata is subsumed by CallSite.name"), so
-            // there is no other source of truth for the head name.
-            if let ExprMetaData::CallSite {
-              name: cs_name,
-              entries: _,
-              canon_meta,
-              orig_head: _,
-            } = node
-            {
-              // Flatten the canonical App telescope. `a_i` is the arg
-              // applied at spine position `i` (0 = innermost, N-1 =
-              // outermost); `head` is the innermost function.
-              let mut canonical_args: Vec<Arc<IxonExpr>> = Vec::new();
-              let mut cur = expr.clone();
-              loop {
-                while let IxonExpr::Share(share_idx) = cur.as_ref() {
-                  cur = ctx
-                    .sharing
-                    .get(usize::try_from(*share_idx).map_err(|_e| {
-                      format!("Share index {share_idx} exceeds usize")
-                    })?)
-                    .ok_or_else(|| format!("invalid Share index {share_idx}"))?
-                    .clone();
-                }
-                match cur.as_ref() {
-                  IxonExpr::App(f2, a2) => {
-                    canonical_args.push(a2.clone());
-                    cur = f2.clone();
-                  },
-                  _ => break,
-                }
-              }
-              canonical_args.reverse();
-              let mut head_ixon = cur;
-              while let IxonExpr::Share(share_idx) = head_ixon.as_ref() {
-                head_ixon = ctx
-                  .sharing
-                  .get(usize::try_from(*share_idx).map_err(|_e| {
-                    format!("Share index {share_idx} exceeds usize")
-                  })?)
-                  .ok_or_else(|| format!("invalid Share index {share_idx}"))?
-                  .clone();
-              }
-              let n_args = canonical_args.len();
-              bump_convert_stat!(stats, callsites);
-              bump_convert_stat!(stats, callsite_args, n_args);
-
-              if canon_meta.len() != n_args {
-                let head_name = resolve_name(cs_name, ctx.names);
-                return Err(format!(
-                  "CallSite for '{}' has {} canonical metadata entries but \
-                   canonical telescope has {} args",
-                  head_name.pretty(),
-                  canon_meta.len(),
-                  n_args
-                ));
-              }
-              let arg_arenas = canon_meta.clone();
-
-              // Build the head KExpr inline. `cs_name` is the name
-              // address stored in the CallSite (e.g. the address of
-              // `Code.rec`'s Lean name); resolving it gives the same
-              // `Name` the normal Ref arm would produce.
-              let head_kexpr: KExpr<M> = match head_ixon.as_ref() {
-                IxonExpr::Ref(ref_idx, univ_idxs) => {
-                  let addr = ctx
-                    .refs
-                    .get(usize::try_from(*ref_idx).map_err(|_e| {
-                      format!("Ref index {ref_idx} exceeds usize")
-                    })?)
-                    .ok_or_else(|| {
-                      format!("CallSite head: invalid Ref index {ref_idx}")
-                    })?
-                    .clone();
-                  let name = resolve_name(cs_name, ctx.names);
-                  let univs = ingress_univ_args(
-                    univ_idxs, ctx, intern, univ_cache, stats,
-                  )?;
-                  let id = KId::new(addr, M::meta_field(name));
-                  let mdata_field: M::MField<Vec<MData>> =
-                    M::meta_field(vec![]);
-                  // Patch lookup key is the CallSite node's arena index:
-                  // the compile side re-keys the head's patch onto it
-                  // (the head's own Ref root is unreachable from here).
-                  let decor: M::MField<Option<UnivDecor>> =
-                    M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
-                      univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
-                    })?;
-                  let key = super::env::ExprKey::Const(
-                    id.addr.clone(),
-                    univs.iter().map(|u| *u.addr()).collect(),
-                    M::meta_get(&decor).cloned().flatten(),
-                  );
-                  timed_intern_or_build(
-                    intern,
-                    &key,
-                    || KExpr::cnst_full(id, univs, mdata_field, decor),
-                    stats,
-                  )
-                },
-                IxonExpr::Rec(rec_idx, univ_idxs) => {
-                  // Rec heads refer to the enclosing mutual block; the
-                  // KId already carries the member's name from
-                  // `mut_ctx`, so `cs_name` is redundant here. Kept
-                  // the shape parallel to the Ref arm for symmetry.
-                  let mid = ctx
-                    .mut_ctx
-                    .get(usize::try_from(*rec_idx).map_err(|_e| {
-                      format!("Rec index {rec_idx} exceeds usize")
-                    })?)
-                    .ok_or_else(|| {
-                      format!("CallSite head: invalid Rec index {rec_idx}")
-                    })?
-                    .clone();
-                  if let Some(refs) = ctx.local_refs {
-                    refs.borrow_mut().insert(mid.addr.clone());
-                  }
-                  let univs = ingress_univ_args(
-                    univ_idxs, ctx, intern, univ_cache, stats,
-                  )?;
-                  let mdata_field: M::MField<Vec<MData>> =
-                    M::meta_field(vec![]);
-                  // Same CallSite-root patch key as the Ref head arm.
-                  let decor: M::MField<Option<UnivDecor>> =
-                    M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
-                      univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
-                    })?;
-                  let key = super::env::ExprKey::Const(
-                    mid.addr.clone(),
-                    univs.iter().map(|u| *u.addr()).collect(),
-                    M::meta_get(&decor).cloned().flatten(),
-                  );
-                  timed_intern_or_build(
-                    intern,
-                    &key,
-                    || KExpr::cnst_full(mid, univs, mdata_field, decor),
-                    stats,
-                  )
-                },
-                _ => {
-                  return Err(format!(
-                    "CallSite head is not Ref/Rec: {:?}",
-                    head_ixon
-                  ));
-                },
-              };
-
-              // Emit the canonical App spine via AppArg/AppDone pairs.
-              // Push order — LIFO, so last pushed is first processed:
-              //
-              //   push AppDone_outer (carries `mdata`)
-              //   push AppArg(a_{N-1})
-              //   push AppDone for each middle/inner App (no mdata)
-              //   push AppArg(a_i) for i from N-2 down to 0
-              //   push head_kexpr onto `values` (processed "first")
-              //
-              // Execution then pops AppArg(a_0), Process(a_0), runs
-              // the innermost AppDone to wrap (head, a_0), pops
-              // AppArg(a_1), runs the next AppDone, …, ending with
-              // AppDone_outer applying `mdata` to the full spine.
-              // Inner AppDones use an empty mdata because the IXON
-              // Mdata variant lives outside the App chain — only the
-              // outermost App carries the wrapper.
-              let no_mdata_inner: M::MField<Vec<MData>> = M::meta_field(vec![]);
-
-              if n_args == 0 {
-                // Defensive: we only arrive here from IxonExpr::App,
-                // so n_args >= 1. Fall through safely anyway.
-                values.push(head_kexpr);
-              } else {
-                // Outermost AppDone (with mdata) + AppArg for the
-                // outermost arg.
-                stack.push(ExprFrame::AppDone { mdata });
-                stack.push(ExprFrame::AppArg {
-                  arg: canonical_args[n_args - 1].clone(),
-                  arg_arena: arg_arenas[n_args - 1],
-                });
-                // Middle + inner AppDones (no mdata) + AppArgs for
-                // args n_args-2 down to 0. Iterating in reverse keeps
-                // each (AppDone, AppArg) pair in the correct LIFO
-                // position.
-                for i in (0..n_args - 1).rev() {
-                  stack
-                    .push(ExprFrame::AppDone { mdata: no_mdata_inner.clone() });
-                  stack.push(ExprFrame::AppArg {
-                    arg: canonical_args[i].clone(),
-                    arg_arena: arg_arenas[i],
-                  });
-                }
-                // Seed `values` with the head so the first AppDone
-                // popped sees (head, a_0) and produces App(head, a_0).
-                values.push(head_kexpr);
-              }
-            } else {
-              let (f_arena, a_arena) = match node {
-                ExprMetaData::App { children } => (children[0], children[1]),
-                _ => (current_idx, current_idx),
-              };
-              stack.push(ExprFrame::AppDone { mdata });
-              stack
-                .push(ExprFrame::AppArg { arg: a.clone(), arg_arena: a_arena });
-              stack.push(ExprFrame::Process {
-                expr: f.clone(),
-                arena_idx: f_arena,
-              });
-            }
+            let (f_arena, a_arena) = match node {
+              ExprMetaData::App { children } => (children[0], children[1]),
+              _ => (current_idx, current_idx),
+            };
+            stack.push(ExprFrame::AppDone { mdata });
+            stack
+              .push(ExprFrame::AppArg { arg: a.clone(), arg_arena: a_arena });
+            stack
+              .push(ExprFrame::Process { expr: f.clone(), arena_idx: f_arena });
           },
 
-          // Kernel ingress checks erased Lean types. Resource claims additionally
-          // require the addressed validator in `crate::resource`.
-          IxonExpr::Lam(_, ty, body) => {
+          // Input contracts participate in conversion. Resource validity still
+          // requires the separate addressed validator in `crate::resource`.
+          IxonExpr::Lam(contract, ty, body) => {
             bump_convert_stat!(stats, lam_nodes);
-            if let ExprMetaData::EtaCallSite { wrapper_meta, .. } = node {
-              // The eta root is decompile-facing. Kernel ingress follows the
-              // ordinary synthesized Binder/CallSite tree so every binder
-              // type and canonical body argument keeps its normal metadata.
-              // Source mdata belongs to the discarded partial expression;
-              // it has no semantic effect on the synthesized wrapper.
-              stack.push(ExprFrame::Process {
-                expr: expr.clone(),
-                arena_idx: *wrapper_meta,
-              });
-              continue;
-            }
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
                 resolve_name(addr, ctx.names),
@@ -1252,6 +1016,7 @@ fn ingress_expr<M: KernelMode>(
             stack.push(ExprFrame::LamDone {
               name: M::meta_field(name.clone()),
               bi: M::meta_field(bi),
+              contract: *contract,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);
@@ -1263,7 +1028,7 @@ fn ingress_expr<M: KernelMode>(
             });
           },
 
-          IxonExpr::All(_, _, ty, body) => {
+          IxonExpr::All(contract, result, ty, body) => {
             bump_convert_stat!(stats, all_nodes);
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
@@ -1282,6 +1047,8 @@ fn ingress_expr<M: KernelMode>(
             stack.push(ExprFrame::AllDone {
               name: M::meta_field(name.clone()),
               bi: M::meta_field(bi),
+              contract: *contract,
+              result: *result,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);
@@ -1293,7 +1060,7 @@ fn ingress_expr<M: KernelMode>(
             });
           },
 
-          IxonExpr::Let(nd, ty, val, body) => {
+          IxonExpr::Let(contract, ty, val, body) => {
             bump_convert_stat!(stats, let_nodes);
             let (name, ty_arena, val_arena, body_arena) = match node {
               ExprMetaData::LetBinder { name: addr, children } => (
@@ -1306,7 +1073,7 @@ fn ingress_expr<M: KernelMode>(
             };
             stack.push(ExprFrame::LetDone {
               name: M::meta_field(name.clone()),
-              nd: nd.non_dep,
+              contract: *contract,
               mdata,
             });
             stack.push(ExprFrame::BinderPop);
@@ -1334,6 +1101,7 @@ fn ingress_expr<M: KernelMode>(
                 format!("invalid Prj type ref index {type_ref_idx}")
               })?
               .clone();
+            ixon_env.require_reference(&type_addr)?;
             // The arena holds both the struct name and the child arena
             // pointer (needed for the projected value's metadata walk).
             // Meta mode reads both; Anon mode skips the entire arena
@@ -1376,7 +1144,7 @@ fn ingress_expr<M: KernelMode>(
               })?)
               .ok_or_else(|| format!("invalid Str ref index {ref_idx}"))?;
             let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
-            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+            let blob = ixon_env.blob(addr)?.ok_or_else(|| {
               format!("missing Str blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
@@ -1405,7 +1173,7 @@ fn ingress_expr<M: KernelMode>(
               })?)
               .ok_or_else(|| format!("invalid Nat ref index {ref_idx}"))?;
             let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
-            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+            let blob = ixon_env.blob(addr)?.ok_or_else(|| {
               format!("missing Nat blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
@@ -1459,15 +1227,15 @@ fn ingress_expr<M: KernelMode>(
           stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
-      ExprFrame::LamDone { name, bi, mdata } => {
+      ExprFrame::LamDone { name, bi, contract, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let key = super::env::ExprKey::Lam(*ty.addr(), *body.addr());
+        let key = super::env::ExprKey::Lam(contract, *ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
           &key,
-          || KExpr::lam_mdata(name, bi, ty, body, mdata),
+          || KExpr::lam_contract_mdata(name, bi, contract, ty, body, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1482,15 +1250,20 @@ fn ingress_expr<M: KernelMode>(
           stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
-      ExprFrame::AllDone { name, bi, mdata } => {
+      ExprFrame::AllDone { name, bi, contract, result, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let key = super::env::ExprKey::All(*ty.addr(), *body.addr());
+        let key =
+          super::env::ExprKey::All(contract, result, *ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
           &key,
-          || KExpr::all_mdata(name, bi, ty, body, mdata),
+          || {
+            KExpr::all_contract_mdata(
+              name, bi, contract, result, ty, body, mdata,
+            )
+          },
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1506,17 +1279,21 @@ fn ingress_expr<M: KernelMode>(
           stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
-      ExprFrame::LetDone { name, nd, mdata } => {
+      ExprFrame::LetDone { name, contract, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let val = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let key =
-          super::env::ExprKey::Let(*ty.addr(), *val.addr(), *body.addr(), nd);
+        let key = super::env::ExprKey::Let(
+          contract,
+          *ty.addr(),
+          *val.addr(),
+          *body.addr(),
+        );
         values.push(timed_intern_or_build(
           intern,
           &key,
-          || KExpr::let_mdata(name, ty, val, body, nd, mdata),
+          || KExpr::let_contract_mdata(name, contract, ty, val, body, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1581,7 +1358,7 @@ fn ingress_defn<M: KernelMode>(
   def: &ixon::constant::Definition,
   self_id: KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   sharing: &[Arc<IxonExpr>],
@@ -1590,10 +1367,10 @@ fn ingress_defn<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
-  // Anon callers compute `mut_ctx` structurally from sibling
-  // projection addresses; passing `Some(_)` skips the metadata-derived
-  // `build_mut_ctx` call. Meta callers pass `None`.
-  mut_ctx_override: Option<Vec<KId<M>>>,
+  // The semantic targets of `Expr::Rec`: the serialized owner's members
+  // (see `owner_mut_ctx`), or `[self_id]` for a standalone. Metadata
+  // never selects them.
+  mut_ctx: Vec<KId<M>>,
   local_dependencies: Option<&mut LocalDefnDependencies>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
@@ -1601,10 +1378,8 @@ fn ingress_defn<M: KernelMode>(
   // Hints live only in `Env::anon_hints`, keyed by the constant's own
   // address, in both anon and meta modes. Without an entry the kernel
   // falls back to `Regular(0)` — always correct, just more def-eq work.
-  let hints = ixon_env
-    .anon_hints
-    .get(&self_id.addr)
-    .map_or(ReducibilityHints::Regular(0), |r| *r);
+  let hints =
+    ixon_env.hint(&self_id.addr).unwrap_or(ReducibilityHints::Regular(0));
   let safety = def.safety;
   let local_refs = RefCell::new(FxHashSet::default());
   let (level_params, arena, type_root, value_root, all_addrs) = match &meta.info
@@ -1621,10 +1396,6 @@ fn ingress_defn<M: KernelMode>(
     _ => (vec![], &DEFAULT_ARENA, 0, 0, vec![]),
   };
 
-  let mut_ctx = match mut_ctx_override {
-    Some(m) => m,
-    None => build_mut_ctx(meta, names, name_to_addr)?,
-  };
   let ctx = Ctx {
     sharing,
     refs,
@@ -1695,7 +1466,7 @@ fn ingress_recursor<M: KernelMode>(
   rec: &ixon::constant::Recursor,
   self_id: KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   sharing: &[Arc<IxonExpr>],
@@ -1704,9 +1475,8 @@ fn ingress_recursor<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
-  // Anon callers compute `mut_ctx` structurally; Meta callers pass
-  // `None` to fall back to the metadata-derived `build_mut_ctx`.
-  mut_ctx_override: Option<Vec<KId<M>>>,
+  // The semantic targets of `Expr::Rec`, as for `ingress_defn`.
+  mut_ctx: Vec<KId<M>>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1731,10 +1501,6 @@ fn ingress_recursor<M: KernelMode>(
       _ => (vec![], &DEFAULT_ARENA, 0, vec![], vec![], vec![]),
     };
 
-  let mut_ctx = match mut_ctx_override {
-    Some(m) => m,
-    None => build_mut_ctx(meta, names, name_to_addr)?,
-  };
   let ctx = Ctx {
     sharing,
     refs,
@@ -1827,7 +1593,7 @@ fn ingress_standalone<M: KernelMode>(
   addr: &Address,
   constant: &Constant,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &mut InternTable<M>,
@@ -1849,10 +1615,11 @@ fn ingress_standalone<M: KernelMode>(
         &constant.sharing,
         &constant.refs,
         &constant.univs,
-        self_id,
+        self_id.clone(),
         intern,
         stats,
-        None,
+        // A standalone is a singleton unit: `Rec(0)` is itself.
+        vec![self_id],
         Some(&mut local_dependencies),
       )?;
       local_dependencies.validate()?;
@@ -1971,10 +1738,10 @@ fn ingress_standalone<M: KernelMode>(
       &constant.sharing,
       &constant.refs,
       &constant.univs,
-      self_id,
+      self_id.clone(),
       intern,
       stats,
-      None,
+      vec![self_id],
     ),
 
     // Projections and Muts are handled in ingress_muts_block
@@ -1995,12 +1762,14 @@ fn ingress_muts_inductive<M: KernelMode>(
   ind: &ixon::constant::Inductive,
   self_id: &KId<M>,
   meta: &ConstantMeta,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   block_constant: &Constant,
   block_id: KId<M>,
   member_idx: u64,
+  // The owner's members, the semantic targets of `Expr::Rec`.
+  mut_ctx: Vec<KId<M>>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
@@ -2018,7 +1787,6 @@ fn ingress_muts_inductive<M: KernelMode>(
 
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
-  let mut_ctx = build_mut_ctx(meta, names, name_to_addr)?;
   let ctx = Ctx {
     sharing: &block_constant.sharing,
     refs: &block_constant.refs,
@@ -2044,14 +1812,21 @@ fn ingress_muts_inductive<M: KernelMode>(
     stats,
   )?;
   let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
-  // Constructor KIds: `ctor_addrs` holds the **name-hash** addresses the
-  // compile pass stored in `ConstantMetaInfo::Indc::ctors`, but each Ctor
-  // `KConst` is registered in the kernel env under its **projection**
-  // address (`CPrj` content hash). We must therefore round-trip through
-  // the Lean name to look up the projection address — see `resolve_all`
-  // for the rationale. Calling `resolve_all` directly reuses that error
-  // handling (error on missing Named instead of guessing a name-hash).
+  // Metadata selects presentation names; the owner and constructor position
+  // determine semantic identity. Validate that each named address agrees
+  // before any payload can be installed under that address.
   let ctor_ids: Vec<KId<M>> = resolve_all(&ctor_addrs, names, name_to_addr)?;
+  if ctor_ids.len() != ind.ctors.len() {
+    return Err("constructor metadata count differs from its owner".into());
+  }
+  for (index, id) in ctor_ids.iter().enumerate() {
+    let index = u64::try_from(index).map_err(|error| error.to_string())?;
+    if id.addr != anon_ctor_proj_addr(&block_id.addr, member_idx, index) {
+      return Err(format!(
+        "constructor metadata address differs from owner/index ({member_idx}, {index})"
+      ));
+    }
+  }
 
   let name = resolve_name(
     match &meta.info {
@@ -2096,13 +1871,16 @@ fn ingress_muts_inductive<M: KernelMode>(
       format!("missing ctor_addrs entry for constructor index {cidx}")
     })?;
     let ctor_name = resolve_name(ctor_name_addr, names);
-    let ctor_named = ixon_env.lookup_name(&ctor_name).ok_or_else(|| {
+    let ctor_named = ixon_env.named(&ctor_name).ok_or_else(|| {
       format!(
         "missing Named entry for ctor '{ctor_name}' (cidx={cidx}) — \
          per-ctor metadata (arena, type_root, lvls) must be registered \
          for every constructor of this inductive block"
       )
     })?;
+    if ctor_named.addr != ctor_id.addr {
+      return Err(format!("ctor '{ctor_name}' metadata address changed"));
+    }
 
     let ctor_named_meta = ctor_named.meta();
     let (ctor_lvl_params, ctor_arena, ctor_type_root) =
@@ -2166,12 +1944,29 @@ fn ingress_muts_inductive<M: KernelMode>(
   Ok(results)
 }
 
+/// Serialized mutual units follow the certified reader's shape policy:
+/// definitions form their own block; inductives and recursors may share a
+/// family block. Direct Lean source grouping has a separate contract.
+pub(crate) fn validate_serialized_muts(
+  members: &[IxonMutConst],
+) -> Result<(), String> {
+  if members.is_empty() {
+    return Err("empty serialized mutual block".into());
+  }
+  let definitions =
+    members.iter().filter(|m| matches!(m, IxonMutConst::Defn(_))).count();
+  if definitions != 0 && definitions != members.len() {
+    return Err("unsupported serialized mutual block: definitions mixed with an inductive/recursor family".into());
+  }
+  Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn ingress_muts_block<M: KernelMode>(
   entry_name: &Name,
   entry_addr: &Address,
   all: &[Vec<Address>],
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &mut InternTable<M>,
@@ -2180,45 +1975,82 @@ fn ingress_muts_block<M: KernelMode>(
   let block_id: KId<M> =
     KId::new(entry_addr.clone(), M::meta_field(entry_name.clone()));
 
-  let block_constant = ixon_env.get_const(entry_addr).ok_or_else(|| {
+  let block_constant = ixon_env.constant(entry_addr)?.ok_or_else(|| {
     format!("missing Muts block constant {}", entry_addr.hex())
   })?;
   let members = match &block_constant.info {
     IxonCI::Muts(m) => m,
     _ => return Err(format!("constant at {} is not Muts", entry_addr.hex())),
   };
+  validate_serialized_muts(members)?;
 
-  let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
-  let mut local_dependencies = LocalDefnDependencies::default();
-
+  // The serialized owner defines its members: member `i`'s address is its
+  // projection from this owner, and `Expr::Rec(i)` denotes it. Metadata only
+  // names them: `all[i][0]` is the name-hash address of member `i`'s
+  // canonical Lean name, whose Named entry carries the member's own metadata
+  // (arena, type root, ...) and must agree with the owner-derived address.
+  // Error loudly if the Named entry is missing — the Muts-registration pass
+  // in `compile_mutual` is supposed to emit one per member.
+  let mut member_ids: Vec<KId<M>> = Vec::with_capacity(members.len());
+  let mut member_metas: Vec<Arc<ConstantMeta>> =
+    Vec::with_capacity(members.len());
   for (i, member) in members.iter().enumerate() {
-    // `all[i][0]` is the name-hash address of this member's canonical Lean
-    // name; we read the per-member metadata (arena, type_root, etc.) from
-    // that Named entry. Note the address distinction: `primary_name_addr`
-    // is a *name-content* hash (Blake3 of the Lean name components),
-    // whereas `member_named.addr` is the *projection-constant* content
-    // hash (address of the IPrj/CPrj/RPrj/DPrj struct that projects this
-    // member out of the enclosing Muts block). We want the projection
-    // address for the `KId`, because that's the address under which every
-    // `Expr::Ref` to this member in the rest of the env was registered.
-    //
-    // Error loudly if the Named entry is missing — the Muts-registration
-    // pass in `compile/mutual.rs` is supposed to emit one per member, and
-    // a missing entry means the compile phase dropped work we need here.
     let primary_name_addr = all
       .get(i)
       .and_then(|cls| cls.first())
       .ok_or_else(|| format!("Muts block member {i} has no name in all"))?;
     let member_name = resolve_name(primary_name_addr, names);
 
-    let member_named = ixon_env.lookup_name(&member_name).ok_or_else(|| {
+    let member_named = ixon_env.named(&member_name).ok_or_else(|| {
       format!("Muts member '{member_name}' not found in named entries")
     })?;
-    let member_addr = &member_named.addr;
-    let member_meta = &member_named.meta();
+    let index = u64::try_from(i).map_err(|error| error.to_string())?;
+    let (kind, member_addr) = match member {
+      IxonMutConst::Defn(_) => ("DPrj", anon_defn_proj_addr(entry_addr, index)),
+      IxonMutConst::Indc(_) => ("IPrj", anon_indc_proj_addr(entry_addr, index)),
+      IxonMutConst::Recr(_) => ("RPrj", anon_recr_proj_addr(entry_addr, index)),
+    };
+    if member_named.addr != member_addr {
+      return Err(format!(
+        "Muts member '{member_name}' metadata address differs from owner/index {index}"
+      ));
+    }
+    // A carried projection record must be this member's, as in anonymous
+    // ingress; installing the owner's members must not shadow a corrupted
+    // one that a later reference would otherwise reach.
+    verify_proj_addr_in_env(
+      kind,
+      &member_addr,
+      entry_addr,
+      index,
+      None,
+      ixon_env,
+    )?;
+    if let IxonMutConst::Indc(ind) = member {
+      for (cidx, ctor_addr) in
+        anon_ctor_addrs(entry_addr, index, ind).iter().enumerate()
+      {
+        verify_proj_addr_in_env(
+          "CPrj",
+          ctor_addr,
+          entry_addr,
+          index,
+          Some(cidx as u64),
+          ixon_env,
+        )?;
+      }
+    }
+    member_metas.push(member_named.meta());
+    member_ids.push(KId::new(member_addr, M::meta_field(member_name)));
+  }
+  let mut_ctx = member_ids.clone();
 
-    let self_id: KId<M> =
-      KId::new(member_addr.clone(), M::meta_field(member_name.clone()));
+  let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
+  let mut local_dependencies = LocalDefnDependencies::default();
+
+  for (i, member) in members.iter().enumerate() {
+    let self_id = member_ids[i].clone();
+    let member_meta = &member_metas[i];
 
     match member {
       IxonMutConst::Indc(ind) => {
@@ -2232,6 +2064,7 @@ fn ingress_muts_block<M: KernelMode>(
           &block_constant,
           block_id.clone(),
           i as u64,
+          mut_ctx.clone(),
           intern,
           stats,
         )?);
@@ -2250,7 +2083,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
-          None,
+          mut_ctx.clone(),
         )?);
       },
       IxonMutConst::Defn(def) => {
@@ -2267,7 +2100,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
-          None,
+          mut_ctx.clone(),
           Some(&mut local_dependencies),
         )?);
       },
@@ -2275,46 +2108,10 @@ fn ingress_muts_block<M: KernelMode>(
   }
   local_dependencies.validate()?;
 
-  // Canonicity validation for Indc-only blocks.
-  //
-  // Per `docs/ix_canonicity.md` §6.0, the inductive block's primary
-  // members ship in `sort_consts` canonical order. Take that ordering
-  // as the alleged partition (each member ↔ class index = its position)
-  // and reject any adjacent pair that doesn't satisfy strict `Less`.
-  //
-  // Skip Recr blocks (they contain primary + aux recursors, with the
-  // aux portion in kernel-computed canonical order, not stored
-  // sort_consts) and Defn blocks (the plan focuses on Indc; defn-block
-  // ordering can be added later if needed).
-  //
-  // Returns `TcError::NonCanonicalBlock` on failure, propagated as the
-  // string error variant `ingress_muts_block` already returns.
-  let mut indcs: Vec<(KId<M>, &KConst<M>)> = Vec::new();
-  for (id, c) in &results {
-    if matches!(c, KConst::Indc { .. }) {
-      indcs.push((id.clone(), c));
-    }
-  }
-  let all_primary_indc = !indcs.is_empty()
-    && indcs.len()
-      == members.iter().filter(|m| matches!(m, IxonMutConst::Indc(_))).count();
-  if all_primary_indc
-    && members.iter().all(|m| matches!(m, IxonMutConst::Indc(_)))
-  {
-    // Resolve a ctor by id by scanning the ingested results — simpler
-    // than threading the env, since the comparator only needs Ctor
-    // payloads for Indc ctors.
-    let results_ref: &Vec<(KId<M>, KConst<M>)> = &results;
-    let resolve_ctor = |cid: &KId<M>| -> Option<KConst<M>> {
-      results_ref.iter().find(|(rid, _)| rid == cid).map(|(_, c)| c.clone())
-    };
-    crate::canonical_check::validate_canonical_block_single_pass::<M>(
-      entry_addr,
-      &indcs,
-      &resolve_ctor,
-    )
-    .map_err(|e| format!("{e}"))?;
-  }
+  // No member-order check: an inductive block is stored in its source's
+  // order, which shapes its recursors (as constructor order does), so any
+  // member order is admissible. The recursor block is checked against the
+  // stored order position by position.
 
   Ok(results)
 }
@@ -2328,36 +2125,41 @@ use ix_common::env::{
 };
 
 /// Convert a Lean Level to KUniv<Meta>, mapping named params to positional indices.
-pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Meta> {
-  match lvl.as_data() {
-    LevelData::Succ(l, _) => KUniv::succ(lean_level_to_kuniv(l, param_names)),
+///
+/// An unknown universe parameter or a level metavariable is an error naming
+/// it, never a panic (the texts are those of the panics it replaces).
+pub fn lean_level_to_kuniv(
+  lvl: &Level,
+  param_names: &[Name],
+) -> Result<KUniv<Meta>, String> {
+  Ok(match lvl.as_data() {
+    LevelData::Succ(l, _) => KUniv::succ(lean_level_to_kuniv(l, param_names)?),
     LevelData::Max(a, b, _) => KUniv::max(
-      lean_level_to_kuniv(a, param_names),
-      lean_level_to_kuniv(b, param_names),
+      lean_level_to_kuniv(a, param_names)?,
+      lean_level_to_kuniv(b, param_names)?,
     ),
     LevelData::Imax(a, b, _) => KUniv::imax(
-      lean_level_to_kuniv(a, param_names),
-      lean_level_to_kuniv(b, param_names),
+      lean_level_to_kuniv(a, param_names)?,
+      lean_level_to_kuniv(b, param_names)?,
     ),
     LevelData::Param(name, _) => {
-      let idx =
-        param_names.iter().position(|n| n == name).unwrap_or_else(|| {
-          panic!(
-            "unknown level param `{}` not found in param_names {:?}",
-            name.pretty(),
-            param_names.iter().map(|n| n.pretty()).collect::<Vec<_>>()
-          )
-        }) as u64;
+      let idx = param_names.iter().position(|n| n == name).ok_or_else(|| {
+        format!(
+          "unknown level param `{}` not found in param_names {:?}",
+          name.pretty(),
+          param_names.iter().map(|n| n.pretty()).collect::<Vec<_>>()
+        )
+      })? as u64;
       KUniv::param(idx, name.clone())
     },
     LevelData::Zero(_) => KUniv::zero(),
     LevelData::Mvar(name, _) => {
-      panic!(
+      return Err(format!(
         "unexpected level metavariable `{}` in elaborated kernel term",
         name.pretty()
-      );
+      ));
     },
-  }
+  })
 }
 
 /// Resolve a Lean Name to an Address, using real Ixon address if available.
@@ -2405,11 +2207,11 @@ pub fn lean_expr_to_zexpr(
   intern: &mut InternTable<Meta>,
   name_to_ixon_addr: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-) -> KExpr<Meta> {
+) -> Result<KExpr<Meta>, String> {
   // Uncached path — only for callers without KEnv access. Top-level
   // expressions start with an empty binder stack.
   let mut binder_names: Vec<Name> = Vec::new();
-  let e = lean_expr_to_zexpr_raw(
+  lean_expr_to_zexpr_cached(
     expr,
     param_names,
     &mut binder_names,
@@ -2418,8 +2220,7 @@ pub fn lean_expr_to_zexpr(
     aux_n2a,
     None,
     None,
-  );
-  intern.intern_expr(e)
+  )
 }
 
 /// Cached variant that takes a full `KEnv` reference instead of just `InternTable`.
@@ -2430,7 +2231,7 @@ pub fn lean_expr_to_zexpr_with_kenv(
   kenv: &mut KEnv<Meta>,
   n2a: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-) -> KExpr<Meta> {
+) -> Result<KExpr<Meta>, String> {
   let pn_h = param_names_hash(param_names);
   let mut binder_names: Vec<Name> = Vec::new();
   lean_expr_to_zexpr_cached(
@@ -2445,12 +2246,25 @@ pub fn lean_expr_to_zexpr_with_kenv(
   )
 }
 
+enum LeanExprFrame<'a> {
+  Visit(&'a LeanExpr),
+  Finish {
+    node: &'a LeanExprData,
+    mdata: Vec<MData>,
+    source_contract: Option<source::Contract>,
+    key: Option<(CtxAddr, CtxAddr)>,
+    projection_id: Option<KId<Meta>>,
+  },
+  PushBinder(&'a Name),
+  PopBinder,
+}
+
 /// Cached variant: uses `ingress_cache` (if provided) to avoid re-converting
 /// shared LeanExpr subtrees. The cache is keyed by `(expr_hash, pn_hash)` to
 /// account for different level param bindings producing different KExprs.
 ///
 /// `binder_names` is the stack of enclosing binder names (outermost first),
-/// pushed/popped around each Lam/All/Let body recursion. It's used to
+/// pushed/popped around each Lam/All/Let body. It's used to
 /// populate `ExprData::Var`'s `name` metadata by de Bruijn lookup — a
 /// cosmetic field for pretty-printing that doesn't affect type-checking.
 /// Top-level callers pass an empty `Vec`. Mirrors the `binder_names` stack
@@ -2462,6 +2276,15 @@ pub fn lean_expr_to_zexpr_with_kenv(
 /// erased in Anon mode, ignored in Meta mode by type checking), and egress
 /// drops them on the way back to Lean's (nameless) Bvar, so this staleness
 /// is benign. Matches the behavior of `ixon_ingress`'s iterative cache.
+///
+/// # Errors
+///
+/// The whole `lean_expr_to_zexpr*` family returns an error, never a panic or
+/// a substituted value, on an unknown universe parameter, a level
+/// metavariable, a free variable, an expression metavariable, or a bound
+/// variable or projection index that does not fit a `u64`. Only successful
+/// conversions enter the cache. The caller's binder stack is restored on
+/// both success and error; completed child cache entries survive an error.
 #[allow(clippy::too_many_arguments)]
 pub fn lean_expr_to_zexpr_cached(
   expr: &LeanExpr,
@@ -2472,276 +2295,219 @@ pub fn lean_expr_to_zexpr_cached(
   aux_n2a: Option<&DashMap<Name, Address>>,
   mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
   pn_hash: Option<&CtxAddr>,
-) -> KExpr<Meta> {
-  // Check cache
-  if let (Some(cache), Some(pn_hash)) = (cache.as_ref(), pn_hash) {
-    let expr_key = *expr.get_hash();
-    let key = (expr_key, *pn_hash);
-    if let Some(hit) = cache.get(&key) {
-      return hit.clone();
-    }
-  }
-
-  let e = lean_expr_to_zexpr_raw(
-    expr,
-    param_names,
-    binder_names,
-    intern,
-    n2a,
-    aux_n2a,
-    cache.as_deref_mut(),
-    pn_hash,
-  );
-  let result = intern.intern_expr(e);
-
-  // Store in cache
-  if let (Some(cache), Some(pn_hash)) = (cache, pn_hash) {
-    let expr_key = *expr.get_hash();
-    cache.insert((expr_key, *pn_hash), result.clone());
-  }
-
-  result
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lean_expr_to_zexpr_raw(
-  expr: &LeanExpr,
-  pn: &[Name],
-  binder_names: &mut Vec<Name>,
-  intern: &mut InternTable<Meta>,
-  n2a: Option<&DashMap<Name, Address>>,
-  aux_n2a: Option<&DashMap<Name, Address>>,
-  mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
-  pn_hash: Option<&CtxAddr>,
-) -> KExpr<Meta> {
-  // Walk through any consecutive `Mdata` wrappers first, accumulating them
-  // as kernel-side `MData` layers. Lean represents `Mdata(a, Mdata(b, e))`
-  // as two separate AST nodes; the kernel stores the layers in a single
-  // `Vec<MData>` attached to the innermost node via the `_mdata` constructors.
-  //
-  // The accumulation is **essential for roundtrip fidelity** — earlier
-  // versions discarded the kv-map here, which silently lost every Lean
-  // mdata annotation (`_recApp`, `_inaccessible`, `noImplicitLambda`,
-  // `borrowed`, `sunfoldMatch`, `save_info`, etc.). The `kernel-lean-
-  // roundtrip` test guards against regressing that.
-  let mut mdata_layers: Vec<MData> = Vec::new();
-  let mut cur = expr;
-  while let LeanExprData::Mdata(kv, inner, _) = cur.as_data() {
-    mdata_layers.push(kv.clone());
-    cur = inner;
-  }
-
-  // Emit the `_mdata` variant of the appropriate constructor. An empty
-  // `mdata_layers` hashes identically to the non-`_mdata` constructor (both
-  // go through `no_mdata::<Meta>()` which is just `Vec::new()`), so we
-  // don't need a separate empty-case branch.
-  //
-  // For subtree recursion into a fresh binder context, we push the binder
-  // name onto `binder_names`, recurse, then pop — mirroring the Ixon side
-  // of ingress.
-  match cur.as_data() {
-    LeanExprData::Bvar(idx, _) => {
-      let idx_u64 = idx.to_u64().unwrap_or(0);
-      // Resolve the bound variable's display name by de Bruijn lookup
-      // into the current binder stack. Missing entries (ill-scoped
-      // expressions, or traversals from a non-empty starting stack)
-      // fall back to anonymous; the idx itself is always correct.
-      let idx_usize = usize::try_from(idx_u64).unwrap_or(usize::MAX);
-      let name = binder_names
-        .len()
-        .checked_sub(1 + idx_usize)
-        .and_then(|i| binder_names.get(i))
-        .cloned()
-        .unwrap_or_else(Name::anon);
-      KExpr::var_mdata(idx_u64, name, mdata_layers)
-    },
-    LeanExprData::Sort(lvl, _) => {
-      KExpr::sort_mdata(lean_level_to_kuniv(lvl, pn), mdata_layers)
-    },
-    LeanExprData::Const(name, us, _) => {
-      let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
-      let zid = KId::new(addr, name.clone());
-      let zus: Box<[KUniv<Meta>]> =
-        us.iter().map(|u| lean_level_to_kuniv(u, pn)).collect();
-      KExpr::cnst_mdata(zid, zus, mdata_layers)
-    },
-    LeanExprData::App(f, a, _) => {
-      let f_k = lean_expr_to_zexpr_cached(
-        f,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      let a_k = lean_expr_to_zexpr_cached(
-        a,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      KExpr::app_mdata(f_k, a_k, mdata_layers)
-    },
-    LeanExprData::ForallE(binder_name, dom, body, bi, _) => {
-      let dom_k = lean_expr_to_zexpr_cached(
-        dom,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      binder_names.push(binder_name.clone());
-      let body_k = lean_expr_to_zexpr_cached(
-        body,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      binder_names.pop();
-      KExpr::all_mdata(
-        binder_name.clone(),
-        bi.clone(),
-        dom_k,
-        body_k,
-        mdata_layers,
-      )
-    },
-    LeanExprData::Lam(binder_name, dom, body, bi, _) => {
-      let dom_k = lean_expr_to_zexpr_cached(
-        dom,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      binder_names.push(binder_name.clone());
-      let body_k = lean_expr_to_zexpr_cached(
-        body,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      binder_names.pop();
-      KExpr::lam_mdata(
-        binder_name.clone(),
-        bi.clone(),
-        dom_k,
-        body_k,
-        mdata_layers,
-      )
-    },
-    LeanExprData::LetE(binder_name, ty, val, body, nd, _) => {
-      let ty_k = lean_expr_to_zexpr_cached(
-        ty,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      let val_k = lean_expr_to_zexpr_cached(
-        val,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      binder_names.push(binder_name.clone());
-      let body_k = lean_expr_to_zexpr_cached(
-        body,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache.as_deref_mut(),
-        pn_hash,
-      );
-      binder_names.pop();
-      KExpr::let_mdata(
-        binder_name.clone(),
-        ty_k,
-        val_k,
-        body_k,
-        *nd,
-        mdata_layers,
-      )
-    },
-    LeanExprData::Proj(name, idx, e, _) => {
-      let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
-      let zid = KId::new(addr, name.clone());
-      let e_k = lean_expr_to_zexpr_cached(
-        e,
-        pn,
-        binder_names,
-        intern,
-        n2a,
-        aux_n2a,
-        cache,
-        pn_hash,
-      );
-      KExpr::prj_mdata(zid, idx.to_u64().unwrap_or(0), e_k, mdata_layers)
-    },
-    LeanExprData::Lit(lit, _) => {
-      use ix_common::env::Literal;
-      match lit {
-        Literal::NatVal(n) => {
-          // Address must match the Ixon-side blob address for this Nat,
-          // which is `Address::hash(&blob_bytes)` where `blob_bytes =
-          // n.to_le_bytes()` (see `store_nat` / `store_blob`). Hashing
-          // `to_u64()` instead truncates any value ≥ 2^64 to 0, causing
-          // distinct Nats to hash-cons to the same KExpr.
-          let addr = Address::hash(&n.to_le_bytes());
-          KExpr::nat_mdata(n.clone(), addr, mdata_layers)
+) -> Result<KExpr<Meta>, String> {
+  let entry_depth = binder_names.len();
+  let result = (|| {
+    let mut stack = vec![LeanExprFrame::Visit(expr)];
+    let mut values: Vec<KExpr<Meta>> = Vec::new();
+    while let Some(frame) = stack.pop() {
+      match frame {
+        LeanExprFrame::Visit(expr) => {
+          let key = pn_hash.map(|h| (*expr.get_hash(), *h));
+          if let (Some(cache), Some(key)) = (cache.as_ref(), key)
+            && let Some(hit) = cache.get(&key)
+          {
+            values.push(hit.clone());
+            continue;
+          }
+          // Preserve the original cache key and outer-to-inner Mdata order.
+          // Peeled intermediate wrappers are not separate cache entries.
+          let mut mdata = Vec::new();
+          let mut cur = expr;
+          while let LeanExprData::Mdata(kv, inner, _) = cur.as_data() {
+            mdata.push(kv.clone());
+            cur = inner;
+          }
+          let node = cur.as_data();
+          let source_contract =
+            source::source_layers(cur, &mdata).map_err(|e| e.to_string())?;
+          // Projection address resolution precedes its operand conversion;
+          // field-index validation remains after that conversion.
+          let projection_id = match node {
+            LeanExprData::Proj(name, ..) => Some(KId::new(
+              resolve_lean_name_addr(name, n2a, aux_n2a),
+              name.clone(),
+            )),
+            _ => None,
+          };
+          stack.push(LeanExprFrame::Finish {
+            node,
+            mdata,
+            source_contract,
+            key,
+            projection_id,
+          });
+          match node {
+            LeanExprData::App(f, a, _) => {
+              stack.push(LeanExprFrame::Visit(a));
+              stack.push(LeanExprFrame::Visit(f));
+            },
+            LeanExprData::Lam(name, dom, body, _, _)
+            | LeanExprData::ForallE(name, dom, body, _, _) => {
+              stack.push(LeanExprFrame::PopBinder);
+              stack.push(LeanExprFrame::Visit(body));
+              stack.push(LeanExprFrame::PushBinder(name));
+              stack.push(LeanExprFrame::Visit(dom));
+            },
+            LeanExprData::LetE(name, ty, val, body, _, _) => {
+              stack.push(LeanExprFrame::PopBinder);
+              stack.push(LeanExprFrame::Visit(body));
+              stack.push(LeanExprFrame::PushBinder(name));
+              stack.push(LeanExprFrame::Visit(val));
+              stack.push(LeanExprFrame::Visit(ty));
+            },
+            LeanExprData::Proj(_, _, value, _) => {
+              stack.push(LeanExprFrame::Visit(value));
+            },
+            _ => {},
+          }
         },
-        Literal::StrVal(s) => {
-          let addr = Address::hash(s.as_bytes());
-          KExpr::str_mdata(s.clone(), addr, mdata_layers)
+        LeanExprFrame::PushBinder(name) => binder_names.push(name.clone()),
+        LeanExprFrame::PopBinder => {
+          binder_names.pop();
+        },
+        LeanExprFrame::Finish {
+          node,
+          mdata,
+          source_contract,
+          key,
+          projection_id,
+        } => {
+          let e = match node {
+            LeanExprData::Bvar(idx, _) => {
+              let idx_u64 = idx.to_u64().ok_or_else(|| {
+                format!("bound variable index {idx} exceeds u64")
+              })?;
+              let idx_usize = usize::try_from(idx_u64).unwrap_or(usize::MAX);
+              let name = binder_names
+                .len()
+                .checked_sub(1)
+                .and_then(|top| top.checked_sub(idx_usize))
+                .and_then(|i| binder_names.get(i))
+                .cloned()
+                .unwrap_or_else(Name::anon);
+              KExpr::var_mdata(idx_u64, name, mdata)
+            },
+            LeanExprData::Sort(lvl, _) => {
+              KExpr::sort_mdata(lean_level_to_kuniv(lvl, param_names)?, mdata)
+            },
+            LeanExprData::Const(name, us, _) => {
+              let id = KId::new(
+                resolve_lean_name_addr(name, n2a, aux_n2a),
+                name.clone(),
+              );
+              let us = us
+                .iter()
+                .map(|u| lean_level_to_kuniv(u, param_names))
+                .collect::<Result<Box<[_]>, _>>()?;
+              KExpr::cnst_mdata(id, us, mdata)
+            },
+            LeanExprData::App(..) => {
+              let a = values.pop().unwrap();
+              let f = values.pop().unwrap();
+              KExpr::app_mdata(f, a, mdata)
+            },
+            LeanExprData::Lam(name, _, _, bi, _) => {
+              let body = values.pop().unwrap();
+              let dom = values.pop().unwrap();
+              KExpr::lam_contract_mdata(
+                name.clone(),
+                bi.clone(),
+                source_contract
+                  .map_or_else(BinderContract::default, |c| c.binder),
+                dom,
+                body,
+                mdata,
+              )
+            },
+            LeanExprData::ForallE(name, _, _, bi, _) => {
+              let body = values.pop().unwrap();
+              let dom = values.pop().unwrap();
+              KExpr::all_contract_mdata(
+                name.clone(),
+                bi.clone(),
+                source_contract
+                  .map_or_else(BinderContract::default, |c| c.binder),
+                source_contract
+                  .map_or_else(ValueContract::shared, |c| c.result),
+                dom,
+                body,
+                mdata,
+              )
+            },
+            LeanExprData::LetE(name, _, _, _, nd, _) => {
+              let body = values.pop().unwrap();
+              let val = values.pop().unwrap();
+              let ty = values.pop().unwrap();
+              let contract = source_contract.map_or_else(
+                || LetContract::plain(*nd),
+                |c| LetContract {
+                  non_dep: *nd,
+                  kind: c.let_kind,
+                  binder: c.binder,
+                },
+              );
+              KExpr::let_contract_mdata(
+                name.clone(),
+                contract,
+                ty,
+                val,
+                body,
+                mdata,
+              )
+            },
+            LeanExprData::Proj(name, idx, _, _) => {
+              let value = values.pop().unwrap();
+              let idx_u64 = idx.to_u64().ok_or_else(|| {
+                format!(
+                  "projection index {idx} of {} exceeds u64",
+                  name.pretty()
+                )
+              })?;
+              KExpr::prj_mdata(projection_id.unwrap(), idx_u64, value, mdata)
+            },
+            LeanExprData::Lit(lit, _) => match lit {
+              ix_common::env::Literal::NatVal(n) => KExpr::nat_mdata(
+                n.clone(),
+                Address::hash(&n.to_le_bytes()),
+                mdata,
+              ),
+              ix_common::env::Literal::StrVal(s) => {
+                KExpr::str_mdata(s.clone(), Address::hash(s.as_bytes()), mdata)
+              },
+            },
+            LeanExprData::Fvar(name, _) => {
+              return Err(format!(
+                "unexpected FVar({}) in elaborated kernel term during ingress",
+                name.pretty()
+              ));
+            },
+            LeanExprData::Mvar(name, _) => {
+              return Err(format!(
+                "unexpected MVar({}) in elaborated kernel term during ingress",
+                name.pretty()
+              ));
+            },
+            LeanExprData::Mdata(..) => {
+              unreachable!("Mdata was peeled on entry")
+            },
+          };
+          // Construct and intern in the old postorder, including on intern
+          // hits, so allocation/first-occurrence metadata behavior is stable.
+          let e = intern.intern_expr(e);
+          if let (Some(cache), Some(key)) = (cache.as_deref_mut(), key) {
+            cache.insert(key, e.clone());
+          }
+          values.push(e);
         },
       }
-    },
-    LeanExprData::Mdata(..) => {
-      // Unreachable — the while-loop above peeled off every `Mdata` layer.
-      unreachable!("Mdata should have been peeled off into mdata_layers");
-    },
-    LeanExprData::Fvar(name, _) => {
-      panic!(
-        "unexpected FVar({}) in elaborated kernel term during ingress",
-        name.pretty()
-      );
-    },
-    LeanExprData::Mvar(name, _) => {
-      panic!(
-        "unexpected MVar({}) in elaborated kernel term during ingress",
-        name.pretty()
-      );
-    },
-  }
+    }
+    Ok(values.pop().unwrap())
+  })();
+  // A failed body must not leak a pushed binder into its caller. Successful
+  // child cache/interner writes are retained, exactly as on the old path.
+  binder_names.truncate(entry_depth);
+  result
 }
 
 /// Name → Address for KId construction from Lean Names.
@@ -2811,7 +2577,7 @@ pub fn ingress_compiled_names(
           name,
           &named.addr,
           all,
-          ixon_env,
+          ixon_env.into(),
           name_map,
           addr_map,
           intern,
@@ -2850,7 +2616,7 @@ pub fn ingress_compiled_names(
       &named.addr,
       &constant,
       &named_meta,
-      ixon_env,
+      ixon_env.into(),
       name_map,
       addr_map,
       intern,
@@ -2875,9 +2641,7 @@ pub fn ingress_compiled_names(
 //   * `lean_name_to_addr` for `KId.addr`s — the same name-hash scheme that
 //     `resolve_lean_name_addr` falls back to when both maps are `None`, so
 //     `Const`-reference addresses inside expressions match constant keys.
-//   * `lean_expr_to_zexpr_with_kenv` for expression ingress — the very same
-//     helper aux_gen already uses after regeneration, so any binder-name /
-//     const-ref semantics are shared between the two paths.
+//   * `lean_expr_to_zexpr_with_kenv` for expression ingress.
 //   * `kenv.intern` is populated in-place (no separate `InternTable` to
 //     swap in the way `ixon_ingress` requires).
 
@@ -2928,11 +2692,8 @@ pub fn build_leon_addr_map(lean_env: &LeanEnv) -> DashMap<Name, Address> {
   //
   // The map type stays `DashMap` (rather than `FxHashMap`) because
   // downstream signatures (`lean_expr_to_zexpr_cached`,
-  // `resolve_lean_name_addr`) share the `n2a` parameter slot with
-  // `aux_n2a`, which is concurrently *written* during the scheduler
-  // phase from `src/ix/compile/aux_gen.rs:823`. Splitting the two into
-  // different types would propagate a signature change through ~5
-  // functions with no matching perf win.
+  // `resolve_lean_name_addr`) take their `n2a` and `aux_n2a` name maps as
+  // `DashMap`s.
   let entries: Vec<_> = lean_env.iter().collect();
   let map = DashMap::with_capacity(lean_env.len());
   entries.par_iter().for_each(|(name, ci)| {
@@ -2976,22 +2737,34 @@ fn lean_all_ids(all: &[Name], n2a: &DashMap<Name, Address>) -> Vec<KId<Meta>> {
 /// `lean_expr_to_zexpr_with_kenv` with the `n2a` map so inner `Const`
 /// references resolve to LEON addresses (same scheme used for the KId
 /// addresses in this constant's own fields).
+///
+/// Every error names the constant (`"{self_name}: ..."`): an expression the
+/// expression ingress refuses, or a `Nat` count or index field that does
+/// not fit a `u64` (such a field used to become 0).
 #[cfg(not(target_arch = "riscv64"))]
 fn lean_const_to_kconst(
   self_name: &Name,
   ci: &LeanCI,
   kenv: &mut KEnv<Meta>,
   n2a: &DashMap<Name, Address>,
-) -> KConst<Meta> {
+) -> Result<KConst<Meta>, String> {
   // Helper: shorthand for expression ingress. `n2a` carries the env-wide
   // LEON addressing so `Const` refs inside expressions resolve to the same
   // addresses we're using for KId keys — any KId we construct here and any
   // Const-ref we ingress agree on where they point.
-  let mut expr_to_k = |e: &ix_common::env::Expr, pn: &[Name]| -> KExpr<Meta> {
-    lean_expr_to_zexpr_with_kenv(e, pn, kenv, Some(n2a), None)
+  let mut expr_to_k =
+    |e: &ix_common::env::Expr, pn: &[Name]| -> Result<KExpr<Meta>, String> {
+      lean_expr_to_zexpr_with_kenv(e, pn, kenv, Some(n2a), None)
+        .map_err(|e| format!("{}: {e}", self_name.pretty()))
+    };
+  // Helper: a `Nat` count or index field as a `u64`, refused when it does
+  // not fit.
+  let nat_field = |n: &Nat, field: &str| -> Result<u64, String> {
+    n.to_u64()
+      .ok_or_else(|| format!("{}: {field} {n} exceeds u64", self_name.pretty()))
   };
 
-  match ci {
+  Ok(match ci {
     LeanCI::AxiomInfo(v) => {
       let pn = &v.cnst.level_params;
       KConst::Axio {
@@ -2999,7 +2772,7 @@ fn lean_const_to_kconst(
         level_params: pn.clone(),
         is_unsafe: v.is_unsafe,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
       }
     },
     LeanCI::DefnInfo(v) => {
@@ -3012,8 +2785,8 @@ fn lean_const_to_kconst(
         safety: v.safety,
         hints: v.hints,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
+        val: expr_to_k(&v.value, pn)?,
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -3028,8 +2801,8 @@ fn lean_const_to_kconst(
         safety: DefinitionSafety::Safe,
         hints: ReducibilityHints::Opaque,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
+        val: expr_to_k(&v.value, pn)?,
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -3048,8 +2821,8 @@ fn lean_const_to_kconst(
         },
         hints: ReducibilityHints::Opaque,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
+        val: expr_to_k(&v.value, pn)?,
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -3061,7 +2834,7 @@ fn lean_const_to_kconst(
         level_params: pn.clone(),
         kind: v.kind,
         lvls: pn.len() as u64,
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
       }
     },
     LeanCI::InductInfo(v) => {
@@ -3076,12 +2849,12 @@ fn lean_const_to_kconst(
         name: self_name.clone(),
         level_params: pn.clone(),
         lvls: pn.len() as u64,
-        params: v.num_params.to_u64().unwrap_or(0),
-        indices: v.num_indices.to_u64().unwrap_or(0),
+        params: nat_field(&v.num_params, "num_params")?,
+        indices: nat_field(&v.num_indices, "num_indices")?,
         is_unsafe: v.is_unsafe,
         block: lean_block_id(self_name, all, n2a),
         member_idx: lean_member_idx(self_name, all),
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
         ctors,
         lean_all: lean_all_ids(&v.all, n2a),
       }
@@ -3094,10 +2867,10 @@ fn lean_const_to_kconst(
         is_unsafe: v.is_unsafe,
         lvls: pn.len() as u64,
         induct: KId::new(leon_addr_of(&v.induct, n2a), v.induct.clone()),
-        cidx: v.cidx.to_u64().unwrap_or(0),
-        params: v.num_params.to_u64().unwrap_or(0),
-        fields: v.num_fields.to_u64().unwrap_or(0),
-        ty: expr_to_k(&v.cnst.typ, pn),
+        cidx: nat_field(&v.cidx, "cidx")?,
+        params: nat_field(&v.num_params, "num_params")?,
+        fields: nat_field(&v.num_fields, "num_fields")?,
+        ty: expr_to_k(&v.cnst.typ, pn)?,
       }
     },
     LeanCI::RecInfo(v) => {
@@ -3106,30 +2879,40 @@ fn lean_const_to_kconst(
       let rules = v
         .rules
         .iter()
-        .map(|r| RecRule {
-          ctor: r.ctor.clone(),
-          fields: r.n_fields.to_u64().unwrap_or(0),
-          rhs: expr_to_k(&r.rhs, pn),
+        .map(|r| -> Result<RecRule<Meta>, String> {
+          let fields = r.n_fields.to_u64().ok_or_else(|| {
+            format!(
+              "{}: n_fields {} of the rule for {} exceeds u64",
+              self_name.pretty(),
+              r.n_fields,
+              r.ctor.pretty()
+            )
+          })?;
+          Ok(RecRule {
+            ctor: r.ctor.clone(),
+            fields,
+            rhs: expr_to_k(&r.rhs, pn)?,
+          })
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
       KConst::Recr {
         name: self_name.clone(),
         level_params: pn.clone(),
         k: v.k,
         is_unsafe: v.is_unsafe,
         lvls: pn.len() as u64,
-        params: v.num_params.to_u64().unwrap_or(0),
-        indices: v.num_indices.to_u64().unwrap_or(0),
-        motives: v.num_motives.to_u64().unwrap_or(0),
-        minors: v.num_minors.to_u64().unwrap_or(0),
+        params: nat_field(&v.num_params, "num_params")?,
+        indices: nat_field(&v.num_indices, "num_indices")?,
+        motives: nat_field(&v.num_motives, "num_motives")?,
+        minors: nat_field(&v.num_minors, "num_minors")?,
         block: lean_block_id(self_name, all, n2a),
         member_idx: lean_member_idx(self_name, all),
-        ty: expr_to_k(&v.cnst.typ, pn),
+        ty: expr_to_k(&v.cnst.typ, pn)?,
         rules,
         lean_all: lean_all_ids(&v.all, n2a),
       }
     },
-  }
+  })
 }
 
 /// Lean emits original recursors in `.all` declaration order, followed by
@@ -3175,9 +2958,7 @@ fn lean_recursor_order(
 
 /// Direct ingress: build a `KEnv<Meta>` from a Lean `Env` without going
 /// through Ixon compilation. Used by the `kernel-lean-roundtrip`
-/// diagnostic test and by `compile_env` to produce the `orig_kenv`
-/// used for original-constant verification (see `src/ix/compile.rs::
-/// KernelCtx::orig_kenv`).
+/// diagnostic test.
 ///
 /// # Addressing
 ///
@@ -3205,11 +2986,18 @@ fn lean_recursor_order(
 /// constant itself for singletons). Constructors follow their parent
 /// inductive's block.
 ///
+/// # Errors
+///
+/// A constant whose conversion is refused (see
+/// [`lean_expr_to_zexpr_cached`], and a `Nat` count or index field that does
+/// not fit a `u64`) makes the whole ingress fail with an error naming that
+/// constant.
+///
 /// **Meta-only**: the existing `lean_expr_to_zexpr_*` family is Meta-mode
 /// only, so this helper is Meta-mode only by extension. Generalizing to
-/// `Anon` would require generalizing `lean_expr_to_zexpr_raw` too.
+/// `Anon` would require generalizing `lean_expr_to_zexpr_cached` too.
 #[cfg(not(target_arch = "riscv64"))]
-pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
+pub fn lean_ingress(lean_env: &LeanEnv) -> Result<KEnv<Meta>, String> {
   use std::time::Instant;
   let quiet = crate::env_var("IX_VERBOSE").is_err();
   let mut kenv = KEnv::<Meta>::new_with_recursor_aux_order(
@@ -3235,7 +3023,8 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   let t = Instant::now();
   for (name, ci) in lean_env.iter() {
     let kid = KId::new(leon_addr_of(name, &n2a), name.clone());
-    let kc = lean_const_to_kconst(name, &ci, &mut kenv, &n2a);
+    // The error already names the constant.
+    let kc = lean_const_to_kconst(name, &ci, &mut kenv, &n2a)?;
     kenv.insert(kid, kc);
   }
   if !quiet {
@@ -3276,22 +3065,19 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // `Lean.Xml.Content.rec`, `Lean.Compiler.LCNF.Code.rec`, every
   // `Grind.Arith.*.*Cnstr*.rec`, etc.).
   //
-  // Declaration order is *not* the canonical structural order that
-  // `sort_consts` produces during compilation — that second order
-  // only shows up in the compiled `kctx.kenv`, not here. Iterating
-  // `lean_env` directly to push each constant's `self_kid` gave
+  // The compiler stores each block in this same declaration order.
+  // Iterating `lean_env` directly to push each constant's `self_kid` gave
   // random (FxHashMap iteration) order; we now seed each block with
   // its `all` list the first time any member is observed, then
   // append ctors and source-ordered recursors in a second pass. The
   // inductive and recursor subsequences must align positionally with the
   // flat block (original `.all` members, then source-walk nested auxes).
   //
-  // `ixon_ingress` builds an analogous list for `kctx.kenv`, but
-  // there the ordering comes from `sort_consts`' equivalence-class
-  // output (structural, not declarational). The two paths diverge on
-  // purpose: `orig_kenv` carries Lean's source-order recursor
-  // expectations, `kctx.kenv` carries the canonical-compile recursor
-  // expectations.
+  // `ixon_ingress` builds an analogous list from each block's stored
+  // `Muts` entry, in stored member order. The two kenvs differ in how
+  // recursor generation opens a nested occurrence of an external
+  // inductive (`RecursorAuxOrder`): this one opens the head alone, an
+  // Ixon-ingressed one the head's whole stored block.
   //
   // For singleton inductives, the block is keyed at `self_kid`; for
   // multi-member mutuals, at the representative (first name in `all`).
@@ -3386,7 +3172,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // so we ignore the Result.
   let _ = kenv.set_prims(crate::primitive::Primitives::from_env_orig(&kenv));
 
-  kenv
+  Ok(kenv)
 }
 
 // ============================================================================
@@ -3398,7 +3184,7 @@ enum IngressWorkItem {
   Muts(Name),
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct IxonIngressLookups {
   names: FxHashMap<Address, Name>,
   name_to_addr: FxHashMap<Name, Address>,
@@ -3499,7 +3285,13 @@ pub fn ingress_const_into_kenv_with_lookups<M: KernelMode>(
   lookups: &IxonIngressLookups,
   name: &Name,
 ) -> Result<KId<M>, String> {
-  ingress_const_into_kenv_with_lookups_impl(kenv, ixon_env, lookups, name, true)
+  ingress_const_into_kenv_with_lookups_impl(
+    kenv,
+    ixon_env.into(),
+    lookups,
+    name,
+    true,
+  )
 }
 
 pub fn ingress_const_shallow_into_kenv_with_lookups<M: KernelMode>(
@@ -3509,7 +3301,11 @@ pub fn ingress_const_shallow_into_kenv_with_lookups<M: KernelMode>(
   name: &Name,
 ) -> Result<KId<M>, String> {
   ingress_const_into_kenv_with_lookups_impl(
-    kenv, ixon_env, lookups, name, false,
+    kenv,
+    ixon_env.into(),
+    lookups,
+    name,
+    false,
   )
 }
 
@@ -3519,18 +3315,36 @@ pub fn ingress_addr_shallow_into_kenv_with_lookups<M: KernelMode>(
   lookups: &IxonIngressLookups,
   addr: &Address,
 ) -> Result<bool, String> {
-  ingress_addr_set_into_kenv(kenv, ixon_env, lookups, addr, false)
+  ingress_addr_set_into_kenv(kenv, ixon_env.into(), lookups, addr, false)
+}
+
+pub(crate) fn ingress_addr_with_input<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  input: crate::input::Input<'_>,
+  lookups: &IxonIngressLookups,
+  addr: &Address,
+) -> Result<bool, String> {
+  ingress_addr_set_into_kenv(kenv, input, lookups, addr, false)
+}
+
+pub(crate) fn ingress_name_with_input<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  input: crate::input::Input<'_>,
+  lookups: &IxonIngressLookups,
+  name: &Name,
+) -> Result<KId<M>, String> {
+  ingress_const_into_kenv_with_lookups_impl(kenv, input, lookups, name, false)
 }
 
 fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
   kenv: &mut KEnv<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   lookups: &IxonIngressLookups,
   name: &Name,
   follow_refs: bool,
 ) -> Result<KId<M>, String> {
   let requested = ixon_env
-    .lookup_name(name)
+    .named(name)
     .ok_or_else(|| format!("{}: missing Named entry", name.pretty()))?;
   let requested_id =
     KId::new(requested.addr.clone(), M::meta_field(name.clone()));
@@ -3551,7 +3365,7 @@ fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
 
 fn ingress_addr_set_into_kenv<M: KernelMode>(
   kenv: &mut KEnv<M>,
-  ixon_env: &IxonEnv,
+  ixon_env: crate::input::Input<'_>,
   lookups: &IxonIngressLookups,
   seed_addr: &Address,
   follow_refs: bool,
@@ -3574,7 +3388,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
       continue;
     }
 
-    let Some(constant) = ixon_env.get_const(&addr) else {
+    let Some(constant) = ixon_env.constant(&addr)? else {
       // `Constant.refs` also contains blob addresses for string/nat payloads.
       continue;
     };
@@ -3590,7 +3404,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
 
     if follow_refs {
       for dep in &constant.refs {
-        if ixon_env.consts.contains_key(dep) {
+        if ixon_env.contains(dep) {
           worklist.push(IngressNeed::Addr(dep.clone()));
         }
       }
@@ -3632,7 +3446,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             continue;
           }
           let named = ixon_env
-            .lookup_name(const_name)
+            .named(const_name)
             .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
           let mut convert_stats = ConvertStats::new(convert_stats_enabled);
           let entries = ingress_standalone(
@@ -4173,7 +3987,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &named.addr,
           &constant,
           &named.meta(),
-          ixon_env,
+          ixon_env.into(),
           &names,
           &name_to_addr,
           &mut intern,
@@ -4223,7 +4037,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &entry_name,
           &named.addr,
           all,
-          ixon_env,
+          ixon_env.into(),
           &names,
           &name_to_addr,
           &mut intern,
@@ -4288,7 +4102,7 @@ fn ixon_ingress_inner<M: KernelMode>(
       cs.share_expansions
     );
     log::info!(
-      "[ixon_ingress]   convert nodes: sort {} var {} ref {} rec {} app {} lam {} all {} let {} prj {} str {} nat {} callsites {} args {}",
+      "[ixon_ingress]   convert nodes: sort {} var {} ref {} rec {} app {} lam {} all {} let {} prj {} str {} nat {}",
       cs.sort_nodes,
       cs.var_nodes,
       cs.ref_nodes,
@@ -4299,9 +4113,7 @@ fn ixon_ingress_inner<M: KernelMode>(
       cs.let_nodes,
       cs.prj_nodes,
       cs.str_nodes,
-      cs.nat_nodes,
-      cs.callsites,
-      cs.callsite_args
+      cs.nat_nodes
     );
     log::info!(
       "[ixon_ingress]   convert metadata/univ: mdata_nodes {} mdata_kv_maps {} univ_roots {} univ_cache_hits {} univ_cache_misses {} univ_hit {:.1}% univ_cache_peak {} univ_process {} univ_interns {}",
@@ -4418,10 +4230,10 @@ use crate::mode::Anon;
 /// Fetch a constant with an explicit binding to its map key, including sources
 /// assembled in memory rather than loaded with deferred address verification.
 fn anon_constant(
-  env: &IxonEnv,
+  env: crate::input::Input<'_>,
   addr: &Address,
 ) -> Result<Option<Arc<Constant>>, String> {
-  env.consts.get(addr).map(|entry| entry.get_at(addr)).transpose()
+  env.constant(addr)
 }
 
 /// A content-addressed file cannot encode a cycle between distinct blocks
@@ -4491,10 +4303,38 @@ fn verify_proj_addr_in_env(
   block_addr: &Address,
   member_idx: u64,
   ctor_idx: Option<u64>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
 ) -> Result<(), String> {
-  if let Some(entry) = anon_env.consts.get(proj_addr) {
-    entry.get_at(proj_addr)?;
+  if let Some(actual) = anon_env.constant(proj_addr)? {
+    let expected = match kind {
+      "DPrj" => {
+        ixon::constant::defn_proj_constant(member_idx, block_addr.clone())
+      },
+      "RPrj" => {
+        ixon::constant::recr_proj_constant(member_idx, block_addr.clone())
+      },
+      "IPrj" => {
+        ixon::constant::indc_proj_constant(member_idx, block_addr.clone())
+      },
+      "CPrj" => ixon::constant::ctor_proj_constant(
+        member_idx,
+        ctor_idx.ok_or("constructor projection has no constructor index")?,
+        block_addr.clone(),
+      ),
+      _ => return Err("unknown projection kind".into()),
+    };
+    if actual.as_ref() != &expected {
+      return Err(format!(
+        "carried {kind} {} differs from its owner/index",
+        proj_addr.hex()
+      ));
+    }
+    return Ok(());
+  }
+  #[cfg(not(target_arch = "riscv64"))]
+  if matches!(anon_env, crate::input::Input::Artifact(_)) {
+    // The authenticated owner defines these semantic members. Absence does
+    // not fabricate a raw record or authorize lookup of a missing reference.
     return Ok(());
   }
   match ctor_idx {
@@ -4553,21 +4393,19 @@ fn anon_ctor_addrs(
 
 /// Anon ingress for a single standalone (non-mutual) constant.
 ///
-/// For `Defn` and `Recr` we pass an explicit `mut_ctx_override = [self_id]`
-/// to support self-recursive standalones that use `Expr::Rec(0, univs)` to
-/// refer to themselves. (Singleton-unwrapped self-recursive defs are emitted
-/// by the compiler as standalones, with their self-reference encoded as
-/// `Rec(0)` — same as a one-member mutual block would have used.) Without
-/// the override, `ingress_defn`/`ingress_recursor` falls back to
-/// `build_mut_ctx` on the empty meta, yielding an empty `mut_ctx` and
-/// "invalid Rec index 0" errors.
+/// For `Defn` and `Recr` the mutual context is the singleton `[self_id]`,
+/// so self-recursive standalones can use `Expr::Rec(0, univs)` to refer to
+/// themselves. (Singleton-unwrapped self-recursive defs are emitted by the
+/// compiler as standalones, with their self-reference encoded as `Rec(0)` —
+/// same as a one-member mutual block would have used.) Named ingress uses
+/// the same singleton.
 ///
 /// `Axio` and `Quot` cannot have `Rec`-references so we route them through
 /// `ingress_standalone` unchanged. Projections / `Muts` belong to a block
 /// and are not valid as standalone entries.
 fn ingress_anon_standalone(
   kenv: &mut KEnv<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   addr: &Address,
   constant: &Constant,
 ) -> Result<KId<Anon>, String> {
@@ -4592,7 +4430,7 @@ fn ingress_anon_standalone(
       self_id.clone(),
       &mut kenv.intern,
       &mut convert_stats,
-      Some(vec![self_id.clone()]),
+      vec![self_id.clone()],
       Some(&mut local_dependencies),
     )?,
     IxonCI::Recr(rec) => ingress_recursor::<Anon>(
@@ -4608,7 +4446,7 @@ fn ingress_anon_standalone(
       self_id.clone(),
       &mut kenv.intern,
       &mut convert_stats,
-      Some(vec![self_id.clone()]),
+      vec![self_id.clone()],
     )?,
     _ => ingress_standalone::<Anon>(
       &Name::anon(),
@@ -4637,7 +4475,7 @@ fn ingress_anon_standalone(
 fn ingress_anon_inductive(
   ind: &ixon::constant::Inductive,
   self_id: &KId<Anon>,
-  anon_env: &IxonEnv,
+  anon_env: crate::input::Input<'_>,
   block_constant: &Constant,
   block_id: KId<Anon>,
   member_idx: u64,
@@ -4760,12 +4598,20 @@ fn ingress_anon_inductive(
 /// `anon_env.consts` — missing → error (corrupted .ixe).
 ///
 /// Returns the KIds in member order. The first KId is the block's
-/// "primary" — `check_const` on it relies on the kernel's block
-/// coordination (`check_const_member` etc.) to check all members in one
-/// pass.
+/// "primary" — `check_ixon_const` checks the complete serialized unit,
+/// including both phases of an inductive/recursor family.
 pub fn ingress_anon_block(
   kenv: &mut KEnv<Anon>,
   anon_env: &IxonEnv,
+  block_constant: &Constant,
+  block_addr: &Address,
+) -> Result<Vec<KId<Anon>>, String> {
+  ingress_anon_block_input(kenv, anon_env.into(), block_constant, block_addr)
+}
+
+pub(crate) fn ingress_anon_block_input(
+  kenv: &mut KEnv<Anon>,
+  anon_env: crate::input::Input<'_>,
   block_constant: &Constant,
   block_addr: &Address,
 ) -> Result<Vec<KId<Anon>>, String> {
@@ -4776,7 +4622,18 @@ pub fn ingress_anon_block(
       block_constant.info.variant()
     ));
   };
+  validate_serialized_muts(members)?;
 
+  convert_anon_muts(kenv, anon_env, block_constant, block_addr, members)
+}
+
+fn convert_anon_muts(
+  kenv: &mut KEnv<Anon>,
+  anon_env: crate::input::Input<'_>,
+  block_constant: &Constant,
+  block_addr: &Address,
+  members: &[IxonMutConst],
+) -> Result<Vec<KId<Anon>>, String> {
   let block_id = KId::<Anon>::new(block_addr.clone(), ());
   let mut convert_stats = ConvertStats::new(false);
   let empty_meta = ConstantMeta::default();
@@ -4828,7 +4685,7 @@ pub fn ingress_anon_block(
           block_id.clone(),
           &mut kenv.intern,
           &mut convert_stats,
-          Some(mut_ctx.clone()),
+          mut_ctx.clone(),
           Some(&mut local_dependencies),
         )?;
         all_entries.extend(entries);
@@ -4854,7 +4711,7 @@ pub fn ingress_anon_block(
           block_id.clone(),
           &mut kenv.intern,
           &mut convert_stats,
-          Some(mut_ctx.clone()),
+          mut_ctx.clone(),
         )?;
         all_entries.extend(entries);
       },
@@ -4912,6 +4769,14 @@ pub fn ingress_anon_addr_shallow(
   anon_env: &IxonEnv,
   addr: &Address,
 ) -> Result<bool, String> {
+  ingress_anon_addr_shallow_input(kenv, anon_env.into(), addr)
+}
+
+pub(crate) fn ingress_anon_addr_shallow_input(
+  kenv: &mut KEnv<Anon>,
+  anon_env: crate::input::Input<'_>,
+  addr: &Address,
+) -> Result<bool, String> {
   let Some(constant) = anon_constant(anon_env, addr)? else {
     return Ok(false);
   };
@@ -4950,7 +4815,7 @@ pub fn ingress_anon_addr_shallow(
           addr.hex()
         )
       })?;
-    ingress_anon_block(kenv, anon_env, &block_const, &block_addr)?;
+    ingress_anon_block_input(kenv, anon_env, &block_const, &block_addr)?;
     return Ok(true);
   }
 
@@ -4965,7 +4830,6 @@ mod tests {
   use crate::expr::ExprData;
   use crate::level::UnivData;
   use ix_common::env::{self, BinderInfo};
-  use ixon::metadata::CallSiteEntry;
 
   fn mk_name(s: &str) -> Name {
     let mut n = Name::anon();
@@ -5039,13 +4903,13 @@ mod tests {
 
   #[test]
   fn lean_level_zero_to_kuniv() {
-    let u = lean_level_to_kuniv(&Level::zero(), &[]);
+    let u = lean_level_to_kuniv(&Level::zero(), &[]).unwrap();
     assert!(matches!(u.data(), UnivData::Zero(_)));
   }
 
   #[test]
   fn lean_level_succ_to_kuniv() {
-    let u = lean_level_to_kuniv(&Level::succ(Level::zero()), &[]);
+    let u = lean_level_to_kuniv(&Level::succ(Level::zero()), &[]).unwrap();
     match u.data() {
       UnivData::Succ(inner, _) => {
         assert!(matches!(inner.data(), UnivData::Zero(_)))
@@ -5059,7 +4923,7 @@ mod tests {
     let u_name = mk_name("u");
     let v_name = mk_name("v");
     let params = vec![u_name.clone(), v_name.clone()];
-    let u = lean_level_to_kuniv(&Level::param(v_name), &params);
+    let u = lean_level_to_kuniv(&Level::param(v_name), &params).unwrap();
     match u.data() {
       UnivData::Param(i, _, _) => assert_eq!(*i, 1),
       other => panic!("expected Param, got {other:?}"),
@@ -5072,20 +4936,30 @@ mod tests {
     let v_name = mk_name("v");
     let params = vec![u_name.clone(), v_name.clone()];
     let ll = Level::max(Level::param(u_name), Level::param(v_name));
-    let u = lean_level_to_kuniv(&ll, &params);
+    let u = lean_level_to_kuniv(&ll, &params).unwrap();
     assert!(matches!(u.data(), UnivData::Max(..)));
   }
 
   #[test]
-  #[should_panic(expected = "unknown level param")]
-  fn lean_level_param_unknown_panics() {
-    let _ = lean_level_to_kuniv(&Level::param(mk_name("zzz")), &[mk_name("u")]);
+  fn lean_level_param_unknown_is_an_error() {
+    let err =
+      lean_level_to_kuniv(&Level::param(mk_name("zzz")), &[mk_name("u")])
+        .unwrap_err();
+    assert!(err.contains("unknown level param `zzz`"), "{err}");
+    // Valid neighbour: the declared parameter converts.
+    assert!(
+      lean_level_to_kuniv(&Level::param(mk_name("u")), &[mk_name("u")]).is_ok()
+    );
+    // Nested under succ/max the refusal still propagates.
+    let nested =
+      Level::max(Level::zero(), Level::succ(Level::param(mk_name("zzz"))));
+    assert!(lean_level_to_kuniv(&nested, &[mk_name("u")]).is_err());
   }
 
   #[test]
-  #[should_panic(expected = "unexpected level metavariable")]
-  fn lean_level_mvar_panics() {
-    let _ = lean_level_to_kuniv(&Level::mvar(mk_name("m")), &[]);
+  fn lean_level_mvar_is_an_error() {
+    let err = lean_level_to_kuniv(&Level::mvar(mk_name("m")), &[]).unwrap_err();
+    assert!(err.contains("unexpected level metavariable `m`"), "{err}");
   }
 
   // ---- lean_name_to_addr ----
@@ -5278,7 +5152,7 @@ mod tests {
         &mk_name("Cycle"),
         &block_addr,
         &all,
-        &env,
+        (&env).into(),
         &names,
         &name_to_addr,
         &mut intern,
@@ -5297,7 +5171,7 @@ mod tests {
 
   fn do_ingress(e: &LeanExpr, pn: &[Name]) -> KExpr<Meta> {
     let mut intern = InternTable::<Meta>::new();
-    lean_expr_to_zexpr(e, pn, &mut intern, None, None)
+    lean_expr_to_zexpr(e, pn, &mut intern, None, None).unwrap()
   }
 
   #[test]
@@ -5308,6 +5182,66 @@ mod tests {
       ExprData::Var(i, _, _) => assert_eq!(*i, 5),
       other => panic!("expected Var, got {other:?}"),
     }
+  }
+
+  #[test]
+  fn ingress_bvar_display_names_with_nonempty_context() {
+    let prefix = vec![mk_name("outer"), mk_name("inner")];
+    let mut binders = prefix.clone();
+    for (idx, expected) in [
+      (0, mk_name("inner")),
+      (1, mk_name("outer")),
+      (2, Name::anon()),
+      (u64::MAX, Name::anon()),
+    ] {
+      let k = lean_expr_to_zexpr_cached(
+        &LeanExpr::bvar(Nat::from(idx)),
+        &[],
+        &mut binders,
+        &mut InternTable::new(),
+        None,
+        None,
+        None,
+        None,
+      )
+      .unwrap();
+      assert!(
+        matches!(k.data(), ExprData::Var(i, n, _) if *i == idx && n == &expected)
+      );
+      assert_eq!(binders, prefix);
+    }
+  }
+
+  #[test]
+  fn ixon_bvar_largest_usize_has_anonymous_name() {
+    let ctx = Ctx::<Meta> {
+      sharing: &[],
+      refs: &[],
+      univs: &[],
+      mut_ctx: vec![],
+      local_refs: None,
+      arena: &ExprMeta::default(),
+      names: &FxHashMap::default(),
+      lvls: vec![],
+      univ_patches: FxHashMap::default(),
+      meta_univs: &[],
+      synth_counter: Cell::new(0),
+    };
+    let idx = usize::MAX as u64;
+    let k = ingress_expr(
+      &Arc::new(IxonExpr::Var(idx)),
+      0,
+      &ctx,
+      &mut InternTable::new(),
+      (&IxonEnv::new()).into(),
+      &mut ExprCache::default(),
+      &mut UnivCache::default(),
+      &mut ConvertStats::default(),
+    )
+    .unwrap();
+    assert!(
+      matches!(k.data(), ExprData::Var(i, n, _) if *i == idx && n == &Name::anon())
+    );
   }
 
   #[test]
@@ -5495,23 +5429,366 @@ mod tests {
     for _ in 0..300 {
       l = Level::max(l, Level::zero());
     }
-    let _u = lean_level_to_kuniv(&l, &[]);
+    let _u = lean_level_to_kuniv(&l, &[]).unwrap();
   }
 
-  // ---- Panic-on-invalid-input regression guards ----
+  // ---- Invalid-input refusals (errors, not panics) ----
+
+  fn try_ingress(e: &LeanExpr, pn: &[Name]) -> Result<KExpr<Meta>, String> {
+    let mut intern = InternTable::<Meta>::new();
+    lean_expr_to_zexpr(e, pn, &mut intern, None, None)
+  }
 
   #[test]
-  #[should_panic(expected = "FVar")]
-  fn ingress_fvar_panics() {
+  fn ingress_fvar_is_an_error() {
     let e = LeanExpr::fvar(mk_name("x"));
-    let _ = do_ingress(&e, &[]);
+    let err = try_ingress(&e, &[]).unwrap_err();
+    assert!(err.contains("unexpected FVar(x)"), "{err}");
   }
 
   #[test]
-  #[should_panic(expected = "MVar")]
-  fn ingress_mvar_panics() {
+  fn ingress_mvar_is_an_error() {
     let e = LeanExpr::mvar(mk_name("m"));
-    let _ = do_ingress(&e, &[]);
+    let err = try_ingress(&e, &[]).unwrap_err();
+    assert!(err.contains("unexpected MVar(m)"), "{err}");
+  }
+
+  #[test]
+  fn ingress_unknown_level_param_under_app_is_an_error() {
+    // The refusal propagates from a level nested inside an application;
+    // the valid neighbour with the parameter declared ingresses.
+    let u = mk_name("u");
+    let e = LeanExpr::app(
+      LeanExpr::cnst(mk_name("f"), vec![Level::param(u.clone())]),
+      LeanExpr::sort(Level::succ(Level::param(u.clone()))),
+    );
+    let err = try_ingress(&e, &[mk_name("v")]).unwrap_err();
+    assert!(err.contains("unknown level param `u`"), "{err}");
+    assert!(try_ingress(&e, std::slice::from_ref(&u)).is_ok());
+  }
+
+  #[test]
+  fn ingress_level_mvar_under_sort_is_an_error() {
+    let e = LeanExpr::sort(Level::succ(Level::mvar(mk_name("m"))));
+    let err = try_ingress(&e, &[]).unwrap_err();
+    assert!(err.contains("unexpected level metavariable `m`"), "{err}");
+  }
+
+  /// 2^64, the least `Nat` that does not fit a `u64`.
+  fn past_u64() -> Nat {
+    Nat::from_le_bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 1])
+  }
+
+  #[test]
+  fn ingress_bvar_index_past_u64_is_an_error() {
+    // It used to become `bvar 0`.
+    let err = try_ingress(&LeanExpr::bvar(past_u64()), &[]).unwrap_err();
+    assert!(
+      err.contains("bound variable index 18446744073709551616 exceeds u64"),
+      "{err}"
+    );
+    // Under a binder the refusal still propagates.
+    let lam = LeanExpr::lam(
+      mk_name("x"),
+      LeanExpr::sort(Level::zero()),
+      LeanExpr::bvar(past_u64()),
+      BinderInfo::Default,
+    );
+    assert!(try_ingress(&lam, &[]).unwrap_err().contains("exceeds u64"));
+    // Valid neighbour: the largest index that fits is kept as it is.
+    let k = try_ingress(&LeanExpr::bvar(Nat::from(u64::MAX)), &[]).unwrap();
+    assert!(matches!(k.data(), ExprData::Var(i, ..) if *i == u64::MAX));
+  }
+
+  #[test]
+  fn ingress_proj_index_past_u64_is_an_error() {
+    // It used to become field 0.
+    let s = LeanExpr::sort(Level::zero());
+    let e = LeanExpr::proj(mk_name("Prod"), past_u64(), s.clone());
+    let err = try_ingress(&e, &[]).unwrap_err();
+    assert!(
+      err.contains("projection index 18446744073709551616 of Prod exceeds u64"),
+      "{err}"
+    );
+    // Valid neighbour: the largest index that fits is kept as it is.
+    let ok = LeanExpr::proj(mk_name("Prod"), Nat::from(u64::MAX), s);
+    let k = try_ingress(&ok, &[]).unwrap();
+    assert!(matches!(k.data(), ExprData::Prj(_, i, ..) if *i == u64::MAX));
+  }
+
+  // ---- lean_ingress: refusals name the constant ----
+
+  /// `T : Type`, `T.mk : T` and `T.rec` with one rule, each Nat field as
+  /// `edit` leaves it (all fit by default). Ingress does not type-check, so
+  /// the expressions only need to be well-formed.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn unit_like_env(
+    edit: impl FnOnce(
+      &mut env::InductiveVal,
+      &mut env::ConstructorVal,
+      &mut env::RecursorVal,
+    ),
+  ) -> LeanEnv {
+    let (t, mk, rec) = (mk_name("T"), mk_name("T.mk"), mk_name("T.rec"));
+    let cv = |name: &Name, typ: LeanExpr| env::ConstantVal {
+      name: name.clone(),
+      level_params: vec![],
+      typ,
+    };
+    let type0 = LeanExpr::sort(Level::succ(Level::zero()));
+    let mut ind = env::InductiveVal {
+      cnst: cv(&t, type0.clone()),
+      num_params: n_lit(0),
+      num_indices: n_lit(0),
+      all: vec![t.clone()],
+      ctors: vec![mk.clone()],
+      num_nested: n_lit(0),
+      is_rec: false,
+      is_unsafe: false,
+      is_reflexive: false,
+    };
+    let mut ctor = env::ConstructorVal {
+      cnst: cv(&mk, LeanExpr::cnst(t.clone(), vec![])),
+      induct: t.clone(),
+      cidx: n_lit(0),
+      num_params: n_lit(0),
+      num_fields: n_lit(0),
+      is_unsafe: false,
+    };
+    let mut recr = env::RecursorVal {
+      cnst: cv(&rec, type0.clone()),
+      all: vec![t.clone()],
+      num_params: n_lit(0),
+      num_indices: n_lit(0),
+      num_motives: n_lit(1),
+      num_minors: n_lit(1),
+      rules: vec![env::RecursorRule {
+        ctor: mk.clone(),
+        n_fields: n_lit(0),
+        rhs: LeanExpr::lam(
+          mk_name("motive"),
+          type0,
+          LeanExpr::bvar(n_lit(0)),
+          BinderInfo::Default,
+        ),
+      }],
+      k: false,
+      is_unsafe: false,
+    };
+    edit(&mut ind, &mut ctor, &mut recr);
+    let mut lean_env = LeanEnv::default();
+    lean_env.insert(t, LeanCI::InductInfo(ind));
+    lean_env.insert(mk, LeanCI::CtorInfo(ctor));
+    lean_env.insert(rec, LeanCI::RecInfo(recr));
+    lean_env
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  fn assert_lean_ingress_refuses(lean_env: &LeanEnv, text: &str) {
+    match lean_ingress(lean_env) {
+      Err(err) => assert!(err.contains(text), "{err:?} lacks {text:?}"),
+      Ok(_) => panic!("expected lean_ingress to refuse with {text:?}"),
+    }
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn direct_lean_family_retains_member_checking() {
+    let source = unit_like_env(|_, _, rec| {
+      let u = mk_name("u");
+      let typ = LeanExpr::cnst(mk_name("T"), vec![]);
+      let ctor = LeanExpr::cnst(mk_name("T.mk"), vec![]);
+      let var = |i| LeanExpr::bvar(n_lit(i));
+      let motive = LeanExpr::all(
+        mk_name("x"),
+        typ.clone(),
+        LeanExpr::sort(Level::param(u.clone())),
+        BinderInfo::Default,
+      );
+      let minor = LeanExpr::app(var(0), ctor);
+      rec.cnst.level_params = vec![u];
+      rec.cnst.typ = LeanExpr::all(
+        mk_name("motive"),
+        motive.clone(),
+        LeanExpr::all(
+          mk_name("minor"),
+          minor.clone(),
+          LeanExpr::all(
+            mk_name("major"),
+            typ,
+            LeanExpr::app(var(2), var(0)),
+            BinderInfo::Default,
+          ),
+          BinderInfo::Default,
+        ),
+        BinderInfo::Default,
+      );
+      rec.rules[0].rhs = LeanExpr::lam(
+        mk_name("motive"),
+        motive,
+        LeanExpr::lam(mk_name("minor"), minor, var(0), BinderInfo::Default),
+        BinderInfo::Default,
+      );
+    });
+    let mut kernel = lean_ingress(&source).unwrap();
+    let ids: Vec<_> = ["T", "T.mk", "T.rec"]
+      .into_iter()
+      .map(|name| {
+        kernel
+          .consts
+          .keys()
+          .find(|id| id.name == mk_name(name))
+          .unwrap()
+          .clone()
+      })
+      .collect();
+    let mut checker = crate::tc::TypeChecker::new(&mut kernel);
+    assert!(
+      checker.coordinated_check_block_for_const(&ids[0]).unwrap().is_none()
+    );
+    for id in ids {
+      checker.check_const(&id).unwrap();
+    }
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn lean_ingress_names_the_constant_of_an_expression_refusal() {
+    let mut lean_env = unit_like_env(|_, _, _| {});
+    let ax = mk_name("Ax");
+    lean_env.insert(
+      ax.clone(),
+      LeanCI::AxiomInfo(env::AxiomVal {
+        cnst: env::ConstantVal {
+          name: ax,
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::param(mk_name("u"))),
+        },
+        is_unsafe: false,
+      }),
+    );
+    assert_lean_ingress_refuses(&lean_env, "Ax: unknown level param `u`");
+    let fvar_rhs = unit_like_env(|_, _, r| {
+      r.rules[0].rhs = LeanExpr::fvar(mk_name("x"));
+    });
+    assert_lean_ingress_refuses(&fvar_rhs, "T.rec: unexpected FVar(x)");
+    let mvar_ty = unit_like_env(|_, c, _| {
+      c.cnst.typ = LeanExpr::mvar(mk_name("m"));
+    });
+    assert_lean_ingress_refuses(&mvar_ty, "T.mk: unexpected MVar(m)");
+    // Valid neighbour.
+    assert!(lean_ingress(&unit_like_env(|_, _, _| {})).is_ok());
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn lean_ingress_refuses_inductive_counts_past_u64() {
+    let params = unit_like_env(|i, _, _| i.num_params = past_u64());
+    assert_lean_ingress_refuses(
+      &params,
+      "T: num_params 18446744073709551616 exceeds u64",
+    );
+    let indices = unit_like_env(|i, _, _| i.num_indices = past_u64());
+    assert_lean_ingress_refuses(
+      &indices,
+      "T: num_indices 18446744073709551616 exceeds u64",
+    );
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn lean_ingress_refuses_constructor_fields_past_u64() {
+    let cidx = unit_like_env(|_, c, _| c.cidx = past_u64());
+    assert_lean_ingress_refuses(
+      &cidx,
+      "T.mk: cidx 18446744073709551616 exceeds u64",
+    );
+    let params = unit_like_env(|_, c, _| c.num_params = past_u64());
+    assert_lean_ingress_refuses(
+      &params,
+      "T.mk: num_params 18446744073709551616 exceeds u64",
+    );
+    let fields = unit_like_env(|_, c, _| c.num_fields = past_u64());
+    assert_lean_ingress_refuses(
+      &fields,
+      "T.mk: num_fields 18446744073709551616 exceeds u64",
+    );
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn lean_ingress_refuses_recursor_counts_past_u64() {
+    type Edit = fn(&mut env::RecursorVal);
+    let cases: [(&str, Edit); 4] = [
+      ("num_params", |r| r.num_params = past_u64()),
+      ("num_indices", |r| r.num_indices = past_u64()),
+      ("num_motives", |r| r.num_motives = past_u64()),
+      ("num_minors", |r| r.num_minors = past_u64()),
+    ];
+    for (field, edit) in cases {
+      assert_lean_ingress_refuses(
+        &unit_like_env(|_, _, r| edit(r)),
+        &format!("T.rec: {field} 18446744073709551616 exceeds u64"),
+      );
+    }
+    let rule = unit_like_env(|_, _, r| r.rules[0].n_fields = past_u64());
+    assert_lean_ingress_refuses(
+      &rule,
+      "T.rec: n_fields 18446744073709551616 of the rule for T.mk exceeds u64",
+    );
+  }
+
+  /// Valid neighbour of the count refusals: every field at `u64::MAX` is
+  /// kept as it is (not 0), and the default fields convert unchanged.
+  #[cfg(not(target_arch = "riscv64"))]
+  #[test]
+  fn lean_ingress_keeps_count_fields_that_fit() {
+    let id_of = |kenv: &KEnv<Meta>, n: &str| {
+      kenv.consts.keys().find(|id| id.name == mk_name(n)).unwrap().clone()
+    };
+    let kenv = lean_ingress(&unit_like_env(|_, _, _| {})).unwrap();
+    match &kenv.consts[&id_of(&kenv, "T.rec")] {
+      KConst::Recr { params, indices, motives, minors, rules, .. } => {
+        assert_eq!((*params, *indices, *motives, *minors), (0, 0, 1, 1));
+        assert_eq!(rules[0].fields, 0);
+      },
+      other => panic!("expected a recursor, got {other:?}"),
+    }
+    let max = Nat::from(u64::MAX);
+    let kenv = lean_ingress(&unit_like_env(|i, c, r| {
+      i.num_params = max.clone();
+      i.num_indices = max.clone();
+      c.cidx = max.clone();
+      c.num_params = max.clone();
+      c.num_fields = max.clone();
+      r.num_params = max.clone();
+      r.num_indices = max.clone();
+      r.num_motives = max.clone();
+      r.num_minors = max.clone();
+      r.rules[0].n_fields = max.clone();
+    }))
+    .unwrap();
+    match &kenv.consts[&id_of(&kenv, "T")] {
+      KConst::Indc { params, indices, .. } => {
+        assert_eq!((*params, *indices), (u64::MAX, u64::MAX));
+      },
+      other => panic!("expected an inductive, got {other:?}"),
+    }
+    match &kenv.consts[&id_of(&kenv, "T.mk")] {
+      KConst::Ctor { cidx, params, fields, .. } => {
+        assert_eq!((*cidx, *params, *fields), (u64::MAX, u64::MAX, u64::MAX));
+      },
+      other => panic!("expected a constructor, got {other:?}"),
+    }
+    match &kenv.consts[&id_of(&kenv, "T.rec")] {
+      KConst::Recr { params, indices, motives, minors, rules, .. } => {
+        assert_eq!(
+          (*params, *indices, *motives, *minors, rules[0].fields),
+          (u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX)
+        );
+      },
+      other => panic!("expected a recursor, got {other:?}"),
+    }
   }
 
   // ---- Caching ----
@@ -5523,91 +5800,12 @@ mod tests {
       LeanExpr::sort(Level::zero()),
       LeanExpr::sort(Level::zero()),
     );
-    let k1 = lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None);
-    let k2 = lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None);
+    let k1 =
+      lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None).unwrap();
+    let k2 =
+      lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None).unwrap();
     // Cache hit → same interned result.
     assert!(k1.ptr_eq(&k2));
-  }
-
-  #[test]
-  fn callsite_ingress_uses_canon_meta_for_collapsed_canonical_arg() {
-    let head_name = mk_name("Head.rec");
-    let arg_name = mk_name("GoodArg");
-    let bad_name = mk_name("BadArg");
-    let head_name_addr = lean_name_to_addr(&head_name);
-    let arg_name_addr = lean_name_to_addr(&arg_name);
-    let bad_name_addr = lean_name_to_addr(&bad_name);
-    let head_ref_addr = Address::hash(b"head-content");
-    let arg_ref_addr = Address::hash(b"arg-content");
-
-    let mut names = FxHashMap::default();
-    names.insert(head_name_addr.clone(), head_name.clone());
-    names.insert(arg_name_addr.clone(), arg_name.clone());
-    names.insert(bad_name_addr.clone(), bad_name);
-
-    let mut arena = ExprMeta::default();
-    let bad_entry_meta = arena.alloc(ExprMetaData::Ref { name: bad_name_addr });
-    let arg_canon_meta = arena.alloc(ExprMetaData::Ref { name: arg_name_addr });
-    let root = arena.alloc(ExprMetaData::CallSite {
-      name: head_name_addr,
-      entries: vec![CallSiteEntry::Collapsed {
-        sharing_idx: 0,
-        meta: bad_entry_meta,
-      }],
-      canon_meta: vec![arg_canon_meta],
-      orig_head: None,
-    });
-
-    let ixon = IxonExpr::app(
-      IxonExpr::reference(0, vec![]),
-      IxonExpr::reference(1, vec![]),
-    );
-    let sharing: Vec<Arc<IxonExpr>> = vec![];
-    let refs = vec![head_ref_addr.clone(), arg_ref_addr.clone()];
-    let univs: Vec<Arc<IxonUniv>> = vec![];
-    let mut intern = InternTable::<Meta>::new();
-    let ctx = Ctx {
-      sharing: &sharing,
-      refs: &refs,
-      univs: &univs,
-      mut_ctx: vec![],
-      arena: &arena,
-      names: &names,
-      lvls: vec![],
-      univ_patches: FxHashMap::default(),
-      meta_univs: &[],
-      local_refs: None,
-      synth_counter: Cell::new(0),
-    };
-    let ixon_env = IxonEnv::new();
-    let mut cache = ExprCache::<Meta>::default();
-    let mut univ_cache = UnivCache::<Meta>::default();
-
-    let mut stats = ConvertStats::default();
-    let k = ingress_expr(
-      &ixon,
-      root,
-      &ctx,
-      &mut intern,
-      &ixon_env,
-      &mut cache,
-      &mut univ_cache,
-      &mut stats,
-    )
-    .unwrap();
-    let ExprData::App(f, a, _) = k.data() else {
-      panic!("expected App, got {:?}", k.data());
-    };
-    let ExprData::Const(head_id, _, _) = f.data() else {
-      panic!("expected CallSite head Const, got {:?}", f.data());
-    };
-    let ExprData::Const(arg_id, _, _) = a.data() else {
-      panic!("expected canonical arg Const, got {:?}", a.data());
-    };
-    assert_eq!(head_id.addr, head_ref_addr);
-    assert_eq!(head_id.name, head_name);
-    assert_eq!(arg_id.addr, arg_ref_addr);
-    assert_eq!(arg_id.name, arg_name);
   }
 
   /// Canonicity §10.6 stage 2: a `univ_patches` entry keyed by the
@@ -5655,7 +5853,7 @@ mod tests {
       root,
       &ctx,
       &mut intern,
-      &ixon_env,
+      (&ixon_env).into(),
       &mut cache,
       &mut univ_cache,
       &mut stats,
@@ -5715,7 +5913,7 @@ mod tests {
         root,
         &ctx,
         &mut intern,
-        &ixon_env,
+        (&ixon_env).into(),
         &mut cache,
         &mut univ_cache,
         &mut stats,
@@ -5786,7 +5984,7 @@ mod tests {
       root,
       &ctx,
       &mut intern,
-      &ixon_env,
+      (&ixon_env).into(),
       &mut cache,
       &mut univ_cache,
       &mut stats,
@@ -5816,14 +6014,16 @@ mod tests {
       &mut env,
       None,
       None,
-    );
+    )
+    .unwrap();
     let k2 = lean_expr_to_zexpr_with_kenv(
       &e,
       &[v_name, u_name.clone()],
       &mut env,
       None,
       None,
-    );
+    )
+    .unwrap();
     // In the first, Param(u) has index 0; in the second, Param(u) has index 1.
     let i1 = match k1.data() {
       ExprData::Sort(u, _) => match u.data() {
@@ -5841,6 +6041,187 @@ mod tests {
     };
     assert_eq!(i1, 0);
     assert_eq!(i2, 1);
+  }
+
+  fn cached_for_frames(
+    e: &LeanExpr,
+    binders: &mut Vec<Name>,
+    kenv: &mut KEnv<Meta>,
+  ) -> Result<KExpr<Meta>, String> {
+    lean_expr_to_zexpr_cached(
+      e,
+      &[],
+      binders,
+      &mut kenv.intern,
+      None,
+      None,
+      Some(&mut kenv.ingress_cache),
+      Some(&param_names_hash(&[])),
+    )
+  }
+
+  fn frame_binder(kind: u8, dom: LeanExpr, body: LeanExpr) -> LeanExpr {
+    let name = mk_name("inner");
+    let value = LeanExpr::lit(env::Literal::NatVal(n_lit(42)));
+    match kind {
+      0 => LeanExpr::lam(name, dom, body, BinderInfo::Implicit),
+      1 => LeanExpr::all(name, dom, body, BinderInfo::Implicit),
+      _ => LeanExpr::letE(name, dom, value, body, true),
+    }
+  }
+
+  #[test]
+  fn lean_frames_restore_context_and_keep_successful_children() {
+    let good = LeanExpr::sort(Level::zero());
+    let bad = frame_binder(0, good.clone(), LeanExpr::fvar(mk_name("bad")));
+    let key = |e: &LeanExpr| (*e.get_hash(), param_names_hash(&[]));
+    for kind in 0..3 {
+      for failure in 0..3 {
+        let mut kenv = KEnv::<Meta>::new();
+        let prefix = vec![mk_name("outer")];
+        let mut binders = prefix.clone();
+        let dom = if failure == 0 { bad.clone() } else { good.clone() };
+        let body =
+          if failure == 1 { bad.clone() } else { LeanExpr::bvar(n_lit(0)) };
+        let e = frame_binder(kind, dom, body);
+        let result = cached_for_frames(&e, &mut binders, &mut kenv);
+        assert_eq!(binders, prefix);
+        if failure < 2 {
+          assert_eq!(
+            result.unwrap_err(),
+            "unexpected FVar(bad) in elaborated kernel term during ingress"
+          );
+          assert!(kenv.ingress_cache.contains_key(&key(&good)));
+          assert!(!kenv.ingress_cache.contains_key(&key(&e)));
+          assert!(!kenv.ingress_cache.contains_key(&key(&bad)));
+        } else {
+          let k = result.unwrap();
+          let body = match k.data() {
+            ExprData::Lam(n, bi, _, _, b, _)
+            | ExprData::All(n, bi, _, _, _, b, _) => {
+              assert_eq!(n, &mk_name("inner"));
+              assert_eq!(bi, &BinderInfo::Implicit);
+              b
+            },
+            ExprData::Let(n, _, _, b, nd, _) => {
+              assert_eq!(n, &mk_name("inner"));
+              assert!(nd.non_dep);
+              b
+            },
+            _ => panic!("expected binder"),
+          };
+          assert!(
+            matches!(body.data(), ExprData::Var(0, n, _) if n == &mk_name("inner"))
+          );
+        }
+      }
+    }
+    let mut binders = vec![mk_name("outer"), mk_name("middle")];
+    let prefix = binders.clone();
+    let e = LeanExpr::letE(
+      mk_name("inner"),
+      LeanExpr::bvar(n_lit(1)),
+      LeanExpr::bvar(n_lit(0)),
+      LeanExpr::bvar(n_lit(2)),
+      true,
+    );
+    let k = cached_for_frames(&e, &mut binders, &mut KEnv::new()).unwrap();
+    assert_eq!(binders, prefix);
+    let ExprData::Let(_, ty, val, body, _, _) = k.data() else { panic!() };
+    for (e, expected) in [(ty, "outer"), (val, "middle"), (body, "outer")] {
+      assert!(
+        matches!(e.data(), ExprData::Var(_, n, _) if n == &mk_name(expected))
+      );
+    }
+    assert!(
+      ty.addr() < val.addr()
+        && val.addr() < body.addr()
+        && body.addr() < k.addr()
+    );
+  }
+
+  #[test]
+  fn lean_frames_metadata_cache_and_allocation_order() {
+    let layer = |s| vec![(mk_name(s), env::DataValue::OfBool(true))];
+    let child = LeanExpr::mdata(
+      layer("child"),
+      LeanExpr::lit(env::Literal::NatVal(n_lit(42))),
+    );
+    let core =
+      LeanExpr::app(child, LeanExpr::lit(env::Literal::StrVal("tail".into())));
+    let inner = LeanExpr::mdata(layer("inner"), core.clone());
+    let e = LeanExpr::mdata(layer("outer"), inner.clone());
+    let mut kenv = KEnv::new();
+    let mut binders = vec![];
+    let k = cached_for_frames(&e, &mut binders, &mut kenv).unwrap();
+    assert_eq!(k.mdata(), &vec![layer("outer"), layer("inner")]);
+    let ExprData::App(f, a, _) = k.data() else { panic!() };
+    assert_eq!(f.mdata(), &vec![layer("child")]);
+    assert!(matches!(f.data(), ExprData::Nat(n, _, _) if n == &n_lit(42)));
+    assert!(matches!(a.data(), ExprData::Str(s, _, _) if s == "tail"));
+    assert!(f.addr() < a.addr() && a.addr() < k.addr());
+    let key = |e: &LeanExpr| (*e.get_hash(), param_names_hash(&[]));
+    assert_eq!(kenv.ingress_cache.len(), 3);
+    assert!(!kenv.ingress_cache.contains_key(&key(&core)));
+    assert!(!kenv.ingress_cache.contains_key(&key(&inner)));
+    assert!(k.ptr_eq(&cached_for_frames(&e, &mut binders, &mut kenv).unwrap()));
+    assert_eq!(kenv.ingress_cache.len(), 3);
+    let var = LeanExpr::bvar(n_lit(0));
+    binders.push(mk_name("first"));
+    let first = cached_for_frames(&var, &mut binders, &mut kenv).unwrap();
+    binders[0] = mk_name("second");
+    let second = cached_for_frames(&var, &mut binders, &mut kenv).unwrap();
+    assert!(first.ptr_eq(&second));
+    assert!(
+      matches!(second.data(), ExprData::Var(0, n, _) if n == &mk_name("first"))
+    );
+    assert_eq!(binders, vec![mk_name("second")]);
+  }
+
+  #[test]
+  fn lean_frames_error_precedence() {
+    let first = LeanExpr::fvar(mk_name("first"));
+    let second = LeanExpr::fvar(mk_name("second"));
+    let let_e =
+      |ty, val, body| LeanExpr::letE(mk_name("x"), ty, val, body, false);
+    for e in [
+      LeanExpr::app(first.clone(), second.clone()),
+      let_e(first.clone(), second.clone(), second.clone()),
+      let_e(LeanExpr::sort(Level::zero()), first.clone(), second),
+      LeanExpr::proj(mk_name("Prod"), past_u64(), first),
+    ] {
+      assert_eq!(
+        try_ingress(&e, &[]).unwrap_err(),
+        "unexpected FVar(first) in elaborated kernel term during ingress"
+      );
+    }
+  }
+
+  #[test]
+  fn lean_frames_deep_bodies_and_staged_teardown() {
+    for kind in 0..3 {
+      let mut e = LeanExpr::bvar(n_lit(0));
+      for _ in 0..500 {
+        e = match kind {
+          0 => frame_binder(0, LeanExpr::sort(Level::zero()), e),
+          1 => frame_binder(2, LeanExpr::sort(Level::zero()), e),
+          _ => LeanExpr::proj(mk_name("Prod"), n_lit(0), e),
+        };
+      }
+      let mut kenv = KEnv::new();
+      let k = cached_for_frames(&e, &mut vec![], &mut kenv).unwrap();
+      drop(k);
+      drop(kenv);
+      while let LeanExprData::Lam(_, _, b, _, _)
+      | LeanExprData::LetE(_, _, _, b, _, _)
+      | LeanExprData::Proj(_, _, b, _) = e.as_data()
+      {
+        let next = b.clone();
+        drop(e);
+        e = next;
+      }
+      drop(e);
+    }
   }
 
   // ---- build_ingress_lookups ----

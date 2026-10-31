@@ -3,9 +3,9 @@
   its reference searches (`docs/sharing-minimum.md`).
 
   The compiler shares every block with the tiered canonical construction
-  `canonicalSharingTiered` (`Exact.Tiered`; Rust
-  `ixon::sharing_exact::canonical_sharing_tiered`): phase 1 is the exact
-  uniform-width optimizer (`Exact.Uniform`) at widths 1, 2 and 3, phase 2
+  `canonicalSharingTiered` (rule `sharing-k16-greedy-v1`; Rust
+  `ixon::sharing_exact::canonical_sharing_tiered`): phase 1 uses the fixed
+  K16 initial-component families at widths 1, 2 and 3, phase 2
   allocates the table slots, phase 3 re-materializes every part under the
   real TagN widths, and the candidate with the fewest bytes wins.
 
@@ -26,13 +26,14 @@
 
   Every operation is pure over Ixon data (no Lean frontend) and returns an
   explicit error instead of an uncertified result. Resource limits may turn a
-  success into `resourceExhausted`, but never change a successful result.
+  success into `resourceExhausted`; successful-run semantic and encoding
+  contracts are checked separately from totality and cost bounds.
 
   Modules. A specification module defines what the theorems
   (`Ix.Sharing.Verify`) describe; a fast twin holds a faster body proved equal
   to a specification for every input by a `@[csimp]` theorem `@f = @fFast`,
   so compiled code runs the twin while every theorem keeps talking about the
-  specification. All 19 csimp theorems are audit roots
+  specification. All csimp theorems are audit roots
   (`Ix.Sharing.Verify.Audit.CompiledCode` fails the build otherwise), and a
   twin that drifts from its specification breaks its equality proof.
 
@@ -71,11 +72,20 @@
                        terms (`pinnedOrder_eq_fast`; `pinnedOrder`)
   * `Exact.KnapsackFast` the rank-based table-count knapsack
                        (`uniformKnapsack_eq_fast`; `uniformKnapsack`)
+  * `Exact.AreaSearch` the component search on the components' areas only,
+                       with the truncated evaluation and a checked opacity
+                       test (`searchComponentsArea`; equal to the loop
+                       `searchComponentsWith` on a stage's tables,
+                       `AreaProof.searchComponentsArea_eq`, proved in
+                       `Exact.AreaRowsRel`, `Exact.AreaClosureRows`,
+                       `Exact.AreaTruncRows`, `Exact.AreaCostEq`,
+                       `Exact.AreaBlockEq` and `Exact.AreaSearchEq`)
   * `Exact.TieredFast` recompiled copies of `allocate`, `tieredAtWidth`,
                        `canonicalTieredCore`, `canonicalTieredExpanded` and
                        `optimizeUniformExpanded` (`*_eq_C`), so their callers
                        reach the fast parts above (a csimp applies only to
-                       code compiled after it)
+                       code compiled after it); their component loop is
+                       `searchComponentsArea`
 
   Shared helpers and oracles:
   * `Exact.SortedSets` ascending lists as sets: first differences, the tie
@@ -86,7 +96,9 @@
   recompiled copy attached by `f_eq_C` (`Exact.TieredFast`); `fF` and `fP`
   take precomputed tables (`Prep`, graph facts) as arguments and are proved
   equal by unfolding (`f_eq_F`, `rematerialize_eq_P`); `fL` is the area- and
-  closure-local form of a uniform-search step; `searchComponentsVia` is
+  closure-local form of a uniform-search step, `fA` its area-only form;
+  `fG` is an `fF` whose component loop is `searchComponentsArea`, proved equal
+  after the DAG checks (`Exact.TieredFast`); `searchComponentsVia` is
   `searchComponents` written as `searchComponentsWith` on the stage's tables,
   so that compiled code reaches `searchComponentsWithFast`.
 -/
@@ -100,6 +112,8 @@ public import Ix.Sharing.Exact.Oracle
 public import Ix.Sharing.Exact.Uniform
 public import Ix.Sharing.Exact.Tiered
 public import Ix.Sharing.Exact.TieredFast
+public import Ix.Sharing.FamilyNormalizeArea
+public import Ix.Sharing.FamilyContext
 
 public section
 
@@ -251,10 +265,13 @@ def optimizeSharingUniformReference (w : Nat) (roots : Array Ixon.Expr)
 
 /-! ## Tiered construction -/
 
-/-- Tiered canonical sharing of Share-free roots under a Share layout: the
+/-! The old exact tiered route remains a reference API. Its optimizer and
+optimality contracts are unchanged; production uses the K16 rule below. -/
+namespace Reference
+
+/-- Reference tiered sharing of Share-free roots under a Share layout: the
 fewest final layout bytes over the phase-1 widths 1, 2, 3 (see
-`Exact.Tiered` for the claim of each phase). This is the compiler's sharing
-(`Ix.CompileM.buildConstantWithSharing`). -/
+`Exact.Tiered` for the claim of each phase). -/
 def canonicalSharingTiered (layout : ShareLayout) (roots : Array Ixon.Expr)
     (limits : Limits := {}) : Except SharingError TieredSharingResult := do
   let ex ← expand limits #[] roots false
@@ -267,6 +284,32 @@ def canonicalSharingTieredTable (layout : ShareLayout) (sharing roots : Array Ix
   canonicalTieredExpanded layout limits ex
 
 /-- Re-share a Constant with the tiered construction. -/
+def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)
+    (limits : Limits := {}) : Except SharingError Constant := do
+  let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits
+  let info ← withRoots c.info r.result.roots
+  return { c with info, sharing := r.result.sharing }
+
+end Reference
+
+/-- Frozen family parameter for `sharing-k16-greedy-v1`. This is a
+canonicalization rule, independent of the checked-object/envelope versions. -/
+def canonicalFamilyConfig : Ix.Sharing.Family.Config := ⟨16⟩
+
+/-- Production K16 family sharing of Share-free roots. The reference entry
+is compiled through its proved cached/area-local twin. -/
+def canonicalSharingTiered (layout : ShareLayout) (roots : Array Ixon.Expr)
+    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
+  let ex ← expand limits #[] roots false
+  Ix.Sharing.Family.familyReferenceExpanded canonicalFamilyConfig layout limits ex
+
+/-- Production K16 family sharing with an existing backward sharing table. -/
+def canonicalSharingTieredTable (layout : ShareLayout) (sharing roots : Array Ixon.Expr)
+    (limits : Limits := {}) : Except SharingError TieredSharingResult := do
+  let ex ← expand limits sharing roots true
+  Ix.Sharing.Family.familyReferenceExpanded canonicalFamilyConfig layout limits ex
+
+/-- Re-share a complete constant with the frozen production rule. -/
 def normalizeConstantSharingTiered (layout : ShareLayout) (c : Constant)
     (limits : Limits := {}) : Except SharingError Constant := do
   let r ← canonicalSharingTieredTable layout c.sharing (constantInfoRoots c.info) limits

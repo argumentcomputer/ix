@@ -888,6 +888,111 @@ mod tests {
     check_rejects(&mut env, &block_id);
   }
 
+  /// indReducedAway: `mk : constType aType I → I` where `constType x y = x`.
+  /// The field mentions `I` only before reduction: its whnf is `aType`, so
+  /// Lean's `check_positivity` (whnf first, then the occurrence test) takes
+  /// it as a nonrecursive field and accepts the block (CQX.8; the reproducer
+  /// is aux-cert's `NestedSortUK`). The kernel used to test the occurrence
+  /// before whnf and reject the whnf'd head `aType` as "not a valid inductive
+  /// app". `bad_induct_neg_reducible` is the negative neighbour: there the
+  /// whnf is a Pi whose domain still mentions `I`.
+  #[test]
+  fn good_induct_occurrence_reduced_away() {
+    let mut env = KEnv::<Meta>::new();
+    // constType : Type → Type → Type := fun x y => x
+    let (ct_id, ct_c) = mk_defn(
+      "constType",
+      0,
+      vec![],
+      pi(sort1(), pi(sort1(), sort1())),
+      nlam("x", sort1(), nlam("y", sort1(), var(1))),
+      ReducibilityHints::Abbrev,
+    );
+    env.insert(ct_id, ct_c);
+    // aType : Type
+    let (at_id, at_c) = mk_axiom("aType", 0, vec![], sort1());
+    env.insert(at_id, at_c);
+
+    let n = "indReducedAway";
+    let block_id = mk_id(n);
+    let ctor_id = mk_id(&format!("{n}.mk"));
+    let rec_id = mk_id(&format!("{n}.rec"));
+
+    env.insert(
+      block_id.clone(),
+      KConst::Indc {
+        name: mk_name(n),
+        level_params: vec![],
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_unsafe: false,
+        block: block_id.clone(),
+        member_idx: 0,
+        ty: sort1(),
+        ctors: vec![ctor_id.clone()],
+        lean_all: vec![block_id.clone()],
+      },
+    );
+
+    // mk : constType aType I → I
+    let ct_app =
+      app(app(cnst("constType", &[]), cnst("aType", &[])), cnst(n, &[]));
+    env.insert(
+      ctor_id.clone(),
+      KConst::Ctor {
+        name: mk_name(&format!("{n}.mk")),
+        level_params: vec![],
+        is_unsafe: false,
+        lvls: 0,
+        induct: block_id.clone(),
+        cidx: 0,
+        params: 0,
+        fields: 1,
+        ty: pi(ct_app.clone(), cnst(n, &[])),
+      },
+    );
+
+    // rec : {motive : I → Sort u} → ((x : constType aType I) → motive (mk x))
+    //       → (t : I) → motive t   (the field is not recursive: no IH)
+    let rec_ty = ipi(
+      "motive",
+      pi(cnst(n, &[]), sort(param(0))),
+      npi(
+        "mk",
+        npi(
+          "x",
+          ct_app,
+          app(var(1), app(cnst(&format!("{n}.mk"), &[]), var(0))),
+        ),
+        npi("t", cnst(n, &[]), app(var(2), var(0))),
+      ),
+    );
+    env.insert(
+      rec_id.clone(),
+      KConst::Recr {
+        name: mk_name(&format!("{n}.rec")),
+        level_params: vec![mk_name("u")],
+        k: false,
+        is_unsafe: false,
+        lvls: 1,
+        params: 0,
+        indices: 0,
+        motives: 1,
+        minors: 1,
+        block: block_id.clone(),
+        member_idx: 0,
+        ty: rec_ty,
+        rules: vec![],
+        lean_all: vec![block_id.clone()],
+      },
+    );
+    env
+      .blocks
+      .insert(block_id.clone(), vec![block_id.clone(), ctor_id, rec_id]);
+    check_accepts(&mut env, &block_id);
+  }
+
   // ==========================================================================
   // Batch 9: Good inductives with universe constraints (Tutorial.lean 558–610)
   // ==========================================================================

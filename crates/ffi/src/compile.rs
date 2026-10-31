@@ -19,7 +19,6 @@ use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
 use ix_compile::compile::{
   CompileOptions, CompileState, compile_env_with_options,
-  compiler_sharing_limits,
 };
 use ix_compile::condense::compute_sccs;
 use ix_compile::decompile::decompile_env;
@@ -190,6 +189,14 @@ pub extern "C" fn rs_roundtrip_block_compare_detail(
 // =============================================================================
 
 /// FFI function to run the complete compilation pipeline and return all data.
+///
+/// Note on ungrounded constants: `compile_env_with_options` records any
+/// pre-compile or per-block grounding rejections in `compile_stt.ungrounded`
+/// and omits them from `compile_stt.name_to_addr` and `compile_stt.env`.
+/// This legacy phase-inspection entrypoint returns the grounded subset
+/// without a status wrapper; production callers that require fail-closed
+/// semantics or the `ungrounded` diagnostic list must use [`rs_compile_env`]
+/// or [`rs_compile_env_anon`].
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env_full(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
@@ -303,8 +310,9 @@ pub extern "C" fn rs_compile_env_full(
 /// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle
 /// root — matches the serialized header, computed even when nothing is
 /// written), ungrounded (`Array (String × String)` of pretty-name /
-/// reason, sorted by name), bytes (0 when not written), named count,
-/// unique anon count.
+/// reason, sorted by name), nonCanonical (`Array (String × String)`,
+/// always empty: the compiler rewrites no block),
+/// bytes (0 when not written), named count, unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
@@ -360,6 +368,9 @@ fn compile_env_inner(
     .map(|e| (e.key().pretty(), e.value().clone()))
     .collect();
   ungrounded.sort_by(|a, b| a.0.cmp(&b.0));
+  // The non-canonical set: empty, since nothing is rewritten. The field
+  // stays in the status until the Lean side drops it.
+  let non_canonical: Vec<(String, String)> = Vec::new();
 
   // Canonical consts merkle root — equals the serialized header root
   // when a file is written; still reported on a fail-closed abort so
@@ -426,9 +437,14 @@ fn compile_env_inner(
     ungrounded_arr
       .set(i, LeanProd::new(LeanString::new(name), LeanString::new(reason)));
   }
+  let nc_arr = LeanArray::alloc(non_canonical.len());
+  for (i, (name, cause)) in non_canonical.iter().enumerate() {
+    nc_arr.set(i, LeanProd::new(LeanString::new(name), LeanString::new(cause)));
+  }
   let status = LeanIxCompileEnvStatus::alloc(0);
   status.set_obj(0, LeanString::new(&root.hex()));
   status.set_obj(1, ungrounded_arr);
+  status.set_obj(2, nc_arr);
   status.set_num_64(0, written);
   status.set_num_64(1, named_count);
   status.set_num_64(2, unique_anon);
@@ -711,7 +727,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
 /// FFI function to compute the LEON content hash of every constant in a
 /// Lean environment. Returns an `Array (Ix.Name × Ix.Address)` where each
 /// `Address` is the 32-byte Blake3 digest produced by
-/// `ConstantInfo::get_hash()` in `src/ix/env.rs`.
+/// `ConstantInfo::get_hash()` in `crates/common/src/env.rs`.
 ///
 /// The LEON hash is the Rust kernel's "original" addressing scheme: it's
 /// derived from the serialized `ConstantInfo` (name + level params + type
@@ -1717,18 +1733,9 @@ pub extern "C" fn rs_decompile_env(
     ));
   }
 
-  // decompile_env reads only `stt.env`; Pass 2 (aux_gen regeneration)
-  // reconstructs the block structure from the env itself —
-  // `name_to_addr` so aux_gen resolves addresses for the names it
-  // regenerates (mirroring `rs_compile_validate_aux`'s Phase 7 setup).
-  // The recompile check runs under the compiler's sharing limits.
-  let sharing_limits = match compiler_sharing_limits() {
-    Ok(l) => l,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!("rs_decompile_env: {e}"));
-    },
-  };
-  let stt = CompileState { env, sharing_limits, ..CompileState::default() };
+  // decompile_env reads `stt.env`; `name_to_addr` mirrors the compiled
+  // state's name table for its diagnostics.
+  let stt = CompileState { env, ..CompileState::default() };
   for entry in stt.env.named.iter() {
     stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
   }
@@ -1755,11 +1762,13 @@ pub extern "C" fn rs_decompile_env(
 /// `Lean.ConstantInfo` objects — the production import path behind
 /// `import_ixe` (`Ix/ImportIxe.lean`).
 ///
-/// `names` selects roots: empty ⇒ every named constant; nonempty ⇒ the
-/// requested constants plus their full name-level reference closure over
-/// the decompiled env. An absent requested name — or a reference that
-/// resolves to nothing, which would fail kernel replay much later with a
-/// worse message — is an immediate error (fail closed).
+/// `names` selects source roots: empty ⇒ every decompiled constant;
+/// nonempty ⇒ the requested source constants plus their full name-level
+/// reference closure over the decompiled env
+/// (`ix_compile::decompile::materialized_source_names`). An absent
+/// requested name or a reference that resolves to nothing (which would
+/// fail kernel replay much later with a worse message) is an immediate
+/// error (fail closed), for a full selection too.
 ///
 /// Pairs return sorted by name; mutual-block grouping and topological
 /// replay order are the Lean side's concern (`Ix.Catalog` machinery).
@@ -1778,8 +1787,6 @@ pub extern "C" fn rs_decompile_env_consts(
   path: LeanString<LeanBorrowed<'_>>,
   names: LeanArray<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  use ix_compile::graph::get_constant_info_references;
-
   use crate::lean_build::{LeanEncodeCache, encode_constant_info, encode_name};
 
   let path = path.as_str().to_string();
@@ -1828,15 +1835,7 @@ pub extern "C" fn rs_decompile_env_consts(
     ));
   }
 
-  let sharing_limits = match compiler_sharing_limits() {
-    Ok(l) => l,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_decompile_env_consts: {e}"
-      ));
-    },
-  };
-  let stt = CompileState { env, sharing_limits, ..CompileState::default() };
+  let stt = CompileState { env, ..CompileState::default() };
   for entry in stt.env.named.iter() {
     stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
   }
@@ -1850,51 +1849,17 @@ pub extern "C" fn rs_decompile_env_consts(
     },
   };
 
-  // Select the output set: everything, or the requested reference closure.
-  let selected: Vec<Name> = if requested.is_empty() {
-    let mut all: Vec<Name> = dstt.env.iter().map(|e| e.key().clone()).collect();
-    all.sort_unstable();
-    all
-  } else {
-    let mut seen: ix_compile::graph::NameSet =
-      ix_compile::graph::NameSet::default();
-    let mut worklist: Vec<Name> = Vec::new();
-    for root in &requested {
-      if !dstt.env.contains_key(root) {
-        return LeanIOResult::error_string(&format!(
-          "rs_decompile_env_consts: requested constant '{}' not found \
-           in {path}",
-          root.pretty()
-        ));
-      }
-      if seen.insert(root.clone()) {
-        worklist.push(root.clone());
-      }
-    }
-    while let Some(name) = worklist.pop() {
-      let refs = {
-        let ci = dstt.env.get(&name).expect("worklist name present");
-        get_constant_info_references(ci.value())
-      };
-      for r in refs {
-        if seen.contains(&r) {
-          continue;
-        }
-        if !dstt.env.contains_key(&r) {
-          return LeanIOResult::error_string(&format!(
-            "rs_decompile_env_consts: '{}' references '{}', which is \
-             missing from {path} — broken closure",
-            name.pretty(),
-            r.pretty()
-          ));
-        }
-        seen.insert(r.clone());
-        worklist.push(r);
-      }
-    }
-    let mut v: Vec<Name> = seen.into_iter().collect();
-    v.sort_unstable();
-    v
+  // Select the output set: every decompiled constant, or the requested
+  // source closure.
+  let selected = match ix_compile::decompile::materialized_source_names(
+    &dstt.env, &requested,
+  ) {
+    Ok(selected) => selected,
+    Err(error) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env_consts: {path}: {error}"
+      ));
+    },
   };
 
   // Marshal on the calling thread with one shared encode cache so
@@ -1918,701 +1883,4 @@ pub extern "C" fn rs_decompile_env_consts(
     arr.set(i, LeanProd::new(name_obj, ci_obj));
   }
   LeanIOResult::ok(arr)
-}
-
-// =============================================================================
-// aux_gen differential dumps (test-ffi)
-// =============================================================================
-
-/// Render an expression's canonical content hash as an address hex string.
-#[cfg(feature = "test-ffi")]
-fn aux_dump_expr_addr(e: &ix_common::env::Expr) -> String {
-  Address::from_blake3_hash(*e.get_hash()).hex()
-}
-
-/// Dump the nested-expansion/canonicity intermediates for one SCC block,
-/// rebuilding exactly the production aux_gen Phase-1 inputs
-/// (`compile_mutual` → `generate_aux_patches`): member `MutConst`s →
-/// `sort_consts` → `ordered_originals`/`alias_to_rep` →
-/// `expand_nested_block` → (nested path) `sort_aux_by_partition_refinement`
-/// → `compute_aux_perm` → `source_aux_order_with_owner`. Every step is
-/// deterministic, so a post-compile re-run reproduces what production did
-/// (same argument as the `validate-aux` Phase 2 re-run).
-#[cfg(feature = "test-ffi")]
-fn aux_dump_block(
-  lo: &Name,
-  all: &[Name],
-  lean_env: &Arc<ix_common::env::Env>,
-  stt: &CompileState,
-  out: &mut String,
-) {
-  use ix_common::env::ConstantInfo as LeanCI;
-  use ix_compile::compile::aux_gen::nested;
-  use ix_compile::compile::{BlockCache, mk_indc, sort_consts};
-  use ix_compile::mutual::{Def, MutConst};
-  use std::fmt::Write as _;
-
-  let _ = writeln!(out, "block {}", lo.pretty());
-
-  // Mirror compile_mutual's cs construction (compile.rs:3732-3753).
-  let mut cs: Vec<MutConst> = Vec::new();
-  for n in all {
-    let Some(ci) = lean_env.get(n).map(|e| e.cloned()) else {
-      let _ = writeln!(out, "error collect missing {}", n.pretty());
-      return;
-    };
-    let mc = match &ci {
-      LeanCI::InductInfo(val) => match mk_indc(val, lean_env) {
-        Ok(ind) => MutConst::Indc(ind),
-        Err(e) => {
-          let _ = writeln!(out, "error mk_indc {e:?}");
-          return;
-        },
-      },
-      LeanCI::DefnInfo(val) => MutConst::Defn(Def::mk_defn(val)),
-      LeanCI::OpaqueInfo(val) => MutConst::Defn(Def::mk_opaq(val)),
-      LeanCI::ThmInfo(val) => MutConst::Defn(Def::mk_theo(val)),
-      LeanCI::RecInfo(val) => MutConst::Recr(val.clone()),
-      _ => continue,
-    };
-    cs.push(mc);
-  }
-
-  let mut cache = BlockCache::default();
-  let sorted_classes =
-    match sort_consts(&cs.iter().collect::<Vec<_>>(), &mut cache, stt) {
-      Ok(sc) => sc,
-      Err(e) => {
-        let _ = writeln!(out, "error sort_consts {e:?}");
-        return;
-      },
-    };
-
-  // generate_aux_patches Phase-1 inputs (aux_gen.rs:241-263).
-  let ordered_originals: Vec<Name> =
-    sorted_classes.iter().map(|c| c[0].name()).collect();
-  let alias_to_rep: rustc_hash::FxHashMap<Name, Name> = sorted_classes
-    .iter()
-    .flat_map(|class| {
-      class[1..].iter().map(move |alias| (alias.name(), class[0].name()))
-    })
-    .collect();
-  let original_all: Vec<Name> = cs
-    .iter()
-    .find_map(|c| match c {
-      MutConst::Indc(ind) => Some(ind.ind.all.clone()),
-      _ => None,
-    })
-    .unwrap_or_default();
-
-  let metadata_has_nested = original_all.iter().any(|name| {
-    matches!(
-      lean_env.get(name).as_deref(),
-      Some(LeanCI::InductInfo(v))
-        if ix_compile::compile::nat_conv::nat_to_usize(&v.num_nested) > 0
-    )
-  });
-
-  let mut expanded = match nested::expand_nested_block(
-    &ordered_originals,
-    lean_env,
-    &alias_to_rep,
-  ) {
-    Ok(x) => x,
-    Err(e) => {
-      let _ = writeln!(out, "error expand {e:?}");
-      return;
-    },
-  };
-  let structural_has_nested = expanded.types.len() > expanded.n_originals;
-
-  let _ = writeln!(
-    out,
-    "flags meta_nested={metadata_has_nested} structural_nested={structural_has_nested} n_classes={}",
-    sorted_classes.len()
-  );
-  let levels: Vec<String> =
-    expanded.level_params.iter().map(|n| n.pretty()).collect();
-  let _ = writeln!(out, "levels {}", levels.join(" "));
-  for (i, n) in ordered_originals.iter().enumerate() {
-    let _ = writeln!(out, "original {i} {}", n.pretty());
-  }
-
-  // Pre-sort expansion state.
-  for (i, mem) in expanded.types.iter().enumerate() {
-    let _ = writeln!(
-      out,
-      "pre {i} name={} owner={} params={} indices={} typ={}",
-      mem.name.pretty(),
-      mem.source_owner.pretty(),
-      mem.n_params,
-      mem.n_indices,
-      aux_dump_expr_addr(&mem.typ)
-    );
-    for (j, ctor) in mem.ctors.iter().enumerate() {
-      let _ = writeln!(
-        out,
-        "prector {i} {j} name={} fields={} typ={}",
-        ctor.name.pretty(),
-        ctor.n_fields,
-        aux_dump_expr_addr(&ctor.typ)
-      );
-    }
-  }
-  let mut nested_entries: Vec<(String, String)> = expanded
-    .aux_to_nested
-    .iter()
-    .map(|(n, e)| (n.pretty(), aux_dump_expr_addr(e)))
-    .collect();
-  nested_entries.sort();
-  for (n, h) in &nested_entries {
-    let _ = writeln!(out, "nested {n} {h}");
-  }
-  let mut auxctor_entries: Vec<(String, String, String)> = expanded
-    .aux_ctor_map
-    .iter()
-    .map(|(c, (orig, ind))| (c.pretty(), orig.pretty(), ind.pretty()))
-    .collect();
-  auxctor_entries.sort();
-  for (c, o, i) in &auxctor_entries {
-    let _ = writeln!(out, "auxctor {c} {o} {i}");
-  }
-
-  if !(metadata_has_nested && structural_has_nested) {
-    return;
-  }
-
-  // Canonical sort of the aux tail (aux_gen.rs:280).
-  let sortperm =
-    match nested::sort_aux_by_partition_refinement(&mut expanded, stt) {
-      Ok(p) => p,
-      Err(e) => {
-        let _ = writeln!(out, "error sortaux {e:?}");
-        return;
-      },
-    };
-  let sortperm_strs: Vec<String> =
-    sortperm.iter().map(|p| p.to_string()).collect();
-  let _ = writeln!(out, "sortperm {}", sortperm_strs.join(" "));
-  for (i, mem) in expanded.types.iter().enumerate().skip(expanded.n_originals) {
-    let _ = writeln!(
-      out,
-      "post {i} name={} owner={} typ={}",
-      mem.name.pretty(),
-      mem.source_owner.pretty(),
-      aux_dump_expr_addr(&mem.typ)
-    );
-    for (j, ctor) in mem.ctors.iter().enumerate() {
-      let _ = writeln!(
-        out,
-        "postctor {i} {j} name={} typ={}",
-        ctor.name.pretty(),
-        aux_dump_expr_addr(&ctor.typ)
-      );
-    }
-  }
-
-  // Source→canonical permutation (aux_gen.rs:292-307).
-  let orig_to_canon_map: HashMap<Name, Name> = sorted_classes
-    .iter()
-    .flat_map(|class| {
-      let rep = class[0].name();
-      class.iter().map(move |n| (n.name(), rep.clone()))
-    })
-    .collect();
-  match nested::compute_aux_perm(
-    &expanded,
-    &original_all,
-    lean_env,
-    stt,
-    &orig_to_canon_map,
-  ) {
-    Ok(perm) => {
-      let perm_strs: Vec<String> = perm
-        .iter()
-        .map(|&p| {
-          if p == nested::PERM_OUT_OF_SCC {
-            "out".to_string()
-          } else {
-            p.to_string()
-          }
-        })
-        .collect();
-      let _ = writeln!(out, "perm {}", perm_strs.join(" "));
-    },
-    Err(e) => {
-      let _ = writeln!(out, "error perm {e:?}");
-      return;
-    },
-  }
-
-  // Lean source-walk discovery order (nested.rs:997).
-  match nested::source_aux_order_with_owner(&original_all, lean_env) {
-    Ok(entries) => {
-      for (j, (owner, head, specs)) in entries.iter().enumerate() {
-        let spec_strs: Vec<String> =
-          specs.iter().map(aux_dump_expr_addr).collect();
-        let _ = writeln!(
-          out,
-          "source {j} owner={} head={} specs={}",
-          owner.pretty(),
-          head.pretty(),
-          spec_strs.join(",")
-        );
-      }
-    },
-    Err(e) => {
-      let _ = writeln!(out, "error source {e:?}");
-    },
-  }
-}
-
-/// FFI: deterministic text dump of nested-expansion/canonicity
-/// intermediates for every inductive SCC block. The pure-Lean port
-/// (`Tests.Compile.AuxGenDiff`) reproduces the same text from its own
-/// structures; the expansion gate is a line diff. See `aux_dump_block`
-/// for the format contract.
-#[cfg(feature = "test-ffi")]
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_aux_gen_dump_expand(
-  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  let rust_env = crate::lean_env::decode_env(env_consts_ptr);
-  let rust_env = Arc::new(rust_env);
-
-  let stt = match compile_env_with_options(&rust_env, CompileOptions::default())
-  {
-    Ok(stt) => stt,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_aux_gen_dump_expand: compile failed: {e:?}"
-      ));
-    },
-  };
-
-  let ref_graph = build_ref_graph(&rust_env);
-  let condensed = compute_sccs(&ref_graph.out_refs);
-
-  // Deterministic block order: sort inductive-containing blocks by
-  // lowlink pretty name.
-  let mut blocks: Vec<(String, Name, Vec<Name>)> = condensed
-    .blocks
-    .iter()
-    .filter_map(|(lo, members)| {
-      let mut all: Vec<Name> = members.iter().cloned().collect();
-      all.sort_by_key(|a| a.pretty());
-      let has_ind = all.iter().any(|n| {
-        matches!(
-          rust_env.get(n).as_deref(),
-          Some(ix_common::env::ConstantInfo::InductInfo(_))
-        )
-      });
-      has_ind.then(|| (lo.pretty(), lo.clone(), all))
-    })
-    .collect();
-  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
-
-  let mut out = String::new();
-  for (_, lo, all) in &blocks {
-    aux_dump_block(lo, all, &rust_env, &stt, &mut out);
-  }
-
-  LeanIOResult::ok(LeanString::new(&out))
-}
-
-/// Render one generated patch as stable text lines. Expression bodies are
-/// content HASHES (both sides build via mirrored hash-maintaining
-/// constructors, so tree equality ⇔ hash equality — the expansion gate
-/// established this for expansion outputs). Lines are kind-tagged so the
-/// Lean harness can widen its comparison scope generator by generator
-/// (rec → casesOn/recOn → below → brecOn).
-#[cfg(feature = "test-ffi")]
-fn aux_dump_patch(
-  name: &Name,
-  patch: &ix_compile::compile::aux_gen::PatchedConstant,
-  out: &mut String,
-) {
-  use ix_compile::compile::aux_gen::PatchedConstant as PC;
-  use std::fmt::Write as _;
-  match patch {
-    PC::Rec(rv) => {
-      let lps: Vec<String> =
-        rv.cnst.level_params.iter().map(|n| n.pretty()).collect();
-      let _ = writeln!(
-        out,
-        "patch {} kind=rec lvls={} k={} params={} indices={} motives={} minors={} all={} typ={}",
-        name.pretty(),
-        lps.join(","),
-        rv.k,
-        ix_compile::compile::nat_conv::nat_to_u64(&rv.num_params),
-        ix_compile::compile::nat_conv::nat_to_u64(&rv.num_indices),
-        ix_compile::compile::nat_conv::nat_to_u64(&rv.num_motives),
-        ix_compile::compile::nat_conv::nat_to_u64(&rv.num_minors),
-        rv.all.iter().map(|n| n.pretty()).collect::<Vec<_>>().join(","),
-        aux_dump_expr_addr(&rv.cnst.typ)
-      );
-      for (i, rule) in rv.rules.iter().enumerate() {
-        let _ = writeln!(
-          out,
-          "rule {} {} ctor={} fields={} rhs={}",
-          name.pretty(),
-          i,
-          rule.ctor.pretty(),
-          ix_compile::compile::nat_conv::nat_to_u64(&rule.n_fields),
-          aux_dump_expr_addr(&rule.rhs)
-        );
-      }
-    },
-    PC::RecOn(d) | PC::CasesOn(d) => {
-      let kind =
-        if matches!(patch, PC::RecOn(_)) { "recOn" } else { "casesOn" };
-      let lps: Vec<String> =
-        d.level_params.iter().map(|n| n.pretty()).collect();
-      let _ = writeln!(
-        out,
-        "patch {} kind={} lvls={} unsafe={} typ={} value={}",
-        name.pretty(),
-        kind,
-        lps.join(","),
-        d.is_unsafe,
-        aux_dump_expr_addr(&d.typ),
-        aux_dump_expr_addr(&d.value)
-      );
-    },
-    PC::BelowDef(d) => {
-      let lps: Vec<String> =
-        d.level_params.iter().map(|n| n.pretty()).collect();
-      let _ = writeln!(
-        out,
-        "patch {} kind=belowDef lvls={} unsafe={} typ={} value={}",
-        name.pretty(),
-        lps.join(","),
-        d.is_unsafe,
-        aux_dump_expr_addr(&d.typ),
-        aux_dump_expr_addr(&d.value)
-      );
-    },
-    PC::BelowIndc(ind) => {
-      let lps: Vec<String> =
-        ind.level_params.iter().map(|n| n.pretty()).collect();
-      let _ = writeln!(
-        out,
-        "patch {} kind=belowIndc lvls={} params={} indices={} reflexive={} unsafe={} typ={}",
-        name.pretty(),
-        lps.join(","),
-        ind.n_params,
-        ind.n_indices,
-        ind.is_reflexive,
-        ind.is_unsafe,
-        aux_dump_expr_addr(&ind.typ)
-      );
-      for (i, ctor) in ind.ctors.iter().enumerate() {
-        let _ = writeln!(
-          out,
-          "belowctor {} {} name={} params={} fields={} typ={}",
-          name.pretty(),
-          i,
-          ctor.name.pretty(),
-          ctor.n_params,
-          ctor.n_fields,
-          aux_dump_expr_addr(&ctor.typ)
-        );
-      }
-    },
-    PC::BRecOn(d) => {
-      let lps: Vec<String> =
-        d.level_params.iter().map(|n| n.pretty()).collect();
-      let _ = writeln!(
-        out,
-        "patch {} kind=brecOn lvls={} unsafe={} prop={} typ={} value={}",
-        name.pretty(),
-        lps.join(","),
-        d.is_unsafe,
-        d.is_prop,
-        aux_dump_expr_addr(&d.typ),
-        aux_dump_expr_addr(&d.value)
-      );
-    },
-  }
-}
-
-/// FFI: deterministic text dump of `generate_aux_patches` output for
-/// every inductive SCC block — the gate medium for the recursor/casesOn/
-/// recOn/below/brecOn port milestones. Re-runs the production Phase-1
-/// pipeline per block post-compile (the `validate-aux` Phase 2 precedent)
-/// with the REAL sorted classes.
-#[cfg(feature = "test-ffi")]
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_aux_gen_dump_patches(
-  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  use ix_common::env::ConstantInfo as LeanCI;
-  use ix_compile::compile::aux_gen;
-  use ix_compile::compile::{BlockCache, mk_indc, sort_consts};
-  use ix_compile::mutual::{Def, MutConst};
-  use std::fmt::Write as _;
-
-  let rust_env = crate::lean_env::decode_env(env_consts_ptr);
-  let rust_env = Arc::new(rust_env);
-
-  let stt = match compile_env_with_options(&rust_env, CompileOptions::default())
-  {
-    Ok(stt) => stt,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_aux_gen_dump_patches: compile failed: {e:?}"
-      ));
-    },
-  };
-
-  let ref_graph = build_ref_graph(&rust_env);
-  let condensed = compute_sccs(&ref_graph.out_refs);
-
-  let mut blocks: Vec<(String, Name, Vec<Name>)> = condensed
-    .blocks
-    .iter()
-    .filter_map(|(lo, members)| {
-      let mut all: Vec<Name> = members.iter().cloned().collect();
-      all.sort_by_key(|a| a.pretty());
-      let has_ind = all.iter().any(|n| {
-        matches!(rust_env.get(n).as_deref(), Some(LeanCI::InductInfo(_)))
-      });
-      has_ind.then(|| (lo.pretty(), lo.clone(), all))
-    })
-    .collect();
-  blocks.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
-
-  let mut out = String::new();
-  for (_, lo, all) in &blocks {
-    let _ = writeln!(out, "block {}", lo.pretty());
-
-    // Production inputs (mirrors compile_mutual + generate_aux_patches).
-    let mut cs: Vec<MutConst> = Vec::new();
-    for n in all {
-      let Some(ci) = rust_env.get(n).map(|e| e.cloned()) else { continue };
-      let mc = match &ci {
-        LeanCI::InductInfo(val) => match mk_indc(val, &rust_env) {
-          Ok(ind) => MutConst::Indc(ind),
-          Err(e) => {
-            let _ = writeln!(out, "error mk_indc {e:?}");
-            continue;
-          },
-        },
-        LeanCI::DefnInfo(val) => MutConst::Defn(Def::mk_defn(val)),
-        LeanCI::OpaqueInfo(val) => MutConst::Defn(Def::mk_opaq(val)),
-        LeanCI::ThmInfo(val) => MutConst::Defn(Def::mk_theo(val)),
-        LeanCI::RecInfo(val) => MutConst::Recr(val.clone()),
-        _ => continue,
-      };
-      cs.push(mc);
-    }
-    let mut cache = BlockCache::default();
-    let sorted_classes =
-      match sort_consts(&cs.iter().collect::<Vec<_>>(), &mut cache, &stt) {
-        Ok(sc) => sc,
-        Err(e) => {
-          let _ = writeln!(out, "error sort_consts {e:?}");
-          continue;
-        },
-      };
-    let class_names: Vec<Vec<Name>> = sorted_classes
-      .iter()
-      .map(|class| class.iter().map(|c| c.name()).collect())
-      .collect();
-    let original_all: Vec<Name> = cs
-      .iter()
-      .find_map(|c| match c {
-        MutConst::Indc(ind) => Some(ind.ind.all.clone()),
-        _ => None,
-      })
-      .unwrap_or_default();
-
-    let mut kctx = ix_compile::compile::KernelCtx::new();
-    let aux_out = match aux_gen::generate_aux_patches(
-      &class_names,
-      &original_all,
-      &rust_env,
-      &stt,
-      &mut kctx,
-    ) {
-      Ok(p) => p,
-      Err(e) => {
-        let _ = writeln!(out, "error generate {e:?}");
-        continue;
-      },
-    };
-
-    let mut patch_names: Vec<&Name> = aux_out.patches.keys().collect();
-    patch_names.sort_by_key(|n| n.pretty());
-    for name in patch_names {
-      aux_dump_patch(name, &aux_out.patches[name], &mut out);
-    }
-    let mut aliases: Vec<(String, String)> =
-      aux_out.aliases.iter().map(|(k, v)| (k.pretty(), v.pretty())).collect();
-    aliases.sort();
-    for (k, v) in &aliases {
-      let _ = writeln!(out, "alias {k} {v}");
-    }
-  }
-
-  LeanIOResult::ok(LeanString::new(&out))
-}
-
-/// Render bool-vec keep masks / usize perms compactly for the plans dump.
-#[cfg(feature = "test-ffi")]
-fn aux_dump_bits(bits: &[bool]) -> String {
-  bits.iter().map(|&b| if b { '1' } else { '0' }).collect()
-}
-
-#[cfg(feature = "test-ffi")]
-fn aux_dump_usizes(xs: &[usize]) -> String {
-  xs.iter()
-    .map(|&x| if x == usize::MAX { "out".to_string() } else { x.to_string() })
-    .collect::<Vec<_>>()
-    .join(",")
-}
-
-/// FFI: deterministic text dump of the post-compile surgery plans,
-/// AuxLayouts, and synthetic `Muts` named entries — the orchestration
-/// parity gate's medium. Lines:
-///   plan <name> params=<n> smotives=<n> sminors=<n> indices=<n>
-///        mkeep=<bits> nkeep=<bits> m2c=<csv> n2c=<csv> inblock=<bits>
-///        head=<target>@<pos>|none
-///   bplan <name> params=<n> smotives=<n> indices=<n> mkeep=<bits> m2c=<csv>
-///   wplan <name> ...                    (below plans, same shape as bplan)
-///   layout <all0> perm=<csv> counts=<csv>
-///   muts <name> addr=<hex> all=<h,h;h|...> layout=<perm csv>/<counts csv>|none
-#[cfg(feature = "test-ffi")]
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_aux_gen_dump_plans(
-  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  use std::fmt::Write as _;
-
-  let rust_env = crate::lean_env::decode_env(env_consts_ptr);
-  let rust_env = Arc::new(rust_env);
-
-  let stt = match compile_env_with_options(&rust_env, CompileOptions::default())
-  {
-    Ok(stt) => stt,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_aux_gen_dump_plans: compile failed: {e:?}"
-      ));
-    },
-  };
-
-  let mut out = String::new();
-
-  let mut plans: Vec<(String, ix_compile::compile::surgery::CallSitePlan)> =
-    stt
-      .call_site_plans
-      .iter()
-      .map(|e| (e.key().pretty(), e.value().clone()))
-      .collect();
-  plans.sort_by(|(a, _), (b, _)| a.cmp(b));
-  for (name, p) in &plans {
-    let head = match &p.head_rewrite {
-      Some(h) => format!("{}@{}", h.target_rec.pretty(), h.target_motive_pos),
-      None => "none".to_string(),
-    };
-    let _ = writeln!(
-      out,
-      "plan {name} params={} smotives={} sminors={} indices={} mkeep={} nkeep={} m2c={} n2c={} inblock={} head={head}",
-      p.n_params,
-      p.n_source_motives,
-      p.n_source_minors,
-      p.n_indices,
-      aux_dump_bits(&p.motive_keep),
-      aux_dump_bits(&p.minor_keep),
-      aux_dump_usizes(&p.source_to_canon_motive),
-      aux_dump_usizes(&p.source_to_canon_minor),
-      aux_dump_bits(&p.source_in_block),
-    );
-  }
-
-  for (tag, map) in [
-    ("bplan", &stt.brec_on_call_site_plans),
-    ("wplan", &stt.below_call_site_plans),
-  ] {
-    let mut bplans: Vec<(
-      String,
-      ix_compile::compile::surgery::BRecOnCallSitePlan,
-    )> = map.iter().map(|e| (e.key().pretty(), e.value().clone())).collect();
-    bplans.sort_by(|(a, _), (b, _)| a.cmp(b));
-    for (name, p) in &bplans {
-      let _ = writeln!(
-        out,
-        "{tag} {name} params={} smotives={} indices={} mkeep={} m2c={}",
-        p.n_params,
-        p.n_source_motives,
-        p.n_indices,
-        aux_dump_bits(&p.motive_keep),
-        aux_dump_usizes(&p.source_to_canon_motive),
-      );
-    }
-  }
-
-  let mut layouts: Vec<(String, ix_compile::compile::surgery::AuxLayout)> = stt
-    .aux_perms
-    .iter()
-    .map(|e| (e.key().pretty(), e.value().clone()))
-    .collect();
-  layouts.sort_by(|(a, _), (b, _)| a.cmp(b));
-  for (name, l) in &layouts {
-    let _ = writeln!(
-      out,
-      "layout {name} perm={} counts={}",
-      aux_dump_usizes(&l.perm),
-      l.source_ctor_counts
-        .iter()
-        .map(|c| c.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
-    );
-  }
-
-  // Synthetic Muts named entries (kernel ingress discovery points).
-  let mut muts: Vec<(String, String, String, String)> = stt
-    .env
-    .named
-    .iter()
-    .filter_map(|e| {
-      let named = e.value();
-      match &named.meta().info {
-        ixon::metadata::ConstantMetaInfo::Muts { all, aux_layout } => {
-          let all_str = all
-            .iter()
-            .map(|class| {
-              class.iter().map(|a| a.hex()).collect::<Vec<_>>().join(",")
-            })
-            .collect::<Vec<_>>()
-            .join(";");
-          let layout_str = match aux_layout {
-            Some(l) => format!(
-              "{}/{}",
-              aux_dump_usizes(&l.perm),
-              l.source_ctor_counts
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
-            ),
-            None => "none".to_string(),
-          };
-          Some((e.key().pretty(), named.addr.hex(), all_str, layout_str))
-        },
-        _ => None,
-      }
-    })
-    .collect();
-  muts.sort();
-  for (name, addr, all_str, layout_str) in &muts {
-    let _ = writeln!(
-      out,
-      "muts {name} addr={addr} all={all_str} layout={layout_str}"
-    );
-  }
-
-  LeanIOResult::ok(LeanString::new(&out))
 }

@@ -2,6 +2,12 @@ module
 public import Ix.Ixon
 public import Tests.Gen.Ixon
 public import Tests.FFI.Ixon
+public import Tests.Ix.RoleBinding
+public import Tests.Ix.RolePublication
+public import Tests.Ix.RoleGeneration
+public import Tests.Ix.RoleArtifactConsumer
+public import Tests.Ix.RolePacking
+public import Tests.Ix.HostAdmission
 
 open LSpec SlimCheck Gen Ixon
 open Tests.FFI.Ixon (rsEqUnivSerialization rsEqExprSerialization rsEqConstantSerialization rsEqEnvSerialization)
@@ -306,22 +312,19 @@ def exprMetaArenaUnits : TestSeq :=
   -- Shared nodes: explicit backward deltas next to implicit slots.
   let dag : ExprMetaArena := { nodes := #[
     .leaf, .app 0 0, .letBinder a 0 1 0, .prj b 1, .mdata #[] 3] }
-  -- Call-site references are explicit; a forward reference wraps.
-  let calls : ExprMetaArena := { nodes := #[
-    .leaf,
-    .callSite a #[.kept 0 0, .collapsed 1 0] #[0] (some (2, 0)),
-    .etaCallSite 1 b #[.kept 0 1] #[1] 1,
-    .prj a 7] }
+  -- A forward reference wraps.
+  let forward : ExprMetaArena := { nodes := #[.leaf, .leaf, .leaf, .prj a 7] }
   test "arena: a post-order tree writes no references"
     (arenaVector tree #[0x05, 0x38, 0x01, 0x38, 0x00, 0x00, 0x0B, 0x13, 0x00]) ++
   test "arena: shared nodes are explicit backward deltas"
     (arenaVector dag #[0x05, 0x00, 0x0A, 0x00, 0x32, 0x00, 0x01, 0x01, 0x40,
       0x01, 0x01, 0x49, 0x00]) ++
-  test "arena: call-site references are explicit; a forward reference wraps"
-    (arenaVector calls #[0x04, 0x00,
-      0x50, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x02, 0x00,
-      0x58, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+  test "arena: a forward reference wraps"
+    (arenaVector forward #[0x04, 0x00, 0x00, 0x00,
       0x40, 0x00, 0xC3, 0x7B, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF]) ++
+  test "arena: rejects the retired call-site kinds 10 and 11"
+    (arenaRejects #[0x01, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00] &&
+      arenaRejects #[0x01, 0x58, 0x00, 0x00, 0x00, 0x00, 0x00]) ++
   test "arena: rejects an explicit slot at the implicit position"
     (arenaRejects #[0x02, 0x00, 0x08, 0x00, 0x00]) ++
   test "arena: rejects an implicit slot with no preceding node"
@@ -460,7 +463,9 @@ def envSerializationMatches (raw : RawEnv) : Bool :=
     `rsEqEnvSerialization`'s content comparison). -/
 def envBytesMatchRust (raw : RawEnv) : Bool :=
   match serEnv raw.toEnv with
-  | .ok bytes => bytes == rsSerEnvFFI raw
+  | .ok bytes => match rsSerEnvFFI raw with
+    | .ok rustBytes => bytes == rustBytes
+    | .error _ => false
   | .error _ => false
 
 /-- Unit tests for Lean==Rust serialization comparison -/
@@ -524,26 +529,25 @@ def envSerializationUnitTests : TestSeq :=
     anonHints := #[(bundleConstAddr, .abbrev)]
   }
   -- Test 7: Metadata-bearing named entries — the directed cross-language
-  -- byte vector for the FULL metadata wire grammar: arena with a
-  -- call-site surgery node (indexed names, kept/collapsed entries,
-  -- canonMeta, origHead), surgery extension tables (sharing exprs, raw
-  -- refs, univs), and a muts entry with the nested-aux `auxLayout`
-  -- sidecar. Every indexed name address is a registered name component.
+  -- byte vector for the FULL metadata wire grammar: an arena over the
+  -- kinds 0-9 (indexed names, binder info, an app, a ref, mdata), the
+  -- extension tables (sharing exprs, raw refs, univs, univ patches), and
+  -- a muts entry with the nested-aux `auxLayout` sidecar. Every indexed
+  -- name address is a registered name component. (Before call-site metadata was retired, the arena
+  -- also carried a call-site surgery node, kinds 10/11, now retired.)
   let surgName := Ix.Name.mkStr Ix.Name.mkAnon "surg"
   let blkName := Ix.Name.mkStr Ix.Name.mkAnon "blk"
   let anonAddr := Ix.Name.mkAnon.getHash
   let surgArena : ExprMetaArena := { nodes := #[
     .leaf,
     .binder anonAddr .implicit 0 0,
-    .callSite surgName.getHash
-      #[.kept 0 1, .collapsed 0 0, .kept 2 1]
-      #[1, 0]
-      (some (1, 0)),
-    .mdata #[#[(blkName.getHash, .ofName surgName.getHash)]] 2
+    .ref surgName.getHash,
+    .app 2 1,
+    .mdata #[#[(blkName.getHash, .ofName surgName.getHash)]] 3
   ] }
   let surgMeta : ConstantMeta := {
     info := .defn surgName.getHash #[anonAddr] #[surgName.getHash] #[]
-      surgArena 0 3,
+      surgArena 0 4,
     metaSharing := #[.app (.share 1) (.var 2), .sort 0],
     metaRefs := #[bundleConstAddr],
     metaUnivs := #[.succ (.var 0), .max .zero (.var 1)],
@@ -574,8 +578,8 @@ def envSerializationUnitTests : TestSeq :=
   test "Blob env bytes Lean==Rust" (envBytesMatchRust blobRaw) ++
   test "Bundle env bytes Lean==Rust" (envBytesMatchRust bundleRaw) ++
   test "Named env bytes Lean==Rust" (envBytesMatchRust namedRaw) ++
-  test "Surgery metadata env bytes Lean==Rust" (envBytesMatchRust metaRaw) ++
-  test "Surgery metadata env pure serde" (envSerde metaRaw)
+  test "Metadata env bytes Lean==Rust" (envBytesMatchRust metaRaw) ++
+  test "Metadata env pure serde" (envSerde metaRaw)
 
 /-! ## Canonical env merkle root: Lean vs. Rust agreement -/
 
@@ -616,7 +620,7 @@ def envMerkleRootUnitTests : TestSeq :=
   test "(a,b) and (b,a) same root"
     (raw_ab.merkleRoot == raw_ba.merkleRoot)
 
-/-! ## Format version 4: header byte and version rejection -/
+/-! ## Checked format 4 and versioned storage envelopes -/
 
 /-- The empty env's bytes, with the header byte replaced by `header`. -/
 private def emptyEnvWithHeader (header : UInt8) : ByteArray :=
@@ -629,13 +633,13 @@ private def versionRejected {α : Type} (r : Except String α) (got : Nat) : Boo
   match r with
   | .ok _ => false
   | .error e =>
-    (e.splitOn s!"expected .ixe format version {Env.VERSION}, got {got}").length > 1
+    (e.splitOn s!"unsupported .ixe envelope version {got}").length > 1
 
 def envHeaderUnits : TestSeq :=
   let bytes := match serEnv ({} : Env) with | .ok b => b | .error _ => .empty
   test "env header is TagN(4, 0xE, 4) = 0xE4" (bytes.data[0]? == some 0xE4)
   ++ test "wireFormatId is ixon-v4" (wireFormatId == "ixon-v4")
-  ++ test "object-format byte is the version" (Env.OBJECT_FORMAT == 4)
+  ++ test "checked object-format byte remains 4" (Env.OBJECT_FORMAT == 4)
   ++ test "Lean reader accepts the version 4 header" ((deEnv bytes).toOption.isSome)
   ++ test "Lean reader rejects a version 3 header"
       (versionRejected (deEnv (emptyEnvWithHeader 0xE3)) 3)
@@ -644,10 +648,83 @@ def envHeaderUnits : TestSeq :=
   ++ test "Rust reader rejects a version 3 header"
       (versionRejected (deEnvAnon (emptyEnvWithHeader 0xE3)) 3)
 
+/-! ## Envelope versions
+
+Version 4 is the environment envelope without a role binding; version 5 is
+the same body after a role-binding header (`Tests.Ix.RoleBinding`). The comms
+section is the last one: nothing follows it. -/
+
+private def envelopeCheck (label : String) (ok : Bool) : Except String Unit :=
+  if ok then .ok () else .error label
+
+private def readersRefuse (bytes : ByteArray) : Bool :=
+  (deEnv bytes).toOption.isNone && (deEnvVerifiedLazy bytes).toOption.isNone &&
+    (rsDeEnv bytes).toOption.isNone && (deEnvAnon bytes).toOption.isNone
+
+private def envelopeChecks (definition : Definition) : Except String Unit := do
+  let c : Constant := {
+    info := .defn definition, sharing := #[], refs := #[], univs := #[] }
+  let ca := Address.blake3 (serConstant c)
+  let n := Ix.Name.mkStr Ix.Name.mkAnon "EnvelopeA"
+  let raw : RawEnv := {
+    consts := #[{ addr := ca, const := c }], blobs := #[], comms := #[],
+    named := #[{ name := n, addr := ca, constMeta := .empty, hints := some .abbrev }],
+    names := #[{ addr := n.getHash, name := n }] }
+  let env := raw.toEnv
+  let bytes ← serEnv env
+  envelopeCheck "v4 bytes agree across writers"
+    (bytes == (← rsSerEnvFFI raw) && bytes.data[0]? == some 0xE4)
+  let goldenEmpty := runPut do
+    putU8 0xE4
+    Serialize.put Ix.Merkle.zeroAddress
+    putBytes (ByteArray.mk #[0, 0, 0, 0, 0, 1])
+    Serialize.put Ix.Name.mkAnon.getHash
+    putBytes (ByteArray.mk #[0, 0, 0])
+  envelopeCheck "empty v4 bytes retain the legacy layout" ((← serEnv {}) == goldenEmpty)
+  let full ← deEnv bytes
+  let rust ← rsDeEnv bytes
+  let parts ← deEnvVerifiedLazy bytes
+  let named ← parts.materializeAllNamed
+  let cached ← parts.materializeAll
+  for loaded in [full, rust, named, cached] do
+    envelopeCheck "full and lazy readers roundtrip" ((← serEnv loaded) == bytes)
+  let (s1, s2, s3, s4, s5, s6) := envSectionSizes env
+  envelopeCheck "v4 size accounting matches its bytes"
+    (35 + s1 + s2 + s3 + s4 + s5 + s6 == bytes.size)
+  -- Trailing bytes (among them the two empty counts the earlier binding
+  -- envelope wrote after the comms section), truncation, version 6 and a
+  -- version-5 tag without a binding header.
+  for bad in [bytes ++ ByteArray.mk #[0], bytes ++ ByteArray.mk #[0, 0],
+      bytes.extract 0 (bytes.size - 1), bytes.set! 0 0xE6, bytes.set! 0 0xE5] do
+    envelopeCheck "readers refuse trailing bytes, truncation and other versions"
+      (readersRefuse bad)
+
+/-- Keep the fixture as a parameter so the compiler cannot initialize the
+entire closed FFI computation before the selected test runs. -/
+private def envelopeUnits (definition : Definition) : TestSeq :=
+  .individualIO "envelope: v4 bytes, both writers and readers, malformed controls" none (do
+    let result ← IO.lazyPure fun _ => envelopeChecks definition
+    return match result with
+      | .ok _ => (true, 0, 0, none)
+      | .error e => (false, 0, 0, some e)) .done
+
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
   envHeaderUnits,
+  Tests.Ix.RoleGeneration.units .natDiv,
+  Tests.Ix.RoleGeneration.artifactUnits .natDiv,
+  Tests.Ix.RoleArtifactConsumer.units,
+  Tests.Ix.RolePacking.units,
+  Tests.Ix.HostAdmission.units,
+  Tests.Ix.RoleBinding.units {
+    sharing := #[], refs := #[], univs := #[.zero], info := .defn {
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } },
+  Tests.Ix.RolePublication.units {
+    sharing := #[], refs := #[], univs := #[.zero], info := .defn {
+      kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 } },
+  envelopeUnits {
+    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0 },
   univExactUnits,
   univUnits,
   exprExactUnits,
@@ -673,7 +750,7 @@ public def Tests.Ixon.suite : List TestSeq := [
   checkIO "Constant serialization Lean==Rust" (∀ c : Constant, constantSerializationMatches c),
   checkIO "Env serialization Lean==Rust" (∀ raw : RawEnv, envSerializationMatches raw),
   -- Strict byte equality between the two writers over generated envs —
-  -- generated named entries carry full metadata (call-site surgery,
+  -- generated named entries carry full metadata (arena nodes,
   -- extension tables, auxLayout), so this is the generator-driven gate
   -- that the metadata wire format stays in sync.
   checkIO "Env bytes Lean==Rust" (∀ raw : RawEnv, envBytesMatchRust raw),

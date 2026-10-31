@@ -8,15 +8,16 @@ public import Ix.IxonSyntax
 public import Ix.Meta
 public import Ix.EnvScope
 public import Ix.GraphM
+public import Ix.Compile.Canon
 public import Ix.CondenseM
 public import Ix.CompileM
+public import Ix.CompileCertified
 public import Ix.DecompileM
 public import Ix.Replay
 public import Ix.Catalog
 public import Ix.ImportIxe
 public import Ix.IxEval
 public import Ix.KernelCheck
-public import Ix.Tc
 public import Ix.Claim
 public import Ix.Merkle
 public import Ix.AssumptionTree

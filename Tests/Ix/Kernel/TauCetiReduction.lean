@@ -20,9 +20,8 @@ field probes `Eq.rec` reduction:
    the proof can be arbitrarily expensive without ever exposing `Eq.refl`.
 
 `slowTypeEquality` makes that second step observably expensive while keeping
-the fixture tiny.  The source is intentionally inconsistent (via one axiom),
-just as a kernel unit test may contain arbitrary axioms; every declaration is
-nevertheless well typed.
+the fixture tiny. The distinct endpoints occur under a local equality
+hypothesis, abstracted by each canary theorem; no global axiom is required.
 -/
 
 namespace Tests.Ix.Kernel.TauCetiReduction
@@ -47,16 +46,13 @@ def TinyIso.trans (f : TinyIso α β) (g : TinyIso β γ) : TinyIso α γ where
   leftInv := fun x => by rw [g.leftInv, f.leftInv]
   rightInv := fun x => by rw [f.rightInv, g.rightInv]
 
-/-- A stand-in for TauCeti's propositional equality of two measures. -/
-axiom typeEquality : Nat = Bool
-
 /-- Productive proof work hidden behind an opaque equality theorem. -/
 theorem spinProof (n : Nat) (h : Nat = Bool) : Nat = Bool :=
   match n with
   | 0 => h
   | n + 1 => spinProof n h
 
-theorem slowTypeEquality : Nat = Bool := spinProof 4096 typeEquality
+theorem slowTypeEquality (h : Nat = Bool) : Nat = Bool := spinProof 4096 h
 
 /-- The minimal analogue of TauCeti's `castLpₗᵢ`: an `Eq.rec` whose result is
 a bundled function in `Type`, rather than a proof in `Prop`. -/
@@ -65,8 +61,8 @@ noncomputable def castIso {α β : Type} (h : α = β) : TinyIso α β :=
 
 def downstream : TinyIso Bool Bool := TinyIso.refl Bool
 
-noncomputable def composed : TinyIso Nat Bool :=
-  (castIso slowTypeEquality).trans downstream
+noncomputable def composed (h : Nat = Bool) : TinyIso Nat Bool :=
+  (castIso (slowTypeEquality h)).trans downstream
 
 def TinyIso.symm (f : TinyIso α β) : TinyIso β α where
   toFun := f.invFun
@@ -76,14 +72,14 @@ def TinyIso.symm (f : TinyIso α β) : TinyIso β α where
 
 /-- Unfolding composition exposes the transported isometry's `toFun`
 projection, reproducing the `Eq.rec`/failed-K probe from TauCeti. -/
-theorem composedApply (x : Nat) :
-    composed x = downstream (castIso slowTypeEquality x) := by
+theorem composedApply (h : Nat = Bool) (x : Nat) :
+    composed h x = downstream (castIso (slowTypeEquality h) x) := by
   rfl
 
 /-- The inverse projection is the corresponding reducer shape from
 TauCeti's `chebyshevWeightL2Isometry_symm_apply`. -/
-theorem composedSymmApply (x : Bool) :
-    composed.symm x = (castIso slowTypeEquality).symm (downstream.symm x) := by
+theorem composedSymmApply (h : Nat = Bool) (x : Bool) :
+    (composed h).symm x = (castIso (slowTypeEquality h)).symm (downstream.symm x) := by
   rfl
 
 end Tests.Ix.Kernel.TauCetiReduction

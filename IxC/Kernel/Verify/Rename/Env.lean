@@ -1,0 +1,371 @@
+module
+
+public import IxC.Kernel.Verify.Rename.ExprOps
+
+@[expose] public section
+
+/-!
+# Renaming and the environment
+
+`EnvRel P f env env'`: the renamed run's environment `env'` answers every
+lookup of a good key as `env` does, renamed, and `env` stores good constants
+at good keys. Renaming a good environment gives one (`EnvRel.mapKeys`);
+locality is the case `f = id` with two environments that agree on a
+covering set.
+
+Then the core's fuel-free helpers over an environment
+(`IxC/Kernel/CoreDefs.lean`): each one, at a renamed argument and the
+related environment, is the original's answer, renamed where it is a
+term.
+-/
+
+set_option linter.unusedSimpArgs false
+
+set_option linter.unusedSectionVars false
+
+namespace Ix.Kernel
+
+variable {md md' : Mode} {f : md.Id → md'.Id}
+
+/-! ## Inverting a renamed term's shape -/
+
+namespace Expr
+
+@[simp] theorem mapKeys_eq_fvar_iff {e : Expr md} {i : Nat} {t : Expr md'} :
+    e.mapKeys f = .fvar i t ↔ ∃ t', e = .fvar i t' ∧ t = t'.mapKeys f := by
+  constructor
+  · intro h; cases e <;> simp at h
+    obtain ⟨rfl, h2⟩ := h; exact ⟨_, rfl, h2.symm⟩
+  · rintro ⟨t', rfl, rfl⟩; rfl
+
+@[simp] theorem mapKeys_eq_const_iff {e : Expr md} {k : Key md'} {us : List Level} :
+    e.mapKeys f = .const k us ↔ ∃ k', e = .const k' us ∧ k = k'.map f := by
+  constructor
+  · intro h; cases e <;> simp at h
+    obtain ⟨h1, rfl⟩ := h; exact ⟨_, rfl, h1.symm⟩
+  · rintro ⟨k', rfl, rfl⟩; rfl
+
+@[simp] theorem mapKeys_eq_app_iff {e : Expr md} {a b : Expr md'} :
+    e.mapKeys f = .app a b ↔ ∃ a' b', e = .app a' b' ∧ a = a'.mapKeys f ∧ b = b'.mapKeys f := by
+  constructor
+  · intro h; cases e <;> simp at h
+    exact ⟨_, _, rfl, h.1.symm, h.2.symm⟩
+  · rintro ⟨a', b', rfl, rfl, rfl⟩; rfl
+
+@[simp] theorem mapKeys_eq_lam_iff {e : Expr md} {a b : Expr md'} {m : BinderMeta} :
+    e.mapKeys f = .lam a b m ↔
+      ∃ a' b', e = .lam a' b' m ∧ a = a'.mapKeys f ∧ b = b'.mapKeys f := by
+  constructor
+  · intro h; cases e <;> simp at h
+    obtain ⟨h1, h2, rfl⟩ := h; exact ⟨_, _, rfl, h1.symm, h2.symm⟩
+  · rintro ⟨a', b', rfl, rfl, rfl⟩; rfl
+
+@[simp] theorem mapKeys_eq_forallE_iff {e : Expr md} {a b : Expr md'} {m : BinderMeta} :
+    e.mapKeys f = .forallE a b m ↔
+      ∃ a' b', e = .forallE a' b' m ∧ a = a'.mapKeys f ∧ b = b'.mapKeys f := by
+  constructor
+  · intro h; cases e <;> simp at h
+    obtain ⟨h1, h2, rfl⟩ := h; exact ⟨_, _, rfl, h1.symm, h2.symm⟩
+  · rintro ⟨a', b', rfl, rfl, rfl⟩; rfl
+
+@[simp] theorem mapKeys_eq_letE_iff {e : Expr md} {a v b : Expr md'} {l : LetMeta} :
+    e.mapKeys f = .letE a v b l ↔
+      ∃ a' v' b', e = .letE a' v' b' l ∧ a = a'.mapKeys f ∧ v = v'.mapKeys f ∧
+        b = b'.mapKeys f := by
+  constructor
+  · intro h; cases e <;> simp at h
+    obtain ⟨h1, h2, h3, rfl⟩ := h; exact ⟨_, _, _, rfl, h1.symm, h2.symm, h3.symm⟩
+  · rintro ⟨a', v', b', rfl, rfl, rfl, rfl⟩; rfl
+
+@[simp] theorem mapKeys_eq_proj_iff {e : Expr md} {s : Key md'} {i : Nat} {x : Expr md'} :
+    e.mapKeys f = .proj s i x ↔ ∃ s' x', e = .proj s' i x' ∧ s = s'.map f ∧ x = x'.mapKeys f := by
+  constructor
+  · intro h; cases e <;> simp at h
+    obtain ⟨h1, rfl, h3⟩ := h; exact ⟨_, _, rfl, h1.symm, h3.symm⟩
+  · rintro ⟨s', x', rfl, rfl, rfl⟩; rfl
+
+@[simp] theorem fvar_eq_mapKeys_iff {e : Expr md} {i : Nat} {t : Expr md'} :
+    Expr.fvar i t = e.mapKeys f ↔ ∃ t', e = .fvar i t' ∧ t = t'.mapKeys f := by
+  rw [eq_comm]; exact mapKeys_eq_fvar_iff
+
+@[simp] theorem const_eq_mapKeys_iff {e : Expr md} {k : Key md'} {us : List Level} :
+    Expr.const k us = e.mapKeys f ↔ ∃ k', e = .const k' us ∧ k = k'.map f := by
+  rw [eq_comm]; exact mapKeys_eq_const_iff
+
+@[simp] theorem app_eq_mapKeys_iff {e : Expr md} {a b : Expr md'} :
+    Expr.app a b = e.mapKeys f ↔ ∃ a' b', e = .app a' b' ∧ a = a'.mapKeys f ∧ b = b'.mapKeys f := by
+  rw [eq_comm]; exact mapKeys_eq_app_iff
+
+@[simp] theorem lam_eq_mapKeys_iff {e : Expr md} {a b : Expr md'} {m : BinderMeta} :
+    Expr.lam a b m = e.mapKeys f ↔
+      ∃ a' b', e = .lam a' b' m ∧ a = a'.mapKeys f ∧ b = b'.mapKeys f := by
+  rw [eq_comm]; exact mapKeys_eq_lam_iff
+
+@[simp] theorem forallE_eq_mapKeys_iff {e : Expr md} {a b : Expr md'} {m : BinderMeta} :
+    Expr.forallE a b m = e.mapKeys f ↔
+      ∃ a' b', e = .forallE a' b' m ∧ a = a'.mapKeys f ∧ b = b'.mapKeys f := by
+  rw [eq_comm]; exact mapKeys_eq_forallE_iff
+
+@[simp] theorem bvar_eq_mapKeys_iff {e : Expr md} {i : Nat} :
+    Expr.bvar i = e.mapKeys f ↔ e = .bvar i := by
+  rw [eq_comm]; exact mapKeys_eq_bvar_iff
+
+@[simp] theorem sort_eq_mapKeys_iff {e : Expr md} {u : Level} :
+    Expr.sort u = e.mapKeys f ↔ e = .sort u := by
+  rw [eq_comm]; exact mapKeys_eq_sort_iff
+
+/-- An application of renamed terms is the renamed application. -/
+theorem app_mapKeys_fold (x y : Expr md) :
+    Expr.app (x.mapKeys f) (y.mapKeys f) = (Expr.app x y).mapKeys f := rfl
+
+end Expr
+
+/-- Refute `h : t.mapKeys f = PAT'` against the fall-through hypothesis of
+the original's match: invert `h` into an equation of `t` with the original
+pattern (prenex, destructured, substituted), which `simp_all` refutes. -/
+macro "shape_refute " h:ident : tactic => `(tactic| (
+  simp only [Expr.mapKeys_eq_fvar_iff, Expr.mapKeys_eq_const_iff, Expr.mapKeys_eq_app_iff,
+    Expr.mapKeys_eq_lam_iff, Expr.mapKeys_eq_forallE_iff, Expr.mapKeys_eq_letE_iff,
+    Expr.mapKeys_eq_proj_iff, Expr.mapKeys_eq_bvar_iff, Expr.mapKeys_eq_sort_iff,
+    Expr.mapKeys_eq_lit_iff, Expr.fvar_eq_mapKeys_iff, Expr.const_eq_mapKeys_iff,
+    Expr.app_eq_mapKeys_iff, Expr.lam_eq_mapKeys_iff, Expr.forallE_eq_mapKeys_iff,
+    Expr.bvar_eq_mapKeys_iff, Expr.sort_eq_mapKeys_iff] at $h:ident
+  simp only [← exists_and_left, ← exists_and_right, and_assoc] at $h:ident
+  repeat (obtain ⟨_, $h:ident⟩ := $h:ident)
+  subst_vars
+  first | solve_by_elim | simp_all))
+
+/-- Close `(match t with pats) = (match t.mapKeys f with pats)`: split the
+original's match; where it fires, the renamed one reduces; where it falls
+through, a firing renamed match is refuted (`shape_refute`). -/
+macro "shape_match" : tactic =>
+  `(tactic| (split <;> first
+    | (simp_all; done)
+    | (split
+       · rename_i h; exfalso; shape_refute h
+       · rfl)))
+
+/-! ## Related environments -/
+
+section Literal
+
+variable {P : md.Id → Prop}
+
+/-- **The renamed run's environment**: the renaming of a good environment
+(`env' = env.mapKeys f`, every constant of `env` good), `f` injective on `P`.
+So it answers every lookup `env` answers, renamed (`EnvRel.find`,
+`EnvRel.find_some`), and holds the renaming of each of `env`'s constants
+(`EnvRel.mem`). Goodness here is at `KeyScope.ofId P`: every role allowed. -/
+structure EnvRel (P : md.Id → Prop) (f : md.Id → md'.Id) (env : Env md) (env' : Env md') :
+    Prop where
+  inj : InjOn f P
+  all : env.Good (KeyScope.ofId P)
+  eq : env' = env.mapKeys f
+
+/-- On good keys a related environment answers as `env` does, renamed. -/
+theorem EnvRel.find {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (k : Key md)
+    (hk : k.Good (KeyScope.ofId P)) :
+    env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f) := by
+  rw [h.eq]
+  exact Env.find?_mapKeys h.inj h.all hk
+
+/-- `env`'s constants are good. -/
+theorem EnvRel.good {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (k : Key md)
+    (c : ConstantInfo md) (_ : k.Good (KeyScope.ofId P)) (hc : env.find? k = some c) :
+    c.Good (KeyScope.ofId P) :=
+  h.all.find? hc
+
+/-- A good environment and its renaming are related. -/
+theorem EnvRel.mapKeys {env : Env md} (hf : InjOn f P) (henv : env.Good (KeyScope.ofId P)) :
+    EnvRel P f env (env.mapKeys f) :=
+  ⟨hf, henv, rfl⟩
+
+/-- **Every constant of `env` is renamed into `env'`.** -/
+theorem EnvRel.mem {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {c : ConstantInfo md}
+    (hc : c ∈ env.consts) : c.mapKeys f ∈ env'.consts := by
+  rw [h.eq]
+  exact List.mem_map_of_mem hc
+
+/-- **Every key `env` answers is answered by `env'`, renamed** (whatever the
+key: an input, derived or role key). -/
+theorem EnvRel.find_some {env : Env md} {env' : Env md'} (h : EnvRel P f env env') {k : Key md}
+    {c : ConstantInfo md} (hc : env.find? k = some c) :
+    env'.find? (k.map f) = some (c.mapKeys f) := by
+  have hk : k.Good (KeyScope.ofId P) := by
+    obtain ⟨cs⟩ := env
+    simp only [Env.find?] at hc
+    have hname := List.find?_some hc
+    have hmem := List.mem_of_find?_eq_some hc
+    rw [beq_iff_eq] at hname
+    rw [← hname]
+    exact (h.all c hmem).name
+  rw [h.find k hk, hc]
+  rfl
+
+end Literal
+
+/-! ### The relation the simulations carry
+
+The simulations of the renaming walk use five facts of the relation they
+thread: `f` is injective on `P`'s ids, lookups at good keys answer renamed,
+the constants at good keys are good, a role outside `P`'s roles is absent
+from `env` (so a read of it fails on the original side), and a push of a
+good constant keeps the relation. So they are stated over `EnvRelG P f L`:
+those facts, plus a *link* `L` that pushes keep (`LinkPush`). At the literal
+link (`LitLink`: `env` good, `env' = env.mapKeys f`) and every role allowed
+it is `EnvRel` (`EnvRel.toG`, `EnvRelG.toLit`); at the trivial link it is
+the frame relation the locality corollaries use (`f = id`, `env'` answering
+as `env` does on good keys). -/
+
+variable {P : KeyScope md}
+
+/-- **Related environments, with a link** (see above). -/
+structure EnvRelG (P : KeyScope md) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop)
+    (env : Env md) (env' : Env md') : Prop where
+  inj : InjOn f P
+  find : ∀ k : Key md, k.Good P → env'.find? (k.map f) = (env.find? k).map (ConstantInfo.mapKeys f)
+  good : ∀ (k : Key md) (c : ConstantInfo md), k.Good P → env.find? k = some c → c.Good P
+  absent : ∀ r : Role, ¬ P.role r → env.find? (roleKey r) = none
+  pre : P.Pre
+  link : L env env'
+
+/-- **A link a push of a good constant keeps.** -/
+class LinkPush (P : KeyScope md) (f : md.Id → md'.Id) (L : Env md → Env md' → Prop) : Prop where
+  push : ∀ {env : Env md} {env' : Env md'} {c : ConstantInfo md}, L env env' → c.Good P →
+    L ⟨c :: env.consts⟩ ⟨c.mapKeys f :: env'.consts⟩
+
+/-- **The literal link**: `env` good, `env'` its renaming. -/
+def LitLink (P : KeyScope md) (f : md.Id → md'.Id) (env : Env md) (env' : Env md') : Prop :=
+  env.Good P ∧ env' = env.mapKeys f
+
+instance : LinkPush P f (LitLink P f) where
+  push h hc := ⟨fun d hd => by
+      rcases List.mem_cons.mp hd with rfl | hd
+      · exact hc
+      · exact h.1 d hd,
+    by rw [h.2]; rfl⟩
+
+/-- **The trivial link** (the frame relation's). -/
+def TrueLink : Env md → Env md' → Prop := fun _ _ => True
+
+instance : LinkPush P f (TrueLink (md := md) (md' := md')) where
+  push _ _ := trivial
+
+theorem EnvRel.toG {P : md.Id → Prop} {env : Env md} {env' : Env md'} (h : EnvRel P f env env') :
+    EnvRelG (KeyScope.ofId P) f (LitLink (KeyScope.ofId P) f) env env' :=
+  ⟨h.inj, h.find, h.good, fun _ hr => absurd trivial hr, fun _ _ => trivial, h.all, h.eq⟩
+
+theorem EnvRelG.toLit {P : md.Id → Prop} {env : Env md} {env' : Env md'}
+    (h : EnvRelG (KeyScope.ofId P) f (LitLink (KeyScope.ofId P) f) env env') :
+    EnvRel P f env env' :=
+  ⟨h.inj, h.link.1, h.link.2⟩
+
+variable {L : Env md → Env md' → Prop} [LinkPush P f L]
+
+/-- A role's lookup, renamed, at a role the scope allows. -/
+theorem EnvRelG.find_role {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {r : Role}
+    (hr : P.role r) :
+    env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
+  h.find (roleKey r) hr
+
+/-- A prelude role's lookup, renamed. -/
+theorem EnvRelG.find_pre {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {r : Role}
+    (hr : r ∈ preludeRoles) :
+    env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
+  h.find_role (h.pre r hr)
+
+/-- A string-support role's lookup, renamed, under a scope that allows them. -/
+theorem EnvRelG.find_str {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    (hs : P.Str) {r : Role} (hr : r ∈ strRoles) :
+    env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
+  h.find_role (hs r hr)
+
+/-- A role outside the scope is absent from `env`. -/
+theorem EnvRelG.find_role_absent {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {r : Role} (hr : ¬ P.role r) : env.find? (roleKey r) = none :=
+  h.absent r hr
+
+/-- A role `env` stores is in the scope. -/
+theorem EnvRelG.role_of_find {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {r : Role} {c : ConstantInfo md} (hc : env.find? (roleKey r) = some c) : P.role r :=
+  Classical.byContradiction fun hr => by rw [h.absent r hr] at hc; exact nomatch hc
+
+/-- A role's lookup, renamed, wherever `env` answers it. -/
+theorem EnvRelG.find_role_some {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {r : Role} {c : ConstantInfo md} (hc : env.find? (roleKey r) = some c) :
+    env'.find? (roleKey r) = some (c.mapKeys f) := by
+  rw [h.find_role (h.role_of_find hc), hc]; rfl
+/-- The good constant at a good key. -/
+theorem EnvRelG.good_of {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env') {k : Key md}
+    (hk : k.Good P) {c : ConstantInfo md} (hc : env.find? k = some c) : c.Good P :=
+  h.good k c hk hc
+
+/-- `isSome` of a lookup at a good key. -/
+theorem EnvRelG.find_isSome {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {k : Key md} (hk : k.Good P) : (env'.find? (k.map f)).isSome = (env.find? k).isSome := by
+  rw [h.find k hk]; cases env.find? k <;> rfl
+
+/-- The projection-table lookup, renamed. -/
+theorem EnvRelG.findProj? {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {T : Key md} (hT : T.Good P) (i : Nat) :
+    env'.findProj? (T.map f) i = (env.findProj? T i).map (ProjEntry.mapKeys f) := by
+  unfold Env.findProj?
+  have hk := h.find (projTableName T) hT
+  simp only [projTableName, auxKey, Key.map_aux] at hk ⊢
+  rw [hk]
+  cases env.find? (.aux T .projTable) with
+  | none => rfl
+  | some c =>
+    cases c with
+    | projInfo tbl =>
+      simp only [Option.map_some, ConstantInfo.mapKeys]
+      have hn : (tbl.mapKeys f).numFields = tbl.numFields := rfl
+      rw [hn]
+      split
+      · simp [ProjTable.mapKeys_entry]
+      · rfl
+    | _ => rfl
+
+/-- A projection-table entry at a good key is good. -/
+theorem EnvRelG.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRelG P f L env env')
+    {T : Key md} (hT : T.Good P) {i : Nat} {e : ProjEntry md}
+    (he : env.findProj? T i = some e) : e.Good P := by
+  unfold Env.findProj? at he
+  cases hc : env.find? (projTableName T) with
+  | none => rw [hc] at he; exact nomatch he
+  | some c =>
+    rw [hc] at he
+    have hg := h.good (projTableName T) c hT hc
+    cases c with
+    | projInfo tbl =>
+      simp only at he
+      split at he
+      · cases he; exact ProjTable.good_entry hg i
+      · exact nomatch he
+    | _ => exact nomatch he
+
+
+section LiteralLookups
+
+variable {P : md.Id → Prop}
+
+/-- `EnvRelG.findProj?` at the literal relation. -/
+theorem EnvRel.findProj? {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+    {T : Key md} (hT : T.Good (KeyScope.ofId P)) (i : Nat) :
+    env'.findProj? (T.map f) i = (env.findProj? T i).map (ProjEntry.mapKeys f) :=
+  h.toG.findProj? hT i
+
+/-- `EnvRelG.findProj?_good` at the literal relation. -/
+theorem EnvRel.findProj?_good {env : Env md} {env' : Env md'} (h : EnvRel P f env env')
+    {T : Key md} (hT : T.Good (KeyScope.ofId P)) {i : Nat} {e : ProjEntry md}
+    (he : env.findProj? T i = some e) : e.Good (KeyScope.ofId P) :=
+  h.toG.findProj?_good hT he
+
+/-- `EnvRelG.find_role` at the literal relation. -/
+theorem EnvRel.find_role {env : Env md} {env' : Env md'} (h : EnvRel P f env env') (r : Role) :
+    env'.find? (roleKey r) = (env.find? (roleKey r)).map (ConstantInfo.mapKeys f) :=
+  h.toG.find_role trivial
+
+end LiteralLookups
+
+end Ix.Kernel

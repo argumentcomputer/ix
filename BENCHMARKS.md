@@ -1,3 +1,14 @@
+> Historical pipeline results (the refresh below is dated 2026-08-07).
+> The measurements and methodology describe that pipeline: its `Ix.Tc`
+> checker, regenerating Lean decompiler, canonical block order and
+> auxiliary regeneration, all since removed. Recorded agreement concerns
+> the measured inputs.
+>
+> Current `ix check-lean` uses IxC and rejects nonzero `--clear-every`,
+> including the recorded `--clear-every 50`. The compiler now compiles
+> Lean verbatim. See the [current benchmark commands](docs/benchmarking.md#local-usage)
+> and [checker contract and commands](docs/kernel.md#environment-check).
+
 # Ix pipeline benchmarks: pure-Lean vs Rust
 
 Head-to-head timings for every stage of the Ix pipeline across three

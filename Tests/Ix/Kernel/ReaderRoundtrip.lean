@@ -24,13 +24,12 @@ constructor or a constructor count is never judged equal.
 
 The same compiled closure checks the kernel's output side
 (`Tests.Ix.Kernel.EgressFidelity`): every block's projection records as the
-certified writer writes them against the compiler's, every block's order
-(recursor blocks in motive order, among them `Rose.rec`/`Rose.rec_1` and
-`Args.rec`/`Tm.rec`, which are not in structural order; every one refused
-with two members swapped), and over two accepted batches the reader's
-declarations with written projections and the installed environments of
-`Admission.checkConstants`, `Projection.checkBytes` and
-`BlockOrder.checkBytes`, with every projection record naming an installed
+certified writer writes them against the compiler's, every recursor block's
+order (in motive order, among them `Rose.rec`/`Rose.rec_1` and
+`Tm.rec`/`Args.rec`; every one refused with two members swapped), and over
+two accepted batches the reader's declarations with written projections and
+the installed environments of `Admission.checkConstants` and
+`Projection.checkBytes`, with every projection record naming an installed
 constant of its kind.
 
 The whole of `Init` and `Std` runs through the same comparisons (projections and
@@ -79,15 +78,11 @@ def expected : List (Lean.Name × Verdict) := [
   (defs "Node", .equal), (defs "Node.mk", .equal), (defs "Node.rec", .equal),
   (defs "Node.val", .normalized "projection rewrite"),
   (defs "Node.kids", .normalized "projection rewrite"),
+  -- mutual blocks, stored in Lean's order with Lean's recursors
   (defs "Even", .equal), (defs "Odd", .equal), (defs "Odd.succ", .equal),
-  (defs "Even.rec", .canonicalized "auxiliary regenerated"),
-  -- a mutual block of data types: the compiler regenerates its recursors in
-  -- canonical member order, and the definitions over it call them through
-  -- permuted call sites
+  (defs "Even.rec", .equal),
   (defs "Tm", .equal), (defs "Args.cons", .equal),
-  (defs "Tm.rec", .canonicalized "auxiliary regenerated"),
-  (defs "Args.rec", .canonicalized "auxiliary regenerated"),
-  (defs "Tm.size", .canonicalized "call-site surgery"),
+  (defs "Tm.rec", .equal), (defs "Args.rec", .equal), (defs "Tm.size", .equal),
   (defs "Trivial", .equal), (defs "Trivial.rec", .equal),
   (defs "Both", .equal), (defs "Both.left", .equal),
   (defs "Pair", .equal), (defs "Pair.mk", .equal),
@@ -115,16 +110,16 @@ def expected : List (Lean.Name × Verdict) := [
 
 /-! ## Tampering: the comparison has teeth -/
 
-def always : Ix.Kernel.BinderMeta := ⟨.ifAllZero []⟩
+def always : Ix.Kernel.BinderMeta := { pw := .ifAllZero [] }
 
 /-- The first binder's annotation set to `always`. -/
-def tamperPw : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+def tamperPw : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lam t b _ => some (.lam t b always)
   | .forallE t b _ => some (.forallE t b always)
   | _ => none
 
 /-- A natural-number literal bumped. -/
-partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
+partial def tamperLit : Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | .lit (.natVal n) => some (.lit (.natVal (n + 1)))
   | .app f a => ((tamperLit a).map (.app f ·)).orElse fun _ => (tamperLit f).map (.app · a)
   | .lam t b m => (tamperLit b).map (.lam t · m)
@@ -134,8 +129,8 @@ partial def tamperLit : Ix.Kernel.Expr → Option Ix.Kernel.Expr
 def tampers : List (String × Lean.Name × (Entry → Option Entry)) := [
   ("definition value replaced by its type", defs "twice", fun
     | .defn cv _ h => some (.defn cv cv.type h) | _ => none),
-  ("level parameter renamed", defs "twice", fun
-    | .defn cv v h => some (.defn { cv with levelParams := cv.levelParams.map (·.str "x") } v h)
+  ("level parameter renumbered", defs "twice", fun
+    | .defn cv v h => some (.defn { cv with levelParams := cv.levelParams.map (· + 1) } v h)
     | _ => none),
   ("binder annotation set", defs "twice", fun
     | .defn cv v h => (tamperPw v).map (.defn cv · h) | _ => none),
@@ -189,9 +184,8 @@ def evaluateReader (inp : Input) : IO (Report × Array String) := do
   return (report, errors)
 
 /-- The two batches of the entry checks: blocks nested through containers,
-mutual blocks and a nested structure (whose recursor blocks are in motive
-order but not in structural order: `Tests.Ix.Kernel.EgressFidelity`, "Block
-order"), and declarations without such blocks. All three certified entries
+mutual blocks and a nested structure (`Tests.Ix.Kernel.EgressFidelity`,
+"Block order"), and declarations without such blocks. Both certified entries
 must accept both with the same environment. -/
 def nestedSeeds : Array Lean.Name :=
   #[defs "Node", defs "Rose.size", defs "Tm.size", defs "ATree"]
@@ -218,12 +212,12 @@ def evaluateEgress (inp : Input) : IO (Array String × Array String) := do
     unless ent.problems.isEmpty do errors := errors.push s!"{label}: {ent.problems.size} entry problems"
     unless ent.projectionRecords > 0 && ent.projectionsInstalled == ent.projectionRecords do
       errors := errors.push s!"{label}: {ent.projectionsInstalled} of {ent.projectionRecords} projections installed"
-  -- the two recursor blocks that are in motive order but not in structural
-  -- order are among those the order check accepts
+  -- a nested and a mutual recursor block are among those the order check
+  -- accepts, each in its family's order
   let accepted := proj.motiveOrdered.toList.map fun a =>
-    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "." |>.reverse |>.take 2 |>.reverse
-      |> ".".intercalate)
-  for block in [["Rose.rec", "Rose.rec_1"], ["Args.rec", "Tm.rec"]] do
+    (EgressFidelity.memberNames inp.ixon inp.store a).map (·.splitOn "."
+      |>.reverse |>.take 2 |>.reverse |> ".".intercalate)
+  for block in [["Rose.rec", "Rose.rec_1"], ["Tm.rec", "Args.rec"]] do
     unless accepted.contains block do
       errors := errors.push s!"block order: the recursor block {block} is not accepted in motive order"
   return (#[proj.summary, s!"recursor blocks in motive order: {accepted}", s!"nested {nested.summary}",

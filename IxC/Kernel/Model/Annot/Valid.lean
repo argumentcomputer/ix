@@ -45,7 +45,7 @@ open Ix.Kernel.SetModel
 
 open SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Name Level PropWhen)
+open Ix.Kernel (Key Level PropWhen)
 
 universe w
 
@@ -123,7 +123,7 @@ variable {V}
 the pointwise establishment step for `AnnotValid`'s `pi` component
 (and for `WellDenoted`'s λ-clause `v = 0` component at the leaf case). -/
 theorem pwBit_zero_mem_univZero {v : Level} {pw : PropWhen}
-    {φ : Name → Nat}
+    {φ : LevelParam → Nat}
     (hz : Level.zeronessOf v = pw)
     (hb : pwBit φ pw = 0) {x : V}
     (hx : x ∈ˢ (univ (Level.eval φ v) : V)) :

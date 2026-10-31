@@ -10,6 +10,8 @@ use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 
 use ix_common::address::Address;
+use ix_common::env::DefinitionSafety;
+use ixon::constant::DefKind;
 use ixon::env::Env as IxonEnv;
 
 use super::constant::{KConst, RecRule};
@@ -17,10 +19,10 @@ use super::env::{Addr, CtxAddr, KEnv};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, FVarId, KExpr};
+use super::extra_reductions::{ExtraReduction, ExtraReductions};
 use super::id::KId;
 use super::ingress::{
-  IxonIngressLookups, ingress_addr_shallow_into_kenv_with_lookups,
-  ingress_anon_addr_shallow,
+  IxonIngressLookups, ingress_addr_with_input, ingress_anon_addr_shallow_input,
 };
 use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData};
@@ -55,6 +57,36 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 /// override for bounded experiments and bisecting suspected loops. This
 /// budget does not replace external time or memory limits.
 pub const MAX_REC_FUEL: u64 = 100_000_000;
+
+/// Native stack, in bytes, a check keeps in reserve. Inference, WHNF and
+/// conversion recurse through each other with no bound a crafted input
+/// cannot exceed (a reduction whose major premise needs its own reduction,
+/// a million levels deep, takes a million native frames), and fuel bounds
+/// work, not depth. So each entry to them checks the stack its thread has
+/// left and declines with [`TcError::StackExhausted`] below the checker's
+/// reserve. The bound is the thread's actual stack, whatever its size (the
+/// checker's workers have 256 MB).
+///
+/// The reserve must cover the stack one guarded step uses before the next
+/// check: over the kernel's tests at most about 166 KiB in a debug build
+/// and 33 KiB in release. It is an eighth of the stack left when the checker is
+/// created, between [`STACK_RESERVE_MIN`] and this maximum, so a 2 MB test
+/// thread keeps 256 KiB and gives the rest to the check.
+pub const STACK_RESERVE_MAX: usize = 1024 * 1024;
+
+/// The least stack reserve; see [`STACK_RESERVE_MAX`].
+pub const STACK_RESERVE_MIN: usize = 192 * 1024;
+
+/// The reserve for a checker created with the current thread's stack: an
+/// eighth of what is left, within [`STACK_RESERVE_MIN`] and
+/// [`STACK_RESERVE_MAX`].
+fn stack_reserve() -> usize {
+  #[cfg(not(target_arch = "riscv64"))]
+  if let Some(left) = stacker::remaining_stack() {
+    return (left / 8).clamp(STACK_RESERVE_MIN, STACK_RESERVE_MAX);
+  }
+  STACK_RESERVE_MAX
+}
 
 static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
   crate::env_var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
@@ -96,7 +128,7 @@ pub struct IotaInfo<M: KernelMode> {
 }
 
 pub struct LazyIxonIngress<'a> {
-  ixon_env: &'a IxonEnv,
+  input: super::input::Input<'a>,
   lookups: &'a IxonIngressLookups,
   faulted_addrs: FxHashSet<Address>,
 }
@@ -107,7 +139,7 @@ pub struct LazyIxonIngress<'a> {
 /// `Env::get_anon` (which discards metadata sections), but the
 /// implementation never consults those sections regardless.
 pub struct LazyAnonIngress<'a> {
-  anon_env: &'a IxonEnv,
+  input: super::input::Input<'a>,
   faulted_addrs: FxHashSet<Address>,
 }
 
@@ -127,9 +159,9 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// `lazy_ingress_addr` dispatcher uses whichever is set. The anon path
   /// never reads `Env::named`/`Env::names`.
   lazy_anon: Option<LazyAnonIngress<'a>>,
-  /// Primitive constant KIds. Copied from `env.prims()` at construction;
-  /// overridable for tests via `tc.prims = custom`.
-  pub prims: Primitives<M>,
+  /// Explicit legacy identities or a bound context. Candidate IDs alone
+  /// provide no permission to execute a native reduction/conversion rule.
+  pub(crate) prims: super::primitive_context::PrimitiveContext<M>,
 
   // -- Thread-local context --
   /// Local variable types, indexed by de Bruijn level.
@@ -153,8 +185,6 @@ pub struct TypeChecker<'a, M: KernelMode> {
   // -- Thread-local control --
   /// When true, `infer` skips def-eq checks (arg-type and let-value validation).
   pub infer_only: bool,
-  /// Re-entrancy guard for native reduction (prevents whnf → native → whnf loops).
-  pub in_native_reduce: bool,
   /// Counter incremented while inside def-eq's cheap projection reductions.
   /// Used by `is_def_eq` to route cheap false negatives into a cheap-only
   /// cache while projected values are reduced structurally instead of through
@@ -170,6 +200,12 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub(crate) in_binder_batch: bool,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
   pub eager_reduce: bool,
+  /// The reductions outside the certified specification set that this
+  /// checker takes: none, except in unit tests of those reducers (see
+  /// [`crate::extra_reductions`]). Configuration, so `reset` keeps it. The
+  /// `KEnv` caches do not record it, so a checker that changes it must own
+  /// its environment.
+  pub(crate) extra_reductions: ExtraReductions,
   /// Current def-eq recursion depth.
   pub def_eq_depth: u32,
   /// Stack depth of active `IX_DEF_EQ_TRACE` outer frames. While > 0,
@@ -179,6 +215,8 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub def_eq_peak: u32,
   /// Shared recursive fuel remaining for this constant check.
   pub rec_fuel: u64,
+  /// Native stack this checker keeps in reserve (see [`STACK_RESERVE_MAX`]).
+  stack_reserve: usize,
   /// Unspent outer fuel temporarily withheld by same-head probes. Only used
   /// to preserve the non-Regular startup window inside a larger Regular
   /// slice; it never increases the fuel available to a nested computation.
@@ -225,7 +263,17 @@ pub struct TypeChecker<'a, M: KernelMode> {
 
 impl<'a, M: KernelMode> TypeChecker<'a, M> {
   pub fn new(env: &'a mut KEnv<M>) -> Self {
-    let prims = env.prims().clone();
+    let prims = super::primitive_context::PrimitiveContext::Legacy(
+      std::sync::Arc::new(env.prims().clone()),
+    );
+    Self::with_primitive_context(env, prims)
+  }
+
+  fn with_primitive_context(
+    env: &'a mut KEnv<M>,
+    prims: super::primitive_context::PrimitiveContext<M>,
+  ) -> Self {
+    let extra_reductions = prims.extra_reductions();
     TypeChecker {
       env,
       lazy_ixon: None,
@@ -239,16 +287,17 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       ctx_id_stack: Vec::new(),
       equiv_manager: EquivManager::new(),
       infer_only: false,
-      in_native_reduce: false,
       cheap_recursion_depth: 0,
       in_projection_probe: false,
       in_app_congruence: false,
       in_binder_batch: false,
       eager_reduce: false,
+      extra_reductions,
       def_eq_depth: 0,
       def_eq_trace_depth: 0,
       def_eq_peak: 0,
       rec_fuel: max_rec_fuel(),
+      stack_reserve: stack_reserve(),
       same_head_fuel_reserve: 0,
       same_head_backoff: Default::default(),
       prefix_admission: Default::default(),
@@ -261,11 +310,97 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
+  pub fn primitives(&self) -> Result<&Primitives<M>, TcError<M>> {
+    self.prims.table().ok_or_else(|| TcError::Other(self.prims.unavailable()))
+  }
+
+  pub(super) fn optional_primitives(&self) -> Option<&Primitives<M>> {
+    self.prims.table()
+  }
+
+  /// Refuse unless rules that need `role` may run: always for unbound input,
+  /// and for a bound artifact only once its binding's group for `role` has
+  /// been admitted. Support that a check cannot do without (literal typing,
+  /// literal/constructor conversion) calls this; an optional acceleration
+  /// instead finds the role absent from the table and does not fire.
+  pub(crate) fn require_role(
+    &self,
+    role: ixon::role_table::Role,
+  ) -> Result<(), TcError<M>> {
+    if self.prims.admits(role) {
+      Ok(())
+    } else {
+      Err(TcError::Other(format!(
+        "{} support is not admitted for this bound artifact",
+        role.lean_name()
+      )))
+    }
+  }
+
+  /// Whether a definition of this kind and safety may be unfolded: a
+  /// definition or theorem, and under the safety tier not a partial one.
+  ///
+  /// The certified checker keeps unsafe definitions opaque too, but it also
+  /// declines unsafe inductives, which this kernel checks as Lean does. The
+  /// unsafe definitions over them (their generated recursion helpers and
+  /// equations, as in Mathlib's Aesop) are checked by unfolding; kept
+  /// opaque, their checks exhaust memory instead of failing. So unsafe
+  /// definitions unfold here, beside the unsafe-inductive divergence.
+  pub(crate) fn unfolds(
+    &self,
+    kind: DefKind,
+    safety: DefinitionSafety,
+  ) -> bool {
+    matches!(kind, DefKind::Definition | DefKind::Theorem)
+      && (safety != DefinitionSafety::Partial
+        || !self.prims.follows_safety_tier())
+  }
+
+  /// Under the safety tier, a safe inductive's or constructor's type may
+  /// not mention a partial or unsafe constant.
+  pub(crate) fn fence_safe_type(
+    &mut self,
+    ty: &KExpr<M>,
+    is_unsafe: bool,
+  ) -> Result<(), TcError<M>> {
+    if is_unsafe || !self.prims.follows_safety_tier() {
+      return Ok(());
+    }
+    self.check_no_unsafe_refs(ty, DefinitionSafety::Safe)
+  }
+
+  /// Whether `id` is one of the table's four quotient primitives.
+  pub(crate) fn is_quot_primitive(
+    &self,
+    id: &KId<M>,
+  ) -> Result<bool, TcError<M>> {
+    let p = self.primitives()?;
+    Ok(
+      [&p.quot_type, &p.quot_ctor, &p.quot_lift, &p.quot_ind]
+        .iter()
+        .any(|primitive| primitive.addr == id.addr),
+    )
+  }
+
+  pub(super) fn check_input_context(&self) -> Result<(), TcError<M>> {
+    match self.prims.entry_error() {
+      Some(error) => Err(TcError::Other(error.into())),
+      None => Ok(()),
+    }
+  }
+
   pub fn new_with_lazy_ixon(
     env: &'a mut KEnv<M>,
     ixon_env: &'a IxonEnv,
     lookups: &'a IxonIngressLookups,
   ) -> Self {
+    #[cfg(not(target_arch = "riscv64"))]
+    if ixon_env.role_binding.is_some() {
+      return Self::with_primitive_context(
+        env,
+        super::primitive_context::PrimitiveContext::UnpreparedBound,
+      );
+    }
     if !env.has_prims() {
       let prims = Primitives::from_addr_names(|addr| {
         lookups.name_for_addr(addr).cloned()
@@ -279,7 +414,24 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     // traversal is therefore redundant here, as it is for `IxonChecker`.
     tc.ixon_ingress = true;
     tc.lazy_ixon = Some(LazyIxonIngress {
-      ixon_env,
+      input: super::input::Input::Legacy(ixon_env),
+      lookups,
+      faulted_addrs: FxHashSet::default(),
+    });
+    tc
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn for_artifact_named(
+    env: &'a mut KEnv<M>,
+    source: &'a super::role_admission::ArtifactSource,
+    lookups: &'a IxonIngressLookups,
+    prims: super::primitive_context::PrimitiveContext<M>,
+  ) -> Self {
+    let mut tc = Self::with_primitive_context(env, prims);
+    tc.ixon_ingress = true;
+    tc.lazy_ixon = Some(LazyIxonIngress {
+      input: super::input::Input::Artifact(source),
       lookups,
       faulted_addrs: FxHashSet::default(),
     });
@@ -290,6 +442,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     &mut self,
     id: &KId<M>,
   ) -> Result<Option<KConst<M>>, TcError<M>> {
+    self.check_input_context()?;
     if let Some(c) = self.env.get(id) {
       return Ok(Some(c));
     }
@@ -316,6 +469,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     &mut self,
     id: &KId<M>,
   ) -> Result<Option<Vec<KId<M>>>, TcError<M>> {
+    self.check_input_context()?;
     if let Some(members) = self.env.get_block(id) {
       return Ok(Some(members));
     }
@@ -340,7 +494,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       let env_anon: &mut KEnv<super::mode::Anon> = unsafe {
         &mut *(self.env as *mut KEnv<M>).cast::<KEnv<super::mode::Anon>>()
       };
-      return ingress_anon_addr_shallow(env_anon, lazy.anon_env, addr)
+      return ingress_anon_addr_shallow_input(env_anon, lazy.input, addr)
         .map(|_| ())
         .map_err(|msg| {
           TcError::Other(format!("lazy anon ingress {}: {msg}", addr.hex()))
@@ -352,16 +506,11 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     if !lazy.faulted_addrs.insert(addr.clone()) {
       return Ok(());
     }
-    ingress_addr_shallow_into_kenv_with_lookups(
-      self.env,
-      lazy.ixon_env,
-      lazy.lookups,
-      addr,
-    )
-    .map(|_| ())
-    .map_err(|msg| {
-      TcError::Other(format!("lazy ingress {}: {msg}", addr.hex()))
-    })
+    ingress_addr_with_input(self.env, lazy.input, lazy.lookups, addr)
+      .map(|_| ())
+      .map_err(|msg| {
+        TcError::Other(format!("lazy ingress {}: {msg}", addr.hex()))
+      })
   }
 
   // -----------------------------------------------------------------------
@@ -385,15 +534,14 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// `ctx_addr_for_lbr(e.lbr())` to capture only the context suffix reachable
   /// from the term's loose bound variables.
   ///
-  /// Soundness: WHNF only consults the local context in three places, and
+  /// Soundness: WHNF only consults the local context in two places, and
   /// each is bounded by `e.lbr()`:
   /// (1) let-zeta: `Var(i)` reduction looks up `let_vals[level]` for `i < e.lbr`
   ///     — frames `≥ depth - e.lbr` are covered by the suffix and `ctx_addr_for_lbr`
   ///     transitively closes over their types and values;
   /// (2) recursive `infer` from `try_struct_eta_iota` / `synth_ctor_when_k` /
   ///     `try_proof_irrel` — those callees use their argument's own lbr, which
-  ///     is `≤ e.lbr`, so the WHNF suffix dominates;
-  /// (3) native reduction body unfold — closed body, no context dependence.
+  ///     is `≤ e.lbr`, so the WHNF suffix dominates.
   ///
   /// Sharing two distinct outer contexts that share a relevant suffix is the
   /// payoff: the same WHNF subterm can hit cache across them.
@@ -589,9 +737,28 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     ty: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, FVarId) {
+    self.open_binder_contract(
+      name,
+      bi,
+      ixon::contract::BinderContract::default(),
+      ixon::contract::ValueContract::shared(),
+      ty,
+      body,
+    )
+  }
+
+  pub fn open_binder_contract(
+    &mut self,
+    name: M::MField<ix_common::env::Name>,
+    bi: M::MField<ix_common::env::BinderInfo>,
+    contract: ixon::contract::BinderContract,
+    result: ixon::contract::ValueContract,
+    ty: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, FVarId) {
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty, contract, result });
     let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
     (body_open, fv_id)
   }
@@ -622,7 +789,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   ) -> (KExpr<M>, KExpr<M>, FVarId) {
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    self.lctx.push(fv_id, LocalDecl::cdecl(name, bi, ty));
     let body_open =
       instantiate_rev(&mut self.env.intern, body, std::slice::from_ref(&fv));
     (body_open, fv, fv_id)
@@ -650,9 +817,26 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     val: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, FVarId) {
+    self.open_let_contract(
+      name,
+      ixon::contract::LetContract::plain(false),
+      ty,
+      val,
+      body,
+    )
+  }
+
+  pub fn open_let_contract(
+    &mut self,
+    name: M::MField<ix_common::env::Name>,
+    contract: ixon::contract::LetContract,
+    ty: KExpr<M>,
+    val: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, FVarId) {
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::LDecl { name, ty, val });
+    self.lctx.push(fv_id, LocalDecl::LDecl { name, ty, val, contract });
     let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
     (body_open, fv_id)
   }
@@ -667,7 +851,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     let bi = M::meta_field(ix_common::env::BinderInfo::Default);
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    self.lctx.push(fv_id, LocalDecl::cdecl(name, bi, ty));
     (fv_id, fv)
   }
 
@@ -706,12 +890,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     e: &KExpr<M>,
   ) -> Result<(KExpr<M>, KExpr<M>), TcError<M>> {
     // Fast path: already a forall, skip WHNF + tick.
-    if let ExprData::All(_, _, a, b, _) = e.data() {
+    if let ExprData::All(_, _, _, _, a, b, _) = e.data() {
       return Ok((a.clone(), b.clone()));
     }
     let w = self.whnf(e)?;
     match w.data() {
-      ExprData::All(_, _, a, b, _) => Ok((a.clone(), b.clone())),
+      ExprData::All(_, _, _, _, a, b, _) => Ok((a.clone(), b.clone())),
       _ => Err(TcError::FunExpected { e: e.clone(), whnf: w }),
     }
   }
@@ -788,26 +972,32 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
         return Ok(r);
       },
 
-      ExprData::Lam(name, bi, ty, body, _) => {
+      ExprData::Lam(name, bi, contract, ty, body, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::lam(name.clone(), bi.clone(), ty2, body2)
+        KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, body2)
       },
 
-      ExprData::All(name, bi, ty, body, _) => {
+      ExprData::All(name, bi, contract, result, ty, body, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        let r =
-          self.env.intern.intern_all(name.clone(), bi.clone(), &ty2, &body2);
+        let r = self.env.intern.intern_all_contract(
+          name.clone(),
+          bi.clone(),
+          *contract,
+          *result,
+          &ty2,
+          &body2,
+        );
         cache.insert(key, r.clone());
         return Ok(r);
       },
 
-      ExprData::Let(name, ty, val, body, nd, _) => {
+      ExprData::Let(name, ty, val, body, contract, _) => {
         let ty2 = self.inst_univ_inner(ty, us, cache)?;
         let val2 = self.inst_univ_inner(val, us, cache)?;
         let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::let_(name.clone(), ty2, val2, body2, *nd)
+        KExpr::let_contract(name.clone(), *contract, ty2, val2, body2)
       },
 
       ExprData::Prj(id, field, val, _) => {
@@ -875,7 +1065,6 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.ctx_id_stack.clear();
     self.equiv_manager.clear();
     self.infer_only = false;
-    self.in_native_reduce = false;
     self.cheap_recursion_depth = 0;
     self.in_projection_probe = false;
     self.in_app_congruence = false;
@@ -918,9 +1107,24 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
-  /// Consume one unit of shared recursive fuel. Returns Err if exhausted.
+  /// Decline when the thread has less native stack left than this checker's
+  /// reserve. Where the stack cannot be measured, no bound applies.
+  #[inline]
+  pub(crate) fn check_stack(&self) -> Result<(), TcError<M>> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if stacker::remaining_stack().is_some_and(|left| left < self.stack_reserve)
+    {
+      return Err(TcError::StackExhausted);
+    }
+    Ok(())
+  }
+
+  /// Consume one unit of shared recursive fuel. Returns Err if exhausted,
+  /// or if the native stack is (see [`Self::check_stack`]): every recursive
+  /// WHNF and conversion entry ticks.
   #[inline]
   pub fn tick(&mut self) -> Result<(), TcError<M>> {
+    self.check_stack()?;
     if self.rec_fuel == 0 {
       self.dump_guard_stack("recursive-fuel");
       if crate::env_var("IX_REC_FUEL_DUMP").is_ok()
@@ -930,12 +1134,11 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
         // This diagnostic is explicitly opt-in, so send its compact record
         // directly to stderr (the backtrace below stays behind `log`).
         eprintln!(
-          "[rec fuel] exhausted const={} depth={} def_eq_depth={} infer_only={} native_reduce={} eager_reduce={}",
+          "[rec fuel] exhausted const={} depth={} def_eq_depth={} infer_only={} eager_reduce={}",
           self.debug_label.as_deref().unwrap_or("<unknown>"),
           self.depth(),
           self.def_eq_depth,
           self.infer_only,
-          self.in_native_reduce,
           self.eager_reduce
         );
         self.dump_hot_misses();
@@ -1036,6 +1239,23 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     result
   }
 
+  // -----------------------------------------------------------------------
+  // Reductions outside the certified specification set
+  // -----------------------------------------------------------------------
+
+  /// Whether this checker takes the reductions of `group`.
+  #[inline]
+  pub(crate) fn takes_extra(&self, group: ExtraReduction) -> bool {
+    self.extra_reductions.allows(group)
+  }
+
+  /// Take every group of [`ExtraReduction`]. Only unit tests of those
+  /// reducers do, on their own environment.
+  #[cfg(test)]
+  pub(crate) fn enable_extra_reductions(&mut self) {
+    self.extra_reductions = ExtraReductions::ALL;
+  }
+
   /// Run a closure in a free-variable local-context scope. Declarations
   /// pushed by the closure are discarded on both `Ok` and `Err` returns;
   /// mutations to the rest of the checker state are retained.
@@ -1055,10 +1275,13 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
 
   /// Check if expression is of the form `eagerReduce _ _` (2 args applied to the eagerReduce const).
   pub fn is_eager_reduce(&self, e: &KExpr<M>) -> bool {
+    let Some(primitives) = self.optional_primitives() else {
+      return false;
+    };
     let ExprData::App(f, _, _) = e.data() else { return false };
     let ExprData::App(head, _, _) = f.data() else { return false };
     matches!(head.data(), ExprData::Const(id, _, _)
-      if id.addr == self.prims.eager_reduce.addr)
+      if id.addr == primitives.eager_reduce.addr)
   }
 
   /// Intern an expression through the mutable intern environment.
@@ -1141,13 +1364,38 @@ impl<'a> TypeChecker<'a, super::mode::Anon> {
     env: &'a mut KEnv<super::mode::Anon>,
     anon_env: &'a IxonEnv,
   ) -> Self {
+    #[cfg(not(target_arch = "riscv64"))]
+    if anon_env.role_binding.is_some() {
+      return Self::with_primitive_context(
+        env,
+        super::primitive_context::PrimitiveContext::UnpreparedBound,
+      );
+    }
     if !env.has_prims() {
       let prims = Primitives::from_addr_names(|_addr| None);
       let _ = env.set_prims(prims);
     }
     let mut tc = Self::new(env);
-    tc.lazy_anon =
-      Some(LazyAnonIngress { anon_env, faulted_addrs: FxHashSet::default() });
+    tc.lazy_anon = Some(LazyAnonIngress {
+      input: super::input::Input::Legacy(anon_env),
+      faulted_addrs: FxHashSet::default(),
+    });
+    tc
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn for_artifact_anon(
+    env: &'a mut KEnv<super::mode::Anon>,
+    source: &'a super::role_admission::ArtifactSource,
+    _lookups: &'a IxonIngressLookups,
+    prims: super::primitive_context::PrimitiveContext<super::mode::Anon>,
+  ) -> Self {
+    let mut tc = Self::with_primitive_context(env, prims);
+    tc.ixon_ingress = true;
+    tc.lazy_anon = Some(LazyAnonIngress {
+      input: super::input::Input::Artifact(source),
+      faulted_addrs: FxHashSet::default(),
+    });
     tc
   }
 }
@@ -1210,7 +1458,8 @@ fn expr_mentions_any_addr_impl<M: KernelMode>(
         stack.push(f);
         stack.push(a);
       },
-      ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+      ExprData::Lam(_, _, _, ty, body, _)
+      | ExprData::All(_, _, _, _, ty, body, _) => {
         stack.push(ty);
         stack.push(body);
       },
@@ -1807,7 +2056,6 @@ mod tests {
     tc.push_local(sort0());
     tc.push_let(sort1(), sort1());
     tc.infer_only = true;
-    tc.in_native_reduce = true;
     tc.eager_reduce = true;
     tc.def_eq_depth = 5;
     tc.def_eq_peak = 10;
@@ -1819,7 +2067,6 @@ mod tests {
     assert_eq!(tc.num_let_bindings, 0);
     assert_eq!(tc.ctx_id, empty_ctx_addr());
     assert!(!tc.infer_only);
-    assert!(!tc.in_native_reduce);
     assert!(!tc.eager_reduce);
     assert_eq!(tc.def_eq_depth, 0);
     assert_eq!(tc.def_eq_peak, 0);

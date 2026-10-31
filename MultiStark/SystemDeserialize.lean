@@ -37,12 +37,15 @@ flat base-field node graph, so this reader parses that compiled form:
 * TRAILER: preprocessed commit (`0` = None / `1` + MerkleCap) then one u16
   per circuit for the preprocessed index (`0xFFFF` = None).
 
-The vk stream (IO channel 1) is fetched once as unconstrained advice, then
-both hashed and deserialized from that same `ByteStream`. The constrained
-countdown readers terminate, and the caller requires an empty remainder;
-together these establish finiteness even for an adversarial stream pointer.
-The hash then binds every reconstructed value to `system_digest`. Hashing alone
-would not establish finiteness. Expression children must also precede their
+The vk stream (IO channel 1) is read once through `read_checked_byte_stream`,
+then both hashed and deserialized from that same `ByteStream`. The checked
+reader proves the stream finite and every element a byte. The byte check is
+what lets the hash bind every reconstructed value to `system_digest`: BLAKE3
+absorbs message bytes as packed 32-bit words, and elements that are not bytes
+could keep those words while `read_vk_u8` and `read_vk_u16` return other
+values (a `ConstSmall` high byte lowered by 512 turns the next `Add` tag
+into `Mul`). The constrained countdown readers terminate, and the caller
+requires an empty remainder. Expression children must also precede their
 parents, as in the native compiled graph: a finite node list can still encode
 a cyclic graph. Per-node degrees are neither serialized nor needed.
 

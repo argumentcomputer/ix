@@ -54,17 +54,19 @@ lean_ffi::lean_inductive! {
   // name, addr, constMeta, original, hints
   LeanIxonRawNamed        [ { num_obj: 5 } ];
   LeanIxonRawBlob         [ { num_obj: 2 } ];
+  LeanIxonRoleBinding     [ { num_obj: 2 } ];
   LeanIxonRawComm         [ { num_obj: 2 } ];
   LeanIxonRawNameEntry    [ { num_obj: 2 } ];
-  // consts, named, blobs, comms, names, main, assumptions, anonHints
-  LeanIxonRawEnv          [ { num_obj: 8 } ];
+  // consts, named, blobs, comms, names, main, assumptions, anonHints,
+  // roleBinding
+  LeanIxonRawEnv          [ { num_obj: 9 } ];
 
   // Lazy/anon deserialization (`rs_de_env_lazy`): zero-copy const windows
   // (addr + offset + len), name->addr, copied blobs, the bundle header
   // fields (main, assumptions), and the hints-section pairs.
   LeanIxonRawConstSlice   [ { num_obj: 1, num_64: 2 } ];
   LeanIxonRawNamedLite    [ { num_obj: 3 } ];
-  LeanIxonRawEnvLazy      [ { num_obj: 6 } ];
+  LeanIxonRawEnvLazy      [ { num_obj: 7 } ];
 
   // Env diff report (`rs_diff_envs`). Slot counts MUST match the Lean
   // structures in Ix/Ixon.lean (Ixon.EnvStats / NamedDiff / EnvDiff).
@@ -74,8 +76,9 @@ lean_ffi::lean_inductive! {
   // + rippled (Bool scalar)
   LeanIxonNamedDiff       [ { num_obj: 7, num_8: 1 } ];
   // mainChanged, assumptions±, named±/changed/metaOnly, comms±/changed,
-  // constsOnly×2, blobsOnly×2, hintsChanged, statsA, statsB
-  LeanIxonEnvDiff         [ { num_obj: 17 } ];
+  // constsOnly×2, blobsOnly×2, hintsChanged, statsA, statsB,
+  // roleBindingChanged
+  LeanIxonEnvDiff         [ { num_obj: 18 } ];
 
   // --- Ixon multi-variant inductives ---
 
@@ -110,15 +113,6 @@ lean_ffi::lean_inductive! {
     { num_obj: 1 },                           // tag 4: ref
     { num_obj: 1, num_64: 1 },                // tag 5: prj
     { num_obj: 1, num_64: 1 },                // tag 6: mdata
-    // name, entries, canonMeta, origHead
-    { num_obj: 4 },                           // tag 7: callSite
-    // nSynth, name, entries, canonMeta, wrapperMeta
-    { num_obj: 3, num_64: 2 },                // tag 8: etaCallSite
-  ];
-
-  LeanIxonCallSiteEntry [
-    { num_64: 2 },                            // tag 0: kept
-    { num_64: 2 },                            // tag 1: collapsed
   ];
 
   // perm, sourceCtorCounts, evaporated (all Array UInt64; evaporated is 0/1)
@@ -176,8 +170,9 @@ lean_ffi::lean_inductive! {
   LeanIxCondensedBlocks [ { num_obj: 3 } ];
   LeanIxCompilePhases   [ { num_obj: 3 } ];
   // Ix.CompileM.CompileEnvStatus: root (String), ungrounded
-  // (Array (String × String)), then UInt64 scalars bytes/named/uniqueAnon
-  LeanIxCompileEnvStatus [ { num_obj: 2, num_64: 3 } ];
+  // (Array (String × String)), nonCanonical (Array (String × String)),
+  // then UInt64 scalars bytes/named/uniqueAnon
+  LeanIxCompileEnvStatus [ { num_obj: 3, num_64: 3 } ];
   LeanIxSubstring       [ { num_obj: 3 } ];
 
   // --- Ix multi-variant inductives ---

@@ -17,8 +17,8 @@ memory-mapped by later runs, which then decode and read nothing.
 
 **Keys.** A plan file is named by the BLAKE3 hash of the `.ixe`'s bytes and by
 `version`: the cache format, Lean's githash and a digest of the sources a
-reading or the plan's layout depends on (the reader, the prelude and pin
-data, the imported frontend passes it runs, the kernel's syntax, the Ixon
+reading or the plan's layout depends on (the reader, the prelude, the
+default role table and its evidence, the imported frontend passes it runs, the kernel's syntax, the Ixon
 decoder, the check order, this module), embedded at compile time
 (`sourceDigest`). A file is only ever read under the key it was written
 under, so a plan of another reader, layout or toolchain is never
@@ -50,7 +50,7 @@ structure PlanRecord where
   kind : String
   recs : Array Address
   deps : Array Address
-  reading : Except ReadError Read
+  reading : Except ReadError (Read .anon)
   deriving Inhabited
 
 /-- An environment-check run's plan: the setup line's counts, the report names, and the
@@ -61,19 +61,23 @@ structure Plan where
   header : String
   names : Array (Address × Array String)
   records : Array PlanRecord
+  /-- the default table's evidence, resolved (the fold's input) -/
+  evidence : Ix.Kernel.Evidences .anon := []
   deriving Inhabited
 
 /-! ## Keys -/
 
 /-- Bump when the plan's layout or its meaning changes in a way the source
 digest would not see. -/
-def formatTag : String := "check-ixe-read-cache-1"
+def formatTag : String := "check-ixe-read-cache-2"
 
 /-- The sources a reading or the plan's layout depends on. -/
 def sourceDigest : UInt64 := hash [
   include_str "../../IxC/Kernel/Ixon/Reader.lean",
   include_str "../../IxC/Kernel/Ixon/Prelude.lean",
-  include_str "../../IxC/Kernel/Ixon/PinData.lean",
+  include_str "../../IxC/Kernel/Ixon/RoleData.lean",
+  include_str "../../IxC/Kernel/Ixon/RoleTable.lean",
+  include_str "../../IxC/Kernel/Roles.lean",
   include_str "../../IxC/Kernel/Ref.lean",
   include_str "../../IxC/Kernel/Frontend/InModel.lean",
   include_str "../../IxC/Kernel/Frontend/InModel/Kit.lean",
@@ -90,7 +94,12 @@ def sourceDigest : UInt64 := hash [
   include_str "../../IxC/Kernel/PropWhen.lean",
   include_str "../../Ix/Ixon.lean",
   include_str "../../IxC/Ixon/Types.lean",
-  include_str "CheckIxeStep.lean",
+  include_str "../../Ix/KernelCheck/Step.lean",
+  include_str "../../Ix/KernelCheck/Stream.lean",
+  include_str "../../Ix/KernelCheck/Binding.lean",
+  include_str "../../Ix/RoleBinding/Artifact.lean",
+  include_str "../../Ix/RoleBinding/Publication.lean",
+  include_str "CheckIxe.lean",
   include_str "CheckIxeReadCache.lean"]
 
 /-- The reader version a plan is written under. -/
@@ -107,7 +116,7 @@ def planPath (dir : System.FilePath) (ixeBytes : ByteArray) : System.FilePath ×
 /-- The plan of a finished environment-check run: its readings (in order) with each
 record's view in the setup. -/
 def ofRun (s : Setup) (ixe header : String) (names : Std.HashMap Address (Array String))
-    (readings : Array (Address × Except ReadError Read)) : Plan := Id.run do
+    (readings : Array (Address × Except ReadError (Read .anon))) : Plan := Id.run do
   let mut records : Array PlanRecord := Array.mkEmpty readings.size
   let mut nameRows : Array (Address × Array String) := #[]
   for (address, reading) in readings do
@@ -115,7 +124,7 @@ def ofRun (s : Setup) (ixe header : String) (names : Std.HashMap Address (Array 
     records := records.push { address, kind := v.kind, recs := v.recs, deps := v.deps (), reading }
     for a in #[address] ++ v.recs do
       if let some ns := names[a]? then nameRows := nameRows.push (a, ns)
-  return { version, ixe, header, names := nameRows, records }
+  return { version, ixe, header, names := nameRows, records, evidence := s.evidence }
 
 /-- Write a plan (to a temporary file, then renamed). -/
 def save (path : System.FilePath) (plan : Plan) : IO Unit := do
@@ -157,13 +166,13 @@ def Plan.source (plan : Plan) : LoopSource Unit :=
     init := pure () }
 
 /-- The check loop over a plan, with the per-record step. -/
-def checkLoopPlan (plan : Plan) (pins : List Ix.Kernel.NatOpPinSet) (limit : Option Nat)
+def checkLoopPlan (plan : Plan) (limit : Option Nat)
     (skip : Std.HashSet String) (emit : Row → IO Unit)
     (before : Address → IO Unit := fun _ => pure ()) (after : IO Unit := pure ())
     (progress : Nat → Outcome → IO Unit := fun _ _ => pure ()) : IO Outcome := do
   let src := plan.source
   let names := plan.nameMap
-  checkLoopWith src.view src.read src.commit (← src.init) (Checker.stepRecord pins) {}
+  checkLoopWith src.view src.read src.commit (← src.init) (Checker.stepRecord plan.evidence) {}
     (names.getD · #[]) (plan.addresses limit) skip emit before after progress
 
 end Benchmarks.Kernel.CheckIxeReadCache

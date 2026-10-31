@@ -51,19 +51,19 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   ReducibilityHint natOpGuard natLitSupported)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## Level plumbing -/
 
 /-- The ground-composition identity: substituting nothing reads the
 assignment itself. -/
-theorem substFn_nil (ψ : Name → Nat) : Level.substFn ψ [] [] = ψ :=
+theorem substFn_nil (ψ : LevelParam → Nat) : Level.substFn ψ [] [] = ψ :=
   funext fun _ => rfl
 
 /-! ## The two-variable `Nat` context -/
@@ -71,37 +71,37 @@ theorem substFn_nil (ψ : Name → Nat) : Level.substFn ψ [] [] = ψ :=
 /-- The `Nat` leaf at an assignment (every structural-`Nat` head is
 stored level-monomorphically, so the spelling is the plain
 assignment). -/
-def natLeafAV {env : Env} (m : EnvModel V env) (ψ : Name → Nat) :
+def natLeafAV {env : Env md} (m : EnvModel V env) (ψ : LevelParam → Nat) :
     AnnotTerm :=
   m.acval Ix.Kernel.natName ψ
 
 /-- The stored `Nat`'s interpretation. -/
-noncomputable def natLeafV {env : Env} (m : EnvModel V env)
-    (ψ : Name → Nat) (ρ : Nat → V) : V :=
+noncomputable def natLeafV {env : Env md} (m : EnvModel V env)
+    (ψ : LevelParam → Nat) (ρ : Nat → V) : V :=
   interp V ρ (natLeafAV m ψ)
 
 /-- A leaf's interpretation does not read the environment
 (`acval_interp2_closed` at the core carrier). -/
-theorem acval_interp_closedC (m : EnvModel V env) (n : Name)
-    (ψ : Name → Nat) (ρ ρ' : Nat → V) :
+theorem acval_interp_closedC (m : EnvModel V env) (n : Key md)
+    (ψ : LevelParam → Nat) (ρ ρ' : Nat → V) :
     interp V ρ (m.acval n ψ) = interp V ρ' (m.acval n ψ) :=
   interp_closed V
     (by rw [m.acval_erase]; exact m.cval_closed n ψ) ρ ρ'
 
 /-- The `Nat` leaf's interpretation does not read the environment. -/
-theorem natLeafAV_interp_closed (m : EnvModel V env) (ψ : Name → Nat)
+theorem natLeafAV_interp_closed (m : EnvModel V env) (ψ : LevelParam → Nat)
     (ρ ρ' : Nat → V) :
     interp V ρ (natLeafAV m ψ) = interp V ρ' (natLeafAV m ψ) :=
   acval_interp_closedC m _ ψ ρ ρ'
 
 /-- The two-variable context: both slots are the `Nat` leaf. -/
-def natCtx2 {env : Env} (m : EnvModel V env) (ψ : Name → Nat) :
+def natCtx2 {env : Env md} (m : EnvModel V env) (ψ : LevelParam → Nat) :
     List AnnotTerm :=
   [natLeafAV m ψ, natLeafAV m ψ]
 
 /-- Two `Nat` members satisfy the two-variable context (`sat_two`'s P
 mirror; the slot readings collapse by leaf closedness). -/
-theorem sat_natCtx2 (m : EnvModel V env) {ψ : Name → Nat}
+theorem sat_natCtx2 (m : EnvModel V env) {ψ : LevelParam → Nat}
     {ρ : Nat → V} {x y : V}
     (hx : x ∈ˢ natLeafV m ψ ρ) (hy : y ∈ˢ natLeafV m ψ ρ) :
     Sat V (natCtx2 m ψ) (cons y (cons x ρ)) := by
@@ -121,7 +121,7 @@ theorem sat_natCtx2 (m : EnvModel V env) {ψ : Name → Nat}
 
 /-- Conversely, a satisfying valuation of the two-variable context has
 `Nat` members in both slots. -/
-theorem sat_natCtx2_inv (m : EnvModel V env) {ψ : Name → Nat}
+theorem sat_natCtx2_inv (m : EnvModel V env) {ψ : LevelParam → Nat}
     {ρ : Nat → V} (hρ : Sat V (natCtx2 m ψ) ρ) :
     ρ 0 ∈ˢ natLeafV m ψ ρ ∧ ρ 1 ∈ˢ natLeafV m ψ ρ := by
   have h0 := hρ 0 (natLeafAV m ψ) (by simp [natCtx2])
@@ -138,14 +138,14 @@ member.  The intro lemmas below are the fragment's typing rules; the
 head packages that drive the application rules follow. -/
 
 /-- A graded `Nat`-valued argument. -/
-def NatArg (m : EnvModel V env) (ψ : Name → Nat) (e : Expr) :
+def NatArg (m : EnvModel V env) (ψ : LevelParam → Nat) (e : Expr md) :
     Prop :=
   ∃ ea, denoteMeta m.acval env ψ 2 e = some ea ∧
     ∀ ρ : Nat → V, Sat V (natCtx2 m ψ) ρ →
       WellDenotedV V ρ ea ∧ interp V ρ ea ∈ˢ natLeafV m ψ ρ
 
 /-- The first equation variable (`fvar 0`). -/
-theorem natArg_var0 (m : EnvModel V env) (ψ : Name → Nat) :
+theorem natArg_var0 (m : EnvModel V env) (ψ : LevelParam → Nat) :
     NatArg m ψ (.fvar 0 (.const Ix.Kernel.natName [])) := by
   refine ⟨.bvar 1, denoteMeta_fvar _ 2 0 _, fun ρ hρ => ?_⟩
   refine ⟨⟨by simp, by simp⟩, ?_⟩
@@ -153,7 +153,7 @@ theorem natArg_var0 (m : EnvModel V env) (ψ : Name → Nat) :
   exact (sat_natCtx2_inv m hρ).2
 
 /-- The second equation variable (`fvar 1`). -/
-theorem natArg_var1 (m : EnvModel V env) (ψ : Name → Nat) :
+theorem natArg_var1 (m : EnvModel V env) (ψ : LevelParam → Nat) :
     NatArg m ψ (.fvar 1 (.const Ix.Kernel.natName [])) := by
   refine ⟨.bvar 0, denoteMeta_fvar _ 2 1 _, fun ρ hρ => ?_⟩
   refine ⟨⟨by simp, by simp⟩, ?_⟩
@@ -161,7 +161,7 @@ theorem natArg_var1 (m : EnvModel V env) (ψ : Name → Nat) :
   exact (sat_natCtx2_inv m hρ).1
 
 /-- `Nat.zero`. -/
-theorem natArg_zero (m : EnvModel V env) {ψ : Name → Nat}
+theorem natArg_zero (m : EnvModel V env) {ψ : LevelParam → Nat}
     (hnh : NatHeads m ψ) (hval : AcvalValid m)
     (hs : natLitSupported env = true) :
     NatArg m ψ (.const Ix.Kernel.natZeroName []) := by
@@ -184,9 +184,9 @@ theorem natArg_zero (m : EnvModel V env) {ψ : Name → Nat}
     from by rw [substFn_nil]; rfl]
 
 /-- `Nat.succ` applied to a graded argument. -/
-theorem natArg_succ (m : EnvModel V env) {ψ : Name → Nat}
+theorem natArg_succ (m : EnvModel V env) {ψ : LevelParam → Nat}
     (hnh : NatHeads m ψ) (hval : AcvalValid m)
-    (hs : natLitSupported env = true) {t : Expr}
+    (hs : natLitSupported env = true) {t : Expr md}
     (ht : NatArg m ψ t) :
     NatArg m ψ (.app (.const Ix.Kernel.natSuccName []) t) := by
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, hlpN,
@@ -226,7 +226,7 @@ step — at *whatever* regime bits the stored annotation carries.
 `app_mem_piR` consumes exactly this, so no bit positivity appears. -/
 
 /-- A binary head over the pinned `Nat`, with codomain set `codS`. -/
-def NatBinHead (m : EnvModel V env) (ψ : Name → Nat) (f : Expr)
+def NatBinHead (m : EnvModel V env) (ψ : LevelParam → Nat) (f : Expr md)
     (codS : (Nat → V) → V) : Prop :=
   ∃ fa, denoteMeta m.acval env ψ 2 f = some fa ∧
     ∀ ρ : Nat → V, Sat V (natCtx2 m ψ) ρ →
@@ -239,7 +239,7 @@ def NatBinHead (m : EnvModel V env) (ψ : Name → Nat) (f : Expr)
         (b₂ = 0 → ∀ x, x ∈ˢ natLeafV m ψ ρ → codS ρ ∈ˢ (univZero : V))
 
 /-- A unary head over the pinned `Nat`, with codomain set `codS`. -/
-def NatUnHead (m : EnvModel V env) (ψ : Name → Nat) (f : Expr)
+def NatUnHead (m : EnvModel V env) (ψ : LevelParam → Nat) (f : Expr md)
     (codS : (Nat → V) → V) : Prop :=
   ∃ fa, denoteMeta m.acval env ψ 2 f = some fa ∧
     ∀ ρ : Nat → V, Sat V (natCtx2 m ψ) ρ →
@@ -250,8 +250,8 @@ def NatUnHead (m : EnvModel V env) (ψ : Name → Nat) (f : Expr)
 
 /-- **The binary application rule**: a binary head applied to two
 graded arguments reads, is graded, and lands in the codomain set. -/
-theorem natBinHead_app (m : EnvModel V env) {ψ : Name → Nat}
-    {f x y : Expr} {codS : (Nat → V) → V}
+theorem natBinHead_app (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {f x y : Expr md} {codS : (Nat → V) → V}
     (hh : NatBinHead m ψ f codS) (hx : NatArg m ψ x)
     (hy : NatArg m ψ y) :
     ∃ ea, denoteMeta m.acval env ψ 2 (.app (.app f x) y) = some ea ∧
@@ -291,8 +291,8 @@ theorem natBinHead_app (m : EnvModel V env) {ψ : Name → Nat}
     exact houter
 
 /-- **The unary application rule.** -/
-theorem natUnHead_app (m : EnvModel V env) {ψ : Name → Nat}
-    {f x : Expr} {codS : (Nat → V) → V}
+theorem natUnHead_app (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {f x : Expr md} {codS : (Nat → V) → V}
     (hh : NatUnHead m ψ f codS) (hx : NatArg m ψ x) :
     ∃ ea, denoteMeta m.acval env ψ 2 (.app f x) = some ea ∧
       ∀ ρ : Nat → V, Sat V (natCtx2 m ψ) ρ →
@@ -323,7 +323,7 @@ bits the stored annotation carries. -/
 
 /-- The pinned binary type's syntactic shape (the `natOpTyPinned`
 else-branch, unpacked). -/
-theorem natOpTyPinned_shape_bin {env' : Env} {c : Name} {ty : Expr}
+theorem natOpTyPinned_shape_bin {env' : Env md} {c : Key md} {ty : Expr md}
     (hnu : ¬(c = Ix.Kernel.natPredName))
     (h : Ix.Kernel.natOpTyPinned env' c ty = true) :
     ∃ mb₁ mb₂ cod,
@@ -371,7 +371,7 @@ theorem natOpTyPinned_shape_bin {env' : Env} {c : Name} {ty : Expr}
     · exact nomatch h
 
 /-- The pinned unary type's syntactic shape. -/
-theorem natOpTyPinned_shape_un {env' : Env} {c : Name} {ty : Expr}
+theorem natOpTyPinned_shape_un {env' : Env md} {c : Key md} {ty : Expr md}
     (hu : c = Ix.Kernel.natPredName)
     (h : Ix.Kernel.natOpTyPinned env' c ty = true) :
     ∃ mb₁, ty = .forallE (.const Ix.Kernel.natName [])
@@ -386,7 +386,7 @@ theorem natOpTyPinned_shape_un {env' : Env} {c : Name} {ty : Expr}
       split at hcod
       · next hcb =>
         exfalso
-        subst hu; exact absurd hcb (by decide)
+        subst hu; exact absurd hcb (by (cases md <;> decide))
       · exact ⟨mb, by rw [beq_iff_eq.mp hcod]⟩
     · exact nomatch h
   · next hc => exact absurd hu hc
@@ -395,8 +395,8 @@ theorem natOpTyPinned_shape_un {env' : Env} {c : Name} {ty : Expr}
 
 /-- A stored level-monomorphic constant reads to its leaf at the plain
 assignment. -/
-theorem denoteMeta_levelless_const {acval : Name → (Name → Nat) → AnnotTerm}
-    {ψ : Name → Nat} {d : Nat} {n : Name} {ci : ConstantInfo}
+theorem denoteMeta_levelless_const {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat} {d : Nat} {n : Key md} {ci : ConstantInfo md}
     (hf : env.find? n = some ci)
     (hlp : ci.toConstantVal.levelParams = []) :
     denoteMeta acval env ψ d (.const n []) = some (acval n ψ) := by
@@ -408,9 +408,9 @@ theorem denoteMeta_levelless_const {acval : Name → (Name → Nat) → AnnotTer
 
 /-- The pinned binary operation type's reading: a two-step `.pi` over
 the `Nat` leaf and the codomain leaf, at the stored regime bits. -/
-theorem denoteMeta_pinnedBinTy (m : EnvModel V env) (ψ : Name → Nat)
-    {mb₁ mb₂ : Ix.Kernel.BinderMeta} {codN : Name}
-    {ciN codCi : ConstantInfo}
+theorem denoteMeta_pinnedBinTy (m : EnvModel V env) (ψ : LevelParam → Nat)
+    {mb₁ mb₂ : Ix.Kernel.BinderMeta} {codN : Key md}
+    {ciN codCi : ConstantInfo md}
     (hfN : env.find? Ix.Kernel.natName = some ciN)
     (hlpN : ciN.toConstantVal.levelParams = [])
     (hcodF : env.find? codN = some codCi)
@@ -438,9 +438,9 @@ theorem denoteMeta_pinnedBinTy (m : EnvModel V env) (ψ : Name → Nat)
   rfl
 
 /-- The pinned unary operation type's reading. -/
-theorem denoteMeta_pinnedUnTy (m : EnvModel V env) (ψ : Name → Nat)
+theorem denoteMeta_pinnedUnTy (m : EnvModel V env) (ψ : LevelParam → Nat)
     {mb₁ : Ix.Kernel.BinderMeta}
-    {ciN : ConstantInfo}
+    {ciN : ConstantInfo md}
     (hfN : env.find? Ix.Kernel.natName = some ciN)
     (hlpN : ciN.toConstantVal.levelParams = []) :
     denoteMeta m.acval env ψ 0
@@ -461,8 +461,8 @@ theorem denoteMeta_pinnedUnTy (m : EnvModel V env) (ψ : Name → Nat)
 /-- **The binary head package, from its parts**: a graded reading, a
 membership in the (two-step, leaf-component) pinned product's reading,
 and the product reading's own grading. -/
-theorem natBinHead_of_parts (m : EnvModel V env) {ψ : Name → Nat}
-    {f : Expr} {fa : AnnotTerm} {b₁ b₂ : Nat} {codN : Name}
+theorem natBinHead_of_parts (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {f : Expr md} {fa : AnnotTerm} {b₁ b₂ : Nat} {codN : Key md}
     (hfa : denoteMeta m.acval env ψ 2 f = some fa)
     (hok : ∀ ρ : Nat → V, WellDenotedV V ρ fa)
     (hmem : ∀ ρ : Nat → V, interp V ρ fa ∈ˢ interp V ρ
@@ -517,8 +517,8 @@ theorem natBinHead_of_parts (m : EnvModel V env) {ψ : Name → Nat}
     rwa [acval_interp_closedC m _ ψ _ ρ] at h
 
 /-- **The unary head package, from its parts.** -/
-theorem natUnHead_of_parts (m : EnvModel V env) {ψ : Name → Nat}
-    {f : Expr} {fa : AnnotTerm} {b₁ : Nat} {codN : Name}
+theorem natUnHead_of_parts (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {f : Expr md} {fa : AnnotTerm} {b₁ : Nat} {codN : Key md}
     (hfa : denoteMeta m.acval env ψ 2 f = some fa)
     (hok : ∀ ρ : Nat → V, WellDenotedV V ρ fa)
     (hmem : ∀ ρ : Nat → V, interp V ρ fa ∈ˢ interp V ρ
@@ -550,16 +550,16 @@ reading is graded — which is where the fibre facts at the unknown
 regime bits come from). -/
 
 /-- **A stored pinned binary head.** -/
-theorem natBinHead_of_stored (mp : EnvModelM V μ env) {ψ : Name → Nat}
-    {o : Name} {cvo : ConstantVal} {vo : Expr}
+theorem natBinHead_of_stored (mp : EnvModelM V μ env) {ψ : LevelParam → Nat}
+    {o : Key md} {cvo : ConstantVal md} {vo : Expr md}
     {ho : ReducibilityHint}
     (hf : env.find? o = some (.defnInfo cvo vo ho))
     (hlp : cvo.levelParams = [])
-    {mb₁ mb₂ : Ix.Kernel.BinderMeta} {codN : Name}
+    {mb₁ mb₂ : Ix.Kernel.BinderMeta} {codN : Key md}
     (hty : cvo.type = .forallE (.const Ix.Kernel.natName [])
       (.forallE (.const Ix.Kernel.natName []) (.const codN []) mb₂)
       mb₁)
-    {ciN codCi : ConstantInfo}
+    {ciN codCi : ConstantInfo md}
     (hfN : env.find? Ix.Kernel.natName = some ciN)
     (hlpN : ciN.toConstantVal.levelParams = [])
     (hcodF : env.find? codN = some codCi)
@@ -585,15 +585,15 @@ theorem natBinHead_of_stored (mp : EnvModelM V μ env) {ψ : Name → Nat}
   rwa [show (ConstantInfo.defnInfo cvo vo ho).name = o from hnm] at h
 
 /-- **A stored pinned unary head.** -/
-theorem natUnHead_of_stored (mp : EnvModelM V μ env) {ψ : Name → Nat}
-    {o : Name} {cvo : ConstantVal} {vo : Expr}
+theorem natUnHead_of_stored (mp : EnvModelM V μ env) {ψ : LevelParam → Nat}
+    {o : Key md} {cvo : ConstantVal md} {vo : Expr md}
     {ho : ReducibilityHint}
     (hf : env.find? o = some (.defnInfo cvo vo ho))
     (hlp : cvo.levelParams = [])
     {mb₁ : Ix.Kernel.BinderMeta}
     (hty : cvo.type = .forallE (.const Ix.Kernel.natName [])
       (.const Ix.Kernel.natName []) mb₁)
-    {ciN : ConstantInfo}
+    {ciN : ConstantInfo md}
     (hfN : env.find? Ix.Kernel.natName = some ciN)
     (hlpN : ciN.toConstantVal.levelParams = []) :
     NatUnHead mp.base2 ψ (.const o [])
@@ -619,11 +619,11 @@ theorem natUnHead_of_stored (mp : EnvModelM V μ env) {ψ : Name → Nat}
 
 /-- The `Nat`-leaved sides satisfy `CtxOk` at the two-variable
 context. -/
-theorem ctxOk_natCtx2 (m : EnvModel V env) {ψ : Name → Nat}
-    (hval : AcvalValid m) {ciN : ConstantInfo}
+theorem ctxOk_natCtx2 (m : EnvModel V env) {ψ : LevelParam → Nat}
+    (hval : AcvalValid m) {ciN : ConstantInfo md}
     (hfN : env.find? Ix.Kernel.natName = some ciN)
     (hlpN : ciN.toConstantVal.levelParams = [])
-    {e : Expr}
+    {e : Expr md}
     (hleaf : ∀ l ∈ e.fvarLeaves, l.1 < 2 ∧
       l.2 = .const Ix.Kernel.natName []) :
     CtxOk m ψ 2 (natCtx2 m ψ) e := by
@@ -645,12 +645,12 @@ sides' packages give the two-variable `interp` equality — the exact
 law shape `NatOps` stores.  `DefEqClaim` does the work; the frames
 come from the v1 fragment machinery, the gradings from the packages,
 the context from `ctxOk_natCtx2`. -/
-theorem natEqLaw_of_run (mp : EnvModelM V μ env) {ψ : Name → Nat}
+theorem natEqLaw_of_run (mp : EnvModelM V μ env) {ψ : LevelParam → Nat}
     {F : Nat} (hde : DefEqClaim μ mp.base2 ψ F)
-    {ciN : ConstantInfo}
+    {ciN : ConstantInfo md}
     (hfN : env.find? Ix.Kernel.natName = some ciN)
     (hlpN : ciN.toConstantVal.levelParams = [])
-    {lhs rhs : Expr} {la ra : AnnotTerm}
+    {lhs rhs : Expr md} {la ra : AnnotTerm}
     (hrun : Ix.Kernel.isDefEqCore μ env F 2 lhs rhs = .ok true)
     (hwl : Expr.WScoped 2 lhs) (hbl : lhs.looseBVarsBounded 0 = true)
     (hLl : Expr.LeavesBounded lhs)
@@ -686,17 +686,17 @@ readings at the extension (`denote_substConst0`'s P mirror) -/
 the shallow fragment, reading in the extended environment under the
 extended valuation is reading the substituted expression in the old
 one. -/
-theorem denoteMeta_substConst0 {acval : Name → (Name → Nat) → AnnotTerm}
-    {ψ : Name → Nat} {c₀ : ConstantInfo} {c : Name} {v : Expr}
-    {A : (Name → Nat) → AnnotTerm}
+theorem denoteMeta_substConst0 {acval : Key md → (LevelParam → Nat) → AnnotTerm}
+    {ψ : LevelParam → Nat} {c₀ : ConstantInfo md} {c : Key md} {v : Expr md}
+    {A : (LevelParam → Nat) → AnnotTerm}
     (hname : c₀.name = c) (hfresh : env.find? c = none)
     (hlp : c₀.toConstantVal.levelParams = [])
-    (hacl : ∀ (n : Name) (ψ' : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ' : LevelParam → Nat) (k : Nat),
       (acval n ψ').liftN 1 k = acval n ψ')
     (hAcl : ∀ k : Nat, (A ψ).liftN 1 k = A ψ)
     (hv : denoteMeta acval env ψ 0 v = some (A ψ))
     (hvf : v.hasFvar = false) :
-    ∀ (d : Nat) (e : Expr), shallowE e = true →
+    ∀ (d : Nat) (e : Expr md), shallowE e = true →
       denoteMeta (acvalWith acval c A) ⟨c₀ :: env.consts⟩ ψ d e
         = denoteMeta acval env ψ d (Expr.substConst0 c v e) := by
   intro d e
@@ -719,7 +719,7 @@ theorem denoteMeta_substConst0 {acval : Name → (Name → Nat) → AnnotTerm}
       · subst hus
         rw [show Expr.substConst0 n v (.const n []) = v from by
           rw [Expr.substConst0, if_pos ⟨rfl, rfl⟩]]
-        have hfc : (⟨c₀ :: env.consts⟩ : Env).find? n = some c₀ := by
+        have hfc : (⟨c₀ :: env.consts⟩ : Env md).find? n = some c₀ := by
           rw [Ix.Kernel.Env.find?_cons, if_pos hname]
         have h1 : denoteMeta (acvalWith acval n A) ⟨c₀ :: env.consts⟩ ψ d
             (.const n []) = some (acvalWith acval n A n ψ) :=
@@ -729,14 +729,14 @@ theorem denoteMeta_substConst0 {acval : Name → (Name → Nat) → AnnotTerm}
       · rw [show Expr.substConst0 n v (.const n us) = .const n us from
           by rw [Expr.substConst0, if_neg (fun h => hus h.2)]]
         rw [denoteMeta, denoteMeta]
-        rw [show (⟨c₀ :: env.consts⟩ : Env).find? n = some c₀ from by
+        rw [show (⟨c₀ :: env.consts⟩ : Env md).find? n = some c₀ from by
           rw [Ix.Kernel.Env.find?_cons, if_pos hname], hfresh]
         dsimp only
         rw [if_neg (by rw [hlp]; simpa using hus)]
     · rw [show Expr.substConst0 c v (.const n us) = .const n us from by
         rw [Expr.substConst0, if_neg (fun h => hn h.1)]]
       rw [denoteMeta, denoteMeta]
-      rw [show (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n from by
+      rw [show (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n from by
         rw [Ix.Kernel.Env.find?_cons,
           if_neg (fun hh => hn (hh.symm.trans hname))]]
       cases hf : env.find? n with
@@ -754,7 +754,7 @@ theorem denoteMeta_substConst0 {acval : Name → (Name → Nat) → AnnotTerm}
   | bvar _ => intro hfr; simp [shallowE] at hfr
   | lam _ _ _ => intro hfr; simp [shallowE] at hfr
   | forallE _ _ _ => intro hfr; simp [shallowE] at hfr
-  | letE _ _ _ => intro hfr; simp [shallowE] at hfr
+  | letE _ _ _ _ => intro hfr; simp [shallowE] at hfr
   | proj _ _ _ => intro hfr; simp [shallowE] at hfr
   | lit _ => intro hfr; simp [shallowE] at hfr
 
@@ -762,8 +762,8 @@ theorem denoteMeta_substConst0 {acval : Name → (Name → Nat) → AnnotTerm}
 
 /-- A binary head with `Nat` codomain applied to two graded arguments
 is a graded argument. -/
-theorem natArg_of_bin (m : EnvModel V env) {ψ : Name → Nat}
-    {f x y : Expr}
+theorem natArg_of_bin (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {f x y : Expr md}
     (hh : NatBinHead m ψ f
       (fun ρ => interp V ρ (m.acval Ix.Kernel.natName ψ)))
     (hx : NatArg m ψ x) (hy : NatArg m ψ y) :
@@ -772,8 +772,8 @@ theorem natArg_of_bin (m : EnvModel V env) {ψ : Name → Nat}
 
 /-- A unary head with `Nat` codomain applied to a graded argument is a
 graded argument. -/
-theorem natArg_of_un (m : EnvModel V env) {ψ : Name → Nat}
-    {f x : Expr}
+theorem natArg_of_un (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {f x : Expr md}
     (hh : NatUnHead m ψ f
       (fun ρ => interp V ρ (m.acval Ix.Kernel.natName ψ)))
     (hx : NatArg m ψ x) :
@@ -782,8 +782,8 @@ theorem natArg_of_un (m : EnvModel V env) {ψ : Name → Nat}
 
 /-- A graded argument's package, forgetting the membership — the shape
 `natEqLaw_of_run`'s grading premises take. -/
-theorem NatArg.package (m : EnvModel V env) {ψ : Name → Nat}
-    {e : Expr} (h : NatArg m ψ e) :
+theorem NatArg.package (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {e : Expr md} (h : NatArg m ψ e) :
     ∃ ea, denoteMeta m.acval env ψ 2 e = some ea ∧
       ∀ ρ : Nat → V, Sat V (natCtx2 m ψ) ρ → WellDenotedV V ρ ea := by
   obtain ⟨ea, hea, hg⟩ := h
@@ -791,8 +791,8 @@ theorem NatArg.package (m : EnvModel V env) {ψ : Name → Nat}
 
 /-- A `Bool`-codomain application's package (comparison sides): the
 membership in the codomain is dropped, the grading kept. -/
-theorem natBinHead_app_package (m : EnvModel V env) {ψ : Name → Nat}
-    {f x y : Expr} {codS : (Nat → V) → V}
+theorem natBinHead_app_package (m : EnvModel V env) {ψ : LevelParam → Nat}
+    {f x y : Expr md} {codS : (Nat → V) → V}
     (hh : NatBinHead m ψ f codS) (hx : NatArg m ψ x)
     (hy : NatArg m ψ y) :
     ∃ ea, denoteMeta m.acval env ψ 2 (.app (.app f x) y) = some ea ∧
@@ -802,8 +802,8 @@ theorem natBinHead_app_package (m : EnvModel V env) {ψ : Name → Nat}
 
 /-- A stored level-monomorphic constant's package (the comparison
 right-hand sides' `Bool` constructors). -/
-theorem natConst_package (m : EnvModel V env) {ψ : Name → Nat}
-    (hval : AcvalValid m) {n : Name} {ci : ConstantInfo}
+theorem natConst_package (m : EnvModel V env) {ψ : LevelParam → Nat}
+    (hval : AcvalValid m) {n : Key md} {ci : ConstantInfo md}
     (hf : env.find? n = some ci)
     (hlp : ci.toConstantVal.levelParams = []) :
     ∃ ea, denoteMeta m.acval env ψ 2 (.const n []) = some ea ∧
@@ -817,14 +817,14 @@ theorem natConst_package (m : EnvModel V env) {ψ : Name → Nat}
 descends to the prefix (the pinned-type conjunct stays at the
 extension — its shape is env-free, and its `Bool`-codomain storedness
 conjunct is descended separately by the caller). -/
-theorem natOpStoredOk_descend {c₀ : ConstantInfo} {n : Name}
+theorem natOpStoredOk_descend {c₀ : ConstantInfo md} {n : Key md}
     (hne : n ≠ c₀.name)
     (hok : Ix.Kernel.natOpStoredOk ⟨c₀ :: env.consts⟩ n = true) :
     ∃ cvn vn hn, env.find? n = some (.defnInfo cvn vn hn) ∧
       cvn.levelParams = [] ∧
       Ix.Kernel.natOpTyPinned ⟨c₀ :: env.consts⟩ n cvn.type = true := by
   unfold Ix.Kernel.natOpStoredOk at hok
-  cases hf2 : (⟨c₀ :: env.consts⟩ : Env).find? n with
+  cases hf2 : (⟨c₀ :: env.consts⟩ : Env md).find? n with
   | none => rw [hf2] at hok; exact nomatch hok
   | some ci =>
     rw [hf2] at hok
@@ -844,16 +844,16 @@ theorem natOpStoredOk_descend {c₀ : ConstantInfo} {n : Name}
 
 /-- The pinned codomain's name: `Bool` for the comparisons, `Nat`
 otherwise. -/
-def natOpCodN (c : Name) : Name :=
+def natOpCodN (c : Key md) : Key md :=
   if c = Ix.Kernel.natBeqName ∨ c = Ix.Kernel.natBleName then Ix.Kernel.boolName
   else Ix.Kernel.natName
 
 /-- Fragment terms mention only stored constants (the raw sides; the
 head `c` must itself be stored). -/
-theorem constsBound_of_natFragOk {c : Name}
+theorem constsBound_of_natFragOk {c : Key md}
     (hc : (env.find? c).isSome = true)
     (hnat : (env.find? Ix.Kernel.natName).isSome = true) :
-    ∀ {e : Expr}, Ix.Kernel.Verify.natFragOk env c e = true →
+    ∀ {e : Expr md}, Ix.Kernel.Verify.natFragOk env c e = true →
       ConstsBound env e := by
   intro e
   induction e with
@@ -885,13 +885,13 @@ theorem constsBound_of_natFragOk {c : Name}
   | bvar _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | lam _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | forallE _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
-  | letE _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
+  | letE _ _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | proj _ _ _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
   | lit _ => intro h; simp [Ix.Kernel.Verify.natFragOk] at h
 
 /-- The raw sides of a stored operation's recurrences are in the
 fragment, from the guard alone. -/
-theorem natOpEquations_frag_of_guard {c : Name}
+theorem natOpEquations_frag_of_guard {c : Key md}
     (hg : natOpGuard env c = true) :
     ∀ eq ∈ Ix.Kernel.natOpEquations 0 c,
       Ix.Kernel.Verify.natFragOk env c eq.1 = true ∧
@@ -904,8 +904,8 @@ theorem natOpEquations_frag_of_guard {c : Name}
     (fun hc => (hbool (by rcases hc with rfl | rfl <;> simp)).2)
 
 /-- A `Nat`-operation fragment has no `.proj` node at all. -/
-theorem consCrossAt_of_natFragOk {c : Name} {c₀ : ConstantInfo} :
-    ∀ {e : Expr}, Ix.Kernel.Verify.natFragOk env c e = true →
+theorem consCrossAt_of_natFragOk {c : Key md} {c₀ : ConstantInfo md} :
+    ∀ {e : Expr md}, Ix.Kernel.Verify.natFragOk env c e = true →
       ConsCrossAt c₀ e := by
   intro e
   induction e with
@@ -920,23 +920,23 @@ theorem consCrossAt_of_natFragOk {c : Name} {c₀ : ConstantInfo} :
     simp only [Ix.Kernel.Verify.natFragOk, Bool.and_eq_true] at h
     simp only [Expr.NoProjAt]
     exact ⟨ihf h.1 entry heq j, iha h.2 entry heq j⟩
-  | bvar _ | lam _ _ _ | forallE _ _ _ | letE _ _ _ | lit _ | proj _ _ _ =>
+  | bvar _ | lam _ _ _ | forallE _ _ _ | letE _ _ _ _ | lit _ | proj _ _ _ =>
     intro h; simp [Ix.Kernel.Verify.natFragOk] at h
 
 /-- **The per-operation crossing at a fresh cons**: an operation
 stored in the prefix keeps its `NatOps` entry at the extension. -/
-theorem natOps_entry_cons (mp : EnvModelM V μ env) {φ : Name → Nat}
+theorem natOps_entry_cons (mp : EnvModelM V μ env) {φ : LevelParam → Nat}
     (hprev : NatOps mp.base2 φ)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ConsCrossEnv env c₀)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
-    {c : Name} (hcN : c ∈ Ix.Kernel.natOpNames) (hne : c ≠ c₀.name)
-    {cv' : ConstantVal} {v' : Expr} {hint' : ReducibilityHint}
-    (hf₂ : (⟨c₀ :: env.consts⟩ : Env).find? c
+    {c : Key md} (hcN : c ∈ Ix.Kernel.natOpNames) (hne : c ≠ c₀.name)
+    {cv' : ConstantVal md} {v' : Expr md} {hint' : ReducibilityHint}
+    (hf₂ : (⟨c₀ :: env.consts⟩ : Env md).find? c
       = some (.defnInfo cv' v' hint')) :
-    natOpGuard (⟨c₀ :: env.consts⟩ : Env) c = true ∧
+    natOpGuard (⟨c₀ :: env.consts⟩ : Env md) c = true ∧
     ∀ eq ∈ Ix.Kernel.natOpEquations 0 c, ∃ L R,
       denoteMeta m₂.acval ⟨c₀ :: env.consts⟩ φ 2 eq.1 = some L ∧
       denoteMeta m₂.acval ⟨c₀ :: env.consts⟩ φ 2 eq.2 = some R ∧
@@ -984,9 +984,9 @@ theorem natOps_entry_cons (mp : EnvModelM V μ env) {φ : Name → Nat}
 step except the operation's own install discharges its obligation
 here.  The disjunctive premise: either the cons is not a definition at
 all, or its name is not an operation name. -/
-theorem natOps_cons_fresh (mp : EnvModelM V μ env) {φ : Name → Nat}
+theorem natOps_cons_fresh (mp : EnvModelM V μ env) {φ : LevelParam → Nat}
     (hprev : NatOps mp.base2 φ)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
     (hntc : ConsCrossEnv env c₀)
     (hnothead : (∀ cv v hint, c₀ ≠ .defnInfo cv v hint) ∨
@@ -1008,21 +1008,21 @@ harvest's facts: the annotated value's reading, grading and membership
 at the declared type's reading, plus the type's pin.  Splits by the
 operation's arity and codomain, concluding both forms
 `natOps_install` takes. -/
-theorem natSelfHead_install (mp : EnvModelM V μ env) {φ : Name → Nat}
-    {c : Name} (hcmem : c ∈ Ix.Kernel.natOpNames)
-    {lps : List Name} {type' value' : Expr} {hint : ReducibilityHint}
+theorem natSelfHead_install (mp : EnvModelM V μ env) {φ : LevelParam → Nat}
+    {c : Key md} (hcmem : c ∈ Ix.Kernel.natOpNames)
+    {lps : List LevelParam} {type' value' : Expr md} {hint : ReducibilityHint}
     (hfresh : env.find? c = none)
     (hpin : Ix.Kernel.natOpTyPinned
-      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env)
+      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env md)
       c type' = true)
     (hs : natLitSupported env = true)
-    {Ta : (Name → Nat) → AnnotTerm}
+    {Ta : (LevelParam → Nat) → AnnotTerm}
     (hTa : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 type' = some (Ta ψ))
-    (hTok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
-    {A : (Name → Nat) → AnnotTerm}
+    (hTok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (Ta ψ))
+    {A : (LevelParam → Nat) → AnnotTerm}
     (hA2 : ∀ ψ, denoteMeta mp.base2.acval env ψ 2 value' = some (A ψ))
-    (hAok : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ))
-    (hmemA : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hAok : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ))
+    (hmemA : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       interp V ρ (A ψ) ∈ˢ interp V ρ (Ta ψ)) :
     (c ≠ Ix.Kernel.natPredName →
       NatBinHead mp.base2 φ value'
@@ -1046,7 +1046,7 @@ theorem natSelfHead_install (mp : EnvModelM V μ env) {φ : Name → Nat}
     · -- `Bool` codomain
       obtain ⟨rfl, ci₂, hfB₂, hlpB₂⟩ := hcmp hccmp
       have hBne : Ix.Kernel.boolName ≠ c :=
-        Ix.Kernel.Verify.ne_of_mem_natOpNames (by decide) hcmem
+        Ix.Kernel.Verify.ne_of_mem_natOpNames (by (cases md <;> decide)) hcmem
       have hfB : env.find? Ix.Kernel.boolName = some ci₂ := by
         rw [Ix.Kernel.Env.find?_cons] at hfB₂
         split at hfB₂
@@ -1096,27 +1096,27 @@ substituted recurrences (`NatEqsRun`) become `interp` equalities
 through `DefEqClaim` at the pre-insertion environment, and the
 substitution crossing (`denoteMeta_substConst0`) restates them as the raw
 equations' readings at the extension. -/
-theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
+theorem natOps_install (mp : EnvModelM V μ env) {φ : LevelParam → Nat}
     {F : Nat} (hde : DefEqClaim μ mp.base2 φ F)
     (hprev : NatOps mp.base2 φ)
-    {c : Name} {lps : List Name} {type' value' : Expr}
+    {c : Key md} {lps : List LevelParam} {type' value' : Expr md}
     {hint : ReducibilityHint}
     (hcmem : c ∈ Ix.Kernel.natOpNames)
     (hfresh : env.find? c = none)
     (hlpcv : lps = [])
     (hs : natLitSupported env = true)
     (hg2 : natOpGuard
-      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env) c
+      (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env md) c
       = true)
     (hdepsOk : (Ix.Kernel.natOpDeps c).all
       (Ix.Kernel.natOpStoredOk
-        (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env))
+        (⟨.defnInfo ⟨c, lps, type'⟩ value' hint :: env.consts⟩ : Env md))
       = true)
     (hruns : NatEqsRun μ F env
       ((Ix.Kernel.natOpEquations 0 c).map fun eq =>
         (Expr.substConst0 c value' eq.1,
          Expr.substConst0 c value' eq.2)))
-    {A : (Name → Nat) → AnnotTerm}
+    {A : (LevelParam → Nat) → AnnotTerm}
     (hA : ∀ ψ, denoteMeta mp.base2.acval env ψ 0 value' = some (A ψ))
     (hAcl : ∀ ψ k, (A ψ).liftN 1 k = A ψ)
     (hvf' : value'.hasFvar = false)
@@ -1139,7 +1139,7 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
   case neg =>
     exact natOps_entry_cons mp hprev
       (c₀ := .defnInfo ⟨c, lps, type'⟩ value' hint)
-      (hntc := fun _ h => ConstantInfo.noConfusion h)
+      (hntc := fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (show env.find? (ConstantInfo.defnInfo ⟨c, lps, type'⟩ value'
         hint).name = none from hfresh) m₂
       (show m₂.acval = acvalWith mp.base2.acval
@@ -1155,29 +1155,29 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
   have hvalV : AcvalValid mp.base2 := mp.acvalValid
   obtain ⟨hN₂, hz₂, hs₂, hdeps₂, hbool₂⟩ :=
     Ix.Kernel.Verify.natOpGuard_stored hg2
-  have tr : ∀ {n : Name}, n ≠ cq →
+  have tr : ∀ {n : Key md}, n ≠ cq →
       Ix.Kernel.Verify.storedNoLevels
-        (⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts⟩ : Env) n →
+        (⟨.defnInfo ⟨cq, lps, type'⟩ value' hint :: env.consts⟩ : Env md) n →
       Ix.Kernel.Verify.storedNoLevels env n := fun hne h =>
     Ix.Kernel.Verify.storedNoLevels_of_cons
       (ci := .defnInfo ⟨cq, lps, type'⟩ value' hint) rfl hne h
   have hnz : Ix.Kernel.natZeroName ≠ cq :=
-    Ix.Kernel.Verify.ne_of_mem_natOpNames (by decide) hcqN
+    Ix.Kernel.Verify.ne_of_mem_natOpNames (by (cases md <;> decide)) hcqN
   have hns : Ix.Kernel.natSuccName ≠ cq :=
-    Ix.Kernel.Verify.ne_of_mem_natOpNames (by decide) hcqN
+    Ix.Kernel.Verify.ne_of_mem_natOpNames (by (cases md <;> decide)) hcqN
   have hnN : Ix.Kernel.natName ≠ cq :=
-    Ix.Kernel.Verify.ne_of_mem_natOpNames (by decide) hcqN
+    Ix.Kernel.Verify.ne_of_mem_natOpNames (by (cases md <;> decide)) hcqN
   have hnT : Ix.Kernel.boolTrueName ≠ cq :=
-    Ix.Kernel.Verify.ne_of_mem_natOpNames (by decide) hcqN
+    Ix.Kernel.Verify.ne_of_mem_natOpNames (by (cases md <;> decide)) hcqN
   have hnF : Ix.Kernel.boolFalseName ≠ cq :=
-    Ix.Kernel.Verify.ne_of_mem_natOpNames (by decide) hcqN
+    Ix.Kernel.Verify.ne_of_mem_natOpNames (by (cases md <;> decide)) hcqN
   obtain ⟨hfr1, hfr2⟩ := Ix.Kernel.Verify.natOpEquations_frag
     (env := env) (c := cq) (tr hnz hz₂) (tr hns hs₂)
     (fun n hn hne => tr hne (hdeps₂ n hn))
     (fun hc => tr hnT (hbool₂ (by rcases hc with rfl | rfl <;> simp)).1)
     (fun hc => tr hnF (hbool₂ (by rcases hc with rfl | rfl <;> simp)).2)
     (e1, e2) hq
-  have hden : ∀ ψ : Name → Nat,
+  have hden : ∀ ψ : LevelParam → Nat,
       ∃ V0, denote mp.base2.cvalE env ψ 0 value' = some V0 :=
     fun ψ => ⟨(A ψ).erase,
       denoteMeta_erase mp.base2.acval_erase 0 value' (hA ψ)⟩
@@ -1191,7 +1191,7 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
   have hlpN : (ConstantInfo.indInfo cvN caps).toConstantVal.levelParams
       = [] := hlpN0
   -- the crossing and the membership conversion, shared
-  have hcross : ∀ (e : Expr), shallowE e = true →
+  have hcross : ∀ (e : Expr md), shallowE e = true →
       ∀ {ea : AnnotTerm},
       denoteMeta mp.base2.acval env φ 2 (Expr.substConst0 cq value' e)
         = some ea →
@@ -1302,9 +1302,9 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
   · -- `Nat.add`
     have hbin : NatBinHead mp.base2 φ value'
         (fun ρ => interp V ρ (mp.base2.acval Ix.Kernel.natName φ)) := by
-      have h := hSelfBin (by decide)
-      simpa only [show natOpCodN Ix.Kernel.natAddName = Ix.Kernel.natName
-        from by unfold natOpCodN; rw [if_neg (by decide)]] using h
+      have h := hSelfBin (by (cases md <;> decide))
+      simpa only [show natOpCodN (md := md) Ix.Kernel.natAddName = Ix.Kernel.natName
+        from by unfold natOpCodN; rw [if_neg (by simp)]] using h
     have hvx := natArg_var0 mp.base2 φ
     have hvy := natArg_var1 mp.base2 φ
     have hz := natArg_zero mp.base2 hnh hvalV hs
@@ -1329,10 +1329,10 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
   · -- `Nat.sub`
     have hbin : NatBinHead mp.base2 φ value'
         (fun ρ => interp V ρ (mp.base2.acval Ix.Kernel.natName φ)) := by
-      have h := hSelfBin (by decide)
-      simpa only [show natOpCodN Ix.Kernel.natSubName = Ix.Kernel.natName
-        from by unfold natOpCodN; rw [if_neg (by decide)]] using h
-    have hpred := hdepUn Ix.Kernel.natPredName (by decide) (by decide) rfl
+      have h := hSelfBin (by (cases md <;> decide))
+      simpa only [show natOpCodN (md := md) Ix.Kernel.natSubName = Ix.Kernel.natName
+        from by unfold natOpCodN; rw [if_neg (by simp)]] using h
+    have hpred := hdepUn Ix.Kernel.natPredName (by (cases md <;> decide)) (by (cases md <;> decide)) rfl
     have hvx := natArg_var0 mp.base2 φ
     have hvy := natArg_var1 mp.base2 φ
     have hz := natArg_zero mp.base2 hnh hvalV hs
@@ -1357,11 +1357,11 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
   · -- `Nat.mul`
     have hbin : NatBinHead mp.base2 φ value'
         (fun ρ => interp V ρ (mp.base2.acval Ix.Kernel.natName φ)) := by
-      have h := hSelfBin (by decide)
-      simpa only [show natOpCodN Ix.Kernel.natMulName = Ix.Kernel.natName
-        from by unfold natOpCodN; rw [if_neg (by decide)]] using h
-    have hadd := hdepBin Ix.Kernel.natAddName (by decide) (by decide)
-      (by decide) (by decide)
+      have h := hSelfBin (by (cases md <;> decide))
+      simpa only [show natOpCodN (md := md) Ix.Kernel.natMulName = Ix.Kernel.natName
+        from by unfold natOpCodN; rw [if_neg (by simp)]] using h
+    have hadd := hdepBin Ix.Kernel.natAddName (by (cases md <;> decide)) (by (cases md <;> decide))
+      (by (cases md <;> decide)) (by (cases md <;> decide))
     have hvx := natArg_var0 mp.base2 φ
     have hvy := natArg_var1 mp.base2 φ
     have hz := natArg_zero mp.base2 hnh hvalV hs
@@ -1386,11 +1386,11 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
   · -- `Nat.pow`
     have hbin : NatBinHead mp.base2 φ value'
         (fun ρ => interp V ρ (mp.base2.acval Ix.Kernel.natName φ)) := by
-      have h := hSelfBin (by decide)
-      simpa only [show natOpCodN Ix.Kernel.natPowName = Ix.Kernel.natName
-        from by unfold natOpCodN; rw [if_neg (by decide)]] using h
-    have hmul := hdepBin Ix.Kernel.natMulName (by decide) (by decide)
-      (by decide) (by decide)
+      have h := hSelfBin (by (cases md <;> decide))
+      simpa only [show natOpCodN (md := md) Ix.Kernel.natPowName = Ix.Kernel.natName
+        from by unfold natOpCodN; rw [if_neg (by simp)]] using h
+    have hmul := hdepBin Ix.Kernel.natMulName (by (cases md <;> decide)) (by (cases md <;> decide))
+      (by (cases md <;> decide)) (by (cases md <;> decide))
     have hvx := natArg_var0 mp.base2 φ
     have hvy := natArg_var1 mp.base2 φ
     have hz := natArg_zero mp.base2 hnh hvalV hs
@@ -1414,11 +1414,11 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
       · simpa +decide [Expr.substConst0] using hla
       · simpa +decide [Expr.substConst0] using hra
   · -- `Nat.beq`
-    have hbin := hSelfBin (by decide)
+    have hbin := hSelfBin (by (cases md <;> decide))
     obtain ⟨ciT, hfT, hlpT⟩ := Ix.Kernel.Verify.storedNoLevels_exists
-      (tr hnT (hbool₂ (by decide)).1)
+      (tr hnT (hbool₂ (by (cases md <;> decide))).1)
     obtain ⟨ciF, hfF, hlpF⟩ := Ix.Kernel.Verify.storedNoLevels_exists
-      (tr hnF (hbool₂ (by decide)).2)
+      (tr hnF (hbool₂ (by (cases md <;> decide))).2)
     have hvx := natArg_var0 mp.base2 φ
     have hvy := natArg_var1 mp.base2 φ
     have hz := natArg_zero mp.base2 hnh hvalV hs
@@ -1458,11 +1458,11 @@ theorem natOps_install (mp : EnvModelM V μ env) {φ : Name → Nat}
       · simpa +decide [Expr.substConst0] using hla
       · simpa +decide [Expr.substConst0] using hra
   · -- `Nat.ble`
-    have hbin := hSelfBin (by decide)
+    have hbin := hSelfBin (by (cases md <;> decide))
     obtain ⟨ciT, hfT, hlpT⟩ := Ix.Kernel.Verify.storedNoLevels_exists
-      (tr hnT (hbool₂ (by decide)).1)
+      (tr hnT (hbool₂ (by (cases md <;> decide))).1)
     obtain ⟨ciF, hfF, hlpF⟩ := Ix.Kernel.Verify.storedNoLevels_exists
-      (tr hnF (hbool₂ (by decide)).2)
+      (tr hnF (hbool₂ (by (cases md <;> decide))).2)
     have hvx := natArg_var0 mp.base2 φ
     have hvy := natArg_var1 mp.base2 φ
     have hz := natArg_zero mp.base2 hnh hvalV hs

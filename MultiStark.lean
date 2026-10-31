@@ -59,24 +59,24 @@ def entrypoints := ⟦
     -- unconstrained (the proof is advice); the parse structure itself stays
     -- constrained.
     let (idx, len) = io_get_info(0, [0]);
-    -- Verifying key (`System<AiurCircuit>`) from IO channel 1: fetch the raw
-    -- bytes once as advice, then constrain both the hash and deserialization
-    -- against that exact byte stream (the same binding pattern as IxVM).
-    -- read_system's constrained countdowns and the empty-remainder assertion
-    -- establish finiteness; the hash alone would not reject a cyclic stream.
+    -- Verifying key (`System<AiurCircuit>`) from IO channel 1: read the bytes
+    -- once through the checked reader (finite, every element a byte), then
+    -- constrain both the hash and deserialization against that exact byte
+    -- stream (the same binding pattern as IxVM). Without the byte check the
+    -- digest would pin only packed 32-bit words, not the fields parsed from
+    -- them.
     let (sidx, slen) = io_get_info(1, [0]);
-    let sbytes = #read_byte_stream(1, sidx, slen);
+    let sbytes = read_checked_byte_stream(1, sidx, slen);
     assert_eq!(@b3_pack(@blake3(sbytes)), system_digest);
     let (sys, srest) = @read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
-    -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
-    -- public Blake3 `claims_digest`, then deserialize. The batch's own
-    -- claims (in its headers, bound by the batch transcript) must equal
-    -- them, which is what ties the public statement to the lookup argument.
-    -- read_claims also uses constrained countdowns. Keep the empty-remainder
-    -- check: together they rule out cyclic advice without another list walk.
+    -- Public claims (`&[&[Val]]`) from IO channel 2, read the same way: bind
+    -- the bytes to the public Blake3 `claims_digest`, then deserialize. The
+    -- batch's own claims (in its headers, bound by the batch transcript)
+    -- must equal them, which is what ties the public statement to the
+    -- lookup argument.
     let (cidx, clen) = io_get_info(2, [0]);
-    let cbytes = #read_byte_stream(2, cidx, clen);
+    let cbytes = read_checked_byte_stream(2, cidx, clen);
     assert_eq!(@b3_pack(@blake3(cbytes)), claims_digest);
     let (claims, crest) = @read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);

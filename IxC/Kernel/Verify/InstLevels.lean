@@ -28,8 +28,8 @@ namespace Ix.Kernel
 
 namespace Level
 
-private theorem subst_go_subst {ks : List Name} {us : List Level} :
-    ∀ {ps : List Name} {vs : List Level} {n : Name},
+private theorem subst_go_subst {ks : List LevelParam} {us : List Level} :
+    ∀ {ps : List LevelParam} {vs : List Level} {n : LevelParam},
       n ∈ ps → vs.length = ps.length →
       subst ks us (subst.go ps vs n) = subst.go ps (vs.map (subst ks us)) n := by
   intro ps
@@ -51,7 +51,7 @@ private theorem subst_go_subst {ks : List Name} {us : List Level} :
 
 /-- Substituting into an already-substituted level composes, provided the
 original level only mentions parameters from `ps` and the lists align. -/
-theorem subst_subst {ks : List Name} {us : List Level} {ps : List Name} {vs : List Level}
+theorem subst_subst {ks : List LevelParam} {us : List Level} {ps : List LevelParam} {vs : List Level}
     (hl : vs.length = ps.length) :
     ∀ {u : Level}, u.allParamsDefined ps = true →
       subst ks us (subst ps vs u) = subst ps (vs.map (subst ks us)) u := by
@@ -59,8 +59,8 @@ theorem subst_subst {ks : List Name} {us : List Level} {ps : List Name} {vs : Li
   induction u <;> intro h <;> simp_all [subst, allParamsDefined]
   case param n => exact subst_go_subst (by simpa using h) hl
 
-private theorem allParamsDefined_subst_go {ps' : List Name} :
-    ∀ {ks : List Name} {us : List Level} {n : Name},
+private theorem allParamsDefined_subst_go {ps' : List LevelParam} :
+    ∀ {ks : List LevelParam} {us : List Level} {n : LevelParam},
       n ∈ ks → us.length = ks.length → (∀ u ∈ us, u.allParamsDefined ps' = true) →
       (subst.go ks us n).allParamsDefined ps' = true := by
   intro ks
@@ -82,7 +82,7 @@ private theorem allParamsDefined_subst_go {ps' : List Name} :
 
 /-- Substitution keeps parameters within the bound of the substituted
 levels. -/
-theorem allParamsDefined_subst {ks : List Name} {us : List Level} {ps' : List Name}
+theorem allParamsDefined_subst {ks : List LevelParam} {us : List Level} {ps' : List LevelParam}
     (hl : us.length = ks.length)
     (hus : ∀ u ∈ us, u.allParamsDefined ps' = true) :
     ∀ {u : Level}, u.allParamsDefined ks = true →
@@ -96,28 +96,28 @@ end Level
 namespace Expr
 
 /-- Level instantiation does not change the free-variable structure. -/
-theorem hasFvar_instantiateLevelParams (ks : List Name) (us : List Level) :
-    ∀ e : Expr, (e.instantiateLevelParams ks us).hasFvar = e.hasFvar := by
+theorem hasFvar_instantiateLevelParams (ks : List LevelParam) (us : List Level) :
+    ∀ e : Expr md, (e.instantiateLevelParams ks us).hasFvar = e.hasFvar := by
   intro e
   induction e <;> simp_all [instantiateLevelParams, hasFvar]
 
 /-- Level instantiation does not change loose-bvar bounds. -/
-theorem looseBVarsBounded_instantiateLevelParams (ks : List Name) (us : List Level) :
-    ∀ (e : Expr) (k : Nat),
+theorem looseBVarsBounded_instantiateLevelParams (ks : List LevelParam) (us : List Level) :
+    ∀ (e : Expr md) (k : Nat),
       (e.instantiateLevelParams ks us).looseBVarsBounded k = e.looseBVarsBounded k := by
   intro e
   induction e <;> intro k <;> simp_all [instantiateLevelParams, looseBVarsBounded]
 
 /-- Level instantiation distributes over a `∀`-telescope's
 decomposition. -/
-theorem stripPis_instantiateLevelParams_eq (ks : List Name)
+theorem stripPis_instantiateLevelParams_eq (ks : List LevelParam)
     (us : List Level) :
-    ∀ (k : Nat) {e : Expr} {bs bs' : List (Expr × BinderMeta)}
-      {body body' : Expr},
+    ∀ (k : Nat) {e : Expr md} {bs bs' : List (Expr md × BinderMeta)}
+      {body body' : Expr md},
       e.stripPis k = some (bs, body) →
       (e.instantiateLevelParams ks us).stripPis k = some (bs', body') →
       body' = body.instantiateLevelParams ks us ∧
-      ∀ (i : Nat) (b b' : Expr × BinderMeta),
+      ∀ (i : Nat) (b b' : Expr md × BinderMeta),
         bs[i]? = some b → bs'[i]? = some b' →
         b'.1 = b.1.instantiateLevelParams ks us := by
   intro k
@@ -146,7 +146,7 @@ theorem stripPis_instantiateLevelParams_eq (ks : List Name)
         cases h1; exact ⟨rfl, rfl⟩
       obtain ⟨hb2, hbody2⟩ :
           (d.instantiateLevelParams ks us,
-            (⟨Level.substPW ks us m.pw⟩ : BinderMeta)) :: p2.1
+            ({ m with pw := Level.substPW ks us m.pw } : BinderMeta)) :: p2.1
               = bs' ∧
             p2.2 = body' := by
         cases h2; exact ⟨rfl, rfl⟩
@@ -164,9 +164,9 @@ theorem stripPis_instantiateLevelParams_eq (ks : List Name)
         exact hdoms i bb bb' hbb hbb'
 
 /-- Level instantiation preserves a `∀`-telescope's arity. -/
-theorem stripPis_instantiateLevelParams_isSome (ks : List Name)
+theorem stripPis_instantiateLevelParams_isSome (ks : List LevelParam)
     (us : List Level) :
-    ∀ (k : Nat) {e : Expr}, (e.stripPis k).isSome →
+    ∀ (k : Nat) {e : Expr md}, (e.stripPis k).isSome →
       ((e.instantiateLevelParams ks us).stripPis k).isSome := by
   intro k
   induction k with
@@ -181,9 +181,9 @@ theorem stripPis_instantiateLevelParams_isSome (ks : List Name)
 
 /-- Level instantiation distributes over an application spine's
 arguments. -/
-theorem getAppArgs_instantiateLevelParams (ks : List Name)
+theorem getAppArgs_instantiateLevelParams (ks : List LevelParam)
     (us : List Level) :
-    ∀ (e : Expr), (e.instantiateLevelParams ks us).getAppArgs =
+    ∀ (e : Expr md), (e.instantiateLevelParams ks us).getAppArgs =
       e.getAppArgs.map (·.instantiateLevelParams ks us) := by
   intro e
   induction e with
@@ -193,9 +193,9 @@ theorem getAppArgs_instantiateLevelParams (ks : List Name)
   | _ => simp [Expr.instantiateLevelParams, Expr.getAppArgs]
 
 /-- Level instantiation preserves the head shape. -/
-theorem getAppFn_instantiateLevelParams (ks : List Name)
+theorem getAppFn_instantiateLevelParams (ks : List LevelParam)
     (us : List Level) :
-    ∀ (e : Expr), (e.instantiateLevelParams ks us).getAppFn =
+    ∀ (e : Expr md), (e.instantiateLevelParams ks us).getAppFn =
       e.getAppFn.instantiateLevelParams ks us := by
   intro e
   induction e with
@@ -204,9 +204,9 @@ theorem getAppFn_instantiateLevelParams (ks : List Name)
   | _ => simp [Expr.instantiateLevelParams, Expr.getAppFn]
 
 /-- A stripped telescope's body keeps its level parameters defined. -/
-theorem allLevelParamsDefined_stripPis_body {ps : List Name} :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr},
+theorem allLevelParamsDefined_stripPis_body {ps : List LevelParam} :
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md},
       e.stripPis k = some (bs, body) →
       e.allLevelParamsDefined ps = true →
       body.allLevelParamsDefined ps = true := by
@@ -229,8 +229,8 @@ theorem allLevelParamsDefined_stripPis_body {ps : List Name} :
       exact ih hb hp.1.2
 
 /-- Renaming constants commutes with instantiation (general argument). -/
-theorem renameConsts_instantiate1_gen (f : Name → Name) {v : Expr} :
-    ∀ (e : Expr) (k : Nat),
+theorem renameConsts_instantiate1_gen (f : Key md → Key md) {v : Expr md} :
+    ∀ (e : Expr md) (k : Nat),
       (e.instantiate1 v k).renameConsts f =
         (e.renameConsts f).instantiate1 (v.renameConsts f) k := by
   intro e
@@ -246,9 +246,9 @@ theorem renameConsts_instantiate1_gen (f : Name → Name) {v : Expr} :
     simp_all [Expr.instantiate1, Expr.renameConsts]
 
 /-- Level instantiation commutes with binder opening. -/
-theorem instantiateLevelParams_instantiate1 (ks : List Name) (us : List Level)
-    {d : Nat} {ty : Expr} :
-    ∀ (e : Expr) (k : Nat),
+theorem instantiateLevelParams_instantiate1 (ks : List LevelParam) (us : List Level)
+    {d : Nat} {ty : Expr md} :
+    ∀ (e : Expr md) (k : Nat),
       (e.instantiate1 (.fvar d ty) k).instantiateLevelParams ks us =
         (e.instantiateLevelParams ks us).instantiate1
           (.fvar d (ty.instantiateLevelParams ks us)) k := by
@@ -259,9 +259,9 @@ theorem instantiateLevelParams_instantiate1 (ks : List Name) (us : List Level)
     · rfl
     · split <;> simp [instantiateLevelParams]
 
-theorem renameConsts_instantiate1 (f : Name → Name)
-    {d : Nat} {ty : Expr} :
-    ∀ (e : Expr) (k : Nat),
+theorem renameConsts_instantiate1 (f : Key md → Key md)
+    {d : Nat} {ty : Expr md} :
+    ∀ (e : Expr md) (k : Nat),
       (e.instantiate1 (.fvar d ty) k).renameConsts f =
         (e.renameConsts f).instantiate1
           (.fvar d (ty.renameConsts f)) k := by
@@ -273,9 +273,9 @@ theorem renameConsts_instantiate1 (f : Name → Name)
     · split <;> simp [Expr.renameConsts]
 
 /-- Binder opening keeps level parameters bounded. -/
-theorem allLevelParamsDefined_instantiate1 {ps : List Name} {d : Nat} {ty : Expr}
+theorem allLevelParamsDefined_instantiate1 {ps : List LevelParam} {d : Nat} {ty : Expr md}
     (hty : ty.allLevelParamsDefined ps = true) :
-    ∀ {e : Expr} (k : Nat), e.allLevelParamsDefined ps = true →
+    ∀ {e : Expr md} (k : Nat), e.allLevelParamsDefined ps = true →
       (e.instantiate1 (.fvar d ty) k).allLevelParamsDefined ps = true := by
   intro e
   induction e <;> intro k h <;> simp_all [instantiate1, allLevelParamsDefined]
@@ -286,8 +286,8 @@ theorem allLevelParamsDefined_instantiate1 {ps : List Name} {d : Nat} {ty : Expr
 
 /-- Renaming an instantiation sequence: pushing the renaming inside is
 exact on the telescope and erased on the (fvar) arguments. -/
-theorem instSeq_renameConsts {f : Name → Name} :
-    ∀ (args : List Expr) (t : Nat) {X : Expr},
+theorem instSeq_renameConsts {f : Key md → Key md} :
+    ∀ (args : List (Expr md)) (t : Nat) {X : Expr md},
       (∀ a ∈ args, ErasedEq (a.renameConsts f) a) →
       ErasedEq ((instSeq args t X).renameConsts f)
         (instSeq args t (X.renameConsts f)) := by
@@ -310,8 +310,8 @@ end Expr
 
 
 /-- Level instantiation distributes over an application spine. -/
-theorem instantiateLevelParams_mkAppN (ks : List Name) (us : List Level) :
-    ∀ (xs : List Expr) (h : Expr),
+theorem instantiateLevelParams_mkAppN (ks : List LevelParam) (us : List Level) :
+    ∀ (xs : List (Expr md)) (h : Expr md),
       (Expr.mkAppN h xs).instantiateLevelParams ks us =
         Expr.mkAppN (h.instantiateLevelParams ks us)
           (xs.map (fun x => x.instantiateLevelParams ks us))
@@ -322,9 +322,9 @@ theorem instantiateLevelParams_mkAppN (ks : List Name) (us : List Level) :
     rfl
 
 /-- Substituting each level parameter by itself is the identity. -/
-theorem Level.subst_param_self (ks : List Name) :
+theorem Level.subst_param_self (ks : List LevelParam) :
     ∀ l : Level, Level.subst ks (ks.map Level.param) l = l := by
-  have hgo : ∀ (ks : List Name) (n : Name),
+  have hgo : ∀ (ks : List LevelParam) (n : LevelParam),
       Level.subst.go ks (ks.map Level.param) n = .param n := by
     intro ks
     induction ks with
@@ -344,8 +344,8 @@ theorem Level.subst_param_self (ks : List Name) :
   | param n => exact hgo ks n
 
 /-- …and so is instantiating a declaration at its own parameters. -/
-theorem Expr.instantiateLevelParams_self (ks : List Name) :
-    ∀ e : Expr, e.instantiateLevelParams ks (ks.map Level.param) = e := by
+theorem Expr.instantiateLevelParams_self (ks : List LevelParam) :
+    ∀ e : Expr md, e.instantiateLevelParams ks (ks.map Level.param) = e := by
   intro e
   have hmap : ∀ us : List Level,
       us.map (Level.subst ks (ks.map Level.param)) = us := by

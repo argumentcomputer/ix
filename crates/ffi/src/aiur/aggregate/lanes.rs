@@ -22,10 +22,10 @@ use aiur::record_pool::{
 };
 use aiur::synthesis::ShardRetention as Retention;
 use ixvm_codegen::aiur_ixvm_runner::execute_ixvm;
-use ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness;
+use ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with;
 
 use super::prepare::PreparedRun;
-use super::protocol::serialize_claims;
+use super::protocol::{aggregate_outer_claim, serialize_claims};
 use super::prove::{
   PrepareFailure, Slot, StagedSlot, finish_slot, prepare_slot,
 };
@@ -34,7 +34,7 @@ use super::*;
 use crate::aiur::lean_unbox_nat_as_usize;
 use aiur::synthesis::{GatedProve, PreparedProve};
 use ix_common::address::Address;
-use ixon::{Claim, Proof as IxonProof};
+use ixon::{Claim, ClaimContext, Proof as IxonProof};
 use lean_ffi::object::{
   LeanBorrowed, LeanByteArray, LeanExcept, LeanExternal, LeanNat, LeanOwned,
   LeanString,
@@ -52,6 +52,10 @@ pub struct Config {
   pub structural_above: usize,
   pub cache_fri_bytes: Vec<u8>,
   pub out_manifest: Option<PathBuf>,
+  /// An IxVM proof of the `Binding` claim for the environment's binding.
+  /// When present, every claim of the run assumes its binding and the root
+  /// discharges that condition once.
+  pub binding_proof: Option<IxonProof>,
 }
 
 /// The default ceiling on one execution record's counted bytes: large
@@ -83,7 +87,7 @@ struct Prep {
 enum Item {
   Claim {
     shard: usize,
-    claim: Claim,
+    claim: Box<Claim>,
     claim_bytes: Vec<u8>,
     prepared: Box<PreparedProve>,
   },
@@ -200,9 +204,12 @@ fn prepare_loop(
     let outcome = (|| -> Result<Item, PrepareFailure> {
       match work {
         Work::Claim(shard) => {
-          let (claim, input, mut io) =
-            build_shard_check_env_witness(env, &owned[shard])
-              .map_err(|e| format!("witness build: {e}"))?;
+          let (claim, input, mut io) = build_shard_check_env_witness_with(
+            env,
+            &owned[shard],
+            ctx.binding_proof.is_some(),
+          )
+          .map_err(|e| format!("witness build: {e}"))?;
           let prepared = match ctx.ixvm_system.prepare_ixvm_within_budget(
             ctx.verify_idx, &input, &mut io, execute_ixvm,
             max_ram_bytes, true, Some(Retention::Regenerate),
@@ -224,7 +231,7 @@ fn prepare_loop(
           claim.put(&mut claim_bytes);
           Ok(Item::Claim {
             shard,
-            claim,
+            claim: Box::new(claim),
             claim_bytes,
             prepared: Box::new(prepared),
           })
@@ -288,7 +295,7 @@ fn prove_loop(
           let proof_bytes = proof
             .to_bytes()
             .map_err(|e| format!("proof serialization: {e}"))?;
-          let wrapper = IxonProof::new(claim, proof_bytes);
+          let wrapper = IxonProof::new(*claim, proof_bytes);
           let mut wrapper_bytes = Vec::new();
           wrapper.put(&mut wrapper_bytes);
           write_store(ctx.store_dir, &claim_bytes)?;
@@ -346,6 +353,39 @@ fn prove_loop(
               format!("aggregate root proof failed verification: {error:?}")
             },
           )?;
+          // Claims that assume their binding: discharge once, here.
+          if let Some(binding) = ctx.binding_proof {
+            let reservation = pool
+              .try_admit()
+              .map_err(|error| {
+                format!("binding discharge admission: {error:?}")
+              })?
+              .ok_or("binding discharge cannot acquire record capacity")?;
+            let record = bind_record_reservation(&reservation);
+            let (discharged, _) = discharge_root(ctx, &root, proof, binding)?;
+            drop(record);
+            drop(reservation);
+            let statement = Statement::new(
+              ClaimContext {
+                binding_assumed: false,
+                literal_class: false,
+                ..root.statement.ctx.clone()
+              },
+              root.statement.subjects.clone(),
+              root.statement.assumptions.clone(),
+            );
+            let outer = aggregate_outer_claim(
+              ctx.aggr_idx,
+              ctx.allowed,
+              &statement.claim_bytes,
+            );
+            ctx.aggr_system.verify(&outer, &discharged).map_err(|error| {
+              format!("binding discharge proof failed verification: {error:?}")
+            })?;
+            let address =
+              persist_wrapper(ctx.store_dir, &statement, &discharged)?;
+            return Ok(address.hex());
+          }
           let address = match (&wrapped, &root.proof_address) {
             (None, Some(address)) => address.clone(),
             _ => persist_wrapper(ctx.store_dir, &root.statement, proof)?,
@@ -525,6 +565,8 @@ struct Pass {
   wrap_budget: Option<usize>,
   pool: RecordPool,
   systems: Vec<(AiurSystem, AiurSystem)>,
+  /// The run's binding proof, when its claims assume their binding.
+  binding_proof: Option<IxonProof>,
 }
 
 impl Pass {
@@ -556,6 +598,7 @@ impl Pass {
         wrap_budget: self.wrap_budget,
         range_width: 0,
         range_jobs: 1,
+        binding_proof: self.binding_proof.as_ref(),
       })
       .collect()
   }
@@ -576,7 +619,7 @@ fn plan_pass(
   cache_root: &Path,
   record_max_bytes: usize,
 ) -> Result<Pass, String> {
-  let prepared = prepare_run(env, manifest)?;
+  let prepared = prepare_run_with(env, manifest, cfg.binding_proof.is_some())?;
   let ixvm_vk = aiur::vk_codec::aiur_system_to_bytes(ixvm)
     .map_err(|error| format!("IxVM VK serialization failed: {error}"))?;
   let aggr_vk = aiur::vk_codec::aiur_system_to_bytes(aggr)
@@ -721,6 +764,7 @@ fn plan_pass(
     wrap_budget: Some(host.limit),
     pool,
     systems,
+    binding_proof: cfg.binding_proof.clone(),
   })
 }
 
@@ -1215,6 +1259,27 @@ fn run_manifest(
   outcome
 }
 
+/// The `Binding` claim proof at `path`, or none for an empty path.
+pub(super) fn read_binding_proof(
+  path: &str,
+) -> Result<Option<IxonProof>, String> {
+  if path.is_empty() {
+    return Ok(None);
+  }
+  let bytes =
+    fs::read(path).map_err(|error| format!("binding proof {path}: {error}"))?;
+  let mut rest = bytes.as_slice();
+  let proof = IxonProof::get(&mut rest)
+    .map_err(|error| format!("binding proof {path}: {error}"))?;
+  if !rest.is_empty() {
+    return Err(format!("binding proof {path}: trailing bytes"));
+  }
+  if !matches!(proof.claim, Claim::Binding { .. }) {
+    return Err(format!("{path} is not a proof of a Binding claim"));
+  }
+  Ok(Some(proof))
+}
+
 /// `AiurSystem.proveLanes`: the whole multi-device run.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_prove_lanes(
@@ -1230,7 +1295,12 @@ extern "C" fn rs_aiur_prove_lanes(
   structural_above: LeanNat<LeanBorrowed<'_>>,
   cache_fri_bytes: LeanByteArray<LeanBorrowed<'_>>,
   out_manifest: LeanString<LeanBorrowed<'_>>,
+  binding_proof_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
+  let binding_proof = match read_binding_proof(binding_proof_path.as_str()) {
+    Ok(proof) => proof,
+    Err(error) => return LeanExcept::error_string(&error),
+  };
   let cfg = Config {
     lanes: lean_unbox_nat_as_usize(lanes.inner()),
     max_ram_bytes: lean_unbox_nat_as_usize(max_ram_bytes.inner()),
@@ -1239,6 +1309,7 @@ extern "C" fn rs_aiur_prove_lanes(
     cache_fri_bytes: cache_fri_bytes.as_bytes().to_vec(),
     out_manifest: (!out_manifest.as_str().is_empty())
       .then(|| PathBuf::from(out_manifest.as_str())),
+    binding_proof,
   };
   if cfg.lanes == 0 {
     return LeanExcept::error_string("at least one lane is required");

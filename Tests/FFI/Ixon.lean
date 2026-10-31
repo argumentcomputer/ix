@@ -163,13 +163,7 @@ def exprMetaDataTests : TestSeq :=
   test "ExprMetaData.binder default" (roundtripIxonExprMetaData (.binder testAddr .default 0 1) == .binder testAddr .default 0 1) ++
   test "ExprMetaData.binder implicit" (roundtripIxonExprMetaData (.binder testAddr .implicit 2 3) == .binder testAddr .implicit 2 3) ++
   test "ExprMetaData.binder strictImplicit" (roundtripIxonExprMetaData (.binder testAddr .strictImplicit 0 0) == .binder testAddr .strictImplicit 0 0) ++
-  test "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0) ++
-  test "ExprMetaData.callSite" (roundtripIxonExprMetaData
-    (.callSite testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] (some (8, 9))) ==
-      .callSite testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] (some (8, 9))) ++
-  test "ExprMetaData.etaCallSite" (roundtripIxonExprMetaData
-    (.etaCallSite 4 testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] 8) ==
-      .etaCallSite 4 testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] 8)
+  test "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0)
 
 def exprMetaArenaTests : TestSeq :=
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
@@ -178,8 +172,7 @@ def exprMetaArenaTests : TestSeq :=
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
   let mixedArena : ExprMetaArena := { nodes := #[
     .leaf, .ref testAddr, .app 0 0, .binder testAddr .default 0 1,
-    .letBinder testAddr 0 1 2, .prj testAddr 0, .mdata #[] 0,
-    .etaCallSite 2 testAddr #[.kept 0 0] #[0, 1] 3
+    .letBinder testAddr 0 1 2, .prj testAddr 0, .mdata #[] 0
   ] }
   checkIO "ExprMetaArena empty" (roundtripIxonExprMetaArena emptyArena == emptyArena) ++
   checkIO "ExprMetaArena single leaf" (roundtripIxonExprMetaArena singleLeaf == singleLeaf) ++
@@ -190,12 +183,11 @@ def constantMetaTests : TestSeq :=
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let emptyArena : ExprMetaArena := {}
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
-  -- Arena containing a call-site surgery node (the FFI used to silently
-  -- downgrade these to Leaf — this pins the faithful marshalling).
-  let callSiteArena : ExprMetaArena := { nodes := #[
-    .leaf,
-    .callSite testAddr #[.kept 0 0, .collapsed 1 0] #[0, 0] (some (2, 0)),
-    .etaCallSite 3 testAddr #[.kept 0 0, .collapsed 1 0] #[0, 1] 1
+  -- An arena with an mdata node over a reference (the shape of a retired
+  -- decompile record's metadata).
+  let recordArena : ExprMetaArena := { nodes := #[
+    .ref testAddr,
+    .mdata #[#[(testAddr, .ofBool true)]] 0
   ] }
   let rt (cm : ConstantMeta) : Bool := roundtripIxonConstantMeta cm == cm
   checkIO "ConstantMeta.empty" (rt .empty) ++
@@ -215,10 +207,10 @@ def constantMetaTests : TestSeq :=
     (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 0]⟩)))) ++
   checkIO "ConstantMeta.muts auxLayout evaporated" (rt (.new
     (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 1]⟩)))) ++
-  checkIO "ConstantMeta callSite arena" (rt (.new
-    (.defn testAddr #[] #[] #[] callSiteArena 0 1))) ++
+  checkIO "ConstantMeta mdata arena" (rt (.new
+    (.defn testAddr #[] #[] #[] recordArena 0 1))) ++
   checkIO "ConstantMeta extension tables" (rt
-    { info := .defn testAddr #[] #[] #[] callSiteArena 0 1,
+    { info := .defn testAddr #[] #[] #[] recordArena 0 1,
       metaSharing := #[.app (.share 0) (.var 3), .sort 1],
       metaRefs := #[testAddr],
       metaUnivs := #[.succ (.var 0), .zero],
@@ -265,6 +257,7 @@ instance : Shrinkable RawEnv where
 /-- Compare RawEnv with content-aware comparison.
     Checks array sizes and content matching by Address. -/
 def rawEnvEq (a b : RawEnv) : Bool :=
+  a.roleBinding == b.roleBinding &&
   a.consts.size == b.consts.size &&
   a.named.size == b.named.size &&
   a.blobs.size == b.blobs.size &&
@@ -355,6 +348,17 @@ def envDiffTests : TestSeq :=
   let runDiff (a b : Env) (compareMeta : Bool := false) :
       Option Ixon.EnvDiff :=
     (Ixon.rsDiffEnvs (serEnv! a) (serEnv! b) compareMeta).toOption
+  (TestSeq.individualIO "EnvDiff: CLI exit codes" none (do
+    let dir ← IO.FS.createTempDir
+    let pa := dir / "a.ixe"
+    let pb := dir / "b.ixe"
+    IO.FS.writeBinFile pa (serEnv! envBase)
+    IO.FS.writeBinFile pb (serEnv! envValueChanged)
+    let same ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pa.toString, "--meta"] }
+    let differ ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pb.toString, "--anon"] }
+    IO.FS.removeDirAll dir
+    let ok := same.exitCode == 0 && same.stdout.contains "identical" && differ.exitCode == 1
+    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"CLI exits {same.exitCode}/{differ.exitCode}")) .done) ++
   test "EnvDiff: self-diff empty (anon)"
     ((runDiff envBase envBase).any (·.isEmpty)) ++
   test "EnvDiff: self-diff empty (meta)"
@@ -586,6 +590,49 @@ def envPackTests : TestSeq :=
   packErrTest "EnvPack: main cannot be assumed"
     (packFixture src "bar" #["bar"])
 
+/-! ## Long `imax` chains (canonUniv's normalizer memo) -/
+
+/-- `imax (a (n-1)) (imax (a (n-2)) (… (imax (a 0) last)))`: one `imax` per
+    binder, the shape `Meta.getLevel` returns for a long `∀`. -/
+def imaxChain (a : Nat → Univ) (last : Univ) : Nat → Univ
+  | 0 => last
+  | n + 1 => .imax (a n) (imaxChain a last n)
+
+/-- The Cutsat-shaped chain (`Lean.Meta.Grind.Arith.Cutsat.EqCnstr.brecOn`'s
+    type did not canonicalize in 300 s) and a mixed two-parameter chain. -/
+def cutsatChain (n : Nat) : Univ := imaxChain (fun _ => .max (.succ .zero) (.var 0)) (.var 0) n
+
+def mixedChain (n : Nat) : Univ := imaxChain
+  (fun i => if i % 3 == 0 then .max (.succ .zero) (.var 0) else if i % 3 == 1 then .succ (.var 1)
+    else .imax (.var 1) (.var 0)) (.var (if n % 2 == 0 then 0 else 1)) n
+
+/-- `canonUniv` on long `imax` chains. The `imax` distributions repeat calls
+    of the normalizer (`2ⁿ` calls on these chains); both normalizers skip a
+    repeated call (`CanonUniv.NState`, Rust `Seen`), so chains of 64 finish.
+    Checked by value (P0), idempotence (P1), the `mk*` fixpoint (P3) and
+    Lean/Rust mirror parity. -/
+def canonUnivChainTests : TestSeq :=
+  let ok (u : Univ) : Bool :=
+    let c := Ixon.canonUniv u
+    (Tests.Gen.Ixon.univDifferAt? 2 u c).isNone && Ixon.canonUniv c == c &&
+      Ixon.reduceUniv c == c && rsCanonUnivMatches u c
+  test "canonUniv: the Cutsat-shaped chain of 64 imax is `u` (0 at u = 0, else u)"
+    (Ixon.canonUniv (cutsatChain 64) == .var 0)
+  ++ test "canonUniv P0, P1, P3 and mirror parity: imax chains of 0–10, 24, 40 and 64 links"
+    (((List.range 11) ++ [24, 40, 64]).all fun n => ok (cutsatChain n) && ok (mixedChain n))
+
+/-- `canonUniv` accumulates successor offsets in `Nat`: in `UInt64` an
+    accumulator at `2^64 - 1` plus one successor wrapped to `0`, and the level
+    lost its value. -/
+def canonUnivOffsetTests : TestSeq :=
+  let init : CanonUniv.NState := { acc := (∅ : CanonUniv.CNorm).insert [] {} }
+  test "canonUniv offset past 2^64 is kept, not wrapped"
+    (((CanonUniv.normalizeAux (.succ .zero) [] (2 ^ 64 - 1) init).acc.findD [] {}).constant
+      == 2 ^ 64)
+  ++ test "canonUniv offset past 2^64 on a variable is kept"
+    (((CanonUniv.normalizeAux (.succ (.var 0)) [] (2 ^ 64 - 1) init).acc.findD [0] {}).vars
+      == #[(0, 2 ^ 64)])
+
 /-! ## Test Suite -/
 
 def suite : List TestSeq := [
@@ -658,6 +705,9 @@ def suite : List TestSeq := [
     ((Tests.Gen.Ixon.biasedUnivFamily 3 10 2000 41
         ++ Tests.Gen.Ixon.biasedUnivFamily 4 12 500 43).all fun u =>
       rsCanonUnivMatches u (Ixon.canonUniv u)),
+  -- long imax chains: the normalizers' call memo (FU item 10)
+  canonUnivChainTests,
+  canonUnivOffsetTests,
 ]
 
 end Tests.FFI.Ixon

@@ -6,103 +6,117 @@
 //! kernel's address-verified ingress, which checks local definition cycles
 //! before admitting a block. External dependencies are Ixon content
 //! addresses, so checking a declaration need not rewalk their expression trees.
-//! As with `TypeChecker::check_const`, referenced declarations are assumptions;
+//! As with `TypeChecker::check_ixon_const`, referenced declarations are assumptions;
 //! check every work item to certify a complete environment.
 
-use ix_common::address::Address;
-use ixon::env::Env;
+#[cfg(not(target_arch = "riscv64"))]
+pub type IxonChecker =
+  crate::artifact_checker::ArtifactChecker<crate::mode::Anon>;
+#[cfg(not(target_arch = "riscv64"))]
+pub use crate::artifact_checker::CheckStats;
 
-use crate::env::KEnv;
-use crate::error::TcError;
-use crate::id::KId;
-use crate::mode::Anon;
-use crate::profile::ProfileSink;
-use crate::tc::TypeChecker;
+// The guest remains on its deferred legacy binding/dispatch interface.
+#[cfg(target_arch = "riscv64")]
+mod guest {
+  use ix_common::address::Address;
+  use ixon::env::Env;
 
-/// Diagnostics for the final member of the most recent block check.
-#[derive(Default)]
-pub struct CheckStats {
-  pub fuel_used: u64,
-  pub def_eq_peak: u32,
-  pub hot_misses: String,
-}
+  use crate::env::KEnv;
+  use crate::error::TcError;
+  use crate::id::KId;
+  use crate::mode::Anon;
+  use crate::profile::ProfileSink;
+  use crate::tc::TypeChecker;
 
-/// A worker whose kernel declarations come exclusively from Ixon ingress.
-pub struct IxonChecker<'a> {
-  source: &'a Env,
-  kernel: KEnv<Anon>,
-  last_check: CheckStats,
-  debug_label: Option<String>,
-}
+  /// Diagnostics for the final member of the most recent block check.
+  #[derive(Default)]
+  pub struct CheckStats {
+    pub fuel_used: u64,
+    pub def_eq_peak: u32,
+    pub hot_misses: String,
+  }
 
-impl<'a> IxonChecker<'a> {
-  pub fn new(source: &'a Env) -> Self {
-    Self {
-      source,
-      kernel: KEnv::new(),
-      last_check: CheckStats::default(),
-      debug_label: None,
+  /// A worker whose kernel declarations come exclusively from Ixon ingress.
+  pub struct IxonChecker<'a> {
+    source: &'a Env,
+    kernel: KEnv<Anon>,
+    last_check: CheckStats,
+    debug_label: Option<String>,
+  }
+
+  impl<'a> IxonChecker<'a> {
+    pub fn new(source: &'a Env) -> Self {
+      Self {
+        source,
+        kernel: KEnv::new(),
+        last_check: CheckStats::default(),
+        debug_label: None,
+      }
+    }
+
+    /// Check one standalone declaration or the whole block containing `addr`.
+    pub fn check_const(&mut self, addr: &Address) -> Result<(), TcError<Anon>> {
+      let mut checker =
+        TypeChecker::new_with_lazy_anon(&mut self.kernel, self.source);
+      checker.ixon_ingress = true;
+      if let Some(label) = &self.debug_label {
+        checker.set_debug_label(label.clone());
+      }
+      let result = checker.check_ixon_const(&KId::new(addr.clone(), ()));
+      self.last_check = CheckStats {
+        fuel_used: checker.fuel_used(),
+        def_eq_peak: checker.def_eq_peak,
+        hot_misses: checker.hot_miss_summary(),
+      };
+      checker.finish_constant_accounting();
+      result
+    }
+
+    pub fn last_check(&self) -> &CheckStats {
+      &self.last_check
+    }
+
+    pub fn set_debug_label(&mut self, label: String) {
+      self.debug_label = Some(label);
+    }
+
+    pub fn perf(&self) -> &crate::perf::PerfCounters {
+      &self.kernel.perf
+    }
+
+    pub fn clear_releasing_memory(&mut self) {
+      self.kernel.clear_releasing_memory();
+    }
+
+    pub fn clear_with_capacity_limit(&mut self, max_capacity: usize) {
+      self.kernel.clear_with_capacity_limit(max_capacity);
+    }
+
+    pub fn clear_reduction_caches(&mut self) {
+      self.kernel.clear_reduction_caches();
+    }
+
+    pub fn set_profile_sink(&mut self, sink: ProfileSink) {
+      self.kernel.profile_sink = Some(sink);
+    }
+
+    pub fn take_profile_sink(&mut self) -> Option<ProfileSink> {
+      self.kernel.profile_sink.take()
     }
   }
-
-  /// Check one standalone declaration or the whole block containing `addr`.
-  pub fn check_const(&mut self, addr: &Address) -> Result<(), TcError<Anon>> {
-    let mut checker =
-      TypeChecker::new_with_lazy_anon(&mut self.kernel, self.source);
-    checker.ixon_ingress = true;
-    if let Some(label) = &self.debug_label {
-      checker.set_debug_label(label.clone());
-    }
-    let result = checker.check_const(&KId::new(addr.clone(), ()));
-    self.last_check = CheckStats {
-      fuel_used: checker.fuel_used(),
-      def_eq_peak: checker.def_eq_peak,
-      hot_misses: checker.hot_miss_summary(),
-    };
-    checker.finish_constant_accounting();
-    result
-  }
-
-  pub fn last_check(&self) -> &CheckStats {
-    &self.last_check
-  }
-
-  pub fn set_debug_label(&mut self, label: String) {
-    self.debug_label = Some(label);
-  }
-
-  pub fn perf(&self) -> &crate::perf::PerfCounters {
-    &self.kernel.perf
-  }
-
-  pub fn clear_releasing_memory(&mut self) {
-    self.kernel.clear_releasing_memory();
-  }
-
-  pub fn clear_with_capacity_limit(&mut self, max_capacity: usize) {
-    self.kernel.clear_with_capacity_limit(max_capacity);
-  }
-
-  pub fn clear_reduction_caches(&mut self) {
-    self.kernel.clear_reduction_caches();
-  }
-
-  pub fn set_profile_sink(&mut self, sink: ProfileSink) {
-    self.kernel.profile_sink = Some(sink);
-  }
-
-  pub fn take_profile_sink(&mut self) -> Option<ProfileSink> {
-    self.kernel.profile_sink.take()
-  }
 }
+#[cfg(target_arch = "riscv64")]
+pub use guest::{CheckStats, IxonChecker};
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ix_common::address::Address;
   use ix_common::env::DefinitionSafety;
   use ixon::constant::{
     Constant, ConstantInfo, DefKind, Definition, MutConst, defn_proj_constant,
   };
+  use ixon::env::Env;
   use ixon::expr::Expr;
   use ixon::univ::Univ;
   use std::sync::Arc;

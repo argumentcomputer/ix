@@ -38,7 +38,7 @@ them) and nothing else.
 namespace Ix.Kernel
 
 /-- The constants of one basis block, in dependency order. -/
-def BasisKind.decls : BasisKind → List ConstantInfo
+def BasisKind.decls : BasisKind → List (ConstantInfo md)
   | .eqK => eqBasis
   | .natK => natBasis
   | .punitK => punitBasis
@@ -65,7 +65,7 @@ a heavily DAG-shared block that was the frontend's single largest cost
 alone, so a block can match a pin only when its members' names are the
 pin's, member for member, and that test is a handful of `Name`
 comparisons. -/
-def basisPinHit (block : List ConstantInfo) : Option BasisKind :=
+def basisPinHit (block : List (ConstantInfo md)) : Option BasisKind :=
   ([BasisKind.eqK, .natK, .punitK, .emptyK, .falseK].find? fun k =>
       k.decls.map (·.name) == block.map (·.name)).filter fun k =>
     canonEqList block k.decls
@@ -74,7 +74,7 @@ def basisPinHit (block : List ConstantInfo) : Option BasisKind :=
 constant at the slot it declares itself at.  The two are compared at
 `toConstantVal`, which `ConstantInfo.canon_toConstantVal` identifies
 with `ConstantVal.canon` of each side. -/
-def quotPinHit (k : QuotKind) (cv : ConstantVal) : Bool :=
+def quotPinHit (k : QuotKind) (cv : ConstantVal md) : Bool :=
   ConstantVal.canonEq cv (BasisKind.quotK.decls.getD k.slot (.axiomInfo default)).toConstantVal
 
 end Ix.Kernel

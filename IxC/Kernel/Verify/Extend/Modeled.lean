@@ -24,17 +24,17 @@ variable {mode : CheckMode}
 open Expr
 
 /-- Invert a successful `checkMemberVal` run. -/
-theorem checkMemberVal_inv {blockNames : List Name} {env' : Env}
-    {cv cvA : ConstantVal}
+theorem checkMemberVal_inv {blockNames : List (Key md)} {env' : Env md}
+    {cv cvA : ConstantVal md}
     (h : checkMemberVal (fueledOps mode F) blockNames env' cv = .ok cvA) :
     checkConstantVal (fueledOps mode F) env' cv = .ok cvA ∧
     cvA.name.isModelSuffix = false ∧
     ∃ cvm mval hmcvm,
-      env'.find? (cvA.name.str "_model") =
+      env'.find? (auxKey cvA.name .model) =
         some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = cvA.levelParams ∧
       ((cvA.type.renameConsts (fun n =>
-        if blockNames.contains n then n.str "_model" else n)) == cvm.type) =
+        if blockNames.contains n then auxKey n .model else n)) == cvm.type) =
         true := by
   simp only [checkMemberVal, fueledOps_annotate, fueledOps_inferType,
     fueledOps_isDefEq, fueledOps_ensureSort, fueledOps_whnf, Bind.bind,
@@ -51,7 +51,7 @@ theorem checkMemberVal_inv {blockNames : List Name} {env' : Env}
     revert hms; cases cvA'.name.isModelSuffix <;> simp
   try dsimp only at h
   revert h
-  match hfm : env'.find? (cvA'.name.str "_model") with
+  match hfm : env'.find? (auxKey cvA'.name .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -67,7 +67,7 @@ theorem checkMemberVal_inv {blockNames : List Name} {env' : Env}
   rw [if_pos hlps] at h
   try dsimp only at h
   by_cases hren : ((cvA'.type.renameConsts (fun n =>
-      if blockNames.contains n then n.str "_model" else n)) == cvm.type)
+      if blockNames.contains n then auxKey n .model else n)) == cvm.type)
       = true
   case neg => rw [if_neg hren] at h; exact nomatch h
   rw [if_pos hren] at h
@@ -76,16 +76,16 @@ theorem checkMemberVal_inv {blockNames : List Name} {env' : Env}
   exact ⟨rfl, hmsF, cvm, mval, hmcvm, hfm, hlps, hren⟩
 
 /-- Invert a successful `checkIndMember` run (non-recursor members). -/
-theorem checkIndMember_inv {blockNames : List Name} {caps : IndCaps}
-    {env' env₁ : Env} {ci : ConstantInfo}
+theorem checkIndMember_inv {blockNames : List (Key md)} {caps : IndCaps md}
+    {env' env₁ : Env md} {ci : ConstantInfo md}
     (h : checkIndMember (fueledOps mode F) blockNames caps env' ci = .ok env₁) :
     ∃ cvA cvm mval hmcvm,
       checkConstantVal (fueledOps mode F) env' ci.toConstantVal = .ok cvA ∧
       cvA.name.isModelSuffix = false ∧
-      env'.find? (cvA.name.str "_model") = some (.defnInfo cvm mval hmcvm) ∧
+      env'.find? (auxKey cvA.name .model) = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = cvA.levelParams ∧
       ((cvA.type.renameConsts (fun n =>
-        if blockNames.contains n then n.str "_model" else n)) == cvm.type) =
+        if blockNames.contains n then auxKey n .model else n)) == cvm.type) =
         true ∧
       ((∃ cv caps', ci = .indInfo cv caps') ∧
          env₁ = ⟨.indInfo cvA caps :: env'.consts⟩ ∨
@@ -114,9 +114,9 @@ theorem checkIndMember_inv {blockNames : List Name} {caps : IndCaps}
     exact Or.inr ⟨cv, nP, nF, rfl, h.symm⟩
 
 /-- One step of `provisionRecs`. -/
-theorem provisionRecs_cons_inv {blockNames : List Name}
-    {envAcc : Env} {ci : ConstantInfo} {rest : List ConstantInfo}
-    {p : Env × List (ConstantVal × Nat × Nat × List RecRule)}
+theorem provisionRecs_cons_inv {blockNames : List (Key md)}
+    {envAcc : Env md} {ci : ConstantInfo md} {rest : List (ConstantInfo md)}
+    {p : Env md × List (ConstantVal md × Nat × Nat × List (RecRule md))}
     (h : provisionRecs (fueledOps mode F) blockNames envAcc (ci :: rest) =
       .ok p) :
     ∃ cv mI rP rules cvA p',

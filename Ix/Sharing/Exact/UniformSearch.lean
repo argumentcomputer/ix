@@ -158,46 +158,66 @@ def classifyWith (p : Prep) (f : GraphFacts) (w : Nat) (b : UBounds)
 
 /-! ## Components -/
 
+/-- Follow parent pointers from `x` for at most `fuel` steps, stopping at a
+root (`parent[x] = x`). -/
+def ufChase (parent : Array Nat) : Nat → Nat → Nat
+  | 0, x => x
+  | fuel + 1, x =>
+    let q := parent[x]!
+    if q == x then x else ufChase parent fuel q
+
 /-- Union-find root (fuel-bounded; `parent[x] ≤ x` is maintained). -/
-def ufFind (parent : Array Nat) (x : Nat) : Nat := Id.run do
-  let mut cur := x
-  for _ in [0:parent.size + 1] do
-    let q := parent[cur]!
-    if q == cur then break
-    cur := q
-  return cur
+def ufFind (parent : Array Nat) (x : Nat) : Nat := ufChase parent (parent.size + 1) x
+
+/-- Join the classes of `x` and `y`; the smaller root becomes the root. -/
+def ufUnion (parent : Array Nat) (x y : Nat) : Array Nat :=
+  let a := ufFind parent x
+  let b := ufFind parent y
+  if a != b then (if a < b then parent.set! b a else parent.set! a b) else parent
+
+/-- The distinct current roots of the representatives of `children`. -/
+def childRoots (uf : Array Nat) (reps : Array (Array Nat)) (children : Array Nat) : Array Nat :=
+  children.foldl (fun rs c => reps[c]!.foldl (fun rs r =>
+    let fr := ufFind uf r
+    if rs.contains fr then rs else rs.push fr) rs) #[]
+
+/-- One term of the component pass. Every term that is not certain-stored
+records the representatives (union-find roots at the time) of the uncertain
+terms reachable from it through terms that are neither certain-stored nor
+uncertain; an uncertain term is joined with all of those below it and
+represents itself. -/
+def componentStep (dag : Dag) (cls : Array UClass) (acc : Array Nat × Array (Array Nat))
+    (t : Nat) : Array Nat × Array (Array Nat) :=
+  if cls[t]! == .certainStored then acc
+  else
+    let rs := childRoots acc.1 acc.2 (dag.node t).children
+    if cls[t]! == .uncertain then
+      (rs.foldl (fun uf r => ufUnion uf t r) acc.1, acc.2.set! t #[t])
+    else (acc.1, acc.2.set! t rs)
+
+/-- One term of the grouping pass: an uncertain term joins the group of its
+root, opening it (as the next group) at the root's first term. -/
+def groupStep (cls : Array UClass) (root : Nat → Nat)
+    (acc : Array (Option Nat) × Array (Array Nat)) (t : Nat) :
+    Array (Option Nat) × Array (Array Nat) :=
+  if cls[t]! == .uncertain then
+    match acc.1[root t]! with
+    | some i => (acc.1, acc.2.modify i (·.push t))
+    | none => (acc.1.set! (root t) (some acc.2.size), acc.2.push #[t])
+  else acc
+
+/-- The uncertain terms of `0..n-1` grouped by `root`, in order of each
+group's smallest term, each group ascending. -/
+def groupByRoot (n : Nat) (cls : Array UClass) (root : Nat → Nat) : Array (Array Nat) :=
+  ((List.range n).foldl (groupStep cls root) (Array.replicate n none, #[])).2
 
 /-- Components of the uncertain terms: joined by DAG paths that avoid
 certain-stored terms. Each component is sorted; components are sorted by
 their smallest term. -/
-def uncertainComponents (dag : Dag) (cls : Array UClass) : Array (Array Nat) := Id.run do
+def uncertainComponents (dag : Dag) (cls : Array UClass) : Array (Array Nat) :=
   let n := dag.size
-  let mut uf : Array Nat := Array.range n
-  -- Component representatives reachable at or below each term.
-  let mut reps : Array (Array Nat) := Array.replicate n #[]
-  for t in [0:n] do
-    if cls[t]! == .certainStored then continue
-    let mut rs : Array Nat := #[]
-    for c in (dag.node t).children do
-      for r in reps[c]! do
-        let fr := ufFind uf r
-        unless rs.contains fr do rs := rs.push fr
-    if cls[t]! == .uncertain then
-      for r in rs do
-        let a := ufFind uf t
-        let b := ufFind uf r
-        if a != b then
-          if a < b then uf := uf.set! b a else uf := uf.set! a b
-      reps := reps.set! t #[t]
-    else
-      reps := reps.set! t rs
-  let mut groups : Std.HashMap Nat (Array Nat) := {}
-  for t in [0:n] do
-    if cls[t]! == .uncertain then
-      let r := ufFind uf t
-      groups := groups.insert r ((groups.getD r #[]).push t)
-  let comps := groups.toArray.map (·.2)
-  return comps.qsort fun a b => a[0]! < b[0]!
+  let uf := ((List.range n).foldl (componentStep dag cls) (Array.range n, Array.replicate n #[])).1
+  groupByRoot n cls (ufFind uf)
 
 /-! ## Checked separation of labeled terms -/
 

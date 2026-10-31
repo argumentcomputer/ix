@@ -1119,6 +1119,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   exec_only: bool,
   trace_shards: bool,
   retention: LeanNat<LeanBorrowed<'_>>,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1135,8 +1136,10 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-        env, &owned,
+      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+        env,
+        &owned,
+        assume_binding,
       ) {
         Ok(t) => t,
         Err(e) => {
@@ -1203,7 +1206,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 /// claim digest before the next shard is proven, so a killed run keeps
 /// every proof it finished. Returns, per shard: the claim's wire bytes,
 /// the proof wrapper's store address (hex) and the heaviest shard's
-/// projected peak.
+/// projected peak. Each claim assumes the environment's binding meets the
+/// specifications (validator 4) when `assume_binding`, and validates it
+/// otherwise.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -1219,6 +1224,7 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
   store_dir: LeanString<LeanBorrowed<'_>>,
   index_dir: LeanString<LeanBorrowed<'_>>,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveAheadWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1258,6 +1264,7 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
       exec_jobs,
       &store_path,
       (!index_dir.is_empty()).then_some(index_path.as_path()),
+      assume_binding,
     );
     let proven = match proven {
       Ok(proven) => proven,
@@ -1304,6 +1311,7 @@ fn prove_shards_ahead(
   exec_jobs: usize,
   store_dir: &std::path::Path,
   index_dir: Option<&std::path::Path>,
+  assume_binding: bool,
 ) -> Result<Vec<(Vec<u8>, Address, usize)>, String> {
   let count = owners.len();
   let cores = std::thread::available_parallelism().map_or(1, usize::from);
@@ -1336,8 +1344,10 @@ fn prove_shards_ahead(
     let label = labels[k];
     let started = std::time::Instant::now();
     let (claim, input, mut io) =
-      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-        env, &owners[k],
+      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+        env,
+        &owners[k],
+        assume_binding,
       )
       .map_err(|e| {
         PrepareFailure::Other(format!("shard {label}: witness build: {e}"))
@@ -1750,7 +1760,7 @@ fn prove_env_distributed(
   use aiur::execute::{Ownership, pointer_stride};
   use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
   use ixvm_codegen::aiur_ixvm_witness::{
-    EnvCheckStatement, addr_key, worker_callers, worker_scopes,
+    EnvCheckStatement, check_owned_key, worker_callers, worker_scopes,
   };
   use rustc_hash::FxHashSet;
 
@@ -1762,8 +1772,14 @@ fn prove_env_distributed(
   statement.claim.put(&mut claim_bytes);
   let input = statement.digest_key.clone();
   let toplevel = system.toplevel();
-  let owned_keys: Vec<FxHashSet<Vec<G>>> =
-    owners.iter().map(|owned| owned.iter().map(addr_key).collect()).collect();
+  let binding = statement.binding();
+  let validator = statement.claim.validator();
+  let owned_keys: Vec<FxHashSet<Vec<G>>> = owners
+    .iter()
+    .map(|owned| {
+      owned.iter().map(|a| check_owned_key(&binding, validator, a)).collect()
+    })
+    .collect();
   let mut owner_of: FxHashMap<Vec<G>, usize> = FxHashMap::default();
   for (worker, keys) in owned_keys.iter().enumerate() {
     for key in keys {
@@ -1829,7 +1845,7 @@ fn prove_env_distributed(
       // walk and be replayed, double-counting its callees.
       let mut entries: Vec<Vec<G>> = Vec::new();
       for addr in &owners[worker] {
-        let key = addr_key(addr);
+        let key = check_owned_key(&binding, validator, addr);
         let queries = &record.function_queries[check_owned_idx];
         // Reached already through another owned constant's walk.
         if queries

@@ -1,6 +1,7 @@
 module
 
 public import Ix.Ixon
+public import Ix.Cli.CompileCmd
 
 /- Integration tests for the Ix CLI -/
 
@@ -30,18 +31,34 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
   let dir ← IO.FS.createTempDir
   let source := dir / "NoBuild.lean"
   let output := dir / "no-build.ixe"
+  let leanOutput := dir / "no-build-lean.ixe"
+  let report := dir / "compile.json"
   try
     -- No Lake project or compiled target exists here. Only the toolchain's
     -- implicit Init imports are available; the CLI must elaborate this body.
     IO.FS.writeFile source
       "def noBuildMarker : Nat := 7\ntheorem noBuildProof : noBuildMarker = 7 := rfl\n"
     let args := #["compile", source.toString, "--consts", "noBuildProof",
-      "--out", output.toString]
+      "--out", output.toString, "--report", report.toString]
     let built ← IO.Process.output { cmd := ix.toString, args := args.push "--no-build" }
     unless built.exitCode == 0 do
       throw <| IO.userError s!"compile --no-build failed:\n{built.stdout}\n{built.stderr}"
     unless (← output.pathExists) && !(← IO.FS.readBinFile output).isEmpty do
       throw <| IO.userError "compile --no-build did not write a nonempty .ixe"
+    let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile report))
+    let schema ← IO.ofExcept (json.getObjValAs? Nat "schemaVersion")
+    let version ← IO.ofExcept (json.getObjValAs? Nat "ixeFormatVersion")
+    unless schema == 2 && version == 5 do
+      throw <| IO.userError "compile report did not identify its emitted bound v5 envelope under schema2"
+    -- Both declarations are in the proof's dependency closure, so the
+    -- local selector asks both CLI commands to compile the same input.
+    let leanArgs := #["compile-lean", source.toString, "--local",
+      "--out", leanOutput.toString]
+    let leanBuilt ← IO.Process.output { cmd := ix.toString, args := leanArgs.push "--no-build" }
+    unless leanBuilt.exitCode == 0 do
+      throw <| IO.userError s!"compile-lean --no-build failed:\n{leanBuilt.stdout}\n{leanBuilt.stderr}"
+    unless (← leanOutput.pathExists) && (← IO.FS.readBinFile leanOutput) == (← IO.FS.readBinFile output) do
+      throw <| IO.userError "compile-lean --no-build differs from the certified compile output"
     for ext in ["olean", "c"] do
       if ← (source.withExtension ext).pathExists then
         throw <| IO.userError s!"compile --no-build unexpectedly wrote a .{ext} file"
@@ -49,13 +66,20 @@ private def Tests.Cli.testCompileNoBuild : IO Unit := do
     let defaultRun ← IO.Process.output { cmd := ix.toString, args }
     if defaultRun.exitCode == 0 then
       throw <| IO.userError "compile without --no-build unexpectedly skipped the Lake build"
+    let leanDefault ← IO.Process.output { cmd := ix.toString, args := leanArgs }
+    if leanDefault.exitCode == 0 then
+      throw <| IO.userError "compile-lean without --no-build unexpectedly skipped the Lake build"
     -- Missing imports must fail instead of silently fetching/building them.
     IO.FS.removeFile output
+    IO.FS.removeFile leanOutput
     IO.FS.writeFile source "import IxCliNoBuildMissingImport\n"
     let missing ← IO.Process.output { cmd := ix.toString, args := args.push "--no-build" }
     if missing.exitCode == 0 || (← output.pathExists) then
       throw <| IO.userError "compile --no-build accepted a missing import"
-    IO.println "compile --no-build: source elaboration, output, default build, and missing-import checks passed"
+    let leanMissing ← IO.Process.output { cmd := ix.toString, args := leanArgs.push "--no-build" }
+    if leanMissing.exitCode == 0 || (← leanOutput.pathExists) then
+      throw <| IO.userError "compile-lean --no-build accepted a missing import"
+    IO.println "compile and compile-lean --no-build: output parity, default builds, and missing-import checks passed"
   finally
     IO.FS.removeDirAll dir
 
@@ -114,7 +138,9 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
     IO.FS.removeDirAll dir
 
 /-- `ix compile --sharing-limits`: a malformed override is rejected before
-    compiling (nothing written), a valid one (Lean and Rust keys mixed)
+    compiling (nothing written). The certified compiler, whose theorem fixes
+    the default limits, refuses a valid override, given or inherited, and
+    writes nothing. Under `--streamed` a valid one (Lean and Rust keys mixed)
     compiles, and a limit no constant fits in fails the compile naming the
     limit (so an override that never reached the compiler would be caught).
     An invalid `IX_SHARING_LIMITS` set directly fails the compile once. -/
@@ -131,12 +157,22 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
     let args := #["compile", source.toString, "--no-build", "--consts", "limitsProof",
       "--out", output.toString]
     let run := fun (spec : String) => IO.Process.output {
-      cmd := ix.toString, args := args ++ #["--sharing-limits", spec] }
+      cmd := ix.toString, args := args ++ #["--streamed", "--sharing-limits", spec] }
     let bad ← run "bogus=1"
     if bad.exitCode == 0 || (← output.pathExists) then
       throw <| IO.userError s!"compile accepted --sharing-limits bogus=1:\n{bad.stdout}\n{bad.stderr}"
     unless (bad.stderr.splitOn "unknown sharing limit bogus").length > 1 do
       throw <| IO.userError s!"--sharing-limits bogus=1: unexpected error:\n{bad.stderr}"
+    -- The certified compiler refuses a valid override, as a flag or inherited.
+    for (flags, env) in [(#["--sharing-limits", "states=2^44"], #[]),
+        (#[], #[("IX_SHARING_LIMITS", some "states=2^44")])] do
+      let refused ← IO.Process.output { cmd := ix.toString, args := args ++ flags, env }
+      if refused.exitCode == 0 || (← output.pathExists) then
+        throw <| IO.userError s!"the certified compiler accepted a sharing-limit override:\n\
+          {refused.stdout}\n{refused.stderr}"
+      unless occurrences refused "runs at the default sharing limits" > 0 do
+        throw <| IO.userError s!"certified sharing-limit override: unexpected error:\n\
+          {refused.stdout}\n{refused.stderr}"
     -- Every serialized constant is longer than one byte: the override must
     -- reach the compiler and fail it, naming the limit to raise.
     let tight ← run "output_bytes=1"
@@ -159,16 +195,106 @@ private def Tests.Cli.testCompileSharingLimits : IO Unit := do
     let good ← run "states=2^44, depth=2^22, work=max"
     unless good.exitCode == 0 && (← output.pathExists) do
       throw <| IO.userError s!"compile --sharing-limits failed:\n{good.stdout}\n{good.stderr}"
-    IO.println "compile --sharing-limits: malformed override rejected, tight limit enforced, \
-      invalid IX_SHARING_LIMITS rejected once, valid override compiled"
+    IO.println "compile --sharing-limits: malformed override rejected, certified compiler \
+      refuses an override, tight limit enforced under --streamed, invalid IX_SHARING_LIMITS \
+      rejected once, valid override compiled under --streamed"
   finally
     IO.FS.removeDirAll dir
+
+/-- `ix compile --local`: the file's own constants with their selected
+    closure. The output's named section holds the file's definition and its
+    inductive's recursor (the selected closure carries recursors) but not an
+    unrelated import-env constant; `--local` with `--consts` is refused
+    (exit 1) and writes nothing. -/
+private def Tests.Cli.testCompileLocal : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  let dir ← IO.FS.createTempDir
+  let source := dir / "LocalScope.lean"
+  let output := dir / "local.ixe"
+  try
+    IO.FS.writeFile source
+      "inductive LocalTree where\n  | leaf\n  | node (l r : LocalTree)\n\
+def localSize : LocalTree → Nat\n  | .leaf => 1\n  | .node l r => localSize l + localSize r\n"
+    let args := #["compile", source.toString, "--no-build", "--local", "--out", output.toString]
+    let run ← IO.Process.output { cmd := ix.toString, args }
+    unless run.exitCode == 0 do
+      throw <| IO.userError s!"compile --local failed:\n{run.stdout}\n{run.stderr}"
+    let env ← IO.ofExcept (Ixon.rsDeEnv (← IO.FS.readBinFile output))
+    let has (s : String) : Bool := env.named.toList.any fun (n, _) => n.pretty == s
+    for required in ["localSize", "LocalTree", "LocalTree.rec"] do
+      unless has required do
+        throw <| IO.userError s!"compile --local: the output lacks {required}"
+    if has "Nat.gcd" then
+      throw <| IO.userError "compile --local: the output holds the unrelated import Nat.gcd"
+    IO.FS.removeFile output
+    let both ← IO.Process.output
+      { cmd := ix.toString, args := args ++ #["--consts", "localSize"] }
+    if both.exitCode != 1 || (← output.pathExists) then
+      throw <| IO.userError s!"compile --local --consts: expected exit 1 and no output, \
+        got exit {both.exitCode}"
+    IO.println s!"compile --local: {env.named.size} named entries (own constants, recursor, \
+      no unrelated import); --local with --consts refused"
+  finally
+    IO.FS.removeDirAll dir
+
+/-- Exercise the report-emitting fail-closed path with an actual ungrounded
+status. Early pipeline exceptions, such as invalid sharing limits, return
+before the existing report code and are a separate contract. -/
+private def Tests.Cli.testCompileReportAbort : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  IO.FS.withTempDir fun dir => do
+    let source := dir / "ReportAbort.lean"
+    let output := dir / "stale.ixe"
+    let report := dir / "report.json"
+    -- As in the kernel tutorial fixtures, skip the kernel only to inject
+    -- an absent reference. The compiler must report that axiom ungrounded.
+    IO.FS.writeFile source <| String.intercalate "\n"
+      [ "import Lean", "open Lean Elab Command in", "run_elab do"
+      , "  withOptions (fun o => debug.skipKernelTC.set o true) do"
+      , "    addDecl (.axiomDecl {"
+      , "      name := `reportBad, levelParams := [],"
+      , "      type := .const `reportMissing [], isUnsafe := false })", "" ]
+    let stale := ByteArray.mk #[0xE5, 0xDE, 0xAD]
+    IO.FS.writeBinFile output stale
+    IO.FS.writeFile report "stale report"
+    let result ← IO.Process.output {
+      cmd := ix.toString
+      args := #["compile", source.toString, "--no-build", "--consts", "reportBad",
+        "--out", output.toString, "--report", report.toString] }
+    unless result.exitCode == 1 && (← IO.FS.readBinFile output) == stale do
+      throw <| IO.userError s!"report abort changed the artifact or exit code:\n{result.stderr}"
+    let json ← IO.ofExcept (Lean.Json.parse (← IO.FS.readFile report))
+    let schema ← IO.ofExcept (json.getObjValAs? Nat "schemaVersion")
+    let written ← IO.ofExcept (json.getObjValAs? Bool "written")
+    let version ← IO.ofExcept (json.getObjVal? "ixeFormatVersion")
+    let ungrounded ← IO.ofExcept (json.getObjValAs? Nat "ungroundedCount")
+    unless schema == 2 && !written && version == .null && ungrounded == 1 do
+      throw <| IO.userError "report abort did not emit schema2/null for this invocation"
+    IO.println "compile report: actual ungrounded abort writes null and preserves stale output"
+
+private def Tests.Cli.testPublishedEnvelopeVersion : IO Unit :=
+  IO.FS.withTempDir fun dir => do
+    let path := dir / "version.ixe"
+    let payload := ByteArray.mk #[1, 2, 3]
+    let env : Ixon.Env := { roleBinding := some ⟨Address.admissionHash payload, payload⟩ }
+    IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv env))
+    unless (← Ix.Cli.publishedEnvelopeVersion true path) == some 5 do
+      throw <| IO.userError "published report did not read v5"
+    unless (← Ix.Cli.publishedEnvelopeVersion false path).isNone &&
+        (← Ix.Cli.publishedEnvelopeVersion false (dir / "absent.ixe")).isNone do
+      throw <| IO.userError "aborted report inspected an output path"
+    IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv {}))
+    unless (← Ix.Cli.publishedEnvelopeVersion true path) == some 4 do
+      throw <| IO.userError "published report did not read v4"
 
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
   Tests.Cli.testCompileContracts
   Tests.Cli.testCompileSharingLimits
+  Tests.Cli.testCompileLocal
+  Tests.Cli.testCompileReportAbort
+  Tests.Cli.testPublishedEnvelopeVersion
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

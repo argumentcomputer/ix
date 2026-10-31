@@ -16,11 +16,12 @@
     exact root-count check instead of out-of-range fallbacks.
 
   Structural equality is decided by `Node` keys (`BEq`), never by a hash
-  alone; the pointer cache only skips re-walking the same live object.
+  alone. Pointer-cache candidates retain their source expression, and a
+  checked equality is required before skipping its traversal.
 -/
 module
 
-public import Ix.Sharing.Exact.Basic
+public import Ix.Sharing.Exact.ExprCache
 
 public section
 
@@ -53,10 +54,9 @@ def Interner.ofNodes (nodes : Array Node) : Interner :=
 /-- State of one expansion pass. -/
 structure IngestState where
   interner : Interner := {}
-  /-- Live input object address ↦ term ID. Every object walked in one pass
-  was allocated before the pass and is alive while walked, so two walked
-  objects with the same address are the same object. -/
-  ptrCache : Std.HashMap USize Nat := {}
+  /-- Pointer-indexed candidates retain their expression. A hit requires
+  checked expression equality, without an address-injectivity premise. -/
+  ptrCache : ExprCache Nat := {}
   visits : Nat := 0
   deriving Inhabited
 
@@ -104,7 +104,7 @@ def internNode (limits : Limits) (n : Node) : IngestM Nat := do
 /-- Expand one expression into the interner and return its term ID. -/
 def ingestExpr (limits : Limits) (ctx : ShareCtx) (depth : Nat) (e : Ixon.Expr) :
     IngestM Nat := do
-  let ptr := exprPtr e
+  let ptr := exprKey e
   match (← get).ptrCache.get? ptr with
   | some id => return id
   | none =>
@@ -226,6 +226,32 @@ def placeBucket (temp : Array Node) (st : Array Nat × Array Node) (bucket : Arr
     (t, { node with children := node.children.map (st.1[·]!) })
   let sorted := keyed.mergeSort fun x y => Node.compareKey x.2 y.2 != .gt
   placeSorted sorted none st
+
+/-- `placeBucket` with fast paths for empty and singleton height buckets,
+avoiding list conversion, key comparison and `mergeSort` when `bucket.size ≤ 1`. -/
+def placeBucketFast (temp : Array Node) (st : Array Nat × Array Node) (bucket : Array Nat) :
+    Except SharingError (Array Nat × Array Node) :=
+  if bucket.size == 0 then
+    pure st
+  else if bucket.size == 1 then
+    let (canon, out) := st
+    let t := bucket[0]!
+    let node := temp[t]!
+    let node' := { node with children := node.children.map (canon[·]!) }
+    pure (canon.set! t out.size, out.push node')
+  else
+    let keyed := bucket.toList.map fun t =>
+      let node := temp[t]!
+      (t, { node with children := node.children.map (st.1[·]!) })
+    let sorted := keyed.mergeSort fun x y => Node.compareKey x.2 y.2 != .gt
+    placeSorted sorted none st
+
+@[csimp] theorem placeBucket_eq_fast : @placeBucket = @placeBucketFast := by
+  funext temp ⟨canon, out⟩ ⟨l⟩
+  rcases l with _ | ⟨t, _ | ⟨t₂, rest⟩⟩
+  · simp [placeBucket, placeBucketFast, placeSorted]
+  · simp [placeBucket, placeBucketFast, placeSorted]
+  · rfl
 
 /-- Keep the nodes reachable from `rootTemps` and renumber them by the §3.2
 rule: increasing height, then increasing `(tag, scalars, child IDs)`.

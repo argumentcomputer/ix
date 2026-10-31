@@ -15,18 +15,19 @@ def source : Lean.ConstantInfo := .defnInfo {
   value := .lam `x (.sort .zero) (.bvar 0) .default
   hints := .abbrev, safety := .safe, all := [`contractIdentity] }
 
-def block : Ix.CompileM.BlockEnv := ⟨{}, .mkAnon, {}, []⟩
+def block : Ix.CompileM.BlockEnv :=
+  { all := {}, current := .mkAnon, mutCtx := {}, univCtx := [] }
 
 def get (label : String) (result : Except α β) [ToString α] : IO β :=
   match result with
   | .ok value => pure value
   | .error error => throw <| IO.userError s!"contract transport {label}: {error}"
 
-def compileMany (sources : Array Lean.Expr) (surgical : Bool := false) :
+def compileMany (sources : Array Lean.Expr) :
     Except Ix.CompileM.CompileError (Array Ixon.Expr) := do
   let ix := Id.run ((sources.mapM Ix.CanonM.canonExpr).run' {})
   let action := ix.mapM fun e => do
-    let (result, _) ← if surgical then Ix.CompileM.compileExprSurgical e else Ix.CompileM.compileExpr e
+    let (result, _) ← Ix.CompileM.compileExpr e
     pure result
   let (output, _) ← Ix.CompileM.CompileM.run default block {} action
   return output
@@ -52,34 +53,25 @@ def run : IO Unit := do
         let some body := sourceBody? decorated | throw <| IO.userError "missing decorated body"
         sources := sources.push body
         expected := expected.push (.lam binder (.sort 0) (.var 0))
-  for surgical in [false, true] do
-    let output ← get "cached lambdas" (compileMany sources surgical)
-    unless output == expected do throw <| IO.userError s!"lambda contracts collided during compilation (surgical={surgical}):\n{repr output}\nexpected {repr expected}"
-    let output ← get "cached foralls" (compileMany allSources surgical)
-    unless output == allExpected do throw <| IO.userError "arrow contracts collided during compilation"
+  let output ← get "cached lambdas" (compileMany sources)
+  unless output == expected do throw <| IO.userError s!"lambda contracts collided during compilation:\n{repr output}\nexpected {repr expected}"
+  let output ← get "cached foralls" (compileMany allSources)
+  unless output == allExpected do throw <| IO.userError "arrow contracts collided during compilation"
   -- All occurrences share their unannotated inner binder. The complete
   -- metadata wrapper must distinguish them in both hash and equality paths.
   for i in [:sources.size] do
     for j in [:sources.size] do
       let equal := Id.run ((Ix.CanonM.exprEqCached sources[i]! sources[j]!).run' {})
       unless equal == (i == j) do throw <| IO.userError "semantic equality ignored a contract"
-  let canonical := Id.run ((sources.mapM Ix.CanonM.canonExpr).run' {})
-  for i in [:canonical.size] do
-    for j in [:canonical.size] do
-      let (comparison, _) ← get "ordering" <|
-        Ix.CompileM.CompileM.run default block {} (Ix.CompileM.compareExpr {} [] [] canonical[i]! canonical[j]!)
-      unless (comparison.ord == .eq) == (i == j) do
-        throw <| IO.userError "canonical ordering merged distinct contracts"
   let rawLet := Lean.Expr.letE `view (.sort .zero) (.bvar 0) (.bvar 0) false
   let borrow : Ix.SemanticContract.Contract := {
     kind := .letE, binder := ⟨.affine, .localShared⟩, letKind := .borrowShared }
   let annotated := borrow.attach rawLet
-  for surgical in [false, true] do
-    let output ← get "borrow lowering" (compileMany #[rawLet, annotated, rawLet] surgical)
-    let expectedBorrow := Ixon.Expr.letE ⟨false, .borrowShared, ⟨.affine, .localShared⟩⟩ (.sort 0) (.var 0) (.var 0)
-    unless output == #[.leanLet false (.sort 0) (.var 0) (.var 0), expectedBorrow,
-      .leanLet false (.sort 0) (.var 0) (.var 0)] do
-      throw <| IO.userError "borrow contract contaminated a shared ordinary cache entry"
+  let output ← get "borrow lowering" (compileMany #[rawLet, annotated, rawLet])
+  let expectedBorrow := Ixon.Expr.letE ⟨false, .borrowShared, ⟨.affine, .localShared⟩⟩ (.sort 0) (.var 0) (.var 0)
+  unless output == #[.leanLet false (.sort 0) (.var 0) (.var 0), expectedBorrow,
+    .leanLet false (.sort 0) (.var 0) (.var 0)] do
+    throw <| IO.userError "borrow contract contaminated a shared ordinary cache entry"
   let wrong := borrow.attach (.sort .zero)
   unless (compileMany #[wrong]).toOption.isNone do
     throw <| IO.userError "semantic metadata on a non-binder was discarded"

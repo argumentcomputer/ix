@@ -1,28 +1,6 @@
 /-
-  `ix validate --path <file>`: run the 8-phase aux_gen validation pipeline
-  against the Lean environment for any file.
-
-  This is the CLI counterpart to the `validate-aux` test runner. Both funnel
-  into the same Rust FFI (`rs_compile_validate_aux` in `src/ffi/lean_env.rs`),
-  which performs:
-
-    1. Compilation succeeds (every input constant gets an address)
-    2. Aux_gen congruence (post-compile: decompiled aux_gen ≡ Lean's)
-    3. No ephemeral leaks in the Ixon env
-    4. Alpha-equivalence group canonicity
-    5. Decompilation with debug info
-    6. Aux congruence roundtrip (no-debug decompile ≡ Lean's)
-    7. Decompilation without debug info (serialize → deserialize)
-    7b. Per-constant roundtrip fidelity
-    8. Nested inductive detection verification
-
-  Separate from `ix compile` because validation is expensive (runs compile
-  twice, decompile twice, and alpha-equivalence checks) and primarily useful
-  as a correctness gate. The `compile` command is the fast production path.
-
-  Separate from the `lake test` binary because we don't want Mathlib (or any
-  large file's transitive imports) to be a compile-time dep of the test
-  suite — it'd force the test binary to rebuild on every Mathlib update.
+  The namespace filter of the CLI commands that select constants by name
+  prefix (`--ns`, `--prefix`): `parsePrefixes`.
 -/
 module
 public import Cli
@@ -32,9 +10,6 @@ public import Ix.Meta
 public import Ix.EnvScope
 
 public section
-
-open System (FilePath)
-open Ix.EnvScope
 
 /-- Strip ASCII whitespace from both ends of `s`. We roll our own because
 `String.trim` was deprecated in favor of slice-returning variants, and we
@@ -49,98 +24,5 @@ def parsePrefixes (s : String) : List Lean.Name :=
   (s.splitOn ",").filterMap fun raw =>
     let trimmed := asciiTrim raw
     if trimmed.isEmpty then none else some trimmed.toName
-
-def runValidateCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some path := p.positionalArg? "path"
-    | p.printError "error: must specify <path> to a Lean source file"
-      return 1
-  let pathStr := path.as! String
-
-  -- `buildFile` also runs `lake exe cache get` if the target depends on
-  -- Mathlib, so large-env validation (`Benchmarks/Compile/CompileMathlib.lean`)
-  -- works out of the box without a prior `lake build`. Corpus orchestrators
-  -- can instead prebuild several targets in one authoritative Lake process
-  -- and pass `--no-build`; this avoids racing concurrent Lake processes over
-  -- a shared package store while the validators themselves run in parallel.
-  unless p.hasFlag "no-build" do
-    buildFile pathStr
-  let fe ← getFileEnvCore pathStr
-  let leanEnv := fe.env
-
-  -- Apply optional namespace filter — mirrors `Tests/Ix/Compile/ValidateAux.lean`.
-  -- When `--prefix Aesop,Nat` is given, only constants whose name starts with
-  -- one of those prefixes seed the dependency walk. The full transitive closure
-  -- is still validated (so aux_gen's cross-module deps resolve correctly); the
-  -- filter just narrows the "interesting" surface.
-  let constList ← match p.flag? "ns" with
-    | none => defaultConstList fe pathStr
-    | some flag =>
-      let raw := flag.as! String
-      let prefixes := parsePrefixes raw
-      if prefixes.isEmpty then
-        IO.println s!"[validate] warning: --ns '{raw}' parsed to empty list; validating full env"
-        defaultConstList fe pathStr
-      else
-        let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
-          if prefixes.any (·.isPrefixOf n) then some n else none
-        IO.println s!"[validate] filter: {prefixes.length} namespace(s), {seeds.length} seed constants"
-        let closed := collectDeps leanEnv seeds
-        IO.println s!"[validate] filter: {closed.length} constants after transitive-dep closure"
-        pure closed
-
-  IO.println s!"Running Ix validator on {pathStr}"
-  IO.println s!"Total constants: {constList.length}"
-
-  let reportPath := (p.flag? "report").map (·.as! String)
-  let start ← IO.monoMsNow
-  -- Non-empty report path ⇒ the Rust side writes the phase-table core
-  -- there (on completion and on abort paths alike); the wrapper below
-  -- then rewrites the file with CLI metadata around that core.
-  let failures := Ix.CompileM.rsCompileValidateAuxFFI constList
-    (reportPath.getD "")
-  let elapsed := (← IO.monoMsNow) - start
-
-  IO.println s!"[validate] total failures: {failures} (in {elapsed.formatMs})"
-
-  -- `--report`: machine-readable verdict, the `ix compile --report`
-  -- shape — phase table from the Rust core, wrapped with the input/
-  -- toolchain metadata only this layer knows.
-  if let some path := reportPath then
-    let phaseCore : Option Lean.Json ← try
-        pure (Lean.Json.parse (← IO.FS.readFile path)).toOption
-      catch _ => pure none
-    let coreField (name : String) : Lean.Json :=
-      (phaseCore.bind fun core => (core.getObjVal? name).toOption)
-        |>.getD Lean.Json.null
-    let report := Lean.Json.mkObj
-      [ ("schemaVersion", Lean.toJson (1 : Nat))
-      , ("tool", Lean.Json.str "validate")
-      , ("ixVersion", Lean.Json.str Ix.versionString)
-      , ("leanToolchain", Lean.Json.str Lean.versionString)
-      , ("input", Lean.Json.str pathStr)
-      , ("ns", (p.flag? "ns").map (Lean.Json.str <| ·.as! String)
-          |>.getD Lean.Json.null)
-      , ("constants", Lean.toJson constList.length)
-      , ("phases", coreField "phases")
-      , ("aborted", coreField "aborted")
-      , ("totalFailures", Lean.toJson failures.toNat)
-      , ("passed", Lean.toJson (failures == 0))
-      , ("elapsedMs", Lean.toJson elapsed) ]
-    IO.FS.writeFile path (report.pretty ++ "\n")
-
-  return if failures == 0 then 0 else 1
-
-def validateCmd : Cli.Cmd := `[Cli|
-  validate VIA runValidateCmd;
-  "Validate a Lean file through the full compile → decompile → roundtrip pipeline"
-
-  FLAGS:
-    ns   : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
-    report : String; "Write a machine-readable JSON report (phase table + pass/fail + counts) to this path. Written on abort paths too."
-    "no-build"; "Skip the Lake build/cache step. The caller must have already built the input and all of its imports. Intended for orchestrators that prebuild targets once before running validators in parallel."
-
-  ARGS:
-    path : String; "Path to the Lean source file whose env should be validated."
-]
 
 end

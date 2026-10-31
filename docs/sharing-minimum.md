@@ -1,29 +1,43 @@
 # Implement canonical minimum sharing in Ix
 
-> **Status: implemented, with the target revised (§12).** §1–§10 are the original plan. Its
+> **Status: `sharing-k16-greedy-v1` is the production route (§14).** Successful-run
+> proofs are attached to the Lean entry; §14.4 records the corpus evidence.
+> No refusal is reachable under a sufficient budget, polynomial in the input size, and
+> the output expands again (§14.3).
+> §14 supersedes §12's unbounded phase-1 search and its no-fallback claim. §1–§10 are the original plan. Its
 > target, the global byte minimum under the key of §3.3, was found infeasible at production
 > scale (§12.1) and is **superseded** by the decisions of §12 wherever the two differ. Read §12
-> first. What was built:
+> together with §14. The construction and its retained components are:
 >
 > - **Construction.** `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Lean
->   `Ix/Sharing/Exact/Tiered.lean`, Rust `crates/ixon/src/sharing_exact/tiered.rs`). Phase 1 is
->   the exact minimum of the uniform-width model at each width `w ∈ {1, 2, 3}` (§12.3, §12.11).
+>   `Ix/Sharing/Exact.lean`, Rust `crates/ixon/src/sharing_exact/tiered.rs`). Phase 1 is
+>   the minimum over a fixed component family at each width `w ∈ {1, 2, 3}` (§14).
+>   Initial uncertain components of at most 16 members use every subset; larger components
+>   use the deterministic greedy chain. The old exact optimum remains a reference theorem.
 >   Phase 2 allocates an exact first tier of eight 1-byte slots, then orders the rest by Kahn
 >   priority (§12.14, §12.15). Phase 3 re-materializes every entry and root at the real TagN
 >   widths. The candidate with the fewest real bytes wins, ties going to the lower width.
 > - **Single route.** Both compilers build every table with it. The heuristic
 >   (`Ix/Sharing.lean`, `crates/ixon/src/sharing.rs`) and its proofs are removed.
-> - **Format.** TagN replaces Tag0, Tag2 and Tag4 (§12.12, §12.16). The format version is 4
->   (`.ixe` header `0xE4`), with object format 4 and the identifiers `ixon-v4` and
->   `ixon-v4/resource-v1`. The IxVM circuit reads and writes TagN.
-> - **Proofs.** Phase-1 minimality, the per-phase specifications, the equality of the minimized
->   length with the serialized length, and wire validity of the output are machine-checked,
->   for a run on the canonical DAG of the input (§12.13). The compiled fast implementations are
+> - **Format.** TagN replaces Tag0, Tag2 and Tag4 (§12.12, §12.16). Checked objects
+>   retain format 4 and the identifiers `ixon-v4` and `ixon-v4/resource-v1`.
+>   The `.ixe` envelope is v4 (`0xE4`); v5 (`0xE5`) when it carries a role
+>   binding (`Ixon.md`). The envelope extension is separate from the sharing
+>   rule.
+>   The IxVM circuit reads and writes TagN.
+> - **Proofs.** Family-relative phase-1 minimality, successful-output semantics and format,
+>   and conditional representation/byte compatibility are proved for the family entry (§14.3).
+>   The Lean production entry and its audits now carry these contracts. The old exact minimality,
+>   per-phase specifications, equality of the minimized
+>   length with the serialized length, and wire validity remain machine-checked on the reference
+>   route (§12.13). The compiled fast implementations are
 >   tied to the specifications by audited `@[csimp]` equalities (§12.18).
 > - **Limits.** Resource limits are a safety net with a CLI override (`ix compile
->   --sharing-limits`). Exceeding one is a compile error; there is no fallback.
-> - **Compile time.** Mathlib `ix compile` takes 1.13–1.26× the time of the heuristic route
->   in the final back-to-back runs (§12.18).
+>   --sharing-limits`). Exceeding one is a compile error. The component-size gate chooses the
+>   fixed greedy family before search; exhausting a budget never changes that family.
+> - **Compile time.** §12.18 records the earlier exact implementation. §14.4 records the
+>   family measurements and whole-Mathlib byte parity after the proved evaluator and
+>   dependency-planning repairs. Remaining release gates are listed there.
 > - **Metadata.** The decompilers implement the extended index space of §13.1. The
 >   construction of §13.2 is not implemented.
 > - **Oracles.** The exact search of §6 is kept as a test oracle for small inputs (§12.1).
@@ -104,8 +118,8 @@ functions in this table were removed by this work):
 | Lean sharing | `Ix/Sharing.lean`: `analyzeBlock`, `decideSharing`, `buildSharingVec`, `applySharingCore`, `applySharing` |
 | Lean codec and contracts | `Ix/Ixon.lean`: `putTag0`, `putTag4`, `putExpr`, `putConstant`, `Env.VERSION`; `Ix/IxonContract.lean`, `Ix/IxonMode.lean` |
 | Rust sharing/codec | `crates/ixon/src/sharing.rs`, `serialize.rs`, `expr.rs` |
-| Lean compiler integration | `Ix/CompileM.lean`: `constantInfoRootExprs`, `mutConstRootExprs`, `buildConstantWithSharing`; `Ix/AuxGen/CompileAux.lean` |
-| Rust compiler integration | `crates/compile/src/compile.rs`: `apply_sharing_with_stats`, `apply_sharing_to_*`; `compile/mutual.rs`; `kernel_egress.rs`; `decompile.rs` |
+| Lean compiler integration | `Ix/CompileM.lean`: `constantInfoRootExprs`, `mutConstRootExprs`, `buildConstantWithSharing` |
+| Rust compiler integration | `crates/compile/src/compile.rs`: `apply_sharing_with_stats`, `apply_sharing_to_*`; `kernel_egress.rs`; `decompile.rs` |
 | Cross-language boundary | `crates/ffi/src/lean_ixon/sharing.rs`, existing sharing comparison FFI |
 | Metadata and ingress | `Ix/DecompileM.lean`, `Ix/Tc/Ingress.lean`, `Ix/Tc/IngressMeta.lean`, Rust `compile/decompile.rs` and kernel ingress consumers |
 | Proofs | `Ix/Compile/Verify/Sharing.lean`, `CompileSharingCodec.lean`, downstream compiler codec theorems and audit manifests |
@@ -531,7 +545,8 @@ not imply that the combined anonymous-plus-metadata artifact has globally minimu
 
 The extended index space for `Share` inside metadata expressions (a metadata `Share(i)` with
 `i < p` is a primary entry, `i ≥ p` is `metaSharing[i − p]`) and its construction are specified
-in §13; collapsed call-site indices keep addressing `metaSharing` directly.
+in §13. No compiler writes metadata expressions now: the call-site metadata and the
+decompile records that used them are retired.
 
 ### 8.3 Version and address migration
 
@@ -889,11 +904,19 @@ sharing + integers together.
 ### 12.13 What is machine-checked (first recorded 2026-10-01; stated at this PR's head)
 
 The theorems below are in `IxSharingVerify` (the TagN theorems in `IxC/Ixon/Verify/TagN.lean`)
-and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (111 roots on Lean
-4.34.0; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
+and are roots of the audit manifest `IxSharingVerify/Audit/Statements.lean` (144 roots on Lean
+4.34.1; each root's axioms are fixed exactly, and no declaration of an `Ix.Sharing` module uses
 `sorry`; checked by `lake build --wfail IxSharingVerify`). The construction theorems are stated for a successful run on
 the canonical DAG of the input (`ex.dag`, `ex.roots`).
 
+- **Source preservation** (`CanonicalMeaning.lean`): `canonicalize_correct`
+  preserves interpreted roots through the actual canonical numbering; `expand_unshared`
+  and `expand_root_terms` derive the canonical DAG's ordered source meaning from the
+  actual ingestion. `canonicalSharingTiered_meaning` connects that result to the
+  construction and its re-expansion check: every successful output has `SharingMeaning`,
+  whose entry equations and backward-reference bounds unfold its roots to exactly the
+  ordered input expressions. No output certificate, pointer injectivity or hash
+  injectivity is a premise.
 - **Phase 1** (`UniformOptimality.lean`): `optimizeUniform_minimum` (a successful
   `optimizeUniformExpanded w limits ex` returns a stored set that is a minimum of the uniform
   model `ulen` over the restricted class, with `modelBytes` equal to it) and
@@ -924,12 +947,14 @@ the canonical DAG of the input (`ex.dag`, `ex.roots`).
   `finishConstantInfoWithSharing_run_codecWF` for the singleton-driver tail) are stated over it;
   the tail concludes `SharingRunOK`: it returns an exactly decodable block, or fails with an
   error that the sharing builder returns on some payload (the payload is existentially
-  quantified). The theorems about the stored bytes are not audit roots, because
-  `BlockResult.mk'` hashes with Blake3, whose package carries a `native_decide` axiom; the
-  per-declaration compiler endpoints are retired with the compiler-correctness proofs.
+  quantified). The theorems about the stored bytes (`BlockResult.mk'_codec_roundtrip`,
+  `BlockResult.mk'_codecWF`, `BlockResult.constantInfo_codec_roundtrip`) are audit roots too:
+  `BlockResult.mk'` hashes with `Address.admissionHash`, and no BLAKE3 call reaches a
+  `native_decide` axiom since the compiler's batch 2a; the per-declaration compiler endpoints
+  are retired with the compiler-correctness proofs.
 - **Compiled code.** The compiler runs fast twins attached to the specifications by
   unconditional `@[csimp]` equalities; `IxSharingVerify/Audit/CompiledCode.lean` fails the
-  build unless every csimp theorem on the compiler's import path is an audit root (19) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
+  build unless every csimp theorem on the compiler's import path is an audit root (22) and unless `Ix.Sharing.*` has no `unsafe`, `partial`, `implemented_by` or `extern`
   declaration besides the pointer-cache key `exprPtr`.
 
 Run-time checks that remain in Lean's phase 3 (`rematerialize`), each failing closed with an
@@ -939,13 +964,21 @@ through the same interner, to the stored terms and the input's root IDs; and eve
 expression is in the wire domain. Rust serializes the returned candidate and compares its
 length (every candidate in its checked mode, §12.18).
 
+The source-preservation proof uses exact pointer-selected cache hits (`ExprCache.lean`: the
+interner selects cache candidates by the `unsafe` pointer address `exprPtr` and reuses a
+candidate's ID only after checking equality with the source expression it retains, for
+arbitrary address hints, collisions included), the actual recursive walk and the ordered
+table and root loops (`Ingestion.lean`, `IngestionTable.lean`), and complete interner indices
+(`IngestionUnique.lean`). These establish the source meaning and discharge
+canonicalization's `Run` contract from an initially empty ingestion.
+
 Not machine-checked: phase-2 optimality for tables of more than 1,032 entries; any global
-minimum; and the step from the input expressions to the canonical DAG (`expand`, whose
-interner keys a cache by the `unsafe` pointer address `exprPtr`). No theorem states that this
-DAG denotes the input expressions, so the round trip to the input is proved only relative to
-the DAG; independence from pointer layout is tested, and idempotence is proved only under the
-hypothesis that the output expands to the input's DAG (`canonicalSharingTieredTable_idem`).
-The reference enumeration path (`uniformSubsetSearch = true`) is excluded from the theorems.
+minimum; success on every input; and the composition of structural sharing preservation with
+the compiler's payload builder, the certified reader and the published records. Idempotence
+is proved only under the hypothesis that the output expands to the input's DAG
+(`canonicalSharingTieredTable_idem`). The phase-1 optimality results exclude the reference
+enumeration path (`uniformSubsetSearch = true`); structural preservation covers every
+successful `canonicalSharingTiered` run.
 Failure semantics: an error at any width fails the whole call, with the lowest failing width's
 error (no fallback to other widths). Rust matches on every limit and length check; its default
 mode runs the checks of built expressions only for the returned candidate (§12.18).
@@ -1048,10 +1081,12 @@ oracle) to the canonical path; in both languages the candidate count is recorded
 (Rust regression test: 70,000 distinct references used twice). `knapsack_cells` (2^28) is about
 27 times the largest knapsack on Init and Mathlib. The limits override is parsed by one grammar
 in both languages (digits only; 35 shared specifications) and read once per run. Rust's phase
-1 uses 128-bit lengths and fails closed (`LengthOverflow`) where Lean's `Nat` succeeds, e.g. on
-the chain `e(i+1) = App(e(i), e(i))` at depth 127 or more; this divergence is documented, not
-removed (no corpus constant is near it). The layout length equals the serialized length by
-theorem (§12.13), and the metadata table check is linear in both languages.
+1 computes in 128-bit integers and, where a value leaves that range, again in exact integers
+(`uniform/arith.rs`; the result is the same wherever the 128-bit run succeeds), so it agrees with
+Lean's `Nat` on inputs such as the chain `e(i+1) = App(e(i), e(i))` at depth 127 or more, whose
+unshared length exceeds `2^127` (the Lean/Rust sharing suite compares four such towers byte for
+byte). The layout length equals the serialized length by theorem (§12.13), and the metadata
+table check is linear in both languages.
 
 ## 13. Metadata sharing: the extended index space (owner decision 2026-10-01)
 
@@ -1080,9 +1115,8 @@ primary bytes decode.
 
 Well-foundedness: entry `metaSharing[j]` may reference every primary entry and the metadata
 entries before it (`p ≤ i < p + j`); a reader expands `metaSharing` in order, each entry against
-`sharing ++ metaSharing[0..j)`. Call-site references are unchanged: `CallSiteEntry.collapsed
-sharingIdx` and `origHead = some (sharingIdx, …)` index `metaSharing` directly
-(`metaSharing[sharingIdx]`, no offset by `p`), as in §8.2.
+`sharing ++ metaSharing[0..j)`. No compiler writes metadata expressions now (§8.2); the
+readers keep the rule.
 
 Readers. Only the two decompilers read `metaSharing` contents, and both implement the rule:
 Lean `Ix.DecompileM` (`ShareScope`, `resolveShareIn`; also the semantic-contract scan
@@ -1095,7 +1129,7 @@ whole table is checked first (`validateMetaSharing`, Rust `validate_meta_sharing
 the first violation in entry order and then left-to-right pre-order. Kernel ingress
 (`Ix/Tc/IngressMeta.lean`, Rust `crates/kernel/src/ingress.rs`), the IxVM circuit and the
 resource validators do not read `metaSharing` contents. Two gaps of the readers predate this
-rule and are not addressed by it: a call site nested inside a metadata expression may reference
+rule and are not addressed by it: a record nested inside a metadata expression may reference
 any `metaSharing` entry, including its own, and neither the decompilers nor kernel ingress check
 that primary table entries reference only earlier entries. A malformed table of either kind can
 therefore make them loop instead of failing; hardening the readers is follow-up work.
@@ -1125,3 +1159,260 @@ Obligations when implemented: the primary table, primary roots and primary bytes
 with and without metadata (a theorem, by construction: the primary result is an input);
 expansion round trip of every metadata root; idempotence; Lean/Rust byte parity; fixtures.
 Like §8.2, this does not make the combined primary-plus-metadata artifact a global minimum.
+
+## 14. Canonical rule revision `sharing-k16-greedy-v1`
+
+Owner decision, 2026-10-22. This rule supersedes the unbounded uncertain-component search
+in §12. It changes canonicalization identity, not the encoding grammar. Checked objects and
+claims retain format 4. The M6D metadata envelope version 5 is a separate change; this rule
+adds no version byte, tag, header field or metadata field. The identifier is recorded here and
+in [Ixon](Ixon.md#canonical-construction).
+
+### 14.1 Fixed component family
+
+At each uniform width `w ∈ {1, 2, 3}`, expand and canonicalize the input DAG, then use the
+existing **initial** classification and uncertain-component partition. No search or
+reclassification precedes the gate. For each initial component `C`:
+
+- If `|C| ≤ 16`, its family contains every subset of `C`.
+- Otherwise, its family is the chain `S₀, …, Sₘ`, where `m = |C|`, `S₀ = ∅`, and
+  `Sᵢ₊₁` adds the member minimizing
+  `Δ_C(Sᵢ ∪ {member}) = phiE(Sᵢ ∪ {member}) − phiE(∅)` in the existing uniform context.
+  Equal deltas choose the `setPrec`-least set, which at a chain step means adding the larger
+  structural ID. All `m + 1` chain rows are retained before slack trimming.
+
+For each attainable count, select the `setPrec`-least minimum-delta family member. Apply
+the existing slack trim, count-bracket knapsack and global `setPrec` tie rule. Phase 2's
+slot allocation, phase 3's rematerialization, and the final choice of the fewest actual
+bytes with lower-width ties are unchanged. The chosen set is optimal over this fixed
+product family; a component using the chain carries no claim of an optimum over all subsets.
+
+The gate, K = 16, classification and tie order are part of the rule identity. An implementation
+may use a different search algorithm only if it produces the same retained rows. For example,
+branch and bound may switch to enumeration of the **same** family. Timeouts, work budgets,
+available memory and implementation language must never choose a different family or emit
+the best table found so far.
+
+### 14.2 Input domain and refusal
+
+The totality theorems (§14.3) state their domain explicitly. For Share-free roots it is
+fewer than `2^64` expression nodes in all, with fewer than `2^64` universes on every
+reference. For an input with a sharing table it is an input that expands, to a canonical
+DAG of fewer than `2^64` terms with fewer than `2^64` universes on every reference. The
+existing `.ixe` framed constant-body bound, fewer than `2^64` bytes per constant, implies
+these counts. Standalone normalization and structured APIs must state their domain
+explicitly; it does not follow from an arbitrary in-memory `Constant`.
+
+The production route retains checked arithmetic, resource limits and construction guards.
+On the domain above none of them is reachable under a sufficient budget (§14.3); under a
+smaller budget a run returns an error. The family route has no telescope-spine guard: its cost identity
+and successful-output theorems hold for every spine length, so only the reference route keeps
+that guard (§12.17). A structural fallback is part of the rule; a fallback triggered by
+failure is not.
+
+### 14.3 Proof scope and follow-up
+
+The family proof stack establishes successful-run meaning and format, least choice in the
+fixed family, representation congruence, and conditional idempotence. It also establishes
+complete constant and serialized-byte equality with the old exact route when every initial
+component at all three widths has at most 16 members, both routes succeed with the same
+limits, and the old route uses its default search (`uniformSubsetSearch = false`). This
+conditional theorem compares `Ix.Sharing.Exact.Reference.normalizeConstantSharingTiered`
+with the production `Ix.Sharing.Exact.normalizeConstantSharingTiered`. It does **not** imply
+that old-route success guarantees new-route success under an arbitrarily tight budget,
+or that the K16 cutover left every corpus constant unchanged (§14.4).
+
+The Lean cutover attaches these statements and the proved fast twins to the production
+entry and its audits, preserving compiler-facing meaning, format and codec theorems without
+new premises. Its audit has 263 theorem roots and checks all 30 compiler-path `csimp`
+equalities; the accepted unsafe set is unchanged. The old exact-optimum theorems remain
+on the reference path. Rust is a
+separately tested implementation; byte parity is not a universal refinement proof.
+
+The guarded area evaluator in `Ix/Sharing/FamilyNormalizeArea.lean` is proved equal
+to the closure evaluator for complete results, mathematical work charges and errors.
+It builds one base table per width and retains the reference evaluator when its
+representation or opacity checks fail. Its two audited `csimp` equalities route both
+the production entry and the parameterized normalizer through this implementation;
+the component family, tie rules and resource limits are unchanged.
+
+Totality is proved in `IxSharingVerify.NeverFails`. Under some budget the production entry
+succeeds on the domain of §14.2 (`canonicalSharingTiered_ok`), and so do the entry with a
+sharing table and constant normalization. No guard of the route is reachable there: the
+component and knapsack budgets, the output-length check, the materialization and
+re-expansion checks of the uniform finisher, the first-tier search and the allocation's
+permutation and dependency checks, and the re-materialization's length, re-expansion and
+wire-domain checks. The component partition check, the negative-model check and the
+retained row's index check, which the same proofs make unreachable, are no longer run
+(below). A larger budget keeps every successful run
+and its result (`Budget.canonicalSharingTiered_mono`), so two successful runs under any
+budgets return the same result (`canonicalSharingTiered_budget_independent`): the budget
+decides only whether a run is refused, never its bytes. The output, with its sharing
+table, expands again (`canonicalSharingTiered_output_expands`).
+
+`IxSharingVerify.SufficientBudget` names one such budget. The input size `N` counts the
+roots' expression nodes plus their universe arguments (`inputSize`). With `B = N + 1`,
+`limitsFor N` allows `2^11·B²` walked expression nodes and depth, `2^12·B²` DAG nodes,
+`2^17·B⁹` states, `B²` knapsack cells, `2^19·B³` cost evaluations, `2^6·B²` output bytes,
+`2^10·B²` materialized bytes and `2^11·B³` materialization work. It allows no transitions
+and no oracle work, which this route does not use. Under it the production entry succeeds
+on every Share-free input with `N < 2^64` (`canonicalSharingTiered_limitsFor`), and every
+larger budget returns the same output (`canonicalSharingTiered_above`). Each stage is
+proved to succeed under every budget that covers an explicit count (the `*_within`
+theorems), and the counts are bounded by `N`:
+
+- the DAG has at most `N` terms, and the uncertain components hold at most `N` terms in
+  all, so the component loop makes at most `2^17·B²` calls and precharges at most
+  `6·2^16·B³` work (`familyCallTotal_le`, `familyWorkTotal_le`);
+- the knapsack has at most `B²` cells;
+- the selected model is no longer than the full endpoint, the set storing every candidate,
+  whose charge `modelBound` is at most `64·B²` when every reference carries at most `N`
+  universes (`selected_ulen_le_modelBound`, `modelBound_le`). The route's output is at most
+  nine times that charge (`familyExpanded_output_le`), since a Share reference is at most
+  nine bytes and phase 3 is never longer than phase 1;
+- an evaluation works at most `n·(n + 1)` on `n` terms, one step per term and available
+  spine node, so materializing a table of at most `n` entries works at most
+  `B³ + 576·B²`;
+- an expression has fewer nodes than twice its length, which bounds the walks of the
+  re-expansion checks by the lengths;
+- the first-tier search visits at most `(m + 1)⁹` states on a table of `m` entries, since
+  every inclusion adds at least one of at most eight terms (`allocate_within`).
+
+With a sharing table whose entries reference only earlier entries, and roots that reference
+only entries, the same budget is sufficient when `N` counts the table and the roots as
+written (`canonicalSharingTieredTable_limitsFor`), and so for re-sharing a constant
+(`normalizeConstantSharingTiered_limitsFor`). The resolved expressions may be exponentially
+larger than the input; the counts above are of the expanded DAG, which has at most one term
+per input node.
+
+The budget bounds what the meters count. In the code that compiled code runs (after the
+`csimp` replacements), most loops are charged or are within a logarithmic factor of a charged
+or linear count. Charged: the ingestion and re-expansion walks (expression visits, depth,
+DAG nodes), the component loop (states, and precharged work that covers each component's
+context, area evaluations and stored sets), the first-tier search (one state per node,
+constant work each), the knapsack (cells, precharged) and the one-pass materialization
+(bytes and work). Uncharged but linear or within a logarithmic factor of linear, per width
+or component, on a DAG of `n` terms and `E` edges: preparation, graph facts,
+classification, the family tables, the allocation's weights and closures, layout pricing and
+the wire check. Some uncharged loops grow faster, by at most one factor of `n`, a spine
+length or a component size over the charged or linear counts:
+
+- the uncertain-component pass (`uncertainComponents`) uses a union-find without path
+  compression and removes duplicate representatives by linear search, `O(n³)` in the
+  worst case;
+- each component evaluation sets its member flags (`memberFlags`) by a linear membership
+  test in the stored set and scans telescopes up to the stored-set size per term, while
+  the precharge counts one step per closure term;
+- the dictionary evaluation counts its telescope work (`DictEval.work`), but only
+  materialization compares it with a limit; the base evaluation of each width, the
+  phase-1 base cost and the expression builders scan up to a spine length per term,
+  `O(n·L)`;
+- the pinned order rechecks a user's nearest stored descendants whenever one of them is
+  placed, `O(Σ |deps|²)`, up to `O(n³)`;
+- each knapsack cell compares the candidates of its component, `O(cap · Σ m²)`;
+- the nearest stored descendants of the pinned order cost `O(s·(n + E))` for `s` stored
+  terms, a component context sorts its area by quicksort (quadratic in the worst case),
+  and retaining a component's best row is quadratic in its size;
+- re-expansion looks a node up among its child's parents, `O(visits · n)` in the worst
+  case, and the Kahn order removes duplicate dependencies by list search.
+
+For Share-free roots `n ≤ N`, so the running time is polynomial in `N`: the charged
+first-tier search sets the degree (`B⁹` states, constant work each), and the uncharged work
+is at most `O(N³)` apart from the one extra factor on the charged component work.
+
+The bound is polynomial, not near-linear, and measured running times stay within it while
+growing faster than linearly on some shapes. These shapes also reach the production
+sharing code:
+
+- **A long `Lam` telescope.** Rust's telescope scan (`dict.rs`, `scan_telescope`) walks the
+  whole spine below each telescope node, in phase-1 materialization and phase-3 costs:
+  about 1 s at 10,000 binders, 4 s at 20,000 and 105 s at 100,000. The work is charged.
+  Lean's evaluator follows links to the next available spine node and is linear on this
+  shape when no spine node is stored. Porting those links to Rust is not a cheap,
+  byte-neutral change; it is follow-up work.
+- **A long argument chain.** Rust collected each term's distinct parents with a linear
+  search, quadratic in a chain's parents: 1.27 s for 200,000 arguments and 7.19 s for
+  400,000. It now compares only with the last parent recorded, since parents arrive in
+  increasing order (0.29 s and 0.60 s). On the Init+Std corpus the outputs are identical
+  and the time unchanged (median wall 52.4 s before, 52.3 s after, seven runs each).
+- **Many repeated references.** A probe with many repeated references grows
+  quadratically in Rust (80 ms at 1,000 repetitions, 357 ms at 2,000). The cause is not
+  yet isolated; the suspect is the representative lists of the uncertain-component pass,
+  which grow the same way in Lean (above).
+- **The exact continuation.** Rust's exact-integer continuation past 128 bits is slower
+  than the 128-bit path. It runs only where a value leaves 128 bits.
+
+Rust has exact wide phase-1 arithmetic, word-sized term IDs and iterative expression
+teardown.
+
+Of the internal guards the proofs make unreachable, the family route no longer runs three:
+the component partition check (`componentsChecked`, quadratic in the uncertain terms), the
+negative-model check, and the check that the retained best row sits at its own count. Each
+removal is byte-neutral and does no metered work, so refusals under every budget are
+unchanged; the proofs take the partition from `stage_componentsChecked` and the model's sign
+from `selected_model_nonnegative`. Rust has no counterpart of the first and third, and
+converts the model to a `u64`, a format bound rather than an internal check. The other
+guards stay:
+
+- the DAG checks (`uniformDagChecks`), which the `csimp` equalities of the compiled family
+  route need on an arbitrary `Expanded` input;
+- the wire-domain check of the re-materialized expressions, a genuine domain check: the
+  format, serialized-length and output-expansion theorems rely on it, and its passing
+  proof needs the input domain (fewer than `2^64` terms and universes per reference);
+- the two re-expansion checks, which charge expression visits (Rust charges the same
+  counts) and which the meaning theorem consumes;
+- the first-tier fuel, the row retention's option checks and the materializer's internal
+  checks, which are structural;
+- the uniform finisher's range, class and model-length checks, the allocation's
+  permutation and dependency checks, and the re-materialization's length checks. They are
+  unreachable and linear-time, but sit on functions shared with the reference route;
+  removing them needs family-only copies of the finisher and re-materializer, or a rework
+  of the reference route's proofs.
+
+Rust keeps its own self-checks: no proof covers the Rust implementation, and they fire
+only on a Rust defect. The compiler theorem (`Ix.Cert.CompileCorrect`, proved by
+`Ix.Cert.ReaderStreamsTrace.compileCorrect`) is stated for compiles that report no
+failure, so a guard that fires puts the closure outside it rather than making it false.
+
+### 14.4 Evidence and release gates
+
+With references held fixed, K16 normalization of the saved corpora changed 16 of 100,327
+Init+Std constants (net +117 payload bytes) and 112 of 689,469 Mathlib constants (net +223).
+Every observed difference involved a fallback component; no wholly exact constant changed.
+These measurements exclude changes to dependent addresses during a whole compile.
+
+The captured `genMutual_mapKeys` input normalized to identical 2,805,615-byte outputs in
+Rust and Lean: 25.50 s and 331.00 s respectively. These are individual normalizations, not
+whole-environment compile times. The 65-second compile target is soft; performance work is
+separate from correctness. The old exact output for this capture remains unknown.
+
+The 2026-10-23 guarded area implementation reduced that Lean normalization to
+133.245 s with identical complete output bytes and charges. A controlled Init+Std
+comparison measured 70.515 s before the integrated compiler changes, 71.287 s after
+integration, and 127.940 s with the initial K16 evaluator. Area evaluation then measured
+89.962 s under concurrent validation load, again with full Rust byte parity; this last
+measurement is not an isolated timing comparison.
+
+A separate whole-Mathlib profile identified quadratic copying in producer dependency
+planning before the first compilation wave. Updating the reverse map with `HashMap.alter`
+removes that retained-array copy; an all-key lookup theorem preserves complete caller
+arrays, including order and duplicates. With both repairs, Lean and Rust each compiled
+all 783,115 selected Mathlib declarations at default limits with zero failures and
+identical 2,386,468,475-byte artifacts (SHA-256
+`a31241a4d326e77b03e54ce29a30d7ede427a900a2c570c3e60a3d30530067f0`).
+The Lean compile phase took 556.658 s; its full command, including the Rust cross-check,
+took 18m16s. This establishes measured corpus success, not totality or a universal cost bound.
+
+The small valid doubling-DAG inputs exposed a Rust refusal while computing the unshared
+size for initial classification. That predicate now uses the proved sufficient cap
+`min(C0, 2 * u64::MAX)` and a product-free comparison. CPU replay gives 11/11 complete
+Rust outputs identical to Lean, including the four former refusals at depths 127, 128, 130
+and 256. The repaired capture is byte-identical in 25.61 s; all 100,327 Init+Std output
+signatures and recorded candidate meters match the preceding K16 run. This targeted repair
+does not eliminate the remaining general arithmetic or index bounds.
+
+Release requires focused mixed-family oracle tests, strict builds and audits, exact-gate
+snapshot compatibility, direct corpus normalization with the production binaries, whole
+Init+Std/Mathlib compiles with Lean/Rust parity and attributed address changes, the formerly
+stalled whole-environment compile, and all affected CI tiers. Prototype measurements do not
+stand in for these production gates.

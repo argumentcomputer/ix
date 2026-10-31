@@ -51,23 +51,28 @@ impl MetaRepr {
   /// call for `Bytes` and `Window` (nothing is cached — mirroring
   /// `LazyConstant`).
   fn decode(&self) -> Arc<ConstantMeta> {
+    self.decode_checked().unwrap_or_else(|_| Arc::new(ConstantMeta::default()))
+  }
+
+  fn decode_checked(&self) -> Result<Arc<ConstantMeta>, String> {
     match self {
-      MetaRepr::Structured(m) => m.clone(),
+      MetaRepr::Structured(m) => Ok(m.clone()),
       MetaRepr::Bytes(b) => {
         let mut slice: &[u8] = b;
-        Arc::new(
-          ConstantMeta::get_raw(&mut slice)
-            .expect("Named meta bytes produced by put_raw failed to decode"),
-        )
+        let meta = ConstantMeta::get_raw(&mut slice)?;
+        if !slice.is_empty() {
+          return Err("Named.meta: trailing bytes in demoted metadata".into());
+        }
+        Ok(Arc::new(meta))
       },
-      MetaRepr::Window(w) => Arc::new(w.decode_meta()),
+      MetaRepr::Window(w) => w.decode_meta_checked().map(Arc::new),
     }
   }
 }
 
 /// One §5 named-entry window kept verbatim from the file: the
 /// `meta_len`-framed bytes holding the entry's metadata plus optional
-/// aux_gen original, in the *indexed* name encoding, together with the
+/// original form, in the *indexed* name encoding, together with the
 /// file's §4 reverse index to resolve name references. Built by
 /// [`Env::get_demoted_named`]'s lazy load path; decoded on demand
 /// through the grammar helpers in `serialize` (the same ones
@@ -82,11 +87,10 @@ pub(crate) struct LazyMetaWindow {
   off: usize,
   len: usize,
   rev: Arc<NameReverseIndex>,
-  /// Filled by the first meta decode: the meta part's encoded length
-  /// and the original's address if the entry carries one. Lets
-  /// `has_original`/`original` skip re-parsing the meta part — the
-  /// muts-plan `meta()` sweep warms it for every entry before the
-  /// decompile passes read originals.
+  /// Validated split of the window: the meta part's encoded length
+  /// and the original's address if the entry carries one. Populated at
+  /// load time by [`Env::get_demoted_named`] (or on first checked access)
+  /// so `has_original`/`original` skip re-parsing the meta part.
   split: OnceLock<(usize, Option<Address>)>,
 }
 
@@ -100,6 +104,7 @@ impl std::fmt::Debug for LazyMetaWindow {
 }
 
 impl LazyMetaWindow {
+  #[cfg(test)]
   pub(crate) fn new(
     arena: Arc<[u8]>,
     off: usize,
@@ -109,59 +114,73 @@ impl LazyMetaWindow {
     LazyMetaWindow { arena, off, len, rev, split: OnceLock::new() }
   }
 
+  pub(crate) fn new_validated(
+    arena: Arc<[u8]>,
+    off: usize,
+    len: usize,
+    rev: Arc<NameReverseIndex>,
+    split_val: (usize, Option<Address>),
+  ) -> Self {
+    let split = OnceLock::new();
+    let _ = split.set(split_val);
+    LazyMetaWindow { arena, off, len, rev, split }
+  }
+
   fn window(&self) -> &[u8] {
     &self.arena[self.off..self.off + self.len]
   }
 
-  /// Decode the meta part, recording the split as a side effect.
-  ///
-  /// Corrupt window bytes are a panic, not an `Err`: `Named::meta` is
-  /// infallible by contract, and the lazy load validated only the
-  /// window framing — interior §5 corruption (which the eager loaders
-  /// would have rejected at load) surfaces here on first decode.
-  fn decode_meta(&self) -> ConstantMeta {
-    let window = self.window();
-    let (meta, meta_len) = decode_window_meta(window, &self.rev)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-    self.fill_split(window, meta_len);
-    meta
-  }
-
-  fn fill_split(&self, window: &[u8], meta_len: usize) {
-    let _ = self.split.get_or_init(|| {
-      let orig = decode_window_orig_header(window, meta_len)
-        .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-      (meta_len, orig.map(|(addr, _)| addr))
-    });
-  }
-
-  fn split(&self) -> &(usize, Option<Address>) {
+  fn split_checked(&self) -> Result<&(usize, Option<Address>), String> {
     if let Some(s) = self.split.get() {
-      return s;
+      return Ok(s);
     }
-    let window = self.window();
-    let (_, meta_len) = decode_window_meta(window, &self.rev)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-    self.fill_split(window, meta_len);
-    self.split.get().expect("split just filled")
+    let validated =
+      crate::serialize::validate_window(self.window(), &self.rev)?;
+    Ok(self.split.get_or_init(|| validated))
   }
 
-  fn has_original(&self) -> bool {
-    self.split().1.is_some()
+  fn decode_meta_checked(&self) -> Result<ConstantMeta, String> {
+    let &(expected_len, _) = self.split_checked()?;
+    let (meta, meta_len) = decode_window_meta(self.window(), &self.rev)?;
+    if meta_len != expected_len {
+      return Err("Named.meta: metadata window length mismatch".into());
+    }
+    Ok(meta)
   }
 
-  fn decode_original(&self) -> Option<(Address, ConstantMeta)> {
-    let s = self.split();
-    let addr = s.1.clone()?;
+  fn decode_original_checked(
+    &self,
+  ) -> Result<Option<(Address, ConstantMeta)>, String> {
+    let &(meta_len, ref orig_addr) = self.split_checked()?;
+    let Some(addr) = orig_addr.clone() else {
+      return Ok(None);
+    };
     let window = self.window();
     // Re-derive the original's offset from its header (one tag byte +
     // address — cheap) rather than caching a second offset.
-    let (header_addr, orig_off) = decode_window_orig_header(window, s.0)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"))?;
+    let Some((header_addr, orig_off)) =
+      decode_window_orig_header(window, meta_len)?
+    else {
+      return Ok(None);
+    };
     debug_assert_eq!(header_addr, addr);
-    let (meta, _end) = decode_window_orig_meta(window, orig_off, &self.rev)
-      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
-    Some((addr, meta))
+    let (meta, end) = decode_window_orig_meta(window, orig_off, &self.rev)?;
+    if end != window.len() {
+      return Err("original: trailing bytes in metadata window".into());
+    }
+    Ok(Some((addr, meta)))
+  }
+
+  fn decode_meta(&self) -> ConstantMeta {
+    self.decode_meta_checked().unwrap_or_default()
+  }
+
+  fn has_original(&self) -> bool {
+    self.split_checked().is_ok_and(|s| s.1.is_some())
+  }
+
+  fn decode_original(&self) -> Option<(Address, ConstantMeta)> {
+    self.decode_original_checked().ok().flatten()
   }
 }
 
@@ -182,10 +201,10 @@ pub struct Named {
   /// field). Private repr: structured, or demoted to serialized bytes —
   /// read through [`Self::meta`].
   meta: MetaRepr,
-  /// For aux_gen-rewritten constants: the original Lean constant's compiled
-  /// form (address + metadata). Ingress uses `addr`/`meta` (the canonical
-  /// aux_gen form). Decompile uses `original` for faithful roundtrip of
-  /// binder names and other cosmetic metadata.
+  /// An optional original form of the constant: a second compiled form
+  /// (address + metadata) recorded beside `addr`/`meta`, which ingress
+  /// uses. Serialization, pruning and diffing carry it as provenance; the
+  /// compiler does not record one.
   original: Option<(Address, MetaRepr)>,
 }
 
@@ -224,13 +243,34 @@ impl Named {
     self.meta.decode()
   }
 
-  /// The aux_gen original form, if recorded (see field docs).
+  /// Fallible metadata lookup for checked storage and serialization paths.
+  pub fn meta_checked(&self) -> Result<Arc<ConstantMeta>, String> {
+    self.meta.decode_checked()
+  }
+
+  /// The original form, if recorded (see field docs).
   pub fn original(&self) -> Option<(Address, Arc<ConstantMeta>)> {
     if let MetaRepr::Window(w) = &self.meta {
       debug_assert!(self.original.is_none());
       return w.decode_original().map(|(a, m)| (a, Arc::new(m)));
     }
     self.original.as_ref().map(|(a, m)| (a.clone(), m.decode()))
+  }
+
+  /// Fallible original lookup for checked storage interfaces. In particular,
+  /// malformed lazy metadata must not turn into a panic during validation.
+  pub fn original_checked(
+    &self,
+  ) -> Result<Option<(Address, Arc<ConstantMeta>)>, String> {
+    if let MetaRepr::Window(w) = &self.meta {
+      return w
+        .decode_original_checked()
+        .map(|opt| opt.map(|(a, m)| (a, Arc::new(m))));
+    }
+    match &self.original {
+      None => Ok(None),
+      Some((a, m)) => Ok(Some((a.clone(), m.decode_checked()?))),
+    }
   }
 
   pub fn has_original(&self) -> bool {
@@ -240,7 +280,7 @@ impl Named {
     }
   }
 
-  /// Record the aux_gen original form. Stored in the same repr as
+  /// Record an original form. Stored in the same repr as
   /// `self.meta`, so demoted entries stay fully demoted.
   pub fn set_original(&mut self, addr: Address, meta: ConstantMeta) {
     self.materialize_window();
@@ -297,17 +337,13 @@ impl Named {
 
 /// Nested-auxiliary layout info for a mutual inductive block.
 ///
-/// Paired perm + source_ctor_counts so consumers have everything needed to
-/// correctly permute source-order aux motives/minors into canonical
-/// positions. Both arrays have one entry per source-walk-discovered aux.
+/// Source-walk positions mapped to canonical positions, with source
+/// constructor counts and evaporation ownership. All three arrays have
+/// one entry per source-walk-discovered auxiliary.
 ///
-/// This lives in `ixon::env` (not `ix_compile::surgery`, where it originated)
-/// so it can be persisted into the serialized Ixon environment as a
-/// side-table on [`Env::aux_layouts`]. The surgery layer re-exports it.
-///
-/// Keyed by `<source_all[0]>` — the first inductive in the Lean source's
-/// mutual block, which is what Lean hangs `.rec_N` / `.below_N` /
-/// `.brecOn_N` names off.
+/// It lives in `ixon::env` and is carried per block in the block's
+/// `Muts` metadata (`ConstantMetaInfo::Muts::aux_layout`, encoded inline
+/// there), not in a side table of the environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuxLayout {
   /// `perm[source_j] = canonical_i`: Lean's source-walk position to
@@ -318,13 +354,10 @@ pub struct AuxLayout {
   /// canonically (it's a property of the external nested inductive).
   pub source_ctor_counts: Vec<usize>,
   /// `evaporated[source_j]`: THIS block owns the evaporation of source
-  /// position j — no SCC's canonical expansion contains the aux, so the
-  /// exported `all0.rec_{j+1}` name is aliased to the external head's
-  /// generic recursor and call sites get a head-rewrite plan. A position
+  /// position j — no SCC's canonical expansion contains the auxiliary. A position
   /// that is canonical in ANOTHER SCC of the same original mutual stays
   /// `PERM_OUT_OF_SCC` in `perm` with `evaporated = false` here: that
-  /// SCC owns the name, and this block registers neither alias nor plan
-  /// (see plans/aux-recursor-alias-collision.md). Same length as `perm`.
+  /// SCC owns the generated name. Same length as `perm`.
   pub evaporated: Vec<bool>,
 }
 
@@ -341,7 +374,7 @@ pub struct LazyConstSlice {
 
 /// One named entry in a [`LazyIndex`]: just the `name → addr` mapping.
 /// The heavy `ExprMetaArena` is parsed (to advance the cursor and
-/// handle every metadata variant, e.g. `CallSite`) but discarded;
+/// handle every metadata variant, e.g. `Mdata`) but discarded;
 /// hints live on [`LazyIndex::hints`].
 #[derive(Debug, Clone)]
 pub struct LazyNamed {
@@ -388,10 +421,41 @@ pub struct LazyIndex {
   /// Byte offset (within the parsed buffer) of §5's entry count — where
   /// a [`crate::serialize::NamedMetaCursor`] starts its streaming walk.
   pub named_section_offset: usize,
+  /// The role binding of a role-bound envelope, as read from the header.
+  pub role_binding: Option<RoleBinding>,
   /// §4 positional index → name-component address, retained so §5
   /// entries can be re-parsed standalone (`get_named_indexed`) without
   /// re-walking §4. ~32 B per name.
   pub name_reverse_index: NameReverseIndex,
+}
+
+/// Exact artifact role-binding bytes and their claimed address.
+/// Transport does not assert semantic role or evidence admission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoleBinding {
+  pub address: Address,
+  pub bytes: Arc<[u8]>,
+}
+
+impl RoleBinding {
+  /// Check the transported pair. Canonical decoding and semantic admission
+  /// remain the responsibility of the role-table consumer.
+  pub fn check_hash(&self) -> Result<(), String> {
+    Self::check_bytes(&self.address, self.bytes.as_ref())
+  }
+
+  pub(crate) fn check_bytes(
+    address: &Address,
+    bytes: &[u8],
+  ) -> Result<(), String> {
+    if Address::hash(bytes) != *address {
+      return Err(format!(
+        "role binding: bytes hash mismatch for {}",
+        address.hex()
+      ));
+    }
+    Ok(())
+  }
 }
 
 /// The Ixon environment.
@@ -446,6 +510,8 @@ pub struct Env {
   /// strictly ascending leaf list; `merkle_root_canonical` over it
   /// reproduces the root a `Claim::assumptions` field commits to.
   pub assumptions: FxHashSet<Address>,
+  /// Anonymous binding, preserved independently of named metadata.
+  pub role_binding: Option<RoleBinding>,
 }
 
 impl Env {
@@ -459,6 +525,7 @@ impl Env {
       anon_hints: IxonMap::new(),
       main: None,
       assumptions: FxHashSet::default(),
+      role_binding: None,
     }
   }
 
@@ -639,6 +706,7 @@ impl Env {
   /// The non-const parts shared by both `from_lazy_index` variants.
   #[cfg(not(target_arch = "riscv64"))]
   fn fill_from_lazy_index(mut env: Env, index: &LazyIndex) -> Env {
+    env.role_binding = index.role_binding.clone();
     for n in &index.named {
       let mut named = Named::with_addr(n.addr.clone());
       named.set_hints(n.hints);
@@ -808,9 +876,10 @@ impl Env {
   /// Collect `c`'s outgoing closure edges: Expr-level `refs`, a
   /// projection's structural `block` pointer, and — for a `Muts`
   /// block at `addr` — every member/constructor projection address
-  /// (derived, not stored anywhere; `ingress_anon_block` computes
-  /// these and requires them present in the env).
-  fn closure_edges(addr: &Address, c: &Constant, edges: &mut Vec<Address>) {
+  /// (derived even when their projection records are not physically carried).
+  /// This is closure accounting, not a requirement that every derived address
+  /// have a separate raw record.
+  pub fn closure_edges(addr: &Address, c: &Constant, edges: &mut Vec<Address>) {
     edges.extend(c.refs.iter().cloned());
     match &c.info {
       ConstantInfo::IPrj(p) => edges.push(p.block.clone()),
@@ -884,6 +953,8 @@ impl Env {
   /// (names, `DataValue` blobs) is the writer's business —
   /// [`Self::prune_to_closure`] carries it; a receiver that only
   /// typechecks/evaluates never needs it.
+  /// Bound pruners additionally enforce binding/support availability; neither
+  /// check admits role specifications or proof evidence.
   pub fn validate_closed(&self) -> Result<(), String> {
     let Some(main) = self.main.clone() else {
       return Err("validate_closed: env has no main".to_string());
@@ -916,6 +987,9 @@ impl Env {
   /// - Reached constants are carried with their GENUINE bytes
   ///   (`store_const_lazy`), so the receiver's per-entry hash check
   ///   and consts merkle root hold; reached blobs are copied.
+  /// - A present binding is retained exactly, together with its members,
+  ///   proofs and the reader's recursor/literal support. Mandatory support
+  ///   cannot be assumed. This checks availability, not semantic admission.
   /// - Cut-points actually reached go to `out.assumptions` (minimal:
   ///   a declared-but-unreached assumption is not carried).
   /// - `anon_hints` are copied per carried constant (else a bundle
@@ -924,7 +998,7 @@ impl Env {
   ///   `named` entries (all of them — alpha-equivalent names may
   ///   share one address), the name components they reference (with
   ///   full parent chains and string-component blobs), `DataValue`
-  ///   payload blobs, `meta_refs` extension DAG edges, and aux_gen
+  ///   payload blobs, `meta_refs` extension DAG edges, and
   ///   `original` constants when the source stores them (a compiled
   ///   env never stores an original that differs from its canonical
   ///   address; the `Named` row keeps the address as provenance — see
@@ -949,9 +1023,46 @@ impl Env {
     assumed: &FxHashSet<Address>,
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    out.role_binding = self.role_binding.clone();
+    let mut support = crate::binding_support::BindingSupport::new(self)?;
+    if let Some(support) = &mut support {
+      support.seed(self, assumed, &mut visited, &mut pending)?;
+    }
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
+    self.prune_fixpoint(
+      &mut out,
+      &mut visited,
+      &mut pending,
+      &mut named_done,
+      assumed,
+      support.as_mut(),
+    )?;
+    if let Some(support) = support {
+      support.finish(self, &out)?;
+    }
+    Ok(out)
+  }
+
+  /// The value and named passes of [`Self::prune_to_closure`], run until
+  /// the named pass finds no new DAG work.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn prune_fixpoint(
+    &self,
+    out: &mut Env,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut VecDeque<Address>,
+    named_done: &mut FxHashSet<Name>,
+    assumed: &FxHashSet<Address>,
+    mut support: Option<&mut crate::binding_support::BindingSupport>,
+  ) -> Result<(), String> {
     loop {
-      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+      self.prune_value_pass(
+        out,
+        visited,
+        pending,
+        assumed,
+        support.as_deref_mut(),
+      )?;
 
       // ── Named pass: carry display metadata for every carried
       // constant. Metadata references content the value walk cannot
@@ -963,15 +1074,15 @@ impl Env {
           continue;
         }
         named_done.insert(name.clone());
-        Self::carry_named_entry(
-          &mut out,
+        self.carry_named_entry(
+          out,
           name,
           named,
           &|na| self.get_name(na),
           &|ba| self.get_blob(ba),
-          &|a| self.holds_or_assumed(a, assumed),
-          &mut visited,
-          &mut pending,
+          assumed,
+          visited,
+          pending,
           &mut named_refs,
         )?;
       }
@@ -979,17 +1090,16 @@ impl Env {
       Self::enqueue_named_refs(
         named_refs,
         &|nm| self.named.get(nm).map(|e| e.addr.clone()),
-        &mut visited,
-        &mut pending,
+        visited,
+        pending,
       );
 
       // The named pass ran against the final consts of this round; if
       // it produced no new DAG work, the walk is complete.
       if pending.is_empty() {
-        break;
+        return Ok(());
       }
     }
-    Ok(out)
   }
 
   /// Value-only bundle: the 3-edge closure of `main` cut at `assumed` —
@@ -998,7 +1108,8 @@ impl Env {
   /// `names`/`named` stay empty (§4/§5 serialize as empty sections).
   /// The result still passes [`Self::validate_closed`] (which checks
   /// the value pin only) — this is the minimal artifact a receiver
-  /// needs to typecheck/evaluate the pinned value. Host-only — see
+  /// needs for the value pin; a present binding also retains its required
+  /// reader/evidence support. Host-only — see
   /// `store_blob`.
   #[cfg(not(target_arch = "riscv64"))]
   pub fn prune_to_closure_anon(
@@ -1007,7 +1118,21 @@ impl Env {
     assumed: &FxHashSet<Address>,
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
-    self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+    out.role_binding = self.role_binding.clone();
+    let mut support = crate::binding_support::BindingSupport::new(self)?;
+    if let Some(support) = &mut support {
+      support.seed(self, assumed, &mut visited, &mut pending)?;
+    }
+    self.prune_value_pass(
+      &mut out,
+      &mut visited,
+      &mut pending,
+      assumed,
+      support.as_mut(),
+    )?;
+    if let Some(support) = support {
+      support.finish(self, &out)?;
+    }
     Ok(out)
   }
 
@@ -1032,7 +1157,7 @@ impl Env {
 
   /// Whether a prune can resolve `addr` against this source under the
   /// cut `assumed`: the source stores it (constant or blob), or it is
-  /// a declared cut-point. Gates the aux_gen `original` edge (see
+  /// a declared cut-point. Gates the `original` edge (see
   /// [`Self::carry_named_entry`]).
   #[cfg(not(target_arch = "riscv64"))]
   pub(crate) fn holds_or_assumed(
@@ -1055,6 +1180,7 @@ impl Env {
     visited: &mut FxHashSet<Address>,
     pending: &mut VecDeque<Address>,
     assumed: &FxHashSet<Address>,
+    mut support: Option<&mut crate::binding_support::BindingSupport>,
   ) -> Result<(), String> {
     while let Some(addr) = pending.pop_front() {
       if assumed.contains(&addr) {
@@ -1066,9 +1192,28 @@ impl Env {
         if let Some(h) = self.anon_hints.get(&addr) {
           out.anon_hints.insert(addr.clone(), *h);
         }
-        let c = self.get_const(&addr).ok_or_else(|| {
-          format!("prune_to_closure: constant {} unparseable", addr.hex())
-        })?;
+        let c = if support.is_some() {
+          Arc::new(crate::binding_support::raw_constant(self, &addr)?)
+        } else {
+          self.get_const(&addr).ok_or_else(|| {
+            format!("prune_to_closure: constant {} unparseable", addr.hex())
+          })?
+        };
+        if let Some(support) = support.as_deref_mut() {
+          support.expand(self, &addr, &c, assumed, visited, pending)?;
+        }
+        // The same raw content address can occupy both tables. A literal
+        // blob must survive even when a constant has the identical address,
+        // including in legacy unbound environments.
+        if let Some(blob) = self.get_blob(&addr) {
+          if Address::hash(&blob) != addr {
+            return Err(format!(
+              "prune_to_closure: bad blob hash {}",
+              addr.hex()
+            ));
+          }
+          out.blobs.insert(addr.clone(), blob);
+        }
         let mut edges: Vec<Address> = Vec::new();
         Self::closure_edges(&addr, &c, &mut edges);
         for e in edges {
@@ -1077,6 +1222,9 @@ impl Env {
           }
         }
       } else if let Some(blob) = self.get_blob(&addr) {
+        if support.is_some() && Address::hash(&blob) != addr {
+          return Err(format!("binding support: bad blob hash {}", addr.hex()));
+        }
         out.blobs.insert(addr, blob);
       } else {
         return Err(format!(
@@ -1093,18 +1241,15 @@ impl Env {
   /// the `Named` row, its name's component chain, every
   /// metadata-referenced name component and blob, and (via
   /// `visited`/`pending`) any new constant DAG edges (`meta_refs`, and
-  /// aux `original`s the source holds) for the next value pass.
+  /// `original`s the source holds) for the next value pass.
   ///
-  /// An aux_gen `original` address is provenance, not a reference: the
-  /// compiler computes the Lean-source form's address but never stores
-  /// that constant (`compile_const_no_aux` is ephemeral; `validate-aux`
-  /// phase 3 fails if one leaks into `consts`). It is followed only
-  /// when `holds(addr)` — the source stores it, or it is assumed;
-  /// otherwise the `Named` row still carries the address and its
-  /// metadata, exactly as the full env does, and decompile falls back
-  /// as it does on the full env.
+  /// An `original` address is provenance, not a reference: the constant
+  /// it names need not be stored. It is followed
+  /// only when the source holds it or it is assumed
+  /// ([`Self::holds_or_assumed`]); otherwise the `Named` row still carries
+  /// the address and its metadata, exactly as the full env does.
   ///
-  /// `resolve_name`/`get_blob`/`holds` abstract the source: the
+  /// `resolve_name`/`get_blob` abstract the metadata source: the
   /// in-memory env for
   /// [`Self::prune_to_closure`]; the §4 lookup + lazy env for the
   /// streaming variant (`Env::prune_to_closure_streaming` in
@@ -1116,12 +1261,13 @@ impl Env {
   #[cfg(not(target_arch = "riscv64"))]
   #[allow(clippy::too_many_arguments)]
   pub(crate) fn carry_named_entry(
+    &self,
     out: &mut Env,
     name: &Name,
     named: &Named,
     resolve_name: &dyn Fn(&Address) -> Option<Name>,
     get_blob: &dyn Fn(&Address) -> Option<Vec<u8>>,
-    holds: &dyn Fn(&Address) -> bool,
+    assumed: &FxHashSet<Address>,
     visited: &mut FxHashSet<Address>,
     pending: &mut VecDeque<Address>,
     named_refs: &mut Vec<Name>,
@@ -1129,8 +1275,13 @@ impl Env {
     out.named.insert(name.clone(), named.clone());
     Self::carry_name(out, name);
 
+    let meta = named.meta_checked()?;
     let mut ref_addrs: Vec<Address> = Vec::new();
-    named.meta().named_refs(&mut ref_addrs);
+    meta.named_refs(&mut ref_addrs);
+    let original = named.original_checked()?;
+    if let Some((_, orig_meta)) = &original {
+      orig_meta.named_refs(&mut ref_addrs);
+    }
     for na in ref_addrs {
       if let Some(n) = resolve_name(&na) {
         named_refs.push(n);
@@ -1140,9 +1291,9 @@ impl Env {
     let mut name_addrs: Vec<Address> = Vec::new();
     let mut blob_addrs: Vec<Address> = Vec::new();
     let mut dag_addrs: Vec<Address> = Vec::new();
-    named.meta().collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
-    if let Some((orig_addr, orig_meta)) = named.original() {
-      if holds(&orig_addr) {
+    meta.collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
+    if let Some((orig_addr, orig_meta)) = original {
+      if self.holds_or_assumed(&orig_addr, assumed) {
         dag_addrs.push(orig_addr);
       }
       orig_meta.collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
@@ -1797,7 +1948,7 @@ mod tests {
   /// Fixture for the streaming/anon prune tests: `a` (the main) named
   /// "Foo" with Def metadata carrying (i) a §4-resolved non-ancestor
   /// name component (`u`, in `lvls`), (ii) a `meta_refs` blob, and
-  /// (iii) an `original` edge to `b` — a constant NOT reachable from
+  /// (iii) an original whose metadata names `b` — a constant NOT reachable from
   /// `a`'s value, so carrying it requires a second fixpoint round; `b`
   /// is named "Bar". Returns (serialized env, a, b, "Bar").
   fn streaming_prune_fixture() -> (Vec<u8>, Address, Address, Name) {
@@ -1823,8 +1974,12 @@ mod tests {
       value_root: 0,
     });
     meta.meta_refs.push(meta_blob);
+    let mut original_meta = meta.clone();
+    if let ConstantMetaInfo::Def { all, .. } = &mut original_meta.info {
+      all.push(Address::from_blake3_hash(*n("Bar").get_hash()));
+    }
     let mut foo_named = Named::new(a.clone(), meta);
-    foo_named.set_original(b.clone(), ConstantMeta::default());
+    foo_named.set_original(b.clone(), original_meta);
     env.register_name(foo, foo_named);
     env.register_hint(a.clone(), ReducibilityHints::Regular(2));
     let bar = n("Bar");
@@ -1865,7 +2020,7 @@ mod tests {
         &FxHashSet::default(),
       )
       .unwrap();
-    // Round-2 evidence: Bar rides in through Foo's `original` edge.
+    // Round-2 evidence: Bar rides in through the original metadata's `all`.
     assert!(via_stream.named.get(&bar).is_some(), "round-2 named carried");
     assert!(via_stream.consts.contains_key(&b));
     via_stream.validate_closed().unwrap();
@@ -1948,10 +2103,8 @@ mod tests {
     assert!(!anon.consts.contains_key(&even_c), "anon: value closure only");
   }
 
-  /// A regenerated auxiliary (`.rec`/`.below`/`.brecOn` of a reordered,
-  /// alpha-collapsed or nested block) records in `Named.original` the
-  /// address of Lean's source form, which the compiler never stores
-  /// (`compile_const_no_aux` is ephemeral). `Foo.rec` here is such an
+  /// A `Named.original` may record the address of a form the environment
+  /// does not store. `Foo.rec` here is such an
   /// entry, and `Bar.rec` shares its canonical constant (as `Nat.rec`
   /// does with an alpha-collapsed user recursor) with an original equal
   /// to its address. Packing either must succeed on both prune paths,
@@ -2105,5 +2258,49 @@ mod tests {
       anon.anon_hints.get(&a).map(|r| *r),
       Some(ReducibilityHints::Regular(2))
     );
+  }
+
+  #[test]
+  fn corrupt_section5_interior_bytes_rejected_without_panic() {
+    let (bytes, _, _, _) = streaming_prune_fixture();
+    let (index, _) = Env::parse_lazy_index_with_names(&bytes).unwrap();
+    assert!(
+      !index.named.is_empty(),
+      "fixture must contain at least one §5 entry"
+    );
+    let rev = Arc::new(index.name_reverse_index);
+
+    // Corrupting any byte in §5 (entry headers, metadata tags, name reference
+    // indices, original presence byte, or original metadata) must be handled
+    // identically by `Env::get` and `Env::get_demoted_named`, and must never
+    // panic if accessed via `LazyMetaWindow` / `Named`.
+    for pos in index.named_section_offset..bytes.len() {
+      let mut tampered = bytes.clone();
+      tampered[pos] ^= 0xff;
+
+      let eager = Env::get(&mut tampered.as_slice());
+      let demoted = Env::get_demoted_named(&mut tampered.as_slice());
+      assert_eq!(
+        eager.is_ok(),
+        demoted.is_ok(),
+        "Env::get and Env::get_demoted_named disagreed at §5 byte offset {pos}"
+      );
+
+      // Even if an unvalidated LazyMetaWindow is constructed over arbitrary
+      // corrupt bytes, neither checked nor infallible accessors may panic.
+      let win_slice = &tampered[pos..];
+      let win = Arc::new(LazyMetaWindow::new(
+        Arc::from(win_slice.to_vec()),
+        0,
+        win_slice.len(),
+        rev.clone(),
+      ));
+      let named = Named::from_indexed_window(Address::hash(b"c"), None, win);
+      let _ = named.meta_checked();
+      let _ = named.original_checked();
+      let _ = named.has_original();
+      let _ = named.meta();
+      let _ = named.original();
+    }
   }
 }

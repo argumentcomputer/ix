@@ -1,7 +1,5 @@
 module
 
-public import IxC.Kernel.Name
-
 /-!
 # The zero-ness datum `PropWhen` — representation, API and laws
 (task #161; the small-list constructors, 2026-09-06; the canonical
@@ -29,9 +27,9 @@ and never sees a constructor:
 
 **Canonical by construction (task #194).**  Every value of the type is
 the unique representative of its parameter *set*: the parameter list
-is strictly ascending in a total order on names (`Name.cmp`, defined
-here), the invariant is carried by the constructors themselves, and
-every producer (`ifAllZero`, `inter`, `bindZ`, hence
+is strictly ascending in `Nat`'s order (a universe parameter is a
+position, `LevelParam`), the invariant is carried by the constructors
+themselves, and every producer (`ifAllZero`, `inter`, `bindZ`, hence
 `Level.zeronessOf`/`Level.substPW`) normalizes.  Consequently
 `ifAllZero ps = ifAllZero qs ↔ (∀ n, n ∈ ps ↔ n ∈ qs)`
 (`ifAllZero_eq_iff`), `=`/`==`/`DecidableEq`/`Hashable` all decide
@@ -48,143 +46,19 @@ relating it to `Level` (`Level.zeronessOf`, `Level.substPW` —
 because `Level` is defined *above* this module, and they are proved
 purely through the API exported here.
 
-Layering: this module imports `Ix.Kernel.Name` and nothing else.
+Layering: this module imports nothing beyond the prelude.
 -/
 
 public section
 
 namespace Ix.Kernel
 
-/-! ## A strict total order on names
+/-- A universe parameter: its position in its constant's
+level-parameter list (`ConstantVal.levelParams`).  The front ends
+number a constant's parameters `0, …, n-1`; a large eliminator's
+elimination parameter is the number `n` after its block's. -/
+abbrev LevelParam := Nat
 
-There is no order on `Ix.Kernel.Name` elsewhere in the tree (the `NNode`
-arena keys by interned index, the level arena stores raw names), so
-the canonical form needs one.  `Name.cmp` is the structural
-lexicographic order — the shape of `Lean.Name.quickLt` minus the hash
-short-cut, which would make the order depend on hashing.  Constructor
-order is `anonymous < str < num`; equal constructors compare the
-prefix first, then the payload with the core `Ord` instances
-(`String`/`Nat`), whose `Std.TransCmp`/`Std.LawfulEqCmp` instances
-supply the payload half of every law below.  `a < b` is `cmp a b =
-.lt`; it is decidable, irreflexive, transitive, asymmetric and
-trichotomous (`lt_irrefl`, `lt_trans`, `lt_asymm`, `lt_trichotomy`) —
-a strict total order. -/
-
-namespace Name
-
-/-- Structural lexicographic comparison of names. -/
-def cmp : Name → Name → Ordering
-  | .anonymous, .anonymous => .eq
-  | .anonymous, .str _ _ => .lt
-  | .anonymous, .num _ _ => .lt
-  | .str _ _, .anonymous => .gt
-  | .num _ _, .anonymous => .gt
-  | .str _ _, .num _ _ => .lt
-  | .num _ _, .str _ _ => .gt
-  | .str p s, .str q t => (cmp p q).then (compare s t)
-  | .num p m, .num q n => (cmp p q).then (compare m n)
-
-/-- The strict order: `cmp` reading `lt`. -/
-instance : LT Name := ⟨fun a b => cmp a b = .lt⟩
-
-instance (a b : Name) : Decidable (a < b) :=
-  inferInstanceAs (Decidable (cmp a b = .lt))
-
-theorem lt_def {a b : Name} : a < b ↔ cmp a b = .lt := Iff.rfl
-
-theorem cmp_self : ∀ a : Name, cmp a a = .eq
-  | .anonymous => rfl
-  | .str p s => by
-    simp [cmp, cmp_self p, Ordering.then, Std.ReflCmp.compare_self]
-  | .num p n => by
-    simp [cmp, cmp_self p, Ordering.then, Std.ReflCmp.compare_self]
-
-theorem eq_of_cmp : ∀ {a b : Name}, cmp a b = .eq → a = b
-  | .anonymous, .anonymous, _ => rfl
-  | .str p s, .str q t, h => by
-    rw [cmp, Ordering.then_eq_eq] at h
-    rw [eq_of_cmp h.1, Std.LawfulEqCmp.compare_eq_iff_eq.mp h.2]
-  | .num p m, .num q n, h => by
-    rw [cmp, Ordering.then_eq_eq] at h
-    rw [eq_of_cmp h.1, Std.LawfulEqCmp.compare_eq_iff_eq.mp h.2]
-
-theorem cmp_swap : ∀ a b : Name, cmp a b = (cmp b a).swap
-  | .anonymous, .anonymous => rfl
-  | .anonymous, .str _ _ => rfl
-  | .anonymous, .num _ _ => rfl
-  | .str _ _, .anonymous => rfl
-  | .num _ _, .anonymous => rfl
-  | .str _ _, .num _ _ => rfl
-  | .num _ _, .str _ _ => rfl
-  | .str p s, .str q t => by
-    rw [cmp, cmp, Ordering.swap_then, ← cmp_swap p q,
-      ← Std.OrientedCmp.eq_swap (cmp := compare)]
-  | .num p m, .num q n => by
-    rw [cmp, cmp, Ordering.swap_then, ← cmp_swap p q,
-      ← Std.OrientedCmp.eq_swap (cmp := compare)]
-
-theorem cmp_trans : ∀ {a b c : Name}, cmp a b = .lt → cmp b c = .lt →
-    cmp a c = .lt
-  | .anonymous, .str _ _, .str _ _, _, _ => rfl
-  | .anonymous, .str _ _, .num _ _, _, _ => rfl
-  | .anonymous, .num _ _, .num _ _, _, _ => rfl
-  | .str _ _, .num _ _, .num _ _, _, _ => rfl
-  | .anonymous, .anonymous, _, h, _ => by simp [cmp] at h
-  | .str _ _, .str _ _, .num _ _, _, _ => rfl
-  | .str p s, .str q t, .str r u, h1, h2 => by
-    rw [cmp, Ordering.then_eq_lt] at h1 h2 ⊢
-    rcases h1 with h1 | ⟨h1, hs⟩
-    · rcases h2 with h2 | ⟨h2, _⟩
-      · exact Or.inl (cmp_trans h1 h2)
-      · exact Or.inl (eq_of_cmp h2 ▸ h1)
-    · rcases h2 with h2 | ⟨h2, ht⟩
-      · exact Or.inl (eq_of_cmp h1 ▸ h2)
-      · have hpq : p = q := eq_of_cmp h1
-        have hqr : q = r := eq_of_cmp h2
-        subst hpq; subst hqr
-        exact Or.inr ⟨cmp_self p, Std.TransCmp.lt_trans hs ht⟩
-  | .num p m, .num q n, .num r k, h1, h2 => by
-    rw [cmp, Ordering.then_eq_lt] at h1 h2 ⊢
-    rcases h1 with h1 | ⟨h1, hs⟩
-    · rcases h2 with h2 | ⟨h2, _⟩
-      · exact Or.inl (cmp_trans h1 h2)
-      · exact Or.inl (eq_of_cmp h2 ▸ h1)
-    · rcases h2 with h2 | ⟨h2, ht⟩
-      · exact Or.inl (eq_of_cmp h1 ▸ h2)
-      · have hpq : p = q := eq_of_cmp h1
-        have hqr : q = r := eq_of_cmp h2
-        subst hpq; subst hqr
-        exact Or.inr ⟨cmp_self p, Std.TransCmp.lt_trans hs ht⟩
-
-theorem lt_irrefl (a : Name) : ¬ a < a := by
-  simp [lt_def, cmp_self]
-
-theorem lt_trans {a b c : Name} (h1 : a < b) (h2 : b < c) : a < c :=
-  cmp_trans h1 h2
-
-theorem lt_asymm {a b : Name} (h : a < b) : ¬ b < a := by
-  have h' : cmp a b = .lt := h
-  have : cmp b a = .gt := by
-    rw [cmp_swap b a, h']; rfl
-  simp [lt_def, this]
-
-theorem ne_of_lt {a b : Name} (h : a < b) : a ≠ b := by
-  intro he
-  rw [he] at h
-  exact lt_irrefl b h
-
-/-- `gt` read backwards. -/
-theorem lt_of_gt {a b : Name} (h : cmp a b = .gt) : b < a := by
-  rw [lt_def, cmp_swap b a, h]; rfl
-
-/-- Trichotomy: names are linearly ordered by `<`. -/
-theorem lt_trichotomy (a b : Name) : a = b ∨ a < b ∨ b < a := by
-  cases h : cmp a b with
-  | eq => exact Or.inl (eq_of_cmp h)
-  | lt => exact Or.inr (Or.inl h)
-  | gt => exact Or.inr (Or.inr (lt_of_gt h))
-
-end Name
 
 /-! ## The sorted-list layer
 
@@ -199,11 +73,11 @@ the same list. -/
 namespace PropWhen
 
 /-- Strictly ascending: sorted **and** duplicate-free, in one clause. -/
-abbrev Sorted (ps : List Name) : Prop := List.Pairwise (· < ·) ps
+abbrev Sorted (ps : List LevelParam) : Prop := List.Pairwise (· < ·) ps
 
 /-- Membership-equal lists agree on every `all`. -/
-private theorem all_eq_of_mem_iff {ps qs : List Name}
-    (h : ∀ n, n ∈ ps ↔ n ∈ qs) (f : Name → Bool) :
+private theorem all_eq_of_mem_iff {ps qs : List LevelParam}
+    (h : ∀ n, n ∈ ps ↔ n ∈ qs) (f : LevelParam → Bool) :
     ps.all f = qs.all f := by
   rw [Bool.eq_iff_iff]
   simp only [List.all_eq_true]
@@ -211,24 +85,24 @@ private theorem all_eq_of_mem_iff {ps qs : List Name}
 
 /-- The ordered merge of two sorted lists — the union of the two sets,
 sorted again (`sorted_merge`). -/
-def merge : List Name → List Name → List Name
+def merge : List LevelParam → List LevelParam → List LevelParam
   | [], bs => bs
   | a :: as, [] => a :: as
   | a :: as, b :: bs =>
-    match Name.cmp a b with
+    match compare a b with
     | .lt => a :: merge as (b :: bs)
     | .eq => a :: merge as bs
     | .gt => b :: merge (a :: as) bs
 termination_by as bs => as.length + bs.length
 
-@[simp] theorem merge_nil : ∀ as : List Name, merge as [] = as
+@[simp] theorem merge_nil : ∀ as : List LevelParam, merge as [] = as
   | [] => by simp [merge]
   | _ :: _ => by simp [merge]
 
-@[simp] theorem nil_merge (bs : List Name) : merge [] bs = bs := by
+@[simp] theorem nil_merge (bs : List LevelParam) : merge [] bs = bs := by
   simp [merge]
 
-@[simp] theorem mem_merge : ∀ (as bs : List Name) {n : Name},
+@[simp] theorem mem_merge : ∀ (as bs : List LevelParam) {n : LevelParam},
     n ∈ merge as bs ↔ n ∈ as ∨ n ∈ bs := by
   intro as bs
   fun_induction merge as bs with
@@ -238,19 +112,19 @@ termination_by as bs => as.length + bs.length
     intro n; simp only [List.mem_cons, ih]; grind
   | case4 a as b bs hc ih =>
     intro n
-    have hab : a = b := Name.eq_of_cmp hc
+    have hab : a = b := Nat.compare_eq_eq.mp hc
     simp only [List.mem_cons, ih, hab]; grind
   | case5 a as b bs hc ih =>
     intro n; simp only [List.mem_cons, ih]; grind
 
-theorem all_merge (P : Name → Bool) (as bs : List Name) :
+theorem all_merge (P : LevelParam → Bool) (as bs : List LevelParam) :
     (merge as bs).all P = (as.all P && bs.all P) := by
   rw [Bool.eq_iff_iff]
   simp only [Bool.and_eq_true, List.all_eq_true, mem_merge]
   exact ⟨fun h => ⟨fun x hx => h x (.inl hx), fun x hx => h x (.inr hx)⟩,
     fun h x hx => hx.elim (h.1 x) (h.2 x)⟩
 
-theorem sorted_merge : ∀ {as bs : List Name}, Sorted as → Sorted bs →
+theorem sorted_merge : ∀ {as bs : List LevelParam}, Sorted as → Sorted bs →
     Sorted (merge as bs) := by
   intro as bs
   fun_induction merge as bs with
@@ -263,11 +137,11 @@ theorem sorted_merge : ∀ {as bs : List Name}, Sorted as → Sorted bs →
     rcases (mem_merge _ _).mp hm with hm | hm
     · exact h1.1 m hm
     · rcases List.mem_cons.mp hm with rfl | hm
-      · exact hc
-      · exact Name.lt_trans hc (h2.1 m hm)
+      · exact Nat.compare_eq_lt.mp hc
+      · exact Nat.lt_trans (Nat.compare_eq_lt.mp hc) (h2.1 m hm)
   | case4 a as b bs hc ih =>
     intro h1 h2
-    have hab : a = b := Name.eq_of_cmp hc
+    have hab : a = b := Nat.compare_eq_eq.mp hc
     subst hab
     simp only [Sorted, List.pairwise_cons] at h1 h2 ⊢
     refine ⟨fun m hm => ?_, ih h1.2 h2.2⟩
@@ -276,48 +150,48 @@ theorem sorted_merge : ∀ {as bs : List Name}, Sorted as → Sorted bs →
     · exact h2.1 m hm
   | case5 a as b bs hc ih =>
     intro h1 h2
-    have hba : b < a := Name.lt_of_gt hc
+    have hba : b < a := Nat.compare_eq_gt.mp hc
     simp only [Sorted, List.pairwise_cons] at h1 h2 ⊢
     refine ⟨fun m hm => ?_, ih (List.pairwise_cons.mpr h1) h2.2⟩
     rcases (mem_merge _ _).mp hm with hm | hm
     · rcases List.mem_cons.mp hm with rfl | hm
       · exact hba
-      · exact Name.lt_trans hba (h1.1 m hm)
+      · exact Nat.lt_trans hba (h1.1 m hm)
     · exact h2.1 m hm
 
 /-- Canonicalize a raw list: sort and deduplicate, by folding the
 singletons together. -/
-def canon (ps : List Name) : List Name :=
+def canon (ps : List LevelParam) : List LevelParam :=
   ps.foldr (fun n s => merge [n] s) []
 
 @[simp] theorem canon_nil : canon [] = [] := by simp [canon]
 
-@[simp] theorem canon_cons (n : Name) (ps : List Name) :
+@[simp] theorem canon_cons (n : LevelParam) (ps : List LevelParam) :
     canon (n :: ps) = merge [n] (canon ps) := by simp [canon]
 
-@[simp] theorem mem_canon {n : Name} : ∀ {ps : List Name},
+@[simp] theorem mem_canon {n : LevelParam} : ∀ {ps : List LevelParam},
     n ∈ canon ps ↔ n ∈ ps
   | [] => by simp
   | m :: rest => by simp [mem_canon (ps := rest)]
 
-theorem sorted_canon : ∀ ps : List Name, Sorted (canon ps)
+theorem sorted_canon : ∀ ps : List LevelParam, Sorted (canon ps)
   | [] => List.Pairwise.nil
   | m :: rest => sorted_merge (by simp [Sorted]) (sorted_canon rest)
 
-theorem all_canon (P : Name → Bool) (ps : List Name) :
+theorem all_canon (P : LevelParam → Bool) (ps : List LevelParam) :
     (canon ps).all P = ps.all P :=
   all_eq_of_mem_iff (fun _ => mem_canon) P
 
-theorem canon_eq_nil_iff {ps : List Name} : canon ps = [] ↔ ps = [] := by
+theorem canon_eq_nil_iff {ps : List LevelParam} : canon ps = [] ↔ ps = [] := by
   rw [List.eq_nil_iff_forall_not_mem, List.eq_nil_iff_forall_not_mem]
   simp only [mem_canon]
 
-theorem isEmpty_canon (ps : List Name) : (canon ps).isEmpty = ps.isEmpty := by
+theorem isEmpty_canon (ps : List LevelParam) : (canon ps).isEmpty = ps.isEmpty := by
   rw [Bool.eq_iff_iff, List.isEmpty_iff, List.isEmpty_iff, canon_eq_nil_iff]
 
 /-- **The canonical-form theorem**: two sorted lists with the same
 members are the same list. -/
-theorem sorted_ext : ∀ {as bs : List Name}, Sorted as → Sorted bs →
+theorem sorted_ext : ∀ {as bs : List LevelParam}, Sorted as → Sorted bs →
     (∀ n, n ∈ as ↔ n ∈ bs) → as = bs
   | [], [], _, _, _ => rfl
   | [], b :: _, _, _, h => by simpa using (h b).mpr (by simp)
@@ -329,30 +203,30 @@ theorem sorted_ext : ∀ {as bs : List Name}, Sorted as → Sorted bs →
       · exact hx
       rcases List.mem_cons.mp ((h b).mpr (by simp)) with hy | hy
       · exact hy.symm
-      exact absurd (hb.1 a hx) (Name.lt_asymm (ha.1 b hy))
+      exact absurd (hb.1 a hx) (Nat.lt_asymm (ha.1 b hy))
     subst hab
     have htail : ∀ n, n ∈ as ↔ n ∈ bs := by
       intro n
       constructor
       · intro hn
         rcases List.mem_cons.mp ((h n).mp (by simp [hn])) with rfl | hn'
-        · exact absurd (ha.1 n hn) (Name.lt_irrefl n)
+        · exact absurd (ha.1 n hn) (Nat.lt_irrefl n)
         · exact hn'
       · intro hn
         rcases List.mem_cons.mp ((h n).mpr (by simp [hn])) with rfl | hn'
-        · exact absurd (hb.1 n hn) (Name.lt_irrefl n)
+        · exact absurd (hb.1 n hn) (Nat.lt_irrefl n)
         · exact hn'
     rw [sorted_ext ha.2 hb.2 htail]
 
 /-- Canonicalizing a sorted list is the identity. -/
-theorem canon_eq_self {ps : List Name} (h : Sorted ps) : canon ps = ps :=
+theorem canon_eq_self {ps : List LevelParam} (h : Sorted ps) : canon ps = ps :=
   sorted_ext (sorted_canon ps) h fun _ => mem_canon
 
 /-- `canon` is idempotent. -/
-theorem canon_canon (ps : List Name) : canon (canon ps) = canon ps :=
+theorem canon_canon (ps : List LevelParam) : canon (canon ps) = canon ps :=
   canon_eq_self (sorted_canon ps)
 
-theorem canon_pair (p q : Name) : canon [p, q] = merge [p] [q] := by
+theorem canon_pair (p q : LevelParam) : canon [p, q] = merge [p] [q] := by
   simp
 
 end PropWhen
@@ -360,7 +234,7 @@ end PropWhen
 /-- The private representation of the zero-ness datum (canonical since
 task #194).  The census (DESIGN.md, "THE PACKED `pw` DATUM" §1) found
 the parameter lists tiny: on init-full 605 492 data are `ifAllZero
-[]`, 123 332 are one name, 16 are two names and **none** is longer.
+[]`, 123 332 are one parameter, 16 are two and **none** is longer.
 So the small cases get dedicated, allocation-free constructors, and
 only lists of length ≥ 3 keep a `List` cell chain.
 
@@ -370,7 +244,7 @@ duplicate-free — `PropWhen.Sorted`) *and* of length > 2, so that no
 list a small constructor could hold is ever a `many`.  Together with
 `never`/`always`/`one` (which have nothing to get wrong) this makes
 the representation a bijection with {`never`} ∪ {finite sets of
-names}: **equal sets are equal values**, by construction rather than
+parameters}: **equal sets are equal values**, by construction rather than
 by a normalization pass anyone could forget.
 
 This type is `private`: it cannot be named, matched on or constructed
@@ -378,9 +252,9 @@ outside this module. -/
 private inductive PropWhenRepr where
   | never
   | always
-  | one (p : Name)
-  | two (p q : Name) (h : p < q)
-  | many (ps : List Name) (h : PropWhen.Sorted ps ∧ 2 < ps.length)
+  | one (p : LevelParam)
+  | two (p q : LevelParam) (h : p < q)
+  | many (ps : List LevelParam) (h : PropWhen.Sorted ps ∧ 2 < ps.length)
   deriving Inhabited, Hashable
 
 /-- The zero-ness datum of a binder's codomain sort — the regime
@@ -424,10 +298,8 @@ private theorem repr_inj {a b : PropWhen} (h : a.repr = b.repr) : a = b := by
 /-! ### The comparison, and the instances
 
 `DecidableEq` is structural equality spelled constructor-wise
-(`equivR`) so that the name comparisons go through `Name.beq` (the
-pointer-and-hash-guarded equality, `IxC/Kernel/Name.lean`) rather
-than the derived structural walk; `equivR_iff_eq` says it *is*
-equality.  `==` is the `DecidableEq`, so `=`, `==`, `decide` and every
+(`equivR`), comparing the parameters with `Nat`'s `==`;
+`equivR_iff_eq` says it *is* equality.  `==` is the `DecidableEq`, so `=`, `==`, `decide` and every
 checker comparison site run the same code.
 
 `instance` bodies are always exposed, so they may not mention the
@@ -474,25 +346,25 @@ def never : PropWhen := ofRepr .never
 
 instance : Inhabited PropWhen := ⟨never⟩
 
-private theorem sorted_pair {p q : Name} (h : Sorted [p, q]) : p < q :=
+private theorem sorted_pair {p q : LevelParam} (h : Sorted [p, q]) : p < q :=
   (List.pairwise_cons.mp h).1 q (List.mem_singleton.mpr rfl)
 
 /-- Build the datum of a *sorted* list: the dedicated small
 constructors for length ≤ 2, the `many` chain above, its invariant
 discharged from the sortedness proof. -/
-private def ofSorted : (ps : List Name) → Sorted ps → PropWhen
+private def ofSorted : (ps : List LevelParam) → Sorted ps → PropWhen
   | [], _ => ofRepr .always
   | [p], _ => ofRepr (.one p)
   | [p, q], h => ofRepr (.two p q (sorted_pair h))
   | p :: q :: r :: rest, h => ofRepr (.many (p :: q :: r :: rest) ⟨h, by simp⟩)
 
-/-- The two-name datum from two arbitrary names: one comparison,
+/-- The two-parameter datum from two arbitrary parameters: one comparison,
 no list cell. -/
-private def two' (p q : Name) : PropWhen :=
-  match h : Name.cmp p q with
-  | .lt => ofRepr (.two p q h)
+private def two' (p q : LevelParam) : PropWhen :=
+  match h : compare p q with
+  | .lt => ofRepr (.two p q (Nat.compare_eq_lt.mp h))
   | .eq => ofRepr (.one p)
-  | .gt => ofRepr (.two q p (Name.lt_of_gt h))
+  | .gt => ofRepr (.two q p (Nat.compare_eq_gt.mp h))
 
 /-- **Smart constructor**: "every parameter in `ps` is zero".
 Normalizing: the result is the canonical representative of the *set*
@@ -500,7 +372,7 @@ of `ps` (`toList_ifAllZero : (ifAllZero ps).toList = canon ps`, and
 `ifAllZero_eq_iff`).  The empty and singleton cases touch no list
 cell and no comparison; the pair case is one comparison; only lists
 of length ≥ 3 run the sort. -/
-@[inline] def ifAllZero : List Name → PropWhen
+@[inline] def ifAllZero : List LevelParam → PropWhen
   | [] => ofRepr .always
   | [p] => ofRepr (.one p)
   | [p, q] => two' p q
@@ -509,7 +381,7 @@ of length ≥ 3 run the sort. -/
 /-- The parameter list of a datum — sorted and duplicate-free
 (`sorted_toList`); `never` reads as `[]` (use `toList?` where the
 distinction matters). -/
-def toList (pw : PropWhen) : List Name :=
+def toList (pw : PropWhen) : List LevelParam :=
   match pw.repr with
   | .never => []
   | .always => []
@@ -519,7 +391,7 @@ def toList (pw : PropWhen) : List Name :=
 
 /-- The parameter list of a non-`never` datum; `none` at `never`.  The
 view that inverts `ifAllZero`. -/
-def toList? (pw : PropWhen) : Option (List Name) :=
+def toList? (pw : PropWhen) : Option (List LevelParam) :=
   match pw.repr with
   | .never => none
   | _ => some pw.toList
@@ -535,17 +407,17 @@ theorem sorted_toList (pw : PropWhen) : Sorted pw.toList := by
 @[simp] theorem toList_never : toList .never = [] := by
   simp [toList, never]
 
-private theorem toList_ofSorted (ps : List Name) (h : Sorted ps) :
+private theorem toList_ofSorted (ps : List LevelParam) (h : Sorted ps) :
     (ofSorted ps h).toList = ps := by
   match ps, h with
   | [], _ | [_], _ | [_, _], _ | _ :: _ :: _ :: _, _ => simp [ofSorted, toList]
 
-private theorem toList_two' (p q : Name) : (two' p q).toList = merge [p] [q] := by
+private theorem toList_two' (p q : LevelParam) : (two' p q).toList = merge [p] [q] := by
   unfold two'
   split <;> simp [toList, merge, *]
 
 /-- The smart constructor's list is the canonical form of its input. -/
-@[simp] theorem toList_ifAllZero (ps : List Name) :
+@[simp] theorem toList_ifAllZero (ps : List LevelParam) :
     (ifAllZero ps).toList = canon ps := by
   match ps with
   | [] => simp [ifAllZero, toList]
@@ -557,21 +429,21 @@ private theorem toList_two' (p q : Name) : (two' p q).toList = merge [p] [q] := 
 
 /-- Membership in the smart constructor's list is membership in its
 input. -/
-theorem mem_toList_ifAllZero {n : Name} {ps : List Name} :
+theorem mem_toList_ifAllZero {n : LevelParam} {ps : List LevelParam} :
     n ∈ (ifAllZero ps).toList ↔ n ∈ ps := by
   rw [toList_ifAllZero, mem_canon]
 
-private theorem two'_ne_never (p q : Name) : two' p q ≠ never := by
+private theorem two'_ne_never (p q : LevelParam) : two' p q ≠ never := by
   unfold two'
   split <;> simp [never]
 
-private theorem ofSorted_ne_never (ps : List Name) (h : Sorted ps) :
+private theorem ofSorted_ne_never (ps : List LevelParam) (h : Sorted ps) :
     ofSorted ps h ≠ never := by
   match ps, h with
   | [], _ | [_], _ | [_, _], _ | _ :: _ :: _ :: _, _ => simp [ofSorted, never]
 
 /-- The smart constructor never produces `never`. -/
-@[simp] theorem ifAllZero_ne_never (ps : List Name) : ifAllZero ps ≠ .never := by
+@[simp] theorem ifAllZero_ne_never (ps : List LevelParam) : ifAllZero ps ≠ .never := by
   match ps with
   | [] | [_] => simp [ifAllZero, never]
   | [p, q] => exact two'_ne_never p q
@@ -587,7 +459,7 @@ private theorem toList?_eq {pw : PropWhen} (h : pw ≠ never) :
   | never => exact absurd rfl h
   | _ => simp [toList?]
 
-@[simp] theorem toList?_ifAllZero (ps : List Name) :
+@[simp] theorem toList?_ifAllZero (ps : List LevelParam) :
     (ifAllZero ps).toList? = some (canon ps) := by
   rw [toList?_eq (ifAllZero_ne_never ps), toList_ifAllZero]
 
@@ -615,7 +487,7 @@ theorem ifAllZero_toList {pw : PropWhen} (h : pw ≠ .never) :
 
 /-- **Unique representatives**: two smart-constructor applications are
 equal exactly when their inputs have the same members. -/
-theorem ifAllZero_eq_iff (ps qs : List Name) :
+theorem ifAllZero_eq_iff (ps qs : List LevelParam) :
     ifAllZero ps = ifAllZero qs ↔ ∀ n, n ∈ ps ↔ n ∈ qs := by
   constructor
   · intro h n
@@ -627,15 +499,15 @@ theorem ifAllZero_eq_iff (ps qs : List Name) :
       fun n => by rw [mem_toList_ifAllZero, mem_toList_ifAllZero]; exact h n
 
 /-- Canonicalizing the input changes nothing. -/
-@[simp] theorem ifAllZero_canon (ps : List Name) :
+@[simp] theorem ifAllZero_canon (ps : List LevelParam) :
     ifAllZero (canon ps) = ifAllZero ps :=
   (ifAllZero_eq_iff _ _).mpr fun _ => mem_canon
 
-private theorem ifAllZero_two {p q : Name} (h : p < q) :
+private theorem ifAllZero_two {p q : LevelParam} (h : p < q) :
     ifAllZero [p, q] = ofRepr (.two p q h) :=
   ifAllZero_toList (pw := ofRepr (.two p q h)) (by simp [never])
 
-private theorem ifAllZero_many {ps : List Name}
+private theorem ifAllZero_many {ps : List LevelParam}
     (h : Sorted ps ∧ 2 < ps.length) :
     ifAllZero ps = ofRepr (.many ps h) :=
   ifAllZero_toList (pw := ofRepr (.many ps h)) (by simp [never])
@@ -649,7 +521,7 @@ list `ps`, canonical or not: the smart constructor normalizes, so
 `ps` is a proof for the canonical ones.) -/
 @[elab_as_elim, cases_eliminator, induction_eliminator]
 def casesZ {motive : PropWhen → Sort u} (never : motive .never)
-    (ifAllZero : (ps : List Name) → motive (PropWhen.ifAllZero ps)) :
+    (ifAllZero : (ps : List LevelParam) → motive (PropWhen.ifAllZero ps)) :
     (pw : PropWhen) → motive pw
   | .ofRepr .never => never
   | .ofRepr .always => ifAllZero []
@@ -667,7 +539,7 @@ literals are computed by `#annotate_basis` at elaboration time now),
 but the spelling stays: it is what a `#eval (repr …)` of a stored pin
 prints, and it names the smart constructor rather than the private
 representation.  This reproduces exactly what `deriving Repr` emitted
-for the old `never | ifAllZero (ps : List Name)` datum (the list is
+for the old `never | ifAllZero (ps : List LevelParam)` datum (the list is
 the canonical one now). -/
 def reprPrec' (pw : PropWhen) (prec : Nat) : Std.Format :=
   Repr.addAppParen
@@ -691,7 +563,7 @@ the whole downstream surface. -/
 /-- Does the datum hold at a valuation — is the codomain sort zero
 there?  (The model side's dispatch bit; the kernel never evaluates
 this, it only compares data by `==`.) -/
-def holds (φ : Name → Nat) (pw : PropWhen) : Bool :=
+def holds (φ : LevelParam → Nat) (pw : PropWhen) : Bool :=
   match pw.repr with
   | .never => false
   | .always => true
@@ -699,17 +571,17 @@ def holds (φ : Name → Nat) (pw : PropWhen) : Bool :=
   | .two p q _ => (φ p == 0) && (φ q == 0)
   | .many ps _ => ps.all fun n => φ n == 0
 
-@[simp] theorem holds_never (φ : Name → Nat) : holds φ .never = false := by
+@[simp] theorem holds_never (φ : LevelParam → Nat) : holds φ .never = false := by
   simp [holds, never]
 
-private theorem holds_eq_toList (φ : Name → Nat) {pw : PropWhen} (h : pw ≠ never) :
+private theorem holds_eq_toList (φ : LevelParam → Nat) {pw : PropWhen} (h : pw ≠ never) :
     holds φ pw = pw.toList.all fun n => φ n == 0 := by
   obtain ⟨x⟩ := pw
   cases x with
   | never => exact absurd rfl h
   | _ => simp [holds, toList]
 
-@[simp] theorem holds_ifAllZero (φ : Name → Nat) (ps : List Name) :
+@[simp] theorem holds_ifAllZero (φ : LevelParam → Nat) (ps : List LevelParam) :
     holds φ (ifAllZero ps) = ps.all fun n => φ n == 0 := by
   rw [holds_eq_toList φ (ifAllZero_ne_never ps), toList_ifAllZero, all_canon]
 
@@ -743,7 +615,7 @@ theorem isNever_iff {pw : PropWhen} : isNever pw = true ↔ pw = never := by
 
 @[simp] theorem isNever_never : isNever .never = true := isNever_iff.mpr rfl
 
-@[simp] theorem isNever_ifAllZero (ps : List Name) :
+@[simp] theorem isNever_ifAllZero (ps : List LevelParam) :
     isNever (ifAllZero ps) = false := by
   rw [Bool.eq_false_iff]
   exact fun h => ifAllZero_ne_never ps (isNever_iff.mp h)
@@ -771,7 +643,7 @@ private theorem hasParams_eq_toList (pw : PropWhen) :
 @[simp] theorem hasParams_never : hasParams .never = false := by
   simp [hasParams, never]
 
-@[simp] theorem hasParams_ifAllZero (ps : List Name) :
+@[simp] theorem hasParams_ifAllZero (ps : List LevelParam) :
     hasParams (ifAllZero ps) = !ps.isEmpty := by
   rw [hasParams_eq_toList, toList_ifAllZero, isEmpty_canon]
 
@@ -780,7 +652,7 @@ private theorem hasParams_eq_toList (pw : PropWhen) :
 composition law (`Level.substPW_comp`) is *false* for data whose
 parameters escape the declaration's — exactly as for the levels
 themselves. -/
-def paramsDefined (params : List Name) (pw : PropWhen) : Bool :=
+def paramsDefined (params : List LevelParam) (pw : PropWhen) : Bool :=
   match pw.repr with
   | .never => true
   | .always => true
@@ -788,15 +660,15 @@ def paramsDefined (params : List Name) (pw : PropWhen) : Bool :=
   | .two p q _ => params.contains p && params.contains q
   | .many ps _ => ps.all params.contains
 
-private theorem paramsDefined_eq_toList (params : List Name) (pw : PropWhen) :
+private theorem paramsDefined_eq_toList (params : List LevelParam) (pw : PropWhen) :
     paramsDefined params pw = pw.toList.all params.contains := by
   obtain ⟨x⟩ := pw
   cases x <;> simp [paramsDefined, toList]
 
-@[simp] theorem paramsDefined_never (params : List Name) :
+@[simp] theorem paramsDefined_never (params : List LevelParam) :
     paramsDefined params .never = true := by simp [paramsDefined, never]
 
-@[simp] theorem paramsDefined_ifAllZero (params ps : List Name) :
+@[simp] theorem paramsDefined_ifAllZero (params ps : List LevelParam) :
     paramsDefined params (ifAllZero ps) = ps.all params.contains := by
   rw [paramsDefined_eq_toList, toList_ifAllZero, all_canon]
 
@@ -807,8 +679,8 @@ valuation are equal.  Everything about the producers (`inter`,
 `bindZ`) is proved through it — a `holds` computation on each side,
 and the representation never appears. -/
 
-private theorem mem_of_all_eq {ps qs : List Name}
-    (h : ∀ φ : Name → Nat, (ps.all fun n => φ n == 0) = (qs.all fun n => φ n == 0)) :
+private theorem mem_of_all_eq {ps qs : List LevelParam}
+    (h : ∀ φ : LevelParam → Nat, (ps.all fun n => φ n == 0) = (qs.all fun n => φ n == 0)) :
     ∀ n, n ∈ ps → n ∈ qs := by
   intro n hin
   by_cases hout : n ∈ qs
@@ -847,7 +719,7 @@ theorem eq_iff_holds (p q : PropWhen) :
         have := h fun _ => 0
         rw [holds_never, holds_eq_toList _ hp] at this
         simp at this
-      · have h' : ∀ φ : Name → Nat, (p.toList.all fun n => φ n == 0)
+      · have h' : ∀ φ : LevelParam → Nat, (p.toList.all fun n => φ n == 0)
             = (q.toList.all fun n => φ n == 0) := fun φ => by
           rw [← holds_eq_toList φ hp, ← holds_eq_toList φ hq]; exact h φ
         exact eq_of_mem_iff hp hq fun n =>
@@ -901,7 +773,7 @@ private theorem toList_inter {p q : PropWhen} (hp : p ≠ never) (hq : q ≠ nev
     | exact toList_ofSorted _ _
     | simp_all [never, toList]
 
-theorem holds_inter (φ : Name → Nat) (p q : PropWhen) :
+theorem holds_inter (φ : LevelParam → Nat) (p q : PropWhen) :
     (p.inter q).holds φ = (p.holds φ && q.holds φ) := by
   by_cases hp : p = never
   · subst hp; simp
@@ -910,7 +782,7 @@ theorem holds_inter (φ : Name → Nat) (p q : PropWhen) :
   rw [holds_eq_toList φ (inter_ne_never hp hq), toList_inter hp hq, all_merge,
     holds_eq_toList φ hp, holds_eq_toList φ hq]
 
-@[simp] theorem inter_ifAllZero (ps qs : List Name) :
+@[simp] theorem inter_ifAllZero (ps qs : List LevelParam) :
     inter (ifAllZero ps) (ifAllZero qs) = ifAllZero (ps ++ qs) :=
   eq_of_holds fun φ => by
     rw [holds_inter, holds_ifAllZero, holds_ifAllZero, holds_ifAllZero,
@@ -936,7 +808,7 @@ theorem inter_eq_toList {p q : PropWhen} (hp : p ≠ .never) (hq : q ≠ .never)
   | ifAllZero qs => rw [inter_ifAllZero, List.nil_append]
 
 /-- The list-level `bindZ` fold. -/
-def bindZ.go (f : Name → PropWhen) : List Name → PropWhen
+def bindZ.go (f : LevelParam → PropWhen) : List LevelParam → PropWhen
   | [] => ifAllZero []
   | n :: rest => (f n).inter (go f rest)
 
@@ -946,7 +818,7 @@ monadic bind of the zero-ness reading.  Canonical on output because
 `inter` is; parameters mapped to `ifAllZero [n]` reproduce the datum
 (`bindZ_unit`), which is what the unconditional identity law of level
 instantiation rests on. -/
-def bindZ (f : Name → PropWhen) (pw : PropWhen) : PropWhen :=
+def bindZ (f : LevelParam → PropWhen) (pw : PropWhen) : PropWhen :=
   match pw.repr with
   | .never => never
   | .always => ifAllZero []
@@ -954,20 +826,20 @@ def bindZ (f : Name → PropWhen) (pw : PropWhen) : PropWhen :=
   | .two p q _ => (f p).inter (f q)
   | .many ps _ => bindZ.go f ps
 
-@[simp] theorem bindZ_never (f : Name → PropWhen) :
+@[simp] theorem bindZ_never (f : LevelParam → PropWhen) :
     bindZ f .never = .never := by simp [bindZ, never]
 
-@[simp] theorem bindZ_go_nil (f : Name → PropWhen) :
+@[simp] theorem bindZ_go_nil (f : LevelParam → PropWhen) :
     bindZ.go f [] = ifAllZero [] := by simp [bindZ.go]
 
-theorem holds_bindZ_go (φ : Name → Nat) (f : Name → PropWhen) :
-    ∀ ps : List Name,
+theorem holds_bindZ_go (φ : LevelParam → Nat) (f : LevelParam → PropWhen) :
+    ∀ ps : List LevelParam,
       (bindZ.go f ps).holds φ = ps.all fun n => (f n).holds φ
   | [] => by rw [bindZ_go_nil, holds_ifAllZero]; rfl
   | n :: rest => by
     simp [bindZ.go, holds_inter, holds_bindZ_go φ f rest]
 
-private theorem bindZ_eq_go (f : Name → PropWhen) {pw : PropWhen} (h : pw ≠ never) :
+private theorem bindZ_eq_go (f : LevelParam → PropWhen) {pw : PropWhen} (h : pw ≠ never) :
     bindZ f pw = bindZ.go f pw.toList := by
   obtain ⟨x⟩ := pw
   cases x with
@@ -977,13 +849,13 @@ private theorem bindZ_eq_go (f : Name → PropWhen) {pw : PropWhen} (h : pw ≠ 
   | two p q _ => simp [bindZ, toList, bindZ.go]
   | many ps _ => simp [bindZ, toList]
 
-private theorem bindZ_go_canon (f : Name → PropWhen) (ps : List Name) :
+private theorem bindZ_go_canon (f : LevelParam → PropWhen) (ps : List LevelParam) :
     bindZ.go f (canon ps) = bindZ.go f ps :=
   eq_of_holds fun φ => by
     rw [holds_bindZ_go, holds_bindZ_go]
     exact all_eq_of_mem_iff (fun _ => mem_canon) _
 
-@[simp] theorem bindZ_ifAllZero (f : Name → PropWhen) (ps : List Name) :
+@[simp] theorem bindZ_ifAllZero (f : LevelParam → PropWhen) (ps : List LevelParam) :
     bindZ f (ifAllZero ps) = bindZ.go f ps := by
   rw [bindZ_eq_go f (ifAllZero_ne_never ps), toList_ifAllZero, bindZ_go_canon]
 
@@ -1003,7 +875,7 @@ namespace PropWhen
 
 /-! ### `paramsDefined` -/
 
-theorem paramsDefined_inter_of {params : List Name} {p q : PropWhen}
+theorem paramsDefined_inter_of {params : List LevelParam} {p q : PropWhen}
     (hp : p.paramsDefined params = true)
     (hq : q.paramsDefined params = true) :
     (p.inter q).paramsDefined params = true := by
@@ -1013,8 +885,8 @@ theorem paramsDefined_inter_of {params : List Name} {p q : PropWhen}
 /-- **Parameter locality**: a datum reads its valuation only at its
 own parameters (the `paramsDefined` footprint) — `denoteMeta`'s
 φ-congruence walk (`denoteMeta_params_ext`) rides this at every binder. -/
-theorem holds_ext {ps : List Name} {pw : PropWhen}
-    (hdef : pw.paramsDefined ps = true) {φ₁ φ₂ : Name → Nat}
+theorem holds_ext {ps : List LevelParam} {pw : PropWhen}
+    (hdef : pw.paramsDefined ps = true) {φ₁ φ₂ : LevelParam → Nat}
     (hφ : ∀ p ∈ ps, φ₁ p = φ₂ p) : pw.holds φ₁ = pw.holds φ₂ := by
   cases pw with
   | never => rfl
@@ -1046,7 +918,7 @@ theorem inter_self (a : PropWhen) : a.inter a = a :=
 
 /-- The `bindZ` fold over an append splits — the list-level half of
 `bindZ_inter`. -/
-theorem bindZ_go_append (g : Name → PropWhen) : ∀ ps qs : List Name,
+theorem bindZ_go_append (g : LevelParam → PropWhen) : ∀ ps qs : List LevelParam,
     bindZ.go g (ps ++ qs) = (bindZ.go g ps).inter (bindZ.go g qs)
   | [], qs => (nil_inter (bindZ.go g qs)).symm
   | n :: rest, qs => by
@@ -1054,7 +926,7 @@ theorem bindZ_go_append (g : Name → PropWhen) : ∀ ps qs : List Name,
       = ((g n).inter (bindZ.go g rest)).inter (bindZ.go g qs)
     rw [bindZ_go_append g rest qs, inter_assoc]
 
-theorem bindZ_inter (g : Name → PropWhen) (p q : PropWhen) :
+theorem bindZ_inter (g : LevelParam → PropWhen) (p q : PropWhen) :
     (p.inter q).bindZ g = (p.bindZ g).inter (q.bindZ g) := by
   cases p with
   | never => simp
@@ -1063,8 +935,8 @@ theorem bindZ_inter (g : Name → PropWhen) (p q : PropWhen) :
     | never => simp
     | ifAllZero qs => simp [bindZ_go_append]
 
-theorem bindZ_congr_names {f g : Name → PropWhen} :
-    ∀ {ps : List Name}, (∀ n ∈ ps, f n = g n) →
+theorem bindZ_congr_names {f g : LevelParam → PropWhen} :
+    ∀ {ps : List LevelParam}, (∀ n ∈ ps, f n = g n) →
       bindZ.go f ps = bindZ.go g ps
   | [], _ => rfl
   | n :: rest, h => by
@@ -1081,7 +953,7 @@ theorem bindZ_unit : ∀ pw : PropWhen,
   | never => simp
   | ifAllZero ps => rw [bindZ_ifAllZero]; exact bindZ_unit.go ps
 where
-  go : ∀ ps : List Name,
+  go : ∀ ps : List LevelParam,
       bindZ.go (fun n => PropWhen.ifAllZero [n]) ps = .ifAllZero ps
   | [] => rfl
   | n :: rest => by

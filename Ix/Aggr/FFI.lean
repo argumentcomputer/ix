@@ -59,6 +59,18 @@ opaque proveIxAggr (system : @& AiurSystem)
   (preimagesBlob treesBlob pathsBlob : @& ByteArray) (useBytecode : Bool := false) :
     Except String (Array G × Proof)
 
+/-- `proveIxAggr` with the generated executor, planned as trace shards whose
+projected host peak fits `maxBytes`: a driver that proves single aggregation
+steps holds each one to its RAM budget this way, as the Stage 2 controller
+holds its slots. An execution no shard count fits is an error. -/
+@[extern "rs_aiur_ix_aggr_prove_within"]
+opaque proveIxAggrWithin (system : @& AiurSystem)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G) (shape : @& Nat)
+  (leftProofAdviceBytes rightProofAdviceBytes ixvmVkBytes selfVkBytes : @& ByteArray)
+  (leftClaimsBytes rightClaimsBytes outputClaimBytes allowedBytes : @& ByteArray)
+  (preimagesBlob treesBlob pathsBlob : @& ByteArray) (maxBytes : @& Nat) :
+    Except String (Array G × Proof)
+
 /-- Run the production aggregate-first Stage 2 pipeline natively after Lean
 has compiled the IxVM and `ix_aggr` systems. Rust owns all data-dependent
 orchestration: manifest/environment binding, shard-claim reconstruction,
@@ -76,7 +88,11 @@ verdict of `ix verify --ixes`). `subtreeCode` is zero for a full run and
 `slot + 1` to prove only the plan subtree rooted at that slot from the
 proofs of the leaves under it, returning that slot's proof address; the
 root-only steps (root validation, wrapping) are skipped, and the run fails
-unless that proof was persisted and cached. -/
+unless that proof was persisted and cached. A nonempty `bindingProof` names
+an `Ixon.Proof` of the environment binding's `binding` claim: every shard
+claim then assumes its binding, and the root discharges that condition once,
+after any wrap; the discharged root claim is the one a run that validates
+its binding states. -/
 @[extern "rs_aiur_stage2_aggregate"]
 opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath proofHexes : @& String)
@@ -84,7 +100,7 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
   (wrapRoot : Bool) (execAhead : @& Nat) (verifyOnly : Bool)
-  (subtreeCode : @& Nat) :
+  (subtreeCode : @& Nat) (bindingProof : @& String) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
@@ -117,12 +133,16 @@ proof verified natively at the end. `maxRamBytes` is one worker's host
 budget (0 detects); `execJobs` the claim executions ahead of each prover.
 Oversized environment claims are bisected and checkpointed; completed
 proofs are reused. A nonempty `outManifest` receives the final partition.
-Returns the verified root address; progress is printed on stderr. -/
+A nonempty `bindingProof` names an `Ixon.Proof` of the environment binding's
+`binding` claim: every claim of the run then assumes its binding, and the
+root discharges that condition once. Returns the verified root address;
+progress is printed on stderr. -/
 @[extern "rs_aiur_prove_lanes"]
 opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath : @& String)
   (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
-  (cacheFriBytes : @& ByteArray) (outManifest : @& String) : Except String String
+  (cacheFriBytes : @& ByteArray) (outManifest : @& String)
+  (bindingProof : @& String) : Except String String
 
 end AiurSystem
 end Aiur

@@ -22,13 +22,13 @@ namespace Ix.Kernel.Expr
 
 /-- Closed terms have no leaves. -/
 theorem fvarLeaves_eq_nil_of_not_hasFvar :
-    ∀ {e : Expr}, e.hasFvar = false → e.fvarLeaves = [] := by
+    ∀ {e : Expr md}, e.hasFvar = false → e.fvarLeaves = [] := by
   intro e
   induction e <;> simp_all [hasFvar, fvarLeaves]
 
 /-- Instantiation only introduces the substituted term's leaves. -/
-theorem fvarLeaves_instantiate1 {a : Expr} :
-    ∀ (e : Expr) (k : Nat) {l}, l ∈ (e.instantiate1 a k).fvarLeaves →
+theorem fvarLeaves_instantiate1 {a : Expr md} :
+    ∀ (e : Expr md) (k : Nat) {l}, l ∈ (e.instantiate1 a k).fvarLeaves →
       l ∈ e.fvarLeaves ∨ l ∈ a.fvarLeaves := by
   intro e
   induction e with
@@ -72,7 +72,7 @@ theorem fvarLeaves_instantiate1 {a : Expr} :
     · rcases ihbody (k + 1) hl with h | h
       · exact Or.inl (Or.inr h)
       · exact Or.inr h
-  | letE ty v body ihty ihv ihbody =>
+  | letE ty v body _ ihty ihv ihbody =>
     intro k l hl
     simp only [instantiate1, fvarLeaves, List.mem_append] at hl ⊢
     rcases hl with (hl | hl) | hl
@@ -94,7 +94,7 @@ theorem fvarLeaves_instantiate1 {a : Expr} :
   | lit ll => intro k l hl; simp [instantiate1, fvarLeaves] at hl
 
 /-- Well-scopedness gives bounds and scoping for every closure leaf. -/
-theorem WScoped_leaves : ∀ (e : Expr) {d : Nat}, WScoped d e →
+theorem WScoped_leaves : ∀ (e : Expr md) {d : Nat}, WScoped d e →
     ∀ l ∈ e.fvarLeaves, l.1 < d ∧ WScoped l.1 l.2 := by
   intro e
   induction e with
@@ -127,7 +127,7 @@ theorem WScoped_leaves : ∀ (e : Expr) {d : Nat}, WScoped d e →
     rcases hl with hl | hl
     · exact ihty hw.1 l hl
     · exact ihbody hw.2 l hl
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro d hw l hl
     simp only [WScoped] at hw
     simp only [fvarLeaves, List.mem_append] at hl
@@ -147,7 +147,7 @@ theorem WScoped_leaves : ∀ (e : Expr) {d : Nat}, WScoped d e →
 
 /-- Leaves of a well-scoped term have indices below the scope. -/
 theorem fvarLeaves_lt_of_wscoped :
-    ∀ {e : Expr} {D : Nat}, WScoped D e → ∀ l ∈ e.fvarLeaves, l.1 < D := by
+    ∀ {e : Expr md} {D : Nat}, WScoped D e → ∀ l ∈ e.fvarLeaves, l.1 < D := by
   intro e
   induction e with
   | fvar idx ty ih =>
@@ -178,7 +178,7 @@ theorem fvarLeaves_lt_of_wscoped :
     rcases hl with hl | hl
     · exact ihty hw.1 l hl
     · exact ihbody hw.2 l hl
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro D hw l hl
     simp only [WScoped] at hw
     simp only [fvarLeaves, List.mem_append] at hl
@@ -199,7 +199,7 @@ theorem fvarLeaves_lt_of_wscoped :
 /-- Abstracting the scope's top index removes exactly its leaves: the
 survivors are original leaves strictly below it. -/
 theorem fvarLeaves_abstract1_lt {D : Nat} :
-    ∀ (e : Expr) (k : Nat), WScoped (D + 1) e →
+    ∀ (e : Expr md) (k : Nat), WScoped (D + 1) e →
       ∀ l ∈ (e.abstract1 D k).fvarLeaves, l ∈ e.fvarLeaves ∧ l.1 < D := by
   intro e
   induction e with
@@ -243,7 +243,7 @@ theorem fvarLeaves_abstract1_lt {D : Nat} :
       exact ⟨Or.inl h1, h2⟩
     · obtain ⟨h1, h2⟩ := ihbody (k + 1) hw.2 l hl
       exact ⟨Or.inr h1, h2⟩
-  | letE ty val body ihty ihval ihbody =>
+  | letE ty val body _ ihty ihval ihbody =>
     intro k hw l hl
     simp only [WScoped] at hw
     simp only [abstract1, fvarLeaves, List.mem_append] at hl ⊢
@@ -274,8 +274,8 @@ open Expr
 
 /-- Annotation only shrinks the free-variable leaf closure (the
 projection-elimination path is guarded to stay inside it). -/
-theorem annotateCore_leaves_sub {env : Env} :
-    ∀ (fuel : Nat) (e : Expr) {d : Nat} {e' : Expr},
+theorem annotateCore_leaves_sub {env : Env md} :
+    ∀ (fuel : Nat) (e : Expr md) {d : Nat} {e' : Expr md},
       annotateCore mode env fuel d e = .ok e' → WScoped d e →
       e.looseBVarsBounded 0 = true →
       ∀ l ∈ e'.fvarLeaves, l ∈ e.fvarLeaves
@@ -372,7 +372,7 @@ theorem annotateCore_leaves_sub {env : Env} :
         rcases h2 with rfl | h2
         · omega
         · exact Or.inl (hsubty l h2)
-  | fuel + 1, .letE ty v b, d, e', h, hw, hb => by
+  | fuel + 1, .letE ty v b _, d, e', h, hw, hb => by
     simp only [WScoped] at hw
     simp only [Expr.looseBVarsBounded, Bool.and_eq_true] at hb
     obtain ⟨ty', v', -, -, hbody, -⟩ := annotateCore_letE_inv h

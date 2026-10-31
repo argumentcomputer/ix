@@ -10,8 +10,7 @@
 //! read: the Lean environment decodes on demand behind a bounded cache
 //! (`decode_env_lazy` in the ffi crate) rather than as a whole-env
 //! owned copy, accumulator constants and named metadata live as their
-//! serialized bytes rather than ~20×-larger structured forms, worker
-//! kernel contexts are fresh per block (canonicity §10.5), the setup
+//! serialized bytes rather than ~20×-larger structured forms, the setup
 //! passes share one whole-env decode, and the `.ixe` streams to disk
 //! from Rust rather than crossing the FFI as an env-sized ByteArray.
 //! All of it is always on, and every mode produces a bit-identical
@@ -42,19 +41,150 @@ use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use rayon::prelude::*;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::admission::Admission;
 use crate::compile::{
-  BlockCache, CompileOptions, CompileState,
-  aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
+  BlockCache, CompileOptions, CompileState, compile_const,
+  ind_flags::validate_ind_groups,
 };
 use crate::condense::compute_sccs;
-use crate::graph::{NameSet, setup_scan};
+use crate::graph::{NameSet, RefMap, setup_scan};
 use crate::ground::proliferate_ungrounded;
 use ix_common::address::Address;
-use ix_common::env::{Env as LeanEnv, Name};
+use ix_common::env::{
+  ConstantInfo as LeanConstantInfo, DefinitionSafety, Env as LeanEnv, Name,
+};
 use ixon::CompileError;
+
+// ===========================================================================
+// Mutual-block safety (a domain restriction, beside the inductive flags)
+// ===========================================================================
+
+const MIXED_SAFETY: &str = "mixed safety in a mutual block";
+
+/// A constant's safety as the kernels compare it within a mutual block:
+/// `unsafe`, `partial` (a definition's) or `safe`. Mirrors Lean
+/// `Ix.CompileM.constSafety`.
+fn const_safety(ci: &LeanConstantInfo) -> &'static str {
+  let flag = |is_unsafe: bool| if is_unsafe { "unsafe" } else { "safe" };
+  match ci {
+    LeanConstantInfo::AxiomInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::OpaqueInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::InductInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::CtorInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::RecInfo(v) => flag(v.is_unsafe),
+    LeanConstantInfo::DefnInfo(v) => match v.safety {
+      DefinitionSafety::Unsafe => "unsafe",
+      DefinitionSafety::Partial => "partial",
+      DefinitionSafety::Safe => "safe",
+    },
+    LeanConstantInfo::ThmInfo(_) | LeanConstantInfo::QuotInfo(_) => "safe",
+  }
+}
+
+/// Whether the members present in `env` share one safety. A block of at most
+/// one member is uniform without a lookup, as in Lean's `uniformSafety`: on
+/// a lazy environment each lookup decodes the whole constant, and almost
+/// every block is a singleton.
+fn uniform_safety(members: &[Name], env: &LeanEnv) -> bool {
+  if members.len() <= 1 {
+    return true;
+  }
+  let mut first: Option<&'static str> = None;
+  for m in members {
+    if let Some(c) = env.get(m) {
+      let s = const_safety(&c);
+      match first {
+        None => first = Some(s),
+        Some(s0) if s != s0 => return false,
+        Some(_) => {},
+      }
+    }
+  }
+  true
+}
+
+/// The refusal of members that disagree on safety: the least member present
+/// in `env` (by name hash) and the least member whose safety differs from
+/// its (Lean `Ix.CompileM.mixedSafetyMessage`).
+fn mixed_safety_error(members: &[Name], env: &LeanEnv) -> CompileError {
+  let safety = |n: &Name| env.get(n).map_or("safe", |c| const_safety(&c));
+  let mut present: Vec<&Name> =
+    members.iter().filter(|m| env.get(m).is_some()).collect();
+  present.sort_unstable_by(|a, b| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+  let reason = present
+    .first()
+    .and_then(|first| {
+      let s0 = safety(first);
+      present.iter().find(|m| safety(m) != s0).map(|m| {
+        format!(
+          "{MIXED_SAFETY}: '{}' is {s0}, '{}' is {}",
+          first.pretty(),
+          m.pretty(),
+          safety(m)
+        )
+      })
+    })
+    .unwrap_or_else(|| MIXED_SAFETY.to_string());
+  CompileError::InvalidMutualBlock { reason }
+}
+
+/// The second domain restriction (Lean `Ix.CompileM.validateMutualSafety`):
+/// the members of a mutual block share one safety, or the compile fails
+/// before any block is scheduled. The kernels reject a mixed-safety block,
+/// and the compilers' orders do not key on safety (C6), so such members
+/// could be alpha-collapsed into one representative's safety. Checked first
+/// on each inductive group (`all`, with each member's constructors) in the
+/// order of their first members' hashes, then on each condensation block in
+/// the order of its least member's hash; the first disagreement is the error.
+pub(crate) fn validate_mutual_safety(
+  ind_groups: &FxHashMap<Name, Vec<Name>>,
+  blocks: &RefMap,
+  env: &LeanEnv,
+) -> Result<(), CompileError> {
+  let mut groups: Vec<(&Name, &Vec<Name>)> = ind_groups.iter().collect();
+  groups.sort_unstable_by(|(a, _), (b, _)| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+  for (_, all) in groups {
+    let mut members: Vec<Name> = Vec::with_capacity(all.len());
+    for n in all {
+      members.push(n.clone());
+      if let Some(c) = env.get(n)
+        && let LeanConstantInfo::InductInfo(v) = &*c
+      {
+        members.extend(v.ctors.iter().cloned());
+      }
+    }
+    if !uniform_safety(&members, env) {
+      return Err(mixed_safety_error(&members, env));
+    }
+  }
+  let mut offenders: Vec<(Name, Vec<Name>)> = blocks
+    .values()
+    .filter_map(|set| {
+      let members: Vec<Name> = set.iter().cloned().collect();
+      if uniform_safety(&members, env) {
+        return None;
+      }
+      let least = members
+        .iter()
+        .min_by(|a, b| a.get_hash().as_bytes().cmp(b.get_hash().as_bytes()))?
+        .clone();
+      Some((least, members))
+    })
+    .collect();
+  offenders.sort_unstable_by(|(a, _), (b, _)| {
+    a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+  });
+  match offenders.first() {
+    Some((_, members)) => Err(mixed_safety_error(members, env)),
+    None => Ok(()),
+  }
+}
 
 // ===========================================================================
 // Progress + diagnostic logging
@@ -95,7 +225,7 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
 /// with `block_name` (and `caller` to distinguish which compile function
 /// panicked). This keeps a single bad block from aborting the whole
 /// compilation and preserves enough context to find the culprit — a raw
-/// panic from deep inside aux_gen has no indication of which SCC it was
+/// panic from deep inside compilation has no indication of which SCC it was
 /// working on.
 ///
 /// When `IX_LOG_BLOCKS` is set, panics also emit an immediate eprintln so
@@ -159,7 +289,7 @@ pub fn compile_env_with_profile(
   let _memory_sampler = crate::diag::memory_sampler("compile_env");
   // The sharing limits of the whole run, read once: an invalid
   // `IX_SHARING_LIMITS` fails the compile here, before any block is
-  // scheduled (Lean `compileEnvParallelAux` does the same).
+  // scheduled (Lean's `Ix.Cli.driverOptionsFromEnv` does the same).
   let sharing_limits = crate::compile::compiler_sharing_limits()
     .map_err(|reason| CompileError::SharingConstruction { reason })?;
   let setup_start = Instant::now();
@@ -179,7 +309,7 @@ pub fn compile_env_with_profile(
   let graph = scan.graph;
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 1/7 setup_scan (graph+ground+groups): {:.2}s{}",
+      "[compile_env] setup 1/6 setup_scan (graph+ground+groups): {:.2}s{}",
       phase_start.elapsed().as_secs_f32(),
       crate::diag::rss_log_suffix(),
     );
@@ -195,7 +325,7 @@ pub fn compile_env_with_profile(
     proliferate_ungrounded(scan.immediate_ungrounded, &graph.in_refs);
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 2/7 proliferate_ungrounded: {:.2}s{}",
+      "[compile_env] setup 2/6 proliferate_ungrounded: {:.2}s{}",
       phase_start.elapsed().as_secs_f32(),
       crate::diag::rss_log_suffix(),
     );
@@ -217,8 +347,11 @@ pub fn compile_env_with_profile(
     lean_env.pin(by_deg[..k].iter().map(|(n, _)| (*n).clone()));
   }
 
-  let ungrounded_map: DashMap<Name, String> =
-    ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
+  // each with its named refusal (Lean's `GroundError.refusal`, the same text)
+  let ungrounded_map: DashMap<Name, String> = ungrounded
+    .iter()
+    .map(|(n, e)| (n.clone(), crate::ground::refusal(e, &ungrounded)))
+    .collect();
   if !ungrounded.is_empty() && *IX_VERBOSE {
     eprintln!(
       "[compile_env] {} ungrounded constants filtered from graph",
@@ -234,7 +367,7 @@ pub fn compile_env_with_profile(
 
   // Filter ungrounded names from the ref graph before SCC computation so
   // condensed blocks only contain constants we can actually compile.
-  let grounded_out_refs: crate::graph::RefMap = if ungrounded_map.is_empty() {
+  let grounded_out_refs: RefMap = if ungrounded_map.is_empty() {
     graph.out_refs
   } else {
     graph
@@ -255,7 +388,7 @@ pub fn compile_env_with_profile(
   let condensed = compute_sccs(&grounded_out_refs);
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
+      "[compile_env] setup 3/6 compute_sccs ({} blocks): {:.2}s{}",
       condensed.blocks.len(),
       phase_start.elapsed().as_secs_f32(),
       crate::diag::rss_log_suffix(),
@@ -268,69 +401,33 @@ pub fn compile_env_with_profile(
   let phase_start = Instant::now();
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 4/7 validate_ind_flags BEGIN ({} groups, {} Rayon threads){}",
+      "[compile_env] setup 4/6 validate_ind_flags BEGIN ({} groups, {} Rayon threads){}",
       scan.ind_groups.len(),
       rayon::current_num_threads(),
       crate::diag::rss_log_suffix(),
     );
   }
   validate_ind_groups(&scan.ind_groups, lean_env.as_ref())?;
+  validate_mutual_safety(
+    &scan.ind_groups,
+    &condensed.blocks,
+    lean_env.as_ref(),
+  )?;
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 4/7 validate_ind_flags: {:.2}s{}",
+      "[compile_env] setup 4/6 validate_ind_flags: {:.2}s{}",
       phase_start.elapsed().as_secs_f32(),
       crate::diag::rss_log_suffix(),
     );
   }
 
+  // Lean's declarations compile as given: the schedule is the
+  // condensation's (Lean `compileEnvFoldWithSource`).
   let stt = CompileState {
-    lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     sharing_limits,
     ..Default::default()
   };
-
-  // The (canonical) kenv is populated on-demand via ensure_in_kenv as
-  // constants are compiled. Precompiles (PUnit, PProd, Eq, True) are
-  // added below.
-
-  // Pre-compile the builtins that aux_gen is known to reference, so the
-  // scheduler has their addresses in `aux_name_to_addr` before any block
-  // with `.below` / `.brecOn` / `.brecOn.eq` regeneration fires.
-  //
-  // Rationale: `build_ref_graph` scans only the *original* Lean env, so
-  // refs that aux_gen introduces (e.g., `.brecOn.eq` using `Eq.symm`)
-  // aren't visible to the scheduler's topological ordering. Without
-  // these pre-compiles, a block's aux_gen could run before the
-  // dep's own SCC does, producing a nondeterministic `MissingConstant`
-  // error (race depends on work-stealing order).
-  //
-  // Seed names (exact Const refs aux_gen emits — grep `mk_const` in
-  // `src/ix/compile/aux_gen/**`):
-  //   - `.below` (Type-level): PUnit, PProd (+ ctors via SCC)
-  //   - `.brecOn.eq`: Eq, Eq.refl, Eq.symm, Eq.ndrec, HEq, HEq.refl, True
-  //
-  // From these seeds we compute the **transitive SCC closure** using
-  // `condensed.block_refs` (each SCC's out-edges) and compile the closure
-  // in reverse topological order — so every SCC's deps are already in
-  // `aux_name_to_addr` by the time its own compilation runs.
-  //
-  // Any pre-compile failure is a hard error: silent fallback would leave
-  // the name unresolved and race with the main scheduler, reintroducing
-  // the bug this exists to prevent.
-  //
-  // Names absent from `lean_env` (e.g., unit-test fixtures) are silently
-  // skipped at seeding time — the initial `condensed.low_links.get` is
-  // optional. Transitive deps of surviving seeds are assumed present.
-  let phase_start = Instant::now();
-  precompile_aux_gen_prereqs(&condensed, lean_env, &stt)?;
-  if *IX_VERBOSE {
-    eprintln!(
-      "[compile_env] setup 5/7 precompile_aux_gen_prereqs: {:.2}s{}",
-      phase_start.elapsed().as_secs_f32(),
-      crate::diag::rss_log_suffix(),
-    );
-  }
 
   // Build work-stealing data structures
   let total_blocks = condensed.blocks.len();
@@ -391,7 +488,7 @@ pub fn compile_env_with_profile(
 
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 6/7 block_info init: {:.2}s",
+      "[compile_env] setup 5/6 block_info init: {:.2}s",
       phase_start.elapsed().as_secs_f32()
     );
   }
@@ -410,7 +507,7 @@ pub fn compile_env_with_profile(
   }
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 7/7 ready_queue init: {:.2}s (total pre-scheduler: {:.2}s){}",
+      "[compile_env] setup 6/6 ready_queue init: {:.2}s (total pre-scheduler: {:.2}s){}",
       phase_start.elapsed().as_secs_f32(),
       setup_start.elapsed().as_secs_f32(),
       crate::diag::rss_log_suffix(),
@@ -563,18 +660,6 @@ pub fn compile_env_with_profile(
     }
 
     // Spawn worker threads.
-    //
-    // Each compile_const/compile_const_no_aux invocation gets a fresh
-    // KernelCtx: kernel caches key on name-erased content addresses, so a
-    // context surviving across blocks can replay a display name recorded
-    // for an alias from an unrelated block into this block's synthesized
-    // expressions — schedule-dependently, since which worker compiled what
-    // first is a race (canonicity §10.5). Metadata display names must be a
-    // deterministic function of the block, so no kernel-cache state may
-    // outlive the block that populated it. The kenv is a pure cache
-    // (`ensure_in_kenv` re-ingresses on demand), so starting cold is
-    // semantics-free, and full clears at block boundaries measured at zero
-    // wall-clock cost on Mathlib-scale envs.
     for _ in 0..num_threads {
       s.spawn(move || {
         loop {
@@ -624,239 +709,83 @@ pub fn compile_env_with_profile(
                 );
               }
 
-              // Check if this block was pre-compiled into aux_name_to_addr.
-              // Promote to name_to_addr without re-compiling.
-              let _cc_start = Instant::now();
-              let _is_precompiled = stt_ref.resolve_addr(&lo).is_some();
-              if _is_precompiled {
-                // Check if any names in this block are aux_gen-rewritten.
-                let any_aux_gen =
-                  all.iter().any(|n| stt_ref.aux_gen_extra_names.contains(n));
-
-                // Compile cross-SCC unresolved names FIRST so they're in
-                // name_to_addr before compile_const_no_aux runs.
-                // Only compile — don't promote other names yet (promote_aux
-                // inside compile_const_no_aux needs names to still be in
-                // aux_name_to_addr, not yet in name_to_addr).
-                let mut aux_precompile_incomplete = false;
-                {
-                  let mut unresolved_names = Vec::new();
-                  for name in &all {
-                    if stt_ref.name_to_addr.contains_key(name) {
-                      continue;
-                    }
-                    if stt_ref.resolve_addr(name).is_some() {
-                      // In aux_name_to_addr — will be promoted later.
-                      continue;
-                    }
-                    unresolved_names.push(name.clone());
-                  }
-                  if !unresolved_names.is_empty() {
-                    if any_aux_gen {
-                      aux_precompile_incomplete = true;
-                      let missing = unresolved_names
-                        .iter()
-                        .map(|n| n.pretty())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                      let msg = format!(
-                        "aux_gen precompile incomplete for {}; missing canonical aliases: {}",
-                        lo.pretty(),
-                        missing,
-                      );
-                      eprintln!(
-                        "[compile_env] block FAILED {} ({} members): {}",
-                        lo.pretty(),
-                        all.len(),
-                        msg,
-                      );
-                      for member in &all {
-                        stt_ref.ungrounded.insert(member.clone(), msg.clone());
-                      }
-                    } else {
-                      let unresolved_set: NameSet =
-                        unresolved_names.iter().cloned().collect();
-                      let mut cache = BlockCache::default();
-                      let cross_name = unresolved_names[0].clone();
-                      let res = run_compile_catching_panic(
-                        &cross_name,
-                        "compile_const(cross-SCC)",
-                        || {
-                          compile_const(
-                            &cross_name,
-                            &unresolved_set,
-                            lean_env,
-                            &mut cache,
-                            stt_ref,
-                            &mut crate::compile::KernelCtx::new(),
-                          )
-                        },
-                      );
-                      if let Err(e) = res {
-                        eprintln!(
-                          "[compile_env] cross-SCC compile failed for {}: {}",
-                          unresolved_names[0].pretty(),
-                          e,
-                        );
-                        // Don't register failed names — downstream blocks
-                        // will get MissingConstant rather than silently
-                        // referencing broken data.
-                      } else {
-                        for name in &unresolved_names {
-                          stt_ref.aux_gen_extra_names.insert(name.clone());
-                        }
-                        stt_ref
-                          .aux_gen_pending
-                          .lock()
-                          .unwrap()
-                          .extend(unresolved_names);
-                      }
-                    }
-                  }
+              // Compile this block
+              let cc_start = Instant::now();
+              let mut cache = BlockCache::default();
+              // Stage the complete block; compilation or commit failure
+              // drops its output before any dependent is released.
+              crate::compile::block_txn::start();
+              let res =
+                run_compile_catching_panic(&lo, "compile_const", || {
+                  compile_const(&lo, &all, lean_env, &mut cache, stt_ref)
+                });
+              let publication =
+                crate::compile::block_txn::finish(stt_ref, res.is_err());
+              let res = res.and_then(|addr| publication.map(|()| addr));
+              if let Err(e) = res {
+                // Record the failure per-member and fall through. The
+                // scheduler keeps running so other constants can still
+                // compile; dependents of this block will hit
+                // MissingConstant and be recorded here too. Callers
+                // inspect `stt.ungrounded` to report per-constant
+                // compile-side rejections.
+                let msg = format!("{e}");
+                for member in &all {
+                  stt_ref.ungrounded.insert(member.clone(), msg.clone());
                 }
-
-                if any_aux_gen && !aux_precompile_incomplete {
-                  // Compile the original Lean form (without aux_gen).
-                  // compile_mutual with aux=false calls promote_aux for
-                  // each constant, setting Named.original with the
-                  // original (addr, meta) for decompilation roundtrip.
-                  let mut orig_cache = BlockCache::default();
-                  let res = run_compile_catching_panic(
-                    &lo,
-                    "compile_const_no_aux",
-                    || {
-                      compile_const_no_aux(
-                        &lo,
-                        &all,
-                        lean_env,
-                        &mut orig_cache,
-                        stt_ref,
-                        &mut crate::compile::KernelCtx::new(),
-                      )
-                    },
-                  );
-                  if let Err(e) = res {
-                    // Record the failure per-member and fall through. The
-                    // scheduler keeps running so other constants can still
-                    // compile; dependents of this block will hit
-                    // MissingConstant and be recorded here too. Callers
-                    // inspect `stt.ungrounded` to report per-constant
-                    // compile-side rejections.
-                    let msg = format!("{e}");
-                    for member in &all {
-                      stt_ref.ungrounded.insert(member.clone(), msg.clone());
-                    }
-                    if *IX_LOG_BLOCKS {
-                      eprintln!(
-                        "[compile_env] compile_const_no_aux failed for {}: {}",
-                        lo.pretty(),
-                        msg,
-                      );
-                    }
-                  }
-                }
-
-                if !aux_precompile_incomplete {
-                  // Promote remaining names from aux_name_to_addr.
-                  for name in &all {
-                    if stt_ref.name_to_addr.contains_key(name) {
-                      continue;
-                    }
-                    if let Some(addr) = stt_ref.resolve_addr(name) {
-                      stt_ref.name_to_addr.insert(name.clone(), addr);
-                    }
-                  }
-                }
-              } else {
-                // Compile this block
-                let mut cache = BlockCache::default();
-                let res = run_compile_catching_panic(
-                  &lo,
-                  "compile_const",
-                  || {
-                    compile_const(
-                      &lo,
-                      &all,
-                      lean_env,
-                      &mut cache,
-                      stt_ref,
-                      &mut crate::compile::KernelCtx::new(),
-                    )
-                  },
+                // The first time we fail on a given block, log a brief
+                // line. Full dep-status diagnostics are gated on
+                // IX_LOG_BLOCKS to avoid log spam on cascading failures.
+                eprintln!(
+                  "[compile_env] block FAILED {} ({} members): {}",
+                  lo.pretty(),
+                  all.len(),
+                  msg,
                 );
-                if let Err(e) = res {
-                  // Record the failure per-member and fall through. The
-                  // scheduler keeps running so other constants can still
-                  // compile; dependents of this block will hit
-                  // MissingConstant and be recorded here too. Callers
-                  // inspect `stt.ungrounded` to report per-constant
-                  // compile-side rejections.
-                  let msg = format!("{e}");
+                if *IX_LOG_BLOCKS {
                   for member in &all {
-                    stt_ref.ungrounded.insert(member.clone(), msg.clone());
+                    eprintln!("    member: {}", member.pretty());
                   }
-                  // The first time we fail on a given block, log a brief
-                  // line. Full dep-status diagnostics are gated on
-                  // IX_LOG_BLOCKS to avoid log spam on cascading failures.
-                  eprintln!(
-                    "[compile_env] block FAILED {} ({} members): {}",
-                    lo.pretty(),
-                    all.len(),
-                    msg,
-                  );
-                  if *IX_LOG_BLOCKS {
+                  if let CompileError::MissingConstant {
+                    ref name,
+                    ref caller,
+                  } = e
+                  {
+                    eprintln!(
+                      "[compile_env] MissingConstant: {name} (from {caller})"
+                    );
                     for member in &all {
-                      eprintln!("    member: {}", member.pretty());
+                      let in_main = stt_ref.name_to_addr.contains_key(member);
+                      let in_ungr = stt_ref.ungrounded.contains_key(member);
+                      let status = if in_main {
+                        "name_to_addr"
+                      } else if in_ungr {
+                        "ungrounded"
+                      } else {
+                        "pending"
+                      };
+                      eprintln!("    {} [{}]", member.pretty(), status);
                     }
-                    if let CompileError::MissingConstant {
-                      ref name,
-                      ref caller,
-                    } = e
-                    {
-                      eprintln!(
-                        "[compile_env] MissingConstant: {name} (from {caller})"
-                      );
-                      for member in &all {
-                        let in_main = stt_ref.name_to_addr.contains_key(member);
-                        let in_aux =
-                          stt_ref.aux_name_to_addr.contains_key(member);
-                        let in_ungr =
-                          stt_ref.ungrounded.contains_key(member);
+                    if let Some(entry) = block_info_ref.get(&lo) {
+                      let (_, orig_deps, remaining) = entry.value();
+                      eprintln!("  deps ({}):", orig_deps.len());
+                      for d in orig_deps.iter() {
+                        let in_main = stt_ref.name_to_addr.contains_key(d);
+                        let in_ungr = stt_ref.ungrounded.contains_key(d);
                         let status = if in_main {
                           "name_to_addr"
-                        } else if in_aux {
-                          "aux_name_to_addr"
                         } else if in_ungr {
                           "ungrounded"
                         } else {
-                          "pending"
+                          "UNRESOLVED"
                         };
-                        eprintln!("    {} [{}]", member.pretty(), status);
+                        eprintln!("    {} [{}]", d.pretty(), status);
                       }
-                      if let Some(entry) = block_info_ref.get(&lo) {
-                        let (_, orig_deps, remaining) = entry.value();
-                        eprintln!("  deps ({}):", orig_deps.len());
-                        for d in orig_deps.iter() {
-                          let in_main = stt_ref.name_to_addr.contains_key(d);
-                          let in_aux = stt_ref.aux_name_to_addr.contains_key(d);
-                          let in_ungr = stt_ref.ungrounded.contains_key(d);
-                          let status = if in_main {
-                            "name_to_addr"
-                          } else if in_aux {
-                            "aux_name_to_addr"
-                          } else if in_ungr {
-                            "ungrounded"
-                          } else {
-                            "UNRESOLVED"
-                          };
-                          eprintln!("    {} [{}]", d.pretty(), status);
-                        }
-                        let rem = remaining.lock().unwrap();
-                        if !rem.is_empty() {
-                          eprintln!("  unsatisfied ({}):", rem.len());
-                          for d in rem.iter() {
-                            eprintln!("    {}", d.pretty());
-                          }
+                      let rem = remaining.lock().unwrap();
+                      if !rem.is_empty() {
+                        eprintln!("  unsatisfied ({}):", rem.len());
+                        for d in rem.iter() {
+                          eprintln!("    {}", d.pretty());
                         }
                       }
                     }
@@ -875,13 +804,12 @@ pub fn compile_env_with_profile(
               // Check for slow blocks
               let elapsed = block_start.elapsed();
               if *crate::compile::IX_TIMING && elapsed.as_secs_f32() > 1.0 {
-                let cc_time = _cc_start.elapsed().as_secs_f32();
+                let cc_time = cc_start.elapsed().as_secs_f32();
                 eprintln!(
-                  "Slow block {:?} ({} consts): {:.2}s path={} cc={:.2}s",
+                  "Slow block {:?} ({} consts): {:.2}s cc={:.2}s",
                   lo.pretty(),
                   all.len(),
                   elapsed.as_secs_f32(),
-                  if _is_precompiled { "precompiled" } else { "compile" },
                   cc_time,
                 );
               }
@@ -919,18 +847,6 @@ pub fn compile_env_with_profile(
                 resolve_name(name, &mut newly_ready);
               }
 
-              // Drain pending aux_gen names and resolve their deps.
-              // Only processes names added since the last drain, not the
-              // full accumulated set (which is kept in aux_gen_extra_names
-              // for persistent membership checks).
-              {
-                let extra: Vec<Name> =
-                  std::mem::take(&mut *stt_ref.aux_gen_pending.lock().unwrap());
-                for name in &extra {
-                  resolve_name(name, &mut newly_ready);
-                }
-              }
-
               // Add newly-ready blocks to the queue and notify waiting workers
               if !newly_ready.is_empty() {
                 let mut queue = ready_queue_ref.lock().unwrap();
@@ -947,7 +863,6 @@ pub fn compile_env_with_profile(
                 condvar_ref.notify_one();
               }
               permit.complete();
-
             },
             None => {
               drop(permit);
@@ -1046,21 +961,12 @@ pub fn compile_env_with_profile(
           .into(),
       });
     }
-    for source in &semantic_sources {
-      if stt.aux_gen_extra_names.contains(source) {
-        return Err(CompileError::UnsupportedExpr {
-          desc: format!(
-            "resource contract source was replaced by auxiliary generation: {}",
-            source.pretty()
-          ),
-        });
-      }
-    }
     let default_profile;
     let profile = match profile {
       Some(profile) => profile,
       None => {
-        default_profile = ix_kernel::resource::standard_profile(&stt.env);
+        default_profile = ix_kernel::resource::standard_profile(&stt.env)
+          .map_err(|desc| CompileError::UnsupportedExpr { desc })?;
         &default_profile
       },
     };
@@ -1084,165 +990,119 @@ pub fn compile_env_with_profile(
 
   Ok(stt)
 }
+#[cfg(test)]
+mod hint_tests {
+  use super::*;
+  use crate::compile::block_txn;
+  use ix_common::env::ReducibilityHints;
 
-/// Seed names for the aux_gen prereq closure.
-///
-/// These are the exact `Const` refs that `aux_gen` emits in generated
-/// `.below` / `.brecOn` / `.brecOn.eq` bodies — grep for `mk_const` in
-/// `src/ix/compile/aux_gen/**` to verify. They must all be compiled and
-/// registered in `aux_name_to_addr` before any block's aux_gen runs, or
-/// else `compile_expr` raises `MissingConstant`.
-fn aux_gen_seed_names() -> Vec<Name> {
-  let root = Name::anon();
-  let eq = Name::str(root.clone(), "Eq".into());
-  let heq = Name::str(root.clone(), "HEq".into());
-  vec![
-    // .below (Type-level): PUnit, PProd — ctors in same SCC
-    Name::str(root.clone(), "PUnit".into()),
-    Name::str(root.clone(), "PProd".into()),
-    // .brecOn.eq — Eq family
-    eq.clone(),
-    Name::str(eq.clone(), "refl".into()),
-    Name::str(eq.clone(), "symm".into()),
-    Name::str(eq.clone(), "ndrec".into()),
-    // `rfl` is a separate constant (`def rfl : a = a := Eq.refl a` in
-    // Init.Prelude), used by `Eq.symm`'s body. The transitive-closure
-    // walker should find it via Eq.symm's block_refs, but listing it
-    // explicitly guards against ref-graph regressions.
-    Name::str(root.clone(), "rfl".into()),
-    // .brecOn.eq — HEq family
-    heq.clone(),
-    Name::str(heq, "refl".into()),
-    // .brecOn.eq — heterogeneous-to-homogeneous coercion
-    // (used in the indexed-eq path's major-continuation discharge)
-    Name::str(root.clone(), "eq_of_heq".into()),
-    // .brecOn.eq dummy motive
-    Name::str(root, "True".into()),
-  ]
+  fn name(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_owned())
+  }
+
+  #[test]
+  fn deferred_hints_keep_read_your_writes_and_last_write_order() {
+    let stt = CompileState::default();
+    let n = name("imageHint");
+    stt.record_hint(&n, Some(ReducibilityHints::Opaque));
+    block_txn::start();
+    stt.record_hint(&n, Some(ReducibilityHints::Abbrev));
+    assert_eq!(stt.recorded_hint(&n), Some(ReducibilityHints::Abbrev));
+    assert_eq!(*stt.def_hints.get(&n).unwrap(), ReducibilityHints::Opaque);
+    stt.record_hint(&n, None);
+    assert_eq!(stt.recorded_hint(&n), None);
+    stt.record_hint(&n, Some(ReducibilityHints::Regular(7)));
+    block_txn::finish(&stt, false).unwrap();
+    assert_eq!(stt.recorded_hint(&n), Some(ReducibilityHints::Regular(7)));
+  }
+
+  /// A failed block's hint writes, removals included, are never published.
+  #[test]
+  fn failed_block_publishes_none_of_its_hints() {
+    let stt = CompileState::default();
+    let (kept, fresh) = (name("keptHint"), name("freshHint"));
+    stt.record_hint(&kept, Some(ReducibilityHints::Opaque));
+    block_txn::start();
+    stt.record_hint(&kept, None);
+    stt.record_hint(&fresh, Some(ReducibilityHints::Abbrev));
+    block_txn::finish(&stt, true).unwrap();
+    assert_eq!(stt.recorded_hint(&kept), Some(ReducibilityHints::Opaque));
+    assert_eq!(stt.recorded_hint(&fresh), None);
+  }
 }
 
-/// Build the transitive SCC closure of `seeds` using `condensed.block_refs`,
-/// then compile each SCC in **reverse topological order** (deps first) into
-/// `aux_name_to_addr`. Fails immediately if any SCC fails to compile.
-///
-/// The reverse-topo order is computed via iterative DFS post-order on the
-/// condensed graph. `block_refs` maps each SCC-rep to the names it
-/// references; we resolve each referenced name back to its own SCC-rep via
-/// `condensed.low_links`.
-fn precompile_aux_gen_prereqs(
-  condensed: &crate::condense::CondensedBlocks,
-  lean_env: &Arc<LeanEnv>,
-  stt: &CompileState,
-) -> Result<(), CompileError> {
-  // Resolve seeds to their SCC reps. Silently skip seeds not in the env
-  // (unit-test fixtures, minimal test envs).
-  let seed_reps: Vec<Name> = aux_gen_seed_names()
-    .into_iter()
-    .filter_map(|n| condensed.low_links.get(&n).cloned())
-    .collect();
+#[cfg(test)]
+mod safety_tests {
+  use super::*;
+  use ix_common::env::{
+    AxiomVal, ConstantVal, DefinitionVal, Expr as LeanExpr, Level,
+    ReducibilityHints,
+  };
 
-  if seed_reps.is_empty() {
-    return Ok(());
+  fn name(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
   }
 
-  // Iterative DFS post-order: visit each SCC exactly once, emitting after
-  // all its dependencies have been emitted. Result is a reverse-topo
-  // (dep-first) order.
-  let mut order: Vec<Name> = Vec::new();
-  let mut visited: FxHashSet<Name> = FxHashSet::default();
-
-  enum Frame {
-    Enter(Name),
-    Exit(Name),
-  }
-  let mut stack: Vec<Frame> = seed_reps.into_iter().map(Frame::Enter).collect();
-
-  while let Some(frame) = stack.pop() {
-    match frame {
-      Frame::Enter(rep) => {
-        if !visited.insert(rep.clone()) {
-          continue;
-        }
-        // Push Exit *before* neighbor Enters so Exit fires after them.
-        stack.push(Frame::Exit(rep.clone()));
-        // Enqueue SCC deps (the external refs of this SCC, resolved to
-        // their SCC reps).
-        if let Some(out_refs) = condensed.block_refs.get(&rep) {
-          for referenced in out_refs {
-            if let Some(dep_rep) = condensed.low_links.get(referenced)
-              && !visited.contains(dep_rep)
-            {
-              stack.push(Frame::Enter(dep_rep.clone()));
-            }
-          }
-        }
-      },
-      Frame::Exit(rep) => {
-        order.push(rep);
-      },
+  fn cval(n: &Name) -> ConstantVal {
+    ConstantVal {
+      name: n.clone(),
+      level_params: vec![],
+      typ: LeanExpr::sort(Level::succ(Level::zero())),
     }
   }
 
-  // Compile each SCC in dep-first order, moving compiled names to
-  // `aux_name_to_addr` so later SCCs can resolve their Const refs.
-  for rep in order {
-    if stt.aux_name_to_addr.contains_key(&rep) {
-      continue; // Already compiled (e.g., via a prior prereq run).
-    }
-    let all = match condensed.blocks.get(&rep) {
-      Some(a) => a.clone(),
-      None => continue,
-    };
-    let mut cache = BlockCache::default();
-    let mut prereq_kctx = crate::compile::KernelCtx::new();
-    compile_const(&rep, &all, lean_env, &mut cache, stt, &mut prereq_kctx)
-      .map_err(|e| match e {
-        // A sharing failure is about this block, not the dependency
-        // order: keep its category (and the limit to raise) and name the
-        // block.
-        CompileError::ResourceLimit { reason } => CompileError::ResourceLimit {
-          reason: format!("aux_gen prereq '{}': {reason}", rep.pretty()),
-        },
-        CompileError::SharingConstruction { reason } => {
-          CompileError::SharingConstruction {
-            reason: format!("aux_gen prereq '{}': {reason}", rep.pretty()),
-          }
-        },
-        e => CompileError::InvalidMutualBlock {
-          reason: format!(
-            "aux_gen prereq pre-compile failed for SCC '{}' ({} members): \
-             {:?}. The SCC closure is traversed in reverse-topological \
-             order starting from the aux_gen seed names (see \
-             `aux_gen_seed_names`), so all transitive deps *should* be \
-             compiled before this — if you're hitting this, a dep \
-             relationship isn't captured in the ref graph, or the source \
-             env is inconsistent.",
-            rep.pretty(),
-            all.len(),
-            e,
-          ),
-        },
-      })?;
-    // Move compiled names → aux_name_to_addr. The scheduler can still
-    // re-encounter this SCC later; the entries will just be no-ops.
-    let just_compiled: Vec<(Name, Address)> = stt
-      .name_to_addr
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
-    for (n, addr) in just_compiled {
-      stt.name_to_addr.remove(&n);
-      stt.aux_name_to_addr.insert(n, addr);
-    }
-    // Defensive: move any aux_gen extras generated during pre-compile.
-    let extras: Vec<Name> =
-      stt.aux_gen_extra_names.iter().map(|r| r.clone()).collect();
-    for name in extras {
-      if let Some((n, addr)) = stt.name_to_addr.remove(&name) {
-        stt.aux_name_to_addr.insert(n, addr);
-      }
-    }
+  fn defn(n: &Name, safety: DefinitionSafety) -> LeanConstantInfo {
+    LeanConstantInfo::DefnInfo(DefinitionVal {
+      cnst: cval(n),
+      value: LeanExpr::sort(Level::zero()),
+      hints: ReducibilityHints::Opaque,
+      safety,
+      all: vec![n.clone()],
+    })
   }
 
-  Ok(())
+  fn axiom(n: &Name, is_unsafe: bool) -> LeanConstantInfo {
+    LeanConstantInfo::AxiomInfo(AxiomVal { cnst: cval(n), is_unsafe })
+  }
+
+  fn block(names: &[&Name]) -> RefMap {
+    let set: NameSet = names.iter().map(|n| (*n).clone()).collect();
+    [(names[0].clone(), set)].into_iter().collect()
+  }
+
+  /// A condensation block whose members disagree on safety is refused,
+  /// naming the least member and the least one that differs from it; a
+  /// uniform block, and singleton blocks of any safety, pass.
+  #[test]
+  fn mixed_safety_blocks_are_refused_uniform_ones_pass() {
+    let (f, g, h) = (name("f"), name("g"), name("h"));
+    for (fs, gs) in [
+      (DefinitionSafety::Unsafe, DefinitionSafety::Safe),
+      (DefinitionSafety::Safe, DefinitionSafety::Unsafe),
+      (DefinitionSafety::Unsafe, DefinitionSafety::Partial),
+    ] {
+      let mut env = LeanEnv::default();
+      env.insert(f.clone(), defn(&f, fs));
+      env.insert(g.clone(), defn(&g, gs));
+      env.insert(h.clone(), axiom(&h, true));
+      let groups = FxHashMap::default();
+      let err = validate_mutual_safety(&groups, &block(&[&f, &g]), &env)
+        .expect_err("mixed block");
+      let CompileError::InvalidMutualBlock { reason } = err else {
+        panic!("wrong error kind")
+      };
+      assert!(reason.starts_with(MIXED_SAFETY), "{reason}");
+      assert!(reason.contains("'f'") && reason.contains("'g'"), "{reason}");
+      // singletons of different safeties are not a mixed block
+      let mut singles = block(&[&f]);
+      singles.extend(block(&[&g]));
+      singles.extend(block(&[&h]));
+      assert!(validate_mutual_safety(&groups, &singles, &env).is_ok());
+    }
+    let mut env = LeanEnv::default();
+    env.insert(f.clone(), defn(&f, DefinitionSafety::Unsafe));
+    env.insert(h.clone(), axiom(&h, true));
+    let groups = FxHashMap::default();
+    assert!(validate_mutual_safety(&groups, &block(&[&f, &h]), &env).is_ok());
+  }
 }

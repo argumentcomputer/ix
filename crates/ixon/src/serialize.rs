@@ -24,7 +24,7 @@ use super::contract::{
 use super::expr::Expr;
 use super::metadata::IxonByteSerde;
 use super::tag::TagN;
-use super::univ::{Univ, get_univ, put_univ};
+use super::univ::{MAX_UNIV_NODES, Univ, get_univ_within, put_univ};
 
 // ============================================================================
 // Primitive helpers
@@ -36,6 +36,34 @@ use super::univ::{Univ, get_univ, put_univ};
 #[inline]
 fn capped_capacity(count: u64, buf: &[u8]) -> usize {
   (count as usize).min(buf.len())
+}
+
+/// A §4 entry is stored under its name's hash; the §5 rows and the metadata
+/// name it by that address, so a mismatch would rename them.
+fn check_name_address(
+  addr: &Address,
+  name: &Name,
+  ctx: &str,
+) -> Result<(), String> {
+  let computed = Address::from_blake3_hash(*name.get_hash());
+  if computed != *addr {
+    return Err(format!(
+      "{ctx}: §4 name stored under {} hashes to {}",
+      addr.hex(),
+      computed.hex()
+    ));
+  }
+  Ok(())
+}
+
+/// A §4 entry is an address and at least one byte of name component, so a
+/// count the remaining buffer cannot hold is corruption: refuse it before
+/// allocating for it.
+fn check_name_count(count: u64, buf: &[u8], ctx: &str) -> Result<(), String> {
+  if count > (buf.len() / 33) as u64 {
+    return Err(format!("{ctx}: name count {count} exceeds remaining buffer"));
+  }
+  Ok(())
 }
 
 fn put_u8(x: u8, buf: &mut Vec<u8>) {
@@ -102,14 +130,19 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
 
 /// Read the `.ixe` header shared by every Env reader:
 /// `TagN(0xE, VERSION)`, the 32-byte consts merkle root, the bundle
-/// `main` pointer, and the strictly ascending assumptions list.
+/// `main` pointer, the strictly ascending assumptions list and, in the
+/// role-bound envelope, the role binding.
 /// Centralized so the four readers (`get`, `get_anon`, `get_anon_mmap`,
 /// `parse_lazy_index`) cannot drift. `ctx` labels errors with the
 /// calling reader.
-fn read_env_header(
-  buf: &mut &[u8],
-  ctx: &str,
-) -> Result<(Address, Option<Address>, Vec<Address>), String> {
+struct EnvHeader {
+  stored_root: Address,
+  main: Option<Address>,
+  assumptions: Vec<Address>,
+  role_binding: Option<RoleBinding>,
+}
+
+fn read_env_header(buf: &mut &[u8], ctx: &str) -> Result<EnvHeader, String> {
   let tag = TagN::get(4, buf)?;
   if tag.flag != Env::FLAG {
     return Err(format!(
@@ -118,11 +151,11 @@ fn read_env_header(
       tag.flag
     ));
   }
-  if tag.value != Env::VERSION {
+  if tag.value != Env::LEGACY_ENV_VERSION
+    && tag.value != Env::BINDING_ENV_VERSION
+  {
     return Err(format!(
-      "{ctx}: expected .ixe format version {}, got {} — recompile the \
-       artifact",
-      Env::VERSION,
+      "{ctx}: unsupported .ixe envelope version {} (expected 4 or 5)",
       tag.value
     ));
   }
@@ -159,7 +192,21 @@ fn read_env_header(
     }
     assumptions.push(addr);
   }
-  Ok((stored_root, main, assumptions))
+  let role_binding = if tag.value == Env::BINDING_ENV_VERSION {
+    let address = get_address(buf)?;
+    let length = usize::try_from(get_u64(buf)?)
+      .map_err(|_| format!("{ctx}: role binding length exceeds memory size"))?;
+    let (bytes, remaining) = buf
+      .split_at_checked(length)
+      .ok_or_else(|| format!("{ctx}: truncated role binding section"))?;
+    RoleBinding::check_bytes(&address, bytes)?;
+    let binding = RoleBinding { address, bytes: Arc::from(bytes) };
+    *buf = remaining;
+    Some(binding)
+  } else {
+    None
+  };
+  Ok(EnvHeader { stored_root, main, assumptions, role_binding })
 }
 
 /// Read the §1 blob section, verifying `Address::hash(bytes) == addr`
@@ -1016,11 +1063,15 @@ fn put_univs(univs: &[Arc<Univ>], buf: &mut Vec<u8>) {
   }
 }
 
+/// A record's universe table, its universes' expanded constructors charged
+/// to one budget (`MAX_UNIV_NODES`), as IxC's bounded decoder charges a
+/// record's.
 fn get_univs(buf: &mut &[u8]) -> Result<Vec<Arc<Univ>>, String> {
   let num = get_u64(buf)?;
   let mut univs = Vec::with_capacity(capped_capacity(num, buf));
+  let mut budget = MAX_UNIV_NODES;
   for _ in 0..num {
-    univs.push(get_univ(buf)?);
+    univs.push(get_univ_within(buf, &mut budget)?);
   }
   Ok(univs)
 }
@@ -1233,54 +1284,10 @@ fn get_name_component(
 // Named serialization
 // ============================================================================
 
-use super::env::{AuxLayout, LazyMetaWindow, Named};
+use super::env::{LazyMetaWindow, Named};
 use super::metadata::{
   ConstantMeta, NameGet, NameIndex, NamePut, NameReverseIndex,
 };
-
-/// Serialize an `AuxLayout` side-table entry.
-///
-/// Encoding: two Vec<u64> telescopes. `usize` is written/read as `u64`
-/// (via `put_u64` / `TagN`) to avoid target-word-size divergence in
-/// cross-platform serialized envs.
-pub fn put_aux_layout(layout: &AuxLayout, buf: &mut Vec<u8>) {
-  put_u64(layout.perm.len() as u64, buf);
-  for &p in &layout.perm {
-    put_u64(p as u64, buf);
-  }
-  put_u64(layout.source_ctor_counts.len() as u64, buf);
-  for &c in &layout.source_ctor_counts {
-    put_u64(c as u64, buf);
-  }
-  put_u64(layout.evaporated.len() as u64, buf);
-  for &b in &layout.evaporated {
-    put_u8(u8::from(b), buf);
-  }
-}
-
-/// Deserialize an `AuxLayout` side-table entry.
-pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
-  let n_perm = get_u64(buf)? as usize;
-  let mut perm = Vec::with_capacity(n_perm);
-  for _ in 0..n_perm {
-    perm.push(get_u64(buf)? as usize);
-  }
-  let n_counts = get_u64(buf)? as usize;
-  let mut source_ctor_counts = Vec::with_capacity(n_counts);
-  for _ in 0..n_counts {
-    source_ctor_counts.push(get_u64(buf)? as usize);
-  }
-  let n_evap = get_u64(buf)? as usize;
-  let mut evaporated = Vec::with_capacity(n_evap);
-  for _ in 0..n_evap {
-    evaporated.push(match get_u8(buf)? {
-      0 => false,
-      1 => true,
-      x => return Err(format!("get_aux_layout: invalid evaporated flag {x}")),
-    });
-  }
-  Ok(AuxLayout { perm, source_ctor_counts, evaporated })
-}
 
 /// Serialize a Named entry with indexed metadata.
 pub fn put_named_indexed(
@@ -1312,12 +1319,12 @@ pub fn put_named_indexed(
   // encodings share the wire format, differing only in how name
   // references are written.
   scratch.clear();
-  named.meta().put_with(NamePut::Indexed(idx), scratch)?;
+  named.meta_checked()?.put_with(NamePut::Indexed(idx), scratch)?;
   // Serialize original as Option: 0 = None, 1 = Some(addr, meta). The
   // original's address stays a raw 32 bytes: it can reference an
   // assumed constant that is NOT stored in §2 (prune cut bundles), so
   // a §2 index cannot represent it.
-  match named.original() {
+  match named.original_checked()? {
     None => scratch.push(0),
     Some((addr, meta)) => {
       scratch.push(1);
@@ -1408,7 +1415,7 @@ pub fn get_named_indexed(
 }
 
 /// Decode the metadata part of a §5 window (the `meta_len`-framed blob
-/// holding meta + optional aux_gen original). Returns the meta and its
+/// holding meta + optional original form). Returns the meta and its
 /// encoded length within the window. The window grammar lives in these
 /// three helpers — `get_named_indexed` and the lazy
 /// [`crate::env::LazyMetaWindow`] both parse through them.
@@ -1456,6 +1463,41 @@ pub(crate) fn decode_window_orig_meta(
   let before = slice.len();
   let meta = ConstantMeta::get_with(&mut slice, NameGet::Indexed(rev))?;
   Ok((meta, off + (before - slice.len())))
+}
+
+/// Validate the full interior structure of a §5 metadata window
+/// (`ConstantMeta` + optional `(Address, ConstantMeta)` + exact framing),
+/// returning `(meta_len, orig_addr)` for [`crate::env::LazyMetaWindow`] while
+/// dropping the decoded metadata immediately so lazy/demoted loads reject
+/// corrupt interior §5 bytes at load time without retaining metadata ASTs.
+pub(crate) fn validate_window(
+  window: &[u8],
+  rev: &NameReverseIndex,
+) -> Result<(usize, Option<Address>), String> {
+  let meta_len = window.len();
+  let frame_err = |e: String| {
+    format!(
+      "get_named_indexed: metadata blob length mismatch (header says \
+       {meta_len}; parse failed inside the window: {e}){PRE_NORMAL_LEVELS}"
+    )
+  };
+  let (_meta, m_len) = decode_window_meta(window, rev).map_err(frame_err)?;
+  let (end, orig_addr) =
+    match decode_window_orig_header(window, m_len).map_err(frame_err)? {
+      None => (m_len + 1, None),
+      Some((orig_addr, orig_off)) => {
+        let (_orig_meta, end) =
+          decode_window_orig_meta(window, orig_off, rev).map_err(frame_err)?;
+        (end, Some(orig_addr))
+      },
+    };
+  if end != window.len() {
+    return Err(format!(
+      "get_named_indexed: metadata blob length mismatch (header says \
+       {meta_len}, parsed {end}){PRE_NORMAL_LEVELS}"
+    ));
+  }
+  Ok((m_len, orig_addr))
 }
 
 /// Streaming cursor over an env's §5 named entries: parse one `Named`
@@ -1533,7 +1575,7 @@ impl<'a> NamedMetaCursor<'a> {
 // ============================================================================
 
 use super::comm::Comm;
-use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed};
+use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed, RoleBinding};
 #[cfg(not(target_arch = "riscv64"))]
 use super::merkle::merkle_root_canonical_sorted;
 use super::merkle::{merkle_root_canonical, zero_address};
@@ -1542,22 +1584,35 @@ impl Env {
   /// TagN flag for Env (0xE).
   pub const FLAG: u8 = 0xE;
 
-  /// `.ixe` format version, carried as the value of the header TagN
-  /// (versions < 8 cost zero extra bytes). Any change to serialized
-  /// bytes bumps this. Readers reject a mismatch; there is no
-  /// back-compat reading of old versions — `.ixe` files are
-  /// regenerated artifacts. Version 4 is the TagN format; its header
-  /// is the single byte `0xE4`. Mirrors `Ixon.Env.VERSION` in
-  /// `Ix/Ixon.lean`.
-  pub const VERSION: u64 = 4;
+  /// Envelope storage versions are separate from the checked object format.
+  pub const CHECKED_FORMAT_VERSION: u8 = 4;
+  /// The envelope without a role binding.
+  pub const LEGACY_ENV_VERSION: u64 = 4;
+  /// The role-bound envelope: the legacy layout with the role binding
+  /// (address, length, bytes) after the bundle header.
+  pub const BINDING_ENV_VERSION: u64 = 5;
+  /// Compatibility alias for the original v4 envelope.
+  pub const VERSION: u64 = Self::LEGACY_ENV_VERSION;
+  /// Claim, proof, catalog and resource scopes still bind checked format 4.
+  pub const OBJECT_FORMAT: u8 = Self::CHECKED_FORMAT_VERSION;
 
-  /// Object-format byte bound by claim, proof and catalog scopes: the
-  /// format version as one byte, so an object produced under another
-  /// version is rejected. Mirrors `Ixon.Env.OBJECT_FORMAT`.
-  pub const OBJECT_FORMAT: u8 = {
-    assert!(Self::VERSION <= u8::MAX as u64);
-    Self::VERSION as u8
-  };
+  /// The envelope version the writers emit: the role-bound envelope when a
+  /// role binding is present, the legacy envelope otherwise.
+  pub fn envelope_version(&self) -> u64 {
+    if self.role_binding.is_some() {
+      Self::BINDING_ENV_VERSION
+    } else {
+      Self::LEGACY_ENV_VERSION
+    }
+  }
+
+  fn put_binding_header(&self, buf: &mut Vec<u8>) {
+    if let Some(binding) = &self.role_binding {
+      put_address(&binding.address, buf);
+      put_u64(binding.bytes.len() as u64, buf);
+      buf.extend_from_slice(binding.bytes.as_ref());
+    }
+  }
 
   /// Serialize an Env to bytes.
   ///
@@ -1583,8 +1638,11 @@ impl Env {
       || std::env::var("IX_COMPILE_DBG").is_ok();
     let overall_start = std::time::Instant::now();
 
-    // Header: TagN with flag=0xE, value=VERSION (format version)
-    TagN::put(4, Self::FLAG, Self::VERSION, buf);
+    if let Some(binding) = &self.role_binding {
+      binding.check_hash()?;
+    }
+    // Header: TagN with flag=0xE, value=the envelope version
+    TagN::put(4, Self::FLAG, self.envelope_version(), buf);
 
     // ─────────────────────────────────────────────────────────────────────
     // Canonical merkle root over consts.keys()
@@ -1630,6 +1688,7 @@ impl Env {
     for addr in &assumption_addrs {
       put_address(addr, buf);
     }
+    self.put_binding_header(buf);
 
     // ─────────────────────────────────────────────────────────────────────
     // Section 1: Blobs (Address -> bytes)
@@ -1931,6 +1990,9 @@ impl Env {
       || std::env::var("IX_COMPILE_DBG").is_ok();
     let overall_start = std::time::Instant::now();
     let mut sec_start = std::time::Instant::now();
+    if let Some(binding) = &self.role_binding {
+      binding.check_hash()?;
+    }
     let file = std::fs::File::create(path)
       .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
     let mut w = std::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
@@ -1951,7 +2013,7 @@ impl Env {
 
     // Header: TagN (flag=0xE, value=VERSION) + the caller-supplied
     // canonical merkle root over consts.keys().
-    TagN::put(4, Self::FLAG, Self::VERSION, &mut buf);
+    TagN::put(4, Self::FLAG, self.envelope_version(), &mut buf);
     put_address(root, &mut buf);
     if verbose {
       eprintln!(
@@ -1980,6 +2042,7 @@ impl Env {
     for addr in &assumption_addrs {
       put_address(addr, &mut buf);
     }
+    self.put_binding_header(&mut buf);
 
     // Section 1: Blobs
     let mut blob_addrs: Vec<Address> =
@@ -2202,11 +2265,13 @@ impl Env {
     // Header: tag + stored merkle root (verified at the end against
     // the recomputed root; empty const sets store `zero_address()`) +
     // bundle fields.
-    let (stored_root, main, assumptions) = read_env_header(buf, "Env::get")?;
+    let EnvHeader { stored_root, main, assumptions, role_binding } =
+      read_env_header(buf, "Env::get")?;
 
     #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
     let mut env = Env::new();
     env.main = main;
+    env.role_binding = role_binding;
     env.assumptions = assumptions.into_iter().collect();
 
     // Section 1: Blobs (hash-verified per entry)
@@ -2265,7 +2330,7 @@ impl Env {
     // `Env::get` and surface much later as a misleading parse error
     // inside `LazyConstant::get`. Runs after the framing pass so the
     // hashing goes wide (serial on the guest target).
-    verify_const_hashes(&const_windows)?;
+    verify_const_hashes(&const_windows, "Env::get")?;
     for (addr, bytes) in const_windows {
       env
         .consts
@@ -2313,6 +2378,7 @@ impl Env {
 
     // Section 4: Names (build lookup table and reverse index for metadata)
     let num_names = get_u64(buf)?;
+    check_name_count(num_names, buf, "Env::get")?;
     // Pre-size the lookup: growth rehashes of a multi-million-entry
     // map are a measurable slice of the parse.
     let mut names_lookup: FxHashMap<Address, Name> =
@@ -2331,6 +2397,7 @@ impl Env {
     for _ in 0..num_names {
       let addr = get_address(buf)?;
       let name = get_name_component(buf, &names_lookup)?;
+      check_name_address(&addr, &name, "Env::get")?;
       name_reverse_index.push(addr.clone());
       names_lookup.insert(addr.clone(), name.clone());
       env.names.insert(addr, name);
@@ -2362,6 +2429,7 @@ impl Env {
         Option<ReducibilityHints>,
         usize,
         usize,
+        (usize, Option<Address>),
       )> = Vec::with_capacity(capped_capacity(num_named, buf));
       for _ in 0..num_named {
         let name_idx = get_u64(buf)? as usize;
@@ -2374,8 +2442,8 @@ impl Env {
             )
           })?;
         // Entry header (outside the framed window), mirroring
-        // `get_named_indexed`; the window itself is copied unparsed —
-        // interior validation happens on first decode.
+        // `get_named_indexed`; the window is validated here without
+        // retaining decoded metadata ASTs, then stored in the shared arena.
         let const_idx = get_u64(buf)? as usize;
         let addr = ConstGet::Addrs(&consts_order)
           .addr(const_idx, "get_named_indexed")?;
@@ -2391,24 +2459,26 @@ impl Env {
         }
         let (window, rest) = buf.split_at(meta_len);
         *buf = rest;
+        let split = validate_window(window, &name_reverse_index)?;
         let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
           format!("Env::get: missing name for addr {:?}", name_addr)
         })?;
         let off = arena.len();
         arena.extend_from_slice(window);
-        pending.push((name, addr, hints, off, meta_len));
+        pending.push((name, addr, hints, off, meta_len, split));
       }
       // Freeze the arena once, then hand every entry an offset into it.
       let arena: Arc<[u8]> = arena.into();
-      for (name, addr, hints, off, len) in pending {
+      for (name, addr, hints, off, len, split) in pending {
         let named = Named::from_indexed_window(
           addr,
           hints,
-          Arc::new(LazyMetaWindow::new(
+          Arc::new(LazyMetaWindow::new_validated(
             arena.clone(),
             off,
             len,
             name_reverse_index.clone(),
+            split,
           )),
         );
         env.named.insert(name, named);
@@ -2509,10 +2579,11 @@ impl Env {
   /// Parse an `.ixe` buffer into a metadata-light, **zero-copy** index for the
   /// anon/lazy check path (see [`LazyIndex`]). Mirrors [`Env::get`]'s section
   /// walk and reuses the same battle-tested parsers (so every metadata variant
-  /// — e.g. `CallSite` — is handled), but:
+  /// — e.g. `Mdata` — is handled), but:
   ///
   /// - constants are recorded as `(addr, offset, len)` windows into `data`
   ///   rather than copied/stored, and their bodies are never parsed here;
+  ///   each window is hash-verified against its address, as in [`Env::get`];
   /// - the `names` table and each `Named`'s `ExprMetaArena` are parsed only to
   ///   advance the cursor and are then dropped, keeping just `name → addr` and
   ///   the per-`Defn` reducibility hint;
@@ -2540,10 +2611,11 @@ impl Env {
     let mut buf: &[u8] = data;
 
     // Header: tag + merkle root + bundle fields.
-    let (stored_root, main, assumptions) =
+    let EnvHeader { stored_root, main, assumptions, role_binding } =
       read_env_header(&mut buf, "parse_lazy_index")?;
 
-    let mut index = LazyIndex { main, assumptions, ..LazyIndex::default() };
+    let mut index =
+      LazyIndex { main, assumptions, role_binding, ..LazyIndex::default() };
 
     // Section 1: Blobs (copied — small, and the kernel ingests their
     // bytes; hash-verified per entry).
@@ -2576,6 +2648,16 @@ impl Env {
       }
       index.consts.push(LazyConstSlice { addr, offset, len });
     }
+    // Per-entry integrity, as in `Env::get`: every window's bytes hash to
+    // the address it is stored under. The windows are handed out as the
+    // records of those addresses, so an unauthenticated window would let a
+    // record's content depend on the file rather than on its address.
+    let windows: Vec<(Address, &[u8])> = index
+      .consts
+      .iter()
+      .map(|c| (c.addr.clone(), &data[c.offset..c.offset + c.len]))
+      .collect();
+    verify_const_hashes(&windows, "parse_lazy_index")?;
 
     // Section 3: anon_hints — kept verbatim (resolved to addresses) on
     // the index for full-reader parity. The §2 windows are the
@@ -2592,6 +2674,7 @@ impl Env {
     // entries can be re-parsed standalone later (the diff meta sweep);
     // the Address→Name lookup is dropped (LazyNamed carries the Names).
     let num_names = get_u64(&mut buf)?;
+    check_name_count(num_names, buf, "parse_lazy_index")?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
       Vec::with_capacity(num_names as usize + 1);
@@ -2600,13 +2683,14 @@ impl Env {
     for _ in 0..num_names {
       let addr = get_address(&mut buf)?;
       let name = get_name_component(&mut buf, &names_lookup)?;
+      check_name_address(&addr, &name, "parse_lazy_index")?;
       name_reverse_index.push(addr.clone());
       names_lookup.insert(addr, name);
     }
     index.name_reverse_index = name_reverse_index;
 
     // Section 5: Named — keep `name → addr`; the full ConstantMeta
-    // (arena, CallSite, ...) is parsed then discarded. The section
+    // (arena, Mdata, ...) is parsed then discarded. The section
     // offset is recorded so a [`NamedMetaCursor`] can re-walk it
     // without re-parsing the earlier sections.
     index.named_section_offset = data.len() - buf.len();
@@ -2713,12 +2797,59 @@ impl Env {
     assumed: &FxHashSet<Address>,
   ) -> Result<Env, String> {
     let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    out.role_binding = self.role_binding.clone();
+    let mut support = crate::binding_support::BindingSupport::new(self)?;
+    if let Some(support) = &mut support {
+      support.seed(self, assumed, &mut visited, &mut pending)?;
+    }
     let mut named_done: FxHashSet<Name> = FxHashSet::default();
     // §5 name → constant address, from the index (no metadata parse).
     let named_addrs: FxHashMap<&Name, &Address> =
       index.named.iter().map(|n| (&n.name, &n.addr)).collect();
+    self.prune_fixpoint_streaming(
+      index,
+      data,
+      names,
+      &named_addrs,
+      &mut out,
+      &mut visited,
+      &mut pending,
+      &mut named_done,
+      assumed,
+      support.as_mut(),
+    )?;
+    if let Some(support) = support {
+      support.finish(self, &out)?;
+    }
+    Ok(out)
+  }
+
+  /// The value and streamed named passes of
+  /// [`Self::prune_to_closure_streaming`], run until the named pass finds no
+  /// new DAG work.
+  #[cfg(not(target_arch = "riscv64"))]
+  #[allow(clippy::too_many_arguments)]
+  fn prune_fixpoint_streaming(
+    &self,
+    index: &LazyIndex,
+    data: &[u8],
+    names: &FxHashMap<Address, Name>,
+    named_addrs: &FxHashMap<&Name, &Address>,
+    out: &mut Env,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut std::collections::VecDeque<Address>,
+    named_done: &mut FxHashSet<Name>,
+    assumed: &FxHashSet<Address>,
+    mut support: Option<&mut crate::binding_support::BindingSupport>,
+  ) -> Result<(), String> {
     loop {
-      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+      self.prune_value_pass(
+        out,
+        visited,
+        pending,
+        assumed,
+        support.as_deref_mut(),
+      )?;
 
       // ── Named pass, streamed: every §5 entry is parsed (boundaries
       // require it — no length sidecar), but only entries whose
@@ -2733,30 +2864,29 @@ impl Env {
           continue;
         }
         named_done.insert(name.clone());
-        Self::carry_named_entry(
-          &mut out,
+        self.carry_named_entry(
+          out,
           name,
           &named,
           &|na| names.get(na).cloned(),
           &|ba| self.get_blob(ba),
-          &|a| self.holds_or_assumed(a, assumed),
-          &mut visited,
-          &mut pending,
+          assumed,
+          visited,
+          pending,
           &mut named_refs,
         )?;
       }
       Self::enqueue_named_refs(
         named_refs,
         &|nm| named_addrs.get(nm).map(|a| (*a).clone()),
-        &mut visited,
-        &mut pending,
+        visited,
+        pending,
       );
 
       if pending.is_empty() {
-        break;
+        return Ok(());
       }
     }
-    Ok(out)
   }
 
   /// Anonymous-only deserialization: read the header + §1 blobs +
@@ -2779,11 +2909,12 @@ impl Env {
   /// content addresses doesn't pay for metadata it will never consult.
   pub fn get_anon(buf: &mut &[u8]) -> Result<Self, String> {
     // Header (same as Env::get)
-    let (stored_root, main, assumptions) =
+    let EnvHeader { stored_root, main, assumptions, role_binding, .. } =
       read_env_header(buf, "Env::get_anon")?;
 
     let mut env = Env::new();
     env.main = main;
+    env.role_binding = role_binding;
     env.assumptions = assumptions.into_iter().collect();
 
     // Section 1: Blobs (kept; hash-verified per entry)
@@ -2941,11 +3072,12 @@ impl Env {
     let mut buf: &[u8] = mmap_full;
 
     // Header (same shape as Env::get_anon)
-    let (stored_root, main, assumptions) =
+    let EnvHeader { stored_root, main, assumptions, role_binding, .. } =
       read_env_header(&mut buf, "Env::get_anon_mmap")?;
 
     let mut env = Env::new();
     env.main = main;
+    env.role_binding = role_binding;
     env.assumptions = assumptions.into_iter().collect();
 
     // Section 1: Blobs (heap-copied; small, eagerly consumed;
@@ -3052,12 +3184,15 @@ impl Env {
   pub fn serialized_size_breakdown(
     &self,
   ) -> Result<(usize, usize, usize, usize, usize, usize, usize), String> {
+    if let Some(binding) = &self.role_binding {
+      binding.check_hash()?;
+    }
     let mut buf = Vec::new();
 
     // Header: tag (flag=0xE, value=VERSION) + merkle root (32 bytes,
     // `zero_address()` sentinel for empty const sets) + bundle fields
     // (matches Env::put layout).
-    TagN::put(4, Self::FLAG, Self::VERSION, &mut buf);
+    TagN::put(4, Self::FLAG, self.envelope_version(), &mut buf);
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
     const_addrs.sort_unstable();
@@ -3071,6 +3206,7 @@ impl Env {
     for addr in &assumption_addrs {
       put_address(addr, &mut buf);
     }
+    self.put_binding_header(&mut buf);
     let header_size = buf.len();
 
     // Section 1: Blobs
@@ -3189,18 +3325,21 @@ impl Env {
 /// up each Name via `DashMap::get` in the DFS loop). It was 22s slower on
 /// Mathlib because 4.7M shard-lock acquisitions dominate vs the one-time
 /// ~150 MB tuple-clone allocation.
-/// §2 per-entry integrity for the full readers: every constant's bytes
-/// must hash to the address they're stored under. Parallel on host —
-/// this is a pure sweep over ~GBs of blake3 input; serial on the guest
-/// target.
+/// §2 per-entry integrity for the full readers and the lazy index: every
+/// constant's bytes must hash to the address they're stored under.
+/// Parallel on host — this is a pure sweep over ~GBs of blake3 input;
+/// serial on the guest target.
 #[cfg(not(target_arch = "riscv64"))]
-fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+fn verify_const_hashes(
+  windows: &[(Address, &[u8])],
+  label: &str,
+) -> Result<(), String> {
   use rayon::prelude::*;
   windows.par_iter().enumerate().try_for_each(|(i, (addr, bytes))| {
     let computed = Address::hash(bytes);
     if computed != *addr {
       return Err(format!(
-        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        "{label}: const at idx {i} bytes hash to {} but stored under {}",
         computed.hex(),
         addr.hex()
       ));
@@ -3210,12 +3349,15 @@ fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "riscv64")]
-fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+fn verify_const_hashes(
+  windows: &[(Address, &[u8])],
+  label: &str,
+) -> Result<(), String> {
   for (i, (addr, bytes)) in windows.iter().enumerate() {
     let computed = Address::hash(bytes);
     if computed != *addr {
       return Err(format!(
-        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        "{label}: const at idx {i} bytes hash to {} but stored under {}",
         computed.hex(),
         addr.hex()
       ));
@@ -3723,10 +3865,11 @@ mod tests {
     // Versions < 8 encode inline in the TagN head byte.
     assert_eq!(buf[0], (Env::FLAG << 4) | (Env::VERSION as u8));
     assert_eq!(buf[0], 0xE4, "the version 4 header is the byte 0xE4");
-    // A pre-versioning header (size 0), the previous version (3) and a
-    // future version must all be rejected, with an error naming the
-    // versions, on every reader path through `read_env_header`.
-    for wrong in [0u8, 3, Env::VERSION as u8 + 1] {
+    // A pre-versioning header (size 0), the previous version (3) and the
+    // versions after the role-bound envelope (6, 7) must all be rejected,
+    // with an error naming the version, on every reader path through
+    // `read_env_header`.
+    for wrong in [0u8, 3, 6, 7] {
       let mut bad = buf.clone();
       bad[0] = (Env::FLAG << 4) | wrong;
       for err in [
@@ -3735,10 +3878,7 @@ mod tests {
         Env::parse_lazy_index(&bad).map(|_| ()).unwrap_err(),
       ] {
         assert!(
-          err.contains(&format!(
-            "expected .ixe format version {}, got {wrong}",
-            Env::VERSION
-          )),
+          err.contains(&format!("unsupported .ixe envelope version {wrong}")),
           "expected a format-version error, got: {err}"
         );
       }
@@ -4268,6 +4408,34 @@ mod tests {
       "expected per-entry verify error, got: {err}"
     );
     std::fs::remove_file(&tmp).ok();
+  }
+
+  /// The lazy index hands its windows out as the records of their
+  /// addresses (Lean's anonymous load), so it verifies them as the full
+  /// reader does.
+  #[test]
+  fn env_const_bytes_tampering_rejected_by_parse_lazy_index() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    assert!(Env::parse_lazy_index(&buf).is_err(), "the key is not the hash");
+    let env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    Env::parse_lazy_index(&buf).expect("authentic windows are accepted");
+    let off = first_const_payload_offset(&buf) + 3;
+    assert!(off < buf.len());
+    buf[off] ^= 0xFF;
+    let err = Env::parse_lazy_index(&buf)
+      .expect_err("tampered const bytes should be rejected");
+    assert!(
+      err.contains("parse_lazy_index")
+        && err.contains("bytes hash to")
+        && err.contains("but stored under"),
+      "expected per-entry verify error, got: {err}"
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -4893,7 +5061,7 @@ mod tests {
     Name::str(Name::anon(), s.to_string())
   }
 
-  /// THE alias regression (validate-aux's 222 decompile mismatches):
+  /// The alias regression:
   /// alpha-identical definitions under different names share one
   /// constant address, so the per-address §3 channel min-merges their
   /// hints — but the per-name §5 channel must preserve each name's

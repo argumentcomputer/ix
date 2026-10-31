@@ -1,6 +1,10 @@
 module
 
 public import Ix.Compile.SourceContract
+public import Ix.Compile.SourceContract.Transport
+public import Ix.CompileM
+public import Ix.CanonM
+public import Ix.LeanIngress.Expr
 public import LSpec
 public import Lean.Compiler.BorrowedAnnotation
 
@@ -283,8 +287,112 @@ def markerTests : TestSeq := Id.run do
           !(changed.resolve marked).isOk
         | .error _ => false)
 
+def arityProducerTests : TestSeq := Id.run do
+  let canonical := fun source => (Id.run ((_root_.Ix.CanonM.canonConst source).run {})).1
+  let frame := fun (kind : _root_.Ix.SemanticContract.Kind) (e : _root_.Ix.Expr) => match e with
+    | .mdata data _ _ => data.size == 3 && ((_root_.Ix.SemanticContract.read data).toOption).any (·.kind == kind)
+    | _ => false
+  let readable := fun e => (_root_.Ix.LeanIngress.ingressExpr (fun _ => 0) e).isOk
+  let linear := resolveTelescope identity #[{ binder := .position 0, uses := .linear, result := some .unique }]
+  let pair := linear.toOption.bind (fun c => c.decorate.toOption)
+  let pairOK := pair.any fun out => match canonical out with
+    | .defnInfo v => frame .all v.cnst.type && frame .lam v.value && readable v.cnst.type && readable v.value
+    | _ => false
+  let binding := definition `arityLet natType (.letE `view natType (.lit (.natVal 0)) (.bvar 0) false)
+  let borrow : SourceContract := {
+    source := binding
+    binders := #[{ site := ⟨.body, []⟩, uses := .affine, value := .localShared, letKind := .borrowShared }] }
+  let letOK := ((borrow.resolve binding).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
+    match canonical out with | .defnInfo v => frame .letE v.value && readable v.value | _ => false
+  let theoremSource : ConstantInfo := .thmInfo {
+    name := `arityTheorem, levelParams := [], type := .const `True [], value := .const `True.intro [], all := [`arityTheorem] }
+  let opaqueSource : ConstantInfo := .opaqueInfo {
+    name := `arityOpaque, levelParams := [], type := natType, value := .lit (.natVal 0), isUnsafe := false, all := [`arityOpaque] }
+  let axiomSource : ConstantInfo := .axiomInfo {
+    name := `arityAxiom, levelParams := [], type := natType, isUnsafe := false }
+  let kinds := [(theoremSource, 0), (opaqueSource, 1), (axiomSource, 2)].all fun (source, expected) =>
+    ((resolveTelescope source #[]).toOption.bind (fun c => c.decorate.toOption)).any fun out =>
+      out.name == source.name && match canonical out, expected with
+      | .thmInfo v, 0 => readable v.cnst.type && readable v.value
+      | .opaqueInfo v, 1 => readable v.cnst.type && readable v.value
+      | .axiomInfo v, 2 => readable v.cnst.type && (sourceBody? out).isNone
+      | _, _ => false
+  let body := (sourceBody? identity).getD natType
+  let plain := ({} : MData).setNat `native.hint 7
+  let marker := ({ origin := 0, binder := `x, uses := .linear, value := .shared } : BinderAnnotation).toMetadata
+  let semantic : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
+  let metadata := (resolveTelescope identity #[]).toOption.any fun c =>
+    let kept := (decorateExpr c .body [] (.mdata plain body)).toOption
+    let stripped := (decorateExpr c .body [] (.mdata marker body)).toOption
+    (match kept with | some (.mdata data inner) => data.entries == plain.entries && inner == body | _ => false) &&
+    (match stripped with | some (.lam ..) => stripped == some body | _ => false) &&
+    (match decorateExpr c .body [] (semantic.attach body) with
+      | .error "source transport: reserved semantic metadata in unprocessed source" => true | _ => false)
+  return test "actual decorator and CanonM keep distinct type/value semantic frames readable" pairOK ++
+    test "actual borrow-let decoration has a readable three-field semantic frame" letOK ++
+    test "actual theorem/opaque/axiom outputs preserve kind and optional-value boundaries" kinds ++
+    test "decorator preserves plain metadata, removes source markers and refuses original semantic frames" metadata
+
+def inspectionTests : TestSeq := Id.run do
+  let digest := fun (n : UInt8) => Address.mk (ByteArray.mk (Array.replicate 32 n))
+  let scalar := _root_.Ix.Expr.lit (.natVal 0) (digest 3)
+  let lam := _root_.Ix.Expr.lam _root_.Ix.Name.mkAnon scalar
+    (.bvar 0 (digest 4)) .default (digest 2)
+  let contract : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
+  let data := contract.ixMetadata
+  let frame := fun md => _root_.Ix.Expr.mdata md lam (digest 0)
+  let good := frame data
+  let codeKey := data[2]!.1
+  let unknown := match codeKey with
+    | .str parent _ hash => _root_.Ix.Name.str parent "unknown" hash | _ => codeKey
+  let malformed := "malformed semantic contract frame"
+  let misplaced := "semantic contract is not attached to its original binder"
+  let cases := #[
+    ("malformed payload", data.pop, malformed),
+    ("valid-size wrong-kind payload", { contract with kind := .all }.ixMetadata, misplaced),
+    ("nonnatural field", data.set! 2 (codeKey, .ofBool true), "semantic contract fields must be natural numbers"),
+    ("reserved bits", data.set! 2 (codeKey, .ofNat 16), "reserved semantic contract bits"),
+    ("aliased metadata-key hash", data.set! 2 (unknown, .ofNat 1), "unknown or duplicate semantic contract field")]
+  let inspect := _root_.Ix.SemanticContract.inspect
+  let eq := _root_.Ix.Compile.ExactKey.exprEq
+  let mut tests := TestSeq.done
+  for (label, md, message) in cases do
+    let bad := frame md
+    let refused := [bad, .app bad good (digest 1), .app good bad (digest 1)].all fun e =>
+      match inspect e with | .error actual => actual == message | _ => false
+    tests := tests ++ test s!"exact inspection rejects {label} despite equal digests in either visitation order"
+      (bad.getHash == good.getHash && !eq bad good && refused)
+  let twin := _root_.Ix.Expr.mdata contract.ixMetadata
+    (.lam _root_.Ix.Name.mkAnon scalar (.bvar 0 (digest 4)) .default (digest 2)) (digest 0)
+  let plain := _root_.Ix.Expr.mdata #[(_root_.Ix.Name.fromLeanName `native.hint, .ofNat 7)] lam (digest 0)
+  return tests ++ test "exact inspection accepts plain, equal and shared valid nodes"
+    ((inspect scalar).toOption == some false && (inspect plain).toOption == some false && eq good twin &&
+      (inspect (.app good good (digest 1))).toOption == some true &&
+      (inspect (.app good twin (digest 1))).toOption == some true)
+
+def presenceMemoTests : TestSeq := Id.run do
+  let plain := Expr.lit (.natVal 0)
+  let binder := Expr.lam `x natType (.bvar 0) .default
+  let contract : _root_.Ix.SemanticContract.Contract := { kind := .lam, binder := ⟨.linear, .shared⟩ }
+  let marked := contract.attach binder
+  let hinted := Expr.mdata (({} : MData).setNat `native.hint 7) binder
+  let bucket := fun (_ : Expr) => (0 : USize)
+  let mut memo : SemanticPresence.Memo := {}
+  let mut valid := true
+  for e in [plain, marked, hinted, plain, marked, marked] do
+    let (result, after) := Id.run ((SemanticPresence.go bucket e).run memo)
+    valid := valid && result.1 == SemanticPresence.spec e
+    memo := after
+  let seeded : SemanticPresence.Memo := ({} : SemanticPresence.Memo).insert 0
+    ⟨plain, SemanticPresence.spec plain, rfl⟩
+  return test "presence memo preserves real results through constant-bucket collisions, overwrites and warm hits" valid ++
+    test "presence memo confirms retained source and computes both positive and negative answers"
+      ((SemanticPresence.probe seeded 0 marked).isNone &&
+        SemanticPresence.runWith bucket marked && !SemanticPresence.runWith bucket hinted)
+
 def suite : List TestSeq :=
-  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests]
+  [telescopeTests, occurrenceTests, rejectionTests, inputTests, valueContractTests, markerTests,
+    arityProducerTests, inspectionTests, presenceMemoTests]
 
 end Tests.Ix.SourceContract
 

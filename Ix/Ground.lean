@@ -25,6 +25,7 @@ module
 
 public import Ix.Common
 public import Ix.Environment
+public import Ix.Compile.ExactKey
 public import Std.Data.HashMap
 public import Std.Data.HashSet
 
@@ -75,6 +76,24 @@ def GroundError.kind : GroundError → GroundErrorKind
   | .indc .. => .indc
   | .idx .. => .idx
 
+/-- The named refusal of a constant the pre-compile groundedness scan
+    rejects, as both compilers record it among the compile's failures
+    (`CompileEnv.ungrounded`; Rust `ground::refusal`, the same text): the
+    constant is never dropped silently. An immediate error names its cause;
+    a transitive `ref` (to a constant that is itself ungrounded,
+    `isUngrounded`) does not name the dependency, whose choice depends on
+    the propagation order (`proliferateUngrounded`). -/
+def GroundError.refusal (e : GroundError) (isUngrounded : Name → Bool) : String :=
+  match e with
+  | .ref n =>
+    if isUngrounded n then "UNGROUNDED-INPUT: references a constant that is itself ungrounded"
+    else s!"UNGROUNDED-INPUT: references {n.pretty}, which is not in the input"
+  | .level .. => "UNGROUNDED-INPUT: a universe level outside the constant's universe parameters"
+  | .mvar .. => "UNGROUNDED-INPUT: an expression metavariable"
+  | .var .. => "UNGROUNDED-INPUT: a free or out-of-scope bound variable"
+  | .indc .. => "UNGROUNDED-INPUT: an inductive type whose constructor is missing or not a constructor"
+  | .idx .. => "UNGROUNDED-INPUT: an invalid de Bruijn index"
+
 /-- Per-constant traversal caches. Mirrors Rust `GroundState`
     (ground.rs:110, `#[derive(Default)]`).
 
@@ -82,12 +101,15 @@ def GroundError.kind : GroundError → GroundErrorKind
     expression reached at a different de Bruijn depth is re-checked. The
     univ cache keys on the level alone, which is sound because `univs`
     is fixed for the lifetime of one `GroundState` (a fresh state is
-    created per constant in `groundConstCheck`). Both `Ix.Expr` and
-    `Ix.Level` hash/compare by their embedded blake3 address, matching
-    the Rust `Hash`/`Eq` behavior. -/
+    created per constant in `groundConstCheck`). Both caches compare their
+    keys exactly (`Ix.Compile.ExactKey.ExprKey`, `LevelKey`: the embedded
+    blake3 address only selects a bucket), as the Rust walk's derived
+    structural `Eq` does. A stored hash is not a content hash on every
+    input, so a key compared by stored hashes alone could skip a different
+    expression or level, and miss an ungrounded reference in it. -/
 structure GroundState where
-  exprCache : Std.HashSet (Nat × Expr)
-  univCache : Std.HashSet Level
+  exprCache : Std.HashSet (Nat × Ix.Compile.ExactKey.ExprKey)
+  univCache : Std.HashSet Ix.Compile.ExactKey.LevelKey
 
 /-- Mirrors Rust `GroundState::default()`. -/
 def GroundState.init : GroundState := ⟨{}, {}⟩
@@ -119,7 +141,7 @@ def constUnivs : ConstantInfo → Array Name
     cache-hit returns Ok, cache insert happens BEFORE the match;
     `param` not in `univs` and `mvar` both fail with `.level`. -/
 partial def groundLevel (level : Level) (univs : Array Name) : GroundM Unit := do
-  let key := level
+  let key : Ix.Compile.ExactKey.LevelKey := ⟨level⟩
   if (← get).univCache.contains key then
     return ()
   modify fun stt => { stt with univCache := stt.univCache.insert key }
@@ -151,7 +173,7 @@ partial def groundLevel (level : Level) (univs : Array Name) : GroundM Unit := d
       `.var expr binds`. -/
 partial def groundExpr (expr : Expr) (env : Environment) (univs : Array Name)
     (binds : Nat) : GroundM Unit := do
-  let key := (binds, expr)
+  let key : Nat × Ix.Compile.ExactKey.ExprKey := (binds, ⟨expr⟩)
   if (← get).exprCache.contains key then
     return ()
   modify fun stt => { stt with exprCache := stt.exprCache.insert key }

@@ -25,6 +25,7 @@ public import Ix.Aggr.Backend
 public import Ix.Aggr.Verification
 public import Ix.Shard.Environment
 public import Ix.Cli.ShardProofIndex
+public import Ix.Cli.CatalogAggregate
 
 public section
 
@@ -73,7 +74,12 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
   let aiurClaim := Aiur.buildClaim funIdx input #[]
   match aiurSystem.verify aiurClaim proof with
   | .ok () =>
-    IO.println s!"ok: proof {proofAddr} verifies claim {claimDigest}"
+    IO.println s!"ok: proof {proofAddr} verifies claim {claimDigest}: {wrapper.claim}"
+    -- A claim that assumes its binding is conditional: it holds if the
+    -- binding claim for its context does (`ix prove-binding`).
+    if (Ix.Claim.context? wrapper.claim).any (·.bindingAssumed) then
+      IO.println "note: the claim assumes its role binding meets the specifications; \
+        it holds if the binding claim for that binding does"
     return 0
   | .error e =>
     IO.eprintln s!"error: verification failed: {e}"
@@ -99,8 +105,11 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
   let wrapper ← match decodeAggregateWrapperAt proofAddr bytes with
     | .ok wrapper => pure wrapper
     | .error e => IO.eprintln s!"error: {e}"; return 1
-  let .checkEnv _ _ := wrapper.claim | do
-    IO.eprintln s!"error: aggregate proof {proofAddr} does not bundle a CheckEnv claim"
+  match wrapper.claim with
+  | .checkEnv .. | .catalog _ => pure ()
+  | _ =>
+    IO.eprintln s!"error: aggregate proof {proofAddr} bundles neither a CheckEnv nor a \
+      Catalog claim"
     return 1
   match expected? with
   | some expected =>
@@ -140,7 +149,8 @@ private def verifyAggregateProof (backend : Aggr.VerificationBackend)
       shard, and every shard covered by a valid proof. -/
 def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat)
     (proofs : List String) (record : Bool := false)
-    (recursionParameters : Aggr.RecursionParameters := Aggr.defaultRecursionParameters) :
+    (recursionParameters : Aggr.RecursionParameters := Aggr.defaultRecursionParameters)
+    (bindingProof : String := "") :
     IO UInt32 := do
   let (ixonEnv, shards) ← match (← Ix.Shard.loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
@@ -155,7 +165,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
   let digestOf (k : Nat) : IO (Option Address) := do
     match shards[k]? with
     | none => IO.eprintln s!"shard {k} out of range ({shards.size} shards)"; pure none
-    | some blocks => match Ix.Shard.shardClaimDigest ixonEnv blocks with
+    | some blocks => match Ix.Shard.shardClaimDigest ixonEnv blocks (!bindingProof.isEmpty) with
       | .error e => IO.eprintln s!"reconstruct shard {k} claim failed: {e}"; pure none
       | .ok d => pure (some d)
   let claimDigestOfProof (hex : String) : IO (Address × Address) := do
@@ -204,6 +214,7 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
       ixvmSystem.aggregateStage2 backend.system envHandle manifestPath proofHexes
         verifyIdx backend.aggrIdx 0 0 Aggr.defaultStructuralAbove 0
         true false recursionParameters.cacheFriBytes false false false 0 false 1 true 0
+        bindingProof
     match verdict with
     | .error e => IO.eprintln s!"[verify] FAIL: {e}"; return 1
     | .ok _ => pure ()
@@ -221,6 +232,16 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
     if proofs.isEmpty then
       p.printError "error: --aggregate requires at least one aggregate proof address"
       return 1
+    if let some ixc := (p.flag? "ixc").map (·.as! String) then
+      if p.flag? "ixe" |>.isSome then
+        p.printError "error: --ixc takes the members from the catalog; drop --ixe"
+        return 1
+      let structuralAbove := ((p.flag? "structural-above").map (·.as! Nat)).getD
+        Aggr.defaultStructuralAbove
+      let backend ← match ← Aggr.buildVerificationBackend recursionParameters with
+        | .error e => IO.eprintln e; return 1
+        | .ok backend => pure backend
+      return ← Ix.Cli.CatalogAggregate.verifyCatalog ixc proofs structuralAbove backend
     let ixePath? : Option String := (p.flag? "ixe").map (·.as! String)
     let manifestPath? : Option String := (p.flag? "ixes").map (·.as! String)
     if manifestPath?.isSome && ixePath?.isNone then
@@ -237,7 +258,11 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
         let some expectedTree := IxVM.ClaimHarness.envCanonicalTree env | do
           IO.eprintln "error: cannot verify an aggregate against an empty environment"
           return 1
+        let ctx ← match Ix.ClaimContext.ofEnv env with
+          | .error e => IO.eprintln s!"error: {e}"; return 1
+          | .ok ctx => pure ctx
         let statement : Aggr.CheckEnvTrees := {
+          ctx
           subjects := expectedTree
           assumptions := none
         }
@@ -258,7 +283,7 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
             IO.eprintln s!"native aggregate manifest audit failed: {e}"
             return 1
           | .ok expected => pure expected
-        let claim ← match Ixon.runGet Ix.Claim.get native.claimBytes with
+        let claim ← match Ix.Claim.de native.claimBytes with
           | .error e =>
             IO.eprintln s!"native aggregate root claim decode failed: {e}"
             return 1
@@ -283,6 +308,7 @@ def runVerifyCmdWith (recursionParameters : Aggr.RecursionParameters)
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
       (p.hasFlag "record") recursionParameters
+      (((p.flag? "binding-proof").map (·.as! String)).getD "")
   | _, _ =>
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
@@ -309,8 +335,10 @@ def verifyCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe). For aggregate roots, reproduces the manifest-relative hybrid structural root."
+    "binding-proof" : String; "With --ixes: the shard proofs assume the env's role binding (`ix prove --ixes --assume-binding`); this proof of the binding claim (`ix prove-binding`) is verified with them, so the composed verdict holds unconditionally."
     "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
     "aggregate";      "Interpret proofs as single-entrypoint aggregate roots. With --ixe, audit every environment constant and bind the canonical claim; add --ixes for the exact manifest-relative hybrid root."
+    "ixc" : String;   "For --aggregate: a .ixc catalog directory. Recompute the catalog's root claim from its manifest and pieces (`ix aggregate --ixc`'s plan), check that each proof states it, verify it, and print every member's statement: label, toolchain, binding, literal class, specification digest and subjects."
     "structural-above" : Nat; "For --aggregate + --ixes, reproduce structural joins above N subject leaves (default 4096; must match proving)."
     "record";         "With --ixe + --ixes and proof(s): after a proof binds to its shard and verifies, record it in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>` → address) so `ix prove --skip-proven` and `ix shard refine` reuse it. How already-proved leaves are imported before a refinement."
 

@@ -7,6 +7,8 @@
 //! - Cryptographic commitments for ZK proofs
 
 pub mod assumption_tree;
+#[cfg(not(target_arch = "riscv64"))]
+mod binding_support;
 pub mod canon_univ;
 pub mod catalog;
 pub mod comm;
@@ -17,12 +19,15 @@ pub mod diff;
 pub mod env;
 pub mod error;
 pub mod expr;
+#[cfg(not(target_arch = "riscv64"))]
+pub mod host_admission;
 pub mod lazy;
 pub mod map;
 pub mod merkle;
 pub mod metadata;
 pub mod proof;
 pub mod resource;
+pub mod role_table;
 pub mod serialize;
 pub mod shard_claim;
 pub mod sharing_exact;
@@ -30,8 +35,9 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
-/// Stable identifier for the Ixon wire format, version 4
-/// (`Env::VERSION`). Mirrors `Ixon.wireFormatId`.
+/// Stable identifier for checked Ixon grammar, version 4
+/// (`Env::CHECKED_FORMAT_VERSION`). Unchecked envelope data does not change it.
+/// Mirrors `Ixon.wireFormatId`.
 pub const WIRE_FORMAT_ID: &str = "ixon-v4";
 
 // Re-export main types
@@ -55,8 +61,8 @@ pub use metadata::{
   NameReverseIndex,
 };
 pub use proof::{
-  Claim, Proof, RevealConstantInfo, RevealConstructorInfo, RevealMutConstInfo,
-  RevealRecursorRule,
+  Claim, ClaimContext, Proof, RevealConstantInfo, RevealConstructorInfo,
+  RevealMutConstInfo, RevealRecursorRule,
 };
 pub use tag::TagN;
 pub use univ::Univ;
@@ -284,10 +290,21 @@ mod doc_examples {
   // Claim/Proof examples (docs section "Proofs")
   // =========================================================================
 
+  fn claim_ctx() -> ClaimContext {
+    ClaimContext {
+      spec: proof::spec_digest(),
+      binding: Address::hash(b"binding"),
+      axioms: None,
+      binding_assumed: false,
+      literal_class: false,
+    }
+  }
+
   #[test]
   fn eval_claim_tag() {
     // Eval claim -> TagN(4, 0xE, 3) -> 0xE3 (single byte)
     let claim = Claim::Eval {
+      ctx: claim_ctx(),
       input: Address::hash(b"input"),
       output: Address::hash(b"output"),
       assumptions: None,
@@ -295,8 +312,8 @@ mod doc_examples {
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE3, "Eval claim should start with 0xE3");
-    // 1 (tag) + 64 (addresses) + 1 (opt=None) = 66
-    assert_eq!(buf.len(), 1 + 2 + 64 + 1, "Eval claim no-asm = 68 bytes");
+    // 1 (tag) + 2 (scope) + 65 (context) + 64 (addresses) + 1 (opt=None)
+    assert_eq!(buf.len(), 1 + 2 + 65 + 64 + 1, "Eval claim no-asm = 133 bytes");
   }
 
   #[test]
@@ -304,6 +321,7 @@ mod doc_examples {
     // Eval proof -> TagN(4, 0xF, 0) -> 0xF0 (single byte)
     let proof = Proof::new(
       Claim::Eval {
+        ctx: claim_ctx(),
         input: Address::hash(b"input"),
         output: Address::hash(b"output"),
         assumptions: None,
@@ -313,28 +331,44 @@ mod doc_examples {
     let mut buf = Vec::new();
     proof.put(&mut buf);
     assert_eq!(buf[0], 0xF0, "Eval proof should start with 0xF0");
-    // 1 (tag) + 64 (addresses) + 1 (opt) + 1 (len=4) + 4 (proof) = 71
-    assert_eq!(buf.len(), 73, "Eval proof no-asm + 4 proof bytes = 73 bytes");
-    assert_eq!(buf[68], 0x04, "proof.len byte should be 0x04");
-    assert_eq!(&buf[69..73], &[1, 2, 3, 4], "proof bytes should be [1,2,3,4]");
+    // 1 (tag) + 2 (scope) + 65 (context) + 64 (addresses) + 1 (opt)
+    // + 1 (len=4) + 4 (proof) = 138
+    assert_eq!(buf.len(), 138, "Eval proof no-asm + 4 proof bytes = 138 bytes");
+    assert_eq!(buf[133], 0x04, "proof.len byte should be 0x04");
+    assert_eq!(
+      &buf[134..138],
+      &[1, 2, 3, 4],
+      "proof bytes should be [1,2,3,4]"
+    );
   }
 
   #[test]
   fn check_claim_tag() {
     // Check claim -> TagN(4, 0xE, 4) -> 0xE4
-    let claim =
-      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None };
+    let claim = Claim::Check {
+      ctx: claim_ctx(),
+      const_addr: Address::hash(b"value"),
+      assumptions: None,
+    };
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE4, "Check claim should start with 0xE4");
-    assert_eq!(buf.len(), 1 + 2 + 32 + 1, "Check claim no-asm = 36 bytes");
+    assert_eq!(
+      buf.len(),
+      1 + 2 + 65 + 32 + 1,
+      "Check claim no-asm = 101 bytes"
+    );
   }
 
   #[test]
   fn check_proof_tag() {
     // Check proof -> TagN(4, 0xF, 1) -> 0xF1
     let proof = Proof::new(
-      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None },
+      Claim::Check {
+        ctx: claim_ctx(),
+        const_addr: Address::hash(b"value"),
+        assumptions: None,
+      },
       vec![5, 6, 7],
     );
     let mut buf = Vec::new();

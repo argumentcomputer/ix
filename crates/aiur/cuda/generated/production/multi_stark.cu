@@ -4,7 +4,121 @@ static_assert(aiur_trace::ABI_VERSION == 2, "trace writer ABI mismatch");
 namespace trace_multi_stark {
 using namespace aiur_trace;
 
-template<bool Typed> struct Seed_multi_stark_76 {
+__device__ __constant__ uint64_t inverse_2_0[] = {0ULL, 1ULL};
+__device__ __constant__ uint64_t inverse_2_1[] = {18446744069414584320ULL, 0ULL};
+template<bool Typed> struct Seed_multi_stark_2 {
+  const uint8_t* data;
+  __device__ __forceinline__ uint64_t word(size_t index) const {
+    if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
+    switch (index) {
+      case 0: return load_u64(data + 0);
+      case 1: return load_u32(data + 16);
+      case 2: return load_u64(data + 8);
+      case 3: return load_u8(data + 28);
+      case 4: return load_u8(data + 29);
+      case 5: return load_u32(data + 20);
+      case 6: return load_u8(data + 30);
+      case 7: return load_u8(data + 31);
+      case 8: return load_u32(data + 24);
+      default: return 0;
+    }
+  }
+};
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_2(Seed_multi_stark_2<Typed> seed, Layout layout, uint64_t* row) {
+  const uint64_t v_0 = seed.word(1);
+  row[0] = v_0;
+  const uint64_t v_1 = seed.word(2);
+  row[1] = v_1;
+  switch (v_1) {
+    case 0ULL: {
+      const uint64_t v_2 = seed.word(3);
+      const uint64_t v_3 = seed.word(4);
+      const uint64_t v_4 = seed.word(5);
+      row[layout.auxiliaries + 1] = v_2;
+      row[layout.auxiliaries + 2] = v_3;
+      row[layout.auxiliaries + 3] = v_4;
+      row[layout.selectors + 0] = 1;
+      return 0;
+    }
+    case 1ULL: {
+      const uint64_t v_6 = seed.word(3);
+      const uint64_t v_7 = seed.word(4);
+      const uint64_t v_8 = seed.word(5);
+      row[layout.auxiliaries + 1] = v_6;
+      row[layout.auxiliaries + 2] = v_7;
+      row[layout.auxiliaries + 3] = v_8;
+      switch (v_6) {
+        case 0ULL: {
+          const uint64_t v_9 = seed.word(6);
+          const uint64_t v_10 = seed.word(7);
+          const uint64_t v_11 = seed.word(8);
+          row[layout.auxiliaries + 4] = v_9;
+          row[layout.auxiliaries + 5] = v_10;
+          row[layout.auxiliaries + 6] = v_11;
+          row[layout.selectors + 1] = 1;
+          return 0;
+        }
+        default: {
+          return 2;
+        }
+      }
+    }
+    default: {
+      row[layout.auxiliaries + 1] = (v_1 <= 1ULL ? inverse_2_0[v_1] : inverse(goldilocks_sub(v_1, 0ULL)));
+      row[layout.auxiliaries + 2] = (v_1 <= 1ULL ? inverse_2_1[v_1] : inverse(goldilocks_sub(v_1, 1ULL)));
+      const uint64_t v_13 = seed.word(3);
+      const uint64_t v_14 = seed.word(4);
+      const uint64_t v_15 = seed.word(5);
+      row[layout.auxiliaries + 3] = v_13;
+      row[layout.auxiliaries + 4] = v_14;
+      row[layout.auxiliaries + 5] = v_15;
+      switch (v_13) {
+        case 0ULL: {
+          const uint64_t v_16 = seed.word(6);
+          const uint64_t v_17 = seed.word(7);
+          const uint64_t v_18 = seed.word(8);
+          row[layout.auxiliaries + 6] = v_16;
+          row[layout.auxiliaries + 7] = v_17;
+          row[layout.auxiliaries + 8] = v_18;
+          switch (v_16) {
+            case 0ULL: {
+              row[layout.selectors + 2] = 1;
+              return 0;
+            }
+            default: {
+              return 2;
+            }
+          }
+        }
+        default: {
+          return 2;
+        }
+      }
+    }
+  }
+}
+template<bool Typed> __global__ void kernel_multi_stark_2(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+  const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (r >= real) return;
+  uint64_t* row = output + r * layout.width;
+  constexpr size_t stride = Typed ? 32 : 72;
+  const Seed_multi_stark_2<Typed> seed{seeds + r * stride};
+  row[layout.auxiliaries] = seed.word(0);
+  const uint32_t status = row_multi_stark_2(seed, layout, row);
+  if (status) atomicCAS(error, 0U, status);
+}
+cudaError_t launch_multi_stark_2(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_2<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_2<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  return cudaGetLastError();
+}
+extern "C" int aiur_trace_multi_stark_2(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+  if (selectors < 2 || auxiliaries < selectors || auxiliaries - selectors < 3 || width < auxiliaries || width - auxiliaries < 9) return int(cudaErrorInvalidValue);
+  const size_t stride = encoding == 1 ? 32 : encoding == 0 ? 72 : 0;
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_2);
+}
+
+template<bool Typed> struct Seed_multi_stark_78 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -207,7 +321,7 @@ template<bool Typed> struct Seed_multi_stark_76 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_76(Seed_multi_stark_76<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_78(Seed_multi_stark_78<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -1045,38 +1159,38 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_76(Seed
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_76(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_78(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 848 : 1552;
-  const Seed_multi_stark_76<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_78<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_76(seed, layout, row);
+  const uint32_t status = row_multi_stark_78(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_76(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_76<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_76<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_78(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_78<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_78<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_76(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_78(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 1 || auxiliaries < selectors || auxiliaries - selectors < 1 || width < auxiliaries || width - auxiliaries < 193) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 848 : encoding == 0 ? 1552 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_76);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_78);
 }
 
-__device__ __constant__ uint64_t inverse_78_0[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_1[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_2[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_3[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_4[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_5[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_6[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_7[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_8[] = {0ULL};
-__device__ __constant__ uint64_t inverse_78_9[] = {0ULL};
-template<bool Typed> struct Seed_multi_stark_78 {
+__device__ __constant__ uint64_t inverse_80_0[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_1[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_2[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_3[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_4[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_5[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_6[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_7[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_8[] = {0ULL};
+__device__ __constant__ uint64_t inverse_80_9[] = {0ULL};
+template<bool Typed> struct Seed_multi_stark_80 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -1231,7 +1345,7 @@ template<bool Typed> struct Seed_multi_stark_78 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_78(Seed_multi_stark_78<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_80(Seed_multi_stark_80<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -1430,63 +1544,63 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_78(Seed
                                           return 0;
                                         }
                                         default: {
-                                          row[layout.auxiliaries + 9] = (v_16 <= 0ULL ? inverse_78_0[v_16] : inverse(goldilocks_sub(v_16, 0ULL)));
+                                          row[layout.auxiliaries + 9] = (v_16 <= 0ULL ? inverse_80_0[v_16] : inverse(goldilocks_sub(v_16, 0ULL)));
                                           row[layout.selectors + 1] = 1;
                                           return 0;
                                         }
                                       }
                                     }
                                     default: {
-                                      row[layout.auxiliaries + 9] = (v_15 <= 0ULL ? inverse_78_1[v_15] : inverse(goldilocks_sub(v_15, 0ULL)));
+                                      row[layout.auxiliaries + 9] = (v_15 <= 0ULL ? inverse_80_1[v_15] : inverse(goldilocks_sub(v_15, 0ULL)));
                                       row[layout.selectors + 2] = 1;
                                       return 0;
                                     }
                                   }
                                 }
                                 default: {
-                                  row[layout.auxiliaries + 9] = (v_14 <= 0ULL ? inverse_78_2[v_14] : inverse(goldilocks_sub(v_14, 0ULL)));
+                                  row[layout.auxiliaries + 9] = (v_14 <= 0ULL ? inverse_80_2[v_14] : inverse(goldilocks_sub(v_14, 0ULL)));
                                   row[layout.selectors + 3] = 1;
                                   return 0;
                                 }
                               }
                             }
                             default: {
-                              row[layout.auxiliaries + 9] = (v_13 <= 0ULL ? inverse_78_3[v_13] : inverse(goldilocks_sub(v_13, 0ULL)));
+                              row[layout.auxiliaries + 9] = (v_13 <= 0ULL ? inverse_80_3[v_13] : inverse(goldilocks_sub(v_13, 0ULL)));
                               row[layout.selectors + 4] = 1;
                               return 0;
                             }
                           }
                         }
                         default: {
-                          row[layout.auxiliaries + 9] = (v_12 <= 0ULL ? inverse_78_4[v_12] : inverse(goldilocks_sub(v_12, 0ULL)));
+                          row[layout.auxiliaries + 9] = (v_12 <= 0ULL ? inverse_80_4[v_12] : inverse(goldilocks_sub(v_12, 0ULL)));
                           row[layout.selectors + 5] = 1;
                           return 0;
                         }
                       }
                     }
                     default: {
-                      row[layout.auxiliaries + 9] = (v_11 <= 0ULL ? inverse_78_5[v_11] : inverse(goldilocks_sub(v_11, 0ULL)));
+                      row[layout.auxiliaries + 9] = (v_11 <= 0ULL ? inverse_80_5[v_11] : inverse(goldilocks_sub(v_11, 0ULL)));
                       row[layout.selectors + 6] = 1;
                       return 0;
                     }
                   }
                 }
                 default: {
-                  row[layout.auxiliaries + 9] = (v_10 <= 0ULL ? inverse_78_6[v_10] : inverse(goldilocks_sub(v_10, 0ULL)));
+                  row[layout.auxiliaries + 9] = (v_10 <= 0ULL ? inverse_80_6[v_10] : inverse(goldilocks_sub(v_10, 0ULL)));
                   row[layout.selectors + 7] = 1;
                   return 0;
                 }
               }
             }
             default: {
-              row[layout.auxiliaries + 9] = (v_9 <= 0ULL ? inverse_78_7[v_9] : inverse(goldilocks_sub(v_9, 0ULL)));
+              row[layout.auxiliaries + 9] = (v_9 <= 0ULL ? inverse_80_7[v_9] : inverse(goldilocks_sub(v_9, 0ULL)));
               row[layout.selectors + 8] = 1;
               return 0;
             }
           }
         }
         default: {
-          row[layout.auxiliaries + 1] = (v_2 <= 0ULL ? inverse_78_8[v_2] : inverse(goldilocks_sub(v_2, 0ULL)));
+          row[layout.auxiliaries + 1] = (v_2 <= 0ULL ? inverse_80_8[v_2] : inverse(goldilocks_sub(v_2, 0ULL)));
           const uint64_t v_109 = seed.word(7);
           const uint64_t v_110 = seed.word(8);
           const uint64_t v_111 = seed.word(9);
@@ -1559,7 +1673,7 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_78(Seed
       }
     }
     default: {
-      row[layout.auxiliaries + 1] = (v_1 <= 0ULL ? inverse_78_9[v_1] : inverse(goldilocks_sub(v_1, 0ULL)));
+      row[layout.auxiliaries + 1] = (v_1 <= 0ULL ? inverse_80_9[v_1] : inverse(goldilocks_sub(v_1, 0ULL)));
       const uint64_t v_142 = seed.word(7);
       const uint64_t v_143 = seed.word(8);
       const uint64_t v_144 = seed.word(9);
@@ -1578,10 +1692,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_78(Seed
       row[layout.auxiliaries + 9] = v_149;
       const uint64_t v_150 = seed.word(15);
       row[layout.auxiliaries + 10] = v_150;
-      const uint64_t v_152 = goldilocks_sub(v_2, v_1);
-      const uint64_t v_153 = uint64_t(v_152 == 0);
-      row[layout.auxiliaries + 11] = inverse(v_152);
-      row[layout.auxiliaries + 12] = v_153;
+      const uint64_t v_153 = goldilocks_sub(v_2, v_1);
+      const uint64_t v_154 = uint64_t(v_153 == 0);
+      row[layout.auxiliaries + 11] = inverse(v_153);
+      row[layout.auxiliaries + 12] = v_154;
       const uint64_t v_159 = seed.word(16);
       row[layout.auxiliaries + 13] = v_159;
       const uint64_t v_160 = seed.word(17);
@@ -1847,28 +1961,28 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_78(Seed
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_78(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_80(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 416 : 1168;
-  const Seed_multi_stark_78<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_80<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_78(seed, layout, row);
+  const uint32_t status = row_multi_stark_80(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_78(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_78<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_78<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_80(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_80<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_80<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_78(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_80(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 6 || auxiliaries < selectors || auxiliaries - selectors < 11 || width < auxiliaries || width - auxiliaries < 143) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 416 : encoding == 0 ? 1168 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_78);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_80);
 }
 
-template<bool Typed> struct Seed_multi_stark_79 {
+template<bool Typed> struct Seed_multi_stark_81 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -2035,7 +2149,7 @@ template<bool Typed> struct Seed_multi_stark_79 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_79(Seed_multi_stark_79<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_81(Seed_multi_stark_81<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -2181,26 +2295,27 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_79(Seed
     case 1023ULL: {
       const uint64_t v_73 = seed.word(71);
       row[layout.auxiliaries + 65] = v_73;
-      const uint64_t v_74 = seed.word(72);
-      const uint64_t v_75 = seed.word(73);
-      const uint64_t v_76 = seed.word(74);
-      const uint64_t v_77 = seed.word(75);
-      const uint64_t v_78 = seed.word(76);
-      const uint64_t v_79 = seed.word(77);
-      const uint64_t v_80 = seed.word(78);
-      const uint64_t v_81 = seed.word(79);
-      row[layout.auxiliaries + 66] = v_74;
-      row[layout.auxiliaries + 67] = v_75;
-      row[layout.auxiliaries + 68] = v_76;
-      row[layout.auxiliaries + 69] = v_77;
-      row[layout.auxiliaries + 70] = v_78;
-      row[layout.auxiliaries + 71] = v_79;
-      row[layout.auxiliaries + 72] = v_80;
-      row[layout.auxiliaries + 73] = v_81;
-      const uint64_t v_82 = seed.word(80);
-      row[layout.auxiliaries + 74] = v_82;
-      const uint64_t v_83 = goldilocks_mul(v_73, v_82);
-      row[layout.auxiliaries + 75] = v_83;
+      const uint64_t v_74 = goldilocks_mul(v_8, v_73);
+      const uint64_t v_75 = seed.word(72);
+      const uint64_t v_76 = seed.word(73);
+      const uint64_t v_77 = seed.word(74);
+      const uint64_t v_78 = seed.word(75);
+      const uint64_t v_79 = seed.word(76);
+      const uint64_t v_80 = seed.word(77);
+      const uint64_t v_81 = seed.word(78);
+      const uint64_t v_82 = seed.word(79);
+      row[layout.auxiliaries + 66] = v_75;
+      row[layout.auxiliaries + 67] = v_76;
+      row[layout.auxiliaries + 68] = v_77;
+      row[layout.auxiliaries + 69] = v_78;
+      row[layout.auxiliaries + 70] = v_79;
+      row[layout.auxiliaries + 71] = v_80;
+      row[layout.auxiliaries + 72] = v_81;
+      row[layout.auxiliaries + 73] = v_82;
+      const uint64_t v_83 = seed.word(80);
+      row[layout.auxiliaries + 74] = v_83;
+      const uint64_t v_84 = goldilocks_mul(v_74, v_83);
+      row[layout.auxiliaries + 75] = v_84;
       const uint64_t v_117 = seed.word(81);
       const uint64_t v_118 = seed.word(82);
       const uint64_t v_119 = seed.word(83);
@@ -2382,9 +2497,8 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_79(Seed
       row[layout.auxiliaries + 75] = v_207;
       const uint64_t v_208 = seed.word(81);
       row[layout.auxiliaries + 76] = v_208;
-      const uint64_t v_209 = goldilocks_mul(v_208, v_8);
-      const uint64_t v_210 = goldilocks_mul(v_199, v_209);
-      row[layout.auxiliaries + 77] = v_210;
+      const uint64_t v_209 = goldilocks_mul(v_199, v_208);
+      row[layout.auxiliaries + 77] = v_209;
       const uint64_t v_211 = 63ULL;
       const uint64_t v_212 = goldilocks_sub(v_2, v_211);
       const uint64_t v_213 = uint64_t(v_212 == 0);
@@ -2529,29 +2643,29 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_79(Seed
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_79(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_81(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 272 : 1264;
-  const Seed_multi_stark_79<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_81<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_79(seed, layout, row);
+  const uint32_t status = row_multi_stark_81(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_79(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_79<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_79<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_81(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_81<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_81<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_79(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_81(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 6 || auxiliaries < selectors || auxiliaries - selectors < 2 || width < auxiliaries || width - auxiliaries < 153) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 272 : encoding == 0 ? 1264 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_79);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_81);
 }
 
-__device__ __constant__ uint64_t inverse_83_0[] = {15811494916641072275ULL, 3074457344902430720ULL, 3689348813882916864ULL, 4611686017353646080ULL, 6148914689804861440ULL, 9223372034707292160ULL, 18446744069414584320ULL, 0ULL};
-template<bool Typed> struct Seed_multi_stark_83 {
+__device__ __constant__ uint64_t inverse_85_0[] = {15811494916641072275ULL, 3074457344902430720ULL, 3689348813882916864ULL, 4611686017353646080ULL, 6148914689804861440ULL, 9223372034707292160ULL, 18446744069414584320ULL, 0ULL};
+template<bool Typed> struct Seed_multi_stark_85 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -2722,7 +2836,7 @@ template<bool Typed> struct Seed_multi_stark_83 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed_multi_stark_83<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_85(Seed_multi_stark_85<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -3083,7 +3197,7 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       return 0;
     }
     default: {
-      row[layout.auxiliaries + 1] = (v_0 <= 7ULL ? inverse_83_0[v_0] : inverse(goldilocks_sub(v_0, 7ULL)));
+      row[layout.auxiliaries + 1] = (v_0 <= 7ULL ? inverse_85_0[v_0] : inverse(goldilocks_sub(v_0, 7ULL)));
       const WordSum op_32 = add_words(word(v_1, v_2, v_3, v_4), word(v_17, v_18, v_19, v_20), word(v_65, v_66, v_67, v_68));
       const uint64_t v_161 = ((op_32.low >> 0) & 255ULL);
       const uint64_t v_162 = ((op_32.low >> 8) & 255ULL);
@@ -3096,11 +3210,11 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 5] = v_164;
       const uint64_t v_166 = 1ULL;
       const uint64_t v_167 = goldilocks_sub(v_165, v_166);
-      const uint64_t v_168 = 2ULL;
-      const uint64_t v_169 = goldilocks_sub(v_165, v_168);
-      const uint64_t v_170 = goldilocks_mul(v_167, v_169);
-      row[layout.auxiliaries + 6] = v_170;
-      const uint64_t v_171 = goldilocks_mul(v_165, v_170);
+      const uint64_t v_168 = goldilocks_mul(v_165, v_167);
+      row[layout.auxiliaries + 6] = v_168;
+      const uint64_t v_169 = 2ULL;
+      const uint64_t v_170 = goldilocks_sub(v_165, v_169);
+      const uint64_t v_171 = goldilocks_mul(v_168, v_170);
       row[layout.auxiliaries + 7] = v_171;
       if (v_49 > 255 || v_161 > 255) return 1;
       const uint64_t v_173 = (v_49 ^ v_161);
@@ -3161,10 +3275,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 27] = v_197;
       row[layout.auxiliaries + 28] = v_198;
       const uint64_t v_200 = goldilocks_sub(v_199, v_166);
-      const uint64_t v_201 = goldilocks_sub(v_199, v_168);
-      const uint64_t v_202 = goldilocks_mul(v_200, v_201);
-      row[layout.auxiliaries + 29] = v_202;
-      const uint64_t v_203 = goldilocks_mul(v_199, v_202);
+      const uint64_t v_201 = goldilocks_mul(v_199, v_200);
+      row[layout.auxiliaries + 29] = v_201;
+      const uint64_t v_202 = goldilocks_sub(v_199, v_169);
+      const uint64_t v_203 = goldilocks_mul(v_201, v_202);
       row[layout.auxiliaries + 30] = v_203;
       if (v_175 > 255 || v_195 > 255) return 1;
       const uint64_t v_204 = (v_175 ^ v_195);
@@ -3225,10 +3339,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 50] = v_228;
       row[layout.auxiliaries + 51] = v_229;
       const uint64_t v_231 = goldilocks_sub(v_230, v_166);
-      const uint64_t v_232 = goldilocks_sub(v_230, v_168);
-      const uint64_t v_233 = goldilocks_mul(v_231, v_232);
-      row[layout.auxiliaries + 52] = v_233;
-      const uint64_t v_234 = goldilocks_mul(v_230, v_233);
+      const uint64_t v_232 = goldilocks_mul(v_230, v_231);
+      row[layout.auxiliaries + 52] = v_232;
+      const uint64_t v_233 = goldilocks_sub(v_230, v_169);
+      const uint64_t v_234 = goldilocks_mul(v_232, v_233);
       row[layout.auxiliaries + 53] = v_234;
       if (v_53 > 255 || v_226 > 255) return 1;
       const uint64_t v_235 = (v_53 ^ v_226);
@@ -3289,10 +3403,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 73] = v_259;
       row[layout.auxiliaries + 74] = v_260;
       const uint64_t v_262 = goldilocks_sub(v_261, v_166);
-      const uint64_t v_263 = goldilocks_sub(v_261, v_168);
-      const uint64_t v_264 = goldilocks_mul(v_262, v_263);
-      row[layout.auxiliaries + 75] = v_264;
-      const uint64_t v_265 = goldilocks_mul(v_261, v_264);
+      const uint64_t v_263 = goldilocks_mul(v_261, v_262);
+      row[layout.auxiliaries + 75] = v_263;
+      const uint64_t v_264 = goldilocks_sub(v_261, v_169);
+      const uint64_t v_265 = goldilocks_mul(v_263, v_264);
       row[layout.auxiliaries + 76] = v_265;
       if (v_237 > 255 || v_257 > 255) return 1;
       const uint64_t v_266 = (v_237 ^ v_257);
@@ -3353,10 +3467,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 96] = v_290;
       row[layout.auxiliaries + 97] = v_291;
       const uint64_t v_293 = goldilocks_sub(v_292, v_166);
-      const uint64_t v_294 = goldilocks_sub(v_292, v_168);
-      const uint64_t v_295 = goldilocks_mul(v_293, v_294);
-      row[layout.auxiliaries + 98] = v_295;
-      const uint64_t v_296 = goldilocks_mul(v_292, v_295);
+      const uint64_t v_294 = goldilocks_mul(v_292, v_293);
+      row[layout.auxiliaries + 98] = v_294;
+      const uint64_t v_295 = goldilocks_sub(v_292, v_169);
+      const uint64_t v_296 = goldilocks_mul(v_294, v_295);
       row[layout.auxiliaries + 99] = v_296;
       if (v_57 > 255 || v_288 > 255) return 1;
       const uint64_t v_297 = (v_57 ^ v_288);
@@ -3417,10 +3531,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 119] = v_321;
       row[layout.auxiliaries + 120] = v_322;
       const uint64_t v_324 = goldilocks_sub(v_323, v_166);
-      const uint64_t v_325 = goldilocks_sub(v_323, v_168);
-      const uint64_t v_326 = goldilocks_mul(v_324, v_325);
-      row[layout.auxiliaries + 121] = v_326;
-      const uint64_t v_327 = goldilocks_mul(v_323, v_326);
+      const uint64_t v_325 = goldilocks_mul(v_323, v_324);
+      row[layout.auxiliaries + 121] = v_325;
+      const uint64_t v_326 = goldilocks_sub(v_323, v_169);
+      const uint64_t v_327 = goldilocks_mul(v_325, v_326);
       row[layout.auxiliaries + 122] = v_327;
       if (v_299 > 255 || v_319 > 255) return 1;
       const uint64_t v_328 = (v_299 ^ v_319);
@@ -3481,10 +3595,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 142] = v_352;
       row[layout.auxiliaries + 143] = v_353;
       const uint64_t v_355 = goldilocks_sub(v_354, v_166);
-      const uint64_t v_356 = goldilocks_sub(v_354, v_168);
-      const uint64_t v_357 = goldilocks_mul(v_355, v_356);
-      row[layout.auxiliaries + 144] = v_357;
-      const uint64_t v_358 = goldilocks_mul(v_354, v_357);
+      const uint64_t v_356 = goldilocks_mul(v_354, v_355);
+      row[layout.auxiliaries + 144] = v_356;
+      const uint64_t v_357 = goldilocks_sub(v_354, v_169);
+      const uint64_t v_358 = goldilocks_mul(v_356, v_357);
       row[layout.auxiliaries + 145] = v_358;
       if (v_61 > 255 || v_350 > 255) return 1;
       const uint64_t v_359 = (v_61 ^ v_350);
@@ -3545,10 +3659,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 165] = v_383;
       row[layout.auxiliaries + 166] = v_384;
       const uint64_t v_386 = goldilocks_sub(v_385, v_166);
-      const uint64_t v_387 = goldilocks_sub(v_385, v_168);
-      const uint64_t v_388 = goldilocks_mul(v_386, v_387);
-      row[layout.auxiliaries + 167] = v_388;
-      const uint64_t v_389 = goldilocks_mul(v_385, v_388);
+      const uint64_t v_387 = goldilocks_mul(v_385, v_386);
+      row[layout.auxiliaries + 167] = v_387;
+      const uint64_t v_388 = goldilocks_sub(v_385, v_169);
+      const uint64_t v_389 = goldilocks_mul(v_387, v_388);
       row[layout.auxiliaries + 168] = v_389;
       if (v_361 > 255 || v_381 > 255) return 1;
       const uint64_t v_390 = (v_361 ^ v_381);
@@ -3609,10 +3723,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 188] = v_414;
       row[layout.auxiliaries + 189] = v_415;
       const uint64_t v_417 = goldilocks_sub(v_416, v_166);
-      const uint64_t v_418 = goldilocks_sub(v_416, v_168);
-      const uint64_t v_419 = goldilocks_mul(v_417, v_418);
-      row[layout.auxiliaries + 190] = v_419;
-      const uint64_t v_420 = goldilocks_mul(v_416, v_419);
+      const uint64_t v_418 = goldilocks_mul(v_416, v_417);
+      row[layout.auxiliaries + 190] = v_418;
+      const uint64_t v_419 = goldilocks_sub(v_416, v_169);
+      const uint64_t v_420 = goldilocks_mul(v_418, v_419);
       row[layout.auxiliaries + 191] = v_420;
       if (v_391 > 255 || v_412 > 255) return 1;
       const uint64_t v_421 = (v_391 ^ v_412);
@@ -3673,10 +3787,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 211] = v_445;
       row[layout.auxiliaries + 212] = v_446;
       const uint64_t v_448 = goldilocks_sub(v_447, v_166);
-      const uint64_t v_449 = goldilocks_sub(v_447, v_168);
-      const uint64_t v_450 = goldilocks_mul(v_448, v_449);
-      row[layout.auxiliaries + 213] = v_450;
-      const uint64_t v_451 = goldilocks_mul(v_447, v_450);
+      const uint64_t v_449 = goldilocks_mul(v_447, v_448);
+      row[layout.auxiliaries + 213] = v_449;
+      const uint64_t v_450 = goldilocks_sub(v_447, v_169);
+      const uint64_t v_451 = goldilocks_mul(v_449, v_450);
       row[layout.auxiliaries + 214] = v_451;
       if (v_423 > 255 || v_443 > 255) return 1;
       const uint64_t v_452 = (v_423 ^ v_443);
@@ -3733,10 +3847,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 234] = v_476;
       row[layout.auxiliaries + 235] = v_477;
       const uint64_t v_479 = goldilocks_sub(v_478, v_166);
-      const uint64_t v_480 = goldilocks_sub(v_478, v_168);
-      const uint64_t v_481 = goldilocks_mul(v_479, v_480);
-      row[layout.auxiliaries + 236] = v_481;
-      const uint64_t v_482 = goldilocks_mul(v_478, v_481);
+      const uint64_t v_480 = goldilocks_mul(v_478, v_479);
+      row[layout.auxiliaries + 236] = v_480;
+      const uint64_t v_481 = goldilocks_sub(v_478, v_169);
+      const uint64_t v_482 = goldilocks_mul(v_480, v_481);
       row[layout.auxiliaries + 237] = v_482;
       if (v_205 > 255 || v_474 > 255) return 1;
       const uint64_t v_483 = (v_205 ^ v_474);
@@ -3797,10 +3911,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 257] = v_507;
       row[layout.auxiliaries + 258] = v_508;
       const uint64_t v_510 = goldilocks_sub(v_509, v_166);
-      const uint64_t v_511 = goldilocks_sub(v_509, v_168);
-      const uint64_t v_512 = goldilocks_mul(v_510, v_511);
-      row[layout.auxiliaries + 259] = v_512;
-      const uint64_t v_513 = goldilocks_mul(v_509, v_512);
+      const uint64_t v_511 = goldilocks_mul(v_509, v_510);
+      row[layout.auxiliaries + 259] = v_511;
+      const uint64_t v_512 = goldilocks_sub(v_509, v_169);
+      const uint64_t v_513 = goldilocks_mul(v_511, v_512);
       row[layout.auxiliaries + 260] = v_513;
       if (v_485 > 255 || v_505 > 255) return 1;
       const uint64_t v_514 = (v_485 ^ v_505);
@@ -3857,10 +3971,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 280] = v_538;
       row[layout.auxiliaries + 281] = v_539;
       const uint64_t v_541 = goldilocks_sub(v_540, v_166);
-      const uint64_t v_542 = goldilocks_sub(v_540, v_168);
-      const uint64_t v_543 = goldilocks_mul(v_541, v_542);
-      row[layout.auxiliaries + 282] = v_543;
-      const uint64_t v_544 = goldilocks_mul(v_540, v_543);
+      const uint64_t v_542 = goldilocks_mul(v_540, v_541);
+      row[layout.auxiliaries + 282] = v_542;
+      const uint64_t v_543 = goldilocks_sub(v_540, v_169);
+      const uint64_t v_544 = goldilocks_mul(v_542, v_543);
       row[layout.auxiliaries + 283] = v_544;
       if (v_267 > 255 || v_536 > 255) return 1;
       const uint64_t v_545 = (v_267 ^ v_536);
@@ -3921,10 +4035,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 303] = v_569;
       row[layout.auxiliaries + 304] = v_570;
       const uint64_t v_572 = goldilocks_sub(v_571, v_166);
-      const uint64_t v_573 = goldilocks_sub(v_571, v_168);
-      const uint64_t v_574 = goldilocks_mul(v_572, v_573);
-      row[layout.auxiliaries + 305] = v_574;
-      const uint64_t v_575 = goldilocks_mul(v_571, v_574);
+      const uint64_t v_573 = goldilocks_mul(v_571, v_572);
+      row[layout.auxiliaries + 305] = v_573;
+      const uint64_t v_574 = goldilocks_sub(v_571, v_169);
+      const uint64_t v_575 = goldilocks_mul(v_573, v_574);
       row[layout.auxiliaries + 306] = v_575;
       if (v_547 > 255 || v_567 > 255) return 1;
       const uint64_t v_576 = (v_547 ^ v_567);
@@ -3981,10 +4095,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 326] = v_600;
       row[layout.auxiliaries + 327] = v_601;
       const uint64_t v_603 = goldilocks_sub(v_602, v_166);
-      const uint64_t v_604 = goldilocks_sub(v_602, v_168);
-      const uint64_t v_605 = goldilocks_mul(v_603, v_604);
-      row[layout.auxiliaries + 328] = v_605;
-      const uint64_t v_606 = goldilocks_mul(v_602, v_605);
+      const uint64_t v_604 = goldilocks_mul(v_602, v_603);
+      row[layout.auxiliaries + 328] = v_604;
+      const uint64_t v_605 = goldilocks_sub(v_602, v_169);
+      const uint64_t v_606 = goldilocks_mul(v_604, v_605);
       row[layout.auxiliaries + 329] = v_606;
       if (v_329 > 255 || v_598 > 255) return 1;
       const uint64_t v_607 = (v_329 ^ v_598);
@@ -4045,10 +4159,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
       row[layout.auxiliaries + 349] = v_631;
       row[layout.auxiliaries + 350] = v_632;
       const uint64_t v_634 = goldilocks_sub(v_633, v_166);
-      const uint64_t v_635 = goldilocks_sub(v_633, v_168);
-      const uint64_t v_636 = goldilocks_mul(v_634, v_635);
-      row[layout.auxiliaries + 351] = v_636;
-      const uint64_t v_637 = goldilocks_mul(v_633, v_636);
+      const uint64_t v_635 = goldilocks_mul(v_633, v_634);
+      row[layout.auxiliaries + 351] = v_635;
+      const uint64_t v_636 = goldilocks_sub(v_633, v_169);
+      const uint64_t v_637 = goldilocks_mul(v_635, v_636);
       row[layout.auxiliaries + 352] = v_637;
       if (v_609 > 255 || v_629 > 255) return 1;
       const uint64_t v_638 = (v_609 ^ v_629);
@@ -4163,29 +4277,29 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_83(Seed
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_83(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_85(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 176 : 1296;
-  const Seed_multi_stark_83<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_85<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_83(seed, layout, row);
+  const uint32_t status = row_multi_stark_85(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_83(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_83<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_83<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_85(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_85<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_85<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_83(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_85(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 129 || auxiliaries < selectors || auxiliaries - selectors < 2 || width < auxiliaries || width - auxiliaries < 402) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 176 : encoding == 0 ? 1296 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_83);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_85);
 }
 
-__device__ __constant__ uint64_t inverse_100_0[] = {0ULL};
-template<bool Typed> struct Seed_multi_stark_100 {
+__device__ __constant__ uint64_t inverse_102_0[] = {0ULL};
+template<bool Typed> struct Seed_multi_stark_102 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -4263,7 +4377,7 @@ template<bool Typed> struct Seed_multi_stark_100 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_100(Seed_multi_stark_100<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_102(Seed_multi_stark_102<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -4278,7 +4392,7 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_100(See
       return 0;
     }
     default: {
-      row[layout.auxiliaries + 1] = (v_1 <= 0ULL ? inverse_100_0[v_1] : inverse(goldilocks_sub(v_1, 0ULL)));
+      row[layout.auxiliaries + 1] = (v_1 <= 0ULL ? inverse_102_0[v_1] : inverse(goldilocks_sub(v_1, 0ULL)));
       const uint64_t v_5 = seed.word(3);
       const uint64_t v_6 = seed.word(4);
       const uint64_t v_7 = seed.word(5);
@@ -4411,17 +4525,17 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_100(See
       row[layout.auxiliaries + 64] = v_70;
       row[layout.auxiliaries + 65] = v_71;
       row[layout.auxiliaries + 66] = v_72;
-      const uint64_t v_94 = 1020ULL;
-      const uint64_t v_95 = goldilocks_sub(v_72, v_94);
-      const uint64_t v_96 = goldilocks_add(v_71, v_95);
-      const uint64_t v_97 = goldilocks_add(v_70, v_96);
-      const uint64_t v_98 = goldilocks_add(v_69, v_97);
+      const uint64_t v_94 = goldilocks_add(v_69, v_70);
+      const uint64_t v_95 = goldilocks_add(v_94, v_71);
+      const uint64_t v_96 = goldilocks_add(v_95, v_72);
+      const uint64_t v_97 = 1020ULL;
+      const uint64_t v_98 = goldilocks_sub(v_96, v_97);
       const uint64_t v_99 = uint64_t(v_98 == 0);
       row[layout.auxiliaries + 67] = inverse(v_98);
       row[layout.auxiliaries + 68] = v_99;
-      const uint64_t v_100 = goldilocks_add(v_67, v_68);
-      const uint64_t v_101 = goldilocks_add(v_66, v_100);
-      const uint64_t v_102 = goldilocks_add(v_65, v_101);
+      const uint64_t v_100 = goldilocks_add(v_65, v_66);
+      const uint64_t v_101 = goldilocks_add(v_100, v_67);
+      const uint64_t v_102 = goldilocks_add(v_101, v_68);
       const uint64_t v_103 = uint64_t(v_102 == 0);
       row[layout.auxiliaries + 69] = inverse(v_102);
       row[layout.auxiliaries + 70] = v_103;
@@ -4445,16 +4559,16 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_100(See
       row[layout.auxiliaries + 77] = v_113;
       row[layout.auxiliaries + 78] = v_114;
       row[layout.auxiliaries + 79] = v_115;
-      const uint64_t v_130 = goldilocks_sub(v_115, v_94);
-      const uint64_t v_131 = goldilocks_add(v_114, v_130);
-      const uint64_t v_132 = goldilocks_add(v_113, v_131);
-      const uint64_t v_133 = goldilocks_add(v_112, v_132);
+      const uint64_t v_130 = goldilocks_add(v_112, v_113);
+      const uint64_t v_131 = goldilocks_add(v_130, v_114);
+      const uint64_t v_132 = goldilocks_add(v_131, v_115);
+      const uint64_t v_133 = goldilocks_sub(v_132, v_97);
       const uint64_t v_134 = uint64_t(v_133 == 0);
       row[layout.auxiliaries + 80] = inverse(v_133);
       row[layout.auxiliaries + 81] = v_134;
-      const uint64_t v_135 = goldilocks_add(v_110, v_111);
-      const uint64_t v_136 = goldilocks_add(v_109, v_135);
-      const uint64_t v_137 = goldilocks_add(v_108, v_136);
+      const uint64_t v_135 = goldilocks_add(v_108, v_109);
+      const uint64_t v_136 = goldilocks_add(v_135, v_110);
+      const uint64_t v_137 = goldilocks_add(v_136, v_111);
       const uint64_t v_138 = uint64_t(v_137 == 0);
       row[layout.auxiliaries + 82] = inverse(v_137);
       row[layout.auxiliaries + 83] = v_138;
@@ -4477,16 +4591,16 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_100(See
       row[layout.auxiliaries + 90] = v_147;
       row[layout.auxiliaries + 91] = v_148;
       row[layout.auxiliaries + 92] = v_149;
-      const uint64_t v_164 = goldilocks_sub(v_149, v_94);
-      const uint64_t v_165 = goldilocks_add(v_148, v_164);
-      const uint64_t v_166 = goldilocks_add(v_147, v_165);
-      const uint64_t v_167 = goldilocks_add(v_146, v_166);
+      const uint64_t v_164 = goldilocks_add(v_146, v_147);
+      const uint64_t v_165 = goldilocks_add(v_164, v_148);
+      const uint64_t v_166 = goldilocks_add(v_165, v_149);
+      const uint64_t v_167 = goldilocks_sub(v_166, v_97);
       const uint64_t v_168 = uint64_t(v_167 == 0);
       row[layout.auxiliaries + 93] = inverse(v_167);
       row[layout.auxiliaries + 94] = v_168;
-      const uint64_t v_169 = goldilocks_add(v_144, v_145);
-      const uint64_t v_170 = goldilocks_add(v_143, v_169);
-      const uint64_t v_171 = goldilocks_add(v_142, v_170);
+      const uint64_t v_169 = goldilocks_add(v_142, v_143);
+      const uint64_t v_170 = goldilocks_add(v_169, v_144);
+      const uint64_t v_171 = goldilocks_add(v_170, v_145);
       const uint64_t v_172 = uint64_t(v_171 == 0);
       row[layout.auxiliaries + 95] = inverse(v_171);
       row[layout.auxiliaries + 96] = v_172;
@@ -4520,41 +4634,41 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_100(See
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_100(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_102(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 304 : 552;
-  const Seed_multi_stark_100<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_102<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_100(seed, layout, row);
+  const uint32_t status = row_multi_stark_102(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_100(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_100<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_100<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_102(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_102<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_102<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_100(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_102(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 2 || auxiliaries < selectors || auxiliaries - selectors < 2 || width < auxiliaries || width - auxiliaries < 109) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 304 : encoding == 0 ? 552 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_100);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_102);
 }
 
-__device__ __constant__ uint64_t inverse_114_0[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_1[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_2[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_3[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_4[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_5[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_6[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_7[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_8[] = {0ULL};
-__device__ __constant__ uint64_t inverse_114_10[] = {18446744069414584320ULL, 0ULL};
-__device__ __constant__ uint64_t inverse_114_11[] = {18446744069414584320ULL, 0ULL};
-__device__ __constant__ uint64_t inverse_114_12[] = {18446744069414584320ULL, 0ULL};
-__device__ __constant__ uint64_t inverse_114_13[] = {18446744069414584320ULL, 0ULL};
-template<bool Typed> struct Seed_multi_stark_114 {
+__device__ __constant__ uint64_t inverse_116_0[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_1[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_2[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_3[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_4[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_5[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_6[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_7[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_8[] = {0ULL};
+__device__ __constant__ uint64_t inverse_116_10[] = {18446744069414584320ULL, 0ULL};
+__device__ __constant__ uint64_t inverse_116_11[] = {18446744069414584320ULL, 0ULL};
+__device__ __constant__ uint64_t inverse_116_12[] = {18446744069414584320ULL, 0ULL};
+__device__ __constant__ uint64_t inverse_116_13[] = {18446744069414584320ULL, 0ULL};
+template<bool Typed> struct Seed_multi_stark_116 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -4764,7 +4878,7 @@ template<bool Typed> struct Seed_multi_stark_114 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(Seed_multi_stark_114<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_116(Seed_multi_stark_116<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -4983,63 +5097,63 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(See
                                       return 0;
                                     }
                                     default: {
-                                      row[layout.auxiliaries + 20] = (v_24 <= 0ULL ? inverse_114_0[v_24] : inverse(goldilocks_sub(v_24, 0ULL)));
+                                      row[layout.auxiliaries + 20] = (v_24 <= 0ULL ? inverse_116_0[v_24] : inverse(goldilocks_sub(v_24, 0ULL)));
                                       row[layout.selectors + 1] = 1;
                                       return 0;
                                     }
                                   }
                                 }
                                 default: {
-                                  row[layout.auxiliaries + 20] = (v_23 <= 0ULL ? inverse_114_1[v_23] : inverse(goldilocks_sub(v_23, 0ULL)));
+                                  row[layout.auxiliaries + 20] = (v_23 <= 0ULL ? inverse_116_1[v_23] : inverse(goldilocks_sub(v_23, 0ULL)));
                                   row[layout.selectors + 2] = 1;
                                   return 0;
                                 }
                               }
                             }
                             default: {
-                              row[layout.auxiliaries + 20] = (v_22 <= 0ULL ? inverse_114_2[v_22] : inverse(goldilocks_sub(v_22, 0ULL)));
+                              row[layout.auxiliaries + 20] = (v_22 <= 0ULL ? inverse_116_2[v_22] : inverse(goldilocks_sub(v_22, 0ULL)));
                               row[layout.selectors + 3] = 1;
                               return 0;
                             }
                           }
                         }
                         default: {
-                          row[layout.auxiliaries + 20] = (v_21 <= 0ULL ? inverse_114_3[v_21] : inverse(goldilocks_sub(v_21, 0ULL)));
+                          row[layout.auxiliaries + 20] = (v_21 <= 0ULL ? inverse_116_3[v_21] : inverse(goldilocks_sub(v_21, 0ULL)));
                           row[layout.selectors + 4] = 1;
                           return 0;
                         }
                       }
                     }
                     default: {
-                      row[layout.auxiliaries + 20] = (v_20 <= 0ULL ? inverse_114_4[v_20] : inverse(goldilocks_sub(v_20, 0ULL)));
+                      row[layout.auxiliaries + 20] = (v_20 <= 0ULL ? inverse_116_4[v_20] : inverse(goldilocks_sub(v_20, 0ULL)));
                       row[layout.selectors + 5] = 1;
                       return 0;
                     }
                   }
                 }
                 default: {
-                  row[layout.auxiliaries + 20] = (v_19 <= 0ULL ? inverse_114_5[v_19] : inverse(goldilocks_sub(v_19, 0ULL)));
+                  row[layout.auxiliaries + 20] = (v_19 <= 0ULL ? inverse_116_5[v_19] : inverse(goldilocks_sub(v_19, 0ULL)));
                   row[layout.selectors + 6] = 1;
                   return 0;
                 }
               }
             }
             default: {
-              row[layout.auxiliaries + 20] = (v_18 <= 0ULL ? inverse_114_6[v_18] : inverse(goldilocks_sub(v_18, 0ULL)));
+              row[layout.auxiliaries + 20] = (v_18 <= 0ULL ? inverse_116_6[v_18] : inverse(goldilocks_sub(v_18, 0ULL)));
               row[layout.selectors + 7] = 1;
               return 0;
             }
           }
         }
         default: {
-          row[layout.auxiliaries + 20] = (v_17 <= 0ULL ? inverse_114_7[v_17] : inverse(goldilocks_sub(v_17, 0ULL)));
+          row[layout.auxiliaries + 20] = (v_17 <= 0ULL ? inverse_116_7[v_17] : inverse(goldilocks_sub(v_17, 0ULL)));
           row[layout.selectors + 8] = 1;
           return 0;
         }
       }
     }
     default: {
-      row[layout.auxiliaries + 12] = (v_16 <= 0ULL ? inverse_114_8[v_16] : inverse(goldilocks_sub(v_16, 0ULL)));
+      row[layout.auxiliaries + 12] = (v_16 <= 0ULL ? inverse_116_8[v_16] : inverse(goldilocks_sub(v_16, 0ULL)));
       const uint64_t v_115 = seed.word(18);
       const uint64_t v_116 = seed.word(19);
       const uint64_t v_117 = seed.word(20);
@@ -5231,7 +5345,7 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(See
               goto continuation_9;
             }
             default: {
-              row[layout.auxiliaries + 103] = (v_211 <= 1ULL ? inverse_114_10[v_211] : inverse(goldilocks_sub(v_211, 1ULL)));
+              row[layout.auxiliaries + 103] = (v_211 <= 1ULL ? inverse_116_10[v_211] : inverse(goldilocks_sub(v_211, 1ULL)));
               const uint64_t v_215 = 0ULL;
               row[layout.selectors + 10] = 1;
               v_217 = v_215;
@@ -5240,7 +5354,7 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(See
           }
         }
         default: {
-          row[layout.auxiliaries + 100] = (v_201 <= 1ULL ? inverse_114_11[v_201] : inverse(goldilocks_sub(v_201, 1ULL)));
+          row[layout.auxiliaries + 100] = (v_201 <= 1ULL ? inverse_116_11[v_201] : inverse(goldilocks_sub(v_201, 1ULL)));
           const uint64_t v_216 = 0ULL;
           row[layout.selectors + 11] = 1;
           v_217 = v_216;
@@ -5257,8 +5371,8 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(See
       const uint64_t v_221 = uint64_t(v_2 == 0);
       row[layout.auxiliaries + 107] = inverse(v_2);
       row[layout.auxiliaries + 108] = v_221;
-      const uint64_t v_222 = goldilocks_mul(v_217, v_220);
-      row[layout.auxiliaries + 109] = v_222;
+      const uint64_t v_223 = goldilocks_mul(v_217, v_220);
+      row[layout.auxiliaries + 109] = v_223;
       const uint64_t v_225 = seed.word(108);
       const uint64_t v_226 = seed.word(109);
       const uint64_t v_227 = seed.word(110);
@@ -5415,7 +5529,7 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(See
           return 0;
         }
         default: {
-          row[layout.auxiliaries + 184] = (v_217 <= 1ULL ? inverse_114_12[v_217] : inverse(goldilocks_sub(v_217, 1ULL)));
+          row[layout.auxiliaries + 184] = (v_217 <= 1ULL ? inverse_116_12[v_217] : inverse(goldilocks_sub(v_217, 1ULL)));
           switch (v_220) {
             case 1ULL: {
               const uint64_t v_355 = seed.word(181);
@@ -5462,7 +5576,7 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(See
               return 0;
             }
             default: {
-              row[layout.auxiliaries + 185] = (v_220 <= 1ULL ? inverse_114_13[v_220] : inverse(goldilocks_sub(v_220, 1ULL)));
+              row[layout.auxiliaries + 185] = (v_220 <= 1ULL ? inverse_116_13[v_220] : inverse(goldilocks_sub(v_220, 1ULL)));
               const uint64_t v_377 = seed.word(181);
               row[layout.auxiliaries + 186] = v_377;
               const uint64_t v_378 = seed.word(182);
@@ -5476,28 +5590,28 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_114(See
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_114(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_116(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 544 : 1608;
-  const Seed_multi_stark_114<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_116<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_114(seed, layout, row);
+  const uint32_t status = row_multi_stark_116(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_114(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_114<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_114<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_116(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_116<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_116<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_114(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_116(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 6 || auxiliaries < selectors || auxiliaries - selectors < 15 || width < auxiliaries || width - auxiliaries < 205) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 544 : encoding == 0 ? 1608 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_114);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_116);
 }
 
-template<bool Typed> struct Seed_multi_stark_172 {
+template<bool Typed> struct Seed_multi_stark_174 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -5582,7 +5696,7 @@ template<bool Typed> struct Seed_multi_stark_172 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_172(Seed_multi_stark_172<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_174(Seed_multi_stark_174<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -5894,28 +6008,28 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_172(See
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_172(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_174(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 464 : 608;
-  const Seed_multi_stark_172<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_174<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_172(seed, layout, row);
+  const uint32_t status = row_multi_stark_174(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_172(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_172<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_172<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_174(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_174<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_174<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_172(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_174(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 2 || auxiliaries < selectors || auxiliaries - selectors < 2 || width < auxiliaries || width - auxiliaries < 74) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 464 : encoding == 0 ? 608 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_172);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_174);
 }
 
-template<bool Typed> struct Seed_multi_stark_200 {
+template<bool Typed> struct Seed_multi_stark_202 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -6018,7 +6132,7 @@ template<bool Typed> struct Seed_multi_stark_200 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_200(Seed_multi_stark_200<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_202(Seed_multi_stark_202<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -6479,28 +6593,28 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_200(See
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_200(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_202(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 616 : 752;
-  const Seed_multi_stark_200<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_202<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_200(seed, layout, row);
+  const uint32_t status = row_multi_stark_202(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_200(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_200<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_200<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_202(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_202<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_202<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_200(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_202(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 20 || auxiliaries < selectors || auxiliaries - selectors < 7 || width < auxiliaries || width - auxiliaries < 152) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 616 : encoding == 0 ? 752 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_200);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_202);
 }
 
-template<bool Typed> struct Seed_multi_stark_217 {
+template<bool Typed> struct Seed_multi_stark_219 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -6520,7 +6634,7 @@ template<bool Typed> struct Seed_multi_stark_217 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_217(Seed_multi_stark_217<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_219(Seed_multi_stark_219<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -6568,28 +6682,28 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_217(See
     }
   }
 }
-template<bool Typed> __global__ void kernel_multi_stark_217(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_219(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 40 : 88;
-  const Seed_multi_stark_217<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_219<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_217(seed, layout, row);
+  const uint32_t status = row_multi_stark_219(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_217(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_217<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_217<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_219(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_219<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_219<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_217(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_219(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 2 || auxiliaries < selectors || auxiliaries - selectors < 2 || width < auxiliaries || width - auxiliaries < 9) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 40 : encoding == 0 ? 88 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_217);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_219);
 }
 
-template<bool Typed> struct Seed_multi_stark_227 {
+template<bool Typed> struct Seed_multi_stark_229 {
   const uint8_t* data;
   __device__ __forceinline__ uint64_t word(size_t index) const {
     if constexpr (!Typed) return reinterpret_cast<const uint64_t*>(data)[index];
@@ -6623,7 +6737,7 @@ template<bool Typed> struct Seed_multi_stark_227 {
     }
   }
 };
-template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_227(Seed_multi_stark_227<Typed> seed, Layout layout, uint64_t* row) {
+template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_229(Seed_multi_stark_229<Typed> seed, Layout layout, uint64_t* row) {
   const uint64_t v_0 = seed.word(1);
   row[0] = v_0;
   const uint64_t v_1 = seed.word(2);
@@ -6675,33 +6789,33 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_multi_stark_227(See
   row[layout.selectors + 0] = 1;
   return 0;
 }
-template<bool Typed> __global__ void kernel_multi_stark_227(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
+template<bool Typed> __global__ void kernel_multi_stark_229(const uint8_t* __restrict__ seeds, size_t real, size_t rows, Layout layout, uint64_t* __restrict__ output, uint32_t* error) {
   const size_t r = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
   if (r >= real) return;
   uint64_t* row = output + r * layout.width;
   constexpr size_t stride = Typed ? 88 : 200;
-  const Seed_multi_stark_227<Typed> seed{seeds + r * stride};
+  const Seed_multi_stark_229<Typed> seed{seeds + r * stride};
   row[layout.auxiliaries] = seed.word(0);
-  const uint32_t status = row_multi_stark_227(seed, layout, row);
+  const uint32_t status = row_multi_stark_229(seed, layout, row);
   if (status) atomicCAS(error, 0U, status);
 }
-cudaError_t launch_multi_stark_227(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
-  if (encoding == 1) kernel_multi_stark_227<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
-  else kernel_multi_stark_227<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+cudaError_t launch_multi_stark_229(const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, Layout layout, uint64_t* output, uint32_t* error) {
+  if (encoding == 1) kernel_multi_stark_229<true><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
+  else kernel_multi_stark_229<false><<<unsigned((real+127)/128), 128, 0, cudaStreamPerThread>>>(seeds, real, rows, layout, output, error);
   return cudaGetLastError();
 }
-extern "C" int aiur_trace_multi_stark_227(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
+extern "C" int aiur_trace_multi_stark_229(int device, const uint8_t* seeds, uint32_t encoding, size_t real, size_t rows, size_t width, size_t selectors, size_t auxiliaries, uint64_t* output) {
   if (selectors < 16 || auxiliaries < selectors || auxiliaries - selectors < 1 || width < auxiliaries || width - auxiliaries < 9) return int(cudaErrorInvalidValue);
   const size_t stride = encoding == 1 ? 88 : encoding == 0 ? 200 : 0;
-  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_227);
+  return upload(device, seeds, encoding, stride, real, rows, {width, selectors, auxiliaries}, output, launch_multi_stark_229);
 }
 
 extern "C" const uint8_t* aiur_trace_multi_stark_contract() {
-  static const uint8_t hash[32] = {190, 78, 33, 75, 247, 82, 112, 163, 173, 204, 83, 141, 6, 196, 161, 203, 161, 99, 163, 87, 1, 40, 26, 136, 174, 21, 15, 159, 197, 168, 147, 208};
+  static const uint8_t hash[32] = {36, 88, 246, 231, 136, 121, 90, 192, 69, 152, 14, 210, 251, 76, 167, 166, 223, 59, 207, 84, 84, 53, 37, 1, 74, 223, 107, 2, 78, 125, 125, 29};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_multi_stark_schema() {
-  static const uint8_t hash[32] = {109, 2, 169, 223, 182, 235, 170, 183, 207, 233, 133, 131, 184, 190, 222, 84, 214, 112, 75, 166, 158, 14, 240, 158, 71, 104, 37, 253, 148, 167, 237, 188};
+  static const uint8_t hash[32] = {138, 28, 224, 91, 101, 110, 89, 45, 44, 198, 190, 211, 128, 153, 217, 34, 194, 216, 26, 93, 207, 65, 140, 218, 1, 199, 187, 200, 165, 243, 224, 112};
   return hash;
 }
 }

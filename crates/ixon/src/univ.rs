@@ -47,6 +47,40 @@ impl Univ {
   pub fn var(idx: u64) -> Arc<Self> {
     Arc::new(Univ::Var(idx))
   }
+
+  /// Move the contents of every uniquely owned child that has children of
+  /// its own to `stack`, leaving a leaf in its place.
+  fn detach_unique_children(&mut self, stack: &mut Vec<Univ>) {
+    let mut detach = |child: &mut Arc<Univ>| {
+      if Arc::strong_count(child) == 1
+        && let Some(inner) = Arc::get_mut(child)
+        && matches!(inner, Univ::Succ(..) | Univ::Max(..) | Univ::IMax(..))
+      {
+        stack.push(std::mem::replace(inner, Univ::Zero));
+      }
+    };
+    match self {
+      Self::Succ(a) => detach(a),
+      Self::Max(a, b) | Self::IMax(a, b) => {
+        detach(a);
+        detach(b);
+      },
+      Self::Zero | Self::Var(_) => {},
+    }
+  }
+}
+
+/// Dropping a universe frees its uniquely owned descendants from an explicit
+/// stack, so the depth of a `Succ`/`Max`/`IMax` chain is bounded by memory,
+/// not by the thread's stack.
+impl Drop for Univ {
+  fn drop(&mut self) {
+    let mut stack: Vec<Univ> = Vec::new();
+    self.detach_unique_children(&mut stack);
+    while let Some(mut u) = stack.pop() {
+      u.detach_unique_children(&mut stack);
+    }
+  }
 }
 
 /// Serialize a universe to bytes (iterative to avoid stack overflow).
@@ -98,8 +132,30 @@ enum GetUnivFrame {
   BuildIMax,
 }
 
-/// Deserialize a universe from bytes (iterative to avoid stack overflow).
+/// The most universe constructors one record's universes may expand to,
+/// counting each successor of a run: the host admission limit
+/// (`artifactLimits.maxRecordUnivNodes` in `Ix/Cli/CheckLeanCmd.lean`). A run
+/// is stored as one count, so without a budget a few bytes expand to
+/// billions of nodes before any check sees the record.
+pub const MAX_UNIV_NODES: u64 = 1 << 26;
+
+/// Deserialize a universe from bytes (iterative to avoid stack overflow),
+/// under a fresh [`MAX_UNIV_NODES`] budget. See [`get_univ_within`].
 pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
+  let mut budget = MAX_UNIV_NODES;
+  get_univ_within(buf, &mut budget)
+}
+
+/// Deserialize a universe from bytes, charging its expanded constructors to
+/// `budget` before building them (a successor run charges its length, every
+/// other tag one), as IxC's bounded decoder does (`Ixon.Bounded`). Only the
+/// canonical encoding [`put_univ`] writes is accepted: a `Max`/`IMax` tag
+/// carries the value 0, and a successor run is never followed by another,
+/// so one value has one encoding.
+pub fn get_univ_within(
+  buf: &mut &[u8],
+  budget: &mut u64,
+) -> Result<Arc<Univ>, String> {
   let mut work: Vec<GetUnivFrame> = vec![GetUnivFrame::Parse];
   let mut results: Vec<Arc<Univ>> = Vec::new();
 
@@ -107,6 +163,17 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
     match frame {
       GetUnivFrame::Parse => {
         let tag = TagN::get(2, buf)?;
+        let charge = if tag.flag == Univ::FLAG_ZERO_SUCC && tag.value != 0 {
+          tag.value
+        } else {
+          1
+        };
+        *budget = budget.checked_sub(charge).ok_or_else(|| {
+          format!(
+            "get_univ: expanded universe constructors exceed the record's \
+             of {MAX_UNIV_NODES}"
+          )
+        })?;
         match tag.flag {
           Univ::FLAG_ZERO_SUCC => {
             if tag.value == 0 {
@@ -116,6 +183,12 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
               work.push(GetUnivFrame::WrapSuccs(tag.value));
               work.push(GetUnivFrame::Parse);
             }
+          },
+          Univ::FLAG_MAX | Univ::FLAG_IMAX if tag.value != 0 => {
+            return Err(format!(
+              "get_univ: noncanonical binary universe tag value {}",
+              tag.value
+            ));
           },
           Univ::FLAG_MAX => {
             // Parse a, parse b, then build Max(a, b)
@@ -138,6 +211,11 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
       GetUnivFrame::WrapSuccs(count) => {
         let mut result =
           results.pop().ok_or("get_univ: missing result for WrapSuccs")?;
+        if matches!(result.as_ref(), Univ::Succ(_)) {
+          return Err(
+            "get_univ: noncanonical successor run split in two".to_string(),
+          );
+        }
         for _ in 0..count {
           result = Univ::succ(result);
         }
@@ -285,5 +363,14 @@ pub mod tests {
   #[test]
   fn test_univ_succ_telescope() {
     assert!(roundtrip(&Univ::succ(Univ::succ(Univ::succ(Univ::zero())))));
+  }
+
+  #[test]
+  fn test_deep_univ_drop_does_not_stack_overflow() {
+    let mut u = Univ::zero();
+    for _ in 0..100_000 {
+      u = Univ::succ(u);
+    }
+    drop(u);
   }
 }

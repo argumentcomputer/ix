@@ -327,7 +327,9 @@ def backendSpecs : List BackendSpec := [
   -- explicit `--env AnthropicFLT` or `BENCH_ENVS=AnthropicFLT` still runs it.
   { name := "compile", defaultMode := "execute", inputs := .perEnv,
     envs := some ["InitStd", "Lean", "ISLB", "Mathlib", "FLT"],
-    testbeds := [("execute", "ix-compile")],
+    -- A distinct baseline keeps the cost of certification out of comparisons
+    -- against historical Rust compiler timings.
+    testbeds := [("execute", "ix-compile-certified")],
     metrics := [("execute", ["compile-time", "throughput", "peak-rss",
                              "file-size", "constants"])],
     -- file-size wiggles slightly run-to-run (the serialized env is not
@@ -607,16 +609,17 @@ def runAiurJoin (out : String) (spawn : String → IO UInt32) : IO Unit := do
 
 /-- Resolve the env's `.ixe`: an explicit `--ixe` path is used as-is (and
     must exist — no silent recompile of a mistyped path); otherwise the
-    env is compiled fresh to `<repo>/<env>.ixe`. -/
-def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
-    IO String := do
+    env is compiled fresh to `<repo>/<env>.ixe` with the default compiler,
+    under the benchmark's RAM ceiling. -/
+def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String)
+    (ceilingGb : Nat) : IO String := do
   if let some path := explicit then
     if ← FilePath.pathExists path then
       return path
     throw <| IO.userError s!"--ixe {path} not found"
   let ixe := s!"{repo}/{info.name}.ixe"
   let ix ← resolveBin repo "ix"
-  let exit ← runGuarded false 0 ix
+  let exit ← runGuarded true ceilingGb ix
     #["compile", s!"{repo}/{info.module}", "--out", ixe]
   if exit != 0 then
     throw <| IO.userError s!"ix compile {info.module} failed (exit {exit})"
@@ -715,6 +718,7 @@ is not a benchmark run"
   match backend with
   | "compile" =>
     -- The compile IS the benchmark: always fresh, row keyed by the env name.
+    -- Measure the default compiler, including its certification checks.
     let ix ← resolveBin repo "ix"
     let exit ← runGuarded watchdog ceilingGb ix
       #["compile", s!"{repo}/{info.module}", "--out", s!"{repo}/{env}.ixe",
@@ -728,14 +732,14 @@ is not a benchmark run"
     -- like compile. A malformed decompile exits nonzero and fails the job;
     -- deep roundtrip fidelity is gated by the canonical roundtrip checks
     -- (`ix validate` / the roundtrip tests), not measured here.
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String)) ceilingGb
     let ix ← resolveBin repo "ix"
     let exit ← runGuarded watchdog ceilingGb ix
       #["decompile", ixe, "--json", out, "--json-name", info.name]
     if exit != 0 then
       IO.eprintln s!"[bench] ix decompile failed (exit {exit})"
   | "ooc" =>
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String)) ceilingGb
     let ix ← resolveBin repo "ix"
     -- Whole-env row (keyed by the env name), plus the per-constant
     -- attribution CSV the compare drill-down reads (top movers).
@@ -763,7 +767,7 @@ is not a benchmark run"
     -- itself (`--json`): check-time, throughput, peak-rss, constants,
     -- shards. The shard step is deterministic setup, not part of the
     -- measured window.
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String)) ceilingGb
     let ix ← resolveBin repo "ix"
     let manifest := s!"{env}-exec.ixes"
     -- One budget for both stages: the shard step seeds for it, and the
@@ -788,7 +792,7 @@ is not a benchmark run"
     -- per constant under the watchdog; `total-time` is the ledger's last
     -- field, so it doubles as the completion marker — a kill before the
     -- pipeline finishes records an honest oom/crash row.
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String)) ceilingGb
     let bt ← resolveBin repo "bench-typecheck"
     let (modeArgs, doneKey) := match mode with
       | "execute" => (#["--execute-only"], "execute-time")

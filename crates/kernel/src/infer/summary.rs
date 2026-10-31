@@ -98,7 +98,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let mut domains: smallvec::SmallVec<[&KExpr<M>; 8]> =
       smallvec::SmallVec::new();
     let mut ty = c.ty();
-    while let ExprData::All(_, _, dom, cod, _) = ty.data() {
+    while let ExprData::All(_, _, _, _, dom, cod, _) = ty.data() {
       if domains.len() == MAX_SUMMARY_ARITY {
         return Ok(UNKNOWN);
       }
@@ -160,7 +160,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
     let mut result = &head_ty;
     for _ in 0..args {
-      let ExprData::All(_, _, _, cod, _) = result.data() else {
+      let ExprData::All(_, _, _, _, _, cod, _) = result.data() else {
         return Ok(None);
       };
       result = cod;

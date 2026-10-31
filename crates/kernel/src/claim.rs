@@ -11,10 +11,9 @@
 //! recursive `merkle_join`; there is no canonical-root validator on claims.
 
 use ix_common::address::Address;
-use ixon::constant::ConstantInfo;
 use ixon::env::Env;
 use ixon::merkle::merkle_root_canonical;
-use ixon::proof::Claim;
+use ixon::proof::{Claim, ClaimContext};
 
 /// Canonical merkle root over the env's `consts.keys()`. Also called
 /// from the env serializer. Returns `None` for an empty const set.
@@ -30,20 +29,29 @@ pub fn env_merkle_root(env: &Env) -> Option<Address> {
 /// Sets `assumptions: None` when the constant has no transitive deps,
 /// else `Some(root)` where `root` is the canonical merkle root over
 /// those deps.
-pub fn build_check_claim(env: &Env, const_addr: Address) -> Claim {
+pub fn build_check_claim(
+  ctx: &ClaimContext,
+  env: &Env,
+  const_addr: Address,
+) -> Claim {
   let deps = env.transitive_deps_excl(&const_addr);
   let assumptions = merkle_root_canonical(&deps);
-  Claim::Check { const_addr, assumptions }
+  Claim::Check { ctx: ctx.clone(), const_addr, assumptions }
 }
 
 /// Build an eval claim for the pair `(input, output)` in `env`.
 ///
 /// Only the input's dependency closure needs typing assumptions. The output
 /// definition's type and body are established by the evaluation claim.
-pub fn build_eval_claim(env: &Env, input: Address, output: Address) -> Claim {
+pub fn build_eval_claim(
+  ctx: &ClaimContext,
+  env: &Env,
+  input: Address,
+  output: Address,
+) -> Claim {
   let deps = env.transitive_deps_excl(&input);
   let assumptions = merkle_root_canonical(&deps);
-  Claim::Eval { input, output, assumptions }
+  Claim::Eval { ctx: ctx.clone(), input, output, assumptions }
 }
 
 /// Build a shard `CheckEnv` claim under the SHARD PROTOCOL convention:
@@ -57,41 +65,11 @@ pub fn build_eval_claim(env: &Env, input: Address, output: Address) -> Claim {
 /// whole env eagerly is a sound superset for DEV use but does not
 /// certify the claim (it misses the strict-membership coverage rule).
 pub fn build_shard_check_env_claim(
+  ctx: &ClaimContext,
   env: &Env,
   owned: &[Address],
 ) -> Option<(Claim, Vec<Address>)> {
-  ixon::shard_claim::shard_check_env_claim(env, owned)
-}
-
-/// Legacy whole-env check claim (DEV convention, not the shard
-/// protocol): subject is the env's canonical merkle root; assumptions
-/// are the env's axiom leaves. Digest-INCOMPATIBLE with the shard
-/// protocol's thin-frontier `CheckEnv` claims — do not mix pipelines.
-///
-/// Returns `None` if the env has an empty const set (no subject root
-/// can be formed).
-///
-/// Materializes every constant to inspect its `ConstantInfo` variant.
-/// This forces a full env walk; callers that already hold structured
-/// constants are unaffected, but a freshly-loaded lazy env will pay
-/// the parse cost here.
-pub fn build_check_env_claim_axioms(env: &Env) -> Option<Claim> {
-  let root = env_merkle_root(env)?;
-  let mut axioms: Vec<Address> = env
-    .consts
-    .iter()
-    .filter_map(|e| {
-      let lazy = e.value();
-      let c = lazy.get().ok()?;
-      match &c.info {
-        ConstantInfo::Axio(_) => Some(e.key().clone()),
-        _ => None,
-      }
-    })
-    .collect();
-  axioms.sort_unstable();
-  let assumptions = merkle_root_canonical(&axioms);
-  Some(Claim::CheckEnv { root, assumptions })
+  ixon::shard_claim::shard_check_env_claim(ctx, env, owned)
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +84,16 @@ mod tests {
   use ixon::expr::Expr;
   use ixon::merkle::leaf_hash;
   use std::sync::Arc;
+
+  fn ctx() -> ClaimContext {
+    ClaimContext {
+      spec: ixon::proof::spec_digest(),
+      binding: Address::hash(b"binding"),
+      axioms: None,
+      binding_assumed: false,
+      literal_class: false,
+    }
+  }
 
   fn axiom_const(refs: Vec<Address>) -> Constant {
     Constant::with_tables(
@@ -148,8 +136,8 @@ mod tests {
     let env = Env::new();
     let a = Address::hash(b"a");
     env.store_const(a.clone(), defn_const(vec![]));
-    match build_check_claim(&env, a.clone()) {
-      Claim::Check { const_addr, assumptions: None } => {
+    match build_check_claim(&ctx(), &env, a.clone()) {
+      Claim::Check { const_addr, assumptions: None, .. } => {
         assert_eq!(const_addr, a);
       },
       other => panic!("expected Check {{ assumptions: None }}, got {other:?}"),
@@ -163,8 +151,8 @@ mod tests {
     let ax = Address::hash(b"ax");
     env.store_const(a.clone(), defn_const(vec![ax.clone()]));
     env.store_const(ax.clone(), axiom_const(vec![]));
-    match build_check_claim(&env, a.clone()) {
-      Claim::Check { const_addr, assumptions: Some(asm) } => {
+    match build_check_claim(&ctx(), &env, a.clone()) {
+      Claim::Check { const_addr, assumptions: Some(asm), .. } => {
         assert_eq!(const_addr, a);
         assert_eq!(asm, leaf_hash(&ax));
       },
@@ -180,8 +168,8 @@ mod tests {
     let b = Address::hash(b"b");
     env.store_const(a.clone(), defn_const(vec![b.clone()]));
     env.store_const(b.clone(), defn_const(vec![a.clone()]));
-    match build_check_claim(&env, a.clone()) {
-      Claim::Check { const_addr, assumptions: Some(asm) } => {
+    match build_check_claim(&ctx(), &env, a.clone()) {
+      Claim::Check { const_addr, assumptions: Some(asm), .. } => {
         assert_eq!(const_addr, a);
         assert_eq!(asm, leaf_hash(&b));
       },
@@ -196,8 +184,8 @@ mod tests {
     let o = Address::hash(b"o");
     env.store_const(i.clone(), defn_const(vec![]));
     env.store_const(o.clone(), defn_const(vec![]));
-    match build_eval_claim(&env, i.clone(), o.clone()) {
-      Claim::Eval { input, output, assumptions: None } => {
+    match build_eval_claim(&ctx(), &env, i.clone(), o.clone()) {
+      Claim::Eval { input, output, assumptions: None, .. } => {
         assert_eq!(input, i);
         assert_eq!(output, o);
       },
@@ -215,8 +203,8 @@ mod tests {
     env.store_const(i.clone(), defn_const(vec![d.clone()]));
     env.store_const(o.clone(), defn_const(vec![Address::hash(b"output-only")]));
     env.store_const(d.clone(), defn_const(vec![]));
-    match build_eval_claim(&env, i.clone(), o.clone()) {
-      Claim::Eval { input, output, assumptions: Some(asm) } => {
+    match build_eval_claim(&ctx(), &env, i.clone(), o.clone()) {
+      Claim::Eval { input, output, assumptions: Some(asm), .. } => {
         assert_eq!(input, i);
         assert_eq!(output, o);
         assert_eq!(asm, leaf_hash(&d));
@@ -233,44 +221,14 @@ mod tests {
     env.store_const(input.clone(), defn_const(vec![output.clone()]));
     env.store_const(output.clone(), defn_const(vec![]));
     assert_eq!(
-      build_eval_claim(&env, input.clone(), output.clone()),
-      Claim::Eval { input, assumptions: Some(leaf_hash(&output)), output }
+      build_eval_claim(&ctx(), &env, input.clone(), output.clone()),
+      Claim::Eval {
+        ctx: ctx(),
+        input,
+        assumptions: Some(leaf_hash(&output)),
+        output
+      }
     );
-  }
-
-  #[test]
-  fn check_env_axiom_free_assumptions_none() {
-    let env = Env::new();
-    let a = Address::hash(b"a");
-    env.store_const(a.clone(), defn_const(vec![]));
-    match build_check_env_claim_axioms(&env).unwrap() {
-      Claim::CheckEnv { root, assumptions: None } => {
-        assert_eq!(Some(root), env_merkle_root(&env));
-      },
-      other => panic!("expected CheckEnv None, got {other:?}"),
-    }
-  }
-
-  #[test]
-  fn check_env_with_axioms_assumptions_some() {
-    let env = Env::new();
-    let a = Address::hash(b"a");
-    let ax = Address::hash(b"ax");
-    env.store_const(a.clone(), defn_const(vec![ax.clone()]));
-    env.store_const(ax.clone(), axiom_const(vec![]));
-    match build_check_env_claim_axioms(&env).unwrap() {
-      Claim::CheckEnv { root, assumptions: Some(asm) } => {
-        assert_eq!(Some(root), env_merkle_root(&env));
-        assert_eq!(asm, leaf_hash(&ax));
-      },
-      other => panic!("expected CheckEnv Some, got {other:?}"),
-    }
-  }
-
-  #[test]
-  fn check_env_empty_returns_none() {
-    let env = Env::new();
-    assert!(build_check_env_claim_axioms(&env).is_none());
   }
 
   #[test]
@@ -285,10 +243,11 @@ mod tests {
     env.store_const(b.clone(), defn_const(vec![c.clone()]));
     env.store_const(c.clone(), defn_const(vec![]));
     let (claim, frontier) =
-      build_shard_check_env_claim(&env, std::slice::from_ref(&a)).unwrap();
+      build_shard_check_env_claim(&ctx(), &env, std::slice::from_ref(&a))
+        .unwrap();
     assert_eq!(frontier, vec![b.clone()]);
     match claim {
-      Claim::CheckEnv { root, assumptions: Some(asm) } => {
+      Claim::CheckEnv { root, assumptions: Some(asm), .. } => {
         assert_eq!(root, leaf_hash(&a));
         assert_eq!(asm, leaf_hash(&b));
       },
@@ -332,8 +291,8 @@ mod tests {
     let b = Address::hash(b"b");
     env.store_const(a.clone(), defn_const(vec![b.clone()]));
     env.store_const(b, defn_const(vec![]));
-    let c1 = build_check_claim(&env, a.clone());
-    let c2 = build_check_claim(&env, a);
+    let c1 = build_check_claim(&ctx(), &env, a.clone());
+    let c2 = build_check_claim(&ctx(), &env, a);
     assert_eq!(c1, c2);
   }
 }
