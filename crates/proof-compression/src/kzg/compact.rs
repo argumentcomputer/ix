@@ -56,11 +56,8 @@ impl FixedProofCodec {
       return Err(CompactProofError);
     }
     let max_log = system.config.max_log_degree();
-    let mut commitments = [
-      KzgCommitment(vec![], vec![]),
-      KzgCommitment(vec![], vec![]),
-      KzgCommitment(vec![], vec![]),
-    ];
+    let mut commitments =
+      [KzgCommitment(vec![]), KzgCommitment(vec![]), KzgCommitment(vec![])];
     let mut rounds = [vec![], vec![], vec![], vec![]];
     let mut heights = Vec::new();
     for (ci, (c, &log)) in system.circuits.iter().zip(log_degrees).enumerate() {
@@ -79,14 +76,6 @@ impl FixedProofCodec {
         .enumerate()
       {
         commitments[i].0.push(vec![G1Affine::default(); width]);
-        commitments[i].1.push(vec![
-          G1Affine::default();
-          if usize::from(log) < max_log {
-            width
-          } else {
-            0
-          }
-        ]);
         let count = match i {
           0 => {
             1 + usize::from(
@@ -151,7 +140,7 @@ impl FixedProofCodec {
     {
       return Err(CompactProofError);
     }
-    let mut bytes = b"KQP1".to_vec();
+    let mut bytes = b"KQP4".to_vec();
     bytes.push(
       u8::try_from(proof.opening_proof.0.len())
         .map_err(|_error| CompactProofError)?,
@@ -174,7 +163,7 @@ impl FixedProofCodec {
     &self,
     bytes: &[u8],
   ) -> Result<Proof<KzgConfig>, CompactProofError> {
-    if bytes.len() < 5 || &bytes[..4] != b"KQP1" {
+    if bytes.len() < 5 || &bytes[..4] != b"KQP4" {
       return Err(CompactProofError);
     }
     let openings = usize::from(bytes[4]);
@@ -192,7 +181,7 @@ impl FixedProofCodec {
       &mut proof.commitments.stage_2_trace,
       &mut proof.commitments.quotient_chunks,
     ] {
-      for point in commitment.0.iter_mut().chain(&mut commitment.1).flatten() {
+      for point in commitment.0.iter_mut().flatten() {
         *point = G1Affine::deserialize_compressed(&mut input)
           .map_err(|_error| CompactProofError)?;
       }
@@ -233,7 +222,7 @@ fn points(proof: &Proof<KzgConfig>) -> impl Iterator<Item = &G1Affine> {
     &proof.commitments.quotient_chunks,
   ]
   .into_iter()
-  .flat_map(|c| c.0.iter().chain(&c.1).flatten())
+  .flat_map(|c| c.0.iter().flatten())
   .chain(&proof.opening_proof.0)
 }
 
@@ -266,10 +255,8 @@ fn shape(proof: &Proof<KzgConfig>) -> Vec<usize> {
     &proof.commitments.stage_2_trace,
     &proof.commitments.quotient_chunks,
   ] {
-    for matrices in [&c.0, &c.1] {
-      shape.push(matrices.len());
-      shape.extend(matrices.iter().map(Vec::len));
-    }
+    shape.push(c.0.len());
+    shape.extend(c.0.iter().map(Vec::len));
   }
   for round in [
     &proof.stage_1_opened_values,
@@ -365,9 +352,10 @@ mod tests {
     let codec = FixedProofCodec::new(&system, &[2]).unwrap();
     let bytes = codec.encode(&proof).unwrap();
     let decoded = codec.decode(&bytes).unwrap();
-    assert_eq!(decoded.to_bytes().unwrap(), proof.to_bytes().unwrap());
+    assert_eq!(codec.encode(&decoded).unwrap(), bytes);
     system.verify_multiple_claims(&[], &decoded).unwrap();
-    assert!(bytes.len() < proof.to_bytes().unwrap().len());
+    assert!(proof.to_bytes().is_err());
+    assert!(Proof::<KzgConfig>::from_bytes(&bytes).is_err());
     for end in 0..bytes.len() {
       assert!(codec.decode(&bytes[..end]).is_err());
     }
