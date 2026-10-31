@@ -4,6 +4,7 @@ members = [
   "crates/bench",
   "crates/common",
   "crates/compile",
+  "crates/proof-compression",
   "crates/ffi",
   "crates/ixvm-codegen",
   "crates/ixon",
@@ -52,7 +53,7 @@ log = "0.4"
 memmap2 = "0.9"
 # Bundle v3.5.1 to fix large-arena failures (microsoft/mimalloc#1309).
 mimalloc = { git = "https://github.com/argumentcomputer/mimalloc_rust.git", rev = "616cc1f130d9ea2a1111a46b4e98c140e078f882", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "acfc370a2e74affcb7e8ee218fbbaf80b9da1eef" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "63ecc52b0b54d765b886d7d9ebc98cd90005496b" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"

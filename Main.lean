@@ -11,6 +11,8 @@ import Ix.Cli.ValidateLeanCmd
 import Ix.Cli.ClaimCmd
 import Ix.Cli.CatalogCmd
 import Ix.Cli.CompileCmd
+import Ix.Cli.CompressCmd
+import Ix.Cli.CompressionSetupCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
 import Ix.Cli.IngressCmd
@@ -39,6 +41,8 @@ def ixCmd : Cli.Cmd := `[Cli|
     aggregateCmd;
     catalogCmd;
     compileCmd;
+    compressCmd;
+    compressionCmd;
     decompileCmd;
     mergeCmd;
     checkCmd;
