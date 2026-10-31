@@ -8,7 +8,7 @@ import Tests.Ix.Kernel.TierIndDefs
 
 /-! # The tier's typing-only inductive install and its answer view (`lake test -- kernel-tier-ind`)
 
-M7 Q1, T1. The fixtures of `Tests.Ix.Kernel.TierIndDefs` are canonicalized,
+The fixtures of `Tests.Ix.Kernel.TierIndDefs` are canonicalized,
 their logical closure (`List` and the prelude) is checked in Source mode
 (`checkSource`), and on top of it:
 

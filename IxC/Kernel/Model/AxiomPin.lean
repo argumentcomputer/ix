@@ -83,7 +83,7 @@ the three obstructions that follow from that were removed
 * **the two standard axioms** — `axiomStd`, both halves, on
   `AxiomBitsP`'s bits and `AxiomMemP`'s memberships.
 
-Those are all of `DeclAxiomRun`'s branches: since `ALPHA-COLLAPSE.md` §8.2
+Those are all of `DeclAxiomRun`'s branches:
 the certified theory is Lean with its three standard axioms, and the
 compiler-trust axioms (`Lean.trustCompiler`, `Lean.ofReduceNat`,
 `Lean.ofReduceBool`), with the `ReduceOps` law their memberships needed,

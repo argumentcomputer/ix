@@ -36,9 +36,12 @@ of the flags check is `Ix.IndFlags`'s.
 executable imports it: the runtime audit's controls declare an `@[extern]`
 symbol that no library defines, so a binary that links them fails. -/
 
--- The audit finds a substitution at its implementation too (2026-10-28): `compile` calls
+-- The audit finds a substitution at its implementation too: `compile` calls
 -- `Address.blake3`, which implements `Address.admissionHash`, so the list names that substitution
 -- beside the BLAKE3 primitives it reaches. Nothing else changes.
+-- Both `Ix.Cert.compile` (which drives `Ix.Compile.compileEnv` / `compileEnvFold`) and
+-- `Ix.Compile.ReadyCompile.reportIO` (the parallel ready-queue driver used by
+-- `Ix.CompileCertified.compileCertifiedIO`) are audited here.
 /-- error: project-level execution replacements reached from [Ix.Cert.compile]:
 [Address.admissionHash,
  Ix.groundExpr,
@@ -148,12 +151,15 @@ run_cmd do
 /-! ## The CLI certified compiler and role-binding finalizer
 
 `ix compile` and `ix compile-lean` invoke `Ix.CanonM.canonEnv`,
-`Ix.CompileM.compileCertified`, `Ix.CompileM.validateFinalized`,
-`Ix.RoleBinding.Compile.finalize`, and `Ixon.serEnv`. Beyond `Init`, `Std`,
-`Lean`, and the `compileChecked` list above, their runtime closure reaches the
-source-contract environment extensions, the syntax equality helper, the Merkle
-tree builder, the name topological sort, and the `partial` helpers of
-role-evidence and role-binding synthesis, frozen here. -/
+`Ix.CompileM.compileCertified` (over `Ix.Compile.compileEnv`, alongside
+`Ix.Compile.ReadyCompile.reportIO`, the parallel ready-queue driver used by
+`Ix.CompileCertified.compileCertifiedIO`, audited above),
+`Ix.CompileM.validateFinalized`, `Ix.RoleBinding.Compile.finalize`, and
+`Ixon.serEnv`. Beyond `Init`, `Std`, `Lean`, and the `compileChecked` list
+above, their runtime closure reaches the source-contract environment
+extensions, the syntax equality helper, the Merkle tree builder, the name
+topological sort, and the `partial` helpers of role-evidence and role-binding
+synthesis, frozen here. -/
 
 /-- error: project-level execution replacements reached from [Ix.CanonM.canonEnv,
  Ix.CompileM.compileCertified,

@@ -1,7 +1,7 @@
 /-
   checker-support-regression: a selected closure carries the checker's
   certificate ground (`Ix.EnvScope.checkerSupportOf`, from `IxC.Kernel.Roles`
-  `Role.deps`; CQX.3), on the exact failing corpus case `S_T_0_0_dir`
+  `Role.deps`), on the exact failing corpus case `S_T_0_0_dir`
   (`Tests/Ix/Compile/CheckerSupport/Single.lean`).
 
   The checker installs a well-founded `Nat` operation only when every

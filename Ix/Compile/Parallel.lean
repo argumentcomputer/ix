@@ -4,6 +4,12 @@ public import Init.Data.Array.Lemmas
 public import Init.Data.Array.Extract
 import Lean.Elab.Tactic.Omega
 
+/-! Bounded-window parallel chunk evaluation (`Parallel.map` and `map_eq`) for
+the certified compiler's parallel execution (`compileBlockTasks`,
+`compileEnvParallelWithTasks`) together with equivalence (`map_eq`,
+`compileEnvParallelWithTasks_eq_pure`) to the sequential reference
+(`Array.map`, `compileEnvPure`). -/
+
 public section
 
 namespace Ix.Compile.Parallel

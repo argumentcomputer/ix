@@ -33,8 +33,8 @@ The rows, and where each comes from:
 
 One of the seven varies across the twenty-two conses and is therefore a
 **disjunctive premise** rather than a fixed proof — `caps_ok`'s
-(reserved name vs. the pair projections' kind; the compiler-trust law
-`reduce_ops` went with `ALPHA-COLLAPSE.md` §8.2).  The two genuinely bespoke rows
+(reserved name vs. the pair projections' kind; the retired compiler-trust law
+`reduce_ops` is no longer present).  The two genuinely bespoke rows
 — `nat_heads` at the `Nat` block, where the literal guard *becomes*
 true, and `eq_law` at the `Eq` block, where `eqLaw_cons_fresh` is
 structurally unavailable — are excluded by this lemma's side conditions

@@ -711,9 +711,9 @@ pub struct KEnv<M: KernelMode> {
   // -- Primitives (resolved lazily from consts) --
   prims: OnceCell<Primitives<M>>,
 
-  // -- Global caches (grow monotonically, keyed by content hash) --
-  // All cache keys use `Addr` (= `Arc<blake3::Hash>`, content-addressed) rather
-  // than `Arc::as_ptr` pointers, avoiding the ABA problem where deallocated
+  // -- Global caches (grow monotonically, stored in FxHashMap keyed by intern UID) --
+  // All cache keys use `Addr` (`u64` monotonic intern-table UIDs) in `FxHashMap`
+  // rather than `Arc::as_ptr` pointers, avoiding the ABA problem where deallocated
   // pointers are reused by the allocator for semantically different expressions.
   /// WHNF cache (full, with delta): (expr_hash, ctx_hash)-keyed.
   pub whnf_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,

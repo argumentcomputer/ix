@@ -233,7 +233,7 @@ the unfolded Ixon expressions; these results do not complete the Source
 acceptance or compiler value-preservation composition.
 
 The former `Ix.Tc.Verify` tree, whose `native_decide` serde fixtures recomputed bytes with the
-codec, is retired ([kernel](kernel.md), "Removal ledger").
+codec, is retired (see [kernel](kernel.md)).
 
 ## 5. Metadata
 

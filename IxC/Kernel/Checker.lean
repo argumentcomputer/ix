@@ -308,7 +308,7 @@ def checkDecl (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
     -- recursor and global choice).  Their types and the shapes of the
     -- inductives they quantify over are pinned (up to the exporter's
     -- unstable hygienic binder names).  The certified theory is Lean
-    -- with its three standard axioms (`ALPHA-COLLAPSE.md` §8): the
+    -- with its three standard axioms: the
     -- compiler-trust axioms (`Lean.trustCompiler`, `Lean.ofReduceBool`,
     -- `Lean.ofReduceNat`) are non-standard axioms here.  `sorryAx` — the
     -- one axiom the checker tolerates as a DECLARATION (user ruling) —

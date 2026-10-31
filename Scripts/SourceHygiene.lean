@@ -15,10 +15,16 @@ def retiredNames : List String :=
 
 def privatePlans : List String := ["IXC-PLAN", "PRIMITIVES-DESIGN"]
 
+def bannedSubstrings : List String :=
+  ["ALPHA-COLLAPSE", "LOCALITY", "TRUST-CLOSURE", "AUX-CERT", "AuxGen",
+   "SurgAlias", "HANDOFF-", "ix-certified-v3", "coordinator decision",
+   "owner decision"]
+
 def hasQueueLabel (text : String) : Bool :=
   (text.splitOn "CQ").tail.any fun suffix =>
     match suffix.toList with
-    | c :: _ => c.isDigit
+    | c :: d :: _ => c.isDigit || (c.isUpper && (d == '.' || d.isDigit))
+    | c :: [] => c.isDigit
     | [] => false
 
 def hasRetiredOpen (text : String) : Bool :=
@@ -31,10 +37,15 @@ def hasRetiredOpen (text : String) : Bool :=
 def violations (text : String) : List String :=
   (if hasQueueLabel text then ["numbered private work queue"] else []) ++
     (if hasRetiredOpen text then ["open of retired typechecker namespace"] else []) ++
-    (privatePlans ++ retiredNames).filter (has text)
+    (privatePlans ++ bannedSubstrings ++ retiredNames).filter (has text)
 
 def selfCheck : IO Unit := do
-  for bad in ["-- CQ2.8 exact cache", "IXC-PLAN §12", "PRIMITIVES-DESIGN", "Ix.Tc.PrimAddrs.canonical",
+  for bad in ["-- CQ2.8 exact cache", "-- CQP.3 wrapper", "-- CQX.8 field test",
+      "IXC-PLAN §12", "PRIMITIVES-DESIGN", "ALPHA-COLLAPSE.md §8.4",
+      "LOCALITY.md", "TRUST-CLOSURE", "AUX-CERT", "AuxGen helper",
+      "SurgAlias", "HANDOFF-2026", "ix-certified-v3",
+      "coordinator decision, 2026-10-20", "owner decision",
+      "Ix.Tc.PrimAddrs.canonical",
       "sourceClasses members", "compileEquivalentMutConsts sources", "open LSpec Ix.Tc",
       "open LSpec _root_.Ix.Tc", "open _root_.Ix.Tc.PrimAddrs"] do
     if (violations bad).isEmpty then throw <| IO.userError s!"scanner missed control: {bad}"

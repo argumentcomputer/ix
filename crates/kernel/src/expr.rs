@@ -512,8 +512,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::var_mdata(idx, name, no_mdata::<M>())
   }
 
-  /// Compute the content hash for [`KExpr::var_mdata`] without allocating.
-  ///
+  /// Construct a bound variable expression with a pre-allocated intern [`Addr`].
   fn var_mdata_with_addr(
     idx: u64,
     name: M::MField<Name>,

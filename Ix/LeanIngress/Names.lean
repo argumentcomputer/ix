@@ -2,7 +2,7 @@ module
 
 public import Ix.LeanIngress.Expr
 
-/-! # Lean's binder names on the Source terms (IxC step 6b, display only)
+/-! # Lean's binder names on the Source terms (display only)
 
 The Source ingress converts a Lean term (`ingressExpr`) without its binder
 names. A failure prints terms with Lean's names, reduced terms included, so the

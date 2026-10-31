@@ -225,8 +225,8 @@ opaque rsShardStaticGraphFFI :
     IO Unit
 
 /-- FFI: profile a `.ixe` out of circuit, writing a `.ixprof` sidecar with
-    per-block heartbeats + the delta-unfold graph (the sharding cost model,
-    see `plans/sharding.md`). Runs the anon kernel over every checkable target.
+    per-block heartbeats + the delta-unfold graph (the sharding cost model).
+    Runs the anon kernel over every checkable target.
     `isolate` clears the kernel's reduction-memo caches between constants for
     sound/faithful recording; `quiet` suppresses per-constant progress. -/
 @[extern "rs_kernel_profile_anon"]

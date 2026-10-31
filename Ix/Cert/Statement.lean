@@ -16,8 +16,8 @@ One checker, two front ends:
   hands its constants, under Lean's own names, to IxC's verified fold
   `Ix.Kernel.Cached.checkDecls`, under the fixed Source role table (each
   role bound to its Lean name) with the committed bundle's evidence
-  (`Ix.RoleEvidence.bundleEvidence`, RoleData's `sourceEvidence`; owner,
-  2026-10-20), whatever the input carries. IxC's model of the result
+  (`Ix.RoleEvidence.bundleEvidence`, RoleData's `sourceEvidence`),
+  whatever the input carries. IxC's model of the result
   is the source semantics.
 * **Ixon mode.** The compiled artifact's records, as the bytes their
   addresses are computed over, go through the certified entry at BLAKE3,
@@ -124,7 +124,7 @@ def termsOf : Ix.ConstantInfo → List Ix.Expr
 def supportNames (keys : List (Ix.Kernel.Key .source)) : Array Ix.Name :=
   keys.toArray.map fun k => Ix.Name.fromLeanName (Ix.RoleEvidence.toLeanName k)
 
-/-- **The constants a constant's literals depend on** (owner, 2026-10-20): a
+/-- **The constants a constant's literals depend on**: a
 `String` literal references no constant, but IxC checks it against `String`,
 `String.ofList`, `List`, `List.nil`, `List.cons`, `Char`, `Char.ofNat` and the `Nat`
 basis (`Expr.constsResolve`), and a `Nat` literal against the `Nat` basis. -/
@@ -1117,16 +1117,14 @@ theorem ixonValueSound : IxonValueSound.{w} := by
   obtain ⟨M, hM⟩ := Ix.Kernel.Admission.checkBytes_has_model_values (hash := Address.blake3Pure) V h.2
   exact ⟨{ M with defn_value := hM }⟩
 
-/-! ## The reference level (Route A, B10)
+/-! ## The reference level
 
-The bridge for unchanged blocks (`ROUTE-A.md` §3.1) reaches Ixon acceptance at
+The bridge for unchanged blocks reaches Ixon acceptance at
 the reference level: the pure fold at some fuel (`Ix.Kernel.Cached.AcceptsRef`),
 where neither the caches nor a fixed fuel appear. Consistency and value
 soundness hold there as well, from the pure soundness tower
 (`AcceptsRef.no_proof_of_False`, `AcceptsRef.model_values`), and every executed
-accept is a reference accept of the same environment (`ixonAccepts_ref`). The
-composition from per-block reference acceptance to the closure (locality) waits
-for step 7.3's corollaries. -/
+accept is a reference accept of the same environment (`ixonAccepts_ref`). -/
 
 /-- **Ixon acceptance at the reference level** of the compiled closure of `S`:
 the certified entry's preparation at BLAKE3 (the batch limits, key uniqueness,
@@ -1182,7 +1180,7 @@ theorem ixonAccepts_ref (V : Type w) [SetTheory V] {binding : Binding} {limits :
   exact ⟨closure, t, pre, ev, ds, admitted, prelude, prepared,
     Ix.Kernel.Cached.checkDecls_refines_ref V rfl checked⟩
 
-/-! ## Quotient Source and S4 (`ALPHA-COLLAPSE.md` §8; owner, 2026-10-20)
+/-! ## Quotient Source and the per-instance nominal link
 
 The certified theory is Lean with α-collapse made explicit: Source runs on the
 artifact's alias fibers, every fiber renamed onto one representative and its

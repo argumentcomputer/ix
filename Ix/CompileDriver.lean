@@ -203,8 +203,7 @@ def checkCompiledBlock (cenv : CompileEnv) (lo : Name) (result : BlockResult)
     (`mergeCompiledBlock`): its primary names already claimed in
     `nameToAddr`. A function of its own: when the merge read the state
     inside its own loops, a second reference to the state stayed alive and
-    every insert of the merge copied its maps (Init+Std's compile phase went
-    from 44 s to 388 s). -/
+    every insert of the merge copied its maps. -/
 def reclaimedNames (cenv : CompileEnv) (lo : Name) (result : BlockResult)
     : Std.HashSet Ix.Compile.ExactKey.ExactName := Id.run do
   let primaryNames : Array Name :=
@@ -245,7 +244,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
   -- before this merge by a function of its own, so that the merge below
   -- still consumes the driver state's maps uniquely. Do not inline it: read
   -- in this function's loops, the state stayed referenced twice and every
-  -- insert below copied its maps (Init+Std's compile phase 44 s → 391 s).
+  -- insert below copied its maps.
   let reclaimed := reclaimedNames cenv lo result
   cenv := { cenv with
     totalBytes := cenv.totalBytes + result.blockBytes.size
@@ -482,7 +481,7 @@ def mixedSafetyMessage (env : Ix.Environment) (members : Array Name) : String :=
     `validate_mutual_safety`): the members of a mutual block share one
     safety, or the compile fails before any block is scheduled. The kernels
     reject a mixed-safety block, and the compilers' orders do not key on
-    safety (C6), so such members could be alpha-collapsed into one
+    safety, so such members could be alpha-collapsed into one
     representative's safety. Checked first on each inductive group (`all`,
     with each member's constructors) in the order of their first members'
     hashes, then on each condensation block in the order of its least
@@ -1052,9 +1051,7 @@ def compileDecoratedConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   --    value does not depend on it): chunks that small let the task pool
   --    (`LEAN_NUM_THREADS`, else one thread per core) balance blocks of very
   --    different sizes, where `numWorkers` chunks left the wave waiting on its
-  --    slowest chunk (Mathlib's compile phase 505.5 s at width 32, 414.1 s at
-  --    128; the queue driver took 458.1 s). At most `min width pool` blocks
-  --    compile at once.
+  --    slowest chunk. At most `min width pool` blocks compile at once.
   let originalSource : Ix.Compile.SourceInput.Carrier := ⟨leanByIx⟩
   let fallback : Ix.Name → Option Ix.ConstantInfo := originalSource.lookup?
   let ixEnv : Ix.Environment :=

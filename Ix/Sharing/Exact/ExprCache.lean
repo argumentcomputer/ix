@@ -3,6 +3,11 @@ module
 public import Ix.Sharing.Exact.Basic
 import all Init.Util
 
+/-! Pointer-addressed expression cache (`ExprCache`) with exact structural source
+equality (`withPtrEqDecEq`) for expression interning (mapping structural
+expressions to cached values / compact `NodeId` (`UInt32`) indices) during
+canonical sharing analysis. -/
+
 public section
 
 namespace Ix.Sharing.Exact

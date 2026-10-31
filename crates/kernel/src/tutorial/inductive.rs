@@ -891,8 +891,7 @@ mod tests {
   /// indReducedAway: `mk : constType aType I → I` where `constType x y = x`.
   /// The field mentions `I` only before reduction: its whnf is `aType`, so
   /// Lean's `check_positivity` (whnf first, then the occurrence test) takes
-  /// it as a nonrecursive field and accepts the block (CQX.8; the reproducer
-  /// is aux-cert's `NestedSortUK`). The kernel used to test the occurrence
+  /// it as a nonrecursive field and accepts the block. The kernel used to test the occurrence
   /// before whnf and reject the whnf'd head `aType` as "not a valid inductive
   /// app". `bad_induct_neg_reducible` is the negative neighbour: there the
   /// whnf is a Pi whose domain still mentions `I`.

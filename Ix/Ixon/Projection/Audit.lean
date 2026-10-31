@@ -83,8 +83,9 @@ count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`); step 5b's
 walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
 reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); step
 5b's mode index from 5598, by the entry's change; its address keys from 5610
-and 111 inherited externs, by the entry's change; the IxC performance series
-(PERF P16, P14, P3, P2) from 5574 and 113 inherited externs, by the entry's
+and 111 inherited externs, by the entry's change; the per-step memo reset,
+shared binder metadata, fixed-width TagN fast paths, and task-parallel phase B
+from 5574 and 113 inherited externs, by the entry's
 change (`IxC/Kernel/Audit/Roots.lean`: the memo state reset, the shared
 binder metadata, the codec's TagN twins with their two ruled csimps, which
 the projection writer and reader also call, and phase B on tasks with
@@ -96,22 +97,20 @@ install anchors from 5810, by the entry's change; step 6b's display annotations 
 5821, by the entry's change (8 more, one more ruled csimp), and its failure display
 from 5829 (30 more, one more ruled csimp); the reader's conversion to Lean `module`s from
 5859, by the entry's change (28 more: the module's own specialisations,
-`instBEqAddress.beq` and `Std.Format.defWidth` called); CQX.8's field test in the
+`instBEqAddress.beq` and `Std.Format.defWidth` called); testing non-recursive fields after the auxiliary rewrite in the
 in-model generator from 5887, by the entry's change (4 of `genNested`'s
-specialisations gone, `IxC/Kernel/Audit/Roots.lean`); (A) (`ALPHA-COLLAPSE.md`
-§8.2) from 5883, by the entry's change (122 out: the compiler-trust roles and
+specialisations gone, `IxC/Kernel/Audit/Roots.lean`); retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`) from 5883, by the entry's change (122 out: the compiler-trust roles and
 their checks, `IxC/Kernel/Audit/Roots.lean`); the `.indDecl` shape guard from 5761, by the
 entry's change (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled, `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's
 recursive fields from 5805, by the entry's change (9 more); the rest-only hoist and the
-decided units check (S1) from 5814, by the entry's change (117 in,
-`IxC/Kernel/Audit/Roots.lean`); the prelude's shape check (S1, fact
-(ii)) from 5931, by the entry's change (12 in); the hoist guard (S1) from 5943, by
-the entry's change (4 in); the in-model generator's totality (S1) from
+decided units check from 5814, by the entry's change (117 in,
+`IxC/Kernel/Audit/Roots.lean`); the prelude's shape check from 5931, by the entry's change (12 in); the hoist guard from 5943, by
+the entry's change (4 in); the in-model generator's totality from
 5947, by the entry's change (15 more; its nine ruled `partial` definitions are total,
-and the ruling is gone); the prelude-copy check ((b), `State.keepsPrelude` in `readStream`)
+and the ruling is gone); the prelude-copy check (`State.keepsPrelude` in `readStream`)
 from 5962, by the entry's change (38 in: the check, the state's keys and the derived
 `DecidableEq` it compares with; externs, `unsafe` and csimp unchanged). -/
--- The committed fallback recursor guard (2026-10-22) adds seven compiled
+-- The committed fallback recursor guard adds seven compiled
 -- functions to each entry closure. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Keeping the fallback's recursors off the input's blocks (`fallbackIndexed`, `indexedRecords`,
@@ -131,6 +130,9 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- helpers, 208 key helpers and 108 fixture helpers) and removes eight obsolete
 -- specializations. The complete extern, unsafe, implementation, replacement and
 -- opaque entry sets are identical; only the compiled-function count changes.
+-- Auditing `@[csimp]` replacements whose target was inlined into its caller
+-- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
+-- `Ix.Kernel.Cached` (26 -> 27; see `IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
  Ixon.Projection.checkBytes]: 6861 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 27 -/

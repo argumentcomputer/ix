@@ -42,19 +42,21 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3377 compiled functions with 67 inherited externs, with the
-computed-field overrides of `Level`, `Expr` and `Key` and 23 proved
-csimps; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
-2147, adding the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 5792 with
-113 inherited externs, adding the byte stage (`preflight`, `uniqueKeys`,
+reaches 3663 compiled functions with 67 inherited externs, with 17
+computed-field overrides of `Level`, `Expr` and `Key` and 24 proved
+csimp rewrites; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
+2338, adding `Name`'s computed-field overrides (21 in total) and the codec's
+TagN writer twin; the entry (the four `publicOperations`) reaches 6839 with
+113 inherited externs, 21 computed-field overrides and 27 proved csimp rewrites,
+adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
 default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
-the typing tier) are frozen apart: the entry's closure and the tier's 79
-functions, with nothing new to rule; the closures above do not reach the
-tier. The `.indDecl` shape guard (2026-10-20: every inductive block's
+the typing tier) are frozen apart: 6949 compiled functions (the entry's closure
+and the tier's functions), with 21 computed-field overrides, 27 proved csimp
+rewrites, and nothing new to rule; the closures above do not reach the
+tier. The `.indDecl` shape guard (every inductive block's
 declared former and constructor types resolve against the environment and
 the block's formers, and its constructor names are fresh, distinct from the
 formers and pairwise distinct, before the pinned-block recognition and the
@@ -70,8 +72,8 @@ its message sites' closed terms) and the code generator's specialisations,
 lambdas and boxed forms of them (`List.all`, `List.filterMap`,
 `List.findSome?`, the `Nodup` decision); the reader is unchanged, and the
 externs, `implemented_by`, `unsafe` constants and `partial` definitions are
-unchanged. The mutual modeller's reading of Lean's own recursive fields (AuxGen
-M3, aux-cert's `SurgAlias`: a field whose member occurrence a reducible alias
+unchanged. The mutual modeller's reading of Lean's own recursive fields (a
+field whose member occurrence a reducible alias
 hides is recursive, read off Lean's minor premises) moved the reader from 2138,
 the entry from 5783 and the tiered entries from 5887, 12 functions in and 3
 out: `minorIH?`, `noBVarsIn`, `replacePiDomAt` with its arity-reduced form, the
@@ -80,7 +82,7 @@ code generator's specialisations of `List.all`, `List.findSome?` and
 messages in; three closed terms of `classifyCtor`'s and `memberApp?`'s out,
 and `genMutual`'s specialisations renumbered; no extern, `unsafe` constant,
 csimp, `partial` definition or ruling moved. The rest-only hoist and the decided
-units check (S1, 2026-10-20: `Cached.checkDecls` ends with `checkUnits`, no
+units check (`Cached.checkDecls` ends with `checkUnits`, no
 unit holding a basis record or out of shape, none past the front declaring a
 prelude role, and no two units declaring a common base) moved the fold from 3377 and the entry and the
 tiered entries from 5792 and 5896, 119, 117 and 117 functions in: `checkUnits`,
@@ -90,20 +92,20 @@ tiered entries from 5792 and 5896, 119, 117 and 117 functions in: `checkUnits`,
 generator's specialisations, lambdas and boxed forms of them, and the closed
 terms of the check's two messages; the reader is unchanged, and no extern,
 `unsafe` constant, csimp, `partial` definition or ruling moved. The prelude's shape
-check (S1, fact (ii): `preludeFor` checks that the prelude it reads names the pinned
+check (`preludeFor` checks that the prelude it reads names the pinned
 `preludeShape`) moved the entry and the tiered entries from 5909 and 6013, 12 functions
 in each: `preludeRead`, `checkPreludeShape` and their closed terms and
-specialisations; the fold and the reader are unchanged. The hoist guard (S1:
-the ground hoist leaves the rest as it is when it would split a lowering of
+specialisations; the fold and the reader are unchanged. The hoist guard (the
+ground hoist leaves the rest as it is when it would split a lowering of
 several declarations, `splitsUnit`) moved them from 5921 and 6025, 4 functions in
-each; the fold and the reader are unchanged. The in-model generator's totality (S1, the prerequisite of the generator's parametricity proof: its nine `partial` definitions are total, the memoized DAG walks `specFamGo`, `specAllGo`, `substParams` and `congrChain` by well-founded recursion on the term or the position, the syntactic inferer `betaHead`/`inferTy` at a fuel, `inferFuel`, whose end is a named failure) moved the reader from 2147, the entry from 5925 and the tiered entries from 6029, 15 functions each: 27 in (`betaHeadF`, `betaHeadE`, `inferTyF`, `sortOfF`, `sortOf`, `mapMemo.go` with its arity-reduced form, the lambdas `specFamGo` and `specAllGo` hand to `mapMemo` with their boxed forms, `readCtors`'s `List.mapM` loop, and 15 closed terms of the inferer, `betaHeadE` and the fuel-out message), 12 out (`betaHead`, `inferTy.sortOf`, `specFamGoList`, `specAllGoList`, `readCtors`'s `List.mapTR` loop with its closed term, and `inferTy`'s 6 closed terms), and the hash map's specialisations at `specFamGo` and `specAllGo` renumbered (12). The `partial` ruling (`partialModules`, the in-model generator's) is gone: the closures reach no `partial` definition, and one reached anywhere now fails the audit. The externs, `implemented_by`, `unsafe` constants and csimps are unchanged. (A) (`ALPHA-COLLAPSE.md` §8.2, owner 2026-10-20: the certified theory
+each; the fold and the reader are unchanged. The in-model generator's totality (the prerequisite of the generator's parametricity proof: its nine `partial` definitions are total, the memoized DAG walks `specFamGo`, `specAllGo`, `substParams` and `congrChain` by well-founded recursion on the term or the position, the syntactic inferer `betaHead`/`inferTy` at a fuel, `inferFuel`, whose end is a named failure) moved the reader from 2147, the entry from 5925 and the tiered entries from 6029, 15 functions each: 27 in (`betaHeadF`, `betaHeadE`, `inferTyF`, `sortOfF`, `sortOf`, `mapMemo.go` with its arity-reduced form, the lambdas `specFamGo` and `specAllGo` hand to `mapMemo` with their boxed forms, `readCtors`'s `List.mapM` loop, and 15 closed terms of the inferer, `betaHeadE` and the fuel-out message), 12 out (`betaHead`, `inferTy.sortOf`, `specFamGoList`, `specAllGoList`, `readCtors`'s `List.mapTR` loop with its closed term, and `inferTy`'s 6 closed terms), and the hash map's specialisations at `specFamGo` and `specAllGo` renumbered (12). The `partial` ruling (`partialModules`, the in-model generator's) is gone: the closures reach no `partial` definition, and one reached anywhere now fails the audit. The externs, `implemented_by`, `unsafe` constants and csimps are unchanged. Retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`: the certified theory
 is Lean with its three standard axioms) moved the fold from 3434, the reader
 from 2150, the entry from 5861 and the tiered entries from 5965: the five
 compiler-trust roles left `Role` (its case tables shrink, which the reader's
 role decoding reaches) and their checks left the fold (the trust pins and
 their environment predicates, the reduce operations' identity certificate);
 the externs, `implemented_by`, `unsafe` constants, csimps, `partial`
-definitions and rulings are unchanged. CQX.8's field test in the in-model
+definitions and rulings are unchanged. Testing non-recursive fields after the auxiliary rewrite in the in-model
 generator (`readCtors`: a
 non-recursive field is tested after the auxiliary rewrite, as Lean tests
 positivity after whnf) moved the reader from 2154 and the entry from 5865
@@ -124,7 +126,7 @@ import had cached (`HashMap.insert` specialised at
 became 95 of its own, renumbered (the entry's 68 became 94); and the derived
 `BEq Address`, which `IxC.Address.Core` does not expose, is now called
 (`instBEqAddress.beq`) instead of inlined, as is `Std.Format.defWidth` in the
-entry. Step 6b's
+entry. The
 failure display (a failure's terms and binders at `.meta` and `.source`,
 `Ix.Kernel.FailureDisplay`, a subsingleton on a message's prose part) moved
 the fold from 3404 to 3434 and the entry from 5807 to 5837 (the tiered
@@ -137,7 +139,7 @@ the empty display's closed object, the handlers `withChain` inlines into
 `inferBodyIOI` and `annotateBodyI` (3 lambdas), and the message sites'
 closed terms, each prose part now holding the empty display (14 more, after
 the code generator's renumbering; `ensureSortI` lost its arity-reduced
-form). Step 6b's
+form). The
 display annotations (a binder's and a let's Lean name, a subsingleton field,
 `BinderMeta.display`/`LetMeta.display`) moved them from 3399, 2134 and 5799
 (the tiered entries from 5878):
@@ -146,20 +148,20 @@ fold, the reader and the entry; `LetDisplay.anon`, the reader and the entry;
 `instInhabitedBinderDisplay.default._closed_0`, all three), the let
 metadata's equality now a function of its own (`instDecidableEqLetMeta.decEq`,
 all three: a second field, compared by the subsingleton's constant decision),
-PERF P14's shared `leanAlways` kept for an anonymous binder only
+the shared `leanAlways` metadata kept for an anonymous binder only
 (`BinderMeta.shareAlwaysImpl` and a closed term, the fold and the entry: one
 more ruled csimp there, `BinderMeta.shareAlways_eq_impl`), and in the reader
 and the entry two lambdas the code generator split out of the in-model
 generator's `genNested` specialisation. The validation
 of the four install anchors (`Bool.rec`, `And`, `And.intro`, `And.rec`;
-`Declaration.anchorMismatch?` in `Cached.annotDeclStep`, owner 2026-10-15)
+`Declaration.anchorMismatch?` in `Cached.annotDeclStep`)
 moved the fold from 3352 to 3399 and the entry from 5788 to 5799: the guard
 (`anchorMismatch?`, `Declaration.anchorMismatch?` with its `findSome?`
 specialisation, `installAnchorPin?` and a closed term, six closed terms of the
 step's message), 11 in both, and in the fold the four specification types
 (`boolRecSpecTy`, `andSpecTy`, `andIntroSpecTy`, `andRecSpecTy`) with 29 closed
 terms and three closed terms they share with the literal support's
-specifications, which the entry reached already. Step 6's
+specifications, which the entry reached already. The
 structured errors (`CheckError md`: a message is prose and keys, `Msg md`, and
 the checker never spells a key) moved them from 3446 and 5570, and the
 fold's and the entry's inherited externs from 92 and 115; the reader is
@@ -178,20 +180,20 @@ unchanged:
   so the key rendering stays reachable there; the term printing and two
   string externs (`String.Internal.foldl`, `String.Internal.isEmpty`) went,
   and every message site of the fold adds its two closed objects.
-The IxC
-performance series (PERF P16, P14, P3, P2) moved them from 3439, 2127 and
+The per-step memo reset, shared binder metadata, fixed-width TagN fast paths,
+and task-parallel phase B moved them from 3439, 2127 and
 5552, and the fold's and the entry's inherited externs from 90 and 113 to 92
 and 115:
-* P16, the memo state reset at every step of the fold (LOCALITY §6(a)): 7
+* The memo state reset at every step of the fold: 7
   fewer in the fold and the entry. The converted-constant cache
   (`recordCConst`, `storedTyIdxM`, `storedValIdxM`) and its map's
   specialisations went; `resetC` and the empty state's closed terms came in;
   the level memos' map specialisations are now named after `isEquivLM` (the
   uncalled `simplifyLM` had named them).
-* P14, shared binder metadata: 2 more in the fold (`BinderMeta.leanAlways`
+* Shared binder metadata: 2 more in the fold (`BinderMeta.leanAlways`
   and its closed datum), 3 in the reader (`BinderMeta.leanNever` and two
   closed terms), 5 in the entry.
-* P3, TagN without `Nat` powers: 4 more in the reader (`putTagNFast`,
+* TagN without `Nat` powers: 4 more in the reader (`putTagNFast`,
   `putTagN0`, `putTagN2`, `putTagN4`: the projection-record serializer's
   writer), 8 in the entry (the reader's `getTagNFast`, `getTagN0/2/4` too).
   The codec's two `@[csimp]` replacements (`putTagN_eq_fast`,
@@ -199,7 +201,7 @@ and 115:
   go from 7 to 8 and the entry's from 21 to 23, and the references they
   replace are still reached, from the twins' fallback for a width other
   than 0, 2 and 4 (csimp 0 to 1 and 4 to 6).
-* P2, phase B of the fold on pure tasks: 12 more in the fold and the entry
+* Phase B of the fold on pure tasks: 12 more in the fold and the entry
   (`checkPendingTasks`, `chunksOf`, `awaitInOrder`, their auxiliaries and the
   task closure), among them the two new inherited externs, `Init`'s
   `Task.spawn` (`lean_task_spawn`) and `Task.get` (`lean_task_get_own`). As
@@ -208,7 +210,7 @@ and 115:
   Lean's runtime running a pure closure on another thread, the same
   runtime every compiled closure already trusts. No `unsafe`,
   `implemented_by`, `csimp` or `partial` constant came with them.
-Step 5b's address keys (an `.anon` input key is the address its references use) moved
+Address keys (an `.anon` input key is the address its references use) moved
 them from 3412, 2030 and 5578, and their inherited externs from 82, 79 and
 111 to 90, 89 and 113, all `Init`'s: the fold compares and hashes addresses
 (`ByteArray.decEq`, `ByteArray.get!`, `ByteArray.size`) and prints them in
@@ -218,22 +220,22 @@ projection record the input omits by that record's address under the entry's
 hash, so it serializes the record (`ByteArray.push`, `copySlice`,
 `emptyWithCapacity`, `UInt64.toUInt8`, `UInt8` shifts and `lor`,
 `String.utf8ByteSize`); the hexadecimal key spelling (`keyName` and its
-table) and the recursors' spelled keys left. Step 5b's
+table) and the recursors' spelled keys left. The
 mode index (the kernel's types take a `Mode`) moved them from 3364, 2066 and
 5566: the pinned names and the basis declarations are generic in the mode, so
 their closed terms are hoisted where they are used rather than where they are
 defined (closed terms and specialisations renumbered), and `Key.id`'s
 override left the fold, which never builds an input key (`Inhabited (Key md)`
-is a role key). Step 5b's
+is a role key). The
 walk change (it visits the source `f` of every arity-reduced `f._redArg` it
 reaches, `reducedAritySource?`) moved them from 3303, 2025 and 5474: the code
 generator calls `f._redArg` directly, and `f` is where an `unsafe`,
 `implemented_by`, `csimp` or `partial` status is recorded. No extern,
-`unsafe`, `csimp` or `partial` constant came in with them. Step 5b's
+`unsafe`, `csimp` or `partial` constant came in with them.
 `LetMeta` (a `letE` keeps its Ixon let contract) moved them from 3274, 2021
 and 5447: the let contract's equality and hash (`Ixon.LetContract`,
-`Ixon.LetKind`) and its `Repr` for the terms printed in messages. Step 5a
-(typed keys) moved the counts from 3350, 2018 and 5656: `Key` became an
+`Ixon.LetKind`) and its `Repr` for the terms printed in messages. Typed keys
+moved the counts from 3350, 2018 and 5656: `Key` became an
 inductive with a cached hash, whose three constructor overrides
 (`Key.{id,role,aux}._override`) the rulings admit with `Key`; a role key is
 now `.role r`, so the closed name terms that spelled the role and derived
@@ -242,8 +244,8 @@ to three per pinned-name constant and per derived-name helper), and the
 rendering that prints keys in messages came in (`Key.toName`, with
 `Role.leanName`'s 121 closed terms and `Derived.spell`'s 19), with `Key`'s,
 `Role`'s and `Derived`'s derived instances; the rest are the compiler's
-specialisations renumbered. Step 4
-(primitives by specification) moved the counts from 3086, 1886 and 5224 with
+specialisations renumbered. Primitives by specification
+moved the counts from 3086, 1886 and 5224 with
 120 externs: the fold gained the specification set (`IxC/Kernel/Roles.lean`)
 and the evidence checks with their closure condition (`evidenceLocal`), the
 reader the role bindings and the evidence resolution (`bindingsOf`,
@@ -411,7 +413,7 @@ surface"). Each names exactly what it admits:
   on the standard axioms;
 * the Ixon codec's two `@[csimp]` replacements (`IxC/Ixon/Codec.lean`):
   `getTagN_eq_fast` and `putTagN_eq_fast`, the TagN reader and writer at a
-  fixed flag width with their powers folded (PERF P3), again each only with a
+  fixed flag width with their powers folded, again each only with a
   theorem on the standard axioms;
 * `withPtrEq`, `withPtrAddr`, their `unsafe` implementations, and
   the pointer reads under them; and `isExclusiveUnsafe`, the reference-count
@@ -436,7 +438,7 @@ def runtimeRulings : RuntimeRulings where
   elaborationModules := #[`IxC.Kernel.BasisGen]
 
 /-- The one execution substitution admitted on an assumption rather than a
-proof (owner, 2026-10-13; `docs/kernel.md`, "Trust surface"): the root
+proof (`docs/kernel.md`, "Trust surface"): the root
 library's admission hash `Address.admissionHash`
 (`Ix/Address/Admission.lean`), defined as pure BLAKE3 (`Address.blake3Pure`),
 executes as the Rust BLAKE3 `Address.blake3` (`@[implemented_by]`), on the
@@ -537,7 +539,7 @@ run_cmd do
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytesTiered [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTiered [propext, Classical.choice, Quot.sound]
 
-/-! ### The reference level (step 7)
+/-! ### The reference level
 
 The executed fold refines the pure fold (`checkDecls_refines_ref`), at the
 certified entry too (`Admission.checkBytes_refines_ref`); the pure checker is
@@ -567,13 +569,17 @@ the executed fold and the certified entry. -/
 The entry's import closure stays inside `importAllowlist`, below the ruled
 elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
-the rulings they use: the fold reaches the kernel's computed-field
-overrides of `Level`, `Expr`, `Name` and `Key` (21) and 20 project csimps; the
-reader adds the in-model generator's 9 `partial` definitions and the codec's
-TagN writer twin (a ruled csimp) and the prelude check (`State.keepsPrelude`:
-the state's keys and the decidable equality of its entries); the entry adds the
-byte stage, the binding section's admission, the committed default table and
-prelude and the codec's TagN reader twin. -/
+the rulings they use: the fold (`checkDecls`, 3663 compiled functions) reaches
+the kernel's computed-field overrides of `Level`, `Expr` and `Key` (17) and 24
+proved project csimp rewrites; the reader (`readRecords`, `readStream`, 2338
+compiled functions) reaches 21 computed-field overrides (adding `Name`'s) and 8
+proved csimp rewrites (including the codec's TagN writer twin) and the prelude
+check (`State.keepsPrelude`: the state's keys and the decidable equality of its
+entries); the entry (`publicOperations`, 6839 compiled functions) and the tiered
+entries (`tierOperations`, 6949 compiled functions) reach 21 computed-field
+overrides and 27 proved csimp rewrites, adding the byte stage, the binding
+section's admission, the committed default table and prelude and the codec's
+TagN reader twin. -/
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
@@ -607,8 +613,9 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 -- specification functions/closed terms and retires four, all in Roles.
 -- The measured closure grows from 3499 to 3663; execution trust is unchanged.
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
--- records one more proved `csimp` in `Ix.Kernel.Cached` (23 -> 24, and 26 -> 27
--- in the public and tiered entries below).
+-- when scanning `val.getUsedConstants` records `Ix.Kernel.Cached.withChain_eq_impl`
+-- (`@[inline] def withChainImpl`) in `Ix.Kernel.Cached` (23 -> 24 for raw kernel
+-- entries, and 26 -> 27 in the public and tiered artifact entries below).
 /-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3663 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 24 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
@@ -635,7 +642,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Ker
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
--- The committed fallback recursor guard (2026-10-22) adds seven compiled
+-- The committed fallback recursor guard adds seven compiled
 -- functions to each entry closure. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Declining an inductive read whose declarations repeat a name adds 11: the reader's 15 but
@@ -657,38 +664,38 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
--- The tiered entries (the typing tier, safety-tier S3): the logical entry's
+-- The tiered entries (the typing tier): the logical entry's
 -- closure (5799, the four `publicOperations`) and 79 functions more: the
 -- partition, the fence's test, the tier reader (`readTierRecord`, over the
 -- reader's own member reader) and the tier fold (`checkTierC`, over the logical
 -- fold's cached functions). No new extern, `unsafe` constant, csimp, `partial`
--- definition or ruling. Step 6b's display annotations moved it from 5878 by the
+-- definition or ruling. Display annotations moved it from 5878 by the
 -- entry's change (8 more, one more ruled csimp), and its failure display from
 -- 5886: the entry's 30 and the closed terms of three of the tier's own message
 -- sites (`Tier.blockShape`), each prose part holding the empty display (one
 -- more ruled csimp). The reader's conversion to modules moved it from 5919 by
 -- the entry's change (28 more; see the module docstring). The tier fold's
--- unsafe stage (U1) moved it from 5947, 15 functions in and 5 out, nothing new
+-- unsafe stage moved it from 5947, 15 functions in and 5 out, nothing new
 -- to rule: the fold's split by kind (`blockC`, `opaqueC` with three closed
 -- terms of its duplicate message, `sortC`, `axiomC`) and the staging
 -- (`TierDecl.stage`, `indexed`, each with its arity-reduced form, `staged` and
 -- its three `List.filter` specialisations); out went `checkDeclC`'s five
 -- closed terms (the unsafe stage's "not implemented" decline). The tiered
--- Ixon entry's routing of unsafe records (U1) moved it from 5957, 14 in and 2
+-- Ixon entry's routing of unsafe records moved it from 5957, 14 in and 2
 -- out: the partition's safety (`tierSafety?` and two closed terms; its
 -- `Tier.Safety` test, `Tier.Safety.ctorIdx` and `instDecidableEqSafety`) and
 -- the tier reader's unsafe opaque and axiom branches (`readTierRecord`: five
 -- more closed terms, two lambdas with their boxed forms in for one out).
--- CQX.8's field test in the in-model generator moved it from 5969 by the
--- entry's change (4 out; see the module docstring). (A) moved it from 5965 by the
+-- Testing non-recursive fields after the auxiliary rewrite in the in-model generator moved it from 5969 by the
+-- entry's change (4 out; see the module docstring). Retiring the compiler-trust roles moved it from 5965 by the
 -- entry's change (122 out; see the module docstring). The `.indDecl` shape
 -- guard moved it from 5843 by the entry's change (44 in, one more csimp; see the module
 -- docstring). The mutual modeller's reading of Lean's recursive fields moved it
 -- from 5887 by the entry's change (9 more; see the module docstring). The
--- admission chain's conversion to modules (step 10c: `Search`,
+-- admission chain's conversion to modules (`Search`,
 -- `Egress/Projection`, `Admission/Bytes`, `Admission`, `Admission/Tier`,
 -- headers only) moved it from 6044, codegen only, as the reader's conversion
--- did (push 30): the partition's `HashSet` `insert` and `contains` are
+-- did: the partition's `HashSet` `insert` and `contains` are
 -- specialised in the module (`Raw₀.insertIfNew`, `expand`, `expand.go`,
 -- `AssocList.foldlM`, `AssocList.contains`, `Raw₀.contains` and the loop at
 -- `partitionTier`), 7 in and 1 out (the loop's former specialisation), and

@@ -460,7 +460,7 @@ impl RoleBinding {
 
 /// The Ixon environment.
 ///
-/// Contains five maps:
+/// Contains six maps plus bundle and role-binding header fields:
 /// - `consts`: Alpha-invariant constants indexed by content hash,
 ///   stored lazily as serialized bytes ([`LazyConstant`]) and
 ///   materialized on demand.
@@ -468,6 +468,9 @@ impl RoleBinding {
 /// - `blobs`: Raw data (strings, nats, files)
 /// - `names`: Hash-consed Lean.Name components (Address -> Name)
 /// - `comms`: Cryptographic commitments (secrets)
+/// - `anon_hints`: Per-constant-address reducibility hints (§3 wire section)
+/// - `main` / `assumptions`: Bundle root pointer and assumed-present address set
+/// - `role_binding`: Optional anonymous role binding (`TagN(0xE, 5)` envelope)
 #[derive(Debug, Default, Clone)]
 pub struct Env {
   /// Alpha-invariant constants: Address -> LazyConstant (raw bytes +

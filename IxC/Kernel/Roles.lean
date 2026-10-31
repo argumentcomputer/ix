@@ -1006,7 +1006,7 @@ def Role.deps : Role → List Role
 /-- **The version of the specification set.** It changes exactly when
 `Role`, `Role.spec`, `Role.block`, `Role.deps` or `Role.usedImplicitly` change,
 together with the specification digest (`Ix.SpecDigest.specDigest`), which the
-root library freezes (`Ix/SpecDigest.lean`). Version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2):
+root library freezes (`Ix/SpecDigest.lean`). Version 2:
 the five compiler-trust roles (`Lean.trustCompiler`, `Lean.reduceBool`,
 `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`) and the `identity`
 specification kind are gone; the certified theory is Lean with its three
@@ -1090,7 +1090,7 @@ closure condition: every constant of a
 proof, after the operation's self-references are replaced by its value, lies
 in the dependency closure of that value and of the operation's dependencies'
 roles (`Role.deps`, with their blocks). The validation then reads only the
-operation's own dependency closure (LOCALITY), and the fast path the evidence
+operation's own dependency closure, and the fast path the evidence
 justifies stays out of the evidence's own check.
 
 The closure follows a stored constant's type, its value (a definition's, a

@@ -313,7 +313,7 @@ Tag0 → TagN replacement had not landed.
   output deterministic. The result is the same as allocation-time dedup.
 - **Proofs.** No theorem covers the compiler's metadata or its arenas: the proofs of the
   arena allocation and the metadata finalizer were part of the compiler-correctness proof
-  tree, which is retired ([kernel](kernel.md), "Removal ledger"). The post-pass needs no
+  tree, which is retired (see [kernel](kernel.md)). The post-pass needs no
   lemma.
 
 **Size estimate.**

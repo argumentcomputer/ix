@@ -88,7 +88,8 @@ def compileDef (compileEnv : CompileM.CompileEnv)
 
   -- 4. Compile via CompileM (pure, runs in Except)
   let all : Ix.Set Ix.Name := ({} : Ix.Set Ix.Name).insert ixName
-  match CompileM.compileBlockPure compileEnv' all ixName with
+  let blockEnv : CompileM.BlockEnv := { all, current := ixName, mutCtx := {}, univCtx := [] }
+  match CompileM.CompileM.run compileEnv' blockEnv {} (CompileM.compileConstantInfo ixConst) with
   | .error e => .error s!"compileDef: {e}"
   | .ok (result, blockState) =>
     -- 5. Serialize and hash to get content address

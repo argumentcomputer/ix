@@ -84,7 +84,7 @@ def expected : List (Lean.Name × String) := [
   (defs "isEven", "accept"), (defs "isOdd", "accept"), (defs "Tm.size", "accept"),
   (defs "WTree.depthAt", "accept"),
   (own "BoolQ", "accept"), (own "BoolQ.mk", "accept"), (own "BoolQ.const", "accept"),
-  -- fields whose occurrence of the block whnf removes (CQX.8; Lean's kernel
+  -- fields whose occurrence of the block whnf removes (Lean's kernel
   -- tests positivity after whnf): nested (`V`, `W`), mutual (`A`, `B`) and
   -- single (`S`); `T` (lane P's reproducer) and `U`, the nested shapes at
   -- `Sort u`, get past that test and are declined by the modeller's residual
@@ -134,7 +134,7 @@ def acceptedSeeds : Array Lean.Name := #[defs "Color", defs "Point3", defs "Vec.
   own "BoolQ.mk_eq", own "BoolQ.const_eq", defs "smallNat", defs "bigNat", defs "twice_id",
   defs "secret", defs "levelMax", defs "levelImax"]
 
-/-- Seeds of the reduced-field fixtures (CQX.8) whose closure is accepted as a
+/-- Seeds of the reduced-field fixtures whose closure is accepted as a
 whole by `checkSource`, apart from `acceptedSeeds`, which `cert-statement`
 also compiles. -/
 def reducedSeeds : Array Lean.Name := #[reduced "v_rec", reduced "W", reduced "a_rec",
@@ -351,7 +351,7 @@ def evaluate : IO (Array String × Array String) := do
   | .ok kenv => lines := lines.push s!"checkSource: accepted, {kenv.consts.length} kernel constants \
       from {accEnv.consts.size} Lean constants"
   | .error e => errors := errors.push s!"checkSource on the accepted closure: {e}"
-  -- all at once, on the reduced-field fixtures' closure (CQX.8)
+  -- all at once, on the reduced-field fixtures' closure
   let redEnv ← envOf leanEnv reducedSeeds
   match checkSource redEnv (condense redEnv) with
   | .ok kenv => lines := lines.push s!"checkSource (reduced fields): accepted, \
@@ -378,7 +378,7 @@ def fixtures : TestSeq :=
     let msg := if errors.isEmpty then none else some ("\n".intercalate errors.toList)
     return (errors.isEmpty, expected.length, 0, msg)) .done
 
-/-! ## Quotient Source (`ALPHA-COLLAPSE.md` §8.4)
+/-! ## Quotient Source
 
 Hand-made fiber maps over the module's alias fixtures: an α-equal pair is
 collapsed to its first member and the result accepted, with exactly the alias's

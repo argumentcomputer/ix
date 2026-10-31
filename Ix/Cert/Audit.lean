@@ -73,7 +73,7 @@ project-level foreign primitives, `unsafe` implementations and `partial`
 definitions its compiled code reaches, which a proof about `compile` meets as
 opaque constants.
 
-Step 5b (the kernel's types indexed by a `Mode`) re-froze the statements
+Indexing the kernel's types by a `Mode` re-froze the statements
 with the modes made explicit and nothing else changed: Source mode installs
 an `Env .source`, Ixon mode an `Env .anon`, and the reading takes a source
 constant to a compiled term (`ConstantInfo .source → Option (Expr .anon)`).
@@ -104,7 +104,7 @@ fun env a b =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.DependsOn
 
--- The literal support (owner, 2026-10-20): a constant's literals depend on the constants IxC
+-- The literal support: a constant's literals depend on the constants IxC
 -- checks them against.
 /-- info: def Ix.Cert.literalSupport : Ix.ConstantInfo → Array Ix.Name :=
 fun ci =>
@@ -140,7 +140,7 @@ fun condense env roots sub envS =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.SourceAccepts
 
--- CQP.3: the worklist finds an inductive's recursors by the block's first
+-- The worklist finds an inductive's recursors by the block's first
 -- member compared structurally (`nameEq`), as `DependsOn` compares it. It
 -- compared the hash fields only (`Ix.Name`'s `==`), so with two names of one
 -- hash field it kept a recursor the roots do not reach, and `ClosureCorrect`
@@ -450,7 +450,7 @@ field notation resolution order:
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.ValueModel
 
--- Step 5a (typed keys): a source constant's key is `Ix.Kernel.Key` (was the
+-- Typed keys: a source constant's key is `Ix.Kernel.Key` (was the
 -- name), matched against the published names by `Ix.LeanIngress.nameIs`.
 /-- info: def Ix.Cert.publishedAddress : Ixon.Env → Ix.Kernel.Key Ix.Kernel.Mode.source → Option Address :=
 fun ixe k =>
@@ -500,7 +500,7 @@ fun τ envS envA =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.Commutes
 
--- CQP.1: `HashAgreement` (`∀ bytes, Address.blake3 bytes = Address.blake3Pure
+-- `HashAgreement` (`∀ bytes, Address.blake3 bytes = Address.blake3Pure
 -- bytes`) is gone, as `CompileCorrect`'s hypothesis and as a definition: since
 -- Every content address the compiler computes is `Address.admissionHash`,
 -- pure BLAKE3 in the logic, so the statement no longer assumes that the Rust
@@ -514,7 +514,7 @@ fun τ envS envA =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.CompileAuthentic
 
--- CQP.2: `CompileCorrect` is hypothesised on the compile's own report
+-- `CompileCorrect` is hypothesised on the compile's own report
 -- (`compileReport`), decidably, instead of on the artifact: "no constant of the
 -- closure failed" (`NoFailure`) replaces `Published ixe sub`, which it now
 -- concludes; the rest of the conclusion is `IxonCommutes`, the former one
@@ -606,7 +606,7 @@ fun ixe sub envS =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.IxonValueSound
 
--- Route A, B10: the reference-level twins of Ixon acceptance, consistency and value soundness
+-- The reference-level twins of Ixon acceptance, consistency and value soundness
 -- (the pure fold at some fuel), and every executed accept is a reference accept.
 /-- info: def Ix.Cert.IxonAcceptsRef : Ix.Kernel.Admission.Binding →
   Ix.Kernel.Admission.Limits → Ixon.Env → (Address → Prop) → List Address → Ix.Kernel.Env Ix.Kernel.Mode.anon → Prop :=
@@ -646,7 +646,7 @@ fun binding limits ixe S order envA =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.ixonAccepts_ref
 
--- Step 5a (typed keys) re-froze the renaming lemma's definitions over
+-- Typed keys re-froze the renaming lemma's definitions over
 -- `Ix.Kernel.Key`: `σ : Key → Key`, the key lists are `List Key`, `Pinned` is
 -- the role keys (the basis blocks' reserved keys are role keys,
 -- `Ix.Cert.reservedBasisNames_pinned`), `DerivedFrom` is one or more `aux`
@@ -654,7 +654,7 @@ fun binding limits ixe S order envA =>
 -- derived shape off the input keys) and drops `anonymous` (keys have no
 -- `etaCtor` sentinel) and `recursor` (no key spells a recursor the checker
 -- reads).
--- Step 5b: `letE` carries a fourth field, its `LetMeta`, which a renaming keeps.
+-- `letE` carries a fourth field, its `LetMeta`, which a renaming keeps.
 -- The renaming now takes a mode to another (`σ : Key md → Key md'`), so a
 -- recursor rule's firing mode, an inductive's capabilities and a projection
 -- table are renamed field by field (`Rename.recRuleFire`, `Rename.indCaps`,
@@ -875,8 +875,7 @@ constructor:
 -- is named once (`blocks`) and passed to the driver; the driver's arguments are
 -- the same.
 --
--- Route A, B9b, check 3a (coordinator decision, 2026-10-20): re-frozen.
--- `compileUnchecked` also returns the driver's resolution map at the end of the
+-- Re-frozen: `compileUnchecked` also returns the driver's resolution map at the end of the
 -- fold (`cenv.nameToAddr`, which it used to drop), for `checkReport`'s sixth
 -- check (section "Resolved names are published where they resolve" below). The
 -- environment and failures it returns are the same.
@@ -917,7 +916,7 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unauthentic
 
--- Route A, B4 (coordinator decision, 2026-10-16): `checkReport` gained a
+-- `checkReport` gained a
 -- third check, acyclic references (`referenceCycle`: the stored records'
 -- reference graph, `recordGraph`, through `Ix.Compile.Canon.condensation`;
 -- a component of more than one record, or a record referencing itself, is
@@ -1337,7 +1336,7 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Commutes.alias
 
--- CQP.3: the Source theorems at the compiler's grouping.
+-- The Source theorems at the compiler's grouping.
 /-- info: Ix.Cert.sourceConsistent_blocksOf : ∀ (V : Type u_1) [Ix.Kernel.SetTheory V] (env : Ix.Environment)
   (roots : List Ix.Name) (sub : Ix.Environment) (envS : Ix.Kernel.Env Ix.Kernel.Mode.source),
   Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
@@ -1357,7 +1356,7 @@ fun env => Prod.fst <$> Ix.Cert.compileReport env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.closureCorrect
 
--- CQP.1: the definitional steps of `CompileAuthentic`.
+-- The definitional steps of `CompileAuthentic`.
 /-- info: Ix.Cert.blockAddr_mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta)
   (projections : Array (Ix.Name × Ixon.Constant × Ixon.ConstantMeta)) :
   (Ix.CompileM.BlockResult.mk' block blockMeta projections).blockAddr =
@@ -2104,7 +2103,7 @@ in `Ix.CompileCert.ReadingAudit`. -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.CompileCert.UniverseMeaning.lower.eq_def
 
--- N2 (2026-10-20): `LevelMeaning` gained `exact` (the level is the reading of the
+-- `LevelMeaning` gained `exact` (the level is the reading of the
 -- canonical form of the exact lowering), from which `CanonLevelReading` reads the
 -- level syntactically; re-frozen.
 /-- info: structure Ix.CompileCert.UniversePipeline.LevelMeaning (params : List Ix.Name) (σ : Ix.Name → Ix.Kernel.LevelParam)
@@ -3157,7 +3156,7 @@ behind them is audited in `Ix.CompileCert.ReadingAudit`. -/
 
 /-! ## Component theorems: the reader's recursor index
 
-The certified reader indexes recursors by their own records (SP3 D8)
+The certified reader indexes recursors by their own records
 before reading (`Ix.Kernel.Reader.buildIndex`). Every block shape's order
 was validated against the block's record, so a compiled standalone family
 is indexed at member 0 exactly (`ReaderIndex.buildIndex_singleton_order`);
@@ -3440,7 +3439,7 @@ fun env first =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.CompileCert.SourceConstructorPositions.inductive_reads_source
 
-/-! ## CQP.4 (a): the driver's schedule is a fold
+/-! ## The driver's schedule is a fold
 
 `Ix.CompileM.compileEnvFold`, the driver of `Ix.Cert.compile` and of the IO
 pipeline, is its sequential form (`Ix.Cert.Schedule.compileEnvFoldSeq`):
@@ -3533,7 +3532,7 @@ fun snapshot ready acc =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Schedule.compileEnvFold_width
 
-/-! ## CQP.4 (b): the hybrid environment compiles as the materialized one
+/-! ## The hybrid environment compiles as the materialized one
 
 The driver and its validations read the environment through
 `Ix.Environment.get?` only, apart from the order of the inductive groups
@@ -3550,7 +3549,7 @@ pipeline's own loops,
 its front end (canonicalization, graph, ground filter, condensation) and
 the blocks' independence within a wave stay tested. -/
 
--- groupOrder (2026-10-19): the runtime check lists the production edit's
+-- `groupOrder`: the runtime check lists
 -- `groupHeads` (which replaces `inductiveGroups`), `groupAll` and `orderedGroups`
 -- (8 → 10 safe definitions).
 /-- info: [cert-audit] hybrid: 11 roots; axioms used: [propext, Classical.choice, Quot.sound]
@@ -3569,7 +3568,7 @@ run_cmd do
       ``Ix.CompileM.orderedGroups, ``Ix.Environment.get?,
       ``Ix.CanonM.canonChunk]
 
--- groupOrder (2026-10-19, flagged production edit in Ix/CompileDriver.lean): the
+-- `groupOrder` (in `Ix/CompileDriver.lean`): the
 -- validations' group order is now `orderedGroups` (the first members as a
 -- `Std.TreeSet` under `Ix.nameCompareExact`, each with its own `all`), and
 -- `groupOrder` restates it; re-frozen.
@@ -3599,7 +3598,7 @@ fun codeConsts leanByIx =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.Hybrid.compileEnvFold_lookups
 
--- groupOrder (2026-10-19): `pipeline_fold`'s premise that the two environments'
+-- `groupOrder`: `pipeline_fold`'s premise that the two environments'
 -- groups agree in order is gone (proved: `groupOrder_eq`, `hybrid_heads`); in its
 -- place the IO layer's `inductives` (the code constants hold exactly the input's
 -- inductives), tested like `code`; re-frozen.
@@ -3626,7 +3625,7 @@ fun codeConsts leanByIx =>
 #print axioms Ix.Cert.Hybrid.pipeline_fold
 
 
-/-! ## Route A, B3: the reader succeeds over the compiled closure's stream
+/-! ## The reader succeeds over the compiled closure's stream
 
 The certified entry's preparation (`Ix.Kernel.Admission.prepareWith`)
 succeeds on the compiled closure (`Ix.Cert.Stream.closure_prepares`): the
@@ -3747,10 +3746,10 @@ fun ixe order =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Stream.closure_accepts
 
-/-! ## Route A, B4: the compiled closure has an order
+/-! ## The compiled closure has an order
 
 `compileReport` checks that no stored record is on a reference cycle
-(`Ix.Cert.referenceCycle`, Pass 1's proved condensation over the stored
+(`Ix.Cert.referenceCycle`, proved condensation over the stored
 records' reference graph). A successful check orders the stored records
 (`Ix.Cert.Order.recordsOrdered_of_acyclic`: sorted by component, since an
 edge never goes to a later component and every component is one record), and
@@ -3832,7 +3831,7 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Order.closureOrder_exists
 
-/-! ## Route A, B5a and B6a: roles in the artifact, and evidence only gates
+/-! ## Roles in the artifact, and evidence only gates
 
 Source mode and Ixon mode check under different evidence (the certificate
 theorems of the checked environment against the role table's synthesized
@@ -3844,9 +3843,9 @@ role table's address for that role (`Ix.Cert.PublishedRolesBound`, decided by
 `publishedRolesBound`; the reading of a role's constant is then at the table's
 address, `Ix.Cert.publishedAddress_role`); `cert-statement`,
 `cert-compile-parity-initstd` and `cert-roles-initstd` run it on the fixtures and
-on Init+Std. Re-frozen (push 77's follow-up): B5a's `RolesBound` and
+on Init+Std. `RolesBound` and
 `RolesBound.of_closure` are removed; `RolesBound` trusts stored name hashes and is
-superseded by `PublishedRolesBound` (push 77). -/
+superseded by `PublishedRolesBound`. -/
 
 /-- info: [cert-audit] evidence: 5 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -3958,7 +3957,7 @@ run_cmd do
   checkRoots (tag := "cert-audit") "block start"
     (#[`clean_empty, `wire_empty].map (`Ix.Cert.BlockStart ++ ·))
 
-/-! ## Route A, B6b: the role table's certificates on their pinned closure
+/-! ## The role table's certificates on their pinned closure
 
 `kernel-pin-gen` pins the well-founded `Nat` operations' dependency closure in
 RoleData. On it, under the default table and its committed prelude, every
@@ -4036,7 +4035,7 @@ run_cmd do
       `mem_blockOf_ctor, `lowerInductive_decl, `forIn_kept, `lowerAll_mem, `noCtor_of_checkSourceWith,
       `inductive_reads_sourceAccepts].map (`Ix.Cert.NoCtor ++ ·))
 
-/-! ## Source mode at the pinned bundle evidence (owner, 2026-10-20)
+/-! ## Source mode at the pinned bundle evidence
 
 `SourceAccepts` runs `Ix.LeanIngress.checkSourceBundled`: the committed prelude
 and the committed bundle's evidence (`Ix.RoleEvidence.bundleEvidence`), whatever
@@ -4122,7 +4121,7 @@ fun env roots sub ixe t =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.sourceAcceptsQ_of_check
 
-/-! ## Quotient Source at the artifact's addresses (step 7.3 (iv), statements' side)
+/-! ## Quotient Source at the artifact's addresses
 
 IxC renames a checked quotient accept to the artifact's addresses by the joined map
 (`Ix.LeanIngress.acceptsRef_prepareSourceCollapsedAt`, `evAddr`). The table rule's
@@ -4197,7 +4196,7 @@ run_cmd do
       `tableBound_of, `publishedAgree_iff, `nameIsName_iff, `publishedAddress_role, `publishedAddress_id,
       `reading_id, `sourceAcceptsQ_addrAt].map (`Ix.Cert ++ ·))
 
-/-! ## Distinct name hashes (B9's name keys; owner-approved check, 2026-10-20)
+/-! ## Distinct name hashes
 
 `Ix.Name`'s `==` compares stored name hashes, and every map keyed by name (the
 input's constants, the artifact's published names, the changed set's tables)
@@ -4232,7 +4231,7 @@ fun env ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.nameHashCollision
 
-/-! ## `Muts` entries agree with their blocks (B9c (c2); coordinator decision, 2026-10-20)
+/-! ## `Muts` entries agree with their blocks
 
 The changed set reads a compiled component's classes off its `Muts` entry,
 which the block compile registers after its projections (`registerMutsEntry`)
@@ -4276,14 +4275,14 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.mutsMismatch
 
-/-! ## Resolved names are published where they resolve (B9b, check 3a; coordinator decision, 2026-10-20)
+/-! ## Resolved names are published where they resolve
 
 A block's merge registers each of its names in the driver's resolution map
 (`CompileEnv.nameToAddr`) and its `Named` table at one address, but later
 merges write the `Named` table without the resolution map's single-ownership
 check, so no proof bounds which names a later block's entries overwrite. `compileReport` now refuses a result in which a name
 of the resolution map at the end of the fold is not published at the address it
-resolves to (`checkReport`'s sixth check, `resolutionMismatch`); B9b's merge
+resolves to (`checkReport`'s sixth check, `resolutionMismatch`); the merge
 invariant is about the resolution map, and with this check it speaks of the
 published names (`resolvedPublished`). Re-frozen with it: `compileUnchecked`'s
 print (it returns the resolution map), `checkReport`'s print (its `resolved`
@@ -4315,7 +4314,7 @@ fun resolved ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.resolutionMismatch
 
-/-! ## Published input names are resolved (B9b, `HookFree`'s discharge, (v); coordinator decision, 2026-10-21)
+/-! ## Published input names are resolved
 
 A `Named` entry can come from a block's `Muts` entry (`BlockState.mutsNamed`),
 so a published input name need not be one the driver resolved. `compileReport`
@@ -4345,15 +4344,14 @@ fun env resolved ixe =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.unresolvedPublished
 
-/-! ## Input constants carry their names (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21)
+/-! ## Input constants carry their names
 
 The block compile names its projections by its members' own names
 (`ConstantVal.name`, through `MutConst`), while the condensation and the
 driver group and look them up by the names they are stored under; no
 statement relates the two. `compileReport` now refuses an input in which a
 constant's own name does not hash like the name it is stored under
-(`checkReport`'s twelfth check, `misnamedInput`; probe
-`ports/20261021T034341Z-hookprobe`: 0 on the materialized constants of
+(`checkReport`'s twelfth check, `misnamedInput`: 0 on the materialized constants of
 Init+Std, 36,870, and Mathlib, 237,499). With it, every name a block's
 compile claims is a member's or a member's constructor's. Re-frozen with it:
 `checkReport`'s print and `checkReport_ok` (a twelfth conjunct; its proof now
@@ -4368,9 +4366,8 @@ member under its own name, and quotient Source keys every constant by its own
 name; with one spelling for both, the Source coverage statement can name the
 published constant by the closure's stored name. `misnamedInput_none` and
 `inputsNamed` now conclude equality. Re-frozen with it: `misnamedInput`'s
-print. Probe `p2src/20261027T003307Z-names-initstd2`: 0 on Init+Std's
-canonical input (117,694 constants, 215 ms); probe
-`p2src/20261027T003616Z-names-mathlib`: 0 on Mathlib's (783,115 constants, 1,493 ms). -/
+print (0 on Init+Std's canonical input of 117,694 constants in 215 ms, and 0 on
+Mathlib's 783,115 constants in 1,493 ms). -/
 
 /-- info: [cert-audit] input names: 2 roots; axioms used: [propext, Classical.choice, Quot.sound]
 ---
@@ -4392,7 +4389,7 @@ fun env =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.misnamedInput
 
-/-! ## Input constructors belong to their inductive (B9b, `HookFree`'s discharge, membership; coordinator decision, 2026-10-21 ~05:20)
+/-! ## Input constructors belong to their inductive
 
 A block's compile claims its inductives' constructors, looked up by the names
 the inductive lists (`InductiveVal.ctors`); a claimed constructor is in the
@@ -4433,7 +4430,7 @@ fun env =>
 #guard_msgs (whitespace := lax) in
 #print Ix.Cert.strayConstructor
 
-/-! ## One projection record per definition member (CtxAgree's hints premise; coordinator decision, 2026-10-21 ~18:20)
+/-! ## One projection record per definition member (CtxAgree's hints premise)
 
 The reader takes a definition block member's hint at the projection record of it
 it finds first (`Ix.Cert.hintsOf`), quotient Source at the address the member's
@@ -4446,8 +4443,8 @@ one projection per member (≈0.2–0.4k). Re-frozen with it: `checkReport`'s pr
 and `checkReport_ok` (its projection conjunct, now sixteenth). On a consistent run the result is
 unchanged.
 
-The first corpus probe (ports/20261021T203754Z-projection-probe-p121) found
-zero collisions on Init+Std, but the two full-decoder passes cost 6.60–6.64 s
+An initial full-decoder pass over Init+Std found
+zero collisions, but the two full-decoder passes cost 6.60–6.64 s
 for 29 projections among 100,327 records. The header filter now skips all
 other records, respecting cached values and uncached buffer/offset behavior
 on arbitrary inputs (`ProjectionRead.fast_eq`); candidate projections are
@@ -5003,7 +5000,7 @@ run_cmd do
   checkRuntime (tag := "cert-audit") "definition hints"
     #[``Ix.Cert.unhintedDefinition]
 
-/-! ## S1's units,: each record's and each group's lowering
+/-! ## Reader units: each record's and each group's lowering
 
 `Ix.Cert.ReaderUnits`: the stream the Ixon reader decodes is its records'
 lowerings concatenated, one per record (`readRecords_units`), and the Source
@@ -5111,7 +5108,7 @@ run_cmd do
     ((#[`compileReport_owned].map (`Ix.Cert.ClosureClaims ++ ·)) ++
       #[``Ix.Cert.Claims.runBlock_owned, ``Ix.Cert.Resolution.reach_env])
 
-/-! ## S1's generated records: the statements half of `CtxAgree`
+/-! ## Generated records: the statements half of `CtxAgree`
 
 `Ix.Cert.CtxAgree`: a mutual or nested block's modeller records agree on the
 two streams. At reader states that agree on the block's scope, the block and its

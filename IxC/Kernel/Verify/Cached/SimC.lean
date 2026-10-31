@@ -346,8 +346,8 @@ theorem CSOKF.flushed {s : CState md} (hs : CSOKF s) : CSOKF s.flushed :=
 
 /-! ## Reset
 
-`resetC` (the start of every step of the declaration fold, LOCALITY
-§6(a)) replaces the state by the empty one, where the invariant holds
+`resetC` (the start of every step of the declaration fold)
+replaces the state by the empty one, where the invariant holds
 for any environment (`CSOK.empty`). -/
 
 theorem resetC_run (s : CState md) : resetC s = .ok ((), ({} : CState md)) := rfl

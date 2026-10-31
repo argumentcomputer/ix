@@ -1,7 +1,7 @@
 import Ix.Cert.RoleClosurePrepare
 import Ix.Cert.PreludeAgree
 
-/-! # The role table's certificates check on their own closure (Route A, B6b)
+/-! # The role table's certificates check on their own closure
 
 The default role table (`IxC/Kernel/Ixon/RoleData.lean`) is the verifier's pinned
 configuration. For each well-founded `Nat` operation (`Ix.Kernel.natDivModNames`)
@@ -25,8 +25,7 @@ the statement is closed: `RoleEvidenceChecks` mentions no input.
 
 `kernel-pin-gen` runs `closureCheck` on the closure before writing it, and
 `cert-statement` checks `roleEvidenceCheck` on the committed file at every
-regeneration. Replaced by CQX.7 (the compiler binds its own compiled
-certificate theorems). -/
+regeneration. -/
 
 namespace Ix.Cert.RoleClosure
 

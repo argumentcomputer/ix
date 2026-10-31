@@ -24,7 +24,7 @@ theorem BoolQ.const_eq (q : BoolQ) : q.const = 0 :=
 
 end Tests.Ix.Kernel.SourceIngressDefs
 
-/-! ## Alias fibers (quotient Source, `ALPHA-COLLAPSE.md` §8.4)
+/-! ## Alias fibers (quotient Source)
 
 `aliasOne` and `aliasTwo` are α-equal, so they are one fiber; `aliasUser`
 references the second, and after the collapse the first. `aliasOther` is not

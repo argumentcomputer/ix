@@ -402,11 +402,12 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
          expectedIOBuffer := ioBuffer
          interpret := false, withProof := false }
 
-/-- kernel check with equivalent transitive typecheck semantic.
-    Reshapes an `Ix.Claim.check target none` request as a `CheckEnv`
-    claim whose owned tree lists the target's transitive closure —
-    every member gets typechecked, not just the target. Kernel path:
-    verify_claim → run_check_env → per-leaf run_check.
+/-- Kernel `Claim.check` with transitive typecheck semantics (`kernelCheckEntries`).
+    Builds an `Ix.Claim.check` claim over `name`'s shared Ixon closure, where
+    `run_check_transitive` walks the block-level ref DAG lazily without an
+    `AssumptionTree`. By default (`assumeBinding := true`), the claim assumes its
+    role binding (validator 4); `assumeBinding := false` validates the roles used
+    in its own proof (validator 3).
 
     Blake3 binding is preserved end-to-end: every closure member
     reaches the kernel via `get_ci(addr)` which reads bytes from
@@ -626,9 +627,9 @@ private def singletonTrees (tree : Ix.AssumptionTree) :
     Std.HashMap Address Ix.AssumptionTree :=
   ({} : Std.HashMap _ _).insert tree.root tree
 
-/-- the kernel `Check` with `assumptions = some tree.root` covering every
+/-- The kernel `Check` with `assumptions = some tree.root` covering every
     transitive dep — the cutoff walk (strict=0) stops at each frontier
-    member, so the kernel ends up checking only the subject. the kernel analog
+    member, so the kernel ends up checking only the subject. The kernel analog
     of `claimCheckWithAsm`. -/
 public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let target ← lookupAddr ixonEnv ``Nat.zero
@@ -643,8 +644,8 @@ public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (singletonTrees tree)
   pure (asTestCase "Claim Check with-asm (Nat.zero)" witness)
 
-/-- the kernel CheckEnv, self-contained: owned tree = every env constant.
-    Exercises the R1 strict owned-membership rule over a closure that
+/-- The kernel CheckEnv, self-contained: owned tree = every env constant.
+    Exercises the strict owned-membership rule over a closure that
     covers itself (walk-reachable ⊆ owned, empty asm). -/
 public def claimCheckEnvFull (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let some tree := envCanonicalTree ixonEnv
@@ -654,9 +655,9 @@ public def claimCheckEnvFull (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (singletonTrees tree)
   pure (asTestCase "CheckEnv self-contained (shared smoke env)" witness)
 
-/-- the kernel CheckEnv with a thin frontier asm: owned = {Nat.add_comm},
+/-- The kernel CheckEnv with a thin frontier asm: owned = {Nat.add_comm},
     asm = the direct block-level refs of its constant. Exercises the
-    R1 asm-cutoff walk: the single owned leaf is checked, the walk
+    asm-cutoff walk: the single owned leaf is checked, the walk
     stops at every frontier member (no recursion below), and strict
     membership passes because the leaf is owned. Bytes for the full
     closure stay in ch 2 — delta unfolding punches through the
@@ -675,7 +676,7 @@ public def claimCheckEnvFrontier (ixonEnv : Ixon.Env) : IO AiurTestCase := do
       (some asmTree.root)) trees
   pure (asTestCase "CheckEnv frontier-asm (Nat.add_comm)" witness)
 
-/-- the kernel `Reveal` Defn (kind+safety) — coverage. -/
+/-- The kernel `Reveal` Defn (kind+safety) — coverage. -/
 public def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
     fun ci => match ci with | .defn _ => true | _ => false
@@ -687,8 +688,8 @@ public def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (Ix.Claim.reveal comm revealInfo) {}
   pure (asTestCase "Claim Reveal Defn (kind+safety)" witness)
 
-/-- the kernel `Reveal` Defn `typ` via content-hash binding — exercises the
-    the kernel `expr_addr` path. -/
+/-- The kernel `Reveal` Defn `typ` via content-hash binding — exercises the
+    kernel `expr_addr` path. -/
 public def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
     fun ci => match ci with | .defn _ => true | _ => false
@@ -720,7 +721,7 @@ public def claimRevealBinderModes : IO AiurTestCase := do
     (Ix.Claim.reveal addr (.axio none none (some typAddr))) {}
   pure (asTestCase "Claim Reveal Expr (v3 binder modes)" witness)
 
-/-- the kernel `Reveal` CPrj — all projection fields. coverage. -/
+/-- The kernel `Reveal` CPrj — all projection fields. Coverage. -/
 public def claimRevealCPrj (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"
     fun ci => match ci with | .cPrj _ => true | _ => false
@@ -732,7 +733,7 @@ public def claimRevealCPrj (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (Ix.Claim.reveal comm revealInfo) {}
   pure (asTestCase "Claim Reveal CPrj (all fields)" witness)
 
-/-- the kernel `Contains` against a synthetic 3-leaf tree. -/
+/-- The kernel `Contains` against a synthetic 3-leaf tree. -/
 public def claimContains : IO AiurTestCase := do
   let a : Address := ⟨⟨Array.replicate 32 0x11⟩⟩
   let b : Address := ⟨⟨Array.replicate 32 0x22⟩⟩

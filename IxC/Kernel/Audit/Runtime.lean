@@ -21,8 +21,9 @@ every constant it reaches that execution treats specially:
   summary; an implementation inlined into its caller leaves no call to
   find), and `unsafe` declarations. The overrides that `@[computed_field]`
   generates are both;
-* `csimp` replacements, found by their source or, since the IR already
-  calls the replacement, by their target;
+* `csimp` replacements, found by their source, by their target when the IR
+  already calls the replacement, or by scanning a constant's logical body
+  when an `@[inline]` replacement target was inlined into its caller;
 * the source `f` of each arity-reduced auxiliary `f._redArg` reached, whose
   code the auxiliary carries;
 * opaque constants with compiled code. On Lean 4.34 a `partial` definition
@@ -150,9 +151,11 @@ where
         | some target =>
           (todo.push target, { report with implementedBy := report.implementedBy.push (name, target) })
         | none => (todo, report)
-      let (todo, report) := match (Compiler.CSimp.ext.getState env).map.find? name with
-        | some entry =>
-          (todo.push entry.toDeclName, { report with csimp := report.csimp.push (name, entry.toDeclName) })
+      let (todo, report) : Array Name × RuntimeReport := match csimpSources.find? name with
+        | some entries =>
+          entries.foldl (init := (todo, report)) fun ((todo, report) : Array Name × RuntimeReport) entry =>
+            (todo.push entry.toDeclName,
+              { report with csimp := report.csimp.push (name, entry.toDeclName) })
         | none => (todo, report)
       let report := match targets.find? name with
         | some entries =>
@@ -183,19 +186,17 @@ where
           -- If `name`'s logical body calls a `@[csimp]` source `c` whose replacement
           -- target was inlined into `name` (leaving neither `c` nor `toDeclName` in
           -- `usedIr`), record the inlined `@[csimp]` entries in `csimpTargets`.
-          let report := match (env.find? name).bind ConstantInfo.value? with
+          let report : RuntimeReport := match (env.find? name).bind ConstantInfo.value? with
             | some val =>
-              val.getUsedConstants.foldl (init := report) fun report c =>
+              val.getUsedConstants.foldl (init := report) fun (report : RuntimeReport) c =>
                 match csimpSources.find? c with
                 | some entries =>
                   if usedIr.contains c || entries.any (fun e => usedIr.contains e.toDeclName) then
                     report
                   else
-                    match (Compiler.CSimp.ext.getState env).map.find? c with
-                    | some e =>
+                    entries.foldl (init := report) fun (report : RuntimeReport) e =>
                       { report with
                         csimpTargets := report.csimpTargets.push (e.fromDeclName, e.toDeclName, e.thmName) }
-                    | none => report
                 | none => report
             | none => report
           go targets csimpSources implementations (todo ++ usedIr) seen report
@@ -354,12 +355,13 @@ def checkRuntimeWith (roots : Array Name) (prefixes : Array Name) (rulings : Run
   -- the substitution is applied where its implementation's primitives are reached
   let applied := rulings.assumed.filter fun s =>
     s.externs.any report.externs.contains || report.visited.contains s.target
+  let csimpSources := csimpBySource env
   let findings := report.externs.map Finding.extern ++
     report.implementedBy.map (fun (name, target) => Finding.implementedBy name target) ++
     report.unsafes.map Finding.unsafe ++
-    report.csimp.filterMap (fun (source, target) =>
-      (((Compiler.CSimp.ext.getState env).map.find? source).map fun entry =>
-        Finding.csimp source target entry.thmName)) ++
+    (report.csimp.flatMap fun (source, target) =>
+      ((csimpSources.find? source).getD #[]).filterMap fun entry =>
+        if entry.toDeclName == target then some (Finding.csimp source target entry.thmName) else none) ++
     report.csimpTargets.map (fun (source, target, thm) => Finding.csimp source target thm) ++
     report.opaqueCode.map Finding.opaqueCode
   let mut flagged : Array Name := #[]

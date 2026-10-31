@@ -1187,7 +1187,7 @@ def putCommTagged (c : Comm) : PutM Unit := do
 /-- Serialize Comm with TagN(4, 0xE, 1) header to bytes. -/
 def serCommTagged (c : Comm) : ByteArray := runPut (putCommTagged c)
 
-/-- Compute commitment address: blake3(TagN(4, 0xE, 5) + secret + payload). -/
+/-- Compute commitment address: blake3(TagN(4, 0xE, 1) + secret + payload). -/
 def Comm.commit (c : Comm) : Address := Address.blake3 (serCommTagged c)
 
 /-! ## Ixon Environment -/
@@ -1504,7 +1504,7 @@ structure RawNameEntry where
 /-- Raw FFI environment structure using arrays instead of HashMaps.
     This is the array-based equivalent of `Env` for FFI compatibility.
     Field order matters: the Rust mirror (`LeanIxonRawEnv`) addresses
-    constructor slots positionally (0-10). -/
+    constructor slots positionally (0-8). -/
 structure RawEnv where
   consts : Array RawConst
   named : Array RawNamed
@@ -1824,17 +1824,12 @@ def buildConstIdx (consts : Array (Address × LazyConstant)) : Std.HashMap Addre
     acc := acc.insert consts[i].1 i.toUInt64
   return acc
 
-/-- Build the §4 name address → index table from the topologically sorted names array. -/
-def buildNameIdx (sortedNames : Array (Address × Ix.Name)) : NameIndex := Id.run do
-  let mut acc := Std.HashMap.emptyWithCapacity sortedNames.size
-  for h : i in [:sortedNames.size] do
-    acc := acc.insert sortedNames[i].1 i.toUInt64
-  return acc
-
-/-! `putEnv` encodes sections 1, 2, 4 and 6, which read only the env and its
-sorted constants, each on its own task, and writes their bytes in place:
-`putBytes` of a section's bytes is the output of its writes, so the bytes are
-those of writing the sections one after the other. -/
+/-! `putEnv` (`spawnPutTasks` and `putSections`) encodes sections 1
+(`blobsSection`), 2 (`encodeConstsChunk`), 4 (`encodeNamesSection`), 5
+(`putNamedEntries`) and 6 (`commsSection`) on parallel tasks and writes their
+bytes in section order: `putBytes` of a section's or chunk's bytes is the
+output of its writes, so the bytes are those of writing the sections one after
+the other. -/
 
 /-- Section 1: Blobs (Address -> bytes). -/
 def blobsSection (env : Env) : ByteArray :=
@@ -1847,7 +1842,11 @@ def blobsSection (env : Env) : ByteArray :=
       putTagN 0 0 bytes.size.toUInt64
       putBytes bytes
 
-/-- Encode `consts[lo:hi]` for Section 2. -/
+/-- Encode `consts[lo:hi]` for Section 2 (Address -> TagN-length-prefixed
+    constant bytes, sorted by address). The TagN length sidecar is added at the
+    env-section level so a lazy loader can slice each constant without parsing
+    its header; the content address is `Address.hash` over the constant body
+    alone (`serConstant`). -/
 def encodeConstsChunk (consts : Array (Address × LazyConstant)) (lo hi : Nat) : ByteArray :=
   let hi := Nat.min hi consts.size
   let cap := Id.run do
@@ -1862,28 +1861,8 @@ def encodeConstsChunk (consts : Array (Address × LazyConstant)) (lo hi : Nat) :
       putTagN 0 0 bytes.size.toUInt64
       putBytes bytes
 
-/-- Section 2: Consts (Address -> TagN-length-prefixed constant bytes), of the
-    constants sorted by address.
-
-    The TagN length sidecar is added at the env-section level so a lazy
-    loader can slice each constant without parsing its header.
-    The length is NOT part of the content-addressed bytes: the address
-    is `Address.hash` over the constant body alone (which is
-    exactly what `serConstant` produces). -/
-def constsSection (consts : Array (Address × LazyConstant)) : ByteArray :=
-  let cap := consts.foldl (fun acc (_, lc) => acc + 37 + lc.len) 9
-  runPutWithCapacity cap do
-    putTagN 0 0 consts.size.toUInt64
-    for (addr, lc) in consts do
-      Serialize.put addr
-      -- The lazy entry already holds exactly `serConstant`'s output, so write
-      -- its bytes directly — no re-materialization or re-serialization.
-      let bytes := lc.rawBytes
-      putTagN 0 0 bytes.size.toUInt64
-      putBytes bytes
-
 /-- Encode Section 4 (Names: Address -> Name component) from topologically
-    sorted names. -/
+    sorted names (parents before children, ties broken by address). -/
 def encodeNamesSection (sortedNames : Array (Address × Ix.Name)) : ByteArray :=
   let cap := sortedNames.size * 48 + 9
   runPutWithCapacity cap do
@@ -1891,13 +1870,6 @@ def encodeNamesSection (sortedNames : Array (Address × Ix.Name)) : ByteArray :=
     for (addr, name) in sortedNames do
       Serialize.put addr
       putNameComponent name
-
-/-- Section 4: Names (Address -> Name component), with the names in their
-    written order: topologically sorted so parents come before children, with
-    ties broken by address. -/
-def namesSection (env : Env) : Array (Address × Ix.Name) × ByteArray :=
-  let (sortedNames, _) := topologicalSortNames env.names
-  (sortedNames, encodeNamesSection sortedNames)
 
 /-- Section 6: Comms (Address -> Comm). -/
 def commsSection (env : Env) : ByteArray :=
@@ -2345,10 +2317,6 @@ the {st.idx - start}-byte span at offset {start}"
     throw s!"serde gate ({label}): writer bytes differ from input in span \
 {start}..{st.idx}"
 
-/-- Coarse progress marker from the pure loader (silent by default). -/
-@[inline] private def loadTrace (_msg : String) : GetM Unit :=
-  pure ()
-
 /-- Streaming counterpart of `deEnv` + `serEnv` roundtrip verification.
     See the section comment above. -/
 def getEnvVerifiedLazy : GetM LazyEnvParts := do
@@ -2397,7 +2365,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let s1Start := (← get).idx
   let numBlobs := (← getTagN 0).value
   reserCheck "§1 count" s1Start <| runPut (putTagN 0 0 numBlobs)
-  loadTrace s!"header ok; §1 blobs: {numBlobs}"
   let mut prevBlobAddr : Option Address := none
   for _ in [:numBlobs.toNat] do
     let eStart := (← get).idx
@@ -2422,7 +2389,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let s2Start := (← get).idx
   let numConsts := (← getTagN 0).value
   reserCheck "§2 count" s2Start <| runPut (putTagN 0 0 numConsts)
-  loadTrace s!"§2 consts: {numConsts}"
   let mut constOrder : Array Address := #[]
   let backing := (← get).bytes
   for _ in [:numConsts.toNat] do
@@ -2437,8 +2403,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
       if !(compare prev addr).isLT then
         throw "Env.get: §2 constants not in strictly ascending address order"
     constOrder := constOrder.push addr
-    if constOrder.size % 100000 == 0 then
-      loadTrace s!"§2 at {constOrder.size}/{numConsts} (byte {eStart})"
     match Env.deConstantLoaded bytes with
     | .ok constant =>
       reserCheck "§2 const" eStart <| runPut do
@@ -2488,7 +2452,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let s4Start := (← get).idx
   let numNames := (← getTagN 0).value
   reserCheck "§4 count" s4Start <| runPut (putTagN 0 0 numNames)
-  loadTrace s!"§3 done; §4 names: {numNames}"
   let mut namesLookup : Std.HashMap Address Ix.Name := {}
   let mut nameRev : NameReverseIndex := #[]
   namesLookup := namesLookup.insert Ix.Name.mkAnon.getHash Ix.Name.mkAnon
@@ -2502,7 +2465,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     reserCheck "§4 name" eStart <| runPut do
       Serialize.put addr
       Env.putNameComponent name
-  loadTrace "§4 parsed; topological order check"
   let (sortedNames, _) := Env.topologicalSortNames env.names
   if sortedNames.map (·.1) != nameRev then
     throw "serde gate (§4): name order differs from the writer's \
@@ -2518,7 +2480,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let s5Start := (← get).idx
   let numNamed := (← getTagN 0).value
   reserCheck "§5 count" s5Start <| runPut (putTagN 0 0 numNamed)
-  loadTrace s!"§5 named: {numNamed}"
   let mut namedRows : Array NamedRow := #[]
   let mut rowIdx : Std.HashMap Ix.Name Nat := {}
   let mut prevName : Option Ix.Name := none
@@ -2585,8 +2546,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     namedRows := namedRows.push
       { name, nameIdx, constRank, addr := constAddr, hints,
         metaOff := stBefore.idx, metaLen }
-    if namedRows.size % 100000 == 0 then
-      loadTrace s!"§5 at {namedRows.size}/{numNamed} (byte {eStart})"
     env := { env with addrToName := env.addrToName.insert constAddr name }
 
   -- Section 6: Comms.
@@ -2616,7 +2575,6 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   if st.idx != st.bytes.size then
     throw s!"Env.get: {st.bytes.size - st.idx} trailing bytes after final section"
 
-  loadTrace "done"
   pure { env, namedRows, rowIdx, nameRev, backing }
 
 /-- Run the streaming verified lazy load over an image. -/

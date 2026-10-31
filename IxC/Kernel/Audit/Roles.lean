@@ -12,8 +12,7 @@ computes and freezes (`Ix.SpecDigest`, `Ix/SpecDigest.lean`): the kernel
 admits no hasher. A change to either output is a change to the specification
 set, and bumps `specVersion` and the digest together.
 
-Re-frozen at version 2 (2026-10-20, `ALPHA-COLLAPSE.md` §8.2, owner's
-approval): the five compiler-trust roles (`Lean.trustCompiler`,
+Re-frozen at version 2 (see `IxC.Kernel.PinGen.Defs`): the five compiler-trust roles (`Lean.trustCompiler`,
 `Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`, `Lean.ofReduceNat`,
 formerly 59–63) and the `identity` kind are gone.
 

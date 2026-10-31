@@ -255,7 +255,7 @@ def declCLabel : Declaration md → String
   | .quotDecl _ cv => s!"quot {cv.name}"
 
 /-- One step of the converted-declaration fold: from the empty memo state
-(`resetC`, LOCALITY §6(a)), check. -/
+(`resetC`), check. -/
 def checkDeclStepC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
     (CheckCM md) (FEnv md) := do
   resetC

@@ -41,9 +41,9 @@ statement is frozen before a consumer has exercised it):
 | `ConstantValR` | the `∀ φ, ∃ Tv tT u, denoteClosed … ∧ Infer … ∧ DefEq …` front door | the six freshness/reservation/level/scoping guards (`hfresh` at every harvest and at `declEtaStep`), the annotate output (`annotate_syntax`), the two `allLevelParamsDefined`/`constsResolve` guards, and H1's own run chain `∃ stype u, inferTypeCore … ∧ ensureSortCore …` (the type's reading, through `acceptedReads_of`) |
 | `ValueFrontR` | the `∀ φ, ∃ Tv Vv tv, …` front door | the value's two syntactic guards, its annotate output, its two resolution guards, and H1's run **pair** `∃ vtype, inferTypeCore … ∧ isDefEqCore …` (the leaf's reading, and the membership crossing) |
 | `NatEqsR` | **the whole relation** | replaced by its twin `NatEqsRun`, which `DeclDefnR` already carries beside it (H1); `natOps_install` consumes the runs |
-| `DivModPinR` | nothing — it was already valuation-free | re-stated as `DivModCertRun` (since step 4 over the evidence's proofs, no pin); `divMod_install` consumes the guards and the certificate verdict |
+| `DivModPinR` | nothing — it was already valuation-free | re-stated as `DivModCertRun` (over the evidence's proofs, no pin); `divMod_install` consumes the guards and the certificate verdict |
 | `DeclThmR` | the `∀ φ, ∃ Tv sT, … DefEq … (.sort 0)` is-a-proposition front | H1's prop-check run triple (`inferTypeCore` + `ensureSortCore` + `Level.isEquiv`) |
-| `DeclAxiomR` | (via `ConstantValR`) | the branch disjunction verbatim (the standard axioms, the tolerated `sorryAx`; since `ALPHA-COLLAPSE.md` §8.2 no compiler-trust branch) — pure stored-data guards |
+| `DeclAxiomR` | (via `ConstantValR`) | the branch disjunction verbatim (the standard axioms, the tolerated `sorryAx`; no compiler-trust branch) — pure stored-data guards |
 | `DeclBasisRun` | nothing | re-used **verbatim**: it is already guards only |
 | `DeclIndRun` | — | **not projected here.**  See the `Ind` parameter below. |
 

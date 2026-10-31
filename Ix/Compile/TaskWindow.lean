@@ -3,6 +3,11 @@ module
 public import Init.Data.Array.Basic
 public import Init.Task
 
+/-! Bounded-window task synchronization primitives (`afterAll`, `token`,
+`completed`, `finish`) that bound the number of simultaneously in-flight Lean
+tasks (as in `forInWindow`-style windowed execution) while streaming results in
+input order. -/
+
 public section
 
 namespace Ix.Compile.TaskWindow

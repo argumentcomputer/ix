@@ -1025,6 +1025,9 @@ fn egress_muts_block(
   limits: &ExactSharingLimits,
   out: &IxonEnv,
 ) -> Result<(), String> {
+  if all.is_empty() {
+    return Err("egress_muts_block: empty Muts block".into());
+  }
   let mut_ctx_vec = build_block_mut_ctx(all, names, name_index)?;
   let mut ctx = EgressCtx::with_mut_ctx(mut_ctx_vec);
   // Reproduce the ORIGINAL block's univ-table layout so member metas'
@@ -1093,10 +1096,6 @@ fn egress_muts_block(
   }
 
   let (refs, univs) = ctx.into_vecs();
-  // The block must name its first member.
-  names
-    .get(all.first().and_then(|c| c.first()).ok_or("empty Muts")?)
-    .ok_or("first name missing")?;
   let result =
     apply_sharing_to_mutual_block_with_limits(limits, mut_consts, refs, univs)
       .map_err(|e| format!("egress '{muts_name}': {e}"))?;
@@ -1312,22 +1311,26 @@ pub fn ixon_egress(
   for entry in original_env.comms.iter() {
     out.comms.insert(entry.key().clone(), entry.value().clone());
   }
-  eprintln!(
-    "[ixon_egress] copy content tables: {:.2?} (blobs={}, names={}, comms={})",
-    t_start.elapsed(),
-    out.blobs.len(),
-    out.names.len(),
-    out.comms.len()
-  );
+  if *crate::compile::IX_TIMING {
+    eprintln!(
+      "[ixon_egress] copy content tables: {:.2?} (blobs={}, names={}, comms={})",
+      t_start.elapsed(),
+      out.blobs.len(),
+      out.names.len(),
+      out.comms.len()
+    );
+  }
 
   // Build name_index for fast lookups (Meta mode only — KId.name is the Lean name).
   let t_idx = std::time::Instant::now();
   let name_index = build_name_index(kenv);
-  eprintln!(
-    "[ixon_egress] build name_index:    {:.2?} ({} entries)",
-    t_idx.elapsed(),
-    name_index.len()
-  );
+  if *crate::compile::IX_TIMING {
+    eprintln!(
+      "[ixon_egress] build name_index:    {:.2?} ({} entries)",
+      t_idx.elapsed(),
+      name_index.len()
+    );
+  }
 
   // Build address → name map for resolving class canonical names.
   let mut names: FxHashMap<Address, Name> = FxHashMap::default();
@@ -1368,12 +1371,14 @@ pub fn ixon_egress(
       },
     }
   }
-  eprintln!(
-    "[ixon_egress] partition:           {:.2?} (muts={}, standalone={})",
-    t_partition.elapsed(),
-    muts_entries.len(),
-    standalone_entries.len()
-  );
+  if *crate::compile::IX_TIMING {
+    eprintln!(
+      "[ixon_egress] partition:           {:.2?} (muts={}, standalone={})",
+      t_partition.elapsed(),
+      muts_entries.len(),
+      standalone_entries.len()
+    );
+  }
 
   // Process Muts blocks in parallel.
   let t_muts = std::time::Instant::now();
@@ -1396,7 +1401,9 @@ pub fn ixon_egress(
       )
     },
   )?;
-  eprintln!("[ixon_egress] muts blocks:         {:.2?}", t_muts.elapsed());
+  if *crate::compile::IX_TIMING {
+    eprintln!("[ixon_egress] muts blocks:         {:.2?}", t_muts.elapsed());
+  }
 
   // Process standalone constants in parallel.
   let t_solo = std::time::Instant::now();
@@ -1405,7 +1412,9 @@ pub fn ixon_egress(
       egress_standalone(name, named, original_env, &name_index, limits, &out)
     },
   )?;
-  eprintln!("[ixon_egress] standalone consts:   {:.2?}", t_solo.elapsed());
+  if *crate::compile::IX_TIMING {
+    eprintln!("[ixon_egress] standalone consts:   {:.2?}", t_solo.elapsed());
+  }
   if let Some(binding) = &original_env.role_binding {
     let unchanged = original_env.consts.len() == out.consts.len()
       && original_env.consts.iter().all(|entry| {
@@ -1421,7 +1430,9 @@ pub fn ixon_egress(
     }
     out.role_binding = Some(binding.clone());
   }
-  eprintln!("[ixon_egress] total:               {:.2?}", t_start.elapsed());
+  if *crate::compile::IX_TIMING {
+    eprintln!("[ixon_egress] total:               {:.2?}", t_start.elapsed());
+  }
 
   Ok(out)
 }

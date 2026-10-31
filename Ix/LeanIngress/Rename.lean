@@ -3,7 +3,7 @@ import IxC.Kernel.Verify.Rename.Fold
 import IxC.Kernel.Verify.Frontend.Prepare
 import IxC.Kernel.Ixon.RoleTableInj
 
-/-! # Quotient Source under the artifact's addresses (step 7.3, chunk (iv))
+/-! # Quotient Source under the artifact's addresses
 
 Quotient Source runs on representatives: every input key is renamed onto its
 alias fiber's representative (`Key.subst (fiberAlias ixe)`). Renaming a

@@ -246,7 +246,6 @@ def classifyCtor (T : Key md) (members : List (Key md × Nat × Nat)) (lps : Lis
         -- Lean's kernel tests positivity after whnf, so an occurrence that
         -- reduces away (`K True T` with `K a _ := a`) is not one, and the
         -- fold's install of the auxiliary family tests the field after whnf
-        -- (CQX.8)
         if mentionsAny memberNames (specFam T lps nP members d) then
           throw s!"field {i} of {c.cv.name} mentions the block other than as a plain \
             member application under the field's own binders (nested or non-positive \

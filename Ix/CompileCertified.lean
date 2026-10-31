@@ -26,7 +26,14 @@ their input:
    constants (`Ix.Cert.Canon.canonChunkCorrect`), and the slices are joined in
    order, so the environment does not depend on the worker count.
 3. **The compile**: `Ix.Cert.compileReport`, with its checks, at the default
-   sharing limits, which it fixes.
+   sharing limits, which it fixes. Execution runs through the
+   `Ix.Compile.ReadyCompile.reportIO` subtype bridge
+   (`{ result : ReportResult // result = Ix.Cert.compileReport env }` /
+   `{ env : Ixon.Env // env = ... }`), which discharges the
+   `ixe = (Ix.Compile.compileEnv rawEnv).1` / `compileReport` equality
+   hypothesis of `Ix.Cert.checkReport_sound` and `Ix.Cert.CompileCorrect`
+   directly from the parallel ready-queue execution without re-running
+   sequential `compileEnv`.
 4. **Accounting**: every failure it reports is an input constant's. With
    `compileReport`'s coverage check, every input constant is then published or
    reported as failed, and never both (the streamed pipeline's source
@@ -61,9 +68,14 @@ def prepareCertified (source : Lean.Environment)
   let prepared ← input.prepare
   return (prepared, ← checkPreparedSource prepared)
 
+/-- Prevent the compiler from dropping `x` before the enclosing `IO` action
+runs, so its reference count is decremented inside `dropAsync`'s task. -/
 @[noinline] private def keepAlive (α : Type) (x : α) : IO α :=
   pure x
 
+/-- Drop a large arena or environment (`CompileState`, `Ixon.Env`,
+`Ix.Environment`, `Lean.Environment`) on a background dedicated task so that
+recursive Arena/RC teardown does not block the critical compilation path. -/
 private def dropAsync (α : Type) (x : α) : IO (Task (Except IO.Error Unit)) :=
   IO.asTask (prio := .dedicated) do
     let _ ← keepAlive α x

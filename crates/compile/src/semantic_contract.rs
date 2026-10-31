@@ -312,9 +312,7 @@ mod tests {
   }
   #[test]
   fn committed_contracts_roundtrip_without_optional_metadata() {
-    use crate::decompile::{
-      BlockCache as DecompileCache, DecompileState, decompile_expr,
-    };
+    use crate::decompile::{BlockCache as DecompileCache, decompile_expr};
     use ixon::metadata::{DataValue, ExprMeta, ExprMetaData};
     let stt = CompileState::new_empty();
     let mut terms = vec![];
@@ -357,7 +355,6 @@ mod tests {
         &[],
         &mut cache,
         &stt,
-        &DecompileState::default(),
       )
       .unwrap();
       let result = compile_expr(
@@ -389,7 +386,6 @@ mod tests {
         &[],
         &mut DecompileCache::default(),
         &stt,
-        &DecompileState::default()
       )
       .is_err()
     );

@@ -327,7 +327,6 @@ impl ArtifactChecker<Anon> {
 
   /// Check every work item required for a sound verdict on `roots` (including
   /// the binding's support closure via [`ArtifactSource::verdict_closure`]).
-  #[cfg(not(target_arch = "riscv64"))]
   pub fn check_verdict(
     &mut self,
     roots: &[Address],

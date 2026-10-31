@@ -823,7 +823,7 @@ def checkSourceBundledUsing (prelude : Except String (Ix.Kernel.Reader.Prelude .
   let pre ← prelude.mapError .prelude
   checkSourceWith pre (Ix.RoleEvidence.bundleEvidence ()) env blocks
 
-/-- **The Source-mode check at the pinned bundle evidence** (owner, 2026-10-20):
+/-- **The Source-mode check at the pinned bundle evidence**:
 the committed prelude, and the committed bundle's evidence
 (`Ix.RoleEvidence.bundleEvidence`, RoleData's `sourceEvidence`: the verifier's
 configuration, the Source twin of the role table's evidence), whatever the
@@ -840,7 +840,7 @@ A definition's hint orders δ-unfolding only: the fold's soundness holds at
 every hint, so a Source check under other hints still means that the
 environment is well typed. The compiler ships one hint per address, merged
 over an alias fiber (`Ixon.Env.anonHints`), where Lean has one per name;
-Route A (B7, option (a1)) runs Source at the shipped hints, through
+Quotient Source runs at the shipped hints, through
 `checkSourceHinted` with the artifact's per-key hints. With no override it
 is `checkSource` (`checkSourceHinted_none`). -/
 
@@ -926,7 +926,7 @@ def hintOfLean : Lean.ReducibilityHints → Ix.Kernel.ReducibilityHint
   | .abbrev => .abbrev
   | .regular h => .regular h.toNat
 
-/-- **The artifact's hints by Source key** (Route A, B7 (a1)): for every name
+/-- **The artifact's hints by Source key**: for every name
 the artifact publishes (`Ixon.Env.named`), the hint it ships at that name's
 address (`Ixon.Env.anonHints`; for an alias fiber, the merge of its names'
 hints), under the name's Source key (`ingressKey`). A function of the
@@ -944,7 +944,7 @@ fiber. -/
 def fiberHints (ixe : Ixon.Env) (k : CName .source) : Option Ix.Kernel.ReducibilityHint :=
   (fiberHintsMap ixe)[k]?
 
-/-! ## Quotient Source (`ALPHA-COLLAPSE.md` §8.4)
+/-! ## Quotient Source
 
 The Source-mode check with every alias fiber collapsed to its representative
 (`Ix.LeanIngress.Collapse`), **before lowering**: every group, converted with

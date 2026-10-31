@@ -1,7 +1,6 @@
 /-
   pack-units: `ix pack` carries the root's reference closure, never its
-  compilation unit (owner, 2026-10-07; `Ix.Cli.PackCmd`). The suite keeps
-  its name from M1-h, when the pack carried whole logical units.
+  compilation unit (`Ix.Cli.PackCmd`).
 
   Source: the selected closure of the fixture
   `Tests/Ix/Compile/Fixtures/PackUnits.lean`, that is of its own constants
@@ -20,17 +19,11 @@
      `Tree.size` does not reference it (the M1-h pack carried it). The
      lemma's own bundle carries `PackU.Tree.size`, which it references.
 
-  Ported from a9cf3607 `Tests/Ix/Compile/PackUnits.lean` (the M6R slice 6
-  version), keeping the donor's numbering:
-  - Check 1 is dropped. It is the Lean oracle `PackParity`, which uses
-    `Ix.Tc` projection addresses, so it belongs to CQX.2/TT-13; so is
-    `PACK_UNITS_IXE`.
-  - The reserved-name check of check 3 (Pass 3's `_ix` constants) is
-    dropped.
+  Notes:
   - The source is written from `out.bytes`, not `rsSerEnv out.env`.
   - `readIxe` and `ixToLeanName` come from the closure harness, not from
-    `Ix.Cli.PackCmd` (TT-13).
-  - Files go to a temporary directory, not `.lake/pack-units` (R11-24).
+    `Ix.Cli.PackCmd`.
+  - Files go to a temporary directory, not `.lake/pack-units`.
 
   Run with: `lake test -- --ignored pack-units`.
 -/

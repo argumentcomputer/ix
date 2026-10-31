@@ -59,8 +59,8 @@ recursors, the standard axioms with the families they quantify over, the
 literal support and the certified `Nat` operations. Closed: a constant
 outside it is an input or a derived key.
 
-The certified theory is Lean with its three standard axioms
-(`ALPHA-COLLAPSE.md` §8, owner 2026-10-20): native evaluation
+The certified theory is Lean with its three standard axioms:
+native evaluation
 (`Lean.reduceBool`, `Lean.reduceNat`, `Lean.ofReduceBool`,
 `Lean.ofReduceNat`, `Lean.trustCompiler`) is outside it, so none of those
 constants is a role; their Lean names key ordinary input constants, and the

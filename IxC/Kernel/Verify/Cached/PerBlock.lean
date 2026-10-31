@@ -8,7 +8,7 @@ public section
 /-!
 # Per-block admission: the specification of the deferred fold
 
-LOCALITY §6(c) and §7 (G5). The executed fold `Cached.checkDecls` installs
+The executed fold `Cached.checkDecls` installs
 every declaration first (phase A) and checks the recorded value groups
 afterwards (phase B, on tasks), each against the prefix view of the final
 index at the size it had when the record was made. **Per-block admission**
@@ -268,8 +268,8 @@ theorem installRun_admit {ds : List (Declaration md)}
     rw [hadmit]
     exact ih hfe₁ hrec₁ hnd hB
 
-/-- **Deferring the value checks changes no accepted environment**
-(LOCALITY §7, G5): the executed fold and the per-block fold accept the same
+/-- **Deferring the value checks changes no accepted environment**:
+the executed fold and the per-block fold accept the same
 declarations with the same environment. (The reported failure can differ.) -/
 theorem checkDecls_ok_iff_PB {ds : Array (Declaration md)} {env : Env md} :
     checkDecls mode ev ds = .ok env ↔ checkDeclsPB mode ev ds = .ok env := by

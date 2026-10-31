@@ -10,14 +10,13 @@
      plus the support the unit brings (`sizeOfUnitSupport`). Each closure
      is a fixed point, and the seed order does not change it. Negative
      control: the raw closure (`collectDeps … {}`) lacks the instances.
-  2. **A matcher's unit** (design document §6.3, owner rule of
-     2026-10-05). The on-demand auxiliary `matcher._arg_pusher` belongs to
+  2. **A matcher's unit.** The on-demand auxiliary `matcher._arg_pusher` belongs to
      `matcher`'s unit, so a closure of the bare `matcher` carries it. The
      caller `carriedProof` is outside the unit and is not pulled.
   3. **Mutual siblings.** The closure of each `mutual` member of
      `Tests.Ix.Compile.AuxiliaryClosure.mutualSeeds` holds its sibling.
   4. **Checker support** (`checkerSupportOf`, derived from
-     `IxC.Kernel.Roles` `Role.deps`; CQX.3). `Nat.land`'s support holds
+     `IxC.Kernel.Roles` `Role.deps`). `Nat.land`'s support holds
      `Nat.mul` (`natOpDeps`). It is drawn from existing records only. The
      selected closure of a `Nat.land` user holds `Nat.mul`, and the raw
      closure does not. The drift check of the derivation against

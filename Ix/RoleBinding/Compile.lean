@@ -404,7 +404,19 @@ and hints are unchanged, and checks the emitted role binding against `final`:
   address (`unhintedDefinition`);
 * no two published names share a structural spelling, and the emitted role
   binding admits and agrees with `final`'s published roles and records
-  (`roleBindingError`). -/
+  (`roleBindingError`).
+
+When `added? = some (addedConsts, addedBlobs, addedHints)` is supplied (in the
+`covered` case where `merged == original` and only generated support/evidence
+records, blobs, and hints were inserted without modifying `named`), checks
+whose inputs are already verified on `original` by `Ix.Cert.checkReport`
+restricted to the delta: `unauthentic` and `blobRecordCollision` inspect only
+the newly added addresses, `referenceCycle` walks only the subgraph reachable
+from `addedConsts`, `projectionCollision` and recursor checks run only if new
+`.dPrj` or `.recr`/`.rPrj` records were added, and `named`-only checks
+(`nameHashCollision`, `mutsMismatch`, `unresolvedPublished`,
+`unreadablePublished`, `unhintedDefinition`) are discharged by `original`'s
+prior certificate check because `Generated.emit` preserves `named`. -/
 structure FinalizedCheckTasks where
   unauthentic : Task (List Address)
   referenceCycle : Task (Option (List Address))
@@ -429,7 +441,7 @@ def FinalizedCheckTasks.spawn (final : Ixon.Env)
   | none =>
     let recRecords := Task.spawn fun _ => Ix.Cert.storedRecursorRecords final
     { unauthentic := Task.spawn fun _ => Ix.Cert.unauthenticPar final
-      referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCycle final
+      referenceCycle := Task.spawn fun _ => Ix.Cert.referenceCyclePar final
       nameHashCollision := Task.spawn fun _ => Ix.Cert.nameHashCollision { consts := {} } final
       mutsMismatch := Task.spawn fun _ => Ix.Cert.mutsMismatchPar final
       unresolvedPublished := Task.spawn fun _ => Ix.RoleBinding.Compile.unresolvedPublished final
@@ -865,15 +877,14 @@ def finalize (backend : Backend) (source : Lean.Environment)
   let _ ← IO.asTask (prio := .dedicated) (dropCheckedStore supportStore)
   unless emitted.roleBinding.isSome do
     throw (IO.userError "artifact finalization: missing emitted role binding")
-  let emittedNames := mergedNames
-  unless covered do
-    IO.ofExcept (preserveRequestedWith input existing emittedNames)
+  -- `Generated.emit` does not modify `named`, so `mergedNames` remains current
+  -- and `preserveRequestedWith` (checked above when `!covered`) still holds.
   let added? := if covered then
       some (generated.support ++ generated.evidence,
             generated.supportBlobs ++ generated.blobs,
             generated.supportHints)
     else none
-  IO.ofExcept (checkFinalized artifact emitted (some (.ok emittedNames)) added?)
+  IO.ofExcept (checkFinalized artifact emitted (some (.ok mergedNames)) added?)
   return emitted
 
 /-- Publish only after finalization and serialization succeed. The temporary

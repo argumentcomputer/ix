@@ -368,7 +368,7 @@ def checkedTableCount (table : String) (count : Nat) : CompileM UInt64 :=
 
 /-- Compile an Ix.Level to Ixon.Univ type. A parameter compiles to its
     position in the context (`nameIndex`, structural), refused when it does
-    not fit the wire's `UInt64` (`checkedTableIndex`; 29591c16's guard): the
+    not fit the wire's `UInt64` (`checkedTableIndex`): the
     result is then a function of the level and the context alone, whatever
     the context's length. -/
 def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
@@ -1346,11 +1346,6 @@ def recursorPreseedExprs (recursorVal : RecursorVal) :
   (recursorSourceExprs recursorVal).map
     (fun source => (source, recursorVal.cnst.levelParams.toList)) |>.toArray
 
-/-- Source expressions of a standalone inductive family in production order. -/
-def inductiveSourceExprs (inductiveVal : InductiveVal)
-    (ctorVals : Array ConstructorVal) : List Expr :=
-  inductiveVal.cnst.type :: ctorVals.toList.map (·.cnst.type)
-
 /-- Exact standalone-inductive preseed inputs. Constructors retain their own
 recorded universe-parameter contexts, matching mutual-block preseeding. -/
 def inductivePreseedExprs (inductiveVal : InductiveVal)
@@ -1654,26 +1649,6 @@ def compileDefinition (d : DefinitionVal) :
       let (typeExpr, typeRoot) ← compileExpr d.cnst.type
       let (valueExpr, valueRoot) ← compileExpr d.value
       finishDefinitionCompilation d typeExpr typeRoot valueExpr valueRoot
-
-/-- Compile a theorem to Ixon.Definition with metadata. -/
-def compileTheorem (d : TheoremVal) :
-    CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) :=
-  withCurrent d.cnst.name do
-    withUnivCtx d.cnst.levelParams.toList do
-      resetArena
-      let (typeExpr, typeRoot) ← compileExpr d.cnst.type
-      let (valueExpr, valueRoot) ← compileExpr d.value
-      finishTheoremCompilation d typeExpr typeRoot valueExpr valueRoot
-
-/-- Compile an opaque to Ixon.Definition with metadata. -/
-def compileOpaque (d : OpaqueVal) :
-    CompileM (Ixon.Definition × Ixon.ConstantMeta × Ixon.Expr × Ixon.Expr) :=
-  withCurrent d.cnst.name do
-    withUnivCtx d.cnst.levelParams.toList do
-      resetArena
-      let (typeExpr, typeRoot) ← compileExpr d.cnst.type
-      let (valueExpr, valueRoot) ← compileExpr d.value
-      finishOpaqueCompilation d typeExpr typeRoot valueExpr valueRoot
 
 /-- Finish an already compiled axiom type: drain per-constant metadata,
 record its source names, and assemble the Ixon payload and metadata. -/
@@ -2488,67 +2463,6 @@ def compileConstantInfo : ConstantInfo → CompileM BlockResult
   | .inductInfo inductiveVal => compileInductiveConstantInfo inductiveVal
   | .ctorInfo constructorVal => compileConstructorConstantInfo constructorVal
   | const => compileConstantInfoCore const
-
-/-- Convert one environment declaration into the mutual compiler's source
-grammar. Declarations that are not mutual payload members are skipped exactly
-as in the original block loop; inductives resolve their constructor payloads
-before being retained. -/
-def collectMutConst? : ConstantInfo → CompileM (Option MutConst)
-  | .inductInfo val => return some (← MutConst.mkIndc val)
-  | .defnInfo val => pure (some (MutConst.fromDefinitionVal val))
-  | .opaqueInfo val => pure (some (MutConst.fromOpaqueVal val))
-  | .thmInfo val => pure (some (MutConst.fromTheoremVal val))
-  | .recInfo val => pure (some (.recr val))
-  | _ => pure none
-
-def resolveMutConst? (name : Name) : CompileM (Option MutConst) := do
-  collectMutConst? (← findConst name)
-
-/-- Resolve the SCC's names into mutual source members in hash-set iteration
-order. This recursive form exposes the collection boundary to refinement
-proofs while preserving the former filtering behavior. -/
-def collectMutConsts : List Name → Array MutConst →
-    CompileM (Array MutConst)
-  | [], acc => pure acc
-  | name :: rest, acc => do
-    let source? ← resolveMutConst? name
-    let acc := match source? with
-      | some source => acc.push source
-      | none => acc
-    collectMutConsts rest acc
-
-/-- Resolve, order (Lean's order, `sourceMembers`), and compile a non-singleton
-block. -/
-def compileMutualConstants (all : Set Name) : CompileM BlockResult := do
-  let consts ← collectMutConsts all.toList #[]
-  compileMutualBlock (sourceMembers consts)
-
-/-- Compile a constant by name (looks it up in the environment).
-    Uses the block's `all` set from BlockEnv (populated from SCC analysis). -/
-def compileConstant (name : Name) : CompileM BlockResult := do
-  let const ← findConst name
-  let blockEnv ← getBlockEnv
-  -- Use the block's all set from SCC analysis
-  let all := blockEnv.all
-
-  -- Handle singleton non-mutual constants
-  if all.size == 1 then
-    compileConstantInfo const
-  else
-    compileMutualConstants all
-
-/-! ## Block Compilation Entry Point -/
-
-/-- Compile a single block purely, returning the block result and state. -/
-def compileBlockPure (compileEnv : CompileEnv) (all : Set Name) (lo : Name)
-    : Except CompileError (BlockResult × BlockState) :=
-  let blockEnv : BlockEnv := {
-    all := all
-    current := lo
-    mutCtx := default
-    univCtx := []
-  }
-  CompileM.run compileEnv blockEnv {} (compileConstant lo)
 
 /-! ## Rust Compilation FFI -/
 

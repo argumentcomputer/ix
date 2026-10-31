@@ -75,8 +75,8 @@ def AxiomStepPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
 
 /-- **`AxiomStepPB`, discharged — THE PIN BUNDLE IS CLOSED.**  Both
 `DeclAxiomRun` branches: the two standard axioms (`axiomStd`, ENDGAME C)
-and the tolerated skip (`axiomSkip`, which stores nothing).  Since
-`ALPHA-COLLAPSE.md` §8.2 there is no compiler-trust branch. -/
+and the tolerated skip (`axiomSkip`, which stores nothing); there is no
+compiler-trust branch. -/
 theorem axiomStepPB_of (hμ : μ.verifiedChecks = true) : (AxiomStepPB (md := md)) V μ := by
   intro _F _env mp _cv _env₂ hR
   -- the `Quot.sound` arm (task #293) installs nothing

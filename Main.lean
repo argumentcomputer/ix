@@ -1,4 +1,3 @@
---import Ix.Cli.StoreCmd
 import Ix.Cli.AddrOfCmd
 import Ix.Cli.AggregateCmd
 import Ix.Cli.BenchReport
@@ -36,7 +35,6 @@ def ixCmd : Cli.Cmd := `[Cli|
   "A tool for generating content-addressed ZK proofs of Lean 4 code"
 
   SUBCOMMANDS:
-    --storeCmd;
     benchCmd;
     aggregateCmd;
     catalogCmd;

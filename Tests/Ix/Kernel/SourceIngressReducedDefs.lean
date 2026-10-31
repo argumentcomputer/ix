@@ -1,6 +1,6 @@
 import Lean
 
-/-! # Fields whose occurrence of the block reduces away (CQX.8)
+/-! # Fields whose occurrence of the block reduces away
 
 Lean's kernel finds a block's nested occurrences syntactically and tests a
 constructor field's positivity after whnf (`check_positivity`), so a field
@@ -26,7 +26,7 @@ module builds:
   `Prop`-only recursor (the level may be zero and the expanded block has two
   members), and the modeller declines a non-`Prop` nested block with a small
   eliminator (its `_impl.unpack` eliminates into `Sort u`): a residual of
-  the modeller that CQX.8 does not touch, which they now reach past the
+  the modeller that this rewrite does not touch, which they now reach past the
   field test. (`Box` itself eliminates into `Prop` only, its field's sort
   `Sort u` may be `Prop`; the modeller declines a block nested through such
   a container whatever its own level, hence `BoxT` for `V` and `W`.) -/

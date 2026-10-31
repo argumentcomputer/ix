@@ -13,8 +13,8 @@ the lazy caches for level-instantiated stored constants, the
 level-operation memos and the bulk-instantiation memo, with the
 linear-update discipline (detach a component from the state record
 before mutating it) each of them is written in.  Every step of the
-declaration fold starts from the empty state (`resetC`; LOCALITY
-§6(a)), so nothing in it crosses a declaration.
+declaration fold starts from the empty state (`resetC`),
+so nothing in it crosses a declaration.
 
 Task #198 removed the last of the arena's shape from this module: the
 unit `CStore` and its twenty forwarding "methods", and the `withStore`
@@ -122,7 +122,7 @@ Each step of the declaration fold starts from the empty state
 (`resetC`), and phase B starts every record from it, so the state lives
 for one declaration.
 
-(LOCALITY §6(a), PERF P16: the converted-constant cache `ienv` and the
+(The converted-constant cache `ienv` and the
 never-filled `Level.isNonZero` memo `lnzC` were deleted with the reset.
 Every `ienv` entry mapped a constant to the very object it was given, so
 a hit returned what a miss returned.) -/
@@ -162,7 +162,7 @@ def instCCapC : Nat := 32000000
 abbrev CheckCM (md : Mode) := StateT (CState md) (CheckM md)
 
 /-- **`x`, run under the binder chain at the head of `e`, opened from depth
-`d`** (step 6b, display only): `x` itself; at run time (`withChainImpl`), outside
+`d`** (display only): `x` itself; at run time (`withChainImpl`), outside
 `.anon`, a failure of `x` gets the chain's binders on its display
 (`CheckError.underChain`), so that a renderer can name the free variables of
 the terms it shows. -/
@@ -378,7 +378,7 @@ def CState.flushed (s : CState md) : CState md :=
 
 def flushC : (CheckCM md) Unit := modify (·.flushed)
 
-/-- Start a declaration from the empty state (LOCALITY §6(a)): the step
+/-- Start a declaration from the empty state: the step
 of the declaration fold then reads nothing from the state it is given
 (`annotDeclStep_state_irrel`), and phase A's results depend only on the
 declaration and the index.  The flushes inside a block (an environment

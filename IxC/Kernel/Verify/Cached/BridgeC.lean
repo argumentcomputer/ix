@@ -32,7 +32,7 @@ tier flag (`hoff`) anywhere — plus the representation differences the
   so `opSIxC_sim` is `ensureSortC_sim` plus the `ensureSort_atF`
   rewrite;
 * `recordIConst` has no counterpart: the cached checker keeps no
-  converted-constant cache (PERF P16; LOCALITY §6(a)).
+  converted-constant cache.
 
 `Declaration` is now one type for both tiers (task #285), so the
 interned premise `denoteDeclP s₀.store pd = some d` has no counterpart
@@ -560,7 +560,7 @@ theorem checkIndShapeC_ok {find? : Key md → Option (ConstantInfo md)}
 /-- One step of the converted-declaration fold: a successful run from any
 state is reproduced by the pure fueled checker on the same declaration,
 and leaves the residue.  The cached driver has no bracket and no
-index-range check, so the step is `resetC` (LOCALITY §6(a)) followed by
+index-range check, so the step is `resetC` followed by
 `checkDeclC`. -/
 theorem checkDeclStepC_run (hμ : mode.verifiedChecks = true) {env : Env md} (henv : EnvWF env) {pd : Declaration md}
     {s₀ : CState md} {fe' : FEnv md} {s' : CState md}

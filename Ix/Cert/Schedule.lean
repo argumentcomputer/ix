@@ -1,6 +1,6 @@
 import Ix.Cert.Compile
 
-/-! # The driver's schedule is a fold (CQP.4 a)
+/-! # The driver's schedule is a fold
 
 `Ix.CompileM.compileEnvFold` is the driver of both `Ix.Cert.compile` and the
 IO pipeline (`Ix.CompileM.compileDecoratedConsts`). Each wave computes its
@@ -197,7 +197,7 @@ def compileEnvFoldSeq (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let (ixe, bytes, cenv) ← finalizeEnv st.acc
   return (ixe, bytes, { cenv with env })
 
-/-- **Schedule = fold (CQP.4 a)**: the driver is its sequential form, for
+/-- **Schedule = fold**: the driver is its sequential form, for
 every `width` and `dbg`: within each wave, every ready block's outcome is
 computed against the wave's snapshot and the outcomes are applied one by
 one in block-key order. -/

@@ -9,7 +9,7 @@ import IxC.Kernel.Ingress.Records
 
 @[expose] public section
 
-/-! # Quotient Source: alias fibers collapsed (`ALPHA-COLLAPSE.md` §8.4)
+/-! # Quotient Source: alias fibers collapsed
 
 Lean names constants; Ix addresses them by content. Two Lean constants whose
 content agrees once their references are identified (an *alias fiber*) are one
@@ -32,7 +32,7 @@ wrong one only produces a refusal. `fiberAlias` reads them off a compiled
 artifact (the published names sharing an address); Source's own content keys
 would serve equally.
 
-**Role-aware representatives** (§8.4, B5c option (i)): a fiber that holds a
+**Role-aware representatives**: a fiber that holds a
 role's Lean name is represented by the role's key (`.role r`), so Source runs
 the role's validation on every alias of a role constant, exactly as Ixon does
 for an address its role table binds. A fiber holding two roles' names is not

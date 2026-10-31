@@ -33,7 +33,7 @@ the ingress and the evidence owe nothing: these theorems hold whatever
 * `checkSourceHinted_reading`, `checkSourceHinted_refines_ref`,
   `checkSourceHinted_strongModel`, `checkSourceHinted_model_values`,
   `checkSourceHinted_no_proof_of_False`: the same at hint overrides
-  (`checkSourceHinted`, Route A's B7), which is `checkSource` with none
+  (`checkSourceHinted`), which is `checkSource` with none
   (`checkSourceHinted_none`);
 * `orderOf_complete`, `scheduleOf_complete`, `leanIngress_converts`,
   `checkSource_converts`: every group is in the order and scheduled, so an
@@ -121,8 +121,8 @@ theorem checkSourceWith_has_model (V : Type u) [Ix.Kernel.SetTheory V]
   obtain ⟨_, _, hc⟩ := checkSourceWith_reading h
   exact Ix.Kernel.model_exists V ev _ kenv hc
 
-/-- **An accepted Source-mode check is a reference accept** (step 7,
-`Ix.Kernel.Cached.checkDecls_refines_ref`): the pure fold at some fuel
+/-- **An accepted Source-mode check is a reference accept**
+(`Ix.Kernel.Cached.checkDecls_refines_ref`): the pure fold at some fuel
 accepts the ingress's declarations behind the prelude, at Source mode's
 evidence, with the same environment. -/
 theorem checkSource_refines_ref (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
@@ -135,8 +135,8 @@ theorem checkSource_refines_ref (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.E
   obtain ⟨pre, decls, hp, hi, hc⟩ := checkSource_reading h
   exact ⟨pre, decls, hp, hi, Ix.Kernel.Cached.checkDecls_refines_ref V rfl hc⟩
 
-/-- **The strong model** of an accepted Source-mode check (step 7.2,
-`Ix.Kernel.Cached.StrongModel`): one witness of the fold's invariant, whose
+/-- **The strong model** of an accepted Source-mode check
+(`Ix.Kernel.Cached.StrongModel`): one witness of the fold's invariant, whose
 public model satisfies the value clauses. -/
 theorem checkSource_strongModel (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.Environment}
     {blocks : Ix.CondensedBlocks} {kenv : Ix.Kernel.Env .source} (h : checkSource env blocks = .ok kenv) :
@@ -156,7 +156,7 @@ theorem checkSource_model_values (V : Type u) [Ix.Kernel.SetTheory V] {env : Ix.
 /-! ### At hint overrides
 
 The fold's theorems hold at every hint, so they hold of the hinted check
-(`checkSourceHinted`, Route A's B7) as of `checkSource`. -/
+(`checkSourceHinted`) as of `checkSource`. -/
 
 /-- The reading of an accepted hinted check, at any prelude source. -/
 theorem checkSourceHintedUsing_reading {prelude : Except String (Ix.Kernel.Reader.Prelude .source)}

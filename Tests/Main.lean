@@ -201,9 +201,9 @@ def registry : List Entry := [
   .suite "validate-lean-reader-cli" .primary Tests.Ix.Kernel.ValidateReaderCli.suite,
   -- the Source-mode check (`Ix.LeanIngress`) on the same fixtures, from Lean's constants
   .suite "kernel-source-ingress" .primary Tests.Ix.Kernel.SourceIngress.suite,
-  -- the typing tier's inductive install and its answer view (M7 Q1)
+  -- the typing tier's inductive install and its answer view
   .suite "kernel-tier-ind" .primary Tests.Ix.Kernel.TierInd.suite,
-  -- the resource validator's typing input (IxC's tiered entry, step 10c): its hints agree with
+  -- the resource validator's typing input (IxC's tiered entry): its hints agree with
   -- `Ix.Cert.hintsOf`, every record is submitted once, and the compiled fixtures validate
   .suite "resource-hints" .primary Tests.ResourceHints.suite,
   -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
@@ -224,8 +224,8 @@ def registry : List Entry := [
   -- primary runners: quick suites kept as deferred `IO` actions (not
   -- `TestSeq` values) so their setup (Aiur system builds, STARK proofs) does
   -- not run at module initialization for unrelated invocations. All are
-  -- seconds-scale: ixvm-tagn about 16 s (measured 2026-10-01), aiur-prove
-  -- about 11 s and the rest 2-4 s each (measured 2026-08-05).
+  -- seconds-scale: ixvm-tagn about 16 s, aiur-prove
+  -- about 11 s and the rest 2-4 s each.
   .runner "aiur-rust-syntax" .primary AiurTests.RustSyntax.run,
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
@@ -349,7 +349,7 @@ def registry : List Entry := [
       LSpec.lspecIO (.ofList [("kernel-dependencies", [tests])]) []),
   .env "ixvm" (.ci .misc) fun env => do
     let kernelChecks ← kernelChecks env
-    -- the kernel CheckEnv smokes .
+    -- The kernel CheckEnv smokes.
     let claimEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
     let envFull ← claimCheckEnvFull claimEnv
     let envFrontier ← claimCheckEnvFrontier claimEnv

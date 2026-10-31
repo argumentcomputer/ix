@@ -35,7 +35,7 @@ rules it out in the code. It finds
 All four lists are frozen. Readers must stay empty: the renderers that spell a
 key with its names and print terms (`Ix.KernelDisplay`) live outside the
 kernel. A structure's own declarations are not readers; among `BinderMeta`'s,
-`shareAlwaysImpl` (PERF P14 with names, step 6b) reads an annotation's
+`shareAlwaysImpl` (`IxC.Kernel.PinGen.Defs`) reads an annotation's
 *address*, not its value, to choose between two equal results (the shared
 `leanAlways` or a copy that keeps the name), and its `@[csimp]` equation
 proves the choice invisible. The derived equalities of `BinderMeta` and

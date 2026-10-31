@@ -1,9 +1,9 @@
 //! Universe levels with optional metadata and Géran's canonical-form comparison.
 //!
-//! `KUniv<M>` is an Arc-wrapped universe level. Each variant carries a blake3
-//! Merkle hash (`Addr`) for content addressing. `Param` additionally carries
-//! `M::MField<Name>` — the parameter name in Meta mode, erased to `()` in
-//! Anon mode.
+//! `KUniv<M>` is an Arc-wrapped universe level. Each variant carries a
+//! monotonic intern-table UID (`Addr = u64`) for hash-consed identity.
+//! `Param` carries a positional `u64` parameter index plus `M::MField<Name>` —
+//! the parameter name in Meta mode, erased to `()` in Anon mode.
 //!
 //! # Relationship to Lean4Lean
 //!
@@ -47,7 +47,8 @@ use super::mode::{KernelMode, MetaDisplay};
 #[derive(Clone, Debug)]
 pub struct KUniv<M: KernelMode>(Arc<UnivData<M>>);
 
-/// Universe level data. Each variant carries its Merkle hash (`Addr`).
+/// Universe level data. Each variant carries its intern-table UID (`Addr = u64`),
+/// and `Param(u64, M::MField<Name>, Addr)` stores the positional parameter index.
 #[derive(Clone, Debug)]
 pub enum UnivData<M: KernelMode> {
   Zero(Addr),

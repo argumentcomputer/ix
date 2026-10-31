@@ -171,7 +171,7 @@ pub fn get_univ_within(
         *budget = budget.checked_sub(charge).ok_or_else(|| {
           format!(
             "get_univ: expanded universe constructors exceed the record's \
-             of {MAX_UNIV_NODES}"
+             limit of {MAX_UNIV_NODES}"
           )
         })?;
         match tag.flag {

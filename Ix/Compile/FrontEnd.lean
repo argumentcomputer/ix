@@ -10,6 +10,11 @@ import all Ix.GraphM
 import all Ix.Ground
 import Std.Data.HashMap.Lemmas
 
+/-! Certified front-end helpers for lowering a `Lean.Environment` into an
+`Ix.Environment` (with content-addressed `Ix.Name`s, constant hashing,
+parallel reference-graph and immediate groundedness scans `graph`/`immediate`,
+and well-formedness/hash-uniqueness/reflexive-ordering proofs). -/
+
 public section
 
 namespace Ix.Compile.FrontEnd

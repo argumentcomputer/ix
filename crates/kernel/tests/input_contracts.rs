@@ -67,7 +67,7 @@ const OWNERSHIP: Case = case!(
   7,
   1
 );
-const LOCALITY: Case = case!(
+const LOCAL_MISMATCH: Case = case!(
   "locality-mismatch",
   "d1966bf100c57bc5d74bc4fab3837f0d8f52884f9259dedd3a865d5779e676c8",
   15,
@@ -153,7 +153,7 @@ fn mismatched_input_ownership_rejects() {
 
 #[test]
 fn mismatched_input_locality_rejects() {
-  check(&LOCALITY, false);
+  check(&LOCAL_MISMATCH, false);
 }
 
 #[test]

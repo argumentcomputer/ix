@@ -2,7 +2,7 @@ import IxC.Kernel.Ixon.Values
 import IxC.Kernel.Verify.Rename.UnionJoin
 
 /-!
-# Non-contradiction, the IxC half (ALPHA-COLLAPSE §8.1, S1)
+# Non-contradiction, the IxC half
 
 A refutation Source accepts and a proof a certificate's closure installs
 cannot meet: there is no proposition `P` with a constant of type `¬P` in an
@@ -10,10 +10,10 @@ environment Source accepts and a constant of type `P` (renamed) in one the
 certificate's closure installs, wherever the two lists can be joined.
 
 **The route.**
-1. The renaming walk (`Cached.AcceptsRef.rename`, step 7.3) takes Source's
+1. The renaming walk (`Cached.AcceptsRef.rename`) takes Source's
    acceptance to its renaming by `f` (injective on Source's ids), an
    environment that answers each good key's lookup renamed.
-2. The union (`Cached.AcceptsRef.union`, S1) joins the renamed Source list
+2. The union (`Cached.AcceptsRef.union`) joins the renamed Source list
    with the certificate's, both the prelude's front followed by units: one
    accepted list, whose environment answers every lookup either environment
    answers, as it does.

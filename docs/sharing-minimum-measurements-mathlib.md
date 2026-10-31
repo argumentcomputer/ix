@@ -19,7 +19,7 @@ neither of which is in this PR.
 
 The harness used for the Mathlib run has six measurements:
 
-- P1.5 statistics;
+- candidate-count statistics;
 - the production rebuild check;
 - MSS (maximal structural sharing);
 - the uniform-width classification and its components;
@@ -60,7 +60,7 @@ Their results are therefore not measured here.
   - So every Mathlib total below includes Init. Where useful, the 607,869 rooted constants that are **not** in
     `init.ixe` are reported separately.
 
-## Headline: P1.5 distributions
+## Headline: candidate-count distributions
 
 All 679,499 stored constants were processed. None was skipped. 663,254 have at least one expression root (Init:
 55,386 of 56,622). Values are over rooted constants. Each cell gives Init / Mathlib.
@@ -95,7 +95,7 @@ All 679,499 stored constants were processed. None was skipped. 663,254 have at l
 - The rows "= 0", "≤ 256", "≤ 1,024" and "> 1,024" and the rows below them come from the CSVs. The rest are in the
   harness output.
 - With the size > 3 cutoff instead: 15.1% of Mathlib's rooted constants are ≤ 8 and 29.8% (197,576) are above 128.
-- **Two candidate notions.** The `occ`-based P1.5 count is far larger than the compact-indegree set (`deg ≥ 2`,
+- **Two candidate notions.** The `occ`-based candidate count is far larger than the compact-indegree set (`deg ≥ 2`,
   the MSS stored set and the candidates of the uniform classification).
   - For the constant with the most `occ`-based candidates (81,833), the `deg`-based set has 21,461 members.
   - Over all rooted Mathlib constants the `deg`-based set totals 36,191,166 against 130,502,728 `occ`-based

@@ -1174,7 +1174,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
   }
 
-  /// Starting fuel for the current check. Used by diagnostics that want
+  /// Fuel consumed so far during the current check. Used by diagnostics that want
   /// to report fuel consumed at a given point.
   pub fn fuel_used(&self) -> u64 {
     max_rec_fuel().saturating_sub(self.rec_fuel)

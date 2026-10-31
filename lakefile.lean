@@ -557,7 +557,7 @@ lean_exe «kernel-source-ingress» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
-/-- Step 6b's oracle: `.meta` and `.source` names against Lean's
+/-- Oracle comparing `.meta` and `.source` names against Lean's
 (`Tests.Ix.Kernel.MetaNames`). -/
 lean_exe «kernel-meta-names» where
   root := `Tests.Ix.Kernel.MetaNames

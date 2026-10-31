@@ -38,8 +38,9 @@ end Ixon.Authenticated.Audit
 -- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
 -- `csimp` or `partial` constant among them); step 5b's mode index from 5752, by
 -- the generic entries' change; its address keys from 5764 and 115 inherited
--- externs, by the generic entries' change; the IxC performance series (PERF
--- P16, P14, P3, P2) from 5727 and 117 inherited externs, by the generic
+-- externs, by the generic entries' change; the per-step memo reset, shared
+-- binder metadata, fixed-width TagN fast paths, and task-parallel phase B
+-- from 5727 and 117 inherited externs, by the generic
 -- entries' change (`IxC/Kernel/Audit/Roots.lean`); step 6's structured errors
 -- from 5745 and 119 inherited externs, by the generic entries' change; the
 -- validation of the four install anchors from 5963, by the generic entries' change;
@@ -49,24 +50,23 @@ end Ixon.Authenticated.Audit
 -- generic entries' change (29 more, the block-order entry's); the block
 -- order's `let` key (a `let`'s nondependency bit,
 -- `Ixon.BlockOrder.compareExpr_letE`) from 6041, by `compareExpr`'s own
--- compiler-generated lambdas (`Ix/Ixon/BlockOrder/Audit.lean`); CQX.8's field test in
+-- compiler-generated lambdas (`Ix/Ixon/BlockOrder/Audit.lean`); testing non-recursive fields after the auxiliary rewrite in
 -- the in-model generator from 6043, by the generic entries' change (4 of
--- `genNested`'s specialisations gone, `IxC/Kernel/Audit/Roots.lean`); (A)
--- (`ALPHA-COLLAPSE.md` §8.2) from 6039, by the generic entries' change (122 out:
+-- `genNested`'s specialisations gone, `IxC/Kernel/Audit/Roots.lean`); retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`) from 6039, by the generic entries' change (122 out:
 -- the compiler-trust roles and their checks, `IxC/Kernel/Audit/Roots.lean`); the
 -- `.indDecl` shape guard from 5917, by the generic entries' change (44 in: the guard,
 -- its memoized walk and their specialisations; one more csimp, ruled,
 -- `IxC/Kernel/Audit/Roots.lean`); the mutual modeller's reading of Lean's recursive
 -- fields from 5961, likewise (9 more); the rest-only hoist and the decided units
--- check (S1) from 5970, by the generic entries' change (117 in,
+-- check from 5970, by the generic entries' change (117 in,
 -- `IxC/Kernel/Audit/Roots.lean`); the prelude's
--- shape check (S1, fact (ii)) from 6087, likewise (12 in); the hoist guard
--- (S1) from 6099, likewise (4 in); the in-model generator's totality (S1)
+-- shape check from 6087, likewise (12 in); the hoist guard
+-- from 6099, likewise (4 in); the in-model generator's totality
 -- from 6103, likewise (15 more; its nine ruled `partial` definitions are total,
--- and the ruling is gone); the prelude-copy check ((b), `State.keepsPrelude` in
+-- and the ruling is gone); the prelude-copy check (`State.keepsPrelude` in
 -- `readStream`) from 6118, likewise (38 in: the check, the state's keys and the derived
 -- `DecidableEq` it compares with; externs, `unsafe` and csimp unchanged).
--- The committed fallback recursor guard (2026-10-22) adds seven compiled
+-- The committed fallback recursor guard adds seven compiled
 -- functions to each entry closure. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Module visibility compiles one additional specialization,
@@ -74,7 +74,7 @@ end Ixon.Authenticated.Audit
 -- instead of reusing Reader.buildIndex's Option Nat equality helper.
 -- Its IR is identical after symbol renaming. Measured +1 against the
 -- archived pre-header modules; extern/unsafe/opaque/substitution and
--- csimp sets and every ruling count are unchanged (2026-10-22).
+-- csimp sets and every ruling count are unchanged.
 -- Keeping the fallback's recursors off the input's blocks (`fallbackIndexed`, `indexedRecords`,
 -- through `contextOf`) adds four compiled functions. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
@@ -100,8 +100,8 @@ end Ixon.Authenticated.Audit
 -- key helpers and 108 fixture helpers are added. Every extern, unsafe, direct
 -- and reached implementation, csimp, replacement and opaque entry is unchanged.
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
--- records one more proved `csimp` in `Ix.Kernel.Cached` (26 -> 27; see
--- `IxC/Kernel/Audit/Roots.lean`).
+-- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
+-- `Ix.Kernel.Cached` (26 -> 27; see `IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
  Address.admissionHash]: 6877 compiled functions; inherited externs 116, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 27 -/
@@ -223,24 +223,23 @@ backend's three externs among them (ruled assumed 4). Step 6b's display
 annotations moved it from 5888 by the generic tiered entries' change (8 more,
 one more ruled csimp), and its failure display from 5896, likewise (33 more,
 one more ruled csimp). The reader's conversion to Lean `module`s moved it from 5929,
-likewise (28 more), and the tier fold's unsafe stage (U1) from 5957, likewise (10
+likewise (28 more), and the tier fold's unsafe stage from 5957, likewise (10
 more: the fold's split by kind and the staging; `IxC/Kernel/Audit/Roots.lean`), and the
-tiered Ixon entry's routing of unsafe records (U1) from 5967, likewise (12 more: the
-partition's safety and the tier reader's unsafe opaque and axiom branches), and CQX.8's
-field test in the in-model generator from 5979, likewise (4 of `genNested`'s
-specialisations gone), and (A) (`ALPHA-COLLAPSE.md` §8.2) from 5975, likewise (122
+tiered Ixon entry's routing of unsafe records from 5967, likewise (12 more: the
+partition's safety and the tier reader's unsafe opaque and axiom branches), and testing non-recursive fields after the auxiliary rewrite in the in-model generator from 5979, likewise (4 of `genNested`'s
+specialisations gone), and retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`) from 5975, likewise (122
 out: the compiler-trust roles and their checks), and the `.indDecl` shape guard from
 5853, likewise (44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled),
 and the mutual modeller's reading of Lean's recursive fields from 5897, likewise (9 more),
-and the rest-only hoist and the decided units check (S1) from 5906, likewise (117 in),
-and the prelude's shape check (S1, fact (ii)) from 6023, likewise (12 in),
-and the hoist guard (S1) from 6035, likewise (4 in),
-and the in-model generator's totality (S1) from 6039, likewise (15 more; its nine ruled
+and the rest-only hoist and the decided units check from 5906, likewise (117 in),
+and the prelude's shape check from 6023, likewise (12 in),
+and the hoist guard from 6035, likewise (4 in),
+and the in-model generator's totality from 6039, likewise (15 more; its nine ruled
 `partial` definitions are total, and the ruling is gone),
-and the admission chain's conversion to Lean `module`s (step 10c) from 6054, likewise
+and the admission chain's conversion to Lean `module`s from 6054, likewise
 (codegen only: the partition's `HashSet` specialisations, 7 in and 1 out, and `wordC`
 under its public name; externs, `unsafe` and csimp unchanged),
-and the prelude-copy check ((b), `State.keepsPrelude` in `readStream`) from 6060, likewise
+and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, likewise
 (38 in: the check, the state's keys and the derived `DecidableEq` it compares with). -/
 
 -- Keeping the fallback's recursors off the input's blocks (`fallbackIndexed`, `indexedRecords`,

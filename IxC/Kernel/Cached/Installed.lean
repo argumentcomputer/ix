@@ -33,7 +33,7 @@ declaration from CHECKING it:
   inductive and basis blocks, and the pinned `Nat`-operation and
   `reduce*` branches, whose checks are not separable from their
   installs — takes the ordinary step `checkDeclStepC`.  Every step
-  starts from the empty memo state (`resetC`, LOCALITY §6(a)), so a step
+  starts from the empty memo state (`resetC`), so a step
   reads nothing from the state it is given (`annotDeclStep_state_irrel`).
   An accepting phase A over `ds` IS an `InstalledEnv mode ds`: the index, the
   records, and the chain of accepting steps (`InstallRun`) that produced
@@ -131,7 +131,7 @@ def annotValC (fe : FEnv md) (cvA : ConstantVal md) (value : Expr md) :
   pure jv
 
 /-- Phase A's install of a separable value declaration: from the empty
-memo state (`resetC`, LOCALITY §6(a)), the header's and the value's
+memo state (`resetC`), the header's and the value's
 install halves; returns the header with its annotated type, that type,
 and the annotated value. -/
 def annotValueC (fe : FEnv md) (cv : ConstantVal md) (value : Expr md) :
@@ -184,7 +184,7 @@ accumulator is `(i, fe, pend)`, and a failing step reports the
 that failed.
 
 First it validates the anchors no use site validates (`Bool.rec`, `And`,
-`And.intro`, `And.rec`; `installAnchors`, owner 2026-10-15): a declaration
+`And.intro`, `And.rec`; `installAnchors`): a declaration
 that declares one whose type is not its specification's
 (`Declaration.anchorMismatch?`) declines here, before anything is
 installed. -/
@@ -232,8 +232,8 @@ theorem annotDeclStep_ok {mode : CheckMode} {ev : Evidences md}
     obtain ⟨rfl, rfl⟩ := h
     exact ⟨fe', pend', rfl, rfl⟩
 
-/-- **Phase A's step body reads nothing from the memo state** (LOCALITY
-§6(a), §7): every branch of `annotStepC` starts with `resetC` — in
+/-- **Phase A's step body reads nothing from the memo state**:
+every branch of `annotStepC` starts with `resetC` — in
 `annotValueC`, in the theorem branch and in `checkDeclStepC` — so the
 step from any state is the step from the empty one. -/
 theorem annotStepC_state_irrel (ev : Evidences md) (i : Nat) (fe : FEnv md)
@@ -246,8 +246,7 @@ theorem annotStepC_state_irrel (ev : Evidences md) (i : Nat) (fe : FEnv md)
     | (split <;> rfl)
 
 /-- **A step of the fold reads nothing from the memo state**: the
-state-independence of a step that the locality lemmas start from
-(LOCALITY §7 (a)). -/
+state-independence of a step that the locality lemmas start from. -/
 theorem annotDeclStep_state_irrel (ev : Evidences md)
     (p : Nat × FEnv md × Array (PendingCheck md)) (pd : Declaration md) (s : CState md) :
     annotDeclStep mode ev p pd s = annotDeclStep mode ev p pd {} := by

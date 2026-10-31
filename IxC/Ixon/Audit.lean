@@ -23,8 +23,8 @@ def dataImports : Array Lean.Name :=
 def proofImports : Array Lean.Name := dataImports ++ #[`Lean, `Std, `IxC.Ixon.Verify]
 
 /-- The codec's one ruled exception to the runtime audit: its two `@[csimp]`
-replacements, `getTagN_eq_fast` and `putTagN_eq_fast` (`IxC/Ixon/Codec.lean`,
-PERF P3), the TagN reader and writer at a fixed flag width with their powers
+replacements, `getTagN_eq_fast` and `putTagN_eq_fast` (`IxC/Ixon/Codec.lean`),
+the TagN reader and writer at a fixed flag width with their powers
 folded, each admitted only with a theorem on the standard axioms. Compiled code
 calls `getTagNFast`/`putTagNFast`; every theorem is about `getTagN`/`putTagN`,
 which the two equations make the same functions. -/
@@ -111,7 +111,7 @@ reaches (`Ix.Kernel.Audit.reducedAritySource?`), 12 more functions: the sources
 (`Ixon.getArray`, `Ixon.runGet`, `Ixon.runGetExact`,
 `Ixon.WireCheck.validArray`, `panic`, `outOfBounds` and Init's tail-recursive
 list helpers), with no extern, `unsafe` or `csimp` among them (339 before).
-The TagN twins (PERF P3; `getTagN_eq_fast`, `putTagN_eq_fast`, ruled by
+The TagN twins (`getTagN_eq_fast`, `putTagN_eq_fast`, ruled by
 `Ixon.Audit.rulings`) added 8 functions, `getTagNFast`, `putTagNFast` and the
 copies at the three widths, `getTagN0/2/4` and `putTagN0/2/4` (their inlined
 helpers leave no functions of their own), with no extern (351 before). The

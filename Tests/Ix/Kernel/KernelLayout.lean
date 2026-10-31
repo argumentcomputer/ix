@@ -65,7 +65,7 @@ def topLevel : List (String × Part) := [
 
 def root : String := "IxC/Kernel/"
 
-/-- `rest` without its first `n` characters. -/
+/-- `s` without its first `n` characters (via `s.toList` and `List.drop`). -/
 def dropChars (s : String) (n : Nat) : String := String.ofList (s.toList.drop n)
 
 /-- The top-level entry of a path under `IxC/Kernel/`: its first component,

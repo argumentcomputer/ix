@@ -60,8 +60,8 @@ compiled code calls, `getTagNFast`, `putTagNFast`, `getTagN0/2/4`,
 is a parameter, so no hasher), the binding section's admission
 (`admitBinding`: `RoleTable.ofBytes`, `RoleTable.check`), the Ixon reader, the
 committed default table and prelude and the verified fold. Its ruled
-constructs are the fold's computed-field overrides and proved csimps and
-the in-model generator's `partial` definitions. Step 4 retired the
+constructs are the fold's computed-field overrides and proved csimp rewrites.
+Step 4 retired the
 Nat-operation pin decoder (`builtinNatOpPins`) and its eight string-scanning
 externs, and the pin table's derived-shape check (`Reader.derivedShape`) with
 `String.Slice.Pattern.Internal.memcmpStr`. Step 5a (typed keys) moved the count
@@ -74,13 +74,13 @@ equality, hash and `Repr` (`IxC/Kernel/Audit/Roots.lean`). Step 5b's walk change
 extern, `unsafe`, `csimp` or `partial` constant among them) moved it from 5471.
 Step 5b's mode index moved it from 5563 by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`), and its address keys from 5575 and 111
-inherited externs, by the entry's change. The IxC performance series (PERF
-P16, P14, P3, P2) moved it from 5549 and 113 inherited externs by the entry's
-change (`IxC/Kernel/Audit/Roots.lean`): the memo state reset (P16, 7
-fewer), the shared binder metadata (P14, 5 more), the codec's TagN twins
-(P3, 8 more: `getTagNFast`, `putTagNFast` and the copies at widths 0, 2 and 4,
+inherited externs, by the entry's change. The per-step memo reset, shared binder
+metadata, fixed-width TagN fast paths, and task-parallel phase B moved it from 5549 and 113 inherited externs by the entry's
+change (`IxC/Kernel/Audit/Roots.lean`): the memo state reset (7
+fewer), the shared binder metadata (5 more), the codec's TagN twins
+(8 more: `getTagNFast`, `putTagNFast` and the copies at widths 0, 2 and 4,
 the ruled csimps 21 to 23, the references they replace still reached, csimp
-4 to 6) and phase B on tasks (P2, 12 more, with `Init`'s `Task.spawn` and
+4 to 6) and phase B on tasks (12 more, with `Init`'s `Task.spawn` and
 `Task.get` the two new inherited externs). Step 6's structured errors
 moved it from 5567 and 115 inherited externs by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`): the fold no longer prints terms (two string
@@ -88,30 +88,30 @@ externs fewer), and every fixed message of the fold is a one-part list (two
 more closed objects per message site). The validation of the four install
 anchors moved it from 5785 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
 11 more). Step 6b's display annotations moved it from 5796 by the entry's change
-(`IxC/Kernel/Audit/Roots.lean`, 8 more, one more ruled csimp: PERF P14 with names),
+(`IxC/Kernel/Audit/Roots.lean`, 8 more, one more ruled csimp: shared binder metadata with names),
 and its failure display from 5804 by the entry's change (30 more, one more
 ruled csimp: `Msg.withTerms`). The reader's and its tables' conversion to Lean
 `module`s moved it from 5834 by the entry's change (`IxC/Kernel/Audit/Roots.lean`,
 28 more: the module's own specialisations, `instBEqAddress.beq` and
-`Std.Format.defWidth` called). CQX.8's field test in the in-model generator moved
+`Std.Format.defWidth` called). Testing non-recursive fields after the auxiliary rewrite in the in-model generator moved
 it from 5862 by the entry's change (`IxC/Kernel/Audit/Roots.lean`, 4 of `genNested`'s
-specialisations gone). (A) (`ALPHA-COLLAPSE.md` §8.2) moved it from 5858 by the
+specialisations gone). Retiring the compiler-trust roles (`IxC.Kernel.PinGen.Defs`) moved it from 5858 by the
 entry's change (`IxC/Kernel/Audit/Roots.lean`, 122 out: the compiler-trust roles
 and their checks). The `.indDecl` shape guard moved it from 5736 by the entry's
 change (`IxC/Kernel/Audit/Roots.lean`, 44 in: the guard, its memoized walk and their specialisations; one more csimp, ruled). The mutual modeller's reading of Lean's
 recursive fields moved it from 5780 by the entry's change (9 more). The rest-only
-hoist and the decided units check (S1) moved it from 5789 by the entry's change
+hoist and the decided units check moved it from 5789 by the entry's change
 (`IxC/Kernel/Audit/Roots.lean`, 117 in: `checkUnits` at the fold's end, its
 units, their bases and shapes and the prelude-role test, and their specialisations). The
-prelude's shape check (S1, fact (ii)) moved it from 5906 by the entry's change
-(`IxC/Kernel/Audit/Roots.lean`, 12 in). The hoist guard (S1) moved it from 5918 by
-the entry's change (4 in). The in-model generator's totality (S1) moved it from 5922 by the
+prelude's shape check moved it from 5906 by the entry's change
+(`IxC/Kernel/Audit/Roots.lean`, 12 in). The hoist guard moved it from 5918 by
+the entry's change (4 in). The in-model generator's totality moved it from 5922 by the
 entry's change (`IxC/Kernel/Audit/Roots.lean`, 15 more; its nine ruled `partial`
 definitions are total, and the ruling is gone). The prelude-copy check
-((b), `State.keepsPrelude` in `readStream`) moved it from 5937 by the entry's
+(`State.keepsPrelude` in `readStream`) moved it from 5937 by the entry's
 change (38 in: the check, the state's keys and the derived `DecidableEq`);
 externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
--- The committed fallback recursor guard (2026-10-22) adds seven compiled
+-- The committed fallback recursor guard adds seven compiled
 -- functions to each entry closure. Measured before refreezing; externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
 -- Keeping the fallback's recursors off the input's blocks (`fallbackIndexed`, `indexedRecords`,
@@ -131,7 +131,8 @@ externs, `implemented_by`, `unsafe`, csimp and their rulings are unchanged. -/
 -- and removes the same eight as the public entry audit: Roles 495, Key 208,
 -- RoleData 108 additions. Exact execution-trust entries are unchanged.
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
--- records one more proved `csimp` in `Ix.Kernel.Cached` (26 -> 27; see
+-- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
+-- `Ix.Kernel.Cached` (23 -> 24 for raw kernel entries, and 26 -> 27 here; see
 -- `IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ix.Kernel.Admission.preflight,
  Ix.Kernel.Admission.uniqueKeys,

@@ -792,18 +792,6 @@ fn ingress_expr<M: KernelMode>(
           stats.arena_walk_ns += elapsed_ns(t0);
         }
 
-        //loop {
-        //  match ctx.arena.nodes.get(current_idx as usize) {
-        //    Some(ExprMetaData::Mdata { mdata, child }) => {
-        //      for kvm in mdata {
-        //        mdata_layers.push(resolve_kvmap(kvm, ixon_env));
-        //      }
-        //      current_idx = *child;
-        //    },
-        //    _ => break,
-        //  }
-        //}
-
         // BVar early return (no caching needed for leaves)
         if let IxonExpr::Var(idx) = expr.as_ref() {
           bump_convert_stat!(stats, var_nodes);
@@ -817,27 +805,15 @@ fn ingress_expr<M: KernelMode>(
             .and_then(|i| binder_names.get(i))
             .cloned()
             .unwrap_or_else(Name::anon);
-          if mdata_layers.is_empty() {
-            let name_field = M::meta_field(name);
-            let mdata_field: M::MField<Vec<MData>> = M::meta_field(vec![]);
-            let key = super::env::ExprKey::Var(*idx);
-            values.push(timed_intern_or_build(
-              intern,
-              &key,
-              || KExpr::var_mdata(*idx, name_field, mdata_field),
-              stats,
-            ));
-          } else {
-            let name_field = M::meta_field(name);
-            let mdata_field = M::meta_field(mdata_layers);
-            let key = super::env::ExprKey::Var(*idx);
-            values.push(timed_intern_or_build(
-              intern,
-              &key,
-              || KExpr::var_mdata(*idx, name_field, mdata_field),
-              stats,
-            ));
-          }
+          let name_field = M::meta_field(name);
+          let mdata_field = M::meta_field(mdata_layers);
+          let key = super::env::ExprKey::Var(*idx);
+          values.push(timed_intern_or_build(
+            intern,
+            &key,
+            || KExpr::var_mdata(*idx, name_field, mdata_field),
+            stats,
+          ));
           if let Some(t0) = process_t0 {
             stats.process_arm_ns += elapsed_ns(t0);
           }

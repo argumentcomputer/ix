@@ -3,7 +3,7 @@ import Ix.CompileCert.Canon.Ref
 import Ix.Cert.Canon
 import Ix.Cert.Statement
 
-/-! # The hybrid environment compiles as the materialized one (CQP.4 b)
+/-! # The hybrid environment compiles as the materialized one
 
 `Ix.Cert.compile` runs the driver `Ix.CompileM.compileEnvFold` over the
 materialized environment (`{ consts := env.consts }`); the IO pipeline
@@ -38,9 +38,8 @@ restatements, behaviour-identical). So:
 * `pipeline_fold`: **the IO pipeline's fold equals `Ix.Cert.compile`'s**, on
   one condensation, under those premises.
 
-**What stays a premise, and why:** the group order is no longer one (it was
-`groupOrder`'s agreement until the validations' order became the first
-members' set, 2026-10-19). The IO layer's own steps are tested, not proved:
+**What stays a premise, and why:** the group order is no longer one (the
+validations order groups by the first members' set). The IO layer's own steps are tested, not proved:
 that its loops build the hybrid environment's pieces as stated (`code`,
 `canon`, and `inductives`: the code constants hold exactly the input's
 inductives), that its streamed
@@ -231,7 +230,7 @@ theorem hybrid_heads {full : Ix.Environment} {codeConsts : Std.HashMap Ix.Name I
   · rintro ⟨⟨n, ci⟩, hm, v, rfl, hv⟩
     exact ⟨(n, .inductInfo v), (inductives n v).2 hm, v, rfl, hv⟩
 
-/-- **The IO pipeline's fold equals `Ix.Cert.compile`'s** (CQP.4 b): over
+/-- **The IO pipeline's fold equals `Ix.Cert.compile`'s**: over
 one condensation, the fold over the IO pipeline's hybrid environment, with
 its `--workers` width and its options' trace, is the fold `Ix.Cert.compile`
 runs over the materialized environment, its result's `CompileEnv` holding the

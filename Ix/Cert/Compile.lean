@@ -565,7 +565,8 @@ nodes `0 … n-1`, and an edge from a record to the record each of its
 references resolves to (`refOwner`), when that is a stored record: the
 edges of `Ix.Cert.RecordRef`, and a record's edges to itself. Each record is
 read once, without its expressions (`recordRefs`), and the edges are resolved
-on tasks (`parMap`). -/
+on tasks (`parMap`). Logical reference definition; the runtime check uses
+`recordGraphPar` (proven equal by `recordGraphPar_eq`). -/
 @[expose] def recordGraph (ixe : Ixon.Env) : Array Address × Array (Array Nat) :=
   let addrs := ixe.consts.keys.toArray
   let index : Std.HashMap Address Nat := Std.HashMap.ofList addrs.toList.zipIdx
@@ -584,7 +585,9 @@ records' reference graph (`Ix.Compile.Canon.condensation`, Tarjan's
 strongly connected components, proved) with more than one record, or one
 record that references itself. `none` when there is no such component, so
 the references are acyclic. (`condensation` always returns,
-`Ix.CompileCert.Canon.condensation_isSome`; were it not to, the check fails.) -/
+`Ix.CompileCert.Canon.condensation_isSome`; were it not to, the check fails.)
+Logical reference definition; the runtime check uses `referenceCyclePar`
+(proven equal by `referenceCyclePar_eq`). -/
 @[expose] def referenceCycle (ixe : Ixon.Env) : Option (List Address) :=
   let (addrs, adj) := recordGraph ixe
   let cyclic (c : Array Nat) : Bool :=

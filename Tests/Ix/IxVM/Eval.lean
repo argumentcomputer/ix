@@ -487,7 +487,6 @@ def difficultTests (leanEnv : Lean.Environment) (vm : AiurTestEnv) : IO TestSeq 
   let env := phases.compileEnv
   let mut seq : TestSeq := .done
   for name in numeric.map Prod.fst ++ neutral do
-    IO.eprintln s!"[ixvm] eval fixture: {name}"
     let some (.defnInfo info) := leanEnv.find? name
       | throw <| IO.userError s!"expected definition: {name}"
     let expected ← runMeta (Lean.Meta.withTransparency .all (Lean.Meta.reduceAll info.value)) leanEnv
@@ -504,7 +503,6 @@ def difficultTests (leanEnv : Lean.Environment) (vm : AiurTestEnv) : IO TestSeq 
   -- The elaborator deliberately wraps this accessibility proof in opaqueId.
   -- A kernel-reduction claim must respect that boundary, even though native
   -- compilation can execute the function by erasing proofs.
-  IO.eprintln "[ixvm] eval fixture: opaque well-founded accessibility proof"
   let input ← lookupAddr env ``Fixtures.wellFoundedTree
   let (fixture, output) ← natOutput env 15
   let opaqueId ← lookupAddr env ``Lean.opaqueId
@@ -514,7 +512,6 @@ def difficultTests (leanEnv : Lean.Environment) (vm : AiurTestEnv) : IO TestSeq 
     (← witness fixture input output) (some "result does not match")
   -- This explicit proof does expose constructors to Acc.rec. Meta keeps its
   -- theorem heads opaque, so pin the independent triangular-number answer.
-  IO.eprintln "[ixvm] eval fixture: transparent well-founded recursion"
   let input ← lookupAddr env ``Fixtures.wellFoundedSum
   let (fixture, output) ← natOutput env 21
   seq := seq ++ execute vm "well-founded recursion through accessibility proofs"
@@ -532,7 +529,6 @@ def difficultTests (leanEnv : Lean.Environment) (vm : AiurTestEnv) : IO TestSeq 
     (.leanLam (.ref 0 #[]) (.app (.app (.ref 1 #[]) (.var 0)) (.nat 2)))
     #[nat, add, literal] 0 #[]
   let input ← lookupAddr env ``Fixtures.openOffset
-  IO.eprintln "[ixvm] eval fixture: compact symbolic offset"
   seq := seq ++ execute vm "compact symbolic Nat offset beyond 32 bits"
     (← witness fixture input output)
   let input ← lookupAddr env ``Fixtures.openZero
@@ -591,7 +587,6 @@ def differentialTests (leanEnv : Lean.Environment) (vm : AiurTestEnv) : IO TestS
     let ((value, answer), next) := (genNat 4 []).run state
     state := next
     let label := s!"generated arithmetic {i}, seed {seed}"
-    IO.eprintln s!"[ixvm] eval differential: {label}"
     let nf ← runMeta (Lean.Meta.withTransparency .all (Lean.Meta.reduceAll value)) leanEnv
     seq := seq ++ test s!"Lean agrees with independent numeric oracle: {label}"
       (nf == .lit (.natVal answer))

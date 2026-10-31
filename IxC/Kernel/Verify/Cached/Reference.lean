@@ -8,7 +8,7 @@ public section
 /-!
 # The reference level: the executed fold refines the pure fold
 
-LOCALITY §6(d4) and §7 (G7). The executed fold `Cached.checkDecls` is
+The executed fold `Cached.checkDecls` is
 proved sound by walking its install run with the model beside it, and every
 step of that walk is a run of the pure declaration checker at some fuel
 (`annotStepC_model`). This module keeps those runs:
@@ -28,8 +28,7 @@ step of that walk is a run of the pure declaration checker at some fuel
 * `AcceptsRef.unique`: a reference accept determines its environment.
 
 Later statements about the fold (renaming, locality) are stated at this
-level (LOCALITY §8.4, the owner's 2026-10-16 decision on the renaming
-lemma).
+level.
 -/
 
 namespace Ix.Kernel
@@ -88,7 +87,7 @@ variable {μ : CheckMode} {ev : Evidences md}
 /-! ## Reference acceptance -/
 
 /-- **Reference acceptance**: the pure fold, at some fuel, accepts `ds` and
-installs `env` (LOCALITY §7 (d4)). -/
+installs `env`. -/
 def AcceptsRef (μ : CheckMode) (ev : Evidences md) (ds : List (Declaration md)) (env : Env md) :
     Prop :=
   ∃ F, checkDeclsPure μ (fueledOps μ F) ev ds = .ok env
@@ -137,7 +136,7 @@ theorem installRun_ref {V : Type w} [SetTheory V] (hμ : μ.verifiedChecks = tru
     rw [List.foldlM_cons, checkDecl_mono (Nat.le_max_left F₁ F₂) hF₁]
     exact checkDeclsFrom_mono (Nat.le_max_right F₁ F₂) hF₂
 
-/-- **The executed fold refines the reference fold** (LOCALITY §7, G7): an
+/-- **The executed fold refines the reference fold**: an
 accept of `Cached.checkDecls` is a reference accept of the same
 environment. The set theory is a hypothesis of the walk, not of the
 statement's meaning (see `installRun_ref`). -/

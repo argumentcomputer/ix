@@ -518,7 +518,7 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Compile.ExactKey.nameEq_eq_impl,
     standardAxioms := noChoice },
   -- The Source ingress's term conversion (`Ix.LeanIngress.Expr`), which the
-  -- compile drivers now run through their Source service (AuxGen M1):
+  -- compile drivers now run through their Source service:
   -- compiled code runs the shared-memo conversion, proved equal to the
   -- structural one (`@[csimp]`).
   { root := ``Ix.LeanIngress.ingressExprs_eq_shared,

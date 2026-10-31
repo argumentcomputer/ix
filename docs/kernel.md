@@ -516,9 +516,9 @@ Lean, through δ, β and instantiation:
   term *is* its anonymous erasure, `.meta` and `.source` check exactly what
   `.anon` checks, and no theorem moved. The type is the same in every mode
   (the renaming statement `Ix.Cert.Rename.expr` carries a binder's metadata
-  between modes); `.anon` writes none (its reader builds the shared anonymous
-  objects of PERF P14, which `BinderMeta.withPw` keeps only for an anonymous
-  binder, `shareAlwaysImpl`);
+  between modes); `.anon` writes none (its reader builds shared anonymous
+  objects (see `IxC/Kernel/PinGen/Defs.lean`), which `BinderMeta.withPw` keeps
+  only for an anonymous binder, `shareAlwaysImpl`);
 - `.source` names its terms from the Lean terms (`Ix/LeanIngress/Names.lean`,
   `nameExprs`, after `ingressExprs`; `nameExprs_eq` proves the result is the
   conversion), and `.meta` from the `.ixe`'s metadata arenas

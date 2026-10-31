@@ -47,8 +47,8 @@ container `Carrier_j` (over the *model* names) and `aux p⃗ (tag.(r+j))`:
 Declines (the residual): a field mentioning the block other than as a
 whole member/mimic carrier, anywhere in it (an occurrence under a binder —
 infinitary nesting; a field whose carriers whnf removes, `K True (Box T)`,
-is ordinary, CQX.8), a container that is itself nested or mutual or whose mimics
-form a cycle (B4), a reflexive member, a `Prop` block with a large
+is ordinary), a container that is itself nested or mutual or whose mimics
+form a cycle, a reflexive member, a `Prop` block with a large
 eliminator, a container field a later container field depends on, an
 index domain whose sort not even a ceiling bounds (`Kit.sortCeil`,
 task #227).  (Members' parameter telescopes and sorts are not
@@ -362,7 +362,7 @@ def readCtors (fam : Family md) (M : Nat) (minors : List (Expr md))
     -- occurrences syntactically and tests positivity after whnf, so a field
     -- whose occurrence reduces away (`K True (Box T)` with `K a _ := a`) is
     -- an ordinary field, and the fold's install of the auxiliary family
-    -- tests it after whnf (CQX.8)
+    -- tests it after whnf
     let memberNames := fam.mems.filterMap fun m => if m.real?.isSome then some m.I else none
     for i in List.range nF do
       let dom := doms.getD i default

@@ -841,7 +841,6 @@ pub fn decompile_expr(
   lvl_names: &[Name],
   cache: &mut BlockCache,
   stt: &CompileState,
-  _dstt: &DecompileState,
 ) -> Result<LeanExpr, DecompileError> {
   // Lean mdata layers: Vec of KVMaps (outermost-first)
   type LeanMdata = Vec<Vec<(Name, LeanDataValue)>>;
@@ -1444,13 +1443,11 @@ fn decompile_const_val(
   meta: &ConstantMeta,
   cache: &mut BlockCache,
   stt: &CompileState,
-  dstt: &DecompileState,
 ) -> Result<ConstantVal, DecompileError> {
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
   let (arena, type_root) = get_arena_and_type_root(meta);
-  let typ =
-    decompile_expr(typ, arena, type_root, &level_params, cache, stt, dstt)?;
+  let typ = decompile_expr(typ, arena, type_root, &level_params, cache, stt)?;
   Ok(ConstantVal { name, level_params, typ })
 }
 
@@ -1460,7 +1457,6 @@ fn decompile_definition(
   meta: &ConstantMeta,
   cache: &mut BlockCache,
   stt: &CompileState,
-  dstt: &DecompileState,
 ) -> Result<LeanConstantInfo, DecompileError> {
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
@@ -1475,24 +1471,10 @@ fn decompile_definition(
     },
   };
 
-  let typ = decompile_expr(
-    &def.typ,
-    arena,
-    type_root,
-    &level_params,
-    cache,
-    stt,
-    dstt,
-  )?;
-  let value = decompile_expr(
-    &def.value,
-    arena,
-    value_root,
-    &level_params,
-    cache,
-    stt,
-    dstt,
-  )?;
+  let typ =
+    decompile_expr(&def.typ, arena, type_root, &level_params, cache, stt)?;
+  let value =
+    decompile_expr(&def.value, arena, value_root, &level_params, cache, stt)?;
 
   let all = match &meta.info {
     ConstantMetaInfo::Def { all, .. } => {
@@ -1544,7 +1526,6 @@ fn decompile_recursor(
   meta: &ConstantMeta,
   cache: &mut BlockCache,
   stt: &CompileState,
-  dstt: &DecompileState,
 ) -> Result<LeanConstantInfo, DecompileError> {
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
@@ -1596,15 +1577,8 @@ fn decompile_recursor(
     },
   };
 
-  let typ = decompile_expr(
-    &rec.typ,
-    arena,
-    type_root,
-    &level_params,
-    cache,
-    stt,
-    dstt,
-  )?;
+  let typ =
+    decompile_expr(&rec.typ, arena, type_root, &level_params, cache, stt)?;
 
   let rule_names = rule_addrs
     .iter()
@@ -1627,15 +1601,8 @@ fn decompile_recursor(
     // Safe: lengths validated against rec.rules above. If rule_roots
     // is empty, rec.rules is also empty and this loop doesn't run.
     let rhs_root = rule_roots[i];
-    let rhs = decompile_expr(
-      &rule.rhs,
-      arena,
-      rhs_root,
-      &level_params,
-      cache,
-      stt,
-      dstt,
-    )?;
+    let rhs =
+      decompile_expr(&rule.rhs, arena, rhs_root, &level_params, cache, stt)?;
     rules.push(LeanRecursorRule {
       ctor: ctor_name.clone(),
       n_fields: Nat::from(rule.fields),
@@ -1666,21 +1633,13 @@ fn decompile_constructor(
   induct_name: Name,
   cache: &mut BlockCache,
   stt: &CompileState,
-  dstt: &DecompileState,
 ) -> Result<ConstructorVal, DecompileError> {
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
 
   let (arena, type_root) = get_arena_and_type_root(meta);
-  let typ = decompile_expr(
-    &ctor.typ,
-    arena,
-    type_root,
-    &level_params,
-    cache,
-    stt,
-    dstt,
-  )?;
+  let typ =
+    decompile_expr(&ctor.typ, arena, type_root, &level_params, cache, stt)?;
 
   let cnst = ConstantVal { name, level_params, typ };
 
@@ -1701,21 +1660,13 @@ fn decompile_inductive(
   meta: &ConstantMeta,
   cache: &mut BlockCache,
   stt: &CompileState,
-  dstt: &DecompileState,
 ) -> Result<(InductiveVal, Vec<ConstructorVal>), DecompileError> {
   let name = decompile_name_from_meta(meta, stt)?;
   let level_params = decompile_level_names_from_meta(meta, stt)?;
 
   let (arena, type_root) = get_arena_and_type_root(meta);
-  let typ = decompile_expr(
-    &ind.typ,
-    arena,
-    type_root,
-    &level_params,
-    cache,
-    stt,
-    dstt,
-  )?;
+  let typ =
+    decompile_expr(&ind.typ, arena, type_root, &level_params, cache, stt)?;
 
   // Extract constructor name addresses and all from metadata. The
   // non-Indc arm should be unreachable — `decompile_inductive` is only
@@ -1813,7 +1764,7 @@ fn decompile_inductive(
     cache.univ_table.extend(ctor_meta.meta_univs.iter().cloned());
 
     let ctor_result =
-      decompile_constructor(ctor, &ctor_meta, name.clone(), cache, stt, dstt);
+      decompile_constructor(ctor, &ctor_meta, name.clone(), cache, stt);
 
     cache.meta_sharing = saved_meta_sharing;
     cache.univ_patches = saved_univ_patches;
@@ -1848,9 +1799,8 @@ fn decompile_axiom(
   meta: &ConstantMeta,
   cache: &mut BlockCache,
   stt: &CompileState,
-  dstt: &DecompileState,
 ) -> Result<LeanConstantInfo, DecompileError> {
-  let cnst = decompile_const_val(&ax.typ, meta, cache, stt, dstt)?;
+  let cnst = decompile_const_val(&ax.typ, meta, cache, stt)?;
   Ok(LeanConstantInfo::AxiomInfo(AxiomVal { cnst, is_unsafe: ax.is_unsafe }))
 }
 
@@ -1860,9 +1810,8 @@ fn decompile_quotient(
   meta: &ConstantMeta,
   cache: &mut BlockCache,
   stt: &CompileState,
-  dstt: &DecompileState,
 ) -> Result<LeanConstantInfo, DecompileError> {
-  let cnst = decompile_const_val(&quot.typ, meta, cache, stt, dstt)?;
+  let cnst = decompile_const_val(&quot.typ, meta, cache, stt)?;
   Ok(LeanConstantInfo::QuotInfo(QuotVal { cnst, kind: quot.kind }))
 }
 
@@ -1912,8 +1861,7 @@ fn decompile_projection(
   match &cnst.info {
     ConstantInfo::DPrj(proj) => match mutuals.get(proj.idx as usize) {
       Some(MutConst::Defn(def)) => {
-        let info =
-          decompile_definition(def, &named_meta, &mut cache, stt, dstt)?;
+        let info = decompile_definition(def, &named_meta, &mut cache, stt)?;
         dstt.insert_interned(name.clone(), info);
       },
       other => {
@@ -1931,7 +1879,7 @@ fn decompile_projection(
     ConstantInfo::IPrj(proj) => match mutuals.get(proj.idx as usize) {
       Some(MutConst::Indc(ind)) => {
         let (ind_val, ctors) =
-          decompile_inductive(ind, &named_meta, &mut cache, stt, dstt)?;
+          decompile_inductive(ind, &named_meta, &mut cache, stt)?;
         dstt
           .insert_interned(name.clone(), LeanConstantInfo::InductInfo(ind_val));
         for ctor in ctors {
@@ -1954,7 +1902,7 @@ fn decompile_projection(
 
     ConstantInfo::RPrj(proj) => match mutuals.get(proj.idx as usize) {
       Some(MutConst::Recr(rec)) => {
-        let info = decompile_recursor(rec, &named_meta, &mut cache, stt, dstt)?;
+        let info = decompile_recursor(rec, &named_meta, &mut cache, stt)?;
         dstt.insert_interned(name.clone(), info);
       },
       other => {
@@ -2029,7 +1977,7 @@ fn decompile_const(
         ..Default::default()
       };
       cache.load_meta_extensions(&named_meta)?;
-      let info = decompile_definition(def, &named_meta, &mut cache, stt, dstt)?;
+      let info = decompile_definition(def, &named_meta, &mut cache, stt)?;
       dstt.insert_interned(name.clone(), info);
     },
 
@@ -2045,7 +1993,7 @@ fn decompile_const(
       // Recursor rule RHSs can carry metadata extensions, as in the Defn
       // branch above.
       cache.load_meta_extensions(&named_meta)?;
-      let info = decompile_recursor(rec, &named_meta, &mut cache, stt, dstt)?;
+      let info = decompile_recursor(rec, &named_meta, &mut cache, stt)?;
       dstt.insert_interned(name.clone(), info);
     },
 
@@ -2060,7 +2008,7 @@ fn decompile_const(
       };
       // Load extensions for consistency with the other branches.
       cache.load_meta_extensions(&named_meta)?;
-      let info = decompile_axiom(ax, &named_meta, &mut cache, stt, dstt)?;
+      let info = decompile_axiom(ax, &named_meta, &mut cache, stt)?;
       dstt.insert_interned(name.clone(), info);
     },
 
@@ -2076,7 +2024,7 @@ fn decompile_const(
       // Quotient types have only a type signature — same story as
       // axioms. Load extensions for consistency.
       cache.load_meta_extensions(&named_meta)?;
-      let info = decompile_quotient(quot, &named_meta, &mut cache, stt, dstt)?;
+      let info = decompile_quotient(quot, &named_meta, &mut cache, stt)?;
       dstt.insert_interned(name.clone(), info);
     },
 

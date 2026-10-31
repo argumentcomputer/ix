@@ -5,6 +5,13 @@ public import Ix.Compile.Parallel
 import all IxC.Kernel.Admission.Bytes
 import Init.Data.List.Monadic
 
+/-! Bounded-parallel authentication and record decoding (`authenticateParallel`,
+`parallel`, and their equivalence theorems `authenticateParallel_eq`,
+`parallel_eq`) verifying that raw Ixon constant/blob bytes authenticate and
+decode under `Ixon.Canonical.deConstant` / `Ixon.getConstant` to the expected
+`Ixon.Constant` records (`DecodingOk`, `checkedStore`, and their soundness
+theorems). -/
+
 public section
 
 namespace Ix.RoleBinding.RecordDecoding
