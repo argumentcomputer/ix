@@ -44,7 +44,7 @@ fn egress_level(
     )),
     UnivData::Param(idx, _, _) => {
       let pos = usize::try_from(*idx)
-        .map_err(|_| format!("level param index {idx} exceeds usize"))?;
+        .map_err(|_err| format!("level param index {idx} exceeds usize"))?;
       let name = level_params.get(pos).cloned().unwrap_or_else(Name::anon);
       Ok(env::Level::param(name))
     },
@@ -81,7 +81,7 @@ fn ixon_univ_to_level(
     )),
     IxonUniv::Var(idx) => {
       let pos = usize::try_from(*idx)
-        .map_err(|_| format!("level param index {idx} exceeds usize"))?;
+        .map_err(|_err| format!("level param index {idx} exceeds usize"))?;
       let name = level_params.get(pos).cloned().unwrap_or_else(Name::anon);
       Ok(env::Level::param(name))
     },

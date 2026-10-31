@@ -2228,26 +2228,27 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_31(Seed_ixvm_3
     case 1023ULL: {
       const uint64_t v_73 = seed.word(71);
       row[layout.auxiliaries + 65] = v_73;
-      const uint64_t v_74 = seed.word(72);
-      const uint64_t v_75 = seed.word(73);
-      const uint64_t v_76 = seed.word(74);
-      const uint64_t v_77 = seed.word(75);
-      const uint64_t v_78 = seed.word(76);
-      const uint64_t v_79 = seed.word(77);
-      const uint64_t v_80 = seed.word(78);
-      const uint64_t v_81 = seed.word(79);
-      row[layout.auxiliaries + 66] = v_74;
-      row[layout.auxiliaries + 67] = v_75;
-      row[layout.auxiliaries + 68] = v_76;
-      row[layout.auxiliaries + 69] = v_77;
-      row[layout.auxiliaries + 70] = v_78;
-      row[layout.auxiliaries + 71] = v_79;
-      row[layout.auxiliaries + 72] = v_80;
-      row[layout.auxiliaries + 73] = v_81;
-      const uint64_t v_82 = seed.word(80);
-      row[layout.auxiliaries + 74] = v_82;
-      const uint64_t v_83 = goldilocks_mul(v_73, v_82);
-      row[layout.auxiliaries + 75] = v_83;
+      const uint64_t v_74 = goldilocks_mul(v_8, v_73);
+      const uint64_t v_75 = seed.word(72);
+      const uint64_t v_76 = seed.word(73);
+      const uint64_t v_77 = seed.word(74);
+      const uint64_t v_78 = seed.word(75);
+      const uint64_t v_79 = seed.word(76);
+      const uint64_t v_80 = seed.word(77);
+      const uint64_t v_81 = seed.word(78);
+      const uint64_t v_82 = seed.word(79);
+      row[layout.auxiliaries + 66] = v_75;
+      row[layout.auxiliaries + 67] = v_76;
+      row[layout.auxiliaries + 68] = v_77;
+      row[layout.auxiliaries + 69] = v_78;
+      row[layout.auxiliaries + 70] = v_79;
+      row[layout.auxiliaries + 71] = v_80;
+      row[layout.auxiliaries + 72] = v_81;
+      row[layout.auxiliaries + 73] = v_82;
+      const uint64_t v_83 = seed.word(80);
+      row[layout.auxiliaries + 74] = v_83;
+      const uint64_t v_84 = goldilocks_mul(v_74, v_83);
+      row[layout.auxiliaries + 75] = v_84;
       const uint64_t v_117 = seed.word(81);
       const uint64_t v_118 = seed.word(82);
       const uint64_t v_119 = seed.word(83);
@@ -2429,9 +2430,8 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_31(Seed_ixvm_3
       row[layout.auxiliaries + 75] = v_207;
       const uint64_t v_208 = seed.word(81);
       row[layout.auxiliaries + 76] = v_208;
-      const uint64_t v_209 = goldilocks_mul(v_208, v_8);
-      const uint64_t v_210 = goldilocks_mul(v_199, v_209);
-      row[layout.auxiliaries + 77] = v_210;
+      const uint64_t v_209 = goldilocks_mul(v_199, v_208);
+      row[layout.auxiliaries + 77] = v_209;
       const uint64_t v_211 = 63ULL;
       const uint64_t v_212 = goldilocks_sub(v_2, v_211);
       const uint64_t v_213 = uint64_t(v_212 == 0);
@@ -3143,11 +3143,11 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 5] = v_164;
       const uint64_t v_166 = 1ULL;
       const uint64_t v_167 = goldilocks_sub(v_165, v_166);
-      const uint64_t v_168 = 2ULL;
-      const uint64_t v_169 = goldilocks_sub(v_165, v_168);
-      const uint64_t v_170 = goldilocks_mul(v_167, v_169);
-      row[layout.auxiliaries + 6] = v_170;
-      const uint64_t v_171 = goldilocks_mul(v_165, v_170);
+      const uint64_t v_168 = goldilocks_mul(v_165, v_167);
+      row[layout.auxiliaries + 6] = v_168;
+      const uint64_t v_169 = 2ULL;
+      const uint64_t v_170 = goldilocks_sub(v_165, v_169);
+      const uint64_t v_171 = goldilocks_mul(v_168, v_170);
       row[layout.auxiliaries + 7] = v_171;
       if (v_49 > 255 || v_161 > 255) return 1;
       const uint64_t v_173 = (v_49 ^ v_161);
@@ -3208,10 +3208,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 27] = v_197;
       row[layout.auxiliaries + 28] = v_198;
       const uint64_t v_200 = goldilocks_sub(v_199, v_166);
-      const uint64_t v_201 = goldilocks_sub(v_199, v_168);
-      const uint64_t v_202 = goldilocks_mul(v_200, v_201);
-      row[layout.auxiliaries + 29] = v_202;
-      const uint64_t v_203 = goldilocks_mul(v_199, v_202);
+      const uint64_t v_201 = goldilocks_mul(v_199, v_200);
+      row[layout.auxiliaries + 29] = v_201;
+      const uint64_t v_202 = goldilocks_sub(v_199, v_169);
+      const uint64_t v_203 = goldilocks_mul(v_201, v_202);
       row[layout.auxiliaries + 30] = v_203;
       if (v_175 > 255 || v_195 > 255) return 1;
       const uint64_t v_204 = (v_175 ^ v_195);
@@ -3272,10 +3272,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 50] = v_228;
       row[layout.auxiliaries + 51] = v_229;
       const uint64_t v_231 = goldilocks_sub(v_230, v_166);
-      const uint64_t v_232 = goldilocks_sub(v_230, v_168);
-      const uint64_t v_233 = goldilocks_mul(v_231, v_232);
-      row[layout.auxiliaries + 52] = v_233;
-      const uint64_t v_234 = goldilocks_mul(v_230, v_233);
+      const uint64_t v_232 = goldilocks_mul(v_230, v_231);
+      row[layout.auxiliaries + 52] = v_232;
+      const uint64_t v_233 = goldilocks_sub(v_230, v_169);
+      const uint64_t v_234 = goldilocks_mul(v_232, v_233);
       row[layout.auxiliaries + 53] = v_234;
       if (v_53 > 255 || v_226 > 255) return 1;
       const uint64_t v_235 = (v_53 ^ v_226);
@@ -3336,10 +3336,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 73] = v_259;
       row[layout.auxiliaries + 74] = v_260;
       const uint64_t v_262 = goldilocks_sub(v_261, v_166);
-      const uint64_t v_263 = goldilocks_sub(v_261, v_168);
-      const uint64_t v_264 = goldilocks_mul(v_262, v_263);
-      row[layout.auxiliaries + 75] = v_264;
-      const uint64_t v_265 = goldilocks_mul(v_261, v_264);
+      const uint64_t v_263 = goldilocks_mul(v_261, v_262);
+      row[layout.auxiliaries + 75] = v_263;
+      const uint64_t v_264 = goldilocks_sub(v_261, v_169);
+      const uint64_t v_265 = goldilocks_mul(v_263, v_264);
       row[layout.auxiliaries + 76] = v_265;
       if (v_237 > 255 || v_257 > 255) return 1;
       const uint64_t v_266 = (v_237 ^ v_257);
@@ -3400,10 +3400,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 96] = v_290;
       row[layout.auxiliaries + 97] = v_291;
       const uint64_t v_293 = goldilocks_sub(v_292, v_166);
-      const uint64_t v_294 = goldilocks_sub(v_292, v_168);
-      const uint64_t v_295 = goldilocks_mul(v_293, v_294);
-      row[layout.auxiliaries + 98] = v_295;
-      const uint64_t v_296 = goldilocks_mul(v_292, v_295);
+      const uint64_t v_294 = goldilocks_mul(v_292, v_293);
+      row[layout.auxiliaries + 98] = v_294;
+      const uint64_t v_295 = goldilocks_sub(v_292, v_169);
+      const uint64_t v_296 = goldilocks_mul(v_294, v_295);
       row[layout.auxiliaries + 99] = v_296;
       if (v_57 > 255 || v_288 > 255) return 1;
       const uint64_t v_297 = (v_57 ^ v_288);
@@ -3464,10 +3464,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 119] = v_321;
       row[layout.auxiliaries + 120] = v_322;
       const uint64_t v_324 = goldilocks_sub(v_323, v_166);
-      const uint64_t v_325 = goldilocks_sub(v_323, v_168);
-      const uint64_t v_326 = goldilocks_mul(v_324, v_325);
-      row[layout.auxiliaries + 121] = v_326;
-      const uint64_t v_327 = goldilocks_mul(v_323, v_326);
+      const uint64_t v_325 = goldilocks_mul(v_323, v_324);
+      row[layout.auxiliaries + 121] = v_325;
+      const uint64_t v_326 = goldilocks_sub(v_323, v_169);
+      const uint64_t v_327 = goldilocks_mul(v_325, v_326);
       row[layout.auxiliaries + 122] = v_327;
       if (v_299 > 255 || v_319 > 255) return 1;
       const uint64_t v_328 = (v_299 ^ v_319);
@@ -3528,10 +3528,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 142] = v_352;
       row[layout.auxiliaries + 143] = v_353;
       const uint64_t v_355 = goldilocks_sub(v_354, v_166);
-      const uint64_t v_356 = goldilocks_sub(v_354, v_168);
-      const uint64_t v_357 = goldilocks_mul(v_355, v_356);
-      row[layout.auxiliaries + 144] = v_357;
-      const uint64_t v_358 = goldilocks_mul(v_354, v_357);
+      const uint64_t v_356 = goldilocks_mul(v_354, v_355);
+      row[layout.auxiliaries + 144] = v_356;
+      const uint64_t v_357 = goldilocks_sub(v_354, v_169);
+      const uint64_t v_358 = goldilocks_mul(v_356, v_357);
       row[layout.auxiliaries + 145] = v_358;
       if (v_61 > 255 || v_350 > 255) return 1;
       const uint64_t v_359 = (v_61 ^ v_350);
@@ -3592,10 +3592,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 165] = v_383;
       row[layout.auxiliaries + 166] = v_384;
       const uint64_t v_386 = goldilocks_sub(v_385, v_166);
-      const uint64_t v_387 = goldilocks_sub(v_385, v_168);
-      const uint64_t v_388 = goldilocks_mul(v_386, v_387);
-      row[layout.auxiliaries + 167] = v_388;
-      const uint64_t v_389 = goldilocks_mul(v_385, v_388);
+      const uint64_t v_387 = goldilocks_mul(v_385, v_386);
+      row[layout.auxiliaries + 167] = v_387;
+      const uint64_t v_388 = goldilocks_sub(v_385, v_169);
+      const uint64_t v_389 = goldilocks_mul(v_387, v_388);
       row[layout.auxiliaries + 168] = v_389;
       if (v_361 > 255 || v_381 > 255) return 1;
       const uint64_t v_390 = (v_361 ^ v_381);
@@ -3656,10 +3656,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 188] = v_414;
       row[layout.auxiliaries + 189] = v_415;
       const uint64_t v_417 = goldilocks_sub(v_416, v_166);
-      const uint64_t v_418 = goldilocks_sub(v_416, v_168);
-      const uint64_t v_419 = goldilocks_mul(v_417, v_418);
-      row[layout.auxiliaries + 190] = v_419;
-      const uint64_t v_420 = goldilocks_mul(v_416, v_419);
+      const uint64_t v_418 = goldilocks_mul(v_416, v_417);
+      row[layout.auxiliaries + 190] = v_418;
+      const uint64_t v_419 = goldilocks_sub(v_416, v_169);
+      const uint64_t v_420 = goldilocks_mul(v_418, v_419);
       row[layout.auxiliaries + 191] = v_420;
       if (v_391 > 255 || v_412 > 255) return 1;
       const uint64_t v_421 = (v_391 ^ v_412);
@@ -3720,10 +3720,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 211] = v_445;
       row[layout.auxiliaries + 212] = v_446;
       const uint64_t v_448 = goldilocks_sub(v_447, v_166);
-      const uint64_t v_449 = goldilocks_sub(v_447, v_168);
-      const uint64_t v_450 = goldilocks_mul(v_448, v_449);
-      row[layout.auxiliaries + 213] = v_450;
-      const uint64_t v_451 = goldilocks_mul(v_447, v_450);
+      const uint64_t v_449 = goldilocks_mul(v_447, v_448);
+      row[layout.auxiliaries + 213] = v_449;
+      const uint64_t v_450 = goldilocks_sub(v_447, v_169);
+      const uint64_t v_451 = goldilocks_mul(v_449, v_450);
       row[layout.auxiliaries + 214] = v_451;
       if (v_423 > 255 || v_443 > 255) return 1;
       const uint64_t v_452 = (v_423 ^ v_443);
@@ -3780,10 +3780,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 234] = v_476;
       row[layout.auxiliaries + 235] = v_477;
       const uint64_t v_479 = goldilocks_sub(v_478, v_166);
-      const uint64_t v_480 = goldilocks_sub(v_478, v_168);
-      const uint64_t v_481 = goldilocks_mul(v_479, v_480);
-      row[layout.auxiliaries + 236] = v_481;
-      const uint64_t v_482 = goldilocks_mul(v_478, v_481);
+      const uint64_t v_480 = goldilocks_mul(v_478, v_479);
+      row[layout.auxiliaries + 236] = v_480;
+      const uint64_t v_481 = goldilocks_sub(v_478, v_169);
+      const uint64_t v_482 = goldilocks_mul(v_480, v_481);
       row[layout.auxiliaries + 237] = v_482;
       if (v_205 > 255 || v_474 > 255) return 1;
       const uint64_t v_483 = (v_205 ^ v_474);
@@ -3844,10 +3844,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 257] = v_507;
       row[layout.auxiliaries + 258] = v_508;
       const uint64_t v_510 = goldilocks_sub(v_509, v_166);
-      const uint64_t v_511 = goldilocks_sub(v_509, v_168);
-      const uint64_t v_512 = goldilocks_mul(v_510, v_511);
-      row[layout.auxiliaries + 259] = v_512;
-      const uint64_t v_513 = goldilocks_mul(v_509, v_512);
+      const uint64_t v_511 = goldilocks_mul(v_509, v_510);
+      row[layout.auxiliaries + 259] = v_511;
+      const uint64_t v_512 = goldilocks_sub(v_509, v_169);
+      const uint64_t v_513 = goldilocks_mul(v_511, v_512);
       row[layout.auxiliaries + 260] = v_513;
       if (v_485 > 255 || v_505 > 255) return 1;
       const uint64_t v_514 = (v_485 ^ v_505);
@@ -3904,10 +3904,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 280] = v_538;
       row[layout.auxiliaries + 281] = v_539;
       const uint64_t v_541 = goldilocks_sub(v_540, v_166);
-      const uint64_t v_542 = goldilocks_sub(v_540, v_168);
-      const uint64_t v_543 = goldilocks_mul(v_541, v_542);
-      row[layout.auxiliaries + 282] = v_543;
-      const uint64_t v_544 = goldilocks_mul(v_540, v_543);
+      const uint64_t v_542 = goldilocks_mul(v_540, v_541);
+      row[layout.auxiliaries + 282] = v_542;
+      const uint64_t v_543 = goldilocks_sub(v_540, v_169);
+      const uint64_t v_544 = goldilocks_mul(v_542, v_543);
       row[layout.auxiliaries + 283] = v_544;
       if (v_267 > 255 || v_536 > 255) return 1;
       const uint64_t v_545 = (v_267 ^ v_536);
@@ -3968,10 +3968,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 303] = v_569;
       row[layout.auxiliaries + 304] = v_570;
       const uint64_t v_572 = goldilocks_sub(v_571, v_166);
-      const uint64_t v_573 = goldilocks_sub(v_571, v_168);
-      const uint64_t v_574 = goldilocks_mul(v_572, v_573);
-      row[layout.auxiliaries + 305] = v_574;
-      const uint64_t v_575 = goldilocks_mul(v_571, v_574);
+      const uint64_t v_573 = goldilocks_mul(v_571, v_572);
+      row[layout.auxiliaries + 305] = v_573;
+      const uint64_t v_574 = goldilocks_sub(v_571, v_169);
+      const uint64_t v_575 = goldilocks_mul(v_573, v_574);
       row[layout.auxiliaries + 306] = v_575;
       if (v_547 > 255 || v_567 > 255) return 1;
       const uint64_t v_576 = (v_547 ^ v_567);
@@ -4028,10 +4028,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 326] = v_600;
       row[layout.auxiliaries + 327] = v_601;
       const uint64_t v_603 = goldilocks_sub(v_602, v_166);
-      const uint64_t v_604 = goldilocks_sub(v_602, v_168);
-      const uint64_t v_605 = goldilocks_mul(v_603, v_604);
-      row[layout.auxiliaries + 328] = v_605;
-      const uint64_t v_606 = goldilocks_mul(v_602, v_605);
+      const uint64_t v_604 = goldilocks_mul(v_602, v_603);
+      row[layout.auxiliaries + 328] = v_604;
+      const uint64_t v_605 = goldilocks_sub(v_602, v_169);
+      const uint64_t v_606 = goldilocks_mul(v_604, v_605);
       row[layout.auxiliaries + 329] = v_606;
       if (v_329 > 255 || v_598 > 255) return 1;
       const uint64_t v_607 = (v_329 ^ v_598);
@@ -4092,10 +4092,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_35(Seed_ixvm_3
       row[layout.auxiliaries + 349] = v_631;
       row[layout.auxiliaries + 350] = v_632;
       const uint64_t v_634 = goldilocks_sub(v_633, v_166);
-      const uint64_t v_635 = goldilocks_sub(v_633, v_168);
-      const uint64_t v_636 = goldilocks_mul(v_634, v_635);
-      row[layout.auxiliaries + 351] = v_636;
-      const uint64_t v_637 = goldilocks_mul(v_633, v_636);
+      const uint64_t v_635 = goldilocks_mul(v_633, v_634);
+      row[layout.auxiliaries + 351] = v_635;
+      const uint64_t v_636 = goldilocks_sub(v_633, v_169);
+      const uint64_t v_637 = goldilocks_mul(v_635, v_636);
       row[layout.auxiliaries + 352] = v_637;
       if (v_609 > 255 || v_629 > 255) return 1;
       const uint64_t v_638 = (v_609 ^ v_629);
@@ -4274,12 +4274,12 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_39(Seed_ixvm_3
   row[8] = v_8;
   const uint64_t v_9 = seed.word(10);
   row[9] = v_9;
-  const uint64_t v_10 = goldilocks_add(v_7, v_8);
-  const uint64_t v_11 = goldilocks_add(v_6, v_10);
-  const uint64_t v_12 = goldilocks_add(v_5, v_11);
-  const uint64_t v_13 = goldilocks_add(v_4, v_12);
-  const uint64_t v_14 = goldilocks_add(v_3, v_13);
-  const uint64_t v_15 = goldilocks_add(v_2, v_14);
+  const uint64_t v_10 = goldilocks_add(v_2, v_3);
+  const uint64_t v_11 = goldilocks_add(v_10, v_4);
+  const uint64_t v_12 = goldilocks_add(v_11, v_5);
+  const uint64_t v_13 = goldilocks_add(v_12, v_6);
+  const uint64_t v_14 = goldilocks_add(v_13, v_7);
+  const uint64_t v_15 = goldilocks_add(v_14, v_8);
   switch (v_15) {
     case 0ULL: {
       const uint64_t v_16 = 32ULL;
@@ -4515,11 +4515,11 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_42(Seed_ixvm_4
   row[10] = v_10;
   switch (v_1) {
     case 0ULL: {
-      const uint64_t v_11 = goldilocks_add(v_8, v_9);
-      const uint64_t v_12 = goldilocks_add(v_7, v_11);
-      const uint64_t v_13 = goldilocks_add(v_6, v_12);
-      const uint64_t v_14 = goldilocks_add(v_5, v_13);
-      const uint64_t v_15 = goldilocks_add(v_4, v_14);
+      const uint64_t v_11 = goldilocks_add(v_4, v_5);
+      const uint64_t v_12 = goldilocks_add(v_11, v_6);
+      const uint64_t v_13 = goldilocks_add(v_12, v_7);
+      const uint64_t v_14 = goldilocks_add(v_13, v_8);
+      const uint64_t v_15 = goldilocks_add(v_14, v_9);
       switch (v_15) {
         case 0ULL: {
           const uint64_t v_18 = seed.word(12);
@@ -4557,10 +4557,10 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_42(Seed_ixvm_4
       }
     }
     case 1ULL: {
-      const uint64_t v_33 = goldilocks_add(v_8, v_9);
-      const uint64_t v_34 = goldilocks_add(v_7, v_33);
-      const uint64_t v_35 = goldilocks_add(v_6, v_34);
-      const uint64_t v_36 = goldilocks_add(v_5, v_35);
+      const uint64_t v_33 = goldilocks_add(v_5, v_6);
+      const uint64_t v_34 = goldilocks_add(v_33, v_7);
+      const uint64_t v_35 = goldilocks_add(v_34, v_8);
+      const uint64_t v_36 = goldilocks_add(v_35, v_9);
       switch (v_36) {
         case 0ULL: {
           const uint64_t v_41 = seed.word(12);
@@ -4598,9 +4598,9 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_42(Seed_ixvm_4
       }
     }
     case 2ULL: {
-      const uint64_t v_56 = goldilocks_add(v_8, v_9);
-      const uint64_t v_57 = goldilocks_add(v_7, v_56);
-      const uint64_t v_58 = goldilocks_add(v_6, v_57);
+      const uint64_t v_56 = goldilocks_add(v_6, v_7);
+      const uint64_t v_57 = goldilocks_add(v_56, v_8);
+      const uint64_t v_58 = goldilocks_add(v_57, v_9);
       switch (v_58) {
         case 0ULL: {
           const uint64_t v_63 = seed.word(12);
@@ -11715,12 +11715,12 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_198(Seed_ixvm_
   row[layout.auxiliaries + 3] = v_7;
   const uint64_t v_8 = seed.word(9);
   row[layout.auxiliaries + 4] = v_8;
-  const uint64_t v_9 = seed.word(10);
-  row[layout.auxiliaries + 5] = v_9;
-  const uint64_t v_10 = seed.word(11);
-  row[layout.auxiliaries + 6] = v_10;
-  const uint64_t v_11 = goldilocks_add(v_8, v_10);
-  const uint64_t v_12 = goldilocks_add(v_6, v_11);
+  const uint64_t v_9 = goldilocks_add(v_6, v_8);
+  const uint64_t v_10 = seed.word(10);
+  row[layout.auxiliaries + 5] = v_10;
+  const uint64_t v_11 = seed.word(11);
+  row[layout.auxiliaries + 6] = v_11;
+  const uint64_t v_12 = goldilocks_add(v_9, v_11);
   switch (v_12) {
     case 1ULL: {
       const uint64_t v_14 = seed.word(12);
@@ -11855,22 +11855,22 @@ template<bool Typed> __device__ __forceinline__ uint32_t row_ixvm_198(Seed_ixvm_
                   row[layout.auxiliaries + 19] = v_58;
                   switch (v_58) {
                     case 1ULL: {
-                      const uint64_t v_59 = 2ULL;
-                      const uint64_t v_60 = goldilocks_mul(v_3, v_44);
-                      row[layout.auxiliaries + 20] = v_60;
-                      const uint64_t v_61 = goldilocks_mul(v_59, v_60);
-                      const uint64_t v_62 = goldilocks_sub(v_44, v_61);
-                      const uint64_t v_63 = goldilocks_add(v_3, v_62);
+                      const uint64_t v_59 = goldilocks_add(v_3, v_44);
+                      const uint64_t v_60 = 2ULL;
+                      const uint64_t v_61 = goldilocks_mul(v_60, v_3);
+                      const uint64_t v_62 = goldilocks_mul(v_61, v_44);
+                      row[layout.auxiliaries + 20] = v_62;
+                      const uint64_t v_63 = goldilocks_sub(v_59, v_62);
                       const uint64_t v_64 = 1ULL;
                       const uint64_t v_65 = seed.word(22);
                       row[layout.auxiliaries + 21] = v_65;
                       const uint64_t v_66 = goldilocks_sub(v_64, v_65);
-                      const uint64_t v_67 = seed.word(23);
+                      const uint64_t v_67 = goldilocks_mul(v_63, v_66);
                       row[layout.auxiliaries + 22] = v_67;
-                      const uint64_t v_68 = goldilocks_sub(v_64, v_67);
-                      const uint64_t v_69 = goldilocks_mul(v_66, v_68);
-                      row[layout.auxiliaries + 23] = v_69;
-                      const uint64_t v_70 = goldilocks_mul(v_63, v_69);
+                      const uint64_t v_68 = seed.word(23);
+                      row[layout.auxiliaries + 23] = v_68;
+                      const uint64_t v_69 = goldilocks_sub(v_64, v_68);
+                      const uint64_t v_70 = goldilocks_mul(v_67, v_69);
                       row[layout.auxiliaries + 24] = v_70;
                       const uint64_t v_71 = seed.word(24);
                       row[layout.auxiliaries + 25] = v_71;
@@ -20506,7 +20506,7 @@ extern "C" int aiur_trace_ixvm_810(int device, const uint8_t* seeds, uint32_t en
 }
 
 extern "C" const uint8_t* aiur_trace_ixvm_contract() {
-  static const uint8_t hash[32] = {38, 29, 24, 215, 124, 68, 119, 206, 188, 87, 245, 201, 220, 59, 227, 63, 153, 172, 8, 136, 99, 171, 116, 56, 101, 81, 57, 9, 42, 209, 26, 90};
+  static const uint8_t hash[32] = {65, 26, 193, 32, 195, 107, 118, 130, 217, 161, 86, 222, 37, 170, 244, 151, 9, 157, 80, 11, 135, 253, 14, 143, 75, 66, 22, 155, 123, 126, 33, 97};
   return hash;
 }
 extern "C" const uint8_t* aiur_trace_ixvm_schema() {
