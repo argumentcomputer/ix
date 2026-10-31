@@ -140,6 +140,11 @@ in the CUDA 13.3.1 development image for SM 80. This is build validation only;
 the new single-shard retention path has not run on a GPU here. No Lean source,
 theorem, axiom, or correctness certificate changed.
 
+The 2026-10-31 [hardware validation](formal-aiur-gpu-validation.md) ran these
+single-shard paths on a GPU: proofs and keys match the CPU byte for byte, and
+the large recursive verifier now takes 4.17 s (host lookups) and 2.72 s (graph
+lookups) on CUDA.
+
 The hardware report's legacy `AIUR_GPU_TRACE=generated` failure in `ood_loop`
 is not fixed by this change. Its reproducer and GPU output were not available
 locally; ordinary legacy CUDA and the formal backend do not use that generated

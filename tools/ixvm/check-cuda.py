@@ -111,7 +111,11 @@ def main():
                 variants += [('cuda-host-retain', cuda, gpu_env, 'retain', args.device),
                              ('cuda-host-regenerate', cuda, gpu_env, 'regenerate', args.device),
                              ('cuda-graph-regenerate', cuda,
-                              dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1'), 'regenerate', args.device)]
+                              dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1'), 'regenerate', args.device),
+                             # Rows the GPU can populate are generated on the device.
+                             ('cuda-gputrace-regenerate', cuda,
+                              dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1', AIUR_GPU_TRACE='generated'),
+                              'regenerate', args.device)]
             reference = None
             for variant, binary, env, retention, device in variants:
                 target = directory / variant
@@ -164,6 +168,9 @@ def main():
                      dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1'), 'retain', args.device),
                     ('cuda-graph-single-regenerate', cuda,
                      dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1'), 'regenerate', args.device),
+                    ('cuda-gputrace-single-retain', cuda,
+                     dict(gpu_env, AIUR_TRACE_ONLY_LOOKUPS='1', AIUR_GPU_TRACE='generated'),
+                     'retain', args.device),
                 ]
             single_reference = None
             for variant, binary, env, retention, device in single_variants:

@@ -127,7 +127,7 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
   use multi_stark::{batch::Retention, lookup::LookupValues, types::ExtVal};
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend = host_lookups(&plan);
   let record = program.execute("root", vec![3]).unwrap();
   let mut traces = backend.generate_stage_1(&record, "root", &[3]).unwrap();
   // Exercise a ROM run spanning two shards, fixed-table padding, zero
@@ -366,6 +366,16 @@ fn erased_rom_views_use_existing_width_buckets() {
 
 /// root(x) = load(store(leaf(x))); leaf(x) = fixed_square_table[x].
 /// The table has three rows, so its preprocessed domain also tests padding.
+/// A batch backend with host lookup buffers, whatever the build's default
+/// (CUDA builds derive lookups on the device unless told otherwise). Tests of
+/// host lookup values and of retention choices use it.
+pub(super) fn host_lookups<'p, 'a>(
+  plan: &'p TracePlan<'a, PrimeField>,
+) -> Backend<'p, 'a, PrimeField> {
+  Backend::build_with_lookup_policy(plan, parameters(), true, None, false)
+    .unwrap()
+}
+
 fn fixture() -> (CheckedProgram, TraceArtifact) {
   let program: Program = serde_json::from_value(json!({
         "version":1,"modulus":Val::ORDER_U64,"enums":[],
@@ -1113,7 +1123,7 @@ fn resource_plan_matches_generated_trace_and_selects_retention() {
   use super::planning::{Options, RetentionPolicy};
   let (program, artifact) = fixture();
   let plan = TracePlan::new(&program, activate(artifact)).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend = host_lookups(&plan);
   let record = program.execute("root", vec![3]).unwrap();
   let actual = backend.generate_stage_1(&record, "root", &[3]).unwrap();
   let generous =
@@ -1207,6 +1217,100 @@ fn resource_plan_matches_generated_trace_and_selects_retention() {
     Options { device: Some(0), ..Default::default() }.validate().is_err()
   );
 }
+
+#[test]
+fn device_cell_budget_bounds_every_shard() {
+  use super::planning::Options;
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let heights: Vec<_> =
+    backend
+      .system
+      .circuits
+      .iter()
+      .map(|c| {
+        if c.preprocessed_height == 0 { 32768 } else { c.preprocessed_height }
+      })
+      .collect();
+  let generous =
+    Options { max_ram_bytes: Some(u64::MAX), ..Default::default() };
+  let with = |cells, rows| Options {
+    max_cells: Some(cells),
+    max_rows: rows,
+    ..generous.clone()
+  };
+  let whole = backend.plan_heights(&heights, &with(u64::MAX, None), 0).unwrap();
+  assert_eq!((whole.shards, whole.max_rows), (1, 32768));
+  assert_eq!(whole.device_cells, Some(u64::MAX));
+  // One row per circuit plus the full fixed tables cannot be split further.
+  let floor =
+    backend.plan_heights(&heights, &with(u64::MAX, Some(1)), 0).unwrap();
+  assert!(floor.shard_cells < whole.shard_cells);
+  let limit = (whole.shard_cells + floor.shard_cells) / 2;
+  let bounded = backend.plan_heights(&heights, &with(limit, None), 0).unwrap();
+  assert!(bounded.fits);
+  assert!(bounded.shards > 1 && bounded.shard_cells <= limit);
+  assert_eq!(bounded.shards, 32768 / bounded.max_rows);
+  // The bound only lowers an explicit row cap; it never raises it.
+  let capped =
+    backend.plan_heights(&heights, &with(u64::MAX, Some(1024)), 0).unwrap();
+  assert_eq!(capped.max_rows, 1024);
+  let impossible = backend
+    .plan_heights(&heights, &with(floor.shard_cells - 1, None), 0)
+    .unwrap();
+  assert!(!impossible.fits);
+  assert!(
+    Options { max_cells: Some(0), ..Default::default() }.validate().is_err()
+  );
+}
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_host_plan_omits_device_phases() {
+  use super::planning::{Options, RetentionPolicy};
+  let (program, artifact) = fixture();
+  let plan = TracePlan::new(&program, activate(artifact)).unwrap();
+  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let rows = 32768;
+  let heights: Vec<_> = backend
+    .system
+    .circuits
+    .iter()
+    .map(
+      |c| if c.preprocessed_height == 0 { rows } else { c.preprocessed_height },
+    )
+    .collect();
+  let (cpu, _, prep) = backend.prove_allocation(&heights, rows);
+  let retained = backend.device_host_allocation(&heights, rows, 1, false);
+  let regenerated = backend.device_host_allocation(&heights, rows, 1, true);
+  // Without the constant upload staging, a copied witness is still below the
+  // CPU commitment phases.
+  assert!(retained < regenerated && regenerated - (256 << 20) < cpu);
+  // Several shards keep a second witness prepared ahead of the prover.
+  let half = rows / 2;
+  assert!(
+    backend.device_host_allocation(&heights, half, 2, true)
+      > backend.device_host_allocation(&heights, half, 1, true)
+  );
+  // A single retained shard is charged its lookups and staging beside the
+  // source matrices, not the CPU commitment phases.
+  let options = Options {
+    max_ram_bytes: Some(u64::MAX),
+    max_cells: Some(u64::MAX),
+    ..Default::default()
+  };
+  let whole = backend.plan_heights(&heights, &options, 0).unwrap();
+  assert_eq!((whole.shards, whole.retention), (1, RetentionPolicy::Retain));
+  let cells: u128 = heights
+    .iter()
+    .zip(&backend.system.circuits)
+    .map(|(&h, c)| h as u128 * c.main_width as u128)
+    .sum();
+  assert_eq!(
+    u128::from(whole.proving_peak_bytes),
+    ((cells * 8 + prep + retained) * 5).div_ceil(4)
+  );
+}
 #[test]
 fn lean_grouped_layout_shares_rows_and_preserves_proofs() {
   #[derive(serde::Deserialize)]
@@ -1292,5 +1396,74 @@ fn lean_grouped_layout_shares_rows_and_preserves_proofs() {
         )
         .is_err()
     );
+  }
+}
+
+/// GPU population (`AIUR_GPU_TRACE=generated`) proves the same bytes as host
+/// population, for whole and sharded batches under both retention policies,
+/// including a grouped circuit's placement on the device.
+#[cfg(feature = "cuda")]
+#[test]
+fn gpu_population_proves_identically() {
+  use multi_stark::batch::Retention;
+  #[derive(serde::Deserialize)]
+  struct Package {
+    program: crate::Program,
+    trace: crate::trace::TraceArtifact,
+  }
+  let package: Package = serde_json::from_str(include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/grouping.json"
+  )))
+  .unwrap();
+  let program = package.program.check().unwrap();
+  let plan = TracePlan::new(&program, package.trace).unwrap();
+  let mut backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  let plans = super::gpu::DevicePlans::new(&backend);
+  let device_circuits: Vec<_> = plans
+    .circuits
+    .iter()
+    .enumerate()
+    .filter(|(_, on)| **on)
+    .map(|(ci, _)| backend.names[ci].clone())
+    .collect();
+  assert!(!device_circuits.is_empty(), "fixture has no device circuit");
+  let entry = "Grouped::run";
+  let record = program.execute(entry, vec![3]).unwrap();
+  for rows in [2, 8] {
+    for retention in [Retention::Retain, Retention::Regenerate] {
+      backend.device_plans = None;
+      let host = backend
+        .prove_batch_stage_1(
+          entry,
+          &[3],
+          &record.output,
+          backend.generate_stage_1(&record, entry, &[3]).unwrap(),
+          rows,
+          retention,
+        )
+        .unwrap();
+      backend.device_plans = Some(super::gpu::DevicePlans::new(&backend));
+      let stage = backend.prepare_stage_1(&record, entry, &[3]).unwrap();
+      assert_eq!(
+        stage.cells(),
+        backend
+          .generate_stage_1(&record, entry, &[3])
+          .unwrap()
+          .iter()
+          .map(|t| t.values.len() as u64)
+          .sum::<u64>()
+      );
+      let device = backend
+        .prove_stage_one(entry, &[3], &record.output, stage, rows, retention)
+        .unwrap();
+      assert_eq!(
+        device.to_bytes().unwrap(),
+        host.to_bytes().unwrap(),
+        "{device_circuits:?} with {rows} rows, {retention:?}"
+      );
+    }
   }
 }

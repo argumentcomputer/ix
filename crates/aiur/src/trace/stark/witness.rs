@@ -261,7 +261,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     if self.gpu_lookup_only {
       Ok(self.witness_from_main(self.generate_stage_1(record, entry, args)?))
     } else {
-      self.generate_with::<true>(record, Some((entry, args)))
+      self.generate_with::<true>(record, Some((entry, args)), &[])
     }
   }
 
@@ -273,7 +273,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     entry: &str,
     args: &[B::Element],
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
-    Ok(self.generate_with::<false>(record, Some((entry, args)))?.traces)
+    Ok(self.generate_with::<false>(record, Some((entry, args)), &[])?.traces)
   }
 
   /// A worker record may have no public entrypoint of its own. Its unresolved
@@ -282,13 +282,16 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     record: &Execution<B>,
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
-    Ok(self.generate_with::<false>(record, None)?.traces)
+    Ok(self.generate_with::<false>(record, None, &[])?.traces)
   }
 
-  fn generate_with<const LOOKUPS: bool>(
+  /// Circuits with a `device` height are populated on the GPU; their host
+  /// matrices are left empty.
+  pub(super) fn generate_with<const LOOKUPS: bool>(
     &self,
     record: &Execution<B>,
     root: Option<(&str, &[B::Element])>,
+    device: &[Option<usize>],
   ) -> Result<SystemWitness<Val>, String> {
     #[cfg(feature = "trace-profile")]
     let mut profile = super::profile::Phases::new();
@@ -304,7 +307,12 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let generate = |ci: usize| {
       #[cfg(feature = "trace-profile")]
       let start = std::time::Instant::now();
-      let result = if ci < self.members.len() {
+      let result = if device.get(ci).copied().flatten().is_some() {
+        Ok((
+          RowMajorMatrix::new(vec![], self.system.circuits[ci].main_width),
+          LookupValues::builder(0, &self.lookup_plans[ci].widths).finish(),
+        ))
+      } else if ci < self.members.len() {
         self.function_witness::<LOOKUPS>(ci, record)
       } else {
         let table = ci - self.members.len();
@@ -336,7 +344,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let (traces, lookups): (Vec<_>, Vec<_>) = results.into_iter().unzip();
     #[cfg(feature = "trace-profile")]
     profile.mark("populate_circuits");
-    let (active, degrees) = self.trace_shape(&traces)?;
+    let (active, degrees) = self.trace_shape_with(&traces, device)?;
     self.check_shape(&active, &degrees)?;
     #[cfg(feature = "trace-profile")]
     {

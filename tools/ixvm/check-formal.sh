@@ -54,7 +54,7 @@ if .lake/build/bin/ix check --formal --legacy Nat.add_comm > "$formal_tmp/confli
   echo "conflicting backends were accepted" >&2
   exit 1
 fi
-rg --quiet -- '--formal and --legacy cannot be combined' "$formal_tmp/conflict.log"
+grep -qF -- '--formal and --legacy cannot be combined' "$formal_tmp/conflict.log"
 .lake/build/bin/ix check --legacy --interp bytecode Nat.add_comm > "$formal_tmp/legacy.log"
 
 target/release/stark-verifier fixture "$formal_tmp/inner"

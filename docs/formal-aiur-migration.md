@@ -73,11 +73,12 @@ implementation. `--formal` remains a compatibility alias and conflicts with
 `--legacy`:
 
 ```sh
+ix prepare --cuda   # once per source revision: hosts and certified artifacts
 ix check Nat.add_comm
 ix prove Nat.add_comm
 ix verify <proof-address>
 
-ix prove --ixe env.ixe --ixes env.ixes --shard-rows 65536
+ix prove --ixe env.ixe --ixes env.ixes
 ix verify --ixe env.ixe --ixes env.ixes <shard-proof-address>...
 ix aggregate --ixe env.ixe --ixes env.ixes \
   --shard-rows 1048576 --direct-joins --structural-above 0 <shard-proof-address>...
@@ -86,7 +87,10 @@ ix verify --aggregate --ixe env.ixe --ixes env.ixes \
 ```
 
 The CLI builds the separate exporter and caches its artifact by source and
-exporter contents. `--aiur-artifact` / `IX_AIUR_ARTIFACT` and
+exporter contents, in the `.lake/aiur` of the checkout `ix` was built in (or
+`IX_ROOT`), so commands work from any directory. `ix prepare` does this, and
+builds the Rust hosts, ahead of time; otherwise the first command that needs an
+artifact exports it, which takes about ten minutes for IxVM. `--aiur-artifact` / `IX_AIUR_ARTIFACT` and
 `--aggr-artifact` / `IX_AGGR_ARTIFACT` select already exported **trusted** compiler
 artifacts. These are verifier configuration, never advice supplied by the
 prover. `IX_AIUR_HOST` and `IX_STARK_HOST` can select prebuilt host executables.
@@ -136,15 +140,20 @@ before proving. The complete stage-one matrices remain in host memory.
 
 Both hosts share the same allocation-phase planner. It accounts for fixed
 tables, source matrices, lookup buffers, commitment data, and retained shard
-state, with a 25% allowance. It conservatively includes the observed RSS even
+state, with a 25% allowance. CUDA plans charge host RAM only for witnesses and
+upload staging, since commitment, stage two and openings stay on the device. It conservatively includes the observed RSS even
 after the execution record is dropped. This is an estimate, not a hard allocator
 limit or a calibrated peak-RSS bound. The execution itself happens before the
 record can be measured. An earlier artifact/fixed-table estimate rejects
 budgets that splitting cannot satisfy. Generated matrix sizes are checked
 against the plan before proving. `--max-ram` is the total new-backend budget in GiB;
 without it, the controller reserves 85% of available host memory, respecting a
-root-mounted cgroup v2 limit. Shard rows are capped at 65536 by default;
-`--shard-rows 0` lets the planner choose the cap.
+root-mounted cgroup v2 limit. Shard rows default to `0`: the planner chooses
+the largest shards that fit the budget. CUDA runs also bound each shard's
+committed cells by `AIUR_TRACE_SHARD_MAX_CELLS` (1.5 billion, sized for a 96 GB
+device). An explicit `--shard-rows` caps rows; small caps multiply recursive
+verification work (at 65536 rows the complete pipeline failed on both CPU and
+CUDA; see [GPU validation](formal-aiur-gpu-validation.md)).
 
 Manifest proving supports `--shards`, `--jobs`, `--skip-proven`, `--exec-only`,
 `--out-ixes`, and `--report`. An oversized claim is cut into whole blocks and
@@ -189,8 +198,17 @@ are built with `--features parallel,cuda`. Override them independently with
 CPU hosts. Device choice does not enter the verifying key or proof protocol.
 An explicit device request to a CPU-only Rust host fails.
 
-The current trace writer populates stage-one matrices on the CPU. CUDA
-accelerates multi-stark's prover phases; this does not add GPU trace codegen.
+The trace writer populates stage-one matrices on the CPU by default; CUDA
+accelerates multi-stark's prover phases. With `AIUR_GPU_TRACE=generated` (which
+needs the default device lookups), function circuits whose population plans
+read only recorded calls, byte tables and word hints are filled on the device
+instead (`crates/aiur/cuda/population.cu` interprets the same compiled plans
+and group placements) and reach multi-stark as generated traces; the record
+tables they read are uploaded once per proof. Circuits with memory stores,
+loads or stream hints, ROMs and fixed tables keep host rows. Proofs are
+byte-identical either way. This is an interpreter, not generated kernels: it
+halves host RAM in the pipeline but does not make it faster
+([GPU validation](formal-aiur-gpu-validation.md)).
 The CUDA CI job checks and links both application hosts and `ix-prover`. On a machine with an
 NVIDIA driver and CUDA toolkit, run this from the repository root:
 
@@ -218,16 +236,19 @@ Ordinary CPU CI runs the same gate's CPU controls; its report explicitly sets
 `hardware_validated: false`. Successful CUDA builds alone do not validate GPU
 execution. Both hosts compile and link locally in the CUDA 13.3.1 development
 container (SM 80), and all three CPU controls pass with identical proofs and
-keys between retain and regenerate. This host has no NVIDIA device or driver;
-the hardware run remains pending.
+keys between retain and regenerate. The hardware gate passed on an RTX PRO
+6000 Blackwell on 2026-10-31; see [GPU validation](formal-aiur-gpu-validation.md).
 
-`AIUR_TRACE_ONLY_LOOKUPS=1` lets CUDA derive lookup messages from the committed
-stage-one rows using multi-stark's graph evaluator. It avoids host lookup
-buffers. Multi-shard batches select regeneration to bound device residency;
-single-shard batches can retain their commitment across the barrier, avoiding
-a second upload, LDE and Merkle commitment at the same peak memory. Full host buffers remain
-the default because they support multi-stark's memory-pressure CPU fallback;
-shape-only buffers fail explicitly if a CPU fallback tries to consume them.
+CUDA proving derives lookup messages from the committed stage-one rows using
+multi-stark's graph evaluator by default, without host lookup buffers.
+Multi-shard batches select regeneration to bound device residency; single-shard
+batches can retain their commitment across the barrier, avoiding a second
+upload, LDE and Merkle commitment at the same peak memory. When device memory
+pressure forces multi-stark onto a path that reads lookup values on the host,
+it rebuilds them from the committed trace (coset interpolation of the committed
+LDE, then its own lookup evaluator), so the fallback is slower but produces the
+same proof bytes. `AIUR_TRACE_ONLY_LOOKUPS=0` builds host lookup buffers
+instead; CPU builds always do and reject `AIUR_TRACE_ONLY_LOOKUPS=1`.
 The hardware integration gate exercises both modes and CPU-verifies the proofs.
 CPU verification and key export ignore this prover-only setting, so leaving it
 exported after GPU proving does not break those commands. CPU proving still
@@ -329,9 +350,9 @@ Default-backend/controller checks on 2026-10-26:
   the earlier direct join. Its first run exposed a reservation bug at the
   final single-job wave; the corrected scheduler gives that wave the full
   128 GiB budget instead of half.
-- CUDA linking is covered by the updated CI job; hardware validation remains
-  pending. `IX_TEST_CUDA=1` enables CPU verification of GPU-produced proofs in
-  the integration gate.
+- CUDA linking is covered by the updated CI job. `IX_TEST_CUDA=1` enables CPU
+  verification of GPU-produced proofs in the integration gate; it passed on
+  hardware on 2026-10-31 ([GPU validation](formal-aiur-gpu-validation.md)).
 
 Current-port checks on 2026-10-22:
 

@@ -400,3 +400,162 @@ impl<B: FieldBackend> FillPlan<B> {
     Ok(())
   }
 }
+
+/// Device encoding of population plans for `stark::gpu`, whose CUDA
+/// interpreter (`cuda/population.cu`) mirrors [`FillPlan::fill_into`].
+#[cfg(feature = "cuda")]
+pub(super) mod device {
+  use super::*;
+
+  pub const OP_ADD: u32 = 0;
+  pub const OP_SUB: u32 = 1;
+  pub const OP_MUL: u32 = 2;
+  pub const OP_SELECT: u32 = 3;
+  pub const OP_INVERSE: u32 = 4;
+  pub const OP_CHOICE: u32 = 5;
+  pub const OP_FAILURE: u32 = 6;
+  pub const OP_MAP: u32 = 7;
+  pub const OP_CALL: u32 = 8;
+  pub const OP_HINT: u32 = 9;
+  const CONSTANT: u32 = 0x8000_0000;
+
+  /// Canonical field constants shared by every encoded plan of a program.
+  #[derive(Default)]
+  pub struct Constants {
+    pub values: Vec<u64>,
+    index: FxHashMap<u64, u32>,
+  }
+  impl Constants {
+    pub fn word(&mut self, value: u64) -> Option<u32> {
+      if let Some(&i) = self.index.get(&value) {
+        return Some(i | CONSTANT);
+      }
+      let i =
+        u32::try_from(self.values.len()).ok().filter(|i| i & CONSTANT == 0)?;
+      self.values.push(value);
+      self.index.insert(value, i);
+      Some(i | CONSTANT)
+    }
+  }
+
+  /// How a callable or hint site runs on the device.
+  #[derive(Clone, Copy)]
+  pub enum Target {
+    Map(u32),
+    Call(u32),
+  }
+
+  pub struct Encoded {
+    pub code: Vec<u32>,
+    pub scratch: u32,
+    pub inputs: u32,
+    pub outputs: u32,
+  }
+
+  impl<B: FieldBackend> FillPlan<B> {
+    /// The plan's kernels and column writes, writing physical `column`s, or
+    /// `None` when a kernel needs host-only state: memory, or a callable or
+    /// hint site without a device implementation.
+    pub fn encode(
+      &self,
+      call: &mut impl FnMut(usize) -> Option<Target>,
+      hint: &mut impl FnMut(usize) -> Option<u32>,
+      column: &impl Fn(usize) -> usize,
+      constants: &mut Constants,
+    ) -> Option<Encoded> {
+      let field = self.field;
+      let mut word = |v: &Value<B::Element>| -> Option<u32> {
+        match v {
+          Value::Constant(c) => constants.word(field.to_u64(*c)),
+          Value::Slot(i) => {
+            u32::try_from(*i).ok().filter(|i| i & CONSTANT == 0)
+          },
+        }
+      };
+      let mut code = vec![u32::try_from(self.kernels.len()).ok()?];
+      for k in &self.kernels {
+        let mut body = vec![];
+        let op = match &k.node {
+          Node::Arithmetic(a) => match a {
+            Arithmetic::Add(x, y)
+            | Arithmetic::Sub(x, y)
+            | Arithmetic::Mul(x, y) => {
+              body.extend([word(x)?, word(y)?]);
+              match a {
+                Arithmetic::Add(..) => OP_ADD,
+                Arithmetic::Sub(..) => OP_SUB,
+                _ => OP_MUL,
+              }
+            },
+            Arithmetic::Select(g, x, y) => {
+              body.extend([word(g)?, word(x)?, word(y)?]);
+              OP_SELECT
+            },
+          },
+          Node::Inverse(x) => {
+            body.push(word(x)?);
+            OP_INVERSE
+          },
+          Node::Choice(tests) => {
+            body.push(u32::try_from(tests.len()).ok()?);
+            for test in tests {
+              body.push(u32::try_from(test.len()).ok()?);
+              for v in test {
+                body.push(word(v)?);
+              }
+            }
+            OP_CHOICE
+          },
+          Node::Failure(xs) => {
+            body.push(u32::try_from(xs.len()).ok()?);
+            for v in xs {
+              body.push(word(v)?);
+            }
+            OP_FAILURE
+          },
+          Node::Call { callable, args } => {
+            let (op, target) = match call(*callable)? {
+              Target::Map(kind) => (OP_MAP, kind),
+              Target::Call(slot) => (OP_CALL, slot),
+            };
+            body.extend([target, u32::try_from(args.len()).ok()?]);
+            for v in args {
+              body.push(word(v)?);
+            }
+            op
+          },
+          Node::Hint { instruction, key } => {
+            body.extend([hint(*instruction)?, u32::try_from(key.len()).ok()?]);
+            for v in key {
+              body.push(word(v)?);
+            }
+            OP_HINT
+          },
+          Node::Store { .. } | Node::Load { .. } => return None,
+        };
+        code.extend([
+          op,
+          word(&k.guard)?,
+          u32::try_from(k.start).ok()?,
+          u32::try_from(k.width).ok()?,
+          u32::try_from(body.len()).ok()?,
+        ]);
+        code.extend(body);
+      }
+      code.push(u32::try_from(self.writes.len()).ok()?);
+      for w in &self.writes {
+        code.extend([
+          word(&w.guard)?,
+          u32::try_from(column(w.column)).ok()?,
+          word(&w.value)?,
+        ]);
+      }
+      Some(Encoded {
+        code,
+        scratch: u32::try_from(self.scratch).ok()?,
+        inputs: u32::try_from(self.inputs).ok()?,
+        outputs: u32::try_from(self.output).ok()?,
+      })
+    }
+  }
+}

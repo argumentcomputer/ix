@@ -175,17 +175,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::process::exit(75);
   }
   let start = Instant::now();
-  let witness = backend.generate_stage_1(&record, &input.entry, &args)?;
-  if witness.iter().map(|m| m.values.len() as u64).sum::<u64>()
-    != batch.stage1_cells
-  {
+  let witness = backend.prepare_stage_1(&record, &input.entry, &args)?;
+  if witness.cells() != batch.stage1_cells {
     return Err("generated trace differs from the resource plan".into());
   }
   let trace = start.elapsed().as_secs_f64();
   drop(record);
   drop(hints);
   let start = Instant::now();
-  let proof = backend.prove_batch_stage_1(
+  let proof = backend.prove_stage_one(
     &input.entry,
     &args,
     &[],

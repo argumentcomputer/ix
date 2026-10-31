@@ -22,35 +22,57 @@ def selected (p : Cli.Parsed) : IO Bool := do
     throw (IO.userError "--gpu-device selects the new backend; legacy device selection uses its existing environment settings")
   return !p.hasFlag "legacy"
 
-def commandStatus (cmd : String) (args : Array String) : IO UInt32 := do
+def commandStatus (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
+    IO UInt32 := do
   (← IO.getStdout).flush
-  let child ← IO.Process.spawn { cmd, args, stdout := .inherit, stderr := .inherit }
+  let child ← IO.Process.spawn { cmd, args, cwd, stdout := .inherit, stderr := .inherit }
   child.wait
 
-def command (cmd : String) (args : Array String) : IO Unit := do
-  let code ← commandStatus cmd args
+def command (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
+    IO Unit := do
+  let code ← commandStatus cmd args cwd
   unless code == 0 do throw (IO.userError s!"{cmd} failed with status {code}")
+
+/-- The checkout this `ix` belongs to. The default backend's exporters, Rust
+hosts and artifact cache live there, so commands work from any directory.
+`IX_ROOT` overrides it; otherwise an executable at `<root>/.lake/build/bin`
+identifies it, falling back to the working directory. -/
+def repoRoot : IO System.FilePath := do
+  if let some root ← IO.getEnv "IX_ROOT" then return root
+  let app ← IO.appPath
+  let root := do
+    let bin ← app.parent
+    let build ← bin.parent
+    let lake ← build.parent
+    lake.parent
+  if let some root := root then
+    if ← (root / "IxVM" / "lakefile.lean").pathExists then return root
+  return "."
 
 def compiledArtifact (p : Cli.Parsed) (flag env exporterPath target sourcePath mode : String)
     (extra : Array String := #[]) : IO String := do
   if let some path := p.flag? flag then return path.as! String
   if let some path ← IO.getEnv env then return path
-  let exporter := System.FilePath.mk exporterPath
-  command "lake" #["-q", "build", target]
-  let source ← if (System.FilePath.mk sourcePath).extension == some "sources" then
+  let root ← repoRoot
+  let exporter := root / exporterPath
+  command "lake" #["-q", "build", target] root
+  let sourcePath := root / sourcePath
+  let source ← if sourcePath.extension == some "sources" then
       pure (← Aiur.SourceBundle.read sourcePath).toUTF8
     else IO.FS.readBinFile sourcePath
   let compiler ← IO.FS.readBinFile exporter
   let digest := Address.blake3 ((Address.blake3 compiler).hash ++ source)
-  let directory := System.FilePath.mk ".lake/aiur"
+  let directory := root / ".lake" / "aiur"
   IO.FS.createDirAll directory
   let path := directory / s!"{target}-{digest}.json"
   unless ← path.pathExists do
+    IO.eprintln s!"[aiur] exporting the certified {target} artifact to {path}; this runs once \
+      per source revision and takes several minutes (`ix prepare` does it ahead of time)"
     let pid ← IO.Process.getPID
     let stamp ← IO.monoNanosNow
     let tmp := directory / s!"{target}-{digest}.tmp.{pid}.{stamp}"
     try
-      command "lake" (#["env", exporter.toString, mode, tmp.toString] ++ extra)
+      command "lake" (#["env", exporter.toString, mode, tmp.toString] ++ extra) root
       IO.FS.rename tmp path
     finally
       if ← tmp.pathExists then IO.FS.removeFile tmp
@@ -60,13 +82,18 @@ def artifact (p : Cli.Parsed) : IO String :=
   compiledArtifact p "aiur-artifact" "IX_AIUR_ARTIFACT" "IxVM/.lake/build/bin/ixvm"
     "ixvm" "IxVM/IxVM/Program.sources" "export-claim-trace"
 
-def rustHost (package binary env : String) (device : Option Nat := none) : IO String := do
+/-- A Rust host of the checkout. A missing host is built; `refresh` lets
+cargo rebuild an existing one whose sources changed. -/
+def rustHost (package binary env : String) (device : Option Nat := none)
+    (refresh : Bool := false) : IO String := do
   if let some path ← IO.getEnv (env ++ if device.isSome then "_CUDA" else "") then return path
-  let directory := if device.isSome then "target/formal-cuda" else "target"
-  let path := System.FilePath.mk directory / "release" / binary
-  unless ← path.pathExists do
+  let root ← repoRoot
+  let directory := root / (if device.isSome then "target/formal-cuda" else "target")
+  let path := directory / "release" / binary
+  if refresh || !(← path.pathExists) then
     command "cargo" #["build", "--release", "--locked", "-p", package, "--bin", binary,
-      "--target-dir", directory, "--features", if device.isSome then "parallel,cuda" else "parallel"]
+      "--target-dir", directory.toString,
+      "--features", if device.isSome then "parallel,cuda" else "parallel"] root
   return path.toString
 
 def host : IO String := rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST"
@@ -76,7 +103,7 @@ structure Resident where
   running : IO Bool
 
 structure HostOptions where
-  rows : Nat := 65536
+  rows : Nat := 0
   retention : String := "auto"
   ram : Nat := 0
   device : Option Nat := none
@@ -135,7 +162,13 @@ def jobCount (p : Cli.Parsed) : IO Nat := do
   return max 1 ((← resources).getObjValAs? Nat "cores" |>.toOption.getD 1)
 
 def hostOptions (p : Cli.Parsed) (shares : Nat := 1) : IO HostOptions := do
-  let rows := ((p.flag? "shard-rows").map (·.as! Nat)).getD 65536
+  -- Zero lets the planner choose the largest shards that fit the RAM budget
+  -- and, on CUDA, the device's committed-cell budget
+  -- (AIUR_TRACE_SHARD_MAX_CELLS). A small fixed row cap only multiplies
+  -- shards, proof bytes and recursive verification work: at 65536 rows a
+  -- wrapped verifier proof has 64 shards, and the join verifying two of them
+  -- needs a ~30 GB record and a ~121 GB proving plan.
+  let rows := ((p.flag? "shard-rows").map (·.as! Nat)).getD 0
   unless rows == 0 || (rows &&& (rows - 1)) == 0 do
     throw (IO.userError "--shard-rows must be zero (automatic) or a power of two")
   let retention := ((p.flag? "retention").map (·.as! String)).getD "auto"
@@ -173,7 +206,10 @@ def withController {α : Type} (p : Cli.Parsed) (artifacts : Array (String × St
   let lanes := ((p.flag? "lanes").map (·.as! Nat)).getD (if options.device.isSome then 1 else jobs)
   if lanes == 0 then throw (IO.userError "--lanes must be positive")
   let executors ← executionJobs p jobs
-  let devices := (Array.range lanes).map fun i => options.device.map (· + i)
+  -- Lanes take consecutive devices. IX_PROVER_SHARED_DEVICES=1 (testing on
+  -- one GPU) puts every lane on the first device instead.
+  let shared := (← IO.getEnv "IX_PROVER_SHARED_DEVICES") == some "1"
+  let devices := (Array.range lanes).map fun i => options.device.map (· + if shared then 0 else i)
   let ram := if p.hasFlag "lanes" && p.hasFlag "max-ram" then options.ram * lanes else options.ram
   let binary ← rustHost "ix-prover" "ix-prover" "IX_PROVER_HOST" options.device
   let recordLimit ← match ← IO.getEnv "AIUR_RECORD_MAX_BYTES" with

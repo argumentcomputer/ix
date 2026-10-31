@@ -14,12 +14,29 @@ use multi_stark::{
   system::{CircuitInputs, System, SystemWitness},
   types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val},
 };
-use std::{error::Error, path::Path, time::Instant};
+use std::{
+  error::Error,
+  io::{BufWriter, Write},
+  path::Path,
+  time::Instant,
+};
 
 #[derive(serde::Deserialize)]
 struct Package {
   program: aiur::Program,
   trace: TraceArtifact,
+}
+
+/// Serialize through a buffer. Recursive invocations encode every proof byte
+/// as a JSON number; unbuffered, each token was a separate write syscall.
+fn write_json(
+  path: &Path,
+  value: &impl serde::Serialize,
+) -> Result<(), Box<dyn Error>> {
+  let mut file = BufWriter::new(std::fs::File::create(path)?);
+  serde_json::to_writer(&mut file, value)?;
+  file.flush()?;
+  Ok(())
 }
 
 fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
@@ -65,8 +82,8 @@ fn fixture(dir: &Path) -> Result<(), Box<dyn Error>> {
   std::fs::write(dir.join("key.bin"), &key)?;
   std::fs::write(dir.join("claims.bin"), &claims)?;
   std::fs::write(dir.join("proof.bin"), &proof)?;
-  serde_json::to_writer(
-    std::fs::File::create(dir.join("input.json"))?,
+  write_json(
+    &dir.join("input.json"),
     &stark_verifier::invocation(&key, &claims, &proof),
   )?;
   println!("created natively verified recursion fixture in {}", dir.display());
@@ -131,8 +148,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     use multi_stark::p3_field::PrimeField64;
     let key = backend.verifying_key_bytes()?;
     std::fs::write(out.join("key.bin"), &key)?;
-    serde_json::to_writer(
-      std::fs::File::create(out.join("identity.json"))?,
+    write_json(
+      &out.join("identity.json"),
       &serde_json::json!({
       "function_index":claim[1].as_canonical_u64(), "call_channel":claim[0].as_canonical_u64(),
       "key_digest":blake3::hash(&key).to_hex().to_string()}),
@@ -276,17 +293,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::process::exit(75);
   }
   let start = Instant::now();
-  let witness = backend.generate_stage_1(&record, &invocation.entry, &args)?;
-  if witness.iter().map(|m| m.values.len() as u64).sum::<u64>()
-    != batch.stage1_cells
-  {
+  let witness = backend.prepare_stage_1(&record, &invocation.entry, &args)?;
+  if witness.cells() != batch.stage1_cells {
     return Err("generated trace differs from the resource plan".into());
   }
   let trace = start.elapsed().as_secs_f64();
   drop(record);
   drop(hints);
   let start = Instant::now();
-  let proof = backend.prove_batch_stage_1(
+  let proof = backend.prove_stage_one(
     &invocation.entry,
     &args,
     &[],
@@ -305,8 +320,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   std::fs::write(out.join("proof.bin"), &bytes)?;
   std::fs::write(out.join("key.bin"), &key)?;
   std::fs::write(out.join("claims.bin"), &claims)?;
-  serde_json::to_writer(
-    std::fs::File::create(out.join("public.json"))?,
+  write_json(
+    &out.join("public.json"),
     &aiur::library::io::Invocation {
       entry: invocation.entry,
       args: invocation.args,
@@ -319,8 +334,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   report["proof_bytes"] = bytes.len().into();
   report["shards"] = proof.proofs.len().into();
   std::fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
-  serde_json::to_writer(
-    std::fs::File::create(out.join("input.json"))?,
+  write_json(
+    &out.join("input.json"),
     &stark_verifier::invocation(&key, &claims, &bytes),
   )?;
   println!(

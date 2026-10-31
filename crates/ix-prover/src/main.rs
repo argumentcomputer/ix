@@ -25,7 +25,7 @@ use std::{
   collections::{HashSet, VecDeque},
   fs,
   path::{Path, PathBuf},
-  sync::{Mutex, mpsc},
+  sync::{Condvar, Mutex, mpsc},
   time::{Duration, Instant},
 };
 
@@ -179,56 +179,148 @@ impl From<BudgetError> for PrepFailure {
   }
 }
 
+/// The prover workspace, shared by the lanes through reservations. Every
+/// lane plans within an equal share, so ordinary jobs never wait for each
+/// other. A recursive job that its share would split into more shards may
+/// plan within the whole workspace instead: every further level of a proof
+/// tree verifies each shard of its children, so splitting one near the root
+/// makes the levels above it larger. Such a job waits until its reservation
+/// is free. Reservations are granted in request order, so a waiting job is
+/// not overtaken by later small ones.
+struct Workspace {
+  total: u64,
+  share: u64,
+  state: Mutex<WorkspaceState>,
+  released: Condvar,
+}
+struct WorkspaceState {
+  free: u64,
+  next: u64,
+  serving: u64,
+}
+struct WorkspaceReservation<'a> {
+  workspace: &'a Workspace,
+  bytes: u64,
+}
+impl Workspace {
+  fn new(total: u64, lanes: usize) -> Self {
+    Self {
+      total,
+      share: total / lanes.max(1) as u64,
+      state: Mutex::new(WorkspaceState { free: total, next: 0, serving: 0 }),
+      released: Condvar::new(),
+    }
+  }
+  fn reserve(&self, bytes: u64) -> WorkspaceReservation<'_> {
+    let bytes = bytes.min(self.total);
+    let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+    let ticket = state.next;
+    state.next += 1;
+    while state.serving != ticket || state.free < bytes {
+      state = self.released.wait(state).unwrap_or_else(|e| e.into_inner());
+    }
+    state.free -= bytes;
+    state.serving += 1;
+    self.released.notify_all();
+    WorkspaceReservation { workspace: self, bytes }
+  }
+}
+impl Drop for WorkspaceReservation<'_> {
+  fn drop(&mut self) {
+    let mut state =
+      self.workspace.state.lock().unwrap_or_else(|e| e.into_inner());
+    state.free += self.bytes;
+    self.workspace.released.notify_all();
+  }
+}
+
+/// Thread pools a lane proves on: its own, and for CPU controllers with
+/// several lanes one spanning every lane's threads, for jobs that borrowed
+/// the whole workspace and therefore run while the other lanes wait.
+struct Pools<'a> {
+  lane: &'a rayon::ThreadPool,
+  wide: Option<&'a rayon::ThreadPool>,
+}
+
 fn prove(
   backend: &Prover<'_, '_>,
   kind: Kind,
   prepared: Prepared,
-  workspace: u64,
+  workspace: &Workspace,
+  pools: &Pools<'_>,
   lane: usize,
   device: Option<i32>,
 ) -> (Job, u32, Value) {
   let Prepared { job, entry, args, record, mut report, .. } = prepared;
   let result = (|| -> Result<(), String> {
-    let mut options = job.options.clone();
-    options.device = device;
-    options.max_ram_bytes =
-      Some(options.max_ram_bytes.unwrap_or(workspace).min(workspace));
-    let batch = backend.plan_record(&record, &options, 0)?;
+    let plan = |budget: u64| {
+      let mut options = job.options.clone();
+      options.device = device;
+      options.max_ram_bytes =
+        Some(options.max_ram_bytes.unwrap_or(budget).min(budget));
+      backend.plan_record(&record, &options, 0)
+    };
+    let narrow = plan(workspace.share)?;
+    let wide = match kind {
+      Kind::Recursion if workspace.total > workspace.share => {
+        Some(plan(workspace.total)?).filter(|wide| {
+          wide.fits && (!narrow.fits || wide.shards < narrow.shards)
+        })
+      },
+      _ => None,
+    };
+    let borrowed = wide.is_some();
+    let batch = wide.unwrap_or(narrow);
     report["plan"] = serde_json::to_value(&batch).map_err(|e| e.to_string())?;
     report["lane"] = lane.into();
     report["device"] = device.into();
+    report["borrowed_workspace"] = borrowed.into();
     if !batch.fits {
       return Ok(());
     }
-    let start = Instant::now();
-    let traces =
-      tracing_texray::examine(tracing::info_span!("aiur.trace", id = %job.id))
-        .in_scope(|| backend.generate_stage_1(&record, &entry, &args))?;
-    if traces.iter().map(|m| m.values.len() as u64).sum::<u64>()
-      != batch.stage1_cells
-    {
-      return Err("generated trace differs from resource plan".into());
-    }
-    report["trace_seconds"] = start.elapsed().as_secs_f64().into();
-    drop(record);
-    let start = Instant::now();
-    let proof = tracing_texray::examine(
-      tracing::info_span!("aiur.prove", id = %job.id, lane),
-    )
-    .in_scope(|| {
-      backend.prove_batch_stage_1(
+    let waited = Instant::now();
+    let _reservation = workspace
+      .reserve(batch.generation_peak_bytes.max(batch.proving_peak_bytes));
+    report["workspace_wait_seconds"] = waited.elapsed().as_secs_f64().into();
+    let pool =
+      if borrowed { pools.wide.unwrap_or(pools.lane) } else { pools.lane };
+    pool.install(|| {
+      let start = Instant::now();
+      let traces = tracing_texray::examine(
+        tracing::info_span!("aiur.trace", id = %job.id),
+      )
+      .in_scope(|| backend.prepare_stage_1(&record, &entry, &args))?;
+      if traces.cells() != batch.stage1_cells {
+        return Err("generated trace differs from resource plan".into());
+      }
+      report["trace_seconds"] = start.elapsed().as_secs_f64().into();
+      drop(record);
+      let start = Instant::now();
+      let proof = tracing_texray::examine(
+        tracing::info_span!("aiur.prove", id = %job.id, lane),
+      )
+      .in_scope(|| {
+        backend.prove_stage_one(
+          &entry,
+          &args,
+          &[],
+          traces,
+          batch.max_rows,
+          batch.retention(),
+        )
+      })?;
+      report["proving_seconds"] = start.elapsed().as_secs_f64().into();
+      report = output::proof(
+        &job,
+        kind,
+        backend,
         &entry,
         &args,
-        &[],
-        traces,
-        batch.max_rows,
-        batch.retention(),
-      )
-    })?;
-    report["proving_seconds"] = start.elapsed().as_secs_f64().into();
-    report =
-      output::proof(&job, kind, backend, &entry, &args, &proof, report.take())?;
-    Ok(())
+        &proof,
+        report.take(),
+      )?;
+      Ok(())
+    })
   })();
   match result {
     Ok(()) if report["verified"] == true => (job, 0, report),
@@ -286,10 +378,14 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
   {
     return Err("controller cannot mix CPU lanes and CUDA lanes".into());
   }
+  // Lanes own distinct devices. Tests on a single GPU may share one between
+  // lanes to exercise concurrent multi-lane proving in one process.
+  let shared = std::env::var("IX_PROVER_SHARED_DEVICES").as_deref() == Ok("1");
   for device in &config.devices {
     planning::Options { device: *device, ..Default::default() }.validate()?;
     if let Some(device) = device
       && !seen_devices.insert(device)
+      && !shared
     {
       return Err("duplicate GPU lane".into());
     }
@@ -349,7 +445,20 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
   if records_bytes == 0 {
     return Err("no record capacity remains".into());
   }
-  let workspace = remaining / 2 / config.devices.len() as u64;
+  let workspace = Workspace::new(remaining / 2, config.devices.len());
+  // CPU lanes borrowing the whole workspace also borrow the waiting lanes'
+  // threads. CUDA lanes keep their own: the device does the heavy work.
+  let wide = (config.devices.len() > 1
+    && config.devices.iter().all(Option::is_none))
+  .then(|| {
+    rayon::ThreadPoolBuilder::new()
+      .num_threads(
+        config.threads_per_prover.saturating_mul(config.devices.len()),
+      )
+      .build()
+      .map_err(|e| e.to_string())
+  })
+  .transpose()?;
   let capacity =
     config.exec_jobs.saturating_add(config.devices.len().saturating_mul(2));
   let pool = RecordPool::new(
@@ -400,23 +509,26 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
       });
     }
     for (lane, backends) in lanes.into_iter().enumerate() {
-      let (kinds, log, records, send, threads, device) = (
+      let (kinds, log, records, send, threads, device, workspace, wide) = (
         &config.artifacts,
         &log,
         &records,
         send.clone(),
         config.threads_per_prover,
         config.devices[lane],
+        &workspace,
+        wide.as_ref(),
       );
       let rayon = rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .build()
         .map_err(|e| e.to_string())?;
       scope.spawn(move || {
+        let pools = Pools { lane: &rayon, wide };
         while let Some(prepared) = records.pop() {
           log.event(json!({"phase":"prove", "id":prepared.job.id, "lane":lane, "device":device}));
           let id = prepared.artifact;
-          let (job, code, report) = rayon.install(|| prove(&backends[id], kinds[id].kind, prepared, workspace, lane, device));
+          let (job, code, report) = prove(&backends[id], kinds[id].kind, prepared, workspace, &pools, lane, device);
           let _ = send.send(Event::Done(job, code, report, false));
         }
       });
@@ -424,7 +536,8 @@ fn serve(config: Config, dir: &Path) -> Result<(), String> {
     atomic_json(
       &dir.join("ready.json"),
       &json!({"ready":true, "lanes":config.devices, "executors":config.exec_jobs,
-      "static_bytes":static_bytes, "record_budget_bytes":records_bytes, "workspace_per_lane_bytes":workspace}),
+      "static_bytes":static_bytes, "record_budget_bytes":records_bytes, "workspace_per_lane_bytes":workspace.share,
+      "workspace_bytes":workspace.total}),
     )?;
     let mut pending = VecDeque::new();
     let mut seen = HashSet::new();
@@ -560,5 +673,48 @@ fn main() {
   if let Err(error) = result {
     eprintln!("ix-prover: {error}");
     std::process::exit(1);
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// A request larger than what is free waits for a release, and a later
+  /// request that would fit does not overtake it.
+  #[test]
+  fn workspace_reservations_are_granted_in_order() {
+    let workspace = Workspace::new(100, 2);
+    assert_eq!(workspace.share, 50);
+    let queued = |count| {
+      while workspace.state.lock().unwrap().next < count {
+        std::thread::yield_now();
+      }
+    };
+    let first = workspace.reserve(60);
+    let (granted, receive) = mpsc::channel();
+    std::thread::scope(|scope| {
+      let send = granted.clone();
+      let workspace = &workspace;
+      scope.spawn(move || {
+        let _whole = workspace.reserve(100);
+        send.send("whole").unwrap();
+      });
+      queued(2);
+      let send = granted.clone();
+      scope.spawn(move || {
+        let _small = workspace.reserve(10);
+        send.send("small").unwrap();
+      });
+      queued(3);
+      std::thread::sleep(Duration::from_millis(50));
+      assert!(receive.try_recv().is_err(), "granted before the release");
+      drop(first);
+      assert_eq!(receive.recv().unwrap(), "whole");
+      assert_eq!(receive.recv().unwrap(), "small");
+    });
+    assert_eq!(workspace.state.lock().unwrap().free, 100);
+    // A request is never larger than the workspace.
+    assert_eq!(workspace.reserve(u64::MAX).bytes, 100);
   }
 }

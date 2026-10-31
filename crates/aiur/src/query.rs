@@ -88,6 +88,20 @@ impl<B: FieldBackend> QueryTable<B> {
     &mut self.rows[row >> self.chunk_shift][start..start + self.stride]
   }
 
+  /// Recorded rows in storage order for bulk transfer: chunks of
+  /// `rows_per_chunk` rows of `stride` words (inputs, then outputs). Static
+  /// maps keep their rows elsewhere and have none here.
+  #[cfg(feature = "cuda")]
+  pub(crate) fn row_chunks(&self) -> (&[Vec<B::Element>], usize, usize) {
+    (&self.rows, self.stride, 1 << self.chunk_shift)
+  }
+
+  /// Each recorded row's multiplicity; zero marks a pending query.
+  #[cfg(feature = "cuda")]
+  pub(crate) fn counts(&self) -> &[u64] {
+    &self.counts
+  }
+
   #[inline(always)]
   pub(crate) fn input(&self, row: usize) -> &[B::Element] {
     if let Some(map) = &self.static_map {

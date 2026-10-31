@@ -23,6 +23,8 @@ use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 mod batch;
+#[cfg(feature = "cuda")]
+mod gpu;
 mod grouping;
 pub mod planning;
 #[cfg(feature = "trace-profile")]
@@ -32,22 +34,36 @@ mod tables;
 #[cfg(test)]
 mod tests;
 mod witness;
-pub use batch::{StreamPlan, VerifyingKey};
+pub use batch::{StageOne, StreamPlan, VerifyingKey};
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
 pub trait WitnessField: FieldBackend {
   fn into_stark(value: Self::Element) -> Val;
+  /// The elements as Goldilocks words, not necessarily canonical; borrowed
+  /// when the representation already is one.
+  fn words(values: &[Self::Element]) -> std::borrow::Cow<'_, [u64]> {
+    values.iter().map(|&v| Self::into_stark(v).as_canonical_u64()).collect()
+  }
 }
 impl WitnessField for PrimeField {
   fn into_stark(value: u64) -> Val {
     Val::from_u64(value)
+  }
+  fn words(values: &[u64]) -> std::borrow::Cow<'_, [u64]> {
+    std::borrow::Cow::Borrowed(values)
   }
 }
 impl WitnessField for NativeField<Val> {
   #[inline]
   fn into_stark(value: Val) -> Val {
     value
+  }
+  fn words(values: &[Val]) -> std::borrow::Cow<'_, [u64]> {
+    // SAFETY: `Goldilocks` is `#[repr(transparent)]` over `u64`.
+    std::borrow::Cow::Borrowed(unsafe {
+      std::slice::from_raw_parts(values.as_ptr().cast::<u64>(), values.len())
+    })
   }
 }
 
@@ -99,6 +115,30 @@ pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
   parameters: Parameters,
   segmented_memory: bool,
   gpu_lookup_only: bool,
+  /// The device a CUDA backend proves on, and its device population plans
+  /// when `AIUR_GPU_TRACE=generated`.
+  #[cfg(feature = "cuda")]
+  device: i32,
+  #[cfg(feature = "cuda")]
+  device_plans: Option<gpu::DevicePlans>,
+}
+
+/// Whether lookup witnesses are shape-only, leaving the CUDA prover to
+/// derive every lookup message from the committed trace. This is the CUDA
+/// default: multi-stark rebuilds the values from the commitment on the rare
+/// paths that need them on the host, so it changes no proof byte. Set
+/// `AIUR_TRACE_ONLY_LOOKUPS=0` to build host lookup buffers anyway; CPU
+/// builds always build them and reject `AIUR_TRACE_ONLY_LOOKUPS=1`.
+fn device_lookups() -> Result<bool, String> {
+  match std::env::var("AIUR_TRACE_ONLY_LOOKUPS") {
+    Ok(value) if value == "1" => Ok(true),
+    Ok(value) if value == "0" => Ok(false),
+    Ok(value) if value.is_empty() => Ok(cfg!(feature = "cuda")),
+    Ok(value) => {
+      Err(format!("AIUR_TRACE_ONLY_LOOKUPS must be 0 or 1, not {value:?}"))
+    },
+    Err(_) => Ok(cfg!(feature = "cuda")),
+  }
 }
 
 fn constant(x: u64) -> Expr<Val> {
@@ -179,15 +219,21 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     segmented_memory: bool,
     device: Option<i32>,
   ) -> Result<Self, String> {
-    let gpu_lookup_only =
-      std::env::var("AIUR_TRACE_ONLY_LOOKUPS").as_deref() == Ok("1");
-    Self::build_with_lookup_policy(
+    let gpu_lookup_only = device_lookups()?;
+    #[allow(unused_mut)]
+    let mut backend = Self::build_with_lookup_policy(
       plan,
       parameters,
       segmented_memory,
       device,
       gpu_lookup_only,
-    )
+    )?;
+    // Only proving backends populate traces; verification ignores this.
+    #[cfg(feature = "cuda")]
+    {
+      backend.device_plans = gpu::DevicePlans::from_env(&backend)?;
+    }
+    Ok(backend)
   }
 
   fn build_with_lookup_policy(
@@ -296,7 +342,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     for (function, &chip) in plan.members.iter().enumerate() {
       members[placements[chip].circuit].push(function);
     }
-    Ok(Self {
+    let backend = Self {
       plan,
       system,
       key,
@@ -309,7 +355,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       parameters,
       segmented_memory,
       gpu_lookup_only,
-    })
+      #[cfg(feature = "cuda")]
+      device: device.unwrap_or_else(multi_stark::cuda::configured_device),
+      #[cfg(feature = "cuda")]
+      device_plans: None,
+    };
+    Ok(backend)
   }
 
   pub fn statistics(&self) -> Vec<CircuitStatistics> {
@@ -540,21 +591,35 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     &self,
     traces: &[RowMajorMatrix<Val>],
   ) -> Result<(Vec<bool>, Vec<u8>), String> {
+    self.trace_shape_with(traces, &[])
+  }
+
+  /// `device` gives the heights of circuits populated on the GPU, whose host
+  /// matrices are empty placeholders.
+  fn trace_shape_with(
+    &self,
+    traces: &[RowMajorMatrix<Val>],
+    device: &[Option<usize>],
+  ) -> Result<(Vec<bool>, Vec<u8>), String> {
     if traces.len() != self.system.circuits.len() {
       return Err("wrong circuit count".into());
     }
     let mut active = vec![];
     let mut degrees = vec![];
-    for (trace, circuit) in traces.iter().zip(&self.system.circuits) {
+    for (ci, (trace, circuit)) in
+      traces.iter().zip(&self.system.circuits).enumerate()
+    {
+      let height =
+        device.get(ci).copied().flatten().unwrap_or_else(|| trace.height());
       if trace.width != circuit.main_width
         || !trace.values.len().is_multiple_of(trace.width)
-        || (trace.height() != 0 && !trace.height().is_power_of_two())
+        || (height != 0 && !height.is_power_of_two())
       {
         return Err("invalid main trace shape".into());
       }
-      active.push(trace.height() != 0);
-      if trace.height() != 0 {
-        degrees.push(trace.height().ilog2() as u8);
+      active.push(height != 0);
+      if height != 0 {
+        degrees.push(height.ilog2() as u8);
       }
     }
     Ok((active, degrees))

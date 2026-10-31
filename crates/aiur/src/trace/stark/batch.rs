@@ -1,7 +1,15 @@
 //! Bounded trace shards and verifier-only keys. Function rows may be partitioned
 //! freely; memory rows remain consecutive and are closed by the batch preamble.
 use super::*;
-use multi_stark::batch::{BatchMessage, Retention};
+#[cfg(feature = "cuda")]
+use multi_stark::witness::TraceSource;
+use multi_stark::{
+  batch::{BatchMessage, Retention},
+  system::Circuit,
+  witness::PreparedWitness,
+};
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
 
 /// A streamed batch authenticates one public claim across independently
 /// executed records. Memory intervals are half-open and width-separated.
@@ -9,6 +17,24 @@ pub struct StreamPlan {
   pub shards: usize,
   pub memory_intervals: Vec<(u64, u64, u64)>,
   pub retention: Retention,
+}
+
+/// Copy a run of rows. One shard of a large trace is gigabytes, so a serial
+/// `to_vec` cost more than committing the shard on a GPU.
+fn copy_rows(values: &[Val]) -> Vec<Val> {
+  #[cfg(feature = "parallel")]
+  {
+    const CHUNK: usize = 1 << 16;
+    if values.len() > 4 * CHUNK {
+      let mut copy = Val::zero_vec(values.len());
+      copy
+        .par_chunks_mut(CHUNK)
+        .zip(values.par_chunks(CHUNK))
+        .for_each(|(to, from)| to.copy_from_slice(from));
+      return copy;
+    }
+  }
+  values.to_vec()
 }
 
 fn commitment_parameters(p: Parameters) -> CommitmentParameters {
@@ -21,6 +47,50 @@ fn fri_parameters(p: Parameters) -> FriParameters {
     num_queries: p.num_queries,
     commit_proof_of_work_bits: 0,
     query_proof_of_work_bits: 0,
+  }
+}
+
+/// Stage-one traces ready for batch proving: host rows, plus the device
+/// record of the function circuits the GPU fills
+/// (`AIUR_GPU_TRACE=generated`), whose host matrices are empty placeholders.
+pub struct StageOne {
+  pub traces: Vec<RowMajorMatrix<Val>>,
+  #[cfg(feature = "cuda")]
+  device: Option<Arc<gpu::DeviceRecord>>,
+}
+
+impl StageOne {
+  pub fn host(traces: Vec<RowMajorMatrix<Val>>) -> Self {
+    Self {
+      traces,
+      #[cfg(feature = "cuda")]
+      device: None,
+    }
+  }
+
+  /// Heights of device-populated circuits, by circuit; empty without any.
+  fn device_heights(&self) -> Vec<Option<usize>> {
+    #[cfg(feature = "cuda")]
+    if let Some(device) = &self.device {
+      return (0..self.traces.len()).map(|ci| device.height(ci)).collect();
+    }
+    vec![]
+  }
+
+  fn height(&self, ci: usize, device: &[Option<usize>]) -> usize {
+    device
+      .get(ci)
+      .copied()
+      .flatten()
+      .unwrap_or_else(|| self.traces[ci].height())
+  }
+
+  /// Stage-one cells, on the host and the device, for resource plans.
+  pub fn cells(&self) -> u64 {
+    let device = self.device_heights();
+    (0..self.traces.len())
+      .map(|ci| (self.height(ci, &device) * self.traces[ci].width) as u64)
+      .sum()
   }
 }
 
@@ -239,30 +309,83 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       return Err("invalid stage-one slice".into());
     }
     let begin = shard.checked_mul(max_rows).ok_or("shard offset overflow")?;
-    Ok(
-      traces
-        .iter()
-        .zip(&self.system.circuits)
-        .map(|(trace, circuit)| {
-          if circuit.preprocessed_height != 0 {
-            return if shard == 0 {
-              trace.clone()
-            } else {
-              RowMajorMatrix::new(
-                Val::zero_vec(trace.values.len()),
-                trace.width,
-              )
-            };
-          }
-          let begin = begin.min(trace.height());
-          let end = begin.saturating_add(max_rows).min(trace.height());
-          RowMajorMatrix::new(
-            trace.values[begin * trace.width..end * trace.width].to_vec(),
-            trace.width,
-          )
-        })
-        .collect(),
+    let slice = |(trace, circuit): (&RowMajorMatrix<Val>, &Circuit<Val>)| {
+      Self::slice_matrix(trace, circuit, shard, begin, max_rows)
+    };
+    #[cfg(feature = "parallel")]
+    let sliced =
+      traces.par_iter().zip(&self.system.circuits).map(slice).collect();
+    #[cfg(not(feature = "parallel"))]
+    let sliced = traces.iter().zip(&self.system.circuits).map(slice).collect();
+    Ok(sliced)
+  }
+
+  fn slice_matrix(
+    trace: &RowMajorMatrix<Val>,
+    circuit: &Circuit<Val>,
+    shard: usize,
+    begin: usize,
+    max_rows: usize,
+  ) -> RowMajorMatrix<Val> {
+    if circuit.preprocessed_height != 0 {
+      return if shard == 0 {
+        RowMajorMatrix::new(copy_rows(&trace.values), trace.width)
+      } else {
+        RowMajorMatrix::new(Val::zero_vec(trace.values.len()), trace.width)
+      };
+    }
+    let begin = begin.min(trace.height());
+    let end = begin.saturating_add(max_rows).min(trace.height());
+    RowMajorMatrix::new(
+      copy_rows(&trace.values[begin * trace.width..end * trace.width]),
+      trace.width,
     )
+  }
+
+  /// The supplier's slice for `shard`. On the shard's last supply, a matrix
+  /// that no other shard reads (shard zero's fixed tables and every circuit
+  /// no taller than one shard) moves out of the source instead of being
+  /// copied; later shards only need its dimensions. With one retained shard
+  /// this moves the whole witness.
+  fn take_stage_1(
+    &self,
+    source: &mut [RowMajorMatrix<Val>],
+    fixed_cells: &[usize],
+    shard: usize,
+    max_rows: usize,
+    last: bool,
+  ) -> Vec<RowMajorMatrix<Val>> {
+    let begin = shard * max_rows;
+    let mut taken: Vec<_> = (0..source.len()).map(|_| None).collect();
+    if last && shard == 0 {
+      for ((trace, circuit), slot) in
+        source.iter_mut().zip(&self.system.circuits).zip(&mut taken)
+      {
+        if circuit.preprocessed_height != 0 || trace.height() <= max_rows {
+          let width = trace.width;
+          *slot = Some(std::mem::replace(
+            trace,
+            RowMajorMatrix::new(Vec::new(), width),
+          ));
+        }
+      }
+    }
+    let source = &*source;
+    let slice = |(i, taken): (usize, Option<RowMajorMatrix<Val>>)| {
+      taken.unwrap_or_else(|| {
+        let (trace, circuit) = (&source[i], &self.system.circuits[i]);
+        if circuit.preprocessed_height != 0 && shard != 0 {
+          RowMajorMatrix::new(Val::zero_vec(fixed_cells[i]), trace.width)
+        } else {
+          Self::slice_matrix(trace, circuit, shard, begin, max_rows)
+        }
+      })
+    };
+    #[cfg(feature = "parallel")]
+    let sliced = taken.into_par_iter().enumerate().map(slice).collect();
+    #[cfg(not(feature = "parallel"))]
+    let sliced = taken.into_iter().enumerate().map(slice).collect();
+    sliced
   }
 
   pub fn verifying_key_bytes(&self) -> Result<Vec<u8>, String> {
@@ -307,6 +430,48 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     max_rows: usize,
     retention: Retention,
   ) -> Result<BatchProof, String> {
+    self.prove_stage_one(
+      entry,
+      args,
+      output,
+      StageOne::host(traces),
+      max_rows,
+      retention,
+    )
+  }
+
+  /// Stage one for [`Self::prove_stage_one`]: like
+  /// [`Self::generate_stage_1`], except that with `AIUR_GPU_TRACE=generated`
+  /// the function circuits the GPU can fill are left to the device, which
+  /// receives the record tables they read. The record can then be dropped.
+  pub fn prepare_stage_1(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<StageOne, String> {
+    #[cfg(feature = "cuda")]
+    if let Some(plans) = &self.device_plans {
+      let device = gpu::DeviceRecord::upload(self, plans, record, self.device)?;
+      let heights: Vec<_> =
+        (0..self.system.circuits.len()).map(|ci| device.height(ci)).collect();
+      let traces = self
+        .generate_with::<false>(record, Some((entry, args)), &heights)?
+        .traces;
+      return Ok(StageOne { traces, device: Some(Arc::new(device)) });
+    }
+    Ok(StageOne::host(self.generate_stage_1(record, entry, args)?))
+  }
+
+  pub fn prove_stage_one(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    stage: StageOne,
+    max_rows: usize,
+    retention: Retention,
+  ) -> Result<BatchProof, String> {
     if !self.segmented_memory {
       return Err("batch proving requires Backend::for_batch".into());
     }
@@ -314,16 +479,20 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       return Err("shard rows must be a positive power of two".into());
     }
     let claim = self.claim(entry, args, output)?;
-    let (active, degrees) = self.trace_shape(&traces)?;
+    let device_heights = stage.device_heights();
+    let (active, degrees) =
+      self.trace_shape_with(&stage.traces, &device_heights)?;
     self.check_shape(&active, &degrees)?;
-    let shards = traces
-      .iter()
-      .zip(&self.system.circuits)
-      .filter(|(_, c)| c.preprocessed_height == 0)
-      .map(|(t, _)| t.height().div_ceil(max_rows))
+    let shards = (0..stage.traces.len())
+      .filter(|&ci| self.system.circuits[ci].preprocessed_height == 0)
+      .map(|ci| stage.height(ci, &device_heights).div_ceil(max_rows))
       .max()
       .unwrap_or(1)
       .max(1);
+    #[cfg(feature = "cuda")]
+    let StageOne { traces, device } = stage;
+    #[cfg(not(feature = "cuda"))]
+    let StageOne { traces } = stage;
     if shards > 65536 {
       return Err("too many trace shards".into());
     }
@@ -358,7 +527,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     } else {
       retention
     };
-    let mut traces = Some(traces);
+    // Shards are supplied in order, once per round: twice when regenerated.
+    // The source matrices remain resident until their last supply.
+    let supplies = if matches!(retention, Retention::Retain) { 1 } else { 2 };
+    let mut supplied = vec![0u8; shards];
+    let fixed_cells: Vec<_> = traces.iter().map(|t| t.values.len()).collect();
+    let mut traces = traces;
     let proof = self.system.prove_batch_with(
       &self.key,
       &claims,
@@ -367,23 +541,59 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       |shard| {
         #[cfg(feature = "trace-profile")]
         let profile = super::profile::Span::new("shard_copy", 0);
-        let sliced = if shards == 1 && matches!(retention, Retention::Retain) {
-          // The backend owns these matrices and calls the supplier only once.
-          // Move the entire witness instead of cloning a potentially multi-GB
-          // trace while keeping the source resident for the rest of the proof.
-          traces.take().expect("single retained shard supplied once")
-        } else {
-          self
-            .slice_stage_1(traces.as_ref().unwrap(), shard, max_rows)
-            .expect("validated batch dimensions")
-        };
+        supplied[shard] += 1;
+        let last = supplied[shard] == supplies;
+        let sliced =
+          self.take_stage_1(&mut traces, &fixed_cells, shard, max_rows, last);
         #[cfg(feature = "trace-profile")]
         drop(profile);
-        self.witness_from_main(sliced)
+        #[cfg(feature = "cuda")]
+        if let Some(device) = &device {
+          return self.device_witness(sliced, device, shard, max_rows);
+        }
+        PreparedWitness::from(self.witness_from_main(sliced))
       },
     );
     self.verify_batch(entry, args, output, &proof)?;
     Ok(proof)
+  }
+
+  /// A shard's witness with the device circuits as generated traces over
+  /// their rows of this shard and every lookup derived on the device.
+  #[cfg(feature = "cuda")]
+  fn device_witness(
+    &self,
+    sliced: Vec<RowMajorMatrix<Val>>,
+    device: &Arc<gpu::DeviceRecord>,
+    shard: usize,
+    max_rows: usize,
+  ) -> PreparedWitness<Val> {
+    let begin = shard * max_rows;
+    let traces: Vec<_> = sliced
+      .into_iter()
+      .enumerate()
+      .map(|(ci, matrix)| match device.height(ci) {
+        Some(height) if begin < height => {
+          TraceSource::Generated(Arc::new(gpu::DeviceTrace {
+            record: Arc::clone(device),
+            circuit: ci,
+            base: begin,
+            height: max_rows.min(height - begin),
+          }))
+        },
+        _ => TraceSource::Host(matrix),
+      })
+      .collect();
+    let lookups = traces
+      .iter()
+      .zip(&self.system.circuits)
+      .map(|(trace, circuit)| {
+        let widths: Vec<_> =
+          circuit.graph.lookups.iter().map(|l| l.args.len()).collect();
+        multi_stark::lookup::LookupValues::shape_only(trace.height(), &widths)
+      })
+      .collect();
+    PreparedWitness { traces, lookups }
   }
 
   pub fn verify_batch(
@@ -402,5 +612,18 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       &[self.claim(entry, args, output)?],
       proof,
     )
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn copy_rows_matches_a_serial_copy() {
+    for len in [0, 1, 4 << 16, (4 << 16) + 1, (9 << 16) + 12345] {
+      let values: Vec<Val> = (0..len as u64).map(Val::from_u64).collect();
+      assert_eq!(copy_rows(&values), values);
+    }
   }
 }

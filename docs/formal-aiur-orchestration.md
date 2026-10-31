@@ -13,7 +13,7 @@ ix prove --ixe env.ixe --ixes env.ixes --jobs 2 --exec-jobs 4 \
 
 # Prove leaves, schedule recursive joins, verify the root, then publish it.
 ix prove --aggregate --ixe env.ixe --ixes env.ixes --jobs 2 --exec-jobs 4 \
-  --trace-shards --max-ram 192 --shard-rows 4194304 \
+  --trace-shards --max-ram 192 \
   --out-ixes completed.ixes --report aggregate.json
 ix verify --aggregate --ixe env.ixe --ixes completed.ixes ROOT_ADDRESS
 
@@ -31,13 +31,19 @@ ix verify --distributed --ixe env.ixe --ixes env.ixes PROOF_ADDRESS
 `--texray` prints timings/RSS for execution, trace population and proving.
 `--direct-joins`, `--structural-above` and `--range` select the same recursive
 strategies available to `ix aggregate`. Direct joins can save wrappers but need
-more RAM. A very small `--shard-rows` can make recursive proofs grow rather
-than shrink; root wrapping detects this and fails with a diagnostic.
+more RAM. A very small `--shard-rows`, or a lane budget too small for a
+single-shard verifier proof, can make recursive proofs grow rather than
+shrink; root wrapping detects this and fails with a diagnostic.
 
 `--lanes` selects CUDA, while `--aggregate --jobs N` runs the complete pipeline
 on CPU. Explicit CUDA requests never select a CPU host silently. Hosts live in
-`target/release` and `target/formal-cuda/release`, with independent overrides
-`IX_PROVER_HOST` and `IX_PROVER_HOST_CUDA`. Build the controller with:
+`target/release` and `target/formal-cuda/release` of the checkout `ix` was
+built in, with independent overrides `IX_PROVER_HOST` and `IX_PROVER_HOST_CUDA`.
+Exporters, sources and the artifact cache (`.lake/aiur`) are also resolved
+against that checkout (or `IX_ROOT`), so `ix` runs from any directory.
+`ix prepare [--cuda]` builds the hosts and exports the IxVM and aggregation
+artifacts ahead of time; otherwise the first command that needs an artifact
+exports it (several minutes, once per source revision). Building by hand:
 
 ```sh
 cargo build --release --locked -p ix-prover --features parallel
@@ -62,9 +68,23 @@ cancels the youngest and retries it after capacity is released. Completed
 records wait in a bounded priority queue.
 
 After accounting for resident Rust artifacts/backends with a margin, half the
-remaining budget goes to record storage and half to prover workspaces, divided
-among lanes. Trace generation and proving are planned before allocating traces;
-the execution record is dropped before STARK proving. The default record ceiling
+remaining budget goes to record storage and half to a prover workspace shared
+by the lanes. Each job reserves its planned peak, normally within its lane's
+equal share. Trace generation and proving are planned before allocating traces;
+the execution record is dropped before STARK proving. CUDA plans charge host
+witnesses and upload staging rather than the commitment phases, which stay on
+the device.
+
+A recursive job that its lane's share would split into more shards may plan
+within the whole workspace instead and waits until that much is free
+(reservations are granted in request order, so it is not overtaken). On CPU it
+also runs on a thread pool spanning every lane, since the others wait. Without
+this, each further level of the tree verifies every shard of the level below:
+on the 342-constant environment, `--jobs 2 --max-ram 192` used to split wraps
+into 8 shards and failed at the root, while it now proves single-shard wraps
+and the same root as one lane ([GPU validation](formal-aiur-gpu-validation.md)).
+Plans depend only on the budgets, not on timing. Job reports record
+`borrowed_workspace` and `workspace_wait_seconds`. The default record ceiling
 is 128 GiB, capped by pool capacity; `AIUR_RECORD_MAX_BYTES` overrides it. This is
 counted record storage plus a conservative workspace estimate, **not a hard RSS
 limit**. Lean's environment/witness buffers, allocator retention and transient
@@ -156,8 +176,11 @@ The targeted Rust suite passes 194 tests, with three existing legacy tests
 ignored. The standard gate also checks explicit legacy bytecode execution.
 
 The controller and both application hosts compile/link with CUDA 13.3.1 for
-SM 80. This machine has no NVIDIA device/driver, so hardware execution remains
-for the user to check. On that machine, `check-controller.py --devices 0,1`
+SM 80. The one-device gate passed on hardware on 2026-10-31
+([GPU validation](formal-aiur-gpu-validation.md)); `check-controller.py --devices 0,1`
 tests multiple GPU lanes and distributed proving, with independent CPU
-verification; add `--pipeline` for complete aggregation. `IX_TEST_CUDA=1`
+verification; add `--pipeline` for complete aggregation. On a single GPU,
+`--devices 0,0` runs two lanes on the same device (the test opt-in
+`IX_PROVER_SHARED_DEVICES=1`, which `ix prove --lanes N` also honors by placing
+every lane on the starting device). `IX_TEST_CUDA=1`
 enables the one-device controller gate in `check-formal.sh` as well.

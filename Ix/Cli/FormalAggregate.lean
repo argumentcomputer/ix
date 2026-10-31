@@ -134,7 +134,7 @@ def proveAdvice (ctx : Context) (bytes : ByteArray) (io : LegacyAiur.IOBuffer)
     unless code == 0 do
       let report := dir / "report.json"
       if ← report.pathExists then IO.eprintln (← IO.FS.readFile report)
-      throw (IO.userError s!"recursive prover exited {code}; reduce --range or increase --max-ram")
+      throw (IO.userError s!"recursive prover exited {code}; reduce --range or give each prover lane more workspace (a larger --max-ram, or fewer --jobs on CPU)")
     IO.FS.readBinFile (dir / "proof.bin")
 
 def proveNode (p : Cli.Parsed) (ctx : Context) (output : CheckEnvTrees)
@@ -485,7 +485,7 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool) : IO UInt32 := do
           root ← proveNode p ctx root.statement root none false options true
           let next ← traceShards root
           unless next < count do
-            throw (IO.userError s!"root wrapping stopped at {next} shards without shrinking; increase --shard-rows")
+            throw (IO.userError s!"root wrapping stopped at {next} shards without shrinking; raise or omit --shard-rows, or give each prover lane more workspace (--max-ram)")
           count := next
     verifyWrapper ctx root.kind root.wrapper
     if proveLeaves then

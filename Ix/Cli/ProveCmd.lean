@@ -547,7 +547,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "jobs" : Nat; "Aiur: CPU prover lanes for manifest claims or --aggregate (default 1; 0 uses available cores). One shared execution pool; the RAM budget and prover threads are divided among lanes."
     "aggregate"; "Aiur: prove manifest leaves and ready recursive joins through one resident controller, then verify and print the root. Requires --ixe, --ixes and --trace-shards. --lanes selects this automatically on GPUs."
     "report" : String; "Aiur: write per-part plans, timings and persisted proof addresses to this JSON file."
-    "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 65536; 0 lets the RAM planner choose)."
+    "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 0, which lets the planner choose the largest shards within the RAM budget and, on CUDA, the device cell budget AIUR_TRACE_SHARD_MAX_CELLS, default 1.5e9). Small caps multiply recursive verification work."
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
     "texray";           "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages) to stderr as each span closes."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."

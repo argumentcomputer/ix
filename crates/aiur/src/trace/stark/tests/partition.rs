@@ -113,7 +113,7 @@ fn unit_call_partitions_balance_one_claim_with_disjoint_roms() {
   ));
   let program = program.check().unwrap();
   let plan = TracePlan::new(&program, artifact).unwrap();
-  let backend = Backend::for_batch(&plan, parameters()).unwrap();
+  let backend = super::host_lookups(&plan);
   let hints = program.prepare_hints(&[]).unwrap();
   let caller = hints
     .execute_partition(

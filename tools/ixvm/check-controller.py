@@ -22,7 +22,9 @@ def main():
     cli.add_argument('--ixvm-artifact', type=Path, required=True)
     cli.add_argument('--recursion-artifact', type=Path, required=True)
     cli.add_argument('--aggregate-artifact', type=Path, required=True)
-    cli.add_argument('--devices', help='comma-separated CUDA device indices; default: two CPU lanes')
+    cli.add_argument('--devices', help='comma-separated CUDA device indices; default: two CPU lanes. '
+                     'A repeated index (0,0) runs several lanes on one GPU, a single-device '
+                     'smoke test of concurrent multi-lane proving')
     cli.add_argument('--pipeline', action='store_true')
     cli.add_argument('--pipeline-ram-gib', type=int, default=192)
     args = cli.parse_args()
@@ -36,6 +38,8 @@ def main():
     artifacts = [p.resolve() for p in [args.ixvm_artifact, args.recursion_artifact, args.aggregate_artifact]]
     env = dict(os.environ, IX_CUDA='0', AIUR_TRACE_ONLY_LOOKUPS='0', RAYON_NUM_THREADS='8',
                IX_AIUR_ARTIFACT=str(artifacts[0]), IX_AGGR_ARTIFACT=str(artifacts[2]))
+    if len(set(devices)) < len(devices) and None not in devices:
+        env['IX_PROVER_SHARED_DEVICES'] = '1'
     report = dict(success=False, devices=devices, commands=[], resident_jobs=[],
                   revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                   binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
