@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.IxVM.ClaimHarness
+public import Ix.Meta
 
 /-!
 # One binding proof, two aggregates
@@ -140,20 +141,30 @@ private def claimSet (exe : String) (home dir : System.FilePath) (label : String
     (s!"{label}: its root verifies as the environment's claim validating its binding",
       verified)]
 
+/-- Build the role-bearing environment and the two bound-closure claim
+    environments from `Init` alone, so `leanEnv` is released before any `ix`
+    prover subprocess runs. -/
+private def prepareEnvs : IO (Ixon.Env × Ixon.Env × Ixon.Env) := do
+  let leanEnv ← getCompileEnv #[`Init]
+  let roles ← IxVM.ClaimHarness.loadSharedIxonEnv #[] leanEnv
+  let leftEnv ← boundClosure leanEnv #[``id]
+  let rightEnv ← boundClosure leanEnv #[``Nat.add_zero]
+  pure (roles, leftEnv, rightEnv)
+
 /-- The flow, with the two aggregates and their verification when `aggregate`;
     `name` labels the report. -/
-def runWith (name : String) (aggregate : Bool) (leanEnv : Lean.Environment) : IO UInt32 := do
+def runWith (name : String) (aggregate : Bool) : IO UInt32 := do
   let ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
   unless (← ixExe.pathExists) do
     IO.eprintln s!"{ixExe} missing — run `lake build ix` first"
     return 1
   let exe := (← IO.FS.realPath ixExe).toString
+  let (roles, leftEnv, rightEnv) ← prepareEnvs
   let home ← IO.FS.createTempDir
   let dir ← IO.FS.createTempDir
   try
     -- The binding proof, from an environment that carries the roles and the
     -- records they are validated against.
-    let roles ← IxVM.ClaimHarness.loadSharedIxonEnv #[] leanEnv
     let rolesIxe := dir / "roles.ixe"
     IO.FS.writeBinFile rolesIxe (← IO.ofExcept (Ixon.serEnv roles))
     let bindingProof := dir / "binding.proof"
@@ -165,10 +176,10 @@ def runWith (name : String) (aggregate : Bool) (leanEnv : Lean.Environment) : IO
     -- Two claim sets over that binding, both with the constants the kernel
     -- fabricates: `id` in one shard, and a theorem whose proof reduces
     -- through a bound operation in two.
-    let left ← claimSet exe home dir "left" (← boundClosure leanEnv #[``id]) 1
+    let left ← claimSet exe home dir "left" leftEnv 1
       bindingProof aggregate
     let right ← claimSet exe home dir "right"
-      (← boundClosure leanEnv #[``Nat.add_zero]) 2 bindingProof aggregate (traceShards := true)
+      rightEnv 2 bindingProof aggregate (traceShards := true)
     LSpec.lspecIO (.ofList [(name,
       (left ++ right).toList.map fun (label, ok) => LSpec.test label ok)]) []
   finally
@@ -176,10 +187,10 @@ def runWith (name : String) (aggregate : Bool) (leanEnv : Lean.Environment) : IO
     IO.FS.removeDirAll dir
 
 /-- `aggregate-binding-reuse`: the whole flow, with both aggregates. -/
-def run (leanEnv : Lean.Environment) : IO UInt32 := runWith "aggregate-binding-reuse" true leanEnv
+def run : IO UInt32 := runWith "aggregate-binding-reuse" true
 
 /-- `binding-proof-cli`: the flow without the aggregates. -/
-def cli (leanEnv : Lean.Environment) : IO UInt32 := runWith "binding-proof-cli" false leanEnv
+def cli : IO UInt32 := runWith "binding-proof-cli" false
 
 end Tests.Aggr.BindingReuse
 
