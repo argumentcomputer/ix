@@ -3,7 +3,9 @@ module
 public import Ix.Ixon
 public import Ix.Cli.CompileCmd
 
-/- Integration tests for the Ix CLI -/
+/-!
+  Integration tests for the Ix CLI.
+-/
 
 /-- Spawn env for nested `lake` invocations: drop the LD_LIBRARY_PATH that
     `lake test` set for this process. It puts the Lean toolchain's lib dir,
@@ -137,70 +139,6 @@ private def Tests.Cli.testCompileContracts : IO Unit := do
   finally
     IO.FS.removeDirAll dir
 
-/-- `ix compile --sharing-limits`: a malformed override is rejected before
-    compiling (nothing written). The certified compiler, whose theorem fixes
-    the default limits, refuses a valid override, given or inherited, and
-    writes nothing. Under `--streamed` a valid one (Lean and Rust keys mixed)
-    compiles, and a limit no constant fits in fails the compile naming the
-    limit (so an override that never reached the compiler would be caught).
-    An invalid `IX_SHARING_LIMITS` set directly fails the compile once. -/
-private def Tests.Cli.testCompileSharingLimits : IO Unit := do
-  let ix ← IO.FS.realPath ".lake/build/bin/ix"
-  let dir ← IO.FS.createTempDir
-  let source := dir / "SharingLimits.lean"
-  let output := dir / "sharing-limits.ixe"
-  let occurrences (out : IO.Process.Output) (s : String) : Nat :=
-    (out.stdout.splitOn s).length - 1 + ((out.stderr.splitOn s).length - 1)
-  try
-    IO.FS.writeFile source
-      "def limitsMarker : Nat := 7\ntheorem limitsProof : limitsMarker = 7 := rfl\n"
-    let args := #["compile", source.toString, "--no-build", "--consts", "limitsProof",
-      "--out", output.toString]
-    let run := fun (spec : String) => IO.Process.output {
-      cmd := ix.toString, args := args ++ #["--streamed", "--sharing-limits", spec] }
-    let bad ← run "bogus=1"
-    if bad.exitCode == 0 || (← output.pathExists) then
-      throw <| IO.userError s!"compile accepted --sharing-limits bogus=1:\n{bad.stdout}\n{bad.stderr}"
-    unless (bad.stderr.splitOn "unknown sharing limit bogus").length > 1 do
-      throw <| IO.userError s!"--sharing-limits bogus=1: unexpected error:\n{bad.stderr}"
-    -- The certified compiler refuses a valid override, as a flag or inherited.
-    for (flags, env) in [(#["--sharing-limits", "states=2^44"], #[]),
-        (#[], #[("IX_SHARING_LIMITS", some "states=2^44")])] do
-      let refused ← IO.Process.output { cmd := ix.toString, args := args ++ flags, env }
-      if refused.exitCode == 0 || (← output.pathExists) then
-        throw <| IO.userError s!"the certified compiler accepted a sharing-limit override:\n\
-          {refused.stdout}\n{refused.stderr}"
-      unless occurrences refused "runs at the default sharing limits" > 0 do
-        throw <| IO.userError s!"certified sharing-limit override: unexpected error:\n\
-          {refused.stdout}\n{refused.stderr}"
-    -- Every serialized constant is longer than one byte: the override must
-    -- reach the compiler and fail it, naming the limit to raise.
-    let tight ← run "output_bytes=1"
-    if tight.exitCode == 0 || (← output.pathExists) then
-      throw <| IO.userError s!"compile ignored --sharing-limits output_bytes=1:\n\
-        {tight.stdout}\n{tight.stderr}"
-    unless occurrences tight "--sharing-limits output_bytes=N" > 0 do
-      throw <| IO.userError s!"--sharing-limits output_bytes=1: unexpected error:\n\
-        {tight.stdout}\n{tight.stderr}"
-    -- An invalid override set directly in the environment (no flag, so no
-    -- Lean pre-check) fails the compile once, before any block.
-    let direct ← IO.Process.output {
-      cmd := ix.toString, args, env := #[("IX_SHARING_LIMITS", some "bogus=1")] }
-    if direct.exitCode == 0 || (← output.pathExists) then
-      throw <| IO.userError s!"compile accepted IX_SHARING_LIMITS=bogus=1:\n\
-        {direct.stdout}\n{direct.stderr}"
-    unless occurrences direct "IX_SHARING_LIMITS: unknown sharing limit bogus" == 1 do
-      throw <| IO.userError s!"IX_SHARING_LIMITS=bogus=1: expected one error:\n\
-        {direct.stdout}\n{direct.stderr}"
-    let good ← run "states=2^44, depth=2^22, work=max"
-    unless good.exitCode == 0 && (← output.pathExists) do
-      throw <| IO.userError s!"compile --sharing-limits failed:\n{good.stdout}\n{good.stderr}"
-    IO.println "compile --sharing-limits: malformed override rejected, certified compiler \
-      refuses an override, tight limit enforced under --streamed, invalid IX_SHARING_LIMITS \
-      rejected once, valid override compiled under --streamed"
-  finally
-    IO.FS.removeDirAll dir
-
 /-- `ix compile --local`: the file's own constants with their selected
     closure. The output's named section holds the file's definition and its
     inductive's recursor (the selected closure carries recursors) but not an
@@ -238,8 +176,7 @@ def localSize : LocalTree → Nat\n  | .leaf => 1\n  | .node l r => localSize l 
     IO.FS.removeDirAll dir
 
 /-- Exercise the report-emitting fail-closed path with an actual ungrounded
-status. Early pipeline exceptions, such as invalid sharing limits, return
-before the existing report code and are a separate contract. -/
+status. -/
 private def Tests.Cli.testCompileReportAbort : IO Unit := do
   let ix ← IO.FS.realPath ".lake/build/bin/ix"
   IO.FS.withTempDir fun dir => do
@@ -291,7 +228,6 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
   Tests.Cli.testCompileContracts
-  Tests.Cli.testCompileSharingLimits
   Tests.Cli.testCompileLocal
   Tests.Cli.testCompileReportAbort
   Tests.Cli.testPublishedEnvelopeVersion

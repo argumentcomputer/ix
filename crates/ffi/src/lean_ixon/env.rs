@@ -22,7 +22,7 @@ use lean_ffi::object::{
   LeanProd, LeanRef,
 };
 
-use crate::builder::LeanBuildCache;
+use crate::lean::LeanBuildCache;
 use crate::lean::LeanIxAddress;
 
 // =============================================================================
@@ -820,4 +820,14 @@ pub extern "C" fn rs_de_env_lazy(
     Ok(index) => LeanExcept::ok(build_raw_env_lazy(&index)),
     Err(e) => LeanExcept::error_string(&format!("rs_de_env_lazy: {e}")),
   }
+}
+
+/// Round-trip Ixon.RawEnv across the FFI boundary.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_roundtrip_raw_env(
+  obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
+) -> LeanIxonRawEnv<LeanOwned> {
+  let decoded = obj.decode();
+  LeanIxonRawEnv::build(&decoded)
 }

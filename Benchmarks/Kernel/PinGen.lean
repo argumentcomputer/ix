@@ -8,6 +8,7 @@ import Ix.Meta
 import Ix.CanonM
 import Ix.GraphM
 import Ix.CondenseM
+import Ix.Compile.FrontEnd
 import Ix.LeanIngress
 import Ix.Cert.RoleClosurePrepare
 import IxC.Kernel.Verify.Rename.Basic
@@ -191,7 +192,7 @@ def sourceEvidenceOf (pre : Prelude .source) (leanEnv : Lean.Environment) (worke
     Task.spawn fun _ => Ix.CanonM.canonChunk chunk
   let env : Ix.Environment :=
     { consts := tasks.foldl (init := {}) fun m t => t.get.foldl (fun m (n, c) => m.insert n c) m }
-  let blocks := Ix.CondenseM.run (Ix.GraphM.envParallel env)
+  let blocks := Ix.CondenseM.run (Ix.Compile.FrontEnd.graph env)
   let groups := Ix.LeanIngress.groupsOf env blocks
   let g := Ix.LeanIngress.graphOf blocks groups (groups.map Ix.LeanIngress.convert)
   let mut st := pre.state

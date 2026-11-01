@@ -3,8 +3,13 @@ public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
 public import Tests.Aiur.Common
 public import Ix.Meta
+public import Ix.CompileCertified
 public import Ix.Commit
 public import Ix.IxEval
+
+/-!
+  IxVM evaluation claim tests (`Tests.Ix.IxVM.Eval`).
+-/
 
 public section
 namespace Tests.Ix.IxVM.Eval
@@ -457,7 +462,7 @@ private def compileClosure (leanEnv : Lean.Environment) (names : Array Lean.Name
       unless seen.contains entry.1 do
         seen := seen.insert entry.1
         entries := entries.push entry
-  Ix.CompileM.rsCompilePhasesOf entries.toList
+  Ix.CompileM.compilePhasesOf leanEnv entries.toList
 
 private def compiledOutput (base : Ix.CompileM.CompileEnv) (env : Ixon.Env)
     (lvls : List Lean.Name) (ty value : Lean.Expr) : IO (Ixon.Env × Ixon.Constant) := do

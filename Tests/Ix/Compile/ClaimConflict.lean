@@ -1,4 +1,10 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Ix.CompileDriver
+import Ix.CompileCertified
+import Tests.Ix.Compile.ScheduleReference
+
+/-!
   compile-claim-conflict: single ownership of compiled names, in both
   compilers (a name assigned twice is an error unless both assignments are
   equal).
@@ -32,10 +38,6 @@
 
   Run with: `lake test -- --ignored compile-claim-conflict`.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Ix.CompileDriver
-import Tests.Ix.Compile.ScheduleReference
 
 open Lean
 
@@ -190,18 +192,35 @@ def conflictClosure (env : Environment) : Except String (List (Name × ConstantI
     else some (n, ci)
   return (belowName, userBelow) :: rest
 
-/-- The streamed Lean pipeline on a closure (`compileInputFromEnv`, then
-    `compileLeanInput`), before CLI finalization. -/
+/-- The certified Lean pipeline on a closure (`compileCertified`), before CLI
+    finalization. -/
 def leanCompile (env : Environment) (closure : List (Name × ConstantInfo)) (workers : Nat) :
-    IO Ix.CompileM.LeanPipelineOut := do
-  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env closure).mapError toString)
-  match ← Ix.CompileM.compileLeanInput input (numWorkers := workers) with
+    IO Ix.CompileM.CertifiedOut := do
+  match ← Ix.CompileM.compileCertified env closure workers with
   | .ok o => pure o
   | .error e => throw (IO.userError s!"Lean compile failed: {e}")
 
+/-- Helper: compile `cs` with the certified compiler, optionally stripping names
+    for anonymous output, and write atomically when `allowPartial || ungrounded.isEmpty`. -/
+private def compileEnvBytes (anonymous : Bool) (cs : List (Name × ConstantInfo))
+    (path : String) (allowPartial : Bool) : IO Ix.CompileM.CompileEnvStatus := do
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertifiedPrepared cs false)
+  let status := Ix.Cli.statusOf out.env out.failures.toMap
+  if !allowPartial && !status.ungrounded.isEmpty then
+    return status
+  let artifact := if anonymous then
+    { out.env with named := {}, names := {}, comms := {}, addrToName := {} }
+  else out.env
+  let bytes ← IO.ofExcept (Ixon.serEnv artifact)
+  Ix.RoleBinding.Compile.writeAtomic (System.FilePath.mk path) bytes
+  return { status with
+    bytes := bytes.size.toUInt64
+    named := artifact.named.size.toUInt64
+    uniqueAnon := artifact.consts.size.toUInt64 }
+
 /-- A block fails after interning a literal and metadata. Partial output must
 equal compilation of the successful subset, while complete output must leave
-the destination untouched. This exercises the production file-writing FFI. -/
+the destination untouched. -/
 private def partialOutputCheck (env : Environment) : IO Unit := do
   let owner := `PartialPublication.owner
   let bad := `PartialPublication.badProjection
@@ -221,8 +240,7 @@ private def partialOutputCheck (env : Environment) : IO Unit := do
   let dir ← IO.FS.createTempDir
   try
     for anonymous in [false, true] do
-      let compile := if anonymous then Ix.CompileM.rsCompileEnvBytesAnonFFI
-        else Ix.CompileM.rsCompileEnvBytesFFI
+      let compile := compileEnvBytes anonymous
       let expectedPath := dir / "expected.ixe"
       let partialPath := dir / "partial.ixe"
       let closedPath := dir / "complete.ixe"
@@ -250,7 +268,7 @@ private def partialOutputCheck (env : Environment) : IO Unit := do
       unless anonymous do
         let lean ← leanCompile env input 2
         let leanBytes ← IO.ofExcept (Ixon.serEnv lean.env)
-        unless lean.cenv.ungrounded.size == 2 && leanBytes == partialBytes do
+        unless lean.failures.toMap.size == 2 && leanBytes == partialBytes do
           throw (IO.userError "Rust and Lean partial output differ")
     IO.println "[claim-conflict] partial output: named/anonymous bytes, refusals, and fail-closed files PASS"
   finally IO.FS.removeDirAll dir
@@ -282,18 +300,21 @@ got {actual.getD "accepted"}"
   partialOutputCheck env
   let closure ← IO.ofExcept (conflictClosure env)
   IO.println s!"[claim-conflict] constructed closure: {closure.length} constants"
-  -- Rust (the `ix compile` FFI), partial output allowed so the status
+  -- Certified compile (`compileEnvBytes`), partial output allowed so the status
   -- lists every refused constant
   let dir ← IO.FS.createTempDir
   let prepared ← IO.ofExcept (Ix.Compile.prepareRegisteredConstants env closure)
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared (dir / "rs.ixe").toString true
+  let status ← compileEnvBytes false prepared (dir / "rs.ixe").toString true
   IO.FS.removeDirAll dir
   for (n, m) in status.ungrounded.toList do
     failures := failures + 1
-    IO.println s!"[claim-conflict] FAIL: rust refuses {n}: {m}"
+    IO.println s!"[claim-conflict] FAIL: certified compile refuses {n}: {m}"
   -- Lean: every schedule
   let mut runs : Array (String × List (String × String)) := #[]
-  let phases ← Ix.CompileM.rsCompilePhasesOf closure
+  let rawEnv := Ix.CompileM.canonInput prepared.toArray 32
+  let condensed := Ix.Cert.blocksOf rawEnv
+  let (compileEnv, _) ← IO.ofExcept (Ix.Cert.compileReport rawEnv)
+  let phases : Ix.CompileM.CompilePhases := { rawEnv, condensed, compileEnv }
   match Ix.CompileM.compileEnvFold phases.rawEnv phases.condensed with
   | .error e => throw (IO.userError s!"[claim-conflict] fold: {e}")
   | .ok (_, _, cenv) =>
@@ -309,7 +330,7 @@ got {actual.getD "accepted"}"
   for k in [1, 4, 16] do
     let out ← leanCompile env closure k
     runs := runs.push (s!"compile-lean --workers {k}",
-      out.cenv.ungrounded.toList.map fun (n, m) => (n.pretty, m))
+      out.failures.toMap.toList.map fun (n, m) => (n.pretty, m))
   for (label, refusals) in runs do
     if refusals.isEmpty then
       IO.println s!"[claim-conflict] {label}: the whole closure compiles, as in Rust"

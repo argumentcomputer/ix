@@ -9,14 +9,16 @@ public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
-public import Ix.Cli.DriverOptions
 import Std.Internal.UV.System
+
+/-! `ix compile`: compile a Lean source file to an Ixon `.ixe` artifact using
+the certified Lean compiler (`Ix.Cert.compileReport`). -/
 
 public section
 
 open System (FilePath)
 open Ix.EnvScope
-open Ix.Cli (applySharingLimitsFlag certifiedLimitsRefusal rootCausesFirst rootOf statusOf)
+open Ix.Cli (rootCausesFirst rootOf statusOf)
 
 private def defaultOutPathFor (pathStr : String) : String :=
   let path := FilePath.mk pathStr
@@ -37,36 +39,12 @@ def Ix.Cli.publishedEnvelopeVersion (published : Bool) (path : FilePath) : IO (O
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Keep the environment-variable interface for scripts, while giving the
-  -- CLI an ordinary discoverable switch. The Rust compiler and serializer
-  -- both consult IX_VERBOSE, so setting it once enables the whole pipeline.
+  -- CLI an ordinary discoverable switch.
   if p.hasFlag "verbose" then
     Std.Internal.UV.System.osSetenv "IX_VERBOSE" "1"
-  if let some e ← applySharingLimitsFlag p then
-    p.printError s!"error: {e}"
-    return 1
-  -- The certified compiler (`Ix.Cert.compileReport`) is the default, at the
-  -- default sharing limits; `--rust` selects the uncertified Rust compiler and
-  -- `--streamed` the uncertified streamed pipeline. The streamed pipeline's
-  -- options: the sharing limits (`--sharing-limits` / `IX_SHARING_LIMITS`) and,
-  -- with `--verbose`, its phase timings.
-  let useRust := p.hasFlag "rust"
-  let streamed := p.hasFlag "streamed"
-  if useRust && streamed then
-    p.printError "error: --rust and --streamed select different compilers"
-    return 1
   let workers := match p.flag? "workers" with
     | some f => max 1 (f.as! Nat)
     | none => 32
-  let opts ← if useRust then pure {} else
-    match ← Ix.Cli.driverOptionsFromEnv (dbg := p.hasFlag "verbose") with
-    | .ok opts => pure opts
-    | .error e =>
-      p.printError s!"error: {e}"
-      return 1
-  unless useRust || streamed do
-    if let some e ← certifiedLimitsRefusal p then
-      p.printError s!"error: {e}"
-      return 1
 
   let some path := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a Lean source file"
@@ -228,38 +206,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       uniqueAnon := artifact.consts.size.toUInt64
       root := rootOf artifact }
   let verbose := (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome
-  let status ← if useRust then
-    let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv leanEnv constList).mapError toString)
-    let constList ← IO.ofExcept input.prepare
-    if verbose then
-      IO.eprintln s!"[compile] source contract preparation: {((← IO.monoMsNow) - start).formatMs}"
-    IO.FS.withTempDir fun dir => do
-      let rawPath := dir / "original.ixe"
-      let status ← Ix.CompileM.rsCompileEnvBytesFFI constList rawPath.toString allowPartial
-      if !allowPartial && !status.ungrounded.isEmpty then return status
-      let original ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rawPath))
-      publish Ix.RoleBinding.Compile.rustBackend original status fun _ => pure ()
-  else if streamed then
-    -- The streamed pipeline with its post-steps (`compileLeanInputValidated`):
-    -- uncertified, kept for comparison.
-    let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv leanEnv constList).mapError toString)
-    let out ← match ← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers) (opts := opts) with
-      | .ok out => pure out
-      | .error e => throw (IO.userError s!"compile refused: {e}")
-    let status := statusOf out.env out.cenv.ungrounded
-    if !allowPartial && !status.ungrounded.isEmpty then pure status
-    else
-      publish (Ix.RoleBinding.Compile.leanBackend workers opts) out.env status fun artifact =>
-        Ix.CompileM.resourcePostStep { out with env := artifact }
-  else
-    -- The certified compiler (`Ix.CompileM.compileCertified`: `Ix.Cert.compileReport`
-    -- on the canonical input), as `ix compile-lean` runs it.
-    let log (s : String) : IO Unit := if verbose then IO.eprintln s!"[compile] {s}" else pure ()
-    let out ← match ← Ix.CompileM.compileCertified leanEnv constList workers log with
-      | .ok out => pure out
-      | .error e => throw (IO.userError s!"compile refused: {e}")
-    let status := statusOf out.env out.failures.toMap
-    if !allowPartial && !status.ungrounded.isEmpty then pure status
+  -- The certified compiler (`Ix.CompileM.compileCertified`: `Ix.Cert.compileReport`
+  -- on the canonical input), as `ix compile-lean` runs it.
+  let log (s : String) : IO Unit := if verbose then IO.eprintln s!"[compile] {s}" else pure ()
+  let out ← match ← Ix.CompileM.compileCertified leanEnv constList workers log with
+    | .ok out => pure out
+    | .error e => throw (IO.userError s!"compile refused: {e}")
+  let status := statusOf out.env out.failures.toMap
+  let status ← if !allowPartial && !status.ungrounded.isEmpty then pure status
     else
       publish (Ix.RoleBinding.Compile.certifiedBackend workers) out.env status
         (Ix.CompileM.validateFinalized out.annotated) (existing? := out.existing?)
@@ -342,13 +296,11 @@ serialized the grounded subset ({status.named} named, \
 
 def compileCmd : Cli.Cmd := `[Cli|
   compile VIA runCompileCmd;
-  "Compile a Lean file to Ixon with the certified compiler (`Ix.Cert.compileReport`, as `ix compile-lean`); `--rust` selects the uncertified Rust compiler, `--streamed` the uncertified streamed pipeline"
+  "Compile a Lean file to Ixon with the certified compiler (`Ix.Cert.compileReport`, as `ix compile-lean`)"
 
   FLAGS:
     v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
-    rust;                     "Compile with the uncertified Rust compiler instead of Ix.Cert.compileReport. Shared finalization and artifact checks still run before writing the output. This backend is outside CompileCorrect; `ix compile-lean --rust-check` provides byte-comparison evidence for a selected input."
-    streamed;                 "Compile with the streamed Lean pipeline instead of the certified compiler. UNCERTIFIED: only its fold is proved to be the certified compiler's; its streamed front end is tested, not proved. Kept for comparison."
-    workers        : Nat;    "Worker count for the certified compiler's parallel phases (default 32). Ignored with --rust."
+    workers        : Nat;    "Worker count for the certified compiler's parallel phases (default 32)."
     "no-build";               "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
@@ -361,7 +313,6 @@ def compileCmd : Cli.Cmd := `[Cli|
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
     "allow-partial" ;        "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
     anon           ;         "Strict-anonymous output: clear §4 names, §5 metadata, and §6 commitments (after hint finalization, so §3 anon hints survive). The env root is unchanged — it covers §2 only. Default keeps names: they are harmless to catalog semantics and valuable for fidelity/debugging."
-    "sharing-limits" : String; "Override resource limits of the canonical sharing construction: comma-separated key=value items (values: digits, 2^k or max) or `unbounded`. Keys: expr_visits, depth, nodes, states, transitions, cost_evals, output_bytes, materialize, materialize_work, knapsack_cells (Lean); input_nodes, distinct_nodes, height, candidates, states, layer_states, transitions, work, output_bytes, knapsack_cells (Rust). The defaults are far above every corpus maximum; a constant that reaches one fails to compile and names the limit. Only with --rust or --streamed: the certified compiler's theorem fixes the default limits. Sets IX_SHARING_LIMITS."
     report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
 
   ARGS:

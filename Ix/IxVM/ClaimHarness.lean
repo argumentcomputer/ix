@@ -3,7 +3,7 @@ public import Ix.Aiur.Protocol
 public import Ix.Ixon
 public import Ix.Claim
 public import Ix.AssumptionTree
-public import Ix.CompileM
+public import Ix.CompileCertified
 public import Ix.Common
 public import Ix.PrimAddrs
 public import Ix.ClaimContext
@@ -19,7 +19,7 @@ Lean-side glue between `Ix.Claim` and the Aiur `verify_claim` /
 The harness handles every step the Aiur side cannot:
 
 1. **Lean → Ixon compile**: `loadIxonEnv` / `loadSharedIxonEnv` walk
-   the Lean environment, run `Ix.CompileM.rsCompileEnvFFI`, and
+   the Lean environment, run `Ix.CompileM.compileCertified`, and
    return an `Ixon.Env` representing the constants' transitive
    closure.
 
@@ -168,8 +168,15 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
         if !seen.contains entry.fst then
           seen := seen.insert entry.fst
           deduped := deduped.push entry
-  let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
-  IO.ofExcept (withDefaultRoleBinding rawEnv.toEnv)
+  match ← Ix.CompileM.compileCertified leanEnv deduped.toList 8 with
+  | .error e => throw (IO.userError s!"the certified Lean compile of {name}'s closure failed: {e}")
+  | .ok out =>
+    unless out.failures.isEmpty do
+      let fMap := out.failures.toMap
+      throw (IO.userError s!"the certified Lean compile of {name}'s closure: \
+        {fMap.size} constant(s) failed to compile: \
+        {Ix.CompileM.recordedFailures fMap}")
+    IO.ofExcept (withDefaultRoleBinding out.env)
 
 /-- Compile the union of `names`'s transitive closures into one shared
     Ixon env. Drivers like `KernelArena.lean` use this to pay the
@@ -184,8 +191,15 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
       if !seen.contains entry.fst then
         seen := seen.insert entry.fst
         deduped := deduped.push entry
-  let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
-  IO.ofExcept (withDefaultRoleBinding rawEnv.toEnv)
+  match ← Ix.CompileM.compileCertified leanEnv deduped.toList 8 with
+  | .error e => throw (IO.userError s!"the certified Lean compile of shared closure failed: {e}")
+  | .ok out =>
+    unless out.failures.isEmpty do
+      let fMap := out.failures.toMap
+      throw (IO.userError s!"the certified Lean compile of shared closure: \
+        {fMap.size} constant(s) failed to compile: \
+        {Ix.CompileM.recordedFailures fMap}")
+    IO.ofExcept (withDefaultRoleBinding out.env)
 
 /-- The `refs` indices `e` uses as a CONSTANT: `Ref i` and the type index
     of `Prj i`. `Str`/`Nat` index blob payloads and `Rec` resolves through

@@ -1,6 +1,6 @@
 import LSpec
 import Ix.Meta
-import Ix.CompileDriver
+import Ix.CompileCertified
 import Ix.EnvScope
 import Ix.Resource.Validate
 import Ix.Cert.Statement
@@ -92,9 +92,9 @@ def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
 def hintsAndCoverage : IO (Array String × Array String) := do
   let leanEnv ← getCompileEnv #[defsModule, ownModule]
   let consts ← closureOf leanEnv #[defsModule, ownModule] #[`Nat.div]
-  let out ← match ← Ix.CompileM.compileLeanConsts consts (numWorkers := 4) with
+  let out ← match ← Ix.CompileM.compileCertified leanEnv consts 4 with
     | .ok out => pure out
-    | .error e => return (#[s!"compileLeanConsts failed: {e}"], #[])
+    | .error e => return (#[s!"compileCertified failed: {e}"], #[])
   let ixe := out.env
   let input ← match Ix.Resource.typingInput ixe with
     | .ok input => pure input
@@ -134,10 +134,10 @@ def compiledVerdicts : IO (Array String × Array String) := do
   let some syntaxIdx := leanEnv.getModuleIdx? syntaxModule | throw (IO.userError "fixture module not loaded")
   let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
     if leanEnv.getModuleIdxFor? n == some syntaxIdx then some n else none
-  match Ix.Compile.compileInputFromEnv leanEnv (Ix.EnvScope.collectSelectedDeps leanEnv seeds) with
-  | .error e => errors := errors.push s!"source-contract syntax fixture: input: {e}"
-  | .ok input =>
-    match ← Ix.CompileM.compileLeanInput input (numWorkers := 4) with
+  match Ix.CompileM.prepareCertified leanEnv (Ix.EnvScope.collectSelectedDeps leanEnv seeds) with
+  | .error e => errors := errors.push s!"source-contract syntax fixture: prepare: {e}"
+  | .ok (prepared, _) =>
+    match ← Ix.CompileM.compileCertifiedPrepared prepared false 4 with
     | .error e => errors := errors.push s!"source-contract syntax fixture: compile: {e}"
     | .ok out =>
       let (es, ls) := verdict "source-contract syntax fixture" out.env
@@ -147,7 +147,7 @@ def compiledVerdicts : IO (Array String × Array String) := do
   match Tests.ContractPipeline.input with
   | .error e => errors := errors.push s!"contract pipeline: input: {e}"
   | .ok input =>
-    match ← Ix.CompileM.compileLeanInput input (numWorkers := 1) with
+    match ← Tests.ContractPipeline.compileInput input with
     | .error e => errors := errors.push s!"contract pipeline: compile: {e}"
     | .ok out =>
       let (es, ls) := verdict "contract pipeline (ContractA)" out.env
@@ -157,7 +157,7 @@ def compiledVerdicts : IO (Array String × Array String) := do
   let tierModule := `Tests.Ix.Kernel.TierIndDefs
   let leanEnv ← getCompileEnv #[tierModule]
   let consts ← closureOf leanEnv #[tierModule]
-  match ← Ix.CompileM.compileLeanConsts consts (numWorkers := 4) with
+  match ← Ix.CompileM.compileCertified leanEnv consts 4 with
   | .error e => errors := errors.push s!"kernel-tier-ind fixtures: compile: {e}"
   | .ok out =>
     let (es, ls) := verdict "kernel-tier-ind fixtures (unsafe inductives)" out.env

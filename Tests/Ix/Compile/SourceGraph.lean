@@ -7,17 +7,21 @@ import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.Compile.SourceAccounting
 import Lean.Elab.Command
 
+/-!
+  Source-graph IO prepass and streamed pipeline controls.
+-/
+
 namespace Tests.Ix.Compile.SourceGraph
 open _root_.Ix.Compile.SourceGraph
 
--- The live wrapper must use the proved producer, not a duplicate inline loop.
+-- The prepass producer must use the proved helpers, not a duplicate inline loop.
 run_cmd do
-  let some (.defnInfo d) := (← Lean.getEnv).find? `Ix.CompileM.compileDecoratedConsts
-    | throwError "IO compiler definition unavailable"
+  let some (.defnInfo d) := (← Lean.getEnv).find? `Ix.Compile.SourceGraph.Prepass.produce
+    | throwError "Prepass.produce definition unavailable"
   let used := d.value.getUsedConstantsAsSet
   for n in [`Ix.Compile.SourceGraph.Prepass.run, `Ix.Compile.SourceGraph.Stream.runLabelled] do
-    unless used.contains n do throwError "IO compiler does not call {n}"
-  if used.contains `Ix.CanonM.chunks then throwError "IO compiler retained the unproved partition"
+    unless used.contains n do throwError "Prepass.produce does not call {n}"
+  if used.contains `Ix.CanonM.chunks then throwError "Prepass.produce retained the unproved partition"
 
 private def need (ok : Bool) (why : String) : IO Unit := unless ok do throw (IO.userError why)
 private def groupEq : Grouping → Grouping → Bool
@@ -28,11 +32,12 @@ private def nodeEq (a b : Node) : Bool :=
   a.literals == b.literals && groupEq a.grouping b.grouping &&
     a.direct.size == b.direct.size && a.direct.toArray.all b.direct.contains
 private def compile (raw : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat) :
-    IO _root_.Ix.CompileM.LeanPipelineOut := do
-  IO.ofExcept (← _root_.Ix.CompileM.compileLeanConsts raw (numWorkers := workers))
+    IO SourceAccounting.PipelineOut := do
+  let input ← IO.ofExcept ((_root_.Ix.Compile.CompileInput.fromAnnotations raw).mapError toString)
+  IO.ofExcept (← SourceAccounting.compileStreamed input (workers := workers))
 
 private def facts (raw : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat)
-    (out : _root_.Ix.CompileM.LeanPipelineOut) : IO Unit := do
+    (out : SourceAccounting.PipelineOut) : IO Unit := do
   let input ← IO.ofExcept ((_root_.Ix.Compile.CompileInput.fromAnnotations raw).mapError toString)
   let prepared ← IO.ofExcept input.prepare
   let (_, expected) := Prepass.produce prepared.toArray workers
@@ -47,7 +52,7 @@ private def facts (raw : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat)
     (fun (n, d) => out.digests.get? n == some d)) "input digests differ"
 
 private def reference (raw : List (Lean.Name × Lean.ConstantInfo))
-    (out : _root_.Ix.CompileM.LeanPipelineOut) : IO Unit := do
+    (out : SourceAccounting.PipelineOut) : IO Unit := do
   let input ← IO.ofExcept ((_root_.Ix.Compile.CompileInput.fromAnnotations raw).mapError toString)
   let prepared ← IO.ofExcept input.prepare
   let consts := (_root_.Ix.CanonM.canonChunk prepared.toArray).foldl
@@ -76,7 +81,7 @@ def run : IO UInt32 := do
   facts [] 0 empty
   reference [] empty
   need (empty.sourceNodes?.any (·.isEmpty)) "empty input was confused with unavailable facts"
-  let unavailable : _root_.Ix.CompileM.LeanPipelineOut :=
+  let unavailable : SourceAccounting.PipelineOut :=
     { bytes := empty.bytes, env := empty.env, cenv := empty.cenv,
       ungroundedCount := 0, blockCount := 0 }
   need unavailable.sourceNodes?.isNone "missing facts became an empty graph"

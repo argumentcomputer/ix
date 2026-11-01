@@ -1,4 +1,10 @@
-/-
+module
+
+public import LSpec
+public import Benchmarks.TruthMinesSpec.Projection
+public import Ix.Cli.CatalogCmd
+
+/-!
   The TruthMines corpus tiers over the piece pipeline: drive
   `truthmines build` (per-member watchdogged `ix compile` straight
   into the self-contained `.ixc` directory → `ix catalog assemble` →
@@ -14,7 +20,7 @@
   * `truthmines` — the full corpus: `truthmines build` → assert the
     manifest (every member present with a recomputed root, catalog
     verify green over a non-empty union).
-  * `truthmines-check` — `truthmines check`: `ix check-rs --anon` over
+  * `truthmines-check` — `truthmines check`: `ix check-lean --anon` over
     every member piece in the `.ixc`, one subprocess per piece (the
     fat-profile rung-1 checking story: embarrassingly parallel, peak =
     max member).
@@ -28,11 +34,6 @@
   `lake test -- --ignored truthmines-mini` (or `truthmines
   truthmines-check` for the full corpus).
 -/
-module
-
-public import LSpec
-public import Benchmarks.TruthMinesSpec.Projection
-public import Ix.Cli.CatalogCmd
 
 public section
 
@@ -100,7 +101,7 @@ private def driverBuild (mini : Bool) (ixc : System.FilePath)
     return (true, labels.length, n, none)
   | .error e => return (false, 0, 0, some s!"verify: {e}")
 
-/-- Drive `truthmines check [--mini]`: the per-piece `ix check-rs
+/-- Drive `truthmines check [--mini]`: the per-piece `ix check-lean
     --anon` sweep over the tier's `.ixc` — the fat-profile checking
     rung lives in the driver (bounded pool, output captured per piece,
     tails + solo repro surfaced on rejection); the suite is exit-code

@@ -1,5 +1,6 @@
 import LSpec
 import Ix.Meta
+import Ix.CompileCertified
 import Ix.Cert.Audit
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.SourceContract.SyntaxFixture
@@ -9,8 +10,8 @@ import Tests.Ix.Cert.ExecutedChecks
 /-! # The certification statements on the Source-mode fixtures (`lake test -- cert-statement`)
 
 * **Compile parity.** `Ix.Cert.compile`, the function the statements are
-  about, against the IO pipeline (`Ix.CompileM.compileLeanConsts`) and the
-  Rust compiler (`Ix.CompileM.rsCompileEnvFFI`), on the closure of every
+  about, against the certified IO pipeline (`Ix.CompileM.compileCertifiedPrepared`),
+  on the closure of every
   constant of `Tests.Ix.Kernel.ReaderFidelityDefs` and
   `Tests.Ix.Kernel.SourceIngressDefs`: the serialized environments
   (`Ixon.serEnv`) are byte-identical, and so are the published addresses.
@@ -780,35 +781,24 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   let (roleErrors, roleLines) ← rolesCases label env ixe
   errors := errors ++ roleErrors
   lines := lines ++ roleLines
-  -- the IO pipeline
+  -- the certified IO pipeline
   let t3 ← IO.monoMsNow
-  match ← Ix.CompileM.compileLeanConsts consts (numWorkers := workers) with
-  | .error e => errors := errors.push s!"{label}: compileLeanConsts failed: {e}"
+  match ← Ix.CompileM.compileCertifiedPrepared consts false workers with
+  | .error e => errors := errors.push s!"{label}: compileCertifiedPrepared failed: {e}"
   | .ok out =>
     let t4 ← IO.monoMsNow
-    lines := lines.push s!"{label}: compileLeanConsts {t4 - t3} ms: {out.bytes.size} bytes, \
-      {out.ungroundedCount} ungrounded, {out.cenv.ungrounded.size} per-block failures"
-    unless out.bytes == pureBytes do
-      errors := errors.push s!"{label}: serEnv bytes differ from compileLeanConsts's \
-        ({pureBytes.size} vs {out.bytes.size})"
-    let diffs := addressDiffs ixe out.env
-    unless diffs.isEmpty do
-      errors := errors.push s!"{label}: {diffs.size} published addresses differ from \
-        compileLeanConsts's: {diffs.toList.take 5}"
-  -- the Rust compiler
-  let raw ← Ix.CompileM.rsCompileEnvFFI consts
-  let rust := raw.toEnv
-  match Ixon.serEnv rust with
-  | .error e => errors := errors.push s!"{label}: serEnv of the Rust output failed: {e}"
-  | .ok rustBytes =>
-    lines := lines.push s!"{label}: Rust compiler: {rust.consts.size} records, {rustBytes.size} bytes"
-    unless rustBytes == pureBytes do
-      errors := errors.push s!"{label}: serEnv bytes differ from the Rust compiler's \
-        ({pureBytes.size} vs {rustBytes.size})"
-    let diffs := addressDiffs ixe rust
-    unless diffs.isEmpty do
-      errors := errors.push s!"{label}: {diffs.size} published addresses differ from the \
-        Rust compiler's: {diffs.toList.take 5}"
+    match Ixon.serEnv out.env with
+    | .error e => errors := errors.push s!"{label}: serEnv of compileCertifiedPrepared failed: {e}"
+    | .ok outBytes =>
+      lines := lines.push s!"{label}: compileCertifiedPrepared {t4 - t3} ms: {outBytes.size} bytes, \
+        {out.failures.toMap.size} failures"
+      unless outBytes == pureBytes do
+        errors := errors.push s!"{label}: serEnv bytes differ from compileCertifiedPrepared's \
+          ({pureBytes.size} vs {outBytes.size})"
+      let diffs := addressDiffs ixe out.env
+      unless diffs.isEmpty do
+        errors := errors.push s!"{label}: {diffs.size} published addresses differ from \
+          compileCertifiedPrepared's: {diffs.toList.take 5}"
   return (errors, lines)
 
 /-! ## The Ixon side of one closure -/
@@ -1718,32 +1708,22 @@ def initStdSuite : List TestSeq := [
     parity "Init+Std" leanEnv.constants.toList 16) 1]
 
 /-- `cert-roles-initstd` (ignored): the role table's bindings (Route A, B5a) on Init+Std,
-compiled in process by the Rust compiler (byte-identical to `Ix.Cert.compile`'s, the
-gates' byte leg `46214545…`). -/
+compiled in process by the certified compiler (`Ix.CompileM.compileCertified`). -/
 def rolesInitStdSuite : List TestSeq := [
   report "the role table's bindings in the compiled Init+Std (Route A, B5a)" (do
     let leanEnv ← getCompileEnv #[`Init, `Std]
     let env ← IO.lazyPure fun _ =>
       Tests.Ix.Kernel.SourceIngressStep.canon leanEnv.constants.toList.toArray 16
-    let dir ← IO.FS.createTempDir
-    let ixe ← try
-        let path := dir / "initstd.ixe"
-        let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
-        IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
-      finally IO.FS.removeDirAll dir
-    rolesCases "Init+Std" env ixe) 1]
+    let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList 16)
+    rolesCases "Init+Std" env out.env) 1]
 
 /-- `cert-evidence-initstd`: the evidence check (part of the artifact checks) on the compiled
 Init+Std, timed. -/
 def evidenceInitStdSuite : List TestSeq := [
   report "the evidence check on the compiled Init+Std" (do
     let leanEnv ← getCompileEnv #[`Init, `Std]
-    let dir ← IO.FS.createTempDir
-    let ixe ← try
-        let path := dir / "initstd.ixe"
-        let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
-        IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
-      finally IO.FS.removeDirAll dir
+    let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList 16)
+    let ixe := out.env
     let some t := defaultTable? | return (#["evidence: the default role table does not read"], #[])
     let started ← IO.monoMsNow
     let checked ← IO.lazyPure fun _ => Ix.Cert.EvidenceCheck.evidenceCheck t ixe

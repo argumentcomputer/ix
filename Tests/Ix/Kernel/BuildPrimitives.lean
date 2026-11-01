@@ -1,4 +1,13 @@
-/-
+import Ix.Common
+import Ix.CompileM
+import Ix.CompileCertified
+import Ix.Meta
+import Ix.Address
+import Ix.Environment
+import Ix.Ixon
+import LSpec
+
+/-!
   Dump primitive constant names and content-addresses for hardcoding into the
   Rust kernel (`crates/common/src/prim_addrs.rs`).
 
@@ -14,13 +23,6 @@
   - Address change: the address for a primitive has changed — paste the new
     hex into `PrimAddrs::new`.
 -/
-import Ix.Common
-import Ix.CompileM
-import Ix.Meta
-import Ix.Address
-import Ix.Environment
-import Ix.Ixon
-import LSpec
 
 open LSpec
 
@@ -89,10 +91,7 @@ def kernelPrimitives : Array String := #[
 ]
 
 /-- Parse a dotted string into a `Lean.Name`, preferring numeric components
-    when the part parses as `Nat`. Mirrors the ix_old helper.
-
-    Public so `Tests.Ix.Kernel.BuildPrimOrigs` (the LEON-hash sister test)
-    can share the same parse logic. -/
+    when the part parses as `Nat`. Mirrors the ix_old helper. -/
 def parseNameToLean (s : String) : Lean.Name := Id.run do
   let mut name := Lean.Name.anonymous
   for part in s.splitOn "." do
@@ -152,8 +151,7 @@ def testBuildPrimitives : TestSeq :=
 
     IO.println s!"[build-primitives] {filtered.length} constants in transitive closure"
 
-    let rawEnv ← Ix.CompileM.rsCompileEnvFFI filtered
-    let env : Ixon.Env := rawEnv.toEnv
+    let (env, _) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput filtered.toArray 32))
 
     IO.println s!"[build-primitives] Ixon env: {env.consts.size} consts, {env.named.size} named"
     IO.println ""
@@ -188,14 +186,14 @@ def testBuildPrimitives : TestSeq :=
 /-- FFI: expose `PrimAddrs::new()` from Rust as
     `(lean_name, hex_address)` pairs in the same order as
     `kernelPrimitives` below. Used to detect drift between hardcoded
-    addresses and what `rsCompileEnvFFI` would produce today. -/
+    addresses and what `Ix.Cert.compileReport` would produce today. -/
 @[extern "rs_prim_addrs_canonical"]
 opaque rsPrimAddrsCanonicalFFI : IO (Array (String × String))
 
 /-- Parity check: every primitive's content address as stored in
     Rust's `PrimAddrs::new()` must match the address produced by
     compiling that primitive's Lean declaration through the live
-    `rsCompileEnvFFI` pipeline. A mismatch means someone changed the
+    certified compile pipeline. A mismatch means someone changed the
     compile/serialize logic in a way that altered a primitive's
     content hash — Aiur and downstream kernel primitive resolution
     will silently break if `PrimAddrs::new()` isn't updated.
@@ -217,8 +215,7 @@ def testPrimitivesParity : TestSeq :=
     let needed := collectDeps leanEnv roots
     let filtered := leanEnv.constants.toList.filter fun (name, _) =>
       needed.contains name
-    let rawEnv ← Ix.CompileM.rsCompileEnvFFI filtered
-    let env : Ixon.Env := rawEnv.toEnv
+    let (env, _) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput filtered.toArray 32))
 
     let hardcoded ← rsPrimAddrsCanonicalFFI
     let lookup : Std.HashMap String String :=
@@ -264,54 +261,7 @@ def testPrimitivesParity : TestSeq :=
     return (total_problems == 0, passed, total_problems, msg)
   ) .done
 
-/-- The native-evaluation constants the Rust kernel declines, in the order of
-    `ix_kernel::primitive::native_evaluation_addrs`. -/
-def nativeEvaluationConstants : Array String := #[
-  "Lean.trustCompiler", "Lean.reduceBool", "Lean.reduceNat",
-  "Lean.ofReduceBool", "Lean.ofReduceNat"
-]
-
-/-- FFI: the kernel's `(lean_name, hex_address)` table of the
-    native-evaluation constants it declines. -/
-@[extern "rs_native_evaluation_addrs"]
-opaque rsNativeEvaluationAddrsFFI : IO (Array (String × String))
-
-/-- Parity check: every address the Rust kernel declines as a
-    native-evaluation constant must be the address a live compile gives that
-    Lean declaration. A stale address would let the kernel accept the
-    declaration it is meant to decline. -/
-def testNativeEvaluationParity : TestSeq :=
-  .individualIO "native-evaluation address parity (kernel table vs live compile)" none (do
-    let leanEnv ← get_env!
-    let roots := nativeEvaluationConstants.map parseNameToLean
-    let needed := collectDeps leanEnv roots
-    let filtered := leanEnv.constants.toList.filter fun (name, _) =>
-      needed.contains name
-    let rawEnv ← Ix.CompileM.rsCompileEnvFFI filtered
-    let env : Ixon.Env := rawEnv.toEnv
-
-    let table ← rsNativeEvaluationAddrsFFI
-    let mut problems : Array String := #[]
-    let names := table.map (·.1)
-    if names != nativeEvaluationConstants then
-      problems := problems.push
-        s!"catalog mismatch: expected {nativeEvaluationConstants}, got {names}"
-    for (name, hex) in table do
-      match env.named[parseIxName name]? with
-      | none => problems := problems.push s!"{name}: missing from the compiled env"
-      | some named =>
-        let live := toString named.addr
-        if live != hex then
-          problems := problems.push s!"{name}: live={live} kernel={hex}"
-    for p in problems do
-      IO.eprintln s!"native-evaluation parity: {p}"
-    let size := nativeEvaluationConstants.size
-    let msg : Option String :=
-      if problems.isEmpty then none else some s!"{problems.size} problem(s)"
-    return (problems.isEmpty, size - min problems.size size, problems.size, msg)
-  ) .done
-
-def paritySuite : List TestSeq := [testPrimitivesParity, testNativeEvaluationParity]
+def paritySuite : List TestSeq := [testPrimitivesParity]
 
 def suite : List TestSeq := [testBuildPrimitives]
 

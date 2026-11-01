@@ -1,5 +1,10 @@
 module
-/-
+public import Ix.Common
+public import Ix.Environment
+public import Ix.Compile.Canon.Graph
+import Ix.CompileCert.Canon.SccRange
+
+/-!
   # CondenseM: strongly connected components of the reference graph
 
   Condenses a dependency graph of `Ix.Name`s into its strongly connected
@@ -19,11 +24,6 @@ module
   the former implementation produced. Each component's member set and
   `lowLinks` entries are populated directly from `c.comps.zip c.roots`.
 -/
-
-public import Ix.Common
-public import Ix.Environment
-public import Ix.Compile.Canon.Graph
-import Ix.CompileCert.Canon.SccRange
 
 public section
 
@@ -89,23 +89,6 @@ def CondenseM.run (refs : Map Ix.Name (Set Ix.Name))
       rs := rs.union (refs.getD a {})
     blockRefs := blockRefs.insert lo (rs.filter (!all.contains ·))
   return ⟨lowLinks, blocks, blockRefs⟩
-
-/-- Rust's CondensedBlocks structure (mirroring Rust's output format).
-    Used for FFI round-tripping with array-based representation. -/
-structure RustCondensedBlocks where
-  lowLinks : Array (Ix.Name × Ix.Name)
-  blocks : Array (Ix.Name × Array Ix.Name)
-  blockRefs : Array (Ix.Name × Array Ix.Name)
-  deriving Inhabited, Nonempty, Repr
-
-/-- Convert Rust's array-based format to Lean's map-based CondensedBlocks. -/
-def RustCondensedBlocks.toCondensedBlocks (rust : RustCondensedBlocks) : CondensedBlocks :=
-  let lowLinks := rust.lowLinks.foldl (init := {}) fun m (k, v) => m.insert k v
-  let blocks := rust.blocks.foldl (init := {}) fun m (k, v) =>
-    m.insert k (v.foldl (init := {}) fun s n => s.insert n)
-  let blockRefs := rust.blockRefs.foldl (init := {}) fun m (k, v) =>
-    m.insert k (v.foldl (init := {}) fun s n => s.insert n)
-  { lowLinks, blocks, blockRefs }
 
 end Ix
 

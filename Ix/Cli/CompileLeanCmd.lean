@@ -1,4 +1,14 @@
-/-
+module
+public import Cli
+public import Ix.Common
+public import Ix.Meta
+public import Ix.CompileM
+public import Ix.CompileDriver
+public import Ix.CompileCertified
+public import Ix.RoleBinding.Compile
+public import Ix.Cli.ValidateCmd
+
+/-!
   `ix compile-lean <path.lean> [--out out.ixe]`: compile a Lean file's
   environment to a serialized Ixon `.ixe` with the certified compiler,
   `Ix.Cert.compileReport`, the function `Ix.Cert.CompileCorrect` is about
@@ -9,52 +19,21 @@
   checks the finalized artifact again), and the artifact is serialized
   (`Ixon.serEnv`) and written atomically.
 
-  The certified compiler runs at the default sharing limits, which the theorem
-  fixes: `--sharing-limits` or `IX_SHARING_LIMITS` is refused, unless
-  `--streamed` is given. `--streamed` selects the streamed pipeline
-  (`Ix.CompileM.compileLeanInputValidated`), which is uncertified: its fold is
-  `compileReport`'s (`Ix.Cert.Hybrid`), but its streamed canonicalization,
-  graph, ground filter and condensation are only tested to be. It is kept for
-  comparison.
-
-  `--rust-check` additionally compiles the same prepared constants through
-  the Rust FFI compiler (`rs_compile_env_bytes`). Lean decodes that raw
-  artifact, finalizes it with the Rust backend, then serializes it with
-  `Ixon.serEnv`. The ALIGNED gate compares these finalized bytes with the
-  selected Lean path's output. Rust's serializer participates in the raw
-  handoff; both final envelopes use Lean serialization. This is byte-parity
-  evidence for the selected input, not a universal refinement or
-  value-preservation proof.
-
-  Exit codes: 0 success (including an explicitly allowed partial output,
-  and aligned when checked); 1 pipeline error, an unallowed compilation failure,
-  or divergence; 2 usage. The Lean output is written before `--rust-check`,
-  so a later divergence leaves that output on disk.
+  Exit codes: 0 success (including an explicitly allowed partial output);
+  1 pipeline error or an unallowed compilation failure; 2 usage.
 -/
-module
-public import Cli
-public import Ix.Common
-public import Ix.Meta
-public import Ix.CompileM
-public import Ix.CompileDriver
-public import Ix.CompileResource
-public import Ix.CompileCertified
-public import Ix.RoleBinding.Compile
-public import Ix.Cli.DriverOptions
-public import Ix.Cli.ValidateCmd
+
 public section
 
 open System (FilePath)
 open Ix.EnvScope
-open Ix.Cli (applySharingLimitsFlag certifiedLimitsRefusal rootCausesFirst)
+open Ix.Cli (rootCausesFirst)
 
 namespace Ix.Cli.CompileLeanCmd
 
-/-- A compile's finalized, serialized artifact, the input `--rust-check`
-compiles, and the summary line's counts. -/
+/-- A compile's finalized, serialized artifact and the summary line's counts. -/
 private structure Compiled where
   bytes : ByteArray
-  prepared : Unit → Except String (List (Lean.Name × Lean.ConstantInfo))
   failures : Std.HashMap Ix.Name String
   summary : String
 
@@ -92,33 +71,8 @@ private def compileCertified (fe : FileEnv) (constList : List (Lean.Name × Lean
   log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
   let bytes ← IO.ofExcept (Ixon.serEnv artifact)
   log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
-  let prepared := out.prepared
-  return .ok { bytes, prepared := fun _ => .ok prepared, failures
+  return .ok { bytes, failures
                summary := s!"{out.inputs} input constants, {failures.size} failures" }
-
-/-- The streamed pipeline (`Ix.CompileM.compileLeanInputValidated`), finalized:
-uncertified, kept for comparison. -/
-private def compileStreamed (fe : FileEnv) (constList : List (Lean.Name × Lean.ConstantInfo))
-    (workers : Nat) (opts : Ix.CompileM.DriverOptions) (allowPartial : Bool) (outPath : String) :
-    IO (Except UInt32 Compiled) := do
-  let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv fe.env constList).mapError toString)
-  -- The compile, then the resource post-step (an input with semantic
-  -- contracts is emitted only if its resources validate).
-  let out ← match ← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers)
-      (opts := opts) with
-    | .ok out => pure out
-    | .error e =>
-      IO.println s!"[compile-lean] FAILED: {e}"
-      return .error 1
-  let failures := out.cenv.ungrounded
-  if ← refusePartial allowPartial outPath failures then return .error 1
-  let artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.leanBackend workers opts)
-    fe.env Ix.RoleBinding.Compile.nativeCertSource input out.env Ix.Resource.typingLimits
-  let out := { out with env := artifact, bytes := ← IO.ofExcept (Ixon.serEnv artifact) }
-  IO.ofExcept (Ix.CompileM.resourcePostStep out)
-  return .ok { bytes := out.bytes, prepared := fun _ => input.prepare, failures
-               summary := s!"{out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
-{failures.size} block failures" }
 
 def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let args : Array String := p.variableArgsAs! String
@@ -133,22 +87,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let workers := match p.flag? "workers" with
     | some f => max 1 (f.as! Nat)
     | none => 32
-  let streamed := p.hasFlag "streamed"
   let allowPartial := p.hasFlag "allow-partial"
-  if let some e ← applySharingLimitsFlag p then
-    p.printError s!"error: {e}"
-    return 2
-  -- The streamed pipeline's options: limits (`--sharing-limits` /
-  -- `IX_SHARING_LIMITS`), traces (`IX_COMPILE_DBG`); phase timings always on.
-  let opts ← match ← Ix.Cli.driverOptionsFromEnv (dbg := true) with
-    | .ok opts => pure opts
-    | .error e =>
-      p.printError s!"error: {e}"
-      return 2
-  unless streamed do
-    if let some e ← certifiedLimitsRefusal p then
-      p.printError s!"error: {e}"
-      return 2
 
   -- Reuse existing imports when the caller already built them: the input file
   -- is still elaborated; only Lake's dependency build and cache step is skipped.
@@ -157,12 +96,10 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     buildFile pathStr
   let fe ← getFileEnvCore pathStr
   let constList ← if p.hasFlag "local" then pure (localConstList fe) else defaultConstList fe pathStr
-  IO.println s!"[compile-lean] {constList.length} constants, {workers} workers, \
-{if streamed then "streamed pipeline (uncertified)" else "certified compiler"}"
+  IO.println s!"[compile-lean] {constList.length} constants, {workers} workers, certified compiler"
 
   let t0 ← IO.monoMsNow
-  let compiled ← if streamed then compileStreamed fe constList workers opts allowPartial outPath
-    else compileCertified fe constList workers allowPartial outPath
+  let compiled ← compileCertified fe constList workers allowPartial outPath
   let out ← match compiled with
     | .ok out => pure out
     | .error code => return code
@@ -174,30 +111,6 @@ in {elapsed}ms"
     IO.println s!"[compile-lean] PARTIAL: {out.failures.size} constants failed to compile"
     for (n, e) in (rootCausesFirst out.failures.toList).take 8 do
       IO.println s!"  {n.pretty}: {e.take 200}"
-
-  if p.hasFlag "rust-check" then
-    IO.println "[compile-lean] --rust-check: compiling via Rust FFI..."
-    let tR ← IO.monoMsNow
-    let rustBytes ← IO.FS.withTempDir fun dir => do
-      let rustOut := dir / "rust-check.ixe"
-      let prepared ← IO.ofExcept (out.prepared ())
-      let _ ← Ix.CompileM.rsCompileEnvBytesFFI prepared rustOut.toString true
-      let raw ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile rustOut))
-      let bound ← Ix.RoleBinding.Compile.finalize Ix.RoleBinding.Compile.rustBackend fe.env
-        Ix.RoleBinding.Compile.nativeCertSource (.plain constList) raw Ix.Resource.typingLimits
-      IO.ofExcept (Ixon.serEnv bound)
-    let tRe := (← IO.monoMsNow) - tR
-    if rustBytes == out.bytes then
-      IO.println s!"[compile-lean] ALIGNED: {out.bytes.size} bytes byte-identical with Rust ({tRe}ms)"
-    else
-      let n := min rustBytes.size out.bytes.size
-      let mut firstDiff := n
-      for i in [0:n] do
-        if firstDiff == n && rustBytes.get! i != out.bytes.get! i then
-          firstDiff := i
-      IO.println s!"[compile-lean] DIVERGED: lean {out.bytes.size}B vs \
-rust {rustBytes.size}B, first difference at byte {firstDiff}"
-      return 1
   return 0
 
 end Ix.Cli.CompileLeanCmd
@@ -211,11 +124,8 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "no-build" ;           "Skip the Lake build/cache step and reuse existing import artifacts. The input file is still elaborated. The caller must ensure all imports are built and up to date."
-    "rust-check" ;         "Also compile via the Rust FFI compiler, finalize its artifact, and compare the final bytes (the ALIGNED gate; both final envelopes use Lean serialization). Exit 1 on divergence; the already-written Lean output remains."
-    "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env. --rust-check compiles the same list."
+    "local" ;              "Compile only the constants the input file itself declares, with their transitive dependencies (the selected closure: recursors, whole logical units, checker support), instead of the whole import env."
     "allow-partial" ;      "Allow writing the successfully compiled subset despite requested compilation failures. Without this flag, those failures cause a nonzero exit and leave the output path untouched."
-    streamed ;             "Compile with the streamed pipeline instead of the certified compiler. UNCERTIFIED: only its fold is proved to be the certified compiler's; its streamed front end is tested, not proved. Kept for comparison."
-    "sharing-limits" : String; "Override resource limits of the canonical sharing construction (same format as `ix compile --sharing-limits`); only with --streamed, since the certified compiler's theorem fixes the default limits. Applies to --rust-check too. Sets IX_SHARING_LIMITS."
 
   ARGS:
     ...path : String; "Path to the Lean source file to compile."

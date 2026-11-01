@@ -758,7 +758,7 @@ fn exec_rss_estimate(owned_bytes: usize) -> usize {
 }
 
 /// FFI: the detected prover/execution RAM budget in bytes
-/// ([`detected_ram_budget`]: [`ix_kernel::shard::RAM_USABLE_FRAC`] of
+/// ([`detected_ram_budget`]: [`ixon::shard::RAM_USABLE_FRAC`] of
 /// `MemAvailable`), or `0` when `/proc/meminfo` is unreadable — the caller
 /// decides whether to fail closed.
 #[unsafe(no_mangle)]
@@ -769,7 +769,7 @@ extern "C" fn rs_aiur_detected_ram_budget()
 }
 
 /// Detected prover/execution RAM budget:
-/// [`ix_kernel::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
+/// [`ixon::shard::RAM_USABLE_FRAC`] of `MemAvailable`, reserving
 /// the rest for the OS. `None` (no gate) when meminfo is unreadable —
 /// disabling the check beats guessing at it.
 /// The trace-shard cell budget the prover plans to, from
@@ -804,7 +804,7 @@ pub(crate) fn record_share(
 #[allow(clippy::cast_sign_loss)] // MemAvailable and the fraction are positive
 pub(crate) fn detected_ram_budget() -> Option<usize> {
   available_ram_bytes()
-    .map(|b| (b as f64 * ix_kernel::shard::RAM_USABLE_FRAC) as usize)
+    .map(|b| (b as f64 * ixon::shard::RAM_USABLE_FRAC) as usize)
 }
 
 /// This process's resident set from `/proc/self/status`, in bytes; `None`

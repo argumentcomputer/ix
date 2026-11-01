@@ -51,13 +51,6 @@ for both compilation and checking; `compileReport_eq_shared` proves that
 sharing this work preserves the function. These are checked `csimp`
 replacements, not a separate compiler.
 
-The optional streamed pipeline (`--streamed`,
-`Ix.CompileM.compileLeanInputValidated`) retains a different front end: it
-canonicalizes theorem and opaque bodies on demand through a hybrid
-environment, and takes sharing limits and task widths from `DriverOptions`.
-Its driver is the same `compileEnvFold`; its front end is tested against the
-certified path and remains an uncertified comparison option.
-
 **Failures.** The compile records what it leaves out instead of dropping it:
 `compileReport` returns, with the environment, every constant the ground
 filter removed, with its named refusal (`Ix.GroundError.refusal`, the text
@@ -170,8 +163,7 @@ structure Failures where
   error (`Ix.CompileM.CompileEnv.ungrounded`). -/
   blocks : Std.HashMap Ix.Name String := {}
 
-/-- Every failure in one map, as the IO pipeline records them
-(`Ix.CompileM.LeanPipelineOut.cenv`'s `ungrounded`). -/
+/-- Every failure in one map (`CompileEnv.ungrounded`). -/
 @[expose] def Failures.toMap (f : Failures) : Std.HashMap Ix.Name String :=
   f.blocks.fold (init := f.ungrounded) fun m n e => if m.contains n then m else m.insert n e
 

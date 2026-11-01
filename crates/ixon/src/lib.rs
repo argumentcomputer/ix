@@ -9,7 +9,6 @@
 pub mod assumption_tree;
 #[cfg(not(target_arch = "riscv64"))]
 mod binding_support;
-pub mod canon_univ;
 pub mod catalog;
 pub mod comm;
 pub mod constant;
@@ -26,11 +25,9 @@ pub mod map;
 pub mod merkle;
 pub mod metadata;
 pub mod proof;
-pub mod resource;
 pub mod role_table;
 pub mod serialize;
 pub mod shard_claim;
-pub mod sharing_exact;
 pub mod syntax;
 pub mod tag;
 pub mod univ;
@@ -499,3 +496,6 @@ mod doc_examples {
     );
   }
 }
+
+#[cfg(not(target_arch = "riscv64"))]
+pub mod shard;

@@ -1,15 +1,16 @@
-/-
-  Canonical Lean types with embedded content-addressed hashes.
-
-  Ix types mirror Lean's core types but include a Blake3 hash at each node,
-  enabling O(1) equality checks and content-addressed storage.
--/
 module
 
 public import Blake3.Rust
 public import Std.Data.HashMap
 public import Std.Data.TreeMap
 public import Ix.Address
+
+/-!
+  Canonical Lean types with embedded content-addressed hashes.
+
+  Ix types mirror Lean's core types but include a Blake3 hash at each node,
+  enabling O(1) equality checks and content-addressed storage.
+-/
 
 public section
 
@@ -688,21 +689,6 @@ def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
     match env.fallback? with
     | some f => f n
     | none => none
-
-/-- Raw environment data as arrays (returned from Rust FFI).
-    Use `toEnvironment` to convert to Environment with HashMaps. -/
-structure RawEnvironment where
-  consts : Array (Name × ConstantInfo)
-  deriving Repr, Inhabited
-
-/-- Convert raw arrays to Environment with HashMaps.
-    This is done on the Lean side for correct hash function usage. -/
-def RawEnvironment.toEnvironment (raw : RawEnvironment) : Environment :=
-  { consts := raw.consts.foldl (init := {}) fun m (k, v) => m.insert k v }
-
-/-- Convert Environment to raw arrays for FFI usage. -/
-def Environment.toRaw (env : Environment) : RawEnvironment :=
-  { consts := env.consts.toArray }
 
 /-! ## Context Types for Compilation -/
 

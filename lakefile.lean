@@ -521,10 +521,6 @@ lean_exe «kernel-layering» where
 lean_exe «kernel-trust-surface» where
   root := `Tests.Ix.Kernel.TrustSurface
 
-lean_exe «kernel-codec» where
-  root := `Tests.Ix.Kernel.CodecHost
-  moreLinkObjs := #[ix_rs_test]
-
 /-- Host-compiled Lean declarations through the certified entry
 `Ix.Kernel.Admission.checkBytes`, each with an exact expected verdict. -/
 lean_exe «kernel-entry-cases» where
@@ -608,14 +604,6 @@ script "check-kernel" (args) := do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
   run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
-  run "lake" #["build", "--wfail", "kernel-codec"]
-  let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
-  IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
-  IO.eprint codec.stderr
-  unless codec.exitCode == 0 do
-    IO.eprint codec.stdout
-    throw <| IO.userError "kernel-codec failed; see .lake/build/kernel-codec.log"
-  IO.println "Production Ixon codec and Rust differential checks passed."
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   -- The kernel's fences, derived from con-leche's: import layering and the

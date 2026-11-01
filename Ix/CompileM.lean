@@ -1,17 +1,3 @@
-/-
-  Pure per-block compilation from Lean declarations to Ixon.
-
-  Architecture:
-  - CompileEnv: shared compilation snapshot (Reader)
-  - BlockEnv: per-block read-only context (Reader)
-  - BlockState: per-block writes and caches (State)
-
-  The certified default uses these operations. CompileDriver schedules
-  independent blocks on tasks and merges their outcomes in key order;
-  Ix.Cert.compileReport checks the assembled result. The Rust compiler
-  remains available through --rust and for differential checks.
--/
-
 module
 import Std.Sync
 public import Ix.Ixon
@@ -29,6 +15,19 @@ public import Ix.CondenseM
 public import Ix.SOrder
 public import Ix.Compile.ExactKey
 public import Ix.CanonM
+
+/-!
+  Pure per-block compilation from Lean declarations to Ixon.
+
+  Architecture:
+  - CompileEnv: shared compilation snapshot (Reader)
+  - BlockEnv: per-block read-only context (Reader)
+  - BlockState: per-block writes and caches (State)
+
+  The certified compiler uses these operations. CompileDriver schedules
+  independent blocks on tasks and merges their outcomes in key order;
+  Ix.Cert.compileReport checks the assembled result.
+-/
 
 namespace Ix.CompileM
 public section
@@ -68,9 +67,7 @@ structure CompileEnv where
   blocks : Std.HashMap Name (Array (Array Name)) := {}
   /-- Resource limits of the canonical sharing construction
       (`buildBlockConstant`, `finishMutualCompilation`): `compilerSharingLimits`
-      unless a driver's options set others (`DriverOptions.sharingLimits`,
-      which the CLI parses from `IX_SHARING_LIMITS`). Limits decide only whether a block
-      compiles, never its bytes. -/
+      by default. Limits decide only whether a block compiles, never its bytes. -/
   sharingLimits : Ix.Sharing.Exact.Limits := {}
 
 /-- Initialize global state from canonicalization result. -/
@@ -1468,34 +1465,15 @@ There is no fallback: every construction failure is a compile error. -/
 /-- Resource limits of the compiler's canonical sharing construction: the
     library defaults (`Ix.Sharing.Exact.Limits`), a safety net far above every
     corpus maximum. `CompileEnv.sharingLimits` carries the limits a compile
-    runs under. Mirrors Rust `compiler_sharing_limits`. -/
+    runs under. -/
 def compilerSharingLimits : Ix.Sharing.Exact.Limits := {}
 
-/-- Environment variable carrying a sharing-limit override in the format of
-    `Ix.Sharing.Exact.Limits.withOverrides` (for example `states=2^44,depth=2^22`
-    or `unbounded`). `ix compile --sharing-limits` and `ix compile-lean
-    --sharing-limits` set it. `compilerSharingLimitsFromEnv` reads it, once per
-    run: the CLI (`Ix.Cli.driverOptionsFromEnv`), which passes the limits to
-    the Lean compile drivers and to `Ix.DecompileM.decompileEnvFullParallel`;
-    no driver reads it. Rust's `compiler_sharing_limits` reads it once per
-    compile or decompile entry point. -/
-def sharingLimitsEnvVar : String := "IX_SHARING_LIMITS"
-
-/-- `compilerSharingLimits` with the `IX_SHARING_LIMITS` override applied, or
-    the parse error. -/
-def compilerSharingLimitsFromEnv : IO (Except String Ix.Sharing.Exact.Limits) := do
-  match ← IO.getEnv sharingLimitsEnvVar with
-  | none => pure (.ok compilerSharingLimits)
-  | some spec =>
-    pure ((compilerSharingLimits.withOverrides spec).mapError (s!"{sharingLimitsEnvVar}: " ++ ·))
-
 /-- A sharing-construction failure as a compile error: resource exhaustion is
-    `resourceLimit` (naming the limit and its override), every other kind
-    `sharingConstruction`. Mirrors Rust `sharing_compile_error`. -/
+    `resourceLimit` (naming the limit), every other kind
+    `sharingConstruction`. -/
 def sharingCompileError : Ix.Sharing.Exact.SharingError → CompileError
   | .resourceExhausted r limit =>
-    .resourceLimit s!"canonical sharing: resource exhausted: {r.key} (limit {limit}); \
-      raise it with --sharing-limits {r.key}=N ({sharingLimitsEnvVar})"
+    .resourceLimit s!"canonical sharing: resource exhausted: {r.key} (limit {limit})"
   | e => .sharingConstruction s!"canonical sharing: {e}"
 
 /-- Write `rewrittenExprs` back into the root slots of `info`, in
@@ -2464,13 +2442,9 @@ def compileConstantInfo : ConstantInfo → CompileM BlockResult
   | .ctorInfo constructorVal => compileConstructorConstantInfo constructorVal
   | const => compileConstantInfoCore const
 
-/-! ## Rust Compilation FFI -/
+/-! ## Compile Status and Phases -/
 
-/-- Structured result of `rs_compile_env`. Field kinds/order must match
-    the `LeanIxCompileEnvStatus` FFI layout in `crates/ffi/src/lean.rs`
-    (`{ num_obj: 3, num_64: 3 }`): boxed fields first (`root`, `ungrounded`,
-    `nonCanonical`), then the UInt64 scalars (`bytes`, `named`, `uniqueAnon`)
-    in declaration order. -/
+/-- Structured result of environment compilation. -/
 structure CompileEnvStatus where
   /-- 64-hex canonical consts merkle root. Equals the `.ixe` header root
       when a file was written; still computed on a fail-closed abort. -/
@@ -2478,7 +2452,7 @@ structure CompileEnvStatus where
   /-- `(pretty name, reason)` for every requested constant whose block
       failed to compile, sorted by name. Empty ⇔ complete environment. -/
   ungrounded : Array (String × String)
-  /-- `(pretty name, cause)` rows the Rust compiler once reported for blocks
+  /-- `(pretty name, cause)` rows the compiler once reported for blocks
       it rewrote. Always empty: the compiler compiles every block as given. -/
   nonCanonical : Array (String × String)
   /-- Bytes written to `outPath` (0 when nothing was written). -/
@@ -2489,134 +2463,12 @@ structure CompileEnvStatus where
   uniqueAnon : UInt64
   deriving Repr, Inhabited
 
-/-- FFI: Compile a Lean environment and write the serialized Ixon.Env
-    bytes straight to `outPath` from Rust (streamed; no env-sized
-    ByteArray crosses the FFI). Writes to `<outPath>.tmp` then renames,
-    so a crash cannot leave a truncated file.
-
-    Fail-closed semantics live behind the FFI: with
-    `allowPartial := false`, an env with any ungrounded requested
-    constant writes NOTHING (the final path is never created) and the
-    returned status carries the full ungrounded list; with
-    `allowPartial := true`, the grounded subset is serialized and the
-    status discloses what was omitted. -/
-@[extern "rs_compile_env"]
-opaque rsCompileEnvBytesFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
-  → IO CompileEnvStatus
-
-/-- `rsCompileEnvBytesFFI` with strict-anon output (`ix compile
-    --anon`): §4 names, §5 metadata, and §6 commitments are cleared —
-    strictly after `finalize_hints`, which derives §3 from `env.named`
-    — so the piece carries the anon layer only (§1–§3). The env root
-    is identical either way (it covers §2 keys only); the status
-    reports `named = 0`. -/
-@[extern "rs_compile_env_anon"]
-opaque rsCompileEnvBytesAnonFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
-  → IO CompileEnvStatus
-
-/-- Compile a Lean environment and write the serialized Ixon.Env bytes
-    to `outPath` using the Rust compiler. Fail-closed by default: any
-    ungrounded constant throws (and nothing is written) unless
-    `allowPartial := true`. Returns the structured compile status. -/
-def rsCompileEnvBytes (leanEnv : Lean.Environment) (outPath : String)
-    (allowPartial : Bool := false) : IO CompileEnvStatus := do
-  let constList ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv leanEnv.constants.toList
-  let status ← rsCompileEnvBytesFFI constList outPath allowPartial
-  if !allowPartial && !status.ungrounded.isEmpty then
-    throw <| IO.userError <|
-      s!"rsCompileEnvBytes: {status.ungrounded.size} requested constant(s) " ++
-      s!"failed to compile; nothing written to {outPath}. First failure: " ++
-      match status.ungrounded[0]? with
-      | some (n, r) => s!"{n}: {r}"
-      | none => "<empty>"
-  return status
-
--- Re-export RawEnv types from Ixon for backwards compatibility
-export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)
-
-/-- FFI: Compile a Lean environment to RawEnv (structured Lean objects) using Rust. -/
-@[extern "rs_compile_env_to_ixon"]
-opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.RawEnv
-
-/-- FFI: Compute the LEON content hash of every constant in a Lean
-    environment. Returns `(Ix.Name, Ix.Address)` pairs where the address
-    is the 32-byte Blake3 digest produced by `ConstantInfo::get_hash()`
-    in `crates/common/src/env.rs`. This is the addressing scheme under which
-    `orig_kenv` stores KIds in the kernel — two constants with the same
-    Lean name but different content get distinct addresses. Used by
-    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimAddrs::new_orig`
-    in the Rust kernel. -/
-@[extern "rs_leon_hashes"]
-opaque rsLeonHashesFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array (Ix.Name × Address))
-
-/-! ## Combined Compile Phases FFI -/
-
-/-- Raw FFI type returned from Rust's rs_compile_phases.
-    Contains all compilation phases in array-based format for FFI compatibility. -/
-structure RustCompilePhases where
-  rawEnv : Ix.RawEnvironment        -- Array-based canonicalized constants
-  condensed : RustCondensedBlocks   -- Array-based SCC data
-  compileEnv : RawEnv               -- Ixon raw type (RawConst, RawNamed, etc.)
-  deriving Inhabited, Repr
-
-/-- Nice Lean type with proper data structures.
-    Converted from RustCompilePhases for ergonomic use in Lean. -/
+/-- Bundled compilation phases (`rawEnv`, `condensed`, `compileEnv`) for
+    downstream incremental compilation and testing. -/
 structure CompilePhases where
   rawEnv : Ix.Environment           -- HashMap-based canonicalized constants
   condensed : CondensedBlocks       -- Map/Set-based SCC data
   compileEnv : Ixon.Env             -- HashMap-based Ixon environment
-
-/-- FFI: Run all compilation phases in Rust and return structured data. -/
-@[extern "rs_compile_phases"]
-opaque rsCompilePhasesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO RustCompilePhases
-
-/-- Run all compilation phases in Rust over an explicit constant list
-    and convert to Lean-friendly types. Use this for closure-scoped
-    compiles (e.g. `#ixeval` compiles only a term's reference closure);
-    `rsCompilePhases` covers the whole-environment case. -/
-def rsCompilePhasesOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
-    IO CompilePhases := do
-  let constList ← IO.ofExcept <| Ix.Compile.prepareSourceConstants constList
-  let raw ← rsCompilePhasesFFI constList
-
-  -- Convert RawEnvironment to Environment
-  let rawEnv := raw.rawEnv.toEnvironment
-
-  -- Convert RustCondensedBlocks to CondensedBlocks
-  let condensed := raw.condensed.toCondensedBlocks
-
-  -- Convert RawEnv to Ixon.Env
-  let compileEnv := raw.compileEnv.toEnv
-
-  pure { rawEnv, condensed, compileEnv }
-
-/-- Run all compilation phases using Rust and convert to Lean-friendly types.
-    This is the main entry point for getting Rust compilation results. -/
-def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
-  let constants ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv leanEnv.constants.toList
-  let raw ← rsCompilePhasesFFI constants
-  return { rawEnv := raw.rawEnv.toEnvironment
-           condensed := raw.condensed.toCondensedBlocks
-           compileEnv := raw.compileEnv.toEnv }
-
-/-- Compile an explicit constant list to Ixon.Env using the Rust
-    compiler. Use for compiles over constructed environments (e.g. the
-    catalog `--audit` per-library comparison). -/
-def rsCompileEnvOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
-    IO Ixon.Env := do
-  let constList ← IO.ofExcept <| Ix.Compile.prepareSourceConstants constList
-  let rawEnv ← rsCompileEnvFFI constList
-  pure rawEnv.toEnv
-
-/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
-    Uses the direct FFI that returns structured Lean objects. -/
-def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
-  let constants ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants leanEnv leanEnv.constants.toList
-  let raw ← rsCompileEnvFFI constants
-  return raw.toEnv
 
 end
 end Ix.CompileM

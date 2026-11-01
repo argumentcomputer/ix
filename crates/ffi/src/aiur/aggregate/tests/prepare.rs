@@ -1,5 +1,5 @@
-use ix_kernel::shard::{AggNode, ShardManifest};
 use ixon::Expr;
+use ixon::shard::{AggNode, ShardManifest};
 
 use super::super::{
   expected_from_manifest,

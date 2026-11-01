@@ -1,5 +1,3 @@
--- This module serves as the root of the `Ix` library.
--- Import modules here that should be built as part of the library.
 module
 public import Ix.Environment
 public import Ix.CanonM
@@ -26,3 +24,6 @@ public import Ix.Watchdog
 public import Ix.Benchmark.Bench
 public import Ix.Aiur
 public import Ix.TracingTexray
+
+/-! This module serves as the root of the `Ix` library.
+Import modules here that should be built as part of the library. -/

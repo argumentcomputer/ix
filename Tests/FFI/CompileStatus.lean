@@ -1,14 +1,16 @@
-/-
-  `rs_compile_env` structured-status tests: the fail-closed default
-  writes nothing when a requested constant is ungrounded, while
-  allow-partial serializes the grounded subset as a reloadable artifact
-  and the status enumerates exactly the missing names.
--/
 module
 
 public import LSpec
 public import Ix.CompileM
+public import Ix.CompileCertified
 public import Ix.Ixon
+
+/-!
+  Structured-status compilation tests: the fail-closed default
+  writes nothing when a requested constant is ungrounded, while
+  allow-partial serializes the grounded subset as a reloadable artifact
+  and the status enumerates exactly the missing names.
+-/
 
 public section
 
@@ -33,11 +35,23 @@ private def badAx : Lean.ConstantInfo := .axiomInfo {
 private def consts : List (Lean.Name × Lean.ConstantInfo) :=
   [(goodName, goodAx), (badName, badAx)]
 
+private def compileEnvBytes (cs : List (Lean.Name × Lean.ConstantInfo))
+    (path : String) (allowPartial : Bool) : IO Ix.CompileM.CompileEnvStatus := do
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertifiedPrepared cs false)
+  let status := { Ix.Cli.statusOf out.env out.failures.toMap with
+    named := out.env.named.size.toUInt64
+    uniqueAnon := out.env.consts.size.toUInt64 }
+  if !allowPartial && !status.ungrounded.isEmpty then
+    return status
+  let bytes ← IO.ofExcept (Ixon.serEnv out.env)
+  Ix.RoleBinding.Compile.writeAtomic (System.FilePath.mk path) bytes
+  return { status with bytes := bytes.size.toUInt64 }
+
 def failClosedTest : TestSeq :=
-  .individualIO "rs_compile_env fail-closed: ungrounded ⇒ no artifact" none (do
+  .individualIO "compileEnvBytes fail-closed: ungrounded ⇒ no artifact" none (do
     let dir ← IO.FS.createTempDir
     let out := dir / "fail-closed.ixe"
-    let status ← Ix.CompileM.rsCompileEnvBytesFFI consts out.toString false
+    let status ← compileEnvBytes consts out.toString false
     let outExists ← out.pathExists
     let tmpExists ← (dir / "fail-closed.ixe.tmp").pathExists
     IO.FS.removeDirAll dir
@@ -55,10 +69,10 @@ def failClosedTest : TestSeq :=
   ) .done
 
 def allowPartialTest : TestSeq :=
-  .individualIO "rs_compile_env allow-partial: grounded subset reloads" none (do
+  .individualIO "compileEnvBytes allow-partial: grounded subset reloads" none (do
     let dir ← IO.FS.createTempDir
     let out := dir / "partial.ixe"
-    let status ← Ix.CompileM.rsCompileEnvBytesFFI consts out.toString true
+    let status ← compileEnvBytes consts out.toString true
     let bytes ← IO.FS.readBinFile out
     IO.FS.removeDirAll dir
     let env ← match Ixon.deEnv bytes with

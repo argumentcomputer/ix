@@ -110,7 +110,7 @@
               ./Tests/Fixtures/ixon-v4
               ./Tests/Fixtures/host-admission-v1
               ./Tests/Fixtures/role-binding-v2
-              ./crates/kernel/tests/fixtures
+              ./crates/ixon/tests/fixtures
             ];
           };
           # Rust code generation for the sandboxed builds. `.cargo/config.toml`

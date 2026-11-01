@@ -1,26 +1,24 @@
-/-
-  `ix shard <path.ixe> [--profile <path.ixprof>]`: partition an environment
-  into shards for the Aiur (IxVM) checking pipeline.
+module
+public import Cli
+public import Ix.Common
+public import Ix.KernelCheck
+public import Ix.Cli.ConstsFile
+public import Ix.Cli.RefineCmd
 
-  Two strategies:
-  - **Static (default, no `--profile`)**: computed from the `.ixe` alone —
-    no out-of-circuit kernel run. Byte-balanced min-cut over the env's
-    static walk-edge nets (the relation that generates each shard's thin
-    frontier, i.e. its real ingress), then a global rebalance post-pass
-    toward equal predicted Aiur FFT cost (fitted model — constants and
-    provenance in `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). `--shards N`
-    fixes the count; `--max-ram G` seeds it from the same static block-shape
-    score, mildly superlinear in both library scale and inverse RAM budget.
-    Measured against the profiled strategy on the 8-shard Init / 24-shard Std
-    harnesses: mean shard FFT −30%, max shard −44/−51%, stddev 17.7%→7.1% /
-    30.6%→8.9%.
-  - **Profiled (`--profile <path.ixprof>`)**: the original pipeline over an
-    `ix profile` run, unchanged. Modes (precedence in `runShardCmd`):
-    default / `--max-ram G` / `--max-cycles C` **bin-pack to a per-shard
-    cycle/RAM cap** (no `--max-ram` ⇒ sized to detected system RAM);
-    `--shards N` forces exactly `N` balanced min-cut shards.
+/-!
+  `ix shard <path.ixe>`: partition an environment into shards for the
+  Aiur (IxVM) checking pipeline using the static strategy.
 
-  Both write the same `.ixes` manifest and print a what-if report. The
+  Computed from the `.ixe` alone — no out-of-circuit kernel run.
+  Byte-balanced min-cut over the env's static walk-edge nets (the
+  relation that generates each shard's thin frontier, i.e. its real
+  ingress), then a global rebalance post-pass toward equal predicted
+  Aiur FFT cost (fitted model — constants and provenance in
+  `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). `--shards N` fixes the
+  count; `--max-ram G` seeds it from the same static block-shape score,
+  mildly superlinear in both library scale and inverse RAM budget.
+
+  Writes a `.ixes` manifest and prints a what-if report. The
   partitioner is self-contained — no external graph-library dependency.
 
   `ix shard extract <path.ixe> --consts <n1,n2,…>`: the pipeline's scoping
@@ -28,15 +26,8 @@
   env into a standalone `.ixe`, without recompiling from source. The output
   carries the closure's genuine constant bytes, blobs, and reducibility
   hints, plus each closure constant's name→address entry, so it composes
-  with everything that consumes a `.ixe` (`ix profile` → `ix shard`,
-  `ix check-rs --consts`, the zkVM hosts, `bench-typecheck`).
+  with everything that consumes a `.ixe`.
 -/
-module
-public import Cli
-public import Ix.Common
-public import Ix.KernelCheck
-public import Ix.Cli.ConstsFile
-public import Ix.Cli.RefineCmd
 
 public section
 
@@ -72,7 +63,7 @@ def shardExtractCmd : Cli.Cmd := `[Cli|
   "Extract named constants + their dependency closure from a `.ixe` into a standalone `.ixe`"
 
   FLAGS:
-    consts        : String; "Comma-separated EXACT constant names (displayed form) to extract, e.g. `Nat.add_comm,String.append`. Same flag/shape as `ix check-rs --consts`. A mutual-block member extracts its whole block."
+    consts        : String; "Comma-separated EXACT constant names (displayed form) to extract, e.g. `Nat.add_comm,String.append`. A mutual-block member extracts its whole block."
     "consts-file" : String; "Additionally read names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
     out           : String; "Output `.ixe` path. Defaults to a slug of the first name (e.g. `nat_add_comm.ixe`)."
     verbose;                "Print extraction details to stderr."
@@ -89,7 +80,7 @@ def runShardGraphCmd (p : Cli.Parsed) : IO UInt32 := do
   let outPath : String :=
     match p.flag? "out" with
     | some flag => flag.as! String
-    -- `init.ixe` → `init.graph`, mirroring the `.ixprof` default naming.
+    -- `init.ixe` → `init.graph`.
     | none =>
       let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
       base ++ ".graph"
@@ -113,14 +104,6 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     | p.printError "error: must specify <path> to a .ixe file"
       return 1
   let envPath := pathArg.as! String
-  let profileFlag : Option String := (p.flag? "profile").map (·.as! String)
-  -- Old CLI shape took the `.ixprof` positionally; catch it so scripts
-  -- fail loudly instead of parsing a profile as an env.
-  if profileFlag.isNone && envPath.endsWith ".ixprof" then
-    p.printError "error: the positional argument is now the `.ixe` env; \
-      pass the profile via --profile <path.ixprof> (or drop it for the \
-      static strategy)"
-    return 1
   let balancePct : Nat :=
     match p.flag? "balance" with
     | some flag => flag.as! Nat
@@ -134,67 +117,28 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
       let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
       base ++ ".ixes"
   let shardsFlag : Option Nat := (p.flag? "shards").map (·.as! Nat)
-  let maxCycles  : Option Nat := (p.flag? "max-cycles").map (·.as! Nat)
   let maxRam     : Option Nat := (p.flag? "max-ram").map (·.as! Nat)
   let execJobs   : Nat := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 3
-  -- Provers the prove-time estimate assumes (wall clock = max(seq/P, slowest
-  -- shard)). Sharded proving is sequential today, so the default is 1.
-  let parallelism : Nat :=
-    match p.flag? "parallelism" with
-    | some flag => max 1 (flag.as! Nat)
-    | none      => 1
 
-  match profileFlag with
-  | none =>
-    -- STATIC strategy (no out-of-circuit profiling): byte-balanced min-cut
-    -- over the env's walk-edge nets + predicted-FFT rebalance post-pass.
-    -- `--shards N` fixes the count. Under `--max-ram G`, Rust chooses a
-    -- seed only after building the static block profile: a CUDA build
-    -- scales the calibrated Mathlib cut by the blocks' serialized bytes
-    -- (execution records are close to linear in them); a CPU build uses the
-    -- fitted owned score, which also sees each block's shape.
-    -- Boundaries and budget fitting are still measured where execution
-    -- happens anyway (the prove gate splits over-budget shards inline and the
-    -- corrected manifest remembers the leaves).
-    if maxCycles.isSome then
-      p.printError "error: --max-cycles requires --profile (its budget \
-        model is calibrated on profiled op counters)"
-      return 1
-    let layout := if p.hasFlag "ordered" then "ordered" else "mincut"
-    match shardsFlag, maxRam with
-    | some n, _ =>
-      if n == 0 then
-        p.printError "error: --shards must be positive"; return 1
-      IO.println s!"Sharding {envPath} into {n} shards \
-        (static strategy, {layout} layout, balance ±{balancePct}%)"
-      rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64 layout
-        outPath execJobs.toUSize
-    | none, some gib =>
-      if gib == 0 then
-        p.printError "error: --max-ram must be positive"; return 1
-      IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
-        (static block-shape seed, {layout} layout, balance ±{balancePct}%)"
-      rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64 layout
-        outPath execJobs.toUSize
-    | none, none =>
-      p.printError "error: the static strategy (no --profile) requires \
-        --shards N or --max-ram G"
-      return 1
-  | some espPath =>
-    -- Profiled strategy, unchanged: partition the `.ixprof`.
-    -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
-    -- (budget) > default (size to detected system RAM).
-    match shardsFlag with
-    | some n =>
-      IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
-      rsShardEspFFI espPath n.toUSize balancePct.toUInt64 parallelism.toUSize outPath
-    | none =>
-      if maxCycles.isNone && maxRam.isNone then
-        IO.println s!"Sharding {espPath} to detected system RAM (balance ±{balancePct}%)"
-      else
-        IO.println s!"Sharding {espPath} to budget (max-cycles={maxCycles.getD 0}, max-ram={maxRam.getD 0} GiB, balance ±{balancePct}%)"
-      rsShardEspCapFFI espPath (maxCycles.getD 0).toUInt64 (maxRam.getD 0).toUInt64
-        balancePct.toUInt64 parallelism.toUSize outPath
+  let layout := if p.hasFlag "ordered" then "ordered" else "mincut"
+  match shardsFlag, maxRam with
+  | some n, _ =>
+    if n == 0 then
+      p.printError "error: --shards must be positive"; return 1
+    IO.println s!"Sharding {envPath} into {n} shards \
+      (static strategy, {layout} layout, balance ±{balancePct}%)"
+    rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64 layout
+      outPath execJobs.toUSize
+  | none, some gib =>
+    if gib == 0 then
+      p.printError "error: --max-ram must be positive"; return 1
+    IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
+      (static block-shape seed, {layout} layout, balance ±{balancePct}%)"
+    rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64 layout
+      outPath execJobs.toUSize
+  | none, none =>
+    p.printError "error: ix shard requires --shards N or --max-ram G"
+    return 1
   if !outPath.isEmpty then
     IO.println s!"[shard] wrote {outPath}"
   return 0
@@ -204,17 +148,14 @@ end Ix.Cli.ShardCmd
 open Ix.Cli.ShardCmd Ix.Cli.RefineCmd in
 def shardCmd : Cli.Cmd := `[Cli|
   "shard" VIA runShardCmd;
-  "Partition a `.ixe` env into shards: static strategy by default (`--shards N`, no kernel run), or the profiled pipeline via `--profile <path.ixprof>`"
+  "Partition a `.ixe` env into shards using the static strategy (`--shards N` or `--max-ram G`, no kernel run)"
 
   FLAGS:
-    profile      : String; "Path to a `.ixprof` from `ix profile`. When given, use the profiled strategy (cap budgeting / balanced min-cut over measured costs); when absent, the static strategy partitions the `.ixe` directly."
-    shards       : Nat;    "Fixed number of shards N (static strategy; overrides --max-ram sizing and the profiled default budget sizing)"
-    "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
-    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Static strategy: seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term). A CUDA build seeds for the trace-shard prover by serialized block bytes, against one execution's share of the record budget (this budget less the prover's working set at AIUR_TRACE_SHARD_MAX_CELLS, over --exec-jobs + 2), anchored at the 78-shard Mathlib cut proven on four GPUs (execution records are close to linear in owned bytes); a CPU build seeds with the CPU prover's fitted scale and budget exponents anchored at Mathlib. The record cap or the execution gate corrects every boundary. Profiled strategy: budget from measured op counters (default: detected system RAM)."
+    shards       : Nat;    "Fixed number of shards N (overrides --max-ram sizing)"
+    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term). A CUDA build seeds for the trace-shard prover by serialized block bytes, against one execution's share of the record budget (this budget less the prover's working set at AIUR_TRACE_SHARD_MAX_CELLS, over --exec-jobs + 2), anchored at the 78-shard Mathlib cut proven on four GPUs (execution records are close to linear in owned bytes); a CPU build seeds with the CPU prover's fitted scale and budget exponents anchored at Mathlib. The record cap or the execution gate corrects every boundary."
     "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --lanes --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
-    ordered;               "Static strategy: lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
-    parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
+    ordered;               "Lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
 
   ARGS:

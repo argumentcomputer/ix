@@ -13,6 +13,10 @@
 -/
 import Ix.Common
 import Ix.Meta
+import Ix.CompileM
+import Ix.CompileCertified
+import Ix.DecompileM
+import Ix.DecompileDriver
 import LSpec
 -- Level-spelling fixtures (canonicity §10.6): mk*-reducible spellings
 -- must survive the kernel leg via the Rust spelling decorations —
@@ -23,13 +27,25 @@ open LSpec
 
 namespace Tests.Ix.Kernel.Roundtrip
 
-/-- FFI: run the kernel roundtrip and collect per-constant diff messages.
-    Empty array = roundtrip agrees with the original Lean env.
-
-    Implemented in `src/ffi/kernel.rs::rs_kernel_roundtrip`. -/
-@[extern "rs_kernel_roundtrip"]
-opaque rsKernelRoundtripFFI :
-    @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
+/-- Run the compile + decompile roundtrip and collect per-constant diff messages.
+    Empty array = roundtrip agrees with the original Lean env. -/
+def rsKernelRoundtripFFI
+    (consts : List (Lean.Name × Lean.ConstantInfo)) : IO (Array String) := do
+  let rawEnv := Ix.CompileM.canonInput consts.toArray 32
+  let (compiledEnv, _) ← IO.ofExcept (Ix.Cert.compileReport rawEnv)
+  let (decompiled, errors, _) ←
+    Ix.DecompileM.decompileEnvFullParallel compiledEnv (some rawEnv.consts)
+      (sharingLimits := Ix.CompileM.compilerSharingLimits)
+  let mut msgs : Array String := #[]
+  for (n, e) in errors do
+    msgs := msgs.push s!"{n.pretty}: decompile error: {e}"
+  for (n, info) in decompiled do
+    match rawEnv.consts.get? n with
+    | none => msgs := msgs.push s!"{n.pretty}: decompiled constant not in source"
+    | some orig =>
+      if info != orig then
+        msgs := msgs.push s!"{n.pretty}: constant-info mismatch"
+  return msgs
 
 def testRoundtrip : TestSeq :=
   .individualIO "kernel ixon roundtrip" none (do

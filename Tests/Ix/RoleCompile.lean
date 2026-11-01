@@ -5,6 +5,10 @@ public import Ix.RoleBinding.ArtifactTiered
 public import Ix.Cli.CompileCmd
 public import LSpec
 
+/-!
+  Artifact role-binding compilation tests.
+-/
+
 namespace Tests.Ix.RoleCompile
 
 private def require (ok : Bool) (message : String) : IO Unit :=
@@ -41,11 +45,10 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
     let source := s!"Tests/Fixtures/{fixture}.lean"
     let result ← IO.Process.output {
       cmd := executable.toString
-      args := #["compile-lean", source, "--local", "--workers", "4", "--rust-check", "--out", path.toString]
+      args := #["compile-lean", source, "--local", "--workers", "4", "--out", path.toString]
       env := #[("LD_LIBRARY_PATH", none)]
     }
     require (result.exitCode == 0) s!"actual artifact compilation failed:\n{result.stdout}\n{result.stderr}"
-    require (result.stdout.contains "ALIGNED:") "the actual Rust/Lean artifact comparison did not run"
     let bytes ← IO.FS.readBinFile path
     let artifact ← IO.ofExcept (Ixon.deEnv bytes)
     require (bytes[0]? == some 0xE5 && artifact.roleBinding.isSome) "production output has no v5 binding"
@@ -68,25 +71,25 @@ private def check : IO Bool := IO.FS.withTempDir fun dir => do
       require (artifact.named.contains (Ix.Name.fromLeanName `Nat.div.go._unsafe_rec))
         "the original partial companion was removed to make logical-only checking pass"
       for anon in [false, true] do
-        let rustPath := dir / (if anon then "rust-anon.ixe" else "rust-named.ixe")
-        let args := #["compile", source, "--local", "--no-build", "--rust", "--out", rustPath.toString]
+        let outPath := dir / (if anon then "cert-anon.ixe" else "cert-named.ixe")
+        let args := #["compile", source, "--local", "--no-build", "--out", outPath.toString]
         let result ← IO.Process.output {
           cmd := executable.toString
           args := if anon then args.push "--anon" else args
         }
-        require (result.exitCode == 0) s!"Rust production artifact failed:\n{result.stdout}\n{result.stderr}"
-        let rustBytes ← IO.FS.readBinFile rustPath
-        let rustArtifact ← IO.ofExcept (Ixon.deEnv rustBytes)
-        checkArtifact rustArtifact roots
+        require (result.exitCode == 0) s!"production artifact failed:\n{result.stdout}\n{result.stderr}"
+        let outBytes ← IO.FS.readBinFile outPath
+        let outArtifact ← IO.ofExcept (Ixon.deEnv outBytes)
+        checkArtifact outArtifact roots
         if anon then
           -- The wire grammar always carries the anonymous name at index zero.
-          let onlyAnonymous := rustArtifact.names.size == 1 && rustArtifact.names.toList.all
+          let onlyAnonymous := outArtifact.names.size == 1 && outArtifact.names.toList.all
             (fun (_, name) => match name with | .anonymous _ => true | _ => false)
-          require (rustArtifact.named.isEmpty && onlyAnonymous && rustArtifact.comms.isEmpty)
+          require (outArtifact.named.isEmpty && onlyAnonymous && outArtifact.comms.isEmpty)
             "strict anonymous publication retained named metadata"
         else
-          require (rustBytes == bytes)
-            s!"Rust named publication differs from Lean: {rustBytes.size} versus {bytes.size} bytes"
+          require (outBytes == bytes)
+            s!"named publication differs from compile-lean: {outBytes.size} versus {bytes.size} bytes"
     IO.println s!"artifact compilation: {fixture}, {artifact.consts.size} records, {bytes.size} bytes, logical roots checked, all records covered and bytes aligned"
   let empty ← Lean.mkEmptyEnvironment
   require (!(Ix.RoleBinding.Compile.supportInput empty {}).isOk)

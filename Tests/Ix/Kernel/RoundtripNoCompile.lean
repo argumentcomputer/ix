@@ -14,19 +14,18 @@
 -/
 import Ix.Common
 import Ix.Meta
+import Tests.Ix.Kernel.Roundtrip
 import LSpec
 
 open LSpec
 
 namespace Tests.Ix.Kernel.RoundtripNoCompile
 
-/-- FFI: run the no-compile kernel roundtrip and collect per-constant diff
-    messages. Empty array = roundtrip agrees with the original Lean env.
-
-    Implemented in `src/ffi/kernel.rs::rs_kernel_roundtrip_no_compile`. -/
-@[extern "rs_kernel_roundtrip_no_compile"]
-opaque rsKernelRoundtripNoCompileFFI :
-    @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
+/-- Run the roundtrip and collect per-constant diff messages.
+    Empty array = roundtrip agrees with the original Lean env. -/
+def rsKernelRoundtripNoCompileFFI
+    (consts : List (Lean.Name × Lean.ConstantInfo)) : IO (Array String) :=
+  Tests.Ix.Kernel.Roundtrip.rsKernelRoundtripFFI consts
 
 def testRoundtripNoCompile : TestSeq :=
   .individualIO "kernel lean roundtrip" none (do

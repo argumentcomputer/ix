@@ -1,4 +1,10 @@
-/-
+import Tests.Ix.Compile.ClosureHarness
+import Tests.Ix.Compile.ScheduleReference
+import Tests.Ix.Compile.ValidateAux
+import Tests.Ix.IxVM
+import Tests.Ix.Fixtures
+
+/-!
   compile-schedule-identity: compare the pure fold and streamed Lean
   pipeline under different schedules on the same fixture corpus.
 
@@ -7,14 +13,14 @@
   families), compile with
 
   - the driver, the pure wave fold `Ix.CompileM.compileEnvFold`, on the
-    canonical environment and condensation of `rsCompilePhasesOf`,
+    canonical environment and condensation of `Ix.Cert.blocksOf`,
     at its default width and at widths 1 and
     32 (tasks per wave; the value must not depend on it);
   - the reference schedule (`Tests.Ix.Compile.ScheduleReference.sequential`,
     a sequential driver: live state, one block at a
     time) on the same input,
     with the least and with the greatest ready key first;
-  - the streamed `compileLeanInput` pipeline through
+  - the Lean pipeline through
     `ClosureHarness.compileClosure`, with its own canonicalization and
     condensation, at 1, 4 and 16 workers;
 
@@ -38,11 +44,6 @@
 
   Run with: `lake exe IxTests --ignored compile-schedule-identity`.
 -/
-import Tests.Ix.Compile.ClosureHarness
-import Tests.Ix.Compile.ScheduleReference
-import Tests.Ix.Compile.ValidateAux
-import Tests.Ix.IxVM
-import Tests.Ix.Fixtures
 
 open Lean
 
@@ -226,8 +227,12 @@ def run : IO UInt32 := do
   let env ← getCompileEnv (this_file!)
   let closure := validateAuxClosure env
   say s!"[schedule] {closure.length} constants (fixture corpus)"
-  -- the shared fold input: canonical environment and condensation from Rust
-  let phases ← Ix.CompileM.rsCompilePhasesOf closure
+  -- the shared fold input: canonical environment and condensation
+  let prepared ← IO.ofExcept (Ix.Compile.prepareSourceConstants closure)
+  let rawEnv := Ix.CompileM.canonInput prepared.toArray 32
+  let condensed := Ix.Cert.blocksOf rawEnv
+  let (compileEnv, _) ← IO.ofExcept (Ix.Cert.compileReport rawEnv)
+  let phases : Ix.CompileM.CompilePhases := { rawEnv, condensed, compileEnv }
   -- Every leg is an independent compile of the same input: run them
   -- concurrently (`SCHED_JOBS` bounds it), then compare in leg order.
   let legs ← legsOf env closure phases

@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.IxVM.ClaimHarness
+public import Ix.CompileCertified
 public import Ix.Meta
 
 /-!
@@ -51,10 +52,10 @@ private def boundClosure (leanEnv : Lean.Environment) (names : Array Lean.Name) 
         if !seen.contains entry.fst then
           seen := seen.insert entry.fst
           deduped := deduped.push entry
-  let raw ← Ix.CompileM.rsCompileEnvFFI deduped.toList
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv deduped.toList)
   let bytes ← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes
   let address ← IO.ofExcept Ix.Kernel.Reader.defaultTableAddress
-  pure { raw.toEnv with roleBinding := some { address, bytes } }
+  pure { out.env with roleBinding := some { address, bytes } }
 
 private def isAddressHex (s : String) : Bool :=
   s.length == 64 && s.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')

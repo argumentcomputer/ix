@@ -1,4 +1,13 @@
-/-
+module
+
+public import LSpec
+public import Ix.Catalog
+public import Ix.CompileM
+public import Ix.CompileCertified
+public import Ix.Cli.CatalogCmd
+public import IxC.Kernel.Ixon.Prelude
+
+/-!
   `.ixc` catalog format suite (primary, network-free).
 
   Two fixture pieces are compiled in-process from a self-contained
@@ -21,18 +30,11 @@
     drift, truncation, trailing bytes, a preimage tag other than 0 or 1,
     duplicate env roots or labels, non-topo deps, path-traversal labels,
     chunk owners out of range).
-  - Strict-anon compile (`rs_compile_env_anon`): §5 empty, §3 hints
+  - Strict-anon compile: §5 empty, §3 hints
     SURVIVE (the `finalize_hints` ordering pin from the plan's risk
     table), and the env root equals the named compile's — the
     anon-invariance the old C5 suite asserted, now structural.
 -/
-module
-
-public import LSpec
-public import Ix.Catalog
-public import Ix.CompileM
-public import Ix.Cli.CatalogCmd
-public import IxC.Kernel.Ixon.Prelude
 
 public section
 
@@ -102,6 +104,18 @@ private def bindPiece (path : String) : IO Unit := do
   let bound := { env with roleBinding := some { address, bytes } }
   IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv bound))
 
+private def envRootOf (env : Ixon.Env) : String :=
+  toString ((Ix.Merkle.merkleRootCanonical (env.consts.toList.map (·.1)).toArray).getD Ix.Merkle.zeroAddress)
+
+private def compilePieceToFile (consts : List (Lean.Name × Lean.ConstantInfo))
+    (path : String) (anon : Bool := false) : IO String := do
+  let (env0, failures) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput consts.toArray 4))
+  unless failures.isEmpty do
+    throw (IO.userError s!"catalog fixture compile failed: {failures.toMap.size} failures")
+  let env := if anon then { env0 with named := {}, names := {}, addrToName := {} } else env0
+  IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv env))
+  return envRootOf env
+
 /-- The end-to-end fixture gate: compile two overlapping pieces,
     assemble, and pin format parity + identity dedup. -/
 private def assembleParityTest : IO (Bool × Nat × Nat × Option String) := do
@@ -112,8 +126,8 @@ private def assembleParityTest : IO (Bool × Nat × Nat × Option String) := do
     let constsB ← fixtureConsts [defnOver `TCat.idA 1, defnOver `TCat.idB 2]
     let pieceA := (dir / "A.ixe").toString
     let pieceB := (dir / "B.ixe").toString
-    let sA ← Ix.CompileM.rsCompileEnvBytesFFI constsA pieceA false
-    let sB ← Ix.CompileM.rsCompileEnvBytesFFI constsB pieceB false
+    let rootA ← compilePieceToFile constsA pieceA false
+    let rootB ← compilePieceToFile constsB pieceB false
     bindPiece pieceA
     bindPiece pieceB
     -- Assemble via the Rust core (the production path): a
@@ -147,9 +161,9 @@ private def assembleParityTest : IO (Bool × Nat × Nat × Option String) := do
       -- Identity dedup: A's content ⊆ B's, so the union root IS B's
       -- env root — the virtual union env coincides with B.
       ("union collapses shared content (content_root = B's env root)",
-        toString cat.contentRoot == sB.root),
+        toString cat.contentRoot == rootB),
       ("piece A root recorded",
-        toString cat.members[0]!.envRoot == sA.root),
+        toString cat.members[0]!.envRoot == rootA),
       ("deps carried", cat.members[1]!.deps == #[0]),
       ("fat profile", !(cat.storage matches .chunked _)) ]
     match checks.find? (!·.2) with
@@ -167,8 +181,8 @@ private def anonCompileTest : IO (Bool × Nat × Nat × Option String) := do
     let consts ← fixtureConsts [defnOver `TCat.idA 1]
     let named := (dir / "named.ixe").toString
     let anon := (dir / "anon.ixe").toString
-    let sNamed ← Ix.CompileM.rsCompileEnvBytesFFI consts named false
-    let sAnon ← Ix.CompileM.rsCompileEnvBytesAnonFFI consts anon false
+    let rootNamed ← compilePieceToFile consts named false
+    let rootAnon ← compilePieceToFile consts anon true
     let countsOf (path : String) : IO (Except String Lean.Json) := do
       match Lean.Json.parse (← rsEnvSectionCountsFFI path) with
       | .ok j => return .ok j
@@ -180,7 +194,7 @@ private def anonCompileTest : IO (Bool × Nat × Nat × Option String) := do
       | .ok j => pure j
       | .error e => return (false, 0, 0, some s!"counts(anon): {e}")
     let checks : List (String × Bool) := [
-      ("roots equal (anon-invariance)", sNamed.root == sAnon.root),
+      ("roots equal (anon-invariance)", rootNamed == rootAnon),
       ("named piece carries §5", (num cNamed "named").getD 0 > 0),
       ("anon piece has empty §5", num cAnon "named" == some 0),
       ("§2 identical", num cNamed "consts" == num cAnon "consts"),

@@ -391,7 +391,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
 
 /-! ## Per-constant drill-down (ooc `--per-const` attribution CSVs) -/
 
-/-- One entry of a `check-rs --per-const` attribution CSV: the
+/-- One entry of a `--per-const` attribution CSV: the
     aggregated measurements of one constant's (or Muts block's) check. -/
 structure PerConstEntry where
   nanos : Float := 0
@@ -498,7 +498,7 @@ private def moverDriver (m pr : PerConstEntry) : String :=
   | none => "—"
 
 /-- Render the top-movers drill-down from two per-constant attribution
-    CSVs (`check-rs --per-const`).
+    CSVs (`--per-const`).
 
     **Entry scope.** An entry is one constant's (or Muts block's) OWN
     check inside the whole-env run: dependencies are lazily ingressed and

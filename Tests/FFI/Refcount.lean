@@ -33,26 +33,13 @@ namespace Tests.FFI.Refcount
 @[extern "rs_refcount_borrow_to_owned_name"]
 opaque borrowToOwnedName : @& Ix.Name → Ix.Name
 
-@[extern "rs_refcount_borrow_to_owned_level"]
-opaque borrowToOwnedLevel : @& Ix.Level → Ix.Level
-
-@[extern "rs_refcount_borrow_to_owned_expr"]
-opaque borrowToOwnedExpr : @& Ix.Expr → Ix.Expr
-
 -- Multiple borrows from same parent
 @[extern "rs_refcount_multi_borrow_name"]
 opaque multiBorrowName : @& Ix.Name → String
 
--- Deep borrow traversal
-@[extern "rs_refcount_deep_borrow_expr"]
-opaque deepBorrowExpr : @& Ix.Expr → Nat
-
 -- Owned drop (NOT @&, Rust takes ownership and drops)
 @[extern "rs_refcount_owned_array_drop"]
 opaque ownedArrayDrop : Array Ix.Name → Nat
-
-@[extern "rs_refcount_owned_list_drop"]
-opaque ownedListDrop : List Ix.Expr → Nat
 
 -- Clone and compare
 @[extern "rs_refcount_clone_and_compare"]
@@ -61,10 +48,6 @@ opaque cloneAndCompare : @& Ix.Name → Nat
 -- Roundtrip loop (N decode/rebuild cycles)
 @[extern "rs_refcount_roundtrip_loop"]
 opaque roundtripLoop : @& Ix.Name → USize → Ix.Name
-
--- Nested borrowed collection traversal
-@[extern "rs_refcount_nested_borrow"]
-opaque nestedBorrow : @& Array (Ix.Name × Ix.Level) → Nat
 
 -- Cache dedup: build N copies from cache
 @[extern "rs_refcount_cache_dedup"]
@@ -85,31 +68,18 @@ opaque stringLifecycle : @& String → String
 @[extern "rs_refcount_alloc_drop_loop"]
 opaque allocDropLoop : @& Ix.Name → USize → Ix.Name
 
--- Array element borrow roundtrip
-@[extern "rs_refcount_array_element_borrow"]
-opaque arrayElementBorrow : @& Array Ix.Level → Array Ix.Level
-
 -- Multi-threaded tests using LeanShared on ix domain types
 @[extern "rs_mt_parallel_decode_names"]
 opaque mtParallelDecodeNames : @& Array Ix.Name → USize → Nat
 
-@[extern "rs_mt_parallel_decode_exprs"]
-opaque mtParallelDecodeExprs : @& Array Ix.Expr → USize → Nat
-
 @[extern "rs_mt_parallel_roundtrip_names"]
 opaque mtParallelRoundtripNames : @& Array Ix.Name → USize → Array Ix.Name
-
-@[extern "rs_mt_shared_expr_stress"]
-opaque mtSharedExprStress : @& Ix.Expr → USize → USize → Nat
 
 /-! ## Test data -/
 
 private def testAnon : Ix.Name := Ix.Name.mkAnon
 private def testStr : Ix.Name := Ix.Name.mkStr (Ix.Name.mkStr Ix.Name.mkAnon "foo") "bar"
 private def testNum : Ix.Name := Ix.Name.mkNat (Ix.Name.mkStr Ix.Name.mkAnon "x") 42
-private def testLevel0 : Ix.Level := Ix.Level.mkZero
-private def testLevel1 : Ix.Level := Ix.Level.mkSucc Ix.Level.mkZero
-private def testLevelMax : Ix.Level := Ix.Level.mkMax Ix.Level.mkZero (Ix.Level.mkSucc Ix.Level.mkZero)
 
 -- Module-level definitions become persistent (m_rc == 0) after initialization
 private def persistentName : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "persistent"
@@ -121,10 +91,7 @@ private def persistentName : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "persistent
 def borrowToOwnedTests : TestSeq :=
   test "borrow→owned Name anonymous" (borrowToOwnedName testAnon == testAnon) ++
   test "borrow→owned Name str" (borrowToOwnedName testStr == testStr) ++
-  test "borrow→owned Name num" (borrowToOwnedName testNum == testNum) ++
-  test "borrow→owned Level zero" (borrowToOwnedLevel testLevel0 == testLevel0) ++
-  test "borrow→owned Level succ" (borrowToOwnedLevel testLevel1 == testLevel1) ++
-  test "borrow→owned Level max" (borrowToOwnedLevel testLevelMax == testLevelMax)
+  test "borrow→owned Name num" (borrowToOwnedName testNum == testNum)
 
 /-! ## Multiple borrows from same object
     Verifies that reading fields multiple times from the same borrowed ctor
@@ -134,32 +101,14 @@ def multiBorrowTests : TestSeq :=
   let name := Ix.Name.mkStr Ix.Name.mkAnon "hello"
   test "multi-borrow Name str" (multiBorrowName name == "hello|hello")
 
-/-! ## Deep borrow tests
-    Recursively traverses an Expr tree using only borrowed refs.
-    Would crash if any intermediate borrow was invalid. -/
-
-def deepBorrowTests : TestSeq :=
-  let e0 := Ix.Expr.mkBVar 0
-  let e1 := Ix.Expr.mkBVar 1
-  let e2 := Ix.Expr.mkBVar 2
-  let e3 := Ix.Expr.mkBVar 3
-  let app1 := Ix.Expr.mkApp e0 e1
-  let app2 := Ix.Expr.mkApp app1 e2
-  let app3 := Ix.Expr.mkApp app2 e3
-  -- 3 app nodes + 4 bvar leaves = 7 total
-  test "deep borrow expr 7 nodes" (deepBorrowExpr app3 == 7)
-
 /-! ## Owned drop tests
-    Passes owned (NOT @&) arrays/lists. Rust drops each element
+    Passes owned (NOT @&) arrays. Rust drops each element
     on scope exit. A missing drop leaks; an extra drop crashes. -/
 
 def ownedDropTests : TestSeq :=
   let names := #[testAnon, testStr, testNum]
   test "owned array drop 3 names" (ownedArrayDrop names == 3) ++
-  test "owned array drop empty" (ownedArrayDrop #[] == 0) ++
-  let exprs := [Ix.Expr.mkBVar 0, Ix.Expr.mkBVar 1, Ix.Expr.mkSort Ix.Level.mkZero]
-  test "owned list drop 3 exprs" (ownedListDrop exprs == 3) ++
-  test "owned list drop empty" (ownedListDrop [] == 0)
+  test "owned array drop empty" (ownedArrayDrop #[] == 0)
 
 /-! ## Clone tests
     Makes two owned clones of a borrowed Name, decodes both.
@@ -181,19 +130,6 @@ def roundtripLoopTests : TestSeq :=
   test "roundtrip loop 20x" (roundtripLoop testStr 20 == testStr) ++
   test "roundtrip loop anon 10x" (roundtripLoop testAnon 10 == testAnon) ++
   test "roundtrip loop num 10x" (roundtripLoop testNum 10 == testNum)
-
-/-! ## Nested borrow tests
-    Iterates a borrowed Array of pairs, accessing both fields of each pair.
-    Would crash if array element borrows outlived the parent. -/
-
-def nestedBorrowTests : TestSeq :=
-  let pairs : Array (Ix.Name × Ix.Level) := #[
-    (testAnon, testLevel0),
-    (testStr, testLevel1),
-    (testNum, testLevelMax)
-  ]
-  test "nested borrow 3 pairs" (nestedBorrow pairs == 3) ++
-  test "nested borrow empty" (nestedBorrow #[] == 0)
 
 /-! ## Persistent object tests
     Module-level defs have m_rc == 0. Refcount ops are no-ops.
@@ -229,15 +165,6 @@ def allocDropTests : TestSeq :=
   test "alloc/drop 100x" (allocDropLoop testStr 100 == testStr) ++
   test "alloc/drop 1000x" (allocDropLoop testNum 1000 == testNum)
 
-/-! ## Array element borrow tests
-    Borrows each element of a borrowed array, decodes, rebuilds. -/
-
-def arrayElementTests : TestSeq :=
-  let levels := #[testLevel0, testLevel1, testLevelMax]
-  let result := arrayElementBorrow levels
-  test "array element borrow size" (result.size == 3) ++
-  test "array element borrow eq" (result == levels)
-
 /-! ## Multi-threaded LeanShared tests
     These exercise lean_mark_mt + atomic refcounting on ix domain types
     across real OS threads. A refcount bug would cause SIGSEGV or assertion failure. -/
@@ -248,30 +175,14 @@ def mtTests : TestSeq :=
   test "MT parallel decode names 4 threads" (mtParallelDecodeNames names 4 == 12) ++
   test "MT parallel decode names 1 thread" (mtParallelDecodeNames names 1 == 3) ++
   test "MT parallel decode names empty" (mtParallelDecodeNames #[] 4 == 0) ++
-  -- Parallel decode exprs
-  let exprs := #[
-    Ix.Expr.mkBVar 0,
-    Ix.Expr.mkApp (Ix.Expr.mkBVar 0) (Ix.Expr.mkBVar 1),
-    Ix.Expr.mkSort Ix.Level.mkZero
-  ]
-  -- bvar=1, app(bvar,bvar)=3, sort=1 → 5 nodes per thread
-  test "MT parallel decode exprs 4 threads" (mtParallelDecodeExprs exprs 4 == 20) ++
-  test "MT parallel decode exprs 1 thread" (mtParallelDecodeExprs exprs 1 == 5) ++
   -- Parallel roundtrip: decode and rebuild from multiple threads
   test "MT parallel roundtrip names" (mtParallelRoundtripNames names 4 == names) ++
-  test "MT parallel roundtrip empty" (mtParallelRoundtripNames #[] 4 == #[]) ++
-  -- Stress test: rapid clone/drop on complex expr
-  let complexExpr := Ix.Expr.mkApp
-    (Ix.Expr.mkApp (Ix.Expr.mkBVar 0) (Ix.Expr.mkBVar 1))
-    (Ix.Expr.mkSort Ix.Level.mkZero)
-  test "MT shared expr stress 4×100" (mtSharedExprStress complexExpr 4 100 == 4) ++
-  test "MT shared expr stress 8×50" (mtSharedExprStress complexExpr 8 50 == 8)
+  test "MT parallel roundtrip empty" (mtParallelRoundtripNames #[] 4 == #[])
 
 /-! ## Property tests -/
 
 def propertyTests : TestSeq :=
   checkIO "borrow→owned Name" (∀ n : Ix.Name, borrowToOwnedName n == n) ++
-  checkIO "borrow→owned Level" (∀ l : Ix.Level, borrowToOwnedLevel l == l) ++
   checkIO "clone always equal" (∀ n : Ix.Name, cloneAndCompare n == 1) ++
   checkIO "roundtrip loop 3x" (∀ n : Ix.Name, roundtripLoop n 3 == n)
 
@@ -280,16 +191,13 @@ def propertyTests : TestSeq :=
 public def suite : List TestSeq := [
   borrowToOwnedTests,
   multiBorrowTests,
-  deepBorrowTests,
   ownedDropTests,
   cloneTests,
   roundtripLoopTests,
-  nestedBorrowTests,
   persistentTests,
   cacheDedupTests,
   stringTests,
   allocDropTests,
-  arrayElementTests,
   mtTests,
   propertyTests,
 ]

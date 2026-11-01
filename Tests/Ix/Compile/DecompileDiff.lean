@@ -1,25 +1,26 @@
-/-
+import Ix.Common
+import Ix.CompileM
+import Ix.CompileCertified
+import Ix.DecompileM
+import Ix.DecompileDriver
+import Lean
+import LSpec
+import Tests.Ix.Compile.ValidateAux
+
+/-!
   Cross-compiler decompilation inventory for the decompiler.
 
-  Rust-compiles the shared fixture corpus (`validateAuxClosure`), decompiles
-  the resulting Ixon env with the pure-Lean `Ix.DecompileM`, and compares
-  every reconstructed constant against the SOURCE `Ix.Environment` by full
-  structural equality (`ConstantInfo` BEq — hash-based at the
-  Name/Level/Expr leaves, so this is Rust `check_decompile`'s `get_hash`
-  comparison at full fidelity).
+  Compiles the shared fixture corpus (`validateAuxClosure`) with the certified
+  compiler, decompiles the resulting Ixon env with the pure-Lean
+  `Ix.DecompileM`, and compares every reconstructed constant against the
+  SOURCE `Ix.Environment` by full structural equality (`ConstantInfo` BEq —
+  hash-based at the Name/Level/Expr leaves).
 
   The gate is total: no mismatch, no decompile error, no decompiled constant
   outside the source and no source constant missing from the decompile.
 
   Invoked via `lake test -- --ignored decompile-diff`.
 -/
-import Ix.Common
-import Ix.CompileM
-import Ix.DecompileM
-import Ix.DecompileDriver
-import Lean
-import LSpec
-import Tests.Ix.Compile.ValidateAux
 
 namespace Tests.Compile.DecompileDiff
 
@@ -31,17 +32,15 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let filtered := validateAuxClosure env
   IO.println s!"[decompile-diff] {filtered.length} constants"
 
-  IO.println "[decompile-diff] Rust compile (rsCompilePhases)..."
-  let raw ← Ix.CompileM.rsCompilePhasesFFI filtered
-  let rawEnv := raw.rawEnv.toEnvironment
-  let rustEnv := raw.compileEnv.toEnv
-  IO.println s!"[decompile-diff] Rust: {rustEnv.named.size} named, {rustEnv.consts.size} consts"
+  IO.println "[decompile-diff] certified compile..."
+  let rawEnv := Ix.CompileM.canonInput filtered.toArray 32
+  let (rustEnv, _) ← IO.ofExcept (Ix.Cert.compileReport rawEnv)
+  IO.println s!"[decompile-diff] compiled: {rustEnv.named.size} named, {rustEnv.consts.size} consts"
 
   IO.println "[decompile-diff] Lean decompile (full driver)..."
   let t0 ← IO.monoMsNow
   let origView : Std.HashMap Ix.Name Ix.ConstantInfo := rawEnv.consts
-  -- The limits the Rust compile above read (`IX_SHARING_LIMITS`).
-  let sharingLimits ← IO.ofExcept (← Ix.CompileM.compilerSharingLimitsFromEnv)
+  let sharingLimits := Ix.CompileM.compilerSharingLimits
   let (decompiled, errors, _) ←
     Ix.DecompileM.decompileEnvFullParallel rustEnv (some origView)
       (sharingLimits := sharingLimits)

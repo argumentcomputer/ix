@@ -1,29 +1,49 @@
-/-
-  Rust decompile roundtrip test.
+import Ix.Common
+import Ix.Meta
+import Ix.CompileM
+import Ix.CompileCertified
+import Ix.DecompileM
+import Ix.DecompileDriver
+import Ix.Ixon
+import LSpec
+
+/-!
+  Serialized decompile roundtrip test.
 
   Exercises `Lean env → compile → serialize → deserialize → decompile →
   Lean` — the `ix decompile` pipeline over the serialized `.ixe`
   boundary (demoted-at-parse metadata load, `Named.original` recovery
   for shape-divergent aux blocks, expression interning) — and
-  hash-compares every constant against the original.
+  compares every constant against the original.
   `kernel-ixon-roundtrip` covers the kernel ingress/egress leg instead.
 -/
-import Ix.Common
-import Ix.Meta
-import LSpec
 
 open LSpec
 
 namespace Tests.RustDecompile
 
-/-- FFI: run the serialized decompile roundtrip and collect per-constant
+/-- Run the serialized decompile roundtrip and collect per-constant
     diff messages. Empty array = decompile agrees with the original Lean
-    env.
-
-    Implemented in `crates/ffi/src/kernel.rs::rs_decompile_roundtrip`. -/
-@[extern "rs_decompile_roundtrip"]
-opaque rsDecompileRoundtripFFI :
-    @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
+    env. -/
+def rsDecompileRoundtripFFI
+    (consts : List (Lean.Name × Lean.ConstantInfo)) : IO (Array String) := do
+  let rawEnv := Ix.CompileM.canonInput consts.toArray 32
+  let (compiledEnv, _) ← IO.ofExcept (Ix.Cert.compileReport rawEnv)
+  let bytes ← IO.ofExcept (Ixon.rsSerEnv compiledEnv)
+  let parsedEnv ← IO.ofExcept (Ixon.rsDeEnv bytes)
+  let (decompiled, errors, _) ←
+    Ix.DecompileM.decompileEnvFullParallel parsedEnv (some rawEnv.consts)
+      (sharingLimits := Ix.CompileM.compilerSharingLimits)
+  let mut msgs : Array String := #[]
+  for (n, e) in errors do
+    msgs := msgs.push s!"{n.pretty}: decompile error: {e}"
+  for (n, info) in decompiled do
+    match rawEnv.consts.get? n with
+    | none => msgs := msgs.push s!"{n.pretty}: decompiled constant not in source"
+    | some orig =>
+      if info != orig then
+        msgs := msgs.push s!"{n.pretty}: constant-info mismatch"
+  return msgs
 
 def testRoundtrip : TestSeq :=
   .individualIO "rust decompile roundtrip" none (do

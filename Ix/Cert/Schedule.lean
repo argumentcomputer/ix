@@ -2,8 +2,7 @@ import Ix.Cert.Compile
 
 /-! # The driver's schedule is a fold
 
-`Ix.CompileM.compileEnvFold` is the driver of both `Ix.Cert.compile` and the
-IO pipeline (`Ix.CompileM.compileDecoratedConsts`). Each wave computes its
+`Ix.CompileM.compileEnvFold` is the driver of `Ix.Cert.compile`. Each wave computes its
 ready blocks' outcomes (`auxBlockOutcome`) against the wave's snapshot on
 at most `width` tasks (`waveTasks`), and applies them in block-key order.
 This file proves that the schedule is only a schedule:
@@ -220,8 +219,7 @@ theorem compileEnvFold_width (env : Ix.Environment) (blocks : Ix.CondensedBlocks
       compileEnvFold env blocks dbg' sharingLimits width' := by
   rw [compileEnvFold_eq_seq, compileEnvFold_eq_seq]
 
-/-- The IO pipeline's wrapper (`compileDecoratedConsts` runs the driver
-under `IO.lazyPure`) is `pure` of the value. -/
+/-- The `IO.lazyPure` wrapper is `pure` of the value. -/
 theorem lazyPure_eq {α : Type} (f : Unit → α) : IO.lazyPure f = pure (f ()) := rfl
 
 end Ix.Cert.Schedule

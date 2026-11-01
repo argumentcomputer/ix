@@ -67,14 +67,14 @@ def checkCoverage (report : Report) (expected : Array (String × String)) : Exce
       {String.intercalate ", " (missing.toList.map fun (n, a) => s!"{n}@{a}")}"
 
 /-- The address of an anonymous diagnostic label: `#<hex>` or `<hex>`,
-optionally followed by a display name (`check-rs --anon`'s fail-out rows). -/
+optionally followed by a display name (anonymous fail-out rows). -/
 def anonymousAddress? (label : String) : Option String := do
   let token ← (label.trimAscii.toString.splitOn " ").head?
   let address := if token.startsWith "#" then (token.drop 1).toString else token
   if isAddress address then some address else none
 
-/-- `(label, message)` of every record of a FailureLog file (the `--fail-out`
-of `check-rs`): a `# message` comment, then the record's label lines. The
+/-- `(label, message)` of every record of a FailureLog file (`--fail-out`):
+a `# message` comment, then the record's label lines. The
 header and trailer comments are not messages. -/
 def failOutRows (content : String) : Array (String × String) := Id.run do
   let mut out : Array (String × String) := #[]
@@ -90,7 +90,7 @@ def failOutRows (content : String) : Array (String × String) := Id.run do
     else out := out.push (l, msg)
   return out
 
-/-- The number of constants `check-rs` reports it checked (`[check] P/N passed`). -/
+/-- The number of constants the checker summary reports it checked (`[check] P/N passed`). -/
 def rsChecked (out : String) : Option Nat :=
   (out.splitOn "\n").findSome? fun line =>
     let l := line.trimAscii.toString

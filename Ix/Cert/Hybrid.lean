@@ -6,8 +6,8 @@ import Ix.Cert.Statement
 /-! # The hybrid environment compiles as the materialized one
 
 `Ix.Cert.compile` runs the driver `Ix.CompileM.compileEnvFold` over the
-materialized environment (`{ consts := env.consts }`); the IO pipeline
-(`Ix.CompileM.compileDecoratedConsts`) runs it over a hybrid one: the code
+materialized environment (`{ consts := env.consts }`); the hybrid model
+runs it over a hybrid one: the code
 kinds materialized, theorem and opaque bodies canonicalized again on demand
 through `fallback?` (`hybridEnv`). The driver and its validations read the
 environment through `Ix.Environment.get?` only, apart from the order of the
@@ -178,8 +178,8 @@ theorem compileEnvFold_lookups {e₁ e₂ : Ix.Environment} (lookups : ∀ n, e�
 
 /-! ## The IO pipeline's environment -/
 
-/-- The IO pipeline's hybrid environment, as `compileDecoratedConsts` builds
-it from its pieces: the materialized code constants, and every input
+/-- The hybrid environment, built
+from its pieces: the materialized code constants, and every input
 constant canonicalized again on demand. -/
 def hybridEnv (codeConsts : Std.HashMap Ix.Name Ix.ConstantInfo)
     (leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo)) : Ix.Environment :=

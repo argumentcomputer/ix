@@ -4,15 +4,14 @@ import IxC.Kernel.Ixon.Prelude
 
 /-! # Init+Std through the `ix` binary (merge queue tier `ci:landing-initstd-cli`)
 
-* `initstd-reference`: `ix compile-lean Benchmarks/Compile/CompileInitStd.lean
-  --rust-check`, the certified compile of Init+Std, which refuses the compile
-  on any failed report check, with the default role binding. Its bytes are
-  compared with the Rust compiler's output
-  (`ALIGNED`). The artifact's SHA-256 and size must equal the reference in
-  `Tests/Fixtures/initstd-reference.txt`. The Rust kernel then checks the
-  artifact (`ix check-rs --anon`): it must admit every role the default role
+* `initstd-reference`: `ix compile-lean Benchmarks/Compile/CompileInitStd.lean`,
+  the certified compile of Init+Std, which refuses the compile
+  on any failed report check, with the default role binding. The artifact's
+  SHA-256 and size must equal the reference in
+  `Tests/Fixtures/initstd-reference.txt`. The kernel then checks the
+  artifact (`ix check-lean --anon`): it must admit every role the default role
   table binds and refuse no role group, and pass the reference's count of
-  constants. A change that moves the compiler's bytes, or the Rust kernel's
+  constants. A change that moves the compiler's bytes, or the kernel's
   verdicts on the artifact, updates that file in the same commit.
 * `fidelity-initstd`: `ix validate-lean Benchmarks/Compile/CompileInitStd.lean
   --report`, gated on the report: every phase (the compile with its role
@@ -82,7 +81,7 @@ private def sample (sha : String) (more : String) : String :=
 #guard (parseReference (sample ("".pushn 'a' 64) "size\t1")).toOption.isNone
 #guard (parseReference ("sha256\t" ++ "".pushn 'a' 64 ++ "\nbytes\t1")).toOption.isNone
 
-/-- The `bound roles: N admitted, M group(s) refused` line of `ix check-rs`:
+/-- The `bound roles: N admitted, M group(s) refused` line of `ix check-lean`:
 `(N, M)`. -/
 def admission (out : String) : Option (Nat × Nat) := do
   let line ← (out.splitOn "\n").find? fun l => (l.splitOn "bound roles: ").length > 1
@@ -91,7 +90,7 @@ def admission (out : String) : Option (Nat × Nat) := do
   let refused ← (refused.splitOn " group").head?
   return ((← admitted.trimAscii.toString.toNat?), (← refused.trimAscii.toString.toNat?))
 
-/-- The `[check] P/T passed` line of `ix check-rs`: `(P, T)`. -/
+/-- The `[check] P/T passed` line of `ix check-lean`: `(P, T)`. -/
 def passedCount (out : String) : Option (Nat × Nat) := do
   let line ← (out.splitOn "\n").find? fun l => l.startsWith "[check] " && l.endsWith " passed"
   let [_, frac, _] := line.splitOn " " | none
@@ -142,14 +141,13 @@ def reference : IO UInt32 := do
   let dir ← IO.FS.createTempDir
   try
     let artifact := dir / "initstd.ixe"
-    let compiled ← runIx #["compile-lean", source, "--rust-check", "--out", artifact.toString]
-    for l in linesWith compiled.stdout ["] compile:", "post-steps", "wrote", "ALIGNED", "DIVERGED"] do
+    let compiled ← runIx #["compile-lean", source, "--out", artifact.toString]
+    for l in linesWith compiled.stdout ["] compile:", "post-steps", "wrote"] do
       IO.println l
     unless compiled.exitCode == 0 && (← artifact.pathExists) do
       IO.eprintln (tail compiled)
       return ← reportChecks "initstd-reference"
-        #[("ix compile-lean on Init+Std passes its report checks and matches the Rust compiler", false)]
-    let aligned := !(linesWith compiled.stdout ["[compile-lean] ALIGNED:"]).isEmpty
+        #[("ix compile-lean on Init+Std passes its report checks", false)]
     let sha ← sha256File artifact
     let size := (← artifact.metadata).byteSize.toNat
     IO.println s!"[initstd] artifact sha256 {sha}, {size} bytes; reference {expected.sha256}, \
@@ -157,10 +155,10 @@ def reference : IO UInt32 := do
     unless sha == expected.sha256 && size == expected.bytes do
       IO.eprintln s!"[initstd] the Init+Std artifact differs from {referencePath}. If the change \
         is meant to move the compiler's bytes, record sha256 {sha} and bytes {size} there."
-    -- the Rust kernel on the artifact, under its role binding; it exits 3 when
+    -- the kernel on the artifact, under its role binding; it exits 3 when
     -- some constant fails, which the count of passing constants decides
     let roles := (← IO.ofExcept Ix.Kernel.Reader.defaultTable).bound.size
-    let checked ← runIx #["check-rs", artifact.toString, "--anon"]
+    let checked ← runIx #["check-lean", artifact.toString, "--anon"]
     let both := checked.stdout ++ "\n" ++ checked.stderr
     for l in linesWith both ["bound roles:", " passing, ", "[check] ", "  ✗ "] do
       IO.println l
@@ -169,17 +167,16 @@ def reference : IO UInt32 := do
     let admitted := admission both
     let counts := passedCount checked.stdout
     if exited && counts != some (expected.rustPassed, expected.rustChecked) then
-      IO.eprintln s!"[initstd] the Rust kernel's count on the artifact differs from \
+      IO.eprintln s!"[initstd] the kernel's count on the artifact differs from \
         {referencePath}. If the change is meant to move it, record it there."
     reportChecks "initstd-reference" #[
-      ("ix compile-lean on Init+Std passes its report checks and matches the Rust compiler \
-        byte for byte", aligned),
+      ("ix compile-lean on Init+Std passes its report checks", compiled.exitCode == 0),
       (s!"the artifact's SHA-256 is the reference's ({expected.sha256})", sha == expected.sha256),
       (s!"the artifact's size is the reference's ({expected.bytes} bytes)", size == expected.bytes),
-      ("ix check-rs --anon exits 0, or 3 for failed constants", exited),
-      (s!"the Rust kernel admits all {roles} roles the default table binds and refuses no \
+      ("ix check-lean --anon exits 0, or 3 for failed constants", exited),
+      (s!"the kernel admits all {roles} roles the default table binds and refuses no \
         role group", admitted == some (roles, 0)),
-      (s!"the Rust kernel passes {expected.rustPassed} of {expected.rustChecked} constants, \
+      (s!"the kernel passes {expected.rustPassed} of {expected.rustChecked} constants, \
         as the reference says", counts == some (expected.rustPassed, expected.rustChecked))]
   finally
     IO.FS.removeDirAll dir

@@ -396,7 +396,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     | IO.eprintln "error: --ixe <path> is required"; return 1
   let ixePath := ixeArg.as! String
   -- `--consts` comma-list ∪ `--consts-file`, shared grammar + dedup
-  -- (Ix.Cli.ConstsFile — same parser as `ix check-rs`). Raw strings:
+  -- (Ix.Cli.ConstsFile — same parser as `ix check-lean`). Raw strings:
   -- resolution against the env happens later (so the `toString` fallback can
   -- see the displayed form the user wrote).
   let nameArgs ← Ix.Cli.ConstsFile.gather p

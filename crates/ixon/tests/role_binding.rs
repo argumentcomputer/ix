@@ -12,22 +12,12 @@ use ixon::tag::TagN;
 use rustc_hash::FxHashSet;
 
 const INPUTS: [&[u8]; 6] = [
-  include_bytes!("../../kernel/tests/fixtures/input_contracts/many-match.ixe"),
-  include_bytes!(
-    "../../kernel/tests/fixtures/input_contracts/linear-match.ixe"
-  ),
-  include_bytes!(
-    "../../kernel/tests/fixtures/input_contracts/uses-mismatch.ixe"
-  ),
-  include_bytes!(
-    "../../kernel/tests/fixtures/input_contracts/ownership-mismatch.ixe"
-  ),
-  include_bytes!(
-    "../../kernel/tests/fixtures/input_contracts/locality-mismatch.ixe"
-  ),
-  include_bytes!(
-    "../../kernel/tests/fixtures/input_contracts/result-only-unique.ixe"
-  ),
+  include_bytes!("fixtures/input_contracts/many-match.ixe"),
+  include_bytes!("fixtures/input_contracts/linear-match.ixe"),
+  include_bytes!("fixtures/input_contracts/uses-mismatch.ixe"),
+  include_bytes!("fixtures/input_contracts/ownership-mismatch.ixe"),
+  include_bytes!("fixtures/input_contracts/locality-mismatch.ixe"),
+  include_bytes!("fixtures/input_contracts/result-only-unique.ixe"),
 ];
 
 fn binding(bytes: &[u8]) -> RoleBinding {

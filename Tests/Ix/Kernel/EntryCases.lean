@@ -1,5 +1,5 @@
 import Ix.Ixon.Authenticated
-import Ix.CompileDriver
+import Ix.CompileCertified
 import Ix.Meta
 import Benchmarks.Kernel.CheckIxeStep
 import Tests.Ix.Kernel.EntryCaseDefs
@@ -9,7 +9,7 @@ import Tests.Ix.Kernel.EntryCaseDefs
 Each case names Lean declarations of `Tests.Ix.Kernel.EntryCaseDefs`. The
 harness loads that module's environment, takes the dependency closure of
 the seeds (with the recursors of every inductive in it, which the reader
-requires), compiles it with Ix's compiler (`Ix.CompileM.compileLeanConsts`),
+requires), compiles it with Ix's compiler (`Ix.CompileM.compileCertified`),
 loads the serialized environment with the host codec, orders the primary
 records as the environment check does (`Benchmarks.Kernel.CheckIxeStep`: dependencies,
 `Nat`-operation grounds and literal edges first; projections last), and
@@ -96,12 +96,13 @@ check order (without the prelude's own records, which the entry supplies),
 then projections by address. -/
 def prepare (leanEnv : Lean.Environment) (seeds : List Lean.Name) : IO Input := do
   let closed ← IO.ofExcept (closure leanEnv seeds)
-  let compiled ← match ← Ix.CompileM.compileLeanConsts closed (numWorkers := 1) with
+  let compiled ← match ← Ix.CompileM.compileCertified leanEnv closed 1 with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compilation failed: {e}")
-  unless compiled.ungroundedCount == 0 do
-    throw (IO.userError s!"{compiled.ungroundedCount} constants are ungrounded")
-  let env ← IO.ofExcept (Ixon.deEnv compiled.bytes)
+  unless compiled.failures.isEmpty do
+    throw (IO.userError s!"{compiled.failures.toMap.size} constants are ungrounded")
+  let bytes ← IO.ofExcept (Ixon.serEnv compiled.env)
+  let env ← IO.ofExcept (Ixon.deEnv bytes)
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)

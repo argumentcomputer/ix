@@ -1,4 +1,20 @@
-/-
+module
+
+public import LSpec
+public import Ix.Ixon
+public import Ix.CompileCertified
+public import Ix.Merkle
+public import Ix.ImportIxe
+-- The C8 consumer subprocess `import`s Ix.IxEval; importing it here keeps
+-- its olean in the test target's build closure (hermetic builds ship only
+-- that closure — a local `lake build ix` leftover masked this once).
+public import Ix.IxEval
+public import Ix.Replay
+public import Ix.CompileM
+public import Ix.Commit
+public import Ix.Meta
+
+/-!
   Materialization FFI + `import_ixe` tests (plan C6/C8).
 
   A self-contained fixture environment is built by direct kernel
@@ -17,7 +33,7 @@
   - Root equality: recompiling the complete materialized source output
     reproduces the original canonical root — compile ∘ materialize ∘
     compile is a fixed point, so every computed field (hashes, cached
-    flags) the Rust side produced is byte-faithful under re-reading.
+    flags) the compiler produced is byte-faithful under re-reading.
   - Fresh kernel replay: `Ix.Replay.planDeclarations` consumes the
     complete materialized source map and replays clean into an empty
     kernel env (the non-elaborator core of `import_ixe`); every source
@@ -28,19 +44,6 @@
     defines a term over the materialized constants (interpreter +
     linked FFI, `supportInterpreter`).
 -/
-module
-
-public import LSpec
-public import Ix.Ixon
-public import Ix.ImportIxe
--- The C8 consumer subprocess `import`s Ix.IxEval; importing it here keeps
--- its olean in the test target's build closure (hermetic builds ship only
--- that closure — a local `lake build ix` leftover masked this once).
-public import Ix.IxEval
-public import Ix.Replay
-public import Ix.CompileM
-public import Ix.Commit
-public import Ix.Meta
 
 public section
 
@@ -257,16 +260,23 @@ private def compareCI (name : Lean.Name) (a b : Lean.ConstantInfo) :
 
 /-! ### The tests -/
 
+private def compileFixtureToFile (consts : List (Lean.Name × Lean.ConstantInfo))
+    (path : String) : IO (String × Nat) := do
+  let (env, failures) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput consts.toArray 4))
+  IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv env))
+  let root := toString ((Ix.Merkle.merkleRootCanonical (env.consts.toList.map (·.1)).toArray).getD Ix.Merkle.zeroAddress)
+  return (root, failures.toMap.size)
+
 /-- C6 parity, source root equality and fresh replay. -/
 private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
   let dir ← IO.FS.createTempDir
   let path := (dir / "fixture.ixe").toString
   try
     let original ← buildFixtureConsts
-    let status ← Ix.CompileM.rsCompileEnvBytesFFI original.toList path false
-    if status.ungrounded.size > 0 then
+    let (root1, ungrounded1) ← compileFixtureToFile original.toList path
+    if ungrounded1 > 0 then
       return (false, 0, 0,
-        some s!"fixture compile ungrounded: {status.ungrounded}")
+        some s!"fixture compile ungrounded: {ungrounded1}")
     -- C6 parity: materialize everything and compare per constant. Source
     -- import restores the complete original declaration set.
     let materialized ← Ix.ImportIxe.materializeIxe path
@@ -288,11 +298,10 @@ private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
     -- Root equality: recompiling the complete materialized source output is
     -- a fixed point of the canonical root.
     let path2 := (dir / "rebuilt.ixe").toString
-    let status2 ← Ix.CompileM.rsCompileEnvBytesFFI materialized.toList
-      path2 false
-    if status2.root != status.root then
-      return (false, 0, 0, some s!"root drift: {status.root.take 12}… → \
-{status2.root.take 12}…")
+    let (root2, _) ← compileFixtureToFile materialized.toList path2
+    if root2 != root1 then
+      return (false, 0, 0, some s!"root drift: {root1.take 12}… → \
+{root2.take 12}…")
     -- Fresh kernel replay via the shared planner (import_ixe core).
     let matMapFrozen := matMap
     let plan ← match Ix.Replay.planDeclarations matMap
@@ -320,7 +329,7 @@ private def closureTest : IO (Bool × Nat × Nat × Option String) := do
   let path := (dir / "fixture.ixe").toString
   try
     let original ← buildFixtureConsts
-    let _ ← Ix.CompileM.rsCompileEnvBytesFFI original.toList path false
+    let _ ← compileFixtureToFile original.toList path
     let subset ← Ix.ImportIxe.materializeIxe path #[`TIxImp.dbl]
     let names : Std.HashSet Lean.Name :=
       subset.foldl (fun s (n, _) => s.insert n) {}
@@ -347,7 +356,7 @@ private def elabTest : IO (Bool × Nat × Nat × Option String) := do
   let consumerPath := dir / "Consumer.lean"
   try
     let original ← buildFixtureConsts
-    let _ ← Ix.CompileM.rsCompileEnvBytesFFI original.toList ixePath false
+    let _ ← compileFixtureToFile original.toList ixePath
     -- Materialized constants carry no compiled code (kernel-level
     -- import), so consumer definitions over them are `noncomputable`;
     -- execution is `#ixeval`'s job, Lean-native code the post-hoc LCNF
@@ -388,7 +397,7 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
   let consumerPath := dir / "Consumer.lean"
   try
     let original ← buildFixtureConsts
-    let _ ← Ix.CompileM.rsCompileEnvBytesFFI original.toList ixePath false
+    let _ ← compileFixtureToFile original.toList ixePath
     IO.FS.writeFile consumerPath
       s!"import Ix.ImportIxe\nimport_ixe \"{ixePath}\"\n"
     let env ← getFileEnv consumerPath
@@ -407,7 +416,7 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
       for r in Ix.Replay.constantInfoReferences ci do
         unless seen.contains r do
           work := work.push r
-    let phases ← Ix.CompileM.rsCompilePhasesOf closure
+    let phases ← Ix.CompileM.compilePhasesOf env closure
     let compileEnv := Ix.Commit.mkCompileEnv phases
     -- Commit a private value of the imported type.
     let voteType := Lean.Expr.const nN []

@@ -339,7 +339,7 @@ inductive Resource where
   deriving BEq, Repr, Inhabited
 
 /-- The name of a resource in error messages and in limit overrides
-(`Limits.withOverrides`, `ix compile --sharing-limits`). -/
+(`Limits.withOverrides`). -/
 def Resource.key : Resource → String
   | .exprVisits => "expr_visits"
   | .depth => "depth"
@@ -481,9 +481,7 @@ def parseLimitValue (raw : String) : Except String Nat :=
 (`Resource.key` names; values as `parseLimitValue`) or `unbounded` (every
 production limit at `max`), applied left to right. Rust-only keys
 (`rustOnlyLimitKeys`) are accepted and ignored; any other key is an error.
-This is the format of `ix compile --sharing-limits` and of the
-`IX_SHARING_LIMITS` environment variable, which Rust's
-`compiler_sharing_limits` parses the same way. -/
+This is the format of limit override strings parsed by `Limits.withOverrides`. -/
 def Limits.withOverrides (l : Limits) (spec : String) : Except String Limits := do
   let mut l := l
   for raw in spec.splitOn "," do

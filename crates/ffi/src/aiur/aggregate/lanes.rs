@@ -521,8 +521,8 @@ pub fn run(
         return Ok(root);
       },
       PassOutcome::Refine(ids) => {
-        let profile = profile
-          .get_or_insert_with(|| crate::kernel::static_block_profile(env));
+        let profile =
+          profile.get_or_insert_with(|| ixon::shard::static_block_profile(env));
         let (refined, parts) = manifest.bisect_leaves(profile, &ids)?;
         checkpoint::write_atomic(&checkpoint_path, &refined.to_bytes())?;
         for (&id, parts) in ids.iter().zip(parts) {

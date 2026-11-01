@@ -3,6 +3,7 @@ module
 public import LSpec
 public import Ix.Ixon
 public import Ix.CompileM
+public import Ix.CompileCertified
 public import Ix.Meta
 public import Ix.Common
 
@@ -87,15 +88,11 @@ def envContentDiff (a b : Ixon.Env) : Option String := Id.run do
       return some s!"anonHints {addr} differs"
   return none
 
-/-- Compile the whole current env through the Rust compiler and return the
+/-- Compile the whole current env through the certified compiler and return the
     `.ixe` bytes. -/
 def compileWholeEnvBytes (leanEnv : Lean.Environment) : IO ByteArray := do
-  let dir ← IO.FS.createTempDir
-  let path := dir / "ixon-corpus.ixe"
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI leanEnv.constants.toList path.toString true
-  let bytes ← IO.FS.readBinFile path
-  IO.FS.removeDirAll dir
-  return bytes
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList)
+  IO.ofExcept (Ixon.serEnv out.env)
 
 def corpusSuite : TestSeq :=
   .individualIO "pure deEnv/serEnv roundtrip whole Rust-compiled env" none (do

@@ -1,67 +1,5 @@
-//! Sharding: partition an environment's blocks into shards that minimize
-//! cross-shard delta-unfold ingress (see `plans/sharding.md`). Two driving
-//! modes share the same min-cut machinery:
-//!
-//! - **Fixed count** ([`Hypergraph::partition`], explicit `--shards N` and the
-//!   static strategy's `--max-ram` score seed): recursive *balanced* min-cut
-//!   bisection into exactly `N` shards — even per-shard work, the bisection tree
-//!   doubling as the aggregation tree.
-//! - **Cap / packing** ([`partition_for_cycle_cap`], the profiled strategy's
-//!   default and `--max-cycles`/`--max-ram` paths): **bin-pack to the cap** — the
-//!   fewest shards that each stay under a per-shard cycle (hence prover-RAM)
-//!   budget, each filled as full as the dependency structure allows. This does
-//!   *not* balance: uniformity over-shards (every shard left partly empty),
-//!   whereas packing hits `≈⌈total/cap⌉` shards. It still uses a fine min-cut
-//!   pre-partition for a **cut-coherent order** so dependency overlap packs into
-//!   the same shard (overlap paid once, not re-ingressed per shard).
-//!
-//! Min-cut keeps dependency-overlapping blocks together, reducing repeated
-//! ingress and bounding each shard's injected closure. The cap planner
-//! ([`partition_for_cycle_cap`]) is order-agnostic, so the ordering remains a
-//! pluggable choice.
-//!
-//! ## Model
-//!
-//! Both modes view the env as a **weighted hypergraph** under the
-//! connectivity-1 (km1) metric:
-//!
-//! - **Vertices** are blocks, weighted by `heartbeats` (the balance metric).
-//! - **Nets** are blocks `p` that get delta-unfolded by someone; the net
-//!   connects `p`'s home plus every block that unfolds `p`, and is weighted by
-//!   `serialized_size(p)` (the ingress cost paid to pull `p`'s body into a
-//!   foreign shard).
-//! - The objective is `Σ_p  size(p) · (λ(p) − 1)`, where `λ(p)` is the number
-//!   of distinct shards spanning `net(p)`. Because the home block is always a
-//!   pin, `λ(p) − 1` counts exactly the foreign shards that must ingress `p` —
-//!   i.e. total cross-shard ingress bytes.
-//!
-//! ## Algorithm
-//!
-//! **Recursive bisection.** Balanced min-cut bisection recursively splits the
-//! block hypergraph, allocating the `N`-shard budget between the two sides at
-//! each step (so any `N` works, not just powers of two); the bisection tree is
-//! the future proof-aggregation tree. On recursion we apply **cut-net
-//! splitting**: a net already cut at an upper level is restricted to its pins
-//! within each half so it is not recounted deeper.
-//!
-//! **Multilevel coarsening.** Each individual bisection is solved with a
-//! multilevel V-cycle rather than flat local search: we *coarsen* the
-//! sub-hypergraph by repeatedly merging tightly-coupled blocks into
-//! supervertices (heavy-edge matching) until only a few hundred remain, decide
-//! the cut once on that tiny graph (greedy graph-growing + Fiduccia–Mattheyses
-//! to convergence), then *uncoarsen* — projecting the cut back down and
-//! boundary-refining with FM at each level. Deciding global structure on the
-//! small graph and only ever refining locally on the big ones is what keeps
-//! large environments (mathlib ≈ 631k blocks) partitioning in seconds. The
-//! partitioner is fully self-contained — no external partitioner dependency.
+//! Static DAG hypergraph sharder and sub-environment extraction.
 
-// This module works throughout with `u32` block/vertex ids, `u64`/`u128` weights
-// (heartbeats, ingress bytes), and `f64` balance ratios. The narrowing/precision
-// casts between them are pervasive and intentional — envs are far below `u32`
-// limits and the balance arithmetic tolerates `f64` rounding — so the lossy-cast
-// lints are allowed module-wide rather than annotated at ~30 sites. The binary
-// manifest decoder maps decode failures to a single message (`map_err_ignore`),
-// and a few matching loops mutate the array they index (`needless_range_loop`).
 #![allow(
   clippy::cast_possible_truncation,
   clippy::cast_precision_loss,
@@ -70,13 +8,15 @@
   clippy::needless_range_loop
 )]
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use crate::profile::{BlockEntry, BlockProfile};
+use crate::constant::ConstantInfo as IxonCI;
+use crate::env::Env as IxonEnv;
+use crate::lazy::ConstVariantTag;
 use ix_common::address::Address;
 
 /// Recurse the two halves of a bisection in parallel (rayon) when the parent
@@ -134,14 +74,853 @@ const FM_NET_CAP: usize = 400;
 /// oscillation; passes normally converge well before this).
 const MAX_FM_PASSES: u32 = 10;
 
-/// Cap-sharding granularity: the fine min-cut pre-partition that supplies the
-/// **cut-coherent block order** for [`partition_for_cycle_cap`] is sized to
-/// roughly this many pieces per cap of work. Finer pieces let the greedy packer
-/// fill each shard closer to the cap and keep dependency-overlapping blocks in
-/// the same run (so cross-ingress only appears at the seams between coherent
-/// runs); the count is still bounded by the block count, so the pre-partition
-/// stays cheap.
-const PACK_PIECES_PER_CAP: u128 = 32;
+// ===========================================================================
+// Cost model
+// ===========================================================================
+
+/// Calibrated instruction weight per substitution step.
+pub const COST_PER_SUBST: u64 = 196_600;
+/// Calibrated instruction weight per WHNF step.
+pub const COST_PER_WHNF: u64 = 1_797_600;
+/// Calibrated instruction weight per definitional-equality step.
+pub const COST_PER_DEF_EQ: u64 = 567_100;
+/// Calibrated instruction weight per arena-interning step.
+pub const COST_PER_INTERN: u64 = 28_400;
+/// Fraction of host RAM considered usable when sizing shards.
+pub const RAM_USABLE_FRAC: f64 = 0.85;
+
+/// Compute the weighted cycle estimate for a single [`BlockEntry`].
+pub fn block_step_cost(b: &BlockEntry) -> u64 {
+  COST_PER_SUBST
+    .saturating_mul(b.subst)
+    .saturating_add(COST_PER_WHNF.saturating_mul(b.whnf))
+    .saturating_add(COST_PER_DEF_EQ.saturating_mul(b.def_eq))
+    .saturating_add(COST_PER_INTERN.saturating_mul(b.intern))
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct OpCounts {
+  pub subst_nodes: u64,
+  pub whnf_calls: u64,
+  pub def_eq_calls: u64,
+  pub nat_arith: u64,
+  pub intern_nodes: u64,
+}
+
+impl OpCounts {
+  /// Saturating field-wise accumulation.
+  pub fn add(&mut self, o: &OpCounts) {
+    self.subst_nodes = self.subst_nodes.saturating_add(o.subst_nodes);
+    self.whnf_calls = self.whnf_calls.saturating_add(o.whnf_calls);
+    self.def_eq_calls = self.def_eq_calls.saturating_add(o.def_eq_calls);
+    self.nat_arith = self.nat_arith.saturating_add(o.nat_arith);
+    self.intern_nodes = self.intern_nodes.saturating_add(o.intern_nodes);
+  }
+}
+
+/// Magic bytes at the head of every `.ixprof` file.
+const MAGIC: &[u8; 8] = b"IXPROF\0\0";
+/// On-disk format version. Bump on any incompatible layout change.
+const VERSION: u32 = 2;
+
+/// Per-block recorded statistics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockEntry {
+  /// Content address of the block (a `Muts` block or a standalone constant).
+  pub addr: Address,
+  /// Total recursive fuel (heartbeats) consumed checking this block's members.
+  pub heartbeats: u64,
+  /// Serialized byte length of the block (ingress cost / net weight).
+  pub serialized_size: u32,
+  /// Number of constants in the block (1 for standalone constants).
+  pub const_count: u32,
+  /// Substitution-node visits (`instantiate_rev`) checking this block — the
+  /// dominant reduction-volume cost driver. Recorded when profiled with op
+  /// counters enabled; 0 otherwise.
+  pub subst: u64,
+  /// `whnf` entries checking this block (counted before cache probes).
+  pub whnf: u64,
+  /// `is_def_eq` entries checking this block.
+  pub def_eq: u64,
+  /// Limb-weighted native Nat-arithmetic work checking this block.
+  pub nat_arith: u64,
+  /// Intern-table node visits checking this block (term-construction volume).
+  pub intern: u64,
+}
+
+/// A recorded kernel profile over an environment.
+///
+/// Blocks are indexed by stable id `0..num_blocks`. The delta graph is stored
+/// in CSR form: `producers(c)` are the block ids whose definition bodies block
+/// `c` delta-unfolds (the "consumer → producer" direction). Self-edges are
+/// dropped; producer lists are sorted and deduplicated.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockProfile {
+  blocks: Vec<BlockEntry>,
+  /// CSR row offsets into `delta_col`, length `blocks.len() + 1`.
+  delta_row: Vec<usize>,
+  /// CSR column indices: producer block ids, grouped by consumer.
+  delta_col: Vec<u32>,
+}
+
+impl BlockProfile {
+  /// Number of blocks (vertices).
+  pub fn num_blocks(&self) -> usize {
+    self.blocks.len()
+  }
+
+  /// Number of delta edges (consumer → producer pairs).
+  pub fn num_edges(&self) -> usize {
+    self.delta_col.len()
+  }
+
+  /// The block entries, indexed by block id.
+  pub fn blocks(&self) -> &[BlockEntry] {
+    &self.blocks
+  }
+
+  /// The entry for block id `i`.
+  pub fn block(&self, i: u32) -> &BlockEntry {
+    &self.blocks[i as usize]
+  }
+
+  /// Producer block ids unfolded by consumer block `c` (sorted, deduped, no
+  /// self-edges).
+  pub fn producers(&self, c: u32) -> &[u32] {
+    let lo = self.delta_row[c as usize];
+    let hi = self.delta_row[c as usize + 1];
+    &self.delta_col[lo..hi]
+  }
+
+  /// Build the reverse delta adjacency: for each producer block, the sorted set
+  /// of consumer blocks that unfold it. This is the natural form for the
+  /// partition hypergraph, where `net(p) = {p} ∪ consumers_of(p)`.
+  pub fn consumers_csr(&self) -> (Vec<usize>, Vec<u32>) {
+    let n = self.num_blocks();
+    let mut counts = vec![0usize; n + 1];
+    for &p in &self.delta_col {
+      counts[p as usize + 1] += 1;
+    }
+    for i in 0..n {
+      counts[i + 1] += counts[i];
+    }
+    let row = counts.clone();
+    let mut col = vec![0u32; self.delta_col.len()];
+    let mut cursor = counts;
+    for c in 0..n as u32 {
+      for &p in self.producers(c) {
+        let slot = cursor[p as usize];
+        col[slot] = c;
+        cursor[p as usize] += 1;
+      }
+    }
+    (row, col)
+  }
+
+  /// Total heartbeats across all blocks.
+  pub fn total_heartbeats(&self) -> u128 {
+    self.blocks.iter().map(|b| u128::from(b.heartbeats)).sum()
+  }
+
+  /// Serialize to the `.ixprof` binary format.
+  pub fn to_bytes(&self) -> Vec<u8> {
+    let n = self.blocks.len();
+    let mut out = Vec::with_capacity(
+      8 + 4 + 4 + n * 80 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
+    );
+    out.extend_from_slice(MAGIC);
+    out.extend_from_slice(&VERSION.to_le_bytes());
+    out.extend_from_slice(&(n as u32).to_le_bytes());
+    for b in &self.blocks {
+      out.extend_from_slice(b.addr.as_bytes());
+      out.extend_from_slice(&b.heartbeats.to_le_bytes());
+      out.extend_from_slice(&b.serialized_size.to_le_bytes());
+      out.extend_from_slice(&b.const_count.to_le_bytes());
+      out.extend_from_slice(&b.subst.to_le_bytes());
+      out.extend_from_slice(&b.whnf.to_le_bytes());
+      out.extend_from_slice(&b.def_eq.to_le_bytes());
+      out.extend_from_slice(&b.nat_arith.to_le_bytes());
+      out.extend_from_slice(&b.intern.to_le_bytes());
+    }
+    out.extend_from_slice(&(self.delta_col.len() as u64).to_le_bytes());
+    // CSR row offsets (n+1 entries) as u64.
+    for &off in &self.delta_row {
+      out.extend_from_slice(&(off as u64).to_le_bytes());
+    }
+    for &p in &self.delta_col {
+      out.extend_from_slice(&p.to_le_bytes());
+    }
+    out
+  }
+
+  /// Deserialize from the `.ixprof` binary format.
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProfileError> {
+    let mut r = Reader::new(bytes);
+    let magic = r.take(8)?;
+    if magic != MAGIC {
+      return Err(ProfileError::BadMagic);
+    }
+    let version = r.u32()?;
+    if version != VERSION {
+      return Err(ProfileError::BadVersion(version));
+    }
+    let n = r.u32()? as usize;
+    let mut blocks = Vec::with_capacity(n);
+    for _ in 0..n {
+      let addr = Address::from_slice(r.take(32)?)
+        .map_err(|_| ProfileError::Truncated)?;
+      let heartbeats = r.u64()?;
+      let serialized_size = r.u32()?;
+      let const_count = r.u32()?;
+      let subst = r.u64()?;
+      let whnf = r.u64()?;
+      let def_eq = r.u64()?;
+      let nat_arith = r.u64()?;
+      let intern = r.u64()?;
+      blocks.push(BlockEntry {
+        addr,
+        heartbeats,
+        serialized_size,
+        const_count,
+        subst,
+        whnf,
+        def_eq,
+        nat_arith,
+        intern,
+      });
+    }
+    let num_edges = r.u64()? as usize;
+    let mut delta_row = Vec::with_capacity(n + 1);
+    for _ in 0..n + 1 {
+      delta_row.push(r.u64()? as usize);
+    }
+    let mut delta_col = Vec::with_capacity(num_edges);
+    for _ in 0..num_edges {
+      delta_col.push(r.u32()?);
+    }
+    // Structural validation: monotone offsets bounded by edge count, in-range ids.
+    if delta_row.len() != n + 1
+      || delta_row.first() != Some(&0)
+      || delta_row.last() != Some(&num_edges)
+    {
+      return Err(ProfileError::Corrupt);
+    }
+    for w in delta_row.windows(2) {
+      if w[0] > w[1] {
+        return Err(ProfileError::Corrupt);
+      }
+    }
+    for &p in &delta_col {
+      if p as usize >= n {
+        return Err(ProfileError::Corrupt);
+      }
+    }
+    Ok(BlockProfile { blocks, delta_row, delta_col })
+  }
+}
+
+/// Errors from decoding a `.ixprof` file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProfileError {
+  BadMagic,
+  BadVersion(u32),
+  Truncated,
+  Corrupt,
+}
+
+impl std::fmt::Display for ProfileError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      ProfileError::BadMagic => write!(f, "not an .ixprof file (bad magic)"),
+      ProfileError::BadVersion(v) => {
+        write!(f, "unsupported .ixprof version {v}")
+      },
+      ProfileError::Truncated => write!(f, "truncated .ixprof file"),
+      ProfileError::Corrupt => write!(f, "corrupt .ixprof file"),
+    }
+  }
+}
+
+impl std::error::Error for ProfileError {}
+
+/// Minimal little-endian byte reader with bounds checking.
+struct Reader<'a> {
+  buf: &'a [u8],
+  pos: usize,
+}
+
+impl<'a> Reader<'a> {
+  fn new(buf: &'a [u8]) -> Self {
+    Reader { buf, pos: 0 }
+  }
+  fn take(&mut self, n: usize) -> Result<&'a [u8], ProfileError> {
+    let end = self.pos.checked_add(n).ok_or(ProfileError::Truncated)?;
+    if end > self.buf.len() {
+      return Err(ProfileError::Truncated);
+    }
+    let s = &self.buf[self.pos..end];
+    self.pos = end;
+    Ok(s)
+  }
+  fn u32(&mut self) -> Result<u32, ProfileError> {
+    Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+  }
+  fn u64(&mut self) -> Result<u64, ProfileError> {
+    Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+  }
+}
+
+/// Accumulates block-level statistics and delta edges (keyed by address), then
+/// freezes into a [`BlockProfile`] with stable, address-sorted block ids.
+///
+/// Phase A (the kernel recorder) feeds this with one `block(..)` per checked
+/// block and one `delta_edge(consumer, producer)` per recorded cross-block
+/// unfold. The builder is the merge point for per-worker accumulators: calling
+/// `block`/`delta_edge` is commutative and idempotent w.r.t. edge sets, so
+/// merge order does not affect the result.
+#[derive(Default)]
+pub struct ProfileBuilder {
+  blocks: FxHashMap<Address, Accum>,
+}
+
+#[derive(Default)]
+struct Accum {
+  heartbeats: u64,
+  serialized_size: u32,
+  const_count: u32,
+  ops: OpCounts,
+  producers: FxHashSet<Address>,
+}
+
+impl ProfileBuilder {
+  pub fn new() -> Self {
+    Self::default()
+  }
+
+  /// Record (or accumulate into) a block's statistics. Heartbeats,
+  /// const_count, and the op counters accumulate additively; serialized_size
+  /// is set (idempotent for a fixed block).
+  pub fn block(
+    &mut self,
+    addr: Address,
+    heartbeats: u64,
+    serialized_size: u32,
+    const_count: u32,
+    ops: OpCounts,
+  ) {
+    let e = self.blocks.entry(addr).or_default();
+    e.heartbeats = e.heartbeats.saturating_add(heartbeats);
+    e.serialized_size = serialized_size;
+    e.const_count = e.const_count.saturating_add(const_count);
+    e.ops.add(&ops);
+  }
+
+  /// Record that `consumer` delta-unfolds the body of `producer`. Self-edges
+  /// are ignored. Ensures both endpoints exist as blocks (with zeroed stats if
+  /// not yet seen) so the graph is well-formed even if a producer is only ever
+  /// referenced, never directly checked.
+  pub fn delta_edge(&mut self, consumer: Address, producer: Address) {
+    if consumer == producer {
+      return;
+    }
+    self.blocks.entry(producer.clone()).or_default();
+    self.blocks.entry(consumer).or_default().producers.insert(producer);
+  }
+
+  /// Freeze into an immutable [`BlockProfile`]. Block ids are assigned by
+  /// sorting addresses, so the result is deterministic regardless of insertion
+  /// order.
+  pub fn finish(self) -> BlockProfile {
+    let mut addrs: Vec<Address> = self.blocks.keys().cloned().collect();
+    addrs.sort();
+    let id_of: FxHashMap<Address, u32> =
+      addrs.iter().enumerate().map(|(i, a)| (a.clone(), i as u32)).collect();
+
+    let mut blocks = Vec::with_capacity(addrs.len());
+    let mut delta_row = Vec::with_capacity(addrs.len() + 1);
+    let mut delta_col = Vec::new();
+    delta_row.push(0usize);
+
+    for addr in &addrs {
+      let a = &self.blocks[addr];
+      blocks.push(BlockEntry {
+        addr: addr.clone(),
+        heartbeats: a.heartbeats,
+        serialized_size: a.serialized_size,
+        const_count: a.const_count,
+        subst: a.ops.subst_nodes,
+        whnf: a.ops.whnf_calls,
+        def_eq: a.ops.def_eq_calls,
+        nat_arith: a.ops.nat_arith,
+        intern: a.ops.intern_nodes,
+      });
+      let mut prods: Vec<u32> = a.producers.iter().map(|p| id_of[p]).collect();
+      prods.sort_unstable();
+      prods.dedup();
+      delta_col.extend_from_slice(&prods);
+      delta_row.push(delta_col.len());
+    }
+
+    BlockProfile { blocks, delta_row, delta_col }
+  }
+}
+
+#[derive(Clone, Debug)]
+pub enum AnonWorkItem {
+  /// A standalone (Defn/Recr/Axio/Quot) constant. `addr` is both the
+  /// kernel-checked target and the only address this item covers.
+  Standalone { addr: Address },
+  /// A Muts block. Checking `primary` (the first member's projection
+  /// address) drives the kernel's block coordination, which in turn
+  /// typechecks every entry in `targets`. `targets[0] == primary`.
+  /// `block_addr` is the block's own `env.consts` key (the `Tag::Muts`
+  /// entry) — distinct from the projection `targets`, and the address
+  /// other constants' `refs` use to reference the block. Carried so the
+  /// set of `consts` keys a checked item certifies ([`proven_targets`])
+  /// is in the same address space as `Constant.refs`.
+  ///
+  /// [`proven_targets`]: AnonWorkItem::proven_targets
+  Block { block_addr: Address, primary: Address, targets: Vec<Address> },
+}
+
+impl AnonWorkItem {
+  /// The address to pass to the Ixon whole-unit checking entry.
+  pub fn primary(&self) -> &Address {
+    match self {
+      AnonWorkItem::Standalone { addr } => addr,
+      AnonWorkItem::Block { primary, .. } => primary,
+    }
+  }
+
+  /// Every kernel-checked target this item covers (one for
+  /// `Standalone`, `targets.len()` for `Block`).
+  pub fn targets(&self) -> &[Address] {
+    match self {
+      AnonWorkItem::Standalone { addr } => core::slice::from_ref(addr),
+      AnonWorkItem::Block { targets, .. } => targets,
+    }
+  }
+
+  /// Every `env.consts` key this item certifies (proves) well-typed when
+  /// its `primary` is checked — the *proven targets*, in the same address
+  /// space as `Constant.refs`, so a dependency ref can be matched against
+  /// the union of `proven_targets()` over all checked items: refs in that
+  /// union are already certified, the rest are the claim's open assumptions
+  /// (resolved later against other proofs). Unlike
+  /// [`targets`](Self::targets) (the addresses the kernel actually walks),
+  /// a `Block`'s proven set also includes the block's own `consts` key:
+  /// for a `Standalone` it's just its address; for a `Block` it's
+  /// `block_addr` plus every projection target (members + ctors). The
+  /// set includes synthesized semantic members whose projection records the
+  /// input may omit. It is not a physical-record coverage set; a host checks
+  /// carried records separately and does not add synthetic bytes to its input.
+  pub fn proven_targets(&self) -> Vec<Address> {
+    match self {
+      AnonWorkItem::Standalone { addr } => vec![addr.clone()],
+      AnonWorkItem::Block { block_addr, targets, .. } => {
+        let mut v = Vec::with_capacity(1 + targets.len());
+        v.push(block_addr.clone());
+        v.extend(targets.iter().cloned());
+        v
+      },
+    }
+  }
+}
+
+fn mutual_work(
+  address: &Address,
+  members: &[crate::constant::MutConst],
+) -> Result<AnonWorkItem, String> {
+  use crate::constant::MutConst;
+  if members.is_empty() {
+    return Err("empty mutual block".into());
+  }
+  if members.iter().any(|m| matches!(m, MutConst::Indc(_))) {
+    if members.iter().any(|m| matches!(m, MutConst::Defn(_))) {
+      return Err("mixed mutual block".into());
+    }
+    if !members.iter().any(|m| matches!(m, MutConst::Recr(_))) {
+      return Err("inductive mutual block without recursor".into());
+    }
+  }
+  let mut targets = Vec::new();
+  for (index, member) in members.iter().enumerate() {
+    let index = u64::try_from(index).map_err(|error| error.to_string())?;
+    targets.push(match member {
+      MutConst::Defn(_) => crate::constant::defn_proj_address(index, address),
+      MutConst::Indc(_) => crate::constant::indc_proj_address(index, address),
+      MutConst::Recr(_) => crate::constant::recr_proj_address(index, address),
+    });
+    if let MutConst::Indc(inductive) = member {
+      for constructor in 0..inductive.ctors.len() {
+        targets.push(crate::constant::ctor_proj_address(
+          index,
+          u64::try_from(constructor).map_err(|error| error.to_string())?,
+          address,
+        ));
+      }
+    }
+  }
+  Ok(AnonWorkItem::Block {
+    block_addr: address.clone(),
+    primary: targets[0].clone(),
+    targets,
+  })
+}
+
+/// Enumerate the anon-mode kernel work set from `env.consts`.
+///
+/// Returns one `AnonWorkItem` per kernel-checkable group of
+/// constants. The total number of checked target addresses is
+/// `work.iter().map(|w| w.targets().len()).sum()`.
+///
+/// Refuses corrupted entries and unsupported serialized mutual shapes before
+/// promising coverage for their member targets.
+pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
+  use crate::constant::ConstantInfo as CI;
+  use ConstVariantTag as Tag;
+
+  let mut work: Vec<AnonWorkItem> = Vec::new();
+
+  // Sort keys for deterministic ordering across runs.
+  let mut keys: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  keys.sort_unstable();
+
+  for addr in keys {
+    let lc = env.consts.get(&addr).ok_or_else(|| {
+      format!("build_anon_work: missing const at {}", addr.hex())
+    })?;
+    let tag = lc.value().peek_variant().map_err(|e| {
+      format!("build_anon_work: peek_variant {}: {e}", addr.hex())
+    })?;
+    match tag {
+      Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {
+        // Skip — covered by parent block.
+      },
+      Tag::Defn | Tag::Recr | Tag::Axio | Tag::Quot => {
+        work.push(AnonWorkItem::Standalone { addr: addr.clone() });
+      },
+      Tag::Muts => {
+        // Materialize once to enumerate members; the `Arc<Constant>`
+        // drops at the end of this arm — no cache retention.
+        let constant = lc.value().get().map_err(|e| {
+          format!("build_anon_work: materialize Muts {}: {e}", addr.hex())
+        })?;
+        let CI::Muts(members) = &constant.info else {
+          return Err(format!(
+            "build_anon_work: Tag::Muts but ConstantInfo is {:?} at {}",
+            constant.info.variant(),
+            addr.hex()
+          ));
+        };
+        work.push(mutual_work(&addr, members)?);
+      },
+    }
+  }
+
+  Ok(work)
+}
+
+/// The full dependency-closure address set of `roots`: their transitive Expr
+/// `refs` PLUS each projection's structural `block: Address`. A refs-only walk
+/// misses the block — projections (IPrj/CPrj/RPrj/DPrj) point at their Muts
+/// block via a struct field, not the Expr ref table — so the kernel couldn't
+/// resolve the projection and would spuriously fail. The returned set includes
+/// constant AND referenced-blob addresses (external refs absent from `source`
+/// are included as addresses but have no bytes to copy).
+pub fn closure_addrs(
+  source: &IxonEnv,
+  roots: &[Address],
+) -> std::collections::HashSet<Address> {
+  // The traversal lives in `ixon` (`Env::bfs_closure`) so bundle
+  // pruning/validation and the shard sub-env share one edge
+  // definition; this wrapper keeps the kernel-side std-HashSet
+  // signature.
+  source.bfs_closure(roots).into_iter().collect()
+}
+
+/// Build a closure sub-env: serialize only the BFS dependency closure of
+/// `roots` (their transitive `Constant.refs` plus referenced literal blobs),
+/// copying each constant's GENUINE bytes via `store_const_lazy` so the guest's
+/// per-const integrity check (`hash(bytes) == addr`) and the env merkle root
+/// still hold. The guest decodes this instead of the whole env, so it pays only
+/// its closure's decode, bounding memory use for large environments.
+/// Missing hints are
+/// performance-only: ingress falls back to `Regular(0)`, so the typecheck
+/// result — and thus the committed claim — is unchanged.
+/// External refs (not in `source`) are omitted and remain open assumptions,
+/// exactly as in whole-env.
+///
+/// Host-only: builds an `Env` via the `store_*` helpers, which are gated to
+/// non-riscv64 (see `Env::store_blob`). The guest receives an already-built
+/// sub-env from the host and only enumerates it via `build_anon_work`.
+#[cfg(not(target_arch = "riscv64"))]
+pub fn build_sub_env(
+  source: &IxonEnv,
+  roots: &[Address],
+) -> Result<Vec<u8>, String> {
+  let sub = sub_env_of(source, roots);
+  let mut buf = Vec::new();
+  sub.put(&mut buf).map_err(|e| format!("sub-env serialize: {e}"))?;
+  Ok(buf)
+}
+
+/// The in-memory closure sub-env behind [`build_sub_env`]: copy the BFS
+/// dependency closure of `roots` (genuine bytes + blobs + reducibility
+/// hints), no Named section. A bound source's binding is copied with the
+/// closure of the records it names, so the sub-env carries every record its
+/// role admission reads and every unit a verdict on `roots` rests on (see
+/// [`verdict_work`]). A binding that does not decode is copied as is, and
+/// the sub-env's reader refuses it.
+#[cfg(not(target_arch = "riscv64"))]
+fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
+  let mut roots = roots.to_vec();
+  if let Some(binding) = &source.role_binding
+    && let Ok(table) = crate::role_table::RoleTable::from_bytes(&binding.bytes)
+  {
+    roots.extend(table.records().cloned());
+  }
+  let closure = closure_addrs(source, &roots);
+  let mut sub = IxonEnv::new();
+  sub.role_binding = source.role_binding.clone();
+  for addr in &closure {
+    if let Some(bytes) = source.get_const_bytes(addr) {
+      sub.store_const_lazy(addr.clone(), bytes);
+    } else if let Some(blob) = source.get_blob(addr) {
+      sub.store_blob(blob);
+    }
+    // else: external ref absent from `source` — omit; stays an open assumption.
+    // Carry the constant's reducibility hint so the guest reproduces vanilla
+    // kernel behavior; without hints the kernel forces `Regular(0)` and does
+    // extra def-eq work (the ~30% check overhead).
+    if let Some(h) = source.anon_hints.get(addr) {
+      sub.anon_hints.insert(addr.clone(), *h);
+    }
+  }
+  sub
+}
+
+/// [`build_sub_env`] plus a name→address entry for every closure constant
+/// named in the FULL view of the same env — a standalone `.ixe` whose names
+/// still resolve (for `--consts`-style tools), extracted without recompiling
+/// from source.
+///
+/// METADATA IS DROPPED: each copied entry is `Named::with_addr` (empty
+/// `ConstantMeta`), because real metadata references name addresses
+/// throughout its tree and carrying it would require the full env's
+/// hash-consed name index. The extract serves the ANON pipeline
+/// (`check-rs --anon`, the zkVM hosts, `ix profile`/`ix shard`,
+/// `bench-typecheck`), where metadata is never read and reducibility hints
+/// travel in the `anon_hints` section instead. Meta-mode tools need the
+/// source env.
+#[cfg(not(target_arch = "riscv64"))]
+pub fn build_sub_env_named(
+  source: &IxonEnv,
+  full: &IxonEnv,
+  roots: &[Address],
+) -> Result<Vec<u8>, String> {
+  use ix_common::env::NameData;
+
+  let sub = sub_env_of(source, roots);
+  // The Named section serializes keys as name HASHES resolved through the
+  // names section, so each key's component chain must be interned too.
+  fn intern_chain(sub: &IxonEnv, name: &ix_common::env::Name) {
+    let addr = Address::from_blake3_hash(*name.get_hash());
+    if sub.get_name(&addr).is_some() {
+      return;
+    }
+    match name.as_data() {
+      NameData::Anonymous(_) => {},
+      NameData::Str(parent, _, _) | NameData::Num(parent, _, _) => {
+        intern_chain(sub, parent);
+      },
+    }
+    sub.store_name(addr, name.clone());
+  }
+  for e in full.named.iter() {
+    if sub.get_const(&e.value().addr).is_some() {
+      intern_chain(&sub, e.key());
+      sub.register_name(
+        e.key().clone(),
+        crate::env::Named::with_addr(e.value().addr.clone()),
+      );
+    }
+  }
+  let mut buf = Vec::new();
+  sub.put(&mut buf).map_err(|e| format!("sub-env serialize: {e}"))?;
+  Ok(buf)
+}
+
+/// The ingress-block address that owns `addr`: a projection (IPrj/CPrj/RPrj/
+/// DPrj) maps to its Muts `block`; anything else is its own block. Used to map
+/// a resolved constant address to the `build_anon_work` item that covers it
+/// (standalone → itself; a mutual-block member → the whole block).
+pub fn block_of_addr(env: &IxonEnv, addr: &Address) -> Address {
+  use crate::constant::ConstantInfo as CI;
+  match env.get_const(addr) {
+    Some(c) => match &c.info {
+      CI::IPrj(p) => p.block.clone(),
+      CI::CPrj(p) => p.block.clone(),
+      CI::RPrj(p) => p.block.clone(),
+      CI::DPrj(p) => p.block.clone(),
+      _ => addr.clone(),
+    },
+    None => addr.clone(),
+  }
+}
+
+/// The ingress-block address of a work item's `primary` — the key for matching
+/// a resolved target constant to the work item that covers it.
+pub fn work_block_addr(env: &IxonEnv, item: &AnonWorkItem) -> Address {
+  block_of_addr(env, item.primary())
+}
+
+/// Build the STATIC block profile of an env — derived from
+/// the serialized constants alone, no kernel run.
+///
+/// - Vertices: ingress units (a Muts block or a standalone constant),
+///   `serialized_size` real, `const_count` = member constants,
+///   `heartbeats` := size (report-only).
+/// - Balance weight: the partitioner's vertex weight is `block_step_cost`
+///   (a linear model over the op counters), so the byte weight is carried
+///   in `subst` — `vweight ∝ size` exactly, matching the measured-best
+///   bisection weight ([`STATIC_OWNED_PER_BYTE`] docs).
+/// - Edges: the claim-walk relation (`crate::shard_claim::walk_edges` —
+///   positively-used refs + projection block pointers) at block
+///   granularity, deduped, self-edges dropped. These are exactly the
+///   edges that generate a shard's thin frontier, i.e. its ingress.
+#[allow(clippy::cast_possible_truncation)] // block sizes clamped to u32::MAX
+pub fn static_block_profile(env: &IxonEnv) -> BlockProfile {
+  use rayon::prelude::*;
+  let addrs: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  // Phase 1 (parallel): parse each constant exactly ONCE. Lazy mmap
+  // entries re-parse on every `get()` (see `LazyConstant`'s cache
+  // policy), so the home block is derived from the constant we already
+  // hold instead of `profile_block_of` (which would parse again), and
+  // edge targets are kept as raw addresses to be resolved in phase 2
+  // through the addr→home table this pass produces.
+  struct ConstRow {
+    addr: Address,
+    home: Address,
+    targets: Vec<Address>,
+  }
+  let rows: Vec<ConstRow> = addrs
+    .par_iter()
+    .filter_map(|addr| {
+      let c = env.get_const(addr)?;
+      let home = match &c.info {
+        IxonCI::IPrj(p) => p.block.clone(),
+        IxonCI::CPrj(p) => p.block.clone(),
+        IxonCI::RPrj(p) => p.block.clone(),
+        IxonCI::DPrj(p) => p.block.clone(),
+        _ => addr.clone(),
+      };
+      let mut targets = Vec::new();
+      crate::shard_claim::walk_edges(&c, &mut targets);
+      Some(ConstRow { addr: addr.clone(), home, targets })
+    })
+    .collect();
+  // Phase 2 (serial, no parsing): addr→home table, per-block member
+  // counts, and block-level edges. A target absent from the table is a
+  // blob payload (or an unparseable constant) — skipped, matching the
+  // claim walk's blob sentinel.
+  let home_of: FxHashMap<&Address, &Address> =
+    rows.iter().map(|r| (&r.addr, &r.home)).collect();
+  let mut counts: FxHashMap<&Address, u32> = FxHashMap::default();
+  for r in &rows {
+    *counts.entry(&r.home).or_insert(0) += 1;
+  }
+  let mut builder = ProfileBuilder::new();
+  for r in &rows {
+    for t in &r.targets {
+      if let Some(&pb) = home_of.get(t)
+        && *pb != r.home
+      {
+        builder.delta_edge(r.home.clone(), pb.clone());
+      }
+    }
+  }
+  for (home, cnt) in counts {
+    // Size without materializing: `raw_bytes().len()` on the lazy entry
+    // (`profile_block_size` would copy the bytes into a fresh Arc).
+    let size = env
+      .consts
+      .get(home)
+      .map_or(0, |e| e.value().raw_bytes().len().min(u32::MAX as usize))
+      as u32;
+    let ops = OpCounts { subst_nodes: u64::from(size), ..OpCounts::default() };
+    builder.block(home.clone(), u64::from(size), size, cnt, ops);
+  }
+  builder.finish()
+}
+
+/// The blocks each block of `profile` references, by block id — every
+/// constant's `refs` mapped to their home blocks, the edges a byte scope
+/// (`Env::bfs_closure`) follows between blocks; projections reference
+/// their own block and a block its wrappers, so those edges never leave a
+/// block — and the blocks of the primitives the environment carries, which
+/// every byte scope also starts from. A superset of the profile's walk
+/// edges, which follow only the references a constant's body uses.
+pub fn static_block_dependencies(
+  env: &IxonEnv,
+  profile: &BlockProfile,
+) -> (Vec<Vec<u32>>, Vec<u32>) {
+  use ix_common::prim_addrs::PrimAddrs;
+  use rayon::prelude::*;
+  let id_of: FxHashMap<&Address, u32> = profile
+    .blocks()
+    .iter()
+    .enumerate()
+    .map(|(i, b)| (&b.addr, u32::try_from(i).expect("block ids are u32")))
+    .collect();
+  let addrs: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  let rows: Vec<(Address, Address, Vec<Address>)> = addrs
+    .par_iter()
+    .filter_map(|addr| {
+      let c = env.get_const(addr)?;
+      let home = match &c.info {
+        IxonCI::IPrj(p) => p.block.clone(),
+        IxonCI::CPrj(p) => p.block.clone(),
+        IxonCI::RPrj(p) => p.block.clone(),
+        IxonCI::DPrj(p) => p.block.clone(),
+        _ => addr.clone(),
+      };
+      Some((addr.clone(), home, c.refs.clone()))
+    })
+    .collect();
+  // Every constant's block id, projections included; a blob has none.
+  let block_of: FxHashMap<&Address, u32> = rows
+    .iter()
+    .filter_map(|(addr, home, _)| id_of.get(home).map(|&id| (addr, id)))
+    .collect();
+  let mut depends: Vec<Vec<u32>> = vec![Vec::new(); profile.num_blocks()];
+  for (addr, _, refs) in &rows {
+    let Some(&consumer) = block_of.get(addr) else { continue };
+    for r in refs {
+      if let Some(&producer) = block_of.get(r)
+        && producer != consumer
+      {
+        depends[consumer as usize].push(producer);
+      }
+    }
+  }
+  for d in &mut depends {
+    d.sort_unstable();
+    d.dedup();
+  }
+  let mut primitives: Vec<u32> = PrimAddrs::lean_parity_table()
+    .iter()
+    .filter_map(|(_, hex)| Address::from_hex(hex))
+    .chain(PrimAddrs::reserved_marker_addrs().iter().map(|(_, a)| a.clone()))
+    .filter_map(|a| block_of.get(&a).copied())
+    .collect();
+  primitives.sort_unstable();
+  primitives.dedup();
+  (depends, primitives)
+}
 
 /// A weighted hypergraph derived from a [`BlockProfile`]. Vertex ids are block
 /// ids (identical to the profile's). Nets are stored with global pins.
@@ -2254,58 +3033,6 @@ fn ordered_layout(
   (shard_of, backward)
 }
 
-/// Read a `.ixprof`, partition into `num_shards` shards, and emit a manifest with
-/// per-shard cost metrics, foreign-block sets, and (delta-based) assumption
-/// roots. Optionally writes the manifest (`.ixes`). Returns a what-if report.
-///
-/// The assumption root here is the Merkle root over the foreign *blocks* whose
-/// bodies the shard must ingress (the cost-model-tight set). The fully-sound
-/// variant for proof generation uses the static reference closure over member
-/// constants and additionally needs the `.ixe`; see `plans/sharding.md` §4.
-pub fn shard_esp(
-  esp_path: &str,
-  num_shards: usize,
-  balance: f64,
-  parallelism: usize,
-  out_path: Option<&str>,
-) -> Result<String, String> {
-  let bytes =
-    std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
-  let profile = BlockProfile::from_bytes(&bytes)
-    .map_err(|e| format!("parse {esp_path}: {e}"))?;
-  let h = Hypergraph::from_profile(&profile);
-  let (shard_of, tree) = h.partition_with_tree(num_shards, balance);
-  let mut manifest =
-    ShardManifest::build(&profile, &shard_of, num_shards).with_tree(tree);
-  seal_and_write(&mut manifest, out_path)?;
-  // The largest single block's heartbeats is the *floor* on achievable
-  // per-shard balance: a mutual block is atomic and cannot be split, so no
-  // partition can drive max-shard heartbeats below it. When the heaviest shard
-  // is pinned at this floor, adding more shards only worsens imbalance — a
-  // signal to stop raising the shard count or to split the block.
-  let max_block_hb =
-    profile.blocks().iter().map(|b| b.heartbeats).max().unwrap_or(0);
-  let max_shard_hb =
-    manifest.shards.iter().map(|s| s.heartbeats).max().unwrap_or(0);
-  let floored =
-    num_shards > 1 && max_shard_hb <= max_block_hb.saturating_mul(11) / 10;
-  let note = if floored {
-    "  [balance floored by largest atomic block — more shards won't help]"
-  } else {
-    ""
-  };
-  Ok(format!(
-    "blocks={} delta_edges={} nets={}\n{}\n{}\nlargest_block_hb={}{}",
-    profile.num_blocks(),
-    profile.num_edges(),
-    h.num_nets(),
-    manifest.summary(),
-    prove_report(&profile, &shard_of, &manifest, parallelism),
-    max_block_hb,
-    note,
-  ))
-}
-
 /// Seal every shard's assumption root (the canonical merkle root over
 /// its foreign blocks) and write the manifest when a path is given.
 /// Shared tail of every manifest-producing entry point.
@@ -2315,7 +3042,7 @@ fn seal_and_write(
 ) -> Result<(), String> {
   for shard in &mut manifest.shards {
     shard.assumption_root =
-      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+      crate::merkle::merkle_root_canonical(&shard.foreign_blocks);
   }
   if let Some(op) = out_path {
     std::fs::write(op, manifest.to_bytes())
@@ -2376,7 +3103,7 @@ impl ShardManifest {
     profile: &BlockProfile,
     ids: &[u32],
   ) -> Result<(ShardManifest, Vec<Vec<u32>>), String> {
-    let block_ids: rustc_hash::FxHashMap<_, _> = profile
+    let block_ids: FxHashMap<_, _> = profile
       .blocks()
       .iter()
       .enumerate()
@@ -2599,481 +3326,9 @@ pub fn shard_manifest_refine(
   Ok((manifest.summary(), part_ids))
 }
 
-/// Like [`shard_esp`] but sized to a per-shard estimated **cycle** budget
-/// (`max_cycles`) rather than a fixed shard count: grows `N` until the heaviest
-/// splittable shard fits the budget (see [`partition_for_cycle_cap`]). Use
-/// [`cycle_cap_for_ram`] to derive `max_cycles` from a host-RAM target.
-pub fn shard_esp_cap(
-  esp_path: &str,
-  max_cycles: u64,
-  balance: f64,
-  parallelism: usize,
-  out_path: Option<&str>,
-) -> Result<String, String> {
-  let bytes =
-    std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
-  let profile = BlockProfile::from_bytes(&bytes)
-    .map_err(|e| format!("parse {esp_path}: {e}"))?;
-  let plan = partition_for_cycle_cap(&profile, max_cycles, balance);
-  let mut manifest =
-    ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
-      .with_tree(plan.tree);
-  seal_and_write(&mut manifest, out_path)?;
-  let note = if plan.infeasible_atomic_floor {
-    "\n  [INFEASIBLE: a single atomic block exceeds the cap — split it upstream, raise the cap, or use a bigger box]"
-  } else {
-    ""
-  };
-  Ok(format!(
-    "blocks={} delta_edges={} max_cycles={} → {} shards (packed to cap)\n{}\n{}\nmax_shard_steps={} (cap {}, incl. floor {} + cross-ingress) largest_block_steps={}{}",
-    profile.num_blocks(),
-    profile.num_edges(),
-    max_cycles,
-    plan.num_shards,
-    manifest.summary(),
-    prove_report(&profile, &plan.shard_of, &manifest, parallelism),
-    plan.max_shard_steps,
-    max_cycles,
-    SHARD_COST_FLOOR,
-    plan.largest_block_steps,
-    note,
-  ))
-}
-
-/// Legacy guest-cost estimate for the profiled partitioner. Cost, rather
-/// than raw steps, is the packing denomination: it prices the
-/// axes that don't ride the main trace — DMA/blake3 precompile area and
-/// memory ops — though on the uid-identity kernel the mix is stable
-/// (~92.5 units per guest step ± 7% across the calibration corpus, blake3
-/// 0.6–2.4%). Features are the per-block op counters the profiler records
-/// (`.ixprof` v2): substitution-node visits, whnf/def-eq entries, and
-/// intern-table visits (term-construction volume — the proxy for the
-/// memory-traffic/DMA axis reduction counters can't see). **Best-fit**
-/// coefficients over 118 measured InitStd shards across 13
-/// constants (weighted least squares on relative error, MAPE 10.9%, worst
-/// under-prediction −33%). One definition, used everywhere: the
-/// `ix profile` breakdown, per-shard prediction, and the packer's cap test.
-/// No conservatism is baked into the coefficients — that would distort
-/// packing; under-prediction risk is covered by [`COST_MODEL_HEADROOM`]
-/// inside [`cycle_cap_for_ram`], plus [`RAM_USABLE_FRAC`].
-pub const COST_PER_SUBST: u64 = 196_600;
-pub const COST_PER_WHNF: u64 = 1_797_600;
-pub const COST_PER_DEF_EQ: u64 = 567_100;
-pub const COST_PER_INTERN: u64 = 28_400;
-/// Cross-shard re-ingress: cost units per foreign byte a shard must load.
-pub const COST_PER_INGRESS_BYTE: u64 = 73_200;
-/// Fixed per-shard (per-leaf) cost floor: the emulator's measured BASE
-/// (fixed-region) cost per run.
-pub const SHARD_COST_FLOOR: u64 = 293_600_000;
-/// Multiplicative safety on the packing cap for the cost model's worst
-/// measured under-prediction (−33% on DMA-dense shards; the profiler runs
-/// cold-cache per work item, so intra-shard cache sharing is invisible to
-/// per-block features).
-pub const COST_MODEL_HEADROOM: f64 = 1.5;
-
-/// Estimated guest cost units for a bag of raw op counters — the same
-/// linear model as [`block_step_cost`], for callers that hold an
-/// [`OpCounts`] rather than a profile block (e.g. the per-constant
-/// attribution CSV `ix check-rs --per-const` emits).
-pub fn op_counts_cost(ops: &crate::profile::OpCounts) -> u64 {
-  COST_PER_SUBST
-    .saturating_mul(ops.subst_nodes)
-    .saturating_add(COST_PER_WHNF.saturating_mul(ops.whnf_calls))
-    .saturating_add(COST_PER_DEF_EQ.saturating_mul(ops.def_eq_calls))
-    .saturating_add(COST_PER_INTERN.saturating_mul(ops.intern_nodes))
-}
-
-/// Estimated guest cost units contributed by a single block. The
-/// per-shard floor and any cross-shard re-ingress are added at the shard
-/// level, not here. Producer-only blocks (never directly checked) carry no
-/// op counts and predict zero — their load cost is priced through the
-/// consumers' intern counts (same-shard) or the cross-ingress term.
-pub fn block_step_cost(b: &BlockEntry) -> u64 {
-  COST_PER_SUBST
-    .saturating_mul(b.subst)
-    .saturating_add(COST_PER_WHNF.saturating_mul(b.whnf))
-    .saturating_add(COST_PER_DEF_EQ.saturating_mul(b.def_eq))
-    .saturating_add(COST_PER_INTERN.saturating_mul(b.intern))
-}
-
-/// The per-shard cost cap implied by a machine's total RAM — so callers can
-/// size shards straight from `MemTotal` without ever picking a budget.
-/// Inverts the measured single-leaf GPU prover model on this setup
-/// (`peak_RAM_GiB ≈ 33.1 + 0.2845 × cost_billions`, fit on a guarded GPU
-/// prove sweep of 4 InitStd shards spanning 48–170e9 cost units on the
-/// uid-identity kernel, each measured as its systemd scope's cgroup
-/// `memory.peak` — the OOM-relevant metric CI's watchdog enforces, charging
-/// the whole process tree plus the ASM trace shm; residuals < 2 GiB. A
-/// same-shard VmRSS-summed sweep read ~2–8 GiB lower with a flatter slope
-/// (34.2 + 0.238) — the shm axis scales with cost. The pre-uid-identity
-/// model was `50 + 33 × steps_billions`.) The budget is taken at
-/// [`RAM_USABLE_FRAC`] (reserving the rest for the OS, cross-shard
-/// re-ingress, and run-to-run variance), then divided by
-/// [`COST_MODEL_HEADROOM`] so a worst-case-under-predicted shard still
-/// proves inside it. Returns 0 when the box can't even hold the ~33 GiB
-/// prover base (nothing will prove). Approximate by design — pair with
-/// [`partition_for_cycle_cap`] to get N.
-/// Measured prover-RAM model (the single source of truth, used by both
-/// [`cycle_cap_for_ram`] and [`ram_gib_for_steps`]): peak host RAM ≈
-/// `RAM_BASE_GIB + RAM_GIB_PER_BCOST × cost_billions`.
-pub const RAM_BASE_GIB: f64 = 33.1;
-pub const RAM_GIB_PER_BCOST: f64 = 0.2845;
-/// Usable fraction of a host-RAM budget (headroom for OS + variance) — applied
-/// to whatever budget the caller gives (explicit `--max-ram`, or detected
-/// system RAM by default).
-pub const RAM_USABLE_FRAC: f64 = 0.85;
-
-/// Predicted peak prover RAM (GiB) for a leaf of `cost` **actual** guest cost
-/// units (for predicted cost, multiply by [`COST_MODEL_HEADROOM`] first to
-/// get the worst-case bound the cap enforces).
-pub fn ram_gib_for_steps(cost: u64) -> f64 {
-  RAM_BASE_GIB + RAM_GIB_PER_BCOST * (cost as f64 / 1e9)
-}
-
-/// Packing cap on **predicted** shard cost for a RAM budget: the actual-cost
-/// ceiling the RAM model allows, divided by [`COST_MODEL_HEADROOM`].
-pub fn cycle_cap_for_ram(ram_gb: f64) -> u64 {
-  let headroom = ram_gb * RAM_USABLE_FRAC - RAM_BASE_GIB;
-  if headroom <= 0.0 {
-    return 0;
-  }
-  (headroom / RAM_GIB_PER_BCOST * 1e9 / COST_MODEL_HEADROOM) as u64
-}
-
-/// Measured single-GPU **leaf prove time**: `≈ PROVE_SETUP_SECS +
-/// PROVE_SECS_PER_BCOST × cost_billions` per shard (RTX PRO 6000, warm
-/// proving-key cache). Aggregation adds a smaller per-fold term this model
-/// omits — minutes next to hours of leaf proving at large shard counts.
-pub const PROVE_SETUP_SECS: f64 = 29.0;
-pub const PROVE_SECS_PER_BCOST: f64 = 2.25;
-
-/// Predicted single-shard leaf prove time (seconds) for a leaf of `steps`.
-pub fn shard_prove_secs(steps: u64) -> f64 {
-  PROVE_SETUP_SECS + PROVE_SECS_PER_BCOST * (steps as f64 / 1e9)
-}
-
-/// Whole-workload prove-time estimate over a partition's per-shard step counts.
-pub struct ProveEstimate {
-  /// Σ predicted guest STEPS over all shards (incl. per-shard floor + ingress).
-  pub total_steps: u64,
-  /// Sum of per-shard leaf prove times — wall clock with a single prover.
-  pub seq_secs: f64,
-  /// Wall clock with `parallelism` provers; `seq_secs` at parallelism 1.
-  pub wall_secs: f64,
-  /// Provers assumed (≥1).
-  pub parallelism: usize,
-}
-
-/// Estimate whole-workload prove time from per-shard predicted STEPS. With
-/// `parallelism` provers the wall clock is bounded below by both an even split
-/// and the single slowest shard (a makespan can beat neither); for the
-/// near-uniform shards the packer produces the even split dominates.
-pub fn prove_estimate(
-  per_shard_steps: &[u64],
-  parallelism: usize,
-) -> ProveEstimate {
-  let p = parallelism.max(1);
-  let total_steps =
-    per_shard_steps.iter().fold(0u64, |a, &s| a.saturating_add(s));
-  let seq_secs: f64 =
-    per_shard_steps.iter().map(|&s| shard_prove_secs(s)).sum();
-  let max_secs =
-    per_shard_steps.iter().map(|&s| shard_prove_secs(s)).fold(0.0, f64::max);
-  let wall_secs = (seq_secs / p as f64).max(max_secs);
-  ProveEstimate { total_steps, seq_secs, wall_secs, parallelism: p }
-}
-
-/// Per-shard predicted full STEPS (floor + member step-cost + cross-ingress),
-/// indexed by shard id, from a built manifest and its block assignment.
-fn per_shard_steps(
-  profile: &BlockProfile,
-  shard_of: &[u32],
-  manifest: &ShardManifest,
-) -> Vec<u64> {
-  let mut steps = vec![0u64; manifest.shards.len()];
-  for (b, &s) in shard_of.iter().enumerate() {
-    steps[s as usize] = steps[s as usize]
-      .saturating_add(block_step_cost(profile.block(b as u32)));
-  }
-  for sh in &manifest.shards {
-    let i = sh.id as usize;
-    steps[i] = steps[i]
-      .saturating_add(SHARD_COST_FLOOR)
-      .saturating_add(COST_PER_INGRESS_BYTE.saturating_mul(sh.cross_ingress));
-  }
-  steps
-}
-
-/// Human-readable duration for the prove-time report.
-fn fmt_duration(secs: f64) -> String {
-  if secs >= 3600.0 {
-    format!("{:.1}h", secs / 3600.0)
-  } else if secs >= 60.0 {
-    format!("{:.0}m", secs / 60.0)
-  } else {
-    format!("{secs:.0}s")
-  }
-}
-
-/// One-line prove-time report fragment shared by [`shard_esp`] and
-/// [`shard_esp_cap`]: total steps across all shards plus the wall-clock estimate
-/// at the requested `parallelism` (and the sequential baseline).
-fn prove_report(
-  profile: &BlockProfile,
-  shard_of: &[u32],
-  manifest: &ShardManifest,
-  parallelism: usize,
-) -> String {
-  let est =
-    prove_estimate(&per_shard_steps(profile, shard_of, manifest), parallelism);
-  format!(
-    "total_steps={} → prove est ~{} wall at parallelism={} (sequential ~{}); \
-     leaf model {PROVE_SETUP_SECS:.0}s + {PROVE_SECS_PER_BCOST:.0}s·Bsteps/shard, aggregation extra",
-    est.total_steps,
-    fmt_duration(est.wall_secs),
-    est.parallelism,
-    fmt_duration(est.seq_secs),
-  )
-}
-
-/// A partition sized to a per-shard estimated **cycle** budget rather than a
-/// fixed shard count. See [`partition_for_cycle_cap`].
-pub struct BudgetPlan {
-  /// Chosen shard count.
-  pub num_shards: usize,
-  /// Shard assignment per block id (as [`Hypergraph::partition`] returns).
-  pub shard_of: Vec<u32>,
-  /// The bisection tree for the chosen partition, for tree-aligned aggregation.
-  pub tree: AggNode,
-  /// Per-shard predicted-STEPS cap: `max_cycles − SHARD_COST_FLOOR` (the block
-  /// step-costs that may sum into one shard before the floor pushes it over
-  /// `max_cycles`).
-  pub step_cap: u64,
-  /// Heaviest shard's **full** predicted guest STEPS — `SHARD_COST_FLOOR +
-  /// Σ block_step_cost + COST_PER_INGRESS_BYTE × cross_ingress_bytes`. The
-  /// packer keeps this `≤ max_cycles` (cross-ingress included), so it is the
-  /// tightest single number to compare against the cap / RAM budget.
-  pub max_shard_steps: u64,
-  /// Largest single (atomic) block's [`block_step_cost`] — the hard floor on
-  /// `max_shard_steps` that no shard count can beat.
-  pub largest_block_steps: u64,
-  /// True when the largest atomic block alone exceeds the cap: the budget is
-  /// infeasible by sharding (split that mutual block upstream, or raise the cap
-  /// / use a bigger box).
-  pub infeasible_atomic_floor: bool,
-}
-
-/// Size a partition to a per-shard **cycle** (guest-STEP) budget by **bin-packing
-/// to the cap**, not by balancing into a fixed shard count.
-///
-/// `max_cycles` is the ceiling on a single shard's estimated guest steps
-/// — the leaf prover's trace size, which is what sets peak prover RAM. Get it
-/// from a host-RAM budget with [`cycle_cap_for_ram`] (the measured prover model
-/// `peak_RAM_GiB ≈ 50 + 33 × steps_billions`).
-///
-/// **Why packing, not balancing.** A shard's predicted STEPS is
-/// `SHARD_COST_FLOOR + Σ block_step_cost + COST_PER_INGRESS_BYTE ×
-/// cross_ingress_bytes` (member reduction + own ingress, plus the foreign
-/// dependencies it re-ingresses). The goal is the *fewest* shards that each stay
-/// under the cap — not uniform shards. Balancing into `N = ⌈total/cap⌉` and
-/// growing `N` whenever imbalance pushed the heaviest shard over the cap (the
-/// old approach) *over-sharded*: it spread work evenly, so every shard sat
-/// partially full and a single un-equalizable block forced extra shards. Packing
-/// instead fills each shard as close to the cap as the dependency structure
-/// allows and only opens a new shard when the next block won't fit — giving
-/// `⌈total/cap⌉` shards plus a small packing remainder, each maximally
-/// performant. Lumpy (a near-full shard beside a partial one) is fine.
-///
-/// **How dependency overlap is packed.** We first cut a *fine* min-cut partition
-/// ([`PACK_PIECES_PER_CAP`] pieces per cap) purely to obtain a **cut-coherent
-/// order**: a DFS of the bisection tree visits each tightly-coupled subtree
-/// before moving on, so dependency-overlapping blocks are contiguous. Greedy
-/// next-fit along that order therefore packs overlapping blocks into the same
-/// shard — keeping their shared dependencies in-shard so they are not re-paid as
-/// cross-ingress — and only the thin seams between coherent runs cross a shard
-/// boundary. The cap test includes the live cross-ingress, so a shard packed
-/// "to the cap" still executes under it.
-///
-/// Flags `infeasible_atomic_floor` when one block alone (its floor + reduction +
-/// own + dependency ingress) exceeds the cap — it cannot be split, so the cap is
-/// unreachable by sharding (split that mutual block upstream, or use a bigger
-/// box). The block is still emitted in its own shard, best-effort.
-pub fn partition_for_cycle_cap(
-  profile: &BlockProfile,
-  max_cycles: u64,
-  epsilon: f64,
-) -> BudgetPlan {
-  // Safety margin lives in `cycle_cap_for_ram` (`RAM_USABLE_FRAC` withholds 15%
-  // of the RAM budget) plus the model's own ~1.1× over-prediction — so the cap is
-  // applied directly, no extra factor.
-  let step_cap = max_cycles.saturating_sub(SHARD_COST_FLOOR).max(1);
-  let nblocks = profile.num_blocks();
-  let largest_block =
-    profile.blocks().iter().map(block_step_cost).max().unwrap_or(0);
-  let size = |b: u32| u64::from(profile.block(b).serialized_size);
-
-  if nblocks == 0 {
-    return BudgetPlan {
-      num_shards: 1,
-      shard_of: Vec::new(),
-      tree: AggNode::Leaf(0),
-      step_cap,
-      max_shard_steps: SHARD_COST_FLOOR,
-      largest_block_steps: 0,
-      infeasible_atomic_floor: false,
-    };
-  }
-
-  // 1. Cut-coherent block order. A fine min-cut pre-partition's bisection tree,
-  //    read in DFS order, lays tightly-coupled blocks contiguously so the packer
-  //    keeps dependency overlap within a shard. Sized to ~PACK_PIECES_PER_CAP
-  //    pieces per cap (bounded by the block count); when everything fits one cap
-  //    this collapses to a trivial order.
-  let total: u128 =
-    profile.blocks().iter().map(|b| u128::from(block_step_cost(b))).sum();
-  let pieces = ((total.saturating_mul(PACK_PIECES_PER_CAP))
-    / u128::from(step_cap)) as usize;
-  let n_fine = pieces.clamp(1, nblocks);
-  let order: Vec<u32> = if n_fine < 2 {
-    (0..nblocks as u32).collect()
-  } else {
-    let h = Hypergraph::from_profile(profile);
-    let (fine_of, fine_tree) = h.partition_with_tree(n_fine, epsilon);
-    let mut leaf_order = Vec::with_capacity(n_fine);
-    dfs_leaf_order(&fine_tree, &mut leaf_order);
-    let mut rank = vec![0u32; n_fine];
-    for (r, &sid) in leaf_order.iter().enumerate() {
-      rank[sid as usize] = r as u32;
-    }
-    let mut order: Vec<u32> = (0..nblocks as u32).collect();
-    order.sort_by_key(|&b| (rank[fine_of[b as usize] as usize], b));
-    order
-  };
-
-  // 2. Greedy next-fit packing to the cap, with live cross-ingress accounting.
-  //    A shard accumulates members until adding the next block would push its
-  //    full predicted STEPS over `max_cycles`, then a new shard opens. Foreign
-  //    dependency bytes (`foreign`) shrink when a later member is itself one of
-  //    the current shard's pending dependencies — exactly the overlap packing
-  //    saves.
-  let mut shard_of = vec![0u32; nblocks];
-  let mut members: FxHashSet<u32> = FxHashSet::default();
-  let mut foreign: FxHashSet<u32> = FxHashSet::default();
-  let mut seen: FxHashSet<u32> = FxHashSet::default();
-  let mut member_cost = 0u64;
-  let mut foreign_bytes = 0u64;
-  let mut cur = 0u32;
-  let mut max_shard_steps = 0u64;
-  let mut infeasible = false;
-  let predicted = |member_cost: u64, foreign_bytes: u64| -> u64 {
-    SHARD_COST_FLOOR
-      .saturating_add(member_cost)
-      .saturating_add(COST_PER_INGRESS_BYTE.saturating_mul(foreign_bytes))
-  };
-
-  for (i, &b) in order.iter().enumerate() {
-    let bc = block_step_cost(profile.block(b));
-    // Foreign-byte delta if `b` joins the current shard: `b` itself drops out of
-    // foreign if a prior member depended on it; `b`'s own producers join unless
-    // already member/foreign.
-    seen.clear();
-    let mut added = 0u64;
-    for &p in profile.producers(b) {
-      if p != b
-        && !members.contains(&p)
-        && !foreign.contains(&p)
-        && seen.insert(p)
-      {
-        added = added.saturating_add(size(p));
-      }
-    }
-    let removed = if foreign.contains(&b) { size(b) } else { 0 };
-    let tent_fbytes =
-      foreign_bytes.saturating_add(added).saturating_sub(removed);
-    let tentative = predicted(member_cost.saturating_add(bc), tent_fbytes);
-
-    // Open a new shard when the current one is non-empty and `b` won't fit. The
-    // first block of a run always goes in (a lone over-cap block is flagged
-    // infeasible below, not split — it can't be).
-    if !members.is_empty() && tentative > max_cycles {
-      max_shard_steps =
-        max_shard_steps.max(predicted(member_cost, foreign_bytes));
-      cur += 1;
-      members.clear();
-      foreign.clear();
-      member_cost = 0;
-      foreign_bytes = 0;
-    }
-
-    // Commit `b` into the current shard.
-    if foreign.remove(&b) {
-      foreign_bytes = foreign_bytes.saturating_sub(size(b));
-    }
-    members.insert(b);
-    member_cost = member_cost.saturating_add(bc);
-    for &p in profile.producers(b) {
-      if p != b && !members.contains(&p) && foreign.insert(p) {
-        foreign_bytes = foreign_bytes.saturating_add(size(p));
-      }
-    }
-    shard_of[b as usize] = cur;
-    if members.len() == 1 && predicted(member_cost, foreign_bytes) > max_cycles
-    {
-      infeasible = true; // this block alone overflows the cap
-    }
-    if i == order.len() - 1 {
-      max_shard_steps =
-        max_shard_steps.max(predicted(member_cost, foreign_bytes));
-    }
-  }
-
-  let num_shards = (cur + 1) as usize;
-  // 3. Balanced aggregation tree over the shard sequence. Shards are numbered in
-  //    packing (cut-coherent) order, so adjacent ids are coupled — a balanced
-  //    binary tree over `0..num_shards` keeps coupled shards as siblings, so
-  //    cross-shard assumptions discharge low in the fold.
-  let tree = balanced_agg_tree(0, num_shards as u32);
-
-  BudgetPlan {
-    num_shards,
-    shard_of,
-    tree,
-    step_cap,
-    max_shard_steps,
-    largest_block_steps: largest_block,
-    infeasible_atomic_floor: infeasible,
-  }
-}
-
-/// Collect the leaf shard ids of an [`AggNode`] in left-to-right DFS order.
-fn dfs_leaf_order(node: &AggNode, out: &mut Vec<u32>) {
-  match node {
-    AggNode::Leaf(id) => out.push(*id),
-    AggNode::Internal(l, r) => {
-      dfs_leaf_order(l, out);
-      dfs_leaf_order(r, out);
-    },
-  }
-}
-
-/// A balanced binary [`AggNode`] over the contiguous shard-id range `lo..hi`.
-fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
-  debug_assert!(hi > lo);
-  if hi - lo <= 1 {
-    AggNode::Leaf(lo)
-  } else {
-    let mid = lo + (hi - lo) / 2;
-    AggNode::Internal(
-      Box::new(balanced_agg_tree(lo, mid)),
-      Box::new(balanced_agg_tree(mid, hi)),
-    )
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::profile::{OpCounts, ProfileBuilder};
 
   fn addr(byte: u8) -> Address {
     Address::from_slice(&[byte; 32]).unwrap()
@@ -3348,120 +3603,6 @@ mod tests {
       0,
       "capping must keep all shards non-empty"
     );
-  }
-
-  /// Full predicted STEPS of a shard under a partition: floor + member step-cost
-  /// + cross-ingress (foreign producers' bytes). Mirrors the packer's cap test.
-  fn shard_predicted(p: &BlockProfile, shard_of: &[u32], s: u32) -> u64 {
-    let members: FxHashSet<u32> = (0..p.num_blocks() as u32)
-      .filter(|&b| shard_of[b as usize] == s)
-      .collect();
-    let member_cost: u64 =
-      members.iter().map(|&b| block_step_cost(p.block(b))).sum();
-    let mut foreign: FxHashSet<u32> = FxHashSet::default();
-    for &b in &members {
-      for &pr in p.producers(b) {
-        if !members.contains(&pr) {
-          foreign.insert(pr);
-        }
-      }
-    }
-    let foreign_bytes: u64 =
-      foreign.iter().map(|&pr| u64::from(p.block(pr).serialized_size)).sum();
-    SHARD_COST_FLOOR + member_cost + COST_PER_INGRESS_BYTE * foreign_bytes
-  }
-
-  #[test]
-  fn cap_packs_to_minimal_shards_under_cap() {
-    // 40 blocks, each ≈196.6M cost units (subst=1000), no ingress. With a
-    // 1.3e9 cap the floor is 293.6M, leaving room for 5 blocks/shard
-    // (5×196.6M = 983M ≤ 1006.4M; a 6th overflows). Packing should produce
-    // exactly ⌈40/5⌉ = 8 shards, each under the cap — no over-sharding from
-    // balancing.
-    let mut b = ProfileBuilder::new();
-    for i in 1..=40u8 {
-      b.block(addr(i), 1000, 0, 0, ops(1000));
-    }
-    for i in 1..40u8 {
-      b.delta_edge(addr(i), addr(i + 1));
-    }
-    let p = b.finish();
-    let max_cycles = 1_300_000_000u64;
-    let plan = partition_for_cycle_cap(&p, max_cycles, 0.05);
-    assert_eq!(plan.num_shards, 8, "should pack to the minimal 8 shards");
-    assert!(!plan.infeasible_atomic_floor);
-    for s in 0..plan.num_shards as u32 {
-      let pred = shard_predicted(&p, &plan.shard_of, s);
-      assert!(
-        pred <= max_cycles,
-        "shard {s} predicted {pred} exceeds cap {max_cycles}"
-      );
-    }
-    assert!(plan.max_shard_steps <= max_cycles);
-    // Every block assigned to a real shard; tree leaves match the shard ids.
-    assert_eq!(plan.tree.num_leaves(), plan.num_shards);
-  }
-
-  #[test]
-  fn cap_cross_ingress_counts_against_the_cap() {
-    // Two blocks that each delta-unfold a heavy shared dependency `dep` (large
-    // serialized_size). If they land in different shards, BOTH re-ingress `dep`.
-    // The packer must keep them together (coherent order) so `dep` is paid once,
-    // and must count `dep`'s bytes when deciding the cap.
-    let mut b = ProfileBuilder::new();
-    b.block(addr(1), 10, 4_000_000, 0, ops(0)); // dep: ~293e9 ingress cost if foreign
-    b.block(addr(2), 100, 0, 0, ops(100));
-    b.block(addr(3), 100, 0, 0, ops(100));
-    b.delta_edge(addr(2), addr(1)); // 2 unfolds dep
-    b.delta_edge(addr(3), addr(1)); // 3 unfolds dep
-    let p = b.finish();
-    // Cap large enough to hold everything in one shard.
-    let plan = partition_for_cycle_cap(&p, 10_000_000_000, 0.05);
-    for s in 0..plan.num_shards as u32 {
-      let pred = shard_predicted(&p, &plan.shard_of, s);
-      assert!(pred <= 10_000_000_000, "shard {s} over cap: {pred}");
-    }
-  }
-
-  #[test]
-  fn cap_flags_infeasible_atomic_block() {
-    // A single block whose own predicted STEPS exceed the cap cannot be split —
-    // it is emitted alone and the plan is flagged infeasible.
-    let mut b = ProfileBuilder::new();
-    b.block(addr(1), 100_000, 0, 0, ops(100_000)); // ~19.7e9 cost, far over a 1e9 cap
-    b.block(addr(2), 100, 0, 0, ops(100));
-    let p = b.finish();
-    let plan = partition_for_cycle_cap(&p, 1_000_000_000, 0.05);
-    assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
-  }
-
-  #[test]
-  fn shard_esp_file_roundtrip() {
-    // Exercise the CLI's shard path: write a .ixprof, run shard_esp, read back
-    // the .ixes manifest.
-    let p = two_clusters();
-    let dir = std::env::temp_dir();
-    let pid = std::process::id();
-    let prof = dir.join(format!("ix_shard_rt_{pid}.ixprof"));
-    let shard = dir.join(format!("ix_shard_rt_{pid}.ixes"));
-    std::fs::write(&prof, p.to_bytes()).unwrap();
-
-    let report = shard_esp(
-      prof.to_str().unwrap(),
-      2,
-      0.10,
-      1,
-      Some(shard.to_str().unwrap()),
-    )
-    .unwrap();
-    assert!(report.contains("shards=2"), "report was: {report}");
-
-    let m = ShardManifest::from_bytes(&std::fs::read(&shard).unwrap()).unwrap();
-    assert_eq!(m.shards.len(), 2);
-    assert_eq!(m.total_cross_ingress, 1000);
-
-    let _ = std::fs::remove_file(&prof);
-    let _ = std::fs::remove_file(&shard);
   }
 
   #[test]
@@ -3750,7 +3891,7 @@ mod tests {
     let mut m = ShardManifest::build(&p, &shard_of, 3).with_tree(tree);
     for sh in &mut m.shards {
       sh.assumption_root =
-        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+        crate::merkle::merkle_root_canonical(&sh.foreign_blocks);
     }
     (p, m)
   }
@@ -3805,7 +3946,7 @@ mod tests {
     let mut sealed = q.clone();
     for sh in &mut sealed.shards {
       sh.assumption_root =
-        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+        crate::merkle::merkle_root_canonical(&sh.foreign_blocks);
     }
     assert_eq!(sealed.shards[0], m.shards[0]);
     assert_eq!(sealed.shards[2], m.shards[2]);
@@ -3909,7 +4050,7 @@ mod tests {
     let mut sealed = q.clone();
     for sh in &mut sealed.shards {
       sh.assumption_root =
-        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+        crate::merkle::merkle_root_canonical(&sh.foreign_blocks);
     }
     assert_eq!(sealed.shards[1], m.shards[1]);
     assert_eq!(
@@ -3927,7 +4068,7 @@ mod tests {
     let mut sealed = q;
     for sh in &mut sealed.shards {
       sh.assumption_root =
-        ixon::merkle::merkle_root_canonical(&sh.foreign_blocks);
+        crate::merkle::merkle_root_canonical(&sh.foreign_blocks);
     }
     assert_eq!(sealed.to_bytes(), m.to_bytes());
     // A nonzero measurement overrides a carried peak; zero keeps it.

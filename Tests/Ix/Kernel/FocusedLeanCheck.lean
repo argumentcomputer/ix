@@ -2,16 +2,80 @@ module
 
 public import Ix.Cli.CheckLeanCmd
 public import Ix.CompileM
+public import Ix.CompileCertified
+public import Ix.Ixon
 public import Ix.EnvScope
+public import Ix.KernelCheck
 
 /-!
 Shared harness for checking a small source-level closure with the pure-Lean
-kernel.  The Rust compiler writes one temporary Ixon environment, then the
+kernel.  The certified compiler writes one temporary Ixon environment, then the
 same driver used by `ix check-lean --consts` checks their supporting
 closure and requires exact named coverage of the requested regression subjects.
 -/
 
 public section
+
+namespace Ix.KernelCheck
+
+def rsCheckIxonFFI (path : String) (names : Array Lean.Name)
+    (_expectPass : Array Bool) (quiet : Bool) (_failOut : String) :
+    IO (Array (Option CheckError)) := do
+  let bytes ← IO.FS.readBinFile path
+  let cfg : Ix.Cli.CheckLeanCmd.CheckCfg := {
+    workers := 1, verbose := !quiet, silent := quiet, progressMs := 0, slowMs := 0 }
+  let only := names.map toString
+  match ← Ix.Cli.CheckLeanCmd.runMetaCheck bytes cfg (.only only) with
+  | .error err =>
+    return Array.replicate names.size (some (.kernelException err.message))
+  | .ok report =>
+    let mut byLabel : Std.HashMap String (String × String) := {}
+    for t in report.targets do
+      byLabel := byLabel.insert t.target.label (t.outcome, t.reason)
+    return names.map fun n =>
+      match byLabel[toString n]? with
+      | some ("accept", _) | some ("typed", _) => none
+      | some (outcome, reason) => some (.kernelException s!"{outcome}: {reason}")
+      | none => some (.kernelException s!"missing target verdict for {n}")
+
+def rsCheckConstsFFI (consts : List (Lean.Name × Lean.ConstantInfo))
+    (names : Array Lean.Name) (_expectPass : Array Bool) (quiet : Bool) :
+    IO (Array (Option CheckError)) := do
+  let rawEnv := Ix.CompileM.canonInput consts.toArray 32
+  let (compiledEnv, failures) ← match Ix.Cert.compileReport rawEnv with
+    | .ok res => pure res
+    | .error err =>
+      return Array.replicate names.size (some (.compileError (toString err)))
+  let failMap := failures.toMap
+  let bytes ← match Ixon.serEnv compiledEnv with
+    | .ok b => pure b
+    | .error err =>
+      return Array.replicate names.size (some (.compileError (toString err)))
+  let cfg : Ix.Cli.CheckLeanCmd.CheckCfg := {
+    workers := 1, verbose := !quiet, silent := quiet, progressMs := 0, slowMs := 0 }
+  let unfailed := names.filter fun n => !failMap.contains (Ix.Name.fromLeanName n)
+  let only := unfailed.map toString
+  let mut byLabel : Std.HashMap String (Option CheckError) := {}
+  if !only.isEmpty then
+    match ← Ix.Cli.CheckLeanCmd.runMetaCheck bytes cfg (.only only) with
+    | .error err =>
+      for n in unfailed do
+        byLabel := byLabel.insert (toString n) (some (.kernelException err.message))
+    | .ok report =>
+      for t in report.targets do
+        let v := match t.outcome with
+          | "accept" | "typed" => none
+          | outcome => some (.kernelException s!"{outcome}: {t.reason}")
+        byLabel := byLabel.insert t.target.label v
+  return names.map fun n =>
+    if let some reason := failMap[Ix.Name.fromLeanName n]? then
+      some (.compileError reason)
+    else
+      match byLabel[toString n]? with
+      | some res => res
+      | none => some (.kernelException s!"missing target verdict for {n}")
+
+end Ix.KernelCheck
 
 namespace Tests.Ix.Kernel.FocusedLeanCheck
 
@@ -26,15 +90,19 @@ def checkClosure (tag fileStem : String)
   let dir ← IO.FS.createTempDir
   try
     let path := dir / s!"{fileStem}.ixe"
-    let status ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString false
-    unless status.ungrounded.isEmpty do
-      let first := match status.ungrounded[0]? with
+    let outEnv ← match ← Ix.CompileM.compileCertified env consts with
+      | .ok out => pure out
+      | .error err => return (false, 0, names.size, some s!"[{tag}] compile failed: {err}")
+    unless outEnv.failures.isEmpty do
+      let first := match outEnv.failures.toMap.toList.head? with
         | some (name, reason) => s!"{name}: {reason}"
         | none => "<missing diagnostic>"
       return (false, 0, names.size, some s!"[{tag}] compile failed for \
-        {status.ungrounded.size} constant(s); first: {first}")
-
-    let bytes ← IO.FS.readBinFile path
+        {outEnv.failures.toMap.size} constant(s); first: {first}")
+    let bytes ← match Ixon.serEnv outEnv.env with
+      | .ok b => pure b
+      | .error err => return (false, 0, names.size, some s!"[{tag}] serEnv failed: {err}")
+    IO.FS.writeBinFile path bytes
     let cfg : Ix.Cli.CheckLeanCmd.CheckCfg := {
       workers := 1, verbose := true, progressMs := 0, slowMs := 0, tag := s!"[{tag}]" }
     let only := names.map toString

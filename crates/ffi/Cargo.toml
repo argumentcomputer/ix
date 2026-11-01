@@ -18,9 +18,7 @@ itertools = { workspace = true }
 ixvm-codegen = { workspace = true }
 ix-bench = { workspace = true }
 ix-common = { workspace = true }
-ix-compile = { workspace = true }
 ixon = { workspace = true }
-ix-kernel = { workspace = true }
 lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
 multi-stark = { workspace = true }
@@ -50,7 +48,7 @@ default = []
 parallel = ["aiur/parallel"]
 cuda = ["aiur/cuda"]
 cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
-test-ffi = ["ixon/sharing-reference"]
+test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 
 [lints]

@@ -1,4 +1,5 @@
 import Ix.CompileDriver
+import Ix.CompileCertified
 import Ix.Meta
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -17,8 +18,7 @@ from this toolchain's `.olean` files.
   exactly `Init` and `Std`); `limit` bounds the records read, in the environment check
   order.
 * `kernel-reader-fidelity --compile [limit]`: compiles `Init` and `Std` in
-  process with Ix's Rust compiler (`Ix.CompileM.rsCompileEnvBytes`, the
-  compiler behind `ix compile`) and compares that.
+  process with Ix's certified compiler (`Ix.CompileM.compileCertified`) and compares that.
 * `kernel-reader-fidelity --check-kernel`: what `lake run check-kernel` runs,
   the compiled environment if it is present and an in-process compile otherwise,
   at `checkKernelLimit` records.
@@ -47,15 +47,10 @@ def checkKernelLimit : Nat := 20000
 
 def initStdEnv : System.FilePath := ".lake/envs/initstd.ixe"
 
-/-- `Init` and `Std` compiled in process by Ix's Rust compiler. -/
+/-- `Init` and `Std` compiled in process by Ix's certified compiler. -/
 def compileInitStd (leanEnv : Lean.Environment) : IO Ixon.Env := do
-  let dir ← IO.FS.createTempDir
-  try
-    let path := dir / "initstd.ixe"
-    let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
-    IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
-  finally
-    IO.FS.removeDirAll dir
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList)
+  return out.env
 
 def report (r : Report) : IO UInt32 := do
   IO.println r.summary

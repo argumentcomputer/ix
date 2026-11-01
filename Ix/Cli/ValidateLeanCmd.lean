@@ -1,13 +1,27 @@
-/-
+module
+public import Cli
+public import Ix.Common
+public import Ix.CanonM
+public import Ix.CompileM
+public import Ix.CompileDriver
+public import Ix.CompileCertified
+public import Ix.DecompileM
+public import Ix.DecompileDriver
+public import Ix.KernelFidelity.Egress
+public import Ix.KernelFidelity.Reader
+public import Ix.Meta
+public import Ix.Cli.ValidateCmd
+public import Ix.RoleBinding.Compile
+public import Ix.SemanticContract
+
+/-!
   `ix validate-lean <file.lean>`: run the pure-Lean Ix pipeline validation
   against the Lean environment for any file.
 
   Phases (all pure-Lean):
 
-    1. Compile (Lean → Ixon)          — the full pure-Lean pipeline
-                                        (canon → graph → ground →
-                                        condense → parallel
-                                        compile → serialize), its
+    1. Compile (Lean → Ixon)          — the certified pure-Lean pipeline
+                                        (`Ix.CompileM.compileCertified`), its
                                         post-steps, and the role binding
                                         `ix compile-lean` adds: the later
                                         phases read the bytes compile-lean
@@ -35,22 +49,6 @@
   `Benchmarks/Compile/CompileMathlib.lean`) must not become compile-time
   deps of the test suite.
 -/
-module
-public import Cli
-public import Ix.Common
-public import Ix.CanonM
-public import Ix.CompileM
-public import Ix.CompileDriver
-public import Ix.CompileResource
-public import Ix.Cli.DriverOptions
-public import Ix.DecompileM
-public import Ix.DecompileDriver
-public import Ix.KernelFidelity.Egress
-public import Ix.KernelFidelity.Reader
-public import Ix.Meta
-public import Ix.Cli.ValidateCmd
-public import Ix.RoleBinding.Compile
-public import Ix.SemanticContract
 
 public section
 
@@ -145,13 +143,6 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   if ixe?.isNone && path?.isNone then
     p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
     return 1
-  -- The drivers' options (sharing limits, traces), read once for the compile
-  -- (phase 1) and the decompile (phase 5).
-  let opts ← match ← Ix.Cli.driverOptionsFromEnv with
-    | .ok opts => pure opts
-    | .error e =>
-      IO.eprintln s!"[validate-lean] error: {e}"
-      return 2
 
   -- Sources: either elaborate a Lean file (full pipeline, oracle
   -- available) or read a pre-compiled `.ixe` (phases 2–3 only).
@@ -162,12 +153,8 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Phase 5's decompile oracle, in one of two forms. The default is a
   -- per-name 64-bit DIGEST of the canonicalized source (derived
   -- `Hashable`, same field coverage as the `BEq` used by `--full-oracle`,
-  -- O(1) at the hash-consed Name/Level/Expr leaves), collected by the
-  -- STREAMING compile driver during its transient canon pass — the
-  -- whole-env canon map is never materialized at all, which at
-  -- whole-Mathlib scale is the difference between fitting in RAM and
-  -- swapping.
-  -- `--full-oracle` keeps the old whole-env view: full structural BEq per
+  -- O(1) at the hash-consed Name/Level/Expr leaves).
+  -- `--full-oracle` keeps the whole-env view: full structural BEq per
   -- constant — use it to debug a digest mismatch on a filtered (`--ns`) closure.
   let mut canonView? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none
   let mut canonDigests? : Option (Std.HashMap Ix.Name UInt64) := none
@@ -207,36 +194,35 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"Total constants: {constList.length}"
     IO.println "[validate-lean] phase 1: compiling (pure-Lean pipeline)..."
     (← IO.getStdout).flush
-    -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
-    -- ground → condense → parallel compile → serialize), with its
-    -- post-steps, then add the role binding as `ix compile-lean` does
-    -- (`Ix.RoleBinding.Compile.finalize`), so that the later phases read the
-    -- bytes compile-lean writes.
+    -- Phase 1: compile through the certified PURE-LEAN pipeline
+    -- (`Ix.CompileM.compileCertified`), with its post-steps, then add the role
+    -- binding as `ix compile-lean` does (`Ix.RoleBinding.Compile.finalize`),
+    -- so that the later phases read the bytes compile-lean writes.
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
-    let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv leanEnv constList).mapError toString)
-    match ← Ix.CompileM.compileLeanInputValidated input
-        (numWorkers := compileWorkers) (opts := opts) with
+    match ← Ix.CompileM.compileCertified leanEnv constList (workers := compileWorkers) with
     | .error e =>
       phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")
     | .ok out =>
-      let bound : Except String Ix.CompileM.LeanPipelineOut ← try
+      let bound : Except String (Ixon.Env × ByteArray) ← try
           let artifact ← Ix.RoleBinding.Compile.finalize
-            (Ix.RoleBinding.Compile.leanBackend compileWorkers opts) leanEnv
-            Ix.RoleBinding.Compile.nativeCertSource input out.env
-            Ix.Resource.typingLimits
-          let finalized := { out with env := artifact, bytes := ← IO.ofExcept (Ixon.serEnv artifact) }
-          IO.ofExcept (Ix.CompileM.resourcePostStep finalized)
-          pure (.ok finalized)
+            (Ix.RoleBinding.Compile.certifiedBackend compileWorkers) leanEnv
+            Ix.RoleBinding.Compile.nativeCertSource (.plain constList) out.env
+            Ix.Resource.typingLimits (existing? := out.existing?)
+          IO.ofExcept (Ix.CompileM.validateFinalized out.annotated artifact)
+          let finalizedBytes ← IO.ofExcept (Ixon.serEnv artifact)
+          pure (.ok (artifact, finalizedBytes))
         catch e => pure (.error e.toString)
       let added : Array Ix.Name := match bound with
-        | .ok finalized => finalized.env.named.fold (init := #[]) fun acc n _ =>
+        | .ok (artifact, _) => artifact.named.fold (init := #[]) fun acc n _ =>
             if out.env.named.contains n then acc else acc.push n
         | .error _ => #[]
-      bytes := (match bound with | .ok finalized => finalized.bytes | .error _ => out.bytes)
+      bytes := match bound with
+        | .ok (_, finalizedBytes) => finalizedBytes
+        | .error _ => (Ixon.serEnv out.env).toOption.getD .empty
       bindingRecords := match bound with
-        | .ok finalized => finalized.env.consts.fold (init := #[]) fun acc a _ =>
+        | .ok (artifact, _) => artifact.consts.fold (init := #[]) fun acc a _ =>
             if out.env.consts.contains a then acc else acc.push a
         | .error _ => #[]
       -- The binding's own constants (role support and certificate theorems) are
@@ -249,14 +235,10 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
         let ln := Ix.SemanticContract.toLeanName n
         (sources.findSome? (·.find? ln)).map (ln, ·)
       let addedCanon := Ix.CanonM.canonChunk addedConsts
+      let constArr := out.prepared.toArray
+      let chunkSize := max 1 ((constArr.size + 31) / 32)
+      let chunkArr := Ix.CanonM.chunks constArr chunkSize
       if fullOracle then
-        -- Materialize the whole canon view post-hoc (chunk-parallel).
-        -- The streaming compile never builds it; canon is per-constant
-        -- deterministic, so this equals the view the compile read
-        -- through its on-demand fallback.
-        let constArr := constList.toArray
-        let chunkSize := max 1 ((constArr.size + 31) / 32)
-        let chunkArr := Ix.CanonM.chunks constArr chunkSize
         let tasks := chunkArr.map fun chunk =>
           Task.spawn fun _ => Ix.CanonM.canonChunk chunk
         let mut view : Std.HashMap Ix.Name Ix.ConstantInfo := {}
@@ -267,27 +249,34 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
           unless view.contains n do view := view.insert n ci
         canonView? := some view
       else
-        -- The streamed canon pass already digested every input
-        -- constant; the whole-env canon map never existed.
-        canonDigests? := some (addedCanon.foldl (init := out.digests) fun m (n, ci) =>
-          if m.contains n then m else m.insert n (hash ci))
+        let tasks := chunkArr.map fun chunk =>
+          Task.spawn fun _ => (Ix.CanonM.canonChunk chunk).map fun (n, ci) => (n, hash ci)
+        let mut digs : Std.HashMap Ix.Name UInt64 :=
+          Std.HashMap.emptyWithCapacity constArr.size
+        for task in tasks do
+          for (n, d) in task.get do
+            digs := digs.insert n d
+        for (n, ci) in addedCanon do
+          unless digs.contains n do digs := digs.insert n (hash ci)
+        canonDigests? := some digs
       let t1 ← IO.monoMsNow
+      let failures := out.failures.toMap
       match bound with
       | .error e =>
         phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
           .failed s!"role binding (as compile-lean adds it): {e}")
-      | .ok finalized =>
-        if out.cenv.ungrounded.size > 0 then
-          let shown := out.cenv.ungrounded.toList.take 3
+      | .ok (_, finalizedBytes) =>
+        if !failures.isEmpty then
+          let shown := failures.toList.take 3
           let msgs := shown.map fun (n, m) => s!"    ✗ {n.pretty}: {m.take 160}"
           phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
-            .failed (s!"{out.cenv.ungrounded.size} per-block compile \
-failure(s) ({finalized.bytes.size} bytes, {t1 - t0}ms)\n" ++
+            .failed (s!"{failures.size} per-block compile \
+failure(s) ({finalizedBytes.size} bytes, {t1 - t0}ms)\n" ++
               String.intercalate "\n" msgs))
         else
           phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
             .passed s!"pure-Lean pipeline with the role binding compile-lean adds: \
-{finalized.bytes.size} bytes, {out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
+{finalizedBytes.size} bytes, {out.inputs} input constants, {failures.size} ungrounded, \
 {added.size} names added by the binding ({addedCanon.size} with a source) ({t1 - t0}ms)")
   | none, none => unreachable!
 
@@ -396,7 +385,7 @@ use IX_SKIP_PHASES=3 to skip this phase explicitly")
     let decompileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 16
     let (decompiled, errs, _p2st) ←
       Ix.DecompileM.decompileEnvFullParallel ixonEnv canonView?
-        (numWorkers := decompileWorkers) (sharingLimits := opts.sharingLimits)
+        (numWorkers := decompileWorkers)
     let t1 ← IO.monoMsNow
     if !errs.isEmpty then
       let shown := errs.toList.take 5

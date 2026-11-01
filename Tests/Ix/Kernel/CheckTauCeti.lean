@@ -1,8 +1,12 @@
-/-
+import Ix.KernelCheck
+import Tests.Ix.Kernel.FocusedLeanCheck
+import LSpec
+
+/-!
   TauCeti-corpus focus constants for the Rust kernel.
 
   The TauCeti analogue of `Tests.Ix.Kernel.CheckEnv.focusConsts`: known
-  failing / slow constants from full `ix check-rs tauceti.ixe` runs, kept
+  failing / slow constants from full `ix check-lean tauceti.ixe` runs, kept
   here for fast reproduction without paying for the ~557k-constant env
   pass. Unlike `CheckEnv`'s list, these names do not exist in this test
   binary's own Lean environment (TauCeti builds against Mathlib in the
@@ -11,7 +15,7 @@
   `tauceti.ixe` with the focus names as exact seeds. That is the same
   subject-only seeded meta check as
 
-    ix check-rs tauceti.ixe --consts <name1,name2,…>
+    ix check-lean tauceti.ixe --consts <name1,name2,…>
 
   (deps lazily ingressed and trusted, only the seeds re-checked), so a
   single constant can also be cherry-picked straight from the CLI, e.g.
@@ -23,8 +27,6 @@
 
   Run with: `lake test -- kernel-check-tauceti --ignored`
 -/
-import Ix.KernelCheck
-import LSpec
 
 open LSpec
 open Ix.KernelCheck (CheckError rsCheckIxonFFI)
@@ -34,7 +36,7 @@ namespace Tests.Ix.Kernel.CheckTauCeti
 /-- Repo-root serialized TauCeti env (see the module docstring). -/
 def ixePath : System.FilePath := "tauceti.ixe"
 
-/-- Known failing / slow constants from a full `ix check-rs tauceti.ixe`
+/-- Known failing / slow constants from a full `ix check-lean tauceti.ixe`
     run. Edit when bisecting a regression; grouped by root cause in order
     of discovery. Timings below are from the 2026-08-22 full-env run
     (10M-fuel default, `MAX_REC_FUEL` in `crates/kernel/src/tc.rs`). -/

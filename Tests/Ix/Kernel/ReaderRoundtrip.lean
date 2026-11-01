@@ -1,5 +1,5 @@
 import LSpec
-import Ix.CompileDriver
+import Ix.CompileCertified
 import Ix.Meta
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.EgressFidelity
@@ -54,12 +54,13 @@ def input : IO (Lean.Environment × Input) := do
   let prelude := #[`Eq, `Nat, `PUnit, `Empty, `False, `Quot, `Quot.mk, `Quot.lift, `Quot.ind,
     `Quot.sound, `And, `Bool]
   let closed ← IO.ofExcept (closure leanEnv (seeds ++ prelude))
-  let compiled ← match ← Ix.CompileM.compileLeanConsts closed (numWorkers := 1) with
+  let compiled ← match ← Ix.CompileM.compileCertified leanEnv closed 1 with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compilation failed: {e}")
-  unless compiled.ungroundedCount == 0 do
-    throw (IO.userError s!"{compiled.ungroundedCount} constants are ungrounded")
-  let ixon ← IO.ofExcept (Ixon.deEnv compiled.bytes)
+  unless compiled.failures.isEmpty do
+    throw (IO.userError s!"{compiled.failures.toMap.size} constants are ungrounded")
+  let bytes ← IO.ofExcept (Ixon.serEnv compiled.env)
+  let ixon ← IO.ofExcept (Ixon.deEnv bytes)
   return (leanEnv, ← Input.ofEnv leanEnv ixon)
 
 /-- The verdict each fixture declaration must get. -/

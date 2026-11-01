@@ -14,7 +14,6 @@ pub mod aiur;
 ))]
 pub mod iroh;
 pub mod keccak;
-pub mod lean_env;
 #[cfg(all(
   feature = "net",
   not(all(target_os = "macos", target_arch = "aarch64"))
@@ -23,28 +22,39 @@ pub mod lean_iroh;
 pub mod texray;
 pub mod unsigned;
 
-pub mod builder;
 pub mod catalog;
-pub mod compile;
-pub mod graph;
-pub mod ix;
-pub mod kernel;
 pub mod lean_ixon;
 pub mod primitives;
 #[cfg(feature = "test-ffi")]
 pub mod refcount;
 
 pub mod lean;
-pub mod lean_build;
 mod sha256;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+use lean_ffi::object::{LeanIOResult, LeanOwned};
+
+unsafe extern "C" {
+  fn lean_internal_set_thread_stack_size(size: usize);
+}
+
+/// Set the stack size (in bytes) for subsequently spawned Lean runtime threads,
+/// adapting the bare `void lean_internal_set_thread_stack_size(size_t)` runtime
+/// call to the `BaseIO Unit` ABI.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_lean_set_thread_stack_size(
+  size: usize,
+) -> LeanIOResult<LeanOwned> {
+  unsafe {
+    lean_internal_set_thread_stack_size(size);
+  }
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
 #[cfg(feature = "test-ffi")]
-use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanOwned, LeanRef,
-};
+use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanRef};
 
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]

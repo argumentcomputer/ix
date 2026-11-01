@@ -8,7 +8,7 @@ use super::{
 };
 use aiur::G;
 use ix_common::address::Address;
-use ix_kernel::shard::{AggNode, ShardInfo, ShardManifest};
+use ixon::shard::{AggNode, ShardInfo, ShardManifest};
 use ixon::{Constant, ConstantInfo};
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use std::sync::Arc;

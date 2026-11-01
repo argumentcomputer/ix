@@ -1,15 +1,14 @@
-/-
-  Tests for Ix.CondenseM module.
-  - Unit tests for SCC computation mirroring Rust test cases
-  - Cross-implementation tests comparing Lean vs Rust SCC results
--/
-
 module
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.Environment
 public import Ix.Meta
 public import LSpec
+
+/-!
+  Tests for Ix.CondenseM module.
+  - Unit tests for SCC computation
+-/
 
 open LSpec Ix
 
@@ -444,169 +443,6 @@ public def suite : List TestSeq := [
   group "large graphs" testLargeGraphs,
   group "total Tarjan" testTarjan,
   group "former implementation" testAgainstFormer
-]
-
-/-! ## Cross-Implementation Tests (Lean vs Rust) -/
-
-/-- Canonicalize environment in Rust (fast). Returns Ix.RawEnvironment. -/
-@[extern "rs_canonicalize_env_to_ix"]
-opaque rsCanonicalizeEnvToIxRaw :
-  @& List (Lean.Name × Lean.ConstantInfo) → IO Ix.RawEnvironment
-
-/-- Compute SCCs in Rust.
-    Returns RustCondensedBlocks (defined in Ix.CondenseM) -/
-@[extern "rs_compute_sccs"]
-opaque rsComputeSccs : @& List (Lean.Name × Lean.ConstantInfo) →
-  IO Ix.RustCondensedBlocks
-
-/-- Convert Rust lowLinks array to HashMap. -/
-def rustLowLinksToMap (arr : Array (Ix.Name × Ix.Name))
-    : Std.HashMap Ix.Name Ix.Name := Id.run do
-  let mut m : Std.HashMap Ix.Name Ix.Name := {}
-  for (name, root) in arr do
-    m := m.insert name root
-  return m
-
-/-- Convert Rust's blocks array to a HashMap. -/
-def rustBlocksToMap (arr : Array (Ix.Name × Array Ix.Name))
-    : Std.HashMap Ix.Name (Std.HashSet Ix.Name) := Id.run do
-  let mut m : Std.HashMap Ix.Name (Std.HashSet Ix.Name) := {}
-  for (name, members) in arr do
-    let memberSet := members.foldl (init := {}) fun s n => s.insert n
-    m := m.insert name memberSet
-  return m
-
-/-- Convert Lean's CondensedBlocks.blocks to a HashMap. -/
-def leanBlocksToHashMap (m : Ix.Map Ix.Name (Ix.Set Ix.Name))
-    : Std.HashMap Ix.Name (Std.HashSet Ix.Name) := Id.run do
-  let mut result : Std.HashMap Ix.Name (Std.HashSet Ix.Name) := {}
-  for (name, members) in m do
-    let memberSet : Std.HashSet Ix.Name := members.fold (init := {}) fun s n => s.insert n
-    result := result.insert name memberSet
-  return result
-
-/-- Compare SCC results efficiently by checking block counts and sizes.
-    Returns (matches, totalChecked, mismatches). -/
-def compareSCCResults
-    (leanBlocks rustBlocks : Std.HashMap Ix.Name (Std.HashSet Ix.Name))
-    (rustLowLinks : Std.HashMap Ix.Name Ix.Name)
-    : Bool × Nat × Array String := Id.run do
-  let mut mismatches : Array String := #[]
-  let mut checked : Nat := 0
-
-  -- Check that block counts match
-  if leanBlocks.size != rustBlocks.size then
-    mismatches := mismatches.push s!"Block count mismatch: Lean={leanBlocks.size}, Rust={rustBlocks.size}"
-    return (false, 0, mismatches)
-
-  -- For each Lean block, find corresponding Rust block and compare sizes
-  for (_leanRoot, leanMembers) in leanBlocks do
-    checked := checked + 1
-    -- Find any member's Rust root
-    let someMember := leanMembers.fold (init := none) fun acc n =>
-      if acc.isNone then some n else acc
-    match someMember with
-    | none => continue
-    | some member =>
-      match rustLowLinks.get? member with
-      | none =>
-        if mismatches.size < 5 then
-          mismatches := mismatches.push s!"Member {member} not in Rust lowLinks"
-      | some rustRoot =>
-        match rustBlocks.get? rustRoot with
-        | none =>
-          if mismatches.size < 5 then
-            mismatches := mismatches.push s!"Rust root {rustRoot} not in blocks"
-        | some rustMembers =>
-          if leanMembers.size != rustMembers.size then
-            if mismatches.size < 5 then
-              mismatches := mismatches.push s!"Size mismatch for SCC containing {member}: Lean={leanMembers.size}, Rust={rustMembers.size}"
-
-  return (mismatches.isEmpty, checked, mismatches)
-
-/-- Cross-implementation test: compare Lean and Rust SCC computation -/
-def testSccComparison : TestSeq :=
-  .individualIO "SCC Computation: Lean vs Rust" none (do
-    let env ← get_env!
-    let numConsts := env.constants.toList.length
-
-    IO.println s!"[Test] SCC Computation Comparison Test"
-    IO.println s!"[Test] Environment has {numConsts} constants"
-    IO.println ""
-
-    -- Step 0: Canonicalize environment using Rust FFI (fast)
-    IO.println s!"[Test] Step 0: Canonicalizing environment via Rust FFI..."
-    let canonStart ← IO.monoMsNow
-    let rawEnv ← rsCanonicalizeEnvToIxRaw env.constants.toList
-    let ixEnv := rawEnv.toEnvironment
-    let canonTime := (← IO.monoMsNow) - canonStart
-    IO.println s!"[Test]   Canonicalized {ixEnv.consts.size} constants in {canonTime}ms"
-    IO.println ""
-
-    -- Step 1: Compute SCCs in Rust
-    IO.println s!"[Test] Step 1: Computing SCCs in Rust..."
-    let rustStart ← IO.monoMsNow
-    let rustSccs ← rsComputeSccs env.constants.toList
-    let rustTime := (← IO.monoMsNow) - rustStart
-    IO.println s!"[Test]   Rust: {rustSccs.blocks.size} SCCs, {rustSccs.lowLinks.size} lowLinks in {rustTime}ms"
-
-    -- Step 2: Compute SCCs in Lean (using pre-canonicalized environment)
-    IO.println s!"[Test] Step 2: Computing SCCs in Lean..."
-    let leanStart ← IO.monoMsNow
-    let leanRefMap := Ix.GraphM.envParallel ixEnv
-    let sccs := Ix.CondenseM.run leanRefMap
-    IO.print s!"[Test]   Lean: {sccs.blocks.size} SCCs, {sccs.lowLinks.size} lowLinks "
-    let leanTime := (← IO.monoMsNow) - leanStart
-    IO.println s!"in {leanTime}ms"
-    IO.println ""
-
-    -- Step 3: Compare SCC content
-    IO.println s!"[Test] Step 3: Comparing SCC content..."
-    let rustBlocksMap := rustBlocksToMap rustSccs.blocks
-    let leanBlocksMap := leanBlocksToHashMap sccs.blocks
-    let rustLowLinksMap := rustLowLinksToMap rustSccs.lowLinks
-
-    let (sccsMatch, checkedCount, mismatches) :=
-      compareSCCResults leanBlocksMap rustBlocksMap rustLowLinksMap
-
-    for msg in mismatches do
-      IO.println s!"[Test]   {msg}"
-
-    IO.println ""
-    IO.println s!"[Test] Summary:"
-    IO.println s!"[Test]   Canon time: {canonTime}ms"
-    IO.println s!"[Test]   Rust SCC time: {rustTime}ms"
-    IO.println s!"[Test]   Lean SCC time: {leanTime}ms"
-    IO.println s!"[Test]   Checked {checkedCount} SCCs"
-    IO.println s!"[Test]   SCCs match: {sccsMatch}"
-
-    if !sccsMatch then
-      return (false, 0, 0, some s!"SCCs do not match: {mismatches.size} mismatches")
-
-    return (true, 0, 0, none)
-  ) .done
-
-/-- `CondenseM.run` against the former implementation on the reference graph
-of the test binary's environment: equal maps and member sets. -/
-def testFormerOnEnv : TestSeq :=
-  .individualIO "CondenseM.run vs the former Tarjan on the environment" none (do
-    let env ← get_env!
-    let rawEnv ← rsCanonicalizeEnvToIxRaw env.constants.toList
-    let refs := Ix.GraphM.envParallel rawEnv.toEnvironment
-    let mine := layout (Ix.CondenseM.run refs)
-    let former := layout (Former.run refs)
-    let same := mine == former
-    IO.println s!"[Test]   {refs.size} nodes, {mine.2.1.size} blocks; \
-      same maps: {same}"
-    if !same then
-      return (false, 0, 0, some "the maps differ from the former implementation's")
-    return (true, 0, 0, none)
-  ) .done
-
-/-- Cross-implementation test suite (expensive, run with --ignored) -/
-public def suiteIO : List TestSeq := [
-  testSccComparison,
-  testFormerOnEnv
 ]
 
 end Tests.Ix.CondenseM

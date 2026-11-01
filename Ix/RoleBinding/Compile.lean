@@ -1,7 +1,7 @@
 module
 
 public import Ix.RoleBinding.Generate
-public import Ix.CompileResource
+public import Ix.Cert.Compile
 public import Ix.EnvScope
 public import Ix.Meta
 public import IxC.Kernel.PinGen.Certs
@@ -23,20 +23,6 @@ open Ix.Kernel (Role)
 /-- A raw backend must report any incomplete internal compilation as an error.
 The finalizer also checks every requested support/certificate publication. -/
 abbrev Backend := Lean.Environment → Ix.Compile.CompileInput → IO Ixon.Env
-
-def leanBackend (workers : Nat) (opts : Ix.CompileM.DriverOptions) : Backend := fun _ input => do
-  let out ← IO.ofExcept (← Ix.CompileM.compileLeanInputValidated input (numWorkers := workers) (opts := opts))
-  unless out.cenv.ungrounded.isEmpty && out.ungroundedCount == 0 do
-    throw (IO.userError "artifact support: incomplete Lean compilation")
-  return out.env
-
-def rustBackend : Backend := fun _ input => IO.FS.withTempDir fun dir => do
-  let path := dir / "support.ixe"
-  let constants ← IO.ofExcept input.prepare
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI constants path.toString false
-  unless status.ungrounded.isEmpty do
-    throw (IO.userError "artifact support: incomplete Rust compilation")
-  IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
 
 def roleName (role : Role) : Lean.Name :=
   Ix.RoleEvidence.toLeanName (Ix.Kernel.roleKey (md := .source) role)

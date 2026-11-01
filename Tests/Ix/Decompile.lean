@@ -1,9 +1,3 @@
-/-
-  Decompilation tests.
-  Runs the Rust compilation pipeline, then decompiles back to Ix constants
-  and compares via content hashes.
--/
-
 module
 public import Ix.Ixon
 public import Ix.Environment
@@ -11,12 +5,19 @@ public import Ix.Address
 public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
+public import Ix.CompileCertified
 public import Ix.DecompileM
 public import Ix.DecompileDriver
 public import Ix.ImportIxe
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
+
+/-!
+  Decompilation tests.
+  Runs the certified compilation pipeline, then decompiles back to Ix constants
+  and compares via content hashes.
+-/
 
 open LSpec
 
@@ -32,12 +33,15 @@ def testDecompile : TestSeq :=
     IO.println s!"[Test] Environment has {totalConsts} constants"
     IO.println ""
 
-    -- Step 1: Run Rust compilation pipeline
-    IO.println s!"[Step 1] Running Rust compilation pipeline..."
+    -- Step 1: Run certified compilation pipeline
+    IO.println s!"[Step 1] Running certified compilation pipeline..."
     let rustStart ← IO.monoMsNow
-    let phases ← Ix.CompileM.rsCompilePhases leanEnv
+    let rawEnv := Ix.CompileM.canonInput leanEnv.constants.toList.toArray 32
+    let condensed := Ix.Cert.blocksOf rawEnv
+    let certOut ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList)
+    let phases : Ix.CompileM.CompilePhases := { rawEnv, condensed, compileEnv := certOut.env }
     let rustTime := (← IO.monoMsNow) - rustStart
-    IO.println s!"[Step 1]   Rust: {phases.compileEnv.constCount} compiled in {rustTime}ms"
+    IO.println s!"[Step 1]   Certified: {phases.compileEnv.constCount} compiled in {rustTime}ms"
     IO.println s!"[Step 1]   names={phases.compileEnv.names.size}, named={phases.compileEnv.named.size}, consts={phases.compileEnv.consts.size}, blobs={phases.compileEnv.blobs.size}"
     IO.println ""
 
@@ -46,8 +50,7 @@ def testDecompile : TestSeq :=
     IO.println s!"[Step 2] Decompiling (full driver) to Ix types..."
     let decompStart ← IO.monoMsNow
     let origView : Std.HashMap Ix.Name Ix.ConstantInfo := phases.rawEnv.consts
-    -- The limits the Rust compile above read (`IX_SHARING_LIMITS`).
-    let sharingLimits ← IO.ofExcept (← Ix.CompileM.compilerSharingLimitsFromEnv)
+    let sharingLimits := Ix.CompileM.compilerSharingLimits
     let (decompiled, decompErrors, _p2st) ←
       Ix.DecompileM.decompileEnvFullParallel phases.compileEnv (some origView)
         (sharingLimits := sharingLimits)

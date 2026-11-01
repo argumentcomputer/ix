@@ -121,29 +121,6 @@ def GraphM.run (env: Ix.Environment) (stt: GraphState) (g: GraphM α)
   : α × GraphState
   := StateT.run (ReaderT.run (Id.run g env)) stt
 
-/-- Build dependency graph from Ix.Environment.
-    Returns a map from Ix.Name to the set of Ix.Names it references.
-    Pass `dbg := true` and `total` (constant count) to enable progress tracing. -/
-def GraphM.env (env: Ix.Environment) (dbg : Bool := false) (total : Nat := 0)
-    : Map Ix.Name (Set Ix.Name) := Id.run do
-  let mut refs: Map Ix.Name (Set Ix.Name) := Std.HashMap.emptyWithCapacity env.consts.size
-  let mut i : Nat := 0
-  let mut lastPct : Nat := 0
-  for (name, const) in env.consts do
-    let (rs, _) := GraphM.run env .init (graphConst const)
-    refs := refs.insert name rs
-    i := i + 1
-    if dbg && total > 0 then
-      let pct := (i * 100) / total
-      if pct >= lastPct + 10 then
-        dbg_trace s!"  [Graph] {pct}% ({i}/{total})"
-        lastPct := pct
-  return refs
-
-def GraphM.envParallel (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) :=
-  (Ix.Compile.Parallel.map 256 (fun (name, ci) => (name, (GraphM.run { consts := {} } .init (graphConst ci)).1))
-    env.consts.toList.toArray).foldl (fun out (name, refs) => out.insert name refs) {}
-
 def GraphM.envSerial (env: Ix.Environment) : Map Ix.Name (Set Ix.Name) := Id.run do
   let mut refs: Map Ix.Name (Set Ix.Name) := {}
   for (name, const) in env.consts do

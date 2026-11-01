@@ -1,7 +1,6 @@
 import LSpec
 import Ix.Meta
-import Ix.CompileDriver
-import Ix.KernelCheck
+import Ix.CompileCertified
 import Tests.Ix.Kernel.ReaderFidelity
 import Tests.Ix.Kernel.SourceIngressCompare
 import Tests.Ix.Kernel.FastPathDefs
@@ -82,22 +81,8 @@ def Verdict.label : Verdict → String
 
 abbrev Verdicts := Std.HashMap Lean.Name Verdict
 
-/-- The Rust kernel: every name checked, its dependencies trusted. -/
-def rustVerdicts (closed : List (Lean.Name × Lean.ConstantInfo)) : IO Verdicts := do
-  let names := (closed.map (·.1)).toArray
-  let results ← Ix.KernelCheck.rsCheckConstsFFI closed names
-    (Array.replicate names.size true) true
-  unless results.size == names.size do
-    throw (IO.userError s!"Rust omitted closure verdicts: expected {names.size}, got {results.size}")
-  let mut out : Verdicts := {}
-  for i in [:names.size] do
-    out := out.insert names[i]! <| match results[i]! with
-      | none => .accept
-      | some e => .reject e.message
-  return out
-
 /-- IxC's environment check on the compiled environment, by name. -/
-def ixcVerdicts (compiled : Ix.CompileM.LeanPipelineOut) (names : List Lean.Name) :
+def ixcVerdicts (compiled : Ix.CompileM.CertifiedOut) (names : List Lean.Name) :
     IO Verdicts := do
   let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts compiled.env
   let mut out : Verdicts := {}
@@ -146,20 +131,17 @@ def run : IO UInt32 := do
   let names := closed.map (·.1)
   IO.println s!"[kernel-fast-paths] {probes.length} probes, {closed.length} constants in their closures"
   let t0 ← IO.monoMsNow
-  let compiled ← match ← Ix.CompileM.compileLeanConsts closed (numWorkers := 4) with
+  let compiled ← match ← Ix.CompileM.compileCertified leanEnv closed 4 with
     | .ok out => pure out
     | .error e => throw (IO.userError s!"compilation failed: {e}")
-  unless compiled.ungroundedCount == 0 do
-    throw (IO.userError s!"{compiled.ungroundedCount} constants are ungrounded")
+  unless compiled.failures.isEmpty do
+    throw (IO.userError s!"{compiled.failures.toMap.size} constants are ungrounded")
   let t1 ← IO.monoMsNow
-  let rust ← rustVerdicts closed
-  let t2 ← IO.monoMsNow
   let ixc ← ixcVerdicts compiled names
-  let t3 ← IO.monoMsNow
-  IO.println s!"[kernel-fast-paths] compile {t1 - t0} ms, Rust {t2 - t1} ms, \
-    IxC {t3 - t2} ms"
+  let t2 ← IO.monoMsNow
+  IO.println s!"[kernel-fast-paths] compile {t1 - t0} ms, IxC {t2 - t1} ms"
   let mut seq : TestSeq := .done
-  for (kernel, verdicts) in [("Rust", rust), ("IxC", ixc)] do
+  for (kernel, verdicts) in [("IxC", ixc)] do
     for p in probes do
       seq := seq ++ checkProbe kernel (closures.getD p.name []) verdicts p
   lspecIO (.ofList [("kernel-fast-paths", [seq])]) []

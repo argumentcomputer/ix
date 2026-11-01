@@ -13,6 +13,7 @@
     lake test -- kernel-check-comppoly --ignored
 -/
 import Ix.KernelCheck
+import Tests.Ix.Kernel.FocusedLeanCheck
 import LSpec
 
 open LSpec

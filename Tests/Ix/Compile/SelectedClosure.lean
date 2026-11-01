@@ -1,4 +1,12 @@
-/-
+import LSpec
+import Ix.Meta
+import Ix.EnvScope
+import Tests.Ix.Compile.AuxiliaryClosure
+import Tests.Ix.Compile.ClosureHarness
+import IxC.Kernel.CoreDefs
+import IxC.Kernel.Roles
+
+/-!
   compiler-selected-closure: what a selected closure
   (`Ix.EnvScope.collectSelectedDeps`, `ClosureOptions.selected`) carries
   beyond the references of its declarations. No compile.
@@ -46,21 +54,13 @@
   - The donor's `introducedSupport` (LC-15b) and Pass 3 harness are gone:
     the e2e runner compiles through the ordinary compiler
     (`ClosureHarness`).
-  - The e2e runner keeps the certified leg only (no `check-rs`/
-    `check-lean`) and writes to a temporary directory, not
+  - The e2e runner keeps the certified leg only and writes to a temporary directory, not
     `out/codex-a7/…` (R11-24).
 
   Run with: `lake test -- compiler-selected-closure` and
   `lake test -- --ignored compiler-selected-closure-e2e` (after
   `lake build kernel-check-ixe`).
 -/
-import LSpec
-import Ix.Meta
-import Ix.EnvScope
-import Tests.Ix.Compile.AuxiliaryClosure
-import Tests.Ix.Compile.ClosureHarness
-import IxC.Kernel.CoreDefs
-import IxC.Kernel.Roles
 
 open LSpec Lean
 open Tests.Ix.Compile.ClosureHarness

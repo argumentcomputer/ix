@@ -1,6 +1,7 @@
 import Ix.CanonM
 import Ix.GraphM
 import Ix.CondenseM
+import Ix.Compile.FrontEnd
 import Ix.LeanIngress
 import Benchmarks.Kernel.CheckIxeStep
 
@@ -58,7 +59,7 @@ def canon (consts : Array (Lean.Name × Lean.ConstantInfo)) (workers : Nat := 1)
 /-- The condensation of an environment's reference graph, as the compiler's
 driver computes it (`Ix.GraphM`, `Ix.CondenseM`). -/
 def condense (env : Ix.Environment) (parallel : Bool := false) : Ix.CondensedBlocks :=
-  Ix.CondenseM.run (if parallel then Ix.GraphM.envParallel env else Ix.GraphM.env env)
+  Ix.CondenseM.run (if parallel then Ix.Compile.FrontEnd.graph env else Ix.GraphM.envSerial env)
 
 /-- `groups.map convert` on `workers` workers. -/
 def convertAll (groups : Array Group) (workers : Nat) : Array (Except ReadError Converted) :=
@@ -258,9 +259,6 @@ def run (pre : Prelude .source) (env : Ix.Environment)
              aliases := aliasOf.size, partialDrops, multiDrops }
   let (hoistMoved, hoistGuarded) := Ix.Kernel.Frontend.prepareReport pre.ix lowered
   IO.println s!"source-ingress: hoist would move {hoistMoved} records; guard fired: {hoistGuarded}"
-  match Ix.Kernel.checkUnits prepared with
-  | .ok () => IO.println "source-ingress: units check passed on the prepared stream"
-  | .error (e, i) => IO.println s!"source-ingress: units check FAILED at {i}: {e}"
   let (ev, evErrors) ← match evidence with
     | some ev => pure (ev, [])
     | none => IO.lazyPure fun _ => Ix.LeanIngress.sourceEvidenceReport prepared

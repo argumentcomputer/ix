@@ -1,4 +1,13 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Ix.KernelCheck
+import Tests.Ix.Kernel.FocusedLeanCheck
+import Ix.CompileM
+import Ix.CompileCertified
+import Ix.Ixon
+import LSpec
+
+/-!
   auxiliary-closure: Lean's auxiliaries and mutual definitions on
   closure-only environments.
 
@@ -12,7 +21,7 @@
   `.brecOn`/`.below` of the block's first member, and a Prop inductive's
   auxiliaries nested through a Prop inductive. Each case compiles exactly
   that closure (`ix compile`'s path, fail-closed) and type-checks the seed
-  with the Rust kernel (`rsCheckConstsFFI`: Lean closure → Ixon compile →
+  with the kernel (`rsCheckConstsFFI`: Lean closure → Ixon compile →
   kernel), and expects both to pass.
 
   A second case, `mutual` definitions on closure-only environments: a
@@ -21,19 +30,13 @@
   metadata carries Lean's `all` (the siblings' names), which meta kernel
   ingress resolves through the env's Named entries. `collectDeps` follows a
   definition's `all`, so the closure of `oddN` (or of a theorem about it)
-  holds `evenN`, and `ix check-rs` accepts the written `.ixe` (before,
+  holds `evenN`, and the meta kernel accepts the written `.ixe` (before,
   `resolve_all: Named entry for 'evenN' missing`). That case compiles the
   closure to a file, as `ix compile` does, and checks the file with the
-  meta Rust kernel, as `ix check-rs` does.
+  meta kernel.
 
   Run with: `lake test -- --ignored auxiliary-closure`.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Ix.KernelCheck
-import Ix.CompileM
-import Ix.Ixon
-import LSpec
 
 open LSpec
 open Ix.KernelCheck (CheckError rsCheckConstsFFI rsCheckIxonFFI)
@@ -118,12 +121,12 @@ def suite : List TestSeq := [
       let mut errs : Array String := #[]
       let closure := Ix.EnvScope.collectDeps env [seed]
       -- `ix compile`'s path on the raw closure, fail-closed.
-      let prepared ← IO.ofExcept <|
-        Ix.Compile.prepareRegisteredConstants env closure
-      let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared
-        (dir / s!"{seed}.ixe").toString false
-      if let some (n, r) := status.ungrounded[0]? then
-        errs := errs.push s!"compile ({status.ungrounded.size} ungrounded): {n}: {r}"
+      let out ← IO.ofExcept (← Ix.CompileM.compileCertified env closure)
+      let ungrounded := out.failures.toMap.toArray
+      if let some (n, r) := ungrounded[0]? then
+        errs := errs.push s!"compile ({ungrounded.size} ungrounded): {n.pretty}: {r}"
+      else
+        IO.FS.writeBinFile (dir / s!"{seed}.ixe") (← IO.ofExcept (Ixon.serEnv out.env))
       let results ← rsCheckConstsFFI closure #[seed] #[true] false
       match results[0]? with
       | some none => pure ()
@@ -149,13 +152,13 @@ def suite : List TestSeq := [
         errs := errs.push s!"closure lacks {sibling}"
       -- `ix compile`'s path on the raw closure, written to a file …
       let path := (dir / s!"{seed}.ixe").toString
-      let prepared ← IO.ofExcept <|
-        Ix.Compile.prepareRegisteredConstants env closure
-      let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared path false
-      if let some (n, r) := status.ungrounded[0]? then
-        errs := errs.push s!"compile ({status.ungrounded.size} ungrounded): {n}: {r}"
+      let out ← IO.ofExcept (← Ix.CompileM.compileCertified env closure)
+      let ungrounded := out.failures.toMap.toArray
+      if let some (n, r) := ungrounded[0]? then
+        errs := errs.push s!"compile ({ungrounded.size} ungrounded): {n.pretty}: {r}"
       else
-        -- … and the `ix check-rs` path (meta mode) on that file.
+        IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv out.env))
+        -- … and the meta kernel check path on that file.
         let results ← rsCheckIxonFFI path #[seed] #[true] true ""
         match results[0]? with
         | some none => pure ()

@@ -3,11 +3,26 @@
 //! Roundtrip FFI functions for AssocList, DHashMap.Raw, and HashMap
 //! (ix-specific types not covered by the lean-ffi test suite).
 
+use ix_common::prim_addrs::PrimAddrs;
 use lean_ffi::nat::Nat;
-use lean_ffi::object::LeanNat;
 #[cfg(feature = "test-ffi")]
-use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned};
-use lean_ffi::object::{LeanBorrowed, LeanRef};
+use lean_ffi::object::LeanCtor;
+use lean_ffi::object::LeanNat;
+use lean_ffi::object::{
+  LeanArray, LeanBorrowed, LeanIOResult, LeanOwned, LeanProd, LeanRef,
+  LeanString,
+};
+
+/// Expose `PrimAddrs::lean_parity_table()` to Lean as `IO (Array (String × String))`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_prim_addrs_canonical() -> LeanIOResult<LeanOwned> {
+  let table = PrimAddrs::lean_parity_table();
+  let arr = LeanArray::alloc(table.len());
+  for (i, (name, hex)) in table.iter().enumerate() {
+    arr.set(i, LeanProd::new(LeanString::new(name), LeanString::new(hex)));
+  }
+  LeanIOResult::ok(arr)
+}
 
 // =============================================================================
 // AssocList / HashMap roundtrip FFI functions

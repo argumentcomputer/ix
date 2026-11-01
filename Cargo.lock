@@ -1797,25 +1797,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ix-compile"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bignat",
- "blake3",
- "dashmap",
- "indexmap",
- "itertools 0.14.0",
- "ix-common",
- "ix-kernel",
- "ixon",
- "num-bigint 0.4.6",
- "rayon",
- "rustc-hash",
- "sha2 0.10.9",
-]
-
-[[package]]
 name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
@@ -1833,8 +1814,6 @@ dependencies = [
  "itertools 0.14.0",
  "ix-bench",
  "ix-common",
- "ix-compile",
- "ix-kernel",
  "ixon",
  "ixvm-codegen",
  "lean-ffi",
@@ -1856,27 +1835,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ix-kernel"
-version = "0.1.0"
-dependencies = [
- "bignat",
- "blake3",
- "dashmap",
- "indexmap",
- "itertools 0.14.0",
- "ix-common",
- "ixon",
- "log",
- "num-bigint 0.4.6",
- "quickcheck",
- "quickcheck_macros",
- "rayon",
- "rustc-hash",
- "smallvec",
- "stacker",
-]
-
-[[package]]
 name = "ixon"
 version = "0.1.0"
 dependencies = [
@@ -1886,7 +1844,6 @@ dependencies = [
  "indexmap",
  "ix-common",
  "memmap2",
- "mimalloc",
  "nom",
  "num-bigint 0.4.6",
  "quickcheck",

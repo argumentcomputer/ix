@@ -1,7 +1,10 @@
 module
 
-public import Ix.CompileDriver
-public import Ix.CompileResource
+public import Ix.CompileCertified
+
+/-!
+  Contract pipeline test suite (`Tests.ContractPipeline`).
+-/
 
 public section
 
@@ -29,37 +32,28 @@ def input (result : Ixon.ValueContract := .localShared) : Except SourceContractE
 def get (label : String) (r : Except String α) : IO α :=
   match r with | .ok value => pure value | .error e => throw <| IO.userError s!"contract pipeline {label}: {e}"
 
+def compileInput (input : CompileInput) : IO (Except String Ix.CompileM.CertifiedOut) := do
+  match input.prepare >>= fun p => (Ix.CompileM.checkPreparedSource p).map (p, ·) with
+  | .error e => return .error e
+  | .ok (prepared, annotated) => Ix.CompileM.compileCertifiedPrepared prepared annotated 1
+
 def run : IO Unit := do
   let valid ← get "input" ((input).mapError toString)
-  let lean ← Ix.CompileM.compileLeanInputValidated valid (numWorkers := 1) >>= get "Lean compiler"
+  let lean ← compileInput valid >>= get "Lean compiler"
   let prepared ← get "preparation" valid.prepare
-  let rust ← Ix.CompileM.rsCompileEnvFFI prepared
-  let rust := rust.toEnv
+  let (certEnv, _) ← get "certified compiler" (Ix.Cert.compileReport (Ix.CompileM.canonInput prepared.toArray 1))
   unless (lean.env.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) ==
-      (rust.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) do
-    throw <| IO.userError "contract pipeline: Lean/Rust address sets differ"
+      (certEnv.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) do
+    throw <| IO.userError "contract pipeline: Lean/certified address sets differ"
   let profile : Ix.Resource.Profile := {}
-  let explicit ← Ix.CompileM.rsCompileInput valid (some profile)
-  unless (rust.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) ==
-      (explicit.consts.toList.map Prod.fst).mergeSort (fun a b => Address.cmpBytes a b != .gt) do
-    throw <| IO.userError "contract pipeline: explicit profile changed constant addresses"
-  let malformedRejected ← try
-    let _ ← Ix.CompileM.rsCompileEnvProfileFFI prepared (profile.bytes.push 0)
-    pure false
-  catch _ => pure true
+  let _ ← get "explicit profile" (Ix.Resource.validate lean.env profile)
+  let malformedRejected := (Ix.Resource.Profile.ofBytes (profile.bytes.push 0)).toOption.isNone
   unless malformedRejected do
     throw <| IO.userError "contract pipeline: malformed profile bytes accepted"
   let invalid ← get "invalid input" ((input .shared).mapError toString)
-  if (← Ix.CompileM.compileLeanInputValidated invalid (numWorkers := 1)).toOption.isSome then
+  if (← compileInput invalid).toOption.isSome then
     throw <| IO.userError "contract pipeline: pure compiler emitted an escaping local value"
-  let prepared ← get "invalid preparation" invalid.prepare
-  let rejected ← try
-    let _ ← Ix.CompileM.rsCompileEnvFFI prepared
-    pure false
-  catch _ => pure true
-  unless rejected do
-    throw <| IO.userError "contract pipeline: native compiler emitted an escaping local value"
-  IO.println "Contract pipeline: both compilers preserve addresses and reject local escape before emission"
+  IO.println "Contract pipeline: certified compiler preserves addresses and rejects local escape before emission"
 
 end Tests.ContractPipeline
 

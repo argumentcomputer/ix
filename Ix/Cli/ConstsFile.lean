@@ -1,6 +1,9 @@
-/-
+module
+public import Cli
+
+/-!
   Shared parsing for constant-name inputs (`--consts` comma-lists and
-  `--consts-file` files) across every CLI that takes them: `ix check-rs`,
+  `--consts-file` files) across every CLI that takes them: `ix check-lean`,
   `ix compile --exclude-file`, and `bench-typecheck`.
 
   One grammar everywhere: one name per line, everything from a `#` to end of
@@ -14,8 +17,6 @@
   zkVM-style paths, where a `toName` round-trip could mangle numeric or
   private components).
 -/
-module
-public import Cli
 
 public section
 

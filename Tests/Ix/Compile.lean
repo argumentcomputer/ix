@@ -1,8 +1,3 @@
-/-
-  Cross-implementation tests for Compilation.
-  Verifies Lean and Rust implementations produce equivalent results.
--/
-
 module
 public import Ix.Ixon
 public import Ix.Environment
@@ -11,12 +6,18 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.CompileCertified
 public import Ix.CondenseM
 public import Ix.GraphM
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
 public import Tests.Ix.Compile.Mutual
+
+/-!
+  Compilation pipeline tests.
+  Verifies the certified compiler and `compileEnvFold` produce equivalent results.
+-/
 
 open LSpec
 
@@ -138,13 +139,16 @@ def testCrossImpl : TestSeq :=
     IO.println s!"[Test] Environment has {totalConsts} constants"
     IO.println ""
 
-    -- Step 1: Get all compilation phases from Rust in one call
-    IO.println s!"[Step 1] Running Rust compilation pipeline (rsCompilePhases)..."
+    -- Step 1: Canonicalize, condense, and run the certified compilation pipeline
+    IO.println s!"[Step 1] Running certified compilation pipeline (compileCertified)..."
     let rustStart ← IO.monoMsNow
-    let phases ← Ix.CompileM.rsCompilePhases leanEnv
+    let rawEnv := Ix.CompileM.canonInput leanEnv.constants.toList.toArray 32
+    let condensed := Ix.Cert.blocksOf rawEnv
+    let certOut ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList)
+    let phases : Ix.CompileM.CompilePhases := { rawEnv, condensed, compileEnv := certOut.env }
     let rustTime := (← IO.monoMsNow) - rustStart
 
-    IO.println s!"[Step 1]   Rust: {phases.rawEnv.consts.size} consts, {phases.condensed.blocks.size} blocks, {phases.compileEnv.constCount} compiled in {rustTime}ms"
+    IO.println s!"[Step 1]   Certified: {phases.rawEnv.consts.size} consts, {phases.condensed.blocks.size} blocks, {phases.compileEnv.constCount} compiled in {rustTime}ms"
     IO.println ""
 
     -- Step 2: Compile with Lean using Rust's rawEnv and condensed blocks

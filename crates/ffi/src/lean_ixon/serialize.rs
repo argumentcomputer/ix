@@ -3,8 +3,6 @@
 //! Contains FFI functions for comparing Lean and Rust serialization outputs,
 //! and Env serialization roundtrip testing.
 
-use std::sync::Arc;
-
 use crate::lean::{
   LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
 };
@@ -24,32 +22,6 @@ pub extern "C" fn rs_eq_univ_serialization(
   let mut buf = Vec::with_capacity(bytes_data.len());
   put_univ(&univ, &mut buf);
   buf == bytes_data
-}
-
-/// P5 mirror-parity check (canonicity §10.6): does Rust's `canon_univ`
-/// of `univ` equal Lean's `Ixon.canonUniv` result `expected`
-/// structurally? Byte equality follows from structural equality
-/// (`put_univ` is a function of the tree).
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_canon_univ_matches(
-  univ_obj: LeanIxonUniv<LeanBorrowed<'_>>,
-  expected_obj: LeanIxonUniv<LeanBorrowed<'_>>,
-) -> bool {
-  let univ = Arc::new(univ_obj.decode());
-  let expected = expected_obj.decode();
-  *ixon::canon_univ::canon_univ(&univ) == expected
-}
-
-/// Twin parity check for the frozen `mk*` rebuild closure
-/// (`reduce_univ` vs `Ixon.reduceUniv`).
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_reduce_univ_matches(
-  univ_obj: LeanIxonUniv<LeanBorrowed<'_>>,
-  expected_obj: LeanIxonUniv<LeanBorrowed<'_>>,
-) -> bool {
-  let univ = Arc::new(univ_obj.decode());
-  let expected = expected_obj.decode();
-  *ixon::canon_univ::reduce_univ(&univ) == expected
 }
 
 /// Check if Lean's Ixon.Expr serialization matches Rust.

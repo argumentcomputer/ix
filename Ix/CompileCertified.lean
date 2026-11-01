@@ -44,11 +44,6 @@ their input:
 
 The artifact's role support and certificates are compiled the same way
 (`certifiedBackend`), by `Ix.RoleBinding.Compile.finalize`.
-
-The streamed pipeline (`Ix.CompileM.compileLeanInputValidated`) stays available
-as an uncertified option of both commands: only its fold is proved to be
-`compileReport`'s (`Ix.Cert.Hybrid`), and its streamed front end is tested
-against it.
 -/
 
 namespace Ix.CompileM
@@ -118,7 +113,7 @@ def unboundPublishedRole (ixe : Ixon.Env)
 
 /-- The certified compile's result. -/
 structure CertifiedOut where
-  /-- The prepared input, which `--rust-check` compiles too. -/
+  /-- The prepared input. -/
   prepared : List (Lean.Name × Lean.ConstantInfo)
   /-- The input carries semantic contracts. -/
   annotated : Bool
@@ -186,7 +181,33 @@ def validateFinalized (annotated : Bool) (artifact : Ixon.Env) : Except String U
   if annotated then
     let _ ← Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact)
 
+/-- Up to three recorded failures, root causes first: a failure that only names a
+missing constant is a dependent's, listed after the ones that name a cause. -/
+def recordedFailures (failures : Std.HashMap Ix.Name String) : String :=
+  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
+  let all := failures.toList
+  let ordered := all.filter (!cascade ·.2) ++ all.filter (cascade ·.2)
+  "; ".intercalate (ordered.take 3 |>.map fun (n, e) => s!"{n.pretty}: {(e.replace "\n" " ").take 200}")
+
+/-- Compile `constList` with the certified Lean compiler and return its `CompilePhases`. -/
+def compilePhasesOf (leanEnv : Lean.Environment)
+    (constList : List (Lean.Name × Lean.ConstantInfo))
+    (workers : Nat := 8) : IO CompilePhases := do
+  let certOut ← IO.ofExcept (← compileCertified leanEnv constList workers)
+  unless certOut.failures.isEmpty do
+    let fMap := certOut.failures.toMap
+    throw (IO.userError s!"compilePhasesOf: {fMap.size} constant(s) failed to compile: {recordedFailures fMap}")
+  let rawEnv := canonInput certOut.prepared.toArray workers
+  let condensed := Ix.Cert.blocksOf rawEnv
+  return { rawEnv, condensed, compileEnv := certOut.env }
+
 end Ix.CompileM
+
+namespace Ix.Cert.Compile
+
+abbrev compileCertified := Ix.CompileM.compileCertified
+
+end Ix.Cert.Compile
 
 namespace Ix.RoleBinding.Compile
 
@@ -202,5 +223,42 @@ def certifiedBackend (workers : Nat) : Backend := fun _ input => do
   return out.env
 
 end Ix.RoleBinding.Compile
+
+namespace Ix.RoleBinding
+
+abbrev certifiedBackend := Ix.RoleBinding.Compile.certifiedBackend
+
+end Ix.RoleBinding
+
+namespace Ix.Cli
+
+/-- The process's resident set size, from `/proc/self/status` (`?` where it
+    cannot be read). -/
+def residentSetSize : IO String := do
+  try
+    let status ← IO.FS.readFile "/proc/self/status"
+    let rss := (status.splitOn "\n").findSome? fun l =>
+      if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
+    return (rss.getD "?").trimAscii.toString
+  catch _ => return "?"
+
+/-- Failures listed root causes first: a constant that failed only because a
+    dependency is missing is a cascade, listed after the ones that name the
+    cause (a refusal's message must be visible in the bounded listing). -/
+def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
+  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
+  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
+
+/-- The canonical Merkle root of `env`'s stored constants, formatted as a hex string. -/
+def rootOf (env : Ixon.Env) : String :=
+  toString ((Ix.Merkle.merkleRootCanonical (env.consts.toArray.map (·.1))).getD Ix.Merkle.zeroAddress)
+
+/-- Initial `CompileEnvStatus` for `original` and `failures` prior to finalization and serialization. -/
+def statusOf (original : Ixon.Env) (failures : Std.HashMap Ix.Name String) :
+    Ix.CompileM.CompileEnvStatus :=
+  let ungrounded := (failures.toArray.map fun (n, r) => (n.pretty, r)).qsort (fun a b => a.1 < b.1)
+  { root := rootOf original, ungrounded, nonCanonical := #[], bytes := 0, named := 0, uniqueAnon := 0 }
+
+end Ix.Cli
 
 end

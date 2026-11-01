@@ -1,4 +1,8 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Tests.Ix.Compile.ClosureHarness
+
+/-!
   compile-closure-whole: a closure compile agrees with the whole compile,
   and a closure carries whole logical units. The harness compares each
   selected closure's compiled names and metadata with the whole artifact.
@@ -52,15 +56,12 @@
      reference, and `ix validate-lean --ns LocalCollapse` passes all
      five phases, including source/reader fidelity; the same closure with
      recursors only (without that support) also compiles with no refusal;
-  8. **the Rust compiler**: the Rust compile of every closure
-     (`rsCompileEnvBytesFFI`) is the Lean compile's artifact, byte for
+  8. **the certified compiler**: the certified compile of every closure
+     is the streamed Lean compile's artifact, byte for
      byte.
 
   Run with: `lake test -- --ignored compile-closure-whole`.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Tests.Ix.Compile.ClosureHarness
 
 open Lean
 open Tests.Ix.Compile.ClosureHarness

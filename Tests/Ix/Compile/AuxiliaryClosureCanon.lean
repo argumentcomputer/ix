@@ -1,4 +1,12 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Ix.KernelCheck
+import Tests.Ix.Kernel.FocusedLeanCheck
+import Ix.CompileM
+import Ix.CompileCertified
+import LSpec
+
+/-!
   canon-closure-aux: an auxiliary's address does not depend on the
   compile set.
 
@@ -36,11 +44,6 @@
 
   Run with: `lake test -- --ignored canon-closure-aux`.
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Ix.KernelCheck
-import Ix.CompileM
-import LSpec
 
 open LSpec
 open Ix.KernelCheck (CheckError rsCheckConstsFFI rsCheckIxonFFI)
@@ -154,16 +157,20 @@ end
 
 end Fx
 
-/-- Compile `consts` with the Rust compiler (the `ix compile`
+/-- Compile `consts` with the certified compiler (`ix compile`
     path: fail-closed) and read the output back. -/
 def compileClosure (env : Lean.Environment) (dir : System.FilePath)
     (tag : String) (consts : List (Lean.Name × Lean.ConstantInfo)) :
     IO (Except String Ixon.Env) := do
-  let prepared ← IO.ofExcept <| Ix.Compile.prepareRegisteredConstants env consts
+  let out ← match ← Ix.CompileM.compileCertified env consts with
+    | .ok out => pure out
+    | .error e => return .error e
+  let ungrounded := out.failures.toMap.toArray
+  if let some (n, r) := ungrounded[0]? then
+    return .error s!"compile ({ungrounded.size} ungrounded): {n.pretty}: {r}"
   let path := dir / s!"{tag}.ixe"
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI prepared path.toString false
-  if let some (n, r) := status.ungrounded[0]? then
-    return .error s!"compile ({status.ungrounded.size} ungrounded): {n}: {r}"
+  let bytes ← IO.ofExcept (Ixon.serEnv out.env)
+  IO.FS.writeBinFile path bytes
   return Ixon.rsDeEnv (← IO.FS.readBinFile path)
 
 /-- The closure WITHOUT auxiliary-family completion: `Ix.EnvScope.collectDeps`

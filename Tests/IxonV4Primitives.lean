@@ -1,6 +1,11 @@
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.IxonV4Paths
+import Ix.CompileCertified
 import Ix.EnvScope
+
+/-!
+  Export and verify the Ixon v4 primitive dependency closure and addresses.
+-/
 
 open Tests.Ix.Kernel.BuildPrimitives
 
@@ -28,8 +33,8 @@ def main (args : List String) : IO Unit := do
     (kernelPrimitives.map parseNameToLean).toList).foldl (fun s (n, _) => s.insert n) {}
   let constants := leanEnv.constants.toList.filter fun (name, _) => needed.contains name
   IO.println s!"Compiling {constants.length} primitive dependency declarations"
-  let raw ← Ix.CompileM.rsCompileEnvFFI constants
-  let env := raw.toEnv
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv constants)
+  let env := out.env
   let mut text := s!"# Ixon v{Ixon.Env.VERSION} canonical primitive addresses\n"
   for name in kernelPrimitives do
     let some named := env.named[parseIxName name]?

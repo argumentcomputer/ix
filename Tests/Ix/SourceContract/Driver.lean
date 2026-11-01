@@ -1,9 +1,12 @@
 module
 
 public import LSpec
-public import Ix.CompileDriver
-public import Ix.CompileResource
+public import Ix.CompileCertified
 public import Ix.Meta
+
+/-!
+  Source-contract driver tests (`Tests.Ix.SourceContract.Driver`).
+-/
 
 public section
 
@@ -33,6 +36,18 @@ private def unsupported (result : Except String α) : Bool :=
   match result with
   | .error message => (message.splitOn "external resource interface is absent").length > 1
   | .ok _ => false
+
+private def compileConsts (consts : List (Lean.Name × ConstantInfo)) :
+    IO (Except String Ix.CompileM.CertifiedOut) := do
+  match prepareSourceConstants consts >>= fun p => (checkPreparedSource p).map (p, ·) with
+  | .error e => return .error e
+  | .ok (prepared, annotated) => compileCertifiedPrepared prepared annotated 1
+
+private def compileInput (input : CompileInput) :
+    IO (Except String Ix.CompileM.CertifiedOut) := do
+  match input.prepare >>= fun p => (checkPreparedSource p).map (p, ·) with
+  | .error e => return .error e
+  | .ok (prepared, annotated) => compileCertifiedPrepared prepared annotated 1
 
 private def placement : IO Bool := do
   let env ← getFileEnv "Tests/Ix/SourceContract/PlacementFixture.lean"
@@ -103,9 +118,9 @@ def suite : List TestSeq := [
       if (checkOrdinaryConstants marked (fun _ => false)).toOption != some false then return false
     return true,
   ioTest "Lean constant-list driver rejects an unadmitted annotated axiom" do
-    return unsupported (← compileLeanConstsValidated (constants markedSource) (numWorkers := 1)),
+    return unsupported (← compileConsts (constants markedSource)),
   ioTest "explicit Lean input rejects a missing annotation registry" do
-    match ← compileLeanInput (.plain (constants markedSource)) (numWorkers := 1) with
+    match ← compileInput (.plain (constants markedSource)) with
     | .error message => return (message.splitOn "missingContract").length > 1
     | .ok _ => return false,
   ioTest "explicit Lean input requires an assumption for an annotated axiom" do
@@ -113,29 +128,17 @@ def suite : List TestSeq := [
       { binder := .position 0, uses := .linear }]
       | return false
     let input : CompileInput := { constants := constants plainSource, contracts := #[contract] }
-    return unsupported (← compileLeanInputValidated input (numWorkers := 1)),
+    return unsupported (← compileInput input),
   ioTest "measure-only input preserves ordinary production bytes" do
     let input := CompileInput.plain (constants plainSource)
-    let .ok plain ← compileLeanInput input (numWorkers := 1) | return false
+    let .ok plain ← compileInput input | return false
     let hinted := { input with measureHints := #[⟨plainSource, .position 0, some 1⟩] }
-    let .ok measured ← compileLeanInput hinted (numWorkers := 1) | return false
-    return plain.bytes == measured.bytes,
-  ioTest "Rust FFI rejects source contracts without creating an artifact in either output mode" do
-    let directory ← IO.FS.createTempDir
-    try
-      for allowPartial in [false, true] do
-        let output := directory / s!"contracts-{allowPartial}.ixe"
-        let rejected ← try
-          let _ ← rsCompileEnvBytesFFI (constants markedSource) output.toString allowPartial
-          pure false
-        catch error =>
-          pure ((error.toString.splitOn "unresolved source binder contracts").length > 1)
-        if !rejected || (← output.pathExists) ||
-            (← (System.FilePath.mk (output.toString ++ ".tmp")).pathExists) then
-          return false
-      return true
-    finally
-      IO.FS.removeDirAll directory
+    let .ok measured ← compileInput hinted | return false
+    return (Ixon.serEnv plain.env).toOption == (Ixon.serEnv measured.env).toOption,
+  ioTest "prepared-source preflight rejects unresolved source binder contracts" do
+    match checkPreparedSource (constants markedSource) with
+    | .error message => return (message.splitOn "unresolved source binder contracts").length > 1
+    | .ok _ => return false
 ]
 
 end Tests.Ix.SourceContract.Driver

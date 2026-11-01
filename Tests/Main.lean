@@ -53,7 +53,6 @@ import Tests.Ix.Compile.SourceGraph
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
-import Tests.Ix.Kernel.BuildPrimOrigs
 import Tests.Ix.Kernel.CheckEnv
 import Tests.Ix.Kernel.CheckCompPoly
 import Tests.Ix.Kernel.CheckPrimeGaps
@@ -90,7 +89,6 @@ import Tests.Ix.SharingFamilyNormalize
 import Tests.Ix.SharingContext
 import Tests.Ix.SharingComponents
 import Tests.Ix.SharingTiered
-import Tests.Ix.SharingExactFFI
 import Tests.Ix.SourceContract
 import Tests.Ix.SourceContract.ImportCheck
 import Tests.Ix.SourceContract.SyntaxCheck
@@ -123,10 +121,13 @@ import Tests.Ix.ImportIxe
 import Tests.Ix.TruthMinesRecords
 import Tests.Ix.TruthMines
 import Tests.Registry
-import Tests.Ix.RustCompile
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
+
+/-!
+  Main test runner and registry for `IxTests`.
+-/
 
 open Tests.Registry in
 /-- Every `IxTests` entry with its tier (`Tests/Registry.lean`): primary
@@ -156,7 +157,6 @@ def registry : List Entry := [
   .suite "sharing-family-normalize" .primary Tests.SharingFamilyNormalize.suite,
   .suite "sharing-context" .primary Tests.SharingContext.suite,
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
-  .suite "exact-sharing-ffi" .primary Tests.SharingExactFFI.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   .suite "graph-unit" .primary Tests.Ix.GraphM.suite,
   .suite "condense-unit" .primary Tests.Ix.CondenseM.suite,
@@ -216,8 +216,7 @@ def registry : List Entry := [
   .suite "kernel-read-cache" .primary Tests.Ix.Kernel.ReadCache.suite,
   .suite "kernel-record-check" .primary Tests.Ix.Kernel.RecordCheck.suite,
   .suite "kernel-check-lean-targets" .primary Tests.Ix.Kernel.CheckLeanTargets.suite,
-  .suite "primitive-address-parity" .primary (Tests.Ix.Kernel.BuildPrimitives.paritySuite
-    ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
+  .suite "primitive-address-parity" .primary Tests.Ix.Kernel.BuildPrimitives.paritySuite,
   .suite "decompile-unit" .primary Tests.Decompile.unitSuite,
   -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
   .suiteIO "getfileenv-body" .primary (do return [← Tests.Ix.EnvBody.suite]),
@@ -297,11 +296,8 @@ def registry : List Entry := [
   .suite "truthmines" (.manual "builds the whole TruthMines corpus (network, Mathlib, FLT)") Tests.Ix.TruthMines.buildSuite,
   .suite "truthmines-check" (.manual "checks the whole TruthMines corpus built by `truthmines`") Tests.Ix.TruthMines.checkSuite,
   .suite "truthmines-mini" (.manual "builds the small TruthMines tier (network, Mathlib, FLT)") Tests.Ix.TruthMines.miniSuite,
-  .suite "rust-canon-roundtrip" (.ci .compilePipeline) Tests.CanonM.rustSuiteIO,
   .suite "serial-canon-roundtrip" (.ci .compilePipeline) Tests.CanonM.serialSuiteIO,
   .suite "parallel-canon-roundtrip" (.ci .compilePipeline) Tests.CanonM.parallelSuiteIO,
-  .suite "graph-cross" (.ci .compilePipeline) Tests.Ix.GraphM.suiteIO,
-  .suite "condense-cross" (.ci .compilePipeline) Tests.Ix.CondenseM.suiteIO,
   .suite "compile" (.ci .compile) Tests.Compile.compileSuiteIO,
   .suite "decompile" (.ci .decompile) Tests.Decompile.decompileSuiteIO,
   .suite "rust-serialize" (.ci .compilePipeline) Tests.RustSerialize.rustSerializeSuiteIO,
@@ -318,7 +314,6 @@ def registry : List Entry := [
   .suite "kernel-check-tauceti" (.manual "needs tauceti.ixe") Tests.Ix.Kernel.CheckTauCeti.suite,
   .suite "kernel-check-tauceti-reduction" (.manual "self-contained, but in no gate yet") Tests.Ix.Kernel.CheckTauCetiReduction.suite,
   .suite "rust-kernel-build-primitives" (.ci .misc) Tests.Ix.Kernel.BuildPrimitives.suite,
-  .suite "rust-kernel-build-prim-origs" (.ci .misc) Tests.Ix.Kernel.BuildPrimOrigs.suite,
   -- Lean's auxiliaries and mutual definitions on closure-only environments
   -- (`collectDeps`), through the Rust compiler and kernel
   .suite "auxiliary-closure" (.ci .compilePipeline) Tests.Ix.Compile.AuxiliaryClosure.suite,
@@ -466,11 +461,6 @@ def registry : List Entry := [
   -- Exact retained acceleration inputs, value/head witnesses and full closures.
   .runner "kernel-accel-semantics" (.ci .compilerClosures) Tests.Ix.Kernel.AccelSemantics.run,
   .runner "admission-hash-diff" (.ci .landingInitStd) Tests.Ix.Kernel.AdmissionHashDiff.run,
-  -- the Rust compiler's compile → decompile roundtrip over this binary's
-  -- environment (Tests.Ix.RustCompile); before the registry, a special case
-  -- that ran alone and skipped every other name
-  .env "rust-compile" (.ci .landingCompilers) Tests.Ix.RustCompile.run,
-  .runner "rust-compile-coverage" .primary Tests.Ix.RustCompile.coverageControl,
   -- the 132-case, twice-executed `ix_aggr` activation matrix, kept out of the
   -- primary suite and independent of the large environment
   .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit
@@ -501,7 +491,6 @@ def required : List (String × String) := [
   ("role-equations", "primary"),
   ("ixvm-tagn", "primary"),
   ("ixes-manifest", "primary"),
-  ("rust-compile-coverage", "primary"),
   ("cli", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
@@ -522,7 +511,6 @@ def required : List (String × String) := [
   ("kernel-check-env", "ci:misc"),
   ("kernel-tutorial", "ci:misc"),
   ("compile-schedule-identity", "ci:landing-compilers"),
-  ("rust-compile", "ci:landing-compilers"),
   ("cert-compile-parity-initstd", "ci:landing-initstd"),
   ("initstd-reference", "ci:landing-initstd-cli"),
   ("fidelity-initstd", "ci:landing-initstd-cli"),

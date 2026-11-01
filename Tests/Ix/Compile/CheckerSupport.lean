@@ -1,4 +1,8 @@
-/-
+import Ix.Meta
+import Ix.EnvScope
+import Tests.Ix.Compile.ClosureHarness
+
+/-!
   checker-support-regression: a selected closure carries the checker's
   certificate ground (`Ix.EnvScope.checkerSupportOf`, from `IxC.Kernel.Roles`
   `Role.deps`), on the exact failing corpus case `S_T_0_0_dir`
@@ -43,9 +47,6 @@
   Run with: `lake test -- --ignored checker-support-regression` (after
   `lake build kernel-check-ixe`).
 -/
-import Ix.Meta
-import Ix.EnvScope
-import Tests.Ix.Compile.ClosureHarness
 
 open Lean
 open Tests.Ix.Compile.ClosureHarness
@@ -72,7 +73,7 @@ private def require (ok : Bool) (message : String) : IO Unit :=
 
 /-- `compileClosure`, with no refusal. -/
 private def compileClean (label : String) (env : Environment)
-    (closure : List (Name × ConstantInfo)) : IO Ix.CompileM.LeanPipelineOut := do
+    (closure : List (Name × ConstantInfo)) : IO ClosureOut := do
   let out ← compileClosure env closure (workers := 4)
   require out.cenv.ungrounded.isEmpty
     s!"{label}: {out.cenv.ungrounded.size} refusals, first \

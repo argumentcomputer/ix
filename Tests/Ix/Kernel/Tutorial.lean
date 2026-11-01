@@ -7,6 +7,8 @@
 import Ix.Common
 import Ix.Meta
 import Ix.KernelCheck
+import Tests.Ix.Kernel.FocusedLeanCheck
+import Tests.Ix.Kernel.SourceIngressCompare
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
 import Tests.Ix.Kernel.NatReduction
@@ -22,18 +24,46 @@ namespace Tests.Ix.Kernel.Tutorial
 -- The single source of truth lives in `Ix/KernelCheck.lean`.
 export Ix.KernelCheck (CheckError)
 
--- Re-export the shared FFI binding so existing call sites keep working
--- without an explicit `Ix.KernelCheck.` qualifier. The single
--- `@[extern "rs_kernel_check_consts"]` declaration lives in
--- `Ix/KernelCheck.lean` so that `lake exe ix check` (production CLI)
--- and the test runners share the same Lean-side opaque.
+-- Re-export the shared check helper so existing call sites keep working
+-- without an explicit `Ix.KernelCheck.` qualifier.
 export Ix.KernelCheck (rsCheckConstsFFI)
 
-@[extern "rs_kernel_check_malformed_rec_rule_ixon"]
-opaque rsCheckMalformedRecRuleIxonFFI :
-    @& List (Lean.Name × Lean.ConstantInfo) →
-    @& Lean.Name →
-    IO (Option CheckError)
+def rsCheckMalformedRecRuleIxonFFI
+    (consts : List (Lean.Name × Lean.ConstantInfo))
+    (recName : Lean.Name) :
+    IO (Option CheckError) := do
+  let rawEnv := Ix.CompileM.canonInput consts.toArray 32
+  let (compiledEnv, _) ← match Ix.Cert.compileReport rawEnv with
+    | .ok res => pure res
+    | .error err => return some (.compileError (toString err))
+  let ixRecName := Ix.Name.fromLeanName recName
+  let some named := compiledEnv.named[ixRecName]?
+    | return some (.kernelException s!"missing recursor {recName}")
+  let some lc := compiledEnv.consts[named.addr]?
+    | return some (.kernelException s!"missing constant record for {recName}")
+  let c ← match lc.get with
+    | .ok c => pure c
+    | .error e => return some (.kernelException e)
+  let mutateRec (r : Ixon.Recursor) : Ixon.Recursor :=
+    if h : r.rules.size ≥ 2 then
+      let r0 := r.rules[0]
+      let r1 := r.rules[1]
+      { r with rules := r.rules.set! 1 { r1 with rhs := r0.rhs } }
+    else r
+  let mutatedInfo : Ixon.ConstantInfo := match c.info with
+    | .recr r => .recr (mutateRec r)
+    | .muts ms => .muts (ms.map fun
+      | .recr r => .recr (mutateRec r)
+      | m => m)
+    | info => info
+  let mutatedConst : Ixon.Constant := { c with info := mutatedInfo }
+  let mutatedLazy := Ixon.LazyConstant.ofConstant mutatedConst
+  let mutatedEnv : Ixon.Env := { compiledEnv with consts := compiledEnv.consts.insert named.addr mutatedLazy }
+  let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts mutatedEnv
+  match rows[Ix.LeanIngress.ingressKey ixRecName]? with
+  | some ("accept", _) | some ("typed", _) => return none
+  | some (outcome, reason) => return some (.kernelException s!"{outcome}: {reason}")
+  | none => return some (.kernelException s!"missing verdict for {recName}")
 
 def testTutorialConsts : TestSeq :=
   .individualIO "kernel tutorial checks" none (do

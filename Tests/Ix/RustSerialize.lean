@@ -1,17 +1,18 @@
-/-
-  Rust serialization/deserialization tests.
-  Tests the Rust FFI endpoints for Ixon.Env serialization and deserialization
-  by roundtripping through Rust and comparing with the Lean serializer.
--/
-
 module
 public import Ix.Ixon
 public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
+public import Ix.CompileCertified
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
+
+/-!
+  Rust serialization/deserialization tests.
+  Tests the Rust FFI endpoints for Ixon.Env serialization and deserialization
+  by roundtripping through Rust and comparing with the Lean serializer.
+-/
 
 open LSpec
 
@@ -27,10 +28,11 @@ def testRustSerdeRoundtrip : TestSeq :=
     IO.println s!"[Test] Environment has {totalConsts} constants"
     IO.println ""
 
-    -- Step 1: Compile with Rust to get an Ixon.Env
-    IO.println s!"[Step 1] Running Rust compilation pipeline..."
+    -- Step 1: Compile with certified pipeline to get an Ixon.Env
+    IO.println s!"[Step 1] Running certified compilation pipeline..."
     let compileStart ← IO.monoMsNow
-    let ixonEnv ← Ix.CompileM.rsCompileEnv leanEnv
+    let certOut ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList)
+    let ixonEnv := certOut.env
     let compileTime := (← IO.monoMsNow) - compileStart
     IO.println s!"[Step 1]   Compiled: {ixonEnv.constCount} constants in {compileTime}ms"
     IO.println ""

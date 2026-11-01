@@ -864,7 +864,7 @@ constructor:
 -- `Ix.Cert.Statement`, unchanged, because the check reads it.
 --
 -- The driver is the pure wave fold `Ix.CompileM.compileEnvFold`, the
--- one driver of `compile` and of the IO pipeline (`compileDecoratedConsts`);
+-- one driver of `compile`;
 -- the queue drivers `compileEnvAux` (sequential, live state) and
 -- `compileEnvParallelAux` (waves applied in completion order) go. Only the
 -- driver's name changes in this body; its arguments are the same.

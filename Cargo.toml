@@ -3,11 +3,9 @@ members = [
   "crates/aiur",
   "crates/bench",
   "crates/common",
-  "crates/compile",
   "crates/ffi",
   "crates/ixvm-codegen",
   "crates/ixon",
-  "crates/kernel",
 ]
 resolver = "2"
 
@@ -32,9 +30,7 @@ aiur = { path = "crates/aiur" }
 ixvm-codegen = { path = "crates/ixvm-codegen" }
 ix-bench = { path = "crates/bench" }
 ix-common = { path = "crates/common" }
-ix-compile = { path = "crates/compile" }
 ixon = { path = "crates/ixon" }
-ix-kernel = { path = "crates/kernel" }
 
 # lean-ffi tree (lean-ffi crate + factored-out bignat sub-crate)
 bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "93c7e52952ae94546be08313f4ff3922984c84d5" }

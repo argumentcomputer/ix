@@ -1,4 +1,14 @@
-/-
+module
+
+public import LSpec
+public import Ix.LeanExport
+public import Ix.LeanExport.Compare
+public import Ix.CompileCertified
+public import Ix.RoleBinding.Compile
+public import Ix.Meta
+public import Tests.Fixtures.toolchains.Primitives
+
+/-!
   The `lean4export` bridge (`Ix.LeanExport`, `ix compile-export`).
 
   - **The reader** accepts a well-formed export and refuses malformed ones:
@@ -17,14 +27,6 @@
 
   The fixture is decompressed with the `zstd` command.
 -/
-module
-
-public import LSpec
-public import Ix.LeanExport
-public import Ix.LeanExport.Compare
-public import Ix.RoleBinding.Compile
-public import Ix.Meta
-public import Tests.Fixtures.toolchains.Primitives
 
 public section
 
@@ -152,11 +154,11 @@ def sameBinders (a b : Lean.ConstantInfo) : Bool :=
 certificate theorems from the same environment. -/
 def compileBound (env : Lean.Environment) : IO Ixon.Env := do
   let input ← IO.ofExcept ((Ix.Compile.compileInputFromEnv env env.constants.toList).mapError toString)
-  let out ← IO.ofExcept (← Ix.CompileM.compileLeanInputValidated input (numWorkers := 8))
-  require out.cenv.ungrounded.isEmpty
-    s!"{out.cenv.ungrounded.size} constants failed to compile"
-  Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.leanBackend 8 {}) env (pure env) input
-    out.env Ix.Resource.typingLimits
+  let out ← IO.ofExcept (← Ix.CompileM.compileCertified env env.constants.toList 8)
+  require out.failures.isEmpty
+    s!"{out.failures.toMap.size} constants failed to compile"
+  Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend 8) env (pure env) input
+    out.env Ix.Resource.typingLimits out.existing?
 
 def fidelity : IO (Bool × Nat × Nat × Option String) := do
   let exported ← IO.ofExcept (importString (← readFixture Lean.versionString))
