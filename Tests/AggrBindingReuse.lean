@@ -158,7 +158,7 @@ def runWith (name : String) (aggregate : Bool) (leanEnv : Lean.Environment) : IO
     IO.FS.writeBinFile rolesIxe (← IO.ofExcept (Ixon.serEnv roles))
     let bindingProof := dir / "binding.proof"
     let proved ← ix exe home #["prove-binding", rolesIxe.toString,
-      "--out", bindingProof.toString]
+      "--max-ram", "64", "--out", bindingProof.toString]
     unless proved.exitCode == 0 && (← bindingProof.pathExists) do
       IO.eprintln "ix prove-binding failed"
       return 1

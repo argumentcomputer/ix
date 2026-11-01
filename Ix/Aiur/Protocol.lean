@@ -145,17 +145,24 @@ private opaque proveIxVM' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+  @& Nat → Bool →
     Except String ProveResult
 
 /-- IxVM-native prove: same shape as `prove`, but routes execution
     through the codegen'd Rust kernel (`execute_generated`) instead
     of the bytecode interpreter. The resulting `Proof` is
     verification-compatible with one from `prove`. Only valid when
-    `system.toplevel` is the IxVM kernel's bytecode. -/
+    `system.toplevel` is the IxVM kernel's bytecode.
+
+    With `traceShards`, the execution is gated against `maxRamBytes`
+    (`0`: detect 85% of `MemAvailable`) and an over-budget record is
+    proven as a batch of trace shards within that budget. -/
 def proveIxVM (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
+  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer)
+  (maxRamBytes : Nat := 0) (traceShards : Bool := false) :
     Except String (Array G × Proof × IOBuffer) :=
-  (proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+  (proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray
+    maxRamBytes traceShards).map
     fun r => (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]

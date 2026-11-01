@@ -82,7 +82,8 @@ private def member (exe : String) (home dir : System.FilePath) (maxRam : Nat) (v
   let piece := dir / s!"lean-{v}.ixe"
   let ixes := dir / s!"lean-{v}.ixes"
   let bindingProof := dir / s!"binding-{v}.proof"
-  let proved ← ix exe home #["prove-binding", piece.toString, "--out", bindingProof.toString]
+  let proved ← ix exe home #["prove-binding", piece.toString,
+    "--max-ram", toString maxRam, "--out", bindingProof.toString]
   if proved.exitCode != 0 then return .error s!"{v}: ix prove-binding"
   let sharded ← ix exe home #["shard", piece.toString, "--max-ram", "64", "--out", ixes.toString]
   if sharded.exitCode != 0 then return .error s!"{v}: ix shard"

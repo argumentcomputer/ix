@@ -55,9 +55,12 @@ def runProveBinding (p : Cli.Parsed) : IO UInt32 := do
     | IO.eprintln "compiled toplevel has no `verify_claim` entry"; return 1
   let system := Aiur.AiurSystem.build compiled.bytecode Aiur.defaultCommitmentParameters
     Aiur.defaultFriParameters
+  let maxRamBytes :=
+    ((p.flag? "max-ram").map (·.as! Nat)).getD 0 * (1024 * 1024 * 1024)
   IO.println s!"Proving the binding claim for {binding.address}"
   (← IO.getStdout).flush
-  let proof ← match system.proveIxVM funIdx witness.input witness.inputIOBuffer with
+  let proof ← match system.proveIxVM funIdx witness.input witness.inputIOBuffer
+      maxRamBytes (traceShards := true) with
     | .error e => IO.eprintln s!"binding claim: {e}"; return 1
     | .ok (_, proof, _) => pure proof
   let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
@@ -80,6 +83,7 @@ def proveBindingCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     out : String; "Where to write the proof (an `Ixon.Proof`; default `binding-<binding hash>.proof`). It is also persisted to `~/.ix/store/`."
+    "max-ram" : Nat; "Prover RAM budget in GiB (default 0: 85% of MemAvailable); over-budget executions prove as trace shards."
 
   ARGS:
     ixe : String; "Path to an .ixe that carries the role binding."

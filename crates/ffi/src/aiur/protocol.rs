@@ -2280,8 +2280,8 @@ impl Workers<'_, '_> {
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
 /// as `rs_aiur_system_prove`, but routes execution through the
 /// codegen'd Rust kernel (`execute_generated`) via
-/// `AiurSystem::prove_ixvm`. The resulting `Proof` is verification-
-/// compatible with `rs_aiur_system_prove`.
+/// `AiurSystem::prove_ixvm_within_budget`. The resulting `Proof` is
+/// verification-compatible with `rs_aiur_system_prove`.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove_ixvm(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -2289,13 +2289,23 @@ extern "C" fn rs_aiur_system_prove_ixvm(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
+  trace_shards: bool,
 ) -> LeanExcept<LeanOwned> {
-  ffi_catch_unwind("AiurSystem.proveIxVM", || {
+  ffi_catch_unwind_except("AiurSystem.proveIxVM", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
     let args = args.map(|x| lean_unbox_g(&x));
     let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
-    let (claim, proof) = aiur_system_obj.get().prove_ixvm(
+    let budget = if max_ram_bytes > 0 {
+      Some(max_ram_bytes)
+    } else if trace_shards {
+      detected_ram_budget()
+    } else {
+      None
+    };
+    let (claim, proof) = match aiur_system_obj.get().prove_ixvm_within_budget(
       fun_idx,
       &args,
       &mut io_buffer,
@@ -2304,9 +2314,26 @@ extern "C" fn rs_aiur_system_prove_ixvm(
           toplevel, fun_idx, input, io_buffer,
         )
       },
-    );
+      budget,
+      false,
+      trace_shards,
+      None,
+    ) {
+      GatedProve::Proved { claim, proof, .. } => (claim, proof),
+      GatedProve::Split { peak, .. } => {
+        return LeanExcept::error_string(&format!(
+          "projected prover peak ({peak} B) exceeds RAM budget"
+        ));
+      },
+      GatedProve::Measured { .. } => {
+        unreachable!("exec_only is false")
+      },
+      GatedProve::Failed(error) => {
+        return LeanExcept::error_string(&format!("execution failed: {error}"));
+      },
+    };
 
-    build_prove_result(&claim, proof, &io_buffer).into()
+    LeanExcept::ok(build_prove_result(&claim, proof, &io_buffer))
   })
 }
 
