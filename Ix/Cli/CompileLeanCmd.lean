@@ -42,20 +42,13 @@ public import Ix.CompileCertified
 public import Ix.RoleBinding.Compile
 public import Ix.Cli.DriverOptions
 public import Ix.Cli.ValidateCmd
-public import Ix.Cli.CompileCmd
 public section
 
 open System (FilePath)
 open Ix.EnvScope
+open Ix.Cli (applySharingLimitsFlag certifiedLimitsRefusal rootCausesFirst)
 
 namespace Ix.Cli.CompileLeanCmd
-
-/-- Failures listed root causes first: a constant that failed only because a
-    dependency is missing is a cascade, listed after the ones that name the
-    cause (a refusal's message must be visible in the bounded listing). -/
-private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
-  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
-  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
 /-- A compile's finalized, serialized artifact, the input `--rust-check`
 compiles, and the summary line's counts. -/
@@ -93,7 +86,7 @@ private def compileCertified (fe : FileEnv) (constList : List (Lean.Name × Lean
   let t0 ← IO.monoMsNow
   let artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend workers)
     fe.env Ix.RoleBinding.Compile.nativeCertSource (.plain constList) out.env
-    Ix.Resource.typingLimits
+    Ix.Resource.typingLimits (existing? := out.existing?)
   IO.ofExcept (Ix.CompileM.validateFinalized out.annotated artifact)
   let t1 ← IO.monoMsNow
   log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"

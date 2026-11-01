@@ -15,10 +15,12 @@ namespace Benchmarks.Kernel.CheckIxeStep
 open Ix.Kernel.Reader
 
 /-- Requested execution: `none` uses the incremental checker, `some n` the
-logical worker pool. Tier support always uses the incremental checker. -/
+worker pool. Tier support defaults to the incremental checker unless `poolTier`
+is set. -/
 structure RunConfig where
   workers : Option Nat := none
   tier : Bool := false
+  poolTier : Bool := false
   skip : Std.HashSet String := {}
 
 /-- The path actually taken. Tier fallback records the original request;
@@ -61,12 +63,15 @@ def runRecords (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md)
   if cfg.workers == some 0 then throw (IO.userError "record check: the pool needs a worker")
   let rows ← IO.mkRef (#[] : Array Row)
   let note := fun row => do rows.modify (·.push row); emit row
-  let execution := if cfg.tier then Execution.serialTier cfg.workers else
-    match cfg.workers with | none => .serial | some n => .pool n
+  let execution := if cfg.tier && !cfg.poolTier then Execution.serialTier cfg.workers else
+    match cfg.workers with
+    | none => if cfg.tier then .serialTier none else .serial
+    | some n => .pool n
   let out : LoopOutcome Unit ← match execution with
     | .pool n => do
       let slots ← (Array.range n).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
       CheckIxePool.runOutcome src ev names addresses cfg.skip slots note log progress onRead spell
+        (tier := if cfg.tier then src.tierHook else none)
     | .serial | .serialTier _ => do
       let out ← checkLoopWith src.view src.read src.commit (← src.init) (Checker.stepRecord ev) {}
         names addresses cfg.skip note (progress := fun i o => progress i o.counts)

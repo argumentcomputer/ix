@@ -21,6 +21,26 @@ def validate (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except Strin
   validateInductiveFlags env
   validateMutualSafety env blocks
 
+@[expose] def validatePar (env : Ix.Environment) (blocks : Ix.CondensedBlocks) : Except String Unit :=
+  let missingTask := Task.spawn fun _ => missingBlockRefs? blocks
+  let flagsTask := Task.spawn fun _ => validateInductiveFlags env
+  let safetyTask := Task.spawn fun _ => validateMutualSafety env blocks
+  match missingTask.get with
+  | some message => .error message
+  | none =>
+    match flagsTask.get with
+    | .error e => .error e
+    | .ok () => safetyTask.get
+
+@[csimp] theorem validate_eq_par : @validate = @validatePar := by
+  funext env blocks
+  unfold validate validatePar
+  cases missingBlockRefs? blocks with
+  | some message => rfl
+  | none =>
+    dsimp only
+    cases validateInductiveFlags env <;> rfl
+
 def initialWith (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (sched : FoldSchedule) (limits : Ix.Sharing.Exact.Limits) : FoldState :=
   let view : Ix.Environment := { consts := {}, fallback? := some env.get? }
@@ -55,17 +75,19 @@ def driverIO (config : ReadyQueue.Config) (env : Ix.Environment)
     (width : Nat := foldWaveTasks) :
     IO ({ result : DriverResult // result = compileEnvFold env blocks dbg limits width } ×
       ReadyQueue.Metrics) := do
-  let validation ← IO.lazyPure fun _ =>
-    (⟨validate env blocks, rfl⟩ : { result : Except String Unit // result = validate env blocks })
+  let validationTask ← IO.asTask do
+    return (⟨validate env blocks, rfl⟩ : { result : Except String Unit // result = validate env blocks })
+  let sched := FoldSchedule.of blocks
+  let initSt := initialWith env blocks sched limits
+  let (state, metrics) ← ReadyQueue.run config blocks sched width dbg
+    (blocks.blocks.size + 1) initSt
+  let validation ← IO.ofExcept validationTask.get
   match checked : validation.val with
   | .error message =>
     return (⟨.error message, by
       rw [driver_decomposition, ← validation.property, checked]
-      rfl⟩, {})
+      rfl⟩, metrics)
   | .ok _ =>
-    let sched := FoldSchedule.of blocks
-    let (state, metrics) ← ReadyQueue.run config blocks sched width dbg
-      (blocks.blocks.size + 1) (initialWith env blocks sched limits)
     let result ← IO.lazyPure fun _ =>
       (⟨finish env state.val, by
         rw [driver_decomposition, ← validation.property, checked]

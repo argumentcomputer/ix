@@ -1366,4 +1366,13 @@ def env (e : Env md) : Env md' := ⟨e.consts.map (constantInfo σ)⟩
 
 end Rename
 
+/-- **Value-model pullback along a key map `σ`**: every value model of `env₂`
+pulls back to a value model of `env₁` whose constant values agree with `env₂`'s
+along `σ`. -/
+def ValueModel.Rel {md₁ md₂ : Ix.Kernel.Mode}
+    (σ : Ix.Kernel.Key md₁ → Ix.Kernel.Key md₂)
+    (env₁ : Env md₁) (env₂ : Env md₂) : Prop :=
+  ∀ (V : Type w) [SetTheory V] (M : ValueModel V env₂),
+    ∃ N : ValueModel V env₁, ∀ k φ, N.cval k φ = M.cval (σ k) φ
+
 end Ix.Cert

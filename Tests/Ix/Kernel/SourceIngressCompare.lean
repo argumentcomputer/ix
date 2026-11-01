@@ -1,4 +1,5 @@
 import Ix.CompileM
+import Benchmarks.Kernel.CheckIxePool
 import Tests.Ix.Kernel.SourceIngressStep
 
 /-! # Source-mode verdicts against the Ixon path's (untrusted harness)
@@ -20,22 +21,35 @@ open Benchmarks.Kernel.CheckIxeStep
 
 /-- The verdicts of the Ixon environment check of `ixon`, by Lean name (the
 checker's spelling of it). -/
-def ixonVerdicts (ixon : Ixon.Env) :
+def ixonVerdicts (ixon : Ixon.Env) (workers : Nat := 1) :
     IO (Std.HashMap (CName .source) (String × String)) := do
-  let mut store : RecordStore := {}
-  for (address, lazy) in ixon.consts.toList do
-    store := store.insert address (← IO.ofExcept lazy.get)
+  let constsArr := ixon.consts.toList.toArray
+  let decoded := if workers ≤ 1 then
+      constsArr.map fun (address, lazy) => (address, lazy.get)
+    else
+      Ix.Compile.Parallel.map 64 (fun (address, lazy) => (address, lazy.get)) constsArr
+  let mut store : RecordStore := Std.HashMap.emptyWithCapacity constsArr.size
+  for (address, res) in decoded do
+    store := store.insert address (← IO.ofExcept res)
   let table ← IO.ofExcept defaultTable
   let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore store ixon.anonHints
   let s := setup store (ixon.blobs[·]?) table pre hints.lookup
-  let rows ← IO.mkRef (Std.HashMap.emptyWithCapacity (α := Address) (β := String × String) 0)
+  let rows ← IO.mkRef (Std.HashMap.emptyWithCapacity (α := Address) (β := String × String) s.ordered.size)
   let names := reportNames ixon store
   let total := s.ordered.size
-  let _ ← checkLoop s (names.getD · #[]) s.ordered {} (tier := true)
-    (fun row => rows.modify (·.insert row.address (row.outcome, row.reason)))
-    (progress := fun i _ => do
-      if i % 10000 == 0 then IO.eprintln s!"source-ingress: ixon check {i}/{total}")
+  let emit := fun (row : Row) => rows.modify (·.insert row.address (row.outcome, row.reason))
+  if workers > 1 then
+    let slots ← (Array.range workers).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
+    let _ ← Benchmarks.Kernel.CheckIxePool.runOutcome s.source s.evidence (names.getD · #[])
+      s.ordered {} slots emit (log := fun _ => pure ())
+      (progress := fun i _ => do
+        if i % 10000 == 0 then IO.eprintln s!"source-ingress: ixon check {i}/{total}")
+      (tier := s.source.tierHook)
+  else
+    let _ ← checkLoop s (names.getD · #[]) s.ordered {} (tier := true) emit
+      (progress := fun i _ => do
+        if i % 10000 == 0 then IO.eprintln s!"source-ingress: ixon check {i}/{total}")
   let rows ← rows.get
   let mut out : Std.HashMap (CName .source) (String × String) := {}
   for (name, named) in ixon.named.toList do

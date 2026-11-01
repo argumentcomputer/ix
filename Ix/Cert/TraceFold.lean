@@ -139,41 +139,57 @@ theorem groundSplit_key {E : Ix.Environment} {n : Ix.Name} {rs : Ix.Set Ix.Name}
         · exact ih n rs h
 
 /-- **A block's members are its discovery map's nodes, exactly.** -/
-theorem blocksOfDisc_exact {bd : Std.HashMap UInt64 (Ix.Name × Ix.Name)} {rep x : Ix.Name}
+theorem blocksOfDisc_exact {names : Array Ix.Name} {bd : Condense.Disc names} {rep x : Ix.Name}
     {all : Ix.Set Ix.Name} (h : (Condense.blocksOfDisc bd).get? rep = some all) (hx : x ∈ all.toList) :
     ∃ key val, bd.get? key = some val ∧ val.1 = x := by
-  unfold Condense.blocksOfDisc at h
-  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, List.forIn_pure_yield_eq_foldl] at h
-  change (List.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name) a =>
-      (Std.HashMap.alter b.fst a.2.snd fun x => match x with
-        | some s => some (Std.HashSet.insert s a.2.fst)
-        | none => some {a.2.fst},
-       Std.HashMap.insert b.snd a.2.fst a.2.snd)) (∅, ∅) bd.toList).fst.get? rep = some all at h
-  refine Condense.foldl_inv (fun s : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name => ∀ rep all x,
-      s.1.get? rep = some all → x ∈ all.toList → ∃ key val, bd.get? key = some val ∧ val.1 = x) _ _ _
-    (fun rep all x h _ => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
-    (fun s e he hs rep all x h hx => ?_) rep all x h hx
-  have hbe : bd.get? e.1 = some e.2 := by
-    rw [Std.HashMap.get?_eq_getElem?, ← Std.HashMap.mem_toList_iff_getElem?_eq_some]
-    exact he
-  dsimp only at h
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_alter] at h
-  split at h
-  · rename_i same
-    split at h
-    · rename_i s hs'
-      cases h
-      rcases set_mem_toList_insert hx with e' | hx
-      · exact ⟨e.1, e.2, hbe, e'.symm⟩
-      · rw [Std.HashMap.getElem?_congr same, ← Std.HashMap.get?_eq_getElem?] at hs'
-        exact hs _ _ x hs' hx
-    · cases h
-      rw [show ({e.2.1} : Ix.Set Ix.Name) = (∅ : Ix.Set Ix.Name).insert e.2.1 from rfl] at hx
-      rcases set_mem_toList_insert hx with e' | hx
-      · exact ⟨e.1, e.2, hbe, e'.symm⟩
+  have comp_exact : ∀ (r : Nat) (hr : r < names.size) (comp : Array Nat) (x : Ix.Name),
+      x ∈ (comp.foldl (fun (s : Ix.Set Ix.Name) v =>
+        if hv : v < names.size then s.insert names[v] else s) {names[r]}).toList →
+      ∃ v, ∃ hv : v < names.size, names[v] = x := by
+    intro r hr comp x hx
+    rw [← Array.foldl_toList] at hx
+    refine Condense.foldl_inv (fun s : Ix.Set Ix.Name =>
+        ∀ x, x ∈ s.toList → ∃ v, ∃ hv : v < names.size, names[v] = x)
+      _ comp.toList {names[r]} ?_ ?_ x hx
+    · intro x hx
+      rw [show ({names[r]} : Ix.Set Ix.Name) = (∅ : Ix.Set Ix.Name).insert names[r] from rfl] at hx
+      rcases set_mem_toList_insert hx with rfl | hx
+      · exact ⟨r, hr, rfl⟩
       · simp at hx
-  · rw [← Std.HashMap.get?_eq_getElem?] at h
-    exact hs rep all x h hx
+    · intro s v _ ih x hx
+      split at hx
+      · rename_i hlt
+        rcases set_mem_toList_insert hx with rfl | hx
+        · exact ⟨v, hlt, rfl⟩
+        · exact ih x hx
+      · exact ih x hx
+  unfold Condense.blocksOfDisc at h
+  simp only [Id.run, Array.forIn_pure_yield_eq_foldl, pure_bind, Array.forIn'_pure_yield_eq_foldl] at h
+  let stepInner (s : Ix.Set Ix.Name) (v : Nat) : Ix.Set Ix.Name :=
+    if hv : v < names.size then s.insert names[v] else s
+  change (Array.foldl (fun (b : Ix.Map Ix.Name (Ix.Set Ix.Name))
+      (p : {p // p ∈ bd.c.comps.zip bd.c.roots}) =>
+      let rn := names[p.1.2]'(bd.hr p.1 p.2)
+      b.insert rn (Array.foldl stepInner {rn} p.1.1))
+    ∅ (bd.c.comps.zip bd.c.roots).attach).get? rep = some all at h
+  rw [← Array.foldl_toList] at h
+  obtain ⟨v, hv, rfl⟩ : ∃ v, ∃ hv : v < names.size, names[v] = x := by
+    refine Condense.foldl_inv (fun b : Ix.Map Ix.Name (Ix.Set Ix.Name) =>
+        ∀ rep all x, b.get? rep = some all → x ∈ all.toList →
+          ∃ v, ∃ hv : v < names.size, names[v] = x)
+      _ _ ∅
+      (fun rep all x h _ => by rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h)
+      (fun b p _ ih rep all x h hx => ?_) rep all x h hx
+    dsimp only at h
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
+    split at h
+    · cases h
+      exact comp_exact p.1.2 (bd.hr p.1 p.2) p.1.1 x hx
+    · rw [← Std.HashMap.get?_eq_getElem?] at h
+      exact ih rep all x h hx
+  refine ⟨v, (names[v], bd.rn[v]), ?_, rfl⟩
+  unfold Condense.Disc.get?
+  simp [hv]
 
 /-- **A block's members are its graph's keys, exactly.** -/
 theorem block_exact {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {rep x : Ix.Name} {all : Ix.Set Ix.Name}

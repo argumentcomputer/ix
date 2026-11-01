@@ -16,44 +16,12 @@ public section
 
 open System (FilePath)
 open Ix.EnvScope
+open Ix.Cli (applySharingLimitsFlag certifiedLimitsRefusal rootCausesFirst rootOf statusOf)
 
 private def defaultOutPathFor (pathStr : String) : String :=
   let path := FilePath.mk pathStr
   let stem := path.fileStem.getD (path.fileName.getD pathStr)
   stem.toLower ++ ".ixe"
-
-/-- `--sharing-limits SPEC`: validate the override (the format of
-`Ix.Sharing.Exact.Limits.withOverrides`, which also accepts the Rust limit
-keys) and publish it through `IX_SHARING_LIMITS`, which both compilers read.
-Returns the parse error, if any. -/
-def applySharingLimitsFlag (p : Cli.Parsed) : IO (Option String) := do
-  let some flag := p.flag? "sharing-limits" | return none
-  let spec := flag.as! String
-  match Ix.CompileM.compilerSharingLimits.withOverrides spec with
-  | .error e => return some s!"--sharing-limits: {e}"
-  | .ok _ =>
-    Std.Internal.UV.System.osSetenv Ix.CompileM.sharingLimitsEnvVar spec
-    return none
-
-/-- The certified compiler runs at the default sharing limits: `Ix.Cert.compileReport`,
-the function its correctness theorem is about, fixes them, and other limits can
-change which constants compile. A valid override (`--sharing-limits`, or a nonempty
-`IX_SHARING_LIMITS`) is therefore refused there, with the reason; the uncertified
-compilers (`--streamed`, `--rust`) take one. An invalid override is reported by its
-parser first. -/
-def certifiedLimitsRefusal (p : Cli.Parsed) : IO (Option String) := do
-  let inherited := (← IO.getEnv Ix.CompileM.sharingLimitsEnvVar).any (!·.trimAscii.isEmpty)
-  unless (p.flag? "sharing-limits").isSome || inherited do return none
-  return some "the certified compiler runs at the default sharing limits, which its \
-correctness theorem fixes; --sharing-limits and IX_SHARING_LIMITS apply only to the \
-uncertified compilers (--streamed, --rust)"
-
-/-- Failures listed root causes first: a constant that failed only because a
-    dependency is missing is a cascade, listed after the ones that name the
-    cause (a refusal's message must be visible in the bounded listing). -/
-private def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
-  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
-  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
 
 /-- The report describes this invocation's published envelope. An abort
 never opens a possibly pre-existing output file. The supported headers are
@@ -240,19 +208,15 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let start ← IO.monoMsNow
   -- The requested constants, whose publications and failures `finalize` keeps.
   let requested := Ix.Compile.CompileInput.plain constList
-  let rootOf (env : Ixon.Env) : String :=
-    toString ((Ix.Merkle.merkleRootCanonical (env.consts.toArray.map (·.1))).getD Ix.Merkle.zeroAddress)
-  let statusOf (original : Ixon.Env) (failures : Std.HashMap Ix.Name String) :
-      Ix.CompileM.CompileEnvStatus :=
-    let ungrounded := (failures.toArray.map fun (n, r) => (n.pretty, r)).qsort (fun a b => a.1 < b.1)
-    { root := rootOf original, ungrounded, nonCanonical := #[], bytes := 0, named := 0, uniqueAnon := 0 }
   -- Finalize (support, certificates, binding; the finalized artifact is checked
   -- again), strip names under `--anon`, serialize, publish atomically.
   let publish (backend : Ix.RoleBinding.Compile.Backend) (original : Ixon.Env)
-      (status : Ix.CompileM.CompileEnvStatus) (postStep : Ixon.Env → Except String Unit) :
+      (status : Ix.CompileM.CompileEnvStatus) (postStep : Ixon.Env → Except String Unit)
+      (existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none) :
       IO Ix.CompileM.CompileEnvStatus := do
     let artifact ← Ix.RoleBinding.Compile.finalize backend leanEnv
       Ix.RoleBinding.Compile.nativeCertSource requested original Ix.Resource.typingLimits
+      (existing? := existing?)
     IO.ofExcept (postStep artifact)
     let artifact := if strictAnon then { artifact with
       named := {}, names := {}, comms := {}, addrToName := {} } else artifact
@@ -298,7 +262,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     if !allowPartial && !status.ungrounded.isEmpty then pure status
     else
       publish (Ix.RoleBinding.Compile.certifiedBackend workers) out.env status
-        (Ix.CompileM.validateFinalized out.annotated)
+        (Ix.CompileM.validateFinalized out.annotated) (existing? := out.existing?)
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 

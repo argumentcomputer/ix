@@ -144,6 +144,8 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
   let store ← match store? with
     | some store => pure store.records
     | none => recordStore limits env
+  let certRecordsTask := Task.spawn fun _ => recordStore limits certificates
+  let certNamesTask := Task.spawn fun _ => sourceAddresses certificates
   let published ← publication env (store[·]?) required
   let boundOnly := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList []
   let preRecords ← preludeRecords boundOnly (store[·]?) groups
@@ -153,8 +155,8 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
     unless (base.cx.memberKey ref).toOption == some (Ix.Kernel.roleKey role) do
       throw s!"role generation: {repr role} is not read under its role key"
 
-  let certRecords ← recordStore limits certificates
-  let certNames ← sourceAddresses certificates
+  let certRecords ← certRecordsTask.get
+  let certNames ← certNamesTask.get
   let certStore ← mergeRecords base.store certRecords
   for (role, address) in published.bound do
     if let some certAddress := certNames[role.leanName]? then
@@ -203,44 +205,56 @@ def generate (limits : Ix.Kernel.Admission.Limits) (env certificates : Ixon.Env)
   let mut records : Array (Address × Ixon.Constant) := #[]
   let mut blobs : Array (Address × ByteArray) := #[]
   let mut closed : Std.HashMap Address (CExpr .anon) := {}
-  for (role, theorems) in selected do
-    -- The same closure operations as RoleEvidence.closedProofs, with a
-    -- fallible certificate-key lookup instead of its total key function.
-    let operation := Ix.Kernel.roleKey (md := .anon) role
-    let some operationValue := Ix.RoleEvidence.valueOf declarations operation
-      | throw s!"role generation: {repr role} is not a definition here"
-    let isOperation := Ix.RoleEvidence.certTheorems.any (·.1 == role)
-    let allowed := Ix.RoleEvidence.allowedFor (lookup[·]?) operation operationValue
-    -- Capture the computed set: a function-valued conditional causes closure
-    -- conversion to repeat the graph walk for every visited proof node.
-    let keep : CName .anon → Bool := allowed.contains
-    let proofs ← theorems.mapM fun name => do
-      let some key := keys[name]? | throw s!"role generation: missing certificate key for {name}"
-      let some value := Ix.RoleEvidence.theoremOf declarations key
-        | throw s!"role generation: {name} is not a theorem here"
-      let proof ← (if isOperation then Ix.RoleEvidence.closeProof values keep value
-        else .ok value).mapError
-        fun e => s!"role generation: {name}: {e}"
-      pure (key, proof)
-    let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
-    for (key, proof) in proofs do
-      let some type := declarations.findSome? (fun
-          | .thmDecl cv _ => if cv.name == key then some cv.type else none
-          | _ => none)
-        | throw s!"role generation: no theorem statement for {key}"
-      let (record, extraBlobs) ← Evidence.theoremRecord (addrOfName[·]?) type proof
-      let bytes := Ixon.serConstant record
-      let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
-      unless Ixon.serConstant decoded == bytes do throw "role generation: noncanonical proof record"
-      let address := Address.admissionHash bytes
+  let roleTasks := selected.map fun (role, theorems) =>
+    Task.spawn fun _ => (do
+      -- The same closure operations as RoleEvidence.closedProofs, with a
+      -- fallible certificate-key lookup instead of its total key function.
+      let operation := Ix.Kernel.roleKey (md := .anon) role
+      let some operationValue := Ix.RoleEvidence.valueOf declarations operation
+        | throw s!"role generation: {repr role} is not a definition here"
+      let isOperation := Ix.RoleEvidence.certTheorems.any (·.1 == role)
+      let allowed := Ix.RoleEvidence.allowedFor (lookup[·]?) operation operationValue
+      -- Capture the computed set: a function-valued conditional causes closure
+      -- conversion to repeat the graph walk for every visited proof node.
+      let keep : CName .anon → Bool := allowed.contains
+      let thmTasks := theorems.map fun name =>
+        Task.spawn fun _ => (do
+          let some key := keys[name]? | throw s!"role generation: missing certificate key for {name}"
+          let some value := Ix.RoleEvidence.theoremOf declarations key
+            | throw s!"role generation: {name} is not a theorem here"
+          let proof ← (if isOperation then Ix.RoleEvidence.closeProof values keep value
+            else .ok value).mapError
+            fun e => s!"role generation: {name}: {e}"
+          let some type := declarations.findSome? (fun
+              | Kernel.Declaration.thmDecl cv _ => if cv.name == key then some cv.type else none
+              | _ => none)
+            | throw s!"role generation: no theorem statement for {key}"
+          let (record, extraBlobs) ← Evidence.theoremRecord (addrOfName[·]?) type proof
+          let bytes := Ixon.serConstant record
+          let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
+          unless Ixon.serConstant decoded == bytes do throw "role generation: noncanonical proof record"
+          let address := Address.admissionHash bytes
+          pure (address, record, proof, extraBlobs) :
+            Except String (Address × Ixon.Constant × CExpr .anon × Array (Address × ByteArray)))
+      let mut entries : Array (Ix.Kernel.Evidence Address) := #[]
+      let mut thmOut : Array (Address × Ixon.Constant × CExpr .anon × Array (Address × ByteArray)) := #[]
+      for t in thmTasks do
+        let res ← t.get
+        entries := entries.push (.proof res.1)
+        thmOut := thmOut.push res
+      pure (role, Ix.RoleEvidence.evidenceEntries role entries, thmOut) :
+        Except String (Role × Array (Ix.Kernel.Evidence Address) ×
+          Array (Address × Ixon.Constant × CExpr .anon × Array (Address × ByteArray))))
+  for rt in roleTasks do
+    let (role, roleEv, thmOut) ← rt.get
+    for (address, record, proof, extraBlobs) in thmOut do
       records := records.push (address, record)
       closed := closed.insert address proof
-      entries := entries.push (.proof address)
       for (a, b) in extraBlobs do
         if let some (_, old) := blobs.find? (·.1 == a) then
           unless old == b do throw s!"role generation: conflicting generated blob at {a}"
         else blobs := blobs.push (a, b)
-    evidence := evidence.push (role, Ix.RoleEvidence.evidenceEntries role entries)
+    evidence := evidence.push (role, roleEv)
   let table := RoleTable.ofEntries Ix.Kernel.specVersion published.bound.toList evidence.toList
   table.check
   unless table.wireWF do throw "role generation: table exceeds the canonical wire domain"
@@ -321,11 +335,12 @@ def Generated.emit (generated : Generated) (limits : Ix.Kernel.Admission.Limits)
   for (address, record) in generated.support ++ generated.evidence do
     let bytes := Ixon.serConstant record
     unless Address.admissionHash bytes == address do throw s!"role emission: bad record address {address}"
-    let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
-    unless Ixon.serConstant decoded == bytes do throw s!"role emission: noncanonical record at {address}"
     if let some old := out.consts[address]? then
       unless old.rawBytes == bytes do throw s!"role emission: conflicting record at {address}"
-    else out := { out with consts := out.consts.insert address { buf := bytes, off := 0, len := bytes.size, cache := some record } }
+    else
+      let decoded ← Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes
+      unless Ixon.serConstant decoded == bytes do throw s!"role emission: noncanonical record at {address}"
+      out := { out with consts := out.consts.insert address { buf := bytes, off := 0, len := bytes.size, cache := some record } }
   for (address, bytes) in generated.supportBlobs ++ generated.blobs do
     unless Address.admissionHash bytes == address do throw s!"role emission: bad blob address {address}"
     if let some old := out.blobs[address]? then

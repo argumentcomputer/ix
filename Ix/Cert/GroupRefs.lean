@@ -352,70 +352,49 @@ theorem scanGroup_covers (blocks : Ix.CondensedBlocks) (groupOf : Ix.Map TableNa
 
 /-! ## The condensation: a name's block and the block's references -/
 
-/-- `CondenseM.run`'s loop that files each name under its representative. -/
-def discMaps (byDiscovery : Std.HashMap UInt64 (Ix.Name × Ix.Name)) :
-    Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name := Id.run do
-  let mut blocks : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
+/-- `CondenseM.run`'s loop that files each block's members under the block's representative. -/
+def lowLinksOf (blocks : Ix.Map Ix.Name (Ix.Set Ix.Name)) : Ix.Map Ix.Name Ix.Name := Id.run do
   let mut lowLinks : Ix.Map Ix.Name Ix.Name := {}
-  for (_, (name, lowName)) in byDiscovery do
-    lowLinks := lowLinks.insert name lowName
-    blocks := blocks.alter lowName fun x => match x with
-      | .some s => .some (s.insert name)
-      | .none => .some {name}
-  return (blocks, lowLinks)
+  for (rn, s) in blocks do
+    for nm in s do
+      lowLinks := lowLinks.insert nm rn
+  return lowLinks
 
-/-- **`CondenseM.run`'s representatives and blocks, from one loop.** -/
-theorem condense_maps (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
-    ∃ bd, (CondenseM.run refs).blocks = (discMaps bd).1 ∧ (CondenseM.run refs).lowLinks = (discMaps bd).2 := by
-  obtain ⟨hr, hv, -⟩ := Condense.blocks_eq refs
-  exact ⟨Condense.discOf (Condense.namesOf refs) (Condense.compsOf refs)
-    (Condense.rootNames (Condense.namesOf refs) (Condense.compsOf refs) hr) hv, rfl, rfl⟩
+theorem lowLinks_eq (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) :
+    (CondenseM.run refs).lowLinks = lowLinksOf (CondenseM.run refs).blocks := rfl
 
-theorem discMaps_lowLinks (bd : Std.HashMap UInt64 (Ix.Name × Ix.Name)) {n lo : Ix.Name}
-    (h : (discMaps bd).2.get? n = some lo) :
-    ∃ all, (discMaps bd).1.get? lo = some all ∧ all.contains n = true := by
-  let I : Ix.Map Ix.Name (Ix.Set Ix.Name) × Ix.Map Ix.Name Ix.Name → Prop := fun s =>
-    ∀ n lo, s.2.get? n = some lo → ∃ all, s.1.get? lo = some all ∧ all.contains n = true
-  suffices hI : I (discMaps bd) from hI n lo h
-  unfold discMaps
-  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, List.forIn_pure_yield_eq_foldl]
+theorem lowLinksOf_get (blocks : Ix.Map Ix.Name (Ix.Set Ix.Name)) {n lo : Ix.Name}
+    (h : (lowLinksOf blocks).get? n = some lo) :
+    ∃ all, blocks.get? lo = some all ∧ all.contains n = true := by
+  let I : Ix.Map Ix.Name Ix.Name → Prop := fun m =>
+    ∀ n lo, m.get? n = some lo → ∃ all, blocks.get? lo = some all ∧ all.contains n = true
+  suffices hI : I (lowLinksOf blocks) from hI n lo h
+  unfold lowLinksOf
+  simp only [Id.run, Std.HashMap.forIn_eq_forIn_toList, Std.HashSet.forIn_eq_forIn_toList,
+    List.forIn_pure_yield_eq_foldl, pure_bind]
   refine Condense.foldl_inv I _ _ _ (fun n lo h => by
-    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h) fun s x _ hs n lo h => ?_
-  obtain ⟨d, name, lowName⟩ := x
-  change (s.2.insert name lowName).get? n = some lo at h
-  change ∃ all, (s.1.alter lowName fun x => match x with
-      | .some s => .some (s.insert name)
-      | .none => .some {name}).get? lo = some all ∧ all.contains n = true
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_alter]
-  split at h
+    rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h; cases h) fun m x hx hm => ?_
+  obtain ⟨rn, s⟩ := x
+  have hblk : blocks.get? rn = some s := Condense.get_of_mem_toList hx (BEq.refl rn)
+  refine Condense.foldl_inv I _ _ _ hm fun m' nm hnm hm' n' lo' h' => ?_
+  change (m'.insert nm rn).get? n' = some lo' at h'
+  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h'
+  split at h'
   · rename_i same
-    have e := Option.some.inj h
-    subst e
-    simp only [BEq.rfl, ↓reduceIte]
-    cases s.1[lowName]? with
-    | some s0 => exact ⟨_, rfl, by rw [Std.HashSet.contains_insert, same, Bool.true_or]⟩
-    | none =>
-      refine ⟨_, rfl, ?_⟩
-      show (({} : Ix.Set Ix.Name).insert name).contains n = true
-      rw [Std.HashSet.contains_insert, same, Bool.true_or]
-  · rw [← Std.HashMap.get?_eq_getElem?] at h
-    obtain ⟨all, hall, hn⟩ := hs n lo h
-    split
-    · rename_i same
-      rw [Std.HashMap.getElem?_congr same, ← Std.HashMap.get?_eq_getElem?, hall]
-      exact ⟨_, rfl, by rw [Std.HashSet.contains_insert, hn, Bool.or_true]⟩
-    · rw [← Std.HashMap.get?_eq_getElem?]
-      exact ⟨all, hall, hn⟩
+    cases h'
+    have hnm_in : s.contains nm = true :=
+      Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_of_mem_toList hnm)
+    rw [Std.HashSet.contains_congr same] at hnm_in
+    exact ⟨s, hblk, hnm_in⟩
+  · rw [← Std.HashMap.get?_eq_getElem?] at h'
+    exact hm' n' lo' h'
 
 /-- **A name's representative's block holds the name.** -/
 theorem condense_lowLinks {refs : Ix.Map Ix.Name (Ix.Set Ix.Name)} {n lo : Ix.Name}
     (h : (CondenseM.run refs).lowLinks.get? n = some lo) :
     ∃ all, (CondenseM.run refs).blocks.get? lo = some all ∧ all.contains n = true := by
-  obtain ⟨bd, hb, hl⟩ := condense_maps refs
-  rw [hl] at h
-  rw [hb]
-  exact discMaps_lowLinks bd h
+  rw [lowLinks_eq] at h
+  exact lowLinksOf_get (CondenseM.run refs).blocks h
 
 /-- A fold of unions holds every element of a listed member's set. -/
 theorem foldl_union_contains (refs : Ix.Map Ix.Name (Ix.Set Ix.Name)) {a r : Ix.Name}

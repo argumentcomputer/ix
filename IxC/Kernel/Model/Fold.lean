@@ -87,6 +87,28 @@ theorem axiomStepPB_of (hμ : μ.verifiedChecks = true) : (AxiomStepPB (md := md
   · exact axiomStd hμ mp hcv hok
   · exact axiomSkip mp
 
+/-- Conditional axiom-step hypothesis: every custom user axiom encountered in the
+stream is semantically realized over the current prefix model `mp`. -/
+def CustomAxiomsRealizedPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
+  ∀ {F : Nat} {env : Env md} (mp : EnvModelM V μ env)
+    {cv : ConstantVal md} {type' : Expr md},
+    ConstantValRun μ F env cv type' →
+    cv.name.isCustomAxiomEligible = true →
+    CustomAxiomRealizedM mp cv type'
+
+/-- Conditional `DeclAxiomRunCond` step: given `CustomAxiomsRealizedPB`, every
+standard, tolerated, or custom user axiom step preserves `EnvModelM`. -/
+theorem axiomStepCond_of (hμ : μ.verifiedChecks = true)
+    (hax : (CustomAxiomsRealizedPB (md := md)) V μ)
+    {F : Nat} {env : Env md} (mp : EnvModelM V μ env)
+    {cv : ConstantVal md} {env₂ : Env md}
+    (hR : DeclAxiomRunCond μ F env cv env₂) :
+    Nonempty (EnvModelM V μ env₂) := by
+  rcases hR with hStd | hCust
+  · exact axiomStepPB_of hμ mp hStd
+  · obtain ⟨type', hcv, _, _, _, _, helig, rfl⟩ := hCust
+    exact axiomCustom hμ mp hcv (hax mp hcv helig)
+
 /-- The basis kind's whole step, routed (basis tier). -/
 def BasisStepPB (V : Type w) [SetTheory V] (μ : CheckMode) : Prop :=
   ∀ {env : Env md}, EnvModelM V μ env →

@@ -1958,6 +1958,20 @@ fun names large n =>
 #guard_msgs (whitespace := lax) in
 #print axioms Ix.Cert.Canon.UniverseBridge
 
+/-- info: [cert-audit] canon correspondence: 22 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "canon correspondence"
+    (#[`canonMCorrect, `canonChunkCorrect, `find?_canonChunk,
+      `numbering_nameS, `numbering_pos_nameS, `numbering_params_nameS,
+      `ingressConstantVal_constValS, `convertAxiom_axiomValS, `convertQuotient_quotValS,
+      `ingressDefinitionVal_defnValS, `convertDefinitions_singleton, `convertDefinitions_defnValS,
+      `ingressTheoremVal_thmValS, `convertDefinitions_thmValS,
+      `ingressOpaqueVal_opaqueValS, `convertDefinitions_opaqueValS,
+      `ingressInductiveVal_inductValS, `ingressConstructorVal_ctorValS, `ingressRecursorRule_recRuleS,
+      `universe_bridge, `univMeaningS, `universeBridge].map (`Ix.Cert.Canon ++ ·))
+
 /-! ## Component theorems: the reading chain's tables
 
 The certified reader's reading of an in-flight compiler expression survives
@@ -4187,14 +4201,35 @@ fun ixe =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.sourceAcceptsQ_addrAt
 
-/-- info: [cert-audit] quotient addresses: 11 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] quotient addresses: 36 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
   checkRoots (tag := "cert-audit") "quotient addresses"
     (#[`ValueModel.pullback, `publishedRolesBound_iff, `byLeanName_foldl, `roleOf_leanName,
       `tableBound_of, `publishedAgree_iff, `nameIsName_iff, `publishedAddress_role, `publishedAddress_id,
-      `reading_id, `sourceAcceptsQ_addrAt].map (`Ix.Cert ++ ·))
+      `reading_id, `sourceAcceptsQ_addrAt, `LawModel.Rel, `ValueModel.comp, `LawModel.comp,
+      `ValueModel.pullback_rel, `substCval, `EnvSubstRel, `EnvSubstRel.find_some,
+      `EnvSubstRel.findProj?, `Denotes.substPullback, `Denotes.subst_const_push,
+      `Model.substPullback, `defn_value_substPullback, `ValueModel.substPullback,
+      `ValueModel.substPullback_rel, `EnvSubstModelPullback, `EnvSubstRel.toModelPullback,
+      `EnvSubstModelPullback.comp_envRel_valueModel, `EnvSubstPullback,
+      `EnvSubstModelPullback.toPullback, `EnvSubstRel.toPullback,
+      `EnvSubstRel.toPullback_of_laws, `EnvSubstPullback.comp_envRel_valueModel,
+      `evAddr_subst_key, `evAddr_subst_ingressKey, `evAddr_subst_named].map (`Ix.Cert ++ ·))
+
+/-- info: [cert-audit] nominal quotient: 19 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+open Ix.CompileCert.UniverseAudit (checkRoots) in
+run_cmd do
+  checkRoots (tag := "cert-audit") "nominal quotient"
+    (#[`checkSource_has_model, `checkGroupIntraInjective_sound, `checkHintsAgreeAt_sound,
+      `checkGroupFiberSafe_sound, `step_fresh_or_beqF, `alias_fresh_or_beqF,
+      `collapseGroup_alias_beqF, `collapseRead_fresh_or_beqF, `collapseRead_kept_beqF,
+      `collapseRead_substKeys_canon_beqF, `prepareSourceCollapsedAtUsing_trace,
+      `prepareSourceCollapsedAt_trace, `canonExprM_run, `canonValM_run,
+      `Converted.canon_idem, `canonDecl_idem, `Converted.quotient_eq_substKeys_canon,
+      `canonDecl_substKeys, `Declaration.beqF_refl].map (`Ix.LeanIngress ++ ·))
 
 /-! ## Distinct name hashes
 
@@ -6002,7 +6037,7 @@ fun ixe t cx envQ envA =>
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
 
-/-- info: [cert-audit] final statement: 31 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
+/-- info: [cert-audit] final statement: 40 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in
 open Ix.CompileCert.UniverseAudit (checkRoots) in
 run_cmd do
@@ -6037,7 +6072,16 @@ run_cmd do
       `compileCorrect_iff_published,
       `CompileCorrect.artifactChecked,
       `CompileCorrect.checked,
-      `CompileCorrect.nominal].map
+      `CompileCorrect.nominal,
+      `CommutesStrong.substPullback,
+      `NominalModelBridgeAt,
+      `IxonCommutesCovering.nominalModelPullback,
+      `IxonCommutesCovering.nominalBridgeAt,
+      `NominalSemanticBridgeAt,
+      `IxonCommutesCovering.nominalPullback,
+      `NominalSemanticBridgeAt.of_covering,
+      `CompileCorrect.nominalBridgeAt,
+      `CompileCorrect.nominalPullback].map
       (`Ix.Cert ++ ·))
 
 /-! ## The composition skeleton

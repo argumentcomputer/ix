@@ -239,8 +239,10 @@ def main (args : List String) : IO UInt32 := do
       let _ ← Ix.CompileM.rsCompileEnvBytes leanEnv path.toString
       IO.println s!"compiled {path} in {(← IO.monoMsNow) - t} ms"
     let t ← IO.monoMsNow
-    let ixon ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
-    let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts ixon
+    let ixon ← match artifact with
+      | some ixon => pure ixon
+      | none => IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+    let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts ixon a.workers
     let cmp := Tests.Ix.Kernel.SourceIngressCompare.compare r.rows verdicts
     IO.println s!"ixon check (default role table) in {(← IO.monoMsNow) - t} ms: {verdicts.size} \
       constants with a verdict, {cmp.unmatched} source constants without one"

@@ -141,7 +141,12 @@ def run (pre : Prelude .source) (env : Ix.Environment)
   -- canonical levels, after the hint override, before lowering
   -- (`Ix.LeanIngress.graphCollapsed`'s `Converted.quotient`)
   let g : Graph := match collapse with
-    | some ρ => { g with converted := g.converted.map fun c => c.map (Converted.quotient ρ) }
+    | some ρ =>
+      let qConv := if workers ≤ 1 then
+          g.converted.map fun c => c.map (Converted.quotient ρ)
+        else
+          Ix.Compile.Parallel.map 256 (fun c => c.map (Converted.quotient ρ)) g.converted
+      { g with converted := qConv }
     | none => g
   -- the tier groups (`isTierGroup`): the tier's conversion; their slots pass
   -- the logical conversion, so that the schedule's verdict on them is the
@@ -267,44 +272,140 @@ def run (pre : Prelude .source) (env : Ix.Environment)
     if rows[i]!.isSome then failed := failed.insert i i
   let mut started : Std.HashSet Nat := {}
   let mut micros : Array Nat := Array.replicate groups.size 0
-  let mut count := 0
-  for d in prepared do
-    count := count + 1
-    if progress && count % 5000 == 0 then
-      IO.eprintln s!"source-ingress: checked {count}/{prepared.size} declarations"
-    let gi? := d.names.head?.bind (owner[·]?)
-    if let some gi := gi? then
-      if failed.contains gi then continue
-      unless started.contains gi do
-        started := started.insert gi
-        let resolve (j : Nat) : Nat := aliasOf.getD j j
-        if let some blocker := (g.hard[gi]! ++ dropDeps.getD gi #[]).find?
-            (fun j => failed.contains (resolve j)) then
-          let root := failed.getD (resolve blocker) (resolve blocker)
-          failed := failed.insert gi root
-          rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "blocked",
-            s!"{(names[root]!)[0]?.getD (.id .anonymous)}", 0⟩)
-          continue
-        -- the fence: a logical group that references a tier group
-        if let some t := g.hard[gi]!.find? tierSet.contains then
+  let mut usedParallel := false
+  if workers > 1 then
+    let mut feP : Ix.Kernel.FEnv .source := Ix.Kernel.mkFEnv Ix.Kernel.Env.empty
+    let mut csP : Ix.Kernel.Cached.CState .source := {}
+    let mut posP : Nat := 0
+    let mut pendP : Array (Ix.Kernel.Cached.PendingCheck .source) := #[]
+    let mut pendOwners : Array (Option Nat) := #[]
+    let mut failedP := failed
+    let mut startedP := started
+    let mut rowsP := rows
+    let mut microsP := micros
+    let mut countP := 0
+    for d in prepared do
+      countP := countP + 1
+      if progress && countP % 5000 == 0 then
+        IO.eprintln s!"source-ingress: installed {countP}/{prepared.size} declarations"
+      let gi? := d.names.head?.bind (owner[·]?)
+      if let some gi := gi? then
+        if failedP.contains gi then continue
+        unless startedP.contains gi do
+          startedP := startedP.insert gi
+          let resolve (j : Nat) : Nat := aliasOf.getD j j
+          if let some blocker := (g.hard[gi]! ++ dropDeps.getD gi #[]).find?
+              (fun j => failedP.contains (resolve j)) then
+            let root := failedP.getD (resolve blocker) (resolve blocker)
+            failedP := failedP.insert gi root
+            rowsP := rowsP.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "blocked",
+              s!"{(names[root]!)[0]?.getD (.id .anonymous)}", 0⟩)
+            continue
+          if let some t := g.hard[gi]!.find? tierSet.contains then
+            failedP := failedP.insert gi gi
+            rowsP := rowsP.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
+              s!"fence: references the tier group {(names[t]!)[0]?.getD (.id .anonymous)}", 0⟩)
+            continue
+      let s0 ← IO.monoNanosNow
+      let before := feP.env
+      let oldPend := pendP.size
+      let stepRes ← IO.lazyPure fun _ =>
+        Ix.Kernel.Cached.annotDeclStep .verified ev (posP, feP, pendP) d csP
+      let us := ((← IO.monoNanosNow) - s0) / 1000
+      match stepRes with
+      | .ok ((pos', fe', pend'), cs') =>
+        posP := pos'
+        feP := fe'
+        pendP := pend'
+        csP := cs'
+        pendOwners := pendOwners ++ Array.replicate (pend'.size - oldPend) gi?
+        if let some gi := gi? then
+          microsP := microsP.set! gi (microsP[gi]! + us)
+      | .error (e, _) =>
+        posP := posP + 1
+        feP := Ix.Kernel.mkFEnv before
+        csP := {}
+        match gi? with
+        | some gi =>
+          microsP := microsP.set! gi (microsP[gi]! + us)
+          let (o, why) := Benchmarks.Kernel.CheckIxeStep.checkOutcome e
+          failedP := failedP.insert gi gi
+          rowsP := rowsP.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, microsP[gi]!⟩)
+        | none =>
+          IO.eprintln s!"source-ingress: prelude declaration {d.names.head?.getD (.id .anonymous)} failed: {e}"
+    let nextRef ← IO.mkRef 0
+    let pendSize := pendP.size
+    let rec workerLoop (fuel : Nat) (acc : Array (Nat × Option (Ix.Kernel.CheckError .source) × Nat)) :
+        IO (Array (Nat × Option (Ix.Kernel.CheckError .source) × Nat)) := do
+      match fuel with
+      | 0 => pure acc
+      | fuel + 1 =>
+        let k ← nextRef.modifyGet fun a => (a, a + 1)
+        if k < pendSize then
+          let t0 ← IO.monoNanosNow
+          let r ← IO.lazyPure fun _ => match pendP[k]? with
+            | some pc => match Ix.Kernel.Cached.checkPending .verified feP pc {} with
+              | .ok _ => none
+              | .error e => some e
+            | none => some (.internal s!"check phase: no recorded check {k}")
+          let us := ((← IO.monoNanosNow) - t0) / 1000
+          workerLoop fuel (acc.push (k, r, us))
+        else pure acc
+    let mut tasks := #[]
+    for _ in [0:workers] do
+      tasks := tasks.push (← IO.asTask (prio := .dedicated) (workerLoop (pendSize + 1) #[]))
+    let mut phaseBFail := false
+    for t in tasks do
+      for (k, r, us) in ← IO.ofExcept (← IO.wait t) do
+        if r.isSome then phaseBFail := true
+        if let some (some gi) := pendOwners[k]? then
+          microsP := microsP.set! gi (microsP[gi]! + us)
+    unless phaseBFail do
+      usedParallel := true
+      checker := { fe := feP, cs := {}, pos := posP }
+      failed := failedP
+      started := startedP
+      rows := rowsP
+      micros := microsP
+  unless usedParallel do
+    let mut count := 0
+    for d in prepared do
+      count := count + 1
+      if progress && count % 5000 == 0 then
+        IO.eprintln s!"source-ingress: checked {count}/{prepared.size} declarations"
+      let gi? := d.names.head?.bind (owner[·]?)
+      if let some gi := gi? then
+        if failed.contains gi then continue
+        unless started.contains gi do
+          started := started.insert gi
+          let resolve (j : Nat) : Nat := aliasOf.getD j j
+          if let some blocker := (g.hard[gi]! ++ dropDeps.getD gi #[]).find?
+              (fun j => failed.contains (resolve j)) then
+            let root := failed.getD (resolve blocker) (resolve blocker)
+            failed := failed.insert gi root
+            rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "blocked",
+              s!"{(names[root]!)[0]?.getD (.id .anonymous)}", 0⟩)
+            continue
+          -- the fence: a logical group that references a tier group
+          if let some t := g.hard[gi]!.find? tierSet.contains then
+            failed := failed.insert gi gi
+            rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
+              s!"fence: references the tier group {(names[t]!)[0]?.getD (.id .anonymous)}", 0⟩)
+            continue
+      let s0 ← IO.monoNanosNow
+      let (c', err) ← IO.lazyPure fun _ => checker.step ev d
+      let us := ((← IO.monoNanosNow) - s0) / 1000
+      checker := c'
+      match gi? with
+      | some gi =>
+        micros := micros.set! gi (micros[gi]! + us)
+        if let some e := err then
+          let (o, why) := Benchmarks.Kernel.CheckIxeStep.checkOutcome e
           failed := failed.insert gi gi
-          rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, "decline",
-            s!"fence: references the tier group {(names[t]!)[0]?.getD (.id .anonymous)}", 0⟩)
-          continue
-    let s0 ← IO.monoNanosNow
-    let (c', err) ← IO.lazyPure fun _ => checker.step ev d
-    let us := ((← IO.monoNanosNow) - s0) / 1000
-    checker := c'
-    match gi? with
-    | some gi =>
-      micros := micros.set! gi (micros[gi]! + us)
-      if let some e := err then
-        let (o, why) := Benchmarks.Kernel.CheckIxeStep.checkOutcome e
-        failed := failed.insert gi gi
-        rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, micros[gi]!⟩)
-    | none =>
-      if let some e := err then
-        IO.eprintln s!"source-ingress: prelude declaration {d.names.head?.getD (.id .anonymous)} failed: {e}"
+          rows := rows.set! gi (some ⟨gi, names[gi]!, kindOf groups[gi]!, o, why, micros[gi]!⟩)
+      | none =>
+        if let some e := err then
+          IO.eprintln s!"source-ingress: prelude declaration {d.names.head?.getD (.id .anonymous)} failed: {e}"
   -- the typing tier, at the index of the checked environment (also the
   -- logical view of the unsafe opaques), staged as the tier fold stages it,
   -- in schedule order within a stage; a tier group behind a failed group is

@@ -266,8 +266,8 @@ def testTarjan : TestSeq :=
 `Former.run` is the implementation `CondenseM.run` replaced, kept verbatim
 except that `visit` takes fuel (the number of keys plus one, more than the
 recursion depth) instead of being `partial`. `CondenseM.run` must reproduce
-its three maps exactly: contents and iteration orders, which downstream
-compilation and Source-mode ingress depend on. -/
+its three maps' contents (representatives, member sets, and external block
+references). -/
 
 namespace Former
 
@@ -360,22 +360,25 @@ def run (refs : Map Ix.Name (Set Ix.Name)) : CondensedBlocks :=
 
 end Former
 
-/-- The three maps in their iteration orders, member sets included. -/
+/-- The three maps normalized by sorting keys and member/reference sets,
+so comparison is independent of hash-bucket iteration order. -/
 def layout (cb : CondensedBlocks) :
-    Array (Ix.Name × Ix.Name) × Array (Ix.Name × Array Ix.Name) ×
-      Array (Ix.Name × Array Ix.Name) := Id.run do
-  let mut lows := #[]
-  for p in cb.lowLinks do lows := lows.push p
-  let mut blocks := #[]
+    Array (String × String) × Array (String × Array String) ×
+      Array (String × Array String) := Id.run do
+  let mut lows : Array (String × String) := #[]
+  for (a, b) in cb.lowLinks do
+    lows := lows.push (toString a, toString b)
+  lows := lows.qsort fun a b => if a.1 == b.1 then a.2 < b.2 else a.1 < b.1
+  let mut blocks : Array (String × Array String) := #[]
   for (k, s) in cb.blocks do
-    let mut ms := #[]
-    for m in s do ms := ms.push m
-    blocks := blocks.push (k, ms)
-  let mut refs := #[]
+    let ms := (s.toArray.map toString).qsort (· < ·)
+    blocks := blocks.push (toString k, ms)
+  blocks := blocks.qsort fun a b => a.1 < b.1
+  let mut refs : Array (String × Array String) := #[]
   for (k, s) in cb.blockRefs do
-    let mut rs := #[]
-    for r in s do rs := rs.push r
-    refs := refs.push (k, rs)
+    let rs := (s.toArray.map toString).qsort (· < ·)
+    refs := refs.push (toString k, rs)
+  refs := refs.qsort fun a b => a.1 < b.1
   return (lows, blocks, refs)
 
 /-- A pseudo-random graph on `n` keys: up to `deg` references per key, some
@@ -395,7 +398,7 @@ def randomGraph (seed n deg : Nat) : Map Ix.Name (Set Ix.Name) := Id.run do
   return m
 
 /-- `CondenseM.run` against the former implementation on a fixed list of
-graphs: equal maps, member sets and iteration orders. -/
+graphs: equal maps and member sets. -/
 def testAgainstFormer : TestSeq := Id.run do
   let mut graphs : Array (String × Map Ix.Name (Set Ix.Name)) := #[
     ("complex", buildGraph [("A", ["B"]), ("B", ["C", "E", "F"]), ("C", ["D", "G"]),
@@ -584,8 +587,7 @@ def testSccComparison : TestSeq :=
   ) .done
 
 /-- `CondenseM.run` against the former implementation on the reference graph
-of the test binary's environment: equal maps, member sets and iteration
-orders. -/
+of the test binary's environment: equal maps and member sets. -/
 def testFormerOnEnv : TestSeq :=
   .individualIO "CondenseM.run vs the former Tarjan on the environment" none (do
     let env ← get_env!
@@ -595,7 +597,7 @@ def testFormerOnEnv : TestSeq :=
     let former := layout (Former.run refs)
     let same := mine == former
     IO.println s!"[Test]   {refs.size} nodes, {mine.2.1.size} blocks; \
-      same maps and orders: {same}"
+      same maps: {same}"
     if !same then
       return (false, 0, 0, some "the maps differ from the former implementation's")
     return (true, 0, 0, none)

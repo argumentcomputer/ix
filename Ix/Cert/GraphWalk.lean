@@ -54,50 +54,47 @@ inductive Refs (n : Ix.Name) : Ix.Expr → Prop
   | letB {x : Ix.Name} {t v b : Ix.Expr} {nd : Bool} {h : Address} : Refs n b → Refs n (.letE x t v b nd h)
   | mdata {d : Array (Ix.Name × Ix.DataValue)} {e : Ix.Expr} {h : Address} : Refs n e → Refs n (.mdata d e h)
 
-/-- **The walk's memo is correct**: every entry holds exactly its expression's mentions. -/
-def MemoOK (s : GraphState) : Prop :=
-  ∀ (k : ExprKey) (v : Ix.Set Ix.Name), s.exprCache.get? k = some v → ∀ n, v.contains n = true ↔ Refs n k.expr
+/-- **The walk's visited set is sound for `acc`**: every visited expression has all of its
+mentions already present in `acc`. -/
+def MemoOK (s : GraphState) (acc : Ix.Set Ix.Name) : Prop :=
+  ∀ (k : ExprKey), s.exprSeen.contains k = true → ∀ n, Refs n k.expr → acc.contains n = true
 
-theorem memoOK_init : MemoOK GraphState.init := fun k v h => by
-  change (∅ : Std.HashMap ExprKey (Ix.Set Ix.Name)).get? k = some v at h
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_empty] at h
+theorem memoOK_init (acc : Ix.Set Ix.Name) : MemoOK GraphState.init acc := fun k h => by
+  change (∅ : Std.HashSet ExprKey).contains k = true at h
+  rw [Std.HashSet.contains_empty] at h
   cases h
 
-theorem memoOK_insert {s : GraphState} (hs : MemoOK s) {e : Ix.Expr} {v : Ix.Set Ix.Name}
-    (hv : ∀ n, v.contains n = true ↔ Refs n e) :
-    MemoOK { s with exprCache := s.exprCache.insert ⟨e⟩ v } := by
-  intro k w h n
-  rw [Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_insert] at h
-  split at h
-  · rename_i same
-    cases h
-    have e' : (⟨e⟩ : ExprKey) = k := beq_iff_eq.mp same
+theorem memoOK_mono {s : GraphState} {acc acc' : Ix.Set Ix.Name} (hs : MemoOK s acc)
+    (hsub : ∀ n, acc.contains n = true → acc'.contains n = true) : MemoOK s acc' :=
+  fun k hk n hr => hsub n (hs k hk n hr)
+
+theorem memoOK_insert {s : GraphState} {acc : Ix.Set Ix.Name} (hs : MemoOK s acc) {e : Ix.Expr}
+    (he : ∀ n, Refs n e → acc.contains n = true) :
+    MemoOK { s with exprSeen := s.exprSeen.insert ⟨e⟩ } acc := by
+  intro k h n hr
+  rw [Std.HashSet.contains_insert] at h
+  rcases Bool.or_eq_true_iff.mp h with same | h
+  · have e' : (⟨e⟩ : ExprKey) = k := beq_iff_eq.mp same
     subst e'
-    exact hv n
-  · rw [← Std.HashMap.get?_eq_getElem?] at h
-    exact hs k w h n
+    exact he n hr
+  · exact hs k h n hr
 
 theorem bind_run {α β : Type} (x : GraphM α) (k : α → GraphM β) (env : Ix.Environment) (s : GraphState) :
     (x >>= k) env s = k (x env s).1 env (x env s).2 := rfl
 
-/-- One step of the walk, from the memo. -/
-private theorem graphExpr_run (e : Ix.Expr) (env : Ix.Environment) (s : GraphState) :
-    graphExpr e env s = match s.exprCache.get? ⟨e⟩ with
-      | some x => (x, s)
-      | none => ((graphExpr.go e env s).1,
-          { (graphExpr.go e env s).2 with
-            exprCache := (graphExpr.go e env s).2.exprCache.insert ⟨e⟩ (graphExpr.go e env s).1 }) := by
-  rw [graphExpr, bind_run]
+theorem pure_run {α : Type} (x : α) (env : Ix.Environment) (s : GraphState) :
+    (pure x : GraphM α) env s = (x, s) := rfl
+
+/-- One step of the accumulator walk, from the visited set. -/
+private theorem graphExprAcc_run (e : Ix.Expr) (acc : Ix.Set Ix.Name) (env : Ix.Environment) (s : GraphState) :
+    graphExprAcc e acc env s = if s.exprSeen.contains ⟨e⟩ then (acc, s)
+      else ((graphExprAcc.go e acc env s).1,
+        { (graphExprAcc.go e acc env s).2 with
+          exprSeen := (graphExprAcc.go e acc env s).2.exprSeen.insert ⟨e⟩ }) := by
+  rw [graphExprAcc, bind_run]
   have hg : (get : GraphM GraphState) env s = (s, s) := rfl
   rw [hg]
-  cases s.exprCache.get? ⟨e⟩ <;> rfl
-
-theorem map_run (g : GraphM (Ix.Set Ix.Name)) (t : Ix.Name) (env : Ix.Environment) (s : GraphState) :
-    ((fun r => Std.HashSet.insert r t) <$> g) env s = ((g env s).1.insert t, (g env s).2) := rfl
-
-theorem union_run (g h : GraphM (Ix.Set Ix.Name)) (env : Ix.Environment) (s : GraphState) :
-    (Std.HashSet.union <$> g <*> h) env s =
-      ((g env s).1.union (h env (g env s).2).1, (h env (g env s).2).2) := rfl
+  cases s.exprSeen.contains ⟨e⟩ <;> rfl
 
 theorem contains_union_iff {a b : Ix.Set Ix.Name} {n : Ix.Name} :
     (a.union b).contains n = true ↔ a.contains n = true ∨ b.contains n = true := by
@@ -108,112 +105,146 @@ theorem contains_insert_iff {a : Ix.Set Ix.Name} {t n : Ix.Name} :
     (a.insert t).contains n = true ↔ (t == n) = true ∨ a.contains n = true := by
   rw [Std.HashSet.contains_insert, Bool.or_eq_true]
 
-theorem contains_singleton_iff {t n : Ix.Name} : ({t} : Ix.Set Ix.Name).contains n = true ↔ (t == n) = true := by
-  change ((∅ : Ix.Set Ix.Name).insert t).contains n = true ↔ _
-  rw [contains_insert_iff, Std.HashSet.contains_empty]
-  simp
-
 theorem not_contains_empty {n : Ix.Name} : ¬ (∅ : Ix.Set Ix.Name).contains n = true := by
   rw [Std.HashSet.contains_empty]
   simp
 
-/-- **The walk returns a term's mentions**, from a correct memo, and keeps the memo correct. -/
-theorem graphExpr_refs : ∀ (e : Ix.Expr) (env : Ix.Environment) (s : GraphState), MemoOK s →
-    MemoOK (graphExpr e env s).2 ∧ ∀ n, (graphExpr e env s).1.contains n = true ↔ Refs n e := by
-  -- a node whose own step is correct, given its memo's correctness after the step
-  have node : ∀ (e : Ix.Expr) (env : Ix.Environment) (s : GraphState), MemoOK s →
-      (MemoOK (graphExpr.go e env s).2 ∧ ∀ n, (graphExpr.go e env s).1.contains n = true ↔ Refs n e) →
-      MemoOK (graphExpr e env s).2 ∧ ∀ n, (graphExpr e env s).1.contains n = true ↔ Refs n e := by
-    intro e env s hs ⟨hgs, hgr⟩
-    rw [graphExpr_run]
+/-- **The accumulator walk adds a term's mentions**, from a sound visited set, and keeps it sound. -/
+theorem graphExprAcc_refs : ∀ (e : Ix.Expr) (acc : Ix.Set Ix.Name) (env : Ix.Environment) (s : GraphState),
+    MemoOK s acc →
+    MemoOK (graphExprAcc e acc env s).2 (graphExprAcc e acc env s).1 ∧
+      ∀ n, (graphExprAcc e acc env s).1.contains n = true ↔ acc.contains n = true ∨ Refs n e := by
+  have node : ∀ (e : Ix.Expr) (acc : Ix.Set Ix.Name) (env : Ix.Environment) (s : GraphState), MemoOK s acc →
+      (MemoOK (graphExprAcc.go e acc env s).2 (graphExprAcc.go e acc env s).1 ∧
+        ∀ n, (graphExprAcc.go e acc env s).1.contains n = true ↔ acc.contains n = true ∨ Refs n e) →
+      MemoOK (graphExprAcc e acc env s).2 (graphExprAcc e acc env s).1 ∧
+        ∀ n, (graphExprAcc e acc env s).1.contains n = true ↔ acc.contains n = true ∨ Refs n e := by
+    intro e acc env s hs ⟨hgs, hgr⟩
+    rw [graphExprAcc_run]
     split
-    · rename_i x hx
-      exact ⟨hs, hs ⟨e⟩ x hx⟩
-    · exact ⟨memoOK_insert hgs hgr, hgr⟩
+    · rename_i hseen
+      refine ⟨hs, fun n => ⟨fun h => .inl h, fun h => ?_⟩⟩
+      rcases h with h | hr
+      · exact h
+      · exact hs ⟨e⟩ hseen n hr
+    · exact ⟨memoOK_insert hgs (fun n hr => (hgr n).mpr (.inr hr)), hgr⟩
   intro e
   induction e with
   | bvar _ _ | fvar _ _ | mvar _ _ | sort _ _ | lit _ _ =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go]
-    exact ⟨hs, fun n => ⟨fun h => absurd h not_contains_empty, fun h => by cases h⟩⟩
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go, pure_run]
+    exact ⟨hs, fun n => ⟨fun h => .inl h, fun h => h.elim id fun hr => by cases hr⟩⟩
   | const m us h =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go]
-    refine ⟨hs, fun n => ?_⟩
-    show ({m} : Ix.Set Ix.Name).contains n = true ↔ _
-    rw [contains_singleton_iff]
-    exact ⟨fun h => .const h, fun h => by cases h; assumption⟩
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go, pure_run]
+    refine ⟨memoOK_mono hs (fun n hn => contains_insert_iff.mpr (.inr hn)), fun n => ?_⟩
+    show (acc.insert m).contains n = true ↔ _
+    rw [contains_insert_iff]
+    exact ⟨fun h => h.elim (.inr ∘ .const) .inl, fun h => h.elim .inr fun hr => by cases hr; exact .inl ‹_›⟩
   | app f a h ihf iha =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go, union_run]
-    obtain ⟨s1, r1⟩ := ihf env s hs
-    obtain ⟨s2, r2⟩ := iha env _ s1
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go, bind_run]
+    obtain ⟨s1, r1⟩ := ihf acc env s hs
+    obtain ⟨s2, r2⟩ := iha _ env _ s1
     refine ⟨s2, fun n => ?_⟩
-    rw [contains_union_iff, r1, r2]
-    exact ⟨fun h => h.elim .appF .appA, fun h => by cases h <;> simp_all⟩
+    rw [r2, r1]
+    exact ⟨fun h => h.elim (fun h => h.elim .inl (.inr ∘ .appF)) (.inr ∘ .appA),
+      fun h => h.elim (.inl ∘ .inl) fun hr => by cases hr with
+        | appF hf => exact .inl (.inr hf)
+        | appA ha => exact .inr ha⟩
   | lam x t b bi h iht ihb =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go, union_run]
-    obtain ⟨s1, r1⟩ := iht env s hs
-    obtain ⟨s2, r2⟩ := ihb env _ s1
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go, bind_run]
+    obtain ⟨s1, r1⟩ := iht acc env s hs
+    obtain ⟨s2, r2⟩ := ihb _ env _ s1
     refine ⟨s2, fun n => ?_⟩
-    rw [contains_union_iff, r1, r2]
-    exact ⟨fun h => h.elim .lamT .lamB, fun h => by cases h <;> simp_all⟩
+    rw [r2, r1]
+    exact ⟨fun h => h.elim (fun h => h.elim .inl (.inr ∘ .lamT)) (.inr ∘ .lamB),
+      fun h => h.elim (.inl ∘ .inl) fun hr => by cases hr with
+        | lamT ht => exact .inl (.inr ht)
+        | lamB hb => exact .inr hb⟩
   | forallE x t b bi h iht ihb =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go, union_run]
-    obtain ⟨s1, r1⟩ := iht env s hs
-    obtain ⟨s2, r2⟩ := ihb env _ s1
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go, bind_run]
+    obtain ⟨s1, r1⟩ := iht acc env s hs
+    obtain ⟨s2, r2⟩ := ihb _ env _ s1
     refine ⟨s2, fun n => ?_⟩
-    rw [contains_union_iff, r1, r2]
-    exact ⟨fun h => h.elim .allT .allB, fun h => by cases h <;> simp_all⟩
+    rw [r2, r1]
+    exact ⟨fun h => h.elim (fun h => h.elim .inl (.inr ∘ .allT)) (.inr ∘ .allB),
+      fun h => h.elim (.inl ∘ .inl) fun hr => by cases hr with
+        | allT ht => exact .inl (.inr ht)
+        | allB hb => exact .inr hb⟩
   | letE x t v b nd h iht ihv ihb =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go, union_run]
-    obtain ⟨s1, r1⟩ := iht env s hs
-    obtain ⟨s2, r2⟩ := ihv env _ s1
-    obtain ⟨s3, r3⟩ := ihb env _ s2
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go, bind_run]
+    obtain ⟨s1, r1⟩ := iht acc env s hs
+    obtain ⟨s2, r2⟩ := ihv _ env _ s1
+    obtain ⟨s3, r3⟩ := ihb _ env _ s2
     refine ⟨s3, fun n => ?_⟩
-    rw [contains_union_iff, r1, contains_union_iff, r2, r3]
-    exact ⟨fun h => h.elim .letT (fun h => h.elim .letV .letB), fun h => by cases h <;> simp_all⟩
+    rw [r3, r2, r1]
+    exact ⟨fun h => h.elim (fun h => h.elim (fun h => h.elim .inl (.inr ∘ .letT)) (.inr ∘ .letV)) (.inr ∘ .letB),
+      fun h => h.elim (.inl ∘ .inl ∘ .inl) fun hr => by cases hr with
+        | letT ht => exact .inl (.inl (.inr ht))
+        | letV hv => exact .inl (.inr hv)
+        | letB hb => exact .inr hb⟩
   | mdata d e h ih =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go]
-    obtain ⟨s1, r1⟩ := ih env s hs
-    exact ⟨s1, fun n => (r1 n).trans ⟨.mdata, fun h => by cases h; assumption⟩⟩
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go]
+    obtain ⟨s1, r1⟩ := ih acc env s hs
+    refine ⟨s1, fun n => (r1 n).trans ⟨fun h => h.elim .inl (.inr ∘ .mdata), fun h => ?_⟩⟩
+    rcases h with h | hr
+    · exact .inl h
+    · cases hr; exact .inr ‹_›
   | proj t i s' h ih =>
-    intro env s hs
-    refine node _ env s hs ?_
-    simp only [graphExpr.go, map_run]
-    obtain ⟨s1, r1⟩ := ih env s hs
-    refine ⟨s1, fun n => ?_⟩
+    intro acc env s hs
+    refine node _ acc env s hs ?_
+    simp only [graphExprAcc.go, bind_run, pure_run]
+    obtain ⟨s1, r1⟩ := ih acc env s hs
+    have hins : MemoOK (graphExprAcc s' acc env s).2 ((graphExprAcc s' acc env s).1.insert t) :=
+      memoOK_mono s1 (fun n hn => contains_insert_iff.mpr (.inr hn))
+    refine ⟨hins, fun n => ?_⟩
+    show ((graphExprAcc s' acc env s).1.insert t).contains n = true ↔ _
     rw [contains_insert_iff, r1]
-    exact ⟨fun h => h.elim .projName .projStruct, fun h => by cases h <;> simp_all⟩
+    exact ⟨fun h => h.elim (.inr ∘ .projName) (fun h => h.elim .inl (.inr ∘ .projStruct)),
+      fun h => h.elim (.inr ∘ .inl) fun hr => by cases hr with
+        | projName ht => exact .inl ht
+        | projStruct hs => exact .inr (.inr hs)⟩
 
-/-- Two terms walked in turn, from the empty memo: the union of their mentions. -/
+/-- **The walk returns a term's mentions**, from the empty accumulator. -/
+theorem graphExpr_refs (e : Ix.Expr) (env : Ix.Environment) (s : GraphState) (hs : MemoOK s ∅) :
+    MemoOK (graphExpr e env s).2 (graphExpr e env s).1 ∧
+      ∀ n, (graphExpr e env s).1.contains n = true ↔ Refs n e := by
+  unfold graphExpr
+  obtain ⟨s1, r1⟩ := graphExprAcc_refs e ∅ env s hs
+  refine ⟨s1, fun n => (r1 n).trans ⟨fun h => h.elim (fun h => absurd h not_contains_empty) id, .inr⟩⟩
+
+/-- Two terms walked in turn into one accumulator, from the empty visited set: the union of their mentions. -/
 theorem union_init (a b : Ix.Expr) (env : Ix.Environment) (n : Ix.Name) :
-    ((Std.HashSet.union <$> graphExpr a <*> graphExpr b) env GraphState.init).1.contains n = true ↔
+    ((do let acc ← graphExprAcc a ∅; graphExprAcc b acc) env GraphState.init).1.contains n = true ↔
       Refs n a ∨ Refs n b := by
-  rw [union_run, contains_union_iff]
-  obtain ⟨s1, r1⟩ := graphExpr_refs a env GraphState.init memoOK_init
-  rw [r1, (graphExpr_refs b _ _ s1).2]
+  rw [bind_run]
+  obtain ⟨s1, r1⟩ := graphExprAcc_refs a ∅ env GraphState.init (memoOK_init ∅)
+  obtain ⟨_, r2⟩ := graphExprAcc_refs b _ env _ s1
+  rw [r2, r1]
+  exact ⟨fun h => h.elim (fun h => h.elim (fun h => absurd h not_contains_empty) .inl) .inr,
+    fun h => h.elim (.inl ∘ .inr) .inr⟩
 
 /-! ## A constant's references -/
 
 theorem graphConst_axiom (v : Ix.AxiomVal) (env : Ix.Environment) (n : Ix.Name) :
     (graphConst (.axiomInfo v) env GraphState.init).1.contains n = true ↔ Refs n v.cnst.type :=
-  (graphExpr_refs v.cnst.type env GraphState.init memoOK_init).2 n
+  (graphExpr_refs v.cnst.type env GraphState.init (memoOK_init ∅)).2 n
 
 theorem graphConst_quot (v : Ix.QuotVal) (env : Ix.Environment) (n : Ix.Name) :
     (graphConst (.quotInfo v) env GraphState.init).1.contains n = true ↔ Refs n v.cnst.type :=
-  (graphExpr_refs v.cnst.type env GraphState.init memoOK_init).2 n
+  (graphExpr_refs v.cnst.type env GraphState.init (memoOK_init ∅)).2 n
 
 theorem graphConst_defn (v : Ix.DefinitionVal) (env : Ix.Environment) (n : Ix.Name) :
     (graphConst (.defnInfo v) env GraphState.init).1.contains n = true ↔
@@ -232,38 +263,45 @@ theorem graphConst_opaque (v : Ix.OpaqueVal) (env : Ix.Environment) (n : Ix.Name
 
 theorem graphConst_induct (v : Ix.InductiveVal) (env : Ix.Environment) {n : Ix.Name}
     (hn : Refs n v.cnst.type) : (graphConst (.inductInfo v) env GraphState.init).1.contains n = true := by
-  have ht := ((graphExpr_refs v.cnst.type env GraphState.init memoOK_init).2 n).mpr hn
+  have ht := ((graphExpr_refs v.cnst.type env GraphState.init (memoOK_init ∅)).2 n).mpr hn
   exact contains_union_iff.mpr (.inl ht)
 
 theorem graphConst_ctor (v : Ix.ConstructorVal) (env : Ix.Environment) {n : Ix.Name}
     (hn : Refs n v.cnst.type) : (graphConst (.ctorInfo v) env GraphState.init).1.contains n = true := by
-  have ht := ((graphExpr_refs v.cnst.type env GraphState.init memoOK_init).2 n).mpr hn
+  have ht := ((graphExpr_refs v.cnst.type env GraphState.init (memoOK_init ∅)).2 n).mpr hn
   exact contains_insert_iff.mpr (.inr ht)
 
-/-- The recursor loop: from a correct memo, the references it starts from stay and each rule's
-right-hand side's mentions join them, for a body that adds a rule's constructor and walks its
-right-hand side. -/
+/-- The recursor loop: from a sound visited set, the references it starts from stay, each rule's
+constructor is added, and each rule's right-hand side's mentions join them, for a body that adds a
+rule's constructor and walks its right-hand side into the accumulator. -/
 theorem forIn_rules (f : Ix.RecursorRule → Ix.Set Ix.Name → GraphM (ForInStep (Ix.Set Ix.Name)))
     (hf : ∀ rule r env s, f rule r env s =
-      (.yield ((r.insert rule.ctor).union (graphExpr rule.rhs env s).1), (graphExpr rule.rhs env s).2))
+      (.yield (graphExprAcc rule.rhs (r.insert rule.ctor) env s).1,
+        (graphExprAcc rule.rhs (r.insert rule.ctor) env s).2))
     (env : Ix.Environment) :
-    ∀ (rules : List Ix.RecursorRule) (r0 : Ix.Set Ix.Name) (s : GraphState), MemoOK s →
+    ∀ (rules : List Ix.RecursorRule) (r0 : Ix.Set Ix.Name) (s : GraphState), MemoOK s r0 →
       (∀ n, r0.contains n = true → (forIn rules r0 f env s).1.contains n = true) ∧
+        (∀ rule ∈ rules, (forIn rules r0 f env s).1.contains rule.ctor = true) ∧
         ∀ rule ∈ rules, ∀ n, Refs n rule.rhs → (forIn rules r0 f env s).1.contains n = true
-  | [], r0, s, _ => ⟨fun _ h => h, fun _ h => nomatch h⟩
+  | [], r0, s, _ => ⟨fun _ h => h, fun _ h => (nomatch h), fun _ h => (nomatch h)⟩
   | rule :: rules, r0, s, hs => by
-    obtain ⟨s1, r1⟩ := graphExpr_refs rule.rhs env s hs
+    have hs' : MemoOK s (r0.insert rule.ctor) :=
+      memoOK_mono hs (fun n hn => contains_insert_iff.mpr (.inr hn))
+    obtain ⟨s1, r1⟩ := graphExprAcc_refs rule.rhs (r0.insert rule.ctor) env s hs'
     have step : forIn (rule :: rules) r0 f env s =
-        forIn rules ((r0.insert rule.ctor).union (graphExpr rule.rhs env s).1) f env
-          (graphExpr rule.rhs env s).2 := by
+        forIn rules (graphExprAcc rule.rhs (r0.insert rule.ctor) env s).1 f env
+          (graphExprAcc rule.rhs (r0.insert rule.ctor) env s).2 := by
       rw [List.forIn_cons, bind_run, hf]
     rw [step]
-    obtain ⟨keep, rest⟩ := forIn_rules f hf env rules _ _ s1
-    refine ⟨fun n h => keep n (contains_union_iff.mpr (.inl (contains_insert_iff.mpr (.inr h)))),
-      fun rule' hr n hn => ?_⟩
-    rcases List.mem_cons.mp hr with rfl | hr
-    · exact keep n (contains_union_iff.mpr (.inr ((r1 n).mpr hn)))
-    · exact rest rule' hr n hn
+    obtain ⟨keep, ctors, rest⟩ := forIn_rules f hf env rules _ _ s1
+    refine ⟨fun n h => keep n ((r1 n).mpr (.inl (contains_insert_iff.mpr (.inr h)))),
+      fun rule' hr => ?_, fun rule' hr n hn => ?_⟩
+    · rcases List.mem_cons.mp hr with rfl | hr
+      · exact keep _ ((r1 _).mpr (.inl (contains_insert_iff.mpr (.inl BEq.rfl))))
+      · exact ctors rule' hr
+    · rcases List.mem_cons.mp hr with rfl | hr
+      · exact keep n ((r1 n).mpr (.inr hn))
+      · exact rest rule' hr n hn
 
 /-- Inserting names keeps the names held. -/
 theorem foldl_insert_keeps (rs : Ix.Set Ix.Name) (p : Ix.Name → Bool) (l : Array Ix.Name) {n : Ix.Name}
@@ -282,10 +320,10 @@ theorem foldl_insert_keeps (rs : Ix.Set Ix.Name) (p : Ix.Name → Bool) (l : Arr
 theorem graphConst_rec (v : Ix.RecursorVal) (env : Ix.Environment) {n : Ix.Name}
     (hn : Refs n v.cnst.type ∨ ∃ rule ∈ v.rules.toList, Refs n rule.rhs) :
     (graphConst (.recInfo v) env GraphState.init).1.contains n = true := by
-  obtain ⟨st, rt⟩ := graphExpr_refs v.cnst.type env GraphState.init memoOK_init
+  obtain ⟨st, rt⟩ := graphExpr_refs v.cnst.type env GraphState.init (memoOK_init ∅)
   rw [graphConst, bind_run, bind_run, ← Array.forIn_toList]
   refine foldl_insert_keeps _ _ _ ?_
-  obtain ⟨keep, rules⟩ := forIn_rules _ (fun _ _ _ _ => rfl) env v.rules.toList _ _ st
+  obtain ⟨keep, -, rules⟩ := forIn_rules _ (fun _ _ _ _ => rfl) env v.rules.toList _ _ st
   rcases hn with hn | ⟨rule, hr, hn⟩
   · exact keep n ((rt n).mpr hn)
   · exact rules rule hr n hn

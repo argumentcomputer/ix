@@ -118,6 +118,15 @@ def applyRowsIO (input : FixedInput) (snapshot : CompileEnv) (fixed : input.Matc
       simpa only [applyRows, next, selected, selectOutcome_fst, outcome_eq input snapshot fixed]
         using result.property⟩
 
+theorem applyOriginal_projected (snapshot : CompileEnv) (ready : WaveBlocks) (acc : DriverAcc) :
+    applyOriginal (Ix.Compile.WorkerContext.project snapshot) ready acc =
+      applyOriginal snapshot ready acc := by
+  unfold applyOriginal
+  congr 1
+  funext before entry
+  obtain ⟨key, _, members⟩ := entry
+  simp only [WorkerSnapshot.outcome_projected]
+
 def applyReadyIO (input : FixedInput) (snapshot : CompileEnv) (fixed : input.Matches snapshot)
     (choose : Choose input) (published : Ix.Name → IO Unit) (observe : Disposition → IO Unit)
     (ready : WaveBlocks) (acc : DriverAcc) :
@@ -151,13 +160,20 @@ def foldWaveIO (input : FixedInput) (blocks : Ix.CondensedBlocks) (sched : FoldS
         simp only [hEmpty, ↓reduceIte]⟩
     else
       let sorted := final.2.1.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
-      let after ← applyReadyIO input st.acc.cenv fixed choose published observe sorted st.acc
-      return ⟨.ok (finishWave sched st sorted final.2.2 after.val), by
+      let parked := final.2.2
+      let acc := st.acc
+      let snapshot := Ix.Compile.WorkerContext.project acc.cenv
+      let stShell : FoldState := { st with acc := { cenv := CompileEnv.new { consts := {} } }, candidates := #[] }
+      have fixedProj : input.Matches snapshot := ⟨fixed.1, fixed.2⟩
+      let after ← applyReadyIO input snapshot fixedProj choose published observe sorted acc
+      return ⟨.ok (finishWave sched stShell sorted parked after.val), by
         simp only [final] at h hEmpty
         rw [foldWave_eq_using, foldWaveUsing_eq_split]
         dsimp only
         rw [h]
-        simp only [final, hEmpty, Bool.false_eq_true, ↓reduceIte, sorted, after.property, applyChunked_eq]⟩
+        simp only [final, hEmpty, Bool.false_eq_true, ↓reduceIte, sorted, parked,
+          after.property, acc, snapshot, stShell, applyOriginal_projected, applyChunked_eq]
+        rfl⟩
 
 def foldWavesIO (input : FixedInput) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule)
     (width : Nat) (dbg : Bool) (choose : Choose input) (published : Ix.Name → IO Unit) :

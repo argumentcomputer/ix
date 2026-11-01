@@ -12,17 +12,12 @@ module
   - `blocks`: maps each SCC representative to all members
   - `blockRefs`: maps each SCC representative to its external references
 
-  **Presentation, kept byte for byte.** The graph is presented in the
-  iteration order of the reference map (roots) and of each reference set
-  (successors), as the former `partial` Tarjan visited it, and the three maps
-  are filled in the order that implementation filled them (members by
-  discovery number through a `UInt64`-keyed map, whose iteration order
-  depends only on its keys and the order they were first inserted). So the
-  representative of a block (the Tarjan root, its first-discovered member),
-  the maps' contents, their iteration orders and every member set's
-  iteration order are what the former implementation produced. The
-  partition does not depend on the presentation; the representatives and
-  the iteration orders do.
+  **Presentation.** The graph is presented in the iteration order of the
+  reference map (roots) and of each reference set (successors), as the former
+  `partial` Tarjan visited it, so each component's representative (the Tarjan
+  root, its first-discovered member) and the three maps' contents match what
+  the former implementation produced. Each component's member set and
+  `lowLinks` entries are populated directly from `c.comps.zip c.roots`.
 -/
 
 public import Ix.Common
@@ -70,40 +65,29 @@ def CondenseM.run (refs : Map Ix.Name (Set Ix.Name))
   let c := (Ix.Compile.Canon.condensation adj).get
     (Ix.CompileCert.Canon.condensation_isSome adj)
   have hc : Ix.Compile.Canon.condensation adj = some c := (Option.some_get _).symm
-  -- Each node's representative: the name of its component's root.
-  let mut rootName : Vector Ix.Name names.size := names.toVector
+  -- Each component's representative and member set.
+  let mut blocks : Map Ix.Name (Set Ix.Name) := {}
   for h : p in c.comps.zip c.roots do
     have hr : p.2 < names.size := by
       rw [hsize]
       exact Ix.CompileCert.Canon.condensation_roots_lt hc
         (Array.of_mem_zip (a := p.1) (b := p.2) h).2
     let rn := names[p.2]
+    let mut s : Set Ix.Name := {rn}
     for v in p.1 do
-      rootName := rootName.setIfInBounds v rn
-  -- The nodes in the former `lowLink` map's iteration order: discovery
-  -- numbers `0, 1, …` inserted in that order into a `UInt64`-keyed map.
-  let mut byDiscovery : Std.HashMap UInt64 (Ix.Name × Ix.Name) := {}
-  let mut d : Nat := 0
-  for h : v in c.order do
-    have hv : v < names.size := by
-      rw [hsize]; exact Ix.CompileCert.Canon.condensation_order_lt hc h
-    byDiscovery := byDiscovery.insert d.toUInt64 (names[v], rootName[v])
-    d := d + 1
-  let mut blocks : Map Ix.Name (Set Ix.Name) := {}
+      s := if hv : v < names.size then s.insert names[v] else s
+    blocks := blocks.insert rn s
   let mut lowLinks : Map Ix.Name Ix.Name := {}
-  for (_, (name, lowName)) in byDiscovery do
-    lowLinks := lowLinks.insert name lowName
-    blocks := blocks.alter lowName fun x => match x with
-      | .some s => .some (s.insert name)
-      | .none => .some {name}
+  for (rn, s) in blocks do
+    for nm in s do
+      lowLinks := lowLinks.insert nm rn
   let mut blockRefs : Map Ix.Name (Set Ix.Name) := {}
   for (lo, all) in blocks do
     let mut rs : Set Ix.Name := {}
     for a in all do
       -- every member is a key of `refs`
       rs := rs.union (refs.getD a {})
-    rs := rs.filter (!all.contains ·)
-    blockRefs := blockRefs.insert lo rs
+    blockRefs := blockRefs.insert lo (rs.filter (!all.contains ·))
   return ⟨lowLinks, blocks, blockRefs⟩
 
 /-- Rust's CondensedBlocks structure (mirroring Rust's output format).

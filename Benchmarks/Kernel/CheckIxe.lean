@@ -190,7 +190,18 @@ def run (args : List String) : IO UInt32 := do
   let _ ← IO.asTask (prio := .dedicated)
     (watchdog slots running watchMs watchKb (options.output.toString ++ ".runaway"))
   let handle ← IO.FS.Handle.mk options.output .write
-  let emit := fun (row : Row) => do handle.putStrLn row.json.compress; handle.flush
+  let emitBuf ← IO.mkRef ("", 0)
+  let flushEmit : IO Unit := do
+    let (buf, n) ← emitBuf.modifyGet fun s => (s, ("", 0))
+    if n > 0 then handle.putStr buf
+  let emit := fun (row : Row) => do
+    let line := row.jsonLine ++ "\n"
+    let flushNow? ← emitBuf.modifyGet fun (buf, n) =>
+      let buf' := buf ++ line
+      let n' := n + 1
+      if n' >= 512 then (some buf', ("", 0)) else (none, (buf', n'))
+    if let some chunk := flushNow? then
+      handle.putStr chunk
   let log := fun (line : String) => do
     IO.eprintln s!"check-ixe: {line}; at {(← IO.monoMsNow) - started} ms, \
       RSS {(← statusKb "VmRSS:") / 1024} MB, peak {(← statusKb "VmHWM:") / 1024} MB"
@@ -208,7 +219,9 @@ def run (args : List String) : IO UInt32 := do
         IO.eprintln s!"check-ixe: {i}/{total} after {(← IO.monoMsNow) - started} ms; {counts.toList}; \
           RSS {(← statusKb "VmRSS:") / 1024} MB"
     match options.jobs with
-    | some _ => CheckIxePool.run src ev names addresses skip slots emit log progress onRead spell
+    | some _ =>
+      CheckIxePool.run src ev names addresses skip slots emit log progress onRead spell
+        (tier := if cacheDir.isNone then src.tierHook else none)
     | none => do
       let st ← src.init
       let out ← checkLoopWith src.view src.read src.commit st (Checker.stepRecord ev) {}
@@ -223,11 +236,11 @@ def run (args : List String) : IO UInt32 := do
   -- multi-threaded, and every reference count on them made atomic
   let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
   let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
-      (addresses : Array Address) (display : DisplayTable .anon) : IO Counts := do
+      (addresses : Array Address) (display : Thunk (DisplayTable .anon)) : IO Counts := do
     let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
     let out ← check s.evidence src (names.getD · #[]) addresses
       (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
-      (spell := spellWith display)
+      (spell := fun k => spellWith display.get k)
     if let some (path, ixe) := cache then
       if record then
         let t0 ← IO.monoMsNow
@@ -253,13 +266,12 @@ def run (args : List String) : IO UInt32 := do
       onThread (check plan.evidence plan.source (names.getD · #[]) (plan.addresses options.limit)
         fun _ _ _ => pure ())
     | none => do
-      let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
-      let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
       match options.load with
       | .eager => do
         let env ← IO.ofExcept (Ixon.deEnv bytes)
-        let mut store : RecordStore := {}
-        for (address, lazy) in env.consts.toList do
+        let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context env)
+        let mut store : RecordStore := Std.HashMap.emptyWithCapacity env.consts.size
+        for (address, lazy) in env.consts do
           store := store.insert address (← IO.ofExcept lazy.get)
         let names := reportNames env store
         let hints := Hints.ofStore store env.anonHints
@@ -267,9 +279,11 @@ def run (args : List String) : IO UInt32 := do
         log s!"eager load: {setupLine s env.blobs.size s.cx.roles.names.size hints.hints.size pre}"
         let addresses := limited (← orderOf s env.named pre rootsEnv)
         if thread then markInputs s names
-        onThread (live s s.source names addresses (CheckIxeMeta.displayTable env s.cx))
+        onThread (live s s.source names addresses (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx))
       | .stream => do
-        let l ← CheckIxeStream.load bytes table pre
+        let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
+        let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
+        let l ← CheckIxeStream.loadEnv contextEnv table pre
         let s := l.setup
         let names := reportNames l.env s.store
         log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
@@ -277,8 +291,10 @@ def run (args : List String) : IO UInt32 := do
         -- the setup and the names only: the records' windows go to the loop
         -- unmarked, so that they are freed once it has taken their bytes
         if thread then markInputs s names
-        onThread (live s l.source names addresses (CheckIxeMeta.displayTable l.env s.cx))
+        onThread (live s l.source names addresses (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx))
   running.set false
+  flushEmit
+  handle.flush
   let ranked := reasons.toArray.qsort (fun a b => a.2 > b.2)
   IO.eprintln s!"check-ixe: done in {(← IO.monoMsNow) - started} ms; {counts.toList}"
   IO.eprintln s!"check-ixe: peak RSS {(← statusKb "VmHWM:") / 1024} MB"
