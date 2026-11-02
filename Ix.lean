@@ -26,3 +26,4 @@ public import Ix.Watchdog
 public import Ix.Benchmark.Bench
 public import Ix.Aiur
 public import Ix.TracingTexray
+public import Ix.Frontend

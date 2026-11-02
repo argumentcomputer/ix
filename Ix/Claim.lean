@@ -788,6 +788,74 @@ instance : ToString Claim where
 
 end Claim
 
+-- ============================================================================
+-- ElabClaim: Provable Elaboration Claim (Text -> Syntax -> Environment)
+-- ============================================================================
+
+/-- Provable elaboration statement (`Text -> Syntax -> Environment` in IxVM, paper §9.2):
+    Asserts that the source text committed at `sourceAddr` parses deterministically
+    to the concrete syntax tree committed at `syntaxAddr`, and elaborates + canonicalizes
+    deterministically to the compiled environment committed at `envAddr`.
+    Decomposes into `Claim.eval` (for the pure parser & elaborator reductions) and
+    `Claim.checkEnv` (for kernel admission of the resulting environment). -/
+structure ElabClaim where
+  ctx         : ClaimContext
+  sourceAddr  : Address
+  syntaxAddr  : Address
+  envAddr     : Address
+  assumptions : Option Address := none
+  deriving BEq, Repr, Inhabited
+
+namespace ElabClaim
+
+def VARIANT_ELAB_CLAIM : UInt64 := 11
+
+def put (c : ElabClaim) : PutM Unit := do
+  putTagN 4 Claim.FLAG_CLAIM VARIANT_ELAB_CLAIM
+  Claim.putScope Claim.VALIDATOR_ERASED_LEAN
+  Claim.putContext c.ctx
+  Serialize.put c.sourceAddr
+  Serialize.put c.syntaxAddr
+  Serialize.put c.envAddr
+  Claim.putOptAddr c.assumptions
+
+def get : GetM ElabClaim := do
+  let tag ← getTagN 4
+  if tag.flag != Claim.FLAG_CLAIM || tag.value != VARIANT_ELAB_CLAIM then
+    throw s!"ElabClaim.get: expected flag 0xE variant {VARIANT_ELAB_CLAIM}, got flag {tag.flag} variant {tag.value}"
+  let _ ← Claim.getScope Claim.VARIANT_EVAL_CLAIM
+  let ctx ← Claim.getContext
+  let sourceAddr ← Serialize.get
+  let syntaxAddr ← Serialize.get
+  let envAddr ← Serialize.get
+  let assumptions ← Claim.getOptAddr
+  return { ctx, sourceAddr, syntaxAddr, envAddr, assumptions }
+
+def ser (c : ElabClaim) : ByteArray := runPut (put c)
+def de (bytes : ByteArray) : Except String ElabClaim := runGetExact get bytes
+def commit (c : ElabClaim) : Address := Address.blake3 (ser c)
+
+/-- The `EvalClaim` asserting that the parser reduces `parseAppAddr` (applied to `sourceAddr`)
+    to `syntaxAddr`. -/
+def toParseEvalClaim (c : ElabClaim) (parseAppAddr : Address) : Claim :=
+  .eval c.ctx parseAppAddr c.syntaxAddr c.assumptions
+
+/-- The `EvalClaim` asserting that the elaborator reduces `elabAppAddr` (applied to `syntaxAddr`)
+    to `envAddr`. -/
+def toElabEvalClaim (c : ElabClaim) (elabAppAddr : Address) : Claim :=
+  .eval c.ctx elabAppAddr c.envAddr c.assumptions
+
+/-- The `CheckEnv` claim asserting that the elaborated environment rooted at `envAddr`
+    is well-typed in the Ix kernel. -/
+def toCheckEnvClaim (c : ElabClaim) : Claim :=
+  .checkEnv c.ctx c.envAddr c.assumptions
+
+instance : ToString ElabClaim where
+  toString c :=
+    s!"Elab(source={c.sourceAddr}, syntax={c.syntaxAddr}, env={c.envAddr}, asm={c.assumptions}; {c.ctx})"
+
+end ElabClaim
+
 end Ix
 
 -- ============================================================================

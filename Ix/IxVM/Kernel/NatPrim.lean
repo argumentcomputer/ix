@@ -353,6 +353,69 @@ def natPrim := ⟦
     }
   }
 
+  -- Count Unicode scalar values in a validated UTF-8 byte stream in O(|bs|)
+  -- without materializing a `List Char` KExpr spine.
+  fn utf8_char_length(bs: ByteStream) -> G {
+    utf8_char_length_go(bs, 0)
+  }
+
+  fn utf8_char_length_go(bs: ByteStream, acc: G) -> G {
+    match load(bs) {
+      ListNode.Nil => acc,
+      ListNode.Cons(b0, rest) =>
+        match utf8_decode_one(b0, rest) {
+          (_, remaining) => utf8_char_length_go(remaining, acc + 1),
+        },
+    }
+  }
+
+  -- Decode the `idx`-th Unicode scalar value from `bs` in O(idx) without
+  -- materializing a `List Char` KExpr spine. Returns (1, cp) or (0, 0) if out of bounds.
+  fn utf8_codepoint_at(bs: ByteStream, idx: G) -> (G, G) {
+    match load(bs) {
+      ListNode.Nil => (0, 0),
+      ListNode.Cons(b0, rest) =>
+        match utf8_decode_one(b0, rest) {
+          (cp, remaining) =>
+            match idx {
+              0 => (1, cp),
+              _ => utf8_codepoint_at(remaining, idx - 1),
+            },
+        },
+    }
+  }
+
+  -- Append a single valid Unicode scalar value `cp` to the end of `bs`.
+  fn utf8_push_codepoint(bs: ByteStream, cp: G) -> ByteStream {
+    let encoded = utf8_encode_prepend(cp, store(ListNode.Nil));
+    list_concat(bs, encoded)
+  }
+
+  -- Take at most `n` bytes from `bs`.
+  fn byte_stream_take(bs: ByteStream, n: G) -> ByteStream {
+    match n {
+      0 => store(ListNode.Nil),
+      _ =>
+        match load(bs) {
+          ListNode.Nil => store(ListNode.Nil),
+          ListNode.Cons(b, rest) =>
+            store(ListNode.Cons(b, byte_stream_take(rest, n - 1))),
+        },
+    }
+  }
+
+  -- Drop at most `n` bytes from `bs`.
+  fn byte_stream_drop(bs: ByteStream, n: G) -> ByteStream {
+    match n {
+      0 => bs,
+      _ =>
+        match load(bs) {
+          ListNode.Nil => store(ListNode.Nil),
+          ListNode.Cons(_, rest) => byte_stream_drop(rest, n - 1),
+        },
+    }
+  }
+
   -- Decode one UTF-8 codepoint. Honors length prefix bits:
   -- 0xxxxxxx → 1 byte; 110xxxxx 10xxxxxx → 2; 1110xxxx 10*2 → 3;
   -- 11110xxx 10*3 → 4 bytes.

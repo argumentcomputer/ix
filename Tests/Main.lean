@@ -124,6 +124,7 @@ import Tests.Ix.TruthMinesRecords
 import Tests.Ix.TruthMines
 import Tests.Registry
 import Tests.Ix.RustCompile
+import Tests.Ix.Frontend
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -158,6 +159,8 @@ def registry : List Entry := [
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
   .suite "exact-sharing-ffi" .primary Tests.SharingExactFFI.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
+  .suite "ix-frontend" .primary Tests.Ix.Frontend.suite,
+  .env "ix-frontend-bench" (.manual "Step 1 closure certification gate + Step 2 host & IxVM STARK FFT benchmarks") Tests.Ix.Frontend.runBenchmarksWithEnv,
   .suite "graph-unit" .primary Tests.Ix.GraphM.suite,
   .suite "condense-unit" .primary Tests.Ix.CondenseM.suite,
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,

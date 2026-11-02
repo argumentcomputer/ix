@@ -656,7 +656,8 @@ def whnf := ⟦
         let major_clean1 = cleanup_nat_offset_major(rc, raw_major);
         let major_w = whnf_iota_major(rc, major_clean1, types);
         let major_clean2 = cleanup_nat_offset_major(rc, major_w);
-        let major = nat_lit_to_ctor_or_self(rc, major_clean2);
+        let major_nat = nat_lit_to_ctor_or_self(rc, major_clean2);
+        let major = str_lit_to_ctor_app_or_self(rc, major_nat, types);
         match collect_spine_of_ctor(major) {
           (1, ctor_cidx, ctor_parent, ctor_args) =>
             -- The constructor must belong to the inductive THIS recursor
