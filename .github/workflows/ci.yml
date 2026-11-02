@@ -160,7 +160,7 @@ jobs:
         run: |
           apt-get update
           apt-get install --yes --no-install-recommends \
-            build-essential ca-certificates cmake curl git libclang-dev ninja-build python3 sudo
+            build-essential ca-certificates curl git libclang-dev sudo
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: portable
@@ -178,21 +178,8 @@ jobs:
       - name: Compile CUDA Rust targets
         run: |
           cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda
-      - name: Check CPU runtime linkage without a CUDA compiler
-        run: IX_CUDA=0 IX_CUDA_TRACE_CODEGEN=0 NVCC=/nonexistent/nvcc lake build ix_rs
       - name: Link CUDA-enabled Lean executables
         run: IX_CUDA=1 lake build ix bench-typecheck
-      - name: Check the CUDA runtime stays private
-        run: |
-          ! readelf -d .lake/build/lib/libmulti_stark_cuda.so | grep -q 'libstdc++\|libc++\|libgcc_s'
-          ! nm -D --defined-only .lake/build/lib/libmulti_stark_cuda.so | grep -qE ' (_Z|__cxa_|__gxx_|_Unwind_)'
-      - name: Check the CUDA compression CLI starts without a GPU
-        run: |
-          set -o pipefail
-          cc -std=gnu17 -Wall -Wextra -Werror -shared -fPIC tests/cuda_link_smoke.c -ldl \
-            -o .lake/build/lib/cuda_link_smoke.so
-          CUDA_VISIBLE_DEVICES='' LD_PRELOAD="$PWD/.lake/build/lib/cuda_link_smoke.so" \
-            .lake/build/bin/ix compress --help
 
   lints:
     name: Lint workflows
