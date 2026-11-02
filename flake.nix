@@ -14,10 +14,6 @@
     # System packages, follows lean4-nix so we stay in sync
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
-    # CUDA-only packages, independently pinned so the ordinary build graph
-    # can retain lean4-nix's older Nixpkgs revision.
-    cuda-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
     # Lean 4 & Lake
     lean4-nix.url = "github:argumentcomputer/lean4-nix";
 
@@ -67,27 +63,6 @@
           ...
         }:
         let
-          # CUDA is opt-in and unfree. Its dedicated package set locks CUDA
-          # 13.2 without changing the default shell or ordinary package/check
-          # graph.
-          cudaPkgs = import inputs.cuda-nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-          cudaToolkit = cudaPkgs.symlinkJoin {
-            name = "ix-cuda-13.2-toolkit";
-            paths = [
-              cudaPkgs.cudaPackages_13_2.cccl
-              cudaPkgs.cudaPackages_13_2.cuda_crt
-              cudaPkgs.cudaPackages_13_2.cuda_cudart
-              cudaPkgs.cudaPackages_13_2.cuda_nvcc
-              cudaPkgs.cudaPackages_13_2.libnvvm
-            ];
-            postBuild = ''
-              ln -s lib "$out/lib64"
-            '';
-          };
-
           # Pins the Lean toolchain; a plain derivation, no overlay involved
           lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
 
@@ -97,10 +72,21 @@
             sha256 = "sha256-p8h3Sl/YRByZfZTAKXdsvF6xEenXKrXSVvpphmZENH4=";
           };
 
+          plonkSources = pkgs.lib.fileset.fileFilter (
+            file: file.hasExt "go" || file.hasExt "h" || file.hasExt "json" || file.hasExt "bin"
+              || file.name == "go.mod" || file.name == "go.sum"
+          ) ./tools/gnark;
+
           # Rust package
           craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
           # The Cargo files the workspace builds from.
           cargoSource = pkgs.lib.fileset.fromSource (craneLib.cleanCargoSource ./.);
+          # Profiles are embedded in the verifier; compression tests also read
+          # binary fixtures that Cargo's source filter does not retain.
+          compressionData = pkgs.lib.fileset.unions [
+            ./crates/proof-compression/tests/fixtures
+            ./crates/proof-compression/verifying-keys
+          ];
           # The Rust tests `include_bytes!` the `.ixe` files under
           # `Tests/Fixtures`: environments serialized by Lean, read back to check
           # both sides agree on the format.
@@ -108,6 +94,7 @@
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
               cargoSource
+              compressionData
               ./Tests/Fixtures/ixon-v4
             ];
           };
@@ -151,6 +138,9 @@
               LEAN_SYSROOT = "${lean}";
               # bindgen needs libclang to parse C headers
               LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+              # Same C standard the lakefile gives Cargo: Lean's bundled
+              # link-time glibc predates the C23 `__isoc23_*` redirects.
+              CFLAGS = "-std=gnu17";
 
               buildInputs =
                 [ ]
@@ -159,6 +149,20 @@
                   pkgs.libiconv
                 ];
             };
+          # Sources for the workspace checks, including the gnark test data
+          # the Rust tests embed.
+          testArgs = craneArgs // {
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                cargoSource
+                compressionData
+                ./Tests/Fixtures/ixon-v4
+                plonkSources
+                ./crates/proof-compression/cuda
+              ];
+            };
+          };
           # Build dependencies once with every host feature enabled so the
           # `net` stack (tokio/iroh) is compiled and cached here, then shared
           # by the package builds and clippy. CUDA remains opt-in and is
@@ -166,7 +170,7 @@
           cargoArtifacts = craneLib.buildDepsOnly (
             craneArgs
             // {
-              cargoExtraArgs = "--locked --features parallel,test-ffi,net";
+              cargoExtraArgs = "--locked -p ix-ffi --features parallel,test-ffi,net";
             }
           );
 
@@ -177,7 +181,7 @@
             craneArgs
             // {
               inherit cargoArtifacts;
-              cargoExtraArgs = "--locked --features parallel,test-ffi";
+              cargoExtraArgs = "--locked -p ix-ffi --features parallel,test-ffi";
               doCheck = false;
             }
           );
@@ -187,7 +191,7 @@
             craneArgs
             // {
               inherit cargoArtifacts;
-              cargoExtraArgs = "--locked --features parallel";
+              cargoExtraArgs = "--locked -p ix-ffi --features parallel";
               doCheck = false;
             }
           );
@@ -200,7 +204,7 @@
             // {
               inherit cargoArtifacts;
               cargoExtraArgs =
-                "--locked --features parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
+                "--locked -p ix-ffi --features parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
               doCheck = false;
             }
           );
@@ -220,6 +224,8 @@
               ./IxC/lean-toolchain
               # What its Rust archive target traces, as Crane sees it.
               cargoSource
+              compressionData
+              plonkSources
             ];
           };
           lakeManifest = builtins.fromJSON (builtins.readFile ./lake-manifest.json);
@@ -252,14 +258,15 @@
             src = leanSrc;
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
-              substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
+              substituteInPlace lakefile.lean --replace-fail 'cmd := "cargo"' 'cmd := "true"'
             '';
             # Preserve workspace-relative paths instead of shadowing local packages.
             preConfigure = ''
               mkdir -p .lake
               ln -sf ${lakePackageOverrides} .lake/package-overrides.json
             '';
-            # Symlink the Crane-built static lib to where Lake expects it
+            # Symlink the Crane-built static lib to where Lake expects Cargo to
+            # have left it
             postConfigure = ''
               mkdir -p target/release
               ln -s ${rustLib}/lib/libix_ffi.a target/release/
@@ -345,17 +352,6 @@
           packages = {
             default = ixLib;
             ix = ixCLI;
-            # `checks` are built by `nix flake check`; exposing this derivation
-            # as a package keeps the ignored suite available on demand without
-            # adding it to the default check set.
-            nextest-ignored = craneLib.cargoNextest (
-              craneArgs
-              // {
-                inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --workspace";
-                cargoNextestExtraArgs = "--profile ci --run-ignored only";
-              }
-            );
             zkv-prover = ZKVotingProver // {
               meta.mainProgram = "Apps-ZKVoting-Prover";
             };
@@ -364,16 +360,16 @@
           checks = {
             # Lint the host workspace; warnings are errors.
             clippy = craneLib.cargoClippy (
-              craneArgs
+              testArgs
               // {
                 inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --features parallel,test-ffi,net";
+                cargoExtraArgs = "--locked --workspace --features ix-ffi/parallel,ix-ffi/test-ffi,ix-ffi/net";
                 cargoClippyExtraArgs = "--all-targets -- -D warnings";
               }
             );
             # Non-ignored Rust unit tests across the host workspace.
             nextest = craneLib.cargoNextest (
-              craneArgs
+              testArgs
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--locked --workspace";
@@ -413,48 +409,6 @@
                 cargo-deny
                 valgrind
               ];
-            };
-          }
-          // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
-            # CUDA stays separate so CPU development does not fetch NVIDIA's
-            # toolkit. Pinning NVCC/CUDA_HOME prevents a host-level
-            # `/usr/local/cuda` from silently selecting an incompatible
-            # compiler or runtime.
-            cuda = pkgs.mkShell {
-              LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-              NVCC = "${cudaToolkit}/bin/nvcc";
-              CUDA_HOME = "${cudaToolkit}";
-              CUDA_PATH = "${cudaToolkit}";
-              MULTI_STARK_CUDA_ARCHS = "120";
-              packages =
-                (with pkgs; [
-                  pkg-config
-                  openssl
-                  clang
-                  rustToolchain
-                  rust-analyzer
-                  lean
-                  cargo-deny
-                  valgrind
-                ])
-                ++ [ cudaToolkit ];
-              shellHook = ''
-                export PATH="${cudaToolkit}/bin:$PATH"
-                export LD_LIBRARY_PATH="${cudaToolkit}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
-                # Nix's dynamic loader does not search the host driver's
-                # library directory. Preload only libcuda to avoid mixing libc.
-                for ixCudaDriverLib in \
-                  /run/opengl-driver/lib/libcuda.so.1 \
-                  /usr/lib/x86_64-linux-gnu/libcuda.so.1 \
-                  /usr/lib64/libcuda.so.1; do
-                  if [ -e "$ixCudaDriverLib" ]; then
-                    export LD_PRELOAD="$ixCudaDriverLib''${LD_PRELOAD:+:$LD_PRELOAD}"
-                    break
-                  fi
-                done
-                unset ixCudaDriverLib
-              '';
             };
           };
 

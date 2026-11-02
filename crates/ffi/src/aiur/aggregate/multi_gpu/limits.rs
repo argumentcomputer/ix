@@ -13,23 +13,22 @@ pub(super) struct HostBudget {
 
 impl HostBudget {
   pub(super) fn new(
-    lanes: usize,
+    gpus: usize,
     executions: usize,
-    per_lane: usize,
+    per_gpu: usize,
     detected: Option<usize>,
     ceiling: Option<usize>,
     cells: usize,
   ) -> Result<Self, String> {
-    if lanes == 0 || executions == 0 || cells == 0 {
+    if gpus == 0 || executions == 0 || cells == 0 {
       return Err(
-        "lanes, execution threads and trace-cell budget must be positive"
-          .into(),
+        "GPUs, execution threads and trace-cell budget must be positive".into(),
       );
     }
-    let requested = if per_lane == 0 {
+    let requested = if per_gpu == 0 {
       detected.ok_or("cannot detect host memory; specify --max-ram per GPU")?
     } else {
-      per_lane.checked_mul(lanes).ok_or("process host budget overflow")?
+      per_gpu.checked_mul(gpus).ok_or("process host budget overflow")?
     };
     let limit = ceiling.map_or(requested, |ceiling| requested.min(ceiling));
     let workspace = cells
@@ -40,12 +39,12 @@ impl HostBudget {
       .ok_or("prover workspace budget overflow")?;
     let headroom = limit / 10;
     let reserved = workspace
-      .checked_mul(lanes)
+      .checked_mul(gpus)
       .and_then(|n| n.checked_add(headroom))
       .ok_or("process workspace budget overflow")?;
     let records = limit.checked_sub(reserved)
       .ok_or("host budget cannot hold the GPU workers' workspace; raise --max-ram or lower AIUR_TRACE_SHARD_MAX_CELLS")?;
-    let slots = lanes
+    let slots = gpus
       .checked_mul(2)
       .and_then(|n| n.checked_add(executions))
       .ok_or("record admission count overflow")?;
@@ -98,7 +97,7 @@ mod tests {
   use super::*;
 
   #[test]
-  fn per_lane_values_expand_once_and_auto_detection_is_global() {
+  fn per_gpu_values_expand_once_and_auto_detection_is_global() {
     let gib = 1usize << 30;
     let explicit =
       HostBudget::new(4, 12, 230 * gib, None, Some(920 * gib), 1_500_000_000)

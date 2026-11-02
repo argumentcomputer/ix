@@ -73,6 +73,7 @@ import Tests.AggrProof
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
+import Tests.CompressionCli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -380,6 +381,11 @@ def main (args : List String) : IO UInt32 := do
   -- Special case: cli tests have their own runner
   if args.contains "cli" then
     return ← Tests.Cli.suite
+
+  -- Compression CLI setup and proof-rejection checks, run explicitly.
+  if args.contains "compression-cli" then
+    Tests.CompressionCli.run
+    return 0
 
   -- Section 14 M1-e diagnostic: keep the 132-case, twice-executed `ix_aggr`
   -- activation matrix out of the default primary suite while making its gate
