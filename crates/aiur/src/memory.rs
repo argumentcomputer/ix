@@ -29,7 +29,6 @@ struct Slot {
 
 #[derive(Clone, Debug)]
 pub struct Memory<F = u64> {
-  pub(crate) budget: crate::budget::Budget,
   base: usize,
   end: u64,
   types: Vec<(Type, usize)>,
@@ -41,6 +40,9 @@ pub struct Memory<F = u64> {
   // Stable record indices and cached hashes, with no second payload copy.
   // Retained after execution so trace population can resolve stores directly.
   index: HashTable<(u64, usize)>,
+  index_bytes: usize,
+  // Release the charge after the payload and indexes have been freed.
+  pub(crate) budget: crate::budget::Budget,
 }
 
 impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
@@ -63,6 +65,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
       buckets,
       type_buckets,
       index: HashTable::new(),
+      index_bytes: 0,
     }
   }
 
@@ -73,17 +76,21 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.slots.is_empty()
   }
 
-  pub(crate) fn set_range(
-    &mut self,
-    start: u64,
-    end: u64,
-  ) -> Result<(), &'static str> {
-    if !self.is_empty() || start >= end {
-      return Err("invalid empty ROM range");
-    }
-    self.base = usize::try_from(start).ok().ok_or("ROM base overflow")?;
-    self.end = end;
-    Ok(())
+  pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
+    let payload = self.words.len() * std::mem::size_of::<F>();
+    let vectors = self.words.capacity() * std::mem::size_of::<F>()
+      + self.slots.capacity() * std::mem::size_of::<Slot>()
+      + self.buckets.iter().map(Vec::capacity).sum::<usize>()
+        * std::mem::size_of::<usize>()
+      + self.buckets.capacity() * std::mem::size_of::<Vec<usize>>();
+    let index = if self.index.capacity() == 0 {
+      0
+    } else {
+      self.index.capacity().next_power_of_two()
+        * (std::mem::size_of::<(u64, usize)>() + 1)
+        + 16
+    };
+    (payload, vectors, index)
   }
 
   #[inline]
@@ -186,11 +193,13 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     if let Some(index) = found {
       return Ok(index);
     }
-    self.budget.vector(&self.words, words.len())?;
-    self.budget.vector(&self.slots, 1)?;
-    self
-      .budget
-      .hash::<(u64, usize)>(self.index.len(), self.index.capacity())?;
+    self.budget.vector(&mut self.words, words.len())?;
+    self.budget.vector(&mut self.slots, 1)?;
+    let replaced = self.budget.hash::<(u64, usize)>(
+      self.index.len(),
+      self.index.capacity(),
+      &mut self.index_bytes,
+    )?;
     let bucket = &mut self.buckets[self.type_buckets[type_id]];
     self.budget.vector(bucket, 1)?;
     let address =
@@ -202,6 +211,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     }
     let index = self.slots.len();
     self.index.insert_unique(hash, (hash, index), |&(hash, _)| hash);
+    drop(replaced);
     let offset = self.words.len();
     self.words.extend_from_slice(words);
     bucket.push(index);

@@ -6,6 +6,18 @@ pub use record_pool::{BudgetError, RecordPool, RecordReservation};
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Budget(pub Option<RecordReservation>);
 
+pub(crate) struct ReplacedAllocation {
+  reservation: Option<RecordReservation>,
+  bytes: usize,
+}
+impl Drop for ReplacedAllocation {
+  fn drop(&mut self) {
+    if let Some(reservation) = &self.reservation {
+      reservation.release(self.bytes);
+    }
+  }
+}
+
 #[derive(Debug)]
 pub(crate) enum StorageError {
   Resource(BudgetError),
@@ -42,10 +54,10 @@ impl Budget {
   #[inline]
   pub(crate) fn vector<T>(
     &self,
-    values: &Vec<T>,
+    values: &mut Vec<T>,
     additional: usize,
   ) -> Result<(), BudgetError> {
-    if self.0.is_some()
+    if let Some(reservation) = &self.0
       && values.len().saturating_add(additional) > values.capacity()
     {
       let capacity = values
@@ -53,7 +65,10 @@ impl Budget {
         .saturating_add(additional)
         .max(values.capacity().saturating_mul(2))
         .max(8);
-      self.reserve(capacity.saturating_mul(size_of::<T>()))?;
+      self.reserve(capacity.saturating_mul(std::mem::size_of::<T>()))?;
+      let old = values.capacity().saturating_mul(std::mem::size_of::<T>());
+      values.reserve_exact(capacity - values.len());
+      reservation.release(old);
     }
     Ok(())
   }
@@ -63,17 +78,42 @@ impl Budget {
     &self,
     len: usize,
     capacity: usize,
-  ) -> Result<(), BudgetError> {
+    charged: &mut usize,
+  ) -> Result<ReplacedAllocation, BudgetError> {
+    let mut replaced = ReplacedAllocation { reservation: None, bytes: 0 };
     if self.0.is_some() && len == capacity {
       // At least twice the required capacity, including the control bytes.
-      self.reserve(
-        len
-          .saturating_add(1)
-          .next_power_of_two()
-          .saturating_mul(4)
-          .saturating_mul(size_of::<T>() + 1),
-      )?;
+      let bytes = len
+        .saturating_add(1)
+        .next_power_of_two()
+        .saturating_mul(4)
+        .saturating_mul(std::mem::size_of::<T>() + 1);
+      self.reserve(bytes)?;
+      replaced =
+        ReplacedAllocation { reservation: self.0.clone(), bytes: *charged };
+      *charged = bytes;
     }
-    Ok(())
+    Ok(replaced)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn vector_growth_charges_live_capacity_and_transient_peak() {
+    let pool = RecordPool::new(4096, 8);
+    let reservation = pool.try_admit().unwrap().unwrap();
+    let budget = Budget(Some(reservation.clone()));
+    let mut values = Vec::<u64>::new();
+    for value in 0..128 {
+      budget.vector(&mut values, 1).unwrap();
+      values.push(value);
+      assert_eq!(reservation.bytes(), values.capacity() * 8);
+    }
+    assert!(pool.stats().peak_reserved >= (64 + 128) * 8);
+    reservation.finish_execution();
+    assert_eq!(pool.stats().reserved, 128 * 8);
   }
 }

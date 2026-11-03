@@ -308,6 +308,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
 
   /// A worker record may have no public entrypoint of its own. Its unresolved
   /// calls are checked by the combined batch, never by a separate claim.
+  #[cfg(test)]
   pub fn generate_record_stage_1(
     &self,
     record: &Execution<B>,

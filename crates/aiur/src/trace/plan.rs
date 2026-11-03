@@ -352,7 +352,7 @@ impl<B: FieldBackend> FillPlan<B> {
             if let Some(id) = table.lookup(buffer).1 {
               scratch[k.start..k.start + k.width]
                 .copy_from_slice(table.output(id).output);
-            } else if k.width != 0 || !record.is_deferred(*callable, buffer) {
+            } else {
               return Err("missing recorded callee".into());
             }
           }
@@ -399,6 +399,116 @@ impl<B: FieldBackend> FillPlan<B> {
       }
     }
     Ok(())
+  }
+}
+
+impl<B: FieldBackend> FillPlan<B> {
+  /// This plan in the stable description schema; `plan` is the function's
+  /// artifact plan, which names its hint sites.
+  pub(super) fn describe(
+    &self,
+    program: &CheckedProgram<B>,
+    plan: &FunctionPlan,
+  ) -> super::describe::FunctionDescription {
+    use super::describe::{
+      FunctionDescription, HintSite, KernelDescription, NodeDescription as N,
+      Operand, WriteDescription,
+    };
+    let field = self.field;
+    let op = |v: &Value<B::Element>| match v {
+      Value::Constant(c) => Operand::Const(field.to_u64(*c)),
+      Value::Slot(i) => Operand::Slot(*i),
+    };
+    let ops = |vs: &[Value<B::Element>]| vs.iter().map(op).collect::<Vec<_>>();
+    let functions = program.program.functions.len();
+    let kernels = self
+      .kernels
+      .iter()
+      .map(|k| {
+        let node = match &k.node {
+          Node::Arithmetic(Arithmetic::Add(a, b)) => {
+            N::Add { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Sub(a, b)) => {
+            N::Sub { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Mul(a, b)) => {
+            N::Mul { a: op(a), b: op(b) }
+          },
+          Node::Arithmetic(Arithmetic::Select(g, a, b)) => {
+            N::Select { guard: op(g), a: op(a), b: op(b) }
+          },
+          Node::Inverse(v) => N::Inverse { value: op(v) },
+          Node::Choice(tests) => {
+            N::Choice { tests: tests.iter().map(|t| ops(t)).collect() }
+          },
+          Node::Failure(xs) => N::Failure { differences: ops(xs) },
+          Node::Call { callable, args } if *callable >= functions => {
+            N::Map { map: callable - functions, args: ops(args) }
+          },
+          Node::Call { callable, args } => N::Call {
+            callee: program.program.functions[*callable].name.clone(),
+            args: ops(args),
+          },
+          Node::Store { values } => {
+            N::Store { width: values.len(), values: ops(values) }
+          },
+          Node::Load { address } => {
+            N::Load { width: k.width, address: op(address) }
+          },
+          Node::Hint { instruction, key } => {
+            let (channel, r#type, key_type) = plan
+              .steps
+              .iter()
+              .find_map(|step| match &step.action {
+                Action::Hint {
+                  instruction: i,
+                  channel,
+                  r#type,
+                  key_type,
+                  ..
+                } if i == instruction => {
+                  Some((channel.clone(), r#type.clone(), key_type.clone()))
+                },
+                _ => None,
+              })
+              .expect("a hint kernel comes from a hint step");
+            N::Hint {
+              site: HintSite {
+                function: plan.name.clone(),
+                instruction: *instruction,
+                channel,
+                r#type,
+                key_type,
+              },
+              key: ops(key),
+            }
+          },
+        };
+        KernelDescription {
+          guard: op(&k.guard),
+          start: k.start,
+          width: k.width,
+          node,
+        }
+      })
+      .collect();
+    FunctionDescription {
+      name: plan.name.clone(),
+      inputs: self.inputs,
+      outputs: self.output,
+      slots: self.scratch,
+      kernels,
+      writes: self
+        .writes
+        .iter()
+        .map(|w| WriteDescription {
+          guard: op(&w.guard),
+          column: w.column,
+          value: op(&w.value),
+        })
+        .collect(),
+    }
   }
 }
 

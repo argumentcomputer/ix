@@ -1,6 +1,8 @@
 //! Resident host for the formal IxVM and recursive verifier. The application
 //! submits ready jobs; CPU execution is shared and each prover owns its backend.
 //! Spool files transport control messages only. Execution records stay in memory.
+mod executor;
+mod limits;
 mod output;
 mod protocol;
 
@@ -10,8 +12,8 @@ use aiur::{
   field::{FieldBackend, NativeField},
   library::io::Invocation,
   trace::{
-    TracePlan,
-    stark::{Backend, Parameters, planning},
+    TraceArtifact, TracePlan,
+    stark::{Backend, Parameters, ShardFeed, planning},
   },
 };
 use multi_stark::types::Val;
@@ -81,10 +83,14 @@ fn tracing(enabled: bool) -> Result<(), String> {
   Ok(())
 }
 
+/// `cell_limit` is the committed-cell limit per shard that a CUDA
+/// controller sized its workspace for; jobs may lower it but not raise it.
 fn prepare(
   program: &Program,
+  executor: executor::Executor,
   kind: Kind,
   task: Prep,
+  cell_limit: Option<u64>,
 ) -> Result<Prepared, Box<(Job, u32, Value, bool)>> {
   let Prep { job, artifact, reservation } = task;
   let _span =
@@ -92,15 +98,24 @@ fn prepare(
       .entered();
   let run = || -> Result<Prepared, PrepFailure> {
     job.options.validate().map_err(PrepFailure::Other)?;
+    if let Some(cells) = cell_limit
+      && job.options.max_cells.is_some_and(|requested| requested > cells)
+    {
+      return Err(PrepFailure::Other(format!(
+        "job cell limit exceeds the controller's {cells} cells per shard"
+      )));
+    }
     // Reserve advice while parsing it, before either its decoded vectors or
     // hint arenas are allocated. It remains charged alongside the record.
     let bytes = fs::metadata(&job.input)
       .map_err(|e| PrepFailure::Other(e.to_string()))?
       .len();
-    reservation.reserve(
-      usize::try_from(bytes.saturating_mul(8)).unwrap_or(usize::MAX),
-    )?;
+    let advice_reserved =
+      usize::try_from(bytes.saturating_mul(8)).unwrap_or(usize::MAX);
+    reservation.reserve(advice_reserved)?;
+    let parsing = Instant::now();
     let input = Invocation::load(&job.input).map_err(PrepFailure::Other)?;
+    let parsing_seconds = parsing.elapsed().as_secs_f64();
     let valid = match kind {
       Kind::Ixvm => {
         input.entry == "IxVM::verify_claim" && input.args.len() == 8
@@ -122,20 +137,28 @@ fn prepare(
       Kind::Recursion => stark_verifier::prepare(program, &input.streams),
     }
     .map_err(PrepFailure::Other)?;
-    let record = hints
-      .execute_reserved(&input.entry, args.clone(), &reservation)
-      .map_err(|e| {
-        e.resource.map_or_else(
-          || PrepFailure::Other(e.to_string()),
-          PrepFailure::Resource,
-        )
-      })?;
+    let hint_seconds = start.elapsed().as_secs_f64();
+    // Includes binding a native kernel and starting its execution thread.
+    let execution = Instant::now();
+    let (record, ran) =
+      executor.execute(&hints, &input.entry, args.clone(), &reservation);
+    let executor_seconds = execution.elapsed().as_secs_f64();
+    let record = record.map_err(|e| {
+      e.resource.map_or_else(
+        || PrepFailure::Other(e.to_string()),
+        PrepFailure::Resource,
+      )
+    })?;
     if !record.output.is_empty() {
       return Err(PrepFailure::Other("verifier returned a value".into()));
     }
     reservation.finish_execution();
     let report = json!({"verified":false, "execution_seconds":start.elapsed().as_secs_f64(),
-      "queries":record.queries.len(), "instructions":record.instructions, "record_bytes":reservation.bytes()});
+      "executor":ran, "executor_seconds":executor_seconds, "native_stack_bytes":record.native_stack_bytes, "hint_preparation_seconds":hint_seconds,
+      "input_parsing_seconds":parsing_seconds, "input_json_bytes":bytes,
+      "advice_reserved_bytes":advice_reserved, "record_storage_reserved_bytes":reservation.bytes().saturating_sub(advice_reserved),
+      "storage":record.storage_usage(), "queries":record.queries.len(),
+      "instructions":record.instructions, "record_bytes":reservation.bytes()});
     Ok(Prepared {
       job: job.clone(),
       artifact,
@@ -183,6 +206,8 @@ impl From<BudgetError> for PrepFailure {
 struct Workspace {
   total: u64,
   share: u64,
+  /// Reject requests above `total` instead of reserving all of it.
+  strict: bool,
   state: Mutex<WorkspaceState>,
   released: Condvar,
 }
@@ -196,15 +221,23 @@ struct WorkspaceReservation<'a> {
   bytes: u64,
 }
 impl Workspace {
-  fn new(total: u64, lanes: usize) -> Self {
+  fn new(total: u64, lanes: usize, strict: bool) -> Self {
     Self {
       total,
       share: total / lanes.max(1) as u64,
+      strict,
       state: Mutex::new(WorkspaceState { free: total, next: 0, serving: 0 }),
       released: Condvar::new(),
     }
   }
-  fn reserve(&self, bytes: u64) -> WorkspaceReservation<'_> {
+  fn reserve(&self, bytes: u64) -> Result<WorkspaceReservation<'_>, String> {
+    if self.strict && bytes > self.total {
+      return Err(format!(
+        "planned workspace of {bytes} bytes exceeds the {}-byte prover \
+         workspace",
+        self.total
+      ));
+    }
     let bytes = bytes.min(self.total);
     let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
     let ticket = state.next;
@@ -215,7 +248,7 @@ impl Workspace {
     state.free -= bytes;
     state.serving += 1;
     self.released.notify_all();
-    WorkspaceReservation { workspace: self, bytes }
+    Ok(WorkspaceReservation { workspace: self, bytes })
   }
 }
 impl Drop for WorkspaceReservation<'_> {
@@ -229,9 +262,11 @@ impl Drop for WorkspaceReservation<'_> {
 
 /// Thread pools a lane proves on: its own, and for CPU controllers with
 /// several lanes one spanning every lane's threads, for jobs that borrowed
-/// the whole workspace and therefore run while the other lanes wait.
+/// the whole workspace and therefore run while the other lanes wait. `feed`
+/// builds the lane's next trace shard while its own pool proves.
 struct Pools<'a> {
   lane: &'a rayon::ThreadPool,
+  feed: &'a ShardFeed,
   wide: Option<&'a rayon::ThreadPool>,
 }
 
@@ -277,36 +312,47 @@ fn prove(
     }
     let waited = Instant::now();
     let _reservation = workspace
-      .reserve(batch.generation_peak_bytes.max(batch.proving_peak_bytes));
+      .reserve(batch.generation_peak_bytes.max(batch.proving_peak_bytes))?;
     report["workspace_wait_seconds"] = waited.elapsed().as_secs_f64().into();
-    let pool =
-      if borrowed { pools.wide.unwrap_or(pools.lane) } else { pools.lane };
+    let (pool, feed) = match pools.wide.filter(|_| borrowed) {
+      Some(wide) => (wide, None),
+      None => (pools.lane, Some(pools.feed)),
+    };
     pool.install(|| {
-      let start = Instant::now();
-      let traces = tracing_texray::examine(
-        tracing::info_span!("aiur.trace", id = %job.id),
+      let layout = batch
+        .layout
+        .as_ref()
+        .ok_or("the proving plan has no incremental layout")?;
+      let result = tracing_texray::examine(
+        tracing::info_span!("aiur.prove_incremental", id = %job.id, lane),
       )
-      .in_scope(|| backend.prepare_stage_1(&record, &entry, &args))?;
-      if traces.cells() != batch.stage1_cells {
-        return Err("generated trace differs from resource plan".into());
-      }
-      report["trace_seconds"] = start.elapsed().as_secs_f64().into();
-      drop(record);
-      let start = Instant::now();
-      let proof = tracing_texray::examine(
-        tracing::info_span!("aiur.prove", id = %job.id, lane),
-      )
-      .in_scope(|| {
-        backend.prove_stage_one(
+      .in_scope(|| match feed {
+        Some(feed) => backend.prove_incremental_fed(
+          &record,
           &entry,
           &args,
           &[],
-          traces,
-          batch.max_rows,
+          layout,
           batch.retention(),
-        )
-      })?;
-      report["proving_seconds"] = start.elapsed().as_secs_f64().into();
+          batch.pipelined.then_some(feed),
+        ),
+        None => backend.prove_incremental_timed(
+          &record,
+          &entry,
+          &args,
+          &[],
+          layout,
+          batch.retention(),
+          batch.pipelined,
+        ),
+      });
+      drop(record);
+      let run = result?;
+      let proof = run.proof;
+      report["trace_seconds"] = run.trace_seconds.into();
+      report["proving_seconds"] = run.proving_seconds.into();
+      report["population"] =
+        serde_json::to_value(&run.population).map_err(|e| e.to_string())?;
       report = output::proof(
         &job,
         kind,
@@ -417,6 +463,10 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     programs.push(program);
     artifacts.push(trace);
   }
+  let executors = programs
+    .iter()
+    .map(executor::Executor::select)
+    .collect::<Result<Vec<_>, _>>()?;
   let plans = programs
     .iter()
     .zip(artifacts)
@@ -427,6 +477,7 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     .iter()
     .map(|a| fs::canonicalize(&a.path).map_err(|e| e.to_string()))
     .collect::<Result<Vec<_>, _>>()?;
+  ixvm::register_compiled_trace();
   let mut lanes = Vec::new();
   for device in &config.devices {
     lanes.push(
@@ -439,16 +490,25 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     );
   }
   let static_bytes = planning::resident_memory();
-  let remaining = config
-    .max_ram_bytes
-    .checked_sub(static_bytes.saturating_mul(5) / 4)
-    .ok_or("RAM budget cannot hold resident artifacts and prover systems")?;
-  let records_bytes =
-    usize::try_from(remaining / 2).ok().ok_or("record pool overflow")?;
-  if records_bytes == 0 {
-    return Err("no record capacity remains".into());
-  }
-  let workspace = Workspace::new(remaining / 2, config.devices.len());
+  // CUDA lanes reserve workspace for this cell limit; jobs may lower it.
+  let cuda = config.devices.iter().all(Option::is_some);
+  let cell_limit =
+    if cuda { planning::Options::default().device_cells()? } else { None };
+  let allocation = limits::allocate(&limits::Request {
+    max_ram_bytes: config.max_ram_bytes,
+    setup_rss_bytes: static_bytes,
+    lanes: config.devices.len(),
+    cell_limit,
+    cgroup_limit_bytes: cuda
+      .then(record_pool::host::cgroup_memory_limit)
+      .flatten()
+      .map(|bytes| bytes as u64),
+    workspace_per_lane_bytes: config.workspace_per_lane_bytes,
+  })?;
+  let records_bytes = usize::try_from(allocation.record_bytes)
+    .map_err(|_| "record pool overflow")?;
+  let workspace =
+    Workspace::new(allocation.workspace_bytes, config.devices.len(), cuda);
   // CPU lanes borrowing the whole workspace also borrow the waiting lanes'
   // threads. CUDA lanes keep their own: the device does the heavy work.
   let wide = (config.devices.len() > 1
@@ -483,8 +543,9 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     let _shutdown =
       Shutdown { pool: &pool, prep: &prep_queue, records: &records };
     for executor in 0..config.exec_jobs {
-      let (programs, kinds, log, send, prep_queue, records) = (
+      let (programs, executors, kinds, log, send, prep_queue, records) = (
         &programs,
+        &executors,
         &config.artifacts,
         &log,
         send.clone(),
@@ -495,7 +556,7 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
         while let Some(task) = prep_queue.pop() {
           log.event(json!({"phase":"execute", "id":task.job.id, "executor":executor}));
           let id = task.artifact;
-          match prepare(&programs[id], kinds[id].kind, task) {
+          match prepare(&programs[id], executors[id], kinds[id].kind, task, cell_limit) {
             Ok(prepared) => {
               log.event(json!({"phase":"prepared", "id":prepared.job.id, "record_bytes":prepared.report["record_bytes"]}));
               let _ = send.send(Event::Prepared);
@@ -526,8 +587,9 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
         .num_threads(threads)
         .build()
         .map_err(|e| e.to_string())?;
+      let feed = ShardFeed::new(threads)?;
       scope.spawn(move || {
-        let pools = Pools { lane: &rayon, wide };
+        let pools = Pools { lane: &rayon, feed: &feed, wide };
         while let Some(prepared) = records.pop_matching(|r| {
           r.job.options.device.is_none() || r.job.options.device == device
         }) {
@@ -549,7 +611,9 @@ fn serve(config: &Config, dir: &Path) -> Result<(), String> {
     atomic_json(
       &dir.join("ready.json"),
       &json!({"ready":true, "lanes":config.devices, "executors":config.exec_jobs,
-      "static_bytes":static_bytes, "record_budget_bytes":records_bytes, "workspace_per_lane_bytes":workspace.share,
+      "static_bytes":static_bytes,
+      "artifact_executors":executors.iter().map(|e| e.name()).collect::<Vec<_>>(), "record_budget_bytes":records_bytes, "workspace_per_lane_bytes":workspace.share,
+      "ram":allocation,
       "workspace_bytes":workspace.total}),
     )?;
     let mut pending = VecDeque::new();
@@ -691,26 +755,26 @@ mod tests {
   /// request that would fit does not overtake it.
   #[test]
   fn workspace_reservations_are_granted_in_order() {
-    let workspace = Workspace::new(100, 2);
+    let workspace = Workspace::new(100, 2, false);
     assert_eq!(workspace.share, 50);
     let queued = |count| {
       while workspace.state.lock().unwrap().next < count {
         std::thread::yield_now();
       }
     };
-    let first = workspace.reserve(60);
+    let first = workspace.reserve(60).unwrap();
     let (granted, receive) = mpsc::channel();
     std::thread::scope(|scope| {
       let send = granted.clone();
       let workspace = &workspace;
       scope.spawn(move || {
-        let _whole = workspace.reserve(100);
+        let _whole = workspace.reserve(100).unwrap();
         send.send("whole").unwrap();
       });
       queued(2);
       let send = granted.clone();
       scope.spawn(move || {
-        let _small = workspace.reserve(10);
+        let _small = workspace.reserve(10).unwrap();
         send.send("small").unwrap();
       });
       queued(3);
@@ -722,6 +786,16 @@ mod tests {
     });
     assert_eq!(workspace.state.lock().unwrap().free, 100);
     // A request is never larger than the workspace.
-    assert_eq!(workspace.reserve(u64::MAX).bytes, 100);
+    assert_eq!(workspace.reserve(u64::MAX).unwrap().bytes, 100);
+  }
+
+  /// Under a fixed workspace reserve, an oversized plan is an error rather
+  /// than a reservation that understates it.
+  #[test]
+  fn strict_workspace_rejects_oversized_requests() {
+    let workspace = Workspace::new(100, 1, true);
+    assert!(workspace.reserve(101).is_err());
+    assert_eq!(workspace.reserve(100).unwrap().bytes, 100);
+    assert_eq!(workspace.state.lock().unwrap().free, 100);
   }
 }

@@ -22,10 +22,13 @@ use multi_stark::{
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(feature = "cuda")]
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 pub mod batch;
+#[cfg(feature = "cuda")]
+pub mod compiled;
 #[cfg(feature = "cuda")]
 mod gpu;
 mod grouping;
@@ -34,11 +37,14 @@ pub mod planning;
 mod profile;
 mod rom;
 mod statistics;
+pub mod streaming;
 mod tables;
 #[cfg(test)]
 mod tests;
 mod witness;
-pub use batch::{StageOne, StreamPlan, VerifyingKey};
+#[cfg(test)]
+pub use batch::StageOne;
+pub use batch::{ShardFeed, StreamPlan, Streamed, VerifyingKey};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 
 /// Conversion at this concrete proving adapter only. The native configuration

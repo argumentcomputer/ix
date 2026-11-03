@@ -7,9 +7,12 @@ use crate::{
 };
 use serde_json::{Value as Json, json};
 mod depth;
+mod describe;
+#[cfg(feature = "cuda")]
+mod gpu;
 mod memo_cycle;
 mod parameters;
-mod partition;
+mod streaming;
 
 fn f() -> Json {
   json!({"kind":"field"})
@@ -220,23 +223,12 @@ fn gpu_lookup_policy_retains_single_shards_without_growing_multi_shard_residency
   let single = backend.plan_heights(&heights, &options, 0).unwrap();
   assert_eq!(single.shards, 1);
   assert_eq!(single.retention, RetentionPolicy::Retain);
-  let streamed = backend.plan_stream(&[(&heights, 1)], &options).unwrap();
-  assert_eq!(streamed.retention, RetentionPolicy::Retain);
-  let regenerated = backend
-    .plan_stream(
-      &[(&heights, 1)],
-      &Options { retention: RetentionPolicy::Regenerate, ..options.clone() },
-    )
-    .unwrap();
-  assert_eq!(streamed.peak_bytes, regenerated.peak_bytes);
   let mut many = heights;
   many[0] = 8;
   let options = Options { max_rows: Some(2), ..options };
   let batch = backend.plan_heights(&many, &options, 0).unwrap();
   assert_eq!(batch.shards, 4);
   assert_eq!(batch.retention, RetentionPolicy::Regenerate);
-  let streamed = backend.plan_stream(&[(&many, 2)], &options).unwrap();
-  assert_eq!(streamed.retention, RetentionPolicy::Regenerate);
   assert!(!backend.requires_regeneration(1));
   assert!(backend.requires_regeneration(2));
 }

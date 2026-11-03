@@ -32,6 +32,10 @@ pub(crate) struct Config {
   pub(crate) parent_pid: Option<u32>,
   #[serde(default)]
   pub(crate) texray: bool,
+  /// Workspace reserved per CUDA lane, instead of the size derived from
+  /// the committed-cell limit.
+  #[serde(default)]
+  pub workspace_per_lane_bytes: Option<u64>,
 }
 
 #[derive(Clone, Deserialize)]

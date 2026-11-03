@@ -419,6 +419,8 @@ pub struct CheckedProgram<B: FieldBackend = PrimeField> {
   /// Each function's SCC among the depth circuits of a trace plan, when
   /// execution records honest heights ([`CheckedProgram::track_depth`]).
   pub(crate) depth: Option<std::sync::Arc<[u32]>>,
+  #[cfg(feature = "native")]
+  pub(crate) native_fingerprint: std::sync::OnceLock<String>,
 }
 
 // Only globally immutable registers may be aliased. Inputs count as writes;
@@ -908,6 +910,8 @@ impl Program {
       execution_functions,
       initial_registers,
       depth: None,
+      #[cfg(feature = "native")]
+      native_fingerprint: std::sync::OnceLock::new(),
     })
   }
 }

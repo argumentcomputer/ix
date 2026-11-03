@@ -333,6 +333,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   std::fs::create_dir_all(out)?;
   let batch = backend.plan_batch(&record, &options)?;
   let mut report = serde_json::json!({"plan":batch, "artifact_digest":artifact.to_string(), "execution_seconds":execute,
+    "storage":record.storage_usage(),
     "queries":record.queries.len(), "instructions":record.instructions, "verified":false});
   std::fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
   if mode == "plan" {
@@ -346,24 +347,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     std::process::exit(75);
   }
-  let start = Instant::now();
-  let witness = backend.prepare_stage_1(&record, &invocation.entry, &args)?;
-  if witness.cells() != batch.stage1_cells {
-    return Err("generated trace differs from the resource plan".into());
-  }
-  let trace = start.elapsed().as_secs_f64();
-  drop(record);
-  drop(hints);
-  let start = Instant::now();
-  let proof = backend.prove_stage_one(
+  let layout = batch
+    .layout
+    .as_ref()
+    .ok_or("the proving plan has no incremental layout")?;
+  write_json(&out.join("layout.json"), layout)?;
+  let result = backend.prove_incremental_timed(
+    &record,
     &invocation.entry,
     &args,
     &[],
-    witness,
-    batch.max_rows,
+    layout,
     batch.retention(),
-  )?;
-  let proving = start.elapsed().as_secs_f64();
+    batch.pipelined,
+  );
+  drop(record);
+  drop(hints);
+  let run = result?;
+  let proof = run.proof;
   let key = backend.verifying_key_bytes()?;
   let claims = stark_verifier::claims_bytes(&[backend.claim(
     &invocation.entry,
@@ -381,8 +382,11 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   .store(&out.join("public.ixi"))?;
   report["verified"] = true.into();
-  report["trace_seconds"] = trace.into();
-  report["proving_seconds"] = proving.into();
+  report["trace_seconds"] = run.trace_seconds.into();
+  report["proving_seconds"] = run.proving_seconds.into();
+  report["population"] = serde_json::to_value(&run.population)?;
+  report["peak_rss_bytes"] =
+    aiur::trace::stark::planning::peak_resident_memory().into();
   report["proof_bytes"] = bytes.len().into();
   report["shards"] = proof.proofs.len().into();
   std::fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
