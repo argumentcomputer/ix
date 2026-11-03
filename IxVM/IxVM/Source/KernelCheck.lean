@@ -1899,9 +1899,11 @@ def compare_rules := aiur_fn⟦
                       assert_eq!(peeled, total,
                         "recursor rule rhs has too few binders to peel");
 
-                      assert_eq!(KernelDefEq::k_is_def_eq(rc, stored_body, cbody,
-                          (&(Lists::Node::Nil))), 1,
-                        "recursor rule rhs differs from canonical reconstruction");
+                      match kexpr_struct_eq(stored_body, cbody) {
+                        1 => {  () } ,
+                        _ => {  assert_eq!(KernelDefEq::k_is_def_eq(rc, stored_body, cbody,
+                            (&(Lists::Node::Nil))), 1, "recursor rule rhs differs from canonical reconstruction"); () } ,
+                      };
                       () } ,
                   };
                   compare_rules(rc, rest, crest, n_p, n_mot, n_min,

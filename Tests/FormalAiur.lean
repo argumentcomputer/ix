@@ -1,6 +1,7 @@
 import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
 import Ix.AiurInvocation
+import Batteries.Data.Char.Basic
 
 /-! Real claim fixtures, plus independently specified evaluation inputs.
 Run through the Rust host. -/
@@ -176,6 +177,16 @@ private def claimContains : IO (String × ClaimWitness) := do
     (Ix.Claim.contains tree.root b) (singletonTrees tree)
   pure ("Claim Contains (synthetic 3-leaf)", witness)
 
+/-- The adversarial Ixon corpus: every exploit must be rejected and every
+control accepted. Each claim is made under its environment's role binding. -/
+/-- Checks `name` under its compiled closure's default role binding. -/
+private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Ix.AiurInvocation.Case := do
+  let env ← loadIxonEnv name leanEnv
+  let target ← lookupAddr env name
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env)
+  let witness ← IO.ofExcept (buildClaimWitness env (.check ctx target none))
+  return claimCase s!"Check {name}" witness
+
 def main (args : List String) : IO Unit := do
   -- Without an argument, write into a fresh temporary directory, not a fixed
   -- /tmp path that concurrent runs would share.
@@ -198,5 +209,13 @@ def main (args : List String) : IO Unit := do
     cases := cases.push (claimCase label witness)
   for (label, witness) in [← claimContains, ← claimRevealBinderModes] do
     cases := cases.push (claimCase label witness)
+  -- `Nat.gcd_comm`'s recursor rules compare open bodies that are identical
+  -- to their canonical reconstruction; checking must not need their binder
+  -- types.
+  cases := cases.push (← checkCase env ``Nat.gcd_comm)
+  -- `Char.all.eq_1` compares two identical terms whose unfolding reaches
+  -- `Nat.all 1056767 …`. Def-eq must accept them by structural identity
+  -- rather than evaluate that loop, which exhausts memory.
+  cases := cases.push (← checkCase env ``Char.all.eq_1)
   IO.FS.writeBinFile path (Ix.AiurInvocation.encodeCases cases)
   IO.println s!"Wrote {cases.size} production claim cases and .ixe fixture to {path}"

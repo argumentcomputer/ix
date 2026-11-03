@@ -33,11 +33,15 @@ def level_list_eq := aiur_fn⟦
 
 def k_is_def_eq := aiur_fn⟦
   fn k_is_def_eq(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
-      let base = KernelSubst::lbr_max(KernelSubst::expr_lbr(a), KernelSubst::expr_lbr(b));
+      match KernelCheck::kexpr_struct_eq(a, b) {
+        1 => {  1 } ,
+        _ => {
+          let base = KernelSubst::lbr_max(KernelSubst::expr_lbr(a), KernelSubst::expr_lbr(b));
           match base {
             0 => {  k_is_def_eq_core(rc, a, b, (&(Lists::Node::Nil))) } ,
             _ => {  k_def_eq_rebase(rc, a, b, types, base) } ,
-          }
+          } } ,
+      }
     }
 ⟧
 
@@ -324,13 +328,17 @@ def k_is_def_eq_slow2 := aiur_fn⟦
   fn k_is_def_eq_slow2(rc: KernelRoles::RoleCtx, orig_a: KernelTypes::KExpr, orig_b: KernelTypes::KExpr,
                               aw: KernelTypes::KExpr, bw: KernelTypes::KExpr,
                               types: Lists::List<KernelTypes::KExpr>) -> Field {
-      match de_rescue_tier(rc, aw, bw, types) {
-        (1, eq) => {  eq } ,
+      match KernelCheck::kexpr_struct_eq(aw, bw) {
+        1 => {  1 } ,
         _ => {
-          match lazy_delta_loop(rc, aw, bw, 16, types) {
-            (1, _, _) => {  1 } ,
-            (_, fa, fb) => {  slow2_after_delta(rc, orig_a, orig_b,
-                                     fa, fb, types) } ,
+          match de_rescue_tier(rc, aw, bw, types) {
+            (1, eq) => {  eq } ,
+            _ => {
+              match lazy_delta_loop(rc, aw, bw, 16, types) {
+                (1, _, _) => {  1 } ,
+                (_, fa, fb) => {  slow2_after_delta(rc, orig_a, orig_b,
+                                         fa, fb, types) } ,
+              } } ,
           } } ,
       }
     }
@@ -433,7 +441,10 @@ def k_is_def_eq_structure_tree_app := aiur_fn⟦
 def k_is_def_eq_struct_bounded := aiur_fn⟦
   fn k_is_def_eq_struct_bounded(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, credit: Field,
                                        types: Lists::List<KernelTypes::KExpr>) -> (Field, Field) {
-      match (*(a)) {
+      match KernelCheck::kexpr_struct_eq(a, b) {
+        1 => {  (1, credit) } ,
+        _ => {
+          match (*(a)) {
             KernelTypes::KExprNode::BVar(i) => {
               match (*(b)) {
                 KernelTypes::KExprNode::BVar(j) => {
@@ -505,7 +516,8 @@ def k_is_def_eq_struct_bounded := aiur_fn⟦
                 _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
               } } ,
             _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-          }
+          } } ,
+      }
     }
 ⟧
 
@@ -849,6 +861,10 @@ def lazy_delta_loop := aiur_fn⟦
       match fuel {
         0 => {  (0, a, b) } ,
         _ => {
+          match KernelCheck::kexpr_struct_eq(a, b) {
+        1 => {  (1, a, b) } ,
+        _ => {
+
           match try_def_eq_nat(rc, a, b, types) {
             (1, eq) => {  (eq, a, b) } ,
             _ => {
@@ -870,6 +886,7 @@ def lazy_delta_loop := aiur_fn⟦
 
                   lazy_delta_both_proj(rc, a, b, fuel, types) } ,
               } } ,
+          } } ,
           } } ,
           } } ,
       }
