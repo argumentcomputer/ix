@@ -25,7 +25,7 @@ unsafe extern "C" {
   pub(super) fn aiur_trace_fixtures_20(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
   pub(super) fn aiur_trace_fixtures_21(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([213, 235, 108, 220, 115, 159, 51, 229, 206, 4, 193, 234, 222, 143, 95, 162, 130, 93, 210, 36, 144, 208, 151, 97, 95, 24, 25, 23, 225, 30, 236, 67], aiur_trace_fixtures_contract, aiur_trace_fixtures_schema, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([205, 89, 45, 81, 115, 192, 43, 229, 178, 117, 203, 87, 188, 146, 231, 25, 106, 211, 41, 51, 208, 189, 121, 121, 56, 36, 50, 146, 157, 240, 103, 180], aiur_trace_fixtures_contract, aiur_trace_fixtures_schema, &[
 Some(aiur_trace_fixtures_0),
 Some(aiur_trace_fixtures_1),
 Some(aiur_trace_fixtures_2),

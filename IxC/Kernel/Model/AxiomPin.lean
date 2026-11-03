@@ -183,4 +183,37 @@ theorem axiomStd (hμ : μ.verifiedChecks = true)
       rw [if_neg hn, if_neg hn2] at hok
       exact nomatch hok
 
+/-! ## Custom user axioms (conditional on semantic realization) -/
+
+/-- **Semantic realization of a custom user axiom at the P model tier.**
+A custom axiom `cv` with annotated type `type'` is realized over `mp : EnvModelM V μ env`
+when its installation `.axiomInfo ⟨cv.name, cv.levelParams, type'⟩` extends `mp` to a
+valid model `EnvModelM V μ ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩`. -/
+@[expose] def CustomAxiomRealizedM (_mp : EnvModelM V μ env) (cv : ConstantVal md) (type' : Expr md) : Prop :=
+  Nonempty (EnvModelM V μ ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩)
+
+/-- **Custom propositional/point-realized user axiom branch**, discharged via `harvestAxiom`. -/
+theorem axiomCustomPt (hμ : μ.verifiedChecks = true)
+    (mp : EnvModelM V μ env) {cv : ConstantVal md} {type' : Expr md}
+    (hcv : ConstantValRun μ F env cv type')
+    (hmem : ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
+      denoteMeta mp.base2.acval env ψ 0 type' = some ta →
+      ∀ (ρ : Nat → V), interp V ρ (.const .propext []) ∈ˢ interp V ρ ta) :
+    CustomAxiomRealizedM mp cv type' := by
+  refine harvestAxiom (V := V) hμ mp hcv
+    (A := fun _ => .const .propext []) (fun _ => trivial)
+    (fun _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => by simp)
+    (fun _ _ => by simp) ?_
+  intro ψ ta hta ρ
+  exact hmem ψ ta hta ρ
+
+/-- **The custom user axiom branch, discharged conditionally on `CustomAxiomRealizedM`.** -/
+theorem axiomCustom (_hμ : μ.verifiedChecks = true)
+    (mp : EnvModelM V μ env) {cv : ConstantVal md} {type' : Expr md}
+    (_hcv : ConstantValRun μ F env cv type')
+    (hreal : CustomAxiomRealizedM mp cv type') :
+    Nonempty (EnvModelM V μ
+      ⟨.axiomInfo ⟨cv.name, cv.levelParams, type'⟩ :: env.consts⟩) :=
+  hreal
+
 end Ix.Kernel.Model

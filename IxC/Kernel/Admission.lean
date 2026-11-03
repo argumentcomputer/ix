@@ -306,6 +306,16 @@ def ByteError.outcome : ByteError → Outcome
   | .mismatch .. => .rejected
   | .decode .. => .rejected
 
+/-- Extract the custom user axioms from a prepared declaration array. -/
+def preparedUserAxioms (decls : Array (Ix.Kernel.Declaration .anon)) :
+    List (Ix.Kernel.ConstantVal .anon) :=
+  Ix.Kernel.userAxiomsOfDecls decls.toList
+
+/-- Extract the custom user axioms stored in an admitted environment. -/
+def admittedUserAxioms (env : Ix.Kernel.Env .anon) :
+    List (Ix.Kernel.ConstantVal .anon) :=
+  env.customAxiomInfos
+
 end Ix.Kernel.Admission
 
 end

@@ -441,6 +441,58 @@ def functionGroups : Array (String × Array String) := #[
     "try_quot_lift",
     "k_synth_gate"
   ]),
+  ("ixvm_group_43", #[
+    "role_ctx_for_validator",
+    "role_ctx_validator",
+    "role_bound_addr",
+    "role_used_implicitly",
+    "validate_binding",
+    "assert_all_roles_bound",
+    "admit_all_groups",
+    "validate_group_roles",
+    "assert_type_meets",
+    "list_length.RoleEvidence",
+    "list_is_empty.U8",
+    "int_le_verdict"
+  ]),
+  ("ixvm_group_44", #[
+    "role_admission_checks",
+    "axiom_role_standing",
+    "role_ctor_of",
+    "role_ctor_count",
+    "read_evidence_entries",
+    "role_ctx_table",
+    "role_ctx_axioms",
+    "role_ctx_is_assumed",
+    "role_is_bound",
+    "group_admit",
+    "group_admit_needs",
+    "get_claim_context"
+  ]),
+  ("ixvm_group_45", #[
+    "mk_eq1",
+    "op_evidence_is_proof",
+    "eqns_conditional",
+    "assert_safe_role",
+    "assert_quot_kind",
+    "validate_anchor",
+    "validate_standard_axiom",
+    "validate_inert_axiom",
+    "validate_op",
+    "validate_eqns"
+  ]),
+  ("ixvm_group_46", #[
+    "load_role_ctx",
+    "role_ctx_binding",
+    "role_bound_addr_or_zero",
+    "role_addr",
+    "group_validation_limit",
+    "validate_role",
+    "role_evidence",
+    "validate_op_equations",
+    "validate_eqns_equations",
+    "dec_rewrite_int_lt_to_le"
+  ]),
   ("ixvm_group_47", #[
     "mk_nat_lit",
     "build_recur_addrs",
@@ -496,6 +548,14 @@ def functionGroups : Array (String × Array String) := #[
     "glist_cmp",
     "nl_add_const_go",
     "try_dec_dispatch"
+  ]),
+  ("ixvm_group_54", #[
+    "dec_nat",
+    "dec_int",
+    "dec_result",
+    "validate_user_axioms",
+    "role_of",
+    "validate_member"
   ]),
   ("ixvm_group_55", #[
     "utf8_validate",
@@ -655,11 +715,15 @@ def functionGroups : Array (String × Array String) := #[
     "whnf_nd_proj_head"
   ]),
   ("ixvm_group_77", #[
-    "prim_family"
+    "prim_family",
+    "op_equation_lhs",
+    "op_equation_rhs"
   ]),
   ("ixvm_group_78", #[
     "whnf_struct_core_const",
-    "k_is_def_eq_struct_spend"
+    "k_is_def_eq_struct_spend",
+    "op_equation_count",
+    "role_member_kind"
   ]),
   ("ixvm_group_79", #[
     "const_num_lvls",
@@ -667,7 +731,10 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("ixvm_group_80", #[
     "k_infer_only",
-    "try_eta_struct"
+    "try_eta_struct",
+    "load_role_table",
+    "read_role_bindings",
+    "read_role_evidence"
   ]),
   ("ixvm_group_81", #[
     "k_is_def_eq_core",

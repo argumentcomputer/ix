@@ -369,7 +369,6 @@ fn prove_loop(
             let statement = Statement::new(
               ClaimContext {
                 binding_assumed: false,
-                literal_class: false,
                 ..root.statement.ctx.clone()
               },
               root.statement.subjects.clone(),

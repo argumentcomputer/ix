@@ -154,10 +154,10 @@ def whnf := ⟦
   -- Pre-whnf wrapper for nat dispatch: whnfs unary/binop args first
   -- (2 first args or 1 first arg for succ/pred), then calls
   -- try_nat_dispatch.
-  fn try_nat_dispatch_prewhnf(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
+  fn try_nat_dispatch_prewhnf(rc: RoleCtx, head_addr: Addr, op: G, spine: List‹KExpr›,
                                     types: List‹KExpr›) -> (G, KExpr) {
     let spine_w = whnf_spine(rc, spine, types);
-    @try_nat_dispatch(rc, head_addr, spine_w, types)
+    @try_nat_dispatch(rc, head_addr, op, spine_w, types)
   }
 
   -- Address-keyed primitive dispatch. Runs BEFORE KConstantInfo
@@ -202,27 +202,27 @@ def whnf := ⟦
   -- Replaces running the is_* gauntlet from try_prim_dispatch, whose key
   -- includes the spine and context — 5 wide rows per Const-head whnf,
   -- almost all guaranteed misses.
-  fn prim_family(rc: RoleCtx, a: Addr) -> G {
+  fn prim_family(rc: RoleCtx, a: Addr) -> (G, G) {
     let r1 = role_index_of(rc, a);
-    let f = match r1 { 0 => 0, _ => role_prim_family(r1 - 1), };
+    let (f, op) = match r1 { 0 => (0, 0), _ => role_prim_family(r1 - 1), };
     match f {
-      0 => 0,
-      _ => match role_of(rc, a) { 0 => 0, _ => f, },
+      0 => (0, 0),
+      _ => match role_of(rc, a) { 0 => (0, 0), _ => (f, op), },
     }
   }
 
   fn try_prim_dispatch(rc: RoleCtx, addr: Addr, lvls: List‹KLevel›,
                             spine: List‹KExpr›,
                             types: List‹KExpr›) -> (G, KExpr) {
-    let fam = prim_family(rc, addr);
+    let (fam, op) = prim_family(rc, addr);
     match fam {
-      1 => try_nat_dispatch_prewhnf(rc, addr, spine, types),
+      1 => try_nat_dispatch_prewhnf(rc, addr, op, spine, types),
       2 =>
         let spine_w = whnf_spine(rc, spine, types);
-        try_str_dispatch(rc, addr, spine_w, types),
-      3 => try_bitvec_dispatch(rc, addr, spine, types),
-      5 => try_dec_dispatch(rc, addr, lvls, spine, types),
-      6 => try_int_prim_dispatch(rc, addr, spine, types),
+        try_str_dispatch(rc, addr, op, spine_w, types),
+      3 => try_bitvec_dispatch(rc, op, spine, types),
+      5 => try_dec_dispatch(rc, addr, op, lvls, spine, types),
+      6 => try_int_prim_dispatch(rc, op, spine, types),
       _ => (0, store(KExprNode.BVar(0))),
     }
   }
@@ -239,10 +239,10 @@ def whnf := ⟦
   -- decide by identity (lean4lean `quotReduceRec`, `Quot.lean:85-100`).
   fn try_quot_iota(rc: RoleCtx, addr: Addr, spine: List‹KExpr›,
                          types: List‹KExpr›) -> (G, KExpr) {
-    match role_is(rc, addr, role_quot_lift()) {
+    match role_is(rc, addr, @role_quot_lift()) {
       1 => try_quot_lift(rc, spine, types),
       _ =>
-        match role_is(rc, addr, role_quot_ind()) {
+        match role_is(rc, addr, @role_quot_ind()) {
           1 => try_quot_ind(rc, spine, types),
           _ => (0, store(KExprNode.BVar(0))),
         },
@@ -294,7 +294,7 @@ def whnf := ⟦
       (head, args) =>
         match load(head) {
           KExprNode.Const(caddr, _) =>
-            match role_is(rc, caddr, role_quot_mk()) {
+            match role_is(rc, caddr, @role_quot_mk()) {
               1 =>
                 match list_length(args) - 3 {
                   0 => (1, list_lookup(args, 2)),
@@ -476,12 +476,12 @@ def whnf := ⟦
         match lit {
           KLiteral.Nat(klimbs) =>
             match klimbs_is_zero(klimbs) {
-              1 => store(KExprNode.Const(role_addr(rc, role_nat_zero()),
+              1 => store(KExprNode.Const(role_addr(rc, @role_nat_zero()),
                                           store(ListNode.Nil))),
               _ =>
                 let pred_limbs = klimbs_normalize(klimbs_dec(klimbs));
                 let pred = store(KExprNode.Lit(KLiteral.Nat(pred_limbs)));
-                let succ_const = store(KExprNode.Const(role_addr(rc, role_nat_succ()),
+                let succ_const = store(KExprNode.Const(role_addr(rc, @role_nat_succ()),
                                                        store(ListNode.Nil)));
                 store(KExprNode.App(succ_const, pred)),
             },
@@ -1164,7 +1164,9 @@ def whnf := ⟦
     -- This mirrors the reference kernel's `has_fvars` gate: closed primitive
     -- computations still reduce normally; open ones remain compact for lazy
     -- delta / offset comparison.
-    let prim = match prim_family(rc, addr) {
+    let (fam, _op) = prim_family(rc, addr);
+    let prim = match fam {
+      0 => (0, store(KExprNode.BVar(0))),
       1 =>
         let whole = apply_spine(head, spine);
         match expr_lbr(whole) {

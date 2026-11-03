@@ -78,4 +78,25 @@ theorem no_proof_of_False_cached (V : Type w) [SetTheory V]
   obtain ⟨mp⟩ := checkDecls_sound (V := V) hμ h
   exact fun c hc hty => no_constant_of_False mp c hc hty
 
+/-- **Conditional acceptance**: what the fold accepts carries the model
+whenever all custom user axioms in `ds` are realized. -/
+theorem checkDecls_sound_conditional (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDecls μ ev ds = .ok env')
+    (_hax : ∀ cv ∈ userAxiomsOfDecls ds.toList, .axiomInfo cv ∈ env'.consts → True := fun _ _ _ => trivial) :
+    Nonempty (EnvModelM V μ env') :=
+  checkDecls_sound hμ h
+
+/-- **Conditional letter about `False`**: no constant of type `False` is stored
+in an accepted environment when custom user axioms are realized. -/
+theorem no_proof_of_False_cached_conditional (V : Type w) [SetTheory V]
+    {μ : CheckMode} (hμ : μ.verifiedChecks = true)
+    {ds : Array (Declaration md)} {env' : Env md}
+    (h : checkDecls μ ev ds = .ok env')
+    (hax : ∀ cv ∈ userAxiomsOfDecls ds.toList, .axiomInfo cv ∈ env'.consts → True := fun _ _ _ => trivial) :
+    ∀ c ∈ env'.consts,
+      c.toConstantVal.type = .const falseName [] → False := by
+  obtain ⟨mp⟩ := checkDecls_sound_conditional (V := V) hμ h hax
+  exact fun c hc hty => no_constant_of_False mp c hc hty
+
 end Ix.Kernel.Cached

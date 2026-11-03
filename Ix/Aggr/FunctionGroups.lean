@@ -150,7 +150,12 @@ def functionGroups : Array (String × Array String) := #[
   ]),
   ("aggr_group_11", #[
     "read_u64_vec_vec_n",
-    "read_node_ids_n"
+    "read_node_ids_n",
+    "aggr_class_walk",
+    "aggr_put_addresses",
+    "aggr_read_cap_n",
+    "aggr_read_bits_n",
+    "aggr_read_headers_n"
   ]),
   ("aggr_group_12", #[
     "bytes_to_block",
@@ -160,7 +165,9 @@ def functionGroups : Array (String × Array String) := #[
     "ch_sample8",
     "ood_loop",
     "aggr_read_address",
-    "aggr_put_address"
+    "aggr_put_address",
+    "aggr_parse_range",
+    "aggr_read_digest"
   ]),
   ("aggr_group_13", #[
     "read_vk_cap_n",
@@ -178,12 +185,18 @@ def functionGroups : Array (String × Array String) := #[
   ("aggr_group_14", #[
     "compress_ordered",
     "ood_fold",
-    "list_is_empty.Ptr.U8_32"
+    "list_is_empty.Ptr.U8_32",
+    "aggr_opt_address_eq",
+    "aggr_context_class"
   ]),
   ("aggr_group_15", #[
     "select_rows_le",
     "frontier_level",
-    "accs_onto"
+    "accs_onto",
+    "aggr_read_header",
+    "aggr_verify_range",
+    "aggr_load_preamble",
+    "aggr_binding_class"
   ]),
   ("aggr_group_16", #[
     "inject_maybe",
@@ -197,7 +210,15 @@ def functionGroups : Array (String × Array String) := #[
     "open_quotient",
     "open_prep",
     "fold_roots",
-    "logup_fingerprint"
+    "logup_fingerprint",
+    "aggr_parse_binding",
+    "aggr_parse_catalog",
+    "aggr_assert_same_context",
+    "aggr_catalog_part",
+    "aggr_read_message",
+    "aggr_read_messages_n",
+    "aggr_batch_challenges",
+    "aggr_is_class_role"
   ]),
   ("aggr_group_18", #[
     "aggr_node_hash",
@@ -225,7 +246,15 @@ def functionGroups : Array (String × Array String) := #[
     "aggr_verify_child",
     "aggr_wrap",
     "aggr_pair",
-    "aggr_pair_structural"
+    "aggr_pair_structural",
+    "aggr_discharge_binding",
+    "aggr_cross_binding",
+    "aggr_catalog_join",
+    "aggr_range_leaf",
+    "aggr_range_join",
+    "aggr_range_root",
+    "aggr_output_range",
+    "aggr_child_range"
   ]),
   ("aggr_group_20", #[
     "list_lookup.BatchOpening",

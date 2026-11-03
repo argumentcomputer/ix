@@ -215,10 +215,42 @@ pub fn build_claim_check_witness(
   };
   // ch 0: claim bytes
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
+  if let Some(ax_tree) = ClaimContext::user_axiom_tree(env) {
+    extend(
+      &mut io,
+      G::ONE,
+      addr_key(&ax_tree.root()),
+      bytes_to_g(&ax_tree.ser()),
+    );
+  }
   // ch 2/3/4: per-const/hint/blob entries — parallel byte conversion.
   add_entries_parallel(env, &closure, &mut io);
   seed_binding(env, &mut io);
 
+  Ok((claim, digest_key, io))
+}
+
+/// Build a `Binding { spec, binding }` claim witness directly in Rust,
+/// over `env`'s role binding.
+pub fn build_binding_witness(
+  env: &Env,
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  let ctx = ClaimContext::for_env(env)?;
+  let mut roots = binding_roots(env, false);
+  roots.extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
+  let closure = env.bfs_closure(&roots);
+  let claim = Claim::Binding { spec: ctx.spec, binding: ctx.binding };
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let digest = Address::hash(&claim_bytes);
+  let digest_key = packed_digest_key(&digest);
+  let mut io = IOBuffer {
+    data: rustc_hash::FxHashMap::default(),
+    map: rustc_hash::FxHashMap::default(),
+  };
+  extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
+  add_entries_parallel(env, &closure, &mut io);
+  seed_binding(env, &mut io);
   Ok((claim, digest_key, io))
 }
 
@@ -269,9 +301,9 @@ fn prim_addrs() -> Vec<Address> {
 /// Every witness builder goes through here, so the byte scope cannot
 /// drift apart per call site. Mirrors
 /// `Ix.IxVM.ClaimHarness.closureFrom`.
-/// The constants the role binding names: every bound role and every proof
-/// evidence theorem the environment carries. Role validation reads them.
-fn binding_roots(env: &Env) -> Vec<Address> {
+/// The constants the role binding names: every bound role and (when not
+/// `assume_binding`) every proof evidence theorem the environment carries.
+fn binding_roots(env: &Env, assume_binding: bool) -> Vec<Address> {
   let Some(binding) = env.role_binding.as_ref() else {
     return Vec::new();
   };
@@ -280,10 +312,12 @@ fn binding_roots(env: &Env) -> Vec<Address> {
   };
   let mut roots: Vec<Address> =
     table.bound.into_iter().map(|(_, address)| address).collect();
-  for (_, entries) in table.evidence {
-    for entry in entries {
-      if let Evidence::Proof(address) = entry {
-        roots.push(address);
+  if !assume_binding {
+    for (_, entries) in table.evidence {
+      for entry in entries {
+        if let Evidence::Proof(address) = entry {
+          roots.push(address);
+        }
       }
     }
   }
@@ -318,12 +352,21 @@ pub fn check_owned_key(
   key
 }
 
-fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
+fn witness_scope_with(
+  env: &Env,
+  roots: &[Address],
+  assume_binding: bool,
+) -> FxHashSet<Address> {
   let mut all_roots: Vec<Address> = roots.to_vec();
   all_roots
     .extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
-  all_roots.extend(binding_roots(env));
+  all_roots.extend(binding_roots(env, assume_binding));
+  all_roots.extend(ClaimContext::user_axioms(env));
   env.bfs_closure(&all_roots)
+}
+
+fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
+  witness_scope_with(env, roots, false)
 }
 
 /// Whole-environment `CheckEnv` witness split across workers (trace-sharding
@@ -413,8 +456,24 @@ impl EnvCheckStatement {
         addr_key(&self.tree.root()),
         bytes_to_g(&self.tree.ser()),
       );
+      if let Some(ax_tree) = ClaimContext::user_axiom_tree(env) {
+        extend(
+          &mut io,
+          G::ONE,
+          addr_key(&ax_tree.root()),
+          bytes_to_g(&ax_tree.ser()),
+        );
+      }
     }
-    add_entries_parallel(env, &witness_scope(env, &owners[worker]), &mut io);
+    let assume_binding = self
+      .claim
+      .context()
+      .is_some_and(|ctx| ctx.binding_assumed);
+    add_entries_parallel(
+      env,
+      &witness_scope_with(env, &owners[worker], assume_binding),
+      &mut io,
+    );
     seed_binding(env, &mut io);
     io
   }
@@ -506,7 +565,7 @@ pub fn build_shard_check_env_witness_with(
     map: rustc_hash::FxHashMap::default(),
   };
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
-  let byte_scope = witness_scope(env, owned);
+  let byte_scope = witness_scope_with(env, owned, assume_binding);
   add_entries_parallel(env, &byte_scope, &mut io);
   seed_binding(env, &mut io);
   extend(
@@ -517,6 +576,14 @@ pub fn build_shard_check_env_witness_with(
   );
   if let Some(at) = asm_tree {
     extend(&mut io, G::ONE, addr_key(&at.root()), bytes_to_g(&at.ser()));
+  }
+  if let Some(ax_tree) = ClaimContext::user_axiom_tree(env) {
+    extend(
+      &mut io,
+      G::ONE,
+      addr_key(&ax_tree.root()),
+      bytes_to_g(&ax_tree.ser()),
+    );
   }
 
   Ok((claim, digest_key, io))

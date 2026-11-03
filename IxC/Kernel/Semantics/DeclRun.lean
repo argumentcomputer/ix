@@ -225,6 +225,41 @@ def DeclRun (μ : CheckMode) (F : Nat)
     | .type => DeclBasisRun env .quotK env₂
     | _ => env₂ = env
 
+/-- Run/guard specification of a custom user axiom declaration: the constant's
+type passes `ConstantValRun`, its name is eligible as a custom user axiom
+(`Key.isCustomAxiomEligible`), it is not a standard or anchor axiom, and the
+annotated constant is installed as `.axiomInfo`. -/
+def DeclCustomAxiomRun (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (env₂ : Env md) : Prop :=
+  ∃ type',
+    ConstantValRun μ F env cv type' ∧
+    let cvA : ConstantVal md := ⟨cv.name, cv.levelParams, type'⟩
+    stdAxiomOk env cvA = false ∧
+    cvA.name ≠ propextName ∧ cvA.name ≠ choiceName ∧
+    cvA.name ≠ sorryAxName ∧
+    cvA.name.isCustomAxiomEligible = true ∧
+    env₂ = ⟨.axiomInfo cvA :: env.consts⟩
+
+/-- Run/guard specification of `.axiomDecl` when custom user axioms are permitted:
+either the standard `DeclAxiomRun` holds, or `DeclCustomAxiomRun` holds. -/
+def DeclAxiomRunCond (μ : CheckMode) (F : Nat) (env : Env md)
+    (cv : ConstantVal md) (env₂ : Env md) : Prop :=
+  DeclAxiomRun μ F env cv env₂ ∨ DeclCustomAxiomRun μ F env cv env₂
+
+/-- Per-declaration run relation when custom user axioms are permitted. -/
+def DeclRunCond (μ : CheckMode) (F : Nat)
+    (Ind : List (ConstantInfo md) → Nat → Env md → Prop) (env : Env md) :
+    (Declaration md) → Env md → Prop
+  | .axiomDecl cv, env₂ => DeclAxiomRunCond μ F env cv env₂
+  | d, env₂ => DeclRun μ F Ind env d env₂
+
+theorem DeclRun.toCond {μ : CheckMode} {F : Nat}
+    {Ind : List (ConstantInfo md) → Nat → Env md → Prop}
+    {env env₂ : Env md} {d : Declaration md}
+    (h : DeclRun μ F Ind env d env₂) :
+    DeclRunCond μ F Ind env d env₂ := by
+  cases d <;> first | exact h | exact Or.inl h
+
 /-! ## The projections, retired (2026-09-05)
 
 `ConstantValR.toRun`, `ValueFrontR.toRun`, `DivModPinR.toRun`,

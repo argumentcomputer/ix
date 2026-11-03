@@ -895,43 +895,68 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
     );
   }
   let check_batch = || -> Vec<(String, usize, usize)> {
-    shards
-      .par_iter()
-      .zip(estimates.par_iter())
-      .map(|(owned, est)| {
-        gate.acquire(*est);
-        let result =
-          match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-            env, owned,
-          ) {
-            Err(e) => (format!("witness build: {e}"), 0, 1),
-            Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
-              &toplevel,
-              fun_idx,
-              input,
-              &mut io_buffer,
-              use_bytecode,
+    let (binding_err, mut shard_results) = rayon::join(
+      || -> Option<String> {
+        if shards.len() <= 1 {
+          return None;
+        }
+        let Ok((_claim, input, mut io_buffer)) =
+          ixvm_codegen::aiur_ixvm_witness::build_binding_witness(env)
+        else {
+          return None;
+        };
+        dispatch_execute(&toplevel, fun_idx, input, &mut io_buffer, use_bytecode)
+          .err()
+          .map(|e| format!("binding check: {e}"))
+      },
+      || -> Vec<(String, usize, usize)> {
+        shards
+          .par_iter()
+          .zip(estimates.par_iter())
+          .map(|(owned, est)| {
+            gate.acquire(*est);
+            let result = match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+              env,
+              owned,
+              shards.len() > 1,
             ) {
-              Err(e) => (e, 0, 1),
-              // Both reductions happen here, while the record is
-              // still owned by this task: it is dropped before
-              // `gate.release`, so admission keeps bounding peak RSS by
-              // the shards in flight rather than by the whole partition.
-              Ok((record, _output)) => {
-                let peak = system.peak_prove_bytes(&record).peak;
-                let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
-                  system.suggested_split_parts(&record, max_ram_bytes)
-                } else {
-                  1
-                };
-                (String::new(), peak, parts)
+              Err(e) => (format!("witness build: {e}"), 0, 1),
+              Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
+                &toplevel,
+                fun_idx,
+                input,
+                &mut io_buffer,
+                use_bytecode,
+              ) {
+                Err(e) => (e, 0, 1),
+                // Both reductions happen here, while the record is
+                // still owned by this task: it is dropped before
+                // `gate.release`, so admission keeps bounding peak RSS by
+                // the shards in flight rather than by the whole partition.
+                Ok((record, _output)) => {
+                  let peak = system.peak_prove_bytes(&record).peak;
+                  let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
+                    system.suggested_split_parts(&record, max_ram_bytes)
+                  } else {
+                    1
+                  };
+                  (String::new(), peak, parts)
+                },
               },
-            },
-          };
-        gate.release(*est);
-        result
-      })
-      .collect()
+            };
+            gate.release(*est);
+            result
+          })
+          .collect()
+      },
+    );
+    if let Some(err) = binding_err
+      && let Some(first) = shard_results.first_mut()
+      && first.0.is_empty()
+    {
+      first.0 = err;
+    }
+    shard_results
   };
   let results = if jobs == 0 {
     check_batch()

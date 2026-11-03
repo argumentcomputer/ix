@@ -654,9 +654,30 @@ def isTowerEntry : ConstantInfo md → Bool
 
 def type (c : ConstantInfo md) : Expr md := c.toConstantVal.type
 
+/-- Is this constant record an `.axiomInfo`? -/
+def isAxiomInfo : ConstantInfo md → Bool
+  | .axiomInfo _ => true
+  | _ => false
+
+/-- Extract the `ConstantVal` of an `.axiomInfo` entry, or `none` for other kinds. -/
+def axiomVal? : ConstantInfo md → Option (ConstantVal md)
+  | .axiomInfo cv => some cv
+  | _ => none
+
 end ConstantInfo
 
 namespace Declaration
+
+/-- Is this declaration an `.axiomDecl`? (Distinct from `.opaqueDecl`, which carries a value.) -/
+def isAxiomDecl : Declaration md → Bool
+  | .axiomDecl _ => true
+  | _ => false
+
+/-- Extract the `ConstantVal` of an `.axiomDecl`, or `none` for other declaration kinds
+(in particular `none` for `.opaqueDecl`). -/
+def axiomVal? : Declaration md → Option (ConstantVal md)
+  | .axiomDecl cv => some cv
+  | _ => none
 
 /-- **The names a declaration record declares**: the hoist's name index
 and `preparePrelude`'s lookup of the stream's own copy of a prelude
