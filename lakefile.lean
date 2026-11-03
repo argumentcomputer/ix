@@ -55,6 +55,9 @@ The second Cargo build is incremental — only feature-affected crates recompile
 
 The archives are built when native targets need them. Keeping Rust linkage on
 `Ix` keeps `ix_rs` out of the certified kernel's build.
+
+Every archive contains the formal Aiur prover library (`ix-prover`), which the
+`ix` CLI runs in process.
 -/
 section FFI
 
@@ -228,6 +231,11 @@ lean_exe «formal-aggregate-tests» where
 `tools/ixvm/check-formal.sh`. -/
 lean_exe «formal-checks» where
   root := `Tests.FormalChecks
+/-- Fingerprint of the formal verify path; `tools/check-verify-path.sh`
+compares it with the pinned `tools/verify-path.fingerprint`. -/
+lean_exe «verify-path» where
+  root := `Tests.VerifyPath
+  supportInterpreter := true
 
 @[test_driver]
 lean_exe IxTests where

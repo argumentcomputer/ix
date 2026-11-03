@@ -30,6 +30,7 @@ lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/groupi
 lake env Aiur/.lake/build/bin/depth_example crates/aiur/tests/fixtures/depth.ixa --check
 cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features parallel \
   --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
+cargo build --release --locked -p aggregate-controller --example streams_parity
 
 if [[ -z ${IX_AIUR_ARTIFACT:-} ]]; then
   IX_AIUR_ARTIFACT="$formal_tmp/ixvm.ixa"
@@ -62,6 +63,7 @@ target/release/stark-verifier prove "$IX_RECURSION_ARTIFACT" "$formal_tmp/inner/
 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.ixi" "$formal_tmp/outer/proof.bin"
 AIUR_TRACE_ONLY_LOOKUPS=1 target/release/stark-verifier verify "$IX_RECURSION_ARTIFACT" "$formal_tmp/outer/public.ixi" "$formal_tmp/outer/proof.bin"
 .lake/build/bin/formal-aggregate-tests "$formal_tmp/aggregation.ixt"
+target/release/examples/streams_parity "$formal_tmp/aggregation.ixt.streams.json"
 target/release/stark-verifier cases "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.ixt"
 target/release/stark-verifier prove "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregation.ixt.wrap.ixi" "$formal_tmp/aggregate"
 target/release/stark-verifier verify "$IX_AGGR_ARTIFACT" "$formal_tmp/aggregate/public.ixi" "$formal_tmp/aggregate/proof.bin"

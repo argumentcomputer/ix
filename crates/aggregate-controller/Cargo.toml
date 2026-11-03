@@ -1,0 +1,19 @@
+[package]
+name = "aggregate-controller"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+blake3 = { workspace = true }
+ix-common = { workspace = true }
+ixon = { workspace = true }
+rayon = { workspace = true }
+record-pool = { workspace = true }
+rustc-hash = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

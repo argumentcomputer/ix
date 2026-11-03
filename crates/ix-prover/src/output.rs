@@ -1,28 +1,30 @@
-use crate::protocol::{Job, Kind, atomic_json};
+use crate::protocol::{Kind, atomic_json};
 use aiur::field::NativeField;
 use aiur::trace::stark::{Backend, BatchProof};
 use multi_stark::{p3_field::PrimeField64, types::Val};
 use serde_json::Value;
+use std::path::Path;
 
-pub(crate) fn report(
-  job: &Job,
-  kind: Kind,
-  report: &Value,
-) -> Result<(), String> {
+pub fn report(output: &Path, kind: Kind, report: &Value) -> Result<(), String> {
   let path = match kind {
     Kind::Ixvm => {
-      std::path::PathBuf::from(format!("{}.report.json", job.output.display()))
+      std::path::PathBuf::from(format!("{}.report.json", output.display()))
     },
     Kind::Recursion => {
-      std::fs::create_dir_all(&job.output).map_err(|e| e.to_string())?;
-      job.output.join("report.json")
+      std::fs::create_dir_all(output).map_err(|e| e.to_string())?;
+      output.join("report.json")
     },
   };
   atomic_json(&path, report)
 }
 
-pub(crate) fn proof(
-  job: &Job,
+/// Writes a verified proof, its verifying key and claims next to `output`
+/// (an IxVM proof file, or a recursive proof's directory), and with
+/// `export_input` the invocation of a verifier over it.
+#[allow(clippy::too_many_arguments)]
+pub fn proof(
+  output: &Path,
+  export_input: bool,
   kind: Kind,
   backend: &Backend<'_, '_, NativeField<Val>>,
   entry: &str,
@@ -44,29 +46,31 @@ pub(crate) fn proof(
     Kind::Ixvm => {
       let mut bytes = b"IXAIUR2\0".to_vec();
       bytes.extend_from_slice(&raw);
-      write(job.output.clone(), &bytes)?;
-      write(format!("{}.vk", job.output.display()).into(), &key)?;
-      write(format!("{}.claims", job.output.display()).into(), &claims)?;
+      write(output.to_path_buf(), &bytes)?;
+      write(format!("{}.vk", output.display()).into(), &key)?;
+      write(format!("{}.claims", output.display()).into(), &claims)?;
     },
     Kind::Recursion => {
-      std::fs::create_dir_all(&job.output).map_err(|e| e.to_string())?;
-      write(job.output.join("proof.bin"), &raw)?;
-      write(job.output.join("key.bin"), &key)?;
-      write(job.output.join("claims.bin"), &claims)?;
+      std::fs::create_dir_all(output).map_err(|e| e.to_string())?;
+      write(output.join("proof.bin"), &raw)?;
+      write(output.join("key.bin"), &key)?;
+      write(output.join("claims.bin"), &claims)?;
       aiur::library::io::Invocation {
         entry: entry.to_owned(),
         args: args.iter().map(Val::as_canonical_u64).collect(),
         streams: Default::default(),
       }
-      .store(&job.output.join("public.ixi"))?;
-      stark_verifier::invocation(&key, &claims, &raw)
-        .store(&job.output.join("input.ixi"))?;
+      .store(&output.join("public.ixi"))?;
+      if export_input {
+        stark_verifier::invocation(&key, &claims, &raw)
+          .store(&output.join("input.ixi"))?;
+      }
     },
   }
   result["verified"] = true.into();
   result["shards"] = proof.proofs.len().into();
   result["proof_bytes"] = raw.len().into();
   result["key_digest"] = blake3::hash(&key).to_hex().to_string().into();
-  report(job, kind, &result)?;
+  report(output, kind, &result)?;
   Ok(result)
 }

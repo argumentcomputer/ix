@@ -1098,9 +1098,10 @@ interleaved:
    byte vectors of `IxC/Fixtures/{Codec,ParserWork,ByteAdmission}.lean`
    are the codec's: rewrite them for the new grammar (their `#guard`s run
    when `lake -d IxC build --wfail` elaborates them).
-7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
-   kernel-check FFT-cost pin of `Tests/Ix/LegacyIxVM.lean` and the shard pin in
-   `Tests/Main.lean` that moved; set each to the measured value.
+7. **IxVM checks.** `bash tools/ixvm/check-formal.sh` must pass: it runs
+   `formal-aiur-tests`, which proves and checks the IxVM claim fixtures and
+   the exploit corpus (`Tests/Ix/IxVM/Exploits.lean`) against the new
+   format, and `formal-aggregate-tests`.
 8. **Frozen audit records**, as step 3 of a toolchain bump, including the
    codec's own closure in `IxC/Ixon/Audit.lean`.
 9. **Stored environments.** Recompile every `.ixe` the documentation's

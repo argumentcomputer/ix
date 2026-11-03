@@ -8,6 +8,10 @@ license.workspace = true
 aiur = { workspace = true, features = ["stark"] }
 ixvm = { workspace = true, features = ["stark"] }
 stark-verifier = { workspace = true }
+stark-key = { workspace = true }
+ixon = { workspace = true }
+aggregate-controller = { workspace = true }
+ix-common = { workspace = true }
 record-pool = { workspace = true }
 multi-stark = { workspace = true }
 rayon = { workspace = true }

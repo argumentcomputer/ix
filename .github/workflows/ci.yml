@@ -111,6 +111,8 @@ jobs:
         env:
           IX_AIUR_ARTIFACT: ${{ runner.temp }}/formal/ixvm.ixa
         run: lake test --wfail -- --tier ci:ixvm
+      - name: Check the formal verify path is unchanged
+        run: bash tools/check-verify-path.sh
       - name: Check Lean versions match for Ix, compiler bench, Aiur packages, certified kernel and its model
         if: github.event_name != 'push'
         run: |
