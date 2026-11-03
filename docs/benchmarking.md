@@ -176,6 +176,31 @@ arena and key-map order, offsets and lengths. Local witness construction took
 20,023/18,570 ms before and 129/121 ms after. These diagnostics isolate the
 arena-copy fix; they do not measure end-to-end proving or CI wall time.
 
+Caching the environment's role binding across constants in the benchmark
+runners (`assumeBinding := true` in `bench-typecheck`, matching the production
+claim tree where the binding is proven once and assumed by per-constant claims,
+and upfront `verdict_work` support checking in `rs_kernel_check_anon_consts`)
+eliminates redundant per-constant role-table re-admission:
+
+| Constant | Checked constants (assumed binding) | Stage 1 FFT cost, billions (`09ee682` → assumed binding) | `ooc` check-time (s) |
+|---|---:|---:|---:|
+| `ByteArray.utf8DecodeChar?_utf8EncodeChar_append` | 2,697 | 126.785 → 121.304 (−4.32%) | 0.819 |
+| `Char.ofOrdinal_le_of_le` | 2,676 | 91.681 → 86.924 (−5.19%) | 0.153 |
+| `Array.extract_append` | 1,509 | 92.985 → 87.989 (−5.37%) | 0.383 |
+| `Std.HashMap` | 2,039 | 63.352 → 58.138 (−8.23%) | 0.087 |
+| `_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq` | 1,768 | 55.479 → 50.474 (−9.02%) | 0.086 |
+| `String.append` | 263 | 4.581 → 3.070 (−32.98%) | 0.015 |
+| `Nat.add_comm` | 34 | 0.390 → 0.377 (−3.33%) | 0.004 |
+
+With `assumeBinding := true` on the 32-vCPU benchmark host (`r8i.8xlarge`),
+inactive role-validation circuits drop out of per-constant proofs, reducing
+`Nat.add_comm` Stage 1 proof size from 6.08 MiB to 4.99 MiB (−17.9%), Stage 2
+`fri-verifier` FFT cost from 114.68B to 90.65B (−21.0%), and end-to-end
+recursive `total-time` from 64.47s to 31.38s (−51.3%); `String.append` Stage 1
+proof size drops from 6.18 MiB to 5.19 MiB (−16.0%), Stage 2 `fri-verifier`
+FFT cost from 115.65B to 99.33B (−14.1%), and `total-time` from 63.85s to
+34.42s (−46.1%).
+
 ## Backends
 
 | backend | what it measures | tool |
