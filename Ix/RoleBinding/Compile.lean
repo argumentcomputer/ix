@@ -3,6 +3,7 @@ module
 public import Ix.RoleBinding.Generate
 public import Ix.CompileResource
 public import Ix.EnvScope
+public import Ix.LeanExport
 public import Ix.Meta
 public import IxC.Kernel.PinGen.Certs
 
@@ -592,13 +593,52 @@ def compileRequired (backend : Backend) (source : Lean.Environment)
 
 initialize cachedNativeCertSource : IO.Ref (Option Lean.Environment) ← IO.mkRef none
 
+def nativeCertSourceText : String :=
+  include_str "../../IxC/Kernel/PinGen/Certs.lean"
+
+/-- Elaborate the embedded `IxC/Kernel/PinGen/Certs.lean` source against the
+toolchain's `Init` when the prebuilt `.olean` is not available on disk (for
+example when `ix` runs as a standalone binary outside a built root workspace). -/
+def elaborateNativeCertSource : IO Lean.Environment := do
+  let opts := Lean.Options.empty.setBool `linter.deprecated false
+  let inputCtx := Lean.Parser.mkInputContext nativeCertSourceText "IxC/Kernel/PinGen/Certs.lean"
+  let (header, _, _) ← Lean.Parser.parseHeader inputCtx
+  unsafe Lean.enableInitializersExecution
+  let some certElabEnv ← Lean.Elab.runFrontend nativeCertSourceText opts
+      "IxC/Kernel/PinGen/Certs.lean" `IxC.Kernel.PinGen.Certs
+    | throw (IO.userError "nativeCertSource: failed to elaborate embedded IxC.Kernel.PinGen.Certs")
+  unsafe Lean.enableInitializersExecution
+  let baseEnv ← Lean.importModules (Lean.Elab.HeaderSyntax.imports header) default (loadExts := false)
+  let baseConsts := baseEnv.constants.fold (init := #[]) fun acc n ci => acc.push (n, ci)
+  let certConsts := certElabEnv.constants.map₂.foldl (init := #[]) fun acc n ci => acc.push (n, ci)
+  Ix.LeanExport.environment (baseConsts ++ certConsts)
+
 /-- The certificate theorems of the toolchain ix runs on: its own
-`IxC.Kernel.PinGen.Certs`, elaborated against its own `Init`. -/
+`IxC.Kernel.PinGen.Certs`, elaborated against its own `Init`. Uses the
+prebuilt `.olean` when present on the search path or in a local `.lake/kernel`
+build directory, and otherwise elaborates the embedded source against `Init`
+without invoking `lake`. -/
 def nativeCertSource : IO Lean.Environment := do
   if let some env ← cachedNativeCertSource.get then
     return env
-  ensureModuleSearchPath `IxC.Kernel.PinGen.Certs
-  let env ← Lean.importModules #[{ module := `IxC.Kernel.PinGen.Certs }] default (loadExts := false)
+  if (← (← Lean.searchPathRef.get).findWithExt "olean" `Init).isNone then
+    Lean.initSearchPath (← Lean.findSysroot)
+  if (← (← Lean.searchPathRef.get).findModuleWithExt "olean" `IxC.Kernel.PinGen.Certs).isNone then
+    let mut localDirs : List System.FilePath := []
+    for dir in ([".lake/kernel/lib/lean", "../.lake/kernel/lib/lean",
+        "../../.lake/kernel/lib/lean"] : List System.FilePath) do
+      if ← dir.pathExists then
+        localDirs := localDirs ++ [dir]
+    unless localDirs.isEmpty do
+      let current ← Lean.searchPathRef.get
+      Lean.searchPathRef.set (localDirs ++ current)
+  let hasOlean ← match ← (← Lean.searchPathRef.get).findModuleWithExt "olean" `IxC.Kernel.PinGen.Certs with
+    | some path => System.FilePath.pathExists (System.FilePath.mk (path.toString ++ ".private"))
+    | none => pure false
+  let env ← if hasOlean then
+      Lean.importModules #[{ module := `IxC.Kernel.PinGen.Certs }] default (loadExts := false)
+    else
+      elaborateNativeCertSource
   cachedNativeCertSource.set (some env)
   return env
 

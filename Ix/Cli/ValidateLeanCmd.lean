@@ -244,7 +244,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       -- the certificate theorems' (`IxC.Kernel.PinGen.Certs`).
       let sources ← if added.all fun n => leanEnv.contains (Ix.SemanticContract.toLeanName n) then
           pure #[leanEnv]
-        else pure #[leanEnv, ← getCompileEnv #[`IxC.Kernel.PinGen.Certs]]
+        else pure #[leanEnv, ← Ix.RoleBinding.Compile.nativeCertSource]
       let addedConsts : Array (Lean.Name × Lean.ConstantInfo) := added.filterMap fun n =>
         let ln := Ix.SemanticContract.toLeanName n
         (sources.findSome? (·.find? ln)).map (ln, ·)
