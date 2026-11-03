@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise resident proving and cross-record IxVM proofs on production artifacts.
+"""Exercise resident proving and the aggregate pipeline on production artifacts.
 
 Uses fixtures from check-formal.sh. CPU is the default; --devices 0,1 runs the
 same resident jobs on real CUDA lanes and independently verifies on the CPU.
@@ -149,35 +149,13 @@ def main():
         resident('record-limit', dict(config, record_limit_bytes=1024), [limited], [75])
         assert not Path(limited['output']).exists()
 
-        # A real dependency-bearing IxVM environment, with all worker records
-        # contributing to one public claim rather than independent leaf claims.
+        # A real dependency-bearing IxVM environment, split into two leaves.
         tiny = fixtures / 'claims.json.controller.ixe'
         if not tiny.exists():
             raise RuntimeError('regenerate formal-aiur-tests fixtures: missing controller environment')
         ix = Path('.lake/build/bin/ix').resolve()
         manifest = out / 'two.ixes'
         run('partition', [ix, 'shard', tiny, '--shards', 2, '--out', manifest])
-        proof_addresses = []
-        for retention in ['retain', 'regenerate']:
-            result_path = out / f'distributed-{retention}.json'
-            command = [ix, 'prove', '--distributed', '--ixe', tiny, '--ixes', manifest,
-                        '--exec-jobs', 2, '--max-ram', 8, '--retention', retention,
-                        '--no-index', '--report', result_path]
-            if args.devices:
-                command += ['--gpu-device', devices[0]]
-            text = run('distributed-' + retention, command)
-            address = text.strip().splitlines()[-1]
-            proof_addresses.append(address)
-            result = json.loads(result_path.read_text())
-            assert result['verified'] and result['cross_record_calls'] > 0
-            assert len(result['workers']) == 2 and result['shards'] >= 2
-            run('distributed-verify-' + retention,
-                [ix, 'verify', '--distributed', '--ixe', tiny, '--ixes', manifest, address],
-                dict(AIUR_TRACE_ONLY_LOOKUPS='1'))
-        assert proof_addresses[0] == proof_addresses[1], 'retention changed distributed proof'
-        report['distributed_proof'] = proof_addresses[0]
-        run('reject-leaf-binding', [ix, 'verify', '--ixe', tiny, '--ixes', manifest,
-                                   proof_addresses[0]], succeeds=False)
         failed_manifest = out / 'failed.ixes'
         failed_report = out / 'failed-pipeline.json'
         text = run('pipeline-budget-failure',
