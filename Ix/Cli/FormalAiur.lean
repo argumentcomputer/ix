@@ -12,12 +12,15 @@ public import Ix.Aiur.Statistics
 public import Ix.AiurInvocation
 public import Ix.Benchmark.Results
 public import Ix.TracingTexray
+public import Ix.FormalProver
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
 Compilation runs in the standalone exporter, which embeds the program; the
-artifact is cached by the exporter and the program's digest.
-The generic Aiur Lean library does not acquire application-specific FFI. -/
+artifact is cached by the exporter and the program's digest. Execution,
+proving and verification run in this process through the prover library
+(`Ix.FormalProver`). The generic Aiur Lean library does not acquire
+application-specific FFI. -/
 public section
 namespace Ix.Cli.FormalAiur
 open Lean IxVM.ClaimHarness
@@ -28,17 +31,27 @@ open Lean IxVM.ClaimHarness
 private def nestedBuildEnv : Array (String × Option String) :=
   #[("LD_LIBRARY_PATH", none)]
 
-def commandStatus (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
-    IO UInt32 := do
+def commandStatus (cmd : String) (args : Array String) (cwd : Option System.FilePath := none)
+    (env : Array (String × Option String) := #[]) : IO UInt32 := do
   (← IO.getStdout).flush
-  let env := if cmd == "lake" || cmd == "cargo" then nestedBuildEnv else #[]
+  let env := (if cmd == "lake" || cmd == "cargo" then nestedBuildEnv else #[]) ++ env
   let child ← IO.Process.spawn { cmd, args, cwd, env, stdout := .inherit, stderr := .inherit }
   child.wait
 
-def command (cmd : String) (args : Array String) (cwd : Option System.FilePath := none) :
-    IO Unit := do
-  let code ← commandStatus cmd args cwd
+def command (cmd : String) (args : Array String) (cwd : Option System.FilePath := none)
+    (env : Array (String × Option String) := #[]) : IO Unit := do
+  let code ← commandStatus cmd args cwd env
   unless code == 0 do throw (IO.userError s!"{cmd} failed with status {code}")
+
+/-- Run `act`; with `IX_PHASE_TIMES` set, report its wall time on stderr. The
+work is a thunk so that pure computations run inside the measured interval. -/
+def phase {α : Type} (label : String) (act : Unit → IO α) : IO α := do
+  if (← IO.getEnv "IX_PHASE_TIMES").isNone then return ← act ()
+  let start ← IO.monoNanosNow
+  let result ← act ()
+  let finish ← IO.monoNanosNow
+  IO.eprintln s!"[phase] {label}: {(finish - start) / 1000000} ms (ended at {finish / 1000000} ms)"
+  return result
 
 /-- Whether `dir` is an Ix checkout: it holds the IxVM package. -/
 private def isCheckout (dir : System.FilePath) : IO Bool :=
@@ -65,12 +78,11 @@ def repoRoot : IO System.FilePath := do
     if ← isCheckout root then return root
   let cwd ← IO.currentDir
   if ← isCheckout cwd then return cwd
-  throw (IO.userError s!"cannot find the Ix checkout that builds the Aiur artifacts and Rust \
-    hosts: {app} is not in a checkout's .lake/build/bin, and the working directory is not a \
-    checkout. Set IX_ROOT to an Ix checkout of the same revision as this ix, or pass prebuilt \
-    inputs: --aiur-artifact or IX_AIUR_ARTIFACT (and --aggr-artifact or IX_AGGR_ARTIFACT for \
-    aggregation) for the exported artifacts, and IX_AIUR_HOST, IX_PROVER_HOST and IX_STARK_HOST \
-    for the Rust hosts.")
+  throw (IO.userError s!"cannot find the Ix checkout that builds the Aiur artifacts: {app} is \
+    not in a checkout's .lake/build/bin, and the working directory is not a checkout. Set \
+    IX_ROOT to an Ix checkout of the same revision as this ix, or pass the exported artifacts: \
+    --aiur-artifact or IX_AIUR_ARTIFACT (and --aggr-artifact or IX_AGGR_ARTIFACT for \
+    aggregation).")
 
 /-- The digest of the program an exporter embeds (`IxVM.programDigest`,
 `MultiStark.recursionDigest`, `MultiStark.aggregateDigest`), which it prints in
@@ -111,26 +123,18 @@ def artifact (p : Cli.Parsed) : IO String :=
   compiledArtifact p "aiur-artifact" "IX_AIUR_ARTIFACT" "IxVM/.lake/build/bin/ixvm"
     "ixvm" "export-claim-trace"
 
-/-- A Rust host of the checkout. A missing host is built; `refresh` lets
-cargo rebuild an existing one whose sources changed. -/
-def rustHost (package binary env : String) (device : Option Nat := none)
-    (refresh : Bool := false) : IO String := do
-  if let some path ← IO.getEnv (env ++ if device.isSome then "_CUDA" else "") then return path
-  let root ← repoRoot
-  let directory := root / (if device.isSome then "target/formal-cuda" else "target")
-  let path := directory / "release" / binary
-  if refresh || !(← path.pathExists) then
-    command "cargo" #["build", "--release", "--locked", "-p", package, "--bin", binary,
-      "--target-dir", directory.toString,
-      "--features", if device.isSome then "parallel,cuda" else "parallel"] root
-  return path.toString
+/-- The certified aggregation program (`MultiStark::ix_aggr`) with its circuits. -/
+def aggregationArtifact (p : Cli.Parsed) : IO String :=
+  compiledArtifact p "aggr-artifact" "IX_AGGR_ARTIFACT"
+    "MultiStark/.lake/build/bin/stark-export" "stark-export"
+    "export-trace" #["--aggregate"]
 
-def host : IO String := rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST"
-
-structure Resident where
-  directory : System.FilePath
-  running : IO Bool
-  mode : String := "prove"
+/-- The certified recursive verifier (`MultiStark::verify_multi_stark_proof`)
+with its circuits. -/
+def verifierArtifact (p : Cli.Parsed) : IO String :=
+  compiledArtifact p "verifier-artifact" "IX_VERIFIER_ARTIFACT"
+    "MultiStark/.lake/build/bin/stark-export" "stark-export"
+    "export-trace"
 
 structure HostOptions where
   rows : Nat := 0
@@ -138,8 +142,6 @@ structure HostOptions where
   ram : Nat := 0
   device : Option Nat := none
   threads : Nat := 0
-  resident : Option Resident := none
-  priority : Bool := false
 
 def HostOptions.json (o : HostOptions) : Json := Json.mkObj [
   ("max_rows", if o.rows == 0 then .null else toJson o.rows),
@@ -148,12 +150,11 @@ def HostOptions.json (o : HostOptions) : Json := Json.mkObj [
   ("device", toJson o.device)]
 
 def HostOptions.forWave (o : HostOptions) (jobs members : Nat) : HostOptions :=
-  if o.resident.isSome then o else
   { o with ram := o.ram * max jobs 1 / max members 1
            threads := o.threads * max jobs 1 / max members 1 }
 
 /-- Keep workers occupied as individual jobs finish. All admitted tasks are
-joined on failure, so temporary files and resident sessions outlive their jobs. -/
+joined on failure, so temporary files outlive their jobs. -/
 def boundedMap {α β : Type} (jobs : Nat) (xs : Array α) (f : Nat → α → IO β) : IO (Array β) := do
   let mut out : Array (Option β) := Array.replicate xs.size none
   let mut running : Array (Nat × Task (Except IO.Error β)) := #[]
@@ -181,10 +182,7 @@ def boundedMap {α β : Type} (jobs : Nat) (xs : Array α) (f : Nat → α → I
   finally
     for (_, task) in (← admitted.get) do let _ ← IO.wait task; pure ()
 
-def resources : IO Json := do
-  let result ← IO.Process.output { cmd := ← host, args := #["resources"] }
-  unless result.exitCode == 0 do throw (IO.userError result.stderr)
-  IO.ofExcept (Json.parse result.stdout)
+def resources : IO Json := FormalProver.resources
 
 def jobCount (p : Cli.Parsed) (defaultJobs : Nat := 1) : IO Nat := do
   let n := ((p.flag? "jobs").map (·.as! Nat)).getD defaultJobs
@@ -216,116 +214,25 @@ def hostOptions (p : Cli.Parsed) (shares : Nat := 1) : IO HostOptions := do
     threads := max 1 (cores / max shares 1) }
 
 def executionJobs (p : Cli.Parsed) (jobs : Nat) : IO Nat := do
-  let explicit := (p.flag? "exec-jobs").map (·.as! Nat)
-  let ahead := (p.flag? "exec-ahead").map (·.as! Nat)
   let cores := ((← resources).getObjValAs? Nat "cores").toOption.getD 1
-  let n := explicit.orElse (fun _ => ahead) |>.getD (if p.hasFlag "lanes" then 0 else jobs)
-  if n == 0 then return if ahead == some 0 then jobs else cores
+  let n := ((p.flag? "exec-jobs").map (·.as! Nat)).getD (if p.hasFlag "lanes" then 0 else jobs)
+  if n == 0 then return cores
   return if p.hasFlag "lanes" then n * (((p.flag? "lanes").map (·.as! Nat)).getD 1) else n
 
-/-- One process retains checked programs and one backend per device. It owns
-the shared execution pool; Lean only schedules dependency-ready requests. -/
-def withController {α : Type} (p : Cli.Parsed) (artifacts : Array (String × String))
-    (options : HostOptions) (jobs : Nat) (f : HostOptions → IO α)
-    (mode : String := "prove") : IO α := do
-  if options.resident.isSome then return ← f options
-  let lanes := if mode != "prove" then 1 else
-    ((p.flag? "lanes").map (·.as! Nat)).getD (if options.device.isSome then 1 else jobs)
-  if lanes == 0 then throw (IO.userError "--lanes must be positive")
-  let executors ← executionJobs p jobs
-  let shared := (← IO.getEnv "IX_PROVER_SHARED_DEVICES") == some "1"
-  let devices := (Array.range lanes).map fun i => options.device.map (· + if shared then 0 else i)
-  let ram ← if mode != "prove" && !p.hasFlag "max-ram" then
-      match (p.flag? "exec-ram").map (·.as! Nat) with
-      | some n =>
-        if n == 0 then throw (IO.userError "--exec-ram must be positive")
-        pure (n * 1024^3)
-      | none =>
-        -- A destination proof's budget is independent of this checker's
-        -- execution capacity, as in the legacy RAM-gated batch.
-        pure (((← resources).getObjValAs? Nat "available_bytes" |>.toOption.getD (8 * 1024^3)) * 85 / 100)
-    else pure (if p.hasFlag "lanes" && p.hasFlag "max-ram" then options.ram * lanes else options.ram)
-  let binary ← rustHost "ix-prover" "ix-prover" "IX_PROVER_HOST" options.device
-  let recordLimit ← match ← IO.getEnv "AIUR_RECORD_MAX_BYTES" with
-    | none => pure Json.null
-    | some s => match s.toNat? with
-      | some n => pure (toJson n)
-      | none => throw (IO.userError "AIUR_RECORD_MAX_BYTES must be a positive integer")
-  IO.FS.withTempDir fun dir => do
-    -- The host refuses an artifact whose digest is not the one named here.
-    let entries ← artifacts.mapM fun (path, kind) => do
-      let digest := Address.blake3 (← IO.FS.readBinFile path)
-      pure (Json.mkObj [("path", toJson path), ("kind", toJson kind), ("digest", toJson (toString digest))])
-    let config := Json.mkObj [
-      ("mode", toJson mode),
-      ("artifacts", toJson entries),
-      ("devices", toJson devices), ("exec_jobs", toJson executors),
-      ("threads_per_prover", toJson (max 1 (options.threads / lanes))),
-      ("max_ram_bytes", toJson ram), ("record_limit_bytes", recordLimit),
-      ("texray", toJson (p.hasFlag "texray")),
-      ("parent_pid", toJson (← IO.Process.getPID).toNat)]
-    let path := dir / "config.json"
-    IO.FS.writeFile path config.compress
-    let child ← IO.Process.spawn {
-      cmd := binary
-      args := #["serve", path.toString, dir.toString]
-      stdout := .inherit
-      stderr := .inherit }
-    let exited ← IO.asTask (prio := .dedicated) child.wait
-    try
-      while !(← (dir / "ready.json").pathExists) do
-        if ← IO.hasFinished exited then
-          let code ← IO.ofExcept exited.get
-          let error ← if ← (dir / "failed.json").pathExists then IO.FS.readFile (dir / "failed.json") else pure ""
-          throw (IO.userError s!"resident prover exited {code}: {error}")
-        IO.sleep 10
-      let resident : Resident := {
-        directory := dir
-        mode := mode
-        running := do return !(← IO.hasFinished exited) }
-      f { options with resident := some resident }
-    finally
-      IO.FS.writeFile (dir / "stop") ""
-      let _ ← IO.wait exited
-      if let some report := p.flag? "report" then
-        for name in #["events.jsonl", "summary.json", "ready.json"] do
-          if ← (dir / name).pathExists then
-            IO.FS.writeFile (s!"{report.as! String}.{name}") (← IO.FS.readFile (dir / name))
-
-private def residentRequest (resident : Resident) (artifactPath input output : String)
-    (options : HostOptions) : IO UInt32 := do
-  let id := toString (Address.blake3 input.toUTF8)
-  let job := Json.mkObj [("id", toJson id), ("artifact", toJson artifactPath),
-    ("input", toJson input), ("output", toJson output), ("options", options.json),
-    ("priority", toJson options.priority)]
-  let pending := resident.directory / "pending"
-  let temp := pending / s!"{id}.tmp"
-  IO.FS.writeFile temp job.compress
-  IO.FS.rename temp (pending / s!"{id}.json")
-  let donePath := resident.directory / "done" / s!"{id}.json"
-  while !(← donePath.pathExists) do
-    unless ← resident.running do throw (IO.userError "resident prover stopped before completing its request")
-    IO.sleep 10
-  let result ← IO.ofExcept (Json.parse (← IO.FS.readFile donePath))
-  return UInt32.ofNat (← IO.ofExcept (result.getObjValAs? Nat "status"))
-
-def runHost (binary artifactPath mode : String) (input : ByteArray) (output : String)
-    (options : HostOptions) : IO UInt32 :=
-  IO.FS.withTempFile fun h path => IO.FS.withTempFile fun oh opath => do
-    h.write input
-    h.flush
-    oh.putStr options.json.compress
-    oh.flush
-    if let some resident := options.resident then
-      if mode != resident.mode then throw (IO.userError "resident session mode mismatch")
-      return ← residentRequest resident artifactPath path.toString output options
-    (← IO.getStdout).flush
-    let child ← IO.Process.spawn {
-      cmd := binary
-      args := #[mode, artifactPath, path.toString, output, toString options.rows, options.retention, opath.toString]
-      env := if options.threads == 0 then #[] else #[("RAYON_NUM_THREADS", some (toString options.threads))]
-      stdout := .inherit, stderr := .inherit }
-    child.wait
+/-- Run one request: prove it, or with `execute` and `plan` check it
+without proving. Returns the status and report. -/
+def runHost (artifactPath mode : String) (request : FormalProver.Request) (output : String)
+    (options : HostOptions) : IO (UInt32 × Json) := do
+  -- The library prints progress on the process's stdout.
+  (← IO.getStdout).flush
+  let (code, report) ← if mode == "prove" then
+      phase "prover" fun _ =>
+        FormalProver.prove artifactPath request output options.json.compress options.threads
+    else if mode == "execute" || mode == "plan" then
+      phase s!"check {mode}" fun _ =>
+        FormalProver.check (mode == "plan") artifactPath request options.json.compress options.threads
+    else throw (IO.userError s!"unknown prover mode {mode}")
+  return (code, ← IO.ofExcept (Json.parse report))
 
 /-- A host input, in Ixon (`Ix.AiurInvocation`). Stream metadata is small; each
 byte payload is transported exactly once. The Rust host turns these into
@@ -334,12 +241,53 @@ def invocation (input : Array Aiur.G) (buffer : Aiur.IOBuffer)
     (entry : String := "IxVM::verify_claim") : ByteArray :=
   AiurInvocation.ofBuffer input buffer entry
 
-def invoke (artifactPath mode : String) (input : ByteArray) (proofPath : String)
-    (rows : Nat) (retention : String := "regenerate") : IO Unit :=
-  IO.FS.withTempFile fun handle path => do
-    handle.write input
-    handle.flush
-    command (← host) #[mode, artifactPath, path.toString, proofPath, toString rows, retention]
+private def pushUInt64 (bytes : ByteArray) (n : UInt64) : ByteArray := Id.run do
+  let mut bytes := bytes
+  for i in [0:8] do
+    bytes := bytes.push (n >>> (8 * i).toUInt64).toUInt8
+  return bytes
+
+/-- An existing witness as compact advice, in the buffer's stream order. A
+stream whose values are all below 256 travels as bytes, any other as
+numeric words. -/
+def bufferRequest (input : Array Aiur.G) (buffer : Aiur.IOBuffer)
+    (entry : String := "IxVM::verify_claim") : IO FormalProver.Request := do
+  let mut layout := ByteArray.empty
+  let mut bytes := ByteArray.empty
+  let mut words := ByteArray.empty
+  for ((channel, key), info) in buffer.map.toArray do
+    let values := (buffer.data.getD channel #[]).extract info.idx (info.idx + info.len)
+    let byteStream := values.all (·.val < 256)
+    layout := pushUInt64 layout channel.val
+    layout := pushUInt64 layout (if byteStream then 0 else 1)
+    layout := pushUInt64 layout key.size.toUInt64
+    for k in key do layout := pushUInt64 layout k.val
+    layout := pushUInt64 layout values.size.toUInt64
+    if byteStream then
+      for v in values do bytes := bytes.push v.val.toUInt8
+    else
+      for v in values do words := pushUInt64 words v.val
+  FormalProver.Request.buffers entry (input.map (·.val)) layout bytes words
+
+/-- Concatenated 32-byte addresses. -/
+def addressBytes (xs : Array Address) : ByteArray :=
+  xs.foldl (fun bytes a => bytes ++ a.hash) ByteArray.empty
+
+/-- A shard `CheckEnv` leaf the prover prepares from `env`: the claim of
+the constants `blocks` own, checked against `claim`. -/
+def shardRequest (env : FormalProver.Env) (blocks : Array Address) (claim : Ix.Claim) :
+    IO FormalProver.Request :=
+  FormalProver.Request.shard env (addressBytes blocks) (Ix.Claim.ser claim)
+
+/-- The request for a `forEachClaim` target. `Check` claims are prepared by
+the prover from `env`; other claim forms submit their Lean witness. -/
+def targetRequest (env : Option FormalProver.Env) (claim : Ix.Claim) :
+    Ix.Check.Target → IO FormalProver.Request
+  | .addr a => do
+    let some env := env | throw (IO.userError "a Check request needs an environment")
+    FormalProver.Request.check env a.hash (Ix.Claim.ser claim)
+  | .shard _ => throw (IO.userError "submit shard leaves by their manifest blocks")
+  | .leanW w => bufferRequest w.input w.inputIOBuffer
 
 def rejectFlags (p : Cli.Parsed) (flags : Array String) : IO Unit := do
   for flag in flags do
@@ -348,9 +296,8 @@ def rejectFlags (p : Cli.Parsed) (flags : Array String) : IO Unit := do
 
 def verifyWrapper (artifactPath : String) (wrapper : Ixon.Proof) : IO Unit := do
   let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
-  IO.FS.withTempFile fun _ path => do
-    IO.FS.writeBinFile path wrapper.proof
-    invoke artifactPath "verify" (invocation (packedDigestKey digest) default) path.toString 65536
+  let _ ← FormalProver.verify artifactPath "IxVM::verify_claim"
+    ((packedDigestKey digest).map (·.val)) wrapper.proof
 
 def readProofFileOrStore (pathOrHex : String) : IO Ixon.Proof := do
   let bytes ← if ← System.FilePath.pathExists pathOrHex then
@@ -383,14 +330,10 @@ def persistClaim (p : Cli.Parsed) (claim : Ix.Claim) (path : System.FilePath) : 
   IO.println s!"verifying-key {keyAddr}"
   return proofAddr
 
-def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
-    (mode : String) (claim : Ix.Claim) (target : Ix.Check.Target) (label : String)
+def one (p : Cli.Parsed) (artifactPath : String) (options : HostOptions)
+    (mode : String) (claim : Ix.Claim) (request : Unit → IO FormalProver.Request) (label : String)
     (resume : Bool := false) : IO JobResult := do
   try
-    let input : ByteArray ← match target with
-      | .leanW witness => pure (invocation witness.input witness.inputIOBuffer)
-      | .rawIxi bytes => pure bytes
-      | _ => throw (IO.userError "formal backend needs a stream witness")
     let digest := Address.blake3 (Ix.Claim.ser claim)
     -- A verified proof of exactly this claim settles it: proving reuses it,
     -- and checking (`ix shard refine`) keeps its leaf rather than orphan it.
@@ -410,10 +353,8 @@ def one (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
     (← IO.getStdout).flush
     IO.FS.withTempDir fun dir => do
       let path := dir / "proof"
-      let code ← runHost binary artifactPath mode input path.toString options
-      let reportPath := System.FilePath.mk (path.toString ++ ".report.json")
-      let report ← if ← reportPath.pathExists then
-          IO.ofExcept (Json.parse (← IO.FS.readFile reportPath)) else pure Json.null
+      let request ← phase "request" fun _ => request ()
+      let (code, report) ← runHost artifactPath mode request path.toString options
       if code == 0 && (report.getObjVal? "execution_statistics").toOption.isNone then
         throw (IO.userError "successful execution returned no circuit statistics")
       -- A failing host writes its error only to the report (a resident prover has no
@@ -444,134 +385,18 @@ structure PartResult where
   result : JobResult
   constants : Nat := 0
 
-/-- The claim a distributed proof of `env` (bound, `withDefaultRoleBinding`) states:
-`checkEnv` of the environment's canonical tree (`envCanonicalTree`), returned with it,
-under the environment's own context. An environment with user axioms is refused. Its
-claim's run checks every owned leaf on the record that runs the claim
-(`KernelClaim::walk_leaves_transitive`), not through the `check_owned` calls that the
-distributed prover assigns to the workers' records, so it does not divide among workers. -/
-private def distributedClaimWithTree (env : Ixon.Env) (assumeBinding : Bool)
-    (subjects : Thunk (Option Ix.AssumptionTree)) :
-    Except String (Ix.Claim × Ix.AssumptionTree) := do
-  let ctx ← Ix.ClaimContext.ofEnv env assumeBinding
-  if ctx.axioms.isSome then
-    throw s!"--distributed does not support an environment with user axioms (it has \
-      {(Ix.ClaimContext.userAxioms env).size} safe axiom(s) its role binding does not bind): \
-      the claim then checks every constant on one record, so its work does not divide among \
-      the workers. Prove the environment without --distributed."
-  let some tree := subjects.get | throw "empty environment"
-  return (Ix.Claim.checkEnv ctx tree.root none, tree)
-
-def distributedClaim (env : Ixon.Env) (assumeBinding : Bool) :
-    Except String (Ix.Claim × Ix.AssumptionTree) :=
-  distributedClaimWithTree env assumeBinding (Thunk.mk fun _ => envCanonicalTree env)
-
-/-- The byte scope of a distributed worker that owns `owned`: the closure of its owned
-constants, the primitives and the role binding's constants. -/
-def distributedScope (env : Ixon.Env) (owned : Array Address) : Std.HashSet Address :=
-  closureFromRoots env (owned ++ Ix.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env)
-
-/-- The input streams of a distributed worker whose byte scope is `scope`: the role binding
-and the records, blobs, hints and model advice in the scope, and for the first worker,
-which runs the claim, also `claim` and the trees its run reads (`seedClaimTrees`, with the
-claim's owned tree `tree`). -/
-def distributedStreams (env : Ixon.Env) (claim : Ix.Claim) (tree : Ix.AssumptionTree)
-    (scope : Std.HashSet Address) (first : Bool) : Except String Aiur.IOBuffer := do
-  let mut io := addScopedEntries env scope (seedBinding env default)
-  if first then
-    let bytes := Ix.Claim.ser claim
-    io := io.extend 0 (packedDigestKey (Address.blake3 bytes)) (bytes.data.map Aiur.G.ofUInt8)
-    io ← seedClaimTrees env claim (({} : Std.HashMap Address Ix.AssumptionTree).insert tree.root tree) io
-  return io
-
-private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : HostOptions)
-    (ixe manifest : String) : IO UInt32 := do
-  for flag in #["shard", "shards", "lanes", "jobs"] do
-    if p.hasFlag flag then throw (IO.userError s!"--distributed cannot be combined with --{flag}")
-  let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
-  let some binding := env.roleBinding | throw (IO.userError "distributed environment carries no role binding")
-  let assumeBinding := p.hasFlag "assume-binding"
-  let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
-  let some (owned, graph) ← Ix.Shard.coveredOwnersWithGraph env view.shards
-    | throw (IO.userError "invalid manifest coverage")
-  let (claim, tree) ← IO.ofExcept
-    (distributedClaimWithTree env assumeBinding (Thunk.mk fun _ => Ix.AssumptionTree.canonical owned.flatten))
-  let indexed := (owned.mapIdx fun i group => (i, group)).filter (!·.2.isEmpty)
-  let owners := indexed.map (·.2)
-  if owners.isEmpty then throw (IO.userError "distributed environment has no owned constants")
-  let commonRoots := Ix.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env
-  let scopes := owners.map fun own => closureFromRootsWithGraph env graph (own ++ commonRoots)
-  let jobs ← executionJobs p owners.size
-  if p.hasFlag "plan-only" then
-    for i in [:owners.size] do
-      let callers := (Array.range owners.size).filter fun j => j != i &&
-        (j == 0 || owners[i]!.any scopes[j]!.contains)
-      IO.println s!"worker {i}: {owners[i]!.size} constants, {scopes[i]!.size} in byte scope; potential callers {callers}"
-    IO.println s!"[aiur distributed] {min jobs owners.size} execution workers; replay one record at a time for batch proving"
-    return 0
-  let bytes := Ix.Claim.ser claim
-  let digest := Address.blake3 bytes
-  let args := packedDigestKey digest
-  if p.hasFlag "skip-proven" && !p.hasFlag "no-index" && !p.hasFlag "exec-only" then
-    if let some addr ← ShardProofIndex.readAddress (← shardIndex) digest then
-      try
-        let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read addr)))
-        unless wrapper.claim == claim do throw (IO.userError "cached distributed claim mismatch")
-        verifyWrapper artifactPath wrapper
-        IO.println (toString addr)
-        return 0
-      catch e => IO.eprintln s!"ignored distributed cache: {e}"
-  let binary ← rustHost "ix-prover" "ix-prover" "IX_PROVER_HOST" options.device
-  let validator := (Ix.Claim.validatorOf claim).toNat
-  IO.FS.withTempDir fun dir => do
-    let mut workers := #[]
-    for i in [:owners.size] do
-      let io ← IO.ofExcept (distributedStreams env claim tree scopes[i]! (i == 0))
-      let input := dir / s!"worker-{i}.ixi"
-      IO.FS.writeBinFile input (invocation args io)
-      workers := workers.push (Json.mkObj [("input", toJson input.toString),
-        ("owned", toJson (owners[i]!.map fun a =>
-          binding.address.hash.data.map UInt8.toNat ++ #[validator] ++ a.hash.data.map UInt8.toNat))])
-    let publicPath := dir / "invocation.ixi"
-    IO.FS.writeBinFile publicPath (invocation args default)
-    let spec := Json.mkObj [("invocation", toJson publicPath.toString), ("workers", toJson workers),
-      ("exec_jobs", toJson (min jobs owners.size)), ("exec_only", toJson (p.hasFlag "exec-only")),
-      ("texray", toJson (p.hasFlag "texray")),
-      ("cells", toJson (((p.flag? "cells").map (·.as! Nat)).getD 0))]
-    let specPath := dir / "distributed.json"
-    let optionPath := dir / "options.json"
-    let proofPath := dir / "proof"
-    IO.FS.writeFile specPath spec.compress
-    IO.FS.writeFile optionPath options.json.compress
-    let child ← IO.Process.spawn {
-      cmd := binary
-      args := #["distributed", artifactPath, specPath.toString, proofPath.toString, optionPath.toString]
-      env := #[("RAYON_NUM_THREADS", some (toString options.threads))]
-      stdout := .inherit, stderr := .inherit }
-    let code ← child.wait
-    let reportPath := System.FilePath.mk (proofPath.toString ++ ".report.json")
-    if let some flag := p.flag? "report" then
-      if ← reportPath.pathExists then IO.FS.writeFile (flag.as! String) (← IO.FS.readFile reportPath)
-    if code != 0 then return code
-    if let some flag := p.flag? "out-ixes" then
-      let report ← IO.ofExcept (Json.parse (← IO.FS.readFile reportPath))
-      let measured ← IO.ofExcept (report.getObjValAs? (Array Json) "workers")
-      let mut peaks := Array.replicate view.shards.size 0
-      for ((index, _), i) in indexed.zipIdx do
-        peaks := peaks.set! index ((measured[i]!.getObjValAs? Nat "record_bytes").toOption.getD 0)
-      let handle ← IO.ofExcept (Aiur.EnvHandle.fromIxe ixe)
-      let _ ← Ix.Shard.Check.emitRefinedManifest "aiur distributed" handle manifest (flag.as! String) #[] peaks 0
-    unless p.hasFlag "exec-only" do IO.println (toString (← persistClaim p claim proofPath))
-    return 0
-
-private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options : HostOptions)
+/-- `ix check`/`ix prove --exec-only` over a manifest: each selected shard
+executed (and with `plan` planned) statelessly. Lean selects each claim; the
+prover rebuilds the advice from the environment Lean loaded
+(`Ix.Check.loadBoundIxe`) and rejects the request unless it recomputes the
+same claim. -/
+private def runManifest (p : Cli.Parsed) (artifactPath : String) (options : HostOptions)
     (mode ixe manifest : String) (jobs : Nat) : IO UInt32 := do
-  -- Match the legacy RSS window, including environment loading and the host.
-  if p.hasFlag "json" then TracingTexray.startSampler
-  let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
+  let (env, handle) ← phase "env load" fun _ => Ix.Check.loadBoundIxe ixe
   let assumeBinding := p.hasFlag "assume-binding"
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
-  let some (owners, graph) ← Ix.Shard.coveredOwnersWithGraph env view.shards | throw (IO.userError "invalid manifest coverage")
+  unless ← phase "manifest coverage" fun _ => Ix.Shard.shardsCover env view.shards do
+    throw (IO.userError "invalid manifest coverage")
   if p.hasFlag "shard" && p.hasFlag "shards" then throw (IO.userError "choose --shard or --shards")
   let selected ← match (p.flag? "shard").map (·.as! Nat), (p.flag? "shards").map (·.as! String) with
     | some k, _ => pure #[k]
@@ -583,108 +408,115 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
     for k in selected do
       IO.println s!"shard {k}: {view.shards[k]!.size} blocks; RAM reservation {options.ram} bytes"
     return 0
+  -- One environment pass assigns the selected shards' constants; refined
+  -- parts partition their parent's constants instead of rescanning.
+  let ownedSelected ← phase "owned constants" fun _ =>
+    pure (Ix.Shard.ownedConstsPer env (selected.map (view.shards[·]!)))
+  let ownedOf : Std.HashMap Nat (Array Address) := (selected.zip ownedSelected).foldl
+    (fun m (k, owned) => m.insert k owned) {}
+  let formalEnv ← phase "formal env" fun _ => FormalProver.Env.ofHandle handle
   let jobs := max 1 (min jobs selected.size)
-  -- every shard's owned constants in one pass over the environment; a split part's are
-  -- divided from its shard's (`Ix.Shard.Check.cutOwned`)
-  let inputs ← IO.ofExcept (ShardWitnessInputs.ofEnv env assumeBinding)
   -- `--json` writes one benchmark results row (`Ix.Benchmark.Results`) for
-  -- `ix bench run --backend aiur-sharded-env`; its peak covers the hosts.
-  -- The legacy batch built its backend inside the timer too. Include shared
-  -- controller startup once, and report it separately for attribution.
+  -- `ix bench run --backend aiur-sharded-env`; its peak covers the prover.
+  if p.hasFlag "json" then TracingTexray.startSampler
   let start ← IO.monoMsNow
-  let drive (options : HostOptions) : IO UInt32 := do
-    let setupMs := (← IO.monoMsNow) - start
-    let capacity ← if mode == "prove" && options.resident.isSome then
-        pure (jobs + (← executionJobs p jobs)) else pure jobs
-    -- Retain each part's source offset: a later sibling can finish a wave
-    -- before an earlier sibling's children, but manifest order must not change.
-    let mut wave := selected.map fun k => (k, 0, view.shards[k]!, owners[k]!)
-    let mut settled : Array (Array (Nat × PartResult)) := Array.replicate view.shards.size #[]
-    let mut elapsedMs := 0
-    let mut waves := 0
-    let mut executionSeconds := 0.0
-    let mut planningSeconds := 0.0
-    let mut stopped : Std.HashSet Nat := {}
-    while !wave.isEmpty do
-      let completed ← boundedMap capacity wave fun members (k, offset, blocks, owned) => do
-        let options := options.forWave jobs members
-        if owned.isEmpty then return (k, offset, blocks, owned, { : JobResult })
-        let (claim, ixiBytes) ← IO.ofExcept (buildOwnedShardInvocation env graph inputs owned)
-        let result ← one p artifactPath binary options mode claim (.rawIxi ixiBytes) s!"shard {k} ({blocks.size} blocks)"
-        return (k, offset, blocks, owned, result)
-      -- Match the legacy benchmark: time the initial batch, then account for
-      -- all split/re-execution waves separately in check-total-time.
-      if waves == 0 then elapsedMs := (← IO.monoMsNow) - start
-      wave := #[]
-      for (k, offset, blocks, owned, result) in completed do
-        executionSeconds := executionSeconds +
-          (result.report.getObjValAs? Float "execution_seconds").toOption.getD 0
-        planningSeconds := planningSeconds +
-          (result.report.getObjValAs? Float "planning_seconds").toOption.getD 0
-        let canSplit := (result.report.getObjValAs? Bool "can_split").toOption.getD true
-        if result.code == 75 && canSplit && blocks.size > 1 && !p.hasFlag "trace-shards" then
-          let parts := (result.report.getObjVal? "plan" >>= fun j => j.getObjValAs? Nat "suggested_parts").toOption.getD 2
-          let cut := Ix.Shard.Check.cutOwned env blocks owned parts
-          IO.println s!"[aiur] shard {k}: splitting into {cut.size} parts after resource planning"
-          let mut offset := offset
-          for (b, o) in cut do
-            wave := wave.push (k, offset, b, o)
-            offset := offset + b.size
-        else
-          if result.code == 75 then
-            IO.eprintln s!"shard {k}: cannot fit budget; {if canSplit then "increase the RAM budget or refine the environment" else "increase the RAM budget"}"
-          settled := settled.modify k (·.push (offset, { blocks, result, constants := owned.size }))
-          if result.code != 0 && !p.hasFlag "keep-going" then stopped := stopped.insert k
-      wave := wave.filter fun (k, _, _, _) => !stopped.contains k
-      waves := waves + 1
-    let totalMs := (← IO.monoMsNow) - start
-    let results := selected.map fun k => (k, (settled[k]!.qsort (·.1 < ·.1)).map (·.2))
-    let failures := results.foldl (fun n (_, parts) => n + parts.countP (·.result.code != 0)) 0
-    let (refinements, measured) := Ix.Shard.Check.refinementsOfRuns view.shards.size
-      (results.map fun (k, parts) => (k, parts.map fun r => (r.blocks, r.result.peak)))
-    if let some flag := p.flag? "out-ixes" then
-      let handle ← IO.ofExcept (Aiur.EnvHandle.fromIxe ixe)
-      let _ ← Ix.Shard.Check.emitRefinedManifest "aiur" handle manifest (flag.as! String) refinements measured failures
-    let leafReports := results.map fun (k, parts) =>
-      let reports := parts.map fun (part : PartResult) => Json.mkObj [
-        ("blocks", toJson (part.blocks.map toString)), ("status", toJson part.result.code.toNat),
-        ("proof", toJson (part.result.address.map toString)), ("report", part.result.report)]
-      Json.mkObj [("shard", toJson k), ("parts", toJson reports)]
-    let name := ((p.flag? "json-name").map (·.as! String)).getD "env"
-    let report := Json.mkObj [("schema", toJson "ix-formal-run/1"), ("failures", toJson failures),
-      ("name", toJson name),
-      ("jobs", toJson jobs), ("options", options.json), ("leaves", toJson leafReports),
-      ("engine", toJson "formal-bytecode"), ("split_waves", toJson (waves - 1)),
-      ("check_seconds", toJson (elapsedMs.toFloat / 1000.0)),
-      ("total_seconds", toJson (totalMs.toFloat / 1000.0)),
-      ("execution_work_seconds", toJson executionSeconds),
-      ("planning_work_seconds", toJson planningSeconds),
-      ("setup_seconds", toJson (setupMs.toFloat / 1000.0))]
-    if let some flag := p.flag? "report" then IO.FS.writeFile (flag.as! String) report.pretty
-    if let some flag := p.flag? "json" then
-      let constants := results.foldl (fun n (_, parts) => parts.foldl (· + ·.constants) n) 0
-      let leaves := results.foldl (fun n (_, parts) => n + parts.size) 0
-      let costs := results.flatMap fun (_, parts) => parts.map fun part =>
-        (part.result.report.getObjValAs? Nat "fft-cost").toOption
-      let fftFields := if costs.all Option.isSome then
-          [("fft-cost", toJson (costs.foldl (fun n c => n + c.getD 0) 0))] else []
-      let secs := elapsedMs.toFloat / 1000.0
-      let throughput := if elapsedMs > 0 then constants.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
-      Ix.Benchmark.Results.writeRow (flag.as! String) name
-        (if failures == 0 then "ok" else "rejected")
-        (fftFields ++ [("engine", toJson "formal-bytecode"),
-         ("constants", toJson constants), ("shards", toJson leaves),
-         ("check-time", Ix.Benchmark.Results.jsonRound 3 secs),
-         ("check-total-time", Ix.Benchmark.Results.jsonRound 3 (totalMs.toFloat / 1000.0)),
-         ("setup-time", Ix.Benchmark.Results.jsonRound 3 (setupMs.toFloat / 1000.0)),
-         ("execution-work-time", Ix.Benchmark.Results.jsonRound 3 executionSeconds),
-         ("planning-work-time", Ix.Benchmark.Results.jsonRound 3 planningSeconds),
-         ("throughput", Ix.Benchmark.Results.jsonRound 2 throughput),
-         ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))])
-      if failures != 0 then return Ix.Benchmark.Results.exitRejected
-    if failures != 0 then IO.eprintln s!"[aiur] {failures} shard part(s) failed"
-    return if failures == 0 then 0 else 1
-  withController p #[(artifactPath, "ixvm")] options jobs drive mode
+  let results ← boundedMap jobs selected fun members k => do
+    let options := options.forWave jobs members
+    let mut pending := #[(view.shards[k]!, ownedOf.getD k #[])]
+    let mut settled : Array PartResult := #[]
+    while !pending.isEmpty do
+      let (blocks, owned) := pending.back!
+      pending := pending.pop
+      if owned.isEmpty then
+        settled := settled.push { blocks, result := {} }
+        continue
+      let (claim, _) ← phase s!"claim ({owned.size} constants)" fun _ =>
+        IO.ofExcept (shardCheckEnvClaimTrees env owned assumeBinding)
+      let result ← one p artifactPath options mode claim (fun _ => shardRequest formalEnv blocks claim)
+        s!"shard {k} ({blocks.size} blocks)"
+      let canSplit := (result.report.getObjValAs? Bool "can_split").toOption.getD true
+      if result.code == 75 && canSplit && blocks.size > 1 && !p.hasFlag "trace-shards" then
+        let parts := (result.report.getObjVal? "plan" >>= fun j => j.getObjValAs? Nat "suggested_parts").toOption.getD 2
+        let cut := Ix.Shard.Check.cutBlocks blocks parts
+        IO.println s!"[aiur] shard {k}: splitting into {cut.size} parts after resource planning"
+        pending := pending ++ (cut.zip (Ix.Shard.partitionOwned env owned cut)).reverse
+      else
+        if result.code == 75 then
+          IO.eprintln s!"shard {k}: cannot fit budget; {if canSplit then "increase --max-ram or refine the environment" else "increase the RAM share (fewer --jobs or a larger budget)"}"
+        settled := settled.push { blocks, result, constants := owned.size }
+        if result.code != 0 && !p.hasFlag "keep-going" then pending := #[]
+    return (k, settled)
+  let elapsedMs := (← IO.monoMsNow) - start
+  let failures := results.foldl (fun n (_, parts) => n + parts.countP (·.result.code != 0)) 0
+  let (refinements, measured) := Ix.Shard.Check.refinementsOfRuns view.shards.size
+    (results.map fun (k, parts) => (k, parts.map fun r => (r.blocks, r.result.peak)))
+  if let some flag := p.flag? "out-ixes" then
+    let _ ← Ix.Shard.Check.emitRefinedManifest "aiur" handle manifest (flag.as! String) refinements measured failures
+  let leafReports := results.map fun (k, parts) =>
+    let reports := parts.map fun (part : PartResult) => Json.mkObj [
+      ("blocks", toJson (part.blocks.map toString)), ("status", toJson part.result.code.toNat),
+      ("proof", toJson (part.result.address.map toString)), ("report", part.result.report)]
+    Json.mkObj [("shard", toJson k), ("parts", toJson reports)]
+  let name := ((p.flag? "json-name").map (·.as! String)).getD "env"
+  let report := Json.mkObj [("schema", toJson "ix-formal-run/1"), ("failures", toJson failures),
+    ("name", toJson name),
+    ("jobs", toJson jobs), ("options", options.json), ("leaves", toJson leafReports)]
+  if let some flag := p.flag? "report" then IO.FS.writeFile (flag.as! String) report.pretty
+  if let some flag := p.flag? "json" then
+    let constants := results.foldl (fun n (_, parts) => parts.foldl (· + ·.constants) n) 0
+    let leaves := results.foldl (fun n (_, parts) => n + parts.size) 0
+    let costs := results.flatMap fun (_, parts) => parts.map fun part =>
+      (part.result.report.getObjValAs? Nat "fft-cost").toOption
+    let fftFields := if costs.all Option.isSome then
+        [("fft-cost", toJson (costs.foldl (fun n c => n + c.getD 0) 0))] else []
+    let secs := elapsedMs.toFloat / 1000.0
+    let throughput := if elapsedMs > 0 then constants.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
+    Ix.Benchmark.Results.writeRow (flag.as! String) name
+      (if failures == 0 then "ok" else "rejected")
+      (fftFields ++ [("constants", toJson constants), ("shards", toJson leaves),
+       ("check-time", Ix.Benchmark.Results.jsonRound 3 secs),
+       ("throughput", Ix.Benchmark.Results.jsonRound 2 throughput),
+       ("peak-rss", toJson (← TracingTexray.peakTreeRssBytes))])
+    if failures != 0 then return Ix.Benchmark.Results.exitRejected
+  return if failures == 0 then 0 else 1
+
+/-- `ix prove --ixe --ixes` without aggregation: the selected claims proven
+on the aggregate controller, CPU lanes (`--jobs`) or one CUDA device, with
+legacy's claim rules (an oversized claim is bisected; the index resumes;
+`--out-ixes` is the partition proven). Prints `shard-id address` per claim. -/
+private def proveManifest (p : Cli.Parsed) (artifactPath : String) (options : HostOptions)
+    (ixe manifest : String) (jobs : Nat) : IO UInt32 := do
+  if p.hasFlag "keep-going" then
+    throw (IO.userError "--keep-going: the controller stops at its first failure; rerun to resume")
+  let (_, handle) ← Ix.Check.loadBoundIxe ixe
+  let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
+  if p.hasFlag "shard" && p.hasFlag "shards" then throw (IO.userError "choose --shard or --shards")
+  let selected ← match (p.flag? "shard").map (·.as! Nat), (p.flag? "shards").map (·.as! String) with
+    | some k, _ => pure (some #[k])
+    | _, some s => some <$> IO.ofExcept (Ix.Shard.Check.parseShardSelection s)
+    | _, _ => pure none
+  let ids ← selected.mapM fun ks => ks.mapM fun k => do
+    let some id := view.shardIds[k]? | throw (IO.userError s!"shard {k} out of range")
+    pure id
+  let lanes := if options.device.isSome then 1 else max 1 jobs
+  let maxRam := match (p.flag? "max-ram").map (·.as! Nat) with
+    | some gib => gib * 1024^3 / lanes
+    | none => 0
+  let config := Json.mkObj [("manifest", toJson manifest),
+    ("ixvm_artifact", toJson artifactPath), ("aggr_artifact", toJson (← aggregationArtifact p)),
+    ("lanes", toJson lanes), ("device", toJson options.device), ("max_ram_bytes", toJson maxRam),
+    ("exec_jobs", toJson (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0)),
+    ("structural_above", toJson (0 : Nat)), ("use_index", toJson !(p.hasFlag "no-index")),
+    ("out_manifest", toJson ((p.flag? "out-ixes").map (·.as! String))),
+    ("assume_binding", toJson (p.hasFlag "assume-binding")),
+    ("claims_only", toJson true), ("select", toJson ids), ("options", options.json)]
+  let lines ← FormalProver.proveLanes handle config.compress
+  for line in lines.splitOn "\n" do
+    unless line.isEmpty do IO.println line
+  if let some flag := p.flag? "report" then
+    IO.FS.writeFile (flag.as! String) (Json.mkObj [("schema", toJson "ix-formal-run/1"),
+      ("failures", toJson (0 : Nat)), ("claims", toJson (lines.splitOn "\n"))]).pretty
+  return 0
 
 def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
   rejectFlags p #["lanes"]
@@ -693,19 +525,18 @@ def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
   for flag in #["direct-joins", "structural-above", "range", "no-cache", "aggr-artifact",
       "binding-proof"] do
     if p.hasFlag flag then throw (IO.userError s!"--{flag} requires --aggregate or --lanes")
-  if p.hasFlag "texray" && (!prove || p.hasFlag "exec-only") && !p.hasFlag "distributed" then
-    throw (IO.userError "--texray requires proving or --distributed")
-  if p.hasFlag "cells" && !p.hasFlag "distributed" then throw (IO.userError "--cells requires --distributed")
+  if p.hasFlag "texray" && (!prove || p.hasFlag "exec-only") then
+    throw (IO.userError "--texray requires proving")
   let ixe := (p.flag? "ixe").map (·.as! String)
   let manifest := (p.flag? "ixes").map (·.as! String)
-  -- Reject manifest-only flags before any artifact export or host build.
+  -- Reject manifest-only flags before any artifact export.
   if manifest.isSome && ixe.isNone then throw (IO.userError "--ixes requires --ixe")
   if manifest.isNone then
-    for flag in #["shard", "shards", "out-ixes", "report", "plan-only", "distributed", "exec-jobs", "exec-ram",
+    for flag in #["shard", "shards", "out-ixes", "report", "plan-only", "exec-jobs",
         "trace-shards", "json", "json-name"] do
       if p.hasFlag flag then throw (IO.userError s!"--{flag} requires --ixe and --ixes")
-  let requestedJobs ← jobCount p (if !prove && manifest.isSome then 0 else 1)
-  let jobs ← if p.hasFlag "exec-only" && p.hasFlag "exec-jobs" && !p.hasFlag "distributed" then
+  let requestedJobs ← jobCount p
+  let jobs ← if p.hasFlag "exec-only" && p.hasFlag "exec-jobs" then
       executionJobs p requestedJobs
     else pure requestedJobs
   -- The resident checker admits records against a shared pool. Its destination
@@ -714,31 +545,32 @@ def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
   let artifactPath ← if p.hasFlag "plan-only" then pure "" else artifact p
   let mode := if prove && !p.hasFlag "exec-only" then "prove"
     else if prove || p.hasFlag "ram-budget" then "plan" else "execute"
-  let binary ← if p.hasFlag "plan-only" then pure ""
-    else rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST" options.device
-  -- Refresh the resident host before the measured manifest/RSS window so
-  -- cached executables use this checkout's protocol and compilation is not timed.
-  if manifest.isSome && !p.hasFlag "plan-only" then
-    let _ ← rustHost "ix-prover" "ix-prover" "IX_PROVER_HOST" options.device (refresh := true)
-    pure ()
   match ixe, manifest with
   | some ixe, some manifest =>
-    if p.hasFlag "distributed" then runDistributed p artifactPath options ixe manifest
-    else runManifest p artifactPath binary options mode ixe manifest jobs
+    if mode == "prove" && !p.hasFlag "plan-only" then
+      proveManifest p artifactPath options ixe manifest jobs
+    else runManifest p artifactPath options mode ixe manifest jobs
   | _, some _ => throw (IO.userError "--ixes requires --ixe")
   | _, none =>
     if jobs != 1 then throw (IO.userError "--jobs currently requires --ixe and --ixes")
-    let run options := Ix.Check.forEachClaim ixe ((p.flag? "claim").map (·.as! String))
-        (p.variableArgsAs! String).toList (p.hasFlag "keep-going") "aiur" true
-        (fun claim _ target label => return (← one p artifactPath binary options mode claim target label).code)
-        (p.hasFlag "assume-binding")
-    if mode == "prove" then withController p #[(artifactPath, "ixvm")] options 1 run
-    else run options
+    -- With `--ixe` every claim shares one bound environment, copied into the
+    -- prover once; a compiled environment differs per target.
+    let shared ← IO.mkRef (none : Option FormalProver.Env)
+    Ix.Check.forEachClaim ixe ((p.flag? "claim").map (·.as! String))
+      (p.variableArgsAs! String).toList (p.hasFlag "keep-going") "aiur" false
+      (fun claim handle target label => do
+        let env ← match ← shared.get, handle with
+          | some env, _ => pure (some env)
+          | none, some handle => do
+            let env ← FormalProver.Env.ofHandle handle
+            if ixe.isSome then shared.set (some env)
+            pure (some env)
+          | none, none => pure none
+        return (← one p artifactPath options mode claim (fun _ => targetRequest env claim target) label).code)
+      (p.hasFlag "assume-binding")
 
 def verify (p : Cli.Parsed) : IO UInt32 := do
   rejectFlags p #["aggregate", "structural-above"]
-  if p.hasFlag "distributed" && (p.hasFlag "shard" || !p.hasFlag "ixe" || !p.hasFlag "ixes") then
-    throw (IO.userError "--distributed verification requires --ixe and --ixes, without --shard")
   let proofs := p.variableArgsAs! String
   let ixe := (p.flag? "ixe").map (·.as! String)
   let manifest := (p.flag? "ixes").map (·.as! String)
@@ -763,13 +595,9 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       let prepared ← IO.ofExcept (Aggr.Reference.prepareShards env #[blocks] #[] assumeBinding)
       expected := prepared.map (·.claim)
     | none =>
-      if p.hasFlag "distributed" then
-        let some tree := envCanonicalTree env | throw (IO.userError "empty distributed environment")
-        expected := #[.checkEnv ctx tree.root none]
-      else
-        let (view, _) ← IO.ofExcept (view.pruneEmpty env)
-        let prepared ← IO.ofExcept (Aggr.Reference.prepareShards env view.shards #[] assumeBinding)
-        expected := prepared.map (·.claim)
+      let (view, _) ← IO.ofExcept (view.pruneEmpty env)
+      let prepared ← IO.ofExcept (Aggr.Reference.prepareShards env view.shards #[] assumeBinding)
+      expected := prepared.map (·.claim)
   | none, none =>
     if shard.isSome || p.hasFlag "record" || bindingProof?.isSome then
       throw (IO.userError "--shard/--record/--binding-proof requires --ixe and --ixes")

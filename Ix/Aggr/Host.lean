@@ -80,19 +80,25 @@ def assumptionCandidates (left right : CheckEnvTrees) : Array Address :=
   | none => #[]
   | some tree => tree.leaves
 
-/-- True when `candidate` is discharged by the opposite child's subjects:
-a left-only assumption by `right.subjects`, or a right-only assumption by
-`left.subjects`. Shared assumptions (`candidate ∈ left.assumptions ∩ right.assumptions`)
-and self-assumptions cannot be discharged. -/
-private def isCrossDischarged (left right : CheckEnvTrees) (candidate : Address) : Bool :=
-  let inLeftAsm := left.assumptions.any (·.contains candidate)
-  let inRightAsm := right.assumptions.any (·.contains candidate)
-  if inLeftAsm && !inRightAsm then
-    right.subjects.contains candidate
-  else if inRightAsm && !inLeftAsm then
-    left.subjects.contains candidate
-  else
-    false
+/-- The predicate that is true when a candidate is discharged by the opposite
+child's subjects: a left-only assumption by `right.subjects`, or a right-only
+assumption by `left.subjects`. Shared assumptions
+(`candidate ∈ left.assumptions ∩ right.assumptions`) and self-assumptions
+cannot be discharged. The leaf sets are hashed once per fold, since tree
+`contains` is linear in the leaf count per candidate. -/
+private def crossDischarged (left right : CheckEnvTrees) : Address → Bool :=
+  let toSet (addrs : Array Address) : Std.HashSet Address :=
+    addrs.foldl (fun set addr => set.insert addr) {}
+  let leftSubjects := toSet left.subjects.leaves
+  let rightSubjects := toSet right.subjects.leaves
+  let leftAsm := toSet (assumptionLeaves left)
+  let rightAsm := toSet (assumptionLeaves right)
+  fun candidate =>
+    let inLeftAsm := leftAsm.contains candidate
+    let inRightAsm := rightAsm.contains candidate
+    if inLeftAsm && !inRightAsm then rightSubjects.contains candidate
+    else if inRightAsm && !inLeftAsm then leftSubjects.contains candidate
+    else false
 
 /-- Canonical pair fold (`aggr_pair`):
 
@@ -110,8 +116,8 @@ subject disjointness.) -/
 def join (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjectLeaves := left.subjects.leaves ++ right.subjects.leaves
   let subjects := (Ix.AssumptionTree.canonical subjectLeaves).get!
-  let remaining := assumptionCandidates left right |>.filter
-    (fun addr => !isCrossDischarged left right addr)
+  let discharged := crossDischarged left right
+  let remaining := assumptionCandidates left right |>.filter (fun addr => !discharged addr)
   { ctx := left.ctx, subjects, assumptions := Ix.AssumptionTree.canonical remaining }
 
 /-- Structural fold. Subjects are committed in O(1) as a free-form node over
@@ -119,8 +125,8 @@ the two child roots. Assumptions retain canonical set semantics and drop
 precisely those candidates discharged by the opposite child's subject tree. -/
 def joinStructural (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjects := Ix.AssumptionTree.join left.subjects right.subjects
-  let remaining := assumptionCandidates left right |>.filter
-    (fun addr => !isCrossDischarged left right addr)
+  let discharged := crossDischarged left right
+  let remaining := assumptionCandidates left right |>.filter (fun addr => !discharged addr)
   { ctx := left.ctx, subjects, assumptions := Ix.AssumptionTree.canonical remaining }
 
 /-- One channel-6 choice per structural-pair candidate. `some path` discharges

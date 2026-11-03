@@ -45,6 +45,18 @@ impl Executor {
     Ok(Self::Interpreter)
   }
 
+  /// Every executor compiled into this build.
+  pub fn available() -> &'static [&'static str] {
+    #[cfg(feature = "native")]
+    {
+      &["interpreter", "native-ixvm", "native-verifier", "native-aggregation"]
+    }
+    #[cfg(not(feature = "native"))]
+    {
+      &["interpreter"]
+    }
+  }
+
   pub fn name(self) -> &'static str {
     match self {
       Self::Interpreter => "interpreter",

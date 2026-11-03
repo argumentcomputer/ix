@@ -1,30 +1,26 @@
 # Tuning the certified grouping layout
 
-Measured on 2026-10-27, on `migration/formal-aiur`, against `ade9330c`.
-Both application policies now use new Aiur's physical functions and measured
-row counts. They replace the direct translation of legacy's grouping policy.
-The source programs, bytecode, hints, accelerators, ROMs and fixed tables are
-unchanged. This is a grouping/compiler change.
+Historical record: measured on 2026-10-27, on `migration/formal-aiur`, against
+`ade9330c`. Both application policies use formal Aiur's physical functions and
+measured row counts, replacing the first, directly translated grouping policy
+of the [grouping report](formal-aiur-grouping-comparison.md). The source
+programs, bytecode, hints, accelerators, ROMs and fixed tables are unchanged.
+This is a grouping/compiler change.
 
 The [CPU scaling follow-up](formal-aiur-trace-scaling.md) measures 1, 8, 32 and
-64 threads. New Aiur scales better than legacy on IxVM, but not on the real
-recursive verifier; the results below all use eight threads.
+64 threads; the results below all use eight threads.
 
 ## Results
 
 Widths include provider multiplicities, ROMs and fixed tables. Stage two is
-counted in base-field columns. Legacy sizes are from the
-[previous comparison](formal-aiur-grouping-comparison.md); legacy was not
-rebenchmarked for this change.
+counted in base-field columns.
 
 | Application | Version | Circuits | Stage-one columns | Stage-two columns |
 |---|---|---:|---:|---:|
-| IxVM | Previous new Aiur | 235 | 9,650 | 4,194 |
-| IxVM | Tuned new Aiur | 162 | 8,018 | 3,436 |
-| IxVM | Legacy grouped | 222 | 9,163 | 3,616 |
-| Recursive verifier | Previous new Aiur | 91 | 4,109 | 1,630 |
-| Recursive verifier | Tuned new Aiur | 68 | 3,199 | 1,412 |
-| Recursive verifier | Legacy grouped | 84 | 3,880 | 1,590 |
+| IxVM | Previous | 235 | 9,650 | 4,194 |
+| IxVM | Tuned | 162 | 8,018 | 3,436 |
+| Recursive verifier | Previous | 91 | 4,109 | 1,630 |
+| Recursive verifier | Tuned | 68 | 3,199 | 1,412 |
 
 IxVM loses **16.9%** of its main columns; the verifier loses **22.1%**.
 Function circuits fall from 214 to 141 and from 77 to 54, respectively.

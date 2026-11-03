@@ -62,6 +62,9 @@ around Cargo + snapshotting so concurrent variants never race on
 
 The archives are built when native targets need them. Keeping Rust linkage on
 `Ix` keeps `ix_rs` out of the certified kernel's build.
+
+Every archive contains the formal Aiur prover library (`ix-prover`), which the
+`ix` CLI runs in process.
 -/
 section FFI
 
@@ -308,6 +311,11 @@ lean_exe «formal-aggregate-tests» where
 `Scripts/CheckFormal.lean`. -/
 lean_exe «formal-checks» where
   root := `Tests.FormalChecks
+/-- Fingerprint of the formal verify path; `tools/check-verify-path.sh`
+compares it with the pinned `tools/verify-path.fingerprint`. -/
+lean_exe «verify-path» where
+  root := `Tests.VerifyPath
+  supportInterpreter := true
 
 /-- Formal-package checks (`instance-symbols`, `ixvm-source`, and formal-package
 manual runners) that import the nested `Aiur`/`IxVM`/`MultiStark` proof packages

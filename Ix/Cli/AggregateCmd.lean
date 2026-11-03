@@ -41,18 +41,18 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "reprove-slot" : Nat; "Recompute exactly Stage 2 slot N from verified cached immediate children, bypassing that slot's cache entry."
     "jobs" : Nat;    "Maximum concurrent aggregate slots (Aiur default 1; 0 uses available cores). Budget and CPU threads are divided among jobs."
     "max-ram" : Nat; "Total in-flight RAM budget in GiB (Aiur default 85% of available memory). Aiur rejects slots that cannot fit through trace sharding."
-    "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 4096; 0 means every join)."
-    "direct-joins";  "Keep IxVM leaves raw until their first pair instead of wrapping first (non-default; substantially higher RAM)."
-    "trace-shards";  "Implied: every slot is proven as a batch of trace shards within its share of --max-ram (the budget divided by --jobs); a slot no shard count can fit fails the run. Accepted so older invocations keep working."
+    "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 0: every join)."
+    "direct-joins";  "Accepted for compatibility; the aggregate controller always joins claims directly."
+    "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."
     "exec-ahead" : Nat; "Slots executing ahead of the provers (default 1): a ready join executes and plans while the previous one proves, so one GPU prover never waits for an execution; each slot ahead holds its execution record. 0: each slot executes and proves on one worker, --jobs at a time."
     "wrap-root";     "Wrap the root proof, each wrap a proof that verifies the previous one, until the final proof is a single trace shard."
-    "binding-proof" : String; "A proof of the `binding` claim for the env's role binding (`ix prove-binding`). The shard claims (proven with `--assume-binding`) assume their binding, and the root discharges that condition once, after any wrap; the final claim is the one an aggregate of claims that validate their binding states."
-    "subtree" : Nat; "Prove only the plan subtree rooted at slot N (slot numbers as --plan-only prints them) from the proofs of the leaves under it, and print that slot's proof address; root validation and --wrap-root do not apply. The proof is published through the aggregate cache, where a later full run over every shard proof finds it and proves only what is above it. With --plan-only, print `subtree N shards: <ids>`, the --shards argument for `ix prove` over those leaves."
-    "range" : Nat;   "Wrap a shard proof of more than N trace shards as a range-sum tree — leaves verifying at most N shards each (--jobs at a time), joins, and a root with the wrap's statement — instead of one proof verifying every shard. 0 (default): wrap whole on Aiur."
+    "binding-proof" : String; "A proof of the `binding` claim for the env's role binding (`ix prove-binding`), as a file or store address. The shard claims (proven with `--assume-binding`) assume their binding, and the controller discharges that condition once, at the root and before --wrap-root wraps it; the final claim is the one an aggregate of claims that validate their binding states. With --subtree or --reprove-slot nothing is discharged: the printed proof still assumes the binding, and a later full run discharges it at the root."
+    "subtree" : Nat; "Prove only the plan subtree rooted at slot N (slot numbers as --plan-only prints them) from the proofs of the leaves under it, and print that slot's proof address; root validation and --wrap-root do not apply. The proof is published through the aggregate cache, where a later full run finds it and proves only what is above it, needing no proofs of the shards under it. With --plan-only, print `subtree N shards: <ids>`, the --shards argument for `ix prove` over those leaves."
+    "range" : Nat;   "Rejected: the aggregate controller never wraps a single claim; claims join directly."
     "report" : String; "Write summary JSON report to this path."
 
   ARGS:
-    ...proofs : String; "Persisted shard-proof wrapper addresses, in any order (one per nonempty shard, except --plan-only or replay with aggregate children)."
+    ...proofs : String; "Persisted proof wrapper addresses, in any order: shard claim proofs, and optionally aggregate proofs of plan slots. A claim proof is needed only for a shard that no supplied or verified cached aggregate above it covers (none with --plan-only or replay with aggregate children)."
 ]
 
 end

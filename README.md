@@ -37,7 +37,9 @@ transactions over proofs.
 The formal Aiur compiler and runtime live in separate Lean and Rust packages
 (`Aiur/`, `IxVM/`, `MultiStark/` and `crates/`). See
 [the migration guide](docs/formal-aiur-migration.md) for their build commands,
-what the Aiur proofs cover and what they trust.
+what the Aiur proofs cover and what they trust, and
+[the controller design](docs/formal-aiur-unified-controller.md) for how claims
+and their aggregation are proven.
 
 ## Use Cases
 
@@ -206,16 +208,18 @@ cells locally, and `!benchmark` runs them on a PR — see
 
 Aiur can use multi-stark's first-party CUDA backend. CUDA is opt-in: ordinary
 Cargo and Lake builds remain CPU-only and do not require a CUDA toolkit or
-runtime. Build the CUDA hosts once, then select a device for proving:
+runtime. Build `ix` with `IX_CUDA=1` (also accepts `true` or `yes`), then
+select a device for the proving command:
 
 ```sh
-ix prepare --cuda
+IX_CUDA=1 lake build ix
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out InitStd.ixe
-ix prove --ixe InitStd.ixe --gpu-device 0 Nat.add_comm
+lake exe ix prove --gpu-device 0 --ixe InitStd.ixe Vector.extract_append
 ```
 
-`IX_CUDA=1` selects the CUDA hosts too (also `true` or `yes`; the device comes
-from `MULTI_STARK_CUDA_DEVICE`, otherwise zero). Rust consumers can instead
+CUDA is a build-time selection. At run time `--gpu-device N`, `--lanes` or
+`IX_CUDA=1` requests it (without `--gpu-device`, the device comes from
+`MULTI_STARK_CUDA_DEVICE`, otherwise zero). Rust consumers can instead
 enable the `cuda` feature on `aiur` or `ix-ffi`. The backend requires an NVIDIA
 GPU and a CUDA toolkit with `nvcc`; build and architecture controls are
 documented in the multi-stark repository. It keeps the Goldilocks/BLAKE3
@@ -236,12 +240,11 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 
 - Build and test the Ix library with `lake build` and `lake test`
 - Install the `ix` binary with `lake run install`, or run with `lake exe ix`.
-  The proving commands build Rust hosts and export Aiur artifacts in the
-  checkout `ix` was built in. An installed copy finds that checkout through
-  `IX_ROOT` (or by running inside it), or takes prebuilt inputs:
+  The prover runs inside `ix`; the proving commands export Aiur artifacts in
+  the checkout `ix` was built in. An installed copy finds that checkout through
+  `IX_ROOT` (or by running inside it), or takes prebuilt artifacts:
   `--aiur-artifact`/`IX_AIUR_ARTIFACT`, `--aggr-artifact`/`IX_AGGR_ARTIFACT` and
-  the `IX_AIUR_HOST`, `IX_PROVER_HOST` and `IX_STARK_HOST` executables. Without
-  either it stops with an error naming them.
+  `--verifier-artifact`/`IX_VERIFIER_ARTIFACT`.
 
 ### Compiling Lean to Ixon
 

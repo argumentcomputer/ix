@@ -201,11 +201,12 @@ private def shardStatement (env : Ixon.Env) (owned : Array Address)
   Aggr.CheckEnvTrees.ofClaim claim trees
 
 /-- Reproduce the flat/structural statement fold from a coverage-validated
-manifest. -/
-def expectedFromManifest (env : Ixon.Env)
+manifest: the statement of every slot of the fold plan, in plan order, the
+root last. -/
+def expectedSlotsFromManifest (env : Ixon.Env)
     (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat)
     (assumeBinding : Bool := false) :
-    Except String Aggr.CheckEnvTrees := do
+    Except String (Array Aggr.CheckEnvTrees) := do
   let (view, counts) ← view.pruneEmpty env
   let owned := Ix.Shard.ownedConstsPer env view.shards
   let plan ← Aggr.Reference.schedulePlan view.aggregationTree.foldPlan
@@ -226,6 +227,14 @@ def expectedFromManifest (env : Ixon.Env)
         leftStatement.joinStructural rightStatement
       else
         leftStatement.join rightStatement
+  pure slots
+
+/-- The root statement of `expectedSlotsFromManifest`. -/
+def expectedFromManifest (env : Ixon.Env)
+    (view : Ix.Shard.IxesManifestView) (structuralAbove : Nat)
+    (assumeBinding : Bool := false) :
+    Except String Aggr.CheckEnvTrees := do
+  let slots ← expectedSlotsFromManifest env view structuralAbove assumeBinding
   let some root := slots.back? | throw "aggregate manifest produced no root"
   pure root
 

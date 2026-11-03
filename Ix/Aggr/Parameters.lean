@@ -24,7 +24,7 @@ def RecursionParameters.cacheFriBytes (parameters : RecursionParameters) : ByteA
     MultiStark.u64le fri.numQueries ++ MultiStark.u64le fri.commitProofOfWorkBits ++
     MultiStark.u64le fri.queryProofOfWorkBits⟩
 
-def defaultStructuralAbove : Nat := 4096
+def defaultStructuralAbove : Nat := 0
 
 def aggregateGiB : Nat := 1024 * 1024 * 1024
 
