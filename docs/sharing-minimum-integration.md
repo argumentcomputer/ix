@@ -62,8 +62,8 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
    and compares the lengths at run time (`tiered.rs`, check 9).
 4. **There are three codecs.** Besides Lean (`IxC/Ixon/Codec.lean`, with the metadata and
    environment codecs in `Ix/Ixon.lean`) and Rust (`crates/ixon`), the IxVM
-   circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`, `Ix/IxVM/IxonSerialize.lean`),
-   generated into `crates/ixvm-codegen/src/aiur_ixvm.rs` by `lake exe ix codegen`. CI runs
+   circuit has its own codec (`LegacyIxVM/IxonDeserialize.lean`, `LegacyIxVM/IxonSerialize.lean`),
+   generated into `crates/ixvm-legacy-native/src/aiur_ixvm.rs` by `lake exe ix codegen`. CI runs
    `lake exe ix codegen --check`.
 5. **Metadata does not depend on the primary table's shape.** `ConstantMeta.metaSharing`,
    which no compiler writes now, is indexed directly, arena roots follow the unshared logical tree, and every consumer expands `Share` transparently.
@@ -120,15 +120,15 @@ and `decompile.rs` (`read_tagn0`). `get_expr` is the only byte-level expression 
 the other readers (`lazy.rs`, `catalog.rs`, `proof.rs`, `diff.rs`, `resource.rs`) decode
 expressions through it and skip constants by their length prefix.
 
-**IxVM**: `Ix/IxVM/IxonDeserialize.lean` reads with `get_tagn0`, `get_tagn2` and `get_tagn4`;
+**IxVM**: `LegacyIxVM/IxonDeserialize.lean` reads with `get_tagn0`, `get_tagn2` and `get_tagn4`;
 the one-byte case is one narrow row and the longer encodings share `get_tagn_tail` and
-`get_tagn_wide`. `Ix/IxVM/IxonSerialize.lean` writes with `put_tagn0/2/4`, `put_tagn_tail` and
+`get_tagn_wide`. `LegacyIxVM/IxonSerialize.lean` writes with `put_tagn0/2/4`, `put_tagn_tail` and
 `put_tagn_wide`. The circuit rejects what the hosts reject: invalid codes, values reaching
-`2^64` and truncation. The claim readers (`run_claim` in `Ix/IxVM/Kernel/Claim.lean`, the
+`2^64` and truncation. The claim readers (`run_claim` in `LegacyIxVM/Kernel/Claim.lean`, the
 aggregator's CheckEnv parser in `Ix/Aggr/Circuit.lean`) require object format 4; Resource
 (`E8 01`) decodes and is rejected explicitly, and Catalog (`E8 00`) has no arm. The
 assumption-tree header must be exactly `0xE2`. The circuit reads no `.ixe` header and no
-`ConstantMeta`. The generated Rust is `crates/ixvm-codegen/src/aiur_ixvm.rs` and
+`ConstantMeta`. The generated Rust is `crates/ixvm-legacy-native/src/aiur_ixvm.rs` and
 `aiur_ix_aggr.rs`; the suite `ixvm-tagn` holds the circuit codec to `Ixon.putTagN`/`getTagN`.
 
 `LazyConstant` header peeks (`Ix/Ixon.lean`, `lazy.rs`) need no change: a non-Muts constant
@@ -335,7 +335,7 @@ the claim" ("catalog: …" likewise). The in-circuit claim readers require objec
 | catalog claim digest | `Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs` (`catalog_claim_wire_bytes_pinned`) | `claim` suite, `ixon` tests | the serializers' output |
 | env-bytes hash | `crates/compile/src/graph.rs` | `ix-compile` `graph::tests::setup_scan_preserves_compiled_fixture_bytes` | rerun and pin |
 | independent expression bytes | `Tests/Fixtures/ixon-v4/expressions.txt` | `ixon-v4-tests`; `ixon` `v4_independent_golden_expressions` | written by hand from the specification (`text.tsv` holds no bytes) |
-| IxVM FFT-cost pins | `Tests/Ix/IxVM.lean` (kernel checks), the shard pin in `Tests/Main.lean` | ignored runner `ixvm` | rerun and pin |
+| IxVM FFT-cost pins | `Tests/Ix/LegacyIxVM.lean` (kernel checks), the shard pin in `Tests/Main.lean` | ignored runner `ixvm` | rerun and pin |
 
 Not regenerated, because their inputs are not available in the development environment:
 

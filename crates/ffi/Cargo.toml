@@ -8,20 +8,17 @@ license.workspace = true
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
-aiur = { workspace = true }
 anyhow = { workspace = true }
 bignat = { workspace = true }
 blake3 = { workspace = true }
 dashmap = { workspace = true, features = ["rayon"] }
 indexmap = { workspace = true, features = ["rayon"] }
 itertools = { workspace = true }
-ixvm-codegen = { workspace = true }
 ix-bench = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
 lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
-multi-stark = { workspace = true }
 mimalloc = { workspace = true }
 num-bigint = { workspace = true }
 rayon = { workspace = true }
@@ -45,9 +42,9 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [features]
 default = []
-parallel = ["aiur/parallel"]
-cuda = ["aiur/cuda"]
-cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
+parallel = []
+cuda = []
+cuda-trace-codegen = ["cuda"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 

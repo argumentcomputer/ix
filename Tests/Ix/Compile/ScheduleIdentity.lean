@@ -1,7 +1,6 @@
 import Tests.Ix.Compile.ClosureHarness
 import Tests.Ix.Compile.ScheduleReference
 import Tests.Ix.Compile.ValidateAux
-import Tests.Ix.IxVM
 import Tests.Ix.Fixtures
 
 /-!

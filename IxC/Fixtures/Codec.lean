@@ -116,7 +116,7 @@ previous one ends, so every value has exactly one encoding and there is no
 nonminimal spelling to reject. The reader rejects exactly an invalid code
 (`f = 0, 2`), a 9-byte value reaching `2^64`, and truncation. The vectors are
 sharing's `Tests.Ixon.tagNUnits` (`Tests/Ix/Ixon.lean`) and the rejection
-vectors of `Tests/Ix/IxVM/TagN.lean`. -/
+vectors of `Tests/Ix/LegacyIxVM/TagN.lean`. -/
 
 /-- `(f, flag, value, bytes)`: the encodings of `Tests.Ixon.tagNUnits`, the
 first and last value of every rung, and `2^64 - 1` for each `f`. -/

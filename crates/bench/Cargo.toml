@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 serde_json = { workspace = true }
+libc = { workspace = true }
 tracing-texray = { workspace = true }
 
 [lints]

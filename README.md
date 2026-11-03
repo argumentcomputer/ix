@@ -34,6 +34,10 @@ transactions over proofs.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
 
+The formal Aiur compiler and runtime now live in separate Lean and Rust packages.
+See [the migration guide](docs/formal-aiur-migration.md) for their build commands
+and the boundary around the retained legacy implementation.
+
 ## Use Cases
 
 Our expectation is that Ix, and **zkPCC** in general, will allow applications to frictionlessly ship
@@ -164,7 +168,7 @@ Ix consists of the following core components:
   The compiler also includes a decompiler to convert `ixon` objects back into
   Lean programs (by preserving the alpha-relevant metadata in a separate ixon
   object and re-merging the computationally relevant and irrelevant parts).
-- The [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Ix/Aiur)
+- The [Aiur zkDSL](https://github.com/argumentcomputer/ix/tree/main/Aiur)
   which is a first-order functional programming language that generates
   multi-STARK circuits.
 - The IxVM (not yet released), which implements reduction and typechecking

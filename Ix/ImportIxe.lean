@@ -35,7 +35,7 @@ public meta import Ix.Replay
   - No compiled code either: consumer definitions that *use*
     materialized constants must be `noncomputable` (the LCNF backend
     has no signatures for them). Theorems, types, and specifications
-    work unrestricted; execution goes through IxVM (`#ixeval`), and
+    work unrestricted; execution goes through LegacyIxVM (`#ixeval`), and
     Lean-native compilation is the post-hoc decompile-then-LCNF path
     (plan D5).
 

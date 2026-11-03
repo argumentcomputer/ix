@@ -7,7 +7,6 @@
   all(target_os = "macos", target_arch = "aarch64")
 ))]
 pub mod _iroh;
-pub mod aiur;
 #[cfg(all(
   feature = "net",
   not(all(target_os = "macos", target_arch = "aarch64"))

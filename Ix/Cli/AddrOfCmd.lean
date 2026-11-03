@@ -42,10 +42,10 @@ def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.eprintln s!"error: failed to deserialize {path}: {e}"; return 1
       | .ok env => pure env
     match resolveIxeAddr ixonEnv argStr with
-    | none =>
-      IO.eprintln s!"error: {name} not found in {path}"; return 1
-    | some addr =>
-      IO.println (toString addr); return 0
+      | none =>
+        IO.eprintln s!"error: {name} not found in {path}"; return 1
+      | some addr =>
+        IO.println (toString addr); return 0
   | none =>
     let env ← get_env!
     if !env.constants.contains name then

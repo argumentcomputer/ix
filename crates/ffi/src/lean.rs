@@ -20,8 +20,6 @@ lean_ffi::lean_domain_type! {
 
   // Opaque types (passed through without field access)
   LeanIxonExprMetaArena;
-  LeanAiurCommitmentParameters;
-  LeanAiurFriParameters;
 }
 
 // =============================================================================
@@ -181,40 +179,6 @@ lean_ffi::lean_inductive! {
   ];
 
   // --- Lean kernel inner val types (used in Ix.ConstantInfo decode) ---
-
-
-  // --- Aiur types ---
-
-  LeanAiurToplevel [ { num_obj: 3 } ];
-  LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
-  LeanAiurCircuit  [ { num_obj: 3 } ];
-
-  // Aiur FFI result structures (`Ix/Aiur/Semantics/BytecodeFfi.lean`,
-  // `Ix/Aiur/Protocol.lean`). `IOBuffer` hashmaps cross the boundary as
-  // flat `ioData`/`ioMap` arrays; Lean folds them back into hashmaps.
-  // idx, len
-  LeanAiurIOKeyInfo      [ { num_obj: 2 } ];
-  // uniqueRows, totalHits
-  LeanAiurQueryCount     [ { num_obj: 2 } ];
-  // mainWidth, stage2Width, quotientDegree, preprocessedWidth,
-  // preprocessedHeight
-  LeanAiurCircuitShape   [ { num_obj: 5 } ];
-  // output, ioData, ioMap, queryCounts
-  LeanAiurExecuteResult  [ { num_obj: 4 } ];
-  // claim, proof, ioData, ioMap
-  LeanAiurProveResult    [ { num_obj: 4 } ];
-  // claimBytes, proof, ioData, ioMap
-  LeanAiurProveEnvResult [ { num_obj: 4 } ];
-  // error, peakBytes, suggestedParts
-  LeanAiurShardResult    [ { num_obj: 3 } ];
-  // claimBytes, proof, peakBytes, suggestedParts, workerBytes
-  LeanAiurShardProveResult [ { num_obj: 5 } ];
-  // claimBytes, proofAddr, peakBytes
-  LeanAiurShardProvenAhead [ { num_obj: 3 } ];
-  // claimBytes, constantCount
-  LeanAiurAggregateExpected [ { num_obj: 2 } ];
-
-  // --- Block / comparison types ---
 
 
   // --- Error types ---

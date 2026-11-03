@@ -1,5 +1,10 @@
 # Proving on GPUs: lanes, generated traces, and how to benchmark them
 
+This guide describes the retained **legacy** backend. Select it with `--legacy`
+when running the commands below. The default formal Aiur backend has separate
+CUDA hosts and CPU trace generation; see its
+[CUDA integration and validation instructions](formal-aiur-migration.md#legacy-support-and-native-builds).
+
 Everything in this document builds on prover-level trace sharding
 ([aiur-trace-sharding.md](aiur-trace-sharding.md)): one execution of a
 claim is proven as a batch of trace shards that each fit a device, and the
@@ -150,14 +155,14 @@ The generated units are checked in and regenerated like the executors:
 lake exe ix codegen --trace-bundle          # regenerate the three programs' units
 lake exe ix codegen --trace-bundle --check  # CI: fail on a stale unit
 lake exe IxTests aiur-trace-plan            # planner fixtures
-cargo test -p aiur trace_codegen            # Rust parity, no GPU needed
+cargo test -p aiur-legacy trace_codegen            # Rust parity, no GPU needed
 ```
 
 The fixtures the Rust parity tests compile against are produced by the
 same generator from two test programs:
 
 ```sh
-lake exe trace-fixtures          # regenerate crates/aiur/src/trace_codegen/tests/* and cuda/generated/*
+lake exe trace-fixtures          # regenerate crates/aiur-legacy/src/trace_codegen/tests/* and cuda/generated/*
 lake exe trace-fixtures --check  # fail on a stale fixture
 ```
 
@@ -166,7 +171,7 @@ The GPU-side parity tests and the two-round generated proof need a device:
 ```sh
 NVCC=/usr/local/cuda-13.3/bin/nvcc MULTI_STARK_CUDA_ARCHS=120 \
   AIUR_TEST_GPU_DEVICES=0,1,2,3 \
-  cargo test -p aiur --release --features cuda-trace-codegen
+  cargo test -p aiur-legacy --release --features cuda-trace-codegen
 ```
 
 ## 5. Knobs

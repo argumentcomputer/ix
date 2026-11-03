@@ -5,7 +5,7 @@
   into either a `Lean.Name` or a content `Address` is needed by several
   commands (`addr-of`, `check`, …) and by benchmark drivers. These helpers
   live here — depending only on `Address`/`Environment`/`Ixon` — so callers
-  don't have to pull in the Aiur typecheck machinery just to resolve a name.
+  don't have to pull in the LegacyAiur typecheck machinery just to resolve a name.
 -/
 module
 public import Ix.Address

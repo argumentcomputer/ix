@@ -170,6 +170,43 @@ pub fn collect_consts(
   Ok(out)
 }
 
+/// Same Goldilocks FFT model as `LegacyAiur.Statistics.fftCost`: two extension
+/// limbs, inverse/forward trace transforms, and quotient transforms. This is
+/// a work estimate, not elapsed time; height is already padded.
+#[allow(clippy::cast_precision_loss)] // Approximate work, not an exact cell count.
+pub fn fft_cost(
+  stage1: usize,
+  stage2: usize,
+  quotient_degree: usize,
+  height: usize,
+  log_blowup: usize,
+) -> f64 {
+  let transform = |n: usize| {
+    if n == 0 { 0.0 } else { n as f64 * f64::from(n.max(2).ilog2()) }
+  };
+  let blowup = 1usize << log_blowup;
+  (blowup + 1) as f64 * (stage1 + stage2) as f64 * transform(height)
+    + 2.0 * transform(quotient_degree * height)
+    + (2 * quotient_degree) as f64 * transform(blowup * height)
+}
+
+/// Optional process-local control for comparing allocation-heavy small runs.
+/// Legacy query arenas request huge pages; faulting a 2 MiB page for a tiny
+/// function can dominate execution. Never changes the machine's THP policy.
+pub fn configure_benchmark_memory() -> Result<bool, String> {
+  let disable = std::env::var("IX_BENCH_NO_THP").as_deref() == Ok("1");
+  if disable {
+    #[cfg(target_os = "linux")]
+    // SAFETY: this prctl changes only the calling process's huge-page policy.
+    if unsafe { libc::prctl(libc::PR_SET_THP_DISABLE, 1, 0, 0, 0) } != 0 {
+      return Err(io::Error::last_os_error().to_string());
+    }
+    #[cfg(not(target_os = "linux"))]
+    return Err("IX_BENCH_NO_THP requires Linux".into());
+  }
+  Ok(disable)
+}
+
 #[cfg(test)]
 mod tests {
   use serde_json::json;

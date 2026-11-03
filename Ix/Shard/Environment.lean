@@ -121,8 +121,7 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
 def shardClaimDigest (ixonEnv : Ixon.Env) (blocks : Array Address)
     (assumeBinding : Bool := false) : Except String Address := do
   let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv
-    (ownedConstsForBlocks ixonEnv blocks)
-  let claim := if assumeBinding then Ix.Claim.assumingBinding claim else claim
+    (ownedConstsForBlocks ixonEnv blocks) assumeBinding
   pure (Address.blake3 (Ix.Claim.ser claim))
 
 /-- Load the `.ixe` env and the `.ixes` shard partition together (each file

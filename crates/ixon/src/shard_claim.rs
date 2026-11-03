@@ -1,6 +1,6 @@
 //! Shard `CheckEnv` claim convention — the single source of truth shared
 //! by every builder (Lean `IxVM.ClaimHarness.shardCheckEnvClaim`,
-//! `ixvm-codegen::aiur_ixvm_witness::build_shard_check_env_witness`,
+//! `ixvm-legacy::aiur_ixvm_witness::build_shard_check_env_witness`,
 //! `ix-kernel::claim`). Any change here changes claim digests; keep the
 //! Lean mirror in lockstep.
 //!
@@ -51,7 +51,7 @@ use ix_common::address::Address;
 /// itself an entry of `Constant.sharing`, which is walked separately, so
 /// coverage is complete and the traversal stays linear.
 ///
-/// Mirror of `const_idxs_expr` in `Ix/IxVM/Kernel/Claim.lean`.
+/// Mirror of `const_idxs_expr` in `LegacyIxVM/Kernel/Claim.lean`.
 fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
   match e {
     Expr::Ref(i, _) => {
@@ -77,7 +77,7 @@ fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
 /// The `refs` indices a constant uses as constants, over its `sharing`
 /// table and every Expr its `ConstantInfo` carries.
 ///
-/// Mirror of `const_idxs_of` in `Ix/IxVM/Kernel/Claim.lean`.
+/// Mirror of `const_idxs_of` in `LegacyIxVM/Kernel/Claim.lean`.
 fn const_idxs_of(c: &Constant) -> FxHashSet<u64> {
   let mut out = FxHashSet::default();
   for e in &c.sharing {

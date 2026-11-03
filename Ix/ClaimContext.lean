@@ -39,13 +39,13 @@ namespace Ix.ClaimContext
 open Ix.Kernel (Role RoleTable)
 
 /-- The context of a claim over the role binding with hash `binding`. -/
-def ofBinding (binding : Address) : Except String ClaimContext := do
-  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none }
+def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
+  return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
 /-- The context of a claim over an environment's own role binding. -/
-def ofEnv (env : Ixon.Env) : Except String ClaimContext :=
+def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext :=
   match env.roleBinding with
-  | some binding => ofBinding binding.address
+  | some binding => ofBinding binding.address bindingAssumed
   | none => throw "claim context: the environment carries no role binding"
 
 /-- The context of a claim over the default role table

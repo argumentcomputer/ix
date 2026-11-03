@@ -1,0 +1,3213 @@
+{
+  "initial": [
+    8781,
+    214,
+    772418,
+    34231776,
+    41842973,
+    2985196243
+  ],
+  "optimized": [
+    7584,
+    141,
+    643248,
+    29613088,
+    38904984,
+    2764501198
+  ],
+  "dimensions": [
+    "stage1_columns",
+    "function_circuits",
+    "cells_0",
+    "fft_0",
+    "cells_1",
+    "fft_1"
+  ],
+  "profiles": [
+    [
+      ".lake/grouping-tune/ixvm-counts.json",
+      ".lake/formal-comparison/final/new-ixvm-ungrouped.json"
+    ],
+    [
+      ".lake/grouping-tune/environment-counts.json",
+      ".lake/formal-comparison/final/new-environment-ungrouped.json"
+    ]
+  ],
+  "circuits": [
+    {
+      "members": [
+        "IxVM::verify_claim"
+      ],
+      "shape": [
+        10,
+        4,
+        1
+      ],
+      "cost": [
+        10,
+        1,
+        10,
+        48,
+        10,
+        48
+      ]
+    },
+    {
+      "members": [
+        "IxVM::run_claim",
+        "Blake3::next_layer",
+        "IxVM::get_recursor",
+        "IxVM::get_ci_dprj",
+        "${\"name\":\"IxVM::list_lookup_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"IxVM::MutConst\"}}]}",
+        "IxVM::projection_addr",
+        "IxVM::muts_member_at",
+        "IxVM::put_expr_list",
+        "${\"name\":\"IxVM::list_length_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"IxVM::MutConst\"}}]}",
+        "IxVM::put_recursor",
+        "IxVM::get_ci_iprj",
+        "IxVM::get_ci_rprj",
+        "IxVM::build_flat_block",
+        "IxVM::first_recr_parent_block",
+        "IxVM::aux_from_recrs_walk_ex",
+        "IxVM::run_check_transitive"
+      ],
+      "shape": [
+        221,
+        50,
+        2
+      ],
+      "cost": [
+        221,
+        1,
+        1768,
+        19896,
+        28288,
+        740736
+      ]
+    },
+    {
+      "members": [
+        "IxVM::read_finite_byte_stream",
+        "IxVM::get_address_list"
+      ],
+      "shape": [
+        27,
+        12,
+        2
+      ],
+      "cost": [
+        27,
+        1,
+        1728,
+        50304,
+        55296,
+        2930688
+      ]
+    },
+    {
+      "members": [
+        "IxVM::read_byte_stream",
+        "IxVM::checked_depth_succ"
+      ],
+      "shape": [
+        12,
+        8,
+        2
+      ],
+      "cost": [
+        12,
+        1,
+        49152,
+        3588096,
+        1572864,
+        162004992
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"IxVM::list_depth_checked\",\"types\":[\"field\"]}",
+        "Blake3::pad_block"
+      ],
+      "shape": [
+        11,
+        8,
+        2
+      ],
+      "cost": [
+        11,
+        1,
+        45056,
+        3440640,
+        1441792,
+        155320320
+      ]
+    },
+    {
+      "members": [
+        "UInt32::less_than_fields"
+      ],
+      "shape": [
+        14,
+        14,
+        1
+      ],
+      "cost": [
+        14,
+        1,
+        28672,
+        2035712,
+        229376,
+        20709376
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress_layer",
+        "IxVM::whnf_apply_beta",
+        "IxVM::env_walk_all"
+      ],
+      "shape": [
+        149,
+        20,
+        2
+      ],
+      "cost": [
+        149,
+        1,
+        4768,
+        83424,
+        305152,
+        11716608
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress"
+      ],
+      "shape": [
+        501,
+        226,
+        2
+      ],
+      "cost": [
+        501,
+        1,
+        256512,
+        10111488,
+        16416768,
+        1078296576
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress_chunks"
+      ],
+      "shape": [
+        17,
+        6,
+        2
+      ],
+      "cost": [
+        17,
+        1,
+        69632,
+        4030464,
+        2228224,
+        182059008
+      ]
+    },
+    {
+      "members": [
+        "Blake3::finish",
+        "IxVM::convert_inductive",
+        "IxVM::get_ci_cprj",
+        "IxVM::expr_lift_bvar",
+        "IxVM::walk_leaves_owned",
+        "IxVM::check_muts_components"
+      ],
+      "shape": [
+        174,
+        28,
+        2
+      ],
+      "cost": [
+        174,
+        1,
+        5568,
+        99264,
+        356352,
+        13946880
+      ]
+    },
+    {
+      "members": [
+        "UInt64::is_zero",
+        "IxVM::is_unsafe_ci"
+      ],
+      "shape": [
+        26,
+        2,
+        2
+      ],
+      "cost": [
+        26,
+        1,
+        832,
+        15744,
+        13312,
+        448512
+      ]
+    },
+    {
+      "members": [
+        "Blake3::bytes_to_block",
+        "IxVM::k_infer_only",
+        "IxVM::head_addr"
+      ],
+      "shape": [
+        145,
+        130,
+        2
+      ],
+      "cost": [
+        145,
+        1,
+        9280,
+        322176,
+        593920,
+        41189376
+      ]
+    },
+    {
+      "members": [
+        "Blake3::compress_block",
+        "IxVM::check_owned"
+      ],
+      "shape": [
+        181,
+        48,
+        2
+      ],
+      "cost": [
+        181,
+        1,
+        5792,
+        112224,
+        370688,
+        15771648
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}"
+      ],
+      "shape": [
+        7,
+        4,
+        1
+      ],
+      "cost": [
+        7,
+        1,
+        224,
+        6368,
+        14336,
+        886784
+      ]
+    },
+    {
+      "members": [
+        "UInt64::wrapping_succ",
+        "IxVM::canon_sord_then",
+        "IxVM::canon_sord_of_g",
+        "IxVM::canon_sord_lt_strong",
+        "IxVM::canon_sord_gt_strong",
+        "IxVM::canon_cmp_kuniv_list",
+        "IxVM::canon_sord_eq_strong",
+        "IxVM::level_leq",
+        "IxVM::nl_le",
+        "IxVM::nlvars_any_offset_geq",
+        "IxVM::nl_covers_var",
+        "IxVM::nlvars_dominates",
+        "IxVM::assert_occ_param_bvars",
+        "IxVM::check_rec_major_spine",
+        "IxVM::args_contain_bvar",
+        "IxVM::spec_params_dom_prefix_match"
+      ],
+      "shape": [
+        75,
+        14,
+        2
+      ],
+      "cost": [
+        75,
+        1,
+        0,
+        0,
+        4800,
+        107904
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_tagn4",
+        "IxVM::get_tagn0",
+        "IxVM::apply_spine"
+      ],
+      "shape": [
+        27,
+        10,
+        2
+      ],
+      "cost": [
+        27,
+        1,
+        13824,
+        572928,
+        884736,
+        60850176
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_tagn_tail",
+        "IxVM::nl_subsumption_walk",
+        "IxVM::ctx_close_cut"
+      ],
+      "shape": [
+        27,
+        12,
+        2
+      ],
+      "cost": [
+        27,
+        1,
+        864,
+        21024,
+        55296,
+        2930688
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_tagn_wide",
+        "IxVM::put_u64_list",
+        "IxVM::expr_lift_let",
+        "IxVM::bytestream_eq",
+        "IxVM::canon_member_num_ctors",
+        "IxVM::canon_ctor_ctx_entries",
+        "IxVM::canon_refine_classes",
+        "IxVM::canon_cmp_kexpr_ctx",
+        "IxVM::canon_ctx_class_idx",
+        "${\"name\":\"IxVM::list_length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+        "IxVM::canon_group_consec",
+        "IxVM::spec_params_ptr_eq",
+        "IxVM::level_list_struct_eq",
+        "IxVM::flat_find_pos",
+        "IxVM::get_opt_rule_list_masked",
+        "IxVM::get_opt_ctor_entry_list_masked"
+      ],
+      "shape": [
+        71,
+        12,
+        2
+      ],
+      "cost": [
+        71,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_u64_le",
+        "IxVM::run_eval",
+        "IxVM::get_axiom",
+        "IxVM::get_quotient",
+        "IxVM::get_quot_kind",
+        "IxVM::utf8_validate",
+        "IxVM::utf8_decode_one",
+        "IxVM::try_quot_ind",
+        "IxVM::walk_char_list_bytes",
+        "IxVM::try_str_back",
+        "IxVM::try_str_dec_eq",
+        "IxVM::try_reduce_bit_vec_ult",
+        "IxVM::int_bdiv_prim",
+        "IxVM::canon_build_ctx_members",
+        "IxVM::canon_cmp_member_ctx",
+        "IxVM::canon_cmp_u64_lex"
+      ],
+      "shape": [
+        92,
+        38,
+        2
+      ],
+      "cost": [
+        92,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "UInt64::add",
+        "IxVM::all_telescope_count",
+        "IxVM::put_mut_const",
+        "IxVM::klimbs_succ",
+        "IxVM::try_struct_eta_iota",
+        "IxVM::struct_scan_ctors",
+        "IxVM::try_nat_binop_addr",
+        "IxVM::klimbs_eq",
+        "IxVM::try_reduce_decide_bitvec_lt",
+        "IxVM::try_eta_expand",
+        "IxVM::check_no_dep_data_field_if_prop",
+        "IxVM::canon_member_ci",
+        "IxVM::canon_insert_sorted",
+        "IxVM::canon_cmp_member_same_kind_ctx",
+        "IxVM::check_nested_ctors_positivity",
+        "IxVM::detect_aux_from_recrs_ex"
+      ],
+      "shape": [
+        140,
+        140,
+        2
+      ],
+      "cost": [
+        140,
+        1,
+        0,
+        0,
+        17920,
+        764928
+      ]
+    },
+    {
+      "members": [
+        "IxVM::read_byte",
+        "IxVM::k_is_def_eq_core"
+      ],
+      "shape": [
+        7,
+        4,
+        2
+      ],
+      "cost": [
+        7,
+        1,
+        896,
+        41856,
+        57344,
+        4890624
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_address"
+      ],
+      "shape": [
+        68,
+        68,
+        1
+      ],
+      "cost": [
+        68,
+        1,
+        4352,
+        159232,
+        139264,
+        9334784
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_opt_addr",
+        "IxVM::level_imax",
+        "IxVM::nat_shift_right_addr",
+        "IxVM::bit_vec_ult_addr",
+        "IxVM::try_match_nat_add",
+        "IxVM::peel_n_alls_whnf",
+        "IxVM::build_apply_bvars_decreasing"
+      ],
+      "shape": [
+        41,
+        18,
+        2
+      ],
+      "cost": [
+        41,
+        1,
+        164,
+        1560,
+        20992,
+        877056
+      ]
+    },
+    {
+      "members": [
+        "IxVM::run_check",
+        "IxVM::whnf_nd_apply_beta",
+        "IxVM::try_prim_dispatch"
+      ],
+      "shape": [
+        26,
+        20,
+        2
+      ],
+      "cost": [
+        26,
+        1,
+        104,
+        1248,
+        53248,
+        3403776
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_ci",
+        "IxVM::check_const",
+        "IxVM::apply_ihs_full",
+        "IxVM::check_muts_member_at",
+        "IxVM::const_idxs_of",
+        "IxVM::load_assumption_tree"
+      ],
+      "shape": [
+        96,
+        60,
+        2
+      ],
+      "cost": [
+        96,
+        1,
+        1536,
+        30912,
+        98304,
+        4927488
+      ]
+    },
+    {
+      "members": [
+        "IxVM::load_verified_constant",
+        "IxVM::get_constant",
+        "IxVM::get_mut_const_list",
+        "IxVM::k_is_def_eq_slow2",
+        "IxVM::get_mut_entry_list_inner",
+        "${\"name\":\"IxVM::list_lookup_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"IxVM::Constructor\"}}]}"
+      ],
+      "shape": [
+        113,
+        20,
+        2
+      ],
+      "cost": [
+        113,
+        1,
+        3616,
+        66144,
+        115712,
+        4220928
+      ]
+    },
+    {
+      "members": [
+        "Blake3::verify_bytes_against",
+        "IxVM::put_constant",
+        "IxVM::is_defn_or_thm"
+      ],
+      "shape": [
+        83,
+        18,
+        2
+      ],
+      "cost": [
+        83,
+        1,
+        1328,
+        20352,
+        42496,
+        1457664
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_mut_const",
+        "IxVM::k_synth_gate",
+        "IxVM::klimbs_mul",
+        "IxVM::klimbs_div_mod",
+        "IxVM::ordinary_div_mod",
+        "IxVM::klimbs_pow",
+        "IxVM::klimbs_land",
+        "IxVM::try_str_dispatch",
+        "IxVM::klimbs_scalar_value",
+        "IxVM::str_dec_eq_build",
+        "IxVM::bitvec_of_nat_args_direct",
+        "IxVM::try_native_dispatch",
+        "IxVM::try_int_prim_dispatch",
+        "IxVM::int_ediv_prim",
+        "IxVM::check_eq_type",
+        "IxVM::canon_sort_loop"
+      ],
+      "shape": [
+        133,
+        66,
+        2
+      ],
+      "cost": [
+        133,
+        1,
+        266,
+        1242,
+        8512,
+        234624
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_definition",
+        "UInt64::to_field",
+        "IxVM::safe_refs_only"
+      ],
+      "shape": [
+        32,
+        18,
+        2
+      ],
+      "cost": [
+        32,
+        1,
+        2048,
+        62976,
+        262144,
+        17350656
+      ]
+    },
+    {
+      "members": [
+        "IxVM::unpack_def_kind_safety",
+        "IxVM::defn_is_unsafe_ci",
+        "${\"name\":\"IxVM::rbtree_map_balance_fix\",\"types\":[\"field\"]}",
+        "IxVM::env_walk_leaves"
+      ],
+      "shape": [
+        308,
+        16,
+        2
+      ],
+      "cost": [
+        308,
+        1,
+        4928,
+        63168,
+        1232,
+        7920
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_expr",
+        "IxVM::get_u64_list",
+        "IxVM::validate_expr_well_scoped"
+      ],
+      "shape": [
+        61,
+        24,
+        2
+      ],
+      "cost": [
+        61,
+        1,
+        31232,
+        1236480,
+        1998848,
+        131629056
+      ]
+    },
+    {
+      "members": [
+        "UInt64::saturating_pred"
+      ],
+      "shape": [
+        20,
+        4,
+        2
+      ],
+      "cost": [
+        20,
+        1,
+        640,
+        13824,
+        2560,
+        76800
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_app_telescope",
+        "IxVM::expr_inst_many_bvar"
+      ],
+      "shape": [
+        29,
+        12,
+        2
+      ],
+      "cost": [
+        29,
+        1,
+        7424,
+        279552,
+        475136,
+        31162368
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_lam_telescope",
+        "IxVM::const_type_of",
+        "IxVM::ctx_seek_cut",
+        "${\"name\":\"IxVM::rbtree_map_balance\",\"types\":[\"field\"]}"
+      ],
+      "shape": [
+        41,
+        16,
+        2
+      ],
+      "cost": [
+        41,
+        1,
+        2624,
+        71040,
+        167936,
+        9043968
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_lam_mode",
+        "IxVM::expr_has_bvar_at"
+      ],
+      "shape": [
+        25,
+        12,
+        2
+      ],
+      "cost": [
+        25,
+        1,
+        1600,
+        48000,
+        204800,
+        13197312
+      ]
+    },
+    {
+      "members": [
+        "IxVM::binder_contract_from_bits",
+        "IxVM::system_platform_num_bits_addr",
+        "IxVM::cleanup_nat_offset_major",
+        "IxVM::nat_offset_of",
+        "IxVM::check_param_agreement_go",
+        "IxVM::walk_fields_classify"
+      ],
+      "shape": [
+        49,
+        30,
+        2
+      ],
+      "cost": [
+        49,
+        1,
+        196,
+        2040,
+        50176,
+        2562048
+      ]
+    },
+    {
+      "members": [
+        "IxVM::value_contract_from_bits",
+        "IxVM::is_bitvec_prim_addr",
+        "IxVM::try_reduce_projection_definition",
+        "IxVM::try_unit_like"
+      ],
+      "shape": [
+        25,
+        16,
+        2
+      ],
+      "cost": [
+        25,
+        1,
+        100,
+        1128,
+        25600,
+        1394688
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_all_telescope",
+        "IxVM::addr_set_build",
+        "${\"name\":\"IxVM::rbtree_map_insert\",\"types\":[\"field\"]}"
+      ],
+      "shape": [
+        37,
+        16,
+        2
+      ],
+      "cost": [
+        37,
+        1,
+        2368,
+        66432,
+        75776,
+        3876864
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_all_mode",
+        "IxVM::convert_expr"
+      ],
+      "shape": [
+        42,
+        38,
+        2
+      ],
+      "cost": [
+        42,
+        1,
+        21504,
+        1167360,
+        688128,
+        57999360
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_expr_let",
+        "IxVM::get_constant_info_by_variant",
+        "IxVM::get_recursor_proj",
+        "IxVM::get_univ",
+        "IxVM::level_normalize"
+      ],
+      "shape": [
+        67,
+        18,
+        2
+      ],
+      "cost": [
+        67,
+        1,
+        2144,
+        43104,
+        34304,
+        1236480
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_inductive",
+        "IxVM::load_verified_blob",
+        "IxVM::count_ctors",
+        "IxVM::klimbs_mul_single",
+        "IxVM::check_canonical_block",
+        "IxVM::peer_agree_walk",
+        "IxVM::ind_is_solo",
+        "IxVM::flat_originals_walk",
+        "IxVM::find_peer_recursor_with_spec",
+        "IxVM::env_walk"
+      ],
+      "shape": [
+        112,
+        30,
+        2
+      ],
+      "cost": [
+        112,
+        1,
+        1792,
+        28224,
+        28672,
+        900096
+      ]
+    },
+    {
+      "members": [
+        "IxVM::assert_wire_bool",
+        "IxVM::io_peel_params_subst",
+        "IxVM::unfold_a_and_loop",
+        "IxVM::k_is_def_eq_structure_tree_app",
+        "IxVM::check_inductive_shape",
+        "IxVM::get_result_sort_level",
+        "${\"name\":\"IxVM::list_reverse\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KExprNode\"}}}}]}",
+        "IxVM::build_all_minors"
+      ],
+      "shape": [
+        29,
+        10,
+        2
+      ],
+      "cost": [
+        29,
+        1,
+        29,
+        129,
+        14848,
+        600576
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_constructor_list",
+        "${\"name\":\"IxVM::list_length_u64\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::Expr\"}}}}]}",
+        "IxVM::address_eq_tail"
+      ],
+      "shape": [
+        80,
+        12,
+        2
+      ],
+      "cost": [
+        80,
+        1,
+        1280,
+        18624,
+        20480,
+        592896
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_constructor",
+        "IxVM::expr_lbr_let",
+        "IxVM::nl_add_var",
+        "IxVM::nat_pred_addr",
+        "IxVM::ensure_sort_only",
+        "IxVM::try_nat_binop_dispatch",
+        "IxVM::klimbs_shl_limbs",
+        "IxVM::compare_struct_fields",
+        "IxVM::k_infer_lit",
+        "IxVM::k_infer_proj",
+        "IxVM::get_reveal_rule_list_inner"
+      ],
+      "shape": [
+        70,
+        28,
+        2
+      ],
+      "cost": [
+        70,
+        1,
+        280,
+        2496,
+        17920,
+        629760
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_recursor_rule_list",
+        "IxVM::bytes_to_u64_limb",
+        "IxVM::nat_lit_to_ctor_or_self",
+        "UInt64::eq",
+        "IxVM::compute_k_target",
+        "IxVM::is_rec_field_peel",
+        "IxVM::ctors_before_pos",
+        "IxVM::populate_rules"
+      ],
+      "shape": [
+        74,
+        22,
+        2
+      ],
+      "cost": [
+        74,
+        1,
+        296,
+        2448,
+        18944,
+        617472
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_constructor_proj",
+        "IxVM::ctor_at",
+        "IxVM::level_max",
+        "IxVM::level_max_go",
+        "IxVM::prim_family",
+        "IxVM::klimbs_sub",
+        "IxVM::collect_spine_of_ctor",
+        "IxVM::struct_block_member_addrs",
+        "UInt64::mul",
+        "IxVM::check_recursor_member",
+        "IxVM::muts_indc_count_is_one",
+        "IxVM::check_recursor_canonical_full",
+        "IxVM::build_rec_type_from",
+        "IxVM::eval_output",
+        "IxVM::get_mut_entry",
+        "IxVM::check_recr_rules"
+      ],
+      "shape": [
+        146,
+        76,
+        2
+      ],
+      "cost": [
+        146,
+        1,
+        146,
+        678,
+        74752,
+        3130368
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_expr_list",
+        "IxVM::leaf_hash",
+        "IxVM::addr_set_member"
+      ],
+      "shape": [
+        28,
+        12,
+        2
+      ],
+      "cost": [
+        28,
+        1,
+        1792,
+        51456,
+        57344,
+        2998272
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_univ_list",
+        "IxVM::peel_n_foralls",
+        "IxVM::str_lit_to_ctor_app_or_self",
+        "IxVM::lazy_delta_a_const_b_proj",
+        "IxVM::lazy_delta_b_const_a_proj"
+      ],
+      "shape": [
+        49,
+        16,
+        2
+      ],
+      "cost": [
+        49,
+        1,
+        784,
+        13440,
+        50176,
+        2131968
+      ]
+    },
+    {
+      "members": [
+        "IxVM::get_tagn2",
+        "IxVM::put_recursor_proj",
+        "IxVM::level_list_inst"
+      ],
+      "shape": [
+        26,
+        10,
+        2
+      ],
+      "cost": [
+        26,
+        1,
+        832,
+        19584,
+        6656,
+        248832
+      ]
+    },
+    {
+      "members": [
+        "IxVM::build_succ_chain",
+        "IxVM::build_recur_addrs_walk",
+        "IxVM::level_equal",
+        "IxVM::canon_muts_has_kind",
+        "IxVM::is_muts_block",
+        "IxVM::check_muts_all"
+      ],
+      "shape": [
+        77,
+        10,
+        2
+      ],
+      "cost": [
+        77,
+        1,
+        1232,
+        17664,
+        19712,
+        562176
+      ]
+    },
+    {
+      "members": [
+        "IxVM::load_constant_hint",
+        "IxVM::put_address",
+        "IxVM::whnf_nd_const_head"
+      ],
+      "shape": [
+        86,
+        68,
+        2
+      ],
+      "cost": [
+        86,
+        1,
+        2752,
+        76224,
+        176128,
+        10702848
+      ]
+    },
+    {
+      "members": [
+        "IxVM::convert_definition",
+        "IxVM::put_refs",
+        "IxVM::env_walk_refs"
+      ],
+      "shape": [
+        35,
+        10,
+        2
+      ],
+      "cost": [
+        35,
+        1,
+        560,
+        9600,
+        8960,
+        304128
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"IxVM::list_lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::Univ\"}}}}]}"
+      ],
+      "shape": [
+        7,
+        6,
+        1
+      ],
+      "cost": [
+        7,
+        1,
+        896,
+        40832,
+        57344,
+        4825088
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"IxVM::list_drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::Univ\"}}}}]}"
+      ],
+      "shape": [
+        9,
+        6,
+        2
+      ],
+      "cost": [
+        9,
+        1,
+        2304,
+        119808,
+        147456,
+        13271040
+      ]
+    },
+    {
+      "members": [
+        "IxVM::convert_univ",
+        "IxVM::put_tagn4",
+        "IxVM::lbr_dec"
+      ],
+      "shape": [
+        25,
+        12,
+        2
+      ],
+      "cost": [
+        25,
+        1,
+        400,
+        8064,
+        3200,
+        111744
+      ]
+    },
+    {
+      "members": [
+        "IxVM::convert_univ_idxs",
+        "IxVM::const_idxs_expr"
+      ],
+      "shape": [
+        36,
+        24,
+        2
+      ],
+      "cost": [
+        36,
+        1,
+        2304,
+        74496,
+        294912,
+        20545536
+      ]
+    },
+    {
+      "members": [
+        "IxVM::utf8_cont",
+        "IxVM::convert_axiom",
+        "IxVM::convert_quotient",
+        "IxVM::defn_member_recur_addrs",
+        "IxVM::put_tagn_tail",
+        "IxVM::put_tagn_wide",
+        "IxVM::put_u64_le",
+        "IxVM::put_expr",
+        "IxVM::app_telescope_count",
+        "IxVM::put_app_telescope",
+        "IxVM::lam_telescope_count",
+        "IxVM::utf8_encode_prepend",
+        "IxVM::aux_already_in",
+        "IxVM::find_peer_rec_spec_walk",
+        "IxVM::get_reveal_info",
+        "IxVM::get_reveal_mut_const_info"
+      ],
+      "shape": [
+        204,
+        62,
+        2
+      ],
+      "cost": [
+        204,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "IxVM::bytes_to_limbs",
+        "IxVM::whnf_proj_head",
+        "IxVM::whnf_nd_proj_head",
+        "IxVM::check_ctor_return_type"
+      ],
+      "shape": [
+        47,
+        26,
+        2
+      ],
+      "cost": [
+        47,
+        1,
+        94,
+        486,
+        24064,
+        1070592
+      ]
+    },
+    {
+      "members": [
+        "IxVM::skip_bytes",
+        "IxVM::level_inst_params",
+        "IxVM::nat_xor_addr"
+      ],
+      "shape": [
+        18,
+        16,
+        2
+      ],
+      "cost": [
+        18,
+        1,
+        288,
+        7488,
+        4608,
+        236544
+      ]
+    },
+    {
+      "members": [
+        "IxVM::build_recur_addrs",
+        "IxVM::lbr_min",
+        "IxVM::assert_safety"
+      ],
+      "shape": [
+        11,
+        4,
+        2
+      ],
+      "cost": [
+        11,
+        1,
+        176,
+        3840,
+        11264,
+        595968
+      ]
+    },
+    {
+      "members": [
+        "UInt64::from_field",
+        "IxVM::put_sharing",
+        "IxVM::put_univs",
+        "IxVM::put_univ_list",
+        "IxVM::mk_nat_lit",
+        "IxVM::klimbs_is_zero",
+        "IxVM::find_rule",
+        "IxVM::struct_is_rec",
+        "IxVM::k_infer_let_start",
+        "IxVM::canon_refine_one",
+        "IxVM::canon_ins_sort",
+        "IxVM::flat_member_at",
+        "IxVM::collect_n_doms_whnf",
+        "IxVM::collect_index_doms",
+        "IxVM::list_lift_each",
+        "IxVM::build_ctor_app_params"
+      ],
+      "shape": [
+        54,
+        16,
+        2
+      ],
+      "cost": [
+        54,
+        1,
+        216,
+        1824,
+        6912,
+        200448
+      ]
+    },
+    {
+      "members": [
+        "IxVM::put_tagn0",
+        "IxVM::validate_univ_params_list",
+        "IxVM::level_list_eq"
+      ],
+      "shape": [
+        23,
+        10,
+        2
+      ],
+      "cost": [
+        23,
+        1,
+        368,
+        7296,
+        2944,
+        100992
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"IxVM::list_length_u64\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+        "IxVM::put_univ",
+        "IxVM::univ_succ_count",
+        "IxVM::put_mut_const_list",
+        "IxVM::put_constructor_list",
+        "${\"name\":\"IxVM::list_length_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"IxVM::RecursorRule\"}}]}",
+        "IxVM::put_recursor_rule_list",
+        "IxVM::put_axiom",
+        "IxVM::put_quotient",
+        "IxVM::klimbs_lor",
+        "IxVM::klimbs_xor_op",
+        "IxVM::canon_cmp_klimbs_tail",
+        "IxVM::extract_aux_spec_params_from_rec",
+        "IxVM::extract_aux_occ_us",
+        "IxVM::get_ctor_entry",
+        "IxVM::check_ctor_entries"
+      ],
+      "shape": [
+        90,
+        26,
+        2
+      ],
+      "cost": [
+        90,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "IxVM::put_lam_telescope",
+        "IxVM::put_all_telescope",
+        "IxVM::put_definition",
+        "IxVM::put_inductive",
+        "${\"name\":\"IxVM::list_length_u64\",\"types\":[{\"named\":{\"args\":[],\"name\":\"IxVM::Constructor\"}}]}",
+        "IxVM::put_constructor",
+        "IxVM::convert_constructor",
+        "IxVM::convert_recursor",
+        "IxVM::canon_indc_positions",
+        "IxVM::check_block_peer_param_agreement",
+        "IxVM::build_rec_type",
+        "IxVM::build_all_motives_walk",
+        "IxVM::build_all_minors_walk",
+        "IxVM::build_minor_doms",
+        "IxVM::flat_find_matching",
+        "IxVM::const_idxs_muts"
+      ],
+      "shape": [
+        101,
+        32,
+        2
+      ],
+      "cost": [
+        101,
+        1,
+        0,
+        0,
+        25856,
+        844800
+      ]
+    },
+    {
+      "members": [
+        "IxVM::put_lam_mode",
+        "IxVM::binder_contract_code",
+        "IxVM::value_contract_code",
+        "IxVM::put_all_mode",
+        "IxVM::put_tagn2",
+        "IxVM::pack_def_kind_safety",
+        "IxVM::put_quot_kind",
+        "IxVM::int_emod_prim",
+        "IxVM::canon_build_ctx_classes",
+        "IxVM::canon_cmp_kuniv",
+        "IxVM::canon_ctx_cmp_addr",
+        "IxVM::canon_cmp_klimbs",
+        "IxVM::canon_classes_eq",
+        "IxVM::extract_aux_spec_params",
+        "IxVM::spec_params_lower",
+        "IxVM::apply_spec_params_lifted"
+      ],
+      "shape": [
+        63,
+        20,
+        2
+      ],
+      "cost": [
+        63,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "IxVM::put_address_list",
+        "IxVM::level_max_offsets",
+        "IxVM::whnf_get_ctor_or_none",
+        "IxVM::klimbs_le",
+        "IxVM::addr_list_contains",
+        "IxVM::nl_le_vars",
+        "IxVM::check_parent_inductive_shape",
+        "IxVM::check_large_prop_ctor",
+        "IxVM::build_peer_recs",
+        "${\"name\":\"IxVM::list_length\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}},\"field\",{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KExprNode\"}}}}],\"name\":\"Lists::Node\"}}}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KLevelNode\"}}}}],\"name\":\"Lists::Node\"}}}}]}}]}",
+        "IxVM::peel_motive_params_subst",
+        "IxVM::list_lift_indices",
+        "IxVM::eval_nf_spine",
+        "IxVM::get_opt_u64_masked"
+      ],
+      "shape": [
+        49,
+        12,
+        2
+      ],
+      "cost": [
+        49,
+        1,
+        49,
+        195,
+        12544,
+        402432
+      ]
+    },
+    {
+      "members": [
+        "IxVM::univ_succ_base",
+        "IxVM::put_recursor_rule",
+        "IxVM::str_lit_delta_step",
+        "IxVM::se_addr_in",
+        "IxVM::str_addr_io",
+        "IxVM::apply_n_projs",
+        "IxVM::str_lit_to_ctor",
+        "IxVM::list_nil_addr",
+        "IxVM::list_cons_addr",
+        "IxVM::char_type_addr",
+        "UInt64::and",
+        "UInt64::or",
+        "IxVM::try_str_to_byte_array",
+        "IxVM::try_reduce_subtype_val",
+        "IxVM::dec_finish",
+        "IxVM::try_int_prim_second"
+      ],
+      "shape": [
+        82,
+        90,
+        2
+      ],
+      "cost": [
+        82,
+        1,
+        0,
+        0,
+        328,
+        4272
+      ]
+    },
+    {
+      "members": [
+        "IxVM::put_constant_info",
+        "IxVM::level_explicit_val",
+        "IxVM::nat_mul_addr",
+        "IxVM::nat_gcd_addr",
+        "IxVM::try_reduce_fin_val_decidable_rec",
+        "IxVM::klimbs_mul_outer",
+        "IxVM::dec_dispatch_le_eq",
+        "IxVM::dec_build_proof",
+        "IxVM::peel_leading_foralls_acc",
+        "IxVM::const_idxs_ctors"
+      ],
+      "shape": [
+        91,
+        64,
+        2
+      ],
+      "cost": [
+        91,
+        1,
+        364,
+        3864,
+        23296,
+        979968
+      ]
+    },
+    {
+      "members": [
+        "IxVM::put_constructor_proj",
+        "IxVM::convert_rec_rules",
+        "IxVM::validate_univ_params_seen",
+        "IxVM::try_nat_linear_rec",
+        "IxVM::canon_kind_ord",
+        "IxVM::eval_nf"
+      ],
+      "shape": [
+        40,
+        28,
+        2
+      ],
+      "cost": [
+        40,
+        1,
+        80,
+        456,
+        10240,
+        445440
+      ]
+    },
+    {
+      "members": [
+        "Blake3::bytes_to_addr",
+        "${\"name\":\"IxVM::rbtree_map_ins\",\"types\":[\"field\"]}",
+        "${\"name\":\"IxVM::rbtree_map_lookup_or_default\",\"types\":[\"field\"]}"
+      ],
+      "shape": [
+        51,
+        22,
+        2
+      ],
+      "cost": [
+        51,
+        1,
+        3264,
+        89472,
+        52224,
+        2377728
+      ]
+    },
+    {
+      "members": [
+        "IxVM::const_num_lvls",
+        "IxVM::k_is_def_eq_struct_spend"
+      ],
+      "shape": [
+        25,
+        12,
+        2
+      ],
+      "cost": [
+        25,
+        1,
+        200,
+        3048,
+        25600,
+        1271808
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"IxVM::list_length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KLevelNode\"}}}}]}"
+      ],
+      "shape": [
+        8,
+        6,
+        2
+      ],
+      "cost": [
+        8,
+        1,
+        512,
+        21504,
+        65536,
+        5849088
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_ensure_sort",
+        "IxVM::types_lookup",
+        "IxVM::ctx_next_cut"
+      ],
+      "shape": [
+        11,
+        8,
+        2
+      ],
+      "cost": [
+        11,
+        1,
+        88,
+        1752,
+        45056,
+        3440640
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_infer",
+        "IxVM::expr_glb_walk"
+      ],
+      "shape": [
+        24,
+        18,
+        2
+      ],
+      "cost": [
+        24,
+        1,
+        1536,
+        53760,
+        786432,
+        68222976
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_lbr",
+        "${\"name\":\"IxVM::list_concat\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KExprNode\"}}}}]}"
+      ],
+      "shape": [
+        21,
+        18,
+        2
+      ],
+      "cost": [
+        21,
+        1,
+        2688,
+        117120,
+        688128,
+        63799296
+      ]
+    },
+    {
+      "members": [
+        "IxVM::lbr_max",
+        "IxVM::bit_vec_to_nat_addr",
+        "IxVM::decidable_decide_addr"
+      ],
+      "shape": [
+        8,
+        4,
+        2
+      ],
+      "cost": [
+        8,
+        1,
+        128,
+        3264,
+        4096,
+        227328
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_infer_core",
+        "IxVM::whnf_struct_core_spine",
+        "IxVM::node_hash"
+      ],
+      "shape": [
+        42,
+        46,
+        2
+      ],
+      "cost": [
+        42,
+        1,
+        1344,
+        44544,
+        344064,
+        29491200
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_lift",
+        "IxVM::expr_inst_many"
+      ],
+      "shape": [
+        18,
+        14,
+        2
+      ],
+      "cost": [
+        18,
+        1,
+        1152,
+        42240,
+        589824,
+        53477376
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_lift_walk",
+        "IxVM::k_is_def_eq"
+      ],
+      "shape": [
+        22,
+        14,
+        2
+      ],
+      "cost": [
+        22,
+        1,
+        704,
+        19584,
+        360448,
+        27721728
+      ]
+    },
+    {
+      "members": [
+        "IxVM::level_reduce",
+        "IxVM::build_param_lvls_range",
+        "${\"name\":\"IxVM::list_lookup_or_default\",\"types\":[\"field\"]}",
+        "IxVM::peel_leading_foralls",
+        "IxVM::apply_indices_in_conclusion",
+        "IxVM::wrap_lams",
+        "IxVM::get_opt_def_kind_masked",
+        "IxVM::get_opt_addr_masked",
+        "IxVM::get_opt_bool_masked",
+        "IxVM::get_opt_quot_kind_masked",
+        "IxVM::check_opt_def_kind",
+        "IxVM::check_opt_quot_kind"
+      ],
+      "shape": [
+        48,
+        14,
+        2
+      ],
+      "cost": [
+        48,
+        1,
+        192,
+        1632,
+        3072,
+        76800
+      ]
+    },
+    {
+      "members": [
+        "IxVM::level_struct_eq",
+        "IxVM::string_utf8_byte_size_addr",
+        "IxVM::wrap_foralls"
+      ],
+      "shape": [
+        26,
+        12,
+        2
+      ],
+      "cost": [
+        26,
+        1,
+        104,
+        1056,
+        13312,
+        586752
+      ]
+    },
+    {
+      "members": [
+        "IxVM::level_max_subsumes",
+        "IxVM::glist_cmp",
+        "IxVM::unfold_b_and_loop",
+        "IxVM::unfold_both_and_loop",
+        "IxVM::try_eta_swap",
+        "IxVM::check_prop_field_if_prop",
+        "IxVM::assert_first_args_are_param_bvars",
+        "IxVM::peel_n_lams_collect"
+      ],
+      "shape": [
+        41,
+        12,
+        2
+      ],
+      "cost": [
+        41,
+        1,
+        41,
+        171,
+        20992,
+        794112
+      ]
+    },
+    {
+      "members": [
+        "IxVM::level_offset_of",
+        "IxVM::nl_add_const",
+        "IxVM::infer_let_local_cutoff",
+        "IxVM::infer_let_lookup_value",
+        "IxVM::check_field_universes_skip_params",
+        "IxVM::check_positivity_fields",
+        "IxVM::build_major_indices",
+        "IxVM::build_apply_field_bvars",
+        "IxVM::count_foralls_body"
+      ],
+      "shape": [
+        36,
+        10,
+        2
+      ],
+      "cost": [
+        36,
+        1,
+        72,
+        324,
+        18432,
+        697344
+      ]
+    },
+    {
+      "members": [
+        "IxVM::level_is_not_zero",
+        "IxVM::is_int_prim_addr",
+        "IxVM::try_iota",
+        "IxVM::is_unit_like_type",
+        "IxVM::check_positivity_aug",
+        "IxVM::canonical_rules_at_pos"
+      ],
+      "shape": [
+        64,
+        50,
+        2
+      ],
+      "cost": [
+        64,
+        1,
+        128,
+        732,
+        32768,
+        1637376
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_inst_levels"
+      ],
+      "shape": [
+        10,
+        4,
+        2
+      ],
+      "cost": [
+        10,
+        1,
+        640,
+        21504,
+        40960,
+        2703360
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_inst_levels_walk",
+        "IxVM::const_idxs_exprs"
+      ],
+      "shape": [
+        22,
+        16,
+        2
+      ],
+      "cost": [
+        22,
+        1,
+        1408,
+        49152,
+        90112,
+        6242304
+      ]
+    },
+    {
+      "members": [
+        "IxVM::collect_spine",
+        "IxVM::k_check"
+      ],
+      "shape": [
+        12,
+        10,
+        2
+      ],
+      "cost": [
+        12,
+        1,
+        768,
+        30720,
+        196608,
+        18087936
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"IxVM::list_snoc\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KExprNode\"}}}}]}",
+        "IxVM::expr_lower"
+      ],
+      "shape": [
+        13,
+        10,
+        2
+      ],
+      "cost": [
+        13,
+        1,
+        832,
+        31872,
+        425984,
+        40206336
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_infer_app_spine_loop",
+        "IxVM::expr_has_bvar_at_binder"
+      ],
+      "shape": [
+        32,
+        34,
+        2
+      ],
+      "cost": [
+        32,
+        1,
+        1024,
+        33984,
+        262144,
+        22462464
+      ]
+    },
+    {
+      "members": [
+        "IxVM::has_bvar_in_range"
+      ],
+      "shape": [
+        21,
+        16,
+        2
+      ],
+      "cost": [
+        21,
+        1,
+        1344,
+        48000,
+        172032,
+        13197312
+      ]
+    },
+    {
+      "members": [
+        "IxVM::has_bvar_in_range_binder",
+        "IxVM::expr_inst1_bvar",
+        "IxVM::k_is_def_eq_struct_safe"
+      ],
+      "shape": [
+        32,
+        14,
+        2
+      ],
+      "cost": [
+        32,
+        1,
+        512,
+        9792,
+        131072,
+        7421952
+      ]
+    },
+    {
+      "members": [
+        "IxVM::has_bvar_in_range_let",
+        "IxVM::expr_inst_many_let",
+        "IxVM::normalize_imax_dispatch",
+        "IxVM::nlvars_max_offset",
+        "IxVM::nlvars_subsume",
+        "IxVM::expr_has_bvar_at_let",
+        "IxVM::expr_inst1_let",
+        "IxVM::try_quot_iota",
+        "IxVM::quot_lift_addr_iota",
+        "IxVM::try_quot_lift",
+        "IxVM::quot_extract_arg",
+        "IxVM::quot_ctor_addr_iota",
+        "IxVM::quot_ind_addr_iota",
+        "IxVM::build_succ_offset",
+        "IxVM::se_mentions",
+        "IxVM::canon_cmp_kexpr_node_ctx"
+      ],
+      "shape": [
+        116,
+        50,
+        2
+      ],
+      "cost": [
+        116,
+        1,
+        0,
+        0,
+        1856,
+        32832
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_inst_many_walk",
+        "IxVM::expr_lower_walk"
+      ],
+      "shape": [
+        31,
+        14,
+        2
+      ],
+      "cost": [
+        31,
+        1,
+        1984,
+        57216,
+        1015808,
+        72646656
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_is_def_eq_ordered"
+      ],
+      "shape": [
+        9,
+        4,
+        2
+      ],
+      "cost": [
+        9,
+        1,
+        288,
+        8544,
+        36864,
+        2555904
+      ]
+    },
+    {
+      "members": [
+        "IxVM::try_def_eq_app"
+      ],
+      "shape": [
+        32,
+        12,
+        2
+      ],
+      "cost": [
+        32,
+        1,
+        1024,
+        23424,
+        131072,
+        7127040
+      ]
+    },
+    {
+      "members": [
+        "IxVM::de_args",
+        "IxVM::peel_beta"
+      ],
+      "shape": [
+        23,
+        10,
+        2
+      ],
+      "cost": [
+        23,
+        1,
+        736,
+        18144,
+        188416,
+        11919360
+      ]
+    },
+    {
+      "members": [
+        "IxVM::address_eq",
+        "IxVM::whnf"
+      ],
+      "shape": [
+        73,
+        12,
+        2
+      ],
+      "cost": [
+        73,
+        1,
+        4672,
+        103296,
+        598016,
+        28532736
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nl_eq",
+        "IxVM::nl_subsume_entry",
+        "IxVM::nat_sub_addr",
+        "IxVM::nat_div_addr",
+        "IxVM::try_extract_nat_app",
+        "IxVM::replace_spine_major",
+        "IxVM::try_unfold_head",
+        "IxVM::projection_addr_ctor",
+        "IxVM::peel_ctor_params_subst",
+        "IxVM::build_rule_rhs"
+      ],
+      "shape": [
+        69,
+        30,
+        2
+      ],
+      "cost": [
+        69,
+        1,
+        552,
+        7512,
+        35328,
+        1430016
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nl_skip_empty",
+        "IxVM::normalize_aux",
+        "IxVM::divide_grow"
+      ],
+      "shape": [
+        28,
+        20,
+        2
+      ],
+      "cost": [
+        28,
+        1,
+        224,
+        3840,
+        3584,
+        141312
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nlvars_eq",
+        "IxVM::glist_ordered_insert",
+        "IxVM::se_parent_addr",
+        "IxVM::nat_zero_addr",
+        "IxVM::se_scan_fields",
+        "IxVM::nat_addr_io",
+        "IxVM::mk_bool",
+        "IxVM::divmod_64u",
+        "IxVM::utf8_last_codepoint",
+        "IxVM::utf8_last_go",
+        "IxVM::byte_array_empty_addr",
+        "IxVM::np_whnf_inner_bv",
+        "IxVM::mk_nat_literal_64",
+        "IxVM::k_is_def_eq_struct_go",
+        "IxVM::build_rec_lvls_list",
+        "${\"name\":\"IxVM::list_snoc\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}},\"field\",{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KExprNode\"}}}}],\"name\":\"Lists::Node\"}}}},{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KLevelNode\"}}}}],\"name\":\"Lists::Node\"}}}}]}}]}"
+      ],
+      "shape": [
+        79,
+        34,
+        2
+      ],
+      "cost": [
+        79,
+        1,
+        0,
+        0,
+        10112,
+        316032
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nl_add_const_go",
+        "IxVM::try_nat_dispatch_prewhnf",
+        "IxVM::try_dec_dispatch",
+        "IxVM::dec_rewrite_lt_to_le",
+        "IxVM::quot_type_addr",
+        "${\"name\":\"IxVM::list_concat\",\"types\":[{\"tuple\":{\"items\":[{\"ptr\":{\"target\":{\"array\":{\"element\":\"field\",\"length\":32}}}},\"field\"]}}]}",
+        "IxVM::check_valid_ind_app",
+        "IxVM::eval_body",
+        "IxVM::def_kind_tag",
+        "IxVM::check_opt_u64",
+        "IxVM::check_opt_expr_addr",
+        "IxVM::check_opt_bool",
+        "IxVM::check_opt_recr_rules",
+        "IxVM::check_opt_addr",
+        "IxVM::check_opt_ctor_entries",
+        "IxVM::run_contains"
+      ],
+      "shape": [
+        65,
+        48,
+        2
+      ],
+      "cost": [
+        65,
+        1,
+        65,
+        351,
+        8320,
+        316032
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nlvars_add",
+        "IxVM::try_k_synth_iota",
+        "IxVM::mk_nat_offset_stuck",
+        "IxVM::klimbs_from_g",
+        "IxVM::fin_addr",
+        "UInt64::xor",
+        "IxVM::is_int_dec_prim_addr",
+        "IxVM::try_extract_int",
+        "IxVM::normalize_int_dec_rebuild",
+        "IxVM::try_extract_int_prim",
+        "IxVM::literal_eq",
+        "IxVM::check_quot",
+        "IxVM::check_large_walk_fields",
+        "IxVM::kexpr_struct_eq",
+        "IxVM::subst_param_for",
+        "IxVM::ctor_subst_param_for"
+      ],
+      "shape": [
+        114,
+        26,
+        2
+      ],
+      "cost": [
+        114,
+        1,
+        0,
+        0,
+        3648,
+        69504
+      ]
+    },
+    {
+      "members": [
+        "IxVM::glist_subset",
+        "IxVM::delta_rank",
+        "IxVM::k_infer_let_env",
+        "IxVM::k_infer_let_env_rebase",
+        "IxVM::build_major_params"
+      ],
+      "shape": [
+        31,
+        20,
+        2
+      ],
+      "cost": [
+        31,
+        1,
+        31,
+        165,
+        15872,
+        766464
+      ]
+    },
+    {
+      "members": [
+        "IxVM::glist_eq_len",
+        "IxVM::slow2_after_delta",
+        "IxVM::k_is_def_eq_struct",
+        "IxVM::peel_n_foralls_with_types",
+        "${\"name\":\"IxVM::list_reverse_acc\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KExprNode\"}}}}]}"
+      ],
+      "shape": [
+        24,
+        8,
+        2
+      ],
+      "cost": [
+        24,
+        1,
+        48,
+        240,
+        12288,
+        503808
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_is_def_eq_slow",
+        "IxVM::expr_inst1"
+      ],
+      "shape": [
+        15,
+        12,
+        2
+      ],
+      "cost": [
+        15,
+        1,
+        480,
+        15264,
+        122880,
+        10002432
+      ]
+    },
+    {
+      "members": [
+        "IxVM::try_string_lit_one"
+      ],
+      "shape": [
+        14,
+        6,
+        2
+      ],
+      "cost": [
+        14,
+        1,
+        224,
+        4800,
+        57344,
+        3588096
+      ]
+    },
+    {
+      "members": [
+        "IxVM::whnf_nd",
+        "IxVM::try_proof_irrel",
+        "IxVM::env_walk_refs_all"
+      ],
+      "shape": [
+        47,
+        12,
+        2
+      ],
+      "cost": [
+        47,
+        1,
+        188,
+        1560,
+        192512,
+        9338880
+      ]
+    },
+    {
+      "members": [
+        "IxVM::whnf_nd_with_spine"
+      ],
+      "shape": [
+        20,
+        12,
+        2
+      ],
+      "cost": [
+        20,
+        1,
+        160,
+        2688,
+        81920,
+        5357568
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_inst1_walk"
+      ],
+      "shape": [
+        20,
+        14,
+        2
+      ],
+      "cost": [
+        20,
+        1,
+        160,
+        2832,
+        81920,
+        5652480
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nat_succ_addr",
+        "IxVM::nat_add_addr",
+        "IxVM::string_append_addr",
+        "IxVM::subtype_val_addr",
+        "IxVM::int_dec_le_addr_dec",
+        "IxVM::int_dec_eq_addr_dec",
+        "IxVM::int_dec_lt_addr_dec",
+        "IxVM::int_add_addr",
+        "IxVM::int_mul_addr",
+        "IxVM::int_neg_addr",
+        "IxVM::int_emod_addr",
+        "IxVM::int_ediv_addr",
+        "IxVM::int_bmod_addr",
+        "IxVM::int_bdiv_addr",
+        "IxVM::int_nat_abs_addr",
+        "IxVM::int_pow_addr"
+      ],
+      "shape": [
+        18,
+        4,
+        2
+      ],
+      "cost": [
+        18,
+        1,
+        288,
+        5184,
+        576,
+        12864
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nat_mod_addr",
+        "IxVM::nat_pow_addr",
+        "IxVM::nat_beq_addr",
+        "IxVM::string_of_list_addr",
+        "IxVM::string_back_addr",
+        "IxVM::string_legacy_back_addr",
+        "IxVM::string_to_byte_array_addr",
+        "IxVM::string_dec_eq_addr",
+        "IxVM::punit_size_of_1_addr",
+        "IxVM::reduce_bool_addr",
+        "IxVM::reduce_nat_addr",
+        "IxVM::canon_ord_then"
+      ],
+      "shape": [
+        17,
+        4,
+        2
+      ],
+      "cost": [
+        17,
+        1,
+        272,
+        4992,
+        272,
+        4992
+      ]
+    },
+    {
+      "members": [
+        "IxVM::nat_ble_addr",
+        "IxVM::nat_land_addr",
+        "IxVM::nat_lor_addr",
+        "IxVM::nat_shift_left_addr",
+        "IxVM::nat_dec_le_addr_dec",
+        "IxVM::nat_dec_eq_addr_dec",
+        "IxVM::nat_dec_lt_addr_dec",
+        "IxVM::int_sub_addr"
+      ],
+      "shape": [
+        10,
+        4,
+        2
+      ],
+      "cost": [
+        10,
+        1,
+        80,
+        1392,
+        80,
+        1392
+      ]
+    },
+    {
+      "members": [
+        "IxVM::is_str_prim_addr",
+        "IxVM::is_native_prim_addr",
+        "IxVM::try_same_proj_head_app",
+        "IxVM::infer_let_drop_unused"
+      ],
+      "shape": [
+        51,
+        30,
+        2
+      ],
+      "cost": [
+        51,
+        1,
+        102,
+        534,
+        26112,
+        1181184
+      ]
+    },
+    {
+      "members": [
+        "IxVM::is_dec_prim_addr",
+        "IxVM::k_infer_let_env_core",
+        "IxVM::peel_field_loop",
+        "IxVM::assert_return_head_is_parent"
+      ],
+      "shape": [
+        37,
+        52,
+        2
+      ],
+      "cost": [
+        37,
+        1,
+        37,
+        279,
+        18944,
+        1291776
+      ]
+    },
+    {
+      "members": [
+        "IxVM::whnf_spine",
+        "IxVM::lazy_delta_both_proj",
+        "IxVM::infer_let_materialize"
+      ],
+      "shape": [
+        35,
+        24,
+        2
+      ],
+      "cost": [
+        35,
+        1,
+        35,
+        189,
+        35840,
+        1947648
+      ]
+    },
+    {
+      "members": [
+        "IxVM::whnf_with_spine",
+        "IxVM::k_def_eq_rebase"
+      ],
+      "shape": [
+        24,
+        26,
+        2
+      ],
+      "cost": [
+        24,
+        1,
+        384,
+        10560,
+        196608,
+        17350656
+      ]
+    },
+    {
+      "members": [
+        "IxVM::whnf_const_head",
+        "IxVM::whnf_iota_major",
+        "IxVM::slow2_eager_fallback",
+        "IxVM::check_inductive_shape_ctors"
+      ],
+      "shape": [
+        65,
+        42,
+        2
+      ],
+      "cost": [
+        65,
+        1,
+        0,
+        0,
+        66560,
+        3422208
+      ]
+    },
+    {
+      "members": [
+        "IxVM::projection_definition_info",
+        "IxVM::k_is_def_eq_slow_nd_after_core",
+        "IxVM::delta_unfold",
+        "IxVM::expr_mentions_block"
+      ],
+      "shape": [
+        48,
+        14,
+        2
+      ],
+      "cost": [
+        48,
+        1,
+        192,
+        1632,
+        49152,
+        2039808
+      ]
+    },
+    {
+      "members": [
+        "IxVM::canon_cprj_addr",
+        "IxVM::is_nat_succ_ih_step",
+        "IxVM::klimbs_add",
+        "IxVM::klimbs_normalize",
+        "UInt64::sub_with_borrow",
+        "IxVM::compute_iprj_addr",
+        "IxVM::rec_to_parent_addr",
+        "IxVM::io_peel_field_loop",
+        "IxVM::assert_lvls_are_params",
+        "${\"name\":\"IxVM::list_length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"IxVM::KRecRule\"}}]}",
+        "IxVM::is_large_eliminator",
+        "IxVM::build_flat_own_params",
+        "IxVM::flat_find_pos_kind",
+        "IxVM::build_all_motives",
+        "IxVM::build_motive_type_flat",
+        "IxVM::walk_refs_transitive"
+      ],
+      "shape": [
+        73,
+        22,
+        2
+      ],
+      "cost": [
+        73,
+        1,
+        0,
+        0,
+        18688,
+        611328
+      ]
+    },
+    {
+      "members": [
+        "${\"name\":\"IxVM::list_take\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"IxVM::KExprNode\"}}}}]}",
+        "IxVM::ctx_trim"
+      ],
+      "shape": [
+        15,
+        16,
+        2
+      ],
+      "cost": [
+        15,
+        1,
+        120,
+        2616,
+        61440,
+        5210112
+      ]
+    },
+    {
+      "members": [
+        "IxVM::try_extract_nat",
+        "IxVM::is_prop_type",
+        "IxVM::infer_let_lookup_type",
+        "IxVM::is_inductive_prop",
+        "IxVM::check_param_agreement",
+        "IxVM::list_any_mentions_block",
+        "IxVM::check_field_universes",
+        "IxVM::check_field_universes_inner",
+        "IxVM::check_positivity",
+        "IxVM::is_rec_field"
+      ],
+      "shape": [
+        36,
+        12,
+        2
+      ],
+      "cost": [
+        36,
+        1,
+        36,
+        156,
+        18432,
+        724992
+      ]
+    },
+    {
+      "members": [
+        "IxVM::klimbs_add_carry",
+        "IxVM::klimbs_sub_borrow",
+        "IxVM::whnf_struct_core_proj",
+        "IxVM::lazy_delta_step_const_const",
+        "IxVM::try_lazy_delta_app",
+        "IxVM::expr_glb_let",
+        "IxVM::build_minor_at_depth",
+        "IxVM::build_ih_doms",
+        "IxVM::compare_rules"
+      ],
+      "shape": [
+        84,
+        42,
+        2
+      ],
+      "cost": [
+        84,
+        1,
+        0,
+        0,
+        43008,
+        1803264
+      ]
+    },
+    {
+      "members": [
+        "IxVM::klimbs_dec",
+        "IxVM::se_peel_tol",
+        "IxVM::char_of_nat_addr",
+        "IxVM::split_u32",
+        "IxVM::divmod_256",
+        "IxVM::klimbs_div",
+        "IxVM::klimbs_mod",
+        "IxVM::klimbs_gcd",
+        "IxVM::klimbs_shl",
+        "IxVM::klimbs_shr",
+        "IxVM::mk_nat_binop_stuck",
+        "IxVM::char_lit_codepoint",
+        "IxVM::utf8_groups",
+        "IxVM::int_add_prim",
+        "IxVM::count_foralls_at_least",
+        "IxVM::all_bvars_in_args"
+      ],
+      "shape": [
+        38,
+        16,
+        2
+      ],
+      "cost": [
+        38,
+        1,
+        0,
+        0,
+        608,
+        11328
+      ]
+    },
+    {
+      "members": [
+        "IxVM::build_char_list",
+        "IxVM::try_nat_offset_dispatch",
+        "IxVM::char_lit_codepoint_syn",
+        "IxVM::try_bitvec_dispatch",
+        "IxVM::bitvec_prep_spine",
+        "IxVM::bv_to_nat_via",
+        "IxVM::bitvec_prep_spine_ult",
+        "IxVM::mk_nat_one",
+        "IxVM::system_platform_get_num_bits_addr",
+        "IxVM::check_native_bool",
+        "IxVM::check_native_nat",
+        "IxVM::try_normalize_int_decidable",
+        "IxVM::intern_int_lit",
+        "IxVM::nat_not_le_of_not_ble_eq_true_addr_dec",
+        "IxVM::mk_int_prim",
+        "IxVM::int_bmod_prim"
+      ],
+      "shape": [
+        82,
+        36,
+        2
+      ],
+      "cost": [
+        82,
+        1,
+        0,
+        0,
+        1312,
+        23616
+      ]
+    },
+    {
+      "members": [
+        "IxVM::decidable_rec_addr",
+        "IxVM::bool_false_addr",
+        "IxVM::bool_true_addr",
+        "IxVM::eq_refl_addr_dec",
+        "IxVM::decidable_is_true_addr_dec",
+        "IxVM::bit_vec_of_nat_addr",
+        "IxVM::lt_lt_addr",
+        "IxVM::bit_vec_addr",
+        "IxVM::int_of_nat_addr_dec",
+        "IxVM::int_neg_succ_addr_dec",
+        "IxVM::bool_type_addr_dec",
+        "IxVM::nat_le_of_ble_eq_true_addr_dec",
+        "IxVM::nat_eq_of_beq_eq_true_addr_dec",
+        "IxVM::nat_ne_of_beq_eq_false_addr_dec",
+        "IxVM::decidable_is_false_addr_dec",
+        "IxVM::eq_type_addr"
+      ],
+      "shape": [
+        18,
+        4,
+        2
+      ],
+      "cost": [
+        18,
+        1,
+        0,
+        0,
+        288,
+        5184
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_is_def_eq_slow_nd"
+      ],
+      "shape": [
+        14,
+        6,
+        2
+      ],
+      "cost": [
+        14,
+        1,
+        224,
+        4800,
+        57344,
+        3588096
+      ]
+    },
+    {
+      "members": [
+        "IxVM::whnf_struct_core"
+      ],
+      "shape": [
+        22,
+        6,
+        2
+      ],
+      "cost": [
+        22,
+        1,
+        352,
+        6336,
+        90112,
+        4767744
+      ]
+    },
+    {
+      "members": [
+        "IxVM::whnf_struct_core_const",
+        "IxVM::try_unfold_proj_app",
+        "IxVM::caddr_is_peer",
+        "IxVM::check_rec_rules_wellscoped",
+        "IxVM::const_idxs_rules",
+        "IxVM::run_check_env"
+      ],
+      "shape": [
+        41,
+        18,
+        2
+      ],
+      "cost": [
+        41,
+        1,
+        164,
+        1560,
+        41984,
+        1947648
+      ]
+    },
+    {
+      "members": [
+        "IxVM::try_eta_struct"
+      ],
+      "shape": [
+        61,
+        14,
+        2
+      ],
+      "cost": [
+        61,
+        1,
+        122,
+        498,
+        31232,
+        1098240
+      ]
+    },
+    {
+      "members": [
+        "IxVM::try_def_eq_nat",
+        "IxVM::lazy_delta_loop"
+      ],
+      "shape": [
+        29,
+        16,
+        2
+      ],
+      "cost": [
+        29,
+        1,
+        116,
+        1224,
+        59392,
+        3336192
+      ]
+    },
+    {
+      "members": [
+        "IxVM::is_nat_zero"
+      ],
+      "shape": [
+        13,
+        6,
+        2
+      ],
+      "cost": [
+        13,
+        1,
+        26,
+        162,
+        13312,
+        718848
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_is_def_eq_struct_bounded"
+      ],
+      "shape": [
+        43,
+        24,
+        2
+      ],
+      "cost": [
+        43,
+        1,
+        43,
+        213,
+        176128,
+        10518528
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_is_def_eq_structure_tree",
+        "IxVM::parse_atree_body"
+      ],
+      "shape": [
+        19,
+        22,
+        2
+      ],
+      "cost": [
+        19,
+        1,
+        304,
+        8832,
+        19456,
+        1394688
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_glb"
+      ],
+      "shape": [
+        9,
+        4,
+        2
+      ],
+      "cost": [
+        9,
+        1,
+        576,
+        20352,
+        294912,
+        25460736
+      ]
+    },
+    {
+      "members": [
+        "IxVM::expr_glb_binder"
+      ],
+      "shape": [
+        10,
+        4,
+        2
+      ],
+      "cost": [
+        10,
+        1,
+        80,
+        1392,
+        81920,
+        5849088
+      ]
+    },
+    {
+      "members": [
+        "IxVM::k_infer_rebase"
+      ],
+      "shape": [
+        15,
+        12,
+        2
+      ],
+      "cost": [
+        15,
+        1,
+        240,
+        6144,
+        122880,
+        10002432
+      ]
+    },
+    {
+      "members": [
+        "IxVM::canon_ord_cmp_g"
+      ],
+      "shape": [
+        8,
+        2,
+        2
+      ],
+      "cost": [
+        8,
+        1,
+        2048,
+        89088,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "IxVM::canon_addr_cmp"
+      ],
+      "shape": [
+        83,
+        36,
+        1
+      ],
+      "cost": [
+        83,
+        1,
+        2656,
+        58208,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "IxVM::canon_addr_chunk"
+      ],
+      "shape": [
+        11,
+        4,
+        1
+      ],
+      "cost": [
+        11,
+        1,
+        2816,
+        105472,
+        0,
+        0
+      ]
+    },
+    {
+      "members": [
+        "IxVM::canon_cmp_kliteral",
+        "IxVM::canon_cmp_bytes",
+        "IxVM::canon_cmp_ctor_range_ctx",
+        "IxVM::canon_cmp_ctor_pair_ctx",
+        "IxVM::canon_cmp_krec_rule_list_ctx",
+        "IxVM::canon_cmp_krec_rule_ctx",
+        "IxVM::canon_group_walk",
+        "IxVM::canon_all_singleton",
+        "IxVM::canon_flatten",
+        "IxVM::nl_covers_const",
+        "IxVM::get_ctor_entry_list_inner",
+        "IxVM::get_reveal_ctor_info",
+        "IxVM::run_reveal",
+        "IxVM::expr_addr",
+        "IxVM::check_mut_const",
+        "IxVM::check_ctor_entry"
+      ],
+      "shape": [
+        155,
+        42,
+        2
+      ],
+      "cost": [
+        155,
+        1,
+        0,
+        0,
+        310,
+        1230
+      ]
+    },
+    {
+      "members": [
+        "IxVM::g_list_has"
+      ],
+      "shape": [
+        11,
+        4,
+        2
+      ],
+      "cost": [
+        11,
+        1,
+        352,
+        9504,
+        180224,
+        13271040
+      ]
+    }
+  ]
+}

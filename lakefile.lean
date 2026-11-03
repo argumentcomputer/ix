@@ -4,6 +4,10 @@ open System Lake DSL
 package ix where
   version := v!"0.1.0"
 
+require aiur from "Aiur"
+require ixvm from "IxVM"
+require multiStark from "MultiStark"
+
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
 
@@ -44,17 +48,13 @@ section FFI
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
-  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
-  -- IX_CUDA_TRACE_CODEGEN=1 enables generated trace kernels and implies CUDA.
+  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixCuda ← IO.getEnv "IX_CUDA"
-  let ixTraceCodegen ← IO.getEnv "IX_CUDA_TRACE_CODEGEN"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
     features := features.push "cuda"
-  if ixTraceCodegen == some "1" || ixTraceCodegen == some "true" || ixTraceCodegen == some "yes" then
-    features := features.push "cuda-trace-codegen"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
@@ -68,11 +68,13 @@ arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
 archive from a previous invocation. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
     SpawnM (Job FilePath) := do
-  let sources ← inputDir (pkg.dir / "crates") true fun path =>
-    path.extension == some "rs" || path.extension == some "cu" ||
-    path.extension == some "cuh" || path.extension == some "h" ||
-    path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
-    path.fileName == "trace-manifest.json"
+  let crates := #["bench", "common", "ffi", "ixon", "record-pool"]
+  let sources := Job.collectArray (← crates.mapM fun name =>
+    inputDir (pkg.dir / "crates" / FilePath.mk name) true fun path =>
+      path.extension == some "rs" || path.extension == some "cu" ||
+      path.extension == some "cuh" || path.extension == some "h" ||
+      path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
+      path.fileName == "trace-manifest.json")
   let manifests := Job.collectArray #[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")
@@ -117,9 +119,6 @@ target ix_rs_net pkg : FilePath := do
 
 end FFI
 
-lean_lib MultiStark where
-  moreLinkObjs := #[ix_rs]
-
 /-- `lake -R -Kprofile build` compiles with frame pointers, so `perf` can unwind
 call graphs through generated C (LBR and DWARF unwinding are unavailable on
 the benchmark machines). The default build is unaffected. -/
@@ -155,6 +154,14 @@ are installed unchecked on purpose). -/
 lean_lib EntryCaseFixtures where
   roots := #[`Tests.Ix.Kernel.EntryCaseDefs]
 
+lean_exe «formal-aiur-tests» where
+  root := `Tests.FormalAiur
+  supportInterpreter := true
+
+lean_exe «formal-aggregate-tests» where
+  root := `Tests.FormalAggregate
+  supportInterpreter := true
+
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main
@@ -164,13 +171,6 @@ lean_exe IxTests where
 
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
-  supportInterpreter := true
-
-/-- Regenerates, or with `--check` verifies, the trace-codegen test fixtures:
-the Rust writers, CUDA units and manifest the `aiur` parity tests compile
-against. -/
-lean_exe «trace-fixtures» where
-  root := `Tests.Aiur.TraceFixtures
   supportInterpreter := true
 
 /-- Focused source-contract checks, including fresh-module registration export. -/
@@ -208,37 +208,8 @@ lean_exe «sharing-family-trace» where
 lean_exe «sharing-family-normalize» where
   root := `Benchmarks.SharingFamilyNormalize
 
-lean_exe «bench-aiur» where
-  root := `Benchmarks.Aiur
-
-lean_exe «bench-blake3» where
-  root := `Benchmarks.Blake3
-
-lean_exe «bench-sha256» where
-  root := `Benchmarks.Sha256
-
-lean_exe «bench-ixvm» where
-  root := `Benchmarks.IxVM
-  supportInterpreter := true
-
 lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
-
-lean_exe «bench-typecheck» where
-  root := `Benchmarks.Typecheck
-  supportInterpreter := true
-
-lean_exe «bench-recursion-debug» where
-  root := `Benchmarks.RecursionDebug
-  supportInterpreter := true
-
-lean_exe «bench-aggregate-policy» where
-  root := `Benchmarks.AggregatePolicy
-  supportInterpreter := true
-  -- Keep ix_ffi ahead of Blake3's Rust staticlib. Importing the converged
-  -- aggregator makes both archives direct dependencies; Rust allocator
-  -- symbols are then resolved from ix_ffi and not pulled twice.
-  moreLinkObjs := #[ix_rs]
 
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
@@ -341,9 +312,9 @@ def moduleExclusions : Array ModuleExclusion := #[
 `IxSharingVerify/` (a globbed library, built by `lake lint`) are covered by
 their own targets; `Models/` and every directory with its own lakefile are
 other workspaces. -/
-def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps", "MultiStark"]
+def coveredDirs : Array FilePath := #["Ix", "Tests", "Benchmarks", "Apps"]
 def coveredRootFiles : Array FilePath :=
-  #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean", "MultiStark.lean"]
+  #["Ix.lean", "Main.lean", "Tests.lean", "Apps.lean"]
 
 /-- Whether `dir` is a nested Lake workspace (it has its own lakefile). -/
 def isNestedWorkspace (dir : FilePath) : IO Bool := do

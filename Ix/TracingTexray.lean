@@ -1,7 +1,7 @@
 /-
   tracing-texray + streaming Lean API.
 
-  The Rust prover emits `tracing` spans for each major Aiur proving stage
+  The Rust prover emits `tracing` spans for each major LegacyAiur proving stage
   (`aiur/execute`, `aiur/witness`, `aiur/prove`) and each STARK proving
   stage (`stark/...`). After `init` installs the subscriber:
     * a one-line `[texray] <span>: <dur>  ── RAM Δ +X peak Y` is streamed

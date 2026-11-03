@@ -1,0 +1,15 @@
+// Goldilocks arithmetic uses ordinary field operations and checked advice.
+// Opaque library bytes/words can only be produced by their checked constructors.
+type U8 = UInt8::U8;
+type U32 = UInt32::U32;
+inline fn store<T>(value: T) -> &T { &value }
+inline fn load<T>(pointer: &T) -> T { *pointer }
+
+// Merkle equality is equality of all 256 digest bits, not equality modulo p
+// or equality of prover-selected memory addresses.
+fn digest_eq(ap: DigestP, bp: DigestP) -> Field {
+    let a = load(ap);
+    let b = load(bp);
+    UInt64::eq(a[0], b[0]) * UInt64::eq(a[1], b[1]) *
+    UInt64::eq(a[2], b[2]) * UInt64::eq(a[3], b[3])
+}

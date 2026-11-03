@@ -1,0 +1,482 @@
+{
+  "legacy-environment-grouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.076047444,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.081557777,
+        "execute_seconds": 0.39694079
+      },
+      {
+        "trace_with_lookups_seconds": 0.086292135,
+        "execute_seconds": 0.397741859
+      },
+      {
+        "trace_with_lookups_seconds": 0.084350744,
+        "execute_seconds": 0.398091789
+      },
+      {
+        "trace_with_lookups_seconds": 0.081483986,
+        "execute_seconds": 0.396436093
+      },
+      {
+        "trace_with_lookups_seconds": 0.087176121,
+        "execute_seconds": 0.400138541
+      }
+    ],
+    "proof": {
+      "verified": true,
+      "prove_including_trace_seconds": 2.449755292,
+      "bytes": 6854018
+    },
+    "backend": "legacy-bytecode"
+  },
+  "legacy-environment-ungrouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.06004794,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.105635153,
+        "execute_seconds": 0.386776311
+      },
+      {
+        "trace_with_lookups_seconds": 0.114584263,
+        "execute_seconds": 0.388725391
+      },
+      {
+        "trace_with_lookups_seconds": 0.098282221,
+        "execute_seconds": 0.389947833
+      },
+      {
+        "trace_with_lookups_seconds": 0.100203899,
+        "execute_seconds": 0.390350548
+      },
+      {
+        "trace_with_lookups_seconds": 0.077690792,
+        "execute_seconds": 0.393669849
+      }
+    ],
+    "proof": {
+      "verified": true,
+      "prove_including_trace_seconds": 2.903080081,
+      "bytes": 13641248
+    },
+    "backend": "legacy-bytecode"
+  },
+  "legacy-ixvm-grouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.079015013,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.014471597,
+        "execute_seconds": 0.009000444
+      },
+      {
+        "trace_with_lookups_seconds": 0.011531999,
+        "execute_seconds": 0.009223491
+      },
+      {
+        "trace_with_lookups_seconds": 0.011553616,
+        "execute_seconds": 0.008779689
+      },
+      {
+        "trace_with_lookups_seconds": 0.011297992,
+        "execute_seconds": 0.008808963
+      },
+      {
+        "trace_with_lookups_seconds": 0.006547986,
+        "execute_seconds": 0.008777393
+      }
+    ],
+    "proof": {
+      "verified": true,
+      "prove_including_trace_seconds": 0.294008628,
+      "bytes": 5669347
+    },
+    "backend": "legacy-bytecode"
+  },
+  "legacy-ixvm-ungrouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.059585136,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.014757027,
+        "execute_seconds": 0.009166877
+      },
+      {
+        "trace_with_lookups_seconds": 0.01332742,
+        "execute_seconds": 0.008943193
+      },
+      {
+        "trace_with_lookups_seconds": 0.007992184,
+        "execute_seconds": 0.00900008
+      },
+      {
+        "trace_with_lookups_seconds": 0.008374487,
+        "execute_seconds": 0.008652334
+      },
+      {
+        "trace_with_lookups_seconds": 0.011523387,
+        "execute_seconds": 0.008857624
+      }
+    ],
+    "proof": {
+      "verified": true,
+      "prove_including_trace_seconds": 0.289305378,
+      "bytes": 7053239
+    },
+    "backend": "legacy-bytecode"
+  },
+  "legacy-recursion-grouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.031248566,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.011727278,
+        "execute_seconds": 0.00420134
+      },
+      {
+        "trace_with_lookups_seconds": 0.010913536,
+        "execute_seconds": 0.004066102
+      },
+      {
+        "trace_with_lookups_seconds": 0.0061596,
+        "execute_seconds": 0.003901586
+      },
+      {
+        "trace_with_lookups_seconds": 0.007437187,
+        "execute_seconds": 0.004151221
+      },
+      {
+        "trace_with_lookups_seconds": 0.012957897,
+        "execute_seconds": 0.003922958
+      }
+    ],
+    "proof": {
+      "verified": true,
+      "prove_including_trace_seconds": 0.193554784,
+      "bytes": 3446443
+    },
+    "backend": "legacy-bytecode"
+  },
+  "legacy-recursion-real-grouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.024223216,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 2.255246306,
+        "execute_seconds": 8.767378601
+      },
+      {
+        "trace_with_lookups_seconds": 2.26979904,
+        "execute_seconds": 8.893816584
+      },
+      {
+        "trace_with_lookups_seconds": 2.249765906,
+        "execute_seconds": 8.821552426
+      }
+    ],
+    "proof": {
+      "verified": true,
+      "prove_including_trace_seconds": 43.336270723,
+      "bytes": 3706823
+    },
+    "backend": "legacy-bytecode"
+  },
+  "legacy-recursion-real-ungrouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.021167741,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 2.215617275,
+        "execute_seconds": 8.562322261
+      },
+      {
+        "trace_with_lookups_seconds": 2.225973237,
+        "execute_seconds": 8.614019507
+      },
+      {
+        "trace_with_lookups_seconds": 2.238022196,
+        "execute_seconds": 8.56303241
+      }
+    ],
+    "proof": null,
+    "backend": "legacy-bytecode"
+  },
+  "legacy-recursion-ungrouped": {
+    "thp_disabled": true,
+    "setup_seconds": 0.030230798,
+    "samples": [
+      {
+        "trace_with_lookups_seconds": 0.011264631,
+        "execute_seconds": 0.004155824
+      },
+      {
+        "trace_with_lookups_seconds": 0.006123067,
+        "execute_seconds": 0.003965857
+      },
+      {
+        "trace_with_lookups_seconds": 0.007140913,
+        "execute_seconds": 0.00383872
+      },
+      {
+        "trace_with_lookups_seconds": 0.0112362,
+        "execute_seconds": 0.003970797
+      },
+      {
+        "trace_with_lookups_seconds": 0.008653358,
+        "execute_seconds": 0.003888236
+      }
+    ],
+    "proof": {
+      "verified": true,
+      "prove_including_trace_seconds": 0.214212501,
+      "bytes": 5522745
+    },
+    "backend": "legacy-bytecode"
+  },
+  "new-environment-grouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.132464764,
+    "proof": {
+      "bytes": 7227058,
+      "prove_including_trace_seconds": 3.632477276,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.364449723,
+        "trace_with_lookups_seconds": 0.154146488
+      },
+      {
+        "execute_seconds": 0.349189468,
+        "trace_with_lookups_seconds": 0.154719896
+      },
+      {
+        "execute_seconds": 0.358461287,
+        "trace_with_lookups_seconds": 0.149352298
+      },
+      {
+        "execute_seconds": 0.361377318,
+        "trace_with_lookups_seconds": 0.149341662
+      },
+      {
+        "execute_seconds": 0.360528516,
+        "trace_with_lookups_seconds": 0.15859383
+      }
+    ],
+    "setup_seconds": 0.289413644,
+    "thp_disabled": true
+  },
+  "new-environment-ungrouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.12973461,
+    "proof": {
+      "bytes": 13201304,
+      "prove_including_trace_seconds": 3.9103374520000003,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.341932683,
+        "trace_with_lookups_seconds": 0.157360247
+      },
+      {
+        "execute_seconds": 0.361428507,
+        "trace_with_lookups_seconds": 0.14809004
+      },
+      {
+        "execute_seconds": 0.354676403,
+        "trace_with_lookups_seconds": 0.149419147
+      },
+      {
+        "execute_seconds": 0.358926832,
+        "trace_with_lookups_seconds": 0.154093866
+      },
+      {
+        "execute_seconds": 0.359224517,
+        "trace_with_lookups_seconds": 0.147582286
+      }
+    ],
+    "setup_seconds": 0.277710595,
+    "thp_disabled": true
+  },
+  "new-ixvm-grouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.133448156,
+    "proof": {
+      "bytes": 6320763,
+      "prove_including_trace_seconds": 0.306254756,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.005795523,
+        "trace_with_lookups_seconds": 0.007127367
+      },
+      {
+        "execute_seconds": 0.0057252,
+        "trace_with_lookups_seconds": 0.006028823
+      },
+      {
+        "execute_seconds": 0.005897024,
+        "trace_with_lookups_seconds": 0.006645933
+      },
+      {
+        "execute_seconds": 0.006214188,
+        "trace_with_lookups_seconds": 0.005493144
+      },
+      {
+        "execute_seconds": 0.005733797,
+        "trace_with_lookups_seconds": 0.00646927
+      }
+    ],
+    "setup_seconds": 0.294222455,
+    "thp_disabled": true
+  },
+  "new-ixvm-ungrouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.130384313,
+    "proof": {
+      "bytes": 7239989,
+      "prove_including_trace_seconds": 0.319077654,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.005896784,
+        "trace_with_lookups_seconds": 0.006270345
+      },
+      {
+        "execute_seconds": 0.005690966,
+        "trace_with_lookups_seconds": 0.006983003
+      },
+      {
+        "execute_seconds": 0.005869135,
+        "trace_with_lookups_seconds": 0.005394423
+      },
+      {
+        "execute_seconds": 0.006009078,
+        "trace_with_lookups_seconds": 0.005384266
+      },
+      {
+        "execute_seconds": 0.00604033,
+        "trace_with_lookups_seconds": 0.006156724
+      }
+    ],
+    "setup_seconds": 0.274913671,
+    "thp_disabled": true
+  },
+  "new-recursion-grouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.040501789,
+    "proof": {
+      "bytes": 3585743,
+      "prove_including_trace_seconds": 0.213977614,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.002884992,
+        "trace_with_lookups_seconds": 0.004701708
+      },
+      {
+        "execute_seconds": 0.002495215,
+        "trace_with_lookups_seconds": 0.004221867
+      },
+      {
+        "execute_seconds": 0.002122304,
+        "trace_with_lookups_seconds": 0.005382521
+      },
+      {
+        "execute_seconds": 0.002042437,
+        "trace_with_lookups_seconds": 0.006158917
+      },
+      {
+        "execute_seconds": 0.002389625,
+        "trace_with_lookups_seconds": 0.004231292
+      }
+    ],
+    "setup_seconds": 0.040630288,
+    "thp_disabled": true
+  },
+  "new-recursion-real-grouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.101803493,
+    "proof": {
+      "bytes": 3845899,
+      "prove_including_trace_seconds": 55.064503669,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 7.972376886,
+        "trace_with_lookups_seconds": 3.553346614
+      },
+      {
+        "execute_seconds": 7.9547783899999995,
+        "trace_with_lookups_seconds": 3.572674917
+      },
+      {
+        "execute_seconds": 7.957455595,
+        "trace_with_lookups_seconds": 3.5628524539999997
+      }
+    ],
+    "setup_seconds": 0.034483757,
+    "thp_disabled": true
+  },
+  "new-recursion-real-ungrouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.097651174,
+    "proof": null,
+    "samples": [
+      {
+        "execute_seconds": 7.917346044,
+        "trace_with_lookups_seconds": 3.398995707
+      },
+      {
+        "execute_seconds": 7.910016249,
+        "trace_with_lookups_seconds": 3.323557759
+      },
+      {
+        "execute_seconds": 7.9684180829999995,
+        "trace_with_lookups_seconds": 3.473215938
+      }
+    ],
+    "setup_seconds": 0.032357274,
+    "thp_disabled": true
+  },
+  "new-recursion-ungrouped": {
+    "backend": "new-bytecode",
+    "prepare_seconds": 0.040377497,
+    "proof": {
+      "bytes": 5486185,
+      "prove_including_trace_seconds": 0.238928249,
+      "verified": true
+    },
+    "samples": [
+      {
+        "execute_seconds": 0.00239003,
+        "trace_with_lookups_seconds": 0.006444447
+      },
+      {
+        "execute_seconds": 0.002052921,
+        "trace_with_lookups_seconds": 0.005409143
+      },
+      {
+        "execute_seconds": 0.002123758,
+        "trace_with_lookups_seconds": 0.00515627
+      },
+      {
+        "execute_seconds": 0.003619588,
+        "trace_with_lookups_seconds": 0.004164671
+      },
+      {
+        "execute_seconds": 0.002143173,
+        "trace_with_lookups_seconds": 0.004843126
+      }
+    ],
+    "setup_seconds": 0.038641642,
+    "thp_disabled": true
+  }
+}

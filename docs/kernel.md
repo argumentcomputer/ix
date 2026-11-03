@@ -1052,11 +1052,10 @@ interleaved:
    `prim-addrs` checks. The suites
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
-3. **Generated IxVM Rust.** `lake exe ix codegen` regenerates
-   `crates/ixvm-codegen/src/*.rs` from the IxVM sources and `Ix/IxVM/Kernel/RoleSpec.lean`, the role specifications
+3. **Generated IxVM `.aiur`.** `python3 tools/ixvm/adapt.py` regenerates
+   `IxVM/IxVM/Modules/*.aiur` from `Ix/IxVM/**/*.lean` and `Ix/IxVM/Kernel/RoleSpec.lean`, the role specifications
    rendered as circuit terms (`Ix/IxVM/RoleSpecGen.lean`), which also
-   changes with `specVersion` or the specification digest; `lake exe ix
-   codegen --check` must pass.
+   changes with `specVersion` or the specification digest; `python3 tools/ixvm/adapt.py --check` must pass.
 4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
    to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
@@ -1079,7 +1078,7 @@ interleaved:
    are the codec's: rewrite them for the new grammar (`kernel-codec`
    compares the Lean codec with Rust's on them).
 7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
-   kernel-check FFT-cost pin of `Tests/Ix/IxVM.lean` and the shard pin in
+   kernel-check FFT-cost pin of `Tests/Ix/LegacyIxVM.lean` and the shard pin in
    `Tests/Main.lean` that moved; set each to the measured value.
 8. **Frozen audit records**, as step 3 of a toolchain bump, including the
    codec's own closure in `IxC/Ixon/Audit.lean`.
