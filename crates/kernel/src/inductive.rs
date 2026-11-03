@@ -859,9 +859,22 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
       match (source.data(), current.data()) {
-        (ExprData::App(sf, sa, _), ExprData::App(f, a, _)) => {
-          work.push((sa.clone(), a.clone(), depth));
-          work.push((sf.clone(), f.clone(), depth));
+        (ExprData::App(..), ExprData::App(..)) => {
+          // A failed complete application has no matching function prefix:
+          // recognition uses the head and its first `params` arguments, and
+          // shorter prefixes only remove trailing arguments. Visit the head
+          // and each actual argument once, in the same left-to-right order,
+          // instead of recollecting every prefix's entire application spine.
+          let mut src = &source;
+          let mut cur = &current;
+          while let (ExprData::App(sf, sa, _), ExprData::App(f, a, _)) =
+            (src.data(), cur.data())
+          {
+            work.push((sa.clone(), a.clone(), depth));
+            src = sf;
+            cur = f;
+          }
+          work.push((src.clone(), cur.clone(), depth));
         },
         (
           ExprData::Lam(_, _, _, st, sb, _),
@@ -5694,6 +5707,26 @@ mod tests {
       matches!(flat[0].spec_params[0].data(), ExprData::Const(id, levels, _)
       if *id == mk_id("Tree") && levels.is_empty())
     );
+  }
+
+  #[test]
+  fn nested_syntax_visits_all_arguments_of_a_wide_application() {
+    let nested =
+      || app(cnst("List", &[AU::succ(AU::zero())]), cnst("Tree", &[]));
+    // One occurrence at the start of the spine, another under a binder in
+    // the middle, and another in the final argument. None may disappear
+    // when the non-inductive function prefixes are skipped.
+    for position in [0, 1024, 2047] {
+      let mut e = cnst("NonInductiveWrapper", &[]);
+      for i in 0..2048 {
+        let argument =
+          if i == position { pi(sort1(), nested()) } else { sort1() };
+        e = app(e, argument);
+      }
+      let flat = discover_test_syntax(&e, 0);
+      assert_eq!(flat.len(), 1);
+      assert_eq!(flat[0].id, mk_id("List"));
+    }
   }
 
   #[test]

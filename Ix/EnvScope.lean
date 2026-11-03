@@ -149,9 +149,20 @@ def unitRoots (consts : Lean.ConstMap) (o : Lean.Name) : List Lean.Name :=
   | some (.opaqueInfo v) => v.all
   | _ => [o]
 
-/-- The key of the unit of a declaration `o` (the first root). -/
+/-- The key of the unit of a declaration `o` (the first root). Read the
+first name directly: computing the key must not enumerate every constructor
+in the unit. -/
 def unitKey (consts : Lean.ConstMap) (o : Lean.Name) : Lean.Name :=
-  (unitRoots consts o).head?.getD o
+  let roots := match consts.find? o with
+    | some (.inductInfo v) => v.all
+    | some (.ctorInfo v) => match consts.find? v.induct with
+      | some (.inductInfo iv) => iv.all
+      | _ => []
+    | some (.defnInfo v) => v.all
+    | some (.thmInfo v) => v.all
+    | some (.opaqueInfo v) => v.all
+    | _ => []
+  roots.head?.getD o
 
 /-- Every auxiliary of the environment by the key of its owner's unit. Built
 once per closure walk (a pass over the constants). -/
@@ -164,7 +175,9 @@ def unitIndex (consts : Lean.ConstMap) : UnitIndex := Id.run do
     consts.toList.toArray).filterMap id
   let mut idx : UnitIndex := Std.HashMap.emptyWithCapacity pairs.size
   for (k, n) in pairs do
-    idx := idx.insert k ((idx.getD k #[]).push n)
+    let members := idx.getD k #[]
+    idx := idx.erase k
+    idx := idx.insert k (members.push n)
   return idx
 
 /-- The logical unit of `n`'s declaration: its roots and every auxiliary of
@@ -259,6 +272,8 @@ private partial def collectDepsStep (env : Lean.Environment) (units : UnitIndex)
     Std.HashSet Lean.Name := Id.run do
   let mut needed := initNeeded
   let mut worklist := seeds
+  let mut expandedRoots : Std.HashSet Lean.Name := {}
+  let mut expandedAux : Std.HashSet Lean.Name := {}
   while !worklist.isEmpty do
     match worklist with
     | [] => break
@@ -274,8 +289,26 @@ private partial def collectDepsStep (env : Lean.Environment) (units : UnitIndex)
         -- (`Lean.auxFamilySiblings`).
         for r in Lean.auxFamilySiblings env.constants n do refs := refs.insert r
         if opts.units then
-          -- the whole logical unit of the declaration (§6.3)
-          for r in unitMembers env.constants units n do refs := refs.insert r
+          let owner := (unitAuxOwner? env.constants n).getD n
+          -- Constructors have exactly their inductive's roots. Other owners
+          -- remain distinct even if malformed `all` metadata gives them the
+          -- same unit key; their root lists must still both be traversed.
+          let rootOwner := match env.constants.find? owner with
+            | some (.ctorInfo v) => match env.constants.find? v.induct with
+              | some (.inductInfo _) => v.induct
+              | _ => owner
+            | _ => owner
+          unless expandedRoots.contains rootOwner do
+            expandedRoots := expandedRoots.insert rootOwner
+            for r in unitRoots env.constants owner do
+              if env.constants.contains r then refs := refs.insert r
+          -- The auxiliary list depends only on the unit key. Expanding it
+          -- once avoids rebuilding the same reference set for every member.
+          let key := unitKey env.constants owner
+          unless expandedAux.contains key do
+            expandedAux := expandedAux.insert key
+            for r in units.getD key #[] do
+              if env.constants.contains r then refs := refs.insert r
         if opts.checkerSupport then
           for r in checkerSupportOf env.constants n do refs := refs.insert r
         match ci with

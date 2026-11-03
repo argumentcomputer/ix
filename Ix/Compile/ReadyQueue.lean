@@ -52,10 +52,15 @@ def makePlan (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldStat
   let descriptors := Ix.Compile.Parallel.map 256 (fun (key, representative, members) => Id.run do
     let dependencies := (sched.deps.getD representative {}).toArray
     let mut parents : Array Nat := #[]
+    -- Several names can belong to one parent. Preserve their first-occurrence
+    -- order without scanning the growing parent array for every dependency.
+    let mut seen : Std.HashSet Nat := {}
     for name in dependencies do
       if let some owner := blocks.lowLinks.get? name then
         if let some index := indices.get? owner then
-          if !parents.contains index then parents := parents.push index
+          if !seen.contains index then
+            seen := seen.insert index
+            parents := parents.push index
     return { key, representative, members, dependencies, parents : Descriptor }) rows
   return { descriptors, indices }
 

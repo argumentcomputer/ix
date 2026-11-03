@@ -1,5 +1,6 @@
 import Tests.Ix.SharingExact
 import Ix.Sharing.FamilyContext
+import Tests.Ix.SharingScratch
 import Lean.Compiler.CSimpAttr
 
 set_option compiler.extract_closed false
@@ -137,10 +138,31 @@ private def componentControls : IO Nat := do
   ensure (longerClosure > 0) "context controls did not distinguish closure work from area work"
   return tested
 
+private def scratchControls : IO Nat := do
+  let mut tested := 0
+  for depth in [8, 15] do
+    let prepared ← IO.ofExcept ((Tests.SharingScratch.prepare 4 depth).mapError toString)
+    ensure (prepared.stage.comps.size == 4 && prepared.stage.comps.all (·.size == 12))
+      "scratch fixture lost its twelve-member components"
+    ensure (prepared.parallelComponents == if depth == 8 then 4 else 0)
+      "area scheduling did not preserve small-DAG parallelism and large-DAG buffer reuse"
+    for cfg in [({ exactLimit := 0 } : Config), ⟨16⟩, ⟨24⟩] do
+      for limits in [({} : Limits), { maxStates := 0 }, { maxCostEvals := 0 },
+          { maxStates := 4096 }, { maxCostEvals := 200000 }] do
+        let expected := familyComponentsArea cfg limits prepared.expanded prepared.stage 3 prepared.parents
+        let actual := prepared.run cfg limits
+        ensure (sameOutcome actual expected)
+          "area task selection changed complete component rows, counters or refusals"
+        tested := tested + 1
+  return tested
+
 def suite : List TestSeq := [
   .individualIO "checked light context preserves full results and exact refusals" none (do
     let normalized ← normalizationControls
     let components ← componentControls
-    return (true, normalized + components, 0, none)) .done]
+    return (true, normalized + components, 0, none)) .done,
+  .individualIO "area task selection preserves results and reuses large scratch buffers" none (do
+    let tested ← scratchControls
+    return (true, tested, 0, none)) .done]
 
 end Tests.SharingContext

@@ -317,6 +317,161 @@ fn projected_proofs_keep_exact_record_owner_and_member_provenance() {
 }
 
 #[test]
+fn work_enumeration_decodes_each_wide_owner_a_bounded_number_of_times() {
+  let env = Env::new();
+  let member = MutConst::Defn(Definition {
+    kind: DefKind::Definition,
+    safety: DefinitionSafety::Safe,
+    lvls: 0,
+    typ: Arc::new(Expr::Sort(1)),
+    value: Arc::new(Expr::Sort(0)),
+  });
+  let owner = store(
+    &env,
+    Constant::with_tables(
+      ConstantInfo::Muts(vec![member; 512]),
+      vec![],
+      vec![],
+      vec![Univ::zero(), Univ::succ(Univ::zero())],
+    ),
+  );
+  for i in 0..512 {
+    store(&env, defn_proj_constant(i, owner.clone()));
+  }
+  let source = ArtifactSource::prepare(env).unwrap();
+  let work = crate::anon_work::build_artifact_work(&source).unwrap();
+  assert_eq!(work.len(), 1);
+  assert_eq!(work[0].targets().len(), 512);
+  // If a projection sorts before its owner, its layout is decoded first;
+  // scheduling the owner itself then needs one more payload decoding.
+  assert!(
+    source.0.owner_decodes.load(std::sync::atomic::Ordering::Relaxed) <= 2
+  );
+  let before =
+    source.0.owner_decodes.load(std::sync::atomic::Ordering::Relaxed);
+  let worker = source.clone();
+  for target in work[0].targets() {
+    worker.authenticate_reference(target).unwrap();
+    assert!(!worker.in_safety_tier(target));
+  }
+  assert_eq!(
+    source.0.owner_decodes.load(std::sync::atomic::Ordering::Relaxed),
+    before
+  );
+}
+
+#[test]
+fn cached_projection_validation_preserves_every_owner_shape_refusal() {
+  use ixon::constant::{
+    Constructor, Inductive, Recursor, ctor_proj_constant, indc_proj_constant,
+    recr_proj_constant,
+  };
+  let env = Env::new();
+  let ConstantInfo::Defn(definition) = record(0, true).info else {
+    unreachable!()
+  };
+  let ctor = |cidx| Constructor {
+    is_unsafe: false,
+    lvls: 0,
+    cidx,
+    params: 0,
+    fields: 0,
+    typ: Arc::new(Expr::Sort(0)),
+  };
+  let owner = store(
+    &env,
+    Constant::with_tables(
+      ConstantInfo::Muts(vec![
+        MutConst::Defn(definition),
+        MutConst::Indc(Inductive {
+          is_unsafe: true,
+          lvls: 0,
+          params: 0,
+          indices: 0,
+          typ: Arc::new(Expr::Sort(0)),
+          ctors: vec![ctor(0), ctor(7)],
+        }),
+        MutConst::Recr(Recursor {
+          k: false,
+          is_unsafe: false,
+          lvls: 0,
+          params: 0,
+          indices: 0,
+          motives: 0,
+          minors: 0,
+          typ: Arc::new(Expr::Sort(0)),
+          rules: vec![],
+        }),
+      ]),
+      vec![],
+      vec![],
+      vec![Univ::zero()],
+    ),
+  );
+  let other = store(&env, record(0, false));
+  let mut with_tables = defn_proj_constant(0, owner.clone());
+  with_tables.refs.push(other.clone());
+  let cases = [
+    (defn_proj_constant(0, owner.clone()), true),
+    (indc_proj_constant(1, owner.clone()), true),
+    (ctor_proj_constant(1, 0, owner.clone()), true),
+    (recr_proj_constant(2, owner.clone()), true),
+    (ctor_proj_constant(1, 1, owner.clone()), false),
+    (ctor_proj_constant(1, 2, owner.clone()), false),
+    (defn_proj_constant(1, owner.clone()), false),
+    (indc_proj_constant(0, owner.clone()), false),
+    (recr_proj_constant(3, owner.clone()), false),
+    (defn_proj_constant(u64::MAX, owner.clone()), false),
+    (defn_proj_constant(0, other), false),
+    (with_tables, false),
+  ]
+  .map(|(c, valid)| (store(&env, c), valid));
+  let source = ArtifactSource::prepare(env).unwrap();
+  // Warm the layout from authenticated bytes before trying bad projections.
+  source.authenticate_reference(&cases[0].0).unwrap();
+  for (address, valid) in cases {
+    let payload = source.member(&address).map(|_| ());
+    let cached = source.authenticate_reference(&address);
+    assert_eq!(payload, cached);
+    assert_eq!(cached.is_ok(), valid);
+  }
+  assert!(
+    source.in_safety_tier(&ixon::constant::ctor_proj_address(1, 0, &owner))
+  );
+}
+
+#[test]
+fn owner_layouts_require_authentic_canonical_bytes() {
+  let make_source = |owner: Address, raw: LazyConstant| {
+    let env = Env::new();
+    env.consts.insert(owner.clone(), raw);
+    let projection = store(&env, defn_proj_constant(0, owner));
+    (ArtifactSource::prepare(env).unwrap(), projection)
+  };
+  let ConstantInfo::Defn(d) = record(0, true).info else { unreachable!() };
+  let mut block = Constant::new(ConstantInfo::Muts(vec![MutConst::Defn(d)]));
+  block.univs.push(Univ::zero());
+  let (_, mut bytes) = block.commit();
+  let (source, projection) = make_source(
+    Address::hash(b"forged owner key"),
+    LazyConstant::from_constant(block),
+  );
+  assert!(matches!(
+    source.authenticate_reference(&projection),
+    Err(Error::Record(_, _))
+  ));
+  assert!(source.0.owner_layouts.is_empty());
+  bytes.push(0);
+  let (source, projection) =
+    make_source(Address::hash(&bytes), LazyConstant::from_bytes(bytes.into()));
+  assert!(matches!(
+    source.authenticate_reference(&projection),
+    Err(Error::Record(_, _))
+  ));
+  assert!(source.0.owner_layouts.is_empty());
+}
+
+#[test]
 fn rehashed_trailing_record_bytes_are_not_canonical_records() {
   let env = Env::new();
   let (_, mut bytes) = record(0, false).commit();

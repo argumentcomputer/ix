@@ -150,7 +150,9 @@ pub fn build_artifact_work(
       Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {
         // Every carried projection must be genuine and resolve its actual
         // owner/kind/index, even if no semantic subject selects it directly.
-        source.member(address).map_err(|error| error.to_string())?;
+        source
+          .authenticate_reference(address)
+          .map_err(|error| error.to_string())?;
       },
       Tag::Muts => {
         let record =

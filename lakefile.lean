@@ -266,6 +266,10 @@ lean_exe «sharing-family-trace» where
 lean_exe «sharing-family-normalize» where
   root := `Benchmarks.SharingFamilyNormalize
 
+/-- Fixed component work with independently scaled full-DAG scratch buffers. -/
+lean_exe «sharing-scratch» where
+  root := `Benchmarks.SharingScratch
+
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 

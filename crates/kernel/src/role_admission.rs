@@ -351,9 +351,71 @@ struct Source {
   /// Records whose bytes have been authenticated (hash and canonical
   /// encoding); a function of this immutable source, shared by every worker.
   authentic: dashmap::DashSet<Address>,
+  /// Authenticated mutual-owner shapes, without retaining expression trees.
+  /// Projection validation needs only member kinds and constructor positions.
+  owner_layouts: dashmap::DashMap<Address, Arc<[MemberLayout]>>,
+  #[cfg(test)]
+  owner_decodes: std::sync::atomic::AtomicUsize,
   /// The roles this source's binding has admitted, computed once by the
   /// group validators (see [`ArtifactSource::admission`]).
   admission: OnceLock<Admission>,
+}
+
+#[derive(Debug)]
+enum MemberLayout {
+  Inductive { constructors: Box<[u64]>, is_unsafe: bool },
+  Recursor { is_unsafe: bool },
+  Definition { safety: DefinitionSafety },
+}
+
+impl MemberLayout {
+  fn from_member(member: &MutConst) -> Self {
+    match member {
+      MutConst::Indc(i) => Self::Inductive {
+        constructors: i.ctors.iter().map(|c| c.cidx).collect(),
+        is_unsafe: i.is_unsafe,
+      },
+      MutConst::Recr(r) => Self::Recursor { is_unsafe: r.is_unsafe },
+      MutConst::Defn(d) => Self::Definition { safety: d.safety },
+    }
+  }
+
+  fn in_safety_tier(&self) -> bool {
+    match self {
+      Self::Inductive { is_unsafe, .. } | Self::Recursor { is_unsafe } => {
+        *is_unsafe
+      },
+      Self::Definition { safety } => *safety != DefinitionSafety::Safe,
+    }
+  }
+}
+
+struct Projection {
+  owner: Address,
+  index: usize,
+  constructor: Option<usize>,
+  kind: u8,
+}
+
+impl Projection {
+  fn validate(&self, layout: &[MemberLayout]) -> Result<(), &'static str> {
+    match (self.kind, layout.get(self.index)) {
+      (0, Some(MemberLayout::Inductive { constructors, .. })) => {
+        if let Some(index) = self.constructor {
+          let Some(cidx) = constructors.get(index) else {
+            return Err("constructor is missing");
+          };
+          if usize::try_from(*cidx).ok() != Some(index) {
+            return Err("constructor index differs");
+          }
+        }
+        Ok(())
+      },
+      (1, Some(MemberLayout::Recursor { .. }))
+      | (2, Some(MemberLayout::Definition { .. })) => Ok(()),
+      _ => Err("projection kind/index differs from owner"),
+    }
+  }
 }
 
 /// The stack of the thread that validates a source's groups.
@@ -461,6 +523,9 @@ impl ArtifactSource {
       owners: OnceLock::new(),
       references: dashmap::DashSet::new(),
       authentic: dashmap::DashSet::new(),
+      owner_layouts: dashmap::DashMap::new(),
+      #[cfg(test)]
+      owner_decodes: std::sync::atomic::AtomicUsize::new(0),
       admission: OnceLock::new(),
     }));
     if let Some(binding) = source.binding() {
@@ -546,22 +611,17 @@ impl ArtifactSource {
   /// outcome (well-typed, with partial and unsafe constants opaque) rather
   /// than acceptance into the logical theory.
   pub fn in_safety_tier(&self, address: &Address) -> bool {
-    let Ok(member) = self.member(address) else { return false };
-    let info = match (member.owner(), member.index()) {
-      (Some(owner), Some(index)) => match &owner.constant().info {
-        ConstantInfo::Muts(members) => {
-          return match members.get(index) {
-            Some(MutConst::Defn(d)) => d.safety != DefinitionSafety::Safe,
-            Some(MutConst::Indc(i)) => i.is_unsafe,
-            Some(MutConst::Recr(r)) => r.is_unsafe,
-            None => false,
-          };
-        },
-        _ => return false,
+    let Ok(record) = self.record(address) else { return false };
+    match record.projection() {
+      Ok(Some(projection)) => {
+        return self
+          .projection_layout(&record, &projection)
+          .is_ok_and(|layout| layout[projection.index].in_safety_tier());
       },
-      _ => &member.record().constant().info,
-    };
-    match info {
+      Ok(None) => {},
+      Err(_) => return false,
+    }
+    match &record.constant().info {
       ConstantInfo::Defn(d) => d.safety != DefinitionSafety::Safe,
       ConstantInfo::Axio(a) => a.is_unsafe,
       ConstantInfo::Recr(r) => r.is_unsafe,
@@ -717,6 +777,13 @@ impl ArtifactSource {
       }
       self.0.authentic.insert(address.clone());
     }
+    if let ConstantInfo::Muts(members) = &value.info {
+      #[cfg(test)]
+      self.0.owner_decodes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      self.0.owner_layouts.entry(address.clone()).or_insert_with(|| {
+        members.iter().map(MemberLayout::from_member).collect()
+      });
+    }
     Ok(Record { address: address.clone(), raw, value })
   }
 
@@ -735,54 +802,57 @@ impl ArtifactSource {
   /// Resolve physical projection/owner provenance, not semantic role identity.
   pub fn member(&self, address: &Address) -> Result<Member, Error> {
     let record = self.record(address)?;
-    let fail = |reason| Error::Member(address.clone(), reason);
-    use ConstantInfo as C;
-    let (owner, index, ctor, kind) = match &record.value.info {
-      C::IPrj(p) => (&p.block, p.idx, None, 0),
-      C::CPrj(p) => (&p.block, p.idx, Some(p.cidx), 0),
-      C::RPrj(p) => (&p.block, p.idx, None, 1),
-      C::DPrj(p) => (&p.block, p.idx, None, 2),
-      C::Muts(_) => return Err(fail("a block is not a member")),
-      _ => {
-        return Ok(Member {
-          record,
-          owner: None,
-          index: None,
-          constructor: None,
-        });
-      },
+    let Some(projection) = record.projection()? else {
+      return Ok(Member {
+        record,
+        owner: None,
+        index: None,
+        constructor: None,
+      });
     };
-    if !record.value.refs.is_empty()
-      || !record.value.sharing.is_empty()
-      || !record.value.univs.is_empty()
-    {
-      return Err(fail("projection carries nonempty tables"));
-    }
-    let index = usize::try_from(index)
-      .map_err(|_error| fail("member index overflows"))?;
-    let constructor = ctor
-      .map(usize::try_from)
-      .transpose()
-      .map_err(|_error| fail("constructor index overflows"))?;
-    let owner = self.record(owner)?;
-    let C::Muts(members) = &owner.value.info else {
-      return Err(fail("owner is not a mutual block"));
+    // Payload consumers still get a fresh decoding of the authenticated
+    // owner. Validation-only callers use the compact layout instead.
+    let owner = self.record(&projection.owner)?;
+    self.projection_layout(&record, &projection)?;
+    Ok(Member {
+      record,
+      owner: Some(owner),
+      index: Some(projection.index),
+      constructor: projection.constructor,
+    })
+  }
+
+  fn projection_layout(
+    &self,
+    record: &Record,
+    projection: &Projection,
+  ) -> Result<Arc<[MemberLayout]>, Error> {
+    let fail = |reason| Error::Member(record.address.clone(), reason);
+    let cached =
+      self.0.owner_layouts.get(&projection.owner).map(|l| Arc::clone(&l));
+    let layout = if let Some(layout) = cached {
+      layout
+    } else {
+      // Only record(), after authenticating the raw bytes and their canonical
+      // decoding, may publish a layout. Never consult LazyConstant's AST cache.
+      self.record(&projection.owner)?;
+      self
+        .0
+        .owner_layouts
+        .get(&projection.owner)
+        .map(|l| Arc::clone(&l))
+        .ok_or_else(|| fail("owner is not a mutual block"))?
     };
-    match (kind, members.get(index)) {
-      (0, Some(MutConst::Indc(inductive))) => {
-        if let Some(i) = constructor {
-          let Some(c) = inductive.ctors.get(i) else {
-            return Err(fail("constructor is missing"));
-          };
-          if Some(c.cidx) != ctor {
-            return Err(fail("constructor index differs"));
-          }
-        }
-      },
-      (1, Some(MutConst::Recr(_))) | (2, Some(MutConst::Defn(_))) => {},
-      _ => return Err(fail("projection kind/index differs from owner")),
+    projection.validate(&layout).map_err(fail)?;
+    Ok(layout)
+  }
+
+  fn authenticate_member(&self, address: &Address) -> Result<(), Error> {
+    let record = self.record(address)?;
+    if let Some(projection) = record.projection()? {
+      self.projection_layout(&record, &projection)?;
     }
-    Ok(Member { record, owner: Some(owner), index: Some(index), constructor })
+    Ok(())
   }
 
   /// Authenticate the carried record a reference names: its bytes hash to
@@ -797,7 +867,7 @@ impl ArtifactSource {
     if self.0.references.contains(address) {
       return Ok(());
     }
-    self.member(address)?;
+    self.authenticate_member(address)?;
     self.0.references.insert(address.clone());
     Ok(())
   }
@@ -824,6 +894,35 @@ pub struct Record {
   value: Constant,
 }
 impl Record {
+  fn projection(&self) -> Result<Option<Projection>, Error> {
+    let fail = |reason| Error::Member(self.address.clone(), reason);
+    use ConstantInfo as C;
+    let (owner, index, constructor, kind) = match &self.value.info {
+      C::IPrj(p) => (&p.block, p.idx, None, 0),
+      C::CPrj(p) => (&p.block, p.idx, Some(p.cidx), 0),
+      C::RPrj(p) => (&p.block, p.idx, None, 1),
+      C::DPrj(p) => (&p.block, p.idx, None, 2),
+      C::Muts(_) => return Err(fail("a block is not a member")),
+      _ => return Ok(None),
+    };
+    if !self.value.refs.is_empty()
+      || !self.value.sharing.is_empty()
+      || !self.value.univs.is_empty()
+    {
+      return Err(fail("projection carries nonempty tables"));
+    }
+    Ok(Some(Projection {
+      owner: owner.clone(),
+      index: usize::try_from(index)
+        .map_err(|_error| fail("member index overflows"))?,
+      constructor: constructor
+        .map(usize::try_from)
+        .transpose()
+        .map_err(|_error| fail("constructor index overflows"))?,
+      kind,
+    }))
+  }
+
   pub fn address(&self) -> &Address {
     &self.address
   }

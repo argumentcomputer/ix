@@ -905,9 +905,15 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
         else {
           return None;
         };
-        dispatch_execute(&toplevel, fun_idx, input, &mut io_buffer, use_bytecode)
-          .err()
-          .map(|e| format!("binding check: {e}"))
+        dispatch_execute(
+          &toplevel,
+          fun_idx,
+          input,
+          &mut io_buffer,
+          use_bytecode,
+        )
+        .err()
+        .map(|e| format!("binding check: {e}"))
       },
       || -> Vec<(String, usize, usize)> {
         shards

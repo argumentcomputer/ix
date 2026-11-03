@@ -465,10 +465,8 @@ impl EnvCheckStatement {
         );
       }
     }
-    let assume_binding = self
-      .claim
-      .context()
-      .is_some_and(|ctx| ctx.binding_assumed);
+    let assume_binding =
+      self.claim.context().is_some_and(|ctx| ctx.binding_assumed);
     add_entries_parallel(
       env,
       &witness_scope_with(env, &owners[worker], assume_binding),

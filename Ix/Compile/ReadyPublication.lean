@@ -101,19 +101,29 @@ theorem applyRows_eq (snapshot : CompileEnv) (rows : List (Ix.Name × Ix.Name ×
     exact ih _
 
 /-- Publication advances once per original row, independently of execution
-readiness. The callback sees only the representative, never the live maps. -/
+readiness. The callback sees only the representative, never the live maps.
+The final row consumes its snapshot before merging, so a singleton wave can
+update the accumulator's maps without copying them. -/
 def applyRowsIO (input : FixedInput) (snapshot : CompileEnv) (fixed : input.Matches snapshot)
     (choose : Choose input) (published : Ix.Name → IO Unit) (observe : Disposition → IO Unit) :
     (rows : List (Ix.Name × Ix.Name × Ix.Set Ix.Name)) → (acc : DriverAcc) →
     IO { result : DriverAcc // result = applyRows snapshot rows acc }
   | [], acc => pure ⟨acc, rfl⟩
-  | (key, rep, members) :: rest, acc => do
+  | [(key, rep, members)], acc => do
     let candidate ← choose rep
     let selected := selectOutcome input snapshot key members candidate
     observe selected.2
     let next := (applyAuxBlockOutcome acc key members selected.1).1
     published rep
-    let result ← applyRowsIO input snapshot fixed choose published observe rest next
+    return ⟨next, by
+      simp only [applyRows, next, selected, selectOutcome_fst, outcome_eq input snapshot fixed]⟩
+  | (key, rep, members) :: nextRow :: rest, acc => do
+    let candidate ← choose rep
+    let selected := selectOutcome input snapshot key members candidate
+    observe selected.2
+    let next := (applyAuxBlockOutcome acc key members selected.1).1
+    published rep
+    let result ← applyRowsIO input snapshot fixed choose published observe (nextRow :: rest) next
     return ⟨result.val, by
       simpa only [applyRows, next, selected, selectOutcome_fst, outcome_eq input snapshot fixed]
         using result.property⟩
@@ -122,9 +132,13 @@ def applyReadyIO (input : FixedInput) (snapshot : CompileEnv) (fixed : input.Mat
     (choose : Choose input) (published : Ix.Name → IO Unit) (observe : Disposition → IO Unit)
     (ready : WaveBlocks) (acc : DriverAcc) :
     IO { result : DriverAcc // result = applyOriginal snapshot ready acc } := do
-  let result ← applyRowsIO input snapshot fixed choose published observe ready.toList acc
+  -- Only worker reads belong in the frozen snapshot. Output-only maps stay
+  -- exclusively owned by the accumulator throughout publication.
+  let result ← applyRowsIO input (Ix.Compile.WorkerContext.project snapshot)
+    ⟨fixed.1, fixed.2⟩ choose published observe ready.toList acc
   return ⟨result.val, by
-    simpa only [applyRows_eq, applyOriginal, Array.foldl_toList] using result.property⟩
+    simpa only [applyRows_eq, applyOriginal, Array.foldl_toList, WorkerSnapshot.outcome_projected]
+      using result.property⟩
 
 /-- Execute one wave via the IO candidate chooser, checking readiness and
 sorting the wave once. -/
@@ -151,13 +165,18 @@ def foldWaveIO (input : FixedInput) (blocks : Ix.CondensedBlocks) (sched : FoldS
         simp only [hEmpty, ↓reduceIte]⟩
     else
       let sorted := final.2.1.qsort fun a b => Ix.nameCompare a.1 b.1 == .lt
-      let after ← applyReadyIO input st.acc.cenv fixed choose published observe sorted st.acc
-      return ⟨.ok (finishWave sched st sorted final.2.2 after.val), by
+      let acc := st.acc
+      -- finishWave reads only the scheduling fields. Keeping the original
+      -- accumulator here would alias every output map during the merge.
+      let rest := { st with acc := { cenv := default } }
+      let after ← applyReadyIO input acc.cenv fixed choose published observe sorted acc
+      return ⟨.ok (finishWave sched rest sorted final.2.2 after.val), by
+        change (Except.ok (finishWave sched st sorted final.2.2 after.val) : Except String FoldState) = _
         simp only [final] at h hEmpty
         rw [foldWave_eq_using, foldWaveUsing_eq_split]
         dsimp only
         rw [h]
-        simp only [final, hEmpty, Bool.false_eq_true, ↓reduceIte, sorted, after.property, applyChunked_eq]⟩
+        simp only [final, hEmpty, Bool.false_eq_true, ↓reduceIte, sorted, after.property, applyChunked_eq, acc]⟩
 
 def foldWavesIO (input : FixedInput) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule)
     (width : Nat) (dbg : Bool) (choose : Choose input) (published : Ix.Name → IO Unit) :

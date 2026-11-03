@@ -42,21 +42,25 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3663 compiled functions with 67 inherited externs, with 17
-computed-field overrides of `Level`, `Expr` and `Key` and 24 proved
+reaches 3677 compiled functions with 67 inherited externs, with 17
+computed-field overrides of `Level`, `Expr` and `Key` and 25 proved
 csimp rewrites; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
 2338, adding `Name`'s computed-field overrides (21 in total) and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 6839 with
-113 inherited externs, 21 computed-field overrides and 27 proved csimp rewrites,
+TagN writer twin; the entry (the four `publicOperations`) reaches 6853 with
+113 inherited externs, 21 computed-field overrides and 28 proved csimp rewrites,
 adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
 default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
-the typing tier) are frozen apart: 6949 compiled functions (the entry's closure
-and the tier's functions), with 21 computed-field overrides, 27 proved csimp
+the typing tier) are frozen apart: 6963 compiled functions (the entry's closure
+and the tier's functions), with 21 computed-field overrides, 28 proved csimp
 rewrites, and nothing new to rule; the closures above do not reach the
-tier. The `.indDecl` shape guard (every inductive block's
+tier. Indexing the shape guard's former membership and constructor uniqueness
+(`indShapeOkFast`, `indShapeKeysNodup`) adds 14 compiled functions net to each
+checker closure and one proved csimp, `indShapeOk_eq_indShapeOkFast`; the reader,
+externs, unsafe declarations and computed-field counts are unchanged.
+The `.indDecl` shape guard (every inductive block's
 declared former and constructor types resolve against the environment and
 the block's formers, and its constructor names are fresh, distinct from the
 formers and pairwise distinct, before the pinned-block recognition and the
@@ -569,15 +573,15 @@ the executed fold and the certified entry. -/
 The entry's import closure stays inside `importAllowlist`, below the ruled
 elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
-the rulings they use: the fold (`checkDecls`, 3663 compiled functions) reaches
-the kernel's computed-field overrides of `Level`, `Expr` and `Key` (17) and 24
+the rulings they use: the fold (`checkDecls`, 3677 compiled functions) reaches
+the kernel's computed-field overrides of `Level`, `Expr` and `Key` (17) and 25
 proved project csimp rewrites; the reader (`readRecords`, `readStream`, 2338
 compiled functions) reaches 21 computed-field overrides (adding `Name`'s) and 8
 proved csimp rewrites (including the codec's TagN writer twin) and the prelude
 check (`State.keepsPrelude`: the state's keys and the decidable equality of its
-entries); the entry (`publicOperations`, 6839 compiled functions) and the tiered
-entries (`tierOperations`, 6949 compiled functions) reach 21 computed-field
-overrides and 27 proved csimp rewrites, adding the byte stage, the binding
+entries); the entry (`publicOperations`, 6853 compiled functions) and the tiered
+entries (`tierOperations`, 6963 compiled functions) reach 21 computed-field
+overrides and 28 proved csimp rewrites, adding the byte stage, the binding
 section's admission, the committed default table and prelude and the codec's
 TagN reader twin. -/
 
@@ -616,7 +620,9 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 -- when scanning `val.getUsedConstants` records `Ix.Kernel.Cached.withChain_eq_impl`
 -- (`@[inline] def withChainImpl`) in `Ix.Kernel.Cached` (23 -> 24 for raw kernel
 -- entries, and 26 -> 27 in the public and tiered artifact entries below).
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3663 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 24 -/
+-- The indexed shape guard adds 14 compiled functions net and its proved
+-- indShapeOk_eq_indShapeOkFast replacement. All other census fields are unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3677 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 25 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -660,7 +666,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6839 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 27 -/
+ Ix.Kernel.Admission.checkConstants]: 6853 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -711,7 +717,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- The tiered closure has the same 811 additions and eight removals as the
 -- logical entry above, with exactly the same execution-trust entries.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6949 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 27 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6963 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 

@@ -92,6 +92,24 @@ def traceParallel (cfg : Config) (width index : Nat) (members : Array Nat) (area
   funext cfg width index members areaSize closureSize eval
   simp only [trace, traceParallel, Parallel.table_eq]
 
+/-- The same trace, with task selection accounting for the position buffer
+captured by the area evaluator. The sequential branch never spawns a task. -/
+def traceForArea (cfg : Config) (positions width index : Nat) (members : Array Nat)
+    (areaSize closureSize : Nat) (eval : (Nat → Bool) → Array Nat → Nat × Nat) : ComponentTrace :=
+  let baseline := (eval (fun _ => false) #[]).1
+  let cost : Cost := fun selected => ((eval selected.contains selected).1 : _root_.Int) - baseline
+  let size := members.size
+  let exact := size ≤ cfg.exactLimit
+  { width, index, exact, members, areaSize, closureSize,
+    rows := Parallel.tableForArea cfg positions areaSize cost members.toList,
+    evaluations := if exact then 2 ^ size else size * (size + 1) / 2 + size + 1 }
+
+theorem traceForArea_eq (cfg : Config) (positions width index : Nat) (members : Array Nat)
+    (areaSize closureSize : Nat) (eval : (Nat → Bool) → Array Nat → Nat × Nat) :
+    traceForArea cfg positions width index members areaSize closureSize eval =
+      trace cfg width index members areaSize closureSize eval := by
+  simp only [traceForArea, trace, Parallel.tableForArea_eq]
+
 def areaFlagsFast (k : Nat) (posA ts : @& Array Nat) : Array Bool :=
   ts.foldl (fun f t => let q := posA[t]!; if q != 0 then f.set! (q - 1) true else f)
     (Array.replicate k false)
@@ -543,7 +561,7 @@ theorem trace_walk_eq (cfg : Config) (ex : Expanded) (stage : UStage) (width ind
     (base : TBase) (found marks : Array Nat) : Except SharingError CompResult :=
   let aux := auxiliary ex stage base area areaPositions found marks
   retainedResult stage.slack
-    (trace cfg width index members area.size found.size
+    (traceForArea cfg areaPositions.size width index members area.size found.size
       (phiASet light areaPositions base aux (fun _ => fullContext ex stage members)))
 
 def step (cfg : Config) (limits : Limits) (ex : Expanded) (stage : UStage)
@@ -592,6 +610,7 @@ theorem step_eq_area (cfg : Config) (limits : Limits) (ex : Expanded) (stage : U
   have clearArea := AreaProof.clear_set_any stage.up.prep.dag.size (componentArea stage.up stage.f members)
   unfold step runStepTrace
   dsimp only
+  simp only [traceForArea_eq]
   cases stateCharge : bump states (familyCalls cfg members.size) limits.maxStates .states with
   | error error =>
     unfold familyStepArea

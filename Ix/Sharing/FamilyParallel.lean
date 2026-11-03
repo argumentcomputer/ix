@@ -123,6 +123,50 @@ theorem table_eq (cfg : Config) (cost : Cost) (members : List Nat) :
     table cfg cost members = Family.table cfg cost members :=
   tableWithDepth_eq 3 cfg cost members
 
+/-- A genuinely sequential family fold. Calling `tableWithDepth 0` would
+still spawn a task and mark every array captured by `cost` as multithreaded. -/
+def tableSequential (cfg : Config) (cost : Cost) (members : List Nat) : CTable :=
+  foldFamily cfg cost members (visit cost) #[]
+
+theorem tableSequential_eq (cfg : Config) (cost : Cost) (members : List Nat) :
+    tableSequential cfg cost members = Family.table cfg cost members := rfl
+
+/-- A subset task captures the full position table. Lean marks that table as
+multithreaded, so clearing it afterwards copies all `positions` cells. Admit
+this copy only when it fits within one of the eight branches' local node
+evaluations. The bounded member check precedes exponentiation, including for
+offline configurations with a larger exact limit. -/
+def areaParallel (cfg : Config) (positions area members : Nat) : Bool :=
+  if 12 ≤ members ∧ members ≤ 16 ∧ members ≤ cfg.exactLimit then
+    decide (8 * positions ≤ area * 2 ^ members)
+  else false
+
+/-- Across admitted components, position-table copying is bounded by their
+local subset evaluations, rather than by DAG size times component count. -/
+theorem areaParallel_copy_bound (cfg : Config) (positions area members : Nat)
+    (h : areaParallel cfg positions area members = true) :
+    8 * positions ≤ area * 2 ^ members := by
+  unfold areaParallel at h
+  split at h
+  · exact of_decide_eq_true h
+  · cases h
+
+/-- Preserve position-buffer reuse when the area is small relative to the
+whole DAG; the family and every winning row are independent of this choice. -/
+def tableForArea (cfg : Config) (positions area : Nat) (cost : Cost)
+    (members : List Nat) : CTable :=
+  if areaParallel cfg positions area members.length then
+    table cfg cost members
+  else tableSequential cfg cost members
+
+theorem tableForArea_eq (cfg : Config) (positions area : Nat) (cost : Cost)
+    (members : List Nat) :
+    tableForArea cfg positions area cost members = Family.table cfg cost members := by
+  unfold tableForArea
+  split
+  · exact table_eq cfg cost members
+  · exact tableSequential_eq cfg cost members
+
 @[csimp] theorem table_eq_function : @Family.table = @table := by
   funext cfg cost members
   exact (table_eq cfg cost members).symm
