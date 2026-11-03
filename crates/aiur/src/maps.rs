@@ -223,6 +223,25 @@ impl<B: FieldBackend> PreparedMap<B> {
   pub(crate) fn output(&self, row: usize) -> &[B::Element] {
     &self.tables[self.output][row]
   }
+  /// For an overridden map, require the override to return every table row's
+  /// own index and output. Binding only checks row indices: an override's
+  /// answers are otherwise certified later, by the tables in the proof.
+  #[cfg(feature = "native")]
+  pub(crate) fn override_matches_table(&self) -> Result<(), String> {
+    let Some(function) = &self.function else { return Ok(()) };
+    let mut output = vec![self.field.zero(); self.output_layout.width()];
+    for row in 0..self.rows() {
+      output.fill(self.field.zero());
+      let answer = function(self.input(row), &mut output);
+      if answer.as_ref().ok() != Some(&row) || output != self.output(row) {
+        return Err(format!(
+          "override of map {} disagrees with its table at row {row}",
+          self.id
+        ));
+      }
+    }
+    Ok(())
+  }
   pub(crate) fn row(&self, args: &[B::Element]) -> Result<usize, String> {
     self.index.get(args).ok_or_else(|| "no table entry for map input".into())
   }
@@ -240,8 +259,12 @@ impl<B: FieldBackend> PreparedMap<B> {
       output.fill(self.field.zero());
       let row = function(args, output)?;
       // Representation checks are not table membership checks. In
-      // particular, a canonical field word need not be a valid byte.
-      self.output_layout.validate(output, self.field)?;
+      // particular, a canonical field word need not be a valid byte. As in
+      // `host::output_check`, a native field with no tags or padding to check
+      // cannot produce an invalid output.
+      if !B::ALL_ELEMENTS_VALID || self.output_layout.has_shape_checks() {
+        self.output_layout.validate(output, self.field)?;
+      }
       Ok(row)
     } else {
       let row = self.row(args)?;

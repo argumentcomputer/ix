@@ -1,14 +1,15 @@
 //! Bounded trace shards and verifier-only keys. Function rows may be partitioned
 //! freely; memory rows remain consecutive and are closed by the batch preamble.
 use super::*;
-#[cfg(feature = "cuda")]
+#[cfg(test)]
+use multi_stark::system::Circuit;
+#[cfg(all(feature = "cuda", test))]
 use multi_stark::witness::TraceSource;
 use multi_stark::{
   batch::{BatchMessage, Retention},
-  system::Circuit,
   witness::PreparedWitness,
 };
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", test))]
 use std::sync::Arc;
 
 /// A streamed batch authenticates one public claim across independently
@@ -19,8 +20,66 @@ pub struct StreamPlan {
   pub retention: Retention,
 }
 
+/// A streamed proof, the time its prover waited for witnesses, and whether
+/// they were built ahead of it.
+pub struct Streamed {
+  pub proof: BatchProof,
+  pub stall: std::time::Duration,
+  pub pipelined: bool,
+}
+
+/// The threads that build a lane's next trace-shard witness while its
+/// prover commits or proves the current one. Population runs on its own
+/// operating-system thread inside this pool, never on the prover's threads,
+/// so it always starts and cannot wait behind a caller blocked in a join.
+pub struct ShardFeed {
+  #[cfg(feature = "parallel")]
+  pool: rayon::ThreadPool,
+}
+
+impl ShardFeed {
+  /// A feed of `threads` population threads.
+  pub fn new(threads: usize) -> Result<Self, String> {
+    #[cfg(feature = "parallel")]
+    {
+      let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads.max(1))
+        .thread_name(|i| format!("aiur-population-{i}"))
+        .build()
+        .map_err(|e| e.to_string())?;
+      Ok(Self { pool })
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+      let _ = threads;
+      Ok(Self {})
+    }
+  }
+
+  /// A feed as wide as the calling thread's pool.
+  pub fn matching_current() -> Result<Self, String> {
+    #[cfg(feature = "parallel")]
+    let threads = rayon::current_num_threads();
+    #[cfg(not(feature = "parallel"))]
+    let threads = 1;
+    Self::new(threads)
+  }
+
+  fn install<R: Send>(&self, work: impl FnOnce() -> R + Send) -> R {
+    #[cfg(feature = "parallel")]
+    {
+      self.pool.install(work)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+      work()
+    }
+  }
+}
+
 /// Copy a run of rows. One shard of a large trace is gigabytes, so a serial
 /// `to_vec` cost more than committing the shard on a GPU.
+#[cfg(test)]
 fn copy_rows(values: &[Val]) -> Vec<Val> {
   #[cfg(feature = "parallel")]
   {
@@ -53,12 +112,14 @@ fn fri_parameters(p: Parameters) -> FriParameters {
 /// Stage-one traces ready for batch proving: host rows, plus the device
 /// record of the function circuits the GPU fills
 /// (`AIUR_GPU_TRACE=generated`), whose host matrices are empty placeholders.
+#[cfg(test)]
 pub struct StageOne {
   pub traces: Vec<RowMajorMatrix<Val>>,
   #[cfg(feature = "cuda")]
   device: Option<Arc<gpu::DeviceRecord>>,
 }
 
+#[cfg(test)]
 impl StageOne {
   pub fn host(traces: Vec<RowMajorMatrix<Val>>) -> Self {
     Self {
@@ -269,13 +330,29 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 
   /// Fallible two-round streaming. The supplier may replay a record and keep
   /// only its current trace matrices; no whole-environment trace is retained.
+  #[cfg(test)]
   pub fn prove_streamed_stage_1(
     &self,
     entry: &str,
     args: &[B::Element],
     output: &[B::Element],
-    mut plan: StreamPlan,
+    plan: StreamPlan,
     mut supply: impl FnMut(usize) -> Result<Vec<RowMajorMatrix<Val>>, String>,
+  ) -> Result<BatchProof, String> {
+    self.prove_streamed(entry, args, output, plan, |shard| {
+      Ok(self.witness_from_main(supply(shard)?).into())
+    })
+  }
+
+  /// Each supplied witness owns only one shard. Regenerated commitments
+  /// must match the headers that fixed the batch transcript.
+  pub fn prove_streamed(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    mut plan: StreamPlan,
+    mut supply: impl FnMut(usize) -> Result<PreparedWitness<Val>, String>,
   ) -> Result<BatchProof, String> {
     if !self.segmented_memory || !(1..=65536).contains(&plan.shards) {
       return Err("invalid streamed batch".into());
@@ -310,11 +387,18 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let mut retained = Vec::new();
     let retain = !self.requires_regeneration(plan.shards)
       && matches!(plan.retention, Retention::Retain);
+    let mut lookup_budget = 1u128;
     for shard in 0..plan.shards {
-      let traces = supply(shard)?;
-      let (active, degrees) = self.trace_shape(&traces)?;
-      self.check_shape(&active, &degrees)?;
-      let stage = self.system.prove_stage_1(self.witness_from_main(traces));
+      let witness = supply(shard)?;
+      self.check_prepared_shape(&witness)?;
+      for (trace, circuit) in witness.traces.iter().zip(&self.system.circuits) {
+        lookup_budget +=
+          trace.height() as u128 * circuit.num_lookups.max(1) as u128;
+      }
+      if lookup_budget >= u128::from(Val::ORDER_U64) {
+        return Err("batch height/lookup budget exceeds field".into());
+      }
+      let stage = self.system.prove_stage_1(witness);
       let claims = if shard == 0 { vec![claim.as_slice()] } else { vec![] };
       headers.push(stage.header(&claims));
       retained.push(if retain { Some(stage) } else { None });
@@ -326,10 +410,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       let stage = if let Some(stage) = cached {
         stage
       } else {
-        let traces = supply(shard)?;
-        let (active, degrees) = self.trace_shape(&traces)?;
-        self.check_shape(&active, &degrees)?;
-        let stage = self.system.prove_stage_1(self.witness_from_main(traces));
+        let witness = supply(shard)?;
+        self.check_prepared_shape(&witness)?;
+        let stage = self.system.prove_stage_1(witness);
         if stage.header(&claims) != preamble.headers[shard] {
           return Err(format!("streamed shard {shard} changed between rounds"));
         }
@@ -346,6 +429,141 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(proof)
   }
 
+  /// [`Self::prove_streamed`] with `supply(round, shard)`. With a `feed`,
+  /// a producer thread on the feed's pool builds the next witness while the
+  /// calling thread commits or proves the current one; a rendezvous channel
+  /// keeps at most one finished witness ahead, and the producer stops at
+  /// its first error. Supplies happen in the serial order either way, so
+  /// the proof bytes are the same.
+  ///
+  /// The producer makes no device calls: generated traces are descriptors
+  /// that the prover fills on the calling thread during commitment, and
+  /// they exist only with device lookups, so the worker never materializes
+  /// one to build host lookups. Should a supplier touch the device anyway,
+  /// every CUDA entry point selects its device and synchronizes its
+  /// per-thread stream before returning, so a handed-over witness carries
+  /// no pending device work.
+  pub fn prove_streamed_scheduled(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    plan: StreamPlan,
+    feed: Option<&ShardFeed>,
+    supply: impl Fn(usize, usize) -> Result<PreparedWitness<Val>, String> + Sync,
+  ) -> Result<Streamed, String>
+  where
+    Self: Sync,
+  {
+    let shards = plan.shards.max(1);
+    let rounds = if !self.requires_regeneration(plan.shards)
+      && matches!(plan.retention, Retention::Retain)
+    {
+      1
+    } else {
+      2
+    };
+    let Some(feed) = feed.filter(|_| rounds * plan.shards >= 2) else {
+      return self.supply_serially(entry, args, output, plan, shards, &supply);
+    };
+    let mut stall = std::time::Duration::ZERO;
+    let order: Vec<_> = (0..rounds)
+      .flat_map(|round| (0..plan.shards).map(move |shard| (round, shard)))
+      .collect();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+    let supply = &supply;
+    let produce = move || {
+      for (round, shard) in order {
+        let witness = supply(round, shard);
+        let failed = witness.is_err();
+        if sender.send((shard, witness)).is_err() || failed {
+          break;
+        }
+      }
+    };
+    let consume = move || {
+      let proof = self.prove_streamed(entry, args, output, plan, |shard| {
+        let start = std::time::Instant::now();
+        let (supplied, witness) = receiver
+          .recv()
+          .map_err(|_| "shard population worker stopped".to_owned())?;
+        stall += start.elapsed();
+        if supplied != shard {
+          return Err(format!(
+            "population worker supplied shard {supplied} for {shard}"
+          ));
+        }
+        witness
+      });
+      (proof, stall)
+    };
+    let (proof, stall) = std::thread::scope(|scope| {
+      let producer = scope.spawn(move || feed.install(produce));
+      // Returning drops the receiver, which stops the producer at its next
+      // send.
+      let consumed = consume();
+      producer
+        .join()
+        .map_err(|_| "shard population worker panicked".to_owned())?;
+      Ok::<_, String>(consumed)
+    })?;
+    Ok(Streamed { proof: proof?, stall, pipelined: true })
+  }
+
+  fn supply_serially(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    plan: StreamPlan,
+    shards: usize,
+    supply: &(impl Fn(usize, usize) -> Result<PreparedWitness<Val>, String> + Sync),
+  ) -> Result<Streamed, String> {
+    let mut stall = std::time::Duration::ZERO;
+    let mut calls = 0;
+    let proof = self.prove_streamed(entry, args, output, plan, |shard| {
+      let start = std::time::Instant::now();
+      let witness = supply(calls / shards, shard);
+      calls += 1;
+      stall += start.elapsed();
+      witness
+    })?;
+    Ok(Streamed { proof, stall, pipelined: false })
+  }
+
+  fn check_prepared_shape(
+    &self,
+    witness: &PreparedWitness<Val>,
+  ) -> Result<(), String> {
+    if witness.traces.len() != self.system.circuits.len()
+      || witness.lookups.len() != witness.traces.len()
+    {
+      return Err("wrong circuit count".into());
+    }
+    let mut active = Vec::new();
+    let mut degrees = Vec::new();
+    for (trace, circuit) in witness.traces.iter().zip(&self.system.circuits) {
+      if trace.width() != circuit.main_width || trace.width() == 0 {
+        return Err("invalid main trace width".into());
+      }
+      if let multi_stark::witness::TraceSource::Host(matrix) = trace
+        && !matrix.values.len().is_multiple_of(matrix.width)
+      {
+        return Err("partial main trace row".into());
+      }
+      let height = trace.height();
+      if height != 0 && !height.is_power_of_two() {
+        return Err("invalid main trace shape".into());
+      }
+      active.push(height != 0);
+      if height != 0 {
+        degrees.push(height.ilog2() as u8);
+      }
+    }
+    self.check_shape(&active, &degrees)
+  }
+
+  #[cfg(test)]
   pub fn slice_stage_1(
     &self,
     traces: &[RowMajorMatrix<Val>],
@@ -370,6 +588,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(sliced)
   }
 
+  #[cfg(test)]
   fn slice_matrix(
     trace: &RowMajorMatrix<Val>,
     circuit: &Circuit<Val>,
@@ -397,6 +616,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// no taller than one shard) moves out of the source instead of being
   /// copied; later shards only need its dimensions. With one retained shard
   /// this moves the whole witness.
+  #[cfg(test)]
   fn take_stage_1(
     &self,
     source: &mut [RowMajorMatrix<Val>],
@@ -453,6 +673,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// or memory chip. Fixed tables retain their exact domain in every shard.
   /// Regenerate keeps only headers at the barrier, bounding committed state
   /// by one shard. The execution record and source stage-one matrices remain.
+  #[cfg(test)]
   pub fn prove_batch(
     &self,
     entry: &str,
@@ -471,6 +692,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 
   /// Prove directly from stage-one matrices, computing lookup buffers only
   /// for the shard currently being committed. Pair with `generate_stage_1`.
+  #[cfg(test)]
   pub fn prove_batch_stage_1(
     &self,
     entry: &str,
@@ -494,6 +716,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// [`Self::generate_stage_1`], except that with `AIUR_GPU_TRACE=generated`
   /// the function circuits the GPU can fill are left to the device, which
   /// receives the record tables they read. The record can then be dropped.
+  #[cfg(test)]
   pub fn prepare_stage_1(
     &self,
     record: &Execution<B>,
@@ -501,7 +724,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     args: &[B::Element],
   ) -> Result<StageOne, String> {
     #[cfg(feature = "cuda")]
-    if let Some(plans) = &self.device_plans {
+    if let Some(plans) = self.device_plans_for(record) {
       let device = gpu::DeviceRecord::upload(self, plans, record, self.device)?;
       let heights: Vec<_> =
         (0..self.system.circuits.len()).map(|ci| device.height(ci)).collect();
@@ -513,6 +736,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(StageOne::host(self.generate_stage_1(record, entry, args)?))
   }
 
+  #[cfg(test)]
   pub fn prove_stage_one(
     &self,
     entry: &str,
@@ -611,6 +835,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// A shard's witness with the device circuits as generated traces over
   /// their rows of this shard and every lookup derived on the device.
   #[cfg(feature = "cuda")]
+  #[cfg(test)]
   fn device_witness(
     &self,
     sliced: Vec<RowMajorMatrix<Val>>,
@@ -629,6 +854,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
             circuit: ci,
             base: begin,
             height: max_rows.min(height - begin),
+            real_rows: max_rows.min(height - begin),
           }))
         },
         _ => TraceSource::Host(matrix),
@@ -839,6 +1065,37 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// A feed starts its producer even when every thread of the caller's
+  /// pool is a caller waiting for its own producer.
+  #[cfg(feature = "parallel")]
+  #[test]
+  fn feeds_start_when_every_pool_thread_waits() {
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+    let (done, finished) = std::sync::mpsc::channel();
+    pool.spawn_broadcast(move |_| {
+      let feed = ShardFeed::new(1).unwrap();
+      let (sender, receiver) = std::sync::mpsc::sync_channel::<()>(0);
+      let received = std::thread::scope(|scope| {
+        scope.spawn(|| feed.install(move || sender.send(()).is_ok()));
+        receiver.recv().is_ok()
+      });
+      done.send(received).unwrap();
+    });
+    for _ in 0..2 {
+      let received = finished
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("a caller deadlocked waiting for its producer");
+      assert!(received);
+    }
+  }
+
+  #[cfg(feature = "parallel")]
+  #[test]
+  fn feeds_run_population_on_their_own_pool() {
+    let feed = ShardFeed::new(3).unwrap();
+    assert_eq!(feed.install(rayon::current_num_threads), 3);
+  }
 
   #[test]
   fn copy_rows_matches_a_serial_copy() {

@@ -18,8 +18,28 @@ rustc-hash = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
+ixvm-native = { path = "../ixvm-native", optional = true }
+stark-verifier-native = { path = "../stark-verifier-native", optional = true }
 
 [features]
 default = ["parallel"]
 parallel = ["aiur/parallel", "ixvm/parallel", "stark-verifier/parallel"]
 cuda = ["aiur/cuda", "ixvm/cuda", "stark-verifier/cuda"]
+# Compiled CUDA trace writers for the IxVM artifact named by
+# AIUR_IXVM_ARTIFACT (see crates/ixvm-tracegen), selected at run time with
+# AIUR_GPU_TRACE=compiled. Programs without a bundle stay on their other
+# population providers.
+compiled-trace = ["cuda", "ixvm/compiled-trace"]
+# Generated native executors for IxVM, the recursive verifier and
+# aggregation, compiled from the packages named by AIUR_IXVM_ARTIFACT,
+# AIUR_VERIFIER_ARTIFACT and AIUR_AGGREGATION_ARTIFACT (`ix prepare` exports
+# all three and builds the prover with this feature). A kernel runs jobs
+# only for an artifact whose program has exactly its fingerprint; other
+# artifacts use the interpreter.
+native = [
+  "dep:ixvm-native",
+  "ixvm-native/kernel",
+  "dep:stark-verifier-native",
+  "stark-verifier-native/kernel",
+  "aiur/native",
+]

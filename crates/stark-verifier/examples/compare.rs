@@ -128,18 +128,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(witness);
     if sample == samples + 1 && cli.iter().any(|a| a == "--prove") {
       let start = Instant::now();
-      let traces =
-        backend.generate_stage_1(&record, &invocation.entry, &args)?;
       let output = record.output.clone();
-      drop(record);
-      let proof = backend.prove_batch_stage_1(
+      let layout = backend.uniform_layout(&record, 1 << 30)?;
+      let proof = backend.prove_incremental(
+        &record,
         &invocation.entry,
         &args,
         &output,
-        traces,
-        1 << 30,
+        &layout,
         Retention::Retain,
       )?;
+      drop(record);
       let seconds = start.elapsed().as_secs_f64();
       proof_report = json!({"prove_including_trace_seconds":seconds,"bytes":proof.to_bytes()?.len(),"verified":true});
       if cli.iter().any(|a| a == "--save-proof") {

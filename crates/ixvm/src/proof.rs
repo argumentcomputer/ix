@@ -39,9 +39,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Err("usage: ixvm-proof execute|plan|prove|verify ARTIFACT INPUT [PROOF] [SHARD_ROWS] [RETENTION] [OPTIONS.json]".into());
   }
   let mode = cli[1].as_str();
-  if !["execute", "plan", "prove", "verify", "test", "key"].contains(&mode) {
+  if !["execute", "plan", "prove", "verify", "test", "key", "tiles"]
+    .contains(&mode)
+  {
     return Err("unknown mode".into());
   }
+  ixvm::register_compiled_trace();
   let package: Package = aiur::decode_artifact(&std::fs::read(&cli[2])?)?;
   let program = package.program.check_field::<Val>()?;
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
@@ -159,8 +162,25 @@ fn main() -> Result<(), Box<dyn Error>> {
   if !record.output.is_empty() {
     return Err("claim verifier returned a value".into());
   }
+  if mode == "tiles" {
+    #[cfg(feature = "compiled-trace")]
+    {
+      let (hosts, tiles, timings) = backend.check_device_tiles(&record)?;
+      let report =
+        serde_json::json!({"host":hosts, "tiles":tiles, "device":timings});
+      std::fs::write(path, serde_json::to_vec_pretty(&report)?)?;
+      println!("{report}");
+      if tiles.iter().any(|t| t.mismatches != 0 || t.noncanonical != 0) {
+        return Err("device tiles differ from host population".into());
+      }
+      return Ok(());
+    }
+    #[cfg(not(feature = "compiled-trace"))]
+    return Err("tiles requires the compiled-trace feature".into());
+  }
   let batch = backend.plan_batch(&record, &options)?;
   let mut report = serde_json::json!({"plan":batch, "execution_seconds":execute,
+    "storage":record.storage_usage(),
     "queries":record.queries.len(), "instructions":record.instructions,
     "circuits":backend.statistics(), "verified":false});
   let report_path = format!("{path}.report.json");
@@ -174,24 +194,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("proving estimate exceeds budget; see {report_path}");
     std::process::exit(75);
   }
-  let start = Instant::now();
-  let witness = backend.prepare_stage_1(&record, &input.entry, &args)?;
-  if witness.cells() != batch.stage1_cells {
-    return Err("generated trace differs from the resource plan".into());
-  }
-  let trace = start.elapsed().as_secs_f64();
-  drop(record);
-  drop(hints);
-  let start = Instant::now();
-  let proof = backend.prove_stage_one(
+  let layout = batch
+    .layout
+    .as_ref()
+    .ok_or("the proving plan has no incremental layout")?;
+  std::fs::write(format!("{path}.layout.json"), serde_json::to_vec(layout)?)?;
+  let result = backend.prove_incremental_timed(
+    &record,
     &input.entry,
     &args,
     &[],
-    witness,
-    batch.max_rows,
+    layout,
     batch.retention(),
-  )?;
-  let proving = start.elapsed().as_secs_f64();
+    batch.pipelined,
+  );
+  drop(record);
+  drop(hints);
+  let run = result?;
+  let proof = run.proof;
   let raw = proof.to_bytes()?;
   let mut bytes = MAGIC.to_vec();
   bytes.extend(&raw);
@@ -209,8 +229,11 @@ fn main() -> Result<(), Box<dyn Error>> {
   }
   std::fs::write(format!("{path}.claims"), claims)?;
   report["verified"] = true.into();
-  report["trace_seconds"] = trace.into();
-  report["proving_seconds"] = proving.into();
+  report["trace_seconds"] = run.trace_seconds.into();
+  report["proving_seconds"] = run.proving_seconds.into();
+  report["population"] = serde_json::to_value(&run.population)?;
+  report["peak_rss_bytes"] =
+    aiur::trace::stark::planning::peak_resident_memory().into();
   report["shards"] = proof.proofs.len().into();
   report["proof_bytes"] = raw.len().into();
   report["key_digest"] = blake3::hash(&key).to_hex().to_string().into();
