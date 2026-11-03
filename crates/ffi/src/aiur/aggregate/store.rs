@@ -113,7 +113,7 @@ pub(super) fn load_input_proofs(
       format!("proof {} matches no manifest shard", address.hex())
     })?;
     if !required[shard] {
-      // A lane proving several subtrees passes all its claim proofs to
+      // A run proving several subtrees passes all its claim proofs to
       // each; one outside this selection is ignored, not rejected.
       continue;
     }
@@ -236,7 +236,7 @@ pub(super) fn persist_wrapper(
 /// Persists a slot's proof and publishes its cache entry. `Ok(None)` when
 /// the run writes nothing or has no cache; a failure is an error, since a
 /// run's success promises that its proofs are where a later run (a resume,
-/// or the final run after subtree lanes) will look for them.
+/// or the final run after the subtree runs) will look for them.
 pub(super) fn persist_cached(
   store_dir: &Path,
   cache_dir: Option<&Path>,

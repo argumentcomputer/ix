@@ -5,6 +5,6 @@ unsafe extern "C" {
   fn aiur_trace_blake3_schema() -> *const u8;
   pub(super) fn aiur_trace_blake3_0(device: i32, seeds: *const u8, encoding: u32, real: usize, rows: usize, width: usize, selectors: usize, auxiliaries: usize, output: *mut u64) -> i32;
 }
-pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([150, 101, 248, 224, 67, 209, 56, 216, 146, 162, 51, 114, 82, 15, 10, 181, 15, 234, 113, 117, 51, 141, 70, 70, 235, 90, 62, 221, 45, 109, 215, 133], aiur_trace_blake3_contract, aiur_trace_blake3_schema, &[
+pub static CUDA: CudaLibrary = unsafe { CudaLibrary::new([58, 213, 204, 64, 57, 46, 134, 177, 30, 246, 254, 175, 75, 41, 50, 24, 114, 80, 186, 84, 61, 41, 13, 140, 14, 107, 159, 30, 218, 19, 75, 152], aiur_trace_blake3_contract, aiur_trace_blake3_schema, &[
 Some(aiur_trace_blake3_0)
 ], &[162], &[176]) };

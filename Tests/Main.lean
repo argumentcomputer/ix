@@ -50,6 +50,7 @@ import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.SourceGraph
+import Tests.Ix.Compile.Performance
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -110,6 +111,7 @@ import Tests.AggrToolchains
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
+import Tests.CompressionCli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -177,6 +179,9 @@ def registry : List Entry := [
   -- the compile drivers refuse a condensation block without a reference set
   .suite "compile-driver-input" .primary Tests.Ix.Compile.DriverInput.suite,
   .runner "compile-source-graph" .primary Tests.Ix.Compile.SourceGraph.run,
+  .runner "compiler-cache-regressions" .primary (do
+    Tests.Ix.Compile.Performance.run
+    return 0),
   .suite "local-blob" .primary Tests.Ix.Compile.LocalBlob.suite,
   .suite "worker-snapshot" .primary Tests.Ix.Compile.WorkerSnapshot.suite,
   .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
@@ -466,7 +471,11 @@ def registry : List Entry := [
   .runner "admission-hash-diff" (.ci .landingInitStd) Tests.Ix.Kernel.AdmissionHashDiff.run,
   -- the 132-case, twice-executed `ix_aggr` activation matrix, kept out of the
   -- primary suite and independent of the large environment
-  .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit
+  .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit,
+  -- Compression CLI setup and proof-rejection checks, run explicitly.
+  .runner "compression-cli" (.manual "compression CLI setup and proof-rejection checks; needs `lake build ix`") (do
+    Tests.CompressionCli.run
+    return 0)
 ]
 
 /-- The entries that must stay registered once, in their tier

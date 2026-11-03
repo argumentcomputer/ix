@@ -2285,6 +2285,84 @@ theorem strayLevelParamsPar_eq (env : Ix.Environment) :
     (all.toList.find? fun y => !familyBlockOk env recs all y).map (rep, ·))
     blocks.blocks.toList
 
+/-- A constructor has exactly the family-block check of its owning input
+inductive. Leave all other cases unchanged, including a missing owner. -/
+@[expose] def familyBlockSubject (env : Ix.Environment) (y : Ix.Name) : Ix.Name :=
+  match env.consts.get? y with
+  | some (.ctorInfo cv) =>
+    match env.consts.get? cv.induct with
+    | some (.inductInfo _) => cv.induct
+    | _ => y
+  | _ => y
+
+theorem familyBlockSubject_eq (env : Ix.Environment)
+    (recs : Std.HashMap Address (Array Ix.Name)) (all : Ix.Set Ix.Name) (y : Ix.Name) :
+    familyBlockOk env recs all (familyBlockSubject env y) = familyBlockOk env recs all y := by
+  unfold familyBlockSubject
+  split
+  · next cv hy =>
+    split
+    · next iv hi => simp only [familyBlockOk, hy, hi]
+    · rfl
+  · rfl
+
+/-- Answers are indexed by exact source names and carry their defining
+equation, so a cache hit never relies on a stored name hash alone. -/
+abbrev FamilyBlockCache (env : Ix.Environment)
+    (recs : Std.HashMap Address (Array Ix.Name)) (all : Ix.Set Ix.Name) :=
+  Std.DHashMap Ix.Compile.ExactKey.ExactName
+    (fun y => { answer : Bool // answer = familyBlockOk env recs all y })
+
+/-- Search in the original order while reusing a family's answer for all its
+constructors. The returned name is the original failing member, not the cache
+key. Only one block's answers are retained at a time. -/
+@[expose] def familyBlockFindCached (env : Ix.Environment)
+    (recs : Std.HashMap Address (Array Ix.Name)) (all : Ix.Set Ix.Name) :
+    (names : List Ix.Name) → FamilyBlockCache env recs all →
+    { result : Option Ix.Name // result = names.find? (fun y => !familyBlockOk env recs all y) }
+  | [], _ => ⟨none, rfl⟩
+  | y :: ys, cache =>
+    let key : Ix.Compile.ExactKey.ExactName := familyBlockSubject env y
+    let (answer, cache) := match cache.get? key with
+      | some answer => (answer, cache)
+      | none =>
+        let answer := (⟨familyBlockOk env recs all key, rfl⟩ :
+          { answer : Bool // answer = familyBlockOk env recs all key })
+        (answer, cache.insert key answer)
+    have correct : answer.val = familyBlockOk env recs all y :=
+      answer.property.trans (familyBlockSubject_eq env recs all y)
+    if accepted : answer.val then
+      let result := familyBlockFindCached env recs all ys cache
+      ⟨result.val, by
+        simp only [List.find?_cons, ← correct, accepted, Bool.not_true]
+        exact result.property⟩
+    else
+      ⟨some y, by simp only [List.find?_cons, ← correct, Bool.eq_false_iff.mpr accepted,
+        Bool.not_false]⟩
+
+@[expose] def strayFamilyMemberWithCached (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
+    (recs : Std.HashMap Address (Array Ix.Name)) : Option (Ix.Name × Ix.Name) :=
+  parFindSome? (fun (rep, all) =>
+    -- Singleton blocks dominate ordinary inputs and cannot reuse an answer.
+    -- Keep their original check without allocating a cache.
+    let found := if all.size ≤ 1 then
+        all.toList.find? (fun y => !familyBlockOk env recs all y)
+      else (familyBlockFindCached env recs all all.toList {}).val
+    found.map (rep, ·)) blocks.blocks.toList
+
+@[csimp] theorem strayFamilyMemberWith_eq_cached :
+    @strayFamilyMemberWith = @strayFamilyMemberWithCached := by
+  funext env blocks recs
+  unfold strayFamilyMemberWith strayFamilyMemberWithCached
+  congr 1
+  funext pair
+  obtain ⟨rep, all⟩ := pair
+  dsimp only
+  split
+  · rfl
+  · exact congrArg (Option.map (rep, ·))
+      (familyBlockFindCached env recs all all.toList {}).property.symm
+
 /-- `strayFamilyMember` computed on tasks (`parFindSome?`). -/
 @[expose] def strayFamilyMemberPar (env : Ix.Environment) (blocks : Ix.CondensedBlocks) :
     Option (Ix.Name × Ix.Name) :=

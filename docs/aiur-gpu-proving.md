@@ -1,4 +1,4 @@
-# Proving on GPUs: lanes, generated traces, and how to benchmark them
+# Proving on GPUs: multi-GPU scheduling, generated traces, and how to benchmark them
 
 Everything in this document builds on prover-level trace sharding
 ([aiur-trace-sharding.md](aiur-trace-sharding.md)): one execution of a
@@ -18,22 +18,34 @@ Three layers, each a Cargo feature over the previous one:
 | `cuda` | `IX_CUDA=1` | multi-stark's CUDA backend: device LDEs, Merkle trees, lookup and quotient kernels, with sppark for every NTT. Proofs are the same Goldilocks/BLAKE3 protocol the CPU verifies. |
 | `cuda-trace-codegen` | `IX_CUDA_TRACE_CODEGEN=1` | The CUDA row writers generated from the compiled bytecode (§4), their Rust seed packers, and the registry the trace runtime binds against. Implies `cuda`. |
 
-The lanes scheduler (§3) needs only `cuda`; generated traces are an
+The multi-GPU scheduler (§3) needs only `cuda`; generated traces are an
 optional provider inside it. On the host the ordinary `ix` binary runs
 everything else unchanged.
 
 Build on a GPU host:
 
 ```sh
-IX_CUDA_TRACE_CODEGEN=1 MULTI_STARK_CUDA_ARCHS=120 CFLAGS=-std=gnu17 lake build ix
+IX_CUDA_TRACE_CODEGEN=1 lake build ix
 ```
 
-`MULTI_STARK_CUDA_ARCHS` names the SM architecture (`120` is Blackwell,
-`80` the CI container's Ampere). `CFLAGS=-std=gnu17` is required with
-glibc 2.43 headers: in C23 mode mimalloc's `strtol` becomes
-`__isoc23_strtol`, which the sysroot of Lean's bundled `clang`/`ld.lld`
-does not provide, and the final link fails on `libix_ffi_net.a`. If `nvcc`
-is not on `PATH`, set `NVCC` or `CUDA_HOME`.
+The build detects the installed GPUs and compiles only their distinct SM
+architectures. Set `MULTI_STARK_CUDA_ARCHS` explicitly for cross builds or
+hosts without a GPU (`120` is Blackwell, `80` is the CI target).
+
+The lakefile compiles the C units Cargo builds as C17: with glibc 2.38 or newer headers in C23 mode, mimalloc's
+`strtol` would become `__isoc23_strtol`, which the link-time glibc of
+Lean's bundled toolchain does not provide, and the final link would fail on
+`libix_ffi_net.a`. No `CFLAGS` setting is needed. If `nvcc` is not on
+`PATH`, set `NVCC` or `CUDA_HOME`.
+
+CUDA-enabled Lean executables load `libmulti_stark_cuda.so` from `../lib` relative
+to the executable; `ix` also loads `libix_bn254_cuda.so`, the KZG and PLONK
+kernels compression uses. Both libraries are built
+with a private static GNU C++ runtime and unwinder; only the C interface
+is exported.
+Lean keeps its bundled libc++. When copying an executable out of the build
+tree, also copy the shared libraries in `.lake/build/lib` into the matching `lib/`
+directory.
 
 A binary linked by the Nix Rust toolchain runs on Nix glibc, whose loader
 never searches `/usr/lib/x86_64-linux-gnu`; the statically linked CUDA
@@ -66,15 +78,15 @@ ix shard mathlib.ixe --max-ram 230 --exec-jobs 3 --out mathlib.ixes
 #    and its address printed on stdout.
 export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24
 export AIUR_TRACE_SHARD_MAX_CELLS=1500000000
-export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$PWD/cache
+export AIUR_GPU_TRACE=generated AIUR_PROOF_CACHE_DIR=$PWD/cache
 systemd-run --user --scope -q -p MemoryMax=920G -- \
-  ix prove --ixe mathlib.ixe --ixes mathlib.ixes --trace-shards \
-    --lanes 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
-    > lanes.out 2> lanes.err
+  ix prove --ixe mathlib.ixe --ixes mathlib.ixes \
+    --gpus 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
+    > prove.out 2> prove.err
 
 # 3. Verify the root against the partition that was actually proven.
 ix verify --aggregate --structural-above 0 --ixe mathlib.ixe \
-  --ixes mathlib-proven.ixes "$(tail -1 lanes.out)"
+  --ixes mathlib-proven.ixes "$(tail -1 prove.out)"
 ```
 
 Rerunning the same command resumes: completed claim proofs and join
@@ -84,24 +96,25 @@ changes the partition, and `ix verify --ixes` must see the one the proofs
 belong to.
 
 The same two stages can still be driven by hand, one device per process,
-with `ix prove --trace-shards --shards <ids>` for a lane's claims and
-`ix aggregate --trace-shards --subtree <slot>` for its subtree; the lanes
+with `ix prove --trace-shards --shards <ids>` for a GPU's claims and
+`ix aggregate --trace-shards --subtree <slot>` for its subtree; the multi-GPU
 scheduler is the one-process equivalent and is what the measurements in
 §6 used.
 
-## 3. Lanes: one resident prover per device
+## 3. Multi-GPU: one resident prover per device
 
-`ix prove --lanes N` builds an `AiurSystem` pair per device from the two
+`ix prove --ixe E --ixes M` (on `--gpus N`, default every visible GPU)
+builds an `AiurSystem` pair per device from the two
 compiled systems (nothing is copied across the FFI; the verifying keys do
 not depend on the device, and every cache key and claim binding derives
 from them) and runs one scheduler over them:
 
 - **One execution pool.** Claims and ready joins execute on the host
   through one bounded queue, joins first, `--exec-jobs` executions at a
-  time per lane. A prepared record goes to whichever device is free, so no
+  time per GPU. A prepared record goes to whichever device is free, so no
   packing is decided ahead of time.
 - **Record reservations.** Each execution reserves its record's bytes from
-  a pool sized by `--max-ram` per lane; the reservation follows the record
+  a pool sized by `--max-ram` per GPU; the reservation follows the record
   through both proving rounds and is released when the proof lands. Under
   pressure, executions wait for capacity; if waiters block each other, the
   youngest is cancelled so the selected one can finish.
@@ -117,10 +130,10 @@ from them) and runs one scheduler over them:
   the end.
 
 Memory is governed by three numbers and nothing else: `--max-ram` (the
-record pool per lane), `--exec-jobs` (records in flight per lane, so the
+record pool per GPU), `--exec-jobs` (records in flight per GPU, so the
 cold wave and the speculative execution concurrency), and the cgroup cap
 as the backstop. On a 4-GPU, 1 TiB host, `--max-ram 230 --exec-jobs 3`
-keeps Mathlib's largest records (about 45 GiB) inside one lane's share and
+keeps Mathlib's largest records (about 45 GiB) inside one GPU's share and
 the process peak under 750 GiB; `--exec-jobs 4` is 5% faster at the cost
 of the pool running at 99%.
 
@@ -180,11 +193,11 @@ The ones a run needs, then the ones a measurement might.
 | `AIUR_MAX_PIECE_LOG_HEIGHT=24` | Caps a piece's trace height, so a tall circuit is cut shorter than the room alone requires, at one activation per extra piece. |
 | `AIUR_GPU_TRACE=cpu\|generated` | Main-trace provider (§4); `cpu` is the reference builder and the default. |
 | `AIUR_RECORD_MAX_BYTES` | The record ceiling (§3), default 128 GiB. Size it from the pool: 256 GiB at a 731 GiB pool held FLT's 174 GiB leaf without waits. |
-| `AIUR_LANES_CACHE_DIR` | Where completed claim proofs, join subtrees and the partition checkpoint live between runs. |
+| `AIUR_PROOF_CACHE_DIR` | Where completed claim proofs, join subtrees and the partition checkpoint live between runs. |
 | `--retention retain\|regenerate\|auto` | What a batch keeps between its two rounds. Every real GPU plan runs `regenerate`: round two rebuilds each shard from its seeds, which the resident seed cache makes cheap. |
 | `MULTI_STARK_CUDA_MIN_FREE_BYTES` | Device headroom the backend keeps by spilling LDEs to the host; default a quarter of the card. |
 | `MULTI_STARK_CUDA_MEMORY_LOG=1` | Logs stage-1 placement and per-lookup-job budget and free bytes to stderr. |
-| `--texray` | Per-phase wall and RSS lines on stderr, as on the CPU. |
+| `--texray` or `IX_TEXRAY=1` | Per-phase wall and RSS lines on stderr, as on the CPU. The environment switch also enables TeXRay output for compression. |
 
 ## 6. Benchmarking a multi-GPU run
 
@@ -193,34 +206,39 @@ command, recorded with its identities. The script that produced the
 measurements below does only this: write the provenance, sample the
 devices, run the one command under the cap, and keep the exit status.
 
+Set `RUNS_DIR` to fast local storage for this script's outputs and proof cache.
+For subsequent KZG compression, see
+[the compression guide](../crates/proof-compression/README.md#proving-and-verification)
+for output and cache placement. `RUNS_DIR` does not configure KZG cache paths.
+
 ```sh
 #!/bin/bash
-# run-lanes4.sh <label> [extra ix prove flags]
+# run-multi-gpu.sh <label> [extra ix prove flags]
 set -u
 LABEL=$1; shift
 EXEC_JOBS=${EXEC_JOBS:-3}; MAX_RAM=${MAX_RAM:-230}; MEM_MAX=${MEM_MAX:-920G}
 IXE=${IXE:-mathlib.ixe}; IXES=${IXES:-mathlib.ixes}
 BIN=${BIN:-$HOME/repos/ix/.lake/build/bin/ix}
-OUT=runs/$LABEL; mkdir -p "$OUT/cache"
+OUT=${RUNS_DIR:-runs}/$LABEL; mkdir -p "$OUT/cache"
 [ -n "${RECORD_MAX_GIB:-}" ] && export AIUR_RECORD_MAX_BYTES=$((RECORD_MAX_GIB << 30))
 export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 AIUR_TRACE_SHARD_MAX_CELLS=1500000000
-export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$OUT/cache
+export AIUR_GPU_TRACE=generated AIUR_PROOF_CACHE_DIR=$OUT/cache
 unset RUST_LOG MULTI_STARK_CUDA_MEMORY_LOG
 {
   echo "started $(date -u +%FT%TZ)  host $(hostname)"
   echo "ix $(sha256sum "$BIN" | cut -d' ' -f1)"; sha256sum "$IXE" "$IXES"
   echo "driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
   echo "thp $(cat /sys/kernel/mm/transparent_hugepage/enabled) / $(cat /sys/kernel/mm/transparent_hugepage/defrag)"
-  echo "flags --lanes 4 --exec-jobs $EXEC_JOBS --max-ram $MAX_RAM $*  cap $MEM_MAX"
+  echo "flags --gpus 4 --exec-jobs $EXEC_JOBS --max-ram $MAX_RAM $*  cap $MEM_MAX"
   env | grep -E '^(AIUR|MULTI_STARK)_' | sort
 } > "$OUT/meta.txt"
 nvidia-smi --query-gpu=timestamp,index,memory.used,utilization.gpu \
   --format=csv,noheader,nounits --loop-ms=1000 > "$OUT/gpu.csv" 2>/dev/null &
 SMI=$!
 systemd-run --user --scope -q -p MemoryMax=$MEM_MAX -- \
-  /usr/bin/time -v "$BIN" prove --ixe "$IXE" --ixes "$IXES" --trace-shards \
-    --lanes 4 --exec-jobs "$EXEC_JOBS" --max-ram "$MAX_RAM" "$@" \
-    > "$OUT/lanes.out" 2> "$OUT/lanes.err"
+  /usr/bin/time -v "$BIN" prove --ixe "$IXE" --ixes "$IXES" \
+    --gpus 4 --exec-jobs "$EXEC_JOBS" --max-ram "$MAX_RAM" "$@" \
+    > "$OUT/prove.out" 2> "$OUT/prove.err"
 echo "exit $?" >> "$OUT/meta.txt"; kill $SMI 2>/dev/null
 ```
 
@@ -235,10 +253,10 @@ What to read off, and where:
 
 | Quantity | Source |
 |---|---|
-| Wall and peak RSS | `/usr/bin/time -v` in `lanes.err` |
-| Per-claim and per-join execution time, record bytes, proof time, pool grants, waits, bisections | `[lanes]` lines in `lanes.err` |
+| Wall and peak RSS | `/usr/bin/time -v` in `prove.err` |
+| Per-claim and per-join execution time, record bytes, proof time, pool grants, waits, bisections | `[multi-gpu]` lines in `prove.err` |
 | Device utilization and memory over time | `gpu.csv` |
-| Root address and verdict | last line of `lanes.out`; `ix verify --aggregate` |
+| Root address and verdict | last line of `prove.out`; `ix verify --aggregate` |
 
 Measured on 4× RTX PRO 6000 Blackwell (96 GB each), 96 CPUs, 1 TiB, CUDA
 13.3, with the knobs above (`--exec-jobs 4` for the second column):

@@ -1,2 +1,9 @@
 [build]
 rustflags = ["-Ctarget-cpu=native"]
+
+# Lean's bundled toolchain links against glibc stubs older than 2.38, whose
+# headers in C23 mode, the default of recent GCC, redirect `strtol` and its
+# relatives to `__isoc23_*` symbols the stubs lack. C17 keeps symbols the link
+# can resolve.
+[env]
+CFLAGS = "-std=gnu17"

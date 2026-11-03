@@ -65,7 +65,10 @@ private def mutualFixture : Fixture := Id.run do
   source := { source with consts := source.consts.insert consumer (declaration consumer left #[consumer]) }
   let members : _root_.Ix.Set _root_.Ix.Name := ({} : _root_.Ix.Set _root_.Ix.Name).insert left |>.insert right
   let single : _root_.Ix.Set _root_.Ix.Name := ({} : _root_.Ix.Set _root_.Ix.Name).insert consumer
-  let dependencies : _root_.Ix.Set _root_.Ix.Name := ({} : _root_.Ix.Set _root_.Ix.Name).insert left
+  -- Both source names have the same scheduling owner. The plan must count
+  -- this parent once even though the worker receives both dependencies.
+  let dependencies : _root_.Ix.Set _root_.Ix.Name :=
+    ({} : _root_.Ix.Set _root_.Ix.Name).insert left |>.insert right
   let blocks : _root_.Ix.CondensedBlocks := {
     lowLinks := ({} : _root_.Ix.Map _root_.Ix.Name _root_.Ix.Name).insert left left |>.insert right left |>.insert consumer consumer
     blocks := ({} : _root_.Ix.Map _root_.Ix.Name (_root_.Ix.Set _root_.Ix.Name)).insert left members |>.insert consumer single
@@ -134,6 +137,14 @@ private def compareFold (label : String) (data : Fixture) (env : CompileEnv)
     IO.println s!"PASS {label}: {repr metrics}"
 
 private def parityChecks : IO Unit := do
+  let empty := fixture 0 1
+  compareFold "empty schedule" empty (CompileEnv.new empty.source)
+  let chain := fixture 24 1
+  compareFold "singleton waves preserve successful publication" chain
+    { CompileEnv.new chain.source with sharingLimits := compilerSharingLimits }
+  let refusedChain := fixture 24 1 true
+  compareFold "singleton waves preserve refusals and dependent failures" refusedChain
+    { CompileEnv.new refusedChain.source with sharingLimits := compilerSharingLimits }
   let data := fixture 40 8 true
   let env := { CompileEnv.new data.source with sharingLimits := compilerSharingLimits }
   compareFold "success, worker refusal and missing-parent cascade" data env
@@ -167,8 +178,17 @@ private def parityChecks : IO Unit := do
       nameToAddr := cleanEnv.nameToAddr.insert root
         (Address.admissionHash "older claim".toUTF8) }
   let family := mutualFixture
+  let familyEnv := { CompileEnv.new family.source with sharingLimits := compilerSharingLimits }
+  let schedule := FoldSchedule.of family.blocks
+  let plan := makePlan family.blocks schedule (FoldState.init familyEnv family.blocks schedule)
+  let some consumer := plan.descriptors.find? (·.representative == family.names[2]!)
+    | throw (IO.userError "missing mutual consumer descriptor")
+  let some parent := plan.indices.get? family.names[0]!
+    | throw (IO.userError "missing mutual parent descriptor")
+  need "multiple member dependencies were counted as multiple parents"
+    (consumer.dependencies.size == 2 && consumer.parents == #[parent])
   compareFold "mutual member slots, projections and metadata" family
-    { CompileEnv.new family.source with sharingLimits := compilerSharingLimits }
+    familyEnv
   let malformed := { clean with blocks := { clean.blocks with
     blockRefs := clean.blocks.blockRefs.erase root } }
   compareFold "missing dependency row keeps reference behavior" malformed cleanEnv false

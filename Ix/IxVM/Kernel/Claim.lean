@@ -525,11 +525,23 @@ def claim := ⟦
         -- (the sharded walk below aborts instead), so a claim without
         -- assumptions proves every constant its tree reaches, not only
         -- those it lists. For an environment's tree the two coincide.
-        walk_leaves_owned(rc, owned),
+        match role_ctx_axioms(rc) {
+          RBTreeMap.Nil => walk_leaves_owned(rc, owned),
+          RBTreeMap.Node(_, _, _, _, _) => walk_leaves_transitive(rc, owned),
+        },
       Option.Some(r) =>
         let owned_set = addr_set_build(owned, RBTreeMap.Nil);
         let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap.Nil);
         env_walk_leaves(rc, owned, owned_set, asm_set),
+    }
+  }
+
+  fn walk_leaves_transitive(rc: RoleCtx, leaves: List‹Addr›) {
+    match load(leaves) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        run_check_transitive(rc, a);
+        walk_leaves_transitive(rc, rest),
     }
   }
 
@@ -631,21 +643,15 @@ def claim := ⟦
 
   -- A typing claim's context (`Ix.ClaimContext`): the specification
   -- digest, which must be this circuit's; the role binding's hash; and the
-  -- axioms beyond the standard three, which must be none, since the
-  -- circuit admits no other axiom. Returns the binding hash and the rest of
-  -- the stream.
-  fn get_claim_context(stream: ByteStream) -> (Addr, ByteStream) {
+  -- optional merkle root of safe user axioms beyond the standard three.
+  -- Returns the binding hash, the axioms root, and the rest of the stream.
+  fn get_claim_context(stream: ByteStream) -> (Addr, Option‹Addr›, ByteStream) {
     let (spec, s) = get_address(stream);
-    assert_eq!(address_eq(spec, spec_digest()), 1,
+    assert_eq!(address_eq(spec, @spec_digest()), 1,
       "claim: specification digest is not this circuit's");
     let (binding, s2) = get_address(s);
     let (axioms, s3) = get_opt_addr(s2);
-    match axioms {
-      Option.None => (binding, s3),
-      Option.Some(_) =>
-        assert_eq!(0, 1, "claim: axioms beyond the standard three are not admitted");
-        (binding, s3),
-    }
+    (binding, axioms, s3)
   }
 
   -- ============================================================================
@@ -1393,8 +1399,8 @@ def claim := ⟦
     match variant {
       3 =>
         assert_eq!(validator, 3u8, "claim: wrong validator identity");
-        let (binding, s) = get_claim_context(s);
-        let rc = role_ctx_of_binding(binding);
+        let (binding, axioms, s) = get_claim_context(s);
+        let rc = load_role_ctx(binding, 3, axioms);
         let (input, s) = get_address(s);
         let (output, s) = get_address(s);
         let (asm, rest) = get_opt_addr(s);
@@ -1403,8 +1409,8 @@ def claim := ⟦
       4 =>
         -- Validator 3 validates the binding's roles as the claim uses
         -- them; 4 assumes the binding meets the specifications.
-        let (binding, s) = get_claim_context(s);
-        let rc = role_ctx_for_validator(binding, to_field(validator));
+        let (binding, axioms, s) = get_claim_context(s);
+        let rc = load_role_ctx(binding, to_field(validator), axioms);
         let (target, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
@@ -1418,8 +1424,8 @@ def claim := ⟦
             env_walk(rc, target, RBTreeMap.Nil, asm_set, 2),
         },
       5 =>
-        let (binding, s) = get_claim_context(s);
-        let rc = role_ctx_for_validator(binding, to_field(validator));
+        let (binding, axioms, s) = get_claim_context(s);
+        let rc = load_role_ctx(binding, to_field(validator), axioms);
         let (root, s2) = get_address(s);
         let (asm, rest) = get_opt_addr(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");
@@ -1448,7 +1454,7 @@ def claim := ⟦
         -- checks.
         assert_eq!(validator, 3u8, "claim: wrong validator identity");
         let (spec, s2) = get_address(s);
-        assert_eq!(address_eq(spec, spec_digest()), 1,
+        assert_eq!(address_eq(spec, @spec_digest()), 1,
           "claim: specification digest is not this circuit's");
         let (binding, rest) = get_address(s2);
         assert_eq!(load(rest), ListNode.Nil, "claim: trailing bytes");

@@ -162,10 +162,10 @@ def check := ⟦
   -- quotient's iota rules apply to the specified constants only.
   fn check_quot(rc: RoleCtx, self_addr: Addr, kind: QuotKind) {
     let r = match kind {
-      QuotKind.Typ => role_quot(),
-      QuotKind.Ctor => role_quot_mk(),
-      QuotKind.Lift => role_quot_lift(),
-      QuotKind.Ind => role_quot_ind(),
+      QuotKind.Typ => @role_quot(),
+      QuotKind.Ctor => @role_quot_mk(),
+      QuotKind.Lift => @role_quot_lift(),
+      QuotKind.Ind => @role_quot_ind(),
     };
     assert_eq!(role_is(rc, self_addr, r), 1,
       "a quotient constant is not the binding's quotient role of its kind");

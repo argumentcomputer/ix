@@ -144,9 +144,9 @@ def inferOnly := ⟦
       KExprNode.Lit(lit) =>
         match lit {
           KLiteral.Nat(_) =>
-            store(KExprNode.Const(role_addr(rc, role_nat()), store(ListNode.Nil))),
+            store(KExprNode.Const(role_addr(rc, @role_nat()), store(ListNode.Nil))),
           KLiteral.Str(_) =>
-            store(KExprNode.Const(role_used_implicitly(rc, role_string()), store(ListNode.Nil))),
+            store(KExprNode.Const(role_used_implicitly(rc, @role_string()), store(ListNode.Nil))),
         },
 
       -- Proj arm: minimal, mirrors k_infer_proj without prop checks.

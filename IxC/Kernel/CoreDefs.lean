@@ -460,6 +460,59 @@ def indShapeOk (find? : Key md → Option (ConstantInfo md)) (block : List (Cons
     (find? c).isNone && !(indFormerNames block).contains c) &&
   decide (indCtorNames block).Nodup
 
+/-- Constructor-name uniqueness, with a set of names already encountered.
+The map retains only keys, never declarations or expression trees. -/
+def indShapeKeysNodup (seen : Std.HashMap (Key md) Unit) : List (Key md) → Bool
+  | [] => true
+  | k :: ks => !seen.contains k && indShapeKeysNodup (seen.insert k ()) ks
+
+/-- The indexed uniqueness pass has exactly the list predicate's meaning. -/
+theorem indShapeKeysNodup_spec (ks : List (Key md)) (seen : Std.HashMap (Key md) Unit) :
+    indShapeKeysNodup seen ks = true ↔
+      ks.Nodup ∧ ∀ k ∈ ks, seen.contains k = false := by
+  induction ks generalizing seen with
+  | nil => simp [indShapeKeysNodup]
+  | cons k ks ih =>
+    simp only [indShapeKeysNodup, Bool.and_eq_true, Bool.not_eq_true', ih,
+      List.nodup_cons, List.mem_cons, forall_eq_or_imp, Std.HashMap.contains_insert,
+      Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+    constructor
+    · rintro ⟨hk, hn, hs⟩
+      refine ⟨⟨?_, hn⟩, hk, ?_⟩
+      · intro h; exact (hs k h).1 rfl
+      · intro a ha; exact (hs a ha).2
+    · rintro ⟨⟨hk, hn⟩, hs, ht⟩
+      refine ⟨hs, hn, ?_⟩
+      intro a ha
+      exact ⟨fun h => hk (h ▸ ha), ht a ha⟩
+
+theorem indShapeKeysNodup_empty (ks : List (Key md)) :
+    indShapeKeysNodup {} ks = decide ks.Nodup := by
+  apply Bool.eq_iff_iff.mpr
+  simp [indShapeKeysNodup_spec]
+
+/-- The executed shape guard: collect the former and constructor names once,
+index former membership, and check duplicate constructors in a single pass.
+In particular, a wide enum does not rescan its whole block for each constructor
+or for each reference to its former. -/
+def indShapeOkFast (find? : Key md → Option (ConstantInfo md))
+    (block : List (ConstantInfo md)) : Bool :=
+  let formers := Std.HashMap.unitOfList (indFormerNames block)
+  let ctors := indCtorNames block
+  (block.all fun ci => match ci with
+    | .indInfo cv _ | .ctorInfo cv _ _ =>
+      cv.type.constsResolveBy (fun n => (find? n).isSome || formers.contains n)
+    | _ => true) &&
+  (ctors.all fun c => (find? c).isNone && !formers.contains c) &&
+  indShapeKeysNodup {} ctors
+
+/-- Every declared-type, freshness and uniqueness check is unchanged. -/
+@[csimp] theorem indShapeOk_eq_indShapeOkFast : @indShapeOk = @indShapeOkFast := by
+  funext md find? block
+  unfold indShapeOkFast indShapeOk
+  simp only [Std.HashMap.contains_unitOfList, indShapeKeysNodup_empty]
+  rfl
+
 /-- Convert a `Nat`-literal major premise to constructor form, one
 layer; anything else passes through. -/
 def litToCtorIfNat (env : Env md) : Expr md → Expr md

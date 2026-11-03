@@ -190,7 +190,7 @@ def defEq := ⟦
           KLiteral.Nat(limbs) => klimbs_is_zero(limbs),
           _ => 0,
         },
-      KExprNode.Const(caddr, _) => role_is(rc, caddr, role_nat_zero()),
+      KExprNode.Const(caddr, _) => role_is(rc, caddr, @role_nat_zero()),
       _ => 0,
     }
   }
@@ -210,7 +210,7 @@ def defEq := ⟦
       KExprNode.App(f, a) =>
         match load(f) {
           KExprNode.Const(caddr, _) =>
-            match role_is(rc, caddr, role_nat_succ()) {
+            match role_is(rc, caddr, @role_nat_succ()) {
               1 =>
                 match nat_offset_of(rc, a) {
                   (_, base, o) => (1, base, klimbs_succ(o)),
@@ -220,7 +220,7 @@ def defEq := ⟦
           KExprNode.App(g, x) =>
             match load(g) {
               KExprNode.Const(caddr, _) =>
-                match role_is(rc, caddr, role_nat_add()) {
+                match role_is(rc, caddr, @role_nat_add()) {
                   1 =>
                     match load(a) {
                       KExprNode.Lit(alit) =>
