@@ -1,7 +1,6 @@
 //! Resident host for the formal IxVM and recursive verifier. The application
 //! submits ready jobs; CPU execution is shared and each prover owns its backend.
 //! Spool files transport control messages only. Execution records stay in memory.
-mod distributed;
 mod output;
 mod protocol;
 
@@ -660,15 +659,8 @@ fn main() {
       .inspect_err(|error| {
         let _ = atomic_json(&dir.join("failed.json"), &fail(error));
       })
-  } else if args.len() == 6 && args[1] == "distributed" {
-    distributed::run(
-      Path::new(&args[2]),
-      Path::new(&args[3]),
-      Path::new(&args[4]),
-      Path::new(&args[5]),
-    )
   } else {
-    Err("usage: ix-prover serve CONFIG.json SPOOL_DIRECTORY | distributed ARTIFACT SPEC OUTPUT OPTIONS".into())
+    Err("usage: ix-prover serve CONFIG.json SPOOL_DIRECTORY".into())
   };
   if let Err(error) = result {
     eprintln!("ix-prover: {error}");
