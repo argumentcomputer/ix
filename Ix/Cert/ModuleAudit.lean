@@ -5,6 +5,7 @@ import Ix.Cert.CompileCorrect
 import Ix.Cert.ConversionValues
 import Ix.Cert.Hybrid
 import Ix.Cert.IxVM
+import Ix.Cert.Compression
 import Ix.Cert.ReaderClosureKeys
 import Ix.Compile.ReadyCompile
 import Ix.CompileCertified
@@ -65,6 +66,14 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
   Ix.CompileCertified
   Ix.LeanIngress.Theorems
   Ix.LeanIngress.NominalQuotient
+  Ix.Cert.Compression.Plonkish
+  Ix.Cert.Compression.Foreign
+  Ix.Cert.Compression.FriVerifier
+  Ix.Cert.Compression.NativeField
+  Ix.Cert.Compression.NativeCurveMsm
+  Ix.Cert.Compression.RecursiveKzg
+  Ix.Cert.Compression.OuterRelation
+  Ix.Cert.Compression.EndToEnd
 
 #guard_kernel_axioms Ix.RoleBinding.RecordDecoding.parallel_eq [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.recordStore_eq_parallel [propext, Classical.choice, Quot.sound]
@@ -100,5 +109,14 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
 #guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_no_proof_of_False [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_compile_commutes [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_compile_commutes_nominal [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_kzg_accepts_imp_normalized_root [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_plonk_accepts_imp_normalized_root [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_groth16_accepts_imp_normalized_root [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_proof_accepts_iff_ixonAcceptsRef [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_proof_strongModel [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_proof_valueModel [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_proof_no_proof_of_False [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_proof_compile_commutes [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Cert.Compression.compressed_proof_compile_commutes_nominal [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms_under Ix.Cert Ix.CompileCert

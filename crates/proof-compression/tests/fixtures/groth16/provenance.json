@@ -1,0 +1,29 @@
+{
+  "scope": "development Groth16 proof of the actual Init recursive KZG verifier fixture",
+  "setup": "development",
+  "curve": "bn254",
+  "claim_digest": "c019cf542c84a8bc161b397194dec92edc7f7616235d2e7245b23f799bcbed80",
+  "constraints": 4340068,
+  "domain": 8388608,
+  "commitments": 1,
+  "inner_schema_sha256": "b86e203bcc2dcd87a67c1e325e24328e12534676ada7ea9602ac319568139c29",
+  "circuit_sha256": "03b7949ca0e45fdb82c583a0c313d1eb8787ced42d74ad1ec1d81cce3b16a6cd",
+  "gnark": "262cf453c107d147a228b6b7418c5cf791c3b79b",
+  "files": {
+    "proof.bin": "5759441e1acfc5c86d7bdd33699a2d93aa21983b7b2c71f5971b9a0437a9a56a",
+    "verifying-key.bin": "0bc6191175529fad61a4c27909d22928a72215b03fbac8b36d17e1ee7cb39e9a"
+  },
+  "inner_vk_id": "0x28fc7d40d30aa21f1db718b93a4f471241a02f6c6cfc58989abc5f92a9b8d258",
+  "statement_prefix": [
+    0,
+    293,
+    3008464260,
+    3936129970,
+    1088962797,
+    1141056675,
+    2347219926,
+    1176003176,
+    683533119,
+    3085659920
+  ]
+}

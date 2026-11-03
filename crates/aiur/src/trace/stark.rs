@@ -22,7 +22,7 @@ use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
-mod batch;
+pub mod batch;
 #[cfg(feature = "cuda")]
 mod gpu;
 mod grouping;
@@ -73,7 +73,7 @@ pub type BatchProof = multi_stark::batch::BatchProof<GoldilocksBlake3Config>;
 // Separate message namespaces; callable/type IDs fix the shape within each.
 const CALL: u64 = 1;
 const ROM: u64 = 2;
-const MEMSEG: u64 = 16;
+pub const MEMSEG: u64 = 16;
 
 /// CPU FRI configuration. Root Merkle caps also cover height-one circuits.
 /// These are explicit protocol parameters, not a claimed security-bit estimate.
@@ -356,7 +356,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       segmented_memory,
       gpu_lookup_only,
       #[cfg(feature = "cuda")]
-      device: device.unwrap_or_else(multi_stark::cuda::configured_device),
+      device: device.unwrap_or_else(|| {
+        std::env::var("MULTI_STARK_CUDA_DEVICE")
+          .ok()
+          .and_then(|v| v.parse().ok())
+          .unwrap_or(0)
+      }),
       #[cfg(feature = "cuda")]
       device_plans: None,
     };

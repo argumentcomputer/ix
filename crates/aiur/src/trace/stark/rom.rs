@@ -5,7 +5,7 @@ use super::*;
 use crate::trace::MemoryLookup;
 
 pub(super) struct Rom {
-  widths: Vec<usize>,
+  pub(super) widths: Vec<usize>,
 }
 
 impl Rom {

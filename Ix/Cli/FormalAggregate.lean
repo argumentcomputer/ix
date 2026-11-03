@@ -1,5 +1,6 @@
 module
 public import Ix.Cli.FormalAiur
+public import Ix.Cli.Compression
 public import Ix.Aggr.Verification
 
 /-! Application scheduling for the separate formal recursive verifier. The
@@ -44,11 +45,15 @@ structure Context where
   aggr : Identity
   allowed : ByteArray
 
+def aggrIdentity (p : Cli.Parsed) : IO (String × Identity) := do
+  let aggrArtifact ← artifact p
+  let aggr ← identity (← host) aggrArtifact
+  return (aggrArtifact, aggr)
+
 def context (p : Cli.Parsed) : IO Context := do
   let ixvmArtifact ← FormalAiur.artifact p
-  let aggrArtifact ← artifact p
+  let (aggrArtifact, aggr) ← aggrIdentity p
   let ixvm ← identity (← FormalAiur.host) ixvmArtifact
-  let aggr ← identity (← host) aggrArtifact
   let allowed := Aggr.allowedBlob ixvm.key ixvm.index aggr.key aggr.index
   return { ixvmArtifact, aggrArtifact, ixvm, aggr, allowed }
 
@@ -63,6 +68,28 @@ def rawProof (kind : ChildKind) (proof : ByteArray) : IO ByteArray := do
   unless proof.extract 0 magic.size == magic do
     throw (IO.userError "proof belongs to a different backend or recursion kind")
   return proof.extract magic.size proof.size
+
+/-- Build the shape-1 (`(.aggr, none)`) recursive wrap invocation for an
+aggregate root `wrapper`. Returns `(rawProofBytes, invocationJson)`. -/
+def wrapInvocation (ctx : Context) (wrapper : Ixon.Proof) : IO (ByteArray × Json) := do
+  let raw ← rawProof .aggr wrapper.proof
+  let shape := Aggr.shapeCode (.aggr, none)
+  let io := Aggr.extendChild (Aggr.extendVk (Aggr.extendIdentity default ctx.allowed shape) .aggr ctx.aggr.key) 0 raw
+    (MultiStark.serializeClaims #[outerClaim ctx .aggr wrapper.claim])
+  let claimBytes := Ix.Claim.ser wrapper.claim
+  let inv := FormalAiur.invocation (Aggr.pubInput ctx.allowed claimBytes) io "MultiStark::ix_aggr"
+  return (raw, inv)
+
+/-- Normalize `wrapper`'s aggregate root to `layout` under `ctx`. -/
+def normalize (ctx : Context) (wrapper : Ixon.Proof) (layout : String) : IO ByteArray := do
+  let (raw, inv) ← wrapInvocation ctx wrapper
+  Compression.normalizeRoot ctx.aggrArtifact inv.compress raw layout
+
+/-- The root statement a compressed proof of `claim` must expose: the public
+claim of the backend's `MultiStark::ix_aggr` entrypoint, serialized as one
+batch claim. -/
+def statementBytes (ctx : Context) (claim : Ix.Claim) : ByteArray :=
+  MultiStark.serializeClaims #[outerClaim ctx .aggr claim]
 
 def verifyWrapper (ctx : Context) (kind : ChildKind) (wrapper : Ixon.Proof) : IO Unit := do
   if kind == .ixvm then return ← FormalAiur.verifyWrapper ctx.ixvmArtifact wrapper
@@ -321,7 +348,8 @@ private partial def proveBlocks (p : Cli.Parsed) (ctx : Context) (env : Ixon.Env
   let node ← proveNode p ctx joined left (some right) false options
   return (node, lp ++ rp)
 
-private def runCore (p : Cli.Parsed) (proveLeaves : Bool) : IO UInt32 := do
+private def runCore (p : Cli.Parsed) (proveLeaves : Bool)
+    (onRoot : Address → IO Unit := fun _ => pure ()) : IO UInt32 := do
   let original : Option String := (p.flag? "ixes").map (·.as! String)
   let checkpoint ← if proveLeaves && !p.hasFlag "plan-only" then do
       let some original := original | throw (IO.userError "--lanes requires --ixes")
@@ -542,22 +570,22 @@ private def runCore (p : Cli.Parsed) (proveLeaves : Bool) : IO UInt32 := do
           ("root", toJson (toString address)), ("slots", toJson plan.size), ("jobs", toJson jobs),
           ("proved_leaves", toJson proveLeaves), ("verified", toJson true)]).pretty
       IO.println (toString address)
+      onRoot address
     return 0
 
 def run (p : Cli.Parsed) : IO UInt32 := runCore p false
 
-def runPipeline (p : Cli.Parsed) : IO UInt32 := do
-  unless p.hasFlag "ixe" && p.hasFlag "ixes" && p.hasFlag "trace-shards" do
+def runPipeline (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pure ()) : IO UInt32 := do
+  unless p.hasFlag "ixe" && p.hasFlag "ixes" && (p.hasFlag "trace-shards" || p.hasFlag "compress") do
     throw (IO.userError "--lanes/--aggregate requires --ixe, --ixes and --trace-shards")
   for flag in #["shard", "shards", "distributed", "exec-only"] do
     if p.hasFlag flag then throw (IO.userError s!"--lanes/--aggregate cannot be combined with --{flag}")
   if p.hasFlag "lanes" && p.hasFlag "jobs" then
     throw (IO.userError "choose --lanes for GPU provers or --jobs for CPU provers")
-  runCore p true
+  runCore p true onRoot
 
 def verify (p : Cli.Parsed) : IO UInt32 := do
   rejectFlags p #["shard", "record", "distributed"]
-  let ctx ← context p
   let expected ← match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
   | none, none => pure none
   | none, some _ => throw (IO.userError "--ixes requires --ixe")
@@ -576,12 +604,25 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     pure (some root.claim)
   let proofs := p.variableArgsAs! String
   if proofs.isEmpty then throw (IO.userError "expected an aggregate proof address")
+  let mut ctx? : Option Context := none
   for hex in proofs do
     let some addr := Address.fromString hex | throw (IO.userError "invalid aggregate address")
-    let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read addr)))
+    let wrapper ← Compression.readProof addr
     unless expected.all (· == wrapper.claim) do throw (IO.userError "aggregate does not match the requested environment/manifest")
-    verifyWrapper ctx .aggr wrapper
-    IO.println s!"ok: aggregate {addr} verifies {wrapper.claim}"
+    if Compression.isCompressed wrapper.proof then
+      let .checkEnv .. := wrapper.claim
+        | throw (IO.userError s!"aggregate proof {addr} does not bundle a CheckEnv claim")
+      let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")
+      if rc != 0 then return rc
+    else
+      let ctx ← match ctx? with
+        | some c => pure c
+        | none =>
+          let c ← context p
+          ctx? := some c
+          pure c
+      verifyWrapper ctx .aggr wrapper
+      IO.println s!"ok: aggregate {addr} verifies {wrapper.claim}"
   return 0
 
 end Ix.Cli.FormalAggregate
