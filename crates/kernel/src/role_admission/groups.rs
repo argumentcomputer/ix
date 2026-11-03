@@ -492,12 +492,18 @@ fn check_units_with(
   let mut checker =
     TypeChecker::for_artifact_anon(kenv, source, &lookups, context);
   for member in members {
+    if candidates.is_empty() && admitted.checked.contains(*member) {
+      continue;
+    }
     if source.in_safety_tier(member) {
       return Err(format!("{} is partial or unsafe", member.hex()));
     }
     checker
       .check_ixon_const(&KId::new((*member).clone(), ()))
       .map_err(|error| format!("{} does not check: {error}", member.hex()))?;
+    if candidates.is_empty() {
+      admitted.checked.insert((*member).clone());
+    }
   }
   Ok(())
 }
@@ -664,17 +670,21 @@ fn expect_theorem_evidence(
 
 fn load_checked_theorem(
   source: &ArtifactSource,
+  admitted: &Admission,
   checker: &mut TypeChecker<'_, Anon>,
   proof: &Address,
   levels: u64,
 ) -> Result<(E, E), String> {
   for member in support_targets(source, std::slice::from_ref(proof))? {
-    if source.in_safety_tier(&member) {
-      return Err(format!("{} is partial or unsafe", member.hex()));
+    if !admitted.checked.contains(&member) {
+      if source.in_safety_tier(&member) {
+        return Err(format!("{} is partial or unsafe", member.hex()));
+      }
+      checker
+        .check_ixon_const(&KId::new(member.clone(), ()))
+        .map_err(|error| error.to_string())?;
+      admitted.checked.insert(member);
     }
-    checker
-      .check_ixon_const(&KId::new(member, ()))
-      .map_err(|error| error.to_string())?;
   }
   let id = KId::new(proof.clone(), ());
   let theorem = checker.get_const(&id).map_err(|error| error.to_string())?;
@@ -1332,7 +1342,22 @@ fn validate_anchors(
       format!("{}: the specified type is not a type: {error}", address.hex())
     })?;
   }
-  check_support(source, admitted, &mut kenv, &addresses)
+  for member in support_targets(source, &addresses)? {
+    if source.in_safety_tier(&member) {
+      return Err(format!("{} is partial or unsafe", member.hex()));
+    }
+    if source.record_tag(&member).map_err(|e| e.to_string())?
+      == ixon::lazy::ConstVariantTag::Axio
+      && admitted.address(Role::Propext) != Some(&member)
+      && admitted.address(Role::Choice) != Some(&member)
+    {
+      return Err(format!(
+        "axiom {} is not an admitted standard axiom",
+        member.hex()
+      ));
+    }
+  }
+  Ok(())
 }
 
 /// `Char : Type`.
@@ -1954,7 +1979,8 @@ fn validate_wf_op(
       format!("{}: certificate {index} ({}) {what}", address.hex(), proof.hex())
     };
     let (_, value) =
-      load_checked_theorem(source, &mut checker, proof, 0).map_err(&fail)?;
+      load_checked_theorem(source, admitted, &mut checker, proof, 0)
+        .map_err(&fail)?;
     let proof_term =
       replace_constant(&value, &address, &val, &mut FxHashMap::default());
 

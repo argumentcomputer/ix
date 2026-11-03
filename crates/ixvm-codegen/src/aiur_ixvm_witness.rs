@@ -196,14 +196,24 @@ pub fn build_claim_check_witness(
   env: &Env,
   target: &Address,
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
-  let closure: FxHashSet<Address> =
-    witness_scope(env, std::slice::from_ref(target));
+  build_claim_check_witness_with(env, target, false)
+}
 
-  let claim = Claim::Check {
-    ctx: ClaimContext::for_env(env)?,
-    const_addr: target.clone(),
-    assumptions: None,
-  };
+/// [`build_claim_check_witness`], whose claim assumes the environment's
+/// binding meets the specifications when `assume_binding` (validator 4) and
+/// validates it otherwise (validator 3).
+pub fn build_claim_check_witness_with(
+  env: &Env,
+  target: &Address,
+  assume_binding: bool,
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  let closure: FxHashSet<Address> =
+    witness_scope_with(env, std::slice::from_ref(target), assume_binding);
+
+  let mut ctx = ClaimContext::for_env(env)?;
+  ctx.binding_assumed = assume_binding;
+  let claim =
+    Claim::Check { ctx, const_addr: target.clone(), assumptions: None };
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);

@@ -543,6 +543,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -553,8 +554,11 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   let env = &env_handle.get().env;
 
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
-    {
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_with(
+      env,
+      &addr,
+      assume_binding,
+    ) {
       Ok(t) => t,
       Err(e) => {
         return LeanExcept::error_string(&format!("witness build: {e}"));
@@ -999,6 +1003,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1012,8 +1017,10 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   // shard entrypoint builds the the kernel witness (thin frontier + wrapper
   // augmentation).
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned,
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+      env,
+      &owned,
+      assume_binding,
     ) {
       Ok(t) => t,
       Err(e) => {
@@ -1055,6 +1062,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.proveAddrWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1065,8 +1073,10 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
-        env, &addr,
+      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_with(
+        env,
+        &addr,
+        assume_binding,
       ) {
         Ok(t) => t,
         Err(e) => {

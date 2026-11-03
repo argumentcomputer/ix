@@ -427,6 +427,7 @@ const ADMISSION_STACK_SIZE: usize = 256 * 1024 * 1024;
 pub struct Admission {
   roles: FxHashMap<Role, Address>,
   refused: Vec<(Role, String)>,
+  checked: dashmap::DashSet<Address>,
 }
 
 impl Admission {

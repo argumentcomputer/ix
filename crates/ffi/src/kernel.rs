@@ -1335,6 +1335,7 @@ where
       Err(e) => {
         progress.stop_reporter();
         if let Some(reporter) = reporter.take() {
+          reporter.thread().unpark();
           let _ = reporter.join();
         }
         for handle in handles {
@@ -1354,6 +1355,7 @@ where
   }
   progress.stop_reporter();
   if let Some(reporter) = reporter {
+    reporter.thread().unpark();
     let _ = reporter.join();
   }
   progress.log_mem_summary();
@@ -1669,6 +1671,7 @@ fn run_anon_checks_parallel(
       Err(e) => {
         progress.stop_reporter();
         if let Some(r) = reporter.take() {
+          r.thread().unpark();
           let _ = r.join();
         }
         for h in handles {
@@ -1688,6 +1691,7 @@ fn run_anon_checks_parallel(
   }
   progress.stop_reporter();
   if let Some(r) = reporter {
+    r.thread().unpark();
     let _ = r.join();
   }
   progress.log_mem_summary();
@@ -2009,6 +2013,41 @@ fn verdict_work_items(
   )
 }
 
+/// The work items in `seed_items`' own dependency closure (or `seed_items`
+/// themselves when `!dependencies`), assuming the environment's role binding
+/// support has already been checked and cached.
+fn closure_work_items(
+  ctx: &AnonSeedContext,
+  seed_items: &[usize],
+  dependencies: bool,
+) -> Result<Vec<ix_kernel::anon_work::AnonWorkItem>, String> {
+  if !dependencies {
+    return Ok(
+      seed_items.iter().map(|&i| ctx.kernel_work[i].clone()).collect(),
+    );
+  }
+  let roots: Vec<Address> = seed_items
+    .iter()
+    .flat_map(|&i| ctx.kernel_work[i].proven_targets())
+    .collect();
+  let selected = ctx.source.closure(&roots).map_err(|e| e.to_string())?;
+  Ok(
+    ctx
+      .kernel_work
+      .iter()
+      .filter(|item| match item {
+        ix_kernel::anon_work::AnonWorkItem::Standalone { addr } => {
+          selected.contains(addr)
+        },
+        ix_kernel::anon_work::AnonWorkItem::Block { block_addr, .. } => {
+          selected.contains(block_addr)
+        },
+      })
+      .cloned()
+      .collect(),
+  )
+}
+
 /// FFI: anon-mode type-check of named constants with (by default) their full
 /// dependency closures. `skip_deps` restricts the check to each name's own
 /// work item (subject-only; deps trusted). Every mode also checks the
@@ -2073,16 +2112,38 @@ pub extern "C" fn rs_kernel_check_anon_consts(
 
   // ---- Per-name rows mode: one independent closure run per name (the
   // zkVM hosts' per-constant scope), timing only each name's closure
-  // selection + check. Rows flush per name; a rejected name records
+  // selection + check. The role binding's support (bound records and
+  // certificate proof theorems) is checked once up front and cached across
+  // constants. Rows flush per name; a rejected name records
   // `status: rejected` and the loop continues.
   if !json_path.is_empty() {
     let json_file = std::path::PathBuf::from(&json_path);
+    let support_selected = match verdict_work_items(&ctx, &[], true) {
+      Ok(work) => work,
+      Err(error) => return LeanIOResult::error_string(&error),
+    };
+    let (support_work, support_addrs) = index_anon_work(support_selected);
+    let support_total = support_addrs.len();
+    let support_results = match run_anon_checks_parallel(
+      ctx.source.clone(),
+      support_work,
+      support_addrs,
+      quiet,
+      None,
+    ) {
+      Ok(r) => r,
+      Err(msg) => {
+        return build_uniform_error(support_total, &format!("[thread] {msg}"));
+      },
+    };
+    let support_failed = support_results.iter().filter(|r| r.is_err()).count();
+
     let mut all_addrs: Vec<Address> = Vec::new();
     let mut all_results = Vec::new();
     for (name, item_idx) in &ctx.seeds {
       tracing_texray::rss_sampler::reset_peak_tree_rss();
       let t = Instant::now();
-      let selected = match verdict_work_items(&ctx, &[*item_idx], !skip_deps) {
+      let selected = match closure_work_items(&ctx, &[*item_idx], !skip_deps) {
         Ok(work) => work,
         Err(error) => return LeanIOResult::error_string(&error),
       };
@@ -2100,7 +2161,8 @@ pub extern "C" fn rs_kernel_check_anon_consts(
           return build_uniform_error(total, &format!("[thread] {msg}"));
         },
       };
-      let failed = results.iter().filter(|r| r.is_err()).count();
+      let failed =
+        support_failed + results.iter().filter(|r| r.is_err()).count();
       let secs = t.elapsed().as_secs_f64();
       let tput = if secs > 0.0 {
         f64::from(u32::try_from(total).unwrap_or(u32::MAX)) / secs
@@ -3868,7 +3930,7 @@ impl ParallelProgress {
       let check_interval = interval.min(Duration::from_millis(250));
       let mut last_print = Instant::now();
       while !progress.stop.load(Ordering::Relaxed) {
-        thread::sleep(check_interval);
+        thread::park_timeout(check_interval);
         if progress.stop.load(Ordering::Relaxed) {
           break;
         }

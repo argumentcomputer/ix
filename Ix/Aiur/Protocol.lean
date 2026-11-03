@@ -167,7 +167,7 @@ def proveIxVM (system : @& AiurSystem)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → Bool →
     Except String ProveEnvResult
 
 /-- Per-claim prove against a Rust-owned `EnvHandle`. Returns
@@ -179,9 +179,9 @@ private opaque proveAddrWithEnv' : @& AiurSystem →
     kernel (same toggle as `checkAddrWithEnv`). -/
 def proveAddrWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (addrBytes : ByteArray)
-  (useBytecode : Bool := false) :
+  (useBytecode : Bool := false) (assumeBinding : Bool := false) :
     Except String (ByteArray × Proof × IOBuffer) :=
-  (proveAddrWithEnv' system funIdx envHandle addrBytes useBytecode).map
+  (proveAddrWithEnv' system funIdx envHandle addrBytes useBytecode assumeBinding).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
 /-- Result of a per-shard prove: the claim's wire bytes, the proof, the
