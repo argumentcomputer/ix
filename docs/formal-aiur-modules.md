@@ -64,30 +64,30 @@ bundle, so editing a dependency invalidates the cache. Shared Lean libraries
 are linked into the exporter and covered by its binary digest.
 
 `tools/ixvm/adapt.py` and `recursion.py` reproduce the application modules from
-the pinned legacy sources and reviewed compatibility adapters. This is port
+pinned source revisions (read with `git show`) and reviewed adapters. This is port
 maintenance tooling, not Rust code generation. `modules.py` changes global
 names and extracts shared bodies; it checks inverse renaming and exact helper
 bodies. The ordinary frontend then checks every cross-module reference. The
 `*.names.json` files map old port names to their new locations, including types
 inside monomorphized names. Existing tuned groups use the relocated names.
 
-## Compatibility checks
+## Refactor checks
 
-Legacy is the behavioral reference, with the previously reviewed adaptations:
-no unconstrained pointer values, explicit raw hint channels, checked byte/word
-construction, and structural equality where equality is required. Optional
-pointer shortcuts stay removed. These adaptations have not been changed.
-The port audit distinguishes lexical translation, semantic adaptations, and
-library replacements; it is not a theorem of equivalence to legacy.
+The programs keep their reviewed adaptations: no unconstrained pointer values,
+explicit raw hint channels, checked byte/word construction, and structural
+equality where equality is required. Optional pointer shortcuts are removed.
+The port audit (`tools/ixvm/audit.py`) distinguishes lexical translation,
+semantic adaptations, and library replacements.
 
-For the modularization itself, `tools/ixvm/check-refactor.py` compares complete
+Historical record: the modularization was checked at `129c8056` against
+`44ea8742`. For the modularization itself, `tools/ixvm/check-refactor.py` compares complete
 compiled exports against the pre-refactor artifacts. It permits only declared
 name changes and no-op removal: empty bytecode guards and trace assignments of
 each column to itself. Jump targets and hint instruction offsets are adjusted
 for removed guards. All other instructions, enum layouts, fixed-table rows,
 constraints, lookup messages, trace actions, and group layouts must match.
-Direct `*`/`&` syntax replaces the legacy inline `load`/`store` wrappers, which
-accounts for those no-ops disappearing.
+Direct `*`/`&` syntax replaces inline `load`/`store` wrappers, which accounts
+for those no-ops disappearing.
 
 The comparison against `44ea8742` passed for all three applications:
 
@@ -101,9 +101,6 @@ These column counts cover the function chips, before the host adds memory,
 fixed-table, and lookup-protocol columns. Those inputs also compare exactly;
 this refactor does not change circuit size or grouping. The checks and artifact
 hashes are saved in [the comparison record](benchmarks/formal-aiur-modules/summary.json).
-The pinned legacy program sources are unchanged between the pin and that
-baseline. Distributed workers recognize both the relocated `check_owned`
-callable and the old name used by cached artifacts.
 
 From the repository root:
 
@@ -120,13 +117,12 @@ tools/ixvm/check-formal.sh
 The library regression also instantiates abstract byte/word clients, rejects
 opaque hints and incomplete providers, and checks accelerated execution against
 table execution and reference trace generation. The full integration gate
-covers valid/invalid IxVM claims, the retained legacy bytecode entrypoint,
-recursive proofs, aggregation, and production controllers.
+covers valid/invalid IxVM claims, recursive proofs, aggregation, and the
+production controller.
 
 Validation of this refactor passed 2,586 accelerated/table execution and
 reference-trace comparisons, the Lean arithmetic/domain/opacity checks, two
-dishonest-hint proof rejections, and U64/Blake3 proofs. Application proof checks,
-resident/distributed controllers, and the three-workload CPU proof/key parity
-gate passed. The first controller run exposed the renamed worker callable;
-the controller gate passed after adding compatibility for both names. CUDA
-runtime validation was not repeated on this machine, which has no GPU.
+dishonest-hint proof rejections, and U64/Blake3 proofs. Application proof
+checks, the controller gate, and the three-workload CPU proof/key parity gate
+passed. CUDA runtime validation was not repeated for this refactor; the
+measuring machine had no GPU.

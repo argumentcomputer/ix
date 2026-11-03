@@ -3,7 +3,7 @@
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
 #
-#   !benchmark ([aiur] [ooc] [compile] [decompile] | all) [execute]
+#   !benchmark ([ooc] [compile] [decompile] | all) [execute]
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
@@ -14,10 +14,6 @@
 #                                  #  — so BENCH_ENVS is never required; a single-env
 #                                  #  BENCH_ENVS still forces placement
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
-#   BENCH_TRACE_SHARDS=<GiB>       # aiur prove: plan each constant's proof as trace shards
-#                                  #  within this per-constant RAM budget (0: detect) and
-#                                  #  report `ixvm-trace-shards`; a base checkout that
-#                                  #  predates the flag proves whole
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
 #                                  # IX_COMPILE_WORKERS): Rust compiler knobs for
@@ -31,17 +27,9 @@
 #                                  # decompile Pass 2 cache limit; 0 disables clearing
 #                                  # (default: 131072)
 #
-# Each backend runs its registry default mode:
-#   - aiur: `prove` — the full proof pipeline per constant (stage 1
-#     proves the IxVM typecheck, stage 2 executes and proves the
-#     in-circuit multi-stark verifier over that fresh proof), reported
-#     as one comparison table per stage — witness execute, prove, peak
-#     RAM, proof size, verify — closing with the pipeline ledger (total
-#     time and the run's RAM ceiling). BENCH_CONSTS overrides the shared
-#     selection. The bare `execute`
-#     token switches it to the fast Phase-1-only mode (witness
-#     generation; no bencher baseline exists for that, so the base side
-#     comes from a base-SHA run).
+# A backend is required (`all` selects every scheduled one). Each backend
+# runs its registry default mode; the bare `execute` token selects a
+# backend's execute mode where it has another default:
 #   - ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
@@ -92,7 +80,7 @@ on:
         description: Full head SHA to benchmark
         required: true
       comment-body:
-        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark aiur BENCH_ENVS=InitStd,Mathlib`"
+        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark ooc BENCH_ENVS=InitStd,Mathlib`"
         required: true
 
 run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0} (r8i.8xlarge)', inputs.pr) || 'Relay benchmark comment' }}"
@@ -152,7 +140,7 @@ jobs:
             -f head-sha="$HEAD_SHA" \
             -f comment-body="$COMMENT_BODY"
 
-  # Select or build the PR's `ix` and `bench-typecheck` once, then
+  # Select or build the PR's `ix` once, then
   # publish them as a run-scoped
   # artifact for every later job. Normal runs may select a persistent
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
@@ -249,9 +237,9 @@ jobs:
       - name: Build benchmark binaries
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
         run: |
-          lake build ix bench-typecheck
-          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
-          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
+          lake build ix
+          cp .lake/build/bin/ix ~/.local/bin/
+          chmod +x ~/.local/bin/ix
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -260,7 +248,7 @@ jobs:
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix bench-typecheck
+          ix
       - name: Upload run binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -751,9 +739,8 @@ jobs:
              && cmp -s lean-toolchain base/lean-toolchain; then
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
-              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
-              [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] \
-                && cached=true
+              mv ~/.local/bin/ix base/.lake/build/bin/ 2>/dev/null || true
+              [ -x base/.lake/build/bin/ix ] && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
@@ -777,14 +764,14 @@ jobs:
         uses: $/.github/actions/log-cpu
         with:
           label: Base benchmark binary build CPU
-      - name: Build base (ix, bench-typecheck)
+      - name: Build base (ix)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
         with:
           lake-package-directory: base
           auto-config: false
           build: true
-          build-args: "ix bench-typecheck"
+          build-args: "ix"
           use-github-cache: false
       # For a mathlib-importing env (Mathlib, FLT), the base-side compile
       # resolves imports from the base tree's Benchmarks/Compile

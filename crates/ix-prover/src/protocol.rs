@@ -1,52 +1,13 @@
-use aiur::trace::stark::planning::Options;
+pub use crate::request::Request;
+pub use aiur::trace::stark::planning::Options;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
   Ixvm,
   Recursion,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Artifact {
-  pub path: PathBuf,
-  pub kind: Kind,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Config {
-  pub artifacts: Vec<Artifact>,
-  pub devices: Vec<Option<i32>>,
-  pub exec_jobs: usize,
-  pub threads_per_prover: usize,
-  pub max_ram_bytes: u64,
-  #[serde(default)]
-  pub record_limit_bytes: Option<usize>,
-  #[serde(default)]
-  pub parent_pid: Option<u32>,
-  #[serde(default)]
-  pub texray: bool,
-  /// Workspace reserved per CUDA lane, instead of the size derived from
-  /// the committed-cell limit.
-  #[serde(default)]
-  pub workspace_per_lane_bytes: Option<u64>,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Job {
-  pub id: String,
-  pub artifact: PathBuf,
-  pub input: PathBuf,
-  pub output: PathBuf,
-  #[serde(default)]
-  pub options: Options,
-  #[serde(default)]
-  pub priority: bool,
 }
 
 pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<(), String> {

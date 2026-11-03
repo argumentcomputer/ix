@@ -173,8 +173,7 @@ on one or several GPUs is [aiur-gpu-proving.md](aiur-gpu-proving.md).
 
 ### 3.1 Definition
 
-A *batch* is one execution (one env shard's `CheckEnv` claim, or one
-worker's chunk under `ix prove --distributed`). A *trace shard* `S_k`, `k ∈ [0, K)`, is a choice of
+A *batch* is one execution (one env shard's `CheckEnv` claim). A *trace shard* `S_k`, `k ∈ [0, K)`, is a choice of
 row subsets for every circuit such that every real row of every circuit
 belongs to exactly one shard. Shards are planned deterministically from
 the record by `plan_shards(record, budget)`; the plan is a pure
@@ -640,12 +639,13 @@ is the only child-verification primitive at every level.
 
 ### 8.3 Direct joins and the root
 
-The wrap-first policy exists because a direct join (two raw IxVM
-children) needs ~390 GiB of prover RAM. With recursion proofs
-trace-sharded, RAM no longer bounds a join; total verification work does,
-and direct joins do strictly less of it (each IxVM proof is verified once,
-at its first join, and the N wraps disappear). Direct joins become the
-default plan.
+Unsharded, a direct join (two raw IxVM children) needs ~390 GiB of
+prover RAM, which is why aggregation once wrapped every leaf first. With
+recursion proofs trace-sharded, RAM no longer bounds a join; total
+verification work does, and direct joins do strictly less of it (each
+IxVM proof is verified once, at its first join, and the N wraps
+disappear). Direct joins are the only plan: the fold never wraps a single
+claim, and wrap-first and `--range` are rejected.
 
 The root is whatever the final join produces: a `K = 1` vector if proven
 unsharded on the CPU box (one proof, one `Ixon.Proof` wrapper, the
@@ -721,9 +721,7 @@ q=50-class recursion FRI parameters halves all of these numbers.
   prefix is computed once per vector; each shard's fork replays only its
   own suffix.
 - **Byte-table multiplicities on the GPU.** The designated shard's
-  Bytes2 table needs global counts; today they come from the record, so
-  nothing changes, but if execution is ever distributed the counts need
-  a gather across workers before committing the shared table.
+  Bytes2 table needs global counts; they come from the single record.
 - **Piece padding.** A circuit cut into the fewest fitting pieces pads
   each piece to a power of two, up to one doubling; cutting into one more
   piece can pad less at the price of one more activation. Whether the

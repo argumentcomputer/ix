@@ -1,22 +1,17 @@
-# Proving on GPUs: multi-GPU scheduling, generated traces, and how to benchmark them
-
-This guide describes the retained **legacy** backend. Select it with `--legacy`
-when running the commands below. The default formal Aiur backend has separate
-CUDA hosts and CPU trace generation; see its
-[CUDA integration and validation instructions](formal-aiur-migration.md#legacy-support-and-native-builds).
+# Proving on GPUs: multi-GPU scheduling, device traces, and how to benchmark them
 
 Everything in this document builds on prover-level trace sharding
 ([aiur-trace-sharding.md](aiur-trace-sharding.md)): one execution of a
 claim is proven as a batch of trace shards that each fit a device, and the
-Stage 2 aggregation tree joins the claims' proofs into one root. This
-document covers what the GPU build adds on top: proving several claims at
-once on several devices from one process, generating the main traces on
-the device instead of the host, and the knobs and measurements a benchmark
-of either needs.
+aggregation tree joins the claims' proofs into one root. This document
+covers what the CUDA build adds: proving several claims at once on several
+devices from one process, populating main traces on the device instead of
+the host, and the settings and measurements a benchmark needs.
 
-## 1. What the GPU build is
+The scheduler is the aggregate controller (`crates/aggregate-controller`),
+described in [formal-aiur-unified-controller.md](formal-aiur-unified-controller.md).
 
-Three layers, each a Cargo feature over the previous one:
+## 1. Building for CUDA
 
 | Feature | Lake switch | What it compiles |
 |---|---|---|
@@ -65,34 +60,46 @@ export LD_LIBRARY_PATH="$(dirname "$(gcc -print-file-name=libstdc++.so.6)"):$LD_
 
 Binaries built with the host's own toolchain need neither.
 
+A single proof selects a device with `--gpu-device N`, or with `IX_CUDA=1`
+at run time and the device from `MULTI_STARK_CUDA_DEVICE` (default 0).
+Verification and key export run on the CPU; the device does not enter the
+verifying key or the proof. An explicit device request to a CPU-only build
+fails.
+
 ## 2. The pipeline, end to end
 
-With `mathlib.ixe` compiled and the GPU binary built, a whole environment
-proves in four commands. The run directory holds the inputs and the
-caches; the whole process goes under one cgroup cap, since one process now
-holds every worker and the record pool is the thing that grows.
+With the `.ixe` compiled and the CUDA binary built, a whole environment
+proves in three commands. Every `.ixe` is checked relative to a role
+binding. A file without one is normalized in memory with the default
+binding and handed to the Rust prover as an environment handle, so Lean and
+Rust check the same bytes without a normalized copy on disk. The whole process goes under one cgroup cap, since one process
+holds every worker and the record pool is what grows.
 
 ```sh
-# 0. Partition. The CUDA build seeds the shard count from the per-worker
-#    record share (--max-ram, --exec-jobs and the cell budget below).
+# 0. Partition. The CUDA build seeds the shard count from the per-lane
+#    record share (--max-ram, --exec-jobs and the device cell budget).
 ix shard mathlib.ixe --max-ram 230 --exec-jobs 3 --out mathlib.ixes
 
-# 1 + 2. Stage 1 and Stage 2 on four devices. Every claim's proof is
-#    persisted as it lands; joins run as soon as their children exist;
-#    the root is wrapped until it is a single trace shard, verified,
-#    and its address printed on stdout.
-export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24
-export AIUR_TRACE_SHARD_MAX_CELLS=1500000000
-export AIUR_GPU_TRACE=generated AIUR_PROOF_CACHE_DIR=$PWD/cache
+# 1. Prove every claim and every join on four devices. Each claim's proof
+#    is persisted as it lands; a join runs as soon as both children exist;
+#    the root is verified and its address printed on stdout.
+export AIUR_GPU_TRACE=generated AIUR_LANES_CACHE_DIR=$PWD/cache
 systemd-run --user --scope -q -p MemoryMax=920G -- \
-  ix prove --ixe mathlib.ixe --ixes mathlib.ixes \
-    --gpus 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
+  ix prove --ixe mathlib.ixe --ixes mathlib.ixes --trace-shards \
+    --lanes 4 --exec-jobs 3 --max-ram 230 --out-ixes mathlib-proven.ixes \
     > prove.out 2> prove.err
 
-# 3. Verify the root against the partition that was actually proven.
-ix verify --aggregate --structural-above 0 --ixe mathlib.ixe \
+# 2. Verify the root against the partition that was actually proven.
+ix verify --aggregate --ixe mathlib.ixe \
   --ixes mathlib-proven.ixes "$(tail -1 prove.out)"
 ```
+
+Claims join directly, and every join is structural by default
+(`--structural-above 0`). `ix verify` must use the same value as proving;
+a root proved with `--structural-above 4096` verifies only with
+`--structural-above 4096`. The fold never wraps a single claim; `--range`
+is rejected. `--wrap-root` on `ix aggregate` wraps the root until it is
+one trace shard.
 
 Rerunning the same command resumes: completed claim proofs and join
 subtrees are reused from the cache directory, and a bisected partition is
@@ -100,19 +107,16 @@ picked up from its checkpoint. `--out-ixes` matters because bisection
 changes the partition, and `ix verify --ixes` must see the one the proofs
 belong to.
 
-The same two stages can still be driven by hand, one device per process,
-with `ix prove --trace-shards --shards <ids>` for a GPU's claims and
-`ix aggregate --trace-shards --subtree <slot>` for its subtree; the multi-GPU
-scheduler is the one-process equivalent and is what the measurements in
-§6 used.
+The same work can be split across processes:
+`ix prove --trace-shards --shards <ids>` proves a set of claims, and
+`ix aggregate --trace-shards --subtree <slot>` proves one subtree of the
+plan (`ix aggregate --plan-only` prints the slots). `--lanes` is the
+one-process equivalent.
 
 ## 3. Multi-GPU: one resident prover per device
 
-`ix prove --ixe E --ixes M` (on `--gpus N`, default every visible GPU)
-builds an `AiurSystem` pair per device from the two
-compiled systems (nothing is copied across the FFI; the verifying keys do
-not depend on the device, and every cache key and claim binding derives
-from them) and runs one scheduler over them:
+`ix prove --lanes N` builds one resident prover per device and runs the
+controller over them (`crates/aggregate-controller/src/lanes.rs`):
 
 - **One execution pool.** Claims and ready joins execute on the host
   through one bounded queue, joins first, `--exec-jobs` executions at a
@@ -126,90 +130,78 @@ from them) and runs one scheduler over them:
 - **The record ceiling.** An environment claim whose record would exceed
   128 GiB (`AIUR_RECORD_MAX_BYTES` overrides it) is stopped, its leaf
   bisected into two claims, and the partition checkpointed; the halves are
-  proven and joined like any other leaves. The ceiling is a guard against a
-  single claim starving the pool, not a performance setting.
-- **Stage 2 inside the run.** The aggregation plan is cut into subtrees
-  from the root while a frontier node holds more leaves than the target;
-  a subtree is proven as one task once its leaves exist, upper joins once
-  both children are published, and the root is wrapped and verified at
-  the end.
+  proven and joined like any other leaves. The ceiling guards against a
+  single claim starving the pool; it is not a performance setting.
+- **Aggregation inside the run.** The plan is cut into subtrees from the
+  root while a frontier node holds more leaves than the target; a subtree
+  is proven as one task once its leaves exist, upper joins once both
+  children are published, and the root is verified at the end.
 
 Memory is governed by three numbers and nothing else: `--max-ram` (the
 record pool per GPU), `--exec-jobs` (records in flight per GPU, so the
 cold wave and the speculative execution concurrency), and the cgroup cap
-as the backstop. On a 4-GPU, 1 TiB host, `--max-ram 230 --exec-jobs 3`
-keeps Mathlib's largest records (about 45 GiB) inside one GPU's share and
-the process peak under 750 GiB; `--exec-jobs 4` is 5% faster at the cost
-of the pool running at 99%.
+as the backstop.
 
-## 4. Generated traces
+`ix prove --aggregate` runs the same controller on CPU lanes (`--jobs`).
 
-With `AIUR_GPU_TRACE=generated`, the main trace of every constrained
-function is written on the device from a compact seed instead of being
-built on the host and uploaded. The compiler derives, per function, a
-**trace plan** from the compiled bytecode: which SSA values each row
-needs, the seed words an execution records for it, and the column spans
-it writes. From the plan it emits matching Rust seed packers and CUDA row
-writers, and a registry with the program's fingerprint; at proving time
-the runtime binds the registry after checking the fingerprint, and any
-circuit the registry does not cover falls back to the CPU builder.
+## 4. Device trace population
 
-Seeds carry a **typed schema**: one width per word (`u8`, `u16`, `u32` or
-full) derived from exclusive value bounds, so a byte-table operand costs a
-byte on the wire. Round-two seeds stay resident on the device (bounded by
-`AIUR_GPU_SEED_CACHE_BYTES`, 16 GiB by default) so regeneration does not
-re-upload them; memory-table rows stay on the host unless
-`AIUR_GPU_TRACE_MEMORY=1`, because a memory seed is the row minus one
-column and generating them bought nothing on Init.
+`AIUR_GPU_TRACE` selects how stage-one main traces are populated:
 
-The generated units are checked in and regenerated like the executors:
+| Value | Population |
+|---|---|
+| `cpu` (default) | Every circuit on the host. |
+| `generated` | Function circuits whose population plans read only recorded calls, byte tables and word hints are filled on the device by `crates/aiur/cuda/population.cu`, which interprets the same compiled plans and group placements as the host writer. The record tables they read are uploaded once per proof, so the execution record can be dropped before proving. |
+| `compiled` | Circuits covered by the compiled writers (`IX_FORMAL_COMPILED_TRACE=1`) run them; the rest stay on the host. |
+| `compiled+generated` | Compiled writers where they exist, the interpreter for the remaining eligible circuits. |
 
-```sh
-lake exe ix codegen --trace-bundle          # regenerate the three programs' units
-lake exe ix codegen --trace-bundle --check  # CI: fail on a stale unit
-lake exe IxTests aiur-trace-plan            # planner fixtures
-cargo test -p aiur-legacy trace_codegen            # Rust parity, no GPU needed
-```
+Circuits with memory stores, loads or stream hints, ROMs and fixed tables
+keep host rows. Proof bytes are identical in every mode. Device modes need
+device lookups, which are the CUDA default: the prover derives lookup
+messages from the committed rows with multi-stark's graph evaluator.
+`AIUR_TRACE_ONLY_LOOKUPS=0` builds host lookup buffers instead and rejects
+the device modes; CPU builds always build host buffers.
 
-The fixtures the Rust parity tests compile against are produced by the
-same generator from two test programs:
+`AIUR_GPU_TRACE_CIRCUITS=a,b` restricts device population to the listed
+circuits, named by circuit or by member function. With
+`AIUR_GPU_TRACE_RELEASE=1`, a generated source asked to release its device
+state copies the uploaded record to host memory once and re-uploads it on
+the next tile; by default it stays resident, because releasing re-uploads it
+about twice per shard on an Init leaf and costs more than the LDE spills it
+avoids.
 
-```sh
-lake exe trace-fixtures          # regenerate crates/aiur-legacy/src/trace_codegen/tests/* and cuda/generated/*
-lake exe trace-fixtures --check  # fail on a stale fixture
-```
+`tools/ixvm/check-formal.sh` with `IX_TEST_CUDA=1` is the hardware gate:
+it compares CPU and CUDA proofs and keys byte for byte across retention
+policies and lookup modes, and verifies every proof on the CPU. Its CPU
+controls run in ordinary CI. [formal-aiur-migration.md](formal-aiur-migration.md)
+gives the commands.
 
-The GPU-side parity tests and the two-round generated proof need a device:
-
-```sh
-NVCC=/usr/local/cuda-13.3/bin/nvcc MULTI_STARK_CUDA_ARCHS=120 \
-  AIUR_TEST_GPU_DEVICES=0,1,2,3 \
-  cargo test -p aiur-legacy --release --features cuda-trace-codegen
-```
-
-## 5. Knobs
-
-The ones a run needs, then the ones a measurement might.
+## 5. Settings
 
 | Variable or flag | Meaning |
 |---|---|
-| `AIUR_TRACE_ONLY_LOOKUPS=1` | The lookup witness carries dimensions only; the device derives multiplicities and arguments from the committed trace. Required by every GPU trace provider and by trace sharding on the device. |
-| `AIUR_TRACE_SHARD_MAX_CELLS` | Committed cells per trace shard the planner cuts to. `1500000000` fits a 96 GB device at `log_blowup = 2` with headroom; the sizing rule is §7.1 of the trace-sharding document. |
-| `AIUR_MAX_PIECE_LOG_HEIGHT=24` | Caps a piece's trace height, so a tall circuit is cut shorter than the room alone requires, at one activation per extra piece. |
-| `AIUR_GPU_TRACE=cpu\|generated` | Main-trace provider (§4); `cpu` is the reference builder and the default. |
-| `AIUR_RECORD_MAX_BYTES` | The record ceiling (§3), default 128 GiB. Size it from the pool: 256 GiB at a 731 GiB pool held FLT's 174 GiB leaf without waits. |
-| `AIUR_PROOF_CACHE_DIR` | Where completed claim proofs, join subtrees and the partition checkpoint live between runs. |
-| `--retention retain\|regenerate\|auto` | What a batch keeps between its two rounds. Every real GPU plan runs `regenerate`: round two rebuilds each shard from its seeds, which the resident seed cache makes cheap. |
-| `MULTI_STARK_CUDA_MIN_FREE_BYTES` | Device headroom the backend keeps by spilling LDEs to the host; default a quarter of the card. |
-| `MULTI_STARK_CUDA_MEMORY_LOG=1` | Logs stage-1 placement and per-lookup-job budget and free bytes to stderr. |
+| `AIUR_TRACE_SHARD_MAX_CELLS` | Committed cells per trace shard the planner cuts to on CUDA, default `1500000000`. That fits a 96 GB device at `log_blowup = 2`; the sizing rule is §7.1 of the trace-sharding document. |
+| `--shard-rows N` | Maximum rows per circuit per trace shard (power of two). The default 0 lets the planner choose the largest shards that fit. Small caps multiply recursive verification work. |
+| `AIUR_GPU_TRACE` | Main-trace population (§4). |
+| `AIUR_TRACE_ONLY_LOOKUPS=0` | Host lookup buffers instead of device-derived lookups. |
+| `AIUR_RECORD_MAX_BYTES` | The record ceiling (§3), default 128 GiB. Size it from the pool before a large run rather than relying on the default. |
+| `AIUR_LANES_CACHE_DIR` | Where completed claim proofs, join subtrees and the partition checkpoint live between runs. |
+| `--retention retain\|regenerate\|auto` | What a batch keeps between its two rounds. Multi-shard batches regenerate to bound device residency; single-shard batches can retain their commitment. |
+| `--structural-above N` | Structural joins above N subject leaves, default 0 (every join). Verify with the same value. |
+| `MULTI_STARK_CUDA_DEVICE` | Device for a single proof when `--gpu-device` is not given. |
 | `--texray` or `IX_TEXRAY=1` | Per-phase wall and RSS lines on stderr, as on the CPU. The environment switch also enables TeXRay output for compression. |
+
+Every proof uses the production STARK parameters: `log_blowup` 2, 100 FRI
+queries and 20-bit query proof of work (`Parameters::default` in
+`crates/aiur/src/trace/stark.rs`). The aggregate cache key includes them,
+so a parameter change never reuses a cached proof.
 
 ## 6. Benchmarking a multi-GPU run
 
 The unit of measurement is one complete `.ixe`/`.ixes` pair under one
-command, recorded with its identities. The script that produced the
-measurements below does only this: write the provenance, sample the
-devices, run the one command under the cap, and keep the exit status.
+command, recorded with its identities. The script below writes the
+provenance, samples the devices, runs the one command under the cap, and
+keeps the exit status.
 
 Set `RUNS_DIR` to fast local storage for this script's outputs and proof cache.
 For subsequent KZG compression, see
@@ -221,34 +213,33 @@ for output and cache placement. `RUNS_DIR` does not configure KZG cache paths.
 # run-multi-gpu.sh <label> [extra ix prove flags]
 set -u
 LABEL=$1; shift
-EXEC_JOBS=${EXEC_JOBS:-3}; MAX_RAM=${MAX_RAM:-230}; MEM_MAX=${MEM_MAX:-920G}
+LANES=${LANES:-4}; EXEC_JOBS=${EXEC_JOBS:-3}; MAX_RAM=${MAX_RAM:-230}; MEM_MAX=${MEM_MAX:-920G}
 IXE=${IXE:-mathlib.ixe}; IXES=${IXES:-mathlib.ixes}
 BIN=${BIN:-$HOME/repos/ix/.lake/build/bin/ix}
 OUT=${RUNS_DIR:-runs}/$LABEL; mkdir -p "$OUT/cache"
 [ -n "${RECORD_MAX_GIB:-}" ] && export AIUR_RECORD_MAX_BYTES=$((RECORD_MAX_GIB << 30))
-export AIUR_TRACE_ONLY_LOOKUPS=1 AIUR_MAX_PIECE_LOG_HEIGHT=24 AIUR_TRACE_SHARD_MAX_CELLS=1500000000
-export AIUR_GPU_TRACE=generated AIUR_PROOF_CACHE_DIR=$OUT/cache
-unset RUST_LOG MULTI_STARK_CUDA_MEMORY_LOG
+export AIUR_GPU_TRACE=${AIUR_GPU_TRACE:-generated} AIUR_LANES_CACHE_DIR=$OUT/cache
+unset RUST_LOG
 {
   echo "started $(date -u +%FT%TZ)  host $(hostname)"
   echo "ix $(sha256sum "$BIN" | cut -d' ' -f1)"; sha256sum "$IXE" "$IXES"
   echo "driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
   echo "thp $(cat /sys/kernel/mm/transparent_hugepage/enabled) / $(cat /sys/kernel/mm/transparent_hugepage/defrag)"
-  echo "flags --gpus 4 --exec-jobs $EXEC_JOBS --max-ram $MAX_RAM $*  cap $MEM_MAX"
+  echo "flags --lanes $LANES --exec-jobs $EXEC_JOBS --max-ram $MAX_RAM $*  cap $MEM_MAX"
   env | grep -E '^(AIUR|MULTI_STARK)_' | sort
 } > "$OUT/meta.txt"
 nvidia-smi --query-gpu=timestamp,index,memory.used,utilization.gpu \
   --format=csv,noheader,nounits --loop-ms=1000 > "$OUT/gpu.csv" 2>/dev/null &
 SMI=$!
 systemd-run --user --scope -q -p MemoryMax=$MEM_MAX -- \
-  /usr/bin/time -v "$BIN" prove --ixe "$IXE" --ixes "$IXES" \
-    --gpus 4 --exec-jobs "$EXEC_JOBS" --max-ram "$MAX_RAM" "$@" \
+  /usr/bin/time -v "$BIN" prove --ixe "$IXE" --ixes "$IXES" --trace-shards \
+    --lanes "$LANES" --exec-jobs "$EXEC_JOBS" --max-ram "$MAX_RAM" "$@" \
     > "$OUT/prove.out" 2> "$OUT/prove.err"
 echo "exit $?" >> "$OUT/meta.txt"; kill $SMI 2>/dev/null
 ```
 
 Before comparing two runs, hold fixed: the inputs by hash, the binary by
-hash and feature list, the multi-stark pin, the knobs in `meta.txt`, a
+hash and feature list, the multi-stark pin, the settings in `meta.txt`, a
 fresh cache directory, and the transparent-huge-page setting (`always`
 with `defer+madvise`; neither survives a reboot). Overlapping CPU and GPU
 phase totals must not be added as wall time, and sampled device memory is
@@ -259,34 +250,24 @@ What to read off, and where:
 | Quantity | Source |
 |---|---|
 | Wall and peak RSS | `/usr/bin/time -v` in `prove.err` |
-| Per-claim and per-join execution time, record bytes, proof time, pool grants, waits, bisections | `[multi-gpu]` lines in `prove.err` |
+| Per-claim and per-join execution time, record bytes, proof time, pool grants, waits, bisections | `[lanes]` lines in `prove.err` |
 | Device utilization and memory over time | `gpu.csv` |
 | Root address and verdict | last line of `prove.out`; `ix verify --aggregate` |
 
-Measured on 4× RTX PRO 6000 Blackwell (96 GB each), 96 CPUs, 1 TiB, CUDA
-13.3, with the knobs above (`--exec-jobs 4` for the second column):
+The latest whole-environment measurement predates role binding.
+`formal-aiur-perf` at `b8e708a35` proved Init (`Init-230.ixes`, 3 shards,
+from `ix shard Init.ixe --max-ram 230 --exec-jobs 3`) on one RTX PRO 6000
+Blackwell with `--exec-jobs 3 --max-ram 230`, direct joins,
+`--structural-above 0` and the production parameters in 7:30.2, at
+131.8 GiB peak RSS. The root was `cf5b813b…`, covering all 56,810
+constants. IxVM has since gained role binding, so the current code produces
+a different root, and the figure has not been re-measured since. The device
+was busy 32% of the run: the 3-shard partition is seeded for a 4-GPU host
+and gives one GPU little overlap between execution and proving.
 
-| | Mathlib, 78 shards, first-party kernels | Mathlib, 78 shards, sppark | Anthropic FLT, 572 shards |
-|---|---:|---:|---:|
-| Wall | 37:59 | 36:00 | 5:35 (after a restart, see below) |
-| Claim proof, mean / total | 59.3 s / 4,623 s | 54.5 s / 4,249 s | 55.7 s / 31,799 s |
-| Join proof, mean / total | 28.2 s / 2,253 s | 25.5 s / 2,041 s | 23.4 s / 13,444 s |
-| Claim record, mean / max | 28 / 44 GiB | 28 / 44 GiB | 32 / 174 GiB |
-| Peak process RSS | 733 GiB | 697 GiB | 527 GiB |
-
-Execution sets the pace in both: the claim phase is execution-bound, and
-the GPUs are busy about half the time. Proving itself got 8 to 9% cheaper
-on sppark for the same records.
-
-The FLT run hit the ceiling: one leaf's record was 174 GiB against the
-128 GiB default, and after four bisection rounds the core still would not
-fit, so the run was restarted with `RECORD_MAX_GIB=256`, which reused the
-571 finished claims and seven join subtrees and proved the leaf whole in
-20 minutes. Two lessons for the next large environment: size the ceiling
-from the pool before the run rather than from the default, and know that
-the scheduler dispatches leaves in manifest order without size
-information, so a heavy leaf last is pure tail. The out-of-circuit profile
-predicts record size well enough to order by (bytes plus `nat_arith`
-count, correlation 0.8 over the 572 leaves), and reordering the manifest
-by predicted size is a few lines over `.ixes`; it is not part of `ix shard`
-yet.
+Two lessons from earlier large runs still apply. Size the record ceiling
+from the pool before the run: a leaf whose record exceeds the ceiling is
+bisected, and a core that still does not fit stalls the run until it is
+restarted with a larger ceiling. And the scheduler dispatches leaves in
+manifest order without size information, so a heavy leaf last is pure
+tail.

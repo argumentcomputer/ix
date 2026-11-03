@@ -101,7 +101,8 @@ private def claimSet (exe : String) (home dir : System.FilePath) (label : String
     else #["--assume-binding"]
   let proved ← ix exe home (#["prove", "--ixe", ixe.toString, "--ixes", ixes.toString]
     ++ proveFlags)
-  let proofs := (lines proved.stdout).filter isAddressHex
+  -- Claims proven on the controller print `shard-id address`.
+  let proofs := (lines proved.stdout).filterMap (fun l => (l.splitOn " ").getLast?) |>.filter isAddressHex
   if proved.exitCode != 0 || proofs.isEmpty then
     return #[(s!"{label}: ix prove {" ".intercalate proveFlags.toList}", false)]
   let envArgs := #["--ixe", ixe.toString, "--ixes", ixes.toString]

@@ -8,11 +8,13 @@ license.workspace = true
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
+aggregate-controller = { workspace = true }
 aiur = { workspace = true, features = ["stark"] }
 blake3 = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
 ix-proof-compression = { path = "../proof-compression", default-features = false }
+ix-prover = { path = "../ix-prover", default-features = false }
 lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
 mimalloc = { workspace = true }
@@ -38,8 +40,17 @@ serde = { version = "1.0.219", features = ["derive"] }
 
 [features]
 default = []
-parallel = ["aiur/parallel", "ix-proof-compression/parallel"]
-cuda = ["aiur/cuda", "ix-proof-compression/cuda"]
+# Generated native executors for the formal IxVM, recursive verifier and
+# aggregation artifacts named by AIUR_IXVM_ARTIFACT, AIUR_VERIFIER_ARTIFACT
+# and AIUR_AGGREGATION_ARTIFACT (see `formalNativeArtifacts` in
+# lakefile.lean). Without it the formal prover runs every job on the
+# interpreter, which produces identical records.
+formal-native = ["ix-prover/native"]
+parallel = ["aiur/parallel", "ix-proof-compression/parallel", "ix-prover/parallel"]
+cuda = ["aiur/cuda", "ix-proof-compression/cuda", "ix-prover/cuda"]
+# Compiled CUDA trace writers for the formal IxVM artifact; needs CUDA and
+# AIUR_IXVM_ARTIFACT, as formal-native does.
+formal-compiled-trace = ["cuda", "ix-prover/compiled-trace"]
 cuda-trace-codegen = ["cuda"]
 # Final proof systems, which link the gnark Go archive.
 plonk = ["ix-proof-compression/plonk"]

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/aggregate-controller",
   "crates/ix-prover",
   "crates/record-pool",
   "crates/aiur",
@@ -17,6 +18,7 @@ members = [
   "crates/ixon",
 ]
 default-members = [
+  "crates/aggregate-controller",
   "crates/ix-prover",
   "crates/record-pool",
   "crates/aiur",
@@ -48,6 +50,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Internal crates
+aggregate-controller = { path = "crates/aggregate-controller" }
 record-pool = { path = "crates/record-pool" }
 aiur = { path = "crates/aiur" }
 stark-key = { path = "crates/stark-key" }

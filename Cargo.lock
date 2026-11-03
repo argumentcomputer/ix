@@ -38,6 +38,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aggregate-controller"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ix-common",
+ "ixon",
+ "rayon",
+ "record-pool",
+ "rustc-hash",
+ "serde_json",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1994,6 +2007,7 @@ dependencies = [
 name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
+ "aggregate-controller",
  "aiur",
  "bincode",
  "blake3",
@@ -2001,6 +2015,7 @@ dependencies = [
  "iroh",
  "ix-common",
  "ix-proof-compression",
+ "ix-prover",
  "ixon",
  "lean-ffi",
  "memmap2",
@@ -2062,8 +2077,11 @@ dependencies = [
 name = "ix-prover"
 version = "0.1.0"
 dependencies = [
+ "aggregate-controller",
  "aiur",
  "blake3",
+ "ix-common",
+ "ixon",
  "ixvm",
  "ixvm-native",
  "multi-stark",
@@ -2072,6 +2090,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "stark-key",
  "stark-verifier",
  "stark-verifier-native",
  "tracing",

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Exercise resident proving and the aggregate pipeline on production artifacts.
+"""Exercise the aggregate controller on production artifacts.
 
-Uses fixtures from check-formal.sh. CPU is the default; --devices 0,1 runs the
-same resident jobs on real CUDA lanes and independently verifies on the CPU.
---pipeline additionally runs the expensive complete recursive aggregation.
-All logs and reports are preserved in the fixture directory.
+Uses fixtures from check-formal.sh: a two-claim environment proven on CPU
+lanes, its claims alone, the ceiling failure, and resumption. --pipeline
+additionally runs the complete recursive aggregation, on CUDA lanes with
+--devices. All logs and reports are preserved in the fixture directory.
 """
 import argparse
 import hashlib
@@ -30,19 +30,18 @@ def main():
     args = cli.parse_args()
     fixtures = args.fixtures.resolve()
     out = Path(tempfile.mkdtemp(prefix='controller-check-', dir=fixtures))
-    cpu = Path('target/release').resolve()
-    binary = Path('target/formal-cuda/release/ix-prover').resolve() if args.devices else cpu / 'ix-prover'
     devices = [int(d) for d in args.devices.split(',')] if args.devices else [None, None]
     if not devices or any(d is not None and not 0 <= d < 2**31 for d in devices):
         cli.error('invalid CUDA device indices')
     artifacts = [p.resolve() for p in [args.ixvm_artifact, args.recursion_artifact, args.aggregate_artifact]]
-    env = dict(os.environ, IX_CUDA='0', AIUR_TRACE_ONLY_LOOKUPS='0', RAYON_NUM_THREADS='8',
+    env = dict(os.environ, IX_CUDA='0', AIUR_TRACE_ONLY_LOOKUPS='0',
                IX_AIUR_ARTIFACT=str(artifacts[0]), IX_AGGR_ARTIFACT=str(artifacts[2]))
     if len(set(devices)) < len(devices) and None not in devices:
         env['IX_PROVER_SHARED_DEVICES'] = '1'
-    report = dict(success=False, devices=devices, commands=[], resident_jobs=[],
+    ix = Path('.lake/build/bin/ix').resolve()
+    report = dict(success=False, devices=devices, commands=[],
                   revision=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
-                  binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+                  binary_sha256=hashlib.sha256(ix.read_bytes()).hexdigest(),
                   artifact_sha256=[hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts])
     print(f'Controller validation logs: {out}', flush=True)
 
@@ -62,98 +61,11 @@ def main():
             raise RuntimeError(f'{name}: unexpected status {result.returncode}; see {log}')
         return log.read_text()
 
-    def wait_file(path, child):
-        deadline = time.monotonic() + 600
-        while not path.exists():
-            if child.poll() is not None:
-                raise RuntimeError(f'resident exited {child.returncode} waiting for {path}')
-            if time.monotonic() > deadline:
-                raise TimeoutError(f'waiting for {path}')
-            time.sleep(0.02)
-        return json.loads(path.read_text())
-
-    def resident(name, config, jobs, statuses):
-        directory = out / name
-        directory.mkdir()
-        config_path = directory / 'config.json'
-        config_path.write_text(json.dumps(config))
-        with (directory / 'host.log').open('w') as stream:
-            child = subprocess.Popen([str(binary), 'serve', str(config_path), str(directory)],
-                                     env=env, stdout=stream, stderr=subprocess.STDOUT)
-            try:
-                wait_file(directory / 'ready.json', child)
-                for job in jobs:
-                    path = directory / 'pending' / (job['id'] + '.tmp')
-                    path.write_text(json.dumps(job))
-                    path.rename(path.with_suffix('.json'))
-                for job, expected in zip(jobs, statuses):
-                    result = wait_file(directory / 'done' / (job['id'] + '.json'), child)
-                    assert result['status'] == expected, result
-                    report['resident_jobs'].append(dict(id=job['id'], **result))
-            finally:
-                (directory / 'stop').touch()
-                try:
-                    child.wait(timeout=120)
-                except subprocess.TimeoutExpired:
-                    child.kill()
-                    child.wait()
-                    raise
-        assert child.returncode == 0, directory
-        summary = json.loads((directory / 'summary.json').read_text())
-        assert summary['record_reserved_bytes'] == 0, summary
-        report[name] = summary
-        save()
-        return directory
-
-    def product_files(path, ixvm):
-        return (path, Path(str(path) + '.vk')) if ixvm else (path / 'proof.bin', path / 'key.bin')
-
     try:
-        cases = json.loads((fixtures / 'claims.json').read_text())
-        claim = next(c['invocation'] for c in cases if c['accept'] and
-                     c['label'] == 'CheckEnv frontier-asm (Nat.add_comm)')
-        invocation = out / 'claim.json'
-        invocation.write_text(json.dumps(claim))
-        inputs = [invocation, fixtures / 'inner/input.json', fixtures / 'aggregation.json.wrap.json']
-        jobs, references = [], []
-        for i, (artifact, source) in enumerate(zip(artifacts, inputs)):
-            ixvm = i == 0
-            host = cpu / ('ixvm-proof' if ixvm else 'stark-verifier')
-            plan = out / f'plan-{i}'
-            run(f'plan-{i}', [host, 'plan', artifact, source, plan, 0, 'regenerate'])
-            plan_path = Path(str(plan) + '.report.json') if ixvm else plan / 'report.json'
-            rows = json.loads(plan_path.read_text())['plan']['max_rows'] // 2
-            assert rows > 0
-            reference = out / f'reference-{i}'
-            run(f'reference-{i}', [host, 'prove', artifact, source, reference, rows, 'regenerate'])
-            references.append(product_files(reference, ixvm))
-            for copy in range(2):
-                jobs.append(dict(id=f'case-{i}-{copy}', artifact=str(artifact), input=str(source),
-                                 output=str(out / f'proof-{i}-{copy}'), priority=i != 0,
-                                 options=dict(max_rows=rows, retention='regenerate')))
-        config = dict(artifacts=[dict(path=str(p), kind='ixvm' if i == 0 else 'recursion')
-                                 for i, p in enumerate(artifacts)],
-                      devices=devices, exec_jobs=2, threads_per_prover=4,
-                      max_ram_bytes=8 << 30, texray=True)
-        directory = resident('resident', config, jobs, [0] * len(jobs))
-        assert '[texray]' in (directory / 'host.log').read_text(), 'texray emitted no phases'
-        for job in jobs:
-            i = int(job['id'].split('-')[1])
-            proof, key = product_files(Path(job['output']), i == 0)
-            assert proof.read_bytes() == references[i][0].read_bytes(), job['id']
-            assert key.read_bytes() == references[i][1].read_bytes(), job['id']
-            host = cpu / ('ixvm-proof' if i == 0 else 'stark-verifier')
-            run(job['id'] + '-verify', [host, 'verify', artifacts[i], inputs[i], proof],
-                dict(AIUR_TRACE_ONLY_LOOKUPS='1'))
-        limited = dict(jobs[0], id='limited', output=str(out / 'limited-proof'))
-        resident('record-limit', dict(config, record_limit_bytes=1024), [limited], [75])
-        assert not Path(limited['output']).exists()
-
         # A real dependency-bearing IxVM environment, split into two leaves.
         tiny = fixtures / 'claims.json.controller.ixe'
         if not tiny.exists():
             raise RuntimeError('regenerate formal-aiur-tests fixtures: missing controller environment')
-        ix = Path('.lake/build/bin/ix').resolve()
         manifest = out / 'two.ixes'
         run('partition', [ix, 'shard', tiny, '--shards', 2, '--out', manifest])
         failed_manifest = out / 'failed.ixes'
@@ -161,14 +73,42 @@ def main():
         text = run('pipeline-budget-failure',
                    [ix, 'prove', '--aggregate', '--direct-joins', '--no-cache', '--no-index',
                     '--ixe', tiny, '--ixes', manifest, '--trace-shards', '--jobs', 2,
-                    '--exec-jobs', 2, '--max-ram', 8, '--report', failed_report,
+                    '--exec-jobs', 2, '--max-ram', 16, '--report', failed_report,
                     '--out-ixes', failed_manifest],
-                   dict(AIUR_RECORD_MAX_BYTES='1024', AIUR_LANES_CACHE_DIR=str(out / 'failed-checkpoints')),
+                   dict(AIUR_RECORD_MAX_BYTES='1024', AIUR_HOST_WORKSPACE_BYTES=str(4 << 30),
+                        AIUR_LANES_CACHE_DIR=str(out / 'failed-checkpoints')),
                    succeeds=False)
-        assert 'no such process' not in text and 'prover stopped' not in text
+        assert 'cannot be split further' in text, 'an unsplittable claim over the ceiling did not stop the run'
         assert not failed_manifest.exists(), 'failed run published a completed manifest'
-        failed_summary = json.loads(Path(str(failed_report) + '.summary.json').read_text())
-        assert failed_summary['record_reserved_bytes'] == 0
+
+        # Legacy's fold (every join structural): proves, passes the trusted
+        # acceptance check, verifies independently, and resumes.
+        rust = [ix, 'prove', '--aggregate', '--structural-above', 0,
+                '--ixe', tiny, '--ixes', manifest, '--trace-shards', '--jobs', 2,
+                '--exec-jobs', 2, '--max-ram', 64, '--out-ixes', out / 'rust.ixes']
+        rust_env = dict(AIUR_HOST_WORKSPACE_BYTES=str(16 << 30),
+                        AIUR_LANES_CACHE_DIR=str(out / 'rust-cache'))
+        text = run('rust-controller', rust, rust_env)
+        rust_root = text.strip().splitlines()[-1]
+        assert 'composed verdict OK' in text, 'the controller skipped the composed verdict'
+        run('rust-controller-verify', [ix, 'verify', '--aggregate', '--structural-above', 0,
+                                       '--ixe', tiny, '--ixes', out / 'rust.ixes', rust_root])
+        text = run('rust-controller-resume', rust, rust_env)
+        assert text.strip().splitlines()[-1] == rust_root
+        assert not any('claim' in line and 'execution started' in line for line in text.splitlines()), \
+            'resumed run executed a claim again'
+        assert 'cache hit' in text, 'resumed run ignored the aggregate cache'
+        report['structural_root'] = rust_root
+
+        # The claims alone: one line per claim, each a verified proof.
+        text = run('claims-only', [ix, 'prove', '--ixe', tiny, '--ixes', manifest, '--jobs', 2,
+                                   '--exec-jobs', 2, '--max-ram', 64, '--no-index',
+                                   '--out-ixes', out / 'claims.ixes'], rust_env)
+        claims = [line.split() for line in text.splitlines() if len(line.split()) == 2
+                  and len(line.split()[1]) == 64]
+        assert len(claims) == 2, text
+        run('claims-verify', [ix, 'verify', '--ixe', tiny, '--ixes', out / 'claims.ixes']
+            + [address for _, address in claims])
         if args.pipeline:
             command = [ix, 'prove', '--aggregate', '--direct-joins', '--ixe', tiny,
                        '--ixes', manifest, '--trace-shards', '--shard-rows', 4194304,
@@ -186,8 +126,8 @@ def main():
                                    '--ixes', out / 'final.ixes', address])
             text = run('pipeline-resume', command, dict(AIUR_LANES_CACHE_DIR=str(out / 'checkpoints')))
             assert text.strip().splitlines()[-1] == address
-            events = (out / 'pipeline.json.events.jsonl').read_text()
-            assert not events.strip(), 'cached root triggered execution'
+            assert not any('claim' in line and 'execution started' in line
+                           for line in text.splitlines()), 'resumed pipeline executed a claim'
             report['pipeline_proof'] = address
         report['success'] = True
         print(f'Controller validation passed: {out / "report.json"}', flush=True)
