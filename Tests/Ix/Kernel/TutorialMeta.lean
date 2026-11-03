@@ -135,6 +135,10 @@ partial def collectDepsWithExtras
               for r in ctorCi.type.getUsedConstantsAsSet do refs := refs.insert r
           for mutName in v.all do
             refs := refs.insert mutName
+            refs := refs.insert (Lean.mkRecName mutName)
+          if let some first := v.all.head? then
+            for i in [:v.numNested] do
+              refs := refs.insert (first.str s!"rec_{i + 1}")
         | .ctorInfo v =>
           refs := refs.insert v.induct
         | .recInfo v =>

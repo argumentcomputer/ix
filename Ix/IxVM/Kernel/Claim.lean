@@ -416,14 +416,17 @@ def claim := ⟦
     -- exclude an owned leaf from both while the claim's merkle root still
     -- commits to it.
     match addr_set_member(addr, asm) {
-      1 => (),
+      1 =>
+        assert_eq!(eq_zero(strict - 2), 0,
+          "Check: target is in the assumption set");
+        (),
       _ =>
-        match strict {
+        let next_strict = match strict {
           1 =>
             assert_eq!(addr_set_member(addr, owned), 1,
               "CheckEnv: walk reached a constant outside the owned set");
-            (),
-          _ => (),
+            1,
+          _ => 0,
         };
         let c = load_verified_constant(addr);
         match c {
@@ -435,29 +438,29 @@ def claim := ⟦
                 match dprj {
                   DefinitionProj.Mk(_, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               ConstantInfo.IPrj(iprj) =>
                 match iprj {
                   InductiveProj.Mk(_, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               ConstantInfo.CPrj(cprj) =>
                 match cprj {
                   ConstructorProj.Mk(_, _, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               ConstantInfo.RPrj(rprj) =>
                 match rprj {
                   RecursorProj.Mk(_, block_addr) =>
                     run_check(rc, addr);
-                    env_walk(rc, block_addr, owned, asm, strict),
+                    env_walk(rc, block_addr, owned, asm, next_strict),
                 },
               _ => run_check(rc, addr),
             };
-            env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, strict),
+            env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, next_strict),
         },
     }
   }
@@ -486,6 +489,10 @@ def claim := ⟦
     match load(leaves) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
+        -- Assumptions waive out-of-shard dependency checks, never the
+        -- check of an owned subject itself.
+        assert_eq!(addr_set_member(a, asm), 0,
+          "CheckEnv: owned constant is in the assumption set");
         env_walk(rc, a, owned, asm, 1);
         env_walk_leaves(rc, rest, owned, asm),
     }
@@ -498,6 +505,10 @@ def claim := ⟦
   -- being well-typed, so every constant the claim covers must be
   -- reached by this walk or assumed via the frontier.
   fn run_check_env(rc: RoleCtx, env_root: Addr, asm: Option‹Addr›) {
+    let owned = load_assumption_tree(env_root);
+    let empty_leaves: &ListNode‹&[U8; 32]› = store(ListNode.Nil);
+    assert_eq!(eq_zero(ptr_val(owned) - ptr_val(empty_leaves)), 0,
+      "CheckEnv: owned tree has no leaves");
     match asm {
       Option.None =>
         -- The whole environment: every constant under `env_root` is
@@ -514,9 +525,8 @@ def claim := ⟦
         -- (the sharded walk below aborts instead), so a claim without
         -- assumptions proves every constant its tree reaches, not only
         -- those it lists. For an environment's tree the two coincide.
-        walk_leaves_owned(rc, load_assumption_tree(env_root)),
+        walk_leaves_owned(rc, owned),
       Option.Some(r) =>
-        let owned = load_assumption_tree(env_root);
         let owned_set = addr_set_build(owned, RBTreeMap.Nil);
         let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap.Nil);
         env_walk_leaves(rc, owned, owned_set, asm_set),
@@ -1403,7 +1413,9 @@ def claim := ⟦
           Option.Some(r) =>
             let asm_leaves = load_assumption_tree(r);
             let asm_set = addr_set_build(asm_leaves, RBTreeMap.Nil);
-            env_walk(rc, target, RBTreeMap.Nil, asm_set, 0),
+            -- strict = 2 rejects `target ∈ asm_set` at the root without
+            -- enforcing owned-set membership on transitive dependencies.
+            env_walk(rc, target, RBTreeMap.Nil, asm_set, 2),
         },
       5 =>
         let (binding, s) = get_claim_context(s);

@@ -242,6 +242,18 @@ def semanticSuite : IO UInt32 := do
     structuralOutput.subjects.root ==
       Ix.Merkle.nodeHash left.subjects.root right.subjects.root &&
       structuralOutput.assumptions.map (·.leaves) == some #[d]
+  let selfAssumingClaim : Ix.Claim :=
+    .checkEnv envCtx (canonicalTree #[a]).root (some (canonicalTree #[a]).root)
+  let selfAssumingTrees : Std.HashMap Address Ix.AssumptionTree :=
+    ({} : Std.HashMap _ _).insert (canonicalTree #[a]).root (canonicalTree #[a])
+  let ofClaimRejectsSelfAssumption :=
+    (Aggr.CheckEnvTrees.ofClaim selfAssumingClaim selfAssumingTrees).isOk == false
+  let selfAssumingStmt : Aggr.CheckEnvTrees :=
+    { ctx := envCtx, subjects := canonicalTree #[a],
+      assumptions := some (canonicalTree #[a]) }
+  let hostJoinRejectsSelfDischarge :=
+    (selfAssumingStmt.join selfAssumingStmt).assumptions.map (·.leaves) == some #[a] &&
+    (selfAssumingStmt.joinStructural selfAssumingStmt).assumptions.map (·.leaves) == some #[a]
   let leftBytes := Ix.Claim.ser left.claim
   let rightBytes := Ix.Claim.ser right.claim
   let flatBytes := Ix.Claim.ser flatOutput.claim
@@ -586,6 +598,10 @@ def semanticSuite : IO UInt32 := do
     test "flat host fold constructs canonical union/discharge trees" flatHostCorrect,
     test "structural host fold constructs root-of-roots and survivors"
       structuralHostCorrect,
+    test "CheckEnvTrees.ofClaim rejects overlapping subjects and assumptions"
+      ofClaimRejectsSelfAssumption,
+    test "host join helpers do not self-discharge assumptions"
+      hostJoinRejectsSelfDischarge,
     test "manifest tree lowers to post-order binary slots"
       (manifestPlan == expectedPlan),
     test "manifest parser exposes its validated bisection tree" parsedManifestPlan,

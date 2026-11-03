@@ -153,22 +153,54 @@ def withDefaultRoleBinding (env : Ixon.Env) : Except String Ixon.Env := do
   if env.roleBinding.isSome then return env
   withRoleTable env (← Ix.Kernel.Reader.defaultTableBytes)
 
+/-- Close `roots` under `Lean.collectDependenciesMany` and every collected
+    inductive's recursors (`<ind>.rec` and nested `<all0>.rec_N`) so
+    `Ix.Cert.compileReport`'s `unownedRecursor` check sees every inductive
+    family's recursors when two families share an anonymous Ixon block
+    (e.g., `Lean.Doc.MathMode` and `Bool`). -/
+private def dedupConstList (entries : List (Lean.Name × Lean.ConstantInfo)) :
+    List (Lean.Name × Lean.ConstantInfo) := Id.run do
+  let mut seen : Lean.NameSet := {}
+  let mut out : Array (Lean.Name × Lean.ConstantInfo) := #[]
+  for entry in entries do
+    if !seen.contains entry.1 then
+      seen := seen.insert entry.1
+      out := out.push entry
+  return out.toList
+
+private def collectCertifiedClosure (roots : Array Lean.Name)
+    (leanEnv : Lean.Environment) : List (Lean.Name × Lean.ConstantInfo) := Id.run do
+  let mut seeds := roots.filter leanEnv.constants.contains
+  let mut deps := dedupConstList (Lean.collectDependenciesMany seeds leanEnv.constants)
+  for _ in [0:4] do
+    let mut seen : Lean.NameSet := {}
+    for (n, _) in deps do seen := seen.insert n
+    let recs := deps.foldl (init := #[]) fun acc (_, ci) =>
+      match ci with
+      | .inductInfo v =>
+        let names := (Lean.mkRecName v.name) ::
+          (List.range v.numNested).map fun i =>
+            Lean.Name.mkStr (v.all.headD v.name) s!"rec_{i + 1}"
+        acc ++ (names.filter fun r =>
+          leanEnv.constants.contains r && !seen.contains r && !acc.contains r).toArray
+      | _ => acc
+    if recs.isEmpty then break
+    seeds := seeds ++ recs
+    deps := dedupConstList (Lean.collectDependenciesMany seeds leanEnv.constants)
+  return deps
+
 /-- Variant of loadIxonEnv: also seeds the constants the kernel's kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
     their bytes are always in ch 2 even when the target's proof body
     doesn't textually reference them. -/
 def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
-  let mut seen : Lean.NameSet := {}
-  let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  let names : Array Lean.Name := #[name] ++ synthesizedPrimNames ++ roleNames
-  for n in names do
-    if leanEnv.constants.contains n then
-      for entry in Lean.collectDependencies n leanEnv.constants do
-        if !seen.contains entry.fst then
-          seen := seen.insert entry.fst
-          deduped := deduped.push entry
-  match ← Ix.CompileM.compileCertified leanEnv deduped.toList 8 with
+  let roots := (#[name] ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains
+  let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
+  let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
+    | .ok out => pure (.ok out)
+    | .error _ => Ix.CompileM.compileCertified leanEnv (collectCertifiedClosure roots leanEnv) 32
+  match res with
   | .error e => throw (IO.userError s!"the certified Lean compile of {name}'s closure failed: {e}")
   | .ok out =>
     unless out.failures.isEmpty do
@@ -184,14 +216,12 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
     `buildClaimWitness` / `buildDbgCheckConst`. -/
 def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
-  let mut seen : Lean.NameSet := {}
-  let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  for n in names ++ roleNames.filter leanEnv.constants.contains do
-    for entry in Lean.collectDependencies n leanEnv.constants do
-      if !seen.contains entry.fst then
-        seen := seen.insert entry.fst
-        deduped := deduped.push entry
-  match ← Ix.CompileM.compileCertified leanEnv deduped.toList 8 with
+  let roots := (names ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains
+  let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
+  let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
+    | .ok out => pure (.ok out)
+    | .error _ => Ix.CompileM.compileCertified leanEnv (collectCertifiedClosure roots leanEnv) 32
+  match res with
   | .error e => throw (IO.userError s!"the certified Lean compile of shared closure failed: {e}")
   | .ok out =>
     unless out.failures.isEmpty do

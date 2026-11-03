@@ -412,9 +412,8 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
     Blake3 binding is preserved end-to-end: every closure member
     reaches the kernel via `get_ci(addr)` which reads bytes from
     ch 2 and asserts blake3(bytes) == addr before returning. -/
-public def kernelCheck (name : Lean.Name) (env : Lean.Environment)
+public def kernelCheckWithEnv (ixonEnv : Ixon.Env) (name : Lean.Name)
     (assumeBinding : Bool := true) : IO AiurTestCase := do
-  let ixonEnv ← loadIxonEnv name env
   let target ← lookupAddr ixonEnv name
   -- Claim.Check with transitive semantics: run_check_transitive walks the
   -- block-level ref DAG lazily. No AssumptionTree needed — Aiur
@@ -433,6 +432,11 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment)
          input := witness.input, inputIOBuffer := witness.inputIOBuffer
          expectedIOBuffer := witness.inputIOBuffer
          interpret := false, withProof := false }
+
+public def kernelCheck (name : Lean.Name) (env : Lean.Environment)
+    (assumeBinding : Bool := true) : IO AiurTestCase := do
+  let ixonEnv ← loadIxonEnv name env
+  kernelCheckWithEnv ixonEnv name assumeBinding
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
@@ -548,10 +552,8 @@ private def validatingCheckEntries : List (String × Nat) := [
     the proof aggregates reuse. -/
 private def bindingCheckEntry : Nat := 286_490_270_758
 
-/-- The binding claim for the default table, over the test environment
-    with the table's support records. -/
-public def bindingCheck (env : Lean.Environment) : IO AiurTestCase := do
-  let ixonEnv ← loadSharedIxonEnv #[] env
+/-- The binding claim for the default table, over `ixonEnv`. -/
+public def bindingCheckWithEnv (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)
   let claim := Ix.Claim.binding ctx.spec ctx.binding
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
@@ -560,17 +562,28 @@ public def bindingCheck (env : Lean.Environment) : IO AiurTestCase := do
          expectedIOBuffer := witness.inputIOBuffer
          interpret := false, withProof := false }
 
+/-- The binding claim for the default table, over the test environment
+    with the table's support records. -/
+public def bindingCheck (env : Lean.Environment) : IO AiurTestCase := do
+  let ixonEnv ← loadSharedIxonEnv #[] env
+  bindingCheckWithEnv ixonEnv
+
 /-- Variant of `kernelChecks`, pinned to the baseline
     (`kernelCheckEntries`). Any kernel change that shifts the kernel FFT
     cost fails the suite and forces a manual pin bump. -/
 public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) := do
+  let allNames :=
+    (kernelCheckEntries.map fun (name, _) => nameOfString name).toArray ++
+    (validatingCheckEntries.map fun (name, _) => nameOfString name).toArray ++
+    synthesizedPrimNames
+  let ixonEnv ← loadSharedIxonEnv allNames env
   let assumed ← kernelCheckEntries.mapM fun (name, expected) => do
-    let tc ← kernelCheck (nameOfString name) env
+    let tc ← kernelCheckWithEnv ixonEnv (nameOfString name)
     pure { tc with expectedFftCost := some expected }
   let validating ← validatingCheckEntries.mapM fun (name, expected) => do
-    let tc ← kernelCheck (nameOfString name) env (assumeBinding := false)
+    let tc ← kernelCheckWithEnv ixonEnv (nameOfString name) (assumeBinding := false)
     pure { tc with expectedFftCost := some expected }
-  let binding ← bindingCheck env
+  let binding ← bindingCheckWithEnv ixonEnv
   return assumed ++ validating ++ [{ binding with expectedFftCost := some bindingCheckEntry }]
 
 /-! ## Codegen ↔ bytecode parity

@@ -400,8 +400,11 @@ def registry : List Entry := [
       -- this gate compares against a stale kernel. Reuses the
       -- `kernelChecks` cases (`runParityCase` ignores the FFT pins), so
       -- the per-constant witness setup runs once, not twice.
-      let paritySeq := kernelChecks.foldl (init := .done) fun s tc =>
-        s ++ runParityCase vmEnv.compiled tc
+      let parityTasks ← kernelChecks.mapM fun tc =>
+        IO.asTask (pure (runParityCase vmEnv.compiled tc))
+      let paritySeq ← parityTasks.foldlM (init := .done) fun s task => do
+        let seq ← IO.ofExcept task.get
+        pure (s ++ seq)
       let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
         fun s tc => s ++ fullVmEnv.runTestCase tc
       -- Shard pipeline: witness built in Rust (thin-frontier claim,
@@ -428,8 +431,8 @@ def registry : List Entry := [
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 89_388_230_967, got {actual}"
-              (actual = 89_388_230_967))
+              s!"Shard pipeline FFT matches: expected 89_387_508_717, got {actual}"
+              (actual = 89_387_508_717))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,

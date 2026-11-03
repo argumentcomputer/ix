@@ -133,9 +133,10 @@ def arenaTests (env : Lean.Environment)
     rawConsts.foldl (fun m ci => m.insert ci.name ci)
       (Std.HashMap.emptyWithCapacity rawConsts.size)
   let (_, closed) := collectDepsWithExtras env rawMap
-    (checks.map (·.name)).toList
+    ((checks.map (·.name)).toList ++ (rawConsts.toList.map (·.name)))
   let allConsts := closed ++ rawConsts.toList.map fun ci => (ci.name, ci)
-  let (rawEnv, _) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput allConsts.toArray 32))
+  let (rawEnv, _, _) ← IO.ofExcept <|
+    Ix.Cert.compileUnchecked (Ix.CompileM.canonInput allConsts.toArray 32)
   let ixonEnv ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding rawEnv)
   let mut tests : TestSeq := .done
   for c in checks do
