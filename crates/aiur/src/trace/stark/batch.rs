@@ -99,13 +99,31 @@ fn copy_rows(values: &[Val]) -> Vec<Val> {
 fn commitment_parameters(p: Parameters) -> CommitmentParameters {
   CommitmentParameters { log_blowup: p.log_blowup, cap_height: 0 }
 }
+/// The batch FRI parameters as five `u64` little-endian words:
+/// `log_final_poly_len`, `max_log_arity`, `num_queries`,
+/// `commit_proof_of_work_bits`, `query_proof_of_work_bits`. The verifying
+/// key does not bind them, so caches of proofs key on these bytes.
+pub fn fri_parameter_bytes(p: Parameters) -> Vec<u8> {
+  let fri = fri_parameters(p);
+  [
+    fri.log_final_poly_len,
+    fri.max_log_arity,
+    fri.num_queries,
+    fri.commit_proof_of_work_bits,
+    fri.query_proof_of_work_bits,
+  ]
+  .iter()
+  .flat_map(|&word| (word as u64).to_le_bytes())
+  .collect()
+}
+
 fn fri_parameters(p: Parameters) -> FriParameters {
   FriParameters {
     log_final_poly_len: 0,
     max_log_arity: 1,
     num_queries: p.num_queries,
     commit_proof_of_work_bits: 0,
-    query_proof_of_work_bits: 0,
+    query_proof_of_work_bits: 20,
   }
 }
 

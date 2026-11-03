@@ -40,7 +40,9 @@ mod tests;
 mod witness;
 #[cfg(test)]
 pub use batch::StageOne;
-pub use batch::{ShardFeed, StreamPlan, Streamed, VerifyingKey};
+pub use batch::{
+  ShardFeed, StreamPlan, Streamed, VerifyingKey, fri_parameter_bytes,
+};
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
@@ -90,7 +92,7 @@ pub struct Parameters {
 }
 impl Default for Parameters {
   fn default() -> Self {
-    Self { log_blowup: 1, num_queries: 64 }
+    Self { log_blowup: 2, num_queries: 100 }
   }
 }
 
@@ -311,7 +313,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         max_log_arity: 1,
         num_queries: parameters.num_queries,
         commit_proof_of_work_bits: 0,
-        query_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 20,
       },
       device,
     );
