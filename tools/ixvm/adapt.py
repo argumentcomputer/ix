@@ -277,16 +277,25 @@ def use_opaque_words(s):
     return s
 
 
-def remove_fast_path(s, name, equal_result='1'):
+def remove_fast_path(s, name, equal_result='1', precheck=False):
     m = re.search(r'\bfn ' + name + r'\b[^{}]*\{', s)
     if not m: raise ValueError(f'missing pointer fast path function {name}')
     start = m.end()-1; end = balance_end(s, start)
     body = s[start:end]
-    # Keep the existing fallback. Replacing the cheap identity test with a
-    # recursive structural comparison would add a traversal before that work.
-    match = re.search(r'match ptr_val\([^)]*\) - ptr_val\([^)]*\) \{\s*0 => '
+    match = re.search(r'match ptr_val\((\w+)\) - ptr_val\((\w+)\) \{\s*0 => '
                       + re.escape(equal_result) + r',\s*_ =>', body)
     if not match: raise ValueError(f'changed pointer fast path in {name}')
+    if precheck:
+        # Pointer identity implies structural identity, so an exact structural
+        # comparison accepts every pair the legacy shortcut did (and identical
+        # copies too). It may answer only "equal"; any other outcome falls
+        # through to the unchanged def-eq tiers.
+        body = (body[:match.start()] + f'match kexpr_struct_eq({match[1]}, {match[2]}) {{'
+                + f'\n      1 => {equal_result},\n      _ =>' + body[match.end():])
+        return s[:start] + body + s[end:]
+    # Elsewhere keep only the fallback: either the function is itself the
+    # structural comparison, or its identity test follows a reduction whose
+    # cost a precheck cannot avoid and precedes tiers that reach one.
     opening = body.index('{', match.start())
     close = balance_end(body, opening)
     fallback = body[match.end():close-1].strip().removesuffix(',')
@@ -393,20 +402,25 @@ def adapt(s, semantic=True):
         s = transform_body(s, 'run_eval', lambda body:
             body.replace('assert_eq!(result, expected,',
                          'assert_eq!(kexpr_struct_eq(result, expected), 1,'))
-        for name, result in {
-            'level_struct_eq': '1',
-            'kexpr_struct_eq': '1',
-            'k_is_def_eq': '1',
-            'k_is_def_eq_slow_nd': '1',
-            'k_is_def_eq_slow_nd_after_core': '1',
-            'k_is_def_eq_slow2': '1',
-            'k_is_def_eq_struct_bounded': '(1, credit)',
-            'k_is_def_eq_struct_spend': '(1, rest)',
-            'slow2_eager_fallback': '1',
-            'lazy_delta_loop': '(1, a, b)',
-            'assert_type_meets': '()',
-        }.items():
-            s = remove_fast_path(s, name, result)
+        # Without pointer identity, identical terms that legacy settled at once
+        # would otherwise unfold, and can reach eager whnf of large Nat
+        # computations (Batteries `Char.all.eq_1` evaluates `Nat.all 1056767`).
+        # The precheck sites are the def-eq entry, the slow tier, the bounded
+        # structural tier and each lazy delta step.
+        for name, result, precheck in [
+            ('level_struct_eq', '1', False),
+            ('kexpr_struct_eq', '1', False),
+            ('k_is_def_eq', '1', True),
+            ('k_is_def_eq_slow_nd', '1', False),
+            ('k_is_def_eq_slow_nd_after_core', '1', False),
+            ('k_is_def_eq_slow2', '1', True),
+            ('k_is_def_eq_struct_bounded', '(1, credit)', True),
+            ('k_is_def_eq_struct_spend', '(1, rest)', False),
+            ('slow2_eager_fallback', '1', False),
+            ('lazy_delta_loop', '(1, a, b)', True),
+            ('assert_type_meets', '()', False),
+        ]:
+            s = remove_fast_path(s, name, result, precheck)
         # Without the identity shortcut, equal variables must be decided before
         # the inference tiers. Canonical recursor rules compare open bodies under
         # an empty context deliberately: their stored binder types are untrusted.
@@ -421,7 +435,9 @@ def adapt(s, semantic=True):
         if count != 1: raise ValueError('changed quick structural comparison')
         # Extend the existing spine congruence to variable heads as well. These
         # occur in the same context-free recursor bodies; recurse on the arguments
-        # directly, rather than adding a separate whole-tree equality precheck.
+        # directly. The structural identity precheck above already accepts
+        # identical trees; this congruence covers equal heads whose arguments
+        # are equal only up to def-eq.
         const_head = 'KExprNode.Const(a_addr, al) =>'
         if s.count(const_head) != 1: raise ValueError('changed application congruence')
         s = s.replace(const_head, '''KExprNode.BVar(i) =>
@@ -434,6 +450,23 @@ def adapt(s, semantic=True):
                       _ => 0,
                     },
                   ''' + const_head)
+        # The same rules may also differ only inside binders, which def-eq enters
+        # by pushing their domains. Those domains refer to the peeled rule
+        # binders, which the empty context cannot close, so def-eq of an honest
+        # rule would abort in `ctx_next_cut` (Nat.gcd_comm). An honest rule
+        # equals its reconstruction syntactically; accept that case with the
+        # context-free structural comparison before def-eq. This runs once per
+        # recursor rule, not on the def-eq hot path.
+        s = transform_body(s, 'compare_rules', lambda body: re.sub(
+            r'assert_eq!\(k_is_def_eq\((rc, )?stored_body, cbody,\s*store\(ListNode\.Nil\)\), 1,'
+            r'\s*("STRING_\d+")\);',
+            r'''match kexpr_struct_eq(stored_body, cbody) {
+                      1 => (),
+                      _ => assert_eq!(k_is_def_eq(\1stored_body, cbody,
+                          store(ListNode.Nil)), 1, \2); (),
+                    };''', body, count=1))
+        if 'match kexpr_struct_eq(stored_body, cbody)' not in s:
+            raise ValueError('changed recursor rule comparison')
         s = replace_body(s, 'k_is_def_eq_core', '    k_is_def_eq_ordered(rc, a, b, types)')
         # Canonical recursor rules compare open bodies under an empty context.
         # Entering a higher-order induction hypothesis (e.g. Acc.rec) pushes
