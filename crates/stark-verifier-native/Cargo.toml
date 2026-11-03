@@ -1,0 +1,31 @@
+[package]
+name = "stark-verifier-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generated native executor for the recursive verifier and aggregation program"
+
+# With feature `kernel`, the generated kernels are built at compile time
+# from the exported packages named by AIUR_VERIFIER_ARTIFACT and
+# AIUR_AGGREGATION_ARTIFACT (`ix prepare` writes both under .lake/aiur/).
+# Without it the crate is empty, so workspace-wide builds need no artifact.
+# This crate is outside the default workspace members.
+
+[features]
+kernel = []
+
+[[bin]]
+name = "stark-verifier-native"
+required-features = ["kernel"]
+
+[dependencies]
+aiur = { path = "../aiur", features = ["native", "parallel"] }
+aiur-macros = { path = "../aiur-macros" }
+stark-verifier = { path = "../stark-verifier" }
+multi-stark = { workspace = true }
+stark-key = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

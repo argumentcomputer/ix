@@ -22,6 +22,7 @@ use multi_stark::{
 };
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(feature = "cuda")]
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,6 +30,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_BACKEND_ID: AtomicU64 = AtomicU64::new(1);
 
 pub mod batch;
+#[cfg(feature = "cuda")]
+pub mod compiled;
 #[cfg(feature = "cuda")]
 mod gpu;
 mod grouping;
@@ -38,11 +41,14 @@ pub mod planning;
 mod profile;
 mod rom;
 mod statistics;
+pub mod streaming;
 mod tables;
 #[cfg(test)]
 mod tests;
 mod witness;
-pub use batch::{StageOne, StreamPlan, VerifyingKey};
+#[cfg(test)]
+pub use batch::StageOne;
+pub use batch::{ShardFeed, StreamPlan, Streamed, VerifyingKey};
 pub use rom::{RomLayout, rom_lanes};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 pub use witness::ValidatedRecord;

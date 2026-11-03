@@ -39,7 +39,6 @@ const CHUNK_ROWS: usize = 4096;
 
 #[derive(Clone, Debug)]
 pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
-  budget: crate::budget::Budget,
   field: B,
   pub(crate) static_map: Option<crate::maps::MapRecord<B>>,
   input_width: usize,
@@ -55,6 +54,8 @@ pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
   // Sparse or large keys still use the exact hash index. Entries are row IDs,
   // including pending rows, so this cannot bypass cycle detection.
   dense_index: Vec<u32>,
+  // Storage drops before its reservation can admit another allocation.
+  budget: crate::budget::Budget,
 }
 
 impl<B: FieldBackend> QueryTable<B> {
@@ -192,9 +193,9 @@ impl<B: FieldBackend> QueryTable<B> {
       self.stride.saturating_mul(size_of::<B::Element>()).saturating_add(16),
     )?;
     self.rows.reserve(&self.budget)?;
-    self.budget.vector(&self.counts, 1)?;
+    self.budget.vector(&mut self.counts, 1)?;
     if self.track_depth {
-      self.budget.vector(&self.depths, 1)?;
+      self.budget.vector(&mut self.depths, 1)?;
     }
     self.budget.index(self.index.growth())?;
     self.rows.push_padded(args, self.field.zero());
@@ -214,7 +215,7 @@ impl<B: FieldBackend> QueryTable<B> {
         if key >= self.dense_index.len() {
           let extra =
             (key + 1).next_power_of_two().min(limit) - self.dense_index.len();
-          self.budget.vector(&self.dense_index, extra)?;
+          self.budget.vector(&mut self.dense_index, extra)?;
           self
             .dense_index
             .resize((key + 1).next_power_of_two().min(limit), u32::MAX);
@@ -243,18 +244,6 @@ impl<B: FieldBackend> QueryTable<B> {
     self.counts[row]
   }
 
-  pub(crate) fn adjust_count(
-    &mut self,
-    row: usize,
-    count: u64,
-    add: bool,
-  ) -> Option<()> {
-    let value = &mut self.counts[row];
-    *value =
-      if add { value.checked_add(count)? } else { value.checked_sub(count)? };
-    Some(())
-  }
-
   /// Number of stored slots. Fixed tables include rows with zero uses.
   pub(crate) fn len(&self) -> usize {
     if let Some(map) = &self.static_map {
@@ -265,6 +254,16 @@ impl<B: FieldBackend> QueryTable<B> {
 
   pub(crate) fn widths(&self) -> (usize, usize) {
     (self.input_width, self.output_width)
+  }
+
+  pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
+    let payload = self.rows.payload_bytes();
+    let vectors = self.rows.capacity_bytes()
+      + (self.counts.capacity() + self.depths.capacity()) * 8
+      + self.dense_index.capacity() * std::mem::size_of::<u32>()
+      + self.static_map.as_ref().map_or(0, |map| map.counts.len() * 8);
+    let index = self.index.allocated_bytes();
+    (payload, vectors, index)
   }
 
   #[inline(always)]

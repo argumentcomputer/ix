@@ -1,0 +1,29 @@
+[package]
+name = "ixvm-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generated native executor for IxVM"
+
+# With feature `kernel`, the kernel is built from the exported IxVM package
+# named by AIUR_IXVM_ARTIFACT at compile time (`ix prepare` writes it under
+# .lake/aiur/). Without it the crate is empty, so workspace-wide builds need
+# no artifact. This crate is outside the default workspace members.
+
+[features]
+kernel = []
+
+[[bin]]
+name = "ixvm-native"
+required-features = ["kernel"]
+
+[dependencies]
+aiur = { path = "../aiur", features = ["native", "parallel"] }
+aiur-macros = { path = "../aiur-macros" }
+ixvm = { path = "../ixvm" }
+multi-stark = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

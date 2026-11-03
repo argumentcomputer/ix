@@ -42,7 +42,6 @@ const CHUNK_BYTES: usize = 1 << 19;
 
 #[derive(Clone, Debug)]
 pub struct Memory<F = u64> {
-  pub(crate) budget: crate::budget::Budget,
   base: usize,
   end: u64,
   types: Vec<(Type, usize)>,
@@ -55,6 +54,8 @@ pub struct Memory<F = u64> {
   // payload copy. Retained after execution so trace population can resolve
   // stores directly.
   index: RowIndex,
+  // Release the charge after the payload and indexes have been freed.
+  pub(crate) budget: crate::budget::Budget,
 }
 
 /// Sequential view over all cells of one payload width in address order.
@@ -144,17 +145,21 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.slots.len() == 0
   }
 
-  pub(crate) fn set_range(
-    &mut self,
-    start: u64,
-    end: u64,
-  ) -> Result<(), &'static str> {
-    if !self.is_empty() || start >= end {
-      return Err("invalid empty ROM range");
-    }
-    self.base = usize::try_from(start).ok().ok_or("ROM base overflow")?;
-    self.end = end;
-    Ok(())
+  pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
+    let payload = self.buckets.iter().map(|b| b.words.payload_bytes()).sum();
+    let vectors = self.slots.capacity_bytes()
+      + self
+        .buckets
+        .iter()
+        .map(|b| {
+          b.words.capacity_bytes()
+            + b.indices.capacity_bytes()
+            + b.counts.capacity_bytes()
+        })
+        .sum::<usize>()
+      + self.buckets.capacity() * std::mem::size_of::<Bucket<F>>();
+    let index = self.index.allocated_bytes();
+    (payload, vectors, index)
   }
 
   /// Distinct registered types along with whether any cell of that type was

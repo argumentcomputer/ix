@@ -4,19 +4,56 @@ use aiur::{
   bytecode::CheckedProgram,
   field::FieldBackend,
   hints::{HintChannels, HintEntry, PreparedHints},
+  library::{
+    advice::Advice,
+    io::{StreamAdvice, Streams},
+  },
   maps::MapOverrides,
 };
 
 pub mod fixture;
 mod io;
 
-/// Prepare a production claim witness using immutable IO arenas.
+/// Makes the compiled IxVM trace writers (`compiled-trace`) available to
+/// proving backends built afterwards; `AIUR_GPU_TRACE=compiled` selects them.
+/// Their hint writers assume the word-hint providers that this crate's
+/// preparation binds.
+pub fn register_compiled_trace() {
+  #[cfg(feature = "compiled-trace")]
+  aiur::trace::stark::compiled::register(&ixvm_tracegen::BUNDLE);
+}
+
+/// Prepare a production claim witness from the JSON interchange format,
+/// binding it as compact [`Advice`].
 pub fn prepare_streams<'a, B: FieldBackend>(
   program: &'a CheckedProgram<B>,
-  streams: &aiur::library::io::Streams,
+  streams: &Streams,
+) -> Result<PreparedHints<'a, B>, String> {
+  prepare_advice(program, &Advice::from_streams(program.field(), streams)?)
+}
+
+/// Bind a production claim witness. The hints share the advice payload;
+/// dropping `advice` afterwards releases only its stream metadata.
+pub fn prepare_advice<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  advice: &Advice<B>,
+) -> Result<PreparedHints<'a, B>, String> {
+  bind_streams(program, advice)
+}
+
+/// Reference binding through field-element arenas decoded from JSON.
+pub fn prepare_streams_reference<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  streams: &Streams,
+) -> Result<PreparedHints<'a, B>, String> {
+  bind_streams(program, &streams.prepare(program.field())?)
+}
+
+fn bind_streams<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  arenas: &impl StreamAdvice<B>,
 ) -> Result<PreparedHints<'a, B>, String> {
   use aiur::bytecode::Type;
-  let arenas = streams.prepare(program.field())?;
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, program.field())?;
   aiur::library::u64::register(&mut channels, program.field())?;
@@ -27,21 +64,21 @@ pub fn prepare_streams<'a, B: FieldBackend>(
     "ixvm.io.info",
     &address_key,
     None,
-    |s| [1, 2, 4, 6, 7].contains(&s.channel),
+    |channel, _| [1, 2, 4, 6, 7].contains(&channel),
     false,
   )?;
   data.extend(arenas.metadata(
     "ixvm.io.claim",
     &Type::Tuple { items: vec![Type::Field; 8] },
     Some(0),
-    |s| s.channel == 0,
+    |channel, _| channel == 0,
     false,
   )?);
   data.extend(arenas.metadata(
     "ixvm.io.tag",
     &address_key,
     None,
-    |s| s.channel == 3,
+    |channel, _| channel == 3,
     true,
   )?);
   let hints = program.prepare_hint_channels(&data, &channels)?;
