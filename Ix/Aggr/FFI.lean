@@ -100,7 +100,7 @@ opaque aggregateStage2 (ixvmSystem aggrSystem : @& AiurSystem)
   (directJoins planOnly : Bool) (cacheFriBytes : @& ByteArray)
   (useCache writeOutputs traceShards : Bool) (rangeWidth : @& Nat)
   (wrapRoot : Bool) (execAhead : @& Nat) (verifyOnly : Bool)
-  (subtreeCode : @& Nat) (bindingProof : @& String) :
+  (subtreeCode : @& Nat) (bindingProof : @& String := "") (fresh : Bool := false) :
     Except String String
 
 /-- Reconstruct and audit the manifest-relative aggregate root entirely in
@@ -114,7 +114,7 @@ opaque aggregateExpected (envHandle : @& EnvHandle)
 
 
 
-/-- The Stage 2 plan cut for `ix prove --lanes`: the tree is split from the
+/-- The Stage 2 plan cut for `ix prove --ixe --ixes`: the tree is split from the
 root while any frontier node holds more than `subtreeSize` leaves (a lone
 leaf may then stand as a subtree of its own). Rows in post-order:
 `#[0, slot, ids…]` for a subtree (its root slot, as `ix aggregate --subtree`
@@ -125,24 +125,27 @@ last. -/
 opaque aggregateSubtreePlan (envHandle : @& EnvHandle) (manifestPath : @& String)
   (structuralAbove subtreeSize : @& Nat) : Except String (Array (Array Nat))
 
-/-- `ix prove --lanes`: the whole multi-device run in this process, one
+/-- `ix prove --ixe --ixes`: the whole multi-device run in this process, one
 resident prover per GPU built from these two systems (`AiurSystem.on_device`
 in Rust; nothing is copied across the FFI), every claim and join scheduled
 over them as their inputs become ready, the root wrapped, and every claim
 proof verified natively at the end. `maxRamBytes` is one worker's host
-budget (0 detects); `execJobs` the claim executions ahead of each prover.
+budget (0 detects); `execJobs` the claim executions ahead of each prover;
+`gpus` the GPU count (0 uses every visible GPU).
 Oversized environment claims are bisected and checkpointed; completed
 proofs are reused. A nonempty `outManifest` receives the final partition.
 A nonempty `bindingProof` names an `Ixon.Proof` of the environment binding's
 `binding` claim: every claim of the run then assumes its binding, and the
-root discharges that condition once. Returns the verified root address;
-progress is printed on stderr. -/
-@[extern "rs_aiur_prove_lanes"]
-opaque proveLanes (ixvmSystem aggrSystem : @& AiurSystem)
+root discharges that condition once. `fresh` bypasses earlier proof indexes
+and refinement checkpoints while publishing newly verified results to the
+usual cache locations. Returns the verified root address; progress is
+printed on stderr. -/
+@[extern "rs_aiur_prove_multi_gpu"]
+opaque proveMultiGpu (ixvmSystem aggrSystem : @& AiurSystem)
   (envHandle : @& EnvHandle) (manifestPath : @& String)
-  (verifyIdx aggrIdx lanes maxRamBytes execJobs structuralAbove : @& Nat)
+  (verifyIdx aggrIdx gpus maxRamBytes execJobs structuralAbove : @& Nat)
   (cacheFriBytes : @& ByteArray) (outManifest : @& String)
-  (bindingProof : @& String) : Except String String
+  (bindingProof : @& String := "") (fresh : Bool := false) : Except String String
 
 end AiurSystem
 end Aiur

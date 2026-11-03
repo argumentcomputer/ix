@@ -112,6 +112,7 @@ import Tests.AggrToolchains
 import Tests.AggrSemantics
 import Tests.AggrActivation
 import Tests.Cli
+import Tests.CompressionCli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -473,7 +474,11 @@ def registry : List Entry := [
   .runner "rust-compile-coverage" .primary Tests.Ix.RustCompile.coverageControl,
   -- the 132-case, twice-executed `ix_aggr` activation matrix, kept out of the
   -- primary suite and independent of the large environment
-  .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit
+  .runner "aggregate-activation" (.manual "a diagnostic matrix (132 cases, run twice)") Tests.Aggr.activationAudit,
+  -- Compression CLI setup and proof-rejection checks, run explicitly.
+  .runner "compression-cli" (.manual "compression CLI setup and proof-rejection checks; needs `lake build ix`") (do
+    Tests.CompressionCli.run
+    return 0)
 ]
 
 /-- The entries that must stay registered once, in their tier

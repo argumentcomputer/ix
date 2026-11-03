@@ -62,7 +62,7 @@ extern "C" fn rs_aiur_aggregate_expected(
 }
 
 /// `AiurSystem.aggregateSubtreePlan`: the plan cut into `subtrees` for
-/// `ix prove --lanes`. Rows in post-order: `[0, slot, ids…]` for a subtree
+/// `ix prove --ixe --ixes`. Rows in post-order: `[0, slot, ids…]` for a subtree
 /// (its root slot, then the manifest ids of the shards under it, sorted;
 /// one id when the subtree is a raw leaf) and `[1, slot, left, right]` for
 /// each join above the frontier, the root last. A tree too small to cut
@@ -168,13 +168,14 @@ extern "C" fn rs_aiur_stage2_aggregate(
   verify_only: bool,
   subtree_code: LeanNat<LeanBorrowed<'_>>,
   binding_proof_path: LeanString<LeanBorrowed<'_>>,
+  fresh: bool,
 ) -> LeanExcept<LeanOwned> {
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let reprove_slot =
       lean_unbox_nat_as_usize(reprove_slot_code.inner()).checked_sub(1);
     let subtree = lean_unbox_nat_as_usize(subtree_code.inner()).checked_sub(1);
     let binding_proof =
-      super::lanes::read_binding_proof(binding_proof_path.as_str())?;
+      super::multi_gpu::read_binding_proof(binding_proof_path.as_str())?;
     run(RunConfig {
       ixvm_system: ixvm_system.get(),
       aggr_system: aggr_system.get(),
@@ -191,6 +192,7 @@ extern "C" fn rs_aiur_stage2_aggregate(
       plan_only,
       cache_fri_bytes: cache_fri_bytes.as_bytes(),
       use_cache,
+      fresh,
       write_outputs,
       trace_shards,
       range_width: lean_unbox_nat_as_usize(range_width.inner()),
