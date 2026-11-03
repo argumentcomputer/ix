@@ -152,6 +152,190 @@ def seedCorePreludeIfMissing (env : IxElabEnv) (modIdx : ModuleIndex) : IxElabEn
     }
     env := registerCanonicalInductiveBlock env #[(iv, #[cRefl])]
 
+  -- 5b. Core Logical Connectives (`True`, `False`, `Not`, `Ne`, `And`, `Or`, `Iff`, `Exists`)
+  let prop := Expr.mkProp
+  let truePropName := Name.simple "True"
+  if !env.contains truePropName && !modIdx.declByName.contains truePropName then
+    let introName := Name.mkStr2 "True" "intro"
+    let iv : Ix.InductiveVal := {
+      cnst := { name := truePropName, levelParams := #[], type := prop }
+      numParams := 0, numIndices := 0, all := #[truePropName]
+      ctors := #[introName], numNested := 0
+      isRec := false, isUnsafe := false, isReflexive := false
+    }
+    let cIntro : Ix.ConstructorVal := {
+      cnst := { name := introName, levelParams := #[], type := Expr.mkConst truePropName #[] }
+      induct := truePropName, cidx := 0, numParams := 0, numFields := 0, isUnsafe := false
+    }
+    env := registerCanonicalInductiveBlock env #[(iv, #[cIntro])]
+
+  let falsePropName := Name.simple "False"
+  if !env.contains falsePropName && !modIdx.declByName.contains falsePropName then
+    let iv : Ix.InductiveVal := {
+      cnst := { name := falsePropName, levelParams := #[], type := prop }
+      numParams := 0, numIndices := 0, all := #[falsePropName]
+      ctors := #[], numNested := 0
+      isRec := false, isUnsafe := false, isReflexive := false
+    }
+    env := registerCanonicalInductiveBlock env #[(iv, #[])]
+
+  let notName := Name.simple "Not"
+  if !env.contains notName && !modIdx.declByName.contains notName then
+    env := env.addConst (.defnInfo {
+      cnst := {
+        name := notName, levelParams := #[]
+        type := Expr.mkForallE (Name.simple "a") prop prop .default
+      }
+      value := Expr.mkLam (Name.simple "a") prop
+        (Expr.mkForallE Name.mkAnon (Expr.mkBVar 0) (Expr.mkConst falsePropName #[]) .default) .default
+      hints := .abbrev, safety := .safe, all := #[notName]
+    })
+
+  let neName := Name.simple "Ne"
+  if !env.contains neName && !modIdx.declByName.contains neName then
+    let neType :=
+      Expr.mkForallE (Name.simple "α") sortU
+        (Expr.mkForallE (Name.simple "a") (Expr.mkBVar 0)
+          (Expr.mkForallE (Name.simple "b") (Expr.mkBVar 1) prop .default) .default)
+        .implicit
+    let neVal :=
+      Expr.mkLam (Name.simple "α") sortU
+        (Expr.mkLam (Name.simple "a") (Expr.mkBVar 0)
+          (Expr.mkLam (Name.simple "b") (Expr.mkBVar 1)
+            (Expr.mkApp (Expr.mkConst notName #[])
+              (Expr.mkAppN (Expr.mkConst eqName #[uLvl]) #[Expr.mkBVar 2, Expr.mkBVar 1, Expr.mkBVar 0]))
+            .default) .default) .implicit
+    env := env.addConst (.defnInfo {
+      cnst := { name := neName, levelParams := #[uName], type := neType }
+      value := neVal, hints := .abbrev, safety := .safe, all := #[neName]
+    })
+
+  let andName := Name.simple "And"
+  if !env.contains andName && !modIdx.declByName.contains andName then
+    let andIntro := Name.mkStr2 "And" "intro"
+    let andLeft  := Name.mkStr2 "And" "left"
+    let andRight := Name.mkStr2 "And" "right"
+    let andType  := Expr.mkForallE (Name.simple "a") prop (Expr.mkForallE (Name.simple "b") prop prop .default) .default
+    let andApp   := Expr.mkAppN (Expr.mkConst andName #[]) #[Expr.mkBVar 3, Expr.mkBVar 2]
+    let andIntroTy :=
+      Expr.mkForallE (Name.simple "a") prop
+        (Expr.mkForallE (Name.simple "b") prop
+          (Expr.mkForallE (Name.simple "left") (Expr.mkBVar 1)
+            (Expr.mkForallE (Name.simple "right") (Expr.mkBVar 1) andApp .default) .default)
+          .implicit) .implicit
+    let iv : Ix.InductiveVal := {
+      cnst := { name := andName, levelParams := #[], type := andType }
+      numParams := 2, numIndices := 0, all := #[andName]
+      ctors := #[andIntro], numNested := 0
+      isRec := false, isUnsafe := false, isReflexive := false
+    }
+    let cIntro : Ix.ConstructorVal := {
+      cnst := { name := andIntro, levelParams := #[], type := andIntroTy }
+      induct := andName, cidx := 0, numParams := 2, numFields := 2, isUnsafe := false
+    }
+    env := registerCanonicalInductiveBlock env #[(iv, #[cIntro])]
+    for p in generateStructProjections iv cIntro #[andLeft, andRight] true do
+      env := env.addConst (.defnInfo p)
+    env := env.addStructInfo {
+      structName := andName, ctorName := andIntro, numParams := 2
+      fields := #[
+        { fieldName := Name.simple "left",  projFnName := andLeft,  fieldIdx := 0 },
+        { fieldName := Name.simple "right", projFnName := andRight, fieldIdx := 1 }
+      ]
+    }
+
+  let orName := Name.simple "Or"
+  if !env.contains orName && !modIdx.declByName.contains orName then
+    let orInl := Name.mkStr2 "Or" "inl"
+    let orInr := Name.mkStr2 "Or" "inr"
+    let orType := Expr.mkForallE (Name.simple "a") prop (Expr.mkForallE (Name.simple "b") prop prop .default) .default
+    let orApp  := Expr.mkAppN (Expr.mkConst orName #[]) #[Expr.mkBVar 2, Expr.mkBVar 1]
+    let inlTy :=
+      Expr.mkForallE (Name.simple "a") prop
+        (Expr.mkForallE (Name.simple "b") prop
+          (Expr.mkForallE (Name.simple "h") (Expr.mkBVar 1) orApp .default) .implicit) .implicit
+    let inrTy :=
+      Expr.mkForallE (Name.simple "a") prop
+        (Expr.mkForallE (Name.simple "b") prop
+          (Expr.mkForallE (Name.simple "h") (Expr.mkBVar 0) orApp .default) .implicit) .implicit
+    let iv : Ix.InductiveVal := {
+      cnst := { name := orName, levelParams := #[], type := orType }
+      numParams := 2, numIndices := 0, all := #[orName]
+      ctors := #[orInl, orInr], numNested := 0
+      isRec := false, isUnsafe := false, isReflexive := false
+    }
+    let cInl : Ix.ConstructorVal := {
+      cnst := { name := orInl, levelParams := #[], type := inlTy }
+      induct := orName, cidx := 0, numParams := 2, numFields := 1, isUnsafe := false
+    }
+    let cInr : Ix.ConstructorVal := {
+      cnst := { name := orInr, levelParams := #[], type := inrTy }
+      induct := orName, cidx := 1, numParams := 2, numFields := 1, isUnsafe := false
+    }
+    env := registerCanonicalInductiveBlock env #[(iv, #[cInl, cInr])]
+
+  let iffName := Name.simple "Iff"
+  if !env.contains iffName && !modIdx.declByName.contains iffName then
+    let iffIntro := Name.mkStr2 "Iff" "intro"
+    let iffMp    := Name.mkStr2 "Iff" "mp"
+    let iffMpr   := Name.mkStr2 "Iff" "mpr"
+    let iffType  := Expr.mkForallE (Name.simple "a") prop (Expr.mkForallE (Name.simple "b") prop prop .default) .default
+    let iffApp   := Expr.mkAppN (Expr.mkConst iffName #[]) #[Expr.mkBVar 3, Expr.mkBVar 2]
+    let mpDom    := Expr.mkForallE Name.mkAnon (Expr.mkBVar 1) (Expr.mkBVar 1) .default
+    let mprDom   := Expr.mkForallE Name.mkAnon (Expr.mkBVar 1) (Expr.mkBVar 3) .default
+    let iffIntroTy :=
+      Expr.mkForallE (Name.simple "a") prop
+        (Expr.mkForallE (Name.simple "b") prop
+          (Expr.mkForallE (Name.simple "mp") mpDom
+            (Expr.mkForallE (Name.simple "mpr") mprDom iffApp .default) .default)
+          .implicit) .implicit
+    let iv : Ix.InductiveVal := {
+      cnst := { name := iffName, levelParams := #[], type := iffType }
+      numParams := 2, numIndices := 0, all := #[iffName]
+      ctors := #[iffIntro], numNested := 0
+      isRec := false, isUnsafe := false, isReflexive := false
+    }
+    let cIntro : Ix.ConstructorVal := {
+      cnst := { name := iffIntro, levelParams := #[], type := iffIntroTy }
+      induct := iffName, cidx := 0, numParams := 2, numFields := 2, isUnsafe := false
+    }
+    env := registerCanonicalInductiveBlock env #[(iv, #[cIntro])]
+    for p in generateStructProjections iv cIntro #[iffMp, iffMpr] true do
+      env := env.addConst (.defnInfo p)
+    env := env.addStructInfo {
+      structName := iffName, ctorName := iffIntro, numParams := 2
+      fields := #[
+        { fieldName := Name.simple "mp",  projFnName := iffMp,  fieldIdx := 0 },
+        { fieldName := Name.simple "mpr", projFnName := iffMpr, fieldIdx := 1 }
+      ]
+    }
+
+  let existsName := Name.simple "Exists"
+  if !env.contains existsName && !modIdx.declByName.contains existsName then
+    let exIntro := Name.mkStr2 "Exists" "intro"
+    let predDom := Expr.mkForallE Name.mkAnon (Expr.mkBVar 0) prop .default
+    let exType  :=
+      Expr.mkForallE (Name.simple "α") sortU
+        (Expr.mkForallE (Name.simple "p") predDom prop .default) .implicit
+    let exApp := Expr.mkAppN (Expr.mkConst existsName #[uLvl]) #[Expr.mkBVar 3, Expr.mkBVar 2]
+    let exIntroTy :=
+      Expr.mkForallE (Name.simple "α") sortU
+        (Expr.mkForallE (Name.simple "p") predDom
+          (Expr.mkForallE (Name.simple "w") (Expr.mkBVar 1)
+            (Expr.mkForallE (Name.simple "h") (Expr.mkApp (Expr.mkBVar 1) (Expr.mkBVar 0)) exApp .default) .default)
+          .implicit) .implicit
+    let iv : Ix.InductiveVal := {
+      cnst := { name := existsName, levelParams := #[uName], type := exType }
+      numParams := 2, numIndices := 0, all := #[existsName]
+      ctors := #[exIntro], numNested := 0
+      isRec := false, isUnsafe := false, isReflexive := false
+    }
+    let cIntro : Ix.ConstructorVal := {
+      cnst := { name := exIntro, levelParams := #[uName], type := exIntroTy }
+      induct := existsName, cidx := 0, numParams := 2, numFields := 2, isUnsafe := false
+    }
+    env := registerCanonicalInductiveBlock env #[(iv, #[cIntro])]
+
   -- 6. `Prod.{u, v} (α : Type u) (β : Type v) : Type (max u v)` (`Prod.mk`, `Prod.fst`, `Prod.snd`)
   let prodName := Name.simple "Prod"
   if !env.contains prodName && !modIdx.declByName.contains prodName then

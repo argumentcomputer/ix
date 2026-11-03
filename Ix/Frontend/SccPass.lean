@@ -248,23 +248,15 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
               else refs
             | _ => refs
           refs
-      -- 9. Tactic sequence: handle `intro`, `have`, `let`, `cases`/`induction` alternatives
+      -- 9. Tactic sequence: handle `intro`, `funext`, `ext`, `have`, `let`, `cases`/`induction`/`case` alternatives
       else if kind == SyntaxKind.tacticSeq then
         let (_, refs') := args.foldl (fun (loc, r) tac =>
           let tk := Syntax.getKind tac
-          if tk == SyntaxKind.tacticIntro then
+          if tk == SyntaxKind.tacticIntro || tk == SyntaxKind.tacticFunext || tk == SyntaxKind.tacticExt then
             let ids := (Syntax.getArgs (Syntax.getArg tac 1)).toList.map Syntax.getId
             let loc' := ids.foldl (fun s id => if Name.isAnonymous id then s else s.insert id) loc
             (loc', r)
-          else if tk == SyntaxKind.tacticHave then
-            let hId := Syntax.getId (Syntax.getArg tac 1)
-            let ty := Syntax.getArg tac 3
-            let val := Syntax.getArg tac 5
-            let r := scanRec loc ty r
-            let r := scanRec loc val r
-            let loc' := if Name.isAnonymous hId then loc else loc.insert hId
-            (loc', r)
-          else if tk == SyntaxKind.tacticLet then
+          else if tk == SyntaxKind.tacticHave || tk == SyntaxKind.tacticLet then
             let lId := Syntax.getId (Syntax.getArg tac 1)
             let optTy := Syntax.getArg tac 2
             let val := Syntax.getArg tac 4
@@ -276,12 +268,18 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
             (loc, scanRec loc tac r)
         ) (locals, refs)
         refs'
-      else if kind == SyntaxKind.tacticAlt then
-        -- `| tag x y => tacSeq`
+      else if kind == SyntaxKind.tacticAlt || kind == SyntaxKind.tacticCase then
+        -- `| tag x y => tacSeq` or `case tag x y => tacSeq`
         let boundIds := (Syntax.getArgs (args.getD 2 .missing)).toList.map Syntax.getId
         let locals' := boundIds.foldl (fun s id => if Name.isAnonymous id then s else s.insert id) locals
         let seq := args.getD 4 .missing
         scanRec locals' seq refs
+      else if kind == SyntaxKind.tacticRw then
+        -- `rw [rules] [at hyp]`: scan only `rules` (`args[2]`), since `hyp` is a local hypothesis
+        scanRec locals (args.getD 2 .missing) refs
+      else if kind == SyntaxKind.tacticSimp || kind == SyntaxKind.tacticDSimp then
+        -- `simp [rules] [at hyp]`: scan only `rules` (`args[1]`)
+        scanRec locals (args.getD 1 .missing) refs
       else
         -- Default: scan all child syntax nodes with the same `locals`
         args.toList.foldl (fun acc child =>

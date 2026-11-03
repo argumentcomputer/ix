@@ -196,7 +196,7 @@ def mkLambdaFVarsList (lctx : LocalContext) : List Ix.Name → Ix.Expr → Ix.Ex
       match decl.value? with
       | some val =>
         let letKind := decl.letKind?.getD .value
-        let nonDep := !containsFVar fvarId acc
+        let nonDep := decl.nonDep || !containsFVar fvarId acc
         Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
       | none =>
         Expr.mkLamContract bName decl.type absBody decl.binderInfo decl.contract
@@ -224,7 +224,7 @@ def mkForallFVarsList (lctx : LocalContext) (retContract : Ixon.ValueContract) :
       match decl.value? with
       | some val =>
         let letKind := decl.letKind?.getD .value
-        let nonDep := !containsFVar fvarId acc
+        let nonDep := decl.nonDep || !containsFVar fvarId acc
         Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
       | none =>
         Expr.mkForallContract bName decl.type absBody decl.binderInfo decl.contract resContract
@@ -428,7 +428,15 @@ def instantiateMVarsCore : Nat → Ix.Expr → IxElabM Ix.Expr
       match st.mctx.getExprAssignment? id with
       | some val =>
         if hasExprOrLevelMVar val then instantiateMVarsCore fuel val else return val
-      | none     => return e
+      | none =>
+        match st.mctx.getDelayedAssignment? id with
+        | some d =>
+          let inner ← instantiateMVarsCore fuel (Expr.mkMVar d.pendingMVar)
+          let closed := mkLambdaFVarsList d.lctx d.fvars inner
+          if !hasExprOrLevelMVar inner then
+            modifyMCtx (·.assignExpr id closed)
+          return closed
+        | none => return e
     | .app f a _ =>
       let f' ← instantiateMVarsCore fuel f
       let a' ← instantiateMVarsCore fuel a
@@ -456,7 +464,7 @@ def instantiateMVarsCore : Nat → Ix.Expr → IxElabM Ix.Expr
 /-- Instantiate assigned expression and universe level metavariables throughout `e`. -/
 def instantiateMVars (fuel : Nat) (e : Ix.Expr) : IxElabM Ix.Expr := do
   let st ← get
-  if st.mctx.exprAssigns.isEmpty && st.mctx.lvlAssigns.isEmpty then return e
+  if st.mctx.exprAssigns.isEmpty && st.mctx.lvlAssigns.isEmpty && st.mctx.delayedAssigns.isEmpty then return e
   if !hasExprOrLevelMVar e then return e
   instantiateMVarsCore fuel e
 
@@ -1115,6 +1123,32 @@ def mkConstWithFreshMVarLevels (constName : Ix.Name) : IxElabM (Ix.Expr × Ix.Ex
       let expr := Expr.mkConst constName us
       let ty := substExprLevelParams cnst.levelParams us cnst.type
       return (expr, ty)
+
+/-- Return `ty` immediately if it is already a `.forallE`, otherwise call `whnf fuel ty`. -/
+def whnfForall (fuel : Nat) (ty : Ix.Expr) : IxElabM Ix.Expr :=
+  match stripMData ty with
+  | .forallE _ _ _ _ _ => return ty
+  | _                  => whnf fuel ty
+
+/-- Insert fresh metavariables for leading `.implicit`, `.strictImplicit`, and `.instImplicit`
+    binders of `(fn, fnType)`, returning `(appliedFn, revInstGoals, remainingFnType)`. -/
+def insertImplicitArgs : Nat → Ix.Expr → Ix.Expr → List Ix.Expr →
+    IxElabM (Ix.Expr × List Ix.Expr × Ix.Expr)
+  | 0, fn, fnTy, instGoals => return (fn, instGoals, fnTy)
+  | fuel + 1, fn, fnTy, instGoals => do
+    let fnTyWhnf ← whnfForall 32 fnTy
+    match stripMData fnTyWhnf with
+    | .forallE nm dom body bi _ =>
+      if bi == .implicit || bi == .strictImplicit || bi == .instImplicit then
+        let mvar ← mkFreshExprMVar dom nm
+        let fn' := Expr.mkApp fn mvar
+        let body' := instantiate1 body mvar
+        let instGoals' := if bi == .instImplicit then mvar :: instGoals else instGoals
+        insertImplicitArgs fuel fn' body' instGoals'
+      else
+        return (fn, instGoals, fnTyWhnf)
+    | _ =>
+      return (fn, instGoals, fnTyWhnf)
 
 /-- Open all leading `.forallE` binders of `fnType` as fresh metavariables, returning
     `(appliedFn, instGoals, resultType)` where `instGoals` are `[...]` instance subgoals. -/

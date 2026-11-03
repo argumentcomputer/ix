@@ -25,7 +25,7 @@ def arrowPrec : Nat := 25
 def defaultTokenSymbols : List String :=
   ["(", ")", "{", "}", "[", "]", "⦃", "⦄", "{{", "}}", "⟨", "⟩",
    ":=", "::", ":", ";", ",", ".", "..", "|", "@", "_",
-   "→", "->", "←", "<-", "↔", "<->", "↦", "=>", "∀", "λ",
+   "→", "->", "←", "<-", "↔", "<->", "↦", "=>", "<;>", "·", "∀", "λ",
    "+", "-", "*", "/", "%", "^", "++",
    "==", "!=", "≠", "<=", "≤", "<", ">=", "≥", ">", "=",
    "&&", "||", "∧", "/\\", "∨", "\\/", "¬",
@@ -450,12 +450,32 @@ def simpleOrBracketedBinderFn (termRec : ParserFn) : ParserFn := fun ctx s =>
         s.pushSyntax (Syntax.mkNode SyntaxKind.explicitBinder
           #[emptyPref, Syntax.mkNullNode #[idStx], emptyVPref, Syntax.mkNullNode #[]])
 
-/-- Parse a tactic sequence, structurally recursive on `fuel : Nat`. -/
-def tacticSeqStep (termRec : ParserFn) : Nat → ParserFn
+/-- True if `tok?` starts a sibling `·` / `case` focus block (used to end a focused tactic sequence). -/
+def isFocusOrCaseToken : Option Ix.Syntax → Bool
+  | some (.atom _ "·") | some (.atom _ ".") => true
+  | some (.ident _ _ (.str (.anonymous _) "case" _) _) | some (.atom _ "case") => true
+  | _ => false
+
+/-- Parse a tactic sequence or single combinator step, structurally recursive on `fuel : Nat`. -/
+def tacticSeqCore (termRec : ParserFn) (stopAtFocus : Bool) (singleStep : Bool) : Nat → ParserFn
   | 0 => fun _ s => s.mkUnexpectedError "parser fuel exhausted in tactic"
   | fuel + 1 =>
     let term0 := withPrecFn 0 termRec
     let termArg := withPrecFn argPrec termRec
+    let sameLineBinderIdent : ParserFn := fun c st =>
+      let (t?, st) := peekToken c st
+      match t? with
+      | some tok =>
+        if hasLeadingNewline tok then st.mkUnexpectedError "newline after tactic binder"
+        else binderIdentFn c st
+      | none => st.mkUnexpectedError "end of tactic binder"
+    let sameLineTerm0 : ParserFn := fun c st =>
+      let (t?, st) := peekToken c st
+      match t? with
+      | some tok =>
+        if hasLeadingNewline tok then st.mkUnexpectedError "newline before optional tactic term"
+        else term0 c st
+      | none => st.mkUnexpectedError "end of optional tactic term"
     let tacticAlt : ParserFn := fun ctx s =>
       let iniSz := s.stackSize
       let s := symbolFn "|" ctx s
@@ -463,23 +483,57 @@ def tacticSeqStep (termRec : ParserFn) : Nat → ParserFn
       let s := identFn ctx s
       let s := manyFn binderIdentFn ctx s
       let s := orelseFn (symbolFn "=>") (symbolFn "↦") ctx s
-      let s := tacticSeqStep termRec fuel ctx s
+      let s := tacticSeqCore termRec false false fuel ctx s
       s.mkNode SyntaxKind.tacticAlt iniSz
     let oneTactic : ParserFn := fun ctx s =>
       let (tok?, s) := peekToken ctx s
+      let iniSz := s.stackSize
       match tok? with
+      | some (.atom _ "(") =>
+        let s := tokenFn ctx s
+        let s := tacticSeqCore termRec false false fuel ctx s
+        let s := symbolFn ")" ctx s
+        s.mkNode SyntaxKind.tacticParen iniSz
+      | some (.atom _ "·") | some (.atom _ ".") =>
+        let s := tokenFn ctx s
+        let s := tacticSeqCore termRec true false fuel ctx s
+        s.mkNode SyntaxKind.tacticFocus iniSz
       | some (.ident _ _ (.str (.anonymous _) kw _) _) | some (.atom _ kw) =>
-        let iniSz := s.stackSize
         match kw with
+        | "case" =>
+          let s := tokenFn ctx s
+          let s := identFn ctx s
+          let s := manyFn sameLineBinderIdent ctx s
+          let s := orelseFn (symbolFn "=>") (symbolFn "↦") ctx s
+          let s := tacticSeqCore termRec true false fuel ctx s
+          s.mkNode SyntaxKind.tacticCase iniSz
+        | "first" =>
+          let s := tokenFn ctx s
+          let firstBranch : ParserFn := fun c st =>
+            let st := symbolFn "|" c st
+            if st.hasError then st else
+            let st := st.popSyntax
+            tacticSeqCore termRec false false fuel c st
+          let s := many1Fn firstBranch ctx s
+          s.mkNode SyntaxKind.tacticFirst iniSz
+        | "try" =>
+          let s := tokenFn ctx s
+          let s := tacticSeqCore termRec stopAtFocus true fuel ctx s
+          s.mkNode SyntaxKind.tacticTry iniSz
+        | "repeat" =>
+          let s := tokenFn ctx s
+          let s := tacticSeqCore termRec stopAtFocus true fuel ctx s
+          s.mkNode SyntaxKind.tacticRepeat iniSz
+        | "all_goals" =>
+          let s := tokenFn ctx s
+          let s := tacticSeqCore termRec stopAtFocus true fuel ctx s
+          s.mkNode SyntaxKind.tacticAllGoals iniSz
+        | "any_goals" =>
+          let s := tokenFn ctx s
+          let s := tacticSeqCore termRec stopAtFocus true fuel ctx s
+          s.mkNode SyntaxKind.tacticAnyGoals iniSz
         | "intro" | "intros" =>
           let s := tokenFn ctx s
-          let sameLineBinderIdent : ParserFn := fun c st =>
-            let (t?, st) := peekToken c st
-            match t? with
-            | some tok =>
-              if hasLeadingNewline tok then st.mkUnexpectedError "newline after intro"
-              else binderIdentFn c st
-            | none => st.mkUnexpectedError "end of intro"
           let s := manyFn sameLineBinderIdent ctx s
           s.mkNode SyntaxKind.tacticIntro iniSz
         | "exact" =>
@@ -503,12 +557,59 @@ def tacticSeqStep (termRec : ParserFn) : Nat → ParserFn
         | "assumption" =>
           let s := tokenFn ctx s
           s.mkNode SyntaxKind.tacticAssumption iniSz
+        | "trivial" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticTrivial iniSz
+        | "contradiction" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticContradiction iniSz
+        | "exfalso" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticExfalso iniSz
+        | "done" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticDone iniSz
         | "constructor" =>
           let s := tokenFn ctx s
           s.mkNode SyntaxKind.tacticConstructor iniSz
-        | "sorry" =>
+        | "left" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticLeft iniSz
+        | "right" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticRight iniSz
+        | "split" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticSplit iniSz
+        | "exists" | "use" =>
+          let s := tokenFn ctx s
+          let s := sepBy1Fn term0 (symbolFn ",") false ctx s
+          s.mkNode SyntaxKind.tacticExists iniSz
+        | "symm" | "symmetry" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticSymm iniSz
+        | "trans" | "transitivity" =>
+          let s := tokenFn ctx s
+          let s := optionalFn sameLineTerm0 ctx s
+          s.mkNode SyntaxKind.tacticTrans iniSz
+        | "congr" =>
+          let s := tokenFn ctx s
+          s.mkNode SyntaxKind.tacticCongr iniSz
+        | "funext" =>
+          let s := tokenFn ctx s
+          let s := manyFn sameLineBinderIdent ctx s
+          s.mkNode SyntaxKind.tacticFunext iniSz
+        | "ext" =>
+          let s := tokenFn ctx s
+          let s := manyFn sameLineBinderIdent ctx s
+          s.mkNode SyntaxKind.tacticExt iniSz
+        | "sorry" | "admit" =>
           let s := tokenFn ctx s
           s.mkNode SyntaxKind.tacticSorry iniSz
+        | "show" =>
+          let s := tokenFn ctx s
+          let s := term0 ctx s
+          s.mkNode SyntaxKind.tacticShow iniSz
         | "change" =>
           let s := tokenFn ctx s
           let s := term0 ctx s
@@ -523,6 +624,7 @@ def tacticSeqStep (termRec : ParserFn) : Nat → ParserFn
             st.mkNode SyntaxKind.tacticRwRule rSz
           let s := sepBy1Fn rwRule (symbolFn ",") false ctx s
           let s := symbolFn "]" ctx s
+          let s := optionalFn (seqFn (nonReservedSymbolFn "at") identFn) ctx s
           s.mkNode SyntaxKind.tacticRw iniSz
         | "simp" =>
           let s := tokenFn ctx s
@@ -530,12 +632,25 @@ def tacticSeqStep (termRec : ParserFn) : Nat → ParserFn
             let st := symbolFn "[" c st
             let st := sepByFn term0 (symbolFn ",") false c st
             symbolFn "]" c st) ctx s
+          let s := optionalFn (seqFn (nonReservedSymbolFn "at") identFn) ctx s
           s.mkNode SyntaxKind.tacticSimp iniSz
+        | "dsimp" =>
+          let s := tokenFn ctx s
+          let s := optionalFn (fun c st =>
+            let st := symbolFn "[" c st
+            let st := sepByFn term0 (symbolFn ",") false c st
+            symbolFn "]" c st) ctx s
+          let s := optionalFn (seqFn (nonReservedSymbolFn "at") identFn) ctx s
+          s.mkNode SyntaxKind.tacticDSimp iniSz
         | "have" =>
           let s := tokenFn ctx s
-          let s := binderIdentFn ctx s
-          let s := symbolFn ":" ctx s
-          let s := term0 ctx s
+          let (tNext?, s) := peekToken ctx s
+          let s := match tNext? with
+            | some (.atom _ ":") | some (.atom _ ":=") =>
+              s.pushSyntax (Syntax.mkSimpleIdent (Name.simple "this"))
+            | _ =>
+              binderIdentFn ctx s
+          let s := optionalFn (seqFn (symbolFn ":") term0) ctx s
           let s := symbolFn ":=" ctx s
           let s := term0 ctx s
           s.mkNode SyntaxKind.tacticHave iniSz
@@ -560,15 +675,40 @@ def tacticSeqStep (termRec : ParserFn) : Nat → ParserFn
           s.mkUnexpectedError s!"expected tactic, got '{kw}'"
       | _ =>
         s.mkUnexpectedError "expected tactic"
-    fun ctx s =>
+    let stepTactic : ParserFn := fun ctx s =>
       let iniSz := s.stackSize
       let s := oneTactic ctx s
       if s.hasError then s else
-      let s := manyLoop (fun c st =>
-        let st := optionalFn (symbolFn ";") c st
-        let st := st.popSyntax
-        oneTactic c st) ctx s (ctx.inputCtx.size - s.pos + 1)
-      s.mkNode SyntaxKind.tacticSeq iniSz
+      let (nextTok?, s) := peekToken ctx s
+      match nextTok? with
+      | some (.atom _ "<;>") =>
+        let s := tokenFn ctx s
+        let s := tacticSeqCore termRec stopAtFocus true fuel ctx s
+        s.mkNode SyntaxKind.tacticAndThen iniSz
+      | _ => s
+    if singleStep then
+      stepTactic
+    else
+      fun ctx s =>
+        let iniSz := s.stackSize
+        let s := stepTactic ctx s
+        if s.hasError then s else
+        let s := manyLoop (fun c st =>
+          let st := optionalFn (symbolFn ";") c st
+          let st := st.popSyntax
+          if stopAtFocus then
+            let (t?, st) := peekToken c st
+            if isFocusOrCaseToken t? then
+              st.mkUnexpectedError "end of focused tactic block"
+            else
+              stepTactic c st
+          else
+            stepTactic c st) ctx s (ctx.inputCtx.size - s.pos + 1)
+        s.mkNode SyntaxKind.tacticSeq iniSz
+
+/-- Parse a tactic sequence, structurally recursive on `fuel : Nat`. -/
+def tacticSeqStep (termRec : ParserFn) (fuel : Nat) : ParserFn :=
+  tacticSeqCore termRec false false fuel
 
 /-- Parse a `| pat1, pat2 => rhs` branch of a `match` expression. -/
 def matchAltFn (termRec : ParserFn) : ParserFn := fun ctx s =>

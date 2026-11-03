@@ -29,6 +29,7 @@ public import Ix.Frontend.Elab.Monad
 public import Ix.Frontend.Elab.Meta
 public import Ix.Frontend.CanonBlock
 public import Ix.Frontend.AuxGen
+public import Ix.Frontend.Elab.Tactic
 public import Ix.Frontend.Elab.Term
 public import Ix.Frontend.Elab.Command
 public import Ix.Claim

@@ -183,6 +183,7 @@ structure LocalDecl where
   binderInfo : Lean.BinderInfo     := .default
   contract   : Ixon.BinderContract := default
   letKind?   : Option Ixon.LetKind := none
+  nonDep     : Bool                := false
   deriving Repr, Inhabited
 
 /-- Pure local context storing local declarations in reverse telescope order (`revDecls`, most-recent first). -/
@@ -224,11 +225,20 @@ structure MetavarDecl where
   type     : Ix.Expr
   deriving Repr, Inhabited
 
+/-- Delayed metavariable assignment `?m := mkLambdaFVarsList lctx fvars ?pendingMVar`,
+    enabling non-continuation `intro`, `have`, and `let` tactics over `TacticState.goals`. -/
+structure DelayedMVarAssign where
+  lctx        : LocalContext
+  fvars       : List Ix.Name
+  pendingMVar : Ix.Name
+  deriving Repr, Inhabited
+
 /-- Pure metavariable context tracking expression and universe level metavariables. -/
 structure MetavarContext where
-  decls       : NameMap MetavarDecl := NameMap.empty
-  exprAssigns : NameMap Ix.Expr     := NameMap.empty
-  lvlAssigns  : NameMap Ix.Level    := NameMap.empty
+  decls          : NameMap MetavarDecl       := NameMap.empty
+  exprAssigns    : NameMap Ix.Expr           := NameMap.empty
+  lvlAssigns     : NameMap Ix.Level          := NameMap.empty
+  delayedAssigns : NameMap DelayedMVarAssign := NameMap.empty
   deriving Repr, Inhabited
 
 namespace MetavarContext
@@ -237,35 +247,48 @@ def empty : MetavarContext := {}
 
 @[inline] def bindMCtx (mctx : MetavarContext) (k : MetavarContext → α) : α :=
   match mctx with
-  | ⟨decls, exprAssigns, lvlAssigns⟩ =>
+  | ⟨decls, exprAssigns, lvlAssigns, delayedAssigns⟩ =>
     decls.bindMap fun decls' =>
     exprAssigns.bindMap fun exprAssigns' =>
     lvlAssigns.bindMap fun lvlAssigns' =>
-      k ⟨decls', exprAssigns', lvlAssigns'⟩
+    delayedAssigns.bindMap fun delayedAssigns' =>
+      k ⟨decls', exprAssigns', lvlAssigns', delayedAssigns'⟩
 
 def addExprMVarDecl (mctx : MetavarContext) (d : MetavarDecl) : MetavarContext :=
   match mctx with
-  | ⟨decls, exprAssigns, lvlAssigns⟩ =>
+  | ⟨decls, exprAssigns, lvlAssigns, delayedAssigns⟩ =>
     (decls.insert d.mvarId d).bindMap fun decls' =>
-      ⟨decls', exprAssigns, lvlAssigns⟩
+      ⟨decls', exprAssigns, lvlAssigns, delayedAssigns⟩
 
 def assignExpr (mctx : MetavarContext) (mvarId : Ix.Name) (val : Ix.Expr) : MetavarContext :=
   match mctx with
-  | ⟨decls, exprAssigns, lvlAssigns⟩ =>
+  | ⟨decls, exprAssigns, lvlAssigns, delayedAssigns⟩ =>
     (exprAssigns.insert mvarId val).bindMap fun exprAssigns' =>
-      ⟨decls, exprAssigns', lvlAssigns⟩
+      ⟨decls, exprAssigns', lvlAssigns, delayedAssigns⟩
 
 def assignLevel (mctx : MetavarContext) (uvarId : Ix.Name) (lvl : Ix.Level) : MetavarContext :=
   match mctx with
-  | ⟨decls, exprAssigns, lvlAssigns⟩ =>
+  | ⟨decls, exprAssigns, lvlAssigns, delayedAssigns⟩ =>
     (lvlAssigns.insert uvarId lvl).bindMap fun lvlAssigns' =>
-      ⟨decls, exprAssigns, lvlAssigns'⟩
+      ⟨decls, exprAssigns, lvlAssigns', delayedAssigns⟩
+
+def assignDelayed (mctx : MetavarContext) (mvarId : Ix.Name) (d : DelayedMVarAssign) : MetavarContext :=
+  match mctx with
+  | ⟨decls, exprAssigns, lvlAssigns, delayedAssigns⟩ =>
+    (delayedAssigns.insert mvarId d).bindMap fun delayedAssigns' =>
+      ⟨decls, exprAssigns, lvlAssigns, delayedAssigns'⟩
 
 def getExprAssignment? (mctx : MetavarContext) (mvarId : Ix.Name) : Option Ix.Expr :=
   mctx.exprAssigns.get? mvarId
 
 def getLevelAssignment? (mctx : MetavarContext) (uvarId : Ix.Name) : Option Ix.Level :=
   mctx.lvlAssigns.get? uvarId
+
+def getDelayedAssignment? (mctx : MetavarContext) (mvarId : Ix.Name) : Option DelayedMVarAssign :=
+  mctx.delayedAssigns.get? mvarId
+
+def isExprAssigned (mctx : MetavarContext) (mvarId : Ix.Name) : Bool :=
+  (mctx.exprAssigns.get? mvarId).isSome || (mctx.delayedAssigns.get? mvarId).isSome
 
 def findDecl? (mctx : MetavarContext) (mvarId : Ix.Name) : Option MetavarDecl :=
   mctx.decls.get? mvarId
@@ -388,12 +411,12 @@ def withLocalDecl (userName : Ix.Name) (type : Ix.Expr)
 def withLetDecl (userName : Ix.Name) (type val : Ix.Expr)
     (contract : Ixon.BinderContract := default)
     (letKind : Ixon.LetKind := .value)
-    (_nonDep : Bool := false)
+    (nonDep : Bool := false)
     (k : Ix.Name → Ix.Expr → IxElabM α) : IxElabM α := do
   let fvarId ← mkFreshName "_fvar"
   let fvarExpr := Expr.mkFVar fvarId
   let decl : LocalDecl :=
-    { fvarId, userName, type, value? := some val, contract, letKind? := some letKind }
+    { fvarId, userName, type, value? := some val, contract, letKind? := some letKind, nonDep }
   fun ctx st =>
     match ctx with
     | ⟨lctx, scope, modIdx, currDecl?, univParams, refPos?⟩ =>

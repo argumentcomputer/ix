@@ -259,6 +259,114 @@ def testStructuralRecursionAndTactics : Bool :=
     env.contains (Name.simple "str_accel_len") &&
     env.contains (Name.simple "str_accel_utf8")
 
+/-! ## 6b. Pure Tactic Engine (`Ix.Frontend.Elab.Tactic`) -/
+
+def testPureTacticEngineResult : Except String Bool :=
+  let src := "
+    def myAdd (n m : Nat) : Nat
+      | 0 => m
+      | Nat.succ k => Nat.succ (myAdd k m)
+
+    -- 1. Structured induction (`Nat.recOn`) + `rw [ih]` (`Eq.casesOn`)
+    theorem myAdd_zero_right (n : Nat) : myAdd n 0 = n := by
+      induction n with
+      | zero => rfl
+      | succ k ih => rw [ih]
+
+    -- 2. Unstructured induction + `case` focus blocks
+    theorem myAdd_zero_right_case (n : Nat) : myAdd n 0 = n := by
+      induction n
+      case zero => rfl
+      case succ k ih =>
+        rw [ih]
+        done
+
+    -- 3. `symm`, `trans`, `congr`, `rw [← h]`, and `rw [h] at hyp`
+    theorem eq_symm_trans (a b c : Nat) (h1 : a = b) (h2 : b = c) : c = a := by
+      symm
+      trans b
+      · exact h1
+      · exact h2
+
+    theorem eq_congr_succ (a b : Nat) (h : a = b) : Nat.succ a = Nat.succ b := by
+      congr
+      exact h
+
+    theorem rw_backward_and_at (P : Nat → Prop) (a b : Nat) (h : a = b) (hp : P a) : P b := by
+      rw [h] at hp
+      exact hp
+
+    theorem rw_rev (a b : Nat) (h : a = b) : b = a := by
+      rw [← h]
+
+    -- 4. Logical connectives & combinators (`·`, `<;>`, `all_goals`, `first`, `try`, `repeat`)
+    theorem and_comm_tac (P Q : Prop) (h : P ∧ Q) : Q ∧ P := by
+      cases h with
+      | intro hp hq =>
+        constructor
+        · exact hq
+        · exact hp
+
+    theorem or_comm_tac (P Q : Prop) (h : P ∨ Q) : Q ∨ P := by
+      cases h with
+      | inl hp =>
+        right
+        exact hp
+      | inr hq =>
+        left
+        exact hq
+
+    theorem comb_and_then (P : Prop) (hp : P) : P ∧ P := by
+      constructor <;> assumption
+
+    theorem comb_first_try (P Q : Prop) (hq : Q) : P ∨ Q := by
+      first
+      | left; assumption
+      | right; try rfl; assumption
+
+    -- 5. `contradiction`, `exfalso`, `trivial`, `exists`, `have`, `let`, `show`, `dsimp`, `simp`
+    theorem absurd_tac (P Q : Prop) (hp : P) (hnp : ¬ P) : Q := by
+      contradiction
+
+    theorem exfalso_tac (P : Prop) (h : False) : P := by
+      exfalso
+      exact h
+
+    theorem exists_witness : Exists (fun (n : Nat) => myAdd n 2 = 5) := by
+      exists 3
+
+    theorem have_let_show_simp (n : Nat) (h : n = 4) : myAdd 1 n = 5 := by
+      let m : Nat := 1
+      have hm : m = 1 := (by rfl)
+      show myAdd 1 n = 5
+      simp [h]
+  "
+  match compileSourceToIxon src "<tactics.ix>" IxElabEnv.empty defaultParserEnv true with
+  | .error e => .error e
+  | .ok (_stx, env, _ixonEnv, cenv) =>
+    .ok (
+      cenv.ungrounded.isEmpty &&
+      env.contains (Name.simple "myAdd_zero_right") &&
+      env.contains (Name.simple "myAdd_zero_right_case") &&
+      env.contains (Name.simple "eq_symm_trans") &&
+      env.contains (Name.simple "eq_congr_succ") &&
+      env.contains (Name.simple "rw_backward_and_at") &&
+      env.contains (Name.simple "rw_rev") &&
+      env.contains (Name.simple "and_comm_tac") &&
+      env.contains (Name.simple "or_comm_tac") &&
+      env.contains (Name.simple "comb_and_then") &&
+      env.contains (Name.simple "comb_first_try") &&
+      env.contains (Name.simple "absurd_tac") &&
+      env.contains (Name.simple "exfalso_tac") &&
+      env.contains (Name.simple "exists_witness") &&
+      env.contains (Name.simple "have_let_show_simp")
+    )
+
+def testPureTacticEngine : Bool :=
+  match testPureTacticEngineResult with
+  | .ok b => b
+  | .error _ => false
+
 /-! ## 7. Programmable Module Import Mapping (`map Name := #<hash>`) & `ElabClaim` -/
 
 def testImportMapAndElabClaim : Bool := Id.run do
@@ -736,6 +844,7 @@ def frontendSuite : TestSeq :=
     test "4. In-elaborator constructor canonicalization & tie-breaking" testConstructorCanonicalization ++
     test "5. Surgery-free AuxGen & structure projections" testAuxGenAndStructures ++
     test "6. Structural recursion (recOn), tactics & String/Nat acceleration" testStructuralRecursionAndTactics ++
+    test "6b. Pure Tactic Engine (induction, rw, cases, combinators, simp)" testPureTacticEngine ++
     test "7. Programmable module import mapping & ElabClaim verification" testImportMapAndElabClaim ++
     test "8. Kernel-level reduction of parseSource, buildModuleIndex & elabModuleSyntax"
       (kernelParseCheck && kernelScopeCheck && kernelElabCheck) ++
@@ -758,6 +867,10 @@ run_meta do
     throwError "testAuxGenAndStructures failed"
   unless testStructuralRecursionAndTactics do
     throwError "testStructuralRecursionAndTactics failed"
+  match testPureTacticEngineResult with
+  | .ok true => pure ()
+  | .ok false => throwError "testPureTacticEngine returned false"
+  | .error msg => throwError s!"testPureTacticEngine failed: {msg}"
   unless testImportMapAndElabClaim do
     throwError "testImportMapAndElabClaim failed"
   unless testFltPropositionElab do
@@ -767,7 +880,7 @@ run_meta do
   IO.println gateSummary
   unless gateOk do
     throwError "Closure Certification Gate failed!"
-  IO.println "✓ All 9 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
+  IO.println "✓ All 10 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
 
 def Tests.Ix.Frontend.runBenchmarksWithEnv (env : Lean.Environment) : IO UInt32 := do
   let stdout ← IO.getStdout
