@@ -96,6 +96,24 @@ fn copy_rows(values: &[Val]) -> Vec<Val> {
   values.to_vec()
 }
 
+/// The batch FRI parameters as five `u64` little-endian words:
+/// `log_final_poly_len`, `max_log_arity`, `num_queries`,
+/// `commit_proof_of_work_bits`, `query_proof_of_work_bits`. The verifying
+/// key does not bind them, so caches of proofs key on these bytes.
+pub fn fri_parameter_bytes(p: Parameters) -> Vec<u8> {
+  let fri = p.fri();
+  [
+    fri.log_final_poly_len,
+    fri.max_log_arity,
+    fri.num_queries,
+    fri.commit_proof_of_work_bits,
+    fri.query_proof_of_work_bits,
+  ]
+  .iter()
+  .flat_map(|&word| (word as u64).to_le_bytes())
+  .collect()
+}
+
 /// Stage-one traces ready for batch proving: host rows, plus the device
 /// record of the function circuits the GPU fills
 /// (`AIUR_GPU_TRACE=generated`), whose host matrices are empty placeholders.

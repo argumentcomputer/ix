@@ -48,7 +48,9 @@ mod tests;
 mod witness;
 #[cfg(test)]
 pub use batch::StageOne;
-pub use batch::{ShardFeed, StreamPlan, Streamed, VerifyingKey};
+pub use batch::{
+  ShardFeed, StreamPlan, Streamed, VerifyingKey, fri_parameter_bytes,
+};
 pub use rom::{RomLayout, rom_lanes};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 pub use witness::ValidatedRecord;
