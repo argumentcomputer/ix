@@ -99,8 +99,10 @@ precisely those candidates for which the resulting subject forest can produce
 a membership path. -/
 def joinStructural (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjects := Ix.AssumptionTree.join left.subjects right.subjects
+  let subjectSet := subjects.leaves.foldl (fun set addr => set.insert addr)
+    ({} : Std.HashSet Address)
   let remaining := assumptionCandidates left right |>.filter
-    (fun addr => !subjects.contains addr)
+    (fun addr => !subjectSet.contains addr)
   { ctx := left.ctx, subjects, assumptions := Ix.AssumptionTree.canonical remaining }
 
 /-- One channel-6 choice per structural-pair candidate. `some path` discharges

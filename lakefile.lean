@@ -42,19 +42,73 @@ The second Cargo build is incremental — only feature-affected crates recompile
 
 The archives are built when native targets need them. Keeping Rust linkage on
 `Ix` keeps `ix_rs` out of the certified kernel's build.
+
+Every archive contains the formal Aiur prover library (`ix-prover`), which the
+`ix` CLI runs in process. Its generated native executors are compiled from the
+certified artifacts that `ix prepare` exports, and exporting needs a built
+`ix`, so the kernels cannot be a dependency of the first build. They are an
+optional feature instead (`formalNativeArtifacts`): a build without them runs
+every formal job on the interpreter, which produces identical records, and a
+kernel only ever runs for the artifact with exactly its program fingerprint,
+so a stale kernel is never used. `ix prepare` records the exported artifacts
+in `.lake/aiur/native-kernels.env`; the next `lake build ix` links their
+kernels. The artifacts' contents are inputs of the archive's trace.
 -/
 section FFI
 
+/-- The artifact variables the generated formal kernels are compiled from. -/
+def formalNativeVariables : Array String :=
+  #["AIUR_IXVM_ARTIFACT", "AIUR_VERIFIER_ARTIFACT", "AIUR_AGGREGATION_ARTIFACT"]
+
+/-- The artifacts to compile formal native kernels from, as environment
+assignments for Cargo: all three `AIUR_*_ARTIFACT` variables when set,
+otherwise the `VAR=path` lines `ix prepare` writes to
+`.lake/aiur/native-kernels.env`. `IX_FORMAL_NATIVE=0` builds without kernels;
+`IX_FORMAL_NATIVE=1` requires them. -/
+def formalNativeArtifacts (root : FilePath) : IO (Array (String × String)) := do
+  let mode ← IO.getEnv "IX_FORMAL_NATIVE"
+  if mode == some "0" then return #[]
+  let given ← formalNativeVariables.filterMapM fun var => do
+    return (← IO.getEnv var).map (var, ·)
+  let found ← if given.size == formalNativeVariables.size then pure given
+    else if !given.isEmpty then
+      throw <| IO.userError s!"set all of {formalNativeVariables} or none of them"
+    else
+      let manifest := root / ".lake" / "aiur" / "native-kernels.env"
+      if ← manifest.pathExists then
+        let lines := (← IO.FS.readFile manifest).splitOn "\n" |>.filter (!·.isEmpty)
+        let pairs := lines.filterMap fun line => match line.splitOn "=" with
+          | [var, path] => some (var, path)
+          | _ => none
+        pure <| formalNativeVariables.filterMap fun var => pairs.find? (·.1 == var)
+      else pure #[]
+  let complete := found.size == formalNativeVariables.size
+  let present ← found.allM fun (_, path) => FilePath.pathExists path
+  if complete && present then return found
+  if mode == some "1" then
+    throw <| IO.userError "IX_FORMAL_NATIVE=1 requires the exported formal artifacts; run `ix prepare`"
+  return #[]
+
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
-def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+def cargoArgs (testFfi : Bool := false) (net : Bool := false) (formalNative : Bool := false) :
+    IO (Array String) := do
   -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA.
+  -- IX_FORMAL_COMPILED_TRACE=1 compiles CUDA trace writers for the formal
+  -- IxVM artifact (`AIUR_GPU_TRACE=compiled`); it implies CUDA and needs the
+  -- formal native artifacts.
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
   let ixCuda ← IO.getEnv "IX_CUDA"
+  let ixCompiledTrace ← IO.getEnv "IX_FORMAL_COMPILED_TRACE"
   let mut features : Array String := #[]
+  if formalNative then features := features.push "formal-native"
   if ixNoPar != some "1" then features := features.push "parallel"
   if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
     features := features.push "cuda"
+  if ixCompiledTrace == some "1" then
+    if !formalNative then
+      throw <| IO.userError "IX_FORMAL_COMPILED_TRACE=1 requires the exported formal artifacts; run `ix prepare`"
+    features := features.push "formal-compiled-trace"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
@@ -62,35 +116,49 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
 
+/-- Formal native artifacts for Cargo; a variable outside the selection is
+cleared so an unrelated shell setting cannot leak into the build. -/
+def cargoEnv (env : Array (String × String)) : Array (String × Option String) :=
+  formalNativeVariables.map fun var => (var, (env.find? (·.1 == var)).map (·.2))
+
 /-- Build and snapshot one feature selection of the Rust static library.
 The copied output has a Lake trace containing both Rust sources and Cargo
 arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
 archive from a previous invocation. -/
-def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
-    SpawnM (Job FilePath) := do
-  let crates := #["bench", "common", "ffi", "ixon", "record-pool"]
+def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
+    (env : Array (String × String)) : SpawnM (Job FilePath) := do
+  -- Generated kernels are inputs only when their optional dependency is enabled.
+  let mut crates := #["aggregate-controller", "aiur", "aiur-macros", "bench",
+    "common", "ffi", "ix-prover", "ixon", "ixvm", "record-pool", "stark-key",
+    "stark-verifier"]
+  let features (name : String) := args.any fun arg => (arg.splitOn ",").contains name
+  if features "formal-native" then
+    crates := crates ++ #["ixvm-native", "stark-verifier-native"]
+  if features "formal-compiled-trace" then
+    crates := crates ++ #["aiur-tracegen", "ixvm-tracegen"]
   let sources := Job.collectArray (← crates.mapM fun name =>
     inputDir (pkg.dir / "crates" / FilePath.mk name) true fun path =>
       path.extension == some "rs" || path.extension == some "cu" ||
       path.extension == some "cuh" || path.extension == some "h" ||
       path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
       path.fileName == "trace-manifest.json")
-  let manifests := Job.collectArray #[
+  let manifests := Job.collectArray (#[
     ← inputTextFile (pkg.dir / "Cargo.toml"),
     ← inputTextFile (pkg.dir / "Cargo.lock")
-  ]
+  ] ++ (← env.mapM fun (_, path) => inputBinFile (FilePath.mk path)))
   let deps := sources.zipWith (fun sourceFiles manifestFiles =>
     (sourceFiles, manifestFiles)) manifests
   let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
   buildFileAfterDep output deps (fun _ => do
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv env } (quiet := true)
     let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
     copyFile built output
   ) (extraDepTrace := pure <| .ofHash (pureHash args) s!"cargo args: {args}")
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
-  buildRustStatic pkg (← cargoArgs) "default"
+  let env ← formalNativeArtifacts pkg.dir
+  buildRustStatic pkg (← cargoArgs (formalNative := !env.isEmpty)) "default" env
 
 /-- Rebuild the Rust static lib with `test-ffi`.
 Used by `IxTests` and the focused `kernel-codec` differential runner.
@@ -98,8 +166,9 @@ Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
 target ix_rs_test pkg : FilePath := do
   let base ← ix_rs.fetch
   base.mapM fun _ => do
-    let args ← cargoArgs (testFfi := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+    let env ← formalNativeArtifacts pkg.dir
+    let args ← cargoArgs (testFfi := true) (formalNative := !env.isEmpty)
+    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv env } (quiet := true)
     let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
     let output := pkg.buildDir / "lib" / "libix_ffi_test.a"
     copyFile built output
@@ -110,8 +179,9 @@ Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
 target ix_rs_net pkg : FilePath := do
   let base ← ix_rs.fetch
   base.mapM fun _ => do
-    let args ← cargoArgs (net := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+    let env ← formalNativeArtifacts pkg.dir
+    let args ← cargoArgs (net := true) (formalNative := !env.isEmpty)
+    proc { cmd := "cargo", args, cwd := pkg.dir, env := cargoEnv env } (quiet := true)
     let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
     let output := pkg.buildDir / "lib" / "libix_ffi_net.a"
     copyFile built output
@@ -160,6 +230,12 @@ lean_exe «formal-aiur-tests» where
 
 lean_exe «formal-aggregate-tests» where
   root := `Tests.FormalAggregate
+  supportInterpreter := true
+
+/-- Fingerprint of the formal verify path; `tools/check-verify-path.sh`
+compares it with the pinned `tools/verify-path.fingerprint`. -/
+lean_exe «verify-path» where
+  root := `Tests.VerifyPath
   supportInterpreter := true
 
 @[test_driver]

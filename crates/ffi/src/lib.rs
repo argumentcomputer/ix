@@ -22,6 +22,7 @@ pub mod texray;
 pub mod unsigned;
 
 pub mod catalog;
+pub mod formal;
 pub mod lean_ixon;
 pub mod primitives;
 #[cfg(feature = "test-ffi")]

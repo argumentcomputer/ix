@@ -1,11 +1,14 @@
 /-
-  `ix prepare [--cuda]`
+  `ix prepare`
 
   Readies the default backend once per source revision, so later commands
-  start immediately and from any directory: builds its Rust hosts (CPU, and
-  with `--cuda` the CUDA hosts too) and exports the certified IxVM and
-  aggregation artifacts into the checkout's cache. Cargo rebuilds a host only
-  when its sources changed; an artifact is exported only when its exporter or
+  start immediately and from any directory: exports the certified IxVM,
+  recursive verifier and aggregation artifacts into the checkout's cache, and
+  records them in `.lake/aiur/native-kernels.env`. The formal prover runs
+  inside `ix`; the next `lake build ix` compiles native executors generated
+  from these artifacts into it (see `formalNativeArtifacts` in
+  `lakefile.lean`). Until then jobs run on the interpreter, with identical
+  records and proofs. An artifact is exported only when its exporter or
   sources changed.
 -/
 module
@@ -18,16 +21,23 @@ namespace Ix.Cli.PrepareCmd
 open Ix.Cli
 
 def runPrepareCmd (p : Cli.Parsed) : IO UInt32 := do
-  IO.println s!"checkout {← FormalAiur.repoRoot}"
-  let hosts := #[("ixvm", "ixvm-proof", "IX_AIUR_HOST"),
-    ("stark-verifier", "stark-verifier", "IX_STARK_HOST"),
-    ("ix-prover", "ix-prover", "IX_PROVER_HOST")]
-  let devices := if p.hasFlag "cuda" then #[none, some 0] else #[none]
-  for device in devices do
-    for (package, binary, env) in hosts do
-      IO.println s!"host {← FormalAiur.rustHost package binary env device (refresh := true)}"
-  IO.println s!"ixvm artifact {← FormalAiur.artifact p}"
-  IO.println s!"aggregation artifact {← FormalAggregate.artifact p}"
+  let root ← FormalAiur.repoRoot
+  IO.println s!"checkout {root}"
+  let absolute (path : String) : IO String := return (← IO.FS.realPath path).toString
+  let ixvm ← absolute (← FormalAiur.artifact p)
+  let verifier ← absolute (← FormalAiur.verifierArtifact p)
+  let aggregation ← absolute (← FormalAggregate.artifact p)
+  IO.println s!"ixvm artifact {ixvm}"
+  IO.println s!"verifier artifact {verifier}"
+  IO.println s!"aggregation artifact {aggregation}"
+  let manifest := root / ".lake" / "aiur" / "native-kernels.env"
+  IO.FS.createDirAll (root / ".lake" / "aiur")
+  IO.FS.writeFile manifest s!"AIUR_IXVM_ARTIFACT={ixvm}\nAIUR_VERIFIER_ARTIFACT={verifier}\nAIUR_AGGREGATION_ARTIFACT={aggregation}\n"
+  IO.println s!"native kernels {manifest}"
+  let linked ← Ix.FormalProver.executors
+  IO.println s!"linked executors {", ".intercalate linked.toList}"
+  unless linked.contains "native-ixvm" do
+    IO.println "rebuild with `lake build ix` to link the native executors for these artifacts"
   return 0
 
 end Ix.Cli.PrepareCmd
@@ -35,10 +45,10 @@ end Ix.Cli.PrepareCmd
 open Ix.Cli.PrepareCmd in
 def prepareCmd : Cli.Cmd := `[Cli|
   prepare VIA runPrepareCmd;
-  "Build the default backend's Rust hosts and export its certified artifacts ahead of time"
+  "Export the default backend's certified artifacts ahead of time and select them for its native executors"
 
   FLAGS:
-    "cuda"; "Also build the CUDA hosts (requires the CUDA toolkit)."
     "aiur-artifact" : String; "Use this trusted IxVM artifact instead of exporting one."
     "aggr-artifact" : String; "Use this trusted aggregation artifact instead of exporting one."
+    "verifier-artifact" : String; "Use this trusted recursive verifier artifact instead of exporting one."
 ]

@@ -41,7 +41,7 @@ row** — an empty or quietly-partial cell can't be green.
 
 | subcommand | job |
 |---|---|
-| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur), fold each spawn's span window into its row, gate on the rows |
+| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog, fold each spawn's span window into its row, gate on the rows |
 | `compare`    | two rows files → Markdown base-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
@@ -61,53 +61,16 @@ ix bench run --backend ooc --env InitStd
 # BENCH_OUTPUT_DIR root the Ix.Benchmark framework writes to):
 ix bench run --backend ooc --env InitStd --ixe InitStd.ixe
 ix bench compare --backend ooc --env InitStd
-
-# One constant through aiur — the fast Phase-1 signal, then the full prove
-# (cap the watchdog to what your machine can spare):
-ix bench run --backend aiur --env InitStd --mode execute \
-  --consts Nat.add_comm --ixe InitStd.ixe --ceiling-gb 50
-ix bench run --backend aiur --env InitStd --mode prove \
-  --consts Nat.add_comm --ixe InitStd.ixe --ceiling-gb 50
-
-# Run the scheduled aggregation workload alongside these two full-closure
-# pipelines, under the same RAM watchdog used by CI:
-ix bench run --backend aiur --env InitStd --mode prove \
-  --consts Nat.add_comm,String.append --ixe InitStd.ixe
-
-# Direct diagnostic: prove two singleton CheckEnv shards, then benchmark
-# one ix_aggr shape-2 flat join. This emits the singleton child rows plus
-# `Nat.add_comm + String.append` with join-* metrics.
-bench-typecheck --ixe InitStd.ixe \
-  --consts Nat.add_comm,String.append --recursive --join --json join.json
-
-# Compare a local run against main's numbers straight from bencher.dev
-# (no token needed; --consts filters to your constants — the testbed
-# holds every benched env's):
-ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
-  --backend aiur --mode prove --consts Nat.add_comm --out main.json
-ix bench compare --backend aiur --env InitStd --mode prove \
-  --base main.json --pr .lake/benches/aiur-InitStd-prove.json
-
 ```
 
 `--repo <dir>` points the run at another checkout: the *measured* tools
 resolve from `<dir>/.lake/build/bin` first, so one `ix` can drive a base and
 a PR tree and compare them — exactly what the PR workflow does.
 
-The default Aiur `InitStd` prove run includes the aggregation pair after the
-per-constant pipelines. A `--consts` override includes it only when both
-`Nat.add_comm` and `String.append` are selected. Pair setup and child metrics
-remain in `<out>.join.json`; only the pair's `join-*` measurements enter the
-main results, so singleton-shard setup cannot overwrite full-closure results.
-The comparison renders the pair in its own table. A missing or incomplete
-successful join is a run failure; a watchdog kill preserves any execution
-measurements and marks the unfinished pair `OOM`.
-
 ## Backends
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
@@ -129,45 +92,16 @@ reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/READ
 and [kernel.md](kernel.md). It is separate from the compiler and Rust kernel benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
-### Aggregate baselines
-
-The unpruned-path lift-size pin uses the 247-function production
-recursion system, default q=100/PoW-20 parameters, and the verified
-one-constant aggregate fixture. Its lift proof is **7,986,166 bytes**;
-the containing `Ixon.Proof` wrapper is 7,986,204 bytes at store address
-`090bea6f1c976ef6677fad94f86286295b2eea751fefb7af4c82ce9f84ca1535`.
-Positive-PoW grinding may change the proof contents, but its structural byte
-length is stable. This is the pre-multiproof comparison baseline.
-
-The pruned-multiproof default-q=100/PoW-20 run produced a verified
-**7,443,023-byte** lift proof in a 7,443,061-byte wrapper at store address
-`b5644a2956b544220dbf54a4768658cb727b24737fc383200e4c475b1f2aa6b6`:
-543,143 bytes, or 6.80%, below the unpruned lift pin. Unlike the old per-query
-path encoding, a pruned multiproof's byte length depends on how its sampled
-query paths overlap. Positive-PoW grinding can therefore vary both contents
-and length with pruned multiproofs; this is a measured sample, not a byte-exact regression
-pin. The deterministic q=100/PoW-0 benchmark is the stable local signal: its
-outer proof was 7,447,279 bytes and its recursive-verifier FFT cost was
-38,850,942,825. The default-PoW debug path separately measured a
-3,861,528-byte compact inner proof, 4,304,576 bytes after expansion to
-per-query advice, and 38,311,558,162 recursive-verifier FFT cost.
-
-The historical `--queries 0` join wiring gate produced a 246,014-byte
-flat-join proof and 10,280,903,348 FFT cost. Plonky3 v0.6 requires at least one FRI
-query, so the replacement smoke check is `--queries 1` (still PoW 0): a
-397,177-byte flat-join proof, 15,204,157,391 FFT cost, 6.64 s prove time,
-11,451,486,208-byte peak RSS, and 2.69 ms native verification. These are smoke
-values, not production aggregate cost estimates; the q=50 join run remains a large-box benchmark.
+Formal Aiur proving has no `ix bench` backend. Whole-environment GPU proving
+runs are benchmarked by hand as described in
+[aiur-gpu-proving.md](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run).
 
 All tools emit the same rows, and all the constant-driven ones take the same
-`--consts`/`--consts-file` grammar. The ooc and Aiur cells share per-constant
+`--consts`/`--consts-file` grammar. The ooc cells use per-constant
 **full-closure** scope.
 
-With `--texray`, tools write per-phase span timings (`aiur/prove_ixvm`,
-`aiur/witness`, `stark/*`, …) to `<json>.spans`. The
-per-constant backends run **one process per constant**, so each spawn's
-window belongs wholly to its constant: `ix bench run` folds it into the
-row as flat `phase-<span>` fields, which flow to bencher as independent
+With `--texray`, tools write per-phase span timings to `<json>.spans`.
+`ix bench run` folds a spawn's window into its row as flat `phase-<span>` fields, which flow to bencher as independent
 measures (witness gen, stage commits, quotient, … each get a trend line)
 and render as a collapsible per-constant drill-down under `BENCH_PHASES=1`
 (a `!benchmark` config line, or the env var for a local `ix bench
@@ -221,7 +155,7 @@ the only clock.
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [ooc] [compile] [decompile] | all)
+!benchmark ([ooc] [compile] [decompile] | all)
            [execute] [fresh] [KEY=VALUE …]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
                                # compile-only request may name any registry
@@ -231,11 +165,6 @@ BENCH_CONSTS=Nat.gcd,…         # bench exactly these constants on the
                                # found automatically)
 BENCH_PHASES=1                 # add the per-constant phase drill-downs
                                # to the comment (off by default)
-BENCH_TRACE_SHARDS=<GiB>       # aiur prove: plan each constant's proof as
-                               # trace shards within this per-constant RAM
-                               # budget (0: detect) and report
-                               # `ixvm-trace-shards`; a base checkout
-                               # that predates the flag proves whole
 RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
                                # RUST_LOG, RUSTFLAGS,
                                # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,
@@ -250,7 +179,7 @@ The `KEY=VALUE` config works both as lines below the command (the comment
 form above) and inline on the command line, whitespace-separated — the
 single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
 input box can't hold newlines:
-`!benchmark aiur execute BENCH_ENVS=InitStd,Mathlib`.
+`!benchmark ooc BENCH_ENVS=InitStd,Mathlib`.
 
 The allowlisted `IX_COMPILE_*` settings tune the Rust compiler used by older
 base checkouts; they do not tune the certified compiler. Normal `.ixe` and
@@ -259,10 +188,8 @@ a compile setting on an already benchmarked commit.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
-(and no Python remains). Mode defaults per backend from the registry; the
-bare `execute` token flips `aiur` from the full proof pipeline to the fast
-Phase-1-only mode (unscheduled testbed, so no bencher baseline — its base
-side comes from a base-SHA run). The bare `fresh`
+(and no Python remains). Mode defaults per backend from the registry, and
+every remaining backend has only its `execute` mode. The bare `fresh`
 token makes every cell bypass its bencher baseline and keeps persistent cached
 benchmark binaries, compiled `.ixe` files, and compile rows out of measured
 jobs. A cached head `ix` may bootstrap the canonical command parser, but the
@@ -274,10 +201,10 @@ untouched.
 
 ## CI shape
 
-**bench-main.yml**: `build` (compile `ix` + `bench-typecheck` once, cache by
+**bench-main.yml**: `build` (compile `ix` once, cache by
 SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe`) →
-one `benchmark` job per remaining cell — aiur / ooc / decompile —
+one `benchmark` job per remaining cell — ooc / decompile —
 (each: restore caches, one `ix bench run … --ixe`, `ix bench bmf`,
 upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
@@ -423,11 +350,3 @@ Per-member kernel checking (`lake exe truthmines check`, suite
 `truthmines-check`) and metadata fidelity (`lake exe truthmines
 validate`, suite `truthmines-validate`) are the other two rungs over
 the same artifacts.
-
-## Not yet covered
-
-- **aiur prove numbers for the biggest closures** — every constant in the
-  shared set runs the full pipeline, but the largest ones exceed the CI
-  host's RAM ceiling and land as honest `oom` rows, which never upload
-  (`ix bench bmf` drops non-`ok` rows) — their trend lines stay empty
-  until the prover's RAM drops under the ceiling.

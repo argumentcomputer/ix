@@ -1,38 +1,31 @@
 # CPU scaling of trace generation
 
-Measured 2026-10-28 against `5de73a23`, with the tuned new-Aiur grouping and
-legacy's existing grouping. The previous grouping comparison used eight Rayon
-threads. It was not a scaling comparison.
-
-**New Aiur scales better on the IxVM environment, but legacy scales better on
-the real recursive verifier.** Legacy remains faster in absolute trace time
-on both workloads at every measured thread count.
+Historical record: measured 2026-10-28 against `5de73a23`, with the tuned
+grouping from the [grouping tuning](formal-aiur-grouping-tuning.md). That
+earlier measurement used eight Rayon threads only.
 
 The [phase-profile follow-up](formal-aiur-trace-profile.md) also measures the
-small `Nat.add_comm` frontier claim, where new Aiur is faster on multiple cores,
-and identifies substantial ROM preparation costs in the recursive trace.
-The subsequent [ROM reuse optimization](formal-aiur-rom-reuse.md) removes those
-passes; the timings and implementation discussion below describe the baseline.
+small `Nat.add_comm` frontier claim and identifies substantial ROM preparation
+costs in the recursive trace. The subsequent
+[ROM reuse optimization](formal-aiur-rom-reuse.md) removes those passes; the
+timings and implementation discussion below describe the baseline.
 
 ## Measurements
 
 All times include main trace generation and host lookup buffers. Each value is
-the median of three samples after two warmups. Execution is bytecode on both
-backends and is excluded from these timings.
+the median of three samples after two warmups. Execution is bytecode and is
+excluded from these timings.
 
-| Threads | IxVM legacy (ms) | IxVM new (ms) | Recursive legacy (s) | Recursive new (s) |
-|---:|---:|---:|---:|---:|
-| 1 | 571.59 | 1,063.62 | 16.716 | 25.714 |
-| 8 | 82.46 | 159.23 | 2.173 | 3.678 |
-| 32 | 46.86 | 56.87 | 0.690 | 1.430 |
-| 64 | 42.94 | 50.51 | 0.631 | 1.220 |
+| Threads | IxVM environment (ms) | Recursive verifier (s) |
+|---:|---:|---:|
+| 1 | 1,063.62 | 25.714 |
+| 8 | 159.23 | 3.678 |
+| 32 | 56.87 | 1.430 |
+| 64 | 50.51 | 1.220 |
 
-From one to 64 threads:
-
-- IxVM: **21.1×** speedup for new Aiur, **13.3×** for legacy. Between eight
-  and 64 threads, new Aiur's time gap shrinks from 93% to 18%.
-- Recursive verifier: **21.1×** for new Aiur, **26.5×** for legacy. New Aiur
-  is still about 1.93 times legacy's elapsed time at 64 threads.
+From one to 64 threads, both workloads speed up **21.1×**. Going from 32 to 64
+threads (adding SMT siblings) gains 11% on IxVM and 15% on the recursive
+verifier.
 
 The host is a KVM machine reporting an Intel Xeon 6975P-C, 32 cores, 64 logical
 CPUs and one NUMA node. At up to 32 threads, each worker has a distinct reported
@@ -42,9 +35,9 @@ no CPU quota. Processes run sequentially and are pinned to the selected CPUs.
 
 ## Effect of the grouping change at 64 threads
 
-The earlier 6–8% trace regression referred to the tuned grouping versus the
-previous **new-Aiur grouping**, at eight threads. A separate 64-thread check
-using the same new interpreter and trace generator gives:
+The tuning report's 6–8% trace regression referred to the tuned grouping versus
+the previous grouping, at eight threads. A separate 64-thread check using the
+same interpreter and trace generator gives:
 
 | Workload | Previous grouping | Tuned grouping | Change |
 |---|---:|---:|---:|
@@ -58,62 +51,55 @@ before/after sample ranges overlap. Raw minima, maxima and samples are saved.
 
 ## Interpretation
 
-Both implementations parallelize across circuits and within function circuits.
-New Aiur's row iterator uses batches of 32 with worker-local scratch storage.
-Legacy's iterator items are individual rows; Rayon also splits and batches
-those items internally. Parallel row population is not unique to new Aiur.
+Trace generation parallelizes across circuits and within function circuits.
+The row iterator uses batches of 32 with worker-local scratch storage.
 
-New Aiur still has serial preparation work, including the ROM payload index,
-memory multiplicity copying and ROM partitioning. Query validation runs in
-parallel across functions but scans each function's rows sequentially. ROM
-main rows are populated sequentially within each width, whereas legacy also
-parallelizes those rows. These are possible scaling limits visible in the
-implementation; this benchmark does not attribute the remaining recursive
-runtime to individual phases.
+At `5de73a23` the trace generator still had serial preparation work, including
+the ROM payload index, memory multiplicity copying and ROM partitioning. Query
+validation runs in parallel across functions but scans each function's rows
+sequentially. ROM main rows are populated sequentially within each width.
+These are possible scaling limits visible in the implementation; this benchmark
+does not attribute the recursive runtime to individual phases.
 
-Better speedup does not establish lower absolute cost: new Aiur starts with
-more single-threaded work on both workloads. The IxVM result shows why the
-eight-thread comparison should not be extrapolated to larger machines, while
-the recursive result shows why the scaling advantage is workload-dependent.
+The eight-thread grouping measurements should not be extrapolated to larger
+machines: IxVM's trace time falls by a further 3.2× from 8 to 64 threads.
 
-## Method, data and reproduction
+## Method and data
 
 The workloads are the same self-contained 342-constant IxVM environment and
-the same real 7,232,210-byte inner proof as the earlier comparisons. Artifacts,
-inputs and binaries are hashed in the
+the same real 7,232,210-byte inner proof as the earlier measurements.
+Artifacts, inputs and binaries are hashed in the
 [manifest](benchmarks/formal-aiur-trace-scaling/manifest.json). The
 [summary CSV](benchmarks/formal-aiur-trace-scaling/summary.csv) and
 [raw samples](benchmarks/formal-aiur-trace-scaling/runs.json) include every run.
-Circuit heights, widths and cell counts were checked to be independent of the
-thread count for each backend/workload.
+Circuit heights,
+widths and cell counts were checked to be independent of the thread count for
+each workload.
 
-Both binaries use release optimization, `-Ctarget-cpu=native`, the parallel
+The binary uses release optimization, `-Ctarget-cpu=native`, the parallel
 feature and `IX_BENCH_NO_THP=1`. The sweep uses thread counts in the order
-8, 64, 1, 32 and alternates the backend order. Larger legacy-thread samples
-have some variability; the saved ranges expose it rather than treating the
-medians as exact constants. No proving or GPU timing is included.
+8, 64, 1, 32. The saved ranges expose sample variability rather than treating
+the medians as exact constants. No proving or GPU timing is included.
 
-The benchmark harnesses now accept `IX_BENCH_REUSE_EXECUTION=1`: execute once,
-retain the immutable query record (and legacy IO buffer), and regenerate the
-complete witness on every iteration. No trace matrices, lookup buffers, row
-indices or count preparation are cached between trace samples. The initial
-execution time is reported separately; repeated execution samples are `null`.
-The default benchmark behavior still executes before every trace sample.
-Smoke proofs on both backends verify after repeated trace generation and have
-the same circuit shapes as ordinary execution. The interpreter, trace
-generation implementations and grouping policies were not changed for this
-experiment.
+The `compare` example accepts `IX_BENCH_REUSE_EXECUTION=1`: execute once,
+retain the immutable query record, and regenerate the complete witness on every
+iteration. No trace matrices, lookup buffers, row indices or count preparation
+are cached between trace samples. The initial execution time is reported
+separately; repeated execution samples are `null`. Without it the benchmark
+executes before every trace sample. Smoke proofs verify after repeated trace
+generation and have the same circuit shapes as ordinary execution.
 
-With the existing exported artifacts and inputs:
+One point of the sweep, for the recursive verifier at 64 threads:
 
 ```sh
-lake build bench-compare-aiur
 cargo build --release --locked -p stark-verifier --features parallel --example compare
-python3 tools/ixvm/trace-scaling.py .lake/trace-scaling/sweep \
-  --ixvm-artifact .lake/formal-integration/ixvm-tuned.json \
-  --recursion-artifact .lake/formal-integration/recursion-tuned.json
+RAYON_NUM_THREADS=64 IX_BENCH_NO_THP=1 IX_BENCH_REUSE_EXECUTION=1 \
+  AIUR_TRACE_ONLY_LOOKUPS=0 taskset -c 0-63 target/release/examples/compare \
+  .lake/formal-integration/recursion-tuned.json \
+  .lake/formal-comparison/final/new-environment-grouped.json.inner/input.json \
+  /tmp/recursion-scaling.json 3
 ```
 
-Use `--inputs`, `--threads` and `--samples` to select another saved comparison
-directory, CPU counts or sample count. The manifest records every invocation,
-including the two additional runs with the previous grouping artifacts.
+The two `.lake` paths are locally exported artifacts and inputs, not checked-in
+files. The manifest records every invocation of the original sweep, including
+the two additional runs with the previous grouping artifacts.

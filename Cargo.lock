@@ -38,6 +38,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aggregate-controller"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ix-common",
+ "ixon",
+ "rayon",
+ "record-pool",
+ "rustc-hash",
+ "serde_json",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1812,6 +1825,7 @@ dependencies = [
 name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
+ "aggregate-controller",
  "anyhow",
  "bignat",
  "bincode",
@@ -1825,6 +1839,7 @@ dependencies = [
  "itertools 0.14.0",
  "ix-bench",
  "ix-common",
+ "ix-prover",
  "ixon",
  "lean-ffi",
  "memmap2",
@@ -1847,8 +1862,11 @@ dependencies = [
 name = "ix-prover"
 version = "0.1.0"
 dependencies = [
+ "aggregate-controller",
  "aiur",
  "blake3",
+ "ix-common",
+ "ixon",
  "ixvm",
  "ixvm-native",
  "multi-stark",
@@ -1857,6 +1875,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "stark-key",
  "stark-verifier",
  "stark-verifier-native",
  "tracing",

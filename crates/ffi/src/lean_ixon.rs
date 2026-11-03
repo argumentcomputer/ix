@@ -274,11 +274,9 @@ pub extern "C" fn rs_env_extract(
 /// profiling run. An explicit nonzero `num_shards` fixes the count. Otherwise,
 /// `ram_gib` seeds it from the static block-shape score after the profile is
 /// loaded ([`ixon::shard::static_seed_shards`]). Builds the static block
-/// profile ([`static_block_profile`]), then either the byte-balanced min-cut
-/// over the walk-edge nets with the predicted-cost rebalance post-pass
-/// (`ixon::shard::shard_static`, `layout` = `mincut`) or contiguous
-/// ranges of a dependency order (`ixon::shard::shard_static_ordered`,
-/// `layout` = `ordered`). Writes a `.ixes` manifest.
+/// profile ([`static_block_profile`]), then the byte-balanced min-cut over
+/// the walk-edge nets with the predicted-cost rebalance post-pass
+/// (`ixon::shard::shard_static`). Writes a `.ixes` manifest.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_env_static(
@@ -286,17 +284,10 @@ pub extern "C" fn rs_shard_env_static(
   requested_shards: usize,
   ram_gib: u64,
   balance_pct: u64,
-  layout: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
   exec_ahead: usize,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
-  let layout = layout.to_string();
-  if layout != "mincut" && layout != "ordered" {
-    return LeanIOResult::error_string(&format!(
-      "rs_shard_env_static: unknown layout `{layout}` (mincut or ordered)"
-    ));
-  }
   if requested_shards == 0 && ram_gib == 0 {
     return LeanIOResult::error_string(
       "rs_shard_env_static: pass a positive shard count or RAM budget",
@@ -357,20 +348,7 @@ pub extern "C" fn rs_shard_env_static(
     );
     n
   };
-  let report = if layout == "ordered" {
-    let (depends, primitives) =
-      ixon::shard::static_block_dependencies(&env, &profile);
-    ixon::shard::shard_static_ordered(
-      &profile,
-      &depends,
-      &primitives,
-      num_shards,
-      out_opt,
-    )
-  } else {
-    ixon::shard::shard_static(&profile, num_shards, balance, out_opt)
-  };
-  match report {
+  match ixon::shard::shard_static(&profile, num_shards, balance, out_opt) {
     Ok(report) => {
       eprintln!("[rs_shard_static]\n{report}");
       LeanIOResult::ok(LeanOwned::box_usize(0))

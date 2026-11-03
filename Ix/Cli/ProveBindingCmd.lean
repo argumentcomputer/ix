@@ -5,9 +5,11 @@
 
   The claim depends only on the specification digest and the table's hash,
   so one proof serves every aggregate over that binding (in practice one per
-  toolchain). Its claims assume the binding (`ix claim check --assume-binding`,
-  `ix prove --lanes --binding-proof`), and `ix aggregate --binding-proof`
-  verifies this proof once, at the root, to discharge that condition.
+  toolchain). Its claims assume the binding (`ix prove --ixes
+  --assume-binding`, `ix prove --lanes --binding-proof`), and the aggregate
+  controller joins this proof once, at the root, to discharge that condition
+  (`ix aggregate --binding-proof`). The claim is proven like any other single
+  claim, on the prover library (`FormalAiur.one`).
 -/
 module
 public import Cli
@@ -44,10 +46,10 @@ def runProveBinding (p : Cli.Parsed) : IO UInt32 := do
     | .ok w => pure w
   let artifactPath ← FormalAiur.artifact p
   let options ← FormalAiur.hostOptions p
-  let binary ← FormalAiur.rustHost "ixvm" "ixvm-proof" "IX_AIUR_HOST" options.device
   IO.println s!"Proving the binding claim for {binding.address}"
   (← IO.getStdout).flush
-  let result ← FormalAiur.one p artifactPath binary options "prove" claim (.leanW witness)
+  let result ← FormalAiur.one p artifactPath options "prove" claim
+    (fun _ => FormalAiur.bufferRequest witness.input witness.inputIOBuffer)
     s!"binding claim for {binding.address}"
   let some address := result.address
     | IO.eprintln s!"binding claim failed with status {result.code}"; return 1
@@ -64,7 +66,7 @@ end Ix.Cli.ProveBindingCmd
 open Ix.Cli.ProveBindingCmd in
 def proveBindingCmd : Cli.Cmd := `[Cli|
   "prove-binding" VIA runProveBinding;
-  "Prove the `binding` claim for the role binding an .ixe carries: the table binds every role and each bound constant meets its specification. One proof serves every aggregate over that binding; pass it to `ix aggregate --binding-proof` or `ix prove --lanes --binding-proof`."
+  "Prove the `binding` claim for the role binding an .ixe carries: the table binds every role and each bound constant meets its specification. One proof serves every aggregate over that binding; pass it to `ix aggregate --binding-proof` or `ix prove --lanes --binding-proof`, or check it beside claims proven with `--assume-binding` with `ix verify --binding-proof`."
 
   FLAGS:
     out : String; "Where to write the proof (an `Ixon.Proof`; default `binding-<binding hash>.proof`). It is also persisted to `~/.ix/store/`."

@@ -1,8 +1,7 @@
 //! The benchmark row contract shared by every measured tool.
 //!
-//! Each tool (`bench-typecheck`, `ix check-rs`,
-//! `ix compile`) reports its results as one JSON object per benchmark name in
-//! a single file:
+//! Each tool (`ix check-rs`, `ix compile`) reports its results as one JSON
+//! object per benchmark name in a single file:
 //!
 //! ```json
 //! { "<name>": { "status": "ok", "<metric>": <number>, ...,

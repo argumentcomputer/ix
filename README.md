@@ -34,9 +34,10 @@ transactions over proofs.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
 
-The formal Aiur compiler and runtime now live in separate Lean and Rust packages.
-See [the migration guide](docs/formal-aiur-migration.md) for their build commands
-and the boundary around the retained legacy implementation.
+The formal Aiur compiler and runtime live in separate Lean and Rust packages.
+See [the migration guide](docs/formal-aiur-migration.md) for their build
+commands, and [the controller design](docs/formal-aiur-unified-controller.md)
+for how claims and their aggregation are proven.
 
 ## Use Cases
 
@@ -203,13 +204,13 @@ cells locally, and `!benchmark` runs them on a PR — see
 
 Aiur can use multi-stark's first-party CUDA backend. CUDA is opt-in: ordinary
 Cargo and Lake builds remain CPU-only and do not require a CUDA toolkit or
-runtime. First generate the benchmark environment, then set `IX_CUDA=1` (also
-accepts `true` or `yes`) for the proving command:
+runtime. Build `ix` with `IX_CUDA=1` (also accepts `true` or `yes`), then
+select a device for the proving command:
 
 ```sh
+IX_CUDA=1 lake build ix
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out InitStd.ixe
-IX_CUDA=1 lake exe bench-typecheck --ixe InitStd.ixe \
-  --consts Vector.extract_append --recursive
+lake exe ix prove --gpu-device 0 --ixe InitStd.ixe Vector.extract_append
 ```
 
 Rust consumers can instead enable the `cuda` feature on `aiur` or `ix-ffi`.

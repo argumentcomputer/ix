@@ -187,16 +187,6 @@ structure CompareSection where
   names : Option (Array String) := none
   rowNoun : Option String := none
 
-/-- Aggregation measures a pair, while the other LegacyAiur stages measure each
-    constant. Select by workload identity so OOM/rejected rows remain visible
-    even when they have no metrics. -/
-def scopeAiurSection (names : Array String) (sec : CompareSection) : CompareSection :=
-  let join := sec.metrics.all (·.startsWith "join-")
-  { sec with
-    names := some (names.filter fun n =>
-      Ix.Cli.BenchCmd.aiurJoinBenchmarkNames.contains n == join)
-    rowNoun := some (if join then "pair" else "constant") }
-
 /-- The stage qualifier shared by every one of a section's measures, if
     they share one. A stage table's heading already says which stage it
     is, so its columns read `prove-time`, not `ixvm-prove-time`. -/
@@ -359,7 +349,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
         ++ lines
   -- Per-phase drill-down (only under `a.phases`): the tables above
   -- carry every constant's high-level row; below it, each constant with
-  -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns)
+  -- `phase-<span>` fields
   -- gets its own collapsed mini-table
   -- (`phase | base | PR | Δ%`), opened as desired.
   let mut detail : Array String := #[]
@@ -625,16 +615,12 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
   let mainRows ← readRows mainPath
   let prRows ← readRows prPath
-  let names := rowNames mainRows ++ rowNames prRows
-  let pairNames := Ix.Cli.BenchCmd.aiurJoinBenchmarkNames
   let sections : Array CompareSection :=
     if !flagged.isEmpty then #[{ metrics := flagged }]
     else match (spec.map (·.stagesFor mode)).getD [] with
       | [] => #[{ metrics := ((spec.map (·.metricsFor mode)).getD []).toArray }]
       | stages => (stages.map fun (heading, ms) =>
-          let sec : CompareSection := { heading, metrics := ms.toArray }
-          if backend == "aiur" && mode == "prove" then scopeAiurSection names sec
-          else sec).toArray
+          ({ heading, metrics := ms.toArray } : CompareSection)).toArray
   if sections.all (·.metrics.isEmpty) then
     p.printError s!"error: no metrics for {backend}/{mode}; pass --metric or fix backendSpecs"
     return exitUsage
@@ -642,7 +628,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD 3.0
   let mainSrc := (p.flag? "base-source").map (·.as! String) |>.getD mainPath
   let baseLabel := (p.flag? "base-label").map (·.as! String) |>.getD "main"
-  -- Name the mode only where a mode choice exists (aiur); a single-mode
+  -- Name the mode only where a mode choice exists; a single-mode
   -- backend's `· execute` is registry plumbing, not information.
   let cellName :=
     if ((Ix.Cli.BenchCmd.findBackend backend).map (·.testbeds.length)).getD 0 > 1
@@ -663,7 +649,6 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     rowNoun :=
       if backend == "compile" then "env"
       else if backend == "ooc" then "env/constant"
-      else if backend == "aiur" && names.any pairNames.contains then "workload"
       else "constant"
   }
   -- Per-constant attribution drill-down: rendered whenever an
@@ -879,8 +864,8 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
           |>.getD #[]
         for m in ms do
           -- The SLUG is the source of truth: row keys are born
-          -- slug-shaped (see the registry metric lists and
-          -- `BenchCmd.slugify`), uploads attach to measures by it, and
+          -- slug-shaped (see the registry metric lists), uploads attach
+          -- to measures by it, and
           -- the console-editable display name is never consulted.
           let mSlug := (m.getObjVal? "measure").toOption.bind fun x =>
             (x.getObjVal? "slug").toOption.bind (·.getStr?.toOption)
@@ -958,7 +943,7 @@ def parseError (msg : String) : IO UInt32 := do
   return 2
 
 /-- Parse a `!benchmark` command into the runs it schedules — locally a
-    dry-run preview (`ix bench ci parse --comment "!benchmark aiur"` prints
+    dry-run preview (`ix bench ci parse --comment "!benchmark ooc"` prints
     the summary and run list), in CI the matrix generator. The text comes
     from `--comment`, else the `COMMENT_BODY` env var (how the PR workflow
     passes the comment without inline shell interpolation). When
@@ -968,9 +953,10 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [ooc] [compile] [decompile] | all)
+      !benchmark ([ooc] [compile] [decompile] | all)
                  [execute] [fresh] [KEY=VALUE …]
-      (`all` covers the scheduled backends)
+      (`all` covers the scheduled backends; at least one backend or
+      `all` is required)
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the
                                     env-keyed backends (compile,
@@ -1002,10 +988,10 @@ def parseError (msg : String) : IO UInt32 := do
     command, like a typo'd backend.
 
     The bare `execute` token flips a backend with an execute metrics entry
-    to execute-only — a real switch only for aiur, which it drops from the
-    full proof pipeline to the fast Phase-1-only signal. That testbed is
-    `unscheduled`, so the run has no bencher baseline — its base side
-    comes from a base-SHA run.
+    to its execute mode. Every registered backend already defaults to
+    `execute`, so the token currently changes nothing. An `unscheduled`
+    execute testbed has no bencher baseline — its base side comes from a
+    base-SHA run.
 
     The bare `fresh` token makes every run bypass its bencher baseline and
     keeps persistent cached benchmark binaries, compiled `.ixe` files, and
@@ -1066,7 +1052,9 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       let reasons := ", ".intercalate <| skipped.toList.map fun b =>
         s!"{b.name} ({b.disabled.getD "disabled in CI"})"
       return ← parseError s!"no requested benchmark backend is enabled in CI: {reasons}"
-    backends := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
+    return ← parseError s!"`!benchmark` needs a backend: one or more of \
+      {", ".intercalate ((Ix.Cli.BenchCmd.backendSpecs.filter
+        (·.disabled.isNone)).map (·.name))}, or `all`"
 
   -- KEY=VALUE config: the inline command-line tokens (strict — an
   -- unknown key rejects, same as a typo'd backend), then the lines below
@@ -1179,7 +1167,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     (fun e => constsByEnv.any (·.1 == e))).toArray
 
   -- Env defaults, per backend, when BENCH_ENVS is absent: the env-keyed
-  -- backends (`inputs := .perEnv` — compile, decompile, aiur-sharded-env) cover
+  -- backends (`inputs := .perEnv` — compile, decompile) cover
   -- their registry env set (the full set, or the spec's `envs`
   -- restriction) — their row IS the env, so a compiler PR sees every
   -- env's delta without asking — while the per-constant backends default
@@ -1223,8 +1211,9 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     (envsFor b).foldl (init := acc) fun acc e =>
       if acc.contains e then acc else acc.push e
 
-  -- Annotate the mode only where a mode CHOICE exists (aiur's
-  -- prove/execute); `ooc=execute` for a single-mode backend is noise.
+  -- Annotate the mode only where a mode CHOICE exists (a backend with
+  -- several testbed modes); `ooc=execute` for a single-mode backend is
+  -- noise.
   let modes := " ".intercalate
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList

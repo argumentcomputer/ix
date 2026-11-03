@@ -10,7 +10,7 @@ Formal Aiur's CPU integration job exercises the CPU controls of
 `tools/ixvm/check-cuda.py`. Actual CPU/CUDA proof and key parity, including
 sharded IxVM, recursion, and aggregation, requires a GPU host running
 `IX_TEST_CUDA=1 bash tools/ixvm/check-formal.sh`. The
-[migration guide](formal-aiur-migration.md#legacy-support-and-native-builds)
+[migration guide](formal-aiur-migration.md#cuda-and-native-execution)
 documents the retained logs and report; the CUDA compilation job does not
 provide hardware validation.
 
@@ -55,16 +55,15 @@ the entry runs:
 | `ci:compile-pipeline` | a merge-tests partition | the Lean and Rust compilers against each other (input conversion, the reference graph and its condensation, serialization, decompilation, Lean's auxiliaries on closure-only environments) and the compilers' refusals |
 | `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, checker-support grounding, packing, admission of selected targets, and the certified checker's pinned subjects and acceleration inputs |
 | `ci:compile`, `ci:decompile` | one merge-tests partition each | the whole test environment through the compiler, and back |
-| `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, sharding, catalog and commit I/O, and the primitives |
 | `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
 | `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std, in process: the certified compile with its report checks against the pipeline and the Rust compiler, role binding and evidence, a reading premise on every inductive, and the admission hash |
 | `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and the Rust comparison, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which the Rust kernel must check with every role of the default table admitted; and `ix validate-lean` fidelity |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
-The manual runners that prove through the production `ix_aggr` circuit,
-`aggregate-proof` and `aggregate-binding-reuse`, take minutes of recursion and
-about 190 GB, three quarters of a 32-CPU merge-tests runner's memory, so they
-stay manual. `binding-proof-cli` (`ci:cli`) runs
+The manual runner `aggregate-binding-reuse` proves through the production
+`ix_aggr` circuit; it takes minutes of recursion and about 190 GB, three
+quarters of a 32-CPU merge-tests runner's memory, so it stays manual. `binding-proof-cli` (`ci:cli`) runs
 `aggregate-binding-reuse`'s flow without its two aggregates: the binding proof,
 the shard proofs that assume it, their composition with it, and the refusals
 without it; the aggregation circuit's handling of the binding is tested in
@@ -81,6 +80,11 @@ commands use 64 GiB. The runner keeps its store and caches in a temporary
 home directory. Its registration and manual-run reason live in
 `Tests/Main.lean`; its full flow is in
 [`Tests/AggrToolchains.lean`](../Tests/AggrToolchains.lean).
+
+Both manual runners aggregate with `ix aggregate --binding-proof`. The
+aggregate controller rejects that flag until binding discharge is ported to
+it, so both runners fail at their aggregation step until then;
+`binding-proof-cli` does not aggregate and is unaffected.
 
 `lake test -- --tier <tier>` runs one tier; `--tier landing` runs the three
 landing partitions. The registry's primary self-test, `ixtests-registry`,

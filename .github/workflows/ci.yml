@@ -73,6 +73,8 @@ jobs:
       - name: Check formal claims, recursive verification, and aggregation
         if: github.event_name != 'push'
         run: bash tools/ixvm/check-formal.sh
+      - name: Check the formal verify path is unchanged
+        run: bash tools/check-verify-path.sh
       - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
         if: github.event_name != 'push'
         run: |
