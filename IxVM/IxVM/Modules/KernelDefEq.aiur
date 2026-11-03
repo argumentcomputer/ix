@@ -20,11 +20,15 @@ module KernelDefEq {
     }
 
   fn k_is_def_eq(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
-      let base = KernelSubst::lbr_max(KernelSubst::expr_lbr(a), KernelSubst::expr_lbr(b));
+      match KernelCheck::kexpr_struct_eq(a, b) {
+        1 => {  1 } ,
+        _ => {
+          let base = KernelSubst::lbr_max(KernelSubst::expr_lbr(a), KernelSubst::expr_lbr(b));
           match base {
             0 => {  k_is_def_eq_core(rc, a, b, (&(Lists::Node::Nil))) } ,
             _ => {  k_def_eq_rebase(rc, a, b, types, base) } ,
-          }
+          } } ,
+      }
     }
 
   fn k_def_eq_rebase(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>,
@@ -284,7 +288,10 @@ module KernelDefEq {
   fn k_is_def_eq_slow2(rc: KernelRoles::RoleCtx, orig_a: KernelTypes::KExpr, orig_b: KernelTypes::KExpr,
                               aw: KernelTypes::KExpr, bw: KernelTypes::KExpr,
                               types: Lists::List<KernelTypes::KExpr>) -> Field {
-      match try_proof_irrel(rc, aw, bw, types) {
+      match KernelCheck::kexpr_struct_eq(aw, bw) {
+        1 => {  1 } ,
+        _ => {
+          match try_proof_irrel(rc, aw, bw, types) {
             1 => {  1 } ,
             _ => {
               match try_unit_like(rc, aw, bw, types) {
@@ -308,7 +315,8 @@ module KernelDefEq {
                       } } ,
                   } } ,
               } } ,
-          }
+          } } ,
+      }
     }
 
   fn slow2_after_delta(rc: KernelRoles::RoleCtx, orig_a: KernelTypes::KExpr, orig_b: KernelTypes::KExpr,
@@ -380,7 +388,10 @@ module KernelDefEq {
 
   fn k_is_def_eq_struct_bounded(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, credit: Field,
                                        types: Lists::List<KernelTypes::KExpr>) -> (Field, Field) {
-      match (*(a)) {
+      match KernelCheck::kexpr_struct_eq(a, b) {
+        1 => {  (1, credit) } ,
+        _ => {
+          match (*(a)) {
             KernelTypes::KExprNode::BVar(i) => {
               match (*(b)) {
                 KernelTypes::KExprNode::BVar(j) => {
@@ -452,7 +463,8 @@ module KernelDefEq {
                 _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
               } } ,
             _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-          }
+          } } ,
+      }
     }
 
   fn k_is_def_eq_struct_spend(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, credit: Field,
@@ -771,6 +783,10 @@ module KernelDefEq {
       match fuel {
         0 => {  (0, a, b) } ,
         _ => {
+          match KernelCheck::kexpr_struct_eq(a, b) {
+        1 => {  (1, a, b) } ,
+        _ => {
+
           match try_def_eq_nat(rc, a, b, types) {
             (1, eq) => {  (eq, a, b) } ,
             _ => {
@@ -792,6 +808,7 @@ module KernelDefEq {
 
                   lazy_delta_both_proj(rc, a, b, fuel, types) } ,
               } } ,
+          } } ,
           } } ,
           } } ,
       }

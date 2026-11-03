@@ -1,5 +1,7 @@
 import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
+import Tests.Ix.IxVM.Exploits
+import Batteries.Data.Char.Basic
 
 /-! Real claim fixtures, plus independently specified evaluation inputs.
 Run through the Rust host. -/
@@ -174,6 +176,35 @@ private def claimContains : IO (String × ClaimWitness) := do
     (Ix.Claim.contains tree.root b) (singletonTrees tree)
   pure ("Claim Contains (synthetic 3-leaf)", witness)
 
+/-- The adversarial Ixon corpus: every exploit must be rejected and every
+control accepted. Each claim is made under its environment's role binding. -/
+private def exploitCases (leanEnv : Lean.Environment) : IO (Array Json) := do
+  let base ← loadSharedIxonEnv
+    #[``String, ``False, ``Eq, ``Eq.refl, ``Bool, ``Nat.beq,
+      ``String.utf8ByteSize, ``Nat, ``SizeOf.sizeOf, ``SizeOf.mk,
+      ``Unit, ``Unit.unit, ``Iff, ``Iff.rec] leanEnv
+  let addr name := lookupAddr base name
+  let fixtures := Tests.Ix.IxVM.Exploits.cases base (← addr ``String) (← addr ``False) (← addr ``Eq)
+    (← addr ``Bool) (← addr ``Nat.beq) (← addr ``String.utf8ByteSize) (← addr ``Bool.true)
+    (← addr ``Bool.false) (← addr ``Eq.refl) (← addr ``Nat) (← addr ``SizeOf.sizeOf)
+    (← addr ``SizeOf.mk) (← addr ``Unit) (← addr ``Unit.unit) (← addr ``Iff) (← addr ``Iff.rec)
+  let roleFixtures ← IO.ofExcept <| Tests.Ix.IxVM.Exploits.roleCases base (← addr ``Eq)
+    (← addr ``Bool) (← addr ``Nat.beq) (← addr ``String.utf8ByteSize) (← addr ``Bool.true)
+    (← addr ``Bool.false) (← addr ``Eq.refl) (← addr ``Unit)
+  (fixtures ++ roleFixtures).mapM fun c => do
+    let env ← IO.ofExcept (withDefaultRoleBinding c.env)
+    let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env)
+    let witness ← IO.ofExcept (buildClaimWitness env (c.claim ctx) c.trees)
+    return caseJson s!"exploit {c.name}" witness c.expectAccept
+
+/-- Checks `name` under its compiled closure's default role binding. -/
+private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Json := do
+  let env ← loadIxonEnv name leanEnv
+  let target ← lookupAddr env name
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env)
+  let witness ← IO.ofExcept (buildClaimWitness env (.check ctx target none))
+  return caseJson s!"Check {name}" witness
+
 def main (args : List String) : IO Unit := do
   let path := args.headD "/tmp/ix-formal-claims.json"
   let env ← get_env!
@@ -189,5 +220,14 @@ def main (args : List String) : IO Unit := do
     cases := cases.push (caseJson label witness)
   for (label, witness) in [← claimContains, ← claimRevealBinderModes] do
     cases := cases.push (caseJson label witness)
+  cases := cases ++ (← exploitCases env)
+  -- `Nat.gcd_comm`'s recursor rules compare open bodies that are identical
+  -- to their canonical reconstruction; checking must not need their binder
+  -- types.
+  cases := cases.push (← checkCase env ``Nat.gcd_comm)
+  -- `Char.all.eq_1` compares two identical terms whose unfolding reaches
+  -- `Nat.all 1056767 …`. Def-eq must accept them by structural identity
+  -- rather than evaluate that loop, which exhausts memory.
+  cases := cases.push (← checkCase env ``Char.all.eq_1)
   IO.FS.writeFile path (toJson cases).compress
   IO.println s!"Wrote {cases.size} production claim cases and .ixe fixture to {path}"
