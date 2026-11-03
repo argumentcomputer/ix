@@ -443,14 +443,14 @@ def arraySetD (xs : Array α) (i : Nat) (v : α) : Array α :=
     | [], _            => []
     | _ :: rest, 0     => v :: rest
     | x :: rest, k + 1 => x :: go rest k
-  (go xs.toList i).toArray
+  Array.mk (go xs.toList i)
 
 /-- Pure, total insertion sort on `Array α` (avoids `Array.qsort` and `Array.foldlM.loop`). -/
 def sortArrayBy (xs : Array α) (lt : α → α → Bool) : Array α :=
   let rec insert (x : α) : List α → List α
     | []      => [x]
     | y :: ys => if lt y x then y :: insert x ys else x :: y :: ys
-  (xs.toList.foldl (fun acc x => insert x acc) []).toArray
+  Array.mk (xs.toList.foldl (fun acc x => insert x acc) [])
 
 /-- Visit node `v` in `TarjanState` using pure `arraySetD`. -/
 def tarjanVisit : Ix.Compile.Canon.TarjanState → Nat → Ix.Compile.Canon.TarjanState
@@ -510,11 +510,11 @@ def tarjanDfsLoop (adj : Array (Array Nat)) : Nat → Ix.Compile.Canon.TarjanSta
 /-- Total Tarjan SCC condensation using pure `sortArrayBy` and `List` recursion. -/
 def tarjanCondensation (adj : Array (Array Nat)) : Option Ix.Compile.Canon.Condensation :=
   let n := adj.size
-  let adj := (adj.toList.map (fun row => (row.toList.filter (· < n)).toArray)).toArray
+  let adj := Array.mk (adj.toList.map (fun row => Array.mk (row.toList.filter (· < n))))
   let edges := adj.toList.foldl (init := 0) (· + ·.size)
   let init : Ix.Compile.Canon.TarjanState :=
-    { index := (List.replicate n 0).toArray, low := (List.replicate n 0).toArray,
-      onStack := (List.replicate n false).toArray }
+    { index := Array.mk (List.replicate n 0), low := Array.mk (List.replicate n 0),
+      onStack := Array.mk (List.replicate n false) }
   let (st, _) := (List.range n).foldl (init := (init, edges + n + 1))
     fun (st, fuel) r =>
       if st.exhausted || arrayGetD st.index r 0 != 0 then (st, fuel)
@@ -591,23 +591,23 @@ def scheduleModuleDecls (modIdx : ModuleIndex)
     (isExtConst : Ix.Name → Bool := fun _ => false)
     (isExtCtor : Ix.Name → Bool := fun _ => false) : Except String ModuleSchedule := do
   let n := modIdx.decls.size
-  let deps := (modIdx.decls.toList.map fun d => extractDeclDeps modIdx d isExtConst isExtCtor).toArray
+  let deps := Array.mk (modIdx.decls.toList.map fun d => extractDeclDeps modIdx d isExtConst isExtCtor)
   -- Build explicit adjacency list `explicitAdj[u]` (including self-edges for `classifyScc`)
-  let explicitAdj : Array (Array Nat) := (deps.toList.map fun d =>
+  let explicitAdj : Array (Array Nat) := Array.mk (deps.toList.map fun d =>
     let all := d.sigRefs.toList.foldl pushUniqueNat #[]
-    d.bodyRefs.toList.foldl pushUniqueNat all).toArray
+    d.bodyRefs.toList.foldl pushUniqueNat all)
   -- Build condensation adjacency list (without self-loops) + cycle-safe instance edges
-  let baseAdj : Array (Array Nat) := (explicitAdj.toList.zipIdx.map fun (nbrs, u) =>
-    (nbrs.toList.filter (· != u)).toArray).toArray
+  let baseAdj : Array (Array Nat) := Array.mk (explicitAdj.toList.zipIdx.map fun (nbrs, u) =>
+    Array.mk (nbrs.toList.filter (· != u)))
   let fullAdj := addInstanceSchedulingEdges modIdx.decls deps baseAdj
   match tarjanCondensation fullAdj with
   | none =>
     throw "internal error: Tarjan SCC condensation failed"
   | some cond =>
-    let sccs : Array ScheduledSCC := (cond.comps.toList.zipIdx.map fun (rawComp, sccIdx) =>
+    let sccs : Array ScheduledSCC := Array.mk (cond.comps.toList.zipIdx.map fun (rawComp, sccIdx) =>
       let orderedComp := sortSccBySigRefs rawComp deps
       let kind := classifyScc modIdx explicitAdj orderedComp
-      { sccIdx, kind, declIdxs := orderedComp }).toArray
+      { sccIdx, kind, declIdxs := orderedComp })
     let _ := n
     return { modIdx, deps, explicitAdj, fullAdj, sccs }
 

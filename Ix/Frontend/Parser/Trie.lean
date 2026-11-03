@@ -20,17 +20,24 @@ namespace Trie
 /-- The empty trie. -/
 def empty : Trie α := .node none []
 
-/-- Look up or insert a child in a sorted `(Char × Trie α)` association list. -/
+/-- Look up or insert a child in a sorted `(Char × Trie α)` association list,
+    strictly forcing the updated child `Trie` and tail list before constructing nodes. -/
 def upsertChild (c : Char) (f : Option (Trie α) → Trie α) :
     List (Char × Trie α) → List (Char × Trie α)
-  | [] => [(c, f none)]
+  | [] =>
+    match f none with
+    | .node v ch => [(c, .node v ch)]
   | (k, t) :: rest =>
     if c == k then
-      (k, f (some t)) :: rest
+      match f (some t) with
+      | .node v ch => (k, .node v ch) :: rest
     else if c < k then
-      (c, f none) :: (k, t) :: rest
+      match f none with
+      | .node v ch => (c, .node v ch) :: (k, t) :: rest
     else
-      (k, t) :: upsertChild c f rest
+      match upsertChild c f rest with
+      | [] => [(k, t)]
+      | hd :: tl => (k, t) :: hd :: tl
 
 /-- Find a child for character `c` in a sorted `(Char × Trie α)` association list. -/
 def findChild? (c : Char) : List (Char × Trie α) → Option (Trie α)
@@ -40,21 +47,29 @@ def findChild? (c : Char) : List (Char × Trie α) → Option (Trie α)
     else if c < k then none
     else findChild? c rest
 
-/-- Insert a character list key into the trie (structurally recursive on `List Char`). -/
+/-- Insert a character list key into the trie (structurally recursive on `List Char`),
+    strictly forcing the updated children list before wrapping in `.node`. -/
 def insertChars : Trie α → List Char → α → Trie α
   | .node _ children, [], v => .node (some v) children
   | .node val children, c :: cs, v =>
-    let children' := upsertChild c (fun prev? =>
-      insertChars (prev?.getD empty) cs v) children
-    .node val children'
+    match upsertChild c (fun prev? => insertChars (prev?.getD empty) cs v) children with
+    | [] => .node val []
+    | hd :: tl => .node val (hd :: tl)
 
 /-- Insert a string key into the trie. -/
 def insert (t : Trie α) (s : String) (v : α) : Trie α :=
   insertChars t s.toList v
 
+/-- Strictly fold a list of strings into a `Trie String`. -/
+def ofSymbolsLoop : Trie String → List String → Trie String
+  | t, [] => t
+  | t, s :: ss =>
+    match t.insert s s with
+    | .node v ch => ofSymbolsLoop (.node v ch) ss
+
 /-- Build a trie from a list of strings (mapping each string to itself). -/
 def ofSymbols (syms : List String) : Trie String :=
-  syms.foldl (fun t s => t.insert s s) empty
+  ofSymbolsLoop empty syms
 
 /-- Exact lookup of a character list key in the trie. -/
 def findExact? : Trie α → List Char → Option α

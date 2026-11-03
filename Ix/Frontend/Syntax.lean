@@ -59,13 +59,17 @@ def charsCmp : List Char → List Char → Ordering
     else if Nat.ble (nb + 1) na then .gt
     else charsCmp as bs
 
-/-- Pure structural equality on `String` (zero proof terms, zero `toByteArray` allocation). -/
+/-- Pure structural equality on `String`: checks O(1) `utf8ByteSize` first so strings of
+    different byte lengths never expand `KLiteral.Str` to `List Char` in `IxVM`. -/
 @[inline] def strBeqPure (a b : String) : Bool :=
-  charsBeq a.toList b.toList
+  Nat.beq a.utf8ByteSize b.utf8ByteSize && charsBeq a.toList b.toList
 
-/-- Pure structural lexicographical order on `String` (zero `WellFounded.fix`). -/
+/-- Pure structural shortlex order on `String` (compares O(1) `utf8ByteSize` first,
+    only expanding `.toList` when two strings have the same UTF-8 byte length). -/
 @[inline] def strCmpPure (a b : String) : Ordering :=
-  charsCmp a.toList b.toList
+  match natCmpPure a.utf8ByteSize b.utf8ByteSize with
+  | .eq => charsCmp a.toList b.toList
+  | ord => ord
 
 scoped instance (priority := 2000) : BEq String where
   beq := strBeqPure
@@ -146,16 +150,16 @@ def beqStruct : Ix.Name → Ix.Name → Bool
   | .num p1 i1 _, .num p2 i2 _ => Nat.beq i1 i2 && beqStruct p1 p2
   | _, _                       => false
 
-/-- Structural total order on `Ix.Name` (`Lean.Name.cmp`) that reads no hash
-    and is `@[expose]` for kernel-level reduction. -/
+/-- Leaf-first structural total order on `Ix.Name` that reads no hash and compares
+    the leaf component (`i₁` vs `i₂` or `s₁` vs `s₂`) before recursing on the prefix. -/
 def cmpStruct : Ix.Name → Ix.Name → Ordering
   | .anonymous _, .anonymous _ => .eq
   | .anonymous _, _            => .lt
   | _, .anonymous _            => .gt
-  | .num p₁ i₁ _, .num p₂ i₂ _ => (cmpStruct p₁ p₂).then (natCmpPure i₁ i₂)
+  | .num p₁ i₁ _, .num p₂ i₂ _ => (natCmpPure i₁ i₂).then (cmpStruct p₁ p₂)
   | .num .., .str ..           => .lt
   | .str .., .num ..           => .gt
-  | .str p₁ s₁ _, .str p₂ s₂ _ => (cmpStruct p₁ p₂).then (strCmpPure s₁ s₂)
+  | .str p₁ s₁ _, .str p₂ s₂ _ => (strCmpPure s₁ s₂).then (cmpStruct p₁ p₂)
 
 instance (priority := 2000) : BEq Ix.Name where
   beq := beqStruct
@@ -330,8 +334,12 @@ def mkConst (name : Ix.Name) (us : Array Ix.Level := #[]) : Ix.Expr :=
 def mkApp (f a : Ix.Expr) : Ix.Expr :=
   .app f a dummyAddr
 
+def mkAppList : Ix.Expr → List Ix.Expr → Ix.Expr
+  | f, []      => f
+  | f, a :: as => mkAppList (mkApp f a) as
+
 def mkAppN (f : Ix.Expr) (args : Array Ix.Expr) : Ix.Expr :=
-  args.foldl mkApp f
+  mkAppList f args.toList
 
 def mkLam (n : Ix.Name) (t b : Ix.Expr) (bi : Lean.BinderInfo := .default) : Ix.Expr :=
   .lam n t b bi dummyAddr
@@ -446,11 +454,11 @@ def rehash : Ix.Expr → Ix.Expr
     if Nat.beq h.hash.size 32 then e
     else
       let name' := Name.rehash name
-      let us' := us.map Level.rehash
+      let usList := us.toList.map Level.rehash
       let digest := Address.admissionHash (
-        us'.foldl (fun acc u => acc ++ u.getHash.hash)
+        usList.foldl (fun acc u => acc ++ u.getHash.hash)
           (ByteArray.mk #[Ix.TAG_EREF] ++ name'.getHash.hash))
-      .const name' us' digest
+      .const name' (Array.mk usList) digest
   | e@(.app f a h) =>
     if Nat.beq h.hash.size 32 then e
     else
@@ -507,13 +515,13 @@ def rehash : Ix.Expr → Ix.Expr
   | e@(.mdata data inner h) =>
     if Nat.beq h.hash.size 32 then e
     else
-      let data' := data.map fun (nm, dv) => (Name.rehash nm, rehashDataValue dv)
+      let dataList := data.toList.map fun (nm, dv) => (Name.rehash nm, rehashDataValue dv)
       let inner' := rehash inner
-      let header := ByteArray.mk #[Ix.TAG_EMDATA] ++ ⟨data'.size.toBytesLE⟩
-      let body := data'.foldl (fun acc (nm, dv) =>
+      let header := ByteArray.mk #[Ix.TAG_EMDATA] ++ ⟨dataList.length.toBytesLE⟩
+      let body := dataList.foldl (fun acc (nm, dv) =>
         acc ++ nm.getHash.hash ++ encodeDataValueBytes dv) header
       let digest := Address.admissionHash (body ++ inner'.getHash.hash)
-      .mdata data' inner' digest
+      .mdata (Array.mk dataList) inner' digest
 
 /-- Pure `Ix.ConstantInfo.getCnst` exposed for kernel-level reduction. -/
 def ConstantInfo.getCnstPure : Ix.ConstantInfo → Ix.ConstantVal
@@ -529,7 +537,7 @@ def ConstantInfo.getCnstPure : Ix.ConstantInfo → Ix.ConstantVal
 /-- Populate canonical 32-byte `Address` hashes on an `Ix.ConstantVal`. -/
 def rehashConstantVal (cv : Ix.ConstantVal) : Ix.ConstantVal :=
   { name        := Name.rehash cv.name
-    levelParams := cv.levelParams.map Name.rehash
+    levelParams := Array.mk (cv.levelParams.toList.map Name.rehash)
     type        := rehash cv.type }
 
 /-- Populate canonical 32-byte `Address` hashes on an `Ix.RecursorRule`. -/
@@ -545,23 +553,23 @@ def ConstantInfo.rehash : Ix.ConstantInfo → Ix.ConstantInfo
       v with
       cnst  := rehashConstantVal v.cnst
       value := Expr.rehash v.value
-      all   := v.all.map Name.rehash }
+      all   := Array.mk (v.all.toList.map Name.rehash) }
   | .thmInfo v => .thmInfo {
       v with
       cnst  := rehashConstantVal v.cnst
       value := Expr.rehash v.value
-      all   := v.all.map Name.rehash }
+      all   := Array.mk (v.all.toList.map Name.rehash) }
   | .opaqueInfo v => .opaqueInfo {
       v with
       cnst  := rehashConstantVal v.cnst
       value := Expr.rehash v.value
-      all   := v.all.map Name.rehash }
+      all   := Array.mk (v.all.toList.map Name.rehash) }
   | .quotInfo v => .quotInfo { v with cnst := rehashConstantVal v.cnst }
   | .inductInfo v => .inductInfo {
       v with
       cnst  := rehashConstantVal v.cnst
-      all   := v.all.map Name.rehash
-      ctors := v.ctors.map Name.rehash }
+      all   := Array.mk (v.all.toList.map Name.rehash)
+      ctors := Array.mk (v.ctors.toList.map Name.rehash) }
   | .ctorInfo v => .ctorInfo {
       v with
       cnst   := rehashConstantVal v.cnst
@@ -569,8 +577,8 @@ def ConstantInfo.rehash : Ix.ConstantInfo → Ix.ConstantInfo
   | .recInfo v => .recInfo {
       v with
       cnst  := rehashConstantVal v.cnst
-      all   := v.all.map Name.rehash
-      rules := v.rules.map rehashRecursorRule }
+      all   := Array.mk (v.all.toList.map Name.rehash)
+      rules := Array.mk (v.rules.toList.map rehashRecursorRule) }
 
 /-- Pure `ix.contract` metadata key `ix.contract`. -/
 def contractKey : Ix.Name := Name.mkStr2 "ix" "contract"
@@ -812,8 +820,9 @@ def listGet? : List α → Nat → Option α
 def getArg (stx : Ix.Syntax) (i : Nat) : Ix.Syntax :=
   listGetD (getArgs stx).toList i .missing
 
-def isNone (stx : Ix.Syntax) : Bool :=
-  isOfKind stx SyntaxKind.nullKind && getNumArgs stx == 0
+def isNone : Ix.Syntax → Bool
+  | .node _ kind ⟨[]⟩ => kind == SyntaxKind.nullKind
+  | _                 => false
 
 def getOptional? (stx : Ix.Syntax) : Option Ix.Syntax :=
   if isOfKind stx SyntaxKind.nullKind then

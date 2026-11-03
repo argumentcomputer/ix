@@ -337,7 +337,7 @@ def registerLeanInitArithInstances (env : IxElabEnv) : IxElabEnv := Id.run do
     and `Nat` instances (`LE.le`, `LT.lt`, `GE.ge`, `GT.gt`, `HAdd.hAdd`, `HPow.hPow`, `OfNat.ofNat`)
     into `env` so statements like Fermat's Last Theorem elaborate to the exact Lean 4 `Ix.Expr`. -/
 def seedLeanInitArith (env : IxElabEnv) : IxElabEnv := Id.run do
-  let mut env := seedCorePreludeIfMissing env {}
+  let mut env := env
   let uName := Name.simple "u"
   let vName := Name.simple "v"
   let wName := Name.simple "w"
@@ -345,16 +345,28 @@ def seedLeanInitArith (env : IxElabEnv) : IxElabEnv := Id.run do
   let vLvl  := Level.mkParam vName
   let wLvl  := Level.mkParam wName
   let zLvl  := Level.mkZero
+  let type0 := Expr.mkSort (Level.mkSucc zLvl)
   let sortU := Expr.mkSort uLvl
   let typeU := Expr.mkSort (Level.mkSucc uLvl)
   let typeV := Expr.mkSort (Level.mkSucc vLvl)
   let typeW := Expr.mkSort (Level.mkSucc wLvl)
   let prop  := Expr.mkProp
-  let natConst := Expr.mkConst (Name.simple "Nat") #[]
+  let natName := Name.simple "Nat"
+  let natConst := Expr.mkConst natName #[]
 
   let addAxiomIfMissing (e : IxElabEnv) (nm : Ix.Name) (lvls : Array Ix.Name) (ty : Ix.Expr) : IxElabEnv :=
     if e.contains nm then e
     else e.addConst (.axiomInfo { cnst := { name := nm, levelParams := lvls, type := ty }, isUnsafe := false })
+
+  -- 0. `Nat : Type` and `Eq.{u} : {α : Sort u} → α → α → Prop`
+  env := addAxiomIfMissing env natName #[] type0
+  let eqName := Name.simple "Eq"
+  let eqType :=
+    Expr.mkForallE (Name.simple "α") sortU
+      (Expr.mkForallE (Name.simple "a") (Expr.mkBVar 0)
+        (Expr.mkForallE (Name.simple "b") (Expr.mkBVar 1) prop .default) .default)
+      .implicit
+  env := addAxiomIfMissing env eqName #[uName] eqType
 
   -- 1. `Not : Prop → Prop` and `Ne.{u} : {α : Sort u} → α → α → Prop`
   let notName := Name.simple "Not"
@@ -530,7 +542,7 @@ def elabInductiveHeader (decl : ModuleDecl) (fuel : Nat := 128) :
       let fullType ← instantiateMVars 32 fullType
       let fullType := defaultUnassignedExprLevelMVars fullType
       let st ← get
-      let lvlParams := (decl.univParams ++ decl.scope.levelNames ++ st.autoBoundUnivs).eraseDups.toArray
+      let lvlParams := Array.mk (decl.univParams ++ decl.scope.levelNames ++ st.autoBoundUnivs).eraseDups
       return (paramFVars.size, nIndices, lvlParams, fullType)
 
 /-- Elaborate a single constructor `| shortId binders [: optType]` of an inductive `decl`. -/
@@ -679,10 +691,10 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
     let tempIndVal : Ix.InductiveVal := {
       cnst := { name := decl.fullName, levelParams := lvlParams, type := indType }
       numParams := nParams, numIndices := nIndices, all := allNames
-      ctors := decl.ctorNames.toArray, numNested := 0
+      ctors := Array.mk decl.ctorNames, numNested := 0
       isRec := false, isUnsafe := false, isReflexive := false
     }
-    modify fun st => { st with env := st.env.addConst (.inductInfo tempIndVal) }
+    modifyEnv (·.addConst (.inductInfo tempIndVal))
     headers := headers.push (decl, nParams, nIndices, lvlParams, indType)
 
   -- Step 2: Elaborate constructors / structure fields for each inductive in the SCC
@@ -701,7 +713,7 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
       let mut ctors : Array Ix.ConstructorVal := #[]
       for (ctorStx, cidx) in ctorStxs.zipIdx do
         let (cval, bcs, retC) ← elabOneConstructor decl lvlParams paramGroups ctorStx cidx fuel
-        modify fun st => { st with env := st.env.addContracts cval.cnst.name bcs retC }
+        modifyEnv (·.addContracts cval.cnst.name bcs retC)
         ctors := ctors.push cval
       let isRec := ctors.any fun cv =>
         let (_, fieldDecls, _) := openForallTelescope (cv.numParams + cv.numFields) cv.cnst.type "rc" 0 #[] #[]
@@ -725,7 +737,7 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
         let mut ctors : Array Ix.ConstructorVal := #[]
         for (ctorStx, cidx) in children.zipIdx do
           let (cval, bcs, retC) ← elabOneConstructor decl lvlParams paramGroups ctorStx cidx fuel
-          modify fun st => { st with env := st.env.addContracts cval.cnst.name bcs retC }
+          modifyEnv (·.addContracts cval.cnst.name bcs retC)
           ctors := ctors.push cval
         let isRec := ctors.any fun cv =>
           let (_, fieldDecls, _) := openForallTelescope (cv.numParams + cv.numFields) cv.cnst.type "rc" 0 #[] #[]
@@ -738,15 +750,14 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
           isRec := isRec, isUnsafe := false, isReflexive := false
         }
         if decl.kind == .cls then
-          modify fun st => { st with env := { st.env with classSet := st.env.classSet.insert decl.fullName } }
+          modifyEnv fun env => { env with classSet := env.classSet.insert decl.fullName }
         rawItems := rawItems.push (indVal, ctors)
       else
         let ctorFullName := decl.ctorNames.headD (Name.mkStr decl.fullName "mk")
         let (cval, sInfo, bcs) ← elabStructureFields decl lvlParams paramGroups ctorFullName fieldsOrCtorsNode fuel
-        modify fun st =>
-          let env := st.env.addContracts cval.cnst.name bcs .shared
-          let env := env.addStructInfo sInfo
-          { st with env }
+        modifyEnv fun env =>
+          let env := env.addContracts cval.cnst.name bcs .shared
+          env.addStructInfo sInfo
         let indVal : Ix.InductiveVal := {
           cnst := { name := decl.fullName, levelParams := lvlParams, type := indType }
           numParams := nParams, numIndices := nIndices, all := allNames
@@ -762,15 +773,13 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
   let canonItems := canonicalizeInductiveBlock addrOf rawItems
 
   -- Step 4: Register canonical `InductiveVal`s, `ConstructorVal`s, and surgery-free `.rec`, `.recOn`, `.casesOn`, `._ctorIdx`
-  modify fun st => { st with env := registerCanonicalInductiveBlock st.env canonItems }
+  modifyEnv fun env => registerCanonicalInductiveBlock env canonItems
 
   -- Step 5: Generate and register structure/class field projection functions
   for (iv, cv, sInfo) in structToGenerate do
     let projFieldNames := sInfo.fields.map (·.projFnName)
     let projs := generateStructProjections iv cv projFieldNames sInfo.isClass
-    modify fun st =>
-      let env' := projs.foldl (fun acc p => acc.addConst (.defnInfo p)) st.env
-      { st with env := env' }
+    modifyEnv fun env => projs.foldl (fun acc p => acc.addConst (.defnInfo p)) env
 
 /-! ## Structural Recursion Lowering (`casesOn` -> `recOn`) -/
 
@@ -911,50 +920,55 @@ where
 /-! ## Value Declaration SCC Elaboration (`def`, `abbrev`, `theorem`, `opaque`, `axiom`, `instance`) -/
 
 /-- Elaborate a strongly connected component of value/axiom declarations. -/
-def elabValueSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Unit := do
+def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel : Nat := 128) : IxElabM Unit := do
   -- Step 1: Elaborate each declaration's signature and pre-register a temporary header
   -- so recursive and mutually recursive references resolve during body elaboration.
+  -- (For a single non-recursive non-axiom declaration, skip Step 1 to avoid elaborating the signature twice!)
   let mut sigInfos : Array (ModuleDecl × Array Ix.Name × Ix.Expr × Array Ixon.BinderContract × Ixon.ValueContract) := #[]
 
   for decl in decls do
-    modify fun st => { st with autoBoundUnivs := [], localLetContracts := #[] }
     let cmd := decl.stx
-    let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
-    let paramGroups := varGroups ++ ((Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode)
     let vPrefNode := Syntax.getArg cmd 5
-    let optTypeNode := Syntax.getArg cmd 6
     let retContract := (decodeContractPrefix vPrefNode).toValueContract
+    if !isRecursive && decls.size == 1 && Syntax.getKind cmd != SyntaxKind.axiomDecl then
+      let initLvls := Array.mk (decl.univParams ++ decl.scope.levelNames).eraseDups
+      sigInfos := sigInfos.push (decl, initLvls, Expr.mkProp, #[], retContract)
+    else
+      modify fun st => match st with | ⟨env, _, nextIdx, _, _⟩ => ⟨env, {}, nextIdx, [], #[]⟩
+      let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
+      let paramGroups := varGroups ++ ((Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode)
+      let optTypeNode := Syntax.getArg cmd 6
 
-    let (lvlParams, fullType, bcs) ← withReader (fun ctx => { ctx with
-        lctx := LocalContext.empty
-        scope := decl.scope
-        currDecl? := some decl.fullName
-        univParams := decl.univParams }) do
-      elabBinderGroups (fun s exp? => elabTerm fuel s exp?) paramGroups #[] fun paramFVars => do
-        let retTy ←
-          if Syntax.isNone optTypeNode || Syntax.isMissing optTypeNode then
-            let u ← mkFreshLevelMVar
-            mkFreshExprMVar (Expr.mkSort u)
-          else
-            let t ← elabTerm fuel optTypeNode none
-            let _ ← ensureSort 32 t
-            instantiateMVars 32 t
-        let piTy ← mkForallFVars paramFVars retTy retContract
-        let piTy ← instantiateMVars 32 piTy
-        let ctxNow ← read
-        let bcs : Array Ixon.BinderContract := paramFVars.filterMap fun fv =>
-          (ctxNow.lctx.findFVar? fv).map (·.contract)
-        let stNow ← get
-        let lvls := (decl.univParams ++ decl.scope.levelNames ++ stNow.autoBoundUnivs).eraseDups.toArray
-        return (lvls, piTy, bcs)
+      let (lvlParams, fullType, bcs) ← withReader (fun ctx => { ctx with
+          lctx := LocalContext.empty
+          scope := decl.scope
+          currDecl? := some decl.fullName
+          univParams := decl.univParams }) do
+        elabBinderGroups (fun s exp? => elabTerm fuel s exp?) paramGroups #[] fun paramFVars => do
+          let retTy ←
+            if Syntax.isNone optTypeNode || Syntax.isMissing optTypeNode then
+              let u ← mkFreshLevelMVar
+              mkFreshExprMVar (Expr.mkSort u)
+            else
+              let t ← elabTerm fuel optTypeNode none
+              let _ ← ensureSortIfNotForall 32 t
+              instantiateMVars 32 t
+          let piTy ← mkForallFVars paramFVars retTy retContract
+          let piTy ← instantiateMVars 32 piTy
+          let ctxNow ← read
+          let bcs : Array Ixon.BinderContract := Array.mk <| paramFVars.toList.filterMap fun fv =>
+            (ctxNow.lctx.findFVar? fv).map (·.contract)
+          let stNow ← get
+          let lvls := Array.mk (decl.univParams ++ decl.scope.levelNames ++ stNow.autoBoundUnivs).eraseDups
+          return (lvls, piTy, bcs)
 
-    -- Pre-register temporary `.axiomInfo` header for recursive calls
-    let tempAx : Ix.AxiomVal := {
-      cnst := { name := decl.fullName, levelParams := lvlParams, type := defaultUnassignedExprLevelMVars fullType }
-      isUnsafe := false
-    }
-    modify fun st => { st with env := st.env.addConst (.axiomInfo tempAx) }
-    sigInfos := sigInfos.push (decl, lvlParams, fullType, bcs, retContract)
+      -- Pre-register temporary `.axiomInfo` header for recursive calls (or final `.axiomInfo` for `axiom`)
+      let tempAx : Ix.AxiomVal := {
+        cnst := { name := decl.fullName, levelParams := lvlParams, type := defaultUnassignedExprLevelMVars fullType }
+        isUnsafe := false
+      }
+      modifyEnv (·.addConst (.axiomInfo tempAx))
+      sigInfos := sigInfos.push (decl, lvlParams, fullType, bcs, retContract)
 
   -- Step 2: Elaborate bodies for all non-axiom declarations in the SCC
   let mut elabbedDefs : Array Ix.Def := #[]
@@ -965,7 +979,7 @@ def elabValueSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Unit :
       -- Already registered as `.axiomInfo` in Step 1!
       pure ()
     else
-      modify fun st => { st with autoBoundUnivs := initLvlParams.toList, localLetContracts := #[] }
+      modify fun st => match st with | ⟨env, _, nextIdx, _, _⟩ => ⟨env, {}, nextIdx, initLvlParams.toList, #[]⟩
       let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
       let rawParamBinders := (Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode
       let paramGroups := varGroups ++ rawParamBinders
@@ -982,7 +996,7 @@ def elabValueSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Unit :
               pure none
             else
               let t ← elabTerm fuel optTypeNode none
-              let _ ← ensureSort 32 t
+              let _ ← ensureSortIfNotForall 32 t
               let tInst ← instantiateMVars 32 t
               pure (some tInst)
 
@@ -1069,26 +1083,26 @@ def elabValueSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Unit :
           let fullTy := defaultUnassignedExprLevelMVars fullTy
           let fullVal := defaultUnassignedExprLevelMVars fullVal
           let ctxNow ← read
-          let bcs : Array Ixon.BinderContract := allParamFVars.filterMap fun fv =>
+          let bcs : Array Ixon.BinderContract := Array.mk <| allParamFVars.toList.filterMap fun fv =>
             (ctxNow.lctx.findFVar? fv).map (·.contract)
           let stNow ← get
-          let lvls := (decl.univParams ++ decl.scope.levelNames ++ stNow.autoBoundUnivs).eraseDups.toArray
+          let lvls := Array.mk (decl.univParams ++ decl.scope.levelNames ++ stNow.autoBoundUnivs).eraseDups
           return (lvls, fullTy, fullVal, bcs, stNow.localLetContracts)
 
       -- If this is a single recursive definition, try lowering structural `casesOn` self-recursion to `recOn`
       let stNow ← get
       let finalVal :=
-        if decls.size == 1 then tryLowerStructuralRecToRecOn stNow.env decl.fullName finalVal
+        if isRecursive && decls.size == 1 then tryLowerStructuralRecToRecOn stNow.env decl.fullName finalVal
         else finalVal
 
-      modify fun st => { st with env := st.env.addContracts decl.fullName finalBcs retContract finalLcs }
+      modifyEnv (·.addContracts decl.fullName finalBcs retContract finalLcs)
 
       -- If `decl.kind == .inst`, register in `st.env.instances`
       if decl.kind == .inst then
         let (_, _, retBody) := openForallTelescope (countForalls 64 finalType) finalType "inst" 0 #[] #[]
         let (headClass, _) := getAppFnArgs retBody
         if let .const className _ _ := headClass then
-          modify fun st => { st with env := st.env.addInstance { instName := decl.fullName, className } }
+          modifyEnv (·.addInstance { instName := decl.fullName, className })
 
       let defKind : Ix.DefKind :=
         if decl.kind == .thm then .thm
@@ -1136,7 +1150,7 @@ def elabValueSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Unit :
               safety := .safe
               all := d.all
             }
-        modify fun st => { st with env := st.env.addConst ci }
+        modifyEnv (·.addConst ci)
 
 /-! ## Whole-Module Elaboration Entry Points -/
 
@@ -1144,21 +1158,23 @@ def elabValueSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Unit :
 def elabModuleSchedule (sched : ModuleSchedule)
     (initEnv : IxElabEnv := IxElabEnv.empty)
     (seedPrelude : Bool := true) : Except ElabError IxElabEnv := do
-  let baseEnv := { initEnv with importMap := initEnv.importMap.merge sched.modIdx.importMap }
+  let baseEnv := initEnv.withImportMap (initEnv.importMap.merge sched.modIdx.importMap)
   let baseEnv := if seedPrelude then seedCorePreludeIfMissing baseEnv sched.modIdx else baseEnv
-  let initState : ElabState := { env := baseEnv }
-  let initCtx : ElabContext := { modIdx := sched.modIdx }
-  let act : IxElabM Unit := do
-    for scc in sched.sccs do
-      let sccDecls := scc.declIdxs.filterMap fun idx => sched.modIdx.decls[idx]?
-      if !sccDecls.isEmpty then
-        let allInd := sccDecls.all fun d => d.kind == .ind || d.kind == .struct || d.kind == .cls
-        if allInd then
-          elabInductiveSCC sccDecls
-        else
-          elabValueSCC sccDecls
-  let (_, finalState) ← IxElabM.run act initCtx initState
-  return finalState.env
+  baseEnv.bindEnv fun baseEnv' => do
+    let initState : ElabState := { env := baseEnv' }
+    let initCtx : ElabContext := { modIdx := sched.modIdx }
+    let declList := sched.modIdx.decls.toList
+    let act : IxElabM Unit := do
+      for scc in sched.sccs.toList do
+        let sccDecls := Array.mk (scc.declIdxs.toList.filterMap fun idx => Syntax.listGet? declList idx)
+        if !sccDecls.isEmpty then
+          let allInd := sccDecls.toList.all fun d => d.kind == .ind || d.kind == .struct || d.kind == .cls
+          if allInd then
+            elabInductiveSCC sccDecls
+          else
+            elabValueSCC sccDecls (scc.kind != .singleNonRec)
+    let (_, finalState) ← IxElabM.run act initCtx initState
+    return finalState.env
 
 /-- Elaborate a parsed `Ix.Syntax` module AST (`SyntaxKind.moduleKind`) into an `IxElabEnv`. -/
 def elabModuleSyntax (moduleStx : Ix.Syntax)
@@ -1166,12 +1182,13 @@ def elabModuleSyntax (moduleStx : Ix.Syntax)
     (seedPrelude : Bool := true) : Except String IxElabEnv := do
   let modIdx ← buildModuleIndex moduleStx
   let baseEnv := if seedPrelude then seedCorePreludeIfMissing initEnv modIdx else initEnv
-  let sched ← scheduleModuleDecls modIdx
-    (fun n => baseEnv.contains n)
-    (fun n => baseEnv.isCtor n)
-  match elabModuleSchedule sched initEnv seedPrelude with
-  | .ok env  => return env
-  | .error e => throw (toString e)
+  baseEnv.bindEnv fun baseEnv' => do
+    let sched ← scheduleModuleDecls modIdx
+      (fun n => baseEnv'.contains n)
+      (fun n => baseEnv'.isCtor n)
+    match elabModuleSchedule sched baseEnv' false with
+    | .ok env  => return env
+    | .error e => throw (toString e)
 
 /-- Parse and elaborate a `.ix` / `.lean` source string into a pure `IxElabEnv` (zero `IO`). -/
 def elabSource (input : String) (fileName : String := "<input>")

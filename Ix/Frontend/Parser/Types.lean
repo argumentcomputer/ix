@@ -13,90 +13,80 @@ namespace Ix.Frontend.Parser
 
 /-! ## Character-Indexed `InputContext` -/
 
-/-- Balanced binary segment tree over character suffixes `(ch, byteOffset, tailChars)`,
+/-- Balanced binary segment tree over character suffixes `(ch, tailChars)`,
     providing $O(\log N)$ random access by character index without `Array`/`Fin` proof terms. -/
 inductive CharSegTree where
   | empty : CharSegTree
-  | leaf  : Char → Nat → List Char → CharSegTree
+  | leaf  : Char → List Char → CharSegTree
   | node  : Nat → CharSegTree → CharSegTree → CharSegTree
   deriving Repr, Inhabited
 
 /-- Pure input context that pre-decodes `input` into a spine of characters `chars`,
-    cumulative UTF-8 byte offsets `byteOffsets`, `charCount`, `byteSize`, and an
-    $O(\log N)$ `CharSegTree`. -/
+    `charCount`, and an $O(\log N)$ `CharSegTree`. -/
 structure InputContext where
-  fileName    : String
-  input       : String
-  chars       : List Char
-  byteOffsets : List Nat
-  charCount   : Nat
-  byteSize    : Nat := 0
-  tree        : CharSegTree := .empty
+  fileName  : String
+  input     : String
+  chars     : List Char
+  charCount : Nat
+  tree      : CharSegTree := .empty
   deriving Repr, Inhabited
 
 namespace InputContext
 
-/-- Build a balanced binary tree over `count` suffixes of `cs` and `os` in $O(N)$ steps,
-    structurally recursive on `depth : Nat` (compiled directly to `Nat.rec`). -/
-def buildCharSegTreeAux : Nat → Nat → List Char → List Nat → (CharSegTree × List Char × List Nat)
-  | 0, _, cs, os => (.empty, cs, os)
-  | depth + 1, count, cs, os =>
+/-- Build a balanced binary tree over `count` suffixes of `cs` in $O(N)$ steps,
+    structurally recursive on `depth : Nat` (compiled directly to `Nat.rec`),
+    forcing `leftLen`, `leftTree`, and `rightTree` before constructing `.node`. -/
+def buildCharSegTreeAux : Nat → Nat → List Char → (CharSegTree × List Char)
+  | 0, _, cs => (.empty, cs)
+  | depth + 1, count, cs =>
     if Nat.beq count 0 then
-      (.empty, cs, os)
+      (.empty, cs)
     else if Nat.beq count 1 then
-      match cs, os with
-      | c :: cs', o :: os' => (.leaf c o (c :: cs'), cs', os')
-      | _, _               => (.empty, cs, os)
+      match cs with
+      | c :: cs' => (.leaf c (c :: cs'), cs')
+      | []       => (.empty, [])
     else
       let leftLen := count / 2
       let rightLen := count - leftLen
-      match buildCharSegTreeAux depth leftLen cs os with
-      | (leftTree, cs1, os1) =>
-        match buildCharSegTreeAux depth rightLen cs1 os1 with
-        | (rightTree, cs2, os2) =>
-          (.node leftLen leftTree rightTree, cs2, os2)
+      match buildCharSegTreeAux depth leftLen cs with
+      | (leftTree, cs1) =>
+        match buildCharSegTreeAux depth rightLen cs1 with
+        | (rightTree, cs2) =>
+          match leftTree, rightTree with
+          | lt, rt =>
+            if Nat.beq leftLen 0 then
+              (.node 0 lt rt, cs2)
+            else
+              (.node leftLen lt rt, cs2)
 
 /-- Look up character index `idx` in `CharSegTree` in $O(\log N)$ steps. -/
-def lookupSegTree : CharSegTree → Nat → Option (Char × Nat × List Char)
+def lookupSegTree : CharSegTree → Nat → Option (Char × List Char)
   | .empty, _ => none
-  | .leaf c o tail, 0 => some (c, o, tail)
-  | .leaf _ _ _, _ => none
+  | .leaf c tail, 0 => some (c, tail)
+  | .leaf _ _, _ => none
   | .node leftLen left right, idx =>
     if Nat.ble (idx + 1) leftLen then
       lookupSegTree left idx
     else
       lookupSegTree right (idx - leftLen)
 
-/-- UTF-8 byte length of a single Unicode scalar `Char`, computed via `Nat.ble` without `BitVec`. -/
-def charUtf8ByteSize (c : Char) : Nat :=
-  let n := c.val.toNat
-  if Nat.ble n 0x7F then 1
-  else if Nat.ble n 0x7FF then 2
-  else if Nat.ble n 0xFFFF then 3
-  else 4
-
-/-- Reverse `revOffs` via `List` structural recursion. -/
-def reverseNatList : List Nat → List Nat → List Nat
-  | [], acc => acc
-  | o :: os, acc => reverseNatList os (o :: acc)
-
-/-- Compute `(byteOffsets, charCount, byteSize)` directly from `input.toList` in $O(N)$
-    structural recursion on `List Char` — zero `String.toByteArray` or `Char.ofNat`! -/
-def buildInputOffsets : List Char → Nat → List Nat → Nat → (List Nat × Nat × Nat)
-  | [], byteAcc, revOffs, cnt =>
-    (reverseNatList (byteAcc :: revOffs) [], cnt, byteAcc)
-  | c :: cs, byteAcc, revOffs, cnt =>
-    let bLen := charUtf8ByteSize c
-    buildInputOffsets cs (byteAcc + bLen) (byteAcc :: revOffs) (cnt + 1)
+/-- Strictly count characters in `List Char` in $O(N)$ tail-recursive steps. -/
+def countChars : List Char → Nat → Nat
+  | [], cnt => cnt
+  | _ :: cs, cnt =>
+    let cnt' := cnt + 1
+    if Nat.beq cnt' 0 then countChars cs 0 else countChars cs cnt'
 
 /-- Construct an `InputContext` from a source string and optional file name. -/
 def mkInputContext (input : String) (fileName : String := "<input>") : InputContext :=
   let chars := input.toList
-  match buildInputOffsets chars 0 [] 0 with
-  | (byteOffsets, charCount, byteSize) =>
-    match buildCharSegTreeAux 20 charCount chars byteOffsets with
-    | (tree, _, _) =>
-      { fileName, input, chars, byteOffsets, charCount, byteSize, tree }
+  let charCount := countChars chars 0
+  match buildCharSegTreeAux 20 charCount chars with
+  | (tree, _) =>
+    match tree with
+    | .empty => { fileName, input, chars, charCount, tree := .empty }
+    | .leaf c tl => { fileName, input, chars, charCount, tree := .leaf c tl }
+    | .node n l r => { fileName, input, chars, charCount, tree := .node n l r }
 
 /-- Total number of Unicode scalar characters in the input. -/
 def size (c : InputContext) : Nat :=
@@ -104,37 +94,25 @@ def size (c : InputContext) : Nat :=
 
 /-- True when character index `idx` is at or past the end of input. -/
 def atEnd (c : InputContext) (idx : Nat) : Bool :=
-  idx ≥ c.charCount
+  Nat.ble c.charCount idx
 
 /-- Return the character suffix `c.chars.drop idx` in $O(\log N)$ steps via `c.tree`. -/
 def charsFrom (c : InputContext) (idx : Nat) : List Char :=
   match lookupSegTree c.tree idx with
-  | some (_, _, tail) => tail
-  | none              => []
+  | some (_, tail) => tail
+  | none           => []
 
 /-- Return the character at character index `idx`, if in bounds, in $O(\log N)$ steps. -/
 def get? (c : InputContext) (idx : Nat) : Option Char :=
   match lookupSegTree c.tree idx with
-  | some (ch, _, _) => some ch
-  | none            => none
+  | some (ch, _) => some ch
+  | none         => none
 
 /-- Return the character at character index `idx`, or `default` if out of bounds, in $O(\log N)$ steps. -/
 def getD (c : InputContext) (idx : Nat) (default : Char := '\x00') : Char :=
   match lookupSegTree c.tree idx with
-  | some (ch, _, _) => ch
-  | none            => default
-
-/-- Convert a character index `idx` into its UTF-8 byte position in `c.input` in $O(\log N)$ steps. -/
-def bytePos (c : InputContext) (idx : Nat) : Nat :=
-  match lookupSegTree c.tree idx with
-  | some (_, off, _) => off
-  | none             => c.byteSize
-
-/-- Build an `Ix.Substring` spanning character indices `[startIdx, stopIdx)`. -/
-def substring (c : InputContext) (startIdx stopIdx : Nat) : Ix.Substring :=
-  { str      := c.input
-    startPos := c.bytePos startIdx
-    stopPos  := c.bytePos stopIdx }
+  | some (ch, _) => ch
+  | none         => default
 
 /-- Take at most `n` elements from a `List` via `Nat` structural recursion. -/
 def takeChars : Nat → List Char → List Char
@@ -170,15 +148,20 @@ def empty : SyntaxStack := { rev := [], len := 0 }
 
 def size (s : SyntaxStack) : Nat := s.len
 
-def isEmpty (s : SyntaxStack) : Bool := s.len == 0
+def isEmpty (s : SyntaxStack) : Bool := Nat.beq s.len 0
 
 def push (s : SyntaxStack) (stx : Ix.Syntax) : SyntaxStack :=
-  { rev := stx :: s.rev, len := s.len + 1 }
+  match s with
+  | ⟨rev, len⟩ =>
+    let len' := len + 1
+    if Nat.beq len' 0 then ⟨stx :: rev, 0⟩ else ⟨stx :: rev, len'⟩
 
 def pop (s : SyntaxStack) : SyntaxStack :=
-  match s.rev with
-  | _ :: xs => { rev := xs, len := s.len - 1 }
-  | []      => { rev := [], len := 0 }
+  match s with
+  | ⟨_ :: xs, len⟩ =>
+    let len' := len - 1
+    if Nat.beq len' 0 then ⟨xs, 0⟩ else ⟨xs, len'⟩
+  | ⟨[], _⟩ => ⟨[], 0⟩
 
 def back (s : SyntaxStack) : Ix.Syntax :=
   match s.rev with
@@ -186,7 +169,7 @@ def back (s : SyntaxStack) : Ix.Syntax :=
   | []     => .missing
 
 def getD (s : SyntaxStack) (i : Nat) : Ix.Syntax :=
-  if i ≥ s.len then .missing
+  if Nat.ble s.len i then .missing
   else Syntax.listGetD s.rev (s.len - 1 - i) .missing
 
 /-- Pop `n` elements from the top of `rev`, accumulating them in left-to-right order in `acc`. -/
@@ -196,18 +179,23 @@ def popTopN : Nat → List Ix.Syntax → List Ix.Syntax → List Ix.Syntax × Li
   | n + 1, x :: rest, acc => popTopN n rest (x :: acc)
 
 def shrink (s : SyntaxStack) (newSize : Nat) : SyntaxStack :=
-  if s.len ≤ newSize then s
-  else
-    let (_, rest) := popTopN (s.len - newSize) s.rev []
-    { rev := rest, len := newSize }
+  match s with
+  | ⟨rev, len⟩ =>
+    if Nat.ble len newSize then ⟨rev, len⟩
+    else
+      match popTopN (len - newSize) rev [] with
+      | (_, rest) =>
+        match rest with
+        | [] => if Nat.beq newSize 0 then ⟨[], 0⟩ else ⟨[], newSize⟩
+        | hd :: tl => if Nat.beq newSize 0 then ⟨hd :: tl, 0⟩ else ⟨hd :: tl, newSize⟩
 
 def extract (s : SyntaxStack) (start stop : Nat) : Array Ix.Syntax :=
   let clampedStop := Nat.min stop s.len
-  if clampedStop ≤ start then #[]
+  if Nat.ble clampedStop start then #[]
   else
     let afterStop := s.rev.drop (s.len - clampedStop)
-    let (items, _) := popTopN (clampedStop - start) afterStop []
-    items.toArray
+    match popTopN (clampedStop - start) afterStop [] with
+    | (items, _) => Array.mk items
 
 end SyntaxStack
 
@@ -223,8 +211,8 @@ structure ParserError where
 namespace ParserError
 
 def merge (e1 e2 : ParserError) : ParserError :=
-  if e2.pos > e1.pos then e2
-  else if e1.pos > e2.pos then e1
+  if Nat.ble (e1.pos + 1) e2.pos then e2
+  else if Nat.ble (e2.pos + 1) e1.pos then e1
   else
     { pos        := e1.pos
       unexpected := if e1.unexpected.isEmpty then e2.unexpected else e1.unexpected
@@ -260,14 +248,22 @@ structure ParserState where
 
 namespace ParserState
 
+/-- Strictly destructure `s : ParserState`, forcing its stack spine, `len`, `lhsPrec`, `pos`,
+    `cache`, and `errorMsg` to WHNF once so subsequent combinator steps never re-evaluate
+    `s` or accumulate projection chains under call-by-name reduction. -/
 def bindState (s : ParserState) (k : ParserState → α) : α :=
   match s with
-  | ⟨⟨rev, len⟩, lhsPrec, pos, cache, err⟩ =>
+  | ⟨⟨rev, len⟩, lhsPrec, pos, ⟨cStart, cStop, cTok⟩, err⟩ =>
+    let rev' : List Ix.Syntax := match rev with | [] => [] | x :: xs => x :: xs
+    let cache' : TokenCacheEntry :=
+      if Nat.beq cStart 0 && Nat.beq cStop 0 then ⟨0, 0, cTok⟩
+      else ⟨cStart, cStop, cTok⟩
+    let lhsPrec' : Nat := if Nat.beq lhsPrec 0 then 0 else lhsPrec
     match len, pos, err with
-    | 0, 0, none => k ⟨⟨rev, 0⟩, lhsPrec, 0, cache, none⟩
-    | 0, p, none => k ⟨⟨rev, 0⟩, lhsPrec, p, cache, none⟩
-    | l, p, none => k ⟨⟨rev, l⟩, lhsPrec, p, cache, none⟩
-    | l, p, some e => k ⟨⟨rev, l⟩, lhsPrec, p, cache, some e⟩
+    | 0, 0, none => k ⟨⟨rev', 0⟩, lhsPrec', 0, cache', none⟩
+    | 0, p, none => k ⟨⟨rev', 0⟩, lhsPrec', p, cache', none⟩
+    | l, p, none => k ⟨⟨rev', l⟩, lhsPrec', p, cache', none⟩
+    | l, p, some e => k ⟨⟨rev', l⟩, lhsPrec', p, cache', some e⟩
 
 def hasError (s : ParserState) : Bool :=
   s.errorMsg.isSome
@@ -276,61 +272,105 @@ def stackSize (s : ParserState) : Nat :=
   s.stxStack.size
 
 def restore (s : ParserState) (iniSz : Nat) (iniPos : Nat) : ParserState :=
-  { s with
-    stxStack := s.stxStack.shrink iniSz
-    pos      := iniPos
-    errorMsg := none }
+  match s with
+  | ⟨stack, lhsPrec, _, cache, _⟩ =>
+    match stack.shrink iniSz with
+    | ⟨rev', len'⟩ =>
+      if Nat.beq iniPos 0 then ⟨⟨rev', len'⟩, lhsPrec, 0, cache, none⟩
+      else ⟨⟨rev', len'⟩, lhsPrec, iniPos, cache, none⟩
 
-def setPos (s : ParserState) (pos : Nat) : ParserState :=
-  { s with pos := pos }
+def setPos (s : ParserState) (newPos : Nat) : ParserState :=
+  match s with
+  | ⟨stack, lhsPrec, _, cache, err⟩ =>
+    if Nat.beq newPos 0 then ⟨stack, lhsPrec, 0, cache, err⟩
+    else ⟨stack, lhsPrec, newPos, cache, err⟩
 
 def pushSyntax (s : ParserState) (stx : Ix.Syntax) : ParserState :=
-  { s with stxStack := s.stxStack.push stx }
+  match s with
+  | ⟨stack, lhsPrec, pos, cache, err⟩ =>
+    match stack.push stx with
+    | ⟨rev', len'⟩ => ⟨⟨rev', len'⟩, lhsPrec, pos, cache, err⟩
 
 def popSyntax (s : ParserState) : ParserState :=
-  { s with stxStack := s.stxStack.pop }
+  match s with
+  | ⟨stack, lhsPrec, pos, cache, err⟩ =>
+    match stack.pop with
+    | ⟨rev', len'⟩ => ⟨⟨rev', len'⟩, lhsPrec, pos, cache, err⟩
 
 def shrinkStack (s : ParserState) (iniSz : Nat) : ParserState :=
-  { s with stxStack := s.stxStack.shrink iniSz }
+  match s with
+  | ⟨stack, lhsPrec, pos, cache, err⟩ =>
+    match stack.shrink iniSz with
+    | ⟨rev', len'⟩ => ⟨⟨rev', len'⟩, lhsPrec, pos, cache, err⟩
 
 def mkNode (s : ParserState) (k : Ix.Name) (iniSz : Nat) : ParserState :=
   match s with
   | ⟨stack, lhsPrec, pos, cache, err⟩ =>
-    if err.isSome && stack.len == iniSz then
-      ⟨stack.push .missing, lhsPrec, pos, cache, err⟩
+    if err.isSome && Nat.beq stack.len iniSz then
+      match stack.push .missing with
+      | ⟨rev', len'⟩ => ⟨⟨rev', len'⟩, lhsPrec, pos, cache, err⟩
     else
       let count := stack.len - iniSz
-      let (children, restRev) := SyntaxStack.popTopN count stack.rev []
-      let newStack : SyntaxStack := { rev := Syntax.mkNode k children.toArray :: restRev, len := iniSz + 1 }
-      ⟨newStack, lhsPrec, pos, cache, err⟩
+      match SyntaxStack.popTopN count stack.rev [] with
+      | (children, restRev) =>
+        let children' : List Ix.Syntax := match children with | [] => [] | x :: xs => x :: xs
+        let restRev' : List Ix.Syntax := match restRev with | [] => [] | x :: xs => x :: xs
+        let newLen := iniSz + 1
+        let newStack : SyntaxStack :=
+          if Nat.beq newLen 0 then
+            ⟨Syntax.mkNode k (Array.mk children') :: restRev', 0⟩
+          else
+            ⟨Syntax.mkNode k (Array.mk children') :: restRev', newLen⟩
+        ⟨newStack, lhsPrec, pos, cache, err⟩
 
 def mkTrailingNode (s : ParserState) (k : Ix.Name) (iniSz : Nat) (lhsPrec : Nat) : ParserState :=
   match s with
   | ⟨stack, _, pos, cache, err⟩ =>
     let baseSz := iniSz - 1
     let count := stack.len - baseSz
-    let (children, restRev) := SyntaxStack.popTopN count stack.rev []
-    let newStack : SyntaxStack := { rev := Syntax.mkNode k children.toArray :: restRev, len := baseSz + 1 }
-    ⟨newStack, lhsPrec, pos, cache, err⟩
+    match SyntaxStack.popTopN count stack.rev [] with
+    | (children, restRev) =>
+      let children' : List Ix.Syntax := match children with | [] => [] | x :: xs => x :: xs
+      let restRev' : List Ix.Syntax := match restRev with | [] => [] | x :: xs => x :: xs
+      let newLen := baseSz + 1
+      let newStack : SyntaxStack :=
+        if Nat.beq newLen 0 then
+          ⟨Syntax.mkNode k (Array.mk children') :: restRev', 0⟩
+        else
+          ⟨Syntax.mkNode k (Array.mk children') :: restRev', newLen⟩
+      if Nat.beq lhsPrec 0 then
+        ⟨newStack, 0, pos, cache, err⟩
+      else
+        ⟨newStack, lhsPrec, pos, cache, err⟩
 
 def setError (s : ParserState) (e : ParserError) : ParserState :=
-  { s with errorMsg := some e }
+  match s with
+  | ⟨stack, lhsPrec, pos, cache, _⟩ => ⟨stack, lhsPrec, pos, cache, some e⟩
 
 def mkError (s : ParserState) (expected : String) : ParserState :=
-  { s with
-    stxStack := s.stxStack.push .missing
-    errorMsg := some { pos := s.pos, expected := [expected] } }
+  match s with
+  | ⟨stack, lhsPrec, pos, cache, _⟩ =>
+    match stack.push .missing with
+    | ⟨rev', len'⟩ =>
+      ⟨⟨rev', len'⟩, lhsPrec, pos, cache, some { pos := pos, expected := [expected] }⟩
 
 def mkUnexpectedError (s : ParserState) (msg : String) (expected : List String := []) : ParserState :=
-  { s with errorMsg := some { pos := s.pos, unexpected := msg, expected := expected } }
+  match s with
+  | ⟨stack, lhsPrec, pos, cache, _⟩ =>
+    ⟨stack, lhsPrec, pos, cache, some { pos := pos, unexpected := msg, expected := expected }⟩
 
 def mkEOIError (s : ParserState) (expected : List String := []) : ParserState :=
   s.mkUnexpectedError "unexpected end of input" expected
 
-def mkErrorAt (s : ParserState) (expected : String) (pos : Nat) (iniSz : Nat) : ParserState :=
-  let s := s.shrinkStack iniSz
-  let s := s.pushSyntax .missing
-  { s with pos := pos, errorMsg := some { pos := pos, expected := [expected] } }
+def mkErrorAt (s : ParserState) (expected : String) (errPos : Nat) (iniSz : Nat) : ParserState :=
+  match s with
+  | ⟨stack, lhsPrec, _, cache, _⟩ =>
+    match (stack.shrink iniSz).push .missing with
+    | ⟨rev', len'⟩ =>
+      if Nat.beq errPos 0 then
+        ⟨⟨rev', len'⟩, lhsPrec, 0, cache, some { pos := 0, expected := [expected] }⟩
+      else
+        ⟨⟨rev', len'⟩, lhsPrec, errPos, cache, some { pos := errPos, expected := [expected] }⟩
 
 end ParserState
 

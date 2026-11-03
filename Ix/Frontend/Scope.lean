@@ -5,8 +5,6 @@
 -/
 module
 
-public import Std.Data.TreeMap
-public import Std.Data.TreeSet
 public import Ix.Frontend.Parser.Command
 
 @[expose] public section
@@ -15,38 +13,214 @@ namespace Ix.Frontend
 
 open Ix.Frontend.Parser
 
-/-- Canonical structural comparator on `Ix.Name` (`Name.cmpStruct`, which reads no hash)
-    for `Std.TreeMap` / `Std.TreeSet`. -/
-abbrev NameMap (α : Type) := Std.TreeMap Ix.Name α Name.cmpStruct
-abbrev NameSet := Std.TreeSet Ix.Name Name.cmpStruct
+/-- Pure, proof-free, strictly-spine-evaluated Red-Black tree keyed by `Ix.Name`
+    (using `Name.cmpStruct`, which reads no hash).
+    Unlike `Std.TreeMap`, this type has zero wrapper structures (`TreeMap.mk` / `DTreeMap.mk`),
+    zero `wf : Balanced` proof terms, zero `Nat` size multiplications, and strictly forces
+    modified child subtrees before constructing parent `.node`s so call-by-name kernel
+    reduction (`Whnf.lean`) never accumulates unevaluated `.insert` chains. -/
+inductive NameMap (α : Type) where
+  | leaf : NameMap α
+  | node : Bool → Ix.Name → α → NameMap α → NameMap α → NameMap α
+  deriving Repr, Inhabited
 
 namespace NameMap
 
-def empty : NameMap α := Std.TreeMap.empty
+def empty : NameMap α := .leaf
+
+def isEmpty : NameMap α → Bool
+  | .leaf => true
+  | .node .. => false
+
+@[inline] def bindMap (m : NameMap α) (k : NameMap α → β) : β :=
+  match m with
+  | .leaf => k .leaf
+  | .node c key val l r => k (.node c key val l r)
+
+def get? : NameMap α → Ix.Name → Option α
+  | .leaf, _ => none
+  | .node _ k' v' l r, k =>
+    match Name.cmpStruct k k' with
+    | .lt => get? l k
+    | .gt => get? r k
+    | .eq => some v'
+
+def contains : NameMap α → Ix.Name → Bool
+  | .leaf, _ => false
+  | .node _ k' _ l r, k =>
+    match Name.cmpStruct k k' with
+    | .lt => contains l k
+    | .gt => contains r k
+    | .eq => true
+
+@[inline] def balanceLeft (c : Bool) (k : Ix.Name) (v : α) (l r : NameMap α) : NameMap α :=
+  match c with
+  | true => .node true k v l r
+  | false =>
+    match l with
+    | .node true lk lv (.node true llk llv lll llr) lr =>
+      .node true lk lv (.node false llk llv lll llr) (.node false k v lr r)
+    | .node true lk lv ll (.node true lrk lrv lrl lrr) =>
+      .node true lrk lrv (.node false lk lv ll lrl) (.node false k v lrr r)
+    | _ => .node false k v l r
+
+@[inline] def balanceRight (c : Bool) (k : Ix.Name) (v : α) (l r : NameMap α) : NameMap α :=
+  match c with
+  | true => .node true k v l r
+  | false =>
+    match r with
+    | .node true rk rv (.node true rlk rlv rll rlr) rr =>
+      .node true rlk rlv (.node false k v l rll) (.node false rk rv rlr rr)
+    | .node true rk rv rl (.node true rrk rrv rrl rrr) =>
+      .node true rk rv (.node false k v l rl) (.node false rrk rrv rrl rrr)
+    | _ => .node false k v l r
+
+def ins (k : Ix.Name) (v : α) : NameMap α → NameMap α
+  | .leaf => .node true k v .leaf .leaf
+  | .node c k' v' l r =>
+    match Name.cmpStruct k k' with
+    | .lt =>
+      match ins k v l with
+      | .leaf => .leaf
+      | l'@(.node ..) => balanceLeft c k' v' l' r
+    | .gt =>
+      match ins k v r with
+      | .leaf => .leaf
+      | r'@(.node ..) => balanceRight c k' v' l r'
+    | .eq => .node c k v l r
+
+def insert (m : NameMap α) (k : Ix.Name) (v : α) : NameMap α :=
+  match ins k v m with
+  | .leaf => .leaf
+  | .node _ k' v' l r => .node false k' v' l r
+
+def foldl (m : NameMap α) (f : β → Ix.Name → α → β) (init : β) : β :=
+  match m with
+  | .leaf => init
+  | .node _ k v l r =>
+    let acc1 := foldl l f init
+    let acc2 := f acc1 k v
+    foldl r f acc2
+
+def toListAux : NameMap α → List (Ix.Name × α) → List (Ix.Name × α)
+  | .leaf, acc => acc
+  | .node _ k v l r, acc => toListAux l ((k, v) :: toListAux r acc)
+
+def toList (m : NameMap α) : List (Ix.Name × α) :=
+  toListAux m []
+
+def size : NameMap α → Nat
+  | .leaf => 0
+  | .node _ _ _ l r => 1 + size l + size r
 
 end NameMap
 
+/-- Pure, proof-free, strictly-spine-evaluated Red-Black set of `Ix.Name`s. -/
+inductive NameSet where
+  | leaf : NameSet
+  | node : Bool → Ix.Name → NameSet → NameSet → NameSet
+  deriving Repr, Inhabited
+
 namespace NameSet
 
-def empty : NameSet := Std.TreeSet.empty
+def empty : NameSet := .leaf
+
+def isEmpty : NameSet → Bool
+  | .leaf => true
+  | .node .. => false
+
+@[inline] def bindSet (s : NameSet) (k : NameSet → β) : β :=
+  match s with
+  | .leaf => k .leaf
+  | .node c key l r => k (.node c key l r)
+
+def contains : NameSet → Ix.Name → Bool
+  | .leaf, _ => false
+  | .node _ k' l r, k =>
+    match Name.cmpStruct k k' with
+    | .lt => contains l k
+    | .gt => contains r k
+    | .eq => true
+
+@[inline] def balanceLeft (c : Bool) (k : Ix.Name) (l r : NameSet) : NameSet :=
+  match c with
+  | true => .node true k l r
+  | false =>
+    match l with
+    | .node true lk (.node true llk lll llr) lr =>
+      .node true lk (.node false llk lll llr) (.node false k lr r)
+    | .node true lk ll (.node true lrk lrl lrr) =>
+      .node true lrk (.node false lk ll lrl) (.node false k lrr r)
+    | _ => .node false k l r
+
+@[inline] def balanceRight (c : Bool) (k : Ix.Name) (l r : NameSet) : NameSet :=
+  match c with
+  | true => .node true k l r
+  | false =>
+    match r with
+    | .node true rk (.node true rlk rll rlr) rr =>
+      .node true rlk (.node false k l rll) (.node false rk rlr rr)
+    | .node true rk rl (.node true rrk rrl rrr) =>
+      .node true rk (.node false k l rl) (.node false rrk rrl rrr)
+    | _ => .node false k l r
+
+def ins (k : Ix.Name) : NameSet → NameSet
+  | .leaf => .node true k .leaf .leaf
+  | .node c k' l r =>
+    match Name.cmpStruct k k' with
+    | .lt =>
+      match ins k l with
+      | .leaf => .leaf
+      | l'@(.node ..) => balanceLeft c k' l' r
+    | .gt =>
+      match ins k r with
+      | .leaf => .leaf
+      | r'@(.node ..) => balanceRight c k' l r'
+    | .eq => .node c k' l r
+
+def insert (s : NameSet) (k : Ix.Name) : NameSet :=
+  match ins k s with
+  | .leaf => .leaf
+  | .node _ k' l r => .node false k' l r
+
+def foldl (s : NameSet) (f : β → Ix.Name → β) (init : β) : β :=
+  match s with
+  | .leaf => init
+  | .node _ k l r =>
+    let acc1 := foldl l f init
+    let acc2 := f acc1 k
+    foldl r f acc2
+
+def toListAux : NameSet → List Ix.Name → List Ix.Name
+  | .leaf, acc => acc
+  | .node _ k l r, acc => toListAux l (k :: toListAux r acc)
+
+def toList (s : NameSet) : List Ix.Name :=
+  toListAux s []
+
+def size : NameSet → Nat
+  | .leaf => 0
+  | .node _ _ l r => 1 + size l + size r
 
 end NameSet
 
 /-! ## Hex Address Decoding & First-Class `IxImportMap` -/
 
 /-- Parse a 64-character hex string into a 32-byte `Address`. -/
-def parseHexBytesAux : List Char → Array UInt8 → Option ByteArray
-  | [], acc =>
-    if acc.size == 32 then some ⟨acc⟩ else none
-  | c1 :: c2 :: rest, acc => do
+def parseHexBytesAux : List Char → List UInt8 → Nat → Option ByteArray
+  | [], revAcc, cnt =>
+    if Nat.beq cnt 32 then some ⟨Array.mk revAcc.reverse⟩ else none
+  | c1 :: c2 :: rest, revAcc, cnt => do
     let hi ← natOfHex c1
     let lo ← natOfHex c2
     let byte : UInt8 := UInt8.ofNat (hi * 16 + lo)
-    parseHexBytesAux rest (acc.push byte)
-  | _, _ => none
+    let cnt' := cnt + 1
+    if Nat.beq cnt' 0 then parseHexBytesAux rest (byte :: revAcc) 0
+    else parseHexBytesAux rest (byte :: revAcc) cnt'
+  | _, _, _ => none
 
 def parseHexAddress (hex : String) : Option Address := do
-  let ba ← parseHexBytesAux hex.toList (Array.mkEmpty 32)
+  let ba ← parseHexBytesAux hex.toList [] 0
   return ⟨ba⟩
 
 /-- First-class programmable `Name -> Address` mapping and content-hash import table
@@ -62,14 +236,22 @@ namespace IxImportMap
 def empty : IxImportMap := {}
 
 def insertName (m : IxImportMap) (name : Ix.Name) (addr : Address) : IxImportMap :=
-  { m with nameToAddr := m.nameToAddr.insert name addr }
+  match m with
+  | ⟨nameToAddr, modulePins, importedEnvs⟩ =>
+    (nameToAddr.insert name addr).bindMap fun nameToAddr' =>
+      ⟨nameToAddr', modulePins, importedEnvs⟩
 
 def insertModulePin (m : IxImportMap) (modName : Ix.Name) (addr : Address) : IxImportMap :=
-  { m with modulePins := m.modulePins.insert modName addr }
+  match m with
+  | ⟨nameToAddr, modulePins, importedEnvs⟩ =>
+    (modulePins.insert modName addr).bindMap fun modulePins' =>
+      ⟨nameToAddr, modulePins', importedEnvs⟩
 
 def addImportedEnv (m : IxImportMap) (addr : Address) : IxImportMap :=
-  if m.importedEnvs.contains addr then m
-  else { m with importedEnvs := m.importedEnvs.push addr }
+  match m with
+  | ⟨nameToAddr, modulePins, importedEnvs⟩ =>
+    if importedEnvs.contains addr then m
+    else ⟨nameToAddr, modulePins, importedEnvs.push addr⟩
 
 def lookupName? (m : IxImportMap) (name : Ix.Name) : Option Address :=
   m.nameToAddr.get? name
@@ -79,7 +261,9 @@ def merge (m1 m2 : IxImportMap) : IxImportMap :=
   let modulePins := m2.modulePins.foldl (fun acc k v => acc.insert k v) m1.modulePins
   let importedEnvs := m2.importedEnvs.foldl (fun acc a =>
     if acc.contains a then acc else acc.push a) m1.importedEnvs
-  { nameToAddr, modulePins, importedEnvs }
+  nameToAddr.bindMap fun nameToAddr' =>
+  modulePins.bindMap fun modulePins' =>
+    { nameToAddr := nameToAddr', modulePins := modulePins', importedEnvs }
 
 end IxImportMap
 
@@ -217,28 +401,41 @@ def extractFieldNames (fullStructName : Ix.Name) (fieldsStx : Ix.Syntax) : List 
 def standardIndAuxSuffixes : List String :=
   ["rec", "recOn", "casesOn", "below", "brecOn", "noConfusion", "noConfusionType", "_ctorIdx", "_sizeOf_inst"]
 
+/-- Register a `ModuleDecl` at index `dIdx` and its constructors, fields, and auxiliaries
+    into `ModuleIndex`'s `NameMap` tables (deferring `Array.mk revDecls.reverse` to `buildModuleIndex`). -/
+def ModuleIndex.registerDeclMaps (idx : ModuleIndex) (dIdx : Nat) (d : ModuleDecl) : ModuleIndex :=
+  match idx with
+  | ⟨decls, declByName0, ctorToInd0, fieldToStruct0, auxToInd0, importMap⟩ =>
+    let declByName := declByName0.insert d.fullName dIdx
+    let ctorToInd := d.ctorNames.foldl (fun acc c => acc.insert c (d.fullName, dIdx)) ctorToInd0
+    let fieldToStruct := d.fieldNames.foldl (fun acc f => acc.insert f (d.fullName, dIdx)) fieldToStruct0
+    let auxToInd :=
+      if d.kind == .ind || d.kind == .struct || d.kind == .cls then
+        standardIndAuxSuffixes.foldl
+          (fun acc suf => acc.insert (Name.mkStr d.fullName suf) (d.fullName, dIdx))
+          auxToInd0
+      else
+        auxToInd0
+    declByName.bindMap fun declByName' =>
+    ctorToInd.bindMap fun ctorToInd' =>
+    fieldToStruct.bindMap fun fieldToStruct' =>
+    auxToInd.bindMap fun auxToInd' =>
+      ⟨decls, declByName', ctorToInd', fieldToStruct', auxToInd', importMap⟩
+
 /-- Register a `ModuleDecl` and its constructors, fields, and auxiliaries into `ModuleIndex`. -/
 def ModuleIndex.registerDecl (idx : ModuleIndex) (d : ModuleDecl) : ModuleIndex :=
   let dIdx := idx.decls.size
   let d := { d with idx := dIdx }
-  let decls := idx.decls.push d
-  let declByName := idx.declByName.insert d.fullName dIdx
-  let ctorToInd := d.ctorNames.foldl (fun acc c => acc.insert c (d.fullName, dIdx)) idx.ctorToInd
-  let fieldToStruct := d.fieldNames.foldl (fun acc f => acc.insert f (d.fullName, dIdx)) idx.fieldToStruct
-  let auxToInd :=
-    if d.kind == .ind || d.kind == .struct || d.kind == .cls then
-      standardIndAuxSuffixes.foldl
-        (fun acc suf => acc.insert (Name.mkStr d.fullName suf) (d.fullName, dIdx))
-        idx.auxToInd
-    else
-      idx.auxToInd
-  { idx with decls, declByName, ctorToInd, fieldToStruct, auxToInd }
+  let idx' := idx.registerDeclMaps dIdx d
+  { idx' with decls := idx.decls.push d }
 
 /-- State of the Pass 1 lexical scanner. -/
 structure ScopePassState where
   currScope : ScopeSnapshot   := {}
   frames    : List ScopeFrame := []
   modIdx    : ModuleIndex     := {}
+  revDecls  : List ModuleDecl := []
+  declCount : Nat             := 0
   anonCount : Nat             := 0
   deriving Repr, Inhabited
 
@@ -246,160 +443,179 @@ structure ScopePassState where
 def processCommandPass1 : Nat → Ix.Syntax → ScopePassState → Except String ScopePassState
   | 0, _, st => .ok st
   | fuel + 1, cmd, st => do
-    let k := Syntax.getKind cmd
-    -- 1. `import #<hash>`
-    if k == SyntaxKind.hashImport then
-      let hashNode := Syntax.getArg cmd 1
-      let hexStr := Syntax.getAtomVal (Syntax.getArg hashNode 0)
-      match parseHexAddress hexStr with
-      | some addr =>
-        return { st with modIdx := { st.modIdx with importMap := st.modIdx.importMap.addImportedEnv addr } }
-      | none =>
-        throw s!"invalid 64-hex-char content address '#{hexStr}' in import"
-    -- 2. `import Mod [@ #<hash>]`
-    else if k == SyntaxKind.importDecl then
-      let modName := Syntax.getId (Syntax.getArg cmd 1)
-      let pinNode := Syntax.getArg cmd 2
-      if Syntax.isOfKind pinNode SyntaxKind.hashRef then
-        let hexStr := Syntax.getAtomVal (Syntax.getArg pinNode 0)
+    match st with
+    | ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩ =>
+      let k := Syntax.getKind cmd
+      -- 1. `import #<hash>`
+      if k == SyntaxKind.hashImport then
+        let hashNode := Syntax.getArg cmd 1
+        let hexStr := Syntax.getAtomVal (Syntax.getArg hashNode 0)
         match parseHexAddress hexStr with
         | some addr =>
-          return { st with modIdx := { st.modIdx with importMap := st.modIdx.importMap.insertModulePin modName addr } }
+          match modIdx with
+          | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+            return ⟨currScope, frames,
+              ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.addImportedEnv addr⟩,
+              revDecls, declCount, anonCount⟩
         | none =>
-          throw s!"invalid 64-hex-char content address '#{hexStr}' in import pin"
-      else
-        return st
-    -- 3. `map Foo.Bar := #<hash>`
-    else if k == SyntaxKind.buildMapDecl then
-      let symName := Syntax.getId (Syntax.getArg cmd 1)
-      let hashNode := Syntax.getArg cmd 3
-      let hexStr := Syntax.getAtomVal (Syntax.getArg hashNode 0)
-      match parseHexAddress hexStr with
-      | some addr =>
-        return { st with modIdx := { st.modIdx with importMap := st.modIdx.importMap.insertName symName addr } }
-      | none =>
-        throw s!"invalid 64-hex-char content address '#{hexStr}' in map declaration"
-    -- 4. `namespace Foo.Bar`
-    else if k == SyntaxKind.namespaceDecl then
-      let ns := Syntax.getId (Syntax.getArg cmd 1)
-      let newNs := Name.append st.currScope.currNamespace ns
-      let frame : ScopeFrame := { header := ns, isNamespace := true, savedScope := st.currScope }
-      let newOpen : OpenDecl := .simple newNs []
-      let newScope := { st.currScope with
-        currNamespace := newNs
-        openDecls := newOpen :: st.currScope.openDecls }
-      return { st with currScope := newScope, frames := frame :: st.frames }
-    -- 5. `section [Foo]`
-    else if k == SyntaxKind.sectionDecl then
-      let secId := match Syntax.getOptional? (Syntax.getArg cmd 1) with
-        | some idStx => Syntax.getId idStx
-        | none => Name.mkAnon
-      let frame : ScopeFrame := { header := secId, isNamespace := false, savedScope := st.currScope }
-      return { st with frames := frame :: st.frames }
-    -- 6. `end [Foo]`
-    else if k == SyntaxKind.endDecl then
-      match st.frames with
-      | [] => throw "unmatched 'end' command"
-      | frame :: rest =>
-        return { st with currScope := frame.savedScope, frames := rest }
-    -- 7. `universe u v`
-    else if k == SyntaxKind.universeDecl then
-      let uIds := (Syntax.getArgs (Syntax.getArg cmd 1)).toList.map Syntax.getId
-      let newLvls := (st.currScope.levelNames ++ uIds).eraseDups
-      return { st with currScope := { st.currScope with levelNames := newLvls } }
-    -- 8. `variable (x : A) ...`
-    else if k == SyntaxKind.variableDecl then
-      let newVars := Syntax.getArgs (Syntax.getArg cmd 1)
-      return { st with currScope := { st.currScope with varBinders := st.currScope.varBinders ++ newVars } }
-    -- 9. `open Foo.Bar [(a b)]`
-    else if k == SyntaxKind.openDecl then
-      let nss := (Syntax.getArgs (Syntax.getArg cmd 1)).toList.map Syntax.getId
-      let onlyIds : List Ix.Name := match Syntax.getOptional? (Syntax.getArg cmd 2) with
-        | some parenNode =>
-          (Syntax.getArgs (Syntax.getArg parenNode 1)).toList.map Syntax.getId
-        | none => []
-      let newOpens := nss.map fun ns =>
-        if onlyIds.isEmpty then OpenDecl.simple ns []
-        else OpenDecl.simple ns onlyIds
-      return { st with currScope := { st.currScope with openDecls := newOpens ++ st.currScope.openDecls } }
-    -- 10. `mutual cmd1 cmd2 ... end` (flattened into individual declarations!)
-    else if k == SyntaxKind.mutualDecl then
-      let innerCmds := Syntax.getArgs (Syntax.getArg cmd 1)
-      innerCmds.toList.foldlM (fun acc c => processCommandPass1 fuel c acc) st
-    -- 11. Top-level declarations (`def`, `abbrev`, `theorem`, `axiom`, `opaque`, `instance`, `inductive`, `structure`, `class`)
-    else if k == SyntaxKind.defDecl || k == SyntaxKind.abbrevDecl || k == SyntaxKind.theoremDecl ||
-            k == SyntaxKind.opaqueDecl || k == SyntaxKind.axiomDecl || k == SyntaxKind.instanceDecl ||
-            k == SyntaxKind.inductiveDecl || k == SyntaxKind.structureDecl || k == SyntaxKind.classDecl then
-      let (isPriv, isProt) := extractModifierFlags (Syntax.getArg cmd 0)
-      let rawId := Syntax.getId (Syntax.getArg cmd 2)
-      let (shortName, anonCount') :=
-        if Name.isAnonymous rawId then
-          (Name.mkStr Name.mkAnon s!"_inst_{st.anonCount}", st.anonCount + 1)
+          throw s!"invalid 64-hex-char content address '#{hexStr}' in import"
+      -- 2. `import Mod [@ #<hash>]`
+      else if k == SyntaxKind.importDecl then
+        let modName := Syntax.getId (Syntax.getArg cmd 1)
+        let pinNode := Syntax.getArg cmd 2
+        if Syntax.isOfKind pinNode SyntaxKind.hashRef then
+          let hexStr := Syntax.getAtomVal (Syntax.getArg pinNode 0)
+          match parseHexAddress hexStr with
+          | some addr =>
+            match modIdx with
+            | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+              return ⟨currScope, frames,
+                ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.insertModulePin modName addr⟩,
+                revDecls, declCount, anonCount⟩
+          | none =>
+            throw s!"invalid 64-hex-char content address '#{hexStr}' in import pin"
         else
-          (rawId, st.anonCount)
-      let fullName := Name.append st.currScope.currNamespace shortName
-      let explicitUnivs := extractUnivParams (Syntax.getArg cmd 3)
-      let declScope := { st.currScope with isPrivate := isPriv, isProtected := isProt }
-      let declKind : DeclKind :=
-        if k == SyntaxKind.defDecl then .defn
-        else if k == SyntaxKind.abbrevDecl then .abbrev
-        else if k == SyntaxKind.theoremDecl then .thm
-        else if k == SyntaxKind.axiomDecl then .axiomDecl
-        else if k == SyntaxKind.opaqueDecl then .opaqueDecl
-        else if k == SyntaxKind.instanceDecl then .inst
-        else if k == SyntaxKind.inductiveDecl then .ind
-        else if k == SyntaxKind.structureDecl then .struct
-        else .cls
-      let (ctorNames, fieldNames) :=
-        if k == SyntaxKind.inductiveDecl then
-          -- args: #[modifiers, "inductive", id, univParams, binders, vPref, optType, ctorsNull, derivingNull]
-          let ctorsNode := Syntax.getArg cmd 7
-          (extractCtorNames fullName ctorsNode, [])
-        else if k == SyntaxKind.structureDecl || k == SyntaxKind.classDecl then
-          -- args: #[modifiers, kw, id, univParams, binders, extendsNull, vPref, optType, customCtorOrNull, fieldsOrCtorsNull, derivingNull]
-          let customCtorNode := Syntax.getArg cmd 8
-          let fieldsOrCtorsNode := Syntax.getArg cmd 9
-          let firstChild? := (Syntax.getArgs fieldsOrCtorsNode)[0]?
-          match firstChild? with
-          | some c0 =>
-            if Syntax.isOfKind c0 SyntaxKind.ctorDecl then
-              (extractCtorNames fullName fieldsOrCtorsNode, [])
-            else
+          return ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 3. `map Foo.Bar := #<hash>`
+      else if k == SyntaxKind.buildMapDecl then
+        let symName := Syntax.getId (Syntax.getArg cmd 1)
+        let hashNode := Syntax.getArg cmd 3
+        let hexStr := Syntax.getAtomVal (Syntax.getArg hashNode 0)
+        match parseHexAddress hexStr with
+        | some addr =>
+          match modIdx with
+          | ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+            return ⟨currScope, frames,
+              ⟨decls, declByName, ctorToInd, fieldToStruct, auxToInd, importMap.insertName symName addr⟩,
+              revDecls, declCount, anonCount⟩
+        | none =>
+          throw s!"invalid 64-hex-char content address '#{hexStr}' in map declaration"
+      -- 4. `namespace Foo.Bar`
+      else if k == SyntaxKind.namespaceDecl then
+        let ns := Syntax.getId (Syntax.getArg cmd 1)
+        let newNs := Name.append currScope.currNamespace ns
+        let frame : ScopeFrame := { header := ns, isNamespace := true, savedScope := currScope }
+        let newOpen : OpenDecl := .simple newNs []
+        let newScope : ScopeSnapshot := { currScope with
+          currNamespace := newNs
+          openDecls := newOpen :: currScope.openDecls }
+        return ⟨newScope, frame :: frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 5. `section [Foo]`
+      else if k == SyntaxKind.sectionDecl then
+        let secId := match Syntax.getOptional? (Syntax.getArg cmd 1) with
+          | some idStx => Syntax.getId idStx
+          | none => Name.mkAnon
+        let frame : ScopeFrame := { header := secId, isNamespace := false, savedScope := currScope }
+        return ⟨currScope, frame :: frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 6. `end [Foo]`
+      else if k == SyntaxKind.endDecl then
+        match frames with
+        | [] => throw "unmatched 'end' command"
+        | frame :: rest =>
+          return ⟨frame.savedScope, rest, modIdx, revDecls, declCount, anonCount⟩
+      -- 7. `universe u v`
+      else if k == SyntaxKind.universeDecl then
+        let uIds := (Syntax.getArgs (Syntax.getArg cmd 1)).toList.map Syntax.getId
+        let newLvls := (currScope.levelNames ++ uIds).eraseDups
+        return ⟨{ currScope with levelNames := newLvls }, frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 8. `variable (x : A) ...`
+      else if k == SyntaxKind.variableDecl then
+        let newVars := Syntax.getArgs (Syntax.getArg cmd 1)
+        return ⟨{ currScope with varBinders := currScope.varBinders ++ newVars }, frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 9. `open Foo.Bar [(a b)]`
+      else if k == SyntaxKind.openDecl then
+        let nss := (Syntax.getArgs (Syntax.getArg cmd 1)).toList.map Syntax.getId
+        let onlyIds : List Ix.Name := match Syntax.getOptional? (Syntax.getArg cmd 2) with
+          | some parenNode =>
+            (Syntax.getArgs (Syntax.getArg parenNode 1)).toList.map Syntax.getId
+          | none => []
+        let newOpens := nss.map fun ns =>
+          if onlyIds.isEmpty then OpenDecl.simple ns []
+          else OpenDecl.simple ns onlyIds
+        return ⟨{ currScope with openDecls := newOpens ++ currScope.openDecls }, frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 10. `mutual cmd1 cmd2 ... end` (flattened into individual declarations!)
+      else if k == SyntaxKind.mutualDecl then
+        let innerCmds := Syntax.getArgs (Syntax.getArg cmd 1)
+        innerCmds.toList.foldlM (fun acc c => processCommandPass1 fuel c acc)
+          ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 11. Top-level declarations (`def`, `abbrev`, `theorem`, `axiom`, `opaque`, `instance`, `inductive`, `structure`, `class`)
+      else if k == SyntaxKind.defDecl || k == SyntaxKind.abbrevDecl || k == SyntaxKind.theoremDecl ||
+              k == SyntaxKind.opaqueDecl || k == SyntaxKind.axiomDecl || k == SyntaxKind.instanceDecl ||
+              k == SyntaxKind.inductiveDecl || k == SyntaxKind.structureDecl || k == SyntaxKind.classDecl then
+        let (isPriv, isProt) := extractModifierFlags (Syntax.getArg cmd 0)
+        let rawId := Syntax.getId (Syntax.getArg cmd 2)
+        let (shortName, anonCount') :=
+          if Name.isAnonymous rawId then
+            (Name.mkStr Name.mkAnon s!"_inst_{anonCount}", anonCount + 1)
+          else
+            (rawId, anonCount)
+        let fullName := Name.append currScope.currNamespace shortName
+        let explicitUnivs := extractUnivParams (Syntax.getArg cmd 3)
+        let declScope := { currScope with isPrivate := isPriv, isProtected := isProt }
+        let declKind : DeclKind :=
+          if k == SyntaxKind.defDecl then .defn
+          else if k == SyntaxKind.abbrevDecl then .abbrev
+          else if k == SyntaxKind.theoremDecl then .thm
+          else if k == SyntaxKind.axiomDecl then .axiomDecl
+          else if k == SyntaxKind.opaqueDecl then .opaqueDecl
+          else if k == SyntaxKind.instanceDecl then .inst
+          else if k == SyntaxKind.inductiveDecl then .ind
+          else if k == SyntaxKind.structureDecl then .struct
+          else .cls
+        let (ctorNames, fieldNames) :=
+          if k == SyntaxKind.inductiveDecl then
+            -- args: #[modifiers, "inductive", id, univParams, binders, vPref, optType, ctorsNull, derivingNull]
+            let ctorsNode := Syntax.getArg cmd 7
+            (extractCtorNames fullName ctorsNode, [])
+          else if k == SyntaxKind.structureDecl || k == SyntaxKind.classDecl then
+            -- args: #[modifiers, kw, id, univParams, binders, extendsNull, vPref, optType, customCtorOrNull, fieldsOrCtorsNull, derivingNull]
+            let customCtorNode := Syntax.getArg cmd 8
+            let fieldsOrCtorsNode := Syntax.getArg cmd 9
+            let firstChild? := (Syntax.getArgs fieldsOrCtorsNode)[0]?
+            match firstChild? with
+            | some c0 =>
+              if Syntax.isOfKind c0 SyntaxKind.ctorDecl then
+                (extractCtorNames fullName fieldsOrCtorsNode, [])
+              else
+                let ctorShort :=
+                  let cid := Syntax.getId customCtorNode
+                  if Name.isAnonymous cid then Name.simple "mk" else cid
+                let ctorFull := Name.append fullName ctorShort
+                ([ctorFull], extractFieldNames fullName fieldsOrCtorsNode)
+            | none =>
               let ctorShort :=
                 let cid := Syntax.getId customCtorNode
                 if Name.isAnonymous cid then Name.simple "mk" else cid
               let ctorFull := Name.append fullName ctorShort
-              ([ctorFull], extractFieldNames fullName fieldsOrCtorsNode)
-          | none =>
-            let ctorShort :=
-              let cid := Syntax.getId customCtorNode
-              if Name.isAnonymous cid then Name.simple "mk" else cid
-            let ctorFull := Name.append fullName ctorShort
-            ([ctorFull], [])
-        else
-          ([], [])
-      let decl : ModuleDecl :=
-        { idx        := st.modIdx.decls.size
-          kind       := declKind
-          shortName  := shortName
-          fullName   := fullName
-          univParams := explicitUnivs
-          scope      := declScope
-          stx        := cmd
-          ctorNames  := ctorNames
-          fieldNames := fieldNames }
-      return { st with
-        modIdx    := st.modIdx.registerDecl decl
-        anonCount := anonCount' }
-    else
-      -- Ignore notationDecl or unknown commands in Pass 1
-      return st
+              ([ctorFull], [])
+          else
+            ([], [])
+        let decl : ModuleDecl :=
+          { idx        := declCount
+            kind       := declKind
+            shortName  := shortName
+            fullName   := fullName
+            univParams := explicitUnivs
+            scope      := declScope
+            stx        := cmd
+            ctorNames  := ctorNames
+            fieldNames := fieldNames }
+        let modIdx' := modIdx.registerDeclMaps declCount decl
+        let nextDeclCount := declCount + 1
+        let nextDeclCount' := if Nat.beq nextDeclCount 0 then 0 else nextDeclCount
+        return ⟨currScope, frames, modIdx', decl :: revDecls, nextDeclCount', anonCount'⟩
+      else
+        -- Ignore notationDecl or unknown commands in Pass 1
+        return ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
 
 /-- Run Pass 1 over a parsed module `Syntax` node (`SyntaxKind.moduleKind`) to build `ModuleIndex`. -/
 def buildModuleIndex (moduleStx : Ix.Syntax) : Except String ModuleIndex := do
   let cmds := Syntax.getArgs moduleStx
   let finalState ← cmds.toList.foldlM (fun st cmd => processCommandPass1 64 cmd st) {}
-  return finalState.modIdx
+  match finalState.modIdx with
+  | ⟨_, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩ =>
+    let declList := match finalState.revDecls.reverse with | [] => [] | d :: ds => d :: ds
+    return ⟨Array.mk declList, declByName, ctorToInd, fieldToStruct, auxToInd, importMap⟩
 
 /-! ## Lexical Name Resolution (`resolveIdentInScope`) -/
 

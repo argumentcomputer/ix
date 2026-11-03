@@ -298,6 +298,22 @@ def isKeywordChars (env : IxParserEnv) (cs : List Char) : Bool :=
 def isKeyword (env : IxParserEnv) (s : String) : Bool :=
   isKeywordChars env s.toList
 
+/-- Construct the updated `ParserState` after scanning a token `tok` spanning `[leadStart, trailStop)`,
+    strictly forcing `newLen`, `leadStart`, and `trailStop` without `{ s with ... }` projections. -/
+def mkScannedState (s : ParserState) (leadStart trailStop : Nat) (tok : Ix.Syntax) : ParserState :=
+  match s with
+  | ⟨⟨rev, len⟩, lhsPrec, _, _, _⟩ =>
+    let newLen := len + 1
+    let stack' : SyntaxStack :=
+      if Nat.beq newLen 0 then ⟨tok :: rev, 0⟩ else ⟨tok :: rev, newLen⟩
+    let cache' : TokenCacheEntry :=
+      if Nat.beq leadStart 0 && Nat.beq trailStop 0 then ⟨0, 0, tok⟩
+      else ⟨leadStart, trailStop, tok⟩
+    if Nat.beq trailStop 0 then
+      ⟨stack', lhsPrec, 0, cache', none⟩
+    else
+      ⟨stack', lhsPrec, trailStop, cache', none⟩
+
 /-- Core token scanner: reads one token starting at `s.pos` with a SINGLE $O(\log N)$
     `c.charsFrom` lookup, scanning leading whitespace, the token body, and trailing
     horizontal whitespace in $O(1)$ per character on `List Char`! -/
@@ -318,10 +334,7 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
       let info := mkOriginalSourceInfoFast hasNl tokStart hexEnd
       let hexVal := String.ofList revHex.reverse
       let tok := Syntax.mkNode SyntaxKind.hashRef #[Syntax.mkAtom info hexVal] info
-      { s with
-        stxStack := s.stxStack.push tok
-        pos      := trailStop
-        cache    := { startPos := leadStart, stopPos := trailStop, token := tok } }
+      mkScannedState s leadStart trailStop tok
     -- 2. String literal `"..."`
     else if ch == '"' then
       match scanStringLitChars restTokChars (tokStart + 1) [] with
@@ -329,10 +342,7 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
         let trailStop := skipHorizontalWhitespaceChars afterStr tokStop
         let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
         let tok := Syntax.mkNode SyntaxKind.strLit #[Syntax.mkAtom info decoded] info
-        { s with
-          stxStack := s.stxStack.push tok
-          pos      := trailStop
-          cache    := { startPos := leadStart, stopPos := trailStop, token := tok } }
+        mkScannedState s leadStart trailStop tok
       | none =>
         s.setPos tokStart |>.mkUnexpectedError "unterminated string literal"
     -- 3. Character literal `'c'` (only when not a prime inside an identifier)
@@ -343,10 +353,7 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
         let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
         let tok := Syntax.mkNode SyntaxKind.charLit
           #[Syntax.mkAtom info (String.singleton decodedChar)] info
-        { s with
-          stxStack := s.stxStack.push tok
-          pos      := trailStop
-          cache    := { startPos := leadStart, stopPos := trailStop, token := tok } }
+        mkScannedState s leadStart trailStop tok
       | none =>
         s.setPos tokStart |>.mkUnexpectedError "invalid character literal"
     -- 4. Numeric literal `0..9`
@@ -357,10 +364,7 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
         let trailStop := skipHorizontalWhitespaceChars afterNum tokStop
         let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
         let tok := Syntax.mkNode SyntaxKind.numLit #[Syntax.mkAtom info (toString n)] info
-        { s with
-          stxStack := s.stxStack.push tok
-          pos      := trailStop
-          cache    := { startPos := leadStart, stopPos := trailStop, token := tok } }
+        mkScannedState s leadStart trailStop tok
       | none =>
         s.setPos tokStart |>.mkUnexpectedError s!"invalid numeric literal '{rawNum}'"
     -- 5. Identifier or keyword
@@ -377,10 +381,7 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
           else
             let rawSub : Ix.Substring := { str := firstPart, startPos := 0, stopPos := firstPart.utf8ByteSize }
             Syntax.mkIdent info rawSub name
-        { s with
-          stxStack := s.stxStack.push tok
-          pos      := trailStop
-          cache    := { startPos := leadStart, stopPos := trailStop, token := tok } }
+        mkScannedState s leadStart trailStop tok
       | none =>
         s.setPos tokStart |>.mkUnexpectedError "invalid identifier"
     -- 6. Operator / punctuation symbol from `ctx.env.tokens`
@@ -392,34 +393,42 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
         let trailStop := skipHorizontalWhitespaceChars afterSym tokStop
         let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
         let tok := Syntax.mkAtom info sym
-        { s with
-          stxStack := s.stxStack.push tok
-          pos      := trailStop
-          cache    := { startPos := leadStart, stopPos := trailStop, token := tok } }
+        mkScannedState s leadStart trailStop tok
       | none =>
         s.setPos tokStart |>.mkUnexpectedError s!"unexpected character '{ch}'"
 
 /-- Read one token using the single-token cache when `s.cache.startPos == s.pos`. -/
 def tokenFn (ctx : IxParserContext) (s : ParserState) : ParserState :=
   s.bindState fun s =>
-    if s.cache.startPos == s.pos then
-      { s with
-        stxStack := s.stxStack.push s.cache.token
-        pos      := s.cache.stopPos }
-    else
-      scanNextToken ctx s
+    match s with
+    | ⟨stack, lhsPrec, pos, cache, err⟩ =>
+      if Nat.beq cache.startPos pos then
+        match stack.push cache.token with
+        | ⟨rev', len'⟩ =>
+          if Nat.beq cache.stopPos 0 then ⟨⟨rev', len'⟩, lhsPrec, 0, cache, err⟩
+          else ⟨⟨rev', len'⟩, lhsPrec, cache.stopPos, cache, err⟩
+      else
+        scanNextToken ctx s
+
+/-- Peek at the next token without consuming it, passing `(Option Syntax, updatedCacheState)`
+    directly to continuation `k` with zero `Prod` allocation and zero stack push/shrink on cache hit. -/
+def bindPeek (ctx : IxParserContext) (s : ParserState)
+    (k : Option Ix.Syntax → ParserState → α) : α :=
+  s.bindState fun s =>
+    match s with
+    | ⟨stack, lhsPrec, iniPos, cache, err⟩ =>
+      if err.isNone && Nat.beq cache.startPos iniPos then
+        k (some cache.token) s
+      else
+        (scanNextToken ctx s).bindState fun s' =>
+          if s'.hasError then
+            k none ⟨stack, lhsPrec, iniPos, s'.cache, none⟩
+          else
+            k (some s'.cache.token) ⟨stack, lhsPrec, iniPos, s'.cache, none⟩
 
 /-- Peek at the next token without consuming it (returns `(Option Syntax, updatedCacheState)`). -/
 def peekToken (ctx : IxParserContext) (s : ParserState) : Option Ix.Syntax × ParserState :=
-  s.bindState fun s =>
-    let iniSz := s.stackSize
-    let iniPos := s.pos
-    (tokenFn ctx s).bindState fun s' =>
-      if s'.hasError then
-        (none, s'.restore iniSz iniPos)
-      else
-        let tok := s'.stxStack.back
-        (some tok, s'.restore iniSz iniPos)
+  bindPeek ctx s fun tok? s' => (tok?, s')
 
 /-- Check if the input is at EOI (after skipping whitespace and comments). -/
 def atEOI (ctx : IxParserContext) (s : ParserState) : Bool :=
@@ -444,7 +453,10 @@ def atomicFn (p : ParserFn) : ParserFn := fun ctx s =>
     let iniPos := s.pos
     (p ctx s).bindState fun s' =>
       if s'.hasError then
-        { s' with stxStack := s'.stxStack.shrink iniSz, pos := iniPos }
+        match s' with
+        | ⟨stack', lhsPrec', _, cache', err'⟩ =>
+          match stack'.shrink iniSz with
+          | ⟨rev', len'⟩ => ⟨⟨rev', len'⟩, lhsPrec', iniPos, cache', err'⟩
       else
         s'
 
@@ -458,14 +470,14 @@ def orelseFn (p q : ParserFn) : ParserFn := fun ctx s =>
       match s1.errorMsg with
       | none => s1
       | some e1 =>
-        if s1.pos != iniPos then
+        if !Nat.beq s1.pos iniPos then
           s1
         else
-          let sRestored := s1.restore iniSz iniPos
-          (q ctx sRestored).bindState fun s2 =>
-            match s2.errorMsg with
-            | none => s2
-            | some e2 => { s2 with errorMsg := some (ParserError.merge e1 e2) }
+          (s1.restore iniSz iniPos).bindState fun sRestored =>
+            (q ctx sRestored).bindState fun s2 =>
+              match s2.errorMsg with
+              | none => s2
+              | some e2 => s2.setError (ParserError.merge e1 e2)
 
 /-- Try `p`, always backtracking on any error and trying `q`. -/
 def tryOrElseFn (p q : ParserFn) : ParserFn :=
@@ -482,12 +494,10 @@ def optionalFn (p : ParserFn) : ParserFn := fun ctx s =>
     let iniSz := s.stackSize
     let iniPos := s.pos
     (p ctx s).bindState fun s' =>
-      let s' :=
-        if s'.hasError && s'.pos == iniPos then
-          s'.restore iniSz iniPos
-        else
-          s'
-      s'.mkNode SyntaxKind.nullKind iniSz
+      if s'.hasError && Nat.beq s'.pos iniPos then
+        (s'.restore iniSz iniPos).mkNode SyntaxKind.nullKind iniSz
+      else
+        s'.mkNode SyntaxKind.nullKind iniSz
 
 /-- Zero-or-more repetition (bounded by `fuel` and strictly advancing `pos`), wrapped in `null`. -/
 def manyLoop (p : ParserFn) (ctx : IxParserContext) (s : ParserState) : Nat → ParserState
@@ -498,8 +508,8 @@ def manyLoop (p : ParserFn) (ctx : IxParserContext) (s : ParserState) : Nat → 
       let iniPos := s.pos
       (p ctx s).bindState fun s' =>
         if s'.hasError then
-          if s'.pos == iniPos then s'.restore iniSz iniPos else s'
-        else if s'.pos == iniPos then
+          if Nat.beq s'.pos iniPos then s'.restore iniSz iniPos else s'
+        else if Nat.beq s'.pos iniPos then
           s'
         else
           manyLoop p ctx s' fuel
@@ -533,19 +543,19 @@ def sepByLoop (p sep : ParserFn) (allowTrailing : Bool) (ctx : IxParserContext) 
       let sepIniPos := s.pos
       (sep ctx s).bindState fun sSep =>
         if sSep.hasError then
-          if sSep.pos == sepIniPos then sSep.restore sepIniSz sepIniPos else sSep
+          if Nat.beq sSep.pos sepIniPos then sSep.restore sepIniSz sepIniPos else sSep
         else
-          let sAfterSep := sSep.shrinkStack sepIniSz
-          let pIniSz := sAfterSep.stackSize
-          let pIniPos := sAfterSep.pos
-          (p ctx sAfterSep).bindState fun sElem =>
-            if sElem.hasError then
-              if allowTrailing && sElem.pos == pIniPos then
-                sElem.restore pIniSz pIniPos
+          (sSep.shrinkStack sepIniSz).bindState fun sAfterSep =>
+            let pIniSz := sAfterSep.stackSize
+            let pIniPos := sAfterSep.pos
+            (p ctx sAfterSep).bindState fun sElem =>
+              if sElem.hasError then
+                if allowTrailing && Nat.beq sElem.pos pIniPos then
+                  sElem.restore pIniSz pIniPos
+                else
+                  sElem
               else
-                sElem
-            else
-              sepByLoop p sep allowTrailing ctx sElem fuel
+                sepByLoop p sep allowTrailing ctx sElem fuel
 
 def sepBy1Fn (p sep : ParserFn) (allowTrailing : Bool := false) : ParserFn := fun ctx s =>
   s.bindState fun s =>
@@ -564,7 +574,7 @@ def sepByFn (p sep : ParserFn) (allowTrailing : Bool := false) : ParserFn := fun
     let iniPos := s.pos
     (p ctx s).bindState fun s1 =>
       if s1.hasError then
-        if s1.pos == iniPos then
+        if Nat.beq s1.pos iniPos then
           (s1.restore iniSz iniPos).mkNode SyntaxKind.nullKind iniSz
         else
           s1.mkNode SyntaxKind.nullKind iniSz
@@ -678,6 +688,9 @@ def hashRefFn : ParserFn := fun ctx s =>
 
 /-- Run `p` with a modified minimum precedence `prec`. -/
 def withPrecFn (prec : Nat) (p : ParserFn) : ParserFn := fun ctx s =>
-  p { ctx with prec := prec } s
+  match ctx with
+  | ⟨inputCtx, env, _⟩ =>
+    if Nat.beq prec 0 then p ⟨inputCtx, env, 0⟩ s
+    else p ⟨inputCtx, env, prec⟩ s
 
 end Ix.Frontend.Parser

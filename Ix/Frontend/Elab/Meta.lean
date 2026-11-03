@@ -30,20 +30,22 @@ def stripMData : Ix.Expr → Ix.Expr
 def getAppFnArgsAux : Ix.Expr → List Ix.Expr → Ix.Expr × Array Ix.Expr
   | .mdata _ e _, acc => getAppFnArgsAux e acc
   | .app f a _, acc   => getAppFnArgsAux f (a :: acc)
-  | e, acc            => (e, acc.toArray)
+  | e, acc            => (e, Array.mk acc)
 
 def getAppFnArgs (e : Ix.Expr) : Ix.Expr × Array Ix.Expr :=
   getAppFnArgsAux e []
 
-def getAppFn (e : Ix.Expr) : Ix.Expr :=
-  (getAppFnArgs e).1
+def getAppFn : Ix.Expr → Ix.Expr
+  | .mdata _ e _ => getAppFn e
+  | .app f _ _   => getAppFn f
+  | e            => e
 
 def getAppArgs (e : Ix.Expr) : Array Ix.Expr :=
   (getAppFnArgs e).2
 
 /-- True if `e` contains any loose `.bvar i` with `i ≥ cutoff`. -/
 def hasLooseBVarsAt : Ix.Expr → Nat → Bool
-  | .bvar i _, c        => i ≥ c
+  | .bvar i _, c        => Nat.ble c i
   | .app f a _, c       => hasLooseBVarsAt f c || hasLooseBVarsAt a c
   | .lam _ t b _ _, c   => hasLooseBVarsAt t c || hasLooseBVarsAt b (c + 1)
   | .forallE _ t b _ _, c => hasLooseBVarsAt t c || hasLooseBVarsAt b (c + 1)
@@ -68,10 +70,10 @@ def containsFVar (fvarId : Ix.Name) : Ix.Expr → Bool
 
 /-- Shift loose `.bvar i` (`i ≥ cutoff`) up by `delta`. -/
 def liftLooseBVars (e : Ix.Expr) (delta : Nat) (cutoff : Nat := 0) : Ix.Expr :=
-  if delta == 0 || !hasLooseBVarsAt e cutoff then e else go e cutoff
+  if Nat.beq delta 0 || !hasLooseBVarsAt e cutoff then e else go e cutoff
 where
   go : Ix.Expr → Nat → Ix.Expr
-    | .bvar i _, c        => if i ≥ c then Expr.mkBVar (i + delta) else Expr.mkBVar i
+    | .bvar i _, c        => if Nat.ble c i then Expr.mkBVar (i + delta) else Expr.mkBVar i
     | .app f a _, c       => Expr.mkApp (go f c) (go a c)
     | .lam nm t b bi _, c => Expr.mkLam nm (go t c) (go b (c + 1)) bi
     | .forallE nm t b bi _, c => Expr.mkForallE nm (go t c) (go b (c + 1)) bi
@@ -86,12 +88,11 @@ def instantiateRevAt (args : Array Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Exp
   if !hasLooseBVarsAt e depth then e
   else match e with
   | .bvar i _ =>
-    if i ≥ depth then
+    if Nat.ble depth i then
       let idx := i - depth
-      if h : idx < args.size then
-        liftLooseBVars args[idx] depth
-      else
-        Expr.mkBVar (i - args.size)
+      match Syntax.listGet? args.toList idx with
+      | some arg => liftLooseBVars arg depth
+      | none     => Expr.mkBVar (i - args.size)
     else
       Expr.mkBVar i
   | .app f a _       => Expr.mkApp (instantiateRevAt args f depth) (instantiateRevAt args a depth)
@@ -107,16 +108,36 @@ def instantiateRevAt (args : Array Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Exp
 def instantiateRev (body : Ix.Expr) (args : Array Ix.Expr) : Ix.Expr :=
   if args.isEmpty then body else instantiateRevAt args body 0
 
+/-- Substitute a single `arg` for loose `.bvar depth` in `e` without `Array` or proof terms. -/
+def instantiate1At (arg : Ix.Expr) (e : Ix.Expr) (depth : Nat) : Ix.Expr :=
+  if !hasLooseBVarsAt e depth then e
+  else match e with
+  | .bvar i _ =>
+    if Nat.beq i depth then
+      liftLooseBVars arg depth
+    else if Nat.ble (depth + 1) i then
+      Expr.mkBVar (i - 1)
+    else
+      Expr.mkBVar i
+  | .app f a _       => Expr.mkApp (instantiate1At arg f depth) (instantiate1At arg a depth)
+  | .lam nm t b bi _ => Expr.mkLam nm (instantiate1At arg t depth) (instantiate1At arg b (depth + 1)) bi
+  | .forallE nm t b bi _ => Expr.mkForallE nm (instantiate1At arg t depth) (instantiate1At arg b (depth + 1)) bi
+  | .letE nm t v b nd _ =>
+    Expr.mkLetE nm (instantiate1At arg t depth) (instantiate1At arg v depth) (instantiate1At arg b (depth + 1)) nd
+  | .proj nm i s _   => Expr.mkProj nm i (instantiate1At arg s depth)
+  | .mdata md x _    => Expr.mkMData md (instantiate1At arg x depth)
+  | other            => other
+
 /-- Substitute `arg` for `bvar 0` in `body`. -/
 def instantiate1 (body : Ix.Expr) (arg : Ix.Expr) : Ix.Expr :=
-  instantiateRevAt #[arg] body 0
+  instantiate1At arg body 0
 
 /-- Replace free variable `fvarId` in `e` with `bvar depth` (lifting existing loose `bvar ≥ depth` by 1). -/
 def abstractFVarAt (fvarId : Ix.Name) (e : Ix.Expr) (d : Nat) : Ix.Expr :=
   if !containsFVar fvarId e && !hasLooseBVarsAt e d then e
   else match e with
   | .bvar i _ =>
-    if i ≥ d then Expr.mkBVar (i + 1) else Expr.mkBVar i
+    if Nat.ble d i then Expr.mkBVar (i + 1) else Expr.mkBVar i
   | .fvar n _ =>
     if n == fvarId then Expr.mkBVar d else e
   | .app f a _       => Expr.mkApp (abstractFVarAt fvarId f d) (abstractFVarAt fvarId a d)
@@ -162,13 +183,13 @@ where
     | .mdata md x _       => Expr.mkMData md (go x)
     | other               => other
 
-/-- Close an array of FVar IDs into a telescope of `.lam` / `.letE` binders using `lctx`,
-    attaching `ix.contract` metadata frames whenever a binder has non-default substructural contract. -/
-def mkLambdaFVars (fvars : Array Ix.Name) (body : Ix.Expr) : IxElabM Ix.Expr := do
-  let ctx ← read
-  fvars.foldrM (fun fvarId acc => do
-    match ctx.lctx.findFVar? fvarId with
-    | none => return acc
+/-- Close a list of FVar IDs into a telescope of `.lam` / `.letE` binders using `lctx`. -/
+def mkLambdaFVarsList (lctx : LocalContext) : List Ix.Name → Ix.Expr → Ix.Expr
+  | [], body => body
+  | fvarId :: rest, body =>
+    let acc := mkLambdaFVarsList lctx rest body
+    match lctx.findFVar? fvarId with
+    | none => acc
     | some decl =>
       let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
       let absBody := abstractFVar fvarId acc
@@ -176,63 +197,86 @@ def mkLambdaFVars (fvars : Array Ix.Name) (body : Ix.Expr) : IxElabM Ix.Expr := 
       | some val =>
         let letKind := decl.letKind?.getD .value
         let nonDep := !containsFVar fvarId acc
-        return Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
+        Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
       | none =>
-        return Expr.mkLamContract bName decl.type absBody decl.binderInfo decl.contract
-  ) body
+        Expr.mkLamContract bName decl.type absBody decl.binderInfo decl.contract
+
+/-- Close an array of FVar IDs into a telescope of `.lam` / `.letE` binders using `lctx`,
+    attaching `ix.contract` metadata frames whenever a binder has non-default substructural contract. -/
+def mkLambdaFVars (fvars : Array Ix.Name) (body : Ix.Expr) : IxElabM Ix.Expr := do
+  let ctx ← read
+  return mkLambdaFVarsList ctx.lctx fvars.toList body
+
+/-- Close a list of FVar IDs into a telescope of `.forallE` / `.letE` binders using `lctx`. -/
+def mkForallFVarsList (lctx : LocalContext) (retContract : Ixon.ValueContract) :
+    List Ix.Name → Ix.Expr → Ix.Expr
+  | [], body => body
+  | fvarId :: rest, body =>
+    let acc := mkForallFVarsList lctx retContract rest body
+    let resContract : Ixon.ValueContract := match rest with
+      | [] => retContract
+      | _  => .shared
+    match lctx.findFVar? fvarId with
+    | none => acc
+    | some decl =>
+      let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
+      let absBody := abstractFVar fvarId acc
+      match decl.value? with
+      | some val =>
+        let letKind := decl.letKind?.getD .value
+        let nonDep := !containsFVar fvarId acc
+        Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
+      | none =>
+        Expr.mkForallContract bName decl.type absBody decl.binderInfo decl.contract resContract
 
 /-- Close an array of FVar IDs into a telescope of `.forallE` / `.letE` binders using `lctx`,
     attaching `ix.contract` metadata frames for binder contracts and `retContract` on the innermost arrow. -/
 def mkForallFVars (fvars : Array Ix.Name) (body : Ix.Expr)
     (retContract : Ixon.ValueContract := .shared) : IxElabM Ix.Expr := do
   let ctx ← read
-  let n := fvars.size
-  (Array.range n).foldrM (fun idx acc => do
-    let fvarId := fvars.getD idx Name.mkAnon
-    let isLast := idx + 1 == n
-    let resContract : Ixon.ValueContract := if isLast then retContract else .shared
-    match ctx.lctx.findFVar? fvarId with
-    | none => return acc
-    | some decl =>
-      let bName := if Name.isAnonymous decl.userName then Name.simple "x" else decl.userName
-      let absBody := abstractFVar fvarId acc
-      match decl.value? with
-      | some val =>
-        let letKind := decl.letKind?.getD .value
-        let nonDep := !containsFVar fvarId acc
-        return Expr.mkLetContract bName decl.type val absBody nonDep decl.contract letKind
-      | none =>
-        return Expr.mkForallContract bName decl.type absBody decl.binderInfo decl.contract resContract
-  ) body
+  return mkForallFVarsList ctx.lctx retContract fvars.toList body
 
 /-! ## Universe Level Operations & Unification -/
 
+/-- Proof-free lookup of universe parameter `n` in parallel lists `(params, lvls)`. -/
+def lookupLevelParam : List Ix.Name → List Ix.Level → Ix.Name → Option Ix.Level
+  | p :: ps, v :: vs, n => if p == n then some v else lookupLevelParam ps vs n
+  | _, _, _             => none
+
 /-- Substitute universe parameter names `params` with `lvls` in `u`. -/
-def substLevelParams (params : Array Ix.Name) (lvls : Array Ix.Level) : Ix.Level → Ix.Level
+def substLevelParamsList (params : List Ix.Name) (lvls : List Ix.Level) : Ix.Level → Ix.Level
   | .zero h     => .zero h
-  | .succ x _   => Level.mkSucc (substLevelParams params lvls x)
-  | .max x y _  => Level.mkMax (substLevelParams params lvls x) (substLevelParams params lvls y)
-  | .imax x y _ => Level.mkIMax (substLevelParams params lvls x) (substLevelParams params lvls y)
+  | .succ x _   => Level.mkSucc (substLevelParamsList params lvls x)
+  | .max x y _  => Level.mkMax (substLevelParamsList params lvls x) (substLevelParamsList params lvls y)
+  | .imax x y _ => Level.mkIMax (substLevelParamsList params lvls x) (substLevelParamsList params lvls y)
   | l@(.param n _) =>
-    match params.idxOf? n with
-    | some i => lvls.getD i l
+    match lookupLevelParam params lvls n with
+    | some v => v
     | none   => l
   | l@(.mvar _ _) => l
 
+def substLevelParams (params : Array Ix.Name) (lvls : Array Ix.Level) (u : Ix.Level) : Ix.Level :=
+  substLevelParamsList params.toList lvls.toList u
+
 /-- Substitute universe parameter names `params` with `lvls` throughout an `Ix.Expr`. -/
 def substExprLevelParams (params : Array Ix.Name) (lvls : Array Ix.Level) (e : Ix.Expr) : Ix.Expr :=
-  if params.isEmpty || lvls.isEmpty then e else go e
-where
-  go : Ix.Expr → Ix.Expr
-    | .sort u _           => Expr.mkSort (substLevelParams params lvls u)
-    | .const nm us _      => Expr.mkConst nm (us.map (substLevelParams params lvls))
-    | .app f a _          => Expr.mkApp (go f) (go a)
-    | .lam nm t b bi _    => Expr.mkLam nm (go t) (go b) bi
-    | .forallE nm t b bi _ => Expr.mkForallE nm (go t) (go b) bi
-    | .letE nm t v b nd _ => Expr.mkLetE nm (go t) (go v) (go b) nd
-    | .proj nm i s _      => Expr.mkProj nm i (go s)
-    | .mdata md x _       => Expr.mkMData md (go x)
-    | other               => other
+  match params.toList, lvls.toList with
+  | [], _ | _, [] => e
+  | pList, lList =>
+    let rec go : Ix.Expr → Ix.Expr
+      | .sort u _           => Expr.mkSort (substLevelParamsList pList lList u)
+      | c@(.const nm us _)  =>
+        match us.toList with
+        | []  => c
+        | uls => Expr.mkConst nm (Array.mk (uls.map (substLevelParamsList pList lList)))
+      | .app f a _          => Expr.mkApp (go f) (go a)
+      | .lam nm t b bi _    => Expr.mkLam nm (go t) (go b) bi
+      | .forallE nm t b bi _ => Expr.mkForallE nm (go t) (go b) bi
+      | .letE nm t v b nd _ => Expr.mkLetE nm (go t) (go v) (go b) nd
+      | .proj nm i s _      => Expr.mkProj nm i (go s)
+      | .mdata md x _       => Expr.mkMData md (go x)
+      | other               => other
+    go e
 
 /-- True if universe level `u` contains any `.mvar`. -/
 def hasLevelMVar : Ix.Level → Bool
@@ -247,7 +291,7 @@ def hasExprOrLevelMVar : Ix.Expr → Bool
   | .bvar _ _ | .fvar _ _ | .lit _ _ => false
   | .mvar _ _          => true
   | .sort u _          => hasLevelMVar u
-  | .const _ us _      => us.any hasLevelMVar
+  | .const _ us _      => us.toList.any hasLevelMVar
   | .app f a _         => hasExprOrLevelMVar f || hasExprOrLevelMVar a
   | .lam _ t b _ _     => hasExprOrLevelMVar t || hasExprOrLevelMVar b
   | .forallE _ t b _ _ => hasExprOrLevelMVar t || hasExprOrLevelMVar b
@@ -255,29 +299,36 @@ def hasExprOrLevelMVar : Ix.Expr → Bool
   | .proj _ _ s _      => hasExprOrLevelMVar s
   | .mdata _ x _       => hasExprOrLevelMVar x
 
-/-- Instantiate assigned level metavariables in `u` (structurally recursive on `fuel`). -/
-def instantiateLevelMVars : Nat → Ix.Level → IxElabM Ix.Level
+/-- Helper for `instantiateLevelMVars` (assumes `u` contains at least one level mvar). -/
+def instantiateLevelMVarsCore : Nat → Ix.Level → IxElabM Ix.Level
   | 0, u => return u
   | fuel + 1, u => do
-    if !hasLevelMVar u then return u
     match u with
     | .zero _ | .param _ _ => return u
     | .succ x _ =>
-      let x' ← instantiateLevelMVars fuel x
+      let x' ← instantiateLevelMVarsCore fuel x
       return Level.mkSucc x'
     | .max x y _ =>
-      let x' ← instantiateLevelMVars fuel x
-      let y' ← instantiateLevelMVars fuel y
+      let x' ← instantiateLevelMVarsCore fuel x
+      let y' ← instantiateLevelMVarsCore fuel y
       return Level.mkMax x' y'
     | .imax x y _ =>
-      let x' ← instantiateLevelMVars fuel x
-      let y' ← instantiateLevelMVars fuel y
+      let x' ← instantiateLevelMVarsCore fuel x
+      let y' ← instantiateLevelMVarsCore fuel y
       return Level.mkIMax x' y'
     | .mvar id _ =>
       let st ← get
       match st.mctx.getLevelAssignment? id with
-      | some assigned => instantiateLevelMVars fuel assigned
+      | some assigned =>
+        if hasLevelMVar assigned then instantiateLevelMVarsCore fuel assigned else return assigned
       | none          => return u
+
+/-- Instantiate assigned level metavariables in `u` (structurally recursive on `fuel`). -/
+def instantiateLevelMVars (fuel : Nat) (u : Ix.Level) : IxElabM Ix.Level := do
+  if !hasLevelMVar u then return u
+  let st ← get
+  if st.mctx.lvlAssigns.isEmpty then return u
+  instantiateLevelMVarsCore fuel u
 
 /-- Smart `max` constructor on already-normalized levels. -/
 def mkMaxNorm (a b : Ix.Level) : Ix.Level :=
@@ -327,11 +378,11 @@ def isLevelDefEq : Nat → Ix.Level → Ix.Level → IxElabM Bool
     match u, v with
     | .mvar id _, _ =>
       if occursLevelMVar id v then return false
-      modify fun st => { st with mctx := st.mctx.assignLevel id v }
+      modifyMCtx (·.assignLevel id v)
       return true
     | _, .mvar id _ =>
       if occursLevelMVar id u then return false
-      modify fun st => { st with mctx := st.mctx.assignLevel id u }
+      modifyMCtx (·.assignLevel id u)
       return true
     | .succ a _, .succ b _ =>
       isLevelDefEq fuel a b
@@ -353,52 +404,61 @@ def mkFreshExprMVar (type : Ix.Expr) (userName : Ix.Name := Name.mkAnon) : IxEla
   let ctx ← read
   let mvarId ← mkFreshName "_mvar"
   let decl : MetavarDecl := { mvarId, userName, lctx := ctx.lctx, type }
-  modify fun st => { st with mctx := st.mctx.addExprMVarDecl decl }
+  modifyMCtx (·.addExprMVarDecl decl)
   return Expr.mkMVar mvarId
 
-/-- Instantiate assigned expression and universe level metavariables throughout `e`. -/
-def instantiateMVars : Nat → Ix.Expr → IxElabM Ix.Expr
+/-- Single bottom-up pass for `instantiateMVars` without repeating `hasExprOrLevelMVar` at internal nodes. -/
+def instantiateMVarsCore : Nat → Ix.Expr → IxElabM Ix.Expr
   | 0, e => return e
   | fuel + 1, e => do
-    if !hasExprOrLevelMVar e then return e
     match e with
     | .bvar _ _ | .fvar _ _ | .lit _ _ => return e
     | .sort u _ =>
+      if !hasLevelMVar u then return e
       let u' ← instantiateLevelMVars 32 u
       return Expr.mkSort (normalizeLevel u')
     | .const nm us _ =>
-      let us' ← us.mapM fun u => do
+      if !(us.toList.any hasLevelMVar) then return e
+      let us' ← us.toList.mapM fun u => do
         let u' ← instantiateLevelMVars 32 u
         return normalizeLevel u'
-      return Expr.mkConst nm us'
+      return Expr.mkConst nm (Array.mk us')
     | .mvar id _ =>
       let st ← get
       match st.mctx.getExprAssignment? id with
-      | some val => instantiateMVars fuel val
+      | some val =>
+        if hasExprOrLevelMVar val then instantiateMVarsCore fuel val else return val
       | none     => return e
     | .app f a _ =>
-      let f' ← instantiateMVars fuel f
-      let a' ← instantiateMVars fuel a
+      let f' ← instantiateMVarsCore fuel f
+      let a' ← instantiateMVarsCore fuel a
       return Expr.mkApp f' a'
     | .lam nm t b bi _ =>
-      let t' ← instantiateMVars fuel t
-      let b' ← instantiateMVars fuel b
+      let t' ← instantiateMVarsCore fuel t
+      let b' ← instantiateMVarsCore fuel b
       return Expr.mkLam nm t' b' bi
     | .forallE nm t b bi _ =>
-      let t' ← instantiateMVars fuel t
-      let b' ← instantiateMVars fuel b
+      let t' ← instantiateMVarsCore fuel t
+      let b' ← instantiateMVarsCore fuel b
       return Expr.mkForallE nm t' b' bi
     | .letE nm t v b nd _ =>
-      let t' ← instantiateMVars fuel t
-      let v' ← instantiateMVars fuel v
-      let b' ← instantiateMVars fuel b
+      let t' ← instantiateMVarsCore fuel t
+      let v' ← instantiateMVarsCore fuel v
+      let b' ← instantiateMVarsCore fuel b
       return Expr.mkLetE nm t' v' b' nd
     | .proj nm i s _ =>
-      let s' ← instantiateMVars fuel s
+      let s' ← instantiateMVarsCore fuel s
       return Expr.mkProj nm i s'
     | .mdata md x _ =>
-      let x' ← instantiateMVars fuel x
+      let x' ← instantiateMVarsCore fuel x
       return Expr.mkMData md x'
+
+/-- Instantiate assigned expression and universe level metavariables throughout `e`. -/
+def instantiateMVars (fuel : Nat) (e : Ix.Expr) : IxElabM Ix.Expr := do
+  let st ← get
+  if st.mctx.exprAssigns.isEmpty && st.mctx.lvlAssigns.isEmpty then return e
+  if !hasExprOrLevelMVar e then return e
+  instantiateMVarsCore fuel e
 
 /-- Check whether `mvarId` occurs in `e` (returns `true` if `mvarId` occurs). -/
 def occursCheckMVar (mvarId : Ix.Name) : Ix.Expr → Bool
@@ -423,7 +483,10 @@ def defaultUnassignedLevelMVars : Ix.Level → Ix.Level
 
 def defaultUnassignedExprLevelMVars : Ix.Expr → Ix.Expr
   | .sort u _           => Expr.mkSort (defaultUnassignedLevelMVars u)
-  | .const nm us _      => Expr.mkConst nm (us.map defaultUnassignedLevelMVars)
+  | c@(.const nm us _)  =>
+    match us.toList with
+    | []  => c
+    | uls => Expr.mkConst nm (Array.mk (uls.map defaultUnassignedLevelMVars))
   | .app f a _          => Expr.mkApp (defaultUnassignedExprLevelMVars f) (defaultUnassignedExprLevelMVars a)
   | .lam nm t b bi _    => Expr.mkLam nm (defaultUnassignedExprLevelMVars t) (defaultUnassignedExprLevelMVars b) bi
   | .forallE nm t b bi _ => Expr.mkForallE nm (defaultUnassignedExprLevelMVars t) (defaultUnassignedExprLevelMVars b) bi
@@ -585,8 +648,14 @@ def tryReduceBinaryPrim (nm : Ix.Name) (a0 a1 : Ix.Expr) : Option Ix.Expr :=
 def whnf : Nat → Ix.Expr → IxElabM Ix.Expr
   | 0, e => return stripMData e
   | fuel + 1, e => do
-    let e ← instantiateMVars 16 (stripMData e)
+    let e := stripMData e
     match e with
+    -- 0. Assigned expression metavariable unfolding
+    | .mvar mvarId _ =>
+      let st ← get
+      match st.mctx.getExprAssignment? mvarId with
+      | some val => whnf fuel val
+      | none     => return e
     -- 1. Local `let` free variable unfolding (ζ-local)
     | .fvar fvarId _ =>
       let ctx ← read
@@ -698,7 +767,7 @@ def whnf : Nat → Ix.Expr → IxElabM Ix.Expr
 def inferType : Nat → Ix.Expr → IxElabM Ix.Expr
   | 0, _ => throwElabError "elaborator fuel exhausted in inferType"
   | fuel + 1, e => do
-    let e ← instantiateMVars 16 (stripMData e)
+    let e := stripMData e
     match e with
     | .bvar idx _ =>
       throwElabError s!"unexpected loose bound variable #{idx} in inferType"
@@ -709,11 +778,15 @@ def inferType : Nat → Ix.Expr → IxElabM Ix.Expr
       | none      => throwElabError s!"unknown free variable '{Name.toStringTotal fvarId}'"
     | .mvar mvarId _ =>
       let st ← get
-      match st.mctx.findDecl? mvarId with
-      | some decl => return decl.type
-      | none      => throwElabError s!"unknown metavariable '?{Name.toStringTotal mvarId}'"
+      match st.mctx.getExprAssignment? mvarId with
+      | some val => inferType fuel val
+      | none =>
+        match st.mctx.findDecl? mvarId with
+        | some decl => return decl.type
+        | none      => throwElabError s!"unknown metavariable '?{Name.toStringTotal mvarId}'"
     | .sort u _ =>
-      return Expr.mkSort (Level.mkSucc (normalizeLevel u))
+      let u' ← instantiateLevelMVars 32 u
+      return Expr.mkSort (Level.mkSucc (normalizeLevel u'))
     | .lit (.natVal _) _ =>
       return Expr.mkConst (Name.simple "Nat") #[]
     | .lit (.strVal _) _ =>
@@ -723,9 +796,19 @@ def inferType : Nat → Ix.Expr → IxElabM Ix.Expr
       match st.env.find? nm with
       | some ci =>
         let cnst := Expr.ConstantInfo.getCnstPure ci
-        if cnst.levelParams.size != us.size then
-          throwElabError s!"universe level count mismatch for '{Name.toStringTotal nm}': expected {cnst.levelParams.size}, got {us.size}"
-        return substExprLevelParams cnst.levelParams us cnst.type
+        match cnst.levelParams.toList, us.toList with
+        | [], [] => return cnst.type
+        | pList, uList =>
+          if pList.length != uList.length then
+            throwElabError s!"universe level count mismatch for '{Name.toStringTotal nm}': expected {pList.length}, got {uList.length}"
+          let us' ←
+            if uList.any hasLevelMVar then
+              let ls ← uList.mapM fun u => do
+                let u' ← instantiateLevelMVars 32 u
+                return normalizeLevel u'
+              pure (Array.mk ls)
+            else pure us
+          return substExprLevelParams cnst.levelParams us' cnst.type
       | none =>
         throwElabError s!"unknown constant '{Name.toStringTotal nm}'"
     | .app f a _ =>
@@ -751,16 +834,30 @@ def inferType : Nat → Ix.Expr → IxElabM Ix.Expr
       let domTy ← inferType fuel dom
       let domTyWhnf ← whnf fuel domTy
       let u1 ← match stripMData domTyWhnf with
-        | .sort u _ => pure u
+        | .sort u _ =>
+          let u' ← instantiateLevelMVars 32 u
+          pure (normalizeLevel u')
         | _         => mkFreshLevelMVar
-      withLocalDecl nm dom bi default fun _ fvarExpr => do
-        let bodyInst := instantiate1 body fvarExpr
-        let bodyTy ← inferType fuel bodyInst
+      if !hasLooseBVars body then
+        let bodyTy ← inferType fuel body
         let bodyTyWhnf ← whnf fuel bodyTy
         let u2 ← match stripMData bodyTyWhnf with
-          | .sort v _ => pure v
+          | .sort v _ =>
+            let v' ← instantiateLevelMVars 32 v
+            pure (normalizeLevel v')
           | _         => mkFreshLevelMVar
         return Expr.mkSort (normalizeLevel (Level.mkIMax u1 u2))
+      else
+        withLocalDecl nm dom bi default fun _ fvarExpr => do
+          let bodyInst := instantiate1 body fvarExpr
+          let bodyTy ← inferType fuel bodyInst
+          let bodyTyWhnf ← whnf fuel bodyTy
+          let u2 ← match stripMData bodyTyWhnf with
+            | .sort v _ =>
+              let v' ← instantiateLevelMVars 32 v
+              pure (normalizeLevel v')
+            | _         => mkFreshLevelMVar
+          return Expr.mkSort (normalizeLevel (Level.mkIMax u1 u2))
     | .letE nm ty val body _ _ =>
       withLetDecl nm ty val default .value false fun _ fvarExpr => do
         let bodyInst := instantiate1 body fvarExpr
@@ -817,7 +914,7 @@ def assignMVarPattern (mvarId : Ix.Name) (args : Array Ix.Expr) (rhs : Ix.Expr) 
         if hasLevelMVar mLvl then
           if let some (.sort rLvl _) ← observing? (do let t ← inferType 16 rhs; whnf 16 t) then
             let _ ← isLevelDefEq 16 mLvl rLvl
-    modify fun st => { st with mctx := st.mctx.assignExpr mvarId rhs }
+    modifyMCtx (·.assignExpr mvarId rhs)
     return true
   else
     -- Check if all `args` are distinct `.fvar`s
@@ -835,14 +932,32 @@ def assignMVarPattern (mvarId : Ix.Name) (args : Array Ix.Expr) (rhs : Ix.Expr) 
       let lamVal ← mkLambdaFVars fvarIds rhs
       if occursCheckMVar mvarId lamVal then
         return false
-      modify fun st => { st with mctx := st.mctx.assignExpr mvarId lamVal }
+      modifyMCtx (·.assignExpr mvarId lamVal)
       return true
+
+/-- Check pairwise level definitional equality on two lists of equal length. -/
+def allLevelDefEq (fuel : Nat) : List Ix.Level → List Ix.Level → IxElabM Bool
+  | [], [] => return true
+  | u :: us, v :: vs => do
+    let ok ← isLevelDefEq fuel u v
+    if ok then allLevelDefEq fuel us vs else return false
+  | _, _ => return false
+
+/-- Check pairwise expression definitional equality on two lists of equal length. -/
+def allExprDefEq (isDefEqFuel : Ix.Expr → Ix.Expr → IxElabM Bool) :
+    List Ix.Expr → List Ix.Expr → IxElabM Bool
+  | [], [] => return true
+  | a :: as, b :: bs => do
+    let ok ← isDefEqFuel a b
+    if ok then allExprDefEq isDefEqFuel as bs else return false
+  | _, _ => return false
 
 /-- Check whether two expressions `t` and `s` are definitionally equal, solving
     expression and universe level metavariables as needed. Bounded by `fuel : Nat`. -/
 def isDefEq : Nat → Ix.Expr → Ix.Expr → IxElabM Bool
   | 0, t, s => return (stripMData t == stripMData s)
   | fuel + 1, t, s => do
+    let recEq (a b : Ix.Expr) : IxElabM Bool := isDefEq fuel a b
     let t ← instantiateMVars 16 (stripMData t)
     let s ← instantiateMVars 16 (stripMData s)
     if t == s then return true
@@ -851,11 +966,8 @@ def isDefEq : Nat → Ix.Expr → Ix.Expr → IxElabM Bool
     let (sFn, sArgs) := getAppFnArgs s
     match tFn, sFn with
     | .mvar mId1 _, .mvar mId2 _ =>
-      if mId1 == mId2 && tArgs.size == sArgs.size then
-        let mut allOk := true
-        for i in [:tArgs.size] do
-          let ok ← isDefEq fuel (tArgs.getD i t) (sArgs.getD i s)
-          if !ok then allOk := false
+      if mId1 == mId2 then
+        let allOk ← allExprDefEq recEq tArgs.toList sArgs.toList
         if allOk then return true
       let ok ← assignMVarPattern mId1 tArgs s
       if ok then return true
@@ -906,31 +1018,20 @@ def isDefEq : Nat → Ix.Expr → Ix.Expr → IxElabM Bool
       | _, _ =>
         -- 3. Try matching same-head constant/fvar spines first (optimistic structural unification)
         let trySpine : IxElabM Bool := do
-          if tArgs.size == sArgs.size && !tArgs.isEmpty then
+          match tArgs.toList, sArgs.toList with
+          | [], _ | _, [] => return false
+          | tArgList, sArgList =>
             match tFn, sFn with
             | .const c1 us1 _, .const c2 us2 _ =>
-              if c1 == c2 && us1.size == us2.size then
-                let mut ok := true
-                for i in [:us1.size] do
-                  let lOk ← isLevelDefEq 32 (us1.getD i Level.mkZero) (us2.getD i Level.mkZero)
-                  if !lOk then ok := false
-                for i in [:tArgs.size] do
-                  if ok then
-                    let aOk ← isDefEq fuel (tArgs.getD i t) (sArgs.getD i s)
-                    if !aOk then ok := false
-                return ok
+              if c1 == c2 then
+                let lOk ← allLevelDefEq 32 us1.toList us2.toList
+                if lOk then allExprDefEq recEq tArgList sArgList else return false
               else return false
             | .fvar f1 _, .fvar f2 _ =>
               if f1 == f2 then
-                let mut ok := true
-                for i in [:tArgs.size] do
-                  if ok then
-                    let aOk ← isDefEq fuel (tArgs.getD i t) (sArgs.getD i s)
-                    if !aOk then ok := false
-                return ok
+                allExprDefEq recEq tArgList sArgList
               else return false
             | _, _ => return false
-          else return false
         match ← observing? (do
           let ok ← trySpine
           if !ok then throwElabError "spine mismatch"
@@ -963,25 +1064,13 @@ def isDefEq : Nat → Ix.Expr → Ix.Expr → IxElabM Bool
               withLocalDecl nm1 d1 bi1 default fun _ fv =>
                 isDefEq fuel (instantiate1 b1 fv) (instantiate1 b2 fv)
             | .const c1 us1 _, .const c2 us2 _ =>
-              if c1 == c2 && us1.size == us2.size && twArgs.size == swArgs.size then
-                let mut ok := true
-                for i in [:us1.size] do
-                  let lOk ← isLevelDefEq 32 (us1.getD i Level.mkZero) (us2.getD i Level.mkZero)
-                  if !lOk then ok := false
-                for i in [:twArgs.size] do
-                  if ok then
-                    let aOk ← isDefEq fuel (twArgs.getD i tW) (swArgs.getD i sW)
-                    if !aOk then ok := false
-                return ok
+              if c1 == c2 then
+                let lOk ← allLevelDefEq 32 us1.toList us2.toList
+                if lOk then allExprDefEq recEq twArgs.toList swArgs.toList else return false
               else return false
             | .fvar f1 _, .fvar f2 _ =>
-              if f1 == f2 && twArgs.size == swArgs.size then
-                let mut ok := true
-                for i in [:twArgs.size] do
-                  if ok then
-                    let aOk ← isDefEq fuel (twArgs.getD i tW) (swArgs.getD i sW)
-                    if !aOk then ok := false
-                return ok
+              if f1 == f2 then
+                allExprDefEq recEq twArgs.toList swArgs.toList
               else return false
             | .proj sn1 idx1 e1 _, .proj sn2 idx2 e2 _ =>
               if sn1 == sn2 && idx1 == idx2 then isDefEq fuel e1 e2
@@ -1003,6 +1092,13 @@ def ensureSort (fuel : Nat) (type : Ix.Expr) : IxElabM Ix.Level := do
 
 /-! ## Bounded Backtracking Typeclass Synthesis (`synthInstance?`) -/
 
+/-- Allocate one fresh universe level metavariable per parameter in `ps` without `Array.push`. -/
+def mkFreshLevelMVarsFor : List Ix.Name → List Ix.Level → IxElabM (Array Ix.Level)
+  | [], acc => return Array.mk acc.reverse
+  | _ :: rest, acc => do
+    let u ← mkFreshLevelMVar
+    mkFreshLevelMVarsFor rest (u :: acc)
+
 /-- Instantiate a constant's universe parameters with fresh level metavariables
     and return `(constExpr, instantiatedType)`. -/
 def mkConstWithFreshMVarLevels (constName : Ix.Name) : IxElabM (Ix.Expr × Ix.Expr) := do
@@ -1011,63 +1107,82 @@ def mkConstWithFreshMVarLevels (constName : Ix.Name) : IxElabM (Ix.Expr × Ix.Ex
   | none => throwElabError s!"unknown constant '{Name.toStringTotal constName}'"
   | some ci =>
     let cnst := Expr.ConstantInfo.getCnstPure ci
-    let us ← cnst.levelParams.mapM fun _ => mkFreshLevelMVar
-    let expr := Expr.mkConst constName us
-    let ty := substExprLevelParams cnst.levelParams us cnst.type
-    return (expr, ty)
+    match cnst.levelParams.toList with
+    | [] =>
+      return (Expr.mkConst constName #[], cnst.type)
+    | ps =>
+      let us ← mkFreshLevelMVarsFor ps []
+      let expr := Expr.mkConst constName us
+      let ty := substExprLevelParams cnst.levelParams us cnst.type
+      return (expr, ty)
 
 /-- Open all leading `.forallE` binders of `fnType` as fresh metavariables, returning
     `(appliedFn, instGoals, resultType)` where `instGoals` are `[...]` instance subgoals. -/
-def openForallMVars : Nat → Ix.Expr → Ix.Expr → Array Ix.Expr →
-    IxElabM (Ix.Expr × Array Ix.Expr × Ix.Expr)
-  | 0, fn, fnTy, instGoals => return (fn, instGoals, fnTy)
+def openForallMVars : Nat → Ix.Expr → Ix.Expr → List Ix.Expr →
+    IxElabM (Ix.Expr × List Ix.Expr × Ix.Expr)
+  | 0, fn, fnTy, instGoals => return (fn, instGoals.reverse, fnTy)
   | fuel + 1, fn, fnTy, instGoals => do
-    let fnTyWhnf ← whnf 32 fnTy
+    let fnTyWhnf ← match stripMData fnTy with
+      | .forallE _ _ _ _ _ => pure fnTy
+      | _                  => whnf 32 fnTy
     match stripMData fnTyWhnf with
     | .forallE nm dom body bi _ =>
       let mvar ← mkFreshExprMVar dom nm
       let fn' := Expr.mkApp fn mvar
       let body' := instantiate1 body mvar
-      let instGoals' := if bi == .instImplicit then instGoals.push mvar else instGoals
+      let instGoals' := if bi == .instImplicit then mvar :: instGoals else instGoals
       openForallMVars fuel fn' body' instGoals'
     | _ =>
-      return (fn, instGoals, fnTyWhnf)
+      return (fn, instGoals.reverse, fnTyWhnf)
+
+/-- Extract the head constant name of the return type of a telescope (without allocating mvars). -/
+def returnHeadConstName? : Nat → Ix.Expr → Option Ix.Name
+  | 0, _ => none
+  | fuel + 1, ty =>
+    match stripMData ty with
+    | .forallE _ _ body _ _ => returnHeadConstName? fuel body
+    | e =>
+      match getAppFn e with
+      | .const nm _ _ => some nm
+      | _             => none
 
 /-- Bounded backtracking typeclass synthesis for `goalType : Ix.Expr`.
     1. Checks local context declarations in reverse order (innermost first).
-    2. Checks registered global `env.instances` matching the head class name. -/
+    2. Checks registered global `env.instancesByClass` matching the head class name. -/
 def synthInstance? : Nat → Ix.Expr → IxElabM (Option Ix.Expr)
   | 0, _ => return none
   | fuel + 1, goalType => do
     let goalWhnf ← whnf 32 goalType
-    let (headFn, _) := getAppFnArgs goalWhnf
-    match headFn with
+    match getAppFn goalWhnf with
     | .const className _ _ =>
       let ctx ← read
       -- 1. Try local context hypotheses (e.g. `[inst : Add α]`)
-      let localDecls := ctx.lctx.decls.reverse
-      for decl in localDecls do
-        let hit? ← observing? do
-          let fvar := Expr.mkFVar decl.fvarId
-          let (cand, subGoals, resTy) ← openForallMVars 16 fvar decl.type #[]
-          let ok ← isDefEq 32 resTy goalWhnf
-          if !ok then throwElabError "local instance mismatch"
-          for sg in subGoals do
-            let sgTy ← inferType 32 sg
-            match ← synthInstance? fuel sgTy with
-            | some sgVal =>
-              let sgOk ← isDefEq 32 sg sgVal
-              if !sgOk then throwElabError "subgoal unification failed"
-            | none => throwElabError "subgoal synthesis failed"
-          instantiateMVars 32 cand
-        if hit?.isSome then return hit?
+      for decl in ctx.lctx.revDecls do
+        let mightMatch : Bool := match returnHeadConstName? 16 decl.type with
+          | some cName => cName == className
+          | none       => decl.binderInfo == .instImplicit
+        if mightMatch then
+          let hit? ← observing? do
+            let fvar := Expr.mkFVar decl.fvarId
+            let (cand, subGoals, resTy) ← openForallMVars 16 fvar decl.type []
+            let ok ← isDefEq 32 resTy goalWhnf
+            if !ok then throwElabError "local instance mismatch"
+            for sg in subGoals do
+              let sgTy ← inferType 32 sg
+              match ← synthInstance? fuel sgTy with
+              | some sgVal =>
+                let sgOk ← isDefEq 32 sg sgVal
+                if !sgOk then throwElabError "subgoal unification failed"
+              | none => throwElabError "subgoal synthesis failed"
+            instantiateMVars 32 cand
+          if hit?.isSome then return hit?
       -- 2. Try global registered instances for `className`
       let st ← get
-      let matchingInsts := (st.env.instances.filter fun e => e.className == className).reverse
+      let matchingInsts := st.env.instancesByClass.get? className |>.getD []
       for entry in matchingInsts do
         let hit? ← observing? do
           let (instConst, instTy) ← mkConstWithFreshMVarLevels entry.instName
-          let (cand, subGoals, resTy) ← openForallMVars 16 instConst instTy #[]
+          let (cand, subGoals, resTy) ← openForallMVars 16 instConst instTy []
           let ok ← isDefEq 32 resTy goalWhnf
           if !ok then throwElabError "global instance mismatch"
           for sg in subGoals do

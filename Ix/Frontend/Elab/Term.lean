@@ -153,7 +153,7 @@ def elabProjOnExpr (fuel : Nat) (baseExpr : Ix.Expr) (fieldStx : Ix.Syntax) : Ix
           let methodName := Name.append typeName fieldId
           if st.env.contains methodName then
             let (mConst, mTy) ← mkConstWithFreshMVarLevels methodName
-            let (applied, instGoals, _) ← openForallMVars 16 mConst mTy #[]
+            let (applied, instGoals, _) ← openForallMVars 16 mConst mTy []
             for g in instGoals do
               let gTy ← inferType fuel g
               if let some instVal ← synthInstance? 8 gTy then
@@ -239,20 +239,65 @@ def elabIdentWithLevels (fuel : Nat) (idStx : Ix.Syntax) (explicitLvls? : Option
 
 /-! ## Implicit Argument Insertion & Expected Type Coercion -/
 
+/-- Return `ty` immediately if it is already a `.forallE`, otherwise call `whnf fuel ty`. -/
+def whnfForall (fuel : Nat) (ty : Ix.Expr) : IxElabM Ix.Expr :=
+  match stripMData ty with
+  | .forallE _ _ _ _ _ => return ty
+  | _                  => whnf fuel ty
+
+/-- Ensure `ty` is a `Sort`, skipping redundant re-checks on `.forallE` nodes whose
+    domain and codomain were already checked when constructed. -/
+def ensureSortIfNotForall (fuel : Nat) (ty : Ix.Expr) : IxElabM Unit :=
+  match stripMData ty with
+  | .forallE _ _ _ _ _ => return ()
+  | _                  => do let _ ← ensureSort fuel ty
+
+/-- Fast pure lookup for built-in binary operators without rebuilding `defaultParserEnv`. -/
+def findBuiltinOpTarget? (sym : String) : Option Ix.Name :=
+  if sym == "="   then some (Name.simple "Eq")
+  else if sym == "≠"   then some (Name.simple "Ne")
+  else if sym == "+"   then some (Name.mkStr2 "HAdd" "hAdd")
+  else if sym == "-"   then some (Name.mkStr2 "HSub" "hSub")
+  else if sym == "*"   then some (Name.mkStr2 "HMul" "hMul")
+  else if sym == "/"   then some (Name.mkStr2 "HDiv" "hDiv")
+  else if sym == "%"   then some (Name.mkStr2 "HMod" "hMod")
+  else if sym == "^"   then some (Name.mkStr2 "HPow" "hPow")
+  else if sym == "++"  then some (Name.mkStr2 "HAppend" "hAppend")
+  else if sym == "::"  then some (Name.mkStr2 "List" "cons")
+  else if sym == "=="  then some (Name.mkStr2 "BEq" "beq")
+  else if sym == "!="  then some (Name.mkStr2 "BEq" "bne")
+  else if sym == "<"   then some (Name.mkStr2 "LT" "lt")
+  else if sym == "≤" || sym == "<=" then some (Name.mkStr2 "LE" "le")
+  else if sym == ">"   then some (Name.mkStr2 "GT" "gt")
+  else if sym == "≥" || sym == ">=" then some (Name.mkStr2 "GE" "ge")
+  else if sym == "&&"  then some (Name.simple "and")
+  else if sym == "||"  then some (Name.simple "or")
+  else if sym == "∧" || sym == "/\\" then some (Name.simple "And")
+  else if sym == "∨" || sym == "\\/" then some (Name.simple "Or")
+  else if sym == "↔" || sym == "<->" then some (Name.simple "Iff")
+  else if sym == "×"   then some (Name.simple "Prod")
+  else if sym == "∘"   then some (Name.mkStr2 "Function" "comp")
+  else if sym == "<|>" then some (Name.mkStr2 "HOrElse" "hOrElse")
+  else if sym == ">>"  then some (Name.mkStr2 "HAndThen" "hAndThen")
+  else if sym == ">>=" then some (Name.mkStr2 "Bind" "bind")
+  else if sym == "<$>" then some (Name.mkStr2 "Functor" "map")
+  else if sym == "<*>" then some (Name.mkStr2 "Seq" "seq")
+  else none
+
 /-- Insert fresh metavariables for leading `.implicit`, `.strictImplicit`, and `.instImplicit`
-    binders of `(fn, fnType)`, returning `(appliedFn, instGoals, remainingFnType)`. -/
-def insertImplicitArgs : Nat → Ix.Expr → Ix.Expr → Array Ix.Expr →
-    IxElabM (Ix.Expr × Array Ix.Expr × Ix.Expr)
+    binders of `(fn, fnType)`, returning `(appliedFn, revInstGoals, remainingFnType)`. -/
+def insertImplicitArgs : Nat → Ix.Expr → Ix.Expr → List Ix.Expr →
+    IxElabM (Ix.Expr × List Ix.Expr × Ix.Expr)
   | 0, fn, fnTy, instGoals => return (fn, instGoals, fnTy)
   | fuel + 1, fn, fnTy, instGoals => do
-    let fnTyWhnf ← whnf 32 fnTy
+    let fnTyWhnf ← whnfForall 32 fnTy
     match stripMData fnTyWhnf with
     | .forallE nm dom body bi _ =>
       if bi == .implicit || bi == .strictImplicit || bi == .instImplicit then
         let mvar ← mkFreshExprMVar dom nm
         let fn' := Expr.mkApp fn mvar
         let body' := instantiate1 body mvar
-        let instGoals' := if bi == .instImplicit then instGoals.push mvar else instGoals
+        let instGoals' := if bi == .instImplicit then mvar :: instGoals else instGoals
         insertImplicitArgs fuel fn' body' instGoals'
       else
         return (fn, instGoals, fnTyWhnf)
@@ -278,44 +323,52 @@ def ppExprShort : Nat → Ix.Expr → String
   | fuel + 1, .mdata _ x _ => ppExprShort fuel x
   | fuel + 1, .proj s i x _ => s!"{ppExprShort fuel x}.{Name.toStringTotal s}.{i}"
 
+/-- Check that `expr` with already-computed type `actualTy` is definitionally equal to `expectedType`. -/
+def ensureHasKnownType (fuel : Nat) (stx : Ix.Syntax) (expr : Ix.Expr)
+    (actualTy : Ix.Expr) (expectedType? : Option Ix.Expr) : IxElabM Ix.Expr := do
+  match expectedType? with
+  | none => instantiateMVars 16 expr
+  | some expTy =>
+    let expTyWhnf ← whnfForall fuel expTy
+    -- If `expTyWhnf` is NOT an implicit forall, peel implicit binders on `actualTy`
+    let shouldPeelImplicits : Bool := match stripMData expTyWhnf with
+      | .forallE _ _ _ bi _ => bi == .default
+      | _                   => true
+    let (expr', instGoals, actualTy') ←
+      if shouldPeelImplicits then insertImplicitArgs 16 expr actualTy []
+      else pure (expr, [], actualTy)
+    let ok ← isDefEq fuel actualTy' expTy
+    if !ok then
+      let actNorm ← instantiateMVars 16 actualTy'
+      let expNorm ← instantiateMVars 16 expTy
+      throwElabError s!"type mismatch: term has type '{ppExprShort 8 actNorm}' but is expected to have type '{ppExprShort 8 expNorm}'" (some stx)
+    for g in instGoals.reverse do
+      let gTy ← inferType fuel g
+      if let some instVal ← synthInstance? 8 gTy then
+        let _ ← isDefEq fuel g instVal
+    instantiateMVars 16 expr'
+
 /-- Check that `expr` has type definitionally equal to `expectedType` (inserting trailing
     implicit arguments if `expr`'s type has leading implicit binders while `expectedType` does not). -/
 def ensureHasType (fuel : Nat) (stx : Ix.Syntax) (expr : Ix.Expr)
     (expectedType? : Option Ix.Expr) : IxElabM Ix.Expr := do
   match expectedType? with
   | none => instantiateMVars 16 expr
-  | some expTy =>
+  | some _ =>
     let actualTy ← inferType fuel expr
-    let expTyWhnf ← whnf fuel expTy
-    -- If `expTyWhnf` is NOT an implicit forall, peel implicit binders on `actualTy`
-    let shouldPeelImplicits : Bool := match stripMData expTyWhnf with
-      | .forallE _ _ _ bi _ => bi == .default
-      | _                   => true
-    let (expr', instGoals, actualTy') ←
-      if shouldPeelImplicits then insertImplicitArgs 16 expr actualTy #[]
-      else pure (expr, #[], actualTy)
-    let ok ← isDefEq fuel actualTy' expTy
-    if !ok then
-      let actNorm ← instantiateMVars 16 actualTy'
-      let expNorm ← instantiateMVars 16 expTy
-      throwElabError s!"type mismatch: term has type '{ppExprShort 8 actNorm}' but is expected to have type '{ppExprShort 8 expNorm}'" (some stx)
-    for g in instGoals do
-      let gTy ← inferType fuel g
-      if let some instVal ← synthInstance? 8 gTy then
-        let _ ← isDefEq fuel g instVal
-    instantiateMVars 16 expr'
+    ensureHasKnownType fuel stx expr actualTy expectedType?
 
 /-! ## Core Bidirectional Term Elaborator (`elabTerm`) -/
 
 /-- Flatten nested `SyntaxKind.appTerm` nodes into `(headStx, #[arg₁, ..., argₙ])`. -/
 def flattenAppSyntax : Nat → Ix.Syntax → List Ix.Syntax → Ix.Syntax × Array Ix.Syntax
-  | 0, stx, acc => (stx, acc.toArray)
+  | 0, stx, acc => (stx, Array.mk acc)
   | fuel + 1, stx@(.node _ k args), acc =>
     if k == SyntaxKind.appTerm && args.size == 2 then
-      flattenAppSyntax fuel (args.getD 0 .missing) (args.getD 1 .missing :: acc)
+      flattenAppSyntax fuel (Syntax.listGetD args.toList 0 .missing) (Syntax.listGetD args.toList 1 .missing :: acc)
     else
-      (stx, acc.toArray)
-  | _, stx, acc => (stx, acc.toArray)
+      (stx, Array.mk acc)
+  | _, stx, acc => (stx, Array.mk acc)
 
 /-- A single flattened binder variable with its optional syntax domain, `BinderInfo`, and `BinderContract`. -/
 structure FlatBinderItem where
@@ -332,9 +385,9 @@ def flattenBinderGroups (groups : List ParsedBinderGroup) : List FlatBinderItem 
 
 /-- Elaborate a flat list of `FlatBinderItem`s structurally on `List`, running `k fvarIds` inside the extended `LocalContext`. -/
 def elabFlatBinderItems (elabTermRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) :
-    List FlatBinderItem → Array Ix.Name → (Array Ix.Name → IxElabM α) → IxElabM α
-  | [], accFVars, k => k accFVars
-  | item :: restItems, accFVars, k => do
+    List FlatBinderItem → List Ix.Name → (Array Ix.Name → IxElabM α) → IxElabM α
+  | [], revFVars, k => k (Array.mk revFVars.reverse)
+  | item :: restItems, revFVars, k => do
     let domTy ← match item.typeStx? with
       | some tyStx =>
         let ty ← elabTermRec tyStx none
@@ -344,12 +397,12 @@ def elabFlatBinderItems (elabTermRec : Ix.Syntax → Option Ix.Expr → IxElabM 
         let u ← mkFreshLevelMVar
         mkFreshExprMVar (Expr.mkSort u) item.name
     withLocalDecl item.name domTy item.binderInfo item.contract fun fvId _ =>
-      elabFlatBinderItems elabTermRec restItems (accFVars.push fvId) k
+      elabFlatBinderItems elabTermRec restItems (fvId :: revFVars) k
 
 /-- Elaborate a sequence of `ParsedBinderGroup`s, running `k fvarIds` inside the extended `LocalContext`. -/
 def elabBinderGroups (elabTermRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr)
     (groups : List ParsedBinderGroup) (accFVars : Array Ix.Name) (k : Array Ix.Name → IxElabM α) : IxElabM α :=
-  elabFlatBinderItems elabTermRec (flattenBinderGroups groups) accFVars k
+  elabFlatBinderItems elabTermRec (flattenBinderGroups groups) accFVars.toList.reverse k
 
 /-- Extract constructor pattern `(ctorName?, boundVarNames)` from a pattern `Syntax`. -/
 def decodeConstructorPattern (scope : ScopeSnapshot) (modIdx : ModuleIndex)
@@ -414,7 +467,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
                   introLoop nextIds subId nextBody onDone
                   let subSolved ← instantiateMVars 32 subMVar
                   let lamProof ← mkLambdaFVars #[fvId] subSolved
-                  modify fun s => { s with mctx := s.mctx.assignExpr curGId lamProof }
+                  modifyMCtx (·.assignExpr curGId lamProof)
               | _ =>
                 throwElabError "'intro' tactic expected a function/forall goal type" (some tac)
           introLoop ids gId gTy (fun finalGId =>
@@ -423,7 +476,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
         else if tk == SyntaxKind.tacticExact || tk == SyntaxKind.tacticRefine then
           let termStx := Syntax.getArg tac (if Syntax.getNumArgs tac > 1 then 1 else 0)
           let val ← elabRec termStx (some gTy)
-          modify fun s => { s with mctx := s.mctx.assignExpr gId val }
+          modifyMCtx (·.assignExpr gId val)
           elabTacticList elabRec fuel tacFuel restTacs restGoals
         -- 3. `rfl` / `decide`
         else if tk == SyntaxKind.tacticRfl || tk == SyntaxKind.tacticDecide then
@@ -439,16 +492,16 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
               if !ok then
                 throwElabError "'rfl' failed: left-hand side and right-hand side are not definitionally equal" (some tac)
               let reflExpr := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Eq" "refl") cUnivs) #[tyArg, lhs]
-              modify fun s => { s with mctx := s.mctx.assignExpr gId reflExpr }
+              modifyMCtx (·.assignExpr gId reflExpr)
               elabTacticList elabRec fuel tacFuel restTacs restGoals
             else
               let (reflConst, reflTy) ← mkConstWithFreshMVarLevels (Name.mkStr2 "Eq" "refl")
-              let (cand, _, resTy) ← openForallMVars 8 reflConst reflTy #[]
+              let (cand, _, resTy) ← openForallMVars 8 reflConst reflTy []
               let ok ← isDefEq fuel resTy gTyW
               if !ok then
                 throwElabError "'rfl' failed: goal is not a reflexive equality" (some tac)
               let candInst ← instantiateMVars 32 cand
-              modify fun s => { s with mctx := s.mctx.assignExpr gId candInst }
+              modifyMCtx (·.assignExpr gId candInst)
               elabTacticList elabRec fuel tacFuel restTacs restGoals
           | _ =>
             throwElabError "'rfl' failed: goal is not an equality" (some tac)
@@ -456,13 +509,13 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
         else if tk == SyntaxKind.tacticAssumption then
           let ctx ← read
           let mut found? : Option Ix.Expr := none
-          for decl in ctx.lctx.decls.reverse do
+          for decl in ctx.lctx.revDecls do
             if found?.isNone then
               let ok ← isDefEq fuel decl.type gTy
               if ok then found? := some (Expr.mkFVar decl.fvarId)
           match found? with
           | some fv =>
-            modify fun s => { s with mctx := s.mctx.assignExpr gId fv }
+            modifyMCtx (·.assignExpr gId fv)
             elabTacticList elabRec fuel tacFuel restTacs restGoals
           | none =>
             throwElabError "'assumption' tactic failed to find a matching local hypothesis" (some tac)
@@ -496,7 +549,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
                   applyOpen k' (Expr.mkApp curFn mv) (instantiate1 body mv) (mvars.push mv)
                 | _ => throwElabError "'apply' failed to match goal type" (some tac)
           let (appliedVal, subGoals) ← applyOpen 16 fnExpr fnTy #[]
-          modify fun s => { s with mctx := s.mctx.assignExpr gId appliedVal }
+          modifyMCtx (·.assignExpr gId appliedVal)
           elabTacticList elabRec fuel tacFuel restTacs (subGoals ++ restGoals)
         -- 6. `constructor`
         else if tk == SyntaxKind.tacticConstructor then
@@ -530,7 +583,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
             let subSolved ← instantiateMVars 32 subMVar
             let absSub := abstractFVar fvId subSolved
             let letProof := Expr.mkLetE hId hTy hVal absSub true
-            modify fun s => { s with mctx := s.mctx.assignExpr gId letProof }
+            modifyMCtx (·.assignExpr gId letProof)
         -- 8. `let x [: T] := v`
         else if tk == SyntaxKind.tacticLet then
           let lId := Syntax.getId (Syntax.getArg tac 1)
@@ -554,7 +607,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
             let subSolved ← instantiateMVars 32 subMVar
             let absSub := abstractFVar fvId subSolved
             let letProof := Expr.mkLetE lId lTy lVal absSub false
-            modify fun s => { s with mctx := s.mctx.assignExpr gId letProof }
+            modifyMCtx (·.assignExpr gId letProof)
         -- 9. `change T`
         else if tk == SyntaxKind.tacticChange then
           let newTyStx := Syntax.getArg tac 1
@@ -563,7 +616,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
           if !ok then
             throwElabError "'change' tactic type is not definitionally equal to current goal" (some tac)
           let subMVar ← mkFreshExprMVar newTy (Name.simple "goal")
-          modify fun s => { s with mctx := s.mctx.assignExpr gId subMVar }
+          modifyMCtx (·.assignExpr gId subMVar)
           let subId := match subMVar with | .mvar id _ => id | _ => gId
           elabTacticList elabRec fuel tacFuel restTacs (subId :: restGoals)
         -- 10. `cases e [with | tag xs => seq]` / `induction e [with | tag xs => seq]`
@@ -583,7 +636,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
             let elimSuffix := if isInd then "recOn" else "casesOn"
             let elimName := Name.mkStr indName elimSuffix
             let (elimConst, elimTy) ← mkConstWithFreshMVarLevels elimName
-            let (elimApplied, _, _) ← openForallMVars 16 elimConst elimTy #[]
+            let (elimApplied, _, _) ← openForallMVars 16 elimConst elimTy []
             let _ := alts
             let _ := elimApplied
             if !isInd && !alts.isEmpty then
@@ -599,7 +652,7 @@ def elabTacticList (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr) 
                 #[Syntax.mkSimpleAtom "match", Syntax.mkNullNode #[targetStx],
                   Syntax.mkSimpleAtom "with", Syntax.mkNullNode matchAlts]
               let proof ← elabRec matchStx (some gTy)
-              modify fun s => { s with mctx := s.mctx.assignExpr gId proof }
+              modifyMCtx (·.assignExpr gId proof)
               elabTacticList elabRec fuel tacFuel restTacs restGoals
             else
               throwElabError s!"'{elimSuffix}' tactic requires 'with | ctor => ...' branches" (some tac)
@@ -674,14 +727,14 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let st ← get
         let ofNatName := Name.mkStr2 "OfNat" "ofNat"
         let instOfNatNatName := Name.simple "instOfNatNat"
+        let natConst := Expr.mkConst (Name.simple "Nat") #[]
         let litExpr :=
           if st.env.contains ofNatName && st.env.contains instOfNatNatName then
-            let natConst := Expr.mkConst (Name.simple "Nat") #[]
             let instExpr := Expr.mkApp (Expr.mkConst instOfNatNatName #[]) rawLit
             Expr.mkAppN (Expr.mkConst ofNatName #[Level.mkZero]) #[natConst, rawLit, instExpr]
           else
             rawLit
-        ensureHasType fuel stx litExpr expectedType?
+        ensureHasKnownType fuel stx litExpr natConst expectedType?
       -- 3.6. String literal
       else if kind == SyntaxKind.strLit then
         let strVal := Syntax.getAtomVal (args.getD 0 .missing)
@@ -760,12 +813,15 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let codStx    := args.getD 3 .missing
         -- Check if `domStx` starts with a usage/value modifier in case of bare `A → !B`
         let domTy ← elabRec domStx none
-        let _ ← ensureSort 32 domTy
+        let _ ← ensureSortIfNotForall 32 domTy
         let retContract := (decodeContractPrefix vPrefNode).toValueContract
         let codTy ← withLocalDecl Name.mkAnon domTy .default default fun fvId _ => do
           let cTy ← elabRec codStx none
-          let _ ← ensureSort 32 cTy
-          return abstractFVar fvId cTy
+          let _ ← ensureSortIfNotForall 32 cTy
+          if containsFVar fvId cTy then
+            return abstractFVar fvId cTy
+          else
+            return cTy
         let arrowExpr := Expr.mkForallContract Name.mkAnon domTy codTy .default default retContract
         ensureHasType fuel stx arrowExpr expectedType?
       -- 3.12. Dependent Pi `forall binders, vPref body` or `(binders) → vPref body` (`SyntaxKind.forallTerm`)
@@ -780,7 +836,7 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let groups := (Syntax.getArgs bindersNode).toList.map decodeBinderNode
         let piExpr ← elabBinderGroups elabRec groups #[] fun fvars => do
           let bodyTy ← elabRec bodyStx none
-          let _ ← ensureSort 32 bodyTy
+          let _ ← ensureSortIfNotForall 32 bodyTy
           mkForallFVars fvars bodyTy retContract
         ensureHasType fuel stx piExpr expectedType?
       -- 3.13. Lambda `fun binders => body` (`SyntaxKind.funTerm`)
@@ -913,12 +969,13 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let opAtom := args.getD 1 .missing
         let rhsStx := args.getD 2 .missing
         let sym := Syntax.getAtomVal opAtom
-        -- Look up `sym` in `defaultParserEnv.operators`
-        let targetName? := (defaultParserEnv.operators.find? (fun op => op.symbol == sym)).bind (·.targetFn)
+        -- Fast lookup in `findBuiltinOpTarget?` (avoiding `defaultParserEnv` rebuild in `IxVM`)
+        let targetName? := (findBuiltinOpTarget? sym).orElse fun _ =>
+          (defaultParserEnv.operators.find? (fun op => op.symbol == sym)).bind (·.targetFn)
         let st ← get
         match targetName? with
         | some targetName =>
-          -- Special handling for `=` (`Eq`), `≠` (`Ne`), `∧` (`And`), `∨` (`Or`), `↔` (`Iff`), `+` (`HAdd.hAdd` or `Nat.add`), etc.
+          -- Special handling for `=` (`Eq`), `≠` (`Ne`)
           if (sym == "=" && st.env.contains (Name.simple "Eq")) ||
              (sym == "≠" && st.env.contains (Name.simple "Ne")) then
             let relName := if sym == "=" then Name.simple "Eq" else Name.simple "Ne"
@@ -926,13 +983,10 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
             let lhsTyRaw ← inferType fuel lhs
             let lhsTy ← instantiateMVars 16 lhsTyRaw
             let rhs ← elabRec rhsStx (some lhsTy)
-            let (relConst, relTy) ← mkConstWithFreshMVarLevels relName
-            let (relApplied, _, _) ← insertImplicitArgs 8 relConst relTy #[]
-            let (_, relArgs) := getAppFnArgs relApplied
-            if let some tyMVar := relArgs[0]? then
-              let _ ← isDefEq fuel tyMVar lhsTy
-            let relExpr ← instantiateMVars 16 (Expr.mkApp (Expr.mkApp relApplied lhs) rhs)
-            ensureHasType fuel stx relExpr expectedType?
+            let u ← ensureSort 32 lhsTy
+            let uNorm := normalizeLevel u
+            let relExpr := Expr.mkAppN (Expr.mkConst relName #[uNorm]) #[lhsTy, lhs, rhs]
+            ensureHasKnownType fuel stx relExpr Expr.mkProp expectedType?
           else
             -- Check if `targetName` exists in `st.env`; otherwise try common fallbacks (e.g. `Nat.add`, `And`, etc.)
             let actualFnName? : Option Ix.Name :=
@@ -1029,7 +1083,7 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
               let vStx := Syntax.getArg assignStx 2
               assignedMap := assignedMap.insert fId vStx
             let (ctorConst, ctorTy) ← mkConstWithFreshMVarLevels sInfo.ctorName
-            let (ctorApplied, instGoals, afterParamsTy) ← insertImplicitArgs 16 ctorConst ctorTy #[]
+            let (ctorApplied, instGoals, afterParamsTy) ← insertImplicitArgs 16 ctorConst ctorTy []
             let mut curFn := ctorApplied
             let mut curTy := afterParamsTy
             for fInfo in sInfo.fields do
@@ -1049,7 +1103,7 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
                     throwElabError s!"missing field '{Name.toStringTotal fInfo.fieldName}' in structure '{Name.toStringTotal structName}'" (some stx)
               curFn := Expr.mkApp curFn fValExpr
               curTy := instantiate1 nextBody fValExpr
-            for g in instGoals do
+            for g in instGoals.reverse do
               let gTy ← inferType fuel g
               if let some instVal ← synthInstance? 8 gTy then
                 let _ ← isDefEq fuel g instVal
@@ -1271,14 +1325,14 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
         let fnTy ← inferType fuel fnExpr
         let mut curFn := fnExpr
         let mut curTy := fnTy
-        let mut pendingInstGoals : Array Ix.Expr := #[]
-        for argStx in argStxs do
+        let mut pendingInstGoals : List Ix.Expr := []
+        for argStx in argStxs.toList do
           if !isExplicitAt then
             let (fn', instGs, ty') ← insertImplicitArgs 16 curFn curTy pendingInstGoals
             curFn := fn'
             pendingInstGoals := instGs
             curTy := ty'
-          let curTyWhnf ← whnf fuel curTy
+          let curTyWhnf ← whnfForall fuel curTy
           match stripMData curTyWhnf with
           | .forallE _ dom body _ _ =>
             let argExpr ← elabRec argStx (some dom)
@@ -1296,11 +1350,11 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
             curFn := Expr.mkApp curFn argExpr
             curTy := codMVar
         -- Solve pending `[...]` typeclass instance goals now that arguments are unified
-        for instGoal in pendingInstGoals do
+        for instGoal in pendingInstGoals.reverse do
           let gTy ← inferType fuel instGoal
           if let some instVal ← synthInstance? 8 gTy then
             let _ ← isDefEq fuel instGoal instVal
-        ensureHasType fuel stx curFn expectedType?
+        ensureHasKnownType fuel stx curFn curTy expectedType?
       else
         throwElabError s!"unsupported syntax node '{Name.toStringTotal kind}' in term" (some stx)
 
