@@ -397,7 +397,8 @@ __device__ bool fill_row(const AiurFunction& f, const AiurCallee* callees, uint6
 }
 
 // Row `r` of the output is circuit row `base + (first + r) % height`: a
-// shard of `height` rows starting at `base`, wrapped for lookup halos.
+// shard of `height` rows starting at `base`, wrapped for lookup halos. The
+// output starts zeroed, so padding rows and unwritten columns are left as is.
 __global__ void populate_kernel(AiurCircuit circuit, uint64_t* output, uint64_t base,
                                 uint64_t first, uint64_t rows, uint64_t height,
                                 uint64_t* scratch_base, AiurPopulationError* error) {
@@ -406,7 +407,6 @@ __global__ void populate_kernel(AiurCircuit circuit, uint64_t* output, uint64_t 
     const Scratch scratch{scratch_base + thread, size_t(threads)};
     for (uint64_t r = thread; r < rows; r += threads) {
         uint64_t* row = output + r * circuit.width;
-        for (uint32_t c = 0; c < circuit.width; ++c) row[c] = 0;
         const uint64_t index = base + (first + r) % height;
         if (index >= circuit.real) continue;
         uint32_t member = 0;
@@ -442,6 +442,12 @@ unsigned blocks_for(uint64_t work, unsigned limit) {
 }  // namespace
 
 extern "C" {
+
+int aiur_gpu_memory_info(int device, size_t* free_bytes, size_t* total_bytes) {
+    cudaError_t status = cudaSetDevice(device);
+    if (status != cudaSuccess) return status;
+    return cudaMemGetInfo(free_bytes, total_bytes);
+}
 
 // Threads a population launch uses at most; the caller sizes the scratch
 // buffer as `aiur_gpu_population_threads() * circuit.scratch` words.
@@ -495,24 +501,40 @@ int aiur_gpu_build_index(int device, const uint64_t* rows, uint64_t count, uint3
     return cudaStreamSynchronize(cudaStreamPerThread);
 }
 
+int aiur_gpu_host_alloc(size_t bytes, void** output) {
+    return cudaMallocHost(output, bytes == 0 ? 8 : bytes);
+}
+
+int aiur_gpu_host_free(void* pointer) { return cudaFreeHost(pointer); }
+
 // Fills `rows` rows of the shard of `circuit` that starts at row `base` and
 // has `height` rows, starting at shard row `first` and wrapping, into
 // `output` (row-major device memory), synchronously on the calling thread's
 // default stream. `scratch` holds `aiur_gpu_population_threads() *
-// circuit->scratch` words; `error` must start zeroed and reports the first
-// failing row.
+// circuit->scratch` words. The first failing row, if any, is recorded in
+// `error` on the device and copied to `status`, page-locked host memory that
+// is valid once this returns; both are reset first.
 int aiur_gpu_populate(int device, const AiurCircuit* circuit, uint64_t* output, uint64_t base,
                       uint64_t first, uint64_t rows, uint64_t height, uint64_t* scratch,
-                      AiurPopulationError* error) {
-    cudaError_t status = cudaSetDevice(device);
-    if (status != cudaSuccess || rows == 0) return status;
+                      AiurPopulationError* error, AiurPopulationError* status) {
+    *status = AiurPopulationError{};
+    cudaError_t result = cudaSetDevice(device);
+    if (result != cudaSuccess || rows == 0) return result;
+    const cudaStream_t stream = cudaStreamPerThread;
+    result = cudaMemsetAsync(output, 0, rows * circuit->width * sizeof(uint64_t), stream);
+    if (result != cudaSuccess) return result;
+    result = cudaMemsetAsync(error, 0, sizeof(AiurPopulationError), stream);
+    if (result != cudaSuccess) return result;
     const unsigned blocks = blocks_for(rows, unsigned(aiur_gpu_population_threads() / BLOCK));
     // Scratch is laid out for the full thread count the kernel strides by.
-    populate_kernel<<<blocks, BLOCK>>>(*circuit, output, base, first, rows, height, scratch,
-                                       error);
-    status = cudaGetLastError();
-    if (status != cudaSuccess) return status;
-    return cudaStreamSynchronize(cudaStreamPerThread);
+    populate_kernel<<<blocks, BLOCK, 0, stream>>>(*circuit, output, base, first, rows, height,
+                                                  scratch, error);
+    result = cudaGetLastError();
+    if (result != cudaSuccess) return result;
+    result = cudaMemcpyAsync(status, error, sizeof(AiurPopulationError), cudaMemcpyDeviceToHost,
+                             stream);
+    if (result != cudaSuccess) return result;
+    return cudaStreamSynchronize(stream);
 }
 
 const char* aiur_gpu_error_string(int status) {

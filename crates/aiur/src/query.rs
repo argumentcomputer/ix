@@ -32,7 +32,6 @@ pub struct QueryOutputRef<'a, F = u64> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
-  budget: crate::budget::Budget,
   field: B,
   pub(crate) static_map: Option<crate::maps::MapRecord<B>>,
   input_width: usize,
@@ -44,10 +43,13 @@ pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
   chunk_mask: usize,
   hashes: Vec<u64>,
   index: HashTable<usize>,
+  index_bytes: usize,
   // A bounded front index for dense unary keys (especially ROM addresses).
   // Sparse or large keys still use the exact hash index. Entries are row IDs,
   // including pending rows, so this cannot bypass cycle detection.
   dense_index: Vec<usize>,
+  // Storage drops before its reservation can admit another allocation.
+  budget: crate::budget::Budget,
 }
 
 impl<B: FieldBackend> QueryTable<B> {
@@ -72,6 +74,7 @@ impl<B: FieldBackend> QueryTable<B> {
       rows: vec![],
       hashes: vec![],
       index: HashTable::new(),
+      index_bytes: 0,
       dense_index: vec![],
     }
   }
@@ -154,7 +157,7 @@ impl<B: FieldBackend> QueryTable<B> {
     debug_assert_eq!(args.len(), self.input_width);
     let row = self.len();
     if row & self.chunk_mask == 0 {
-      self.budget.vector(&self.rows, 1)?;
+      self.budget.vector(&mut self.rows, 1)?;
       self.budget.reserve(
         self
           .stride
@@ -166,13 +169,18 @@ impl<B: FieldBackend> QueryTable<B> {
     let values = self.rows.last_mut().unwrap();
     values.extend_from_slice(args);
     values.resize(values.len() + self.output_width, self.field.zero());
-    self.budget.vector(&self.counts, 1)?;
-    self.budget.vector(&self.hashes, 1)?;
-    self.budget.hash::<usize>(self.index.len(), self.index.capacity())?;
+    self.budget.vector(&mut self.counts, 1)?;
+    self.budget.vector(&mut self.hashes, 1)?;
+    let replaced = self.budget.hash::<usize>(
+      self.index.len(),
+      self.index.capacity(),
+      &mut self.index_bytes,
+    )?;
     self.counts.push(0);
     self.hashes.push(hash);
     let hashes = &self.hashes;
     self.index.insert_unique(hash, row, |&row| hashes[row]);
+    drop(replaced);
     if let [key] = args
       && let Ok(key) = usize::try_from(self.field.to_u64(*key))
     {
@@ -184,7 +192,7 @@ impl<B: FieldBackend> QueryTable<B> {
         if key >= self.dense_index.len() {
           let extra =
             (key + 1).next_power_of_two().min(limit) - self.dense_index.len();
-          self.budget.vector(&self.dense_index, extra)?;
+          self.budget.vector(&mut self.dense_index, extra)?;
           self
             .dense_index
             .resize((key + 1).next_power_of_two().min(limit), usize::MAX);
@@ -213,18 +221,6 @@ impl<B: FieldBackend> QueryTable<B> {
     self.counts[row]
   }
 
-  pub(crate) fn adjust_count(
-    &mut self,
-    row: usize,
-    count: u64,
-    add: bool,
-  ) -> Option<()> {
-    let value = &mut self.counts[row];
-    *value =
-      if add { value.checked_add(count)? } else { value.checked_sub(count)? };
-    Some(())
-  }
-
   /// Number of stored slots. Fixed tables include rows with zero uses.
   pub(crate) fn len(&self) -> usize {
     if let Some(map) = &self.static_map {
@@ -235,6 +231,24 @@ impl<B: FieldBackend> QueryTable<B> {
 
   pub(crate) fn widths(&self) -> (usize, usize) {
     (self.input_width, self.output_width)
+  }
+
+  pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
+    let word = std::mem::size_of::<B::Element>();
+    let payload = self.rows.iter().map(Vec::len).sum::<usize>() * word;
+    let vectors = self.rows.iter().map(Vec::capacity).sum::<usize>() * word
+      + self.rows.capacity() * std::mem::size_of::<Vec<B::Element>>()
+      + (self.counts.capacity() + self.hashes.capacity()) * 8
+      + self.dense_index.capacity() * std::mem::size_of::<usize>()
+      + self.static_map.as_ref().map_or(0, |map| map.counts.len() * 8);
+    let index = if self.index.capacity() == 0 {
+      0
+    } else {
+      self.index.capacity().next_power_of_two()
+        * (std::mem::size_of::<usize>() + 1)
+        + 16
+    };
+    (payload, vectors, index)
   }
 
   #[inline(always)]

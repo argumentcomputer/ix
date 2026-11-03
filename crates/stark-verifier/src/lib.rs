@@ -4,16 +4,44 @@ use aiur::{
   bytecode::{CheckedProgram, Type},
   field::FieldBackend,
   hints::{HintChannels, PreparedHints},
-  library::io::Streams,
+  library::{
+    advice::{Advice, Entry, Payload},
+    io::{StreamAdvice, Streams},
+  },
   maps::MapOverrides,
 };
 
+/// Prepare a recursive invocation from the JSON interchange format, binding
+/// it as compact [`Advice`].
 pub fn prepare<'a, B: FieldBackend>(
   program: &'a CheckedProgram<B>,
   streams: &Streams,
 ) -> Result<PreparedHints<'a, B>, String> {
+  prepare_advice(program, &Advice::from_streams(program.field(), streams)?)
+}
+
+/// Bind recursive verifier advice. The hints share the advice payload;
+/// dropping `advice` afterwards releases only its stream metadata.
+pub fn prepare_advice<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  advice: &Advice<B>,
+) -> Result<PreparedHints<'a, B>, String> {
+  bind_streams(program, advice)
+}
+
+/// Reference binding through field-element arenas decoded from JSON.
+pub fn prepare_reference<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  streams: &Streams,
+) -> Result<PreparedHints<'a, B>, String> {
+  bind_streams(program, &streams.prepare(program.field())?)
+}
+
+fn bind_streams<'a, B: FieldBackend>(
+  program: &'a CheckedProgram<B>,
+  arenas: &impl StreamAdvice<B>,
+) -> Result<PreparedHints<'a, B>, String> {
   let field = program.field();
-  let arenas = streams.prepare(field)?;
   let mut channels = HintChannels::new();
   aiur::library::u32::register(&mut channels, field)?;
   aiur::library::u64::register(&mut channels, field)?;
@@ -30,7 +58,7 @@ pub fn prepare<'a, B: FieldBackend>(
     "stark.io.info",
     Type::Tuple { items: vec![Type::Field; 2] },
     None,
-    |s| s.key.len() == 1,
+    |_, key| key.len() == 1,
     false,
   )?;
   data.extend(arenas.metadata(
@@ -39,14 +67,14 @@ pub fn prepare<'a, B: FieldBackend>(
       items: vec![Type::Field, Type::Tuple { items: vec![Type::Field; 32] }],
     },
     None,
-    |s| s.key.len() == 32,
+    |_, key| key.len() == 32,
     false,
   )?);
   data.extend(arenas.metadata(
     "stark.io.digest",
     Type::Tuple { items: vec![Type::Field; 8] },
     Some(4),
-    |s| s.channel == 4 && s.key.len() == 8,
+    |channel, key| channel == 4 && key.len() == 8,
     false,
   )?);
   let prepared = program.prepare_hint_channels(&data, &channels)?;
@@ -79,6 +107,26 @@ pub fn claims_bytes(claims: &[Vec<multi_stark::types::Val>]) -> Vec<u8> {
 
 pub use aiur::library::io::Invocation;
 
+/// Recursive advice taken directly from proof, key and claims bytes, laid
+/// out as [`invocation`] lays out its streams.
+pub fn advice<B: FieldBackend>(
+  field: B,
+  key: &[u8],
+  claims: &[u8],
+  proof: &[u8],
+) -> Result<Advice<B>, String> {
+  Advice::from_entries(
+    field,
+    [proof, key, claims].into_iter().enumerate().map(|(channel, bytes)| {
+      Entry {
+        channel: channel as u64,
+        key: &[0],
+        payload: Payload::Bytes(bytes),
+      }
+    }),
+  )
+}
+
 /// The proof is advice. Only the key and public claims enter the statement.
 pub fn invocation(key: &[u8], claims: &[u8], proof: &[u8]) -> Invocation {
   use aiur::library::io::Stream;
@@ -99,5 +147,24 @@ pub fn invocation(key: &[u8], claims: &[u8], proof: &[u8]) -> Invocation {
     entry: "MultiStark::verify_multi_stark_proof".into(),
     args,
     streams,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use aiur::field::NativeField;
+  use multi_stark::types::Val;
+
+  #[test]
+  fn direct_advice_matches_invocation_layout() {
+    let field = NativeField::<Val>::new();
+    let (key, claims, proof) = ([1u8, 2, 255], [0u8; 9], [7u8; 70]);
+    let direct = advice(field, &key, &claims, &proof).unwrap();
+    let streams = invocation(&key, &claims, &proof).streams;
+    let adapted = Advice::from_streams(field, &streams).unwrap();
+    assert_eq!(direct.streams(), adapted.streams());
+    assert_eq!(direct.retained_bytes(), adapted.retained_bytes());
+    assert!((0..3).all(|c| direct.is_byte_channel(c)));
   }
 }

@@ -40,12 +40,15 @@ structure IOBuffer where
 on the same channel. -/
 def IOBuffer.extend (ioBuffer : IOBuffer) (channel : G) (key data : Array G) :
     IOBuffer :=
-  let arena := ioBuffer.data.getD channel #[]
+  let { data := arenas, map } := ioBuffer
+  -- Take the arena out of the map before appending: while the map still
+  -- references it, `++` copies the whole channel (and bumps every element's
+  -- reference count) on each call, which is quadratic over a witness.
+  let arena := arenas.getD channel #[]
+  let arenas := arenas.erase channel
   let idx := arena.size
-  let len := data.size
-  { ioBuffer with
-    data := ioBuffer.data.insert channel (arena ++ data)
-    map := ioBuffer.map.insert (channel, key) { idx, len } }
+  { data := arenas.insert channel (arena ++ data)
+    map := map.insert (channel, key) { idx, len := data.size } }
 
 /-- Rebuild an `IOBuffer` from the flat arrays produced by the Rust FFI. -/
 def IOBuffer.ofArrays (data : Array (G × Array G))

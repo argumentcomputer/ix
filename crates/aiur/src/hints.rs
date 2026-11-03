@@ -50,6 +50,11 @@ impl<F> HintChannels<F> {
     Self::default()
   }
 
+  #[cfg(test)]
+  pub(crate) fn function(&self, name: &str) -> Option<Arc<HintFunction<F>>> {
+    self.channels.get(name).map(|c| c.function.clone())
+  }
+
   pub fn insert(
     &mut self,
     name: impl Into<String>,
@@ -163,6 +168,10 @@ pub struct PreparedHints<'a, B: FieldBackend = PrimeField> {
 }
 
 impl<B: FieldBackend> PreparedHints<'_, B> {
+  pub fn program(&self) -> &CheckedProgram<B> {
+    self.program
+  }
+
   /// Bind optional static-map implementations once. The resulting execution
   /// records retain these same closures for witness population. No source
   /// syntax, function implementation, or certifying table is replaced.

@@ -34,7 +34,7 @@ pub struct Enum {
   pub constructors: Vec<Constructor>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Binary {
   Add,
@@ -413,6 +413,8 @@ pub struct CheckedProgram<B: FieldBackend = PrimeField> {
   pub(crate) returns: Vec<Vec<Option<ReturnPlan>>>,
   pub(crate) execution_functions: Vec<Function<B::Element>>,
   pub(crate) initial_registers: Vec<Vec<(usize, B::Element)>>,
+  #[cfg(feature = "native")]
+  pub(crate) native_fingerprint: std::sync::OnceLock<String>,
 }
 
 // Only globally immutable registers may be aliased. Inputs count as writes;
@@ -848,6 +850,8 @@ impl Program {
       returns,
       execution_functions,
       initial_registers,
+      #[cfg(feature = "native")]
+      native_fingerprint: std::sync::OnceLock::new(),
     })
   }
 }

@@ -14,6 +14,8 @@ mod host;
 pub mod library;
 pub mod maps;
 pub mod memory;
+#[cfg(feature = "native")]
+pub mod native;
 pub mod query;
 mod table;
 pub mod trace;

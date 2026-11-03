@@ -17,9 +17,8 @@ rustc-hash = "2.1.2"
 rayon = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
-
-[dev-dependencies]
 blake3 = "1.8.7"
+stacker = { version = "0.1", optional = true }
 
 [lib]
 crate-type = ["rlib", "staticlib"]
@@ -32,6 +31,8 @@ trace-profile = ["stark"]
 stark = ["dep:stark-key"]
 parallel = ["stark", "multi-stark/parallel", "dep:rayon"]
 cuda = ["stark", "multi-stark/cuda"]
+# Runtime for generated executors (`aiur-macros`).
+native = ["dep:stacker"]
 
 [[example]]
 name = "prove"

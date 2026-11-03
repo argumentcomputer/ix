@@ -1,0 +1,19 @@
+[package]
+name = "aiur-tracegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generated CUDA row writers for formal Aiur population plans"
+
+# CPU-only: emits CUDA source from an exported trace artifact and, from a
+# bundle crate's build script, compiles it with nvcc. Depending on this
+# crate never requires the CUDA toolkit; only `bundle::build` invokes nvcc.
+
+[dependencies]
+aiur = { path = "../aiur" }
+blake3 = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
