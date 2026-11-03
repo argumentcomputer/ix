@@ -1,4 +1,5 @@
 import Tests.Aiur
+import Tests.Aiur.IOBuffer
 import Tests.Aiur.RustSyntax
 import Tests.Ix.Ixon
 import Tests.Ix.IxonRejectParity
@@ -51,6 +52,7 @@ import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Compile.ScheduleIdentity
 import Tests.Ix.Compile.SourceGraph
 import Tests.Ix.Compile.Performance
+import Tests.Ix.IxVM.SubstBoundaries
 import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -182,6 +184,7 @@ def registry : List Entry := [
   .runner "compiler-cache-regressions" .primary (do
     Tests.Ix.Compile.Performance.run
     return 0),
+  .runner "ixvm-subst-boundaries" .primary Tests.Ix.IxVM.SubstBoundaries.runSuite,
   .suite "local-blob" .primary Tests.Ix.Compile.LocalBlob.suite,
   .suite "worker-snapshot" .primary Tests.Ix.Compile.WorkerSnapshot.suite,
   .suite "compiler-index-safety" .primary Tests.Ix.Compile.IndexSafety.suite,
@@ -193,6 +196,7 @@ def registry : List Entry := [
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
   .suite "aiur-cross" .primary [AiurTests.Cross.tests],
+  .runner "aiur-io-buffer" .primary AiurTests.IOBuffer.runSuite,
   .suite "aiur-cost" .primary [AiurTests.Cost.tests],
   .suite "aiur-trace-plan" .primary [AiurTests.TracePlan.tests],
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
@@ -260,7 +264,9 @@ def registry : List Entry := [
   .runner "aiur-hashes" .primary (do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
-        let t ← Aiur.Library.core.merge Aiur.Library.byteStream; t.merge Aiur.Library.blake3)
+        let t ← Aiur.Library.core.merge Aiur.Library.byteStream
+        let t ← t.merge Aiur.Library.blake3
+        t.merge blake3BoundaryProgram)
       | IO.eprintln "Blake3 setup failed"; return 1
     let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
     let .ok sha256Env := AiurTestEnv.build (do
@@ -438,8 +444,8 @@ def registry : List Entry := [
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 89_387_508_717, got {actual}"
-              (actual = 89_387_508_717))
+              s!"Shard pipeline FFT matches: expected 85_826_059_884, got {actual}"
+              (actual = 85_826_059_884))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,

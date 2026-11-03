@@ -40,12 +40,15 @@ structure IOBuffer where
 on the same channel. -/
 def IOBuffer.extend (ioBuffer : IOBuffer) (channel : G) (key data : Array G) :
     IOBuffer :=
-  let arena := ioBuffer.data.getD channel #[]
-  let idx := arena.size
+  let ⟨channels, entries⟩ := ioBuffer
+  let idx := (channels.getD channel #[]).size
   let len := data.size
-  { ioBuffer with
-    data := ioBuffer.data.insert channel (arena ++ data)
-    map := ioBuffer.map.insert (channel, key) { idx, len } }
+  -- `alter` releases the map's old arena before appending. Looking up the
+  -- arena and then inserting its extension keeps it shared during `++`,
+  -- copying the entire growing channel for every entry.
+  let channels := channels.alter channel (fun arena => some (arena.getD #[] ++ data))
+  { data := channels
+    map := entries.insert (channel, key) { idx, len } }
 
 /-- Rebuild an `IOBuffer` from the flat arrays produced by the Rust FFI.
 Hashmaps don't cross the FFI boundary; Rust returns arrays and the

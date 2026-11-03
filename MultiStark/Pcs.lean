@@ -748,10 +748,15 @@ def pcs := ⟦
   -- lane list — `limb_to_field` reduces mod p as pure wiring, so no
   -- intermediate `List‹Goldilocks›` is ever materialized (the former
   -- `lanes_to_gl` pass and its per-lane stores/loads).
+  -- Both rows must end together: a short p_z fails the Cons match, and a
+  -- long p_z fails the Nil check. This also checks their widths in the
+  -- existing fold, without separate list-length traversals per query row.
   fn ro_fold(p_x: List‹U64›, p_z: List‹Ext›, alpha: Ext, s: Ext, ap: Ext)
       -> (Ext, Ext) {
     match load(p_x) {
-      ListNode.Nil => (s, ap),
+      ListNode.Nil =>
+        let &ListNode.Nil = p_z;
+        (s, ap),
       ListNode.Cons(lane, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
         let term = @eg_mul(ap, @eg_sub(pz, [@limb_to_field(lane), 0]));
@@ -875,7 +880,11 @@ def pcs := ⟦
   fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹U64›, p_z: List‹Ext›,
       q: Ext, alpha: Ext) -> List‹Bucket› {
     match load(buckets) {
-      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Nil =>
+        -- A missing bucket does not run ro_fold. Keep the original width
+        -- check on this defensive path as well.
+        assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
+        store(ListNode.Nil),
       ListNode.Cons(b, rest) =>
         let Bucket.Mk(h, ap, ro) = b;
         match eq_zero(h - lh) {
@@ -912,9 +921,8 @@ def pcs := ⟦
   -- Compute x = GENERATOR·g^{revbits} for this height and fold the contribution.
   fn ri_apply(buckets: List‹Bucket›, lh: G, idxbits: List‹G›, log_gmax: G,
       z: Ext, p_x: List‹U64›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
-    -- the base opening and the ext opening at this point must have equal width
-    -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
-    assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
+    -- Equal widths (PointEvaluationCountMismatch) are checked while ro_fold
+    -- consumes both rows; bucket_update retains the check on a bucket miss.
     let x = @ro_x(list_drop(idxbits, log_gmax - lh), lh);
     let q = @eg_inverse(@eg_sub(z, [x, 0]));
     bucket_update(buckets, lh, p_x, p_z, q, alpha)

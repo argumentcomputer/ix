@@ -41,27 +41,68 @@ def mkSha256HashTestCase (size : Nat) (prove : Bool := false)
     expectedOutput := output, inputIOBuffer := buffer, expectedIOBuffer := buffer
     interpret := interp, withProof := prove }
 
+/-- Resume the ordinary chunk loop after a checked prefix. This exercises
+every byte's boundary checks without assuming a multiple-of-four offset. -/
+public def blake3BoundaryProgram := ⟦
+  fn blake3_resume_seek(input: ByteStream, acc: ByteStream, offset: G) -> (ByteStream, ByteStream) {
+    match offset {
+      0 => (input, acc),
+      _ =>
+        let &ListNode.Cons(head, tail) = input;
+        blake3_resume_seek(tail, store(ListNode.Cons(head, acc)), offset - 1),
+    }
+  }
+  pub fn blake3_resume_test(offset: G) -> [[U8; 4]; 8] {
+    assert_eq!(u32_less_than(offset, 64), 1);
+    let (idx, len) = io_get_info(0, [0]);
+    let stream = read_checked_byte_stream(0, idx, len);
+    let (rest, acc) = blake3_resume_seek(stream, store(ListNode.Nil), offset);
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(blake3_compress_chunks(rest, acc, offset, offset,
+      store([0u8; 8]), store(IV), store(LayerNode.Nil)))
+  }
+⟧
+
+public def blake3ResumeTestCases : List AiurTestCase :=
+  ([1, 2, 3, 4, 60, 61, 62, 63] : List Nat).flatMap fun offset =>
+    [offset, offset + 1, offset + 2, offset + 3, 64, 65, 1023, 1024, 1025, 2049].map fun size =>
+      let tc := mkBlake3HashTestCase size
+      { tc with
+        functionName := `blake3_resume_test,
+        label := s!"blake3 (size={size}, resume={offset})",
+        input := #[Aiur.G.ofNat offset] }
+
 public def blake3TestCases : List AiurTestCase := [
   -- prove: empty input (padding-only path) and a two-chunk input with a
   -- parent node (chunk = 1024 bytes). interp: the two smallest sizes give
   -- the interpreter real-program coverage at bounded cost.
   mkBlake3HashTestCase 0 (prove := true) (interp := true),
+  mkBlake3HashTestCase 1 (interp := true),
+  mkBlake3HashTestCase 2 (interp := true),
+  mkBlake3HashTestCase 3 (interp := true),
+  mkBlake3HashTestCase 4 (interp := true),
   mkBlake3HashTestCase 32 (interp := true),
+  mkBlake3HashTestCase 63,
   mkBlake3HashTestCase 64,
+  mkBlake3HashTestCase 65,
   mkBlake3HashTestCase 96,
+  mkBlake3HashTestCase 1023,
   mkBlake3HashTestCase 1024,
+  mkBlake3HashTestCase 1025,
   mkBlake3HashTestCase 1056,
   mkBlake3HashTestCase 1088 (prove := true),
   mkBlake3HashTestCase 1120,
   mkBlake3HashTestCase 2048,
+  mkBlake3HashTestCase 2049,
   mkBlake3HashTestCase 2080,
   mkBlake3HashTestCase 2112,
   mkBlake3HashTestCase 2144,
   mkBlake3HashTestCase 3072,
+  mkBlake3HashTestCase 3073,
   mkBlake3HashTestCase 3104,
   mkBlake3HashTestCase 3136,
   mkBlake3HashTestCase 3168,
-]
+] ++ blake3ResumeTestCases
 
 public def sha256TestCases : List AiurTestCase := [
   -- prove: empty input (padding-only path) and a two-block input whose

@@ -103,6 +103,79 @@ The comparison renders the pair in its own table. A missing or incomplete
 successful join is a run failure; a watchdog kill preserves any execution
 measurements and marks the unfinished pair `OOM`.
 
+### Circuit cost profiling
+
+Use the same compiled artifact and claim scope for each comparison. The
+profiler records the artifact size, binding address, checked-constant count,
+per-function query heights, and actual AIR shapes:
+
+```shell
+lake exe proving-profile InitStd.ixe Nat.add_comm nat-profile.json
+lake exe function-grouping check ixvm
+lake exe function-grouping measure ixvm before-groups.json after-groups.json \
+  nat-profile.json grouping-comparison.json
+```
+
+Group files are JSON arrays of `[groupName, [functionName, ...]]`; `-` selects
+the production groups. The comparison validates the unchanged function
+library and complete circuit partition. A digest of the function bodies,
+layouts, flags and memory sizes rejects stale profiles, including changes
+that leave function indices or widths unchanged. It reports both raw-height
+and power-of-two padded function FFT cost, active committed width, and VK size.
+Memory and gadget circuits are
+unchanged by regrouping and excluded from those function-cost totals.
+
+`proving-profile` always uses generic bytecode execution, so its elapsed time
+is an iteration diagnostic. Compare FFT cost and proof size while changing
+source or grouping, then regenerate the native artifacts and use
+`bench-typecheck` for native timings. Proof measurements must retain the same
+FRI parameters, checked constants, binding and dependency scope.
+
+### PR #665 proving optimization measurement
+
+The 2026-11-03 pass compares against `09ee682af5b0a37ceaad6317683cb772a9cd8ad2`,
+the PR revision in [the benchmark comment](https://github.com/argumentcomputer/ix/pull/665#issuecomment-6608664380).
+The input is the 253,772,604-byte `InitStd.ixe` with 103 bound roles, 44 evidence
+entries and SHA-256
+`e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1`.
+All seven baseline FFT values reproduce the comment's PR column to its
+displayed precision. The same constants and admission checks are retained:
+
+| Constant | Checked constants | Baseline FFT cost, billions | Optimized | Reduction |
+|---|---:|---:|---:|---:|
+| `ByteArray.utf8DecodeChar?_utf8EncodeChar_append` | 3,638 | 126.785 | 121.610 | 4.08% |
+| `Char.ofOrdinal_le_of_le` | 3,596 | 91.741 | 87.742 | 4.36% |
+| `Array.extract_append` | 2,420 | 92.971 | 90.388 | 2.78% |
+| `Std.HashMap` | 2,968 | 63.338 | 60.522 | 4.45% |
+| `_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq` | 2,688 | 55.475 | 53.180 | 4.14% |
+| `String.append` | 781 | 4.576 | 4.373 | 4.44% |
+| `Nat.add_comm` | 52 | 0.390 | 0.376 | 3.68% |
+
+Paired inner and recursive proofs were generated and verified with 50 FRI
+queries, log blowup 2, log final polynomial length 0, max log arity 1 and
+zero proof-of-work bits. Each recursive run verifies the corresponding
+baseline or optimized inner proof:
+
+| Measure | `Nat.add_comm` | `String.append` |
+|---|---:|---:|
+| Inner proof bytes | 5,673,393 → 5,390,069 (−4.99%) | 6,450,356 → 6,153,240 (−4.61%) |
+| Recursive FFT cost, billions | 94.551 → 88.886 (−5.99%) | 109.191 → 100.616 (−7.85%) |
+| Outer proof bytes | 2,807,371 → 2,822,459 (+0.54%) | 2,811,979 → 2,833,115 (+0.75%) |
+
+The wider, four-byte BLAKE3 loop reduces recursive work with a small outer
+proof-size increase. These are improvements over the PR revision; some
+costs remain above main's figures with the PR's larger checked workload.
+Generic bytecode execution was used for source iteration. The regenerated
+native backend was checked for correctness with codegen compilation at
+optimization level 0; its wall times are not native CI speedup measurements.
+
+The host `IOBuffer.extend` change is separate from those circuit measurements.
+On frozen `HEq` and `String.append` fixture environments, old and new native
+witness builders produced identical 33,172,696-byte serializations, including
+arena and key-map order, offsets and lengths. Local witness construction took
+20,023/18,570 ms before and 129/121 ms after. These diagnostics isolate the
+arena-copy fix; they do not measure end-to-end proving or CI wall time.
+
 ## Backends
 
 | backend | what it measures | tool |

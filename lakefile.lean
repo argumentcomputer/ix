@@ -290,6 +290,16 @@ lean_exe «bench-typecheck» where
   root := `Benchmarks.Typecheck
   supportInterpreter := true
 
+/-- Generic execution profiles for full-closure proving workloads. -/
+lean_exe «proving-profile» where
+  root := `Scripts.Performance.ProvingProfile
+  moreLinkObjs := #[ix_rs]
+
+/-- Validate and compare circuit partitions against measured query heights. -/
+lean_exe «function-grouping» where
+  root := `Scripts.Performance.FunctionGrouping
+  moreLinkObjs := #[ix_rs]
+
 lean_exe «bench-recursion-debug» where
   root := `Benchmarks.RecursionDebug
   supportInterpreter := true
