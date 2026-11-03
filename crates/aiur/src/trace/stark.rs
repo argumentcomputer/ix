@@ -44,7 +44,9 @@ mod tests;
 mod witness;
 #[cfg(test)]
 pub use batch::StageOne;
-pub use batch::{ShardFeed, StreamPlan, Streamed, VerifyingKey};
+pub use batch::{
+  ShardFeed, StreamPlan, Streamed, VerifyingKey, fri_parameter_bytes,
+};
 pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 
 /// Conversion at this concrete proving adapter only. The native configuration
