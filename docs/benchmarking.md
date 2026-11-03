@@ -201,6 +201,8 @@ proof size drops from 6.18 MiB to 5.19 MiB (−16.0%), Stage 2 `fri-verifier`
 FFT cost from 115.65B to 99.33B (−14.1%), and `total-time` from 63.85s to
 34.42s (−46.1%).
 
+> **Follow-up note (recursive binding-proof discharge):** Today `bench-typecheck --recursive` proves per-constant claims with `assumeBinding := true` (`validator = 4`) and runs the 1-child `fri-verifier` over each constant's `IxVM` proof. A future refinement to mirror production toolchain role bindings end-to-end is to pre-generate the toolchain's `Ix.Claim.binding` proof (`ix prove-binding`) once per `.ixe` and recursively verify/discharge it via `ix_aggr` shape 13/14 (`aggr_discharge_binding`) so benchmarked proofs emit self-contained `validator = 3` (`bindingAssumed = false`) claims.
+
 ## Backends
 
 | backend | what it measures | tool |
