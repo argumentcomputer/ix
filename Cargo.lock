@@ -88,6 +88,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiur-codegen"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+]
+
+[[package]]
+name = "aiur-codegen-tests"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "aiur-codegen",
+ "multi-stark",
+ "serde_json",
+]
+
+[[package]]
 name = "aiur-ffi"
 version = "0.1.0"
 dependencies = [
@@ -96,22 +113,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aiur-macros"
-version = "0.1.0"
-dependencies = [
- "aiur",
- "multi-stark",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "aiur-tracegen"
 version = "0.1.0"
 dependencies = [
  "aiur",
  "blake3",
- "serde",
  "serde_json",
 ]
 
@@ -1126,6 +1132,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "formal-generated"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "aiur-tracegen",
+ "multi-stark",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2088,11 +2103,13 @@ version = "0.1.0"
 dependencies = [
  "aggregate-controller",
  "aiur",
+ "aiur-codegen",
+ "aiur-tracegen",
  "blake3",
+ "formal-generated",
  "ix-common",
  "ixon",
  "ixvm",
- "ixvm-native",
  "multi-stark",
  "rayon",
  "record-pool",
@@ -2101,7 +2118,6 @@ dependencies = [
  "serde_json",
  "stark-key",
  "stark-verifier",
- "stark-verifier-native",
  "tracing",
  "tracing-subscriber",
  "tracing-texray",
@@ -2130,7 +2146,7 @@ version = "0.1.0"
 dependencies = [
  "aiur",
  "blake3",
- "ixvm-tracegen",
+ "formal-generated",
  "multi-stark",
  "serde",
  "serde_json",
@@ -2141,20 +2157,11 @@ name = "ixvm-native"
 version = "0.1.0"
 dependencies = [
  "aiur",
- "aiur-macros",
+ "formal-generated",
  "ixvm",
  "multi-stark",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "ixvm-tracegen"
-version = "0.1.0"
-dependencies = [
- "aiur",
- "aiur-tracegen",
- "multi-stark",
 ]
 
 [[package]]
@@ -4028,7 +4035,7 @@ name = "stark-verifier-native"
 version = "0.1.0"
 dependencies = [
  "aiur",
- "aiur-macros",
+ "formal-generated",
  "multi-stark",
  "serde",
  "serde_json",

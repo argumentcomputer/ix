@@ -3,24 +3,24 @@ name = "stark-verifier-native"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Generated native executor for the recursive verifier and aggregation program"
+description = "Checks the generated native recursive verifier and aggregation executors against the interpreter"
 
-# With feature `kernel`, the generated kernels are built at compile time
-# from the binary artifacts named by AIUR_VERIFIER_ARTIFACT and
-# AIUR_AGGREGATION_ARTIFACT (`ix prepare` writes both under .lake/aiur/).
-# Without it the crate is empty, so workspace-wide builds need no artifact.
-# This crate is outside the default workspace members.
+# Diagnostics of the generated native recursive verifier and aggregation
+# executors (crates/formal-generated) against the interpreter. Feature
+# `generated` compiles them from the sources `lake build ix` writes
+# (.lake/build/formal-generated). This crate is outside
+# the default workspace members.
 
 [features]
-kernel = []
+generated = ["formal-generated/executors"]
 
 [[bin]]
 name = "stark-verifier-native"
-required-features = ["kernel"]
+required-features = ["generated"]
 
 [dependencies]
 aiur = { path = "../aiur", features = ["native", "parallel"] }
-aiur-macros = { path = "../aiur-macros" }
+formal-generated = { path = "../formal-generated" }
 stark-verifier = { path = "../stark-verifier" }
 multi-stark = { workspace = true }
 stark-key = { workspace = true }

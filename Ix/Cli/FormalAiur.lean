@@ -6,12 +6,12 @@ public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.Compression
-public import Aiur.SourceBundle
-public import Ix.FormalProver
+public import Ix.Cli.FormalPrograms
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
-Compilation runs in the standalone exporter and is cached by its contents.
+Programs come from the compiled-program cache or the linked compiler
+(`Ix.Cli.FormalPrograms`).
 Execution, proving and verification run in this process through the prover
 library (`Ix.FormalProver`), on program and system handles that a command
 loads once into its registry. The generic Aiur Lean library does not acquire
@@ -40,96 +40,45 @@ def command (cmd : String) (args : Array String) (cwd : Option System.FilePath :
   let code ← commandStatus cmd args cwd env
   unless code == 0 do throw (IO.userError s!"{cmd} failed with status {code}")
 
-/-- Run `act`; with `IX_PHASE_TIMES` set, report its wall time on stderr. The
-work is a thunk so that pure computations run inside the measured interval. -/
-def phase {α : Type} (label : String) (act : Unit → IO α) : IO α := do
-  if (← IO.getEnv "IX_PHASE_TIMES").isNone then return ← act ()
-  let start ← IO.monoNanosNow
-  let result ← act ()
-  let finish ← IO.monoNanosNow
-  IO.eprintln s!"[phase] {label}: {(finish - start) / 1000000} ms (ended at {finish / 1000000} ms)"
-  return result
+/-- The trusted artifact a command's flag or variable selects for `c`. -/
+def explicitArtifact (p : Cli.Parsed) (c : Certified) : IO (Option String) :=
+  match p.flag? c.flag with
+  | some path => pure (some (path.as! String))
+  | none => IO.getEnv c.env
 
-/-- The checkout this `ix` belongs to. The default backend's exporters and
-artifact cache live there, so commands work from any directory.
-`IX_ROOT` overrides it; otherwise an executable at `<root>/.lake/build/bin`
-identifies it, falling back to the working directory. -/
-def repoRoot : IO System.FilePath := do
-  if let some root ← IO.getEnv "IX_ROOT" then return root
-  let app ← IO.appPath
-  let root := do
-    let bin ← app.parent
-    let build ← bin.parent
-    let lake ← build.parent
-    lake.parent
-  if let some root := root then
-    if ← (root / "IxVM" / "lakefile.lean").pathExists then return root
-  return "."
+/-- Certified programs, in order: each is the trusted artifact the
+command's flag or variable selects, or otherwise compiled or loaded from
+the cache (`compiledPrograms`). -/
+def compiledArtifacts (p : Cli.Parsed) (registry : FormalProver.Registry)
+    (programs : Array Certified) : IO (Array Selected) :=
+  compiledPrograms registry programs (explicitArtifact p)
 
-/-- A program a command selected, in the registry that prepares its system. -/
-structure Selected where
-  registry : FormalProver.Registry
-  program : FormalProver.Program
-  /-- The artifact file it was loaded from or persisted to. -/
-  path : String
-
-/-- Load the trusted binary artifact at `path` into `registry`. -/
-def Selected.load (registry : FormalProver.Registry) (path : String) : IO Selected := do
-  return { registry, program := ← registry.loadBinary path, path }
-
-/-- The program's system under the default STARK parameters, prepared once
-per registry. -/
-def Selected.system (s : Selected) : IO FormalProver.System :=
-  s.registry.system s.program {}
-
-/-- A certified program: the trusted artifact `flag` or the variable `env`
-names, or otherwise the linked compiler's output for the checkout's source
-bundle `sourcePath`. That output is cached in `.lake/aiur` under a lookup
-key derived from the compiler's identity, the target and the source; a
-miss compiles in process, hands the image to the prover directly and
-persists the program as a binary artifact. A cached artifact that fails to
-load is compiled again. The checksum a load verifies detects corruption;
-trust in a cached artifact rests on its key naming this compiler and
-source. -/
-def compiledArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) (flag env name : String)
-    (target : FormalProver.Target) (sourcePath : String) : IO Selected := do
-  if let some path := p.flag? flag then return ← Selected.load registry (path.as! String)
-  if let some path ← IO.getEnv env then return ← Selected.load registry path
-  let root ← repoRoot
-  let compiler ← FormalProver.compiler
-  let sourcePath := root / sourcePath
-  let text ← if sourcePath.extension == some "sources" then Aiur.SourceBundle.read sourcePath
-    else IO.FS.readFile sourcePath
-  let source := Address.blake3 text.toUTF8
-  let key := Address.blake3 (s!"ix-formal-artifact/1\x00{compiler.identity}\x00{name}\x00".toUTF8
-    ++ source.hash)
-  let directory := root / ".lake" / "aiur"
-  IO.FS.createDirAll directory
-  let path := directory / s!"{name}-{key}.aiur"
-  if ← path.pathExists then
-    try return ← Selected.load registry path.toString
-    catch e => IO.eprintln s!"[aiur] {path} does not load ({e}); compiling it again"
-  IO.eprintln s!"[aiur] compiling the certified {name} program in process; this runs once per \
-    source revision and takes several minutes (`ix prepare` does it ahead of time)"
-  let program ← phase s!"compile {name}" fun _ =>
-    compiler.compile registry target root.toString text key.hash
-  program.save path.toString name compiler.identity source.hash
-  return { registry, program, path := path.toString }
+/-- One certified program; see `compiledArtifacts`. -/
+def compiledArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) (c : Certified) :
+    IO Selected := do
+  let some selected := (← compiledArtifacts p registry #[c])[0]?
+    | throw (IO.userError s!"no {c.name} program")
+  return selected
 
 def artifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected :=
-  compiledArtifact p registry "aiur-artifact" "IX_AIUR_ARTIFACT" "ixvm" .ixvm
-    "IxVM/IxVM/Program.sources"
+  compiledArtifact p registry ixvmProgram
 
 /-- The certified aggregation program (`MultiStark::ix_aggr`) with its circuits. -/
 def aggregationArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected :=
-  compiledArtifact p registry "aggr-artifact" "IX_AGGR_ARTIFACT" "aggregation" .aggregation
-    "MultiStark/MultiStark/Aggregate.sources"
+  compiledArtifact p registry aggregationProgram
 
 /-- The certified recursive verifier (`MultiStark::verify_multi_stark_proof`)
 with its circuits. -/
 def verifierArtifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected :=
-  compiledArtifact p registry "verifier-artifact" "IX_VERIFIER_ARTIFACT" "verifier" .verifier
-    "MultiStark/MultiStark/Program.sources"
+  compiledArtifact p registry verifierProgram
+
+/-- The certified IxVM and aggregation programs, compiled concurrently on a
+miss. -/
+def ixvmAndAggregation (p : Cli.Parsed) (registry : FormalProver.Registry) :
+    IO (Selected × Selected) := do
+  match ← compiledArtifacts p registry #[ixvmProgram, aggregationProgram] with
+  | #[ixvm, aggregation] => return (ixvm, aggregation)
+  | _ => throw (IO.userError "expected the IxVM and aggregation programs")
 
 structure HostOptions where
   rows : Nat := 0
@@ -468,7 +417,7 @@ private def runManifest (p : Cli.Parsed) (ixvm : Option Selected) (options : Hos
 on the aggregate controller, CPU lanes (`--jobs`) or one CUDA device, with
 legacy's claim rules (an oversized claim is bisected; the index resumes;
 `--out-ixes` is the partition proven). Prints `shard-id address` per claim. -/
-private def proveManifest (p : Cli.Parsed) (ixvm : Selected) (options : HostOptions)
+private def proveManifest (p : Cli.Parsed) (ixvm aggregation : Selected) (options : HostOptions)
     (ixe manifest : String) (jobs : Nat) : IO UInt32 := do
   if p.hasFlag "keep-going" then
     throw (IO.userError "--keep-going: the controller stops at its first failure; rerun to resume")
@@ -486,7 +435,7 @@ private def proveManifest (p : Cli.Parsed) (ixvm : Selected) (options : HostOpti
   let maxRam := match (p.flag? "max-ram").map (·.as! Nat) with
     | some gib => gib * 1024^3 / lanes
     | none => 0
-  let aggr ← (← aggregationArtifact p ixvm.registry).system
+  let aggr ← aggregation.system
   let config : FormalProver.LaneConfig := {
     manifest, lanes, device := options.device, maxRamBytes := maxRam
     execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
@@ -517,17 +466,21 @@ def run (p : Cli.Parsed) (prove : Bool) : IO UInt32 := do
     else pure requestedJobs
   let options ← hostOptions p (if prove && !p.hasFlag "exec-only" then 1 else jobs)
   let registry ← FormalProver.Registry.new
-  let selected ← if p.hasFlag "plan-only" then pure none
-    else some <$> artifact p registry
   let mode := if prove && !p.hasFlag "exec-only" then "prove"
     else if prove || p.hasFlag "ram-budget" || p.hasFlag "stats-out" then "plan" else "execute"
+  -- Proving a manifest also needs aggregation; both compile concurrently.
+  let (selected, aggregation) ← if p.hasFlag "plan-only" then pure (none, none)
+    else if mode == "prove" && ixe.isSome && manifest.isSome then do
+      let (ixvm, aggregation) ← ixvmAndAggregation p registry
+      pure (some ixvm, some aggregation)
+    else pure (some (← artifact p registry), none)
   match ixe, manifest with
   | some ixe, some manifest =>
-    match selected with
-    | some selected =>
-      if mode == "prove" then proveManifest p selected options ixe manifest jobs
-      else runManifest p selected options mode ixe manifest jobs
-    | none => runManifest p none options mode ixe manifest jobs
+    match selected, aggregation with
+    | some selected, some aggregation =>
+      proveManifest p selected aggregation options ixe manifest jobs
+    | some selected, none => runManifest p selected options mode ixe manifest jobs
+    | none, _ => runManifest p none options mode ixe manifest jobs
   | _, some _ => throw (IO.userError "--ixes requires --ixe")
   | _, none =>
     for flag in #["shard", "shards", "out-ixes", "report", "plan-only", "exec-jobs"] do

@@ -17,6 +17,7 @@ described in [formal-aiur-unified-controller.md](formal-aiur-unified-controller.
 |---|---|---|
 | `cuda` | `IX_CUDA=1` | multi-stark's CUDA backend: device LDEs, Merkle trees, lookup and quotient kernels, with sppark for every NTT. Proofs are the same Goldilocks/BLAKE3 protocol the CPU verifies. |
 | `cuda-trace-codegen` | `IX_CUDA_TRACE_CODEGEN=1` | The CUDA row writers generated from the compiled bytecode (§4), their Rust seed packers, and the registry the trace runtime binds against. Implies `cuda`. |
+| `formal-compiled-trace` | `IX_FORMAL_COMPILED_TRACE=1` | The `cuda` feature of `crates/formal-generated`: the CUDA row writers that `lake build ix` generates for IxVM (`AIUR_GPU_TRACE=compiled`; only IxVM's bundle is registered). Implies `cuda` and needs `nvcc`. |
 
 The multi-GPU scheduler (§3) needs only `cuda`; generated traces are an
 optional provider inside it. On the host the ordinary `ix` binary runs
@@ -27,6 +28,15 @@ Build on a GPU host:
 ```sh
 IX_CUDA_TRACE_CODEGEN=1 lake build ix
 ```
+
+Before Cargo runs, `lake build ix` generates the native executors and, in
+a CUDA build (`cudaEnabled` in `lakefile.lean`), the CUDA trace writers
+into `.lake/build/formal-generated/`. Generation loads the three certified
+programs from the shared cache (`IX_AIUR_CACHE`, default
+`~/.ix/cache/aiur/`), compiling misses concurrently: about 7 minutes on the
+first build per machine, compiler and source revision. A linked executor
+whose fingerprint does not match the selected program is reported and that
+program runs on the interpreter, with identical records and proofs.
 
 The build detects the installed GPUs and compiles only their distinct SM
 architectures. Set `MULTI_STARK_CUDA_ARCHS` explicitly for cross builds or

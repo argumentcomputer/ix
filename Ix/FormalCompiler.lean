@@ -8,11 +8,11 @@ import Aiur.Trace.Export
 
 /-!
 The certified Aiur compiler linked into `ix`. On a cache miss a command
-compiles the selected program's source bundle here, in process, and hands
-the resulting `Aiur.Image.RuntimeImage` to the prover directly: the adapter
-reads the Lean objects and copies them once into a Rust-owned program. No
-exporter process, JSON or temporary file sits between compilation and
-execution.
+compiles the selected programs' source bundles here, in process and
+concurrently, and hands each resulting `Aiur.Image.RuntimeImage` to the
+prover directly: the adapter reads the Lean objects and copies them once
+into a Rust-owned program. No exporter process, JSON or temporary file sits
+between compilation and execution.
 
 The compiler is the one the standalone exporters (`IxVM/IxVM/Main.lean`,
 `MultiStark/MultiStark/Main.lean`) run, with the same entries and function
@@ -71,13 +71,17 @@ def identity : String :=
   compiler_identity% [Ix.FormalCompiler.image]
     [Aiur.Modules.Frontend, Aiur.Generic.Frontend]
 
-/-- Compile `target` from its source bundle `text` into `registry` under
-`key`; the checkout `root` supplies the frontend's build. -/
-def compile (registry : FormalProver.Registry) (target : FormalProver.Target) (root text : String)
-    (key : ByteArray) : IO FormalProver.Program := do
+/-- Compile each job's target from its source bundle into `registry` under
+its key, concurrently, after importing the frontend once; the checkout
+`root` supplies the frontend's build. Every job runs to completion before
+the first failure, if any, is reported. -/
+def compile (registry : FormalProver.Registry) (root : String)
+    (jobs : Array FormalProver.CompileJob) : IO (Array FormalProver.Program) := do
   let env ← frontend root
-  let image ← image env target text
-  registryOfImage registry key image
+  let tasks ← jobs.mapM fun job => IO.asTask (prio := .dedicated) do
+    registryOfImage registry job.key (← image env job.target job.source)
+  let results ← tasks.mapM fun task => (IO.wait task : IO _)
+  results.mapM IO.ofExcept
 
 initialize FormalProver.compilerRef.set (some { identity, compile })
 

@@ -81,32 +81,40 @@ This is a function-dispatch contract, separate from the `Map` overrides
 
 ### Packaging
 
-The generator is the `kernel!` procedural macro in `crates/aiur-macros`.
-`kernel!(pub Name, env = "VAR")` reads an execution package at compile time,
-derives its normalized plan with `aiur`'s own checker and expands to a type
-implementing `aiur::native::Kernel`. The expansion references the artifact
-with `include_bytes!` and the variable with `env!`, so Cargo regenerates the
-kernel when either the file or the variable changes.
+The generator is the library crate `crates/aiur-codegen`:
+`aiur_codegen::native_executor(program, name)` takes a checked program,
+derives its normalized plan with `aiur`'s own checker and returns Rust
+source for a type implementing `aiur::native::Kernel`. It reads no
+artifact.
 
-Each application's expansion lives in its own crate:
+`lake build ix` runs the Lean executable `formal-codegen` (target
+`formal_generated`), which obtains the three programs (from the cache or by
+compiling them) and writes their executors into
+`.lake/build/formal-generated/native/`. `crates/formal-generated`, with
+feature `executors`, compiles them with `include!`:
 
-| Kernel | Crate | Artifact variable |
+| Kernel | Type | Generated source |
 |---|---|---|
-| IxVM claim verifier | `crates/ixvm-native` | `AIUR_IXVM_ARTIFACT` |
-| Recursive verifier | `crates/stark-verifier-native` | `AIUR_VERIFIER_ARTIFACT` |
-| Aggregation | `crates/stark-verifier-native` | `AIUR_AGGREGATION_ARTIFACT` |
+| IxVM claim verifier | `formal_generated::Ixvm` | `native/ixvm.rs` |
+| Recursive verifier | `formal_generated::Verifier` | `native/verifier.rs` |
+| Aggregation | `formal_generated::Aggregation` | `native/aggregation.rs` |
 
-Both kernel crates are workspace members but not default members, and each
-compiles its kernels only under its non-default `kernel` feature. Without it
-the crate is empty and its tool is skipped, so `--workspace` builds need no
-artifacts. The generator itself is tested by `aiur-macros`' checked-in
-coverage fixture (`crates/aiur-macros/tests/coverage.rs`).
+Nothing generated is committed. `ix codegen --out DIR [--cuda]` writes the
+same sources elsewhere for inspection. The diagnostic binaries `ixvm-native`
+and `stark-verifier-native`, outside the default workspace members, compare
+these executors to the interpreter; they need feature `generated` and a
+prior `lake build ix`. The generator itself is tested by
+`crates/aiur-codegen-tests`: its build script generates the executor of
+`tests/fixtures/coverage.aiur` into `OUT_DIR`, and `tests/coverage.rs`
+checks it against the interpreter.
 
-Each expansion carries a fingerprint covering the program, its normalized
+Each executor carries a fingerprint covering the program, its normalized
 plan, the field and the runtime ABI version (`aiur::native::ABI_VERSION`).
 Binding a kernel to a checked program (`PreparedHints::bind_native`)
 compares fingerprints and rejects a mismatch before execution, so a kernel
-only ever runs the program it was generated from.
+only ever runs the program it was generated from. A generated file's header
+records only that fingerprint, so a change that leaves the bytecode and
+execution plan alone, such as regrouping, leaves the file byte-identical.
 
 ## Correctness conditions
 
@@ -167,32 +175,32 @@ is not charged to the record reservation. Budget cancellation is retained.
 ## Build and executor selection
 
 The formal prover (`crates/ix-prover`) runs inside `ix` as part of the Rust
-static library. Its feature `native` enables all three kernels together;
-`ix-ffi`'s `formal-native` feature turns it on.
+static library. `lake build ix` builds that archive (`ix_rs_net`) with the
+Cargo feature `native-executors`, linking the three executors generated for
+the current programs. Other Lean executables link `ix_rs` and run formal
+jobs on the interpreter, and the flake sets `nativeExecutors` to false, so
+the Nix-packaged `ix` does too; results are identical.
 
-`ix prepare` (`Ix/Cli/PrepareCmd.lean`) compiles the certified IxVM,
-recursive verifier and aggregation programs in process, persists them as
-binary artifacts in the checkout's cache and records their paths in
-`.lake/aiur/native-kernels.env`. Each program is compiled only when the
-linked compiler or its sources changed; `--aiur-artifact`,
+Generation warms the cache. A command that still misses compiles the
+certified programs it needs in process, concurrently when it needs several,
+and persists them in the shared cache (`IX_AIUR_CACHE`, default
+`~/.ix/cache/aiur/`); a program is compiled again only when the linked
+compiler or its sources changed. `--aiur-artifact`,
 `--verifier-artifact` and `--aggr-artifact` supply trusted ones instead.
-The next `lake build ix` reads that file (`formalNativeArtifacts` in
-`lakefile.lean`) and builds the library with `formal-native` and the three
-`AIUR_*_ARTIFACT` variables. All three variables may instead be set in the
-environment. `IX_FORMAL_NATIVE=0` builds without kernels, and
-`IX_FORMAL_NATIVE=1` fails the build if the binary artifacts are missing.
-Compiling them needs a built `ix`, so the kernels cannot be part of the first build; until
-the rebuild, every job runs on the interpreter.
+After selecting its programs, a command reports a linked executor whose
+fingerprint differs, with the advice to rebuild with `lake build ix`;
+that program runs on the interpreter, and under `IX_FORMAL_NATIVE=1` the
+command fails instead.
 
 Executor selection (`crates/ix-prover/src/executor.rs`) happens once per
-loaded artifact. With `native`, a program runs on the kernel whose
+loaded artifact. A program runs on the kernel whose
 fingerprint matches its own (`native-ixvm`, `native-verifier` or
 `native-aggregation`), or on the interpreter if none matches.
 `IX_PROVER_EXECUTOR=interpreter` forces the interpreter. A job whose map
 overrides disagree with their tables fails to bind its kernel and runs on
 the interpreter. Single-claim reports (`crates/ix-prover/src/tools.rs`) name
 the executor that ran (`executor`), and `Ix.FormalProver.executors` lists the
-executors linked into the build; `ix prepare` prints them.
+executors linked into the build.
 
 Generated code keeps the interpreter's register numbering in a local array
 and emits each function as a dispatch loop over basic blocks. Runtime
@@ -221,10 +229,10 @@ These results were recorded on `formal-aiur-perf` between `9da877bce` and
 `1e8cc6bd7` (2026-11-03), before role binding changed IxVM. Every comparison
 requires identical records, as defined above, or identical failures.
 
-- **Coverage fixture** (`crates/aiur-macros/tests/coverage.rs`): memoized and
-  mutual recursion, a branch join with a simultaneous swap, typed ROM, a
-  fixed table with and without a fixed-arity override, data hints, constant
-  and dynamic division, and every failure path (guard, checked assertion,
+- **Coverage fixture** (`crates/aiur-codegen-tests/tests/coverage.rs`):
+  memoized and mutual recursion, a branch join with a simultaneous swap,
+  typed ROM, a fixed table with and without a fixed-arity override, data
+  hints, constant and dynamic division, and every failure path (guard, checked assertion,
   `Fail`, division by zero, pending query, dangling pointer, out-of-domain
   table argument). Runs over a prime field and Goldilocks, and checks that a
   kernel does not bind to a different program. A deliberately wrong copy
@@ -352,9 +360,13 @@ layout, so differences smaller than that are not meaningful here.
 
 `crates/aiur-tracegen` applies the same approach to trace population: it
 emits a straight-line CUDA row writer for each eligible function circuit of
-an exported trace artifact, and `crates/ixvm-tracegen` compiles them for the
-IxVM artifact. Like the native executor generator, it replaces a fixed-table
-call with arithmetic only when a closed form is verified against every table
+a checked program (`aiur_tracegen::describe`, rendered by `bundle::sources`).
+A CUDA `lake build ix` (`cudaEnabled`) writes the writers of all three
+programs into `.lake/build/formal-generated/cuda/`, one `.cu` unit per
+circuit plus the Rust binding `bundle.rs`, and `crates/formal-generated`'s
+`cuda` feature (`IX_FORMAL_COMPILED_TRACE=1`) compiles them with nvcc
+(`bundle::build`); only IxVM's bundle is registered at runtime. Like the
+native executor generator, it replaces a fixed-table call with arithmetic only when a closed form is verified against every table
 row, and a bundle binds only to the program whose population fingerprint it
 was generated from. The two take different inputs: execution creates
 records, while population reads records and writes circuit columns from the

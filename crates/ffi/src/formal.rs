@@ -291,6 +291,49 @@ extern "C" fn rs_formal_program_identity(
   io(|| Ok(LeanByteArray::from_bytes(program.get().0.identity())))
 }
 
+/// `Ix.FormalProver.Program.executor : @& Program → IO (String × String)`:
+/// the executor the program runs on and its native fingerprint.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_program_executor(
+  program: Borrowed<'_, FormalProgram>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let program = &program.get().0;
+    Ok(LeanProd::new(
+      LeanString::new(program.executor_name()),
+      LeanString::new(program.native_fingerprint()),
+    ))
+  })
+}
+
+/// `Ix.FormalProver.Program.codegen : @& Program → (name : @& String) →
+/// (source : @& ByteArray) → (cuda : Bool) → IO (Array (String × String))`:
+/// the generated files of the formal program `name` (`ix_prover::codegen`),
+/// as paths relative to the generated directory with their contents.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_program_codegen(
+  program: Borrowed<'_, FormalProgram>,
+  name: LeanString<LeanBorrowed<'_>>,
+  source: LeanByteArray<LeanBorrowed<'_>>,
+  cuda: bool,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let source: [u8; 32] = source
+      .as_bytes()
+      .try_into()
+      .map_err(|e| format!("source digest: {e}"))?;
+    let files = ix_prover::codegen::sources(
+      &program.get().0,
+      name.as_str(),
+      &source,
+      cuda,
+    )?;
+    Ok(records::lean_array(files.iter().map(|(path, contents)| {
+      LeanProd::new(LeanString::new(path), LeanString::new(contents))
+    })))
+  })
+}
+
 /// `Ix.FormalProver.Program.compare : @& Program → (path : @& String) →
 /// IO String`: the first difference between the program, the JSON artifact
 /// at `path` and the program's binary round trip, or an empty string.

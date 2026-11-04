@@ -53,12 +53,13 @@ executing ahead of the provers, default 1).
 
 `--lanes` selects CUDA, while `--aggregate --jobs N` runs the pipeline on
 CPU. `--texray` prints timings and RSS for execution, trace population and
-proving. Sources, the frontend's build and the artifact cache (`.lake/aiur`)
-are resolved against the checkout `ix` was built in (or `IX_ROOT`), so `ix`
-runs from any directory. `ix prepare` compiles the IxVM, recursive verifier
-and aggregation programs ahead of time; otherwise the first command that
-needs a program compiles it in process (several minutes, once per compiler
-and source revision). A command loads each program once into its registry
+proving. Sources and the frontend's build are resolved against the
+checkout `ix` was built in (or `IX_ROOT`), so `ix` runs from any directory.
+There is no setup command: `lake build ix` warms the shared cache
+`IX_AIUR_CACHE` (default `~/.ix/cache/aiur/`) while generating the native
+executors, and a command that still misses a program compiles it in
+process (several minutes; programs a command needs together compile
+concurrently) and persists it for later commands. A command loads each program once into its registry
 and shares its system (verifying backend and key) across every check, key
 query, proof and verification; the controller receives these handles, not
 artifact paths. Configuration and results cross the FFI as typed records
@@ -169,30 +170,38 @@ proves the cross-binding and catalog joins (shapes 15 and 16). Lean accepts
 the result with `CatalogAggregate.acceptCatalog`. No operation runs a
 separate prover executable.
 
-### Native executors and build order
+### Native executors
 
-The generated native executors (`crates/ixvm-native`,
-`crates/stark-verifier-native`) are compiled from the binary artifacts
-(`AIUR_IXVM_ARTIFACT`, `AIUR_VERIFIER_ARTIFACT`, `AIUR_AGGREGATION_ARTIFACT`),
-but compiling them needs a built `ix`, and `ix` links the Rust archive. The
-kernels are therefore the optional `formal-native` feature of `ix-ffi`:
+`lake build ix` generates the native executors for the IxVM, recursive
+verifier and aggregation programs before Cargo runs:
 
-1. `lake build ix` without artifacts links the interpreter only.
-2. `ix prepare` compiles the programs, writes their binary artifacts and
-   records their absolute paths in `.lake/aiur/native-kernels.env`.
-3. The next `lake build ix` reads that file, enables `formal-native`, passes
-   the three variables to Cargo and adds the artifacts' contents to the
-   archive's Lake trace, so a recompiled artifact rebuilds its kernel. A
-   file that still names JSON artifacts is ignored until `ix prepare`
-   replaces it.
+1. `ix_rs` builds the Rust archive without generated code.
+2. The Lean executable `formal-codegen`, which links `ix_rs`, loads the
+   three programs from the shared cache, compiling misses concurrently
+   (about 7 minutes the first time per machine, compiler and source
+   revision), and writes `native/{ixvm,verifier,aggregation}.rs` into
+   `.lake/build/formal-generated/` (target `formal_generated`), plus
+   `cuda/{ixvm,verifier,aggregation}/` in a CUDA build (`cudaEnabled`).
+   It reruns only when `formal-codegen`, a program's source bundle or the
+   CUDA selection changed, rewrites only changed files, and a CPU build
+   removes CUDA output.
+3. `ix_rs_net`, the archive `ix` links, is built with the Cargo feature
+   `native-executors`; `crates/formal-generated` (feature `executors`, plus
+   `cuda` for the trace writers) `include!`s the generated files. Cargo
+   never invokes Lake or reads an artifact.
 
-Setting all three `AIUR_*_ARTIFACT` variables overrides the file;
-`IX_FORMAL_NATIVE=0` builds without kernels and `IX_FORMAL_NATIVE=1` fails if
-they are unavailable. Kernels are only an optimization: a kernel runs a job
-only for an artifact whose program has exactly its fingerprint, and the
-interpreter produces identical records and proofs. `ix prepare` prints which
-executors are linked, and check and prove reports name the `executor`. See
-[native execution](formal-aiur-native-execution.md).
+Only `ix` links native executors. Other Lean executables (tests, kernel
+tools) link `ix_rs` and run formal jobs on the interpreter; the flake sets
+`nativeExecutors` to false, so the Nix-packaged `ix` does too.
+`ix codegen --out DIR [--cuda]` writes the same sources elsewhere for
+inspection.
+
+Executors are only an optimization: an executor runs a job only for a
+program whose fingerprint is exactly its own, and the interpreter produces
+identical records and proofs. After selecting programs, a command reports a
+stale linked executor with the advice to rebuild with `lake build ix`;
+under `IX_FORMAL_NATIVE=1` that is an error. Check and prove reports name
+the `executor`. See [native execution](formal-aiur-native-execution.md).
 
 `ixvm-proof` and `stark-verifier` remain as reference drivers for the check
 tools: fixture generation, acceptance cases, and independent single-proof

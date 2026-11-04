@@ -46,9 +46,10 @@ def aggrIdentity (p : Cli.Parsed) (registry : FormalProver.Registry) :
   return (aggrSystem, aggr)
 
 def context (p : Cli.Parsed) : IO Context := do
-  let registry ← FormalProver.Registry.new
-  let ixvmSystem ← (← FormalAiur.artifact p registry).system
-  let (aggrSystem, aggr) ← aggrIdentity p registry
+  let (ixvm, aggregation) ← FormalAiur.ixvmAndAggregation p (← FormalProver.Registry.new)
+  let ixvmSystem ← ixvm.system
+  let aggrSystem ← aggregation.system
+  let aggr ← identity aggrSystem true
   let ixvm ← identity ixvmSystem false
   let allowed := Aggr.allowedBlob ixvm.key ixvm.index aggr.key aggr.index
   return { ixvmSystem, aggrSystem, ixvm, aggr, allowed }

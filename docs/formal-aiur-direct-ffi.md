@@ -148,8 +148,9 @@ never invokes Lake.
 ## Persistent artifacts
 
 `aiur::artifact` (`crates/aiur/src/artifact.rs`) is the one reader and
-writer, shared by the runtime loader, the `kernel!` macro, the CUDA trace
-generator and the development binaries. Format version 1:
+writer, shared by the runtime loader, the compiled-program cache and the
+development binaries; the code generators take a checked program, not a
+file. Format version 1:
 
 - header: magic `AIURIMG\0`, version `u32`, flags `u32` (zero), modulus `u64`;
 - four sections, in order, each `tag u32 ‖ length u64 ‖ payload`:
@@ -181,10 +182,13 @@ is rejected with that conversion command.
    binary artifact.
 2. Otherwise the lookup key is BLAKE3 over a domain tag, the linked
    compiler's identity, the target name and the source bundle's digest.
-   `.lake/aiur/<target>-<key>.aiur` is loaded when present and valid; a file
-   that fails to load is compiled again.
-3. On a miss the linked compiler compiles the bundle in process, registers
-   the image's program and persists it under the key.
+   `<target>-<key>.aiur` in the shared cache (`IX_AIUR_CACHE`, default
+   `~/.ix/cache/aiur/`) is loaded when present; a file that fails to load is
+   an error naming the file and saying to delete it.
+3. On a miss the linked compiler compiles the bundle in process, with a
+   progress message, registers the image's program and persists it under
+   the key. Programs a command needs together compile concurrently from one
+   frontend import. The cache is never pruned automatically.
 
 The compiler identity (`Ix.FormalCompiler.identity`) is computed when
 `Ix.FormalCompiler` is elaborated: a BLAKE3 digest of the structural hashes
@@ -195,12 +199,12 @@ code changes and not when unrelated Rust or Lean code does, so a rebuilt
 cached artifact rests on its key, and explicitly selected artifacts are
 trusted by the caller as before. Proof inputs never select a program or key.
 
-`ix prepare` compiles the three programs, persists them and records their
-paths in `.lake/aiur/native-kernels.env`. The next `lake build ix` expands
-the native executors (`aiur_macros::kernel!`) and, when requested, the
-compiled CUDA trace writers from those binary artifacts; Cargo does not run
-Lean. A selection that still names JSON artifacts is ignored, or rejected
-under `IX_FORMAL_NATIVE=1`, until `ix prepare` replaces it.
+`lake build ix` runs `formal-codegen`, which obtains the three programs
+this way and writes the native executors (`aiur_codegen::native_executor`)
+and, in a CUDA build, the trace writers (`aiur_tracegen`) into
+`.lake/build/formal-generated/`, which `crates/formal-generated` compiles;
+Cargo does not run Lean or read an artifact.
+See [codegen and caching](formal-aiur-codegen.md).
 
 ## Identities
 

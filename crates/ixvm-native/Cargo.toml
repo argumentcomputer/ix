@@ -3,23 +3,22 @@ name = "ixvm-native"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Generated native executor for IxVM"
+description = "Checks the generated native IxVM executor against the interpreter"
 
-# With feature `kernel`, the kernel is built from the binary IxVM artifact
-# named by AIUR_IXVM_ARTIFACT at compile time (`ix prepare` writes it under
-# .lake/aiur/). Without it the crate is empty, so workspace-wide builds need
-# no artifact. This crate is outside the default workspace members.
+# Diagnostics of the generated native IxVM executor (crates/formal-generated)
+# against the interpreter. Feature `generated` compiles it from the sources
+# `lake build ix` writes (.lake/build/formal-generated). This crate is outside the default workspace members.
 
 [features]
-kernel = []
+generated = ["formal-generated/executors"]
 
 [[bin]]
 name = "ixvm-native"
-required-features = ["kernel"]
+required-features = ["generated"]
 
 [dependencies]
 aiur = { path = "../aiur", features = ["native", "parallel"] }
-aiur-macros = { path = "../aiur-macros" }
+formal-generated = { path = "../formal-generated" }
 ixvm = { path = "../ixvm" }
 multi-stark = { workspace = true }
 serde = { version = "1", features = ["derive"] }

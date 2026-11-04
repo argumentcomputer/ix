@@ -12,16 +12,17 @@ multi-stark = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 blake3 = { workspace = true }
-ixvm-tracegen = { path = "../ixvm-tracegen", optional = true }
+formal-generated = { path = "../formal-generated", optional = true }
 
 [features]
 default = []
 stark = ["aiur/stark"]
 parallel = ["stark", "aiur/parallel"]
 cuda = ["stark", "aiur/cuda"]
-# Link the compiled trace writers generated from AIUR_IXVM_ARTIFACT
-# (see crates/ixvm-tracegen); select them with AIUR_GPU_TRACE=compiled.
-compiled-trace = ["cuda", "ixvm-tracegen/kernel"]
+# Link the compiled trace writers `lake build ix` generates for a CUDA build
+# (crates/formal-generated); select them with AIUR_GPU_TRACE=compiled.
+# Building them needs nvcc.
+compiled-trace = ["cuda", "formal-generated/cuda"]
 function-profile = ["aiur/function-profile"]
 function-profile-ops = ["function-profile", "aiur/function-profile-ops"]
 
