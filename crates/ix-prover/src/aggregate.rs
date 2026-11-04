@@ -867,24 +867,21 @@ pub struct NormalizeConfig {
   pub options: Options,
 }
 
-/// Wrap the aggregate root `proof` (an encoded `IXAGGR2` proof) of `claim`
-/// once more with `ix_aggr` and prove the wrap as one trace shard with every
-/// circuit active at the log2 heights `log_heights`, in system circuit
-/// order. Every root that fits those heights then has a proof of one shape,
-/// which a verifier circuit fixed in advance checks. The root is verified
-/// before it is wrapped and the wrap after it is proved; returns the raw
-/// proof of the wrap, whose outer claim is the root's.
-pub fn normalize_root(
-  config: &NormalizeConfig,
-  ixvm: &System,
-  aggr: &System,
-  log_heights: &[u8],
+/// One more `ix_aggr` wrap of a verified aggregate root, executed.
+struct ExecutedWrap {
+  /// The root's outer claim, which the wrap's proof shares.
+  outer: Vec<u64>,
+  args: Vec<Element>,
+  record: Execution<Field>,
+}
+
+/// Verify the aggregate root `proof` (an encoded `IXAGGR2` proof) of `claim`
+/// and execute one more `ix_aggr` wrap of it.
+fn execute_wrap(
+  backend: &Formal,
   claim: &[u8],
   proof: &[u8],
-) -> Result<Vec<u8>, String> {
-  let mut options = config.options.clone();
-  options.fixed_log_heights = Some(log_heights.to_vec());
-  let backend = Formal::new(ixvm, aggr, 1, config.device, options)?;
+) -> Result<ExecutedWrap, String> {
   let root = backend.decode_proof(proof)?;
   if root.kind != ChildKind::Aggr {
     return Err("normalization wraps an aggregate proof".into());
@@ -907,7 +904,44 @@ pub fn normalize_root(
   let (args, record) = backend
     .execute_streams(&streams, backend.public_input(claim), &reservation)
     .map_err(String::from)?;
-  drop(streams);
+  Ok(ExecutedWrap { outer, args, record })
+}
+
+/// The rows each circuit of `aggr`, in system circuit order, holds in one
+/// more `ix_aggr` wrap of the aggregate root `proof` (an encoded `IXAGGR2`
+/// proof) of `claim`: the rows [`normalize_root`] must fit. The wrap is
+/// executed on the CPU but not proved; the root is verified first.
+pub fn wrap_rows(
+  ixvm: &System,
+  aggr: &System,
+  claim: &[u8],
+  proof: &[u8],
+) -> Result<Vec<usize>, String> {
+  let backend = Formal::new(ixvm, aggr, 1, None, Options::default())?;
+  let wrap = execute_wrap(&backend, claim, proof)?;
+  aggr.verifier().record_rows(&wrap.record)
+}
+
+/// Wrap the aggregate root `proof` (an encoded `IXAGGR2` proof) of `claim`
+/// once more with `ix_aggr` and prove the wrap as one trace shard with every
+/// circuit active at the log2 heights `log_heights`, in system circuit
+/// order. Every root that fits those heights then has a proof of one shape,
+/// which a verifier circuit fixed in advance checks. The root is verified
+/// before it is wrapped and the wrap after it is proved; returns the raw
+/// proof of the wrap, whose outer claim is the root's.
+pub fn normalize_root(
+  config: &NormalizeConfig,
+  ixvm: &System,
+  aggr: &System,
+  log_heights: &[u8],
+  claim: &[u8],
+  proof: &[u8],
+) -> Result<Vec<u8>, String> {
+  let mut options = config.options.clone();
+  options.fixed_log_heights = Some(log_heights.to_vec());
+  let backend = Formal::new(ixvm, aggr, 1, config.device, options)?;
+  let ExecutedWrap { outer, args, record } =
+    execute_wrap(&backend, claim, proof)?;
   let lanes = backend.lanes(1)?;
   let normalized =
     backend.prove(&lanes[0], ChildKind::Aggr, &record, AGGR_ENTRY, &args)?;

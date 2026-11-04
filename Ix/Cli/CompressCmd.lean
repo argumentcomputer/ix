@@ -113,7 +113,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "fresh"; "Replace prior compression stages in --out (or the default output) with newly generated proofs. Reuse parameters, proving keys and fixed preprocessing."
     "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
     "fixed-root" : String; "Normalization layout from `ix compress layout`, instead of one sized from the root. Roots normalized to one layout compress under one recursive verifying key."
-    "headroom" : Nat; "Without --fixed-root: extra doublings of every circuit height beyond the root's own (default 0)."
+    "headroom" : Nat; "Without --fixed-root: extra doublings of every circuit height beyond what the root and its wrap need (default 0)."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default 85% of available memory)."

@@ -346,12 +346,15 @@ still has to pass the caller's acceptance check. -/
 opaque aggregateCatalog (ixvm aggr : @& System) (config : @& CatalogConfig) : IO ByteArray
 
 /-- The fixed normalization layout (`ix-fixed-root-layout-v1` JSON) of one
-more wrap of `proof`, a raw one-shard proof of the aggregation system `aggr`:
-the root's heights raised by `headroom` doublings, fixed tables at their
-own heights, two rows for circuits the root leaves inactive, and the memory
-circuits the root closes. -/
+more wrap of `proof`, an encoded `IXAGGR2` one-shard root of `claim`. The
+wrap is executed once, not proved: each circuit gets the larger of the root's
+height and the wrap's rows rounded up to a power of two, raised by `headroom`
+doublings; fixed tables keep their own heights, circuits empty in both get two
+rows, and the memory circuits are those the root closes. The root is verified
+first. -/
 @[extern "rs_formal_fixed_root_layout"]
-opaque fixedRootLayout (aggr : @& System) (proof : @& ByteArray) (headroom : UInt8) : IO String
+opaque fixedRootLayout (ixvm aggr : @& System) (claim proof : @& ByteArray) (headroom : UInt8) :
+  IO String
 
 /-- Wrap the aggregate root `proof` (an encoded `IXAGGR2` proof) of `claim`
 once more with `ix_aggr` and prove the wrap as one all-active trace shard at
