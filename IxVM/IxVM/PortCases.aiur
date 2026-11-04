@@ -20,7 +20,7 @@ fn check_port_cases() -> () {
       store([UInt8::BYTE_0; 32]),
       RoleMap::Nil,
       RBTreeMap::Nil,
-      RoleMap::Nil))));
+      RoleMap::Nil)), RBTreeMap::Nil));
     let zero_level = store(KLevelNode::Zero);
     let prop = store(KExprNode::Srt(zero_level));
     let v0 = store(KExprNode::BVar(0));

@@ -41,7 +41,7 @@ module IxVM {
         zero_addr,
         KernelRoles::RoleMap::Node(1, KernelRoleSpec::role_nat_zero(), zero_addr, (&(KernelRoles::RoleMap::Nil)), (&(KernelRoles::RoleMap::Nil))),
         RBTreeMap::RBTreeMap::Node(1, zero_addr, KernelRoleSpec::role_nat_zero() + 1, (&(RBTreeMap::RBTreeMap::Nil)), (&(RBTreeMap::RBTreeMap::Nil))),
-        KernelRoles::RoleMap::Nil))))));
+        KernelRoles::RoleMap::Nil))), RBTreeMap::RBTreeMap::Nil)));
       let prop = (&(KernelTypes::KExprNode::Srt((&(KernelTypes::KLevelNode::Zero)))));
       let var = (&(KernelTypes::KExprNode::BVar(0)));
       let ctx = (&(Lists::Node::Cons(prop, empty)));
@@ -85,7 +85,7 @@ module IxVM {
         (&([UInt8::BYTE_0; 32])),
         KernelRoles::RoleMap::Nil,
         RBTreeMap::RBTreeMap::Nil,
-        KernelRoles::RoleMap::Nil))))));
+        KernelRoles::RoleMap::Nil))), RBTreeMap::RBTreeMap::Nil)));
       let zero_level = (&(KernelTypes::KLevelNode::Zero));
       let prop = (&(KernelTypes::KExprNode::Srt(zero_level)));
       let v0 = (&(KernelTypes::KExprNode::BVar(0)));

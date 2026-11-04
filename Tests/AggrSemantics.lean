@@ -49,15 +49,15 @@ private def envCtx : Ix.ClaimContext :=
 
 private def singletonIxonEnv : Ixon.Env × Address :=
   let constant : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let address := Address.blake3 (Ixon.serConstant constant)
   (bound (({} : Ixon.Env).storeConst address constant), address)
 
 private def pairIxonEnv : Ixon.Env × Address × Address :=
   let left : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.opaq, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let right : Ixon.Constant :=
-    ⟨.axio ⟨true, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let leftAddress := Address.blake3 (Ixon.serConstant left)
   let rightAddress := Address.blake3 (Ixon.serConstant right)
   let env := (({} : Ixon.Env).storeConst leftAddress left)
@@ -66,12 +66,12 @@ private def pairIxonEnv : Ixon.Env × Address × Address :=
 
 private def sharedClosureIxonEnv : Ixon.Env × Array Address × Address :=
   let shared : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let sharedAddress := Address.blake3 (Ixon.serConstant shared)
   let left : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[sharedAddress], #[]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .ref 0 #[]⟩, #[], #[sharedAddress], #[.zero, .succ .zero]⟩
   let right : Ixon.Constant :=
-    ⟨.axio ⟨true, 0, .ref 0 #[]⟩, #[], #[sharedAddress], #[]⟩
+    ⟨.defn ⟨.opaq, .safe, 0, .sort 1, .ref 0 #[]⟩, #[], #[sharedAddress], #[.zero, .succ .zero]⟩
   let leftAddress := Address.blake3 (Ixon.serConstant left)
   let rightAddress := Address.blake3 (Ixon.serConstant right)
   let env := (({} : Ixon.Env).storeConst sharedAddress shared)

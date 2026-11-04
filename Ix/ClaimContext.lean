@@ -1,6 +1,7 @@
 module
 
 public import Ix.Claim
+public import Ix.AssumptionTree
 public import Ix.SpecDigest
 public import IxC.Kernel.Ixon.Prelude
 public import IxC.Kernel.Ixon.RoleTable
@@ -9,8 +10,10 @@ public import IxC.Kernel.Ixon.RoleTable
 
 A typing claim is relative to a `ClaimContext`: the specification digest,
 the role binding's hash and the axioms beyond the standard three. A claim
-made today names this specification set (`Ix.SpecDigest.specDigest`) and
-no further axiom; only the binding varies.
+made today names this specification set (`Ix.SpecDigest.specDigest`) and the
+safe axioms of its environment that the binding binds to no role
+(`userAxioms`), such as Lean's `Lean.trustCompiler`, `Lean.ofReduceBool` and
+`Lean.ofReduceNat`.
 
 ## Literal classes
 
@@ -42,11 +45,37 @@ open Ix.Kernel (Role RoleTable)
 def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
   return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
-/-- The context of a claim over an environment's own role binding. -/
-def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext :=
-  match env.roleBinding with
-  | some binding => ofBinding binding.address bindingAssumed
-  | none => throw "claim context: the environment carries no role binding"
+/-- Whether a constant record is a safe axiom: its first two bytes are the
+`ConstantInfo.axio` tag and a clear `isUnsafe` flag. -/
+def isSafeAxiomRecord (lc : Ixon.LazyConstant) : Bool :=
+  lc.len ≥ 2 && lc.buf[lc.off]! == 0xD2 && lc.buf[lc.off + 1]! == 0x00
+
+/-- The safe axioms in `env` that its role binding binds to no role
+(`propext`, `Classical.choice` and `sorryAx` are role-bound; `Quot.sound` is
+a quotient record). Mirrors `ClaimContext::user_axioms`
+(`crates/ixon/src/proof.rs`). -/
+def userAxioms (env : Ixon.Env) : Array Address := Id.run do
+  let some binding := env.roleBinding | return #[]
+  let some table := RoleTable.ofBytes binding.bytes | return #[]
+  let bound : Std.HashSet Address := table.bound.foldl (fun s (_, a) => s.insert a) {}
+  let mut out : Array Address := #[]
+  for (addr, lc) in env.consts do
+    if isSafeAxiomRecord lc && !bound.contains addr then
+      out := out.push addr
+  return out
+
+/-- The canonical tree of `env`'s user axioms, `none` when it has none. Its
+root is the `axioms` field of `ofEnv`. -/
+def userAxiomTree (env : Ixon.Env) : Option AssumptionTree :=
+  AssumptionTree.canonical (userAxioms env)
+
+/-- The context of a claim over an environment's own role binding, committing
+to its user axioms. -/
+def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext := do
+  let some binding := env.roleBinding
+    | throw "claim context: the environment carries no role binding"
+  return { ← ofBinding binding.address bindingAssumed with
+           axioms := (userAxiomTree env).map (·.root) }
 
 /-- The context of a claim over the default role table
 (`Ix.Kernel.Reader.defaultTable`), the generated table of the compiled

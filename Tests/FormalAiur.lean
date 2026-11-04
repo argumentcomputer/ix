@@ -173,6 +173,63 @@ private def exploitCases (leanEnv : Lean.Environment) : IO (Array Json) := do
     let witness ← IO.ofExcept (buildClaimWitness env (c.claim ctx) c.trees)
     return caseJson s!"exploit {c.name}" witness c.expectAccept
 
+/-- Claims over an environment with user axioms: Lean's compiler-trust axioms
+and a declared `axiom T : Type`. Every claim commits to the environment's
+user axioms and is accepted; the same claims are rejected when the
+commitment is missing, omits an axiom, or names a constant that is not an
+admissible user axiom (a definition, or a role-bound standard axiom). -/
+private def userAxiomCases (leanEnv : Lean.Environment) : IO (Array Json) := do
+  let base ← loadSharedIxonEnv #[``Lean.ofReduceBool, ``Lean.ofReduceNat] leanEnv
+  let custom : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+  let customAddr := Address.blake3 (Ixon.ser custom)
+  let env := base.storeConst customAddr custom
+  let trust ← lookupAddr env ``Lean.trustCompiler
+  let ofBool ← lookupAddr env ``Lean.ofReduceBool
+  let ofNat ← lookupAddr env ``Lean.ofReduceNat
+  let reduceBool ← lookupAddr env ``Lean.reduceBool
+  let propext ← lookupAddr env ``propext
+  let expected := #[customAddr, trust, ofBool, ofNat]
+  let users := Ix.ClaimContext.userAxioms env
+  unless users.size == expected.size && expected.all users.contains do
+    throw <| IO.userError s!"user axioms {users}, expected {expected}"
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env)
+  let some committed := Ix.ClaimContext.userAxiomTree env
+    | throw <| IO.userError "no user axiom tree"
+  unless ctx.axioms == some committed.root do
+    throw <| IO.userError "the claim context does not commit to the user axioms"
+  let some subjects := Ix.AssumptionTree.canonical expected
+    | throw <| IO.userError "no subject tree"
+  let checkEnv (ctx : Ix.ClaimContext) : Ix.Claim := .checkEnv ctx subjects.root none
+  -- The Rust prover recomputes each claim, axioms commitment included, and
+  -- rejects a job whose claim differs from Lean's.
+  let handle ← match Aiur.EnvHandle.fromBytes (← IO.ofExcept (Ixon.serEnv env)) with
+    | .ok handle => pure handle
+    | .error e => throw <| IO.userError s!"EnvHandle.fromBytes: {e}"
+  let formal ← Ix.FormalProver.Env.ofHandle handle
+  let _ ← Ix.FormalProver.Request.check formal ofBool.hash (Ix.Claim.ser (.check ctx ofBool none))
+  let (shardClaim, _) ← IO.ofExcept (shardCheckEnvClaimTrees env expected)
+  let _ ← Ix.Cli.FormalAiur.shardRequest formal expected shardClaim
+  let mut cases := #[]
+  for (label, target) in #[("Lean.ofReduceBool", ofBool), ("custom axiom", customAddr)] do
+    let w ← IO.ofExcept (buildClaimWitness env (.check ctx target none))
+    cases := cases.push (caseJson s!"user axioms: Check {label}" w)
+  let w ← IO.ofExcept (buildClaimWitness env (checkEnv ctx) (singletonTrees subjects))
+  cases := cases.push (caseJson "user axioms: CheckEnv over the committed axioms" w)
+  let w ← IO.ofExcept (buildClaimWitness env (checkEnv { ctx with axioms := none })
+    (singletonTrees subjects))
+  cases := cases.push (caseJson "user axioms: CheckEnv rejected without the commitment" w false)
+  let w ← IO.ofExcept (buildClaimWitness env (.check { ctx with axioms := none } ofBool none))
+  cases := cases.push (caseJson "user axioms: Check rejected without the commitment" w false)
+  for (label, axioms) in #[("omitting Lean.ofReduceNat", #[customAddr, trust, ofBool]),
+      ("naming a definition", expected.push reduceBool),
+      ("naming a role-bound axiom", expected.push propext)] do
+    let some tree := Ix.AssumptionTree.canonical axioms
+      | throw <| IO.userError "no axiom tree"
+    let trees := (singletonTrees subjects).insert tree.root tree
+    let w ← IO.ofExcept (buildClaimWitness env (checkEnv { ctx with axioms := some tree.root }) trees)
+    cases := cases.push (caseJson s!"user axioms: CheckEnv rejected with a commitment {label}" w false)
+  return cases
+
 /-- Checks `name` under its compiled closure's default role binding. -/
 private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Json := do
   let env ← loadIxonEnv name leanEnv
@@ -197,6 +254,7 @@ def main (args : List String) : IO Unit := do
   for (label, witness) in [← claimContains, ← claimRevealBinderModes] do
     cases := cases.push (caseJson label witness)
   cases := cases ++ (← exploitCases env)
+  cases := cases ++ (← userAxiomCases env)
   -- `Nat.gcd_comm`'s recursor rules compare open bodies that are identical
   -- to their canonical reconstruction; checking must not need their binder
   -- types.

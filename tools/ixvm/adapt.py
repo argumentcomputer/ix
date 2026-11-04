@@ -94,8 +94,8 @@ ROLE_MAP_HELPERS = '''
 
   fn role_ctx_limit(rc: RoleCtx) -> G {
     match load(rc) {
-      RoleCtxNode.Assumed(_) => 0,
-      RoleCtxNode.Mk(_, limit) => limit,
+      RoleCtxNode.Assumed(_, _) => 0,
+      RoleCtxNode.Mk(_, limit, _) => limit,
     }
   }
 '''
@@ -657,12 +657,13 @@ def prune(s, roots, module='IxVM', raw_bytes=True):
 
 def source(ix=ROOT):
     import modules
+    import user_axioms
     parts = []
     owned = []
     for name in FILES:
         ref = source_ref(name)
         text = subprocess.check_output(['git', '-C', str(ix), 'show', ref], text=True)
-        part = text.split('⟦', 1)[1].split('⟧', 1)[0]
+        part = user_axioms.apply(name, text.split('⟦', 1)[1].split('⟧', 1)[0])
         if name == 'RBTreeMap':
             part += CANON_ADDR_CMP_HELPERS
         elif name == 'Kernel/Roles':

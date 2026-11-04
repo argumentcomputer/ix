@@ -12,8 +12,8 @@ module KernelRoles {
   type RoleTable = &RoleTableNode;
 
   enum RoleCtxNode {
-      Mk(RoleTable, Field),
-      Assumed(RoleTable)
+      Mk(RoleTable, Field, RBTreeMap::RBTreeMap<Field>),
+      Assumed(RoleTable, RBTreeMap::RBTreeMap<Field>)
     }
 
   type RoleCtx = &RoleCtxNode;
@@ -102,21 +102,45 @@ module KernelRoles {
       }
     }
 
-  fn role_ctx_of_binding(binding: Bytes::AddressRef) -> RoleCtx {
-      (&(RoleCtxNode::Mk(load_role_table(binding), KernelRoleSpec::group_count())))
-    }
-
   fn role_ctx_assumed(binding: Bytes::AddressRef) -> RoleCtx {
-      (&(RoleCtxNode::Assumed(load_role_table(binding))))
+      (&(RoleCtxNode::Assumed(load_role_table(binding), RBTreeMap::RBTreeMap::Nil)))
     }
 
   fn role_ctx_for_validator(binding: Bytes::AddressRef, validator: Field) -> RoleCtx {
+      load_role_ctx(binding, validator, Options::Option::None)
+    }
+
+  fn validate_user_axioms(tbl: RoleTable, leaves: Lists::List<Bytes::AddressRef>, acc: RBTreeMap::RBTreeMap<Field>)
+        -> RBTreeMap::RBTreeMap<Field> {
+      match (*(leaves)) {
+        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Cons(a, rest) => {
+          assert_eq!(RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0), 0,
+            "claim: user axiom is bound in the role table");
+          match (*(Ingress::get_ci(a))) {
+            KernelTypes::KConstantInfo::Axiom(_, _, u) => {
+              assert_eq!(u, 0, "claim: user axiom is unsafe");
+              validate_user_axioms(tbl, rest, RBTreeMap::rbtree_map_insert(a, 1, acc)) } ,
+            _ => {
+              assert_eq!(0, 1, "claim: axioms tree entry is not an axiom");
+              acc } ,
+          } } ,
+      }
+    }
+
+  fn load_role_ctx(binding: Bytes::AddressRef, validator: Field, axioms_opt: Options::Option<Bytes::AddressRef>) -> RoleCtx {
+      let tbl = load_role_table(binding);
+      let axioms = match axioms_opt {
+        Options::Option::None => {  RBTreeMap::RBTreeMap::Nil } ,
+        Options::Option::Some(ax_root) => {
+          validate_user_axioms(tbl, KernelClaim::load_assumption_tree(ax_root), RBTreeMap::RBTreeMap::Nil) } ,
+      };
       match validator {
-        3 => {  role_ctx_of_binding(binding) } ,
-        4 => {  role_ctx_assumed(binding) } ,
+        3 => {  (&(RoleCtxNode::Mk(tbl, KernelRoleSpec::group_count(), axioms))) } ,
+        4 => {  (&(RoleCtxNode::Assumed(tbl, axioms))) } ,
         _ => {
           assert_eq!(0, 1, "claim: wrong validator identity");
-          role_ctx_of_binding(binding) } ,
+          (&(RoleCtxNode::Mk(tbl, KernelRoleSpec::group_count(), axioms))) } ,
       }
     }
 
@@ -126,15 +150,22 @@ module KernelRoles {
 
   fn role_ctx_table(rc: RoleCtx) -> RoleTable {
       match (*(rc)) {
-        RoleCtxNode::Mk(tbl, _) => {  tbl } ,
-        RoleCtxNode::Assumed(tbl) => {  tbl } ,
+        RoleCtxNode::Mk(tbl, _, _) => {  tbl } ,
+        RoleCtxNode::Assumed(tbl, _) => {  tbl } ,
+      }
+    }
+
+  fn role_ctx_axioms(rc: RoleCtx) -> RBTreeMap::RBTreeMap<Field> {
+      match (*(rc)) {
+        RoleCtxNode::Mk(_, _, axioms) => {  axioms } ,
+        RoleCtxNode::Assumed(_, axioms) => {  axioms } ,
       }
     }
 
   fn role_ctx_is_assumed(rc: RoleCtx) -> Field {
       match (*(rc)) {
-        RoleCtxNode::Mk(_, _) => {  0 } ,
-        RoleCtxNode::Assumed(_) => {  1 } ,
+        RoleCtxNode::Mk(_, _, _) => {  0 } ,
+        RoleCtxNode::Assumed(_, _) => {  1 } ,
       }
     }
 
@@ -173,7 +204,7 @@ module KernelRoles {
 
   fn role_of(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
       match (*(rc)) {
-        RoleCtxNode::Mk(tbl, limit) => {
+        RoleCtxNode::Mk(tbl, limit, _) => {
           let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
           match r1 {
             0 => {  0 } ,
@@ -185,7 +216,7 @@ module KernelRoles {
                 _ => {  0 } ,
               } } ,
           } } ,
-        RoleCtxNode::Assumed(tbl) => {
+        RoleCtxNode::Assumed(tbl, _) => {
           RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0) } ,
       }
     }
@@ -203,13 +234,13 @@ module KernelRoles {
 
   fn role_addr(rc: RoleCtx, r: Field) -> Bytes::AddressRef {
       match (*(rc)) {
-        RoleCtxNode::Mk(tbl, limit) => {
+        RoleCtxNode::Mk(tbl, limit, _) => {
           assert_eq!(UInt32::less_than_fields(KernelRoleSpec::role_group(r), limit), 1,
             "a role is used before its group is admitted");
           let a = role_bound_addr(tbl, r);
           group_admit(tbl, KernelRoleSpec::role_group(r));
           a } ,
-        RoleCtxNode::Assumed(tbl) => {  role_bound_addr(tbl, r) } ,
+        RoleCtxNode::Assumed(tbl, _) => {  role_bound_addr(tbl, r) } ,
       }
     }
 
@@ -221,7 +252,7 @@ module KernelRoles {
 
   fn group_admit(tbl: RoleTable, g: Field) -> () {
       group_admit_needs(tbl, KernelRoleSpec::group_needs(g));
-      let rc = (&(RoleCtxNode::Mk(tbl, group_validation_limit(g))));
+      let rc = (&(RoleCtxNode::Mk(tbl, group_validation_limit(g), RBTreeMap::RBTreeMap::Nil)));
       validate_group_roles(rc, tbl, KernelRoleSpec::group_roles(g))
     }
 
@@ -255,7 +286,7 @@ module KernelRoles {
 
   fn walk_ctx(rc: RoleCtx, a: Bytes::AddressRef) -> RoleCtx {
       match (*(rc)) {
-        RoleCtxNode::Mk(tbl, limit) => {
+        RoleCtxNode::Mk(tbl, limit, _) => {
           let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
           match r1 {
             0 => {  rc } ,
@@ -263,17 +294,17 @@ module KernelRoles {
               let g = KernelRoleSpec::role_group(r1 - 1);
               match UInt32::less_than_fields(g, limit) * role_admission_checks(r1 - 1) {
                 0 => {  rc } ,
-                _ => {  (&(RoleCtxNode::Mk(tbl, group_validation_limit(g)))) } ,
+                _ => {  (&(RoleCtxNode::Mk(tbl, group_validation_limit(g), RBTreeMap::RBTreeMap::Nil))) } ,
               } } ,
           } } ,
-        RoleCtxNode::Assumed(_) => {  rc } ,
+        RoleCtxNode::Assumed(_, _) => {  rc } ,
       }
     }
 
   fn walk_covered(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
       match (*(rc)) {
-        RoleCtxNode::Mk(_, _) => {  0 } ,
-        RoleCtxNode::Assumed(tbl) => {
+        RoleCtxNode::Mk(_, _, _) => {  0 } ,
+        RoleCtxNode::Assumed(tbl, _) => {
           let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
           match r1 {
             0 => {  0 } ,
@@ -552,13 +583,17 @@ module KernelRoles {
   fn axiom_standing(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
       let tbl = role_ctx_table(rc);
       let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
-      let standing = axiom_role_standing(r1);
-      match standing {
-        0 => {  0 } ,
+      match r1 {
+        0 => {  RBTreeMap::rbtree_map_lookup_or_default(a, role_ctx_axioms(rc), 0) } ,
         _ => {
-          match role_of(rc, a) {
+          let standing = axiom_role_standing(r1);
+          match standing {
             0 => {  0 } ,
-            _ => {  standing } ,
+            _ => {
+              match role_of(rc, a) {
+                0 => {  0 } ,
+                _ => {  standing } ,
+              } } ,
           } } ,
       }
     }
@@ -614,8 +649,8 @@ module KernelRoles {
 
   fn role_ctx_limit(rc: RoleCtx) -> Field {
       match (*(rc)) {
-        RoleCtxNode::Assumed(_) => {  0 } ,
-        RoleCtxNode::Mk(_, limit) => {  limit } ,
+        RoleCtxNode::Assumed(_, _) => {  0 } ,
+        RoleCtxNode::Mk(_, limit, _) => {  limit } ,
       }
     }
 }

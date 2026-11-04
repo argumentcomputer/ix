@@ -136,10 +136,10 @@ primitives read through a role binding, and these three fields say which:
   bytes (`Ixon.RoleBinding.address`), naming which constant plays each role;
 - `axioms`: the axioms the claim depends on beyond the standard three
   (`propext`, `Classical.choice`, `Quot.sound`), as the canonical merkle root
-  of their sorted addresses. `none` means the standard three only. No checker
-  admits another axiom yet, so every claim made today carries `none`; the
-  field is reserved so that admitting declared axioms later needs no second
-  format change.
+  of their sorted addresses. `none` means the standard three only. A claim
+  over an environment commits its safe axioms that bind no role
+  (`Ix.ClaimContext.userAxioms`); IxVM checks that every committed address
+  is a safe axiom binding no role and admits exactly those.
 
 Typing assumptions (`assumptions` on the claims themselves) are a different
 thing: constants assumed well-typed and discharged by other claims. An axiom

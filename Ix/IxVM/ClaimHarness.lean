@@ -77,11 +77,17 @@ def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
     constants needs no other support. -/
 def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env := do
   let (records, blobs, hints) ← defaultTableSupport
+  let table? := Ix.Kernel.RoleTable.ofBytes bytes
   let mut env := { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
   let wrapper (info : Ixon.ConstantInfo) : Address × Ixon.Constant :=
     let c : Ixon.Constant := ⟨info, #[], #[], #[]⟩
     (Address.blake3 (Ixon.ser c), c)
   for (a, c) in records do
+    -- A support axiom the table binds to no role would become a user axiom
+    -- of `env` (`Ix.ClaimContext.userAxioms`).
+    if let .axio _ := c.info then
+      if let some table := table? then
+        if !table.bound.any (·.2 == a) then continue
     let mut entries : Array (Address × Ixon.Constant) := #[(a, c)]
     if let .muts members := c.info then
       for (m, i) in members.zipIdx do
@@ -318,12 +324,13 @@ def seedBinding (env : Ixon.Env) (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer :=
   | none => ioBuffer
 
 /-- The full witness byte scope for `target`: the closure of `target`
-    together with every primitive address present in `env` and the role
-    binding's constants (`bindingRoots`), all as walk ROOTS. -/
+    together with every primitive address present in `env`, the role
+    binding's constants (`bindingRoots`) and the user axioms the claim
+    context commits to (`Ix.ClaimContext.userAxioms`), all as walk ROOTS. -/
 def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
   closureFromRoots env
     (#[target] ++ Ix.primAddrSet.toArray.filter env.consts.contains
-      ++ bindingRoots env)
+      ++ bindingRoots env ++ Ix.ClaimContext.userAxioms env)
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
@@ -341,18 +348,29 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   let seedAsm asm buf := match asm with
     | some r => seedTreeAt r trees buf
     | none => .ok buf
+  -- The axioms tree comes from `trees` or, for the context `ofEnv` builds,
+  -- from the environment.
+  let axiomTrees := match Ix.ClaimContext.userAxiomTree env with
+    | some tree => trees.insertIfNew tree.root tree
+    | none => trees
+  let seedAxioms (ctx : Ix.ClaimContext) buf := match ctx.axioms with
+    | some r => seedTreeAt r axiomTrees buf
+    | none => .ok buf
   match claim with
-  | .check _ addr asm =>
+  | .check ctx addr asm =>
     ioBuffer := addEntries env (closureFrom env addr).contains ioBuffer
+    ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .eval _ input output asm =>
+  | .eval ctx input output asm =>
     let inputClosure := closureFrom env input
     let outputClosure := closureFrom env output
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
+    ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .checkEnv _ root asm =>
+  | .checkEnv ctx root asm =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
+    ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
   | .resource root profile =>
@@ -414,6 +432,8 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
   let claim := Ix.Claim.checkEnv ctx ownedTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
+  if let some axiomTree := Ix.ClaimContext.userAxiomTree env then
+    trees := trees.insert axiomTree.root axiomTree
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
@@ -427,7 +447,8 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address)
   let env ← withDefaultRoleBinding env
   let (claim, trees) ← shardCheckEnvClaimTrees env owned assumeBinding
   let primitiveRoots := Ix.primAddrSet.toArray.filter env.consts.contains
-  let closure := closureFromRoots env (owned ++ primitiveRoots ++ bindingRoots env)
+  let closure := closureFromRoots env
+    (owned ++ primitiveRoots ++ bindingRoots env ++ Ix.ClaimContext.userAxioms env)
   pure (claim, closure, trees)
 
 /-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see

@@ -380,12 +380,25 @@ module KernelClaim {
       match asm {
         Options::Option::None => {
 
-          walk_leaves_owned(rc, load_assumption_tree(env_root)) } ,
+          let leaves = load_assumption_tree(env_root);
+          match KernelRoles::role_ctx_axioms(rc) {
+            RBTreeMap::RBTreeMap::Nil => {  walk_leaves_owned(rc, leaves) } ,
+            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {  walk_leaves_transitive(rc, leaves) } ,
+          } } ,
         Options::Option::Some(r) => {
           let owned = load_assumption_tree(env_root);
           let owned_set = addr_set_build(owned, RBTreeMap::RBTreeMap::Nil);
           let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil);
           env_walk_leaves(rc, owned, owned_set, asm_set) } ,
+      }
+    }
+
+  fn walk_leaves_transitive(rc: KernelRoles::RoleCtx, leaves: Lists::List<Bytes::AddressRef>) -> () {
+      match (*(leaves)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(a, rest) => {
+          run_check_transitive(rc, a);
+          walk_leaves_transitive(rc, rest) } ,
       }
     }
 
@@ -469,18 +482,13 @@ module KernelClaim {
       }
     }
 
-  fn get_claim_context(stream: Bytes::Stream) -> (Bytes::AddressRef, Bytes::Stream) {
+  fn get_claim_context(stream: Bytes::Stream) -> (Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Bytes::Stream) {
       let (spec, s) = IxonDeserialize::get_address(stream);
       assert_eq!(Bytes::address_eq(spec, KernelRoleSpec::spec_digest()), 1,
         "claim: specification digest is not this circuit's");
       let (binding, s2) = IxonDeserialize::get_address(s);
       let (axioms, s3) = get_opt_addr(s2);
-      match axioms {
-        Options::Option::None => {  (binding, s3) } ,
-        Options::Option::Some(_) => {
-          assert_eq!(0, 1, "claim: axioms beyond the standard three are not admitted");
-          (binding, s3) } ,
-      }
+      (binding, axioms, s3)
     }
 
   fn get_opt_u64_masked(mb: Field, stream: Bytes::Stream)
@@ -1131,8 +1139,8 @@ module KernelClaim {
       match UInt8::to_field(variant) {
         3 => {
           assert_eq!(UInt8::to_field(validator), 3, "claim: wrong validator identity");
-          let (binding, s) = get_claim_context(s);
-          let rc = KernelRoles::role_ctx_of_binding(binding);
+          let (binding, axioms, s) = get_claim_context(s);
+          let rc = KernelRoles::load_role_ctx(binding, 3, axioms);
           let (input, s) = IxonDeserialize::get_address(s);
           let (output, s) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s);
@@ -1140,8 +1148,8 @@ module KernelClaim {
           KernelEval::run_eval(rc, input, output, asm) } ,
         4 => {
 
-          let (binding, s) = get_claim_context(s);
-          let rc = KernelRoles::role_ctx_for_validator(binding, UInt8::to_field(validator));
+          let (binding, axioms, s) = get_claim_context(s);
+          let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
           let (target, s2) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s2);
           let Lists::Node::Nil = (*(rest));
@@ -1153,8 +1161,8 @@ module KernelClaim {
               env_walk(rc, target, RBTreeMap::RBTreeMap::Nil, asm_set, 0) } ,
           } } ,
         5 => {
-          let (binding, s) = get_claim_context(s);
-          let rc = KernelRoles::role_ctx_for_validator(binding, UInt8::to_field(validator));
+          let (binding, axioms, s) = get_claim_context(s);
+          let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
           let (root, s2) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s2);
           let Lists::Node::Nil = (*(rest));

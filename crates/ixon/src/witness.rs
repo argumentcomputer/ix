@@ -35,7 +35,8 @@
 //! in execution records, so the order is part of the recipe:
 //!
 //! 1. channels ascend: 0, 1, 2, 3, 4, 6;
-//! 2. channel 1 follows the claim's fields: the subject tree of a
+//! 2. channel 1 follows the claim's fields: the tree of the user axioms
+//!    its context commits to when present, then the subject tree of a
 //!    `CheckEnv` claim, then its assumption tree when present;
 //! 3. channels 2, 3 and 4 ascend by address bytes.
 //!
@@ -58,7 +59,8 @@
 //! scope is [`witness_scope`]: the full structural closure of the roots,
 //! including the projection wrappers the kernel synthesizes for every
 //! `Muts` block it reaches, together with every primitive the kernel may
-//! fabricate references to while reducing, and the binding's roots.
+//! fabricate references to while reducing, the binding's roots, and the
+//! user axioms the claim context commits to.
 
 use std::fmt;
 
@@ -273,7 +275,7 @@ impl<'a> Statement<'a> {
   fn new(env: &Env, request: WitnessRequest<'a>) -> Result<Self, WitnessError> {
     match request {
       WitnessRequest::Check { target, assume_binding } => {
-        Ok(Self::check(claim_context(env, assume_binding)?, target))
+        Self::check(env, claim_context(env, assume_binding)?, target)
       },
       WitnessRequest::ShardCheckEnv { owned, assume_binding } => {
         Self::shard(&claim_context(env, assume_binding)?, env, owned)
@@ -282,16 +284,21 @@ impl<'a> Statement<'a> {
     }
   }
 
-  fn check(ctx: ClaimContext, target: &'a Address) -> Self {
-    Self {
+  fn check(
+    env: &Env,
+    ctx: ClaimContext,
+    target: &'a Address,
+  ) -> Result<Self, WitnessError> {
+    let trees = axiom_trees(env, &ctx)?;
+    Ok(Self {
       claim: Claim::Check {
         ctx,
         const_addr: target.clone(),
         assumptions: None,
       },
       roots: std::slice::from_ref(target),
-      trees: Vec::new(),
-    }
+      trees,
+    })
   }
 
   /// The scope of a binding claim is the primitives and the binding's
@@ -325,7 +332,8 @@ impl<'a> Statement<'a> {
     if !consistent {
       return Err(WitnessError::TreeMismatch);
     }
-    let mut trees = vec![subject];
+    let mut trees = axiom_trees(env, ctx)?;
+    trees.push(subject);
     trees.extend(assumptions);
     Ok(Self { claim, roots: owned, trees })
   }
@@ -341,13 +349,30 @@ impl<'a> Statement<'a> {
       payload: Payload::Bytes(claim_bytes.clone().into()),
     }];
     streams.extend(self.trees.iter().map(tree_stream));
-    streams.extend(scope_streams(env, &witness_scope(env, self.roots)));
+    let mut roots = self.roots.to_vec();
+    if self.claim.context().is_some_and(|ctx| ctx.axioms.is_some()) {
+      roots.extend(ClaimContext::user_axioms(env));
+    }
+    streams.extend(scope_streams(env, &witness_scope(env, &roots)));
     streams.push(AdviceStream {
       channel: ROLE_CHANNEL,
       key: StreamKey::Address(binding.address.clone()),
       payload: Payload::Bytes(BytesSource::Heap(binding.bytes.clone())),
     });
     Ok(ClaimWitness { claim: self.claim, claim_bytes, digest, streams })
+  }
+}
+
+/// The tree of the user axioms `ctx` commits to, which must be `env`'s
+/// ([`ClaimContext::user_axiom_tree`]); none when it commits to none.
+fn axiom_trees(
+  env: &Env,
+  ctx: &ClaimContext,
+) -> Result<Vec<AssumptionTree>, WitnessError> {
+  let Some(root) = &ctx.axioms else { return Ok(Vec::new()) };
+  match ClaimContext::user_axiom_tree(env) {
+    Some(tree) if tree.root() == *root => Ok(vec![tree]),
+    _ => Err(WitnessError::TreeMismatch),
   }
 }
 
@@ -400,7 +425,9 @@ pub fn binding_roots(env: &Env) -> Vec<Address> {
 
 /// The byte scope of a witness for `roots`: [`Env::bfs_closure`] of the
 /// roots together with every primitive present in the environment and the
-/// role binding's roots ([`binding_roots`]).
+/// role binding's roots ([`binding_roots`]). A typing claim whose context
+/// commits to user axioms also lists them among its roots, since the kernel
+/// validates their records.
 ///
 /// `bfs_closure` follows `refs`, each projection's block, and every
 /// member and constructor wrapper a `Muts` block derives. The kernel's
@@ -465,13 +492,14 @@ mod tests {
   use ix_common::env::DefinitionSafety;
   use std::sync::Arc;
 
+  /// An unsafe axiom, so that no fixture constant is a user axiom.
   fn axiom_using(refs: Vec<Address>) -> Constant {
     let mut typ: Arc<Expr> = Arc::new(Expr::Sort(0));
     for i in 0..refs.len() {
       typ = Arc::new(Expr::App(typ, Arc::new(Expr::Ref(i as u64, vec![]))));
     }
     Constant::with_tables(
-      ConstantInfo::Axio(Axiom { is_unsafe: false, lvls: 0, typ }),
+      ConstantInfo::Axio(Axiom { is_unsafe: true, lvls: 0, typ }),
       Vec::new(),
       refs,
       Vec::new(),
@@ -583,6 +611,48 @@ mod tests {
       binding.bytes.iter().map(|b| u64::from(*b)).collect::<Vec<_>>()
     );
     assert_eq!(layout(&w), layout(&witness(&env, shard(&owned)).unwrap()));
+  }
+
+  /// A safe axiom the binding binds to no role is a user axiom: the claim
+  /// context commits to its tree, channel 1 ships that tree before the
+  /// subject tree, and the scope carries its record although the shard does
+  /// not reach it.
+  #[test]
+  fn user_axioms_are_committed_and_shipped() {
+    let (env, a, _, _, _) = chain();
+    let safe = Constant::with_tables(
+      ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: Arc::new(Expr::Sort(0)),
+      }),
+      Vec::new(),
+      Vec::new(),
+      Vec::new(),
+    );
+    let mut bytes = Vec::new();
+    safe.put(&mut bytes);
+    let user = Address::hash(&bytes);
+    env.store_const(user.clone(), safe);
+    assert_eq!(ClaimContext::user_axioms(&env), vec![user.clone()]);
+    let tree = AssumptionTree::canonical(std::slice::from_ref(&user)).unwrap();
+    let owned = [a.clone()];
+    let w = witness(&env, shard(&owned)).unwrap();
+    let Claim::CheckEnv { ctx, root, .. } = &w.claim else { panic!() };
+    assert_eq!(ctx.axioms, Some(tree.root()));
+    assert_eq!(w.streams[1].key, StreamKey::Address(tree.root()));
+    assert_eq!(w.streams[2].key, StreamKey::Address(root.clone()));
+    assert!(w.streams.iter().any(|s| s.channel == CONSTANT_CHANNEL
+      && s.key == StreamKey::Address(user.clone())));
+    let check = witness(
+      &env,
+      WitnessRequest::Check { target: &a, assume_binding: false },
+    )
+    .unwrap();
+    assert_eq!(check.streams[1].key, StreamKey::Address(tree.root()));
+    let binding = witness(&env, WitnessRequest::Binding).unwrap();
+    assert!(!binding.streams.iter().any(|s| s.channel == TREE_CHANNEL
+      || s.key == StreamKey::Address(user.clone())));
   }
 
   #[test]

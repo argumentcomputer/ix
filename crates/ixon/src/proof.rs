@@ -1149,10 +1149,46 @@ impl ClaimContext {
     })
   }
 
+  /// The safe axioms of `env` that its role binding binds to no role: every
+  /// constant whose record starts with the `Axio` tag and a clear
+  /// `is_unsafe` flag, other than a bound role. Mirrors
+  /// `Ix.ClaimContext.userAxioms`.
+  pub fn user_axioms(env: &Env) -> Vec<Address> {
+    let Some(binding) = &env.role_binding else {
+      return Vec::new();
+    };
+    let Ok(table) = crate::role_table::RoleTable::from_bytes(&binding.bytes)
+    else {
+      return Vec::new();
+    };
+    let bound: rustc_hash::FxHashSet<Address> =
+      table.bound.into_iter().map(|(_, a)| a).collect();
+    let mut out = Vec::new();
+    for entry in env.consts.iter() {
+      let bytes = entry.value().raw_bytes();
+      if bytes.len() >= 2
+        && bytes[0] == 0xD2
+        && bytes[1] == 0x00
+        && !bound.contains(entry.key())
+      {
+        out.push(entry.key().clone());
+      }
+    }
+    out
+  }
+
+  /// The canonical tree of `env`'s user axioms ([`Self::user_axioms`]), or
+  /// `None` when it has none. Its root is the `axioms` of [`Self::for_env`].
+  pub fn user_axiom_tree(
+    env: &Env,
+  ) -> Option<crate::assumption_tree::AssumptionTree> {
+    crate::assumption_tree::AssumptionTree::canonical(&Self::user_axioms(env))
+  }
+
   /// The context of a claim made today over `env`'s own role binding: this
-  /// specification set ([`SPEC_DIGEST`]) and no axiom beyond the standard
-  /// three, validating the binding. Fails when the environment carries no
-  /// binding.
+  /// specification set ([`SPEC_DIGEST`]) and `env`'s user axioms
+  /// ([`Self::user_axiom_tree`]), validating the binding. Fails when the
+  /// environment carries no binding.
   pub fn for_env(env: &Env) -> Result<Self, String> {
     let binding = env.role_binding.as_ref().ok_or_else(|| {
       "claim context: the environment carries no role binding".to_string()
@@ -1160,7 +1196,7 @@ impl ClaimContext {
     Ok(ClaimContext {
       spec: spec_digest(),
       binding: binding.address.clone(),
-      axioms: None,
+      axioms: Self::user_axiom_tree(env).map(|tree| tree.root()),
       binding_assumed: false,
       literal_class: false,
     })

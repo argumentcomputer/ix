@@ -81,12 +81,20 @@ def resultWrapper (address : Address) (bytes : ByteArray := .empty) : IO Ixon.Pr
     pure bytes
   IO.ofExcept (Ixon.Proof.de bytes)
 
+/-- The axioms beyond the standard three that claims over `env` commit to
+(`Ix.ClaimContext.userAxioms`), by name where `env` names them. -/
+def axiomsNote (env : Ixon.Env) : String :=
+  let names := (Ix.ClaimContext.userAxioms env).map fun a =>
+    (env.getName? a).map (·.pretty) |>.getD (toString a)
+  if names.isEmpty then "no axioms beyond the standard three"
+  else "assuming the user axioms " ++ ", ".intercalate (names.qsort (· < ·)).toList
+
 /-- The acceptance check of `ix verify --aggregate`, applied to a root that
 the untrusted controller produced: the root statement `manifestPath` folds to
 is recomputed from the environment, every constant is audited, and the
 proof must verify against exactly that claim under the certified artifacts. -/
 def accept (p : Cli.Parsed) (ctx : Context) (manifestPath : String) (wrapper : Ixon.Proof) :
-    IO Nat := do
+    IO (Nat × String) := do
   let (env, view, _) ← manifest p manifestPath
   let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
   let root ← IO.ofExcept (Reference.expectedFromManifest env view above)
@@ -94,7 +102,7 @@ def accept (p : Cli.Parsed) (ctx : Context) (manifestPath : String) (wrapper : I
   unless wrapper.claim == root.claim do
     throw (IO.userError "the controller's root does not prove the manifest's statement")
   verifyWrapper ctx .aggr wrapper
-  return count
+  return (count, axiomsNote env)
 
 /-- The acceptance check of `ix aggregate --subtree`/`--reprove-slot`, applied
 to the proof the untrusted controller produced for plan slot `slot`: the
@@ -173,8 +181,8 @@ def runControllerRoot (p : Cli.Parsed) : IO Address := do
       ("binding_proof", toJson (binding.map (toString ·.1))), ("options", options.json)]
     let root ← FormalProver.proveLanes handle config.compress
     let some address := Address.fromString root | throw (IO.userError s!"controller returned {root}")
-    let count ← accept p ctx out (← resultWrapper address)
-    IO.println s!"[aiur aggregate] verified coverage of {count} constants, no undischarged assumptions"
+    let (count, axioms) ← accept p ctx out (← resultWrapper address)
+    IO.println s!"[aiur aggregate] verified coverage of {count} constants, no undischarged assumptions, {axioms}"
     if let some flag := p.flag? "report" then
       IO.FS.writeFile (flag.as! String) (Json.mkObj [("schema", toJson "ix-formal-pipeline/1"),
         ("root", toJson root), ("jobs", toJson lanes), ("proved_leaves", toJson true),
@@ -232,8 +240,8 @@ def run (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[aiur aggregate] slot {slot} still assumes its role binding: only a full \
         root discharges it, so {address} is not a discharged root"
   | none =>
-    let count ← accept p ctx ixes wrapper
-    IO.println s!"[aiur aggregate] verified coverage of {count} constants, no undischarged assumptions"
+    let (count, axioms) ← accept p ctx ixes wrapper
+    IO.println s!"[aiur aggregate] verified coverage of {count} constants, no undischarged assumptions, {axioms}"
   IO.println address
   return 0
 
@@ -282,7 +290,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     loaded.set (some ctx)
     return ctx
   let expected ← match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
-  | none, none => pure none
+  | none, none => pure (none, "")
   | none, some _ => throw (IO.userError "--ixes requires --ixe")
   | some path, none => do
     let env ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))))
@@ -290,13 +298,14 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let envCtx ← IO.ofExcept (Ix.ClaimContext.ofEnv env false)
     let statement : CheckEnvTrees := { ctx := envCtx, subjects, assumptions := none }
     let _ ← IO.ofExcept (auditAggregateConstants env statement)
-    pure (some statement.claim)
+    pure (some statement.claim, s!", {axiomsNote env}")
   | some _, some _ => do
     let (env, view, _) ← manifest p
     let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
     let root ← IO.ofExcept (Reference.expectedFromManifest env view above)
     let _ ← IO.ofExcept (auditAggregateConstants env root)
-    pure (some root.claim)
+    pure (some root.claim, s!", {axiomsNote env}")
+  let (expected, note) := expected
   let proofs := p.variableArgsAs! String
   if proofs.isEmpty then throw (IO.userError "expected an aggregate proof address")
   for hex in proofs do
@@ -307,7 +316,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       verifyCompressed p getContext addr wrapper
     else
       verifyWrapper (← getContext) .aggr wrapper
-      IO.println s!"ok: aggregate {addr} verifies {wrapper.claim}"
+      IO.println s!"ok: aggregate {addr} verifies {wrapper.claim}{note}"
   return 0
 
 end Ix.Cli.FormalAggregate
