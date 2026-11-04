@@ -11,7 +11,7 @@
 #
 # A change that moves the compiler's bytes, or the Rust kernel's verdicts on
 # this artifact, updates these lines in the same commit and says why.
-sha256	0d21dc6d906a86646deea50629d3367c2ab356dcd9a760c08fcf774ea389efd1
-bytes	253648555
-rust-kernel-passed	99427
-rust-kernel-checked	99432
+sha256	e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1
+bytes	253772604
+rust-kernel-passed	99514
+rust-kernel-checked	99519

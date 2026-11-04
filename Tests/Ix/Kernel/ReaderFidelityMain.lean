@@ -87,8 +87,11 @@ def main (args : List String) : IO UInt32 := do
   let (ixon, limit, source) ← match args with
     | ["--check-kernel"] =>
       if ← initStdEnv.pathExists then
-        pure (← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile initStdEnv)), some checkKernelLimit,
-          initStdEnv.toString)
+        match Ixon.deEnv (← IO.FS.readBinFile initStdEnv) with
+        | .ok env => pure (env, some checkKernelLimit, initStdEnv.toString)
+        | .error e =>
+          IO.eprintln s!"reader-fidelity: ignoring stale {initStdEnv} ({e}); compiling in-process"
+          pure (← compileInitStd leanEnv, some checkKernelLimit, "in-process compile")
       else pure (← compileInitStd leanEnv, some checkKernelLimit, "in-process compile")
     | "--compile" :: rest => pure (← compileInitStd leanEnv, rest.head?.bind String.toNat?,
         "in-process compile")

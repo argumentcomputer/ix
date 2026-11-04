@@ -597,6 +597,7 @@ lean_exe «kernel-trust-surface» where
 lean_exe «kernel-codec» where
   root := `Tests.Ix.Kernel.CodecHost
   moreLinkObjs := #[ix_rs_test]
+  needs := #[`@/ix, `@/«kernel-check-ixe»]
 
 /-- Host-compiled Lean declarations through the certified entry
 `Ix.Kernel.Admission.checkBytes`, each with an exact expected verdict. -/
@@ -681,7 +682,7 @@ script "check-kernel" (args) := do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
   run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
-  run "lake" #["build", "--wfail", "kernel-codec"]
+  run "lake" #["build", "--wfail", "kernel-codec", "ix", "kernel-check-ixe"]
   let codec ← IO.Process.output { cmd := ".lake/build/bin/kernel-codec" }
   IO.FS.writeFile ".lake/build/kernel-codec.log" (codec.stdout ++ codec.stderr)
   IO.eprint codec.stderr
@@ -713,6 +714,8 @@ script "check-kernel" (args) := do
   -- records: the fixture closure (the `lake test` suite's check) and the
   -- first records of Init and Std (`Tests/Ix/Kernel/ReaderFidelity.lean`).
   run "lake" #["build", "--wfail", "kernel-reader-fidelity"]
+  if ← System.FilePath.pathExists ".lake/envs/initstd.ixe" then
+    IO.FS.removeFile ".lake/envs/initstd.ixe"
   let mut fidelityLog := ""
   for mode in #["--fixture", "--check-kernel"] do
     let out ← IO.Process.output { cmd := ".lake/build/bin/kernel-reader-fidelity", args := #[mode] }
