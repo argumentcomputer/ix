@@ -196,14 +196,16 @@ pub struct FixedShape {
 }
 
 /// The fixed shape of one more wrap of `proof`, a raw one-shard proof of
-/// the recursive system. A wrap of a one-shard root verifies the same
-/// kind of proof the root itself verified, so the root's heights, raised by
-/// `headroom` doublings, size it. Fixed tables keep their heights; circuits
-/// the root leaves inactive get two rows. The normalizing prover rejects a
-/// wrap that does not fit.
+/// the recursive system, whose execution fills `wrap_rows` rows per circuit
+/// ([`crate::aggregate::wrap_rows`]). The wrap is a join of its own, so it can
+/// need more rows than the root it verifies; each circuit is sized for the
+/// larger of the two, raised by `headroom` doublings
+/// ([`fixed_log_heights`]). The normalizing prover rejects a wrap that does
+/// not fit.
 pub fn fixed_root_shape(
   system: &System,
   proof: &[u8],
+  wrap_rows: &[usize],
   headroom: u8,
 ) -> Result<FixedShape, String> {
   let proof = decode_proof(proof)?;
@@ -220,27 +222,28 @@ pub fn fixed_root_shape(
   let backend = system.verifier();
   let key = aiur::trace::stark::VerifyingKey::from_bytes(system.key())?;
   let circuits = &key.system().circuits;
-  if header.active.len() != circuits.len() {
+  if header.active.len() != circuits.len() || wrap_rows.len() != circuits.len()
+  {
     return Err("the root belongs to another artifact".into());
   }
   let mut degrees = header.log_degrees.iter();
-  let mut log_heights = Vec::with_capacity(circuits.len());
-  for (ci, (circuit, &active)) in
-    circuits.iter().zip(&header.active).enumerate()
-  {
-    let root = if active {
-      Some(*degrees.next().ok_or("missing trace height")?)
-    } else {
-      None
-    };
-    let log = if backend.is_fixed_table(ci) {
-      u8::try_from(circuit.preprocessed_height.ilog2())
-        .map_err(|e| e.to_string())?
-    } else {
-      root.map_or(1, |log| log.saturating_add(headroom).max(1))
-    };
-    log_heights.push(log);
-  }
+  let root = header
+    .active
+    .iter()
+    .map(|&active| {
+      active
+        .then(|| degrees.next().copied().ok_or("missing trace height"))
+        .transpose()
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+  let fixed = circuits
+    .iter()
+    .enumerate()
+    .map(|(ci, circuit)| {
+      backend.is_fixed_table(ci).then_some(circuit.preprocessed_height)
+    })
+    .collect::<Vec<_>>();
+  let log_heights = fixed_log_heights(&fixed, &root, wrap_rows, headroom)?;
   let closed: std::collections::BTreeSet<u64> = proof
     .preamble
     .messages
@@ -257,6 +260,46 @@ pub fn fixed_root_shape(
     return Err("the root closes memory no circuit holds".into());
   }
   Ok(FixedShape { log_heights, memory_traces, claim_len: claim.len() })
+}
+
+/// One log2 height per circuit for a fixed normalization layout. `fixed`
+/// holds each fixed table's preprocessed height, which it keeps; `root` each
+/// circuit's log2 height in the root, `None` where the root leaves it
+/// inactive; `wrap` the rows each circuit fills in the wrap. Every other
+/// circuit gets the larger of its root height and its wrap rows rounded up
+/// to a power of two, raised by `headroom` doublings, and a circuit empty in
+/// both gets two rows.
+pub fn fixed_log_heights(
+  fixed: &[Option<usize>],
+  root: &[Option<u8>],
+  wrap: &[usize],
+  headroom: u8,
+) -> Result<Vec<u8>, String> {
+  if root.len() != fixed.len() || wrap.len() != fixed.len() {
+    return Err("one height per circuit".into());
+  }
+  fixed
+    .iter()
+    .zip(root)
+    .zip(wrap)
+    .map(|((&fixed, &root), &rows)| {
+      if let Some(height) = fixed {
+        return u8::try_from(height.ilog2()).map_err(|e| e.to_string());
+      }
+      let needed = (rows > 0)
+        .then(|| {
+          rows
+            .checked_next_power_of_two()
+            .map(|h| h.ilog2() as u8)
+            .ok_or("circuit row count overflow")
+        })
+        .transpose()?;
+      Ok(match root.max(needed) {
+        Some(log) => log.saturating_add(headroom).max(1),
+        None => 1,
+      })
+    })
+    .collect()
 }
 
 fn bind_error(failure: PrepFailure) -> String {
@@ -449,5 +492,25 @@ mod tests {
     assert!(proof_shards(&[]).is_err());
     assert!(ranges(&[1, 2, 3], 1).is_err());
     assert!(ranges(&[], 0).is_err());
+  }
+
+  #[test]
+  fn fixed_heights_hold_a_wrap_larger_than_its_root() {
+    let fixed = [None, Some(1 << 8), None, None, None];
+    let root = [Some(18), Some(8), Some(10), None, None];
+    let wrap = [275_804, 1 << 8, 3, 5, 0];
+    assert_eq!(
+      fixed_log_heights(&fixed, &root, &wrap, 0).unwrap(),
+      [19, 8, 10, 3, 1]
+    );
+    assert_eq!(
+      fixed_log_heights(&fixed, &root, &wrap, 1).unwrap(),
+      [20, 8, 11, 4, 1]
+    );
+    assert_eq!(
+      fixed_log_heights(&fixed, &root, &[1, 1 << 8, 1, 0, 0], 0).unwrap(),
+      [18, 8, 10, 1, 1]
+    );
+    assert!(fixed_log_heights(&fixed, &root, &wrap[1..], 0).is_err());
   }
 }

@@ -600,18 +600,28 @@ extern "C" fn rs_formal_aggregate_catalog(
   })
 }
 
-/// `Ix.FormalProver.fixedRootLayout : (aggr : @& System) → @& ByteArray →
-/// UInt8 → IO String`: the fixed normalization layout (JSON) of one more
-/// wrap of a raw one-shard aggregate root.
+/// `Ix.FormalProver.fixedRootLayout : (ixvm aggr : @& System) →
+/// @& ByteArray → @& ByteArray → UInt8 → IO String`: the fixed normalization
+/// layout (JSON) of one more wrap of the aggregate root `proof` (an encoded
+/// `IXAGGR2` one-shard proof) of `claim`, sized from both the root's heights
+/// and the rows an execution of the wrap fills.
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_fixed_root_layout(
+  ixvm: Borrowed<'_, FormalSystem>,
   aggr: Borrowed<'_, FormalSystem>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
   proof: LeanByteArray<LeanBorrowed<'_>>,
   headroom: u8,
 ) -> LeanIOResult<LeanOwned> {
   io(|| {
-    let shape =
-      tools::fixed_root_shape(&aggr.get().0, proof.as_bytes(), headroom)?;
+    let (ixvm, aggr) = (&ixvm.get().0, &aggr.get().0);
+    let proof = proof.as_bytes();
+    let raw = proof
+      .strip_prefix(ix_prover::aggregate::AGGR_MAGIC)
+      .ok_or("not a formal aggregate proof")?;
+    let rows =
+      ix_prover::aggregate::wrap_rows(ixvm, aggr, claim.as_bytes(), proof)?;
+    let shape = tools::fixed_root_shape(aggr, raw, &rows, headroom)?;
     let layout = ix_proof_compression::pipeline::FixedRoot::new(
       shape.log_heights,
       shape.memory_traces,

@@ -1,11 +1,11 @@
 /-
   `ix compress layout|normalize|setup` for formal aggregate roots. `layout`
   sizes one fixed layout that holds the root wrap of each given root, from
-  each root's own trace heights; `normalize` proves a root's wrap in that
-  layout and writes the FRI worker's root input. Every root normalized to
-  one layout compresses under the same FRI verifier. `setup` installs the
-  released Ignition proving parameters and the fixed preprocessing every
-  stage reads.
+  each root's trace heights and its wrap's rows; `normalize` proves a root's
+  wrap in that layout and writes the FRI worker's root input. Every root
+  normalized to one layout compresses under the same FRI verifier. `setup`
+  installs the released Ignition proving parameters and the fixed
+  preprocessing every stage reads.
 -/
 module
 public import Cli
@@ -90,12 +90,12 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
 
 def layoutCmd : Cli.Cmd := `[Cli|
   layout VIA runLayout;
-  "Size one fixed root layout that holds the root wrap of every given formal aggregate root, from the roots' own trace heights."
+  "Size one fixed root layout that holds the root wrap of every given formal aggregate root, from the roots' trace heights and the rows each wrap fills."
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
-    headroom : Nat; "Extra doublings of every circuit's height beyond the largest root's (default 0)."
+    headroom : Nat; "Extra doublings of every circuit's height beyond what the largest root and its wrap need (default 0)."
 
   ARGS:
     out : String; "Output layout JSON file."

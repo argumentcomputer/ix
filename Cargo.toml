@@ -76,7 +76,7 @@ libc = "0.2"
 memmap2 = "0.9"
 # Bundle v3.5.1 to fix large-arena failures (microsoft/mimalloc#1309).
 mimalloc = { git = "https://github.com/argumentcomputer/mimalloc_rust.git", rev = "616cc1f130d9ea2a1111a46b4e98c140e078f882", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "0e662c50725c525424a816d1df75cfa07cb1fecd" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "b895ab48482ceda785ec6b16fee9ae73b2b00e44" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"

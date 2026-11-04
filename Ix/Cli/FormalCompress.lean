@@ -18,10 +18,12 @@ def isFormalRoot (proof : ByteArray) : Bool :=
   proof.extract 0 magic.size == magic
 
 /-- The fixed layout of one more wrap of `wrapper`'s root, sized from the
-root's own trace heights raised by `headroom` doublings. -/
+larger of the root's trace heights and the rows an execution of the wrap
+fills, raised by `headroom` doublings. -/
 def layout (ctx : Context) (wrapper : Ixon.Proof) (headroom : Nat) : IO String := do
   unless headroom < 8 do throw (IO.userError "--headroom must be below 8")
-  FormalProver.fixedRootLayout ctx.aggrSystem (← rawProof .aggr wrapper.proof) headroom.toUInt8
+  FormalProver.fixedRootLayout ctx.ixvmSystem ctx.aggrSystem (Ix.Claim.ser wrapper.claim)
+    wrapper.proof headroom.toUInt8
 
 /-- Wrap the root `wrapper` once more and prove the wrap as one trace shard
 with the heights of `layout`, on the device and within the RAM budget `p`

@@ -117,7 +117,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
     "fixed-root" : String; "Normalization layout from `ix compress layout`, instead of one sized from the root. Roots normalized to one layout compress under one recursive verifying key."
-    "headroom" : Nat; "Without --fixed-root: extra doublings of every circuit height beyond the root's own (default 0)."
+    "headroom" : Nat; "Without --fixed-root: extra doublings of every circuit height beyond what the root and its wrap need (default 0)."
     "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default 85% of available memory)."
     "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
     "dev-kzg-srs"; "Generate local development parameters for inner KZG. With --groth16 or --plonk, also requires --dev-final-srs."

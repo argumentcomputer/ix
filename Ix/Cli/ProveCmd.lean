@@ -101,7 +101,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "compress" : String; "With --ixe and --ixes: compress the aggregate root to `kzg`, `plonk` or `groth16` and print the compressed proof's address after the root's. The setup is checked before proving."
     "compression-out" : String; "With --compress: directory for compression stage files; --fresh replaces prior stages there."
     "fixed-root" : String; "With --compress: the normalization layout from `ix compress layout`, instead of one sized from the root."
-    "headroom" : Nat; "With --compress and no --fixed-root: extra doublings of every circuit height beyond the root's own (default 0)."
+    "headroom" : Nat; "With --compress and no --fixed-root: extra doublings of every circuit height beyond what the root and its wrap need (default 0)."
     "dev-kzg-srs";      "With --compress: generate local development inner KZG parameters. Final Groth16/PLONK proofs also require --dev-final-srs."
     "dev-final-srs"; "With --compress groth16 or plonk: generate and cache local development final keys. With --dev-kzg-srs, no Ignition parameters are required."
     "max-ram" : Nat;    "Aiur: total RAM budget across --jobs in GiB, default 85% of available memory."
