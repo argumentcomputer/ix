@@ -1,15 +1,16 @@
 /-
-  `ix compress layout|normalize|setup`. `layout` executes a root wrap
-  of each given aggregate proof and sizes one fixed layout that holds all of
-  them; `normalize` proves a root's wrap in that layout and writes the FRI
-  worker's root input. Every root normalized to one layout compresses under
-  the same FRI verifier. `setup` installs the released Ignition proving
-  parameters and the fixed preprocessing every stage reads.
+  `ix compress layout|normalize|setup` for formal aggregate roots. `layout`
+  sizes one fixed layout that holds the root wrap of each given root, from
+  each root's own trace heights; `normalize` proves a root's wrap in that
+  layout and writes the FRI worker's root input. Every root normalized to
+  one layout compresses under the same FRI verifier. `setup` installs the
+  released Ignition proving parameters and the fixed preprocessing every
+  stage reads.
 -/
 module
 public import Cli
 public import Ix.Cli.Compression
-public import Ix.Cli.FormalAggregate
+public import Ix.Cli.FormalCompress
 
 public section
 namespace Ix.Cli.CompressionCmd
@@ -20,7 +21,40 @@ private def loadRoot (input : String) : IO (Address × Ixon.Proof) := do
     throw <| IO.userError s!"proof {addr} is already compressed"
   let .checkEnv .. := wrapper.claim
     | throw <| IO.userError s!"proof {addr} is not an aggregate CheckEnv proof"
+  unless FormalCompress.isFormalRoot wrapper.proof do
+    throw <| IO.userError s!"proof {addr} is not a formal aggregate root (IXAGGR2); legacy Aiur roots are retired"
   return (addr, wrapper)
+
+/-- The layout holding each root's: the largest height per circuit and every
+memory circuit any root closes. -/
+private def combinedLayout (p : Cli.Parsed) (roots : List (Address × Ixon.Proof))
+    (headroom : Nat) : IO String := do
+  let ctx ← FormalAggregate.context p
+  let mut heights : Array Nat := #[]
+  let mut memory : Array (Nat × Nat) := #[]
+  let mut claimLen : Option Nat := none
+  for (addr, wrapper) in roots do
+    FormalAggregate.verifyWrapper ctx .aggr wrapper
+    IO.eprintln s!"Sizing the root wrap of {addr}."
+    let json ← IO.ofExcept (Lean.Json.parse (← FormalCompress.layout ctx wrapper headroom))
+    let logs ← IO.ofExcept (json.getObjValAs? (Array Nat) "log_heights")
+    let traces ← IO.ofExcept (json.getObjValAs? (Array (Nat × Nat)) "memory_traces")
+    let len ← IO.ofExcept (json.getObjValAs? Nat "claim_len")
+    if heights.isEmpty then heights := logs
+    else if heights.size != logs.size then
+      throw <| IO.userError "roots of different aggregation artifacts"
+    else heights := heights.zipWith max logs
+    for t in traces do
+      unless memory.contains t do memory := memory.push t
+    if claimLen.any (· != len) then
+      throw <| IO.userError "roots with different claim lengths"
+    claimLen := some len
+  let some len := claimLen | throw <| IO.userError "no roots to size"
+  return (Lean.Json.mkObj [
+    ("format", "ix-fixed-root-layout-v1"),
+    ("log_heights", Lean.toJson heights),
+    ("memory_traces", Lean.toJson (memory.qsort (·.1 < ·.1))),
+    ("claim_len", Lean.toJson len)]).pretty
 
 def runLayout (p : Cli.Parsed) : IO UInt32 := do
   try
@@ -29,18 +63,7 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
     if proofs.isEmpty then
       throw <| IO.userError "expected at least one aggregate proof file or address"
     let headroom := ((p.flag? "headroom").map (·.as! Nat)).getD 0
-    let ctx ← FormalAggregate.context p
-    let mut rows := #[]
-    let mut claimLen := 0
-    for hex in proofs do
-      let (addr, wrapper) ← loadRoot hex
-      IO.eprintln s!"Executing the root wrap of {addr}."
-      let (raw, inv) ← FormalAggregate.wrapInvocation ctx wrapper
-      rows := rows.push (← Compression.rootRows ctx.aggrArtifact inv.compress raw)
-      claimLen := (FormalAggregate.outerClaim ctx .aggr wrapper.claim).size
-    let layout ← Compression.rootLayout ctx.aggrArtifact
-      ("[" ++ ",".intercalate rows.toList ++ "]") headroom.toUInt32 claimLen.toUInt32
-    IO.FS.writeFile out layout
+    IO.FS.writeFile out (← combinedLayout p (← proofs.mapM loadRoot) headroom)
     IO.println out
     return 0
   catch e =>
@@ -55,7 +78,7 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
     let layout ← IO.FS.readFile layoutPath
     let ctx ← FormalAggregate.context p
     IO.eprintln s!"Normalizing aggregate root {addr} to {layoutPath}."
-    let root ← FormalAggregate.normalize ctx wrapper layout
+    let root ← FormalCompress.normalize p ctx wrapper layout
     let claim := Ix.Claim.ser wrapper.claim
     Compression.writeRoot ctx.aggr.key root claim
       (FormalAggregate.statementBytes ctx wrapper.claim) layout out
@@ -67,12 +90,12 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
 
 def layoutCmd : Cli.Cmd := `[Cli|
   layout VIA runLayout;
-  "Size one fixed root layout that holds the root wrap of every given aggregate proof."
+  "Size one fixed root layout that holds the root wrap of every given formal aggregate root, from the roots' own trace heights."
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
-    headroom : Nat; "Extra doublings of every circuit's height beyond the largest execution (default 0)."
+    headroom : Nat; "Extra doublings of every circuit's height beyond the largest root's (default 0)."
 
   ARGS:
     out : String; "Output layout JSON file."
@@ -86,6 +109,8 @@ def normalizeCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
+    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default 85% of available memory)."
+    "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
 
   ARGS:
     proof : String; "Aggregate Ixon.Proof file or content address in the ix store."

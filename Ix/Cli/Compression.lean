@@ -24,27 +24,6 @@ remain reusable. A nonempty `fixedRoot` is the JSON layout of `proof`. -/
 opaque compress (vk proof claim statement : @& ByteArray) (fixedRoot dir cacheRoot : @& String)
   (devKzgSrs devFinalSrs : Bool) (finalProof : UInt8) (fresh : Bool := false) : IO ByteArray
 
-/-- The versioned normalization layout for the aggregation backend's key. -/
-@[extern "rs_compression_release_root_layout"]
-opaque releaseRootLayout (vk : @& ByteArray) : IO String
-
-/-- Per-circuit rows of one root wrap execution of `rawProof`, as a JSON array. -/
-@[extern "rs_compression_root_rows"]
-opaque rootRows (aggrArtifact invocationJson : @& String)
-  (rawProof : @& ByteArray) : IO String
-
-/-- The fixed root layout holding every row-count array in the JSON array
-`rows`, with `headroom` extra doublings per circuit. -/
-@[extern "rs_compression_root_layout"]
-opaque rootLayout (aggrArtifact rows : @& String)
-  (headroom claimLen : UInt32) : IO String
-
-/-- Wrap the aggregate root `rawProof` once more and prove the wrap in the fixed
-shape of `layout`; returns the normalized proof bytes. -/
-@[extern "rs_compression_normalize_root"]
-opaque normalizeRoot (aggrArtifact invocationJson : @& String)
-  (rawProof : @& ByteArray) (layout : @& String) : IO ByteArray
-
 /-- Write the FRI worker's root input directory `dir` without compressing. -/
 @[extern "rs_compression_write_root"]
 opaque writeRoot (vk proof claim statement : @& ByteArray) (fixedRoot dir : @& String) : IO Unit

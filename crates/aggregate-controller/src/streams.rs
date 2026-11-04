@@ -162,10 +162,10 @@ fn child<'a>(
 }
 
 /// Shape 0 or 1: one child, passed through.
-pub fn wrap<'a>(keys: Keys<'a>, shape: u8, left: Child<'a>) -> Streams<'a> {
+pub fn wrap<'a>(keys: Keys<'a>, shape: u8, left: Transport<'a>) -> Streams<'a> {
   let mut streams = Streams::default();
   streams.identity(keys.allowed, shape);
-  child(&mut streams, keys, 0, left.transport());
+  child(&mut streams, keys, 0, left);
   streams
 }
 

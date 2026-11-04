@@ -116,6 +116,22 @@ wrapper. The root still has to pass the caller's acceptance check. -/
 @[extern "rs_formal_aggregate_catalog"]
 opaque aggregateCatalog (config : @& String) : IO String
 
+/-- The fixed normalization layout (`ix-fixed-root-layout-v1` JSON) of one
+more wrap of `proof`, a raw one-shard proof of the aggregation `artifact`:
+the root's heights raised by `headroom` doublings, fixed tables at their
+own heights, two rows for circuits the root leaves inactive, and the memory
+circuits the root closes. -/
+@[extern "rs_formal_fixed_root_layout"]
+opaque fixedRootLayout (artifact : @& String) (proof : @& ByteArray) (headroom : UInt8) : IO String
+
+/-- Wrap the aggregate root `proof` (an encoded `IXAGGR2` proof) of `claim`
+once more with `ix_aggr` and prove the wrap as one all-active trace shard at
+the heights of the fixed layout `layout`, from the JSON configuration
+`config` (`ix_prover::aggregate::NormalizeConfig`). The root is verified
+first and the normalized proof after; returns the raw normalized proof. -/
+@[extern "rs_formal_normalize_root"]
+opaque normalizeRoot (config layout : @& String) (claim proof : @& ByteArray) : IO ByteArray
+
 end Ix.FormalProver
 
 end

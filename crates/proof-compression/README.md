@@ -108,18 +108,26 @@ install it.
 
 ## Proving and verification
 
-`ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
-normalize the aggregate root using the versioned
-[version 0.1 layout](verifying-keys/0.1/layout.json).
-`--fixed-root` is an optional layout override. The default layout is the one
-shared by the saved Nat.add_comm, Init and Mathlib normalization runs; it has
-101 circuit heights, 18 claim elements and no additional headroom beyond those
-measured bounds. Its root verifier BLAKE3 is
-`f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc`.
-The default rejects another backend key, and normalization rejects executions
-that exceed the fixed bounds before allocating traces. A larger supported
-layout is a new release profile; compression does not resize it per proof.
-The profile supplies normalization bounds, not a bundled compression verifier.
+`ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` normalize the
+formal aggregate root (an `IXAGGR2` proof) and compress it. The formal
+aggregation artifact (`--aggr-artifact`, or the locally compiled one) supplies
+the backend key and the 18-word statement. Without `--fixed-root`, the layout
+is sized from the root's own trace heights (`--headroom` adds doublings);
+inactive circuits get two rows and fixed tables their own heights, so the
+root must have one trace shard (`ix aggregate --wrap-root` wraps one until it
+does). The aggregate controller verifies the root, wraps it once more with
+`ix_aggr`, proves the wrap as one all-active trace shard at those heights
+(`fixed_log_heights` in the prover options) and verifies that proof, which is
+what compression starts from. `ix compress layout` sizes one layout for
+several roots and `ix compress normalize` writes a root input directory
+without compressing; roots normalized to one layout compress under the same
+FRI verifier.
+
+The bundled [version 0.1 layout](verifying-keys/0.1/layout.json) and the keys
+derived for it belong to the retired legacy Aiur aggregation backend, whose
+root verifier BLAKE3 is
+`f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc`. They do
+not apply to the formal backend's key.
 
 `ix compress` and `ix prove ... --compress` run every stage in the `ix`
 process through `pipeline::compress(CompressInput, &CompressConfig)`: FRI

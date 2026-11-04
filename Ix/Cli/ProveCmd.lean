@@ -27,8 +27,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     && !p.hasFlag "shard" && !p.hasFlag "shards" && !p.hasFlag "exec-only"
   let compress? ← match (p.flag? "compress").map (·.as! String) with
     | none =>
-      if p.hasFlag "fixed-root" || p.hasFlag "dev-kzg-srs" || p.hasFlag "dev-final-srs" || p.hasFlag "compression-out" then
-        IO.eprintln "--fixed-root, --dev-kzg-srs, --dev-final-srs and --compression-out require --compress"; return 1
+      if p.hasFlag "fixed-root" || p.hasFlag "headroom" || p.hasFlag "dev-kzg-srs" || p.hasFlag "dev-final-srs" || p.hasFlag "compression-out" then
+        IO.eprintln "--fixed-root, --headroom, --dev-kzg-srs, --dev-final-srs and --compression-out require --compress"; return 1
       pure none
     | some output =>
       if !canCompress then
@@ -42,7 +42,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
           out := (p.flag? "compression-out").map (·.as! String)
           devKzgSrs := p.hasFlag "dev-kzg-srs"
           devFinalSrs := p.hasFlag "dev-final-srs"
-          fixedRoot := (p.flag? "fixed-root").map (·.as! String) }
+          fixedRoot := (p.flag? "fixed-root").map (·.as! String)
+          headroom := ((p.flag? "headroom").map (·.as! Nat)).getD 0 }
         try
           IO.eprintln s!"Compression will use {← Ix.Cli.CompressCmd.preflight p opts}."
           pure (some opts)
@@ -99,7 +100,8 @@ def proveCmd : Cli.Cmd := `[Cli|
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
     "compress" : String; "With --ixe and --ixes: compress the aggregate root to `kzg`, `plonk` or `groth16` and print the compressed proof's address after the root's. The setup is checked before proving."
     "compression-out" : String; "With --compress: directory for compression stage files; --fresh replaces prior stages there."
-    "fixed-root" : String; "With --compress: override the bundled release normalization layout with a layout from `ix compress layout`."
+    "fixed-root" : String; "With --compress: the normalization layout from `ix compress layout`, instead of one sized from the root."
+    "headroom" : Nat; "With --compress and no --fixed-root: extra doublings of every circuit height beyond the root's own (default 0)."
     "dev-kzg-srs";      "With --compress: generate local development inner KZG parameters. Final Groth16/PLONK proofs also require --dev-final-srs."
     "dev-final-srs"; "With --compress groth16 or plonk: generate and cache local development final keys. With --dev-kzg-srs, no Ignition parameters are required."
     "max-ram" : Nat;    "Aiur: total RAM budget across --jobs in GiB, default 85% of available memory."

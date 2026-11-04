@@ -3,6 +3,7 @@ public import Cli
 public import Ix.Cli.Compression
 public import Ix.Cli.CompressionCmd
 public import Ix.Cli.FormalAggregate
+public import Ix.Cli.FormalCompress
 
 public section
 namespace Ix.Cli.CompressCmd
@@ -17,6 +18,9 @@ structure Options where
   rootVk : Option String := none
   fixedRoot : Option String := none
   fresh : Bool := false
+  /-- Extra doublings of every circuit height when sizing the normalization
+  layout from the root. -/
+  headroom : Nat := 0
 
 /-- Select the proof system independently of its setup policy. -/
 def finalOf : String → Except String UInt8
@@ -31,6 +35,7 @@ def preflight (_p : Cli.Parsed) (opts : Options) : IO String := do
   if let some path := opts.fixedRoot then
     unless ← System.FilePath.pathExists path do
       throw <| IO.userError s!"fixed root layout {path} does not exist"
+  unless opts.headroom < 8 do throw (IO.userError "--headroom must be below 8")
   Compression.describeSetup opts.devKzgSrs opts.devFinalSrs opts.finalProof
 
 /-- Compress the aggregate root `addr`, persist the compressed proof under the
@@ -40,6 +45,8 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
   if Compression.isCompressed wrapper.proof then
     throw <| IO.userError "proof is already compressed"
   let .checkEnv .. := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
+  unless FormalCompress.isFormalRoot wrapper.proof do
+    throw <| IO.userError "compression requires a formal aggregate root (IXAGGR2); legacy Aiur roots are retired"
   -- The statement comes from the same backend `ix verify --aggregate` uses;
   -- a trusted root key only replaces the verifying key the FRI stage checks.
   let ctx ← FormalAggregate.context p
@@ -56,9 +63,9 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
     | none => pure ctx.aggr.key
   let layout ← match opts.fixedRoot with
     | some path => IO.FS.readFile path
-    | none => Compression.releaseRootLayout vk
+    | none => FormalCompress.layout ctx wrapper opts.headroom
   IO.eprintln s!"Normalizing aggregate root {addr} for compression."
-  let root ← FormalAggregate.normalize ctx wrapper layout
+  let root ← FormalCompress.normalize p ctx wrapper layout
   Compression.releaseGpuMemory
   IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
   let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
@@ -85,7 +92,8 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
       devFinalSrs := p.hasFlag "dev-final-srs"
       out := (p.flag? "out").map (·.as! String)
       rootVk := (p.flag? "root-vk").map (·.as! String)
-      fixedRoot := (p.flag? "fixed-root").map (·.as! String) }
+      fixedRoot := (p.flag? "fixed-root").map (·.as! String)
+      headroom := ((p.flag? "headroom").map (·.as! Nat)).getD 0 }
     let setup ← preflight p opts
     let input := p.positionalArg! "proof" |>.as! String
     let (addr, wrapper) ← Compression.readProofInput input
@@ -108,7 +116,10 @@ def compressCmd : Cli.Cmd := `[Cli|
     "fresh"; "Replace prior compression stages in --out (or the default output) with newly generated proofs. Reuse parameters, proving keys and fixed preprocessing."
     "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
-    "fixed-root" : String; "Override the bundled release normalization layout with a layout from `ix compress layout`."
+    "fixed-root" : String; "Normalization layout from `ix compress layout`, instead of one sized from the root. Roots normalized to one layout compress under one recursive verifying key."
+    "headroom" : Nat; "Without --fixed-root: extra doublings of every circuit height beyond the root's own (default 0)."
+    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default 85% of available memory)."
+    "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
     "dev-kzg-srs"; "Generate local development parameters for inner KZG. With --groth16 or --plonk, also requires --dev-final-srs."
     "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no Ignition parameters are required."
     "plonk"; "Add a final PLONK proof using the compiled curve and selected setup."

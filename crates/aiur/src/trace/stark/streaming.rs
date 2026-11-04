@@ -145,6 +145,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     (self.members.len()..self.members.len() + self.tables.len()).contains(&ci)
   }
 
+  /// Whether circuit `ci` is a fixed table, whose height never changes.
+  pub fn is_fixed_table(&self, ci: usize) -> bool {
+    self.fixed_circuit(ci)
+  }
+
   pub fn record_rows(
     &self,
     record: &Execution<B>,
@@ -227,6 +232,47 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let layout = BatchLayout {
       version: 1,
       shards,
+      memory_intervals: self.record_shape(record)?.memory_intervals,
+    };
+    self.validate_layout(&rows, &layout)?;
+    Ok(layout)
+  }
+
+  /// One trace shard with every circuit active at the log2 heights `logs`,
+  /// in system circuit order. Fixed tables must keep their own heights.
+  pub fn fixed_layout(
+    &self,
+    record: &Execution<B>,
+    logs: &[u8],
+  ) -> Result<BatchLayout, String> {
+    let rows = self.record_rows(record)?;
+    if logs.len() != rows.len() {
+      return Err("fixed layouts need one log-height per circuit".into());
+    }
+    let circuits = rows
+      .iter()
+      .zip(logs)
+      .enumerate()
+      .map(|(ci, (&n, &log))| {
+        let height = (log < 32)
+          .then(|| 1usize << log)
+          .ok_or("fixed log-height exceeds the Goldilocks domain")?;
+        if self.fixed_circuit(ci) && height != n {
+          return Err(format!(
+            "circuit {ci} is a fixed table of {n} rows, not {height}"
+          ));
+        }
+        if n > height {
+          return Err(format!(
+            "circuit {ci} needs {n} rows; the fixed layout allows {height}"
+          ));
+        }
+        Ok(CircuitSlice { first: 0, rows: n, height })
+      })
+      .collect::<Result<Vec<_>, String>>()?;
+    let layout = BatchLayout {
+      version: 1,
+      shards: vec![ShardLayout { circuits, fixed_counts: true }],
       memory_intervals: self.record_shape(record)?.memory_intervals,
     };
     self.validate_layout(&rows, &layout)?;
@@ -819,6 +865,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   ) -> Result<planning::BatchPlan, String> {
     options.validate()?;
     if let Some(layout) = options.forced_layout()? {
+      return self.plan_forced(record, layout, options, resident);
+    }
+    if let Some(logs) = &options.fixed_log_heights {
+      let layout = self.fixed_layout(record, logs)?;
       return self.plan_forced(record, layout, options, resident);
     }
     if options.packing == Some(false) {

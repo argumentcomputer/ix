@@ -56,22 +56,6 @@ def rawProof (kind : ChildKind) (proof : ByteArray) : IO ByteArray := do
     throw (IO.userError "proof belongs to a different backend or recursion kind")
   return proof.extract magic.size proof.size
 
-/-- Build the shape-1 (`(.aggr, none)`) recursive wrap invocation for an
-aggregate root `wrapper`. Returns `(rawProofBytes, invocationJson)`. -/
-def wrapInvocation (ctx : Context) (wrapper : Ixon.Proof) : IO (ByteArray × Json) := do
-  let raw ← rawProof .aggr wrapper.proof
-  let shape := Aggr.shapeCode (.aggr, none)
-  let io := Aggr.extendChild (Aggr.extendVk (Aggr.extendIdentity default ctx.allowed shape) .aggr ctx.aggr.key) 0 raw
-    (MultiStark.serializeClaims #[outerClaim ctx .aggr wrapper.claim])
-  let claimBytes := Ix.Claim.ser wrapper.claim
-  let inv := FormalAiur.invocation (Aggr.pubInput ctx.allowed claimBytes) io "MultiStark::ix_aggr"
-  return (raw, inv)
-
-/-- Normalize `wrapper`'s aggregate root to `layout` under `ctx`. -/
-def normalize (ctx : Context) (wrapper : Ixon.Proof) (layout : String) : IO ByteArray := do
-  let (raw, inv) ← wrapInvocation ctx wrapper
-  Compression.normalizeRoot ctx.aggrArtifact inv.compress raw layout
-
 /-- The root statement a compressed proof of `claim` must expose: the public
 claim of the backend's `MultiStark::ix_aggr` entrypoint, serialized as one
 batch claim. -/
