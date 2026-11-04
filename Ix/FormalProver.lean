@@ -116,6 +116,14 @@ wrapper. The root still has to pass the caller's acceptance check. -/
 @[extern "rs_formal_aggregate_catalog"]
 opaque aggregateCatalog (config : @& String) : IO String
 
+/-- Wrap the aggregate root `proof` (an encoded `IXAGGR2` proof) of `claim`
+once more with `ix_aggr` and prove the wrap as one all-active trace shard at
+the heights of the fixed layout `layout` (`.ixl` bytes), from the JSON configuration
+`config` (`ix_prover::aggregate::NormalizeConfig`). The root is verified
+first and the normalized proof after; returns the raw normalized proof. -/
+@[extern "rs_formal_normalize_root"]
+opaque normalizeRoot (config : @& String) (layout claim proof : @& ByteArray) : IO ByteArray
+
 end Ix.FormalProver
 
 end

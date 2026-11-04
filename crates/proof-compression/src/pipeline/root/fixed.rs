@@ -351,6 +351,112 @@ mod tests {
   };
   use p3_matrix::dense::RowMajorMatrix;
 
+  /// A formal Aiur root proved in a fixed one-shard layout verifies, and
+  /// compresses through FRI, under the fixed verifier of its artifact.
+  #[test]
+  fn normalized_formal_root_matches_the_fixed_verifier() -> Result<()> {
+    use aiur::{
+      Program,
+      trace::{
+        TraceArtifact, TracePlan,
+        stark::{Backend, Parameters, planning},
+      },
+    };
+    #[derive(serde::Deserialize)]
+    struct Package {
+      program: Program,
+      trace: TraceArtifact,
+    }
+    // Calls, a fixed map table and memory, the shape of `crates/aiur`'s
+    // `proves_calls_fixed_maps_and_rom_and_verifies_without_record`.
+    let package: Package = serde_json::from_str(include_str!(
+      "../../../tests/fixtures/formal-root.json"
+    ))?;
+    let program = package.program.check()?;
+    let plan = TracePlan::new(&program, package.trace)?;
+    let backend =
+      Backend::for_batch(&plan, Parameters { log_blowup: 1, num_queries: 2 })?;
+    let key = AiurVerifyingKey::from_bytes(&backend.verifying_key_bytes()?)?;
+    let config = || {
+      GoldilocksBlake3Config::new(
+        CommitmentParameters { log_blowup: 2, cap_height: 0 },
+        FriParameters {
+          log_final_poly_len: 0,
+          max_log_arity: 1,
+          num_queries: 2,
+          commit_proof_of_work_bits: 0,
+          query_proof_of_work_bits: 0,
+        },
+      )
+    };
+    let entry = "root";
+    let inputs = [3, 4];
+    let records = inputs
+      .iter()
+      .map(|&input| program.execute(entry, vec![input]))
+      .collect::<std::result::Result<Vec<_>, _>>()?;
+    // One layout for every record: each circuit one doubling above the
+    // largest record, fixed tables at their own heights.
+    let mut logs = vec![0u8; key.num_circuits()];
+    for record in &records {
+      for (ci, &rows) in backend.record_rows(record)?.iter().enumerate() {
+        logs[ci] = logs[ci].max(if backend.is_fixed_table(ci) {
+          u8::try_from(rows.ilog2())?
+        } else {
+          u8::try_from(rows.max(1).next_power_of_two().ilog2())? + 1
+        });
+      }
+    }
+    let options = planning::Options {
+      fixed_log_heights: Some(logs.clone()),
+      max_ram_bytes: Some(1 << 30),
+      ..Default::default()
+    };
+    let mut roots = vec![];
+    let mut closed = std::collections::BTreeSet::new();
+    for (record, input) in records.iter().zip(inputs) {
+      let planned = backend.plan_record(record, &options, 0)?;
+      let proof = backend.prove_incremental(
+        record,
+        entry,
+        &[input],
+        &record.output,
+        planned.layout.as_ref().ok_or("no layout")?,
+        planned.retention(),
+      )?;
+      let header = &proof.preamble.headers[0];
+      assert!(header.active.iter().all(|&a| a));
+      assert_eq!(header.log_degrees, logs);
+      closed.extend(
+        proof.preamble.messages.iter().map(|m| m.args[1].as_canonical_u64()),
+      );
+      roots.push((backend.claim(entry, &[input], &record.output)?, proof));
+    }
+    let memory: Vec<_> = backend
+      .memory_circuits()
+      .into_iter()
+      .filter(|&(width, _)| closed.contains(&(width as u64)))
+      .collect();
+    let fixed = FixedRoot::new(logs.clone(), memory, roots[0].0.len())?;
+    // Derived before, and independently of, every proof.
+    let local = FriVerifier::derive(
+      fixed.circuit(&key, Default::default())?,
+      config(),
+      1 << 16,
+    )?;
+    for (claim, proof) in &roots {
+      let prepared = fixed.prepare(&key, proof, claim, Default::default())?;
+      let (verifier, compressed) = prepared.prove_fri(config(), 1 << 16)?;
+      assert_eq!(verifier.to_bytes()?, local.to_bytes()?);
+      local.verify(&compressed, claim)?;
+      let mut wrong = claim.clone();
+      wrong[2] += Val::ONE;
+      assert!(local.verify(&compressed, &wrong).is_err());
+      assert!(fixed.prepare(&key, proof, &wrong, Default::default()).is_err());
+    }
+    Ok(())
+  }
+
   #[test]
   fn normalized_aiur_execution_matches_the_fixed_verifier() -> Result<()> {
     use aiur::{

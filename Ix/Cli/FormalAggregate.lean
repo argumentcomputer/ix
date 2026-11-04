@@ -67,11 +67,6 @@ def wrapInvocation (ctx : Context) (wrapper : Ixon.Proof) : IO (ByteArray × Byt
   let inv := FormalAiur.invocation (Aggr.pubInput ctx.allowed claimBytes) io "MultiStark::ix_aggr"
   return (raw, inv)
 
-/-- Normalize `wrapper`'s aggregate root to `layout` (`.ixl` bytes) under `ctx`. -/
-def normalize (ctx : Context) (wrapper : Ixon.Proof) (layout : ByteArray) : IO ByteArray := do
-  let (raw, inv) ← wrapInvocation ctx wrapper
-  Compression.normalizeRoot ctx.aggrArtifact inv raw layout
-
 /-- The root statement a compressed proof of `claim` must expose: the public
 claim of the backend's `MultiStark::ix_aggr` entrypoint, serialized as one
 batch claim. -/

@@ -47,6 +47,11 @@ pub struct Options {
   /// report whose `plan.layout` holds one; [`Options::read`] loads it into
   /// `layout`.
   pub layout_file: Option<String>,
+  /// Prove as one trace shard with every circuit active at these log2
+  /// heights, in system circuit order; fixed tables keep their own heights.
+  /// Every record that fits proves in the same shape, which is what a
+  /// verifier circuit fixed in advance needs.
+  pub fixed_log_heights: Option<Vec<u8>>,
 }
 impl Options {
   pub fn read(
@@ -103,6 +108,11 @@ impl Options {
     }
     if self.layout.is_some() && self.layout_file.is_some() {
       return Err("give either a layout or a layout file".into());
+    }
+    if self.fixed_log_heights.is_some()
+      && (self.layout.is_some() || self.layout_file.is_some())
+    {
+      return Err("give either a layout or fixed log-heights".into());
     }
     Ok(())
   }
