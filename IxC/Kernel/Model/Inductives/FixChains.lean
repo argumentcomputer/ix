@@ -28,7 +28,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w'
 
@@ -195,7 +195,7 @@ theorem ShadowRel.snoc {nP : Nat} {ks : List RecFieldKind} {as as' : List V}
     exact ha hr
 
 omit [SetTheory V] in
-theorem mem_fvarLeaves_of_getAppArgs : ∀ (e a : Expr), a ∈ e.getAppArgs →
+theorem mem_fvarLeaves_of_getAppArgs : ∀ (e a : Expr md), a ∈ e.getAppArgs →
     ∀ l ∈ a.fvarLeaves, l ∈ e.fvarLeaves
   | .app f a', a, ha, l, hl => by
     simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at ha
@@ -209,7 +209,7 @@ theorem mem_fvarLeaves_of_getAppArgs : ∀ (e a : Expr), a ∈ e.getAppArgs →
   | .const _ _, _, ha, _, _ => absurd ha (by simp [Expr.getAppArgs])
   | .lam _ _ _, _, ha, _, _ => absurd ha (by simp [Expr.getAppArgs])
   | .forallE _ _ _, _, ha, _, _ => absurd ha (by simp [Expr.getAppArgs])
-  | .letE _ _ _, _, ha, _, _ => absurd ha (by simp [Expr.getAppArgs])
+  | .letE _ _ _ _, _, ha, _, _ => absurd ha (by simp [Expr.getAppArgs])
   | .proj _ _ _, _, ha, _, _ => absurd ha (by simp [Expr.getAppArgs])
   | .lit _, _, ha, _, _ => absurd ha (by simp [Expr.getAppArgs])
 

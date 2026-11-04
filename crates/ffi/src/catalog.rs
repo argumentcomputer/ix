@@ -15,6 +15,7 @@ use lean_ffi::object::{LeanBorrowed, LeanIOResult, LeanOwned, LeanString};
 fn member_json(m: &ixon::catalog::CatalogMember) -> serde_json::Value {
   serde_json::json!({
     "envRoot": m.env_root.hex(),
+    "binding": m.binding.hex(),
     "constCount": m.const_count,
     "label": m.label,
     "toolchain": m.toolchain,

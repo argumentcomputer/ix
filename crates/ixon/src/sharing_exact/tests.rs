@@ -38,6 +38,9 @@ use crate::univ::Univ;
 
 type E = Arc<Expr>;
 
+mod family;
+mod wide;
+
 fn hex(b: &[u8]) -> String {
   b.iter().map(|x| format!("{x:02x}")).collect()
 }
@@ -667,13 +670,11 @@ fn structural_ids_follow_height_then_key() {
   assert_eq!(dag.roots(), &[10, 9, 4, 5, 3, 8, 6, 7]);
   for (i, node) in dag.nodes().iter().enumerate() {
     for &c in node.children().as_slice() {
-      assert!((c as usize) < i);
+      assert!(c < i);
     }
     if i > 0 {
       let (h0, h1) = (dag.heights()[i - 1], dag.heights()[i]);
-      assert!(
-        h0 < h1 || (h0 == h1 && dag.key(i as u32 - 1) < dag.key(i as u32))
-      );
+      assert!(h0 < h1 || (h0 == h1 && dag.key(i - 1) < dag.key(i)));
     }
   }
 }
@@ -827,8 +828,8 @@ fn fixed_dictionary_matches_enumeration() {
     for _ in 0..4 {
       // An arbitrary dictionary: random subset, random order, and either
       // consecutive or boundary-straddling indices.
-      let mut chosen: Vec<u32> =
-        (0..dag.len() as u32).filter(|_| rng.pct(45)).collect();
+      let mut chosen: Vec<TermId> =
+        (0..dag.len()).filter(|_| rng.pct(45)).collect();
       for i in (1..chosen.len()).rev() {
         chosen.swap(i, rng.below(i as u64 + 1) as usize);
       }
@@ -844,14 +845,14 @@ fn fixed_dictionary_matches_enumeration() {
           pos as u64
         };
         dict.insert(t, idx);
-        avail.push((terms[t as usize].clone(), idx));
+        avail.push((terms[t].clone(), idx));
       }
-      for t in 0..dag.len() as u32 {
-        if variant_count(&terms[t as usize], &avail) > 20_000 {
+      for (t, term) in terms.iter().enumerate() {
+        if variant_count(term, &avail) > 20_000 {
           skipped += 1;
           continue;
         }
-        let (len, bytes) = brute_best(&terms[t as usize], &avail);
+        let (len, bytes) = brute_best(term, &avail);
         assert_eq!(
           dictionary_cost(&dag, &dict, t),
           Len::new(len),
@@ -1009,7 +1010,7 @@ fn fixture_nine_refs_minimum_is_578() {
   assert_eq!(bytes.len(), 578);
   // Ref(i,[0,0,0]) has term ID i; the least tied sequence keeps ID order,
   // which already gives the hot atom (ID 2) a one-byte index.
-  assert_eq!(res.table_terms, (0..9).collect::<Vec<u32>>());
+  assert_eq!(res.table_terms, (0..9).collect::<Vec<TermId>>());
   assert_eq!(exact.sharing[2].as_ref(), hot.as_ref());
 }
 
@@ -1044,7 +1045,7 @@ fn fixture_two_minima_pins_the_tie() {
   let bytes = roundtrip(&exact);
   let dag = SharingDag::from_constant(&c, &limits()).unwrap();
   let terms = dag.term_exprs();
-  let id = |e: &E| terms.iter().position(|t| t == e).unwrap() as u32;
+  let id = |e: &E| terms.iter().position(|t| t == e).unwrap();
   eprintln!(
     "two minima: exact {} {} Q={:?} (A={}, B={})",
     bytes.len(),
@@ -1131,7 +1132,7 @@ fn optimizer_matches_exhaustive_oracle() {
     let terms = dag.term_exprs();
     for i in 0..q.len() {
       for j in i + 1..q.len() {
-        if contains(&terms[q[i] as usize], &terms[q[j] as usize]) {
+        if contains(&terms[q[i]], &terms[q[j]]) {
           parent_first += 1;
         }
       }
@@ -1200,7 +1201,7 @@ fn representation_independence() {
   // Results (or errors) that do not depend on the input's pointer layout.
   fn outcome(
     r: Result<ExactSharingResult, SharingError>,
-  ) -> Result<(Vec<u32>, u64, Vec<u8>), SharingError> {
+  ) -> Result<(Vec<TermId>, u64, Vec<u8>), SharingError> {
     r.map(|x| {
       let mut b = Vec::new();
       for e in x.roots.iter().chain(&x.sharing) {
@@ -1411,7 +1412,7 @@ fn forced_states_cross_tag0_and_share_width_boundaries() {
   let mut meter = Meter::new(&lim);
   for k in [0usize, 7, 8, 9, 127, 128, 129, 255, 256, 257, 300] {
     // Store the atoms in reverse ID order so every width class is used.
-    let q: Vec<u32> = (0..k as u32).rev().collect();
+    let q: Vec<TermId> = (0..k).rev().collect();
     let predicted = sequence_len(&dag, &q).unwrap().exact().unwrap();
     let (rw, table) = materialize_sequence(
       &dag,
@@ -1463,7 +1464,7 @@ fn pruning_never_changes_the_result() {
   let mut states = [0u64; MODES.len()];
   for seed in 0..150 {
     let c = gen_constant(seed + 40_000, 4, 18, 5);
-    let mut results: Vec<(Vec<u8>, Vec<u32>)> = Vec::new();
+    let mut results: Vec<(Vec<u8>, Vec<TermId>)> = Vec::new();
     let mut seen = [0u64; MODES.len()];
     let mut complete = true;
     for (i, (p, m, g)) in MODES.into_iter().enumerate() {
@@ -1534,11 +1535,11 @@ fn ordering_parent_stored_before_its_inlined_descendant() {
   };
   let dag = SharingDag::from_constant(&c, &limits()).unwrap();
   let terms = dag.term_exprs();
-  let id = |e: &E| terms.iter().position(|t| t == e).unwrap() as u32;
+  let id = |e: &E| terms.iter().position(|t| t == e).unwrap();
   let (exact, res) =
     normalize_constant_sharing_with_stats(&c, &limits()).unwrap();
   let bytes = roundtrip(&exact);
-  let hot_ids: Vec<u32> = hot.iter().map(id).collect();
+  let hot_ids: Vec<TermId> = hot.iter().map(id).collect();
   let mut want = hot_ids.clone();
   want.extend([id(&p), id(&d)]);
   eprintln!(
@@ -1602,7 +1603,7 @@ fn telescope_cuts_at_header_boundaries_match_enumeration() {
           .unwrap();
       let terms = dag.term_exprs();
       // The spine suffixes of the root, outermost first.
-      let mut spine: Vec<u32> = vec![dag.roots()[0]];
+      let mut spine: Vec<TermId> = vec![dag.roots()[0]];
       loop {
         let cur = *spine.last().unwrap();
         let next = match dag.node(cur) {
@@ -1627,11 +1628,11 @@ fn telescope_cuts_at_header_boundaries_match_enumeration() {
           }
           let idx = indices[(slot + trial) % indices.len()];
           dict.insert(t, idx);
-          avail.push((terms[t as usize].clone(), idx));
+          avail.push((terms[t].clone(), idx));
         }
         for &t in &[spine[0], spine[spine.len() / 2]] {
-          assert!(variant_count(&terms[t as usize], &avail) <= 64);
-          let (len, bytes) = brute_best(&terms[t as usize], &avail);
+          assert!(variant_count(&terms[t], &avail) <= 64);
+          let (len, bytes) = brute_best(&terms[t], &avail);
           assert_eq!(
             dictionary_cost(&dag, &dict, t),
             Len::new(len),
@@ -1660,8 +1661,7 @@ fn every_valid_incoming_encoding_normalizes_identically() {
     for _ in 0..8 {
       // Any distinct subterms in any order, including non-candidates and
       // entries nothing will reference.
-      let mut q: Vec<u32> =
-        (0..dag.len() as u32).filter(|_| rng.pct(35)).collect();
+      let mut q: Vec<TermId> = (0..dag.len()).filter(|_| rng.pct(35)).collect();
       for i in (1..q.len()).rev() {
         q.swap(i, rng.below(i as u64 + 1) as usize);
       }
@@ -1751,16 +1751,19 @@ fn oracle_extended() {
 /// Independent exhaustive table-order search: every ordered sequence of
 /// distinct terms from `pool`, each evaluated exactly, without state
 /// merging or pruning. Returns the least `(variable length, Q)`.
-fn brute_force_tables(dag: &SharingDag, pool: &[u32]) -> (Len, Vec<u32>, u64) {
+fn brute_force_tables(
+  dag: &SharingDag,
+  pool: &[TermId],
+) -> (Len, Vec<TermId>, u64) {
   use super::dict::{DenseIndex, all_costs};
   fn go(
     dag: &SharingDag,
     own: &[Len],
-    pool: &[u32],
+    pool: &[TermId],
     dict: &mut DenseIndex,
-    q: &mut Vec<u32>,
+    q: &mut Vec<TermId>,
     f: Len,
-    best: &mut (Len, Vec<u32>),
+    best: &mut (Len, Vec<TermId>),
     visited: &mut u64,
   ) {
     *visited += 1;
@@ -1768,7 +1771,7 @@ fn brute_force_tables(dag: &SharingDag, pool: &[u32]) -> (Len, Vec<u32>, u64) {
     let costs = all_costs(dag.nodes(), own, &*dict, &mut work);
     let mut total = f.plus(Len::new(tag0_len(q.len() as u64)));
     for &r in dag.roots() {
-      total = total.plus(costs[r as usize]);
+      total = total.plus(costs[r]);
     }
     if (total, &*q) < (best.0, &best.1) {
       *best = (total, q.clone());
@@ -1777,7 +1780,7 @@ fn brute_force_tables(dag: &SharingDag, pool: &[u32]) -> (Len, Vec<u32>, u64) {
       if q.contains(&t) {
         continue;
       }
-      let nf = f.plus(costs[t as usize]);
+      let nf = f.plus(costs[t]);
       dict.set(t, q.len() as u64);
       q.push(t);
       go(dag, own, pool, dict, q, nf, best, visited);
@@ -1804,7 +1807,7 @@ fn brute_force_tables(dag: &SharingDag, pool: &[u32]) -> (Len, Vec<u32>, u64) {
 
 fn check_against_brute_force(c: &Constant) -> u64 {
   let dag = SharingDag::from_constant(c, &limits()).unwrap();
-  let pool: Vec<u32> = (0..dag.len() as u32).collect();
+  let pool: Vec<TermId> = (0..dag.len()).collect();
   let (len, q, visited) = brute_force_tables(&dag, &pool);
   let (exact, res) =
     normalize_constant_sharing_with_stats(c, &limits()).unwrap();
@@ -1930,6 +1933,39 @@ fn deep_inputs_are_handled_iteratively() {
   assert!(bytes.len() < put(&c).len());
 }
 
+/// Deep inputs normalize as bytes on a 1 MiB stack: the traversals use
+/// explicit stacks, and the decoded input and the outputs drop
+/// iteratively.
+#[test]
+fn deep_inputs_normalize_on_a_small_stack() {
+  std::thread::Builder::new()
+    .stack_size(1 << 20)
+    .spawn(|| {
+      let limits = ExactSharingLimits::default();
+      for shape in 0..2u64 {
+        let mut e = Expr::var(0);
+        for i in 0..100_000u64 {
+          e = if shape == 0 {
+            Expr::app(Expr::var(i % 2), e)
+          } else {
+            Expr::prj(0, i % 2, e)
+          };
+        }
+        let bytes = put(&axiom(e, 1));
+        let out =
+          normalize_constant_bytes_tiered(ShareLayout::TagN, &bytes, &limits)
+            .unwrap();
+        let again =
+          normalize_constant_bytes_tiered(ShareLayout::TagN, &out, &limits)
+            .unwrap();
+        assert_eq!(again, out);
+      }
+    })
+    .unwrap()
+    .join()
+    .unwrap();
+}
+
 #[test]
 fn candidate_terms_apply_r1_and_r2() {
   // T2 -> T2: Prop is one byte (R2), the root occurs once (R1).
@@ -1953,7 +1989,7 @@ fn uni(w: u64, roots: &[E]) -> UniformSharingResult {
   optimize_sharing_uniform(w, roots, &limits()).unwrap()
 }
 
-fn uni_reference(w: u64, roots: &[E], deg2: bool) -> (u64, Vec<u32>) {
+fn uni_reference(w: u64, roots: &[E], deg2: bool) -> (u64, Vec<TermId>) {
   let lim = limits();
   let mut meter = Meter::new(&lim);
   let dag = SharingDag::from_expanded_roots(roots, &lim).unwrap();
@@ -1962,12 +1998,12 @@ fn uni_reference(w: u64, roots: &[E], deg2: bool) -> (u64, Vec<u32>) {
 
 /// Exact uniform-model length of a stored set (entries in any dependency
 /// order see every stored descendant).
-fn uniform_set_len(dag: &SharingDag, w: u64, set: &[u32]) -> u64 {
+fn uniform_set_len(dag: &SharingDag, w: u64, set: &[TermId]) -> u64 {
   let nodes = dag.nodes();
   let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
   let mut index = vec![None; nodes.len()];
   for &t in set {
-    index[t as usize] = Some(0);
+    index[t] = Some(0);
   }
   let dict = UniformIndex { index, width: w };
   let mut work = 0;
@@ -1976,20 +2012,11 @@ fn uniform_set_len(dag: &SharingDag, w: u64, set: &[u32]) -> u64 {
   for &t in set {
     let hide = Hide { inner: &dict, hidden: t };
     total = total.plus(
-      eval_node(
-        nodes,
-        &own,
-        t,
-        &hide,
-        &|x| costs[x as usize],
-        false,
-        &mut work,
-      )
-      .0,
+      eval_node(nodes, &own, t, &hide, &|x| costs[x], false, &mut work).0,
     );
   }
   for &r in dag.roots() {
-    total = total.plus(costs[r as usize]);
+    total = total.plus(costs[r]);
   }
   total.exact().unwrap()
 }
@@ -1997,11 +2024,11 @@ fn uniform_set_len(dag: &SharingDag, w: u64, set: &[u32]) -> u64 {
 fn in_degrees(dag: &SharingDag) -> Vec<u64> {
   let mut deg = vec![0u64; dag.len()];
   for &r in dag.roots() {
-    deg[r as usize] += 1;
+    deg[r] += 1;
   }
   for node in dag.nodes() {
     for &c in node.children().as_slice() {
-      deg[c as usize] += 1;
+      deg[c] += 1;
     }
   }
   deg
@@ -2009,10 +2036,14 @@ fn in_degrees(dag: &SharingDag) -> Vec<u64> {
 
 /// Exhaustive canonical uniform optimum over a candidate pool: the least
 /// `(model length, set)` with sets ordered by `set_prec`.
-fn uniform_brute(dag: &SharingDag, w: u64, pool: &[u32]) -> (u64, Vec<u32>) {
-  let mut best: Option<(u64, Vec<u32>)> = None;
+fn uniform_brute(
+  dag: &SharingDag,
+  w: u64,
+  pool: &[TermId],
+) -> (u64, Vec<TermId>) {
+  let mut best: Option<(u64, Vec<TermId>)> = None;
   for mask in 0u64..(1u64 << pool.len()) {
-    let set: Vec<u32> = (0..pool.len())
+    let set: Vec<TermId> = (0..pool.len())
       .filter(|&i| mask >> i & 1 == 1)
       .map(|i| pool[i])
       .collect();
@@ -2026,6 +2057,79 @@ fn uniform_brute(dag: &SharingDag, w: u64, pool: &[u32]) -> (u64, Vec<u32>) {
     }
   }
   best.unwrap()
+}
+
+#[test]
+fn family_trace_exact_bytes_and_component_costs() {
+  use super::family_trace::{self, Event};
+  let mut rows_checked = 0;
+  for seed in 0..80 {
+    let c = gen_constant(seed + 913, 1, 16, 3);
+    let lim = limits();
+    let dag = SharingDag::from_constant(&c, &lim).unwrap();
+    let roots = constant_info_root_exprs(&c.info);
+    let classes: Vec<_> =
+      (1..=3).map(|w| uni(w, &roots).certain_stored).collect();
+    let baseline =
+      normalize_constant_sharing_tiered(ShareLayout::TagN, &c, &lim).unwrap().0;
+    for k in [0, 24] {
+      let mut events = Vec::new();
+      let (candidate, _) = family_trace::normalize(&c, &lim, k, &mut |e| {
+        events.push(e.clone());
+        Ok(())
+      })
+      .unwrap();
+      assert_eq!(SharingDag::from_constant(&candidate, &lim).unwrap(), dag);
+      if k == 24 {
+        assert_eq!(put(&candidate), put(&baseline));
+      }
+      for event in events {
+        if let Event::Row { width, count, delta, selected, .. } = event {
+          let certain = &classes[width as usize - 1];
+          let mut all = certain.clone();
+          all.extend(&selected);
+          all.sort_unstable();
+          let body = |s: &[TermId]| {
+            i128::from(uniform_set_len(&dag, width, s))
+              - i128::from(tag0_len(s.len() as u64))
+          };
+          assert_eq!(count, selected.len());
+          assert_eq!(delta, body(&all) - body(certain));
+          rows_checked += 1;
+        }
+      }
+    }
+  }
+  assert!(rows_checked > 0);
+}
+
+#[test]
+fn family_trace_classification_does_not_search_and_retains_source_metrics() {
+  use super::family_trace::{self, Event};
+  let mut c = axiom(Expr::app(Expr::var(18), Expr::var(18)), 0);
+  // This unreachable table payload must still count as source input.
+  c.sharing.push(Arc::new(Expr::Ref(3, vec![u64::MAX; 17])));
+  let lim = ExactSharingLimits { max_states: 0, max_work: 0, ..limits() };
+  let mut events = Vec::new();
+  family_trace::classify(&c, &lim, &mut |e| {
+    events.push(e.clone());
+    Ok(())
+  })
+  .unwrap();
+  assert_eq!(
+    events.iter().filter(|e| matches!(e, Event::Width { .. })).count(),
+    3
+  );
+  assert!(events.iter().all(|e| !matches!(e, Event::Row { .. })));
+  assert!(
+    events
+      .iter()
+      .any(|e| matches!(e, Event::Input { interned_nodes, dag_nodes,
+    table_entries: 1, .. } if *interned_nodes > *dag_nodes as u64))
+  );
+  assert!(family_trace::normalize(&c, &lim, 12, &mut |_| Ok(())).is_err());
+  c.sharing[0] = Expr::share(1);
+  assert!(family_trace::classify(&c, &lim, &mut |_| Ok(())).is_err());
 }
 
 #[test]
@@ -2118,7 +2222,7 @@ fn uniform_in_degree_one_tie() {
   let roots =
     vec![Expr::app(p.clone(), Expr::var(1)), Expr::app(p, Expr::var(2))];
   let dag = SharingDag::from_expanded_roots(&roots, &limits()).unwrap();
-  let id = |e: &E| dag.term_exprs().iter().position(|x| x == e).unwrap() as u32;
+  let id = |e: &E| dag.term_exprs().iter().position(|x| x == e).unwrap();
   let (tid_, pid) = (id(&t), id(&Expr::app(Expr::var(0), t.clone())));
   let u = uni(1, &roots);
   let len_t = uniform_set_len(&dag, 1, &[tid_]);
@@ -2229,6 +2333,7 @@ fn uniform_agrees_with_reference_and_brute_force() {
       continue;
     }
     let u = uni(w, &roots);
+    family::compare_production(w, &roots, &u);
     let (rm, rq) = uni_reference(w, &roots, false);
     let (rrm, rrq) = uni_reference(w, &roots, true);
     assert_eq!((u.model_len, rrm), (rm, rm), "w={w} roots={roots:?}");
@@ -2242,8 +2347,8 @@ fn uniform_agrees_with_reference_and_brute_force() {
     assert!(u.model_len <= u.unshared_len.unwrap());
     // The full key over the restricted class, by exhaustive subsets.
     let deg = in_degrees(&dag);
-    let pool: Vec<u32> =
-      cands.iter().copied().filter(|&t| deg[t as usize] >= 2).collect();
+    let pool: Vec<TermId> =
+      cands.iter().copied().filter(|&t| deg[t] >= 2).collect();
     if pool.len() <= 10 {
       assert_eq!(
         uniform_brute(&dag, w, &pool),
@@ -2490,23 +2595,21 @@ fn tiered_allocation_properties() {
 fn brute_tier(
   n: usize,
   weight: &[u64],
-  deps: &[Vec<u32>],
+  deps: &[Vec<TermId>],
   cap: usize,
-) -> Vec<u32> {
-  let mut items: Vec<u32> = (0..n as u32).collect();
-  items.sort_by(|&a, &b| {
-    weight[b as usize].cmp(&weight[a as usize]).then(a.cmp(&b))
-  });
+) -> Vec<TermId> {
+  let mut items: Vec<TermId> = (0..n).collect();
+  items.sort_by(|&a, &b| weight[b].cmp(&weight[a]).then(a.cmp(&b)));
   let mut best: Option<(u64, Vec<bool>)> = None;
   for mask in 0u32..(1 << n) {
-    let ins = |t: u32| mask >> t & 1 == 1;
-    let members: Vec<u32> = (0..n as u32).filter(|&t| ins(t)).collect();
+    let ins = |t: TermId| mask >> t & 1 == 1;
+    let members: Vec<TermId> = (0..n).filter(|&t| ins(t)).collect();
     if members.len() > cap
-      || !members.iter().all(|&t| deps[t as usize].iter().all(|&d| ins(d)))
+      || !members.iter().all(|&t| deps[t].iter().all(|&d| ins(d)))
     {
       continue;
     }
-    let wsum: u64 = members.iter().map(|&t| weight[t as usize]).sum();
+    let wsum: u64 = members.iter().map(|&t| weight[t]).sum();
     let vec: Vec<bool> = items.iter().map(|&t| ins(t)).collect();
     let better = match &best {
       None => true,
@@ -2525,33 +2628,38 @@ fn brute_tier(
     }
   }
   let (_, vec) = best.unwrap();
-  let mut out: Vec<u32> =
+  let mut out: Vec<TermId> =
     items.iter().zip(&vec).filter(|(_, b)| **b).map(|(t, _)| *t).collect();
   out.sort_unstable();
   out
 }
 
+/// The first-tier search against brute force; half of the cases shift the
+/// term IDs across the old 32-bit ID limit.
 #[test]
 fn tiered_first_tier_matches_brute_force() {
   let mut rng = Rng(73);
   for case in 0..300 {
     let n = 1 + rng.below(12) as usize;
     let mut weight = Vec::new();
-    let mut deps: Vec<Vec<u32>> = Vec::new();
+    let mut deps: Vec<Vec<TermId>> = Vec::new();
     for t in 0..n {
       weight.push(1 + rng.below(4));
-      deps.push((0..t as u32).filter(|_| rng.below(4) == 0).collect());
+      deps.push((0..t).filter(|_| rng.below(4) == 0).collect());
     }
     let cap = 8.min(1 + rng.below(n as u64) as usize);
-    let wmap: FxHashMap<u32, u64> =
-      (0..n).map(|t| (t as u32, weight[t])).collect();
-    let dmap: FxHashMap<u32, Vec<u32>> =
-      (0..n).map(|t| (t as u32, deps[t].clone())).collect();
-    let stored: Vec<u32> = (0..n as u32).collect();
+    let base: TermId = if case % 2 == 1 { (1 << 32) - 6 } else { 0 };
+    let wmap: FxHashMap<TermId, u64> =
+      (0..n).map(|t| (base + t, weight[t])).collect();
+    let dmap: FxHashMap<TermId, Vec<TermId>> = (0..n)
+      .map(|t| (base + t, deps[t].iter().map(|&d| base + d).collect()))
+      .collect();
+    let stored: Vec<TermId> = (base..base + n).collect();
     let (s, _) = first_tier(&stored, &wmap, &dmap, cap, &limits()).unwrap();
+    let want: Vec<TermId> =
+      brute_tier(n, &weight, &deps, cap).iter().map(|&t| base + t).collect();
     assert_eq!(
-      s,
-      brute_tier(n, &weight, &deps, cap),
+      s, want,
       "case {case}: n={n} cap={cap} w={weight:?} deps={deps:?}"
     );
   }
@@ -2659,6 +2767,33 @@ fn subset_reference_limits() -> ExactSharingLimits {
   }
 }
 
+// The subset oracle can retain early discoveries outside the final slack
+// band; compare every count inside that band, including its chosen set.
+fn retained_component_counts(
+  u: &UniformSharingResult,
+) -> Vec<Vec<(usize, i128, Vec<TermId>)>> {
+  let cs = u.certain_stored.len() as u64;
+  let slack =
+    i128::from(tag0_len(cs + u.uncertain.len() as u64) - tag0_len(cs));
+  u.component_tables
+    .iter()
+    .map(|table| {
+      let delta = |d: &num_bigint::BigInt| i128::try_from(d).unwrap();
+      let best = table.iter().flatten().map(|(d, _)| delta(d)).min().unwrap();
+      table
+        .iter()
+        .enumerate()
+        .filter_map(|(k, entry)| {
+          entry
+            .as_ref()
+            .filter(|(d, _)| delta(d) <= best + slack)
+            .map(|(d, set)| (k, delta(d), set.clone()))
+        })
+        .collect()
+    })
+    .collect()
+}
+
 /// The reclassifying branch and bound returns exactly what the subset
 /// enumeration returns (same set, so the same tie-break, and the same
 /// output), on inputs with larger uncertain components.
@@ -2679,8 +2814,15 @@ fn uniform_branch_and_bound_matches_subset_enumeration() {
     if comp < 2 {
       continue;
     }
+    family::compare_production(w, &roots, &u);
     match optimize_sharing_uniform(w, &roots, &reference) {
       Ok(r) => {
+        assert_eq!(u.components, r.components);
+        assert_eq!(
+          retained_component_counts(&u),
+          retained_component_counts(&r),
+          "per-count optimum/tie: case {i} w={w} roots={roots:?}"
+        );
         assert_eq!(
           (&u.stored, u.model_len, u.lower_bracket),
           (&r.stored, r.model_len, r.lower_bracket),
@@ -2723,6 +2865,11 @@ fn uniform_branch_and_bound_across_a_bracket() {
     let u = optimize_sharing_uniform(w, &roots, &limits()).unwrap();
     let r = optimize_sharing_uniform(w, &roots, &reference).unwrap();
     assert_eq!((&u.stored, u.model_len), (&r.stored, r.model_len), "w={w}");
+    assert_eq!(
+      retained_component_counts(&u),
+      retained_component_counts(&r),
+      "w={w}"
+    );
   }
 }
 
@@ -2916,16 +3063,18 @@ fn parallel_tiered_limits_fail_closed() {
 
 /// The Kahn priority order of phase 2 against a direct reference: the
 /// available term of largest weight, ties by the smaller ID, on random DAGs
-/// (dependencies outside `rest` are ignored).
+/// (dependencies outside `rest` are ignored). Half of the cases use term IDs
+/// on both sides of the old 32-bit ID limit.
 #[test]
 fn kahn_order_matches_reference() {
   use super::tiered::kahn_order;
   let mut rng = Rng(89);
   for case in 0..300 {
     let m = 1 + rng.below(30) as usize;
+    let base: TermId = if case % 2 == 1 { (1 << 32) - 45 } else { 0 };
     // Distinct IDs in a random topological sequence; a term may depend on
     // earlier terms of the sequence (some twice) and on IDs outside `rest`.
-    let mut ids: Vec<TermId> = (0..m as u32).map(|i| i * 3 + (i % 2)).collect();
+    let mut ids: Vec<TermId> = (0..m).map(|i| base + i * 3 + (i % 2)).collect();
     for i in (1..m).rev() {
       ids.swap(i, rng.below(i as u64 + 1) as usize);
     }
@@ -2940,7 +3089,7 @@ fn kahn_order_matches_reference() {
         }
       }
       if rng.below(3) == 0 {
-        ds.push(10_000 + rng.below(5) as u32);
+        ds.push(base + 10_000 + rng.below(5) as usize);
       }
       // A repeated dependency does not change the order.
       if !ds.is_empty() && rng.below(4) == 0 {
@@ -3275,7 +3424,7 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
     let own: Vec<Len> = nodes.iter().map(Node::own_len).collect();
     // A random sequence of distinct terms, in any order, with indices that
     // cross the TagN width boundaries.
-    let mut terms: Vec<TermId> = (0..n as TermId).collect();
+    let mut terms: Vec<TermId> = (0..n).collect();
     for k in (1..terms.len()).rev() {
       terms.swap(k, rng.below(k as u64 + 1) as usize);
     }
@@ -3295,7 +3444,7 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
     // non-empty dictionary at that point (as the parallel per-prefix phase 3
     // starts every range but the first).
     let mut late: Option<LazyCosts<'_>> = None;
-    let all: Vec<TermId> = (0..n as TermId).collect();
+    let all: Vec<TermId> = (0..n).collect();
     let mut mat = Materializer::new(n);
     let mut index = rng.below(20);
     for (step, &t) in terms.iter().enumerate() {
@@ -3315,18 +3464,14 @@ fn incremental_costs_and_sparse_materialize_match_full_evaluation() {
           if step % 4 == 3 { &all } else { std::slice::from_ref(&t) };
         lazy.prepare(targets, &dict);
         for &x in targets {
-          assert_eq!(
-            lazy.costs()[x as usize],
-            full[x as usize],
-            "lazy case {i} step {step}"
-          );
+          assert_eq!(lazy.costs()[x], full[x], "lazy case {i} step {step}");
         }
         assert_eq!(lazy.work(), w, "lazy case {i} step {step}");
         if let Some(late) = late.as_mut() {
           late.add(t, &dict);
           late.prepare(targets, &dict);
           for &x in targets {
-            assert_eq!(late.costs()[x as usize], full[x as usize]);
+            assert_eq!(late.costs()[x], full[x]);
           }
           assert_eq!(late.work(), w, "late lazy case {i} step {step}");
           late_steps += 1;
@@ -3804,8 +3949,7 @@ fn descendant_closed_matches_brute_force() {
     let dag = SharingDag::from_expanded_roots(&roots, &limits()).unwrap();
     let nodes = dag.nodes();
     let n = nodes.len();
-    let mut order: Vec<TermId> =
-      (0..n as TermId).filter(|_| rng.pct(40)).collect();
+    let mut order: Vec<TermId> = (0..n).filter(|_| rng.pct(40)).collect();
     if rng.pct(50) {
       for k in (1..order.len()).rev() {
         order.swap(k, rng.below(k as u64 + 1) as usize);
@@ -3821,17 +3965,16 @@ fn descendant_closed_matches_brute_force() {
     let pos: HashMap<TermId, usize> =
       order.iter().enumerate().map(|(i, &t)| (t, i)).collect();
     let brute = order.iter().enumerate().all(|(i, &t)| {
-      let mut stack: Vec<TermId> =
-        nodes[t as usize].children().as_slice().to_vec();
+      let mut stack: Vec<TermId> = nodes[t].children().as_slice().to_vec();
       let mut seen = vec![false; n];
       while let Some(x) = stack.pop() {
-        if std::mem::replace(&mut seen[x as usize], true) {
+        if std::mem::replace(&mut seen[x], true) {
           continue;
         }
         if pos.get(&x).is_some_and(|&p| p > i) {
           return false;
         }
-        stack.extend_from_slice(nodes[x as usize].children().as_slice());
+        stack.extend_from_slice(nodes[x].children().as_slice());
       }
       true
     });

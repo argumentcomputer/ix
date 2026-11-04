@@ -111,7 +111,6 @@ pub struct PrimAddrs {
   pub punit_size_of_1: Address,
   pub size_of_size_of: Address,
   pub string_back: Address,
-  pub string_legacy_back: Address,
   pub string_utf8_byte_size: Address,
   pub string_append: Address,
   pub string_dec_eq: Address,
@@ -137,7 +136,7 @@ impl PrimAddrs {
 
   /// Canonical content-hash addresses, hardcoded from the Ixon-compiled
   /// form of each primitive. Used by `Primitives::from_env` to resolve
-  /// primitives against a `kctx.kenv` whose KIds live at canonical
+  /// primitives against a kenv whose KIds live at canonical
   /// addresses. Regenerate with
   /// `lake test -- --ignored rust-kernel-build-primitives`.
   pub fn new() -> Self {
@@ -420,10 +419,7 @@ impl PrimAddrs {
         "ea81aee4a7d154faa8211a2594406dfdc7442020c0f29d2d0f79b4e62314da51",
       ),
       string_back: h(
-        "616eeeb0735f93dd10891b72bb659dd80418a6e84a9ce1313ecb41b0adc7623a",
-      ),
-      string_legacy_back: h(
-        "2f4e032675b915bfd44c2099b41c819971c259ec42f4b5e24fdddf20c03fe573",
+        "6a47d4c02a7bd096323488f1c115081fb0dfe8fc9651751de02e00ca6e0a68f1",
       ),
       string_utf8_byte_size: h(
         "4c086826cc679df3b6aa57a29f3d093a8a92d0de4edecef46a908d8398733dc0",
@@ -553,7 +549,6 @@ impl PrimAddrs {
       ("PUnit._sizeOf_1", p.punit_size_of_1.hex()),
       ("SizeOf.sizeOf", p.size_of_size_of.hex()),
       ("String.back", p.string_back.hex()),
-      ("String.Legacy.back", p.string_legacy_back.hex()),
       ("String.utf8ByteSize", p.string_utf8_byte_size.hex()),
       ("String.append", p.string_append.hex()),
       ("String.decEq", p.string_dec_eq.hex()),
@@ -850,9 +845,6 @@ impl PrimAddrs {
       ),
       string_back: h(
         "54317bf07a28017fbfccf7d9f11c97846c106be220ab98ce1e1b58a196c12be8",
-      ),
-      string_legacy_back: h(
-        "2943dd3d52e8db4fc5b68543ec64d786ba8c70c1f304fe1c0164cc80f2aaaf17",
       ),
       string_utf8_byte_size: h(
         "06ba07154a1cd0e1e9eec2b6e27b195a6fc3ae20a70d1ced7643a61e4e3e6d0f",

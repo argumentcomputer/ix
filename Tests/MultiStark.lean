@@ -74,13 +74,31 @@ def selfTestSuite : IO UInt32 := do
   let compiled ← match top.compile with
     | .error e => IO.eprintln s!"verifier-tests compilation failed: {e}"; return 1
     | .ok c => pure c
-  lspecEachIO selfTests fun (name, desc) => pure <|
+  let primitives ← lspecEachIO selfTests fun (name, desc) => pure <|
     match compiled.getFuncIdx name with
     | none => test s!"{name}: {desc} — entrypoint not found" false
     | some idx =>
       match compiled.bytecode.execute idx #[] default with
       | .error e => test s!"{name}: {desc} — execution failed: {e}" false
       | .ok (output, _, _) => test s!"{name}: {desc}" (output == #[Aiur.G.ofNat 1])
+  let some rowIdx := compiled.getFuncIdx `pcs_row_shape_test
+    | IO.eprintln "PCS row-shape entrypoint missing"; return 1
+  let some lengthIdx := compiled.getFuncIdx (`list_length ++ `U8_8)
+    | IO.eprintln "PCS defensive row-length check missing"; return 1
+  let cases := ([0, 1, 3, 8, 17] : List Nat).flatMap fun nx =>
+    ([0, 1, 3, 8, 17] : List Nat).flatMap fun nz =>
+      [0, 1, 2].map fun mode => (nx, nz, mode)
+  let shapes ← lspecEachIO cases fun (nx, nz, mode) => pure <|
+    let result := compiled.bytecode.execute rowIdx
+      #[Aiur.G.ofNat nx, Aiur.G.ofNat nz, Aiur.G.ofNat mode] default
+    let label := s!"PCS row widths {nx}/{nz}, bucket mode {mode}"
+    if nx != nz then expectErr label result else
+      match result with
+      | .error e => test s!"{label} — execution failed: {e}" false
+      | .ok (output, _, counts) =>
+        test label (output == #[Aiur.G.ofNat (if mode == 0 then 0 else 1)] &&
+          (mode != 1 || counts[lengthIdx]!.uniqueRows == 0))
+  return if primitives == 0 && shapes == 0 then 0 else 1
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- `recursive-verifier`: prove factorial(5)=120, verify it, reject tampering

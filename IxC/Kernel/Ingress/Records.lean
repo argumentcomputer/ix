@@ -1,4 +1,10 @@
-import IxC.Ixon.Types
+module
+
+public import IxC.Ixon.Types
+/- The proofs of `Address.beq_eq` and `beq_iff_eq` unfold the derived `BEq
+Address`, which `IxC.Address.Core` does not expose; `import all` makes that
+body visible in this module's private view only. -/
+import all IxC.Address.Core
 
 /-! # The decoded-record store of the Ixon ingress
 
@@ -8,6 +14,8 @@ use: first-match `lookup`, the projection test, the empty-table test of a
 projection record, and the little-endian value of a natural-number blob;
 and `LawfulBEq Address`, for the proofs of the duplicate-key checks (first
 match is then the only match: the entries reject a key used twice). -/
+
+@[expose] public section
 
 namespace Ix.Kernel.Ingress
 
@@ -43,7 +51,11 @@ lawful, which the `Std.HashSet Address` lemmas behind the duplicate-key
 checks need (`Ix.Kernel.Admission.uniqueKeys`, the reader's `readRecords`).
 Proof only: these add no runtime code. -/
 
-theorem _root_.Address.beq_eq (a b : Address) : (a == b) = (a.hash == b.hash) := rfl
+/- Not the term `rfl`: a module checks an `rfl` theorem's definitional
+equation in its public view, where the derived `BEq Address` is opaque; the
+proof below unfolds it in this module's private view (`import all`). -/
+theorem _root_.Address.beq_eq (a b : Address) : (a == b) = (a.hash == b.hash) := by
+  cases a; cases b; rfl
 
 theorem _root_.Address.beq_iff_eq {a b : Address} : (a == b) = true ↔ a = b := by
   rw [Address.beq_eq]

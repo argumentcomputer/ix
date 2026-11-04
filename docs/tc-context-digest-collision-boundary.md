@@ -1,3 +1,7 @@
+> Historical proof-boundary note for the retired Ix.Tc verification system.
+> The proof APIs below are no longer in the tree. Current certified contracts
+> and checks are in [kernel.md](kernel.md).
+
 # Ix.Tc context-digest collision boundary
 
 Snapshot: 2026-07-31. This note records a proof boundary for the K1/K2 cache

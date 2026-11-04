@@ -8,12 +8,13 @@ use crate::lean::{
   LeanIxonConstantMeta, LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst,
   LeanIxonRawConstSlice, LeanIxonRawEnv, LeanIxonRawEnvLazy,
   LeanIxonRawNameEntry, LeanIxonRawNamed, LeanIxonRawNamedLite,
+  LeanIxonRoleBinding,
 };
 use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
 use ixon::comm::Comm;
 use ixon::constant::Constant as IxonConstant;
-use ixon::env::{Env as IxonEnv, LazyIndex, Named as IxonNamed};
+use ixon::env::{Env as IxonEnv, LazyIndex, Named as IxonNamed, RoleBinding};
 use ixon::merkle::merkle_root_canonical;
 use ixon::metadata::ConstantMeta;
 use lean_ffi::object::{
@@ -300,8 +301,40 @@ impl<R: LeanRef> LeanIxonRawNameEntry<R> {
 }
 
 // =============================================================================
-// RawEnv (consts, named, blobs, comms, names, main, assumptions, anonHints)
+// RawEnv (consts, named, blobs, comms, names, main, assumptions, anonHints,
+//         roleBinding)
 // =============================================================================
+
+fn build_opt_role_binding(binding: &Option<RoleBinding>) -> LeanOwned {
+  match binding {
+    None => LeanOption::none().into(),
+    Some(binding) => {
+      let value = LeanIxonRoleBinding::alloc(0);
+      value.set_obj(0, LeanIxAddress::build(&binding.address));
+      value.set_obj(1, LeanByteArray::from_bytes(binding.bytes.as_ref()));
+      LeanOption::some(value).into()
+    },
+  }
+}
+
+fn decode_opt_role_binding(obj: LeanBorrowed<'_>) -> Option<RoleBinding> {
+  if obj.is_scalar() {
+    return None;
+  }
+  let option = obj.as_ctor();
+  match option.tag() {
+    0 => None,
+    1 => {
+      let value = option.get(0).as_ctor();
+      Some(RoleBinding {
+        address: LeanIxAddress::from_borrowed(value.get(0).as_byte_array())
+          .decode(),
+        bytes: value.get(1).as_byte_array().as_bytes().to_vec().into(),
+      })
+    },
+    tag => panic!("Invalid Option tag for role binding: {tag}"),
+  }
+}
 
 /// Decoded Ixon.RawEnv
 pub struct DecodedRawEnv {
@@ -316,6 +349,8 @@ pub struct DecodedRawEnv {
   pub assumptions: Vec<Address>,
   /// Explicit reducibility hints (`Env::anon_hints`), sorted by address.
   pub anon_hints: Vec<(Address, ReducibilityHints)>,
+  /// The role binding of a role-bound envelope (`Env::role_binding`).
+  pub role_binding: Option<RoleBinding>,
 }
 
 impl LeanIxonRawEnv<LeanOwned> {
@@ -385,12 +420,13 @@ impl LeanIxonRawEnv<LeanOwned> {
     ctor.set_obj(5, main_obj);
     ctor.set_obj(6, assumptions_arr);
     ctor.set_obj(7, hints_arr);
+    ctor.set_obj(8, build_opt_role_binding(&env.role_binding));
     ctor
   }
 }
 
-/// Populate the bundle-field constructor slots (5-7: main,
-/// assumptions, anonHints) of a `RawEnv` being built field-by-field —
+/// Populate the trailing constructor slots (5-8: main, assumptions,
+/// anonHints, roleBinding) of a `RawEnv` being built field-by-field —
 /// the compile FFI assembles its RawEnv manually instead of going
 /// through [`LeanIxonRawEnv::build`], and leaving these slots unset is
 /// uninitialized memory (segfault on GC). Set-shaped fields are sorted
@@ -425,6 +461,7 @@ pub fn set_raw_env_bundle_fields(
   ctor.set_obj(5, main_obj);
   ctor.set_obj(6, assumptions_arr);
   ctor.set_obj(7, hints_arr);
+  ctor.set_obj(8, build_opt_role_binding(&env.role_binding));
 }
 
 impl<R: LeanRef> LeanIxonRawEnv<R> {
@@ -455,6 +492,7 @@ impl<R: LeanRef> LeanIxonRawEnv<R> {
     };
 
     DecodedRawEnv {
+      role_binding: decode_opt_role_binding(ctor.get(8)),
       consts: consts_arr
         .map(|x| LeanIxonRawConst::new(x.to_owned_ref()).decode()),
       named: named_arr
@@ -506,6 +544,7 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
     env.store_comm(rc.addr.clone(), rc.comm.clone());
   }
   env.main = decoded.main.clone();
+  env.role_binding = decoded.role_binding.clone();
   env.assumptions.extend(decoded.assumptions.iter().cloned());
   env
     .anon_hints
@@ -568,6 +607,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
     env.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
   anon_hints.sort_unstable_by(|a, b| a.0.cmp(&b.0));
   Ok(DecodedRawEnv {
+    role_binding: env.role_binding.clone(),
     consts,
     named,
     blobs,
@@ -583,17 +623,18 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
 // rs_ser_env: Serialize an Ixon.RawEnv to bytes
 // =============================================================================
 
-/// FFI: Serialize an Ixon.RawEnv -> ByteArray via Rust's Env.put. Pure.
+/// FFI: Serialize an Ixon.RawEnv -> Except String ByteArray. Pure.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_ser_env(
   obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
-) -> LeanByteArray<LeanOwned> {
+) -> LeanExcept<LeanOwned> {
   let decoded = obj.decode();
   let env = decoded_to_ixon_env(&decoded);
   let mut buf = Vec::new();
-  env.put(&mut buf).expect("Env serialization failed");
-
-  LeanByteArray::from_bytes(&buf)
+  match env.put(&mut buf) {
+    Ok(()) => LeanExcept::ok(LeanByteArray::from_bytes(&buf)),
+    Err(e) => LeanExcept::error_string(&format!("rs_ser_env: {e}")),
+  }
 }
 
 // =============================================================================
@@ -677,7 +718,7 @@ pub extern "C" fn rs_de_env_anon(
 // =============================================================================
 // rs_de_env_lazy: zero-copy, metadata-light deserialization for the Aiur
 // check path. Parses the env once in Rust (reusing the proven section parsers,
-// so every metadata variant — e.g. CallSite — is handled) and hands Lean only:
+// so every metadata variant — e.g. Mdata — is handled) and hands Lean only:
 //   - per-const (addr, offset, len) windows into the *same* buffer Lean passed
 //     in (no constant bytes copied across the boundary),
 //   - name -> addr,
@@ -763,6 +804,7 @@ fn build_raw_env_lazy(index: &LazyIndex) -> LeanIxonRawEnvLazy<LeanOwned> {
   ctor.set_obj(3, main_obj);
   ctor.set_obj(4, assumptions_arr);
   ctor.set_obj(5, hints_arr);
+  ctor.set_obj(6, build_opt_role_binding(&index.role_binding));
   ctor
 }
 

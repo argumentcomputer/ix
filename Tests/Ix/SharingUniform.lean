@@ -272,6 +272,19 @@ def genSearchRoots : RGen (Array Ixon.Expr) := do
   | 4 => genPrefixes
   | _ => genRoots 6 24 5
 
+/-- Every retained count keeps its optimum and canonical tied set. The
+enumeration may also retain early discoveries outside the final slack band. -/
+def componentCountsAgree (w : Nat) (roots : Array Ixon.Expr) : Bool := Id.run do
+  let .ok ex := expand {} #[] roots false | return false
+  let sg := uniformStage w ex (Prep.ofDag ex.dag)
+  let .ok (actual, _, _) := searchComponents {} ex sg | return false
+  let .ok (reference, _, _) := searchComponents
+      { maxStates := 1 <<< 16, uniformSubsetSearch := true } ex sg | return false
+  let kept (t : CTable) := (t.trim sg.slack).zipIdx.filterMap fun (entry, k) =>
+    entry.map fun (delta, ids) => (k, delta, ids)
+  return actual.size == reference.size &&
+    (actual.zip reference).all fun (a, b) => kept a.bySize == kept b.bySize
+
 /-- The reclassifying branch and bound returns exactly what the subset
 enumeration returns (same set, so the same tie-break), on inputs with larger
 uncertain components. -/
@@ -293,14 +306,14 @@ def searchTests (_ : Unit) : TestSeq :=
         checked := checked + 1
         maxComp := max maxComp comp
         unless u.stored == r.stored && u.result.modelBytes == r.result.modelBytes &&
-            u.lowerBracket == r.lowerBracket do
+            u.lowerBracket == r.lowerBracket && componentCountsAgree w roots do
           err := some s!"case {i} w={w}: branch and bound stored {u.stored} model {u.result.modelBytes}, subset enumeration stored {r.stored} model {r.result.modelBytes} roots={reprStr roots}"
       | .ok _, .error (.resourceExhausted ..) => skipped := skipped + 1
       | .error e, _ => err := some s!"case {i} w={w}: branch and bound error {reprStr e} roots={reprStr roots}"
       | _, .error e => err := some s!"case {i} w={w}: subset enumeration error {reprStr e}"
     return (checked, skipped, maxComp, err)
   group "uniform branch and bound vs subset enumeration" <|
-    test s!"{checked} generated inputs with a component of ≥ 2 uncertain terms (prefix chains, telescopes, App chains, long spines, prefixes, general; w ∈ 1,2,3,5; largest component {maxComp}; {skipped} skipped where the enumeration exceeded 2^16 states): identical stored set, model length and bracket choice"
+    test s!"{checked} generated inputs with a component of ≥ 2 uncertain terms (prefix chains, telescopes, App chains, long spines, prefixes, general; w ∈ 1,2,3,5; largest component {maxComp}; {skipped} skipped where the enumeration exceeded 2^16 states): identical retained per-count optima/ties, stored set, model length and bracket choice"
       (err.isNone && checked == 600) ++
     (match err with | some m => test m false | none => .done)
 
@@ -315,7 +328,8 @@ def searchBracketTests (_ : Unit) : TestSeq :=
       ([1, 2, 3].all fun w =>
         match optimizeSharingUniform w roots,
             optimizeSharingUniform w roots { uniformSubsetSearch := true } with
-        | .ok u, .ok r => u.stored == r.stored && u.result.modelBytes == r.result.modelBytes
+        | .ok u, .ok r => u.stored == r.stored && u.result.modelBytes == r.result.modelBytes &&
+            componentCountsAgree w roots
         | _, _ => false)
 
 /-- The imperative tie order that `setPrec` replaced (kept as a reference). -/

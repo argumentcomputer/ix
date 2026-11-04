@@ -95,8 +95,8 @@ extern "C" fn rs_tiered_sharing_normalize(
 ///
 /// Decodes exactly one Constant whose roots carry no sharing table, and
 /// rebuilds it with `ix_compile::compile::apply_sharing_to_*_with_limits`
-/// (the explicit-limits forms of the functions every compile, aux-gen,
-/// kernel-egress and decompile-recompile path calls) under the default
+/// (the explicit-limits forms of the functions every compile and
+/// kernel-egress path calls) under the default
 /// limits in the checked mode ([`parity_limits`]; the compiler itself runs
 /// the default mode, which writes the same bytes). Projections are returned
 /// unchanged. Errors are the compile error's text, prefixed `decode:` for

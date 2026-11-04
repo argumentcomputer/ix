@@ -93,10 +93,10 @@ nothing here.*
 What did have to be re-pointed is the **clause** built on top, below.
 -/
 
-open Ix.Kernel (CheckMode Env Expr Name inferTypeCore inferBody
+open Ix.Kernel (CheckMode Env Expr Key inferTypeCore inferBody
   natLitSupported)
 
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat} {fuel : Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat} {fuel : Nat}
 
 /-! ## The `Nat`-literal clause lives in `InferQ.lean`
 

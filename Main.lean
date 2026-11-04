@@ -1,4 +1,3 @@
---import Ix.Cli.StoreCmd
 import Ix.Cli.AddrOfCmd
 import Ix.Cli.AggregateCmd
 import Ix.Cli.BenchReport
@@ -7,6 +6,7 @@ import Ix.Cli.CodegenCmd
 import Ix.Cli.CheckRsCmd
 import Ix.Cli.CheckLeanCmd
 import Ix.Cli.CompileLeanCmd
+import Ix.Cli.CompileExportCmd
 import Ix.Cli.ValidateLeanCmd
 import Ix.Cli.ClaimCmd
 import Ix.Cli.CatalogCmd
@@ -20,10 +20,11 @@ import Ix.Cli.PackCmd
 import Ix.Cli.ProfileCmd
 import Ix.Cli.CompressCmd
 import Ix.Cli.ProveCmd
+import Ix.Cli.ProveBindingCmd
 import Ix.Cli.ShardCmd
 import Ix.Cli.TreeCmd
-import Ix.Cli.ValidateCmd
 import Ix.Cli.VerifyCmd
+import Ix.Cli.VerifyHostCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
 import Ix
@@ -35,7 +36,6 @@ def ixCmd : Cli.Cmd := `[Cli|
   "A tool for generating content-addressed ZK proofs of Lean 4 code"
 
   SUBCOMMANDS:
-    --storeCmd;
     benchCmd;
     aggregateCmd;
     catalogCmd;
@@ -46,6 +46,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     checkRsCmd;
     checkLeanCmd;
     compileLeanCmd;
+    compileExportCmd;
     validateLeanCmd;
     claimCmd;
     diffCmd;
@@ -53,14 +54,15 @@ def ixCmd : Cli.Cmd := `[Cli|
     treeCmd;
     profileCmd;
     proveCmd;
+    proveBindingCmd;
     compressCmd;
     shardCmd;
     codegenCmd;
     verifyCmd;
+    verifyHostCmd;
     addrOfCmd;
     nameOfCmd;
     ingressCmd;
-    validateCmd;
     serveCmd;
     connectCmd
 ]

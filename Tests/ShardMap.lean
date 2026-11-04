@@ -376,20 +376,20 @@ def testConcurrentTryGet : TestSeq :=
       map.insert i i
     -- Many readers trying tryGet?
     let numReaders := 32
-    let successCount ← IO.mkRef 0
-    let mut tasks : Array (Task (Except IO.Error Unit)) := #[]
+    let mut tasks : Array (Task (Except IO.Error Nat)) := #[]
     for _ in [:numReaders] do
       let task ← IO.asTask do
+        let mut successes := 0
         for i in [:100] do
           match ← map.tryGet? i with
-          | some _ => successCount.modify (· + 1)
+          | some _ => successes := successes + 1
           | none => pure ()  -- Shard was locked (rare with reads)
+        pure successes
       tasks := tasks.push task
+    -- Count after joining: IO.Ref.modify is not an atomic cross-task update.
+    let mut successes := 0
     for task in tasks do
-      match task.get with
-      | .ok () => pure ()
-      | .error _ => pure ()
-    let successes ← successCount.get
+      successes := successes + (← IO.ofExcept task.get)
     -- Most should succeed (reads don't block each other with SharedMutex)
     -- With 32 readers × 100 keys = 3200 operations, expect at least 100 to succeed
     -- (conservative threshold to avoid flakiness)

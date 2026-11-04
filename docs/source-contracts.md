@@ -15,8 +15,8 @@ and proofs of the executed state invariants.
 
 The admitted source fragment includes definitions, theorems, opaque bodies,
 and explicitly admitted external interfaces. Annotated inductive/constructor/
-recursor generation and nonidentity compiler surgery currently report an
-unsupported transformation before emission. Ordinary source keeps its existing
+recursor generation currently reports an unsupported transformation before
+emission. Ordinary source keeps its existing
 compilation path. Source syntax alone does not establish resource validity.
 
 The complete semantic and binary design is in [Ixon v4](Ixon-v4.md).

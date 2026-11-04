@@ -33,7 +33,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps InductiveShape
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps InductiveShape
   NativeParts BinderMeta RecRule)
 
 universe w
@@ -60,14 +60,14 @@ theorem spineFit_take {Fs : List AnnotTerm} {ρ : Nat → V} {as : List V}
 
 set_option maxHeartbeats 25600000 in
 /-- **The P carrier survives a direct recursive install.** -/
-theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
-    {block : List ConstantInfo} {nPd : Nat} {p₀ : NativeParts} (mp : EnvModelM V μ env)
+theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env md}
+    {block : List (ConstantInfo md)} {nPd : Nat} {p₀ : NativeParts md} (mp : EnvModelM V μ env)
     (hE : Ix.Kernel.EtaFamiliesClosed env) (hdp : Ix.Kernel.nativeParts? nPd block = some p₀)
     (h : Ix.Kernel.Semantics.DeclNativeRun μ F env p₀ env₂) : Nonempty (EnvModelM V μ env₂) := by
   obtain ⟨hnd₀, isRec, env₁, cvTa, p₁, p, ctorsA, sortss, kinds, cvRa, rhss, tfvs, trest, isorts,
     hInd, rfl, hCtors, hK, hcaps, hwl, hopT2, hsorts, hFOk, -, hRec, hTbl⟩ := h
   obtain ⟨hshape, -⟩ := Ix.Kernel.nativeParts?_inv hdp
-  obtain ⟨-, hClps₀, hresT₀, hresR₀⟩ := Ix.Kernel.nativeShape?_inv hshape
+  obtain ⟨-, hClps₀, hresT₀, -⟩ := Ix.Kernel.nativeShape?_inv hshape
   -- the former: its run completed the record with the sort it read
   -- (task #195; task #210 Part B: on this route too) — every later
   -- stage runs on the completed record `p`, and the recogniser's
@@ -109,15 +109,12 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   have hlenK : p.kinds.length = p.ctors.length := by rw [hpK, hpC]; exact hlenK₀
   have hClps : ∀ c ∈ p.ctors, c.1.levelParams = p.cvT.levelParams ∧
       Ix.Kernel.reservedBasisNames.contains c.1.name = false := by rw [hpC, hpT]; exact hClps₀
-  -- the recursor's NAME and its LEVEL PARAMETERS are the RECURSOR
-  -- STAGE's pins since task #220 (the recogniser no longer refuses a
-  -- block over its recursor record; the stage REJECTS it, as
-  -- official's replay does)
-  obtain ⟨hRname, helimR, hRlps⟩ := Ix.Kernel.checkNativeRec_pins hRec
+  -- the recursor's LEVEL PARAMETERS are the RECURSOR STAGE's pins
+  -- since task #220 (the recogniser no longer refuses a block over its
+  -- recursor record; the stage REJECTS it, as official's replay does)
+  obtain ⟨helimR, hRlps⟩ := Ix.Kernel.checkNativeRec_pins hRec
   have hresT : Ix.Kernel.reservedBasisNames.contains p.cvT.name = false := by
     rw [hpT]; exact hresT₀
-  have hresR : Ix.Kernel.reservedBasisNames.contains p.cvR.name = false := by
-    rw [hpR]; exact hresR₀
   have hTname₀ : cvT.name = p.cvT.name := by rw [hpT]; exact hTname₀₀
   have hTlps₀ : cvT.levelParams = p.cvT.levelParams := by rw [hpT]; exact hTlps₀₀
   have hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort) := by
@@ -132,7 +129,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   have hTfresh' : env.find? p.cvT.name = none := by rw [← hTname₀]; exact hfindT
   have hcbT : ConstsBound env cvTa.type :=
     constsBound_of_constsResolve _ (by rw [hTtype]; exact htrT)
-  have hfT_I : (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env).find?
+  have hfT_I : (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env md).find?
       p.cvT.name = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)) := by
     rw [← hTname]; exact Ix.Kernel.Env.find?_cons_self _ _
   have hProp' : p.isProp = true → (Level.isEquiv p.resSort .zero == some true) = true :=
@@ -146,10 +143,10 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       exact hTname))
   -- the constructors' runs
   obtain ⟨hlenA, hlenS, hall⟩ := Ix.Kernel.checkSumCtors_inv hCtors
-  have hrunOf : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
-      ∃ c : ConstantVal × Nat, p.ctors[j]? = some c ∧
+  have hrunOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      ∃ c : ConstantVal md × Nat, p.ctors[j]? = some c ∧
       cA.1.name = c.1.name ∧ cA.1.levelParams = p.cvT.levelParams ∧
-      (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env).find?
+      (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env md).find?
         cA.1.name = none ∧
       cA.1.type.constsResolve
         ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ = true ∧
@@ -176,8 +173,8 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       rw [htyC]; exact hfindC
     · show Expr.constsResolve _ cA.1.type = true
       rw [htyC]; exact htrC
-  have hrunOf' : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
-      ∃ (c : ConstantVal × Nat) (sorts : List Level),
+  have hrunOf' : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      ∃ (c : ConstantVal md × Nat) (sorts : List Level),
         Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F)
           ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩
           ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩
@@ -210,7 +207,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem (by omega)]; rfl
   let rss : List (List Bool) := rssOfK ksF ctorsA.length
   have hrss : ∀ j, j < ctorsA.length → rss.getD j [] = rsOf (ksF j) := fun j hj => rssOfK_getD hj
-  let Ids : (Name → Nat) → List AnnotTerm := fun ψ => ((ppsAll ψ).drop p.nP).map (·.2.2)
+  let Ids : (LevelParam → Nat) → List AnnotTerm := fun ψ => ((ppsAll ψ).drop p.nP).map (·.2.2)
   have hlenIds : ∀ ψ, (Ids ψ).length = p.nIdx := by
     intro ψ; simp [Ids, hFD.len ψ]
   have hlenPps : ∀ ψ, (ppsAll ψ).length = p.nP + (Ids ψ).length := by
@@ -219,8 +216,8 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     intro ψ
     have := (DomsBelow.drop p.nP (hFD.below ψ)).fields
     rwa [Nat.zero_add] at this
-  let uAV : (Name → Nat) → Nat := fun ψ => idxUniv (restrictΨ p.cvT.levelParams ψ) isorts
-  have hUparams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
+  let uAV : (LevelParam → Nat) → Nat := fun ψ => idxUniv (restrictΨ p.cvT.levelParams ψ) isorts
+  have hUparams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
       uAV ψ₁ = uAV ψ₂ := by
     intro ψ₁ ψ₂ hφ
     show idxUniv (restrictΨ p.cvT.levelParams ψ₁) isorts = idxUniv (restrictΨ p.cvT.levelParams ψ₂) isorts
@@ -234,7 +231,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   -- environment (the table keeps the family free); unit-likeness is
   -- claimed at one fieldless index-free constructor, where the family
   -- at its parameters is the one tagged empty tuple (`FixZeroFieldP`)
-  have hnFc : ∀ (j : Nat) (cA c : ConstantVal × Nat), ctorsA[j]? = some cA →
+  have hnFc : ∀ (j : Nat) (cA c : ConstantVal md × Nat), ctorsA[j]? = some cA →
       p.ctors[j]? = some c → cA.2 = c.2 :=
     fun j cA c hj hc => (hall j c cA hc hj).1
   have hfreshFam : (Ix.Kernel.nativeCaps p).unitlike = false →
@@ -243,13 +240,13 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         (Ix.Kernel.sumRules (Ix.Kernel.consSumCtors p.nP ctorsA
           ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).find? cvRa.name p.nP p.majorIdx p.rulePrefix cvRa.type ctorsA rhss)
         :: (Ix.Kernel.consSumCtors p.nP ctorsA
-          ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).consts⟩ : Env).find?
+          ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩).consts⟩ : Env md).find?
         (projFnName p.cvT.name 0) = none :=
     fun hU => fixTableFamFree hTbl hlenA hlenS
       (fun cA c hA hc => hnFc 0 cA c (by rw [hA]; rfl) (by rw [hc]; rfl)) hU
   have hfreshFam₁ : (Ix.Kernel.nativeCaps p).unitlike = false →
       (Ix.Kernel.nativeCaps p).eta = true →
-      (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env).find?
+      (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env md).find?
         (projFnName p.cvT.name 0) = none :=
     fun hU he => Ix.Kernel.consSumCtors_find?_none (find?_none_of_cons (hfreshFam hU he))
   have hunitOf : (Ix.Kernel.nativeCaps p).unitlike = true →
@@ -276,7 +273,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     split at he
     · next c hc => exact ⟨c, hc⟩
     · exact nomatch he
-  have hetaFresh : ∀ {env' : Env} (m' : EnvModel V env'),
+  have hetaFresh : ∀ {env' : Env md} (m' : EnvModel V env'),
       (∀ c, p.ctors = [c] → env'.find? c.1.name = none) →
       (Ix.Kernel.nativeCaps p).eta = true →
       Ix.Kernel.EtaFamilyStored env' p.cvT.name (Ix.Kernel.nativeCaps p) →
@@ -284,13 +281,14 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     intro env' m' hfrC he hfam φ'
     exfalso
     obtain ⟨c, hc⟩ := hetaOf he
-    obtain ⟨-, ⟨cvC, cnP, cnF, hf⟩, -⟩ := hfam
-    rw [Ix.Kernel.nativeCaps_single hc] at hf
+    obtain ⟨C, hCe, -, ⟨cvC, cnP, cnF, hf⟩, -⟩ := hfam
+    rw [Ix.Kernel.nativeCaps_single hc] at hCe
+    obtain rfl : c.1.name = C := Option.some.inj hCe
     have hf' : env'.find? c.1.name = some (.ctorInfo cvC cnP cnF) := hf
     rw [hfrC c hc] at hf'
     exact nomatch hf'
   have hfrC₁ : ∀ c, p.ctors = [c] →
-      (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env).find? c.1.name = none := by
+      (⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩ : Env md).find? c.1.name = none := by
     intro c hc
     obtain ⟨cA, hA⟩ := List.length_eq_one_iff.mp (by rw [hlenA, hc]; rfl : ctorsA.length = 1)
     obtain ⟨c', hc', hCname, -, hfresh, -, -, -, -, -⟩ := hrunOf 0 cA (by rw [hA]; rfl)
@@ -298,7 +296,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     subst hcc
     rw [← hCname]; exact hfresh
   -- the laws at the dummy former's leaf (the family is empty)
-  have hcapsLaws₀ : ∀ {env' : Env} (m' : EnvModel V env'),
+  have hcapsLaws₀ : ∀ {env' : Env md} (m' : EnvModel V env'),
       (∀ c, p.ctors = [c] → env'.find? c.1.name = none) →
       FormerData m' cvTa (p.nP + p.nIdx) p.resSort ppsAll →
       (∀ ψ, m'.acval p.cvT.name ψ = sumTyAV (p.resSort.eval ψ) (ppsAll ψ) []) →
@@ -336,7 +334,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [hacI₀, ← hTname, acvalWith_self]
     exact ⟨_, rfl⟩
   -- the index telescope
-  have hIdx : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hIdx : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       IdxOk (uAV ψ) ρp (Ids ψ) ∧ FieldsValid ρp (Ids ψ) := by
     intro ψ ρp hρp
@@ -348,13 +346,13 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   -- the constructors' data at the dummy former
   obtain ⟨idxF₀, dsF₀, esF₀, srcsF₀, fvsPF₀, xFvsF₀, xrestF₀, eissF₀, tssF₀, hcf₀⟩ :=
     fixCtorFuns_of hμ mpI₀ hfT_I hlpsT hstripT hFOk hrunOf'
-  let Fss₀ : (Name → Nat) → List (List AnnotTerm) :=
+  let Fss₀ : (LevelParam → Nat) → List (List AnnotTerm) :=
     fun ψ => fssOfR p.nP (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
-  let Ess₀ : (Name → Nat) → List (List AnnotTerm) :=
+  let Ess₀ : (LevelParam → Nat) → List (List AnnotTerm) :=
     fun ψ => essOfR (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
-  let Eiss₀ : (Name → Nat) → List (List (List AnnotTerm)) :=
+  let Eiss₀ : (LevelParam → Nat) → List (List (List AnnotTerm)) :=
     fun ψ => eissOfR (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
-  let Tlss₀ : (Name → Nat) → List (List (List (Nat × Nat × AnnotTerm))) :=
+  let Tlss₀ : (LevelParam → Nat) → List (List (List (Nat × Nat × AnnotTerm))) :=
     fun ψ => tlssOfR (fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ ctorsA 0)
   have hFss₀D : ∀ ψ j cA, ctorsA[j]? = some cA →
       (Fss₀ ψ).getD j [] = ((dsF₀ j ψ).drop p.nP).map (·.2.2) :=
@@ -376,7 +374,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   have hksLen : ∀ j cA, ctorsA[j]? = some cA → (ksF j).length = cA.2 :=
     fun j cA hj => (hcf₀ j cA hj).ksLen
   -- the chain facts at the dummy former
-  have hC₀ : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hC₀ : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       ChainFacts (uAV ψ) (p.resSort.eval ψ) p.nP cA.2 ρp (Ids ψ) (ksF j) (tssF₀ j ψ)
         (((dsF₀ j ψ).drop p.nP).map (·.2.2)) (eissF₀ j ψ) (esF₀ j ψ) ∧
@@ -394,7 +392,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by
       rw [tlssOfR_length, fixCtorDataList_length]; omega)]
     rfl
-  have hX₀ : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hX₀ : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) rss (Tlss₀ ψ) (Eiss₀ ψ) (Fss₀ ψ) (Ess₀ ψ) ∧
       ∀ X, X ∈ˢ lfpFamSpace V (p.resSort.eval ψ) (idxSet (uAV ψ) ρp (Ids ψ)) →
@@ -414,7 +412,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       rw [hlenFs₀ ψ j cA hjA, hFss₀D ψ j cA hjA, hEss₀D ψ j cA hjA, hEiss₀D ψ j cA hjA,
         hTlss₀D ψ j cA hjA]
       exact (hC₀ j cA hjA ψ ρp hρp).2
-  let leafT : (Name → Nat) → AnnotTerm := fun ψ =>
+  let leafT : (LevelParam → Nat) → AnnotTerm := fun ψ =>
     nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) (Ids ψ) rss (Tlss₀ ψ) (Eiss₀ ψ) (Fss₀ ψ) (Ess₀ ψ)
   -- the laws at the fixpoint leaf: unit-likeness (one fieldless
   -- index-free constructor) folds the leaf to the one tagged empty
@@ -423,9 +421,9 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   -- index, the empty chains, and the leaf's fold to the one tagged
   -- empty tuple (`FixZeroFieldP`)
   have hzero : (Ix.Kernel.nativeCaps p).unitlike = true →
-      ∃ (c cA : ConstantVal × Nat), p.ctors = [c] ∧ ctorsA = [cA] ∧ ctorsA[0]? = some cA ∧
+      ∃ (c cA : ConstantVal md × Nat), p.ctors = [c] ∧ ctorsA = [cA] ∧ ctorsA[0]? = some cA ∧
         p.nIdx = 0 ∧ c.2 = 0 ∧ cA.2 = 0 ∧
-        (∀ (ψ : Name → Nat) (ρ : Nat → V) (ts : List V),
+        (∀ (ψ : LevelParam → Nat) (ρ : Nat → V) (ts : List V),
           SpineFit ρ ((ppsAll ψ).map (·.2.2)) ts →
           ts.foldl SetTheory.app (interp V ρ
               (nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) [] rss (Tlss₀ ψ) (Eiss₀ ψ)
@@ -469,7 +467,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     refine fixFoldSingle (Fs := []) hlenP (hEss0 ψ) hsp hX ?_
     rw [hFss0, hEss0]
     exact chainsRealI_zero
-  have hunitFix : ∀ {env' : Env} (m' : EnvModel V env'),
+  have hunitFix : ∀ {env' : Env md} (m' : EnvModel V env'),
       FormerData m' cvTa (p.nP + p.nIdx) p.resSort ppsAll →
       (∀ ψ, m'.acval p.cvT.name ψ = leafT ψ) →
       (Ix.Kernel.nativeCaps p).unitlike = true →
@@ -484,7 +482,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       (tlss := Tlss₀) (eiss := Eiss₀) (Fss₀ := Fss₀) (Ess := Ess₀) hleaf' hfoldZ hFD'.read
       hFD'.okTy (fun ψ => hunitParams ψ hu)
   -- the laws at a carrier storing the former and not the constructor
-  have hcapsLawsF : ∀ {env' : Env} (m' : EnvModel V env'),
+  have hcapsLawsF : ∀ {env' : Env md} (m' : EnvModel V env'),
       (∀ c, p.ctors = [c] → env'.find? c.1.name = none) →
       FormerData m' cvTa (p.nP + p.nIdx) p.resSort ppsAll →
       (∀ ψ, m'.acval p.cvT.name ψ = leafT ψ) →
@@ -496,7 +494,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hcA
     obtain ⟨-, -, -, hlps, -, -, -, -, -, -⟩ := hrunOf j cA hj
     exact hlps
-  have hcds₀Params : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
+  have hcds₀Params : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ cvTa.levelParams, ψ₁ q = ψ₂ q) →
       fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ₁ ctorsA 0
         = fixCtorDataList dsF₀ esF₀ ksF eissF₀ tssF₀ ψ₂ ctorsA 0 := by
     intro ψ₁ ψ₂ hφ
@@ -605,7 +603,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [Nat.zero_add]
     obtain ⟨cAi, hi'⟩ : ∃ cAi, ctorsA[i]? = some cAi := ⟨_, List.getElem?_eq_getElem hi⟩
     exact (hident i cAi hi').2.2.1 ψ
-  let Fss : (Name → Nat) → List (List AnnotTerm) :=
+  let Fss : (LevelParam → Nat) → List (List AnnotTerm) :=
     fun ψ => fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)
   have hFssD : ∀ ψ j cA, ctorsA[j]? = some cA →
       (Fss ψ).getD j [] = ((dsF j ψ).drop p.nP).map (·.2.2) :=
@@ -617,11 +615,11 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     rw [hFssD ψ j cA hj]
     simp [(hcf j cA hj).len ψ]
   -- the frames of the real data
-  have hframes : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hframes : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
           Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ) ∧
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
           FieldsOkB (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
           FieldsValid ρ (((dsF j ψ).drop p.nP).map (·.2.2)) ∧
@@ -635,10 +633,10 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     exact ⟨hiff, fun ψ ρ h => ⟨(hfields ψ ρ h).1, (hfields ψ ρ h).2.1, (hfields ψ ρ h).2.2.2⟩⟩
   -- the fields' bounds and sorts at a non-`Prop` family (task #210 Part
   -- A: the projection table's guards at a structure-like block)
-  have hsortsOf : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+  have hsortsOf : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       ∃ sorts : List Level, sortss[j]? = some sorts ∧ sorts.length = cA.2 ∧
       (∀ k, k < cA.2 → p.isProp = false → Level.leq (sorts.getD k .zero) p.resSort = some true) ∧
-      (∀ (ψ : Name → Nat) (ρ : Nat → V),
+      (∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
         (p.isProp = false →
           FieldsBound (p.resSort.eval ψ) ρ (((dsF j ψ).drop p.nP).map (·.2.2))) ∧
@@ -651,7 +649,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨-, hfields, hlenS', hleq, hmem⟩ := ctorFramesGen hμ mpI hCtor hfT_I hProp' hFD_I
       (hcf j cA hj).toCtorDataI hleafT_I'
     exact ⟨sorts, hsj, hlenS', hleq, fun ψ ρ h => ⟨(hfields ψ ρ h).2.2.1, hmem ψ ρ h⟩⟩
-  have hC : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hC : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       ChainFacts (uAV ψ) (p.resSort.eval ψ) p.nP cA.2 ρp (Ids ψ) (ksF j) (tssF j ψ)
         (((dsF j ψ).drop p.nP).map (·.2.2)) (eissF j ψ) (esF j ψ) := by
@@ -659,7 +657,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨c, -, -, -, -, -, -, _, -, hCtor⟩ := hrunOf j cA hj
     exact fixChainFacts_of hμ mpI hCtor hfT_I hProp' hFD_I hleafT_I' (hcf j cA hj) (uAV ψ) ψ ρp hρp
   -- the real chains against the leaf's
-  have hreal : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hreal : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       ChainsRealI (fixFamI (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) (Ids ψ).length rss (Tlss₀ ψ) (Eiss₀ ψ)
           (Fss₀ ψ) (Ess₀ ψ)) (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) rss (Tlss₀ ψ) (Eiss₀ ψ) (Fss₀ ψ)
@@ -734,7 +732,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
           rw [hlenAB, ← Nat.add_assoc] at this
           exact this
   -- the constructors' conses
-  have hFssParams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
+  have hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
       fssOf p.nP (ctorDataList dsF esF ψ₁ ctorsA 0) = fssOf p.nP (ctorDataList dsF esF ψ₂ ctorsA 0) := by
     intro ψ₁ ψ₂ hφ
     have hcds : ctorDataList dsF esF ψ₁ ctorsA 0 = ctorDataList dsF esF ψ₂ ctorsA 0 := by
@@ -751,7 +749,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     cases h : ctorsA[i]? with
     | none => rw [h] at hi; exact nomatch hi
     | some cA => rw [h] at hi; exact ⟨cA, rfl, (Option.some.inj hi).symm⟩
-  have hFssBelow : ∀ ψ : Name → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
+  have hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
       FieldsBelow p.nP Fs := by
     intro ψ Fs hFs
     obtain ⟨cd, hcdm, rfl⟩ := List.mem_map.mp hFs
@@ -759,7 +757,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     obtain ⟨cA, hiA, rfl⟩ := hcdMem ψ i cd hi
     have := (DomsBelow.drop p.nP ((hcf i cA hiA).below ψ)).fields
     rwa [Nat.zero_add] at this
-  have hFssOkP : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hFssOkP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       SumFieldsOkB (p.resSort.eval ψ) ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)) ∧
       SumFieldsValid ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)) := by
@@ -775,7 +773,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       obtain ⟨i, hi⟩ := List.getElem?_of_mem hcdm
       obtain ⟨cA, hiA, rfl⟩ := hcdMem ψ i cd hi
       exact ((hframes i cA hiA).2 ψ ρ (((hframes i cA hiA).1 ψ ρ).mp hρ)).2.1
-  have hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
         interp V (consList bs ρ)
@@ -803,7 +801,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
   -- the laws at a carrier storing the constructor (task #210 Part B):
   -- η at a fieldless block is the constructor at the parameters, from
   -- its leaf; η with a field stays vacuous while the family is free
-  have hcapsLaws : ∀ {env' : Env} (m' : EnvModel V env'),
+  have hcapsLaws : ∀ {env' : Env md} (m' : EnvModel V env'),
       ((Ix.Kernel.nativeCaps p).unitlike = false → (Ix.Kernel.nativeCaps p).eta = true →
         env'.find? (projFnName p.cvT.name 0) = none) →
       FormerData m' cvTa (p.nP + p.nIdx) p.resSort ppsAll →
@@ -838,11 +836,11 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         rw [hFs, hdrop] at h0'
         simp only [List.getElem?_cons_zero, Option.some.injEq] at h0'
         rw [hFs, h0']
-      have hleafC : ∀ ψ, m'.acval (Ix.Kernel.nativeCaps p).etaCtor ψ
+      have hleafC : ∀ C, (Ix.Kernel.nativeCaps p).etaCtor = some C → ∀ ψ, m'.acval C ψ
           = sumMkAV (p.resSort.eval ψ) 0 (dsF 0 ψ) [] (uChains [[]]) := by
-        intro ψ
-        rw [Ix.Kernel.nativeCaps_single hc]
-        show m'.acval c.1.name ψ = _
+        intro C hCe ψ
+        rw [Ix.Kernel.nativeCaps_single hc] at hCe
+        obtain rfl : c.1.name = C := Option.some.inj hCe
         rw [← hCname, hC cA hA ψ, hdrop, hfss]
       refine fixFibreEtaLaw0 (u := uAV) (w := fun ψ => p.resSort.eval ψ) (rss := rss)
         (tlss := Tlss₀) (eiss := Eiss₀) (Fss₀ := Fss₀) (Ess := Ess₀) (ds := fun ψ => dsF 0 ψ)
@@ -865,17 +863,17 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       exact fixCapsLawsAt_vacuous m' hu' (hfr hu')
   -- the invariant across the conses: every constructor's recursive
   -- data, its type and index arguments bounded, the former found
-  let Inv : ∀ {env' : Env}, EnvModel V env' → Prop := fun {env'} m' =>
+  let Inv : ∀ {env' : Env md}, EnvModel V env' → Prop := fun {env'} m' =>
     env'.find? p.cvT.name = some (.indInfo cvTa (Ix.Kernel.nativeCaps p)) ∧
     ((Ix.Kernel.nativeCaps p).unitlike = false → (Ix.Kernel.nativeCaps p).eta = true →
       env'.find? (projFnName p.cvT.name 0) = none) ∧
-    ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+    ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       ConstsBound env' cA.1.type ∧ (∀ e ∈ idxF j, ConstsBound env' e) ∧
       FixCtorDataI m' env p.cvT.name p.cvT.levelParams cA.1 p.nP cA.2 p.nIdx p.resSort p.isProp
         p.large (idxF j) (dsF j) (esF j) (srcsF j) (ksF j) (fvsPF j) (xFvsF j) (xrestF j) (eissF j)
         (tssF j)
-  have hInv : ∀ {env' : Env} (m' : EnvModel V env') (cA : ConstantVal × Nat)
-      (A : (Name → Nat) → AnnotTerm)
+  have hInv : ∀ {env' : Env md} (m' : EnvModel V env') (cA : ConstantVal md × Nat)
+      (A : (LevelParam → Nat) → AnnotTerm)
       (mC : EnvModel V ⟨.ctorInfo cA.1 p.nP cA.2 :: env'.consts⟩),
       cA ∈ ctorsA → env'.find? cA.1.name = none →
       mC.acval = acvalWith m'.acval cA.1.name A → Inv m' → Inv mC := by
@@ -885,7 +883,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
       have h1 := hinv.1
       rw [h, hfresh] at h1
       exact nomatch h1
-    have hcross : ∀ e : Expr, ConsCrossAt (.ctorInfo cA.1 p.nP cA.2) e :=
+    have hcross : ∀ e : Expr md, ConsCrossAt (.ctorInfo cA.1 p.nP cA.2) e :=
       fun _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)
     refine ⟨Ix.Kernel.Env.find?_cons_of_fresh hfresh hinv.1, fun hU he => ?_, fun j cAj hj => ?_⟩
     · obtain ⟨j, hj⟩ := List.getElem?_of_mem hcA
@@ -931,17 +929,17 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
         (hcf i cA hi).toCtorDataI⟩)
     hinv₀
   -- the recursor
-  have hcf_C : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+  have hcf_C : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       FixCtorFactsAt mpC.base2 env p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF j cA := by
     intro j cA hj
     obtain ⟨⟨hfind, hlps, -⟩, -, -⟩ := hconsAll j cA (List.getElem?_eq_some_iff.mp hj).1 hj
     exact ⟨hfind, hlps, (hinvC.2.2 j cA hj).2.2⟩
-  have hidxRes_C : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+  have hidxRes_C : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
       ∀ e ∈ idxF j, e.constsResolve (Ix.Kernel.consSumCtors p.nP ctorsA
         ⟨.indInfo cvTa (Ix.Kernel.nativeCaps p) :: env.consts⟩) = true :=
     fun j cA hj => (hconsAll j cA (List.getElem?_eq_some_iff.mp hj).1 hj).2.1
-  have hleafC_C : ∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA → ∀ ψ,
+  have hleafC_C : ∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA → ∀ ψ,
       mpC.base2.acval cA.1.name ψ
       = sumMkAV (p.resSort.eval ψ) j (dsF j ψ) (((dsF j ψ).drop p.nP).map (·.2.2))
           (uChains (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))) := by
@@ -960,7 +958,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     simp only [InductiveShape.majorIdx, InductiveShape.rulePrefix, hlenA]
   have hrP : p.rulePrefix = p.nP + 1 + ctorsA.length := by
     simp only [InductiveShape.rulePrefix, hlenA]
-  have hframesR : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hframesR : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (Ids ψ) rss
         (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
@@ -1054,7 +1052,7 @@ theorem declNative (hμ : μ.verifiedChecks = true) {F : Nat} {env env₂ : Env}
     (fun j cA hj => (hframes j cA hj).1) hframesR
     (fun hl => (hwl hl).imp_right fun h => by rw [hlenA]; exact h)
   -- the projection table at a structure-like block (task #210 Parts A, B)
-  exact declNativeTable rfl rfl hTbl mpC mp₃ hac₃ hProp hRname hClps hresT hresR
+  exact declNativeTable rfl rfl hTbl mpC mp₃ hac₃ hProp hClps hresT
     (by rw [← hTname₀]; exact hpshapeT)
     mp.base2.wf hlenA hnFc hrunOf hfT_C hlpsT hTfresh'
     (by rw [hTtype]; exact htrT) hFD_C hcf_C hleafT_C' hleafC_C hframes hsortsOf

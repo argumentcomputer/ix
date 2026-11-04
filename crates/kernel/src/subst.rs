@@ -108,23 +108,30 @@ pub fn subst_no_intern<M: KernelMode>(
       KExpr::app(f2, x2)
     },
 
-    ExprData::Lam(name, bi, ty, inner, _) => {
+    ExprData::Lam(name, bi, contract, ty, inner, _) => {
       let ty2 = subst_no_intern(ty, arg, depth);
       let inner2 = subst_no_intern(inner, arg, depth + 1);
-      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, inner2)
     },
 
-    ExprData::All(name, bi, ty, inner, _) => {
+    ExprData::All(name, bi, contract, result, ty, inner, _) => {
       let ty2 = subst_no_intern(ty, arg, depth);
       let inner2 = subst_no_intern(inner, arg, depth + 1);
-      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+      KExpr::all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        ty2,
+        inner2,
+      )
     },
 
-    ExprData::Let(name, ty, val, inner, nd, _) => {
+    ExprData::Let(name, ty, val, inner, contract, _) => {
       let ty2 = subst_no_intern(ty, arg, depth);
       let val2 = subst_no_intern(val, arg, depth);
       let inner2 = subst_no_intern(inner, arg, depth + 1);
-      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, inner2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -193,25 +200,32 @@ fn subst_cached<M: KernelMode>(
       return r;
     },
 
-    ExprData::Lam(name, bi, ty, inner, _) => {
+    ExprData::Lam(name, bi, contract, ty, inner, _) => {
       let ty2 = subst_cached(env, ty, arg, depth, cache);
       let inner2 = subst_cached(env, inner, arg, depth + 1, cache);
-      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, inner2)
     },
 
-    ExprData::All(name, bi, ty, inner, _) => {
+    ExprData::All(name, bi, contract, result, ty, inner, _) => {
       let ty2 = subst_cached(env, ty, arg, depth, cache);
       let inner2 = subst_cached(env, inner, arg, depth + 1, cache);
-      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      let r = env.intern_all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        &ty2,
+        &inner2,
+      );
       cache.insert(key, r.clone());
       return r;
     },
 
-    ExprData::Let(name, ty, val, inner, nd, _) => {
+    ExprData::Let(name, ty, val, inner, contract, _) => {
       let ty2 = subst_cached(env, ty, arg, depth, cache);
       let val2 = subst_cached(env, val, arg, depth, cache);
       let inner2 = subst_cached(env, inner, arg, depth + 1, cache);
-      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, inner2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -307,25 +321,32 @@ fn simul_subst_cached<M: KernelMode>(
       return r;
     },
 
-    ExprData::Lam(name, bi, ty, inner, _) => {
+    ExprData::Lam(name, bi, contract, ty, inner, _) => {
       let ty2 = simul_subst_cached(env, ty, substs, depth, cache);
       let inner2 = simul_subst_cached(env, inner, substs, depth + 1, cache);
-      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, inner2)
     },
 
-    ExprData::All(name, bi, ty, inner, _) => {
+    ExprData::All(name, bi, contract, result, ty, inner, _) => {
       let ty2 = simul_subst_cached(env, ty, substs, depth, cache);
       let inner2 = simul_subst_cached(env, inner, substs, depth + 1, cache);
-      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      let r = env.intern_all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        &ty2,
+        &inner2,
+      );
       cache.insert(key, r.clone());
       return r;
     },
 
-    ExprData::Let(name, ty, val, inner, nd, _) => {
+    ExprData::Let(name, ty, val, inner, contract, _) => {
       let ty2 = simul_subst_cached(env, ty, substs, depth, cache);
       let val2 = simul_subst_cached(env, val, substs, depth, cache);
       let inner2 = simul_subst_cached(env, inner, substs, depth + 1, cache);
-      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, inner2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -395,23 +416,30 @@ fn lift_no_intern<M: KernelMode>(
       KExpr::app(f2, x2)
     },
 
-    ExprData::Lam(name, bi, ty, body, _) => {
+    ExprData::Lam(name, bi, contract, ty, body, _) => {
       let ty2 = lift_no_intern(ty, shift, cutoff);
       let body2 = lift_no_intern(body, shift, cutoff + 1);
-      KExpr::lam(name.clone(), bi.clone(), ty2, body2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, body2)
     },
 
-    ExprData::All(name, bi, ty, body, _) => {
+    ExprData::All(name, bi, contract, result, ty, body, _) => {
       let ty2 = lift_no_intern(ty, shift, cutoff);
       let body2 = lift_no_intern(body, shift, cutoff + 1);
-      KExpr::all(name.clone(), bi.clone(), ty2, body2)
+      KExpr::all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        ty2,
+        body2,
+      )
     },
 
-    ExprData::Let(name, ty, val, body, nd, _) => {
+    ExprData::Let(name, ty, val, body, contract, _) => {
       let ty2 = lift_no_intern(ty, shift, cutoff);
       let val2 = lift_no_intern(val, shift, cutoff);
       let body2 = lift_no_intern(body, shift, cutoff + 1);
-      KExpr::let_(name.clone(), ty2, val2, body2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, body2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -465,25 +493,32 @@ fn lift_cached<M: KernelMode>(
       return r;
     },
 
-    ExprData::Lam(name, bi, ty, body, _) => {
+    ExprData::Lam(name, bi, contract, ty, body, _) => {
       let ty2 = lift_cached(env, ty, shift, cutoff, cache);
       let body2 = lift_cached(env, body, shift, cutoff + 1, cache);
-      KExpr::lam(name.clone(), bi.clone(), ty2, body2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, body2)
     },
 
-    ExprData::All(name, bi, ty, body, _) => {
+    ExprData::All(name, bi, contract, result, ty, body, _) => {
       let ty2 = lift_cached(env, ty, shift, cutoff, cache);
       let body2 = lift_cached(env, body, shift, cutoff + 1, cache);
-      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &body2);
+      let r = env.intern_all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        &ty2,
+        &body2,
+      );
       cache.insert(key, r.clone());
       return r;
     },
 
-    ExprData::Let(name, ty, val, body, nd, _) => {
+    ExprData::Let(name, ty, val, body, contract, _) => {
       let ty2 = lift_cached(env, ty, shift, cutoff, cache);
       let val2 = lift_cached(env, val, shift, cutoff, cache);
       let body2 = lift_cached(env, body, shift, cutoff + 1, cache);
-      KExpr::let_(name.clone(), ty2, val2, body2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, body2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -723,25 +758,32 @@ fn clo_subst_cached<M: KernelMode>(
       return r;
     },
 
-    ExprData::Lam(name, bi, ty, inner, _) => {
+    ExprData::Lam(name, bi, contract, ty, inner, _) => {
       let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
       let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
-      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, inner2)
     },
 
-    ExprData::All(name, bi, ty, inner, _) => {
+    ExprData::All(name, bi, contract, result, ty, inner, _) => {
       let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
       let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
-      let r = intern.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      let r = intern.intern_all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        &ty2,
+        &inner2,
+      );
       cache.insert(key, r.clone());
       return r;
     },
 
-    ExprData::Let(name, ty, val, inner, nd, _) => {
+    ExprData::Let(name, ty, val, inner, contract, _) => {
       let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
       let val2 = clo_subst_cached(intern, val, env, depth, cache);
       let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
-      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, inner2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -825,7 +867,7 @@ pub fn cheap_beta_reduce<M: KernelMode>(
   // Peel up to `args.len()` lambdas, advancing `head` to the body.
   let mut i: usize = 0;
   while i < args.len() {
-    if let ExprData::Lam(_, _, _, inner, _) = head.data() {
+    if let ExprData::Lam(_, _, _, _, inner, _) = head.data() {
       let inner = inner.clone();
       head = inner;
       i += 1;
@@ -957,25 +999,32 @@ fn instantiate_rev_cached<M: KernelMode>(
       return r;
     },
 
-    ExprData::Lam(name, bi, ty, inner, _) => {
+    ExprData::Lam(name, bi, contract, ty, inner, _) => {
       let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
       let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
-      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, inner2)
     },
 
-    ExprData::All(name, bi, ty, inner, _) => {
+    ExprData::All(name, bi, contract, result, ty, inner, _) => {
       let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
       let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
-      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      let r = env.intern_all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        &ty2,
+        &inner2,
+      );
       cache.insert(key, r.clone());
       return r;
     },
 
-    ExprData::Let(name, ty, val, inner, nd, _) => {
+    ExprData::Let(name, ty, val, inner, contract, _) => {
       let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
       let val2 = instantiate_rev_cached(env, val, fvars, depth, cache);
       let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
-      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, inner2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -1095,25 +1144,32 @@ fn abstract_fvars_cached<M: KernelMode>(
       return r;
     },
 
-    ExprData::Lam(name, bi, ty, inner, _) => {
+    ExprData::Lam(name, bi, contract, ty, inner, _) => {
       let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
       let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
-      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+      KExpr::lam_contract(name.clone(), bi.clone(), *contract, ty2, inner2)
     },
 
-    ExprData::All(name, bi, ty, inner, _) => {
+    ExprData::All(name, bi, contract, result, ty, inner, _) => {
       let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
       let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
-      let r = env.intern_all(name.clone(), bi.clone(), &ty2, &inner2);
+      let r = env.intern_all_contract(
+        name.clone(),
+        bi.clone(),
+        *contract,
+        *result,
+        &ty2,
+        &inner2,
+      );
       cache.insert(key, r.clone());
       return r;
     },
 
-    ExprData::Let(name, ty, val, inner, nd, _) => {
+    ExprData::Let(name, ty, val, inner, contract, _) => {
       let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
       let val2 = abstract_fvars_cached(env, val, pos, n, depth, cache);
       let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
-      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+      KExpr::let_contract(name.clone(), *contract, ty2, val2, inner2)
     },
 
     ExprData::Prj(id, field, val, _) => {
@@ -1146,10 +1202,14 @@ impl<M: KernelMode> ExprData<M> {
       ExprData::Sort(u, _) => KExpr::sort(u),
       ExprData::Const(id, us, _) => KExpr::cnst(id, us),
       ExprData::App(f, a, _) => KExpr::app(f, a),
-      ExprData::Lam(n, bi, ty, body, _) => KExpr::lam(n, bi, ty, body),
-      ExprData::All(n, bi, ty, body, _) => KExpr::all(n, bi, ty, body),
-      ExprData::Let(n, ty, val, body, nd, _) => {
-        KExpr::let_(n, ty, val, body, nd)
+      ExprData::Lam(n, bi, contract, ty, body, _) => {
+        KExpr::lam_contract(n, bi, contract, ty, body)
+      },
+      ExprData::All(n, bi, contract, result, ty, body, _) => {
+        KExpr::all_contract(n, bi, contract, result, ty, body)
+      },
+      ExprData::Let(n, ty, val, body, contract, _) => {
+        KExpr::let_contract(n, contract, ty, val, body)
       },
       ExprData::Prj(id, idx, val, _) => KExpr::prj(id, idx, val),
       ExprData::Nat(n, addr, _) => KExpr::nat(n, addr),
@@ -1423,7 +1483,7 @@ mod tests {
       instantiate_rev(&mut env, &body, std::slice::from_ref(&fv_outer));
     // opened_outer is now: λ(Nat). App(#0, fv_outer)
     let inner_body = match opened_outer.data() {
-      ExprData::Lam(_, _, _, b, _) => b.clone(),
+      ExprData::Lam(_, _, _, _, b, _) => b.clone(),
       _ => unreachable!(),
     };
     let opened_inner =
@@ -1719,7 +1779,8 @@ mod tests {
           walk(f, binders, max);
           walk(a, binders, max);
         },
-        ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+        ExprData::Lam(_, _, _, ty, body, _)
+        | ExprData::All(_, _, _, _, ty, body, _) => {
           walk(ty, binders, max);
           walk(body, binders + 1, max);
         },

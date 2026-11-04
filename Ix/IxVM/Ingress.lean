@@ -41,7 +41,7 @@ def ingress := ⟦
   fn load_verified_constant(addr: Addr) -> Constant {
     let raw = load(addr);
     let (idx, len) = io_get_info(2, raw);
-    let bytes = read_finite_byte_stream(2, idx, len);
+    let bytes = read_checked_byte_stream(2, idx, len);
     verify_bytes_against(bytes, raw);
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil,
@@ -49,12 +49,31 @@ def ingress := ⟦
     constant
   }
 
+  -- The reducibility hint of a definition at `addr`. Only a `Definition`
+  -- unfolds by its hint, so a theorem or an opaque faults none from ch 3:
+  -- an environment need not carry hints for them.
+  fn definition_hint(addr: Addr, d: Definition) -> G {
+    match d {
+      Definition.Mk(kind, _, _, _, _) =>
+        match kind {
+          DefKind.Definition => #load_constant_hint(addr),
+          _ => 0,
+        },
+    }
+  }
+
   -- Load reducibility hint G for a Defn at `addr` (ch 3).
   -- Encoding: 0 = Opaque, 1+h = Regular(h), 0xFFFFFFFF = Abbrev.
+  --
+  -- The one IO read that skips `read_checked_byte_stream`, and it is safe:
+  -- the hint is advisory. It only selects a reduction heuristic, def-eq is
+  -- sound under any value, and the read runs unconstrained (`#`), so no
+  -- content of the cell, byte or not, can change what a claim proves.
+  -- `Tests/Ix/IOIngress.lean` allows exactly this caller.
   fn load_constant_hint(addr: Addr) -> G {
     let raw = load(addr);
     let (idx, len) = io_get_info(3, raw);
-    let bytes = #read_byte_stream(3, idx, len);
+    let bytes = #read_byte_stream_unchecked(3, idx, len);
     match load(bytes) {
       ListNode.Cons(b, _) => to_field(b),
     }
@@ -64,7 +83,7 @@ def ingress := ⟦
   fn load_verified_blob(addr: Addr) -> ByteStream {
     let raw = load(addr);
     let (idx, len) = io_get_info(4, raw);
-    let bytes = read_finite_byte_stream(4, idx, len);
+    let bytes = read_checked_byte_stream(4, idx, len);
     verify_bytes_against(bytes, raw);
     bytes
   }
@@ -138,7 +157,7 @@ def ingress := ⟦
       Constant.Mk(info, sharing, refs, univs) =>
         match info {
           ConstantInfo.Defn(defn) =>
-            let hint = #load_constant_hint(addr);
+            let hint = definition_hint(addr, defn);
             -- Standalone Defn: a single recur slot naming ITSELF, and only
             -- for an unsafe definition.
             --
@@ -241,7 +260,7 @@ def ingress := ⟦
             let mc = list_lookup_u64(members, idx);
             match mc {
               MutConst.Defn(d) =>
-                let hint = #load_constant_hint(dprj_addr);
+                let hint = definition_hint(dprj_addr, d);
                 let recur_addrs =
                   defn_member_recur_addrs(d, members, block_addr);
                 store(convert_definition(d, sharing, refs, recur_addrs, univs, hint)),

@@ -15,6 +15,21 @@ use rustc_hash::FxHashMap;
 
 pub const VALIDATOR_ID: &str = "ixon-v4/resource-v1";
 
+/// Immutable raw entries for resource preparation. The existing adapter below
+/// authenticates and canonically decodes each entry independently of its cache.
+pub trait RawSource {
+  fn constants(&self) -> Vec<(Address, crate::lazy::LazyConstant)>;
+  fn blobs(&self) -> Vec<(Address, Vec<u8>)>;
+}
+impl RawSource for Env {
+  fn constants(&self) -> Vec<(Address, crate::lazy::LazyConstant)> {
+    self.consts.iter().map(|r| (r.key().clone(), r.value().clone())).collect()
+  }
+  fn blobs(&self) -> Vec<(Address, Vec<u8>)> {
+    self.blobs.iter().map(|r| (r.key().clone(), r.value().clone())).collect()
+  }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Profile {
   pub assumptions: Vec<Address>,
@@ -364,12 +379,11 @@ fn fields(
 }
 
 pub fn prepare(
-  env: &Env,
+  env: &(impl RawSource + ?Sized),
   profile: &Profile,
 ) -> Result<AddressedProgram, String> {
   let profile_address = profile.address()?;
-  let mut entries: Vec<_> =
-    env.consts.iter().map(|r| (r.key().clone(), r.value().clone())).collect();
+  let mut entries = env.constants();
   entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
   let mut constants = FxHashMap::default();
   for (address, lazy) in &entries {
@@ -546,8 +560,7 @@ pub fn prepare(
       ));
     }
   }
-  let mut blob_entries: Vec<_> =
-    env.blobs.iter().map(|r| (r.key().clone(), r.value().clone())).collect();
+  let mut blob_entries = env.blobs();
   blob_entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
   let mut blobs = FxHashMap::default();
   for (address, bytes) in blob_entries {
@@ -653,7 +666,7 @@ pub fn prepare(
 
 /// Resource-only admission; the combined validator also checks erased typing.
 pub fn check_resources(
-  env: &Env,
+  env: &(impl RawSource + ?Sized),
   profile: &Profile,
 ) -> Result<AddressedProgram, String> {
   let resolved = prepare(env, profile)?;
@@ -675,12 +688,14 @@ mod tests {
   use crate::constant::{Axiom, Constructor, DefKind, Inductive, RecursorRule};
   use crate::univ::Univ;
 
-  /// The validator identity and the wire-format id move with the format
-  /// version: a version bump cannot leave profile addresses in the old
-  /// domain.
+  /// Validator identity follows checked grammar, independently of the storage
+  /// envelope version.
   #[test]
   fn validator_id_follows_the_wire_format() {
-    assert_eq!(crate::WIRE_FORMAT_ID, format!("ixon-v{}", Env::VERSION));
+    assert_eq!(
+      crate::WIRE_FORMAT_ID,
+      format!("ixon-v{}", Env::CHECKED_FORMAT_VERSION)
+    );
     assert_eq!(VALIDATOR_ID, format!("{}/resource-v1", crate::WIRE_FORMAT_ID));
   }
 

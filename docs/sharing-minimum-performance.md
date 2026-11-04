@@ -1,7 +1,7 @@
-# Exact sharing: production performance (plan P4)
+# Exact sharing: production performance
 
-This document is the P4 deliverable of [`sharing-minimum.md`](sharing-minimum.md), "Production viability
-measurements". It gathers in one place, for a PR reviewer, what has been measured on two corpora:
+This document covers the "Production viability measurements" deliverable of [`sharing-minimum.md`](sharing-minimum.md).
+It gathers in one place, for a PR reviewer, what has been measured on two corpora:
 
 - `Init`, with the corpus harness, in [`sharing-minimum-measurements.md`](sharing-minimum-measurements.md);
 - Mathlib, with the same harness, in [`sharing-minimum-measurements-mathlib.md`](sharing-minimum-measurements-mathlib.md);

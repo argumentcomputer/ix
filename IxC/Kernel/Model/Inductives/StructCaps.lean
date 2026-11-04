@@ -25,15 +25,15 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps
   projFnName)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
-theorem projFnName_isProjFnShape (T : Name) (j : Nat) :
-    (projFnName T j).isProjFnShape = true := rfl
+theorem projFnName_isProjFnShape (T : Key md) (j : Nat) :
+    (projFnName T j).isProjFnShape = true := isProjFnShape_auxKey_projFn T j
 
 /-- **The block's own capability laws at a carrier** (task #210 Part
 A): what `capsOk_cons_native` asks of the family being installed at
@@ -42,24 +42,24 @@ stored complete, the unit law where it claims unit-likeness.  A stage
 takes it as a hypothesis about the carrier it builds; the assembly
 discharges it from the leaves (or vacuously: `capsLawsAt_of_none`,
 `capsLawsAt_vacuous`). -/
-@[expose] def CapsLawsAt {env : Env} (m : EnvModel V env) (T : Name) (cvT : ConstantVal)
-    (caps : IndCaps) : Prop :=
+@[expose] def CapsLawsAt {env : Env md} (m : EnvModel V env) (T : Key md) (cvT : ConstantVal md)
+    (caps : IndCaps md) : Prop :=
   (caps.eta = true → Ix.Kernel.EtaFamilyStored env T caps →
-    ∀ φ' : Name → Nat, EtaLaw m φ' T cvT caps) ∧
-  (caps.unitlike = true → ∀ φ' : Name → Nat, UnitLaw m φ' T cvT caps)
+    ∀ φ' : LevelParam → Nat, EtaLaw m φ' T cvT caps) ∧
+  (caps.unitlike = true → ∀ φ' : LevelParam → Nat, UnitLaw m φ' T cvT caps)
 
 /-- A record claiming η at a family with a field and no unit-likeness
 owes nothing while its projection-function family is free: the η
 half's premise `EtaFamilyStored` stores a projection function at every
 field, and the first slot is fresh. -/
-theorem capsLawsAt_vacuous {env : Env} (m : EnvModel V env) {T : Name} {cvT : ConstantVal}
-    {caps : IndCaps} (hU : caps.unitlike = false)
+theorem capsLawsAt_vacuous {env : Env md} (m : EnvModel V env) {T : Key md} {cvT : ConstantVal md}
+    {caps : IndCaps md} (hU : caps.unitlike = false)
     (hE : caps.eta = true → 0 < caps.etaFields ∧ env.find? (projFnName T 0) = none) :
     CapsLawsAt m T cvT caps := by
   refine ⟨fun he hfam => ?_, fun hu => absurd (hU.symm.trans hu) Bool.false_ne_true⟩
   exfalso
   obtain ⟨hpos, hfresh⟩ := hE he
-  obtain ⟨-, -, hslots⟩ := hfam
+  obtain ⟨-, -, -, -, hslots⟩ := hfam
   obtain ⟨cv, mI, rP, rules, hf⟩ := hslots 0 hpos
   rw [hfresh] at hf
   exact nomatch hf
@@ -70,34 +70,34 @@ inductive at all; every other stored family's capability constructor
 is stored in the prefix (`hother`); the block's own family's laws at
 the extension are supplied (`hTlaws`). -/
 theorem capsOk_cons_native (mp : EnvModelM V μ env)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm} {T : Name}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm} {T : Key md}
     (hfresh : env.find? c₀.name = none)
     (hcross : ConsCrossEnv env c₀)
     (hpshape : c₀.name.isProjFnShape = false)
     (hkind : (∃ cvT caps, c₀ = .indInfo cvT caps ∧ c₀.name = T) ∨
       ∀ cv caps, c₀ ≠ .indInfo cv caps)
-    (hother : ∀ (T' : Name) (cvT' : ConstantVal) (caps' : IndCaps),
+    (hother : ∀ (T' : Key md) (cvT' : ConstantVal md) (caps' : IndCaps md),
       env.find? T' = some (.indInfo cvT' caps') → T' ≠ T →
       Ix.Kernel.reservedBasisNames.contains T' = false →
       caps'.eta = true →
-      ∃ cvC', env.find? caps'.etaCtor
-        = some (.ctorInfo cvC' caps'.etaParams caps'.etaFields))
+      ∃ C cvC', caps'.etaCtor = some C ∧
+        env.find? C = some (.ctorInfo cvC' caps'.etaParams caps'.etaFields))
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval c₀.name A)
-    (hTlaws : ∀ (cvT : ConstantVal) (caps : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps) →
+    (hTlaws : ∀ (cvT : ConstantVal md) (caps : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T = some (.indInfo cvT caps) →
       Ix.Kernel.reservedBasisNames.contains T = false →
       (caps.eta = true → Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
-        ∀ φ' : Name → Nat, EtaLaw m₂ φ' T cvT caps) ∧
-      (caps.unitlike = true → ∀ φ' : Name → Nat, UnitLaw m₂ φ' T cvT caps)) :
+        ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps) ∧
+      (caps.unitlike = true → ∀ φ' : LevelParam → Nat, UnitLaw m₂ φ' T cvT caps)) :
     CapsOk m₂ := by
   -- a stored family other than the block's is a prefix lookup
-  have hdown : ∀ n : Name, n ≠ c₀.name →
-      (⟨c₀ :: env.consts⟩ : Env).find? n = env.find? n := by
+  have hdown : ∀ n : Key md, n ≠ c₀.name →
+      (⟨c₀ :: env.consts⟩ : Env md).find? n = env.find? n := by
     intro n hn
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hn hh.symm)]
-  have hneT : ∀ (T' : Name) (cvT' : ConstantVal) (caps' : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T' = some (.indInfo cvT' caps') →
+  have hneT : ∀ (T' : Key md) (cvT' : ConstantVal md) (caps' : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T' = some (.indInfo cvT' caps') →
       T' ≠ T → T' ≠ c₀.name := by
     intro T' cvT' caps' hf hne hh
     rcases hkind with ⟨cvT₀, caps₀, rfl, hname⟩ | hnotind
@@ -106,16 +106,17 @@ theorem capsOk_cons_native (mp : EnvModelM V μ env)
       exact hnotind cvT' caps' (Option.some.inj hf)
   constructor
   · -- the η half
-    intro T' cvT' caps' hf hcape hres hfam φ' us hlen
+    intro T' cvT' caps' hf hcape hres hfam φ' C hC us hlen
     by_cases hTT : T' = T
     · subst hTT
-      exact (hTlaws cvT' caps' hf hres).1 hcape hfam φ' us hlen
+      exact (hTlaws cvT' caps' hf hres).1 hcape hfam φ' C hC us hlen
     have hnT' : T' ≠ c₀.name := hneT T' cvT' caps' hf hTT
     have hfE : env.find? T' = some (.indInfo cvT' caps') := by
       rwa [hdown _ hnT'] at hf
     -- the family's names are all prefix lookups
-    obtain ⟨cvC', hfC'⟩ := hother T' cvT' caps' hfE hTT hres hcape
-    have hnC : caps'.etaCtor ≠ c₀.name := by
+    obtain ⟨C', cvC', hC', hfC'⟩ := hother T' cvT' caps' hfE hTT hres hcape
+    obtain rfl : C' = C := Option.some.inj (hC'.symm.trans hC)
+    have hnC : C' ≠ c₀.name := by
       intro hh
       rw [hh, hfresh] at hfC'
       exact nomatch hfC'
@@ -125,13 +126,14 @@ theorem capsOk_cons_native (mp : EnvModelM V μ env)
       rw [hh, hpshape] at this
       exact nomatch this
     have hfam₀ : Ix.Kernel.EtaFamilyStored env T' caps' := by
-      obtain ⟨hCres, ⟨cvC'', hfC''⟩, hfP⟩ := hfam
-      refine ⟨hCres, ⟨cvC'', by rwa [hdown _ hnC] at hfC''⟩, ?_⟩
+      obtain ⟨C'', hC'', hCres, ⟨cvC'', hfC''⟩, hfP⟩ := hfam
+      obtain rfl : C'' = C' := Option.some.inj (hC''.symm.trans hC')
+      refine ⟨C'', hC'', hCres, ⟨cvC'', by rwa [hdown _ hnC] at hfC''⟩, ?_⟩
       intro j hj
       obtain ⟨cv2, mI2, rP2, rules2, hf2⟩ := hfP j hj
       exact ⟨cv2, mI2, rP2, rules2, by rwa [hdown _ (hnP j hj)] at hf2⟩
     obtain ⟨TVa, hTVa, hokTVa, hlaw⟩ :=
-      mp.caps_ok.1 T' cvT' caps' hfE hcape hres hfam₀ φ' us hlen
+      mp.caps_ok.1 T' cvT' caps' hfE hcape hres hfam₀ φ' C' hC' us hlen
     refine ⟨TVa, ?_, hokTVa, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_mono hfresh

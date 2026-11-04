@@ -29,6 +29,7 @@ def proofRoundTrip : IO UInt32 := do
   let selfVk := system.vkBytes
   let allowed := Aggr.allowedBlob childVk childIdx selfVk idx
   let statement : Aggr.CheckEnvTrees := {
+    ctx := testCtx
     subjects := (Ix.AssumptionTree.canonical #[Address.blake3 "proof-round-trip".toUTF8]).get!
     assumptions := none }
   let bytes := Ix.Claim.ser statement.claim

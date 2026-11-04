@@ -9,7 +9,7 @@
 
   Used as a bisecting diagnostic: if this test is clean but
   `kernel-ixon-roundtrip` has errors, the bug lives in the compile
-  pipeline (most likely `aux_gen` regeneration). If both tests fail with
+  pipeline. If both tests fail with
   the same errors, the bug is in the ingress/egress pipeline itself.
 -/
 import Ix.Common

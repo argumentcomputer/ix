@@ -22,8 +22,8 @@ namespace Ix.Kernel
 
 variable {mode : CheckMode}
 
-private theorem dThrow_ne_ok {α : Type} {e : CheckError} {a : α}
-    (h : (throw e : CheckM α) = .ok a) : False := by
+private theorem dThrow_ne_ok {α : Type} {e : CheckError md} {a : α}
+    (h : (throw e : CheckM md α) = .ok a) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
 local syntax "close_throw" : tactic
@@ -44,7 +44,7 @@ local macro_rules
 
 /-- `checkStructDomsAt`, inverted: every position below the walk's
 bound carries a successful `isDefEqCore` at its own frame. -/
-theorem checkStructDomsAt_inv {env : Env} {F off : Nat} {fvs doms : List Expr} :
+theorem checkStructDomsAt_inv {env : Env md} {F off : Nat} {fvs doms : List (Expr md)} :
     ∀ {j : Nat},
       checkStructDomsAt (fueledOps mode F) env off fvs doms j = .ok () →
       ∀ i, i < j → ∃ a b, fvs[i]? = some a ∧ doms[i]? = some b ∧

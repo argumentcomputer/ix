@@ -35,20 +35,20 @@ open Expr
 everything `modeled_rule_fold` consumes.  `env` is the environment the
 theorem is stored in, `env₀` the provisional one carrying the block's
 rule-less recursors (the definitional-equality checks ran there). -/
-@[expose] def PlainChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Name → Name)
-    (cvA : ConstantVal) (mI rP cnP cnF j : Nat) (r : RecRule)
-    (cvj : ConstantVal) : Prop :=
-  ∃ (thmName : Name) (cvt : ConstantVal) (ci : ConstantInfo)
-    (fvs : List Expr) (tbody : Expr) (ℓA : Level) (αS lhsS rhsS : Expr)
-    (cdoms : List Expr) (cres : Expr) (rdoms : List Expr) (rrest : Expr)
-    (fvsP : List Expr) (restP : Expr) (cdomsP : List Expr)
-    (crestP : Expr) (xFvsP : List Expr) (crest2 : Expr)
-    (ldoms : List Expr) (lrest : Expr),
+@[expose] def PlainChecked (mode : CheckMode) (F : Nat) (env env₀ : Env md) (f : Key md → Key md)
+    (cvA : ConstantVal md) (mI rP cnP cnF j : Nat) (r : RecRule md)
+    (cvj : ConstantVal md) : Prop :=
+  ∃ (thmName : Key md) (cvt : ConstantVal md) (ci : ConstantInfo md)
+    (fvs : List (Expr md)) (tbody : Expr md) (ℓA : Level) (αS lhsS rhsS : Expr md)
+    (cdoms : List (Expr md)) (cres : Expr md) (rdoms : List (Expr md)) (rrest : Expr md)
+    (fvsP : List (Expr md)) (restP : Expr md) (cdomsP : List (Expr md))
+    (crestP : Expr md) (xFvsP : List (Expr md)) (crest2 : Expr md)
+    (ldoms : List (Expr md)) (lrest : Expr md),
     env.find? thmName = some ci ∧
     ci.toConstantVal = cvt ∧
     -- task #148 T6: the name the checker looked the statement up at,
     -- recorded (the proof always knew it; the statement now says so)
-    thmName = (cvA.name.str "_model").str s!"iota_{j}" ∧
+    thmName = auxKey (auxKey cvA.name .model) (.iota j) ∧
     cvt.levelParams = cvA.levelParams ∧
     openPisAtFvars (rP + cnF) cvt.type 0 = some (fvs, tbody) ∧
     tbody.getAppFn = .const eqName [ℓA] ∧
@@ -102,20 +102,20 @@ prefix variables) instead of the leading telescope variables; index
 premises between the prefix and the major flow through exactly as on
 the plain path (the statement's index arguments are pinned against
 the constructor residual's canonical tuple). -/
-@[expose] def NestedChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Name → Name)
-    (cvA : ConstantVal) (mI rP cnP cnF j : Nat) (r : RecRule)
-    (cvj : ConstantVal) (lvls : List Level) (pins : List Expr) : Prop :=
-  ∃ (thmName : Name) (cvt : ConstantVal) (ci : ConstantInfo)
-    (fvs : List Expr) (tbody : Expr) (ℓA : Level) (αS lhsS rhsS : Expr)
-    (cdoms : List Expr) (cres : Expr) (rdoms : List Expr) (rrest : Expr)
-    (fvsP : List Expr) (restP : Expr) (cdomsP : List Expr)
-    (crestP : Expr) (xFvsP : List Expr) (crest2 : Expr)
-    (ldoms : List Expr) (lrest : Expr),
+@[expose] def NestedChecked (mode : CheckMode) (F : Nat) (env env₀ : Env md) (f : Key md → Key md)
+    (cvA : ConstantVal md) (mI rP cnP cnF j : Nat) (r : RecRule md)
+    (cvj : ConstantVal md) (lvls : List Level) (pins : List (Expr md)) : Prop :=
+  ∃ (thmName : Key md) (cvt : ConstantVal md) (ci : ConstantInfo md)
+    (fvs : List (Expr md)) (tbody : Expr md) (ℓA : Level) (αS lhsS rhsS : Expr md)
+    (cdoms : List (Expr md)) (cres : Expr md) (rdoms : List (Expr md)) (rrest : Expr md)
+    (fvsP : List (Expr md)) (restP : Expr md) (cdomsP : List (Expr md))
+    (crestP : Expr md) (xFvsP : List (Expr md)) (crest2 : Expr md)
+    (ldoms : List (Expr md)) (lrest : Expr md),
     env.find? thmName = some ci ∧
     ci.toConstantVal = cvt ∧
     -- task #148 T6: the name the checker looked the statement up at,
     -- recorded (the proof always knew it; the statement now says so)
-    thmName = (cvA.name.str "_model").str s!"iota_{j}" ∧
+    thmName = auxKey (auxKey cvA.name .model) (.iota j) ∧
     cvt.levelParams = cvA.levelParams ∧
     openPisAtFvars (rP + cnF) cvt.type 0 = some (fvs, tbody) ∧
     tbody.getAppFn = .const eqName [ℓA] ∧
@@ -175,9 +175,9 @@ the constructor residual's canonical tuple). -/
 
 /-- Invert a successful `checkIotaThm` run (on the rule as returned,
 whose `rhs` is the annotated right-hand side). -/
-theorem checkIotaThm_inv {env' env₀ : Env} {f : Name → Name}
-    {cvA cvj : ConstantVal} {mI rP j cnP cnF : Nat}
-    {r : RecRule} {rhsA : Expr} {u : Unit}
+theorem checkIotaThm_inv {env' env₀ : Env md} {f : Key md → Key md}
+    {cvA cvj : ConstantVal md} {mI rP j cnP cnF : Nat}
+    {r : RecRule md} {rhsA : Expr md} {u : Unit}
     (h : checkIotaThm mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
       cvA.type mI rP j r cvj cnP cnF rhsA = .ok u) :
     PlainChecked mode F env' env₀ f cvA mI rP cnP cnF j
@@ -186,7 +186,7 @@ theorem checkIotaThm_inv {env' env₀ : Env} {f : Name → Name}
     fueledOps_inferType, fueledOps_isDefEq, fueledOps_ensureSort,
     fueledOps_whnf, Bind.bind, Except.bind, pure, Except.pure] at h
   revert h
-  match hfthm : env'.find? ((cvA.name.str "_model").str s!"iota_{j}") with
+  match hfthm : env'.find? (auxKey (auxKey cvA.name .model) (.iota j)) with
   | none => intro h; exact nomatch h
   | some ci => ?_
   intro h
@@ -377,7 +377,7 @@ theorem checkIotaThm_inv {env' env₀ : Env} {f : Name → Name}
   | false =>
     rw [htt] at h
     simp only [Bool.false_eq_true, if_false, pure, Except.pure] at h
-    exact ⟨(cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+    exact ⟨auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
       tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
       restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
       hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -406,7 +406,7 @@ theorem checkIotaThm_inv {env' env₀ : Env} {f : Name → Name}
   | true =>
   rw [hheadEq] at hdα
   intro h
-  exact ⟨(cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+  exact ⟨auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
     tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
     restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
     hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -424,9 +424,9 @@ rule-prefix context), and the recursor-type pin the instantiations
 were read off — the major domain applies the family to the
 instantiations' liftings past the index binders followed by the index
 variables in order. -/
-theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP cnP j : Nat}
-    {lvls : List Level} {pins : List Expr}
+theorem nestedRuleShape_inv {env' envSelf : Env md} {cvName : Key md}
+    {lps : List LevelParam} {tyA : Expr md} {mI rP cnP j : Nat}
+    {lvls : List Level} {pins : List (Expr md)}
     (h : nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j =
       some (lvls, pins)) :
     rP ≤ mI ∧
@@ -456,7 +456,7 @@ theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Name}
   | some (pre, .const _ _) => intro h; exact nomatch h
   | some (pre, .app _ _) => intro h; exact nomatch h
   | some (pre, .lam _ _ _) => intro h; exact nomatch h
-  | some (pre, .letE _ _ _) => intro h; exact nomatch h
+  | some (pre, .letE _ _ _ _) => intro h; exact nomatch h
   | some (pre, .lit _) => intro h; exact nomatch h
   | some (pre, .proj _ _ _) => intro h; exact nomatch h
   | some (pre, .forallE dom body bm) => ?_
@@ -470,7 +470,7 @@ theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Name}
   | .app _ _ => intro h; exact nomatch h
   | .lam _ _ _ => intro h; exact nomatch h
   | .forallE _ _ _ => intro h; exact nomatch h
-  | .letE _ _ _ => intro h; exact nomatch h
+  | .letE _ _ _ _ => intro h; exact nomatch h
   | .lit _ => intro h; exact nomatch h
   | .proj _ _ _ => intro h; exact nomatch h
   | .const D lvls' => ?_
@@ -503,9 +503,9 @@ theorem nestedRuleShape_inv {env' envSelf : Env} {cvName : Name}
 is the annotated right-hand side): either the rule was stored inert,
 or the returned flag carries the certified shape and the full
 `NestedChecked` hypothesis kit. -/
-theorem checkIotaThmN_inv {env' env₀ : Env} {f : Name → Name}
-    {cvA cvj : ConstantVal} {mI rP j cnP cnF : Nat}
-    {r : RecRule} {rhsA : Expr} {fire : RecRuleFire}
+theorem checkIotaThmN_inv {env' env₀ : Env md} {f : Key md → Key md}
+    {cvA cvj : ConstantVal md} {mI rP j cnP cnF : Nat}
+    {r : RecRule md} {rhsA : Expr md} {fire : RecRuleFire md}
     (h : checkIotaThmN mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
       cvA.type mI rP j r cvj cnP cnF rhsA = .ok fire) :
     (fire = .inert ∧
@@ -531,7 +531,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Name → Name}
     fueledOps_inferType, fueledOps_isDefEq, fueledOps_ensureSort,
     fueledOps_whnf, Bind.bind, Except.bind, pure, Except.pure] at h
   revert h
-  match hfthm : env'.find? ((cvA.name.str "_model").str s!"iota_{j}") with
+  match hfthm : env'.find? (auxKey (auxKey cvA.name .model) (.iota j)) with
   | none => intro h; exact nomatch h
   | some ci => ?_
   intro h
@@ -605,7 +605,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Name → Name}
   | .app _ _ => intro h; exact nomatch h
   | .lam _ _ _ => intro h; exact nomatch h
   | .forallE _ _ _ => intro h; exact nomatch h
-  | .letE _ _ _ => intro h; exact nomatch h
+  | .letE _ _ _ _ => intro h; exact nomatch h
   | .lit _ => intro h; exact nomatch h
   | .proj _ _ _ => intro h; exact nomatch h
   | .const Dc usc => ?_
@@ -759,7 +759,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Name → Name}
     simp only [Bool.false_eq_true, if_false, if_true, ite_true, pure,
       Except.pure, Bind.bind, Except.bind, Except.ok.injEq] at h
     exact Or.inr ⟨lvls, pins, h.symm, rfl,
-          (cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+          auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
           tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
           restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
           hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -793,7 +793,7 @@ theorem checkIotaThmN_inv {env' env₀ : Env} {f : Name → Name}
   intro h
   simp only [if_true, Except.ok.injEq] at h
   exact Or.inr ⟨lvls, pins, h.symm, rfl,
-        (cvA.name.str "_model").str s!"iota_{j}", cvt, ci, fvs,
+        auxKey (auxKey cvA.name .model) (.iota j), cvt, ci, fvs,
         tbody, ℓA, αS, lhsS, rhsS, cdoms, cres, rdoms, rrest, fvsP,
         restP, cdomsP, crestP, xFvsP, crest2, ldoms, lrest,
         hfthm, hcvt, rfl, hlpt, hopen, hheadEq, hargs3, eq_of_beq hlhead, hlarity,
@@ -812,10 +812,10 @@ hypothesis kit its fold obligation consumes.  `env` is the environment
 before the recursor group's installation, `env₀` the provisional one
 with the block's rule-less recursors (in which the rule's right-hand
 side was annotated). -/
-@[expose] def RuleChecked (mode : CheckMode) (F : Nat) (env env₀ : Env) (f : Name → Name)
-    (cvA : ConstantVal) (mI rP j : Nat) (r : RecRule) : Prop :=
-  ∃ (cvj : ConstantVal) (cnP cnF : Nat) (raw rhsTy : Expr)
-    (rbinders : List (Expr × BinderMeta)) (rbody : Expr),
+@[expose] def RuleChecked (mode : CheckMode) (F : Nat) (env env₀ : Env md) (f : Key md → Key md)
+    (cvA : ConstantVal md) (mI rP j : Nat) (r : RecRule md) : Prop :=
+  ∃ (cvj : ConstantVal md) (cnP cnF : Nat) (raw rhsTy : Expr md)
+    (rbinders : List (Expr md × BinderMeta)) (rbody : Expr md),
     env.find? (RecRule.ctor r) = some (.ctorInfo cvj cnP cnF) ∧
     RecRule.nfields r = cnF ∧
     RecRule.ctorParams r = cnP ∧
@@ -851,8 +851,8 @@ side was annotated). -/
       PlainChecked mode F env env₀ f cvA mI rP cnP cnF j r cvj)
 
 /-- Invert one `checkIotaRule` run. -/
-theorem checkIotaRule_inv {env' env₀ : Env} {f : Name → Name}
-    {cvA : ConstantVal} {mI rP j : Nat} {r r' : RecRule}
+theorem checkIotaRule_inv {env' env₀ : Env md} {f : Key md → Key md}
+    {cvA : ConstantVal md} {mI rP j : Nat} {r r' : RecRule md}
     (h : checkIotaRule mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
       cvA.type mI rP j r = .ok r') :
     RuleChecked mode F env' env₀ f cvA mI rP j r' ∧
@@ -944,7 +944,7 @@ theorem checkIotaRule_inv {env' env₀ : Env} {f : Name → Name}
       have hkit := checkIotaThm_inv (cvA := cvA) hthm
       exact ⟨⟨cvj, cnP, cnF, RecRule.rhs r, rhsTy, rbinders, rbody,
         hfc, hnf, rfl, ⟨fun _ => hplain, fun _ => rfl⟩,
-        fun lvls pins hf => RecRuleFire.noConfusion hf,
+        fun lvls pins hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
         hrfF, hrb, hann,
         not_hasFvar_of_fvarsBelow_zero
           ((annotateCore_WScoped F _ hann
@@ -969,9 +969,9 @@ theorem checkIotaRule_inv {env' env₀ : Env} {f : Name → Name}
       · subst hinert
         exact ⟨⟨cvj, cnP, cnF, RecRule.rhs r, rhsTy, rbinders, rbody,
           hfc, hnf, rfl,
-          ⟨fun hf => RecRuleFire.noConfusion hf,
+          ⟨fun hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
             fun hc => absurd hc hplain⟩,
-          fun lvls pins hf => RecRuleFire.noConfusion hf,
+          fun lvls pins hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
           hrfF, hrb, hann,
           not_hasFvar_of_fvarsBelow_zero
             ((annotateCore_WScoped F _ hann
@@ -983,7 +983,7 @@ theorem checkIotaRule_inv {env' env₀ : Env} {f : Name → Name}
       · subst hfe
         refine ⟨⟨cvj, cnP, cnF, RecRule.rhs r, rhsTy, rbinders, rbody,
           hfc, hnf, rfl,
-          ⟨fun hf => RecRuleFire.noConfusion hf,
+          ⟨fun hf => RecRuleFire.noConfusion rfl (heq_of_eq hf),
             fun hc => absurd hc hplain⟩,
           ?_, hrfF, hrb, hann,
           not_hasFvar_of_fvarsBelow_zero
@@ -1006,12 +1006,12 @@ theorem checkIotaRule_inv {env' env₀ : Env} {f : Name → Name}
 
 /-- Invert a successful `checkIotaRules` run: every returned rule
 carries the full `RuleChecked` hypothesis kit. -/
-theorem checkIotaRules_inv {env' env₀ : Env} {f : Name → Name}
-    {cvA : ConstantVal} {mI rP : Nat} :
-    ∀ (j : Nat) (rules rules' : List RecRule),
+theorem checkIotaRules_inv {env' env₀ : Env md} {f : Key md → Key md}
+    {cvA : ConstantVal md} {mI rP : Nat} :
+    ∀ (j : Nat) (rules rules' : List (RecRule md)),
     checkIotaRules mode (fueledOps mode F) env' env₀ f cvA.name cvA.levelParams
       cvA.type mI rP j rules = .ok rules' →
-    ∀ (k : Nat) (r' : RecRule), rules'[k]? = some r' →
+    ∀ (k : Nat) (r' : RecRule md), rules'[k]? = some r' →
       RuleChecked mode F env' env₀ f cvA mI rP (j + k) r' := by
   intro j rules
   induction rules generalizing j with
@@ -1056,18 +1056,19 @@ conjunct of each half is task #135's: the model former's telescope
 residual is `Sort ℓA` at the statement's own `Eq` level, which is what
 lets a consumer type the equation's type slot at the level the
 statement names (see `checkEtaThm`). -/
-@[expose] def EtaPins (mode : CheckMode) (env' : Env) (T : Name) (lps : List Name)
-    (caps : IndCaps) : Prop :=
+@[expose] def EtaPins (mode : CheckMode) (env' : Env md) (T : Key md) (lps : List LevelParam)
+    (caps : IndCaps md) : Prop :=
   (caps.eta = true →
-  ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal) (mvalT : Expr)
+  ∃ (C : Key md) (tcv : ConstantVal md) (tval : Expr md) (cvmT : ConstantVal md) (mvalT : Expr md)
     (hmcvmT : ReducibilityHint)
-    (sbinders tbindersM : List (Expr × BinderMeta))
-    (sbody tbodyM tySlot : Expr) (ℓA : Level),
-    env'.find? ((T.str "_model").str "eta") = some (.thmInfo tcv tval) ∧
+    (sbinders tbindersM : List (Expr md × BinderMeta))
+    (sbody tbodyM tySlot : Expr md) (ℓA : Level),
+    caps.etaCtor = some C ∧
+    env'.find? (auxKey (auxKey T .model) .eta) = some (.thmInfo tcv tval) ∧
     tcv.levelParams = lps ∧
-    env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+    env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
     cvmT.levelParams = lps ∧
-    (∃ cvmC mvalC hmcvmC, env'.find? (caps.etaCtor.str "_model") =
+    (∃ cvmC mvalC hmcvmC, env'.find? (auxKey C .model) =
       some (.defnInfo cvmC mvalC hmcvmC) ∧ cvmC.levelParams = lps) ∧
     (∀ j, j < caps.etaFields → ∃ cvmj mvalj hmcvmj,
       env'.find? (projModelName T j) = some (.defnInfo cvmj mvalj hmcvmj) ∧
@@ -1075,16 +1076,16 @@ statement names (see `checkEtaThm`). -/
     env'.find? eqName = some eqA ∧
     tcv.type.stripPis (caps.etaParams + 1) = some (sbinders, sbody) ∧
     cvmT.type.stripPis caps.etaParams = some (tbindersM, tbodyM) ∧
-    (∀ (k : Nat) (b b' : Expr × BinderMeta), k < caps.etaParams →
+    (∀ (k : Nat) (b b' : Expr md × BinderMeta), k < caps.etaParams →
       sbinders[k]? = some b → tbindersM[k]? = some b' →
       b.1 = b'.1) ∧
     (∃ mx, sbinders[caps.etaParams]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range caps.etaParams).map fun k =>
           Expr.bvar (caps.etaParams - 1 - k)), mx)) ∧
     sbody = Expr.mkAppN (.const eqName [ℓA])
       [tySlot, .bvar 0,
-       Expr.mkAppN (.const (caps.etaCtor.str "_model") (lps.map .param))
+       Expr.mkAppN (.const (auxKey C .model) (lps.map .param))
         (((List.range caps.etaParams).map fun k =>
             Expr.bvar (caps.etaParams - k)) ++
          (List.range caps.etaFields).map fun j => Expr.mkAppN
@@ -1092,38 +1093,38 @@ statement names (see `checkEtaThm`). -/
            (((List.range caps.etaParams).map fun k =>
                Expr.bvar (caps.etaParams - k)) ++
             [Expr.bvar 0]))] ∧
-    tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+    tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
       ((List.range caps.etaParams).map fun k =>
         Expr.bvar (caps.etaParams - k)) ∧
     -- TT-lane conjunct (task #147): delivered only at `mode.ttChecks`
     (mode.ttChecks = true → tbodyM = Expr.sort ℓA)) ∧
   (caps.unitlike = true →
-  ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal) (mvalT : Expr)
+  ∃ (tcv : ConstantVal md) (tval : Expr md) (cvmT : ConstantVal md) (mvalT : Expr md)
     (hmcvmT : ReducibilityHint)
-    (sbinders tbindersM : List (Expr × BinderMeta))
-    (sbody tbodyM tySlot : Expr) (ℓA : Level),
-    env'.find? ((T.str "_model").str "unitlike") =
+    (sbinders tbindersM : List (Expr md × BinderMeta))
+    (sbody tbodyM tySlot : Expr md) (ℓA : Level),
+    env'.find? (auxKey (auxKey T .model) .unitlike) =
       some (.thmInfo tcv tval) ∧
     tcv.levelParams = lps ∧
-    env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+    env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
     cvmT.levelParams = lps ∧
     env'.find? eqName = some eqA ∧
     tcv.type.stripPis (caps.unitParams + 2) = some (sbinders, sbody) ∧
     cvmT.type.stripPis caps.unitParams = some (tbindersM, tbodyM) ∧
-    (∀ (k : Nat) (b b' : Expr × BinderMeta),
+    (∀ (k : Nat) (b b' : Expr md × BinderMeta),
       k < caps.unitParams →
       sbinders[k]? = some b → tbindersM[k]? = some b' →
       b.1 = b'.1) ∧
     (∃ mx, sbinders[caps.unitParams]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range caps.unitParams).map fun k =>
           Expr.bvar (caps.unitParams - 1 - k)), mx)) ∧
     (∃ my, sbinders[caps.unitParams + 1]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range caps.unitParams).map fun k =>
           Expr.bvar (caps.unitParams - k)), my)) ∧
     sbody = Expr.mkAppN (.const eqName [ℓA]) [tySlot, .bvar 1, .bvar 0] ∧
-    tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+    tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
       ((List.range caps.unitParams).map fun k =>
         Expr.bvar (caps.unitParams + 1 - k)) ∧
     -- TT-lane conjunct (task #147): delivered only at `mode.ttChecks`
@@ -1131,38 +1132,38 @@ statement names (see `checkEtaThm`). -/
 
 set_option maxHeartbeats 3200000 in
 /-- Invert a positive unit-capability check into the stored pins. -/
-theorem checkUnitThm_inv {env' : Env} {T : Name}
-    {lps : List Name} {nP : Nat}
+theorem checkUnitThm_inv {env' : Env md} {T : Key md}
+    {lps : List LevelParam} {nP : Nat}
     (h : checkUnitThm mode env' T lps nP = true) :
-    ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal)
-      (mvalT : Expr) (hmcvmT : ReducibilityHint)
-      (sbinders tbindersM : List (Expr × BinderMeta))
-      (sbody tbodyM tySlot : Expr) (ℓA : Level),
-      env'.find? ((T.str "_model").str "unitlike") =
+    ∃ (tcv : ConstantVal md) (tval : Expr md) (cvmT : ConstantVal md)
+      (mvalT : Expr md) (hmcvmT : ReducibilityHint)
+      (sbinders tbindersM : List (Expr md × BinderMeta))
+      (sbody tbodyM tySlot : Expr md) (ℓA : Level),
+      env'.find? (auxKey (auxKey T .model) .unitlike) =
         some (.thmInfo tcv tval) ∧
       tcv.levelParams = lps ∧
-      env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+      env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
       cvmT.levelParams = lps ∧
       env'.find? eqName = some eqA ∧
       tcv.type.stripPis (nP + 2) = some (sbinders, sbody) ∧
       cvmT.type.stripPis nP = some (tbindersM, tbodyM) ∧
-      (∀ (k : Nat) (b b' : Expr × BinderMeta), k < nP →
+      (∀ (k : Nat) (b b' : Expr md × BinderMeta), k < nP →
         sbinders[k]? = some b → tbindersM[k]? = some b' →
         b.1 = b'.1) ∧
       (∃ mx, sbinders[nP]? = some (
-        Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+        Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
           ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx)) ∧
       (∃ my, sbinders[nP + 1]? = some (
-        Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+        Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
           ((List.range nP).map fun k => Expr.bvar (nP - k)), my)) ∧
       sbody = Expr.mkAppN (.const eqName [ℓA])
         [tySlot, .bvar 1, .bvar 0] ∧
-      tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP + 1 - k)) ∧
       (mode.ttChecks = true → tbodyM = Expr.sort ℓA) := by
   rw [checkUnitThm] at h
   revert h
-  match hthm : env'.find? ((T.str "_model").str "unitlike") with
+  match hthm : env'.find? (auxKey (auxKey T .model) .unitlike) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1173,7 +1174,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
   | some (.thmInfo tcv tval) => ?_
   intro h
   revert h
-  match hTm : env'.find? (T.str "_model") with
+  match hTm : env'.find? (auxKey T .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1203,14 +1204,14 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
   intro hrest
   simp only [Bool.and_eq_true] at hrest
   obtain ⟨⟨⟨hdomsB, hxdomB⟩, hydomB⟩, hbodyB⟩ := hrest
-  have hdoms : ∀ (k : Nat) (b b' : Expr × BinderMeta), k < nP →
+  have hdoms : ∀ (k : Nat) (b b' : Expr md × BinderMeta), k < nP →
       sbinders[k]? = some b → tbindersM[k]? = some b' →
       b.1 = b'.1 := by
     intro k b b' hk hb hb'
     exact domsMatchAux_inv hdomsB hk
       (by rw [Nat.zero_add]; exact hb) (by rw [Nat.zero_add]; exact hb')
   have hxdom : ∃ mx, sbinders[nP]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx) := by
     revert hxdomB
     match hbx : sbinders[nP]? with
@@ -1219,7 +1220,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
       intro hx
       exact ⟨mx, by rw [eq_of_beq hx]⟩
   have hydom : ∃ my, sbinders[nP + 1]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - k)), my) := by
     revert hydomB
     match hby : sbinders[nP + 1]? with
@@ -1236,7 +1237,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
   | .const _ _ => intro hb; exact nomatch hb
   | .lam _ _ _ => intro hb; exact nomatch hb
   | .forallE _ _ _ => intro hb; exact nomatch hb
-  | .letE _ _ _ => intro hb; exact nomatch hb
+  | .letE _ _ _ _ => intro hb; exact nomatch hb
   | .lit _ => intro hb; exact nomatch hb
   | .proj _ _ _ => intro hb; exact nomatch hb
   | .app (.bvar _) _ => intro hb; exact nomatch hb
@@ -1245,7 +1246,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
   | .app (.const _ _) _ => intro hb; exact nomatch hb
   | .app (.lam _ _ _) _ => intro hb; exact nomatch hb
   | .app (.forallE _ _ _) _ => intro hb; exact nomatch hb
-  | .app (.letE _ _ _) _ => intro hb; exact nomatch hb
+  | .app (.letE _ _ _ _) _ => intro hb; exact nomatch hb
   | .app (.lit _) _ => intro hb; exact nomatch hb
   | .app (.proj _ _ _) _ => intro hb; exact nomatch hb
   | .app (.app (.bvar _) _) _ => intro hb; exact nomatch hb
@@ -1254,7 +1255,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
   | .app (.app (.const _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lam _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.forallE _ _ _) _) _ => intro hb; exact nomatch hb
-  | .app (.app (.letE _ _ _) _) _ => intro hb; exact nomatch hb
+  | .app (.app (.letE _ _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lit _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.proj _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.bvar _) _) _) _ => intro hb; exact nomatch hb
@@ -1265,7 +1266,7 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
     intro hb; exact nomatch hb
   | .app (.app (.app (.forallE _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
-  | .app (.app (.app (.letE _ _ _) _) _) _ =>
+  | .app (.app (.app (.letE _ _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
   | .app (.app (.app (.lit _) _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.proj _ _ _) _) _) _ =>
@@ -1289,19 +1290,19 @@ theorem checkUnitThm_inv {env' : Env} {T : Name}
 
 set_option maxHeartbeats 3200000 in
 /-- Invert a positive eta-capability check into the stored pins. -/
-theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
-    {lps : List Name} {nP nF : Nat}
+theorem checkEtaThm_inv {env' : Env md} {T ctorName : Key md}
+    {lps : List LevelParam} {nP nF : Nat}
     (h : checkEtaThm mode env' T ctorName lps nP nF = true) :
-    ∃ (tcv : ConstantVal) (tval : Expr) (cvmT : ConstantVal)
-      (mvalT : Expr) (hmcvmT : ReducibilityHint)
-      (sbinders tbindersM : List (Expr × BinderMeta))
-      (sbody tbodyM tySlot : Expr) (ℓA : Level),
-      env'.find? ((T.str "_model").str "eta") =
+    ∃ (tcv : ConstantVal md) (tval : Expr md) (cvmT : ConstantVal md)
+      (mvalT : Expr md) (hmcvmT : ReducibilityHint)
+      (sbinders tbindersM : List (Expr md × BinderMeta))
+      (sbody tbodyM tySlot : Expr md) (ℓA : Level),
+      env'.find? (auxKey (auxKey T .model) .eta) =
         some (.thmInfo tcv tval) ∧
       tcv.levelParams = lps ∧
-      env'.find? (T.str "_model") = some (.defnInfo cvmT mvalT hmcvmT) ∧
+      env'.find? (auxKey T .model) = some (.defnInfo cvmT mvalT hmcvmT) ∧
       cvmT.levelParams = lps ∧
-      (∃ cvmC mvalC hmcvmC, env'.find? (ctorName.str "_model") =
+      (∃ cvmC mvalC hmcvmC, env'.find? (auxKey ctorName .model) =
         some (.defnInfo cvmC mvalC hmcvmC) ∧ cvmC.levelParams = lps) ∧
       (∀ j, j < nF → ∃ cvmj mvalj hmcvmj,
         env'.find? (projModelName T j) = some (.defnInfo cvmj mvalj hmcvmj) ∧
@@ -1309,26 +1310,26 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
       env'.find? eqName = some eqA ∧
       tcv.type.stripPis (nP + 1) = some (sbinders, sbody) ∧
       cvmT.type.stripPis nP = some (tbindersM, tbodyM) ∧
-      (∀ (k : Nat) (b b' : Expr × BinderMeta), k < nP →
+      (∀ (k : Nat) (b b' : Expr md × BinderMeta), k < nP →
         sbinders[k]? = some b → tbindersM[k]? = some b' →
         b.1 = b'.1) ∧
       (∃ mx, sbinders[nP]? = some (
-        Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+        Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
           ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx)) ∧
       sbody = Expr.mkAppN (.const eqName [ℓA])
         [tySlot, .bvar 0,
-         Expr.mkAppN (.const (ctorName.str "_model") (lps.map .param))
+         Expr.mkAppN (.const (auxKey ctorName .model) (lps.map .param))
           (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
            (List.range nF).map fun j => Expr.mkAppN
              (.const (projModelName T j) (lps.map .param))
              (((List.range nP).map fun k => Expr.bvar (nP - k)) ++
               [Expr.bvar 0]))] ∧
-      tySlot = Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      tySlot = Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - k)) ∧
       (mode.ttChecks = true → tbodyM = Expr.sort ℓA) := by
   rw [checkEtaThm] at h
   revert h
-  match hthm : env'.find? ((T.str "_model").str "eta") with
+  match hthm : env'.find? (auxKey (auxKey T .model) .eta) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1339,7 +1340,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   | some (.thmInfo tcv tval) => ?_
   intro h
   revert h
-  match hTm : env'.find? (T.str "_model") with
+  match hTm : env'.find? (auxKey T .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1350,7 +1351,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   | some (.defnInfo cvmT mvalT hmcvmT) => ?_
   intro h
   revert h
-  match hCm : env'.find? (ctorName.str "_model") with
+  match hCm : env'.find? (auxKey ctorName .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1397,14 +1398,14 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   simp only [Bool.and_eq_true] at hrest
   obtain ⟨⟨hdomsB, hxdomB⟩, hbodyB⟩ := hrest
   have htMlen : tbindersM.length = nP := Expr.stripPis_length _ hTm_strip
-  have hdoms : ∀ (k : Nat) (b b' : Expr × BinderMeta), k < nP →
+  have hdoms : ∀ (k : Nat) (b b' : Expr md × BinderMeta), k < nP →
       sbinders[k]? = some b → tbindersM[k]? = some b' →
       b.1 = b'.1 := by
     intro k b b' hk hb hb'
     exact domsMatchAux_inv hdomsB hk
       (by rw [Nat.zero_add]; exact hb) (by rw [Nat.zero_add]; exact hb')
   have hxdom : ∃ mx, sbinders[nP]? = some (
-      Expr.mkAppN (.const (T.str "_model") (lps.map .param))
+      Expr.mkAppN (.const (auxKey T .model) (lps.map .param))
         ((List.range nP).map fun k => Expr.bvar (nP - 1 - k)), mx) := by
     revert hxdomB
     match hbx : sbinders[nP]? with
@@ -1421,7 +1422,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   | .const _ _ => intro hb; exact nomatch hb
   | .lam _ _ _ => intro hb; exact nomatch hb
   | .forallE _ _ _ => intro hb; exact nomatch hb
-  | .letE _ _ _ => intro hb; exact nomatch hb
+  | .letE _ _ _ _ => intro hb; exact nomatch hb
   | .lit _ => intro hb; exact nomatch hb
   | .proj _ _ _ => intro hb; exact nomatch hb
   | .app (.bvar _) _ => intro hb; exact nomatch hb
@@ -1430,7 +1431,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   | .app (.const _ _) _ => intro hb; exact nomatch hb
   | .app (.lam _ _ _) _ => intro hb; exact nomatch hb
   | .app (.forallE _ _ _) _ => intro hb; exact nomatch hb
-  | .app (.letE _ _ _) _ => intro hb; exact nomatch hb
+  | .app (.letE _ _ _ _) _ => intro hb; exact nomatch hb
   | .app (.lit _) _ => intro hb; exact nomatch hb
   | .app (.proj _ _ _) _ => intro hb; exact nomatch hb
   | .app (.app (.bvar _) _) _ => intro hb; exact nomatch hb
@@ -1439,7 +1440,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   | .app (.app (.const _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lam _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.forallE _ _ _) _) _ => intro hb; exact nomatch hb
-  | .app (.app (.letE _ _ _) _) _ => intro hb; exact nomatch hb
+  | .app (.app (.letE _ _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.lit _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.proj _ _ _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.bvar _) _) _) _ => intro hb; exact nomatch hb
@@ -1450,7 +1451,7 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
     intro hb; exact nomatch hb
   | .app (.app (.app (.forallE _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
-  | .app (.app (.app (.letE _ _ _) _) _) _ =>
+  | .app (.app (.app (.letE _ _ _ _) _) _) _ =>
     intro hb; exact nomatch hb
   | .app (.app (.app (.lit _) _) _) _ => intro hb; exact nomatch hb
   | .app (.app (.app (.proj _ _ _) _) _) _ =>
@@ -1474,14 +1475,14 @@ theorem checkEtaThm_inv {env' : Env} {T ctorName : Name}
   rfl
 
 /-- The pins persist under a fresh install. -/
-theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Name}
-    {lps : List Name} {caps : IndCaps}
+theorem EtaPins.step {env' : Env md} {c₁ : ConstantInfo md} {T : Key md}
+    {lps : List LevelParam} {caps : IndCaps md}
     (h : EtaPins mode env' T lps caps)
     (hfresh : env'.find? c₁.name = none) :
     EtaPins mode ⟨c₁ :: env'.consts⟩ T lps caps := by
-  have hkeep : ∀ (n : Name) (ci : ConstantInfo),
+  have hkeep : ∀ (n : Key md) (ci : ConstantInfo md),
       env'.find? n = some ci →
-      (⟨c₁ :: env'.consts⟩ : Env).find? n = some ci := by
+      (⟨c₁ :: env'.consts⟩ : Env md).find? n = some ci := by
     intro n ci hf
     rw [Env.find?_cons, if_neg ?_]
     · exact hf
@@ -1490,11 +1491,11 @@ theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Name}
       exact nomatch hf
   refine ⟨?_, ?_⟩
   · intro hcape
-    obtain ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
+    obtain ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
       heqf, h8, h9, h10, h11, h12, h13⟩ := h.1 hcape
-    refine ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hkeep _ _ hthm, h2, hkeep _ _ hTm, h4,
+    refine ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hkeep _ _ hthm, h2, hkeep _ _ hTm, h4,
       ⟨cvmC, mvalC, hmC, hkeep _ _ hCm, hClps⟩, ?_, hkeep _ _ heqf,
       h8, h9, h10, h11, h12, h13⟩
     intro j hj
@@ -1512,18 +1513,18 @@ theorem EtaPins.step {env' : Env} {c₁ : ConstantInfo} {T : Name}
 /-- The pins transport along any lookup preservation covering the
 non-recursor kinds (the pins only look up theorems, definitions and
 the pinned equality former). -/
-theorem EtaPins.transport {env₁ env₂ : Env} {T : Name}
-    {lps : List Name} {caps : IndCaps}
+theorem EtaPins.transport {env₁ env₂ : Env md} {T : Key md}
+    {lps : List LevelParam} {caps : IndCaps md}
     (h : EtaPins mode env₁ T lps caps)
-    (hkeep : ∀ (n : Name) (ci : ConstantInfo), env₁.find? n = some ci →
+    (hkeep : ∀ (n : Key md) (ci : ConstantInfo md), env₁.find? n = some ci →
       (∀ cv mI rP rules, ci ≠ .recInfo cv mI rP rules) →
       env₂.find? n = some ci) :
     EtaPins mode env₂ T lps caps := by
-  have hk : ∀ (n : Name) (cv : ConstantVal) (tv : Expr),
+  have hk : ∀ (n : Key md) (cv : ConstantVal md) (tv : Expr md),
       env₁.find? n = some (.thmInfo cv tv) →
       env₂.find? n = some (.thmInfo cv tv) :=
     fun n cv tv hf => hkeep n _ hf (fun _ _ _ _ hc => nomatch hc)
-  have hkd : ∀ (n : Name) (cv : ConstantVal) (v : Expr)
+  have hkd : ∀ (n : Key md) (cv : ConstantVal md) (v : Expr md)
       (hh : ReducibilityHint), env₁.find? n = some (.defnInfo cv v hh) →
       env₂.find? n = some (.defnInfo cv v hh) :=
     fun n cv v hh hf => hkeep n _ hf (fun _ _ _ _ hc => nomatch hc)
@@ -1532,11 +1533,11 @@ theorem EtaPins.transport {env₁ env₂ : Env} {T : Name}
     fun hf => hkeep _ _ hf (fun _ _ _ _ hc => nomatch hc)
   refine ⟨?_, ?_⟩
   · intro hcape
-    obtain ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
+    obtain ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hthm, h2, hTm, h4, ⟨cvmC, mvalC, hmC, hCm, hClps⟩, hPj,
       heqf, h8, h9, h10, h11, h12, h13⟩ := h.1 hcape
-    refine ⟨tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
-      tySlot, ℓA, hk _ _ _ hthm, h2, hkd _ _ _ _ hTm, h4,
+    refine ⟨C, tcv, tval, cvmT, mvalT, hmT, sbinders, tbindersM, sbody, tbodyM,
+      tySlot, ℓA, hC, hk _ _ _ hthm, h2, hkd _ _ _ _ hTm, h4,
       ⟨cvmC, mvalC, hmC, hkd _ _ _ _ hCm, hClps⟩, ?_, hke heqf,
       h8, h9, h10, h11, h12, h13⟩
     intro j hj
@@ -1570,39 +1571,37 @@ itself a block member (so the block invariant's public/model
 identification reaches it), and — when it has fields — the freshness
 of its first projection, which is what makes a `etaFields > 0` family
 unable to complete before the projection fold runs. -/
-@[expose] def BlockEtaPinned (mode : CheckMode) (blockNames : List Name)
-    (env : Env) : Prop :=
-  ∀ (n : Name) (cvS : ConstantVal) (capsS : IndCaps),
+@[expose] def BlockEtaPinned (mode : CheckMode) (blockNames : List (Key md))
+    (env : Env md) : Prop :=
+  ∀ (n : Key md) (cvS : ConstantVal md) (capsS : IndCaps md),
     blockNames.contains n = true →
     env.find? n = some (.indInfo cvS capsS) → capsS.eta = true →
     EtaPins mode env n cvS.levelParams capsS ∧
-      blockNames.contains capsS.etaCtor = true ∧
+      (∀ C, capsS.etaCtor = some C → blockNames.contains C = true) ∧
       (0 < capsS.etaFields → env.find? (projFnName n 0) = none)
 
 /-- A projection function's name is never a block member's: block
 members are guarded `isProjFnShape = false`. -/
-theorem projFnName_ne_of_shape {T n : Name} {j : Nat}
-    (h : n.isProjFnShape = false) : projFnName T j ≠ n := by
-  intro he
-  rw [← he] at h
-  simp [projFnName, Name.isProjFnShape] at h
+theorem projFnName_ne_of_shape {T n : Key md} {j : Nat}
+    (h : n.isProjFnShape = false) : projFnName T j ≠ n :=
+  auxKey_projFn_ne h
 
 /-- The stored-pins invariant steps at any fresh install whose name is
 not projection-shaped, given the new member's own data when it is an
 eta-capable former. -/
-theorem BlockEtaPinned.cons {mode : CheckMode} {blockNames : List Name}
-    {env : Env} {c₀ : ConstantInfo}
+theorem BlockEtaPinned.cons {mode : CheckMode} {blockNames : List (Key md)}
+    {env : Env md} {c₀ : ConstantInfo md}
     (h : BlockEtaPinned mode blockNames env)
     (hfresh : env.find? c₀.name = none)
     (hshape : c₀.name.isProjFnShape = false)
     (hnew : ∀ cvS capsS, c₀ = .indInfo cvS capsS → capsS.eta = true →
       EtaPins mode env c₀.name cvS.levelParams capsS ∧
-        blockNames.contains capsS.etaCtor = true ∧
+        (∀ C, capsS.etaCtor = some C → blockNames.contains C = true) ∧
         (0 < capsS.etaFields →
           env.find? (projFnName c₀.name 0) = none)) :
     BlockEtaPinned mode blockNames ⟨c₀ :: env.consts⟩ := by
-  have hup : ∀ n : Name, env.find? (projFnName n 0) = none →
-      (⟨c₀ :: env.consts⟩ : Env).find? (projFnName n 0) = none := by
+  have hup : ∀ n : Key md, env.find? (projFnName n 0) = none →
+      (⟨c₀ :: env.consts⟩ : Env md).find? (projFnName n 0) = none := by
     intro n hn
     rw [Env.find?_cons, if_neg (fun he =>
       projFnName_ne_of_shape (T := n) (j := 0) hshape he.symm)]
@@ -1622,14 +1621,16 @@ theorem BlockEtaPinned.cons {mode : CheckMode} {blockNames : List Name}
 definition: `indBlockCaps`' two Booleans *are* `checkEtaThm` and
 `checkUnitThm`, which invert to the artifacts' shape pins.  Transpose
 of `Model/Extend/Decl.lean`'s `hpinsT0`. -/
-theorem etaPins_of_indBlockCaps {μ : CheckMode} {env : Env}
-    {cvT cvC : ConstantVal} {nP nF : Nat} :
+theorem etaPins_of_indBlockCaps {μ : CheckMode} {env : Env md}
+    {cvT cvC : ConstantVal md} {nP nF : Nat} :
     EtaPins μ env cvT.name cvT.levelParams
       (indBlockCaps μ env cvT cvC nP nF) := by
   refine ⟨?_, ?_⟩
   · intro hcape
     simp only [indBlockCaps, Bool.and_eq_true] at hcape
-    exact checkEtaThm_inv hcape.2
+    obtain ⟨tcv, tval, cvmT, mvalT, hm, sb, tb, sbody, tbodyM, tySlot, ℓA, h⟩ :=
+      checkEtaThm_inv hcape.2
+    exact ⟨cvC.name, tcv, tval, cvmT, mvalT, hm, sb, tb, sbody, tbodyM, tySlot, ℓA, rfl, h⟩
   · intro hcapu
     simp only [indBlockCaps] at hcapu
     exact checkUnitThm_inv hcapu
@@ -1640,11 +1641,11 @@ capability's pin reads the model former's `∀`-telescope at the
 parameter count (`checkEtaThm`/`checkUnitThm`, through `EtaPins`),
 and the member's stored type is the model's under the block renaming
 (`checkMemberVal`), which keeps the telescope. -/
-theorem indCapsWF_of_pins {μ : CheckMode} {env : Env} {cvA : ConstantVal}
-    {caps : IndCaps} {f : Name → Name}
+theorem indCapsWF_of_pins {μ : CheckMode} {env : Env md} {cvA : ConstantVal md}
+    {caps : IndCaps md} {f : Key md → Key md}
     (hpins : EtaPins μ env cvA.name cvA.levelParams caps)
-    {cvm : ConstantVal} {mval : Expr} {hint : ReducibilityHint}
-    (hfm : env.find? (cvA.name.str "_model") =
+    {cvm : ConstantVal md} {mval : Expr md} {hint : ReducibilityHint}
+    (hfm : env.find? (auxKey cvA.name .model) =
       some (.defnInfo cvm mval hint))
     (hty : (cvA.type.renameConsts f == cvm.type) = true) :
     IndCapsWF (.indInfo cvA caps) := by
@@ -1658,7 +1659,7 @@ theorem indCapsWF_of_pins {μ : CheckMode} {env : Env} {cvA : ConstantVal}
     exact Expr.stripPis_isSome_of_renameConsts (f := f) _
       (by rw [hty', hstrip]; rfl)
   · intro he
-    obtain ⟨_, _, cvmT, _, _, _, _, _, _, _, _, -, -, hfmT, -, -, -, -, -,
+    obtain ⟨_, _, _, cvmT, _, _, _, _, _, _, _, _, -, -, -, hfmT, -, -, -, -, -,
       hstrip, -⟩ := hpins.1 he
     rw [hfm] at hfmT
     obtain ⟨rfl, -, -⟩ := ConstantInfo.defnInfo.inj (Option.some.inj hfmT)

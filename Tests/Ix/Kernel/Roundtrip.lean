@@ -4,10 +4,9 @@
   Exercises
   `Lean env → compile → ixon_ingress → kenv → ixon_egress → decompile → Lean`
   on the full current environment and compares each constant (by content
-  hash) against the original. Passing through `ixon_egress + decompile_env`
-  lets the validated decompile path regenerate aux_gen constants (brecOn,
-  below, ...) from the kernel-canonicalized Ixon form, rather than a
-  second ad-hoc `KEnv → Lean` decompiler.
+  hash) against the original, through `ixon_egress + decompile_env` (the
+  validated decompile path) rather than a second ad-hoc `KEnv → Lean`
+  decompiler.
 
   If `kernel-ixon-roundtrip` passes but `kernel-tutorial` fails, the bug
   is in the check side.

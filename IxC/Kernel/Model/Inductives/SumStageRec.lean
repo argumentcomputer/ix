@@ -29,19 +29,19 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps InductiveShape
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveShape
   BinderMeta RecRule)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Kit -/
 
 /-- A lifted telescope strips as the telescope does, the body lifted
 above the stripped binders. -/
 theorem stripPis_liftLooseBVars :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)} {body : Expr} (n c : Nat),
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)} {body : Expr md} (n c : Nat),
       e.stripPis k = some (bs, body) →
       ∃ bs', (e.liftLooseBVars n c).stripPis k = some (bs', body.liftLooseBVars n (c + k))
   | 0, e, bs, body, n, c, h => by
@@ -62,7 +62,7 @@ theorem stripPis_liftLooseBVars :
       simp only [Expr.stripPis, hs'', Option.map_some]
       rw [show c + 1 + k = c + (k + 1) from by omega]
     | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
-    | .lam _ _ _, h | .letE _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
       simp [Expr.stripPis] at h
 
 /-! ## The rule data's shape -/

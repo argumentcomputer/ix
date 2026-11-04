@@ -44,6 +44,11 @@ instance [Ord α] [Ord β] : Ord (α × β) where
 instance : Ord Lean.Name where
   compare := Lean.Name.cmp
 
+-- Shared by canonicalization and exact raw keys. Keep these below CanonM
+-- so semantic inspection can use exact keys without an import cycle.
+deriving instance DecidableEq for Lean.Literal
+deriving instance DecidableEq for Lean.BinderInfo
+
 deriving instance Ord for Lean.Literal
 --deriving instance Ord for Lean.Expr
 deriving instance Ord for Lean.BinderInfo

@@ -25,13 +25,13 @@ private meta def decodePrefix (modes : Syntax) : TermElabM Ixon.BinderContract :
   let mut owned := Ixon.Owned.shared
   let mut locality := Ixon.Locality.unrestricted
   let mut hasUses := false
-  for i in [:parts.size] do
+  for h : i in [:parts.size] do
     if i > 0 then
-      if let some stop := parts[i - 1]!.getTailPos? then
-        if let some start := parts[i]!.getPos? then
+      if let some stop := (parts[i - 1]'(Nat.lt_of_le_of_lt (Nat.sub_le i 1) (Membership.get_elem_helper h rfl))).getTailPos? then
+        if let some start := parts[i].getPos? then
           unless start == stop do
-            throwErrorAt parts[i]! "binder annotation components must be adjacent"
-    let atom := parts[i]![0]
+            throwErrorAt parts[i] "binder annotation components must be adjacent"
+    let atom := parts[i][0]
     if atom.isAtom && atom.getAtomVal == "!" then
       if owned == .unique then throwErrorAt atom "duplicate ownership annotation"
       owned := .unique
@@ -142,9 +142,9 @@ private meta def rewriteBinders (binders : Array Syntax)
   if binders.isEmpty && result.isSome then
     throwError "a result contract requires a function arrow"
   let mut rewritten := #[]
-  for i in [:binders.size] do
+  for h : i in [:binders.size] do
     let output := if i + 1 == binders.size then result else none
-    rewritten := rewritten ++ (← rewriteBinder binders[i]! output)
+    rewritten := rewritten ++ (← rewriteBinder binders[i] output)
   return rewritten
 
 private meta def decodeResult (stx : Syntax) : TermElabM Ixon.ValueContract := do

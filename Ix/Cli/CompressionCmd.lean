@@ -18,7 +18,7 @@ private def loadRoot (input : String) : IO (Address × Ixon.Proof) := do
   let (addr, wrapper) ← Compression.readProofInput input
   if Compression.isCompressed wrapper.proof then
     throw <| IO.userError s!"proof {addr} is already compressed"
-  let .checkEnv _ _ := wrapper.claim
+  let .checkEnv .. := wrapper.claim
     | throw <| IO.userError s!"proof {addr} is not an aggregate CheckEnv proof"
   return (addr, wrapper)
 

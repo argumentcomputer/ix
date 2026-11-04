@@ -48,7 +48,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta)
 
 universe w
@@ -60,9 +60,9 @@ variable {V : Type w} [SetTheory V]
 /-- **The dummy telescope reads to the opened body**: `k` dummy
 binders at depth `d` open at the variables `d, …, d + k - 1`, and the
 residual is the body's instantiation sequence at them. -/
-theorem denoteMeta_projTele {acval : Name → (Name → Nat) → AnnotTerm} {env : Env}
-    {φ : Name → Nat} :
-    ∀ (k d : Nat) (body : Expr) {RA : AnnotTerm},
+theorem denoteMeta_projTele {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+    {φ : LevelParam → Nat} :
+    ∀ (k d : Nat) (body : Expr md) {RA : AnnotTerm},
       denoteMeta acval env φ (d + k)
         (Expr.instSeq ((List.range k).map fun j =>
           Expr.fvar (d + j) (.sort .zero)) (k - 1) body) = some RA →
@@ -93,8 +93,8 @@ theorem denoteMeta_projTele {acval : Name → (Name → Nat) → AnnotTerm} {env
 /-- The telescope over the parameters and the subject, at depth `0`:
 the residual is the body at the direct install's own variable
 spelling (`fvsD`/`tfvD`). -/
-theorem denoteMeta_projTele_zero {acval : Name → (Name → Nat) → AnnotTerm} {env : Env}
-    {φ : Name → Nat} {nP : Nat} {body : Expr} {RA : AnnotTerm}
+theorem denoteMeta_projTele_zero {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+    {φ : LevelParam → Nat} {nP : Nat} {body : Expr md} {RA : AnnotTerm}
     (h : denoteMeta acval env φ (nP + 1)
       (Expr.instSpine (Ix.Kernel.fvsD nP ++ [Ix.Kernel.tfvD nP]) nP body) = some RA) :
     denoteMeta acval env φ 0 (Ix.Kernel.projTele (nP + 1) body)
@@ -102,8 +102,8 @@ theorem denoteMeta_projTele_zero {acval : Name → (Name → Nat) → AnnotTerm}
   refine denoteMeta_projTele (nP + 1) 0 body ?_
   rw [Nat.zero_add, Nat.add_sub_cancel]
   rw [Expr.instSpine_eq_instSeq] at h
-  have e : ((List.range (nP + 1)).map fun j => Expr.fvar (0 + j) (.sort .zero))
-      = Ix.Kernel.fvsD nP ++ [Ix.Kernel.tfvD nP] := by
+  have e : ((List.range (nP + 1)).map fun j => (Expr.fvar (md := md)) (0 + j) (.sort .zero))
+      = (Ix.Kernel.fvsD (md := md)) nP ++ [Ix.Kernel.tfvD nP] := by
     rw [List.range_succ, List.map_append, List.map_cons, List.map_nil]
     simp only [Ix.Kernel.fvsD, Ix.Kernel.tfvD, Nat.zero_add]
   rw [e]
@@ -128,9 +128,9 @@ the opened body reads to a graded term whose value is the field
 domain at the subject's projection spine.  The grading in the squash
 regime rides the official guard's content (`hguard`) and the unused
 earlier fields' invariance (`hfree`). -/
-theorem bodyFrames {env : Env} (m : EnvModel V env)
-    {nP nF i off : Nat} {T : Name} {cty : Expr} {cds : List Expr}
-    {bodyC : Expr} {mbC : BinderMeta} {body : Expr}
+theorem bodyFrames {env : Env md} (m : EnvModel V env)
+    {nP nF i off : Nat} {T : Key md} {cty : Expr md} {cds : List (Expr md)}
+    {bodyC : Expr md} {mbC : BinderMeta} {body : Expr md}
     (hcf : Expr.instPisAt (Ix.Kernel.fvsD nP ++ Ix.Kernel.projArgsD T i nP) cty
       = some (cds, .forallE
           (Expr.instSpine (Ix.Kernel.fvsD nP ++ [Ix.Kernel.tfvD nP]) nP body) bodyC mbC))
@@ -140,7 +140,7 @@ theorem bodyFrames {env : Env} (m : EnvModel V env)
     -- its fields at offset `1`)
     (hprev : ∀ j, j < i → ∃ entry, env.findProj? T j = some entry ∧ entry.off = off)
     (hi : i < nF)
-    {ds : List (Nat × Nat × AnnotTerm)} {bodyA : AnnotTerm} {ψ : Name → Nat} {w : Nat}
+    {ds : List (Nat × Nat × AnnotTerm)} {bodyA : AnnotTerm} {ψ : LevelParam → Nat} {w : Nat}
     (hlenDs : ds.length = nP + nF) (hbelow : DomsBelow 0 ds)
     (hctyRead0 : denoteMeta m.acval env ψ 0 cty = some (mkPisAV ds bodyA))
     {sorts : List Level}
@@ -187,8 +187,8 @@ theorem bodyFrames {env : Env} (m : EnvModel V env)
       (fun k => denoteMeta_closed m.acval_erase m.cval_closed hCf hCb hctyRead0 1 k)
       hctyRead0 (nP + 1)
   -- the arguments' scoping
-  have hlenP : (Ix.Kernel.fvsD nP).length = nP := Ix.Kernel.fvsD_length nP
-  have hfvsDidx : ∀ (k : Nat) (x : Expr), (Ix.Kernel.fvsD nP)[k]? = some x →
+  have hlenP : ((Ix.Kernel.fvsD (md := md)) nP).length = nP := Ix.Kernel.fvsD_length nP
+  have hfvsDidx : ∀ (k : Nat) (x : Expr md), (Ix.Kernel.fvsD nP)[k]? = some x →
       ∃ ty, x = Expr.fvar k ty := by
     intro k x hx
     have hk : k < nP := by

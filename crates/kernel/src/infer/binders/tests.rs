@@ -66,7 +66,7 @@ fn reference<M: KernelMode>(
     return Ok(ty.clone());
   }
   let result = match e.data() {
-    ExprData::Lam(name, bi, ty, body, _) => {
+    ExprData::Lam(name, bi, contract, ty, body, _) => {
       if !tc.infer_only {
         let domain_ty = reference(tc, ty)?;
         tc.ensure_sort(&domain_ty)?;
@@ -80,21 +80,25 @@ fn reference<M: KernelMode>(
             name: name.clone(),
             bi: bi.clone(),
             ty: ty.clone(),
+            contract: *contract,
+            result: ixon::contract::ValueContract::shared(),
           },
         );
         let opened = instantiate_rev(&mut tc.env.intern, body, &[fv]);
         let body_ty = reference(tc, &opened)?;
         let body_ty = cheap_beta_reduce(&mut tc.env.intern, &body_ty);
         let closed = abstract_fvars(&mut tc.env.intern, &body_ty, &[id]);
-        Ok(tc.intern(KExpr::all(
+        Ok(tc.intern(KExpr::all_contract(
           M::meta_field(Name::anon()),
           M::meta_field(BinderInfo::Default),
+          *contract,
+          ixon::contract::ValueContract::shared(),
           ty.clone(),
           closed,
         )))
       })?
     },
-    ExprData::All(name, bi, ty, body, _) => {
+    ExprData::All(name, bi, contract, result, ty, body, _) => {
       let domain_ty = reference(tc, ty)?;
       let u1 = tc.ensure_sort(&domain_ty)?;
       tc.with_lctx_scope(|tc| {
@@ -106,6 +110,8 @@ fn reference<M: KernelMode>(
             name: name.clone(),
             bi: bi.clone(),
             ty: ty.clone(),
+            contract: *contract,
+            result: *result,
           },
         );
         let opened = instantiate_rev(&mut tc.env.intern, body, &[fv]);
@@ -150,8 +156,11 @@ fn same_shape<M: KernelMode>(a: KExpr<M>, b: KExpr<M>) {
       (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
         pending.extend([(f, g), (x, y)]);
       },
-      (ExprData::Lam(n, bi, t, r, _), ExprData::Lam(m, bj, u, s, _))
-      | (ExprData::All(n, bi, t, r, _), ExprData::All(m, bj, u, s, _)) => {
+      (ExprData::Lam(n, bi, _, t, r, _), ExprData::Lam(m, bj, _, u, s, _))
+      | (
+        ExprData::All(n, bi, _, _, t, r, _),
+        ExprData::All(m, bj, _, _, u, s, _),
+      ) => {
         assert_eq!(n, m);
         assert_eq!(bi, bj);
         pending.extend([(t, u), (r, s)]);
@@ -265,11 +274,11 @@ fn outer_contexts<M: KernelMode>() {
     assert_eq!(id, FVarId(0));
     tc.lctx.push(
       id,
-      LocalDecl::CDecl {
-        name: name::<M>("outer"),
-        bi: M::meta_field(BinderInfo::Default),
-        ty: sort(1),
-      },
+      LocalDecl::cdecl(
+        name::<M>("outer"),
+        M::meta_field(BinderInfo::Default),
+        sort(1),
+      ),
     );
   }
   let legacy = lam(var(0), lam(var(1), var::<M>(0)));

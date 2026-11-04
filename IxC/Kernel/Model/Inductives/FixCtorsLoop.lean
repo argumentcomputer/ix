@@ -21,7 +21,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps InductiveShape
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps InductiveShape
   BinderMeta RecRule)
 
 universe w
@@ -31,42 +31,42 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode}
 set_option maxHeartbeats 6400000 in
 /-- **The constructors' conses, in order.** -/
 theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
-    {F : Nat} {p : InductiveShape} {env₀ envI : Env} {cvTa : ConstantVal}
-    {ctors ctorsA : List (ConstantVal × Nat)} {sortss : List (List Level)}
+    {F : Nat} {p : InductiveShape md} {env₀ envI : Env md} {cvTa : ConstantVal md}
+    {ctors ctorsA : List (ConstantVal md × Nat)} {sortss : List (List Level)}
     (hCtors : Ix.Kernel.checkSumCtors (Ix.Kernel.fueledOps μ F) env₀ envI p.cvT.name
       p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp p.large cvTa ctors = .ok (ctorsA, sortss))
     (hnd : (ctorsA.map (·.1.name)).Nodup)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
     (hlpsA : ∀ cA ∈ ctorsA, cA.1.levelParams = p.cvT.levelParams)
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
-    (hFssParams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {idxF : Nat → List (Expr md)} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    (hFssParams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) →
       fssOf p.nP (ctorDataList dsF esF ψ₁ ctorsA 0) = fssOf p.nP (ctorDataList dsF esF ψ₂ ctorsA 0))
-    (hFssBelow : ∀ ψ : Name → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
+    (hFssBelow : ∀ ψ : LevelParam → Nat, ∀ Fs ∈ fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0),
       FieldsBelow p.nP Fs)
-    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ)
-    (hFssOkP : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hFssOkP : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       SumFieldsOkB (p.resSort.eval ψ) ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)) ∧
       SumFieldsValid ρ (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)))
-    (hIdx : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hIdx : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
         SpineFit ρ (((ppsAll ψ).drop p.nP).map (·.2.2)) (idxValsAt ρ (esF j ψ) bs))
-    (Inv : ∀ {env' : Env}, EnvModel V env' → Prop)
-    (hInv : ∀ {env' : Env} (m' : EnvModel V env') (cA : ConstantVal × Nat)
-      (A : (Name → Nat) → AnnotTerm)
+    (Inv : ∀ {env' : Env md}, EnvModel V env' → Prop)
+    (hInv : ∀ {env' : Env md} (m' : EnvModel V env') (cA : ConstantVal md × Nat)
+      (A : (LevelParam → Nat) → AnnotTerm)
       (mC : EnvModel V ⟨.ctorInfo cA.1 p.nP cA.2 :: env'.consts⟩),
       cA ∈ ctorsA → env'.find? cA.1.name = none →
       mC.acval = acvalWith m'.acval cA.1.name A → Inv m' → Inv mC)
     -- the block's capability record and its laws at every carrier the
     -- invariant reaches (task #210 Part A)
-    (caps : IndCaps)
-    (leafT : (Name → Nat) → AnnotTerm)
-    (hTlawsOf : ∀ {env' : Env} (m' : EnvModel V env') (k : Nat) (cA : ConstantVal × Nat),
+    (caps : IndCaps md)
+    (leafT : (LevelParam → Nat) → AnnotTerm)
+    (hTlawsOf : ∀ {env' : Env md} (m' : EnvModel V env') (k : Nat) (cA : ConstantVal md × Nat),
       ctorsA[k]? = some cA → Inv m' →
       FormerData m' cvTa (p.nP + p.nIdx) p.resSort ppsAll →
       (∀ ψ, m'.acval p.cvT.name ψ = leafT ψ) →
@@ -74,7 +74,7 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
         = sumMkAV (p.resSort.eval ψ) k (dsF k ψ) (((dsF k ψ).drop p.nP).map (·.2.2))
             (uChains (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0)))) →
       CapsLawsAt m' p.cvT.name cvTa caps)
-    (hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hfold : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
       ∀ bs : List V, SpineFit ρ (((dsF j ψ).drop p.nP).map (·.2.2)) bs →
         interp V (consList bs ρ)
@@ -83,7 +83,7 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
               (consList (idxValsAt ρ (esF j ψ) bs) ρ)
               (rChains p.nIdx p.nIdx (fssOf p.nP (ctorDataList dsF esF ψ ctorsA 0))
                 (essOf (ctorDataList dsF esF ψ ctorsA 0))))) :
-    ∀ (rest : List (ConstantVal × Nat)) (k : Nat) (env : Env) (mp : EnvModelM V μ env),
+    ∀ (rest : List (ConstantVal md × Nat)) (k : Nat) (env : Env md) (mp : EnvModelM V μ env),
       (∀ i, rest[i]? = ctorsA[k + i]?) → k + rest.length = ctorsA.length →
       Ix.Kernel.EtaFamiliesClosedExcept env p.cvT.name →
       env.find? p.cvT.name = some (.indInfo cvTa caps) →
@@ -127,7 +127,7 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
       intro ψ
       rw [essOf_getElem?, ctorDataList_getElem?, hcAk, Nat.zero_add]; rfl
     -- the stage
-    have hfoldC : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    have hfoldC : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
         Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ →
         ∀ bs : List V, SpineFit ρ (((dsF k ψ).drop p.nP).map (·.2.2)) bs →
           interp V (consList bs ρ) (ctorBodyAVI mp.base2 p.cvT.name p.nP cA.2 ψ (esF k ψ))
@@ -141,7 +141,7 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
       exact hfold k cA hcAk ψ ρ hρ bs hsp
     have hcbT : ConstsBound env cvTa.type :=
       constsBound_of_constsResolve _ (mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)).2.2.1
-    have hcross : ∀ e : Expr, ConsCrossAt (.ctorInfo cA.1 p.nP cA.2) e :=
+    have hcross : ∀ e : Expr md, ConsCrossAt (.ctorInfo cA.1 p.nP cA.2) e :=
       fun _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)
     obtain ⟨mpC, hacC⟩ := stageCtorGen (j := k) hE mp hCtor hfresh htr hfT hlpsT hlpsC
       (fun m₂ hag hleafC₂ => by
@@ -163,7 +163,7 @@ theorem ctorsLoopGen (hμ : μ.verifiedChecks = true)
     have hE' : Ix.Kernel.EtaFamiliesClosedExcept ⟨.ctorInfo cA.1 p.nP cA.2 :: env.consts⟩
         p.cvT.name :=
       hE.cons hfresh (fun _ _ heq => nomatch heq)
-    have hfT' : (⟨.ctorInfo cA.1 p.nP cA.2 :: env.consts⟩ : Env).find? p.cvT.name
+    have hfT' : (⟨.ctorInfo cA.1 p.nP cA.2 :: env.consts⟩ : Env md).find? p.cvT.name
         = some (.indInfo cvTa caps) := Ix.Kernel.Env.find?_cons_of_fresh hfresh hfT
     have hFD' : FormerData mpC.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll :=
       hFD.cross (c₀ := .ctorInfo cA.1 p.nP cA.2) hfresh (hcross _) hcbT mpC.base2 hacC

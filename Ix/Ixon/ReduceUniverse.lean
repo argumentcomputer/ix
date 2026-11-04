@@ -98,9 +98,9 @@ def nIMax (a b : Univ) : Univ :=
     the simplifying constructors — exactly what anon/meta ingress does.
     A non-fixpoint entry reaches the kernel changed (the stage-1
     decoration-presence test); P6 pins that this rebuild refines into
-    the Géran classes. `tc-unit` pins agreement with
-    `Ix.Tc.reduceIxonUniv` (the same closure via the kernel's own
-    constructors). -/
+    the Géran classes. `Tests.Ix.IxonUniverse` retains the complete semantic
+    corpus. The former `Ix.Tc.reduceIxonUniv` constructor comparison is
+    historical; it retired with that backend. -/
 def reduceUniv : Univ → Univ
   | .zero => .zero
   | .var i => .var i

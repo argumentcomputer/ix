@@ -14,13 +14,14 @@
   - C6 parity: `rs_decompile_env_consts` output matches the original
     constants field-for-field (types, values, level params, hints,
     recursor rules — the round trip is exact on this fixture).
-  - Root equality: recompiling the materialized constants reproduces
-    the original canonical root — compile ∘ materialize ∘ compile is a
-    fixed point, so every computed field (hashes, cached flags) the
-    Rust side produced is byte-faithful under re-reading.
-  - Fresh kernel replay: `Ix.Replay.planDeclarations` over the
-    materialized map replays clean into an empty kernel env — the
-    non-elaborator core of `import_ixe`.
+  - Root equality: recompiling the complete materialized source output
+    reproduces the original canonical root — compile ∘ materialize ∘
+    compile is a fixed point, so every computed field (hashes, cached
+    flags) the Rust side produced is byte-faithful under re-reading.
+  - Fresh kernel replay: `Ix.Replay.planDeclarations` consumes the
+    complete materialized source map and replays clean into an empty
+    kernel env (the non-elaborator core of `import_ixe`); every source
+    constant is present and exact after replay.
   - Closure scoping: `only [TIxImp.dbl]` returns the reference closure
     and nothing else.
   - C8: an in-process consumer file `import_ixe`s the artifact and
@@ -30,6 +31,7 @@
 module
 
 public import LSpec
+public import Ix.Ixon
 public import Ix.ImportIxe
 -- The C8 consumer subprocess `import`s Ix.IxEval; importing it here keeps
 -- its olean in the test target's build closure (hermetic builds ship only
@@ -83,14 +85,16 @@ private def fixtureDecls : List Lean.Declaration := [
     ctors := [{
       name := `TIxImp.P.mk
       type := arrow cN (arrow cN (.const `TIxImp.P [])) }] }] false,
-  -- Mutual inductive pair (grouped inductDecl, mutual recursors).
+  -- Mutual inductive pair (grouped inductDecl, mutual recursors) with
+  -- distinct members.
   .inductDecl [] 0 [
     { name := `TIxImp.A, type := type1
       ctors := [{ name := `TIxImp.A.mk
                   type := arrow (.const `TIxImp.B []) (.const `TIxImp.A []) }] },
     { name := `TIxImp.B, type := type1
       ctors := [{ name := `TIxImp.B.mk
-                  type := arrow (.const `TIxImp.A []) (.const `TIxImp.B []) }] }]
+                  type := arrow (.const `TIxImp.A [])
+                    (arrow cN (.const `TIxImp.B [])) }] }]
     false,
   -- Doubling via the recursor: const-with-levels, app spine, lambdas.
   .defnDecl {
@@ -181,8 +185,7 @@ private def fixtureDecls : List Lean.Declaration := [
 
 /-- Kernel-replay the fixture into an empty environment and return its
     constants. -/
-private def buildFixtureConsts :
-    IO (Array (Lean.Name × Lean.ConstantInfo)) := do
+private def buildFixtureConsts : IO (Array (Lean.Name × Lean.ConstantInfo)) := do
   let env ← Lean.mkEmptyEnvironment
   let mut kenv := env.toKernelEnv
   for decl in fixtureDecls do
@@ -254,6 +257,7 @@ private def compareCI (name : Lean.Name) (a b : Lean.ConstantInfo) :
 
 /-! ### The tests -/
 
+/-- C6 parity, source root equality and fresh replay. -/
 private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
   let dir ← IO.FS.createTempDir
   let path := (dir / "fixture.ixe").toString
@@ -263,23 +267,26 @@ private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
     if status.ungrounded.size > 0 then
       return (false, 0, 0,
         some s!"fixture compile ungrounded: {status.ungrounded}")
-    -- C6 parity: materialize everything and compare per constant.
+    -- C6 parity: materialize everything and compare per constant. Source
+    -- import restores the complete original declaration set.
     let materialized ← Ix.ImportIxe.materializeIxe path
-    if materialized.size != original.size then
-      return (false, 0, 0, some s!"constant count: original \
-{original.size}, materialized {materialized.size}")
+    let extra := materialized.filter fun (n, _) => !original.any (·.1 == n)
+    let missing := original.filter fun (n, _) => !materialized.any (·.1 == n)
+    if materialized.size != original.size || !missing.isEmpty || !extra.isEmpty then
+      return (false, 0, 0, some s!"materialized names: original \
+{original.size}, materialized {materialized.size}; extra {extra.map (·.1)}, missing {missing.map (·.1)}")
     let mut origMap : Lean.NameMap Lean.ConstantInfo := {}
     for (n, ci) in original do
       origMap := origMap.insert n ci
     let mut matMap : Lean.NameMap Lean.ConstantInfo := {}
     for (n, ci) in materialized do
       let some oci := origMap.find? n
-        | return (false, 0, 0, some s!"unexpected constant {n}")
+        | return (false, 0, 0, some s!"unexpected source constant {n}")
       if let some e := compareCI n oci ci then
         return (false, 0, 0, some e)
       matMap := matMap.insert n ci
-    -- Root equality: recompiling the materialized constants is a fixed
-    -- point of the canonical root.
+    -- Root equality: recompiling the complete materialized source output is
+    -- a fixed point of the canonical root.
     let path2 := (dir / "rebuilt.ixe").toString
     let status2 ← Ix.CompileM.rsCompileEnvBytesFFI materialized.toList
       path2 false
@@ -299,8 +306,11 @@ private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
       | .ok kenv' => kenv := kenv'
       | .error _ =>
         return (false, 0, 0, some s!"fresh kernel replay rejected {key}")
-    unless kenv.constants.contains `TIxImp.dbl do
-      return (false, 0, 0, some "fresh replay lost TIxImp.dbl")
+    for (n, expected) in original do
+      let some actual := kenv.constants.find? n
+        | return (false, 0, 0, some s!"fresh replay lost source constant {n}")
+      if let some e := compareCI n expected actual then
+        return (false, 0, 0, some s!"fresh replay: {e}")
     return (true, original.size, 0, none)
   finally
     IO.FS.removeDirAll dir
@@ -413,12 +423,14 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
     let input := Lean.mkApp (.const `TIxImp.dbl []) (.const commitName [])
     let output := Lean.mkApp (.const nSucc [])
       (Lean.mkApp (.const nSucc []) (.const nZero []))
-    let claim ← match Ix.Commit.evalClaim compileEnv' [] input output
+    let ctx : Ix.ClaimContext :=
+      { spec := default, binding := default, axioms := none }
+    let claim ← match Ix.Commit.evalClaim ctx compileEnv' [] input output
         voteType with
       | .ok claim => pure claim
       | .error e => return (false, 0, 0, some s!"evalClaim failed: {e}")
     match claim with
-    | .eval i o _ =>
+    | .eval _ i o _ =>
       if i == o then
         return (false, 0, 0, some "degenerate claim: input addr = output addr")
       return (true, 0, 0, none)

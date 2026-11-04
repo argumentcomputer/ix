@@ -279,6 +279,141 @@ def getTagN (f : Nat) : GetM TagN := do
   else
     getTagNWide f flag (p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2))
 
+/-! ### TagN at a fixed flag width (PERF P3)
+
+`getTagN` and `putTagN` take the flag width `f` as a run-time argument, so
+every integer they read or write evaluates the header shift `2 ^ (8 - f)` and
+the rung ends `tagNEnd1..5` with `Nat.pow`, which runs through GMP and its
+allocator. The codec only ever passes `f = 0`, `2` or `4`.
+
+`getTagNAt`/`putTagNAt` are the same bodies with their helpers `@[inline]`
+(`tagNEndAt1..5`, `tagNHeaderAt`, `getTagNWideAt`), so at a literal width the
+compiler folds every power to a constant. `getTagNFast`/`putTagNFast` dispatch
+a width of `0`, `2` or `4` to those copies and any other width to the
+reference. They are `@[noinline]`, so that compiled code calls them by name
+and the runtime-closure audits, which find a `csimp` replacement where its
+target is called, see it (an inlined target would leave no trace).
+The `@[csimp]` theorems `getTagN_eq_fast` and `putTagN_eq_fast` make compiled
+code call them; every theorem keeps talking about `getTagN` and `putTagN`. Each
+branch of each equation holds by `rfl`: the copies are the reference terms. -/
+
+@[inline] def tagNEndAt1 (f : Nat) : Nat := 2 ^ (8 - f - 1)
+@[inline] def tagNEndAt2 (f : Nat) : Nat := tagNEndAt1 f + 2 ^ (8 - f - 2 + 8)
+@[inline] def tagNEndAt3 (f : Nat) : Nat := tagNEndAt2 f + 2 ^ 16
+@[inline] def tagNEndAt4 (f : Nat) : Nat := tagNEndAt3 f + 2 ^ 24
+@[inline] def tagNEndAt5 (f : Nat) : Nat := tagNEndAt4 f + 2 ^ 32
+@[inline] def tagNHeaderAt (f : Nat) (flag : UInt8) (payload : Nat) : UInt8 :=
+  (flag.toNat * 2 ^ (8 - f) + payload).toUInt8
+
+/-- `putTagN` with its helpers inlined. -/
+@[inline] def putTagNAt (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
+  let v := value.toNat
+  let lead := 2 ^ (8 - f - 1)
+  let mbit := 2 ^ (8 - f - 2)
+  if v < tagNEndAt1 f then
+    putU8 (tagNHeaderAt f flag v)
+  else if v < tagNEndAt2 f then do
+    putU8 (tagNHeaderAt f flag (lead + (v - tagNEndAt1 f) / 256))
+    putU8 ((v - tagNEndAt1 f) % 256).toUInt8
+  else if v < tagNEndAt3 f then do
+    putU8 (tagNHeaderAt f flag (lead + mbit))
+    putU64TrimmedLEAux (v - tagNEndAt2 f).toUInt64 2
+  else if v < tagNEndAt4 f then do
+    putU8 (tagNHeaderAt f flag (lead + mbit + 1))
+    putU64TrimmedLEAux (v - tagNEndAt3 f).toUInt64 3
+  else if v < tagNEndAt5 f then do
+    putU8 (tagNHeaderAt f flag (lead + mbit + 2))
+    putU64TrimmedLEAux (v - tagNEndAt4 f).toUInt64 4
+  else do
+    putU8 (tagNHeaderAt f flag (lead + mbit + 3))
+    putU64TrimmedLEAux (v - tagNEndAt5 f).toUInt64 8
+
+/-- `getTagNWide` with its helpers inlined. -/
+@[inline] def getTagNWideAt (f : Nat) (flag : UInt8) (c : Nat) : GetM TagN :=
+  if c = 0 then do
+    let x ← getU64TrimmedLEAux 2
+    pure ⟨flag, (tagNEndAt2 f + x.toNat).toUInt64⟩
+  else if c = 1 then do
+    let x ← getU64TrimmedLEAux 3
+    pure ⟨flag, (tagNEndAt3 f + x.toNat).toUInt64⟩
+  else if c = 2 then do
+    let x ← getU64TrimmedLEAux 4
+    pure ⟨flag, (tagNEndAt4 f + x.toNat).toUInt64⟩
+  else if c = 3 then do
+    let x ← getU64TrimmedLEAux 8
+    if tagNEndAt5 f + x.toNat < 2 ^ 64 then
+      pure ⟨flag, (tagNEndAt5 f + x.toNat).toUInt64⟩
+    else
+      throw "TagN value exceeds UInt64"
+  else
+    throw s!"invalid TagN code {c}"
+
+/-- `getTagN` with its helpers inlined. -/
+@[inline] def getTagNAt (f : Nat) : GetM TagN := do
+  let b ← getU8
+  let flag := (b.toNat / 2 ^ (8 - f)).toUInt8
+  let p := b.toNat % 2 ^ (8 - f)
+  if p < 2 ^ (8 - f - 1) then
+    pure ⟨flag, p.toUInt64⟩
+  else if p - 2 ^ (8 - f - 1) < 2 ^ (8 - f - 2) then do
+    let lo ← getU8
+    pure ⟨flag, (tagNEndAt1 f + (p - 2 ^ (8 - f - 1)) * 256 + lo.toNat).toUInt64⟩
+  else
+    getTagNWideAt f flag (p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2))
+
+/-- `putTagN 0`, its powers folded. -/
+def putTagN0 (flag : UInt8) (value : UInt64) : PutM Unit := putTagNAt 0 flag value
+/-- `putTagN 2`, its powers folded. -/
+def putTagN2 (flag : UInt8) (value : UInt64) : PutM Unit := putTagNAt 2 flag value
+/-- `putTagN 4`, its powers folded. -/
+def putTagN4 (flag : UInt8) (value : UInt64) : PutM Unit := putTagNAt 4 flag value
+/-- `getTagN 0`, its powers folded. -/
+def getTagN0 : GetM TagN := getTagNAt 0
+/-- `getTagN 2`, its powers folded. -/
+def getTagN2 : GetM TagN := getTagNAt 2
+/-- `getTagN 4`, its powers folded. -/
+def getTagN4 : GetM TagN := getTagNAt 4
+
+/-- `putTagN` by width: the folded copy for `0`, `2` and `4`, the reference
+otherwise. -/
+@[noinline] def putTagNFast (f : Nat) (flag : UInt8) (value : UInt64) : PutM Unit :=
+  if f = 0 then putTagN0 flag value
+  else if f = 2 then putTagN2 flag value
+  else if f = 4 then putTagN4 flag value
+  else putTagN f flag value
+
+/-- `getTagN` by width: the folded copy for `0`, `2` and `4`, the reference
+otherwise. -/
+@[noinline] def getTagNFast (f : Nat) : GetM TagN :=
+  if f = 0 then getTagN0
+  else if f = 2 then getTagN2
+  else if f = 4 then getTagN4
+  else getTagN f
+
+/-- Compiled code writes TagN integers with the folded copies. -/
+@[csimp] theorem putTagN_eq_fast : @putTagN = @putTagNFast := by
+  funext f flag value
+  unfold putTagNFast
+  split
+  · next h => subst h; rfl
+  split
+  · next h => subst h; rfl
+  split
+  · next h => subst h; rfl
+  rfl
+
+/-- Compiled code reads TagN integers with the folded copies. -/
+@[csimp] theorem getTagN_eq_fast : @getTagN = @getTagNFast := by
+  funext f
+  unfold getTagNFast
+  split
+  · next h => subst h; rfl
+  split
+  · next h => subst h; rfl
+  split
+  · next h => subst h; rfl
+  rfl
+
 /-! ## Contract serialization -/
 
 /-- Counts must fit the remaining input before a reader allocates or iterates. -/

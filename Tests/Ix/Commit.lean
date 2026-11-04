@@ -38,9 +38,15 @@ def commDeterminismTests : TestSeq :=
 
 /-! ## Claim.commit tests -/
 
+/-- A stand-in claim context. -/
+private def ctx : Ix.ClaimContext :=
+  { spec := Address.blake3 "commit-test-spec".toUTF8
+    binding := Address.blake3 "commit-test-binding".toUTF8
+    axioms := none }
+
 def claimCommitTests : TestSeq :=
-  let evalClaim := Claim.eval payload1 payload2 none
-  let checkClaim := Claim.check payload1 none
+  let evalClaim := Claim.eval ctx payload1 payload2 none
+  let checkClaim := Claim.check ctx payload1 none
   let revealSafety := Claim.reveal payload1 (.defn none (some .safe) none none none)
   let revealKind := Claim.reveal payload1 (.defn (some .defn) none none none none)
   let revealBoth := Claim.reveal payload1 (.defn (some .defn) (some .safe) none none none)
@@ -166,14 +172,14 @@ def compileDefTests : TestSeq :=
 /-! ## checkClaim and revealClaim tests -/
 
 private def checkClaimSucceeds : Bool :=
-  match Ix.Commit.checkClaim emptyCompileEnv [] simpleType simpleValue with
-  | .ok (.check _ _) => true
+  match Ix.Commit.checkClaim ctx emptyCompileEnv [] simpleType simpleValue with
+  | .ok (.check _ _ _) => true
   | _ => false
 
 private def checkClaimMatchesCompileDef : Bool :=
   match Ix.Commit.compileDef emptyCompileEnv [] simpleType simpleValue,
-        Ix.Commit.checkClaim emptyCompileEnv [] simpleType simpleValue with
-  | .ok (addr, _), .ok (.check claimAddr _) => addr == claimAddr
+        Ix.Commit.checkClaim ctx emptyCompileEnv [] simpleType simpleValue with
+  | .ok (addr, _), .ok (.check _ claimAddr _) => addr == claimAddr
   | _, _ => false
 
 private def openConstantInfoDefn : Bool :=
@@ -185,7 +191,7 @@ private def openConstantInfoDefn : Bool :=
     | some named =>
       match env'.constants.get? named.addr with
       | some bytes =>
-        match Ixon.deConstantAt bytes 0 with
+        match Ixon.deConstantAt bytes 0 bytes.size with
         | .ok constant =>
           let info := Ix.Commit.openConstantInfo constant.info
           -- Should be a defn variant with all fields some
@@ -205,7 +211,7 @@ private def openConstantInfoRoundtrips : Bool :=
     | some named =>
       match env'.constants.get? named.addr with
       | some bytes =>
-        match Ixon.deConstantAt bytes 0 with
+        match Ixon.deConstantAt bytes 0 bytes.size with
         | .ok constant =>
           let info := Ix.Commit.openConstantInfo constant.info
           -- The fully-revealed RevealConstantInfo should serde roundtrip

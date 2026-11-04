@@ -66,13 +66,20 @@ def core := ⟦
          b16, b17, b18, b19, b20, b21, b22, b23,
          b24, b25, b26, b27, b28, b29, b30, b31] = load(b);
     -- Pack 7 bytes per field element, base 256, then compare packed
-    -- limbs: 31 matched variables become 5. A `U8` is `< 256` by type, so
-    -- base-256 packing is INJECTIVE and the comparison decides byte
-    -- equality exactly — unlike a weighted sum with smaller coefficients,
-    -- where distinct byte strings collide and unequal addresses would
-    -- compare equal. Seven is the largest safe group: `256^7 - 1 = 2^56-1`
-    -- fits Goldilocks, while eight bytes would reach `2^64-1 > p` and wrap
-    -- the packing back into collisions.
+    -- limbs: 31 matched variables become 5. On bytes below 256, base-256
+    -- packing is INJECTIVE and the comparison decides byte equality
+    -- exactly — unlike a weighted sum with smaller coefficients, where
+    -- distinct byte strings collide and unequal addresses would compare
+    -- equal. Seven is the largest safe group: `256^7 - 1 = 2^56-1` fits
+    -- Goldilocks, while eight bytes would reach `2^64-1 > p` and wrap the
+    -- packing back into collisions.
+    --
+    -- `U8` is nominal typing, not a range: `u8_from_field_unsafe` gives
+    -- any field element that type. Elements that are not bytes can agree
+    -- on every packed limb while the addresses they stand for differ, so
+    -- both addresses must hold checked bytes: IO bytes admitted by
+    -- `read_checked_byte_stream`, hash outputs (whose bytes the hash
+    -- gadget range-checks), byte-lookup results, or literals.
     -- Compared one limb at a time, each packed inside the branch that
     -- needs it: a mismatch in an early group returns without ever packing
     -- the later ones. Width is set by the widest path, so this costs the
@@ -162,20 +169,6 @@ def core := ⟦
     assert_eq!(memo_u32_less_than(depth, 0xFFFFFFFF), 1,
       "list depth exceeds u32");
     depth + 1
-  }
-
-  -- A constrained termination certificate for a prover-supplied list. Every
-  -- recursive edge decreases a u32 depth, so even adversarial memory cannot
-  -- close a cycle. Check BEFORE incrementing: field/wrapping addition alone
-  -- is not a well-founded rank. The scalar comparison is memoized across
-  -- lists, keeping its range-check columns out of each list-walk row.
-  fn list_depth_checked‹T›(list: List‹T›) -> G {
-    match load(list) {
-      ListNode.Nil => 0,
-      ListNode.Cons(_, rest) =>
-        let depth = list_depth_checked(rest);
-        checked_depth_succ(depth),
-    }
   }
 
   fn list_length_u64‹T›(list: List‹T›) -> U64 {

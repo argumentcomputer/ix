@@ -33,45 +33,45 @@ exactly the sub-runs the inversion hands back, each sub-run being at
 
 namespace Ix.Kernel.Rules
 
-variable {env : Env}
+variable {env : Env md}
 
 /-- `whnfCore` at `fuel` is bridged. -/
-@[expose] def WhnfCoreBridge (env : Env) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e e' : Expr},
+@[expose] def WhnfCoreBridge (env : Env md) (fuel : Nat) : Prop :=
+  ∀ {d : Nat} {e e' : Expr md},
     whnfCore .verified env fuel d e = .ok e' → Red env d e e'
 
 /-- `whnf` at `fuel` is bridged. -/
-@[expose] def WhnfBridge (env : Env) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e e' : Expr},
+@[expose] def WhnfBridge (env : Env md) (fuel : Nat) : Prop :=
+  ∀ {d : Nat} {e e' : Expr md},
     whnf .verified env fuel d e = .ok e' → Red env d e e'
 
 /-- `isDefEqCore` at `fuel` is bridged. -/
-@[expose] def DefEqBridge (env : Env) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {a b : Expr},
+@[expose] def DefEqBridge (env : Env md) (fuel : Nat) : Prop :=
+  ∀ {d : Nat} {a b : Expr md},
     isDefEqCore .verified env fuel d a b = .ok true → DefEq env d a b
 
 /-- `inferTypeCore` at `fuel` is bridged, at the full grade. -/
-@[expose] def InferBridge (env : Env) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e t : Expr},
+@[expose] def InferBridge (env : Env md) (fuel : Nat) : Prop :=
+  ∀ {d : Nat} {e t : Expr md},
     inferTypeCore .verified env fuel d e = .ok t → Infer env .full d e t
 
 /-- `inferTypeCoreIO` (the io leaf lane, the `InferClaimIO` subject) at
 `fuel` is bridged, at the io grade. -/
-@[expose] def InferIOBridge (env : Env) (fuel : Nat) : Prop :=
-  ∀ {d : Nat} {e t : Expr},
+@[expose] def InferIOBridge (env : Env md) (fuel : Nat) : Prop :=
+  ∀ {d : Nat} {e t : Expr md},
     inferTypeCoreIO .verified env fuel d e = .ok t → Infer env .io d e t
 
 /-- The knot's io SLOT (`inferTypeIO`, what every internal inference
 call site runs) is the io lane at `.verified` (`inferTypeIO_on`), so
 its bridge is the lane's. -/
 theorem inferTypeIO_bridge {fuel : Nat} (hio : InferIOBridge env fuel)
-    {d : Nat} {e t : Expr}
+    {d : Nat} {e t : Expr md}
     (h : inferTypeIO .verified env fuel d e = .ok t) : Infer env .io d e t :=
   hio (by rwa [inferTypeIO_on rfl] at h)
 
 /-- `ensureSort` is a reduction to a sort. -/
 theorem ensureSort_bridge {fuel : Nat} (hw : WhnfBridge env fuel)
-    {d : Nat} {t : Expr} {u : Level}
+    {d : Nat} {t : Expr md} {u : Level}
     (h : ensureSortCore .verified env fuel d t = .ok u) :
     Red env d t (.sort u) :=
   hw (ensureSortCore_inv h)

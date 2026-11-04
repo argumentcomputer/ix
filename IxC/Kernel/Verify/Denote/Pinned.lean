@@ -14,7 +14,7 @@ declarative layer, where it denotes to a bare `BConst` built-in.
 Relocated verbatim from `IxC/Kernel/TTVerify/EnvTT.lean` (task #148, T1):
 the definition is `V`-free — it is a table from the checker's reserved
 names to `IxC/Kernel/Term/Const.lean`'s built-ins — so it belongs where both
-verification lanes can import it.  The level-parameter names it reads
+verification lanes can import it.  The level parameters it reads
 are `IxC/Kernel/Verify/EnvPreds.lean`'s `uN`/`vN`/`u1N` (the `uN`/`vN`/
 `u1N` restatements that stood beside it were the same relocation's
 fourth item).
@@ -45,20 +45,20 @@ Each would have been caught only here, because `val_params` is what
 they violate and nothing before the install asserts it for a basis
 constant.  That is the house rule's point exactly (`IxC/Kernel/Term/DESIGN.md`
 §3.1): a definition is a conjecture until a consumer elaborates it. -/
-@[expose] def pinnedStructT (n : Name) (ψ : Name → Nat) : Option Term :=
+@[expose] def pinnedStructT (n : Key md) (ψ : LevelParam → Nat) : Option Term :=
   if n = natName then some (.const .nat [])
   else if n = natZeroName then some (.const .natZero [])
   else if n = natSuccName then some (.const .natSucc [])
-  else if n = natName.str "rec" then some (.const .natRec [ψ uN])
+  else if n = natRecName then some (.const .natRec [ψ uN])
   else if n = punitName then some (.const .punit [ψ uN])
   else if n = punitUnitName then some (.const .punitUnit [ψ uN])
-  else if n = punitName.str "rec" then
+  else if n = punitRecName then
     some (.const .punitRec [ψ uN, ψ u1N])
   else if n = emptyName then some (.const .empty [1])
-  else if n = emptyName.str "rec" then
+  else if n = emptyRecName then
     some (.const .emptyRec [1, ψ uN])
   else if n = falseName then some (.const .empty [0])
-  else if n = falseName.str "rec" then
+  else if n = falseRecName then
     some (.const .emptyRec [0, ψ uN])
   else if n = quotName then some (.const .quot [ψ uN])
   else if n = quotMkName then some (.const .quotMk [ψ uN])
@@ -79,11 +79,8 @@ is the shape `projFstMk` is stated at.
 **The declaration clause came back** (the retired lane's record, §12.10).
 It was dropped on the first transposition as "syntactic, no consumer",
 and `ProofIrrelStepTT`'s unit-like branch is the consumer: `isUnitLikeTy`
-accepts a `.const c _` whose `c.str "rec"` is *reserved*, so identifying
-`c` as `PUnit` — which is what the unit-like eta law is stated at — is
-exactly reading the four other reserved recursors' pinned shapes and
-finding that none of them is single-rule, zero-field and index-free.
-Without the clause the branch is unprovable; with it, it is a `decide`.
+accepts a `.const punitName _`, and the clause identifies the stored former
+with the pinned `PUnit`, which is what the unit-like eta law is stated at.
 
 **The declaration clause is unconditional** (task #283).  It used to be
 premised on `ConstantInfo.isBasis ci`, which every establishment site
@@ -94,15 +91,15 @@ therefore bought nothing and cost the only fact a *statement* can want
 from the table: that a stored reserved name holds the pin whatever its
 kind — which is what lets `Model.eq_equality` (`IxC/Kernel/Denotes.lean`)
 speak about the stored `Eq` without hypothesising its declaration. -/
-@[expose] def BasisPinnedTT (env : Env) (cval : TConstVal) : Prop :=
-  ∀ (n : Name) (ci : ConstantInfo),
+@[expose] def BasisPinnedTT (env : Env md) (cval : TConstVal md) : Prop :=
+  ∀ (n : Key md) (ci : ConstantInfo md),
     env.find? n = some ci →
     reservedBasisNames.contains n = true →
     ci = pinnedInfo n ∧
-    ∀ (t : Term) (ψ : Name → Nat), pinnedStructT n ψ = some t →
+    ∀ (t : Term) (ψ : LevelParam → Nat), pinnedStructT n ψ = some t →
       cval n ψ = t
 
-theorem BasisPinnedTT.empty (cval : TConstVal) :
+theorem BasisPinnedTT.empty (cval : TConstVal md) :
     BasisPinnedTT Env.empty cval := by
   intro n ci h
   simp [Env.find?, Env.empty] at h

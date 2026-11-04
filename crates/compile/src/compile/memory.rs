@@ -43,6 +43,26 @@ mod tests {
     assert_eq!(parse_budget("TEST", "0.5").unwrap(), GIB / 2);
     assert_eq!(parse_budget("TEST", "100").unwrap(), 100 * GIB);
   }
+
+  #[test]
+  fn ramp_up_doubles_to_the_ceiling() {
+    assert_eq!(ramp_up(1, 64), 2);
+    assert_eq!(ramp_up(2, 64), 4);
+    assert_eq!(ramp_up(32, 64), 64);
+    assert_eq!(ramp_up(40, 64), 64);
+    assert_eq!(ramp_up(64, 64), 64);
+    assert_eq!(ramp_up(3, 4), 4);
+    assert_eq!(ramp_up(1, 1), 1);
+    assert_eq!(ramp_up(usize::MAX, usize::MAX), usize::MAX);
+  }
+}
+
+/// The admission limit after one healthy ramp interval: twice the current
+/// limit, at most `max`. Doubling reaches a large worker pool in a few
+/// intervals; each step still waits for a healthy sample at the previous
+/// limit, and pressure still halves the limit or drops it to one.
+pub(super) fn ramp_up(limit: usize, max: usize) -> usize {
+  limit.max(1).saturating_mul(2).min(max.max(1))
 }
 
 #[derive(Clone, Copy, Debug)]

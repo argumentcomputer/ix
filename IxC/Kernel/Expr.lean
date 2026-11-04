@@ -1,7 +1,9 @@
 module
 
+public import IxC.Kernel.Key
 public import IxC.Kernel.PropWhen
 public import IxC.Kernel.Exclusive
+public import IxC.Ixon.Types.Contract
 /- `withPtrEq` is `public` but not `@[expose]`, and its whole point here
 is that it is *definitionally* `k ()` — which is what
 `Level.beqPtr_eq` and `Expr.beqMemo_eq` prove.  `import all` makes that
@@ -43,7 +45,7 @@ inductive Level where
   | succ (u : Level)
   | max (u v : Level)
   | imax (u v : Level)
-  | param (n : Name)
+  | param (n : LevelParam)
 with
   /-- The cached hash of a level. -/
   @[computed_field] hashData : Level → UInt64
@@ -55,7 +57,7 @@ with
 deriving DecidableEq, Repr, Inhabited
 
 /-- Hashing a level is an `O(1)` field read (the memo maps keyed by
-`Level` — `lsimpC`, `lnzC`, `eqvC` — probe with this). -/
+`Level` — `lsimpC`, `eqvC` — probe with this). -/
 instance : Hashable Level := ⟨Level.hashData⟩
 
 /-- Level equality in the official kernel's shape (task #176 P2):
@@ -91,6 +93,62 @@ instance : LawfulBEq Level where
   eq_of_beq h := of_decide_eq_true h
   rfl := by simp [BEq.beq, Level.beq]
 
+/-! ### Display annotations (step 6b)
+
+A binder and a let carry the Lean name the input gave them, and a binder its
+`BinderInfo`, so that a failure can print a term, a reduced one included,
+with Lean's names (`.source` from the Lean term, `.meta` from the `.ixe`'s
+metadata). The annotation is held in a **quotient**, `Squash`, so it is a
+subsingleton: structural `=`, the derived `DecidableEq`, `==`, the hash and
+every equation of the checker are blind to it, two terms that differ only in
+names are *equal*, and no theorem moves. Safe code cannot read a `Squash`'s
+value either: the renderers read it outside the kernel and every certified
+closure, and the checker never does (the display-use audit,
+`IxC/Kernel/Audit/Display.lean`).
+
+The annotation's type is the same in every mode: the renaming statement
+(`Ix.Cert.Rename.expr`) carries a binder's metadata unchanged from `.source`
+to `.anon`. `.anon` writes none: its reader builds the shared anonymous
+objects below, and only the Source ingress and the `.meta` reader's name
+pass, both outside the kernel, write names. -/
+
+/-- Lean's binder annotation, for display only (`Lean.BinderInfo`). -/
+inductive BinderInfo where
+  | default | implicit | strictImplicit | instImplicit
+  deriving DecidableEq, Repr, Inhabited
+
+/-- What a binder shows: Lean's name for it and its annotation. -/
+structure BinderDisplay where
+  name : Name := .anonymous
+  info : BinderInfo := .default
+  deriving Repr, Inhabited
+
+/-- Annotations compare equal: a `Squash` is a subsingleton. -/
+instance : DecidableEq (Squash BinderDisplay) := fun a b => isTrue (Subsingleton.elim a b)
+instance : DecidableEq (Squash Name) := fun a b => isTrue (Subsingleton.elim a b)
+/-- Annotations print as a placeholder: the value is not readable here. -/
+instance : Repr (Squash BinderDisplay) := ⟨fun _ _ => "⟨display⟩"⟩
+instance : Repr (Squash Name) := ⟨fun _ _ => "⟨display⟩"⟩
+
+/-- The anonymous binder annotation: one shared object, the default of every
+binder that carries no name. Not inlined, so every default refers to it. -/
+@[noinline] def BinderDisplay.anon : Squash BinderDisplay := Squash.mk {}
+
+/-- The anonymous let annotation: one shared object. -/
+@[noinline] def LetDisplay.anon : Squash Name := Squash.mk .anonymous
+
+instance : Inhabited (Squash BinderDisplay) := ⟨BinderDisplay.anon⟩
+instance : Inhabited (Squash Name) := ⟨LetDisplay.anon⟩
+
+/-- Any two binder annotations are equal (a `Squash` is a subsingleton), so
+`simp` discharges the display conjunct of a binder's injectivity. -/
+@[simp] theorem BinderDisplay.squash_eq (a b : Squash BinderDisplay) : (a = b) = True :=
+  eq_true (Subsingleton.elim a b)
+
+/-- Any two let annotations are equal. -/
+@[simp] theorem LetDisplay.squash_eq (a b : Squash Name) : (a = b) = True :=
+  eq_true (Subsingleton.elim a b)
+
 /-- Metadata carried by a binder (`forallE`, `lam`): the codomain
 prop-ness annotation `pw` (task #161 — the validated-annotation design;
 one datum per binder, written by the untrusted annotate pass or the
@@ -99,12 +157,177 @@ read it).  Unannotated input defaults to `.never` at the parser — a
 definite, validatable claim.  The display `BinderInfo` that used to
 sit beside it is gone (task #205): the official kernel's equality and
 hash ignore it, so it was never data the checker held — the frontend
-validates a stream's spelling and drops it (`parseBinderInfo`). -/
+validates a stream's spelling and drops it (`parseBinderInfo`).
+
+The binder also carries Ixon's binder contracts
+(`IxC/Ixon/Types/Contract.lean`). They are committed content (they move
+a constant's address), so they are identity data, not display data:
+* `contract`: the bound variable's usage, ownership and locality (Ixon's
+  `lam` and `all` input contract);
+* `result`: the value contract of a `forallE`'s result (Ixon's `all`
+  result contract). A `lam` has none and carries `shared`.
+
+Lean has no contracts: Lean-fragment binders carry the defaults, `many`,
+`shared`, `unrestricted` in and `shared`, `unrestricted` out, which is
+what `{ pw := … }` builds. Conversion compares input contracts: the
+binder congruences and η require equal `contract`s besides equal `pw`s
+(`Rules/Rel.lean`; `defeqStep` and `etaCert` in `Core.lean`). It never
+compares `result`s: a `lam` has none, so the type inferred for one carries
+the default. The model reads only `pw`. Structural `=` and the packed
+hash (`BinderMeta.hashData`) see all the contracts, so terms that differ
+only in contracts are different terms, as their Ixon addresses are; basis
+and pin matching (`canonExprEqFast`, `Expr.erasePwEq`) compare them too.
+
+`display` is the binder's display annotation (step 6b, above): a
+subsingleton, so none of the above sees it. -/
 structure BinderMeta where
   pw : PropWhen
-  deriving DecidableEq, Repr, Hashable
+  contract : Ixon.BinderContract := .many
+  result : Ixon.ValueContract := .shared
+  display : Squash BinderDisplay := BinderDisplay.anon
+  deriving DecidableEq, Repr
 
-instance : Inhabited BinderMeta := ⟨⟨.never⟩⟩
+instance : Inhabited BinderMeta := ⟨{ pw := .never }⟩
+
+/-! ### Shared binder metadata (PERF P14)
+
+A `BinderMeta` is an object of its own, so building one per binder — in the
+reader, in the annotation pass, at each level instantiation — allocates one
+per binder. Nearly every binder of a Lean-compiled term has the Lean
+fragment's contracts and a parameter-free datum, so the builders below return
+one of two shared closed objects, or the metadata they were given, where the
+value is the same. Each is proved equal to the plain structure update it
+replaces. -/
+
+/-- The Lean fragment's binder metadata at the datum `never` (the reader's
+placeholder): one shared object. -/
+def BinderMeta.leanNever : BinderMeta := { pw := .never }
+
+/-- The Lean fragment's binder metadata at the datum `ifAllZero []` (the
+codomain sort is zero at every valuation): one shared object. -/
+def BinderMeta.leanAlways : BinderMeta := { pw := .ifAllZero [] }
+
+/-- An input binder's metadata, `{ pw := .never, contract := c, result := r }`:
+the shared `leanNever` for the Lean fragment's contracts
+(`BinderMeta.ofContracts_eq`). -/
+@[inline] def BinderMeta.ofContracts (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
+    BinderMeta :=
+  if c = .many ∧ r = .shared then BinderMeta.leanNever
+  else { pw := .never, contract := c, result := r }
+
+theorem BinderMeta.ofContracts_eq (c : Ixon.BinderContract) (r : Ixon.ValueContract) :
+    BinderMeta.ofContracts c r = { pw := .never, contract := c, result := r } := by
+  unfold BinderMeta.ofContracts
+  split
+  · next h => obtain ⟨rfl, rfl⟩ := h; rfl
+  · rfl
+
+/-- `{ mb with pw := .ifAllZero [] }`; at run time the shared `leanAlways`
+when that is the same binder, display included (`shareAlwaysImpl`). -/
+def BinderMeta.shareAlways (mb : BinderMeta) : BinderMeta := { mb with pw := .ifAllZero [] }
+
+/-- A Lean-fragment binder at the datum `ifAllZero []` is `leanAlways`,
+whatever its display: the annotation is a subsingleton. -/
+theorem BinderMeta.leanAlways_eq (mb : BinderMeta)
+    (h : mb.contract = .many ∧ mb.result = .shared) :
+    BinderMeta.leanAlways = { mb with pw := .ifAllZero [] } := by
+  obtain ⟨p, c, r, d⟩ := mb
+  obtain ⟨rfl, rfl⟩ := h
+  show BinderMeta.mk _ _ _ BinderDisplay.anon = BinderMeta.mk _ _ _ d
+  rw [Subsingleton.elim BinderDisplay.anon d]
+
+/-- `withPtrAddr` into the subsingleton `{ m // m = c }`: its side condition
+holds because both results are `c`. -/
+@[inline] def BinderMeta.withAddrEq {α : Type} {c : BinderMeta} (a : α)
+    (k : USize → { m : BinderMeta // m = c }) : { m : BinderMeta // m = c } :=
+  withPtrAddr a k (fun u₁ u₂ => Subtype.ext ((k u₁).2.trans (k u₂).2.symm))
+
+/-- The run-time `shareAlways` (PERF P14, step 6b): the shared `leanAlways` for
+a Lean-fragment binder whose display is the shared anonymous object, and a copy
+otherwise, so that a binder with a name keeps it. The display test reads the
+annotation's address, never its value: each branch is the same binder (the
+annotation is a subsingleton), so the result is a subsingleton and does not
+depend on the address (`withPtrAddr`'s side condition). -/
+def BinderMeta.shareAlwaysImpl (mb : BinderMeta) : BinderMeta :=
+  (BinderMeta.withAddrEq mb.display fun a => BinderMeta.withAddrEq BinderDisplay.anon fun b =>
+    if h : a == b && decide (mb.contract = .many) && decide (mb.result = .shared) then
+      ⟨BinderMeta.leanAlways, BinderMeta.leanAlways_eq mb (by
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+        exact ⟨h.1.2, h.2⟩)⟩
+    else ⟨{ mb with pw := .ifAllZero [] }, rfl⟩).1
+
+/-- The compiler runs `shareAlwaysImpl` for `shareAlways`: the same binder. -/
+@[csimp] theorem BinderMeta.shareAlways_eq_impl :
+    @BinderMeta.shareAlways = @BinderMeta.shareAlwaysImpl := by
+  funext mb
+  unfold BinderMeta.shareAlwaysImpl
+  exact (Subtype.property
+    (BinderMeta.withAddrEq (c := { mb with pw := .ifAllZero [] }) mb.display _)).symm
+
+/-- `{ mb with pw }`, without a new object where an equal one exists: `mb`
+itself when both data are `never`, the shared `leanAlways` for a
+Lean-fragment binder whose new datum is `ifAllZero []` and which carries no
+name (`shareAlways`; `BinderMeta.withPw_eq`). -/
+@[inline] def BinderMeta.withPw (mb : BinderMeta) (pw : PropWhen) : BinderMeta :=
+  if pw.isNever && mb.pw.isNever then mb
+  else if !pw.hasParams && !pw.isNever && decide (mb.contract = .many) &&
+      decide (mb.result = .shared) then BinderMeta.shareAlways mb
+  else { mb with pw }
+
+theorem BinderMeta.withPw_eq (mb : BinderMeta) (pw : PropWhen) :
+    mb.withPw pw = { mb with pw } := by
+  obtain ⟨p, c, r⟩ := mb
+  unfold BinderMeta.withPw
+  split
+  · next h =>
+    simp only [Bool.and_eq_true, PropWhen.isNever_iff] at h
+    obtain ⟨rfl, rfl⟩ := h
+    rfl
+  · split
+    · next h =>
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true,
+        decide_eq_true_eq] at h
+      obtain ⟨⟨⟨hp, hn⟩, rfl⟩, rfl⟩ := h
+      cases pw with
+      | never => simp at hn
+      | ifAllZero ps =>
+        cases ps with
+        | nil => rfl
+        | cons q qs => simp at hp
+    · rfl
+
+/-- A binder's share of its node's hash: the hash of `pw`, mixed with the
+contracts' hashes unless they are the Lean fragment's. So the hash is a
+function of all of the binder's identity data, and a Lean-fragment binder
+hashes by `pw` alone. -/
+@[inline] def BinderMeta.hashData (m : BinderMeta) : UInt64 :=
+  if m.contract == .many && m.result == .shared then Hashable.hash m.pw
+  else mixHash (Hashable.hash m.pw) (mixHash (hash m.contract) (hash m.result))
+
+/-- Metadata carried by a `letE`: Ixon's let contract (`Ixon.LetContract`,
+`IxC/Ixon/Types/Contract.lean`): the `nonDep` flag, whether the let binds a
+value or a shared borrow, and the bound variable's contract. Like a binder's
+contracts it is committed content (it moves a constant's address), so it is
+identity data: structural `=` sees it. Lean's lets carry `LetContract.lean
+nonDep`. Conversion never compares it: the annotation pass substitutes every
+let away before a term is inferred or compared, and the model reads none of
+it. The packed hash mixes it in only off the Lean fragment (a value let at the
+default binder contract), so a Lean let hashes as before.
+
+`display` is the let's display annotation, its Lean name (step 6b): a
+subsingleton, so none of the above sees it. -/
+structure LetMeta where
+  contract : Ixon.LetContract := .lean false
+  display : Squash Name := LetDisplay.anon
+  deriving DecidableEq, Repr
+
+instance : Inhabited LetMeta := ⟨{}⟩
+
+/-- A let's share of its node's hash: none on the Lean fragment, else the
+contract's hash. -/
+@[inline] def LetMeta.hashData (l : LetMeta) : UInt64 :=
+  if l.contract.kind == .value && l.contract.binder == .many then 0
+  else hash l.contract
 
 /-- Literals. -/
 inductive Literal where
@@ -341,63 +564,65 @@ The *storage* is the compiler's: `Lean/Elab/ComputedFields.lean:33` —
 via `implemented_by`."*  That is a named trust escape; it is
 enumerated, with the user ruling that adopted it, in the trust census
 in `IxC/Kernel/Cached/ExprNodes.lean`'s module docstring. -/
-inductive Expr where
+inductive Expr (md : Mode) where
   | bvar (i : Nat)
-  | fvar (idx : Nat) (type : Expr)
+  | fvar (idx : Nat) (type : Expr md)
   | sort (u : Level)
-  | const (n : Name) (us : List Level)
-  | app (f a : Expr)
-  | lam (type body : Expr) (m : BinderMeta)
-  | forallE (type body : Expr) (m : BinderMeta)
-  | letE (type value body : Expr)
+  | const (n : Key md) (us : List Level)
+  | app (f a : Expr md)
+  | lam (type body : Expr md) (m : BinderMeta)
+  | forallE (type body : Expr md) (m : BinderMeta)
+  | letE (type value body : Expr md) (l : LetMeta)
   | lit (l : Literal)
-  | proj (structName : Name) (idx : Nat) (e : Expr)
+  | proj (structName : Key md) (idx : Nat) (e : Expr md)
 with
   /-- The packed derived-data word: `hash` (32) ǀ reserved (1) ǀ
   `bvarB` (15, saturating) ǀ `fvarB` (15, saturating) ǀ `hasLP` (1). -/
-  @[computed_field] data : Expr → UInt64
-    | .bvar i =>
+  @[computed_field] data : (md : Mode) → Expr md → UInt64
+    | _, .bvar i =>
       packData (hash32 (mixHash 3 (Hashable.hash i))) (satSucc i) 0 false
-    | .fvar idx ty =>
+    | _, .fvar idx ty =>
       packData (hash32 (mixHash 5 (mixHash (Hashable.hash idx)
           (hashOfData ty.data))))
         0 (satSucc idx) (lpOfData ty.data)
-    | .sort u =>
+    | _, .sort u =>
       packData (hash32 (mixHash 7 (levelHash u))) 0 0 (levelHasParam u)
-    | .const n us =>
+    | _, .const n us =>
       packData (hash32 (mixHash 11 (mixHash (Hashable.hash n)
           (levelsHash us)))) 0 0 (levelsHaveParam us)
-    | .app f a =>
+    | _, .app f a =>
       packData (hash32 (mixHash 17
           (mixHash (hashOfData f.data) (hashOfData a.data))))
         (max (bvarOfData f.data) (bvarOfData a.data))
         (max (fvarOfData f.data) (fvarOfData a.data))
         (lpOfData f.data || lpOfData a.data)
-    | .lam ty b m =>
+    | _, .lam ty b m =>
       packData (hash32 (mixHash 19
           (mixHash (hashOfData ty.data)
-            (mixHash (hashOfData b.data) (Hashable.hash m.pw)))))
+            (mixHash (hashOfData b.data) m.hashData))))
         (max (bvarOfData ty.data) (satPred (bvarOfData b.data)))
         (max (fvarOfData ty.data) (fvarOfData b.data))
         (lpOfData ty.data || lpOfData b.data || m.pw.hasParams)
-    | .forallE ty b m =>
+    | _, .forallE ty b m =>
       packData (hash32 (mixHash 23
           (mixHash (hashOfData ty.data)
-            (mixHash (hashOfData b.data) (Hashable.hash m.pw)))))
+            (mixHash (hashOfData b.data) m.hashData))))
         (max (bvarOfData ty.data) (satPred (bvarOfData b.data)))
         (max (fvarOfData ty.data) (fvarOfData b.data))
         (lpOfData ty.data || lpOfData b.data || m.pw.hasParams)
-    | .letE ty v b =>
+    | _, .letE ty v b l =>
       packData (hash32 (mixHash 29
           (mixHash (hashOfData ty.data)
-            (mixHash (hashOfData v.data) (hashOfData b.data)))))
+            (mixHash (hashOfData v.data)
+              (if l.hashData == 0 then hashOfData b.data
+               else mixHash (hashOfData b.data) l.hashData)))))
         (max (max (bvarOfData ty.data) (bvarOfData v.data))
           (satPred (bvarOfData b.data)))
         (max (max (fvarOfData ty.data) (fvarOfData v.data))
           (fvarOfData b.data))
         (lpOfData ty.data || lpOfData v.data || lpOfData b.data)
-    | .lit l => packData (hash32 (mixHash 31 (Hashable.hash l))) 0 0 false
-    | .proj s i e =>
+    | _, .lit l => packData (hash32 (mixHash 31 (Hashable.hash l))) 0 0 false
+    | _, .proj s i e =>
       packData (hash32 (mixHash 37 (mixHash (Hashable.hash s)
           (mixHash (Hashable.hash i) (hashOfData e.data)))))
         (bvarOfData e.data) (fvarOfData e.data) (lpOfData e.data)
@@ -417,19 +642,20 @@ namespace Expr
 
 /-- The node's 32-bit hash (`O(1)`).  The recurrence reads exactly
 what `is_equal` in the official kernel reads (`expr_eq_fn.cpp`) plus
-the validated `pw` datum; there is no display data in a node (task
-#205), so hashing and `DecidableEq` are α-equivalence outright. -/
-@[inline] def hash (e : Expr) : UInt64 := hashOfData e.data
+the validated `pw` datum and the binder contracts
+(`BinderMeta.hashData`); there is no display data in a node (task #205),
+so hashing and `DecidableEq` are α-equivalence outright. -/
+@[inline] def hash (e : Expr md) : UInt64 := hashOfData e.data
 
 /-- Has-level-param: is level instantiation ever non-trivial here?
 One bit, so this read is *exact*. -/
-@[inline] def hasLP (e : Expr) : Bool := lpOfData e.data
+@[inline] def hasLP (e : Expr md) : Bool := lpOfData e.data
 
 /-- The stored loose-bvar bound, saturating at `satRange`. -/
-@[inline] def bvarBRaw (e : Expr) : Nat := (bvarOfData e.data).toNat
+@[inline] def bvarBRaw (e : Expr md) : Nat := (bvarOfData e.data).toNat
 
 /-- The stored fvar range, saturating at `satRange`. -/
-@[inline] def fvarBRaw (e : Expr) : Nat := (fvarOfData e.data).toNat
+@[inline] def fvarBRaw (e : Expr md) : Nat := (fvarOfData e.data).toNat
 
 end Expr
 
@@ -438,7 +664,7 @@ end Expr
 pure representation had nowhere to put a hash.  `levelHash` kept a
 depth budget for the same reason until task #176 P3 gave `Level` its
 own computed field; no hash in the tree is budgeted any more.) -/
-instance : Hashable Expr := ⟨Expr.hash⟩
+instance : Hashable (Expr md) := ⟨Expr.hash⟩
 
 namespace Expr
 
@@ -448,9 +674,9 @@ Each equation is the packed word's recurrence read back through the
 roundtrip lemmas; together they are what the exactness induction in
 `Verify/Cached/Erase.lean` runs on. -/
 
-theorem bvarBRaw_lt (e : Expr) : e.bvarBRaw < 32768 := bvarOfData_lt _
+theorem bvarBRaw_lt (e : Expr md) : e.bvarBRaw < 32768 := bvarOfData_lt _
 
-theorem fvarBRaw_lt (e : Expr) : e.fvarBRaw < 32768 := fvarOfData_lt _
+theorem fvarBRaw_lt (e : Expr md) : e.fvarBRaw < 32768 := fvarOfData_lt _
 
 private theorem toNat_satSucc (n : Nat) :
     (satSucc n).toNat = min (n + 1) satRange := by
@@ -472,40 +698,47 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
         toNat_sub_one hz]
 
 @[simp] theorem bvarBRaw_bvar (i : Nat) :
-    (Expr.bvar i).bvarBRaw = min (i + 1) satRange := by
+    ((Expr.bvar (md := md)) i).bvarBRaw = min (i + 1) satRange := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ (satSucc i) 0 false)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (satSucc_lt i) (by decide), toNat_satSucc]
 
-@[simp] theorem bvarBRaw_fvar (idx : Nat) (ty : Expr) :
+@[simp] theorem bvarBRaw_fvar (idx : Nat) (ty : Expr md) :
     (Expr.fvar idx ty).bvarBRaw = 0 := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ 0 (satSucc idx) _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (by decide) (satSucc_lt idx)]; rfl
 
-@[simp] theorem bvarBRaw_sort (u : Level) : (Expr.sort u).bvarBRaw = 0 := by
+@[simp] theorem bvarBRaw_sort (u : Level) : ((Expr.sort (md := md)) u).bvarBRaw = 0 := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ 0 0 _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem bvarBRaw_const (n : Name) (us : List Level) :
+@[simp] theorem bvarBRaw_const (n : Key md) (us : List Level) :
     (Expr.const n us).bvarBRaw = 0 := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ 0 0 _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem bvarBRaw_lit (l : Literal) : (Expr.lit l).bvarBRaw = 0 := by
+@[simp] theorem bvarBRaw_lit (l : Literal) : ((Expr.lit (md := md)) l).bvarBRaw = 0 := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ 0 0 _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem bvarBRaw_app (f a : Expr) :
+@[simp] theorem bvarBRaw_app (f a : Expr md) :
     (Expr.app f a).bvarBRaw = max f.bvarBRaw a.bvarBRaw := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ (max _ _) (max _ _) _)).toNat = _
   rw [bvarOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (bvarOfData_lt _))
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _)), toNat_max]
   rfl
 
-@[simp] theorem bvarBRaw_lam (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem bvarBRaw_lam (ty b : Expr md) (m : BinderMeta) :
     (Expr.lam ty b m).bvarBRaw =
       max ty.bvarBRaw
         (if b.bvarBRaw = satRange then satRange else b.bvarBRaw - 1) := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ (max _ (satPred _)) (max _ _) _)).toNat = _
   rw [bvarOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (satPred_lt (bvarOfData_lt _)))
@@ -513,10 +746,11 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
     toNat_satPred (bvarOfData_lt _)]
   rfl
 
-@[simp] theorem bvarBRaw_forallE (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem bvarBRaw_forallE (ty b : Expr md) (m : BinderMeta) :
     (Expr.forallE ty b m).bvarBRaw =
       max ty.bvarBRaw
         (if b.bvarBRaw = satRange then satRange else b.bvarBRaw - 1) := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ (max _ (satPred _)) (max _ _) _)).toNat = _
   rw [bvarOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (satPred_lt (bvarOfData_lt _)))
@@ -524,10 +758,11 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
     toNat_satPred (bvarOfData_lt _)]
   rfl
 
-@[simp] theorem bvarBRaw_letE (ty v b : Expr) :
-    (Expr.letE ty v b).bvarBRaw =
+@[simp] theorem bvarBRaw_letE (ty v b : Expr md) (l : LetMeta) :
+    (Expr.letE ty v b l).bvarBRaw =
       max (max ty.bvarBRaw v.bvarBRaw)
         (if b.bvarBRaw = satRange then satRange else b.bvarBRaw - 1) := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ (max (max _ _) (satPred _)) (max (max _ _) _)
     _)).toNat = _
   rw [bvarOfData_pack _ _ _ _
@@ -538,61 +773,71 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
     toNat_satPred (bvarOfData_lt _)]
   rfl
 
-@[simp] theorem bvarBRaw_proj (s : Name) (i : Nat) (e : Expr) :
+@[simp] theorem bvarBRaw_proj (s : Key md) (i : Nat) (e : Expr md) :
     (Expr.proj s i e).bvarBRaw = e.bvarBRaw := by
+  rw [Expr.bvarBRaw, Expr.data]
   show (bvarOfData (packData _ _ _ _)).toNat = _
   rw [bvarOfData_pack _ _ _ _ (bvarOfData_lt _) (fvarOfData_lt _)]
   rfl
 
-@[simp] theorem fvarBRaw_bvar (i : Nat) : (Expr.bvar i).fvarBRaw = 0 := by
+@[simp] theorem fvarBRaw_bvar (i : Nat) : ((Expr.bvar (md := md)) i).fvarBRaw = 0 := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ (satSucc i) 0 false)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (satSucc_lt i) (by decide)]; rfl
 
-@[simp] theorem fvarBRaw_fvar (idx : Nat) (ty : Expr) :
+@[simp] theorem fvarBRaw_fvar (idx : Nat) (ty : Expr md) :
     (Expr.fvar idx ty).fvarBRaw = min (idx + 1) satRange := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ 0 (satSucc idx) _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (by decide) (satSucc_lt idx), toNat_satSucc]
 
-@[simp] theorem fvarBRaw_sort (u : Level) : (Expr.sort u).fvarBRaw = 0 := by
+@[simp] theorem fvarBRaw_sort (u : Level) : ((Expr.sort (md := md)) u).fvarBRaw = 0 := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ 0 0 _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem fvarBRaw_const (n : Name) (us : List Level) :
+@[simp] theorem fvarBRaw_const (n : Key md) (us : List Level) :
     (Expr.const n us).fvarBRaw = 0 := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ 0 0 _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem fvarBRaw_lit (l : Literal) : (Expr.lit l).fvarBRaw = 0 := by
+@[simp] theorem fvarBRaw_lit (l : Literal) : ((Expr.lit (md := md)) l).fvarBRaw = 0 := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ 0 0 _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (by decide) (by decide)]; rfl
 
-@[simp] theorem fvarBRaw_app (f a : Expr) :
+@[simp] theorem fvarBRaw_app (f a : Expr md) :
     (Expr.app f a).fvarBRaw = max f.fvarBRaw a.fvarBRaw := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ (max _ _) (max _ _) _)).toNat = _
   rw [fvarOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (bvarOfData_lt _))
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _)), toNat_max]
   rfl
 
-@[simp] theorem fvarBRaw_lam (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem fvarBRaw_lam (ty b : Expr md) (m : BinderMeta) :
     (Expr.lam ty b m).fvarBRaw = max ty.fvarBRaw b.fvarBRaw := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ (max _ (satPred _)) (max _ _) _)).toNat = _
   rw [fvarOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (satPred_lt (bvarOfData_lt _)))
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _)), toNat_max]
   rfl
 
-@[simp] theorem fvarBRaw_forallE (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem fvarBRaw_forallE (ty b : Expr md) (m : BinderMeta) :
     (Expr.forallE ty b m).fvarBRaw = max ty.fvarBRaw b.fvarBRaw := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ (max _ (satPred _)) (max _ _) _)).toNat = _
   rw [fvarOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (satPred_lt (bvarOfData_lt _)))
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _)), toNat_max]
   rfl
 
-@[simp] theorem fvarBRaw_letE (ty v b : Expr) :
-    (Expr.letE ty v b).fvarBRaw =
+@[simp] theorem fvarBRaw_letE (ty v b : Expr md) (l : LetMeta) :
+    (Expr.letE ty v b l).fvarBRaw =
       max (max ty.fvarBRaw v.fvarBRaw) b.fvarBRaw := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ (max (max _ _) (satPred _)) (max (max _ _) _)
     _)).toNat = _
   rw [fvarOfData_pack _ _ _ _
@@ -602,64 +847,74 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
       (fvarOfData_lt _)), toNat_max, toNat_max]
   rfl
 
-@[simp] theorem fvarBRaw_proj (s : Name) (i : Nat) (e : Expr) :
+@[simp] theorem fvarBRaw_proj (s : Key md) (i : Nat) (e : Expr md) :
     (Expr.proj s i e).fvarBRaw = e.fvarBRaw := by
+  rw [Expr.fvarBRaw, Expr.data]
   show (fvarOfData (packData _ _ _ _)).toNat = _
   rw [fvarOfData_pack _ _ _ _ (bvarOfData_lt _) (fvarOfData_lt _)]
   rfl
 
 /-! ### The has-level-param bit, constructor by constructor -/
 
-@[simp] theorem hasLP_bvar (i : Nat) : (Expr.bvar i).hasLP = false := by
+@[simp] theorem hasLP_bvar (i : Nat) : ((Expr.bvar (md := md)) i).hasLP = false := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ (satSucc i) 0 false) = _
   rw [lpOfData_pack _ _ _ _ (satSucc_lt i) (by decide)]
 
-@[simp] theorem hasLP_fvar (idx : Nat) (ty : Expr) :
+@[simp] theorem hasLP_fvar (idx : Nat) (ty : Expr md) :
     (Expr.fvar idx ty).hasLP = ty.hasLP := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ 0 (satSucc idx) _) = _
   rw [lpOfData_pack _ _ _ _ (by decide) (satSucc_lt idx)]; rfl
 
 @[simp] theorem hasLP_sort (u : Level) :
-    (Expr.sort u).hasLP = levelHasParam u := by
+    ((Expr.sort (md := md)) u).hasLP = levelHasParam u := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ 0 0 _) = _
   rw [lpOfData_pack _ _ _ _ (by decide) (by decide)]
 
-@[simp] theorem hasLP_const (n : Name) (us : List Level) :
+@[simp] theorem hasLP_const (n : Key md) (us : List Level) :
     (Expr.const n us).hasLP = levelsHaveParam us := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ 0 0 _) = _
   rw [lpOfData_pack _ _ _ _ (by decide) (by decide)]
 
-@[simp] theorem hasLP_lit (l : Literal) : (Expr.lit l).hasLP = false := by
+@[simp] theorem hasLP_lit (l : Literal) : ((Expr.lit (md := md)) l).hasLP = false := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ 0 0 _) = _
   rw [lpOfData_pack _ _ _ _ (by decide) (by decide)]
 
-@[simp] theorem hasLP_app (f a : Expr) :
+@[simp] theorem hasLP_app (f a : Expr md) :
     (Expr.app f a).hasLP = (f.hasLP || a.hasLP) := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ (max _ _) (max _ _) _) = _
   rw [lpOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (bvarOfData_lt _))
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _))]
   rfl
 
-@[simp] theorem hasLP_lam (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem hasLP_lam (ty b : Expr md) (m : BinderMeta) :
     (Expr.lam ty b m).hasLP = (ty.hasLP || b.hasLP || m.pw.hasParams) := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ (max _ (satPred _)) (max _ _) _) = _
   rw [lpOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (satPred_lt (bvarOfData_lt _)))
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _))]
   rfl
 
-@[simp] theorem hasLP_forallE (ty b : Expr) (m : BinderMeta) :
+@[simp] theorem hasLP_forallE (ty b : Expr md) (m : BinderMeta) :
     (Expr.forallE ty b m).hasLP =
       (ty.hasLP || b.hasLP || m.pw.hasParams) := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ (max _ (satPred _)) (max _ _) _) = _
   rw [lpOfData_pack _ _ _ _
     (max_lt_32768 (bvarOfData_lt _) (satPred_lt (bvarOfData_lt _)))
     (max_lt_32768 (fvarOfData_lt _) (fvarOfData_lt _))]
   rfl
 
-@[simp] theorem hasLP_letE (ty v b : Expr) :
-    (Expr.letE ty v b).hasLP = (ty.hasLP || v.hasLP || b.hasLP) := by
+@[simp] theorem hasLP_letE (ty v b : Expr md) (l : LetMeta) :
+    (Expr.letE ty v b l).hasLP = (ty.hasLP || v.hasLP || b.hasLP) := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ (max (max _ _) (satPred _)) (max (max _ _) _)
     _) = _
   rw [lpOfData_pack _ _ _ _
@@ -669,8 +924,9 @@ private theorem toNat_satPred {x : UInt64} (_hx : x.toNat < 32768) :
       (fvarOfData_lt _))]
   rfl
 
-@[simp] theorem hasLP_proj (s : Name) (i : Nat) (e : Expr) :
+@[simp] theorem hasLP_proj (s : Key md) (i : Nat) (e : Expr md) :
     (Expr.proj s i e).hasLP = e.hasLP := by
+  rw [Expr.hasLP, Expr.data]
   show lpOfData (packData _ _ _ _) = _
   rw [lpOfData_pack _ _ _ _ (bvarOfData_lt _) (fvarOfData_lt _)]
   rfl
@@ -733,7 +989,7 @@ consulted and written **only** at these: a `bvar`, `sort`, `const` or
 save a walk and every one of them costs a probe, a bucket cons cell
 and, at the end of the call, its `lean_dec_ref`.  Leaves are the
 majority of the nodes of a real term. -/
-@[inline] def beqRecursive : Expr → Bool
+@[inline] def beqRecursive : Expr md → Bool
   | .fvar .. | .app .. | .lam .. | .forallE .. | .letE .. | .proj .. => true
   | _ => false
 
@@ -742,19 +998,19 @@ equal, the addresses the descent saw them at, and the proof.  The
 proof is erased; the addresses are the probe's cheap filter; the
 objects are what the probe verifies against (`probeHit`) — and
 holding them is what keeps their addresses theirs. -/
-structure EqPair where
-  fst : Expr
-  snd : Expr
+structure EqPair (md : Mode) where
+  fst : Expr md
+  snd : Expr md
   pa : USize
   pb : USize
   eq : fst = snd
 
 /-- The default a probe reads on a miss: no object has address `0`,
 so its filter never passes at runtime. -/
-def EqPair.dflt : EqPair := ⟨.bvar 0, .bvar 0, 0, 0, rfl⟩
+def EqPair.dflt : EqPair md := ⟨.bvar 0, .bvar 0, 0, 0, rfl⟩
 
 /-- The memo: keyed on the packed address pair (`beqKey`). -/
-abbrev BeqMap := Std.HashMap Nat EqPair
+abbrev BeqMap (md : Mode) := Std.HashMap Nat (EqPair md)
 
 /-- The memo key of a pair of addresses, packed into ONE small `Nat`:
 a `Nat × Nat` key would be a `Prod` cell allocated on every probe and
@@ -774,7 +1030,7 @@ continuation's result does not depend on the address — is then
 
 /-- Identity, decided: the pointer test at runtime, the derived
 structural decision in the pure model. -/
-@[inline] def ptrDec (a b : Expr) : Decidable (a = b) :=
+@[inline] def ptrDec (a b : Expr md) : Decidable (a = b) :=
   withPtrEqDecEq a b (fun _ => instDecidableEqExpr a b)
 
 /-- Does the entry at `key` identify the pair `(a, b)`?  The stored
@@ -782,7 +1038,7 @@ addresses are the filter; the stored objects, tested by identity, are
 the verification, and the proof behind a `true` is the entry's own.
 At runtime a passed filter is an identity match, so `ptrDec` decides
 by pointer and never walks. -/
-@[inline] def probeHit (m : BeqMap) (key : Nat) (pa pb : USize) (a b : Expr) :
+@[inline] def probeHit (m : BeqMap md) (key : Nat) (pa pb : USize) (a b : Expr md) :
     { h : Bool // h = true → a = b } :=
   let p := m.getD key EqPair.dflt
   if p.pa == pa && p.pb == pb then
@@ -825,25 +1081,25 @@ quotient; `beqMemo_eq` is three lines, as it always was. -/
 
 /-- The raw result of one node's comparison: the decision and the
 memo (absent until the first recorded pair). -/
-structure BeqResX (a b : Expr) where
+structure BeqResX (a b : Expr md) where
   dec : Decidable (a = b)
-  map : Option BeqMap
+  map : Option (BeqMap md)
 
 /-- The result as the descent returns it: the raw result behind a
 quotient identifying all of them, so that it is a subsingleton — the
 decision is one (`Decidable` is a subsingleton) and the state is
 unobservable.  Erased by the compiler. -/
-abbrev BeqOutX (a b : Expr) := Squash (BeqResX a b)
+abbrev BeqOutX (a b : Expr md) := Squash (BeqResX a b)
 
-@[inline] def BeqOutX.mk {a b : Expr} (d : Decidable (a = b)) (map : Option BeqMap) :
+@[inline] def BeqOutX.mk {a b : Expr md} (d : Decidable (a = b)) (map : Option (BeqMap md)) :
     BeqOutX a b :=
   Quot.mk _ ⟨d, map⟩
 
 /-- The write-back: the entry under its key, in the table or in a
 fresh one. -/
-@[inline] def BeqMap.record (mp : Option BeqMap) (key : Nat) (p : EqPair) : Option BeqMap :=
+@[inline] def BeqMap.record (mp : Option (BeqMap md)) (key : Nat) (p : EqPair md) : Option (BeqMap md) :=
   match mp with
-  | none => some (({} : BeqMap).insert key p)
+  | none => some (({} : BeqMap md).insert key p)
   | some m => some (m.insert key p)
 
 /-- The child step of `beqGoX`: pointer identity, the computed word,
@@ -853,8 +1109,8 @@ untouched; a shared/shared pair is probed, and recorded on a completed
 `true`.  The terms are borrowed, so the counts read are the counts of
 the references inside the terms (the requirement stated in
 `IxC/Kernel/Cached/ExprOpsC.lean`; the check is the IR audit). -/
-@[inline] def enterBeq (map : Option BeqMap) (a b : @& Expr)
-    (rec : Option BeqMap → BeqOutX a b) : BeqOutX a b :=
+@[inline] def enterBeq (map : Option (BeqMap md)) (a b : @& (Expr md))
+    (rec : Option (BeqMap md) → BeqOutX a b) : BeqOutX a b :=
   withAddr a fun pa => withAddr b fun pb =>
   if pa == pb then .mk (ptrDec a b) map
   else if h : a.data != b.data then
@@ -888,7 +1144,7 @@ them, and owned terms cost a reference-count pair per node — and the
 exclusivity read would then answer `false` at every node
 (`IxC/Kernel/Exclusive.lean`, "The borrowed-parameter
 requirement"). -/
-def beqGoX (map : Option BeqMap) (a b : @& Expr) : BeqOutX a b :=
+def beqGoX (map : Option (BeqMap md)) (a b : @& (Expr md)) : BeqOutX a b :=
   match a, b with
   | .bvar i, .bvar j =>
     .mk (if h : i = j then isTrue (by subst h; rfl)
@@ -944,18 +1200,20 @@ def beqGoX (map : Option BeqMap) (a b : @& Expr) : BeqOutX a b :=
             | isFalse h₂ => isFalse (fun e => h₂ (Expr.forallE.inj e).2.1))
             r₂.map
     else .mk (isFalse (fun e => h (Expr.forallE.inj e).2.2)) map
-  | .letE t v b, .letE t' v' b' =>
-    Squash.lift (enterBeq map t t' fun mp => beqGoX mp t t') fun r₁ =>
-      match r₁.dec with
-      | isFalse h₁ => .mk (isFalse (fun e => h₁ (Expr.letE.inj e).1)) r₁.map
-      | isTrue h₁ => Squash.lift (enterBeq r₁.map v v' fun mp => beqGoX mp v v') fun r₂ =>
-        match r₂.dec with
-        | isFalse h₂ => .mk (isFalse (fun e => h₂ (Expr.letE.inj e).2.1)) r₂.map
-        | isTrue h₂ => Squash.lift (enterBeq r₂.map b b' fun mp => beqGoX mp b b') fun r₃ =>
-          .mk (match r₃.dec with
-            | isTrue h₃ => isTrue (by subst h₁; subst h₂; subst h₃; rfl)
-            | isFalse h₃ => isFalse (fun e => h₃ (Expr.letE.inj e).2.2))
-            r₃.map
+  | .letE t v b l, .letE t' v' b' l' =>
+    if h : l = l' then
+      Squash.lift (enterBeq map t t' fun mp => beqGoX mp t t') fun r₁ =>
+        match r₁.dec with
+        | isFalse h₁ => .mk (isFalse (fun e => h₁ (Expr.letE.inj e).1)) r₁.map
+        | isTrue h₁ => Squash.lift (enterBeq r₁.map v v' fun mp => beqGoX mp v v') fun r₂ =>
+          match r₂.dec with
+          | isFalse h₂ => .mk (isFalse (fun e => h₂ (Expr.letE.inj e).2.1)) r₂.map
+          | isTrue h₂ => Squash.lift (enterBeq r₂.map b b' fun mp => beqGoX mp b b') fun r₃ =>
+            .mk (match r₃.dec with
+              | isTrue h₃ => isTrue (by subst h; subst h₁; subst h₂; subst h₃; rfl)
+              | isFalse h₃ => isFalse (fun e => h₃ (Expr.letE.inj e).2.2.1))
+              r₃.map
+    else .mk (isFalse (fun e => h (Expr.letE.inj e).2.2.2)) map
   | .lit l, .lit l' =>
     .mk (if h : l = l' then isTrue (by subst h; rfl)
          else isFalse (fun e => h (Expr.lit.inj e))) map
@@ -978,20 +1236,20 @@ termination_by structural a
 
 /-- The descent's decision, from a fresh state (no table: the first
 shared/shared pair proved equal creates it). -/
-def beqDec (a b : Expr) : Decidable (a = b) :=
+def beqDec (a b : Expr md) : Decidable (a = b) :=
   Squash.lift (beqGoX none a b) fun r => r.dec
 
 /-- The executed equality: pointer test, computed-word test, then the
 memoised descent.  The implementation of `beq`; `beqMemo_eq` proves
 it is `decide (a = b)`. -/
-@[inline] def beqMemo (a b : Expr) : Bool :=
+@[inline] def beqMemo (a b : Expr md) : Bool :=
   withPtrEq a b (fun _ => if a.data == b.data then @decide (a = b) (beqDec a b) else false)
     (fun h => by subst h; simp)
 
 /-- The executed equality is the specification: `withPtrEq a b k h`
 is *defined* as `k ()`, the word guard cannot reject an equal pair,
 and `beqDec` is *a* decision of `a = b`, hence *the* decision. -/
-theorem beqMemo_eq (a b : Expr) : beqMemo a b = decide (a = b) := by
+theorem beqMemo_eq (a b : Expr md) : beqMemo a b = decide (a = b) := by
   show (if a.data == b.data then @decide (a = b) (beqDec a b) else false) = decide (a = b)
   rw [Subsingleton.elim (beqDec a b) (instDecidableEqExpr a b)]
   by_cases h : a = b
@@ -1002,17 +1260,17 @@ theorem beqMemo_eq (a b : Expr) : beqMemo a b = decide (a = b) := by
 hence definitionally the `BEq` any `DecidableEq` type has, with
 `beqMemo` substituted by the compiler on the `@[csimp]` equation
 below. -/
-def beq (a b : Expr) : Bool := decide (a = b)
+def beq (a b : Expr md) : Bool := decide (a = b)
 
 /-- The `Expr` twin of `Name.beq_eq_beqPtr`: `@[csimp]` on a
 kernel-checked equality, not `@[implemented_by]`. -/
 @[csimp] theorem beq_eq_beqMemo : @Expr.beq = @Expr.beqMemo := by
-  funext a b; exact (beqMemo_eq a b).symm
+  funext md a b; exact (beqMemo_eq a b).symm
 
-instance : BEq Expr := ⟨Expr.beq⟩
+instance : BEq (Expr md) := ⟨Expr.beq⟩
 
 /-- `beq` is lawful — it *is* `decide (· = ·)`. -/
-instance : LawfulBEq Expr where
+instance : LawfulBEq (Expr md) where
   eq_of_beq h := of_decide_eq_true h
   rfl := by simp [BEq.beq, Expr.beq]
 
@@ -1052,14 +1310,14 @@ index the battery produces is the 4 000-binder λ tower of
 def bvarPoolSize : Nat := 4096
 
 @[inherit_doc bvarPoolSize]
-def bvarPool : Array Expr := (Array.range bvarPoolSize).map Expr.bvar
+def bvarPool : Array (Expr md) := (Array.range bvarPoolSize).map Expr.bvar
 
 /-- The `bvar` smart constructor: the pooled node below `bvarPoolSize`,
 a fresh one above it.  Same value either way (`mkBvar_eq`). -/
-@[inline] def mkBvar (i : Nat) : Expr :=
+@[inline] def mkBvar (i : Nat) : Expr md :=
   if h : i < bvarPool.size then bvarPool[i] else .bvar i
 
-@[simp] theorem mkBvar_eq (i : Nat) : mkBvar i = .bvar i := by
+@[simp] theorem mkBvar_eq (i : Nat) : (mkBvar (md := md)) i = .bvar i := by
   unfold mkBvar
   split
   · simp [bvarPool]

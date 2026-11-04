@@ -1,8 +1,8 @@
-# Sharing corpus measurements (plan gate P1.5)
+# Sharing corpus measurements
 
-Measurements for gate P1.5 of [`sharing-minimum.md`](sharing-minimum.md), taken on the
+Corpus measurements for [`sharing-minimum.md`](sharing-minimum.md), taken on the
 `Init` corpus with the harness `Benchmarks/SharingStudy.lean` (`lake exe sharing-study`).
-The plan says these numbers decide P3's design. This document reports them and does not
+These numbers inform the global exact search design. This document reports them and does not
 choose a design.
 
 **Status.** The corpus `init.ixe` is a format-v3 file (`Tag0`/`Tag2`/`Tag4` integers)
@@ -51,7 +51,7 @@ stored constants of `init.ixe` were processed and none were skipped):
 - Longest telescopes: 95 for App, Lam and All (`Lean.Grind.Config.mk.inj` /
   `.mk.noConfusion`). For rooted constants the p99 of the per-constant maximum is 17.
 
-For comparison with the P1.5 criterion: candidate counts are small (≤ 8, where a subset state
+For comparison with the corpus-measurement criterion: candidate counts are small (≤ 8, where a subset state
 space is at most 256) for about one constant in six. They are in the hundreds or more for
 about one in five, and in the tens of thousands at the top.
 
@@ -62,7 +62,7 @@ same harness (`mssBuild` in `Benchmarks/SharingStudy.lean`). The rule is:
 
 1. `deg(t)` is the number of incoming edges of `t` in the compact hash-consed DAG, counted
    with multiplicity (`App(x,x)` contributes 2), plus the number of roots equal to `t`.
-   This is the compact indegree, not the expanded `occ` used in P1.5.
+   This is the compact indegree, not the expanded `occ` used in the candidate-count census.
 2. MSS stores exactly the terms with `deg ≥ 2` and unshared standalone size > 1. Every
    occurrence of a stored term, in roots and in other entries, becomes a Share.
 3. The table is in priority topological order. Among stored terms whose stored body

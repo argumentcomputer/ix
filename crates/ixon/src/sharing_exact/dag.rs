@@ -12,19 +12,24 @@ use std::sync::Arc;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::cost::{Len, tag0_len, tag4_len};
-use super::{
-  FormatBound, MalformedSharing, Meter, ShareLocation, SharingError,
-};
+use super::{MalformedSharing, Meter, ShareLocation, SharingError};
 use crate::contract::{
   BinderContract, LetContract, ValueContract, pack_all_contract,
 };
 use crate::expr::Expr;
 
 /// Structural term ID: position in the §3.2 order.
-pub type TermId = u32;
+///
+/// A `usize`, so every term of a DAG held in memory has an ID: the node
+/// vector has fewer than `usize::MAX` elements, which also leaves
+/// `TermId::MAX` free as the "no term" sentinel of internal tables. Heights
+/// are below the node count and use the same type. Wire indices are `u64`
+/// and are converted, checked, only where they are written.
+pub type TermId = usize;
 
-pub(crate) fn ix(t: TermId) -> usize {
-  usize::try_from(t).unwrap_or(usize::MAX)
+/// The vector index of a term ID.
+pub(crate) const fn ix(t: TermId) -> usize {
+  t
 }
 
 /// One distinct expanded subterm; children are term IDs.
@@ -219,7 +224,7 @@ impl Node {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SharingDag {
   nodes: Vec<Node>,
-  heights: Vec<u32>,
+  heights: Vec<TermId>,
   roots: Vec<TermId>,
 }
 
@@ -239,7 +244,7 @@ enum ShareCtx<'a> {
 
 struct Builder<'m, 'l> {
   nodes: Vec<Node>,
-  heights: Vec<u32>,
+  heights: Vec<TermId>,
   index: FxHashMap<Node, TermId>,
   meter: &'m mut Meter<'l>,
 }
@@ -249,24 +254,16 @@ impl Builder<'_, '_> {
     if let Some(&id) = self.index.get(&node) {
       return Ok(id);
     }
-    let mut height: u32 = 0;
+    // The children were interned first, so their heights are below the
+    // node count: neither the height nor the new ID (the node count)
+    // overflows.
+    let mut height: TermId = 0;
     for &c in node.children().as_slice() {
-      let h = self.heights[ix(c)].checked_add(1).ok_or_else(|| {
-        SharingError::FormatBound(FormatBound::TermIdSpace {
-          nodes: u64_len(self.nodes.len()),
-        })
-      })?;
-      height = height.max(h);
+      height = height.max(self.heights[ix(c)] + 1);
     }
-    self.meter.height(u64::from(height))?;
-    let count = u64_len(self.nodes.len()) + 1;
-    self.meter.distinct_nodes(count)?;
-    let id = TermId::try_from(self.nodes.len())
-      .ok()
-      .filter(|id| *id != TermId::MAX)
-      .ok_or(SharingError::FormatBound(FormatBound::TermIdSpace {
-        nodes: count,
-      }))?;
+    self.meter.height(u64_len(height))?;
+    let id: TermId = self.nodes.len();
+    self.meter.distinct_nodes(u64_len(id).saturating_add(1))?;
     self.nodes.push(node.clone());
     self.heights.push(height);
     self.index.insert(node, id);
@@ -387,10 +384,9 @@ impl Builder<'_, '_> {
     }
     let max_h =
       (0..n).filter(|&p| reach[p]).map(|p| self.heights[p]).max().unwrap_or(0);
-    let mut buckets: Vec<Vec<usize>> =
-      vec![Vec::new(); usize::try_from(max_h).unwrap_or(0) + 1];
+    let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); max_h + 1];
     for p in (0..n).filter(|&p| reach[p]) {
-      buckets[usize::try_from(self.heights[p]).unwrap_or(0)].push(p);
+      buckets[self.heights[p]].push(p);
     }
     let mut new_id = vec![TermId::MAX; n];
     let mut nodes = Vec::new();
@@ -410,13 +406,10 @@ impl Builder<'_, '_> {
           ));
         }
       }
-      let h = u32::try_from(h)
-        .map_err(|_e| SharingError::Internal("height exceeds u32".into()))?;
       for p in keyed {
+        // At most `n` terms are renumbered, so `next` stays below `n`.
         new_id[p] = next;
-        next = next.checked_add(1).ok_or(SharingError::FormatBound(
-          FormatBound::TermIdSpace { nodes: u64_len(n) },
-        ))?;
+        next += 1;
         nodes.push(self.nodes[p].map_children(|c| new_id[ix(c)]));
         heights.push(h);
       }
@@ -863,7 +856,7 @@ impl SharingDag {
   }
 
   /// Heights indexed by term ID (leaves are 0).
-  pub fn heights(&self) -> &[u32] {
+  pub fn heights(&self) -> &[TermId] {
     &self.heights
   }
 

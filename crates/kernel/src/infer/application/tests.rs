@@ -99,8 +99,11 @@ fn same_type<M: KernelMode>(a: KExpr<M>, b: KExpr<M>) {
       (ExprData::App(f, x, _), ExprData::App(g, y, _)) => {
         pending.extend([(f, g), (x, y)])
       },
-      (ExprData::All(n, i, d, c, _), ExprData::All(m, j, e, r, _))
-      | (ExprData::Lam(n, i, d, c, _), ExprData::Lam(m, j, e, r, _)) => {
+      (
+        ExprData::All(n, i, _, _, d, c, _),
+        ExprData::All(m, j, _, _, e, r, _),
+      )
+      | (ExprData::Lam(n, i, _, d, c, _), ExprData::Lam(m, j, _, e, r, _)) => {
         assert_eq!(n, m);
         assert_eq!(i, j);
         pending.extend([(d, e), (c, r)]);
@@ -348,21 +351,21 @@ fn fvar_arguments<M: KernelMode>() {
     let a = tc.intern(KExpr::fvar(aid, name::<M>("A")));
     tc.lctx.push(
       aid,
-      LocalDecl::CDecl {
-        name: name::<M>("A"),
-        bi: M::meta_field(BinderInfo::Default),
-        ty: sort(1),
-      },
+      LocalDecl::cdecl(
+        name::<M>("A"),
+        M::meta_field(BinderInfo::Default),
+        sort(1),
+      ),
     );
     let xid = tc.fresh_fvar_id();
     let x = tc.intern(KExpr::fvar(xid, name::<M>("x")));
     tc.lctx.push(
       xid,
-      LocalDecl::CDecl {
-        name: name::<M>("x"),
-        bi: M::meta_field(BinderInfo::Default),
-        ty: a.clone(),
-      },
+      LocalDecl::cdecl(
+        name::<M>("x"),
+        M::meta_field(BinderInfo::Default),
+        a.clone(),
+      ),
     );
     let e = app(app(f, a), x);
     for infer_only in [false, true] {

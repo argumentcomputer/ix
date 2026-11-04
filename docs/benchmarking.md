@@ -103,49 +103,161 @@ The comparison renders the pair in its own table. A missing or incomplete
 successful join is a run failure; a watchdog kill preserves any execution
 measurements and marks the unfinished pair `OOM`.
 
+### Circuit cost profiling
+
+Use the same compiled artifact and claim scope for each comparison. The
+profiler records the artifact size, binding address, checked-constant count,
+per-function query heights, and actual AIR shapes:
+
+```shell
+lake exe proving-profile InitStd.ixe Nat.add_comm nat-profile.json
+lake exe function-grouping check ixvm
+lake exe function-grouping measure ixvm before-groups.json after-groups.json \
+  nat-profile.json grouping-comparison.json
+```
+
+Group files are JSON arrays of `[groupName, [functionName, ...]]`; `-` selects
+the production groups. The comparison validates the unchanged function
+library and complete circuit partition. A digest of the function bodies,
+layouts, flags and memory sizes rejects stale profiles, including changes
+that leave function indices or widths unchanged. It reports both raw-height
+and power-of-two padded function FFT cost, active committed width, and VK size.
+Memory and gadget circuits are
+unchanged by regrouping and excluded from those function-cost totals.
+
+`proving-profile` always uses generic bytecode execution, so its elapsed time
+is an iteration diagnostic. Compare FFT cost and proof size while changing
+source or grouping, then regenerate the native artifacts and use
+`bench-typecheck` for native timings. Proof measurements must retain the same
+FRI parameters, checked constants, binding and dependency scope.
+
+### PR #665 proving optimization measurement
+
+The 2026-11-03 pass compares against `09ee682af5b0a37ceaad6317683cb772a9cd8ad2`,
+the PR revision in [the benchmark comment](https://github.com/argumentcomputer/ix/pull/665#issuecomment-6608664380).
+The input is the 253,772,604-byte `InitStd.ixe` with 103 bound roles, 44 evidence
+entries and SHA-256
+`e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1`.
+All seven baseline FFT values reproduce the comment's PR column to its
+displayed precision. The same constants and admission checks are retained:
+
+| Constant | Checked constants | Baseline FFT cost, billions | Optimized | Reduction |
+|---|---:|---:|---:|---:|
+| `ByteArray.utf8DecodeChar?_utf8EncodeChar_append` | 3,638 | 126.785 | 121.610 | 4.08% |
+| `Char.ofOrdinal_le_of_le` | 3,596 | 91.741 | 87.742 | 4.36% |
+| `Array.extract_append` | 2,420 | 92.971 | 90.388 | 2.78% |
+| `Std.HashMap` | 2,968 | 63.338 | 60.522 | 4.45% |
+| `_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq` | 2,688 | 55.475 | 53.180 | 4.14% |
+| `String.append` | 781 | 4.576 | 4.373 | 4.44% |
+| `Nat.add_comm` | 52 | 0.390 | 0.376 | 3.68% |
+
+Paired inner and recursive proofs were generated and verified with 50 FRI
+queries, log blowup 2, log final polynomial length 0, max log arity 1 and
+zero proof-of-work bits. Each recursive run verifies the corresponding
+baseline or optimized inner proof:
+
+| Measure | `Nat.add_comm` | `String.append` |
+|---|---:|---:|
+| Inner proof bytes | 5,673,393 → 5,390,069 (−4.99%) | 6,450,356 → 6,153,240 (−4.61%) |
+| Recursive FFT cost, billions | 94.551 → 88.886 (−5.99%) | 109.191 → 100.616 (−7.85%) |
+| Outer proof bytes | 2,807,371 → 2,822,459 (+0.54%) | 2,811,979 → 2,833,115 (+0.75%) |
+
+The wider, four-byte BLAKE3 loop reduces recursive work with a small outer
+proof-size increase. These are improvements over the PR revision; some
+costs remain above main's figures with the PR's larger checked workload.
+Generic bytecode execution was used for source iteration. The regenerated
+native backend was checked for correctness with codegen compilation at
+optimization level 0; its wall times are not native CI speedup measurements.
+
+The host `IOBuffer.extend` change is separate from those circuit measurements.
+On frozen `HEq` and `String.append` fixture environments, old and new native
+witness builders produced identical 33,172,696-byte serializations, including
+arena and key-map order, offsets and lengths. Local witness construction took
+20,023/18,570 ms before and 129/121 ms after. These diagnostics isolate the
+arena-copy fix; they do not measure end-to-end proving or CI wall time.
+
+Caching the environment's role binding across constants in the benchmark
+runners (`assumeBinding := true` in `bench-typecheck`, matching the production
+claim tree where the binding is proven once and assumed by per-constant claims,
+and upfront `verdict_work` support checking in `rs_kernel_check_anon_consts`)
+eliminates redundant per-constant role-table re-admission:
+
+| Constant | Checked constants (assumed binding) | Stage 1 FFT cost, billions (`09ee682` → assumed binding) | `ooc` check-time (s) |
+|---|---:|---:|---:|
+| `ByteArray.utf8DecodeChar?_utf8EncodeChar_append` | 2,697 | 126.785 → 121.304 (−4.32%) | 0.819 |
+| `Char.ofOrdinal_le_of_le` | 2,676 | 91.681 → 86.924 (−5.19%) | 0.153 |
+| `Array.extract_append` | 1,509 | 92.985 → 87.989 (−5.37%) | 0.383 |
+| `Std.HashMap` | 2,039 | 63.352 → 58.138 (−8.23%) | 0.087 |
+| `_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq` | 1,768 | 55.479 → 50.474 (−9.02%) | 0.086 |
+| `String.append` | 263 | 4.581 → 3.070 (−32.98%) | 0.015 |
+| `Nat.add_comm` | 34 | 0.390 → 0.377 (−3.33%) | 0.004 |
+
+With `assumeBinding := true` on the 32-vCPU benchmark host (`r8i.8xlarge`),
+inactive role-validation circuits drop out of per-constant proofs, reducing
+`Nat.add_comm` Stage 1 proof size from 6.08 MiB to 4.99 MiB (−17.9%), Stage 2
+`fri-verifier` FFT cost from 114.68B to 90.65B (−21.0%), and end-to-end
+recursive `total-time` from 64.47s to 31.38s (−51.3%); `String.append` Stage 1
+proof size drops from 6.18 MiB to 5.19 MiB (−16.0%), Stage 2 `fri-verifier`
+FFT cost from 115.65B to 99.33B (−14.1%), and `total-time` from 63.85s to
+34.42s (−46.1%).
+
+> **Follow-up note (recursive binding-proof discharge):** Today `bench-typecheck --recursive` proves per-constant claims with `assumeBinding := true` (`validator = 4`) and runs the 1-child `fri-verifier` over each constant's `IxVM` proof. A future refinement to mirror production toolchain role bindings end-to-end is to pre-generate the toolchain's `Ix.Claim.binding` proof (`ix prove-binding`) once per `.ixe` and recursively verify/discharge it via `ix_aggr` shape 13/14 (`aggr_discharge_binding`) so benchmarked proofs emit self-contained `validator = 3` (`bindingAssumed = false`) claims.
+
 ## Backends
 
 | backend | what it measures | tool |
 |---|---|---|
 | `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
-| `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
+| `compile` | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
+
+The `compile` benchmark switches from the uncertified Rust compiler to the
+certified default in this change. Certified uploads use the distinct
+`ix-compile-certified` workload and testbeds, with the same regression
+thresholds. Historical Rust rows remain in `ix-compile` and appear as separate
+lines on the compile plots; they never enter the certified alert baseline.
+PR comparisons across the switch include the cost of certification and remain
+informational: the table displays the delta without failing on its size.
+Compiler failures, missing rows and kernel rejections still fail their jobs.
+For a separate Rust measurement, run
+`ix compile <env>.lean --rust --out rust.ixe --json rust-compile.json --json-name <env>`;
+keep that row separate from the certified series.
 
 The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
 reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
-and [kernel.md](kernel.md). It is separate from the Rust benchmarks above;
+and [kernel.md](kernel.md). It is separate from the compiler and Rust kernel benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
-### Aggregate W0 baselines
+### Aggregate baselines
 
-The pre-E2 lift-size pin (2026-08-28) uses the 247-function production
+The unpruned-path lift-size pin uses the 247-function production
 recursion system, default q=100/PoW-20 parameters, and the verified
 one-constant aggregate fixture. Its lift proof is **7,986,166 bytes**;
 the containing `Ixon.Proof` wrapper is 7,986,204 bytes at store address
 `090bea6f1c976ef6677fad94f86286295b2eea751fefb7af4c82ce9f84ca1535`.
 Positive-PoW grinding may change the proof contents, but its structural byte
-length is stable. This is the WP-E2 comparison baseline.
+length is stable. This is the pre-multiproof comparison baseline.
 
-The post-E2 default-q=100/PoW-20 run (2026-08-29) produced a verified
+The pruned-multiproof default-q=100/PoW-20 run produced a verified
 **7,443,023-byte** lift proof in a 7,443,061-byte wrapper at store address
 `b5644a2956b544220dbf54a4768658cb727b24737fc383200e4c475b1f2aa6b6`:
-543,143 bytes, or 6.80%, below the pre-E2 lift pin. Unlike the old per-query
+543,143 bytes, or 6.80%, below the unpruned lift pin. Unlike the old per-query
 path encoding, a pruned multiproof's byte length depends on how its sampled
 query paths overlap. Positive-PoW grinding can therefore vary both contents
-and length after E2; this is a measured sample, not a byte-exact regression
+and length with pruned multiproofs; this is a measured sample, not a byte-exact regression
 pin. The deterministic q=100/PoW-0 benchmark is the stable local signal: its
 outer proof was 7,447,279 bytes and its recursive-verifier FFT cost was
 38,850,942,825. The default-PoW debug path separately measured a
 3,861,528-byte compact inner proof, 4,304,576 bytes after expansion to
 per-query advice, and 38,311,558,162 recursive-verifier FFT cost.
 
-The historical pre-E2 `--queries 0` join wiring gate produced a 246,014-byte
-flat-join proof and 10,280,903,348 FFT cost. P3 v0.6 requires at least one FRI
-query, so the post-E2 replacement is `--queries 1` (still PoW 0): a
+The historical `--queries 0` join wiring gate produced a 246,014-byte
+flat-join proof and 10,280,903,348 FFT cost. Plonky3 v0.6 requires at least one FRI
+query, so the replacement smoke check is `--queries 1` (still PoW 0): a
 397,177-byte flat-join proof, 15,204,157,391 FFT cost, 6.64 s prove time,
 11,451,486,208-byte peak RSS, and 2.69 ms native verification. These are smoke
-values, not W0 cost estimates; the q=50 join run remains a large-box benchmark.
+values, not production aggregate cost estimates; the q=50 join run remains a large-box benchmark.
 
 All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar. The ooc and Aiur cells share per-constant
@@ -177,8 +289,10 @@ its row marked `status: oom`
 constant's death costs one constant. A kill that lands *after* the row
 carries the mode's completion metric hit teardown (the prover releasing
 tens of GB right after the final write), so the finished row stays `ok`.
-ooc and compile run as single processes instead — their checks never
-approach the ceiling, and a kill there means missing rows and a red cell.
+ooc and compile run as single processes instead, and a kill there means
+missing rows and a red cell. Preparing a missing `.ixe` uses the default
+compiler under the same RAM ceiling; that preparation is outside the
+consumer's timed window.
 There are **no per-constant timeouts**; the job-level `timeout-minutes` is
 the only clock.
 
@@ -198,12 +312,11 @@ the only clock.
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
   note.) Runner provisioning lives in the workflows; `IX_BENCH_MACHINE`
   selects the matching Bencher testbed. The watchdog ceiling defaults to
-  the machine's RAM minus 15 GB
-  (`--ceiling-gb` overrides). The heaviest compile/decompile workload is
-  `ix decompile` on Mathlib and FLT, approaching 40 GB now that Pass 2
-  holds its kenv rather than clearing it (compile itself peaks around half
-  that), so the default only clears it on machines with roughly 55 GB or
-  more; cap explicitly below that.
+  the machine's RAM minus 15 GiB (`--ceiling-gb` overrides). Certified
+  compilation can use substantially more RAM than the historical Rust
+  compile series. The benchmark runners have 256 GiB, leaving about
+  240 GiB for the watchdog; smaller hosts should set an explicit ceiling.
+  The same ceiling covers fallback compilation for consumers without `--ixe`.
 
 ## `!benchmark` grammar
 
@@ -239,10 +352,10 @@ single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
 input box can't hold newlines:
 `!benchmark aiur execute BENCH_ENVS=InitStd,Mathlib`.
 
-The `IX_COMPILE_*` settings change compile-time RAM and speed but produce a
-bit-identical `.ixe`, so normal `.ixe` and compile-row caches are keyed only by
-commit and env. Add `fresh` when remeasuring a compile knob on an already
-benchmarked commit.
+The allowlisted `IX_COMPILE_*` settings tune the Rust compiler used by older
+base checkouts; they do not tune the certified compiler. Normal `.ixe` and
+compile-row caches are keyed by commit and env. Add `fresh` when remeasuring
+a compile setting on an already benchmarked commit.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it

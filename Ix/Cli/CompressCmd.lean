@@ -39,7 +39,7 @@ private def compressProof (addr : Address) (wrapper : Ixon.Proof)
     (opts : Options) (setup : String) : IO Address := do
   if Compression.isCompressed wrapper.proof then
     throw <| IO.userError "proof is already compressed"
-  let .checkEnv _ _ := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
+  let .checkEnv .. := wrapper.claim | throw <| IO.userError "compression requires an aggregate CheckEnv proof"
   -- The statement comes from the same backend `ix verify --aggregate` uses;
   -- a trusted root key only replaces the verifying key the FRI stage checks.
   let backend ← IO.ofExcept (← Aggr.buildVerificationBackend Aggr.defaultRecursionParameters)

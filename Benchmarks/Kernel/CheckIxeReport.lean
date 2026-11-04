@@ -129,11 +129,11 @@ def summary (path : String) (top : Nat) (json : Option String) : IO Unit := do
     IO.println s!"Accepted row time: median {fixed (quantile 0.5) 2} ms, p90 {fixed (quantile 0.9) 2} ms, \
       p99 {fixed (quantile 0.99) 1} ms; the 10 slowest rows account for \
       {fixed (100 * (Float.ofInt topMicros) / (Float.ofInt (max totalMicros 1))) 0}% of summed checking time\n"
-  IO.println "| Kind | accept | decline | reject | blocked |\n| --- | ---: | ---: | ---: | ---: |"
+  IO.println "| Kind | accept | typed | decline | reject | blocked |\n| --- | ---: | ---: | ---: | ---: | ---: |"
   let kindTotal (k : String) : Nat := ((byKind.getD k {}).items.map (·.2)).foldl (· + ·) 0
   for (kind, _) in byCountDesc (kinds.map fun k => (k, kindTotal k)) do
     let c := byKind.getD kind {}
-    IO.println s!"| {kind} | {c.get "accept"} | {c.get "decline"} | {c.get "reject"} | {c.get "blocked"} |"
+    IO.println s!"| {kind} | {c.get "accept"} | {c.get "typed"} | {c.get "decline"} | {c.get "reject"} | {c.get "blocked"} |"
   IO.println s!"\n## First-cause reasons (top {top})\n"
   IO.println "| Records | Reason |\n| ---: | --- |"
   for (reason, count) in (byCountDesc reasons.items).extract 0 top do

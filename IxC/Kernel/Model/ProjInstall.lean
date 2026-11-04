@@ -40,7 +40,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   RecRule RecRuleFire IndCaps ProjEntry BinderMeta projFnName
   projModelName projFwd ReducibilityHint inferTypeCore isDefEqCore)
 
@@ -55,9 +55,9 @@ twin).  The bottom fires at the *base* environment under
 `Rn := projModelName T i`; `projCons` then stores the entry, and
 `acvalWith_self` makes the base law's head the installed constant's
 leaf. -/
-theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
-    {T ctorName : Name} {lps : List Name} {nP nF i : Nat}
-    {blockNames : List Name} (mp : EnvModelM V μ env')
+theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env md}
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i : Nat}
+    {blockNames : List (Key md)} (mp : EnvModelM V μ env')
     (hR : ProjFnRun μ F env' T ctorName lps nP nF i env₁)
     (hinv : ProjPhaseInvS T ctorName nF env' mp.base2.cvalE)
     (hinvA : ProjPhaseAcval T ctorName nF env' mp.base2.acval)
@@ -69,7 +69,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     (hpinsT : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
       Ix.Kernel.EtaPins μ env' T cvT.levelParams capsT)
     (hCblock : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
-      capsT.eta = true → blockNames.contains capsT.etaCtor = true)
+      capsT.eta = true → ∀ C, capsT.etaCtor = some C → blockNames.contains C = true)
     (hFields : ∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
       capsT.eta = true → capsT.etaFields = nF) :
     ∃ mp₁ : EnvModelM V μ env₁,
@@ -115,7 +115,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     exact projFwd_model_self hPCne
   have hfCt : (if (env'.find? ctorName).isSome = true then
       projFwd T ctorName nF ctorName else ctorName)
-      = ctorName.str "_model" := by
+      = auxKey ctorName .model := by
     rw [if_pos hCf]
     unfold projFwd
     by_cases hCT : ctorName = T
@@ -136,7 +136,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
   obtain ⟨hfvsIlen, hheadEqO, αS, hargs3O⟩ :=
     projStmtParts hilt hSb hopen hSstrip
   obtain ⟨ctorSpine, hctorSpine⟩ : ∃ e, e = Expr.mkAppN
-      (.const (ctorName.str "_model") (cvj.levelParams.map .param))
+      (.const (auxKey ctorName .model) (cvj.levelParams.map .param))
       (fvsI.take nP ++ fvsI.drop nP) := ⟨_, rfl⟩
   obtain ⟨lhsLit, hlhsLit⟩ : ∃ e, e = Expr.mkAppN
       (.const (projModelName T i) (lps.map .param))
@@ -164,7 +164,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     rw [hlargsE]
     simp
   -- the domain pin, at the pruned renaming
-  have hdomsSCp : ∀ (i0 : Nat) (b b' : Expr × BinderMeta),
+  have hdomsSCp : ∀ (i0 : Nat) (b b' : Expr md × BinderMeta),
       i0 < nP + nF → sbinders[i0]? = some b → cbinders[i0]? = some b' →
       b.1 = b'.1.renameConsts (fun n =>
         if (env'.find? n).isSome = true then
@@ -191,11 +191,11 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
   -- the four claims and the reads, at every assignment
   have hclaims := fun ψ =>
     checkSoundAt (V := V) hμ (Rules.RulesInputs.ofSem mp ψ) F
-  have hdeq : ∀ ψ : Name → Nat, DefEqClaim μ mp.base2 ψ F :=
+  have hdeq : ∀ ψ : LevelParam → Nat, DefEqClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.1
-  have hinf : ∀ ψ : Name → Nat, InferClaim μ mp.base2 ψ F :=
+  have hinf : ∀ ψ : LevelParam → Nat, InferClaim μ mp.base2 ψ F :=
     fun ψ => (hclaims ψ).2.2.2
-  have hreadsP : ∀ ψ : Name → Nat, InferReads mp.base2 μ ψ F :=
+  have hreadsP : ∀ ψ : LevelParam → Nat, InferReads mp.base2 μ ψ F :=
     fun ψ => inferReads_of hμ (Rules.RulesInputs.ofSem mp ψ)
   -- ===== the rule rhs's front door, at the reading (the H1 exposure,
   -- fourth widening — `iotaRulePlain`'s three-part construction)
@@ -207,7 +207,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
   have hrhsLb : Expr.LeavesBounded rhsA :=
     fun l hl => absurd hl (fun h => hrhsLeafNil l h)
   obtain ⟨t', hrun⟩ := hrhsRun
-  have hrhsKey : ∀ ψ : Name → Nat, ∃ Ra ta,
+  have hrhsKey : ∀ ψ : LevelParam → Nat, ∃ Ra ta,
       denoteMeta mp.base2.acval env' ψ 0 rhsA = some Ra ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Ra ∧
         interp V ρ Ra ∈ˢ interp V ρ ta := by
@@ -231,7 +231,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     exact ⟨Ra, ta, hRa, fun ρ =>
       ⟨hokRa ρ (Sat_nil V ρ), hmemRa ρ (Sat_nil V ρ)⟩⟩
   -- the statement's front doors
-  have hthmP : ∀ ψ : Name → Nat, ∃ ta,
+  have hthmP : ∀ ψ : LevelParam → Nat, ∃ ta,
       denoteMeta mp.base2.acval env' ψ 0 tcv.type = some ta ∧
       ∀ ρ : Nat → V, (∃ pv : V, pv ∈ˢ interp V ρ ta) ∧
         WellDenotedV V ρ ta := by
@@ -287,7 +287,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     refine constsBound_of_constsResolve _ ?_
     rw [Expr.constsResolve_instantiateLevelParams]
     exact hptyres
-  have hptyReadPre : ∀ (ψ : Name → Nat), ∃ ta : AnnotTerm,
+  have hptyReadPre : ∀ (ψ : LevelParam → Nat), ∃ ta : AnnotTerm,
       denoteMeta mp.base2.acval env' ψ 0 pty = some ta := by
     intro ψ
     obtain ⟨ta, hta, -, -⟩ := mp.acval_memType hfm ψ
@@ -302,7 +302,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
         [projFnRule env'.find? T ctorName pty nP nF i rhsA] :: env'.consts⟩,
       m₂.acval = acvalWith mp.base2.acval (projFnName T i)
         (fun ψ => mp.base2.acval (projModelName T i) ψ) →
-      ∀ (φ : Name → Nat),
+      ∀ (φ : LevelParam → Nat),
         ∀ rl ∈ [projFnRule env'.find? T ctorName pty nP nF i rhsA],
         RecRule.fire rl ≠ .inert →
         RecRuleLaw m₂ φ (projFnName T i) ⟨projFnName T i, lps, pty⟩
@@ -325,7 +325,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
     refine ⟨Ra, ?_, hokRa, ?_, ?_⟩
     · rw [hac]
       exact denoteMeta_cons_fresh_mono hfreshC
-        (fun _ h => ConstantInfo.noConfusion h) φ 0 _ (hcbRhs us) hRaden
+        (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) φ 0 _ (hcbRhs us) hRaden
     · -- the `.nested` pin conjunct: the rule is `.plain`
       intro lvls pins hn
       rw [hplainFire] at hn
@@ -355,7 +355,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
       refine Option.some.inj (Eq.trans ?_ hTVa)
       rw [hac]
       exact (denoteMeta_cons_fresh_mono hfreshC
-        (fun _ h => ConstantInfo.noConfusion h) φ 0 _ (hcbPty us)
+        (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) φ 0 _ (hcbPty us)
         hTVa').symm
     obtain ⟨TVja', hTVja', -, -⟩ :=
       mp.constType 0 ctorName _ usj hctor rfl (by exact husjlen)
@@ -363,7 +363,7 @@ theorem projFn (hμ : μ.verifiedChecks = true) {F : Nat} {env' env₁ : Env}
       refine Option.some.inj (Eq.trans ?_ hTVja)
       rw [hac]
       exact (denoteMeta_cons_fresh_mono hfreshC
-        (fun _ h => ConstantInfo.noConfusion h) φ 0 _
+        (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) φ 0 _
         (constsBound_instType mp.base2.wf
           (Env.find?_mem hctor) usj) hTVja').symm
     -- the two leaves the conclusion mentions
@@ -409,13 +409,13 @@ The skip branch is a no-op; the block-level premises are re-established
 at each step exactly as in v1 (`EtaPins.step` plus "a projection name
 is never a block name"). -/
 theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
-    {T ctorName : Name} {lps : List Name} {nP nF : Nat}
-    {blockNames : List Name}
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF : Nat}
+    {blockNames : List (Key md)}
     (hTblock : blockNames.contains T = true)
     (hbshape : ∀ n, blockNames.contains n = true →
       n.isProjFnShape = false) :
-    ∀ (fields : List Nat) {env' : Env} (mp : EnvModelM V μ env')
-      {env₄ : Env},
+    ∀ (fields : List Nat) {env' : Env md} (mp : EnvModelM V μ env')
+      {env₄ : Env md},
       ProjInstallRun μ F T ctorName lps nP nF env' fields env₄ →
       ProjPhaseInvS T ctorName nF env' mp.base2.cvalE →
       ProjPhaseAcval T ctorName nF env' mp.base2.acval →
@@ -424,7 +424,7 @@ theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
       (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
         Ix.Kernel.EtaPins μ env' T cvT.levelParams capsT) →
       (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
-        capsT.eta = true → blockNames.contains capsT.etaCtor = true) →
+        capsT.eta = true → ∀ C, capsT.etaCtor = some C → blockNames.contains C = true) →
       (∀ cvT capsT, env'.find? T = some (.indInfo cvT capsT) →
         capsT.eta = true → capsT.etaFields = nF) →
       ∃ mp₄ : EnvModelM V μ env₄,
@@ -457,7 +457,7 @@ theorem projInstall (hμ : μ.verifiedChecks = true) {F : Nat}
       intro hh
       rw [hh, hfresh] at hTf
       exact nomatch hTf
-    have hdown : ∀ (cvT : ConstantVal) (capsT : IndCaps),
+    have hdown : ∀ (cvT : ConstantVal md) (capsT : IndCaps md),
         env''.find? T = some (.indInfo cvT capsT) →
         env'.find? T = some (.indInfo cvT capsT) := by
       intro cvT capsT hf

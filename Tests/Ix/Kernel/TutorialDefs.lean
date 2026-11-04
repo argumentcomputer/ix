@@ -1266,16 +1266,50 @@ plain non-nested shape (no IH for the `P n F` field), and the env is
 accepted — this is a GOOD fixture.
 
 Lean's elaborator rejects this declaration (nested occurrences must
-use only the block's fixed params), so it is hand-built here. The
-`dummyRecInfo` stubs satisfy compile-side aux-gen's regeneration gate
-(`lean_env.get(rec_name).is_some()`); aux-gen replaces their contents
-with the recursors it derives — its own `has_invalid_spec_ref` check
-(`crates/compile/src/compile/aux_gen/nested.rs`) skips the `P n F`
-occurrence the same way the Rust kernel does. -/
+use only the block's fixed params), so it is hand-built here with its
+actual recursor headers and rules. `F.rec` has one motive and a minor with
+the two constructor fields, without a nested induction hypothesis.
+The nested expansion's spec check (`Ix.IndFlags.hasInvalidSpecRef`) skips the
+`P n F` occurrence the same way the Rust kernel does. Presence-only recursor stubs
+have no structural owner dependency and must not enter this scheduled
+full-pipeline test. -/
 
 good_raw_consts
   let p := `nestedSpecLocalP
   let f := `nestedSpecLocalF
+  let nat := Lean.mkConst ``Nat
+  let pApp := Lean.mkApp2 (Lean.mkConst p)
+  let pMk := Lean.mkApp2 (Lean.mkConst (p ++ `mk))
+  let fType := Lean.mkConst f
+  let fMk := Lean.mkApp2 (Lean.mkConst (f ++ `mk))
+  let app := Lean.mkApp
+  let pi := Lean.mkForall
+  let lam := Lean.mkLambda
+  -- P.rec's minor supplies motive (P.mk n B), with no constructor fields.
+  let pMotive := pi `x .default (pApp (.bvar 1) (.bvar 0)) (.sort (.param `u))
+  let pMinor := app (.bvar 0) (pMk (.bvar 2) (.bvar 1))
+  let pRecType := pi `n .default nat <|
+    pi `B .default (.sort 1) <|
+    pi `motive .implicit pMotive <|
+    pi `mk .default pMinor <|
+    pi `x .default (pApp (.bvar 3) (.bvar 2)) (app (.bvar 2) (.bvar 0))
+  let pRhs := lam `n .default nat <|
+    lam `B .default (.sort 1) <|
+    lam `motive .default pMotive <|
+    lam `mk .default pMinor (.bvar 0)
+  -- F.rec's minor consumes n and the P n F field directly; no IH is added.
+  let fMotive := pi `x .default fType (.sort (.param `u))
+  let fMinor := pi `n .default nat <|
+    pi `field .default (pApp (.bvar 0) fType) <|
+    app (.bvar 2) (fMk (.bvar 1) (.bvar 0))
+  let fRecType := pi `motive .implicit fMotive <|
+    pi `mk .default fMinor <|
+    pi `x .default fType (app (.bvar 2) (.bvar 0))
+  let fRhs := lam `motive .default fMotive <|
+    lam `mk .default fMinor <|
+    lam `n .default nat <|
+    lam `field .default (pApp (.bvar 0) fType) <|
+    Lean.mkApp2 (.bvar 2) (.bvar 1) (.bvar 0)
   #[ .inductInfo {
       name := p
       levelParams := []
@@ -1302,7 +1336,12 @@ good_raw_consts
       numFields := 0
       isUnsafe := false
   },
-  dummyRecInfo p,
+  .recInfo {
+      name := p ++ `rec, levelParams := [`u], type := pRecType,
+      all := [p], numParams := 2, numIndices := 0, numMotives := 1, numMinors := 1,
+      rules := [{ ctor := p ++ `mk, nfields := 0, rhs := pRhs }],
+      k := false, isUnsafe := false
+  },
   .inductInfo {
       name := f
       levelParams := []
@@ -1334,8 +1373,35 @@ good_raw_consts
       numFields := 2
       isUnsafe := false
   },
-  dummyRecInfo f
+  .recInfo {
+      name := f ++ `rec, levelParams := [`u], type := fRecType,
+      all := [f], numParams := 0, numIndices := 0, numMotives := 1, numMinors := 1,
+      rules := [{ ctor := f ++ `mk, nfields := 2, rhs := fRhs }],
+      k := false, isUnsafe := false
+  }
   ]
+
+-- Check the actual registered payloads, including the scheduling references.
+run_cmd do
+  let env ← Lean.getEnv
+  let cases := getTestCases env
+  let expected := #[`nestedSpecLocalP, `nestedSpecLocalP.mk, `nestedSpecLocalP.rec,
+    `nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
+  let some tc := cases[cases.size - 1]? | throwError "nested-local fixture is absent"
+  unless tc.outcome == .good && tc.decls == expected do
+    throwError "nested-local fixture must retain all six accepted targets"
+  let raw := getRawConsts env
+  for (owner, params, fields) in [(`nestedSpecLocalP, 2, 0), (`nestedSpecLocalF, 0, 2)] do
+    let found := raw.filter (fun ci => ci.name == owner ++ `rec)
+    let #[.recInfo rv] := found | throwError "nested-local recursor missing or duplicated"
+    let [rule] := rv.rules | throwError "nested-local recursor must have one rule"
+    unless rv.all == [owner] && rv.levelParams == [`u] && rv.numParams == params &&
+        rv.numIndices == 0 && rv.numMotives == 1 && rv.numMinors == 1 &&
+        !rv.k && !rv.isUnsafe && rule.ctor == owner ++ `mk && rule.nfields == fields do
+      throwError "nested-local recursor header/rule shape changed"
+    unless rv.type.getUsedConstantsAsSet.contains owner &&
+        !rv.type.hasLooseBVars && !rule.rhs.hasLooseBVars do
+      throwError "nested-local recursor lost its owner dependency or binder scope"
 
 /-! ## Kernel-check regression fixtures
 

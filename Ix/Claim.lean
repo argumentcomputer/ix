@@ -69,6 +69,12 @@ private def getTagN0Value : GetM UInt64 := return (← getTagN 0).value
 private def getOpt (mask : UInt64) (bit : UInt64) (read : GetM α) : GetM (Option α) :=
   if mask &&& bit != 0 then some <$> read else pure none
 
+/-- Refuse a reveal mask with a bit at or above `width`: the variant has `width`
+fields, and a mask bit naming none of them would give one claim two encodings. -/
+private def requireMask (mask : UInt64) (width : Nat) : GetM Unit :=
+  unless mask.toNat < 2 ^ width do
+    throw s!"claim: reveal mask {mask} sets bits beyond its {width} fields"
+
 -- ============================================================================
 -- Types
 -- ============================================================================
@@ -120,46 +126,108 @@ inductive RevealConstantInfo where
   | muts (components : Array (UInt64 × RevealMutConstInfo))
   deriving BEq, Repr, Inhabited
 
+/-- What a typing claim is relative to. The typing claims (`eval`, `check`,
+`checkEnv`) state that constants are well-typed in Lean's theory with its
+primitives read through a role binding, and these three fields say which:
+
+- `spec`: the specification digest (`Ix.SpecDigest.specDigest`), naming the
+  specifications every bound role is validated against;
+- `binding`: the binding hash, the BLAKE3 hash of the role table's section
+  bytes (`Ixon.RoleBinding.address`), naming which constant plays each role;
+- `axioms`: the axioms the claim depends on beyond the standard three
+  (`propext`, `Classical.choice`, `Quot.sound`), as the canonical merkle root
+  of their sorted addresses. `none` means the standard three only. No checker
+  admits another axiom yet, so every claim made today carries `none`; the
+  field is reserved so that admitting declared axioms later needs no second
+  format change.
+
+Typing assumptions (`assumptions` on the claims themselves) are a different
+thing: constants assumed well-typed and discharged by other claims. An axiom
+is never discharged by typing, so axioms are never listed there.
+
+`bindingAssumed` says whether the claim validates the binding itself or
+assumes it. A claim that validates it (validator `erased-lean-v2`) checks,
+in its own proof, every role it uses against its specification. A `check`
+or `checkEnv` claim may instead assume it (validator
+`erased-lean-v2-assumed`). It then states its typing only *if* the role
+table with hash `binding` meets the specifications `spec`, which a `binding`
+claim states and aggregation discharges once. The flag is the claim's
+validator byte, not a context field on the wire, and only `check` and
+`checkEnv` carry it: the other typing claims always validate.
+
+`literalClass` says that `binding` is not a binding hash but a **literal
+class** digest (`Ix.ClaimContext.literalClass`): the hash of the addresses a
+binding binds to the roles the checker uses without a reference to them,
+the literal support and the standard axioms (`Ix.ClaimContext.classRoles`).
+A `checkEnv` claim under a literal class (validator `erased-lean-v2-class`)
+states its typing under every role binding with that literal class that
+meets the specifications. Bindings that differ only in roles referenced by
+address type the same constants, so typing transfers between them; the
+literal class pins the roles the checker fabricates references to. Only
+aggregation produces such claims, from claims that validate bindings of the
+same class (`ix_aggr` shape 15); IxVM never reads one. -/
+structure ClaimContext where
+  spec : Address
+  binding : Address
+  axioms : Option Address
+  bindingAssumed : Bool := false
+  literalClass : Bool := false
+  deriving BEq, Repr, Inhabited
+
 /--
 A claim that can be proven.
 
-Six variants in three families:
+Eight variants in five families:
 
-- **Typechecking claims** (`eval`, `check`, `checkEnv`, `catalog`):
-  assert that a constant evaluates, a constant is well-typed, every
-  constant in an env is well-typed, or every constant in a catalog is
-  well-typed. Each carries `assumptions : Option Address`:
+- **Typechecking claims** (`eval`, `check`, `checkEnv`): assert that a
+  constant evaluates, a constant is well-typed, or every constant in an env
+  is well-typed, relative to their `ClaimContext`. Each carries
+  `assumptions : Option Address`:
   - `none` → unconditional.
   - `some root` → conditional on every leaf in the merkle tree rooted
     at `root` being well-typed.
+- **`catalog`**: a conjunction of unconditional `checkEnv` claims, each under
+  its own context, so members compiled under different role bindings (from
+  different Lean toolchains) meet in one statement. `members` is the
+  canonical merkle root over the members' claim digests (`Claim.commit`):
+  every one of those claims holds.
 - **`reveal`**: selective field revelation of a committed constant.
   Carries no assumptions (orthogonal to typechecking).
 - **`contains`**: structural membership claim — `const` is a leaf in
   the merkle tree rooted at `tree`. Used by aggregation to discharge
   leaves from a conditional claim's assumption set. Carries no
   assumptions.
+- **`resource`**: combined erased typing and resource admission, validated
+  natively.
+- **`binding`**: the role table with hash `binding` binds every role, and
+  each bound constant meets its specification in `spec`. It discharges the
+  condition of the typing claims that assume their binding
+  (`ClaimContext.bindingAssumed`), once per aggregate.
 
-`catalog` binds both `.ixc` roots. Two leaf vocabularies, never
-mixed: `members` leaves are member ENV ROOTS; `content` (and
-`assumptions`) leaves are CONSTANT ADDRESSES. Semantics: (1)
-`tree(content)` is exactly the union of the member envs' const sets,
-and (2) every constant in it typechecks modulo `assumptions`.
-Verified by composition of per-piece `checkEnv` claims with set
-discharge — there is deliberately no whole-catalog interpreter arm.
+A `catalog` claim is formed only by aggregation (`ix_aggr` shape 16), from
+unconditional `checkEnv` claims (validator `erased-lean-v2` or
+`erased-lean-v2-class`) and other catalogs; there is no whole-catalog
+interpreter arm. A `.ixc` manifest's members are the pieces whose claims a
+catalog claim collects.
 -/
 inductive Claim where
   /-- Check the input declaration and normalize its body to the output's body.
   The output is a safe standalone definition with the same universe parameter
   count and structurally equal erased type. Assumptions concern input dependencies. -/
-  | eval     (input output : Address) (assumptions : Option Address)
-  | check    (const : Address) (assumptions : Option Address)
-  | checkEnv (root : Address) (assumptions : Option Address)
+  | eval     (ctx : ClaimContext) (input output : Address) (assumptions : Option Address)
+  | check    (ctx : ClaimContext) (const : Address) (assumptions : Option Address)
+  | checkEnv (ctx : ClaimContext) (root : Address) (assumptions : Option Address)
   | reveal   (comm : Address) (info : RevealConstantInfo)
   | contains (tree : Address) (const : Address)
-  | catalog  (members content : Address) (assumptions : Option Address)
+  /-- Every claim whose digest is a leaf of the canonical merkle tree `members`
+  holds: each an unconditional `checkEnv`. -/
+  | catalog  (members : Address)
   /-- Combined erased typing and resource admission of the complete addressed
   environment under the profile committed by `profile`. -/
   | resource (root profile : Address)
+  /-- The role table with hash `binding` binds every role, and each bound
+  constant meets its specification in the set with digest `spec`. -/
+  | binding (spec binding : Address)
   deriving BEq, Repr, Inhabited
 
 -- ============================================================================
@@ -181,6 +249,7 @@ def put (info : RevealConstructorInfo) : PutM Unit := do
 
 def get : GetM RevealConstructorInfo := do
   let mask := (← getTagN 0).value
+  requireMask mask 6
   let isUnsafe ← getOpt mask 1 getBoolField
   let lvls ← getOpt mask 2 getTagN0Value
   let cidx ← getOpt mask 4 getTagN0Value
@@ -285,6 +354,7 @@ def put : RevealMutConstInfo → PutM Unit
 def get : GetM RevealMutConstInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
+  requireMask mask (match variant with | 0 => 5 | 1 => 6 | 2 => 9 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
@@ -399,6 +469,8 @@ def put : RevealConstantInfo → PutM Unit
 def get : GetM RevealConstantInfo := do
   let variant ← getU8
   let mask ← getTagN0Value
+  requireMask mask (match variant with
+    | 0 => 5 | 1 => 9 | 2 | 3 | 4 => 3 | 5 | 6 | 7 => 2 | 8 => 1 | _ => 64)
   match variant with
   | 0 => do -- Defn
     let kind ← getOpt mask 1 getDefKind
@@ -469,10 +541,10 @@ namespace Claim
 -- TagN (`f = 4`) value dispatch (mirrors crates/ixon/src/proof.rs).
 -- Flag 0xE holds Comm, AssumptionTree, and claims. Variants 0–7 are in
 -- rung 1, the single bytes 0xE0–0xE7; from 8 on the header is two bytes,
--- so catalog is `E8 00` and resource `E8 01` on the wire. The `.ixe`
--- header also uses flag 0xE, with the format version as the value
+-- so catalog is `E8 00`, resource `E8 01` and binding `E8 02` on the
+-- wire. The `.ixe` header also uses flag 0xE, with the format version as the value
 -- (`0xE4` for version 4, the same byte as the check claim tag).
--- Flag 0xF holds proofs (single-byte tags 0xF0–0xF6).
+-- Flag 0xF holds proofs (single-byte tags 0xF0–0xF7).
 
 def FLAG_CLAIM : UInt8 := 0xE
 def FLAG_PROOF : UInt8 := 0xF
@@ -486,6 +558,7 @@ def VARIANT_REVEAL_CLAIM     : UInt64 := 6
 def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
 def VARIANT_CATALOG_CLAIM    : UInt64 := 8
 def VARIANT_RESOURCE_CLAIM   : UInt64 := 9
+def VARIANT_BINDING_CLAIM    : UInt64 := 10
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
 def VARIANT_CHECK_PROOF      : UInt64 := 1
@@ -494,6 +567,7 @@ def VARIANT_REVEAL_PROOF     : UInt64 := 3
 def VARIANT_CONTAINS_PROOF   : UInt64 := 4
 def VARIANT_CATALOG_PROOF    : UInt64 := 5
 def VARIANT_RESOURCE_PROOF   : UInt64 := 6
+def VARIANT_BINDING_PROOF    : UInt64 := 7
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
     (some). Mirrors `put_opt_addr` in crates/ixon/src/proof.rs. -/
@@ -507,12 +581,41 @@ def getOptAddr : GetM (Option Address) := do
   else if b == 0x01 then return some (← Serialize.get)
   else throw s!"getOptAddr: invalid tag {b}"
 
-/-- Claim and proof payloads bind both the object format (`Ixon.Env.OBJECT_FORMAT`)
-and the validator. 0 is structural-v1, 1 is erased-lean-v1, 2 is resource-v1. -/
+/-- The validator identities a claim's scope names, after the object format:
+
+- `0`, structural-v1: `reveal` and `contains`, which read bytes only;
+- `1`, erased-lean-v1: retired. It named typing claims whose primitives were
+  recognized by fixed addresses and which admitted any axiom; new readers
+  refuse it rather than read such a claim as a newer one;
+- `2`, resource-v1: `resource`;
+- `3`, erased-lean-v2: the typing claims, relative to their `ClaimContext`
+  (Lean's theory over the standard axioms, primitives read through the
+  committed role binding and validated against the committed
+  specifications), and the `binding` claim;
+- `4`, erased-lean-v2-assumed: a `check` or `checkEnv` claim that assumes
+  its binding meets the specifications instead of validating it
+  (`ClaimContext.bindingAssumed`); its typing holds if the `binding` claim
+  for its context does;
+- `5`, erased-lean-v2-class: a `checkEnv` claim relative to a literal class
+  instead of one binding (`ClaimContext.literalClass`): its typing holds
+  under every binding of that class that meets the specifications. -/
+def VALIDATOR_STRUCTURAL : UInt8 := 0
+def VALIDATOR_ERASED_LEAN_RETIRED : UInt8 := 1
+def VALIDATOR_RESOURCE : UInt8 := 2
+def VALIDATOR_ERASED_LEAN : UInt8 := 3
+def VALIDATOR_ERASED_LEAN_ASSUMED : UInt8 := 4
+def VALIDATOR_ERASED_LEAN_CLASS : UInt8 := 5
+
 def validatorForVariant (variant : UInt64) : UInt8 :=
-  if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then 0
-  else if variant == VARIANT_RESOURCE_CLAIM then 2
-  else 1
+  if variant == VARIANT_REVEAL_CLAIM || variant == VARIANT_CONTAINS_CLAIM then
+    VALIDATOR_STRUCTURAL
+  else if variant == VARIANT_RESOURCE_CLAIM then VALIDATOR_RESOURCE
+  else VALIDATOR_ERASED_LEAN
+
+/-- Whether claims of variant `variant` may assume their binding: `check`
+    and `checkEnv`. -/
+def variantMayAssume (variant : UInt64) : Bool :=
+  variant == VARIANT_CHECK_CLAIM || variant == VARIANT_CHECK_ENV_CLAIM
 
 def variantOf : Claim → UInt64
   | .eval .. => VARIANT_EVAL_CLAIM
@@ -522,30 +625,66 @@ def variantOf : Claim → UInt64
   | .contains .. => VARIANT_CONTAINS_CLAIM
   | .catalog .. => VARIANT_CATALOG_CLAIM
   | .resource .. => VARIANT_RESOURCE_CLAIM
+  | .binding .. => VARIANT_BINDING_CLAIM
+
+/-- The validator a claim's scope names: its variant's,
+    erased-lean-v2-assumed for a `check` or `checkEnv` claim that assumes
+    its binding, or erased-lean-v2-class for a `checkEnv` claim under a
+    literal class. Only those carry the flags on the wire; the other typing
+    claims always validate one binding. -/
+def validatorOf : Claim → UInt8
+  | .checkEnv ctx .. =>
+    if ctx.literalClass then VALIDATOR_ERASED_LEAN_CLASS
+    else if ctx.bindingAssumed then VALIDATOR_ERASED_LEAN_ASSUMED else VALIDATOR_ERASED_LEAN
+  | .check ctx .. =>
+    if ctx.bindingAssumed then VALIDATOR_ERASED_LEAN_ASSUMED else VALIDATOR_ERASED_LEAN
+  | c => validatorForVariant (variantOf c)
 
 def putScope (validator : UInt8) : PutM Unit := do
   putU8 Ixon.Env.OBJECT_FORMAT
   putU8 validator
 
-def getScope (validator : UInt8) : GetM Unit := do
+/-- Read the scope of a claim of variant `variant` and return its validator:
+    the variant's, erased-lean-v2-assumed for `check` and `checkEnv`, or
+    erased-lean-v2-class for `checkEnv`. Any other byte is refused. -/
+def getScope (variant : UInt64) : GetM UInt8 := do
+  let validator := validatorForVariant variant
   let format ← getU8
   unless format == Ixon.Env.OBJECT_FORMAT do
     throw s!"claim: unsupported object format {format}, expected \
       {Ixon.Env.OBJECT_FORMAT} — regenerate the claim"
-  unless (← getU8) == validator do throw "claim: wrong validator identity"
+  let found ← getU8
+  if found == validator then return found
+  if found == VALIDATOR_ERASED_LEAN_ASSUMED && variantMayAssume variant then return found
+  if found == VALIDATOR_ERASED_LEAN_CLASS && variant == VARIANT_CHECK_ENV_CLAIM then return found
+  if validator == VALIDATOR_ERASED_LEAN && found == VALIDATOR_ERASED_LEAN_RETIRED then
+    throw "claim: validator erased-lean-v1 is retired — regenerate the claim"
+  throw "claim: wrong validator identity"
 
-def put (claim : Claim) : PutM Unit := do
-  putTagN 4 FLAG_CLAIM (variantOf claim)
-  putScope (validatorForVariant (variantOf claim))
-  match claim with
-  | .eval input output assumptions => do
+def putContext (ctx : ClaimContext) : PutM Unit := do
+  Serialize.put ctx.spec
+  Serialize.put ctx.binding
+  putOptAddr ctx.axioms
+
+def getContext : GetM ClaimContext := do
+  let spec ← Serialize.get
+  let binding ← Serialize.get
+  let axioms ← getOptAddr
+  return { spec, binding, axioms }
+
+/-- The bytes after the scope, shared by claims and proofs. -/
+def putPayload : Claim → PutM Unit
+  | .eval ctx input output assumptions => do
+    putContext ctx
     Serialize.put input
     Serialize.put output
     putOptAddr assumptions
-  | .check const assumptions => do
+  | .check ctx const assumptions => do
+    putContext ctx
     Serialize.put const
     putOptAddr assumptions
-  | .checkEnv root assumptions => do
+  | .checkEnv ctx root assumptions => do
+    putContext ctx
     Serialize.put root
     putOptAddr assumptions
   | .reveal comm info => do
@@ -554,60 +693,98 @@ def put (claim : Claim) : PutM Unit := do
   | .contains tree const => do
     Serialize.put tree
     Serialize.put const
-  | .catalog members content assumptions => do
+  | .catalog members => do
     -- A two-byte claim tag: `E8 00` on the wire.
     Serialize.put members
-    Serialize.put content
-    putOptAddr assumptions
   | .resource root profile => do
     Serialize.put root
     Serialize.put profile
+  | .binding spec bound => do
+    -- A two-byte claim tag: `E8 02` on the wire.
+    Serialize.put spec
+    Serialize.put bound
+
+/-- Read the bytes after the scope of the claim variant `variant`;
+    `validator` is what the scope said (`getScope`). -/
+def getPayload (variant : UInt64) (validator : UInt8) : GetM Claim := do
+  let assumed := validator == VALIDATOR_ERASED_LEAN_ASSUMED
+  if variant == VARIANT_EVAL_CLAIM then
+    let ctx ← getContext
+    let input ← Serialize.get
+    let output ← Serialize.get
+    let asm ← getOptAddr
+    return .eval ctx input output asm
+  else if variant == VARIANT_CHECK_CLAIM then
+    let ctx ← getContext
+    let const ← Serialize.get
+    let asm ← getOptAddr
+    return .check { ctx with bindingAssumed := assumed } const asm
+  else if variant == VARIANT_CHECK_ENV_CLAIM then
+    let ctx ← getContext
+    let root ← Serialize.get
+    let asm ← getOptAddr
+    let literalClass := validator == VALIDATOR_ERASED_LEAN_CLASS
+    return .checkEnv { ctx with bindingAssumed := assumed, literalClass } root asm
+  else if variant == VARIANT_REVEAL_CLAIM then
+    return .reveal (← Serialize.get) (← RevealConstantInfo.get)
+  else if variant == VARIANT_CONTAINS_CLAIM then
+    return .contains (← Serialize.get) (← Serialize.get)
+  else if variant == VARIANT_CATALOG_CLAIM then
+    return .catalog (← Serialize.get)
+  else if variant == VARIANT_RESOURCE_CLAIM then
+    return .resource (← Serialize.get) (← Serialize.get)
+  else if variant == VARIANT_BINDING_CLAIM then
+    return .binding (← Serialize.get) (← Serialize.get)
+  else
+    throw s!"Claim.get: invalid claim variant {variant}"
+
+def put (claim : Claim) : PutM Unit := do
+  putTagN 4 FLAG_CLAIM (variantOf claim)
+  putScope (validatorOf claim)
+  putPayload claim
 
 def get : GetM Claim := do
   let tag ← getTagN 4
   if tag.flag != FLAG_CLAIM then
     throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
-  getScope (validatorForVariant tag.value)
-  if tag.value == VARIANT_EVAL_CLAIM then
-    let input ← Serialize.get
-    let output ← Serialize.get
-    let asm ← getOptAddr
-    return .eval input output asm
-  else if tag.value == VARIANT_CHECK_CLAIM then
-    let const ← Serialize.get
-    let asm ← getOptAddr
-    return .check const asm
-  else if tag.value == VARIANT_CHECK_ENV_CLAIM then
-    let root ← Serialize.get
-    let asm ← getOptAddr
-    return .checkEnv root asm
-  else if tag.value == VARIANT_REVEAL_CLAIM then
-    return .reveal (← Serialize.get) (← RevealConstantInfo.get)
-  else if tag.value == VARIANT_CONTAINS_CLAIM then
-    return .contains (← Serialize.get) (← Serialize.get)
-  else if tag.value == VARIANT_CATALOG_CLAIM then
-    let members ← Serialize.get
-    let content ← Serialize.get
-    let asm ← getOptAddr
-    return .catalog members content asm
-  else if tag.value == VARIANT_RESOURCE_CLAIM then
-    return .resource (← Serialize.get) (← Serialize.get)
-  else
-    throw s!"Claim.get: invalid claim variant {tag.value}"
+  let validator ← getScope tag.value
+  getPayload tag.value validator
 
 def ser (c : Claim) : ByteArray := runPut (put c)
 def de (bytes : ByteArray) : Except String Claim := runGetExact get bytes
 def commit (c : Claim) : Address := Address.blake3 (ser c)
 
+/-- The claim assuming its binding meets the specifications: `check` and
+    `checkEnv` with validator 4; any other claim unchanged, since only those
+    two may assume it. -/
+def assumingBinding : Claim → Claim
+  | .check ctx c asm => .check { ctx with bindingAssumed := true } c asm
+  | .checkEnv ctx r asm => .checkEnv { ctx with bindingAssumed := true } r asm
+  | c => c
+
+/-- The claim's context, for the typing claims. -/
+def context? : Claim → Option ClaimContext
+  | .eval ctx .. | .check ctx .. | .checkEnv ctx .. => some ctx
+  | _ => none
+
+instance : ToString ClaimContext where
+  toString ctx :=
+    if ctx.literalClass then
+      s!"spec {ctx.spec}, any binding with literal class {ctx.binding}, axioms {ctx.axioms}"
+    else
+      let base := s!"spec {ctx.spec}, binding {ctx.binding}, axioms {ctx.axioms}"
+      if ctx.bindingAssumed then s!"{base}, assuming the binding meets the spec" else base
+
 instance : ToString Claim where
   toString c := match c with
-    | .eval i o asm => s!"Eval({i}, {o}, {asm})"
-    | .check v asm => s!"Check({v}, {asm})"
-    | .checkEnv r asm => s!"CheckEnv({r}, {asm})"
+    | .eval ctx i o asm => s!"Eval({i}, {o}, {asm}; {ctx})"
+    | .check ctx v asm => s!"Check({v}, {asm}; {ctx})"
+    | .checkEnv ctx r asm => s!"CheckEnv({r}, {asm}; {ctx})"
     | .reveal comm info => s!"Reveal({comm}, {repr info})"
     | .contains t c => s!"Contains({t}, {c})"
-    | .catalog m c asm => s!"Catalog({m}, {c}, {asm})"
+    | .catalog m => s!"Catalog({m})"
     | .resource root profile => s!"Resource({root}, {profile})"
+    | .binding spec bound => s!"Binding({bound} meets spec {spec})"
 
 end Claim
 
@@ -631,41 +808,19 @@ namespace Proof
 /-- The proof variant matching this claim, used as the TagN (`f = 4`) value
     field under `FLAG_PROOF = 0xF`. -/
 def variantOf : Ix.Claim → UInt64
-  | .eval _ _ _     => Ix.Claim.VARIANT_EVAL_PROOF
-  | .check _ _      => Ix.Claim.VARIANT_CHECK_PROOF
-  | .checkEnv _ _   => Ix.Claim.VARIANT_CHECK_ENV_PROOF
-  | .reveal _ _     => Ix.Claim.VARIANT_REVEAL_PROOF
-  | .contains _ _   => Ix.Claim.VARIANT_CONTAINS_PROOF
-  | .catalog _ _ _  => Ix.Claim.VARIANT_CATALOG_PROOF
-  | .resource _ _   => Ix.Claim.VARIANT_RESOURCE_PROOF
+  | .eval ..     => Ix.Claim.VARIANT_EVAL_PROOF
+  | .check ..    => Ix.Claim.VARIANT_CHECK_PROOF
+  | .checkEnv .. => Ix.Claim.VARIANT_CHECK_ENV_PROOF
+  | .reveal ..   => Ix.Claim.VARIANT_REVEAL_PROOF
+  | .contains .. => Ix.Claim.VARIANT_CONTAINS_PROOF
+  | .catalog ..  => Ix.Claim.VARIANT_CATALOG_PROOF
+  | .resource .. => Ix.Claim.VARIANT_RESOURCE_PROOF
+  | .binding ..  => Ix.Claim.VARIANT_BINDING_PROOF
 
 def put (p : Proof) : PutM Unit := do
   putTagN 4 Ix.Claim.FLAG_PROOF (variantOf p.claim)
-  Ix.Claim.putScope (Ix.Claim.validatorForVariant (Ix.Claim.variantOf p.claim))
-  match p.claim with
-  | .eval input output asm => do
-    Serialize.put input
-    Serialize.put output
-    Ix.Claim.putOptAddr asm
-  | .check addr asm => do
-    Serialize.put addr
-    Ix.Claim.putOptAddr asm
-  | .checkEnv root asm => do
-    Serialize.put root
-    Ix.Claim.putOptAddr asm
-  | .reveal comm info => do
-    Serialize.put comm
-    Ix.RevealConstantInfo.put info
-  | .contains tree target => do
-    Serialize.put tree
-    Serialize.put target
-  | .catalog members content asm => do
-    Serialize.put members
-    Serialize.put content
-    Ix.Claim.putOptAddr asm
-  | .resource root profile => do
-    Serialize.put root
-    Serialize.put profile
+  Ix.Claim.putScope (Ix.Claim.validatorOf p.claim)
+  Ix.Claim.putPayload p.claim
   putTagN 0 0 p.proof.size.toUInt64
   putBytes p.proof
 
@@ -673,38 +828,10 @@ def get : GetM Proof := do
   let tag ← getTagN 4
   if tag.flag != Ix.Claim.FLAG_PROOF then
     throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
-  Ix.Claim.getScope (Ix.Claim.validatorForVariant (tag.value + 3))
-  let claim : Ix.Claim ←
-    if tag.value == Ix.Claim.VARIANT_EVAL_PROOF then do
-      let input ← Serialize.get
-      let output ← Serialize.get
-      let asm ← Ix.Claim.getOptAddr
-      pure (.eval input output asm)
-    else if tag.value == Ix.Claim.VARIANT_CHECK_PROOF then do
-      let addr ← Serialize.get
-      let asm ← Ix.Claim.getOptAddr
-      pure (.check addr asm)
-    else if tag.value == Ix.Claim.VARIANT_CHECK_ENV_PROOF then do
-      let root ← Serialize.get
-      let asm ← Ix.Claim.getOptAddr
-      pure (.checkEnv root asm)
-    else if tag.value == Ix.Claim.VARIANT_REVEAL_PROOF then do
-      let comm ← Serialize.get
-      let info ← Ix.RevealConstantInfo.get
-      pure (.reveal comm info)
-    else if tag.value == Ix.Claim.VARIANT_CONTAINS_PROOF then do
-      let tree ← Serialize.get
-      let target ← Serialize.get
-      pure (.contains tree target)
-    else if tag.value == Ix.Claim.VARIANT_CATALOG_PROOF then do
-      let members ← Serialize.get
-      let content ← Serialize.get
-      let asm ← Ix.Claim.getOptAddr
-      pure (.catalog members content asm)
-    else if tag.value == Ix.Claim.VARIANT_RESOURCE_PROOF then do
-      pure (.resource (← Serialize.get) (← Serialize.get))
-    else
-      throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
+  if tag.value > Ix.Claim.VARIANT_BINDING_PROOF then
+    throw s!"Ixon.Proof.get: invalid proof variant {tag.value}"
+  let validator ← Ix.Claim.getScope (tag.value + 3)
+  let claim ← Ix.Claim.getPayload (tag.value + 3) validator
   let lenTag ← getTagN 0
   let bytes ← getBytes lenTag.value.toNat
   pure { claim, proof := bytes }

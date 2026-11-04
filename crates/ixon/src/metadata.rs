@@ -19,7 +19,7 @@ use super::env::AuxLayout;
 use super::expr::Expr;
 use super::serialize::{get_expr, put_expr};
 use super::tag::TagN;
-use super::univ::{Univ, get_univ, put_univ};
+use super::univ::{MAX_UNIV_NODES, Univ, get_univ_within, put_univ};
 
 // ===========================================================================
 // Types (use Address internally)
@@ -27,19 +27,6 @@ use super::univ::{Univ, get_univ, put_univ};
 
 /// Key-value map for Lean.Expr.mdata
 pub type KVMap = Vec<(Address, DataValue)>;
-
-/// Entry in a `CallSite` metadata node, representing one source-order argument.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum CallSiteEntry {
-  /// Argument exists in canonical form at App-spine position `canon_idx`.
-  /// `meta` is the arena index for this argument's metadata subtree.
-  Kept { canon_idx: u64, meta: u64 },
-  /// Argument was collapsed. Expression stored in `ConstantMeta.meta_sharing[sharing_idx]`
-  /// (a direct index, not offset by the primary sharing table's length).
-  /// `meta` is the arena index for this argument's metadata subtree
-  /// (may differ from the representative's metadata — different names, refs, etc.).
-  Collapsed { sharing_idx: u64, meta: u64 },
-}
 
 /// Arena node for per-expression metadata.
 ///
@@ -61,51 +48,6 @@ pub enum ExprMetaData {
   Prj { struct_name: Address, child: u64 },
   /// Mdata wrapper: always a separate node, never absorbed into Binder/Ref/Prj
   Mdata { mdata: Vec<KVMap>, child: u64 },
-  /// Surgered call-site. Replaces the entire App-spine metadata chain
-  /// (outermost App down to the Ref head) with a single node. Entries are
-  /// in SOURCE order. The corresponding Ixon expression is a normal App
-  /// telescope — only the metadata changes shape.
-  ///
-  /// Sits at the outermost position so both compiler and decompiler see it
-  /// first, avoiding the need to recurse through App nodes to discover surgery.
-  CallSite {
-    /// Name address of the referenced auxiliary (doubles as Ref name metadata).
-    name: Address,
-    /// Source-order entries for the argument telescope.
-    entries: Vec<CallSiteEntry>,
-    /// Canonical-order metadata roots, one per argument in the IXON App spine.
-    ///
-    /// This is separate from `entries` because some source arguments are
-    /// represented by `Collapsed` entries even though compile-side surgery
-    /// synthesized a canonical replacement argument. Kernel ingress needs the
-    /// replacement argument's metadata by canonical position, while decompile
-    /// needs the source-order `entries` to reconstruct the original spine.
-    canon_meta: Vec<u64>,
-    /// `Some((sharing_idx, meta))` when the call-site HEAD itself was
-    /// rewritten (evaporated-aux recursors: `<all0>.rec_N` aliased to the
-    /// external inductive's recursor, whose universe-level arity differs).
-    /// Points at the ORIGINAL head expression in
-    /// `ConstantMeta.meta_sharing`, exactly like a `Collapsed` argument —
-    /// decompile uses it to restore the source head (name + original level
-    /// args) instead of reading levels off the stored canonical head.
-    orig_head: Option<(u64, u64)>,
-  },
-  /// Eta adapter for a partial plan-bearing reference. The corresponding
-  /// Ixon expression is a synthesized lambda telescope whose body is a normal
-  /// canonical `CallSite`. Decompile strips `n_synth` lambdas and rebuilds
-  /// only the originally-applied source prefix from `entries`.
-  ///
-  /// `wrapper_meta` points at the ordinary Binder/CallSite metadata tree for
-  /// the synthesized wrapper. Kernel meta-ingress follows it so binder-type
-  /// references retain complete metadata; source decompile intentionally
-  /// discards that wrapper tree.
-  EtaCallSite {
-    n_synth: u64,
-    name: Address,
-    entries: Vec<CallSiteEntry>,
-    canon_meta: Vec<u64>,
-    wrapper_meta: u64,
-  },
 }
 
 /// Arena for expression metadata within a single constant.
@@ -237,11 +179,11 @@ pub struct UnivPatch {
 ///
 /// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) extend the
 /// index spaces of the primary `Constant` tables (for a projection, the
-/// tables of its `Muts` block). They are used by `CallSite` nodes in the
-/// metadata arena for call-site surgery roundtrip — collapsed argument
-/// expressions use `Ref(idx)` and universe indices in the extended spaces,
-/// and `Share(idx)` as specified on `meta_sharing` — and by `univ_patches`
-/// for original level spellings (canonicity §10.6).
+/// tables of its `Muts` block): an expression of `meta_sharing` uses
+/// `Ref(idx)` and universe indices in the extended spaces, and `Share(idx)`
+/// as specified on `meta_sharing`. The compilers write `meta_sharing` and
+/// `meta_refs` empty. `univ_patches` holds original level spellings
+/// (canonicity §10.6).
 ///
 /// At decompile time `meta_refs`/`meta_univs` are appended to the block
 /// cache's primary tables, creating contiguous index spaces; `meta_sharing`
@@ -249,10 +191,7 @@ pub struct UnivPatch {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantMeta {
   pub info: ConstantMetaInfo,
-  /// Compiled Ixon expressions for collapsed call-site arguments and
-  /// rewritten call-site heads, indexed DIRECTLY (no offset) by
-  /// `CallSiteEntry::Collapsed.sharing_idx` and
-  /// `orig_head = Some((sharing_idx, _))`.
+  /// Per-constant metadata expressions, indexed DIRECTLY (no offset).
   ///
   /// Extended index space for `Share` (a reader rule; the bytes are
   /// unchanged). Let the primary table `sharing` have `p` entries and this
@@ -385,9 +324,7 @@ impl ConstantMeta {
           ExprMetaData::Leaf | ExprMetaData::App { .. } => {},
           ExprMetaData::Binder { name, .. }
           | ExprMetaData::LetBinder { name, .. }
-          | ExprMetaData::Ref { name }
-          | ExprMetaData::CallSite { name, .. }
-          | ExprMetaData::EtaCallSite { name, .. } => names.push(name.clone()),
+          | ExprMetaData::Ref { name } => names.push(name.clone()),
           ExprMetaData::Prj { struct_name, .. } => {
             names.push(struct_name.clone());
           },
@@ -503,8 +440,9 @@ impl ConstantMeta {
     }
     let univs_len = get_vec_len(buf)?;
     let mut meta_univs = Vec::with_capacity(univs_len);
+    let mut budget = MAX_UNIV_NODES;
     for _ in 0..univs_len {
-      meta_univs.push(get_univ(buf)?);
+      meta_univs.push(get_univ_within(buf, &mut budget)?);
     }
     let patches_len = get_vec_len(buf)?;
     let mut univ_patches = Vec::with_capacity(patches_len);
@@ -532,13 +470,27 @@ pub enum DataValue {
   OfSyntax(Address),
 }
 
-/// Resolve an Ixon KVMap (address-based) to Lean-level MData (name/value pairs).
-///
-/// Used by kernel ingress to convert expression metadata from the
-/// content-addressed Ixon representation to the named kernel representation.
+/// Read-only dependencies of metadata decoding. Checked callers can retain
+/// authentication failures while preserving the ordinary decoration decoder.
+pub trait MetadataSource {
+  fn get_blob(&self, address: &Address) -> Option<Vec<u8>>;
+  fn get_name(&self, address: &Address) -> Option<Name>;
+}
+
+impl MetadataSource for super::env::Env {
+  fn get_blob(&self, address: &Address) -> Option<Vec<u8>> {
+    super::env::Env::get_blob(self, address)
+  }
+  fn get_name(&self, address: &Address) -> Option<Name> {
+    super::env::Env::get_name(self, address)
+  }
+}
+
+/// Resolve address-based metadata. Env callers keep their existing behavior;
+/// admission callers supply an authenticated read-only blob/name source.
 pub fn resolve_kvmap(
   kvm: &KVMap,
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Vec<(Name, env::DataValue)> {
   kvm
     .iter()
@@ -623,7 +575,7 @@ fn deser_int(bytes: &[u8]) -> Option<env::Int> {
 
 fn deser_substring(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::Substring> {
   let str_addr = deser_addr(buf)?;
   let s = String::from_utf8(ixon_env.get_blob(&str_addr)?).ok()?;
@@ -634,7 +586,7 @@ fn deser_substring(
 
 fn deser_source_info(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::SourceInfo> {
   match deser_u8(buf)? {
     0 => {
@@ -662,7 +614,7 @@ fn deser_source_info(
 
 fn deser_preresolved(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::SyntaxPreresolved> {
   match deser_u8(buf)? {
     0 => {
@@ -672,7 +624,7 @@ fn deser_preresolved(
     1 => {
       let name = ixon_env.get_name(&deser_addr(buf)?)?;
       let count = deser_tagn0(buf)? as usize;
-      let mut fields = Vec::with_capacity(count);
+      let mut fields = Vec::with_capacity(count.min(buf.len()));
       for _ in 0..count {
         let addr = deser_addr(buf)?;
         fields.push(String::from_utf8(ixon_env.get_blob(&addr)?).ok()?);
@@ -685,7 +637,7 @@ fn deser_preresolved(
 
 fn deser_syntax(
   buf: &mut &[u8],
-  ixon_env: &super::env::Env,
+  ixon_env: &(impl MetadataSource + ?Sized),
 ) -> Option<env::Syntax> {
   match deser_u8(buf)? {
     0 => Some(env::Syntax::Missing),
@@ -693,7 +645,7 @@ fn deser_syntax(
       let info = deser_source_info(buf, ixon_env)?;
       let kind = ixon_env.get_name(&deser_addr(buf)?)?;
       let arg_count = deser_tagn0(buf)? as usize;
-      let mut args = Vec::with_capacity(arg_count);
+      let mut args = Vec::with_capacity(arg_count.min(buf.len()));
       for _ in 0..arg_count {
         args.push(deser_syntax(buf, ixon_env)?);
       }
@@ -710,7 +662,7 @@ fn deser_syntax(
       let raw_val = deser_substring(buf, ixon_env)?;
       let val = ixon_env.get_name(&deser_addr(buf)?)?;
       let pr_count = deser_tagn0(buf)? as usize;
-      let mut preresolved = Vec::with_capacity(pr_count);
+      let mut preresolved = Vec::with_capacity(pr_count.min(buf.len()));
       for _ in 0..pr_count {
         preresolved.push(deser_preresolved(buf, ixon_env)?);
       }
@@ -778,8 +730,18 @@ pub(super) fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
   TagN::put(0, 0, len as u64, buf);
 }
 
+/// A vector length, refused when the remaining buffer cannot hold that many
+/// elements of at least one byte each, so no count allocates more than its
+/// input could fill.
 pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
-  Ok(TagN::get(0, buf)?.value as usize)
+  let len = TagN::get(0, buf)?.value;
+  if len > buf.len() as u64 {
+    return Err(format!(
+      "metadata: vector length {len} exceeds the {} remaining bytes",
+      buf.len()
+    ));
+  }
+  Ok(len as usize)
 }
 
 // ===========================================================================
@@ -1025,8 +987,9 @@ fn get_mdata_stack_indexed(
 //   node_i := tag payload,   tag = kind << 3 | mask
 //
 // Kinds: 0 Leaf, 1 App, 2..5 Binder (2 + BinderInfo), 6 LetBinder, 7 Ref,
-// 8 Prj, 9 Mdata, 10 CallSite, 11 EtaCallSite. The payload is the node's
-// fields in declaration order. Child references are never absolute:
+// 8 Prj, 9 Mdata. Kinds 10 and 11 (the retired CallSite and EtaCallSite)
+// are refused. The payload is the node's fields in declaration
+// order. Child references are never absolute:
 //
 // * The *structural* slots (App fun/arg, Binder type/body, Let
 //   type/value/body, Prj child, Mdata child) may be **implicit**: bit `s` of
@@ -1054,13 +1017,11 @@ const EM_LET: u8 = 6;
 const EM_REF: u8 = 7;
 const EM_PRJ: u8 = 8;
 const EM_MDATA: u8 = 9;
-const EM_CALL_SITE: u8 = 10;
-const EM_ETA_CALL_SITE: u8 = 11;
 
 /// Number of structural (possibly implicit) child slots of a node kind.
 fn em_slot_count(kind: u8) -> Option<u32> {
   match kind {
-    EM_LEAF | EM_REF | EM_CALL_SITE | EM_ETA_CALL_SITE => Some(0),
+    EM_LEAF | EM_REF => Some(0),
     EM_APP | 2..=5 => Some(2),
     EM_LET => Some(3),
     EM_PRJ | EM_MDATA => Some(1),
@@ -1077,10 +1038,7 @@ impl ExprMetaData {
       Self::Prj { child, .. } | Self::Mdata { child, .. } => {
         std::slice::from_ref(child)
       },
-      Self::Leaf
-      | Self::Ref { .. }
-      | Self::CallSite { .. }
-      | Self::EtaCallSite { .. } => &[],
+      Self::Leaf | Self::Ref { .. } => &[],
     }
   }
 }
@@ -1155,65 +1113,6 @@ fn em_resolve_slots(
   Ok(top)
 }
 
-fn put_em_entries(i: u64, entries: &[CallSiteEntry], buf: &mut Vec<u8>) {
-  put_vec_len(entries.len(), buf);
-  for entry in entries {
-    match entry {
-      CallSiteEntry::Kept { canon_idx, meta } => {
-        put_u8(0, buf);
-        put_u64(*canon_idx, buf);
-        put_em_ref(i, *meta, buf);
-      },
-      CallSiteEntry::Collapsed { sharing_idx, meta } => {
-        put_u8(1, buf);
-        put_u64(*sharing_idx, buf);
-        put_em_ref(i, *meta, buf);
-      },
-    }
-  }
-}
-
-fn get_em_entries(
-  i: u64,
-  buf: &mut &[u8],
-) -> Result<Vec<CallSiteEntry>, String> {
-  let n_entries = get_vec_len(buf)?;
-  let mut entries = Vec::with_capacity(n_entries.min(buf.len()));
-  for _ in 0..n_entries {
-    let entry = match get_u8(buf)? {
-      0 => {
-        let canon_idx = get_u64(buf)?;
-        let meta = get_em_ref(i, buf)?;
-        CallSiteEntry::Kept { canon_idx, meta }
-      },
-      1 => {
-        let sharing_idx = get_u64(buf)?;
-        let meta = get_em_ref(i, buf)?;
-        CallSiteEntry::Collapsed { sharing_idx, meta }
-      },
-      x => return Err(format!("CallSiteEntry::get: invalid tag {x}")),
-    };
-    entries.push(entry);
-  }
-  Ok(entries)
-}
-
-fn put_em_refs(i: u64, refs: &[u64], buf: &mut Vec<u8>) {
-  put_vec_len(refs.len(), buf);
-  for &c in refs {
-    put_em_ref(i, c, buf);
-  }
-}
-
-fn get_em_refs(i: u64, buf: &mut &[u8]) -> Result<Vec<u64>, String> {
-  let len = get_vec_len(buf)?;
-  let mut v = Vec::with_capacity(len.min(buf.len()));
-  for _ in 0..len {
-    v.push(get_em_ref(i, buf)?);
-  }
-  Ok(v)
-}
-
 impl ExprMetaData {
   /// Write node `i` with its implicit-slot `mask` (see the module comment
   /// above).
@@ -1264,34 +1163,6 @@ impl ExprMetaData {
         put_u8((EM_MDATA << 3) | mask, buf);
         put_mdata_stack_indexed(mdata, idx, buf)?;
         put_em_slot(i, mask, 0, *child, buf);
-      },
-      Self::CallSite { name, entries, canon_meta, orig_head } => {
-        put_u8(EM_CALL_SITE << 3, buf);
-        put_idx(name, idx, buf)?;
-        put_em_entries(i, entries, buf);
-        put_em_refs(i, canon_meta, buf);
-        match orig_head {
-          None => put_u8(0, buf),
-          Some((sharing_idx, meta)) => {
-            put_u8(1, buf);
-            put_u64(*sharing_idx, buf);
-            put_em_ref(i, *meta, buf);
-          },
-        }
-      },
-      Self::EtaCallSite {
-        n_synth,
-        name,
-        entries,
-        canon_meta,
-        wrapper_meta,
-      } => {
-        put_u8(EM_ETA_CALL_SITE << 3, buf);
-        put_u64(*n_synth, buf);
-        put_idx(name, idx, buf)?;
-        put_em_entries(i, entries, buf);
-        put_em_refs(i, canon_meta, buf);
-        put_em_ref(i, *wrapper_meta, buf);
       },
     }
     Ok(())
@@ -1349,31 +1220,7 @@ impl ExprMetaData {
         let child = get_em_slot(i, mask, 0, buf)?;
         Self::Mdata { mdata, child }
       },
-      EM_CALL_SITE => {
-        let name = get_idx(buf, rev)?;
-        let entries = get_em_entries(i, buf)?;
-        let canon_meta = get_em_refs(i, buf)?;
-        let orig_head = match get_u8(buf)? {
-          0 => None,
-          1 => {
-            let sharing_idx = get_u64(buf)?;
-            let meta = get_em_ref(i, buf)?;
-            Some((sharing_idx, meta))
-          },
-          x => {
-            return Err(format!("CallSite::get: invalid orig_head tag {x}"));
-          },
-        };
-        Self::CallSite { name, entries, canon_meta, orig_head }
-      },
-      _ => {
-        let n_synth = get_u64(buf)?;
-        let name = get_idx(buf, rev)?;
-        let entries = get_em_entries(i, buf)?;
-        let canon_meta = get_em_refs(i, buf)?;
-        let wrapper_meta = get_em_ref(i, buf)?;
-        Self::EtaCallSite { n_synth, name, entries, canon_meta, wrapper_meta }
-      },
+      _ => return Err(format!("ExprMetaData::get: invalid tag {tag}")),
     };
     let top = match &mut node {
       Self::App { children } | Self::Binder { children, .. } => {
@@ -1385,10 +1232,7 @@ impl ExprMetaData {
       Self::Prj { child, .. } | Self::Mdata { child, .. } => {
         em_resolve_slots(std::slice::from_mut(child), mask, i, lo)?
       },
-      Self::Leaf
-      | Self::Ref { .. }
-      | Self::CallSite { .. }
-      | Self::EtaCallSite { .. } => i,
+      Self::Leaf | Self::Ref { .. } => i,
     };
     Ok((node, top))
   }
@@ -1601,7 +1445,7 @@ impl ConstantMetaInfo {
       }),
       6 => {
         let n = get_u64(buf)? as usize;
-        let mut all = Vec::with_capacity(n);
+        let mut all = Vec::with_capacity(n.min(buf.len()));
         for _ in 0..n {
           all.push(get_idx_vec(buf, rev)?);
         }
@@ -1609,17 +1453,18 @@ impl ConstantMetaInfo {
           0 => None,
           1 => {
             let n_perm = get_u64(buf)? as usize;
-            let mut perm = Vec::with_capacity(n_perm);
+            let mut perm = Vec::with_capacity(n_perm.min(buf.len()));
             for _ in 0..n_perm {
               perm.push(get_u64(buf)? as usize);
             }
             let n_counts = get_u64(buf)? as usize;
-            let mut source_ctor_counts = Vec::with_capacity(n_counts);
+            let mut source_ctor_counts =
+              Vec::with_capacity(n_counts.min(buf.len()));
             for _ in 0..n_counts {
               source_ctor_counts.push(get_u64(buf)? as usize);
             }
             let n_evap = get_u64(buf)? as usize;
-            let mut evaporated = Vec::with_capacity(n_evap);
+            let mut evaporated = Vec::with_capacity(n_evap.min(buf.len()));
             for _ in 0..n_evap {
               evaporated.push(match get_u8(buf)? {
                 0 => false,
@@ -1772,16 +1617,8 @@ mod tests {
       mdata: vec![vec![(addr1.clone(), DataValue::OfBool(true))]],
       child: app,
     });
-    let _eta = arena.alloc(ExprMetaData::EtaCallSite {
-      n_synth: 3,
-      name: addr1.clone(),
-      entries: vec![
-        CallSiteEntry::Kept { canon_idx: 0, meta: leaf },
-        CallSiteEntry::Collapsed { sharing_idx: 2, meta: ref_node },
-      ],
-      canon_meta: vec![leaf, ref_node],
-      wrapper_meta: mdata,
-    });
+    let _prj = arena
+      .alloc(ExprMetaData::Prj { struct_name: addr1.clone(), child: mdata });
 
     let mut buf = Vec::new();
     arena.put_with(NamePut::Indexed(&idx), &mut buf).unwrap();
@@ -1873,30 +1710,15 @@ mod tests {
     );
   }
 
-  /// Call-site references are always explicit; a forward reference wraps
-  /// to a 9-byte TagN delta.
+  /// A forward reference wraps to a 9-byte TagN delta.
   #[test]
-  fn arena_vector_call_sites_and_forward() {
-    let (a, b, _, _) = vec_names();
+  fn arena_vector_forward() {
+    let (a, _, _, _) = vec_names();
     let arena = ExprMeta {
       nodes: vec![
         ExprMetaData::Leaf,
-        ExprMetaData::CallSite {
-          name: a.clone(),
-          entries: vec![
-            CallSiteEntry::Kept { canon_idx: 0, meta: 0 },
-            CallSiteEntry::Collapsed { sharing_idx: 1, meta: 0 },
-          ],
-          canon_meta: vec![0],
-          orig_head: Some((2, 0)),
-        },
-        ExprMetaData::EtaCallSite {
-          n_synth: 1,
-          name: b,
-          entries: vec![CallSiteEntry::Kept { canon_idx: 0, meta: 1 }],
-          canon_meta: vec![1],
-          wrapper_meta: 1,
-        },
+        ExprMetaData::Leaf,
+        ExprMetaData::Leaf,
         // Δ = 3 - 1 - 7 wraps to 2^64 - 5.
         ExprMetaData::Prj { struct_name: a, child: 7 },
       ],
@@ -1904,14 +1726,23 @@ mod tests {
     check_vector(
       &arena,
       &[
-        0x04, 0x00, // leaf
-        0x50, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01,
-        0x02, 0x00, // callSite
-        0x58, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, // eta
+        0x04, 0x00, 0x00, 0x00, // three leaves
         0x40, 0x00, 0xC3, 0x7B, 0xBF, 0xFE, 0xFE, 0xFE, 0xFF, 0xFF,
         0xFF, // prj (TagN f = 0 rung 6: 2^64 - 5 - R5 = 0xFFFFFFFE_FEFEBF7B)
       ],
     );
+  }
+
+  /// The retired call-site kinds (10 `CallSite`, 11 `EtaCallSite`)
+  /// are refused: a file written before their retirement no longer decodes.
+  #[test]
+  fn arena_rejects_retired_call_site_kinds() {
+    let (_, _, _, rev) = vec_names();
+    for tag in [0x50u8, 0x58] {
+      assert!(
+        arena_from(&[0x01, tag, 0x00, 0x00, 0x00, 0x00, 0x00], &rev).is_err()
+      );
+    }
   }
 
   /// The reader accepts exactly the writer's encoding.
@@ -1952,7 +1783,7 @@ mod tests {
           _ => i.saturating_sub(1 + next(3)),
         };
         let name = if next(2) == 0 { a.clone() } else { b.clone() };
-        let node = match next(9) {
+        let node = match next(7) {
           0 => ExprMetaData::Leaf,
           1 => ExprMetaData::App { children: [r(&mut next), r(&mut next)] },
           2 => ExprMetaData::Binder {
@@ -1966,28 +1797,9 @@ mod tests {
           },
           4 => ExprMetaData::Ref { name },
           5 => ExprMetaData::Prj { struct_name: name, child: r(&mut next) },
-          6 => ExprMetaData::Mdata {
+          _ => ExprMetaData::Mdata {
             mdata: vec![vec![(name, DataValue::OfBool(true))]],
             child: r(&mut next),
-          },
-          7 => ExprMetaData::CallSite {
-            name,
-            entries: vec![CallSiteEntry::Kept {
-              canon_idx: 3,
-              meta: r(&mut next),
-            }],
-            canon_meta: vec![r(&mut next), r(&mut next)],
-            orig_head: Some((4, r(&mut next))),
-          },
-          _ => ExprMetaData::EtaCallSite {
-            n_synth: 2,
-            name,
-            entries: vec![CallSiteEntry::Collapsed {
-              sharing_idx: 5,
-              meta: r(&mut next),
-            }],
-            canon_meta: vec![],
-            wrapper_meta: r(&mut next),
           },
         };
         nodes.push(node);

@@ -1,4 +1,4 @@
-import IxC.Kernel.Admission
+import Ix.Ixon.Authenticated
 import Ix.CompileDriver
 import Ix.Meta
 import Benchmarks.Kernel.CheckIxeStep
@@ -14,8 +14,11 @@ loads the serialized environment with the host codec, orders the primary
 records as the environment check does (`Benchmarks.Kernel.CheckIxeStep`: dependencies,
 `Nat`-operation grounds and literal edges first; projections last), and
 submits canonical record bytes, the literal blobs and the compiler's
-reducibility hints to the certified entry `Ix.Kernel.Admission.checkBytes`.
-Some cases first alter the input (bytes, keys, a recursor header).
+reducibility hints to the certified entry at BLAKE3,
+`Ixon.Authenticated.checkBytes` (`Ix.Kernel.Admission.checkBytes` at the
+admission hash). Some cases first alter the input (bytes, keys, a recursor
+header); an altered record or blob under its original key is refused at
+authentication.
 
 Every case has an exact expected verdict: accepted with each seed installed
 under its reader name, or the entry's error at a named stage with the
@@ -77,7 +80,7 @@ structure Input where
   hints : Hints
   /-- the reader's context over the compiled records and the prelude (for
   the names of installed seeds) -/
-  cx : Ctx
+  cx : Ctx .anon
   /-- the seeds' addresses -/
   seeds : List (Lean.Name × Address)
   /-- every compiled name's address -/
@@ -102,10 +105,10 @@ def prepare (leanEnv : Lean.Environment) (seeds : List Lean.Name) : IO Input := 
   let mut store : RecordStore := {}
   for (address, lazy) in env.consts.toList do
     store := store.insert address (← IO.ofExcept lazy.get)
-  let pins ← IO.ofExcept defaultPins
-  let pre ← IO.ofExcept builtinPrelude
+  let table ← IO.ofExcept defaultTable
+  let pre ← IO.ofExcept (preludeFor table)
   let hints := Hints.ofStore store env.anonHints
-  let s := setup store (env.blobs[·]?) pins pre hints.lookup
+  let s := setup store (env.blobs[·]?) table pre hints.lookup
   let primaries := s.ordered.filterMap fun a => (store[a]?).map (a, ·)
   let projections := (store.toArray.filter fun (a, c) => owner a c != a).qsort
     fun x y => x.1.cmpBytes y.1 == .lt
@@ -162,9 +165,17 @@ def positionOf (input : Input) (name : Lean.Name) : Option Nat := do
   let c ← (input.constants.find? (·.1 == a)).map (·.2)
   input.constants.findIdx? (·.1 == owner a c)
 
+/-- The position of a compiled name's own record in the submitted order. -/
+def positionOfRecord (input : Input) (name : Lean.Name) : Option Nat := do
+  let a ← input.named name
+  input.constants.findIdx? (·.1 == a)
+
+/-- A payload without its last byte. -/
+def truncated (bytes : ByteArray) : ByteArray := bytes.extract 0 (bytes.size - 1)
+
 /-- The reader's name of a compiled singleton record. -/
 def keyOf (input : Input) (name : Lean.Name) : Option String :=
-  (input.named name).map fun a => toString (keyName (.member a 0))
+  (input.named name).map fun a => toString (Ix.Kernel.Key.id (md := .anon) a)
 
 def cases : List Case := [
   -- accepted
@@ -198,15 +209,35 @@ def cases : List Case := [
   -- level comparison equates them; the shape of `RatFunc.liftOn_def`)
   { label := "level-comparison", seeds := [seed "levelCanon"], expected := .accept },
   -- rejected: malformed input
+  -- a truncated record under its own hash: it fails to decode
   { label := "malformed-bytes", seeds := [seed "twiceId"],
     expected := .fail .rejected "decode" fun input e => match e with
       | .decode p a r =>
-        p + 1 == input.constants.length && some a == input.constants.getLast?.map (·.1) && r == "EOF"
+        p + 1 == input.constants.length && some a == (input.constants.getLast?.map fun (_, c) =>
+          Address.admissionHash (truncated (Ixon.serConstant c))) && r == "EOF"
       | _ => false,
     alter := fun input =>
       let s := encode input
       pure { s with records := s.records.dropLast ++
-        s.records.getLast?.toList.map fun (a, b) => (a, b.extract 0 (b.size - 1)) } },
+        s.records.getLast?.toList.map fun (_, b) => (Address.admissionHash (truncated b), truncated b) } },
+  -- the same truncation under the record's original address: its key is no
+  -- longer the hash of its bytes
+  { label := "unauthentic-record", seeds := [seed "twiceId"],
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .records p a => p + 1 == input.constants.length && some a == input.constants.getLast?.map (·.1)
+      | _ => false,
+    alter := fun input =>
+      let s := encode input
+      pure { s with records := s.records.dropLast ++
+        s.records.getLast?.toList.map fun (a, b) => (a, truncated b) } },
+  -- a literal's blob with another value under the original blob's address
+  { label := "unauthentic-blob", seeds := [seed "natLit"],
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .blobs 0 a => some a == input.blobs.head?.map (·.1)
+      | _ => false,
+    alter := fun input =>
+      let s := encode input
+      pure { s with blobs := (s.blobs.take 1).map (fun (a, b) => (a, b.push 1)) ++ s.blobs.drop 1 } },
   { label := "duplicate-constant", seeds := [seed "twiceId"],
     expected := .fail .rejected "duplicate record" fun input e => match e with
       | .duplicate .records p a => p == input.constants.length && some a == input.constants.head?.map (·.1)
@@ -222,22 +253,21 @@ def cases : List Case := [
       let s := encode input
       pure { s with blobs := s.blobs ++ s.blobs.take 1 } },
   -- `Nat.rec`, the recursor of the pinned `Nat` block, under its own
-  -- address with its K flag set: the reader regenerates the recursor and
-  -- refuses the header
+  -- address with its K flag set: the address is not the altered record's
+  -- hash, so the entry refuses it before the reader would read the header
   { label := "wrong-shaped-pinned-recursor", seeds := [seed "natLit"],
-    expected := .fail .rejected "reader: malformed" fun input e => match e with
-      | .read p (.malformed m) => some p == positionOf input `Nat &&
-        m == "recursor Nat.rec declares k := true; the generated recursor is not K-like"
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .records p a => some a == input.named `Nat.rec && some p == positionOfRecord input `Nat.rec
       | _ => false,
     alter := fun input => alterRecord input `Nat.rec fun c => match c.info with
       | .recr r => pure { c with info := .recr { r with k := true } }
       | _ => throw "Nat.rec is not a recursor record" },
   -- `Nat.add`, a pinned `Nat` operation, under its own address with the
-  -- value `fun n m => n`: the checker refuses the pin (a checker verdict,
-  -- so a decline at the Ix API)
+  -- value `fun n m => n`: the address is not the altered record's hash, so
+  -- the entry refuses it before the checker would compare the pin
   { label := "wrong-valued-pinned-operation", seeds := [seed "natAdd"],
-    expected := .fail .declined "checker" fun _ e => match e with
-      | .kernel (.notImplemented m) _ => m == "nonstandard structural Nat operation (Nat.add)"
+    expected := .fail .rejected "authentication" fun input e => match e with
+      | .mismatch .records p a => some a == input.named `Nat.add && some p == positionOfRecord input `Nat.add
       | _ => false,
     alter := fun input => alterRecord input `Nat.add fun c => match c.info with
       | .defn d => pure { c with info := .defn { d with value := .leanLam (.ref 0 #[]) (.leanLam (.ref 0 #[]) (.var 1)) } }
@@ -250,30 +280,31 @@ def cases : List Case := [
       | _ => false },
   { label := "axiom", seeds := [seed "someAxiom"],
     expected := .fail .declined "checker" fun input e => match e, keyOf input (seed "someAxiom") with
-      | .kernel (.notImplemented m) _, some key => m == s!"non-standard axiom ({key})"
+      | .kernel (.notImplemented m) _, some key => Ix.Kernel.Msg.render toString m == s!"non-standard axiom ({key})"
       | _, _ => false },
   -- an equation at the wrong universe level, installed in Lean unchecked
   { label := "wrong-universe-level", seeds := [seed "levelWrong"],
     expected := .fail .declined "checker" fun _ e => match e with
-      | .kernel (.invalid m) _ => m == "application type mismatch"
+      | .kernel (.invalid m) _ => Ix.Kernel.Msg.render toString m == "application type mismatch"
       | _ => false },
   -- `bad_thm` declares its name at the root
   { label := "false-theorem", seeds := [`falseThm],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `falseThm with
-      | .kernel (.invalid m) _, some key => m == s!"type mismatch in theorem {key}"
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
 def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<< 22, 1 <<< 20⟩
 
 /-- The names the seeds are installed under. -/
-def seedNames (input : Input) : List (Lean.Name × Option CName) :=
-  input.seeds.map fun (n, a) => (n, (resolve input.cx.store a).map input.cx.nameOf)
+def seedNames (input : Input) : List (Lean.Name × Option (CName .anon)) :=
+  input.seeds.map fun (n, a) => (n, (input.cx.keyAt a).toOption)
 
 def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
   let started ← IO.monoMsNow
   let input ← prepare leanEnv test.seeds
   let submission ← IO.ofExcept (test.alter input)
-  let result := Ix.Kernel.Admission.checkBytes limits submission.records submission.blobs input.hints.lookup
+  let binding ← IO.ofExcept Ix.Kernel.Admission.defaultBinding
+  let result := Ixon.Authenticated.checkBytes binding limits submission.records submission.blobs input.hints.lookup
   let (outcome, detail, passed) := match result, test.expected with
     | .ok env, .accept =>
       let missing : List Lean.Name := (seedNames input).filterMap fun (seed, n) => match n with
@@ -294,6 +325,121 @@ def run (leanEnv : Lean.Environment) (test : Case) : IO Bool := do
     ("outcome", Lean.toJson outcome), ("detail", Lean.toJson detail),
     ("passed", Lean.toJson passed), ("records", Lean.toJson submission.records.length),
     ("blobs", Lean.toJson submission.blobs.length), ("ms", Lean.toJson ms),
+    ("leanVersion", Lean.toJson Lean.versionString)]).compress
+  unless passed do
+    IO.eprintln s!"{test.label}: expected {test.expected.label}, got {outcome}: {detail}"
+  return passed
+
+/-! ## The tiered entry
+
+`Ixon.Authenticated.checkBytesTiered` (the logical check, then the typing
+tier) on host-compiled records: a partial definition, a mutual partial block
+of three, a partial definition of `False`, an unsafe definition, an unsafe
+opaque, and an unsafe axiom of `False` with an unsafe definition of `False`
+by it are typed, each seed's key among the tier constants and none in the
+logical environment; a partial definition that types only by unfolding
+another declines at the tier. Over decoded
+records (`Admission.checkConstantsTiered`, where an altered record keeps its
+key without failing authentication): a block that mixes safeties and a
+theorem with safety `partial` decline at the tier reader. `checkBytes`
+still declines a partial definition (`partial-definition` above). -/
+
+inductive TierExpected where
+  | typed
+  | fail (outcome : Ix.Kernel.Admission.Outcome)
+      (check : Input → Ix.Kernel.Admission.TierError → Bool)
+
+def TierExpected.label : TierExpected → String
+  | .typed => "typed"
+  | .fail .rejected _ => "reject"
+  | .fail .declined _ => "decline"
+
+structure TierCase where
+  label : String
+  seeds : List Lean.Name
+  expected : TierExpected
+  /-- an alteration of the decoded records; the case then runs over decoded
+  records (`checkConstantsTiered`) -/
+  alter : Option (Input → Except String (List (Address × Ixon.Constant))) := none
+
+/-- The decoded records with a compiled name's record replaced, under its key. -/
+def alterConstant (input : Input) (name : Lean.Name) (f : Ixon.Constant → Except String Ixon.Constant) :
+    Except String (List (Address × Ixon.Constant)) := do
+  let some a := input.named name | throw s!"{name} was not compiled"
+  let c ← match input.constants.find? (·.1 == a) with
+    | some (_, c) => pure c
+    | none => throw s!"{name} has no record of its own"
+  let o := owner a c
+  input.constants.mapM fun (b, c) => do if b == o then pure (b, ← f c) else pure (b, c)
+
+def tierCases : List TierCase := [
+  { label := "tier-partial-definition", seeds := [seed "loop._unsafe_rec"], expected := .typed },
+  { label := "tier-partial-block",
+    seeds := [seed "ping._unsafe_rec", seed "pong._unsafe_rec", seed "pang._unsafe_rec"],
+    expected := .typed },
+  { label := "tier-partial-false", seeds := [seed "badFalse"], expected := .typed },
+  { label := "tier-unsafe-definition", seeds := [seed "unsafeSucc"], expected := .typed },
+  { label := "tier-unsafe-opaque", seeds := [seed "unsafeOpq"], expected := .typed },
+  { label := "tier-unsafe-false", seeds := [seed "unsafeAx", seed "unsafeFalse"], expected := .typed },
+  { label := "tier-needs-delta", seeds := [seed "deltaUse"],
+    expected := .fail .declined fun input e => match e, keyOf input (seed "deltaUse") with
+      | .tier (.invalid m) p, some key => some p == positionOf input (seed "deltaUse") &&
+        Ix.Kernel.Msg.render toString m == s!"type mismatch in definition {key}"
+      | _, _ => false },
+  { label := "tier-mixed-safety-block", seeds := [seed "ping._unsafe_rec"],
+    expected := .fail .declined fun input e => match e with
+      | .read p (.declined m) => some p == positionOf input (seed "ping._unsafe_rec") &&
+        m == "tier: a partial block with a member of safety 'safe'"
+      | _ => false,
+    alter := some fun input => alterConstant input (seed "ping._unsafe_rec") fun c => match c.info with
+      | .muts ms => match ms[1]? with
+        | some (Ixon.MutConst.defn d) => pure { c with info := .muts (ms.set! 1 (.defn { d with safety := .safe })) }
+        | _ => throw "the block's second member is not a definition"
+      | _ => throw "the partial block is not a muts record" },
+  { label := "tier-partial-theorem", seeds := [seed "loop._unsafe_rec"],
+    expected := .fail .declined fun input e => match e with
+      | .read p (.declined m) => some p == positionOf input (seed "loop._unsafe_rec") &&
+        m == "tier: a theorem or an opaque with safety 'partial'"
+      | _ => false,
+    alter := some fun input => alterConstant input (seed "loop._unsafe_rec") fun c => match c.info with
+      | .defn d => pure { c with info := .defn { d with kind := .thm } }
+      | _ => throw "loop._unsafe_rec is not a definition record" } ]
+
+def runTier (leanEnv : Lean.Environment) (test : TierCase) : IO Bool := do
+  let started ← IO.monoMsNow
+  let input ← prepare leanEnv test.seeds
+  let result ← match test.alter with
+    | none =>
+      let submission := encode input
+      let binding ← IO.ofExcept Ix.Kernel.Admission.defaultBinding
+      pure (Ixon.Authenticated.checkBytesTiered binding limits submission.records submission.blobs
+        input.hints.lookup)
+    | some alter =>
+      let constants ← IO.ofExcept (alter input)
+      let table ← IO.ofExcept defaultTable
+      let pre ← IO.ofExcept (preludeFor table)
+      pure (Ix.Kernel.Admission.checkConstantsTiered Address.blake3 table pre constants input.blobs
+        input.hints.lookup)
+  let (outcome, detail, passed) := match result, test.expected with
+    | .ok (env, ts), .typed =>
+      let missing : List Lean.Name := (seedNames input).filterMap fun (seed, n) => match n with
+        | some n => if ts.any (·.cv.name == n) && !env.consts.any (·.name == n) then none else some seed
+        | none => some seed
+      ("typed", if missing.isEmpty then s!"{ts.length} tier constants" else s!"not typed: {missing}",
+        missing.isEmpty)
+    | .ok _, .fail .. => ("typed", "", false)
+    | .error e, expected =>
+      let o := e.outcome
+      let label := match o with | .rejected => "reject" | .declined => "decline"
+      let ok := match expected with
+        | .typed => false
+        | .fail o' check => o == o' && check input e
+      (label, toString e, ok)
+  let ms := (← IO.monoMsNow) - started
+  IO.println (Lean.Json.mkObj [
+    ("case", Lean.toJson test.label), ("expected", Lean.toJson test.expected.label),
+    ("outcome", Lean.toJson outcome), ("detail", Lean.toJson detail),
+    ("passed", Lean.toJson passed), ("records", Lean.toJson input.constants.length), ("ms", Lean.toJson ms),
     ("leanVersion", Lean.toJson Lean.versionString)]).compress
   unless passed do
     IO.eprintln s!"{test.label}: expected {test.expected.label}, got {outcome}: {detail}"
@@ -323,9 +469,8 @@ def stepCases : List StepCase := [
 
 def runStep (leanEnv : Lean.Environment) (test : StepCase) : IO Bool := do
   let input ← prepare leanEnv [test.seed]
-  let natPins ← IO.ofExcept builtinNatOpPins
   let rows ← IO.mkRef (#[] : Array Benchmarks.Kernel.CheckIxeStep.Row)
-  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop input.step natPins (fun _ => #[])
+  let _ ← Benchmarks.Kernel.CheckIxeStep.checkLoop input.step (fun _ => #[])
     input.step.ordered {} (emit := fun row => rows.modify (·.push row))
   let some a := input.named test.seed | throw (IO.userError s!"seed {test.seed} was not compiled")
   let row := (← rows.get).find? (·.address == a)
@@ -374,7 +519,7 @@ def main (args : List String) : IO UInt32 := do
     let some test := cases.find? (·.label == label)
       | IO.eprintln s!"no case {label}"; return 2
     let input ← prepare leanEnv test.seeds
-    let pre ← IO.ofExcept builtinPrelude
+    let pre ← IO.ofExcept (builtinPrelude (md := .anon))
     let submission ← IO.ofExcept (test.alter input)
     let own := submission.records.filter fun (a, _) => !pre.records.any (·.1 == a)
     IO.println (recordsSource { submission with records := own })
@@ -395,7 +540,12 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln s!"{test.label}: harness error: {e}"
       pure false
     unless passed do failed := failed + 1
-  let total := cases.length + stepCases.length
+  for test in tierCases do
+    let passed ← try runTier leanEnv test catch e => do
+      IO.eprintln s!"{test.label}: harness error: {e}"
+      pure false
+    unless passed do failed := failed + 1
+  let total := cases.length + stepCases.length + tierCases.length
   IO.eprintln s!"Certified entry, host-compiled cases: {total - failed}/{total} passed."
   return if failed == 0 then 0 else 1
 

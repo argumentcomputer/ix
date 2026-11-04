@@ -145,22 +145,29 @@ private opaque proveIxVM' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+  @& Nat → Bool →
     Except String ProveResult
 
 /-- IxVM-native prove: same shape as `prove`, but routes execution
     through the codegen'd Rust kernel (`execute_generated`) instead
     of the bytecode interpreter. The resulting `Proof` is
     verification-compatible with one from `prove`. Only valid when
-    `system.toplevel` is the IxVM kernel's bytecode. -/
+    `system.toplevel` is the IxVM kernel's bytecode.
+
+    With `traceShards`, the execution is gated against `maxRamBytes`
+    (`0`: detect 85% of `MemAvailable`) and an over-budget record is
+    proven as a batch of trace shards within that budget. -/
 def proveIxVM (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
+  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer)
+  (maxRamBytes : Nat := 0) (traceShards : Bool := false) :
     Except String (Array G × Proof × IOBuffer) :=
-  (proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+  (proveIxVM' system funIdx args ioBuffer.data.toArray ioBuffer.map.toArray
+    maxRamBytes traceShards).map
     fun r => (r.claim, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → Bool →
     Except String ProveEnvResult
 
 /-- Per-claim prove against a Rust-owned `EnvHandle`. Returns
@@ -172,9 +179,9 @@ private opaque proveAddrWithEnv' : @& AiurSystem →
     kernel (same toggle as `checkAddrWithEnv`). -/
 def proveAddrWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (addrBytes : ByteArray)
-  (useBytecode : Bool := false) :
+  (useBytecode : Bool := false) (assumeBinding : Bool := false) :
     Except String (ByteArray × Proof × IOBuffer) :=
-  (proveAddrWithEnv' system funIdx envHandle addrBytes useBytecode).map
+  (proveAddrWithEnv' system funIdx envHandle addrBytes useBytecode assumeBinding).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
 /-- Result of a per-shard prove: the claim's wire bytes, the proof, the
@@ -207,7 +214,7 @@ structure ShardProveResult where
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& Nat → Bool → Bool →
-  @& Nat → Except String ShardProveResult
+  @& Nat → Bool → Except String ShardProveResult
 
 /-- What a trace-shard batch keeps of each shard between its two rounds.
     `auto` lets the prover's RAM model choose: retain when the whole
@@ -250,15 +257,17 @@ def ShardRetention.code : ShardRetention → Nat
     `peakBytes` is then the heaviest shard's projection. Only when no
     shard count fits does the result fall back to `suggestedParts`.
     `retention` fixes what the batch keeps between its rounds, or lets
-    the RAM model choose. -/
+    the RAM model choose. `assumeBinding` proves the claim assuming the
+    environment's binding meets the specifications (validator 4), for an
+    aggregate that discharges it once with a binding proof. -/
 def shardProveWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (maxRamBytes : Nat := 0)
   (execOnly : Bool := false) (traceShards : Bool := false)
-  (retention : ShardRetention := .auto) :
+  (retention : ShardRetention := .auto) (assumeBinding : Bool := false) :
     Except String ShardProveResult :=
   shardProveWithEnv' system funIdx envHandle ownedBlob maxRamBytes execOnly
-    traceShards retention.code
+    traceShards retention.code assumeBinding
 
 @[extern "rs_aiur_system_prove_env_distributed"]
 private opaque proveEnvDistributed' : @& AiurSystem →
@@ -326,6 +335,7 @@ structure ShardProvenAhead where
 private opaque shardProveAheadWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& ByteArray → @& Nat →
   @& Nat → @& Nat → @& String → @& String →
+  Bool →
   Except String (Array ShardProvenAhead)
 
 /-- Several shard claims proven in order, each from one execution planned
@@ -335,11 +345,14 @@ private opaque shardProveAheadWithEnv' : @& AiurSystem →
     flight. Every proof and its claim are written to the store under
     `storeDir` and, unless `indexDir` is empty, recorded in the shard-proof
     index as soon as they exist, so a killed run keeps what it finished.
-    `labels` are the shards' manifest indices, for the lines printed. -/
+    `labels` are the shards' manifest indices, for the lines printed. Each claim
+    assumes the environment's binding meets the specifications (validator 4)
+    when `assumeBinding`, and validates it otherwise. -/
 def shardProveAheadWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (owners : Array (Array Address)) (labels : Array Nat) (maxRamBytes : Nat)
-  (retention : ShardRetention) (execJobs : Nat) (storeDir indexDir : String) :
+  (retention : ShardRetention) (execJobs : Nat) (storeDir indexDir : String)
+  (assumeBinding : Bool := false) :
     Except String (Array ShardProvenAhead) :=
   let u32le (n : Nat) : ByteArray :=
     ⟨#[(n &&& 0xFF).toUInt8, ((n >>> 8) &&& 0xFF).toUInt8,
@@ -353,7 +366,7 @@ def shardProveAheadWithEnv (system : @& AiurSystem)
   let labelsBlob : ByteArray :=
     labels.foldl (fun (acc : ByteArray) (n : Nat) => acc ++ u32le n) ByteArray.empty
   shardProveAheadWithEnv' system funIdx envHandle blob labelsBlob maxRamBytes
-    retention.code execJobs storeDir indexDir
+    retention.code execJobs storeDir indexDir assumeBinding
 
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →

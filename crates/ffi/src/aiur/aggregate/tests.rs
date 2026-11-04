@@ -80,6 +80,29 @@ fn cache_key_has_a_stable_test_vector() {
   );
 }
 
+/// A stand-in claim context.
+fn test_ctx() -> ixon::ClaimContext {
+  ixon::ClaimContext {
+    spec: ixon::proof::spec_digest(),
+    binding: addr("aggregate-test-binding"),
+    axioms: None,
+    binding_assumed: false,
+    literal_class: false,
+  }
+}
+
+/// An empty environment carrying a stand-in role binding, as every
+/// environment a claim is made over must.
+fn bound_env() -> ixon::Env {
+  let mut env = ixon::Env::new();
+  let section: Arc<[u8]> = Arc::from(&b"stand-in role binding section"[..]);
+  env.role_binding = Some(ixon::env::RoleBinding {
+    address: Address::hash(&section),
+    bytes: section,
+  });
+  env
+}
+
 fn store_axiom(env: &ixon::Env, typ: Arc<Expr>, refs: Vec<Address>) -> Address {
   let constant = Constant {
     info: ConstantInfo::Axio(Axiom { is_unsafe: false, lvls: 0, typ }),
@@ -109,7 +132,7 @@ fn shard(id: u32, block: Address) -> ShardInfo {
 
 #[test]
 fn native_preparation_and_structural_fold_discharge_a_frontier() {
-  let env = ixon::Env::new();
+  let env = bound_env();
   let dependency = store_axiom(&env, Expr::sort(0), Vec::new());
   let consumer =
     store_axiom(&env, Expr::reference(0, Vec::new()), vec![dependency.clone()]);
@@ -193,4 +216,64 @@ fn native_preparation_and_structural_fold_discharge_a_frontier() {
   assert_eq!(paths.len(), 1);
   assert_eq!(paths[0].0, dependency);
   assert_eq!(paths[0].1.first(), Some(&1));
+}
+
+/// One `Binding` claim discharges any claim set over its binding: two
+/// conditional `CheckEnv` claims with different subjects and assumptions
+/// both discharge against the same binding claim, each to its own claim
+/// validating the binding. A claim that already validates it, or a binding
+/// claim for another binding or specification, does not discharge.
+#[test]
+fn one_binding_claim_discharges_any_claim_set() {
+  use super::prove::discharged_claim_bytes;
+  use ixon::proof::Claim;
+  let assumed = test_ctx().assuming_binding();
+  let binding = Claim::Binding {
+    spec: assumed.spec.clone(),
+    binding: assumed.binding.clone(),
+  };
+  let claims = [
+    Claim::CheckEnv {
+      ctx: assumed.clone(),
+      root: addr("subjects-a"),
+      assumptions: None,
+    },
+    Claim::CheckEnv {
+      ctx: assumed.clone(),
+      root: addr("subjects-b"),
+      assumptions: Some(addr("assumptions-b")),
+    },
+  ];
+  for claim in &claims {
+    let (_, bytes) = claim.commit();
+    let discharged =
+      discharged_claim_bytes(&bytes, &binding).expect("discharges");
+    let Claim::CheckEnv { ctx, root, assumptions } = claim.clone() else {
+      unreachable!()
+    };
+    let validating = Claim::CheckEnv {
+      ctx: ixon::ClaimContext { binding_assumed: false, ..ctx },
+      root,
+      assumptions,
+    };
+    assert_eq!(discharged, validating.commit().1);
+  }
+  let (_, validating_bytes) = Claim::CheckEnv {
+    ctx: test_ctx(),
+    root: addr("subjects-a"),
+    assumptions: None,
+  }
+  .commit();
+  assert!(discharged_claim_bytes(&validating_bytes, &binding).is_err());
+  let (_, assumed_bytes) = claims[0].commit();
+  let other_binding = Claim::Binding {
+    spec: assumed.spec.clone(),
+    binding: addr("another binding"),
+  };
+  assert!(discharged_claim_bytes(&assumed_bytes, &other_binding).is_err());
+  let other_spec = Claim::Binding {
+    spec: addr("another spec"),
+    binding: assumed.binding.clone(),
+  };
+  assert!(discharged_claim_bytes(&assumed_bytes, &other_spec).is_err());
 }

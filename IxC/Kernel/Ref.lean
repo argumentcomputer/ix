@@ -1,3 +1,7 @@
+module
+
+@[expose] public section
+
 namespace Ix.Kernel
 
 /-- A reference to a constant contained in a content-addressed block. -/

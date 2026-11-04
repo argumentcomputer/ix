@@ -1,5 +1,6 @@
 module
 
+public import Ix.ClaimContext
 public import Ix.Resource.Claim
 public import Tests.Ix.ResourceAddressed
 public import Tests.Ix.Claim
@@ -12,10 +13,24 @@ def fixtures : Array (String × Ix.Claim) :=
   let a := Address.blake3 "a".toUTF8
   let b := Address.blake3 "b".toUTF8
   let asm := some (Address.blake3 "asm".toUTF8)
-  #[ ("eval", .eval a b asm), ("check", .check a none),
-     ("check_env", .checkEnv a asm), ("reveal", .reveal a (.axio none none none)),
-     ("contains", .contains a b), ("catalog", .catalog a b asm),
-     ("resource", .resource a b) ]
+  let ctx : Ix.ClaimContext :=
+    { spec := Ix.SpecDigest.specDigest.toOption.getD default
+      binding := Address.blake3 "binding".toUTF8
+      axioms := none }
+  let assumed := { ctx with bindingAssumed := true }
+  let klass := { ctx with literalClass := true }
+  #[ ("eval", .eval ctx a b asm), ("check", .check ctx a none),
+     ("check_env", .checkEnv ctx a asm), ("reveal", .reveal a (.axio none none none)),
+     ("contains", .contains a b), ("catalog", .catalog a),
+     ("resource", .resource a b),
+     ("check_assumed", .check assumed a none),
+     ("check_env_assumed", .checkEnv assumed a asm),
+     ("binding", .binding ctx.spec ctx.binding),
+     ("check_env_class", .checkEnv klass a asm) ]
+
+/-- The variants whose claims may assume their binding (validator 4). -/
+def mayAssume (claim : Ix.Claim) : Bool :=
+  Ix.Claim.variantMayAssume (Ix.Claim.variantOf claim)
 
 def fixtureText : String := Id.run do
   let mut text := s!"# Ixon v{Ixon.Env.VERSION} claims: name, BLAKE3, canonical bytes\n"
@@ -42,6 +57,28 @@ def run : IO Unit := do
       unless e.startsWith "claim: unsupported object format 3, expected 4" do
         throw <| IO.userError s!"version 3 object format: unexpected error {e}"
     unless (Ix.Claim.de (bytes.set! (header + 1) 255)).toOption.isNone do throw <| IO.userError "wrong validator accepted"
+    -- Validator 4 (the binding assumed) is read only for `check` and
+    -- `checkEnv`, and as exactly that.
+    match Ix.Claim.de (bytes.set! (header + 1) Ix.Claim.VALIDATOR_ERASED_LEAN_ASSUMED),
+        claim with
+    | .ok (.check ctx' a' asm'), .check ctx a asm =>
+      unless ctx' == { ctx with bindingAssumed := true } && a' == a && asm' == asm do
+        throw <| IO.userError "validator 4 check read wrongly"
+    | .ok (.checkEnv ctx' r' asm'), .checkEnv ctx r asm =>
+      unless ctx' == { ctx with bindingAssumed := true, literalClass := false } && r' == r && asm' == asm do
+        throw <| IO.userError "validator 4 check-env read wrongly"
+    | .ok _, _ => throw <| IO.userError "validator 4 accepted for a variant that cannot assume"
+    | .error _, _ =>
+      if mayAssume claim then throw <| IO.userError "validator 4 refused for check or check-env"
+    -- Validator 5 (a literal class) is read only for `checkEnv`, and as
+    -- exactly that.
+    match Ix.Claim.de (bytes.set! (header + 1) Ix.Claim.VALIDATOR_ERASED_LEAN_CLASS), claim with
+    | .ok (.checkEnv ctx' r' asm'), .checkEnv ctx r asm =>
+      unless ctx' == { ctx with bindingAssumed := false, literalClass := true } && r' == r && asm' == asm do
+        throw <| IO.userError "validator 5 check-env read wrongly"
+    | .ok _, _ => throw <| IO.userError "validator 5 accepted for a variant other than check-env"
+    | .error _, .checkEnv .. => throw <| IO.userError "validator 5 refused for check-env"
+    | .error _, _ => pure ()
     let proof : Ixon.Proof := { claim, proof := ⟨#[1, 2, 3]⟩ }
     let proofBytes := Ixon.Proof.ser proof
     let decoded ← IO.ofExcept (Ixon.Proof.de proofBytes)
@@ -58,7 +95,9 @@ def run : IO Unit := do
   let claim ← IO.ofExcept (Ix.Resource.makeClaim env profile)
   let _ ← IO.ofExcept (Ix.Resource.checkClaim env profile claim)
   Tests.ResourceAddressed.check "resource claim rejects erased validator"
-    (Ix.Resource.checkClaim env profile (.checkEnv env.merkleRoot.get! none)) false
+    (Ix.Resource.checkClaim env profile
+      (.checkEnv (Ix.ClaimContext.ofDefaultTable.toOption.getD default) env.merkleRoot.get! none))
+    false
   Tests.ResourceAddressed.check "resource claim binds the entire subject"
     (Ix.Resource.checkClaim base profile claim) false
   Tests.ResourceAddressed.check "resource claim binds limits"

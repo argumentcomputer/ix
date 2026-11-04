@@ -3,6 +3,8 @@
 use crate::expr::{Owned, Uses};
 use crate::serialize::get_u8;
 
+pub mod source;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum Locality {

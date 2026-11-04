@@ -154,6 +154,11 @@ def runDiffCmd (p : Cli.Parsed) : IO UInt32 := do
       | none => "∅"
       | some a => shortAddr verbose a
     IO.println s!"main: {fmt oldMain} → {fmt newMain}"
+  if let some (oldBinding, newBinding) := d.roleBindingChanged then
+    let fmt : Option Address → String
+      | none => "∅"
+      | some a => shortAddr verbose a
+    IO.println s!"role binding: {fmt oldBinding} → {fmt newBinding}"
   unless d.assumptionsAdded.isEmpty && d.assumptionsRemoved.isEmpty do
     IO.println
       s!"assumptions: +{d.assumptionsAdded.size} −{d.assumptionsRemoved.size}"
@@ -202,7 +207,7 @@ def diffCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     anon; "Compare only anonymous structure (the default; accepted for explicitness)."
-    «meta»; "Additionally compare named metadata (binder names, originals, kv-maps)."
+    «meta»; "Additionally compare named metadata."
     verbose; "Print full addresses, uncapped lists, synthetic mutual-block names, and rippled changed rows."
 
   ARGS:

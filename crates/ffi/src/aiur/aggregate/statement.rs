@@ -2,7 +2,7 @@
 
 use ix_common::address::Address;
 use ixon::{
-  Claim,
+  Claim, ClaimContext,
   assumption_tree::AssumptionTree,
   merkle::{
     MerklePath, leaf_hash, merkle_root_canonical_sorted, node_hash,
@@ -209,6 +209,7 @@ impl SubjectTree {
 
 #[derive(Debug)]
 pub(super) struct Statement {
+  pub(super) ctx: ClaimContext,
   pub(super) subjects: Arc<SubjectTree>,
   pub(super) assumptions: Option<Arc<CanonicalTree>>,
   pub(super) claim: Claim,
@@ -217,16 +218,18 @@ pub(super) struct Statement {
 
 impl Statement {
   pub(super) fn new(
+    ctx: ClaimContext,
     subjects: Arc<SubjectTree>,
     assumptions: Option<Arc<CanonicalTree>>,
   ) -> Arc<Self> {
     let claim = Claim::CheckEnv {
+      ctx: ctx.clone(),
       root: subjects.root.clone(),
       assumptions: assumptions.as_ref().map(|tree| tree.root.clone()),
     };
     let mut claim_bytes = Vec::new();
     claim.put(&mut claim_bytes);
-    Arc::new(Self { subjects, assumptions, claim, claim_bytes })
+    Arc::new(Self { ctx, subjects, assumptions, claim, claim_bytes })
   }
 
   pub(super) fn join(
@@ -235,6 +238,11 @@ impl Statement {
     structural: bool,
     owner_by_address: &FxHashMap<Address, usize>,
   ) -> Result<Arc<Self>, String> {
+    // A join states both children's typing under one context; children
+    // under different contexts do not combine.
+    if left.ctx != right.ctx {
+      return Err("aggregate children differ in claim context".into());
+    }
     let subjects = if structural {
       SubjectTree::structural(left.subjects.clone(), right.subjects.clone())
     } else {
@@ -254,7 +262,7 @@ impl Statement {
       }
     }
     let assumptions = CanonicalTree::from_sorted(remaining)?;
-    Ok(Self::new(subjects, assumptions))
+    Ok(Self::new(left.ctx.clone(), subjects, assumptions))
   }
 }
 

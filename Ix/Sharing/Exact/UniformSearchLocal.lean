@@ -200,10 +200,19 @@ a scan of the members per read. -/
     (c, s, bl)
 
 /-- Flags over the area positions: the members satisfying `avail`. -/
-def memberFlags (cx : SCtx) (posA : Array Nat) (avail : Nat → Bool) : Array Bool :=
+@[specialize] def memberFlags (cx : SCtx) (posA : Array Nat) (avail : Nat → Bool) : Array Bool :=
   cx.members.foldl (fun fl m => match posOf posA m with
     | some j => if avail m then fl.set! j true else fl
     | none => fl) (Array.replicate cx.area.size false)
+
+/-- `memberFlags` with borrowed `cx` and `posA` parameters. -/
+@[specialize] def memberFlagsDirect (cx : @& SCtx) (posA : @& Array Nat)
+    (avail : Nat → Bool) : Array Bool :=
+  cx.members.foldl (fun fl m => match posOf posA m with
+    | some j => if avail m then fl.set! j true else fl
+    | none => fl) (Array.replicate cx.area.size false)
+
+@[csimp] theorem memberFlags_eq_direct : @memberFlags = @memberFlagsDirect := by rfl
 
 /-- The widths of `SCtx.phiE` read through member flags `fl`. -/
 @[inline] def flagWidth (cx : SCtx) (posA : Array Nat) (fl : Array Bool) (u : Nat) :

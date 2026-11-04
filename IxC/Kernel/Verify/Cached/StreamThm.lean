@@ -23,7 +23,7 @@ Three ingredients, one per step of the walk:
   annotates a declaration's type before storing it
   (`annotConstantValC`), and the annotation pass is memoized
   (`memoEI (·.annotC)`), so the returned type is the memo's entry on a
-  hit and `annotateBodyI`'s on a miss.  The step's own `flushC` empties
+  hit and `annotateBodyI`'s on a miss.  The step's own `resetC` empties
   the annotation memo immediately before the call, so the hit branch is
   unreachable and `annotateBodyI`'s `.const` arm — `pure e` — decides:
   `annotate_const`.
@@ -46,21 +46,21 @@ namespace Ix.Kernel.Cached
 
 open Ix.Kernel
 
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences md}
 
 /-! ## The annotation of a bare constant is the constant -/
 
 /-- The annotation pass's `.const` arm: a bare constant annotates to
 itself. -/
-theorem annotateBodyI_const (r : CoreFnsI) (fe : FEnv) (d : Nat) (n : Name)
+theorem annotateBodyI_const (r : CoreFnsI md) (fe : FEnv md) (d : Nat) (n : Key md)
     (ls : List Level) :
     annotateBodyI r fe d (.const n ls) = pure (.const n ls) := rfl
 
 /-- With the annotation memo missing the key, the memoized entry point
 returns what the body returns: a bare constant annotates to itself. -/
-theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv} {f d : Nat}
-    {n : Name} {ls : List Level} {s₀ s' : CState} {j : Expr}
-    (hmiss : s₀.annotC[(Expr.const n ls : Expr)]? = none)
+theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv md} {f d : Nat}
+    {n : Key md} {ls : List Level} {s₀ s' : CState md} {j : Expr md}
+    (hmiss : s₀.annotC[(Expr.const n ls : Expr md)]? = none)
     (h : (coreKnotI mode fe (f + 1)).annotate d (.const n ls) s₀ = .ok (j, s')) :
     j = .const n ls := by
   rw [show (coreKnotI mode fe (f + 1)).annotate d (Expr.const n ls) =
@@ -74,20 +74,19 @@ theorem annotate_const_of_miss {mode : CheckMode} {fe : FEnv} {f d : Nat}
     Prod.mk.injEq] at h
   exact h.1.symm
 
-/-- The annotation memo of a flushed state is empty. -/
-theorem flushed_annotC_none (s : CState) (e : Expr) :
-    (s.flushed).annotC[e]? = none := by
-  simp only [CState.flushed]
+/-- The annotation memo of the empty state (`resetC`) is empty. -/
+theorem empty_annotC_none (e : Expr md) :
+    ({} : CState md).annotC[e]? = none := by
   simp
 
 /-! ## Phase A's header install keeps a bare declared type -/
 
-/-- Phase A's header install, at a flushed state, returns the header
+/-- Phase A's header install, at the empty state, returns the header
 with the declared type unchanged when that type is a bare constant. -/
-theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
-    {cv cvA : ConstantVal} {jty : Expr} {n : Name} {ls : List Level}
-    {s₀ s' : CState} (hty : cv.type = .const n ls)
-    (h : annotConstantValC mode fe cv s₀.flushed = .ok ((cvA, jty), s')) :
+theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv md}
+    {cv cvA : ConstantVal md} {jty : Expr md} {n : Key md} {ls : List Level}
+    {s' : CState md} (hty : cv.type = .const n ls)
+    (h : annotConstantValC mode fe cv ({} : CState md) = .ok ((cvA, jty), s')) :
     cvA = ⟨cv.name, cv.levelParams, .const n ls⟩ := by
   unfold annotConstantValC at h
   by_cases h1 : (fe.find? cv.name).isSome = true
@@ -99,7 +98,7 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
   by_cases h3 : cv.name.isProjFnShape = true
   · rw [if_pos h3] at h; exact absurd h throwC_bind_ok
   rw [if_neg h3] at h
-  by_cases h4 : Name.nodup cv.levelParams = true
+  by_cases h4 : LevelParam.nodup cv.levelParams = true
   case neg => rw [if_neg h4] at h; exact absurd h throwC_bind_ok
   rw [if_pos h4] at h
   by_cases h5 : Expr.looseBVarsBounded 0 cv.type = true
@@ -111,7 +110,7 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
   obtain ⟨jA, s₁, hann, h⟩ := bindC_ok h
   rw [hty] at hann
   obtain rfl : jA = .const n ls :=
-    annotate_const_of_miss (f := checkFuel - 1) (flushed_annotC_none s₀ _)
+    annotate_const_of_miss (f := checkFuel - 1) (empty_annotC_none _)
       (by rw [show checkFuel - 1 + 1 = checkFuel from rfl]; exact hann)
   by_cases h7 : Expr.allLevelParamsDefinedC cv.levelParams (Expr.const n ls) = true
   case neg => rw [if_neg h7] at h; exact absurd h throwC_bind_ok
@@ -127,24 +126,23 @@ theorem annotConstantValC_const {mode : CheckMode} {fe : FEnv}
 
 /-- Phase A's step at a `thmDecl` record with a bare declared type:
 the constant it pushes is a `.thmInfo` of that very type. -/
-theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv}
-    {pend : Array PendingCheck} {cv : ConstantVal} {value : Expr}
-    {n : Name} {ls : List Level} {s₀ s' : CState}
-    {fe' : FEnv} {pend' : Array PendingCheck} (hty : cv.type = .const n ls)
-    (h : annotStepC mode pins i fe pend (.thmDecl cv value) s₀ = .ok ((fe', pend'), s')) :
+theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv md}
+    {pend : Array (PendingCheck md)} {cv : ConstantVal md} {value : Expr md}
+    {n : Key md} {ls : List Level} {s₀ s' : CState md}
+    {fe' : FEnv md} {pend' : Array (PendingCheck md)} (hty : cv.type = .const n ls)
+    (h : annotStepC mode ev i fe pend (.thmDecl cv value) s₀ = .ok ((fe', pend'), s')) :
     fe'.env.consts =
       ConstantInfo.thmInfo ⟨cv.name, cv.levelParams, .const n ls⟩ value ::
         fe.env.consts := by
   unfold annotStepC at h
   simp only [] at h
   obtain ⟨_, s₁, hfl, h⟩ := bindC_ok h
-  rw [show (flushC : CheckCM Unit) s₀ = .ok ((), s₀.flushed) from rfl] at hfl
-  have hs₁ : s₀.flushed = s₁ := congrArg Prod.snd (Except.ok.inj hfl)
+  rw [resetC_run] at hfl
+  have hs₁ : ({} : CState md) = s₁ := congrArg Prod.snd (Except.ok.inj hfl)
   subst hs₁
   obtain ⟨p, s₂, hcv, h⟩ := bindC_ok h
   obtain ⟨cvA, jty⟩ := p
   obtain rfl := annotConstantValC_const hty hcv
-  obtain ⟨_, s₃, _, h⟩ := bindC_ok h
   obtain ⟨hv, _⟩ := pureC_ok h
   obtain ⟨rfl, _⟩ := Prod.mk.injEq .. ▸ hv
   rfl
@@ -154,11 +152,11 @@ theorem annotStepC_thm_consts {mode : CheckMode} {i : Nat} {fe : FEnv}
 /-- **A theorem record of the stream is stored**: if phase A accepts a
 list of records containing a `thmDecl` whose declared type is a bare
 constant, the environment it returns holds a constant of that type. -/
-theorem installRun_thmDecl_const {mode : CheckMode} {ds : List Declaration}
-    {cv : ConstantVal} {value : Expr} {n : Name} {ls : List Level}
+theorem installRun_thmDecl_const {mode : CheckMode} {ds : List (Declaration md)}
+    {cv : ConstantVal md} {value : Expr md} {n : Key md} {ls : List Level}
     (hty : cv.type = .const n ls) (hmem : Declaration.thmDecl cv value ∈ ds)
-    {p q : Nat × FEnv × Array PendingCheck} {s s' : CState}
-    (h : InstallRun mode pins ds p s q s') (hcanon : p.2.1 = mkFEnv p.2.1.env) :
+    {p q : Nat × FEnv md × Array (PendingCheck md)} {s s' : CState md}
+    (h : InstallRun mode ev ds p s q s') (hcanon : p.2.1 = mkFEnv p.2.1.env) :
     ∃ c ∈ q.2.1.env.consts, c.toConstantVal.type = .const n ls := by
   induction h with
   | nil p s => exact absurd hmem (List.not_mem_nil)
@@ -180,10 +178,10 @@ theorem installRun_thmDecl_const {mode : CheckMode} {ds : List Declaration}
 /-- **The main corollary's ingredient at the stream**: an accepted stream
 that declares a theorem of a bare constant type leaves a constant of
 that type in the environment. -/
-theorem checkDecls_thmDecl_const {mode : CheckMode} {ds : Array Declaration} {env : Env}
-    {cv : ConstantVal} {value : Expr} {n : Name} {ls : List Level}
+theorem checkDecls_thmDecl_const {mode : CheckMode} {ds : Array (Declaration md)} {env : Env md}
+    {cv : ConstantVal md} {value : Expr md} {n : Key md} {ls : List Level}
     (hty : cv.type = .const n ls) (hmem : Declaration.thmDecl cv value ∈ ds)
-    (h : checkDecls mode pins ds = .ok env) :
+    (h : checkDecls mode ev ds = .ok env) :
     ∃ c ∈ env.consts, c.toConstantVal.type = .const n ls := by
   obtain ⟨fc, rfl⟩ := checkDecls_fullyChecked mode h
   obtain ⟨_, _, run⟩ := fc.1.run
@@ -205,9 +203,9 @@ set, which the constant would have to be a member of
 (`no_proof_of_False_cached`).  The main corollary
 (`no_False_declaration`, `IxC/Kernel/MainTheorem.lean`) rests on this. -/
 theorem no_False_theorem_accepted (V : Type w) [SetTheory V]
-    (ds : Array Declaration) (cv : ConstantVal) (v : Expr)
+    (ds : Array (Declaration md)) (cv : ConstantVal md) (v : Expr md)
     (hmem : Declaration.thmDecl cv v ∈ ds) (hty : cv.type = .const falseName []) :
-    ∀ env, Cached.checkDecls .verified pins ds ≠ .ok env := by
+    ∀ env, Cached.checkDecls .verified ev ds ≠ .ok env := by
   intro env accepted
   obtain ⟨c, hc, hcty⟩ := Cached.checkDecls_thmDecl_const hty hmem accepted
   exact Cached.no_proof_of_False_cached V rfl accepted c hc hcty

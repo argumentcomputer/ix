@@ -8,10 +8,10 @@ public import IxC.Kernel.Env
 # The level-parameter canonical form the pinned blocks are matched up to
 
 A stream's `Nat` block and the checker's pinned one are the same
-declaration when they agree up to the names Lean's exporter picks
-freely: binder names, binder annotations and level-parameter names.
-This module is that canonical form and the lockstep comparisons built
-on it.
+declaration when they agree up to the binders' `pw` annotations and a
+renumbering of their level parameters (each constant's `i`-th parameter
+becomes `i`), binder contracts included.  This module is that canonical
+form and the lockstep comparisons built on it.
 
 It sits in the KERNEL because the matching does (task #293): the
 decoder emits the file's records and nothing else, and it is
@@ -24,9 +24,9 @@ matching.
 
 namespace Ix.Kernel
 
-/-- Rename level parameters (for basis-block matching up to
-level-parameter names). -/
-def canonLevel (m : Name → Name) : Level → Level
+/-- Renumber level parameters (for basis-block matching up to
+level-parameter numbering). -/
+def canonLevel (m : LevelParam → LevelParam) : Level → Level
   | .zero => .zero
   | .succ u => .succ (canonLevel m u)
   | .max u v => .max (canonLevel m u) (canonLevel m v)
@@ -49,41 +49,43 @@ signatures.  Since task #203 the pin builder
 and the parser emits `.anonymous` too, so the name/annotation erasure
 here is the identity on both sides; what this canonical form still
 *does* is rename level parameters and reset `pw` (the pin side is
-annotated, the stream side is at the parse placeholder). -/
-def canonExpr (m : Name → Name) : Expr → Expr
+annotated, the stream side is at the parse placeholder).  Binder contracts
+are kept, so a block whose binders carry contracts other than the pinned
+block's (the Lean fragment's) does not match. -/
+def canonExpr (m : LevelParam → LevelParam) : Expr md → Expr md
   | .bvar i => .bvar i
   | .fvar idx ty => .fvar idx (canonExpr m ty)
   | .sort u => .sort (canonLevel m u)
   | .const n us => .const n (us.map (canonLevel m))
   | .app f a => .app (canonExpr m f) (canonExpr m a)
-  | .lam ty b _ => .lam (canonExpr m ty) (canonExpr m b) ⟨.never⟩
-  | .forallE ty b _ =>
-      .forallE (canonExpr m ty) (canonExpr m b) ⟨.never⟩
-  | .letE ty v b => .letE (canonExpr m ty) (canonExpr m v)
-      (canonExpr m b)
+  | .lam ty b bm => .lam (canonExpr m ty) (canonExpr m b) { bm with pw := .never }
+  | .forallE ty b bm =>
+      .forallE (canonExpr m ty) (canonExpr m b) { bm with pw := .never }
+  | .letE ty v b lmeta => .letE (canonExpr m ty) (canonExpr m v)
+      (canonExpr m b) lmeta
   | .lit l => .lit l
   | .proj s i e => .proj s i (canonExpr m e)
 
 /-- The level-parameter renaming a constant's own parameter list
-induces: the `i`-th parameter becomes `⟨i⟩`, anything else is left
+induces: the `i`-th parameter becomes `i`, anything else is left
 alone. -/
-def canonNameMap (ps : List Name) : Name → Name := fun n =>
+def canonNameMap (ps : List LevelParam) : LevelParam → LevelParam := fun n =>
   match ps.findIdx? (fun p => p == n) with
-  | some i => .num .anonymous i
+  | some i => i
   | none => n
 
 /-- Canonical form of a constant's common data (name kept, level
 parameters numbered, type renamed). -/
-def ConstantVal.canon (cv : ConstantVal) : ConstantVal :=
+def ConstantVal.canon (cv : ConstantVal md) : ConstantVal md :=
   { cv with
-    levelParams := (List.range cv.levelParams.length).map (.num .anonymous ·),
+    levelParams := List.range cv.levelParams.length,
     type := canonExpr (canonNameMap cv.levelParams) cv.type }
 
 /-- Canonical form of a stored constant for basis matching. -/
-def ConstantInfo.canon (ci : ConstantInfo) : ConstantInfo :=
+def ConstantInfo.canon (ci : ConstantInfo md) : ConstantInfo md :=
   let ps := ci.toConstantVal.levelParams
-  let m : Name → Name := canonNameMap ps
-  let cv : ConstantVal := ConstantVal.canon ci.toConstantVal
+  let m : LevelParam → LevelParam := canonNameMap ps
+  let cv : ConstantVal md := ConstantVal.canon ci.toConstantVal
   match ci with
   | .axiomInfo _ => .axiomInfo cv
   | .defnInfo _ v hint => .defnInfo cv (canonExpr m v) hint
@@ -99,7 +101,7 @@ def ConstantInfo.canon (ci : ConstantInfo) : ConstantInfo :=
 /-! ### Comparing canonical forms in lockstep (task #226)
 
 Two places ask "is this record the same declaration as that pinned
-one, up to level-parameter names?" — the `Quot.sound` axiom record and
+one, up to level-parameter numbering?" — the `Quot.sound` axiom record and
 the four quotient records against the `quot` basis pin, and a block
 against one of the five basis pins.  Both are `checkDecl`'s since task
 #293 (`basisPinHit`, `quotPinHit`, `IxC/Kernel/Basis.lean`); a
@@ -125,7 +127,7 @@ and that test is a handful of `Name` comparisons. -/
 
 /-- Lockstep twin of `canonExpr m a == canonExpr m' b`
 (`canonExprEqFast_iff`). -/
-def canonExprEqFast (m m' : Name → Name) : Expr → Expr → Bool
+def canonExprEqFast (m m' : LevelParam → LevelParam) : Expr md → Expr md → Bool
   | .bvar i, .bvar j => i == j
   | .fvar i t, .fvar j t' => i == j && canonExprEqFast m m' t t'
   | .sort u, .sort v => canonLevel m u == canonLevel m' v
@@ -133,13 +135,15 @@ def canonExprEqFast (m m' : Name → Name) : Expr → Expr → Bool
       n == n' && us.map (canonLevel m) == us'.map (canonLevel m')
   | .app f a, .app f' a' =>
       canonExprEqFast m m' f f' && canonExprEqFast m m' a a'
-  | .lam t b _, .lam t' b' _ =>
-      canonExprEqFast m m' t t' && canonExprEqFast m m' b b'
-  | .forallE t b _, .forallE t' b' _ =>
-      canonExprEqFast m m' t t' && canonExprEqFast m m' b b'
-  | .letE t v b, .letE t' v' b' =>
+  | .lam t b bm, .lam t' b' bm' =>
+      canonExprEqFast m m' t t' && canonExprEqFast m m' b b' &&
+        bm.contract == bm'.contract && bm.result == bm'.result
+  | .forallE t b bm, .forallE t' b' bm' =>
+      canonExprEqFast m m' t t' && canonExprEqFast m m' b b' &&
+        bm.contract == bm'.contract && bm.result == bm'.result
+  | .letE t v b l, .letE t' v' b' l' =>
       canonExprEqFast m m' t t' && canonExprEqFast m m' v v' &&
-        canonExprEqFast m m' b b'
+        canonExprEqFast m m' b b' && l == l'
   | .lit l, .lit l' => l == l'
   | .proj s i e, .proj s' i' e' =>
       s == s' && i == i' && canonExprEqFast m m' e e'
@@ -150,8 +154,8 @@ node's constructor (it rewrites only levels, and resets the binder
 metadata to the same constant on both sides), so the two canonical
 forms are equal iff the originals agree constructor by constructor
 down to their leaves — which is what the descent tests. -/
-theorem canonExprEqFast_iff (m m' : Name → Name) :
-    ∀ a b : Expr, canonExprEqFast m m' a b = true ↔ canonExpr m a = canonExpr m' b := by
+theorem canonExprEqFast_iff (m m' : LevelParam → LevelParam) :
+    ∀ a b : Expr md, canonExprEqFast m m' a b = true ↔ canonExpr m a = canonExpr m' b := by
   intro a
   induction a with
   | bvar i => intro b; cases b <;> simp [canonExprEqFast, canonExpr]
@@ -164,11 +168,11 @@ theorem canonExprEqFast_iff (m m' : Name → Name) :
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, ihf, iha]
   | lam t b m iht ihb =>
     intro c; cases c <;>
-      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb]
+      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb, and_assoc]
   | forallE t b m iht ihb =>
     intro c; cases c <;>
-      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb]
-  | letE t v b iht ihv ihb =>
+      simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihb, and_assoc]
+  | letE t v b _ iht ihv ihb =>
     intro c; cases c <;>
       simp [canonExprEqFast, canonExpr, Bool.and_eq_true, iht, ihv, ihb, and_assoc]
   | lit l => intro b; cases b <;> simp [canonExprEqFast, canonExpr]
@@ -183,7 +187,7 @@ never occurs in parsed input).  The quotient records — parsed
 `axiomInfo`s, pinned `indInfo`/`ctorInfo`/`recInfo`/`axiomInfo`s — are
 compared at this projection. -/
 theorem ConstantInfo.canon_toConstantVal :
-    ∀ {ci : ConstantInfo}, (∀ t, ci ≠ .projInfo t) →
+    ∀ {ci : ConstantInfo md}, (∀ t, ci ≠ .projInfo t) →
       (ConstantInfo.canon ci).toConstantVal = ConstantVal.canon ci.toConstantVal := by
   intro ci h
   cases ci <;> first | rfl | exact absurd rfl (h _)
@@ -195,17 +199,17 @@ private theorem boolEq_of_iff {a b : Bool} (h : a = true ↔ b = true) : a = b :
 /-- Two constants have the same canonical common data.  (`decide (· =
 ·)` is what `==` unfolds to at these `DecidableEq` types, so this is
 the comparison the call sites used to spell inline.) -/
-def ConstantVal.canonEq (cv cv' : ConstantVal) : Bool :=
+def ConstantVal.canonEq (cv cv' : ConstantVal md) : Bool :=
   decide (ConstantVal.canon cv = ConstantVal.canon cv')
 
 /-- `ConstantVal.canonEq` in lockstep.  The numbered level-parameter
 lists are equal exactly when they are equally long. -/
-def ConstantVal.canonEqFast (cv cv' : ConstantVal) : Bool :=
+def ConstantVal.canonEqFast (cv cv' : ConstantVal md) : Bool :=
   cv.name == cv'.name && cv.levelParams.length == cv'.levelParams.length &&
     canonExprEqFast (canonNameMap cv.levelParams) (canonNameMap cv'.levelParams)
       cv.type cv'.type
 
-theorem ConstantVal.canonEqFast_iff (cv cv' : ConstantVal) :
+theorem ConstantVal.canonEqFast_iff (cv cv' : ConstantVal md) :
     ConstantVal.canonEqFast cv cv' = true ↔
       ConstantVal.canon cv = ConstantVal.canon cv' := by
   simp only [ConstantVal.canonEqFast, ConstantVal.canon, Bool.and_eq_true,
@@ -217,21 +221,21 @@ theorem ConstantVal.canonEqFast_iff (cv cv' : ConstantVal) :
 
 @[csimp] theorem ConstantVal.canonEq_eq_canonEqFast :
     @ConstantVal.canonEq = @ConstantVal.canonEqFast := by
-  funext cv cv'
+  funext md cv cv'
   exact boolEq_of_iff (by
     simp only [ConstantVal.canonEq, decide_eq_true_eq, ConstantVal.canonEqFast_iff])
 
 /-- Rule lists compared through the canonical form of each rule's
 right-hand side (`ConstantInfo.canon`'s recursor arm). -/
-def canonRulesEqFast (m m' : Name → Name) : List RecRule → List RecRule → Bool
+def canonRulesEqFast (m m' : LevelParam → LevelParam) : List (RecRule md) → List (RecRule md) → Bool
   | [], [] => true
   | r :: rs, r' :: rs' =>
       ({ r with rhs := .bvar 0 } == { r' with rhs := .bvar 0 }) &&
         canonExprEqFast m m' r.rhs r'.rhs && canonRulesEqFast m m' rs rs'
   | _, _ => false
 
-theorem canonRulesEqFast_iff (m m' : Name → Name) :
-    ∀ rs rs' : List RecRule,
+theorem canonRulesEqFast_iff (m m' : LevelParam → LevelParam) :
+    ∀ rs rs' : List (RecRule md),
       canonRulesEqFast m m' rs rs' = true ↔
         rs.map (fun r => { r with rhs := canonExpr m r.rhs }) =
           rs'.map (fun r => { r with rhs := canonExpr m' r.rhs }) := by
@@ -248,11 +252,11 @@ theorem canonRulesEqFast_iff (m m' : Name → Name) :
       constructor <;> (intro h; simp_all)
 
 /-- Two stored constants have the same canonical form. -/
-def ConstantInfo.canonEq (ci ci' : ConstantInfo) : Bool :=
+def ConstantInfo.canonEq (ci ci' : ConstantInfo md) : Bool :=
   decide (ConstantInfo.canon ci = ConstantInfo.canon ci')
 
 /-- `ConstantInfo.canonEq` in lockstep. -/
-def ConstantInfo.canonEqFast : ConstantInfo → ConstantInfo → Bool
+def ConstantInfo.canonEqFast : ConstantInfo md → ConstantInfo md → Bool
   | .axiomInfo cv, .axiomInfo cv' => ConstantVal.canonEqFast cv cv'
   | .defnInfo cv v h, .defnInfo cv' v' h' =>
       ConstantVal.canonEqFast cv cv' &&
@@ -272,7 +276,7 @@ def ConstantInfo.canonEqFast : ConstantInfo → ConstantInfo → Bool
   | .projInfo t, .projInfo t' => t == t'
   | _, _ => false
 
-theorem ConstantInfo.canonEqFast_iff (ci ci' : ConstantInfo) :
+theorem ConstantInfo.canonEqFast_iff (ci ci' : ConstantInfo md) :
     ConstantInfo.canonEqFast ci ci' = true ↔
       ConstantInfo.canon ci = ConstantInfo.canon ci' := by
   cases ci <;> cases ci' <;>
@@ -282,23 +286,23 @@ theorem ConstantInfo.canonEqFast_iff (ci ci' : ConstantInfo) :
 
 @[csimp] theorem ConstantInfo.canonEq_eq_canonEqFast :
     @ConstantInfo.canonEq = @ConstantInfo.canonEqFast := by
-  funext ci ci'
+  funext md ci ci'
   exact boolEq_of_iff (by
     simp only [ConstantInfo.canonEq, decide_eq_true_eq, ConstantInfo.canonEqFast_iff])
 
 /-- Two blocks are the same, member for member, up to the canonical
 form. -/
-def canonEqList (xs ys : List ConstantInfo) : Bool :=
+def canonEqList (xs ys : List (ConstantInfo md)) : Bool :=
   decide (xs.map ConstantInfo.canon = ys.map ConstantInfo.canon)
 
 /-- `canonEqList` in lockstep. -/
-def canonEqListFast : List ConstantInfo → List ConstantInfo → Bool
+def canonEqListFast : List (ConstantInfo md) → List (ConstantInfo md) → Bool
   | [], [] => true
   | x :: xs, y :: ys => ConstantInfo.canonEqFast x y && canonEqListFast xs ys
   | _, _ => false
 
 theorem canonEqListFast_iff :
-    ∀ xs ys : List ConstantInfo,
+    ∀ xs ys : List (ConstantInfo md),
       canonEqListFast xs ys = true ↔
         xs.map ConstantInfo.canon = ys.map ConstantInfo.canon := by
   intro xs
@@ -312,7 +316,7 @@ theorem canonEqListFast_iff :
 
 @[csimp] theorem canonEqList_eq_canonEqListFast :
     @canonEqList = @canonEqListFast := by
-  funext xs ys
+  funext md xs ys
   exact boolEq_of_iff (by
     simp only [canonEqList, decide_eq_true_eq, canonEqListFast_iff])
 

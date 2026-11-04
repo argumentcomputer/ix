@@ -8,7 +8,8 @@ implementations; `docs/Ixon.md`, "ExprMeta Arena", is its normative description.
 Hash-consing (§5) is not implemented; it is designed here for a stacked PR. §1–§5 were
 measured on v3 files (header `0xE3`, `Tag0` integers, heuristic sharing tables); §6 and §7
 on files with TagN integers everywhere but still the header `0xE3`, heuristic sharing and
-no 4-byte TagN rung; §7 ends with the sizes of the final v4 files.
+no 4-byte TagN rung; §7 ends with the sizes of the final v4 files. The call-site kinds
+(10 `callSite`, 11 `etaCallSite`) measured here were retired from the format.
 
 **Answer.** Yes, for the encoding; no, for deduplication.
 
@@ -312,16 +313,15 @@ Tag0 → TagN replacement had not landed.
   output deterministic. The result is the same as allocation-time dedup.
 - **Proofs.** No theorem covers the compiler's metadata or its arenas: the proofs of the
   arena allocation and the metadata finalizer were part of the compiler-correctness proof
-  tree, which is retired ([kernel](kernel.md), "Removal ledger"). The post-pass needs no
+  tree, which is retired (see [kernel](kernel.md)). The post-pass needs no
   lemma.
 
 **Size estimate.**
 
 - the pass in Lean and Rust, about 120 lines each, plus Lean/Rust parity tests;
 - one call at each metadata finalization site: Lean `takeArena` users in
-  `Ix/CompileM.lean` (defn, axio, quot, recr, ctor, inductive and mutual paths) and
-  `Ix/AuxGen/CompileAux.lean`, and the Rust equivalents in `compile.rs`, `mutual.rs` and
-  `kernel_egress.rs`;
+  `Ix/CompileM.lean` (defn, axio, quot, recr, ctor, inductive and mutual paths), and the
+  Rust equivalents in `compile.rs` and `kernel_egress.rs`;
 - fixture regeneration, which v4 needs anyway.
 
 That is too large for "serializer only", hence a stacked PR. It needs no format change:

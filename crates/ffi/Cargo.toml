@@ -54,7 +54,7 @@ cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
 # Final proof systems, which link the gnark Go archive.
 plonk = ["ix-proof-compression/plonk"]
 groth16 = ["ix-proof-compression/groth16"]
-test-ffi = []
+test-ffi = ["ixon/sharing-reference"]
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 
 [lints]

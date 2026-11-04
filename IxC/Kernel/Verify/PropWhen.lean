@@ -49,7 +49,7 @@ private theorem beq_zero_and (x y : Nat) :
     ((x == 0) && (y == 0)) = (Max.max x y == 0) := by
   cases hx : x == 0 <;> cases hy : y == 0 <;> simp_all <;> omega
 
-theorem zeronessOf_sound (φ : Name → Nat) :
+theorem zeronessOf_sound (φ : LevelParam → Nat) :
     ∀ l : Level, (Level.zeronessOf l).holds φ = (Level.eval φ l == 0)
   | .zero => by simp [Level.zeronessOf, Level.eval]
   | .succ l => by simp [Level.zeronessOf, Level.eval]
@@ -89,7 +89,7 @@ open Ix.Kernel.PropWhen
 
 /-- The substitution pushforward, as a syntactic equation: reading
 zero-ness commutes with level-parameter substitution. -/
-theorem zeronessOf_subst (ks : List Name) (vs : List Level) :
+theorem zeronessOf_subst (ks : List LevelParam) (vs : List Level) :
     ∀ l : Level,
       zeronessOf (subst ks vs l) = substPW ks vs (zeronessOf l)
   | .zero => rfl
@@ -120,7 +120,7 @@ theorem isNeverZero_eq_isNever :
     rw [Level.isNeverZero, zeronessOf, isNeverZero_eq_isNever b]
 
 /-- `subst.go` at the identity substitution. -/
-theorem subst_go_self (ks : List Name) (n : Name) :
+theorem subst_go_self (ks : List LevelParam) (n : LevelParam) :
     subst.go ks (ks.map Level.param) n = .param n := by
   induction ks with
   | nil => rfl
@@ -137,7 +137,7 @@ law false for a *normalizing* `substPW` on a *non-canonical* datum;
 since task #194 every datum is canonical by construction, so there is
 no such datum and the law is an equality again (`PropWhen.bindZ_unit`
 is its datum half). -/
-theorem substPW_self (ks : List Name) (pw : PropWhen) :
+theorem substPW_self (ks : List LevelParam) (pw : PropWhen) :
     substPW ks (ks.map Level.param) pw = pw := by
   show pw.bindZ _ = pw
   have : pw.bindZ (fun n => zeronessOf (subst.go ks (ks.map .param) n))
@@ -152,7 +152,7 @@ theorem substPW_self (ks : List Name) (pw : PropWhen) :
 /-- `subst.go` under a mapped replacement list: a parameter resolved
 within the pairing factors through the outer substitution. -/
 theorem subst_go_map (σ : Level → Level) :
-    ∀ (ps : List Name) (vs : List Level) (n : Name),
+    ∀ (ps : List LevelParam) (vs : List Level) (n : LevelParam),
       n ∈ ps → vs.length = ps.length →
       subst.go ps (vs.map σ) n = σ (subst.go ps vs n)
   | [], _, n, hn, _ => by simp at hn
@@ -174,8 +174,8 @@ theorem subst_go_map (σ : Level → Level) :
 /-- Composition of datum instantiations, under the same
 parameter-definedness the level side's `subst_subst` has: parameters
 of the datum are covered by the inner substitution. -/
-theorem substPW_comp {ks : List Name} {us : List Level}
-    {ps : List Name} {vs : List Level} {pw : PropWhen}
+theorem substPW_comp {ks : List LevelParam} {us : List Level}
+    {ps : List LevelParam} {vs : List Level} {pw : PropWhen}
     (hl : vs.length = ps.length)
     (hdef : pw.paramsDefined ps = true) :
     substPW ks us (substPW ps vs pw) =
@@ -207,7 +207,7 @@ theorem substPW_comp {ks : List Name} {us : List Level}
           (by simpa [List.contains_iff_mem] using hdef n (by simp)) hl]
 
 /-- The parameter footprint of a readout is the level's. -/
-theorem zeronessOf_paramsDefined {ps' : List Name} :
+theorem zeronessOf_paramsDefined {ps' : List LevelParam} :
     ∀ {l : Level}, l.allParamsDefined ps' = true →
       (zeronessOf l).paramsDefined ps' = true
   | .zero, _ => rfl
@@ -226,7 +226,7 @@ theorem zeronessOf_paramsDefined {ps' : List Name} :
 /-- A parameter resolved within the pairing lands in the replacement
 list. -/
 theorem subst_go_mem :
-    ∀ {ks : List Name} {us : List Level} {n : Name},
+    ∀ {ks : List LevelParam} {us : List Level} {n : LevelParam},
       n ∈ ks → us.length = ks.length → subst.go ks us n ∈ us
   | [], _, n, hn, _ => by simp at hn
   | _ :: _, [], n, _, hl => by simp at hl
@@ -244,8 +244,8 @@ theorem subst_go_mem :
 /-- The pushforward keeps datum parameters within the bound of the
 substituted levels — the datum half of
 `Level.allParamsDefined_subst`. -/
-theorem substPW_paramsDefined {ks : List Name} {us : List Level}
-    {ps' : List Name} (hl : us.length = ks.length)
+theorem substPW_paramsDefined {ks : List LevelParam} {us : List Level}
+    {ps' : List LevelParam} (hl : us.length = ks.length)
     (hus : ∀ u ∈ us, u.allParamsDefined ps' = true) :
     ∀ {pw : PropWhen}, pw.paramsDefined ks = true →
       (substPW ks us pw).paramsDefined ps' = true := by
@@ -273,7 +273,7 @@ valuation `Level.substFn φ ks vs` — the same composed valuation
 this where the canonical lane needed the open checker metatheorems
 (`SortOfEInstLevels`/`LamSortEInstLevels`,
 `IxC/Kernel/SetR/Interp/Steps/Levels.lean`). -/
-theorem holds_substPW (φ : Name → Nat) (ks : List Name)
+theorem holds_substPW (φ : LevelParam → Nat) (ks : List LevelParam)
     (vs : List Level) : ∀ pw : PropWhen,
     (substPW ks vs pw).holds φ = pw.holds (substFn φ ks vs) := by
   intro pw

@@ -89,3 +89,9 @@ def main (args : List String) : IO Unit := do
     IO.println s!"Validating {env.consts.size} constants from the primitive closure"
     let resolved ← IO.ofExcept (Ix.Resource.validate env (Ix.Resource.standardProfile env))
     IO.println s!"Validated {resolved.addresses.size} addressed interfaces"
+    -- Time the actual typing check on the same committed primitive closure.
+    let t0 ← IO.monoMsNow
+    let typing ← IO.lazyPure fun _ => Ix.Resource.typeCheck env
+    let t1 ← IO.monoMsNow
+    discard <| IO.ofExcept typing
+    IO.println s!"Typing the primitive closure: IxC {t1 - t0} ms (accepted)"

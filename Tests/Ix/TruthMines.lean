@@ -21,13 +21,6 @@
   * `truthmines-mini` — the small infrastructure tier end to end
     (fixtures + spine + Mathlib + FLT → `truthmines-mini.ixc/`), then
     the per-piece check sweep over its members.
-  * `truthmines-validate` / `truthmines-validate-mini` — the METADATA
-    fidelity rung (Q1): `truthmines validate [--mini]`, the 8-phase
-    `ix validate` pipeline (aux-gen congruence, alpha canonicity,
-    decompile both ways, per-constant roundtrip) over every native
-    member's driver module, plus Palomar.ix as one aggregate library in
-    the full tier. The anon check sweep never touches §4/§5; this leg is
-    what gates them, per validation target.
 
   All heavy steps run under the driver's `Ix.Watchdog` ceilings. Needs
   `lake build ix truthmines` first; network + `lake exe cache get` on
@@ -111,7 +104,7 @@ private def driverBuild (mini : Bool) (ixc : System.FilePath)
     --anon` sweep over the tier's `.ixc` — the fat-profile checking
     rung lives in the driver (bounded pool, output captured per piece,
     tails + solo repro surfaced on rejection); the suite is exit-code
-    gated like the validate legs. -/
+    gated. -/
 private def driverCheck (mini : Bool) : IO (Bool × Nat × Nat × Option String) := do
   unless (← driverExe.pathExists) do
     return (false, 0, 0,
@@ -134,35 +127,6 @@ def buildSuite : List TestSeq := [
 def checkSuite : List TestSeq := [
   .individualIO "truthmines: per-piece kernel check sweep (fat rung 1)"
     none (driverCheck false) .done ]
-
-/-- Drive `truthmines validate [--mini]`: per-member 8-phase metadata
-    fidelity, exit-code gated (the driver prints the verdict table). -/
-private def driverValidate (mini : Bool) :
-    IO (Bool × Nat × Nat × Option String) := do
-  unless (← ixExe.pathExists) do
-    return (false, 0, 0, some s!"{ixExe} missing — run `lake build ix` first")
-  unless (← driverExe.pathExists) do
-    return (false, 0, 0,
-      some s!"{driverExe} missing — run `lake build truthmines` first")
-  let exe ← IO.FS.realPath driverExe
-  let mut args := #["validate"]
-  if mini then
-    args := args.push "--mini"
-  let child ← IO.Process.spawn { cmd := exe.toString, args }
-  let exit ← child.wait
-  if exit != 0 then
-    return (false, 0, 0, some s!"truthmines validate failed ({exit})")
-  return (true, 0, 0, none)
-
-def validateSuite : List TestSeq := [
-  .individualIO
-    "truthmines-validate: 8-phase metadata fidelity over every validation target"
-    none (driverValidate false) .done ]
-
-def validateMiniSuite : List TestSeq := [
-  .individualIO
-    "truthmines-validate-mini: 8-phase metadata fidelity over the mini tier"
-    none (driverValidate true) .done ]
 
 def miniSuite : List TestSeq := [
   .individualIO

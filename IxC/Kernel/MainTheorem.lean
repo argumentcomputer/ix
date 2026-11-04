@@ -27,13 +27,15 @@ in `IxC/Kernel/Denotes.lean`.
   checker builds; `env.consts` are the constants it accepted;
   `.verified` is the default mode.
 * `False` and `Eq` are built in: the checker installs them from its own
-  pins, and a stream that declares them differently is rejected.
-* `pins` is the list of `Nat.div`/`Nat.mod` pin variants the fold's
-  install gate tries (task #304).  The statement is for EVERY list:
-  consistency does not depend on it — under the empty list every
-  stream that declares `Nat.div` simply declines, and under any other
-  what an accept establishes is the certificates' verdict in the
-  accepted environment, which is all the model tier reads.
+  specifications (`Role.spec`), and a stream that declares them
+  differently is rejected.
+* `ev` is the role table's evidence the operations' install gates read
+  (`Evidences`, `IxC/Kernel/Roles.lean`).  The statement is for EVERY
+  value: consistency does not depend on it — with no evidence every
+  stream that declares a certified `Nat` operation simply declines, and
+  with any other what an accept establishes is the certificates' and
+  recurrences' verdicts in the accepted environment, which is all the
+  model tier reads.
 * `SetTheory V` is the set theory the model lives in; the proof works
   for any `V` implementing that interface.
 
@@ -49,16 +51,46 @@ open Ix.Kernel.Cached (checkDecls)
 universe w
 
 /-- **The main theorem.**  Every environment the checker accepts has a
-model in every set theory — at every `Nat.div`/`Nat.mod` pin list, so
-consistency does not depend on which variants the install gate is
-handed (the empty list included: under it every stream that declares
-`Nat.div` declines).  The shipped binary runs the fold at
-`natOpPinSets`. -/
-theorem model_exists (V : Type w) [SetTheory V]
-    (pins : List NatOpPinSet) (ds : Array Declaration) (env : Env)
-    (accepted : checkDecls .verified pins ds = .ok env) :
+model in every set theory — at every role-table evidence `ev`, so
+consistency does not depend on the evidence the install gates are
+handed (none included: then every stream that declares a certified
+`Nat` operation declines). It is stated at the certified modes
+(`Mode.Certified`: `.anon`, the Ixon entry's, and `.source`, the Lean
+ingress's); `.meta`'s verdicts are never reported. -/
+theorem model_exists {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
+    (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
+    (accepted : checkDecls .verified ev ds = .ok env) :
     Nonempty (Model V env) := by
   obtain ⟨m⟩ := Cached.checkDecls_sound (V := V) rfl accepted
   exact ⟨Model.Model.ofEnvModelM m⟩
+
+/-- **Conditional model existence**: every environment accepted by `checkDecls`
+has a model in `V` realizing all custom user axioms in `env.customAxiomInfos`. -/
+theorem model_exists_conditional {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
+    (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
+    (accepted : checkDecls .verified ev ds = .ok env) :
+    ∃ M : Model V env, AxiomSetRealized V M.cval env env.customAxiomInfos := by
+  obtain ⟨M⟩ := model_exists V ev ds env accepted
+  refine ⟨M, fun cv hcv => ?_⟩
+  exact M.realizes_of_mem_consts ((Env.mem_customAxiomInfos_iff.mp hcv).1)
+
+/-- **Consistency of accepted environments**: every environment accepted by
+`checkDecls` is semantically consistent (`Consistent env`, i.e., contains no
+constant of type `False`). -/
+theorem checkDecls_consistent {md : Mode} [md.Certified] (V : Type w) [SetTheory V]
+    (ev : Evidences md) (ds : Array (Declaration md)) (env : Env md)
+    (accepted : checkDecls .verified ev ds = .ok env) :
+    Consistent env :=
+  consistent_of_model V (model_exists V ev ds env accepted)
+
+/-- **Conditional consistency under custom user axioms**: any environment `env`
+with a model `M : Model V env` realizing its custom user axioms
+(`AxiomSetRealized V M.cval env env.customAxiomInfos`) is semantically
+consistent (`Consistent env`). -/
+theorem consistent_of_userAxioms_realized {md : Mode} (V : Type w) [SetTheory V]
+    {env : Env md} (M : Model V env)
+    (_hax : AxiomSetRealized V M.cval env env.customAxiomInfos) :
+    Consistent env :=
+  consistent_of_model V ⟨M⟩
 
 end Ix.Kernel

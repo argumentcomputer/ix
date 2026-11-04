@@ -36,13 +36,13 @@ open Ix.Kernel.Semantics
 open Ix.Kernel.SetModel
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo)
+open Ix.Kernel (Env Expr Key Level ConstantInfo)
 open Ix.Kernel.Rules
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {env : Env} {φ : Name → Nat}
+variable {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## The `WellDenotedV` splitters (`Steps/InferIO.lean:75`, `:123`, `:142`)
 
@@ -279,14 +279,14 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
   have hlpAtC : levelParamsAt env Ix.Kernel.listConsName
       = ciC.toConstantVal.levelParams := by rw [levelParamsAt, hfC]
   -- every leaf is closed, graded and bit-valid
-  have hleafC : ∀ (n : Name) (ψ : Name → Nat) (σ : Nat → V),
+  have hleafC : ∀ (n : Key md) (ψ : LevelParam → Nat) (σ : Nat → V),
       interp V σ (m.acval n ψ) = interp V ρ (m.acval n ψ) := fun n ψ σ =>
     interp_closed V (by rw [m.acval_erase]; exact m.cval_closed n ψ) σ ρ
-  have hleafOk : ∀ (n : Name) (ψ : Name → Nat) (σ : Nat → V),
+  have hleafOk : ∀ (n : Key md) (ψ : LevelParam → Nat) (σ : Nat → V),
       WellDenotedV V σ (m.acval n ψ) := fun n ψ σ =>
     ⟨m.acval_wellDenoted _ _ σ, hval _ _ σ⟩
   -- the stored types' rows, from the `const` residue
-  have head : ∀ (n : Name) (ci : ConstantInfo) (us : List Level)
+  have head : ∀ (n : Key md) (ci : ConstantInfo md) (us : List Level)
       (ta : AnnotTerm), env.find? n = some ci → ci.isTowerEntry = false →
       us.length = ci.toConstantVal.levelParams.length →
       denoteMeta m.acval env φ 0
@@ -338,7 +338,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           ciH.toConstantVal.levelParams []) = some ((.sort 1) : AnnotTerm) := by
       rw [hIH, denoteMeta_sort]
       rfl
-    have h := (head _ _ _ _ hfH (Ix.Kernel.isTowerEntry_false_of_find? hfH (fun _ _ h => by simp [Ix.Kernel.charName] at h)) (by simp [hlpH]) hR).2 ρ
+    have h := (head _ _ _ _ hfH (Ix.Kernel.isTowerEntry_false_of_find? hfH (fun T h => Ix.Kernel.projTableName_ne_roleKey T .char h.symm)) (by simp [hlpH]) hR).2 ρ
     rw [hlpH, interp_sort] at h
     exact h
   -- `List.nil`
@@ -346,7 +346,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
       ciN.toConstantVal.levelParams [Level.zero]
       = Expr.forallE (.sort (Level.succ Level.zero))
           (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 0))
-          ⟨Level.substPW [pN] [Level.zero] mbN.pw⟩ := by
+          { mbN with pw := Level.substPW [pN] [Level.zero] mbN.pw } := by
     rw [hlpN, hTN]
     simp [Expr.instantiateLevelParams, Level.subst, Level.subst.go]
   have hRN : denoteMeta m.acval env φ 0
@@ -364,7 +364,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
             (.fvar 0 (Expr.sort (Level.succ Level.zero))) from rfl,
       denoteMeta_app, hKL, denoteMeta_fvar]
     rfl
-  obtain ⟨hokRN, hmemRN⟩ := head _ _ _ _ hfN (Ix.Kernel.isTowerEntry_false_of_find? hfN (fun _ _ h => by simp [Ix.Kernel.listNilName] at h)) (by simp [hlpN]) hRN
+  obtain ⟨hokRN, hmemRN⟩ := head _ _ _ _ hfN (Ix.Kernel.isTowerEntry_false_of_find? hfN (fun T h => Ix.Kernel.projTableName_ne_roleKey T .listNil h.symm)) (by simp [hlpN]) hRN
   -- `List.cons`
   have hIC : ciC.toConstantVal.type.instantiateLevelParams
       ciC.toConstantVal.levelParams [Level.zero]
@@ -372,9 +372,9 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           (.forallE (.bvar 0)
             (.forallE (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 1))
               (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 2))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩)
-            ⟨Level.substPW [pC] [Level.zero] mb2.pw⟩)
-          ⟨Level.substPW [pC] [Level.zero] mb1.pw⟩ := by
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw })
+            { mb2 with pw := Level.substPW [pC] [Level.zero] mb2.pw })
+          { mb1 with pw := Level.substPW [pC] [Level.zero] mb1.pw } := by
     rw [hlpC, hTC]
     simp [Expr.instantiateLevelParams, Level.subst, Level.subst.go]
   have hRC : denoteMeta m.acval env φ 0
@@ -394,8 +394,8 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
       show (Expr.forallE (.bvar 0)
             (.forallE (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 1))
               (.app (.const Ix.Kernel.listName [Level.zero]) (.bvar 2))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩)
-            ⟨Level.substPW [pC] [Level.zero] mb2.pw⟩).instantiate1
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw })
+            { mb2 with pw := Level.substPW [pC] [Level.zero] mb2.pw }).instantiate1
           (.fvar 0 (Expr.sort (Level.succ Level.zero)))
         = Expr.forallE (.fvar 0 (Expr.sort (Level.succ Level.zero)))
             (.forallE
@@ -403,22 +403,22 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
               (.app (.const Ix.Kernel.listName [Level.zero])
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩)
-            ⟨Level.substPW [pC] [Level.zero] mb2.pw⟩ from rfl,
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw })
+            { mb2 with pw := Level.substPW [pC] [Level.zero] mb2.pw } from rfl,
       denoteMeta_forallE, denoteMeta_fvar,
       show (Expr.forallE
               (.app (.const Ix.Kernel.listName [Level.zero])
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
               (.app (.const Ix.Kernel.listName [Level.zero])
                 (.fvar 0 (Expr.sort (Level.succ Level.zero))))
-              ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩).instantiate1
+              { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw }).instantiate1
           (.fvar (0 + 1) (.fvar 0 (Expr.sort (Level.succ Level.zero))))
         = Expr.forallE
             (.app (.const Ix.Kernel.listName [Level.zero])
               (.fvar 0 (Expr.sort (Level.succ Level.zero))))
             (.app (.const Ix.Kernel.listName [Level.zero])
               (.fvar 0 (Expr.sort (Level.succ Level.zero))))
-            ⟨Level.substPW [pC] [Level.zero] mb3.pw⟩ from rfl,
+            { mb3 with pw := Level.substPW [pC] [Level.zero] mb3.pw } from rfl,
       denoteMeta_forallE, denoteMeta_app, hKL, denoteMeta_fvar,
       show (Expr.app (.const Ix.Kernel.listName [Level.zero])
               (.fvar 0 (Expr.sort (Level.succ Level.zero)))).instantiate1
@@ -429,12 +429,12 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
             (.fvar 0 (Expr.sort (Level.succ Level.zero))) from rfl,
       denoteMeta_app, hKL, denoteMeta_fvar]
     rfl
-  obtain ⟨hokRC, hmemRC⟩ := head _ _ _ _ hfC (Ix.Kernel.isTowerEntry_false_of_find? hfC (fun _ _ h => by simp [Ix.Kernel.listConsName] at h)) (by simp [hlpC]) hRC
+  obtain ⟨hokRC, hmemRC⟩ := head _ _ _ _ hfC (Ix.Kernel.isTowerEntry_false_of_find? hfC (fun T h => Ix.Kernel.projTableName_ne_roleKey T .listCons h.symm)) (by simp [hlpC]) hRC
   -- `Char.ofNat`
   have hIF : ciF.toConstantVal.type.instantiateLevelParams
       ciF.toConstantVal.levelParams []
       = Expr.forallE (.const Ix.Kernel.natName []) (.const Ix.Kernel.charName [])
-          ⟨Level.substPW [] [] mbF.pw⟩ := by
+          { mbF with pw := Level.substPW [] [] mbF.pw } := by
     rw [hlpF, hTF]
     simp [Expr.instantiateLevelParams]
   have hRF : denoteMeta m.acval env φ 0
@@ -448,7 +448,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           (.fvar 0 (Expr.const Ix.Kernel.natName []))
         = Expr.const Ix.Kernel.charName [] from rfl, hKH]
     rfl
-  obtain ⟨hokRF, hmemRF⟩ := head _ _ _ _ hfF (Ix.Kernel.isTowerEntry_false_of_find? hfF (fun _ _ h => by simp [Ix.Kernel.charOfNatName] at h)) (by simp [hlpF]) hRF
+  obtain ⟨hokRF, hmemRF⟩ := head _ _ _ _ hfF (Ix.Kernel.isTowerEntry_false_of_find? hfF (fun T h => Ix.Kernel.projTableName_ne_roleKey T .charOfNat h.symm)) (by simp [hlpF]) hRF
   -- `String.ofList`
   have hIO : ciO.toConstantVal.type.instantiateLevelParams
       ciO.toConstantVal.levelParams []
@@ -456,7 +456,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
           (.app (.const Ix.Kernel.listName [Level.zero])
             (.const Ix.Kernel.charName []))
           (.const Ix.Kernel.stringName [])
-          ⟨Level.substPW [] [] mbO.pw⟩ := by
+          { mbO with pw := Level.substPW [] [] mbO.pw } := by
     rw [hlpO, hTO]
     simp [Expr.instantiateLevelParams, Level.subst]
   have hRO : denoteMeta m.acval env φ 0
@@ -474,7 +474,7 @@ theorem strLitFacts {m : EnvModel V env} (hct : ConstType m φ)
             (.const Ix.Kernel.charName [])))
         = Expr.const Ix.Kernel.stringName [] from rfl, hKS]
     rfl
-  obtain ⟨hokRO, hmemRO⟩ := head _ _ _ _ hfO (Ix.Kernel.isTowerEntry_false_of_find? hfO (fun _ _ h => by simp [Ix.Kernel.stringOfListName] at h)) (by simp [hlpO]) hRO
+  obtain ⟨hokRO, hmemRO⟩ := head _ _ _ _ hfO (Ix.Kernel.isTowerEntry_false_of_find? hfO (fun T h => Ix.Kernel.projTableName_ne_roleKey T .stringOfList h.symm)) (by simp [hlpO]) hRO
   -- the numeral heads
   obtain ⟨hz, hsucc⟩ := hnh hs ρ
   -- the chain
@@ -561,12 +561,12 @@ the type's reading** — `teleFitPA_residual` without the fit: the two
 walks step in lockstep (`body.instantiate1 a` against `B.inst a`), and
 the per-step content is `denoteMeta_beta`, once. -/
 theorem denoteMeta_instPisAt_peel
-    (hacl : ∀ (n : Name) (ψ : Name → Nat) (k : Nat),
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
       (acval n ψ).liftN 1 k = acval n ψ)
-    (hainst : ∀ (n : Name) (ψ : Name → Nat) (y : AnnotTerm) (k : Nat),
+    (hainst : ∀ (n : Key md) (ψ : LevelParam → Nat) (y : AnnotTerm) (k : Nat),
       (acval n ψ).inst y k = acval n ψ)
     {d : Nat} :
-    ∀ (args : List Expr) {ty rest : Expr} {ds : List Expr} {Ta : AnnotTerm}
+    ∀ (args : List (Expr md)) {ty rest : Expr md} {ds : List (Expr md)} {Ta : AnnotTerm}
       {vs : List AnnotTerm},
       Expr.instPisAt args ty = some (ds, rest) →
       Expr.WScoped d ty →
@@ -592,7 +592,7 @@ theorem denoteMeta_instPisAt_peel
     | .const _ _, hpr, _, _ => exact nomatch hpr
     | .app _ _, hpr, _, _ => exact nomatch hpr
     | .lam _ _ _, hpr, _, _ => exact nomatch hpr
-    | .letE _ _ _, hpr, _, _ => exact nomatch hpr
+    | .letE _ _ _ _, hpr, _, _ => exact nomatch hpr
     | .lit _, hpr, _, _ => exact nomatch hpr
     | .proj _ _ _, hpr, _, _ => exact nomatch hpr
     | .forallE dom body mb, hpr, hwty, hty => ?_
@@ -620,13 +620,13 @@ theorem denoteMeta_instPisAt_peel
 (task #175 S1): `ProjEntry.typeAt` is the `instPisAt` peel of the body
 telescope along the arguments and the subject, so its reading is the
 syntactic peel of the telescope's reading along the readings. -/
-theorem denoteMeta_typeAt_peel {m : EnvModel V env} {T : Name} {i : Nat}
-    {entry : ProjEntry} (hfe : env.findProj? T i = some entry)
+theorem denoteMeta_typeAt_peel {m : EnvModel V env} {T : Key md} {i : Nat}
+    {entry : ProjEntry md} (hfe : env.findProj? T i = some entry)
     {us : List Level} {Ta : AnnotTerm} {d : Nat}
     (hTa : denoteMeta m.acval env φ 0
       (Ix.Kernel.projTele (entry.numParams + 1)
         (entry.body.instantiateLevelParams entry.levelParams us)) = some Ta)
-    {targs : List Expr} {pe : Expr} (hlen : targs.length = entry.numParams)
+    {targs : List (Expr md)} {pe : Expr md} (hlen : targs.length = entry.numParams)
     (hframes : ∀ a ∈ targs ++ [pe], Expr.WScoped d a ∧ a.looseBVarsBounded 0 = true)
     {vs : List AnnotTerm}
     (hsp : DenoteMetaSpine m.acval env φ d (targs ++ [pe]) vs) :

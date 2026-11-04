@@ -39,11 +39,11 @@ public def run : IO Unit := do
     let help ← invoke home #["compress", "--help"]
     unless help.exitCode == 0 && (help.stdout.splitOn "--root-vk").length > 1 do
       throw <| IO.userError s!"compress help failed: {help.stdout} {help.stderr}"
-    let claim := Ix.Claim.checkEnv (Address.blake3 "test".toUTF8) none
+    let claim := Ix.Claim.checkEnv default (Address.blake3 "test".toUTF8) none
     let native : Ixon.Proof := { claim, proof := "native".toUTF8 }
     let compressed : Ixon.Proof := { claim, proof := "IXCMP".toUTF8 }
     let other : Ixon.Proof :=
-      { claim := Ix.Claim.check (Address.blake3 "test".toUTF8) none, proof := "native".toUTF8 }
+      { claim := Ix.Claim.check default (Address.blake3 "test".toUTF8) none, proof := "native".toUTF8 }
     let old ← putProof home (Ixon.Proof.ser native)
     let addr ← putProof home (Ixon.Proof.ser compressed)
     let otherAddr ← putProof home (Ixon.Proof.ser other)

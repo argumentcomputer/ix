@@ -69,8 +69,8 @@ use ixon::Env;
 use ixon::TagN;
 use ixon::constant::Constant;
 use ixon::metadata::{
-  CallSiteEntry, ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta,
-  ExprMetaData, NameGet, NameIndex, NamePut,
+  ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, NameGet,
+  NameIndex, NamePut,
 };
 use ixon::serialize::{NamedMetaCursor, put_expr, put_named_indexed};
 use ixon::univ::put_univ;
@@ -136,22 +136,11 @@ fn kind(n: &ExprMetaData) -> usize {
     ExprMetaData::Ref { .. } => 4,
     ExprMetaData::Prj { .. } => 5,
     ExprMetaData::Mdata { .. } => 6,
-    ExprMetaData::CallSite { .. } => 7,
-    ExprMetaData::EtaCallSite { .. } => 8,
   }
 }
 
-const KIND_NAMES: [&str; 9] = [
-  "leaf",
-  "app",
-  "binder",
-  "letBinder",
-  "ref",
-  "prj",
-  "mdata",
-  "callSite",
-  "etaCallSite",
-];
+const KIND_NAMES: [&str; 7] =
+  ["leaf", "app", "binder", "letBinder", "ref", "prj", "mdata"];
 
 const SLOT_NAMES: [&str; 10] = [
   "App function",
@@ -183,52 +172,20 @@ fn slots(n: &ExprMetaData) -> Vec<(usize, u64)> {
   }
 }
 
-/// Arena references of call-site nodes (always explicit), in write order.
-fn callsite_refs(n: &ExprMetaData) -> Vec<u64> {
-  let mut out = Vec::new();
-  let ents = |es: &[CallSiteEntry], out: &mut Vec<u64>| {
-    for e in es {
-      match e {
-        CallSiteEntry::Kept { meta, .. }
-        | CallSiteEntry::Collapsed { meta, .. } => out.push(*meta),
-      }
-    }
-  };
-  match n {
-    ExprMetaData::CallSite { entries, canon_meta, orig_head, .. } => {
-      ents(entries, &mut out);
-      out.extend_from_slice(canon_meta);
-      if let Some((_, m)) = orig_head {
-        out.push(*m);
-      }
-    },
-    ExprMetaData::EtaCallSite { entries, canon_meta, wrapper_meta, .. } => {
-      ents(entries, &mut out);
-      out.extend_from_slice(canon_meta);
-      out.push(*wrapper_meta);
-    },
-    _ => {},
-  }
-  out
-}
-
 /// The node's own name reference, if any.
 fn node_name(n: &ExprMetaData) -> Option<&Address> {
   match n {
     ExprMetaData::Binder { name, .. }
     | ExprMetaData::LetBinder { name, .. }
-    | ExprMetaData::Ref { name }
-    | ExprMetaData::CallSite { name, .. }
-    | ExprMetaData::EtaCallSite { name, .. } => Some(name),
+    | ExprMetaData::Ref { name } => Some(name),
     ExprMetaData::Prj { struct_name, .. } => Some(struct_name),
     _ => None,
   }
 }
 
 /// Bytes of a node excluding its child references and its own name
-/// reference: tag byte, mdata payload, call-site scalars.
+/// reference: tag byte and mdata payload.
 fn rest_w(n: &ExprMetaData, ix: &NameIndex, pr: Pricing) -> usize {
-  let w = |v: u64| code_w(pr.scalars, v);
   let mw = |v: u64| code_w(pr.mdata, v);
   let name_w =
     |a: &Address| code_w(pr.names, *ix.get(a).expect("name in index"));
@@ -238,16 +195,6 @@ fn rest_w(n: &ExprMetaData, ix: &NameIndex, pr: Pricing) -> usize {
       DataValue::OfName(a) => name_w(a),
       _ => 32,
     }
-  };
-  let ents_w = |es: &[CallSiteEntry]| -> usize {
-    w(es.len() as u64)
-      + es
-        .iter()
-        .map(|e| match e {
-          CallSiteEntry::Kept { canon_idx: x, .. }
-          | CallSiteEntry::Collapsed { sharing_idx: x, .. } => 1 + w(*x),
-        })
-        .sum::<usize>()
   };
   1 + match n {
     ExprMetaData::Mdata { mdata, .. } => {
@@ -259,15 +206,6 @@ fn rest_w(n: &ExprMetaData, ix: &NameIndex, pr: Pricing) -> usize {
               + kv.iter().map(|(k, d)| name_w(k) + dv_w(d)).sum::<usize>()
           })
           .sum::<usize>()
-    },
-    ExprMetaData::CallSite { entries, canon_meta, orig_head, .. } => {
-      ents_w(entries)
-        + w(canon_meta.len() as u64)
-        + 1
-        + orig_head.map_or(0, |(s, _)| w(s))
-    },
-    ExprMetaData::EtaCallSite { n_synth, entries, canon_meta, .. } => {
-      w(*n_synth) + ents_w(entries) + w(canon_meta.len() as u64)
     },
     _ => 0,
   }
@@ -321,13 +259,6 @@ fn child_w(n: &ExprMetaData, i: usize, mask: u8, enc: Enc) -> usize {
       },
     };
   }
-  for c in callsite_refs(n) {
-    b += match enc {
-      Enc::V3 => tag0_w(c),
-      Enc::Abs => tagn_w(c),
-      Enc::Delta | Enc::Implicit => tagn_w(delta(c)),
-    };
-  }
   b
 }
 
@@ -356,14 +287,6 @@ fn arena_w(nodes: &[ExprMetaData], ix: &NameIndex, pr: Pricing) -> usize {
 
 /// Renumber every arena reference of a node.
 fn map_refs(n: &mut ExprMetaData, f: &dyn Fn(u64) -> u64) {
-  let ents = |es: &mut Vec<CallSiteEntry>| {
-    for e in es.iter_mut() {
-      match e {
-        CallSiteEntry::Kept { meta, .. }
-        | CallSiteEntry::Collapsed { meta, .. } => *meta = f(*meta),
-      }
-    }
-  };
   match n {
     ExprMetaData::App { children } | ExprMetaData::Binder { children, .. } => {
       for c in children.iter_mut() {
@@ -377,22 +300,6 @@ fn map_refs(n: &mut ExprMetaData, f: &dyn Fn(u64) -> u64) {
     },
     ExprMetaData::Prj { child, .. } | ExprMetaData::Mdata { child, .. } => {
       *child = f(*child);
-    },
-    ExprMetaData::CallSite { entries, canon_meta, orig_head, .. } => {
-      ents(entries);
-      for c in canon_meta.iter_mut() {
-        *c = f(*c);
-      }
-      if let Some((_, m)) = orig_head {
-        *m = f(*m);
-      }
-    },
-    ExprMetaData::EtaCallSite { entries, canon_meta, wrapper_meta, .. } => {
-      ents(entries);
-      for c in canon_meta.iter_mut() {
-        *c = f(*c);
-      }
-      *wrapper_meta = f(*wrapper_meta);
     },
     ExprMetaData::Leaf | ExprMetaData::Ref { .. } => {},
   }
@@ -442,7 +349,7 @@ struct Stats {
   arenas: u64,
   orig_arenas: u64,
   nodes: u64,
-  kind_nodes: [u64; 9],
+  kind_nodes: [u64; 7],
   /// Bytes per encoding (index into `ENCS`), then `implicit + hash-consing`
   /// and `delta + hash-consing`.
   bytes: [u64; 6],
@@ -456,7 +363,7 @@ struct Stats {
   /// Call-site references redirected by hash-consing.
   cs_refs_redirected: u64,
   /// Node bytes per kind per encoding (length prefixes excluded).
-  kind_bytes: [[u64; 9]; 4],
+  kind_bytes: [[u64; 7]; 4],
   slot_children: [u64; 10],
   slot_fresh: [u64; 10],
   slot_forward: [u64; 10],
@@ -601,18 +508,6 @@ fn study_arena(
         st.slot_explicit_w[*slot][wbucket(d)] += 1;
       }
     }
-    for c in callsite_refs(n) {
-      st.slot_children[9] += 1;
-      if c >= i as u64 {
-        st.slot_forward[9] += 1;
-      }
-      let d = (i as u64).wrapping_sub(1).wrapping_sub(c);
-      st.slot_delta_w[9][wbucket(d)] += 1;
-      st.slot_explicit_w[9][wbucket(d)] += 1;
-      if d == 0 {
-        st.slot_delta0[9] += 1;
-      }
-    }
     if let Some(a) = node_name(n) {
       let g = ix[a];
       st.name_refs += 1;
@@ -655,13 +550,6 @@ fn study_arena(
     st.root_bytes_hc += tagn_w(nr) as u64;
     if merged(r) {
       st.roots_redirected += 1;
-    }
-  }
-  for n in nodes {
-    for c in callsite_refs(n) {
-      if merged(c) {
-        st.cs_refs_redirected += 1;
-      }
     }
   }
   if opts.check_writer {
@@ -862,7 +750,7 @@ fn main() -> Result<(), String> {
     st.cs_refs_redirected
   );
   md += "\nNode bytes by kind (length prefixes excluded):\n\n| kind | nodes | v3 | abs | delta | implicit | implicit B/node |\n|---|---:|---:|---:|---:|---:|---:|\n";
-  for k in 0..9 {
+  for k in 0..KIND_NAMES.len() {
     md += &format!(
       "| {} | {} | {} | {} | {} | {} | {:.2} |\n",
       KIND_NAMES[k],
@@ -1058,51 +946,17 @@ impl Census {
           self.add(13, delta(c));
         }
       }
-      for c in callsite_refs(n) {
-        self.add(13, delta(c));
-      }
-      match n {
-        ExprMetaData::Mdata { mdata, .. } => {
-          self.add(14, mdata.len() as u64);
-          for kv in mdata {
-            self.add(14, kv.len() as u64);
-            for (k, d) in kv {
-              self.add(12, ix[k]);
-              if let DataValue::OfName(a) = d {
-                self.add(12, ix[a]);
-              }
+      if let ExprMetaData::Mdata { mdata, .. } = n {
+        self.add(14, mdata.len() as u64);
+        for kv in mdata {
+          self.add(14, kv.len() as u64);
+          for (k, d) in kv {
+            self.add(12, ix[k]);
+            if let DataValue::OfName(a) = d {
+              self.add(12, ix[a]);
             }
           }
-        },
-        ExprMetaData::CallSite { entries, canon_meta, orig_head, .. } => {
-          self.add(14, entries.len() as u64);
-          for e in entries {
-            match e {
-              CallSiteEntry::Kept { canon_idx: x, .. }
-              | CallSiteEntry::Collapsed { sharing_idx: x, .. } => {
-                self.add(14, *x);
-              },
-            }
-          }
-          self.add(14, canon_meta.len() as u64);
-          if let Some((s, _)) = orig_head {
-            self.add(14, *s);
-          }
-        },
-        ExprMetaData::EtaCallSite { n_synth, entries, canon_meta, .. } => {
-          self.add(14, *n_synth);
-          self.add(14, entries.len() as u64);
-          for e in entries {
-            match e {
-              CallSiteEntry::Kept { canon_idx: x, .. }
-              | CallSiteEntry::Collapsed { sharing_idx: x, .. } => {
-                self.add(14, *x);
-              },
-            }
-          }
-          self.add(14, canon_meta.len() as u64);
-        },
-        _ => {},
+        }
       }
     }
   }
@@ -1344,26 +1198,17 @@ fn meta_nonint_bytes(cm: &ConstantMeta) -> u64 {
   let arena = |nodes: &[ExprMetaData]| -> u64 {
     let mut b = nodes.len() as u64;
     for n in nodes {
-      match n {
-        ExprMetaData::Mdata { mdata, .. } => {
-          for kv in mdata {
-            for (_, d) in kv {
-              b += 1
-                + match d {
-                  DataValue::OfBool(_) => 1,
-                  DataValue::OfName(_) => 0,
-                  _ => 32,
-                };
-            }
+      if let ExprMetaData::Mdata { mdata, .. } = n {
+        for kv in mdata {
+          for (_, d) in kv {
+            b += 1
+              + match d {
+                DataValue::OfBool(_) => 1,
+                DataValue::OfName(_) => 0,
+                _ => 32,
+              };
           }
-        },
-        ExprMetaData::CallSite { entries, .. } => {
-          b += entries.len() as u64 + 1;
-        },
-        ExprMetaData::EtaCallSite { entries, .. } => {
-          b += entries.len() as u64;
-        },
-        _ => {},
+        }
       }
     }
     b

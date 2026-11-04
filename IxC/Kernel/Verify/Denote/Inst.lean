@@ -45,7 +45,7 @@ namespace Ix.Kernel.Verify
 
 open Ix.Kernel.Term
 
-variable {cval : TConstVal} {env : Env} {φ : Name → Nat}
+variable {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
 
 /-- `projNV` commutes with instantiation (no binders; task #175
 wiring W3). -/
@@ -59,10 +59,10 @@ theorem inst_projNV :
 `fvar p` corresponds to instantiating the denotation at de Bruijn cut
 `D - p`. -/
 theorem denote_substFvarAt (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {p : Nat} {a : Expr} {x : Term}
+    {p : Nat} {a : Expr md} {x : Term}
     (hwa : Expr.WScoped p a) (hba : a.looseBVarsBounded 0 = true)
     (ha : denote cval env φ p a = some x) :
-    ∀ (e : Expr) (D : Nat), p ≤ D → Expr.fvarsBelow (D + 1) e →
+    ∀ (e : Expr md) (D : Nat), p ≤ D → Expr.fvarsBelow (D + 1) e →
       denote cval env φ D (Expr.substFvarAt p a e) =
         (denote cval env φ (D + 1) e).map (Term.inst · x (D - p))
   | .bvar i, D, hpD, hfb => by simp [Expr.substFvarAt]
@@ -138,7 +138,7 @@ theorem denote_substFvarAt (hcl : ∀ n ψ, Term.Closed (cval n ψ))
           (body.instantiate1 (.fvar (D + 1) ty)) with
       | none => rfl
       | some B => simp only [Option.map_some, Term.inst_lam]
-  | .letE ty val body, D, hpD, hfb => by
+  | .letE ty val body _, D, hpD, hfb => by
     -- task #241: `denote` is `none` at a `letE`, on both sides
     simp only [Expr.substFvarAt, denote_letE, Option.map_none]
   | .proj s i e, D, hpD, hfb => by
@@ -181,7 +181,7 @@ decreasing_by
 opening a binder body with the argument directly is opening it with a
 fresh variable and then instantiating.  Transpose of `interp_beta`. -/
 theorem denote_beta (hcl : ∀ n ψ, Term.Closed (cval n ψ))
-    {d : Nat} {ty body a : Expr} {x : Term}
+    {d : Nat} {ty body a : Expr md} {x : Term}
     (hfb : Expr.fvarsBelow d body) (hwa : Expr.WScoped d a)
     (hba : a.looseBVarsBounded 0 = true)
     (ha : denote cval env φ d a = some x) (k : Nat) :
@@ -206,8 +206,8 @@ pin ignores.  It does — `denote` reads a binder's name only to build the
 of syntax**, which is why a `matchesPin` hit is usable at all. -/
 
 /-- Erasure-equal expressions denote equally. -/
-theorem denote_erasedEq {cval : TConstVal} {env : Env} {φ : Name → Nat} :
-    ∀ {e₁ e₂ : Expr}, Expr.ErasedEq e₁ e₂ →
+theorem denote_erasedEq {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat} :
+    ∀ {e₁ e₂ : Expr md}, Expr.ErasedEq e₁ e₂ →
       ∀ d : Nat, denote cval env φ d e₁ = denote cval env φ d e₂
   | .bvar i, e₂, he, d => by
     match e₂, he with
@@ -248,9 +248,9 @@ theorem denote_erasedEq {cval : TConstVal} {env : Env} {φ : Name → Nat} :
         denote_erasedEq (Expr.ErasedEq.instantiate1 h2
           (show Expr.ErasedEq (.fvar d ty) (.fvar d ty') from rfl))
           (d + 1)]
-  | .letE ty vl body, e₂, he, d => by
+  | .letE ty vl body _, e₂, he, d => by
     match e₂, he with
-    | .letE ty' vl' body', he => simp only [denote_letE]
+    | .letE ty' vl' body' _, he => simp only [denote_letE]
   | .lit l, e₂, he, d => by
     match e₂, he with
     | .lit l', he => obtain rfl : l = l' := he; rfl
@@ -287,7 +287,7 @@ up on the nose. -/
 
 /-- `erasePw` commutes with opening a binder. -/
 theorem Expr.erasePw_instantiate1 :
-    ∀ (e v : Expr) (k : Nat),
+    ∀ (e v : Expr md) (k : Nat),
       (e.instantiate1 v k).erasePw = e.erasePw.instantiate1 v.erasePw k := by
   intro e
   induction e <;> intro v k <;>
@@ -300,8 +300,8 @@ theorem Expr.erasePw_instantiate1 :
 /-- **`pw` transparency**: erasing the binder prop-ness data does not
 change a denotation.  `denote` reads a binder's metadata never, and its
 name only to build the `fvar` it opens with. -/
-theorem denote_erasePw {cval : TConstVal} {env : Env} {φ : Name → Nat} :
-    ∀ (e : Expr) (d : Nat),
+theorem denote_erasePw {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat} :
+    ∀ (e : Expr md) (d : Nat),
       denote cval env φ d e.erasePw = denote cval env φ d e
   | .bvar _, _ => rfl
   | .fvar i ty, d => by simp [Expr.erasePw, denote_fvar]
@@ -321,7 +321,7 @@ theorem denote_erasePw {cval : TConstVal} {env : Env} {φ : Name → Nat} :
       rw [Expr.erasePw_instantiate1]; rfl
     simp only [Expr.erasePw, denote_lam, denote_erasePw ty d, hb,
       denote_erasePw (body.instantiate1 (.fvar d ty)) (d + 1)]
-  | .letE ty vl body, d => by
+  | .letE ty vl body _, d => by
     simp only [Expr.erasePw, denote_letE]
   | .lit _, _ => rfl
   | .proj sn i pe, d => by
@@ -338,15 +338,15 @@ types that agree after both erasures — exactly what
 `ConstantVal.matchesPin` checks of them — denote equally.  This is the
 form the pinned-family shape facts (`Verify/StdAxiomPin.lean`) hand to
 their consumers. -/
-theorem denote_pinEq {cval : TConstVal} {env : Env} {φ : Name → Nat}
-    {a b : Expr} (h : a.erasePw = b.erasePw)
+theorem denote_pinEq {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
+    {a b : Expr md} (h : a.erasePw = b.erasePw)
     (d : Nat) : denote cval env φ d a = denote cval env φ d b := by
   rw [← denote_erasePw a d, ← denote_erasePw b d]
   exact denote_erasedEq (h ▸ Expr.ErasedEq.rfl _) d
 
 /-- A `matchesPin` hit lets a stored type be denoted on the pin. -/
-theorem denote_matchesPin {cval : TConstVal} {env : Env} {φ : Name → Nat}
-    {cv pin : ConstantVal} (h : ConstantVal.matchesPin cv pin = true)
+theorem denote_matchesPin {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
+    {cv pin : ConstantVal md} (h : ConstantVal.matchesPin cv pin = true)
     (d : Nat) :
     denote cval env φ d cv.type = denote cval env φ d pin.type := by
   simp only [ConstantVal.matchesPin, Bool.and_eq_true, beq_iff_eq] at h

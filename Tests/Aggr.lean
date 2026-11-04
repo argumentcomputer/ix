@@ -6,6 +6,8 @@ public import Ix.Aiur.Compiler
 public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.Aggr.Reference
+public import Ix.Aggr.CatalogPlan
+public import Ix.ClaimContext
 public import Tests.ProofHelpers
 
 /-!
@@ -53,6 +55,13 @@ def childProgram : Source.Toplevel := ⟦
     ()
   }
 ⟧
+
+/-- A fixed claim context for the statements below: a stand-in specification
+    digest and binding hash, no axiom beyond the standard three. -/
+def testCtx : Ix.ClaimContext :=
+  { spec := Address.blake3 "aggregate-test-spec".toUTF8
+    binding := Address.blake3 "aggregate-test-binding".toUTF8
+    axioms := none }
 
 private def canonicalTree (leaves : Array Address) : Ix.AssumptionTree :=
   (Ix.AssumptionTree.canonical leaves).get!
@@ -125,10 +134,10 @@ def smokeSuite : IO UInt32 := do
   let d := Address.blake3 "aggr-d".toUTF8
   let e := Address.blake3 "aggr-extra".toUTF8
   let leftStatement : Aggr.CheckEnvTrees :=
-    { subjects := canonicalTree #[a, b]
+    { ctx := testCtx, subjects := canonicalTree #[a, b]
       assumptions := some (canonicalTree #[c, d]) }
   let rightStatement : Aggr.CheckEnvTrees :=
-    { subjects := canonicalTree #[c]
+    { ctx := testCtx, subjects := canonicalTree #[c]
       assumptions := some (canonicalTree #[a]) }
   let outputStatement := leftStatement.join rightStatement
   let adviceTrees := Aggr.CheckEnvTrees.adviceTrees
@@ -394,7 +403,7 @@ def smokeSuite : IO UInt32 := do
 
   -- Candidate d chooses carry, but this output omits it.
   let missingCarriedOutput : Aggr.CheckEnvTrees :=
-    { subjects := structuralOutput.subjects, assumptions := none }
+    { ctx := testCtx, subjects := structuralOutput.subjects, assumptions := none }
   let missingCarriedBytes := Ix.Claim.ser missingCarriedOutput.claim
   let missingCarried := run (Aggr.structuralShapeCode .ixvm .ixvm)
     #[leftIxvm, rightIxvm] missingCarriedBytes
@@ -462,9 +471,23 @@ def smokeSuite : IO UInt32 := do
     (preimages := #[leftClaimBytes, rightClaimBytes])
     (trees := Aggr.CheckEnvTrees.adviceTrees
       leftStatement rightStatement droppedStatement)
+  -- Children under different contexts do not fold: the right statement
+  -- names another role binding.
+  let otherCtxRight : Aggr.CheckEnvTrees :=
+    { rightStatement with
+      ctx := { testCtx with binding := Address.blake3 "aggr-other-binding".toUTF8 } }
+  let otherCtxRightBytes := Ix.Claim.ser otherCtxRight.claim
+  let otherCtxRightIxvm ← match mkIxvmChild otherCtxRightBytes with
+    | .error e => IO.eprintln s!"other-context IxVM proof advice encoding failed: {e}"; return 1
+    | .ok child => pure child
+  let contextMismatch := run (pairShape .ixvm .ixvm) #[leftIxvm, otherCtxRightIxvm]
+    outputClaimBytes (outClaim? := some outputClaimBytes)
+    (preimages := #[leftClaimBytes, otherCtxRightBytes])
+    (trees := Aggr.CheckEnvTrees.adviceTrees
+      leftStatement otherCtxRight outputStatement)
   -- A pair fold whose output subjects contain an extra address {e}.
   let paddedStatement : Aggr.CheckEnvTrees :=
-    { subjects := canonicalTree #[a, b, c, e]
+    { ctx := testCtx, subjects := canonicalTree #[a, b, c, e]
       assumptions := outputStatement.assumptions }
   let paddedBytes := Ix.Claim.ser paddedStatement.claim
   let extraSubject := run (pairShape .ixvm .ixvm) #[leftIxvm, rightIxvm]
@@ -495,6 +518,7 @@ def smokeSuite : IO UInt32 := do
     .node (.node (.leaf sortedOutputLeaves[2]!) (.leaf sortedOutputLeaves[1]!))
       (.leaf sortedOutputLeaves[0]!)
   let unsortedStatement : Aggr.CheckEnvTrees := {
+    ctx := testCtx
     subjects := unsortedSubjects
     assumptions := outputStatement.assumptions
   }
@@ -517,7 +541,186 @@ def smokeSuite : IO UInt32 := do
     (Aggr.pubInput longAllowed leftClaimBytes)
     (mkIO longAllowed (Aggr.shapeCode (.ixvm, none)) ixvmVk aggrVk
       #[leftIxvm])
-  let invalidShape := run 13 #[leftIxvm] leftClaimBytes
+  -- 17 is the first shape hint past the catalog join (16).
+  let invalidShape := run 17 #[leftIxvm] leftClaimBytes
+
+  -- ── binding discharge (shapes 13–14) ────────────────────────────────────
+  -- Children that assume their binding (validator 4) and one stand-in proof
+  -- of the binding claim for their context, written to a file and read back:
+  -- the same proof file discharges two different claim sets, each to its
+  -- claim validating the binding (the validator-3 bytes above).
+  let assumedCtx := { testCtx with bindingAssumed := true }
+  let assumedLeftBytes := Ix.Claim.ser { leftStatement with ctx := assumedCtx }.claim
+  let assumedRightBytes := Ix.Claim.ser { rightStatement with ctx := assumedCtx }.claim
+  let bindingClaim : Ix.Claim := .binding testCtx.spec testCtx.binding
+  let bindingBytes := Ix.Claim.ser bindingClaim
+  let bindingFile ← IO.FS.createTempFile
+  let (_, bindingProof, _) ← IO.ofExcept <|
+    ixvmSystem.prove fakeVerifyIdx (MultiStark.digestGs bindingBytes) default
+  IO.FS.writeBinFile bindingFile.2
+    (Ixon.Proof.ser { claim := bindingClaim, proof := bindingProof.toBytes })
+  let readBinding : IO ChildSlot := do
+    let wrapper ← IO.ofExcept (Ixon.Proof.de (← IO.FS.readBinFile bindingFile.2))
+    let proof ← IO.ofExcept (Aiur.Proof.ofBytesChecked wrapper.proof)
+    let claim := Aiur.buildClaim fakeVerifyIdx
+      (MultiStark.digestGs (Ix.Claim.ser wrapper.claim)) #[]
+    let advice ← IO.ofExcept (ixvmSystem.proofToAdviceBytes claim proof)
+    pure ⟨advice, MultiStark.serializeClaims #[claim]⟩
+  let bindingSlot ← readBinding
+  let otherBindingBytes := Ix.Claim.ser
+    (Ix.Claim.binding testCtx.spec (Address.blake3 "another binding".toUTF8))
+  let otherBindingSlot ← IO.ofExcept (mkIxvmChild otherBindingBytes)
+  let assumedLeftIxvm ← IO.ofExcept (mkIxvmChild assumedLeftBytes)
+  let assumedRightIxvm ← IO.ofExcept (mkIxvmChild assumedRightBytes)
+  let assumedLeftSelf ← IO.ofExcept (mkSelfChild allowed assumedLeftBytes)
+  let runDischarge (kind : Aggr.ChildKind) (child binding : ChildSlot)
+      (childBytes bindingClaimBytes outBytes : ByteArray) :=
+    run (Aggr.dischargeShapeCode kind) #[child, binding] outBytes
+      (outClaim? := some outBytes) (preimages := #[childBytes, bindingClaimBytes])
+  let dischargeLeft := runDischarge .ixvm assumedLeftIxvm bindingSlot
+    assumedLeftBytes bindingBytes leftClaimBytes
+  let dischargeRight := runDischarge .ixvm assumedRightIxvm bindingSlot
+    assumedRightBytes bindingBytes rightClaimBytes
+  let dischargeSelf := runDischarge .aggr assumedLeftSelf bindingSlot
+    assumedLeftBytes bindingBytes leftClaimBytes
+  let dischargeValidating := runDischarge .ixvm leftIxvm bindingSlot
+    leftClaimBytes bindingBytes leftClaimBytes
+  let dischargeOtherBinding := runDischarge .ixvm assumedLeftIxvm otherBindingSlot
+    assumedLeftBytes otherBindingBytes leftClaimBytes
+  let dischargeKeepsAssumed := runDischarge .ixvm assumedLeftIxvm bindingSlot
+    assumedLeftBytes bindingBytes assumedLeftBytes
+  let dischargeOtherSubjects := runDischarge .ixvm assumedLeftIxvm bindingSlot
+    assumedLeftBytes bindingBytes rightClaimBytes
+  -- A fold never mixes a claim that assumes its binding with one that
+  -- validates it.
+  let pairMixedValidators := run (pairShape .ixvm .ixvm) #[leftIxvm, assumedRightIxvm]
+    outputClaimBytes (outClaim? := some outputClaimBytes)
+    (preimages := #[leftClaimBytes, assumedRightBytes]) (trees := adviceTrees)
+
+  -- ── claims under different role bindings (shapes 15–16) ─────────────────
+  -- Complete role tables: `tableA` and `tableB` bind every role, and differ
+  -- only in `Nat.land`, so they have one literal class; `tableC` also binds
+  -- `Char.ofNat` elsewhere, a class role, so its class differs.
+  let tableOf (rebind : List Ix.Kernel.Role) (tag : String) : ByteArray :=
+    Ix.Kernel.RoleTable.toBytes {
+      version := Ix.Kernel.specVersion, evidence := #[]
+      bound := Ix.Kernel.Role.all.toArray.map fun r =>
+        (r, Address.blake3 (if rebind.contains r then s!"{tag} {r.leanName}"
+          else s!"bound {r.leanName}").toUTF8) }
+  let tableA := tableOf [] "a"
+  let tableB := tableOf [.natLand] "b"
+  let tableC := tableOf [.natLand, .charOfNat] "c"
+  let incompleteTable := Ix.Kernel.RoleTable.toBytes {
+    version := Ix.Kernel.specVersion, evidence := #[]
+    bound := (Ix.Kernel.Role.all.toArray.map fun r =>
+      (r, Address.blake3 s!"bound {r.leanName}".toUTF8)).pop }
+  let klass ← IO.ofExcept (Ix.ClaimContext.literalClassOfBytes tableA)
+  let classB ← IO.ofExcept (Ix.ClaimContext.literalClassOfBytes tableB)
+  let classC ← IO.ofExcept (Ix.ClaimContext.literalClassOfBytes tableC)
+  let underTable (table : ByteArray) (statement : Aggr.CheckEnvTrees) : Aggr.CheckEnvTrees :=
+    { statement with ctx := { testCtx with binding := Address.blake3 table } }
+  let memberA := underTable tableA { leftStatement with assumptions := none }
+  let memberB := underTable tableB { rightStatement with assumptions := none }
+  let memberC := underTable tableC { rightStatement with assumptions := none }
+  let memberIncomplete := underTable incompleteTable { rightStatement with assumptions := none }
+  let selfOf (statement : Aggr.CheckEnvTrees) : IO (ChildSlot × ByteArray) := do
+    let bytes := Ix.Claim.ser statement.claim
+    pure (← IO.ofExcept (mkSelfChild allowed bytes), bytes)
+  let (childA, bytesA) ← selfOf memberA
+  let (childB, bytesB) ← selfOf memberB
+  let (childC, bytesC) ← selfOf memberC
+  let (childIncomplete, bytesIncomplete) ← selfOf memberIncomplete
+  let crossAB := memberA.joinCrossBinding klass memberB
+  let crossBytes := Ix.Claim.ser crossAB.claim
+  let runCross (left right : ChildSlot) (preimages : Array ByteArray) (outBytes : ByteArray) :=
+    run Aggr.crossBindingShapeCode #[left, right] outBytes (outClaim? := some outBytes)
+      (preimages := preimages)
+  let crossAccepts := runCross childA childB #[bytesA, bytesB, tableA, tableB] crossBytes
+  -- A claim already under the class joins a member of the class.
+  let (childCross, _) ← selfOf crossAB
+  let crossNested := memberA.joinCrossBinding klass crossAB
+  let crossNestedBytes := Ix.Claim.ser crossNested.claim
+  let crossOfClass := runCross childA childCross #[bytesA, crossBytes, tableA]
+    crossNestedBytes
+  let crossOtherClass := runCross childA childC #[bytesA, bytesC, tableA, tableC]
+    (Ix.Claim.ser (memberA.joinCrossBinding klass memberC).claim)
+  let crossIncomplete := runCross childA childIncomplete
+    #[bytesA, bytesIncomplete, tableA, incompleteTable]
+    (Ix.Claim.ser (memberA.joinCrossBinding klass memberIncomplete).claim)
+  let assumedA := { memberA with ctx := { memberA.ctx with bindingAssumed := true } }
+  let (childAssumedA, bytesAssumedA) ← selfOf assumedA
+  let crossAssumed := runCross childAssumedA childB #[bytesAssumedA, bytesB, tableA, tableB]
+    crossBytes
+  let crossWrongClass := runCross childA childB #[bytesA, bytesB, tableA, tableB]
+    (Ix.Claim.ser { crossAB with ctx := { crossAB.ctx with binding := classC } }.claim)
+  let crossValidatorThree := runCross childA childB #[bytesA, bytesB, tableA, tableB]
+    (Ix.Claim.ser { crossAB with ctx := { crossAB.ctx with literalClass := false } }.claim)
+  -- Folds that require one context still refuse the two bindings.
+  let pairAcrossBindings := run (pairShape .aggr .aggr) #[childA, childB]
+    (Ix.Claim.ser (memberA.join memberB).claim)
+    (outClaim? := some (Ix.Claim.ser (memberA.join memberB).claim))
+    (preimages := #[bytesA, bytesB])
+    (trees := Aggr.CheckEnvTrees.adviceTrees memberA memberB (memberA.join memberB))
+  -- Catalog joins: two member claims, then a catalog and a member claim.
+  let catalogAC := Aggr.CatalogTrees.join (.inl memberA.claim) (.inl memberC.claim)
+  let catalogBytes := Ix.Claim.ser catalogAC.claim
+  let runCatalog (left right : ChildSlot) (preimages : Array ByteArray)
+      (trees : Array Ix.AssumptionTree) (outBytes : ByteArray) :=
+    run Aggr.catalogShapeCode #[left, right] outBytes (outClaim? := some outBytes)
+      (preimages := preimages) (trees := trees)
+  let catalogAccepts := runCatalog childA childC #[bytesA, bytesC] #[catalogAC.members]
+    catalogBytes
+  let catalogWithPartial := Aggr.CatalogTrees.join (.inl memberA.claim) (.inl memberIncomplete.claim)
+  let catalogPartial := runCatalog childA childIncomplete #[bytesA, bytesIncomplete]
+    #[catalogWithPartial.members] (Ix.Claim.ser catalogWithPartial.claim)
+  let completeMember (label : String) (claim : Ix.Claim) (table : ByteArray) : Aggr.CatalogMember :=
+    { label, toolchain := "fixture", claim, bindingSection := table, literalClass := some klass }
+  let partialMember : Aggr.CatalogMember :=
+    { label := "partial", toolchain := "fixture", claim := memberIncomplete.claim,
+      bindingSection := incompleteTable, literalClass := none }
+  let mixedPlan ← IO.ofExcept (Aggr.catalogPlan #[
+    completeMember "left" memberA.claim tableA, partialMember,
+    completeMember "right" memberB.claim tableB])
+  let anotherPartialClaim := (underTable incompleteTable { leftStatement with assumptions := none }).claim
+  let partialPlan ← IO.ofExcept (Aggr.catalogPlan #[partialMember,
+    { partialMember with label := "another partial", claim := anotherPartialClaim }])
+  let plansKeepPartial := mixedPlan.nodes.size == 5 &&
+    mixedPlan.nodes.any (fun | .crossBinding k 0 2 => k == klass | _ => false) &&
+    partialPlan.nodes.size == 3 &&
+    (match partialPlan.nodes[partialPlan.root]! with | .catalogJoin 0 1 => true | _ => false) &&
+    partialPlan.statements[partialPlan.root]!.claim ==
+      (Aggr.CatalogTrees.join (.inl partialMember.claim) (.inl anotherPartialClaim)).claim
+  let childCatalog ← IO.ofExcept (mkSelfChild allowed catalogBytes)
+  let catalogACB := Aggr.CatalogTrees.join (.inr catalogAC) (.inl crossAB.claim)
+  let catalogNested := runCatalog childCatalog childCross #[catalogBytes, crossBytes]
+    #[catalogAC.members, catalogACB.members] (Ix.Claim.ser catalogACB.claim)
+  let catalogMissing := runCatalog childA childC #[bytesA, bytesC]
+    #[(Ix.AssumptionTree.canonical #[Ix.Claim.commit memberA.claim]).get!]
+    (Ix.Claim.ser (Ix.Claim.catalog (Ix.AssumptionTree.canonical
+      #[Ix.Claim.commit memberA.claim]).get!.root))
+  let conditionalA := underTable tableA leftStatement
+  let (childConditional, bytesConditional) ← selfOf conditionalA
+  let catalogConditional := runCatalog childConditional childC
+    #[bytesConditional, bytesC]
+    #[(Ix.AssumptionTree.canonical #[Ix.Claim.commit conditionalA.claim,
+        Ix.Claim.commit memberC.claim]).get!]
+    (Ix.Claim.ser (Ix.Claim.catalog (Ix.AssumptionTree.canonical
+      #[Ix.Claim.commit conditionalA.claim, Ix.Claim.commit memberC.claim]).get!.root))
+  let catalogAssumed := runCatalog childAssumedA childC #[bytesAssumedA, bytesC]
+    #[(Ix.AssumptionTree.canonical #[Ix.Claim.commit assumedA.claim,
+        Ix.Claim.commit memberC.claim]).get!]
+    (Ix.Claim.ser (Ix.Claim.catalog (Ix.AssumptionTree.canonical
+      #[Ix.Claim.commit assumedA.claim, Ix.Claim.commit memberC.claim]).get!.root))
+  let bindingMemberBytes := Ix.Claim.ser (Ix.Claim.binding testCtx.spec (Address.blake3 tableA))
+  let childBindingMember ← IO.ofExcept (mkSelfChild allowed bindingMemberBytes)
+  let catalogOfBinding := runCatalog childBindingMember childC #[bindingMemberBytes, bytesC]
+    #[(Ix.AssumptionTree.canonical #[Address.blake3 bindingMemberBytes,
+        Ix.Claim.commit memberC.claim]).get!]
+    (Ix.Claim.ser (Ix.Claim.catalog (Ix.AssumptionTree.canonical
+      #[Address.blake3 bindingMemberBytes, Ix.Claim.commit memberC.claim]).get!.root))
+  let catalogTampered := runCatalog childCatalog childCross #[catalogBytes, crossBytes]
+    #[catalogACB.members] (Ix.Claim.ser catalogACB.claim)
+  let classesDistinct := klass == classB && klass != classC
 
   -- ── range-sum recursion (shapes 10–12) over one IxVM batch ─────────────
   -- `prove` yields a one-shard batch, so its ranges are `[0, 0)` and
@@ -630,6 +833,8 @@ def smokeSuite : IO UInt32 := do
     expectErr "wrap output differing from the child statement is rejected"
       wrapMismatch,
     expectErr "pair output dropping an assumption is rejected" droppedAssumption,
+    expectErr "pair of children under different claim contexts is rejected"
+      contextMismatch,
     expectErr "pair output with an extra subject is rejected" extraSubject,
     expectErr "tree advice not reproducing its keyed root is rejected"
       mismatchedTree,
@@ -640,6 +845,19 @@ def smokeSuite : IO UInt32 := do
     expectErr "ix_aggr rejects a shortened identity blob" shortIdentity,
     expectErr "ix_aggr rejects the retired 96-byte identity layout" longIdentity,
     expectErr "ix_aggr rejects an out-of-range shape hint" invalidShape,
+    expectOk "binding discharge of an IxVM child accepts" dischargeLeft,
+    expectOk "the same binding proof file discharges another claim set" dischargeRight,
+    expectOk "binding discharge of a self child accepts" dischargeSelf,
+    expectErr "binding discharge rejects a child that validates its binding"
+      dischargeValidating,
+    expectErr "binding discharge rejects a binding claim for another binding"
+      dischargeOtherBinding,
+    expectErr "binding discharge rejects an output that still assumes the binding"
+      dischargeKeepsAssumed,
+    expectErr "binding discharge rejects an output for other subjects"
+      dischargeOtherSubjects,
+    expectErr "a fold rejects children that differ in assuming their binding"
+      pairMixedValidators,
     expectErr "structural pair rejects a path to the wrong root" wrongRootPath,
     expectErr "structural pair rejects a tampered path sibling" tamperedPath,
     expectErr "structural pair rejects a missing path choice" droppedPath,
@@ -671,6 +889,29 @@ def smokeSuite : IO UInt32 := do
     expectErr "range root rejects a range not covering the batch" rootPartial,
     expectErr "range root rejects a claim other than the batch's" rootClaimLie,
     expectErr "a range statement is not a CheckEnv claim" rangeAsCheckEnv,
+    test "tables differing in Nat.land share a literal class; Char.ofNat moves it"
+      classesDistinct,
+    expectOk "cross-binding pair of one literal class accepts" crossAccepts,
+    expectOk "cross-binding pair accepts a child already under the class" crossOfClass,
+    expectErr "cross-binding pair rejects bindings of different literal classes"
+      crossOtherClass,
+    expectErr "cross-binding pair rejects a binding that does not bind every role"
+      crossIncomplete,
+    expectErr "cross-binding pair rejects a child that assumes its binding" crossAssumed,
+    expectErr "cross-binding pair rejects an output under another class" crossWrongClass,
+    expectErr "cross-binding pair rejects an output naming a binding, not a class"
+      crossValidatorThree,
+    expectErr "a pair fold rejects claims under two bindings" pairAcrossBindings,
+    expectOk "catalog join of two member claims accepts" catalogAccepts,
+    expectOk "catalog join retains a member with an incomplete binding" catalogPartial,
+    test "catalog plans keep incomplete bindings separate from class folds" plansKeepPartial,
+    expectOk "catalog join of a catalog and a class claim accepts" catalogNested,
+    expectErr "catalog join rejects an output missing a member" catalogMissing,
+    expectErr "catalog join rejects a conditional member claim" catalogConditional,
+    expectErr "catalog join rejects a member that assumes its binding" catalogAssumed,
+    expectErr "catalog join rejects a binding claim as a member" catalogOfBinding,
+    expectErr "catalog join rejects a catalog child without its members tree"
+      catalogTampered,
   ])]) []
 
 end Tests.Aggr

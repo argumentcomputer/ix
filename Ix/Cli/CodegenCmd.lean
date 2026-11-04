@@ -35,6 +35,8 @@ public import Ix.Aiur.Stages.TraceCodegen
 public import Ix.Aiur.Stages.TraceCuda
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
+public import Ix.IxVM.RoleSpecGen
+public import Ix.RoleBinding.RustSpecGen
 public import MultiStark
 
 public section
@@ -104,6 +106,50 @@ def emitTarget (checkOnly : Bool) (t : Target) : IO Bool := do
     ({compiled.bytecode.functions.size} aiur fns)"
   return true
 
+/-- Where the IxVM role specifications are rendered (`IxVM.RoleSpecGen`). -/
+def roleSpecPath : String := "Ix/IxVM/Kernel/RoleSpec.lean"
+
+/-- Render the IxVM role specifications from IxC's; in `--check` mode,
+    compare against the file instead of writing it. The kernel reads the file,
+    so a regenerated file takes effect after the next build. -/
+def emitRoleSpecs (checkOnly : Bool) : IO Bool := do
+  let source ← match IxVM.RoleSpecGen.render with
+    | .ok s => pure s
+    | .error e => IO.eprintln s!"role specifications: {e}"; return false
+  if checkOnly then
+    let existing ← try pure (some (← IO.FS.readFile roleSpecPath)) catch _ => pure none
+    if existing == some source then
+      IO.println s!"[codegen --check] {roleSpecPath} up to date"
+      return true
+    IO.eprintln s!"[codegen --check] {roleSpecPath} STALE: re-run `ix codegen` and commit the result."
+    return false
+  IO.FS.writeFile roleSpecPath source
+  IO.println s!"[codegen] wrote {roleSpecPath}"
+  return true
+
+/-- Keep the Rust validator and the shared shape fixture derived from the
+same specification data used by the verified kernel and circuit renderer. -/
+def emitRustRoleSpecs (checkOnly : Bool) : IO Bool := do
+  let source ← match Ix.RoleBinding.RustSpecGen.render with
+    | .ok source => pure source
+    | .error error => IO.eprintln s!"Rust role specifications: {error}"; return false
+  let outputs := #[
+    ("crates/kernel/src/role_admission/specs.rs", source),
+    ("Tests/Fixtures/role-binding-v2/spec-shape.tsv", Ix.RoleBinding.RustSpecGen.shape)]
+  let mut ok := true
+  for (path, contents) in outputs do
+    if checkOnly then
+      let existing ← try pure (some (← IO.FS.readFile path)) catch _ => pure none
+      if existing == some contents then
+        IO.println s!"[codegen --check] {path} up to date"
+      else
+        IO.eprintln s!"[codegen --check] {path} STALE: re-run `ix codegen` and commit the result."
+        ok := false
+    else
+      IO.FS.writeFile path contents
+      IO.println s!"[codegen] wrote {path}"
+  return ok
+
 /-- Circuits generated beyond the static rule, by circuit name per target:
 the IxVM circuits whose host trace building dominates a proof, small rows
 in very large numbers whose typed seed is a fraction of the row. The list
@@ -111,7 +157,7 @@ was chosen from one environment's measurements; revisit it when a heavier
 one is profiled. -/
 def weightedCircuits : List (String × Array String) := [
   ("ixvm", #[
-    "blake3_compress_chunks", "get_tagn4", "get_u64_le", "g_list_has", "list_snoc.G",
+    "blake3_compress_chunks", "get_tagn4", "get_u64_le", "g_list_has",
     "expr_glb_walk", "expr_inst_many_walk", "get_app_telescope", "expr_glb", "expr_lower",
     "get_expr", "expr_lbr", "k_infer_app_spine_loop", "list_drop.G", "expr_inst_many_bvar",
     "expr_lower_walk", "bytes_to_block", "expr_inst_many", "get_expr_list", "collect_spine",
@@ -122,10 +168,11 @@ pack into at most half their canonical seeds
 (`ProgramPlan.compactCircuitFunctions`), and the measured `weightedCircuits`.
 Every selected writer is generated from the same bytecode library as its
 host seed packer. -/
-def traceBundle : Except String (Array (String × String)) := do
+@[noinline, never_extract]
+def traceBundle (selectedTargets : List Target) : Except String (Array (String × String)) := do
   let mut files := #[]
   let mut units := #[]
-  for target in targets do
+  for target in selectedTargets do
     let source ← target.source.mapError fun error => s!"{target.label}: {repr error}"
     let compiled ← source.compile
     let grouped ← compiled.groupFunctions target.groups
@@ -157,7 +204,7 @@ def traceBundle : Except String (Array (String × String)) := do
   pure (files.push ("crates/aiur/cuda/generated/production/trace-manifest.json", manifest.pretty ++ "\n"))
 
 def emitTraceBundle (checkOnly : Bool) : IO UInt32 := do
-  let files ← match traceBundle with
+  let files ← match traceBundle targets with
     | .ok files => pure files
     | .error error => IO.eprintln s!"trace bundle: {error}"; return 1
   for (path, source) in files do
@@ -235,6 +282,9 @@ def runCodegenCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok source => IO.print source; return 0
     | .error error => IO.eprintln s!"{target.label} trace codegen: {error}"; return 1
   let mut ok := true
+  if selected.any (·.label == "ixvm") then
+    ok := (← emitRoleSpecs checkOnly) && ok
+    ok := (← emitRustRoleSpecs checkOnly) && ok
   for t in selected do
     ok := (← emitTarget checkOnly t) && ok
   return if ok then 0 else 1

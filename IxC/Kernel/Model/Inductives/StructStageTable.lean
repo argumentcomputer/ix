@@ -33,15 +33,15 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps StructParts
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps StructParts
   BinderMeta ProjEntry ProjTable projTableName)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-- The table name has the reserved shape. -/
-theorem projTableName_isProjFnShape (T : Name) :
-    (projTableName T).isProjFnShape = true := rfl
+theorem projTableName_isProjFnShape (T : Key md) :
+    (projTableName T).isProjFnShape = true := isProjFnShape_auxKey_projTable T
 
 end Ix.Kernel.Model

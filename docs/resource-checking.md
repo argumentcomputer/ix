@@ -11,6 +11,17 @@ The executable modules are [Basic](../Ix/Resource/Basic.lean),
 The production boundaries are [Validate](../Ix/Resource/Validate.lean) and
 [the Rust kernel adapter](../crates/kernel/src/resource.rs).
 
+Lean's [typing half](../Ix/Resource/Typing.lean) uses IxC's certified tiered
+admission entry for the part it admits. Unsafe inductives, safe assumption
+axioms not bound by a role, and their dependents are typed separately by IxC
+outside that theorem. Their tier checks use the typing tier's answer view;
+the certified entry never reads that view. If opaque batch-tier checking
+refuses a tier record, all tier records move to the separate typing path
+and certified admission is retried on the logical part alone. The combined
+`resource-v1` claim remains uncertified as a resource claim; the transition
+proofs below do not extend the certified admission theorem to this separate
+typing path.
+
 ## Preconditions and admission
 
 Resource checking supplements ordinary typechecking. The
@@ -142,7 +153,8 @@ required closure. Merely parsing a claim or proof wrapper validates no program.
 | Consumer | Advertised validation |
 | --- | --- |
 | Lean and Rust resource admission | Resources plus erased typing, with a committed profile |
-| Ix.Tc and the Rust ordinary kernel | Erased Lean typing |
+| IxC certified admission | Authenticated logical admission and the entry's stated partial/unsafe typing tier |
+| Rust ordinary kernel | Erased Lean typing |
 | IxVM `Check` and `CheckEnv` | Erased Lean typing, validator byte `1` |
 | IxVM `Reveal` and `Contains` | Structural validation, validator byte `0` |
 | IxVM `Resource` | Explicitly unsupported; native success is not a circuit proof |

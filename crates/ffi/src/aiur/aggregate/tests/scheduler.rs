@@ -7,7 +7,7 @@ use super::super::{
   scheduler::{Prepared, SlotWorker, run_scheduler_with},
   statement::{ShardSet, Statement, SubjectTree},
 };
-use super::addr;
+use super::{addr, test_ctx};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -15,7 +15,7 @@ fn specs(ops: &[(PlanOp, usize)]) -> Vec<SlotSpec> {
   let subjects =
     SubjectTree::canonical(vec![addr("scheduler")], ShardSet::singleton(0, 1))
       .unwrap();
-  let statement = Statement::new(subjects, None);
+  let statement = Statement::new(test_ctx(), subjects, None);
   ops
     .iter()
     .map(|(op, ram_bytes)| SlotSpec {

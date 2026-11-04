@@ -25,11 +25,11 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal IndCaps)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal IndCaps)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-! ## Kit -/
 
@@ -79,27 +79,27 @@ theorem DomsBelow.drop {k : Nat} :
 stored type reads as the Π-tower over the parameter data ending in
 the result sort, with nonzero codomain bits, graded, bounded, and
 depending only on the block's level parameters. -/
-structure FormerData {env : Env} (m : EnvModel V env) (cvT : ConstantVal)
+structure FormerData {env : Env md} (m : EnvModel V env) (cvT : ConstantVal md)
     (nP : Nat) (resSort : Level)
-    (pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)) : Prop where
-  read : ∀ ψ : Name → Nat, denoteMeta m.acval env ψ 0 cvT.type
+    (pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)) : Prop where
+  read : ∀ ψ : LevelParam → Nat, denoteMeta m.acval env ψ 0 cvT.type
     = some (mkPisAV (pps ψ) (.sort (resSort.eval ψ)))
-  len : ∀ ψ : Name → Nat, (pps ψ).length = nP
-  bits : ∀ (ψ : Name → Nat) (d : Nat × Nat × AnnotTerm), d ∈ pps ψ → d.2.1 ≠ 0
-  okTy : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  len : ∀ ψ : LevelParam → Nat, (pps ψ).length = nP
+  bits : ∀ (ψ : LevelParam → Nat) (d : Nat × Nat × AnnotTerm), d ∈ pps ψ → d.2.1 ≠ 0
+  okTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
     WellDenotedV V ρ (mkPisAV (pps ψ) (.sort (resSort.eval ψ)))
-  below : ∀ ψ : Name → Nat, DomsBelow 0 (pps ψ)
-  params : ∀ ψ₁ ψ₂ : Name → Nat, (∀ p ∈ cvT.levelParams, ψ₁ p = ψ₂ p) →
+  below : ∀ ψ : LevelParam → Nat, DomsBelow 0 (pps ψ)
+  params : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ p ∈ cvT.levelParams, ψ₁ p = ψ₂ p) →
     pps ψ₁ = pps ψ₂ ∧ resSort.eval ψ₁ = resSort.eval ψ₂
 
 /-- The former's data, from its `checkConstantVal` run at the
 pre-block environment and the annotated telescope shape. -/
 theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {cvT cvTa : ConstantVal} {nP : Nat} {resSort : Level}
-    {bs : List (Expr × Ix.Kernel.BinderMeta)}
+    {F : Nat} {cvT cvTa : ConstantVal md} {nP : Nat} {resSort : Level}
+    {bs : List (Expr md × Ix.Kernel.BinderMeta)}
     (hccv : Ix.Kernel.checkConstantVal (Ix.Kernel.fueledOps μ F) env cvT = .ok cvTa)
     (hstrip : cvTa.type.stripPis nP = some (bs, .sort resSort)) :
-    ∃ pps : (Name → Nat) → List (Nat × Nat × AnnotTerm),
+    ∃ pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm),
       FormerData mp.base2 cvTa nP resSort pps := by
   obtain ⟨-, -, -, -, hlbt, hitf, type', stype, u, hann', htp', htr', hst,
     hens, rfl⟩ := Ix.Kernel.checkConstantVal_inv hccv
@@ -116,7 +116,7 @@ theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
   obtain rfl := inferTypeCore_sort_inv hib
   obtain rfl := ensureSortCore_sort_eq hensb
   -- per assignment: the reading, its peel, its grading
-  have hper : ∀ ψ : Name → Nat, ∃ pps : List (Nat × Nat × AnnotTerm),
+  have hper : ∀ ψ : LevelParam → Nat, ∃ pps : List (Nat × Nat × AnnotTerm),
       denoteMeta mp.base2.acval env ψ 0 type'
         = some (mkPisAV pps (.sort (resSort.eval ψ))) ∧
       pps.length = nP ∧
@@ -165,11 +165,11 @@ theorem formerData_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
 
 /-- The former's data crosses a cons whose slot does not mention the
 stored type (any block cons after the former's). -/
-theorem FormerData.cross {m : EnvModel V env} {cvT : ConstantVal}
+theorem FormerData.cross {m : EnvModel V env} {cvT : ConstantVal md}
     {nP : Nat} {resSort : Level}
-    {pps : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {pps : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (h : FormerData m cvT nP resSort pps)
-    {c₀ : ConstantInfo} {A : (Name → Nat) → AnnotTerm}
+    {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none) (hat : ConsCrossAt c₀ cvT.type)
     (hcb : ConstsBound env cvT.type)
     (m₂ : EnvModel V ⟨c₀ :: env.consts⟩)

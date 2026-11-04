@@ -4,6 +4,7 @@ public import IxC.Kernel.MainTheorem
 public import IxC.Kernel.Verify.Cached.MainC
 public import IxC.Kernel.Model.Fold
 public import IxC.Kernel.Model.Capstone
+public import IxC.Kernel.Verify.Tier
 public section
 
 /-!
@@ -131,5 +132,26 @@ info: 'Ix.Kernel.Expr.beq_eq_beqMemo' depends on axioms: [propext, Classical.cho
 -/
 #guard_msgs in
 #print axioms Ix.Kernel.Expr.beq_eq_beqMemo
+
+/-! The typing tier (`IxC/Kernel/Verify/Tier.lean`): its guarantee and the fence
+stand on the same three axioms. -/
+
+/--
+info: 'Ix.Kernel.Tier.checkTierC_typed' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Kernel.Tier.checkTierC_typed
+
+/--
+info: 'Ix.Kernel.Tier.checkDecls_closed' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Kernel.Tier.checkDecls_closed
+
+/--
+info: 'Ix.Kernel.Tier.checkDecls_checkTierC' depends on axioms: [propext, Classical.choice, Quot.sound]
+-/
+#guard_msgs in
+#print axioms Ix.Kernel.Tier.checkDecls_checkTierC
 
 end Tests.Ix.Kernel.Axioms

@@ -10,7 +10,7 @@ def blake3 := ⟦
 
   pub fn blake3_test() -> [[U8; 4]; 8] {
     let (idx, len) = io_get_info(0, [0]);
-    let byte_stream = read_finite_byte_stream(0, idx, len);
+    let byte_stream = read_checked_byte_stream(0, idx, len);
     @blake3(byte_stream)
   }
 
@@ -20,7 +20,7 @@ def blake3 := ⟦
     let num_hashes_pred = num_hashes - 1;
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(0, key);
-    let byte_stream = read_finite_byte_stream(0, idx, len);
+    let byte_stream = read_checked_byte_stream(0, idx, len);
     @blake3(byte_stream);
     match num_hashes_pred {
       0 => 0,
@@ -55,11 +55,14 @@ def blake3 := ⟦
      @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
   }
 
-  -- `input` must be finite: constructed by constrained terminating code, or
-  -- admitted through read_finite_byte_stream. Hash equality alone cannot
-  -- establish this for an arbitrary hinted pointer (cyclic lookups can forge
-  -- a traversal's return). Keep the check at ingress, not on every hash of
-  -- an internally constructed buffer.
+  -- `input` must be a finite list of bytes: built by constrained terminating
+  -- code from checked bytes, or admitted through read_checked_byte_stream.
+  -- Hash equality alone establishes neither for an arbitrary hinted
+  -- pointer: cyclic lookups can forge a traversal's return, and message
+  -- bytes enter the compression only as packed 32-bit words, which elements
+  -- that are not bytes can match while holding other values. Keep the
+  -- checks at ingress, not on every hash of an internally constructed
+  -- buffer.
   fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
     blake3_compress_layer(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
@@ -143,8 +146,76 @@ def blake3 := ⟦
   -- Hot chunk loop. The 64-byte block buffer is NOT threaded here as a
   -- `[[U8; 4]; 16]` value — that cost 64 columns of `inputSize` plus a +64-aux
   -- `assign_block_value` call on every row. Instead bytes accumulate into a
-  -- reverse-ordered linked list (`byte_acc`); each hot row is a single `store`.
+  -- reverse-ordered linked list (`byte_acc`). Four byte steps share one hot
+  -- row. The inline continuations repeat the Nil/Cons and block_index == 63
+  -- checks at EACH byte, including unaligned entry states. Block compression
+  -- and finalization are called at exactly the original boundaries.
   fn blake3_compress_chunks(
+    input: ByteStream,
+    byte_acc: ByteStream,
+    block_index: G,
+    chunk_index: G,
+    chunk_count: &U64,
+    block_digest: &[[U8; 4]; 8],
+    layer: Layer
+  ) -> Layer {
+    match load(input) {
+      -- Input exhausted: hand off to the cold finalize circuit.
+      ListNode.Nil =>
+        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
+      ListNode.Cons(head, input) =>
+        let byte_acc = store(ListNode.Cons(head, byte_acc));
+        match block_index {
+          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
+          _ => @blake3_compress_chunks_step2(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
+        },
+    }
+  }
+  -- These helpers are always inlined: only the fourth step recurses through
+  -- the ordinary seven-input hot circuit. No helper adds a circuit.
+  fn blake3_compress_chunks_step2(
+    input: ByteStream,
+    byte_acc: ByteStream,
+    block_index: G,
+    chunk_index: G,
+    chunk_count: &U64,
+    block_digest: &[[U8; 4]; 8],
+    layer: Layer
+  ) -> Layer {
+    match load(input) {
+      -- Input exhausted: hand off to the cold finalize circuit.
+      ListNode.Nil =>
+        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
+      ListNode.Cons(head, input) =>
+        let byte_acc = store(ListNode.Cons(head, byte_acc));
+        match block_index {
+          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
+          _ => @blake3_compress_chunks_step3(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
+        },
+    }
+  }
+  fn blake3_compress_chunks_step3(
+    input: ByteStream,
+    byte_acc: ByteStream,
+    block_index: G,
+    chunk_index: G,
+    chunk_count: &U64,
+    block_digest: &[[U8; 4]; 8],
+    layer: Layer
+  ) -> Layer {
+    match load(input) {
+      -- Input exhausted: hand off to the cold finalize circuit.
+      ListNode.Nil =>
+        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
+      ListNode.Cons(head, input) =>
+        let byte_acc = store(ListNode.Cons(head, byte_acc));
+        match block_index {
+          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
+          _ => @blake3_compress_chunks_step4(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
+        },
+    }
+  }
+  fn blake3_compress_chunks_step4(
     input: ByteStream,
     byte_acc: ByteStream,
     block_index: G,

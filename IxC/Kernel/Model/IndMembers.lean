@@ -34,7 +34,7 @@ open.
 leaf *is* the model's, so the fresh entry satisfies the predicate by
 `acvalWith_self`, and every earlier entry survives because neither
 `n` nor `n ++ "_model"` can be the member's name —
-`Name.str_model_ne` against `MemberValR`'s `isModelSuffix = false`
+`auxKey_model_ne` against `MemberValR`'s `isModelSuffix = false`
 conjunct, which is exactly the conjunct v1's `BlockInstalledTT.step`
 consumes for the same purpose.
 -/
@@ -45,28 +45,28 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics Ix.Kernel.SetModel
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps ReducibilityHint)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env} {F : Nat}
+variable {μ : CheckMode} {env : Env md} {F : Nat}
 
 /-- **The member cons's live η law** (`MemberKeyS`'s sibling): the row
 `capsOk_cons_member` leaves open — a block former at
 `etaFields = 0`.  v1's counterpart is `etaLawKeyS`, reached through
 `memberEtaS`. -/
 @[expose] def MemberEtaLaw (V : Type w) [SetTheory V] : Prop :=
-  ∀ {μ : CheckMode} {F : Nat} {blockNames : List Name} {env : Env}
-    (mp : EnvModelM V μ env) {cv cvA : ConstantVal} {c₀ : ConstantInfo},
+  ∀ {μ : CheckMode} {F : Nat} {blockNames : List (Key md)} {env : Env md}
+    (mp : EnvModelM V μ env) {cv cvA : ConstantVal md} {c₀ : ConstantInfo md},
     MemberValRun μ F env blockNames cv cvA →
     BlockInstalledTT blockNames env mp.base2.cvalE →
     BlockAcvalInstalled blockNames env mp.base2.acval →
     c₀.toConstantVal = cvA → c₀.name = cvA.name →
     (∀ entry, c₀ ≠ .projInfo entry) →
-    ∀ (T : Name) (cvT : ConstantVal) (caps : IndCaps),
-      (⟨c₀ :: env.consts⟩ : Env).find? T = some (.indInfo cvT caps) →
+    ∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
+      (⟨c₀ :: env.consts⟩ : Env md).find? T = some (.indInfo cvT caps) →
       caps.eta = true → Ix.Kernel.reservedBasisNames.contains T = false →
       Ix.Kernel.EtaPins μ env T cvT.levelParams caps →
       caps.etaFields = 0 →
@@ -75,12 +75,12 @@ variable {μ : CheckMode} {env : Env} {F : Nat}
       -- `BlockAcvalInstalled`, which is the only bridge between the
       -- law's *subject* and the model artifacts the pins name
       blockNames.contains T = true →
-      blockNames.contains caps.etaCtor = true →
+      (∀ C, caps.etaCtor = some C → blockNames.contains C = true) →
       Ix.Kernel.EtaFamilyStored ⟨c₀ :: env.consts⟩ T caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name
-          (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
-        ∀ φ' : Name → Nat, EtaLaw m₂ φ' T cvT caps
+          (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) →
+        ∀ φ' : LevelParam → Nat, EtaLaw m₂ φ' T cvT caps
 
 /-- **The member cons's live unit-like law** (`unitLawKeyS`'s
 transpose's obligation): the cons's own former.
@@ -96,34 +96,34 @@ stored, its telescope is pinned) is unreachable.  The caller has them
 — so this is a threading fix, not a strengthening of what the fold
 must prove. -/
 @[expose] def MemberUnitLaw (V : Type w) [SetTheory V] : Prop :=
-  ∀ {μ : CheckMode} {F : Nat} {blockNames : List Name} {env : Env}
-    (mp : EnvModelM V μ env) {cv cvA : ConstantVal} {c₀ : ConstantInfo},
+  ∀ {μ : CheckMode} {F : Nat} {blockNames : List (Key md)} {env : Env md}
+    (mp : EnvModelM V μ env) {cv cvA : ConstantVal md} {c₀ : ConstantInfo md},
     MemberValRun μ F env blockNames cv cvA →
     BlockInstalledTT blockNames env mp.base2.cvalE →
     BlockAcvalInstalled blockNames env mp.base2.acval →
     c₀.toConstantVal = cvA → c₀.name = cvA.name →
-    ∀ (cvT : ConstantVal) (caps : IndCaps),
+    ∀ (cvT : ConstantVal md) (caps : IndCaps md),
       c₀ = .indInfo cvT caps → caps.unitlike = true →
       Ix.Kernel.reservedBasisNames.contains c₀.name = false →
       Ix.Kernel.EtaPins μ env cvA.name cvA.levelParams caps →
       ∀ m₂ : EnvModel V ⟨c₀ :: env.consts⟩,
         m₂.acval = acvalWith mp.base2.acval c₀.name
-          (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) →
-        ∀ φ' : Name → Nat, UnitLaw m₂ φ' c₀.name cvT caps
+          (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) →
+        ∀ φ' : LevelParam → Nat, UnitLaw m₂ φ' c₀.name cvT caps
 
 /-- **One member installed at both tiers**, with every carried
 invariant stepped — `memberInstallS`'s joint twin. -/
-theorem memberInstallPM (hetaP : MemberEtaLaw V)
-    (hunitP : MemberUnitLaw V)
-    {blockNames : List Name} (mp : EnvModelM V μ env)
-    {cv cvA : ConstantVal} {c₀ : ConstantInfo}
+theorem memberInstallPM (hetaP : (MemberEtaLaw (md := md)) V)
+    (hunitP : (MemberUnitLaw (md := md)) V)
+    {blockNames : List (Key md)} (mp : EnvModelM V μ env)
+    {cv cvA : ConstantVal md} {c₀ : ConstantInfo md}
     (hmv : MemberValRun μ F env blockNames cv cvA)
     (hI : BlockInstalledTT blockNames env mp.base2.cvalE)
     (hIA : BlockAcvalInstalled blockNames env mp.base2.acval)
     (hbn : blockNames.contains cvA.name = true)
     (hpins : ∀ caps, c₀ = .indInfo cvA caps →
       Ix.Kernel.EtaPins μ env cv.name cv.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (Ix.Kernel.projFnName cv.name 0) = none))
     (hEC : Ix.Kernel.EtaFamiliesClosedO blockNames env)
@@ -137,7 +137,7 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
     ∃ mp₁ : EnvModelM V μ ⟨c₀ :: env.consts⟩,
       mp₁.base2.cvalE = cvalModeled mp.base2.cvalE cvA.name ∧
       mp₁.base2.acval = acvalWith mp.base2.acval cvA.name
-        (fun ψ => mp.base2.acval (cvA.name.str "_model") ψ) ∧
+        (fun ψ => mp.base2.acval (auxKey cvA.name .model) ψ) ∧
       BlockInstalledTT blockNames ⟨c₀ :: env.consts⟩
         mp₁.base2.cvalE ∧
       BlockAcvalInstalled blockNames ⟨c₀ :: env.consts⟩
@@ -160,7 +160,7 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
   -- the `cvA`-form pins the P row wants
   have hpinsA : ∀ caps, c₀ = .indInfo cvA caps →
       Ix.Kernel.EtaPins μ env cvA.name cvA.levelParams caps ∧
-        (caps.eta = true → blockNames.contains caps.etaCtor = true) ∧
+        (caps.eta = true → ∀ C, caps.etaCtor = some C → blockNames.contains C = true) ∧
         (caps.eta = true → 0 < caps.etaFields →
           env.find? (Ix.Kernel.projFnName cvA.name 0) = none) := by
     intro caps2 hceq
@@ -209,7 +209,7 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
     by_cases hn : n = cvA.name
     · subst hn
       rw [acvalWith_self]
-      show (mp.base2.acval (cvA.name.str "_model") ψ).erase = _
+      show (mp.base2.acval (auxKey cvA.name .model) ψ).erase = _
       rw [mp.base2.acval_erase]
       exact (congrFun cvalWith_self ψ).symm
     · rw [acvalWith_ne hn, mp.base2.acval_erase]
@@ -222,8 +222,8 @@ theorem memberInstallPM (hetaP : MemberEtaLaw V)
   rw [hmp₁ac]
   by_cases hn : n = cvA.name
   · subst hn
-    rw [acvalWith_ne (Ix.Kernel.Name.str_model_ne hmsA), acvalWith_self]
-  · rw [acvalWith_ne (Ix.Kernel.Name.str_model_ne hmsA), acvalWith_ne hn]
+    rw [acvalWith_ne (Ix.Kernel.auxKey_model_ne hmsA), acvalWith_self]
+  · rw [acvalWith_ne (Ix.Kernel.auxKey_model_ne hmsA), acvalWith_ne hn]
     refine hIA n hbnn ci ?_ ψ
     rw [Ix.Kernel.Env.find?_cons,
       if_neg (fun hh => hn (by rw [← hh, hc₀name]))] at hfn
@@ -236,18 +236,18 @@ the fold's, and the four carried invariants hold of the result.
 The same induction serves the *provisioning* fold (`ProvisionRecsR`'s
 rule-less recursors), exactly as `memberInstallS` serves both of v1's:
 the step's `hkind` disjunct covers all three shapes. -/
-theorem indMembersPM (hetaP : MemberEtaLaw V)
-    (hunitP : MemberUnitLaw V)
-    {μ : CheckMode} {F : Nat} {blockNames : List Name}
-    {caps : IndCaps} :
-    ∀ (members : List ConstantInfo) {env : Env} (mp : EnvModelM V μ env)
-      {env₂ : Env},
+theorem indMembersPM (hetaP : (MemberEtaLaw (md := md)) V)
+    (hunitP : (MemberUnitLaw (md := md)) V)
+    {μ : CheckMode} {F : Nat} {blockNames : List (Key md)}
+    {caps : IndCaps md} :
+    ∀ (members : List (ConstantInfo md)) {env : Env md} (mp : EnvModelM V μ env)
+      {env₂ : Env md},
       (∀ ci ∈ members, blockNames.contains ci.name = true) →
-      (∀ (cv : ConstantVal) (caps₂ : IndCaps),
+      (∀ (cv : ConstantVal md) (caps₂ : IndCaps md),
         ConstantInfo.indInfo cv caps₂ ∈ members →
         Ix.Kernel.EtaPins μ env cv.name cv.levelParams caps ∧
           (caps.eta = true →
-            blockNames.contains caps.etaCtor = true) ∧
+            (∀ C, caps.etaCtor = some C → blockNames.contains C = true)) ∧
           (caps.eta = true → 0 < caps.etaFields →
             env.find? (Ix.Kernel.projFnName cv.name 0) = none)) →
       IndMembersRun μ F blockNames caps env members env₂ →
@@ -303,9 +303,9 @@ theorem indMembersPM (hetaP : MemberEtaLaw V)
     | ctorInfo cv nP nF =>
       obtain ⟨mp₁, -, -, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
         memberInstallPM hetaP hunitP mp hmv hI hIA hbnA
-          (fun _ heq => ConstantInfo.noConfusion heq)
+          (fun _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
           hEC hBP rfl rfl (Or.inr (Or.inl ⟨nP, nF, rfl⟩))
-          (fun _ _ heq => ConstantInfo.noConfusion heq)
+          (fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
       exact ih mp₁
         (fun ci' hci' => hbn ci' (List.mem_cons_of_mem _ hci'))
         (fun cv₂ caps₂ hmem => etaMemberData_step hfreshA
@@ -325,13 +325,13 @@ checked against *together with a `EnvModelM` at it* — which is what the
 iota phase's run-certificate route needs, since `checkSoundAt` runs
 at `Rules.RulesInputs.ofSem` and there is no other way to get one at
 `envSelf`. -/
-theorem provisionRecsPM (hetaP : MemberEtaLaw V)
-    (hunitP : MemberUnitLaw V)
-    {μ : CheckMode} {F : Nat} {blockNames : List Name} :
-    ∀ (recs : List ConstantInfo) {envAcc : Env}
+theorem provisionRecsPM (hetaP : (MemberEtaLaw (md := md)) V)
+    (hunitP : (MemberUnitLaw (md := md)) V)
+    {μ : CheckMode} {F : Nat} {blockNames : List (Key md)} :
+    ∀ (recs : List (ConstantInfo md)) {envAcc : Env md}
       (mp : EnvModelM V μ envAcc)
-      {envSelf : Env}
-      {checked : List (ConstantVal × Nat × Nat × List RecRule)},
+      {envSelf : Env md}
+      {checked : List (ConstantVal md × Nat × Nat × List (RecRule md))},
       (∀ ci ∈ recs, blockNames.contains ci.name = true) →
       Ix.Kernel.Semantics.ProvisionRecsRun μ F blockNames envAcc
         recs envSelf checked →
@@ -358,9 +358,9 @@ theorem provisionRecsPM (hetaP : MemberEtaLaw V)
     obtain ⟨mp₁, -, -, hI₁, hIA₁, hEC₁, hBP₁⟩ :=
       memberInstallPM hetaP hunitP mp hmv hI hIA
         (by rw [hnameA]; exact hbn ci List.mem_cons_self)
-        (fun _ heq => ConstantInfo.noConfusion heq)
+        (fun _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
         hEC hBP rfl rfl (Or.inr (Or.inr ⟨mI, rP, rfl⟩))
-        (fun _ _ heq => ConstantInfo.noConfusion heq)
+        (fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))
     exact ih mp₁
       (fun ci' hci' => hbn ci' (List.mem_cons_of_mem _ hci'))
       hrec hI₁ hIA₁ hEC₁ hBP₁

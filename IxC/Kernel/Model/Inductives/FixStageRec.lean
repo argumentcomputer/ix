@@ -24,27 +24,27 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta
   NativeParts RecRule)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## The semantic data of a block -/
 
 /-- The constructors' field lists. -/
-@[expose] def fssOfR (nP : Nat) (cds : List CtorDatumR) : List (List AnnotTerm) :=
+@[expose] def fssOfR (nP : Nat) (cds : List (CtorDatumR md)) : List (List AnnotTerm) :=
   cds.map fun cd => (cd.2.2.1.drop nP).map (·.2.2)
 
 /-- The constructors' index readings. -/
-@[expose] def essOfR (cds : List CtorDatumR) : List (List AnnotTerm) := cds.map fun cd => cd.2.2.2.1
+@[expose] def essOfR (cds : List (CtorDatumR md)) : List (List AnnotTerm) := cds.map fun cd => cd.2.2.2.1
 
 /-- The constructors' per-field index expressions. -/
-@[expose] def eissOfR (cds : List CtorDatumR) : List (List (List AnnotTerm)) := cds.map fun cd => cd.2.2.2.2.2.1
+@[expose] def eissOfR (cds : List (CtorDatumR md)) : List (List (List AnnotTerm)) := cds.map fun cd => cd.2.2.2.2.2.1
 
 /-- The per-constructor telescopes (task #202). -/
-@[expose] def tlssOfR (cds : List CtorDatumR) : List (List (List (Nat × Nat × AnnotTerm))) :=
+@[expose] def tlssOfR (cds : List (CtorDatumR md)) : List (List (List (Nat × Nat × AnnotTerm))) :=
   cds.map fun cd => cd.2.2.2.2.2.2
 
 /-- The recursive flags of the first `n` constructors. -/
@@ -52,33 +52,33 @@ variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
   (List.range n).map fun j => rsOf (ksF j)
 
 omit [SetTheory V] in
-theorem fssOfR_getElem? (nP : Nat) (cds : List CtorDatumR) (j : Nat) :
+theorem fssOfR_getElem? (nP : Nat) (cds : List (CtorDatumR md)) (j : Nat) :
     (fssOfR nP cds)[j]? = (cds[j]?).map fun cd => (cd.2.2.1.drop nP).map (·.2.2) := by
   simp [fssOfR]
 
 omit [SetTheory V] in
-theorem essOfR_getElem? (cds : List CtorDatumR) (j : Nat) :
+theorem essOfR_getElem? (cds : List (CtorDatumR md)) (j : Nat) :
     (essOfR cds)[j]? = (cds[j]?).map fun cd => cd.2.2.2.1 := by simp [essOfR]
 
 omit [SetTheory V] in
-theorem eissOfR_getElem? (cds : List CtorDatumR) (j : Nat) :
+theorem eissOfR_getElem? (cds : List (CtorDatumR md)) (j : Nat) :
     (eissOfR cds)[j]? = (cds[j]?).map fun cd => cd.2.2.2.2.2.1 := by simp [eissOfR]
 
-theorem tlssOfR_getElem? (cds : List CtorDatumR) (j : Nat) :
+theorem tlssOfR_getElem? (cds : List (CtorDatumR md)) (j : Nat) :
     (tlssOfR cds)[j]? = (cds[j]?).map fun cd => cd.2.2.2.2.2.2 := by simp [tlssOfR]
 
-theorem tlssOfR_length (cds : List CtorDatumR) : (tlssOfR cds).length = cds.length := by
+theorem tlssOfR_length (cds : List (CtorDatumR md)) : (tlssOfR cds).length = cds.length := by
   simp [tlssOfR]
 
 omit [SetTheory V] in
-theorem fssOfR_length (nP : Nat) (cds : List CtorDatumR) : (fssOfR nP cds).length = cds.length := by
+theorem fssOfR_length (nP : Nat) (cds : List (CtorDatumR md)) : (fssOfR nP cds).length = cds.length := by
   simp [fssOfR]
 
 omit [SetTheory V] in
-theorem essOfR_length (cds : List CtorDatumR) : (essOfR cds).length = cds.length := by simp [essOfR]
+theorem essOfR_length (cds : List (CtorDatumR md)) : (essOfR cds).length = cds.length := by simp [essOfR]
 
 omit [SetTheory V] in
-theorem eissOfR_length (cds : List CtorDatumR) : (eissOfR cds).length = cds.length := by
+theorem eissOfR_length (cds : List (CtorDatumR md)) : (eissOfR cds).length = cds.length := by
   simp [eissOfR]
 
 omit [SetTheory V] in
@@ -88,8 +88,8 @@ theorem rssOfK_getD {ksF : Nat → List RecFieldKind} {n j : Nat} (hj : j < n) :
 
 /-! ## The rule's binder data as domains -/
 
-theorem fixRuleDataAV_map_dom {m : EnvModel V env} {T : Name} {ψ : Name → Nat} {nP nIdx : Nat}
-    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
+theorem fixRuleDataAV_map_dom {m : EnvModel V env} {T : Key md} {ψ : LevelParam → Nat} {nP nIdx : Nat}
+    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List (CtorDatumR md)}
     {ds : List (Nat × Nat × AnnotTerm)} (hlenP : pps.length = nP) (hlenI : ips.length = nIdx) :
     (fixRuleDataAV m T ψ nP nIdx ℓ pps ips cds ds).map (·.2)
       = ((fixRecDataAV m T ψ nP nIdx ℓ pps ips cds).take (nP + 1 + cds.length)).map (·.2.2) ++
@@ -115,17 +115,17 @@ theorem fixRuleDataAV_map_dom {m : EnvModel V env} {T : Name} {ψ : Name → Nat
 /-! ## The recursor leaf -/
 
 /-- The restriction of an assignment to a level-parameter list. -/
-@[expose] def restrictΨ (lps : List Name) (ψ : Name → Nat) : Name → Nat :=
+@[expose] def restrictΨ (lps : List LevelParam) (ψ : LevelParam → Nat) : LevelParam → Nat :=
   fun q => if q ∈ lps then ψ q else 0
 
 omit [SetTheory V] in
-theorem restrictΨ_agree (lps : List Name) (ψ : Name → Nat) :
+theorem restrictΨ_agree (lps : List LevelParam) (ψ : LevelParam → Nat) :
     ∀ q ∈ lps, restrictΨ lps ψ q = ψ q := by
   intro q hq
   simp [restrictΨ, hq]
 
 omit [SetTheory V] in
-theorem restrictΨ_congr {lps : List Name} {ψ₁ ψ₂ : Name → Nat}
+theorem restrictΨ_congr {lps : List LevelParam} {ψ₁ ψ₂ : LevelParam → Nat}
     (h : ∀ q ∈ lps, ψ₁ q = ψ₂ q) : restrictΨ lps ψ₁ = restrictΨ lps ψ₂ := by
   funext q
   unfold restrictΨ
@@ -136,11 +136,11 @@ theorem restrictΨ_congr {lps : List Name} {ψ₁ ψ₂ : Name → Nat}
 /-- The recursor leaf's sort: the kernel's inferred sort at the
 restricted assignment, floored at one at a nonzero elimination level,
 zero at a zero one. -/
-@[expose] def fixSortAV (elimL : Level) (u : Level) (lps : List Name) (ψ : Name → Nat) : Nat :=
+@[expose] def fixSortAV (elimL : Level) (u : Level) (lps : List LevelParam) (ψ : LevelParam → Nat) : Nat :=
   if elimL.eval ψ = 0 then 0 else max 1 (u.eval (restrictΨ lps ψ))
 
 omit [SetTheory V] in
-theorem fixSortAV_zero_iff (elimL u : Level) (lps : List Name) (ψ : Name → Nat) :
+theorem fixSortAV_zero_iff (elimL u : Level) (lps : List LevelParam) (ψ : LevelParam → Nat) :
     fixSortAV elimL u lps ψ = 0 ↔ elimL.eval ψ = 0 := by
   unfold fixSortAV
   split
@@ -152,8 +152,8 @@ theorem fixSortAV_zero_iff (elimL u : Level) (lps : List Name) (ψ : Name → Na
 
 /-! ## The data at the parameters -/
 
-theorem fixRecDataAV_take_nP {m : EnvModel V env} {T : Name} {ψ : Name → Nat} {nP nIdx : Nat}
-    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List CtorDatumR}
+theorem fixRecDataAV_take_nP {m : EnvModel V env} {T : Key md} {ψ : LevelParam → Nat} {nP nIdx : Nat}
+    {ℓ : Level} {pps ips : List (Nat × Nat × AnnotTerm)} {cds : List (CtorDatumR md)}
     (hlenP : pps.length = nP) :
     ((fixRecDataAV m T ψ nP nIdx ℓ pps ips cds).take nP).map (·.2.2) = pps.map (·.2.2) := by
   unfold fixRecDataAV
@@ -165,11 +165,11 @@ theorem fixRecDataAV_take_nP {m : EnvModel V env} {T : Name} {ψ : Name → Nat}
 
 omit [SetTheory V] in
 /-- The constructor data at two assignments agreeing on the data. -/
-theorem fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF₁ esF₂ : Nat → (Name → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
-    {eissF₁ eissF₂ : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF₁ tssF₂ : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ₁ ψ₂ : Name → Nat} :
-    ∀ (cs : List (ConstantVal × Nat)) (j : Nat),
+theorem fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF₁ esF₂ : Nat → (LevelParam → Nat) → List AnnotTerm} {ksF : Nat → List RecFieldKind}
+    {eissF₁ eissF₂ : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF₁ tssF₂ : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))} {ψ₁ ψ₂ : LevelParam → Nat} :
+    ∀ (cs : List (ConstantVal md × Nat)) (j : Nat),
       (∀ i, i < cs.length → dsF₁ (j + i) ψ₁ = dsF₂ (j + i) ψ₂ ∧ esF₁ (j + i) ψ₁ = esF₂ (j + i) ψ₂ ∧
         eissF₁ (j + i) ψ₁ = eissF₂ (j + i) ψ₂ ∧ tssF₁ (j + i) ψ₁ = tssF₂ (j + i) ψ₂) →
       fixCtorDataList dsF₁ esF₁ ksF eissF₁ tssF₁ ψ₁ cs j = fixCtorDataList dsF₂ esF₂ ksF eissF₂ tssF₂ ψ₂ cs j
@@ -187,24 +187,24 @@ theorem fixCtorDataList_congr {dsF₁ dsF₂ : Nat → (Name → Nat) → List (
 set_option maxHeartbeats 6400000 in
 /-- **The recursive recursor rule's law** at the recursor's cons. -/
 theorem fixRecRuleLaw (mp : EnvModelM V μ env)
-    {F : Nat} {p : NativeParts} {cvTa cvRa : ConstantVal} {ctorsA : List (ConstantVal × Nat)}
-    {rhss : List Expr} {mI rP : Nat}
+    {F : Nat} {p : NativeParts md} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {rhss : List (Expr md)} {mI rP : Nat}
     (hmI : mI = p.nP + 1 + ctorsA.length + p.nIdx) (hrP : rP = p.nP + 1 + ctorsA.length)
     (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
-    {caps : IndCaps}
+    {caps : IndCaps md}
     (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
-    {bsT : List (Expr × BinderMeta)}
+    {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
-    {tfvs : List Expr} {trest : Expr}
+    {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars p.nP cvTa.type 0 = some (tfvs, trest))
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
-    {env₀ : Env} {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
-    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {env₀ : Env md} {idxF : Nat → List (Expr md)} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List (Expr md)} {xrestF : Nat → Expr md}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hlenK : p.kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → p.kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
@@ -214,8 +214,8 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
     (hRD : SumRecData mp.base2 cvRa p.nP ctorsA.length p.nIdx (Ix.Kernel.structElimLevel p.elim p.large)
       (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA))
     -- the leaf and its facts
-    {A : (Name → Nat) → AnnotTerm} {sAV : (Name → Nat) → Nat} {uAV : (Name → Nat) → Nat}
-    {fssZ : (Name → Nat) → List (List AnnotTerm)}
+    {A : (LevelParam → Nat) → AnnotTerm} {sAV : (LevelParam → Nat) → Nat} {uAV : (LevelParam → Nat) → Nat}
+    {fssZ : (LevelParam → Nat) → List (List AnnotTerm)}
     (hA : ∀ ψ, A ψ = nativeRecAVI ((Ix.Kernel.structElimLevel p.elim p.large).eval ψ) (p.resSort.eval ψ)
       p.nP (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
       (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (((ppsAll ψ).drop p.nP).map (·.2.2))
@@ -230,7 +230,7 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
       (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
       (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ) (sAV ψ))
     (hAcl : ∀ ψ, Term.bvarsBelow 0 (A ψ).erase)
-    (hokFssH : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+    (hokFssH : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       SumFieldsOkB (p.resSort.eval ψ) ρp (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)))
     (hleafC : ∀ j cA, ctorsA[j]? = some cA → ∀ ψ, mp.base2.acval cA.1.name ψ
@@ -238,11 +238,11 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
           (uChains (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))))
     -- a constructor's parameter domains and the former's are the same
     -- `Sat`, so the law needs no comparison of the two parameter spines
-    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ)
     -- the subsingleton criterion at the former's parameter frame
-    (hsrcH : ∀ ψ : Name → Nat, p.resSort.eval ψ = 0 →
+    (hsrcH : ∀ ψ : LevelParam → Nat, p.resSort.eval ψ = 0 →
       (Ix.Kernel.structElimLevel p.elim p.large).eval ψ ≠ 0 → ∀ ρp : Nat → V,
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       ∀ k, k < ctorsA.length →
@@ -255,21 +255,21 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
             (((fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)).getD k []).getD i default)
           ∈ˢ (univZero : V))
     -- the rule
-    {j : Nat} {cA : ConstantVal × Nat} (hj : ctorsA[j]? = some cA) {rhs : Expr}
+    {j : Nat} {cA : ConstantVal md × Nat} (hj : ctorsA[j]? = some cA) {rhs : Expr md}
     (hrhs : rhss[j]? = some rhs)
-    (hRuleOk : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hRuleOk : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       WellDenotedV V ρ (mkLamsAV (fixRuleDataAV mp.base2 p.cvT.name ψ p.nP p.nIdx
           (Ix.Kernel.structElimLevel p.elim p.large) ((ppsAll ψ).take p.nP) ((ppsAll ψ).drop p.nP)
           (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) (dsF j ψ))
         (fixRuleCoreAV (pwBit ψ (Level.zeronessOf (Ix.Kernel.structElimLevel p.elim p.large))) (A ψ) p.nP
           cA.2 ctorsA.length j (Ix.Kernel.recIdxOf (ksF j)) (tssF j ψ) (eissF j ψ))))
     (hfresh : env.find? cvRa.name = none)
-    {rule : RecRule} {kb eb : Bool}
+    {rule : RecRule md} {kb eb : Bool}
     (hrule : rule = ⟨cA.1.name, cA.2, p.nP, .plain, rhs, kb, eb, true⟩)
-    {rules : List RecRule}
+    {rules : List (RecRule md)}
     (m₂ : EnvModel V ⟨.recInfo cvRa mI rP rules :: env.consts⟩)
     (hac : m₂.acval = acvalWith mp.base2.acval cvRa.name A)
-    (φ : Name → Nat) :
+    (φ : LevelParam → Nat) :
     RecRuleLaw m₂ φ cvRa.name cvRa mI rP rule := by
   subst hrule
   obtain ⟨hfC, hlpsC, hD⟩ := hcf j cA hj
@@ -290,9 +290,9 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
     rw [this]
     exact constsBound_of_constsResolve _ htrR
   -- the cons crossing
-  have hcross : ∀ e : Expr, ConsCrossAt (.recInfo cvRa mI rP rules) e :=
+  have hcross : ∀ e : Expr md, ConsCrossAt (.recInfo cvRa mI rP rules) e :=
     fun _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)
-  have hfindC : (⟨.recInfo cvRa mI rP rules :: env.consts⟩ : Env).find? cA.1.name
+  have hfindC : (⟨.recInfo cvRa mI rP rules :: env.consts⟩ : Env md).find? cA.1.name
       = some (.ctorInfo cA.1 p.nP cA.2) := by
     rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hRC h.symm)]
     exact hfC
@@ -317,7 +317,7 @@ theorem fixRecRuleLaw (mp : EnvModelM V μ env)
   -- the law
   refine ⟨by omega, fun us hus => ?_⟩
   dsimp only
-  have hinstR : ∀ (d : Nat) (e : Expr),
+  have hinstR : ∀ (d : Nat) (e : Expr md),
       denoteMeta m₂.acval _ φ d (e.instantiateLevelParams cvRa.levelParams us)
         = denoteMeta m₂.acval _ (Level.substFn φ cvRa.levelParams us) d e :=
     fun d e => denoteMeta_instLevels (acvalParamsAt_of_core m₂) φ d e
@@ -562,13 +562,13 @@ theorem fieldsBoundSrc_at {ρ : Nat → V} :
 /-! ## The stage -/
 
 /-- The recursor leaf of a recursive block at an assignment. -/
-@[expose] def fixLeafAV {env : Env} (m : EnvModel V env) (p : NativeParts)
-    (ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm))
-    (esF : Nat → (Name → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
-    (eissF : Nat → (Name → Nat) → List (List AnnotTerm))
-    (tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))) (ctorsA : List (ConstantVal × Nat))
-    (sAV : (Name → Nat) → Nat) (ψ : Name → Nat) : AnnotTerm :=
+@[expose] def fixLeafAV {env : Env md} (m : EnvModel V env) (p : NativeParts md)
+    (ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm))
+    (esF : Nat → (LevelParam → Nat) → List AnnotTerm) (ksF : Nat → List RecFieldKind)
+    (eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm))
+    (tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))) (ctorsA : List (ConstantVal md × Nat))
+    (sAV : (LevelParam → Nat) → Nat) (ψ : LevelParam → Nat) : AnnotTerm :=
   nativeRecAVI ((Ix.Kernel.structElimLevel p.elim p.large).eval ψ) (p.resSort.eval ψ) p.nP
     (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
     (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (((ppsAll ψ).drop p.nP).map (·.2.2))
@@ -577,47 +577,47 @@ theorem fieldsBoundSrc_at {ρ : Nat → V} :
 
 set_option maxHeartbeats 12800000 in
 /-- **The P step at the recursive recursor's cons.** -/
-theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept env p.cvT.name)
+theorem stageFixRec {p : NativeParts md} (hE : Ix.Kernel.EtaFamiliesClosedExcept env p.cvT.name)
     (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {cvTa cvRa : ConstantVal} {ctorsA : List (ConstantVal × Nat)}
-    {rhss : List Expr} {mI rP : Nat}
+    {F : Nat} {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {rhss : List (Expr md)} {mI rP : Nat}
     (hmI : mI = p.nP + 1 + ctorsA.length + p.nIdx) (hrP : rP = p.nP + 1 + ctorsA.length)
     (hmIp : p.majorIdx = mI) (hrPp : p.rulePrefix = rP)
     (hRec : Ix.Kernel.checkNativeRec (Ix.Kernel.fueledOps μ F) env p cvTa ctorsA = .ok (cvRa, rhss))
-    {bsT : List (Expr × BinderMeta)}
+    {bsT : List (Expr md × BinderMeta)}
     (hstripT : cvTa.type.stripPis (p.nP + p.nIdx) = some (bsT, .sort p.resSort))
-    {caps : IndCaps}
+    {caps : IndCaps md}
     (hfT : env.find? p.cvT.name = some (.indInfo cvTa caps))
     -- the block's own capability laws at the cons (task #210 Part A),
     -- at any carrier agreeing with this one off the recursor's name
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hTlaws : ∀ m₂ : EnvModel V ⟨.recInfo cvRa mI rP
         (Ix.Kernel.sumRules env.find? cvRa.name p.nP mI rP cvRa.type ctorsA rhss) :: env.consts⟩,
       (∀ n, n ≠ cvRa.name → m₂.acval n = mp.base2.acval n) →
       FormerData m₂ cvTa (p.nP + p.nIdx) p.resSort ppsAll →
       (∀ ψ, m₂.acval p.cvT.name ψ = mp.base2.acval p.cvT.name ψ) →
-      (∀ (j : Nat) (cA : ConstantVal × Nat), ctorsA[j]? = some cA →
+      (∀ (j : Nat) (cA : ConstantVal md × Nat), ctorsA[j]? = some cA →
         ∀ ψ, m₂.acval cA.1.name ψ = mp.base2.acval cA.1.name ψ) →
       CapsLawsAt m₂ p.cvT.name cvTa caps)
     (hlpsT : cvTa.levelParams = p.cvT.levelParams)
-    {tfvs : List Expr} {trest : Expr}
+    {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars p.nP cvTa.type 0 = some (tfvs, trest))
     (helim : p.large = true → p.elim ∈ p.cvR.levelParams)
     (hRlps' : ∀ q ∈ p.cvT.levelParams, q ∈ p.cvR.levelParams)
     (hFD : FormerData mp.base2 cvTa (p.nP + p.nIdx) p.resSort ppsAll)
-    {env₀ : Env} {idxF : Nat → List Expr} {dsF : Nat → (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {esF : Nat → (Name → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
-    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List Expr} {xrestF : Nat → Expr}
-    {eissF : Nat → (Name → Nat) → List (List AnnotTerm)}
-    {tssF : Nat → (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {env₀ : Env md} {idxF : Nat → List (Expr md)} {dsF : Nat → (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {esF : Nat → (LevelParam → Nat) → List AnnotTerm} {srcsF : Nat → List (Option Nat)}
+    {ksF : Nat → List RecFieldKind} {fvsPF xFvsF : Nat → List (Expr md)} {xrestF : Nat → Expr md}
+    {eissF : Nat → (LevelParam → Nat) → List (List AnnotTerm)}
+    {tssF : Nat → (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hlenK : p.kinds.length = ctorsA.length)
     (hks : ∀ i, i < ctorsA.length → p.kinds[i]? = some (ksF i))
     (hcf : ∀ i cA, ctorsA[i]? = some cA →
       FixCtorFactsAt mp.base2 env₀ p.cvT.name p.cvT.levelParams p.nP p.nIdx p.resSort p.isProp
         p.large idxF dsF esF srcsF ksF fvsPF xFvsF xrestF eissF tssF i cA)
     (hidxRes : ∀ j cA, ctorsA[j]? = some cA → ∀ e ∈ idxF j, e.constsResolve env = true)
-    {uAV : (Name → Nat) → Nat} {fssZ : (Name → Nat) → List (List AnnotTerm)}
-    (_hUparams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) → uAV ψ₁ = uAV ψ₂)
+    {uAV : (LevelParam → Nat) → Nat} {fssZ : (LevelParam → Nat) → List (List AnnotTerm)}
+    (_hUparams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q) → uAV ψ₁ = uAV ψ₂)
     (hleafT : ∀ ψ, mp.base2.acval p.cvT.name ψ
       = nativeTyAVI (uAV ψ) (p.resSort.eval ψ) (ppsAll ψ) (((ppsAll ψ).drop p.nP).map (·.2.2))
           (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
@@ -626,10 +626,10 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
     (hleafC : ∀ j cA, ctorsA[j]? = some cA → ∀ ψ, mp.base2.acval cA.1.name ψ
       = sumMkAV (p.resSort.eval ψ) j (dsF j ψ) (((dsF j ψ).drop p.nP).map (·.2.2))
           (uChains (fssOfR p.nP (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))))
-    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+    (hiff : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρ ↔
         Sat V (((dsF j ψ).take p.nP).map (·.2.2)).reverse ρ)
-    (hframes : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+    (hframes : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V (((ppsAll ψ).take p.nP).map (·.2.2)).reverse ρp →
       XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (((ppsAll ψ).drop p.nP).map (·.2.2))
         (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
@@ -668,7 +668,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
         ∀ E ∈ (essOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)).getD j [],
           AnnotValid V (consList bs ρp) E))
     (hwl : p.large = true → p.resSort.isNeverZero = true ∨ ctorsA.length < 2) :
-    ∃ (sAV : (Name → Nat) → Nat)
+    ∃ (sAV : (LevelParam → Nat) → Nat)
       (mp' : EnvModelM V μ ⟨.recInfo cvRa mI rP (Ix.Kernel.sumRules env.find? cvRa.name p.nP mI rP cvRa.type ctorsA rhss)
         :: env.consts⟩),
       mp'.base2.acval = acvalWith mp.base2.acval cvRa.name
@@ -693,8 +693,8 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
     intro h; rw [h, hfresh] at hfT; exact nomatch hfT
   -- names
   generalize hElimL : Ix.Kernel.structElimLevel p.elim p.large = elimL at hRD hR hleafC ⊢
-  let sAV : (Name → Nat) → Nat := fixSortAV elimL u cvRa.levelParams
-  let A : (Name → Nat) → AnnotTerm := fixLeafAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV
+  let sAV : (LevelParam → Nat) → Nat := fixSortAV elimL u cvRa.levelParams
+  let A : (LevelParam → Nat) → AnnotTerm := fixLeafAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA sAV
   have hrdsE : ∀ ψ, fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ
       = fixRecDataAV mp.base2 p.cvT.name ψ p.nP p.nIdx elimL ((ppsAll ψ).take p.nP)
           ((ppsAll ψ).drop p.nP) (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) := by
@@ -799,7 +799,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
     rw [← univ_zero]
     exact fieldsBoundSrc_at hbnd hs hfs (by rw [hlenF]; exact hi)
   -- the recursor type's universe
-  have hunivTy : ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hunivTy : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       interp V ρ (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
         (recConcAV ctorsA.length p.nIdx)) ∈ˢ (univ (sAV ψ) : V) := by
     intro ψ ρ
@@ -823,7 +823,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
       rw [hrdsEq] at this
       exact univ_mono (Nat.le_max_right 1 _) _ this
   -- the frames at a parameter valuation, in `fixPre_of`'s shape
-  have hframes' : ∀ (ψ : Name → Nat) (ρp : Nat → V),
+  have hframes' : ∀ (ψ : LevelParam → Nat) (ρp : Nat → V),
       Sat V ((((ppsAll ψ).take p.nP).map (·.2.2)).reverse) ρp →
       XChainsOk (uAV ψ) (p.resSort.eval ψ) ρp (((ppsAll ψ).drop p.nP).map (·.2.2))
         (rssOfK ksF ctorsA.length) (tlssOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0)) (eissOfR (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0))
@@ -985,7 +985,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
     rw [hrdsE ψ, fixRecDataAV_take_nP (hlenPps ψ)] at hρ
     obtain ⟨-, -, -, hv, hEisV, hEsV⟩ := hframes ψ ρp hρ
     exact ⟨hv, hEsV, hEisV⟩
-  have hleafF : ∀ (ψ : Name → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ) ∧
+  have hleafF : ∀ (ψ : LevelParam → Nat) (ρ : Nat → V), WellDenotedV V ρ (A ψ) ∧
       interp V ρ (A ψ) ∈ˢ interp V ρ (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
         (recConcAV ctorsA.length p.nIdx)) := by
     intro ψ ρ
@@ -1028,7 +1028,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
       (fun j hj => hEssB j hj) Fs' hFs'
     refine fieldsBelow_mono (by rw [hlenIds ψ, hlenFs ψ]; omega) this
   -- the rule right-hand sides' gradedness
-  have hRuleOk : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : Name → Nat) (ρ : Nat → V),
+  have hRuleOk : ∀ j cA, ctorsA[j]? = some cA → ∀ (ψ : LevelParam → Nat) (ρ : Nat → V),
       WellDenotedV V ρ (mkLamsAV (fixRuleDataAV mp.base2 p.cvT.name ψ p.nP p.nIdx elimL
           ((ppsAll ψ).take p.nP) ((ppsAll ψ).drop p.nP)
           (fixCtorDataList dsF esF ksF eissF tssF ψ ctorsA 0) (dsF j ψ))
@@ -1050,7 +1050,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
       (mp.base2.cval_closedL cA.1.name ψ) (hiff j cA hj ψ) ρ
     have := hokΓ ψ; rw [hrdsE ψ] at this; exact this
   -- the leaf's level dependence
-  have hAparams : ∀ ψ₁ ψ₂ : Name → Nat, (∀ q ∈ cvRa.levelParams, ψ₁ q = ψ₂ q) → A ψ₁ = A ψ₂ := by
+  have hAparams : ∀ ψ₁ ψ₂ : LevelParam → Nat, (∀ q ∈ cvRa.levelParams, ψ₁ q = ψ₂ q) → A ψ₁ = A ψ₂ := by
     intro ψ₁ ψ₂ hφ
     have hlpsAll : ∀ q ∈ p.cvT.levelParams, ψ₁ q = ψ₂ q :=
       fun q hq => hφ q (by rw [hRlps]; exact hRlps' q hq)
@@ -1079,9 +1079,9 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
       rw [hℓ, restrictΨ_congr hφ]
     rw [hA ψ₁, hA ψ₂, hℓ, hw, hcds, hpps, hRD.params ψ₁ ψ₂ hφ, hs]
   -- the cons head
-  let c₀ : ConstantInfo := .recInfo cvRa mI rP (Ix.Kernel.sumRules env.find? cvRa.name p.nP mI rP cvRa.type ctorsA rhss)
-  have hcross : ∀ e : Expr, ConsCrossAt c₀ e := fun _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)
-  have hreadR : ∀ ψ : Name → Nat,
+  let c₀ : ConstantInfo md := .recInfo cvRa mI rP (Ix.Kernel.sumRules env.find? cvRa.name p.nP mI rP cvRa.type ctorsA rhss)
+  have hcross : ∀ e : Expr md, ConsCrossAt c₀ e := fun _ => ConsCrossAt.ofNtc (fun _ h => nomatch h)
+  have hreadR : ∀ ψ : LevelParam → Nat,
       denoteMeta (acvalWith mp.base2.acval cvRa.name A) ⟨c₀ :: env.consts⟩ ψ 0 cvRa.type
         = some (mkPisAV (fixRdsAV mp.base2 p ppsAll dsF esF ksF eissF tssF ctorsA ψ)
             (recConcAV ctorsA.length p.nIdx)) := fun ψ =>
@@ -1119,7 +1119,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
     · intro T' cvT' caps' hf hne hres hcape
       exact hE T' cvT' caps' hf hne hcape hres
     · intro cvT caps' hf _
-      have hfT' : (⟨c₀ :: env.consts⟩ : Env).find? p.cvT.name = some (.indInfo cvTa caps) := by
+      have hfT' : (⟨c₀ :: env.consts⟩ : Env md).find? p.cvT.name = some (.indInfo cvTa caps) := by
         rw [Ix.Kernel.Env.find?_cons, if_neg (fun h => hTR h.symm)]
         exact hfT
       obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj (Option.some.inj (hfT'.symm.trans hf))
@@ -1147,7 +1147,7 @@ theorem stageFixRec {p : NativeParts} (hE : Ix.Kernel.EtaFamiliesClosedExcept en
             { ctor := cA.1.name, nfields := cA.2, ctorParams := p.nP,
               fire := if Expr.recRulePlain cvRa.type mI rP p.nP then .plain
                 else .inert,
-              rhs := rhs, paramsBlind := true } : RecRule)
+              rhs := rhs, paramsBlind := true } : RecRule md)
           = ⟨cA.1.name, cA.2, p.nP, .plain, rhs,
              Ix.Kernel.recRuleKOf env.find? cA.1.name,
              Ix.Kernel.recRuleEtaOf env.find? cvRa.name cA.1.name, true⟩ := by

@@ -26,16 +26,16 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecFieldKind IndCaps BinderMeta)
 
 universe w'
 
-variable {V : Type w'} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w'} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-! ## Kit -/
 
 /-- The tuple universe: the join of the index binders' sorts. -/
-def idxUniv (ψ : Name → Nat) (isorts : List Level) : Nat :=
+def idxUniv (ψ : LevelParam → Nat) (isorts : List Level) : Nat :=
   (isorts.map (Level.eval ψ)).foldl max 0
 
 omit [SetTheory V] in
@@ -54,7 +54,7 @@ where
       exact Nat.le_trans (Nat.le_max_left a y) (foldl_max_ge l _)
 
 omit [SetTheory V] in
-theorem eval_le_idxUniv {ψ : Name → Nat} {isorts : List Level} {j : Nat} {s : Level}
+theorem eval_le_idxUniv {ψ : LevelParam → Nat} {isorts : List Level} {j : Nat} {s : Level}
     (h : isorts[j]? = some s) : s.eval ψ ≤ idxUniv ψ isorts :=
   le_foldl_max _ 0 _ (List.mem_map.mpr ⟨s, List.mem_of_getElem? h, rfl⟩)
 
@@ -63,16 +63,16 @@ theorem eval_le_idxUniv {ψ : Name → Nat} {isorts : List Level} {j : Nat} {s :
 /-- **The former's index telescope**, graded and bounded by the tuple
 universe at every parameter frame. -/
 theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal} {T : Name}
-    {caps : IndCaps} (hfT : env.find? T = some (.indInfo cvTa caps))
-    {tfvs : List Expr} {trest : Expr}
+    {F : Nat} {nP nIdx : Nat} {resSort : Level} {cvTa : ConstantVal md} {T : Key md}
+    {caps : IndCaps md} (hfT : env.find? T = some (.indInfo cvTa caps))
+    {tfvs : List (Expr md)} {trest : Expr md}
     (hopT : openPisAtFvars (nP + nIdx) cvTa.type 0 = some (tfvs, trest))
     {isorts : List Level}
     (hsorts : Ix.Kernel.checkStructFieldSortsI (Ix.Kernel.fueledOps μ F) env true false resSort nP
       (tfvs.drop nP) [] nIdx = .ok isorts)
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
-    (ψ : Name → Nat) (ρp : Nat → V)
+    (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     IdxOk (idxUniv ψ isorts) ρp (((ppsAll ψ).drop nP).map (·.2.2)) := by
   obtain ⟨hTf, -, -, hTb, -⟩ := mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfT)
@@ -110,7 +110,7 @@ theorem idxOk_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
 /-! ## Kit for the chain facts -/
 
 omit [SetTheory V] in
-theorem WScoped_of_mem_getAppArgs : ∀ (e a : Expr) {d : Nat}, Expr.WScoped d e →
+theorem WScoped_of_mem_getAppArgs : ∀ (e a : Expr md) {d : Nat}, Expr.WScoped d e →
     a ∈ e.getAppArgs → Expr.WScoped d a
   | .app f a', a, d, hw, ha => by
     simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at ha
@@ -124,13 +124,13 @@ theorem WScoped_of_mem_getAppArgs : ∀ (e a : Expr) {d : Nat}, Expr.WScoped d e
   | .const _ _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
   | .lam _ _ _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
   | .forallE _ _ _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
-  | .letE _ _ _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
+  | .letE _ _ _ _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
   | .proj _ _ _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
   | .lit _, _, _, _, ha => absurd ha (by simp [Expr.getAppArgs])
 
 /-- Every reading of a read spine is the reading of one of its terms. -/
-theorem DenoteMetaSpine.mem_inv {acval : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat} {d : Nat} :
-    ∀ {as : List Expr} {vs : List AnnotTerm}, DenoteMetaSpine acval env φ d as vs →
+theorem DenoteMetaSpine.mem_inv {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat} {d : Nat} :
+    ∀ {as : List (Expr md)} {vs : List AnnotTerm}, DenoteMetaSpine acval env φ d as vs →
       ∀ v ∈ vs, ∃ a ∈ as, denoteMeta acval env φ d a = some v
   | _, _, .nil, _, hv => nomatch hv
   | a :: as, v' :: vs, .cons ha h, v, hv => by
@@ -141,11 +141,11 @@ theorem DenoteMetaSpine.mem_inv {acval : Name → (Name → Nat) → AnnotTerm} 
 
 /-- **The opened pieces' leaves** are the term's or at the opening
 depth and above. -/
-theorem openPisAtFvars_leaf_bound {n : Nat} {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr}
+theorem openPisAtFvars_leaf_bound {n : Nat} {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md}
     (h : openPisAtFvars n e d = some (fvs, o)) :
     (∀ x ∈ fvs, ∀ l ∈ x.fvarTypeD.fvarLeaves, l ∈ e.fvarLeaves ∨ d ≤ l.1) ∧
     (∀ l ∈ o.fvarLeaves, l ∈ e.fvarLeaves ∨ d ≤ l.1) := by
-  have key : ∀ l : Nat × Expr, Expr.fvar l.1 l.2 ∈ fvs → d ≤ l.1 := by
+  have key : ∀ l : Nat × Expr md, Expr.fvar l.1 l.2 ∈ fvs → d ≤ l.1 := by
     intro l hl
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hl
     obtain ⟨ty, heq⟩ := openPisAtFvars_index n e d h j _ hj
@@ -172,23 +172,23 @@ set_option maxHeartbeats 1600000 in
 /-- **The walk's inputs**, from a recursive constructor's data at a
 carrier storing the former as a λ-tower over the parameters. -/
 theorem fixChainFacts_of (hμ : μ.verifiedChecks = true) (mp : EnvModelM V μ env)
-    {F : Nat} {T : Name} {lps : List Name} {nP nF nIdx : Nat} {resSort : Level}
-    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal} {env₀ env₁ : Env} {caps : IndCaps}
+    {F : Nat} {T : Key md} {lps : List LevelParam} {nP nF nIdx : Nat} {resSort : Level}
+    {isProp large : Bool} {cvC cvTa cvCa : ConstantVal md} {env₀ env₁ : Env md} {caps : IndCaps md}
     {sorts : List Level}
     (hCtor : Ix.Kernel.checkSumCtor (Ix.Kernel.fueledOps μ F) env₁ env T lps nP nIdx resSort
       isProp large cvC nF cvTa = .ok (cvCa, sorts))
     (hfT : env.find? T = some (.indInfo cvTa caps))
     (hProp : isProp = true → (Level.isEquiv resSort .zero == some true) = true)
-    {ppsAll : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
+    {ppsAll : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
     (hFD : FormerData mp.base2 cvTa (nP + nIdx) resSort ppsAll)
     (hleafT : ∀ ψ, ∃ B, mp.base2.acval T ψ = mkLamsC (resSort.eval ψ + 1) (ppsAll ψ) B)
-    {idxArgs : List Expr} {ds : (Name → Nat) → List (Nat × Nat × AnnotTerm)}
-    {Es : (Name → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
-    {fvsP xFvs : List Expr} {xrest : Expr} {Eiss : (Name → Nat) → List (List AnnotTerm)}
-    {tss : (Name → Nat) → List (List (Nat × Nat × AnnotTerm))}
+    {idxArgs : List (Expr md)} {ds : (LevelParam → Nat) → List (Nat × Nat × AnnotTerm)}
+    {Es : (LevelParam → Nat) → List AnnotTerm} {srcs : List (Option Nat)} {ks : List RecFieldKind}
+    {fvsP xFvs : List (Expr md)} {xrest : Expr md} {Eiss : (LevelParam → Nat) → List (List AnnotTerm)}
+    {tss : (LevelParam → Nat) → List (List (Nat × Nat × AnnotTerm))}
     (hD : FixCtorDataI mp.base2 env₀ T lps cvCa nP nF nIdx resSort isProp large idxArgs ds Es
       srcs ks fvsP xFvs xrest Eiss tss)
-    (u : Nat) (ψ : Name → Nat) (ρp : Nat → V)
+    (u : Nat) (ψ : LevelParam → Nat) (ρp : Nat → V)
     (hρp : Sat V (((ppsAll ψ).take nP).map (·.2.2)).reverse ρp) :
     ChainFacts u (resSort.eval ψ) nP nF ρp (((ppsAll ψ).drop nP).map (·.2.2)) ks (tss ψ)
       (((ds ψ).drop nP).map (·.2.2)) (Eiss ψ) (Es ψ) := by

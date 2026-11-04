@@ -24,17 +24,17 @@ namespace Ix.Kernel
 variable {mode : CheckMode}
 
 /-- A thrown step never succeeds. -/
-private theorem fixThrow_ne_ok {α : Type} {e : CheckError} {a : α}
-    (h : (throw e : CheckM α) = .ok a) : False := by
+private theorem fixThrow_ne_ok {α : Type} {e : CheckError md} {a : α}
+    (h : (throw e : CheckM md α) = .ok a) : False := by
   simp [throw, throwThe, MonadExceptOf.throw] at h
 
 /-- The generated rules loop: `k` rules for constructors `j, j+1, …`,
 each the generator's output at its position, scoped at `envR`. -/
-theorem checkNativeRules_inv {envR : Env} {rlps : List Name} {T : Name}
-    {lps : List Name} {elim : Name} {large : Bool} {nP nIdx : Nat} {tty : Expr}
-    {ctors : List (Name × Nat × Expr × List Nat)} {recC : Name} {rlvls : List Level} :
-    ∀ {k j : Nat} {rhss : List Expr},
-      checkNativeRules (m := CheckM) envR rlps T lps elim large nP nIdx tty ctors recC
+theorem checkNativeRules_inv {envR : Env md} {rlps : List LevelParam} {T : Key md}
+    {lps : List LevelParam} {elim : LevelParam} {large : Bool} {nP nIdx : Nat} {tty : Expr md}
+    {ctors : List (Key md × Nat × Expr md × List Nat)} {recC : Key md} {rlvls : List Level} :
+    ∀ {k j : Nat} {rhss : List (Expr md)},
+      checkNativeRules (m := CheckM md) envR rlps T lps elim large nP nIdx tty ctors recC
         rlvls k j = .ok rhss →
       rhss.length = k ∧
       ∀ i, i < k → ∃ rhs, rhss[i]? = some rhs ∧
@@ -79,31 +79,18 @@ theorem checkNativeRules_inv {envR : Env} {rlps : List Name} {T : Name}
       exact ⟨rhs', hget', hgen', hlp, hres, hbv, hfv⟩
 
 /-- **The recursor record's pins** (task #220): a successful recursor
-stage says the block's recursor record is NAMED the one official
-generates (`T.rec`) and carries its level parameters — the block's own,
-with the fresh elimination parameter in front at the large eliminator.
-Before task #220 both were recogniser conjuncts, so a block whose
-recursor record was a stub fell through to a DECLINE; they are now
-install checks whose failure REJECTS (official's replay finds no such
-generated recursor, or one that differs from it), and this is where the
-P tier reads them off. -/
-theorem checkNativeRec_pins {env : Env} {p : NativeParts}
-    {cvTa : ConstantVal} {ctorsA : List (ConstantVal × Nat)}
-    {r : ConstantVal × List Expr} {F : Nat}
+stage says the block's recursor record carries the generated level
+parameters — the block's own, with the fresh elimination parameter in
+front at the large eliminator. They are install checks whose failure
+REJECTS (official's replay finds a generated recursor that differs from
+the record), and this is where the P tier reads them off. -/
+theorem checkNativeRec_pins {env : Env md} {p : NativeParts md}
+    {cvTa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)}
+    {r : ConstantVal md × List (Expr md)} {F : Nat}
     (h : checkNativeRec (fueledOps mode F) env p cvTa ctorsA = .ok r) :
-    p.cvR.name = p.cvT.name.str "rec" ∧
     (p.large = true → p.elim ∈ p.cvR.levelParams) ∧
     (∀ q ∈ p.cvT.levelParams, q ∈ p.cvR.levelParams) := by
   unfold checkNativeRec at h
-  by_cases hn : (p.cvR.name == p.cvT.name.str "rec") = true
-  case neg =>
-    exfalso
-    rw [if_neg hn] at h
-    first
-      | exact fixThrow_ne_ok h
-      | exact fixThrow_ne_ok (by simpa [bind, Except.bind] using h)
-  rw [if_pos hn] at h
-  try simp only [bind, Except.bind] at h
   by_cases hlp : nativeRecLpsOk p.toInductiveShape = true
   case neg =>
     exfalso
@@ -112,7 +99,7 @@ theorem checkNativeRec_pins {env : Env} {p : NativeParts}
       | exact fixThrow_ne_ok h
       | exact fixThrow_ne_ok (by simpa [bind, Except.bind] using h)
   unfold nativeRecLpsOk at hlp
-  refine ⟨beq_iff_eq.mp hn, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · intro hL
     rw [if_pos hL] at hlp
     simp only [beq_iff_eq] at hlp
@@ -130,10 +117,10 @@ theorem checkNativeRec_pins {env : Env} {p : NativeParts}
       exact hq
 
 /-- The recursor stage's shape. -/
-theorem checkNativeRec_shape {env : Env} {p : NativeParts}
-    {cvTa cvRa : ConstantVal} {ctorsA : List (ConstantVal × Nat)} {rhss : List Expr} {F : Nat}
+theorem checkNativeRec_shape {env : Env md} {p : NativeParts md}
+    {cvTa cvRa : ConstantVal md} {ctorsA : List (ConstantVal md × Nat)} {rhss : List (Expr md)} {F : Nat}
     (h : checkNativeRec (fueledOps mode F) env p cvTa ctorsA = .ok (cvRa, rhss)) :
-    ∃ (cvRi : ConstantVal) (recTy sty : Expr) (u : Level),
+    ∃ (cvRi : ConstantVal md) (recTy sty : Expr md) (u : Level),
       checkConstantVal (fueledOps mode F) env p.cvR = .ok cvRi ∧
       structRecTyR p.cvT.name p.cvT.levelParams p.elim p.large p.nP p.nIdx cvTa.type
         (nativeCtors4 ctorsA p.kinds) = some recTy ∧
@@ -143,7 +130,7 @@ theorem checkNativeRec_shape {env : Env} {p : NativeParts}
       inferTypeCore mode env F 0 recTy = .ok sty ∧
       ensureSortCore mode env F 0 sty = .ok u ∧
       isDefEqCore mode env F 0 cvRi.type recTy = .ok true ∧
-      checkNativeRules (m := CheckM)
+      checkNativeRules (m := CheckM md)
         ⟨.recInfo ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ p.majorIdx p.rulePrefix []
           :: env.consts⟩
         p.cvR.levelParams p.cvT.name p.cvT.levelParams p.elim p.large p.nP p.nIdx cvTa.type
@@ -151,16 +138,7 @@ theorem checkNativeRec_shape {env : Env} {p : NativeParts}
         (nativeCtors4 ctorsA p.kinds).length 0 = .ok rhss ∧
       cvRa = ⟨p.cvR.name, p.cvR.levelParams, recTy⟩ := by
   unfold checkNativeRec at h
-  -- the recursor pin (task #220): the name and the record's structure
-  by_cases hn : (p.cvR.name == p.cvT.name.str "rec") = true
-  case neg =>
-    exfalso
-    rw [if_neg hn] at h
-    first
-      | exact fixThrow_ne_ok h
-      | exact fixThrow_ne_ok (by simpa [bind, Except.bind] using h)
-  rw [if_pos hn] at h
-  try simp only [bind, Except.bind] at h
+  -- the recursor pin (task #220): the record's structure
   by_cases hlp : nativeRecLpsOk p.toInductiveShape = true
   case neg =>
     exfalso
@@ -218,9 +196,9 @@ theorem checkNativeRec_shape {env : Env} {p : NativeParts}
 /-- The kinds' classification at install (task #210 Part D): the
 recogniser's syntactic reading of the stored constructors, with no
 non-positive and no unmodeled occurrence. -/
-theorem classifyFixKinds_inv {T : Name} {lps : List Name} {nP nIdx : Nat}
-    {ctorsA : List (ConstantVal × Nat)} {kinds : List (List RecFieldKind)}
-    (h : classifyFixKinds (m := CheckM) T lps nP nIdx ctorsA = .ok kinds) :
+theorem classifyFixKinds_inv {T : Key md} {lps : List LevelParam} {nP nIdx : Nat}
+    {ctorsA : List (ConstantVal md × Nat)} {kinds : List (List RecFieldKind)}
+    (h : classifyFixKinds (m := CheckM md) T lps nP nIdx ctorsA = .ok kinds) :
     ctorsA.mapM (recCtorKinds T lps nP nIdx) = some kinds ∧
     kinds.any (fun ks => ks.any (· == .negative)) = false ∧
     kinds.any (fun ks => ks.any (· == .unsupported)) = false ∧
@@ -247,17 +225,17 @@ environment (the resolution guard pointed at that same environment),
 the kinds classified on the stored constructors, the record completed
 with them, and the settling bit — the classified record against the
 one the pass ran at. -/
-theorem checkNativePass_inv {env : Env} {p₀ : NativeParts} {isRec : Bool}
-    {q : NativePass Env} {b : Bool} {F : Nat}
+theorem checkNativePass_inv {env : Env md} {p₀ : NativeParts md} {isRec : Bool}
+    {q : (NativePass md) (Env md)} {b : Bool} {F : Nat}
     (h : checkNativePass (fueledOps mode F) env p₀ isRec = .ok (q, b)) :
-    ∃ (p₁ : InductiveShape) (kinds : List (List RecFieldKind)),
+    ∃ (p₁ : InductiveShape md) (kinds : List (List RecFieldKind)),
       checkSumInd (fueledOps mode F) env p₀.toInductiveShape
         (fun p₁ => nativeCapsAt p₁ isRec) = .ok (q.env₁, q.cvTa, p₁) ∧
       checkSumCtors (fueledOps mode F) q.env₁ q.env₁ (p₀.complete p₁).cvT.name
         (p₀.complete p₁).cvT.levelParams (p₀.complete p₁).nP (p₀.complete p₁).nIdx
         (p₀.complete p₁).resSort (p₀.complete p₁).isProp (p₀.complete p₁).large q.cvTa
         (p₀.complete p₁).ctors = .ok (q.ctorsA, q.sortss) ∧
-      classifyFixKinds (m := CheckM) (p₀.complete p₁).cvT.name (p₀.complete p₁).cvT.levelParams
+      classifyFixKinds (m := CheckM md) (p₀.complete p₁).cvT.name (p₀.complete p₁).cvT.levelParams
         (p₀.complete p₁).nP (p₀.complete p₁).nIdx q.ctorsA = .ok kinds ∧
       q.p = (p₀.complete p₁).withKinds kinds ∧
       b = (nativeCaps q.p == nativeCapsAt p₁ isRec) := by

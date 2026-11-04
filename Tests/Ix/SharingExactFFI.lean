@@ -17,8 +17,9 @@
   The inputs of these groups: the §2 fixtures, 350 inputs of the generated
   families of the uniform and tiered tests, the tiered outputs of the
   fixtures and of generated inputs re-normalized from their stored tables,
-  and the scale inputs of the tiered tests (a table past the 3-byte TagN
-  rung, a 1288-argument spine, 10000-deep inputs; uniform and tiered modes).
+  the scale inputs of the tiered tests (a table past the 3-byte TagN rung, a
+  1288-argument spine, 10000-deep inputs; uniform and tiered modes), and
+  doubling towers whose unshared lengths exceed `2^127` (tiered mode).
   Malformed stored tables (forward, self and out-of-range references) must
   be rejected as malformed by both sides, with the expected Lean error.
 
@@ -450,6 +451,38 @@ def scaleParityTests : TestSeq :=
     let t ← compareMany scaleCases fun _ => [.uniform 1, .uniform 2, .uniform 3, .tiered]
     return judge "scale inputs (a table past the 3-byte rung, a long spine, deep inputs) × uniform-w1..3, tiered-tagN" t true
 
+/-- A doubling tower as a table: entry `0` is `Var 0`, entry `i + 1` is
+`step (Share i)` and the root is the last entry, from entry `base` of
+`table` on. -/
+def towerTable (table : Array Ixon.Expr) (depth : Nat) (step : Ixon.Expr → Ixon.Expr) :
+    Array Ixon.Expr :=
+  let base := table.size
+  (List.range depth).foldl (fun acc i => acc.push (step (.share (base + i).toUInt64)))
+    (table.push (.var 0))
+
+def towerOf (depth : Nat) (step : Ixon.Expr → Ixon.Expr) : Constant :=
+  { axiomOf (.share depth.toUInt64) with sharing := towerTable #[] depth step }
+
+/-- Doubling towers whose unshared costs exceed `2^127` while their tables
+have a few hundred entries: Rust computes phase 1 again in exact integers
+where `u128` overflows, Lean in `Nat`. The production route only: the
+uniform modes run the old reference optimizer, which refuses outside
+`u128` in Rust. -/
+def wideCases : Array (String × Constant) :=
+  let app : Ixon.Expr → Ixon.Expr := fun x => .app x x
+  let twin : Ixon.Expr → Ixon.Expr := fun x => .app x (.app (.var 1) x)
+  let pair := towerTable (towerTable #[] 128 app) 128 twin
+  #[("App(x, x) depth 127", towerOf 127 app),
+    ("App(x, x) depth 130", towerOf 130 app),
+    ("Lam(x, x) depth 130", towerOf 130 fun x => .lam .many x x),
+    ("two App towers depth 128",
+      { axiomOf (.app (.share 128) (.share 257)) with sharing := pair })]
+
+def wideParityTests : TestSeq :=
+  ioGroup "Lean/Rust: lengths past u128" do
+    let t ← compareMany wideCases fun _ => [.tiered]
+    return judge "doubling towers past u128 × tiered-tagN" t true
+
 /-! ## Compiler sharing route
 
 The compiler builds every block through `Ix.CompileM.buildConstantWithSharing`
@@ -592,6 +625,7 @@ public def suite : List TestSeq := [
   renormalizeTests,
   malformedTests,
   scaleParityTests,
+  wideParityTests,
   routeUnits,
   routeTests,
   corpusTests (),

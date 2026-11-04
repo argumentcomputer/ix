@@ -191,7 +191,7 @@ def catalogAssembleCmd : Cli.Cmd := `[Cli|
 
 def catalogVerifyCmd : Cli.Cmd := `[Cli|
   verify VIA runVerify;
-  "Verify a self-contained .ixc directory: both roots recomputed (members from entries, content by the k-way sweep over the pieces inside), every piece's env root, const count, and size checked; chunked profiles enforce the no-redeclaration invariant. --deep re-hashes files and fully loads each piece (per-constant blake3)."
+  "Verify a self-contained .ixc directory: both roots recomputed (members from entries, content by the k-way sweep over the pieces inside), every piece's env root, role binding, const count, and size checked. Only fat catalogs verify: a chunked manifest's members are not tied to its chunks, so it is refused after its structural checks (no-redeclaration included). --deep re-hashes files and fully loads each piece (per-constant blake3)."
 
   FLAGS:
     deep; "Also re-hash every file against the manifest and fully verify each piece load."

@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [features]
+# Old unbounded solvers are available only to unit tests/test-ffi.
+sharing-reference = []
 # Scoped phase timers of the canonical sharing construction
 # (`sharing_exact::profile_report`); diagnostic only, off by default.
 sharing-profile = []

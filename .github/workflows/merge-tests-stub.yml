@@ -3,6 +3,7 @@ name: Merge tests
 # Ignored suites run against merge-group commits. Pull requests publish the
 # same gate name so they can enter the queue before those suites run. This
 # workflow never runs on merge_group, where merge-tests.yml owns the real gate.
+# The check it publishes runs nothing; see docs/ci.md, "Required checks".
 on:
   pull_request:
 

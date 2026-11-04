@@ -46,7 +46,7 @@ def testRustSerdeRoundtrip : TestSeq :=
     -- Step 3: Serialize with Rust
     IO.println s!"[Step 3] Serializing with Rust (rsSerEnv)..."
     let rustSerStart ← IO.monoMsNow
-    let rustBytes := Ixon.rsSerEnv ixonEnv
+    let rustBytes ← IO.ofExcept (Ixon.rsSerEnv ixonEnv)
     let rustSerTime := (← IO.monoMsNow) - rustSerStart
     IO.println s!"[Step 3]   {rustBytes.size} bytes in {rustSerTime}ms"
     IO.println ""

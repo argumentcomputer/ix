@@ -34,7 +34,7 @@ fn collect(e: &Arc<Expr>, heights: &mut HashMap<Expr, u32>) -> u32 {
   h
 }
 
-fn key(e: &Expr, ids: &HashMap<Expr, u32>) -> (u8, Vec<u64>, Vec<u32>) {
+fn key(e: &Expr, ids: &HashMap<Expr, usize>) -> (u8, Vec<u64>, Vec<usize>) {
   let id = |c: &Arc<Expr>| ids[c.as_ref()];
   match e {
     Expr::Sort(u) => (0, vec![*u], vec![]),
@@ -68,16 +68,16 @@ fn key(e: &Expr, ids: &HashMap<Expr, u32>) -> (u8, Vec<u64>, Vec<u32>) {
 /// in ID order.
 pub(crate) fn oracle_ids(
   roots: &[Arc<Expr>],
-) -> (HashMap<Expr, u32>, Vec<Arc<Expr>>) {
+) -> (HashMap<Expr, usize>, Vec<Arc<Expr>>) {
   let mut heights: HashMap<Expr, u32> = HashMap::new();
   for r in roots {
     collect(r, &mut heights);
   }
   let max_h = heights.values().copied().max().unwrap_or(0);
-  let mut ids: HashMap<Expr, u32> = HashMap::new();
+  let mut ids: HashMap<Expr, usize> = HashMap::new();
   let mut terms: Vec<Arc<Expr>> = Vec::new();
   for h in 0..=max_h {
-    let mut level: Vec<(u8, Vec<u64>, Vec<u32>, Expr)> = heights
+    let mut level: Vec<(u8, Vec<u64>, Vec<usize>, Expr)> = heights
       .iter()
       .filter(|(_, hh)| **hh == h)
       .map(|(e, _)| {
@@ -87,7 +87,7 @@ pub(crate) fn oracle_ids(
       .collect();
     level.sort_by(|a, b| (&a.0, &a.1, &a.2).cmp(&(&b.0, &b.1, &b.2)));
     for (_, _, _, e) in level {
-      let id = u32::try_from(terms.len()).unwrap();
+      let id = terms.len();
       ids.insert(e.clone(), id);
       terms.push(Arc::new(e));
     }
@@ -150,11 +150,11 @@ fn best_variant(e: &Arc<Expr>, avail: &[(Arc<Expr>, u64)]) -> Arc<Expr> {
 #[derive(Debug)]
 pub(crate) struct OracleResult {
   pub len: u64,
-  pub q: Vec<u32>,
+  pub q: Vec<usize>,
   pub bytes: Vec<u8>,
   pub constant: Constant,
   /// Every table sequence (as oracle IDs) that attains the minimum length.
-  pub minimal_sequences: Vec<Vec<u32>>,
+  pub minimal_sequences: Vec<Vec<usize>>,
   pub sequences: u64,
 }
 
@@ -188,9 +188,9 @@ fn available(terms: &[Arc<Expr>], order: &[usize]) -> Vec<(Arc<Expr>, u64)> {
 pub(crate) fn oracle_optimum(template: &Constant) -> OracleResult {
   let roots = constant_info_root_exprs(&template.info);
   let (_, terms) = oracle_ids(&roots);
-  let mut best: Option<(u64, Vec<u32>, Vec<u8>, Constant)> = None;
+  let mut best: Option<(u64, Vec<usize>, Vec<u8>, Constant)> = None;
   let mut min_len = u64::MAX;
-  let mut minimal: Vec<Vec<u32>> = Vec::new();
+  let mut minimal: Vec<Vec<usize>> = Vec::new();
   let mut sequences = 0u64;
   for_each_sequence(terms.len(), &mut |order| {
     sequences += 1;
@@ -211,8 +211,7 @@ pub(crate) fn oracle_optimum(template: &Constant) -> OracleResult {
     };
     let bytes = constant_bytes(&c);
     let len = bytes.len() as u64;
-    let q: Vec<u32> =
-      order.iter().map(|&i| u32::try_from(i).unwrap()).collect();
+    let q: Vec<usize> = order.to_vec();
     if len < min_len {
       min_len = len;
       minimal.clear();
@@ -246,10 +245,10 @@ pub(crate) fn oracle_optimum(template: &Constant) -> OracleResult {
 pub(crate) fn oracle_full_product(
   template: &Constant,
   cap: usize,
-) -> Option<(u64, Vec<u32>, Vec<u8>, u64)> {
+) -> Option<(u64, Vec<usize>, Vec<u8>, u64)> {
   let roots = constant_info_root_exprs(&template.info);
   let (_, terms) = oracle_ids(&roots);
-  let mut best: Option<(u64, Vec<u32>, Vec<u8>)> = None;
+  let mut best: Option<(u64, Vec<usize>, Vec<u8>)> = None;
   let mut complete = 0u64;
   let mut too_big = false;
   for_each_sequence(terms.len(), &mut |order| {
@@ -271,8 +270,7 @@ pub(crate) fn oracle_full_product(
       too_big = true;
       return;
     }
-    let q: Vec<u32> =
-      order.iter().map(|&i| u32::try_from(i).unwrap()).collect();
+    let q: Vec<usize> = order.to_vec();
     let mut pick = vec![0usize; components.len()];
     loop {
       let table: Vec<Arc<Expr>> =

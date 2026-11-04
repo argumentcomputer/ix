@@ -2,7 +2,6 @@
 
 pub mod compile;
 pub mod condense;
-pub mod congruence;
 pub mod decompile;
 pub mod diag;
 pub mod graph;

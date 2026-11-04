@@ -8,10 +8,13 @@
 //!
 //! `Primitives<M>` stores `KId<M>` values, resolved from the environment by
 //! address so that names match in both Meta and Anon modes. `Lean.reduceBool`
-//! and `Lean.reduceNat` are real primitive constants and are dispatched by
-//! content address. `eager_reduce` is a synthetic kernel-only marker because
-//! Lean's `eagerReduce` compiles to the same canonical content address as
-//! `id`; address-only dispatch on the real constant would be unsound.
+//! and `Lean.reduceNat` are real constants, recognized by content address so
+//! that the kernel can decline them (see [`native_evaluation_addrs`]).
+//! `eager_reduce` is a synthetic kernel-only marker because Lean's
+//! `eagerReduce` compiles to the same canonical content address as `id`;
+//! address-only dispatch on the real constant would be unsound.
+
+use std::sync::LazyLock;
 
 use ix_common::address::Address;
 
@@ -140,7 +143,6 @@ pub struct Primitives<M: KernelMode> {
   pub punit_size_of_1: KId<M>,
   pub size_of_size_of: KId<M>,
   pub string_back: KId<M>,
-  pub string_legacy_back: KId<M>,
   pub string_utf8_byte_size: KId<M>,
 
   // -- Native string-value fast paths --
@@ -160,10 +162,66 @@ pub struct Primitives<M: KernelMode> {
 /// kernel code has always named them.
 pub use ix_common::prim_addrs::{PrimAddrs, reserved_marker_name};
 
+/// Lean's native-evaluation constants, by canonical content address:
+/// `Lean.trustCompiler` and the interface built on it, `Lean.reduceBool`,
+/// `Lean.reduceNat`, `Lean.ofReduceBool` and `Lean.ofReduceNat`.
+///
+/// The checked theory is Lean with its three standard axioms; evaluation by
+/// the compiler is outside it. The kernel therefore declines each of these
+/// declarations and every declaration that refers to one of them, as the
+/// certified checker does: it declines `trustCompiler` as a non-standard
+/// axiom and blocks the four that depend on it.
+///
+/// `reduceBool` and `reduceNat` reuse their [`PrimAddrs`] entries. The other
+/// three live here rather than in `PrimAddrs`, whose parity table also
+/// scopes IxVM witnesses. `lake test -- primitive-address-parity` compares
+/// every entry with a live compile of the Lean declarations.
+pub fn native_evaluation_addrs() -> &'static [(&'static str, Address); 5] {
+  static ADDRS: LazyLock<[(&'static str, Address); 5]> = LazyLock::new(|| {
+    let pinned = PrimAddrs::new();
+    let h = |hex: &str| -> Address {
+      Address::from_hex(hex).expect("invalid native-evaluation address hex")
+    };
+    [
+      (
+        "Lean.trustCompiler",
+        h("78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2"),
+      ),
+      ("Lean.reduceBool", pinned.reduce_bool),
+      ("Lean.reduceNat", pinned.reduce_nat),
+      (
+        "Lean.ofReduceBool",
+        h("560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b"),
+      ),
+      (
+        "Lean.ofReduceNat",
+        h("1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b"),
+      ),
+    ]
+  });
+  &ADDRS
+}
+
+/// Whether `addr` is one of [`native_evaluation_addrs`].
+pub fn is_native_evaluation_addr(addr: &Address) -> bool {
+  native_evaluation_addrs().iter().any(|(_, a)| a == addr)
+}
+
+/// The address that stands for a primitive a bound artifact has not
+/// admitted (see `Primitives::from_admitted`). It is not the hash of any
+/// known bytes, so no authenticated record or reference can carry it.
+pub const ABSENT_PRIMITIVE: &str =
+  "ff000000000000000000000000000000000000000000000000000000000000a0";
+
+/// [`ABSENT_PRIMITIVE`] as an address.
+pub fn absent_primitive() -> Address {
+  Address::from_hex(ABSENT_PRIMITIVE).expect("valid absent-primitive address")
+}
+
 impl<M: KernelMode> Primitives<M> {
   /// Resolve primitives from the environment using the canonical
   /// content-hash address table (`PrimAddrs::new`). This is the correct
-  /// call for `kctx.kenv` (the incrementally-compiled canonical
+  /// call for a kenv ingressed from compiled Ixon (the canonical
   /// environment).
   ///
   /// Addresses that don't resolve fall back to a synthetic KId with the
@@ -188,6 +246,121 @@ impl<M: KernelMode> Primitives<M> {
   /// `lake test -- rust-kernel-build-prim-origs`.
   pub fn from_env_orig(env: &KEnv<M>) -> Self {
     Self::from_env_with(env, &PrimAddrs::new_orig())
+  }
+
+  /// The table for a bound artifact. A primitive whose role the artifact's
+  /// binding has admitted is its bound constant. Every other primitive (a role
+  /// not admitted, or a primitive with no role) is [`ABSENT_PRIMITIVE`], an
+  /// address no authenticated record has, so its acceleration never applies
+  /// and the term reduces by ordinary delta and iota. The synthetic
+  /// `eager_reduce` marker keeps its reserved address.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn from_admitted<A, F>(admitted: A, mut name_for_addr: F) -> Self
+  where
+    A: Fn(ixon::role_table::Role) -> Option<Address>,
+    F: FnMut(&Address) -> Option<ix_common::env::Name>,
+  {
+    use ixon::role_table::Role as R;
+    let absent = absent_primitive();
+    let role = |r: R| admitted(r).unwrap_or_else(|| absent.clone());
+    let a = PrimAddrs {
+      nat: role(R::Nat),
+      nat_zero: role(R::NatZero),
+      nat_succ: role(R::NatSucc),
+      nat_add: role(R::NatAdd),
+      nat_pred: role(R::NatPred),
+      nat_sub: role(R::NatSub),
+      nat_mul: role(R::NatMul),
+      nat_pow: role(R::NatPow),
+      nat_gcd: role(R::NatGcd),
+      nat_mod: role(R::NatMod),
+      nat_div: role(R::NatDiv),
+      nat_bitwise: absent.clone(),
+      nat_beq: role(R::NatBeq),
+      nat_ble: role(R::NatBle),
+      nat_land: role(R::NatLand),
+      nat_lor: role(R::NatLor),
+      nat_xor: role(R::NatXor),
+      nat_shift_left: role(R::NatShiftLeft),
+      nat_shift_right: role(R::NatShiftRight),
+      bool_type: role(R::Bool),
+      bool_true: role(R::BoolTrue),
+      bool_false: role(R::BoolFalse),
+      string: role(R::String),
+      string_mk: role(R::StringOfList),
+      char_type: role(R::Char),
+      char_mk: absent.clone(),
+      char_of_nat: role(R::CharOfNat),
+      string_of_list: role(R::StringOfList),
+      string_to_byte_array: role(R::StringToByteArray),
+      byte_array_empty: role(R::ByteArrayEmpty),
+      list: role(R::List),
+      list_nil: role(R::ListNil),
+      list_cons: role(R::ListCons),
+      eq: role(R::Eq),
+      eq_refl: role(R::EqRefl),
+      quot_type: role(R::Quot),
+      quot_ctor: role(R::QuotMk),
+      quot_lift: role(R::QuotLift),
+      quot_ind: role(R::QuotInd),
+      reduce_bool: absent.clone(),
+      reduce_nat: absent.clone(),
+      eager_reduce: PrimAddrs::new().eager_reduce,
+      system_platform_num_bits: absent.clone(),
+      system_platform_get_num_bits: absent.clone(),
+      subtype_val: absent.clone(),
+      nat_dec_le: role(R::NatDecLe),
+      nat_dec_eq: role(R::NatDecEq),
+      nat_dec_lt: role(R::NatDecLt),
+      decidable_rec: absent.clone(),
+      decidable_is_true: role(R::DecidableIsTrue),
+      decidable_is_false: role(R::DecidableIsFalse),
+      nat_le_of_ble_eq_true: absent.clone(),
+      nat_not_le_of_not_ble_eq_true: absent.clone(),
+      nat_eq_of_beq_eq_true: absent.clone(),
+      nat_ne_of_beq_eq_false: absent.clone(),
+      fin: absent.clone(),
+      bool_no_confusion: absent.clone(),
+      int: role(R::Int),
+      int_of_nat: role(R::IntOfNat),
+      int_neg_succ: role(R::IntNegSucc),
+      int_add: role(R::IntAdd),
+      int_sub: role(R::IntSub),
+      int_mul: role(R::IntMul),
+      int_neg: role(R::IntNeg),
+      int_emod: role(R::IntEmod),
+      int_ediv: role(R::IntEdiv),
+      int_bmod: role(R::IntBmod),
+      int_bdiv: role(R::IntBdiv),
+      int_nat_abs: role(R::IntNatAbs),
+      int_pow: role(R::IntPow),
+      int_dec_eq: role(R::IntDecEq),
+      int_dec_le: role(R::IntDecLe),
+      int_dec_lt: role(R::IntDecLt),
+      punit: role(R::PUnit),
+      pprod: absent.clone(),
+      pprod_mk: absent.clone(),
+      nat_rec: role(R::NatRec),
+      nat_cases_on: absent.clone(),
+      bit_vec: role(R::BitVec),
+      bit_vec_to_nat: role(R::BitVecToNat),
+      bit_vec_of_nat: role(R::BitVecOfNat),
+      bit_vec_ult: role(R::BitVecUlt),
+      decidable_decide: role(R::DecidableDecide),
+      lt_lt: absent.clone(),
+      of_nat_of_nat: absent.clone(),
+      unit: absent.clone(),
+      punit_size_of_1: absent.clone(),
+      size_of_size_of: absent.clone(),
+      string_back: role(R::StringBack),
+      string_utf8_byte_size: role(R::StringUtf8ByteSize),
+      string_append: role(R::StringAppend),
+      string_dec_eq: role(R::StringDecEq),
+    };
+    Self::from_addrs_with(&a, |addr| {
+      name_for_addr(addr)
+        .map(|name| KId::new(addr.clone(), M::meta_field(name)))
+    })
   }
 
   /// Resolve canonical primitive KIds from an external address → name
@@ -330,7 +503,6 @@ impl<M: KernelMode> Primitives<M> {
       punit_size_of_1: r(&a.punit_size_of_1),
       size_of_size_of: r(&a.size_of_size_of),
       string_back: r(&a.string_back),
-      string_legacy_back: r(&a.string_legacy_back),
       string_utf8_byte_size: r(&a.string_utf8_byte_size),
       string_append: r(&a.string_append),
       string_dec_eq: r(&a.string_dec_eq),
@@ -447,7 +619,6 @@ mod tests {
       ("punit_size_of_1", &a.punit_size_of_1),
       ("size_of_size_of", &a.size_of_size_of),
       ("string_back", &a.string_back),
-      ("string_legacy_back", &a.string_legacy_back),
       ("string_utf8_byte_size", &a.string_utf8_byte_size),
       ("string_append", &a.string_append),
       ("string_dec_eq", &a.string_dec_eq),
@@ -630,5 +801,34 @@ mod tests {
       assert_eq!(name_a, name_d);
       assert_eq!(addr_a.hex(), addr_d.hex());
     }
+  }
+
+  #[test]
+  fn bound_extra_identities_require_admission_and_leave_legacy_helpers_absent()
+  {
+    use ixon::role_table::Role;
+    let key = Address::hash(b"admitted string append");
+    let p = Primitives::<Anon>::from_admitted(
+      |role| (role == Role::StringAppend).then(|| key.clone()),
+      |_| None,
+    );
+    assert_eq!(p.string_append.addr, key);
+    for absent in [
+      &p.string_dec_eq,
+      &p.string_back,
+      &p.string_utf8_byte_size,
+      &p.bit_vec_to_nat,
+      &p.int_add,
+      &p.nat_dec_eq,
+      &p.nat_le_of_ble_eq_true,
+      &p.nat_not_le_of_not_ble_eq_true,
+      &p.nat_eq_of_beq_eq_true,
+      &p.nat_ne_of_beq_eq_false,
+      &p.decidable_rec,
+    ] {
+      assert_eq!(absent.addr, absent_primitive());
+    }
+    let none = Primitives::<Anon>::from_admitted(|_| None, |_| None);
+    assert_eq!(none.string_append.addr, absent_primitive());
   }
 }

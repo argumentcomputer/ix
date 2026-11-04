@@ -18,10 +18,11 @@ public import Ix.IxVM.Kernel.Whnf
 public import Ix.IxVM.Kernel.InferOnly
 public import Ix.IxVM.Kernel.DefEq
 public import Ix.IxVM.Kernel.Infer
-public import Ix.IxVM.Kernel.CanonicalCheck
 public import Ix.IxVM.Kernel.Check
 public import Ix.IxVM.Kernel.Claim
 public import Ix.IxVM.Kernel.Eval
+public import Ix.IxVM.Kernel.Roles
+public import Ix.IxVM.Kernel.RoleSpec
 
 public section
 
@@ -35,16 +36,17 @@ def entrypoints := ⟦
   -- Checks the constant AT `addr_bytes` and nothing else: its refs are
   -- ingressed and get_ci'd for their declared types, but are not
   -- themselves checked. For the transitive discipline use `verify_claim`
-  -- with a Check or CheckEnv claim.
-  pub fn verify_check(addr_bytes: [U8; 32]) {
-    run_check(store(addr_bytes));
+  -- with a Check or CheckEnv claim. Primitives are read through the role
+  -- binding with hash `binding`.
+  pub fn verify_check(binding: [U8; 32], addr_bytes: [U8; 32]) {
+    run_check(role_ctx_of_binding(store(binding)), store(addr_bytes));
   }
 
   -- CheckEnv entrypoint. Parses the env tree at `root_bytes` (ch 1),
   -- checks every leaf via run_check. Faults constants lazily via
   -- get_ci; shared subterms across leaves ingressed once (memoized).
-  pub fn verify_check_env(root_bytes: [U8; 32]) {
-    run_check_env(store(root_bytes), Option.None);
+  pub fn verify_check_env(binding: [U8; 32], root_bytes: [U8; 32]) {
+    run_check_env(role_ctx_of_binding(store(binding)), store(root_bytes), Option.None);
   }
 
   /- # Test entrypoints. These exercise shared infrastructure — the Ixon
@@ -58,7 +60,7 @@ def entrypoints := ⟦
       _ =>
         let n_minus_1 = n - 1;
         let (idx, len) = io_get_info(0, [n_minus_1]);
-        let bytes = read_finite_byte_stream(0, idx, len);
+        let bytes = read_checked_byte_stream(0, idx, len);
         let (const, rest) = get_constant(bytes);
         assert_eq!(load(rest), ListNode.Nil,
           "ixon deserialization left trailing bytes");
@@ -163,8 +165,8 @@ def entrypoints := ⟦
   -- Body is deliberately identical to `verify_check`: the two exist as
   -- separate funcidxs precisely so policy can accept one and reject the
   -- other.
-  pub fn verify_const(addr_bytes: [U8; 32]) {
-    run_check(store(addr_bytes));
+  pub fn verify_const(binding: [U8; 32], addr_bytes: [U8; 32]) {
+    run_check(role_ctx_of_binding(store(binding)), store(addr_bytes));
   }
 
   -- Claim-discipline entrypoint — the only production entrypoint. Loads
@@ -205,7 +207,8 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge inferOnly
   let vm ← vm.merge defEq
   let vm ← vm.merge infer
-  let vm ← vm.merge canonicalCheck
+  let vm ← vm.merge roles
+  let vm ← vm.merge roleSpec
   let vm ← vm.merge check
   let vm ← vm.merge claim
   let vm ← vm.merge eval

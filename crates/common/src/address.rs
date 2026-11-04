@@ -61,7 +61,7 @@ impl Address {
   /// Use this when you need to register a KId/Named entry at a synthetic
   /// name that can't collide with any Lean-originated name (e.g. for
   /// scratch `KEnv` entries that should not participate in the
-  /// `name_to_addr` / `aux_name_to_addr` namespace).
+  /// `name_to_addr` namespace).
   pub fn to_unique_name(&self) -> crate::env::Name {
     use crate::env::Name;
     Name::str(
@@ -95,7 +95,7 @@ impl Address {
   /// `Ix.<hex>.<first_member_name>`. Disambiguates alpha-equivalent blocks
   /// that share an `addr` but have different member names.
   ///
-  /// Used by `compile/mutual.rs` to register each mutual block under a
+  /// Used by `compile_mutual` to register each mutual block under a
   /// Muts-tagged meta so kernel ingress can discover and process it via
   /// `ingress_muts_block`.
   pub fn muts_name(&self, first_member: &crate::env::Name) -> crate::env::Name {

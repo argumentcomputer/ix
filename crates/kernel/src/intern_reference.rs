@@ -98,32 +98,54 @@ impl<M: KernelMode> InternTable<M> {
           KExpr::app_mdata(cf, ca, e.mdata().clone())
         }
       },
-      ExprData::Lam(n, bi, t, b, _) => {
+      ExprData::Lam(n, bi, contract, t, b, _) => {
         let ct = self.intern_expr_reference(t.clone());
         let cb = self.intern_expr_reference(b.clone());
         if ct.ptr_eq(t) && cb.ptr_eq(b) {
           e
         } else {
-          KExpr::lam_mdata(n.clone(), bi.clone(), ct, cb, e.mdata().clone())
+          KExpr::lam_contract_mdata(
+            n.clone(),
+            bi.clone(),
+            *contract,
+            ct,
+            cb,
+            e.mdata().clone(),
+          )
         }
       },
-      ExprData::All(n, bi, t, b, _) => {
+      ExprData::All(n, bi, contract, result, t, b, _) => {
         let ct = self.intern_expr_reference(t.clone());
         let cb = self.intern_expr_reference(b.clone());
         if ct.ptr_eq(t) && cb.ptr_eq(b) {
           e
         } else {
-          KExpr::all_mdata(n.clone(), bi.clone(), ct, cb, e.mdata().clone())
+          KExpr::all_contract_mdata(
+            n.clone(),
+            bi.clone(),
+            *contract,
+            *result,
+            ct,
+            cb,
+            e.mdata().clone(),
+          )
         }
       },
-      ExprData::Let(n, t, v, b, nd, _) => {
+      ExprData::Let(n, t, v, b, contract, _) => {
         let ct = self.intern_expr_reference(t.clone());
         let cv = self.intern_expr_reference(v.clone());
         let cb = self.intern_expr_reference(b.clone());
         if ct.ptr_eq(t) && cv.ptr_eq(v) && cb.ptr_eq(b) {
           e
         } else {
-          KExpr::let_mdata(n.clone(), ct, cv, cb, *nd, e.mdata().clone())
+          KExpr::let_contract_mdata(
+            n.clone(),
+            *contract,
+            ct,
+            cv,
+            cb,
+            e.mdata().clone(),
+          )
         }
       },
       ExprData::Prj(id, f, v, _) => {

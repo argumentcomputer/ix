@@ -110,3 +110,10 @@ pub(super) fn shape_code(left: ChildKind, right: Option<ChildKind>) -> u8 {
 pub(super) fn structural_shape_code(left: ChildKind, right: ChildKind) -> u8 {
   6 + 2 * left.code() + right.code()
 }
+
+/// The binding-discharge shape for a child of kind `kind`
+/// (`Aggr.dischargeShapeCode`): `13` for an IxVM child, `14` for an
+/// `ix_aggr` child, each with an IxVM proof of the `Binding` claim.
+pub(super) fn discharge_shape_code(kind: ChildKind) -> u8 {
+  13 + kind.code()
+}

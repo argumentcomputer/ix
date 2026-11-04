@@ -14,6 +14,7 @@
 
 use super::*;
 use ix_common::env::{BinderInfo, Name};
+use ixon::contract::{BinderContract, ValueContract};
 
 const BINDER_BATCH_MIN_LENGTH: usize = 4;
 const BINDER_BATCH_FUEL: u64 = 4_096;
@@ -21,6 +22,9 @@ const BINDER_BATCH_FUEL: u64 = 4_096;
 struct BinderPair<'a, M: KernelMode> {
   name: &'a M::MField<Name>,
   bi: &'a M::MField<BinderInfo>,
+  left_contract: BinderContract,
+  right_contract: BinderContract,
+  left_result: ValueContract,
   left_ty: &'a KExpr<M>,
   right_ty: &'a KExpr<M>,
   left_body: &'a KExpr<M>,
@@ -32,17 +36,34 @@ fn binder_pair<'a, M: KernelMode>(
   b: &'a KExpr<M>,
 ) -> Option<BinderPair<'a, M>> {
   match (a.data(), b.data()) {
-    (ExprData::Lam(name, bi, at, ab, _), ExprData::Lam(_, _, bt, bb, _))
-    | (ExprData::All(name, bi, at, ab, _), ExprData::All(_, _, bt, bb, _)) => {
-      Some(BinderPair {
-        name,
-        bi,
-        left_ty: at,
-        right_ty: bt,
-        left_body: ab,
-        right_body: bb,
-      })
-    },
+    (
+      ExprData::Lam(name, bi, left_contract, at, ab, _),
+      ExprData::Lam(_, _, right_contract, bt, bb, _),
+    ) => Some(BinderPair {
+      name,
+      bi,
+      left_contract: *left_contract,
+      right_contract: *right_contract,
+      left_result: ValueContract::shared(),
+      left_ty: at,
+      right_ty: bt,
+      left_body: ab,
+      right_body: bb,
+    }),
+    (
+      ExprData::All(name, bi, left_contract, result, at, ab, _),
+      ExprData::All(_, _, right_contract, _, bt, bb, _),
+    ) => Some(BinderPair {
+      name,
+      bi,
+      left_contract: *left_contract,
+      right_contract: *right_contract,
+      left_result: *result,
+      left_ty: at,
+      right_ty: bt,
+      left_body: ab,
+      right_body: bb,
+    }),
     _ => None,
   }
 }
@@ -94,6 +115,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
     let Some(pair) = binder_pair(a, b) else { return Ok(false) };
+    if pair.left_contract != pair.right_contract {
+      return Ok(false);
+    }
     if !self.is_def_eq(pair.left_ty, pair.right_ty)? {
       return Ok(false);
     }
@@ -106,6 +130,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           name: pair.name.clone(),
           bi: pair.bi.clone(),
           ty: pair.left_ty.clone(),
+          contract: pair.left_contract,
+          result: pair.left_result,
         },
       );
       let left = instantiate_rev(
@@ -140,6 +166,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return self.is_def_eq(a, b);
       }
       let Some(pair) = binder_pair(a, b) else { break };
+      if pair.left_contract != pair.right_contract {
+        return Ok(false);
+      }
       if !fvars.is_empty() {
         // Corresponds to entering another nontrivial binder comparison.
         // Keeps the iterative walk fuel-bounded without growing the stack.
@@ -162,6 +191,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           name: pair.name.clone(),
           bi: pair.bi.clone(),
           ty: left_ty,
+          contract: pair.left_contract,
+          result: pair.left_result,
         },
       );
       fvars.push(fv);

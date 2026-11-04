@@ -245,7 +245,6 @@ pub(crate) fn all_costs<W: Widths>(
 ) -> Vec<Len> {
   let mut costs: Vec<Len> = Vec::with_capacity(nodes.len());
   for t in 0..nodes.len() {
-    let t = TermId::try_from(t).unwrap_or(TermId::MAX);
     let c = eval_node(nodes, own, t, widths, &|x| costs[ix(x)], false, work).0;
     costs.push(c);
   }
@@ -304,7 +303,6 @@ impl Evaluation {
     let mut term_work: Vec<u64> = Vec::with_capacity(n);
     let mut total: u128 = 0;
     for t in 0..n {
-      let t = TermId::try_from(t).unwrap_or(TermId::MAX);
       let mut w = 0u64;
       let c =
         eval_node(nodes, own, t, widths, &|x| costs[ix(x)], false, &mut w).0;
@@ -382,7 +380,6 @@ impl ReadEdges {
     let mut fill: Vec<usize> = start[..n].to_vec();
     let mut edges: Vec<(TermId, u8)> = vec![(0, 0); start[n]];
     for (p, node) in nodes.iter().enumerate() {
-      let p = TermId::try_from(p).unwrap_or(TermId::MAX);
       for (c, f) in reads(node) {
         if f != 0 {
           edges[fill[ix(c)]] = (p, f);
@@ -454,7 +451,7 @@ impl<'a> IncrementalCosts<'a> {
       let bit = bits.trailing_zeros() as usize;
       self.queued[word] &= !(1u64 << bit);
       let xi = word * 64 + bit;
-      let x = TermId::try_from(xi).unwrap_or(TermId::MAX);
+      let x: TermId = xi;
       let mut w = 0u64;
       let c = {
         let costs = &self.eval.costs;
@@ -560,8 +557,7 @@ impl<'a> LazyCosts<'a> {
     let mut reach = vec![false; n];
     let mut spined = vec![false; n];
     for t in 0..n {
-      let tid = TermId::try_from(t).unwrap_or(TermId::MAX);
-      let avail = widths.width(tid).is_some();
+      let avail = widths.width(t).is_some();
       if let Some((_, next)) = spine_parts(&nodes[t]) {
         let same = nodes[ix(next)].family() == nodes[t].family();
         reach[t] = avail || (same && reach[ix(next)]);
@@ -860,18 +856,15 @@ pub(crate) fn materialize<D: Indices>(
     if !needed[t] {
       continue;
     }
-    let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
-    let (_, ch) =
-      eval_node(nodes, own, tid, dict, &|x| costs[ix(x)], true, work);
+    let (_, ch) = eval_node(nodes, own, t, dict, &|x| costs[ix(x)], true, work);
     choice[t] = Some(ch);
-    for_each_needed(nodes, tid, ch, work, |c| needed[ix(c)] = true)?;
+    for_each_needed(nodes, t, ch, work, |c| needed[ix(c)] = true)?;
   }
   // Bottom-up: build each needed standalone representation once.
   let mut rep: Vec<Option<Arc<Expr>>> = vec![None; top + 1];
   for t in 0..=top {
     let Some(ch) = choice[t] else { continue };
-    let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
-    rep[t] = Some(build_choice(nodes, dict, tid, ch, &rep)?);
+    rep[t] = Some(build_choice(nodes, dict, t, ch, &rep)?);
   }
   targets.iter().map(|&t| built(&rep, t)).collect()
 }
@@ -1108,14 +1101,12 @@ pub(crate) fn decide_dependent<D: Indices>(
     if !needed[t] {
       continue;
     }
-    let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
-    let (c, ch) =
-      eval_node(nodes, own, tid, dict, &|x| costs[ix(x)], true, work);
+    let (c, ch) = eval_node(nodes, own, t, dict, &|x| costs[ix(x)], true, work);
     if c != costs[t] {
       return Err(internal("standalone choice differs from C_M"));
     }
     choice[t] = Some(ch);
-    mark_children(tid, ch, &mut needed, work)?;
+    mark_children(t, ch, &mut needed, work)?;
   }
   Ok(DependentPlan { entry_choice, choice, predicted })
 }
@@ -1234,8 +1225,7 @@ impl DependentPlan {
     }
     for t in (0..n).rev() {
       let Some(ch) = self.choice[t] else { continue };
-      let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
-      count = count.saturating_add(Self::items(nodes, tid, ch, &mut items)?);
+      count = count.saturating_add(Self::items(nodes, t, ch, &mut items)?);
       let m = mult[t];
       if m == 0 {
         continue;
@@ -1300,8 +1290,7 @@ pub(crate) fn build_dependent<D: Indices>(
   let mut rep: Vec<Option<Arc<Expr>>> = vec![None; n];
   for t in 0..n {
     if let Some(ch) = choice[t] {
-      let tid = TermId::try_from(t).map_err(|_e| internal("term id"))?;
-      rep[t] = Some(build_choice(nodes, dict, tid, ch, &rep)?);
+      rep[t] = Some(build_choice(nodes, dict, t, ch, &rep)?);
     }
   }
   let mut entries = Vec::with_capacity(table.len());

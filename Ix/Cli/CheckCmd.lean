@@ -134,10 +134,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       if jobs != 1 && !interpSource && claimHex.isNone then
         runBatchCheck ixe names jobs toplevel useBytecode
       else
-        forEachClaim ixePath claimHex names keepGoing "check" interpSource
+        forEachClaim ixePath claimHex names keepGoing "check" interpSource (rust := p.hasFlag "rust")
           runOne
     | _, _ =>
-      forEachClaim ixePath claimHex names keepGoing "check" interpSource
+      forEachClaim ixePath claimHex names keepGoing "check" interpSource (rust := p.hasFlag "rust")
         runOne
 
 end Ix.Cli.CheckCmd
@@ -151,6 +151,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     interp : String;        "Use an interpreter instead of the codegen'd IxVM Rust kernel. Modes: `source` = Aiur source interpreter (richer per-execution error diagnostics, slowest); `bytecode` = generic Aiur bytecode interpreter (skips the regen + cargo rebuild cycle when iterating on `Ix/IxVM/*.lean`). Omit the flag entirely for the native codegen kernel."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "rust";                 "Without --ixe: compile each name's closure with the Rust compiler instead of the certified Lean pipeline. The Rust compiler runs none of the compile's checks, and its output is not covered by the compiler's correctness theorem."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."

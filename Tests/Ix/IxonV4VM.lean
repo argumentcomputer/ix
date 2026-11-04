@@ -12,21 +12,21 @@ namespace Tests.IxonV4
 def codecEntrypoints := ⟦
   pub fn ixon_expr_decode() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (_, rest) = get_expr(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing expression bytes");
   }
 
   pub fn ixon_const_decode() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (_, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing constant bytes");
   }
 
   pub fn ixon_expr_codec() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (expr, rest) = get_expr(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing expression bytes");
     let encoded = put_expr(load(expr), store(ListNode.Nil));
@@ -35,7 +35,7 @@ def codecEntrypoints := ⟦
 
   pub fn ixon_const_codec() {
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil, "trailing constant bytes");
     let encoded = put_constant(constant, store(ListNode.Nil));
@@ -171,12 +171,13 @@ def runVMClaims : IO Nat := do
   let some tree := IxVM.ClaimHarness.envCanonicalTree env
     | throw <| IO.userError "VM claim fixture has no tree"
   let trees := ({} : Std.HashMap Address Ix.AssumptionTree).insert tree.root tree
+  let ctx ← IO.ofExcept Ix.ClaimContext.ofDefaultTable
   let mut checks := 0
   let revealedType := Address.blake3 (Ixon.runPut (Ixon.putExpr
     (.all Tests.ResourceAddressed.linearLocal .localShared (.ref 0 #[]) (.ref 0 #[]))))
   for (name, claim) in [
-      ("check", Ix.Claim.check validTarget none),
-      ("check-env", .checkEnv tree.root none),
+      ("check", Ix.Claim.check ctx validTarget none),
+      ("check-env", .checkEnv ctx tree.root none),
       ("reveal", .reveal validTarget (.defn none none none (some revealedType) none)),
       ("contains", .contains tree.root validTarget)] do
     let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees)
@@ -196,17 +197,30 @@ def runVMClaims : IO Nat := do
         ("wrong-validator", bytes.set! 2 255), ("truncated", bytes.extract 0 (bytes.size - 1))] do
       checks := checks + (← checkVMClaim vm s!"{name}-{mutation}"
         (replaceClaimBytes witness bad) false)
+    -- A typing claim's context: the retired validator, another
+    -- specification digest, and an axiom set beyond the standard three are
+    -- each refused.
+    if name == "check" || name == "check-env" then
+      for (mutation, bad) in [
+          ("retired-validator", bytes.set! 2 1),
+          ("other-specification", bytes.set! 3 (bytes[3]! ^^^ 1)),
+          ("further-axioms", Ix.Claim.ser (match claim with
+            | .check c t a => .check { c with axioms := some tree.root } t a
+            | .checkEnv c r a => .checkEnv { c with axioms := some tree.root } r a
+            | other => other))] do
+        checks := checks + (← checkVMClaim vm s!"{name}-{mutation}"
+          (replaceClaimBytes witness bad) false)
     -- A Catalog claim (the two-byte tag `E8 00`) has no circuit arm: Catalog
     -- is verified by host or aggregate composition, never by `run_claim`.
     if name == "check" then
       checks := checks + (← checkVMClaim vm "catalog-no-arm"
-        (replaceClaimBytes witness (Ix.Claim.ser (.catalog tree.root tree.root none))) false)
+        (replaceClaimBytes witness (Ix.Claim.ser (.catalog tree.root))) false)
   -- Erased typing deliberately accepts a resource-invalid body. The
   -- validator byte keeps that fact separate from resource admission.
   let (escaping, escapingTarget) := Tests.ResourceAddressed.store base
     (Tests.ResourceAddressed.identity unit Tests.ResourceAddressed.linearLocal .shared)
   let escaping := { escaping with anonHints := escaping.anonHints.insert escapingTarget .opaque }
-  let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness escaping (.check escapingTarget none))
+  let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness escaping (.check ctx escapingTarget none))
   checks := checks + (← checkVMClaim vm "explicit erased typing" witness true)
   unless (Ix.Resource.validate escaping {}).toOption.isNone do
     throw <| IO.userError "escaping fixture passed native resource validation"
@@ -218,7 +232,7 @@ def runVMClaims : IO Nat := do
   let witness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env claim trees
     (({} : Std.HashMap Address ByteArray).insert profileAddr profile.bytes))
   checks := checks + (← checkVMClaim vm "unsupported circuit resource validator" witness false)
-  let checkWitness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env (.check validTarget none))
+  let checkWitness ← IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness env (.check ctx validTarget none))
   checkVMProof vm checkWitness.funcName checkWitness.input checkWitness.inputIOBuffer
   return checks + 1
 

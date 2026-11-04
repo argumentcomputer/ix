@@ -130,16 +130,16 @@ private def fixtureAt (height : Height) (salt : Nat) : Fixture :=
   {
     height
     salt
-    leftNone := { subjects := leftSubjects, assumptions := none }
+    leftNone := { ctx := testCtx, subjects := leftSubjects, assumptions := none }
     leftDischarge := {
-      subjects := leftSubjects, assumptions := some (canonicalTree #[b]) }
+      ctx := testCtx, subjects := leftSubjects, assumptions := some (canonicalTree #[b]) }
     leftCarry := {
-      subjects := leftSubjects, assumptions := some (canonicalTree #[c]) }
-    rightNone := { subjects := rightSubjects, assumptions := none }
+      ctx := testCtx, subjects := leftSubjects, assumptions := some (canonicalTree #[c]) }
+    rightNone := { ctx := testCtx, subjects := rightSubjects, assumptions := none }
     rightDischarge := {
-      subjects := rightSubjects, assumptions := some (canonicalTree #[a]) }
+      ctx := testCtx, subjects := rightSubjects, assumptions := some (canonicalTree #[a]) }
     rightCarry := {
-      subjects := rightSubjects, assumptions := some (canonicalTree #[d]) }
+      ctx := testCtx, subjects := rightSubjects, assumptions := some (canonicalTree #[d]) }
   }
 
 private def Fixture.statements (fixture : Fixture) : Array Aggr.CheckEnvTrees :=

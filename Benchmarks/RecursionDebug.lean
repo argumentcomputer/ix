@@ -90,8 +90,10 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
   (← IO.getStdout).flush
   let t0 ← IO.monoNanosNow
   let (claim, proof) ←
-    if skipDeps then
-      let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+    if skipDeps then do
+      let witness ← match IxVM.ClaimHarness.buildVerifyConst ixonEnv addr with
+        | .error e => IO.eprintln s!"verify_const witness: {e}"; return none
+        | .ok w => pure w
       match aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer with
       | .error e => IO.eprintln s!"proveIxVM failed: {e}"; return none
       | .ok (claim, proof, _) => pure (claim, proof)

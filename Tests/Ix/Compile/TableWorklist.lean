@@ -1,0 +1,161 @@
+import LSpec
+import Ix.CompileM
+
+/-! The preseed table walks run as proved-equal total implementations
+(`Ix.CompileM.collectExprTables_eq_worklist`,
+`preseedExprTables_eq_worklist`), not as `implemented_by` unsafe code: shared
+DAGs need no tree-size prepass, deep pending siblings use the worklist (no
+native recursion proportional to depth), wide root arrays use the folds, and
+the effects and errors are the structural semantics'. Table indices and
+counts that do not fit the wire's `UInt64` are refused (`checkedTableIndex`,
+`checkedTableCount`), virtual universe indices included. -/
+
+namespace Tests.Ix.Compile.TableWorklist
+
+open LSpec
+open _root_.Ix (Name Expr Level)
+open _root_.Ix.CompileM
+
+private def context : CompileEnv × BlockEnv :=
+  (default, { all := {}, current := Name.fromLeanName `Tables, mutCtx := {}, univCtx := [] })
+
+private def raw (action : CompileM α) (state : BlockState := {}) :
+    Except CompileError α × BlockState := (action context).run state
+
+private def resourceFailure (result : Except CompileError α) : Bool :=
+  match result with
+  | .error (.resourceLimit _) => true
+  | _ => false
+
+private def expressionCollision (collide : Bool) : Bool := Id.run do
+  let u := Name.fromLeanName `u
+  let v := Name.fromLeanName `v
+  let first := Expr.mkSort (Level.mkParam u)
+  let second := if collide then Expr.sort (Level.mkParam v) first.getHash else Expr.mkSort (Level.mkParam v)
+  let env := (context.1, { context.2 with univCtx := [u, v] })
+  let (seeded, state) := (preseedExprTables #[(first, [u, v]), (second, [u, v])] env).run {}
+  let (compiled, after) := (compileExpr second env).run state
+  return seeded.isOk && state.univs == #[.var 0, .var 1] &&
+    compiled.toOption.map (·.1) == some (.sort 1) && after.univs == state.univs && after.univsFinal
+
+private def contextCollision (collide : Bool) : Bool := Id.run do
+  let u := Name.fromLeanName `u
+  let v := if collide then Name.str Name.mkAnon "v" u.getHash else Name.fromLeanName `v
+  let expression := Expr.mkSort (Level.mkParam u)
+  let env := (context.1, { context.2 with univCtx := [v, u] })
+  let (seeded, state) := (preseedExprTables #[(expression, [u, v]), (expression, [v, u])] env).run {}
+  let (compiled, after) := (compileExpr expression env).run state
+  return seeded.isOk && state.univs == #[.var 0, .var 1] &&
+    compiled.toOption.map (·.1) == some (.sort 1) && after.univs == state.univs && after.univsFinal
+
+private def collisionRejectsUnsupported : Bool := Id.run do
+  let valid := Expr.mkSort Level.mkZero
+  let invalid := Expr.mvar (Name.fromLeanName `bad) valid.getHash
+  let (result, state) := raw (preseedExprTables #[(valid, []), (invalid, [])])
+  return (match result with | .error (.unsupportedExpr "metavariable") => true | _ => false) &&
+    state.univs.isEmpty && !state.univsFinal
+
+def controls : List (String × Bool) := Id.run do
+  let key := univParamsKey []
+  let mut shared := Expr.mkBVar 0
+  for _ in [:64] do
+    shared := Expr.mkLam Name.mkAnon shared shared .default
+  let (sharedResult, _) := raw (collectExprTables shared key (#[], #[], {}))
+  let (sharedSeed, sharedSeedState) := raw (preseedExprTables #[(shared, [])])
+  -- Left-associated applications force pending siblings. A recursive
+  -- structural collector would consume native stack proportional to depth.
+  let mut deep := Expr.mkBVar 0
+  let argument := Expr.mkBVar 1
+  for _ in [:65536] do deep := Expr.mkApp deep argument
+  let (deepResult, _) := raw (collectExprTables deep key (#[], #[], {}))
+  let roots := Array.replicate 65536 (Expr.mkSort Level.mkZero, [])
+  let (wideResult, wideState) := raw (preseedExprTables roots)
+  let u := Name.fromLeanName `u
+  let v := Name.fromLeanName `v
+  let level := Level.mkParam u
+  let sort := Expr.mkSort level
+  let (positions, positionalState) := raw (preseedExprTables #[(sort, [u, v]), (sort, [v, u])])
+  let literal := Expr.mkLit (.natVal 37)
+  let literalBytes := ByteArray.mk (Nat.toBytesLE 37)
+  let literalAddress := Address.admissionHash literalBytes
+  let textBytes := "kept".toUTF8
+  let textAddress := Address.admissionHash textBytes
+  let skippedAddress := Address.admissionHash "after".toUTF8
+  let invalid := Expr.mkMVar (Name.fromLeanName `bad)
+  let broken := Expr.mkLetE Name.mkAnon literal
+    (Expr.mkApp (Expr.mkLit (.strVal "kept")) invalid)
+    (Expr.mkLit (.strVal "after")) false
+  let (failure, failed) := raw (preseedExprTables #[(broken, [])])
+  let seen : Std.HashMap _root_.Ix.Compile.ExactKey.PreseedKey Unit :=
+    ({} : Std.HashMap _root_.Ix.Compile.ExactKey.PreseedKey Unit).insert ⟨invalid, [], key⟩ ()
+  let (warm, _) := raw (collectExprTables invalid key (#[literalAddress], #[], seen))
+  let badLevels := Expr.mkConst (Name.fromLeanName `Missing)
+    #[Level.mkZero, Level.mkMvar (Name.fromLeanName `badLevel)]
+  let (levelFailure, levelState) := raw (preseedExprTables #[(badLevels, [])])
+  let largest := UInt64.size - 1
+  let (zeroIndex, _) := raw (checkedTableIndex "control" 0)
+  let (lastIndex, _) := raw (checkedTableIndex "control" largest)
+  let (tooLarge, _) := raw (checkedTableIndex "control" UInt64.size)
+  let (largerStill, _) := raw (checkedTableIndex "control" (UInt64.size + 1))
+  let (emptyCount, _) := raw (checkedTableCount "control" 0)
+  let (largestCount, _) := raw (checkedTableCount "control" largest)
+  let (overflowCount, _) := raw (checkedTableCount "control" UInt64.size)
+  let (beyondCount, _) := raw (checkedTableCount "control" (UInt64.size + 1))
+  let one : Ixon.Univ := .succ .zero
+  let goodMeta : BlockState :=
+    { univs := #[.zero]
+      metaUnivs := #[one]
+      metaUnivsIndex := ({} : Std.HashMap Ixon.Univ UInt64).insert one 0 }
+  let badMeta := { goodMeta with
+    metaUnivsIndex := goodMeta.metaUnivsIndex.insert one largest.toUInt64 }
+  let (goodUniv, goodUnivAfter) := raw (internMetaUniv one) goodMeta
+  let (badUniv, badUnivAfter) := raw (internMetaUniv one) badMeta
+  return [
+    ("shared DAG collector has no tree-size prepass", match sharedResult with
+      | .ok (refs, univs, seen) => refs.isEmpty && univs.isEmpty && seen.size == 65
+      | .error _ => false),
+    ("shared DAG survives the public preseed entry", sharedSeed.isOk && sharedSeedState.univsFinal),
+    ("deep pending siblings use the worklist", match deepResult with
+      | .ok (refs, univs, seen) => refs.isEmpty && univs.isEmpty && seen.size == 65538
+      | .error _ => false),
+    ("wide root arrays use the compiled folds",
+      wideResult.isOk && wideState.univs == #[.zero] && wideState.univsFinal),
+    ("seen keys retain universe parameter positions",
+      positions.isOk && positionalState.univs == #[.var 0, .var 1] &&
+      positionalState.univCache.get? ⟨level, [v, u]⟩ == some (.var 1)),
+    ("preorder error preserves completed blob writes", (match failure with
+      | .error (.unsupportedExpr "metavariable") => true | _ => false) &&
+      failed.blockBlobs.get? literalAddress == some literalBytes &&
+      failed.blockBlobs.get? textAddress == some textBytes),
+    ("preorder error leaves later syntax and tables untouched",
+      !failed.blockBlobs.contains skippedAddress &&
+      failed.refs.isEmpty && failed.univs.isEmpty && !failed.univsFinal),
+    ("an exact warm seen-cache hit retains existing behavior", match warm with
+      | .ok (refs, univs, afterSeen) => refs == #[literalAddress] && univs.isEmpty && afterSeen.size == 1
+      | .error _ => false),
+    ("ordinary distinct expressions preseed both universes", expressionCollision false),
+    ("equal expression digests retain both universe dependencies", expressionCollision true),
+    ("ordinary reordered contexts preseed both positions", contextCollision false),
+    ("equal context digests retain both universe positions", contextCollision true),
+    ("a digest collision cannot suppress an unsupported expression", collisionRejectsUnsupported),
+    ("universe failure precedes missing reference lookup", (match levelFailure with
+      | .error (.unsupportedExpr "level metavariable") => true | _ => false) &&
+      levelState.univCache.get? ⟨Level.mkZero, []⟩ == some .zero),
+    ("checked indices accept zero and the last wire slot",
+      zeroIndex.toOption == some 0 && lastIndex.toOption == some largest.toUInt64),
+    ("checked indices reject overflow", resourceFailure tooLarge && resourceFailure largerStill),
+    ("wire table counts accept empty and largest representable tables",
+      emptyCount.toOption == some 0 && largestCount.toOption == some largest.toUInt64),
+    ("a representable last slot cannot justify an overflowing table count",
+      lastIndex.isOk && resourceFailure overflowCount && resourceFailure beyondCount),
+    ("virtual universe hit retains its intended slot",
+      goodUniv.toOption == some 1 && goodUnivAfter.univs == #[.zero] &&
+        goodUnivAfter.metaUnivs == #[one]),
+    ("overflowing virtual universe cannot wrap to the primary slot",
+      resourceFailure badUniv && badUnivAfter.univs == badMeta.univs &&
+        badUnivAfter.metaUnivs == badMeta.metaUnivs &&
+        badUnivAfter.metaUnivsIndex.get? one == some largest.toUInt64)]
+
+def suite : List TestSeq := controls.map fun (label, ok) => test s!"table worklist: {label}" ok
+
+end Tests.Ix.Compile.TableWorklist

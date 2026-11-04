@@ -61,13 +61,13 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   emptyA emptyRecA emptyName uN)
 
 universe w
 
 variable {V : Type w} [SetTheory V]
-variable {μ : CheckMode} {env : Env}
+variable {μ : CheckMode} {env : Env md}
 
 /-! ## `Empty` -/
 
@@ -75,10 +75,10 @@ variable {μ : CheckMode} {env : Env}
 `BConst.typeAV .empty [1]` on the nose (no `BitAgree` needed — the
 former has no binder, so there is no numeral to disagree about). -/
 theorem denoteMeta_emptyA_type
-    {acval : Name → (Name → Nat) → AnnotTerm} (ψ : Name → Nat) :
-    denoteMeta acval ⟨emptyA :: env.consts⟩ ψ 0 emptyA.toConstantVal.type
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat) :
+    denoteMeta acval ⟨emptyA :: env.consts⟩ ψ 0 (emptyA (md := md)).toConstantVal.type
       = some (BConst.typeAV .empty [1]) := by
-  rw [show emptyA.toConstantVal.type = Expr.sort (.succ .zero) from rfl,
+  rw [show (emptyA (md := md)).toConstantVal.type = Expr.sort (.succ .zero) from rfl,
     denoteMeta_sort]
   rfl
 
@@ -90,9 +90,9 @@ theorem extendEmpty (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
     (A := fun _ => AnnotTerm.const .empty [1]) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => nomatch h)
-    (Or.inl (by decide)) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT emptyA.name ψ
@@ -118,13 +118,13 @@ Two binders, three stored `PropWhen` pins, and the reading's numerals
 are all three of them. -/
 
 /-- `pwBit` at a `.never` pin: the graph regime, unconditionally. -/
-theorem pwBit_never (ψ : Name → Nat) :
+theorem pwBit_never (ψ : LevelParam → Nat) :
     pwBit ψ Ix.Kernel.PropWhen.never = 1 := by rfl
 
 /-- `pwBit` at a one-parameter `.ifAllZero` pin: zero exactly when the
 parameter is.  One of the *three* shapes every basis binder reduces to
 — see `pwBit_ifAllZero_nil`/`pwBit_ifAllZero_pair` for the other two. -/
-theorem pwBit_ifAllZero_single (ψ : Name → Nat) (n : Name) :
+theorem pwBit_ifAllZero_single (ψ : LevelParam → Nat) (n : LevelParam) :
     pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [n]) = 0 ↔ ψ n = 0 := by
   rw [pwBit_eq_zero_iff]
   simp
@@ -153,7 +153,7 @@ vacuity the same way; this is the third such retirement running. -/
 because `[].all _` is `true`.  The pin the `Prop`-valued basis
 constants carry (`Eq.refl`, `PSigma'.rec`, `Quot.ind`, `Quot.sound`,
 and `Quot.lift`'s invariance binder). -/
-theorem pwBit_ifAllZero_nil (ψ : Name → Nat) :
+theorem pwBit_ifAllZero_nil (ψ : LevelParam → Nat) :
     pwBit ψ (Ix.Kernel.PropWhen.ifAllZero []) = 0 := by
   rw [pwBit_eq_zero_iff]
   simp
@@ -161,7 +161,7 @@ theorem pwBit_ifAllZero_nil (ψ : Name → Nat) :
 /-- `pwBit` at a two-parameter `.ifAllZero` pin: zero exactly when
 *both* parameters are.  `PSigma'.mk`'s pin, and the basis tier's only
 instance. -/
-theorem pwBit_ifAllZero_pair (ψ : Name → Nat) (n m : Name) :
+theorem pwBit_ifAllZero_pair (ψ : LevelParam → Nat) (n m : LevelParam) :
     pwBit ψ (Ix.Kernel.PropWhen.ifAllZero [n, m]) = 0 ↔ (ψ n = 0 ∧ ψ m = 0) := by
   rw [pwBit_eq_zero_iff]
   simp
@@ -169,31 +169,31 @@ theorem pwBit_ifAllZero_pair (ψ : Name → Nat) (n m : Name) :
 /-- **`Empty.rec`'s type reading.**  The four moves of the module
 docstring; the leaves are `acval_basis_pinned` at `Empty`. -/
 theorem denoteMeta_emptyRecA_type {m : EnvModel V env}
-    {A : (Name → Nat) → AnnotTerm} (ψ : Name → Nat)
+    {A : (LevelParam → Nat) → AnnotTerm} (ψ : LevelParam → Nat)
     (hE : env.find? emptyName = some emptyA) :
     denoteMeta (acvalWith m.acval emptyRecA.name A)
-        ⟨emptyRecA :: env.consts⟩ ψ 0 emptyRecA.toConstantVal.type
+        ⟨emptyRecA :: env.consts⟩ ψ 0 (emptyRecA (md := md)).toConstantVal.type
       = some (.pi 0 (pwBit ψ (.ifAllZero [uN]))
           (.pi 0 (pwBit ψ .never) (.const .empty [1]) (.sort (ψ uN)))
           (.pi 0 (pwBit ψ (.ifAllZero [uN])) (.const .empty [1])
             (.app (.bvar 1) (.bvar 0)))) := by
-  have hpd : Ix.Kernel.Verify.pinnedStructT emptyName ψ
+  have hpd : (Ix.Kernel.Verify.pinnedStructT (md := md)) emptyName ψ
       = some (Term.const .empty [1]) := by
     simp +decide [Ix.Kernel.Verify.pinnedStructT]
   have hleaf : acvalWith m.acval emptyRecA.name A emptyName ψ
       = AnnotTerm.const .empty [1] := by
-    rw [acvalWith_ne (by decide)]
-    exact acval_basis_pinned hE (by decide) hpd
+    rw [acvalWith_ne (by (cases md <;> decide))]
+    exact acval_basis_pinned hE (by (cases md <;> decide)) hpd
   have hEc : ∀ d : Nat,
       denoteMeta (acvalWith m.acval emptyRecA.name A)
           ⟨emptyRecA :: env.consts⟩ ψ d (.const emptyName [])
         = some (AnnotTerm.const .empty [1]) := by
     intro d
-    have hf : (⟨emptyRecA :: env.consts⟩ : Env).find? emptyName
+    have hf : (⟨emptyRecA :: env.consts⟩ : Env md).find? emptyName
         = some emptyA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]; exact hE
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]; exact hE
     rw [denoteMeta_levelless_const hf (by rfl), hleaf]
-  rw [show emptyRecA.toConstantVal.type
+  rw [show (emptyRecA (md := md)).toConstantVal.type
       = Expr.forallE
           (Expr.forallE (.const emptyName [])
             (.sort (.param uN)) { pw := .never })
@@ -208,7 +208,7 @@ theorem denoteMeta_emptyRecA_type {m : EnvModel V env}
 reads.**  Three binders, three `pwBit`s, three `typeAV` slots, and the
 iffs are `pwBit_never` and `pwBit_ifAllZero_single` — nothing here is
 chosen. -/
-theorem bitAgree_emptyRecA (ψ : Name → Nat) :
+theorem bitAgree_emptyRecA (ψ : LevelParam → Nat) :
     AnnotTerm.BitAgree
       (.pi 0 (pwBit ψ (.ifAllZero [uN]))
         (.pi 0 (pwBit ψ .never) (.const .empty [1]) (.sort (ψ uN)))
@@ -234,9 +234,9 @@ theorem extendEmptyRec (mp : EnvModelM V μ env)
   refine nonempty_of_exists (declStep_preserves_of_basis_cons mp
     (A := fun ψ => AnnotTerm.const .emptyRec [1, ψ uN]) hfresh
     (fun _ _ _ h => nomatch h)
-    (by decide) (by decide) (by decide) (by decide)
+    (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide)) (by (cases md <;> decide))
     (fun _ _ _ _ h => by injection h with _ _ _ h4; exact h4 ▸ rfl)
-    (Or.inl (by decide)) (Or.inl (fun _ h => nomatch h))
+    (Or.inl (by (cases md <;> decide)))
     (ConsHead.ofBasis hwf (fun _ => trivial) rfl
       (fun ψ t hp => by
         rw [show Ix.Kernel.Verify.pinnedStructT emptyRecA.name ψ
@@ -272,7 +272,7 @@ it.  `BasisInstallRun` is a right-nested `∧` chain, so the walk is an
 
 /-- **The `Empty` block, installed at the P tier.**  `BasisStepPB`'s
 `emptyK` branch. -/
-theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
+theorem declBasisPB_emptyK {env₂ : Env md} (mp : EnvModelM V μ env)
     (h : Ix.Kernel.Semantics.BasisInstallRun env Ix.Kernel.BasisKind.emptyK.declsA env₂) :
     Nonempty (EnvModelM V μ env₂) := by
   rw [show Ix.Kernel.BasisKind.emptyK.declsA = [emptyA, emptyRecA] from rfl]
@@ -288,12 +288,12 @@ theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
   obtain ⟨mp1⟩ := extendEmpty mp hf1 hwf1
-  have hE : (⟨emptyA :: env.consts⟩ : Env).find? emptyName
+  have hE : (⟨emptyA :: env.consts⟩ : Env md).find? emptyName
       = some emptyA := by
     rw [Ix.Kernel.Env.find?_cons]; exact if_pos rfl
-  have hf2 : (⟨emptyA :: env.consts⟩ : Env).find? emptyRecA.name
+  have hf2 : (⟨emptyA :: env.consts⟩ : Env md).find? emptyRecA.name
       = none := Option.isNone_iff_eq_none.mp h2
   have hwf2 : EnvWF ⟨emptyRecA :: emptyA :: env.consts⟩ := by
     refine EnvWF.cons hwf1 ⟨rfl, rfl, ?_, rfl,
@@ -306,9 +306,9 @@ theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
       (by first
         | (refine Ix.Kernel.IndCapsWF.of_caps ?_ ?_ <;> intro h <;>
             first | exact absurd h (by decide) | rfl)
-        | exact fun _ _ heq => ConstantInfo.noConfusion heq)⟩
-    show Expr.constsResolve _ emptyRecA.toConstantVal.type = true
-    simp only [show emptyRecA.toConstantVal.type
+        | exact fun _ _ heq => ConstantInfo.noConfusion rfl (heq_of_eq heq))⟩
+    show Expr.constsResolve _ (emptyRecA (md := md)).toConstantVal.type = true
+    simp only [show (emptyRecA (md := md)).toConstantVal.type
         = Expr.forallE
             (Expr.forallE (.const emptyName [])
               (.sort (.param uN)) { pw := .never })
@@ -317,9 +317,9 @@ theorem declBasisPB_emptyK {env₂ : Env} (mp : EnvModelM V μ env)
               { pw := .ifAllZero [uN] })
             { pw := .ifAllZero [uN] } from rfl,
       Expr.constsResolve, Bool.and_eq_true, Option.isSome_iff_exists]
-    have hf : (⟨emptyRecA :: emptyA :: env.consts⟩ : Env).find?
+    have hf : (⟨emptyRecA :: emptyA :: env.consts⟩ : Env md).find?
         emptyName = some emptyA := by
-      rw [Ix.Kernel.Env.find?_cons, if_neg (by decide)]
+      rw [Ix.Kernel.Env.find?_cons, if_neg (by (cases md <;> decide))]
       exact hE
     rw [hf]
     simp
@@ -351,12 +351,12 @@ the `.plain` conjunct and the fold contract. -/
 /-- **Every stored basis recursor rule fires `.plain`.**  Computed, not
 argued — and it is the *annotated* pin that governs. -/
 theorem basis_rec_rules_plain (kind : Ix.Kernel.BasisKind) :
-    ∀ ci ∈ kind.declsA,
+    ∀ ci ∈ kind.declsA (md := md),
       (match ci with
        | .recInfo _ _ _ rules =>
          rules.all fun rl => Ix.Kernel.RecRule.fire rl == .plain
        | _ => true) = true := by
-  cases kind <;> decide
+  cases kind <;> (cases md <;> decide)
 
 /-- **`Empty.rec` and `False.rec` are the only basis recursors with no
 rules** — the sole rows `declStep_preserves_of_basis_cons`'s `hnotrec` premise
@@ -364,13 +364,13 @@ can discharge, and the reason this file's block (and its `False` twin,
 `BasisFalseP.lean`, task #181) are the ones that close this way. -/
 theorem basis_rec_rules_nonempty (kind : Ix.Kernel.BasisKind)
     (hk : kind ≠ .emptyK) (hk' : kind ≠ .falseK) :
-    ∀ ci ∈ kind.declsA,
+    ∀ ci ∈ kind.declsA (md := md),
       (match ci with
        | .recInfo _ _ _ rules => !rules.isEmpty
        | _ => true) = true := by
   cases kind
   case emptyK => exact absurd rfl hk
   case falseK => exact absurd rfl hk'
-  all_goals decide
+  all_goals (cases md <;> decide)
 
 end Ix.Kernel.Model

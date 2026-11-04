@@ -4,7 +4,14 @@ public import Ix.Claim
 public import Ix.Resource.Validate
 
 /-! A resource claim binds the complete constant set, format v4,
-resource-v1 validator, and the canonical policy bytes. -/
+resource-v1 validator, and the canonical policy bytes.
+
+`resource-v1`'s typing half is `Ix.Resource.typeCheck`: IxC's tiered Ixon
+entry, with its theorem (`checkBytesTieredUsing_ok`) and the prepared binding
+and prelude, over everything it admits,
+and uncertified IxC typing for unsafe inductives, assumption axioms and the
+records that depend on them (`Ix.Resource.Typing` says which part rests on
+which). The claim stays uncertified as a resource claim. -/
 
 @[expose] public section
 

@@ -37,30 +37,30 @@ set_option linter.unusedSimpArgs false
 namespace Ix.Kernel
 
 variable {mode : CheckMode}
-variable {pins : List NatOpPinSet}
+variable {ev : Evidences md}
 
 open Expr
 
 /-! ## Small syntactic toolkit -/
 
-theorem wscopedB_of_not_hasFvar {e : Expr} (h : e.hasFvar = false)
+theorem wscopedB_of_not_hasFvar {e : Expr md} (h : e.hasFvar = false)
     {d : Nat} : e.wscopedB d = true :=
   (WScoped.of_not_hasFvar h).to_wscopedB
 
 theorem hasFvar_liftLooseBVars (n : Nat) :
-    ∀ (c : Nat) (e : Expr), (e.liftLooseBVars n c).hasFvar = e.hasFvar := by
+    ∀ (c : Nat) (e : Expr md), (e.liftLooseBVars n c).hasFvar = e.hasFvar := by
   intro c e
   induction e generalizing c <;>
     simp_all [Expr.liftLooseBVars, Expr.hasFvar]
   case bvar i => split <;> simp [Expr.hasFvar]
 
-theorem hasFvar_renameConsts (f : Name → Name) :
-    ∀ (e : Expr), (e.renameConsts f).hasFvar = e.hasFvar := by
+theorem hasFvar_renameConsts (f : Key md → Key md) :
+    ∀ (e : Expr md), (e.renameConsts f).hasFvar = e.hasFvar := by
   intro e
   induction e <;> simp_all [Expr.renameConsts, Expr.hasFvar]
 
 theorem hasFvar_mkAppN :
-    ∀ (args : List Expr) (g : Expr), g.hasFvar = false →
+    ∀ (args : List (Expr md)) (g : Expr md), g.hasFvar = false →
       (∀ x ∈ args, x.hasFvar = false) → (Expr.mkAppN g args).hasFvar = false
   | [], g, hg, _ => hg
   | a :: as, g, hg, hargs => by
@@ -71,8 +71,8 @@ theorem hasFvar_mkAppN :
     exact ⟨hg, hargs a (List.mem_cons_self ..)⟩
 
 theorem stripLams_not_hasFvar :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr}, Expr.stripLams k e = some (bs, body) →
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md}, Expr.stripLams k e = some (bs, body) →
       e.hasFvar = false →
       (∀ b ∈ bs, (b.1).hasFvar = false) ∧ body.hasFvar = false
   | 0, e, bs, body, h, hf => by
@@ -96,8 +96,8 @@ theorem stripLams_not_hasFvar :
       · exact hrest b hb
 
 theorem stripPis_not_hasFvar :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr}, Expr.stripPis k e = some (bs, body) →
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md}, Expr.stripPis k e = some (bs, body) →
       e.hasFvar = false →
       (∀ b ∈ bs, (b.1).hasFvar = false) ∧ body.hasFvar = false
   | 0, e, bs, body, h, hf => by
@@ -120,7 +120,7 @@ theorem stripPis_not_hasFvar :
       · exact hf.1
       · exact hrest b hb
 
-theorem atF_bind_ok {α β : Type} {x : FueledM α} {g : α → FueledM β}
+theorem atF_bind_ok {α β : Type} {x : FueledM md α} {g : α → FueledM md β}
     {F : Nat} {v : β} (h : (x >>= g).val F = .ok v) :
     ∃ a, x.val F = .ok a ∧ (g a).val F = .ok v := by
   rw [FueledM.atF_bind] at h
@@ -135,9 +135,9 @@ theorem atF_bind_ok {α β : Type} {x : FueledM α} {g : α → FueledM β}
     simp only [Bind.bind, Except.bind] at h
     exact ⟨a, rfl, h⟩
 
-theorem atF_throw_bind {α β : Type} {e : CheckError}
-    {g : α → FueledM β} {F : Nat} {v : β}
-    (h : ((throw e : FueledM α) >>= g).val F = .ok v) : False := by
+theorem atF_throw_bind {α β : Type} {e : CheckError md}
+    {g : α → FueledM md β} {F : Nat} {v : β}
+    (h : ((throw e : FueledM md α) >>= g).val F = .ok v) : False := by
   rw [FueledM.atF_bind] at h
   simp only [throw, throwThe, MonadExceptOf.throw, Bind.bind,
     Except.bind] at h
@@ -145,8 +145,8 @@ theorem atF_throw_bind {α β : Type} {e : CheckError}
 
 /-! ## The leaf checker functions, `wfOpsM mode` runs to pure runs -/
 
-theorem checkConstantVal_wfimp {env : Env} (henv : EnvWF env)
-    {cv : ConstantVal} {F : Nat} {v : ConstantVal}
+theorem checkConstantVal_wfimp {env : Env md} (henv : EnvWF env)
+    {cv : ConstantVal md} {F : Nat} {v : ConstantVal md}
     (h : (checkConstantVal (wfOpsM mode) env cv).val F = .ok v) :
     checkConstantVal (fueledOps mode F) env cv = .ok v := by
   unfold checkConstantVal at h ⊢
@@ -163,7 +163,7 @@ theorem checkConstantVal_wfimp {env : Env} (henv : EnvWF env)
   · rw [if_pos h3] at h
     exact absurd h atF_throw_bind
   rw [if_neg h3] at h ⊢
-  by_cases h4 : Name.nodup cv.levelParams = true
+  by_cases h4 : LevelParam.nodup cv.levelParams = true
   case neg =>
     rw [if_neg h4] at h
     exact absurd h atF_throw_bind
@@ -211,9 +211,9 @@ theorem checkConstantVal_wfimp {env : Env} (henv : EnvWF env)
   simp only [Bind.bind, Except.bind]
   exact h
 
-theorem checkDefnVal_wfimp {env : Env} (henv : EnvWF env)
-    {cv : ConstantVal} {value : Expr} {hint : ReducibilityHint}
-    (hcvty : cv.type.hasFvar = false) {F : Nat} {v : Env}
+theorem checkDefnVal_wfimp {env : Env md} (henv : EnvWF env)
+    {cv : ConstantVal md} {value : Expr md} {hint : ReducibilityHint}
+    (hcvty : cv.type.hasFvar = false) {F : Nat} {v : Env md}
     (h : (checkDefnVal (wfOpsM mode) env cv value hint).val F = .ok v) :
     checkDefnVal (fueledOps mode F) env cv value hint = .ok v := by
   unfold checkDefnVal at h ⊢
@@ -268,9 +268,9 @@ theorem checkDefnVal_wfimp {env : Env} (henv : EnvWF env)
     simp only [Bool.false_eq_true, ↓reduceIte] at h
     exact absurd h atF_throw_bind
 
-theorem checkThmVal_wfimp {env : Env} (henv : EnvWF env)
-    {cv : ConstantVal} {value : Expr}
-    (hcvty : cv.type.hasFvar = false) {F : Nat} {v : Env}
+theorem checkThmVal_wfimp {env : Env md} (henv : EnvWF env)
+    {cv : ConstantVal md} {value : Expr md}
+    (hcvty : cv.type.hasFvar = false) {F : Nat} {v : Env md}
     (h : (checkThmVal (wfOpsM mode) env cv value).val F = .ok v) :
     checkThmVal (fueledOps mode F) env cv value = .ok v := by
   unfold checkThmVal at h ⊢
@@ -292,7 +292,7 @@ theorem checkThmVal_wfimp {env : Env} (henv : EnvWF env)
   obtain ⟨ok₁, hok, h⟩ := atF_bind_ok h
   rw [liftFueled_atF] at hok
   show ((liftFueled "level comparison" (u.isEquiv .zero) :
-    CheckM Bool) >>= _) = _
+    CheckM md Bool) >>= _) = _
   rw [hok]
   simp only [Bind.bind, Except.bind]
   by_cases h0 : ok₁ = true
@@ -350,9 +350,9 @@ theorem checkThmVal_wfimp {env : Env} (henv : EnvWF env)
     simp only [Bool.false_eq_true, ↓reduceIte] at h
     exact absurd h atF_throw_bind
 
-theorem checkOpaqueVal_wfimp {env : Env} (henv : EnvWF env)
-    {cv : ConstantVal} {value : Expr}
-    (hcvty : cv.type.hasFvar = false) {F : Nat} {v : Env}
+theorem checkOpaqueVal_wfimp {env : Env md} (henv : EnvWF env)
+    {cv : ConstantVal md} {value : Expr md}
+    (hcvty : cv.type.hasFvar = false) {F : Nat} {v : Env md}
     (h : (checkOpaqueVal (wfOpsM mode) env cv value).val F = .ok v) :
     checkOpaqueVal (fueledOps mode F) env cv value = .ok v := by
   unfold checkOpaqueVal at h ⊢
@@ -407,8 +407,8 @@ theorem checkOpaqueVal_wfimp {env : Env} (henv : EnvWF env)
     simp only [Bool.false_eq_true, ↓reduceIte] at h
     exact absurd h atF_throw_bind
 
-theorem certifyNatEqs_wfimp {env : Env} (henv : EnvWF env) {F : Nat} :
-    ∀ {eqs : List (Expr × Expr)},
+theorem certifyNatEqs_wfimp {env : Env md} (henv : EnvWF env) {F : Nat} :
+    ∀ {eqs : List (Expr md × Expr md)},
       (∀ eq ∈ eqs, (eq.1.wscopedB 2 = true) ∧ (eq.2.wscopedB 2 = true)) →
       ∀ {v : Bool}, (certifyNatEqs (wfOpsM mode) env eqs).val F = .ok v →
       certifyNatEqs (fueledOps mode F) env eqs = .ok v
@@ -433,7 +433,7 @@ theorem certifyNatEqs_wfimp {env : Env} (henv : EnvWF env) {F : Nat} :
 set_option maxHeartbeats 1600000 in
 /-- `getD` with the `bvar 0` default preserves well-scopedness. -/
 theorem WScoped_getD' {d : Nat} :
-    ∀ {l : List Expr}, (∀ x ∈ l, WScoped d x) → ∀ (n : Nat),
+    ∀ {l : List (Expr md)}, (∀ x ∈ l, WScoped d x) → ∀ (n : Nat),
       WScoped d (l.getD n (.bvar 0)) := by
   intro l
   induction l with
@@ -449,9 +449,9 @@ theorem WScoped_getD' {d : Nat} :
 index `i + j` — the positional companion of `openPisAtFvars_WScoped`,
 needed wherever a check runs at each binder's *own* frame. -/
 theorem openPisAtFvars_index :
-    ∀ (n : Nat) (e : Expr) (i : Nat) {fvs : List Expr} {body : Expr},
+    ∀ (n : Nat) (e : Expr md) (i : Nat) {fvs : List (Expr md)} {body : Expr md},
       openPisAtFvars n e i = some (fvs, body) →
-      ∀ (j : Nat) (x : Expr), fvs[j]? = some x →
+      ∀ (j : Nat) (x : Expr md), fvs[j]? = some x →
         ∃ ty, x = Expr.fvar (i + j) ty := by
   intro n
   induction n with
@@ -483,13 +483,13 @@ theorem openPisAtFvars_index :
           obtain ⟨ty', hx'⟩ := ih _ (i + 1) hrec j x hx
           exact ⟨ty', by rw [hx']; congr 1; omega⟩
     | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _
-    | lam _ _ _ | letE _ _ _ | lit _ | proj _ _ _ =>
+    | lam _ _ _ | letE _ _ _ _ | lit _ | proj _ _ _ =>
       exact nomatch h
 
 /-- Opening a `∀`-telescope at fresh free variables produces variables
 and a body scoped at the extended frame. -/
 theorem openPisAtFvars_WScoped :
-    ∀ (n : Nat) (e : Expr) (i : Nat) {fvs : List Expr} {body : Expr},
+    ∀ (n : Nat) (e : Expr md) (i : Nat) {fvs : List (Expr md)} {body : Expr md},
       openPisAtFvars n e i = some (fvs, body) → WScoped i e →
       (∀ x ∈ fvs, WScoped (i + n) x) ∧ WScoped (i + n) body := by
   intro n
@@ -533,7 +533,7 @@ theorem openPisAtFvars_WScoped :
     | const c us => exact nomatch h
     | app f a => exact nomatch h
     | lam b c d => exact nomatch h
-    | letE b c d => exact nomatch h
+    | letE b c d _ => exact nomatch h
     | lit l => exact nomatch h
     | proj s k e => exact nomatch h
 
@@ -542,11 +542,11 @@ mentions only the binders before it, so it is scoped at `d + i` when the
 spine entries climb one frame at a time.  This is what lets the
 recursor's minor-premise pins run at each field's **own** frame. -/
 theorem instPisAt_index_WScoped :
-    ∀ (spine : List Expr) {d : Nat} {ty : Expr} {doms : List Expr}
-      {res : Expr},
+    ∀ (spine : List (Expr md)) {d : Nat} {ty : Expr md} {doms : List (Expr md)}
+      {res : Expr md},
       Expr.instPisAt spine ty = some (doms, res) → WScoped d ty →
-      (∀ (i : Nat) (a : Expr), spine[i]? = some a → WScoped (d + i + 1) a) →
-      ∀ (i : Nat) (x : Expr), doms[i]? = some x → WScoped (d + i) x
+      (∀ (i : Nat) (a : Expr md), spine[i]? = some a → WScoped (d + i + 1) a) →
+      ∀ (i : Nat) (x : Expr md), doms[i]? = some x → WScoped (d + i) x
   | [], d, ty, doms, res, h, hty, _ => by
     simp only [Expr.instPisAt, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
@@ -581,11 +581,11 @@ theorem instPisAt_index_WScoped :
         rw [show d + (i + 1) = d + 1 + i from by omega]
         exact hrec
     | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _ | lam _ _ _
-    | letE _ _ _ | lit _ | proj _ _ _ => exact nomatch h
+    | letE _ _ _ _ | lit _ | proj _ _ _ => exact nomatch h
 
 /-- `instPisAt` for `λ`-binders, scoped. -/
 theorem instLamsAt_WScoped {d : Nat} :
-    ∀ (args : List Expr) (ty : Expr) {doms : List Expr} {res : Expr},
+    ∀ (args : List (Expr md)) (ty : Expr md) {doms : List (Expr md)} {res : Expr md},
       Expr.instLamsAt args ty = some (doms, res) → WScoped d ty →
       (∀ a ∈ args, WScoped d a) →
       (∀ x ∈ doms, WScoped d x) ∧ WScoped d res
@@ -623,12 +623,12 @@ theorem instLamsAt_WScoped {d : Nat} :
     | const c us => exact nomatch h
     | app f a' => exact nomatch h
     | forallE b c d' => exact nomatch h
-    | letE b c d' => exact nomatch h
+    | letE b c d' _ => exact nomatch h
     | lit l => exact nomatch h
     | proj s k e => exact nomatch h
 
 /-- The read-off type of an opened variable is scoped. -/
-theorem fvarTypeD_WScoped {d : Nat} {e : Expr} (h : WScoped d e) :
+theorem fvarTypeD_WScoped {d : Nat} {e : Expr md} (h : WScoped d e) :
     WScoped d (Expr.fvarTypeD e) := by
   cases e with
   | fvar idx ty =>
@@ -640,24 +640,24 @@ theorem fvarTypeD_WScoped {d : Nat} {e : Expr} (h : WScoped d e) :
   | app f a => exact h
   | lam b c d' => exact h
   | forallE b c d' => exact h
-  | letE b c d' => exact h
+  | letE b c d' _ => exact h
   | lit l => exact h
   | proj s k e => exact h
 
-theorem unwrapOr_atF_ok {α : Type} {o : Option α} {err : CheckError}
+theorem unwrapOr_atF_ok {α : Type} {o : Option α} {err : CheckError md}
     {F : Nat} {a : α}
-    (h : (unwrapOr o err : FueledM α).val F = .ok a) : o = some a := by
+    (h : (unwrapOr o err : FueledM md α).val F = .ok a) : o = some a := by
   cases o with
   | none => exact nomatch h
   | some b =>
     have hb : b = a := by
-      have h' : (Except.ok b : Except CheckError α) = .ok a := h
+      have h' : (Except.ok b : Except (CheckError md) α) = .ok a := h
       exact Except.ok.inj h'
     rw [hb]
 
 /-- Invert a stored-constant lookup (kind-agnostic: the certificate
 checks consume only the stored constant's type). -/
-theorem findCV?_ok {env : Env} {n : Name} {cvt : ConstantVal}
+theorem findCV?_ok {env : Env md} {n : Key md} {cvt : ConstantVal md}
     (h : env.findCV? n = some cvt) :
     ∃ ci, env.find? n = some ci ∧ ci.toConstantVal = cvt := by
   simp only [Env.findCV?, Option.map_eq_some_iff] at h
@@ -665,9 +665,9 @@ theorem findCV?_ok {env : Env} {n : Name} {cvt : ConstantVal}
 
 /-- The pairwise defeq check, `wfOpsM mode` run to pure run (the arguments
 are scoped at the check's depth). -/
-theorem checkDefEqList_wfimp {env : Env} (henv : EnvWF env)
+theorem checkDefEqList_wfimp {env : Env md} (henv : EnvWF env)
     {depth : Nat} {F : Nat} :
-    ∀ {as bs : List Expr},
+    ∀ {as bs : List (Expr md)},
       (∀ a ∈ as, WScoped depth a) → (∀ b ∈ bs, WScoped depth b) →
       ∀ {v : Unit},
       (checkDefEqList (wfOpsM mode) env depth as bs).val F = .ok v →
@@ -695,9 +695,9 @@ theorem checkDefEqList_wfimp {env : Env} (henv : EnvWF env)
         (fun y hy => hb y (List.mem_cons_of_mem _ hy)) h
 
 /-- The pairwise inferred-type check, `wfOpsM mode` run to pure run. -/
-theorem checkTypedList_wfimp {env : Env} (henv : EnvWF env)
+theorem checkTypedList_wfimp {env : Env md} (henv : EnvWF env)
     {depth : Nat} {F : Nat} :
-    ∀ {as bs : List Expr},
+    ∀ {as bs : List (Expr md)},
       (∀ a ∈ as, WScoped depth a) → (∀ b ∈ bs, WScoped depth b) →
       ∀ {v : Unit},
       (checkTypedList (wfOpsM mode) env depth as bs).val F = .ok v →
@@ -733,9 +733,9 @@ theorem checkTypedList_wfimp {env : Env} (henv : EnvWF env)
         (fun y hy => hb y (List.mem_cons_of_mem _ hy)) h
 
 /-- The annotate-idempotence check, `wfOpsM mode` run to pure run. -/
-theorem checkAnnotList_wfimp {env : Env} (henv : EnvWF env)
+theorem checkAnnotList_wfimp {env : Env md} (henv : EnvWF env)
     {depth : Nat} {F : Nat} :
-    ∀ {as : List Expr},
+    ∀ {as : List (Expr md)},
       (∀ a ∈ as, WScoped depth a) →
       ∀ {v : Unit},
       (checkAnnotList (wfOpsM mode) env depth as).val F = .ok v →
@@ -761,8 +761,8 @@ theorem checkAnnotList_wfimp {env : Env} (henv : EnvWF env)
 set_option maxHeartbeats 6400000 in
 /-- The iota-sides type certificate, `wfOpsM mode` to pure (task #100
 stage 3). -/
-theorem checkIotaSidesTy_wfimp {envSelf : Env} (henvSelf : EnvWF envSelf)
-    {depth : Nat} {alphaS lhsS rhsS : Expr} {ℓA : Level} {cvName : Name}
+theorem checkIotaSidesTy_wfimp {envSelf : Env md} (henvSelf : EnvWF envSelf)
+    {depth : Nat} {alphaS lhsS rhsS : Expr md} {ℓA : Level} {cvName : Key md}
     {F : Nat} {v : Unit}
     (hα : WScoped depth alphaS) (hl : WScoped depth lhsS)
     (hr : WScoped depth rhsS)
@@ -845,10 +845,10 @@ theorem checkIotaSidesTy_wfimp {envSelf : Env} (henvSelf : EnvWF envSelf)
 type, the constructor type and the annotated rule right-hand side are
 closed; everything the check compares is scoped at the opened
 telescope's depth. -/
-theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
-    {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr} {F : Nat}
+theorem checkIotaThm_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
+    (henvSelf : EnvWF envSelf) {f : Key md → Key md} {cvName : Key md}
+    {lps : List LevelParam} {tyA : Expr md} {mI rP j : Nat} {r : RecRule md}
+    {cvj : ConstantVal md} {cnP cnF : Nat} {rhsA : Expr md} {F : Nat}
     {v : Unit}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
     (hrhsA : rhsA.hasFvar = false)
@@ -861,7 +861,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨cvt, hthm, h⟩ := atF_bind_ok h
   have hthm' := unwrapOr_atF_ok hthm
   show ((unwrapOr (env'.findCV?
-    ((cvName.str "_model").str s!"iota_{j}")) _ : CheckM _) >>= _) = _
+    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM md _) >>= _) = _
   rw [hthm']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -876,7 +876,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨fvs, tbody⟩ := q
   have hopen' := unwrapOr_atF_ok hopen
   show ((unwrapOr (openPisAtFvars (rP + cnF) cvt.type 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopen']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -927,7 +927,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   have hcinst' := unwrapOr_atF_ok hcinst
   show ((unwrapOr (Expr.instPisAt (fvs.take cnP ++
     fvs.drop rP) (cvj.type.renameConsts f)) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hcinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -967,7 +967,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨rdoms, rrest⟩ := q3
   have hrinst' := unwrapOr_atF_ok hrinst
   show ((unwrapOr (Expr.instPisAt (fvs.take rP)
-    (tyA.renameConsts f)) _ : CheckM _) >>= _) = _
+    (tyA.renameConsts f)) _ : CheckM md _) >>= _) = _
   rw [hrinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -990,7 +990,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨fvsP, restP⟩ := q4
   have hopenP' := unwrapOr_atF_ok hopenP
   show ((unwrapOr (openPisAtFvars rP tyA 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1002,7 +1002,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨cdomsP, crestP⟩ := q5
   have hcinstP' := unwrapOr_atF_ok hcinstP
   show ((unwrapOr (Expr.instPisAt (fvsP.take cnP) cvj.type) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hcinstP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1024,7 +1024,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨xFvsP, crest2⟩ := q6
   have hopenX' := unwrapOr_atF_ok hopenX
   show ((unwrapOr (openPisAtFvars cnF crestP rP) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenX']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1040,7 +1040,7 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨ldoms, lrest⟩ := q7
   have hlinst' := unwrapOr_atF_ok hlinst
   show ((unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hlinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1081,9 +1081,9 @@ theorem checkIotaThm_wfimp {env' envSelf : Env} (henv' : EnvWF env')
 
 /-- A successful `nestedRuleShape` guards its stored parameter
 instantiations: they are fvar-free. -/
-theorem nestedRuleShape_pins {env' envSelf : Env} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP cnP j : Nat}
-    {lvls : List Level} {pins : List Expr}
+theorem nestedRuleShape_pins {env' envSelf : Env md} {cvName : Key md}
+    {lps : List LevelParam} {tyA : Expr md} {mI rP cnP j : Nat}
+    {lvls : List Level} {pins : List (Expr md)}
     (h : nestedRuleShape env' envSelf cvName lps tyA mI rP cnP j =
       some (lvls, pins)) :
     ∀ p ∈ pins, p.hasFvar = false := by
@@ -1102,11 +1102,11 @@ set_option maxHeartbeats 6400000 in
 /-- The nested-auxiliary iota-theorem check, `wfOpsM mode` run to pure run:
 `checkIotaThm_wfimp` with the constructor's parameters and levels
 fixed at the stored instantiations. -/
-theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
-    {cvj : ConstantVal} {cnP cnF : Nat} {rhsA : Expr} {F : Nat}
-    {v : RecRuleFire}
+theorem checkIotaThmN_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
+    (henvSelf : EnvWF envSelf) {f : Key md → Key md} {cvName : Key md}
+    {lps : List LevelParam} {tyA : Expr md} {mI rP j : Nat} {r : RecRule md}
+    {cvj : ConstantVal md} {cnP cnF : Nat} {rhsA : Expr md} {F : Nat}
+    {v : RecRuleFire md}
     (htyA : tyA.hasFvar = false) (hctor : cvj.type.hasFvar = false)
     (hrhsA : rhsA.hasFvar = false)
     (h : (checkIotaThmN mode (wfOpsM mode) env' envSelf f cvName lps tyA
@@ -1127,7 +1127,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨cvt, hthm, h⟩ := atF_bind_ok h
   have hthm' := unwrapOr_atF_ok hthm
   show ((unwrapOr (env'.findCV?
-    ((cvName.str "_model").str s!"iota_{j}")) _ : CheckM _) >>= _) = _
+    (auxKey (auxKey cvName .model) (.iota j))) _ : CheckM md _) >>= _) = _
   rw [hthm']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1142,7 +1142,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨fvs, tbody⟩ := q
   have hopen' := unwrapOr_atF_ok hopen
   show ((unwrapOr (openPisAtFvars (rP + cnF) cvt.type 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopen']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1190,7 +1190,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨bs8, cbody8⟩ := q8
   have hstrip8' := unwrapOr_atF_ok hstrip8
   show ((unwrapOr (cvj.type.stripPis (cnP + cnF)) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hstrip8']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1212,7 +1212,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     (pins.map (fun p => Expr.instSpine (fvs.take rP) (rP - 1)
       (p.renameConsts f)) ++ fvs.drop rP)
     ((cvj.type.instantiateLevelParams cvj.levelParams
-      lvls).renameConsts f)) _ : CheckM _) >>= _) = _
+      lvls).renameConsts f)) _ : CheckM md _) >>= _) = _
   rw [hcinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1258,7 +1258,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨rdoms, rrest⟩ := q3
   have hrinst' := unwrapOr_atF_ok hrinst
   show ((unwrapOr (Expr.instPisAt (fvs.take rP)
-    (tyA.renameConsts f)) _ : CheckM _) >>= _) = _
+    (tyA.renameConsts f)) _ : CheckM md _) >>= _) = _
   rw [hrinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1281,7 +1281,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨fvsP, restP⟩ := q4
   have hopenP' := unwrapOr_atF_ok hopenP
   show ((unwrapOr (openPisAtFvars rP tyA 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1306,7 +1306,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   show ((unwrapOr (Expr.instPisAt
     (pins.map (fun p => Expr.instSpine (fvsP.take rP) (rP - 1) p))
     (cvj.type.instantiateLevelParams cvj.levelParams lvls)) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hcinstP']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1336,7 +1336,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨xFvsP, crest2⟩ := q6
   have hopenX' := unwrapOr_atF_ok hopenX
   show ((unwrapOr (openPisAtFvars cnF crestP rP) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopenX']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1356,7 +1356,7 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   obtain ⟨ldoms, lrest⟩ := q7
   have hlinst' := unwrapOr_atF_ok hlinst
   show ((unwrapOr (Expr.instLamsAt (fvsP ++ xFvsP) rhsA) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hlinst']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   try dsimp only [] at h ⊢
@@ -1401,10 +1401,10 @@ theorem checkIotaThmN_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     simp only [Bind.bind, Except.bind]
     exact h
 
-theorem checkIotaRule_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP j : Nat} {r : RecRule}
-    {F : Nat} {v : RecRule} (htyA : tyA.hasFvar = false)
+theorem checkIotaRule_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
+    (henvSelf : EnvWF envSelf) {f : Key md → Key md} {cvName : Key md}
+    {lps : List LevelParam} {tyA : Expr md} {mI rP j : Nat} {r : RecRule md}
+    {F : Nat} {v : RecRule md} (htyA : tyA.hasFvar = false)
     (h : (checkIotaRule mode (wfOpsM mode) env' envSelf f cvName lps tyA
       mI rP j r).val F = .ok v) :
     checkIotaRule mode (fueledOps mode F) env' envSelf f cvName lps tyA
@@ -1481,11 +1481,11 @@ theorem checkIotaRule_wfimp {env' envSelf : Env} (henv' : EnvWF env')
   simp only [Bind.bind, Except.bind]
   exact h
 
-theorem checkIotaRules_wfimp {env' envSelf : Env} (henv' : EnvWF env')
-    (henvSelf : EnvWF envSelf) {f : Name → Name} {cvName : Name}
-    {lps : List Name} {tyA : Expr} {mI rP : Nat} {F : Nat}
+theorem checkIotaRules_wfimp {env' envSelf : Env md} (henv' : EnvWF env')
+    (henvSelf : EnvWF envSelf) {f : Key md → Key md} {cvName : Key md}
+    {lps : List LevelParam} {tyA : Expr md} {mI rP : Nat} {F : Nat}
     (htyA : tyA.hasFvar = false) :
-    ∀ {j : Nat} {rules rules' : List RecRule},
+    ∀ {j : Nat} {rules rules' : List (RecRule md)},
       (checkIotaRules mode (wfOpsM mode) env' envSelf f cvName lps tyA
         mI rP j rules).val F = .ok rules' →
       checkIotaRules mode (fueledOps mode F) env' envSelf f cvName lps tyA
@@ -1508,8 +1508,8 @@ theorem checkIotaRules_wfimp {env' envSelf : Env} (henv' : EnvWF env')
     exact h
 
 /-- The member-against-model check, `wfOpsM mode` run to pure run. -/
-theorem checkMemberVal_wfimp {blockNames : List Name} {env' : Env}
-    (henv' : EnvWF env') {cv : ConstantVal} {F : Nat} {v : ConstantVal}
+theorem checkMemberVal_wfimp {blockNames : List (Key md)} {env' : Env md}
+    (henv' : EnvWF env') {cv : ConstantVal md} {F : Nat} {v : ConstantVal md}
     (h : (checkMemberVal (wfOpsM mode) blockNames env' cv).val F = .ok v) :
     checkMemberVal (fueledOps mode F) blockNames env' cv = .ok v := by
   unfold checkMemberVal at h ⊢
@@ -1524,7 +1524,7 @@ theorem checkMemberVal_wfimp {blockNames : List Name} {env' : Env}
     exact absurd h atF_throw_bind
   rw [if_neg h1] at h ⊢
   revert h
-  match hm : env'.find? (cvA.name.str "_model") with
+  match hm : env'.find? (auxKey cvA.name .model) with
   | none => intro h; exact nomatch h
   | some (.axiomInfo _) => intro h; exact nomatch h
   | some (.projInfo _) => intro h; exact nomatch h
@@ -1539,15 +1539,15 @@ theorem checkMemberVal_wfimp {blockNames : List Name} {env' : Env}
   case neg => rw [if_neg h2] at h; exact absurd h atF_throw_bind
   rw [if_pos h2] at h ⊢
   by_cases h3 : ((cvA.type.renameConsts
-      (fun n => if blockNames.contains n then n.str "_model" else n))
+      (fun n => if blockNames.contains n then auxKey n .model else n))
       == cvm.type) = true
   case neg => rw [if_neg h3] at h; exact absurd h atF_throw_bind
   rw [if_pos h3] at h ⊢
   exact h
 
-theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
-    {pty : Expr} {cvj : ConstantVal} {lps : List Name}
-    {nP nF i F : Nat} {v : Expr}
+theorem checkProjRule_wfimp {env' : Env md} (henv' : EnvWF env')
+    {pty : Expr md} {cvj : ConstantVal md} {lps : List LevelParam}
+    {nP nF i F : Nat} {v : Expr md}
     (hptyf : pty.hasFvar = false)
     (_hptyb : pty.looseBVarsBounded 0 = true)
     (hCf : cvj.type.hasFvar = false)
@@ -1635,7 +1635,7 @@ theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
     | app _ _ => exact hw.mono (by omega)
     | lam _ _ _ => exact hw.mono (by omega)
     | forallE _ _ _ => exact hw.mono (by omega)
-    | letE _ _ _ => exact hw.mono (by omega)
+    | letE _ _ _ _ => exact hw.mono (by omega)
     | lit _ => exact hw.mono (by omega)
     | proj _ _ _ => exact hw.mono (by omega)
   obtain ⟨hcdW, hcrW⟩ := instPisAt_WScoped (d := nP) fvsP cvj.type
@@ -1686,7 +1686,7 @@ theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
     | app _ _ => exact hw.mono (by omega)
     | lam _ _ _ => exact hw.mono (by omega)
     | forallE _ _ _ => exact hw.mono (by omega)
-    | letE _ _ _ => exact hw.mono (by omega)
+    | letE _ _ _ _ => exact hw.mono (by omega)
     | lit _ => exact hw.mono (by omega)
     | proj _ _ _ => exact hw.mono (by omega)
   obtain ⟨hldW, -⟩ := instLamsAt_WScoped (fvsP ++ xFvs) rhsA hlinst
@@ -1707,10 +1707,10 @@ theorem checkProjRule_wfimp {env' : Env} (henv' : EnvWF env')
   exact h
 
 /-- The stored constructor behind a successful projection lookup. -/
-theorem checkProjLookups_ctor {env' : Env} {T ctorName : Name}
-    {lps : List Name} {nP nF i : Nat} {cvj mcv : ConstantVal}
+theorem checkProjLookups_ctor {env' : Env md} {T ctorName : Key md}
+    {lps : List LevelParam} {nP nF i : Nat} {cvj mcv : ConstantVal md}
     (h : (checkProjLookups env' T ctorName lps nP nF i :
-      CheckM (ConstantVal × ConstantVal)) = .ok (cvj, mcv)) :
+      CheckM md (ConstantVal md × ConstantVal md)) = .ok (cvj, mcv)) :
     ∃ cnP cnF, env'.find? ctorName = some (.ctorInfo cvj cnP cnF) := by
   unfold checkProjLookups at h
   revert h
@@ -1759,9 +1759,9 @@ theorem checkProjLookups_ctor {env' : Env} {T ctorName : Name}
   next => exact nomatch h
 
 /-- Well-formedness of a successfully checked projection type. -/
-theorem checkProjTy_wf {env' : Env} {T ctorName : Name}
-    {lps : List Name} {mty pty : Expr} {nP nF : Nat}
-    (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM Expr) =
+theorem checkProjTy_wf {env' : Env md} {T ctorName : Key md}
+    {lps : List LevelParam} {mty pty : Expr md} {nP nF : Nat}
+    (h : (checkProjTy env' T ctorName lps mty nP nF : CheckM md (Expr md)) =
       .ok pty) :
     pty.hasFvar = false ∧ pty.looseBVarsBounded 0 = true := by
   unfold checkProjTy at h
@@ -1788,8 +1788,8 @@ set_option maxHeartbeats 6400000 in
 /-- The projection-iota check, `wfOpsM mode` run to pure run (task #100
 stage 3: the side certificates run at the opened statement telescope,
 which is scoped by the stored statement's closedness). -/
-theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
-    {T ctorName : Name} {lps : List Name} {cvj : ConstantVal}
+theorem checkProjIota_wfimp {env' : Env md} (henv' : EnvWF env')
+    {T ctorName : Key md} {lps : List LevelParam} {cvj : ConstantVal md}
     {nP nF i F : Nat} {v : Unit}
     (h : (checkProjIota mode (wfOpsM mode) env' env' T ctorName lps cvj nP nF
       i).val F = .ok v) :
@@ -1797,7 +1797,7 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
       = .ok v := by
   unfold checkProjIota at h ⊢
   revert h
-  match hthm : env'.find? ((projModelName T i).str "iota") with
+  match hthm : env'.find? (auxKey (projModelName T i) .projIota) with
   | none => intro h; rw [FueledM.atF_throw] at h; exact nomatch h
   | some (.axiomInfo _) => intro h; rw [FueledM.atF_throw] at h; exact nomatch h
   | some (.projInfo _) => intro h; rw [FueledM.atF_throw] at h; exact nomatch h
@@ -1900,7 +1900,7 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
       (.const (projModelName T i) (lps.map .param))
       (((List.range nP).map fun k => Expr.bvar (nP + nF - 1 - k)) ++
        [Expr.mkAppN
-         (.const (ctorName.str "_model") (cvj.levelParams.map .param))
+         (.const (auxKey ctorName .model) (cvj.levelParams.map .param))
          (((List.range nP).map fun k => Expr.bvar (nP + nF - 1 - k)) ++
           ((List.range nF).map fun k => Expr.bvar (nF - 1 - k)))])) = true
   case neg =>
@@ -1918,7 +1918,7 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
   obtain ⟨fvsO, sbodyO⟩ := q
   have hopen' := unwrapOr_atF_ok hopen
   show ((unwrapOr (openPisAtFvars (nP + nF) tcv.type 0) _ :
-    CheckM _) >>= _) = _
+    CheckM md _) >>= _) = _
   rw [hopen']
   simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
   have hcvtF : tcv.type.hasFvar = false :=
@@ -1932,26 +1932,26 @@ theorem checkProjIota_wfimp {env' : Env} (henv' : EnvWF env')
   exact checkIotaSidesTy_wfimp henv' (WScoped_getD' htargsW 0)
     (WScoped_getD' htargsW 1) (WScoped_getD' htargsW 2) h
 
-theorem checkProjFn_wfimp {env' : Env} (henv' : EnvWF env')
-    {T ctorName : Name} {lps : List Name} {nP nF i F : Nat} {v : Env}
+theorem checkProjFn_wfimp {env' : Env md} (henv' : EnvWF env')
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i F : Nat} {v : Env md}
     (h : (checkProjFn mode (wfOpsM mode) env' T ctorName lps nP nF i).val F = .ok v) :
     checkProjFn mode (fueledOps mode F) env' T ctorName lps nP nF i = .ok v := by
   unfold checkProjFn at h ⊢
   obtain ⟨⟨cvj, mcv⟩, hlk, h⟩ := atF_bind_ok h
   rw [checkProjLookups_datF] at hlk
   show ((checkProjLookups env' T ctorName lps nP nF i :
-    CheckM (ConstantVal × ConstantVal)) >>= _) = _
+    CheckM md (ConstantVal md × ConstantVal md)) >>= _) = _
   rw [hlk]
   simp only [Bind.bind, Except.bind]
   obtain ⟨pty, hty, h⟩ := atF_bind_ok h
   rw [checkProjTy_datF] at hty
   show ((checkProjTy env' T ctorName lps mcv.type nP nF :
-    CheckM Expr) >>= _) = _
+    CheckM md (Expr md)) >>= _) = _
   rw [hty]
   simp only [Bind.bind, Except.bind]
   obtain ⟨u0, hshape, h⟩ := atF_bind_ok h
   rw [checkProjShape_datF] at hshape
-  show ((checkProjShape pty cvj.type nP nF : CheckM Unit) >>= _) = _
+  show ((checkProjShape pty cvj.type nP nF : CheckM md Unit) >>= _) = _
   rw [hshape]
   simp only [Bind.bind, Except.bind]
   dsimp only [] at h ⊢
@@ -1977,8 +1977,8 @@ theorem checkProjFn_wfimp {env' : Env} (henv' : EnvWF env')
   simp only [Bind.bind, Except.bind]
   exact h
 
-theorem installProjFnStep_wfimp {e : Env} (he : EnvWF e)
-    {T ctorName : Name} {lps : List Name} {nP nF i F : Nat} {e' : Env}
+theorem installProjFnStep_wfimp {e : Env md} (he : EnvWF e)
+    {T ctorName : Key md} {lps : List LevelParam} {nP nF i F : Nat} {e' : Env md}
     (h : (installProjFnStep mode (wfOpsM mode) T ctorName lps nP nF e i).val F =
       .ok e') :
     installProjFnStep mode (fueledOps mode F) T ctorName lps nP nF e i = .ok e' := by
@@ -1994,11 +1994,11 @@ theorem installProjFnStep_wfimp {e : Env} (he : EnvWF e)
 
 /-- The recurrence equations' sides are well-scoped at depth 2 (their
 free variables are `fvar 0`/`fvar 1` with closed annotations). -/
-theorem natOpEquations_wscopedB {c : Name} (hc : c ∈ natOpNames) :
+theorem natOpEquations_wscopedB {c : Key md} (hc : c ∈ natOpNames) :
     ∀ eq ∈ natOpEquations 0 c,
       eq.1.wscopedB 2 = true ∧ eq.2.wscopedB 2 = true := by
   simp only [natOpNames, List.mem_cons, List.not_mem_nil, or_false] at hc
-  rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+  rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> cases md <;>
     (intro eq heq
      simp +decide [natOpEquations] at heq
      first
@@ -2010,9 +2010,9 @@ theorem natOpEquations_wscopedB {c : Name} (hc : c ∈ natOpNames) :
            simp +decide [Expr.wscopedB])
 
 /-- Substituting a closed value for a constant preserves scoping. -/
-theorem wscopedB_substConst0 {n : Name} {r : Expr}
+theorem wscopedB_substConst0 {n : Key md} {r : Expr md}
     (hr : r.hasFvar = false) :
-    ∀ (e : Expr) {d : Nat}, e.wscopedB d = true →
+    ∀ (e : Expr md) {d : Nat}, e.wscopedB d = true →
       (Expr.substConst0 n r e).wscopedB d = true
   | .const c us, d, he => by
     simp only [Expr.substConst0]
@@ -2024,27 +2024,27 @@ theorem wscopedB_substConst0 {n : Name} {r : Expr}
     exact ⟨wscopedB_substConst0 hr f he.1, wscopedB_substConst0 hr a he.2⟩
   | .bvar _, _, he | .fvar _ _, _, he | .sort _, _, he | .lit _, _, he
   | .lam _ _ _, _, he | .forallE _ _ _, _, he
-  | .letE _ _ _, _, he | .proj _ _ _, _, he => he
+  | .letE _ _ _ _, _, he | .proj _ _ _, _, he => he
 
 /-! ## The div/mod pin gate, `wfOpsM mode` runs to pure runs -/
 
-theorem atF_throw {α : Type} {e : CheckError} {F : Nat} {v : α}
-    (h : ((throw e : FueledM α)).val F = .ok v) : False := by
+theorem atF_throw {α : Type} {e : CheckError md} {F : Nat} {v : α}
+    (h : ((throw e : FueledM md α)).val F = .ok v) : False := by
   simp only [throw, throwThe, MonadExceptOf.throw] at h
   exact nomatch h
 
 /-- The pinned open certificate statements are well-scoped at the
 certificate frame: hypotheses at their own binder index (they ride as
 the `fvar 2`/`fvar 3` annotations), the equation at the full frame. -/
-theorem divModCertStmts_wscopedB {c : Name} (hc : c ∈ natDivModNames) :
+theorem divModCertStmts_wscopedB {c : Key md} (hc : c ∈ natDivModNames) :
     ∀ st ∈ divModCertStmts c,
       (∀ hyp ∈ st.1, hyp.wscopedB 2 = true) ∧ st.2.wscopedB 4 = true := by
   simp only [natDivModNames, List.mem_cons, List.not_mem_nil, or_false] at hc
   rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-    decide +kernel
+    (cases md <;> decide +kernel)
 
 /-- The applied certificate proof is well-scoped at the frame. -/
-theorem divModCertApplied_wscopedB {proofS : Expr} {hyps : List Expr}
+theorem divModCertApplied_wscopedB {proofS : Expr md} {hyps : List (Expr md)}
     (hp : proofS.hasFvar = false)
     (hh : ∀ hyp ∈ hyps, hyp.wscopedB 2 = true) :
     (divModCertApplied proofS hyps).wscopedB 4 = true := by
@@ -2063,9 +2063,9 @@ theorem divModCertApplied_wscopedB {proofS : Expr} {hyps : List Expr}
     simp [Expr.wscopedB, hpw, h1w, h2w3]
   | _ :: _ :: _ :: _, hh => simp [Expr.wscopedB, hpw]
 
-theorem checkDivModCerts_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} {annVal : Expr} (hvf : annVal.hasFvar = false) :
-    ∀ {stmts : List (List Expr × Expr)} {proofs : List Expr},
+theorem checkDivModCerts_wfimp {env : Env md} (henv : EnvWF env) {F : Nat}
+    {c : Key md} {annVal : Expr md} (hvf : annVal.hasFvar = false) :
+    ∀ {stmts : List (List (Expr md) × Expr md)} {proofs : List (Expr md)},
       (∀ st ∈ stmts, (∀ hyp ∈ st.1, hyp.wscopedB 2 = true) ∧
         st.2.wscopedB 4 = true) →
       ∀ {v : Bool},
@@ -2125,87 +2125,16 @@ theorem checkDivModCerts_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
         (fun st hs => hsc st (List.mem_cons_of_mem _ hs)) h
     | false => simpa using h
 
-/-- One pin variant's attempt, `wfOpsM mode` run to pure run (the
-variant's guards supply the pin's scoping, the definition check the
-stored value's; task #273). -/
-theorem checkDivModPinAt_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} (hc : c ∈ natDivModNames) {value' : Expr}
-    (hvf : value'.hasFvar = false) {ps : NatOpPinSet}
-    (hping : (divModPinGuard ps env c &&
-      divModCertsGuard ps env c value') = true) {b : Bool}
-    (h : (checkDivModPinAt (wfOpsM mode) env c value' ps).val F = .ok b) :
-    checkDivModPinAt (fueledOps mode F) env c value' ps = .ok b := by
-  unfold checkDivModPinAt at h ⊢
-  have hping' := hping
-  simp only [Bool.and_eq_true] at hping'
-  have hping'' := hping'.1
-  unfold divModPinGuard at hping''
-  simp only [Bool.and_eq_true] at hping''
-  have hpinF : (divModDeclPin ps c).hasFvar = false := by
-    simpa using hping''.1.1.2
-  rw [wfOpsM_annotate henv (wscopedB_of_not_hasFvar hpinF)] at h
-  obtain ⟨pinA, hann, h⟩ := atF_bind_ok h
-  have hann' : annotateCore mode env F 0 _ = .ok pinA := hann
-  show (annotateCore mode env F 0 _ >>= _) = _
-  rw [hann']
-  simp only [Bind.bind, Except.bind]
-  have hpinAW : WScoped 0 pinA :=
-    annotateCore_WScoped F _ hann' (WScoped.of_not_hasFvar hpinF)
-  rw [wfOpsM_isDefEq henv (wscopedB_of_not_hasFvar hvf)
-    hpinAW.to_wscopedB] at h
-  obtain ⟨b', hde, h⟩ := atF_bind_ok h
-  have hde' : isDefEqCore mode env F 0 value' pinA = .ok b' := hde
-  show (isDefEqCore mode env F 0 value' pinA >>= _) = _
-  rw [hde']
-  simp only [Bind.bind, Except.bind]
-  cases b' with
-  | false =>
-    simp only [Bool.false_eq_true, ↓reduceIte] at h ⊢
-    exact h
-  | true =>
-    simp only [↓reduceIte] at h ⊢
-    exact checkDivModCerts_wfimp henv hvf (divModCertStmts_wscopedB hc) h
-
-/-- The variant loop, `wfOpsM mode` run to pure run: the fueled
-family's combinator hands its continuation `none`, and so does the
-pure lane's — the two loops accumulate the same reasons and agree
-branch for branch. -/
-theorem checkDivModPinLoop_wfimp {env : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} (hc : c ∈ natDivModNames) {value' : Expr}
-    (hvf : value'.hasFvar = false) {u : Unit} :
-    ∀ {pss : List NatOpPinSet} {tried : List String},
-      (checkDivModPinLoop (wfOpsM mode) env c value' pss tried).val F = .ok u →
-      checkDivModPinLoop (fueledOps mode F) env c value' pss tried = .ok u
-  | [], _, h => absurd h atF_throw
-  | ps :: rest, tried, h => by
-    unfold checkDivModPinLoop at h ⊢
-    revert h
-    split
-    case isTrue hping =>
-      rw [wfOpsM_orElse, fueledOpsM_orElse_atF, fueledOps_orElse']
-      cases hx : (checkDivModPinAt (wfOpsM mode) env c value' ps).val F with
-      | ok b =>
-        rw [checkDivModPinAt_wfimp henv hc hvf hping hx]
-        cases b with
-        | true => intro h; exact h
-        | false => exact checkDivModPinLoop_wfimp henv hc hvf
-      | error e =>
-        intro h
-        cases hx' : checkDivModPinAt (fueledOps mode F) env c value' ps with
-        | ok b =>
-          cases b with
-          | true => cases u; rfl
-          | false => exact checkDivModPinLoop_wfimp henv hc hvf h
-        | error e' => exact checkDivModPinLoop_wfimp henv hc hvf h
-    case isFalse => exact checkDivModPinLoop_wfimp henv hc hvf
-
-theorem checkDivModPin_wfimp {env env2 : Env} (henv : EnvWF env) {F : Nat}
-    {c : Name} (hc : c ∈ natDivModNames)
+/-- The well-founded operations' evidence gate, `wfOpsM mode` run to
+pure run: the fueled family's combinator hands its continuation `none`,
+and so does the pure lane's; the continuation throws in both. -/
+theorem checkDivModEvidence_wfimp {env env2 : Env md} (henv : EnvWF env) {F : Nat}
+    {c : Key md} (hc : c ∈ natDivModNames)
     (hv'f : ∀ cv' v' h', env2.find? c = some (.defnInfo cv' v' h') →
       v'.hasFvar = false)
-    {u : Unit} (h : (checkDivModPin (wfOpsM mode) pins env env2 c).val F = .ok u) :
-    checkDivModPin (fueledOps mode F) pins env env2 c = .ok u := by
-  unfold checkDivModPin at h ⊢
+    {u : Unit} (h : (checkDivModEvidence (wfOpsM mode) ev env env2 c).val F = .ok u) :
+    checkDivModEvidence (fueledOps mode F) ev env env2 c = .ok u := by
+  unfold checkDivModEvidence at h ⊢
   by_cases h1 : divModEnvGuard env2 c = true
   case neg =>
     rw [if_neg h1] at h
@@ -2223,84 +2152,25 @@ theorem checkDivModPin_wfimp {env env2 : Env} (henv : EnvWF env) {F : Nat}
     | recInfo cv' mI rP rules => intro h; exact absurd h atF_throw
     | projInfo _ => intro h; exact absurd h atF_throw
     | defnInfo cv' value' hint' =>
-      exact checkDivModPinLoop_wfimp henv hc (hv'f _ _ _ hfind)
-
-/-- The compiler-trust install gate, `wfOpsM mode` run to pure run (the
-raw witness value's scoping comes from the preceding opaque check). -/
-theorem checkReducePin_wfimp {env env2 : Env} (henv : EnvWF env)
-    {F : Nat} {c : Name} {value : Expr}
-    (hvf : value.hasFvar = false)
-    {u : Unit}
-    (h : (checkReducePin (wfOpsM mode) env env2 c value).val F = .ok u) :
-    checkReducePin (fueledOps mode F) env env2 c value = .ok u := by
-  unfold checkReducePin at h ⊢
-  by_cases h1 : (reduceStoredOk env2 c && reduceElemOk env c) = true
-  case neg =>
-    rw [if_neg h1] at h
-    exact absurd h atF_throw
-  rw [if_pos h1] at h ⊢
-  by_cases h2 : reducePinGuard env c = true
-  case neg =>
-    rw [if_neg h2] at h
-    exact absurd h atF_throw
-  rw [if_pos h2] at h ⊢
-  rw [wfOpsM_annotate henv (wscopedB_of_not_hasFvar hvf)] at h
-  obtain ⟨valA, hannv, h⟩ := atF_bind_ok h
-  have hannv' : annotateCore mode env F 0 value = .ok valA := hannv
-  show (annotateCore mode env F 0 value >>= _) = _
-  rw [hannv']
-  simp only [Bind.bind, Except.bind]
-  have h2' := h2
-  unfold reducePinGuard at h2'
-  simp only [Bool.and_eq_true] at h2'
-  have hpinF : (reduceDeclPin c).hasFvar = false := by
-    simpa using h2'.1.1.2
-  rw [wfOpsM_annotate henv (wscopedB_of_not_hasFvar hpinF)] at h
-  obtain ⟨pinA, hannp, h⟩ := atF_bind_ok h
-  have hannp' : annotateCore mode env F 0 (reduceDeclPin c) = .ok pinA := hannp
-  show (annotateCore mode env F 0 (reduceDeclPin c) >>= _) = _
-  rw [hannp']
-  simp only [Bind.bind, Except.bind]
-  have hvalAW : WScoped 0 valA :=
-    annotateCore_WScoped F value hannv' (WScoped.of_not_hasFvar hvf)
-  have hpinAW : WScoped 0 pinA :=
-    annotateCore_WScoped F _ hannp' (WScoped.of_not_hasFvar hpinF)
-  rw [wfOpsM_isDefEq henv hvalAW.to_wscopedB hpinAW.to_wscopedB] at h
-  obtain ⟨b, hde, h⟩ := atF_bind_ok h
-  have hde' : isDefEqCore mode env F 0 valA pinA = .ok b := hde
-  show (isDefEqCore mode env F 0 valA pinA >>= _) = _
-  rw [hde']
-  simp only [Bind.bind, Except.bind]
-  cases b with
-  | false =>
-    simp only [Bool.false_eq_true, ↓reduceIte] at h ⊢
-    exact absurd h atF_throw
-  | true =>
-    simp only [↓reduceIte] at h ⊢
-    have hxW : WScoped 1 (reduceCertVar c) := by
-      unfold reduceCertVar
-      simp only [WScoped]
-      refine ⟨Nat.zero_lt_one, ?_⟩
-      unfold reduceElemTy
-      split <;> simp only [WScoped]
-    have happW : WScoped 1 (Expr.app valA (reduceCertVar c)) := by
-      simp only [WScoped]
-      exact ⟨WScoped.mono (Nat.zero_le 1) hvalAW, hxW⟩
-    rw [wfOpsM_isDefEq henv happW.to_wscopedB hxW.to_wscopedB] at h
-    obtain ⟨b2, hde2, h⟩ := atF_bind_ok h
-    have hde2' : isDefEqCore mode env F 1 (.app valA (reduceCertVar c))
-        (reduceCertVar c) = .ok b2 := hde2
-    show (isDefEqCore mode env F 1 (.app valA (reduceCertVar c))
-        (reduceCertVar c) >>= _) = _
-    rw [hde2']
-    simp only [Bind.bind, Except.bind]
-    cases b2 with
-    | false =>
-      simp only [Bool.false_eq_true, ↓reduceIte] at h
-      exact absurd h atF_throw
-    | true =>
-      simp only [↓reduceIte] at h ⊢
-      exact h
+      dsimp only
+      cases hev : evidenceProofs ev c with
+      | none => intro h; exact absurd h atF_throw
+      | some proofs =>
+        dsimp only
+        by_cases hg : (divModCertsGuard proofs env c value' &&
+            evidenceLocal env.find? c value' proofs) = true
+        case neg => rw [if_neg hg, if_neg hg]; intro h; exact absurd h atF_throw
+        rw [if_pos hg, if_pos hg]
+        rw [wfOpsM_orElse, fueledOpsM_orElse_atF, fueledOps_orElse']
+        cases hx : (checkDivModCerts (wfOpsM mode) env c value'
+            (divModCertStmts c) proofs).val F with
+        | ok b =>
+          rw [checkDivModCerts_wfimp henv (hv'f _ _ _ hfind)
+            (divModCertStmts_wscopedB hc) hx]
+          cases b with
+          | true => intro h; exact h
+          | false => intro h; exact absurd h atF_throw
+        | error e => intro h; exact absurd h atF_throw
 
 /-! ## The direct simple-structure path (task #82)
 
@@ -2313,11 +2183,11 @@ right-hand side — the last two are checked closed by the checker's own
 
 /-- The per-frame parameter-domain pins, `wfOpsM mode` run to pure run: each
 domain is scoped at its own frame. -/
-theorem checkStructDomsAt_wfimp {env : Env} (henv : EnvWF env)
-    {F off : Nat} {fvs doms : List Expr}
-    (hc : ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+theorem checkStructDomsAt_wfimp {env : Env md} (henv : EnvWF env)
+    {F off : Nat} {fvs doms : List (Expr md)}
+    (hc : ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
       WScoped (off + i) (Expr.fvarTypeD x))
-    (ht : ∀ (i : Nat) (x : Expr), doms[i]? = some x → WScoped (off + i) x) :
+    (ht : ∀ (i : Nat) (x : Expr md), doms[i]? = some x → WScoped (off + i) x) :
     ∀ {j : Nat} {v : Unit},
       (checkStructDomsAt (wfOpsM mode) env off fvs doms j).val F = .ok v →
       checkStructDomsAt (fueledOps mode F) env off fvs doms j = .ok v
@@ -2326,12 +2196,12 @@ theorem checkStructDomsAt_wfimp {env : Env} (henv : EnvWF env)
     unfold checkStructDomsAt at h ⊢
     obtain ⟨a, ha, h⟩ := atF_bind_ok h
     have ha' := unwrapOr_atF_ok ha
-    show ((unwrapOr fvs[j]? _ : CheckM _) >>= _) = _
+    show ((unwrapOr fvs[j]? _ : CheckM md _) >>= _) = _
     rw [ha']
     simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
     obtain ⟨b, hb, h⟩ := atF_bind_ok h
     have hb' := unwrapOr_atF_ok hb
-    show ((unwrapOr doms[j]? _ : CheckM _) >>= _) = _
+    show ((unwrapOr doms[j]? _ : CheckM md _) >>= _) = _
     rw [hb']
     simp only [unwrapOr, Bind.bind, Except.bind, pure, Except.pure]
     rw [wfOpsM_isDefEq henv (hc j a ha').to_wscopedB
@@ -2359,7 +2229,7 @@ macro "throwM_elim" h:ident : tactic =>
 level parameters and constant resolution are checked outright, and the
 annotated type inherits closedness and fvar-freedom from the raw
 checks through `annotate`. -/
-theorem checkConstantVal_typeWF {env : Env} {cv cvA : ConstantVal}
+theorem checkConstantVal_typeWF {env : Env md} {cv cvA : ConstantVal md}
     {F : Nat} (h : checkConstantVal (fueledOps mode F) env cv = .ok cvA) :
     cvA.type.hasFvar = false ∧
     cvA.type.allLevelParamsDefined cvA.levelParams = true ∧
@@ -2375,7 +2245,7 @@ theorem checkConstantVal_typeWF {env : Env} {cv cvA : ConstantVal}
   by_cases h3 : cv.name.isProjFnShape = true
   · rw [if_pos h3] at h; throwM_elim h
   rw [if_neg h3] at h
-  by_cases h4 : Name.nodup cv.levelParams = true
+  by_cases h4 : LevelParam.nodup cv.levelParams = true
   case neg => rw [if_neg h4] at h; throwM_elim h
   rw [if_pos h4] at h
   by_cases h5 : Expr.looseBVarsBounded 0 cv.type = true
@@ -2419,8 +2289,8 @@ theorem checkConstantVal_typeWF {env : Env} {cv cvA : ConstantVal}
 /-- Peeling a `∀`-telescope (without instantiating) keeps every binder
 domain and the body scoped at the same frame. -/
 theorem stripPis_WScoped {d : Nat} :
-    ∀ (k : Nat) {e : Expr} {bs : List (Expr × BinderMeta)}
-      {body : Expr}, Expr.stripPis k e = some (bs, body) → WScoped d e →
+    ∀ (k : Nat) {e : Expr md} {bs : List (Expr md × BinderMeta)}
+      {body : Expr md}, Expr.stripPis k e = some (bs, body) → WScoped d e →
       (∀ b ∈ bs, WScoped d b.1) ∧ WScoped d body
   | 0, e, bs, body, h, hw => by
     simp only [Expr.stripPis, Option.some.injEq] at h
@@ -2444,12 +2314,12 @@ theorem stripPis_WScoped {d : Nat} :
 
 /-- The projection table, `wfOpsM mode` run to pure run (the stage is
 ops-free, task #175 S1). -/
-theorem checkStructProjTable_wfimp {T C : Name} {lps : List Name}
-    {nP nF : Nat} {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal}
-    {env v : Env} {F : Nat}
-    (h : (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM Env).val F
+theorem checkStructProjTable_wfimp {T C : Key md} {lps : List LevelParam}
+    {nP nF : Nat} {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal md}
+    {env v : Env md} {F : Nat}
+    (h : (checkStructProjTable T C lps nP nF rs guards off cvCa env : FueledM md (Env md)).val F
       = Except.ok v) :
-    (checkStructProjTable T C lps nP nF rs guards off cvCa env : CheckM Env)
+    (checkStructProjTable T C lps nP nF rs guards off cvCa env : CheckM md (Env md))
       = Except.ok v := by
   rw [checkStructProjTable_datF] at h
   exact h

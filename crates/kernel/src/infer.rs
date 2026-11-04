@@ -7,6 +7,7 @@ use super::id::KId;
 use super::lctx::LocalDecl;
 use super::level::KUniv;
 use super::mode::KernelMode;
+use super::primitive::is_native_evaluation_addr;
 use super::subst::{abstract_fvars, cheap_beta_reduce, instantiate_rev, subst};
 use super::tc::{TypeChecker, collect_app_spine};
 
@@ -44,6 +45,7 @@ static INFER_COUNT: std::sync::atomic::AtomicUsize =
 
 impl<M: KernelMode> TypeChecker<'_, M> {
   pub fn infer(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
+    self.check_input_context()?;
     if *IX_INFER_COUNT_LOG {
       let n = INFER_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
@@ -72,6 +74,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       self.env.perf.record_infer_only_miss();
       self.record_hot_miss("infer-only", e);
     }
+    self.check_stack()?;
 
     let ty = match e.data() {
       // Legacy de Bruijn lookup: still used by inductive validation paths
@@ -100,7 +103,33 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
 
       ExprData::Const(id, us, _) => {
+        // A checked declaration may not refer to a native-evaluation
+        // constant: the certified checker blocks such declarations.
+        // Inference without validation (`infer_only`, which also drives
+        // auxiliary-definition generation) is unaffected.
+        if !infer_only && is_native_evaluation_addr(&id.addr) {
+          return Err(TcError::NativeEvaluation(id.addr.clone()));
+        }
         let c = self.get_const(id)?;
+        // A quotient record means the quotient only at its primitive
+        // address: for a bound artifact, once the Quot group is admitted.
+        if matches!(c, KConst::Quot { .. }) && !self.is_quot_primitive(id)? {
+          return Err(TcError::Other(format!(
+            "quotient record {} is not an admitted quotient primitive",
+            id.addr.hex()
+          )));
+        }
+        // Unsafe axioms belong to the unsafe tier, which safe declarations
+        // cannot reference; the policy is for the safe theory.
+        if !infer_only
+          && matches!(c, KConst::Axio { is_unsafe: false, .. })
+          && !self.prims.axiom_usable(&id.addr)
+        {
+          return Err(TcError::Other(format!(
+            "axiom {} is not an admitted standard axiom",
+            id.addr.hex()
+          )));
+        }
         if u64_to_usize::<M>(c.lvls())? != us.len() {
           return Err(TcError::UnivParamMismatch {
             expected: c.lvls(),
@@ -108,8 +137,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           });
         }
         let ty = c.ty().clone();
-        let us_vec: Vec<_> = us.to_vec();
-        self.instantiate_univ_params(&ty, &us_vec)?
+        self.instantiate_univ_params(&ty, us)?
       },
 
       ExprData::App(f, _, _) if matches!(f.data(), ExprData::App(..)) => {
@@ -150,19 +178,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       // Avoid telescope-vector allocation on the existing single-binder
       // path. Telescopes can open their terminal body once per batch.
-      ExprData::Lam(_, _, _, body, _)
+      ExprData::Lam(_, _, _, _, body, _)
         if matches!(body.data(), ExprData::Lam(..)) =>
       {
         self.infer_lambda_telescope(e)?
       },
 
-      ExprData::All(_, _, _, body, _)
+      ExprData::All(_, _, _, _, _, body, _)
         if matches!(body.data(), ExprData::All(..)) =>
       {
         self.infer_forall_telescope(e)?
       },
 
-      ExprData::Lam(name, bi, ty, body, _) => {
+      ExprData::Lam(name, bi, contract, ty, body, _) => {
         if !infer_only {
           let t = self.infer(ty)?;
           self.ensure_sort(&t)?;
@@ -179,6 +207,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               name: name.clone(),
               bi: bi.clone(),
               ty: ty.clone(),
+              contract: *contract,
+              result: ixon::contract::ValueContract::shared(),
             },
           );
           let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
@@ -196,16 +226,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           // canonically.
           let abstracted =
             abstract_fvars(&mut tc.env.intern, &body_ty, &[fv_id]);
-          Ok(tc.intern(KExpr::all(
+          Ok(tc.intern(KExpr::all_contract(
             M::meta_field(ix_common::env::Name::anon()),
             M::meta_field(ix_common::env::BinderInfo::Default),
+            *contract,
+            ixon::contract::ValueContract::shared(),
             ty.clone(),
             abstracted,
           )))
         })?
       },
 
-      ExprData::All(name, bi, ty, body, _) => {
+      ExprData::All(name, bi, contract, result, ty, body, _) => {
         let ty_ty = self.infer(ty)?;
         let u1 = self.ensure_sort(&ty_ty)?;
         self.with_lctx_scope(|tc| {
@@ -227,6 +259,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               name: name.clone(),
               bi: bi.clone(),
               ty: ty.clone(),
+              contract: *contract,
+              result: *result,
             },
           );
           let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
@@ -237,7 +271,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         })?
       },
 
-      ExprData::Let(name, ty, val, body, _, _) => {
+      ExprData::Let(name, ty, val, body, contract, _) => {
         if !infer_only {
           let t = self.infer(ty)?;
           self.ensure_sort(&t)?;
@@ -260,6 +294,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               name: name.clone(),
               ty: ty.clone(),
               val: val.clone(),
+              contract: *contract,
             },
           );
           let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
@@ -284,8 +319,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         self.infer_proj(&struct_id, *field, val, &val_ty)?
       },
 
-      ExprData::Nat(..) => self.infer_nat_type(),
-      ExprData::Str(..) => self.infer_str_type(),
+      ExprData::Nat(..) => self.infer_nat_type()?,
+      ExprData::Str(..) => self.infer_str_type()?,
     };
 
     if !infer_only {
@@ -366,8 +401,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
     };
 
-    let i_levels_vec: Vec<_> = i_levels.to_vec();
-    let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels_vec)?;
+    let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels)?;
 
     for i in 0..num_params {
       let (_, body) = self
@@ -435,22 +469,30 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     e: &KExpr<M>,
     err: &'static str,
   ) -> Result<(KExpr<M>, KExpr<M>), TcError<M>> {
-    if let ExprData::All(_, _, dom, body, _) = e.data() {
+    if let ExprData::All(_, _, _, _, dom, body, _) = e.data() {
       return Ok((dom.clone(), body.clone()));
     }
     let w = self.whnf(e)?;
     match w.data() {
-      ExprData::All(_, _, dom, body, _) => Ok((dom.clone(), body.clone())),
+      ExprData::All(_, _, _, _, dom, body, _) => {
+        Ok((dom.clone(), body.clone()))
+      },
       _ => Err(TcError::Other(err.into())),
     }
   }
 
-  fn infer_nat_type(&mut self) -> KExpr<M> {
-    self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([])))
+  fn infer_nat_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_role(ixon::role_table::Role::Nat)?;
+    Ok({
+      self.intern(KExpr::cnst(self.primitives()?.nat.clone(), Box::new([])))
+    })
   }
 
-  fn infer_str_type(&mut self) -> KExpr<M> {
-    self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([])))
+  fn infer_str_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
+    self.require_role(ixon::role_table::Role::String)?;
+    Ok({
+      self.intern(KExpr::cnst(self.primitives()?.string.clone(), Box::new([])))
+    })
   }
 
   fn inductive_app_is_prop(
@@ -467,12 +509,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Err(TcError::Other("projection: not an inductive type".into()));
       },
     };
-    let levels_vec: Vec<_> = levels.to_vec();
-    let mut r = self.instantiate_univ_params(&ind_ty, &levels_vec)?;
+    let mut r = self.instantiate_univ_params(&ind_ty, levels)?;
     for _ in 0..binders {
       let wr = self.whnf(&r)?;
       match wr.data() {
-        ExprData::All(_, _, _, body, _) => {
+        ExprData::All(_, _, _, _, _, body, _) => {
           r = body.clone();
         },
         _ => {
@@ -495,7 +536,7 @@ fn compact_expr<M: KernelMode>(e: &KExpr<M>) -> String {
 fn compact_expr_deep<M: KernelMode>(e: &KExpr<M>, depth: usize) -> String {
   if depth > 0 {
     match e.data() {
-      ExprData::Lam(_, _, ty, body, _) => {
+      ExprData::Lam(_, _, _, ty, body, _) => {
         return format!(
           "lam(ty={}, body={}) @{} lbr={}",
           compact_expr_deep(ty, depth - 1),
@@ -504,7 +545,7 @@ fn compact_expr_deep<M: KernelMode>(e: &KExpr<M>, depth: usize) -> String {
           e.lbr()
         );
       },
-      ExprData::All(_, _, ty, body, _) => {
+      ExprData::All(_, _, _, _, ty, body, _) => {
         return format!(
           "forall(ty={}, body={}) @{} lbr={}",
           compact_expr_deep(ty, depth - 1),
@@ -710,7 +751,7 @@ mod tests {
     let ty = tc.infer(&n).unwrap();
     // Nat literal type = Nat constant
     assert!(
-      matches!(ty.data(), ExprData::Const(id, _, _) if id.addr == tc.prims.nat.addr)
+      matches!(ty.data(), ExprData::Const(id, _, _) if id.addr == tc.primitives().unwrap().nat.addr)
     );
   }
 
@@ -814,8 +855,7 @@ mod tests {
       let mut env = test_env();
       let mut tc = TypeChecker::new(&mut env);
       let outer_id = tc.fresh_fvar_id();
-      tc.lctx
-        .push(outer_id, LocalDecl::CDecl { name: (), bi: (), ty: sort0() });
+      tc.lctx.push(outer_id, LocalDecl::cdecl((), (), sort0()));
       let saved = tc.lctx.len();
 
       assert!(tc.infer(&expr).is_err(), "{kind} body must fail");
@@ -921,7 +961,7 @@ mod tests {
     // Type should be `String` — a constant at the canonical string addr.
     match ty.data() {
       ExprData::Const(id, _, _) => {
-        assert_eq!(id.addr, tc.prims.string.addr);
+        assert_eq!(id.addr, tc.primitives().unwrap().string.addr);
       },
       other => panic!("expected Const(String), got {other:?}"),
     }

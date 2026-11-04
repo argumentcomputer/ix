@@ -126,31 +126,29 @@ jobs:
         include:
           - name: Lake ignored tests (compile pipeline)
             kind: lake
-            test_args: >-
-              --ignored
-              rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip
-              graph-cross condense-cross rust-serialize ixon-corpus
-              rust-decompile validate-aux aux-gen-diff decompile-diff
-              aux-gen-closure canon-closure-aux
+            test_args: --tier ci:compile-pipeline
+          - name: Lake ignored tests (compiler closures)
+            kind: lake
+            test_args: --tier ci:compiler-closures
           - name: Lake ignored tests (compile)
             kind: lake
-            test_args: --ignored compile
+            test_args: --tier ci:compile
           - name: Lake ignored tests (decompile)
             kind: lake
-            test_args: --ignored decompile
+            test_args: --tier ci:decompile
           - name: Lake ignored tests (misc)
             kind: lake
-            test_args: >-
-              --ignored
-              shard-map catalog-dedup commit-io fidelity-initstd
-              kernel-ixon-roundtrip kernel-tutorial kernel-check-env kernel-check-const
-              rust-kernel-build-primitives rust-kernel-build-prim-origs ixvm
+            test_args: --tier ci:misc
             zk_voting: true
-          - name: Ix.Tc unit and parity tests
-            kind: tc
-            test_args: >-
-              tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
-              tc-pins tc-accel-diff
+          - name: Lake ignored tests (landing, compilers)
+            kind: lake
+            test_args: --tier ci:landing-compilers
+          - name: Lake ignored tests (landing, Init+Std)
+            kind: lake
+            test_args: --tier ci:landing-initstd
+          - name: Lake ignored tests (landing, Init+Std through ix)
+            kind: lake
+            test_args: --tier ci:landing-initstd-cli
           - name: Certified kernel
             kind: kernel
     # On-demand rather than Spot: a reclaimed partition restarts from scratch
@@ -169,7 +167,7 @@ jobs:
           TEST_KIND: ${{ matrix.kind }}
         run: |
           case "$TEST_KIND" in
-            lake|tc|kernel) ;;
+            lake|kernel) ;;
             *) echo "::error::Unknown merge-test variant: $TEST_KIND"; exit 1 ;;
           esac
 
@@ -215,16 +213,11 @@ jobs:
         if: ${{ matrix.kind == 'lake' && matrix.zk_voting }}
         run: lake exe Apps.ZKVoting.Prover
 
-      - name: Run Ix.Tc unit, parity, and regression tests
-        if: ${{ matrix.kind == 'tc' }}
-        run: |
-          lake test --wfail -- tc-unit
-          lake test --wfail -- --ignored ${{ matrix.test_args }}
-
       # The certified kernel gate (docs/kernel.md): the standalone IxC
       # package build, which has no dependencies and so proves the kernel needs
       # only the toolchain, then the host tests, the Rust differentials, the
-      # set-theory model, the fences, the entry cases and the reader fidelity.
+      # set-theory model, the fences, the entry cases, the reader fidelity, the
+      # `.meta` and `.source` names, and quotient Source on Init and Std.
       # The kernel artifacts come from .lake/kernel on the sticky disk. The
       # model lives in its own workspace so Mathlib stays out of the root
       # package; its objects come from Mathlib's cache and persist on the
@@ -236,7 +229,7 @@ jobs:
             Mathlib.SetTheory.Cardinal.Regular \
             Mathlib.SetTheory.ZFC.VonNeumann \
             Mathlib.SetTheory.ZFC.Cardinal
-      - name: Check certified kernel, codec and order differentials, model, entry cases and reader fidelity
+      - name: Check certified kernel, codec and order differentials, model, entry cases, reader fidelity and quotient Source
         if: ${{ matrix.kind == 'kernel' }}
         run: lake run check-kernel --with-model
 

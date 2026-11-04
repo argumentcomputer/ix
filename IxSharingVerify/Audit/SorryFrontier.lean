@@ -8,7 +8,10 @@ Fail the build if any declaration emitted from an `Ix.Sharing` source module
 (the sharing core `Ix.Sharing.Exact`, whose `@[csimp]` replacements the
 compiler runs, and its proofs `Ix.Sharing.Verify`) directly references
 `sorryAx`. The per-root manifest (`Audit.Statements`) rejects `sorryAx` in each
-root's closure; this check also covers declarations that no root reaches.
+root's closure; this check also covers the declarations of this module's
+import closure that no root reaches. It does not see the modules that only
+the `IxSharingVerify` library's glob builds, which neither this module nor
+the library root imports.
 -/
 
 open Lean Lean.Elab.Command

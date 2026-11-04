@@ -402,27 +402,34 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
          expectedIOBuffer := ioBuffer
          interpret := false, withProof := false }
 
-/-- kernel check with equivalent transitive typecheck semantic.
-    Reshapes an `Ix.Claim.check target none` request as a `CheckEnv`
-    claim whose owned tree lists the target's transitive closure —
-    every member gets typechecked, not just the target. Kernel path:
-    verify_claim → run_check_env → per-leaf run_check.
+/-- Kernel `Claim.check` with transitive typecheck semantics (`kernelCheckEntries`).
+    Builds an `Ix.Claim.check` claim over `name`'s shared Ixon closure, where
+    `run_check_transitive` walks the block-level ref DAG lazily without an
+    `AssumptionTree`. By default (`assumeBinding := true`), the claim assumes its
+    role binding (validator 4); `assumeBinding := false` validates the roles used
+    in its own proof (validator 3).
 
     Blake3 binding is preserved end-to-end: every closure member
     reaches the kernel via `get_ci(addr)` which reads bytes from
     ch 2 and asserts blake3(bytes) == addr before returning. -/
-public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
-    IO AiurTestCase := do
+public def kernelCheck (name : Lean.Name) (env : Lean.Environment)
+    (assumeBinding : Bool := true) : IO AiurTestCase := do
   let ixonEnv ← loadIxonEnv name env
   let target ← lookupAddr ixonEnv name
   -- Claim.Check with transitive semantics: run_check_transitive walks the
   -- block-level ref DAG lazily. No AssumptionTree needed — Aiur
   -- memoization ensures every reachable const/block gets checked exactly
   -- once, and the FFT cost stays pure typecheck cost with no tree
-  -- hash-verify overhead folded in.
-  let claim := Ix.Claim.check target none
+  -- hash-verify overhead folded in. By default the claim assumes its
+  -- binding (validator 4), as the claims of an aggregate do, whose binding
+  -- claim is proven once; `assumeBinding := false` validates the roles the
+  -- claim uses in its own proof (validator 3).
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)
+  let claim := Ix.Claim.check { ctx with bindingAssumed := assumeBinding } target none
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
-  pure { functionName := witness.funcName, label := s!"Kernel check {name}"
+  let label := if assumeBinding then s!"Kernel check {name}"
+    else s!"Kernel check validating its binding {name}"
+  pure { functionName := witness.funcName, label
          input := witness.input, inputIOBuffer := witness.inputIOBuffer
          expectedIOBuffer := witness.inputIOBuffer
          interpret := false, withProof := false }
@@ -440,98 +447,131 @@ private def nameOfString (str : String) : Lean.Name :=
     include v4 TagN and contract decoding, canonicality checks, and scoped
     claim headers. -/
 private def kernelCheckEntries : List (String × Nat) := [
-  ("HEq",                                                        108_698_241),
-  ("HEq.rec",                                                    112_906_176),
-  ("Eq.rec",                                                     112_305_106),
-  ("Nat",                                                        108_730_253),
-  ("Nat.add",                                                    150_020_922),
-  ("Nat.add_comm",                                               295_319_752),
-  ("Nat.decEq",                                                  348_643_388),
-  ("Nat.decLe",                                                  761_022_591),
-  ("Nat.sub_le_of_le_add",                                     1_808_365_095),
-  ("Nat.shiftRight_succ",                                      1_366_391_166),
-  ("Trans.mk",                                                   116_194_349),
-  ("Array.append_assoc",                                       8_280_766_372),
-  ("Vector.append",                                            8_473_176_948),
-  ("IxVMPrim.nat_add_lit",                                       191_123_862),
-  ("IxVMPrim.nat_sub_lit",                                       206_401_810),
-  ("IxVMPrim.nat_mul_lit",                                       182_766_823),
-  ("IxVMPrim.nat_mul_big",                                       181_613_118),
-  ("IxVMPrim.nat_div_lit",                                     1_331_998_987),
-  ("IxVMPrim.nat_mod_lit",                                     1_357_684_315),
-  ("IxVMPrim.nat_succ_lit",                                      124_064_445),
-  ("IxVMPrim.nat_pred_lit",                                      145_427_278),
-  ("IxVMPrim.nat_gcd_lit",                                     2_082_587_597),
-  ("IxVMPrim.nat_land_lit",                                    3_406_555_393),
-  ("IxVMPrim.nat_lor_lit",                                     3_408_497_099),
-  ("IxVMPrim.nat_xor_lit",                                     3_427_269_541),
-  ("IxVMPrim.nat_shl_lit",                                       212_079_025),
-  ("IxVMPrim.nat_shr_lit",                                     1_345_957_157),
-  ("IxVMPrim.nat_pow_big",                                       372_261_849),
-  ("IxVMPrim.nat_beq_lit",                                       180_548_536),
-  ("IxVMPrim.nat_ble_lit",                                       175_462_814),
-  ("IxVMPrim.nat_cases_big",                                     145_033_020),
-  ("IxVMPrim.nat_dec_le",                                        778_247_100),
-  ("IxVMPrim.nat_dec_lt",                                        789_754_000),
-  ("IxVMPrim.nat_dec_eq",                                        387_385_794),
-  ("IxVMPrim.str_size_lit",                                    2_404_811_078),
-  ("IxVMPrim.bv_to_nat_lit",                                   1_994_932_942),
-  ("IxVMInd.Even",                                               185_074_976),
-  ("IxVMInd.Odd",                                                185_079_919),
-  ("IxVMInd.Even.rec",                                           202_845_667),
-  ("IxVMInd.Odd.rec",                                            202_842_003),
-  ("IxVMInd.IdxTeleN.rec",                                       140_809_015),
-  ("IxVMInd.IdxTeleB.rec",                                       140_806_789),
-  ("IxVMInd.SoloA.rec",                                          135_670_460),
-  ("IxVMInd.SoloB.rec",                                          135_671_561),
-  ("IxVMInd.UnsafeSquash",                                       110_649_313),
-  ("IxVMInd.Tree",                                               110_463_614),
-  ("IxVMInd.Tree.rec",                                           121_246_620),
-  ("IxVMInd.DedupM",                                             113_910_246),
-  ("IxVMInd.DedupM.rec",                                         128_276_107),
-  ("IxVMInd.DepthM",                                             112_305_663),
-  ("IxVMInd.DepthM.rec",                                         123_506_665),
-  ("String.Internal.append",                                   2_375_702_364),
-  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec", 3_519_060_770),
-  ("Lean.Syntax.rec",                                          2_434_954_687),
-  ("IxVMInd.AuxTie",                                             303_563_514),
-  ("IxVMInd.AuxTie.rec",                                         348_853_569),
-  ("IxVMInd.HiddenIdx",                                          109_711_775),
-  ("IxVMInd.HiddenIdx.rec",                                      113_178_687),
-  ("IxVMInd.thmMajorUse",                                        477_898_517),
-  ("IxVMInd.partialKRec",                                        129_810_364),
-  ("IxVMInd.deepRebase",                                         200_146_826),
-  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec",        3_304_600_159),
-  ("Lean.Widget.TaggedText.rec",                               2_403_064_952),
-  ("Lean.Doc.Part.rec",                                        2_445_528_705),
-  ("Lean.Doc.Block.rec",                                       2_668_827_158),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 111_823_357),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 115_301_242),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 114_539_532),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2", 114_539_532),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1", 114_539_532),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M", 112_136_945),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 124_061_615),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 124_060_579),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 114_539_532),
-  ("strOfListFoldSize",                                        2_674_019_217),
-  ("strOfListFoldSizeAscii",                                   2_674_624_027),
-  ("IxVMPrim.lazy_ble_offset",                                   213_004_773),
-  ("IxVMPrim.lazy_unit_cast",                                    523_655_783),
-  ("IxVMPrim.sizeof_unit",                                       141_010_665),
-  ("IxVMPerf.let_continuations",                                 148_337_247),
-  ("IxVMPerf.mul_row",                                           421_849_159),
-  ("IxVMPerf.context_tower",                                     504_617_637),
-  ("IxVMPerf.mul_wide",                                          245_116_565),
+  ("HEq",                                                        177_456_126),
+  ("HEq.rec",                                                    182_223_634),
+  ("Eq.rec",                                                     181_293_061),
+  ("Nat",                                                        177_332_122),
+  ("Nat.add",                                                    218_693_979),
+  ("Nat.add_comm",                                               351_624_045),
+  ("Nat.decEq",                                                  396_034_820),
+  ("Nat.decLe",                                                  767_469_169),
+  ("Nat.sub_le_of_le_add",                                     1_617_315_103),
+  ("Nat.shiftRight_succ",                                        317_394_095),
+  ("Trans.mk",                                                   185_115_903),
+  ("Array.append_assoc",                                       7_400_908_470),
+  ("Vector.append",                                            7_581_904_654),
+  ("IxVMPrim.nat_add_lit",                                       215_245_218),
+  ("IxVMPrim.nat_sub_lit",                                       215_234_163),
+  ("IxVMPrim.nat_mul_lit",                                       196_343_916),
+  ("IxVMPrim.nat_mul_big",                                       195_065_266),
+  ("IxVMPrim.nat_div_lit",                                       200_555_916),
+  ("IxVMPrim.nat_mod_lit",                                       200_664_503),
+  ("IxVMPrim.nat_succ_lit",                                      193_541_387),
+  ("IxVMPrim.nat_pred_lit",                                      196_296_439),
+  ("IxVMPrim.nat_gcd_lit",                                       196_466_150),
+  ("IxVMPrim.nat_land_lit",                                      194_479_846),
+  ("IxVMPrim.nat_lor_lit",                                       195_721_250),
+  ("IxVMPrim.nat_xor_lit",                                       197_049_773),
+  ("IxVMPrim.nat_shl_lit",                                       196_510_360),
+  ("IxVMPrim.nat_shr_lit",                                       196_454_661),
+  ("IxVMPrim.nat_pow_big",                                       350_839_899),
+  ("IxVMPrim.nat_beq_lit",                                       197_169_714),
+  ("IxVMPrim.nat_ble_lit",                                       198_003_588),
+  ("IxVMPrim.nat_cases_big",                                     213_182_669),
+  ("IxVMPrim.nat_dec_le",                                        306_807_687),
+  ("IxVMPrim.nat_dec_lt",                                        304_761_914),
+  ("IxVMPrim.nat_dec_eq",                                        296_365_496),
+  ("IxVMPrim.str_size_lit",                                    2_043_299_173),
+  ("IxVMPrim.bv_to_nat_lit",                                   1_740_155_969),
+  ("IxVMInd.Even",                                               209_713_017),
+  ("IxVMInd.Odd",                                                209_720_203),
+  ("IxVMInd.Even.rec",                                           227_222_690),
+  ("IxVMInd.Odd.rec",                                            227_222_181),
+  ("IxVMInd.IdxTeleN.rec",                                       209_825_728),
+  ("IxVMInd.IdxTeleB.rec",                                       209_825_728),
+  ("IxVMInd.SoloA.rec",                                          204_986_095),
+  ("IxVMInd.SoloB.rec",                                          204_984_844),
+  ("IxVMInd.UnsafeSquash",                                       179_987_550),
+  ("IxVMInd.Tree",                                               179_284_510),
+  ("IxVMInd.Tree.rec",                                           190_670_366),
+  ("IxVMInd.DedupM",                                             183_129_460),
+  ("IxVMInd.DedupM.rec",                                         197_667_811),
+  ("IxVMInd.DepthM",                                             181_146_385),
+  ("IxVMInd.DepthM.rec",                                         192_670_190),
+  ("String.Internal.append",                                   2_050_833_668),
+  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec", 2_284_177_051),
+  ("Lean.Syntax.rec",                                          2_105_310_165),
+  ("IxVMInd.AuxTie",                                             281_817_395),
+  ("IxVMInd.AuxTie.rec",                                         321_476_538),
+  ("IxVMInd.HiddenIdx",                                          178_618_892),
+  ("IxVMInd.HiddenIdx.rec",                                      182_631_424),
+  ("IxVMInd.thmMajorUse",                                        511_764_182),
+  ("IxVMInd.partialKRec",                                        197_435_424),
+  ("IxVMInd.deepRebase",                                         246_311_194),
+  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec",        2_070_555_900),
+  ("Lean.Widget.TaggedText.rec",                               2_076_271_093),
+  ("Lean.Doc.Part.rec",                                        2_114_900_192),
+  ("Lean.Doc.Block.rec",                                       2_313_344_708),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 181_592_009),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 215_254_576),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 215_255_826),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2", 215_257_077),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1", 199_433_831),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M", 180_778_440),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 206_728_123),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 206_728_123),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 206_728_123),
+  ("strOfListFoldSize",                                        2_310_764_927),
+  ("strOfListFoldSizeAscii",                                   2_311_375_306),
+  ("IxVMPrim.lazy_ble_offset",                                   220_893_731),
+  ("IxVMPrim.lazy_unit_cast",                                    345_818_198),
+  ("IxVMPrim.sizeof_unit",                                       209_770_262),
+  ("IxVMPerf.let_continuations",                                 216_744_623),
+  ("IxVMPerf.mul_row",                                           408_073_396),
+  ("IxVMPerf.context_tower",                                     520_505_224),
+  ("IxVMPerf.mul_wide",                                          253_273_713),
 ]
+
+/-- Claims that validate their binding in their own proof (validator 3),
+    one per cost class: no operation or one structural group, structural
+    operations, `div`/`mod`/shifts, and `gcd`/`land`/`lor`/`xor`. They keep
+    the lazy in-circuit role validation measured; `kernelCheckEntries`
+    measure the same kind of claims assuming the binding. -/
+private def validatingCheckEntries : List (String × Nat) := [
+  ("IxVMPrim.nat_succ_lit", 198_531_475),
+  ("IxVMPrim.nat_mul_lit", 267_673_634),
+  ("IxVMPrim.nat_div_lit", 1_660_328_650),
+  ("IxVMPrim.nat_land_lit", 5_173_245_291),
+]
+
+/-- The binding claim for the default table: every group validated once,
+    the proof aggregates reuse. -/
+private def bindingCheckEntry : Nat := 277_988_602_536
+
+/-- The binding claim for the default table, over the test environment
+    with the table's support records. -/
+public def bindingCheck (env : Lean.Environment) : IO AiurTestCase := do
+  let ixonEnv ← loadSharedIxonEnv #[] env
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)
+  let claim := Ix.Claim.binding ctx.spec ctx.binding
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
+  pure { functionName := witness.funcName, label := "Binding claim for the default table"
+         input := witness.input, inputIOBuffer := witness.inputIOBuffer
+         expectedIOBuffer := witness.inputIOBuffer
+         interpret := false, withProof := false }
 
 /-- Variant of `kernelChecks`, pinned to the baseline
     (`kernelCheckEntries`). Any kernel change that shifts the kernel FFT
     cost fails the suite and forces a manual pin bump. -/
-public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
-  kernelCheckEntries.mapM fun (name, expected) => do
+public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) := do
+  let assumed ← kernelCheckEntries.mapM fun (name, expected) => do
     let tc ← kernelCheck (nameOfString name) env
     pure { tc with expectedFftCost := some expected }
+  let validating ← validatingCheckEntries.mapM fun (name, expected) => do
+    let tc ← kernelCheck (nameOfString name) env (assumeBinding := false)
+    pure { tc with expectedFftCost := some expected }
+  let binding ← bindingCheck env
+  return assumed ++ validating ++ [{ binding with expectedFftCost := some bindingCheckEntry }]
 
 /-! ## Codegen ↔ bytecode parity
 
@@ -587,9 +627,9 @@ private def singletonTrees (tree : Ix.AssumptionTree) :
     Std.HashMap Address Ix.AssumptionTree :=
   ({} : Std.HashMap _ _).insert tree.root tree
 
-/-- the kernel `Check` with `assumptions = some tree.root` covering every
+/-- The kernel `Check` with `assumptions = some tree.root` covering every
     transitive dep — the cutoff walk (strict=0) stops at each frontier
-    member, so the kernel ends up checking only the subject. the kernel analog
+    member, so the kernel ends up checking only the subject. The kernel analog
     of `claimCheckWithAsm`. -/
 public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let target ← lookupAddr ixonEnv ``Nat.zero
@@ -600,22 +640,24 @@ public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let some tree := Ix.AssumptionTree.canonical depLeaves
     | throw <| IO.userError "deps unexpectedly empty for Nat.zero"
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.check target (some tree.root)) (singletonTrees tree)
+    (Ix.Claim.check (← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)) target (some tree.root))
+    (singletonTrees tree)
   pure (asTestCase "Claim Check with-asm (Nat.zero)" witness)
 
-/-- the kernel CheckEnv, self-contained: owned tree = every env constant.
-    Exercises the R1 strict owned-membership rule over a closure that
+/-- The kernel CheckEnv, self-contained: owned tree = every env constant.
+    Exercises the strict owned-membership rule over a closure that
     covers itself (walk-reachable ⊆ owned, empty asm). -/
 public def claimCheckEnvFull (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let some tree := envCanonicalTree ixonEnv
     | throw <| IO.userError "envCanonicalTree empty"
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.checkEnv tree.root none) (singletonTrees tree)
+    (Ix.Claim.checkEnv (← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)) tree.root none)
+    (singletonTrees tree)
   pure (asTestCase "CheckEnv self-contained (shared smoke env)" witness)
 
-/-- the kernel CheckEnv with a thin frontier asm: owned = {Nat.add_comm},
+/-- The kernel CheckEnv with a thin frontier asm: owned = {Nat.add_comm},
     asm = the direct block-level refs of its constant. Exercises the
-    R1 asm-cutoff walk: the single owned leaf is checked, the walk
+    asm-cutoff walk: the single owned leaf is checked, the walk
     stops at every frontier member (no recursion below), and strict
     membership passes because the leaf is owned. Bytes for the full
     closure stay in ch 2 — delta unfolding punches through the
@@ -630,10 +672,11 @@ public def claimCheckEnvFrontier (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     | throw <| IO.userError "asm (frontier) tree build failed"
   let trees := (singletonTrees ownedTree).insert asmTree.root asmTree
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.checkEnv ownedTree.root (some asmTree.root)) trees
+    (Ix.Claim.checkEnv (← IO.ofExcept (Ix.ClaimContext.ofEnv ixonEnv)) ownedTree.root
+      (some asmTree.root)) trees
   pure (asTestCase "CheckEnv frontier-asm (Nat.add_comm)" witness)
 
-/-- the kernel `Reveal` Defn (kind+safety) — coverage. -/
+/-- The kernel `Reveal` Defn (kind+safety) — coverage. -/
 public def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
     fun ci => match ci with | .defn _ => true | _ => false
@@ -645,8 +688,8 @@ public def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (Ix.Claim.reveal comm revealInfo) {}
   pure (asTestCase "Claim Reveal Defn (kind+safety)" witness)
 
-/-- the kernel `Reveal` Defn `typ` via content-hash binding — exercises the
-    the kernel `expr_addr` path. -/
+/-- The kernel `Reveal` Defn `typ` via content-hash binding — exercises the
+    kernel `expr_addr` path. -/
 public def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
     fun ci => match ci with | .defn _ => true | _ => false
@@ -678,7 +721,7 @@ public def claimRevealBinderModes : IO AiurTestCase := do
     (Ix.Claim.reveal addr (.axio none none (some typAddr))) {}
   pure (asTestCase "Claim Reveal Expr (v3 binder modes)" witness)
 
-/-- the kernel `Reveal` CPrj — all projection fields. coverage. -/
+/-- The kernel `Reveal` CPrj — all projection fields. Coverage. -/
 public def claimRevealCPrj (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"
     fun ci => match ci with | .cPrj _ => true | _ => false
@@ -690,7 +733,7 @@ public def claimRevealCPrj (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (Ix.Claim.reveal comm revealInfo) {}
   pure (asTestCase "Claim Reveal CPrj (all fields)" witness)
 
-/-- the kernel `Contains` against a synthetic 3-leaf tree. -/
+/-- The kernel `Contains` against a synthetic 3-leaf tree. -/
 public def claimContains : IO AiurTestCase := do
   let a : Address := ⟨⟨Array.replicate 32 0x11⟩⟩
   let b : Address := ⟨⟨Array.replicate 32 0x22⟩⟩

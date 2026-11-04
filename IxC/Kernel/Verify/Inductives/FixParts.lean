@@ -30,7 +30,7 @@ and rule metadata — is the RECURSOR PIN's, thrown at
 `checkNativeRec`, and no longer the recogniser's; so is the
 constructors' result shape, official's "invalid return type", thrown at
 `checkSumCtor`). -/
-theorem nativeShape?_inv {nPd : Nat} {block : List ConstantInfo} {p : InductiveShape}
+theorem nativeShape?_inv {nPd : Nat} {block : List (ConstantInfo md)} {p : InductiveShape md}
     (h : nativeShape? nPd block = some p) :
     p.isProp = (Level.isEquiv p.resSort .zero == some true) ∧
     (∀ c ∈ p.ctors, c.1.levelParams = p.cvT.levelParams ∧
@@ -84,7 +84,7 @@ theorem List.mapM_option_length {α β : Type} {f : α → Option β} :
 
 /-- The recogniser is shape-only (task #210 Part D): the record's kinds
 are the placeholder the install fills. -/
-theorem nativeParts?_inv {nPd : Nat} {block : List ConstantInfo} {p : NativeParts}
+theorem nativeParts?_inv {nPd : Nat} {block : List (ConstantInfo md)} {p : NativeParts md}
     (h : nativeParts? nPd block = some p) :
     nativeShape? nPd block = some p.toInductiveShape ∧ p.kinds = [] := by
   unfold nativeParts? at h

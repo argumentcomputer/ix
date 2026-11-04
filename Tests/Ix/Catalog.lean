@@ -14,8 +14,13 @@
     union (`content_root` counts them once); two different piece
     partitions of the same content commit to the same `content_root`.
   - Lean-mirror unit coverage: ser/de roundtrips over fat + chunked +
-    preimage/deps variants, tamper rejection (magic, unknown flags,
-    members_root drift, non-topo deps, path-traversal labels).
+    preimage/deps variants, and a writer that refuses lengths the
+    format cannot carry.
+  - Reject parity: the Lean mirror and the Rust reader refuse the same
+    malformed manifests (magic, version, flags, scope, members_root
+    drift, truncation, trailing bytes, a preimage tag other than 0 or 1,
+    duplicate env roots or labels, non-topo deps, path-traversal labels,
+    chunk owners out of range).
   - Strict-anon compile (`rs_compile_env_anon`): §5 empty, §3 hints
     SURVIVE (the `finalize_hints` ordering pin from the plan's risk
     table), and the env root equals the named compile's — the
@@ -27,6 +32,7 @@ public import LSpec
 public import Ix.Catalog
 public import Ix.CompileM
 public import Ix.Cli.CatalogCmd
+public import IxC.Kernel.Ixon.Prelude
 
 public section
 
@@ -87,6 +93,15 @@ private def num (json : Lean.Json) (k : String) : Option Nat :=
 private def str (json : Lean.Json) (k : String) : Option String :=
   ((json.getObjVal? k).bind (·.getStr?)).toOption
 
+/-- Give the piece at `path` the default role binding: a catalog member must be
+    a bound environment. The env root, over §2, does not move. -/
+private def bindPiece (path : String) : IO Unit := do
+  let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile path))
+  let bytes ← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes
+  let address ← IO.ofExcept Ix.Kernel.Reader.defaultTableAddress
+  let bound := { env with roleBinding := some { address, bytes } }
+  IO.FS.writeBinFile path (← IO.ofExcept (Ixon.serEnv bound))
+
 /-- The end-to-end fixture gate: compile two overlapping pieces,
     assemble, and pin format parity + identity dedup. -/
 private def assembleParityTest : IO (Bool × Nat × Nat × Option String) := do
@@ -99,6 +114,8 @@ private def assembleParityTest : IO (Bool × Nat × Nat × Option String) := do
     let pieceB := (dir / "B.ixe").toString
     let sA ← Ix.CompileM.rsCompileEnvBytesFFI constsA pieceA false
     let sB ← Ix.CompileM.rsCompileEnvBytesFFI constsB pieceB false
+    bindPiece pieceA
+    bindPiece pieceB
     -- Assemble via the Rust core (the production path): a
     -- self-contained .ixc DIRECTORY, pieces ingested inside it.
     let ixcDir := dir / "cat.ixc"
@@ -121,7 +138,7 @@ private def assembleParityTest : IO (Bool × Nat × Nat × Option String) := do
     let checks : List (String × Bool) := [
       -- Byte-identity: Lean ser ∘ de reproduces the Rust bytes.
       ("mirror re-serializes byte-identical",
-        Ix.Catalog.ser cat == bytes),
+        (Ix.Catalog.ser cat).toOption == some bytes),
       -- Root parity with the Rust info JSON.
       ("members_root parity",
         some (toString cat.membersRoot) == str json "membersRoot"),
@@ -187,67 +204,150 @@ private def addr (seed : String) : Address := Address.blake3 seed.toUTF8
 private def member (label : String) (root : Address)
     (deps : Array UInt32 := #[]) (preimage : Option Address := none) :
     Ix.Catalog.Member :=
-  { envRoot := root, constCount := 3, label, toolchain := "tc",
-    sourcePin := "git:example@abc", deps, preimage }
+  { envRoot := root, binding := addr s!"binding{label}", constCount := 3, label,
+    toolchain := "tc", sourcePin := "git:example@abc", deps, preimage }
 
-private def fatCat : Ix.Catalog.Catalog :=
-  let members := #[member "A" (addr "rootA"),
-                   member "B" (addr "rootB") #[0] (some (addr "pre"))]
+private def fatOf (members : Array Ix.Catalog.Member) : Ix.Catalog.Catalog :=
   { membersRoot := Ix.Catalog.membersRootOf members
     contentRoot := addr "content"
     members
-    storage := .fat #[⟨addr "fA", 10⟩, ⟨addr "fB", 20⟩]
-    trailing := .empty }
+    storage := .fat (members.map fun m => ⟨addr s!"f{m.label}", 10⟩) }
+
+private def fatCat : Ix.Catalog.Catalog :=
+  fatOf #[member "A" (addr "rootA"), member "B" (addr "rootB") #[0] (some (addr "pre"))]
 
 private def chunkedCat : Ix.Catalog.Catalog :=
   let members := #[member "A" (addr "rootA")]
   { membersRoot := Ix.Catalog.membersRootOf members
     contentRoot := addr "content"
     members
-    storage := .chunked #[⟨addr "c0", addr "f0", 5, 0⟩]
-    trailing := ⟨#[0xAB, 0xCD]⟩ }
+    storage := .chunked #[⟨addr "c0", addr "f0", 5, 0⟩] }
+
+/-- The bytes of a catalog the writer accepts; empty if it refuses, which no
+    test below expects to decode. -/
+private def serOk (c : Ix.Catalog.Catalog) : ByteArray :=
+  match Ix.Catalog.ser c with
+  | .ok bytes => bytes
+  | .error _ => .empty
 
 private def roundtrips (c : Ix.Catalog.Catalog) : Bool :=
-  match Ix.Catalog.de (Ix.Catalog.ser c) with
-  | .ok c' => c' == c
+  match Ix.Catalog.ser c with
+  | .ok bytes => match Ix.Catalog.de bytes with
+    | .ok c' => c' == c
+    | .error _ => false
   | .error _ => false
 
-private def deFails (mutate : ByteArray → ByteArray)
-    (needle : String) : Bool :=
-  match Ix.Catalog.de (mutate (Ix.Catalog.ser fatCat)) with
-  | .ok _ => false
-  | .error e => (e.splitOn needle).length > 1
+private def contains (haystack needle : String) : Bool :=
+  needle.isEmpty || (haystack.splitOn needle).length > 1
 
 private def setByte (i : Nat) (v : UInt8) (b : ByteArray) : ByteArray :=
   b.set! i v
 
-private def truncationRejected : Bool :=
-  match Ix.Catalog.de ((Ix.Catalog.ser fatCat).extract 0 40) with
+/-- The offset of the first member's preimage tag in `fatCat`'s bytes: the
+    fixed header (magic, version, flags, scope, two roots, the member count),
+    then the member up to its last byte. -/
+private def firstPreimageTag : Nat :=
+  8 + 4 + 4 + 2 + 32 + 32 + 4 + (Ixon.runPut (Ix.Catalog.putMember fatCat.members[0]!)).size - 1
+
+/-- Malformed manifests, each with a phrase that both readers' refusals
+    contain (an empty phrase: any refusal). -/
+private def malformed : List (String × ByteArray × String) :=
+  let good := serOk fatCat
+  [ ("bad magic", setByte 0 0xFF good, "magic"),
+    ("legacy version", setByte 8 1 good, "version"),
+    ("unknown flags", setByte 12 0xFF good, "flags"),
+    ("other object format", setByte 16 3 good, "format"),
+    ("resource validator", setByte 17 2 good, "validator"),
+    ("members_root drift", setByte (8 + 4 + 4 + 2) 0xFF good, "members_root"),
+    ("truncated", good.extract 0 (good.size - 1), ""),
+    ("trailing byte", good.push 0, "trailing"),
+    ("preimage tag 2", setByte firstPreimageTag 2 good, "preimage tag"),
+    ("one env root twice",
+      serOk (fatOf #[member "A" (addr "rootA"), member "B" (addr "rootA")]),
+      "duplicate member env root"),
+    ("one label twice",
+      serOk (fatOf #[member "A" (addr "rootA"), member "A" (addr "rootB")]),
+      "duplicate member label"),
+    ("dependency not before its member",
+      serOk (fatOf #[member "A" (addr "rootA") #[0]]), "strictly before"),
+    ("path-traversal label",
+      serOk (fatOf #[member "../evil" (addr "rootA")]), "bare filename"),
+    ("chunk owner out of range",
+      serOk { chunkedCat with storage := .chunked #[⟨addr "c0", addr "f0", 5, 1⟩] },
+      "out of range") ]
+
+private def deFails (bytes : ByteArray) (needle : String) : Bool :=
+  match Ix.Catalog.de bytes with
   | .ok _ => false
-  | .error _ => true
+  | .error e => contains e needle
+
+/-- A string the writer's `u16` length cannot carry. -/
+private def oversized : String := String.ofList (List.replicate 65536 'x')
 
 def unitTests : TestSeq :=
   test "fat catalog roundtrips" (roundtrips fatCat)
-  ++ test "chunked catalog roundtrips (trailing preserved)"
-      (roundtrips chunkedCat)
-  ++ test "bad magic rejected" (deFails (setByte 0 0xFF) "magic")
-  ++ test "unknown flags rejected" (deFails (setByte 12 0xFF) "flags")
-  ++ test "legacy manifest rejected" (deFails (setByte 8 1) "version")
-  ++ test "version 3 object format rejected" (deFails (setByte 16 3) "format")
-  ++ test "resource validator cannot label catalog" (deFails (setByte 17 2) "validator")
-  ++ test "members_root drift rejected"
-      (deFails (setByte (8 + 4 + 4 + 2) 0xFF) "members_root")
-  ++ test "truncation rejected" truncationRejected
-  ++ test "path-traversal label rejected"
-      (Ix.Catalog.validateLabel "../evil" matches .error _)
+  ++ test "chunked catalog roundtrips" (roundtrips chunkedCat)
+  ++ test "the first member's preimage tag is where the malformed cases set it"
+      ((serOk fatCat)[firstPreimageTag]! == 0)
+  ++ malformed.foldl (init := .done) fun acc (what, bytes, needle) =>
+      acc ++ test s!"{what} rejected" (deFails bytes needle)
+  ++ test "writer refuses a source pin over 64 KiB"
+      (Ix.Catalog.ser (fatOf #[{ member "A" (addr "rootA") with sourcePin := oversized }])
+        matches .error _)
+  ++ test "writer accepts a source pin of exactly 64 KiB - 1"
+      (Ix.Catalog.ser (fatOf #[{ member "A" (addr "rootA") with
+        sourcePin := String.ofList (List.replicate 65535 'x') }]) matches .ok _)
+  ++ test "writer refuses a fat catalog without one storage row per member"
+      (Ix.Catalog.ser { fatCat with storage := .fat #[] } matches .error _)
   ++ test "bare label accepted"
       (Ix.Catalog.validateLabel "Mathlib" matches .ok _)
+
+/-- Reject parity: the Lean mirror and the Rust reader (`rs_catalog_info`)
+    refuse the same malformed manifests, and accept the well-formed one. -/
+private def rejectParityTest : IO (Bool × Nat × Nat × Option String) := do
+  let dir ← IO.FS.createTempDir
+  try
+    let write (name : String) (bytes : ByteArray) : IO String := do
+      let ixc := dir / s!"{name}.ixc"
+      IO.FS.createDirAll ixc
+      IO.FS.writeBinFile (ixc / "manifest") bytes
+      return ixc.toString
+    let good ← write "good" (serOk fatCat)
+    try
+      discard <| Ix.Cli.CatalogCmd.rsCatalogInfoFFI good
+    catch e => return (false, 0, 0, some s!"Rust refuses the well-formed manifest: {e}")
+    unless Ix.Catalog.de (serOk fatCat) matches .ok _ do
+      return (false, 0, 0, some "Lean refuses the well-formed manifest")
+    let mut i := 0
+    for (what, bytes, needle) in malformed do
+      i := i + 1
+      let ixc ← write s!"bad{i}" bytes
+      let rust ← try
+          discard <| Ix.Cli.CatalogCmd.rsCatalogInfoFFI ixc
+          pure none
+        catch e => pure (some (toString e))
+      match rust with
+      | none => return (false, i, 0, some s!"Rust accepts: {what}")
+      | some e =>
+        unless contains e needle do
+          return (false, i, 0, some s!"Rust refuses {what} for another reason: {e}")
+      match Ix.Catalog.de bytes with
+      | .ok _ => return (false, i, 0, some s!"Lean accepts: {what}")
+      | .error e =>
+        unless contains e needle do
+          return (false, i, 0, some s!"Lean refuses {what} for another reason: {e}")
+    return (true, i, 0, none)
+  finally
+    IO.FS.removeDirAll dir
 
 def suite : List TestSeq := [
   unitTests,
   .individualIO
     "assemble parity: Rust .ixc ↔ Lean mirror byte-identical, dedup observed"
     none assembleParityTest .done,
+  .individualIO
+    "reject parity: Lean and Rust refuse the same malformed manifests"
+    none rejectParityTest .done,
   .individualIO
     "strict-anon compile: §5 empty, §3 survives, root unmoved"
     none anonCompileTest .done ]

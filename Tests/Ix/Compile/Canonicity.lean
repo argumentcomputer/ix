@@ -1,11 +1,13 @@
 /-
   Cross-namespace canonicity twin fixtures.
 
-  Each twin pair declares structurally identical Lean types in different
-  namespaces with different names.  The validate-aux Phase 4b asserts that
-  corresponding constants compile to the **same** content address.
+  Renamed families and source-layout variants feed `validateAuxClosure` for
+  compiler parity, schedule independence and reconstruction checks. Those
+  suites compare the same input under different implementations or schedules;
+  this file does not assert address equality between different declarations.
+  Every mutual member retains its source slot, including symmetric members.
 
-  See `docs/ix_canonicity.md` for the theory and testing plan.
+  See `docs/ix_canonicity.md` for the current representation contract.
 -/
 module
 public import Lean
@@ -13,10 +15,10 @@ public import Lean
 namespace Tests.Ix.Compile.Canonicity
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Twin 1: Simple alpha-collapse
+-- Twin 1: Symmetric mutual pair
 -- ═══════════════════════════════════════════════════════════════════════
--- Structurally identical declarations in different namespaces should
--- compile to the same canonical addresses.
+-- Structurally identical declarations in different namespaces, with the
+-- same member order and two separate slots in each block.
 namespace CrossNamespaceTwin1
 mutual
   public inductive A | a : B → A
@@ -32,7 +34,7 @@ end
 end CrossNamespaceTwin2
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Twin 2: Nested alpha-collapse (List + Option)
+-- Twin 2: Nested mutual pair (List + Option)
 -- ═══════════════════════════════════════════════════════════════════════
 -- Same cross-namespace shape, but with nested references that force
 -- generated auxiliary recursors.
@@ -70,10 +72,10 @@ end
 end CrossNamespaceOverMergeTwin2
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Twin 4: 3-way alpha-collapse cycle
+-- Twin 4: Three-member cycle
 -- ═══════════════════════════════════════════════════════════════════════
--- All three types are alpha-equivalent (A→B→C→A cycle); all should
--- share the same address as their counterparts X→Y→Z→X.
+-- Symmetric A→B→C→A and X→Y→Z→X cycles. Each retains three members;
+-- symmetry does not identify their projection indices.
 namespace CrossNamespaceAlpha3Twin1
 mutual
   public inductive A | a : B → A
@@ -93,8 +95,7 @@ end CrossNamespaceAlpha3Twin2
 -- ═══════════════════════════════════════════════════════════════════════
 -- Twin 5: Parameter binder rename (alpha vs beta) + nested
 -- ═══════════════════════════════════════════════════════════════════════
--- Tests that binder names on type parameters don't affect hashing.
--- Explicitly listed as missing in section 16.4 of the canonicity spec.
+-- Renamed type parameters keep the same anonymous binder positions.
 namespace CrossNamespaceParamTwin1
 mutual
   public inductive A (α : Type)
@@ -124,9 +125,9 @@ end CrossNamespaceParamTwin2
 -- ═══════════════════════════════════════════════════════════════════════
 -- Twin 6: 3 types x 3 containers (nested aux ordering)
 -- ═══════════════════════════════════════════════════════════════════════
--- Tests that content-hash-sorted aux ordering is canonical across
--- namespaces.  Hardest canonical ordering case: 9 nested aux
--- occurrences that must sort identically whether named A/B/C or X/Y/Z.
+-- Nine nested occurrences across three members, with renamed, reordered
+-- and separately declared variants below. Each compiles its own source
+-- layout and Lean-generated auxiliaries without hash-sorting their order.
 namespace CrossNamespaceNestedOrderTwin1
 mutual
   public inductive A where | mk : Array B → Option C → List A → A
@@ -193,14 +194,11 @@ public inductive X where
 end CrossNamespaceHOTwin2
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Twin 8: Self-referential collapse
+-- Twin 8: Self-reference and a mutual pair
 -- ═══════════════════════════════════════════════════════════════════════
--- A single self-referential inductive `A | a : A -> A` should compile to
--- the same canonical form as a mutual pair that alpha-collapses (e.g.
--- CrossNamespaceTwin1.{A,B} above).
---
--- We also declare a fresh mutual pair (X <-> Y) in a second namespace to
--- verify the self-ref and mutual-pair forms agree.
+-- A self-referential singleton and a two-member cycle exercise different
+-- block layouts. The pair keeps both slots; it does not collapse to the
+-- singleton's encoding.
 
 namespace SelfRefTwin1
 public inductive A | a : A → A
@@ -214,11 +212,10 @@ end
 end SelfRefTwin2
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Twin 9: OverMerge + alpha-collapse (partial collapse)
+-- Twin 9: Symmetric pair with a dependent member
 -- ═══════════════════════════════════════════════════════════════════════
--- A and B alpha-collapse (A ≅ B), but C is structurally different (it
--- references both A and B without being referenced by them).  Tests that
--- partial collapse works consistently across namespaces.
+-- A and B have symmetric shapes. C references both without being referenced
+-- by them. All source members and their corresponding projections remain.
 
 namespace OverMergeAlphaCollapseTwin1
 mutual
@@ -264,10 +261,8 @@ end NestedOverMergeTwin2
 -- ═══════════════════════════════════════════════════════════════════════
 -- Twin 11: Binary container nesting (Prod)
 -- ═══════════════════════════════════════════════════════════════════════
--- Nesting through `Prod` (2-argument container), unlike the unary
--- `List`/`Option`/`Array` containers in other twins.  Tests that
--- spec_params with arity > 1 hash correctly.
--- All 3 types alpha-collapse (A ≅ B ≅ C).
+-- Nesting through the two-argument `Prod` container. The constructor fields
+-- refer to all three members, which retain separate slots in source order.
 
 namespace ProdNestedTwin1
 mutual
@@ -288,8 +283,7 @@ end ProdNestedTwin2
 -- ═══════════════════════════════════════════════════════════════════════
 -- Twin 12: Simple nested (single inductive + List)
 -- ═══════════════════════════════════════════════════════════════════════
--- Simplest nested case: a single (non-mutual) inductive nesting through
--- List.  No alpha-collapse.
+-- Simplest nested case: a single inductive nesting through List.
 
 namespace SimpleNestedTwin1
 public inductive A where
@@ -560,18 +554,11 @@ end
 end ZFA5
 
 /-!
-Collapsed mutual Prop pair (below.rec canonical-order neighbor case).
+Symmetric mutual Prop pairs and their source auxiliaries.
 
-`P` and `Q` are alpha-IDENTICAL (symmetric mutual references), so the
-parent block collapses to ONE class. The interesting consequence for the
-below.rec canonical sort: collapse happens UPSTREAM — aux generation
-emits a single `.below` patch for the class representative (member names
-alias it), so `below_indcs` has length 1 and the joint below.rec
-generation never sees tied classes. True ties are structurally
-unreachable (alpha-identical belows would require alpha-identical
-parents, which collapse first). This pair + its clone pin that path:
-collapsed Prop parents through `.below`/`.below.rec` generation and
-aliasing, cross-namespace canonical.
+`P` and `Q` have symmetric mutual references but retain distinct member
+slots. The two namespaces provide the same source shape, including Lean's
+original `.below` and `.below.rec` declarations, for the shared corpus.
 -/
 
 namespace PropCollapseA
@@ -597,23 +584,20 @@ end
 end PropCollapseB
 
 /-!
-Cross-block alias-occurrence provenance (§10.5 / §17.8).
+Cross-block alias-occurrence provenance.
 
-`WrapA`/`WrapB` are alpha-identical wrapper defs in SEPARATE blocks — a
-§13.5 cross-block coincidence on one content address. Each inductive
-below references that collapsed address twice in one source expression
-with DIFFERENT spellings. §10.5: every synthesized occurrence in the
-regenerated auxiliaries must inherit its source spelling, so both
-compilers must emit byte-identical metas here.
+`WrapA` and `WrapB` are alpha-identical wrapper definitions in separate
+blocks, so they share a content address. Each inductive below uses both
+source names in one expression. Compilation and reconstruction must retain
+the spelling of each occurrence, including those in Lean's auxiliaries.
 
 Coverage axes:
 - `StepAB`/`StepBA`: both orientations through a reducible index
   wrapper (`RelOn`, the `HomRel (Paths (Symmetrify V))` shape of the
-  Mathlib motivating instance) — recursor regeneration must WHNF
-  `RelOn (WrapA (WrapB V))` to expose the index telescope, a genuine
-  reduction whose reduct contains the collapsed address twice. The
-  mirrored orientation distinguishes spelling inheritance from any
-  first-seen or least-name policy.
+  Mathlib motivating instance). Reducing `RelOn (WrapA (WrapB V))`
+  exposes the index telescope and both alias occurrences. The mirrored
+  orientation distinguishes occurrence metadata from a first-seen or
+  least-name policy.
 - `DirectAB`: the same double occurrence as a plain index telescope
   (syntactic peel, no reduction).
 - `Pair`: both spellings as sibling constructor fields — the

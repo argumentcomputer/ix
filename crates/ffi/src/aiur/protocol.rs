@@ -543,6 +543,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -553,8 +554,11 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   let env = &env_handle.get().env;
 
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
-    {
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_with(
+      env,
+      &addr,
+      assume_binding,
+    ) {
       Ok(t) => t,
       Err(e) => {
         return LeanExcept::error_string(&format!("witness build: {e}"));
@@ -895,43 +899,74 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
     );
   }
   let check_batch = || -> Vec<(String, usize, usize)> {
-    shards
-      .par_iter()
-      .zip(estimates.par_iter())
-      .map(|(owned, est)| {
-        gate.acquire(*est);
-        let result =
-          match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-            env, owned,
-          ) {
-            Err(e) => (format!("witness build: {e}"), 0, 1),
-            Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
-              &toplevel,
-              fun_idx,
-              input,
-              &mut io_buffer,
-              use_bytecode,
+    let (binding_err, mut shard_results) = rayon::join(
+      || -> Option<String> {
+        if shards.len() <= 1 {
+          return None;
+        }
+        let Ok((_claim, input, mut io_buffer)) =
+          ixvm_codegen::aiur_ixvm_witness::build_binding_witness(env)
+        else {
+          return None;
+        };
+        dispatch_execute(
+          &toplevel,
+          fun_idx,
+          input,
+          &mut io_buffer,
+          use_bytecode,
+        )
+        .err()
+        .map(|e| format!("binding check: {e}"))
+      },
+      || -> Vec<(String, usize, usize)> {
+        shards
+          .par_iter()
+          .zip(estimates.par_iter())
+          .map(|(owned, est)| {
+            gate.acquire(*est);
+            let result = match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+              env,
+              owned,
+              shards.len() > 1,
             ) {
-              Err(e) => (e, 0, 1),
-              // Both reductions happen here, while the record is
-              // still owned by this task: it is dropped before
-              // `gate.release`, so admission keeps bounding peak RSS by
-              // the shards in flight rather than by the whole partition.
-              Ok((record, _output)) => {
-                let peak = system.peak_prove_bytes(&record).peak;
-                let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
-                  system.suggested_split_parts(&record, max_ram_bytes)
-                } else {
-                  1
-                };
-                (String::new(), peak, parts)
+              Err(e) => (format!("witness build: {e}"), 0, 1),
+              Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
+                &toplevel,
+                fun_idx,
+                input,
+                &mut io_buffer,
+                use_bytecode,
+              ) {
+                Err(e) => (e, 0, 1),
+                // Both reductions happen here, while the record is
+                // still owned by this task: it is dropped before
+                // `gate.release`, so admission keeps bounding peak RSS by
+                // the shards in flight rather than by the whole partition.
+                Ok((record, _output)) => {
+                  let peak = system.peak_prove_bytes(&record).peak;
+                  let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
+                    system.suggested_split_parts(&record, max_ram_bytes)
+                  } else {
+                    1
+                  };
+                  (String::new(), peak, parts)
+                },
               },
-            },
-          };
-        gate.release(*est);
-        result
-      })
-      .collect()
+            };
+            gate.release(*est);
+            result
+          })
+          .collect()
+      },
+    );
+    if let Some(err) = binding_err
+      && let Some(first) = shard_results.first_mut()
+      && first.0.is_empty()
+    {
+      first.0 = err;
+    }
+    shard_results
   };
   let results = if jobs == 0 {
     check_batch()
@@ -968,6 +1003,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -981,8 +1017,10 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   // shard entrypoint builds the the kernel witness (thin frontier + wrapper
   // augmentation).
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned,
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+      env,
+      &owned,
+      assume_binding,
     ) {
       Ok(t) => t,
       Err(e) => {
@@ -1024,6 +1062,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.proveAddrWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1034,8 +1073,10 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
-        env, &addr,
+      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_with(
+        env,
+        &addr,
+        assume_binding,
       ) {
         Ok(t) => t,
         Err(e) => {
@@ -1119,6 +1160,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   exec_only: bool,
   trace_shards: bool,
   retention: LeanNat<LeanBorrowed<'_>>,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1135,8 +1177,10 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-        env, &owned,
+      match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+        env,
+        &owned,
+        assume_binding,
       ) {
         Ok(t) => t,
         Err(e) => {
@@ -1203,7 +1247,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 /// claim digest before the next shard is proven, so a killed run keeps
 /// every proof it finished. Returns, per shard: the claim's wire bytes,
 /// the proof wrapper's store address (hex) and the heaviest shard's
-/// projected peak.
+/// projected peak. Each claim assumes the environment's binding meets the
+/// specifications (validator 4) when `assume_binding`, and validates it
+/// otherwise.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -1219,6 +1265,7 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
   exec_jobs: LeanNat<LeanBorrowed<'_>>,
   store_dir: LeanString<LeanBorrowed<'_>>,
   index_dir: LeanString<LeanBorrowed<'_>>,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.shardProveAheadWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1258,6 +1305,7 @@ extern "C" fn rs_aiur_system_shard_prove_ahead_with_env(
       exec_jobs,
       &store_path,
       (!index_dir.is_empty()).then_some(index_path.as_path()),
+      assume_binding,
     );
     let proven = match proven {
       Ok(proven) => proven,
@@ -1304,6 +1352,7 @@ fn prove_shards_ahead(
   exec_jobs: usize,
   store_dir: &std::path::Path,
   index_dir: Option<&std::path::Path>,
+  assume_binding: bool,
 ) -> Result<Vec<(Vec<u8>, Address, usize)>, String> {
   let count = owners.len();
   let cores = std::thread::available_parallelism().map_or(1, usize::from);
@@ -1336,8 +1385,10 @@ fn prove_shards_ahead(
     let label = labels[k];
     let started = std::time::Instant::now();
     let (claim, input, mut io) =
-      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-        env, &owners[k],
+      ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+        env,
+        &owners[k],
+        assume_binding,
       )
       .map_err(|e| {
         PrepareFailure::Other(format!("shard {label}: witness build: {e}"))
@@ -1751,7 +1802,7 @@ fn prove_env_distributed(
   use aiur::execute::{Ownership, pointer_stride};
   use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_in;
   use ixvm_codegen::aiur_ixvm_witness::{
-    EnvCheckStatement, addr_key, worker_callers, worker_scopes,
+    EnvCheckStatement, check_owned_key, worker_callers, worker_scopes,
   };
   use rustc_hash::FxHashSet;
 
@@ -1763,8 +1814,14 @@ fn prove_env_distributed(
   statement.claim.put(&mut claim_bytes);
   let input = statement.digest_key.clone();
   let toplevel = system.toplevel();
-  let owned_keys: Vec<FxHashSet<Vec<G>>> =
-    owners.iter().map(|owned| owned.iter().map(addr_key).collect()).collect();
+  let binding = statement.binding();
+  let validator = statement.claim.validator();
+  let owned_keys: Vec<FxHashSet<Vec<G>>> = owners
+    .iter()
+    .map(|owned| {
+      owned.iter().map(|a| check_owned_key(&binding, validator, a)).collect()
+    })
+    .collect();
   let mut owner_of: FxHashMap<Vec<G>, usize> = FxHashMap::default();
   for (worker, keys) in owned_keys.iter().enumerate() {
     for key in keys {
@@ -1830,7 +1887,7 @@ fn prove_env_distributed(
       // walk and be replayed, double-counting its callees.
       let mut entries: Vec<Vec<G>> = Vec::new();
       for addr in &owners[worker] {
-        let key = addr_key(addr);
+        let key = check_owned_key(&binding, validator, addr);
         let queries = &record.function_queries[check_owned_idx];
         // Reached already through another owned constant's walk.
         if queries
@@ -2265,8 +2322,8 @@ impl Workers<'_, '_> {
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
 /// as `rs_aiur_system_prove`, but routes execution through the
 /// codegen'd Rust kernel (`execute_generated`) via
-/// `AiurSystem::prove_ixvm`. The resulting `Proof` is verification-
-/// compatible with `rs_aiur_system_prove`.
+/// `AiurSystem::prove_ixvm_within_budget`. The resulting `Proof` is
+/// verification-compatible with `rs_aiur_system_prove`.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove_ixvm(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -2274,13 +2331,23 @@ extern "C" fn rs_aiur_system_prove_ixvm(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
+  max_ram_bytes: LeanNat<LeanBorrowed<'_>>,
+  trace_shards: bool,
 ) -> LeanExcept<LeanOwned> {
-  ffi_catch_unwind("AiurSystem.proveIxVM", || {
+  ffi_catch_unwind_except("AiurSystem.proveIxVM", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let max_ram_bytes = lean_unbox_nat_as_usize(max_ram_bytes.inner());
     let args = args.map(|x| lean_unbox_g(&x));
     let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
-    let (claim, proof) = aiur_system_obj.get().prove_ixvm(
+    let budget = if max_ram_bytes > 0 {
+      Some(max_ram_bytes)
+    } else if trace_shards {
+      detected_ram_budget()
+    } else {
+      None
+    };
+    let (claim, proof) = match aiur_system_obj.get().prove_ixvm_within_budget(
       fun_idx,
       &args,
       &mut io_buffer,
@@ -2289,9 +2356,26 @@ extern "C" fn rs_aiur_system_prove_ixvm(
           toplevel, fun_idx, input, io_buffer,
         )
       },
-    );
+      budget,
+      false,
+      trace_shards,
+      None,
+    ) {
+      GatedProve::Proved { claim, proof, .. } => (claim, proof),
+      GatedProve::Split { peak, .. } => {
+        return LeanExcept::error_string(&format!(
+          "projected prover peak ({peak} B) exceeds RAM budget"
+        ));
+      },
+      GatedProve::Measured { .. } => {
+        unreachable!("exec_only is false")
+      },
+      GatedProve::Failed(error) => {
+        return LeanExcept::error_string(&format!("execution failed: {error}"));
+      },
+    };
 
-    build_prove_result(&claim, proof, &io_buffer).into()
+    LeanExcept::ok(build_prove_result(&claim, proof, &io_buffer))
   })
 }
 

@@ -101,6 +101,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    self.check_input_context()?;
     if *IX_DEF_EQ_COUNT_LOG {
       let n = DEF_EQ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
@@ -521,22 +522,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         }
       }
 
-      // Native reduction inside lazy delta. Reference order is
-      // `is_def_eq_offset → reduce_nat (gated) → reduce_native → delta`
-      // (lean4 `type_checker.cpp:986-991`, lean4lean `TypeChecker.lean:625-628`).
-      // Ix-specific `try_reduce_decidable` runs after native to keep the
-      // reference-aligned segment tight.
-      if fam_a == PrimFamily::Native
-        && let Some(wa2) = self.try_reduce_native(wa)?
-      {
-        return self.is_def_eq(&wa2, wb).map(Some);
-      }
-      if fam_b == PrimFamily::Native
-        && let Some(wb2) = self.try_reduce_native(wb)?
-      {
-        return self.is_def_eq(wa, &wb2).map(Some);
-      }
-
+      // Reference order is `is_def_eq_offset → reduce_nat (gated) → delta`
+      // (lean4 `type_checker.cpp:986-991`, lean4lean
+      // `TypeChecker.lean:625-628`), without their native evaluation, which
+      // is outside the checked theory. Ix-specific `try_reduce_decidable`
+      // runs after the Nat step to keep the reference-aligned segment tight.
       if fam_a == PrimFamily::Decidable
         && let Some(wa2) = self.try_reduce_decidable(wa)?
       {
@@ -862,7 +852,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         false
       },
       (
-        ExprData::Let(name, ty1, v1, body1, _, _),
+        ExprData::Let(name, ty1, v1, body1, contract, _),
         ExprData::Let(_, ty2, v2, body2, _, _),
       ) => {
         // H3: Let should be zeta-reduced by whnf_core before reaching this
@@ -879,6 +869,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
                 name: name.clone(),
                 ty: ty1.clone(),
                 val: v1.clone(),
+                contract: *contract,
               },
             );
             let b1_open = instantiate_rev(
@@ -896,9 +887,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         false
       },
       (ExprData::Nat(v1, _, _), ExprData::Nat(v2, _, _)) => {
+        self.primitives()?;
         return Ok(v1 == v2);
       },
       (ExprData::Str(v1, _, _), ExprData::Str(v2, _, _)) => {
+        self.primitives()?;
         return Ok(v1 == v2);
       },
       _ => false,
@@ -1068,11 +1061,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Check if an expression is a nat-like value (literal, Nat.zero, Nat.succ _).
   fn is_nat_like(&self, e: &KExpr<M>) -> bool {
+    let Some(primitives) = self.optional_primitives() else {
+      return false;
+    };
     match e.data() {
       ExprData::Nat(..) => true,
-      ExprData::Const(id, _, _) => id.addr == self.prims.nat_zero.addr,
+      ExprData::Const(id, _, _) => id.addr == primitives.nat_zero.addr,
       ExprData::App(f, _, _) => {
-        matches!(f.data(), ExprData::Const(id, _, _) if id.addr == self.prims.nat_succ.addr)
+        matches!(f.data(), ExprData::Const(id, _, _) if id.addr == primitives.nat_succ.addr)
       },
       _ => false,
     }
@@ -1080,9 +1076,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Check if expression is nat zero (literal 0 or Nat.zero constructor).
   fn is_nat_zero(&self, e: &KExpr<M>) -> bool {
+    let Some(primitives) = self.optional_primitives() else {
+      return false;
+    };
     match e.data() {
       ExprData::Nat(v, _, _) => v.0 == num_bigint::BigUint::ZERO,
-      ExprData::Const(id, _, _) => id.addr == self.prims.nat_zero.addr,
+      ExprData::Const(id, _, _) => id.addr == primitives.nat_zero.addr,
       _ => false,
     }
   }
@@ -1091,12 +1090,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// a Nat literal, `Nat.zero`/`Nat.succ`, or an app whose head constant is
   /// `Nat.succ`/`Nat.add`. Walks the app chain by reference — no spine Vec.
   fn nat_offset_candidate(&self, e: &KExpr<M>) -> bool {
+    let Some(primitives) = self.optional_primitives() else {
+      return false;
+    };
     let mut cur = e;
     loop {
       match cur.data() {
         ExprData::Nat(..) => return true,
         ExprData::Const(id, _, _) => {
-          let p = &self.prims;
+          let p = primitives;
           return id.addr == p.nat_zero.addr
             || id.addr == p.nat_succ.addr
             || id.addr == p.nat_add.addr;
@@ -1120,7 +1122,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         Some(self.env.intern.intern_expr(KExpr::nat(pred, pred_addr)))
       },
       ExprData::App(f, arg, _) => match f.data() {
-        ExprData::Const(id, _, _) if id.addr == self.prims.nat_succ.addr => {
+        ExprData::Const(id, _, _)
+          if id.addr == self.optional_primitives()?.nat_succ.addr =>
+        {
           Some(arg.clone())
         },
         _ => None,
@@ -1137,6 +1141,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    self.primitives()?;
     // Fast path: both literals — compare by value directly
     if let (ExprData::Nat(va, _, _), ExprData::Nat(vb, _, _)) =
       (a.data(), b.data())
@@ -1167,6 +1172,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<Option<bool>, TcError<M>> {
+    if self.optional_primitives().is_none() {
+      return Ok(None);
+    }
     // Fast path: both literals — compare by value directly
     if let (ExprData::Nat(va, _, _), ExprData::Nat(vb, _, _)) =
       (a.data(), b.data())
@@ -1194,8 +1202,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // to the generic path, matching the previous conservative behavior.
       return Ok(None);
     }
-    let ra = self.nat_offset_rebuild(base_a, bignat::Nat(ka.0 - &k));
-    let rb = self.nat_offset_rebuild(base_b, bignat::Nat(kb.0 - &k));
+    let ra = self.nat_offset_rebuild(base_a, bignat::Nat(ka.0 - &k))?;
+    let rb = self.nat_offset_rebuild(base_b, bignat::Nat(kb.0 - &k))?;
     Ok(Some(self.is_def_eq(&ra, &rb)?))
   }
 
@@ -1218,6 +1226,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     t: &KExpr<M>,
     s: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
+    if self.optional_primitives().is_none() {
+      return Ok(false);
+    }
     let str_val = match t.data() {
       ExprData::Str(v, _, _) => v.clone(),
       _ => return Ok(false),
@@ -1238,41 +1249,62 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ///
   /// Uses `Char.ofNat` (not `Char.mk`) matching lean4lean/C++ kernel.
   /// Uses `String.ofList` (= `String.mk` in our env) matching lean4lean/C++ kernel.
-  pub(super) fn str_lit_to_constructor(&mut self, s: &str) -> KExpr<M> {
-    let char_const =
-      self.intern(KExpr::cnst(self.prims.char_type.clone(), Box::new([])));
-    let char_of_nat =
-      self.intern(KExpr::cnst(self.prims.char_of_nat.clone(), Box::new([])));
-    let string_mk =
-      self.intern(KExpr::cnst(self.prims.string_of_list.clone(), Box::new([])));
-
-    // List.nil.{0} Char
-    let list_nil_z = self.intern(KExpr::cnst(
-      self.prims.list_nil.clone(),
-      Box::new([KUniv::zero()]),
-    ));
-    let nil = self.intern(KExpr::app(list_nil_z, char_const.clone()));
-
-    // List.cons.{0} Char
-    let list_cons_z = self.intern(KExpr::cnst(
-      self.prims.list_cons.clone(),
-      Box::new([KUniv::zero()]),
-    ));
-    let cons = self.intern(KExpr::app(list_cons_z, char_const));
-
-    // Build list right-to-left: foldr
-    let mut list = nil;
-    for c in s.chars().rev() {
-      let nat_val = bignat::Nat::from(c as u64);
-      let nat_addr = ix_common::address::Address::hash(&nat_val.to_le_bytes());
-      let nat_lit = self.intern(KExpr::nat(nat_val, nat_addr));
-      let char_val = self.intern(KExpr::app(char_of_nat.clone(), nat_lit));
-      let partial = self.intern(KExpr::app(cons.clone(), char_val));
-      list = self.intern(KExpr::app(partial, list));
+  pub(super) fn str_lit_to_constructor(
+    &mut self,
+    s: &str,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    // A string literal denotes `String.ofList` of its `Char.ofNat` list.
+    for role in [
+      ixon::role_table::Role::StringOfList,
+      ixon::role_table::Role::CharOfNat,
+      ixon::role_table::Role::List,
+      ixon::role_table::Role::Nat,
+    ] {
+      self.require_role(role)?;
     }
+    Ok({
+      let char_const = self.intern(KExpr::cnst(
+        self.primitives()?.char_type.clone(),
+        Box::new([]),
+      ));
+      let char_of_nat = self.intern(KExpr::cnst(
+        self.primitives()?.char_of_nat.clone(),
+        Box::new([]),
+      ));
+      let string_mk = self.intern(KExpr::cnst(
+        self.primitives()?.string_of_list.clone(),
+        Box::new([]),
+      ));
 
-    // String.mk list
-    self.intern(KExpr::app(string_mk, list))
+      // List.nil.{0} Char
+      let list_nil_z = self.intern(KExpr::cnst(
+        self.primitives()?.list_nil.clone(),
+        Box::new([KUniv::zero()]),
+      ));
+      let nil = self.intern(KExpr::app(list_nil_z, char_const.clone()));
+
+      // List.cons.{0} Char
+      let list_cons_z = self.intern(KExpr::cnst(
+        self.primitives()?.list_cons.clone(),
+        Box::new([KUniv::zero()]),
+      ));
+      let cons = self.intern(KExpr::app(list_cons_z, char_const));
+
+      // Build list right-to-left: foldr
+      let mut list = nil;
+      for c in s.chars().rev() {
+        let nat_val = bignat::Nat::from(c as u64);
+        let nat_addr =
+          ix_common::address::Address::hash(&nat_val.to_le_bytes());
+        let nat_lit = self.intern(KExpr::nat(nat_val, nat_addr));
+        let char_val = self.intern(KExpr::app(char_of_nat.clone(), nat_lit));
+        let partial = self.intern(KExpr::app(cons.clone(), char_val));
+        list = self.intern(KExpr::app(partial, list));
+      }
+
+      // String.mk list
+      self.intern(KExpr::app(string_mk, list))
+    })
   }
 
   /// String literal → structure-constructor application.
@@ -1291,7 +1323,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     s: &str,
   ) -> Result<KExpr<M>, TcError<M>> {
-    let of_list_app = self.str_lit_to_constructor(s);
+    let of_list_app = self.str_lit_to_constructor(s)?;
     match self.delta_unfold_one(&of_list_app)? {
       // Beta the unfolded body against the char list. `whnf_core` stops
       // at the constructor head and runs no string-primitive
@@ -1326,18 +1358,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(w) => w,
       Err(_) => return Ok(false),
     };
-    let (name, bi, ty) = match s_ty_whnf.data() {
-      ExprData::All(name, bi, ty, _, _) => {
-        (name.clone(), bi.clone(), ty.clone())
+    let (name, bi, contract, ty) = match s_ty_whnf.data() {
+      ExprData::All(name, bi, contract, _, ty, _, _) => {
+        (name.clone(), bi.clone(), *contract, ty.clone())
       },
       _ => return Ok(false),
     };
+    if let ExprData::Lam(_, _, input, ..) = t.data()
+      && *input != contract
+    {
+      return Ok(false);
+    }
     // Wrap s as λ(ty). s #0
     let s_lifted = lift(&mut self.env.intern, s, 1, 0);
     let v0 =
       self.intern(KExpr::var(0, M::meta_field(ix_common::env::Name::anon())));
     let body = self.intern(KExpr::app(s_lifted, v0));
-    let s_lam = self.intern(KExpr::lam(name, bi, ty, body));
+    let s_lam = self.intern(KExpr::lam_contract(name, bi, contract, ty, body));
     self.is_def_eq(t, &s_lam)
   }
 
@@ -1510,9 +1547,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Check if expression is the Bool.true constant.
   fn is_bool_true(&self, e: &KExpr<M>) -> bool {
+    let Some(primitives) = self.optional_primitives() else {
+      return false;
+    };
     match e.data() {
       ExprData::Const(id, us, _) => {
-        us.is_empty() && id.addr == self.prims.bool_true.addr
+        us.is_empty() && id.addr == primitives.bool_true.addr
       },
       _ => false,
     }
@@ -1522,8 +1562,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   fn is_delta(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
     Ok(matches!(
       self.try_get_const(id)?,
-      Some(KConst::Defn { kind, .. })
-        if matches!(kind, DefKind::Definition | DefKind::Theorem)
+      Some(KConst::Defn { kind, safety, .. }) if self.unfolds(kind, safety)
     ))
   }
 
@@ -1553,6 +1592,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   fn def_rank_id(&mut self, id: &KId<M>) -> Result<(u8, u32), TcError<M>> {
     use ix_common::env::ReducibilityHints;
     Ok(match self.try_get_const(id)? {
+      Some(KConst::Defn { kind, safety, .. })
+        if !self.unfolds(kind, safety) =>
+      {
+        (0, 0)
+      },
       Some(KConst::Defn { kind, hints, .. }) => match kind {
         DefKind::Opaque | DefKind::Theorem => (0, 0),
         DefKind::Definition => match hints {

@@ -171,12 +171,12 @@ private def serdeEnvEq (a b : RawEnv) : Bool :=
     runs the test. -/
 private def mkSerdeRoundtripTest (descr : String) (env : RawEnv) : TestSeq :=
   .individualIO descr none (deferIO fun () =>
-    match rsDeEnvFFI (rsSerEnvFFI env) with
+    match rsSerEnvFFI env >>= rsDeEnvFFI with
     | .ok decoded =>
       let ok := serdeEnvEq decoded env
       (ok, 0, 0, if ok then none else some "mismatch")
     | .error e =>
-      (false, 0, 0, some s!"deserialization failed: {e}")) .done
+      (false, 0, 0, some s!"serialization/deserialization failed: {e}")) .done
 
 def serdeTests : TestSeq :=
   -- Empty RawEnv. Only data construction happens eagerly; FFI is deferred
@@ -311,7 +311,7 @@ private instance : SampleableExt serdeRawEnv :=
 
 /-- Check that serialize → deserialize roundtrips for a well-formed RawEnv. -/
 def serdeRoundtripOk (env : RawEnv) : Bool :=
-  match rsDeEnvFFI (rsSerEnvFFI env) with
+  match rsSerEnvFFI env >>= rsDeEnvFFI with
   | .ok decoded => serdeEnvEq decoded env
   | .error _ => false
 

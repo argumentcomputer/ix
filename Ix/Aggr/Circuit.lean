@@ -7,7 +7,7 @@ public import MultiStark.Verifier
 # Heterogeneous recursive aggregation circuit
 
 One entrypoint, `ix_aggr`, subsumes wrapping and joining. A non-deterministic
-shape hint (IO channel 6) selects one of thirteen verified forms:
+shape hint (IO channel 6) selects one of seventeen verified forms:
 
 | shape | children                  | statement fold                          |
 |-------|---------------------------|-----------------------------------------|
@@ -24,6 +24,21 @@ shape hint (IO channel 6) selects one of thirteen verified forms:
 | 10    | shards `[lo, hi)` of an IxVM batch | range leaf: residual sum        |
 | 11    | `ix_aggr`, `ix_aggr` (ranges) | range join: adjacent ranges added   |
 | 12    | one `ix_aggr` range proof | range root: whole batch, IxVM claim     |
+| 13    | IxVM, IxVM `Binding`      | binding discharge: validator 4 → 3      |
+| 14    | `ix_aggr`, IxVM `Binding` | binding discharge: validator 4 → 3      |
+| 15    | `ix_aggr`, `ix_aggr`      | cross-binding structural pair: one literal class, validator 5 |
+| 16    | `ix_aggr`, `ix_aggr`      | catalog join: union of member statements |
+
+Shapes 15 and 16 join claims made under different role bindings, as libraries
+compiled from different Lean toolchains are. Shape 15 is the structural pair
+for two `CheckEnv` claims whose bindings have the same literal class
+(`Ix.ClaimContext.literalClass`): each child validates its binding (validator
+3) or already names a class (validator 5), and the output names the class
+(validator 5), so further folds of that class and discharge across its
+bindings are the existing shapes. Shape 16 forms a `Catalog` claim, the
+conjunction of unconditional `CheckEnv` claims under any contexts: a `CheckEnv`
+child contributes its own claim digest, a `Catalog` child its members, and the
+output's members are their union. Both take `ix_aggr` children only.
 
 Shapes 10–12 are the range-sum recursion (see the section of that name in
 the circuit): together they verify one large IxVM batch across several
@@ -37,7 +52,10 @@ proof verification or a digest/shape assertion.
 
 The public statement is uniform across all shapes:
 
-`blake3(allowed_blob) ‖ blake3(output CheckEnv claim bytes)`,
+`blake3(allowed_blob) ‖ blake3(output claim bytes)`,
+
+where the output claim is a `CheckEnv` claim, or a `Catalog` claim for shape
+16 (and for a wrap of one),
 
 packed four bytes per Goldilocks element. The 80-byte allowed blob is
 
@@ -81,9 +99,9 @@ not stored values to be globally deduplicated.
 | 1       | `[kind]`             | vk bytes (0 = IxVM, 1 = self)            |
 | 2       | `[0]` / `[1]`, `[2]` | child claims; output claim or range statement bytes |
 | 3       | `[0]`                | 80-byte allowed blob                     |
-| 4       | packed digest        | `CheckEnv` claim and range statement preimages |
+| 4       | packed digest        | `CheckEnv` and `Catalog` claim, range statement and role binding section preimages |
 | 5       | raw 32-byte root     | serialized canonical `AssumptionTree`s   |
-| 6       | `[0]` / address      | shape byte (0–12) / structural path choice |
+| 6       | `[0]` / address      | shape byte (0–16) / structural path choice |
 -/
 
 public section
@@ -339,7 +357,7 @@ def circuit := ⟦
   fn aggr_load_canonical_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
     let (idx, len) = io_get_info(5, raw);
-    let bytes = #read_byte_stream(5, idx, len);
+    let bytes = read_checked_byte_stream(5, idx, len);
     let (tag, body) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE2u8, "aggr: tree has the wrong Ixon tag");
     let (leaves, stop) = aggr_parse_tree_body(body);
@@ -485,7 +503,7 @@ def circuit := ⟦
   --   discharged: 1 || count:u8 || (side:u8 || sibling:32)*
   fn aggr_discharge_choice(candidate: Addr, root: Addr) -> G {
     let (idx, len) = io_get_info(6, load(candidate));
-    let bytes = #read_byte_stream(6, idx, len);
+    let bytes = read_checked_byte_stream(6, idx, len);
     let (choice, rest) = aggr_read_byte(bytes);
     assert_eq!(u8_less_than(choice, 2u8), 1,
       "aggr structural: discharge choice must be 0 or 1");
@@ -541,29 +559,111 @@ def circuit := ⟦
     }
   }
 
-  -- Strictly decode one complete `Claim::CheckEnv` byte string.
-  -- The fixed sequence (36 or 68 bytes) and final Nil check rule out cycles
-  -- in preimages and output claims without a separate depth traversal.
-  fn aggr_parse_check_env(bytes: ByteStream) -> (Addr, Option‹Addr›) {
-    -- TagN4(0xE, 5) is the one byte 0xE5; object format 4 is Ixon v4.
+  -- Strictly decode one complete `Claim::CheckEnv` byte string: its context
+  -- (specification digest, binding hash, axioms, validator), root and
+  -- assumptions. The fixed sequence and final Nil check rule out cycles in
+  -- preimages and output claims without a separate depth traversal.
+  fn aggr_parse_check_env(bytes: ByteStream)
+      -> ((Addr, Addr, Option‹Addr›, G), Addr, Option‹Addr›) {
+    -- TagN4(0xE, 5) is the one byte 0xE5; object format 4 is Ixon v4;
+    -- validator 3 is erased-lean-v2, whose claims carry a context, 4
+    -- erased-lean-v2-assumed, whose claims assume their binding meets the
+    -- specifications, and 5 erased-lean-v2-class, whose context names a
+    -- literal class instead of a binding.
     let (tag, s) = aggr_read_byte(bytes);
     assert_eq!(tag, 0xE5u8, "aggr: claim is not CheckEnv");
     let (format, s) = aggr_read_byte(s);
     assert_eq!(format, 4u8, "aggr: unsupported object format");
-    let (validator, s) = aggr_read_byte(s);
-    assert_eq!(validator, 1u8, "aggr: wrong validator identity");
+    let (validator_byte, s) = aggr_read_byte(s);
+    let validator = to_field(validator_byte);
+    assert_eq!((validator - 3) * (validator - 4) * (validator - 5), 0,
+      "aggr: wrong validator identity");
+    let (spec, s) = aggr_read_address(s);
+    let (binding, s) = aggr_read_address(s);
+    let (axioms, s) = aggr_get_opt_address(s);
     let (root, s2) = aggr_read_address(s);
     let (assumptions, stop) = aggr_get_opt_address(s2);
     assert_eq!(load(stop), ListNode.Nil,
       "aggr: trailing bytes after CheckEnv claim");
-    (root, assumptions)
+    ((spec, binding, axioms, validator), root, assumptions)
+  }
+
+  -- Strictly decode one complete `Claim::Binding` byte string: its
+  -- specification digest and binding hash.
+  fn aggr_parse_binding(bytes: ByteStream) -> (Addr, Addr) {
+    -- TagN4(0xE, 10) is the two bytes `E8 02`; validator 3.
+    let (tag0, s) = aggr_read_byte(bytes);
+    assert_eq!(tag0, 0xE8u8, "aggr: claim is not Binding");
+    let (tag1, s) = aggr_read_byte(s);
+    assert_eq!(tag1, 0x02u8, "aggr: claim is not Binding");
+    let (format, s) = aggr_read_byte(s);
+    assert_eq!(format, 4u8, "aggr: unsupported object format");
+    let (validator, s) = aggr_read_byte(s);
+    assert_eq!(validator, 3u8, "aggr: wrong validator identity");
+    let (spec, s) = aggr_read_address(s);
+    let (binding, stop) = aggr_read_address(s);
+    assert_eq!(load(stop), ListNode.Nil,
+      "aggr: trailing bytes after Binding claim");
+    (spec, binding)
+  }
+
+  -- Strictly decode one complete `Claim::Catalog` byte string: its members
+  -- root, the canonical tree of the member claims' digests.
+  fn aggr_parse_catalog(bytes: ByteStream) -> Addr {
+    -- TagN4(0xE, 8) is the two bytes `E8 00`; validator 3.
+    let (tag0, s) = aggr_read_byte(bytes);
+    assert_eq!(tag0, 0xE8u8, "aggr: claim is not Catalog");
+    let (tag1, s) = aggr_read_byte(s);
+    assert_eq!(tag1, 0x00u8, "aggr: claim is not Catalog");
+    let (format, s) = aggr_read_byte(s);
+    assert_eq!(format, 4u8, "aggr: unsupported object format");
+    let (validator, s) = aggr_read_byte(s);
+    assert_eq!(validator, 3u8, "aggr: wrong validator identity");
+    let (members, stop) = aggr_read_address(s);
+    assert_eq!(load(stop), ListNode.Nil,
+      "aggr: trailing bytes after Catalog claim");
+    members
+  }
+
+  fn aggr_opt_address_eq(a: Option‹Addr›, b: Option‹Addr›) -> G {
+    match a {
+      Option.None =>
+        match b {
+          Option.None => 1,
+          Option.Some(_) => 0,
+        },
+      Option.Some(x) =>
+        match b {
+          Option.None => 0,
+          Option.Some(y) => address_eq(x, y),
+        },
+    }
+  }
+
+  -- A fold states its children's typing under one context: both children
+  -- and the output must carry the same specification digest, binding hash,
+  -- axioms and validator, so a fold never mixes claims that assume their
+  -- binding with claims that validate it.
+  fn aggr_assert_same_context(a: (Addr, Addr, Option‹Addr›, G),
+      b: (Addr, Addr, Option‹Addr›, G)) {
+    let (spec_a, binding_a, axioms_a, validator_a) = a;
+    let (spec_b, binding_b, axioms_b, validator_b) = b;
+    assert_eq!(address_eq(spec_a, spec_b), 1,
+      "aggr: claims differ in specification digest");
+    assert_eq!(address_eq(binding_a, binding_b), 1,
+      "aggr: claims differ in binding hash");
+    assert_eq!(aggr_opt_address_eq(axioms_a, axioms_b), 1,
+      "aggr: claims differ in axioms");
+    assert_eq!(validator_a, validator_b,
+      "aggr: claims differ in whether they assume their binding");
+    ()
   }
 
   /- ## Digest-bound advice and claim decoding -/
 
   fn aggr_load_preimage(digest: [G; 8]) -> ByteStream {
     let (idx, len) = io_get_info(4, digest);
-    let bytes = #read_byte_stream(4, idx, len);
+    let bytes = read_checked_byte_stream(4, idx, len);
     assert_eq!(@b3_pack(@blake3(bytes)), digest,
       "aggr: claim preimage digest mismatch");
     bytes
@@ -614,10 +714,11 @@ def circuit := ⟦
 
   fn aggr_load_sys(kind: G, ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8])
       -> Sys {
-    -- Constrained countdown decoding plus the final Nil check establishes
-    -- finite bytes; read_system also checks expression-graph acyclicity.
+    -- The checked reader proves the key bytes finite and below 256, so the
+    -- digest pins every field read_system parses from them; read_system
+    -- also checks expression-graph acyclicity.
     let (sidx, slen) = io_get_info(1, [kind]);
-    let sbytes = #read_byte_stream(1, sidx, slen);
+    let sbytes = read_checked_byte_stream(1, sidx, slen);
     let digest = @b3_pack(@blake3(sbytes));
     match kind {
       0 =>
@@ -638,7 +739,7 @@ def circuit := ⟦
   fn aggr_verify_child(sys: Sys, key: G) -> List‹List‹U64›› {
     let (idx, len) = io_get_info(0, [key]);
     let (cidx, clen) = io_get_info(2, [key]);
-    let cbytes = #read_byte_stream(2, cidx, clen);
+    let cbytes = read_checked_byte_stream(2, cidx, clen);
     let (claims, crest) = @read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
     assert_eq!(@verify_batch_at(sys, idx, len, claims), 1);
@@ -698,17 +799,19 @@ def circuit := ⟦
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
     let right_digest = aggr_child_check_env_digest(right_kind, 1,
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
-    let (left_root, left_asm) =
+    let (left_ctx, left_root, left_asm) =
       aggr_parse_check_env(aggr_load_preimage(left_digest));
-    let (right_root, right_asm) =
+    let (right_ctx, right_root, right_asm) =
       aggr_parse_check_env(aggr_load_preimage(right_digest));
 
     -- Bind and decode this fold's output claim.
     let (oidx, olen) = io_get_info(2, [2]);
-    let output_bytes = #read_byte_stream(2, oidx, olen);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr: output claim digest mismatch");
-    let (output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    aggr_assert_same_context(left_ctx, right_ctx);
+    aggr_assert_same_context(left_ctx, output_ctx);
 
     let left_subjects = aggr_load_canonical_tree(left_root);
     let right_subjects = aggr_load_canonical_tree(right_root);
@@ -734,16 +837,18 @@ def circuit := ⟦
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
     let right_digest = aggr_child_check_env_digest(right_kind, 1,
       ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
-    let (left_root, left_asm) =
+    let (left_ctx, left_root, left_asm) =
       aggr_parse_check_env(aggr_load_preimage(left_digest));
-    let (right_root, right_asm) =
+    let (right_ctx, right_root, right_asm) =
       aggr_parse_check_env(aggr_load_preimage(right_digest));
 
     let (oidx, olen) = io_get_info(2, [2]);
-    let output_bytes = #read_byte_stream(2, oidx, olen);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr structural: output claim digest mismatch");
-    let (output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    aggr_assert_same_context(left_ctx, right_ctx);
+    aggr_assert_same_context(left_ctx, output_ctx);
 
     let expected_root = aggr_node_hash(left_root, right_root);
     assert_eq!(address_eq(output_root, expected_root), 1,
@@ -754,6 +859,213 @@ def circuit := ⟦
     let output_assumptions = aggr_load_optional_tree(output_asm);
     aggr_assert_structural_difference(left_assumptions, right_assumptions,
       output_root, output_assumptions);
+    ()
+  }
+
+  -- Binding discharge: a `CheckEnv` child that assumes its binding (key 0,
+  -- of the hinted kind) and an IxVM proof of the `Binding` claim for its
+  -- specification digest and binding hash (key 1). The output is the
+  -- child's claim validating its binding: the same bytes with validator 3.
+  -- Folds keep the validator, so an aggregate discharges once, at the top.
+  fn aggr_discharge_binding(kind: G,
+      ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let child_digest = aggr_child_check_env_digest(kind, 0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let binding_digest = aggr_child_check_env_digest(0, 1,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let (child_ctx, child_root, child_asm) =
+      aggr_parse_check_env(aggr_load_preimage(child_digest));
+    let (spec, binding, axioms, validator) = child_ctx;
+    assert_eq!(validator, 4,
+      "aggr discharge: the claim does not assume its binding");
+    let (bound_spec, bound_binding) =
+      aggr_parse_binding(aggr_load_preimage(binding_digest));
+    assert_eq!(address_eq(spec, bound_spec), 1,
+      "aggr discharge: the binding claim is for another specification digest");
+    assert_eq!(address_eq(binding, bound_binding), 1,
+      "aggr discharge: the binding claim is for another binding");
+
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "aggr discharge: output claim digest mismatch");
+    let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    aggr_assert_same_context((spec, binding, axioms, 3), output_ctx);
+    assert_eq!(address_eq(child_root, output_root), 1,
+      "aggr discharge: output subject root differs from the child's");
+    assert_eq!(aggr_opt_address_eq(child_asm, output_asm), 1,
+      "aggr discharge: output assumptions differ from the child's");
+    ()
+  }
+
+  /- ## Claims under different role bindings
+
+  A role binding's literal class (`Ix.ClaimContext.literalClassOf`) is the
+  BLAKE3 of `E8 04` followed by the addresses it binds to the twelve roles the
+  checker uses without a reference to them, in role order: `Nat`, `Nat.zero`,
+  `Nat.succ`, `List`, `List.nil`, `List.cons`, `String`, `String.ofList`,
+  `Char`, `Char.ofNat`, `propext` and `Classical.choice`, at role indices 0,
+  1, 2, 29, 30, 31, 37, 38, 39, 40, 56 and 57. A claim that validates its
+  binding (validator 3) names the binding hash; its class is read from the
+  binding section (channel 4, keyed by the binding hash, so its BLAKE3 is
+  checked), which must bind all 103 roles, one entry per role in order.
+  -/
+
+  -- 1 for the role indices of the literal class.
+  fn aggr_is_class_role(i: G) -> G {
+    match i {
+      0 => 1,
+      1 => 1,
+      2 => 1,
+      29 => 1,
+      30 => 1,
+      31 => 1,
+      37 => 1,
+      38 => 1,
+      39 => 1,
+      40 => 1,
+      56 => 1,
+      57 => 1,
+      _ => 0,
+    }
+  }
+
+  -- The class roles' addresses from the bound entries `i` to 102 of a
+  -- complete binding section, each entry its role index then its address.
+  fn aggr_class_walk(stream: ByteStream, i: G, remaining: G) -> List‹Addr› {
+    match remaining {
+      0 => store(ListNode.Nil),
+      _ =>
+        let (role, s) = aggr_read_byte(stream);
+        assert_eq!(to_field(role), i,
+          "aggr cross-binding: the binding does not bind every role in order");
+        let (addr, s2) = aggr_read_address(s);
+        let rest = aggr_class_walk(s2, i + 1, remaining - 1);
+        match aggr_is_class_role(i) {
+          1 => store(ListNode.Cons(addr, rest)),
+          _ => rest,
+        },
+    }
+  }
+
+  fn aggr_put_addresses(addrs: List‹Addr›, tail: ByteStream) -> ByteStream {
+    match load(addrs) {
+      ListNode.Nil => tail,
+      ListNode.Cons(a, rest) => aggr_put_address(a, aggr_put_addresses(rest, tail)),
+    }
+  }
+
+  -- The literal class of the binding section with hash `binding`.
+  fn aggr_binding_class(binding: Addr) -> Addr {
+    let bytes = aggr_load_preimage(aggr_pack_address(binding));
+    let (tag0, s) = aggr_read_byte(bytes);
+    assert_eq!(tag0, 0xE8u8, "aggr cross-binding: not a role binding section");
+    let (tag1, s) = aggr_read_byte(s);
+    assert_eq!(tag1, 0x03u8, "aggr cross-binding: not a role binding section");
+    let (_version, s) = aggr_read_byte(s);
+    let (count, s) = aggr_read_byte(s);
+    assert_eq!(count, 103u8,
+      "aggr cross-binding: the binding does not bind every role");
+    let addrs = aggr_class_walk(s, 0, 103);
+    let body = aggr_put_addresses(addrs, store(ListNode.Nil));
+    bytes_to_addr(store(ListNode.Cons(0xE8u8, store(ListNode.Cons(0x04u8, body)))))
+  }
+
+  -- The literal class of a `CheckEnv` claim's context: read from its
+  -- binding (validator 3) or named by it (validator 5). A claim that
+  -- assumes its binding (validator 4) is refused: discharge it first.
+  fn aggr_context_class(ctx: (Addr, Addr, Option‹Addr›, G)) -> Addr {
+    let (_spec, binding, _axioms, validator) = ctx;
+    assert_eq!((validator - 3) * (validator - 5), 0,
+      "aggr cross-binding: the claim assumes its binding");
+    match validator {
+      5 => binding,
+      _ => aggr_binding_class(binding),
+    }
+  }
+
+  -- Cross-binding structural pair: two `ix_aggr` children whose bindings
+  -- have one literal class. The output names the class (validator 5), with
+  -- the children's specification digest and axioms, subjects
+  -- `nodeHash(left, right)` and the structural difference of the
+  -- assumptions, as in `aggr_pair_structural`.
+  fn aggr_cross_binding(ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let left_digest = aggr_child_check_env_digest(1, 0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let right_digest = aggr_child_check_env_digest(1, 1,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let (left_ctx, left_root, left_asm) =
+      aggr_parse_check_env(aggr_load_preimage(left_digest));
+    let (right_ctx, right_root, right_asm) =
+      aggr_parse_check_env(aggr_load_preimage(right_digest));
+    let left_class = aggr_context_class(left_ctx);
+    let right_class = aggr_context_class(right_ctx);
+    assert_eq!(address_eq(left_class, right_class), 1,
+      "aggr cross-binding: the bindings' literal classes differ");
+    let (left_spec, _lb, left_axioms, _lv) = left_ctx;
+    let (right_spec, _rb, right_axioms, _rv) = right_ctx;
+
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "aggr cross-binding: output claim digest mismatch");
+    let (output_ctx, output_root, output_asm) = aggr_parse_check_env(output_bytes);
+    aggr_assert_same_context((left_spec, left_class, left_axioms, 5), output_ctx);
+    aggr_assert_same_context((right_spec, right_class, right_axioms, 5), output_ctx);
+
+    let expected_root = aggr_node_hash(left_root, right_root);
+    assert_eq!(address_eq(output_root, expected_root), 1,
+      "aggr cross-binding: output subject root is not nodeHash(left, right)");
+    let left_assumptions = aggr_load_optional_tree(left_asm);
+    let right_assumptions = aggr_load_optional_tree(right_asm);
+    let output_assumptions = aggr_load_optional_tree(output_asm);
+    aggr_assert_structural_difference(left_assumptions, right_assumptions,
+      output_root, output_assumptions);
+    ()
+  }
+
+  -- The member statements a catalog join's child contributes, sorted: an
+  -- unconditional `CheckEnv` claim that validates its binding or names a
+  -- literal class contributes its own digest, a `Catalog` claim the leaves of
+  -- its members tree.
+  fn aggr_catalog_part(digest: [G; 8]) -> List‹Addr› {
+    let bytes = aggr_load_preimage(digest);
+    let (tag, _rest) = aggr_read_byte(bytes);
+    match tag {
+      229 =>
+        let (ctx, _root, asm) = aggr_parse_check_env(bytes);
+        let (_spec, _binding, _axioms, validator) = ctx;
+        assert_eq!((validator - 3) * (validator - 5), 0,
+          "aggr catalog: a member claim assumes its binding");
+        assert_eq!(aggr_opt_address_eq(asm, Option.None), 1,
+          "aggr catalog: a member claim has assumptions");
+        store(ListNode.Cons(bytes_to_addr(bytes), store(ListNode.Nil))),
+      _ => aggr_load_canonical_tree(aggr_parse_catalog(bytes)),
+    }
+  }
+
+  -- Catalog join: two `ix_aggr` children, each a member claim or a catalog;
+  -- the output `Catalog` claim's members are the union of theirs.
+  fn aggr_catalog_join(ixvm_vk_digest: [G; 8], self_vk_digest: [G; 8],
+      verify_idx: G, aggr_idx: G, allowed_digest: [G; 8],
+      out_claim_digest: [G; 8]) {
+    let left_digest = aggr_child_check_env_digest(1, 0,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let right_digest = aggr_child_check_env_digest(1, 1,
+      ixvm_vk_digest, self_vk_digest, verify_idx, aggr_idx, allowed_digest);
+    let left = aggr_catalog_part(left_digest);
+    let right = aggr_catalog_part(right_digest);
+
+    let (oidx, olen) = io_get_info(2, [2]);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
+    assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
+      "aggr catalog: output claim digest mismatch");
+    let output = aggr_load_canonical_tree(aggr_parse_catalog(output_bytes));
+    aggr_assert_union(left, right, output);
     ()
   }
 
@@ -870,7 +1182,7 @@ def circuit := ⟦
   -- parsed from the hashed stream.
   fn aggr_load_preamble(key: G, d: Addr) -> (List‹ShardHeader›, List‹BatchMessage›) {
     let (idx, len) = io_get_info(0, [key]);
-    let bytes = #read_byte_stream(0, idx, len);
+    let bytes = read_checked_byte_stream(0, idx, len);
     assert_eq!(address_eq(bytes_to_addr(bytes), d), 1,
       "aggr range: preamble does not hash to the statement's batch digest");
     let (nh, s1) = @read_count(bytes);
@@ -909,7 +1221,7 @@ def circuit := ⟦
   -- The output statement of a range node: channel 2 key 2, digest-bound.
   fn aggr_output_range(out_claim_digest: [G; 8]) -> (Addr, U64, U64, Ext) {
     let (oidx, olen) = io_get_info(2, [2]);
-    let output_bytes = #read_byte_stream(2, oidx, olen);
+    let output_bytes = read_checked_byte_stream(2, oidx, olen);
     assert_eq!(@b3_pack(@blake3(output_bytes)), out_claim_digest,
       "aggr range: output statement digest mismatch");
     aggr_parse_range(output_bytes)
@@ -1011,7 +1323,7 @@ def circuit := ⟦
     let (aidx, alen) = io_get_info(3, [0]);
     assert_eq!(alen, 80,
       "aggr: allowed blob must be exactly 80 bytes");
-    let allowed_bytes = #read_byte_stream(3, aidx, alen);
+    let allowed_bytes = read_checked_byte_stream(3, aidx, alen);
     assert_eq!(@b3_pack(@blake3(allowed_bytes)), allowed_digest,
       "aggr: allowed blob digest mismatch");
     let (ixvm_digest_addr, as1) = aggr_read_address(allowed_bytes);
@@ -1030,9 +1342,13 @@ def circuit := ⟦
     --   2–5 = flat pairs:       2 + 2·left + right
     --   6–9 = structural pairs: 6 + 2·left + right
     --   10 = range leaf      11 = range join      12 = range root
+    --   13 = binding discharge of an IxVM child
+    --   14 = binding discharge of a self child
+    --   15 = cross-binding structural pair (self children)
+    --   16 = catalog join (self children)
     let (hidx, hlen) = io_get_info(6, [0]);
     assert_eq!(hlen, 1, "aggr: shape hint must be exactly one byte");
-    let hint = #read_byte_stream(6, hidx, hlen);
+    let hint = read_checked_byte_stream(6, hidx, hlen);
     let (shape, hstop) = aggr_read_byte(hint);
     assert_eq!(load(hstop), ListNode.Nil,
       "aggr: trailing bytes after shape hint");
@@ -1061,6 +1377,14 @@ def circuit := ⟦
       11 => aggr_range_join(ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
       12 => aggr_range_root(ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      13 => aggr_discharge_binding(0, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      14 => aggr_discharge_binding(1, ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      15 => aggr_cross_binding(ixvm_vk_digest, self_vk_digest,
+        verify_idx, aggr_idx, allowed_digest, out_claim_digest),
+      16 => aggr_catalog_join(ixvm_vk_digest, self_vk_digest,
         verify_idx, aggr_idx, allowed_digest, out_claim_digest),
     }
   }

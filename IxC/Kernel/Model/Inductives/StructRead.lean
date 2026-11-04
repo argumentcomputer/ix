@@ -43,10 +43,10 @@ a name `env₀` lacks: every `.const` the reading looks up resolves in
 `constsResolve`'s literal clauses.  Stated as an equation — the two
 runs are `none` together. -/
 theorem denoteMeta_acvalWith_unmentioned
-    {acval : Name → (Name → Nat) → AnnotTerm} {T : Name}
-    {A : (Name → Nat) → AnnotTerm} {env₀ env : Env} {φ : Name → Nat}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T : Key md}
+    {A : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env md} {φ : LevelParam → Nat}
     (hfresh : env₀.find? T = none) :
-    ∀ (d : Nat) (e : Expr), Expr.constsResolve env₀ e = true →
+    ∀ (d : Nat) (e : Expr md), Expr.constsResolve env₀ e = true →
       denoteMeta (acvalWith acval T A) env φ d e
         = denoteMeta acval env φ d e := by
   have hne : ∀ n, (env₀.find? n).isSome = true → n ≠ T := by
@@ -124,7 +124,7 @@ theorem denoteMeta_acvalWith_unmentioned
     | forallE ty b m => exact absurd rfl (hpi ty b m)
     | lam ty b m => exact absurd rfl (hlam ty b m)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with
@@ -133,10 +133,10 @@ theorem denoteMeta_acvalWith_unmentioned
 
 /-- Two leaves at the block's name read a pre-block term alike. -/
 theorem denoteMeta_acvalWith_unmentioned₂
-    {acval : Name → (Name → Nat) → AnnotTerm} {T : Name}
-    {A₁ A₂ : (Name → Nat) → AnnotTerm} {env₀ env : Env} {φ : Name → Nat}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {T : Key md}
+    {A₁ A₂ : (LevelParam → Nat) → AnnotTerm} {env₀ env : Env md} {φ : LevelParam → Nat}
     (hfresh : env₀.find? T = none)
-    (d : Nat) (e : Expr) (hcr : Expr.constsResolve env₀ e = true) :
+    (d : Nat) (e : Expr md) (hcr : Expr.constsResolve env₀ e = true) :
     denoteMeta (acvalWith acval T A₁) env φ d e
       = denoteMeta (acvalWith acval T A₂) env φ d e := by
   rw [denoteMeta_acvalWith_unmentioned hfresh d e hcr,
@@ -149,9 +149,9 @@ theorem denoteMeta_acvalWith_unmentioned₂
 variables' annotation readings at their own depths (domain sort
 numeral `0`, the codomain bit the binder's own), and whose residual is
 the opened body's reading at the full depth. -/
-theorem denoteMeta_openPis {acval : Name → (Name → Nat) → AnnotTerm} {env : Env}
-    {φ : Name → Nat} :
-    ∀ (n : Nat) {d : Nat} {e : Expr} {fvs : List Expr} {o : Expr}
+theorem denoteMeta_openPis {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+    {φ : LevelParam → Nat} :
+    ∀ (n : Nat) {d : Nat} {e : Expr md} {fvs : List (Expr md)} {o : Expr md}
       {ea : AnnotTerm},
       openPisAtFvars n e d = some (fvs, o) →
       denoteMeta acval env φ d e = some ea →
@@ -159,7 +159,7 @@ theorem denoteMeta_openPis {acval : Name → (Name → Nat) → AnnotTerm} {env 
         stripPisAV n ea = some (pps, b) ∧
         denoteMeta acval env φ (d + n) o = some b ∧
         pps.length = n ∧
-        ∀ (i : Nat) (x : Expr), fvs[i]? = some x →
+        ∀ (i : Nat) (x : Expr md), fvs[i]? = some x →
           ∃ p, pps[i]? = some p ∧ p.1 = 0 ∧
             denoteMeta acval env φ (d + i) x.fvarTypeD = some p.2.2
   | 0, d, e, fvs, o, ea, hop, hden => by
@@ -195,7 +195,7 @@ theorem denoteMeta_openPis {acval : Name → (Name → Nat) → AnnotTerm} {env 
               by rw [show d + (i + 1) = d + 1 + i from by omega]; exact hpd⟩
       · exact nomatch hop
     | .bvar _, hop | .fvar _ _, hop | .sort _, hop | .const _ _, hop
-    | .app _ _, hop | .lam _ _ _, hop | .letE _ _ _, hop | .lit _, hop
+    | .app _ _, hop | .lam _ _ _, hop | .letE _ _ _ _, hop | .lit _, hop
     | .proj _ _ _, hop =>
       simp [openPisAtFvars] at hop
 

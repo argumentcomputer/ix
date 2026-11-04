@@ -47,6 +47,13 @@ const BODY_LEAF: u8 = 0x00;
 const BODY_PADDING: u8 = 0x01;
 const BODY_NODE: u8 = 0x02;
 
+/// The deepest tree a reader accepts, in nodes on a path. A canonical tree is
+/// logarithmic in its leaves and joins add a level each, so real trees stay far
+/// below this; the bound keeps the decoder and every recursive walk of a
+/// decoded tree (and its drop) shallow. Lean's reader (`AssumptionTree.maxDepth`)
+/// uses the same.
+pub const MAX_DEPTH: usize = 4096;
+
 /// A merkle tree over `Address` leaves with explicit shape.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum AssumptionTree {
@@ -210,10 +217,11 @@ impl AssumptionTree {
         tag.flag, tag.value,
       ));
     }
-    Self::get_body(buf)
+    Self::get_body(buf, MAX_DEPTH)
   }
 
-  fn get_body(buf: &mut &[u8]) -> Result<Self, String> {
+  /// A body with at most `depth` nodes on any path.
+  fn get_body(buf: &mut &[u8], depth: usize) -> Result<Self, String> {
     let (tag, rest) =
       buf.split_first().ok_or("AssumptionTree: EOF reading body tag")?;
     *buf = rest;
@@ -233,8 +241,11 @@ impl AssumptionTree {
       },
       BODY_PADDING => Ok(AssumptionTree::Padding),
       BODY_NODE => {
-        let l = Self::get_body(buf)?;
-        let r = Self::get_body(buf)?;
+        let depth = depth.checked_sub(1).ok_or_else(|| {
+          format!("AssumptionTree: deeper than {MAX_DEPTH} levels")
+        })?;
+        let l = Self::get_body(buf, depth)?;
+        let r = Self::get_body(buf, depth)?;
         Ok(AssumptionTree::Node(Box::new(l), Box::new(r)))
       },
       b => Err(format!("AssumptionTree: invalid body tag 0x{:02X}", b)),

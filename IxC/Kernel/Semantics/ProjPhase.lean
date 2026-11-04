@@ -29,39 +29,39 @@ open Ix.Kernel.Term Ix.Kernel.Verify
 model values, and every installed projection function carries its
 `_model.proj_j`'s.  These three conjuncts are `projFwd`'s three
 cases. -/
-def ProjPhaseInvS (T ctorName : Name) (nF : Nat) (env' : Env)
-    (cval : TConstVal) : Prop :=
+def ProjPhaseInvS (T ctorName : Key md) (nF : Nat) (env' : Env md)
+    (cval : TConstVal md) : Prop :=
   (∀ ci, env'.find? T = some ci →
     ∃ cvm mval hmcvm,
-      env'.find? (T.str "_model") = some (.defnInfo cvm mval hmcvm) ∧
+      env'.find? (auxKey T .model) = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
-      ∀ ψ : Name → Nat, cval T ψ = cval (T.str "_model") ψ) ∧
+      ∀ ψ : LevelParam → Nat, cval T ψ = cval (auxKey T .model) ψ) ∧
   (∀ ci, env'.find? ctorName = some ci →
     ∃ cvm mval hmcvm,
-      env'.find? (ctorName.str "_model")
+      env'.find? (auxKey ctorName .model)
         = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
-      ∀ ψ : Name → Nat,
-        cval ctorName ψ = cval (ctorName.str "_model") ψ) ∧
+      ∀ ψ : LevelParam → Nat,
+        cval ctorName ψ = cval (auxKey ctorName .model) ψ) ∧
   (∀ j, j < nF → ∀ ci, env'.find? (projFnName T j) = some ci →
     ∃ cvm mval hmcvm,
       env'.find? (projModelName T j)
         = some (.defnInfo cvm mval hmcvm) ∧
       cvm.levelParams = ci.toConstantVal.levelParams ∧
-      ∀ ψ : Name → Nat,
+      ∀ ψ : LevelParam → Nat,
         cval (projFnName T j) ψ = cval (projModelName T j) ψ)
 
 /-- The projection renaming, pruned to the stored names, is sound at
 the phase invariant.  Its three cases *are* the invariant's three
 conjuncts. -/
-theorem projFwd_renameOkT {T ctorName : Name} {nF : Nat} {env' : Env}
-    {cval : TConstVal} (hinv : ProjPhaseInvS T ctorName nF env' cval) :
+theorem projFwd_renameOkT {T ctorName : Key md} {nF : Nat} {env' : Env md}
+    {cval : TConstVal md} (hinv : ProjPhaseInvS T ctorName nF env' cval) :
     RenameOkT cval env' (fun n => if (env'.find? n).isSome = true then
       projFwd T ctorName nF n else n) := by
   have hfound : ∀ n ci₂, env'.find? n = some ci₂ →
       (∃ ci', env'.find? (projFwd T ctorName nF n) = some ci' ∧
         ci'.toConstantVal.levelParams = ci₂.toConstantVal.levelParams) ∧
-      (∀ ψ : Name → Nat,
+      (∀ ψ : LevelParam → Nat,
         cval (projFwd T ctorName nF n) ψ = cval n ψ) := by
     intro n ci₂ hf₂
     unfold projFwd
@@ -105,10 +105,10 @@ theorem projFwd_renameOkT {T ctorName : Name} {nF : Nat} {env' : Env}
     dsimp only
     cases hf₂ : env'.find? n with
     | none =>
-      rw [if_neg (show ¬(none : Option ConstantInfo).isSome = true
+      rw [if_neg (show ¬(none : Option (ConstantInfo md)).isSome = true
         from fun hx => nomatch hx)]
     | some ci₂ =>
-      rw [if_pos (show (some ci₂ : Option ConstantInfo).isSome = true
+      rw [if_pos (show (some ci₂ : Option (ConstantInfo md)).isSome = true
         from rfl)]
       exact (hfound n ci₂ hf₂).2 ψ
 

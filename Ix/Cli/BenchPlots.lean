@@ -51,11 +51,11 @@ def workloadOf (testbed : String) : String :=
     nicer name here. -/
 def plotTitle (workload measure : String) : String :=
   match workload, measure with
-  | "ix-compile", "compile-time"         => "Ix Compile Time"
-  | "ix-compile", "throughput"           => "Ix Compile Throughput"
-  | "ix-compile", "peak-rss"             => "Ix Compile Peak RAM Usage"
-  | "ix-compile", "file-size"            => "Ix Environment Size"
-  | "ix-compile", "constants"            => "Ix Input Constants"
+  | "ix-compile-certified", "compile-time" => "Ix Compile Time"
+  | "ix-compile-certified", "throughput"   => "Ix Compile Throughput"
+  | "ix-compile-certified", "peak-rss"     => "Ix Compile Peak RAM Usage"
+  | "ix-compile-certified", "file-size"    => "Ix Environment Size"
+  | "ix-compile-certified", "constants"    => "Ix Input Constants"
   | "ix-decompile", "decompile-time"     => "Ix Decompile Time"
   | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
@@ -142,7 +142,7 @@ def unitsFor (slug : String) : Option String :=
 /-- Dashboard group order (compile first, then the aiur pipeline,
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile", "ix-decompile", "aiur", "ooc-check"]
+  ["ix-compile-certified", "ix-decompile", "aiur", "ooc-check"]
 
 structure PlotSpec where
   testbed : String
@@ -224,11 +224,15 @@ def findUuid (items : Array Json) (key val : String) : Option String :=
   items.findSome? fun it =>
     if objStr it key == some val then objStr it "uuid" else none
 
-/-- Historical Warp and current testbeds share a plot as separate series,
-    so changing benchmark hardware preserves the visible history. -/
+/-- Historical and current testbeds share a plot as separate series, so
+    changing benchmark hardware or compiler preserves the visible history.
+    Alert baselines still use only the registry's current testbed. -/
 def testbedsForPlot (testbeds : Array Json) (workload : String) : Array String :=
-  let slugs := #[s!"{workload}-x64-32x"] ++
-    BenchCmd.benchmarkMachines.toArray.map (BenchCmd.testbedOnMachine workload)
+  let workloads := if workload == "ix-compile-certified"
+    then #[workload, "ix-compile"] else #[workload]
+  let slugs := workloads.flatMap fun w =>
+    #[s!"{w}-x64-32x"] ++
+      BenchCmd.benchmarkMachines.toArray.map (BenchCmd.testbedOnMachine w)
   slugs.filterMap (findUuid testbeds "slug" ·)
 
 /-! ## Sync -/

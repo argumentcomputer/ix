@@ -39,7 +39,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level PropWhen
+open Ix.Kernel (Env Expr Key Level PropWhen
   natLitSupported strLitSupported)
 
 /-- **`denoteMeta` is stable under environment extension**, stated.
@@ -48,22 +48,22 @@ open Ix.Kernel (Env Expr Name Level PropWhen
 An **equation**, not an implication, for the reason the original is
 one: an install must not be able to assume silently that an
 annotation exists on one side and not the other. -/
-@[expose] def DenotePEnvExtend (env₀ env : Env)
-    (acval : Name → (Name → Nat) → AnnotTerm) (φ : Name → Nat) : Prop :=
-  ∀ (d : Nat) (e : Expr), ConstsBound env₀ e →
+@[expose] def DenotePEnvExtend (env₀ env : Env md)
+    (acval : Key md → (LevelParam → Nat) → AnnotTerm) (φ : LevelParam → Nat) : Prop :=
+  ∀ (d : Nat) (e : Expr md), ConstsBound env₀ e →
     denoteMeta acval env₀ φ d e = denoteMeta acval env φ d e
 
 /-- **`DenotePEnvExtend`, discharged** — from `FindPreserved` and
 `LitGuardsAgree` alone.  See the module docstring for the dropped
 `SortAgree`. -/
-theorem denoteMeta_envExtend {env₀ env : Env}
-    {acval : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat}
+theorem denoteMeta_envExtend {env₀ env : Env md}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     (hF : FindPreserved env₀ env) (hG : LitGuardsAgree env₀ env)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key md) (i : Nat),
       env₀.findProj? sn i = none → env.findProj? sn i = none) :
     DenotePEnvExtend env₀ env acval φ := by
   -- a preserved lookup carries its entry across unchanged
-  have hmono : ∀ (sn : Name) (i : Nat) (entry : Ix.Kernel.ProjEntry),
+  have hmono : ∀ (sn : Key md) (i : Nat) (entry : Ix.Kernel.ProjEntry md),
       env₀.findProj? sn i = some entry →
       env.findProj? sn i = some entry := by
     intro sn i entry h
@@ -146,7 +146,7 @@ theorem denoteMeta_envExtend {env₀ env : Env}
     | forallE ty b m => exact absurd rfl (hpi ty b m)
     | lam ty b m => exact absurd rfl (hlam ty b m)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with
@@ -165,27 +165,27 @@ forward — which is the only direction the harvests use for their
 subjects, whose acceptance guaranteed prefix-supported literals. -/
 
 /-- The literal guards are monotone across the extension. -/
-@[expose] def LitGuardsMono (env₀ env : Env) : Prop :=
+@[expose] def LitGuardsMono (env₀ env : Env md) : Prop :=
   (natLitSupported env₀ = true → natLitSupported env = true) ∧
   (strLitSupported env₀ = true → strLitSupported env = true)
 
 /-- Free at every fresh cons, of any kind. -/
-theorem litGuardsMono_cons {env : Env} {c₀ : Ix.Kernel.ConstantInfo}
+theorem litGuardsMono_cons {env : Env md} {c₀ : Ix.Kernel.ConstantInfo md}
     (hfresh : env.find? c₀.name = none) :
     LitGuardsMono env ⟨c₀ :: env.consts⟩ :=
   ⟨natLitSupported_cons hfresh, strLitSupported_cons hfresh⟩
 
 /-- **The monotone crossing**: a successful prefix reading is
 reproduced verbatim at the extension. -/
-theorem denoteMeta_envExtend_mono {env₀ env : Env}
-    {acval : Name → (Name → Nat) → AnnotTerm} {φ : Name → Nat}
+theorem denoteMeta_envExtend_mono {env₀ env : Env md}
+    {acval : Key md → (LevelParam → Nat) → AnnotTerm} {φ : LevelParam → Nat}
     (hF : FindPreserved env₀ env) (hG : LitGuardsMono env₀ env)
-    (hproj : ∀ (sn : Name) (i : Nat),
+    (hproj : ∀ (sn : Key md) (i : Nat),
       env₀.findProj? sn i = none → env.findProj? sn i = none) :
-    ∀ (d : Nat) (e : Expr), ConstsBound env₀ e →
+    ∀ (d : Nat) (e : Expr md), ConstsBound env₀ e →
       ∀ {ea : AnnotTerm}, denoteMeta acval env₀ φ d e = some ea →
         denoteMeta acval env φ d e = some ea := by
-  have hmono : ∀ (sn : Name) (i : Nat) (entry : Ix.Kernel.ProjEntry),
+  have hmono : ∀ (sn : Key md) (i : Nat) (entry : Ix.Kernel.ProjEntry md),
       env₀.findProj? sn i = some entry →
       env.findProj? sn i = some entry := by
     intro sn i entry h
@@ -279,7 +279,7 @@ theorem denoteMeta_envExtend_mono {env₀ env : Env}
     | forallE ty b m => exact absurd rfl (hpi ty b m)
     | lam ty b m => exact absurd rfl (hlam ty b m)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with

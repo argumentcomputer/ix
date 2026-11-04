@@ -75,7 +75,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let ExprData::App(f, _, _) = prefixes[i].data() else {
         unreachable!("only application prefixes were collected")
       };
-      let (dom, cod) = if let ExprData::All(_, _, dom, cod, _) = ty.data() {
+      let (dom, cod) = if let ExprData::All(_, _, _, _, dom, cod, _) = ty.data()
+      {
         let dom =
           instantiate_pending(&mut self.env.intern, dom, &args[i + 1..end]);
         (dom, cod.clone())

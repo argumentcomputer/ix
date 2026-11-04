@@ -180,21 +180,21 @@ theorem canonicalTiered_format {layout : ShareLayout} {limits : Limits} {ex : Ex
 
 /-- `canonicalSharingTiered` (Share-free roots): the output is in the format
 domain. -/
-theorem canonicalSharingTiered_format {layout : ShareLayout} {roots : Array Ixon.Expr}
+theorem Reference.canonicalSharingTiered_format {layout : ShareLayout} {roots : Array Ixon.Expr}
     {limits : Limits} {r : TieredSharingResult}
-    (h : canonicalSharingTiered layout roots limits = .ok r) :
+    (h : Exact.Reference.canonicalSharingTiered layout roots limits = .ok r) :
     FormatOK r.result.sharing r.result.roots := by
-  unfold canonicalSharingTiered at h
+  unfold Exact.Reference.canonicalSharingTiered at h
   obtain ⟨ex, -, h⟩ := bind_eq_ok h
   exact canonicalTiered_format h
 
 /-- `canonicalSharingTieredTable` (roots with an existing table): the output
 is in the format domain. -/
-theorem canonicalSharingTieredTable_format {layout : ShareLayout}
+theorem Reference.canonicalSharingTieredTable_format {layout : ShareLayout}
     {sharing roots : Array Ixon.Expr} {limits : Limits} {r : TieredSharingResult}
-    (h : canonicalSharingTieredTable layout sharing roots limits = .ok r) :
+    (h : Exact.Reference.canonicalSharingTieredTable layout sharing roots limits = .ok r) :
     FormatOK r.result.sharing r.result.roots := by
-  unfold canonicalSharingTieredTable at h
+  unfold Exact.Reference.canonicalSharingTieredTable at h
   obtain ⟨ex, -, h⟩ := bind_eq_ok h
   exact canonicalTiered_format h
 
@@ -258,22 +258,22 @@ theorem canonicalTiered_serialized {limits : Limits} {ex : Expanded} {r : Tiered
 length `canonicalSharingTiered` reports for its output (`variableBytes`, and
 the layout price `modelBytes`) is the serialized length of the output: the
 table count and every entry and root as the wire codec writes them. -/
-theorem canonicalSharingTiered_serialized {roots : Array Ixon.Expr} {limits : Limits}
-    {r : TieredSharingResult} (h : canonicalSharingTiered .tagN roots limits = .ok r) :
+theorem Reference.canonicalSharingTiered_serialized {roots : Array Ixon.Expr} {limits : Limits}
+    {r : TieredSharingResult} (h : Exact.Reference.canonicalSharingTiered .tagN roots limits = .ok r) :
     r.result.variableBytes = tag0Size r.result.sharing.size +
         (r.result.sharing ++ r.result.roots).foldl (fun acc e => acc + (Ixon.serExpr e).size) 0 ∧
       r.result.modelBytes = r.result.variableBytes := by
-  unfold canonicalSharingTiered at h
+  unfold Exact.Reference.canonicalSharingTiered at h
   obtain ⟨ex, -, h⟩ := bind_eq_ok h
   exact canonicalTiered_serialized h
 
 /-- `canonicalSharingTiered_serialized` for roots with an existing table. -/
-theorem canonicalSharingTieredTable_serialized {sharing roots : Array Ixon.Expr} {limits : Limits}
-    {r : TieredSharingResult} (h : canonicalSharingTieredTable .tagN sharing roots limits = .ok r) :
+theorem Reference.canonicalSharingTieredTable_serialized {sharing roots : Array Ixon.Expr} {limits : Limits}
+    {r : TieredSharingResult} (h : Exact.Reference.canonicalSharingTieredTable .tagN sharing roots limits = .ok r) :
     r.result.variableBytes = tag0Size r.result.sharing.size +
         (r.result.sharing ++ r.result.roots).foldl (fun acc e => acc + (Ixon.serExpr e).size) 0 ∧
       r.result.modelBytes = r.result.variableBytes := by
-  unfold canonicalSharingTieredTable at h
+  unfold Exact.Reference.canonicalSharingTieredTable at h
   obtain ⟨ex, -, h⟩ := bind_eq_ok h
   exact canonicalTiered_serialized h
 

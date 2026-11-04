@@ -27,7 +27,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory Ix.Kernel.SetTheory.Tower
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name Level ConstantInfo ConstantVal BinderMeta)
+open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal BinderMeta)
 
 universe w
 
@@ -38,8 +38,8 @@ variable {V : Type w} [SetTheory V]
 omit [SetTheory V] in
 /-- Instantiating a variable-free term above an index leaves the
 lower indices' occurrences alone. -/
-theorem hasLooseBVar_instantiate1_lt {v : Expr} (hv : ∀ i, v.hasLooseBVar i = false) :
-    ∀ (e : Expr) (i k : Nat), i < k →
+theorem hasLooseBVar_instantiate1_lt {v : Expr md} (hv : ∀ i, v.hasLooseBVar i = false) :
+    ∀ (e : Expr md) (i k : Nat), i < k →
       (e.instantiate1 v k).hasLooseBVar i = e.hasLooseBVar i := by
   intro e
   induction e with
@@ -71,7 +71,7 @@ theorem hasLooseBVar_instantiate1_lt {v : Expr} (hv : ∀ i, v.hasLooseBVar i = 
   | forallE ty b _ ihty ihb =>
     intro i k hik
     simp only [Expr.instantiate1, Expr.hasLooseBVar, ihty i k hik, ihb (i + 1) (k + 1) (by omega)]
-  | letE t v' b iht ihv ihb =>
+  | letE t v' b _ iht ihv ihb =>
     intro i k hik
     simp only [Expr.instantiate1, Expr.hasLooseBVar, iht i k hik, ihv i k hik,
       ihb (i + 1) (k + 1) (by omega)]
@@ -82,7 +82,7 @@ theorem hasLooseBVar_instantiate1_lt {v : Expr} (hv : ∀ i, v.hasLooseBVar i = 
 omit [SetTheory V] in
 /-- Instantiating an absent variable introduces no leaf. -/
 theorem fvarLeaves_instantiate1_of_not_hasLooseBVar :
-    ∀ (e v : Expr) (k : Nat), e.hasLooseBVar k = false →
+    ∀ (e v : Expr md) (k : Nat), e.hasLooseBVar k = false →
       ∀ l, l ∈ (e.instantiate1 v k).fvarLeaves → l ∈ e.fvarLeaves := by
   intro e
   induction e with
@@ -117,7 +117,7 @@ theorem fvarLeaves_instantiate1_of_not_hasLooseBVar :
     rcases hl with hl | hl
     · exact Or.inl (ihty v k hk.1 l hl)
     · exact Or.inr (ihb v (k + 1) hk.2 l hl)
-  | letE t v' b iht ihv ihb =>
+  | letE t v' b _ iht ihv ihb =>
     intro v k hk l hl
     simp only [Expr.hasLooseBVar, Bool.or_eq_false_iff] at hk
     simp only [Expr.instantiate1, Expr.fvarLeaves, List.mem_append] at hl ⊢
@@ -132,7 +132,7 @@ theorem fvarLeaves_instantiate1_of_not_hasLooseBVar :
     exact ihe v k hk l hl
 
 omit [SetTheory V] in
-theorem fvar_hasLooseBVar (idx : Nat) (ty : Expr) (i : Nat) :
+theorem fvar_hasLooseBVar (idx : Nat) (ty : Expr md) (i : Nat) :
     (Expr.fvar idx ty).hasLooseBVar i = false := rfl
 
 omit [SetTheory V] in
@@ -140,8 +140,8 @@ omit [SetTheory V] in
 after binder `m` does not mention it, no later opener's annotation and
 not the opened body carries the `m`-th opener as a leaf. -/
 theorem openPisAtFvars_leaf_free :
-    ∀ (n : Nat) {e : Expr} {d : Nat} {fvs : List Expr} {o : Expr} (m : Nat)
-      {bs : List (Expr × BinderMeta)} {rest : Expr},
+    ∀ (n : Nat) {e : Expr md} {d : Nat} {fvs : List (Expr md)} {o : Expr md} (m : Nat)
+      {bs : List (Expr md × BinderMeta)} {rest : Expr md},
       openPisAtFvars n e d = some (fvs, o) → m < n →
       e.stripPis (m + 1) = some (bs, rest) → rest.hasLooseBVar 0 = false →
       (∀ l ∈ e.fvarLeaves, l.1 ≠ d + m) →
@@ -224,7 +224,7 @@ theorem openPisAtFvars_leaf_free :
             omega
       · exact nomatch hop
     | .bvar _, hop, _ | .fvar _ _, hop, _ | .sort _, hop, _ | .const _ _, hop, _
-    | .app _ _, hop, _ | .lam _ _ _, hop, _ | .letE _ _ _, hop, _ | .lit _, hop, _
+    | .app _ _, hop, _ | .lam _ _ _, hop, _ | .letE _ _ _ _, hop, _ | .lit _, hop, _
     | .proj _ _ _, hop, _ =>
       simp [openPisAtFvars] at hop
 
@@ -243,8 +243,8 @@ theorem natLitAV_liftN {za sa : AnnotTerm} {k : Nat} (hz : za.liftN 1 k = za)
 without the `q`-th variable as a leaf reads, at depth `d`, as a
 reading lifted over index `d - 1 - q` — the slot that variable would
 read as. -/
-theorem denoteMeta_liftN_of_leaf_free {env : Env} (m : EnvModel V env) {φ : Name → Nat} :
-    ∀ (d : Nat) (e : Expr), Expr.WScoped d e →
+theorem denoteMeta_liftN_of_leaf_free {env : Env md} (m : EnvModel V env) {φ : LevelParam → Nat} :
+    ∀ (d : Nat) (e : Expr md), Expr.WScoped d e →
       ∀ {q : Nat}, q < d → (∀ l ∈ e.fvarLeaves, l.1 ≠ q) →
       ∀ {ea : AnnotTerm}, denoteMeta m.acval env φ d e = some ea →
       ∃ X : AnnotTerm, ea = X.liftN 1 (d - 1 - q) := by
@@ -370,7 +370,7 @@ theorem denoteMeta_liftN_of_leaf_free {env : Env} (m : EnvModel V env) {φ : Nam
     | forallE ty b mb => exact absurd rfl (hpi ty b mb)
     | lam ty b mb => exact absurd rfl (hlam ty b mb)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with
@@ -526,7 +526,7 @@ prefix differ, the fitting value is not the point, so that field is
 not a proposition there, so (under the guard) no later field uses it,
 so the projected field is a lift over that slot. -/
 theorem free_of_diff {nP nF i : Nat} {ds : List (Nat × Nat × AnnotTerm)} {sorts : List Level}
-    {ψ : Name → Nat} {ρ' : Nat → V} {used : Nat → Bool}
+    {ψ : LevelParam → Nat} {ρ' : Nat → V} {used : Nat → Bool}
     (hlenDs : ds.length = nP + nF) (hi : i < nF)
     (hsorts : ∀ j, j < nF → ∀ as : List V,
       SpineFit ρ' (((ds.drop nP).map (·.2.2)).take j) as →
@@ -569,7 +569,7 @@ theorem spineFit_take_length {Fs : List AnnotTerm} {ρ : Nat → V} {as : List V
 omit [SetTheory V] in
 /-- The evaluated join over the used slots is zero exactly when the
 base and every used joined level are. -/
-theorem eval_foldl_max_if_zero_iff (ψ : Name → Nat) (used : Nat → Bool) (s : Nat → Level) :
+theorem eval_foldl_max_if_zero_iff (ψ : LevelParam → Nat) (used : Nat → Bool) (s : Nat → Level) :
     ∀ (l : List Nat) (s0 : Level),
       Level.eval ψ (l.foldl (fun acc j => if used j then Level.max acc (s j) else acc) s0) = 0 ↔
         Level.eval ψ s0 = 0 ∧ ∀ j ∈ l, used j = true → Level.eval ψ (s j) = 0

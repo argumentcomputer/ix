@@ -28,6 +28,64 @@ Sticky disks restore with provisioned snapshot initialization; `lazy-init`
 makes first reads of cached binaries and oleans slow enough to dominate jobs
 that only run them.
 
+## Test tiers
+
+`lake run check-source-docs` rejects retired compiler API names, numbered
+private work-queue labels and references to internal plan files in Lean,
+Rust and Markdown sources. It runs scanner controls on every invocation and
+uses no grandfather baseline. `lake lint` runs it after the strict module
+build and coverage checks.
+
+Every Lean test entry is registered once, with its tier, in
+`Tests/Main.lean` (the registry is `Tests/Registry.lean`). The tier says where
+the entry runs:
+
+| Tier | Where it runs | What it holds |
+| --- | --- | --- |
+| `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
+| `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
+| `ci:compile-pipeline` | a merge-tests partition | the Lean and Rust compilers against each other (input conversion, the reference graph and its condensation, serialization, decompilation, Lean's auxiliaries on closure-only environments) and the compilers' refusals |
+| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, checker-support grounding, packing, admission of selected targets, and the certified checker's pinned subjects and acceleration inputs |
+| `ci:compile`, `ci:decompile` | one merge-tests partition each | the whole test environment through the compiler, and back |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
+| `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
+| `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std, in process: the certified compile with its report checks against the pipeline and the Rust compiler, role binding and evidence, a reading premise on every inductive, and the admission hash |
+| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and the Rust comparison, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which the Rust kernel must check with every role of the default table admitted; and `ix validate-lean` fidelity |
+| `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
+
+The manual runners that prove through the production `ix_aggr` circuit,
+`aggregate-proof` and `aggregate-binding-reuse`, take minutes of recursion and
+about 190 GB, three quarters of a 32-CPU merge-tests runner's memory, so they
+stay manual. `binding-proof-cli` (`ci:cli`) runs
+`aggregate-binding-reuse`'s flow without its two aggregates: the binding proof,
+the shard proofs that assume it, their composition with it, and the refusals
+without it; the aggregation circuit's handling of the binding is tested in
+`ix-aggr` (primary).
+
+`aggregate-toolchains` is also manual: it proves the committed library fixtures
+from Lean 4.29.0, 4.33.1, 4.34.1 and 4.35.0 with one IxVM key, discharges each
+piece's binding assumptions, and joins their roots into one catalog root.
+It verifies that root against the catalog and checks refusals for missing
+members. Run `lake build ix`, then `lake test -- aggregate-toolchains`, with
+`zstd` available. Allow tens of minutes. `IX_TOOLCHAINS_MAX_RAM` sets the
+aggregate jobs' RAM budget in GiB (default 140); the shard and shard-proof
+commands use 64 GiB. The runner keeps its store and caches in a temporary
+home directory. Its registration and manual-run reason live in
+`Tests/Main.lean`; its full flow is in
+[`Tests/AggrToolchains.lean`](../Tests/AggrToolchains.lean).
+
+`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the three
+landing partitions. The registry's primary self-test, `ixtests-registry`,
+fails when a CI tier has no entry, when no workflow runs a CI tier (comments
+do not count), or when a workflow names a tier the registry does not define.
+It also fails when an entry of `required` in `Tests/Main.lean` is missing,
+registered twice or in another tier, and when that list names no entry of
+some tier that runs in CI; moving a required check to `manual` therefore
+means editing the list in the same change. The check of the workflows is
+textual: a step disabled by an `if:` still counts. A merge-tests partition
+must finish well within the merge queue's status-check timeout: split a tier
+into two jobs before it approaches it.
+
 ## Required checks
 
 The branch protection or ruleset for `main` must require these aggregate
@@ -54,6 +112,14 @@ an authorized `!merge-tests` comment. The pull-request-only stub publishes
 It never runs on `merge_group`, and merge-tests.yml never runs on
 `pull_request`, so each commit shows one `merge-gate / pass` check under the
 shared workflow name.
+
+The stub runs nothing: a green `merge-gate / pass` on a pull request says
+nothing about the merge-queue tiers, the certified kernel gate (the only job
+that builds the standalone `IxC` package with its audits, and the set-theory
+model) or Valgrind. They guard `main` only while `main` requires
+`merge-gate / pass` and every merge goes through the queue, which are
+repository settings these files cannot check. To run them on a pull request
+before queueing it, comment `!merge-tests`.
 
 `Report merge tests` runs only for authorized `!merge-tests` comments, after
 the gate finishes. It reports a pending Spot retry when the gate succeeds

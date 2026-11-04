@@ -571,16 +571,17 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.resetPeakTreeRss
       let (res, execSec) ← timed fun _ =>
         if skipDeps then
-          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          if useInterp then
-            compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
-          else
-            compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+          (IxVM.ClaimHarness.buildVerifyConst ixonEnv addr).bind fun witness =>
+            if useInterp then
+              compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
+            else
+              compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
         else if join then
           compiled.bytecode.shardCheckWithEnv funIdx envHandle
-            (singletonOwnedBlob addr) useInterp
+            (singletonOwnedBlob addr) useInterp (assumeBinding := true)
         else
           compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash useInterp
+            (assumeBinding := true)
       let execPeak ← TracingTexray.peakTreeRssBytes
       match res with
       | .error e =>
@@ -672,17 +673,18 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.resetPeakTreeRss
       let (proveRes, proveSec) ← timed fun _ =>
         if skipDeps then
-          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          let proveRes :=
-            if useInterp then
-              aiurSystem.prove funIdx witness.input witness.inputIOBuffer
-            else
-              aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
-          proveRes.map fun (claim, proof, ioBuf) =>
-            (claim, proof, ioBuf, (none : Option ByteArray))
+          (IxVM.ClaimHarness.buildVerifyConst ixonEnv addr).bind fun witness =>
+            let proveRes :=
+              if useInterp then
+                aiurSystem.prove funIdx witness.input witness.inputIOBuffer
+              else
+                aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
+            proveRes.map fun (claim, proof, ioBuf) =>
+              (claim, proof, ioBuf, (none : Option ByteArray))
         else if join || traceShards then
           match aiurSystem.shardProveWithEnv funIdx envHandle
-              (singletonOwnedBlob addr) maxRamBytes false traceShards with
+              (singletonOwnedBlob addr) maxRamBytes false traceShards
+              (assumeBinding := true) with
           | .error e => .error e
           | .ok result => match result.proof with
             | none =>
@@ -700,7 +702,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
               -- this benchmark never reads it after the proof is produced.
               .ok (claim, proof, default, some result.claimBytes)
         else
-          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp with
+          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp
+              (assumeBinding := true) with
           | .error e => .error e
           | .ok (claimBytes, proof, ioBuf) =>
             -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
@@ -819,6 +822,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
               | .ok (), some checkEnvClaimBytes =>
                 let (expectedClaim, trees) ← IO.ofExcept <|
                   IxVM.ClaimHarness.shardCheckEnvClaimTrees ixonEnv #[addr]
+                    (assumeBinding := true)
                 if Ix.Claim.ser expectedClaim != checkEnvClaimBytes then
                   throw <| IO.userError s!"join benchmark: native shard claim for \
                     {r.name} differs from host reconstruction"
@@ -863,10 +867,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let aggrVk := aggrSystem.vkBytes
     let allowed := Aggr.allowedBlob ixvmVk funIdx aggrVk aggrIdx
     let leftStatement : Aggr.CheckEnvTrees := {
+      ctx := left.statement.ctx
       subjects := left.statement.subjects
       assumptions := left.statement.assumptions
     }
     let rightStatement : Aggr.CheckEnvTrees := {
+      ctx := right.statement.ctx
       subjects := right.statement.subjects
       assumptions := right.statement.assumptions
     }

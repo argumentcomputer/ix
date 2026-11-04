@@ -105,11 +105,25 @@ structure IxesManifestView where
   measuredPeakBytes : Array Nat
   deriving BEq, Repr
 
-private partial def ixesAggregationTree : IxesP AggregationTree := do
-  match ← ixesU8 with
-  | 0 => pure (.leaf (← ixesU32).toNat)
-  | 1 => pure (.node (← ixesAggregationTree) (← ixesAggregationTree))
-  | tag => throw s!"ixes: invalid aggregation-tree tag {tag.toNat}"
+/-- The deepest aggregation tree a manifest may carry, in internal nodes on a
+path. A planner tree comes from recursive bisection, so its depth stays far below
+this; the bound keeps every recursive walk of a parsed tree shallow. The Rust
+reader (`AGG_TREE_MAX_DEPTH`, `crates/kernel/src/shard.rs`) uses the same. -/
+def ixesTreeMaxDepth : Nat := 4096
+
+/-- A preorder aggregation tree with at most `depth` internal nodes on any
+path. -/
+private def ixesAggregationTree : Nat → IxesP AggregationTree
+  | 0 => do
+    match ← ixesU8 with
+    | 0 => pure (.leaf (← ixesU32).toNat)
+    | 1 => throw s!"ixes: aggregation tree is deeper than {ixesTreeMaxDepth} levels"
+    | tag => throw s!"ixes: invalid aggregation-tree tag {tag.toNat}"
+  | depth + 1 => do
+    match ← ixesU8 with
+    | 0 => pure (.leaf (← ixesU32).toNat)
+    | 1 => pure (.node (← ixesAggregationTree depth) (← ixesAggregationTree depth))
+    | tag => throw s!"ixes: invalid aggregation-tree tag {tag.toNat}"
 
 private def validateAggregationTree (tree : AggregationTree)
     (numShards : Nat) : Except String Unit := do
@@ -170,7 +184,7 @@ def parseIxesManifest (bytes : ByteArray) : Except String IxesManifestView :=
       else
         match ← ixesU8 with
         | 0 => pure (AggregationTree.balancedRange 0 n.toNat)
-        | 1 => ixesAggregationTree
+        | 1 => ixesAggregationTree ixesTreeMaxDepth
         | tag => throw s!"ixes: invalid aggregation-tree presence tag {tag.toNat}"
     validateAggregationTree tree n.toNat
     let (buffer, position) ← get

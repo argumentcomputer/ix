@@ -24,11 +24,11 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (Env Expr Name)
+open Ix.Kernel (Env Expr Key)
 
 universe w
 
-variable {V : Type w} [SetTheory V] {env : Env} {φ : Name → Nat}
+variable {V : Type w} [SetTheory V] {env : Env md} {φ : LevelParam → Nat}
 
 /-- The slots the variables of `Q` read as at depth `d`. -/
 @[expose] def exclP (Q : Nat → Prop) (d : Nat) : Nat → Prop :=
@@ -84,8 +84,8 @@ theorem NoBVar_projAV {P : Nat → Prop} :
   | i + 1, e, h => NoBVar_projAV i (.snd e) h
 
 /-- **A leaf-free reading mentions none of the excluded slots.** -/
-theorem noBVar_of_leaf_free {env : Env} (m : EnvModel V env) {φ : Name → Nat} :
-    ∀ (d : Nat) (e : Expr), Expr.WScoped d e →
+theorem noBVar_of_leaf_free {env : Env md} (m : EnvModel V env) {φ : LevelParam → Nat} :
+    ∀ (d : Nat) (e : Expr md), Expr.WScoped d e →
       ∀ {Q : Nat → Prop}, (∀ q, Q q → q < d) → (∀ l ∈ e.fvarLeaves, ¬ Q l.1) →
       ∀ {ea : AnnotTerm}, denoteMeta m.acval env φ d e = some ea →
       NoBVar (exclP Q d) ea := by
@@ -209,7 +209,7 @@ theorem noBVar_of_leaf_free {env : Env} (m : EnvModel V env) {φ : Name → Nat}
     | forallE ty b mb => exact absurd rfl (hpi ty b mb)
     | lam ty b mb => exact absurd rfl (hlam ty b mb)
     | app f a => exact absurd rfl (happ f a)
-    | letE ty v b => exact absurd rfl (hlet ty v b)
+    | letE ty v b _ => exact absurd rfl (hlet ty v b _)
     | proj sn i e => exact absurd rfl (hproj sn i e)
     | lit l =>
       cases l with

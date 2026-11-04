@@ -2067,6 +2067,7 @@ dependencies = [
  "rayon",
  "rustc-hash",
  "smallvec",
+ "stacker",
 ]
 
 [[package]]

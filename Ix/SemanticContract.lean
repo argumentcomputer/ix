@@ -1,6 +1,7 @@
 module
 
 public import Ix.Ixon
+public import Ix.Compile.ExactKey
 
 /-!
 # Contracts inside the source expression pipeline
@@ -111,14 +112,14 @@ def Contract.lower (contract : Contract) (source : Ix.Expr) (compiled : Ixon.Exp
 
 /-- Inspect an entire source expression before rewrites can remove subterms. -/
 def inspect (top : Ix.Expr) : Except String Bool := do
-  let mut seen : Std.HashSet Ix.Expr := {}
+  let mut seen : Std.HashSet Ix.Compile.ExactKey.ExprKey := {}
   let mut stack := #[top]
   let mut annotated := false
   while !stack.isEmpty do
     let e := stack.back!
     stack := stack.pop
-    if seen.contains e then continue
-    seen := seen.insert e
+    if seen.contains ⟨e⟩ then continue
+    seen := seen.insert ⟨e⟩
     match e with
     | .app fn arg _ => stack := stack.push fn |>.push arg
     | .lam _ type body _ _ | .forallE _ type body _ _ =>
@@ -155,31 +156,6 @@ def Contract.ixMetadata (contract : Contract) : Array (Ix.Name × Ix.DataValue) 
   #[ (key, .ofNat 3),
      (Ix.Name.mkStr key "kind", .ofNat contract.kindCode),
      (Ix.Name.mkStr key "code", .ofNat contract.code) ]
-
-/-- Read-only presence scan used to reject optional structural rewrites that
-would remove contracts, including contracts hidden behind sharing. A `share`
-node met in index space `scope` is expanded by `resolve`, which returns the
-target and the index space the target's own `share` nodes are read in (the
-decompiler's primary/metadata share scopes). -/
-def containsIxon {σ ε : Type} [BEq σ] [Hashable σ] [Inhabited σ]
-    (resolve : σ → UInt64 → Except ε (Ixon.Expr × σ)) (scope : σ)
-    (top : Ixon.Expr) : Except ε Bool := do
-  let mut seen : Std.HashSet (Ixon.Expr × σ) := {}
-  let mut stack := #[(top, scope)]
-  while !stack.isEmpty do
-    let (e, s) := stack.back!
-    stack := stack.pop
-    if seen.contains (e, s) then continue
-    seen := seen.insert (e, s)
-    if (ofIxon? e).isSome then return true
-    match e with
-    | .share index => stack := stack.push (← resolve s index)
-    | .app f a => stack := stack.push (f, s) |>.push (a, s)
-    | .lam _ t b | .all _ _ t b => stack := stack.push (t, s) |>.push (b, s)
-    | .letE _ t v b => stack := stack.push (t, s) |>.push (v, s) |>.push (b, s)
-    | .prj _ _ v => stack := stack.push (v, s)
-    | _ => pure ()
-  return false
 
 end Ix.SemanticContract
 

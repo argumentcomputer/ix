@@ -20,7 +20,7 @@ P fold stores `denoteMeta`-numeraled leaves and so can never supply the
 denoteAnnot-currency fields, which the P surface never reads.)
 
 **The laws the fields are stated over live in `Model/Annot/Laws.lean`**
-since task #305 closing — `NatOps`, `DivMod`, `EqLaw`, `ReduceOps`, the
+since task #305 closing — `NatOps`, `DivMod`, `EqLaw`, the
 caps kit, the iota kit and the tower kit were in this file until then,
 and were moved out (unchanged, docstrings included) so that the rules
 tier's inputs can name them without importing the establishment
@@ -59,7 +59,7 @@ open Ix.Kernel.SetModel
 
 open Ix.Kernel.Term Ix.Kernel.Verify SetTheory
 open Ix.Kernel.Semantics (AnnotTerm)
-open Ix.Kernel (CheckMode Env Expr Name Level ConstantInfo ConstantVal
+open Ix.Kernel (CheckMode Env Expr Key Level ConstantInfo ConstantVal
   IndCaps projFnName RecRule)
 
 universe w
@@ -68,21 +68,21 @@ variable (V : Type w) [SetTheory V]
 
 /-- **The P-tier environment invariant, at one mode** (see the module
 docstring). -/
-structure EnvModelM (μ : CheckMode) (env : Env) where
+structure EnvModelM (μ : CheckMode) (env : Env md) where
   /-- the denoteAnnot-free environment carrier, contained (batch 8: the
   P fold stores `denoteMeta`-numeraled leaves, so it can never supply the
   denoteAnnot-currency fields `EnvModelUM` carries — and the P surface reads
   none of them) -/
   base2 : EnvModel V env
   /-- every leaf is bit-valid (`acval_wellDenoted`'s `AnnotValid` half) -/
-  acval_validV : ∀ (n : Name) (ψ : Name → Nat) (ρ : Nat → V),
+  acval_validV : ∀ (n : Key md) (ψ : LevelParam → Nat) (ρ : Nat → V),
     AnnotValid V ρ (base2.acval n ψ)
   /-- every stored type reads, at every ground assignment -/
-  type_reads : ∀ c ∈ env.consts, ∀ ψ : Name → Nat,
+  type_reads : ∀ c ∈ env.consts, ∀ ψ : LevelParam → Nat,
     ∃ ta : AnnotTerm,
       denoteMeta base2.acval env ψ 0 c.toConstantVal.type = some ta
   /-- the stored types' readings are graded -/
-  type_wellDenotedV : ∀ c ∈ env.consts, ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+  type_wellDenotedV : ∀ c ∈ env.consts, ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
     denoteMeta base2.acval env ψ 0 c.toConstantVal.type = some ta →
     ∀ ρ : Nat → V, WellDenotedV V ρ ta
   /-- stored constants inhabit their types' readings (task #175 S1:
@@ -91,7 +91,7 @@ structure EnvModelM (μ : CheckMode) (env : Env) where
   W4c-era `isTowerEntry` guard is gone; that a table is not a term is
   `inferTypeCore`'s own rejection of a `.const` naming one) -/
   mem_type : ∀ c ∈ env.consts,
-    ∀ (ψ : Name → Nat) (ta : AnnotTerm),
+    ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
     denoteMeta base2.acval env ψ 0 c.toConstantVal.type = some ta →
     ∀ ρ : Nat → V,
       interp V ρ (base2.acval c.name ψ) ∈ˢ interp V ρ ta
@@ -99,16 +99,16 @@ structure EnvModelM (μ : CheckMode) (env : Env) where
   leaf (existence — the fuel-free upgrade of `acval_defn`) -/
   defn_reads : AcvalDefnInst base2
   /-- the two `Nat`-literal head facts, at every assignment -/
-  nat_heads : ∀ φ : Name → Nat, NatHeads base2 φ
+  nat_heads : ∀ φ : LevelParam → Nat, NatHeads base2 φ
   /-- the structural-`Nat` recurrence laws at every assignment (the
   literal tier's supplier; established at the operations' own installs
   from the recorded runs — `Interp/NatEqsP.lean`) -/
-  nat_ops : ∀ φ : Name → Nat, NatOps base2 φ
+  nat_ops : ∀ φ : LevelParam → Nat, NatOps base2 φ
   /-- the pin-certified WF operations' guarded clauses at every
   assignment (the literal tier's other supplier; established at the
   operations' own installs from the recorded certificate runs —
   `Interp/DivModCertP.lean`) -/
-  div_mod : ∀ φ : Name → Nat, DivMod base2 φ
+  div_mod : ∀ φ : LevelParam → Nat, DivMod base2 φ
   /-- the pinned `Eq` spine's value and grading (an *environment law*,
   as `EnvS.eq_lawV` is: the `Eq` leaf is fixed by the basis install and
   by nothing else, so the supplier is the P basis install —
@@ -128,24 +128,18 @@ structure EnvModelM (μ : CheckMode) (env : Env) where
   else, so the supplier is `IndStepPB`).  Consumed by the ι rule's
   soundness (`Model/Rules/IotaSound.lean`, through
   `RulesInputs.rec_rules`) -/
-  rec_rules : ∀ φ : Name → Nat, RecRules base2 φ
-  /-- every stored compiler-trust opaque is the identity on its
-  element type (`EnvS.reduce_ops`'s mirror; an *environment law* for
-  the same reason `eq_law` is — the opaque's leaf is fixed by its own
-  install's identity certificate and by nothing else, so the supplier
-  is `harvestOpaque`.  Consumed by the `ofReduce*` axiom branch) -/
-  reduce_ops : ReduceOps base2
+  rec_rules : ∀ φ : LevelParam → Nat, RecRules base2 φ
   /-- the stored tower-backed projection entries' typing and iota
   laws (task #175 wiring W5; an *environment law* for the same reason
   `rec_rules` is — a direct structure's entries are fixed by its
   install and by nothing else, so the supplier is the direct install
   step.  Consumed by the `.proj` rows' tower branches) -/
-  tower_ok : ∀ φ : Name → Nat, TowerOk base2 φ
+  tower_ok : ∀ φ : LevelParam → Nat, TowerOk base2 φ
 
 namespace EnvModelM
 
 variable {V}
-variable {μ : CheckMode} {env : Env} {φ : Name → Nat}
+variable {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
 /-- The leaf bit-validity residue, read off the field. -/
 theorem acvalValid (m : EnvModelM V μ env) : AcvalValid m.base2 :=
@@ -202,7 +196,7 @@ Wall C step (e)) — `EnvS.toEnvFacts`'s P-side twin, and the last thing
 Nothing of the collapsed model is consulted, and the P lane's
 `checkDeclR_ofEnvRE` runs on this. -/
 def toEnvFacts {V : Type w} [SetTheory V] {μ : CheckMode}
-    {env : Env} (m : EnvModelM V μ env) : Ix.Kernel.Semantics.EnvFacts env where
+    {env : Env md} (m : EnvModelM V μ env) : Ix.Kernel.Semantics.EnvFacts env where
   cval := m.base2.cvalE
   cval_closed := m.base2.cval_closed
   wf := m.base2.wf
@@ -236,7 +230,7 @@ field is vacuous — no constants, guards false, and the empty leaf
 `.const .empty [0]` is bit-valid because a constant leaf carries no
 binder. -/
 @[expose] noncomputable def EnvModelM.empty (V : Type w) [SetTheory V]
-    (μ : CheckMode) : EnvModelM V μ Env.empty where
+    (μ : CheckMode) : EnvModelM (md := md) V μ Env.empty where
   base2 := EnvModel.empty
   acval_validV := fun _ _ _ => by
     show AnnotValid V _ (.const .empty [0])
@@ -266,9 +260,6 @@ binder. -/
   rec_rules := fun _ n _ _ _ _ hf => by
     rw [show Env.empty.find? n = none from rfl] at hf
     exact nomatch hf
-  reduce_ops := fun c _ cv hf => by
-    rw [show Env.empty.find? c = none from rfl] at hf
-    exact nomatch hf
   tower_ok := fun _ T i entry hf => by
     have : Env.empty.findProj? T i = none := rfl
     rw [this] at hf
@@ -277,7 +268,7 @@ binder. -/
 /-! ## The `Nat`-op guard law -/
 
 section
-variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env}
+variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md}
 
 /-- **The install fold's `Nat`-op invariant, in the form the literal
 tier reads it** (task #161 de-gating item B3, harvest site 37 / list
@@ -289,7 +280,7 @@ is carried by `NatOps`/`DivMod`, whose statement is exactly "stored
 as a `defnInfo` → guard ∧ the recurrences".  So the tier reads the
 guard off the environment, and nothing about the shapes changes.
 (from `Model/Steps/Nat.lean`, task #305 closing) -/
-@[expose] def NatOpGuardLaw (env : Env) : Prop :=
+@[expose] def NatOpGuardLaw (env : Env md) : Prop :=
   ∀ c, (c ∈ Ix.Kernel.natOpNames ∨ c ∈ Ix.Kernel.natDivModNames) →
     Ix.Kernel.natOpStored env c = true → Ix.Kernel.natOpGuard env c = true
 

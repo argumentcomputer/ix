@@ -12,7 +12,7 @@
 
   Two legs, both driving the real CLI binary in fresh subprocesses:
 
-  * fixture-class: `Tests/Ix/Compile/Mutual.lean` — the aux-gen
+  * fixture-class: `Tests/Ix/Compile/Mutual.lean` — the mutual
     fixture corpus, module-visible closure, seconds.
   * Batteries-class: `Benchmarks/Compile/CompileBatteries.lean` — a
     real library through the sub-workspace bootstrap path

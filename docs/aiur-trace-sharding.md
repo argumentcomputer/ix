@@ -698,9 +698,8 @@ refinements: Merkle authentication shrinks slightly per shard (pruned
 paths over smaller trees), and the per-proof fixed overhead
 (commitments, PoW, final polynomial, the two flag columns per memory
 circuit) is negligible at these sizes. K itself follows from the §7.1
-budget and must be re-derived once the device calibration exists. The
-FRI parameter bench in `HANDOFF-recursion-fri-params.md` (q=50-class
-recursion parameters) halves all of these numbers if adopted.
+budget and must be re-derived once the device calibration exists. Adopting
+q=50-class recursion FRI parameters halves all of these numbers.
 
 ## 11. Open questions
 
