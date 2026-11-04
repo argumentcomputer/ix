@@ -153,6 +153,17 @@ impl Program {
     self.0.executor
   }
 
+  /// The executor this program runs on: `interpreter`, or the name of the
+  /// linked native executor generated from exactly this program.
+  pub fn executor_name(&self) -> &'static str {
+    self.0.executor.name()
+  }
+
+  /// The fingerprint a native executor generated from this program carries.
+  pub fn native_fingerprint(&self) -> &str {
+    self.0.checked.native_fingerprint()
+  }
+
   /// The trace plan, built on first use and shared afterwards.
   pub fn plan(&self) -> Result<Arc<Plan>, String> {
     let mut slot =

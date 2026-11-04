@@ -57,98 +57,63 @@ The archives are built when native targets need them. Keeping Rust linkage on
 `Ix` keeps `ix_rs` out of the certified kernel's build.
 
 Every archive contains the formal Aiur prover library (`ix-prover`), which the
-`ix` CLI runs in process. Its generated native executors are compiled from the
-certified binary artifacts that `ix prepare` compiles, and compiling them needs a built
-`ix`, so the kernels cannot be a dependency of the first build. They are an
-optional feature instead (`formalNativeArtifacts`): a build without them runs
-every formal job on the interpreter, which produces identical records, and a
-kernel only ever runs for the artifact with exactly its program fingerprint,
-so a stale kernel is never used. `ix prepare` records the binary artifacts
-in `.lake/aiur/native-kernels.env`; the next `lake build ix` links their
-kernels. The artifacts' contents are inputs of the archive's trace. A
-selection that names legacy JSON artifacts is stale: it is ignored, or
-rejected under `IX_FORMAL_NATIVE=1`, until `ix prepare` replaces it.
+`ix` CLI runs in process. `ix_rs_net` also contains the native executors
+generated from the certified programs (`formal_generated`): before Cargo runs,
+`formal-codegen`, which links `ix_rs`, writes them as Rust source, and with
+CUDA the trace writers as CUDA source, to `.lake/build/formal-generated`,
+compiling the programs into the shared cache first when they are missing (once
+per machine and source revision; several minutes). An executor only ever runs
+for the program with exactly its fingerprint, so a stale one is never used.
 -/
 section FFI
-
-/-- The artifact variables the generated formal kernels are compiled from. -/
-def formalNativeVariables : Array String :=
-  #["AIUR_IXVM_ARTIFACT", "AIUR_VERIFIER_ARTIFACT", "AIUR_AGGREGATION_ARTIFACT"]
-
-/-- The artifacts to compile formal native kernels from, as environment
-assignments for Cargo: all three `AIUR_*_ARTIFACT` variables when set,
-otherwise the `VAR=path` lines `ix prepare` writes to
-`.lake/aiur/native-kernels.env`. `IX_FORMAL_NATIVE=0` builds without kernels;
-`IX_FORMAL_NATIVE=1` requires them. -/
-def formalNativeArtifacts (root : FilePath) : IO (Array (String × String)) := do
-  let mode ← IO.getEnv "IX_FORMAL_NATIVE"
-  if mode == some "0" then return #[]
-  let given ← formalNativeVariables.filterMapM fun var => do
-    return (← IO.getEnv var).map (var, ·)
-  let found ← if given.size == formalNativeVariables.size then pure given
-    else if !given.isEmpty then
-      throw <| IO.userError s!"set all of {formalNativeVariables} or none of them"
-    else
-      let manifest := root / ".lake" / "aiur" / "native-kernels.env"
-      if ← manifest.pathExists then
-        let lines := (← IO.FS.readFile manifest).splitOn "\n" |>.filter (!·.isEmpty)
-        let pairs := lines.filterMap fun line => match line.splitOn "=" with
-          | [var, path] => some (var, path)
-          | _ => none
-        pure <| formalNativeVariables.filterMap fun var => pairs.find? (·.1 == var)
-      else pure #[]
-  let complete := found.size == formalNativeVariables.size
-  let present ← found.allM fun (_, path) => FilePath.pathExists path
-  let binary := found.all fun (_, path) => FilePath.extension path == some "aiur"
-  if complete && present && binary then return found
-  if mode == some "1" then
-    throw <| IO.userError "IX_FORMAL_NATIVE=1 requires the binary formal artifacts; run `ix prepare`"
-  return #[]
 
 /-- Whether the environment variable `name` is `1`, `true` or `yes`. -/
 def enabled (name : String) : IO Bool :=
   return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
 
+/-- Whether the Rust archives are built with CUDA: IX_CUDA, or anything that
+implies it (IX_CUDA_TRACE_CODEGEN, IX_FORMAL_COMPILED_TRACE=1). -/
+def cudaEnabled : IO Bool := do
+  return (← enabled "IX_CUDA") || (← enabled "IX_CUDA_TRACE_CODEGEN") ||
+    (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1"
+
+/-- Whether `ix` links the native executors generated from the certified
+programs (`formal_generated`). -/
+def nativeExecutors : Bool := true
+
 /-- Rust feature selection shared by compilation and native runtime linkage.
-IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA; IX_CUDA_TRACE_CODEGEN
-enables generated trace kernels and implies CUDA. `formalNative` compiles
-the formal native kernels from `formalNativeArtifacts`;
-IX_FORMAL_COMPILED_TRACE=1 also compiles CUDA trace writers for the formal
-IxVM artifact (`AIUR_GPU_TRACE=compiled`), which implies CUDA and needs those
-artifacts. For `net` (the `ix` CLI), IX_PLONK and
+IX_NO_PAR=1 disables parallel; `cudaEnabled` enables CUDA;
+IX_CUDA_TRACE_CODEGEN enables generated trace kernels. `native` links the
+generated native executors (`formal_generated`), and with
+IX_FORMAL_COMPILED_TRACE=1 also the generated CUDA trace writers of formal
+IxVM (`AIUR_GPU_TRACE=compiled`). For `net` (the `ix` CLI), IX_PLONK and
 IX_GROTH16 add those final compression backends, which otherwise end at the
 recursive KZG proof; with CUDA, Groth16 links an installed ICICLE library. -/
-def cargoFeatures (testFfi : Bool := false) (net : Bool := false)
-    (formalNative : Bool := false) : IO (Array String) := do
+def cargoFeatures (testFfi : Bool := false) (net : Bool := false) (native : Bool := false) :
+    IO (Array String) := do
   let mut features := #[]
   if net && (← enabled "IX_PLONK") then features := features.push "plonk"
   if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
-  if formalNative then features := features.push "formal-native"
   if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
-  if ← enabled "IX_CUDA" then features := features.push "cuda"
+  if ← cudaEnabled then features := features.push "cuda"
   if ← enabled "IX_CUDA_TRACE_CODEGEN" then features := features.push "cuda-trace-codegen"
-  if (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1" then
-    if !formalNative then
-      throw <| IO.userError "IX_FORMAL_COMPILED_TRACE=1 requires the binary formal artifacts; run `ix prepare`"
-    features := features.push "formal-compiled-trace"
+  if native then
+    features := features.push "native-executors"
+    if (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1" then
+      features := features.push "formal-compiled-trace"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
   return features
 
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
-def cargoArgs (testFfi : Bool := false) (net : Bool := false) (formalNative : Bool := false) :
+def cargoArgs (testFfi : Bool := false) (net : Bool := false) (native : Bool := false) :
     IO (Array String) := do
-  let features ← cargoFeatures testFfi net formalNative
+  let features ← cargoFeatures testFfi net native
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
-
-/-- Formal native artifacts for Cargo; a variable outside the selection is
-cleared so an unrelated shell setting cannot leak into the build. -/
-def cargoEnv (env : Array (String × String)) : Array (String × Option String) :=
-  formalNativeVariables.map fun var => (var, (env.find? (·.1 == var)).map (·.2))
 
 /-- The shared libraries the build scripts report (`IX_RUNTIME_ARTIFACTS`):
 each `source` is copied to `lib/<path>`, keeping ICICLE's backend plugins at
@@ -195,7 +160,7 @@ A static archive does not carry its shared-library dependencies to Lean's
 linker, so with CUDA this is an `ld` script naming the archive together with
 the libraries the build scripts report. -/
 def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
-    (env : Array (String × String)) (before : Option (Job FilePath) := none) :
+    (before : Option (Job FilePath) := none) :
     FetchM (Job FilePath) := do
   let start := match before with
     | some before => before.map fun _ => ()
@@ -205,7 +170,6 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
       cmd := "cargo"
       args := args.push "--message-format=json-render-diagnostics"
       cwd := pkg.dir
-      env := cargoEnv env
     }
     unless result.stderr.isEmpty do logVerbose result.stderr
     let artifacts ← match cargoRuntimeArtifacts result.stdout with
@@ -230,21 +194,63 @@ def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
-  let env ← formalNativeArtifacts pkg.dir
-  buildRustStatic pkg (← cargoArgs (formalNative := !env.isEmpty)) "default" env
+  buildRustStatic pkg (← cargoArgs) "default"
 
 /-- Cargo feature variants run after the default build, since every
 selection writes Cargo's one release archive. -/
 target ix_rs_test pkg : FilePath := do
-  let env ← formalNativeArtifacts pkg.dir
-  buildRustStatic pkg (← cargoArgs (testFfi := true) (formalNative := !env.isEmpty)) "test" env
-    (some (← ix_rs.fetch))
+  buildRustStatic pkg (← cargoArgs (testFfi := true)) "test" (some (← ix_rs.fetch))
 
-/-- Build the Rust static lib with `net` for the `ix` CLI. -/
+/-- Every file of the certified programs' source bundles: each `.sources`
+manifest and the files it lists. -/
+def formalSources (root : FilePath) : IO (Array FilePath) := do
+  let mut files := #[]
+  for manifest in #["IxVM/IxVM/Program.sources", "MultiStark/MultiStark/Program.sources",
+      "MultiStark/MultiStark/Aggregate.sources"] do
+    let path := root / manifest
+    files := files.push path
+    for raw in (← IO.FS.readFile path).splitOn "\n" do
+      let line := raw.trimAscii.toString
+      unless line.isEmpty || line.startsWith "#" do
+        files := files.push ((path.parent.getD ".") / line)
+  return files
+
+/-- Writes the generated sources of the certified programs for
+`formal_generated`. It links `ix_rs`, which has no generated code. -/
+lean_exe «formal-codegen» where
+  root := `FormalCodegen
+  supportInterpreter := true
+
+/-- The generated sources of the certified programs in
+`.lake/build/formal-generated`: the native executors, and in a CUDA build
+(`cudaEnabled`) the trace writers. `formal-codegen` writes them, compiling
+programs missing from the shared cache first; it reruns only when it, the
+programs' sources or the CUDA selection changed, and rewrites only files whose
+contents changed. A CPU build removes any CUDA output. -/
+target formal_generated pkg : FilePath := do
+  let codegen ← «formal-codegen».fetch
+  let sources ← (← formalSources pkg.dir).mapM fun file => (inputTextFile file : SpawnM _)
+  let cuda ← cudaEnabled
+  let directory := pkg.buildDir / "formal-generated"
+  let deps := codegen.zipWith (fun exe _ => exe) (Job.collectArray sources)
+  buildFileAfterDep (directory / "inputs") deps (extraDepTrace := do
+      return .ofHash (pureHash cuda) s!"cuda: {cuda}") fun exe => do
+    proc {
+      cmd := exe.toString
+      args := #[directory.toString] ++ (if cuda then #["--cuda"] else #[])
+      cwd := pkg.dir
+      env := #[("IX_ROOT", some pkg.dir.toString)]
+    }
+    IO.FS.writeFile (directory / "inputs") s!"cuda {cuda}\n"
+
+/-- Build the Rust static lib with `net` for the `ix` CLI, with the native
+executors generated from the certified programs. -/
 target ix_rs_net pkg : FilePath := do
-  let env ← formalNativeArtifacts pkg.dir
-  buildRustStatic pkg (← cargoArgs (net := true) (formalNative := !env.isEmpty)) "net" env
-    (some (← ix_rs.fetch))
+  let before ← ix_rs.fetch
+  let before ← if nativeExecutors then
+      pure (before.zipWith (fun archive _ => archive) (← formal_generated.fetch))
+    else pure before
+  buildRustStatic pkg (← cargoArgs (net := true) (native := nativeExecutors)) "net" (some before)
 
 end FFI
 

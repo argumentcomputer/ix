@@ -79,6 +79,21 @@ opaque Program.save (program : @& Program) (path : @& String) (name compiler : @
 @[extern "rs_formal_program_identity"]
 opaque Program.identity (program : @& Program) : IO ByteArray
 
+/-- The executor `program` runs on (`interpreter`, or the linked native
+executor generated from exactly this program, such as `native-ixvm`) and
+the program's native fingerprint. -/
+@[extern "rs_formal_program_executor"]
+opaque Program.executor (program : @& Program) : IO (String × String)
+
+/-- The generated sources of the formal program `name` (`ixvm`, `verifier`
+or `aggregation`) that `lake build ix` compiles: its native executor, and
+with `cuda` its trace writers, as paths relative to the generated directory
+with their contents. `source` is the digest of the source bundle the program
+was compiled from. -/
+@[extern "rs_formal_program_codegen"]
+opaque Program.codegen (program : @& Program) (name : @& String) (source : @& ByteArray)
+  (cuda : Bool) : IO (Array (String × String))
+
 /-- Diagnostic: compare `program` with the JSON compiler artifact at `path`
 and with its own binary round trip. Returns the first difference, or an
 empty string when all three agree. -/
@@ -90,14 +105,21 @@ inductive Target where
   | ixvm | verifier | aggregation
   deriving BEq, Repr, Inhabited
 
+/-- One program for the linked compiler: its target, source bundle text and
+lookup key. -/
+structure CompileJob where
+  target : Target
+  source : String
+  key : ByteArray
+
 /-- The compiler linked into an executable: its identity, and a function
-that compiles a target's source bundle text into a registry under a lookup
-key, with the frontend's build taken from the checkout `root`. An
-executable that does not import `Ix.FormalCompiler` has none. -/
+that compiles targets' source bundle texts into a registry under their
+lookup keys, concurrently, with the frontend's build taken from the checkout
+`root`. An executable that does not import `Ix.FormalCompiler` has none. -/
 structure Compiler where
   /-- Lowercase hex digest of the compiler code linked into this executable. -/
   identity : String
-  compile : Registry → Target → (root source : String) → (key : ByteArray) → IO Program
+  compile : Registry → (root : String) → Array CompileJob → IO (Array Program)
 
 initialize compilerRef : IO.Ref (Option Compiler) ← IO.mkRef none
 
@@ -262,8 +284,8 @@ opaque System.prove (system : @& System) (request : @& Request) (output : @& Str
 @[extern "rs_formal_resources"]
 opaque resources : IO Resources
 
-/-- The executors linked into this build: `interpreter`, and the native
-kernels when built with them. -/
+/-- The executors linked into this build: `interpreter`, and the committed
+native executors. -/
 @[extern "rs_formal_executors"]
 opaque executors : IO (Array String)
 

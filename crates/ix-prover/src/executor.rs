@@ -1,7 +1,8 @@
-//! Executor selection. With feature `native`, a loaded artifact runs on the
-//! generated kernel compiled from exactly its program, if there is one;
-//! otherwise, or with `IX_PROVER_EXECUTOR=interpreter`, on the interpreter.
-//! Both produce identical records.
+//! Executor selection. With feature `native`, a loaded program runs on the
+//! native executor generated from exactly that program, if one is linked
+//! (`crates/formal-generated`); otherwise, or with
+//! `IX_PROVER_EXECUTOR=interpreter`, on the interpreter. Both produce
+//! identical records.
 use crate::Field;
 use aiur::{Execution, ExecutionError, hints::PreparedHints};
 use record_pool::RecordReservation;
@@ -15,7 +16,7 @@ pub enum Executor {
   Native(Kernel),
 }
 
-/// The generated kernels compiled into this prover.
+/// The generated native executors compiled into this prover.
 #[cfg(feature = "native")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kernel {
@@ -96,9 +97,9 @@ impl Kernel {
     use aiur::native::Kernel as _;
     let fingerprint = program.native_fingerprint();
     [
-      (ixvm_native::Ixvm::FINGERPRINT, Self::Ixvm),
-      (stark_verifier_native::Verifier::FINGERPRINT, Self::Verifier),
-      (stark_verifier_native::Aggregation::FINGERPRINT, Self::Aggregation),
+      (formal_generated::Ixvm::FINGERPRINT, Self::Ixvm),
+      (formal_generated::Verifier::FINGERPRINT, Self::Verifier),
+      (formal_generated::Aggregation::FINGERPRINT, Self::Aggregation),
     ]
     .into_iter()
     .find_map(|(k, kernel)| (k == fingerprint).then_some(kernel))
@@ -121,16 +122,15 @@ impl Kernel {
       Some(native.execute_reserved(entry, args, reservation))
     }
     match self {
-      Self::Ixvm => run::<ixvm_native::Ixvm>(hints, entry, args, reservation),
-      Self::Verifier => {
-        run::<stark_verifier_native::Verifier>(hints, entry, args, reservation)
+      Self::Ixvm => {
+        run::<formal_generated::Ixvm>(hints, entry, args, reservation)
       },
-      Self::Aggregation => run::<stark_verifier_native::Aggregation>(
-        hints,
-        entry,
-        args,
-        reservation,
-      ),
+      Self::Verifier => {
+        run::<formal_generated::Verifier>(hints, entry, args, reservation)
+      },
+      Self::Aggregation => {
+        run::<formal_generated::Aggregation>(hints, entry, args, reservation)
+      },
     }
   }
 }

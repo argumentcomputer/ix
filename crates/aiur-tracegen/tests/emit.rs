@@ -1,24 +1,24 @@
 //! Emission from the grouped fixture shared with `aiur`'s own tests.
 use aiur_tracegen::cuda::{Selection, emit};
 
-use aiur::artifact::{Metadata, Package};
+use aiur::trace::TraceArtifact;
 
 const FIXTURE: &str =
   concat!(env!("CARGO_MANIFEST_DIR"), "/../aiur/tests/fixtures/grouping.json");
 
-fn fixture() -> Package {
-  let (program, trace) =
-    aiur::artifact::from_json(&std::fs::read(FIXTURE).unwrap()).unwrap();
-  Package { program, trace, metadata: Metadata::default() }
+fn fixture() -> (aiur::Program, TraceArtifact) {
+  aiur::artifact::from_json(&std::fs::read(FIXTURE).unwrap()).unwrap()
 }
 
-fn encoded(package: &Package) -> Vec<u8> {
-  aiur::artifact::encode(package).unwrap()
+fn describe(
+  (program, trace): (aiur::Program, TraceArtifact),
+) -> aiur_tracegen::Described {
+  aiur_tracegen::describe(&program.check().unwrap(), trace).unwrap()
 }
 
 #[test]
 fn emits_supported_circuits_and_explains_the_rest() {
-  let artifact = aiur_tracegen::describe(&encoded(&fixture())).unwrap();
+  let artifact = describe(fixture());
   let emitted = emit(&artifact, &Selection::All, "fixture").unwrap();
   assert!(!emitted.circuits.is_empty());
   assert!(
@@ -53,31 +53,37 @@ fn emits_supported_circuits_and_explains_the_rest() {
 
 #[test]
 fn fingerprint_covers_plans_and_placement() {
-  let bytes = encoded(&fixture());
-  let original = aiur_tracegen::describe(&bytes).unwrap();
-  let mut package = fixture();
-  package.trace.groups.clear();
-  let ungrouped = aiur_tracegen::describe(&encoded(&package)).unwrap();
-  assert_ne!(original.fingerprint, ungrouped.fingerprint);
-  let mut package = fixture();
-  package.trace.functions[1].writes.reverse();
-  let reordered = aiur_tracegen::describe(&encoded(&package)).unwrap();
-  assert_ne!(original.fingerprint, reordered.fingerprint);
-  let mut package = fixture();
-  package.metadata.name = "renamed".into();
-  assert_eq!(
-    original.fingerprint,
-    aiur_tracegen::describe(&encoded(&package)).unwrap().fingerprint
-  );
-  assert_eq!(
-    original.fingerprint,
-    aiur_tracegen::describe(&bytes).unwrap().fingerprint
-  );
+  let original = describe(fixture());
+  let (program, mut trace) = fixture();
+  trace.groups.clear();
+  assert_ne!(original.fingerprint, describe((program, trace)).fingerprint);
+  let (program, mut trace) = fixture();
+  trace.functions[1].writes.reverse();
+  assert_ne!(original.fingerprint, describe((program, trace)).fingerprint);
+  assert_eq!(original.fingerprint, describe(fixture()).fingerprint);
 }
 
 #[test]
-fn rejects_json_input_with_a_conversion_hint() {
-  let error =
-    aiur_tracegen::describe_file(std::path::Path::new(FIXTURE)).err().unwrap();
-  assert!(error.contains("aiur-artifact convert"), "{error}");
+fn sources_carry_the_preamble_and_fingerprint() {
+  let described = describe(fixture());
+  let files =
+    aiur_tracegen::bundle::sources(&described, "fixture", "// Header.\n")
+      .unwrap();
+  let emitted = emit(&described, &Selection::All, "fixture").unwrap();
+  assert_eq!(files.len(), emitted.circuits.len() + 1);
+  let fingerprint =
+    format!("// Population fingerprint {}", described.fingerprint);
+  for (name, contents) in &files {
+    assert!(contents.starts_with("// Header.\n"), "{name}");
+    assert!(contents.lines().nth(1).unwrap().starts_with(&fingerprint));
+  }
+  let (_, binding) = files.last().unwrap();
+  assert!(binding.contains("pub static BUNDLE"));
+  for circuit in &emitted.circuits {
+    assert!(binding.contains(&circuit.symbol));
+  }
+  assert!(
+    aiur_tracegen::bundle::sources(&described, "fixture", "not a comment\n")
+      .is_err()
+  );
 }

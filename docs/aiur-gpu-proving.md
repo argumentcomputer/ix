@@ -16,21 +16,22 @@ described in [formal-aiur-unified-controller.md](formal-aiur-unified-controller.
 | Switch | What it compiles |
 |---|---|
 | `IX_CUDA=1` | The `cuda` feature: multi-stark's CUDA prover (device LDEs, Merkle trees, lookup and quotient kernels, sppark NTTs) and device trace population (`crates/aiur/cuda/population.cu`). Proofs are the same Goldilocks/BLAKE3 protocol the CPU verifies. |
-| `IX_FORMAL_COMPILED_TRACE=1` | The `formal-compiled-trace` feature: CUDA row writers compiled for the exported IxVM artifact (`AIUR_GPU_TRACE=compiled`). Implies `cuda` and needs the artifacts `ix prepare` exports. |
+| `IX_FORMAL_COMPILED_TRACE=1` | The `cuda` feature of `crates/formal-generated`: the CUDA row writers that `lake build ix` generates for IxVM (`AIUR_GPU_TRACE=compiled`; only IxVM's bundle is registered). Implies `cuda` and needs `nvcc`. |
 
 Build on a GPU host:
 
 ```sh
-ix prepare --cuda          # compile the IxVM, verifier and aggregation programs once per revision
 IX_CUDA=1 MULTI_STARK_CUDA_ARCHS=120 CFLAGS=-std=gnu17 lake build ix
 ```
 
-`ix prepare` records the artifacts in `.lake/aiur/native-kernels.env`; the
-next `lake build ix` compiles the native executors generated from them
-(see `formalNativeArtifacts` in `lakefile.lean`). Without them, execution
-runs on the interpreter, with identical records and proofs. `ix prepare
---cuda` also builds the CUDA one-shot `stark-verifier` host that catalog
-aggregation (`ix aggregate --ixc`) proves on.
+Before Cargo runs, `lake build ix` generates the native executors and, in
+a CUDA build (`cudaEnabled` in `lakefile.lean`), the CUDA trace writers
+into `.lake/build/formal-generated/`. Generation loads the three certified
+programs from the shared cache (`IX_AIUR_CACHE`, default
+`~/.ix/cache/aiur/`), compiling misses concurrently: about 7 minutes on the
+first build per machine, compiler and source revision. A linked executor
+whose fingerprint does not match the selected program is reported and that
+program runs on the interpreter, with identical records and proofs.
 
 `MULTI_STARK_CUDA_ARCHS` names the SM architecture (`120` is Blackwell,
 `80` the CI container's Ampere). `CFLAGS=-std=gnu17` is required with

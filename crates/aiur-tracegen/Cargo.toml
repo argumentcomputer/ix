@@ -5,14 +5,16 @@ edition.workspace = true
 license.workspace = true
 description = "Generated CUDA row writers for formal Aiur population plans"
 
-# CPU-only: emits CUDA source from an exported trace artifact and, from a
-# bundle crate's build script, compiles it with nvcc. Depending on this
-# crate never requires the CUDA toolkit; only `bundle::build` invokes nvcc.
+# CPU-only: emits CUDA source from a checked program's population plans
+# and, from a bundle crate's build script, compiles committed sources with
+# nvcc. Depending on this crate never requires the CUDA toolkit; only
+# `bundle::build` invokes nvcc.
 
 [dependencies]
 aiur = { path = "../aiur" }
 blake3 = { workspace = true }
-serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
 serde_json = { workspace = true }
 
 [lints]

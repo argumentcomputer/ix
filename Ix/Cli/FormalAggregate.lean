@@ -40,9 +40,9 @@ structure Context extends Keys where
   aggrSystem : FormalProver.System
 
 def context (p : Cli.Parsed) : IO Context := do
-  let registry ← FormalProver.Registry.new
-  let ixvmSystem ← (← FormalAiur.artifact p registry).system
-  let aggrSystem ← (← artifact p registry).system
+  let (ixvm, aggregation) ← FormalAiur.ixvmAndAggregation p (← FormalProver.Registry.new)
+  let ixvmSystem ← ixvm.system
+  let aggrSystem ← aggregation.system
   let ixvm ← identity ixvmSystem false
   let aggr ← identity aggrSystem true
   let allowed := Aggr.allowedBlob ixvm.key ixvm.index aggr.key aggr.index

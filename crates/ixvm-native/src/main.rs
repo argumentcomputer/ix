@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     aiur::artifact::read(std::path::Path::new(cli.get(2).ok_or(usage)?))?;
   let program = package.program.check_field::<Val>()?;
   if mode == "bind" {
-    program.prepare_hints(&[])?.bind_native::<ixvm_native::Ixvm>()?;
+    program.prepare_hints(&[])?.bind_native::<formal_generated::Ixvm>()?;
     let plan = program.native_plan();
     println!(
       "bound: {} functions, {} dispatch entries, fingerprint {}",
@@ -56,10 +56,10 @@ fn main() -> Result<(), Box<dyn Error>> {
   let args = program.field().decode(&invocation.args)?;
   let hints = ixvm::prepare_streams(&program, &invocation.streams)?;
   let start = Instant::now();
-  hints.bind_native::<ixvm_native::Ixvm>()?;
+  hints.bind_native::<formal_generated::Ixvm>()?;
   let first_bind = start.elapsed().as_secs_f64();
   let start = Instant::now();
-  let native = hints.bind_native::<ixvm_native::Ixvm>()?;
+  let native = hints.bind_native::<formal_generated::Ixvm>()?;
   let bind = start.elapsed().as_secs_f64();
   let (mut interpreted, mut generated) = (vec![], vec![]);
   let mut summary = None;
@@ -136,8 +136,9 @@ fn prove(
   let args = program.field().decode(&invocation.args)?;
   let hints = ixvm::prepare_streams(program, &invocation.streams)?;
   let interpreted = hints.execute(entry, args.clone())?;
-  let generated =
-    hints.bind_native::<ixvm_native::Ixvm>()?.execute(entry, args.clone())?;
+  let generated = hints
+    .bind_native::<formal_generated::Ixvm>()?
+    .execute(entry, args.clone())?;
   record_diff(&interpreted, &generated)?;
   // One plan for both: it depends on resident memory as well as the record.
   let batch = backend.plan_batch(&interpreted, &Options::default())?;
@@ -234,7 +235,7 @@ fn advice(program: &Program, input: &str) -> Result<(), Box<dyn Error>> {
   outcome_diff(&expected, &compact.execute(entry, args.clone()))
     .map_err(|e| format!("compact interpreter: {e}"))?;
   let compact_interpreted = start.elapsed().as_secs_f64();
-  let native = compact.bind_native::<ixvm_native::Ixvm>()?;
+  let native = compact.bind_native::<formal_generated::Ixvm>()?;
   let start = Instant::now();
   outcome_diff(&expected, &native.execute(entry, args))
     .map_err(|e| format!("compact native: {e}"))?;

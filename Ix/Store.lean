@@ -39,9 +39,12 @@ def storeDir : StoreIO FilePath := do
     IO.toEIO .ioError (IO.FS.createDirAll path)
   return path
 
-/-- `~/.ix/cache/<namespace>` holds wipeable, keyed indexes into the
-content-addressed store. Unlike `storeDir`, filenames here are caller-defined
-lookup keys and their contents must always be treated as untrusted hints. -/
+/-- `~/.ix/cache/<namespace>` holds wipeable, caller-keyed files outside the
+content-addressed store. Unlike `storeDir`, filenames here are
+caller-defined lookup keys, and each namespace's owner decides what its
+contents are trusted for: indexes into the store are untrusted hints, while
+`aiur` holds programs this machine's `ix` compiled, trusted because their
+key names its compiler and their sources (`FormalAiur.compiledArtifacts`). -/
 def cacheDir (namespace' : String) : StoreIO FilePath := do
   let home ← getHomeDir
   let path := home / ".ix" / "cache" / namespace'

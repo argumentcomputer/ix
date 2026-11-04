@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 aiur = { workspace = true, features = ["stark"] }
+aiur-codegen = { path = "../aiur-codegen" }
+aiur-tracegen = { path = "../aiur-tracegen" }
 ixvm = { path = "../ixvm", features = ["stark"] }
 stark-verifier = { path = "../stark-verifier" }
 stark-key = { workspace = true }
@@ -22,28 +24,18 @@ rustc-hash = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
-ixvm-native = { path = "../ixvm-native", optional = true }
-stark-verifier-native = { path = "../stark-verifier-native", optional = true }
+formal-generated = { path = "../formal-generated", optional = true }
 
 [features]
 default = ["parallel"]
 parallel = ["aiur/parallel", "ixvm/parallel", "stark-verifier/parallel"]
 cuda = ["aiur/cuda", "ixvm/cuda", "stark-verifier/cuda"]
-# Compiled CUDA trace writers for the IxVM artifact named by
-# AIUR_IXVM_ARTIFACT (see crates/ixvm-tracegen), selected at run time with
-# AIUR_GPU_TRACE=compiled. Programs without a bundle stay on their other
-# population providers.
-compiled-trace = ["cuda", "ixvm/compiled-trace"]
-# Generated native executors for IxVM, the recursive verifier and
-# aggregation, compiled from the binary artifacts named by AIUR_IXVM_ARTIFACT,
-# AIUR_VERIFIER_ARTIFACT and AIUR_AGGREGATION_ARTIFACT (`ix prepare` compiles
-# all three and builds the prover with this feature). A kernel runs jobs
-# only for an artifact whose program has exactly its fingerprint; other
-# artifacts use the interpreter.
-native = [
-  "dep:ixvm-native",
-  "ixvm-native/kernel",
-  "dep:stark-verifier-native",
-  "stark-verifier-native/kernel",
-  "aiur/native",
-]
+# The compiled CUDA trace writers for IxVM (crates/formal-generated),
+# selected at run time with AIUR_GPU_TRACE=compiled. Programs without a
+# bundle stay on their other population providers.
+compiled-trace = ["cuda", "native", "ixvm/compiled-trace"]
+# The native executors for IxVM, the recursive verifier and aggregation
+# that `lake build ix` generates from the certified programs
+# (crates/formal-generated). An executor runs jobs only for a program with
+# exactly its fingerprint; other programs use the interpreter.
+native = ["dep:formal-generated", "formal-generated/executors", "aiur/native"]

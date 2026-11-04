@@ -19,7 +19,7 @@ mod io;
 /// preparation binds.
 pub fn register_compiled_trace() {
   #[cfg(feature = "compiled-trace")]
-  aiur::trace::stark::compiled::register(&ixvm_tracegen::BUNDLE);
+  aiur::trace::stark::compiled::register(&formal_generated::cuda::ixvm::BUNDLE);
 }
 
 /// Prepare a production claim witness from the JSON interchange format,

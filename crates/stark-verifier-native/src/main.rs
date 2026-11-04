@@ -17,8 +17,8 @@
 use aiur::field::FieldBackend;
 use aiur::native::Kernel;
 use aiur::native::record_diff;
+use formal_generated::{Aggregation, Verifier};
 use multi_stark::types::Val;
-use stark_verifier_native::{Aggregation, Verifier};
 use std::{error::Error, time::Instant};
 
 fn median(mut samples: Vec<f64>) -> f64 {

@@ -27,14 +27,15 @@ cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features
   --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
 cargo build --release --locked -p aggregate-controller --example streams_parity
 
-# Binary artifacts compiled in process by `ix prepare`, unless supplied.
-if [[ -z ${IX_AIUR_ARTIFACT:-} || -z ${IX_RECURSION_ARTIFACT:-} || -z ${IX_AGGR_ARTIFACT:-} ]]; then
-  .lake/build/bin/ix prepare > "$formal_tmp/prepare.log"
-  prepared() { awk -v kind="$1" '$1 == kind && $2 == "artifact" { print $3 }' "$formal_tmp/prepare.log"; }
-  IX_AIUR_ARTIFACT=${IX_AIUR_ARTIFACT:-$(prepared ixvm)}
-  IX_RECURSION_ARTIFACT=${IX_RECURSION_ARTIFACT:-$(prepared verifier)}
-  IX_AGGR_ARTIFACT=${IX_AGGR_ARTIFACT:-$(prepared aggregation)}
-fi
+# `lake build ix` compiled the certified programs into the shared cache to
+# generate their native executors. The separate binaries below use those
+# cached artifacts unless the IX_*_ARTIFACT variables supply others;
+# `ix codegen --out` names them (and writes the generated sources there).
+.lake/build/bin/ix codegen --out "$formal_tmp/generated" > "$formal_tmp/codegen.log"
+compiled() { awk -v kind="$1" '$1 == kind && $2 == "artifact" { print $3 }' "$formal_tmp/codegen.log"; }
+IX_AIUR_ARTIFACT=${IX_AIUR_ARTIFACT:-$(compiled ixvm)}
+IX_RECURSION_ARTIFACT=${IX_RECURSION_ARTIFACT:-$(compiled verifier)}
+IX_AGGR_ARTIFACT=${IX_AGGR_ARTIFACT:-$(compiled aggregation)}
 export IX_AIUR_ARTIFACT IX_AGGR_ARTIFACT
 
 lake env .lake/build/bin/formal-aiur-tests "$formal_tmp/claims.json"
