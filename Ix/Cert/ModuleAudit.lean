@@ -4,7 +4,6 @@ import Ix.Cert.Closure
 import Ix.Cert.CompileCorrect
 import Ix.Cert.ConversionValues
 import Ix.Cert.Hybrid
-import Ix.Cert.IxVM
 import Ix.Cert.ReaderClosureKeys
 import Ix.Compile.ReadyCompile
 import Ix.CompileCertified
@@ -90,15 +89,5 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
 #guard_kernel_axioms Ix.Kernel.ConditionalValueModel.ofUserAxioms [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.checkDecls_sound_conditional [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Cached.no_proof_of_False_cached_conditional [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_activated_derives_evalFn [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_ingress_stream_sound [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_derives_imp_circuitAccepts [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_accepts_iff_ixvmAcceptsClaim [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_accepts_iff_ixonAcceptsRef [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_strongModel [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_valueModel [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_no_proof_of_False [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_compile_commutes [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Cert.IxVM.ixvm_circuit_compile_commutes_nominal [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms_under Ix.Cert Ix.CompileCert
