@@ -12,6 +12,7 @@ public import Ix.AiurInvocation
 public import Ix.Benchmark.Results
 public import Ix.TracingTexray
 public import Ix.FormalProver
+public import Ix.Cli.FormalKeys
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
@@ -772,7 +773,10 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       let system ← match system? with
         | some system => pure system
         | none =>
-          let system ← (← artifact p registry).system; system? := some system; pure system
+          let system ← (← artifact p registry).system
+          FormalKeys.checkSystem "ixvm" system
+          system? := some system
+          pure system
       verifyWrapper system bWrapper
     catch e =>
       IO.eprintln s!"{bPath}: {e}"
@@ -795,7 +799,10 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
         let system ← match system? with
           | some system => pure system
           | none =>
-            let system ← (← artifact p registry).system; system? := some system; pure system
+            let system ← (← artifact p registry).system
+            FormalKeys.checkSystem "ixvm" system
+            system? := some system
+            pure system
         verifyWrapper system wrapper
         covered := covered.push wrapper.claim
         if p.hasFlag "record" then ShardProofIndex.writeAddress (← shardIndex) digest addr

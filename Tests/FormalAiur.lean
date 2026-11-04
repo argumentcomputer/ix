@@ -1,10 +1,13 @@
 import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
 import Ix.AiurInvocation
+import Tests.FormalPins
 import Batteries.Data.Char.Basic
 
-/-! Real claim fixtures, plus independently specified evaluation inputs.
-Run through the Rust host. -/
+/-! `formal-aiur-tests [PATH]` writes the real claim fixtures, plus
+independently specified evaluation inputs, which run through the Rust host.
+`formal-aiur-tests pins ROOT` checks acceptance against the pinned verifying
+keys (`Tests/FormalPins.lean`). -/
 open Lean IxVM.ClaimHarness
 
 private def claimCase (label : String) (w : ClaimWitness) (accept : Bool := true) :
@@ -188,6 +191,7 @@ private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Ix.Ai
   return claimCase s!"Check {name}" witness
 
 def main (args : List String) : IO Unit := do
+  if let ["pins", root] := args then return ← FormalPins.run root
   -- Without an argument, write into a fresh temporary directory, not a fixed
   -- /tmp path that concurrent runs would share.
   let path ← match args.head? with
