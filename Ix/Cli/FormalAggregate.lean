@@ -143,8 +143,8 @@ private def bindingProof (p : Cli.Parsed) (ctx : Context) (env : Ixon.Env) (pers
 
 /-- `--lanes`/`--aggregate`: the aggregate controller legacy proves with,
 and its fold: claims join directly and only the root is wrapped. The root it
-returns is accepted only after `accept`. -/
-def runController (p : Cli.Parsed) : IO UInt32 := do
+returns is accepted only after `accept`; returns the root's address. -/
+def runControllerRoot (p : Cli.Parsed) : IO Address := do
   for flag in #["subtree", "reprove-slot", "plan-only", "wrap-root", "range"] do
     if p.hasFlag flag then throw (IO.userError s!"--{flag} applies to `ix aggregate`, not to proving")
   let some ixe := (p.flag? "ixe").map (·.as! String) | throw (IO.userError "missing --ixe")
@@ -180,7 +180,11 @@ def runController (p : Cli.Parsed) : IO UInt32 := do
         ("root", toJson root), ("jobs", toJson lanes), ("proved_leaves", toJson true),
         ("verified", toJson true)]).pretty
     IO.println root
-    return 0
+    return address
+
+def runController (p : Cli.Parsed) : IO UInt32 := do
+  let _ ← runControllerRoot p
+  return 0
 
 /-- `ix aggregate`: fold the supplied claim proofs into the root, or with
 `--subtree` into one subtree, on the aggregate controller, with the fold
@@ -233,14 +237,19 @@ def run (p : Cli.Parsed) : IO UInt32 := do
   IO.println address
   return 0
 
-def runPipeline (p : Cli.Parsed) : IO UInt32 := do
+/-- Prove every manifest claim and aggregate; returns the root's address. -/
+def runPipelineRoot (p : Cli.Parsed) : IO Address := do
   unless p.hasFlag "ixe" && p.hasFlag "ixes" && p.hasFlag "trace-shards" do
     throw (IO.userError "--lanes/--aggregate requires --ixe, --ixes and --trace-shards")
   for flag in #["shard", "shards", "exec-only"] do
     if p.hasFlag flag then throw (IO.userError s!"--lanes/--aggregate cannot be combined with --{flag}")
   if p.hasFlag "lanes" && p.hasFlag "jobs" then
     throw (IO.userError "choose --lanes for GPU provers or --jobs for CPU provers")
-  runController p
+  runControllerRoot p
+
+def runPipeline (p : Cli.Parsed) : IO UInt32 := do
+  let _ ← runPipelineRoot p
+  return 0
 
 /-- Verify a compressed aggregate proof. With `--compression-vk` and its
 independently trusted `--compression-vk-blake3`, the proof must verify under

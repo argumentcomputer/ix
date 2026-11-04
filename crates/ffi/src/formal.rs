@@ -339,3 +339,57 @@ extern "C" fn rs_formal_aggregate_catalog(
     )
   })
 }
+
+/// `Ix.FormalProver.fixedRootLayout : @& String → @& ByteArray → UInt8 →
+/// IO String`: the fixed normalization layout (JSON) of one more wrap of a
+/// raw one-shard aggregate root.
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_fixed_root_layout(
+  artifact: LeanString<LeanBorrowed<'_>>,
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+  headroom: u8,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let shape = tools::fixed_root_shape(
+      Path::new(artifact.as_str()),
+      proof.as_bytes(),
+      headroom,
+    )?;
+    let layout = ix_proof_compression::pipeline::FixedRoot::new(
+      shape.log_heights,
+      shape.memory_traces,
+      shape.claim_len,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(LeanString::new(&layout.to_json()).into())
+  })
+}
+
+/// `Ix.FormalProver.normalizeRoot : @& String → @& String → @& ByteArray →
+/// @& ByteArray → IO ByteArray`: the raw proof of one more wrap of the
+/// aggregate root `proof` of `claim`, proved at the heights of the fixed
+/// layout `layout` from the JSON configuration
+/// (`ix_prover::aggregate::NormalizeConfig`).
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_normalize_root(
+  config: LeanString<LeanBorrowed<'_>>,
+  layout: LeanString<LeanBorrowed<'_>>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let config: ix_prover::aggregate::NormalizeConfig =
+      serde_json::from_str(config.as_str())
+        .map_err(|e| format!("invalid normalization configuration: {e}"))?;
+    let layout =
+      ix_proof_compression::pipeline::FixedRoot::from_json(layout.as_str())
+        .map_err(|e| e.to_string())?;
+    let normalized = ix_prover::aggregate::normalize_root(
+      &config,
+      layout.log_heights(),
+      claim.as_bytes(),
+      proof.as_bytes(),
+    )?;
+    Ok(LeanByteArray::from_bytes(&normalized).into())
+  })
+}

@@ -191,6 +191,84 @@ pub fn ranges(
   Ok((preamble, nodes))
 }
 
+/// The fixed shape a one-shard recursive root normalizes to: one log2
+/// height per circuit in system order, `(memory width, circuit index)` for
+/// each memory circuit the root's preamble closes, and the claim length.
+pub struct FixedShape {
+  pub log_heights: Vec<u8>,
+  pub memory_traces: Vec<(usize, usize)>,
+  pub claim_len: usize,
+}
+
+/// The fixed shape of one more wrap of `proof`, a raw one-shard proof of
+/// the recursive artifact. A wrap of a one-shard root verifies the same
+/// kind of proof the root itself verified, so the root's heights, raised by
+/// `headroom` doublings, size it. Fixed tables keep their heights; circuits
+/// the root leaves inactive get two rows. The normalizing prover rejects a
+/// wrap that does not fit.
+pub fn fixed_root_shape(
+  artifact: &Path,
+  proof: &[u8],
+  headroom: u8,
+) -> Result<FixedShape, String> {
+  let proof = decode_proof(proof)?;
+  let [header] = proof.preamble.headers.as_slice() else {
+    return Err(
+      "normalize a root of exactly one trace shard; `ix aggregate --wrap-root` \
+       wraps a root until it has one"
+        .into(),
+    );
+  };
+  let [claim] = header.claims.as_slice() else {
+    return Err("the root shard carries no single claim".into());
+  };
+  let package = load_package(artifact)?;
+  let program = package.program.check_field::<Val>()?;
+  let plan = TracePlan::new(&program, package.trace)?;
+  let backend = Backend::for_batch_verification(&plan, Parameters::default())?;
+  let key = aiur::trace::stark::VerifyingKey::from_bytes(
+    &backend.verifying_key_bytes()?,
+  )?;
+  let circuits = &key.system().circuits;
+  if header.active.len() != circuits.len() {
+    return Err("the root belongs to another artifact".into());
+  }
+  let mut degrees = header.log_degrees.iter();
+  let mut log_heights = Vec::with_capacity(circuits.len());
+  for (ci, (circuit, &active)) in
+    circuits.iter().zip(&header.active).enumerate()
+  {
+    let root = if active {
+      Some(*degrees.next().ok_or("missing trace height")?)
+    } else {
+      None
+    };
+    let log = if backend.is_fixed_table(ci) {
+      u8::try_from(circuit.preprocessed_height.ilog2())
+        .map_err(|e| e.to_string())?
+    } else {
+      root.map_or(1, |log| log.saturating_add(headroom).max(1))
+    };
+    log_heights.push(log);
+  }
+  let closed: std::collections::BTreeSet<u64> = proof
+    .preamble
+    .messages
+    .iter()
+    .step_by(2)
+    .filter_map(|m| m.args.get(1).map(PrimeField64::as_canonical_u64))
+    .collect();
+  let memory_traces = backend
+    .memory_circuits()
+    .into_iter()
+    .filter(|&(width, _)| closed.contains(&(width as u64)))
+    .collect::<Vec<_>>();
+  if memory_traces.len() != closed.len() {
+    return Err("the root closes memory no circuit holds".into());
+  }
+  Ok(FixedShape { log_heights, memory_traces, claim_len: claim.len() })
+}
+
 /// What [`check`] does after executing the claim.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Check {

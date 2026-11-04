@@ -38,8 +38,12 @@ while `--dev-final-srs` prepares local keys for either PLONK or Groth16. With
 `--dev-kzg-srs` as well, neither stage needs Ignition.
 Default verification pins one version of the verifying keys,
 [`0.1`](verifying-keys/0.1): one key per proof system, with the root layout,
-statement prefix and Ignition parameters they were derived for. `ix verify` selects the key by the proof's tag and requires
-the packet's key identifier to name it; there is no catalog of alternatives.
+statement prefix and Ignition parameters they were derived for. They belong to
+the retired legacy Aiur aggregation backend; they still anchor the Ignition
+parameters and verify proofs of that release. `ix verify` selects the key by
+the proof's tag and requires the packet's key identifier to name it; there is
+no catalog of alternatives. Compressed formal aggregate roots verify under a
+derived key instead (see [Formal aggregate roots](#formal-aggregate-roots)).
 Bundled recursive KZG and PLONK proofs verify under Ignition. The release Groth16 key
 comes from a development setup, so Groth16 proving requires `--dev-final-srs`
 and verification requires `--dev-srs`. Use
@@ -63,13 +67,15 @@ parameters. Verification needs no SRS file, source manifest or admission JSON.
 Proving loads a prefix of the release's standard gnark `SRS.WriteRawTo` file:
 
 ```sh
-ix compress setup
+ix compress setup [--fixed-root LAYOUT]
 ix compress ROOT_PROOF_ADDRESS --out /path/to/new-run
 ```
 
 `ix compress setup` downloads the file if it is missing and checks it against
-its pinned SHA-256, then publishes every stage's fixed preprocessing to the
-fixed cache; entries already present are only checked. The file is
+its pinned SHA-256. With `--fixed-root`, it also publishes the fixed
+preprocessing of the first KZG and recursive stages for roots of the formal
+aggregation artifact normalized to that layout; entries already present are
+only checked. The file is
 `bn254-ignition-main-197/srs.bin` under `IX_PARAMS_DIR` (default
 `~/.ix/compression/params`). `IX_KZG_SRS` can select another local copy of the
 same release SRS; it is not pin-checked. Its G1/G2 anchors must match the
@@ -108,18 +114,12 @@ install it.
 
 ## Proving and verification
 
-`ix compress ROOT` and `ix prove ... --compress kzg|plonk|groth16` automatically
-normalize the aggregate root using the versioned
-[version 0.1 layout](verifying-keys/0.1/layout.json).
-`--fixed-root` is an optional layout override. The default layout is the one
-shared by the saved Nat.add_comm, Init and Mathlib normalization runs; it has
-101 circuit heights, 18 claim elements and no additional headroom beyond those
-measured bounds. Its root verifier BLAKE3 is
-`f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc`.
-The default rejects another backend key, and normalization rejects executions
-that exceed the fixed bounds before allocating traces. A larger supported
-layout is a new release profile; compression does not resize it per proof.
-The profile supplies normalization bounds, not a bundled compression verifier.
+`ix compress ROOT` and `ix prove --aggregate|--lanes ... --compress
+kzg|plonk|groth16` normalize the formal aggregate root and compress it; see
+[Formal aggregate roots](#formal-aggregate-roots). The bundled
+[version 0.1 layout](verifying-keys/0.1/layout.json) records the layout the
+release keys were derived for under the legacy backend, whose root verifier
+key has BLAKE3 `f0c635f096bb2b9ff8fbeaf947c406978c11ce3bc447df94e43d6e9fe3cc6fbc`.
 
 `ix compress` and `ix prove ... --compress` run every stage in the `ix`
 process through `pipeline::compress(CompressInput, &CompressConfig)`: FRI
@@ -141,13 +141,49 @@ fixed at 2^24, the height the bundled keys were derived for. Fixed-preprocessing
 development SRS caches are shared under `~/.ix/compression/cache`;
 `IX_KZG_FIXED_CACHE` and `IX_KZG_SRS_CACHE` override them.
 
-`ix verify` checks recursive KZG proofs under the bundled key. To verify
-under an independently pinned key instead, `verify_with_vk` takes the independently reviewed BLAKE3
+`ix verify` checks recursive KZG proofs under the bundled key, or under
+`--compression-vk` with its `--compression-vk-blake3` pin. To verify under an
+independently pinned key, `verify_with_vk` takes the independently reviewed BLAKE3
 digest of `final-kzg/vk.bin`, the original claim and independently expected
 root claims. It needs no proving SRS or cache, and checks the verifying key
 digest, development opt-in, claim digest, all expected statement words, outer
 KZG proof and deferred pairing; the verifier never obtains its trusted pin
 from the proof.
+
+### Formal aggregate roots
+
+The aggregation backend is the formal Aiur aggregation artifact
+(`MultiStark::ix_aggr`, `crates/aiur`). Its key uses the multi-stark key
+codec, and `RootKey` checks roots, fixed layouts and verifier templates under
+formal Aiur's batch policy; fixed-layout identities are domain-separated from
+the legacy backend's. The FRI stage's outer proof uses blowup 4, 100 queries
+and 20 query proof-of-work bits whatever the root key's parameters, since
+the first KZG stage verifies that proof and the lowered verifier's degree-4
+constraints need blowup 4. The root itself is verified under its own
+parameters.
+
+`ix compress` and `ix prove --aggregate|--lanes ... --compress` accept a
+root with an `IXAGGR2` proof prefix. The formal aggregation artifact
+(`--aggr-artifact`, or the locally compiled one) supplies the backend key
+and the 18-word statement; the root is verified natively first. Without
+`--fixed-root`, the layout is sized from the root's own trace heights
+(`--headroom` adds doublings); inactive circuits get two rows and fixed
+tables their own heights. A root must have one trace shard
+(`ix aggregate --wrap-root` wraps one until it does). The root is then
+wrapped once more by `ix_aggr` and proved as one all-active trace shard at
+those heights (`fixed_log_heights` in the prover options), and that proof is
+compressed. The layout is kept in `root/fixed-root.json`;
+`ix compress layout` sizes one for several roots, and
+`ix compress normalize` writes a root input directory without compressing.
+
+No verifying key is bundled for the formal backend. A compressed formal root
+verifies with `ix verify` (or `ix verify --aggregate`, which also checks the
+claim against `--ixe`/`--ixes`) given `--compression-vk FILE` and its
+independently trusted `--compression-vk-blake3`; the statement is derived
+from the formal aggregation artifact, not from the proof.
+`ix compress derive-vk LAYOUT OUT` derives that key from the artifact, the
+layout and the inner KZG setup alone, without a proof, and prints its
+BLAKE3 digest.
 
 ### Validation and sizing entry points
 

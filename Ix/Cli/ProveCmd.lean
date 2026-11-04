@@ -2,6 +2,7 @@ module
 public import Cli
 public import Ix.Cli.FormalAiur
 public import Ix.Cli.FormalAggregate
+public import Ix.Cli.CompressCmd
 
 /-!
   `ix prove`: generate a STARK proof against an `Ix.Claim`. Mirrors
@@ -12,12 +13,35 @@ public section
 
 namespace Ix.Cli.ProveCmd
 
+/-- `--compress` and its setup flags, checked before any proving starts. -/
+def compressOptions (p : Cli.Parsed) : IO (Option Ix.Cli.CompressCmd.Options) := do
+  let some output := (p.flag? "compress").map (·.as! String) | do
+    for flag in #["fixed-root", "headroom", "dev-kzg-srs", "dev-final-srs", "compression-out", "fresh"] do
+      if p.hasFlag flag then throw (IO.userError s!"--{flag} requires --compress")
+    return none
+  unless p.hasFlag "lanes" || p.hasFlag "aggregate" do
+    throw (IO.userError "--compress requires aggregating with --aggregate or --lanes")
+  let finalProof ← IO.ofExcept (Ix.Cli.CompressCmd.finalOf output |>.mapError (s!"--compress: {·}"))
+  let opts : Ix.Cli.CompressCmd.Options := {
+    finalProof
+    fresh := p.hasFlag "fresh"
+    out := (p.flag? "compression-out").map (·.as! String)
+    devKzgSrs := p.hasFlag "dev-kzg-srs"
+    devFinalSrs := p.hasFlag "dev-final-srs"
+    fixedRoot := (p.flag? "fixed-root").map (·.as! String)
+    headroom := ((p.flag? "headroom").map (·.as! Nat)).getD 0 }
+  IO.eprintln s!"Compression will use {← Ix.Cli.CompressCmd.preflight opts}."
+  return some opts
+
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let _ ← FormalAiur.selected p
-  if p.hasFlag "lanes" || p.hasFlag "aggregate" then
-    FormalAggregate.runPipeline p
-  else
-    FormalAiur.run p true
+  let compress? ← compressOptions p
+  unless p.hasFlag "lanes" || p.hasFlag "aggregate" do
+    return ← FormalAiur.run p true
+  let root ← FormalAggregate.runPipelineRoot p
+  let some opts := compress? | return 0
+  IO.println (toString (← Ix.Cli.CompressCmd.compressRoot p root opts))
+  return 0
 
 end Ix.Cli.ProveCmd
 
@@ -59,6 +83,13 @@ def proveCmd : Cli.Cmd := `[Cli|
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
     "max-ram" : Nat;    "Aiur: total RAM budget across --jobs in GiB, default 85% of available memory."
+    "compress" : String; "With --aggregate/--lanes: compress the verified aggregate root to `kzg`, `plonk` or `groth16` and print the compressed proof's address after the root's. The setup is checked before proving."
+    "compression-out" : String; "With --compress: directory for compression stage files; --fresh replaces prior stages there."
+    "fresh"; "With --compress: replace prior compression stages with newly generated proofs."
+    "fixed-root" : String; "With --compress: the normalization layout from `ix compress layout`, instead of one sized from the root."
+    "headroom" : Nat; "With --compress and no --fixed-root: extra doublings of every circuit height beyond the root's own (default 0)."
+    "dev-kzg-srs";      "With --compress: generate local development inner KZG parameters. Final Groth16/PLONK proofs also require --dev-final-srs."
+    "dev-final-srs"; "With --compress groth16 or plonk: generate and cache local development final keys. With --dev-kzg-srs, no Ignition parameters are required."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

@@ -49,6 +49,10 @@ public def run : IO Unit := do
     let otherAddr ← putProof home (Ixon.Proof.ser other)
     rejects home #["compress", toString old, "--groth16", "--plonk"]
       "choose at most one"
+    rejects home #["prove", "--ixe", "missing.ixe", "--ixes", "missing.ixes", "--aggregate",
+      "--compress", "fri"] "unknown compression output"
+    rejects home #["prove", "--ixe", "missing.ixe", "--ixes", "missing.ixes",
+      "--compress", "kzg"] "--compress requires aggregating"
     rejects home #["compress", toString old, "--dev-final-srs"]
       "--dev-final-srs requires a final proof system"
     for finalFlag in #["--plonk", "--groth16"] do
@@ -58,7 +62,7 @@ public def run : IO Unit := do
       throw <| IO.userError "compression must preserve claim identity and change proof identity"
     rejects home #["compress", toString old] setupError
     rejects home #["compress", toString old, "--dev-kzg-srs", "--out", (home / "run").toString]
-      "legacy Aiur roots are retired"
+      "formal aggregate root"
     rejects home #["compress", toString otherAddr, "--dev-kzg-srs", "--out", (home / "run").toString]
       "aggregate CheckEnv proof"
     unless !(← (home / "run").pathExists) do
@@ -88,6 +92,8 @@ public def run : IO Unit := do
         "already compressed" missingSrs
       rejects home #["compress", filePath.toString, finalFlag, "--dev-kzg-srs", "--dev-final-srs"]
         "aggregate CheckEnv proof" missingSrs
+    rejects home #["prove", "--ixe", "missing.ixe", "--ixes", "missing.ixes", "--aggregate",
+      "--compress", "groth16", "--dev-final-srs"] setupError missingSrs
     rejects home #["verify", toString addr] "unsupported compressed proof version"
     rejects home #["verify", toString addr, "--dev-srs"] "unsupported compressed proof version"
     rejects home #["verify", toString addr, "--verifier-bundle", "/missing", "--dev-srs"]
