@@ -64,9 +64,9 @@ also work from the root Lake workspace as `lake exe ixvm/ixvm ...`.
 
 ## Application port and CLI
 
-`tools/ixvm/adapt.py` reproduces the IxVM application port from pinned Ix
-revisions (`05cc396fc` for the application, `827550579` for the shared
-libraries). The application covers the claim dispatcher, evaluation,
+The checked-in `.aiur` sources under `IxVM/IxVM` and `MultiStark/MultiStark`
+are the canonical programs and are edited directly; no generator produces
+them. The IxVM application covers the claim dispatcher, evaluation,
 environment checking, reveal, membership and role-binding claims. Every
 claim is relative to the environment's role binding, read from input
 channel 6; see [role binding](formal-aiur-orchestration.md#role-binding).
@@ -274,10 +274,7 @@ runs on the interpreter, which produces identical records and proofs. See
 [native execution](formal-aiur-native-execution.md) and
 [native executors](formal-aiur-orchestration.md#native-executors).
 
-`tools/ixvm/adapt.py --check` checks reproducibility against the pinned
-source revision. `tools/ixvm/recursion.py --check` and `--aggregate --check`
-do the same for recursive programs. `tools/ixvm/audit.py --out DIR`
-inventories lexical and semantic adaptations. The compiler correctness proofs
+The compiler correctness proofs
 remain intact. Neither those proofs nor the port tests constitute a new
 formal proof of the cryptographic backend or discharge the existing
 memo-acyclicity hypothesis of the semantic model.
