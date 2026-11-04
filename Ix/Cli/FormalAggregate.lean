@@ -45,13 +45,16 @@ def aggrIdentity (p : Cli.Parsed) (registry : FormalProver.Registry) :
   let aggr ← identity aggrSystem true
   return (aggrSystem, aggr)
 
+/-- The certified IxVM and aggregation systems of the command, whose keys
+must be the pinned ones (`FormalKeys.pinnedAllowed`); the identity blob is
+built from the pins. -/
 def context (p : Cli.Parsed) : IO Context := do
   let (ixvm, aggregation) ← FormalAiur.ixvmAndAggregation p (← FormalProver.Registry.new)
   let ixvmSystem ← ixvm.system
   let aggrSystem ← aggregation.system
   let aggr ← identity aggrSystem true
   let ixvm ← identity ixvmSystem false
-  let allowed := Aggr.allowedBlob ixvm.key ixvm.index aggr.key aggr.index
+  let allowed ← FormalKeys.pinnedAllowed ixvm.key ixvm.index aggr.key aggr.index
   return { ixvmSystem, aggrSystem, ixvm, aggr, allowed }
 
 def outerClaim (ctx : Keys) (kind : ChildKind) (claim : Ix.Claim) : Array Aiur.G :=

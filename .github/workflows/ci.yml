@@ -75,6 +75,9 @@ jobs:
         run: bash tools/ixvm/check-formal.sh
       - name: Check the formal verify path is unchanged
         run: bash tools/check-verify-path.sh
+      - name: Check the formal verifying keys match their pins
+        if: github.event_name != 'push'
+        run: bash tools/check-formal-keys.sh
       - name: Check Lean versions match for Ix, compiler bench, certified kernel and its model
         if: github.event_name != 'push'
         run: |

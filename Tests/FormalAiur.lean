@@ -1,10 +1,15 @@
 import Ix.Cli.FormalAiur
 import Ix.IxVM.ClaimHarness
 import Tests.Ix.IxVM.Exploits
+import Tests.FormalImage
+import Tests.FormalPins
 import Batteries.Data.Char.Basic
 
-/-! Real claim fixtures, plus independently specified evaluation inputs.
-Run through the Rust host. -/
+/-! `formal-aiur-tests [PATH]` writes the real claim fixtures, plus
+independently specified evaluation inputs, which run through the Rust host.
+`formal-aiur-tests image ...` checks and measures the direct compiler
+handoff (`Tests/FormalImage.lean`), and `formal-aiur-tests pins ROOT` checks
+acceptance against the pinned verifying keys (`Tests/FormalPins.lean`). -/
 open Lean IxVM.ClaimHarness
 
 private def caseJson (label : String) (w : ClaimWitness) (accept : Bool := true) : Json :=
@@ -206,6 +211,8 @@ private def checkCase (leanEnv : Lean.Environment) (name : Lean.Name) : IO Json 
   return caseJson s!"Check {name}" witness
 
 def main (args : List String) : IO Unit := do
+  if let "image" :: rest := args then return ← FormalImage.run rest
+  if let ["pins", root] := args then return ← FormalPins.run root
   let path := args.headD "/tmp/ix-formal-claims.json"
   let env ← get_env!
   let fixture ← loadIxonEnv ``Nat.add_comm env

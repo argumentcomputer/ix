@@ -230,6 +230,37 @@ and, in a CUDA build, the trace writers (`aiur_tracegen`) into
 Cargo does not run Lean or read an artifact.
 See [codegen and caching](formal-aiur-codegen.md).
 
+## Pinned verifying keys
+
+`tools/formal-aiur.keys` pins, for the IxVM, recursive verifier and
+aggregation programs, the program identity and the BLAKE3 digest of the
+verifying key under the default STARK parameters, which the file states:
+
+```text
+parameters log_blowup 2 num_queries 100
+ixvm <identity hex> <key digest hex>
+verifier <identity hex> <key digest hex>
+aggregation <identity hex> <key digest hex>
+```
+
+- **Embedding.** The library `FormalAiurKeys` embeds the file
+  (`include_str`); its `needs` names the file as a Lake input, so a change
+  rebuilds it and its importers. The flake adds the file to the Lean
+  sources.
+- **Acceptance.** `Ix.Cli.FormalKeys` parses the pins. `ix verify` of IxVM
+  proofs checks the selected IxVM system's key (`checkSystem`), and
+  `FormalAggregate.context`, which `accept`, `acceptSlot`, the catalog and
+  compression checks use, checks the IxVM and aggregation keys and builds
+  the identity blob aggregate proofs commit to (`allowed`) from the pinned
+  digests, requiring it to equal the blob of the derived keys
+  (`pinnedAllowed`). A mismatch is an error naming the program and both
+  digests, whichever artifact was selected.
+- **Updating.** `lake exe formal-keys` derives the file from the checkout's
+  programs; `tools/check-formal-keys.sh` fails when it differs from the
+  committed pins (CI runs it), and `--update` rewrites them. The pin file
+  is hashed into the verify-path fingerprint, so a re-pin goes through that
+  review as well.
+
 ## Identities
 
 Program identity is the content digest
@@ -297,13 +328,15 @@ adds the linked compiler's roots; the pin needs the verify-path review.
 
 ## Checks
 
-- `formal-image-tests fixture`: a small Goldilocks program compiled through
+- `formal-aiur-tests image fixture`: a small Goldilocks program compiled through
   the independent JSON encoders and through the image; the prover's
   program, the JSON reference and the binary round trip must agree, and so
   must identities and verifying keys.
-- `formal-image-tests <ixvm|verifier|aggregation> [reference.json]`: the
-  linked compiler's program against an exporter's JSON for the same
-  source, with timings of each phase and peak RSS.
+- `formal-aiur-tests image <ixvm|verifier|aggregation> [reference.json]`:
+  the linked compiler's program against a JSON artifact for the same
+  source (an exporter's, or `aiur-artifact json` of a stored file), with
+  timings of each phase and peak RSS; `formal-aiur-tests image load FILE`
+  times one load.
 - `aiur::trace::stark::tests::binary_artifact_and_shared_handles_prove_identically`:
   JSON and binary inputs prove to the same bytes and keys, and a backend
   that shares its plan through `Arc`s proves after its caller's handles are
