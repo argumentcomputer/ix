@@ -154,22 +154,54 @@ def elabProjOnExpr (fuel : Nat) (baseExpr : Ix.Expr) (fieldStx : Ix.Syntax) : Ix
           let methodName := Name.append typeName fieldId
           if st.env.contains methodName then
             let (mConst, mTy) ← mkConstWithFreshMVarLevels methodName
-            let (applied, instGoals, _) ← openForallMVars 16 mConst mTy []
-            for g in instGoals do
+            let (applied, instGoals, _) ← insertImplicitArgs 16 mConst mTy []
+            for g in instGoals.reverse do
               let gTy ← inferType fuel g
               if let some instVal ← synthInstance? 8 gTy then
                 let _ ← isDefEq fuel g instVal
             return Expr.mkApp applied baseExpr
           else
-            throwElabError s!"unknown field or method '{Name.toStringTotal fieldId}' on '{Name.toStringTotal typeName}'" (some fieldStx)
+            -- Check inherited methods on `sInfo.parents` via `.to<Parent>` coercion
+            let foundParent? := sInfo.parents.find? fun pName =>
+              st.env.contains (Name.append pName fieldId)
+            match foundParent? with
+            | some pName =>
+              let pShort := (Name.components pName).getLastD (Name.toStringTotal pName)
+              let toParentName := Name.mkStr typeName s!"to{pShort}"
+              let coercedBase ←
+                if st.env.contains toParentName then
+                  let (tpConst, tpTy) ← mkConstWithFreshMVarLevels toParentName
+                  let (tpApp, tpInsts, _) ← insertImplicitArgs 16 tpConst tpTy []
+                  for g in tpInsts.reverse do
+                    let gTy ← inferType fuel g
+                    if let some instVal ← synthInstance? 8 gTy then
+                      let _ ← isDefEq fuel g instVal
+                  pure (Expr.mkApp tpApp baseExpr)
+                else
+                  pure baseExpr
+              let pMethodName := Name.append pName fieldId
+              let (mConst, mTy) ← mkConstWithFreshMVarLevels pMethodName
+              let (applied, instGoals, _) ← insertImplicitArgs 16 mConst mTy []
+              for g in instGoals.reverse do
+                let gTy ← inferType fuel g
+                if let some instVal ← synthInstance? 8 gTy then
+                  let _ ← isDefEq fuel g instVal
+              return Expr.mkApp applied coercedBase
+            | none =>
+              throwElabError s!"unknown field or method '{Name.toStringTotal fieldId}' on '{Name.toStringTotal typeName}'" (some fieldStx)
       | none =>
-        -- Check if `<typeName>.<fieldId>` is a function/constructor or if `fieldToStruct` knows the index
+        -- Check if `<typeName>.<fieldId>` is a function/constructor
         let methodName := Name.append typeName fieldId
         if st.env.contains methodName then
           let _ := typeUnivs
           let _ := headArgs
-          let (mConst, _) ← mkConstWithFreshMVarLevels methodName
-          return Expr.mkApp mConst baseExpr
+          let (mConst, mTy) ← mkConstWithFreshMVarLevels methodName
+          let (applied, instGoals, _) ← insertImplicitArgs 16 mConst mTy []
+          for g in instGoals.reverse do
+            let gTy ← inferType fuel g
+            if let some instVal ← synthInstance? 8 gTy then
+              let _ ← isDefEq fuel g instVal
+          return Expr.mkApp applied baseExpr
         else
           throwElabError s!"unknown field '{Name.toStringTotal fieldId}' on type '{Name.toStringTotal typeName}'" (some fieldStx)
     | _ =>
@@ -235,6 +267,9 @@ def elabIdentWithLevels (fuel : Nat) (idStx : Ix.Syntax) (explicitLvls? : Option
         | none =>
           let (cExpr, _) ← mkConstWithFreshMVarLevels mappedResolved
           return cExpr
+      else if (rawId == Name.simple "true" || rawId == Name.simple "false") &&
+              st.env.contains (Name.mkStr2 "Bool" (Name.toStringTotal rawId)) then
+        return Expr.mkConst (Name.mkStr2 "Bool" (Name.toStringTotal rawId)) #[]
       else
         throwElabError s!"unknown identifier '{Name.toStringTotal rawId}'" (some idStx)
 
@@ -316,7 +351,84 @@ def ensureHasKnownType (fuel : Nat) (stx : Ix.Syntax) (expr : Ix.Expr)
     if !ok then
       let actNorm ← instantiateMVars 16 actualTy'
       let expNorm ← instantiateMVars 16 expTy
-      throwElabError s!"type mismatch: term has type '{ppExprShort 8 actNorm}' but is expected to have type '{ppExprShort 8 expNorm}'" (some stx)
+      let actWhnf ← whnf fuel actNorm
+      let expWhnf ← whnf fuel expNorm
+      let st ← get
+      -- 1. Try parent structure subobject coercion (`<Child>.to<Parent> expr'`)
+      let parentCoerced? : Option Ix.Expr ← do
+        let (actHead, _) := getAppFnArgs actWhnf
+        let (expHead, _) := getAppFnArgs expWhnf
+        match actHead, expHead with
+        | .const actStruct _ _, .const expStruct _ _ =>
+          match st.env.structTable.get? actStruct with
+          | some sInfo =>
+            if sInfo.parents.contains expStruct then
+              let pShort := (Name.components expStruct).getLastD (Name.toStringTotal expStruct)
+              let toParentName := Name.mkStr actStruct s!"to{pShort}"
+              if st.env.contains toParentName then
+                let (tpConst, tpTy) ← mkConstWithFreshMVarLevels toParentName
+                let (tpApp, tpInsts, tpAfterTy) ← insertImplicitArgs 16 tpConst tpTy []
+                match stripMData (← whnf fuel tpAfterTy) with
+                | .forallE _ d b _ _ =>
+                  let dOk ← isDefEq fuel actNorm d
+                  let coerced := Expr.mkApp tpApp expr'
+                  let retTy := instantiate1 b expr'
+                  let rOk ← isDefEq fuel retTy expTy
+                  if dOk && rOk then
+                    for g in tpInsts.reverse do
+                      let gTy ← inferType fuel g
+                      if let some instVal ← synthInstance? 8 gTy then
+                        let _ ← isDefEq fuel g instVal
+                    pure (some coerced)
+                  else pure none
+                | _ => pure none
+              else pure none
+            else pure none
+          | none => pure none
+        | _, _ => pure none
+      match parentCoerced? with
+      | some coerced =>
+        for g in instGoals.reverse do
+          let gTy ← inferType fuel g
+          if let some instVal ← synthInstance? 8 gTy then
+            let _ ← isDefEq fuel g instVal
+        return (← instantiateMVars 16 coerced)
+      | none =>
+        -- 2. Try `Coe.coe` typeclass coercion (`@Coe.coe α β inst expr'`)
+        let coeFnName := Name.mkStr2 "Coe" "coe"
+        let coeClsName := Name.simple "Coe"
+        let coeCoerced? : Option Ix.Expr ←
+          if st.env.contains coeFnName && st.env.contains coeClsName then do
+            let (coeConst, coeTy) ← mkConstWithFreshMVarLevels coeFnName
+            let (coeApp, coeInsts, coeAfterTy) ← insertImplicitArgs 16 coeConst coeTy []
+            match stripMData (← whnf fuel coeAfterTy) with
+            | .forallE _ dom b _ _ =>
+              let dOk ← isDefEq fuel actNorm dom
+              let coerced := Expr.mkApp coeApp expr'
+              let retTy := instantiate1 b expr'
+              let rOk ← isDefEq fuel retTy expTy
+              if dOk && rOk then
+                let mut allSolved := true
+                for g in coeInsts.reverse do
+                  let gTy ← inferType fuel g
+                  match ← synthInstance? 8 gTy with
+                  | some instVal =>
+                    let _ ← isDefEq fuel g instVal
+                  | none =>
+                    allSolved := false
+                if allSolved then pure (some coerced) else pure none
+              else pure none
+            | _ => pure none
+          else pure none
+        match coeCoerced? with
+        | some coerced =>
+          for g in instGoals.reverse do
+            let gTy ← inferType fuel g
+            if let some instVal ← synthInstance? 8 gTy then
+              let _ ← isDefEq fuel g instVal
+          return (← instantiateMVars 16 coerced)
+        | none =>
+          throwElabError s!"type mismatch: term has type '{ppExprShort 8 actNorm}' but is expected to have type '{ppExprShort 8 expNorm}'" (some stx)
     for g in instGoals.reverse do
       let gTy ← inferType fuel g
       if let some instVal ← synthInstance? 8 gTy then
@@ -402,6 +514,151 @@ def decodeConstructorPattern (scope : ScopeSnapshot) (modIdx : ModuleIndex)
       else
         none
     | _ => none
+
+/-! ## Structural Recursion Lowering (`casesOn` -> `recOn`) -/
+
+/-- If a single recursive definition or `let rec` / `where` binding `fnName`'s value is a lambda
+    chain whose body calls `<Ind>.casesOn ... minor_0 ... minor_{m-1}` on one of its parameter
+    binders, and a minor calls `fnName` (as either `.const fnName` or `.fvar fnName`) on a
+    recursive field of that constructor, lower the `<Ind>.casesOn` call into `<Ind>.recOn`
+    (generalizing the motive over any trailing accumulator parameters after `majorParamPos`)
+    so that the definition is 100% self-reference-free and reduces in the kernel via ι-reduction (`rfl`)! -/
+def tryLowerStructuralRecToRecOn (env : IxElabEnv) (fnName : Ix.Name)
+    (value : Ix.Expr) : Ix.Expr := Id.run do
+  -- Peel leading `.lam` binders into fresh FVars via structural recursion on `fuel`
+  let rec peelLams : Nat → Nat → Ix.Expr → Array AuxLocalDecl → Array Ix.Expr →
+      Ix.Expr × Array AuxLocalDecl × Array Ix.Expr
+    | 0, _, cur, decls, fvars => (cur, decls, fvars)
+    | fuel + 1, idx, cur, decls, fvars =>
+      match stripMData cur with
+      | .lam nm dom body bi _ =>
+        let (fvId, fvExpr) := mkAuxFVar "srl" idx
+        let cur' := instantiate1 body fvExpr
+        let decl : AuxLocalDecl := { fvarId := fvId, binderName := nm, domain := dom, binderInfo := bi }
+        peelLams fuel (idx + 1) cur' (decls.push decl) (fvars.push fvExpr)
+      | _ => (cur, decls, fvars)
+  let (cur, lamDecls, lamFVars) := peelLams 32 0 value #[] #[]
+  let (headFn, headArgs) := getAppFnArgs cur
+  match headFn with
+  | .const cName cUnivs _ =>
+    -- Check if `cName` is `<Ind>.casesOn`
+    let comps := Name.components cName
+    if comps.getLast? != some "casesOn" then return value
+    let indName := Name.fromComponents comps.dropLast
+    let some (.inductInfo ival) := env.find? indName | return value
+    let recOnName := Name.mkStr indName "recOn"
+    if !env.contains recOnName then return value
+    let nParams := ival.numParams
+    let nIndices := ival.numIndices
+    let nCtors := ival.ctors.size
+    let majorPos := nParams + 1 + nIndices
+    if headArgs.size != majorPos + 1 + nCtors then return value
+    let majorArg := headArgs.getD majorPos cur
+    -- Check which lambda parameter `majorArg` corresponds to
+    let some majorParamPos := lamFVars.idxOf? majorArg | return value
+    let extraDecls := lamDecls.extract (majorParamPos + 1) lamDecls.size
+    let extraFVars := lamFVars.extract (majorParamPos + 1) lamFVars.size
+    let origMotive := headArgs.getD nParams cur
+    -- Generalize `origMotive` over any trailing accumulator parameters `extraDecls`
+    let genMotive :=
+      if extraDecls.isEmpty then origMotive
+      else match stripMData origMotive with
+        | .lam nm dom body bi _ =>
+          Expr.mkLam nm dom (closeForalls extraDecls body) bi
+        | _ => origMotive
+    -- Rewrite each constructor minor `minor_i`
+    let mut newMinors : Array Ix.Expr := #[]
+    let mut changed := false
+    for cidx in [:nCtors] do
+      let minorExpr := headArgs.getD (majorPos + 1 + cidx) cur
+      let some ctorName := ival.ctors[cidx]? | return value
+      let some (.ctorInfo cval) := env.find? ctorName | return value
+      -- Peel `cval.numFields` lambda binders from `minorExpr`
+      let mut mCur := minorExpr
+      let mut fDecls : Array AuxLocalDecl := #[]
+      let mut fFVars : Array Ix.Expr := #[]
+      for fIdx in [:cval.numFields] do
+        match stripMData mCur with
+        | .lam nm dom body bi _ =>
+          let (fvId, fvExpr) := mkAuxFVar s!"srf_{cidx}" fIdx
+          mCur := instantiate1 body fvExpr
+          fDecls := fDecls.push { fvarId := fvId, binderName := nm, domain := dom, binderInfo := bi }
+          fFVars := fFVars.push fvExpr
+        | _ => pure ()
+      -- Identify which fields of `cval` are recursive occurrences of `indName`
+      let mut ihDecls : Array AuxLocalDecl := #[]
+      let mut recFieldMap : NameMap Ix.Expr := NameMap.empty
+      for (fDecl, fIdx) in fDecls.zipIdx do
+        let (fDomHead, _) := getAppFnArgs fDecl.domain
+        match fDomHead with
+        | .const dNm _ _ =>
+          if dNm == indName then
+            let (ihId, ihExpr) := mkAuxFVar s!"srih_{cidx}" fIdx
+            let ihDom := Expr.mkBeta (Expr.mkApp genMotive (fFVars.getD fIdx mCur))
+            ihDecls := ihDecls.push { fvarId := ihId, binderName := Name.simple "ih", domain := ihDom }
+            recFieldMap := recFieldMap.insert fDecl.fvarId ihExpr
+        | _ => pure ()
+      -- Replace self-calls `fnName a₀ ... a_{majorParamPos} a_{majorParamPos+1} ...`
+      -- (matching both `.const fnName` and `.fvar fnName`)
+      let rec rewriteSelfCalls : Ix.Expr → Bool × Ix.Expr
+        | .app f a _ =>
+          let (c1, f') := rewriteSelfCalls f
+          let (c2, a') := rewriteSelfCalls a
+          let curApp := Expr.mkApp f' a'
+          let (fnH, fnAs) := getAppFnArgs curApp
+          let isSelfHead := match fnH with
+            | .const nm _ _ => nm == fnName
+            | .fvar fvId _  => fvId == fnName
+            | _             => false
+          if isSelfHead && fnAs.size == lamFVars.size then
+            let argAtMaj := fnAs.getD majorParamPos f'
+            match stripMData argAtMaj with
+            | .fvar fvId _ =>
+              match recFieldMap.get? fvId with
+              | some ihExpr =>
+                let trailingArgs := fnAs.extract (majorParamPos + 1) fnAs.size
+                (true, Expr.mkAppN ihExpr trailingArgs)
+              | none => (c1 || c2, curApp)
+            | _ => (c1 || c2, curApp)
+          else
+            (c1 || c2, curApp)
+        | .lam nm t b bi _ =>
+          let (c1, t') := rewriteSelfCalls t
+          let (c2, b') := rewriteSelfCalls b
+          (c1 || c2, Expr.mkLam nm t' b' bi)
+        | .forallE nm t b bi _ =>
+          let (c1, t') := rewriteSelfCalls t
+          let (c2, b') := rewriteSelfCalls b
+          (c1 || c2, Expr.mkForallE nm t' b' bi)
+        | .letE nm t v b nd _ =>
+          let (c1, t') := rewriteSelfCalls t
+          let (c2, v') := rewriteSelfCalls v
+          let (c3, b') := rewriteSelfCalls b
+          (c1 || c2 || c3, Expr.mkLetE nm t' v' b' nd)
+        | .proj nm i s _ =>
+          let (c1, s') := rewriteSelfCalls s
+          (c1, Expr.mkProj nm i s')
+        | .mdata md x _ =>
+          let (c1, x') := rewriteSelfCalls x
+          (c1, Expr.mkMData md x')
+        | other => (false, other)
+      let (didRewrite, mCur') := rewriteSelfCalls mCur
+      if didRewrite then changed := true
+      let newMinor := closeLambdas (fDecls ++ ihDecls ++ extraDecls) mCur'
+      newMinors := newMinors.push newMinor
+    if !changed then return value
+    let params := headArgs.extract 0 nParams
+    let indicesAndMaj := headArgs.extract (nParams + 1) (majorPos + 1)
+    let prefixArgs := params ++ #[genMotive] ++ indicesAndMaj
+    let recOnCall := Expr.mkAppN (Expr.mkConst recOnName cUnivs) (prefixArgs ++ newMinors)
+    let fullBody := Expr.mkAppN recOnCall extraFVars
+    return closeLambdas (lamDecls.extract 0 (majorParamPos + 1) ++ extraDecls) fullBody
+  | _ => return value
+where
+  /-- Beta-reduce a single `(λ x => body) arg` application if `fn` is a lambda. -/
+  Expr.mkBeta : Ix.Expr → Ix.Expr
+    | .app (.lam _ _ b _ _) a _ => instantiate1 b a
+    | other => other
 
 /-- Main bidirectional term elaborator, structurally recursive on `fuel : Nat`. -/
 def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
@@ -671,6 +928,97 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
           modify fun st => { st with localLetContracts := st.localLetContracts.push lc }
           let letExpr := Expr.mkLetContract letName letTy letVal absBody nonDep binderContract letKind
           ensureHasType fuel stx letExpr expectedType?
+      -- 3.14b. `let rec f b₁ ... bₙ [: T] (:= val | | pat => rhs); body` (`SyntaxKind.letRecTerm`)
+      else if kind == SyntaxKind.letRecTerm then
+        let bPrefNode   := args.getD 2 .missing
+        let idStx       := args.getD 3 .missing
+        let bindersNode := args.getD 4 .missing
+        let optTyNode   := args.getD 5 .missing
+        let valStx      := args.getD 7 .missing
+        let bodyStx     := args.getD 9 .missing
+        let letName :=
+          let id := Syntax.getId idStx
+          if Name.isAnonymous id then Name.simple "recFn" else id
+        let bParsed := decodeContractPrefix bPrefNode
+        let (vParsed, optTyStx?) :=
+          if Syntax.getNumArgs optTyNode >= 3 then
+            let vp := decodeContractPrefix (Syntax.getArg optTyNode 1)
+            (vp, some (Syntax.getArg optTyNode 2))
+          else
+            ({}, none)
+        let merged := mergeParsedContracts bParsed vParsed
+        let binderContract : Ixon.BinderContract := merged.toBinderContract
+        let paramGroups := (Syntax.getArgs bindersNode).toList.map decodeBinderNode
+        -- Step 1: Elaborate signature `letTy` of the recursive helper
+        let letTy ← elabBinderGroups elabRec paramGroups #[] fun fvars => do
+          let retTy ← match optTyStx? with
+            | some tyStx =>
+              let t ← elabRec tyStx none
+              let _ ← ensureSortIfNotForall 32 t
+              pure t
+            | none =>
+              let u ← mkFreshLevelMVar
+              mkFreshExprMVar (Expr.mkSort u)
+          mkForallFVars fvars retTy
+        -- Step 2: Bind `letName : letTy` in `lctx` while elaborating `valStx`, then lower self-recursion via `tryLowerStructuralRecToRecOn`
+        let (letTyInst, letVal) ← withLocalDecl letName letTy .default binderContract fun recFvId _ => do
+          let rawVal ← elabBinderGroups elabRec paramGroups #[] fun fvars => do
+            let expValTy? ← match optTyStx? with
+              | some tyStx =>
+                let t ← elabRec tyStx none
+                let _ ← ensureSortIfNotForall 32 t
+                pure (some t)
+              | none => pure none
+            let vExpr ←
+              if Syntax.isOfKind valStx SyntaxKind.nullKind then
+                -- Pattern-matching `let rec f x | pat => rhs`
+                let ctxNow ← read
+                let rec stxMentions (nm : Ix.Name) (fuelM : Nat) (s : Ix.Syntax) : Bool :=
+                  match fuelM with
+                  | 0 => false
+                  | f + 1 =>
+                    match s with
+                    | .ident _ _ id _ => id == nm
+                    | .node _ _ as    => as.any (stxMentions nm f)
+                    | _               => false
+                let targetFvId? :=
+                  (fvars.find? fun fvId =>
+                    match ctxNow.lctx.findFVar? fvId with
+                    | some d => d.binderInfo == .default && !stxMentions d.userName 64 valStx
+                    | none   => false).orElse (fun _ => fvars.back?)
+                match targetFvId? with
+                | some lastFvId =>
+                  let lastName := match ctxNow.lctx.findFVar? lastFvId with
+                    | some d => d.userName
+                    | none   => Name.simple "x"
+                  let matchStx := Syntax.mkNode SyntaxKind.matchTerm
+                    #[Syntax.mkSimpleAtom "match", Syntax.mkNullNode #[Syntax.mkSimpleIdent lastName],
+                      Syntax.mkSimpleAtom "with", valStx]
+                  elabRec matchStx expValTy?
+                | none =>
+                  throwElabError "pattern-matching 'let rec' / 'where' requires at least one parameter" (some stx)
+              else
+                elabRec valStx expValTy?
+            let vTy ← match expValTy? with
+              | some t => pure t
+              | none   => inferType fuel vExpr
+            let fullTy ← mkForallFVars fvars vTy
+            let _ ← isDefEq fuel letTy fullTy
+            mkLambdaFVars fvars vExpr
+          let rawValInst ← instantiateMVars 32 rawVal
+          let tyInst ← instantiateMVars 32 letTy
+          let stNow ← get
+          let lowered := tryLowerStructuralRecToRecOn stNow.env recFvId rawValInst
+          pure (tyInst, lowered)
+        -- Step 3: Elaborate `bodyStx` with `letName := letVal` bound in `lctx`
+        withLetDecl letName letTyInst letVal binderContract .value false fun fvId _ => do
+          let bodyExpr ← elabRec bodyStx expectedType?
+          let nonDep := !containsFVar fvId bodyExpr
+          let absBody := abstractFVar fvId bodyExpr
+          let lc : Ixon.LetContract := { nonDep, kind := .value, binder := binderContract }
+          modify fun st => { st with localLetContracts := st.localLetContracts.push lc }
+          let letExpr := Expr.mkLetContract letName letTyInst letVal absBody nonDep binderContract .value
+          ensureHasType fuel stx letExpr expectedType?
       -- 3.15. `have h [: T] := v; body` (`SyntaxKind.haveTerm` — non-dependent `letE`)
       else if kind == SyntaxKind.haveTerm then
         let idStx     := args.getD 1 .missing
@@ -810,7 +1158,7 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
             whnf fuel bTy
           | none, none =>
             throwElabError "structure literal '{ ... }' requires an expected structure type" (some stx)
-        let (headFn, _) := getAppFnArgs expTy
+        let (headFn, expArgs) := getAppFnArgs expTy
         let st ← get
         match headFn with
         | .const structName _ _ =>
@@ -826,6 +1174,10 @@ def elabTerm : Nat → Ix.Syntax → Option Ix.Expr → IxElabM Ix.Expr
               assignedMap := assignedMap.insert fId vStx
             let (ctorConst, ctorTy) ← mkConstWithFreshMVarLevels sInfo.ctorName
             let (ctorApplied, instGoals, afterParamsTy) ← insertImplicitArgs 16 ctorConst ctorTy []
+            -- Pre-unify structure parameter metavariables with `expArgs` so field lambdas see concrete parameter types!
+            let (_, ctorParamMVars) := getAppFnArgs ctorApplied
+            for (pMVar, expArg) in ctorParamMVars.zip expArgs do
+              let _ ← isDefEq fuel pMVar expArg
             let mut curFn := ctorApplied
             let mut curTy := afterParamsTy
             for fInfo in sInfo.fields do

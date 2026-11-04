@@ -367,6 +367,123 @@ def testPureTacticEngine : Bool :=
   | .ok b => b
   | .error _ => false
 
+/-! ## 6c. Advanced Frontend Features (`where`, `let rec`, Auto-Implicits, `deriving`, `extends`, `@[simp]`, `Coe`, Custom Operators) -/
+
+def testAdvancedFrontendResult : Except String Bool :=
+  let src := "
+    -- 1. Auto-bound implicit parameters (`{α : Type}`, `{β : Type}`)
+    def polyId (x : α) : α := x
+    def polyConst (x : α) (y : β) : α := x
+
+    theorem polyId_nat : polyId 7 = 7 := by rfl
+
+    -- 2. `where` clauses and `let rec` local structural recursion (lowered to `Nat.recOn` + `.letE`)
+    def doubleWithWhere (n : Nat) : Nat :=
+      helper n
+    where
+      helper (k : Nat) : Nat
+        | 0 => 0
+        | Nat.succ m => Nat.succ (Nat.succ (helper m))
+
+    theorem doubleWithWhere_three : doubleWithWhere 3 = 6 := by rfl
+
+    def sumDownLetRec (n : Nat) : Nat :=
+      let rec loop (k : Nat) : Nat
+        | 0 => 0
+        | Nat.succ m => Nat.add (Nat.succ m) (loop m);
+      loop n
+
+    theorem sumDownLetRec_three : sumDownLetRec 3 = 6 := by rfl
+
+    -- 3. `deriving Inhabited, BEq` on `inductive` and `structure`
+    inductive Color : Type
+      | red : Color
+      | green : Color
+      | blue : Color
+      deriving Inhabited, BEq
+
+    structure Point2D : Type where
+      x : Nat
+      y : Nat
+      deriving Inhabited, BEq
+
+    theorem color_default_eq : (default : Color) = Color.red := by rfl
+    theorem color_beq_self : (Color.green == Color.green) = true := by rfl
+    theorem color_beq_diff : (Color.red == Color.blue) = false := by rfl
+    theorem point_default_x : (default : Point2D).x = 0 := by rfl
+    theorem point_beq_check : (Point2D.mk 2 3 == Point2D.mk 2 3) = true := by rfl
+
+    -- 4. Structure & Class Inheritance (`extends`) with diamond deduplication & subobject coercion
+    structure BaseX : Type where
+      x : Nat
+
+    structure LeftXY extends BaseX : Type where
+      y : Nat
+
+    structure RightXZ extends BaseX : Type where
+      z : Nat
+
+    structure DiamondXYZ extends LeftXY, RightXZ : Type where
+      w : Nat
+
+    def sumFromLeft (p : LeftXY) : Nat := Nat.add p.x p.y
+
+    def mkDiamond : DiamondXYZ :=
+      { x := 10, y := 20, z := 30, w := 40 }
+
+    -- Subobject coercion `DiamondXYZ -> LeftXY` via `DiamondXYZ.toLeftXY`
+    theorem diamond_coerces_to_left : sumFromLeft mkDiamond = 30 := by rfl
+
+    -- 5. Attributes (`@[simp]`, `@[reducible]`) & Custom `prefix` / `postfix` / `infixl` operators
+    @[reducible] def addOne (n : Nat) : Nat := Nat.succ n
+    prefix:75 \"+++\" => addOne
+    postfix:80 \"!+\" => addOne
+    infixl:65 \" <+> \" => Nat.add
+
+    theorem custom_ops_reduce : (+++ 2 !+ <+> 1) = 5 := by rfl
+
+    def tagVal (n : Nat) : Nat := n
+    @[simp] theorem tagVal_four : tagVal 4 = 4 := by rfl
+
+    theorem simp_uses_attr : tagVal 4 = 4 := by
+      simp
+
+    -- 6. `Coe` typeclass coercion
+    structure WrappedNat : Type where
+      unbox : Nat
+
+    instance instCoeWrappedNat : Coe WrappedNat Nat where
+      coe w := w.unbox
+
+    def takeNat (n : Nat) : Nat := n
+
+    theorem coe_wrapped_nat : takeNat (WrappedNat.mk 42) = 42 := by rfl
+  "
+  match compileSourceToIxon src "<advanced.ix>" IxElabEnv.empty defaultParserEnv true with
+  | .error e => .error e
+  | .ok (_stx, env, _ixonEnv, cenv) =>
+    .ok (
+      cenv.ungrounded.isEmpty &&
+      env.contains (Name.simple "polyId") &&
+      env.contains (Name.simple "doubleWithWhere") &&
+      env.contains (Name.simple "sumDownLetRec") &&
+      env.contains (Name.simple "instInhabitedColor") &&
+      env.contains (Name.simple "instBEqColor") &&
+      env.contains (Name.simple "instInhabitedPoint2D") &&
+      env.contains (Name.simple "instBEqPoint2D") &&
+      env.contains (Name.mkStr2 "DiamondXYZ" "toLeftXY") &&
+      env.contains (Name.mkStr2 "DiamondXYZ" "toRightXZ") &&
+      env.contains (Name.simple "diamond_coerces_to_left") &&
+      env.contains (Name.simple "custom_ops_reduce") &&
+      env.contains (Name.simple "simp_uses_attr") &&
+      env.contains (Name.simple "coe_wrapped_nat")
+    )
+
+def testAdvancedFrontend : Bool :=
+  match testAdvancedFrontendResult with
+  | .ok b => b
+  | .error _ => false
+
 /-! ## 7. Programmable Module Import Mapping (`map Name := #<hash>`) & `ElabClaim` -/
 
 def testImportMapAndElabClaim : Bool := Id.run do
@@ -849,7 +966,9 @@ def frontendSuite : TestSeq :=
     test "8. Kernel-level reduction of parseSource, buildModuleIndex & elabModuleSyntax"
       (kernelParseCheck && kernelScopeCheck && kernelElabCheck) ++
     test "9. Fermat's Last Theorem proposition (`flt_pinned` & `FermatLastTheorem`) elaboration"
-      (kernelFltPropCheck && testFltPropositionElab)
+      (kernelFltPropCheck && testFltPropositionElab) ++
+    test "10. Advanced Frontend (where, let rec, auto-implicits, deriving, extends, @[simp], Coe, prefix/postfix)"
+      testAdvancedFrontend
   )
 
 def Tests.Ix.Frontend.suite : List TestSeq := [frontendSuite]
@@ -871,6 +990,10 @@ run_meta do
   | .ok true => pure ()
   | .ok false => throwError "testPureTacticEngine returned false"
   | .error msg => throwError s!"testPureTacticEngine failed: {msg}"
+  match testAdvancedFrontendResult with
+  | .ok true => pure ()
+  | .ok false => throwError "testAdvancedFrontend returned false"
+  | .error msg => throwError s!"testAdvancedFrontend failed: {msg}"
   unless testImportMapAndElabClaim do
     throwError "testImportMapAndElabClaim failed"
   unless testFltPropositionElab do
@@ -880,7 +1003,7 @@ run_meta do
   IO.println gateSummary
   unless gateOk do
     throwError "Closure Certification Gate failed!"
-  IO.println "✓ All 10 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
+  IO.println "✓ All 11 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
 
 def Tests.Ix.Frontend.runBenchmarksWithEnv (env : Lean.Environment) : IO UInt32 := do
   let stdout ← IO.getStdout

@@ -279,6 +279,16 @@ def findInfixOp? (env : IxParserEnv) (sym : String) (minPrec : Nat) : Option Ope
     op.symbol == sym && op.prec ≥ minPrec &&
     (op.fixity == .infixl || op.fixity == .infixr || op.fixity == .infixn)
 
+/-- Look up a prefix operator spec matching `sym`. -/
+def findPrefixOp? (env : IxParserEnv) (sym : String) : Option OperatorSpec :=
+  env.operators.find? fun op =>
+    op.symbol == sym && op.fixity == .prefixOp
+
+/-- Look up a postfix operator spec matching `sym` at or above `minPrec`. -/
+def findPostfixOp? (env : IxParserEnv) (sym : String) (minPrec : Nat) : Option OperatorSpec :=
+  env.operators.find? fun op =>
+    op.symbol == sym && op.prec ≥ minPrec && op.fixity == .postfixOp
+
 /-- Check if a token can start a function argument in juxtaposition `f a`. -/
 def canStartArg (env : IxParserEnv) : Ix.Syntax → Bool
   | .ident .. => true
@@ -294,7 +304,7 @@ def canStartArg (env : IxParserEnv) : Ix.Syntax → Bool
       sym == "," || sym == "|" || sym == "=>" || sym == "↦" || sym == "→" ||
       sym == "->" || sym == "in" || sym == "then" || sym == "else" || sym == "with" ||
       sym == "where" || sym == "end" ||
-      (env.operators.any fun op => op.symbol == sym))
+      (env.operators.any fun op => op.symbol == sym && op.fixity != .prefixOp))
   | .missing => false
 
 /-- Parse an explicit binder `(0 x y : !A)` or `(x : A)` or `(x)`. -/
@@ -839,8 +849,14 @@ def leadTermFn (termRec : ParserFn) (tacticFuel : Nat) : ParserFn := fun ctx s =
             let isBorrow := match afterLet? with
               | some (.ident _ _ (.str (.anonymous _) "borrow" _) _) => true
               | _ => false
-            let sBorrow := if isBorrow then nonReservedSymbolFn "borrow" ctx s else s
-            sBorrow.bindState fun s =>
+            let isRec := match afterLet? with
+              | some (.ident _ _ (.str (.anonymous _) "rec" _) _) | some (.atom _ "rec") => true
+              | _ => false
+            let sSubKw :=
+              if isBorrow then nonReservedSymbolFn "borrow" ctx s
+              else if isRec then nonReservedSymbolFn "rec" ctx s
+              else s
+            sSubKw.bindState fun s =>
             (binderPrefixFn ctx s).bindState fun s =>
             (binderIdentFn ctx s).bindState fun s =>
               if s.hasError then s else
@@ -851,13 +867,26 @@ def leadTermFn (termRec : ParserFn) (tacticFuel : Nat) : ParserFn := fun ctx s =
                   (valuePrefixFn c st).bindState fun st =>
                     term0 c st) ctx s).bindState fun s =>
                 if s.hasError then s else
-                (symbolFn ":=" ctx s).bindState fun s =>
-                  if s.hasError then s else
-                  (term0 ctx s).bindState fun s =>
+                bindPeek ctx s fun rhsTok? s =>
+                  let sAfterRhs := match rhsTok? with
+                    | some (.atom _ "|") =>
+                      if isRec then
+                        let s := s.pushSyntax (Syntax.mkSimpleAtom ":=")
+                        many1Fn (matchAltFn termRec) ctx s
+                      else
+                        symbolFn ":=" ctx s
+                    | _ =>
+                      (symbolFn ":=" ctx s).bindState fun s =>
+                        if s.hasError then s else term0 ctx s
+                  sAfterRhs.bindState fun s =>
                     if s.hasError then s else
                     (optionalFn (orelseFn (symbolFn ";") (symbolFn "in")) ctx s).bindState fun s =>
                     (term0 ctx s).bindState fun s =>
-                      s.mkNode (if isBorrow then SyntaxKind.letBorrowTerm else SyntaxKind.letTerm) iniSz
+                      let nodeKind :=
+                        if isBorrow then SyntaxKind.letBorrowTerm
+                        else if isRec then SyntaxKind.letRecTerm
+                        else SyntaxKind.letTerm
+                      s.mkNode nodeKind iniSz
       | "have" =>
         let iniSz := s.stackSize
         (symbolFn "have" ctx s).bindState fun s =>
@@ -1003,12 +1032,25 @@ def leadTermFn (termRec : ParserFn) (tacticFuel : Nat) : ParserFn := fun ctx s =
         (withPrecFn leadPrec termRec ctx s).bindState fun s =>
           s.mkNode SyntaxKind.unaryOpTerm iniSz
       | _ =>
-        s.mkUnexpectedError s!"unexpected token '{sym}' in term"
+        match findPrefixOp? ctx.env sym with
+        | some op =>
+          (tokenFn ctx s).bindState fun s =>
+            let s := s.popSyntax
+            (withPrecFn op.prec termRec ctx s).bindState fun s =>
+              if s.hasError then s else
+              match op.targetFn with
+              | some fnName =>
+                let argStx := s.stxStack.back
+                let s := s.popSyntax
+                s.pushSyntax (Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, argStx])
+              | none => s
+        | none =>
+          s.mkUnexpectedError s!"unexpected token '{sym}' in term"
     | _ =>
       s.mkUnexpectedError "expected term"
 
 /-- Pratt trailing loop: handles `.field` / `.0` projections, function application `f a`,
-    substructural function arrows `A → !B`, and binary infix operators. -/
+    substructural function arrows `A → !B`, and binary infix / postfix operators. -/
 def trailingTermLoop (termRec : ParserFn) (ctx : IxParserContext) (s : ParserState) :
     Nat → ParserState
   | 0 => s
@@ -1048,18 +1090,44 @@ def trailingTermLoop (termRec : ParserFn) (ctx : IxParserContext) (s : ParserSta
                   | _       => op.prec + 1
                 (withPrecFn rhsMinPrec termRec ctx s).bindState fun s =>
                   if s.hasError then s else
-                  (s.mkTrailingNode op.kind iniSz op.prec).bindState fun s =>
+                  let sNext :=
+                    if op.kind == SyntaxKind.appTerm then
+                      match op.targetFn with
+                      | some fnName =>
+                        let rhsStx := s.stxStack.back
+                        let s1 := s.shrinkStack (iniSz - 1)
+                        let lhsStx := s.stxStack.getD (iniSz - 1)
+                        let app1 := Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, lhsStx]
+                        let app2 := Syntax.mkNode SyntaxKind.appTerm #[app1, rhsStx]
+                        s1.pushSyntax app2
+                      | none => s.mkTrailingNode op.kind iniSz op.prec
+                    else
+                      s.mkTrailingNode op.kind iniSz op.prec
+                  sNext.bindState fun s =>
                     trailingTermLoop termRec ctx s fuel
             | none =>
-              -- 4. Juxtaposition application `f arg` when `ctx.prec < argPrec` (on the same line)
-              if Nat.ble (ctx.prec + 1) argPrec && !hasLeadingNewline tok && canStartArg ctx.env tok then
+              match findPostfixOp? ctx.env (Syntax.getAtomVal tok) ctx.prec with
+              | some op =>
                 let iniSz := s.stackSize
-                (withPrecFn argPrec termRec ctx s).bindState fun s =>
-                  if s.hasError then s else
-                  (s.mkTrailingNode SyntaxKind.appTerm iniSz argPrec).bindState fun s =>
+                (tokenFn ctx s).bindState fun s =>
+                  let sNext := match op.targetFn with
+                    | some fnName =>
+                      let lhsStx := s.stxStack.getD (iniSz - 1)
+                      let s1 := s.shrinkStack (iniSz - 1)
+                      s1.pushSyntax (Syntax.mkNode SyntaxKind.appTerm #[Syntax.mkSimpleIdent fnName, lhsStx])
+                    | none => s
+                  sNext.bindState fun s =>
                     trailingTermLoop termRec ctx s fuel
-              else
-                s
+              | none =>
+                -- 4. Juxtaposition application `f arg` when `ctx.prec < argPrec` (on the same line)
+                if Nat.ble (ctx.prec + 1) argPrec && !hasLeadingNewline tok && canStartArg ctx.env tok then
+                  let iniSz := s.stackSize
+                  (withPrecFn argPrec termRec ctx s).bindState fun s =>
+                    if s.hasError then s else
+                    (s.mkTrailingNode SyntaxKind.appTerm iniSz argPrec).bindState fun s =>
+                      trailingTermLoop termRec ctx s fuel
+                else
+                  s
 
 /-- Parse an expression at minimum precedence `ctx.prec`, structurally recursive on `fuel : Nat`. -/
 def termStep : Nat → ParserFn

@@ -497,6 +497,184 @@ def seedCorePreludeIfMissing (env : IxElabEnv) (modIdx : ModuleIndex) : IxElabEn
         isUnsafe := false
       })
 
+  -- 10. On-demand seeding of `Inhabited`, `BEq`, and `Coe` when referenced or derived in `modIdx`
+  let rec stxHasRefOrOp : Nat → Ix.Syntax → Bool
+    | 0, _ => false
+    | _ + 1, .ident _ _ id _ =>
+      let c := (Name.components id).headD ""
+      c == "Inhabited" || c == "default" || c == "BEq" || c == "DecidableEq" || c == "Coe"
+    | _, .atom _ v => v == "==" || v == "!=" || v == "&&"
+    | f + 1, .node _ _ as => as.any (stxHasRefOrOp f)
+    | _, _ => false
+  let needsCoreClasses := modIdx.decls.any fun d => stxHasRefOrOp 64 d.stx
+  if needsCoreClasses then
+    -- 10a. `Inhabited.{u} (α : Type u) : Type u`, `Inhabited.mk`, `Inhabited.default`, `default`, `instInhabitedNat`, `instInhabitedBool`
+    let inhName := Name.simple "Inhabited"
+    if !env.contains inhName && !modIdx.declByName.contains inhName then
+      let inhMk := Name.mkStr2 "Inhabited" "mk"
+      let inhDef := Name.mkStr2 "Inhabited" "default"
+      let inhTy := Expr.mkForallE (Name.simple "α") typeU typeU .default
+      let inhApp0 := Expr.mkApp (Expr.mkConst inhName #[uLvl]) (Expr.mkBVar 0)
+      let inhApp1 := Expr.mkApp (Expr.mkConst inhName #[uLvl]) (Expr.mkBVar 1)
+      let inhMkTy :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "default") (Expr.mkBVar 0) inhApp1 .default) .implicit
+      let iv : Ix.InductiveVal := {
+        cnst := { name := inhName, levelParams := #[uName], type := inhTy }
+        numParams := 1, numIndices := 0, all := #[inhName]
+        ctors := #[inhMk], numNested := 0
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let cMk : Ix.ConstructorVal := {
+        cnst := { name := inhMk, levelParams := #[uName], type := inhMkTy }
+        induct := inhName, cidx := 0, numParams := 1, numFields := 1, isUnsafe := false
+      }
+      env := registerCanonicalInductiveBlock env #[(iv, #[cMk])]
+      for p in generateStructProjections iv cMk #[inhDef] true do
+        env := env.addConst (.defnInfo p)
+      env := env.addStructInfo {
+        structName := inhName, ctorName := inhMk, numParams := 1, isClass := true
+        fields := #[{ fieldName := Name.simple "default", projFnName := inhDef, fieldIdx := 0 }]
+      }
+      let topDefName := Name.simple "default"
+      if !env.contains topDefName && !modIdx.declByName.contains topDefName then
+        let topDefTy :=
+          Expr.mkForallE (Name.simple "α") typeU
+            (Expr.mkForallE (Name.simple "self") inhApp0 (Expr.mkBVar 1) .instImplicit) .implicit
+        let topDefVal :=
+          Expr.mkLam (Name.simple "α") typeU
+            (Expr.mkLam (Name.simple "self") inhApp0
+              (Expr.mkProj inhName 0 (Expr.mkBVar 0)) .instImplicit) .implicit
+        env := env.addConst (.defnInfo {
+          cnst := { name := topDefName, levelParams := #[uName], type := topDefTy }
+          value := topDefVal, hints := .abbrev, safety := .safe, all := #[topDefName]
+        })
+      let instInhNat := Name.simple "instInhabitedNat"
+      if !env.contains instInhNat && !modIdx.declByName.contains instInhNat then
+        env := env.addConst (.defnInfo {
+          cnst := { name := instInhNat, levelParams := #[], type := Expr.mkApp (Expr.mkConst inhName #[Level.mkZero]) natConst }
+          value := Expr.mkAppN (Expr.mkConst inhMk #[Level.mkZero]) #[natConst, Expr.mkConst (Name.mkStr2 "Nat" "zero") #[]]
+          hints := .abbrev, safety := .safe, all := #[instInhNat]
+        })
+        env := env.addInstance { instName := instInhNat, className := inhName }
+      let instInhBool := Name.simple "instInhabitedBool"
+      if !env.contains instInhBool && !modIdx.declByName.contains instInhBool then
+        env := env.addConst (.defnInfo {
+          cnst := { name := instInhBool, levelParams := #[], type := Expr.mkApp (Expr.mkConst inhName #[Level.mkZero]) boolConst }
+          value := Expr.mkAppN (Expr.mkConst inhMk #[Level.mkZero]) #[boolConst, Expr.mkConst (Name.mkStr2 "Bool" "false") #[]]
+          hints := .abbrev, safety := .safe, all := #[instInhBool]
+        })
+        env := env.addInstance { instName := instInhBool, className := inhName }
+
+    -- 10b. `BEq.{u} (α : Type u) : Type u`, `BEq.mk`, `BEq.beq`, `and`, `instBEqNat`, `instBEqBool`
+    let andBoolName := Name.simple "and"
+    if !env.contains andBoolName && !modIdx.declByName.contains andBoolName then
+      let andVal :=
+        Expr.mkLam (Name.simple "x") boolConst
+          (Expr.mkLam (Name.simple "y") boolConst
+            (Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Bool" "casesOn") #[Level.mkSucc Level.mkZero])
+              #[Expr.mkLam (Name.simple "_") boolConst boolConst .default,
+                Expr.mkBVar 1,
+                Expr.mkConst (Name.mkStr2 "Bool" "false") #[],
+                Expr.mkBVar 0]) .default) .default
+      let boolBinTy := Expr.mkForallE (Name.simple "x") boolConst (Expr.mkForallE (Name.simple "y") boolConst boolConst .default) .default
+      env := env.addConst (.defnInfo {
+        cnst := { name := andBoolName, levelParams := #[], type := boolBinTy }
+        value := andVal, hints := .abbrev, safety := .safe, all := #[andBoolName]
+      })
+    let beqClsName := Name.simple "BEq"
+    if !env.contains beqClsName && !modIdx.declByName.contains beqClsName then
+      let beqMk := Name.mkStr2 "BEq" "mk"
+      let beqFn := Name.mkStr2 "BEq" "beq"
+      let beqClsTy := Expr.mkForallE (Name.simple "α") typeU typeU .default
+      let beqFnDom :=
+        Expr.mkForallE Name.mkAnon (Expr.mkBVar 0)
+          (Expr.mkForallE Name.mkAnon (Expr.mkBVar 1) boolConst .default) .default
+      let beqApp1 := Expr.mkApp (Expr.mkConst beqClsName #[uLvl]) (Expr.mkBVar 1)
+      let beqMkTy :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "beq") beqFnDom beqApp1 .default) .implicit
+      let iv : Ix.InductiveVal := {
+        cnst := { name := beqClsName, levelParams := #[uName], type := beqClsTy }
+        numParams := 1, numIndices := 0, all := #[beqClsName]
+        ctors := #[beqMk], numNested := 0
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let cMk : Ix.ConstructorVal := {
+        cnst := { name := beqMk, levelParams := #[uName], type := beqMkTy }
+        induct := beqClsName, cidx := 0, numParams := 1, numFields := 1, isUnsafe := false
+      }
+      env := registerCanonicalInductiveBlock env #[(iv, #[cMk])]
+      for p in generateStructProjections iv cMk #[beqFn] true do
+        env := env.addConst (.defnInfo p)
+      env := env.addStructInfo {
+        structName := beqClsName, ctorName := beqMk, numParams := 1, isClass := true
+        fields := #[{ fieldName := Name.simple "beq", projFnName := beqFn, fieldIdx := 0 }]
+      }
+      let instBEqNat := Name.simple "instBEqNat"
+      if !env.contains instBEqNat && !modIdx.declByName.contains instBEqNat then
+        env := env.addConst (.defnInfo {
+          cnst := { name := instBEqNat, levelParams := #[], type := Expr.mkApp (Expr.mkConst beqClsName #[Level.mkZero]) natConst }
+          value := Expr.mkAppN (Expr.mkConst beqMk #[Level.mkZero]) #[natConst, Expr.mkConst (Name.mkStr2 "Nat" "beq") #[]]
+          hints := .abbrev, safety := .safe, all := #[instBEqNat]
+        })
+        env := env.addInstance { instName := instBEqNat, className := beqClsName }
+      let instBEqBool := Name.simple "instBEqBool"
+      if !env.contains instBEqBool && !modIdx.declByName.contains instBEqBool then
+        let boolBeqVal :=
+          Expr.mkLam (Name.simple "a") boolConst
+            (Expr.mkLam (Name.simple "b") boolConst
+              (Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Bool" "casesOn") #[Level.mkSucc Level.mkZero])
+                #[Expr.mkLam (Name.simple "_") boolConst boolConst .default,
+                  Expr.mkBVar 1,
+                  Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Bool" "casesOn") #[Level.mkSucc Level.mkZero])
+                    #[Expr.mkLam (Name.simple "_") boolConst boolConst .default,
+                      Expr.mkBVar 0,
+                      Expr.mkConst (Name.mkStr2 "Bool" "true") #[],
+                      Expr.mkConst (Name.mkStr2 "Bool" "false") #[]],
+                  Expr.mkBVar 0]) .default) .default
+        env := env.addConst (.defnInfo {
+          cnst := { name := instBEqBool, levelParams := #[], type := Expr.mkApp (Expr.mkConst beqClsName #[Level.mkZero]) boolConst }
+          value := Expr.mkAppN (Expr.mkConst beqMk #[Level.mkZero]) #[boolConst, boolBeqVal]
+          hints := .abbrev, safety := .safe, all := #[instBEqBool]
+        })
+        env := env.addInstance { instName := instBEqBool, className := beqClsName }
+
+    -- 10c. `Coe.{u, v} (α : Type u) (β : Type v) : Type (max u v)`, `Coe.mk`, `Coe.coe`
+    let coeClsName := Name.simple "Coe"
+    if !env.contains coeClsName && !modIdx.declByName.contains coeClsName then
+      let coeMk := Name.mkStr2 "Coe" "mk"
+      let coeFn := Name.mkStr2 "Coe" "coe"
+      let typeV := Expr.mkSort (Level.mkSucc vLvl)
+      let typeMaxUV := Expr.mkSort (Level.mkSucc (Level.mkMax uLvl vLvl))
+      let coeClsTy :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "β") typeV typeMaxUV .default) .default
+      let coeFnDom := Expr.mkForallE Name.mkAnon (Expr.mkBVar 1) (Expr.mkBVar 1) .default
+      let coeApp := Expr.mkAppN (Expr.mkConst coeClsName #[uLvl, vLvl]) #[Expr.mkBVar 2, Expr.mkBVar 1]
+      let coeMkTy :=
+        Expr.mkForallE (Name.simple "α") typeU
+          (Expr.mkForallE (Name.simple "β") typeV
+            (Expr.mkForallE (Name.simple "coe") coeFnDom coeApp .default)
+            .implicit) .implicit
+      let iv : Ix.InductiveVal := {
+        cnst := { name := coeClsName, levelParams := #[uName, vName], type := coeClsTy }
+        numParams := 2, numIndices := 0, all := #[coeClsName]
+        ctors := #[coeMk], numNested := 0
+        isRec := false, isUnsafe := false, isReflexive := false
+      }
+      let cMk : Ix.ConstructorVal := {
+        cnst := { name := coeMk, levelParams := #[uName, vName], type := coeMkTy }
+        induct := coeClsName, cidx := 0, numParams := 2, numFields := 1, isUnsafe := false
+      }
+      env := registerCanonicalInductiveBlock env #[(iv, #[cMk])]
+      for p in generateStructProjections iv cMk #[coeFn] true do
+        env := env.addConst (.defnInfo p)
+      env := env.addStructInfo {
+        structName := coeClsName, ctorName := coeMk, numParams := 2, isClass := true
+        fields := #[{ fieldName := Name.simple "coe", projFnName := coeFn, fieldIdx := 0 }]
+      }
+
   return env
 
 /-- Register the core Lean 4 `Init` arithmetic/order typeclass instance entries in `env.instances`. -/
@@ -692,6 +870,108 @@ def seedLeanInitArith (env : IxElabEnv) : IxElabEnv := Id.run do
 
   return registerLeanInitArithInstances env
 
+/-! ## Auto-Bound Implicit Parameters & Attributes -/
+
+/-- Extract `@[attr₁, attr₂, ...]` attribute names from a declaration's `modifiers` node. -/
+def extractDeclAttributes (modsNode : Ix.Syntax) : Array Ix.Name :=
+  (Syntax.getArgs modsNode).filterMap fun child =>
+    match child with
+    | .ident _ _ id _ => if Name.isAnonymous id then none else some id
+    | _               => none
+
+/-- True if `id` is a single-component Greek (`α..ω`) or single lowercase ASCII (`a..z`) identifier
+    eligible for Lean 4 auto-implicit parameter binding (`{α : _}`). -/
+def isAutoImplicitCandidate (id : Ix.Name) : Bool :=
+  match Name.components id with
+  | [s] =>
+    if s.length == 1 then
+      match s.toList with
+      | [c] =>
+        ('a' ≤ c && c ≤ 'z') ||
+        (0x03B1 ≤ c.toNat && c.toNat ≤ 0x03C9) -- Greek α (0x03B1) .. ω (0x03C9)
+      | _ => false
+    else false
+  | _ => false
+
+/-- Scan `paramGroups` and `optTypeNode` for unbound auto-implicit candidates, returning
+    implicit `{id : _}` `ParsedBinderGroup`s in left-to-right appearance order. -/
+def collectAutoImplicitGroups (scope : ScopeSnapshot) (modIdx : ModuleIndex)
+    (env : IxElabEnv) (varGroups : List ParsedBinderGroup)
+    (paramGroups : List ParsedBinderGroup) (optTypeNode : Ix.Syntax) : List ParsedBinderGroup := Id.run do
+  let isKnownConst (id : Ix.Name) : Bool :=
+    let res := resolveIdentInScope scope modIdx (fun n => env.contains n) id
+    env.contains res || modIdx.declByName.contains res || env.isCtor res || modIdx.isModuleCtor res
+  let rec scanStx (fuel : Nat) (bound : NameSet) (stx : Ix.Syntax) (acc : List Ix.Name) : List Ix.Name :=
+    match fuel with
+    | 0 => acc
+    | f + 1 =>
+      match stx with
+      | .ident _ _ id _ =>
+        if !bound.contains id && isAutoImplicitCandidate id && !isKnownConst id && !acc.contains id then
+          acc ++ [id]
+        else
+          acc
+      | .node _ k args =>
+        -- Do not treat universe level annotations as term auto-implicits
+        if k == SyntaxKind.typeTerm || k == SyntaxKind.sortTerm ||
+           k == SyntaxKind.explicitTerm || k == SyntaxKind.projTerm then
+          if k == SyntaxKind.projTerm then
+            scanStx f bound (args.getD 0 .missing) acc
+          else acc
+        else if k == SyntaxKind.forallTerm then
+          let isKw := match args[0]? with
+            | some (.atom _ kw) => kw == "forall" || kw == "∀"
+            | _ => false
+          let bNode := if isKw then args.getD 1 .missing else args.getD 0 .missing
+          let body  := if isKw then args.getD 4 .missing else args.getD 3 .missing
+          let bGrps := (Syntax.getArgs bNode).toList.map decodeBinderNode
+          let (bound', acc') := bGrps.foldl (fun (bSet, a) g =>
+            let a' := match g.typeStx? with | some ts => scanStx f bSet ts a | none => a
+            let bSet' := g.names.foldl (fun s n => s.insert n) bSet
+            (bSet', a')) (bound, acc)
+          scanStx f bound' body acc'
+        else if k == SyntaxKind.funTerm then
+          let bNode := args.getD 1 .missing
+          let body  := args.getD 3 .missing
+          let bGrps := (Syntax.getArgs bNode).toList.map decodeBinderNode
+          let (bound', acc') := bGrps.foldl (fun (bSet, a) g =>
+            let a' := match g.typeStx? with | some ts => scanStx f bSet ts a | none => a
+            let bSet' := g.names.foldl (fun s n => s.insert n) bSet
+            (bSet', a')) (bound, acc)
+          scanStx f bound' body acc'
+        else if k == SyntaxKind.letTerm || k == SyntaxKind.letBorrowTerm || k == SyntaxKind.letRecTerm then
+          let isLong := k != SyntaxKind.letTerm
+          let idStx  := if isLong then args.getD 3 .missing else args.getD 2 .missing
+          let bNode  := if isLong then args.getD 4 .missing else args.getD 3 .missing
+          let optTy  := if isLong then args.getD 5 .missing else args.getD 4 .missing
+          let val    := if isLong then args.getD 7 .missing else args.getD 6 .missing
+          let body   := if isLong then args.getD 9 .missing else args.getD 8 .missing
+          let letId  := Syntax.getId idStx
+          let bGrps  := (Syntax.getArgs bNode).toList.map decodeBinderNode
+          let (boundB, acc1) := bGrps.foldl (fun (bSet, a) g =>
+            let a' := match g.typeStx? with | some ts => scanStx f bSet ts a | none => a
+            let bSet' := g.names.foldl (fun s n => s.insert n) bSet
+            (bSet', a')) (bound, acc)
+          let acc2 := scanStx f boundB optTy acc1
+          let boundVal := if k == SyntaxKind.letRecTerm && !Name.isAnonymous letId then boundB.insert letId else boundB
+          let acc3 := scanStx f boundVal val acc2
+          let boundBody := if Name.isAnonymous letId then bound else bound.insert letId
+          scanStx f boundBody body acc3
+        else
+          args.toList.foldl (fun a child => scanStx f bound child a) acc
+      | _ => acc
+  let initBound : NameSet :=
+    varGroups.foldl (fun s g => g.names.foldl (fun s' n => s'.insert n) s) NameSet.empty
+  let (boundAfterParams, autoNames1) :=
+    paramGroups.foldl (fun (bSet, a) g =>
+      let a' := match g.typeStx? with | some ts => scanStx 64 bSet ts a | none => a
+      let bSet' := g.names.foldl (fun s n => s.insert n) bSet
+      (bSet', a')) (initBound, [])
+  let autoNames := scanStx 64 boundAfterParams optTypeNode autoNames1
+  let defaultTypeStx := Syntax.mkNode SyntaxKind.typeTerm #[Syntax.mkSimpleAtom "Type", Syntax.mkNullNode #[]]
+  return autoNames.map fun nm =>
+    { names := #[nm], typeStx? := some defaultTypeStx, binderInfo := .implicit, contract := default }
+
 /-! ## Inductive, Structure, and Class SCC Elaboration -/
 
 /-- Elaborate the header `(numParams, numIndices, levelParams, fullType)` of an
@@ -707,7 +987,10 @@ def elabInductiveHeader (decl : ModuleDecl) (fuel : Nat := 128) :
     else Syntax.getArg cmd 7
   let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
   let paramGroups := (Syntax.getArgs bindersNode).toList.map decodeBinderNode
-  let allGroups := varGroups ++ paramGroups
+  let ctx0 ← read
+  let st0 ← get
+  let autoGroups := collectAutoImplicitGroups decl.scope ctx0.modIdx st0.env varGroups paramGroups optTypeNode
+  let allGroups := varGroups ++ autoGroups ++ paramGroups
   withReader (fun ctx => { ctx with
       lctx := LocalContext.empty
       scope := decl.scope
@@ -781,12 +1064,15 @@ def elabOneConstructor (decl : ModuleDecl) (lvlParams : Array Ix.Name)
         }
         return (cval, bcs, retContract)
 
-/-- Elaborate a `structure` or `class` field list into a single constructor and `StructInfo`. -/
+/-- Elaborate a `structure` or `class` field list (including `extends Parent₁, Parent₂` with
+    diamond field deduplication) into a single constructor, `StructInfo`, and parent projection definitions. -/
 def elabStructureFields (decl : ModuleDecl) (lvlParams : Array Ix.Name)
     (paramGroups : List ParsedBinderGroup) (ctorFullName : Ix.Name)
     (fieldsNode : Ix.Syntax) (fuel : Nat := 128) :
-    IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract) := do
+    IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract × Array Ix.DefinitionVal) := do
   let implicitParamGroups := paramGroups.map fun g => { g with binderInfo := .implicit }
+  let extendsNode := Syntax.getArg decl.stx 5
+  let parentStxs := (Syntax.getArgs extendsNode).toList
   let fieldItems := (Syntax.getArgs fieldsNode).toList
   withReader (fun ctx => { ctx with
       lctx := LocalContext.empty
@@ -811,58 +1097,311 @@ def elabStructureFields (decl : ModuleDecl) (lvlParams : Array Ix.Name)
           let contract  := (mergeParsedContracts (decodeContractPrefix bPrefNode) (decodeContractPrefix vPrefNode)).toBinderContract
           (Syntax.getArgs idsNode).toList.map fun idStx =>
             (Syntax.getId idStx, bi, contract, tyNode, defStx?)
+
+      -- Elaborate own fields after inherited parent fields (with diamond deduplication)
       let rec elabFieldLoop
           (rem : List (Ix.Name × Lean.BinderInfo × Ixon.BinderContract × Ix.Syntax × Option Ix.Syntax))
           (fIdx : Nat) (fvars : Array Ix.Name) (fInfos : Array StructFieldInfo)
-          (k : Array Ix.Name → Array StructFieldInfo → IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract)) :
-          IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract) := do
+          (k : Array Ix.Name → Array StructFieldInfo → IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract × Array Ix.DefinitionVal)) :
+          IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract × Array Ix.DefinitionVal) := do
         match rem with
         | [] => k fvars fInfos
         | (fShort, bi, contract, tyStx, defStx?) :: rest =>
-          let fTy ← elabTerm fuel tyStx none
-          let _ ← ensureSort 32 fTy
-          let fTyInst ← instantiateMVars 32 fTy
-          let fInfo : StructFieldInfo := {
-            fieldName  := fShort
-            projFnName := Name.append decl.fullName fShort
-            fieldIdx   := fIdx
-            binderInfo := bi
-            contract   := contract
-            defaultVal := defStx?
-          }
-          withLocalDecl fShort fTyInst bi contract fun fvId _ =>
-            elabFieldLoop rest (fIdx + 1) (fvars.push fvId) (fInfos.push fInfo) k
-      elabFieldLoop flatFields 0 #[] #[] fun fieldFVars fieldInfos => do
-        let indUnivs := lvlParams.map Level.mkParam
-        let paramExprs := paramFVars.map Expr.mkFVar
-        let retTy := Expr.mkAppN (Expr.mkConst decl.fullName indUnivs) paramExprs
-        let allFVars := paramFVars ++ fieldFVars
-        let ctorTy ← mkForallFVars allFVars retTy
-        let ctorTy ← instantiateMVars 32 ctorTy
-        let ctorTy := defaultUnassignedExprLevelMVars ctorTy
-        let ctxNow ← read
-        let bcs : Array Ixon.BinderContract := allFVars.filterMap fun fv =>
-          (ctxNow.lctx.findFVar? fv).map (·.contract)
-        let cval : Ix.ConstructorVal := {
-          cnst := {
-            name        := ctorFullName
-            levelParams := lvlParams
-            type        := ctorTy
-          }
-          induct    := decl.fullName
-          cidx      := 0
-          numParams := paramFVars.size
-          numFields := fieldFVars.size
-          isUnsafe  := false
-        }
-        let sInfo : StructInfo := {
-          structName := decl.fullName
-          ctorName   := ctorFullName
-          numParams  := paramFVars.size
-          fields     := fieldInfos
-          isClass    := decl.kind == .cls
-        }
-        return (cval, sInfo, bcs)
+          -- If `fShort` was already inherited from a parent structure, optionally update its default value and skip
+          match fInfos.findIdx? (fun fi => fi.fieldName == fShort) with
+          | some existingIdx =>
+            let fInfos' := match defStx? with
+              | some dStx =>
+                if h : existingIdx < fInfos.size then
+                  fInfos.set existingIdx { fInfos[existingIdx] with defaultVal := some dStx }
+                else fInfos
+              | none => fInfos
+            elabFieldLoop rest fIdx fvars fInfos' k
+          | none =>
+            let fTy ← elabTerm fuel tyStx none
+            let _ ← ensureSort 32 fTy
+            let fTyInst ← instantiateMVars 32 fTy
+            let fInfo : StructFieldInfo := {
+              fieldName  := fShort
+              projFnName := Name.append decl.fullName fShort
+              fieldIdx   := fIdx
+              binderInfo := bi
+              contract   := contract
+              defaultVal := defStx?
+            }
+            withLocalDecl fShort fTyInst bi contract fun fvId _ =>
+              elabFieldLoop rest (fIdx + 1) (fvars.push fvId) (fInfos.push fInfo) k
+
+      -- Elaborate inherited parent structures (`extends P₁, P₂`) and flatten their fields with diamond deduplication
+      let rec elabParentFields
+          (remPFields : List StructFieldInfo) (curPCtorTy : Ix.Expr)
+          (fIdx : Nat) (fvars : Array Ix.Name) (fInfos : Array StructFieldInfo)
+          (nextK : Nat → Array Ix.Name → Array StructFieldInfo → IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract × Array Ix.DefinitionVal)) :
+          IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract × Array Ix.DefinitionVal) := do
+        match remPFields with
+        | [] => nextK fIdx fvars fInfos
+        | pf :: restPF =>
+          let curW ← whnf fuel curPCtorTy
+          match stripMData curW with
+          | .forallE _ fDom fBody _ _ =>
+            match fInfos.findIdx? (fun fi => fi.fieldName == pf.fieldName) with
+            | some existingIdx =>
+              let existingFvExpr := Expr.mkFVar (fvars.getD existingIdx Name.mkAnon)
+              elabParentFields restPF (instantiate1 fBody existingFvExpr) fIdx fvars fInfos nextK
+            | none =>
+              let fDomInst ← instantiateMVars 32 fDom
+              let fInfo : StructFieldInfo := {
+                fieldName  := pf.fieldName
+                projFnName := Name.append decl.fullName pf.fieldName
+                fieldIdx   := fIdx
+                binderInfo := pf.binderInfo
+                contract   := pf.contract
+                defaultVal := pf.defaultVal
+              }
+              withLocalDecl pf.fieldName fDomInst pf.binderInfo pf.contract fun fvId fvExpr =>
+                elabParentFields restPF (instantiate1 fBody fvExpr) (fIdx + 1) (fvars.push fvId) (fInfos.push fInfo) nextK
+          | _ => nextK fIdx fvars fInfos
+
+      let rec elabParentsLoop
+          (remParents : List Ix.Syntax)
+          (fIdx : Nat) (fvars : Array Ix.Name) (fInfos : Array StructFieldInfo)
+          (parentSpecs : Array (Ix.Name × Array Ix.Level × Array Ix.Expr × StructInfo)) :
+          IxElabM (Ix.ConstructorVal × StructInfo × Array Ixon.BinderContract × Array Ix.DefinitionVal) := do
+        match remParents with
+        | [] =>
+          elabFieldLoop flatFields fIdx fvars fInfos fun fieldFVars fieldInfos => do
+            let indUnivs := lvlParams.map Level.mkParam
+            let paramExprs := paramFVars.map Expr.mkFVar
+            let retTy := Expr.mkAppN (Expr.mkConst decl.fullName indUnivs) paramExprs
+            let allFVars := paramFVars ++ fieldFVars
+            let ctorTy ← mkForallFVars allFVars retTy
+            let ctorTy ← instantiateMVars 32 ctorTy
+            let ctorTy := defaultUnassignedExprLevelMVars ctorTy
+            let ctxNow ← read
+            let bcs : Array Ixon.BinderContract := allFVars.filterMap fun fv =>
+              (ctxNow.lctx.findFVar? fv).map (·.contract)
+            let cval : Ix.ConstructorVal := {
+              cnst := {
+                name        := ctorFullName
+                levelParams := lvlParams
+                type        := ctorTy
+              }
+              induct    := decl.fullName
+              cidx      := 0
+              numParams := paramFVars.size
+              numFields := fieldFVars.size
+              isUnsafe  := false
+            }
+            let sInfo : StructInfo := {
+              structName := decl.fullName
+              ctorName   := ctorFullName
+              numParams  := paramFVars.size
+              fields     := fieldInfos
+              parents    := parentSpecs.map (fun (pn, _, _, _) => pn)
+              isClass    := decl.kind == .cls
+            }
+            -- Build `<Child>.to<Parent>` projection functions for each parent in `parentSpecs`
+            let mut toParentDefs : Array Ix.DefinitionVal := #[]
+            let selfBi : Lean.BinderInfo := if decl.kind == .cls then .instImplicit else .default
+            for (pName, pUnivs, pArgs, pInfo) in parentSpecs do
+              let pShort := (Name.components pName).getLastD (Name.toStringTotal pName)
+              let toParentName := Name.mkStr decl.fullName s!"to{pShort}"
+              let pRetTy := Expr.mkAppN (Expr.mkConst pName pUnivs) pArgs
+              let (tpTy, tpVal) ← withLocalDecl (Name.simple "self") retTy selfBi default fun selfFvId selfExpr => do
+                let mut ctorCall := Expr.mkAppN (Expr.mkConst pInfo.ctorName pUnivs) pArgs
+                for pf in pInfo.fields do
+                  let cIdx := (fieldInfos.find? (fun cf => cf.fieldName == pf.fieldName)).map (·.fieldIdx) |>.getD 0
+                  ctorCall := Expr.mkApp ctorCall (Expr.mkProj decl.fullName cIdx selfExpr)
+                let fnTy ← mkForallFVars (paramFVars.push selfFvId) pRetTy
+                let fnVal ← mkLambdaFVars (paramFVars.push selfFvId) ctorCall
+                let fnTy ← instantiateMVars 32 fnTy
+                let fnVal ← instantiateMVars 32 fnVal
+                pure (defaultUnassignedExprLevelMVars fnTy, defaultUnassignedExprLevelMVars fnVal)
+              toParentDefs := toParentDefs.push {
+                cnst := { name := toParentName, levelParams := lvlParams, type := tpTy }
+                value := tpVal
+                hints := .abbrev
+                safety := .safe
+                all := #[toParentName]
+              }
+            return (cval, sInfo, bcs, toParentDefs)
+        | pStx :: restP =>
+          let pTy ← elabTerm fuel pStx none
+          let _ ← ensureSort 32 pTy
+          let pTyInst ← instantiateMVars 32 pTy
+          let pTyW ← whnf fuel pTyInst
+          let (pHead, pArgs) := getAppFnArgs pTyW
+          let st ← get
+          match pHead with
+          | .const pStructName pUnivs _ =>
+            match st.env.structTable.get? pStructName with
+            | some pInfo =>
+              match st.env.find? pInfo.ctorName with
+              | some (.ctorInfo pCval) =>
+                let pCtorInstTy := pArgs.foldl (fun cur pa =>
+                  match stripMData cur with
+                  | .forallE _ _ b _ _ => instantiate1 b pa
+                  | other => other) (substExprLevelParams pCval.cnst.levelParams pUnivs pCval.cnst.type)
+                elabParentFields pInfo.fields.toList pCtorInstTy fIdx fvars fInfos fun fIdx' fvars' fInfos' =>
+                  elabParentsLoop restP fIdx' fvars' fInfos' (parentSpecs.push (pStructName, pUnivs, pArgs, pInfo))
+              | _ =>
+                throwElabError s!"missing constructor for parent structure '{Name.toStringTotal pStructName}'" (some pStx)
+            | none =>
+              throwElabError s!"parent '{Name.toStringTotal pStructName}' in 'extends' is not a structure or class" (some pStx)
+          | _ =>
+            throwElabError "parent in 'extends' must be a structure or class application" (some pStx)
+
+      elabParentsLoop parentStxs 0 #[] #[] #[]
+
+/-- Synthesize and register derived typeclass instances (`deriving Inhabited, BEq, DecidableEq`)
+    for an elaborated `inductive` or `structure`. -/
+def elabDerivingHandlers (decl : ModuleDecl) (ival : Ix.InductiveVal) (fuel : Nat := 128) : IxElabM Unit := do
+  let cmd := decl.stx
+  let k := Syntax.getKind cmd
+  let derivNode :=
+    if k == SyntaxKind.inductiveDecl then Syntax.getArg cmd 8
+    else Syntax.getArg cmd 10
+  let derivIds := (Syntax.getArgs derivNode).toList.map Syntax.getId
+  if derivIds.isEmpty then return ()
+  let shortDecl := (Name.components decl.fullName).getLastD (Name.toStringTotal decl.fullName)
+  let indUnivs := ival.cnst.levelParams.map Level.mkParam
+  let (paramFVars, paramDecls, _) := openForallTelescope ival.numParams ival.cnst.type "dp" 0 #[] #[]
+  let indApplied := Expr.mkAppN (Expr.mkConst decl.fullName indUnivs) paramFVars
+  let paramImpDecls := paramDecls.map fun d => { d with binderInfo := .implicit }
+
+  for clsId in derivIds do
+    -- 1. `deriving Inhabited`
+    if clsId == Name.simple "Inhabited" then
+      let st ← get
+      if let some ctorName := ival.ctors[0]? then
+        if let some (.ctorInfo cval) := st.env.find? ctorName then
+          -- Require `[Inhabited α_i]` for each type parameter `α_i`
+          let mut instDecls : Array AuxLocalDecl := #[]
+          for (pDecl, pIdx) in paramDecls.zipIdx do
+            let (pSortHead, _) := getAppFnArgs pDecl.domain
+            if let .sort u _ := pSortHead then
+              let uPred := match u with | .succ p _ => p | _ => Level.mkZero
+              let (iFvId, _) := mkAuxFVar "dinh" pIdx
+              let iDom := Expr.mkApp (Expr.mkConst (Name.simple "Inhabited") #[uPred]) (paramFVars.getD pIdx indApplied)
+              instDecls := instDecls.push { fvarId := iFvId, binderName := Name.simple s!"inst_{pIdx}", domain := iDom, binderInfo := .instImplicit }
+          -- Temporarily add `paramImpDecls ++ instDecls` to `lctx` and synthesize `Inhabited.default` for each field of `ctorName`
+          let allHdrDecls := paramImpDecls ++ instDecls
+          let lctxHdr := allHdrDecls.foldl (fun lc d =>
+            lc.addDecl { fvarId := d.fvarId, userName := d.binderName, type := d.domain, binderInfo := d.binderInfo }) LocalContext.empty
+          let ctorInstTy := paramFVars.foldl (fun cur p =>
+            match stripMData cur with
+            | .forallE _ _ b _ _ => instantiate1 b p
+            | other => other) (substExprLevelParams cval.cnst.levelParams indUnivs cval.cnst.type)
+          let defaultVal ← withReader (fun ctx => { ctx with lctx := lctxHdr, scope := decl.scope, univParams := ival.cnst.levelParams.toList }) do
+            let mut curFn := Expr.mkAppN (Expr.mkConst ctorName indUnivs) paramFVars
+            let mut curTy := ctorInstTy
+            for _ in [:cval.numFields] do
+              let curW ← whnf fuel curTy
+              match stripMData curW with
+              | .forallE _ fDom fBody _ _ =>
+                let defTerm ← elabTerm fuel (Syntax.mkSimpleIdent (Name.simple "default")) (some fDom)
+                curFn := Expr.mkApp curFn defTerm
+                curTy := instantiate1 fBody defTerm
+              | _ => pure ()
+            instantiateMVars 32 curFn
+          let inhZero := Level.mkZero
+          let instRetTy := Expr.mkApp (Expr.mkConst (Name.simple "Inhabited") #[inhZero]) indApplied
+          let instBody := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "Inhabited" "mk") #[inhZero]) #[indApplied, defaultVal]
+          let instFullTy := defaultUnassignedExprLevelMVars (closeForalls allHdrDecls instRetTy)
+          let instFullVal := defaultUnassignedExprLevelMVars (closeLambdas allHdrDecls instBody)
+          let instName := Name.fromComponents ((Name.components decl.fullName).dropLast ++ [s!"instInhabited{shortDecl}"])
+          modifyEnv fun env =>
+            let env := env.addConst (.defnInfo {
+              cnst := { name := instName, levelParams := ival.cnst.levelParams, type := instFullTy }
+              value := instFullVal, hints := .abbrev, safety := .safe, all := #[instName]
+            })
+            env.addInstance { instName := instName, className := Name.simple "Inhabited" }
+
+    -- 2. `deriving BEq` (and `DecidableEq`)
+    else if clsId == Name.simple "BEq" || clsId == Name.simple "DecidableEq" then
+      let st ← get
+      let casesOnName := Name.mkStr decl.fullName "casesOn"
+      if let some (.defnInfo casesOnDef) := st.env.find? casesOnName then
+        let mut instDecls : Array AuxLocalDecl := #[]
+        for (pDecl, pIdx) in paramDecls.zipIdx do
+          let (pSortHead, _) := getAppFnArgs pDecl.domain
+          if let .sort u _ := pSortHead then
+            let uPred := match u with | .succ p _ => p | _ => Level.mkZero
+            let (iFvId, _) := mkAuxFVar "dbeq" pIdx
+            let iDom := Expr.mkApp (Expr.mkConst (Name.simple "BEq") #[uPred]) (paramFVars.getD pIdx indApplied)
+            instDecls := instDecls.push { fvarId := iFvId, binderName := Name.simple s!"instBEq_{pIdx}", domain := iDom, binderInfo := .instImplicit }
+        let (aFvId, aFvExpr) := mkAuxFVar "dbeq_a" 0
+        let (bFvId, bFvExpr) := mkAuxFVar "dbeq_b" 1
+        let aDecl : AuxLocalDecl := { fvarId := aFvId, binderName := Name.simple "a", domain := indApplied }
+        let bDecl : AuxLocalDecl := { fvarId := bFvId, binderName := Name.simple "b", domain := indApplied }
+        let allHdrDecls := paramImpDecls ++ instDecls
+        let boolConst := Expr.mkConst (Name.simple "Bool") #[]
+        let trueConst := Expr.mkConst (Name.mkStr2 "Bool" "true") #[]
+        let falseConst := Expr.mkConst (Name.mkStr2 "Bool" "false") #[]
+        let casesOnUnivs :=
+          if casesOnDef.cnst.levelParams.size == indUnivs.size + 1 then
+            #[Level.mkSucc Level.mkZero] ++ indUnivs
+          else indUnivs
+        let motive := Expr.mkLam (Name.simple "_") indApplied boolConst .default
+        -- Build outer `casesOn` on `aFvExpr` and inner `casesOn` on `bFvExpr`
+        let mut outerMinors : Array Ix.Expr := #[]
+        for (ctorA, idxA) in ival.ctors.zipIdx do
+          if let some (.ctorInfo cvalA) := st.env.find? ctorA then
+            let ctorATy := paramFVars.foldl (fun cur p =>
+              match stripMData cur with
+              | .forallE _ _ b _ _ => instantiate1 b p
+              | other => other) (substExprLevelParams cvalA.cnst.levelParams indUnivs cvalA.cnst.type)
+            let (aFieldFVars, aFieldDecls, _) := openForallTelescope cvalA.numFields ctorATy s!"dfa_{idxA}" 0 #[] #[]
+            let mut innerMinors : Array Ix.Expr := #[]
+            for (ctorB, idxB) in ival.ctors.zipIdx do
+              if let some (.ctorInfo cvalB) := st.env.find? ctorB then
+                let ctorBTy := paramFVars.foldl (fun cur p =>
+                  match stripMData cur with
+                  | .forallE _ _ b _ _ => instantiate1 b p
+                  | other => other) (substExprLevelParams cvalB.cnst.levelParams indUnivs cvalB.cnst.type)
+                let (bFieldFVars, bFieldDecls, _) := openForallTelescope cvalB.numFields ctorBTy s!"dfb_{idxB}" 0 #[] #[]
+                if idxA != idxB then
+                  innerMinors := innerMinors.push (closeLambdas bFieldDecls falseConst)
+                else if cvalA.numFields == 0 then
+                  innerMinors := innerMinors.push (closeLambdas bFieldDecls trueConst)
+                else
+                  let branchDecls := allHdrDecls ++ #[aDecl, bDecl] ++ aFieldDecls ++ bFieldDecls
+                  let lctxBranch := branchDecls.foldl (fun lc d =>
+                    lc.addDecl { fvarId := d.fvarId, userName := d.binderName, type := d.domain, binderInfo := d.binderInfo }) LocalContext.empty
+                  let cmpExpr ← withReader (fun ctx => { ctx with lctx := lctxBranch, scope := decl.scope, univParams := ival.cnst.levelParams.toList }) do
+                    let mut eqConj : Option Ix.Expr := none
+                    for fIdx in [:cvalA.numFields] do
+                      let lhsF := aFieldFVars.getD fIdx trueConst
+                      let rhsF := bFieldFVars.getD fIdx trueConst
+                      let fDom := (aFieldDecls.getD fIdx aDecl).domain
+                      let beqGoal := Expr.mkApp (Expr.mkConst (Name.simple "BEq") #[Level.mkZero]) fDom
+                      let instExpr ← match ← synthInstance? 8 beqGoal with
+                        | some ie => pure ie
+                        | none    => pure (Expr.mkConst (Name.simple "instBEqNat") #[])
+                      let fEq := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "BEq" "beq") #[Level.mkZero]) #[fDom, instExpr, lhsF, rhsF]
+                      eqConj := match eqConj with
+                        | none      => some fEq
+                        | some prev => some (Expr.mkAppN (Expr.mkConst (Name.simple "and") #[]) #[prev, fEq])
+                    instantiateMVars 32 (eqConj.getD trueConst)
+                  innerMinors := innerMinors.push (closeLambdas bFieldDecls cmpExpr)
+            let innerCases := Expr.mkAppN (Expr.mkConst casesOnName casesOnUnivs)
+              (paramFVars ++ #[motive, bFvExpr] ++ innerMinors)
+            outerMinors := outerMinors.push (closeLambdas aFieldDecls innerCases)
+        let outerCases := Expr.mkAppN (Expr.mkConst casesOnName casesOnUnivs)
+          (paramFVars ++ #[motive, aFvExpr] ++ outerMinors)
+        let beqLam := closeLambdas #[aDecl, bDecl] outerCases
+        let beqZero := Level.mkZero
+        let instRetTy := Expr.mkApp (Expr.mkConst (Name.simple "BEq") #[beqZero]) indApplied
+        let instBody := Expr.mkAppN (Expr.mkConst (Name.mkStr2 "BEq" "mk") #[beqZero]) #[indApplied, beqLam]
+        let instFullTy := defaultUnassignedExprLevelMVars (closeForalls allHdrDecls instRetTy)
+        let instFullVal := defaultUnassignedExprLevelMVars (closeLambdas allHdrDecls instBody)
+        let instName := Name.fromComponents ((Name.components decl.fullName).dropLast ++ [s!"instBEq{shortDecl}"])
+        modifyEnv fun env =>
+          let env := env.addConst (.defnInfo {
+            cnst := { name := instName, levelParams := ival.cnst.levelParams, type := instFullTy }
+            value := instFullVal, hints := .abbrev, safety := .safe, all := #[instName]
+          })
+          env.addInstance { instName := instName, className := Name.simple "BEq" }
 
 /-- Elaborate an inductive/structure/class SCC, canonicalize its block & constructor order,
     and generate surgery-free recursors and auxiliary definitions. -/
@@ -883,14 +1422,21 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
 
   -- Step 2: Elaborate constructors / structure fields for each inductive in the SCC
   let mut rawItems : Array (Ix.InductiveVal × Array Ix.ConstructorVal) := #[]
-  let mut structToGenerate : Array (Ix.InductiveVal × Ix.ConstructorVal × StructInfo) := #[]
+  let mut structToGenerate : Array (Ix.InductiveVal × Ix.ConstructorVal × StructInfo × Array Ix.DefinitionVal) := #[]
   let indNameSet : NameSet := allNames.foldl (fun s n => s.insert n) NameSet.empty
 
   for (decl, nParams, nIndices, lvlParams, indType) in headers do
     let cmd := decl.stx
     let k := Syntax.getKind cmd
+    let optTypeNode :=
+      if k == SyntaxKind.inductiveDecl then Syntax.getArg cmd 6
+      else Syntax.getArg cmd 7
     let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
-    let paramGroups := varGroups ++ ((Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode)
+    let rawParamGroups := (Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode
+    let ctxNow ← read
+    let stNow ← get
+    let autoGroups := collectAutoImplicitGroups decl.scope ctxNow.modIdx stNow.env varGroups rawParamGroups optTypeNode
+    let paramGroups := varGroups ++ autoGroups ++ rawParamGroups
     if k == SyntaxKind.inductiveDecl then
       let ctorsNode := Syntax.getArg cmd 7
       let ctorStxs := Syntax.getArgs ctorsNode
@@ -938,7 +1484,7 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
         rawItems := rawItems.push (indVal, ctors)
       else
         let ctorFullName := decl.ctorNames.headD (Name.mkStr decl.fullName "mk")
-        let (cval, sInfo, bcs) ← elabStructureFields decl lvlParams paramGroups ctorFullName fieldsOrCtorsNode fuel
+        let (cval, sInfo, bcs, toParentDefs) ← elabStructureFields decl lvlParams paramGroups ctorFullName fieldsOrCtorsNode fuel
         modifyEnv fun env =>
           let env := env.addContracts cval.cnst.name bcs .shared
           env.addStructInfo sInfo
@@ -949,7 +1495,7 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
           isRec := false, isUnsafe := false, isReflexive := false
         }
         rawItems := rawItems.push (indVal, #[cval])
-        structToGenerate := structToGenerate.push (indVal, cval, sInfo)
+        structToGenerate := structToGenerate.push (indVal, cval, sInfo, toParentDefs)
 
   -- Step 3: Canonicalize block member order & constructor order (breaking α-ties by source order!)
   let stNow ← get
@@ -959,147 +1505,25 @@ def elabInductiveSCC (decls : Array ModuleDecl) (fuel : Nat := 128) : IxElabM Un
   -- Step 4: Register canonical `InductiveVal`s, `ConstructorVal`s, and surgery-free `.rec`, `.recOn`, `.casesOn`, `._ctorIdx`
   modifyEnv fun env => registerCanonicalInductiveBlock env canonItems
 
-  -- Step 5: Generate and register structure/class field projection functions
-  for (iv, cv, sInfo) in structToGenerate do
+  -- Step 5: Generate and register structure/class field projection functions and `.to<Parent>` coercions
+  for (iv, cv, sInfo, toParentDefs) in structToGenerate do
     let projFieldNames := sInfo.fields.map (·.projFnName)
     let projs := generateStructProjections iv cv projFieldNames sInfo.isClass
-    modifyEnv fun env => projs.foldl (fun acc p => acc.addConst (.defnInfo p)) env
+    modifyEnv fun env =>
+      let env := projs.foldl (fun acc p => acc.addConst (.defnInfo p)) env
+      let env := toParentDefs.foldl (fun acc tp => acc.addConst (.defnInfo tp)) env
+      if sInfo.isClass then
+        (sInfo.parents.zip toParentDefs).foldl (fun acc (pName, tpDef) =>
+          if acc.classSet.contains pName then
+            acc.addInstance { instName := tpDef.cnst.name, className := pName }
+          else acc) env
+      else env
 
-/-! ## Structural Recursion Lowering (`casesOn` -> `recOn`) -/
-
-/-- If a single recursive definition `fnName`'s value is a lambda chain whose body
-    calls `<Ind>.casesOn ... minor_0 ... minor_{m-1}` on one of its parameter binders,
-    and a minor calls `fnName` on a recursive field of that constructor, lower the
-    `<Ind>.casesOn` call into `<Ind>.recOn` so that the definition is 100% self-reference-free
-    and reduces in the kernel via ι-reduction (`rfl`)! -/
-def tryLowerStructuralRecToRecOn (env : IxElabEnv) (fnName : Ix.Name)
-    (value : Ix.Expr) : Ix.Expr := Id.run do
-  -- Peel leading `.lam` binders into fresh FVars via structural recursion on `fuel`
-  let rec peelLams : Nat → Nat → Ix.Expr → Array AuxLocalDecl → Array Ix.Expr →
-      Ix.Expr × Array AuxLocalDecl × Array Ix.Expr
-    | 0, _, cur, decls, fvars => (cur, decls, fvars)
-    | fuel + 1, idx, cur, decls, fvars =>
-      match stripMData cur with
-      | .lam nm dom body bi _ =>
-        let (fvId, fvExpr) := mkAuxFVar "srl" idx
-        let cur' := instantiate1 body fvExpr
-        let decl : AuxLocalDecl := { fvarId := fvId, binderName := nm, domain := dom, binderInfo := bi }
-        peelLams fuel (idx + 1) cur' (decls.push decl) (fvars.push fvExpr)
-      | _ => (cur, decls, fvars)
-  let (cur, lamDecls, lamFVars) := peelLams 32 0 value #[] #[]
-  let (headFn, headArgs) := getAppFnArgs cur
-  match headFn with
-  | .const cName cUnivs _ =>
-    -- Check if `cName` is `<Ind>.casesOn`
-    let comps := Name.components cName
-    if comps.getLast? != some "casesOn" then return value
-    let indName := Name.fromComponents comps.dropLast
-    let some (.inductInfo ival) := env.find? indName | return value
-    let recOnName := Name.mkStr indName "recOn"
-    if !env.contains recOnName then return value
-    let nParams := ival.numParams
-    let nIndices := ival.numIndices
-    let nCtors := ival.ctors.size
-    let majorPos := nParams + 1 + nIndices
-    if headArgs.size != majorPos + 1 + nCtors then return value
-    let majorArg := headArgs.getD majorPos cur
-    -- Check which lambda parameter `majorArg` corresponds to
-    let some majorParamPos := lamFVars.idxOf? majorArg | return value
-    -- Rewrite each constructor minor `minor_i`
-    let mut newMinors : Array Ix.Expr := #[]
-    let mut changed := false
-    for cidx in [:nCtors] do
-      let minorExpr := headArgs.getD (majorPos + 1 + cidx) cur
-      let some ctorName := ival.ctors[cidx]? | return value
-      let some (.ctorInfo cval) := env.find? ctorName | return value
-      -- Peel `cval.numFields` lambda binders from `minorExpr`
-      let mut mCur := minorExpr
-      let mut fDecls : Array AuxLocalDecl := #[]
-      let mut fFVars : Array Ix.Expr := #[]
-      for fIdx in [:cval.numFields] do
-        match stripMData mCur with
-        | .lam nm dom body bi _ =>
-          let (fvId, fvExpr) := mkAuxFVar s!"srf_{cidx}" fIdx
-          mCur := instantiate1 body fvExpr
-          fDecls := fDecls.push { fvarId := fvId, binderName := nm, domain := dom, binderInfo := bi }
-          fFVars := fFVars.push fvExpr
-        | _ => pure ()
-      -- Identify which fields of `cval` are recursive occurrences of `indName`
-      let mut ihDecls : Array AuxLocalDecl := #[]
-      let mut recFieldMap : NameMap Ix.Expr := NameMap.empty
-      for (fDecl, fIdx) in fDecls.zipIdx do
-        let (fDomHead, _) := getAppFnArgs fDecl.domain
-        match fDomHead with
-        | .const dNm _ _ =>
-          if dNm == indName then
-            let (ihId, ihExpr) := mkAuxFVar s!"srih_{cidx}" fIdx
-            let motiveArg := headArgs.getD nParams cur
-            let ihDom := Expr.mkBeta (Expr.mkApp motiveArg (fFVars.getD fIdx mCur))
-            ihDecls := ihDecls.push { fvarId := ihId, binderName := Name.simple "ih", domain := ihDom }
-            recFieldMap := recFieldMap.insert fDecl.fvarId ihExpr
-        | _ => pure ()
-      -- Replace self-calls `fnName a₀ ... a_{majorParamPos} ...` where `a_{majorParamPos}` is a recursive field `fVar`
-      let rec rewriteSelfCalls : Ix.Expr → Bool × Ix.Expr
-        | .app f a h =>
-          let (fnH, fnAs) := getAppFnArgs (.app f a h)
-          match fnH with
-          | .const nm _ _ =>
-            if nm == fnName && fnAs.size == lamFVars.size then
-              let argAtMaj := fnAs.getD majorParamPos f
-              match stripMData argAtMaj with
-              | .fvar fvId _ =>
-                match recFieldMap.get? fvId with
-                | some ihExpr => (true, ihExpr)
-                | none =>
-                  let (c1, f') := rewriteSelfCalls f
-                  let (c2, a') := rewriteSelfCalls a
-                  (c1 || c2, Expr.mkApp f' a')
-              | _ =>
-                let (c1, f') := rewriteSelfCalls f
-                let (c2, a') := rewriteSelfCalls a
-                (c1 || c2, Expr.mkApp f' a')
-            else
-              let (c1, f') := rewriteSelfCalls f
-              let (c2, a') := rewriteSelfCalls a
-              (c1 || c2, Expr.mkApp f' a')
-          | _ =>
-            let (c1, f') := rewriteSelfCalls f
-            let (c2, a') := rewriteSelfCalls a
-            (c1 || c2, Expr.mkApp f' a')
-        | .lam nm t b bi _ =>
-          let (c1, t') := rewriteSelfCalls t
-          let (c2, b') := rewriteSelfCalls b
-          (c1 || c2, Expr.mkLam nm t' b' bi)
-        | .forallE nm t b bi _ =>
-          let (c1, t') := rewriteSelfCalls t
-          let (c2, b') := rewriteSelfCalls b
-          (c1 || c2, Expr.mkForallE nm t' b' bi)
-        | .letE nm t v b nd _ =>
-          let (c1, t') := rewriteSelfCalls t
-          let (c2, v') := rewriteSelfCalls v
-          let (c3, b') := rewriteSelfCalls b
-          (c1 || c2 || c3, Expr.mkLetE nm t' v' b' nd)
-        | .proj nm i s _ =>
-          let (c1, s') := rewriteSelfCalls s
-          (c1, Expr.mkProj nm i s')
-        | .mdata md x _ =>
-          let (c1, x') := rewriteSelfCalls x
-          (c1, Expr.mkMData md x')
-        | other => (false, other)
-      let (didRewrite, mCur') := rewriteSelfCalls mCur
-      if didRewrite then changed := true
-      let newMinor := closeLambdas (fDecls ++ ihDecls) mCur'
-      newMinors := newMinors.push newMinor
-    if !changed then return value
-    let prefixArgs := headArgs.extract 0 (majorPos + 1)
-    let recOnCall := Expr.mkAppN (Expr.mkConst recOnName cUnivs) (prefixArgs ++ newMinors)
-    return closeLambdas lamDecls recOnCall
-  | _ => return value
-where
-  /-- Beta-reduce a single `(λ x => body) arg` application if `fn` is a lambda. -/
-  Expr.mkBeta : Ix.Expr → Ix.Expr
-    | .app (.lam _ _ b _ _) a _ => instantiate1 b a
-    | other => other
+  -- Step 6: Run `deriving` handlers (`Inhabited`, `BEq`, `DecidableEq`)
+  for (decl, _, _, _, _) in headers do
+    let stAfter ← get
+    if let some (.inductInfo ival) := stAfter.env.find? decl.fullName then
+      elabDerivingHandlers decl ival fuel
 
 /-! ## Value Declaration SCC Elaboration (`def`, `abbrev`, `theorem`, `opaque`, `axiom`, `instance`) -/
 
@@ -1120,8 +1544,12 @@ def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel :
     else
       modify fun st => match st with | ⟨env, _, nextIdx, _, _⟩ => ⟨env, {}, nextIdx, [], #[]⟩
       let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
-      let paramGroups := varGroups ++ ((Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode)
+      let rawParamGroups := (Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode
       let optTypeNode := Syntax.getArg cmd 6
+      let ctx0 ← read
+      let st0 ← get
+      let autoGroups := collectAutoImplicitGroups decl.scope ctx0.modIdx st0.env varGroups rawParamGroups optTypeNode
+      let paramGroups := varGroups ++ autoGroups ++ rawParamGroups
 
       let (lvlParams, fullType, bcs) ← withReader (fun ctx => { ctx with
           lctx := LocalContext.empty
@@ -1159,6 +1587,9 @@ def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel :
   for (decl, initLvlParams, _, _, retContract) in sigInfos do
     let cmd := decl.stx
     let k := Syntax.getKind cmd
+    let attrs := extractDeclAttributes (Syntax.getArg cmd 0)
+    if attrs.contains (Name.simple "simp") then
+      modifyEnv (·.addInstance { instName := decl.fullName, className := Name.mkStr2 "_Ix" "simpLemma" })
     if k == SyntaxKind.axiomDecl then
       -- Already registered as `.axiomInfo` in Step 1!
       pure ()
@@ -1166,8 +1597,11 @@ def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel :
       modify fun st => match st with | ⟨env, _, nextIdx, _, _⟩ => ⟨env, {}, nextIdx, initLvlParams.toList, #[]⟩
       let varGroups := decl.scope.varBinders.toList.map decodeBinderNode
       let rawParamBinders := (Syntax.getArgs (Syntax.getArg cmd 4)).toList.map decodeBinderNode
-      let paramGroups := varGroups ++ rawParamBinders
       let optTypeNode := Syntax.getArg cmd 6
+      let ctx0 ← read
+      let st0 ← get
+      let autoGroups := collectAutoImplicitGroups decl.scope ctx0.modIdx st0.env varGroups rawParamBinders optTypeNode
+      let paramGroups := varGroups ++ autoGroups ++ rawParamBinders
 
       let (finalLvls, finalType, finalVal, finalBcs, finalLcs) ← withReader (fun ctx => { ctx with
           lctx := LocalContext.empty
@@ -1281,8 +1715,8 @@ def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel :
 
       modifyEnv (·.addContracts decl.fullName finalBcs retContract finalLcs)
 
-      -- If `decl.kind == .inst`, register in `st.env.instances`
-      if decl.kind == .inst then
+      -- If `decl.kind == .inst` or `@[instance]`, register in `st.env.instances`
+      if decl.kind == .inst || attrs.contains (Name.simple "instance") then
         let (_, _, retBody) := openForallTelescope (countForalls 64 finalType) finalType "inst" 0 #[] #[]
         let (headClass, _) := getAppFnArgs retBody
         if let .const className _ _ := headClass then
@@ -1293,8 +1727,8 @@ def elabValueSCC (decls : Array ModuleDecl) (isRecursive : Bool := true) (fuel :
         else if decl.kind == .opaqueDecl then .opaq
         else .defn
       let hints : Lean.ReducibilityHints :=
-        if decl.kind == .abbrev then .abbrev
-        else if decl.kind == .thm || decl.kind == .opaqueDecl then .opaque
+        if decl.kind == .abbrev || attrs.contains (Name.simple "reducible") || attrs.contains (Name.simple "inline") then .abbrev
+        else if decl.kind == .thm || decl.kind == .opaqueDecl || attrs.contains (Name.simple "irreducible") then .opaque
         else .regular 1
       let dItem : Ix.Def := {
         name        := decl.fullName

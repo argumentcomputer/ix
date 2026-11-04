@@ -978,19 +978,24 @@ def evalSimpOrDSimpTactic (elabRec : Ix.Syntax → Option Ix.Expr → IxElabM Ix
         let subId := match subMVar with | .mvar id _ => id | _ => gId
         liftM (modifyMCtx (·.assignDelayed gId { lctx := lctx', fvars := [newFvId], pendingMVar := subId }))
         replaceMainGoal [subId]
-  -- Step 2: If `simp [r₁, ...]`, repeatedly apply equational rewrites from `extraRules`
-  if isFullSimp && !extraRules.isEmpty then
-    let rwRules := extraRules.map fun tStx =>
-      Syntax.mkNode SyntaxKind.tacticRwRule #[Syntax.mkNullNode #[], tStx]
-    let rec simpRwLoop : Nat → TacticM Unit
-      | 0 => return ()
-      | k + 1 => do
-        let mut anyProgress := false
-        for rStx in rwRules do
-          if (← tryTactic? (evalOneRwRule elabRec fuel rStx atHyp?)).isSome then
-            anyProgress := true
-        if anyProgress then simpRwLoop k else return ()
-    simpRwLoop 8
+  -- Step 2: If `simp [...]`, repeatedly apply equational rewrites from `extraRules` AND registered `@[simp]` lemmas
+  if isFullSimp then
+    let stNow ← liftM (get : IxElabM ElabState)
+    let simpEntries : List InstanceEntry := (stNow.env.instancesByClass.get? (Name.mkStr2 "_Ix" "simpLemma")).getD []
+    let simpStxs : List Ix.Syntax := simpEntries.reverse.map fun (e : InstanceEntry) => Syntax.mkSimpleIdent e.instName
+    let allRuleTerms := extraRules ++ simpStxs
+    if !allRuleTerms.isEmpty then
+      let rwRules := allRuleTerms.map fun tStx =>
+        Syntax.mkNode SyntaxKind.tacticRwRule #[Syntax.mkNullNode #[], tStx]
+      let rec simpRwLoop : Nat → TacticM Unit
+        | 0 => return ()
+        | k + 1 => do
+          let mut anyProgress := false
+          for rStx in rwRules do
+            if (← tryTactic? (evalOneRwRule elabRec fuel rStx atHyp?)).isSome then
+              anyProgress := true
+          if anyProgress then simpRwLoop k else return ()
+      simpRwLoop 8
   -- Step 3: Try closing goal if `atHyp?.isNone`
   if atHyp?.isNone then
     let _ ← tryTactic? (evalTrivialTactic fuel tac)

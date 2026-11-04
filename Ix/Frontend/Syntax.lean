@@ -161,6 +161,9 @@ def cmpStruct : Ix.Name → Ix.Name → Ordering
   | .str .., .num ..           => .gt
   | .str p₁ s₁ _, .str p₂ s₂ _ => (strCmpPure s₁ s₂).then (cmpStruct p₁ p₂)
 
+instance (priority := 2000) : Inhabited Ix.Name where
+  default := mkAnon
+
 instance (priority := 2000) : BEq Ix.Name where
   beq := beqStruct
 
@@ -302,6 +305,9 @@ def beqStruct : Ix.Level → Ix.Level → Bool
   | .param n1 _, .param n2 _ => Name.beqStruct n1 n2
   | .mvar n1 _, .mvar n2 _   => Name.beqStruct n1 n2
   | _, _                     => false
+
+instance (priority := 2000) : Inhabited Ix.Level where
+  default := mkZero
 
 instance (priority := 2000) : BEq Ix.Level where
   beq := beqStruct
@@ -699,6 +705,7 @@ def forallTerm        : Ix.Name := Name.mkStr2 "Ix" "forall"
 def funTerm           : Ix.Name := Name.mkStr2 "Ix" "fun"
 def letTerm           : Ix.Name := Name.mkStr2 "Ix" "let"
 def letBorrowTerm     : Ix.Name := Name.mkStr2 "Ix" "letBorrow"
+def letRecTerm        : Ix.Name := Name.mkStr2 "Ix" "letRec"
 def haveTerm          : Ix.Name := Name.mkStr2 "Ix" "have"
 def ifTerm            : Ix.Name := Name.mkStr2 "Ix" "if"
 def matchTerm         : Ix.Name := Name.mkStr2 "Ix" "match"

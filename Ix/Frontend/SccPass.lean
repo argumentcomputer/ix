@@ -191,6 +191,19 @@ def scanSyntaxRefs (scope : ScopeSnapshot) (modIdx : ModuleIndex)
         let letId := Syntax.getId idStx
         let localsBody := if Name.isAnonymous letId then locals else locals.insert letId
         scanRec localsBody body refs
+      -- 4b. `let rec bPref id binders optType := val; body` (`letId` is in scope inside `val` too)
+      else if kind == SyntaxKind.letRecTerm then
+        let idStx := args.getD 3 .missing
+        let binders := Syntax.getArgs (args.getD 4 .missing)
+        let optTy := args.getD 5 .missing
+        let val := args.getD 7 .missing
+        let body := args.getD 9 .missing
+        let letId := Syntax.getId idStx
+        let localsWithId := if Name.isAnonymous letId then locals else locals.insert letId
+        let (localsBind, refs) := scanBinderArray scanRec localsWithId binders refs
+        let refs := scanRec localsBind optTy refs
+        let refs := scanRec localsBind val refs
+        scanRec localsWithId body refs
       -- 5. `have id optType := val; body`
       else if kind == SyntaxKind.haveTerm then
         let idStx := args.getD 1 .missing

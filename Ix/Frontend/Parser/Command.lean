@@ -15,7 +15,7 @@ namespace Ix.Frontend.Parser
 
 /-! ## Declaration Modifiers & Header Helpers -/
 
-/-- Parse zero or more declaration modifiers (`private`, `protected`, `noncomputable`, `partial`, `unsafe`). -/
+/-- Parse zero or more declaration modifiers (`@[attr1, ...]`, `private`, `protected`, `noncomputable`, `partial`, `unsafe`). -/
 def declModifiersLoop (ctx : IxParserContext) (s : ParserState) : Nat → ParserState
   | 0 => s
   | fuel + 1 =>
@@ -25,6 +25,17 @@ def declModifiersLoop (ctx : IxParserContext) (s : ParserState) : Nat → Parser
         if kw == "private" || kw == "protected" || kw == "noncomputable" ||
            kw == "partial" || kw == "unsafe" then
           (tokenFn ctx s).bindState fun s =>
+            declModifiersLoop ctx s fuel
+        else if kw == "@" then
+          let iniSz := s.stackSize
+          (symbolFn "@" ctx s).bindState fun s =>
+          (symbolFn "[" ctx s).bindState fun s =>
+          (sepBy1Fn identFn (symbolFn ",") false ctx s).bindState fun s =>
+          (symbolFn "]" ctx s).bindState fun s =>
+            if s.hasError then s else
+            let attrsNull := s.stxStack.getD (iniSz + 2)
+            let s := s.shrinkStack iniSz
+            let s := (Syntax.getArgs attrsNull).foldl (fun st a => st.pushSyntax a) s
             declModifiersLoop ctx s fuel
         else
           s
@@ -96,9 +107,10 @@ def isCommandStart (tok : Ix.Syntax) : Bool :=
     kw == "open" || kw == "export" || kw == "variable" || kw == "universe" ||
     kw == "import" || kw == "private" || kw == "protected" ||
     kw == "noncomputable" || kw == "partial" || kw == "unsafe" ||
-    kw == "deriving"
+    kw == "deriving" || kw == "@"
   | .ident _ _ (.str (.anonymous _) w _) _ =>
-    w == "map" || w == "infixl" || w == "infixr" || w == "notation"
+    w == "map" || w == "infixl" || w == "infixr" || w == "infix" ||
+    w == "prefix" || w == "postfix" || w == "notation"
   | _ => false
 
 /-- Parse a single inductive constructor `| ctorName binders* [: type]`. -/
@@ -162,6 +174,65 @@ def structFieldDeclFn : ParserFn := fun ctx s =>
 
 /-! ## Top-Level Command Parser -/
 
+/-- Parse an optional `where` block at the end of a `def`/`theorem`, wrapping the body
+    on top of the syntax stack in nested `SyntaxKind.letRecTerm` nodes. -/
+def optWhereClauseFn : ParserFn := fun ctx s =>
+  bindPeek ctx s fun tok? s =>
+    match tok? with
+    | some (.atom _ "where") =>
+      (symbolFn "where" ctx s).bindState fun s =>
+        let s := s.popSyntax -- drop `where`
+        let whereItemFn : ParserFn := fun c st =>
+          let iSz := st.stackSize
+          (optionalFn (symbolFn "|") c st).bindState fun st =>
+            let st := st.popSyntax
+            bindPeek c st fun nextTok? st =>
+              match nextTok? with
+              | none => st.mkUnexpectedError "end of where block"
+              | some t =>
+                if isCommandStart t then
+                  st.mkUnexpectedError "end of where block"
+                else
+                  (binderPrefixFn c st).bindState fun st =>
+                  (identFn c st).bindState fun st =>
+                    if st.hasError then st else
+                    (manyFn (simpleOrBracketedBinderFn termFn) c st).bindState fun st =>
+                    (optionalFn (fun c2 st2 =>
+                      (symbolFn ":" c2 st2).bindState fun st2 =>
+                        if st2.hasError then st2 else
+                        (valuePrefixFn c2 st2).bindState fun st2 =>
+                          withPrecFn 0 termFn c2 st2) c st).bindState fun st =>
+                      if st.hasError then st else
+                      bindPeek c st fun rhsTok? st =>
+                        let stAfterRhs := match rhsTok? with
+                          | some (.atom _ "|") =>
+                            let st := st.pushSyntax (Syntax.mkSimpleAtom ":=")
+                            many1Fn (matchAltFn termFn) c st
+                          | _ =>
+                            (symbolFn ":=" c st).bindState fun st =>
+                              if st.hasError then st else withPrecFn 0 termFn c st
+                        stAfterRhs.bindState fun st =>
+                          st.mkNode SyntaxKind.nullKind iSz
+        (many1Fn whereItemFn ctx s).bindState fun s =>
+          if s.hasError then s else
+          let itemsNull := s.stxStack.back
+          let s := s.popSyntax
+          let bodyStx := s.stxStack.back
+          let s := s.popSyntax
+          let wrappedBody := (Syntax.getArgs itemsNull).toList.foldr (fun item accBody =>
+            let bPref     := Syntax.getArg item 0
+            let idStx     := Syntax.getArg item 1
+            let binders   := Syntax.getArg item 2
+            let optTy     := Syntax.getArg item 3
+            let colEq     := Syntax.getArg item 4
+            let valOrAlts := Syntax.getArg item 5
+            Syntax.mkNode SyntaxKind.letRecTerm
+              #[Syntax.mkSimpleAtom "let", Syntax.mkSimpleAtom "rec",
+                bPref, idStx, binders, optTy, colEq, valOrAlts, Syntax.mkNullNode #[], accBody]
+          ) bodyStx
+          s.pushSyntax wrappedBody
+    | _ => s
+
 /-- Parse a `def`, `abbrev`, `theorem`/`lemma`, or `opaque` declaration after its modifiers. -/
 def parseValueDecl (kind : Ix.Name) : ParserFn := fun ctx s =>
   s.bindState fun s =>
@@ -178,7 +249,9 @@ def parseValueDecl (kind : Ix.Name) : ParserFn := fun ctx s =>
             | some (.atom _ ":=") =>
               (symbolFn ":=" ctx s).bindState fun s =>
               (withPrecFn 0 termFn ctx s).bindState fun s =>
-                s.mkNode kind iniSz
+                if s.hasError then s else
+                (optWhereClauseFn ctx s).bindState fun s =>
+                  s.mkNode kind iniSz
             | some (.atom _ "|") =>
               -- Pattern-matching definition `def f : Nat → Nat | 0 => 1 | n => n`
               (many1Fn (matchAltFn termFn) ctx s).bindState fun s =>
@@ -413,7 +486,8 @@ def commandStep : Nat → ParserFn
           (symbolFn ":=" ctx s).bindState fun s =>
           (hashRefFn ctx s).bindState fun s =>
             s.mkNode SyntaxKind.buildMapDecl iniSz
-        else if word == "infixl" || word == "infixr" || word == "infix" then
+        else if word == "infixl" || word == "infixr" || word == "infix" ||
+                word == "prefix" || word == "postfix" then
           let iniSz := s.stackSize
           (tokenFn ctx s).bindState fun s =>
           (optionalFn (seqFn (symbolFn ":") numLitFn) ctx s).bindState fun s =>
@@ -430,7 +504,7 @@ def commandFn : ParserFn := commandStep 64
 
 /-! ## Module Parser & Dynamic Operator Registration -/
 
-/-- If `cmd` is a `notationDecl` (`infixl:65 " ++ " => append`), update `env` with the new operator. -/
+/-- If `cmd` is a `notationDecl` (`infixl:65 " ++ " => append`, `prefix:75 ...`, `postfix:80 ...`), update `env` with the new operator. -/
 def updateParserEnvFromCommand (env : IxParserEnv) (cmd : Ix.Syntax) : IxParserEnv :=
   if Syntax.isOfKind cmd SyntaxKind.notationDecl then
     let args := Syntax.getArgs cmd
@@ -438,6 +512,8 @@ def updateParserEnvFromCommand (env : IxParserEnv) (cmd : Ix.Syntax) : IxParserE
     let fixity : FixityKind :=
       if fixStr == "infixr" then .infixr
       else if fixStr == "infix" then .infixn
+      else if fixStr == "prefix" then .prefixOp
+      else if fixStr == "postfix" then .postfixOp
       else .infixl
     let prec : Nat := match args[1]? with
       | some optNode =>
@@ -458,7 +534,7 @@ def updateParserEnvFromCommand (env : IxParserEnv) (cmd : Ix.Syntax) : IxParserE
         if Name.isAnonymous id then none else some id
       | none => none
     if rawSym.isEmpty then env
-    else env.addOperator { symbol := rawSym, kind := SyntaxKind.binOpTerm, fixity, prec, targetFn := target }
+    else env.addOperator { symbol := rawSym, kind := SyntaxKind.appTerm, fixity, prec, targetFn := target }
   else
     env
 where
