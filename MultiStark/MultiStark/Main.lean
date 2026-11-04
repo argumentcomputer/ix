@@ -42,9 +42,7 @@ unsafe def main (args : List String) : IO Unit := do
   let program ← IO.ofExcept (exported.toJson MultiStark.modulus ZMod.val)
   let trace ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
-    let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    pure <| some (← IO.ofExcept (Trace.exportJson MultiStark.modulus ZMod.val
-      compiled.circuit.inlined.program compiled.circuit.artifact exported.bytecode groups))
+    pure <| some (← Trace.exportModulesJson prepared MultiStark.modulus ZMod.val exported.bytecode groups)
   else pure none
   let package := Json.mkObj ([("program", program)] ++ trace.toList.map ("trace", ·))
   let path := args[1]?.getD "/tmp/ix-recursion.json"
