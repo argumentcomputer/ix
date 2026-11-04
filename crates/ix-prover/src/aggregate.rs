@@ -638,9 +638,8 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
     let streams = streams::wrap(
       self.keys(),
       aggregate_controller::protocol::shape_code(ChildKind::Aggr, None),
-      Child {
+      Transport {
         kind: ChildKind::Aggr,
-        statement: &root.statement,
         proof: &proof.raw,
         claims: &root.claims_bytes,
       },
@@ -1002,6 +1001,87 @@ pub fn aggregate_catalog(config: &CatalogConfig) -> Result<String, String> {
     &config.proofs,
     Some(&expected_root),
   )
+}
+
+/// `ix compress` normalization of a formal aggregate root, as configured.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NormalizeConfig {
+  pub ixvm_artifact: PathBuf,
+  pub aggr_artifact: PathBuf,
+  /// The CUDA device to prove on; `None` proves on the CPU.
+  #[serde(default)]
+  pub device: Option<i32>,
+  /// Planner options; the layout comes from the normalization's heights.
+  #[serde(default)]
+  pub options: Options,
+}
+
+/// Wrap the aggregate root `proof` (an encoded `IXAGGR2` proof) of `claim`
+/// once more with `ix_aggr` and prove the wrap as one trace shard with every
+/// circuit active at the log2 heights `log_heights`, in system circuit
+/// order. Every root that fits those heights then has a proof of one shape,
+/// which a verifier circuit fixed in advance checks. The root is verified
+/// before it is wrapped and the wrap after it is proved; returns the raw
+/// proof of the wrap, whose outer claim is the root's.
+pub fn normalize_root(
+  config: &NormalizeConfig,
+  log_heights: &[u8],
+  claim: &[u8],
+  proof: &[u8],
+) -> Result<Vec<u8>, String> {
+  let ixvm = Loaded::load(&config.ixvm_artifact)?;
+  let aggr = Loaded::load(&config.aggr_artifact)?;
+  let ixvm_plan = TracePlan::new(&ixvm.program, ixvm.trace.clone())?;
+  let aggr_plan = TracePlan::new(&aggr.program, aggr.trace.clone())?;
+  let mut options = config.options.clone();
+  options.fixed_log_heights = Some(log_heights.to_vec());
+  let backend = Formal::new(
+    &ixvm_plan,
+    &ixvm.program,
+    &aggr_plan,
+    &aggr.program,
+    1,
+    config.device,
+    options,
+  )?;
+  let root = backend.decode_proof(proof)?;
+  if root.kind != ChildKind::Aggr {
+    return Err("normalization wraps an aggregate proof".into());
+  }
+  let outer = backend.outer_claim(ChildKind::Aggr, claim);
+  backend
+    .verify(ChildKind::Aggr, &outer, &root)
+    .map_err(|e| format!("aggregate root: {e}"))?;
+  let claims = backend.claims_bytes(&outer);
+  let streams = streams::wrap(
+    backend.keys(),
+    aggregate_controller::protocol::shape_code(ChildKind::Aggr, None),
+    Transport { kind: ChildKind::Aggr, proof: &root.raw, claims: &claims },
+  );
+  let pool = record_pool::RecordPool::new(usize::MAX / 2, 16 << 20);
+  let reservation = pool
+    .try_admit()
+    .map_err(|e| format!("record admission: {e:?}"))?
+    .ok_or("record pool refused admission")?;
+  let (args, record) = backend
+    .execute_streams(&streams, backend.public_input(claim), &reservation)
+    .map_err(String::from)?;
+  drop(streams);
+  let lanes = backend.lanes(1)?;
+  let normalized =
+    backend.prove(&lanes[0], ChildKind::Aggr, &record, AGGR_ENTRY, &args)?;
+  drop(record);
+  backend
+    .verify(ChildKind::Aggr, &outer, &normalized)
+    .map_err(|e| format!("normalized root: {e}"))?;
+  if normalized.shards != 1 {
+    return Err(format!(
+      "the normalized root has {} trace shards, not one",
+      normalized.shards
+    ));
+  }
+  Ok(normalized.raw.to_vec())
 }
 
 #[cfg(test)]

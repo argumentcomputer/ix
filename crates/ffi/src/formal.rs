@@ -339,3 +339,32 @@ extern "C" fn rs_formal_aggregate_catalog(
     )
   })
 }
+
+/// `Ix.FormalProver.normalizeRoot : @& String → @& ByteArray →
+/// @& ByteArray → @& ByteArray → IO ByteArray`: the raw proof of one more wrap of the
+/// aggregate root `proof` of `claim`, proved at the heights of the fixed
+/// layout `layout` (`.ixl` bytes) from the JSON configuration
+/// (`ix_prover::aggregate::NormalizeConfig`).
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_normalize_root(
+  config: LeanString<LeanBorrowed<'_>>,
+  layout: LeanByteArray<LeanBorrowed<'_>>,
+  claim: LeanByteArray<LeanBorrowed<'_>>,
+  proof: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  io(|| {
+    let config: ix_prover::aggregate::NormalizeConfig =
+      serde_json::from_str(config.as_str())
+        .map_err(|e| format!("invalid normalization configuration: {e}"))?;
+    let layout =
+      ix_proof_compression::pipeline::FixedRoot::from_bytes(layout.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let normalized = ix_prover::aggregate::normalize_root(
+      &config,
+      layout.log_heights(),
+      claim.as_bytes(),
+      proof.as_bytes(),
+    )?;
+    Ok(LeanByteArray::from_bytes(&normalized).into())
+  })
+}

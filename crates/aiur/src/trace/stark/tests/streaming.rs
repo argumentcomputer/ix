@@ -69,6 +69,55 @@ fn incremental_ranges_match_full_grouped_rows_and_proofs() {
 }
 
 #[test]
+fn fixed_log_heights_prove_one_all_active_shard() {
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend = host_lookups(&plan);
+  let entry = "Grouped::run";
+  let record = program.execute(entry, vec![3]).unwrap();
+  let rows = backend.record_rows(&record).unwrap();
+  let logs: Vec<u8> = rows
+    .iter()
+    .map(|&n| n.max(1).next_power_of_two().ilog2() as u8 + 1)
+    .collect();
+  let options = planning::Options {
+    fixed_log_heights: Some(logs.clone()),
+    max_ram_bytes: Some(1 << 30),
+    ..Default::default()
+  };
+  let planned = backend.plan_record(&record, &options, 0).unwrap();
+  assert!(planned.forced_layout);
+  let proof = backend
+    .prove_incremental(
+      &record,
+      entry,
+      &[3],
+      &record.output,
+      planned.layout.as_ref().unwrap(),
+      planned.retention(),
+    )
+    .unwrap();
+  backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+  let [header] = proof.preamble.headers.as_slice() else {
+    panic!("expected one shard")
+  };
+  assert!(header.active.iter().all(|&a| a));
+  assert_eq!(header.log_degrees, logs);
+  let key =
+    VerifyingKey::from_bytes(&backend.verifying_key_bytes().unwrap()).unwrap();
+  let claims = [backend.claim(entry, &[3], &record.output).unwrap()];
+  key.validate_preamble(&claims, &proof.preamble).unwrap();
+  key.verify(&claims, &proof).unwrap();
+  let ci = rows.iter().position(|&n| n > 2).unwrap();
+  let mut small = logs.clone();
+  small[ci] = 1;
+  assert!(backend.fixed_layout(&record, &small).is_err());
+  assert!(backend.fixed_layout(&record, &logs[1..]).is_err());
+  let both = planning::Options { layout: planned.layout.clone(), ..options };
+  assert!(both.validate().is_err());
+}
+
+#[test]
 fn packed_layout_proves_and_rejects_missing_or_duplicate_ranges() {
   let (program, artifact) = grouped();
   let plan = TracePlan::new(&program, artifact).unwrap();

@@ -46,12 +46,6 @@ opaque rootRows (aggrArtifact : @& String) (invocation : @& ByteArray)
 opaque rootLayout (aggrArtifact rows : @& String)
   (headroom claimLen : UInt32) : IO ByteArray
 
-/-- Wrap the aggregate root `rawProof` once more and prove the wrap in the fixed
-shape of `layout`; returns the normalized proof bytes. -/
-@[extern "rs_compression_normalize_root"]
-opaque normalizeRoot (aggrArtifact : @& String) (invocation : @& ByteArray)
-  (rawProof layout : @& ByteArray) : IO ByteArray
-
 /-- Write the FRI worker's root input directory `dir` without compressing. -/
 @[extern "rs_compression_write_root"]
 opaque writeRoot (vk proof claim statement fixedRoot : @& ByteArray) (dir : @& String) : IO Unit

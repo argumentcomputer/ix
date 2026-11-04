@@ -328,7 +328,7 @@ fn run(path: &str, catalog_path: Option<&str>) -> Result<usize, String> {
     let output;
     let actual = match case["type"].as_str() {
       Some("wrap") => {
-        entries(&streams::wrap(keys, shape, as_child(&children[0])))
+        entries(&streams::wrap(keys, shape, as_child(&children[0]).transport()))
       },
       Some("pair") => {
         let structural = case["structural"].as_bool().unwrap_or(false);

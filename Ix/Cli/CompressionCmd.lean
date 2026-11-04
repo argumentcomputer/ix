@@ -1,15 +1,16 @@
 /-
-  `ix compress layout|normalize|setup`. `layout` executes a root wrap
-  of each given aggregate proof and sizes one fixed layout that holds all of
-  them; `normalize` proves a root's wrap in that layout and writes the FRI
-  worker's root input. Every root normalized to one layout compresses under
-  the same FRI verifier. `setup` installs the released Ignition proving
+  `ix compress layout|normalize|setup` for formal aggregate roots. Every root
+  is normalized to the one layout the bundled release pins, so every root
+  compresses under the same FRI verifier. `layout` derives that layout when a
+  release is cut: one fixed layout holding the root wrap of each given root.
+  `normalize` proves a root's wrap in the release layout and writes the FRI
+  worker's root input. `setup` installs the released Ignition proving
   parameters and the fixed preprocessing every stage reads.
 -/
 module
 public import Cli
 public import Ix.Cli.Compression
-public import Ix.Cli.FormalAggregate
+public import Ix.Cli.FormalCompress
 
 public section
 namespace Ix.Cli.CompressionCmd
@@ -20,6 +21,8 @@ private def loadRoot (input : String) : IO (Address × Ixon.Proof) := do
     throw <| IO.userError s!"proof {addr} is already compressed"
   let .checkEnv .. := wrapper.claim
     | throw <| IO.userError s!"proof {addr} is not an aggregate CheckEnv proof"
+  unless FormalCompress.isFormalRoot wrapper.proof do
+    throw <| IO.userError s!"proof {addr} is not a formal aggregate root (IXAGGR2); legacy Aiur roots are retired"
   return (addr, wrapper)
 
 def runLayout (p : Cli.Parsed) : IO UInt32 := do
@@ -50,12 +53,11 @@ def runLayout (p : Cli.Parsed) : IO UInt32 := do
 def runNormalize (p : Cli.Parsed) : IO UInt32 := do
   try
     let (addr, wrapper) ← loadRoot (p.positionalArg! "proof" |>.as! String)
-    let layoutPath := p.positionalArg! "layout" |>.as! String
     let out := p.positionalArg! "out" |>.as! String
-    let layout ← IO.FS.readBinFile layoutPath
     let ctx ← FormalAggregate.context p
-    IO.eprintln s!"Normalizing aggregate root {addr} to {layoutPath}."
-    let root ← FormalAggregate.normalize ctx wrapper layout
+    let layout ← Compression.releaseRootLayout ctx.aggr.key
+    IO.eprintln s!"Normalizing aggregate root {addr} to the release root layout."
+    let root ← FormalCompress.normalize p ctx wrapper layout
     let claim := Ix.Claim.ser wrapper.claim
     Compression.writeRoot ctx.aggr.key root claim
       (FormalAggregate.statementBytes ctx wrapper.claim) layout out
@@ -67,7 +69,7 @@ def runNormalize (p : Cli.Parsed) : IO UInt32 := do
 
 def layoutCmd : Cli.Cmd := `[Cli|
   layout VIA runLayout;
-  "Size one fixed root layout that holds the root wrap of every given aggregate proof."
+  "Derive a release's root layout: one fixed layout that holds the root wrap of every given formal aggregate root. Compression uses only the layout the bundled release pins; this derives it when a release is cut."
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
@@ -83,17 +85,18 @@ def layoutCmd : Cli.Cmd := `[Cli|
 
 def normalizeCmd : Cli.Cmd := `[Cli|
   normalize VIA runNormalize;
-  "Prove a root's wrap in a fixed layout and write the FRI worker's root input directory."
+  "Prove a root's wrap in the release root layout and write the FRI worker's root input directory."
 
   FLAGS:
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aiur-artifact-digest" : String; "Require the IxVM artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AIUR_ARTIFACT_DIGEST)."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
+    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default 85% of available memory)."
+    "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
 
   ARGS:
     proof : String; "Aggregate Ixon.Proof file or content address in the ix store."
-    layout : String; "Layout file (`.ixl`) from `ix compress layout`."
     out : String; "Empty output directory for root-vk.bin, root-proof.bin, root-claims.bin and fixed-root.ixl."
 ]
 
