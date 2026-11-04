@@ -62,12 +62,48 @@ def dHashMapRawTests : TestSeq :=
   test "DHashMapRaw single" (dHashMapRawEq (roundtripDHashMapRawNatNat single) single) ++
   test "DHashMapRaw double" (dHashMapRawEq (roundtripDHashMapRawNatNat double) double)
 
+/-! ## Mixed-width scalar records
+
+Every scalar width, declared out of runtime order. Lean lays the fields out
+as `name count | size | wide | word | half | flag small`. -/
+
+structure MixedScalars where
+  flag : Bool
+  wide : UInt64
+  name : String
+  small : UInt8
+  half : UInt16
+  word : UInt32
+  size : USize
+  count : Nat
+  deriving BEq, Repr, Inhabited
+
+/-- The fields as Rust reads them: the name, then the numbers in declaration
+order. -/
+@[extern "rs_mixed_scalars_fields"]
+opaque mixedScalarsFields : @& MixedScalars → String × Array Nat
+
+@[extern "rs_roundtrip_mixed_scalars"]
+opaque roundtripMixedScalars : @& MixedScalars → MixedScalars
+
+def mixedScalarsTests : TestSeq :=
+  let m : MixedScalars :=
+    ⟨true, 0x0102030405060708, "mixed", 0xab, 0xcdef, 0x89abcdef, 12345, 678⟩
+  let z : MixedScalars := ⟨false, 0, "", 0, 0, 0, 0, 0⟩
+  test "MixedScalars fields read from Lean" (mixedScalarsFields m ==
+    ("mixed", #[1, 0x0102030405060708, 0xab, 0xcdef, 0x89abcdef, 12345, 678])) ++
+  test "MixedScalars zero fields read from Lean" (mixedScalarsFields z ==
+    ("", #[0, 0, 0, 0, 0, 0, 0])) ++
+  test "MixedScalars roundtrip" (roundtripMixedScalars m == m) ++
+  test "MixedScalars zero roundtrip" (roundtripMixedScalars z == z)
+
 /-! ## Test Suite -/
 
 public def suite : List TestSeq := [
   assocListTests,
   hashMapTests,
   dHashMapRawTests,
+  mixedScalarsTests,
   checkIO "HashMap Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat, hashMapEq (roundtripHashMapNatNat m) m),
   checkIO "DHashMapRaw Nat Nat roundtrip" (∀ m : Std.HashMap Nat Nat,
     let raw := m.toList.foldl (init := ({} : DHashMapRaw Nat (fun _ => Nat))) fun acc (k, v) => acc.insert k v

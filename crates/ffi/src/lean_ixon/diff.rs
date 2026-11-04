@@ -284,6 +284,10 @@ pub(crate) fn mmap_file(
     .map_err(|e| format!("{which} input {path}: {e}"))?;
   let expected =
     file.metadata().map_err(|e| format!("{which} input {path}: {e}"))?.len();
+  // SAFETY: not a Lean object operation. `Mmap::map` is unsafe because
+  // another process may truncate or modify the file while it is mapped; the
+  // inputs are read-only Ixon files, and the length check below rejects a
+  // file that changed size between `metadata` and the mapping.
   let mmap = unsafe { memmap2::Mmap::map(&file) }
     .map_err(|e| format!("{which} input {path}: mmap failed: {e}"))?;
   if mmap.len() as u64 != expected {

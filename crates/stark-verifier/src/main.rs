@@ -1,7 +1,7 @@
 use aiur::{
   field::FieldBackend,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters, planning::Options},
   },
 };
@@ -20,12 +20,6 @@ use std::{
   path::Path,
   time::Instant,
 };
-
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: TraceArtifact,
-}
 
 /// Serialize through a buffer. Recursive invocations encode every proof byte
 /// as a JSON number; unbuffered, each token was a separate write syscall.
@@ -104,9 +98,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   {
     return Err("unknown mode".into());
   }
-  let package: Package = aiur::decode_artifact(&std::fs::read(
-    cli.get(2).ok_or("missing package")?,
-  )?)?;
+  let package =
+    aiur::artifact::read(Path::new(cli.get(2).ok_or("missing package")?))?;
   let program = package.program.check_field::<Val>()?;
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "cases" {

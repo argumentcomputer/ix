@@ -21,7 +21,7 @@ described in [formal-aiur-unified-controller.md](formal-aiur-unified-controller.
 Build on a GPU host:
 
 ```sh
-ix prepare --cuda          # export the IxVM, verifier and aggregation artifacts once per revision
+ix prepare --cuda          # compile the IxVM, verifier and aggregation programs once per revision
 IX_CUDA=1 MULTI_STARK_CUDA_ARCHS=120 CFLAGS=-std=gnu17 lake build ix
 ```
 

@@ -199,6 +199,49 @@ lean_ffi::lean_inductive! {
 
   LeanPutResponse [ { num_obj: 2 } ];
   LeanGetResponse [ { num_obj: 3 } ];
+
+  // --- Prelude types read from fields ---
+
+  /// `Option α` stored in a field. `LeanOption` can only wrap an owned
+  /// reference or an FFI argument, so a borrowed field is read through this
+  /// layout instead.
+  LeanOptionField [
+    { },                                      // tag 0: none (scalar)
+    { num_obj: 1 },                           // tag 1: some
+  ];
+  /// `α × β` stored in a field or an array element.
+  LeanPair [ { num_obj: 2 } ];
+
+  // --- Std.DHashMap internals (test-only round trips) ---
+
+  /// `Std.DHashMap.Internal.AssocList`.
+  LeanAssocList [
+    { },                                      // tag 0: nil (scalar)
+    { num_obj: 3 },                           // tag 1: cons key value tail
+  ];
+  /// `Std.DHashMap.Raw` (and `HashMap`/`DHashMap`, which unbox to it):
+  /// size, buckets.
+  LeanDHashMapRaw [ { num_obj: 2 } ];
+}
+
+impl<R: LeanRef> LeanOptionField<R> {
+  /// The `some` payload mapped by `f`. `none` is usually `lean_box(0)`;
+  /// a tag-0 constructor object is accepted as well. Panics on any other
+  /// tag, naming the field as `what`.
+  pub fn decode<T>(
+    &self,
+    what: &str,
+    f: impl FnOnce(LeanBorrowed<'_>) -> T,
+  ) -> Option<T> {
+    if self.inner().is_scalar() {
+      return None;
+    }
+    match self.inner().tag() {
+      0 => None,
+      1 => Some(f(self.get_obj(0))),
+      tag => panic!("Invalid Option tag for {what}: {tag}"),
+    }
+  }
 }
 
 // =============================================================================
@@ -365,15 +408,15 @@ impl LeanIxName<LeanOwned> {
 impl<R: LeanRef> LeanIxName<R> {
   /// Decode a Lean `Ix.Name` into a Rust [`Name`].
   pub fn decode(&self) -> Name {
-    match self.as_ctor().tag() {
+    match self.inner().tag() {
       0 => Name::anon(),
       1 => {
-        let parent = LeanIxName::new(self.get_obj(0).to_owned_ref()).decode();
+        let parent = LeanIxName(self.get_obj(0)).decode();
         let s = self.get_obj(1).as_string().to_string();
         Name::str(parent, s)
       },
       2 => {
-        let parent = LeanIxName::new(self.get_obj(0).to_owned_ref()).decode();
+        let parent = LeanIxName(self.get_obj(0)).decode();
         let n = LeanNat::to_nat(&self.get_obj(1));
         Name::num(parent, n)
       },
@@ -413,7 +456,7 @@ impl LeanIxBinderInfo<LeanOwned> {
 impl<R: LeanRef> LeanIxBinderInfo<R> {
   /// Decode a Lean `BinderInfo` scalar.
   pub fn decode(&self) -> BinderInfo {
-    let tag = (self.inner().as_raw() as usize) >> 1;
+    let tag = self.inner().unbox_usize();
     LeanIxBinderInfo::from_u8(
       u8::try_from(tag).expect("BinderInfo tag fits in u8"),
     )
@@ -439,13 +482,13 @@ impl<R: LeanRef> LeanIxReducibilityHints<R> {
   /// Decode a Lean `Ix.ReducibilityHints`.
   pub fn decode(&self) -> ReducibilityHints {
     if self.inner().is_scalar() {
-      match (self.inner().as_raw() as usize) >> 1 {
+      match self.inner().unbox_usize() {
         0 => ReducibilityHints::Opaque,
         1 => ReducibilityHints::Abbrev,
         t => panic!("Invalid scalar ReducibilityHints tag: {t}"),
       }
     } else {
-      assert_eq!(self.as_ctor().tag(), 2);
+      assert_eq!(self.inner().tag(), 2);
       ReducibilityHints::Regular(self.get_num_32(0))
     }
   }

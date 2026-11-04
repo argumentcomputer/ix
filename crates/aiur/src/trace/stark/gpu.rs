@@ -359,7 +359,7 @@ fn encode<B: WitnessField>(
   backend: &Backend<'_, '_, B>,
   include: impl Fn(usize) -> bool,
 ) -> (Vec<Option<Program>>, Constants, Vec<usize>) {
-  let plan = backend.plan;
+  let plan = &*backend.plan;
   let program = plan.program.program();
   let functions = program.functions.len();
   let mut constants = Constants::default();

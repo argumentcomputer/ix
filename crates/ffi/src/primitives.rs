@@ -5,13 +5,15 @@
 
 use ix_common::prim_addrs::PrimAddrs;
 use lean_ffi::nat::Nat;
-#[cfg(feature = "test-ffi")]
-use lean_ffi::object::LeanCtor;
 use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanIOResult, LeanOwned, LeanProd, LeanRef,
   LeanString,
 };
+
+use crate::lean::LeanAssocList;
+#[cfg(feature = "test-ffi")]
+use crate::lean::LeanDHashMapRaw;
 
 /// Expose `PrimAddrs::lean_parity_table()` to Lean as `IO (Array (String × String))`.
 #[unsafe(no_mangle)]
@@ -34,26 +36,36 @@ pub extern "C" fn rs_prim_addrs_canonical() -> LeanIOResult<LeanOwned> {
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_assoclist_nat_nat(
-  list_ptr: LeanBorrowed<'_>,
-) -> LeanOwned {
-  if list_ptr.is_scalar() {
-    return LeanOwned::box_usize(0);
+  list: LeanAssocList<LeanBorrowed<'_>>,
+) -> LeanAssocList<LeanOwned> {
+  if list.inner().is_scalar() {
+    return LeanAssocList::new(LeanOwned::box_usize(0));
   }
-  let pairs = decode_assoc_list_nat_nat(list_ptr);
+  let pairs = decode_assoc_list_nat_nat(list);
   build_assoc_list_nat_nat(&pairs)
+}
+
+/// `AssocList.cons key value tail`.
+#[cfg(feature = "test-ffi")]
+fn cons(
+  key: &Nat,
+  value: &Nat,
+  tail: impl Into<LeanOwned>,
+) -> LeanAssocList<LeanOwned> {
+  let cons = LeanAssocList::alloc(1);
+  cons.set_obj(0, LeanNat::from_nat(key));
+  cons.set_obj(1, LeanNat::from_nat(value));
+  cons.set_obj(2, tail);
+  cons
 }
 
 #[cfg(feature = "test-ffi")]
 /// Build an AssocList Nat Nat from pairs
-fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> LeanOwned {
+fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> LeanAssocList<LeanOwned> {
   // Build in reverse to preserve order
-  let mut list = LeanOwned::box_usize(0); // nil
+  let mut list = LeanAssocList::new(LeanOwned::box_usize(0)); // nil
   for (k, v) in pairs.iter().rev() {
-    let cons = LeanCtor::alloc(1, 3, 0); // AssocList.cons
-    cons.set(0, LeanNat::from_nat(k));
-    cons.set(1, LeanNat::from_nat(v));
-    cons.set(2, list);
-    list = cons.into();
+    list = cons(k, v, list);
   }
   list
 }
@@ -62,56 +74,12 @@ fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> LeanOwned {
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
-  raw_ptr: LeanBorrowed<'_>,
-) -> LeanOwned {
-  if raw_ptr.is_scalar() {
-    return raw_ptr.to_owned_ref();
+  raw: LeanDHashMapRaw<LeanBorrowed<'_>>,
+) -> LeanDHashMapRaw<LeanOwned> {
+  if raw.inner().is_scalar() {
+    return LeanDHashMapRaw::new(raw.inner().to_owned_ref());
   }
-
-  let raw_ctor = raw_ptr.as_ctor();
-  let size = LeanNat::to_nat(&raw_ctor.get(0));
-  let buckets = raw_ctor.get(1).as_array();
-
-  // Decode and rebuild buckets
-  let num_buckets = buckets.len();
-
-  let mut all_pairs: Vec<(Nat, Nat)> = Vec::new();
-  for bucket in buckets.iter() {
-    let pairs = decode_assoc_list_nat_nat(bucket);
-    all_pairs.extend(pairs);
-  }
-
-  // Rebuild buckets
-  let new_buckets = LeanArray::alloc(num_buckets);
-  let nil = LeanOwned::box_usize(0);
-  for i in 0..num_buckets {
-    new_buckets.set(i, nil.clone());
-  }
-
-  for (k, v) in &all_pairs {
-    let k_u64 = k.to_u64().unwrap_or_else(|| {
-      let bytes = k.to_le_bytes();
-      let mut arr = [0u8; 8];
-      let len = bytes.len().min(8);
-      arr[..len].copy_from_slice(&bytes[..len]);
-      u64::from_le_bytes(arr)
-    });
-    #[allow(clippy::cast_possible_truncation)]
-    let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
-
-    let old_bucket = new_buckets.get(bucket_idx).to_owned_ref();
-    let new_bucket = LeanCtor::alloc(1, 3, 0);
-    new_bucket.set(0, LeanNat::from_nat(k));
-    new_bucket.set(1, LeanNat::from_nat(v));
-    new_bucket.set(2, old_bucket);
-    new_buckets.set(bucket_idx, new_bucket);
-  }
-
-  // Build Raw
-  let raw = LeanCtor::alloc(0, 2, 0);
-  raw.set(0, LeanNat::from_nat(&size));
-  raw.set(1, new_buckets);
-  raw.into()
+  roundtrip_raw_nat_nat(raw)
 }
 
 /// Round-trip a Std.HashMap Nat Nat.
@@ -132,81 +100,70 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
-  map_ptr: LeanCtor<LeanBorrowed<'_>>,
-) -> LeanOwned {
-  // Due to unboxing, map_ptr points directly to Raw
-  let size = LeanNat::to_nat(&map_ptr.get(0));
-  let buckets = map_ptr.get(1).as_array();
+  map: LeanDHashMapRaw<LeanBorrowed<'_>>,
+) -> LeanDHashMapRaw<LeanOwned> {
+  roundtrip_raw_nat_nat(map)
+}
 
-  // Decode buckets (Array of AssocLists)
+/// Decode a `DHashMap.Raw Nat Nat` and rebuild it with the same size and
+/// bucket count, placing each key in bucket `hash & (buckets - 1)` as Lean
+/// does (a `Nat` hashes to its low 64 bits).
+#[cfg(feature = "test-ffi")]
+fn roundtrip_raw_nat_nat(
+  raw: LeanDHashMapRaw<LeanBorrowed<'_>>,
+) -> LeanDHashMapRaw<LeanOwned> {
+  let size = LeanNat::to_nat(&raw.get_obj(0));
+  let buckets = raw.get_obj(1).as_array();
+
   let mut pairs: Vec<(Nat, Nat)> = Vec::new();
-
   for bucket in buckets.iter() {
-    let bucket_pairs = decode_assoc_list_nat_nat(bucket);
-    pairs.extend(bucket_pairs);
+    pairs.extend(decode_assoc_list_nat_nat(LeanAssocList(bucket)));
   }
 
-  // Rebuild the HashMap with the same bucket count
   let num_buckets = buckets.len();
   let new_buckets = LeanArray::alloc(num_buckets);
-
-  // Initialize all buckets to AssocList.nil (lean_box(0))
   let nil = LeanOwned::box_usize(0);
   for i in 0..num_buckets {
     new_buckets.set(i, nil.clone());
   }
 
-  // Insert each pair into the appropriate bucket using Lean's hash function
   for (k, v) in &pairs {
-    // Hash the key - for Nat, Lean uses the value itself as hash
     let k_u64 = k.to_u64().unwrap_or_else(|| {
-      // For large nats, use low 64 bits
       let bytes = k.to_le_bytes();
       let mut arr = [0u8; 8];
       let len = bytes.len().min(8);
       arr[..len].copy_from_slice(&bytes[..len]);
       u64::from_le_bytes(arr)
     });
-    // Lean uses (hash & (buckets.size - 1)) for bucket index (power of 2)
     #[allow(clippy::cast_possible_truncation)]
     let bucket_idx = (k_u64 as usize) & (num_buckets - 1);
 
-    // Get current bucket AssocList
     let old_bucket = new_buckets.get(bucket_idx).to_owned_ref();
-
-    // Build AssocList.cons key value tail (tag 1, 3 fields)
-    let new_bucket = LeanCtor::alloc(1, 3, 0);
-    new_bucket.set(0, LeanNat::from_nat(k));
-    new_bucket.set(1, LeanNat::from_nat(v));
-    new_bucket.set(2, old_bucket);
-    new_buckets.set(bucket_idx, new_bucket);
+    new_buckets.set(bucket_idx, cons(k, v, old_bucket));
   }
 
-  // Build Raw (ctor 0, 2 fields: size, buckets)
-  // Due to unboxing, this IS the HashMap
-  let raw = LeanCtor::alloc(0, 2, 0);
-  raw.set(0, LeanNat::from_nat(&size));
-  raw.set(1, new_buckets);
-  raw.into()
+  let result = LeanDHashMapRaw::alloc(0);
+  result.set_obj(0, LeanNat::from_nat(&size));
+  result.set_obj(1, new_buckets);
+  result
 }
 
 /// Decode a Lean AssocList Nat Nat to Vec of pairs
 /// AssocList: nil (tag 0) | cons key value tail (tag 1, 3 fields)
-pub fn decode_assoc_list_nat_nat(obj: LeanBorrowed<'_>) -> Vec<(Nat, Nat)> {
+pub fn decode_assoc_list_nat_nat(
+  list: LeanAssocList<LeanBorrowed<'_>>,
+) -> Vec<(Nat, Nat)> {
   let mut result = Vec::new();
-  let mut current = obj;
-
-  while !current.is_scalar() {
-    let ctor = current.as_ctor();
-    if ctor.tag() == 0 {
-      break;
-    }
-    let key = ctor.get(0);
-    let val = ctor.get(1);
-    let next = ctor.get(2).as_raw();
-    result.push((LeanNat::to_nat(&key), LeanNat::to_nat(&val)));
-    current = unsafe { LeanBorrowed::from_raw(next) };
+  // Each tail is held as an owned reference: a borrowed field's lifetime is
+  // tied to the wrapper it was read from, which is replaced every step.
+  let mut current = LeanAssocList::new(list.inner().to_owned_ref());
+  while !current.inner().is_scalar() && current.inner().tag() != 0 {
+    result.push((
+      LeanNat::to_nat(&current.get_obj(0)),
+      LeanNat::to_nat(&current.get_obj(1)),
+    ));
+    let tail = current.get_obj(2).to_owned_ref();
+    current = LeanAssocList::new(tail);
   }
-
   result
 }

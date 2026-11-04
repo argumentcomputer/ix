@@ -86,14 +86,17 @@ ix aggregate --ixe env.ixe --ixes env.ixes <shard-proof-address>...
 ix verify --aggregate --ixe env.ixe --ixes env.ixes <aggregate-address>
 ```
 
-The CLI builds the separate exporter and caches its artifact by source and
-exporter contents, in the `.lake/aiur` of the checkout `ix` was built in (or
-`IX_ROOT`), so commands work from any directory. `ix prepare` does this ahead
-of time and selects the artifacts for the native executors that the next
-`lake build ix` links; otherwise the first command that needs an artifact
-exports it, which takes about ten minutes for IxVM. `--aiur-artifact` /
-`IX_AIUR_ARTIFACT` and `--aggr-artifact` / `IX_AGGR_ARTIFACT` select already
-exported **trusted** compiler artifacts. These are verifier configuration,
+The CLI compiles a certified program with the compiler linked into `ix`,
+hands the result to the prover in memory and caches it as a binary artifact
+keyed by the compiler's identity and the sources, in the `.lake/aiur` of the
+checkout `ix` was built in (or `IX_ROOT`), so commands work from any
+directory. `ix prepare` does this ahead of time and selects the artifacts
+for the native executors that the next `lake build ix` links; otherwise the
+first command that needs a program compiles it, which takes several minutes
+for IxVM. `--aiur-artifact` / `IX_AIUR_ARTIFACT` and `--aggr-artifact` /
+`IX_AGGR_ARTIFACT` select **trusted** binary artifacts (`aiur-artifact
+convert` turns a legacy JSON export into one); see
+[direct FFI](formal-aiur-direct-ffi.md). These are verifier configuration,
 never advice supplied by the prover. The prover runs inside `ix` as a linked
 library, so `lake build ix` rebuilds it with its sources; see the
 [orchestration guide](formal-aiur-orchestration.md#in-process-prover).

@@ -21,11 +21,6 @@ use multi_stark::types::Val;
 use stark_verifier_native::{Aggregation, Verifier};
 use std::{error::Error, time::Instant};
 
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-}
-
 fn median(mut samples: Vec<f64>) -> f64 {
   samples.sort_by(f64::total_cmp);
   samples[samples.len() / 2]
@@ -55,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
   }
   let runs: usize = cli.get(4).map_or(Ok(3), |s| s.parse())?;
-  let package: Package = aiur::decode_artifact(&std::fs::read(&cli[2])?)?;
+  let package = aiur::artifact::read(std::path::Path::new(&cli[2]))?;
   let program = package.program.check_field::<Val>()?;
   let invocation: stark_verifier::Invocation =
     serde_json::from_slice(&std::fs::read(&cli[3])?)?;
@@ -194,18 +189,12 @@ fn fixture(
   Ok(())
 }
 
-#[derive(serde::Deserialize)]
-struct TracePackage {
-  program: aiur::Program,
-  trace: aiur::trace::TraceArtifact,
-}
-
 fn prove(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
   use aiur::trace::{
     TracePlan,
     stark::{Backend, Parameters, planning::Options},
   };
-  let package: TracePackage = aiur::decode_artifact(&std::fs::read(package)?)?;
+  let package = aiur::artifact::read(std::path::Path::new(package))?;
   let program = package.program.check_field::<Val>()?;
   let plan = TracePlan::new(&program, package.trace)?;
   let backend =
@@ -260,7 +249,7 @@ fn prove(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
 
 fn advice(package: &str, input: &str) -> Result<(), Box<dyn Error>> {
   use aiur::{library::advice::Advice, native::outcome_diff};
-  let package: Package = aiur::decode_artifact(&std::fs::read(package)?)?;
+  let package = aiur::artifact::read(std::path::Path::new(package))?;
   let program = package.program.check_field::<Val>()?;
   let start = Instant::now();
   let invocation: stark_verifier::Invocation =

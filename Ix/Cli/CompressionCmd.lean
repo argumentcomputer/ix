@@ -121,7 +121,9 @@ def normalizeCmd : Cli.Cmd := `[Cli|
 
 /-- The formal aggregation artifact's verifying key. -/
 private def aggregationKey (p : Cli.Parsed) : IO ByteArray := do
-  return (← FormalAggregate.identity (← FormalAggregate.artifact p) true).key
+  let registry ← FormalProver.Registry.new
+  let aggr ← (← FormalAggregate.artifact p registry).system
+  return (← FormalAggregate.identity aggr true).key
 
 def runDeriveVk (p : Cli.Parsed) : IO UInt32 := do
   try

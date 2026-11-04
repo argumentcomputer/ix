@@ -21,6 +21,7 @@ ixon = { workspace = true }
 ix-prover = { path = "../ix-prover", default-features = false }
 ix-proof-compression = { path = "../proof-compression", default-features = false }
 lean-ffi = { workspace = true }
+aiur-ffi = { workspace = true }
 memmap2 = { workspace = true }
 multi-stark = { workspace = true }
 mimalloc = { workspace = true }

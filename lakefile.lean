@@ -58,14 +58,16 @@ The archives are built when native targets need them. Keeping Rust linkage on
 
 Every archive contains the formal Aiur prover library (`ix-prover`), which the
 `ix` CLI runs in process. Its generated native executors are compiled from the
-certified artifacts that `ix prepare` exports, and exporting needs a built
+certified binary artifacts that `ix prepare` compiles, and compiling them needs a built
 `ix`, so the kernels cannot be a dependency of the first build. They are an
 optional feature instead (`formalNativeArtifacts`): a build without them runs
 every formal job on the interpreter, which produces identical records, and a
 kernel only ever runs for the artifact with exactly its program fingerprint,
-so a stale kernel is never used. `ix prepare` records the exported artifacts
+so a stale kernel is never used. `ix prepare` records the binary artifacts
 in `.lake/aiur/native-kernels.env`; the next `lake build ix` links their
-kernels. The artifacts' contents are inputs of the archive's trace.
+kernels. The artifacts' contents are inputs of the archive's trace. A
+selection that names legacy JSON artifacts is stale: it is ignored, or
+rejected under `IX_FORMAL_NATIVE=1`, until `ix prepare` replaces it.
 -/
 section FFI
 
@@ -97,9 +99,10 @@ def formalNativeArtifacts (root : FilePath) : IO (Array (String × String)) := d
       else pure #[]
   let complete := found.size == formalNativeVariables.size
   let present ← found.allM fun (_, path) => FilePath.pathExists path
-  if complete && present then return found
+  let binary := found.all fun (_, path) => FilePath.extension path == some "aiur"
+  if complete && present && binary then return found
   if mode == some "1" then
-    throw <| IO.userError "IX_FORMAL_NATIVE=1 requires the exported formal artifacts; run `ix prepare`"
+    throw <| IO.userError "IX_FORMAL_NATIVE=1 requires the binary formal artifacts; run `ix prepare`"
   return #[]
 
 /-- Whether the environment variable `name` is `1`, `true` or `yes`. -/
@@ -126,7 +129,7 @@ def cargoFeatures (testFfi : Bool := false) (net : Bool := false)
   if ← enabled "IX_CUDA_TRACE_CODEGEN" then features := features.push "cuda-trace-codegen"
   if (← IO.getEnv "IX_FORMAL_COMPILED_TRACE") == some "1" then
     if !formalNative then
-      throw <| IO.userError "IX_FORMAL_COMPILED_TRACE=1 requires the exported formal artifacts; run `ix prepare`"
+      throw <| IO.userError "IX_FORMAL_COMPILED_TRACE=1 requires the binary formal artifacts; run `ix prepare`"
     features := features.push "formal-compiled-trace"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
@@ -282,6 +285,11 @@ lean_lib EntryCaseFixtures where
 
 lean_exe «formal-aiur-tests» where
   root := `Tests.FormalAiur
+  supportInterpreter := true
+
+/-- Differential checks and measurements of the direct compiler handoff. -/
+lean_exe «formal-image-tests» where
+  root := `Tests.FormalImage
   supportInterpreter := true
 
 lean_exe «formal-aggregate-tests» where

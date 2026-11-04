@@ -4,6 +4,7 @@ members = [
   "crates/ix-prover",
   "crates/record-pool",
   "crates/aiur",
+  "crates/aiur-ffi",
   "crates/aiur-macros",
   "crates/aiur-tracegen",
   "crates/stark-key",
@@ -55,6 +56,7 @@ license = "MIT OR Apache-2.0"
 aggregate-controller = { path = "crates/aggregate-controller" }
 record-pool = { path = "crates/record-pool" }
 aiur = { path = "crates/aiur" }
+aiur-ffi = { path = "crates/aiur-ffi" }
 stark-key = { path = "crates/stark-key" }
 ix-bench = { path = "crates/bench" }
 ix-common = { path = "crates/common" }

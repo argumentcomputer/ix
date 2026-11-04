@@ -1,39 +1,67 @@
-//! Stateless prover operations: proof verification, verifying-key identity,
-//! execution-only checks and plans, and recursive range advice. Each call
-//! loads and checks its artifact.
+//! Stateless prover operations on program and system handles: proof
+//! verification, verifying-key identity, execution-only checks and plans,
+//! single-claim proving, and recursive range advice.
 use crate::{
-  PrepFailure, load_package,
+  PrepFailure,
   protocol::{Kind, Request},
   request::{IXVM_ENTRY, RECURSIVE_ENTRIES, Uncharged},
+  system::{Program, System},
 };
-use aiur::{
-  field::FieldBackend,
-  trace::{
-    TracePlan,
-    stark::{Backend, BatchProof, Parameters, planning},
-  },
-};
-use multi_stark::{
-  p3_field::{PrimeCharacteristicRing, PrimeField64},
-  types::Val,
-};
+use aiur::trace::stark::{BatchProof, planning};
+use multi_stark::p3_field::PrimeField64;
 use serde_json::{Value, json};
 use std::{path::Path, time::Instant};
 
 /// The prefix of a formal IxVM proof as stored in an `Ixon.Proof`.
 pub const IXVM_MAGIC: &[u8] = b"IXAIUR2\0";
 
-/// Available host memory and logical cores.
-pub fn resources() -> Value {
-  json!({"available_bytes":planning::available_memory(),
-    "cores":std::thread::available_parallelism().map_or(1, usize::from)})
+/// Available host memory in bytes, when known, and logical cores.
+pub fn resources() -> (Option<u64>, usize) {
+  (
+    planning::available_memory(),
+    std::thread::available_parallelism().map_or(1, usize::from),
+  )
 }
 
-/// Verify `proof` of `entry(args)` against the artifact's circuits on the
+/// What a check or proof decided: whether its plan fits the budget, and how
+/// a caller that splits claims should split this one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Planned {
+  pub fits: bool,
+  /// Whether splitting the claim can help; false when the fixed tables
+  /// alone exceed the budget.
+  pub can_split: bool,
+  pub suggested_parts: usize,
+  pub generation_peak_bytes: u64,
+  pub proving_peak_bytes: u64,
+}
+
+impl Planned {
+  fn of(plan: &planning::BatchPlan, can_split: bool) -> Self {
+    Self {
+      fits: plan.fits,
+      can_split,
+      suggested_parts: plan.suggested_parts,
+      generation_peak_bytes: plan.generation_peak_bytes,
+      proving_peak_bytes: plan.proving_peak_bytes,
+    }
+  }
+}
+
+/// The result of one stateless job: its status (0, or 75 when no plan fits
+/// the budget), what its plan decided (none for execution alone), and a
+/// diagnostic report that callers render only when asked to.
+pub struct Outcome {
+  pub status: u32,
+  pub plan: Option<Planned>,
+  pub report: Value,
+}
+
+/// Verify `proof` of `entry(args)` against the system's circuits on the
 /// CPU. An IxVM proof carries [`IXVM_MAGIC`]; a recursive proof is raw.
 /// Returns the number of trace shards.
 pub fn verify(
-  artifact: &Path,
+  system: &System,
   entry: &str,
   args: &[u64],
   proof: &[u8],
@@ -54,51 +82,18 @@ pub fn verify(
   } else {
     return Err(format!("unknown verification entrypoint `{entry}`"));
   };
-  let package = load_package(artifact)?;
-  let program = package.program.check_field::<Val>()?;
-  let plan = TracePlan::new(&program, package.trace)?;
-  let backend = Backend::for_batch_verification(&plan, Parameters::default())?;
-  let args = program.field().decode(args)?;
-  let proof = BatchProof::from_bytes(bytes).map_err(|e| e.to_string())?;
-  if proof.to_bytes().map_err(|e| e.to_string())? != bytes {
-    return Err("noncanonical or trailing proof bytes".into());
+  system.verify(entry, args, bytes)
+}
+
+pub use crate::system::Identity;
+
+/// The verifying key of a system and how its claims address it: the IxVM
+/// claim entry, or the recursive program's first entry.
+pub fn identity(system: &System, kind: Kind) -> Result<Identity, String> {
+  match kind {
+    Kind::Ixvm => system.identity(IXVM_ENTRY, 8),
+    Kind::Recursion => system.identity(system.program().first_entry()?, 16),
   }
-  backend.verify_batch(entry, &args, &[], &proof)?;
-  Ok(proof.proofs.len())
-}
-
-/// The verifying key of an artifact and how its claims address it.
-pub struct Identity {
-  pub key: Vec<u8>,
-  pub function_index: u64,
-  pub call_channel: u64,
-}
-
-pub fn identity(artifact: &Path, kind: Kind) -> Result<Identity, String> {
-  let package = load_package(artifact)?;
-  let program = package.program.check_field::<Val>()?;
-  let plan = TracePlan::new(&program, package.trace)?;
-  let backend = Backend::for_batch_verification(&plan, Parameters::default())?;
-  let claim = match kind {
-    Kind::Ixvm => backend.claim(IXVM_ENTRY, &[Val::ZERO; 8], &[])?,
-    Kind::Recursion => {
-      let entry = &program
-        .program()
-        .entries
-        .first()
-        .ok_or("artifact has no entrypoint")?
-        .name;
-      backend.claim(entry, &[Val::ZERO; 16], &[])?
-    },
-  };
-  let [call_channel, function_index, ..] = claim[..] else {
-    return Err("claim lacks its call namespace".into());
-  };
-  Ok(Identity {
-    key: backend.verifying_key_bytes()?,
-    function_index: function_index.as_canonical_u64(),
-    call_channel: call_channel.as_canonical_u64(),
-  })
 }
 
 fn decode_proof(bytes: &[u8]) -> Result<BatchProof, String> {
@@ -201,13 +196,13 @@ pub struct FixedShape {
 }
 
 /// The fixed shape of one more wrap of `proof`, a raw one-shard proof of
-/// the recursive artifact. A wrap of a one-shard root verifies the same
+/// the recursive system. A wrap of a one-shard root verifies the same
 /// kind of proof the root itself verified, so the root's heights, raised by
 /// `headroom` doublings, size it. Fixed tables keep their heights; circuits
 /// the root leaves inactive get two rows. The normalizing prover rejects a
 /// wrap that does not fit.
 pub fn fixed_root_shape(
-  artifact: &Path,
+  system: &System,
   proof: &[u8],
   headroom: u8,
 ) -> Result<FixedShape, String> {
@@ -222,13 +217,8 @@ pub fn fixed_root_shape(
   let [claim] = header.claims.as_slice() else {
     return Err("the root shard carries no single claim".into());
   };
-  let package = load_package(artifact)?;
-  let program = package.program.check_field::<Val>()?;
-  let plan = TracePlan::new(&program, package.trace)?;
-  let backend = Backend::for_batch_verification(&plan, Parameters::default())?;
-  let key = aiur::trace::stark::VerifyingKey::from_bytes(
-    &backend.verifying_key_bytes()?,
-  )?;
+  let backend = system.verifier();
+  let key = aiur::trace::stark::VerifyingKey::from_bytes(system.key())?;
   let circuits = &key.system().circuits;
   if header.active.len() != circuits.len() {
     return Err("the root belongs to another artifact".into());
@@ -269,73 +259,72 @@ pub fn fixed_root_shape(
   Ok(FixedShape { log_heights, memory_traces, claim_len: claim.len() })
 }
 
-/// What [`check`] does after executing the claim.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Check {
-  /// Execute only.
-  Execute,
-  /// Also plan the proof within the RAM budget.
-  Plan,
+fn bind_error(failure: PrepFailure) -> String {
+  match failure {
+    PrepFailure::Other(error) => error,
+    PrepFailure::Resource(error) => error.to_string(),
+  }
 }
 
-/// Execute an IxVM claim without proving it. Returns the job status (0, or
-/// 75 when [`Check::Plan`] finds that the fixed tables alone exceed the
-/// budget) and a report; a rejected claim is an error.
-pub fn check(
-  mode: Check,
-  artifact: &Path,
+/// Execute an IxVM claim on `program` without proving it. Returns the job
+/// status (0) and a report; a rejected claim is an error.
+pub fn execute(
+  program: &Program,
+  request: &Request,
+) -> Result<Outcome, String> {
+  let start = Instant::now();
+  let bound =
+    crate::request::bind(program.checked(), Kind::Ixvm, request, &Uncharged)
+      .map_err(bind_error)?;
+  let (result, ran) = run(program, &bound)?;
+  if !result.output.is_empty() {
+    return Err("claim verifier returned a value".into());
+  }
+  let seconds = start.elapsed().as_secs_f64();
+  println!(
+    "verified claim in {seconds:.3}s ({} queries, {} instructions)",
+    result.queries.len(),
+    result.instructions
+  );
+  let mut report = json!({"execution_seconds":seconds, "queries":result.queries.len(),
+    "instructions":result.instructions, "executor":ran});
+  for (key, value) in bound.report {
+    report[key] = value;
+  }
+  Ok(Outcome { status: 0, plan: None, report })
+}
+
+/// Execute an IxVM claim and plan its proof within the RAM budget, without
+/// proving. Returns the job status (0, or 75 when the fixed tables alone
+/// exceed the budget) and a report; a rejected claim is an error.
+pub fn plan(
+  system: &System,
   request: &Request,
   options: &planning::Options,
-) -> Result<(u32, Value), String> {
-  let artifact_resident = planning::resident_memory();
-  let package = load_package(artifact)?;
-  let program = package.program.check_field::<Val>()?;
-  let bind = |program| {
-    crate::request::bind(program, Kind::Ixvm, request, &Uncharged).map_err(
-      |failure| match failure {
-        PrepFailure::Other(error) => error,
-        PrepFailure::Resource(error) => error.to_string(),
-      },
-    )
-  };
-  if mode == Check::Execute {
-    let start = Instant::now();
-    let bound = bind(&program)?;
-    let (result, ran) = run(&program, &bound)?;
-    if !result.output.is_empty() {
-      return Err("claim verifier returned a value".into());
-    }
-    let seconds = start.elapsed().as_secs_f64();
-    println!(
-      "verified claim in {seconds:.3}s ({} queries, {} instructions)",
-      result.queries.len(),
-      result.instructions
-    );
-    let mut report = json!({"execution_seconds":seconds, "queries":result.queries.len(),
-      "instructions":result.instructions, "executor":ran});
-    for (key, value) in bound.report {
-      report[key] = value;
-    }
-    return Ok((0, report));
-  }
+) -> Result<Outcome, String> {
   options.validate()?;
-  let before_setup = planning::resident_memory();
+  let program = system.program();
   ixvm::register_compiled_trace();
-  let plan = TracePlan::new(&program, package.trace)?;
-  let backend =
-    Backend::for_batch_on_device(&plan, Parameters::default(), options.device)?;
-  let static_resident = artifact_resident
-    .saturating_add(planning::resident_memory().saturating_sub(before_setup));
+  let backend = system.prover(options.device)?;
+  // The resident program, system and proving setup all count against the
+  // budget's static floor.
+  let static_resident = planning::resident_memory();
   let fixed = backend.plan_fixed(options, static_resident)?;
   if !fixed.fits {
     let report = json!({"plan":fixed, "can_split":false, "verified":false,
       "error":"budget is below the estimated artifact and fixed-table floor"});
     println!("{report}");
-    return Ok((0, report));
+    return Ok(Outcome {
+      status: 0,
+      plan: Some(Planned::of(&fixed, false)),
+      report,
+    });
   }
-  let bound = bind(&program)?;
+  let bound =
+    crate::request::bind(program.checked(), Kind::Ixvm, request, &Uncharged)
+      .map_err(bind_error)?;
   let start = Instant::now();
-  let (record, ran) = run(&program, &bound)?;
+  let (record, ran) = run(program, &bound)?;
   let execute = start.elapsed().as_secs_f64();
   if !record.output.is_empty() {
     return Err("claim verifier returned a value".into());
@@ -349,7 +338,7 @@ pub fn check(
     report[key] = value;
   }
   println!("{report}");
-  Ok((0, report))
+  Ok(Outcome { status: 0, plan: Some(Planned::of(&batch, true)), report })
 }
 
 /// Prove one IxVM claim with no controller: execute it, plan its proof
@@ -358,26 +347,21 @@ pub fn check(
 /// status (0, or 75 when no trace-shard plan fits) and a report; a rejected
 /// claim is an error.
 pub fn prove(
-  artifact: &Path,
+  system: &System,
   request: &Request,
   options: &planning::Options,
   output: &Path,
   threads: usize,
-) -> Result<(u32, Value), String> {
+) -> Result<Outcome, String> {
   options.validate()?;
-  let package = load_package(artifact)?;
-  let program = package.program.check_field::<Val>()?;
+  let program = system.program();
   ixvm::register_compiled_trace();
-  let plan = TracePlan::new(&program, package.trace)?;
-  let backend =
-    Backend::for_batch_on_device(&plan, Parameters::default(), options.device)?;
-  let bound = crate::request::bind(&program, Kind::Ixvm, request, &Uncharged)
-    .map_err(|failure| match failure {
-    PrepFailure::Other(error) => error,
-    PrepFailure::Resource(error) => error.to_string(),
-  })?;
+  let backend = system.prover(options.device)?;
+  let bound =
+    crate::request::bind(program.checked(), Kind::Ixvm, request, &Uncharged)
+      .map_err(bind_error)?;
   let start = Instant::now();
-  let (record, ran) = run(&program, &bound)?;
+  let (record, ran) = run(program, &bound)?;
   if !record.output.is_empty() {
     return Err("claim verifier returned a value".into());
   }
@@ -389,10 +373,11 @@ pub fn prove(
   }
   let batch = backend.plan_batch(&record, options)?;
   report["plan"] = serde_json::to_value(&batch).map_err(|e| e.to_string())?;
+  let planned = Planned::of(&batch, true);
   if !batch.fits {
     report["can_split"] = true.into();
     crate::output::report(output, Kind::Ixvm, &report)?;
-    return Ok((75, report));
+    return Ok(Outcome { status: 75, plan: Some(planned), report });
   }
   let layout = batch
     .layout
@@ -424,23 +409,23 @@ pub fn prove(
     output,
     false,
     Kind::Ixvm,
-    &backend,
+    system.verifier(),
     &bound.entry,
     &bound.args,
     &run.proof,
     report,
   )?;
-  Ok((0, report))
+  Ok(Outcome { status: 0, plan: Some(planned), report })
 }
 
 /// Execute on the executor selected for this program: its
 /// native kernel when one is linked for exactly this program and binds,
 /// otherwise the interpreter. A stateless check has no record budget.
 fn run(
-  program: &crate::Program,
+  program: &Program,
   bound: &crate::request::Bound<'_>,
 ) -> Result<(aiur::Execution<crate::Field>, &'static str), String> {
-  let executor = crate::executor::Executor::select(program)?;
+  let executor = program.executor();
   let pool = record_pool::RecordPool::new(usize::MAX / 2, 16 << 20);
   let reservation = pool
     .try_admit()
@@ -464,19 +449,5 @@ mod tests {
     assert!(proof_shards(&[]).is_err());
     assert!(ranges(&[1, 2, 3], 1).is_err());
     assert!(ranges(&[], 0).is_err());
-    let missing = Path::new("/nonexistent/artifact.json");
-    assert!(
-      verify(missing, "IxVM::verify_claim", &[0; 8], b"IXAIUR2\0").is_err()
-    );
-    assert!(
-      verify(missing, "IxVM::verify_claim", &[0; 8], b"other").unwrap_err()
-        == "not a formal Aiur proof"
-    );
-    assert!(verify(missing, "Other::entry", &[0; 8], &[]).is_err());
-    assert!(
-      verify(missing, "MultiStark::ix_aggr", &[0; 8], &[])
-        .unwrap_err()
-        .contains("sixteen")
-    );
   }
 }

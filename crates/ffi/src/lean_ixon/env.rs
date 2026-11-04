@@ -24,6 +24,7 @@ use lean_ffi::object::{
 
 use crate::lean::LeanBuildCache;
 use crate::lean::LeanIxAddress;
+use crate::lean::{LeanOptionField, LeanPair};
 
 // =============================================================================
 // RawConst (addr: Address, const: Constant)
@@ -56,10 +57,10 @@ impl LeanIxonRawConst<LeanOwned> {
 impl<R: LeanRef> LeanIxonRawConst<R> {
   /// Decode Ixon.RawConst from Lean pointer.
   pub fn decode(&self) -> DecodedRawConst {
-    let ctor = self.as_ctor();
     DecodedRawConst {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
-      constant: LeanIxonConstant::new(ctor.get(1).to_owned_ref()).decode(),
+      addr: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+        .decode(),
+      constant: LeanIxonConstant(self.get_obj(1)).decode(),
     }
   }
 }
@@ -99,21 +100,13 @@ pub(crate) fn build_opt_original(
 pub(crate) fn decode_opt_original(
   obj: LeanBorrowed<'_>,
 ) -> Option<(Address, ConstantMeta)> {
-  if obj.is_scalar() {
-    return None;
-  }
-  let opt = obj.as_ctor();
-  match opt.tag() {
-    0 => None,
-    1 => {
-      let pair = opt.get(0).as_ctor();
-      let addr =
-        LeanIxAddress::from_borrowed(pair.get(0).as_byte_array()).decode();
-      let meta = LeanIxonConstantMeta::new(pair.get(1).to_owned_ref()).decode();
-      Some((addr, meta))
-    },
-    tag => panic!("Invalid Option tag for original: {tag}"),
-  }
+  LeanOptionField(obj).decode("original", |pair| {
+    let pair = LeanPair(pair);
+    let addr =
+      LeanIxAddress::from_borrowed(pair.get_obj(0).as_byte_array()).decode();
+    let meta = LeanIxonConstantMeta(pair.get_obj(1)).decode();
+    (addr, meta)
+  })
 }
 
 /// Build `Option Lean.ReducibilityHints` (scalar-optimized `none` or a
@@ -129,15 +122,8 @@ pub(crate) fn build_opt_hints(hints: Option<ReducibilityHints>) -> LeanOwned {
 pub(crate) fn decode_opt_hints(
   obj: LeanBorrowed<'_>,
 ) -> Option<ReducibilityHints> {
-  if obj.is_scalar() {
-    return None;
-  }
-  let opt = obj.as_ctor();
-  match opt.tag() {
-    0 => None,
-    1 => Some(LeanIxReducibilityHints::new(opt.get(0).to_owned_ref()).decode()),
-    tag => panic!("Invalid Option tag for hints: {tag}"),
-  }
+  LeanOptionField(obj)
+    .decode("hints", |hints| LeanIxReducibilityHints(hints).decode())
 }
 
 impl LeanIxonRawNamed<LeanOwned> {
@@ -174,14 +160,14 @@ impl LeanIxonRawNamed<LeanOwned> {
 impl<R: LeanRef> LeanIxonRawNamed<R> {
   /// Decode Ixon.RawNamed from Lean pointer.
   pub fn decode(&self) -> DecodedRawNamed {
-    let ctor = self.as_ctor();
     DecodedRawNamed {
-      name: LeanIxName::new(ctor.get(0).to_owned_ref()).decode(),
-      addr: LeanIxAddress::from_borrowed(ctor.get(1).as_byte_array()).decode(),
-      const_meta: LeanIxonConstantMeta::new(ctor.get(2).to_owned_ref())
+      name: LeanIxName(self.get_obj(0)).decode(),
+      addr: LeanIxAddress::from_borrowed(self.get_obj(1).as_byte_array())
         .decode(),
-      original: decode_opt_original(ctor.get(3)),
-      hints: decode_opt_hints(ctor.get(4)),
+      const_meta: LeanIxonConstantMeta::new(self.get_obj(2).to_owned_ref())
+        .decode(),
+      original: decode_opt_original(self.get_obj(3)),
+      hints: decode_opt_hints(self.get_obj(4)),
     }
   }
 }
@@ -217,10 +203,10 @@ impl LeanIxonRawBlob<LeanOwned> {
 impl<R: LeanRef> LeanIxonRawBlob<R> {
   /// Decode Ixon.RawBlob from Lean pointer.
   pub fn decode(&self) -> DecodedRawBlob {
-    let ctor = self.as_ctor();
-    let ba = ctor.get(1).as_byte_array();
+    let ba = self.get_obj(1).as_byte_array();
     DecodedRawBlob {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+      addr: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+        .decode(),
       bytes: ba.as_bytes().to_vec(),
     }
   }
@@ -257,10 +243,10 @@ impl LeanIxonRawComm<LeanOwned> {
 impl<R: LeanRef> LeanIxonRawComm<R> {
   /// Decode Ixon.RawComm from Lean pointer.
   pub fn decode(&self) -> DecodedRawComm {
-    let ctor = self.as_ctor();
     DecodedRawComm {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
-      comm: LeanIxonComm::new(ctor.get(1).to_owned_ref()).decode(),
+      addr: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+        .decode(),
+      comm: LeanIxonComm(self.get_obj(1)).decode(),
     }
   }
 }
@@ -292,10 +278,10 @@ impl LeanIxonRawNameEntry<LeanOwned> {
 impl<R: LeanRef> LeanIxonRawNameEntry<R> {
   /// Decode Ixon.RawNameEntry from Lean pointer.
   pub fn decode(&self) -> DecodedRawNameEntry {
-    let ctor = self.as_ctor();
     DecodedRawNameEntry {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
-      name: LeanIxName::new(ctor.get(1).to_owned_ref()).decode(),
+      addr: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+        .decode(),
+      name: LeanIxName(self.get_obj(1)).decode(),
     }
   }
 }
@@ -318,22 +304,14 @@ fn build_opt_role_binding(binding: &Option<RoleBinding>) -> LeanOwned {
 }
 
 fn decode_opt_role_binding(obj: LeanBorrowed<'_>) -> Option<RoleBinding> {
-  if obj.is_scalar() {
-    return None;
-  }
-  let option = obj.as_ctor();
-  match option.tag() {
-    0 => None,
-    1 => {
-      let value = option.get(0).as_ctor();
-      Some(RoleBinding {
-        address: LeanIxAddress::from_borrowed(value.get(0).as_byte_array())
-          .decode(),
-        bytes: value.get(1).as_byte_array().as_bytes().to_vec().into(),
-      })
-    },
-    tag => panic!("Invalid Option tag for role binding: {tag}"),
-  }
+  LeanOptionField(obj).decode("role binding", |value| {
+    let value = LeanIxonRoleBinding(value);
+    RoleBinding {
+      address: LeanIxAddress::from_borrowed(value.get_obj(0).as_byte_array())
+        .decode(),
+      bytes: value.get_obj(1).as_byte_array().as_bytes().to_vec().into(),
+    }
+  })
 }
 
 /// Decoded Ixon.RawEnv
@@ -467,49 +445,36 @@ pub fn set_raw_env_bundle_fields(
 impl<R: LeanRef> LeanIxonRawEnv<R> {
   /// Decode Ixon.RawEnv from Lean pointer.
   pub fn decode(&self) -> DecodedRawEnv {
-    let ctor = self.as_ctor();
-    let consts_arr = ctor.get(0).as_array();
-    let named_arr = ctor.get(1).as_array();
-    let blobs_arr = ctor.get(2).as_array();
-    let comms_arr = ctor.get(3).as_array();
-    let names_arr = ctor.get(4).as_array();
-    let main_obj = ctor.get(5);
-    let assumptions_arr = ctor.get(6).as_array();
-    let hints_arr = ctor.get(7).as_array();
+    let consts_arr = self.get_obj(0).as_array();
+    let named_arr = self.get_obj(1).as_array();
+    let blobs_arr = self.get_obj(2).as_array();
+    let comms_arr = self.get_obj(3).as_array();
+    let names_arr = self.get_obj(4).as_array();
+    let main_obj = self.get_obj(5);
+    let assumptions_arr = self.get_obj(6).as_array();
+    let hints_arr = self.get_obj(7).as_array();
 
     // `Option Address`: scalar-optimized none, or a tag-0/1 ctor.
-    let main: Option<Address> = if main_obj.is_scalar() {
-      None
-    } else {
-      let opt = main_obj.as_ctor();
-      match opt.tag() {
-        0 => None,
-        1 => Some(
-          LeanIxAddress::from_borrowed(opt.get(0).as_byte_array()).decode(),
-        ),
-        tag => panic!("Invalid Option tag for RawEnv.main: {tag}"),
-      }
-    };
+    let main = LeanOptionField(main_obj).decode("RawEnv.main", |addr| {
+      LeanIxAddress::from_borrowed(addr.as_byte_array()).decode()
+    });
 
     DecodedRawEnv {
-      role_binding: decode_opt_role_binding(ctor.get(8)),
-      consts: consts_arr
-        .map(|x| LeanIxonRawConst::new(x.to_owned_ref()).decode()),
-      named: named_arr
-        .map(|x| LeanIxonRawNamed::new(x.to_owned_ref()).decode()),
-      blobs: blobs_arr.map(|x| LeanIxonRawBlob::new(x.to_owned_ref()).decode()),
-      comms: comms_arr.map(|x| LeanIxonRawComm::new(x.to_owned_ref()).decode()),
-      names: names_arr
-        .map(|x| LeanIxonRawNameEntry::new(x.to_owned_ref()).decode()),
+      role_binding: decode_opt_role_binding(self.get_obj(8)),
+      consts: consts_arr.map(|x| LeanIxonRawConst(x).decode()),
+      named: named_arr.map(|x| LeanIxonRawNamed(x).decode()),
+      blobs: blobs_arr.map(|x| LeanIxonRawBlob(x).decode()),
+      comms: comms_arr.map(|x| LeanIxonRawComm(x).decode()),
+      names: names_arr.map(|x| LeanIxonRawNameEntry(x).decode()),
       main,
       assumptions: assumptions_arr
         .map(|x| LeanIxAddress::from_borrowed(x.as_byte_array()).decode()),
       anon_hints: hints_arr.map(|x| {
-        let pair = x.as_ctor();
+        let pair = LeanPair(x);
         let addr =
-          LeanIxAddress::from_borrowed(pair.get(0).as_byte_array()).decode();
-        let hint =
-          LeanIxReducibilityHints::new(pair.get(1).to_owned_ref()).decode();
+          LeanIxAddress::from_borrowed(pair.get_obj(0).as_byte_array())
+            .decode();
+        let hint = LeanIxReducibilityHints(pair.get_obj(1)).decode();
         (addr, hint)
       }),
     }

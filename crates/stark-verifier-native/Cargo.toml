@@ -6,7 +6,7 @@ license.workspace = true
 description = "Generated native executor for the recursive verifier and aggregation program"
 
 # With feature `kernel`, the generated kernels are built at compile time
-# from the exported packages named by AIUR_VERIFIER_ARTIFACT and
+# from the binary artifacts named by AIUR_VERIFIER_ARTIFACT and
 # AIUR_AGGREGATION_ARTIFACT (`ix prepare` writes both under .lake/aiur/).
 # Without it the crate is empty, so workspace-wide builds need no artifact.
 # This crate is outside the default workspace members.

@@ -22,13 +22,13 @@ def isFormalRoot (proof : ByteArray) : Bool :=
 claim of the aggregation artifact's `ix_aggr` entrypoint, serialized as one
 batch claim. -/
 def statementBytes (ctx : Context) (claim : Ix.Claim) : ByteArray :=
-  MultiStark.serializeClaims #[outerClaim ctx .aggr claim]
+  MultiStark.serializeClaims #[outerClaim ctx.toKeys .aggr claim]
 
 /-- The fixed layout of one more wrap of `wrapper`'s root, sized from the
 root's own trace heights raised by `headroom` doublings. -/
 def layout (ctx : Context) (wrapper : Ixon.Proof) (headroom : Nat) : IO String := do
   unless headroom < 8 do throw (IO.userError "--headroom must be below 8")
-  FormalProver.fixedRootLayout ctx.aggrArtifact (← rawProof .aggr wrapper.proof) headroom.toUInt8
+  FormalProver.fixedRootLayout ctx.aggrSystem (← rawProof .aggr wrapper.proof) headroom.toUInt8
 
 /-- Wrap the root `wrapper` once more and prove the wrap as one trace shard
 with the heights of `layout`, on the device and within the RAM budget `p`
@@ -37,10 +37,9 @@ returns the raw normalized proof. -/
 def normalize (p : Cli.Parsed) (ctx : Context) (wrapper : Ixon.Proof) (layout : String) :
     IO ByteArray := do
   let options ← hostOptions p
-  let config := Json.mkObj [
-    ("ixvm_artifact", toJson ctx.ixvmArtifact), ("aggr_artifact", toJson ctx.aggrArtifact),
-    ("device", toJson options.device), ("options", options.json)]
-  FormalProver.normalizeRoot config.compress layout (Ix.Claim.ser wrapper.claim) wrapper.proof
+  FormalProver.normalizeRoot ctx.ixvmSystem ctx.aggrSystem
+    { device := options.device, options := options.job } layout
+    (Ix.Claim.ser wrapper.claim) wrapper.proof
 
 end Ix.Cli.FormalCompress
 end

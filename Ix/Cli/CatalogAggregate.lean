@@ -216,21 +216,21 @@ def aggregateCatalog (p : Cli.Parsed) (ixc : String) : IO UInt32 := do
   printStatements members plan
   let options ← FormalAiur.hostOptions p
   let ctx ← FormalAggregate.context p
-  let memberJson := members.map fun (m, _, _) => Json.mkObj [("label", toJson m.label),
-    ("claim", toJson (hexOfBytes (Ix.Claim.ser m.claim))),
-    ("binding_section", toJson (hexOfBytes m.bindingSection)),
-    ("literal_class", toJson (m.literalClass.map toString))]
-  let config := Json.mkObj [("ixvm_artifact", toJson ctx.ixvmArtifact),
-    ("aggr_artifact", toJson ctx.aggrArtifact), ("members", toJson memberJson),
-    ("proofs", toJson (p.variableArgsAs! String)),
-    ("expected_root", toJson (hexOfBytes (Ix.Claim.ser expected))),
-    ("device", toJson options.device), ("use_cache", toJson !(p.hasFlag "no-cache")),
-    ("options", options.json)]
-  let root ← match ← (FormalProver.aggregateCatalog config.compress).toBaseIO with
-    | .ok root => pure root
+  let proofs ← (p.variableArgsAs! String).mapM fun hex => do
+    let some address := Address.fromString hex
+      | throw (IO.userError s!"expected a 64-character hex address, got {hex}")
+    pure address.hash
+  let config : FormalProver.CatalogConfig := {
+    members := members.map fun (m, _, _) => {
+      label := m.label, claim := Ix.Claim.ser m.claim, bindingSection := m.bindingSection
+      literalClass := m.literalClass.map (·.hash) }
+    proofs, expectedRoot := Ix.Claim.ser expected, device := options.device
+    options := options.job, useCache := !(p.hasFlag "no-cache"), writeOutputs := true }
+  let address ← match ← (FormalProver.aggregateCatalog ctx.ixvmSystem ctx.aggrSystem
+      config).toBaseIO with
+    | .ok bytes => pure (⟨bytes⟩ : Address)
     | .error e => IO.eprintln s!"error: {e}"; return 1
-  let some address := Address.fromString root
-    | IO.eprintln s!"error: the controller returned {root}"; return 1
+  let root := toString address
   let (count, constants) ← acceptCatalog ctx ixc structuralAbove address
   IO.println s!"ok: aggregate proof {address} verifies the catalog's root {expected}: \
     {count} members, all {constants} of their constants well-typed, each member's under \

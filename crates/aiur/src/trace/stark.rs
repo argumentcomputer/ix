@@ -5,6 +5,7 @@
 //! are outside the Lean proof. In particular, the memoized semantics' acyclicity
 //! hypothesis is not discharged by a lookup argument.
 use super::{Polynomial, Trace, TracePlan};
+use crate::shared::Shared;
 use crate::{
   Execution,
   field::{FieldBackend, NativeField, PrimeField},
@@ -112,7 +113,7 @@ pub struct CircuitStatistics {
 /// Set up once, then prove many records. Only this adapter selects Goldilocks;
 /// the compiler, circuit export and ordinary execution remain field generic.
 pub struct Backend<'p, 'a, B: WitnessField = PrimeField> {
-  plan: &'p TracePlan<'a, B>,
+  plan: Shared<'p, TracePlan<'a, B>>,
   system: System<GoldilocksBlake3Config>,
   key: ProverKey<GoldilocksBlake3Config>,
   names: Vec<String>,
@@ -179,7 +180,7 @@ fn degree(e: &Expr<Val>) -> usize {
 
 impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   pub fn new(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::with_memory_policy(plan, parameters, false)
@@ -188,7 +189,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Batch proofs close contiguous memory ranges through authenticated
   /// boundary messages. A standalone proof uses the original first-row rule.
   pub fn for_batch(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::with_memory_policy(plan, parameters, true)
@@ -198,7 +199,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Prover-only lookup settings must not affect these operations. Use the CPU
   /// host binary when verification must not initialize the CUDA backend.
   pub fn for_batch_verification(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
   ) -> Result<Self, String> {
     Self::build_with_lookup_policy(plan, parameters, true, None, false)
@@ -207,7 +208,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// Explicit CUDA placement. CPU builds reject a requested device instead of
   /// silently running a different backend. Device placement does not change keys.
   pub fn for_batch_on_device(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     device: Option<i32>,
   ) -> Result<Self, String> {
@@ -215,7 +216,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn with_memory_policy(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
   ) -> Result<Self, String> {
@@ -223,7 +224,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn build(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     device: Option<i32>,
@@ -246,7 +247,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   }
 
   fn build_with_lookup_policy(
-    plan: &'p TracePlan<'a, B>,
+    plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
     parameters: Parameters,
     segmented_memory: bool,
     device: Option<i32>,
@@ -265,6 +266,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
           .into(),
       );
     }
+    let plan: Shared<'p, TracePlan<'a, B>> = plan.into();
     if plan.program.field.modulus() != Val::ORDER_U64 {
       return Err("multi-stark adapter requires the Goldilocks field".into());
     }
@@ -274,13 +276,13 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         "expected log_blowup in 1..=4 and positive num_queries".into(),
       );
     }
-    let rom = rom::Rom::new(plan);
+    let rom = rom::Rom::new(&plan);
     let mut inputs = vec![];
     let mut names = vec![];
-    let placements = grouping::build(plan, &rom, &mut inputs, &mut names)?;
+    let placements = grouping::build(&plan, &rom, &mut inputs, &mut names)?;
     let function_circuits = inputs.len();
     let tables = tables::fixed_tables(
-      plan,
+      &plan,
       &mut inputs,
       &mut names,
       parameters.log_blowup,

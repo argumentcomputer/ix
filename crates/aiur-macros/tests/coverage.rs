@@ -8,10 +8,20 @@ use aiur::hints::HintEntry;
 use aiur::native::record_diff;
 use multi_stark::p3_goldilocks::Goldilocks;
 
-aiur_macros::kernel!(Coverage, "tests/fixtures/coverage.json");
+aiur_macros::kernel!(Coverage, "tests/fixtures/coverage.aiur");
 
 fn program() -> Program {
-  serde_json::from_slice(include_bytes!("fixtures/coverage.json")).unwrap()
+  aiur::artifact::decode(include_bytes!("fixtures/coverage.aiur"))
+    .unwrap()
+    .program
+}
+
+/// `coverage.json` is the readable source of the binary fixture.
+#[test]
+fn binary_fixture_matches_its_source() {
+  let source: Program =
+    serde_json::from_slice(include_bytes!("fixtures/coverage.json")).unwrap();
+  assert_eq!(program(), source);
 }
 
 fn hints() -> Vec<HintEntry> {

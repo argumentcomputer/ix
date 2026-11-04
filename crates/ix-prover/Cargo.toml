@@ -35,8 +35,8 @@ cuda = ["aiur/cuda", "ixvm/cuda", "stark-verifier/cuda"]
 # population providers.
 compiled-trace = ["cuda", "ixvm/compiled-trace"]
 # Generated native executors for IxVM, the recursive verifier and
-# aggregation, compiled from the packages named by AIUR_IXVM_ARTIFACT,
-# AIUR_VERIFIER_ARTIFACT and AIUR_AGGREGATION_ARTIFACT (`ix prepare` exports
+# aggregation, compiled from the binary artifacts named by AIUR_IXVM_ARTIFACT,
+# AIUR_VERIFIER_ARTIFACT and AIUR_AGGREGATION_ARTIFACT (`ix prepare` compiles
 # all three and builds the prover with this feature). A kernel runs jobs
 # only for an artifact whose program has exactly its fingerprint; other
 # artifacts use the interpreter.

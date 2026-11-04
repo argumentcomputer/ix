@@ -2,6 +2,7 @@
 //! evaluates it and records memoized queries. Companion population plans fill
 //! the final optimized circuit rows from these records.
 
+pub mod artifact;
 pub mod budget;
 pub mod bytecode;
 pub mod execute;
@@ -17,6 +18,7 @@ pub mod memory;
 #[cfg(feature = "native")]
 pub mod native;
 pub mod query;
+pub mod shared;
 mod table;
 pub mod trace;
 pub mod value;

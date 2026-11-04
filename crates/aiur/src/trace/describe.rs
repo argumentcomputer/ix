@@ -13,9 +13,14 @@
 //!
 //! [`FillPlan`]: super::plan::FillPlan
 use super::*;
+use crate::artifact::{Writer, write_polynomial, write_type};
 
 /// Increment whenever the meaning of a described plan changes.
 pub const DESCRIPTION_VERSION: u32 = 1;
+
+/// Version of the encoding hashed by [`PopulationDescription::fingerprint`].
+/// Bumping it invalidates every compiled trace bundle.
+pub const DESCRIPTION_FINGERPRINT_SCHEME: u32 = 2;
 
 /// The whole population plan of a program's function circuits.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,12 +175,144 @@ pub struct MemberDescription {
 }
 
 impl PopulationDescription {
-  /// BLAKE3 over the canonical JSON encoding, as lowercase hex.
+  /// BLAKE3 over the domain, [`DESCRIPTION_FINGERPRINT_SCHEME`] and the
+  /// canonical binary encoding of every field, as lowercase hex.
   pub fn fingerprint(&self) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"aiur-population-description\0");
-    hasher.update(&serde_json::to_vec(self).expect("serializable description"));
+    hasher.update(&DESCRIPTION_FINGERPRINT_SCHEME.to_le_bytes());
+    hasher.update(&self.canonical_bytes());
     hasher.finalize().to_hex().to_string()
+  }
+
+  fn canonical_bytes(&self) -> Vec<u8> {
+    fn operand(w: &mut Writer, value: Operand) {
+      match value {
+        Operand::Const(v) => {
+          w.u8(0);
+          w.u64(v);
+        },
+        Operand::Slot(s) => {
+          w.u8(1);
+          w.usize(s);
+        },
+      }
+    }
+    fn operands(w: &mut Writer, values: &[Operand]) {
+      w.count(values.len());
+      values.iter().for_each(|&v| operand(w, v));
+    }
+    fn node(w: &mut Writer, node: &NodeDescription) {
+      use NodeDescription as N;
+      match node {
+        N::Add { a, b } | N::Sub { a, b } | N::Mul { a, b } => {
+          w.u8(match node {
+            N::Add { .. } => 0,
+            N::Sub { .. } => 1,
+            _ => 2,
+          });
+          operand(w, *a);
+          operand(w, *b);
+        },
+        N::Select { guard, a, b } => {
+          w.u8(3);
+          operand(w, *guard);
+          operand(w, *a);
+          operand(w, *b);
+        },
+        N::Inverse { value } => {
+          w.u8(4);
+          operand(w, *value);
+        },
+        N::Choice { tests } => {
+          w.u8(5);
+          w.count(tests.len());
+          tests.iter().for_each(|t| operands(w, t));
+        },
+        N::Failure { differences } => {
+          w.u8(6);
+          operands(w, differences);
+        },
+        N::Call { callee, args } => {
+          w.u8(7);
+          w.str(callee);
+          operands(w, args);
+        },
+        N::Map { map, args } => {
+          w.u8(8);
+          w.usize(*map);
+          operands(w, args);
+        },
+        N::Store { width, values } => {
+          w.u8(9);
+          w.usize(*width);
+          operands(w, values);
+        },
+        N::Load { width, address } => {
+          w.u8(10);
+          w.usize(*width);
+          operand(w, *address);
+        },
+        N::Hint { site, key } => {
+          w.u8(11);
+          w.str(&site.function);
+          w.usize(site.instruction);
+          w.str(&site.channel);
+          write_type(w, &site.r#type);
+          write_type(w, &site.key_type);
+          operands(w, key);
+        },
+      }
+    }
+    let mut w = Writer::new();
+    w.u32(self.version);
+    w.u64(self.modulus);
+    w.count(self.functions.len());
+    for function in &self.functions {
+      w.str(&function.name);
+      w.usize(function.inputs);
+      w.usize(function.outputs);
+      w.usize(function.slots);
+      w.count(function.kernels.len());
+      for kernel in &function.kernels {
+        operand(&mut w, kernel.guard);
+        w.usize(kernel.start);
+        w.usize(kernel.width);
+        node(&mut w, &kernel.node);
+      }
+      w.count(function.writes.len());
+      for write in &function.writes {
+        operand(&mut w, write.guard);
+        w.usize(write.column);
+        operand(&mut w, write.value);
+      }
+    }
+    w.count(self.maps.len());
+    for map in &self.maps {
+      w.str(&map.name);
+      w.usize(map.inputs);
+      w.usize(map.outputs);
+      w.usize(map.rows);
+      w.str(&map.digest);
+    }
+    w.count(self.circuits.len());
+    for circuit in &self.circuits {
+      w.str(&circuit.name);
+      w.usize(circuit.width);
+      w.count(circuit.members.len());
+      for member in &circuit.members {
+        w.usize(member.function);
+        w.usizes(&member.columns);
+        w.usize(member.selector);
+        w.count(member.writes.len());
+        for write in &member.writes {
+          w.usize(write.column);
+          write_polynomial(&mut w, &write.value)
+            .expect("a writer without a modulus accepts every constant");
+        }
+      }
+    }
+    w.into_bytes()
   }
 
   pub fn function(&self, name: &str) -> Option<usize> {
@@ -222,7 +359,7 @@ impl<B: FieldBackend> TracePlan<'_, B> {
       .fills
       .iter()
       .zip(&self.artifact.functions)
-      .map(|(fill, plan)| fill.describe(self.program, plan))
+      .map(|(fill, plan)| fill.describe(&self.program, plan))
       .collect();
     let mut circuits: Vec<CircuitDescription> = layout
       .circuits
@@ -496,4 +633,145 @@ pub fn program_identity(program: &crate::Program) -> String {
     hasher.update(&[0]);
   }
   hasher.finalize().to_hex().to_string()
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+  use super::*;
+
+  fn sample() -> PopulationDescription {
+    let site = HintSite {
+      function: "main".into(),
+      instruction: 3,
+      channel: "u32".into(),
+      r#type: Type::Field,
+      key_type: Type::Tuple { items: vec![Type::Field] },
+    };
+    let s = Operand::Slot;
+    let c = Operand::Const;
+    let nodes = vec![
+      NodeDescription::Add { a: s(0), b: c(1) },
+      NodeDescription::Sub { a: s(0), b: c(1) },
+      NodeDescription::Mul { a: s(0), b: c(1) },
+      NodeDescription::Select { guard: s(1), a: s(0), b: c(2) },
+      NodeDescription::Inverse { value: s(0) },
+      NodeDescription::Choice { tests: vec![vec![s(0)], vec![]] },
+      NodeDescription::Failure { differences: vec![s(0), s(1)] },
+      NodeDescription::Call { callee: "f".into(), args: vec![s(0)] },
+      NodeDescription::Map { map: 0, args: vec![s(0)] },
+      NodeDescription::Store { width: 2, values: vec![s(0), s(1)] },
+      NodeDescription::Load { width: 2, address: s(2) },
+      NodeDescription::Hint { site, key: vec![s(0)] },
+    ];
+    let kernels = nodes
+      .into_iter()
+      .enumerate()
+      .map(|(i, node)| KernelDescription {
+        guard: c(1),
+        start: 2 + i,
+        width: 1,
+        node,
+      })
+      .collect();
+    PopulationDescription {
+      version: DESCRIPTION_VERSION,
+      modulus: 0xffff_ffff_0000_0001,
+      functions: vec![FunctionDescription {
+        name: "main".into(),
+        inputs: 1,
+        outputs: 1,
+        slots: 14,
+        kernels,
+        writes: vec![WriteDescription { guard: c(1), column: 0, value: s(2) }],
+      }],
+      maps: vec![MapDescription {
+        name: "m".into(),
+        inputs: 1,
+        outputs: 1,
+        rows: 4,
+        digest: "00".into(),
+      }],
+      circuits: vec![CircuitDescription {
+        name: "main".into(),
+        width: 3,
+        members: vec![MemberDescription {
+          function: 0,
+          columns: vec![0, 1],
+          selector: 2,
+          writes: vec![GroupWrite {
+            column: 1,
+            value: Polynomial::Add(Box::new([
+              Polynomial::Var(0),
+              Polynomial::Const(3),
+            ])),
+          }],
+        }],
+      }],
+    }
+  }
+
+  #[test]
+  fn fingerprint_is_deterministic_and_covers_every_field() {
+    let base = sample().fingerprint();
+    assert_eq!(base.len(), 64);
+    assert_eq!(sample().fingerprint(), base);
+    let changed = |edit: &dyn Fn(&mut PopulationDescription)| {
+      let mut d = sample();
+      edit(&mut d);
+      d.fingerprint()
+    };
+    type Edit = Box<dyn Fn(&mut PopulationDescription)>;
+    let edits: Vec<Edit> = vec![
+      Box::new(|d| d.version += 1),
+      Box::new(|d| d.functions[0].slots += 1),
+      Box::new(|d| {
+        d.functions[0].kernels[0].node =
+          NodeDescription::Add { a: Operand::Slot(0), b: Operand::Const(2) }
+      }),
+      Box::new(|d| {
+        d.functions[0].kernels[0].node =
+          NodeDescription::Add { a: Operand::Const(0), b: Operand::Const(1) }
+      }),
+      Box::new(|d| d.functions[0].kernels[1].guard = Operand::Slot(1)),
+      Box::new(|d| d.functions[0].kernels.swap(0, 1)),
+      Box::new(|d| {
+        if let NodeDescription::Hint { site, .. } =
+          &mut d.functions[0].kernels[11].node
+        {
+          site.channel = "u64".into();
+        }
+      }),
+      Box::new(|d| {
+        if let NodeDescription::Hint { site, .. } =
+          &mut d.functions[0].kernels[11].node
+        {
+          site.key_type = Type::Field;
+        }
+      }),
+      Box::new(|d| d.functions[0].writes[0].column = 1),
+      Box::new(|d| d.maps[0].digest = "01".into()),
+      Box::new(|d| d.circuits[0].members[0].selector = 1),
+      Box::new(|d| {
+        d.circuits[0].members[0].writes[0].value = Polynomial::Const(3);
+      }),
+    ];
+    let mut seen = std::collections::HashSet::from([base.clone()]);
+    for edit in &edits {
+      assert!(seen.insert(changed(edit.as_ref())));
+    }
+  }
+
+  #[test]
+  fn fingerprint_hashes_the_versioned_domain() {
+    let description = sample();
+    let hash = |scheme: u32| {
+      let mut hasher = blake3::Hasher::new();
+      hasher.update(b"aiur-population-description\0");
+      hasher.update(&scheme.to_le_bytes());
+      hasher.update(&description.canonical_bytes());
+      hasher.finalize().to_hex().to_string()
+    };
+    assert_eq!(hash(DESCRIPTION_FINGERPRINT_SCHEME), description.fingerprint());
+    assert_ne!(hash(1), description.fingerprint());
+  }
 }

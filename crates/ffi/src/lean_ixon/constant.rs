@@ -61,10 +61,8 @@ impl<R: LeanRef> LeanIxonDefinition<R> {
   /// Lean stores scalar fields ordered by size (largest first).
   /// Layout: header(8) + typ(8) + value(8) + lvls(8) + kind(1) + safety(1) + padding(6)
   pub fn decode(&self) -> IxonDefinition {
-    let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
-    let value =
-      Arc::new(LeanIxonExpr::new(ctor.get(1).to_owned_ref()).decode());
+    let typ = Arc::new(LeanIxonExpr(self.get_obj(0)).decode());
+    let value = Arc::new(LeanIxonExpr(self.get_obj(1)).decode());
     let lvls = self.get_num_64(0);
     let kind_val = self.get_num_8(0);
     let kind = match kind_val {
@@ -102,8 +100,7 @@ impl LeanIxonRecursorRule<LeanOwned> {
 impl<R: LeanRef> LeanIxonRecursorRule<R> {
   /// Decode Ixon.RecursorRule.
   pub fn decode(&self) -> IxonRecursorRule {
-    let ctor = self.as_ctor();
-    let rhs = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
+    let rhs = Arc::new(LeanIxonExpr(self.get_obj(0)).decode());
     let fields = self.get_num_64(0);
     IxonRecursorRule { fields, rhs }
   }
@@ -141,11 +138,9 @@ impl<R: LeanRef> LeanIxonRecursor<R> {
   /// Decode Ixon.Recursor.
   /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + motives(8) + minors(8) + k(1) + isUnsafe(1) + padding(6)
   pub fn decode(&self) -> IxonRecursor {
-    let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
-    let rules_arr = ctor.get(1).as_array();
-    let rules =
-      rules_arr.map(|x| LeanIxonRecursorRule::new(x.to_owned_ref()).decode());
+    let typ = Arc::new(LeanIxonExpr(self.get_obj(0)).decode());
+    let rules_arr = self.get_obj(1).as_array();
+    let rules = rules_arr.map(|x| LeanIxonRecursorRule(x).decode());
     let lvls = self.get_num_64(0);
     let params = self.get_num_64(1);
     let indices = self.get_num_64(2);
@@ -188,8 +183,7 @@ impl<R: LeanRef> LeanIxonAxiom<R> {
   /// Decode Ixon.Axiom.
   /// Scalars ordered by size: lvls(8) + isUnsafe(1) + padding(7)
   pub fn decode(&self) -> IxonAxiom {
-    let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
+    let typ = Arc::new(LeanIxonExpr(self.get_obj(0)).decode());
     let lvls = self.get_num_64(0);
     let is_unsafe = self.get_num_8(0) != 0;
     IxonAxiom { is_unsafe, lvls, typ }
@@ -224,8 +218,7 @@ impl<R: LeanRef> LeanIxonQuotient<R> {
   /// Decode Ixon.Quotient.
   /// QuotKind is a scalar (not object field). Scalars: lvls(8) + kind(1) + padding(7)
   pub fn decode(&self) -> IxonQuotient {
-    let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
+    let typ = Arc::new(LeanIxonExpr(self.get_obj(0)).decode());
     let lvls = self.get_num_64(0);
     let kind_val = self.get_num_8(0);
     let kind = match kind_val {
@@ -263,8 +256,7 @@ impl<R: LeanRef> LeanIxonConstructor<R> {
   /// Decode Ixon.Constructor.
   /// Scalars ordered by size: lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
   pub fn decode(&self) -> IxonConstructor {
-    let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
+    let typ = Arc::new(LeanIxonExpr(self.get_obj(0)).decode());
     let lvls = self.get_num_64(0);
     let cidx = self.get_num_64(1);
     let params = self.get_num_64(2);
@@ -303,11 +295,9 @@ impl<R: LeanRef> LeanIxonInductive<R> {
   /// Decode Ixon.Inductive.
   /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + isUnsafe(1) + padding(5)
   pub fn decode(&self) -> IxonInductive {
-    let ctor = self.as_ctor();
-    let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
-    let ctors_arr = ctor.get(1).as_array();
-    let ctors =
-      ctors_arr.map(|x| LeanIxonConstructor::new(x.to_owned_ref()).decode());
+    let typ = Arc::new(LeanIxonExpr(self.get_obj(0)).decode());
+    let ctors_arr = self.get_obj(1).as_array();
+    let ctors = ctors_arr.map(|x| LeanIxonConstructor(x).decode());
     let lvls = self.get_num_64(0);
     let params = self.get_num_64(1);
     let indices = self.get_num_64(2);
@@ -332,9 +322,8 @@ impl LeanIxonInductiveProj<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonInductiveProj<R> {
   pub fn decode(&self) -> InductiveProj {
-    let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
     let idx = self.get_num_64(0);
     InductiveProj { idx, block }
   }
@@ -353,9 +342,8 @@ impl LeanIxonConstructorProj<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonConstructorProj<R> {
   pub fn decode(&self) -> ConstructorProj {
-    let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
     let idx = self.get_num_64(0);
     let cidx = self.get_num_64(1);
     ConstructorProj { idx, cidx, block }
@@ -374,9 +362,8 @@ impl LeanIxonRecursorProj<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonRecursorProj<R> {
   pub fn decode(&self) -> RecursorProj {
-    let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
     let idx = self.get_num_64(0);
     RecursorProj { idx, block }
   }
@@ -394,9 +381,8 @@ impl LeanIxonDefinitionProj<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonDefinitionProj<R> {
   pub fn decode(&self) -> DefinitionProj {
-    let ctor = self.as_ctor();
     let block =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+      LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
     let idx = self.get_num_64(0);
     DefinitionProj { idx, block }
   }
@@ -430,16 +416,11 @@ impl LeanIxonMutConst<LeanOwned> {
 
 impl<R: LeanRef> LeanIxonMutConst<R> {
   pub fn decode(&self) -> MutConst {
-    let ctor = self.as_ctor();
-    let inner = ctor.get(0);
-    match ctor.tag() {
-      0 => {
-        MutConst::Defn(LeanIxonDefinition::new(inner.to_owned_ref()).decode())
-      },
-      1 => {
-        MutConst::Indc(LeanIxonInductive::new(inner.to_owned_ref()).decode())
-      },
-      2 => MutConst::Recr(LeanIxonRecursor::new(inner.to_owned_ref()).decode()),
+    let inner = self.get_obj(0);
+    match self.inner().tag() {
+      0 => MutConst::Defn(LeanIxonDefinition(inner).decode()),
+      1 => MutConst::Indc(LeanIxonInductive(inner).decode()),
+      2 => MutConst::Recr(LeanIxonRecursor(inner).decode()),
       tag => panic!("Invalid Ixon.MutConst tag: {}", tag),
     }
   }
@@ -509,37 +490,19 @@ impl LeanIxonConstantInfo<LeanOwned> {
 impl<R: LeanRef> LeanIxonConstantInfo<R> {
   /// Decode Ixon.ConstantInfo.
   pub fn decode(&self) -> IxonConstantInfo {
-    let ctor = self.as_ctor();
-    let inner = ctor.get(0);
-    match ctor.tag() {
-      0 => IxonConstantInfo::Defn(
-        LeanIxonDefinition::new(inner.to_owned_ref()).decode(),
-      ),
-      1 => IxonConstantInfo::Recr(
-        LeanIxonRecursor::new(inner.to_owned_ref()).decode(),
-      ),
-      2 => IxonConstantInfo::Axio(
-        LeanIxonAxiom::new(inner.to_owned_ref()).decode(),
-      ),
-      3 => IxonConstantInfo::Quot(
-        LeanIxonQuotient::new(inner.to_owned_ref()).decode(),
-      ),
-      4 => IxonConstantInfo::CPrj(
-        LeanIxonConstructorProj::new(inner.to_owned_ref()).decode(),
-      ),
-      5 => IxonConstantInfo::RPrj(
-        LeanIxonRecursorProj::new(inner.to_owned_ref()).decode(),
-      ),
-      6 => IxonConstantInfo::IPrj(
-        LeanIxonInductiveProj::new(inner.to_owned_ref()).decode(),
-      ),
-      7 => IxonConstantInfo::DPrj(
-        LeanIxonDefinitionProj::new(inner.to_owned_ref()).decode(),
-      ),
+    let inner = self.get_obj(0);
+    match self.inner().tag() {
+      0 => IxonConstantInfo::Defn(LeanIxonDefinition(inner).decode()),
+      1 => IxonConstantInfo::Recr(LeanIxonRecursor(inner).decode()),
+      2 => IxonConstantInfo::Axio(LeanIxonAxiom(inner).decode()),
+      3 => IxonConstantInfo::Quot(LeanIxonQuotient(inner).decode()),
+      4 => IxonConstantInfo::CPrj(LeanIxonConstructorProj(inner).decode()),
+      5 => IxonConstantInfo::RPrj(LeanIxonRecursorProj(inner).decode()),
+      6 => IxonConstantInfo::IPrj(LeanIxonInductiveProj(inner).decode()),
+      7 => IxonConstantInfo::DPrj(LeanIxonDefinitionProj(inner).decode()),
       8 => {
         let arr = inner.as_array();
-        let muts =
-          arr.map(|x| LeanIxonMutConst::new(x.to_owned_ref()).decode());
+        let muts = arr.map(|x| LeanIxonMutConst(x).decode());
         IxonConstantInfo::Muts(muts)
       },
       tag => panic!("Invalid Ixon.ConstantInfo tag: {}", tag),
@@ -570,12 +533,11 @@ impl LeanIxonConstant<LeanOwned> {
 impl<R: LeanRef> LeanIxonConstant<R> {
   /// Decode Ixon.Constant.
   pub fn decode(&self) -> IxonConstant {
-    let ctor = self.as_ctor();
     IxonConstant {
-      info: LeanIxonConstantInfo::new(ctor.get(0).to_owned_ref()).decode(),
-      sharing: LeanIxonExpr::decode_array(&ctor.get(1).as_array()),
-      refs: LeanIxAddress::decode_array(ctor.get(2).as_array()),
-      univs: LeanIxonUniv::decode_array(&ctor.get(3).as_array()),
+      info: LeanIxonConstantInfo(self.get_obj(0)).decode(),
+      sharing: LeanIxonExpr::decode_array(&self.get_obj(1).as_array()),
+      refs: LeanIxAddress::decode_array(self.get_obj(2).as_array()),
+      univs: LeanIxonUniv::decode_array(&self.get_obj(3).as_array()),
     }
   }
 }
