@@ -260,6 +260,17 @@ the benchmark machines). The default build is unaffected. -/
 def profileLeancArgs : Array String :=
   if (get_config? profile).isSome then #["-fno-omit-frame-pointer"] else #[]
 
+/-- The committed pins of the certified formal Aiur programs' identities
+and verifying keys (`tools/check-formal-keys.sh`). -/
+input_file formalAiurKeys where
+  path := "tools/formal-aiur.keys"
+  text := true
+
+/-- The pins, embedded in the module `FormalAiurKeys`, which Lake rebuilds
+whenever the pin file changes. -/
+lean_lib FormalAiurKeys where
+  needs := #[formalAiurKeys]
+
 /-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
 its imports, not every module under `Ix/`. A module that `Ix.lean` does not
 import, such as `Ix.Cert.Audit`, is built only by a target that imports it,
@@ -289,17 +300,21 @@ are installed unchecked on purpose). -/
 lean_lib EntryCaseFixtures where
   roots := #[`Tests.Ix.Kernel.EntryCaseDefs]
 
+/-- The formal claim fixtures; with `image`, the differential checks and
+measurements of the direct compiler handoff; with `pins`, acceptance against
+the pinned verifying keys. -/
 lean_exe «formal-aiur-tests» where
   root := `Tests.FormalAiur
   supportInterpreter := true
 
-/-- Differential checks and measurements of the direct compiler handoff. -/
-lean_exe «formal-image-tests» where
-  root := `Tests.FormalImage
-  supportInterpreter := true
-
 lean_exe «formal-aggregate-tests» where
   root := `Tests.FormalAggregate
+  supportInterpreter := true
+
+/-- The pin file of the checkout's certified programs;
+`tools/check-formal-keys.sh` compares it with `tools/formal-aiur.keys`. -/
+lean_exe «formal-keys» where
+  root := `Tests.FormalKeys
   supportInterpreter := true
 
 /-- Fingerprint of the formal verify path; `tools/check-verify-path.sh`

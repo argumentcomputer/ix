@@ -6,6 +6,7 @@ public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
 public import Ix.Cli.FormalPrograms
+public import Ix.Cli.FormalKeys
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
 Ix's claim and witness construction, not the legacy evaluator or compiler.
@@ -506,6 +507,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
   rejectFlags p #["aggregate", "structural-above"]
   let registry ← FormalProver.Registry.new
   let selected ← artifact p registry
+  FormalKeys.checkSystem "ixvm" (← selected.system)
   let proofs := p.variableArgsAs! String
   let ixe := (p.flag? "ixe").map (·.as! String)
   let manifest := (p.flag? "ixes").map (·.as! String)

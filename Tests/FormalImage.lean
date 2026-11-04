@@ -6,21 +6,26 @@ import Aiur.SourceBundle
 /-!
 Differential checks and measurements of the direct compiler handoff.
 
-`formal-image-tests fixture` compiles a small Goldilocks program (the byte
+`formal-aiur-tests image fixture` compiles a small Goldilocks program (the byte
 library client) twice: through the independent JSON encoders
 (`Execution.Export.toJson`, `functionJsonOf`, `chipJson`, `groupJson`) and
 through the runtime image handed to the prover. The prover must hold the
 same bytecode, plans, circuits and groups as the JSON reference, and its
 binary round trip must agree as well.
 
-`formal-image-tests <ixvm|verifier|aggregation> [reference.json]` compiles
-a certified program with the linked compiler, compares it with a JSON
-artifact the standalone exporter wrote for the same source when one is
-given, persists and reloads it, and reports each phase's wall time and the
-peak resident set.
+`formal-aiur-tests image <ixvm|verifier|aggregation> [reference.json]`
+compiles a certified program with the linked compiler, compares it with a
+JSON artifact for the same source when one is given (an exporter's output,
+or `aiur-artifact json` of a stored artifact), persists and reloads it, and
+reports each phase's wall time and the peak resident set.
+
+`formal-aiur-tests image load FILE` loads a binary artifact into a fresh
+registry and reports the wall time and peak resident set of the load.
 -/
 
 open Lean Aiur Ix
+
+namespace FormalImage
 
 private def now : IO Nat := IO.monoNanosNow
 
@@ -129,9 +134,18 @@ def certified (target : FormalProver.Target) (name sourcePath : String)
       check name (← program.compare path)
       report s!"{name}: comparison with {path}" c0 (← now)
 
-def main (args : List String) : IO UInt32 := do
+def load (path : String) : IO Unit := do
+  let t0 ← now
+  let program ← (← FormalProver.Registry.new).loadBinary path
+  let t1 ← now
+  report s!"{path}: binary load, program check and trace plan" t0 t1
+  IO.println s!"{path}: identity {hexOfBytes (← program.identity)}"
+
+/-- `formal-aiur-tests image ARGS`. -/
+def run (args : List String) : IO Unit := do
   match args with
   | ["fixture"] => fixture
+  | ["load", path] => load path
   | target :: rest =>
     let reference := rest.head?
     match target with
@@ -140,5 +154,7 @@ def main (args : List String) : IO UInt32 := do
     | "aggregation" =>
       certified .aggregation "aggregation" "MultiStark/MultiStark/Aggregate.sources" reference
     | _ => throw (IO.userError s!"unknown target {target}")
-  | [] => throw (IO.userError "usage: formal-image-tests fixture | <ixvm|verifier|aggregation> [reference.json]")
-  return 0
+  | [] => throw (IO.userError
+      "usage: formal-aiur-tests image fixture | load FILE | <ixvm|verifier|aggregation> [reference.json]")
+
+end FormalImage
