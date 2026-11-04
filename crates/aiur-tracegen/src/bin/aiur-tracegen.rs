@@ -1,6 +1,6 @@
-//! `aiur-tracegen ARTIFACT [OUT_DIR] [SELECTION]`: describe an exported
-//! package and emit its compiled row writers. Prints the fingerprint and
-//! the compiled and skipped circuits; with `OUT_DIR`, writes the CUDA units
+//! `aiur-tracegen ARTIFACT [OUT_DIR] [SELECTION]`: describe a binary
+//! compiler artifact and emit its compiled row writers. Prints the
+//! fingerprint and the compiled and skipped circuits; with `OUT_DIR`, writes the CUDA units
 //! and the description there. `SELECTION` is `all` or a JSON array of
 //! circuit names.
 use aiur_tracegen::cuda::{Selection, emit};
@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let args: Vec<String> = std::env::args().collect();
   let artifact =
     args.get(1).ok_or("usage: aiur-tracegen ARTIFACT [OUT_DIR] [SELECTION]")?;
-  let artifact = aiur_tracegen::describe(&std::fs::read(artifact)?)?;
+  let artifact = aiur_tracegen::describe_file(std::path::Path::new(artifact))?;
   let selection = match args.get(3).map(String::as_str) {
     None | Some("all") => Selection::All,
     Some(names) => Selection::Named(serde_json::from_str(names)?),

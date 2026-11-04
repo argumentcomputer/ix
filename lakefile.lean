@@ -221,6 +221,11 @@ lean_exe «formal-aiur-tests» where
   root := `Tests.FormalAiur
   supportInterpreter := true
 
+/-- Differential checks and measurements of the direct compiler handoff. -/
+lean_exe «formal-image-tests» where
+  root := `Tests.FormalImage
+  supportInterpreter := true
+
 lean_exe «formal-aggregate-tests» where
   root := `Tests.FormalAggregate
   supportInterpreter := true

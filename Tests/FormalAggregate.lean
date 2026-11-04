@@ -17,22 +17,22 @@ private def fixture (dir : System.FilePath) (args : Array Aiur.G) : IO Unit := d
 
 /-- A stand-in proof of `claim` as a `kind` child: a `claim_fixture` proof
 whose public input is the child's outer claim. -/
-private def standIn (ctx : Context) (dir : System.FilePath) (kind : ChildKind)
+private def standIn (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
     (claim : Ix.Claim) : IO Ixon.Proof := do
   fixture dir ((outerClaim ctx kind claim).extract 2 18)
   let magic := (if kind == .ixvm then "IXAIUR2\x00" else "IXAGGR2\x00").toUTF8
   return { claim, proof := magic ++ (← IO.FS.readBinFile (dir / "proof.bin")) }
 
-private def node (ctx : Context) (dir : System.FilePath) (kind : ChildKind)
+private def node (ctx : Keys) (dir : System.FilePath) (kind : ChildKind)
     (statement : CheckEnvTrees) : IO Node := do
   return { kind, statement, wrapper := ← standIn ctx dir kind statement.claim }
 
 /-- The advice of a wrap or pair as the `IOBuffer` the circuit cases run. -/
-private def advice (ctx : Context) (left : Node) (right : Option Node)
+private def advice (ctx : Keys) (left : Node) (right : Option Node)
     (output : CheckEnvTrees) (structural : Bool) : IO Aiur.IOBuffer :=
   return (← streamsAdvice ctx left right output structural).toIOBuffer
 
-private def test (ctx : Context) (label : String) (bytes : ByteArray) (io : Aiur.IOBuffer)
+private def test (ctx : Keys) (label : String) (bytes : ByteArray) (io : Aiur.IOBuffer)
     (accept : Bool := true) : Json :=
   Json.mkObj [("label", toJson label), ("accept", toJson accept),
     ("invocation", FormalAiur.invocation (pubInput ctx.allowed bytes) io "MultiStark::ix_aggr")]
@@ -86,9 +86,7 @@ def main (args : List String) : IO Unit := do
     fixture (dir / "self") (Array.replicate 16 0)
     let ixvmKey ← IO.FS.readBinFile (dir / "ixvm" / "key.bin")
     let aggrKey ← IO.FS.readBinFile (dir / "self" / "key.bin")
-    let ctx : Context := {
-      ixvmArtifact := ""
-      aggrArtifact := ""
+    let ctx : Keys := {
       ixvm := ⟨ixvmKey, 0⟩
       aggr := ⟨aggrKey, 0⟩
       allowed := allowedBlob ixvmKey 0 aggrKey 0 }

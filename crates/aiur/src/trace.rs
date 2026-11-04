@@ -79,7 +79,7 @@ impl Polynomial {
   }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Action {
   Assign {
@@ -153,18 +153,18 @@ impl Action {
   }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PopulationStep {
   pub guard: Polynomial,
   pub action: Action,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ColumnWrite {
   pub column: usize,
   pub source: usize,
   pub guard: Polynomial,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FunctionPlan {
   pub name: String,
   pub chip: String,
@@ -174,21 +174,21 @@ pub struct FunctionPlan {
   pub steps: Vec<PopulationStep>,
   pub writes: Vec<ColumnWrite>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Send {
   pub channel: String,
   pub args: Vec<Polynomial>,
   pub result: Vec<usize>,
   pub enable: Polynomial,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryLookup {
   pub r#type: Type,
   pub address: Polynomial,
   pub values: Vec<Polynomial>,
   pub enable: Polynomial,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Chip {
   pub name: String,
   pub width: usize,
@@ -200,7 +200,7 @@ pub struct Chip {
   pub sends: Vec<Send>,
   pub memory: Vec<MemoryLookup>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TraceArtifact {
   pub version: u32,
   pub modulus: u64,
@@ -218,7 +218,7 @@ pub struct GroupWrite {
   pub value: Polynomial,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GroupMember {
   pub name: String,
   pub columns: Vec<usize>,
@@ -226,13 +226,13 @@ pub struct GroupMember {
   pub writes: Vec<GroupWrite>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GroupLookup {
   pub enable: Polynomial,
   pub args: Vec<Polynomial>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FunctionGroup {
   pub name: String,
   pub width: usize,
@@ -306,7 +306,7 @@ pub struct PopulationTimings {
 
 /// A checked plan is tied to the immutable checked execution program.
 pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
-  program: &'a CheckedProgram<B>,
+  program: crate::shared::Shared<'a, CheckedProgram<B>>,
   artifact: TraceArtifact,
   callables: FxHashMap<String, usize>,
   members: Vec<usize>,
@@ -323,9 +323,11 @@ fn indices(xs: &[usize], width: usize) -> Result<(), String> {
 
 impl<'a, B: FieldBackend> TracePlan<'a, B> {
   pub fn new(
-    program: &'a CheckedProgram<B>,
+    program: impl Into<crate::shared::Shared<'a, CheckedProgram<B>>>,
     mut artifact: TraceArtifact,
   ) -> Result<Self, String> {
+    let shared = program.into();
+    let program = &*shared;
     if artifact.version != 2 || artifact.modulus != program.field.modulus() {
       return Err("trace version or field mismatch".into());
     }
@@ -505,15 +507,15 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       .iter()
       .map(|f| plan::FillPlan::compile(f, &callables, program))
       .collect();
-    Ok(Self { program, artifact, callables, members, fills })
+    Ok(Self { program: shared, artifact, callables, members, fills })
   }
 
   pub fn artifact(&self) -> &TraceArtifact {
     &self.artifact
   }
 
-  pub fn program(&self) -> &'a CheckedProgram<B> {
-    self.program
+  pub fn program(&self) -> &CheckedProgram<B> {
+    &self.program
   }
 
   /// The chip that represents each function, by function index.

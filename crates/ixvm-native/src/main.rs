@@ -17,12 +17,6 @@ use aiur::native::record_diff;
 use multi_stark::types::Val;
 use std::{error::Error, time::Instant};
 
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: Option<aiur::trace::TraceArtifact>,
-}
-
 fn median(mut samples: Vec<f64>) -> f64 {
   samples.sort_by(f64::total_cmp);
   samples[samples.len() / 2]
@@ -33,8 +27,8 @@ fn main() -> Result<(), Box<dyn Error>> {
   let usage = "usage: ixvm-native bind PACKAGE | compare|prove|advice PACKAGE INPUT \
      [RUNS]";
   let mode = cli.get(1).ok_or(usage)?.as_str();
-  let package: Package =
-    aiur::decode_artifact(&std::fs::read(cli.get(2).ok_or(usage)?)?)?;
+  let package =
+    aiur::artifact::read(std::path::Path::new(cli.get(2).ok_or(usage)?))?;
   let program = package.program.check_field::<Val>()?;
   if mode == "bind" {
     program.prepare_hints(&[])?.bind_native::<ixvm_native::Ixvm>()?;
@@ -48,11 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Ok(());
   }
   if mode == "prove" {
-    return prove(
-      &program,
-      package.trace.ok_or("package has no circuits")?,
-      cli.get(3).ok_or(usage)?,
-    );
+    return prove(&program, package.trace, cli.get(3).ok_or(usage)?);
   }
   if mode == "advice" {
     return advice(&program, cli.get(3).ok_or(usage)?);

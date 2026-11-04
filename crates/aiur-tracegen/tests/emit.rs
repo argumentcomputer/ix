@@ -1,13 +1,24 @@
 //! Emission from the grouped fixture shared with `aiur`'s own tests.
 use aiur_tracegen::cuda::{Selection, emit};
 
+use aiur::artifact::{Metadata, Package};
+
 const FIXTURE: &str =
   concat!(env!("CARGO_MANIFEST_DIR"), "/../aiur/tests/fixtures/grouping.json");
 
+fn fixture() -> Package {
+  let (program, trace) =
+    aiur::artifact::from_json(&std::fs::read(FIXTURE).unwrap()).unwrap();
+  Package { program, trace, metadata: Metadata::default() }
+}
+
+fn encoded(package: &Package) -> Vec<u8> {
+  aiur::artifact::encode(package).unwrap()
+}
+
 #[test]
 fn emits_supported_circuits_and_explains_the_rest() {
-  let bytes = std::fs::read(FIXTURE).unwrap();
-  let artifact = aiur_tracegen::describe(&bytes).unwrap();
+  let artifact = aiur_tracegen::describe(&encoded(&fixture())).unwrap();
   let emitted = emit(&artifact, &Selection::All, "fixture").unwrap();
   assert!(!emitted.circuits.is_empty());
   assert!(
@@ -42,22 +53,31 @@ fn emits_supported_circuits_and_explains_the_rest() {
 
 #[test]
 fn fingerprint_covers_plans_and_placement() {
-  let bytes = std::fs::read(FIXTURE).unwrap();
+  let bytes = encoded(&fixture());
   let original = aiur_tracegen::describe(&bytes).unwrap();
-  let mut package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-  package["trace"]["groups"] = serde_json::json!([]);
-  let ungrouped =
-    aiur_tracegen::describe(&serde_json::to_vec(&package).unwrap()).unwrap();
+  let mut package = fixture();
+  package.trace.groups.clear();
+  let ungrouped = aiur_tracegen::describe(&encoded(&package)).unwrap();
   assert_ne!(original.fingerprint, ungrouped.fingerprint);
-  let mut package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-  let writes =
-    package["trace"]["functions"][1]["writes"].as_array_mut().unwrap();
-  writes.reverse();
-  let reordered =
-    aiur_tracegen::describe(&serde_json::to_vec(&package).unwrap()).unwrap();
+  let mut package = fixture();
+  package.trace.functions[1].writes.reverse();
+  let reordered = aiur_tracegen::describe(&encoded(&package)).unwrap();
   assert_ne!(original.fingerprint, reordered.fingerprint);
+  let mut package = fixture();
+  package.metadata.name = "renamed".into();
+  assert_eq!(
+    original.fingerprint,
+    aiur_tracegen::describe(&encoded(&package)).unwrap().fingerprint
+  );
   assert_eq!(
     original.fingerprint,
     aiur_tracegen::describe(&bytes).unwrap().fingerprint
   );
+}
+
+#[test]
+fn rejects_json_input_with_a_conversion_hint() {
+  let error =
+    aiur_tracegen::describe_file(std::path::Path::new(FIXTURE)).err().unwrap();
+  assert!(error.contains("aiur-artifact convert"), "{error}");
 }

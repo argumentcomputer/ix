@@ -14,37 +14,46 @@ public section
 namespace Ix.Cli.FormalAggregate
 open Lean Aggr FormalAiur
 
-def artifact (p : Cli.Parsed) : IO String := aggregationArtifact p
+def artifact (p : Cli.Parsed) (registry : FormalProver.Registry) : IO Selected :=
+  aggregationArtifact p registry
 
 structure Identity where
   key : ByteArray
   index : Nat
 
-def identity (artifact : String) (recursive : Bool) : IO Identity := do
-  let (key, index, channel) ← FormalProver.identity artifact recursive
+def identity (system : FormalProver.System) (recursive : Bool) : IO Identity := do
+  let (key, index, channel) ← system.identity recursive
   unless channel == 1 do throw (IO.userError "unexpected formal call namespace")
   return { key, index }
 
-structure Context where
-  ixvmArtifact : String
-  aggrArtifact : String
+/-- How the two certified systems' claims are addressed: their verifying
+keys, entry indices and the identity blob aggregates commit to. -/
+structure Keys where
   ixvm : Identity
   aggr : Identity
   allowed : ByteArray
 
-def aggrIdentity (p : Cli.Parsed) : IO (String × Identity) := do
-  let aggrArtifact ← artifact p
-  let aggr ← identity aggrArtifact true
-  return (aggrArtifact, aggr)
+/-- The certified IxVM and aggregation systems a command selected, with
+their keys. -/
+structure Context extends Keys where
+  ixvmSystem : FormalProver.System
+  aggrSystem : FormalProver.System
+
+def aggrIdentity (p : Cli.Parsed) (registry : FormalProver.Registry) :
+    IO (FormalProver.System × Identity) := do
+  let aggrSystem ← (← artifact p registry).system
+  let aggr ← identity aggrSystem true
+  return (aggrSystem, aggr)
 
 def context (p : Cli.Parsed) : IO Context := do
-  let ixvmArtifact ← FormalAiur.artifact p
-  let (aggrArtifact, aggr) ← aggrIdentity p
-  let ixvm ← identity ixvmArtifact false
+  let registry ← FormalProver.Registry.new
+  let ixvmSystem ← (← FormalAiur.artifact p registry).system
+  let (aggrSystem, aggr) ← aggrIdentity p registry
+  let ixvm ← identity ixvmSystem false
   let allowed := Aggr.allowedBlob ixvm.key ixvm.index aggr.key aggr.index
-  return { ixvmArtifact, aggrArtifact, ixvm, aggr, allowed }
+  return { ixvmSystem, aggrSystem, ixvm, aggr, allowed }
 
-def outerClaim (ctx : Context) (kind : ChildKind) (claim : Ix.Claim) : Array Aiur.G :=
+def outerClaim (ctx : Keys) (kind : ChildKind) (claim : Ix.Claim) : Array Aiur.G :=
   let bytes := Ix.Claim.ser claim
   match kind with
   | .ixvm => #[1, .ofNat ctx.ixvm.index] ++ MultiStark.digestGs bytes
@@ -60,15 +69,15 @@ def rawProof (kind : ChildKind) (proof : ByteArray) : IO ByteArray := do
 claim of the backend's `MultiStark::ix_aggr` entrypoint, serialized as one
 batch claim. -/
 def statementBytes (ctx : Context) (claim : Ix.Claim) : ByteArray :=
-  MultiStark.serializeClaims #[outerClaim ctx .aggr claim]
+  MultiStark.serializeClaims #[outerClaim ctx.toKeys .aggr claim]
 
 def verifyWrapper (ctx : Context) (kind : ChildKind) (wrapper : Ixon.Proof) : IO Unit := do
-  if kind == .ixvm then return ← FormalAiur.verifyWrapper ctx.ixvmArtifact wrapper
+  if kind == .ixvm then return ← FormalAiur.verifyWrapper ctx.ixvmSystem wrapper
   match wrapper.claim with
   | .checkEnv .. | .catalog _ => pure ()
   | _ => throw (IO.userError "aggregate must carry CheckEnv or Catalog")
   let raw ← rawProof .aggr wrapper.proof
-  let _ ← FormalProver.verify ctx.aggrArtifact "MultiStark::ix_aggr"
+  let _ ← ctx.aggrSystem.verify "MultiStark::ix_aggr"
     ((Aggr.pubInput ctx.allowed (Ix.Claim.ser wrapper.claim)).map (·.val)) raw
 
 def manifest (p : Cli.Parsed) (override : Option String := none) : IO (Ixon.Env × Ix.Shard.IxesManifestView × Array Nat) := do
@@ -144,7 +153,7 @@ private def bindingProof (p : Cli.Parsed) (ctx : Context) (env : Ixon.Env) (pers
   let expected := Ix.Claim.binding envCtx.spec envCtx.binding
   unless wrapper.claim == expected do
     throw (IO.userError s!"binding proof {path} states {wrapper.claim}, expected {expected}")
-  FormalAiur.verifyWrapper ctx.ixvmArtifact wrapper
+  FormalAiur.verifyWrapper ctx.ixvmSystem wrapper
   let bytes := Ixon.Proof.ser wrapper
   unless persist do return some (Address.admissionHash bytes, bytes)
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser wrapper.claim))
@@ -176,15 +185,17 @@ def runController (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pur
   let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
   IO.FS.withTempDir fun scratch => do
     let out := ((p.flag? "out-ixes").map (·.as! String)).getD (scratch / "proven.ixes").toString
-    let config := Json.mkObj [("manifest", toJson ixes),
-      ("ixvm_artifact", toJson ctx.ixvmArtifact), ("aggr_artifact", toJson ctx.aggrArtifact),
-      ("lanes", toJson lanes), ("device", toJson options.device), ("max_ram_bytes", toJson maxRam),
-      ("exec_jobs", toJson (((p.flag? "exec-jobs").map (·.as! Nat)).getD 0)),
-      ("structural_above", toJson above), ("use_cache", toJson !(p.hasFlag "no-cache")),
-      ("use_index", toJson !(p.hasFlag "no-index")), ("out_manifest", toJson out),
-      ("binding_proof", toJson (binding.map (toString ·.1))), ("options", options.json)]
-    let root ← FormalProver.proveLanes handle config.compress
-    let some address := Address.fromString root | throw (IO.userError s!"controller returned {root}")
+    let config : FormalProver.LaneConfig := {
+      manifest := ixes, lanes, device := options.device, maxRamBytes := maxRam
+      execJobs := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 0
+      structuralAbove := above, outManifest := some out, select := none
+      bindingProof := binding.map (·.1.hash), options := options.job
+      useCache := !(p.hasFlag "no-cache"), useIndex := !(p.hasFlag "no-index")
+      claimsOnly := false, assumeBinding := false }
+    let .root bytes ← FormalProver.proveLanes ctx.ixvmSystem ctx.aggrSystem handle config
+      | throw (IO.userError "the controller returned claims instead of a root")
+    let address : Address := ⟨bytes⟩
+    let root := toString address
     let count ← accept p ctx out (← resultWrapper address)
     IO.println s!"[aiur aggregate] verified coverage of {count} constants, no undischarged assumptions"
     if let some flag := p.flag? "report" then
@@ -218,21 +229,24 @@ def run (p : Cli.Parsed) : IO UInt32 := do
   let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
   let subtree := (p.flag? "subtree").map (·.as! Nat)
   let reproveSlot := (p.flag? "reprove-slot").map (·.as! Nat)
-  let config := Json.mkObj [("manifest", toJson ixes),
-    ("ixvm_artifact", toJson ctx.ixvmArtifact), ("aggr_artifact", toJson ctx.aggrArtifact),
-    ("proofs", toJson (p.variableArgsAs! String)), ("lanes", toJson lanes),
-    ("device", toJson options.device),
-    ("exec_ahead", toJson (((p.flag? "exec-ahead").map (·.as! Nat)).getD 1)),
-    ("structural_above", toJson above), ("reprove_slot", toJson reproveSlot),
-    ("subtree", toJson subtree), ("plan_only", toJson (p.hasFlag "plan-only")),
-    ("use_cache", toJson !(p.hasFlag "no-cache")), ("write_outputs", toJson !(p.hasFlag "no-write")),
-    ("wrap_root", toJson (p.hasFlag "wrap-root")),
-    ("binding_proof", toJson (if readOnly then none else binding.map (toString ·.1))),
-    ("binding_proof_bytes", toJson (if readOnly then binding.map (hexOfBytes ·.2) else none)),
-    ("options", options.json)]
-  let (address, bytes) ← FormalProver.aggregate handle config.compress
-  if address.isEmpty then return 0
-  let some result := Address.fromString address | throw (IO.userError s!"controller returned {address}")
+  let proofs ← (p.variableArgsAs! String).mapM fun hex => do
+    let some address := Address.fromString hex
+      | throw (IO.userError s!"expected a 64-character hex address, got {hex}")
+    pure address.hash
+  let config : FormalProver.AggregateConfig := {
+    manifest := ixes, proofs, lanes, device := options.device
+    execAhead := ((p.flag? "exec-ahead").map (·.as! Nat)).getD 1
+    structuralAbove := above, reproveSlot, subtree
+    bindingProof := if readOnly then none else binding.map (·.1.hash)
+    options := options.job, planOnly := p.hasFlag "plan-only"
+    useCache := !(p.hasFlag "no-cache"), writeOutputs := !(p.hasFlag "no-write")
+    wrapRoot := p.hasFlag "wrap-root", assumeBinding := false }
+  let bindingBytes := if readOnly then binding.map (·.2) else none
+  let some (addressBytes, bytes) ← FormalProver.aggregate ctx.ixvmSystem ctx.aggrSystem handle
+      config bindingBytes
+    | return 0
+  let result : Address := ⟨addressBytes⟩
+  let address := toString result
   let wrapper ← resultWrapper result bytes
   match subtree.orElse (fun _ => reproveSlot) with
   | some slot =>

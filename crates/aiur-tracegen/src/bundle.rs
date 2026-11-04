@@ -58,9 +58,7 @@ fn try_build(config: &Config<'_>) -> Result<(), String> {
       })?)
     },
   };
-  let bytes = std::fs::read(&artifact)
-    .map_err(|e| format!("cannot read {artifact}: {e}"))?;
-  let described = crate::describe(&bytes)?;
+  let described = crate::describe_file(Path::new(&artifact))?;
   let emitted = emit(&described, &selection, config.tag)?;
   let library = format!("aiur_tracegen_{}", config.tag);
   let ptxas = compile(&out, &emitted, &library)?;

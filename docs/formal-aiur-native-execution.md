@@ -170,17 +170,18 @@ The formal prover (`crates/ix-prover`) runs inside `ix` as part of the Rust
 static library. Its feature `native` enables all three kernels together;
 `ix-ffi`'s `formal-native` feature turns it on.
 
-`ix prepare` (`Ix/Cli/PrepareCmd.lean`) exports the certified IxVM,
-recursive verifier and aggregation artifacts into the checkout's cache and
-records their paths in `.lake/aiur/native-kernels.env`. Each artifact is
-exported only when its exporter or sources changed; `--aiur-artifact`,
+`ix prepare` (`Ix/Cli/PrepareCmd.lean`) compiles the certified IxVM,
+recursive verifier and aggregation programs in process, persists them as
+binary artifacts in the checkout's cache and records their paths in
+`.lake/aiur/native-kernels.env`. Each program is compiled only when the
+linked compiler or its sources changed; `--aiur-artifact`,
 `--verifier-artifact` and `--aggr-artifact` supply trusted ones instead.
 The next `lake build ix` reads that file (`formalNativeArtifacts` in
 `lakefile.lean`) and builds the library with `formal-native` and the three
 `AIUR_*_ARTIFACT` variables. All three variables may instead be set in the
 environment. `IX_FORMAL_NATIVE=0` builds without kernels, and
-`IX_FORMAL_NATIVE=1` fails the build if the artifacts are missing. Exporting
-needs a built `ix`, so the kernels cannot be part of the first build; until
+`IX_FORMAL_NATIVE=1` fails the build if the binary artifacts are missing.
+Compiling them needs a built `ix`, so the kernels cannot be part of the first build; until
 the rebuild, every job runs on the interpreter.
 
 Executor selection (`crates/ix-prover/src/executor.rs`) happens once per

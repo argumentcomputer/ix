@@ -2,34 +2,39 @@
 //! is the formal backend of the aggregate controller, which proves
 //! manifests, their joins and `ix aggregate`; [`tools`] holds the stateless
 //! operations: single-claim proving, verification, key identity, execution
-//! checks and proof inspection. The `ix` CLI links it through FFI.
+//! checks and proof inspection, on the program and system handles of
+//! [`system`]. The `ix` CLI links it through FFI.
 pub mod aggregate;
 mod executor;
 mod output;
 pub mod protocol;
 pub mod request;
+pub mod system;
 pub mod tools;
 
-use aiur::{
-  bytecode::CheckedProgram, field::NativeField, trace::TraceArtifact,
-};
+use aiur::{bytecode::CheckedProgram, field::NativeField};
 use multi_stark::types::Val;
 use record_pool::BudgetError;
 
 type Field = NativeField<Val>;
 type Program = CheckedProgram<Field>;
 
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: TraceArtifact,
+/// Load and check the binary compiler artifact at `path`. A JSON artifact
+/// is rejected with the command that converts it.
+pub fn load_program(path: &std::path::Path) -> Result<system::Program, String> {
+  let package = aiur::artifact::read(path)?;
+  system::Program::new(package.program, package.trace)
 }
 
-fn load_package(path: &std::path::Path) -> Result<Package, String> {
-  aiur::decode_artifact::<Package>(
-    &std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?,
-  )
-  .map_err(|e| e.to_string())
+/// Diagnostic: load and check the legacy JSON compiler artifact at `path`.
+pub fn load_json_program(
+  path: &std::path::Path,
+) -> Result<system::Program, String> {
+  let bytes =
+    std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+  let (program, trace) = aiur::artifact::from_json(&bytes)?;
+  drop(bytes);
+  system::Program::new(program, trace)
 }
 
 /// Names the executors this build links: `interpreter`, plus the generated

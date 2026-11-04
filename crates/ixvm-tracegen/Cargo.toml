@@ -6,7 +6,7 @@ license.workspace = true
 description = "Compiled CUDA trace writers for IxVM"
 
 # With feature `kernel`, the writers are generated and compiled at build time
-# from the exported IxVM package named by AIUR_IXVM_ARTIFACT (`ix prepare`
+# from the binary IxVM artifact named by AIUR_IXVM_ARTIFACT (`ix prepare`
 # writes it under .lake/aiur/); AIUR_IXVM_TRACEGEN_CIRCUITS optionally
 # selects circuits (a JSON array of names). This needs the CUDA toolkit.
 # Without it the crate is empty, so workspace-wide builds need neither CUDA

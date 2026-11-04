@@ -1,5 +1,5 @@
 pub use crate::request::Request;
-pub use aiur::trace::stark::planning::Options;
+pub use aiur::trace::stark::planning::{Options, RetentionPolicy};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 

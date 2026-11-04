@@ -23,12 +23,12 @@ pub enum Type {
   Enum { name: String },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Constructor {
   pub name: String,
   pub fields: Vec<Type>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Enum {
   pub name: String,
   pub constructors: Vec<Constructor>,
@@ -43,7 +43,7 @@ pub enum Binary {
   Div,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Instruction<F = u64> {
   Literal {
@@ -154,7 +154,7 @@ impl Instruction {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Function<F = u64> {
   pub name: String,
   pub params: Vec<Type>,
@@ -162,13 +162,13 @@ pub struct Function<F = u64> {
   pub registers: usize,
   pub code: Vec<Instruction<F>>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Table {
   pub name: String,
   pub r#type: Type,
   pub rows: Vec<Vec<u64>>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Map {
   pub name: String,
   pub params: Vec<Type>,
@@ -176,7 +176,7 @@ pub struct Map {
   pub input: usize,
   pub output: usize,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Entry {
   pub name: String,
   pub function: usize,
@@ -185,7 +185,7 @@ pub struct Entry {
   /// None means the result contains a pointer or opaque type.
   pub output: Option<IoType>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Program {
   pub version: u32,
   pub modulus: u64,

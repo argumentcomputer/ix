@@ -32,17 +32,13 @@ cargo build --release --locked -p ixvm -p stark-verifier -p ix-prover --features
   --bin ixvm-proof --bin stark-verifier --bin ix-prover --example claim_fixture
 cargo build --release --locked -p aggregate-controller --example streams_parity
 
-if [[ -z ${IX_AIUR_ARTIFACT:-} ]]; then
-  IX_AIUR_ARTIFACT="$formal_tmp/ixvm.json"
-  lake env IxVM/.lake/build/bin/ixvm export-claim-trace "$IX_AIUR_ARTIFACT"
-fi
-if [[ -z ${IX_RECURSION_ARTIFACT:-} ]]; then
-  IX_RECURSION_ARTIFACT="$formal_tmp/recursion.json"
-  lake env MultiStark/.lake/build/bin/stark-export export-trace "$IX_RECURSION_ARTIFACT"
-fi
-if [[ -z ${IX_AGGR_ARTIFACT:-} ]]; then
-  IX_AGGR_ARTIFACT="$formal_tmp/aggregate.json"
-  lake env MultiStark/.lake/build/bin/stark-export export-trace "$IX_AGGR_ARTIFACT" --aggregate
+# Binary artifacts compiled in process by `ix prepare`, unless supplied.
+if [[ -z ${IX_AIUR_ARTIFACT:-} || -z ${IX_RECURSION_ARTIFACT:-} || -z ${IX_AGGR_ARTIFACT:-} ]]; then
+  .lake/build/bin/ix prepare > "$formal_tmp/prepare.log"
+  prepared() { awk -v kind="$1" '$1 == kind && $2 == "artifact" { print $3 }' "$formal_tmp/prepare.log"; }
+  IX_AIUR_ARTIFACT=${IX_AIUR_ARTIFACT:-$(prepared ixvm)}
+  IX_RECURSION_ARTIFACT=${IX_RECURSION_ARTIFACT:-$(prepared verifier)}
+  IX_AGGR_ARTIFACT=${IX_AGGR_ARTIFACT:-$(prepared aggregation)}
 fi
 export IX_AIUR_ARTIFACT IX_AGGR_ARTIFACT
 

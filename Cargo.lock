@@ -88,6 +88,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiur-ffi"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "lean-ffi",
+]
+
+[[package]]
 name = "aiur-macros"
 version = "0.1.0"
 dependencies = [
@@ -2009,6 +2017,7 @@ version = "0.1.0"
 dependencies = [
  "aggregate-controller",
  "aiur",
+ "aiur-ffi",
  "bincode",
  "blake3",
  "getrandom 0.3.4",

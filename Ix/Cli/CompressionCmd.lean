@@ -143,7 +143,7 @@ private def parametersDir : IO System.FilePath := do
   return (← StoreIO.toIO Store.getHomeDir) / ".ix/compression/params"
 
 private def backendVk (p : Cli.Parsed) : IO ByteArray := do
-  return (← FormalAggregate.aggrIdentity p).2.key
+  return (← FormalAggregate.aggrIdentity p (← FormalProver.Registry.new)).2.key
 
 def runSetup (p : Cli.Parsed) : IO UInt32 := do
   try

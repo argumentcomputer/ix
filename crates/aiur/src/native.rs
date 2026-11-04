@@ -12,6 +12,7 @@
 //! Memory-type indices are assigned from a hash map when a program is checked
 //! and may differ between processes. Plans therefore name ROM operations by
 //! function and PC, and the runtime resolves their type at execution time.
+use crate::artifact::{Writer, binary_tag};
 use crate::bytecode::{Binary, CheckedProgram, Instruction};
 use crate::execute::{Execution, ExecutionError};
 use crate::field::FieldBackend;
@@ -313,17 +314,164 @@ impl<B: FieldBackend> CheckedProgram<B> {
   }
 }
 
+/// Version of the encoding hashed by [`native_fingerprint`]. Bumping it
+/// invalidates every generated executor.
+pub const NATIVE_FINGERPRINT_SCHEME: u32 = 2;
+
+const NATIVE_FINGERPRINT_DOMAIN: &[u8] = b"aiur-native-fingerprint\0";
+
+/// BLAKE3, as lowercase hex, over the domain, [`NATIVE_FINGERPRINT_SCHEME`],
+/// [`ABI_VERSION`], the plan's modulus, the canonical bytecode encoding
+/// ([`crate::artifact::program_bytes`]) and the canonical encoding of every
+/// field of `plan`. The program must have canonical field elements, as every
+/// checked program does.
 pub fn native_fingerprint(
   program: &crate::Program,
   plan: &NativePlan,
 ) -> String {
+  let program = crate::artifact::program_bytes(program)
+    .expect("a checked program has canonical field elements");
+  let encoded = plan_bytes(plan);
   let mut hasher = blake3::Hasher::new();
-  hasher.update(b"aiur-native");
+  hasher.update(NATIVE_FINGERPRINT_DOMAIN);
+  hasher.update(&NATIVE_FINGERPRINT_SCHEME.to_le_bytes());
   hasher.update(&ABI_VERSION.to_le_bytes());
   hasher.update(&plan.modulus.to_le_bytes());
-  hasher.update(&serde_json::to_vec(program).expect("program serializes"));
-  hasher.update(&serde_json::to_vec(plan).expect("plan serializes"));
+  hasher.update(&(program.len() as u64).to_le_bytes());
+  hasher.update(&program);
+  hasher.update(&(encoded.len() as u64).to_le_bytes());
+  hasher.update(&encoded);
   hasher.finalize().to_hex().to_string()
+}
+
+/// The canonical encoding of every field of a plan, with one tag per
+/// operation variant.
+fn plan_bytes(plan: &NativePlan) -> Vec<u8> {
+  let mut w = Writer::new();
+  w.u32(plan.abi);
+  w.u64(plan.modulus);
+  w.count(plan.functions.len());
+  for function in &plan.functions {
+    w.str(&function.name);
+    w.usize(function.inputs);
+    w.usize(function.outputs);
+    w.usize(function.registers);
+    w.count(function.initial.len());
+    for &(register, value) in &function.initial {
+      w.usize(register);
+      w.u64(value);
+    }
+    w.count(function.entries.len());
+    for entry in &function.entries {
+      w.usize(entry.pc);
+      w.u64(entry.instructions);
+      write_op(&mut w, &entry.op);
+      match entry.next {
+        None => w.u8(0),
+        Some(next) => {
+          w.u8(1);
+          w.usize(next);
+        },
+      }
+    }
+  }
+  w.count(plan.maps.len());
+  for map in &plan.maps {
+    w.str(&map.name);
+    w.usize(map.inputs);
+    w.usize(map.outputs);
+  }
+  w.into_bytes()
+}
+
+fn write_op(w: &mut Writer, op: &NativeOp) {
+  let tests = |w: &mut Writer, tests: &[(usize, u64)]| {
+    w.count(tests.len());
+    for &(register, value) in tests {
+      w.usize(register);
+      w.u64(value);
+    }
+  };
+  match op {
+    NativeOp::Literal { dest, value } => {
+      w.u8(0);
+      w.usize(*dest);
+      w.u64(*value);
+    },
+    NativeOp::Copy { dest, source } => {
+      w.u8(1);
+      w.usizes(dest);
+      w.usizes(source);
+    },
+    NativeOp::Neg { dest, source } => {
+      w.u8(2);
+      w.usize(*dest);
+      w.usize(*source);
+    },
+    NativeOp::Binary { dest, operator, left, right } => {
+      w.u8(3);
+      w.usize(*dest);
+      w.u8(binary_tag(*operator));
+      w.usize(*left);
+      w.usize(*right);
+    },
+    NativeOp::Guard { tests: t, message } => {
+      w.u8(4);
+      tests(w, t);
+      w.str(message);
+    },
+    NativeOp::Branch { tests: t, target } => {
+      w.u8(5);
+      tests(w, t);
+      w.usize(*target);
+    },
+    NativeOp::Jump { target } => {
+      w.u8(6);
+      w.usize(*target);
+    },
+    NativeOp::Call { function, args, dest } => {
+      w.u8(7);
+      w.usize(*function);
+      w.usizes(args);
+      w.usizes(dest);
+    },
+    NativeOp::Map { function, args, dest } => {
+      w.u8(8);
+      w.usize(*function);
+      w.usizes(args);
+      w.usizes(dest);
+    },
+    NativeOp::Store { value, dest } => {
+      w.u8(9);
+      w.usizes(value);
+      w.usize(*dest);
+    },
+    NativeOp::Load { pointer, dest } => {
+      w.u8(10);
+      w.usize(*pointer);
+      w.usizes(dest);
+    },
+    NativeOp::Hint { key, dest } => {
+      w.u8(11);
+      w.usizes(key);
+      w.usizes(dest);
+    },
+    NativeOp::Assert { left, right, message } => {
+      w.u8(12);
+      w.usizes(left);
+      w.usizes(right);
+      w.str(message);
+    },
+    NativeOp::Nop => w.u8(13),
+    NativeOp::Return { values } => {
+      w.u8(14);
+      w.usizes(values);
+    },
+    NativeOp::Fail { message } => {
+      w.u8(15);
+      w.str(message);
+    },
+  }
 }
 
 /// A generated executor for one program.
@@ -910,4 +1058,109 @@ pub fn record_diff<B: FieldBackend>(
     }
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::bytecode::{Entry, Function, Program, Type};
+  use crate::value::IoType;
+
+  fn program(literal: u64, channel: &str) -> Program {
+    use Instruction as I;
+    Program {
+      version: 2,
+      modulus: 0xffff_ffff_0000_0001,
+      functions: vec![Function {
+        name: "main".into(),
+        params: vec![Type::Field],
+        result: Type::Field,
+        registers: 3,
+        code: vec![
+          I::Literal { dest: 1, value: literal },
+          I::Hint {
+            channel: channel.into(),
+            r#type: Type::Field,
+            key_type: Type::Field,
+            key: vec![0],
+            dest: vec![2],
+          },
+          I::Binary { dest: 1, operator: Binary::Add, left: 1, right: 2 },
+          I::Ret { value: vec![1] },
+        ],
+      }],
+      enums: vec![],
+      tables: vec![],
+      maps: vec![],
+      entries: vec![Entry {
+        name: "main".into(),
+        function: 0,
+        inputs: vec![IoType::Field],
+        output: Some(IoType::Field),
+      }],
+    }
+  }
+
+  fn fingerprint(program: Program) -> (String, Program, NativePlan) {
+    let checked = program.check().unwrap();
+    let plan = checked.native_plan();
+    let fingerprint = native_fingerprint(checked.program(), &plan);
+    assert_eq!(checked.native_fingerprint(), fingerprint);
+    (fingerprint, checked.program().clone(), plan)
+  }
+
+  #[test]
+  fn fingerprint_is_deterministic_and_covers_its_inputs() {
+    let (base, program, plan) = fingerprint(self::program(5, "c"));
+    assert_eq!(base.len(), 64);
+    assert!(base.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')));
+    assert_eq!(fingerprint(self::program(5, "c")).0, base);
+    assert_ne!(fingerprint(self::program(6, "c")).0, base);
+    assert_ne!(fingerprint(self::program(5, "d")).0, base);
+
+    let changed = |edit: &dyn Fn(&mut NativePlan)| {
+      let mut plan = plan.clone();
+      edit(&mut plan);
+      native_fingerprint(&program, &plan)
+    };
+    assert_ne!(changed(&|p| p.functions[0].entries[0].next = None), base);
+    assert_ne!(changed(&|p| p.functions[0].entries[0].instructions += 1), base);
+    assert_ne!(changed(&|p| p.functions[0].registers += 1), base);
+    assert_ne!(
+      changed(&|p| p.functions[0].entries[0].op = NativeOp::Nop),
+      base
+    );
+    assert_ne!(
+      changed(&|p| p.maps.push(NativeMap {
+        name: "m".into(),
+        inputs: 1,
+        outputs: 1
+      })),
+      base
+    );
+    let mut renamed = program.clone();
+    renamed.entries[0].name = "start".into();
+    assert_ne!(native_fingerprint(&renamed, &plan), base);
+  }
+
+  #[test]
+  fn fingerprint_hashes_the_versioned_domain() {
+    let (base, program, plan) = fingerprint(self::program(5, "c"));
+    let hash = |scheme: u32| {
+      let program = crate::artifact::program_bytes(&program).unwrap();
+      let encoded = plan_bytes(&plan);
+      let mut hasher = blake3::Hasher::new();
+      hasher.update(b"aiur-native-fingerprint\0");
+      hasher.update(&scheme.to_le_bytes());
+      hasher.update(&ABI_VERSION.to_le_bytes());
+      hasher.update(&plan.modulus.to_le_bytes());
+      hasher.update(&(program.len() as u64).to_le_bytes());
+      hasher.update(&program);
+      hasher.update(&(encoded.len() as u64).to_le_bytes());
+      hasher.update(&encoded);
+      hasher.finalize().to_hex().to_string()
+    };
+    assert_eq!(hash(NATIVE_FINGERPRINT_SCHEME), base);
+    assert_ne!(hash(1), base);
+  }
 }

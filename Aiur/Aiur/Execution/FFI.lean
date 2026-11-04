@@ -1,6 +1,11 @@
 import Aiur.Execution.Encode
 import Mathlib.Data.ZMod.Basic
 
+/-! Diagnostic execution bridge for examples and checkers: the program and
+hints travel to the Rust engine as JSON and the result returns as JSON.
+`ix` does not use it; its prover receives programs as runtime images
+(`Aiur.Image`) or binary artifacts. -/
+
 namespace Aiur.Execution
 open Lean
 

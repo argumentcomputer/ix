@@ -1,8 +1,8 @@
 //! Generated native executors for formal Aiur programs.
 //!
-//! `kernel!(pub Name, "path/to/artifact.json")` reads an execution package
-//! (a bytecode `Program`, or an export with a `program` field) at compile time,
-//! derives its normalized plan with `aiur`'s own checker, and expands to a
+//! `kernel!(pub Name, "path/to/artifact.aiur")` reads a binary compiler
+//! artifact (see `aiur::artifact`) at compile time, derives the normalized
+//! plan of its program with `aiur`'s own checker, and expands to a
 //! unit type `Name` implementing [`aiur::native::Kernel`]. The path is relative
 //! to the invoking crate's manifest directory unless absolute; the form
 //! `kernel!(pub Name, env = "VAR")` reads the path from an environment variable
@@ -39,7 +39,7 @@ struct Input {
 }
 
 fn parse(input: TokenStream) -> Result<Input, String> {
-  let usage = "expected `kernel!([pub] Name, \"artifact.json\")` or \
+  let usage = "expected `kernel!([pub] Name, \"artifact.aiur\")` or \
                `kernel!([pub] Name, env = \"VAR\")`";
   let tokens: Vec<TokenTree> = input
     .into_iter()
@@ -112,22 +112,10 @@ fn parse(input: TokenStream) -> Result<Input, String> {
   Ok(Input { public, name, path, variable })
 }
 
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-}
-
 fn expand(input: TokenStream) -> Result<String, String> {
   let input = parse(input)?;
-  let bytes = std::fs::read(&input.path)
-    .map_err(|e| format!("cannot read {}: {e}", input.path.display()))?;
-  let program = match aiur::decode_artifact::<Package>(&bytes) {
-    Ok(package) => package.program,
-    Err(_) => aiur::decode_artifact::<aiur::Program>(&bytes).map_err(|e| {
-      format!("{}: not an execution package: {e}", input.path.display())
-    })?,
-  };
-  let checked = program.check()?;
+  let package = aiur::artifact::read(&input.path)?;
+  let checked = package.program.check()?;
   let plan = checked.native_plan();
   let fingerprint = aiur::native::native_fingerprint(checked.program(), &plan);
   let path =

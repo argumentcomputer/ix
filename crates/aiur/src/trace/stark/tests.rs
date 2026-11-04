@@ -1459,3 +1459,43 @@ fn gpu_population_proves_identically() {
     }
   }
 }
+
+/// The grouped fixture proves to the same bytes and keys whether its program
+/// was read from the diagnostic JSON or from the binary artifact, and a
+/// backend that shares its plan and program through `Arc`s keeps proving
+/// after every other handle to them is released.
+#[test]
+fn binary_artifact_and_shared_handles_prove_identically() {
+  use multi_stark::batch::Retention;
+  use std::sync::Arc;
+  let json = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/grouping.json"
+  ));
+  let (program, trace) = crate::artifact::from_json(json).unwrap();
+  let bytes = crate::artifact::encode(&crate::artifact::Package {
+    program: program.clone(),
+    trace: trace.clone(),
+    metadata: crate::artifact::Metadata::default(),
+  })
+  .unwrap();
+  let decoded = crate::artifact::decode(&bytes).unwrap();
+  let entry = "Grouped::run";
+  let prove = |program: crate::Program, trace: TraceArtifact| {
+    let checked = Arc::new(program.check().unwrap());
+    let plan = Arc::new(TracePlan::new(Arc::clone(&checked), trace).unwrap());
+    let backend = Backend::for_batch(Arc::clone(&plan), parameters()).unwrap();
+    let record = checked.execute(entry, vec![3]).unwrap();
+    drop((checked, plan));
+    let traces = backend.generate(&record, entry, &[3]).unwrap();
+    let proof = backend
+      .prove_batch(entry, &[3], &record.output, traces, 2, Retention::Retain)
+      .unwrap();
+    backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
+    (backend.verifying_key_bytes().unwrap(), proof.to_bytes().unwrap())
+  };
+  let from_json = prove(program, trace);
+  let from_binary = prove(decoded.program, decoded.trace);
+  assert_eq!(from_json.0, from_binary.0, "verifying keys differ");
+  assert_eq!(from_json.1, from_binary.1, "proof bytes differ");
+}

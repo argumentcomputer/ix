@@ -4,7 +4,7 @@ use aiur::{
   field::FieldBackend,
   library::io::Invocation,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, BatchProof, Parameters, VerifyingKey, planning::Options},
   },
 };
@@ -12,12 +12,6 @@ use multi_stark::{p3_field::PrimeField64, types::Val};
 use std::{error::Error, time::Instant};
 
 const MAGIC: &[u8] = b"IXAIUR2\0";
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: Option<TraceArtifact>,
-}
-
 #[derive(serde::Deserialize)]
 struct Case {
   label: String,
@@ -45,14 +39,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Err("unknown mode".into());
   }
   ixvm::register_compiled_trace();
-  let package: Package = aiur::decode_artifact(&std::fs::read(&cli[2])?)?;
+  let package = aiur::artifact::read(std::path::Path::new(&cli[2]))?;
   let program = package.program.check_field::<Val>()?;
   let artifact_resident = aiur::trace::stark::planning::resident_memory();
   if mode == "key" {
-    let plan = TracePlan::new(
-      &program,
-      package.trace.ok_or("artifact has no circuits")?,
-    )?;
+    let plan = TracePlan::new(&program, package.trace)?;
     let backend =
       Backend::for_batch_verification(&plan, Parameters::default())?;
     let key = backend.verifying_key_bytes()?;
@@ -115,8 +106,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   let path = cli.get(4).ok_or("missing proof path")?;
   let options = Options::read(cli.get(7), cli.get(5), cli.get(6))?;
   let before_setup = aiur::trace::stark::planning::resident_memory();
-  let plan =
-    TracePlan::new(&program, package.trace.ok_or("artifact has no circuits")?)?;
+  let plan = TracePlan::new(&program, package.trace)?;
   let backend = if mode == "verify" {
     Backend::for_batch_verification(&plan, Parameters::default())?
   } else {

@@ -3,19 +3,13 @@ use aiur::{
   field::FieldBackend,
   library::io::Invocation,
   trace::{
-    TraceArtifact, TracePlan,
+    TracePlan,
     stark::{Backend, Parameters},
   },
 };
 use multi_stark::{batch::Retention, p3_matrix::Matrix, types::Val};
 use serde_json::json;
 use std::{error::Error, time::Instant};
-
-#[derive(serde::Deserialize)]
-struct Package {
-  program: aiur::Program,
-  trace: TraceArtifact,
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
   let thp_disabled = configure_benchmark_memory()?;
@@ -26,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into(),
     );
   }
-  let mut package: Package = aiur::decode_artifact(&std::fs::read(&cli[1])?)?;
+  let mut package = aiur::artifact::read(std::path::Path::new(&cli[1]))?;
   let invocation: Invocation =
     serde_json::from_slice(&std::fs::read(&cli[2])?)?;
   let samples: usize = cli[4].parse()?;

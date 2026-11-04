@@ -53,11 +53,16 @@ executing ahead of the provers, default 1).
 
 `--lanes` selects CUDA, while `--aggregate --jobs N` runs the pipeline on
 CPU. `--texray` prints timings and RSS for execution, trace population and
-proving. Exporters, sources and the artifact cache (`.lake/aiur`) are resolved
-against the checkout `ix` was built in (or `IX_ROOT`), so `ix` runs from any
-directory. `ix prepare` exports the IxVM, recursive verifier and aggregation
-artifacts ahead of time; otherwise the first command that needs an artifact
-exports it (several minutes, once per source revision).
+proving. Sources, the frontend's build and the artifact cache (`.lake/aiur`)
+are resolved against the checkout `ix` was built in (or `IX_ROOT`), so `ix`
+runs from any directory. `ix prepare` compiles the IxVM, recursive verifier
+and aggregation programs ahead of time; otherwise the first command that
+needs a program compiles it in process (several minutes, once per compiler
+and source revision). A command loads each program once into its registry
+and shares its system (verifying backend and key) across every check, key
+query, proof and verification; the controller receives these handles, not
+artifact paths. Configuration and results cross the FFI as typed records
+([direct FFI](formal-aiur-direct-ffi.md)).
 
 ## In-process prover
 
@@ -167,17 +172,19 @@ separate prover executable.
 ### Native executors and build order
 
 The generated native executors (`crates/ixvm-native`,
-`crates/stark-verifier-native`) are compiled from the exported artifacts
+`crates/stark-verifier-native`) are compiled from the binary artifacts
 (`AIUR_IXVM_ARTIFACT`, `AIUR_VERIFIER_ARTIFACT`, `AIUR_AGGREGATION_ARTIFACT`),
-but exporting them needs a built `ix`, and `ix` links the Rust archive. The
+but compiling them needs a built `ix`, and `ix` links the Rust archive. The
 kernels are therefore the optional `formal-native` feature of `ix-ffi`:
 
 1. `lake build ix` without artifacts links the interpreter only.
-2. `ix prepare` exports the artifacts and records their absolute paths in
-   `.lake/aiur/native-kernels.env`.
+2. `ix prepare` compiles the programs, writes their binary artifacts and
+   records their absolute paths in `.lake/aiur/native-kernels.env`.
 3. The next `lake build ix` reads that file, enables `formal-native`, passes
    the three variables to Cargo and adds the artifacts' contents to the
-   archive's Lake trace, so a re-exported artifact rebuilds its kernel.
+   archive's Lake trace, so a recompiled artifact rebuilds its kernel. A
+   file that still names JSON artifacts is ignored until `ix prepare`
+   replaces it.
 
 Setting all three `AIUR_*_ARTIFACT` variables overrides the file;
 `IX_FORMAL_NATIVE=0` builds without kernels and `IX_FORMAL_NATIVE=1` fails if

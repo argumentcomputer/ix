@@ -22,26 +22,18 @@ use aiur::{
   Execution,
   field::FieldBackend,
   library::advice::AdviceBuilder,
-  trace::{
-    TracePlan,
-    stark::{
-      Backend as Prover, BatchProof, Parameters, ShardFeed,
-      fri_parameter_bytes, planning,
-    },
-  },
+  trace::stark::{BatchProof, ShardFeed, fri_parameter_bytes, planning},
 };
 use ix_common::address::Address;
 use ixon::witness::WitnessRequest;
-use multi_stark::{p3_field::PrimeField64, types::Val};
+use multi_stark::p3_field::PrimeField64;
 use record_pool::{BudgetError, RecordReservation};
-use serde::Deserialize;
 
 use crate::{
-  Field, PrepFailure, Program,
-  executor::Executor,
-  load_package,
+  Field, PrepFailure,
   protocol::{Kind, Options},
   request::{IXVM_ENTRY, bind_advice, leaf_advice},
+  system::{Prover, System},
 };
 
 pub const AGGR_ENTRY: &str = "MultiStark::ix_aggr";
@@ -83,82 +75,54 @@ fn index(kind: ChildKind) -> usize {
 }
 
 /// The run as `ix prove --lanes` configures it.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct LaneConfig {
   pub manifest: PathBuf,
-  pub ixvm_artifact: PathBuf,
-  pub aggr_artifact: PathBuf,
   pub lanes: usize,
   /// The first lane's CUDA device; `None` proves on the CPU.
-  #[serde(default)]
   pub device: Option<i32>,
-  #[serde(default)]
+  /// Zero detects the host's allowance.
   pub max_ram_bytes: usize,
-  #[serde(default)]
   pub exec_jobs: usize,
   pub structural_above: usize,
-  #[serde(default = "yes")]
   pub use_cache: bool,
-  #[serde(default = "yes")]
   pub use_index: bool,
-  #[serde(default)]
   pub out_manifest: Option<PathBuf>,
   /// Prove the claims only, without joins or a root.
-  #[serde(default)]
   pub claims_only: bool,
   /// With `claims_only`, the shard ids to prove; every claim otherwise.
-  #[serde(default)]
   pub select: Option<Vec<u32>>,
   /// Claims assume their role binding meets the specifications instead of
   /// validating it.
-  #[serde(default)]
   pub assume_binding: bool,
   /// The store address of a proof of the environment's `Binding` claim:
   /// the claims assume their binding and the root discharges it.
-  #[serde(default)]
-  pub binding_proof: Option<String>,
+  pub binding_proof: Option<Address>,
   /// Planner options of every proof; the device and RAM budget are the
   /// lane's.
-  #[serde(default)]
   pub options: Options,
 }
 
-fn yes() -> bool {
-  true
+/// What a lane run proved: the verified root, or with `claims_only` each
+/// proven claim's shard id and proof address.
+pub enum LaneResult {
+  Root(Address),
+  Claims(Vec<(u32, Address)>),
 }
 
-/// A checked program with its trace artifact, loaded once per run.
-pub struct Loaded {
-  program: Program,
-  trace: aiur::trace::TraceArtifact,
-}
-
-impl Loaded {
-  pub fn load(path: &std::path::Path) -> Result<Self, String> {
-    let package = load_package(path)?;
-    Ok(Self {
-      program: package.program.check_field::<Val>()?,
-      trace: package.trace,
-    })
-  }
-}
-
-/// One resident prover per artifact on one device, the threads it proves
+/// One resident prover per system on one device, the threads it proves
 /// on, and as many that build its next trace shard meanwhile.
-pub struct Lane<'p, 'a> {
-  provers: [Prover<'p, 'a, Field>; 2],
+pub struct Lane {
+  provers: [Prover; 2],
   pool: rayon::ThreadPool,
   feed: ShardFeed,
   device: Option<i32>,
 }
 
-pub struct Formal<'p, 'a> {
-  plans: [&'p TracePlan<'a, Field>; 2],
-  programs: [&'a Program; 2],
-  executors: [Executor; 2],
-  verifiers: [Prover<'p, 'a, Field>; 2],
-  keys: [Vec<u8>; 2],
+/// The formal backend over the IxVM and aggregation systems the command
+/// selected. Verification and keys come from the shared systems; each lane
+/// builds its own proving backends.
+pub struct Formal {
+  systems: [System; 2],
   identity: WordIdentity,
   options: Options,
   device: Option<i32>,
@@ -167,47 +131,37 @@ pub struct Formal<'p, 'a> {
   workspace: usize,
 }
 
-impl<'p, 'a> Formal<'p, 'a> {
+impl Formal {
   pub fn new(
-    ixvm: &'p TracePlan<'a, Field>,
-    ixvm_program: &'a Program,
-    aggr: &'p TracePlan<'a, Field>,
-    aggr_program: &'a Program,
+    ixvm: &System,
+    aggr: &System,
     lanes: usize,
     device: Option<i32>,
     options: Options,
   ) -> Result<Self, String> {
     options.validate()?;
-    let verifiers = [
-      Prover::for_batch_verification(ixvm, Parameters::default())?,
-      Prover::for_batch_verification(aggr, Parameters::default())?,
-    ];
-    let keys = [
-      verifiers[0].verifying_key_bytes()?,
-      verifiers[1].verifying_key_bytes()?,
-    ];
-    let function_index = |prover: &Prover<'_, '_, Field>, entry, args| {
-      let claim = prover.claim(entry, args, &[])?;
-      match claim[..] {
-        [channel, index, ..]
-          if channel.as_canonical_u64() == FORMAL_CALL_CHANNEL =>
-        {
-          Ok(index.as_canonical_u64())
-        },
-        _ => Err("claim lacks its call namespace".to_owned()),
+    if ixvm.parameters() != aggr.parameters() {
+      return Err(
+        "the IxVM and aggregation systems use different STARK parameters"
+          .into(),
+      );
+    }
+    let function_index = |system: &System, entry, arity| {
+      let identity = system.identity(entry, arity)?;
+      if identity.call_channel != FORMAL_CALL_CHANNEL {
+        return Err("claim lacks its call namespace".to_owned());
       }
+      Ok(identity.function_index)
     };
-    let zero = Val::default();
-    let (ixvm_args, aggr_args) = ([zero; 8], [zero; 16]);
-    let ixvm_index = function_index(&verifiers[0], IXVM_ENTRY, &ixvm_args)?;
-    let aggr_index = function_index(&verifiers[1], AGGR_ENTRY, &aggr_args)?;
+    let ixvm_index = function_index(ixvm, IXVM_ENTRY, 8)?;
+    let aggr_index = function_index(aggr, AGGR_ENTRY, 16)?;
     let identity = WordIdentity::new(
       FORMAL_CALL_CHANNEL,
-      &keys[0],
+      ixvm.key(),
       ixvm_index,
-      &keys[1],
+      aggr.key(),
       aggr_index,
-      fri_parameter_bytes(Parameters::default()),
+      fri_parameter_bytes(ixvm.parameters().into()),
     );
     let workspace = match std::env::var("AIUR_HOST_WORKSPACE_BYTES") {
       Ok(value) => value
@@ -225,14 +179,7 @@ impl<'p, 'a> Formal<'p, 'a> {
     let cores = std::thread::available_parallelism().map_or(1, usize::from);
     ixvm::register_compiled_trace();
     Ok(Self {
-      plans: [ixvm, aggr],
-      programs: [ixvm_program, aggr_program],
-      executors: [
-        Executor::select(ixvm_program)?,
-        Executor::select(aggr_program)?,
-      ],
-      verifiers,
-      keys,
+      systems: [ixvm.clone(), aggr.clone()],
       identity,
       options,
       device,
@@ -246,8 +193,8 @@ impl<'p, 'a> Formal<'p, 'a> {
   fn keys(&self) -> Keys<'_> {
     Keys {
       allowed: &self.identity.allowed,
-      ixvm: &self.keys[0],
-      aggr: &self.keys[1],
+      ixvm: self.systems[0].key(),
+      aggr: self.systems[1].key(),
     }
   }
 
@@ -266,7 +213,7 @@ impl<'p, 'a> Formal<'p, 'a> {
     args: Vec<u64>,
     reservation: &RecordReservation,
   ) -> Result<(Vec<Element>, Execution<Field>), PrepareFailure> {
-    let program = self.programs[1];
+    let program = self.systems[1].program().checked();
     let mut builder = AdviceBuilder::new(program.field())?;
     for (channel, key, payload) in streams.entries() {
       builder.push_bytes(*channel, key, payload)?;
@@ -293,7 +240,7 @@ impl<'p, 'a> Formal<'p, 'a> {
     bound: crate::request::Bound<'_>,
     reservation: &RecordReservation,
   ) -> Result<(Vec<Element>, Execution<Field>), PrepareFailure> {
-    let (record, _) = self.executors[artifact].execute(
+    let (record, _) = self.systems[artifact].program().executor().execute(
       &bound.hints,
       &bound.entry,
       bound.args.clone(),
@@ -316,7 +263,7 @@ impl<'p, 'a> Formal<'p, 'a> {
   /// Plans `record` within the lane workspace and proves it on `lane`.
   fn prove(
     &self,
-    lane: &Lane<'p, 'a>,
+    lane: &Lane,
     kind: ChildKind,
     record: &Execution<Field>,
     entry: &str,
@@ -387,7 +334,7 @@ fn prep_failure(failure: PrepFailure) -> PrepareFailure {
   }
 }
 
-fn child<'s>(slot: &'s BackendSlot<Formal<'_, '_>>) -> Child<'s> {
+fn child<'s>(slot: &'s BackendSlot<Formal>) -> Child<'s> {
   Child {
     kind: slot.kind,
     statement: &slot.statement,
@@ -400,7 +347,7 @@ fn transport(c: ChildProof<'_, FormalProof>) -> Transport<'_> {
   Transport { kind: c.kind, proof: &c.proof.raw, claims: c.claims_bytes }
 }
 
-impl Identity for Formal<'_, '_> {
+impl Identity for Formal {
   type Claim = Vec<u64>;
 
   fn outer_claim(&self, kind: ChildKind, claim_bytes: &[u8]) -> Vec<u64> {
@@ -428,14 +375,14 @@ pub enum Staged {
   Executed { args: Vec<Element>, record: Box<Execution<Field>> },
 }
 
-impl<'p, 'a> Backend for Formal<'p, 'a> {
-  type Lane = Lane<'p, 'a>;
+impl Backend for Formal {
+  type Lane = Lane;
   type Proof = FormalProof;
   type ClaimRecord = ClaimRecord;
   type Staged = Staged;
   type Binding = ();
 
-  fn lanes(&self, count: usize) -> Result<Vec<Lane<'p, 'a>>, String> {
+  fn lanes(&self, count: usize) -> Result<Vec<Lane>, String> {
     (0..count)
       .map(|lane| {
         let offset = if self.shared_devices { 0 } else { lane };
@@ -448,25 +395,10 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
               .ok_or("CUDA device index overflow")
           })
           .transpose()?;
-        let provers = [
-          Prover::for_batch_on_device(
-            self.plans[0],
-            Parameters::default(),
-            device,
-          )?,
-          Prover::for_batch_on_device(
-            self.plans[1],
-            Parameters::default(),
-            device,
-          )?,
-        ];
-        for (prover, key) in provers.iter().zip(&self.keys) {
-          if &prover.verifying_key_bytes()? != key {
-            return Err(format!(
-              "the verifying key of lane {lane} differs from the verifier's"
-            ));
-          }
-        }
+        let prover = |system: &System| {
+          system.prover(device).map_err(|e| format!("lane {lane}: {e}"))
+        };
+        let provers = [prover(&self.systems[0])?, prover(&self.systems[1])?];
         let pool = rayon::ThreadPoolBuilder::new()
           .num_threads(self.threads_per_prover)
           .build()
@@ -490,14 +422,14 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 
   fn execute_claim(
     &self,
-    _lane: &Lane<'p, 'a>,
+    _lane: &Lane,
     env: &ixon::Env,
     owned: &[Address],
     expected: &ixon::Claim,
     _budget: Option<usize>,
     reservation: &RecordReservation,
   ) -> Result<ClaimRecord, PrepareFailure> {
-    let program = self.programs[0];
+    let program = self.systems[0].program().checked();
     let mut report = serde_json::Map::new();
     let assume_binding = expected.context().is_some_and(|c| c.binding_assumed);
     let (args, advice) = leaf_advice(
@@ -528,7 +460,7 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 
   fn execute_aggregate(
     &self,
-    _lane: &Lane<'p, 'a>,
+    _lane: &Lane,
     run: Run<'_, Vec<u64>>,
     slot: usize,
     children: &[Arc<BackendSlot<Self>>],
@@ -573,7 +505,7 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 
   fn prove_claim(
     &self,
-    lane: &Lane<'p, 'a>,
+    lane: &Lane,
     record: ClaimRecord,
   ) -> Result<ProvenClaim<FormalProof>, String> {
     let ClaimRecord { claim, claim_bytes, args, record } = record;
@@ -584,7 +516,7 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 
   fn prove_aggregate(
     &self,
-    lane: &Lane<'p, 'a>,
+    lane: &Lane,
     run: Run<'_, Vec<u64>>,
     slot: usize,
     staged: Staged,
@@ -629,7 +561,7 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 
   fn wrap_root(
     &self,
-    lane: &Lane<'p, 'a>,
+    lane: &Lane,
     _run: Run<'_, Vec<u64>>,
     root: &BackendSlot<Self>,
     proof: &FormalProof,
@@ -653,7 +585,7 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 
   fn prove_extra(
     &self,
-    lane: &Lane<'p, 'a>,
+    lane: &Lane,
     node: ExtraNode<'_, FormalProof>,
     reservation: &RecordReservation,
   ) -> Result<FormalProof, String> {
@@ -718,8 +650,9 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
       .get(2..)
       .filter(|args| args.len() == arity)
       .ok_or("outer claim has the wrong arity")?;
-    let verifier = &self.verifiers[index(kind)];
-    let args = self.programs[index(kind)].field().decode(args)?;
+    let system = &self.systems[index(kind)];
+    let verifier = system.verifier();
+    let args = system.program().checked().field().decode(args)?;
     let batch =
       BatchProof::from_bytes(&proof.raw).map_err(|e| e.to_string())?;
     verifier.verify_batch(entry, &args, &[], &batch)
@@ -727,7 +660,7 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 
   fn verify_on(
     &self,
-    _lane: &Lane<'p, 'a>,
+    _lane: &Lane,
     kind: ChildKind,
     outer: &Vec<u64>,
     proof: &FormalProof,
@@ -764,45 +697,25 @@ impl<'p, 'a> Backend for Formal<'p, 'a> {
 /// `ix aggregate` as configured: the supplied claim proofs, with any
 /// supplied or cached aggregates above them, folded on the slot scheduler
 /// with the lane controller's fold.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AggregateConfig {
   pub manifest: PathBuf,
-  pub ixvm_artifact: PathBuf,
-  pub aggr_artifact: PathBuf,
   /// Store addresses of claim proofs and of aggregate proofs of plan slots.
-  #[serde(default)]
-  pub proofs: Vec<String>,
+  pub proofs: Vec<Address>,
   pub lanes: usize,
-  #[serde(default)]
   pub device: Option<i32>,
-  #[serde(default = "one")]
   pub exec_ahead: usize,
   pub structural_above: usize,
-  #[serde(default)]
   pub reprove_slot: Option<usize>,
-  #[serde(default)]
   pub subtree: Option<usize>,
-  #[serde(default)]
   pub plan_only: bool,
-  #[serde(default = "yes")]
   pub use_cache: bool,
-  #[serde(default = "yes")]
   pub write_outputs: bool,
-  #[serde(default)]
   pub wrap_root: bool,
   /// The supplied claims assume their role binding.
-  #[serde(default)]
   pub assume_binding: bool,
   /// The store address of a proof of the environment's `Binding` claim:
   /// the supplied claims assume their binding and the root discharges it.
-  #[serde(default)]
-  pub binding_proof: Option<String>,
-  /// That proof's encoded wrapper in hex, in place of `binding_proof`, for
-  /// a run that writes nothing to the store.
-  #[serde(default)]
-  pub binding_proof_bytes: Option<String>,
-  #[serde(default)]
+  pub binding_proof: Option<Address>,
   pub options: Options,
 }
 
@@ -811,25 +724,18 @@ fn store_address(hex: &str) -> Result<Address, String> {
     .ok_or_else(|| format!("expected a 64-character hex address, got {hex}"))
 }
 
-fn one() -> usize {
-  1
-}
-
 /// `ix aggregate` for the formal provers over `env`, the environment Lean
 /// checks: the proof it produced, or nothing with `plan_only`.
 pub fn aggregate(
   config: &AggregateConfig,
   env: &ixon::Env,
+  ixvm: &System,
+  aggr: &System,
+  binding_proof_bytes: Option<Vec<u8>>,
 ) -> Result<Option<aggregate_controller::aggregate::Output>, String> {
-  let ixvm = Loaded::load(&config.ixvm_artifact)?;
-  let aggr = Loaded::load(&config.aggr_artifact)?;
-  let ixvm_plan = TracePlan::new(&ixvm.program, ixvm.trace.clone())?;
-  let aggr_plan = TracePlan::new(&aggr.program, aggr.trace.clone())?;
   let backend = Formal::new(
-    &ixvm_plan,
-    &ixvm.program,
-    &aggr_plan,
-    &aggr.program,
+    ixvm,
+    aggr,
     config.lanes,
     config.device,
     config.options.clone(),
@@ -845,16 +751,14 @@ pub fn aggregate(
     write_outputs: config.write_outputs,
     wrap_root: config.wrap_root,
     assume_binding: config.assume_binding,
-    binding_proof: match (&config.binding_proof, &config.binding_proof_bytes) {
+    binding_proof: match (&config.binding_proof, binding_proof_bytes) {
       (Some(_), Some(_)) => {
         return Err(
-          "binding_proof and binding_proof_bytes are exclusive".into(),
+          "a binding proof is either stored or supplied as bytes".into(),
         );
       },
-      (Some(address), None) => {
-        Some(BindingSource::Stored(store_address(address)?))
-      },
-      (None, Some(bytes)) => Some(BindingSource::Bytes(hex_bytes(bytes)?)),
+      (Some(address), None) => Some(BindingSource::Stored(address.clone())),
+      (None, Some(bytes)) => Some(BindingSource::Bytes(bytes)),
       (None, None) => None,
     },
     store_dir: None,
@@ -865,7 +769,7 @@ pub fn aggregate(
     &backend,
     env,
     &config.manifest,
-    &config.proofs.join("\n"),
+    &config.proofs.iter().map(Address::hex).collect::<Vec<_>>().join("\n"),
   )
 }
 
@@ -875,16 +779,12 @@ pub fn aggregate(
 pub fn prove_lanes(
   config: &LaneConfig,
   env: &ixon::Env,
-) -> Result<String, String> {
-  let ixvm = Loaded::load(&config.ixvm_artifact)?;
-  let aggr = Loaded::load(&config.aggr_artifact)?;
-  let ixvm_plan = TracePlan::new(&ixvm.program, ixvm.trace.clone())?;
-  let aggr_plan = TracePlan::new(&aggr.program, aggr.trace.clone())?;
+  ixvm: &System,
+  aggr: &System,
+) -> Result<LaneResult, String> {
   let backend = Formal::new(
-    &ixvm_plan,
-    &ixvm.program,
-    &aggr_plan,
-    &aggr.program,
+    ixvm,
+    aggr,
     config.lanes,
     config.device,
     config.options.clone(),
@@ -901,119 +801,69 @@ pub fn prove_lanes(
   controller.claims_only = config.claims_only;
   controller.select = config.select.clone();
   controller.assume_binding = config.assume_binding;
-  controller.binding_proof =
-    config.binding_proof.as_deref().map(store_address).transpose()?;
-  lanes::run(&controller, &backend, env, &config.manifest)
-}
-
-/// One catalog member as `ix aggregate --ixc` reads it
-/// (`Ix.Cli.CatalogAggregate.catalogMembers`), byte fields in hex.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CatalogMemberConfig {
-  pub label: String,
-  /// The member's claim, `Ix.Claim.ser`.
-  pub claim: String,
-  pub binding_section: String,
-  #[serde(default)]
-  pub literal_class: Option<String>,
+  controller.binding_proof = config.binding_proof.clone();
+  let text = lanes::run(&controller, &backend, env, &config.manifest)?;
+  if !config.claims_only {
+    return Ok(LaneResult::Root(store_address(text.trim())?));
+  }
+  text
+    .lines()
+    .filter(|line| !line.is_empty())
+    .map(|line| {
+      let (id, address) = line
+        .split_once(' ')
+        .ok_or_else(|| format!("malformed claim line {line}"))?;
+      let id = id.parse::<u32>().map_err(|e| format!("claim id {id}: {e}"))?;
+      Ok((id, store_address(address)?))
+    })
+    .collect::<Result<_, String>>()
+    .map(LaneResult::Claims)
 }
 
 /// `ix aggregate --ixc` as configured: the catalog's members, in manifest
 /// order, and the store addresses of their aggregate roots.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct CatalogConfig {
-  pub ixvm_artifact: PathBuf,
-  pub aggr_artifact: PathBuf,
-  pub members: Vec<CatalogMemberConfig>,
-  pub proofs: Vec<String>,
-  /// The root claim (`Ix.Claim.ser`, hex) the caller's plan reaches.
-  pub expected_root: String,
-  #[serde(default)]
+  pub members: Vec<catalog::Member>,
+  pub proofs: Vec<Address>,
+  /// The root claim (`Ix.Claim.ser`) the caller's plan reaches.
+  pub expected_root: Vec<u8>,
   pub device: Option<i32>,
-  #[serde(default = "yes")]
   pub use_cache: bool,
-  #[serde(default = "yes")]
   pub write_outputs: bool,
-  #[serde(default)]
   pub options: Options,
-}
-
-fn hex_bytes(text: &str) -> Result<Vec<u8>, String> {
-  if !text.len().is_multiple_of(2) {
-    return Err(format!("odd-length hex string {text}"));
-  }
-  (0..text.len())
-    .step_by(2)
-    .map(|i| {
-      text
-        .get(i..i + 2)
-        .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-        .ok_or_else(|| format!("invalid hex string {text}"))
-    })
-    .collect()
 }
 
 /// `ix aggregate --ixc` for the formal provers: every join of the catalog's
 /// plan, from its members' roots, returning the root proof's store address.
-pub fn aggregate_catalog(config: &CatalogConfig) -> Result<String, String> {
-  let members = config
-    .members
-    .iter()
-    .map(|m| {
-      Ok(catalog::Member {
-        label: m.label.clone(),
-        claim: ixon::Claim::from_bytes(&hex_bytes(&m.claim)?)?,
-        binding_section: hex_bytes(&m.binding_section)?,
-        literal_class: m
-          .literal_class
-          .as_deref()
-          .map(store_address)
-          .transpose()?,
-      })
-    })
-    .collect::<Result<Vec<_>, String>>()?;
-  let expected_root = hex_bytes(&config.expected_root)?;
-  let ixvm = Loaded::load(&config.ixvm_artifact)?;
-  let aggr = Loaded::load(&config.aggr_artifact)?;
-  let ixvm_plan = TracePlan::new(&ixvm.program, ixvm.trace.clone())?;
-  let aggr_plan = TracePlan::new(&aggr.program, aggr.trace.clone())?;
-  let backend = Formal::new(
-    &ixvm_plan,
-    &ixvm.program,
-    &aggr_plan,
-    &aggr.program,
-    1,
-    config.device,
-    config.options.clone(),
-  )?;
+pub fn aggregate_catalog(
+  config: &CatalogConfig,
+  ixvm: &System,
+  aggr: &System,
+) -> Result<Address, String> {
+  let backend =
+    Formal::new(ixvm, aggr, 1, config.device, config.options.clone())?;
   let controller = catalog::Config {
     use_cache: config.use_cache,
     write_outputs: config.write_outputs,
     store_dir: None,
     cache_dir: None,
   };
-  catalog::run(
+  let proofs: Vec<String> = config.proofs.iter().map(Address::hex).collect();
+  let root = catalog::run(
     &controller,
     &backend,
-    &members,
-    &config.proofs,
-    Some(&expected_root),
-  )
+    &config.members,
+    &proofs,
+    Some(&config.expected_root),
+  )?;
+  store_address(root.trim())
 }
 
 /// `ix compress` normalization of a formal aggregate root, as configured.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct NormalizeConfig {
-  pub ixvm_artifact: PathBuf,
-  pub aggr_artifact: PathBuf,
   /// The CUDA device to prove on; `None` proves on the CPU.
-  #[serde(default)]
   pub device: Option<i32>,
   /// Planner options; the layout comes from the normalization's heights.
-  #[serde(default)]
   pub options: Options,
 }
 
@@ -1026,25 +876,15 @@ pub struct NormalizeConfig {
 /// proof of the wrap, whose outer claim is the root's.
 pub fn normalize_root(
   config: &NormalizeConfig,
+  ixvm: &System,
+  aggr: &System,
   log_heights: &[u8],
   claim: &[u8],
   proof: &[u8],
 ) -> Result<Vec<u8>, String> {
-  let ixvm = Loaded::load(&config.ixvm_artifact)?;
-  let aggr = Loaded::load(&config.aggr_artifact)?;
-  let ixvm_plan = TracePlan::new(&ixvm.program, ixvm.trace.clone())?;
-  let aggr_plan = TracePlan::new(&aggr.program, aggr.trace.clone())?;
   let mut options = config.options.clone();
   options.fixed_log_heights = Some(log_heights.to_vec());
-  let backend = Formal::new(
-    &ixvm_plan,
-    &ixvm.program,
-    &aggr_plan,
-    &aggr.program,
-    1,
-    config.device,
-    options,
-  )?;
+  let backend = Formal::new(ixvm, aggr, 1, config.device, options)?;
   let root = backend.decode_proof(proof)?;
   if root.kind != ChildKind::Aggr {
     return Err("normalization wraps an aggregate proof".into());
@@ -1090,7 +930,7 @@ mod tests {
 
   #[test]
   fn cache_fri_bytes_follow_the_key_layout() {
-    let parameters = Parameters::default();
+    let parameters = aiur::trace::stark::Parameters::default();
     let bytes = fri_parameter_bytes(parameters);
     assert_eq!(bytes.len(), 40);
     assert_eq!(&bytes[8..16], &1u64.to_le_bytes());

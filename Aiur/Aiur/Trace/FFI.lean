@@ -1,6 +1,9 @@
 import Aiur.Trace.Export
 import Aiur.Execution.FFI
 
+/-! Diagnostic execution and population bridge over JSON, used by the
+examples and the Lean trace checkers; see `Aiur.Execution.FFI`. -/
+
 namespace Aiur.Trace
 open Lean
 
