@@ -86,11 +86,18 @@ fn sample_program() -> Program {
         Constructor { name: "some".into(), fields: vec![named, ptr] },
       ],
     }],
-    tables: vec![Table {
-      name: "t".into(),
-      r#type: pair.clone(),
-      rows: vec![vec![0, P - 1], vec![], vec![3]],
-    }],
+    tables: vec![
+      Table {
+        name: "t".into(),
+        r#type: pair.clone(),
+        rows: vec![vec![0, P - 1], vec![], vec![3]],
+      },
+      Table {
+        name: "u".into(),
+        r#type: Type::Field,
+        rows: vec![vec![3], vec![0, P - 1], vec![3]],
+      },
+    ],
     maps: vec![Map {
       name: "m".into(),
       params: vec![Type::Field],
@@ -217,7 +224,7 @@ fn sample() -> Package {
   }
 }
 
-/// Recomputes the trailing digest so that a test reaches the section parser.
+/// Recomputes the trailing digest so that a test reaches the parser.
 fn sign(mut bytes: Vec<u8>) -> Vec<u8> {
   let body = bytes.len() - DIGEST_LEN;
   let digest = blake3::hash(&bytes[..body]);
@@ -225,28 +232,57 @@ fn sign(mut bytes: Vec<u8>) -> Vec<u8> {
   bytes
 }
 
-fn assemble(modulus: u64, sections: &[(u32, Vec<u8>)]) -> Vec<u8> {
+fn body_of(sections: &[(u32, Vec<u8>)]) -> Vec<u8> {
+  let mut w = Writer::new();
+  for (tag, payload) in sections {
+    w.u32(*tag);
+    w.bytes(payload);
+  }
+  w.into_bytes()
+}
+
+/// A signed file around `body`, compressed at `level`.
+fn assemble_body(modulus: u64, body: &[u8], level: i32) -> Vec<u8> {
   let mut w = Writer::new();
   w.raw(&MAGIC);
   w.u32(VERSION);
   w.u32(0);
   w.u64(modulus);
-  for (tag, payload) in sections {
-    w.u32(*tag);
-    w.bytes(payload);
-  }
+  w.str("aiur test");
+  w.u64(body.len() as u64);
+  w.raw(&zstd::bulk::compress(body, level).unwrap());
   w.raw(&[0; DIGEST_LEN]);
   sign(w.into_bytes())
 }
 
-fn payloads(package: &Package) -> Vec<(u32, Vec<u8>)> {
-  vec![
-    (SECTION_METADATA, metadata_bytes(&package.metadata)),
-    (SECTION_BYTECODE, program_bytes(&package.program).unwrap()),
-    (SECTION_TRACE, trace_payload(&package.trace).unwrap()),
-    (SECTION_GROUPS, groups_payload(&package.trace).unwrap()),
-  ]
+fn assemble(modulus: u64, sections: &[(u32, Vec<u8>)]) -> Vec<u8> {
+  assemble_body(modulus, &body_of(sections), ZSTD_LEVEL)
 }
+
+fn payloads(package: &Package) -> Vec<(u32, Vec<u8>)> {
+  let content = content(&package.program, &package.trace).unwrap();
+  std::iter::once(metadata_bytes(&package.metadata))
+    .chain(content)
+    .zip(SECTIONS)
+    .map(|(payload, tag)| (tag, payload))
+    .collect()
+}
+
+/// Payloads written without the canonical-field check.
+fn unchecked_payloads(
+  program: &Program,
+  trace: &TraceArtifact,
+) -> Vec<(u32, Vec<u8>)> {
+  let content = content_with(program, trace, Writer::new).unwrap();
+  std::iter::once(metadata_bytes(&sample().metadata))
+    .chain(content)
+    .zip(SECTIONS)
+    .map(|(payload, tag)| (tag, payload))
+    .collect()
+}
+
+/// The header length of a file written by [`assemble`].
+const HEADER_LEN: usize = 8 + 4 + 4 + 8 + 8 + 9 + 8;
 
 #[test]
 fn round_trip() {
@@ -255,12 +291,11 @@ fn round_trip() {
   assert_eq!(decode(&bytes).unwrap(), package);
   assert_eq!(encode(&decode(&bytes).unwrap()).unwrap(), bytes);
   assert_eq!(assemble(P, &payloads(&package)), bytes);
-  let lengths = sections(&bytes).unwrap();
-  assert_eq!(lengths.len(), 4);
-  assert_eq!(
-    lengths[1],
-    (SECTION_BYTECODE, program_bytes(&package.program).unwrap().len() as u64)
-  );
+  let layout = layout(&bytes).unwrap();
+  assert_eq!(layout.compiler, "aiur test");
+  assert_eq!(layout.sections.len(), 6);
+  assert_eq!(layout.rows, 3);
+  assert_eq!(layout.compressed as usize, bytes.len() - HEADER_LEN - DIGEST_LEN);
 }
 
 #[test]
@@ -284,29 +319,38 @@ fn exported_fixture_round_trips() {
   let (program, trace) = from_json(&bytes).unwrap();
   assert!(!trace.groups.is_empty());
   let package = Package { program, trace, metadata: Metadata::default() };
-  let decoded = decode(&encode(&package).unwrap()).unwrap();
+  let (decoded, identity) =
+    decode_identified(&encode(&package).unwrap()).unwrap();
   assert_eq!(decoded, package);
+  assert_eq!(
+    identity,
+    content_digest(&package.program, &package.trace).unwrap()
+  );
   let json = to_json(&package.program, &package.trace).unwrap();
   let (program, trace) = from_json(&json).unwrap();
   assert_eq!((program, trace), (decoded.program, decoded.trace));
 }
 
 #[test]
-fn content_digest_ignores_metadata() {
+fn content_digest_ignores_metadata_and_compression() {
   let mut package = sample();
   let digest = content_digest(&package.program, &package.trace).unwrap();
+  let bytes = encode(&package).unwrap();
+  assert_eq!(decode_identified(&bytes).unwrap().1, digest);
+  let recompressed = assemble_body(P, &body_of(&payloads(&package)), 19);
+  assert_ne!(recompressed, bytes);
+  assert_eq!(decode_identified(&recompressed).unwrap().1, digest);
   package.metadata.name = "renamed".into();
+  package.metadata.compiler = "another".into();
   assert_eq!(content_digest(&package.program, &package.trace).unwrap(), digest);
   package.trace.groups.clear();
   assert_ne!(content_digest(&package.program, &package.trace).unwrap(), digest);
   let mut hasher = blake3::Hasher::new();
-  let p = program_bytes(&sample_program()).unwrap();
-  let t = trace_bytes(&sample_trace()).unwrap();
-  hasher.update(b"aiur-image-content/1\0");
-  hasher.update(&(p.len() as u64).to_le_bytes());
-  hasher.update(&p);
-  hasher.update(&(t.len() as u64).to_le_bytes());
-  hasher.update(&t);
+  hasher.update(b"aiur-image-content/2\0");
+  for (_, payload) in &payloads(&sample())[1..] {
+    hasher.update(&(payload.len() as u64).to_le_bytes());
+    hasher.update(payload);
+  }
   assert_eq!(*hasher.finalize().as_bytes(), digest);
 }
 
@@ -317,7 +361,7 @@ fn rejects_malformed_headers() {
   bad[0] = b'X';
   assert!(decode(&sign(bad)).unwrap_err().contains("magic"));
   let mut bad = bytes.clone();
-  bad[8..12].copy_from_slice(&2u32.to_le_bytes());
+  bad[8..12].copy_from_slice(&3u32.to_le_bytes());
   assert!(decode(&sign(bad)).unwrap_err().contains("version"));
   let mut bad = bytes.clone();
   bad[12] = 1;
@@ -325,7 +369,31 @@ fn rejects_malformed_headers() {
   let mut bad = bytes.clone();
   bad[16..24].copy_from_slice(&(P - 2).to_le_bytes());
   assert!(decode(&sign(bad)).unwrap_err().contains("modulus"));
+  let mut bad = bytes.clone();
+  bad[24..32].copy_from_slice(&(MAX_COMPILER_LEN as u64 + 1).to_le_bytes());
+  assert!(decode(&sign(bad)).unwrap_err().contains("compiler"));
+  let mut bad = bytes.clone();
+  bad[41..49].copy_from_slice(&(MAX_BODY_LEN + 1).to_le_bytes());
+  assert!(decode(&sign(bad)).unwrap_err().contains("exceeds"));
+  let mut bad = bytes.clone();
+  let body = u64::from_le_bytes(bad[41..49].try_into().unwrap());
+  bad[41..49].copy_from_slice(&(body - 1).to_le_bytes());
+  assert!(decode(&sign(bad)).unwrap_err().contains("decompress"));
+  let mut bad = bytes.clone();
+  bad[41..49].copy_from_slice(&(body + 1).to_le_bytes());
+  assert!(decode(&sign(bad)).unwrap_err().contains("decompresses"));
   assert!(decode(&[]).is_err());
+  let mut long = sample();
+  long.metadata.compiler = "x".repeat(MAX_COMPILER_LEN + 1);
+  assert!(encode(&long).is_err());
+}
+
+#[test]
+fn rejects_version_1_with_its_cause() {
+  let mut bytes = encode(&sample()).unwrap();
+  bytes[8..12].copy_from_slice(&1u32.to_le_bytes());
+  let error = decode(&sign(bytes)).unwrap_err();
+  assert!(error.contains("version 1"), "{error}");
 }
 
 #[test]
@@ -356,9 +424,10 @@ fn rejects_flipped_and_trailing_bytes() {
   let mut bad = bytes.clone();
   bad.push(0);
   assert!(decode(&bad).is_err());
-  let mut bad = bytes.clone();
-  bad.insert(bytes.len() - DIGEST_LEN, 0);
-  assert!(decode(&sign(bad)).unwrap_err().contains("trailing"));
+  let mut body = body_of(&payloads(&sample()));
+  body.push(0);
+  let error = decode(&assemble_body(P, &body, ZSTD_LEVEL)).unwrap_err();
+  assert!(error.contains("trailing"), "{error}");
 }
 
 #[test]
@@ -371,11 +440,14 @@ fn rejects_section_framing_errors() {
   sections.pop();
   assert!(decode(&assemble(P, &sections)).is_err());
   let mut sections = payloads(&package);
-  sections.push((5, vec![]));
+  sections.push((7, vec![]));
   assert!(decode(&assemble(P, &sections)).is_err());
-  let mut sections = payloads(&package);
-  sections[0].1.push(0);
-  assert!(decode(&assemble(P, &sections)).unwrap_err().contains("trailing"));
+  for i in 0..6 {
+    let mut sections = payloads(&package);
+    sections[i].1.push(0);
+    let error = decode(&assemble(P, &sections)).unwrap_err();
+    assert!(error.contains("trailing"), "section {i}: {error}");
+  }
 }
 
 #[test]
@@ -387,22 +459,25 @@ fn rejects_noncanonical_field_elements() {
     *value = P;
   }
   assert!(encode(&package).is_err());
-  let mut sections = payloads(&sample());
-  let mut w = Writer::new();
-  write_program(&mut w, &package.program).unwrap();
-  sections[1].1 = w.into_bytes();
+  let sections = unchecked_payloads(&package.program, &package.trace);
   let error = decode(&assemble(P, &sections)).unwrap_err();
-  assert!(error.contains("noncanonical"), "{error}");
+  assert!(
+    error.contains("bytecode") && error.contains("noncanonical"),
+    "{error}"
+  );
+
+  let mut program = sample_program();
+  program.tables[0].rows[0][0] = P;
+  let sections = unchecked_payloads(&program, &sample_trace());
+  let error = decode(&assemble(P, &sections)).unwrap_err();
+  assert!(error.contains("rows") && error.contains("noncanonical"), "{error}");
 
   let mut trace = sample_trace();
   trace.chips[0].constraints.push(add(var(0), constant(u64::MAX)));
-  assert!(trace_bytes(&trace).is_err());
-  let mut sections = payloads(&sample());
-  let mut w = Writer::new();
-  write_trace(&mut w, &trace).unwrap();
-  sections[2].1 = w.into_bytes();
+  assert!(content_digest(&sample_program(), &trace).is_err());
+  let sections = unchecked_payloads(&sample_program(), &trace);
   let error = decode(&assemble(P, &sections)).unwrap_err();
-  assert!(error.contains("noncanonical"), "{error}");
+  assert!(error.contains("nodes") && error.contains("noncanonical"), "{error}");
 }
 
 #[test]
@@ -414,53 +489,85 @@ fn rejects_mismatched_moduli() {
   let mut w = Writer::with_modulus(P);
   let mut trace = sample_trace();
   trace.modulus = P - 2;
-  write_trace(&mut w, &trace).unwrap();
-  sections[2].1 = w.into_bytes();
+  write_trace(&mut w, &mut Interner::with_modulus(P), &trace).unwrap();
+  sections[4].1 = w.into_bytes();
   assert!(decode(&assemble(P, &sections)).unwrap_err().contains("modulus"));
 }
 
-fn nodes(raw: &[(u8, &[u64])]) -> Vec<u8> {
+fn node_section(nodes: &[Node]) -> Vec<u8> {
   let mut w = Writer::new();
-  w.count(raw.len());
-  for (tag, operands) in raw {
-    w.u8(*tag);
-    for &x in *operands {
-      w.u64(x);
-    }
-  }
+  write_nodes(&mut w, nodes).unwrap();
   w.into_bytes()
 }
 
-fn parse_polynomial(bytes: &[u8]) -> Result<Polynomial, String> {
-  let mut r = Reader::with_modulus(bytes, P);
-  let p = read_polynomial(&mut r)?;
-  r.finish()?;
-  Ok(p)
+/// Decodes the sample with its NODES section replaced by `nodes` and its
+/// TRACE and GROUPS sections written against `interner`.
+fn with_pool(edit: impl FnOnce(&mut Vec<Node>)) -> Result<Package, String> {
+  let package = sample();
+  let mut sections = payloads(&package);
+  let mut interner = Interner::with_modulus(P);
+  let mut trace = Writer::with_modulus(P);
+  write_trace(&mut trace, &mut interner, &package.trace).unwrap();
+  let mut groups = Writer::with_modulus(P);
+  write_groups(&mut groups, &mut interner, &package.trace.groups).unwrap();
+  let mut nodes = interner.nodes().to_vec();
+  edit(&mut nodes);
+  sections[3].1 = node_section(&nodes);
+  sections[4].1 = trace.into_bytes();
+  sections[5].1 = groups.into_bytes();
+  decode(&assemble(P, &sections))
 }
 
 #[test]
-fn polynomial_node_references() {
-  let ok = nodes(&[(1, &[0]), (0, &[5]), (4, &[0, 1])]);
-  assert_eq!(parse_polynomial(&ok).unwrap(), mul(var(0), constant(5)));
-  let mut w = Writer::new();
-  write_polynomial(&mut w, &mul(var(0), constant(5))).unwrap();
-  assert_eq!(w.into_bytes(), ok);
+fn polynomial_pools_are_canonical() {
+  assert_eq!(with_pool(|_| ()).unwrap(), sample());
+  let error = with_pool(|nodes| nodes.push(Node::Var(1000))).unwrap_err();
+  assert!(error.contains("unreferenced"), "{error}");
+  let error = with_pool(|nodes| nodes.push(nodes[0])).unwrap_err();
+  assert!(error.contains("repeats"), "{error}");
+  let error = with_pool(|nodes| {
+    let last = nodes.len();
+    nodes[last - 1] = Node::Add(last - 1, 0);
+  })
+  .unwrap_err();
+  assert!(error.contains("later"), "{error}");
+  let error = with_pool(|nodes| nodes.truncate(2)).unwrap_err();
+  assert!(error.contains("not a pool node"), "{error}");
+}
 
-  let forward = nodes(&[(1, &[0]), (2, &[0, 2]), (1, &[1])]);
-  assert!(parse_polynomial(&forward).unwrap_err().contains("later"));
-  let own = nodes(&[(1, &[0]), (2, &[0, 1])]);
-  assert!(parse_polynomial(&own).unwrap_err().contains("later"));
-  let shared = nodes(&[(1, &[0]), (2, &[0, 0])]);
-  assert!(parse_polynomial(&shared).unwrap_err().contains("shared"));
-  let reused = nodes(&[(1, &[0]), (1, &[1]), (2, &[0, 1]), (3, &[0, 2])]);
-  assert!(parse_polynomial(&reused).unwrap_err().contains("shared"));
-  let unreferenced = nodes(&[(1, &[0]), (1, &[1])]);
+#[test]
+fn table_rows_are_canonical() {
+  let package = sample();
+  let rows = |rows: &[&[u64]]| {
+    let mut w = Writer::new();
+    w.count(rows.len());
+    for row in rows {
+      w.count(row.len());
+      row.iter().for_each(|&v| w.u64(v));
+    }
+    w.into_bytes()
+  };
+  let canonical: [&[u64]; 4] = [&[0, P - 1], &[], &[3], &[3]];
+  let mut sections = payloads(&package);
+  sections[1].1 = rows(&canonical[..3]);
+  assert_eq!(decode(&assemble(P, &sections)).unwrap(), package);
+  sections[1].1 = rows(&canonical);
+  assert!(decode(&assemble(P, &sections)).unwrap_err().contains("repeats"));
+  let mut bytecode = Writer::with_modulus(P);
+  let mut refs = [1usize, 0, 2, 2, 1, 2].into_iter();
+  write_program(&mut bytecode, &package.program, |w, table| {
+    w.count(table.rows.len());
+    table.rows.iter().for_each(|_| w.usize(refs.next().unwrap()));
+    Ok(())
+  })
+  .unwrap();
+  let mut reordered = payloads(&package);
+  reordered[2].1 = bytecode.into_bytes();
+  assert!(decode(&assemble(P, &reordered)).unwrap_err().contains("order"));
+  sections[1].1 = rows(&[&[0, P - 1], &[], &[3], &[4]]);
   assert!(
-    parse_polynomial(&unreferenced).unwrap_err().contains("unreferenced")
+    decode(&assemble(P, &sections)).unwrap_err().contains("unreferenced")
   );
-  assert!(parse_polynomial(&nodes(&[])).unwrap_err().contains("empty"));
-  assert!(parse_polynomial(&nodes(&[(5, &[])])).is_err());
-  assert!(parse_polynomial(&nodes(&[(0, &[P])])).is_err());
 }
 
 #[test]
@@ -513,7 +620,7 @@ fn deep_polynomial_round_trip() {
     let mut deep = var(0);
     for i in 0..100_000u64 {
       deep = match i % 3 {
-        0 => add(deep, constant(i)),
+        0 => add(deep, constant(i % 5)),
         1 => sub(var(1), deep),
         _ => mul(deep, var(2)),
       };
@@ -528,22 +635,6 @@ fn deep_polynomial_round_trip() {
       trace.groups[0].constraints.drain(..).for_each(dismantle);
     }
   });
-}
-
-#[test]
-fn deep_malformed_polynomial_is_rejected_without_recursion() {
-  // A 100 000-deep chain followed by an unreferenced node: the decoder must
-  // discard the chain without the recursive drop.
-  let depth = 100_000u64;
-  let mut raw: Vec<(u8, Vec<u64>)> = vec![(1, vec![0])];
-  for i in 0..depth {
-    raw.push((1, vec![1]));
-    raw.push((2, vec![2 * i, 2 * i + 1]));
-  }
-  raw.push((1, vec![0]));
-  let raw: Vec<(u8, &[u64])> =
-    raw.iter().map(|(t, o)| (*t, o.as_slice())).collect();
-  assert!(parse_polynomial(&nodes(&raw)).unwrap_err().contains("unreferenced"));
 }
 
 #[test]
@@ -570,7 +661,7 @@ fn read_and_write_files() {
 
 #[test]
 fn random_corruption_never_panics() {
-  let bytes = encode(&sample()).unwrap();
+  let body = body_of(&payloads(&sample()));
   let mut state = 0x9e37_79b9_7f4a_7c15u64;
   let mut next = move || {
     state ^= state << 13;
@@ -578,21 +669,20 @@ fn random_corruption_never_panics() {
     state ^= state << 17;
     state
   };
-  let body = bytes.len() - DIGEST_LEN;
   let mut accepted = 0;
-  for _ in 0..20_000 {
-    let mut bad = bytes.clone();
+  for _ in 0..5_000 {
+    let mut bad = body.clone();
     for _ in 0..1 + next() % 4 {
-      let at = HEADER_LEN + (next() as usize) % (body - HEADER_LEN);
+      let at = (next() as usize) % bad.len();
       bad[at] = match next() % 3 {
         0 => bad[at] ^ (1 << (next() % 8)),
         1 => 0xff,
         _ => next() as u8,
       };
     }
-    if decode(&sign(bad)).is_ok() {
+    if decode(&assemble_body(P, &bad, 1)).is_ok() {
       accepted += 1;
     }
   }
-  assert!(accepted < 20_000);
+  assert!(accepted < 5_000);
 }

@@ -111,9 +111,10 @@ def checkExecutor (c : Certified) (s : Selected) : IO Unit := do
 names, or otherwise the linked
 compiler's output for the checkout's source bundle. That output is cached
 in `programCache` as one binary artifact per program, named by a lookup key
-derived from the compiler's identity, the program and the source digest,
-so checkouts with the same compiler and sources share a file and others
-never collide. Misses compile in process, concurrently, hand their images
+derived from the artifact format version, the compiler's identity, the
+program and the source digest, so checkouts with the same compiler and
+sources share a file, and others, and files of another format version, are
+never looked up. Misses compile in process, concurrently, hand their images
 to the prover directly and persist each program atomically. A cached
 artifact that does not load is an error, never a silent recompile: the
 checksum a load verifies detects corruption, and trust in a cached artifact
@@ -126,6 +127,7 @@ def compiledPrograms (registry : FormalProver.Registry) (programs : Array Certif
   let mut found : Array (Option Selected) := #[]
   let mut misses : Array (Nat × Certified × System.FilePath × Address × FormalProver.CompileJob) := #[]
   let mut compiler : Option FormalProver.Compiler := none
+  let format ← FormalProver.artifactVersion
   for c in programs do
     if let some path ← explicit c then
       found := found.push (some (← Selected.load registry path))
@@ -136,7 +138,8 @@ def compiledPrograms (registry : FormalProver.Registry) (programs : Array Certif
     compiler := some linked
     let (text, source) ← c.source root
     let key := Address.blake3
-      (s!"ix-formal-artifact/1\x00{linked.identity}\x00{c.name}\x00".toUTF8 ++ source.hash)
+      (s!"ix-formal-artifact/2\x00{format}\x00{linked.identity}\x00{c.name}\x00".toUTF8 ++
+        source.hash)
     let path := (← programCache) / s!"{c.name}-{key}.aiur"
     if ← path.pathExists then
       let selected ← try Selected.load registry path.toString

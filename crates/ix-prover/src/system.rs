@@ -83,6 +83,16 @@ impl Program {
     trace: TraceArtifact,
   ) -> Result<Self, String> {
     let identity = aiur::artifact::content_digest(&program, &trace)?;
+    Self::with_identity(program, trace, identity)
+  }
+
+  /// [`Program::new`] for a program whose identity is already known, such
+  /// as one [`aiur::artifact::read_identified`] decoded.
+  pub fn with_identity(
+    program: aiur::Program,
+    trace: TraceArtifact,
+    identity: [u8; 32],
+  ) -> Result<Self, String> {
     let checked = Arc::new(program.check_field::<Val>()?);
     let plan = Arc::new(TracePlan::new(Arc::clone(&checked), trace.clone())?);
     PLANS.fetch_add(1, Ordering::Relaxed);

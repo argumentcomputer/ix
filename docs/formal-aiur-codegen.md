@@ -150,14 +150,16 @@ them.
 
 ## Compiled-program cache
 
-- **Format.** One immutable file per compiled program, using the existing
-  `AIURIMG` codec in `aiur`. There are no per-section blobs, no manifest and
+- **Format.** One immutable file per compiled program, using the
+  `AIURIMG` codec in `aiur` (version 2: shared table rows and polynomial
+  nodes, zstd-compressed; see
+  [formal-aiur-direct-ffi.md](formal-aiur-direct-ffi.md#persistent-artifacts)). There are no per-section blobs, no manifest and
   no bundle.
 - **Location.** A shared, configurable directory instead of each checkout's
   `.lake/aiur/`: `IX_AIUR_CACHE`, defaulting to `~/.ix/cache/aiur/`. This
   uses the store's caller-named `cacheDir`, not the content-addressed
-  store. Files are named by the existing cache key: the linked compiler's
-  identity, the target and the source digest. Every checkout on a machine
+  store. Files are named by the cache key: the artifact format version,
+  the linked compiler's identity, the target and the source digest. Every checkout on a machine
   with matching compiler and sources reuses the same file; differing
   checkouts never collide.
 - **Writing and loading.** Writes are atomic: temporary file, then rename.

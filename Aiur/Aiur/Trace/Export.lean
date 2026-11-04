@@ -43,7 +43,7 @@ def operationJson (encode : F → Nat) (hintPCs : List Nat) : Operation F → Ex
       return obj [("op", js "hint"), ("channel", js channel), ("instruction", js pc), ("type", Execution.typeJson type),
         ("key_type", Execution.typeJson keyType), ("key", js (key.map (polynomialJson encode))), ("dest", js dest)]
 
-def operationImage (encode : F → Nat) (hintPCs : List Nat) : Operation F → Except String Image.Action
+def operationImage (encode : F → Nat) (hintPCs : List Nat) : Operation F → Image.PoolM Image.Action
   | .assign dest values => do
     let values ← values.toArray.mapM (Image.poly encode)
     return .assign dest.toArray values
@@ -70,25 +70,28 @@ def operationImage (encode : F → Nat) (hintPCs : List Nat) : Operation F → E
     let key ← key.toArray.mapM (Image.poly encode)
     return .hint channel pc (Image.ty type) (Image.ty keyType) key dest.toArray
 
+/-- Check the activated circuit of `source`; the result adds its image to a
+node pool. -/
 def chipImage [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chip F) :
-    Except String Image.Chip := do
+    Except String (Image.PoolM Image.Chip) := do
   let chip := Activation.compile source
   unless chip.wellFormed do throw s!"invalid activated circuit {source.name}"
   unless chip.stats.maxConstraintDegree ≤ max 2 source.stats.maxConstraintDegree &&
       chip.maxLookupGuardDegree ≤ max 1 source.maxLookupGuardDegree do
     throw s!"activation increased the degree budget in {source.name}"
-  let poly := Image.poly encode
-  let polys := fun (ps : List (Polynomial F)) => ps.toArray.mapM poly
-  return { name := chip.name, width := chip.numVars, activation := source.numVars
-           inputs := (chip.inputs.flatMap WireValue.words).toArray
-           output := ← polys chip.output.words
-           constraints := ← polys chip.constraints
-           sends := ← chip.sends.toArray.mapM fun send => do
-             return { channel := send.channel, args := ← polys (send.args.flatMap WireValue.words)
-                      result := send.result.words.toArray, enable := ← poly send.enable }
-           memory := ← chip.memory.toArray.mapM fun cell => do
-             return { type := Image.ty cell.value.type, address := ← poly cell.address
-                      values := ← polys cell.value.words, enable := ← poly cell.enable } }
+  return do
+    let poly := Image.poly encode
+    let polys := fun (ps : List (Polynomial F)) => ps.toArray.mapM poly
+    return { name := chip.name, width := chip.numVars, activation := source.numVars
+             inputs := (chip.inputs.flatMap WireValue.words).toArray
+             output := ← polys chip.output.words
+             constraints := ← polys chip.constraints
+             sends := ← chip.sends.toArray.mapM fun send => do
+               return { channel := send.channel, args := ← polys (send.args.flatMap WireValue.words)
+                        result := send.result.words.toArray, enable := ← poly send.enable }
+             memory := ← chip.memory.toArray.mapM fun cell => do
+               return { type := Image.ty cell.value.type, address := ← poly cell.address
+                        values := ← polys cell.value.words, enable := ← poly cell.enable } }
 
 def chipJson [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chip F) : Except String Json := do
   let chip := Activation.compile source
@@ -167,11 +170,11 @@ def functionJsonOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Conf
     ("witnesses", js degree.chip.roles.size), ("inputs", js (source.chip.inputs.flatMap WireValue.words)),
     ("output", js source.chip.output.words), ("steps", js steps), ("writes", js writes)]
 
-/-- Check a replay against the certified layout and emit its population
-plan, as `functionJsonOf` does. -/
+/-- Check a replay against the certified layout, as `functionJsonOf` does;
+the result adds its population plan to a node pool. -/
 def functionImageOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Config) (fn : Function F)
     (replay : Replay F) (layout : LaidOutChip F) (representative : String)
-    (bytecode : Execution.Function F) : Except String Image.FunctionPlan := do
+    (bytecode : Execution.Function F) : Except String (Image.PoolM Image.FunctionPlan) := do
   let ⟨source, degree, replayed, chip, columns⟩ := replay
   unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
   unless replayed == layout.layout do throw s!"trace column allocation mismatch in {fn.name}"
@@ -183,19 +186,21 @@ def functionImageOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Con
   unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {fn.name}"
   let steps := source.steps ++ (degree.cache.reverse.map fun (scope, value, dest) =>
     Step.mk scope (.assign [dest] [value])).toArray
-  let steps ← steps.mapM fun step => do
-    return { guard := ← Image.poly encode (source.chip.activation step.scope)
-             action := ← operationImage encode hintPCs step.operation : Image.Step }
-  let writes ← (columns.zipIdx.flatMap fun (old, column) =>
+  let writes := (columns.zipIdx.flatMap fun (old, column) =>
     (layout.layout.occupants[old]?.getD []).map fun id =>
       let guard := match degree.chip.roles[id]? with
         | some (.auxiliary scope) => source.chip.activation scope
         | _ => .const 1
-      (column, id, guard)).toArray.mapM fun (column, source, guard) => do
-    return { column, source, guard := ← Image.poly encode guard : Image.ColumnWrite }
-  return { name := fn.name, chip := representative, witnesses := degree.chip.roles.size
-           inputs := (source.chip.inputs.flatMap WireValue.words).toArray
-           output := source.chip.output.words.toArray, steps, writes }
+      (column, id, guard)).toArray
+  return do
+    let steps ← steps.mapM fun step => do
+      return { guard := ← Image.poly encode (source.chip.activation step.scope)
+               action := ← operationImage encode hintPCs step.operation : Image.Step }
+    let writes ← writes.mapM fun (column, source, guard) => do
+      return { column, source, guard := ← Image.poly encode guard : Image.ColumnWrite }
+    return { name := fn.name, chip := representative, witnesses := degree.chip.roles.size
+             inputs := (source.chip.inputs.flatMap WireValue.words).toArray
+             output := source.chip.output.words.toArray, steps, writes }
 
 def functionJson [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
     (config : Config) (fn : Function F) (layout : LaidOutChip F) (representative : String)
@@ -204,7 +209,7 @@ def functionJson [Field F] [DecidableEq F] (encode : F → Nat) (program : Progr
     representative bytecode
 
 def groupImage [Field F] [DecidableEq F] (encode : F → Nat) (group : Grouping.Layout F) :
-    Except String Image.Group := do
+    Image.PoolM Image.Group := do
   let poly := Image.poly encode
   let polys := fun (ps : List (Polynomial F)) => ps.toArray.mapM poly
   return { name := group.name, width := group.width, activation := ← poly group.activation
@@ -258,9 +263,16 @@ def exportPreparedImage [Field F] [DecidableEq F] (modulus : Nat) (encode : F �
     return (⟨chips, ← Grouping.compile name id chips⟩ : Grouping.Packed F id)
   let plan ← Grouping.preparePlan physical.system id packed
   if modulus ≥ 2 ^ 64 then throw "trace export requires a modulus fitting UInt64"
-  return { version := 2, modulus := modulus.toUInt64, functions := functions.toArray
-           chips := (← physical.system.chips.parMapM (chipImage encode)).toArray
-           groups := ← plan.groups.toArray.mapM fun p => groupImage encode p.checked.layout }
+  let chips ← physical.system.chips.parMapM (chipImage encode)
+  -- The checks above run in parallel; the parts share one node pool, which
+  -- is built in order.
+  let ((functions, chips, groups), pool) ← (do
+      let functions ← functions.toArray.mapM fun part => part
+      let chips ← chips.toArray.mapM fun part => part
+      let groups ← plan.groups.toArray.mapM fun p => groupImage encode p.checked.layout
+      return (functions, chips, groups) : Image.PoolM _).run {}
+  return { version := 2, modulus := modulus.toUInt64, functions, chips, groups
+           nodes := pool.bytes }
 
 /-- The diagnostic JSON of `exportPreparedImage`. -/
 def exportPreparedJson [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)

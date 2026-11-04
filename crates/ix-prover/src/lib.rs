@@ -20,11 +20,15 @@ use record_pool::BudgetError;
 type Field = NativeField<Val>;
 type Program = CheckedProgram<Field>;
 
+/// The binary artifact format version [`load_program`] reads and
+/// [`system::Program::save`] writes.
+pub const ARTIFACT_VERSION: u32 = aiur::artifact::VERSION;
+
 /// Load and check the binary compiler artifact at `path`. A JSON artifact
 /// is rejected with the command that converts it.
 pub fn load_program(path: &std::path::Path) -> Result<system::Program, String> {
-  let package = aiur::artifact::read(path)?;
-  system::Program::new(package.program, package.trace)
+  let (package, identity) = aiur::artifact::read_identified(path)?;
+  system::Program::with_identity(package.program, package.trace, identity)
 }
 
 /// Diagnostic: load and check the legacy JSON compiler artifact at `path`.
