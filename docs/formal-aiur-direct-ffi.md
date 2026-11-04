@@ -116,9 +116,13 @@ panic is caught at the boundary or aborts under the workspace's
 mirroring the runtime's `aiur::Program` (functions, enums, tables, maps,
 entries with IO types) and `aiur::trace::TraceArtifact` (population plans,
 physical circuits, function groups). Identifiers and register lists are
-naturals below `2^63`, field elements canonical `UInt64`s, and each
-polynomial a buffer of post-order nodes (three little-endian words: tag,
-operand, operand). Shapes and orders are preserved exactly.
+naturals below `2^63` and field elements canonical `UInt64`s. Polynomials
+share their subexpressions: the trace carries one node pool (`Trace.nodes`,
+three little-endian words per node: tag, operand, operand, every operand an
+earlier node), built by hash-consing (`Image.Pool`), and each polynomial is
+the index of its root node. Shapes and orders are otherwise preserved
+exactly. The checks that produce the parts run in parallel; the parts are
+then added to the pool in order.
 
 `Aiur.Trace.exportPreparedImage` checks every replayed population plan
 against the certified logical layout, column allocation and final
@@ -141,30 +145,47 @@ linked.
 
 `crates/aiur-ffi` reads the image with `lean-ffi`: one call per image,
 checking constructor tags and field counts, scalar naturals, canonical
-field elements and polynomial trees, and building polynomials without
-recursion. The generic `aiur` crate does not depend on Lean, and Cargo
+field elements and the node pool (`aiur::artifact::pool`), and expanding
+the runtime's polynomial trees from the pool without recursion, within a
+bound on the total expanded size. The generic `aiur` crate does not depend on Lean, and Cargo
 never invokes Lake.
 
 ## Persistent artifacts
 
 `aiur::artifact` (`crates/aiur/src/artifact.rs`) is the one reader and
-writer, shared by the runtime loader, the compiled-program cache and the
-development binaries; the code generators take a checked program, not a
-file. Format version 1:
+writer, shared by the runtime loader, the compiled-program cache, the
+build's code generation step and the development binaries; the code
+generators take a checked program, not a file. Format version 2:
 
-- header: magic `AIURIMG\0`, version `u32`, flags `u32` (zero), modulus `u64`;
-- four sections, in order, each `tag u32 ‖ length u64 ‖ payload`:
-  1 metadata (name, compiler identity, source digest, lookup key),
-  2 bytecode, 3 trace, 4 groups;
-- a BLAKE3 digest of everything before it, then end of file.
+- header: magic `AIURIMG\0`, version `u32`, flags `u32` (zero), modulus
+  `u64`, the producing compiler's identity (a string of at most 1024
+  bytes), the uncompressed body length `u64` (at most 1 GiB);
+- body: one zstd frame (level 3) holding six sections, in order, each
+  `tag u32 ‖ length u64 ‖ payload`: 1 metadata (name, source digest, lookup
+  key), 2 rows (the distinct rows of the fixed tables), 3 bytecode (tables
+  name rows by index), 4 nodes (the shared polynomial node pool), 5 trace
+  and 6 groups (polynomials name their root node);
+- a BLAKE3 digest of everything before it, then end of file. It is checked
+  before the body is decompressed.
 
 All integers are little-endian; element counts are bounded by the bytes
 remaining, strings are validated UTF-8, field elements must be canonical,
-polynomials are post-order node lists that must form trees, types nest at
-most 256 deep, and every section must be consumed exactly. Trailing bytes,
-unknown sections and a digest mismatch are errors. The format does not
-depend on Lean's heap layout, Rust's struct layout or pointer width. The
-module documentation gives every tag.
+every pool node references only earlier nodes (so pools decode iteratively
+and have no cycles), polynomials expand to at most `2^28` nodes in total,
+types nest at most 256 deep, and every section must be consumed exactly.
+Both pools must be canonical: each distinct row and node occurs once, in
+the order of first reference, and every entry is referenced, so a program
+has exactly one encoding. Trailing bytes, unknown sections, a wrong
+decompressed length and a digest mismatch are errors, and a version 1 file
+is rejected with that cause. The format does not depend on Lean's heap
+layout, Rust's struct layout or pointer width. The module documentation
+gives every tag.
+
+| Program | v1 file | v2 body (raw) | v2 file (compressed) |
+|---|---|---|---|
+| IxVM | 108.1 MB | 19.8 MB | 2.3 MB |
+| recursive verifier | 15.6 MB | 8.1 MB | 0.78 MB |
+| aggregation | 17.1 MB | 8.9 MB | 0.80 MB |
 
 Files are written atomically (unique temporary file, `fsync`, rename).
 `aiur-artifact` (`crates/aiur/src/bin/aiur-artifact.rs`) converts a legacy
@@ -180,11 +201,14 @@ is rejected with that conversion command.
 1. An explicit trusted artifact (`--aiur-artifact`, `--aggr-artifact`,
    `--verifier-artifact` or the `IX_*_ARTIFACT` variables) is loaded as a
    binary artifact.
-2. Otherwise the lookup key is BLAKE3 over a domain tag, the linked
-   compiler's identity, the target name and the source bundle's digest.
+2. Otherwise the lookup key is BLAKE3 over a domain tag, the artifact
+   format version, the linked compiler's identity, the target name and the
+   source bundle's digest.
    `<target>-<key>.aiur` in the shared cache (`IX_AIUR_CACHE`, default
    `~/.ix/cache/aiur/`) is loaded when present; a file that fails to load is
-   an error naming the file and saying to delete it.
+   an error naming the file and saying to delete it. The key also covers
+   the artifact format version (`FormalProver.artifactVersion`), so files
+   of another version are never looked up.
 3. On a miss the linked compiler compiles the bundle in process, with a
    progress message, registers the image's program and persists it under
    the key. Programs a command needs together compile concurrently from one
@@ -210,15 +234,20 @@ See [codegen and caching](formal-aiur-codegen.md).
 
 Program identity is the content digest
 `aiur::artifact::content_digest`: BLAKE3 over a domain tag and the
-canonical bytecode and trace sections, independent of metadata and file
-header. Systems are keyed by program identity and STARK parameters.
+canonical, uncompressed rows, bytecode, nodes, trace and groups sections,
+independent of metadata, file header and compression settings. A decoded
+file's identity is computed from the payloads it holds, which the decoder
+has checked are canonical. Systems are keyed by program identity and STARK
+parameters.
 
 Native kernels and CUDA bundles bind by fingerprints over canonical,
 domain-separated binary encodings instead of JSON:
 
 - `aiur::native::native_fingerprint`, scheme
   `NATIVE_FINGERPRINT_SCHEME = 2`: the domain, scheme, `ABI_VERSION`,
-  modulus, the canonical bytecode and every field of the native plan;
+  modulus, the canonical bytecode with its table rows inline
+  (`artifact::program_bytes`, unchanged by format version 2) and every
+  field of the native plan;
 - `PopulationDescription::fingerprint`, scheme
   `DESCRIPTION_FINGERPRINT_SCHEME = 2`: the domain, scheme and every field
   of the population description; `compiled_fingerprint` covers it with the
@@ -280,9 +309,11 @@ adds the linked compiler's roots; the pin needs the verify-path review.
   that shares its plan through `Arc`s proves after its caller's handles are
   dropped.
 - `aiur::artifact` tests: round trips, malformed and truncated files,
-  digest, trailing bytes, noncanonical values, polynomial shape, deep
-  polynomials and randomized corruption; `aiur-ffi` tests cover image
-  polynomial shape and depth.
+  digest, compression and decompressed length, version 1 rejection,
+  trailing bytes, noncanonical values, canonical row and node pools,
+  identity independence from metadata and compression, deep polynomials
+  and randomized corruption; `aiur-ffi` tests cover the image pool's
+  references and depth.
 - Native and population fingerprint tests cover every encoded field.
 
 Full Init, Mathlib and GPU runs require separate authorization under the

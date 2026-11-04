@@ -1,5 +1,6 @@
 import Aiur.Execution.Encode
 import Aiur.Optimized.Basic
+import Std.Data.HashMap
 
 /-!
 The runtime image: the certified compiler's output as explicit data that a
@@ -7,14 +8,16 @@ runtime reads directly. It carries the execution bytecode (functions, enum
 layouts, fixed tables, maps and entry interfaces) and the trace artifact
 (population plans, physical circuits and function groups).
 
-The shapes mirror the runtime's representation one to one; nothing is
-optimized in transit. Identifiers and register lists are naturals below
-`2^63`. Field elements are canonical `UInt64`s. A polynomial is a buffer of
-post-order nodes, three little-endian 64-bit words each (tag, a, b): tag 0
-is the constant `a`, 1 the variable `a`, and 2, 3 and 4 the sum, difference
-and product of the earlier nodes `a` and `b`; the last node is the root.
-Every node but the root is an operand exactly once, so a reader can rebuild
-the tree without recursion.
+The shapes mirror the runtime's representation one to one, except that
+polynomials share their subexpressions. Identifiers and register lists are
+naturals below `2^63`. Field elements are canonical `UInt64`s. The trace's
+polynomials are stored once, in a node pool (`Trace.nodes`): a buffer of
+nodes, three little-endian 64-bit words each (tag, a, b), where tag 0 is the
+constant `a`, 1 the variable `a`, and 2, 3 and 4 the sum, difference and
+product of the earlier nodes `a` and `b`. Equal subexpressions are one node
+(`Pool`), and a polynomial (`Poly`) is the index of its root node. Every
+operand names an earlier node, so a reader expands polynomials without
+recursion and the pool has no cycles.
 
 `Image.toJson` renders the diagnostic JSON artifact from an image.
 -/
@@ -22,8 +25,8 @@ the tree without recursion.
 namespace Aiur.Image
 open Lean
 
-/-- Post-order polynomial nodes; see the module documentation. -/
-abbrev Poly := ByteArray
+/-- A polynomial: the index of its root in the trace's node pool. -/
+abbrev Poly := Nat
 
 inductive Ty where
   | field
@@ -198,6 +201,8 @@ structure Trace where
   functions : Array FunctionPlan
   chips : Array Chip
   groups : Array Group
+  /-- The node pool every `Poly` of the trace indexes. -/
+  nodes : ByteArray
   modulus : UInt64
   deriving Inhabited, BEq
 
@@ -218,30 +223,40 @@ private def pushWord (bytes : ByteArray) (n : UInt64) : ByteArray := Id.run do
     bytes := bytes.push (n >>> (8 * i).toUInt64).toUInt8
   return bytes
 
-private def pushNode (bytes : ByteArray) (tag a b : UInt64) : ByteArray :=
-  pushWord (pushWord (pushWord bytes tag) a) b
+/-- A node pool under construction; each distinct node is stored once. -/
+structure Pool where
+  bytes : ByteArray := .empty
+  count : Nat := 0
+  index : Std.HashMap (UInt64 × UInt64 × UInt64) Nat := {}
 
-/-- Append `p`'s post-order nodes, numbering them from `next`; returns the
-buffer and the root's index. -/
-def polyNodes (encode : F → Nat) (bytes : ByteArray) (next : Nat) :
-    Optimized.Polynomial F → Except String (ByteArray × Nat)
-  | .const x => do return (pushNode bytes 0 (← word (encode x)) 0, next)
-  | .var x => do return (pushNode bytes 1 (← word x) 0, next)
+/-- Builds image parts whose polynomials share one `Pool`. -/
+abbrev PoolM := StateT Pool (Except String)
+
+/-- The index of the node `(tag, a, b)`, added unless already present. -/
+def Pool.node (tag a b : UInt64) : PoolM Nat :=
+  modifyGet fun pool =>
+    match pool.index[(tag, a, b)]? with
+    | some i => (i, pool)
+    | none => (pool.count,
+        { bytes := pushWord (pushWord (pushWord pool.bytes tag) a) b, count := pool.count + 1
+          index := pool.index.insert (tag, a, b) pool.count })
+
+/-- The index of `p`'s root, adding the nodes not yet in the pool. -/
+def poly (encode : F → Nat) : Optimized.Polynomial F → PoolM Poly
+  | .const x => do Pool.node 0 (← word (encode x)) 0
+  | .var x => do Pool.node 1 (← word x) 0
   | .add a b => do
-    let (bytes, ia) ← polyNodes encode bytes next a
-    let (bytes, ib) ← polyNodes encode bytes (ia + 1) b
-    return (pushNode bytes 2 ia.toUInt64 ib.toUInt64, ib + 1)
+    let ia ← poly encode a
+    let ib ← poly encode b
+    Pool.node 2 ia.toUInt64 ib.toUInt64
   | .sub a b => do
-    let (bytes, ia) ← polyNodes encode bytes next a
-    let (bytes, ib) ← polyNodes encode bytes (ia + 1) b
-    return (pushNode bytes 3 ia.toUInt64 ib.toUInt64, ib + 1)
+    let ia ← poly encode a
+    let ib ← poly encode b
+    Pool.node 3 ia.toUInt64 ib.toUInt64
   | .mul a b => do
-    let (bytes, ia) ← polyNodes encode bytes next a
-    let (bytes, ib) ← polyNodes encode bytes (ia + 1) b
-    return (pushNode bytes 4 ia.toUInt64 ib.toUInt64, ib + 1)
-
-def poly (encode : F → Nat) (p : Optimized.Polynomial F) : Except String Poly :=
-  return (← polyNodes encode .empty 0 p).1
+    let ia ← poly encode a
+    let ib ← poly encode b
+    Pool.node 4 ia.toUInt64 ib.toUInt64
 
 def ty : Aiur.Ty → Ty
   | .field => .field
@@ -343,10 +358,10 @@ private def readWord (bytes : ByteArray) (offset : Nat) : Nat := Id.run do
     n := n + (bytes.get! (offset + i)).toNat * 256 ^ i
   return n
 
-/-- The polynomial tree of a node buffer, as nested JSON. -/
-def polyJson (p : Poly) : Except String Json := do
+/-- Each pool node's polynomial as nested JSON, built bottom-up. -/
+def nodesJson (p : ByteArray) : Except String (Array Json) := do
   let count := p.size / 24
-  unless count * 24 == p.size && count > 0 do throw "malformed polynomial nodes"
+  unless count * 24 == p.size do throw "malformed polynomial nodes"
   let mut nodes : Array Json := #[]
   for i in [0:count] do
     let tag := readWord p (24 * i)
@@ -364,9 +379,15 @@ def polyJson (p : Poly) : Except String Json := do
         | 4 => pure (obj [("mul", js [x, y])])
         | _ => throw "invalid polynomial node"
     nodes := nodes.push node
-  return nodes.back!
+  return nodes
 
-def polysJson (ps : Array Poly) : Except String Json := return js (← ps.mapM polyJson)
+/-- A polynomial as nested JSON, given `nodesJson` of its pool. -/
+def polyJson (nodes : Array Json) (p : Poly) : Except String Json := do
+  let some json := nodes[p]? | throw s!"polynomial root {p} is not a pool node"
+  return json
+
+def polysJson (nodes : Array Json) (ps : Array Poly) : Except String Json :=
+  return js (← ps.mapM (polyJson nodes))
 
 partial def Ty.toJson : Ty → Json
   | .field => tagged "kind" "field"
@@ -428,58 +449,59 @@ def Program.toJson (p : Program) : Json :=
       ("function", js entry.function), ("inputs", js (entry.inputs.map IOType.toJson)),
       ("output", (entry.output.map IOType.toJson).getD Json.null)]))]
 
-def Action.toJson : Action → Except String Json
-  | .assign dest values => do return tagged "op" "assign" [("dest", js dest), ("values", ← polysJson values)]
-  | .inverse dest value => do return tagged "op" "inverse" [("dest", js dest), ("value", ← polyJson value)]
+def Action.toJson (n : Array Json) : Action → Except String Json
+  | .assign dest values => do return tagged "op" "assign" [("dest", js dest), ("values", ← polysJson n values)]
+  | .inverse dest value => do return tagged "op" "inverse" [("dest", js dest), ("value", ← polyJson n value)]
   | .choose dest tests => do return tagged "op" "choose" [("dest", js dest),
-      ("tests", js (← tests.mapM polysJson))]
+      ("tests", js (← tests.mapM (polysJson n)))]
   | .failure dest differences => do return tagged "op" "failure" [("dest", js dest),
-      ("differences", ← polysJson differences)]
+      ("differences", ← polysJson n differences)]
   | .call name args dest => do return tagged "op" "call" [("name", js name), ("dest", js dest),
-      ("args", ← polysJson args)]
+      ("args", ← polysJson n args)]
   | .store type values dest => do return tagged "op" "store" [("type", type.toJson),
-      ("values", ← polysJson values), ("dest", js dest)]
+      ("values", ← polysJson n values), ("dest", js dest)]
   | .load type address dest => do return tagged "op" "load" [("type", type.toJson),
-      ("address", ← polyJson address), ("dest", js dest)]
+      ("address", ← polyJson n address), ("dest", js dest)]
   | .hint channel instruction type keyType key dest => do
     return tagged "op" "hint" [("channel", js channel), ("instruction", js instruction), ("type", type.toJson),
-       ("key_type", keyType.toJson), ("key", ← polysJson key), ("dest", js dest)]
+       ("key_type", keyType.toJson), ("key", ← polysJson n key), ("dest", js dest)]
 
-def FunctionPlan.toJson (f : FunctionPlan) : Except String Json := do
+def FunctionPlan.toJson (n : Array Json) (f : FunctionPlan) : Except String Json := do
   let steps ← f.steps.mapM fun step => do
-    return obj [("guard", ← polyJson step.guard), ("action", ← step.action.toJson)]
+    return obj [("guard", ← polyJson n step.guard), ("action", ← step.action.toJson n)]
   let writes ← f.writes.mapM fun w => do
-    return obj [("column", js w.column), ("source", js w.source), ("guard", ← polyJson w.guard)]
+    return obj [("column", js w.column), ("source", js w.source), ("guard", ← polyJson n w.guard)]
   return obj [("name", js f.name), ("chip", js f.chip), ("witnesses", js f.witnesses),
     ("inputs", js f.inputs), ("output", js f.output), ("steps", js steps), ("writes", js writes)]
 
-def Chip.toJson (c : Chip) : Except String Json := do
+def Chip.toJson (n : Array Json) (c : Chip) : Except String Json := do
   let sends ← c.sends.mapM fun s => do
-    return obj [("channel", js s.channel), ("args", ← polysJson s.args), ("result", js s.result),
-      ("enable", ← polyJson s.enable)]
+    return obj [("channel", js s.channel), ("args", ← polysJson n s.args), ("result", js s.result),
+      ("enable", ← polyJson n s.enable)]
   let memory ← c.memory.mapM fun m => do
-    return obj [("type", m.type.toJson), ("address", ← polyJson m.address),
-      ("values", ← polysJson m.values), ("enable", ← polyJson m.enable)]
+    return obj [("type", m.type.toJson), ("address", ← polyJson n m.address),
+      ("values", ← polysJson n m.values), ("enable", ← polyJson n m.enable)]
   return obj [("name", js c.name), ("width", js c.width), ("activation", js c.activation),
-    ("inputs", js c.inputs), ("output", ← polysJson c.output),
-    ("constraints", ← polysJson c.constraints), ("sends", js sends), ("memory", js memory)]
+    ("inputs", js c.inputs), ("output", ← polysJson n c.output),
+    ("constraints", ← polysJson n c.constraints), ("sends", js sends), ("memory", js memory)]
 
-def Group.toJson (g : Group) : Except String Json := do
+def Group.toJson (n : Array Json) (g : Group) : Except String Json := do
   let sends ← g.sends.mapM fun s => do
-    return obj [("enable", ← polyJson s.enable), ("args", ← polysJson s.args)]
+    return obj [("enable", ← polyJson n s.enable), ("args", ← polysJson n s.args)]
   let members ← g.members.mapM fun m => do
     let writes ← m.writes.mapM fun w => do
-      return obj [("column", js w.column), ("value", ← polyJson w.value)]
+      return obj [("column", js w.column), ("value", ← polyJson n w.value)]
     return obj [("name", js m.name), ("columns", js m.columns), ("selector", js m.selector),
       ("writes", js writes)]
-  return obj [("name", js g.name), ("width", js g.width), ("activation", ← polyJson g.activation),
-    ("constraints", ← polysJson g.constraints), ("receive", ← polysJson g.receive),
+  return obj [("name", js g.name), ("width", js g.width), ("activation", ← polyJson n g.activation),
+    ("constraints", ← polysJson n g.constraints), ("receive", ← polysJson n g.receive),
     ("sends", js sends), ("members", js members)]
 
 def Trace.toJson (t : Trace) : Except String Json := do
+  let n ← nodesJson t.nodes
   return obj [("version", js t.version), ("modulus", js t.modulus.toNat),
-    ("functions", js (← t.functions.mapM FunctionPlan.toJson)),
-    ("chips", js (← t.chips.mapM Chip.toJson)), ("groups", js (← t.groups.mapM Group.toJson))]
+    ("functions", js (← t.functions.mapM (FunctionPlan.toJson n))),
+    ("chips", js (← t.chips.mapM (Chip.toJson n))), ("groups", js (← t.groups.mapM (Group.toJson n)))]
 
 /-- The diagnostic JSON package `{"program", "trace"}`. -/
 def RuntimeImage.toJson (image : RuntimeImage) : Except String Json := do

@@ -284,6 +284,12 @@ opaque System.prove (system : @& System) (request : @& Request) (output : @& Str
 @[extern "rs_formal_resources"]
 opaque resources : IO Resources
 
+/-- The version of the binary artifact format (`AIURIMG`) this build reads
+and writes. Compiled-program cache keys include it, so files of another
+version are never looked up. -/
+@[extern "rs_formal_artifact_version"]
+opaque artifactVersion : IO Nat
+
 /-- The executors linked into this build: `interpreter`, and the committed
 native executors. -/
 @[extern "rs_formal_executors"]

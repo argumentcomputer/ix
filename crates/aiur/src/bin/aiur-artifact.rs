@@ -4,8 +4,8 @@
 //!   [--source-hex HEX] [--key K]`: validate a JSON package
 //!   (`{"program": ..., "trace": ...}`) and write it as a binary artifact.
 //! - `aiur-artifact json IN.aiur OUT.json`: export the diagnostic JSON form.
-//! - `aiur-artifact info IN.aiur`: print the header, metadata, section sizes
-//!   and digests.
+//! - `aiur-artifact info IN.aiur`: print the header, metadata, compressed and
+//!   section sizes, pool sizes and digests.
 //! - `aiur-artifact compare A B`: report the first component in which two
 //!   artifacts (binary, or JSON when the name ends in `.json`) differ; exits
 //!   with status 1 when they do. Metadata is not compared.
@@ -124,34 +124,40 @@ fn hex(bytes: &[u8]) -> String {
 fn info(path: &Path) -> Result<(), String> {
   let bytes = std::fs::read(path)
     .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-  let package = artifact::read(path)?;
-  let sections = artifact::sections(&bytes)?;
-  let digest = artifact::content_digest(&package.program, &package.trace)?;
+  let (package, identity) = artifact::read_identified(path)?;
+  let layout = artifact::layout(&bytes)?;
   let m = &package.metadata;
   println!("magic     {:?}", String::from_utf8_lossy(&artifact::MAGIC));
   println!("version   {}", artifact::VERSION);
   println!("modulus   {}", package.program.modulus);
-  println!("name      {}", m.name);
   println!("compiler  {}", m.compiler);
+  println!("name      {}", m.name);
   println!("source    {}", hex(&m.source));
   println!("key       {}", m.key);
-  for (tag, len) in sections {
-    let name = match tag {
+  println!("file      {} bytes", bytes.len());
+  println!("body      {} bytes, {} compressed", layout.body, layout.compressed);
+  for (tag, len) in &layout.sections {
+    let name = match *tag {
       artifact::SECTION_METADATA => "metadata",
+      artifact::SECTION_ROWS => "rows",
       artifact::SECTION_BYTECODE => "bytecode",
+      artifact::SECTION_NODES => "nodes",
       artifact::SECTION_TRACE => "trace",
       _ => "groups",
     };
     println!("section   {tag} {name}: {len} bytes");
   }
   println!(
-    "contents  {} functions, {} chips, {} groups",
+    "contents  {} functions, {} chips, {} groups, {} distinct table rows, \
+     {} polynomial nodes",
     package.program.functions.len(),
     package.trace.chips.len(),
-    package.trace.groups.len()
+    package.trace.groups.len(),
+    layout.rows,
+    layout.nodes
   );
-  println!("content   {}", hex(&digest));
-  println!("file      {}", hex(&bytes[bytes.len() - 32..]));
+  println!("content   {}", hex(&identity));
+  println!("digest    {}", hex(&bytes[bytes.len() - 32..]));
   Ok(())
 }
 

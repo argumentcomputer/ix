@@ -1,17 +1,24 @@
 //! Versioned binary encoding of a compiler artifact: the bytecode
 //! [`Program`] and its [`TraceArtifact`], with identifying [`Metadata`].
 //!
-//! # Format, version 1
+//! # Format, version 2
 //!
-//! All integers are little-endian. A file is `header ‖ sections ‖ digest`.
+//! All integers are little-endian. A file is `header ‖ body ‖ digest`.
 //!
 //! - header: [`MAGIC`] (8 bytes), [`VERSION`] `u32`, flags `u32` (must be
-//!   zero), field modulus `u64`.
-//! - exactly four sections, in order, each `tag u32 ‖ length u64 ‖
-//!   payload[length]`: 1 METADATA, 2 BYTECODE, 3 TRACE, 4 GROUPS. Each
-//!   payload must be consumed exactly.
-//! - digest: BLAKE3 of every preceding byte. Nothing may follow it. The
-//!   digest is verified before any section is parsed.
+//!   zero), field modulus `u64`, compiler `str` (the identity of the
+//!   compiler that produced the program, at most [`MAX_COMPILER_LEN`]
+//!   bytes), body length `u64` (at most [`MAX_BODY_LEN`]).
+//! - body: one zstd frame ([`ZSTD_LEVEL`]) that decompresses to exactly the
+//!   body length. Decompressed, it is exactly six sections, in order, each
+//!   `tag u32 ‖ length u64 ‖ payload[length]`: 1 METADATA, 2 ROWS,
+//!   3 BYTECODE, 4 NODES, 5 TRACE, 6 GROUPS. Each payload must be consumed
+//!   exactly.
+//! - digest: BLAKE3 of every preceding byte of the file. Nothing may follow
+//!   it. The digest is verified before the body is decompressed.
+//!
+//! A file of another version is rejected; version 1 files (no sharing, no
+//! compression) name the cause.
 //!
 //! Primitives: `count` is a `u64` element count, rejected when it exceeds
 //! the bytes remaining in the enclosing section (every element occupies at
@@ -26,18 +33,14 @@
 //! - `IoType`: tag 0 Field, 1 Tuple(IoType*), 2 Array(IoType ‖ length
 //!   usize), 3 Struct(name ‖ (str ‖ IoType)*), 4 Enum(name ‖ (str ‖
 //!   IoType*)*). Types nest at most [`MAX_NESTING`] deep.
-//! - `Polynomial`: `count (≥ 1) ‖ node*`, the polynomial being the last
-//!   node. A node is tag 0 Const(field), 1 Var(usize), or 2 Add / 3 Sub /
-//!   4 Mul(a usize ‖ b usize), where `a` and `b` index earlier nodes. Every
-//!   node but the last is referenced exactly once, so the list is a tree.
-//!   Encoding and decoding do not recurse: polynomials can be very deep.
-//! - METADATA: name str ‖ compiler str ‖ source 32 bytes ‖ key str.
-//! - BYTECODE ([`program_bytes`]): version u32 ‖ modulus u64 ‖ functions
-//!   (name ‖ params Type* ‖ result Type ‖ registers usize ‖ code
-//!   Instruction*) ‖ enums (name ‖ constructors (name ‖ fields Type*)) ‖
-//!   tables (name ‖ Type ‖ rows (field*)*) ‖ maps (name ‖ params Type* ‖
-//!   result Type ‖ input usize ‖ output usize) ‖ entries (name ‖ function
-//!   usize ‖ inputs IoType* ‖ output option<IoType>).
+//! - METADATA: name str ‖ source 32 bytes ‖ key str.
+//! - ROWS: the distinct rows of all fixed tables, `(field*)*`.
+//! - BYTECODE: version u32 ‖ modulus u64 ‖ functions (name ‖ params Type* ‖
+//!   result Type ‖ registers usize ‖ code Instruction*) ‖ enums (name ‖
+//!   constructors (name ‖ fields Type*)) ‖ tables (name ‖ Type ‖ rows
+//!   usize*, each an index into ROWS) ‖ maps (name ‖ params Type* ‖ result
+//!   Type ‖ input usize ‖ output usize) ‖ entries (name ‖ function usize ‖
+//!   inputs IoType* ‖ output option<IoType>).
 //!   Instruction tags: 0 Literal(dest ‖ value field), 1 Copy(dest* ‖
 //!   source*), 2 Neg(dest ‖ source), 3 Binary(dest ‖ operator u8 (0 Add,
 //!   1 Sub, 2 Mul, 3 Div) ‖ left ‖ right), 4 Guard((usize ‖ field)* ‖
@@ -47,13 +50,17 @@
 //!   ‖ key* ‖ dest*), 11 AssertEq(left* ‖ right* ‖ message option<str> ‖
 //!   runtime_check bool), 12 Ret(value*), 13 Fail(message str). Register
 //!   and index operands are `usize`.
+//! - NODES: the polynomial node pool ([`pool`]), `node*`. A node is tag
+//!   0 Const(field), 1 Var(usize), or 2 Add / 3 Sub / 4 Mul(a usize ‖ b
+//!   usize), where `a` and `b` index earlier nodes. A polynomial `P` in
+//!   TRACE and GROUPS is a `usize` naming its root node; the polynomials
+//!   expand to at most [`pool::MAX_EXPANDED_NODES`] nodes in total.
 //! - TRACE: version u32 ‖ modulus u64 ‖ functions (name ‖ chip str ‖
-//!   witnesses usize ‖ inputs usize* ‖ output usize* ‖ steps (guard
-//!   Polynomial ‖ Action) ‖ writes (column ‖ source ‖ guard Polynomial)) ‖
-//!   chips (name ‖ width ‖ activation ‖ inputs usize* ‖ output Polynomial*
-//!   ‖ constraints Polynomial* ‖ sends (channel str ‖ args Polynomial* ‖
-//!   result usize* ‖ enable Polynomial) ‖ memory (Type ‖ address
-//!   Polynomial ‖ values Polynomial* ‖ enable Polynomial)).
+//!   witnesses usize ‖ inputs usize* ‖ output usize* ‖ steps (guard P ‖
+//!   Action) ‖ writes (column ‖ source ‖ guard P)) ‖ chips (name ‖ width ‖
+//!   activation ‖ inputs usize* ‖ output P* ‖ constraints P* ‖ sends
+//!   (channel str ‖ args P* ‖ result usize* ‖ enable P) ‖ memory (Type ‖
+//!   address P ‖ values P* ‖ enable P)).
 //!   Action tags: 0 Assign(dest* ‖ values P*), 1 Inverse(dest ‖ value P),
 //!   2 Choose(dest* ‖ tests (P*)*), 3 Failure(dest* ‖ differences P*),
 //!   4 Call(name str ‖ args P* ‖ dest*), 5 Store(Type ‖ values P* ‖ dest),
@@ -63,9 +70,19 @@
 //!   receive P* ‖ sends (enable P ‖ args P*) ‖ members (name ‖ columns
 //!   usize* ‖ selector usize ‖ writes (column usize ‖ value P))).
 //!
+//! Both pools are canonical, so a program has exactly one encoding: ROWS
+//! lists each distinct row once, in the order the tables first reference
+//! it, and NODES is the pool [`pool::Interner`] builds for the
+//! polynomials of TRACE and then GROUPS, in order. The decoder rejects any
+//! other pool. The program's identity ([`content_digest`]) is BLAKE3 over
+//! the uncompressed ROWS, BYTECODE, NODES, TRACE and GROUPS payloads, so it
+//! depends on neither metadata, header nor compression.
+//!
 //! The header, bytecode and trace moduli must agree. Decoding validates
 //! structure only; [`Program::check`] and [`crate::trace::TracePlan::new`]
 //! validate meaning.
+pub mod pool;
+
 use crate::bytecode::{
   Binary, Constructor, Entry, Enum, Function, Instruction, Map, Program, Table,
   Type,
@@ -76,29 +93,45 @@ use crate::trace::{
   TraceArtifact,
 };
 use crate::value::IoType;
+use pool::{Interner, Node, Pool};
+use rustc_hash::FxHashMap;
 use std::io::Write as _;
 use std::path::Path;
 
 pub const MAGIC: [u8; 8] = *b"AIURIMG\0";
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 /// The deepest nesting of a `Type` or `IoType` the decoder accepts.
 pub const MAX_NESTING: usize = 256;
+/// The longest compiler identity a header may carry.
+pub const MAX_COMPILER_LEN: usize = 1024;
+/// The largest uncompressed body a decoder allocates.
+pub const MAX_BODY_LEN: u64 = 1 << 30;
+/// The zstd level files are written with. Readers accept any level.
+pub const ZSTD_LEVEL: i32 = 3;
 
 pub const SECTION_METADATA: u32 = 1;
-pub const SECTION_BYTECODE: u32 = 2;
-pub const SECTION_TRACE: u32 = 3;
-pub const SECTION_GROUPS: u32 = 4;
-const SECTIONS: [u32; 4] =
-  [SECTION_METADATA, SECTION_BYTECODE, SECTION_TRACE, SECTION_GROUPS];
+pub const SECTION_ROWS: u32 = 2;
+pub const SECTION_BYTECODE: u32 = 3;
+pub const SECTION_NODES: u32 = 4;
+pub const SECTION_TRACE: u32 = 5;
+pub const SECTION_GROUPS: u32 = 6;
+const SECTIONS: [u32; 6] = [
+  SECTION_METADATA,
+  SECTION_ROWS,
+  SECTION_BYTECODE,
+  SECTION_NODES,
+  SECTION_TRACE,
+  SECTION_GROUPS,
+];
 
-const HEADER_LEN: usize = 24;
 const DIGEST_LEN: usize = 32;
-const CONTENT_DOMAIN: &[u8] = b"aiur-image-content/1\0";
+const CONTENT_DOMAIN: &[u8] = b"aiur-image-content/2\0";
 
 /// Identifies where an artifact came from. Not part of [`content_digest`].
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Metadata {
   pub name: String,
+  /// The producing compiler's identity, carried in the file header.
   pub compiler: String,
   pub source: [u8; 32],
   pub key: String,
@@ -430,7 +463,9 @@ fn read_io_type_at(r: &mut Reader<'_>, depth: usize) -> Result<IoType, String> {
   }
 }
 
-/// Writes `polynomial` as a post-order node list, without recursion.
+/// Writes `polynomial` as a post-order node list in which every node but
+/// the last is an operand exactly once, without recursion: the tree encoding
+/// that population-description fingerprints cover. It is not a file section.
 pub fn write_polynomial(
   w: &mut Writer,
   polynomial: &Polynomial,
@@ -484,73 +519,6 @@ pub fn write_polynomial(
   Ok(())
 }
 
-pub fn read_polynomial(r: &mut Reader<'_>) -> Result<Polynomial, String> {
-  let count = r.count()?;
-  if count == 0 {
-    return Err("empty polynomial".into());
-  }
-  let mut nodes: Vec<Option<Polynomial>> = Vec::with_capacity(count);
-  let result = read_nodes(r, count, &mut nodes);
-  let root = match result {
-    Ok(()) => nodes.pop().flatten(),
-    Err(e) => {
-      nodes.drain(..).flatten().for_each(dismantle);
-      return Err(e);
-    },
-  };
-  if nodes.iter().any(Option::is_some) {
-    nodes.drain(..).flatten().for_each(dismantle);
-    root.into_iter().for_each(dismantle);
-    return Err("unreferenced polynomial node".into());
-  }
-  root.ok_or_else(|| "polynomial has no root".into())
-}
-
-fn read_nodes(
-  r: &mut Reader<'_>,
-  count: usize,
-  nodes: &mut Vec<Option<Polynomial>>,
-) -> Result<(), String> {
-  for index in 0..count {
-    let node = match r.u8()? {
-      0 => Polynomial::Const(r.field()?),
-      1 => Polynomial::Var(r.usize()?),
-      tag @ 2..=4 => {
-        let a = r.usize()?;
-        let b = r.usize()?;
-        if a >= index || b >= index {
-          return Err(format!(
-            "polynomial node {index} references a later node"
-          ));
-        }
-        let mut operand = |i: usize| {
-          nodes
-            .get_mut(i)
-            .and_then(Option::take)
-            .ok_or_else(|| format!("polynomial node {i} is shared"))
-        };
-        let left = operand(a)?;
-        let right = match operand(b) {
-          Ok(right) => right,
-          Err(e) => {
-            dismantle(left);
-            return Err(e);
-          },
-        };
-        let pair = Box::new([left, right]);
-        match tag {
-          2 => Polynomial::Add(pair),
-          3 => Polynomial::Sub(pair),
-          _ => Polynomial::Mul(pair),
-        }
-      },
-      v => return Err(format!("invalid polynomial node tag {v}")),
-    };
-    nodes.push(Some(node));
-  }
-  Ok(())
-}
-
 /// Drops a polynomial without recursion; the derived drop of a deep tree
 /// would exhaust the stack.
 pub fn dismantle(polynomial: Polynomial) {
@@ -566,14 +534,123 @@ pub fn dismantle(polynomial: Polynomial) {
   }
 }
 
-fn write_polynomials(w: &mut Writer, ps: &[Polynomial]) -> Result<(), String> {
-  w.sequence(ps, write_polynomial)
+fn write_poly(
+  w: &mut Writer,
+  nodes: &mut Interner,
+  polynomial: &Polynomial,
+) -> Result<(), String> {
+  w.usize(nodes.intern(polynomial)?);
+  Ok(())
 }
 
-fn read_polynomials(r: &mut Reader<'_>) -> Result<Vec<Polynomial>, String> {
-  r.sequence(read_polynomial)
+fn write_polys(
+  w: &mut Writer,
+  nodes: &mut Interner,
+  ps: &[Polynomial],
+) -> Result<(), String> {
+  w.sequence(ps, |w, p| write_poly(w, nodes, p))
 }
 
+fn read_poly(
+  r: &mut Reader<'_>,
+  nodes: &mut Pool,
+) -> Result<Polynomial, String> {
+  nodes.expand(r.usize()?)
+}
+
+fn read_polys(
+  r: &mut Reader<'_>,
+  nodes: &mut Pool,
+) -> Result<Vec<Polynomial>, String> {
+  r.sequence(|r| read_poly(r, nodes))
+}
+
+fn write_nodes(w: &mut Writer, nodes: &[Node]) -> Result<(), String> {
+  w.sequence(nodes, |w, &node| {
+    w.u8(node.tag());
+    match node {
+      Node::Const(value) => w.field(value)?,
+      Node::Var(index) => w.usize(index),
+      Node::Add(a, b) | Node::Sub(a, b) | Node::Mul(a, b) => {
+        w.usize(a);
+        w.usize(b);
+      },
+    }
+    Ok(())
+  })
+}
+
+fn read_nodes(r: &mut Reader<'_>, modulus: u64) -> Result<Pool, String> {
+  let count = r.count()?;
+  let mut pool = Pool::new(modulus, true);
+  for _ in 0..count {
+    let tag = r.u8()?;
+    let node = match tag {
+      0 => Node::Const(r.field()?),
+      1 => Node::Var(r.usize()?),
+      _ => Node::from_parts(tag, r.usize()?, r.usize()?)?,
+    };
+    pool.push(node)?;
+  }
+  Ok(pool)
+}
+
+/// The distinct table rows of a program, in the order its tables first
+/// reference them.
+#[derive(Default)]
+struct RowInterner<'a> {
+  rows: Vec<&'a [u64]>,
+  index: FxHashMap<&'a [u64], usize>,
+}
+
+impl<'a> RowInterner<'a> {
+  fn intern(&mut self, row: &'a [u64]) -> usize {
+    let next = self.rows.len();
+    *self.index.entry(row).or_insert_with(|| {
+      self.rows.push(row);
+      next
+    })
+  }
+}
+
+/// The rows of a ROWS section; tables must reference them in canonical
+/// order, each new row being the next unreferenced one.
+struct Rows {
+  rows: Vec<Vec<u64>>,
+  reached: usize,
+}
+
+impl Rows {
+  fn read(r: &mut Reader<'_>) -> Result<Self, String> {
+    let rows = r.sequence(|r| r.sequence(Reader::field))?;
+    let mut seen = rustc_hash::FxHashSet::default();
+    if let Some(i) = rows.iter().position(|row| !seen.insert(row.as_slice())) {
+      return Err(format!("table row {i} repeats an earlier row"));
+    }
+    Ok(Self { rows, reached: 0 })
+  }
+
+  fn take(&mut self, index: usize) -> Result<Vec<u64>, String> {
+    if index > self.reached || index >= self.rows.len() {
+      return Err(format!(
+        "table row {index} is out of canonical order (expected at most {})",
+        self.reached
+      ));
+    }
+    if index == self.reached {
+      self.reached += 1;
+    }
+    Ok(self.rows[index].clone())
+  }
+
+  fn finish(&self) -> Result<(), String> {
+    if self.reached == self.rows.len() {
+      Ok(())
+    } else {
+      Err(format!("table row {} is unreferenced", self.reached))
+    }
+  }
+}
 fn write_tests(w: &mut Writer, tests: &[(usize, u64)]) -> Result<(), String> {
   w.sequence(tests, |w, &(register, value)| {
     w.usize(register);
@@ -726,7 +803,11 @@ fn read_instruction(r: &mut Reader<'_>) -> Result<Instruction, String> {
   })
 }
 
-fn write_program(w: &mut Writer, program: &Program) -> Result<(), String> {
+fn write_program<'p>(
+  w: &mut Writer,
+  program: &'p Program,
+  mut rows: impl FnMut(&mut Writer, &'p Table) -> Result<(), String>,
+) -> Result<(), String> {
   w.u32(program.version);
   w.u64(program.modulus);
   w.sequence(&program.functions, |w, f| {
@@ -744,11 +825,12 @@ fn write_program(w: &mut Writer, program: &Program) -> Result<(), String> {
       Ok(())
     })
   })?;
-  w.sequence(&program.tables, |w, t| {
+  w.count(program.tables.len());
+  for t in &program.tables {
     w.str(&t.name);
     write_type(w, &t.r#type);
-    w.sequence(&t.rows, |w, row| w.sequence(row, |w, &v| w.field(v)))
-  })?;
+    rows(w, t)?;
+  }
   w.sequence(&program.maps, |w, m| {
     w.str(&m.name);
     write_types(w, &m.params);
@@ -775,7 +857,11 @@ fn write_program(w: &mut Writer, program: &Program) -> Result<(), String> {
   })
 }
 
-fn read_program(r: &mut Reader<'_>, modulus: u64) -> Result<Program, String> {
+fn read_program(
+  r: &mut Reader<'_>,
+  modulus: u64,
+  rows: &mut Rows,
+) -> Result<Program, String> {
   let version = r.u32()?;
   let program_modulus = r.u64()?;
   if program_modulus != modulus {
@@ -802,7 +888,7 @@ fn read_program(r: &mut Reader<'_>, modulus: u64) -> Result<Program, String> {
     Ok(Table {
       name: r.str()?,
       r#type: read_type(r)?,
-      rows: r.sequence(|r| r.sequence(Reader::field))?,
+      rows: r.sequence(|r| rows.take(r.usize()?))?,
     })
   })?;
   let maps = r.sequence(|r| {
@@ -833,46 +919,50 @@ fn read_program(r: &mut Reader<'_>, modulus: u64) -> Result<Program, String> {
   })
 }
 
-fn write_action(w: &mut Writer, action: &Action) -> Result<(), String> {
+fn write_action(
+  w: &mut Writer,
+  n: &mut Interner,
+  action: &Action,
+) -> Result<(), String> {
   match action {
     Action::Assign { dest, values } => {
       w.u8(0);
       w.usizes(dest);
-      write_polynomials(w, values)
+      write_polys(w, n, values)
     },
     Action::Inverse { dest, value } => {
       w.u8(1);
       w.usize(*dest);
-      write_polynomial(w, value)
+      write_poly(w, n, value)
     },
     Action::Choose { dest, tests } => {
       w.u8(2);
       w.usizes(dest);
-      w.sequence(tests, |w, test| write_polynomials(w, test))
+      w.sequence(tests, |w, test| write_polys(w, n, test))
     },
     Action::Failure { dest, differences } => {
       w.u8(3);
       w.usizes(dest);
-      write_polynomials(w, differences)
+      write_polys(w, n, differences)
     },
     Action::Call { name, args, dest } => {
       w.u8(4);
       w.str(name);
-      write_polynomials(w, args)?;
+      write_polys(w, n, args)?;
       w.usizes(dest);
       Ok(())
     },
     Action::Store { r#type, values, dest } => {
       w.u8(5);
       write_type(w, r#type);
-      write_polynomials(w, values)?;
+      write_polys(w, n, values)?;
       w.usize(*dest);
       Ok(())
     },
     Action::Load { r#type, address, dest } => {
       w.u8(6);
       write_type(w, r#type);
-      write_polynomial(w, address)?;
+      write_poly(w, n, address)?;
       w.usizes(dest);
       Ok(())
     },
@@ -882,36 +972,35 @@ fn write_action(w: &mut Writer, action: &Action) -> Result<(), String> {
       w.usize(*instruction);
       write_type(w, r#type);
       write_type(w, key_type);
-      write_polynomials(w, key)?;
+      write_polys(w, n, key)?;
       w.usizes(dest);
       Ok(())
     },
   }
 }
 
-fn read_action(r: &mut Reader<'_>) -> Result<Action, String> {
+fn read_action(r: &mut Reader<'_>, n: &mut Pool) -> Result<Action, String> {
   Ok(match r.u8()? {
-    0 => Action::Assign { dest: r.usizes()?, values: read_polynomials(r)? },
-    1 => Action::Inverse { dest: r.usize()?, value: read_polynomial(r)? },
-    2 => {
-      Action::Choose { dest: r.usizes()?, tests: r.sequence(read_polynomials)? }
+    0 => Action::Assign { dest: r.usizes()?, values: read_polys(r, n)? },
+    1 => Action::Inverse { dest: r.usize()?, value: read_poly(r, n)? },
+    2 => Action::Choose {
+      dest: r.usizes()?,
+      tests: r.sequence(|r| read_polys(r, n))?,
     },
-    3 => {
-      Action::Failure { dest: r.usizes()?, differences: read_polynomials(r)? }
-    },
+    3 => Action::Failure { dest: r.usizes()?, differences: read_polys(r, n)? },
     4 => Action::Call {
       name: r.str()?,
-      args: read_polynomials(r)?,
+      args: read_polys(r, n)?,
       dest: r.usizes()?,
     },
     5 => Action::Store {
       r#type: read_type(r)?,
-      values: read_polynomials(r)?,
+      values: read_polys(r, n)?,
       dest: r.usize()?,
     },
     6 => Action::Load {
       r#type: read_type(r)?,
-      address: read_polynomial(r)?,
+      address: read_poly(r, n)?,
       dest: r.usizes()?,
     },
     7 => Action::Hint {
@@ -919,14 +1008,18 @@ fn read_action(r: &mut Reader<'_>) -> Result<Action, String> {
       instruction: r.usize()?,
       r#type: read_type(r)?,
       key_type: read_type(r)?,
-      key: read_polynomials(r)?,
+      key: read_polys(r, n)?,
       dest: r.usizes()?,
     },
     v => return Err(format!("invalid action tag {v}")),
   })
 }
 
-fn write_trace(w: &mut Writer, trace: &TraceArtifact) -> Result<(), String> {
+fn write_trace(
+  w: &mut Writer,
+  n: &mut Interner,
+  trace: &TraceArtifact,
+) -> Result<(), String> {
   w.u32(trace.version);
   w.u64(trace.modulus);
   w.sequence(&trace.functions, |w, f| {
@@ -936,13 +1029,13 @@ fn write_trace(w: &mut Writer, trace: &TraceArtifact) -> Result<(), String> {
     w.usizes(&f.inputs);
     w.usizes(&f.output);
     w.sequence(&f.steps, |w, step| {
-      write_polynomial(w, &step.guard)?;
-      write_action(w, &step.action)
+      write_poly(w, n, &step.guard)?;
+      write_action(w, n, &step.action)
     })?;
     w.sequence(&f.writes, |w, write| {
       w.usize(write.column);
       w.usize(write.source);
-      write_polynomial(w, &write.guard)
+      write_poly(w, n, &write.guard)
     })
   })?;
   w.sequence(&trace.chips, |w, c| {
@@ -950,19 +1043,19 @@ fn write_trace(w: &mut Writer, trace: &TraceArtifact) -> Result<(), String> {
     w.usize(c.width);
     w.usize(c.activation);
     w.usizes(&c.inputs);
-    write_polynomials(w, &c.output)?;
-    write_polynomials(w, &c.constraints)?;
+    write_polys(w, n, &c.output)?;
+    write_polys(w, n, &c.constraints)?;
     w.sequence(&c.sends, |w, send| {
       w.str(&send.channel);
-      write_polynomials(w, &send.args)?;
+      write_polys(w, n, &send.args)?;
       w.usizes(&send.result);
-      write_polynomial(w, &send.enable)
+      write_poly(w, n, &send.enable)
     })?;
     w.sequence(&c.memory, |w, lookup| {
       write_type(w, &lookup.r#type);
-      write_polynomial(w, &lookup.address)?;
-      write_polynomials(w, &lookup.values)?;
-      write_polynomial(w, &lookup.enable)
+      write_poly(w, n, &lookup.address)?;
+      write_polys(w, n, &lookup.values)?;
+      write_poly(w, n, &lookup.enable)
     })
   })
 }
@@ -970,6 +1063,7 @@ fn write_trace(w: &mut Writer, trace: &TraceArtifact) -> Result<(), String> {
 fn read_trace(
   r: &mut Reader<'_>,
   modulus: u64,
+  n: &mut Pool,
 ) -> Result<TraceArtifact, String> {
   let version = r.u32()?;
   let trace_modulus = r.u64()?;
@@ -985,15 +1079,15 @@ fn read_trace(
       output: r.usizes()?,
       steps: r.sequence(|r| {
         Ok(PopulationStep {
-          guard: read_polynomial(r)?,
-          action: read_action(r)?,
+          guard: read_poly(r, n)?,
+          action: read_action(r, n)?,
         })
       })?,
       writes: r.sequence(|r| {
         Ok(ColumnWrite {
           column: r.usize()?,
           source: r.usize()?,
-          guard: read_polynomial(r)?,
+          guard: read_poly(r, n)?,
         })
       })?,
     })
@@ -1004,22 +1098,22 @@ fn read_trace(
       width: r.usize()?,
       activation: r.usize()?,
       inputs: r.usizes()?,
-      output: read_polynomials(r)?,
-      constraints: read_polynomials(r)?,
+      output: read_polys(r, n)?,
+      constraints: read_polys(r, n)?,
       sends: r.sequence(|r| {
         Ok(Send {
           channel: r.str()?,
-          args: read_polynomials(r)?,
+          args: read_polys(r, n)?,
           result: r.usizes()?,
-          enable: read_polynomial(r)?,
+          enable: read_poly(r, n)?,
         })
       })?,
       memory: r.sequence(|r| {
         Ok(MemoryLookup {
           r#type: read_type(r)?,
-          address: read_polynomial(r)?,
-          values: read_polynomials(r)?,
-          enable: read_polynomial(r)?,
+          address: read_poly(r, n)?,
+          values: read_polys(r, n)?,
+          enable: read_poly(r, n)?,
         })
       })?,
     })
@@ -1035,17 +1129,18 @@ fn read_trace(
 
 fn write_groups(
   w: &mut Writer,
+  n: &mut Interner,
   groups: &[FunctionGroup],
 ) -> Result<(), String> {
   w.sequence(groups, |w, g| {
     w.str(&g.name);
     w.usize(g.width);
-    write_polynomial(w, &g.activation)?;
-    write_polynomials(w, &g.constraints)?;
-    write_polynomials(w, &g.receive)?;
+    write_poly(w, n, &g.activation)?;
+    write_polys(w, n, &g.constraints)?;
+    write_polys(w, n, &g.receive)?;
     w.sequence(&g.sends, |w, send| {
-      write_polynomial(w, &send.enable)?;
-      write_polynomials(w, &send.args)
+      write_poly(w, n, &send.enable)?;
+      write_polys(w, n, &send.args)
     })?;
     w.sequence(&g.members, |w, m| {
       w.str(&m.name);
@@ -1053,25 +1148,25 @@ fn write_groups(
       w.usize(m.selector);
       w.sequence(&m.writes, |w, write| {
         w.usize(write.column);
-        write_polynomial(w, &write.value)
+        write_poly(w, n, &write.value)
       })
     })
   })
 }
 
-fn read_groups(r: &mut Reader<'_>) -> Result<Vec<FunctionGroup>, String> {
+fn read_groups(
+  r: &mut Reader<'_>,
+  n: &mut Pool,
+) -> Result<Vec<FunctionGroup>, String> {
   r.sequence(|r| {
     Ok(FunctionGroup {
       name: r.str()?,
       width: r.usize()?,
-      activation: read_polynomial(r)?,
-      constraints: read_polynomials(r)?,
-      receive: read_polynomials(r)?,
+      activation: read_poly(r, n)?,
+      constraints: read_polys(r, n)?,
+      receive: read_polys(r, n)?,
       sends: r.sequence(|r| {
-        Ok(GroupLookup {
-          enable: read_polynomial(r)?,
-          args: read_polynomials(r)?,
-        })
+        Ok(GroupLookup { enable: read_poly(r, n)?, args: read_polys(r, n)? })
       })?,
       members: r.sequence(|r| {
         Ok(GroupMember {
@@ -1079,7 +1174,7 @@ fn read_groups(r: &mut Reader<'_>) -> Result<Vec<FunctionGroup>, String> {
           columns: r.usizes()?,
           selector: r.usize()?,
           writes: r.sequence(|r| {
-            Ok(GroupWrite { column: r.usize()?, value: read_polynomial(r)? })
+            Ok(GroupWrite { column: r.usize()?, value: read_poly(r, n)? })
           })?,
         })
       })?,
@@ -1090,115 +1185,203 @@ fn read_groups(r: &mut Reader<'_>) -> Result<Vec<FunctionGroup>, String> {
 fn metadata_bytes(metadata: &Metadata) -> Vec<u8> {
   let mut w = Writer::new();
   w.str(&metadata.name);
-  w.str(&metadata.compiler);
   w.raw(&metadata.source);
   w.str(&metadata.key);
   w.into_bytes()
 }
 
-fn read_metadata(r: &mut Reader<'_>) -> Result<Metadata, String> {
-  Ok(Metadata {
-    name: r.str()?,
-    compiler: r.str()?,
-    source: r.array()?,
-    key: r.str()?,
-  })
+fn read_metadata(
+  r: &mut Reader<'_>,
+  compiler: String,
+) -> Result<Metadata, String> {
+  Ok(Metadata { name: r.str()?, compiler, source: r.array()?, key: r.str()? })
 }
 
-/// The canonical BYTECODE section payload.
+/// The bytecode with every table row inline: the canonical encoding that
+/// [`crate::native::native_fingerprint`] covers. It is not a file section.
 pub fn program_bytes(program: &Program) -> Result<Vec<u8>, String> {
   let mut w = Writer::with_modulus(program.modulus);
-  write_program(&mut w, program)?;
+  write_program(&mut w, program, |w, table| {
+    w.sequence(&table.rows, |w, row| w.sequence(row, |w, &v| w.field(v)))
+  })?;
   Ok(w.into_bytes())
 }
 
-fn trace_payload(trace: &TraceArtifact) -> Result<Vec<u8>, String> {
-  let mut w = Writer::with_modulus(trace.modulus);
-  write_trace(&mut w, trace)?;
-  Ok(w.into_bytes())
+/// The canonical ROWS, BYTECODE, NODES, TRACE and GROUPS payloads.
+fn content(
+  program: &Program,
+  trace: &TraceArtifact,
+) -> Result<[Vec<u8>; 5], String> {
+  if trace.modulus != program.modulus {
+    return Err("program and trace moduli differ".into());
+  }
+  content_with(program, trace, || Writer::with_modulus(program.modulus))
 }
 
-fn groups_payload(trace: &TraceArtifact) -> Result<Vec<u8>, String> {
-  let mut w = Writer::with_modulus(trace.modulus);
-  write_groups(&mut w, &trace.groups)?;
-  Ok(w.into_bytes())
+/// The content payloads, written by writers `new` creates.
+fn content_with(
+  program: &Program,
+  trace: &TraceArtifact,
+  new: impl Fn() -> Writer,
+) -> Result<[Vec<u8>; 5], String> {
+  let mut rows = RowInterner::default();
+  let mut bytecode = new();
+  write_program(&mut bytecode, program, |w, table| {
+    w.count(table.rows.len());
+    for row in &table.rows {
+      w.usize(rows.intern(row));
+    }
+    Ok(())
+  })?;
+  let mut row_section = new();
+  row_section
+    .sequence(&rows.rows, |w, row| w.sequence(row, |w, &v| w.field(v)))?;
+  let mut nodes = match new().modulus {
+    Some(modulus) => Interner::with_modulus(modulus),
+    None => Interner::default(),
+  };
+  let mut trace_section = new();
+  write_trace(&mut trace_section, &mut nodes, trace)?;
+  let mut groups = new();
+  write_groups(&mut groups, &mut nodes, &trace.groups)?;
+  let mut node_section = new();
+  write_nodes(&mut node_section, nodes.nodes())?;
+  Ok([
+    row_section.into_bytes(),
+    bytecode.into_bytes(),
+    node_section.into_bytes(),
+    trace_section.into_bytes(),
+    groups.into_bytes(),
+  ])
 }
 
-/// The canonical TRACE section payload followed by the GROUPS payload.
-pub fn trace_bytes(trace: &TraceArtifact) -> Result<Vec<u8>, String> {
-  let mut bytes = trace_payload(trace)?;
-  bytes.extend(groups_payload(trace)?);
-  Ok(bytes)
+fn digest_content<'a>(
+  sections: impl IntoIterator<Item = &'a [u8]>,
+) -> [u8; 32] {
+  let mut hasher = blake3::Hasher::new();
+  hasher.update(CONTENT_DOMAIN);
+  for payload in sections {
+    hasher.update(&(payload.len() as u64).to_le_bytes());
+    hasher.update(payload);
+  }
+  *hasher.finalize().as_bytes()
 }
 
-/// The semantic identity of a program and its trace artifact, independent
-/// of metadata and of the file header.
+/// The program's identity: BLAKE3 over a domain tag and its canonical
+/// uncompressed ROWS, BYTECODE, NODES, TRACE and GROUPS payloads,
+/// independent of metadata, the file header and compression. A decoded
+/// file has the identity [`read_identified`] reports.
 pub fn content_digest(
   program: &Program,
   trace: &TraceArtifact,
 ) -> Result<[u8; 32], String> {
-  let program = program_bytes(program)?;
-  let trace = trace_bytes(trace)?;
-  let mut hasher = blake3::Hasher::new();
-  hasher.update(CONTENT_DOMAIN);
-  hasher.update(&(program.len() as u64).to_le_bytes());
-  hasher.update(&program);
-  hasher.update(&(trace.len() as u64).to_le_bytes());
-  hasher.update(&trace);
-  Ok(*hasher.finalize().as_bytes())
+  let sections = content(program, trace)?;
+  Ok(digest_content(sections.iter().map(Vec::as_slice)))
 }
 
 pub fn encode(package: &Package) -> Result<Vec<u8>, String> {
-  let modulus = package.program.modulus;
-  if package.trace.modulus != modulus {
-    return Err("program and trace moduli differ".into());
+  let compiler = &package.metadata.compiler;
+  if compiler.len() > MAX_COMPILER_LEN {
+    return Err(format!("compiler identity exceeds {MAX_COMPILER_LEN} bytes"));
   }
-  let sections = [
-    metadata_bytes(&package.metadata),
-    program_bytes(&package.program)?,
-    trace_payload(&package.trace)?,
-    groups_payload(&package.trace)?,
-  ];
+  let content = content(&package.program, &package.trace)?;
+  let metadata = metadata_bytes(&package.metadata);
+  let mut body = Writer::new();
+  let payloads = std::iter::once(&metadata).chain(&content);
+  for (tag, payload) in SECTIONS.into_iter().zip(payloads) {
+    body.u32(tag);
+    body.bytes(payload);
+  }
+  let body = body.into_bytes();
+  let compressed = zstd::bulk::compress(&body, ZSTD_LEVEL)
+    .map_err(|e| format!("cannot compress the artifact: {e}"))?;
   let mut w = Writer::new();
   w.raw(&MAGIC);
   w.u32(VERSION);
   w.u32(0);
-  w.u64(modulus);
-  for (tag, payload) in SECTIONS.into_iter().zip(&sections) {
-    w.u32(tag);
-    w.bytes(payload);
-  }
+  w.u64(package.program.modulus);
+  w.str(compiler);
+  w.u64(body.len() as u64);
+  w.raw(&compressed);
   let digest = blake3::hash(w.as_bytes());
   w.raw(digest.as_bytes());
   Ok(w.into_bytes())
 }
 
-/// The modulus and the four section payloads of a well-formed file.
-fn frame(bytes: &[u8]) -> Result<(u64, [&[u8]; 4]), String> {
+/// A file's header fields and its decompressed body.
+struct Frame {
+  modulus: u64,
+  compiler: String,
+  compressed: usize,
+  body: Vec<u8>,
+}
+
+fn frame(bytes: &[u8]) -> Result<Frame, String> {
   let mut header = Reader::new(bytes);
   if header.array::<8>().ok() != Some(MAGIC) {
     return Err("not an Aiur artifact (bad magic)".into());
   }
-  let version = header.u32()?;
-  if version != VERSION {
-    return Err(format!(
-      "unsupported artifact version {version} (expected {VERSION})"
-    ));
+  match header.u32()? {
+    VERSION => {},
+    1 => {
+      return Err(
+        "artifact format version 1 is no longer read (this ix reads version \
+         2). A cached program is recompiled automatically; recompile an \
+         explicitly selected artifact with this ix"
+          .into(),
+      );
+    },
+    version => {
+      return Err(format!(
+        "unsupported artifact version {version} (expected {VERSION})"
+      ));
+    },
   }
   let flags = header.u32()?;
   if flags != 0 {
     return Err(format!("unsupported artifact flags {flags:#x}"));
   }
   let modulus = header.u64()?;
-  if bytes.len() < HEADER_LEN + DIGEST_LEN {
+  if modulus < 2 {
+    return Err(format!("invalid modulus {modulus}"));
+  }
+  let compiler_len = header.u64()?;
+  if compiler_len > MAX_COMPILER_LEN as u64 {
+    return Err(format!(
+      "compiler identity of {compiler_len} bytes exceeds {MAX_COMPILER_LEN}"
+    ));
+  }
+  let compiler = std::str::from_utf8(header.take(compiler_len as usize)?)
+    .map_err(|e| format!("invalid UTF-8 compiler identity: {e}"))?
+    .to_owned();
+  let body_len = header.u64()?;
+  if body_len > MAX_BODY_LEN {
+    return Err(format!("body of {body_len} bytes exceeds {MAX_BODY_LEN}"));
+  }
+  let start = header.position();
+  if bytes.len() < start + DIGEST_LEN {
     return Err("unexpected end of input".into());
   }
-  let (body, digest) = bytes.split_at(bytes.len() - DIGEST_LEN);
-  if blake3::hash(body).as_bytes() != digest {
+  let (signed, digest) = bytes.split_at(bytes.len() - DIGEST_LEN);
+  if blake3::hash(signed).as_bytes() != digest {
     return Err("artifact digest mismatch".into());
   }
-  let mut r = Reader::new(body.get(HEADER_LEN..).unwrap_or_default());
-  let mut payloads: [&[u8]; 4] = [&[]; 4];
+  let compressed = &signed[start..];
+  let body = zstd::bulk::decompress(compressed, body_len as usize)
+    .map_err(|e| format!("cannot decompress the body: {e}"))?;
+  if body.len() as u64 != body_len {
+    return Err(format!(
+      "body decompresses to {} bytes, not {body_len}",
+      body.len()
+    ));
+  }
+  Ok(Frame { modulus, compiler, compressed: compressed.len(), body })
+}
+
+/// The six section payloads of a decompressed body, in order.
+fn split(body: &[u8]) -> Result<[&[u8]; 6], String> {
+  let mut r = Reader::new(body);
+  let mut payloads: [&[u8]; 6] = [&[]; 6];
   for (expected, payload) in SECTIONS.into_iter().zip(&mut payloads) {
     let tag = r.u32()?;
     if tag != expected {
@@ -1207,23 +1390,49 @@ fn frame(bytes: &[u8]) -> Result<(u64, [&[u8]; 4]), String> {
     *payload = r.bytes()?;
   }
   r.finish().map_err(|e| format!("after the last section: {e}"))?;
-  Ok((modulus, payloads))
+  Ok(payloads)
 }
 
-/// The tag and payload length of each section of a well-formed file.
-pub fn sections(bytes: &[u8]) -> Result<Vec<(u32, u64)>, String> {
-  let (_, payloads) = frame(bytes)?;
-  Ok(
-    SECTIONS
+/// How a well-formed file is laid out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Layout {
+  pub compiler: String,
+  /// Bytes of the zstd-compressed body.
+  pub compressed: u64,
+  /// Bytes of the decompressed body.
+  pub body: u64,
+  /// Each section's tag and payload length, uncompressed.
+  pub sections: Vec<(u32, u64)>,
+  pub rows: u64,
+  pub nodes: u64,
+}
+
+pub fn layout(bytes: &[u8]) -> Result<Layout, String> {
+  let frame = frame(bytes)?;
+  let payloads = split(&frame.body)?;
+  let count =
+    |payload: &[u8]| Reader::new(payload).u64().map_err(|e| e.to_string());
+  Ok(Layout {
+    rows: count(payloads[1])?,
+    nodes: count(payloads[3])?,
+    compiler: frame.compiler,
+    compressed: frame.compressed as u64,
+    body: frame.body.len() as u64,
+    sections: SECTIONS
       .into_iter()
       .zip(payloads)
       .map(|(t, p)| (t, p.len() as u64))
       .collect(),
-  )
+  })
 }
 
-pub fn decode(bytes: &[u8]) -> Result<Package, String> {
-  let (modulus, [metadata, bytecode, trace, groups]) = frame(bytes)?;
+/// Decodes a file and reports its program's identity, computed from the
+/// canonical payloads it holds ([`content_digest`] of the result).
+pub fn decode_identified(bytes: &[u8]) -> Result<(Package, [u8; 32]), String> {
+  let frame = frame(bytes)?;
+  let modulus = frame.modulus;
+  let payloads = split(&frame.body)?;
+  let [metadata, rows, bytecode, nodes, trace, groups] = payloads;
   fn section<T>(
     name: &str,
     payload: &[u8],
@@ -1234,19 +1443,34 @@ pub fn decode(bytes: &[u8]) -> Result<Package, String> {
     let value = parse(&mut r).and_then(|v| r.finish().map(|()| v));
     value.map_err(|e| format!("{name} section at byte {}: {e}", r.position()))
   }
-  let metadata = section("metadata", metadata, modulus, read_metadata)?;
-  let program =
-    section("bytecode", bytecode, modulus, |r| read_program(r, modulus))?;
-  let mut trace = section("trace", trace, modulus, |r| read_trace(r, modulus))?;
-  trace.groups = section("groups", groups, modulus, read_groups)?;
-  Ok(Package { program, trace, metadata })
+  let metadata = section("metadata", metadata, modulus, |r| {
+    read_metadata(r, frame.compiler)
+  })?;
+  let mut rows = section("rows", rows, modulus, Rows::read)?;
+  let program = section("bytecode", bytecode, modulus, |r| {
+    read_program(r, modulus, &mut rows)
+  })?;
+  rows.finish().map_err(|e| format!("rows section: {e}"))?;
+  let mut pool = section("nodes", nodes, modulus, |r| read_nodes(r, modulus))?;
+  let mut trace =
+    section("trace", trace, modulus, |r| read_trace(r, modulus, &mut pool))?;
+  trace.groups =
+    section("groups", groups, modulus, |r| read_groups(r, &mut pool))?;
+  pool.finish().map_err(|e| format!("nodes section: {e}"))?;
+  let identity = digest_content(payloads[1..].iter().copied());
+  Ok((Package { program, trace, metadata }, identity))
+}
+
+pub fn decode(bytes: &[u8]) -> Result<Package, String> {
+  Ok(decode_identified(bytes)?.0)
 }
 
 fn is_json(bytes: &[u8]) -> bool {
   bytes.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'{')
 }
 
-pub fn read(path: &Path) -> Result<Package, String> {
+/// Reads the artifact at `path` and reports its program's identity.
+pub fn read_identified(path: &Path) -> Result<(Package, [u8; 32]), String> {
   let bytes = std::fs::read(path)
     .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
   if is_json(&bytes) {
@@ -1256,9 +1480,12 @@ pub fn read(path: &Path) -> Result<Package, String> {
       path.display()
     ));
   }
-  decode(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+  decode_identified(&bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+pub fn read(path: &Path) -> Result<Package, String> {
+  Ok(read_identified(path)?.0)
+}
 /// Writes `package` to a temporary file beside `path`, syncs it and renames
 /// it over `path`, so readers never observe a partial artifact.
 pub fn write_atomic(path: &Path, package: &Package) -> Result<(), String> {

@@ -165,6 +165,12 @@ extern "C" fn rs_formal_resources() -> LeanIOResult<LeanOwned> {
   })
 }
 
+/// `Ix.FormalProver.artifactVersion : IO Nat`
+#[unsafe(no_mangle)]
+extern "C" fn rs_formal_artifact_version() -> LeanIOResult<LeanOwned> {
+  io(|| Ok(LeanOwned::box_usize(ix_prover::ARTIFACT_VERSION as usize)))
+}
+
 /// `Ix.FormalProver.executors : IO (Array String)`
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_executors() -> LeanIOResult<LeanOwned> {

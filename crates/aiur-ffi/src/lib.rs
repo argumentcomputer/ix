@@ -6,7 +6,9 @@
 //! JSON or intermediate encoding is built. Every constructor's tag and
 //! object-field count is checked against its declared layout, every natural
 //! must be a scalar below `2^63`, every field element must be canonical, and
-//! polynomial node buffers must form trees in post order. Semantic
+//! every node of the trace's polynomial pool must reference only earlier
+//! nodes; polynomials are expanded from the pool without recursion and
+//! within [`aiur::artifact::pool::MAX_EXPANDED_NODES`]. Semantic
 //! validation (register bounds, layouts, hint sites, group placements) stays
 //! in `Program::check_field` and `TracePlan::new`.
 //!
@@ -14,6 +16,7 @@
 //! layout; fields are read through the generated accessors.
 use aiur::{
   Program,
+  artifact::pool::{Node, Pool},
   bytecode::{
     Binary, Constructor, Entry, Enum, Function, Instruction, Map, Table, Type,
   },
@@ -90,8 +93,8 @@ lean_ffi::lean_inductive! {
   LeanGroupWrite [ { num_obj: 2 } ];
   LeanGroupMember [ { num_obj: 4 } ];
   LeanGroup [ { num_obj: 7 } ];
-  /// Four object fields, then `modulus : UInt64`.
-  LeanTrace [ { num_obj: 4, num_64: 1 } ];
+  /// Five object fields, then `modulus : UInt64`.
+  LeanTrace [ { num_obj: 5, num_64: 1 } ];
   LeanRuntimeImage [ { num_obj: 2 } ];
   /// `α × β` stored in a field or an array.
   LeanPair [ { num_obj: 2 } ];
@@ -158,7 +161,7 @@ fn string(object: LeanBorrowed<'_>) -> String {
 
 fn array<T>(
   object: LeanBorrowed<'_>,
-  f: impl Fn(LeanBorrowed<'_>) -> Result<T>,
+  f: impl FnMut(LeanBorrowed<'_>) -> Result<T>,
 ) -> Result<Vec<T>> {
   object.as_array().iter().map(f).collect()
 }
@@ -405,61 +408,41 @@ fn word(bytes: &[u8], at: usize) -> u64 {
   u64::from_le_bytes(bytes[at..at + 8].try_into().expect("eight bytes"))
 }
 
-/// A polynomial from its post-order node buffer, built without recursion.
-pub fn polynomial(bytes: &[u8], modulus: u64) -> Result<Polynomial> {
-  if bytes.is_empty() || !bytes.len().is_multiple_of(24) {
+/// The polynomial pool of a node buffer: three words (tag, a, b) per node,
+/// every operand an earlier node.
+pub fn pool(bytes: &[u8], modulus: u64) -> Result<Pool> {
+  let (nodes, []) = bytes.as_chunks::<24>() else {
     return Err("malformed polynomial nodes".into());
-  }
-  let count = bytes.len() / 24;
-  let mut nodes: Vec<Option<Polynomial>> = Vec::with_capacity(count);
-  for i in 0..count {
-    let (tag, a, b) =
-      (word(bytes, 24 * i), word(bytes, 24 * i + 8), word(bytes, 24 * i + 16));
-    let mut operand = |index: u64| -> Result<Polynomial> {
-      usize::try_from(index)
-        .ok()
-        .filter(|&j| j < i)
-        .and_then(|j| nodes[j].take())
-        .ok_or_else(|| {
-          "polynomial operand is not an unused earlier node".into()
-        })
-    };
+  };
+  let mut pool = Pool::new(modulus, false);
+  for node in nodes {
+    let (tag, a, b) = (word(node, 0), word(node, 8), word(node, 16));
+    let index = |w: u64| usize::try_from(w).map_err(|e| e.to_string());
     let node = match tag {
-      0 => Polynomial::Const(Field(modulus).canonical(a)?),
-      1 => Polynomial::Var(usize::try_from(a).map_err(|e| e.to_string())?),
-      2..=4 => {
-        let left = operand(a)?;
-        let right = operand(b)?;
-        let children = Box::new([left, right]);
-        match tag {
-          2 => Polynomial::Add(children),
-          3 => Polynomial::Sub(children),
-          _ => Polynomial::Mul(children),
-        }
+      0 | 1 if b != 0 => {
+        return Err("leaf polynomial node with a second operand".into());
       },
-      other => return Err(format!("invalid polynomial node tag {other}")),
+      0 => Node::Const(a),
+      _ => {
+        let tag = u8::try_from(tag)
+          .map_err(|e| format!("invalid polynomial node tag {tag}: {e}"))?;
+        Node::from_parts(tag, index(a)?, index(b)?)?
+      },
     };
-    if tag < 2 && b != 0 {
-      return Err("leaf polynomial node with a second operand".into());
-    }
-    nodes.push(Some(node));
+    pool.push(node)?;
   }
-  let root = nodes.pop().flatten().ok_or("missing polynomial root")?;
-  if nodes.iter().any(Option::is_some) {
-    return Err("polynomial node is not an operand".into());
-  }
-  Ok(root)
+  Ok(pool)
 }
 
-fn poly(object: LeanBorrowed<'_>, modulus: u64) -> Result<Polynomial> {
-  polynomial(object.as_byte_array().as_bytes(), modulus)
+fn poly(object: LeanBorrowed<'_>, pool: &mut Pool) -> Result<Polynomial> {
+  pool.expand(nat(object)?)
 }
 
-fn polys(object: LeanBorrowed<'_>, modulus: u64) -> Result<Vec<Polynomial>> {
-  array(object, |p| poly(p, modulus))
+fn polys(object: LeanBorrowed<'_>, pool: &mut Pool) -> Result<Vec<Polynomial>> {
+  array(object, |p| poly(p, pool))
 }
 
-fn action(object: LeanBorrowed<'_>, m: u64) -> Result<Action> {
+fn action(object: LeanBorrowed<'_>, m: &mut Pool) -> Result<Action> {
   let (tag, a) = variant(object, LeanAction, "Action")?;
   Ok(match tag {
     0 => Action::Assign {
@@ -504,7 +487,10 @@ fn action(object: LeanBorrowed<'_>, m: u64) -> Result<Action> {
   })
 }
 
-fn function_plan(object: LeanBorrowed<'_>, m: u64) -> Result<FunctionPlan> {
+fn function_plan(
+  object: LeanBorrowed<'_>,
+  m: &mut Pool,
+) -> Result<FunctionPlan> {
   let f = record(object, LeanFunctionPlan, "FunctionPlan")?;
   Ok(FunctionPlan {
     name: string(f.get_obj(0)),
@@ -530,7 +516,7 @@ fn function_plan(object: LeanBorrowed<'_>, m: u64) -> Result<FunctionPlan> {
   })
 }
 
-fn chip(object: LeanBorrowed<'_>, m: u64) -> Result<Chip> {
+fn chip(object: LeanBorrowed<'_>, m: &mut Pool) -> Result<Chip> {
   let c = record(object, LeanChip, "Chip")?;
   Ok(Chip {
     name: string(c.get_obj(0)),
@@ -560,7 +546,7 @@ fn chip(object: LeanBorrowed<'_>, m: u64) -> Result<Chip> {
   })
 }
 
-fn group(object: LeanBorrowed<'_>, m: u64) -> Result<FunctionGroup> {
+fn group(object: LeanBorrowed<'_>, m: &mut Pool) -> Result<FunctionGroup> {
   let g = record(object, LeanGroup, "Group")?;
   Ok(FunctionGroup {
     name: string(g.get_obj(0)),
@@ -600,12 +586,14 @@ pub fn trace(object: LeanBorrowed<'_>) -> Result<TraceArtifact> {
   if modulus < 2 {
     return Err("invalid modulus".into());
   }
+  let mut nodes = pool(t.get_obj(4).as_byte_array().as_bytes(), modulus)?;
+  let m = &mut nodes;
   Ok(TraceArtifact {
     version: u32::try_from(nat(t.get_obj(0))?).map_err(|e| e.to_string())?,
     modulus,
-    functions: array(t.get_obj(1), |f| function_plan(f, modulus))?,
-    chips: array(t.get_obj(2), |x| chip(x, modulus))?,
-    groups: array(t.get_obj(3), |g| group(g, modulus))?,
+    functions: array(t.get_obj(1), |f| function_plan(f, m))?,
+    chips: array(t.get_obj(2), |x| chip(x, m))?,
+    groups: array(t.get_obj(3), |g| group(g, m))?,
   })
 }
 
@@ -632,22 +620,28 @@ mod tests {
   }
 
   #[test]
-  fn polynomial_nodes_form_a_tree() {
-    let bytes = [node(1, 3, 0), node(0, 5, 0), node(4, 0, 1)].concat();
+  fn polynomial_nodes_form_a_dag() {
+    let bytes =
+      [node(1, 3, 0), node(0, 5, 0), node(4, 0, 1), node(2, 2, 2)].concat();
+    let mut nodes = pool(&bytes, 7).unwrap();
+    let product =
+      Polynomial::Mul(Box::new([Polynomial::Var(3), Polynomial::Const(5)]));
+    assert_eq!(nodes.expand(2).unwrap(), product);
     assert_eq!(
-      polynomial(&bytes, 7).unwrap(),
-      Polynomial::Mul(Box::new([Polynomial::Var(3), Polynomial::Const(5)]))
+      nodes.expand(3).unwrap(),
+      Polynomial::Add(Box::new([product.clone(), product]))
     );
-    let shared = [node(1, 3, 0), node(2, 0, 0)].concat();
-    assert!(polynomial(&shared, 7).is_err());
-    let unused = [node(1, 3, 0), node(1, 4, 0)].concat();
-    assert!(polynomial(&unused, 7).is_err());
+    assert!(nodes.expand(4).is_err());
     let forward = [node(2, 1, 2), node(1, 0, 0), node(1, 1, 0)].concat();
-    assert!(polynomial(&forward, 7).is_err());
-    assert!(polynomial(&node(0, 7, 0), 7).is_err());
-    assert!(polynomial(&node(9, 0, 0), 7).is_err());
-    assert!(polynomial(&[], 7).is_err());
-    assert!(polynomial(&[0; 23], 7).is_err());
+    assert!(pool(&forward, 7).is_err());
+    let own = [node(1, 0, 0), node(2, 0, 1)].concat();
+    assert!(pool(&own, 7).is_err());
+    assert!(pool(&node(0, 7, 0), 7).is_err());
+    assert!(pool(&node(1, 0, 1), 7).is_err());
+    assert!(pool(&node(9, 0, 0), 7).is_err());
+    assert!(pool(&node(1 << 40, 0, 0), 7).is_err());
+    assert!(pool(&[], 7).unwrap().is_empty());
+    assert!(pool(&[0; 23], 7).is_err());
   }
 
   #[test]
@@ -660,7 +654,8 @@ mod tests {
     }
     // Building is iterative; only dropping the tree recurses, so drop it on
     // a thread with room for that.
-    let p = polynomial(&bytes, 7).unwrap();
+    let root = usize::try_from(2 * depth).unwrap();
+    let p = pool(&bytes, 7).unwrap().expand(root).unwrap();
     std::thread::Builder::new()
       .stack_size(1 << 30)
       .spawn(move || drop(p))
