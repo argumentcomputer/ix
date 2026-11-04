@@ -1,4 +1,5 @@
 import Aiur.Trace.Compile
+import Aiur.Trace.Parallel
 import Aiur.Optimized.Activation
 import Aiur.Optimized.Physical
 import Aiur.Optimized.Grouping.Plan
@@ -67,30 +68,48 @@ def putChip [Field F] [DecidableEq F] (encode : F → Nat) (source : Circuit.Chi
     list cell.value.words poly
     poly cell.enable
 
-/-- Replay the actual layout functions to retain their otherwise discarded
-definitions and compaction columns. Equality checks fail closed if either
-compiler evolves without updating its companion metadata. -/
-def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
-    (config : Config) (fn : Function F) (layout : LaidOutChip F) (representative : String)
-    (bytecode : Execution.Function F) (validateInputs : Bool := true) : PutM Unit := do
-  let source ← MonadExcept.ofExcept (Compiler.function program config fn validateInputs)
-  let aliases ← MonadExcept.ofExcept (resolveAliases source.chip)
+/-- The actual layout functions replayed from the source function alone, to
+retain their otherwise discarded definitions and compaction columns. The
+replay does not depend on the certified layout, so it can run while the
+certified compiler runs; `putFunctionOf` then checks it against the layout. -/
+structure Replay (F : Type) where
+  source : Compiler.Result F
+  degree : Degree.State F
+  layout : ColumnLayout
+  /-- The final chip this replay reproduces, before comparison with the layout. -/
+  chip : Circuit.Chip F
+  columns : List Nat
+
+def replayFunction [Field F] [DecidableEq F] (program : Program F) (config : Config)
+    (fn : Function F) (validateInputs : Bool := true) : Except String (Replay F) := do
+  let source ← Compiler.function program config fn validateInputs
+  let aliases ← resolveAliases source.chip
   let propagatedScopes := if config.propagateScopes then ScopedPropagation.transform aliases else aliases
   let simplified := if config.simplifyConstraints then (ConstraintElimination.run propagatedScopes).chip
     else propagatedScopes
-  let degree ← MonadExcept.ofExcept (Degree.boundState config simplified)
-  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
-  let merged := (LookupMerging.run config degree.chip layout.layout).chip
-  let columns ← if config.propagateValues then do
+  let degree ← Degree.boundState config simplified
+  let layout := allocateColumns config degree.chip
+  let merged := (LookupMerging.run config degree.chip layout).chip
+  if config.propagateValues then
     let propagated := Propagation.propagate merged merged.numVars (.identity merged)
     let used := propagated.chip.variables
     let columns := (List.range propagated.chip.numVars).filter (used.contains ·)
-    unless Propagation.compact propagated.chip columns == layout.chip do
-      throw s!"trace final compaction mismatch in {fn.name}"
-    pure columns
-  else do
-    unless merged == layout.chip do throw s!"trace final layout mismatch in {fn.name}"
-    pure (List.range merged.numVars)
+    return ⟨source, degree, layout, Propagation.compact propagated.chip columns, columns⟩
+  else
+    return ⟨source, degree, layout, merged, List.range merged.numVars⟩
+
+/-- Check a replay against the certified layout and write its population
+plan. Equality checks fail closed if either compiler evolves without updating
+its companion metadata. -/
+def putFunctionOf [Field F] [DecidableEq F] (encode : F → Nat) (config : Config)
+    (fn : Function F) (replay : Replay F) (layout : LaidOutChip F) (representative : String)
+    (bytecode : Execution.Function F) : PutM Unit := do
+  let ⟨source, degree, replayed, chip, columns⟩ := replay
+  unless degree.chip == layout.logical do throw s!"trace logical layout mismatch in {fn.name}"
+  unless replayed == layout.layout do throw s!"trace column allocation mismatch in {fn.name}"
+  unless chip == layout.chip do
+    throw (if config.propagateValues then s!"trace final compaction mismatch in {fn.name}"
+      else s!"trace final layout mismatch in {fn.name}")
   let hintPCs := bytecode.code.toList.zipIdx.filterMap fun (op, pc) =>
     match op with | .hint .. => some pc | _ => none
   unless source.hints == hintPCs.length do throw s!"trace hint occurrence mismatch in {fn.name}"
@@ -112,6 +131,13 @@ def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Progra
     putOperation encode hintPCs step.operation
   list writes fun (column, id, guard) => do
     nat column; nat id; putPolynomial encode guard
+
+def putFunction [Field F] [DecidableEq F] (encode : F → Nat) (program : Program F)
+    (config : Config) (fn : Function F) (layout : LaidOutChip F) (representative : String)
+    (bytecode : Execution.Function F) (validateInputs : Bool := true) : PutM Unit := do
+  putFunctionOf encode config fn
+    (← MonadExcept.ofExcept (replayFunction program config fn validateInputs)) layout
+    representative bytecode
 
 def putGroup [Field F] [DecidableEq F] (encode : F → Nat) (group : Grouping.Layout F) :
     PutM Unit := do
@@ -199,11 +225,14 @@ the checked function groups over them. It also returns `exported` with the
 range maps (`depthBytecode`), which the package must carry. -/
 def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
-    (exported : Execution.Export F) (groups : List (String × List String) := []) :
+    (exported : Execution.Export F) (groups : List (String × List String) := [])
+    (replays : Option (List (Except String (Replay F))) := none) :
     Except String (Execution.Export F × ByteArray) := do
   let original := exported.bytecode
   unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
     throw "trace program/function count mismatch"
+  if let some replays := replays then
+    unless replays.length == program.functions.length do throw "trace replay count mismatch"
   let cfg ← depthConfig modulus physical
   let bytecode := depthBytecode cfg original
   let system := Depth.system cfg physical.system
@@ -211,15 +240,16 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
   let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
     else throw s!"unknown grouped callable {name}"
   let mut used : List String := []
-  let mut packed : List (Grouping.Packed F id) := []
+  let mut selected : List (String × List (Circuit.Chip F)) := []
   for (name, names) in groups do
     let names := (names.map physical.representative).dedup
     let chips := system.chips.filter fun c =>
       names.contains c.name && !used.contains c.name && !artifact.entries.contains c.name
     if chips.length < 2 then continue
-    let group ← Grouping.compile name id chips
     used := used ++ chips.map (·.name)
-    packed := packed ++ [⟨chips, group⟩]
+    selected := selected ++ [(name, chips)]
+  let packed ← selected.parMapM fun (name, chips) => do
+    return (⟨chips, ← Grouping.compile name id chips⟩ : Grouping.Packed F id)
   let plan ← Grouping.preparePlan system id packed
   -- The backend theorems (`grouped_activated_heap_sound` and its siblings) assume
   -- `plan.WellFormedActivation`; refuse to export a plan that does not meet it.
@@ -229,10 +259,14 @@ def exportPreparedPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F →
     nat planVersion
     nat modulus
     nats cfg.limbs
-    list ((program.functions.zip artifact.layouts).zip original.functions) fun ((fn, layout), code) => do
+    list ((program.functions.zip artifact.layouts).zip original.functions).zipIdx
+        fun (((fn, layout), code), index) => do
       unless fn.name == code.name do throw "trace bytecode function order mismatch"
-      putFunction encode program artifact.config fn layout (physical.representative fn.name) code
-        (artifact.entries.contains fn.name)
+      let replay ← match replays with
+        | some replays => MonadExcept.ofExcept (replays[index]?.getD (throw "missing trace replay"))
+        | none => MonadExcept.ofExcept (replayFunction program artifact.config fn
+            (artifact.entries.contains fn.name))
+      putFunctionOf encode artifact.config fn replay layout (physical.representative fn.name) code
     list (system.chips.zip physical.system.chips) fun (chip, source) => do
       putChip encode chip
       putDepth cfg source
@@ -244,5 +278,25 @@ def exportPlan [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (exported : Execution.Export F)
     (groups : List (String × List String) := []) : Except String (Execution.Export F × ByteArray) := do
   exportPreparedPlan modulus encode program artifact (← Physical.prepare artifact) exported groups
+
+/-- `exportPlan` of the generic program `source` with entries `entries`, as
+`Generic.Specialized.compileOptimized` compiles it, using every core: the
+certified layouts come from `compileParallel` (proven equal to
+`Optimized.compile`), and the population replays run alongside it, one task
+per function. -/
+def exportPlanParallel [Field F] [DecidableEq F] (modulus : Nat) (encode : F → Nat)
+    (source : Generic.Source F) (entries : List String) (exported : Execution.Export F)
+    (groups : List (String × List String) := []) (config : Config := {}) :
+    IO (Execution.Export F × ByteArray) := do
+  let specialized ← IO.ofExcept (Generic.specialize source entries)
+  let inlined ← IO.ofExcept (Inlining.prepare specialized.program specialized.inlineNames entries)
+  let program := inlined.program
+  let replays ← program.functions.mapM fun fn => IO.asTask <| IO.lazyPure fun _ =>
+    replayFunction program config fn (entries.contains fn.name)
+  let artifact ← IO.ofExcept (compileParallel program entries config)
+  let physical ← IO.ofExcept (Physical.prepare artifact)
+  let replays ← replays.mapM fun replay => do IO.ofExcept (← IO.wait replay)
+  IO.ofExcept (exportPreparedPlan modulus encode program artifact physical exported groups
+    (some replays))
 
 end Aiur.Trace

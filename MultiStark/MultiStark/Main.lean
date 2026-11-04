@@ -38,9 +38,8 @@ unsafe def main (args : List String) : IO Unit := do
     return
   let (exported, trace) ← if mode == "export-trace" then do
     IO.eprintln "Compiling certified circuits and witness population plans..."
-    let compiled ← IO.ofExcept (prepared.compileOptimized {})
-    let (exported, trace) ← IO.ofExcept (Trace.exportPlan MultiStark.modulus ZMod.val
-      compiled.circuit.inlined.program compiled.circuit.artifact exported groups)
+    let (exported, trace) ← Trace.exportPlanParallel MultiStark.modulus ZMod.val
+      prepared.environment.source prepared.entries exported groups
     pure (exported, some trace)
   else pure (exported, none)
   let path := args[1]?.getD "/tmp/ix-recursion.ixa"
