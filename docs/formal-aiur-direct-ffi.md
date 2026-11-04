@@ -150,6 +150,37 @@ unrelated Rust or Lean code does, so a rebuilt `ix` keeps its cache.
 `lake build ix` generates the native executors from the same packages
 ([code generation](formal-aiur-codegen.md)).
 
+## Pinned verifying keys
+
+`tools/formal-aiur.keys` pins, for the IxVM, recursive verifier and
+aggregation programs, the program identity and the BLAKE3 digest of the
+verifying key under the default STARK parameters, which the file states:
+
+```text
+parameters log_blowup 2 num_queries 100
+ixvm <identity hex> <key digest hex>
+verifier <identity hex> <key digest hex>
+aggregation <identity hex> <key digest hex>
+```
+
+- **Embedding.** The library `FormalAiurKeys` embeds the file
+  (`include_str`); its `needs` names the file as a Lake input, so a change
+  rebuilds it and its importers. The flake adds the file to the Lean
+  sources.
+- **Acceptance.** `Ix.Cli.FormalKeys` parses the pins. `ix verify` of IxVM
+  proofs checks the selected IxVM system's key (`checkSystem`), and
+  `FormalAggregate.context`, which `accept`, `acceptSlot`, the catalog and
+  compression checks use, checks the IxVM and aggregation keys and builds
+  the identity blob aggregate proofs commit to (`allowed`) from the pinned
+  digests, requiring it to equal the blob of the derived keys
+  (`pinnedAllowed`). A mismatch is an error naming the program and both
+  digests, whichever artifact was selected.
+- **Updating.** `lake exe formal-keys` derives the file from the checkout's
+  programs; `tools/check-formal-keys.sh` fails when it differs from the
+  committed pins (CI runs it), and `--update` rewrites them. The pin file
+  is hashed into the verify-path fingerprint, so a re-pin goes through that
+  review as well.
+
 ## Identities
 
 A program's identity is the BLAKE3 digest of the package it was loaded

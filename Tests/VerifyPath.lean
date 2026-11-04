@@ -22,8 +22,9 @@ parameters, type, value or inductive data) and its `@[extern]` and
 equivalence: binder names, binder annotations and metadata are ignored,
 because none of them changes what a term means.
 
-The Aiur sources of the certified programs are files rather than constants,
-so their contents are hashed too.
+The Aiur sources of the certified programs and the pinned verifying keys
+(`tools/formal-aiur.keys`) are files rather than constants, so their
+contents are hashed too.
 
 Output: `fingerprint <hex>`, the toolchain, the roots, the source files with
 their hashes, then one `<hex> <group>:<name>` line per constant, sorted. -/
@@ -249,9 +250,15 @@ def bundles : Array System.FilePath := #[
   "MultiStark/MultiStark/Aggregate.sources",
   "MultiStark/MultiStark/Program.sources"]
 
-/-- Each bundle manifest and every file it lists, with the content hash. -/
+/-- The pinned identities and verifying keys acceptance compares with. -/
+def pinFiles : Array System.FilePath := #["tools/formal-aiur.keys"]
+
+/-- Each bundle manifest and every file it lists, and the pin files, with
+the content hash. -/
 def sourceFiles : IO (Array (String × Digest)) := do
   let mut out := #[]
+  for path in pinFiles do
+    out := out.push (path.toString, blake3 (← IO.FS.readBinFile path))
   for manifest in bundles do
     let text ← IO.FS.readFile manifest
     out := out.push (manifest.toString, blake3 text.toUTF8)

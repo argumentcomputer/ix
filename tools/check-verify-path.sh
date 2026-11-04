@@ -15,10 +15,12 @@
 # (`verifyWrapper`), and the export and caching of the certified artifacts
 # that fix the verifying keys (`compiledArtifact`, the compiler linked into
 # `ix` (`Ix.FormalCompiler`), and the `ixvm` and `stark-export` exporters
-# with their Aiur sources). `lake exe verify-path`
+# with their Aiur sources), and the pinned verifying keys acceptance requires
+# (tools/formal-aiur.keys, `Ix.Cli.FormalKeys`). `lake exe verify-path`
 # (Tests/VerifyPath.lean) hashes the kernel declarations of every constant
 # reachable from those entry points, outside the Lean toolchain, plus the
-# Aiur source bundles, and this script compares the result with the pin in
+# Aiur source bundles and the key pins, and this script compares the result
+# with the pin in
 # tools/verify-path.fingerprint. The roots and closure sizes are listed at the
 # top of the pin.
 #
