@@ -267,8 +267,8 @@ def allCases : Array Case := cases ++ higherOrderCases
 def fixtureLine (test : Case) : String :=
   s!"{test.name}\t{test.expected}\t{hexOfBytes (runPut (putExpr test.type))}\t{hexOfBytes (runPut (putExpr test.value))}"
 
-/-- The shared `resource.tsv` fixture, also read by the Rust resource checker.
-`lake exe ixon-v4-tests --export-fixtures` writes it. -/
+/-- The `resource.tsv` fixture. `lake exe ixon-v4-tests --export-fixtures`
+writes it. -/
 def fixtureText : String :=
   allCases.foldl (fun text test => text ++ fixtureLine test ++ "\n")
     s!"# name\texpected\ttype ({Ixon.wireFormatId} hex)\tbody ({Ixon.wireFormatId} hex)\n"

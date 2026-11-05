@@ -1457,8 +1457,8 @@ def constantInfoRootExprs : Ixon.ConstantInfo → Array Ixon.Expr
 /-! ## Canonical sharing
 
 The compiler builds every block Constant with the canonical sharing
-construction `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Rust
-`canonical_sharing_tiered`), under the limits of `CompileEnv.sharingLimits`.
+construction `Ix.Sharing.Exact.canonicalSharingTiered .tagN`, under the
+limits of `CompileEnv.sharingLimits`.
 There is no fallback: every construction failure is a compile error. -/
 
 /-- Resource limits of the compiler's canonical sharing construction: the
