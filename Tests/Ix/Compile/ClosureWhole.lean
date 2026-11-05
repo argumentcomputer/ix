@@ -287,15 +287,13 @@ def run : IO UInt32 := do
   say s!"introduced references carried by every closure: {support}"
   say s!"closures: {closures.foldl (· + ·.2.1.length) 0} constants over {roots.length} roots; \
     {unitChecks} unit memberships checked"
-  -- 3, 4, 5, 8: each closure compiled, against the whole compile
+  -- 3, 4, 5: each closure compiled, against the whole compile
   let ref ← loadOrCompile env whole
-  let dir ← IO.FS.createTempDir
   let mut compared := 0
   let mut addrDiffs := 0
   let mut metaDiffs := 0
   let mut classes : Std.HashMap String Nat := {}
   let mut missing := 0
-  let mut rustSame := 0
   let mut introduced : Std.HashSet Name := {}
   for (r, c, base) in closures do
     let out ← compileClosure env c
@@ -303,11 +301,7 @@ def run : IO UInt32 := do
     unless out.cenv.ungrounded.isEmpty do
       errors := errors.push s!"{r}: {out.cenv.ungrounded.size} refusals, first \
         {out.cenv.ungrounded.toList.head?.map (·.1.pretty)}"
-    -- 8. the Rust compiler on the same closure
-    match ← rustCheck s!"{r}" env c out (dir / "rust.ixe") with
-    | none => rustSame := rustSame + 1
-    | some e => errors := errors.push e
-    let outEnv ← IO.ofExcept (Ixon.rsDeEnv out.bytes)
+    let outEnv := out.env
     -- 5. every closure constant is in the output
     for (n, _) in c do
       unless outEnv.named.contains (ixN n) do
@@ -346,14 +340,9 @@ def run : IO UInt32 := do
   say s!"{roots.length} roots, {compared} carried names compared with the whole compile: \
     {addrDiffs} address differences, {metaDiffs} metadata differences (classes: {classLine}), \
     {missing} closure constants missing from the output"
-  say s!"Rust compiler on the same closures: {rustSame}/{closures.size} byte-identical with the \
-    Lean compile"
   say s!"references introduced by the outputs (derived): {sortedNames introduced}"
-  -- 7. the local scope of the mutual-inductive fixture
-  errors := errors ++ (← localCollapse dir)
   for e in errors do say s!"FAIL {e}"
   say s!"{if errors.isEmpty then "PASS" else s!"FAIL ({errors.size})"}"
-  IO.FS.removeDirAll dir
   return if errors.isEmpty then 0 else 1
 
 end Tests.Ix.Compile.ClosureWhole

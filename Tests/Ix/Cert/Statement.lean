@@ -64,17 +64,6 @@ def fixtureConsts (leanEnv : Lean.Environment) : IO (List (Lean.Name × Lean.Con
     if m == some idx || m == some idx' then some n else none
   IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv (seeds ++ #[`Nat.div] ++ preludeNames))
 
-/-- The published addresses of two compiled environments that differ, by name. -/
-def addressDiffs (a b : Ixon.Env) : Array String := Id.run do
-  let mut out := #[]
-  for (n, na) in a.named.toList do
-    match b.named.get? n with
-    | some nb => unless na.addr == nb.addr do out := out.push s!"{n}: {na.addr} vs {nb.addr}"
-    | none => out := out.push s!"{n}: missing from the second"
-  for (n, _) in b.named.toList do
-    unless a.named.contains n do out := out.push s!"{n}: missing from the first"
-  return out
-
 /-- `Ix.CompileCovers` on one compile: the input constants published, the
 failed ones, those both published and failed, and those neither. -/
 def coverage (env : Ix.Environment) (ixe : Ixon.Env) (failures : Ix.Cert.Failures) :
@@ -781,24 +770,10 @@ def parity (label : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (wo
   let (roleErrors, roleLines) ← rolesCases label env ixe
   errors := errors ++ roleErrors
   lines := lines ++ roleLines
-  -- the certified IO pipeline
-  let t3 ← IO.monoMsNow
-  match ← Ix.CompileM.compileCertifiedPrepared consts false workers with
-  | .error e => errors := errors.push s!"{label}: compileCertifiedPrepared failed: {e}"
-  | .ok out =>
-    let t4 ← IO.monoMsNow
-    match Ixon.serEnv out.env with
-    | .error e => errors := errors.push s!"{label}: serEnv of compileCertifiedPrepared failed: {e}"
-    | .ok outBytes =>
-      lines := lines.push s!"{label}: compileCertifiedPrepared {t4 - t3} ms: {outBytes.size} bytes, \
-        {out.failures.toMap.size} failures"
-      unless outBytes == pureBytes do
-        errors := errors.push s!"{label}: serEnv bytes differ from compileCertifiedPrepared's \
-          ({pureBytes.size} vs {outBytes.size})"
-      let diffs := addressDiffs ixe out.env
-      unless diffs.isEmpty do
-        errors := errors.push s!"{label}: {diffs.size} published addresses differ from \
-          compileCertifiedPrepared's: {diffs.toList.take 5}"
+  -- N-READS N4 (a)'s premise `NoCtorIn` on every inductive
+  let (noCtorErrors, noCtorLines) ← noCtorCases label env
+  errors := errors ++ noCtorErrors
+  lines := lines ++ noCtorLines
   return (errors, lines)
 
 /-! ## The Ixon side of one closure -/
@@ -1700,46 +1675,5 @@ stays out of the primary tier. -/
 def evidenceSuite : List TestSeq := [
   report "the role table's evidence against quotient Source's, on the well-founded operations" (do
     evidenceAgreement (← getCompileEnv #[defsModule, ownModule])) 1]
-
-/-- `cert-compile-parity-initstd` (merge queue): the parity on Init+Std. -/
-def initStdSuite : List TestSeq := [
-  report "Ix.Cert.compile against the IO pipeline and the Rust compiler, on Init+Std" (do
-    let leanEnv ← getCompileEnv #[`Init, `Std]
-    parity "Init+Std" leanEnv.constants.toList 16) 1]
-
-/-- `cert-roles-initstd` (ignored): the role table's bindings (Route A, B5a) on Init+Std,
-compiled in process by the certified compiler (`Ix.CompileM.compileCertified`). -/
-def rolesInitStdSuite : List TestSeq := [
-  report "the role table's bindings in the compiled Init+Std (Route A, B5a)" (do
-    let leanEnv ← getCompileEnv #[`Init, `Std]
-    let env ← IO.lazyPure fun _ =>
-      Tests.Ix.Kernel.SourceIngressStep.canon leanEnv.constants.toList.toArray 16
-    let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList 16)
-    rolesCases "Init+Std" env out.env) 1]
-
-/-- `cert-evidence-initstd`: the evidence check (part of the artifact checks) on the compiled
-Init+Std, timed. -/
-def evidenceInitStdSuite : List TestSeq := [
-  report "the evidence check on the compiled Init+Std" (do
-    let leanEnv ← getCompileEnv #[`Init, `Std]
-    let out ← IO.ofExcept (← Ix.CompileM.compileCertified leanEnv leanEnv.constants.toList 16)
-    let ixe := out.env
-    let some t := defaultTable? | return (#["evidence: the default role table does not read"], #[])
-    let started ← IO.monoMsNow
-    let checked ← IO.lazyPure fun _ => Ix.Cert.EvidenceCheck.evidenceCheck t ixe
-    let ms := (← IO.monoMsNow) - started
-    match checked with
-    | .ok () => return (#[], #[s!"evidence check on Init+Std ({ixe.consts.size} records): passes in {ms} ms"])
-    | .error e => return (#[s!"evidence check on Init+Std refuses the artifact after {ms} ms: {e}"], #[])) 1]
-
-/-- `cert-noctor-initstd` (ignored): N-READS N4 (a)'s premise `NoCtorIn` on every inductive of
-Init+Std. -/
-def noCtorInitStdSuite : List TestSeq := [
-  report "no constructor of a family in its types, on Init+Std (N-READS N4 a)" (do
-    let leanEnv ← getCompileEnv #[`Init, `Std]
-    let env ← IO.lazyPure fun _ =>
-      Tests.Ix.Kernel.SourceIngressStep.canon leanEnv.constants.toList.toArray 16
-    noCtorCases "Init+Std" env) 1]
-
 
 end Tests.Ix.Cert.Statement

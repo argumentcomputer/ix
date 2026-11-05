@@ -40,12 +40,15 @@ structure IOBuffer where
 on the same channel. -/
 def IOBuffer.extend (ioBuffer : IOBuffer) (channel : G) (key data : Array G) :
     IOBuffer :=
-  let arena := ioBuffer.data.getD channel #[]
-  let idx := arena.size
+  let ⟨channels, entries⟩ := ioBuffer
+  let idx := (channels.getD channel #[]).size
   let len := data.size
-  { ioBuffer with
-    data := ioBuffer.data.insert channel (arena ++ data)
-    map := ioBuffer.map.insert (channel, key) { idx, len } }
+  -- `alter` releases the map's old arena before appending. Looking up the
+  -- arena and then inserting its extension keeps it shared during `++`,
+  -- copying the entire growing channel for every entry.
+  let channels := channels.alter channel (fun arena => some (arena.getD #[] ++ data))
+  { data := channels
+    map := entries.insert (channel, key) { idx, len } }
 
 /-- Rebuild an `IOBuffer` from the flat arrays produced by the Rust FFI.
 Hashmaps don't cross the FFI boundary; Rust returns arrays and the
@@ -163,7 +166,7 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
 
 @[extern "rs_aiur_toplevel_check_addr_with_env"]
 private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → Bool →
     Except String ExecuteResult
 
 /-- Per-claim check against a Rust-owned `EnvHandle`. `useBytecode`
@@ -174,8 +177,9 @@ private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
 def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (addrBytes : ByteArray) (useBytecode : Bool := false)
+  (assumeBinding : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode).map
+  (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode assumeBinding).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 @[extern "rs_aiur_toplevel_check_addrs_with_env"]
@@ -201,7 +205,7 @@ def checkAddrsWithEnv (toplevel : @& Bytecode.Toplevel)
 
 @[extern "rs_aiur_toplevel_shard_check_with_env"]
 private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → Bool →
     Except String ExecuteResult
 
 /-- Per-shard check with the witness shape (wrapper-augmented byte
@@ -210,8 +214,9 @@ private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
 def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (useBytecode : Bool := false)
+  (assumeBinding : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode).map
+  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode assumeBinding).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 end Bytecode.Toplevel

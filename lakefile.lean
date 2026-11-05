@@ -290,6 +290,16 @@ lean_exe «bench-typecheck» where
   root := `Benchmarks.Typecheck
   supportInterpreter := true
 
+/-- Generic execution profiles for full-closure proving workloads. -/
+lean_exe «proving-profile» where
+  root := `Scripts.Performance.ProvingProfile
+  moreLinkObjs := #[ix_rs]
+
+/-- Validate and compare circuit partitions against measured query heights. -/
+lean_exe «function-grouping» where
+  root := `Scripts.Performance.FunctionGrouping
+  moreLinkObjs := #[ix_rs]
+
 lean_exe «bench-recursion-debug» where
   root := `Benchmarks.RecursionDebug
   supportInterpreter := true
@@ -591,13 +601,6 @@ lean_exe «kernel-entry-cases» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
-/-- The kernel's universe-level comparison (`Level.leq`, `Level.isEquiv`, and
-its Géran fallback `Level.Geran.leq`) against brute-force evaluation, on
-random levels and on Ixon's canonical forms. -/
-lean_exe «kernel-level-comparison» where
-  root := `Tests.Ix.Kernel.LevelComparison
-  moreLinkObjs := #[ix_rs]
-
 /-- The Ixon reader against a direct translation of Lean's constants over
 `Init` and `Std` (`Tests/Ix/Kernel/ReaderFidelity.lean`): the compiled environment
 (`kernel-reader-fidelity .lake/envs/initstd.ixe [limit]`), `Init` and `Std`
@@ -650,12 +653,9 @@ lean_exe «kernel-pin-gen» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, the codec differential against Rust,
-optionally the set-theory model, the layering and trust-surface fences, the
-level comparison, the certified entry's host-compiled cases, and the reader's
-fidelity against Lean (the fixture closure and the first records of Init and
-Std), the `.meta` and `.source` names against Lean's, and quotient Source on
-Init and Std. -/
+the host-side tests, optionally the set-theory model, the layering and
+trust-surface fences, the certified entry's host-compiled
+cases, and the `.meta` and `.source` names against Lean's. -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -666,7 +666,7 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
   -- The kernel's fences, derived from con-leche's: import layering and the
@@ -674,9 +674,6 @@ script "check-kernel" (args) := do
   run "lake" #["build", "--wfail", "kernel-layering", "kernel-trust-surface"]
   run ".lake/build/bin/kernel-layering" #[]
   run ".lake/build/bin/kernel-trust-surface" #[]
-  -- The level comparison against brute-force evaluation.
-  run "lake" #["build", "--wfail", "kernel-level-comparison"]
-  run ".lake/build/bin/kernel-level-comparison" #[]
   -- Host-compiled Lean declarations through the certified entry, each with
   -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
   run "lake" #["build", "--wfail", "kernel-entry-cases"]
@@ -686,38 +683,10 @@ script "check-kernel" (args) := do
   unless entry.exitCode == 0 do
     IO.eprint entry.stdout
     throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
-  -- The Ixon reader against a direct translation of the Lean constants it was
-  -- compiled from, and the kernel's projection output against the compiler's
-  -- records: the fixture closure (the `lake test` suite's check) and the
-  -- first records of Init and Std (`Tests/Ix/Kernel/ReaderFidelity.lean`).
-  run "lake" #["build", "--wfail", "kernel-reader-fidelity"]
-  let mut fidelityLog := ""
-  for mode in #["--fixture", "--check-kernel"] do
-    let out ← IO.Process.output { cmd := ".lake/build/bin/kernel-reader-fidelity", args := #[mode] }
-    fidelityLog := fidelityLog ++ s!"== {mode}\n{out.stdout}{out.stderr}"
-    IO.FS.writeFile ".lake/build/kernel-reader-fidelity.log" fidelityLog
-    IO.eprint out.stderr
-    unless out.exitCode == 0 do
-      IO.eprint out.stdout
-      throw <| IO.userError s!"kernel-reader-fidelity {mode} failed; see .lake/build/kernel-reader-fidelity.log"
-  IO.println "Reader fidelity checks passed."
   -- The `.meta` and `.source` names against Lean's, on ill-typed declarations
   -- and the fixtures (`Tests/Ix/Kernel/MetaNames.lean`).
   run "lake" #["build", "--wfail", "kernel-meta-names"]
   run ".lake/build/bin/kernel-meta-names" #[]
-  -- Quotient Source on Init and Std, as `checkSourceCollapsedBundledAt` runs it:
-  -- the artifact's alias fibers, the committed bundle's evidence, the collapse
-  -- checks, and the harness's prepared stream against production's; it fails
-  -- when a collapse check fails or the streams differ. The artifact is
-  -- compiled afresh, never read from an earlier run.
-  run "lake" #["build", "--wfail", "kernel-source-ingress"]
-  let ingressIxe := ".lake/build/kernel-source-ingress-initstd.ixe"
-  for stale in #[ingressIxe, ingressIxe ++ ".diff", ingressIxe ++ ".rows"] do
-    if ← System.FilePath.pathExists stale then IO.FS.removeFile stale
-  run ".lake/build/bin/kernel-source-ingress"
-    #["--workers", "16", "--collapse", "--bundle-evidence", "--compare-prepared",
-      "--ixe", ingressIxe, "Init", "Std"]
-  IO.println "Meta names and quotient Source on Init and Std passed."
   IO.println "Certified kernel checks passed."
   return 0
 

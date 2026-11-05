@@ -22,6 +22,31 @@ public section
 namespace MultiStark
 
 def tests := ⟦
+  -- Equal-width checks must survive empty rows and a missing/wrong-height
+  -- bucket. A matching bucket checks widths during the existing fold.
+  fn pcs_shape_px(n: G) -> List‹U64› {
+    match n {
+      0 => store(ListNode.Nil),
+      _ => store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], pcs_shape_px(n - 1))),
+    }
+  }
+  fn pcs_shape_pz(n: G) -> List‹Ext› {
+    match n {
+      0 => store(ListNode.Nil),
+      _ => store(ListNode.Cons([3, 5], pcs_shape_pz(n - 1))),
+    }
+  }
+  pub fn pcs_row_shape_test(nx: G, nz: G, mode: G) -> G {
+    let buckets = match mode {
+      0 => store(ListNode.Nil),
+      1 => store(ListNode.Cons(Bucket.Mk(1, [1, 0], [0, 0]), store(ListNode.Nil))),
+      _ => store(ListNode.Cons(Bucket.Mk(2, [1, 0], [0, 0]), store(ListNode.Nil))),
+    };
+    let bits = store(ListNode.Cons(0, store(ListNode.Nil)));
+    let result = ri_apply(buckets, 1, bits, 1, [3, 5], pcs_shape_px(nx), pcs_shape_pz(nz), [7, 3]);
+    list_length(result)
+  }
+
   -- ==========================================================================
   -- Native Goldilocks arithmetic (vs `gl_ops_ref`; reference vectors kept as
   -- their canonical LE bytes and folded with `gl_val`, which is injective on

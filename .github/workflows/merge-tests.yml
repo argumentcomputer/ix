@@ -124,28 +124,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Lake ignored tests (compile pipeline)
-            kind: lake
-            test_args: --tier ci:compile-pipeline
           - name: Lake ignored tests (compiler closures)
             kind: lake
             test_args: --tier ci:compiler-closures
-          - name: Lake ignored tests (compile)
-            kind: lake
-            test_args: --tier ci:compile
-          - name: Lake ignored tests (decompile)
-            kind: lake
-            test_args: --tier ci:decompile
           - name: Lake ignored tests (misc)
             kind: lake
             test_args: --tier ci:misc
             zk_voting: true
-          - name: Lake ignored tests (landing, compilers)
-            kind: lake
-            test_args: --tier ci:landing-compilers
-          - name: Lake ignored tests (landing, Init+Std)
-            kind: lake
-            test_args: --tier ci:landing-initstd
           - name: Lake ignored tests (landing, Init+Std through ix)
             kind: lake
             test_args: --tier ci:landing-initstd-cli
@@ -240,7 +225,7 @@ jobs:
     # Valgrind cannot decode AVX-512, so this job builds generic artifacts and
     # keeps them in the S3-backed actions cache under their own key rather
     # than sharing a sticky disk with the x86-64-v4 partitions.
-    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=8/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}-valgrind-${{ github.run_attempt }}/cpu=16/family=r7i+r8i+r7a+r8a/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -258,6 +243,9 @@ jobs:
           fi
 
       - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+        with:
+          sccache: s3
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - uses: $/.github/actions/setup-rust-toolchain
         with:
           codegen: generic

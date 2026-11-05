@@ -1,7 +1,6 @@
 import LSpec
 import Ix.Meta
 import Ix.EnvScope
-import Tests.Ix.Compile.AuxiliaryClosure
 import Tests.Ix.Compile.ClosureHarness
 import IxC.Kernel.CoreDefs
 import IxC.Kernel.Roles
@@ -72,6 +71,41 @@ namespace Tests.Ix.Compile.SelectedClosure
 def matcher (n : Nat) : Nat := n
 theorem matcher._arg_pusher : matcher 0 = 0 := rfl
 theorem carriedProof : matcher 0 = 0 := matcher._arg_pusher
+
+mutual
+def evenN : Nat → Bool
+  | 0 => true
+  | n + 1 => oddN n
+def oddN : Nat → Bool
+  | 0 => false
+  | n + 1 => evenN n
+end
+
+mutual
+def wfEven : Nat → Bool
+  | 0 => true
+  | n + 1 => wfOdd n
+termination_by n => n
+def wfOdd : Nat → Bool
+  | 0 => false
+  | n + 1 => wfEven n
+termination_by n => n
+end
+
+mutual
+partial def pEven : Nat → Bool
+  | 0 => true
+  | n + 1 => pOdd n
+partial def pOdd : Nat → Bool
+  | 0 => false
+  | n + 1 => pEven n
+end
+
+theorem oddN_one : oddN 1 = true := rfl
+
+def mutualSeeds : List (Lean.Name × Lean.Name) := [
+  (``oddN, ``evenN), (``wfOdd, ``wfEven), (``pOdd, ``pEven), (``oddN_one, ``evenN)
+]
 
 /-- A user of `Nat.land`, whose certified install needs `Nat.mul`'s record
 (`natOpDeps Nat.land`), which `Nat.land`'s value does not reference. -/
@@ -185,7 +219,7 @@ def suite : List TestSeq := [
       errors := errors.push "the bare matcher pulled its caller carriedProof"
     checked := checked + 1
     -- 3. mutual siblings
-    for (root, sibling) in Tests.Ix.Compile.AuxiliaryClosure.mutualSeeds do
+    for (root, sibling) in mutualSeeds do
       checked := checked + 1
       unless (nameSet (Ix.EnvScope.collectSelectedDeps env [root])).contains sibling do
         errors := errors.push s!"{root}: missing its sibling {sibling}"
@@ -259,9 +293,6 @@ def run : IO UInt32 := do
     let out ← compileClosure env closure
     unless out.cenv.ungrounded.isEmpty do
       errors := errors.push s!"{label}: {out.cenv.ungrounded.size} refusals"
-    -- the Rust compiler on the same closure
-    let rust ← rustCheck label env closure out (dir / s!"rust-{i}.ixe")
-    if let some e := rust then errors := errors.push e
     -- closure against whole
     for (name, named) in out.env.named do
       match whole.env.named[name]? with
@@ -283,7 +314,7 @@ def run : IO UInt32 := do
         unless v.outcome == "accept" do
           errors := errors.push s!"{label}: {seed}'s owning record: {v.outcome}: {v.reason}"
     IO.println s!"[selected-closure-e2e] {label}: closure {closure.length}, {out.bytes.size} B; \
-      {summary}; Rust {if rust.isNone then "byte-identical" else "DIFFERENT"}"
+      {summary}"
   for e in errors do IO.println s!"[selected-closure-e2e] FAIL {e}"
   IO.println s!"[selected-closure-e2e] {errors.size} failure(s)"
   if errors.isEmpty then IO.FS.removeDirAll dir

@@ -110,11 +110,7 @@ def subst := ⟦
   -- ============================================================================
   fn has_bvar_in_range(e: KExpr, lo: G, hi: G) -> G {
     match load(e) {
-      KExprNode.BVar(i) =>
-        match u32_less_than(i, lo) {
-          1 => 0,
-          0 => u32_less_than(i, hi),
-        },
+      KExprNode.BVar(i) => has_bvar_in_range_bvar(i, lo, hi),
       KExprNode.Srt(_) => 0,
       KExprNode.Const(_, _) => 0,
       KExprNode.Lit(_) => 0,
@@ -127,6 +123,16 @@ def subst := ⟦
       KExprNode.Forall(ty, body) => has_bvar_in_range_binder(ty, body, lo, hi),
       KExprNode.Let(ty, val, body) => has_bvar_in_range_let(ty, val, body, lo, hi),
       KExprNode.Proj(_, _, e1) => has_bvar_in_range(e1, lo, hi),
+    }
+  }
+
+  -- The two range comparisons are wide, but only BVar rows need them.
+  -- Keep their order and short circuit, including refusal of out-of-range
+  -- fields, without charging their byte lookups to every compound node.
+  fn has_bvar_in_range_bvar(i: G, lo: G, hi: G) -> G {
+    match u32_less_than(i, lo) {
+      1 => 0,
+      0 => u32_less_than(i, hi),
     }
   }
 
@@ -385,12 +391,11 @@ def subst := ⟦
 
   fn expr_lower_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, cutoff);
-        match lt {
-          1 => e,
-          0 => store(KExprNode.BVar(i - shift)),
-        },
+      -- Only expr_lower calls this walk, after checking cutoff < expr_lbr(e).
+      -- For BVar(i), expr_lbr computes i + 1; that comparison range-checks
+      -- both operands, so i >= cutoff. The field-wrap case i + 1 = 0
+      -- cannot pass the guard. No second comparison is needed here.
+      KExprNode.BVar(i) => store(KExprNode.BVar(i - shift)),
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>
@@ -405,15 +410,20 @@ def subst := ⟦
         store(KExprNode.Forall(
           expr_lower(ty, shift, cutoff),
           expr_lower(body, shift, cutoff + 1))),
-      KExprNode.Let(ty, val, body) =>
-        store(KExprNode.Let(
-          expr_lower(ty, shift, cutoff),
-          expr_lower(val, shift, cutoff),
-          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Let(ty, val, body) => expr_lower_let(ty, val, body, shift, cutoff),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_lower(e1, shift, cutoff))),
     }
+  }
+
+  -- As in expr_lift_let, the three-child arm gets its own circuit so the
+  -- common App/Lam/Forall rows pay only for two recursive calls.
+  fn expr_lower_let(ty: KExpr, val: KExpr, body: KExpr, shift: G, cutoff: G) -> KExpr {
+    store(KExprNode.Let(
+      expr_lower(ty, shift, cutoff),
+      expr_lower(val, shift, cutoff),
+      expr_lower(body, shift, cutoff + 1)))
   }
 
   -- ============================================================================

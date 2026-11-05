@@ -44,13 +44,9 @@ the entry runs:
 | --- | --- | --- |
 | `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
 | `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
-| `ci:compile-pipeline` | a merge-tests partition | the Lean and Rust compilers against each other (input conversion, the reference graph and its condensation, serialization, decompilation, Lean's auxiliaries on closure-only environments) and the compilers' refusals |
-| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, checker-support grounding, packing, admission of selected targets, and the certified checker's pinned subjects and acceleration inputs |
-| `ci:compile`, `ci:decompile` | one merge-tests partition each | the whole test environment through the compiler, and back |
-| `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
-| `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
-| `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std, in process: the certified compile with its report checks against the pipeline and the Rust compiler, role binding and evidence, a reading premise on every inductive, and the admission hash |
-| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and the Rust comparison, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which the Rust kernel must check with every role of the default table admitted; and `ix validate-lean` fidelity |
+| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, and the certified checker's pinned subjects and acceleration inputs |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, sharding, catalog and commit I/O, and the IxVM suite |
+| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; and `ix validate-lean` fidelity |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
 The manual runners that prove through the production `ix_aggr` circuit,
