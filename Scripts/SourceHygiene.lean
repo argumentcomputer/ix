@@ -11,7 +11,8 @@ def has (text pattern : String) : Bool := (text.splitOn pattern).length > 1
 
 def retiredNames : List String :=
   ["sourceClasses", "source_classes", "compileExprNoSurgery", "compileEquivalentMutConsts",
-   "compileMutConstClass", "Ix.Tc.PrimAddrs", "Ix.Tc.primAddrSet", "Ix.Tc.reservedMarkerName"]
+   "compileMutConstClass", "Ix.Tc.PrimAddrs", "Ix.Tc.primAddrSet", "Ix.Tc.reservedMarkerName",
+   "compileEnvStreamed", "compileEnvWithRust", "compileLeanWithRust", "checkRsCmd", "validateRsCmd"]
 
 def privatePlans : List String := ["IXC-PLAN", "PRIMITIVES-DESIGN"]
 
@@ -46,6 +47,7 @@ def selfCheck : IO Unit := do
       "SurgAlias", "HANDOFF-2026", "ix-certified-v3",
       "coordinator decision, 2026-10-20", "owner decision",
       "Ix.Tc.PrimAddrs.canonical",
+      "compileEnvStreamed", "compileEnvWithRust", "checkRsCmd",
       "sourceClasses members", "compileEquivalentMutConsts sources", "open LSpec Ix.Tc",
       "open LSpec _root_.Ix.Tc", "open _root_.Ix.Tc.PrimAddrs"] do
     if (violations bad).isEmpty then throw <| IO.userError s!"scanner missed control: {bad}"

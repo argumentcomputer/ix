@@ -12,5 +12,5 @@
 # this artifact, updates these lines in the same commit and says why.
 sha256	e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1
 bytes	253772604
-lean-kernel-passed	99514
+lean-kernel-passed	99519
 lean-kernel-checked	99519

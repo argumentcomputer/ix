@@ -316,6 +316,24 @@ def admittedUserAxioms (env : Ix.Kernel.Env .anon) :
     List (Ix.Kernel.ConstantVal .anon) :=
   env.customAxiomInfos
 
+/-- `checkBytesWith` with custom user axioms enabled (`checkDeclsWithUserAxioms`). -/
+def checkBytesWithUserAxioms (hash : ByteArray → Address) (binding : Binding) (pre : Prelude .anon)
+    (limits : Limits) (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Env .anon) := do
+  let (ev, decls) ← prepareWith hash binding pre limits records blobs hint
+  (Ix.Kernel.Cached.checkDeclsWithUserAxioms .verified ev decls).mapError
+    fun (e, i) => .kernel e i
+
+/-- `checkConstantsWith` with custom user axioms enabled (`checkDeclsWithUserAxioms`). -/
+def checkConstantsWithUserAxioms (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except Error (Ix.Kernel.Env .anon) := do
+  let (ev, decls) ← readStream hash t pre constants blobs hint
+  (Ix.Kernel.Cached.checkDeclsWithUserAxioms .verified ev (Ix.Kernel.Frontend.preparePrelude pre.ix decls)).mapError
+    fun (e, i) => .kernel e i
+
 end Ix.Kernel.Admission
 
 end

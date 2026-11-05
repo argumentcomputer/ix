@@ -3464,8 +3464,11 @@ task's value is its function's, so the split (`width`) and the trace
 (`dbg`) change nothing (`compileEnvFold_width`); the IO pipeline's
 `IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Wave-snapshot freshness
 and disjointness across blocks in a wave are proved in `Ix.Cert.FreshSnapshot`
-(feeding `Ix.Cert.RunOwnership`), and `Ix.Compile.ReadyCompile.reportIO` proves
-by type that the IO worker-queue pipeline computes `Ix.Cert.compileReport`.
+(feeding `Ix.Cert.RunOwnership`, which proves semantic correctness of the
+wave-snapshot fold directly; that the wave-snapshot fold also equals a
+one-block-at-a-time live-state fold is a property of block independence within
+a wave, not proved in `Ix.Cert.Schedule`), and `Ix.Compile.ReadyCompile.reportIO`
+proves by type that the IO worker-queue pipeline computes `Ix.Cert.compileReport`.
 
 The runtime projects each worker snapshot before spawning its tasks. The
 exact block read frame and task equality add two proof roots. The original
@@ -6069,16 +6072,15 @@ fun ixe t cx envQ envA =>
     {ixe : Ixon.Env} {failures : Ix.Cert.Failures} {t : Ix.Kernel.RoleTable}
     {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
     Ix.Kernel.Reader.defaultTable = Except.ok t →
-      Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
-        Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
-          Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
-            Ix.Cert.compileReport env = Except.ok (ixe, failures) →
-              Ix.Cert.NoFailure failures sub →
-                Ix.Cert.PublishedRolesBound t ixe →
-                  Ix.Cert.PublishedAgree ixe →
-                    Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
-                      Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                        Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalModelBridgeAt ixe sub t envS envQ -/
+      Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
+        Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+          Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+            Ix.Cert.NoFailure failures sub →
+              Ix.Cert.PublishedRolesBound t ixe →
+                Ix.Cert.PublishedAgree ixe →
+                  Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                    Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                      Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalModelBridgeAt ixe sub t envS envQ -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominalBridgeAt
 
@@ -6086,16 +6088,15 @@ fun ixe t cx envQ envA =>
   ∀ {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
     {t : Ix.Kernel.RoleTable} {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
     Ix.Kernel.Reader.defaultTable = Except.ok t →
-      Ix.Cert.SourceAccepts Ix.Cert.blocksOf env roots sub envS →
-        Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
-          Ix.Cert.EnvSubstPullback (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
-            Ix.Cert.compileReport env = Except.ok (ixe, failures) →
-              Ix.Cert.NoFailure failures sub →
-                Ix.Cert.PublishedRolesBound t ixe →
-                  Ix.Cert.PublishedAgree ixe →
-                    Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
-                      Ix.Cert.RoleClosure.RoleEvidenceChecks →
-                        Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
+      Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
+        Ix.Cert.EnvSubstPullback (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+          Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+            Ix.Cert.NoFailure failures sub →
+              Ix.Cert.PublishedRolesBound t ixe →
+                Ix.Cert.PublishedAgree ixe →
+                  Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                    Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                      Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominalPullback
 

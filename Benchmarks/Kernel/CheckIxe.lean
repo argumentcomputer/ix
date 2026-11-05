@@ -218,7 +218,8 @@ def run (args : List String) : IO UInt32 := do
   let check {σ : Type} (ev : Ix.Kernel.Evidences .anon) (src : LoopSource σ) (names : Address → Array String)
       (addresses : Array Address)
       (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit)
-      (spell : Ix.Kernel.Key .anon → String := toString) : IO Counts := do
+      (spell : Ix.Kernel.Key .anon → String := toString)
+      (allowUserAxioms : Bool := false) : IO Counts := do
     let total := addresses.size
     let progress := fun (i : Nat) (counts : Std.HashMap String Nat) => do
       if i % 1000 == 0 then
@@ -228,9 +229,11 @@ def run (args : List String) : IO UInt32 := do
     | some _ =>
       CheckIxePool.run src ev names addresses skip slots emit log progress onRead spell
         (tier := if cacheDir.isNone then src.tierHook else none)
+        (allowUserAxioms := allowUserAxioms)
     | none => do
       let st ← src.init
-      let out ← checkLoopWith src.view src.read src.commit st (Checker.stepRecord ev) {}
+      let out ← checkLoopWith src.view src.read src.commit st
+        (Checker.stepRecordWithUserAxioms ev allowUserAxioms) {}
         names addresses skip emit
         (before := fun a => do slot0.set (some (a, ← IO.monoMsNow)))
         (after := slot0.set none)
@@ -242,11 +245,13 @@ def run (args : List String) : IO UInt32 := do
   -- multi-threaded, and every reference count on them made atomic
   let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
   let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
-      (addresses : Array Address) (display : Thunk (DisplayTable .anon)) : IO Counts := do
+      (addresses : Array Address) (display : Thunk (DisplayTable .anon))
+      (allowUserAxioms : Bool := false) : IO Counts := do
     let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
     let out ← check s.evidence src (names.getD · #[]) addresses
       (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
       (spell := fun k => spellWith display.get k)
+      (allowUserAxioms := allowUserAxioms)
     if let some (path, ixe) := cache then
       if record then
         let t0 ← IO.monoMsNow
@@ -285,7 +290,9 @@ def run (args : List String) : IO UInt32 := do
         log s!"eager load: {setupLine s env.blobs.size s.cx.roles.names.size hints.hints.size pre}"
         let addresses := limited (← orderOf s env.named pre rootsEnv)
         if thread then markInputs s names
-        onThread (live s s.source names addresses (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx))
+        onThread (live s s.source names addresses
+          (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx)
+          (allowUserAxioms := env.roleBinding.isSome))
       | .stream => do
         let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
         let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
@@ -297,7 +304,9 @@ def run (args : List String) : IO UInt32 := do
         -- the setup and the names only: the records' windows go to the loop
         -- unmarked, so that they are freed once it has taken their bytes
         if thread then markInputs s names
-        onThread (live s l.source names addresses (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx))
+        onThread (live s l.source names addresses
+          (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx)
+          (allowUserAxioms := contextEnv.roleBinding.isSome))
   running.set false
   flushEmit
   handle.flush

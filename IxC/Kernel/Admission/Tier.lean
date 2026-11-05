@@ -241,6 +241,34 @@ def checkBytesTiered (hash : ByteArray → Address) (binding : Binding) (limits 
     Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) :=
   checkBytesTieredUsing preludeFor hash binding limits records blobs hint
 
+/-- `checkConstantsTiered` with custom user axioms enabled on the logical part. -/
+def checkConstantsTieredWithUserAxioms (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) := do
+  let (logical, tier) := partitionTier constants
+  if let some (a, r) := fenceOf logical tier then throw (.fence a r)
+  let env ← (checkConstantsWithUserAxioms hash t pre logical blobs hint).mapError .entry
+  let tds ← (readTier (streamContext hash t pre constants blobs hint) tier).mapError
+    fun (i, e) => .read i e
+  match Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) with
+  | .ok (_, ts) => pure (env, ts)
+  | .error (e, k) => throw (.tier e ((tds[k]?.map (·.1)).getD k))
+
+/-- `checkBytesTieredUsing` with custom user axioms enabled on the logical part. -/
+def checkBytesTieredUsingWithUserAxioms (prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon))
+    (hash : ByteArray → Address) (binding : Binding) (limits : Limits)
+    (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) := do
+  (preflight limits records blobs).mapError (.entry ∘ Error.ofBytes)
+  (uniqueKeys records blobs).mapError (.entry ∘ Error.ofBytes)
+  (authenticate hash records blobs).mapError (.entry ∘ Error.ofBytes)
+  let t ← (admitBinding hash binding).mapError (.entry ∘ .binding)
+  let pre ← (prelude t).mapError (.entry ∘ .prelude)
+  let constants ← (decodeRecords limits records).mapError (.entry ∘ Error.ofBytes)
+  checkConstantsTieredWithUserAxioms hash t pre constants blobs hint
+
 end Ix.Kernel.Admission
 
 end

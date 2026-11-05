@@ -791,9 +791,8 @@ specifications pins both parsers (`LIMIT_SPEC_PARITY` in
 `Tests/Ix/SharingExact.lean`).
 
 Exceeding a limit is a compile error (`CompileError.resourceLimit`) that
-names the limit's key and the override, for example `canonical sharing:
-resource exhausted: states (limit 1099511627776); raise it with
---sharing-limits states=N (IX_SHARING_LIMITS)`. Every other construction
+names the limit's key and bound, for example `canonical sharing:
+resource exhausted: states (limit 1099511627776)`. Every other construction
 failure is `CompileError.sharingConstruction`. In Rust, kernel egress and the
 decompiler's recompile name the constant in the message (`egress '<name>':
 …`, `recompile of '<name>' (sharing): …`). The structural gate above fixes the
@@ -1414,8 +1413,7 @@ Both compiler commands generate the binding and proof records from the actual
 published declarations and certificate sources before writing their output.
 Internal support compilation uses the same backend and preserves the original
 request's publication/failure accounting. Named metadata is removed only after
-generation for anonymous output. The ordinary `compile-lean --rust-check` gate
-compares the complete generated artifacts from both backends.
+generation for anonymous output.
 
 For bound whole inputs, `check-lean` runs the actual authenticated logical or
 typing-tier entry, selected from record headers before checking. The logical

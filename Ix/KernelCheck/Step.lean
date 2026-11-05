@@ -53,11 +53,16 @@ structure Checker (md : Ix.Kernel.Mode) where
 instance : Inhabited (Checker md) := ⟨{}⟩
 
 /-- Install and check one declaration; on failure, the state before it. -/
-def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.Declaration md) :
+def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.Declaration md)
+    (allowUserAxioms : Bool := false) :
     Checker md × Option (Ix.Kernel.CheckError md) :=
   let ⟨fe, cs, pos⟩ := c
   let before := fe.env
-  match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, #[]) d cs with
+  let stepFn := if allowUserAxioms then
+      Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified ev
+    else
+      Ix.Kernel.Cached.annotDeclStep .verified ev
+  match stepFn (pos, fe, #[]) d cs with
   | .error (e, _) => (⟨Ix.Kernel.mkFEnv before, {}, pos + 1⟩, some e)
   | .ok ((pos', fe', pend), cs') =>
     match Ix.Kernel.Cached.checkPendingList .verified fe' pend.toList with
@@ -66,10 +71,11 @@ def Checker.step (ev : Ix.Kernel.Evidences md) (c : Checker md) (d : Ix.Kernel.D
 
 /-- One record's declarations, in order; the first failure ends it. -/
 def Checker.steps (ev : Ix.Kernel.Evidences md) (c : Checker md)
-    (ds : Array (Ix.Kernel.Declaration md)) : Checker md × Option (Ix.Kernel.CheckError md) := Id.run do
+    (ds : Array (Ix.Kernel.Declaration md)) (allowUserAxioms : Bool := false) :
+    Checker md × Option (Ix.Kernel.CheckError md) := Id.run do
   let mut c := c
   for d in ds do
-    let (c', e) := c.step ev d
+    let (c', e) := c.step ev d allowUserAxioms
     c := c'
     if e.isSome then return (c, e)
   return (c, none)
@@ -359,6 +365,12 @@ record's declarations (`Checker.steps`). -/
 def Checker.stepRecord (ev : Ix.Kernel.Evidences md) (c : Checker md) (_ : Address) (rd : Read md) :
     Checker md × Option (Ix.Kernel.CheckError md) :=
   c.steps ev rd.decls
+
+/-- `Checker.stepRecord` with `allowUserAxioms` threaded to `Checker.steps`. -/
+def Checker.stepRecordWithUserAxioms (ev : Ix.Kernel.Evidences md) (allowUserAxioms : Bool)
+    (c : Checker md) (_ : Address) (rd : Read md) :
+    Checker md × Option (Ix.Kernel.CheckError md) :=
+  c.steps ev rd.decls allowUserAxioms
 
 /-- Check `addresses` in order, continuing past failures; each row is passed
 to `emit`. The records' views and readings come from `view` and `read`; the

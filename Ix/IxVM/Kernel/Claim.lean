@@ -306,11 +306,9 @@ def claim := ⟦
   }
 
   -- ============================================================================
-  -- Assumption / env tree: leaf list serialization (ch 1). The format
-  -- matches the Rust implementation in crates/kernel/src, so the same
-  -- witness buffers feed either checker. The tree is bound to its ch 1
-  -- key by recomputing the merkle root, not by hashing the bytes — see
-  -- the channel table in Ix/IxVM/ClaimHarness.lean.
+  -- Assumption / env tree: leaf list serialization (ch 1). The tree is
+  -- bound to its ch 1 key by recomputing the merkle root, not by hashing
+  -- the bytes — see the channel table in Ix/IxVM/ClaimHarness.lean.
   -- ============================================================================
   fn leaf_hash(addr: Addr) -> Addr {
     let tail = put_address(addr, store(ListNode.Nil));
@@ -658,8 +656,7 @@ def claim := ⟦
   }
 
   -- ============================================================================
-  -- Reveal claim (variant 6). Mirrors the Rust implementation in
-  -- crates/kernel/src; the machinery is Ixon-level rather than
+  -- Reveal claim (variant 6). The machinery is Ixon-level rather than
   -- typechecker-level: parse a `RevealConstantInfo` (per-field Option
   -- mirror of `ConstantInfo`, Expr fields as content hashes), load the
   -- committed constant, assert every Some(field) equals the real one.

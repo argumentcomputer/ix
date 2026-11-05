@@ -96,4 +96,23 @@ def checkTieredAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (o
     | .error e => .error (.admission e)
     | .ok (logical,tier) => .ok ⟨prepared,logical,tier,fromArtifact,checked⟩
 
+/-- Conditional receipt of preparation and tiered checking with custom user axioms enabled on the logical part. -/
+structure TierReceiptConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) where
+  prepared : Prepared
+  logical : Ix.Kernel.Env .anon
+  tier : List (Ix.Kernel.Tier.TierConst .anon)
+  preparedFrom : prepareTiered artifact limits = .ok prepared
+  checked : Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms prepared.preludeFor Address.admissionHash
+    prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup = .ok (logical, tier)
+
+def checkTieredConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+    Except TierError (TierReceiptConditional artifact limits) :=
+  match fromArtifact : prepareTiered artifact limits with
+  | .error e => .error e
+  | .ok prepared =>
+    match checked : Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms prepared.preludeFor Address.admissionHash
+        prepared.binding limits prepared.records prepared.blobs prepared.hints.lookup with
+    | .error e => .error (.admission e)
+    | .ok (logical, tier) => .ok ⟨prepared, logical, tier, fromArtifact, checked⟩
+
 end Ix.RoleBinding.Artifact

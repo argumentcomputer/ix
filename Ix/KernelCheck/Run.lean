@@ -21,6 +21,7 @@ structure RunConfig where
   workers : Option Nat := none
   tier : Bool := false
   poolTier : Bool := false
+  allowUserAxioms : Bool := false
   skip : Std.HashSet String := {}
 
 /-- The path actually taken. Tier fallback records the original request;
@@ -72,8 +73,10 @@ def runRecords (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md)
       let slots ← (Array.range n).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
       CheckIxePool.runOutcome src ev names addresses cfg.skip slots note log progress onRead spell
         (tier := if cfg.tier then src.tierHook else none)
+        (allowUserAxioms := cfg.allowUserAxioms)
     | .serial | .serialTier _ => do
-      let out ← checkLoopWith src.view src.read src.commit (← src.init) (Checker.stepRecord ev) {}
+      let out ← checkLoopWith src.view src.read src.commit (← src.init)
+        (Checker.stepRecordWithUserAxioms ev cfg.allowUserAxioms) {}
         names addresses cfg.skip note (progress := fun i o => progress i o.counts)
         (onRead := onRead) (spell := spell) (tier := if cfg.tier then src.tierHook else none)
       pure { checker := (), counts := out.counts, reasons := out.reasons, failed := out.failed }

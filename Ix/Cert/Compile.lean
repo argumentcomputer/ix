@@ -72,7 +72,9 @@ therefore hold by construction, without an invariant of the driver's loop.
 `Tests.Ix.Cert.Statement` compares the serialized output of `Ix.Cert.compile`
 and the certified IO pipeline on the Source-mode fixtures (`cert-statement`),
 while `Ix.Compile.ReadyCompile.reportIO` proves by type that the IO
-worker-queue compile returns `Ix.Cert.compileReport`. -/
+worker-queue compile returns `Ix.Cert.compileReport` (`CompileCorrect` proves
+semantic correctness of the wave-snapshot fold directly; equivalence with a
+one-block-at-a-time live-state fold is not proved in `Ix.Cert.Schedule`). -/
 
 public section
 

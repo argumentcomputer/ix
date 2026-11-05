@@ -3,6 +3,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.Cli.CheckLeanTargets
+public import Ix.ClaimContext
 public import Ix.KernelCheck.Run
 public import Ix.KernelCheck.Stream
 public import Ix.HostAdmission
@@ -144,19 +145,30 @@ structure CheckReport where
 failure never selects another checker. Selected/capped runs make no complete
 artifact claim, and unresolved thin bundles have no external-store fallback. -/
 def checkWhole (p : PreparedInput) (selection : Selection) (maxGroups : Option Nat) :
-    Except DriverError (Option (ArtifactAdmission × Ix.HostAdmission.Statement)) := do
+    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) := do
   unless p.bound do return none
   match selection, maxGroups with
   | .all, none => pure ()
   | _, _ => return none
   unless p.parts.env.assumptions.isEmpty do
     throw (.artifact "artifact: decline: thin artifact assumptions require explicit resolution")
-  let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify p.parts.env artifactLimits).mapError
-    (DriverError.artifact ∘ toString)
-  let admission := match checked.run with
-    | .logical receipt => ArtifactAdmission.logical receipt.prepared.records.length
-    | .tiered receipt => .tiered receipt.prepared.records.length receipt.tier.length
-  return some (admission, statement)
+  if (Ix.ClaimContext.userAxioms p.parts.env).isEmpty then
+    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify p.parts.env artifactLimits).mapError
+      (DriverError.artifact ∘ toString)
+    let admission := match checked.run with
+      | .logical receipt => ArtifactAdmission.logical receipt.prepared.records.length
+      | .tiered receipt => .tiered receipt.prepared.records.length receipt.tier.length
+    return some (admission, some statement)
+  else
+    let admission ← if p.hasTier then
+        let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional p.parts.env artifactLimits).mapError
+          (DriverError.artifact ∘ toString)
+        pure (ArtifactAdmission.tiered receipt.prepared.records.length receipt.tier.length)
+      else
+        let receipt ← (Ix.RoleBinding.Artifact.checkConditional p.parts.env artifactLimits).mapError
+          (DriverError.artifact ∘ toString)
+        pure (ArtifactAdmission.logical receipt.prepared.records.length)
+    return some (admission, none)
 
 def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
 def CheckReport.targetsCovered (r : CheckReport) : Nat := r.targets.size
@@ -178,7 +190,8 @@ def coverageNotice (report : CheckReport) (wholeRequested : Bool) : Option Strin
   | some _ => none
   | none =>
     if report.bound then
-      if wholeRequested then none
+      if wholeRequested then
+        some "[check-lean] whole-artifact admission did not run because declaration checks failed"
       else some "[check-lean] selected checking only; no whole-artifact receipt"
     else if wholeRequested then
       some s!"[check-lean] partial check: the artifact carries no role binding, so the \
@@ -232,7 +245,8 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
         IO.eprintln s!"{cfg.tag} {subjects}/{plan.targets.size} subjects, {records} record rows, elapsed {(now - start) / 1000}s"
         last := now
   try
-    let run ← runRecords src ev (fun _ => #[]) plan.addresses { workers := some cfg.workers, tier := true }
+    let run ← runRecords src ev (fun _ => #[]) plan.addresses
+      { workers := some cfg.workers, tier := true, allowUserAxioms := p.bound }
       (spell := spell)
       (onRead := fun a r _ => do
         actual.modify (·.insert a)
@@ -320,7 +334,7 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
         | .ok admission =>
           return .ok { report with
             bound := p.bound, boundRoles, artifactAdmission := admission.map (·.1)
-            hostStatement := admission.map (·.2), artifactMs := elapsed }
+            hostStatement := admission.bind (·.2), artifactMs := elapsed }
     if cfg.stackBytes != 0 then Ix.Runtime.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) job))
   catch e => return .error (.infrastructure e.toString)
@@ -500,7 +514,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       if let some h := out then h.putStrLn s!"\n# total failures: {report.failures.size}"; h.flush
       if let some perConstFlag := p.flag? "per-const" then
         writePerConstCsv prepared report.rows (perConstFlag.as! String)
-      if report.bound then
+      if report.bound && report.artifactAdmission.isSome then
         IO.println s!"[check-lean] bound roles: {report.boundRoles} admitted, 0 group(s) refused"
       match report.artifactAdmission with
       | some (.logical records) =>

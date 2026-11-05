@@ -20,8 +20,8 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
   the resource validator ID (`"ixon-v4/resource-v1"`) and `wireFormatId` (`"ixon-v4"`).
   The environment envelope is v4 (`0xE4`), or v5 (`0xE5`) with a role binding;
   the extension does not change the checked payload grammar;
-- compiler limits are a safety net: metering and fail-closed errors stay, the defaults sit far
-  above every corpus maximum, and `ix compile --sharing-limits` overrides them;
+- compiler limits are a safety net: metering and fail-closed errors stay, and the defaults sit far
+  above every corpus maximum (`compileReport` fixes the default limits);
 - a `Share` inside a metadata expression is read in the extended index space of
   `sharing-minimum.md` §13.1; there is no metadata construction;
 - the IxVM circuit codec changes in the same PR.

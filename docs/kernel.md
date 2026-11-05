@@ -104,7 +104,10 @@ function `Ix.Cert.compileReport`, which `ix compile`, `ix compile-lean` and
 `Ix.Check.loadNamedIxonEnv` run on the canonicalized input
 (`Ix.Compile.ReadyCompile.reportIO` proves by type that the IO worker-queue
 driver returns `Ix.Cert.compileReport`, and `Ix.Cert.FreshSnapshot` proves
-wave-snapshot freshness and disjointness across blocks in a wave).
+wave-snapshot freshness and disjointness across blocks in a wave, feeding the
+direct semantic proof on the wave-snapshot fold; equivalence between the
+wave-snapshot fold and a one-block-at-a-time live-state fold is not proved in
+`Ix.Cert.Schedule`).
 `finalize`'s additions are outside the theorem.
 
 ## The certified entry

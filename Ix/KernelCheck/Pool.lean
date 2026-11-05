@@ -72,7 +72,8 @@ instance : Inhabited (Installer md) := ⟨{}⟩
 recorded checks; the first failure ends it, rolled back as `Checker.step`
 rolls back (the index rebuilt from the constants before the declaration,
 the memo state reset), with the checks the declarations before it recorded. -/
-def installDecls (ev : Ix.Kernel.Evidences md) (pendOffset : Nat) (recordDecls : Bool := true) :
+def installDecls (ev : Ix.Kernel.Evidences md) (pendOffset : Nat) (recordDecls : Bool := true)
+    (allowUserAxioms : Bool := false) :
     Nat → Ix.Kernel.FEnv md → Array (Ix.Kernel.Cached.PendingCheck md) →
       Array (InstalledDecl md) → Ix.Kernel.Cached.CState md →
       List (Ix.Kernel.Declaration md) →
@@ -85,25 +86,29 @@ def installDecls (ev : Ix.Kernel.Evidences md) (pendOffset : Nat) (recordDecls :
     let recorded := pend
     let oldLen := fe.visibleBelow
     let pStart := pendOffset + recorded.size
-    match Ix.Kernel.Cached.annotDeclStep .verified ev (pos, fe, pend) d cs with
+    let stepFn := if allowUserAxioms then
+        Ix.Kernel.Cached.annotDeclStepWithUserAxioms .verified ev
+      else
+        Ix.Kernel.Cached.annotDeclStep .verified ev
+    match stepFn (pos, fe, pend) d cs with
     | .ok ((pos', fe', pend'), cs') =>
       let decls := if recordDecls then
           let added := fe'.env.consts.take (fe'.visibleBelow - oldLen)
           let pStop := pendOffset + pend'.size
           decls.push { consts := added, pendStart := pStart, pendStop := pStop }
         else decls
-      installDecls ev pendOffset recordDecls pos' fe' pend' decls cs' rest
+      installDecls ev pendOffset recordDecls allowUserAxioms pos' fe' pend' decls cs' rest
     | .error (e, _) => (pos + 1, Ix.Kernel.mkFEnv before, recorded, decls, {}, some e)
 
 /-- Phase A's step: install a record's declarations, recording their checks. -/
 def Installer.stepRecord (ev : Ix.Kernel.Evidences md) (recordDecls : Bool := true)
-    (lazyDecls : Bool := false)
+    (lazyDecls : Bool := false) (allowUserAxioms : Bool := false)
     (c : Installer md) (address : Address) (rd : Read md) :
     Installer md × Option (Ix.Kernel.CheckError md) :=
   let ⟨fe, cs, pos, pend, owners, installErrors, installedDecls, installedCount, installedLog⟩ := c
   let oldPendSize := pend.size
   let (pos, fe, pend, decls, cs, err) :=
-    installDecls ev 0 recordDecls pos fe pend #[] cs rd.decls.toList
+    installDecls ev 0 recordDecls allowUserAxioms pos fe pend #[] cs rd.decls.toList
   let addedPend := pend.size - oldPendSize
   let owners := Id.run do
     let mut o := owners
@@ -210,7 +215,8 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
     (progress : Nat → Std.HashMap String Nat → IO Unit := fun _ _ => pure ())
     (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
     (spell : Ix.Kernel.Key md → String := toString)
-    (tier : Option (TierHook σ (Checker md) md) := none) :
+    (tier : Option (TierHook σ (Checker md) md) := none)
+    (allowUserAxioms : Bool := false) :
     IO (LoopOutcome Unit) := do
   let some slot0 := slots[0]? | throw (IO.userError "check-ixe: the pool needs a worker")
   -- phase A: what each record's rows will carry besides the verdict
@@ -251,7 +257,7 @@ def runOutcome {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md
       owners := Array.mkEmpty addresses.size
       installedLog := if needDecls then Array.mkEmpty addresses.size else #[] }
   let installed ← checkLoopWith src.view src.read src.commit st
-    (Installer.stepRecord ev needDecls true) startInstaller
+    (Installer.stepRecord ev needDecls true allowUserAxioms) startInstaller
     names addresses skip
     (emit := fun row =>
       unless tierReads.contains row.address do
@@ -342,9 +348,10 @@ def run {σ : Type} (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md) (name
     (progress : Nat → Std.HashMap String Nat → IO Unit := fun _ _ => pure ())
     (onRead : Address → Except ReadError (Read md) → Nat → IO Unit := fun _ _ _ => pure ())
     (spell : Ix.Kernel.Key md → String := toString)
-    (tier : Option (TierHook σ (Checker md) md) := src.tierHook) :
+    (tier : Option (TierHook σ (Checker md) md) := src.tierHook)
+    (allowUserAxioms : Bool := false) :
     IO (Std.HashMap String Nat × Std.HashMap String Nat) := do
-  let out ← runOutcome src ev names addresses skip slots emit log progress onRead spell tier
+  let out ← runOutcome src ev names addresses skip slots emit log progress onRead spell tier allowUserAxioms
   return (out.counts, out.reasons)
 
 end Benchmarks.Kernel.CheckIxePool

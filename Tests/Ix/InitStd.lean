@@ -158,14 +158,13 @@ def reference : IO UInt32 := do
     unless sha == expected.sha256 && size == expected.bytes do
       IO.eprintln s!"[initstd] the Init+Std artifact differs from {referencePath}. If the change \
         is meant to move the compiler's bytes, record sha256 {sha} and bytes {size} there."
-    -- the kernel on the artifact, under its role binding; it exits 3 when
-    -- some constant fails, which the count of passing constants decides
+    -- the kernel on the artifact, under its role binding
     let roles := (← IO.ofExcept Ix.Kernel.Reader.defaultTable).bound.size
     let checked ← runIx #["check-lean", artifact.toString, "--anon"]
     let both := checked.stdout ++ "\n" ++ checked.stderr
     for l in linesWith both ["bound roles:", "subjects passed", "[check-lean]"] do
       IO.println l
-    let exited := checked.exitCode == 0 || checked.exitCode == 3
+    let exited := checked.exitCode == 0
     unless exited do IO.eprintln (tail checked)
     let admitted := admission both
     let counts := passedCount checked.stdout
@@ -176,7 +175,7 @@ def reference : IO UInt32 := do
       ("ix compile-lean on Init+Std passes its report checks", compiled.exitCode == 0),
       (s!"the artifact's SHA-256 is the reference's ({expected.sha256})", sha == expected.sha256),
       (s!"the artifact's size is the reference's ({expected.bytes} bytes)", size == expected.bytes),
-      ("ix check-lean --anon exits 0, or 3 for failed constants", exited),
+      ("ix check-lean --anon exits 0", exited),
       (s!"the kernel admits all {roles} roles the default table binds and refuses no \
         role group", admitted == some (roles, 0)),
       (s!"the kernel passes {expected.leanPassed} of {expected.leanChecked} constants, \

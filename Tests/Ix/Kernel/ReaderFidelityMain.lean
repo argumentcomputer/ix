@@ -19,9 +19,9 @@ from this toolchain's `.olean` files.
   order.
 * `kernel-reader-fidelity --compile [limit]`: compiles `Init` and `Std` in
   process with Ix's certified compiler (`Ix.CompileM.compileCertified`) and compares that.
-* `kernel-reader-fidelity --check-kernel`: what `lake run check-kernel` runs,
-  the compiled environment if it is present and an in-process compile otherwise,
-  at `checkKernelLimit` records.
+* `kernel-reader-fidelity --check-kernel`: checks the compiled environment if
+  it is present and an in-process compile otherwise, at `checkKernelLimit`
+  records.
 * `kernel-reader-fidelity --fixture`: the check of the fixture closure that the `lake test` suite `kernel-reader-roundtrip` runs
   (`Tests.Ix.Kernel.ReaderRoundtrip.evaluate`: expected verdicts and tampers).
 * `kernel-reader-fidelity --egress <input.ixe>`: the output side only, with no

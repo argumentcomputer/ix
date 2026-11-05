@@ -53,7 +53,7 @@ def whnf := ⟦
     }
   }
 
-  -- Multi-arg beta (mirror crates/kernel/src/whnf.rs): peel the whole
+  -- Multi-arg beta: peel the whole
   -- telescope and substitute all consumed args in ONE `expr_inst_many` walk,
   -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
   -- stay on the cheap `expr_inst1` path (no list overhead).
@@ -421,8 +421,7 @@ def whnf := ⟦
   }
 
   -- Recognize `λ x_1 ... x_n → Prj S i (BVar k)` and rewrite an
-  -- application of the constant to a direct Prj. Mirrors the Rust
-  -- implementation in crates/kernel/src. Pure perf — standard
+  -- application of the constant to a direct Prj. Pure perf — standard
   -- delta+beta produces the same result — but keeps binder-type WHNF
   -- inside a proj scrutinee stuck at Const-inductive form rather than
   -- descending into the body and getting stuck at a partially-applied
@@ -464,12 +463,11 @@ def whnf := ⟦
     }
   }
 
-  -- Canonical Nat.zero / Nat.succ addrs. Mirror
-  -- crates/kernel/src, 490).
+  -- Canonical Nat.zero / Nat.succ addrs.
 
   -- Convert `Lit(Nat n)` to `Nat.zero` or `App(Nat.succ, Lit(n-1))`.
   -- Non-Lit inputs pass through unchanged. Enables iota to fire on
-  -- Lit majors.  Mirror crates/kernel/src.
+  -- Lit majors.
   fn nat_lit_to_ctor_or_self(rc: RoleCtx, e: KExpr) -> KExpr {
     match load(e) {
       KExprNode.Lit(lit) =>
@@ -492,8 +490,7 @@ def whnf := ⟦
   }
 
   -- K-recursor synth: fire rule[0] assuming the nullary K-ctor, but only
-  -- when the toCtorWhenK gate holds (mirror try_synth_k_ctor,
-  -- crates/kernel/src: infer the major's type, require its
+  -- when the toCtorWhenK gate holds: infer the major's type, require its
   -- head to be this recursor's inductive, synthesize the ctor app from
   -- the type's params, and require def_eq(major_ty, ctor_ty). Without
   -- the gate, an Eq.rec transport whose endpoints differ symbolically
@@ -546,8 +543,7 @@ def whnf := ⟦
 
   -- The toCtorWhenK gate: 1 iff whnf(rc, infer(major)) is `I params indices`
   -- for this recursor's own inductive AND the synthesized ctor app
-  -- `I.ctor params` has type def-eq to the major's. Mirror
-  -- try_synth_k_ctor's verification step.
+  -- `I.ctor params` has type def-eq to the major's.
   fn k_synth_gate(rc: RoleCtx, raw_major: KExpr, cidx: G, nparams: G,
                       rec_parent: Addr, types: List‹KExpr›) -> G {
     let major_ty = k_infer(rc, raw_major, types);
@@ -587,8 +583,7 @@ def whnf := ⟦
   -- major argument. If it's a Ctor application matching one of the
   -- rules, apply the rule's rhs (Lam-wrapped) to
   -- params ++ motives ++ minors ++ ctor_fields ++ post_major via
-  -- apply_spine so that outer whnf beta-reduces. Mirror
-  -- crates/kernel/src.
+  -- apply_spine so that outer whnf beta-reduces.
   -- Rewrite spine with major (at major_idx) replaced by given whnf'd major.
   fn replace_spine_major(spine: List‹KExpr›, major_idx: G, major_w: KExpr)
                              -> List‹KExpr› {
@@ -1063,8 +1058,7 @@ def whnf := ⟦
   }
 
   -- ============================================================================
-  -- whnf_nd: WHNF without delta-unfolding. Mirror whnf_nd
-  -- crates/kernel/src / Rust whnf.rs::whnf_no_delta.
+  -- whnf_nd: WHNF without delta-unfolding.
   --
   -- Same dispatch tree as whnf, but the Defn/Thm arms of the const
   -- head return the stuck application instead of unfolding. Beta / zeta /

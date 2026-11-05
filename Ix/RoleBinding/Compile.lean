@@ -216,16 +216,6 @@ def projectionBlock? (lc : Ixon.LazyConstant) : Option Address :=
     | .ok block? _ => block?
     | .error _ _ => none
 
-/-- Fast block owner lookup for `unownedRecursorWith`: a standalone constant is
-its own block without scanning its expressions; projections read their block
-header via `projectionBlock?`. -/
-def fastRecordBlock (ixe : Ixon.Env) (a : Address) : Address :=
-  match ixe.consts.get? a with
-  | some lc =>
-    if lc.cache.isNone && standaloneHeader lc.rawBytes then a
-    else (projectionBlock? lc).getD a
-  | none => a
-
 /-- `unownedRecursor` given the artifact's stored recursor records
 (`Ix.Cert.storedRecursorRecords ixe`), so callers that also run
 `recursorSlotErrorWith` compute the recursor record array once. -/
@@ -249,7 +239,7 @@ def unownedRecursorWith (ixe : Ixon.Env)
       match named.constMeta.info with
       | .muts .. => none
       | _ =>
-        let b := fastRecordBlock ixe named.addr
+        let b := Ix.Cert.recordBlockFast ixe named.addr
         match idx.blocks[b]? with
         | none => none
         | some shape =>

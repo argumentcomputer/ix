@@ -25,7 +25,9 @@ import Tests.Ix.Cert.ExecutedChecks
   planted reference cycles (two decoded, two stored as bytes), and its
   refs-only reader must agree with the decoder on every record.
   (`Ix.Compile.ReadyCompile.reportIO` proves by type that the IO worker-queue
-  driver computes `Ix.Cert.compileReport`.)
+  driver computes `Ix.Cert.compileReport`, whose wave-snapshot fold is proved
+  semantically correct directly; equivalence with a one-block-at-a-time
+  live-state fold is not proved in `Ix.Cert.Schedule`.)
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
   constants):

@@ -105,7 +105,11 @@ theorem checkGroupIntraInjective_sound {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable
 
 /-- Every definition in `sub` has its nominal reducibility hint (`definitionShape`)
 matching `fiberHintsMap ixe` at its substituted key under
-`fiberAliasAt ixe (roleAtMap t)`. -/
+`fiberAliasAt ixe (roleAtMap t)` (`Key.subst ρ (ingressKey n)`).
+Because `fiberHintsMap ixe` is keyed by the quotient representative of each
+address fiber (and `Converted.quotient` looks up hints at the quotient key
+after `Key.subst ρ`), agreement at `Key.subst ρ (ingressKey n)` is the exact
+condition ensuring every member of an alias fiber receives its nominal hint. -/
 def HintsAgreeAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (sub : Ix.Environment) : Prop :=
   let ρ := fiberAliasAt ixe (roleAtMap t)
   let hints := fiberHintsMap ixe

@@ -46,7 +46,10 @@ canonicalization match `Ix.Cert.Canon.constS` (`code`, `canon`, and
 certified production path, `Ix.Compile.ReadyCompile.reportIO` proves directly
 by type that the IO worker-queue pipeline returns `Ix.Cert.compileReport`, and
 `Ix.Cert.FreshSnapshot` proves wave-snapshot freshness and disjointness across
-blocks in a wave. -/
+blocks in a wave (used to prove semantic correctness of the wave-snapshot fold
+directly; equivalence between the wave-snapshot fold and a one-block-at-a-time
+live-state fold is a property of block independence within a wave, not proved
+in `Ix.Cert.Schedule`). -/
 
 namespace Ix.Cert.Hybrid
 

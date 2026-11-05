@@ -195,4 +195,22 @@ def checkAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order :
     | .error e => .error (.admission e)
     | .ok target => .ok ⟨prepared,target,fromArtifact,checked⟩
 
+/-- Conditional receipt of preparation and checking with custom user axioms enabled. -/
+structure ReceiptConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) where
+  prepared : Prepared
+  target : Ix.Kernel.Env .anon
+  preparedFrom : prepare artifact limits = .ok prepared
+  checked : Ix.Kernel.Admission.checkBytesWithUserAxioms Address.admissionHash prepared.binding prepared.pre
+    limits prepared.records prepared.blobs prepared.hints.lookup = .ok target
+
+def checkConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+    Except Error (ReceiptConditional artifact limits) :=
+  match fromArtifact : prepare artifact limits with
+  | .error e => .error e
+  | .ok prepared =>
+    match checked : Ix.Kernel.Admission.checkBytesWithUserAxioms Address.admissionHash prepared.binding prepared.pre
+        limits prepared.records prepared.blobs prepared.hints.lookup with
+    | .error e => .error (.admission e)
+    | .ok target => .ok ⟨prepared, target, fromArtifact, checked⟩
+
 end Ix.RoleBinding.Artifact

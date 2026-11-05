@@ -601,7 +601,7 @@ lean_exe «kernel-entry-cases» where
 /-- The Ixon reader against a direct translation of Lean's constants over
 `Init` and `Std` (`Tests/Ix/Kernel/ReaderFidelity.lean`): the compiled environment
 (`kernel-reader-fidelity .lake/envs/initstd.ixe [limit]`), `Init` and `Std`
-compiled in process (`--compile [limit]`), `check-kernel`'s run
+compiled in process (`--compile [limit]`), bounded prefix check
 (`--check-kernel`) or the `lake test` fixture (`--fixture`). -/
 lean_exe «kernel-reader-fidelity» where
   root := `Tests.Ix.Kernel.ReaderFidelityMain

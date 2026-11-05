@@ -23,6 +23,8 @@ import Tests.Ix.LeanExport
 import Tests.Ix.HostAdmissionCli
 import Tests.Ix.Compile.AuxiliaryClosureCanon
 import Tests.Ix.Compile.IndFlags
+import Tests.Ix.CompileDeterminism
+import Tests.Ix.Kernel.AdmissionHashDiff
 import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.LeanReportTests
 import Tests.Ix.Compile.GroundRefusal
@@ -222,9 +224,13 @@ def registry : List Entry := [
   -- Non-canonical stored inductive flags and mixed mutual safety: refused by
   -- both Lean drivers and the pure compiler (Tests.Ix.Compile.IndFlags).
   .runner "compile-ind-flags" .primary Tests.Ix.Compile.IndFlags.run,
+  -- Differential comparison of Address.blake3, Address.blake3Pure, and
+  -- Address.admissionHash across multi-chunk boundaries and an .ixe artifact.
+  .runner "admission-hash-diff" .primary Tests.Ix.Kernel.AdmissionHashDiff.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
+  .suite "compile-determinism" (.ci .cli) Tests.Ix.CompileDeterminism.suite,
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
@@ -405,7 +411,9 @@ def required : List (String × String) := [
   ("ixes-manifest", "primary"),
   ("kernel-record-check", "primary"),
   ("compile-ind-flags", "primary"),
+  ("admission-hash-diff", "primary"),
   ("cli", "ci:cli"),
+  ("compile-determinism", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
