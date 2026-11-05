@@ -39,9 +39,9 @@ pub struct Options {
   /// proven, when that extra shard fits the RAM budget (the default), or
   /// never (`false`). Either schedule produces the same proof bytes.
   pub pipeline: Option<bool>,
-  /// Prove with this layout instead of planning one. Population placement
-  /// changes the planner's estimates and therefore its layout, so runs
-  /// compared byte for byte must share a layout.
+  /// Prove with this layout instead of planning one. A planned layout is
+  /// the one host population gets, whatever the population placement; a
+  /// forced one is proven with the configured placement as given.
   pub layout: Option<super::streaming::BatchLayout>,
   /// A JSON file holding a [`super::streaming::BatchLayout`], or a proof
   /// report whose `plan.layout` holds one; [`Options::read`] loads it into
@@ -311,6 +311,9 @@ pub enum HostCause {
   EncodingLimit,
   /// Some members could be filled on the device, but not all of them.
   IneligibleGroup,
+  /// The record's device population does not fit at the layout host
+  /// population gets, so the whole record stays on the host.
+  DeviceLayout,
   Rom,
   FixedTable,
 }
@@ -416,7 +419,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     resident: u64,
   ) -> Result<BatchPlan, String> {
     options.validate()?;
-    let mut batch = self.plan_record_inner(record, options, resident)?;
+    let mut batch = self.plan_population(record, options, resident)?;
     let rows = self.record_rows(record)?;
     batch.population = rows
       .iter()
@@ -443,6 +446,43 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     Ok(batch)
   }
 
+  /// Plans the layout host population would get, and populates on the
+  /// device only if that layout also fits with the device record. Device
+  /// population then never changes the layout of a record host population
+  /// can prove, and so never its proof; a record whose device plan would
+  /// need a smaller layout keeps host population. A record host population
+  /// cannot prove at any layout is planned with device population, which
+  /// needs less host memory. A layout the caller forces is planned as given.
+  fn plan_population(
+    &self,
+    record: &Execution<B>,
+    options: &Options,
+    resident: u64,
+  ) -> Result<BatchPlan, String> {
+    record.host_population.set(false);
+    #[cfg(feature = "cuda")]
+    if self.device_plans_for(record).is_some()
+      && options.forced_layout()?.is_none()
+      && options.fixed_log_heights.is_none()
+    {
+      record.host_population.set(true);
+      let host = self.plan_record_inner(record, options, resident)?;
+      record.host_population.set(false);
+      let Some(layout) = host.layout.clone().filter(|_| host.fits) else {
+        return self.plan_record_inner(record, options, resident);
+      };
+      let mut device = self.plan_forced(record, layout, options, resident)?;
+      if device.fits {
+        device.forced_layout = false;
+        device.candidates = host.candidates;
+        return Ok(device);
+      }
+      record.host_population.set(true);
+      return Ok(host);
+    }
+    self.plan_record_inner(record, options, resident)
+  }
+
   fn plan_record_inner(
     &self,
     record: &Execution<B>,
@@ -455,12 +495,13 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   #[cfg(feature = "cuda")]
   pub(super) fn device_plans_for(
     &self,
-    _record: &Execution<B>,
+    record: &Execution<B>,
   ) -> Option<&gpu::DevicePlans> {
     self
       .device_plans
       .as_ref()
       .filter(|plans| plans.circuits.iter().any(|&on| on))
+      .filter(|_| !record.host_population.get())
   }
 
   /// Who populates circuit `ci`.
@@ -507,6 +548,12 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     } else {
       #[cfg(feature = "cuda")]
       if let Some(plans) = &self.device_plans {
+        if record.host_population.get() && plans.circuits[ci] {
+          return (
+            vec![HostCause::DeviceLayout],
+            "the device record does not fit at the host layout".to_owned(),
+          );
+        }
         return plans.host_cause(self, ci);
       }
       (vec![HostCause::DeviceDisabled], "host population selected".to_owned())
@@ -639,8 +686,12 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     loop {
       let shards = tallest.div_ceil(rows);
       let shard_cells = self.shard_committed_cells(heights, rows);
-      let device_peak =
-        self.device_peak(shard_cells, device_record_bytes, rows);
+      let device_peak = self.device_peak(
+        shard_cells,
+        self.shard_population_cells(heights, rows),
+        device_record_bytes,
+        rows,
+      );
       let (mut single, retained, prep) = self.prove_allocation(heights, rows);
       if cfg!(feature = "cuda") {
         single = self.placed_device_host_allocation(
@@ -690,7 +741,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         || shards >= 65536
         || generation > u128::from(budget)
         || device_budget.is_some_and(|budget| {
-          self.device_peak(0, device_record_bytes, 0) > u128::from(budget)
+          self.device_peak(0, 0, device_record_bytes, 0) > u128::from(budget)
         })
       {
         return Ok(BatchPlan {
@@ -743,16 +794,35 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     Ok(None)
   }
 
+  /// Device peak of a shard committing `cells` cells, `population_cells` of
+  /// them stage-one and stage-two cells, with `tallest` rows and a device
+  /// record of `record` bytes (zero without device population).
+  ///
+  /// Population and lookups need the device record, its launch workspaces,
+  /// and the stage-one and stage-two LDEs together; the quotient and opening
+  /// phases need every committed LDE but no record when it is releasable,
+  /// since admission reclaims a releasable record before anything else. A
+  /// pinned record is charged in both phases.
   pub(super) fn device_peak(
     &self,
     cells: u128,
+    population_cells: u128,
     record: u64,
     tallest: usize,
   ) -> u128 {
     #[cfg(feature = "cuda")]
     {
-      let scratch =
-        self.device_plans.as_ref().map_or(0, gpu::DevicePlans::scratch_bytes);
+      // A shard without device population has no record and allocates no
+      // population workspaces.
+      let population = if record == 0 {
+        0
+      } else {
+        let scratch = self
+          .device_plans
+          .as_ref()
+          .map_or(0, |p| p.scratch_bytes(&self.members));
+        u128::from(record) + u128::from(scratch)
+      };
       let blowup = 1u128 << self.parameters.log_blowup;
       let fixed: u128 = self
         .system
@@ -775,17 +845,15 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       // Opening, FRI and Merkle buffers scale with the tallest LDE, even
       // when a narrow circuit consumes few committed cells.
       let opening = height as u128 * blowup * (192 + 160 + 88);
-      margin(
-        u128::from(record)
-          + u128::from(scratch)
-          + fixed
-          + opening
-          + cells * 8 * ((1u128 << self.parameters.log_blowup) + 1),
-      )
+      let lde = |cells: u128| cells * 8 * (blowup + 1);
+      let generation = population + fixed + opening + lde(population_cells);
+      let pinned = if gpu::release_enabled() { 0 } else { population };
+      let proving = pinned + fixed + opening + lde(cells);
+      margin(generation.max(proving))
     }
     #[cfg(not(feature = "cuda"))]
     {
-      let _ = (cells, record, tallest);
+      let _ = (cells, population_cells, record, tallest);
       0
     }
   }
@@ -794,14 +862,28 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   /// circuit contributes at most `rows` padded rows, fixed tables their full
   /// domain. Counts stage-one, stage-two and quotient (extension) columns.
   fn shard_committed_cells(&self, heights: &[usize], rows: usize) -> u128 {
+    self.shard_cells_of(heights, rows, true)
+  }
+
+  /// [`Self::shard_committed_cells`] without the quotient columns.
+  fn shard_population_cells(&self, heights: &[usize], rows: usize) -> u128 {
+    self.shard_cells_of(heights, rows, false)
+  }
+
+  fn shard_cells_of(
+    &self,
+    heights: &[usize],
+    rows: usize,
+    quotient: bool,
+  ) -> u128 {
     heights
       .iter()
       .zip(&self.system.circuits)
       .map(|(&height, c)| {
         let n =
           if c.preprocessed_height == 0 { height.min(rows) } else { height };
-        n as u128
-          * (c.main_width + c.stage_2_width + 2 * c.quotient_degree()) as u128
+        let quotient = if quotient { 2 * c.quotient_degree() } else { 0 };
+        n as u128 * (c.main_width + c.stage_2_width + quotient) as u128
       })
       .sum()
   }

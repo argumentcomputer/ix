@@ -206,8 +206,9 @@ with a 25% margin:
 - one extra shard witness when pipelining, which is enabled only if it still
   fits;
 - under CUDA, the device record bytes and per-shard device peak, checked
-  against the device budget, plus a host copy of the device record when
-  `AIUR_GPU_TRACE_RELEASE=1`.
+  against the device budget (the record only with
+  `AIUR_GPU_TRACE_RELEASE=0`), plus a host copy of the device record unless
+  `AIUR_GPU_TRACE_RELEASE=0`.
 
 `BatchPlan::population` lists, per circuit, real and padded rows, stage-one
 cells, whether it is generated on the device, its provider, and why it stays
@@ -259,11 +260,11 @@ The planner charges host rows only for host-populated circuits; generated
 circuits count against the device budget, together with the persistent
 device record. Proof bytes are identical to host population.
 
-Under device memory pressure multi-stark asks a generated source to release
-its device state. With `AIUR_GPU_TRACE_RELEASE=1`, the uploaded record is
-copied to host memory once, freed, and uploaded again on the next tile. It
-stays resident by default, because the next generated source needs it again
-at once.
+Multi-stark asks a generated source to release its device state only when a
+phase's admission is short of device memory. The uploaded record is then
+copied to host memory once, freed, and uploaded again on the next tile, so
+device planning does not reserve it beside the proving peak.
+`AIUR_GPU_TRACE_RELEASE=0` pins the record instead and saves the host copy.
 
 ## Soundness and compatibility
 

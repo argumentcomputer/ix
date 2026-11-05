@@ -77,6 +77,11 @@ pub fn register(bundle: &'static Bundle) {
   }
 }
 
+/// Whether any compiled bundle is registered.
+pub(super) fn registered() -> bool {
+  !BUNDLES.lock().unwrap_or_else(PoisonError::into_inner).is_empty()
+}
+
 struct Bound {
   launch: Launch,
   callees: Vec<u32>,
