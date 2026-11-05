@@ -54,6 +54,10 @@ serialize the grounded subset)"
 private def compileCertified (fe : FileEnv) (constList : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat) (allowPartial : Bool) (outPath : String) : IO (Except UInt32 Compiled) := do
   let log (s : String) : IO Unit := IO.println s!"  [compile-lean] {s}"
+  -- the certificate compile `finalize` needs runs beside the source compile
+  let backend := Ix.RoleBinding.Compile.certifiedBackend workers
+  let certificates ← Ix.RoleBinding.Compile.prefetchCertificates backend
+    Ix.RoleBinding.Compile.nativeCertSource
   let out ← match ← Ix.CompileM.compileCertified fe.env constList workers log with
     | .ok out => pure out
     | .error e =>
@@ -63,9 +67,9 @@ private def compileCertified (fe : FileEnv) (constList : List (Lean.Name × Lean
   let failures := out.failures.toMap
   if ← refusePartial allowPartial outPath failures then return .error 1
   let t0 ← IO.monoMsNow
-  let artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend workers)
+  let artifact ← Ix.RoleBinding.Compile.finalize backend
     fe.env Ix.RoleBinding.Compile.nativeCertSource (.plain constList) out.env
-    Ix.Resource.typingLimits (existing? := out.existing?)
+    Ix.Resource.typingLimits (existing? := out.existing?) (prefetched? := some certificates)
   IO.ofExcept (Ix.CompileM.validateFinalized out.annotated artifact)
   let t1 ← IO.monoMsNow
   log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
