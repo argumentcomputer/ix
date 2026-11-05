@@ -1331,11 +1331,6 @@ def Declaration.anchorMismatch? : Declaration md → Option (Key md)
 
 /-! ## Custom user axiom eligibility and extraction -/
 
-/-- Whether `k` is one of the standard axioms (`propext`, `Classical.choice`,
-`Quot.sound`) or the tolerated `sorryAx` anchor. -/
-def Key.isStdOrAnchorAxiom (k : Key md) : Bool :=
-  k == propextName || k == choiceName || k == quotSoundName || k == sorryAxName
-
 /-- Whether `k` is eligible as a custom user axiom name: an `.id` key that is
 not in `reservedBasisNames`. Role keys (`.role`) and compiler/model auxiliary
 keys (`.aux`) are never eligible as custom user axioms. -/
