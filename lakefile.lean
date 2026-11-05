@@ -186,8 +186,8 @@ def profileLeancArgs : Array String :=
 
 /-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
 its imports, not every module under `Ix/`. A module that `Ix.lean` does not
-import, such as `Ix.Cert.Audit`, is built only by a target that imports it,
-such as `IxTests`. Nothing the `ix-kernel` dependency or `IxSharingVerify` owns
+import, such as `Ix.Cert.Audit`, is built only when named, as the
+`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-kernel` dependency or `IxSharingVerify` owns
 is under the `Ix.` module root (their declaration namespaces are, their module
 names are not), so this library never shadows them. Keep new modules of theirs
 under their roots. -/
@@ -657,7 +657,8 @@ lean_exe «kernel-pin-gen» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, optionally the set-theory model, the layering and
+the host-side tests, optionally the set-theory model, the certification
+statements' freeze (`Ix.Cert.Audit`), the layering and
 trust-surface fences, the certified entry's host-compiled
 cases, and the `.meta` and `.source` names against Lean's. -/
 script "check-kernel" (args) := do
@@ -673,6 +674,8 @@ script "check-kernel" (args) := do
   run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+  -- The certification statements' freeze, which no test binary imports.
+  run "lake" #["build", "--wfail", "Ix.Cert.Audit"]
   -- The kernel's fences, derived from con-leche's: import layering and the
   -- per-file escape allowlist, with the trust-surface lexer's self-test.
   run "lake" #["build", "--wfail", "kernel-layering", "kernel-trust-surface"]
