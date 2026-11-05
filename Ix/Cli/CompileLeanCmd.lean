@@ -47,11 +47,15 @@ serialize the grounded subset)"
   for (n, e) in (rootCausesFirst failures.toList).take 8 do
     IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
 
-/-- The certified compile, finalized (`Ix.CompileM.compileAndFinalize`). -/
+/-- The certified compile, finalized (`Ix.CompileM.compileAndFinalize`). A compile of
+the whole import environment (not `--local`) publishes every role, so it
+prefetches every role's certificates beside the source compile. -/
 private def compileFinalized (fe : FileEnv) (constList : List (Lean.Name × Lean.ConstantInfo))
-    (workers : Nat) (allowPartial : Bool) (outPath : String) : IO (Except UInt32 Compiled) := do
+    (workers : Nat) (allowPartial : Bool) (outPath : String) (wholeEnv : Bool) :
+    IO (Except UInt32 Compiled) := do
   let log (s : String) : IO Unit := IO.println s!"  [compile-lean] {s}"
-  match ← Ix.CompileM.compileAndFinalize fe.env constList workers allowPartial log with
+  match ← Ix.CompileM.compileAndFinalize fe.env constList workers allowPartial log
+      (prefetch := wholeEnv) with
   | .error e =>
     IO.println s!"[compile-lean] FAILED: {e}"
     return .error 1
@@ -89,7 +93,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers, certified compiler"
 
   let t0 ← IO.monoMsNow
-  let compiled ← compileFinalized fe constList workers allowPartial outPath
+  let compiled ← compileFinalized fe constList workers allowPartial outPath (!p.hasFlag "local")
   let out ← match compiled with
     | .ok out => pure out
     | .error code => return code

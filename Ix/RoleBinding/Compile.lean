@@ -816,6 +816,38 @@ def sliceSupportRoles? (source : Lean.Environment) (artifact : Ixon.Env)
   guard (closeRoles (roles ++ Role.all.filter foundRoles.contains) == roles)
   some { consts, blobs, named, anonHints }
 
+/-- The certificate theorems of the roles `roles`, in the evidence order. -/
+def certTheoremsOf (roles : List Role) : List Lean.Name :=
+  (Ix.RoleEvidence.allCertTheorems.filter (fun (role, _) => roles.contains role)).flatMap (·.2)
+
+/-- The certificate closure of `theorems`, read from `certSource` and compiled
+by `backend` (empty for no theorems). -/
+def compileCertificates (backend : Backend) (certSource : IO Lean.Environment)
+    (theorems : List Lean.Name) : IO Ixon.Env := do
+  if theorems.isEmpty then pure ({} : Ixon.Env) else do
+    let certSource ← certSource
+    for name in theorems do
+      match certSource.find? name with
+      | some (.thmInfo _) => pure ()
+      | _ => throw (IO.userError s!"artifact evidence: source theorem unavailable: {name}")
+    let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
+    let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
+    compileRequired backend certSource selected
+
+/-- A certificate compile started ahead of `finalize`: its theorems, and the
+task compiling their closure (`compileCertificates`). -/
+abbrev Prefetched := List Lean.Name × Task (Except IO.Error Ixon.Env)
+
+/-- Start the certificate compile of every role's theorems now, on its own
+task, so that it runs beside the source compile. `finalize` uses it when its
+roles need exactly these theorems (as a compile of a whole toolchain's
+library does), and compiles its own otherwise. `backend` and `certSource`
+must be the ones `finalize` is given. -/
+def prefetchCertificates (backend : Backend) (certSource : IO Lean.Environment) :
+    IO Prefetched := do
+  let theorems := certTheoremsOf Role.all
+  return (theorems, ← IO.asTask (compileCertificates backend certSource theorems))
+
 /-- Generate from real certificate source, compiled by the same raw backend.
 No committed/default role table or certificate store supplies missing inputs.
 
@@ -824,29 +856,26 @@ toolchain's environment as `source`: `nativeCertSource` for a compile of ix's ow
 toolchain, and the imported environment itself for a compile of another
 toolchain's export (`Ix.LeanExport`). It is only run when a role with
 certificate evidence (a well-founded operation, or a definition specified by
-equations that hold by a certificate) is published. -/
+equations that hold by a certificate) is published. A `prefetched` compile
+(`prefetchCertificates`, from the same `backend` and `certSource`) stands in
+for it when its theorems are the ones needed. -/
 def finalize (backend : Backend) (source : Lean.Environment)
     (certSource : IO Lean.Environment)
     (input : Ix.Compile.CompileInput) (artifact : Ixon.Env)
     (limits : Ix.Kernel.Admission.Limits)
-    (existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none) : IO Ixon.Env := do
+    (existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none)
+    (prefetched? : Option Prefetched := none) : IO Ixon.Env := do
   let existing ← match existing? with
     | some m => pure m
     | none => IO.ofExcept (sourceAddresses artifact)
   let initialRoles := publishedRolesFrom existing
   let initRoles := closeRoles (Ix.Kernel.preludeShape.flatten ++ initialRoles)
   let spawnCertificatesTask (roles : List Role) : IO (Task (Except IO.Error Ixon.Env)) := do
-    let theorems := (Ix.RoleEvidence.allCertTheorems.filter (fun (role, _) => roles.contains role)).flatMap (·.2)
-    IO.asTask do
-      if theorems.isEmpty then pure ({} : Ixon.Env) else do
-        let certSource ← certSource
-        for name in theorems do
-          match certSource.find? name with
-          | some (.thmInfo _) => pure ()
-          | _ => throw (IO.userError s!"artifact evidence: source theorem unavailable: {name}")
-        let constants := Ix.EnvScope.collectSelectedDeps certSource theorems
-        let selected ← IO.ofExcept ((Ix.Compile.compileInputFromEnv certSource constants).mapError toString)
-        compileRequired backend certSource selected
+    let theorems := certTheoremsOf roles
+    match prefetched? with
+    | some (ahead, task) => if ahead == theorems then pure task else
+        IO.asTask (compileCertificates backend certSource theorems)
+    | none => IO.asTask (compileCertificates backend certSource theorems)
   let initCertTask? ← if initialRoles == initRoles then
       some <$> spawnCertificatesTask initRoles
     else

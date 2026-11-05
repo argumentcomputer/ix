@@ -252,31 +252,48 @@ with `certifiedBackend`, the certificate theorems from `certSource`),
 compile's refusal. `log` receives each phase's time and the resident set size.
 `defaultRoles` is off for another toolchain's export, as in
 `compileCertifiedPrepared`; the finalized artifact's published role names are
-then checked against its own binding (`checkFinalized`). -/
+then checked against its own binding (`checkFinalized`).
+
+With `prefetch`, every role's certificate compile starts first, beside the
+source compile (`Ix.RoleBinding.Compile.prefetchCertificates`): a compile of a
+whole toolchain's library publishes every role, so `finalize` needs exactly
+those certificates. The prefetch is always joined before returning, also on a
+refusal or a failure, or when `finalize` needed other certificates: a task
+still running when `main` returns would wait for subtasks that the runtime's
+shutdown no longer runs. -/
 def compileAndFinalize (source : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat) (allowPartial : Bool)
     (log : String → IO Unit := fun _ => pure ())
     (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
-    (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true) :
+    (strip : Ixon.Env → Ixon.Env := id) (defaultRoles : Bool := true)
+    (prefetch : Bool := false) :
     IO (Except String (CertifiedOut × Finalization)) := do
-  let out ← match ← compileCertified source constants workers log defaultRoles with
-    | .ok out => pure out
-    | .error e => return .error e
-  log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
-  if !allowPartial && !out.failures.isEmpty then return .ok (out, .refused)
+  let backend := Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles
+  let certificates? ← if prefetch then
+      some <$> Ix.RoleBinding.Compile.prefetchCertificates backend certSource
+    else pure none
   try
-    let t0 ← IO.monoMsNow
-    let artifact ← Ix.RoleBinding.Compile.finalize
-      (Ix.RoleBinding.Compile.certifiedBackend workers defaultRoles) source certSource
-      (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
-    IO.ofExcept (validateFinalized out.annotated artifact)
-    let t1 ← IO.monoMsNow
-    log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
-    let artifact := strip artifact
-    let bytes ← IO.ofExcept (Ixon.serEnv artifact)
-    log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
-    return .ok (out, .done artifact bytes)
-  catch e => return .ok (out, .failed e.toString)
+    let out ← match ← compileCertified source constants workers log defaultRoles with
+      | .ok out => pure out
+      | .error e => return .error e
+    log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
+    if !allowPartial && !out.failures.isEmpty then return .ok (out, .refused)
+    try
+      let t0 ← IO.monoMsNow
+      let artifact ← Ix.RoleBinding.Compile.finalize backend source certSource
+        (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
+        (prefetched? := certificates?)
+      IO.ofExcept (validateFinalized out.annotated artifact)
+      let t1 ← IO.monoMsNow
+      log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
+      let artifact := strip artifact
+      let bytes ← IO.ofExcept (Ixon.serEnv artifact)
+      log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
+      return .ok (out, .done artifact bytes)
+    catch e => return .ok (out, .failed e.toString)
+  finally
+    if let some (_, task) := certificates? then
+      let _ ← IO.wait task
 
 end Ix.CompileM
 

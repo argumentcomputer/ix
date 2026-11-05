@@ -156,6 +156,8 @@ def Row.json (row : Row) : Lean.Json := Lean.Json.mkObj [
   ("reason", Lean.toJson row.reason), ("micros", Lean.toJson row.micros),
   ("readMicros", Lean.toJson row.readMicros)]
 
+/-- `row.json.compress`, written out without building the `Json` value (keys
+in `Json`'s sorted order). `kernel-record-check` checks the two agree. -/
 def Row.jsonLine (row : Row) : String :=
   let namesStr := String.intercalate "," (row.names.toList.map Lean.Json.renderString)
   "{\"address\":\"" ++ toString row.address ++

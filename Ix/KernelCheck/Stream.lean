@@ -1,14 +1,15 @@
 module
 
 public import Ix.KernelCheck.Step
+import all IxC.Ixon.Types.Kinds
 
 @[expose] public section
 
 /-! # The environment check's streaming load (untrusted harness)
 
 `kernel-check-ixe` loads an `.ixe` this way unless `--load eager` is given.
-The `.ixe` is loaded metadata-light and lazily (`Ixon.deEnvAnon`: names map
-to addresses, records stay windows into the file's buffer). Every record is
+The `.ixe` is parsed metadata-light (`Ixon.deEnvAnon`: names map to
+addresses, records stay undecoded until `loadEnv`). Every record is
 decoded once for its **skeleton** (`skeleton`): what the order, the record
 views and the reader read of a record other than the one being read. The
 setup (`CheckIxeStep.setup`) is built over the skeletons, with the literal
@@ -28,6 +29,71 @@ once read.
 
 The rows are the eager load's: the same records in the same order, read by
 the same reader from the same decoded records. -/
+
+namespace Ix.Kernel.Reader
+
+/-- Whether a value's body is a projection of the bound variable: the only
+shape the projection-function rewrite (`projRewrite`) reads the state for. -/
+def projBody (value : CExpr md) : Bool :=
+  match Ix.Kernel.Frontend.lamBody value with
+  | .proj _ _ (.bvar 0) => true
+  | _ => false
+
+/-- Whether `lowerDefinition` reads its reading state `st`: through the
+projection rewrite, on a definition's or theorem's projection body (an
+opaque's value is kept as read). -/
+def readsState (value : CExpr md) : Ix.DefKind → Bool
+  | .opaq => false
+  | _ => projBody value
+
+/-- Whether `lowerDefinition` reads its `heights`: through the height rule, on
+a definition without a host hint. -/
+def readsHeights (hint : Option Ix.Kernel.ReducibilityHint) : Ix.DefKind → Bool
+  | .defn => hint.isNone
+  | _ => false
+
+/-- Whether `lowerDefinition hint st heights cv value kind safety` reads its
+reading state or its heights. When it does not, its result is the same at
+every state (`lowerDefinition_stateless`), so a reading at the empty state
+stands. -/
+def needsState (hint : Option Ix.Kernel.ReducibilityHint) (value : CExpr md)
+    (kind : Ix.DefKind) : Bool :=
+  readsState value kind || readsHeights hint kind
+
+theorem projRewrite_eq_none (st : State md) (cv : CVal md) (value : CExpr md)
+    (h : projBody value = false) : projRewrite st cv value = none := by
+  unfold projBody at h
+  unfold projRewrite
+  split
+  · rename_i heq
+    rw [heq] at h
+    simp at h
+  · rfl
+
+/-- `needsState` is exact about `lowerDefinition`'s reads: if it says no
+state is read, any two states lower the same. -/
+theorem lowerDefinition_stateless (hint : Option Ix.Kernel.ReducibilityHint)
+    (st st' : State md) (heights heights' : CName md → Nat) (cv : CVal md)
+    (value : CExpr md) (kind : Ix.DefKind) (safety : Ix.DefinitionSafety)
+    (h : needsState hint value kind = false) :
+    lowerDefinition hint st heights cv value kind safety =
+      lowerDefinition hint st' heights' cv value kind safety := by
+  cases kind with
+  | defn =>
+    cases hint with
+    | none => simp [needsState, readsHeights] at h
+    | some k =>
+      simp only [needsState, readsState, readsHeights, Option.isNone_some, Bool.or_false] at h
+      simp [lowerDefinition, projRewrite_eq_none _ _ _ h]
+  | thm =>
+    simp only [needsState, readsState, readsHeights, Bool.or_false] at h
+    simp [lowerDefinition, projRewrite_eq_none _ _ _ h]
+  | opaq =>
+    -- the derived `BEq` is unfolded here (`import all` of its module)
+    have hk : (Ix.DefKind.opaq != Ix.DefKind.opaq) = false := rfl
+    simp [lowerDefinition, hk]
+
+end Ix.Kernel.Reader
 
 namespace Benchmarks.Kernel.CheckIxeStream
 
@@ -85,10 +151,12 @@ inductive PreRead where
       (kind : Ix.DefKind) (safety : Ix.DefinitionSafety)
 
 /-- Pre-read a record against an empty `State .anon` when its `Expr .anon`
-construction is independent of prior records' state. Returns `none` only for
-records whose expression construction depends on `st` (inductive blocks needing
-the in-process model, or mutual definition blocks with a projection-function
-body or missing reducibility hint). -/
+construction is independent of prior records' state. A single definition
+whose lowering reads the state (`needsState`) is pre-read up to its header and
+value, lowered at its turn. Returns `none` only for records whose expression
+construction depends on `st` otherwise (inductive blocks needing the
+in-process model, or mutual definition blocks with a member whose lowering
+reads the state). -/
 def preReadRecord (cx : Ctx .anon) (address : Address) (c : Ixon.Constant) : Option PreRead :=
   match c.info with
   | .defn d =>
@@ -96,14 +164,9 @@ def preReadRecord (cx : Ctx .anon) (address : Address) (c : Ixon.Constant) : Opt
     | .error e => some (.ready (.error e))
     | .ok rd =>
       match rd.decls[0]? with
-      | some (Ix.Kernel.Declaration.defnDecl cv value _) =>
-        if (match Ix.Kernel.Frontend.lamBody value with | .proj _ _ (.bvar 0) => true | _ => false) ||
-            (cx.hint (.member address 0)).isNone then
-          some (.defn cv value d.kind d.safety)
-        else
-          some (.ready (.ok rd))
+      | some (Ix.Kernel.Declaration.defnDecl cv value _)
       | some (Ix.Kernel.Declaration.thmDecl cv value) =>
-        if (match Ix.Kernel.Frontend.lamBody value with | .proj _ _ (.bvar 0) => true | _ => false) then
+        if needsState (cx.hint (.member address 0)) value d.kind then
           some (.defn cv value d.kind d.safety)
         else
           some (.ready (.ok rd))
@@ -121,16 +184,17 @@ def preReadRecord (cx : Ctx .anon) (address : Address) (c : Ixon.Constant) : Opt
       match readRecord cx {} address c with
       | .error e => some (.ready (.error e))
       | .ok rd =>
+        -- `needsState` member by member: the heights by the member's index
+        -- in the block (its hint's), the state by its declaration (the
+        -- declarations follow `defOrder`, not the block's order)
         let needsSt := (List.range ms.size).any (fun i =>
           match ms[i]? with
-          | some (.defn d) => d.kind == .defn && (cx.hint (.member address i)).isNone
+          | some (.defn d) => readsHeights (cx.hint (.member address i)) d.kind
           | _ => false) ||
           rd.decls.any fun (d : Ix.Kernel.Declaration .anon) =>
             match d with
-            | .defnDecl _ value _ | .thmDecl _ value =>
-              match Ix.Kernel.Frontend.lamBody value with
-              | .proj _ _ (.bvar 0) => true
-              | _ => false
+            | .defnDecl _ value _ => readsState value .defn
+            | .thmDecl _ value => readsState value .thm
             | _ => false
         if needsSt then none else some (.ready (.ok rd))
     else
@@ -138,24 +202,41 @@ def preReadRecord (cx : Ctx .anon) (address : Address) (c : Ixon.Constant) : Opt
   | _ =>
     some (.ready (readRecord cx {} address c))
 
-/-- Pre-read a chunk of decoded records in a worker task. -/
+/-- Pre-read a chunk of decoded records in a worker task, keeping a decoded
+record only where the check loop still reads it: when its pre-read gave up,
+and for a tier record (the tier reader reads it). Every other decoded record
+is freed with its chunk. -/
 def preReadChunk (cx : Ctx .anon)
     (chunk : Array (Address × Ixon.Constant × Ixon.Constant × (Bool × Bool))) :
-    Array (Address × Option PreRead × Ixon.Constant) :=
-  chunk.map fun (address, c, _, _) => (address, preReadRecord cx address c, c)
+    Array (Address × Option PreRead × Option Ixon.Constant) :=
+  chunk.map fun (address, c, _, _) =>
+    let pr := preReadRecord cx address c
+    (address, pr, if pr.isNone || Ix.Kernel.Admission.isTierInfo c.info then some c else none)
 
 /-- A streaming load: the environment without its records, the setup over
-the skeletons, the records' lazy windows (handed to the check loop's thread
-in a reference, so that the loop takes the only reference to them), the
-parallel pre-read expressions, and the prelude's records that the `.ixe` does
-not hold (read in full from the setup's store). -/
+the skeletons, the decoded records the pre-read could not read ahead (the
+context-dependent ones and the tier records), the parallel pre-readings (both
+handed to the check loop's thread in a reference, so that the loop takes the
+only reference to the containers), and the prelude's records that the `.ixe`
+does not hold (read in full from the setup's store). -/
 structure Loaded where
   env : Ixon.Env
   setup : Setup
-  windows : IO.Ref (Std.HashMap Address Ixon.Constant)
+  decoded : IO.Ref (Std.HashMap Address Ixon.Constant)
   preReads : IO.Ref (Std.HashMap Address PreRead)
   preludeOnly : Std.HashSet Address
   tierAddresses : Std.HashSet Address := {}
+
+/-- A lazy constant decoded, as `LazyConstant.get` decodes it, from its own
+copy of its bytes. Every record of a loaded `.ixe` is a window into the one
+file buffer, and the decoder's state holds the buffer it reads: decoded in
+place by the parallel workers, every step of every worker updates that one
+buffer's thread-shared reference count, and the chunks spend about 50 times
+the work of decoding the same records one at a time from copies. -/
+def decodeOwn (lazy : Ixon.LazyConstant) : Except String Ixon.Constant :=
+  match lazy.cache with
+  | some c => .ok c
+  | none => Ixon.deConstantAt lazy.rawBytes 0 lazy.len
 
 /-- Decode a slice `[lo, hi)` of lazy constants together with their skeletons
 and literal-kind flags. -/
@@ -165,7 +246,7 @@ def decodeChunk (entries : Array (Address × Ixon.LazyConstant))
   for idx in [lo:hi] do
     if h : idx < entries.size then
       let (address, lazy) := entries[idx]
-      match lazy.get with
+      match decodeOwn lazy with
       | .ok c => out := out.push (address, c, skeleton c, literalKinds c)
       | .error e => return .error e
   return .ok out
@@ -210,23 +291,24 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     if store.contains a then acc else acc.insert a
   let hints := Hints.ofStore store env.anonHints
   let s := setup store (env.blobs[·]?) table pre hints.lookup (literalFlags := some litFlags)
+  -- The pre-read workers all read the setup's reader context. Persistent, it
+  -- costs them no thread-shared reference counting; the run keeps the setup
+  -- to its end anyway (`kernel-check-ixe` marks it persistent before its loop).
+  -- Nothing else uses it yet. (`markPersistent` is `unsafe`: a persistent
+  -- object is never freed.)
+  let s ← unsafe Runtime.markPersistent s
   let preTasks := chunks.map fun chunk => Task.spawn fun () => preReadChunk s.cx chunk
   let mut preReads : Std.HashMap Address PreRead := Std.HashMap.emptyWithCapacity entries.size
   let mut decoded : Std.HashMap Address Ixon.Constant := {}
   for pt in preTasks do
     let preChunk := pt.get
-    for (address, pr?, c) in preChunk do
-      match pr? with
-      | some pr =>
-        preReads := preReads.insert address pr
-        if tierAddresses.contains address then
-          decoded := decoded.insert address c
-      | none =>
-        decoded := decoded.insert address c
+    for (address, pr?, c?) in preChunk do
+      if let some pr := pr? then preReads := preReads.insert address pr
+      if let some c := c? then decoded := decoded.insert address c
   return {
     env
     setup := s
-    windows := ← IO.mkRef decoded
+    decoded := ← IO.mkRef decoded
     preReads := ← IO.mkRef preReads
     preludeOnly
     tierAddresses
@@ -248,17 +330,10 @@ structure StreamState where
   records : Std.HashMap Address Ixon.Constant := {}
   preReads : Std.HashMap Address PreRead := {}
 
-/-- The initial reading state: every decoded record, taken out of the load's
-reference so that the check loop's thread holds the sole reference and
-dropping a record frees it. -/
-def StreamState.take (windows : IO.Ref (Std.HashMap Address Ixon.Constant)) : IO StreamState := do
-  let records ← windows.modifyGet fun m => (m, {})
-  return { records }
-
 /-- Take both the pre-read map and fallback decoded records out of `Loaded`
 so the check loop's thread holds the sole reference to the containers. -/
 def Loaded.init (l : Loaded) : IO StreamState := do
-  let records ← l.windows.modifyGet fun m => (m, {})
+  let records ← l.decoded.modifyGet fun m => (m, {})
   let preReads ← l.preReads.modifyGet fun m => (m, {})
   return { records, preReads }
 

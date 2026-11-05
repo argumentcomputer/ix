@@ -11,10 +11,14 @@ namespace Ix.KernelCheck.Binding
 
 def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 22, 1 <<< 22, 1 <<< 34, 1 <<< 28, 1 <<< 26⟩
 
+/-- The role table and prelude a harness reads an artifact under. A bound
+artifact is admitted by `check-lean`'s preparation (`prepareRecords`), run
+with its decoding in parallel (`prepareRecordsPar`, equal to it by
+`prepareRecordsPar_eq`). -/
 def context (env : Ixon.Env) :
     Except String (Ix.Kernel.RoleTable × Ix.Kernel.Reader.Prelude .anon) := do
   if env.roleBinding.isSome then
-    let input ← (Ix.RoleBinding.Artifact.prepareRecords env limits).mapError toString
+    let input ← (Ix.RoleBinding.Artifact.prepareRecordsPar env limits).mapError toString
     return (input.prepared.table, input.prepared.pre)
   let table ← Ix.Kernel.Reader.defaultTable
   let pre ← Ix.Kernel.Reader.preludeFor table
