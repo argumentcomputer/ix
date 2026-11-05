@@ -236,8 +236,10 @@ def registry : List Entry := [
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
-  -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates)
-  .runner "binding-proof-cli" (.ci .cli) Tests.Aggr.BindingReuse.cli,
+  -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).
+  -- Its 64 GiB proving budget would set lean-test's memory peak, so it runs
+  -- in the compiler-closures partition of the merge queue.
+  .runner "binding-proof-cli" (.ci .compilerClosures) Tests.Aggr.BindingReuse.cli,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "catalog-dedup" (.ci .misc) Tests.Ix.CatalogDedup.suite,
@@ -417,7 +419,7 @@ def required : List (String × String) := [
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
-  ("binding-proof-cli", "ci:cli"),
+  ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
   ("checker-support-regression", "ci:compiler-closures"),
