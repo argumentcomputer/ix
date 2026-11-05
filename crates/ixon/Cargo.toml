@@ -8,13 +8,11 @@ license.workspace = true
 bignat = { workspace = true }
 blake3 = { workspace = true }
 dashmap = { workspace = true }
-indexmap = { workspace = true }
 ix-common = { workspace = true }
 memmap2 = { workspace = true }
 nom = { workspace = true }
 num-bigint = { workspace = true }
 rustc-hash = { workspace = true }
-tiny-keccak = { workspace = true }
 
 [target.'cfg(not(target_arch = "riscv64"))'.dependencies]
 dashmap = { workspace = true, features = ["rayon"] }
