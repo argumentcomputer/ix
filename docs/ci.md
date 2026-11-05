@@ -44,9 +44,9 @@ the entry runs:
 | --- | --- | --- |
 | `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
 | `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
-| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, and the certified checker's pinned subjects and acceleration inputs |
+| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, the certified checker's pinned subjects and acceleration inputs, and the kernel's level comparison against evaluation |
 | `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, sharding, catalog and commit I/O, and the IxVM suite |
-| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; and `ix validate-lean` fidelity |
+| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; `ix validate-lean` fidelity; and quotient Source on Init and Std at that artifact |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
 The manual runners that prove through the production `ix_aggr` circuit,
@@ -149,3 +149,59 @@ artifact under the same name so a recovered job cannot fail on a duplicate
 upload.
 
 See [RunsOn's merge queue guidance](https://runs-on.com/docs/costs/spot-pricing/#merge-queues).
+
+## Suites retired with the Rust compiler and kernel
+
+Deleting the Rust compiler, the Rust kernel and ShardMap also retired the
+suites below. Each entry says what replaced it, or why it was dropped.
+
+**Dropped:**
+
+- **The Rust differentials:** `rust-compile`, `rust-decompile`,
+  `rust-serialize`, the `*-cross` and `*-canon-roundtrip` checks,
+  `kernel-check-const`, `kernel-check-env`, `kernel-ixon-roundtrip`,
+  `exact-sharing-ffi`, `shard-map`, and `check-kernel`'s codec differential
+  (`kernel-codec`). Their other side is deleted.
+- **`compile-schedule-identity`** (landing). It compared the wave fold at
+  several widths, a test-only live-state reference schedule, and the streamed
+  pipeline at 1, 4 and 16 workers. None of these comparisons is needed now:
+  - The IO pipeline computes the fold by type: `reportIO` returns
+    `{r // r = Ix.Cert.compileReport env}` (`Ix/Compile/ReadyCompile.lean`).
+  - The fold's value does not depend on its width
+    (`Ix.Cert.Schedule.compileEnvFold_width`).
+  - No other path ran the reference schedule. That the wave-snapshot fold
+    equals a one-block-at-a-time live-state fold is not proved
+    (`Ix/Cert/Schedule.lean`), but nothing compiles that way.
+- **`cert-compile-parity-initstd`** (landing). It compared `Ix.Cert.compile`
+  with the IO pipeline and the Rust compiler on Init+Std. The first equality
+  is `reportIO`'s type, and the Rust compiler is deleted. `initstd-reference`
+  pins the bytes of the Init+Std artifact.
+- **The Batteries leg of `compile-determinism`.** `initstd-reference`'s
+  pinned digest is the stronger check across processes at scale.
+
+**Replaced:**
+
+- **`record-decoding`.** Its refusals moved into `kernel-record-check`
+  (primary): orphan, noncanonical and oversized records, phase precedence,
+  and a cache beside bad bytes. The parallel decoder's agreement with the
+  serial one is proved (`Ix.RoleBinding.RecordDecoding.parallel_eq`,
+  `recordStore_eq_parallel`).
+- **`compile-claim-conflict`** keeps its Lean legs, in primary: the driver
+  API's exact refusals, and a user `T.below` that every Lean driver compiles
+  whole.
+- **`decompile` and `decompile-diff`.** Replaced by `decompile-roundtrip`
+  (primary): the certified compile, then the decompiler, over the fixture
+  corpus, compared with the input both ways. On Init+Std the round trip is
+  `fidelity-initstd`'s phase 5.
+- **`check-kernel`'s Init+Std reader fidelity** (the first 20,000 records).
+  It is `fidelity-initstd`'s phases 3 and 4, which compare every record of
+  Init+Std and require full source coverage.
+
+**Restored:**
+
+- **`kernel-read-cache`** (primary), as it was.
+- **`check-kernel`'s level comparison**, as `kernel-level-comparison`
+  (`ci:compiler-closures`: about a minute on one thread).
+- **`check-kernel`'s quotient Source on Init and Std**, as
+  `kernel-source-ingress-initstd` (`ci:landing-initstd-cli`). It reads
+  `initstd-reference`'s artifact instead of compiling Init+Std again.
