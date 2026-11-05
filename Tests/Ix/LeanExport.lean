@@ -24,8 +24,12 @@ public import Tests.Fixtures.toolchains.Primitives
     included, gives exactly the content of the native compile of the same
     declarations: every name, address, constant and the binding. Metadata
     differences are reported.
+  - **Another toolchain's roles.** The 4.35.0 and 4.33.1 fixtures publish
+    `Int.decLt` and `Nat.xor` at addresses the default role table does not
+    bind them at. The compile at the default table refuses them; the compile
+    of `ix compile-export` binds them in the export's own role binding.
 
-  The fixture is decompressed with the `zstd` command.
+  The fixtures are decompressed with the `zstd` command.
 -/
 
 public section
@@ -184,10 +188,58 @@ native ones in binder names or info; {exported.droppedSyntaxMData} syntax-valued
   require c.contentExact s!"the export's compile differs in content: {report}"
   return (true, 0, 0, none)
 
+/-! ## Another toolchain's roles -/
+
+/-- An export of another toolchain binds its roles where its own declarations
+put them. 4.35.0's `Decidable` has one constructor (`Decidable.intro`), so its
+`Int.decLt` sits elsewhere than ix's. 4.33.1's `Bool.not` is another term, so
+its `Nat.xor` does too.
+
+- **At the default role table** (`compileCertified`), the published role is
+  refused.
+- **As `ix compile-export` compiles it** (`defaultRoles := false`), the export
+  is finalized. Its binding binds the role at the address the export publishes
+  it at, which is not the default table's. `finalize`'s own check of the
+  published role names against that binding passed. -/
+def foreignRoles (version : String) (role : _root_.Ix.Kernel.Role) :
+    IO (Bool × Nat × Nat × Option String) := do
+  let exported ← IO.ofExcept (importString (← readFixture version))
+  let env ← environment exported.constants
+  let constants := env.constants.toList
+  match ← Ix.CompileM.compileCertified env constants 8 with
+  | .ok _ =>
+    throw (IO.userError s!"{version}: the compile at the default role table accepted {repr role}")
+  | .error e =>
+    require (e.startsWith "role check failed") s!"{version}: refused for another reason: {e}"
+  let artifact ← match ← Ix.CompileM.compileAndFinalize env constants 8 (allowPartial := false)
+      (certSource := pure env) (defaultRoles := false) with
+    | .ok (_, .done artifact _) => pure artifact
+    | .ok (out, .refused) =>
+      throw (IO.userError s!"{version}: {out.failures.toMap.size} constants failed to compile")
+    | .ok (_, .failed e) => throw (IO.userError s!"{version}: finalization failed: {e}")
+    | .error e => throw (IO.userError s!"{version}: the compile failed: {e}")
+  let some binding := artifact.roleBinding
+    | throw (IO.userError s!"{version}: the artifact carries no role binding")
+  let some table := _root_.Ix.Kernel.RoleTable.ofBytes binding.bytes
+    | throw (IO.userError s!"{version}: the role binding does not decode")
+  let published := (← IO.ofExcept (_root_.Ix.RoleBinding.sourceAddresses artifact))[role.leanName]?
+  let atDefault := (_root_.Ix.Cert.roleTableBound.find? (·.1 == role)).map (·.2)
+  require (published.isSome && table.addressOf? role == published)
+    s!"{version}: {repr role} is published at {published}, bound at {table.addressOf? role}"
+  require (published != atDefault)
+    s!"{version}: {repr role} is published at the default table's address {atDefault}"
+  IO.println s!"[lean-export] {version}: {repr role} bound at {published}; the default table \
+binds it at {atDefault}"
+  return (true, 0, 0, none)
+
 def suite : List LSpec.TestSeq := [
   readerTests,
   .individualIO "a 4.34.1 export compiles to exactly the native content, role binding included" none
-    fidelity .done]
+    fidelity .done,
+  .individualIO "a 4.35.0 export binds its own Int.decLt, which the default role table refuses"
+    none (foreignRoles "4.35.0" .intDecLt) .done,
+  .individualIO "a 4.33.1 export binds its own Nat.xor, which the default role table refuses"
+    none (foreignRoles "4.33.1" .natXor) .done]
 
 end Tests.Ix.LeanExport
 
