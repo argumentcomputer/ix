@@ -1,6 +1,6 @@
-import IxC.Kernel.Admission.Tier
-import IxC.Kernel.Admission.Theorems
-import IxC.Kernel.Verify.Cached.PolicyC
+module
+
+public import IxC.Kernel.Admission.Tier
 
 /-! # The theorems of the entries that admit user axioms
 
@@ -22,21 +22,28 @@ are their environments at `allowUser`.
   `checkBytesTieredUsingUnder_strict_of_nil`), at every policy: over records
   that declare no user axiom the fold is `checkDecls`
   (`Cached.checkDeclsUnder_eq_checkDecls`). In particular such an accept has a
-  model (`checkBytesUnder_has_model_of_nil`), and a receipt of the user-axiom
-  entry whose list is empty is a receipt of the certified entry.
+  model (`checkBytesUnder_has_model_of_nil`, `UserAxioms/Model.lean`), and a
+  receipt of the user-axiom entry whose list is empty is a receipt of the
+  certified entry (`Ix.RoleBinding.Artifact.ReceiptConditional.toReceipt`,
+  `TierReceiptConditional.toTierReceipt`).
 * An accept of a user-axiom entry is exactly an accept under `allowUser` with
   some list (`checkBytesWithUserAxioms_ok_iff`, ...).
 
+This file is a `module`, so that a host's compiled code can build the certified
+entry's receipt from an accept that lists no user axiom (a `module` imports
+only modules). It imports no theorem module: the theorem that needs one, the
+model of such an accept, is `UserAxioms/Model.lean`.
+
 Every statement holds at every content hash `hash`. An accept that lists user
 axioms is conditional on them; no model is claimed for it here. -/
+
+public section
 
 namespace Ix.Kernel.Admission
 
 open Ix.Kernel (ConstRef)
 open Ix.Kernel.Reader
 open Ix.Kernel.Tier (TierConst)
-
-universe u
 
 /-- The environment of an accept that also returns a list. -/
 theorem map_fst_ok_iff {ε α β : Type} {x : Except ε (α × β)} {a : α} :
@@ -116,8 +123,7 @@ theorem checkBytesUnder_strict (hash : ByteArray → Address) (binding : Binding
     (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint) :
     Prod.fst <$> checkBytesUnder .strict hash binding pre limits records blobs hint =
       checkBytesWith hash binding pre limits records blobs hint := by
-  rw [checkBytesWith_eq]
-  unfold checkBytesUnder
+  unfold checkBytesUnder checkBytesWith prepareWith
   cases preflight limits records blobs with
   | error e => rfl
   | ok _ =>
@@ -132,7 +138,12 @@ theorem checkBytesUnder_strict (hash : ByteArray → Address) (binding : Binding
         | ok t =>
           cases decodeRecords limits records with
           | error e => rfl
-          | ok constants => exact checkConstantsUnder_strict hash t pre constants blobs hint
+          | ok constants =>
+            refine (checkConstantsUnder_strict hash t pre constants blobs hint).trans ?_
+            unfold checkConstantsWith
+            show Except.bind (readStream hash t pre constants blobs hint) _ =
+              Except.bind (Except.bind (readStream hash t pre constants blobs hint) _) _
+            cases readStream hash t pre constants blobs hint <;> rfl
 
 /-- **T1 over record bytes**: an accept of the bytes entry under any policy that
 lists no user axiom is `checkBytesWith`'s accept, with the same environment. -/
@@ -142,7 +153,7 @@ theorem checkBytesUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
     {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
     (h : checkBytesUnder policy hash binding pre limits records blobs hint = .ok (env, [])) :
     checkBytesWith hash binding pre limits records blobs hint = .ok env := by
-  rw [checkBytesWith_eq]
+  unfold checkBytesWith prepareWith
   unfold checkBytesUnder at h
   cases h1 : preflight limits records blobs with
   | error e => simp [h1, bind, Except.bind, Except.mapError] at h
@@ -160,8 +171,11 @@ theorem checkBytesUnder_strict_of_nil {policy : Ix.Kernel.Cached.AxiomPolicy}
           | error e => simp [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
           | ok constants =>
             simp only [h1, h2, h3, h4, h5, bind, Except.bind, Except.mapError] at h
-            simp only [bind, Except.bind, Except.mapError]
-            exact checkConstantsUnder_strict_of_nil h
+            refine Eq.trans ?_ (checkConstantsUnder_strict_of_nil h)
+            unfold checkConstantsWith
+            show Except.bind (Except.bind (readStream hash t pre constants blobs hint) _) _ =
+              Except.bind (readStream hash t pre constants blobs hint) _
+            cases readStream hash t pre constants blobs hint <;> rfl
 
 /-- An accept of `checkBytesWithUserAxioms` is an accept under `allowUser`. -/
 theorem checkBytesWithUserAxioms_ok_iff {hash : ByteArray → Address} {binding : Binding}
@@ -170,17 +184,6 @@ theorem checkBytesWithUserAxioms_ok_iff {hash : ByteArray → Address} {binding 
     checkBytesWithUserAxioms hash binding pre limits records blobs hint = .ok env ↔
       ∃ axs, checkBytesUnder .allowUser hash binding pre limits records blobs hint = .ok (env, axs) :=
   map_fst_ok_iff
-
-/-- **Model existence without user axioms**: an accept of the bytes entry under
-any policy that lists no user axiom has a model in every set theory. -/
-theorem checkBytesUnder_has_model_of_nil (V : Type u) [Ix.Kernel.SetTheory V]
-    {policy : Ix.Kernel.Cached.AxiomPolicy}
-    {hash : ByteArray → Address} {binding : Binding} {pre : Prelude .anon}
-    {limits : Limits} {records : Records} {blobs : Ix.Kernel.Ingress.Blobs}
-    {hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env .anon}
-    (h : checkBytesUnder policy hash binding pre limits records blobs hint = .ok (env, [])) :
-    Nonempty (Ix.Kernel.Model V env) :=
-  checkBytesWith_has_model V (checkBytesUnder_strict_of_nil h)
 
 /-! ## The tiered entries -/
 
@@ -322,3 +325,5 @@ theorem checkBytesTieredUsingWithUserAxioms_ok_iff
   map_fst_ok_iff
 
 end Ix.Kernel.Admission
+
+end

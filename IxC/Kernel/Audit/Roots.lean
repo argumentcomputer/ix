@@ -4,6 +4,8 @@ import IxC.Kernel.Admission.Theorems
 import IxC.Kernel.Admission.TierTheorems
 import IxC.Kernel.Admission.Reference
 import IxC.Kernel.Admission.UserAxioms
+import IxC.Kernel.Admission.UserAxioms.Model
+import IxC.Kernel.Verify.Cached.PolicyC
 import IxC.Kernel.Verify.Cached.PerBlock
 import IxC.Kernel.Audit.Axioms
 import IxC.Kernel.Audit.Imports
@@ -615,8 +617,14 @@ the executed fold and the certified entry. -/
 
 The fold and the entries under an axiom policy (`AxiomPolicy`,
 `IxC/Kernel/Cached/Policy.lean`, `IxC/Kernel/Admission/UserAxioms.lean`) and
-their theorems stand on the same three axioms. Their statements are frozen
-below; their runtime closure is frozen with the others. -/
+their theorems (`IxC/Kernel/Verify/Cached/PolicyC.lean`,
+`IxC/Kernel/Admission/UserAxioms{,/Model}.lean`) stand on the same three
+axioms. `UserAxioms.lean` is a `module`, so that the host's compiled code can
+use T1 (`checkBytesUnder_strict_of_nil` and its tiered form) to make the
+certified entry's receipt from an accept that lists no user axiom; it is
+denied to the certified import closure like the other theorem modules
+(`importDenylist`, which also covers `UserAxioms.Model`). Their statements are
+frozen below; their runtime closure is frozen with the others. -/
 
 run_cmd do
   let env ← Lean.getEnv
@@ -679,6 +687,10 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.UserAxioms] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.UserAxioms.Model] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `IxC.Kernel.Admission.UserAxioms.Model Ix.Kernel.Audit.importDenylist
 
 -- The entry's byte stage is admitted; projection hashing, block order, the
 -- codec proofs and `kernelImportAllowlist` are not widened.
