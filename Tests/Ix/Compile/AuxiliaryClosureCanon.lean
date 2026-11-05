@@ -48,6 +48,10 @@ import LSpec
     auxiliary seed keeps the seed's address, and IxC accepts or types the
     seed in the bundle.
 
+  And `twin` (`twinRecursorCheck`): a closure that is not closed over its
+  recursors can meet the compile's recursor check on alpha-equivalent
+  families, which refuses it whole; closed over them it compiles.
+
   Only the `selected` and `pack` artifacts are type-checked. IxC reads an
   inductive block together with its recursor and declines it otherwise
   (`reader: inductive block without a recursor in the input`,
@@ -274,6 +278,32 @@ def withSupport (env : Lean.Environment) (closure : List (Lean.Name × Lean.Cons
   closure ++ (Ix.EnvScope.collectDeps env (Ix.EnvScope.introducedSupport env)).filter
     (!present.contains ·.1)
 
+/-- The compile's recursor check on alpha-equivalent families
+    (`Ix.Cert.RecursorsOwned`, `twin`): `HAdd` and `HPow` compile to one
+    inductive block, and `HAdd.rec`'s record is the one `HPow.rec` would
+    compile to. A closure that holds `HAdd.rec` and reaches `HPow` without
+    `HPow.rec` is refused whole, since the recursor index files the shared
+    record under the block and it is not a published recursor of `HPow`'s
+    family; closed over its recursors (`ClosureOptions.recursors`, as every
+    selected closure and whole environment is) it compiles. Failure
+    messages, none when both hold. -/
+def twinRecursorCheck (env : Lean.Environment) : Array String := Id.run do
+  let names (c : List (Lean.Name × Lean.ConstantInfo)) := c.map (·.1)
+  let without := (Ix.EnvScope.collectDeps env [``HAdd.rec, ``HPow]).filter (·.1 != ``HPow.rec)
+  let closed := Ix.EnvScope.collectDeps env (names without) { recursors := true }
+  let mut errors : Array String := #[]
+  unless (names without).contains ``HAdd.rec && (names closed).contains ``HPow.rec do
+    errors := errors.push s!"twin: the closures are not the case: {names without}"
+  match Ix.Cert.compileReport (Ix.CompileM.canonInput without.toArray 32) with
+  | .error e =>
+    let e := toString e
+    unless (e.splitOn "recursor check failed").length > 1 && (e.splitOn "HPow").length > 1 do
+      errors := errors.push s!"twin: refused, but not by HPow's recursor check: {e}"
+  | .ok _ => errors := errors.push "twin: HPow without HPow.rec beside HAdd.rec compiled"
+  if let .error e := Ix.Cert.compileReport (Ix.CompileM.canonInput closed.toArray 32) then
+    errors := errors.push s!"twin: closed over its recursors, refused: {e}"
+  return errors
+
 /-- One leg: per seed, compile `closureOf seed` (with `withSupport`), compare every shared name's
     address with `ref`, and with `check` kernel-check the seed in that
     artifact (`checkSeed`). A seed with `refused seed = some msg` must
@@ -379,8 +409,13 @@ def suite : List TestSeq := [
         for e in errs do IO.println s!"[canon-closure-aux] pack FAIL {seed}: {e}"
     IO.println s!"[canon-closure-aux] pack: {auxSeeds.size - f4}/{auxSeeds.size} seeds ok \
       ({(← IO.monoMsNow) - t4} ms)"
-    let n := 3 * seeds.size + auxSeeds.size
-    let failed := f1 + f2 + f3 + f4
+    -- The recursor check on alpha-equivalent families, which a closure
+    -- not closed over its recursors can meet.
+    let twinErrors := twinRecursorCheck env
+    for e in twinErrors do IO.println s!"[canon-closure-aux] FAIL {e}"
+    IO.println s!"[canon-closure-aux] twin: {if twinErrors.isEmpty then "ok" else "FAIL"}"
+    let n := 3 * seeds.size + auxSeeds.size + 1
+    let failed := f1 + f2 + f3 + f4 + (if twinErrors.isEmpty then 0 else 1)
     if failed == 0 then IO.FS.removeDirAll dir
     return (failed == 0, n - failed, n,
       if failed == 0 then none else some s!"{failed} seed check(s) failed"))
