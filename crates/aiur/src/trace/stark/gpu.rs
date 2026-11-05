@@ -229,6 +229,138 @@ impl Drop for Buffer {
   }
 }
 
+/// Words in one page-locked staging buffer.
+const STAGING_WORDS: usize = 8 << 20;
+
+/// A page-locked host buffer of [`STAGING_WORDS`] words.
+struct Staging(*mut u64);
+// SAFETY: the allocation is plain host memory owned by this value.
+unsafe impl Send for Staging {}
+impl Drop for Staging {
+  fn drop(&mut self) {
+    // SAFETY: allocated by `aiur_gpu_host_alloc`, freed once.
+    unsafe { aiur_gpu_host_free(self.0.cast()) };
+  }
+}
+
+/// Staging buffers kept between uploads: page-locking memory stalls every
+/// other CUDA call in the process while it runs. At most
+/// [`STAGING_POOL`] are kept; concurrent uploads beyond that allocate their
+/// own and free them afterwards.
+static STAGING: Mutex<Vec<Staging>> = Mutex::new(Vec::new());
+const STAGING_POOL: usize = 4;
+
+impl Buffer {
+  /// Copies `pieces`, concatenated, to this buffer from word `offset` on.
+  /// The driver stages pageable copies one at a time, at about the same
+  /// rate however many threads issue them; packing into page-locked memory
+  /// in parallel and copying from there runs at host memory and link speed.
+  ///
+  /// `parallel` packs on the current Rayon pool. Callers holding a lock
+  /// that pool workers can wait on must pass `false`: a worker blocked in
+  /// a parallel loop may run any queued job, including one that waits on
+  /// that same lock.
+  fn write_staged(
+    &self,
+    offset: usize,
+    pieces: &[&[u64]],
+    parallel: bool,
+  ) -> Result<(), String> {
+    let total: usize = pieces.iter().map(|p| p.len()).sum();
+    if total == 0 {
+      return Ok(());
+    }
+    let staging =
+      STAGING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop();
+    let staging = match staging {
+      Some(staging) => staging,
+      None => {
+        let mut pointer = std::ptr::null_mut();
+        // SAFETY: the out-pointer is valid for writing.
+        check(
+          unsafe { aiur_gpu_host_alloc(STAGING_WORDS * 8, &raw mut pointer) },
+          "GPU population staging allocation",
+        )?;
+        Staging(pointer.cast())
+      },
+    };
+    // Pieces split at batch boundaries and into parallel-sized parts.
+    const PART: usize = 1 << 17;
+    let mut parts = Vec::new();
+    let mut batch_start = offset;
+    let mut used = 0;
+    let mut result = Ok(());
+    let flush = |parts: &mut Vec<(usize, &[u64])>,
+                 used: &mut usize,
+                 batch_start: &mut usize|
+     -> Result<(), String> {
+      let base = staging.0 as usize;
+      let copy = |&(at, piece): &(usize, &[u64])| {
+        // SAFETY: each part has its own range within the staging buffer.
+        unsafe {
+          std::ptr::copy_nonoverlapping(
+            piece.as_ptr(),
+            (base as *mut u64).add(at),
+            piece.len(),
+          );
+        }
+      };
+      #[cfg(feature = "parallel")]
+      if parallel {
+        parts.par_iter().for_each(copy);
+      } else {
+        parts.iter().for_each(copy);
+      }
+      #[cfg(not(feature = "parallel"))]
+      {
+        let _ = parallel;
+        parts.iter().for_each(copy);
+      }
+      // SAFETY: the destination range lies within this buffer.
+      check(
+        unsafe {
+          aiur_gpu_upload(
+            self.device,
+            self.pointer.cast::<u64>().add(*batch_start).cast(),
+            staging.0.cast(),
+            *used * 8,
+          )
+        },
+        "GPU population upload",
+      )?;
+      *batch_start += *used;
+      *used = 0;
+      parts.clear();
+      Ok(())
+    };
+    'pieces: for piece in pieces {
+      let mut rest = *piece;
+      while !rest.is_empty() {
+        let take = rest.len().min(PART).min(STAGING_WORDS - used);
+        parts.push((used, &rest[..take]));
+        used += take;
+        rest = &rest[take..];
+        if used == STAGING_WORDS {
+          result = flush(&mut parts, &mut used, &mut batch_start);
+          if result.is_err() {
+            break 'pieces;
+          }
+        }
+      }
+    }
+    if result.is_ok() && used > 0 {
+      result = flush(&mut parts, &mut used, &mut batch_start);
+    }
+    let mut pool =
+      STAGING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if pool.len() < STAGING_POOL {
+      pool.push(staging);
+    }
+    drop(pool);
+    result
+  }
+}
+
 /// Device bytes of one launch workspace for `words` scratch words per
 /// thread, as [`Workspace::new`] allocates it.
 fn workspace_bytes(words: u64) -> u64 {
@@ -1039,18 +1171,20 @@ impl DeviceRecord {
         return Err("query table stride changed".into());
       }
       let mut done = 0;
+      let mut words = Vec::new();
       for chunk in chunks {
         let take = per_chunk.min(count - done);
         if take == 0 {
           break;
         }
-        let values = B::words(&chunk[..take * stride]);
-        buffer.write(done * stride * 8, &values)?;
+        words.push(B::words(&chunk[..take * stride]));
         done += take;
       }
       if done != count {
         return Err("query table storage ended early".into());
       }
+      let pieces: Vec<&[u64]> = words.iter().map(|w| &w[..]).collect();
+      buffer.write_staged(0, &pieces, true)?;
       // SAFETY: the buffer holds `count * stride` words.
       check(
         unsafe {
@@ -1066,7 +1200,7 @@ impl DeviceRecord {
       if counts.iter().any(|&c| c >= Val::ORDER_U64) {
         return Err("function count reaches field characteristic".into());
       }
-      multiplicities.write(0, counts)
+      multiplicities.write_staged(0, &[counts], true)
     })?;
     let bytes = image.bytes()?;
     Ok(Self {
@@ -1108,10 +1242,13 @@ impl DeviceRecord {
       if state.resident.is_none() {
         let spilled =
           state.spilled.as_ref().ok_or("released record has no host copy")?;
+        // Sequential packing: a parallel loop here could run a queued
+        // tile job on this thread, which would wait on the write lock it
+        // holds.
         state.resident =
           Some(self.image.upload(self.device, |i, rows, multiplicities| {
-            rows.write(0, &spilled[i].0)?;
-            multiplicities.write(0, &spilled[i].1)
+            rows.write_staged(0, &[&spilled[i].0], false)?;
+            multiplicities.write_staged(0, &[&spilled[i].1], false)
           })?);
       }
     }

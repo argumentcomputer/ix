@@ -1246,13 +1246,16 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     };
     // A lookahead holds the next shard's host witness beside the shard
     // being committed or proven; without room for it, supply serially.
-    let supplies = if retention == RetentionPolicy::Retain
-      && !self.requires_regeneration(layout.shards.len())
-    {
-      layout.shards.len()
-    } else {
-      2 * layout.shards.len()
-    };
+    let supplies = self
+      .supply_order(
+        layout.shards.len(),
+        if retention == RetentionPolicy::Retain {
+          Retention::Retain
+        } else {
+          Retention::Regenerate
+        },
+      )
+      .len();
     let pipelined_peak = peak + margin(lookahead);
     let pipelined = pipeline != Some(false)
       && supplies >= 2
