@@ -109,7 +109,8 @@ def registry : List Entry := [
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
-  .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
+  -- `concurrently`: the long role and admission checks run at once
+  .suiteIO "ixon" .primary (concurrently (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite)),
   .suiteIO "ixon-reject-parity" .primary Tests.Ix.IxonRejectParity.suite,
   .suite "role-equations" .primary Tests.Ix.RoleEquations.suite,
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
@@ -118,7 +119,7 @@ def registry : List Entry := [
   .suite "assumption-tree" .primary Tests.AssumptionTree.suite,
   .suite "commit" .primary Tests.Commit.suite,
   .suite "keccak" .primary Tests.Keccak.suite,
-  .suite "exact-sharing" .primary (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
+  .suiteIO "exact-sharing" .primary (concurrently (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite)),
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,

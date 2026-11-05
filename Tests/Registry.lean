@@ -117,6 +117,26 @@ def Entry.runner (name : String) (tier : Tier) (run : IO UInt32) : Entry :=
 def Entry.env (name : String) (tier : Tier) (run : Lean.Environment → IO UInt32) : Entry :=
   ⟨name, tier, .env run⟩
 
+/-- `tests` with every `individualIO` check started now, each on a thread of
+its own with its output captured; each check of the result waits for its
+thread and then prints that output, so results and output keep their order.
+For a suite of independent long checks, the suite takes as long as its
+longest check rather than their sum. -/
+def startChecks : LSpec.TestSeq → IO LSpec.TestSeq
+  | .individualIO descr shown check next => do
+    let task ← IO.asTask (IO.FS.withIsolatedStreams check) .dedicated
+    return .individualIO descr shown (do
+      let (output, result) ← IO.ofExcept (← IO.wait task)
+      IO.print output
+      return result) (← startChecks next)
+  | .individual descr p shown inst next => return .individual descr p shown inst (← startChecks next)
+  | .group descr tests next => return .group descr (← startChecks tests) (← startChecks next)
+  | .done => return .done
+
+/-- `suites`, their checks started at once (`startChecks`). -/
+def concurrently (suites : List LSpec.TestSeq) : IO (List LSpec.TestSeq) :=
+  suites.mapM startChecks
+
 /-- A workflow line without its YAML comment: from the first `#` at the line's
 start or after a space or a tab. A `#` inside a quoted string after a space is
 cut too, which can only hide a mention, never invent one. -/
