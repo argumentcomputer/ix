@@ -3,6 +3,7 @@ import Benchmarks.Kernel.CheckIxeStream
 import Benchmarks.Kernel.CheckIxePool
 import Benchmarks.Kernel.CheckIxeMeta
 import Ix.KernelCheck.Binding
+import Ix.RoleBinding.UserAxioms
 
 /-! # Environment check of a compiled Ixon environment (untrusted)
 
@@ -27,8 +28,8 @@ gives them and their addresses, `Nat.add@a1b2c3d4` (`Reader.spellWith` over
 `Key.toName` does). `kernel-check-ixe --meta` runs the check at `.meta` too
 and compares the two (`Benchmarks.Kernel.CheckIxeMeta`).
 
-Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
-<output.jsonl> [limit]`.
+Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms]
+<input.ixe> <output.jsonl> [limit]`.
 
 * `--load stream` (the default) uses the skeleton/pre-read loader
   (`Benchmarks.Kernel.CheckIxeStream`): the `.ixe` is loaded metadata-light
@@ -43,6 +44,13 @@ Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
   record installed in order, then the recorded checks on `n` worker threads.
   The rows are the per-record check's, each record's `micros` its install
   plus its checks.
+* `--allow-user-axioms` admits safe axioms beyond Lean's standard three
+  (`Key.isCustomAxiomEligible`) on every path: streamed, eager, pooled and from
+  the read cache. Without it the check is strict and such an axiom declines.
+  The artifact's role binding must bind `sorryAx`, `propext` and
+  `Classical.choice` (`Ix.RoleBinding.UserAxioms.requireAxiomRoles`), or the
+  run is refused with exit code 2; an accepted run lists the user axioms it
+  admitted (`CONDITIONAL on K user axioms`) after its counts.
 
 The watchdog (`CHECK_IXE_WATCH_MS`, default 60000; `CHECK_IXE_WATCH_MB`,
 default 20000) appends a runaway record's address to `<output>.runaway` and
@@ -88,30 +96,33 @@ inductive Load where
   | eager
 
 structure Options where
-  input : System.FilePath
-  output : System.FilePath
+  input : System.FilePath := ⟨""⟩
+  output : System.FilePath := ⟨""⟩
   limit : Option Nat := none
   load : Load := .stream
   jobs : Option Nat := none
+  allowUserAxioms : Bool := false
 
 def usage : String :=
-  "usage: kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe> <output.jsonl> [limit]"
+  "usage: kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms] \
+   <input.ixe> <output.jsonl> [limit]"
 
 /-- The options; the flags may come before or after the positional arguments. -/
 def parseArgs (args : List String) : Option Options :=
-  go args .stream none #[]
+  go args {} #[]
 where
-  go : List String → Load → Option Nat → Array String → Option Options
-    | "--load" :: "stream" :: rest, _, jobs, pos => go rest .stream jobs pos
-    | "--load" :: "eager" :: rest, _, jobs, pos => go rest .eager jobs pos
-    | "--jobs" :: n :: rest, load, _, pos => do
+  go : List String → Options → Array String → Option Options
+    | "--load" :: "stream" :: rest, o, pos => go rest { o with load := .stream } pos
+    | "--load" :: "eager" :: rest, o, pos => go rest { o with load := .eager } pos
+    | "--jobs" :: n :: rest, o, pos => do
       let k ← n.toNat?
       guard (k ≥ 1)
-      go rest load (some k) pos
-    | a :: rest, load, jobs, pos => if a.startsWith "--" then none else go rest load jobs (pos.push a)
-    | [], load, jobs, pos => match pos.toList with
-      | [input, output] => some { input, output, load, jobs }
-      | [input, output, limit] => do some { input, output, limit := some (← limit.toNat?), load, jobs }
+      go rest { o with jobs := some k } pos
+    | "--allow-user-axioms" :: rest, o, pos => go rest { o with allowUserAxioms := true } pos
+    | a :: rest, o, pos => if a.startsWith "--" then none else go rest o (pos.push a)
+    | [], o, pos => match pos.toList with
+      | [input, output] => some { o with input, output }
+      | [input, output, limit] => do some { o with input, output, limit := some (← limit.toNat?) }
       | _ => none
 
 /-- The order of a run: the setup's, or with `CHECK_IXE_ROOTS` the closure of
@@ -169,6 +180,16 @@ def run (args : List String) : IO UInt32 := do
     | IO.eprintln usage; return 2
   let started ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile options.input
+  -- `--allow-user-axioms` is refused up front, whichever path runs, unless the
+  -- artifact's binding binds the axiom roles
+  if options.allowUserAxioms then
+    let binding := (← IO.ofExcept (Ixon.deEnvAnon bytes)).roleBinding
+    if let .error e := Ix.RoleBinding.UserAxioms.requireAxiomRoles binding then
+      IO.eprintln s!"check-ixe: --allow-user-axioms: {e}"
+      return 2
+  -- the user axioms the run read (with their names) and the records it accepted
+  let userAxioms ← IO.mkRef ({} : Std.HashMap Address (Array String))
+  let accepted ← IO.mkRef ({} : Std.HashSet Address)
   let rootsEnv ← IO.getEnv "CHECK_IXE_ROOTS"
   -- the persistent read cache (`CheckIxeReadCache`): full-order runs only
   let cacheDir ← IO.getEnv "CHECK_IXE_READ_CACHE"
@@ -200,6 +221,7 @@ def run (args : List String) : IO UInt32 := do
   let _ ← IO.asTask (prio := .dedicated)
     (watchdog slots running watchMs watchKb (options.output.toString ++ ".runaway") flushEmit)
   let emit := fun (row : Row) => do
+    if options.allowUserAxioms && row.outcome == "accept" then accepted.modify (·.insert row.address)
     let line := row.jsonLine ++ "\n"
     let flushNow? ← emitBuf.modifyGet fun (buf, n) =>
       let buf' := buf ++ line
@@ -214,12 +236,20 @@ def run (args : List String) : IO UInt32 := do
   let limited := fun (a : Array Address) => match options.limit with
     | some n => a.extract 0 (min n a.size)
     | none => a
-  -- the loop over a source: the per-record check, or with `--jobs` the pool
+  -- the loop over a source: the per-record check, or with `--jobs` the pool;
+  -- strict unless `--allow-user-axioms`, on every source (streamed, eager or
+  -- the read cache's plan)
+  let allowUserAxioms := options.allowUserAxioms
   let check {σ : Type} (ev : Ix.Kernel.Evidences .anon) (src : LoopSource σ) (names : Address → Array String)
       (addresses : Array Address)
       (onRead : Address → Except ReadError (Read .anon) → Nat → IO Unit)
-      (spell : Ix.Kernel.Key .anon → String := toString)
-      (allowUserAxioms : Bool := false) : IO Counts := do
+      (spell : Ix.Kernel.Key .anon → String := toString) : IO Counts := do
+    let onRead := fun (a : Address) (r : Except ReadError (Read .anon)) (n : Nat) => do
+      if allowUserAxioms then
+        if let .ok rd := r then
+          for x in Ix.RoleBinding.UserAxioms.ofDecls rd.decls.toList do
+            userAxioms.modify (·.insert x (names x))
+      onRead a r n
     let total := addresses.size
     let progress := fun (i : Nat) (counts : Std.HashMap String Nat) => do
       if i % 1000 == 0 then
@@ -245,13 +275,11 @@ def run (args : List String) : IO UInt32 := do
   -- multi-threaded, and every reference count on them made atomic
   let record := cache.isSome && options.limit.isNone && rootsEnv.isNone
   let live {σ : Type} (s : Setup) (src : LoopSource σ) (names : Std.HashMap Address (Array String))
-      (addresses : Array Address) (display : Thunk (DisplayTable .anon))
-      (allowUserAxioms : Bool := false) : IO Counts := do
+      (addresses : Array Address) (display : Thunk (DisplayTable .anon)) : IO Counts := do
     let readings ← IO.mkRef (#[] : Array (Address × Except ReadError (Read .anon)))
     let out ← check s.evidence src (names.getD · #[]) addresses
       (fun a r _ => if record then readings.modify (·.push (a, r)) else pure ())
       (spell := fun k => spellWith display.get k)
-      (allowUserAxioms := allowUserAxioms)
     if let some (path, ixe) := cache then
       if record then
         let t0 ← IO.monoMsNow
@@ -291,8 +319,7 @@ def run (args : List String) : IO UInt32 := do
         let addresses := limited (← orderOf s env.named pre rootsEnv)
         if thread then markInputs s names
         onThread (live s s.source names addresses
-          (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx)
-          (allowUserAxioms := env.roleBinding.isSome))
+          (Thunk.mk fun () => CheckIxeMeta.displayTable env s.cx))
       | .stream => do
         let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
         let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
@@ -305,8 +332,7 @@ def run (args : List String) : IO UInt32 := do
         -- unmarked, so that they are freed once it has taken their bytes
         if thread then markInputs s names
         onThread (live s l.source names addresses
-          (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx)
-          (allowUserAxioms := contextEnv.roleBinding.isSome))
+          (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx))
   running.set false
   flushEmit
   handle.flush
@@ -316,6 +342,13 @@ def run (args : List String) : IO UInt32 := do
   IO.eprintln "check-ixe: first-cause reasons by frequency:"
   for (reason, count) in ranked.extract 0 25 do
     IO.eprintln s!"  {count}\t{reason}"
+  if allowUserAxioms then
+    let accepted ← accepted.get
+    let admitted := (← userAxioms.get).toArray.filter (accepted.contains ·.1)
+      |>.qsort (fun a b => compare a.1 b.1 == .lt)
+    IO.eprintln s!"check-ixe: CONDITIONAL on {admitted.size} user axioms:"
+    for (address, names) in admitted do
+      IO.eprintln s!"  {address} {" | ".intercalate names.toList}"
   return 0
 
 end Benchmarks.Kernel.CheckIxe

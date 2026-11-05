@@ -1,18 +1,25 @@
 import Lean.Data.Json
 import LSpec
 import IxC.Kernel.Ixon.Prelude
+import Ix.FileDigest
 
 /-! # Init+Std through the `ix` binary (merge queue tier `ci:landing-initstd-cli`)
 
 * `initstd-reference`: `ix compile-lean Benchmarks/Compile/CompileInitStd.lean`,
   the certified compile of Init+Std, which refuses the compile
   on any failed report check, with the default role binding. The artifact's
-  SHA-256 and size must equal the reference in
+  Blake3 digest and size must equal the reference in
   `Tests/Fixtures/initstd-reference.txt`. The kernel then checks the
-  artifact (`ix check-lean --anon`): it must admit every role the default role
-  table binds and refuse no role group, and pass the reference's count of
-  constants. A change that moves the compiler's bytes, or the kernel's
-  verdicts on the artifact, updates that file in the same commit.
+  artifact (`ix check-lean --anon`), strict as every entry is by default: it
+  must admit every role the default role table binds and refuse none, pass
+  the reference's count of constants, and refuse exactly the reference's
+  constants (`Lean.trustCompiler`, the one native-evaluation axiom it declines,
+  and the four constants that depend on it), so the whole-artifact entry does
+  not run and the check exits 3. A change that moves the compiler's bytes, or
+  the kernel's verdicts on the artifact, updates that file in the same commit.
+  (`--allow-user-axioms`, the uncertified conditional path, is covered on
+  small fixtures by `RoleArtifactConsumer`: a second pass here would add
+  almost three minutes.)
 * `fidelity-initstd`: `ix validate-lean Benchmarks/Compile/CompileInitStd.lean
   --report`, gated on the report: every phase (the compile with its role
   binding, the serde gate, projection and block-order fidelity, the reader
@@ -30,64 +37,84 @@ def source : String := "Benchmarks/Compile/CompileInitStd.lean"
 
 def referencePath : System.FilePath := "Tests" / "Fixtures" / "initstd-reference.txt"
 
-/-- The reference artifact's digest and size, and the Lean kernel's verdicts on it. -/
+/-- The reference artifact's digest and size, and the Lean kernel's strict
+verdicts on it: the constants it passes and checks, and the ones it refuses. -/
 structure Reference where
-  sha256 : String
+  blake3 : String
   bytes : Nat
   leanPassed : Nat
   leanChecked : Nat
+  /-- `lean-kernel-refused` lines: the addresses strict checking refuses. -/
+  refused : Array String
 
 def isHex64 (s : String) : Bool :=
   s.length == 64 && s.all fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')
 
-/-- The reference file: `#` comments and `key<TAB>value` lines, each key once,
-no other key. -/
+/-- The keys a reference file gives once. -/
+def singleKeys : List String := ["blake3", "bytes", "lean-kernel-passed", "lean-kernel-checked"]
+
+/-- The reference file: `#` comments, `key<TAB>value` lines, each key above
+once, and `lean-kernel-refused<TAB>address[<TAB>name]` lines, each address
+once, the name for the reader; no other key. The refused addresses are
+exactly the constants not passed. -/
 def parseReference (text : String) : Except String Reference := do
-  let keys := ["sha256", "bytes", "lean-kernel-passed", "lean-kernel-checked"]
   let mut kv : Std.HashMap String String := {}
+  let mut refused : Array String := #[]
   for raw in text.splitOn "\n" do
     let line := raw.trimAscii.toString
     if line.isEmpty || line.startsWith "#" then continue
     match line.splitOn "\t" with
-    | [k, v] =>
-      unless keys.contains k do throw s!"unknown key '{k}'"
-      if kv.contains k then throw s!"key '{k}' given twice"
-      kv := kv.insert k v
+    | k :: v :: rest =>
+      if k == "lean-kernel-refused" then
+        unless isHex64 v && rest.length ≤ 1 do
+          throw s!"malformed line '{line}' (expected {k}<TAB><64 hex digits>[<TAB>name])"
+        if refused.contains v then throw s!"{k} {v} given twice"
+        refused := refused.push v
+      else
+        unless singleKeys.contains k do throw s!"unknown key '{k}'"
+        unless rest.isEmpty do throw s!"malformed line '{line}' (expected key<TAB>value)"
+        if kv.contains k then throw s!"key '{k}' given twice"
+        kv := kv.insert k v
     | _ => throw s!"malformed line '{line}' (expected key<TAB>value)"
   let get (k : String) : Except String String :=
     match kv.get? k with
     | some v => .ok v
     | none => .error s!"no '{k}' line"
-  let sha ← get "sha256"
-  unless isHex64 sha do throw s!"sha256 '{sha}' is not 64 lowercase hex digits"
+  let digest ← get "blake3"
+  unless isHex64 digest do throw s!"blake3 '{digest}' is not 64 lowercase hex digits"
   let nat (k : String) : Except String Nat := do
     let v ← get k
     match v.toNat? with
     | some n => .ok n
     | none => .error s!"{k} '{v}' is not a number"
-  return {
-    sha256 := sha
-    bytes := (← nat "bytes")
-    leanPassed := (← nat "lean-kernel-passed")
-    leanChecked := (← nat "lean-kernel-checked") }
+  let leanPassed ← nat "lean-kernel-passed"
+  let leanChecked ← nat "lean-kernel-checked"
+  unless leanPassed + refused.size == leanChecked do
+    throw s!"{refused.size} lean-kernel-refused lines for {leanChecked - leanPassed} constants not passed"
+  return { blake3 := digest, bytes := (← nat "bytes"), leanPassed, leanChecked, refused }
 
-private def sample (sha : String) (more : String) : String :=
-  s!"# c\nsha256\t{sha}\nbytes\t12\nlean-kernel-passed\t3\nlean-kernel-checked\t4\n{more}"
+private def sample (digest : String) (more : String) : String :=
+  s!"# c\nblake3\t{digest}\nbytes\t12\nlean-kernel-passed\t3\nlean-kernel-checked\t4\n\
+    lean-kernel-refused\t{"".pushn 'b' 64}\tA.b\n{more}"
 
 #guard (parseReference (sample ("".pushn 'a' 64) "")).toOption.map
-  (fun r => (r.bytes, r.leanPassed, r.leanChecked)) == some (12, 3, 4)
+  (fun r => (r.bytes, r.leanPassed, r.leanChecked, r.refused)) == some (12, 3, 4, #["".pushn 'b' 64])
 #guard (parseReference (sample "ab" "")).toOption.isNone
 #guard (parseReference (sample ("".pushn 'a' 64) "bytes\t1")).toOption.isNone
 #guard (parseReference (sample ("".pushn 'a' 64) "size\t1")).toOption.isNone
-#guard (parseReference ("sha256\t" ++ "".pushn 'a' 64 ++ "\nbytes\t1")).toOption.isNone
+#guard (parseReference ("blake3\t" ++ "".pushn 'a' 64 ++ "\nbytes\t1")).toOption.isNone
+-- every constant not passed is listed, once, by its address
+#guard (parseReference (sample ("".pushn 'a' 64) s!"lean-kernel-refused\t{"".pushn 'c' 64}")).toOption.isNone
+#guard (parseReference (sample ("".pushn 'a' 64) s!"lean-kernel-refused\t{"".pushn 'b' 64}")).toOption.isNone
+#guard (parseReference ((sample ("".pushn 'a' 64) "").replace "\tA.b" "")).toOption.isSome
+#guard (parseReference ((sample ("".pushn 'a' 64) "").replace "\tA.b" "\tA.b\tC")).toOption.isNone
 
-/-- The `bound roles: N admitted, M group(s) refused` line of `ix check-lean`:
-`(N, M)`. -/
+/-- The `bound roles: N admitted, M refused` line of `ix check-lean`: `(N, M)`. -/
 def admission (out : String) : Option (Nat × Nat) := do
   let line ← (out.splitOn "\n").find? fun l => (l.splitOn "bound roles: ").length > 1
   let rest ← ((line.splitOn "bound roles: ")[1]?)
   let [admitted, refused] := rest.splitOn " admitted, " | none
-  let refused ← (refused.splitOn " group").head?
+  let refused ← (refused.splitOn " refused").head?
   return ((← admitted.trimAscii.toString.toNat?), (← refused.trimAscii.toString.toNat?))
 
 /-- The `[check-lean] P/T subjects passed` line of `ix check-lean`: `(P, T)`. -/
@@ -99,9 +126,8 @@ def passedCount (out : String) : Option (Nat × Nat) := do
   let [p, t] := frac.splitOn "/" | none
   return ((← p.trimAscii.toString.toNat?), (← t.trimAscii.toString.toNat?))
 
-#guard admission "x\n[check-lean] bound roles: 103 admitted, 0 group(s) refused\n" ==
-  some (103, 0)
-#guard admission "[check-lean] bound roles: 57 admitted, 2 group(s) refused" == some (57, 2)
+#guard admission "x\n[check-lean] bound roles: 103 admitted, 0 refused\n" == some (103, 0)
+#guard admission "[check-lean] bound roles: 57 admitted, 2 refused" == some (57, 2)
 #guard admission "no binding" == none
 #guard passedCount "[check-lean] 3/4 subjects passed (0 typed only), 4 checked/read records\n" ==
   some (3, 4)
@@ -125,15 +151,6 @@ def linesWith (s : String) (needles : List String) : List String :=
 def tail (out : IO.Process.Output) : String :=
   s!"{(out.stdout.takeEnd 2000).toString}\n{(out.stderr.takeEnd 2000).toString}"
 
-/-- The SHA-256 of a file, by `sha256sum`. -/
-def sha256File (path : System.FilePath) : IO String := do
-  let out ← IO.Process.output { cmd := "sha256sum", args := #[path.toString] }
-  unless out.exitCode == 0 do
-    throw (IO.userError s!"sha256sum {path} exited {out.exitCode}: {out.stderr}")
-  match (out.stdout.splitOn " ").head? with
-  | some h => if isHex64 h then pure h else throw (IO.userError s!"sha256sum printed {out.stdout}")
-  | none => throw (IO.userError s!"sha256sum printed nothing")
-
 def reportChecks (name : String) (checks : Array (String × Bool)) : IO UInt32 :=
   LSpec.lspecIO (.ofList [(name, checks.toList.map fun (label, ok) => LSpec.test label ok)]) []
 
@@ -151,35 +168,46 @@ def reference : IO UInt32 := do
       IO.eprintln (tail compiled)
       return ← reportChecks "initstd-reference"
         #[("ix compile-lean on Init+Std passes its report checks", false)]
-    let sha ← sha256File artifact
+    let digest ← Ix.FileDigest.blake3File artifact
     let size := (← artifact.metadata).byteSize.toNat
-    IO.println s!"[initstd] artifact sha256 {sha}, {size} bytes; reference {expected.sha256}, \
+    IO.println s!"[initstd] artifact blake3 {digest}, {size} bytes; reference {expected.blake3}, \
       {expected.bytes} bytes"
-    unless sha == expected.sha256 && size == expected.bytes do
+    unless digest == expected.blake3 && size == expected.bytes do
       IO.eprintln s!"[initstd] the Init+Std artifact differs from {referencePath}. If the change \
-        is meant to move the compiler's bytes, record sha256 {sha} and bytes {size} there."
-    -- the kernel on the artifact, under its role binding
+        is meant to move the compiler's bytes, record blake3 {digest} and bytes {size} there."
+    -- the kernel on the artifact, under its role binding: strict, as every
+    -- entry's default, it declines `Lean.trustCompiler` and blocks what depends
+    -- on it, so the whole-artifact entry does not run and the run exits 3
     let roles := (← IO.ofExcept Ix.Kernel.Reader.defaultTable).bound.size
-    let checked ← runIx #["check-lean", artifact.toString, "--anon"]
+    let failOut := dir / "refused.txt"
+    let checked ← runIx #["check-lean", artifact.toString, "--anon", "--fail-out", failOut.toString]
     let both := checked.stdout ++ "\n" ++ checked.stderr
     for l in linesWith both ["bound roles:", "subjects passed", "[check-lean]"] do
       IO.println l
-    let exited := checked.exitCode == 0
+    let exited := checked.exitCode == 3
     unless exited do IO.eprintln (tail checked)
+    let refused := ((← try IO.FS.readFile failOut catch _ => pure "").splitOn "\n").toArray.filterMap
+      fun l => let l := l.trimAscii.toString; if l.isEmpty || l.startsWith "#" then none else some l
+    let sorted (xs : Array String) := xs.qsort (· < ·)
+    let refusedOk := sorted refused == sorted expected.refused
     let admitted := admission both
     let counts := passedCount checked.stdout
-    if exited && counts != some (expected.leanPassed, expected.leanChecked) then
-      IO.eprintln s!"[initstd] the kernel's count on the artifact differs from \
-        {referencePath}. If the change is meant to move it, record it there."
+    if exited && (counts != some (expected.leanPassed, expected.leanChecked) || !refusedOk) then
+      IO.eprintln s!"[initstd] the kernel's verdicts on the artifact differ from {referencePath}: \
+        refused {refused}. If the change is meant to move them, record them there."
     reportChecks "initstd-reference" #[
       ("ix compile-lean on Init+Std passes its report checks", compiled.exitCode == 0),
-      (s!"the artifact's SHA-256 is the reference's ({expected.sha256})", sha == expected.sha256),
+      (s!"the artifact's Blake3 digest is the reference's ({expected.blake3})", digest == expected.blake3),
       (s!"the artifact's size is the reference's ({expected.bytes} bytes)", size == expected.bytes),
-      ("ix check-lean --anon exits 0", exited),
-      (s!"the kernel admits all {roles} roles the default table binds and refuses no \
-        role group", admitted == some (roles, 0)),
+      ("ix check-lean --anon exits 3: strict checking refuses constants", exited),
+      (s!"the kernel admits all {roles} roles the default table binds and refuses none",
+        admitted == some (roles, 0)),
       (s!"the kernel passes {expected.leanPassed} of {expected.leanChecked} constants, \
-        as the reference says", counts == some (expected.leanPassed, expected.leanChecked))]
+        as the reference says", counts == some (expected.leanPassed, expected.leanChecked)),
+      (s!"the kernel refuses exactly the reference's {expected.refused.size} constants", refusedOk),
+      ("it claims no whole-artifact acceptance and no host statement",
+        !checked.stdout.contains "accepted all" && !checked.stdout.contains "host admission statement" &&
+        !checked.stdout.contains "CONDITIONAL")]
   finally
     IO.FS.removeDirAll dir
 

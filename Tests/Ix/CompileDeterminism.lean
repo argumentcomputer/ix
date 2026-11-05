@@ -2,7 +2,7 @@
   Cross-process compile determinism.
 
   Two `ix compile` runs of the same module in separate subprocesses must
-  produce `sha256`-identical `.ixe` files — committing not only the canonical
+  produce Blake3-identical `.ixe` files — committing not only the canonical
   constants (`status.root`), but also blobs, hints, and names.
   (Large-corpus cross-process byte determinism against a pinned reference
   digest is also gated by `initstd-reference` in `ci:landing-initstd-cli`.)
@@ -10,6 +10,7 @@
 module
 
 public import LSpec
+public import Ix.FileDigest
 
 public section
 
@@ -18,18 +19,6 @@ open LSpec
 namespace Tests.Ix.CompileDeterminism
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
-
-/-- `sha256sum` of a file. -/
-private def sha256 (path : System.FilePath) : IO (Except String String) := do
-  let out ← IO.Process.output {
-    cmd := "sha256sum", args := #[path.toString] }
-  if out.exitCode != 0 then
-    return .error s!"sha256sum {path} failed ({out.exitCode}): {out.stderr.take 200}"
-  match out.stdout.splitOn " " with
-  | hash :: _ =>
-    if hash.length == 64 then return .ok hash
-    else return .error s!"sha256sum {path}: unparsable output {out.stdout.take 80}"
-  | _ => return .error s!"sha256sum {path}: empty output"
 
 /-- One `ix compile` run in a fresh subprocess. -/
 private def compileOnce (source : String) (out : System.FilePath) :
@@ -45,7 +34,8 @@ private def compileOnce (source : String) (out : System.FilePath) :
     return .error s!"ix compile {source} exited 0 but wrote no {out}"
   return .ok ()
 
-/-- Two separate `ix compile` processes over `source`, byte identity asserted via `sha256`. -/
+/-- Two separate `ix compile` processes over `source`, byte identity asserted via their Blake3
+digests (`Ix.FileDigest.blake3File`). -/
 private def determinismLeg (source : String) :
     IO (Bool × Nat × Nat × Option String) := do
   unless (← ixExe.pathExists) do
@@ -58,12 +48,10 @@ private def determinismLeg (source : String) :
       return (false, 0, 0, some e)
     if let .error e ← compileOnce source out2 then
       return (false, 0, 0, some e)
-    let h1 ← match ← sha256 out1 with
-      | .ok h => pure h
-      | .error e => return (false, 0, 0, some e)
-    let h2 ← match ← sha256 out2 with
-      | .ok h => pure h
-      | .error e => return (false, 0, 0, some e)
+    let h1 ← try Ix.FileDigest.blake3File out1
+      catch e => return (false, 0, 0, some s!"blake3 of {out1}: {e}")
+    let h2 ← try Ix.FileDigest.blake3File out2
+      catch e => return (false, 0, 0, some s!"blake3 of {out2}: {e}")
     let bytes := (← out1.metadata).byteSize.toNat
     if h1 != h2 then
       return (false, bytes, 0, some s!"{source}: cross-process compile \
@@ -74,7 +62,7 @@ is nondeterministic — {h1} vs {h2}")
 
 def suite : List TestSeq := [
   .individualIO
-    "compile determinism: fixture corpus, two processes, sha256-identical"
+    "compile determinism: fixture corpus, two processes, Blake3-identical"
     none (determinismLeg "Tests/Ix/Compile/Mutual.lean") .done ]
 
 end Tests.Ix.CompileDeterminism
