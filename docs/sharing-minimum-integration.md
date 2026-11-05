@@ -3,16 +3,18 @@
 This map says where Ixon v4's two changes, canonical sharing and TagN integers, live in the
 code, together with what follows from them: format version 4, the new identifiers, the reader
 rule for `Share` inside metadata, and the IxVM circuit codec. For each part it names the Lean,
-Rust and IxVM code, the theorems that cover it and the fixtures that pin it. The normative
+Rust and IxVM code, the theorems that cover it and the fixtures that pin it. The sharing
+construction, the compiler and the decompiler exist in Lean only; Rust has the Ixon codec
+(`crates/ixon`). The Rust port of the construction and the Rust compiler were retired in
+PR #677 ([retired Rust](retired-rust.md)). The normative
 format is [Ixon](Ixon.md); the decisions behind it are in [`sharing-minimum.md`](sharing-minimum.md)
 §12–§14. Code is referred to by file and symbol, not by line.
 
 Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14):
 
-- the canonical sharing of a constant is `Ix.Sharing.Exact.canonicalSharingTiered .tagN` (Rust
-  `canonical_sharing_tiered(ShareLayout::TagN, ..)`), the only sharing construction of both
-  compilers, under `sharing-k16-greedy-v1` (K = 16); the heuristic and its proofs
-  are removed. The old unbounded exact search is a reference route;
+- the canonical sharing of a constant is `Ix.Sharing.Exact.canonicalSharingTiered .tagN`,
+  the compiler's only sharing construction, under `sharing-k16-greedy-v1` (K = 16); the
+  heuristic and its proofs are removed. The old unbounded exact search is a reference route;
 - TagN with flag widths 0, 2 and 4 replaces Tag0, Tag2 and Tag4 at every site of the grammar and
   is the only integer code; there is one format, with no dual-format gate and no reader for the
   old one;
@@ -32,12 +34,12 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
 |---|---|
 | TagN at every Lean, Rust and IxVM site; six rungs (widths 1, 2, 3, 4, 5, 9); old encoders, decoders and canonical-integer checks deleted | done |
 | Sharing pricing and tie-break bytes at TagN widths; count threshold θmax (finding 7); telescope-spine guard (finding 8) | implemented; guards can still refuse |
-| Canonical construction as the only compiler route in Lean and Rust; heuristic removed | done (§3.2, §8) |
-| Compiler limits as a safety net with a CLI override | done (§8) |
+| Canonical construction as the only compiler route; heuristic removed | done (§3.2, §8) |
+| Compiler limits as a safety net, fixed at the defaults in the certified compiler; overrides for tests and tools | done (§8) |
 | Successful-run proofs for the production family, input expansion, format and builder codec; audited fast twins | proved with the conditions described in §4, with totality and output-domain closure; a cost bound remains a follow-up |
 | Checked object format 4 and `ixon-v4` identifiers; v4/v5 environment envelopes | implemented; see [Ixon](Ixon.md#environment) for the envelope distinction |
 | `.ixe` caches keyed by the format version | done (§6) |
-| Metadata `Share` reader rule in both decompilers | done; no metadata construction (§5.3) |
+| Metadata `Share` reader rule in the decompiler | done; no metadata construction (§5.3) |
 | IxVM TagN codec, claim scope bytes and v4 primitive addresses | implemented (§3.1, §6); the historical gate record below does not establish current FFT cost-pin acceptance |
 | Corpus parity and performance | [K16 production evidence](sharing-minimum.md#144-evidence-and-release-gates); older exact-route measurements below are historical |
 
@@ -53,13 +55,11 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
    shorter on `[2^24, R4)` and `[2^32, R5)`.
 3. **The cost model prices the wire bytes.** `Ix/Sharing/Exact/Basic.lean` defines
    `tag0Size := Ixon.tagNByteWidth 0` and `tag4Size := Ixon.tagNByteWidth 4`, and from them
-   `shareWidth`, `sizeInfo` and `exprSize`; Rust `sharing_exact/cost.rs` `tag0_len`/`tag4_len`
-   are `TagN::byte_width`. The tie-break header bytes are TagN encodings in both languages (Lean
-   `Dictionary.lean` `tag4Bytes` runs `putTagN 4`; Rust `cost.rs` `tag4_bytes_cmp` compares
-   `TagN::put` outputs). TagN is a prefix code, so distinct header values still differ inside
-   the shorter encoding. That the price of the tiered output is its serialized length is a
-   theorem (`canonicalSharingTiered_serialized`); Rust also serializes the returned candidate
-   and compares the lengths at run time (`tiered.rs`, check 9).
+   `shareWidth`, `sizeInfo` and `exprSize`. The tie-break header bytes are TagN encodings
+   (`Dictionary.lean`: `tag4Bytes` runs `putTagN 4`). TagN is a prefix code, so distinct header
+   values still differ inside the shorter encoding. That the price of the tiered output is its
+   serialized length is a theorem (`canonicalSharingTiered_serialized`), so the construction
+   does not serialize its output to measure it.
 4. **There are three codecs.** Besides Lean (`IxC/Ixon/Codec.lean`, with the metadata and
    environment codecs in `Ix/Ixon.lean`) and Rust (`crates/ixon`), the IxVM
    circuit has its own codec (`Ix/IxVM/IxonDeserialize.lean`, `Ix/IxVM/IxonSerialize.lean`),
@@ -75,15 +75,16 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
    fail, so the singleton-driver tail concludes `SharingRunOK`: the run returns an exactly decodable
    block, or fails with an error the builder returns on some payload (§4).
 7. **The certain-stored threshold follows the TagN count growth.** The uniform optimizer
-   (`Uniform.lean`, Rust `uniform.rs`) once used θ = 2 because one more table entry grew the
+   (`Uniform.lean`) once used θ = 2 because one more table entry grew the
    `Tag0` count by at most a byte. The TagN (`f = 0`) count grows by 4 bytes at 4,311,826,560
    entries (5 → 9). The threshold is θmax = `tag0StepBound n + 1` with `n` the candidate count (2
-   below that bound), in both languages, and `tag0BracketStart` returns the TagN rung start.
+   below that bound), and `tag0BracketStart` returns the TagN rung start.
 8. **Telescope headers are subadditive only below `R5`.** The certain-excluded rule assumes
    `tag4Size (a + b) ≤ tag4Size a + tag4Size b`, which fails at `R5` = 4,311,811,080 (`f = 4`).
    `optimizeUniformExpanded` fails closed (`formatBound "telescope spine length"`) on a spine of
    `teleSubaddEnd = Ixon.tagNEnd5 4` nodes or more, and the optimality theorems take the bound
-   (`SpinesFit`) from that guard. Rust fails with `FormatBound::TelescopeSpine`.
+   (`SpinesFit`) from that guard. The K16 family route has no such guard (`sharing-minimum.md`
+   §14.2).
 9. **Claim tags past the first rung changed.** Catalog and Resource claims (flag `0xE`, values 8
    and 9) are written `E8 00` and `E8 01`; the old code wrote `E8 08` and `E8 09`.
 10. **Version header aliasing (kept).** The env header and the claim tags share flag `0xE`:
@@ -96,8 +97,8 @@ Decisions in force (`sharing-minimum.md` §12.8, §12.11–§12.16, §13–§14)
 |---|---|
 | §8.3 "The expression byte grammar need not change." | True for the construction alone. False after §12.12: every integer past the first rung changes, including Share indices ≥ 8. |
 | §8.2 "Metadata expressions may also contain Share references …" | The readers implement the extended index space (§5.3); no writer emits a `Share` into `metaSharing`. |
-| §2 source map: Lean, Rust, FFI. | Also the IxVM circuit codec and its generated Rust (finding 4). |
-| §8.1 "Derive roots from ConstantInfo … do not use out-of-range fallbacks." | Implemented: Lean `buildConstantWithSharing` takes the roots from `constantInfoRootExprs` and writes them back with `withRootExprs`, after checking that the construction returned one root per input root. Rust `apply_sharing_to_*` derive the roots from the payload. |
+| §2 source map: Lean, Rust, FFI. | Also the IxVM circuit codec and its generated Rust (finding 4). The Rust construction, compiler routes and sharing FFI it lists are retired. |
+| §8.1 "Derive roots from ConstantInfo … do not use out-of-range fallbacks." | Implemented: `buildConstantWithSharing` takes the roots from `constantInfoRootExprs` and writes them back with `withRootExprs`, after checking that the construction returned one root per input root. |
 
 ## 3. Call sites and consumers
 
@@ -113,12 +114,11 @@ use the same code: `Ixon.DeserCursor.tagN0?`, `Ix.DecompileM.BlobCursor.readTagN
 syntax-blob writer `Ix.CompileM.tagN0Bytes`.
 
 **Rust**: `crates/ixon/src/tag.rs` defines only `TagN` (`put`, `get`, `byte_width`,
-`end1`..`end5`). Every former `Tag0`/`Tag2`/`Tag4` site in `ixon`, `ix-compile` and `ix-kernel`
-uses it: `serialize.rs` (`put_expr`, `get_expr`, constants, `Env::put`, `read_env_header`),
-`metadata.rs` (with `deser_tagn0`), `proof.rs`, `comm.rs`, `assumption_tree.rs`, `lazy.rs`,
-and `decompile.rs` (`read_tagn0`). `get_expr` is the only byte-level expression decoder in Rust;
-the other readers (`lazy.rs`, `catalog.rs`, `proof.rs`, `diff.rs`, `resource.rs`) decode
-expressions through it and skip constants by their length prefix.
+`end1`..`end5`). Every former `Tag0`/`Tag2`/`Tag4` site in `ixon` uses it: `serialize.rs`
+(`put_expr`, `get_expr`, constants, `Env::put`, `read_env_header`), `expr.rs`, `univ.rs`,
+`constant.rs`, `metadata.rs`, `proof.rs`, `comm.rs`, `assumption_tree.rs`, `lazy.rs`, `env.rs`
+and `catalog.rs`. `get_expr` is the only byte-level expression decoder in Rust; the other
+readers decode expressions through it and skip constants by their length prefix.
 
 **IxVM**: `Ix/IxVM/IxonDeserialize.lean` reads with `get_tagn0`, `get_tagn2` and `get_tagn4`;
 the one-byte case is one narrow row and the longer encodings share `get_tagn_tail` and
@@ -137,11 +137,10 @@ header is a rung-1 TagN, one byte.
 ### 3.2 The sharing construction and its callers
 
 The construction is `Ix.Sharing.Exact.canonicalSharingTiered` (`Ix/Sharing/Exact.lean` over
-`Ix/Sharing/Exact/Tiered.lean`) and Rust `canonical_sharing_tiered`
-(`crates/ixon/src/sharing_exact/tiered.rs`), with the deterministic parallel variant
-`normalize_constant_sharing_tiered_par` (byte-identical to the sequential path).
+`Ix/Sharing/Exact/Tiered.lean`); its compiled form runs the three widths in parallel on large
+inputs with the sequential result (`tieredCandidates_eq`, §8).
 
-**Lean.** `Ix.CompileM.buildConstantWithSharing limits info refs univs : Except CompileError
+`Ix.CompileM.buildConstantWithSharing limits info refs univs : Except CompileError
 Constant` takes the roots from `constantInfoRootExprs`, runs `canonicalSharingTiered .tagN`
 under `limits` and writes the roots back with `withRootExprs`, which delegates to the checked
 `Ix.Sharing.Exact.withRoots` (one root per input root, no positional fallback). Every block goes
@@ -153,40 +152,32 @@ through it:
 | `finishInductiveFamilyBlock` | standalone inductive families |
 | `finishMutualCompilation` → `buildCompiledMutualBlock` | mutual blocks |
 
-**Rust** (the Rust compiler, since retired). `share_roots` ran the construction on a block's ordered roots.
-`apply_sharing_to_{definition,axiom,quotient,recursor,mutual_block}_with_limits` run it under
-the limits they are given and return the shared `Constant`. The compiler passes the limits it
-read once per run (`CompileState::sharing_limits`, from `compiler_sharing_limits`: the defaults
-with the `IX_SHARING_LIMITS` override); the FFI parity hook `rs_compiler_sharing_build` passes
-explicit limits.
+The certified compiler fixes `CompileEnv.sharingLimits` to the defaults
+(`Ix.CompileM.compilerSharingLimits`, §8).
 
-| Caller | Error handling |
-|---|---|
-| `compile.rs`: `compile_single_def`, `compile_const_inner`, `compile_mutual`, `compile_mutual_block` | `CompileError`, propagated with `?` |
-| `kernel_egress.rs`: `egress_muts_block`, `egress_standalone` | mapped to the egress `String` errors, naming the constant (`egress '<name>': …`) |
-
-Errors: resource exhaustion is `CompileError.resourceLimit` (it names the limit and the
-override); every other construction failure is `CompileError.sharingConstruction`.
+Errors: resource exhaustion is `CompileError.resourceLimit` (it names the limit and its
+bound); every other construction failure is `CompileError.sharingConstruction`.
 The initial K16 gate selects the exact or greedy family before search; a
 failure does not switch families or emit a best-so-far result.
 
 ### 3.3 Share consumers that are independent of the encoding
 
-These expand `Share(i)` against the decoded table and need no change for TagN: Lean
+These expand `Share(i)` against the decoded table and need no change for TagN:
 `Ix/DecompileM.lean` (`resolveShareIn`, `collectIxonTelescopeExpandingShares`),
 IxC's reader (`IxC/Kernel/Ixon/Reader.lean`),
 `Ix/SemanticContract.lean` (`containsIxon`), `Ix/Resource/Addressed.lean` (offsets Share into a
-program-wide table); Rust `crates/ffi/src/lean_ixon/diff.rs`. The IxVM ingress and conversion
-modules also consume the table logically.
+program-wide table); Rust `crates/ixon/src/diff.rs` (`resolve_share`) and
+`crates/ffi/src/lean_ixon/diff.rs`. The IxVM ingress and conversion modules also consume the
+table logically.
 
 ### 3.4 Pricing and tie-break bytes in the construction
 
 | Site | What it prices |
 |---|---|
-| `Ix/Sharing/Exact/Basic.lean`: `tag4Size`, `tag0Size`, `shareWidth`, `sizeInfo`, `exprSize`; Rust `sharing_exact/cost.rs`: `tag4_len`, `tag0_len` | headers, counts, refs/univs indices and Share widths at TagN widths |
-| `Ix/Sharing/Exact/Uniform.lean`: `tag0BracketStart`, `tag0StepBound`, `teleSubaddEnd`; Rust `uniform.rs`: `tag0_bracket_start`, `tag0_step_bound` | count brackets at the TagN rung starts, θmax (finding 7), the spine guard (finding 8) |
-| `Ix/Sharing/Exact/Tiered.lean`: `ShareLayout.widthAt` (`tagNWidth`), `layoutBytes`, `rematerialize`; Rust `tiered.rs`: `tagn_width` | the real Share width at each index; the price is the serialized length (a theorem in Lean, a run-time check in Rust) |
-| `Ix/Sharing/Exact/Dictionary.lean`: `tag4Bytes` (cut, inline and Share option bytes); Rust `cost.rs`: `tag4_bytes_cmp` | tie-break bytes as TagN encodings; a Share option loses every tie, since inline and cut options start with a flag nibble below `0xB` |
+| `Ix/Sharing/Exact/Basic.lean`: `tag4Size`, `tag0Size`, `shareWidth`, `sizeInfo`, `exprSize` | headers, counts, refs/univs indices and Share widths at TagN widths |
+| `Ix/Sharing/Exact/Uniform.lean`: `tag0BracketStart`, `tag0StepBound`, `teleSubaddEnd` | count brackets at the TagN rung starts, θmax (finding 7), the spine guard (finding 8) |
+| `Ix/Sharing/Exact/Tiered.lean`: `ShareLayout.widthAt` (`tagNWidth`), `layoutBytes`, `rematerialize` | the real Share width at each index; the price is the serialized length (a theorem) |
+| `Ix/Sharing/Exact/Dictionary.lean`: `tag4Bytes` (cut, inline and Share option bytes) | tie-break bytes as TagN encodings; a Share option loses every tie, since inline and cut options start with a flag nibble below `0xB` |
 
 ## 4. Verification theorems
 
@@ -225,8 +216,7 @@ new-route success at an arbitrarily tight budget; idempotence does not
 silently supply second-run success. Totality on the stated input domain and
 output-domain closure are proved; a cost bound remains follow-up work
 ([§14.3](sharing-minimum.md#143-proof-scope-and-follow-up)). There is no global
-minimum claim or phase-2 optimum for tables above 1,032 entries. Rust has
-differential evidence, not a universal refinement proof. Sharing preserves
+minimum claim or phase-2 optimum for tables above 1,032 entries. Sharing preserves
 the unfolded Ixon expressions; these results do not complete the Source
 acceptance or compiler value-preservation composition.
 
@@ -259,18 +249,18 @@ entry `i` when `i < p` (shares nested in that entry stay primary) and `metaShari
 primary entry. A record's `_ix.inline` indexes `metaSharing` directly and reads that entry in its
 own scope.
 
-| | Lean | Rust |
-|---|---|---|
-| scopes and resolution | `Ix.DecompileM.ShareScope` (`primary`, `metaEntry j`), `resolveShareIn` | `decompile::ShareScope` (`Primary`, `Meta { entry }`) |
-| table check on load | `validateMetaSharing` (in `withFreshBlock`) | `validate_meta_sharing` (in `load_meta_extensions`, used by `decompile_const`, `decompile_projection` and `roundtrip_block`) |
-| error | `DecompileError.invalidMetaShareIndex idx entry primaryLen metaLen constant` | `DecompileError::InvalidMetaShareIndex { idx, entry, primary_len, meta_len, constant }` |
-| semantic-contract scan | `Ix.SemanticContract.containsIxon` with the decompiler's scopes | `semantic_contract::contains_ixon` |
+| | Decompiler (`Ix/DecompileM.lean`) |
+|---|---|
+| scopes and resolution | `ShareScope` (`primary`, `metaEntry j`), `resolveShareIn` |
+| table check on load | `validateMetaSharing` (in `withFreshBlock`) |
+| error | `DecompileError.invalidMetaShareIndex idx entry primaryLen metaLen constant` |
+| semantic-contract scan | `Ix.SemanticContract.containsIxon` with the decompiler's scopes |
 
-The error has tag 11 in both languages. The table check is iterative, does not expand shares and
+The table check is iterative, does not expand shares and
 reports the first violation in entry order, then left-to-right pre-order. A malformed primary
-`Share` found by the semantic-contract scan is reported as `InvalidShareIndex`; the record replay
+`Share` found by the semantic-contract scan is reported as `invalidShareIndex`; the record replay
 uses the scan to refuse a record over a compiled term that carries a contract. The IxVM circuit,
-kernel ingress and egress, `diff.rs` and the resource validators do not read `metaSharing`
+kernel ingress, the Rust `diff.rs` and the resource validators do not read `metaSharing`
 contents, and no writer emits a metadata `Share`. The table check is linear in the DAG size of
 the table: each shared node is visited once. Its scope must be distinguished from the
 certified reader and from other host traversals:
@@ -278,20 +268,17 @@ certified reader and from other host traversals:
 | Entry | Current checks and boundary |
 | --- | --- |
 | Certified IxC admission | `IxC/Kernel/Ixon/Reader.lean`, `MemberReader.mk'` builds each primary sharing entry against earlier entries only; `convExpr` returns a malformed-reference error when a self/forward reference is used. An unused failing entry need not be forced. This entry does not read optional `ConstantMeta` or replay `_ix.inline` records. |
-| Host metadata-Share expansion | `validateMetaSharing` / `validate_meta_sharing` checks every metadata table entry, rejecting self, forward and out-of-range metadata Shares before decompilation. This does not validate the primary sharing table or the metadata arena/replay graph. |
-| Raw host primary-Share expansion | `Ix.DecompileM.resolveShareIn`, Rust `BlockCache::resolve_share` and Rust kernel `ingress.rs`'s expression conversion check primary index range but have no backwardness/progress guard on that traversal. For example, `sharing = [Share(0)]` resolves `Share(0)` back to itself. These host paths are distinct from the certified IxC reader. |
-| Host metadata replay | The arena codec represents arbitrary UInt64 child references with wrapping deltas (`Ix/Ixon.lean`, `crates/ixon/src/metadata.rs`). Its canonical byte encoding does not establish acyclicity. The decompilers follow `Mdata.child` and range-checked `_ix.inline` replay targets without a general active-cycle check; the metadata-Share bound does not constrain those edges. |
+| Host metadata-Share expansion | `validateMetaSharing` checks every metadata table entry, rejecting self, forward and out-of-range metadata Shares before decompilation. This does not validate the primary sharing table or the metadata arena/replay graph. |
+| Raw host primary-Share expansion | `Ix.DecompileM.resolveShareIn` checks the primary index range but has no backwardness/progress guard on that traversal. For example, `sharing = [Share(0)]` resolves `Share(0)` back to itself. This host path is distinct from the certified IxC reader. |
+| Host metadata replay | The arena codec represents arbitrary UInt64 child references with wrapping deltas (`Ix/Ixon.lean`, `crates/ixon/src/metadata.rs`). Its canonical byte encoding does not establish acyclicity. The decompiler follows `Mdata.child` and range-checked `_ix.inline` replay targets without a general active-cycle check; the metadata-Share bound does not constrain those edges. |
 
 These remaining host traversal limits follow from the current resolver/replay
 code; they are not a blanket claim that all cyclic metadata bypasses checks.
-Rust kernel `LocalDefnDependencies::validate` separately rejects local safe
-definition cycles. That guard does not validate Share or metadata-replay edges.
 
 ### 5.4 How per-occurrence arena roots survive
 
 Arena nodes mirror the **unshared** logical tree; a Share is transparent and keeps the same
-arena index (`Ix/DecompileM.lean`, Rust `decompile.rs`,
-`ingress.rs`). Universe patches are keyed by arena index. Root indices
+arena index (`Ix/DecompileM.lean`). Universe patches are keyed by arena index. Root indices
 (`typeRoot`, `valueRoot`, `ruleRoots`) are arena indices. So any change of which subterms are
 shared, or of where a Share cuts a telescope, leaves arena roots, binder data,
 universe patches and `Named.original` valid. Editing only the optional
@@ -310,8 +297,8 @@ The sharing-rule revision is separate again (§14 of `sharing-minimum.md`).
 | environment envelope version | `Ixon.Env.envelopeVersion` | `Env::envelope_version` | 4 (`0xE4`) without a role binding; otherwise 5 (`0xE5`) |
 | object-format byte (claims, proofs, catalog manifests) | `Ixon.Env.OBJECT_FORMAT` | `Env::OBJECT_FORMAT` | 4 |
 | wire format ID | `Ixon.wireFormatId` | `WIRE_FORMAT_ID` | `"ixon-v4"` |
-| resource validator ID (profile prefix `<ID>/profile\0`) | `Ix.Resource.validatorId` | `resource::addressed::VALIDATOR_ID` | `"ixon-v4/resource-v1"` |
-| catalog manifest version | `Ix.Catalog.VERSION` | `CATALOG_VERSION` | 2 (unchanged) |
+| resource validator ID (profile prefix `<ID>/profile\0`) | `Ix.Resource.validatorId` | none (the Rust resource validator is retired) | `"ixon-v4/resource-v1"` |
+| catalog manifest version | `Ix.Catalog.VERSION` | `CATALOG_VERSION` | 3 |
 | text grammar version | `Ixon.Syntax.VERSION` | `syntax::VERSION` | 3 (unchanged; it covers no integer bytes) |
 
 The env readers (Lean `getEnv`, `getEnvVerifiedLazy`; Rust `read_env_header`, used by
@@ -353,23 +340,22 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
 
 ## 7. Risks
 
-1. **Lean/Rust disagreement of tiered outputs** would fork the address space. Fixtures,
-   generated inputs and the compiler route agree byte for byte (`exact-sharing-ffi`). With Rust
-   in its checked mode, all stored constants of Init (56,783) and of Init+Std (100,277) compiled
-   on Lean 4.34.0 give identical bytes, as did all of Init (56,622) and a Mathlib sample of
-   20,284 constants on Lean 4.33.1, with no resource exhaustion on either side; and the
-   merge-queue suite `lake test -- --ignored compile` requires the Lean and Rust compilers to
-   write identical environments (238,574 constants on Lean 4.34.0)
-   (`sharing-minimum-performance.md`).
+1. **No second implementation.** The construction exists only in Lean. While the Rust port
+   existed, the two agreed byte for byte on fixtures, generated inputs, the compiler route, all
+   of Init and Init+Std, a Mathlib sample and every constant of the merge-queue test environment
+   (`sharing-minimum.md` §12.10, §14.4; `sharing-minimum-performance.md`). That differential
+   check is gone with the port; determinism now rests on the proofs (§4) and the Lean suites
+   (§8). The deleted parity suite was also the only test of two shapes: constants whose
+   tables reach 66,600 entries (Shares in the 4-, 5- and 9-byte rungs), and doubling towers
+   whose unshared length exceeds `2^127`. Lean-only versions of those cases are follow-up
+   work.
 2. **Resource exhaustion in the compiler.** The construction fails closed; a constant over the
-   limits is a compile error for every caller (compile and kernel egress). The defaults sit
-   far above every corpus maximum (Mathlib: largest MSS table
-   21,461 entries; 81,833 candidates; largest table-count knapsack 9,959,424 cells against a
-   `knapsack_cells` default of 2^28), and `--sharing-limits` raises them. Neither language limits
-   the candidate count on this path. Lean and Rust count work differently (Rust's `work` charges
-   the evaluations actually done: one evaluation of the whole table in one pass, one per prefix
-   otherwise), so equal limits can succeed in one language and fail in the other; every observed
-   case was a Lean-only exhaustion that matched Rust once raised.
+   limits is a compile error. The defaults sit far above every corpus maximum (Mathlib: largest
+   MSS table 21,461 entries; 81,833 candidates; largest table-count knapsack 9,959,424 cells
+   against a `knapsack_cells` default of 2^28). The certified compiler cannot raise them; tests
+   and study tools can (`Limits.withOverrides`). The candidate count is not limited on this
+   path. The meters count the specification's work, whichever path the compiled code takes
+   (`materializeTableOnePass_eq`, §8).
 3. **The pointer cache is not evidence of term equality.** Successful input expansion is
    covered by the proofs (§4), including structural confirmation of cache hits. The
    unsafe pointer key remains an explicit implementation boundary in the audit.
@@ -377,25 +363,13 @@ commit. To regenerate an `.ixe`: `lake exe ix compile <file>.lean --out <x>.ixe`
    threshold (finding 7) and the telescope-spine guard (finding 8) cover the two arguments that
    needed it; any new argument that assumes a header grows by at most one byte per boundary is
    unsound from `R5` on.
-5. **Recompile invariant.** Rust `roundtrip_block` requires recompiled addresses to equal
-   `Named.original`; the recompile calls the compile path's `apply_sharing_*` functions under
-   the compiler's limits, so it follows the route.
-6. **Header aliasing** (finding 10), kept by decision.
-7. **Stale artifacts.** Caches are keyed by the format version (§6). Artifacts pinned by hash
+5. **Header aliasing** (finding 10), kept by decision.
+6. **Stale artifacts.** Caches are keyed by the format version (§6). Artifacts pinned by hash
    from outside the repository (the FLT benchmark) must be regenerated by their owners.
-8. **Host traversal limits** (§5.3): raw host primary-Share expansion and metadata
+7. **Host traversal limits** (§5.3): raw host primary-Share expansion and metadata
    arena/replay traversal still lack general cycle guards. The certified IxC reader
    uses only earlier primary entries, and host metadata-Share self/forward references
    already fail their dedicated check. These are separate entrypoint contracts.
-9. **Length range.** General Rust costs and signed deltas still use checked 128-bit
-   arithmetic, so overflow can refuse where Lean's `Nat` succeeds. The earlier initial-
-   classification overflow on doubling DAGs is repaired: all 11 fixtures, including
-   depths 127–256, have Rust/Lean byte parity. That bounded predicate repair does not
-   prove the remaining general arithmetic bounds (§14.3–§14.4 of `sharing-minimum.md`).
-10. **Rust's default mode checks built expressions for the returned candidate only.** A wrong
-    length of another candidate would change the selection without an error. The checked mode
-    (`ExactSharingLimits::full_check`) builds and checks all three; over all of Init and Mathlib
-    it gives the default mode's output.
 
 ## 8. Implementation notes
 
@@ -415,41 +389,40 @@ is `tieredAtWidth`. Removed with the heuristic: `Ix/Sharing.lean`, `crates/ixon/
 `Ix/Compile/Verify/Sharing.lean` and its two audit roots (`rewriteWithSharing_wireWF`,
 `applySharing_wireWF`), the heuristic seeds of the exact optimizers (the unshared length is the
 initial bound), the `sharing` suite and the heuristic FFI hooks. Experiment hooks used during
-development (forced phase-1 width, a fourth phase-1 candidate, the MSS inspector, the
-`sharing_corpus` modes `--layout`, `--width-experiment` and `--mss-*`) are removed; the
-forced-width entry point survives only as a crate-private test helper. Also removed: the Rust
-`apply_sharing_with_stats` and `apply_sharing_to_*_with_stats` wrappers,
-`SingletonSharingResult`, `MutualBlockSharingResult`, `block_stats`/`BlockSizeStats`,
-`optimize_dag`, `optimize_dag_uniform`, `optimize_sharing_uniform_reference` and `tier2_end`.
-Renamed: `check_canonical_sharing` → `check_exact_minimum` (Lean `checkCanonicalSharing` →
-`checkExactMinimum`, `CanonicalCheck` → `ExactMinimumCheck`).
+development (forced phase-1 width, a fourth phase-1 candidate, the MSS inspector, the corpus
+tool's layout and width experiments) are removed. Renamed: `checkCanonicalSharing` →
+`checkExactMinimum`, `CanonicalCheck` → `ExactMinimumCheck`.
 
-**Rust checks and metering.** The module documentation of `crates/ixon/src/sharing_exact/tiered.rs`
-("Checks") lists every check. In the default mode every limit and every phase-1 to phase-3 length
-check applies to all three candidates, and the checks on built expressions run for the returned
-candidate; the checked mode (`ExactSharingLimits::full_check`: unit tests, the FFI parity hooks,
-`sharing_corpus --full-check`) runs them for all three. Phase 1 is a dry run that builds no
-expressions; phase 3 evaluates the whole table once when the order is closed under stored
-descendants and per prefix otherwise (an App spine of 1,288 nodes ending in a stored term reaches
-the per-prefix path; it is a fixture in both languages, 7,105 bytes). The cargo feature
-`ixon/sharing-profile` (off by default, compiled in CI) adds phase timers.
+**Checks and metering.** Every one of the three candidates runs phases 1 to 3 under the same
+limits and with the same checks; there is no mode that checks only the returned candidate.
+Phase 3's checks (`rematerialize`) are the layout length against the evaluated length and
+against phase 1, the re-expansion to the stored terms and the input's root IDs, and the wire
+domain; the serialized length equals the layout length by theorem and is not re-measured. An
+error at any width fails the call with the lowest failing width's error. Phase 3 evaluates
+the whole table once when the order is closed under stored descendants (`onePassOrder`) and
+per prefix otherwise; `materializeTableOnePass_eq` proves the two paths give the same result,
+errors and work charges, so limits are metered against the specification. The App spine of
+1,288 nodes ending in a stored term in `Tests/Ix/SharingTiered.lean` reaches the per-prefix
+path. `Exact.TieredFast` computes the width-independent tables once per constant and runs the
+three widths as parallel tasks on a DAG of at least 1,024 terms (`tieredCandidates_eq`). The
+full account is `sharing-minimum.md` §12.18.
 
-**Limits.** Lean `Ix.Sharing.Exact.Limits` and Rust `ExactSharingLimits` hold the defaults
-(`docs/Ixon.md`, "Canonical construction"). `Limits.withOverrides` (`parseLimitValue`) and
-`ExactSharingLimits::with_overrides` (`parse_limit_value`) parse one grammar: values are ASCII
+**Limits.** `Ix.Sharing.Exact.Limits` holds the defaults (`docs/Ixon.md`, "Canonical
+construction"). `Limits.withOverrides` (`parseLimitValue`) parses an override: values are ASCII
 digits, `2^k` or `max`; items and keys are trimmed of spaces, tabs, line feeds and carriage
-returns only; keys of the other language are accepted and ignored. One list of 35
-specifications pins both (`LIMIT_SPEC_PARITY` in `crates/ixon/src/sharing_exact/tests.rs`,
-`limitSpecParity` in `Tests/Ix/SharingExact.lean`). The certified compiler
+returns only. It still accepts and ignores the keys of the retired Rust implementation
+(`rustOnlyLimitKeys`). The 35 specifications of `limitSpecParity` (`Tests/Ix/SharingExact.lean`)
+pin the grammar. The certified compiler
 (`Ix.Cert.compileReport`) always uses the default `Ix.CompileM.compilerSharingLimits`,
 carried in `CompileEnv.sharingLimits`. Lean's `decompileEnvFullParallel` reads
 stored originals and ignores its historical sharing-limits parameter; it does
 not invoke the sharing construction.
 
-**Test oracles.** The width-state search (`Ix.Sharing.Exact.Search`, `search.rs`, the `exact`
-corpus mode), the tiny exhaustive oracle (`Exact.Oracle`, `oracle.rs`), the subset-enumeration
-reference of phase 1 (`uniformSubsetSearch`, `uniform_subset_search`) and the MSS reference
-encoding (`mss.rs`, test-only) are labelled as test oracles; the compiler path never calls them.
+**Test oracles.** The width-state search (`Ix.Sharing.Exact.Search`), the tiny exhaustive
+oracle (`Exact.Oracle`) and the subset-enumeration reference of phase 1 (`uniformSubsetSearch`)
+are labelled as test oracles; the compiler path never calls them. The MSS reference encoding
+(store every node of in-degree at least 2, `sharing-minimum.md` §12.2) survives as the
+baseline of `Benchmarks/SharingStudy.lean`; its Rust test reference went with the port.
 
 **Tests.**
 
@@ -458,23 +431,18 @@ encoding (`mss.rs`, test-only) are labelled as test oracles; the compiler path n
   idempotence, pointer-layout independence, the tiered path at scale (tables above 1,032
   entries, the 1,288-node spine, the parallel widths) and under each production limit, and the
   limit grammar (`limitSpecParity`).
-- `exact-sharing-ffi` (`Tests/Ix/SharingExactFFI.lean`): Lean and Rust bytes on fixtures,
-  generated inputs, Share-bearing constants with tables up to 66,600 entries (Shares in the 4-,
-  5- and 9-byte rungs), the re-normalization of 119 table-carrying inputs, malformed tables, and
-  the compiler route. With `IX_SHARING_CORPUS=<file.ixe>` it runs over
-  every constant of an `.ixe` (modes `tiered-tagN`, `uniform-w<k>`, `exact`;
-  `IX_SHARING_CORPUS_MODES`, `IX_SHARING_CORPUS_SELECT`, `IX_SHARING_CORPUS_LIMIT`).
+- `sharing-components` (`Tests/Ix/SharingComponents.lean`): the uncertain-component pass
+  (`ufFind`, `uncertainComponents`) against its loop references on generated inputs.
 - `ixon` (`tagNUnits`: expected encodings, rejection vectors, rung-end vectors, boundary
   round trips), with the same vectors in Rust `tag.rs`; `ixvm-tagn` for the circuit.
-- `ixon-v4-tests` and `ixon-v4-primitives` (§6); the Rust `sharing_exact` tests, including
-  parallel against sequential byte identity.
+- `ixon-v4-tests` and `ixon-v4-primitives` (§6).
 - Benchmarks and studies: `sharing-study` (`Benchmarks/SharingStudy.lean`: the rebuild check,
   round trip, unshared size and the MSS baseline), `lean-sharing-prof <ixe> full|split|hash
-  [select-file]` (`Benchmarks/LeanSharingProf.lean`, the Lean construction's phase profile),
-  `uniform-hard` (`Benchmarks/UniformHard.lean`), and the Rust example `sharing_corpus`
-  (`crates/ixon/examples/sharing_corpus.rs`; `--full-check`, `--sharing-limits SPEC`, and
-  `--check-sequential`, which compares the parallel and sequential paths under the run's
-  limits).
+  [select-file]` (`Benchmarks/LeanSharingProf.lean`, the Lean construction's phase profile)
+  and `uniform-hard` (`Benchmarks/UniformHard.lean`).
+
+The Lean/Rust differential suite `exact-sharing-ffi`, the Rust port's own tests and its
+corpus example were retired with the port (risk 1).
 
 ### Historical gates before the K16 cutover
 
@@ -510,10 +478,12 @@ and codec contracts. K16 evidence is recorded in
    (`canonicalSharingTiered_format`), with the endpoints stated over it (§4). Applied; the
    compiler's sharing builder theorems remain over it, and the per-declaration endpoints
    are retired with the compiler-correctness proofs.
-4. Compiler limits: a safety net with a CLI override (§7 risk 2). Applied.
+4. Compiler limits: a safety net with a CLI override (§7 risk 2). Applied; the override
+   later went with the uncertified compile routes, and the certified compiler fixes the
+   defaults.
 5. `metaSharing`: the extended index space of `sharing-minimum.md` §13 (§5.3). Readers applied;
    no construction.
 6. IxVM: updated in this PR (§3.1). Applied.
 7. Header aliasing: kept; the env header is TagN(4, `0xE`, version), `0xE4` for v4
    (finding 10).
-8. Cost-model repricing: TagN widths in both languages (finding 3, §3.4). Applied.
+8. Cost-model repricing: TagN widths (finding 3, §3.4). Applied.

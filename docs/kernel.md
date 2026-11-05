@@ -21,8 +21,8 @@ declarations are the ones the bytes encode, bounded resources), under which assu
 with which outcomes (accept, reject, decline; only an accept carries the
 theorems).
 
-This entry does not by itself certify the Lean-to-Ixon compiler, the Rust
-checker or IxVM. An accepted environment has a model; that it is the
+This entry does not by itself certify the Lean-to-Ixon compiler or IxVM.
+An accepted environment has a model; that it is the
 environment the original Lean source meant is outside this entry's claim;
 for the Lean compiler's output, the compiler theorem (next section) relates
 the two.
@@ -96,7 +96,8 @@ Name-only `ix prove`, `ix check` and `ix addr-of` use
 `Ix.Check.loadNamedIxonEnv`, which also compiles the closure through the
 certified compiler `Ix.CompileM.compileCertified` (`Ix.Cert.compileReport`);
 supplying a `.ixe` uses the supplied artifact instead. The uncertified
-streamed and Rust compiler paths have been retired. Metadata is outside the
+streamed and Rust compiler paths have been retired
+([retired Rust](retired-rust.md)). Metadata is outside the
 certification claim.
 
 What the theorem covers on these paths: `CompileCorrect` is about the pure
@@ -618,9 +619,7 @@ names. A mismatch declines with `role specification mismatch`. The compiler
 also enforces `RoleRecordKinds` in its report checks. The equation checker
 used by pin generation validates actual definitions and checked evidence;
 it adds no native rule to IxC. IxVM validates the role specifications for
-its native operations. Rust constructs the same terms from generated data
-and validates their carried support before admission; its optional String
-and BitVec reductions are restricted to admitted heads and specified inputs.
+its native operations.
 
 **The role table** (`IxC/Kernel/Ixon/RoleTable.lean`) is input:
 `RoleTable` has the version of the specification set it was made for, the

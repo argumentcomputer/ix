@@ -400,7 +400,7 @@ structure Limits where
   /-- Width states inserted into the search frontier. -/
   maxStates : Nat := 1 <<< 40
   /-- Cells (components × capacity) of the uniform optimizer's count-bracket
-  knapsack table; matches the Rust `max_knapsack_cells`. -/
+  knapsack table. -/
   maxKnapsackCells : Nat := 1 <<< 28
   /-- Transitions (state, appended term) examined. -/
   maxTransitions : Nat := 1 <<< 40
@@ -429,14 +429,12 @@ structure Limits where
   uniformSubsetSearch : Bool := false
   deriving Repr, Inhabited
 
-/-- The value `max` in a limit override: `2^64 − 1`, the largest value Rust's
-`u64` limits hold. -/
+/-- The value `max` in a limit override: `2^64 − 1`, the largest `UInt64`. -/
 def limitMax : Nat := 2 ^ 64 - 1
 
-/-- Limit keys of the Rust implementation (`ExactSharingLimits`) that the Lean
-limits do not have. `Limits.withOverrides` accepts and ignores them, so one
-override string serves both compilers; `states`, `transitions` and
-`output_bytes` name a limit in both. -/
+/-- Limit keys of the retired Rust port of the construction (`docs/retired-rust.md`)
+that these limits do not have. `Limits.withOverrides` still accepts and ignores
+them, so override strings written for both compilers keep parsing. -/
 def rustOnlyLimitKeys : List String :=
   ["input_nodes", "distinct_nodes", "height", "candidates", "layer_states", "work"]
 
@@ -462,8 +460,7 @@ def Limits.setAll (l : Limits) (v : Nat) : Limits :=
            maxMaterialize := v, maxMaterializeWork := v, maxKnapsackCells := v }
 
 /-- A limit value: ASCII decimal digits, `2^k` (`k ≤ 63`) or `max`. No sign or
-`_` separator (`String.toNat?` alone would accept `1_000`), so the grammar is
-Rust's `parse_limit_value`. -/
+`_` separator (`String.toNat?` alone would accept `1_000`). -/
 def parseLimitValue (raw : String) : Except String Nat :=
   let s := raw.trimAscii.toString
   if s.any (· == '_') then .error s!"sharing limit value {s}: expected digits, 2^k or max"

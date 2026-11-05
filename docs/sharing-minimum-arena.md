@@ -3,9 +3,11 @@
 Question: can the ExprMeta arenas (43% of the Mathlib `.ixe`) be made substantially
 smaller by a change small enough for the v4 PR?
 
-**Status.** The implicit post-order encoding (§4) is part of format v4 in both
-implementations; `docs/Ixon.md`, "ExprMeta Arena", is its normative description.
-Hash-consing (§5) is not implemented; it is designed here for a stacked PR. §1–§5 were
+**Status.** The implicit post-order encoding (§4) is part of format v4 in both codecs,
+Lean `Ix/Ixon.lean` and Rust `crates/ixon/src/metadata.rs`; `docs/Ixon.md`, "ExprMeta Arena", is its normative description.
+Hash-consing (§5) is not implemented; it is designed here for a stacked PR. The Rust compiler,
+decompiler and kernel that §4 and §5 mention were retired in PR #677, so the compiler and the
+decompiler are Lean only ([retired Rust](retired-rust.md)). §1–§5 were
 measured on v3 files (header `0xE3`, `Tag0` integers, heuristic sharing tables); §6 and §7
 on files with TagN integers everywhere but still the header `0xE3`, heuristic sharing and
 no 4-byte TagN rung; §7 ends with the sizes of the final v4 files. The call-site kinds
@@ -20,7 +22,7 @@ no 4-byte TagN rung; §7 ends with the sizes of the final v4 files. The call-sit
     by 19.95% on Mathlib (−667,051,250 bytes) and 19.11% on Init (−37,332,515).
   - Lean and Rust are byte-identical (§4).
 - **Stacked PR: hash-consing.** It saves a further 10.6% (Mathlib) and 10.3% (Init). It
-  changes the producers and both compilers. It is designed
+  changes the compiler's metadata producer. It is designed
   in §5 and kept separable.
 
 All figures below are exact byte counts from the `arena_study` tool (§8). Its v3 pricing
@@ -163,7 +165,7 @@ so none of these change:
 
 - the compiler (`Ix/CompileM.lean`);
 - the decompiler (`Ix/DecompileM.lean`);
-- kernel meta ingress (IxC's reader, `IxC/Kernel/Ixon/Reader.lean`);
+- kernel ingress (IxC's reader, `IxC/Kernel/Ixon/Reader.lean`, reads no arena);
 - the FFI marshalling (`crates/ffi/src/lean_ixon/meta.rs`);
 - the proofs (none is about the serialized arena; the sharing proofs in `IxSharingVerify`
   do not touch metadata);
@@ -226,6 +228,10 @@ Tag0 → TagN replacement had not landed.
 
 ### Lean/Rust parity
 
+These are the records of the time. The `ixon` suite's `Lean==Rust` codec checks still run;
+the `ixon-corpus` gate read an environment written by the Rust compiler and was retired with
+it, and so were the Rust `resource` and `sharing_exact` tests named below.
+
 - **Lean `ixon` suite: 374 passed, 0 failed.** It includes:
   - the byte vectors;
   - "Surgery metadata env bytes Lean==Rust";
@@ -284,18 +290,18 @@ Tag0 → TagN replacement had not landed.
 
 **Consumer audit (tree assumptions).**
 
-- **No code mutates an arena node after allocation**, in Lean or Rust. The only
-  post-allocation read is `finishEtaCallSite`, which only reads.
+This audit was made when four consumers read arenas: the Lean and the Rust decompilers, Rust
+kernel ingress and a Lean kernel ingress since removed. The decompiler (`Ix/DecompileM.lean`)
+is the only one left; IxC's reader reads no metadata.
+
+- **No code mutates an arena node after allocation.** The only post-allocation read was
+  `finishEtaCallSite`, which only reads.
 - **Every expression-conversion cache is keyed by (expression, arena index)**, so a
-  shared node is safe:
-  - Rust decompile: `(Arc ptr, idx)`;
-  - Rust kernel ingress: `(expr ptr, arena_idx)`;
-  - Lean `DecompileM`: `(e, arenaIdx)`;
-  - Lean `IngressMeta`: `(shareIdx, arenaIdx)`.
+  shared node is safe: `DecompileM` keys its cache by `(e, arenaIdx, scope)`.
 - **No consumer does index arithmetic** on arena indices. The decompiler's `u64::MAX`
   "no metadata" sentinel is in-memory only.
 - **The one per-node side table is `univPatches`.** Level-spelling patches are keyed by
-  arena index, and all four consumers read them per node. Two occurrences with different
+  arena index and read per node. Two occurrences with different
   original spellings must not share a node, so patched nodes are never merged; the
   measurement above already obeys this. The compiler also clones the head's patch onto
   `callSite`/`etaCallSite` roots by index lookup during compilation, which is before any
@@ -318,10 +324,10 @@ Tag0 → TagN replacement had not landed.
 
 **Size estimate.**
 
-- the pass in Lean and Rust, about 120 lines each, plus Lean/Rust parity tests;
-- one call at each metadata finalization site: Lean `takeArena` users in
-  `Ix/CompileM.lean` (defn, axio, quot, recr, ctor, inductive and mutual paths), and the
-  Rust equivalents in `compile.rs` and `kernel_egress.rs`;
+- the pass, about 120 lines of Lean, plus tests (the estimate was made when a Rust copy and
+  Lean/Rust parity tests were also needed);
+- one call at each metadata finalization site: the `takeArena` users in
+  `Ix/CompileM.lean` (defn, axio, quot, recr, ctor, inductive and mutual paths);
 - fixture regeneration, which v4 needs anyway.
 
 That is too large for "serializer only", hence a stacked PR. It needs no format change:
