@@ -50,33 +50,44 @@ serialize the grounded subset)"
     IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
   return true
 
-/-- The certified compile (`Ix.CompileM.compileCertified`), finalized. -/
+/-- The certified compile (`Ix.CompileM.compileCertified`), finalized. A
+compile of the whole import environment (not `--local`) publishes every role,
+so its `finalize` needs every role's certificates: that certificate compile
+starts first, beside the source compile (`prefetchCertificates`). It is
+always joined before returning, also on a failure or when `finalize` needed
+other certificates: a task still running when `main` returns would wait for
+subtasks that the runtime's shutdown no longer runs. -/
 private def compileCertified (fe : FileEnv) (constList : List (Lean.Name × Lean.ConstantInfo))
-    (workers : Nat) (allowPartial : Bool) (outPath : String) : IO (Except UInt32 Compiled) := do
+    (workers : Nat) (allowPartial : Bool) (outPath : String) (wholeEnv : Bool) :
+    IO (Except UInt32 Compiled) := do
   let log (s : String) : IO Unit := IO.println s!"  [compile-lean] {s}"
-  -- the certificate compile `finalize` needs runs beside the source compile
   let backend := Ix.RoleBinding.Compile.certifiedBackend workers
-  let certificates ← Ix.RoleBinding.Compile.prefetchCertificates backend
-    Ix.RoleBinding.Compile.nativeCertSource
-  let out ← match ← Ix.CompileM.compileCertified fe.env constList workers log with
-    | .ok out => pure out
-    | .error e =>
-      IO.println s!"[compile-lean] FAILED: {e}"
-      return .error 1
-  log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
-  let failures := out.failures.toMap
-  if ← refusePartial allowPartial outPath failures then return .error 1
-  let t0 ← IO.monoMsNow
-  let artifact ← Ix.RoleBinding.Compile.finalize backend
-    fe.env Ix.RoleBinding.Compile.nativeCertSource (.plain constList) out.env
-    Ix.Resource.typingLimits (existing? := out.existing?) (prefetched? := some certificates)
-  IO.ofExcept (Ix.CompileM.validateFinalized out.annotated artifact)
-  let t1 ← IO.monoMsNow
-  log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
-  let bytes ← IO.ofExcept (Ixon.serEnv artifact)
-  log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
-  return .ok { bytes, failures
-               summary := s!"{out.inputs} input constants, {failures.size} failures" }
+  let certificates? ← if wholeEnv then
+      some <$> Ix.RoleBinding.Compile.prefetchCertificates backend Ix.RoleBinding.Compile.nativeCertSource
+    else pure none
+  try
+    let out ← match ← Ix.CompileM.compileCertified fe.env constList workers log with
+      | .ok out => pure out
+      | .error e =>
+        IO.println s!"[compile-lean] FAILED: {e}"
+        return .error 1
+    log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
+    let failures := out.failures.toMap
+    if ← refusePartial allowPartial outPath failures then return .error 1
+    let t0 ← IO.monoMsNow
+    let artifact ← Ix.RoleBinding.Compile.finalize backend
+      fe.env Ix.RoleBinding.Compile.nativeCertSource (.plain constList) out.env
+      Ix.Resource.typingLimits (existing? := out.existing?) (prefetched? := certificates?)
+    IO.ofExcept (Ix.CompileM.validateFinalized out.annotated artifact)
+    let t1 ← IO.monoMsNow
+    log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
+    let bytes ← IO.ofExcept (Ixon.serEnv artifact)
+    log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
+    return .ok { bytes, failures
+                 summary := s!"{out.inputs} input constants, {failures.size} failures" }
+  finally
+    if let some (_, task) := certificates? then
+      let _ ← IO.wait task
 
 def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let args : Array String := p.variableArgsAs! String
@@ -103,7 +114,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers, certified compiler"
 
   let t0 ← IO.monoMsNow
-  let compiled ← compileCertified fe constList workers allowPartial outPath
+  let compiled ← compileCertified fe constList workers allowPartial outPath (!p.hasFlag "local")
   let out ← match compiled with
     | .ok out => pure out
     | .error code => return code
