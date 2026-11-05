@@ -58,30 +58,6 @@ def ser [Serialize α] (a : α) : ByteArray := runPut (Serialize.put a)
 def de [Serialize α] (bytes : ByteArray) : Except String α :=
   runGet Serialize.get bytes
 
-/-! ## Serialization Error Type -/
-
-/-- Serialization/deserialization error. Variant order matches Rust SerializeError (tags 0–6). -/
-inductive SerializeError where
-  | unexpectedEof (expected : String)
-  | invalidTag (tag : UInt8) (context : String)
-  | invalidFlag (flag : UInt8) (context : String)
-  | invalidVariant (variant : UInt64) (context : String)
-  | invalidBool (value : UInt8)
-  | addressError
-  | invalidShareIndex (idx : UInt64) (max : Nat)
-  deriving Repr, BEq
-
-def SerializeError.toString : SerializeError → String
-  | .unexpectedEof expected => s!"unexpected EOF, expected {expected}"
-  | .invalidTag tag context => s!"invalid tag 0x{String.ofList <| tag.toNat.toDigits 16} in {context}"
-  | .invalidFlag flag context => s!"invalid flag {flag} in {context}"
-  | .invalidVariant variant context => s!"invalid variant {variant} in {context}"
-  | .invalidBool value => s!"invalid bool value {value}"
-  | .addressError => "address parsing error"
-  | .invalidShareIndex idx max => s!"invalid Share index {idx}, max is {max}"
-
-instance : ToString SerializeError := ⟨SerializeError.toString⟩
-
 /-! ## Primitive Serialization -/
 
 def putU8 (x : UInt8) : PutM Unit :=

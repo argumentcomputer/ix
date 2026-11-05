@@ -16,7 +16,6 @@ pub mod contract;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod diff;
 pub mod env;
-pub mod error;
 pub mod expr;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod host_admission;
@@ -50,7 +49,6 @@ pub use diff::{
   diff_env_bytes, diff_envs, diff_envs_lazy, diff_envs_with,
 };
 pub use env::{Env, Named};
-pub use error::SerializeError;
 pub use expr::Expr;
 pub use lazy::LazyConstant;
 pub use metadata::{

@@ -43,14 +43,6 @@ impl LeanIxonRawConst<LeanOwned> {
     ctor.set_obj(1, LeanIxonConstant::build(&rc.constant));
     ctor
   }
-
-  /// Build from individual parts (used by compile.rs).
-  pub fn build_from_parts(addr: &Address, constant: &IxonConstant) -> Self {
-    let ctor = LeanIxonRawConst::alloc(0);
-    ctor.set_obj(0, LeanIxAddress::build(addr));
-    ctor.set_obj(1, LeanIxonConstant::build(constant));
-    ctor
-  }
 }
 
 impl<R: LeanRef> LeanIxonRawConst<R> {
@@ -151,24 +143,6 @@ impl LeanIxonRawNamed<LeanOwned> {
     ctor.set_obj(4, build_opt_hints(rn.hints));
     ctor
   }
-
-  /// Build from individual parts (used by compile.rs).
-  pub fn build_from_parts(
-    cache: &mut LeanBuildCache,
-    name: &Name,
-    addr: &Address,
-    meta: &ConstantMeta,
-    original: &Option<(Address, ConstantMeta)>,
-    hints: Option<ReducibilityHints>,
-  ) -> Self {
-    let ctor = LeanIxonRawNamed::alloc(0);
-    ctor.set_obj(0, LeanIxName::build(cache, name));
-    ctor.set_obj(1, LeanIxAddress::build(addr));
-    ctor.set_obj(2, LeanIxonConstantMeta::build(meta));
-    ctor.set_obj(3, build_opt_original(original));
-    ctor.set_obj(4, build_opt_hints(hints));
-    ctor
-  }
 }
 
 impl<R: LeanRef> LeanIxonRawNamed<R> {
@@ -205,7 +179,8 @@ impl LeanIxonRawBlob<LeanOwned> {
     ctor
   }
 
-  /// Build from individual parts (used by compile.rs).
+  /// Build from an address and borrowed bytes, without a [`DecodedRawBlob`]
+  /// (`build_raw_env_lazy`).
   pub fn build_from_parts(addr: &Address, bytes: &[u8]) -> Self {
     let ctor = LeanIxonRawBlob::alloc(0);
     ctor.set_obj(0, LeanIxAddress::build(addr));
@@ -242,14 +217,6 @@ impl LeanIxonRawComm<LeanOwned> {
     let ctor = LeanIxonRawComm::alloc(0);
     ctor.set_obj(0, LeanIxAddress::build(&rc.addr));
     ctor.set_obj(1, LeanIxonComm::build(&rc.comm));
-    ctor
-  }
-
-  /// Build from individual parts (used by compile.rs).
-  pub fn build_from_parts(addr: &Address, comm: &Comm) -> Self {
-    let ctor = LeanIxonRawComm::alloc(0);
-    ctor.set_obj(0, LeanIxAddress::build(addr));
-    ctor.set_obj(1, LeanIxonComm::build(comm));
     ctor
   }
 }
