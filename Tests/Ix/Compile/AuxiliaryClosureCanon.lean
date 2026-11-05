@@ -4,6 +4,8 @@ import Ix.KernelCheck
 import Tests.Ix.Kernel.FocusedLeanCheck
 import Ix.CompileM
 import Ix.CompileCertified
+import Ix.RoleBinding.Compile
+import Ix.Resource.Typing
 import LSpec
 
 /-!
@@ -23,30 +25,48 @@ import LSpec
 
   For each fixture constant (the seed) this compiles the seed's closure and
   checks, for every name the closure output shares with the reference
-  compile (the closure of all fixtures, where every family is complete),
-  that the address is the reference's; and type-checks the seed with the
-  Rust kernel. Two legs:
+  compile, that the address is the reference's. The reference is the
+  selected closure of all fixtures (`collectSelectedDeps`, where every
+  family is complete), compiled and bound as `ix compile --consts` compiles
+  and binds it (`Ix.RoleBinding.Compile.finalize`). Four legs:
 
   - `collectDeps`: the raw closure producers' closure, which pulls an
     auxiliary's whole family (`Lean.auxFamilySiblings`) and a definition's
-    `all`. Every address must match. (`ix compile --consts` now takes the
-    selected closure, `collectSelectedDeps`, a superset with recursors,
-    whole logical units and checker support; this leg keeps the
-    raw collector, which reaches fewer family members.)
+    `all`. Every address must match.
   - `raw`: the closure without family completion (`rawDeps`), which tests
     the compiler's per-family block membership on its own. Every address
     must match: the compiler compiles Lean's auxiliaries as Lean declared
     them, so a family-incomplete slice (a nested block's class
     `.brecOn.eq`, whose family holds `<all0>.brecOn_N.eq`) compiles to the
     whole compile's addresses.
-  - `pack`: `ix pack` (`rsPackEnv`) of the reference to each auxiliary
-    seed keeps the seed's address and type-checks (`rsCheckIxonFFI`).
+  - `selected`: the selected closure (`collectSelectedDeps`, what
+    `ix compile --consts` takes: recursors, whole logical units, checker
+    and literal support). Every address must match, and the certified
+    checker (IxC, `rsCheckIxonFFI`) accepts or types the seed in that
+    artifact.
+  - `pack`: `ix pack` (`rsPackEnv`) of the bound reference to each
+    auxiliary seed keeps the seed's address, and IxC accepts or types the
+    seed in the bundle.
 
-  Run with: `lake test -- --ignored canon-closure-aux`.
+  Only the `selected` and `pack` artifacts are type-checked. IxC reads an
+  inductive block together with its recursor and declines it otherwise
+  (`reader: inductive block without a recursor in the input`,
+  `Ix.EnvScope.ClosureOptions.recursors`), and neither the `collectDeps`
+  nor the `raw` closure carries the recursors of the library families it
+  reaches (`PProd`, `Nat`, …). The selected closure of either leg's closure
+  is the seed's own selected closure (`collectSelectedDeps` is a fixed
+  point, and each leg's closure lies inside the seed's), so the `selected`
+  leg checks the seed in exactly the closure that makes either leg's input
+  self-contained. Likewise `ix pack` carries the recursors of the
+  inductives a bundle reaches only for a bound artifact
+  (`crates/ixon/src/binding_support.rs`), so the reference is bound. On
+  `main` these checks ran the Rust kernel, which needed neither.
+
+  Run with: `lake test -- canon-closure-aux`.
 -/
 
 open LSpec
-open Ix.KernelCheck (CheckError rsCheckConstsFFI rsCheckIxonFFI)
+open Ix.KernelCheck (CheckError rsCheckIxonFFI)
 
 namespace Tests.Ix.Compile.AuxiliaryClosureCanon
 
@@ -157,10 +177,17 @@ end
 
 end Fx
 
+/-- The file `compileClosure` writes for `tag`. -/
+def artifactPath (dir : System.FilePath) (tag : String) : System.FilePath :=
+  dir / s!"{tag}.ixe"
+
 /-- Compile `consts` with the certified compiler (`ix compile`
-    path: fail-closed) and read the output back. -/
+    path: fail-closed), write it to `artifactPath dir tag` and read the
+    output back. With `bind`, the role support, certificates and binding are
+    added first, as `ix compile --consts` adds them
+    (`Ix.RoleBinding.Compile.finalize`). -/
 def compileClosure (env : Lean.Environment) (dir : System.FilePath)
-    (tag : String) (consts : List (Lean.Name × Lean.ConstantInfo)) :
+    (tag : String) (consts : List (Lean.Name × Lean.ConstantInfo)) (bind : Bool := false) :
     IO (Except String Ixon.Env) := do
   let out ← match ← Ix.CompileM.compileCertified env consts with
     | .ok out => pure out
@@ -168,10 +195,28 @@ def compileClosure (env : Lean.Environment) (dir : System.FilePath)
   let ungrounded := out.failures.toMap.toArray
   if let some (n, r) := ungrounded[0]? then
     return .error s!"compile ({ungrounded.size} ungrounded): {n.pretty}: {r}"
-  let path := dir / s!"{tag}.ixe"
-  let bytes ← IO.ofExcept (Ixon.serEnv out.env)
+  let mut artifact := out.env
+  if bind then
+    try
+      artifact ← Ix.RoleBinding.Compile.finalize (Ix.RoleBinding.Compile.certifiedBackend 32) env
+        Ix.RoleBinding.Compile.nativeCertSource (Ix.Compile.CompileInput.plain consts) out.env
+        Ix.Resource.typingLimits (existing? := out.existing?)
+    catch e => return .error s!"finalize: {e}"
+  let path := artifactPath dir tag
+  let bytes ← IO.ofExcept (Ixon.serEnv artifact)
   IO.FS.writeBinFile path bytes
   return Ixon.rsDeEnv (← IO.FS.readBinFile path)
+
+/-- The certified checker's verdict on `seed` in the artifact at `path`
+    (`rsCheckIxonFFI`: `ix check-lean`'s selected check), as failure
+    messages: none when IxC accepts or types it. -/
+def checkSeed (path : System.FilePath) (seed : Lean.Name) : IO (Array String) := do
+  let results ← rsCheckIxonFFI path.toString #[seed] #[true] true ""
+  return match results[0]? with
+    | some none => #[]
+    | some (some (CheckError.kernelException m)) => #[s!"kernel: {m}"]
+    | some (some (CheckError.compileError m)) => #[s!"check-compile: {m}"]
+    | none => #["no kernel result"]
 
 /-- The closure WITHOUT auxiliary-family completion: `Ix.EnvScope.collectDeps`
     minus `Lean.auxFamilySiblings` (type, value, ctor/inductive links, `all`
@@ -230,13 +275,15 @@ def withSupport (env : Lean.Environment) (closure : List (Lean.Name × Lean.Cons
     (!present.contains ·.1)
 
 /-- One leg: per seed, compile `closureOf seed` (with `withSupport`), compare every shared name's
-    address with `ref`, kernel-check the seed. A seed with `refused seed =
-    some msg` must instead be refused by the compiler with `msg` in the
-    error (and is not kernel-checked: nothing was written). -/
+    address with `ref`, and with `check` kernel-check the seed in that
+    artifact (`checkSeed`). A seed with `refused seed = some msg` must
+    instead be refused by the compiler with `msg` in the error (and is not
+    kernel-checked: nothing was written). -/
 def runLeg (env : Lean.Environment) (dir : System.FilePath) (ref : Ixon.Env)
     (label : String) (seeds : Array Lean.Name)
     (closureOf : Lean.Name → List (Lean.Name × Lean.ConstantInfo))
-    (refused : Lean.Name → Option String) : IO Nat := do
+    (refused : Lean.Name → Option String) (check : Bool := false) : IO Nat := do
+  let t0 ← IO.monoMsNow
   let mut failed := 0
   for seed in seeds do
     let mut errs : Array String := #[]
@@ -263,18 +310,15 @@ def runLeg (env : Lean.Environment) (dir : System.FilePath) (ref : Ixon.Env)
             if a != b then errs := errs.push s!"{n}: {a} in the closure, {b} in the reference"
           | none, _ => errs := errs.push s!"{n}: not in the closure output"
           | some _, none => pure ()
-    let results ← rsCheckConstsFFI closure #[seed] #[true] false
-    match results[0]? with
-    | some none => pure ()
-    | some (some (CheckError.kernelException m)) => errs := errs.push s!"kernel: {m}"
-    | some (some (CheckError.compileError m)) => errs := errs.push s!"check-compile: {m}"
-    | none => errs := errs.push "no kernel result"
+        if check then
+          errs := errs ++ (← checkSeed (artifactPath dir s!"{label}-{seed}") seed)
     if !errs.isEmpty then
       failed := failed + 1
       for e in errs[:4] do IO.println s!"[canon-closure-aux] {label} FAIL {seed}: {e}"
       if errs.size > 4 then
         IO.println s!"[canon-closure-aux] {label} FAIL {seed}: … {errs.size - 4} more"
-  IO.println s!"[canon-closure-aux] {label}: {seeds.size - failed}/{seeds.size} seeds ok"
+  IO.println s!"[canon-closure-aux] {label}: {seeds.size - failed}/{seeds.size} seeds ok \
+    ({(← IO.monoMsNow) - t0} ms)"
   return failed
 
 def suite : List TestSeq := [
@@ -285,31 +329,42 @@ def suite : List TestSeq := [
       if fx.isPrefixOf n && n != fx then some n else none).toArray.qsort
         (·.toString < ·.toString)
     let dir ← IO.FS.createTempDir
+    -- The reference: every fixture's selected closure, compiled and bound as
+    -- `ix compile --consts` compiles and binds it.
+    let t0 ← IO.monoMsNow
     let ref ← match ← compileClosure env dir "ref"
-        (withSupport env (Ix.EnvScope.collectDeps env seeds.toList)) with
+        (Ix.EnvScope.collectSelectedDeps env seeds.toList) (bind := true) with
       | .ok e => pure e
       | .error e => throw (IO.userError s!"reference compile: {e}")
+    IO.println s!"[canon-closure-aux] reference: {seeds.size} seeds, {ref.named.size} names, \
+      bound ({(← IO.monoMsNow) - t0} ms); files in {dir}"
     -- Leg 1, the closure producers (`collectDeps`): every address is the
-    -- reference's, every seed type-checks.
+    -- reference's.
     let f1 ← runLeg env dir ref "collectDeps" seeds
       (fun s => Ix.EnvScope.collectDeps env [s]) (fun _ => none)
     -- Leg 2, the compiler on family-incomplete slices: same, a nested
     -- block's class `.brecOn.eq` included.
     let f2 ← runLeg env dir ref "raw" seeds (fun s => rawDeps env [s]) (fun _ => none)
-    -- Leg 3, the pack-side closure (`ix pack`, `Env::prune_to_closure`):
+    -- Leg 3, the selected closure (`ix compile --consts`), self-contained
+    -- for IxC: every address is the reference's, and the seed type-checks.
+    let f3 ← runLeg env dir ref "selected" seeds
+      (fun s => Ix.EnvScope.collectSelectedDeps env [s]) (fun _ => none) (check := true)
+    -- Leg 4, the pack-side closure (`ix pack`, `Env::prune_to_closure`):
     -- a block is one Ixon constant, so pruning the reference to an
     -- auxiliary keeps its whole block; the bundle must name the seed at the
-    -- reference's address and type-check.
+    -- reference's address and type-check. The reference is bound, so the
+    -- bundle carries the recursors of the inductives it reaches.
     let auxSeeds := seeds.filter fun s => match s with
       | .str _ last => ["rec", "casesOn", "recOn", "below", "brecOn", "go", "eq"].contains last
           || ["rec_", "below_", "brecOn_"].any (fun p => last.startsWith p)
       | _ => false
-    let refPath := (dir / "ref.ixe").toString
-    let mut f3 := 0
+    let refPath := (artifactPath dir "ref").toString
+    let t4 ← IO.monoMsNow
+    let mut f4 := 0
     for seed in auxSeeds do
       let mut errs : Array String := #[]
-      let bundle := (dir / s!"pack-{seed}.ixe").toString
-      match ← (Ixon.rsPackEnv refPath (toString seed) #[] bundle false false).toBaseIO with
+      let bundle := artifactPath dir s!"pack-{seed}"
+      match ← (Ixon.rsPackEnv refPath (toString seed) #[] bundle.toString false false).toBaseIO with
       | .error e => errs := errs.push s!"pack: {e}"
       | .ok () =>
         match Ixon.rsDeEnv (← IO.FS.readBinFile bundle) with
@@ -318,18 +373,15 @@ def suite : List TestSeq := [
           let ixn := Ix.Name.fromLeanName seed
           if b.getAddr? ixn != ref.getAddr? ixn then
             errs := errs.push s!"bundle address {b.getAddr? ixn} ≠ reference {ref.getAddr? ixn}"
-        let results ← rsCheckIxonFFI bundle #[seed] #[true] true ""
-        match results[0]? with
-        | some none => pure ()
-        | some (some (CheckError.kernelException m)) => errs := errs.push s!"kernel: {m}"
-        | some (some (CheckError.compileError m)) => errs := errs.push s!"check-compile: {m}"
-        | none => errs := errs.push "no kernel result"
+        errs := errs ++ (← checkSeed bundle seed)
       if !errs.isEmpty then
-        f3 := f3 + 1
+        f4 := f4 + 1
         for e in errs do IO.println s!"[canon-closure-aux] pack FAIL {seed}: {e}"
-    IO.println s!"[canon-closure-aux] pack: {auxSeeds.size - f3}/{auxSeeds.size} seeds ok"
-    let n := 2 * seeds.size + auxSeeds.size
-    let failed := f1 + f2 + f3
+    IO.println s!"[canon-closure-aux] pack: {auxSeeds.size - f4}/{auxSeeds.size} seeds ok \
+      ({(← IO.monoMsNow) - t4} ms)"
+    let n := 3 * seeds.size + auxSeeds.size
+    let failed := f1 + f2 + f3 + f4
+    if failed == 0 then IO.FS.removeDirAll dir
     return (failed == 0, n - failed, n,
       if failed == 0 then none else some s!"{failed} seed check(s) failed"))
     .done
