@@ -7,7 +7,7 @@
   The tutorial was written for the Rust kernel. The certified checker (IxC)
   gives four kinds of fixture another verdict, each with the check that
   stands in for the tutorial's (`nativeEvaluationFixtures`,
-  `axiomFixtures`, `modelDeclines`, `sourceOnlyBad`), as
+  `axiomFixtures`, `cornerCases`, `sourceOnlyBad`), as
   `Tests.Ix.Kernel.Arena` does for the IxVM kernel.
 -/
 import Ix.Common
@@ -57,12 +57,24 @@ axioms admitted (`ix check-lean --allow-user-axioms` on the bound artifact,
 axioms only. -/
 def axiomFixtures : Array Lean.Name := #[`letTypeDep, `letRed]
 
-/-- Good fixtures IxC declines as outside its model, with the decline's
-reason. `nestedSpecLocalF`'s field `P n F` looks nested, but `P`'s parameter
-mentions a field binder: Lean's elaborator rejects the declaration, the Rust
-kernel skipped the occurrence and accepted it, and IxC declines it, which
-is neither an acceptance nor a rejection. -/
-def modelDeclines : Array (Lean.Name × String) :=
+/-- Corner cases: fixtures registered with the good cases (the IxVM arena run,
+which follows the Rust kernel, accepts them) whose right verdict is not
+settled, pinned to IxC's verdict with its reason.
+
+`nestedSpecLocalF`'s field `P n F` is a nested occurrence whose parametric
+argument `n` is the constructor's own field, so no auxiliary type can be
+formed from it, and `P` stores nothing, so the occurrence is phantom. Lean's
+elaborator rejects the declaration, and the Rust kernel skipped the occurrence
+and accepted it. lean-kernel-arena's nearest test,
+`corner-cases/nested-nonuniform-param` (a nested occurrence that supplies
+something other than the parameter, phantom too), has outcome `either`. Its
+relative `bugs/nested-unused-param`, whose parametric argument was never
+type-checked, is a proof of `False` (lean4#14576, fixed in lean4#14577).
+
+IxC declines it as outside its model, which is neither an acceptance nor a
+rejection. An IxC change that accepts or rejects it is allowed by the
+`either` outcome, and updates the pinned reason. -/
+def cornerCases : Array (Lean.Name × String) :=
   let reason := "decline: direct rec: a nested occurrence of the block (not modeled here)"
   #[(`nestedSpecLocalF, reason), (`nestedSpecLocalF.mk, reason), (`nestedSpecLocalF.rec, reason)]
 
@@ -370,11 +382,11 @@ def testTutorialConsts : TestSeq :=
               failed := failed + 1
               errors := errors.push s!"  ✗ GOOD {n} (native_decide): {msg?.getD "not found"}, \
                 expected IxC not to accept it"
-          else if let some (_, reason) := modelDeclines.find? (·.1 == n) then
+          else if let some (_, reason) := cornerCases.find? (·.1 == n) then
             if msg? == some s!"kernel: {reason}" then passed := passed + 1
             else
               failed := failed + 1
-              errors := errors.push s!"  ✗ GOOD {n} (outside IxC's model): {msg?.getD "not found"}, \
+              errors := errors.push s!"  ✗ CORNER {n} (arena outcome either): {msg?.getD "not found"}, \
                 expected kernel: {reason}"
           else if axiomFixtures.contains n then
             -- strict: blocked by the declined axiom; admitted: accepted
