@@ -778,9 +778,9 @@ comma-separated list of items, each `key=value` or the word `unbounded` (every
 production limit at its maximum). A value is ASCII decimal digits (no sign, no
 `_` separator), `2^k` with `k ≤ 63`, or `max` (2^64 − 1). Items, keys and
 values are trimmed of spaces, tabs, line feeds and carriage returns only. The
-keys are the limit names (for example `states`, `depth`, `materialize_work`).
-The keys of the retired Rust implementation (`rustOnlyLimitKeys`, for example
-`distinct_nodes`) are still accepted and ignored. The 35 specifications of
+keys are the limit names (for example `states`, `depth`, `materialize_work`);
+any other key, including those of the retired Rust implementation (for example
+`distinct_nodes`), is an error. The 35 specifications of
 `limitSpecParity` (`Tests/Ix/SharingExact.lean`) pin the grammar.
 
 Exceeding a limit is a compile error (`CompileError.resourceLimit`) that

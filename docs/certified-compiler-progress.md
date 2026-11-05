@@ -1,10 +1,8 @@
 # Certified compiler architecture and performance summary
 
 The target is complete certified Lean-to-Ixon compilation of Init+Std in less
-than 10 seconds and Mathlib in less than 60 seconds of wall-clock time. Both
-targets are achieved by the integrated certified compilation pipeline while
-preserving bit-identical canonical Ixon artifacts and full certificate
-verification (`Ix.Cert.CompileCorrect`).
+than 10 seconds and Mathlib in less than 60 seconds of wall-clock time.
+Neither target is met; see "Workload performance" for what has been measured.
 
 ## Measurement contract
 
@@ -24,29 +22,41 @@ failures. Its complete 253,772,604-byte artifact has Blake3 digest
 | Subsystem | Implementation summary |
 | --- | --- |
 | `Ix.Compile.ReadyCompile` | Dependency-driven ready-queue scheduler with an `O(|E|)` reverse-dependency graph, lock-free atomic work-stealing waves, and a subtype equality bridge (`{ result : ReportResult // result = Ix.Cert.compileReport env }`) discharging `Ix.Cert.checkReport_sound` without re-running sequential `compileEnv`. |
-| `Ix.Sharing.Exact` & `Ix.Sharing.FamilyParallel` | Canonical sharing analysis with open-addressed `ExprCache` (`UInt32` `NodeId` DAG), `UInt64` FNV-1a structural key tables, `ReIndex` byte-LUT leaf counting, deferred candidate width materialization (`Deferred.lean`), and parallel intra-block sharing (`decideSharingFormattedAuto`) for large declarations and inductive families. |
-| `Ix.Cert.Compile` & `Ix.RoleBinding.Compile` | Fused single-pass `recordGraphPar` / `referenceCyclePar` condensation check, incremental post-finalization check fast-path (`FinalizedCheckTasks.spawn` with `added?`), direct single-pass `putEnvDirect` serialization, and asynchronous background arena teardown (`dropAsync`). |
+| `Ix.Sharing.Exact` & `Ix.Sharing.FamilyParallel` | Canonical sharing analysis with a pointer-keyed `ExprCache` that checks exact structural equality before a hit (`UInt32` `NodeId` DAG), width-independent tables computed once per constant with the three widths run as parallel tasks on DAGs of at least 1,024 terms (`Exact.TieredFast`, `tieredCandidates_eq`), and parallel exact family tables (`Family.Parallel.exactTable`). |
+| `Ix.Cert.Compile` & `Ix.RoleBinding.Compile` | Fused single-pass `recordGraphPar` / `referenceCyclePar` condensation check, incremental post-finalization check fast-path (`FinalizedCheckTasks.spawn` with `added?`), and asynchronous background teardown (`dropAsync`). |
 
 Trace source generation is deferred until the code-generation command requests
 it rather than running during unrelated CLI initialization. The integration
-also includes implicit `Char` validation, producer-generated native/trace
-outputs, and documentation of the certified, streamed, and Rust boundaries.
+also includes implicit `Char` validation and producer-generated native/trace
+outputs. The certified compiler is the only compiler
+([retired Rust](retired-rust.md)).
 
-## Verified workload performance
+## Workload performance
 
-On the 32-core / 64-thread benchmark host (`perfspec`), end-to-end certified
-compilation (`ix compile --certified`) achieves:
+**Current (2026-11-05).** On a 64-core test host under load (load average
+35 to 49), `ix compile-lean Benchmarks/Compile/CompileInitStd.lean` compiled
+Init+Std to the artifact above in 37.4 s of total wall-clock time (target
+`< 10 s`): 29.7 s in `compileReport` and 1.9 s in finalization. There is no
+current Mathlib measurement.
 
-- **Init+Std** (117,694 declarations, 253,772,604-byte `.ixon`): **4.65 s**
-  total wall-clock time (target `< 10 s`), bit-identical to the sequential
-  reference artifact (`e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1`).
-- **Mathlib** (783,115 declarations, 2,349,530,307-byte `.ixon`): **44.6 s**
-  total wall-clock time (target `< 60 s`), bit-identical to the reference
-  artifact (`458b779888c8f9627bba58d41a3a2cdf48c38eec32d0a4f36606856782c9374a`).
+**Last recorded Mathlib run (2026-10-29).** A run on an earlier compiler
+completed all 783,115 inputs with zero failures: 630.020 s for the full process
+(369.915 s main report), 77,311,912 KiB peak RSS, and a 2,349,530,307-byte
+output with SHA-256
+`458b779888c8f9627bba58d41a3a2cdf48c38eec32d0a4f36606856782c9374a`. The same
+checkpoint recorded Init+Std process wall times of 68.62 to 83.18 s.
+
+**Withdrawn figures.** From 2026-10-31 (`d3e3a6f41`) to 2026-11-05 this page
+claimed 4.65 s for Init+Std and 44.6 s for Mathlib with `ix compile
+--certified`. `ix compile` never had a `--certified` flag: the certified
+compiler was already its default. No measurement in the repository's history
+supports either figure, which replaced the 2026-10-29 checkpoint (`d511618e0`)
+that the previous paragraph quotes. Both figures are withdrawn.
 
 ## Verification gates
 
-All runtime and logical axiom audits (`lake run check-kernel --with-model`),
-source hygiene checks (`Scripts/SourceHygiene.lean`), strict compiler and
-linter gates (`lake build --wfail`, `lake lint -- --wfail`), and the Lean and
-Rust test suites pass with zero `sorry`s and zero new axioms.
+The gates for this pipeline are the runtime and logical axiom audits
+(`lake run check-kernel --with-model`), the source hygiene checks
+(`Scripts/SourceHygiene.lean`), the strict compiler and linter gates
+(`lake build --wfail`, `lake lint`), the Lean test suites and the Rust crate
+tests, with no `sorry` and no new axioms.

@@ -410,8 +410,8 @@ full account is `sharing-minimum.md` §12.18.
 **Limits.** `Ix.Sharing.Exact.Limits` holds the defaults (`docs/Ixon.md`, "Canonical
 construction"). `Limits.withOverrides` (`parseLimitValue`) parses an override: values are ASCII
 digits, `2^k` or `max`; items and keys are trimmed of spaces, tabs, line feeds and carriage
-returns only. It still accepts and ignores the keys of the retired Rust implementation
-(`rustOnlyLimitKeys`). The 35 specifications of `limitSpecParity` (`Tests/Ix/SharingExact.lean`)
+returns only. A key that names no limit, such as one of the retired Rust implementation's, is
+an error. The 35 specifications of `limitSpecParity` (`Tests/Ix/SharingExact.lean`)
 pin the grammar. The certified compiler
 (`Ix.Cert.compileReport`) always uses the default `Ix.CompileM.compilerSharingLimits`,
 carried in `CompileEnv.sharingLimits`. Lean's `decompileEnvFullParallel` reads

@@ -432,12 +432,6 @@ structure Limits where
 /-- The value `max` in a limit override: `2^64 − 1`, the largest `UInt64`. -/
 def limitMax : Nat := 2 ^ 64 - 1
 
-/-- Limit keys of the retired Rust port of the construction (`docs/retired-rust.md`)
-that these limits do not have. `Limits.withOverrides` still accepts and ignores
-them, so override strings written for both compilers keep parsing. -/
-def rustOnlyLimitKeys : List String :=
-  ["input_nodes", "distinct_nodes", "height", "candidates", "layer_states", "work"]
-
 /-- Set the limit named `key` (`Resource.key`, oracle limits excluded). -/
 def Limits.set? (l : Limits) (key : String) (v : Nat) : Option Limits :=
   match key with
@@ -476,9 +470,8 @@ def parseLimitValue (raw : String) : Except String Nat :=
 
 /-- Apply a limit override: comma-separated items, each `key=value`
 (`Resource.key` names; values as `parseLimitValue`) or `unbounded` (every
-production limit at `max`), applied left to right. Rust-only keys
-(`rustOnlyLimitKeys`) are accepted and ignored; any other key is an error.
-This is the format of limit override strings parsed by `Limits.withOverrides`. -/
+production limit at `max`), applied left to right. Any other key is an
+error. -/
 def Limits.withOverrides (l : Limits) (spec : String) : Except String Limits := do
   let mut l := l
   for raw in spec.splitOn "," do
@@ -494,10 +487,8 @@ def Limits.withOverrides (l : Limits) (spec : String) : Except String Limits := 
       match l.set? key v with
       | some l' => l := l'
       | none =>
-        unless rustOnlyLimitKeys.contains key do
-          throw s!"unknown sharing limit {key} (expected expr_visits, depth, nodes, states, \
-            transitions, cost_evals, output_bytes, materialize, materialize_work, knapsack_cells, or a Rust key: \
-            {", ".intercalate rustOnlyLimitKeys})"
+        throw s!"unknown sharing limit {key} (expected expr_visits, depth, nodes, states, \
+          transitions, cost_evals, output_bytes, materialize, materialize_work or knapsack_cells)"
     | _ => throw s!"sharing limit item {item}: expected key=value or unbounded"
   return l
 
