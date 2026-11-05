@@ -83,11 +83,10 @@ bound. A named module fails if it is no longer imported or declares nothing. -/
 #guard_kernel_axioms Ix.Cert.NominalSemanticBridgeAt.of_covering [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Cert.CompileCorrect.nominalBridgeAt [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Cert.CompileCorrect.nominalPullback [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.model_exists_conditional [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.model_exists_of_no_user_axioms [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.checkDecls_consistent [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.consistent_of_userAxioms_realized [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.ConditionalValueModel.ofUserAxioms [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Cached.checkDecls_sound_conditional [propext, Classical.choice, Quot.sound]
-#guard_kernel_axioms Ix.Kernel.Cached.no_proof_of_False_cached_conditional [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDeclsWithUserAxioms_sound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.no_proof_of_False_cached_userAxioms [propext, Classical.choice, Quot.sound]
 
 #guard_module_axioms_under Ix.Cert Ix.CompileCert

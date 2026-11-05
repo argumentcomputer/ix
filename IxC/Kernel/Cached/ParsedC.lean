@@ -261,37 +261,4 @@ def checkDeclStepC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
   resetC
   checkDeclC mode ev fe pd
 
-/-- `checkDeclC` with custom user axioms enabled: when `pd` is `.axiomDecl cv`
-and `cv.name` is eligible as a custom user axiom (`Key.isCustomAxiomEligible`),
-`checkConstantValC` validates its header and type and pushes `.axiomInfo cvA`. -/
-def checkDeclWithUserAxiomsC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
-    (CheckCM md) (FEnv md) :=
-  match pd with
-  | .axiomDecl cv =>
-    if cv.name = quotSoundName then
-      (if ConstantInfo.canonEq (.axiomInfo cv) (quotBasis.getD 4 (.axiomInfo default)) then
-        pure fe
-      else
-        throw (.notImplemented "quotient soundness axiom mismatch"))
-    else do
-      let (cvA, _) ← checkConstantValC mode fe cv
-      if stdAxiomOkF fe cvA then
-        pure (fe.push (.axiomInfo cvA))
-      else if cvA.name = propextName ∨ cvA.name = choiceName then
-        throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
-      else if cvA.name = sorryAxName then
-        pure fe
-      else if cvA.name.isCustomAxiomEligible then
-        pure (fe.push (.axiomInfo cvA))
-      else
-        throw (.notImplemented msg!"non-standard axiom ({cv.name})")
-  | pd => checkDeclC mode ev fe pd
-
-/-- One step of the converted-declaration fold with custom user axioms enabled:
-from the empty memo state (`resetC`), check. -/
-def checkDeclStepWithUserAxiomsC (ev : Evidences md) (fe : FEnv md) (pd : Declaration md) :
-    (CheckCM md) (FEnv md) := do
-  resetC
-  checkDeclWithUserAxiomsC mode ev fe pd
-
 end Ix.Kernel.Cached

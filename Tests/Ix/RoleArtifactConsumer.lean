@@ -84,10 +84,14 @@ private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBindi
     let r ← checked (← runPrepared p cfg (.only #[natDiv]))
     ensure (r.failures.isEmpty && r.userAxioms.isEmpty && runExit r false == 0)
       "a selected run that reads no user axiom became conditional"
-    -- with no user axiom among the declarations, the flag keeps the certified entry
+    -- with no user axiom among the declarations, the one run under the flag is
+    -- the certified entry's (T1, `ReceiptConditional.toReceipt`): the same
+    -- verdict and host statement as a strict run
+    let strict ← checked (← runPrepared (← checked (← prepareInput bytes anon)) cfg .all)
     let p ← checked (← prepareInput bytes anon (allowUserAxioms := true))
     let r ← checked (← runPrepared p cfg .all)
     ensure (r.artifactAdmission == some (.logical env.consts.size) && r.hostStatement.isSome &&
+      r.hostStatement == strict.hostStatement && r.artifactAdmission == strict.artifactAdmission &&
       runExit r true true == 0) "the flag replaced the certified entry on an artifact without user axioms"
     match ← prepareInput noSorry anon (allowUserAxioms := true) with
     | .error (.artifact message) =>
@@ -97,6 +101,15 @@ private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBindi
   let r ← checked (← runPrepared p cfg .all)
   ensure (r.artifactAdmission == some (.conditional tierCheatEnv.consts.size (some 1) #[cheatAddress]))
     s!"the tiered conditional entry did not run: {repr r.artifactAdmission}"
+  -- and the tiered entry with no user axiom: the certified tiered receipt
+  -- (`TierReceiptConditional.toTierReceipt`) and the strict run's statement
+  let tierBytes ← IO.ofExcept (serEnv tierEnv)
+  let strict ← checked (← runPrepared (← checked (← prepareInput tierBytes true)) cfg .all)
+  let r ← checked (← runPrepared (← checked (← prepareInput tierBytes true (allowUserAxioms := true))) cfg .all)
+  ensure (r.artifactAdmission == some (.tiered tierEnv.consts.size 1) &&
+      r.artifactAdmission == strict.artifactAdmission && r.hostStatement.isSome &&
+      r.hostStatement == strict.hostStatement)
+    s!"the flag replaced the certified tiered entry: {repr r.artifactAdmission} vs {repr strict.artifactAdmission}"
   -- meta mode checks the published names against the binding even when strict
   match ← prepareInput noSorry with
   | .error (.artifact message) =>

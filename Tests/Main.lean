@@ -25,6 +25,7 @@ import Tests.Ix.Compile.AuxiliaryClosureCanon
 import Tests.Ix.Compile.IndFlags
 import Tests.Ix.CompileDeterminism
 import Tests.Ix.Kernel.AdmissionHashDiff
+import Tests.Ix.Kernel.UserAxioms
 import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.LeanReportTests
 import Tests.Ix.Compile.GroundRefusal
@@ -158,6 +159,8 @@ def registry : List Entry := [
   -- the per-root hypotheses and conclusion
   .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,
   .suite "kernel-record-check" .primary Tests.Ix.Kernel.RecordCheck.suite,
+  -- the fold and the role table's admission under each axiom policy (user axioms)
+  .suite "kernel-user-axioms" .primary Tests.Ix.Kernel.UserAxioms.suite,
   .suite "kernel-check-lean-targets" .primary Tests.Ix.Kernel.CheckLeanTargets.suite,
   .suite "primitive-address-parity" .primary Tests.Ix.Kernel.BuildPrimitives.paritySuite,
   .suite "decompile-unit" .primary Tests.Decompile.unitSuite,

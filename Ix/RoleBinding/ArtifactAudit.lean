@@ -62,6 +62,24 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
+/- `ix check-lean --allow-user-axioms` runs the entries that admit user axioms
+in place of `check` and `checkTiered`. When the kernel lists no user axiom,
+their receipt is the certified one (`ReceiptConditional.toReceipt`,
+`TierReceiptConditional.toTierReceipt`, T1) and a host statement is derived
+from it, so their closure is frozen here with the same rulings. It has 61
+more compiled functions than `checkTiered`'s (the fold under the axiom policy
+and the list); the extern, implemented_by, unsafe and csimp counts and every
+ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.checkBytesUnder`,
+`checkBytesTieredUsingUnder`) are frozen apart in
+`IxC/Kernel/Audit/Roots.lean` (`userAxiomOperations`). -/
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 6972 compiled functions; inherited externs 115, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 28 -/
+#guard_msgs (whitespace := lax) in
+run_cmd do
+  Ix.Kernel.Audit.checkRuntimeWith
+    #[``Ix.RoleBinding.Artifact.checkConditional, ``Ix.RoleBinding.Artifact.checkTieredConditional]
+    #[`Init, `Std] rulings
+
 #guard_kernel_axioms Ixon.putTagN_eq_I [propext, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.Receipt.strongModel [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.Receipt.authentic [propext, Classical.choice, Quot.sound]
@@ -81,5 +99,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 #guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedTierReceipt.target_unique [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedReceipt.authentic [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.RoleBinding.Artifact.OrderedTierReceipt.authentic [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.ReceiptConditional.toReceipt [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.TierReceiptConditional.toTierReceipt [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.ReceiptConditional.strongModel_of_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.RoleBinding.Artifact.TierReceiptConditional.strongModel_of_nil [propext, Classical.choice, Quot.sound]
 
 end Ix.RoleBinding.Artifact.Audit

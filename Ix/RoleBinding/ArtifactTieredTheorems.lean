@@ -29,4 +29,13 @@ theorem TierReceipt.typed (V : Type u) [Ix.Kernel.SetTheory V]
   obtain ⟨_, wf, fresh, _, declarations, _, typed⟩ := Ix.Kernel.Admission.checkConstantsTiered_ok V checked
   exact ⟨wf, fresh, declarations.toList.map (·.2), typed⟩
 
+/-- A tiered conditional receipt that lists no user axiom has the certified
+tiered receipt's model of its logical part: it is that receipt
+(`TierReceiptConditional.toTierReceipt`, T1). -/
+theorem TierReceiptConditional.strongModel_of_nil (V : Type u) [Ix.Kernel.SetTheory V]
+    {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    (receipt : TierReceiptConditional artifact limits) (noAxioms : receipt.axioms = []) :
+    Nonempty (Ix.Kernel.Cached.StrongModel V receipt.logical) :=
+  (receipt.toTierReceipt noAxioms).strongModel V
+
 end Ix.RoleBinding.Artifact

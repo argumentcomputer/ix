@@ -401,20 +401,26 @@ constants that depend on it, the other two axioms among them
 (`Tests/Fixtures/initstd-reference.txt`). The host drivers can opt in with
 `--allow-user-axioms` (`ix check-lean`, `kernel-check-ixe`): the declaration
 checks then install a safe axiom whose key is an input constant's
-(`Key.isCustomAxiomEligible`) as an axiom, and a whole `check-lean` run whose
-declarations hold such an axiom runs a separate conditional entry
-(`Admission.checkBytesWithUserAxioms`, `checkBytesTieredUsingWithUserAxioms`,
+(`Key.isCustomAxiomEligible`) as an axiom, and a whole `check-lean` run runs,
+once, the entry under the `allowUser` axiom policy
+(`Admission.checkBytesUnder .allowUser`, `checkBytesTieredUsingUnder .allowUser`,
 through `Ix.RoleBinding.Artifact.checkConditional` and
-`checkTieredConditional`). That entry has no soundness theorem and issues no
-host statement. A run that admits a user
+`checkTieredConditional`). It returns the environment with the user axioms
+among the declarations it ran over. When that list is empty the accept is the
+certified entry's (T1, `Admission.checkBytesUnder_strict_of_nil`; the host
+turns the receipt into the certified one with `ReceiptConditional.toReceipt`),
+so the run issues the host statement as a strict run does. Otherwise no
+soundness theorem covers the accept and there is no host statement. A run that admits a user
 axiom prints `CONDITIONAL on K user axioms:` and lists them (the addresses the
 declarations key them by, with their names in meta mode), and `check-lean`
-exits with 5 rather than 0 ("`ix check-lean`" below). The binding must bind
-`sorryAx`, `propext` and `Classical.choice`
-(`Ix.RoleBinding.UserAxioms.requireAxiomRoles`): a binding that leaves one out
-keys Lean's own constant as an input constant, which the conditional checks
-would admit as a user axiom, so such an artifact, like one with no binding, is
-refused before any checking.
+exits with 5 rather than 0 ("`ix check-lean`" below). The binding must pass the
+kernel's role-table check for user axioms (`Admission.admitAxiomPolicy
+.allowUser`: `sorryAx`, `propext` and `Classical.choice` bound): a binding that
+leaves one out keys Lean's own constant as an input constant, which the checks
+would admit as a user axiom. The entries run that check themselves; the
+record-by-record drivers never reach admission, so the host runs it first
+(`Ix.RoleBinding.UserAxioms.requireAxiomRoles`), and such an artifact, like
+one with no binding, is refused before any checking.
 
 ## The typing tier
 
@@ -1268,11 +1274,11 @@ published role names disagree with its binding is refused before any check
 (`Ix.RoleBinding.Compile.roleBindingError`, as the compiler's `finalize`
 runs it).
 
-Checking is strict. With `--allow-user-axioms` the user axioms among the
-artifact's declarations (`Ix.RoleBinding.UserAxioms.ofPrepared`: the reading the
-conditional entry checks) choose the whole-artifact entry. With none, the
-certified entry runs, as without the flag. With some, the conditional entry
-runs ("User axioms (uncertified)" above) and the run prints
+Checking is strict. With `--allow-user-axioms` a whole run runs the entry under
+the `allowUser` policy once ("User axioms (uncertified)" above), and the user
+axioms it lists choose the verdict. With none, its receipt is the certified
+entry's and the run reports and issues the host statement as without the flag.
+With some, the run prints
 
 ```text
 [check-lean] whole artifact: CONDITIONAL on K user axioms:

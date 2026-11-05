@@ -17,4 +17,13 @@ theorem Receipt.authentic {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Li
       Address.admissionHash receipt.prepared.binding.bytes = receipt.prepared.binding.address :=
   Ix.Kernel.Admission.checkBytesWith_authentic receipt.checked
 
+/-- A conditional receipt that lists no user axiom has the certified receipt's
+model: it is that receipt (`ReceiptConditional.toReceipt`, T1). One that lists
+some has no model claimed. -/
+theorem ReceiptConditional.strongModel_of_nil (V : Type u) [Ix.Kernel.SetTheory V]
+    {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    (receipt : ReceiptConditional artifact limits) (noAxioms : receipt.axioms = []) :
+    Nonempty (Ix.Kernel.Cached.StrongModel V receipt.target) :=
+  (receipt.toReceipt noAxioms).strongModel V
+
 end Ix.RoleBinding.Artifact
