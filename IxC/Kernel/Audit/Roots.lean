@@ -1079,8 +1079,9 @@ constructor:
 
 /-! ### Frozen statements: the checks that admit user axioms
 
-The entries' signatures, T1 at the fold and at the bytes and tiered entries,
-the converse, and the model without user axioms. -/
+The entries' signatures, the bytes and tiered Ixon entries at `strict`, T1 at
+the fold and at the bytes and tiered entries, the converse, and the model
+without user axioms. -/
 
 /-- info: @Ix.Kernel.Admission.checkBytesWithUserAxioms : (ByteArray → Address) →
   Ix.Kernel.Admission.Binding →
@@ -1168,6 +1169,18 @@ the converse, and the model without user axioms. -/
     Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint = Except.ok env -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.Admission.checkBytesUnder_strict_of_nil
+
+/-- info: Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict : ∀
+  (prelude : Ix.Kernel.RoleTable → Except String (Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon))
+  (hash : ByteArray → Address) (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits)
+  (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
+  (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint),
+  Prod.fst <$>
+      Ix.Kernel.Admission.checkBytesTieredUsingUnder Ix.Kernel.Cached.AxiomPolicy.strict prelude hash binding limits
+        records blobs hint =
+    Ix.Kernel.Admission.checkBytesTieredUsing prelude hash binding limits records blobs hint -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict
 
 /-- info: @Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict_of_nil : ∀ {policy : Ix.Kernel.Cached.AxiomPolicy}
   {prelude : Ix.Kernel.RoleTable → Except String (Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon)}
