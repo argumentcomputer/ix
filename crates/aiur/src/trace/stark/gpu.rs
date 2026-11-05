@@ -14,14 +14,14 @@
 //! circuits, named by circuit or by member function; the record upload then
 //! holds only what those circuits read.
 //!
-//! Under device memory pressure multi-stark asks a generated source to
-//! release its device state. With `AIUR_GPU_TRACE_RELEASE=1` the uploaded
-//! record is then copied to host memory once, freed, and uploaded again from
-//! that copy on the next tile. It stays resident by default: multi-stark
-//! asks before each commitment that is short of memory, and the next
-//! generated source needs the record again at once, so on an Init leaf
-//! releasing re-uploads it about twice per shard and costs more proving time
-//! than the LDE spills it avoids.
+//! Multi-stark asks a generated source to release its device state only
+//! under device memory pressure, when admitting a commitment, lookup or
+//! quotient phase that is short of memory. The uploaded record is then
+//! copied to host memory once, freed, and uploaded again from that copy on
+//! the next tile. Because admission can reclaim it, device planning does not
+//! reserve the record beside the proving peak. `AIUR_GPU_TRACE_RELEASE=0`
+//! pins the record instead, saving the host copy; device planning then
+//! charges it.
 use super::{planning::HostCause, *};
 use crate::{
   Execution,
@@ -227,6 +227,16 @@ impl Drop for Buffer {
     // SAFETY: allocated by `aiur_gpu_malloc` on this device, freed once.
     unsafe { aiur_gpu_free(self.device, self.pointer) };
   }
+}
+
+/// Device bytes of one launch workspace for `words` scratch words per
+/// thread, as [`Workspace::new`] allocates it.
+fn workspace_bytes(words: u64) -> u64 {
+  // SAFETY: the launch bound has no arguments or side effects.
+  unsafe { aiur_gpu_population_threads() }
+    .saturating_mul(words.max(1))
+    .saturating_mul(8)
+    .saturating_add(std::mem::size_of::<AiurPopulationError>() as u64)
 }
 
 /// A launch's scratch and failure report, reused across tiles.
@@ -474,22 +484,39 @@ fn allowlist() -> Result<Option<Vec<String>>, String> {
 }
 
 impl DevicePlans {
-  pub(super) fn scratch_bytes(&self) -> u64 {
-    // SAFETY: the launch bound has no arguments or side effects.
-    unsafe { aiur_gpu_population_threads() }
-      .saturating_mul(self.scratch_words())
-      .saturating_mul(8)
+  /// Scratch words per launch thread for device circuit `ci`: its widest
+  /// member plan when interpreted, none with a compiled writer. `members`
+  /// lists each circuit's functions.
+  fn scratch_words(&self, ci: usize, members: &[Vec<usize>]) -> u64 {
+    if self.compiled.as_ref().is_some_and(|c| c.covers(ci)) {
+      return 0;
+    }
+    members
+      .get(ci)
+      .into_iter()
+      .flatten()
+      .filter_map(|&f| self.programs[f].as_ref())
+      .map(|p| u64::from(p.scratch))
+      .max()
+      .unwrap_or(0)
   }
 
-  /// Scratch words per launch thread for the widest selected plan.
-  fn scratch_words(&self) -> u64 {
-    self
-      .programs
+  /// Device scratch the population launches can hold at once. Multi-stark
+  /// fills up to `MAX_CONCURRENT_LDES` generated traces concurrently, at most
+  /// one per device circuit, and each call takes a pooled workspace. The pool
+  /// replaces a workspace too small for a call with a larger one, so every
+  /// workspace held can grow to the widest circuit's size. None without
+  /// device circuits.
+  pub(super) fn scratch_bytes(&self, members: &[Vec<usize>]) -> u64 {
+    let circuits: Vec<usize> =
+      (0..self.circuits.len()).filter(|&ci| self.circuits[ci]).collect();
+    let widest = circuits
       .iter()
-      .flatten()
-      .map(|p| u64::from(p.scratch.max(1)))
+      .map(|&ci| workspace_bytes(self.scratch_words(ci, members)))
       .max()
-      .unwrap_or(1)
+      .unwrap_or(0);
+    let concurrent = circuits.len().min(multi_stark::cuda::MAX_CONCURRENT_LDES);
+    widest.saturating_mul(concurrent as u64)
   }
 
   pub(super) fn record_bytes<B: WitnessField>(
@@ -551,11 +578,21 @@ impl DevicePlans {
     (causes, format!("unsupported population plans: {}", names.join(", ")))
   }
 
-  /// `None` unless `AIUR_GPU_TRACE=generated`, which requires device lookups.
+  /// The device population `AIUR_GPU_TRACE` selects. Unset, it is
+  /// `compiled` when a compiled bundle is registered and lookups run on the
+  /// device, and host population otherwise.
   pub(super) fn from_env<B: WitnessField>(
     backend: &Backend<'_, '_, B>,
   ) -> Result<Option<Self>, String> {
-    match std::env::var("AIUR_GPU_TRACE").as_deref() {
+    let mode = match std::env::var("AIUR_GPU_TRACE") {
+      Err(std::env::VarError::NotPresent)
+        if backend.gpu_lookup_only && super::compiled::registered() =>
+      {
+        Ok("compiled".to_owned())
+      },
+      mode => mode,
+    };
+    match mode.as_deref() {
       Ok("generated") => {
         if !backend.gpu_lookup_only {
           return Err(
@@ -964,6 +1001,8 @@ pub(super) struct DeviceRecord {
   workspaces: Mutex<Vec<Workspace>>,
   /// Whether multi-stark's release requests free the record.
   releasable: bool,
+  /// Device bytes of the uploaded record.
+  bytes: u64,
   compiled: Option<Arc<super::compiled::Selection>>,
   /// Range-table uses counted on the device; none while depth circuits are
   /// populated on the host.
@@ -1029,12 +1068,14 @@ impl DeviceRecord {
       }
       multiplicities.write(0, counts)
     })?;
+    let bytes = image.bytes()?;
     Ok(Self {
       device,
       image,
       state: RwLock::new(State { resident: Some(resident), spilled: None }),
       workspaces: Mutex::new(vec![]),
       releasable: release_enabled(),
+      bytes,
       compiled: plans.compiled.clone(),
       ranges: RangeCounts::default(),
     })
@@ -1315,6 +1356,37 @@ impl TraceGenerator<Val> for DeviceTrace {
       self.real_rows,
     )
   }
+  fn device_state_bytes(&self) -> usize {
+    if self.record.releasable {
+      usize::try_from(self.record.bytes).unwrap_or(usize::MAX)
+    } else {
+      0
+    }
+  }
+  fn device_state_resident(&self) -> bool {
+    self
+      .record
+      .state
+      .read()
+      .unwrap_or_else(std::sync::PoisonError::into_inner)
+      .resident
+      .is_some()
+  }
+  fn device_workspace_bytes(&self) -> usize {
+    let words = if self
+      .record
+      .compiled
+      .as_ref()
+      .is_some_and(|c| c.covers(self.circuit))
+    {
+      0
+    } else {
+      self.record.image.circuits[self.circuit]
+        .as_ref()
+        .map_or(0, |c| u64::from(c.scratch))
+    };
+    usize::try_from(workspace_bytes(words)).unwrap_or(usize::MAX)
+  }
   fn release_device(&self, device_id: i32) {
     if self.record.releasable {
       self.record.release(device_id);
@@ -1322,9 +1394,11 @@ impl TraceGenerator<Val> for DeviceTrace {
   }
 }
 
-/// Whether released device records keep a host copy for re-upload
-/// (`AIUR_GPU_TRACE_RELEASE=1`). The copy lives as long as the record, so
-/// host planning charges it whenever this is on.
+/// Whether a release request frees the device record, keeping a host copy
+/// for re-upload. On unless `AIUR_GPU_TRACE_RELEASE=0`: multi-stark asks only
+/// when a phase's admission is short of memory, so the record then never
+/// pins device memory a later phase needs. The copy lives as long as the
+/// record, so host planning charges it whenever this is on.
 pub(super) fn release_enabled() -> bool {
-  std::env::var("AIUR_GPU_TRACE_RELEASE").as_deref() == Ok("1")
+  std::env::var("AIUR_GPU_TRACE_RELEASE").as_deref() != Ok("0")
 }

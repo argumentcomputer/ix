@@ -247,3 +247,166 @@ fn allowlisted_population_proves_identically() {
     assert_eq!(prove(&backend), expected, "circuit {ci}");
   }
 }
+
+/// The planner charges what concurrent population calls can hold: a pooled
+/// workspace of the widest circuit's size per concurrent writer, each of them
+/// what commitment admission reserves for a generated trace.
+#[test]
+fn planned_scratch_covers_concurrent_writers() {
+  use super::super::gpu::DeviceTrace;
+  use multi_stark::witness::TraceGenerator;
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  let record = program.execute(ENTRY, vec![3]).unwrap();
+  let rows = backend.record_rows(&record).unwrap();
+  let plans = DevicePlans::new(&backend);
+  let device = std::sync::Arc::new(
+    DeviceRecord::upload(&backend, &plans, &record, 0).unwrap(),
+  );
+  let traces: Vec<_> = device_circuits(&plans)
+    .into_iter()
+    .map(|ci| DeviceTrace {
+      record: std::sync::Arc::clone(&device),
+      circuit: ci,
+      base: 0,
+      height: device.height(ci).unwrap(),
+      real_rows: rows[ci],
+    })
+    .collect();
+  assert!(!traces.is_empty());
+  let widest =
+    traces.iter().map(|t| t.device_workspace_bytes() as u64).max().unwrap();
+  assert!(widest > 0);
+  let concurrent = traces.len().min(multi_stark::cuda::MAX_CONCURRENT_LDES);
+  assert_eq!(plans.scratch_bytes(&backend.members), widest * concurrent as u64);
+  // The record is the state a release frees and the next tile restores.
+  for trace in &traces {
+    assert!(trace.device_state_resident());
+    assert_eq!(
+      trace.device_state_bytes() > 0,
+      super::super::gpu::release_enabled()
+    );
+  }
+}
+
+/// The device record is charged beside the stage-one and stage-two LDEs it
+/// populates, and, when releasable, not beside the quotient peak.
+#[test]
+fn device_peak_charges_the_record_while_populating() {
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let mut backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  backend.device_plans = Some(DevicePlans::new(&backend));
+  let record: u64 = 3 << 30;
+  let population = 1u128 << 28;
+  // Population dominates: the record adds at least its own bytes.
+  assert!(
+    backend.device_peak(population, population, record, 1 << 10)
+      >= backend.device_peak(population, population, 0, 1 << 10)
+        + u128::from(record)
+  );
+  // The quotient phase dominates: a releasable record adds nothing.
+  let committed = population * 64;
+  if !super::super::gpu::release_enabled() {
+    return;
+  }
+  assert_eq!(
+    backend.device_peak(committed, population, record, 1 << 10),
+    backend.device_peak(committed, population, 0, 1 << 10)
+  );
+}
+
+/// Device population plans the layout host population gets, and keeps a
+/// record on the host when its device plan does not fit there.
+#[test]
+fn device_population_keeps_the_host_layout() {
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let mut backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  let record = program.execute(ENTRY, vec![3]).unwrap();
+  let options = |max_device_bytes| planning::Options {
+    max_device_bytes: Some(max_device_bytes),
+    ..Default::default()
+  };
+  let generated = |plan: &planning::BatchPlan| {
+    plan.population.iter().filter(|c| c.generated).count()
+  };
+  let host = backend.plan_record(&record, &options(1 << 40), 0).unwrap();
+  assert_eq!(generated(&host), 0);
+  backend.device_plans = Some(DevicePlans::new(&backend));
+  let device = backend.plan_record(&record, &options(1 << 40), 0).unwrap();
+  assert!(device.fits);
+  assert!(generated(&device) > 0);
+  assert_eq!(device.layout, host.layout);
+  assert!(device.device_peak_bytes > host.device_peak_bytes);
+  // A budget the host layout meets but its device population does not.
+  let tight =
+    backend.plan_record(&record, &options(host.device_peak_bytes), 0).unwrap();
+  assert!(tight.fits);
+  assert_eq!(tight.layout, host.layout);
+  assert_eq!(generated(&tight), 0);
+  assert!(record.host_population.get());
+  assert!(
+    tight.population.iter().any(|c| c.host_causes == [HostCause::DeviceLayout])
+  );
+}
+
+/// A record host population cannot prove gets the device plan instead of a
+/// host plan that does not fit: whether host planning found no layout at
+/// all, or only a layout over the device budget.
+#[test]
+fn device_population_plans_records_host_population_cannot_prove() {
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let host_backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  let mut backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  backend.device_plans = Some(DevicePlans::new(&backend));
+  let record = program.execute(ENTRY, vec![3]).unwrap();
+  let options = |max_ram_bytes, max_device_bytes| planning::Options {
+    max_ram_bytes: Some(max_ram_bytes),
+    max_device_bytes: Some(max_device_bytes),
+    ..Default::default()
+  };
+  let generated = |plan: &planning::BatchPlan| {
+    plan.population.iter().filter(|c| c.generated).count()
+  };
+  let check = |options: &planning::Options| {
+    let device = backend.plan_record(&record, options, 0).unwrap();
+    assert!(!record.host_population.get(), "{options:?}");
+    assert!(generated(&device) > 0, "{options:?}");
+    device
+  };
+  // No layout: the host floor already exceeds the RAM budget.
+  let starved = options(1, 1 << 40);
+  let host = host_backend.plan_record(&record, &starved, 0).unwrap();
+  assert!(host.layout.is_none() && !host.fits);
+  check(&starved);
+  // A layout over the device budget, the last one the search tried: a
+  // budget the floor meets but no packing does.
+  let small = (10..40)
+    .flat_map(|log| (0..8).map(move |step| (8u64 + step) << (log - 3)))
+    .map(|budget| options(1 << 40, budget))
+    .find(|options| {
+      let host = host_backend.plan_record(&record, options, 0).unwrap();
+      host.layout.is_some() && !host.fits
+    })
+    .expect("no device budget leaves host population an unfit layout");
+  check(&small);
+  // A fitting host layout still decides.
+  let ample = options(1 << 40, 1 << 40);
+  let host = host_backend.plan_record(&record, &ample, 0).unwrap();
+  let device = check(&ample);
+  assert!(host.fits && device.fits);
+  assert_eq!(device.layout, host.layout);
+}

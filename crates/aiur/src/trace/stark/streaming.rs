@@ -920,7 +920,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       if batch.fits
         || limit <= 1
         || batch.device_budget_bytes.is_some_and(|n| {
-          self.device_peak(0, batch.device_record_bytes, 0) > n as u128
+          self.device_peak(0, 0, batch.device_record_bytes, 0) > n as u128
         })
       {
         return Ok(batch);
@@ -929,6 +929,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         && batch.device_budget_bytes.is_some_and(|n| {
           batch.device_peak_bytes > n
             && self.device_peak(
+              batch.shard_cells as u128,
               batch.shard_cells as u128,
               batch.device_record_bytes,
               0,
@@ -944,7 +945,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   }
 
   /// Charge a caller's layout instead of searching for one.
-  fn plan_forced(
+  pub(super) fn plan_forced(
     &self,
     record: &Execution<B>,
     layout: BatchLayout,
@@ -1026,7 +1027,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       if plan.fits
         || cap == 1
         || device_budget.is_some_and(|n| {
-          self.device_peak(0, plan.device_record_bytes, 0) > n as u128
+          self.device_peak(0, 0, plan.device_record_bytes, 0) > n as u128
         })
       {
         return Ok(plan);
@@ -1160,12 +1161,18 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         .enumerate()
         .map(|(ci, &h)| h as u128 * self.committed_width(ci))
         .sum();
+      let population: u128 = heights
+        .iter()
+        .zip(&self.system.circuits)
+        .map(|(&h, c)| h as u128 * (c.main_width + c.stage_2_width) as u128)
+        .sum();
       shard_cells = shard_cells.max(committed);
       stage1_cells += cells;
       host_cells += main;
       let tallest = heights.iter().copied().max().unwrap_or(1).max(1);
       device_peak = device_peak.max(self.device_peak(
         committed,
+        population,
         device_record_bytes,
         tallest,
       ));

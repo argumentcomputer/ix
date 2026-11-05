@@ -945,6 +945,7 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
         memory,
         instructions: 0,
         native_stack_bytes: 0,
+        host_population: Default::default(),
       },
     };
     let mut output = vec![];
