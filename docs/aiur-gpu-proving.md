@@ -155,29 +155,38 @@ as the backstop.
 
 ## 4. Device trace population
 
-`AIUR_GPU_TRACE` selects how stage-one main traces are populated:
+`AIUR_GPU_TRACE` selects how stage-one main traces are populated. Unset,
+it is `compiled` in a CUDA build that registers compiled writers
+(`IX_FORMAL_COMPILED_TRACE=1`) with device lookups, and `cpu` otherwise. On
+Init with `ix prove --lanes 1 --exec-jobs 3`, `compiled` proves about 2%
+faster end to end than `cpu`: it halves the population stall and frees host
+threads for the prover.
 
 | Value | Population |
 |---|---|
-| `cpu` (default) | Every circuit on the host. |
+| `cpu` | Every circuit on the host. |
 | `generated` | Function circuits whose population plans read only recorded calls, byte tables and word hints are filled on the device by `crates/aiur/cuda/population.cu`, which interprets the same compiled plans and group placements as the host writer. The record tables they read are uploaded once per proof, so the execution record can be dropped before proving. |
 | `compiled` | Circuits covered by the compiled writers (`IX_FORMAL_COMPILED_TRACE=1`) run them; the rest stay on the host. |
 | `compiled+generated` | Compiled writers where they exist, the interpreter for the remaining eligible circuits. |
 
 Circuits with memory stores, loads or stream hints, ROMs and fixed tables
-keep host rows. Proof bytes are identical in every mode. Device modes need
+keep host rows. Proof bytes are identical in every mode. The planner chooses
+the layout host population would get and populates on the device only if
+the device record and its workspaces also fit there; otherwise that record
+keeps host population (`device_layout` in the plan's host causes). Device
+population therefore never changes a planned layout or a proof. Device modes need
 device lookups, which are the CUDA default: the prover derives lookup
 messages from the committed rows with multi-stark's graph evaluator.
 `AIUR_TRACE_ONLY_LOOKUPS=0` builds host lookup buffers instead and rejects
 the device modes; CPU builds always build host buffers.
 
 `AIUR_GPU_TRACE_CIRCUITS=a,b` restricts device population to the listed
-circuits, named by circuit or by member function. With
-`AIUR_GPU_TRACE_RELEASE=1`, a generated source asked to release its device
-state copies the uploaded record to host memory once and re-uploads it on
-the next tile; by default it stays resident, because releasing re-uploads it
-about twice per shard on an Init leaf and costs more than the LDE spills it
-avoids.
+circuits, named by circuit or by member function. A generated source asked
+to release its device state copies the uploaded record to host memory once
+and re-uploads it on the next tile. Multi-stark asks only when a phase's
+admission is short of device memory, so the planner does not reserve the
+record beside the proving peak. `AIUR_GPU_TRACE_RELEASE=0` pins the record
+instead, saves the host copy, and has the planner charge it.
 
 `tools/ixvm/check-formal.sh` with `IX_TEST_CUDA=1` is the hardware gate:
 it compares CPU and CUDA proofs and keys byte for byte across retention

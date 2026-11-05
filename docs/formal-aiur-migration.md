@@ -500,9 +500,8 @@ Both fingerprints matched the pre-migration results.
 
 GPU population uploads the leaf's query tables and indexes once and shares
 them across every circuit (`crates/aiur/src/trace/stark/gpu.rs`). Under
-device pressure, with `AIUR_GPU_TRACE_RELEASE=1`, it downloads every table,
-frees the record and later re-uploads the whole record; release is off by
-default. The record occupies 3–5.6 GB of device memory on an Init leaf.
+device pressure it downloads every table, frees the record and later
+re-uploads the whole record; `AIUR_GPU_TRACE_RELEASE=0` pins it instead. The record occupies 3–5.6 GB of device memory on an Init leaf.
 
 Measured on `formal-aiur-perf` (before PR 678) on Init leaf 0 at a fixed
 10-shard layout:

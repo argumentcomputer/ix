@@ -45,6 +45,30 @@ pub struct Execution<B: FieldBackend = PrimeField> {
   /// including any heap segments at their full size; zero for the
   /// interpreter, whose frames are heap allocations charged to the record.
   pub native_stack_bytes: usize,
+  /// Set by the planner when this record's trace stays on the host although
+  /// device population is enabled. Only CUDA builds populate on the device.
+  #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+  pub(crate) host_population: HostPopulation,
+}
+
+/// A record's population override, kept by value through clones.
+#[derive(Debug, Default)]
+pub(crate) struct HostPopulation(std::sync::atomic::AtomicBool);
+
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+impl HostPopulation {
+  pub(crate) fn get(&self) -> bool {
+    self.0.load(std::sync::atomic::Ordering::Acquire)
+  }
+  pub(crate) fn set(&self, host: bool) {
+    self.0.store(host, std::sync::atomic::Ordering::Release);
+  }
+}
+
+impl Clone for HostPopulation {
+  fn clone(&self) -> Self {
+    Self(std::sync::atomic::AtomicBool::new(self.get()))
+  }
 }
 
 /// Query and ROM storage excludes shared program data, hint closures and
@@ -342,6 +366,7 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
         memory,
         instructions: 0,
         native_stack_bytes: 0,
+        host_population: Default::default(),
       },
     };
     machine.run_query(root)?;
