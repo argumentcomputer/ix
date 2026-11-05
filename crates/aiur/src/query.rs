@@ -18,6 +18,47 @@ pub(crate) fn hash_words<F: Hash>(words: &[F]) -> u64 {
   hash.finish()
 }
 
+/// A hash index entry: a row number and a 32-bit tag folded from its key's
+/// hash. Probes compare the tag before loading the row, so a control-byte
+/// false match almost never costs a row load. The index files each entry
+/// under a hash of its tag alone, so growing the index rehashes entries
+/// without loading rows or keeping each key's full hash.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Entry {
+  pub(crate) row: u32,
+  tag: u32,
+}
+
+impl Entry {
+  #[inline(always)]
+  pub(crate) fn new(row: u32, hash: u64) -> Self {
+    Self { row, tag: Self::tag(hash) }
+  }
+
+  #[inline(always)]
+  pub(crate) fn tag(hash: u64) -> u32 {
+    (hash ^ (hash >> 32)) as u32
+  }
+
+  /// The index hash of entries with `tag`. Multiplying by an odd constant
+  /// is a bijection whose low bits (the bucket) come from the tag's low bits
+  /// and whose top bits (the control byte) mix all of them.
+  #[inline(always)]
+  pub(crate) fn index_hash(tag: u32) -> u64 {
+    u64::from(tag).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+  }
+
+  #[inline(always)]
+  pub(crate) fn rehash(&self) -> u64 {
+    Self::index_hash(self.tag)
+  }
+
+  #[inline(always)]
+  pub(crate) fn matches(&self, tag: u32) -> bool {
+    self.tag == tag
+  }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct QueryInputRef<'a, F = u64> {
   pub function: usize,
@@ -44,8 +85,7 @@ pub(crate) struct QueryTable<B: FieldBackend = PrimeField> {
   depths: Vec<u64>,
   chunk_shift: u32,
   chunk_mask: usize,
-  hashes: Vec<u64>,
-  index: HashTable<usize>,
+  index: HashTable<Entry>,
   index_bytes: usize,
   // A bounded front index for dense unary keys (especially ROM addresses).
   // Sparse or large keys still use the exact hash index. Entries are row IDs,
@@ -76,7 +116,6 @@ impl<B: FieldBackend> QueryTable<B> {
       chunk_shift,
       chunk_mask: (1 << chunk_shift) - 1,
       rows: vec![],
-      hashes: vec![],
       index: HashTable::new(),
       index_bytes: 0,
       dense_index: vec![],
@@ -172,19 +211,39 @@ impl<B: FieldBackend> QueryTable<B> {
     {
       return (hash, Some(row));
     }
-    (hash, self.index.find(hash, |&row| self.input(row) == args).copied())
+    let tag = Entry::tag(hash);
+    let found = self.index.find(Entry::index_hash(tag), |entry| {
+      entry.matches(tag)
+        && self.row(entry.row as usize)[..self.input_width] == *args
+    });
+    (hash, found.map(|entry| entry.row as usize))
   }
 
   /// A zero count marks a pending query, which must never supply an output.
+  /// `outputs` is the table's output width, passed by callers that know it
+  /// statically.
   #[inline(always)]
   pub(crate) fn start(
     &mut self,
     args: &[B::Element],
+    outputs: usize,
     hash: u64,
   ) -> Result<usize, crate::budget::BudgetError> {
     debug_assert!(self.static_map.is_none());
-    debug_assert_eq!(args.len(), self.input_width);
+    // Rows are written in place at the table's stride; a caller with other
+    // widths would misalign every later row.
+    assert!(
+      args.len() == self.input_width && outputs == self.output_width,
+      "query of widths ({}, {outputs}) started in a ({}, {}) table",
+      args.len(),
+      self.input_width,
+      self.output_width
+    );
     let row = self.len();
+    let entry = Entry::new(
+      self.budget.row(row, self.stride * std::mem::size_of::<B::Element>())?,
+      hash,
+    );
     if row & self.chunk_mask == 0 {
       self.budget.vector(&mut self.rows, 1)?;
       self.budget.reserve(
@@ -197,22 +256,19 @@ impl<B: FieldBackend> QueryTable<B> {
     }
     let values = self.rows.last_mut().unwrap();
     values.extend_from_slice(args);
-    values.resize(values.len() + self.output_width, self.field.zero());
+    values.resize(values.len() + outputs, self.field.zero());
     self.budget.vector(&mut self.counts, 1)?;
-    self.budget.vector(&mut self.hashes, 1)?;
-    let replaced = self.budget.hash::<usize>(
+    let replaced = self.budget.hash::<Entry>(
       self.index.len(),
       self.index.capacity(),
       &mut self.index_bytes,
     )?;
     self.counts.push(0);
     if self.track_depth {
-      self.budget.vector(&self.depths, 1)?;
+      self.budget.vector(&mut self.depths, 1)?;
       self.depths.push(0);
     }
-    self.hashes.push(hash);
-    let hashes = &self.hashes;
-    self.index.insert_unique(hash, row, |&row| hashes[row]);
+    self.index.insert_unique(entry.rehash(), entry, Entry::rehash);
     drop(replaced);
     if let [key] = args
       && let Ok(key) = usize::try_from(self.field.to_u64(*key))
@@ -259,7 +315,7 @@ impl<B: FieldBackend> QueryTable<B> {
     if let Some(map) = &self.static_map {
       return map.counts.len();
     }
-    self.hashes.len()
+    self.counts.len()
   }
 
   pub(crate) fn widths(&self) -> (usize, usize) {
@@ -271,14 +327,14 @@ impl<B: FieldBackend> QueryTable<B> {
     let payload = self.rows.iter().map(Vec::len).sum::<usize>() * word;
     let vectors = self.rows.iter().map(Vec::capacity).sum::<usize>() * word
       + self.rows.capacity() * std::mem::size_of::<Vec<B::Element>>()
-      + (self.counts.capacity() + self.hashes.capacity()) * 8
+      + self.counts.capacity() * 8
       + self.dense_index.capacity() * std::mem::size_of::<usize>()
       + self.static_map.as_ref().map_or(0, |map| map.counts.len() * 8);
     let index = if self.index.capacity() == 0 {
       0
     } else {
       self.index.capacity().next_power_of_two()
-        * (std::mem::size_of::<usize>() + 1)
+        * (std::mem::size_of::<Entry>() + 1)
         + 16
     };
     (payload, vectors, index)
@@ -419,6 +475,13 @@ mod tests {
   use super::*;
 
   #[test]
+  #[should_panic(expected = "started in a (1, 1) table")]
+  fn rows_of_other_widths_are_rejected() {
+    let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
+    let _ = table.start(&[1], 2, 0);
+  }
+
+  #[test]
   fn fixed_tables_skip_unused_rows_and_compare_without_query_order() {
     let field = PrimeField::new(97).unwrap();
     let program: crate::Program = serde_json::from_value(serde_json::json!({
@@ -463,13 +526,18 @@ mod tests {
   #[test]
   fn dense_front_index_keeps_sparse_keys_and_arity_checks() {
     let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
-    let early = table.start(&[80], table.lookup(&[80]).0).unwrap();
+    let early =
+      table.start(&[80], table.widths().1, table.lookup(&[80]).0).unwrap();
     table.finish(early, &[5]);
-    let large = table.start(&[u64::MAX], table.lookup(&[u64::MAX]).0).unwrap();
+    let large = table
+      .start(&[u64::MAX], table.widths().1, table.lookup(&[u64::MAX]).0)
+      .unwrap();
     table.finish(large, &[6]);
     for key in 0..200 {
       if key != 80 {
-        let row = table.start(&[key], table.lookup(&[key]).0).unwrap();
+        let row = table
+          .start(&[key], table.widths().1, table.lookup(&[key]).0)
+          .unwrap();
         table.finish(row, &[key]);
       }
     }
@@ -481,13 +549,39 @@ mod tests {
   }
 
   #[test]
+  fn equal_tags_still_compare_keys() {
+    let mut table = QueryTable::new(2, 1, PrimeField::new(97).unwrap());
+    // Two keys whose hashes share a tag (here the whole hash): the index
+    // must tell them apart by their rows.
+    let hash = 0xdead_beef_0000_0001;
+    let first = table.start(&[1, 2], table.widths().1, hash).unwrap();
+    table.finish(first, &[3]);
+    let second = table.start(&[2, 1], table.widths().1, hash).unwrap();
+    table.finish(second, &[4]);
+    let tag = Entry::tag(hash);
+    let find = |args: &[u64]| {
+      table
+        .index
+        .find(Entry::index_hash(tag), |e| {
+          e.matches(tag) && table.row(e.row as usize)[..2] == *args
+        })
+        .map(|e| e.row as usize)
+    };
+    assert_eq!(find(&[1, 2]), Some(first));
+    assert_eq!(find(&[2, 1]), Some(second));
+    assert_eq!(find(&[1, 1]), None);
+    assert_eq!(table.output(second).output, [4]);
+  }
+
+  #[test]
   fn pending_rows_survive_growth_and_counts_do_not_wrap() {
     let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
-    let first = table.start(&[0], table.lookup(&[0]).0).unwrap();
+    let first =
+      table.start(&[0], table.widths().1, table.lookup(&[0]).0).unwrap();
     for i in 1..10_000 {
       let (hash, found) = table.lookup(&[i]);
       assert!(found.is_none());
-      let row = table.start(&[i], hash).unwrap();
+      let row = table.start(&[i], table.widths().1, hash).unwrap();
       table.finish(row, &[i + 1]);
     }
     assert_eq!(table.lookup(&[0]).1, Some(first));
