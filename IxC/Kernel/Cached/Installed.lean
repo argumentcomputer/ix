@@ -199,27 +199,6 @@ def annotDeclStep (ev : Evidences md)
       | .ok ((fe', pend'), s') => .ok ((p.1 + 1, fe', pend'), s')
       | .error e => .error (e, p.1)
 
-/-- Phase A's step body with custom user axioms enabled: `annotStepC` with
-`checkDeclStepWithUserAxiomsC` on `.axiomDecl`. -/
-def annotStepWithUserAxiomsC (ev : Evidences md) (i : Nat) (fe : FEnv md)
-    (pend : Array (PendingCheck md)) :
-    (Declaration md) → (CheckCM md) (FEnv md × Array (PendingCheck md))
-  | .axiomDecl cv => do
-    pure (← checkDeclStepWithUserAxiomsC mode ev fe (.axiomDecl cv), pend)
-  | pd => annotStepC mode ev i fe pend pd
-
-/-- Phase A's step with custom user axioms enabled. -/
-def annotDeclStepWithUserAxioms (ev : Evidences md)
-    (p : Nat × FEnv md × Array (PendingCheck md)) (pd : Declaration md) :
-    StateT (CState md) (Except (CheckError md × Nat)) (Nat × FEnv md × Array (PendingCheck md)) :=
-  fun s =>
-    match pd.anchorMismatch? with
-    | some k => .error (.notImplemented msg!"role specification mismatch ({k})", p.1)
-    | none =>
-      match annotStepWithUserAxiomsC mode ev p.1 p.2.1 p.2.2 pd s with
-      | .ok ((fe', pend'), s') => .ok ((p.1 + 1, fe', pend'), s')
-      | .error e => .error (e, p.1)
-
 /-- **Phase A's accepting run**: a chain of accepting `annotDeclStep`s
 over the records, from an accumulator and memo state to the final
 ones.  A loop builds it step by step, whatever else it does between
@@ -598,17 +577,6 @@ def checkDecls (mode : CheckMode) (ev : Evidences md)
     (ds : Array (Declaration md)) :
     Except (CheckError md × Nat) (Env md) := do
   let (p, _) ← (ds.foldlM (annotDeclStep mode ev) (0, mkFEnv Env.empty, #[])) {}
-  checkPendingTasks mode p.2.1 p.2.2
-  checkUnits ds
-  pure p.2.1.env
-
-/-- **The declaration fold with custom user axioms enabled**: install every
-record with `annotDeclStepWithUserAxioms` (phase A), check every recorded
-declaration (phase B, on tasks), check units, and return the environment. -/
-def checkDeclsWithUserAxioms (mode : CheckMode) (ev : Evidences md)
-    (ds : Array (Declaration md)) :
-    Except (CheckError md × Nat) (Env md) := do
-  let (p, _) ← (ds.foldlM (annotDeclStepWithUserAxioms mode ev) (0, mkFEnv Env.empty, #[])) {}
   checkPendingTasks mode p.2.1 p.2.2
   checkUnits ds
   pure p.2.1.env
