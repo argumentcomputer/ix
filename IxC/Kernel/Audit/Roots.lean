@@ -57,7 +57,12 @@ entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
 the typing tier) are frozen apart: 6963 compiled functions (the entry's closure
 and the tier's functions), with 21 computed-field overrides, 28 proved csimp
 rewrites, and nothing new to rule; the closures above do not reach the
-tier. Indexing the shape guard's former membership and constructor uniqueness
+tier. The checks that admit user axioms (`userAxiomOperations`: the fold, the
+entries and the tiered entries under `AxiomPolicy.allowUser`, whose accepts are
+conditional on the user axioms they list) are frozen apart too: 6676 compiled
+functions, 112 inherited externs, under the same rulings; the certified
+closures above do not reach them, and their theorems (`userAxiomRoots`) are
+guarded and their statements frozen below. Indexing the shape guard's former membership and constructor uniqueness
 (`indShapeOkFast`, `indShapeKeysNodup`) adds 14 compiled functions net to each
 checker closure and one proved csimp, `indShapeOk_eq_indShapeOkFast`; the reader,
 externs, unsafe declarations and computed-field counts are unchanged.
