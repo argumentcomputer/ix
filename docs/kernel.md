@@ -380,8 +380,8 @@ increasing ω-chain of Grothendieck universes interpreting the universe
 tower. The Mathlib instance above supplies it from ω inaccessible
 cardinals, which its corollaries take as a hypothesis, not as an axiom.
 
-**Input policy.** The entry never falls back to the Rust checker, which is
-not in its closure ("Trust surface"). The certified theory
+**Input policy.** The entry has no fallback: what it declines stays declined,
+and no checker outside its closure ("Trust surface") is consulted. The certified theory
 uses Lean's three standard axioms: `propext`, `Classical.choice` and
 `Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
 `Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
