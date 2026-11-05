@@ -392,6 +392,28 @@ nothing; any use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
 operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
 
+**User axioms (uncertified).** Every other safe axiom, the three compiler-trust
+axioms among them, declines at the certified entry and in every host driver
+by default. A real Lean library therefore does not check whole: Init+Std
+refuses exactly those three axioms and the two opaques that depend on them
+(`Tests/Fixtures/initstd-reference.txt`). The host drivers can opt in with
+`--allow-user-axioms` (`ix check-lean`, `kernel-check-ixe`): the declaration
+checks then install a safe axiom whose key is an input constant's
+(`Key.isCustomAxiomEligible`) as an axiom, and a whole `check-lean` run whose
+declarations hold such an axiom runs a separate conditional entry
+(`Admission.checkBytesWithUserAxioms`, `checkBytesTieredUsingWithUserAxioms`,
+through `Ix.RoleBinding.Artifact.checkConditional` and
+`checkTieredConditional`). That entry has no soundness theorem and issues no
+host statement. A run that admits a user
+axiom prints `CONDITIONAL on K user axioms:` and lists them (the addresses the
+declarations key them by, with their names in meta mode), and `check-lean`
+exits with 5 rather than 0 ("`ix check-lean`" below). The binding must bind
+`sorryAx`, `propext` and `Classical.choice`
+(`Ix.RoleBinding.UserAxioms.requireAxiomRoles`): a binding that leaves one out
+keys Lean's own constant as an input constant, which the conditional checks
+would admit as a user axiom, so such an artifact is refused before any
+checking.
+
 ## The typing tier
 
 The logical fold gives what it accepts a model, so it declines every
@@ -1176,8 +1198,8 @@ CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max
 .lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
 ```
 
-Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
-<output.jsonl> [limit]`. The records are streamed by default
+Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms]
+<input.ixe> <output.jsonl> [limit]`. The records are streamed by default
 (`Ix/KernelCheck/Stream.lean`): the order and the record views
 are built over record skeletons, and each record is decoded in full at its
 turn and dropped once it is read. `--load eager` decodes and keeps the whole
@@ -1185,7 +1207,12 @@ environment up front. `--jobs <n>` installs every record first and then runs
 the recorded checks on `n` worker threads
 (`Ix/KernelCheck/Pool.lean`). All three write the same rows
 (`kernel-check-ixe --compare` shows it); with `--jobs`, a row's `micros` is
-its install plus its checks. A checker failure's reason is rendered by
+its install plus its checks. The check is strict: a safe axiom other than the
+standard three declines. `--allow-user-axioms` admits such axioms on every
+path, the read cache's included, after refusing (exit code 2) an artifact
+whose binding does not bind `sorryAx`, `propext` and `Classical.choice`, and
+ends its log with `CONDITIONAL on K user axioms:` and the axioms it admitted
+("User axioms (uncertified)" above). A checker failure's reason is rendered by
 `.meta`: its keys spelled with the names the `.ixe`'s metadata gives them and
 the first eight hexadecimal digits of their addresses, `Nat.add@a1b2c3d4`
 (`Reader.spellWith`); the verdict is the `.anon` run's.
@@ -1226,4 +1253,53 @@ Run one environment check at a time, under a memory cap, with no concurrent buil
 `--compare` and `--paired` compare runs (`Benchmarks/Kernel/README.md`).
 Mathlib's `.ixe` comes from `Benchmarks/Compile/CompileMathlib.lean`
 (`Benchmarks/Compile/README.md`).
+
+### `ix check-lean`
+
+`ix check-lean <input.ixe>` (`Ix/Cli/CheckLeanCmd.lean`) is the host checker
+behind the merge-queue gate `initstd-reference` and the `ooc` benchmark. It
+authenticates the bytes and checks every declaration, or a selection
+(`--consts`, `--consts-file`, `--max`), with the same incremental step as the
+environment check. When a whole run of a bound artifact passes, it runs the
+certified entry (`Ix.HostAdmission.certify`) and reports the host statement,
+which `--host-out` and `--host-store` persist (`docs/host-admission.md`). A
+whole bound run prints `bound roles: N admitted, M refused`: a role is refused
+when the run refused its record. In meta mode, the default, an artifact whose
+published role names disagree with its binding is refused before any check
+(`Ix.RoleBinding.Compile.roleBindingError`, as the compiler's `finalize`
+runs it).
+
+Checking is strict. With `--allow-user-axioms` the user axioms among the
+artifact's declarations (`Ix.RoleBinding.UserAxioms.ofPrepared`: the reading the
+conditional entry checks) choose the whole-artifact entry. With none, the
+certified entry runs, as without the flag. With some, the conditional entry
+runs ("User axioms (uncertified)" above) and the run prints
+
+```text
+[check-lean] whole artifact: CONDITIONAL on K user axioms:
+[check-lean]   <address> <name>
+```
+
+one line per axiom, the name in meta mode only, and never the `accepted all`
+line of a certified run. A selected run whose declaration checks read a user
+axiom prints the same list under `selected checking:`.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | everything asked for passed; for a whole bound run, through the certified entry |
+| 1 | an infrastructure failure |
+| 2 | a usage error: a bad flag or selector, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound or conditional run) |
+| 3 | a declaration failed, or the artifact was refused |
+| 4 | partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
+| 5 | conditional: everything passed, but only with the listed user axioms admitted |
+
+`--json <file>` writes benchmark results rows (`Ix.Benchmark.Results`). A run
+writes one row, keyed by `--json-name` (default `env`). With a selection it
+runs each name's full closure on its own and writes one row per name, keyed
+`<json-name>/<name>` when `--json-name` is given; a name that resolves to no
+declaration is reported, and the other names still run. In every row,
+`constants` is the number of records the run checked or read, and `throughput`
+is that number per second. `--per-const <file>` writes one CSV row per record
+for the same run or runs. A run exits with the same status with `--json` as
+without.
 
