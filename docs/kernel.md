@@ -1082,8 +1082,8 @@ interleaved:
    (`lTreeRecords`, `levelRecords`) with the names of the blocks they
    belong to; replace the lists and the owner addresses with the output. The
    byte vectors of `IxC/Fixtures/{Codec,ParserWork,ByteAdmission}.lean`
-   are the codec's: rewrite them for the new grammar (`kernel-codec`
-   compares the Lean codec with Rust's on them).
+   are the codec's: rewrite them for the new grammar (their `#guard`s run
+   when `lake -d IxC build --wfail` elaborates them).
 7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
    kernel-check FFT-cost pin of `Tests/Ix/IxVM.lean` and the shard pin in
    `Tests/Main.lean` that moved; set each to the measured value.
