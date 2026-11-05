@@ -225,7 +225,6 @@ inductive CompileError where
   | invalidMutualBlock (reason : String)
   | unsupportedExpr (desc : String)
   | unknownUnivParam (curr param : String)
-  | serializeError (err : Ixon.SerializeError)
   | resourceLimit (reason : String)
   /-- The sharing construction failed (other than by resource exhaustion, which is
       `resourceLimit`). -/
@@ -239,7 +238,6 @@ instance : ToString CompileError where
   | .invalidMutualBlock reason => s!"invalidMutualBlock: {reason}"
   | .unsupportedExpr desc => s!"unsupportedExpr: {desc}"
   | .unknownUnivParam curr param => s!"unknownUnivParam: compiling {curr}, param {param}"
-  | .serializeError err => s!"serializeError: {err}"
   | .resourceLimit reason => s!"resourceLimit: {reason}"
   | .sharingConstruction reason => s!"sharingConstruction: {reason}"
 

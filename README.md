@@ -179,8 +179,10 @@ consistency. It is Ix's own kernel, derived from the verified checker of
 [con-leche](https://github.com/leanprover/con-leche). Its entry,
 `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
 environment it accepts the theorems give a set-theoretic model and no proof of
-`False`, on the standard axioms only. It does not certify the compiler, the
-Rust kernel or IxVM. [docs/kernel.md](docs/kernel.md) states what is
+`False`, on the standard axioms only. This theorem does not by itself certify
+the compiler or IxVM: the compiler has its own theorem,
+`Ix.Cert.CompileCorrect` (see [Compiling Lean to Ixon](#compiling-lean-to-ixon)),
+and IxVM is outside both. [docs/kernel.md](docs/kernel.md) states what is
 proved, what is trusted and what the gate checks; `--with-model` also builds
 the Mathlib-based model package `Models/SetTheory`:
 

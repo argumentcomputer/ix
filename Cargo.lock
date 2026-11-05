@@ -1745,7 +1745,6 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.0",
- "rayon",
  "serde",
  "serde_core",
 ]
@@ -1976,7 +1975,6 @@ dependencies = [
  "bignat",
  "blake3",
  "quickcheck",
- "quickcheck_macros",
  "rustc-hash",
 ]
 
@@ -1985,17 +1983,10 @@ name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
  "aiur",
- "anyhow",
- "bignat",
  "bincode",
  "blake3",
- "bytes",
- "dashmap",
  "getrandom 0.3.4",
- "indexmap",
  "iroh",
- "iroh-base",
- "itertools 0.14.0",
  "ix-common",
  "ix-proof-compression",
  "ixon",
@@ -2005,7 +1996,6 @@ dependencies = [
  "mimalloc",
  "multi-stark",
  "n0-error",
- "num-bigint 0.4.6",
  "rayon",
  "rustc-hash",
  "serde",
@@ -2061,7 +2051,6 @@ dependencies = [
  "bignat",
  "blake3",
  "dashmap",
- "indexmap",
  "ix-common",
  "memmap2",
  "nom",
@@ -2070,7 +2059,6 @@ dependencies = [
  "quickcheck_macros",
  "rayon",
  "rustc-hash",
- "tiny-keccak",
 ]
 
 [[package]]
@@ -2078,11 +2066,9 @@ name = "ixvm-codegen"
 version = "0.1.0"
 dependencies = [
  "aiur",
- "dashmap",
  "ix-common",
  "ixon",
  "multi-stark",
- "num-bigint 0.4.6",
  "rayon",
  "rustc-hash",
  "stacker",

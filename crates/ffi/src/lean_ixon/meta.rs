@@ -9,7 +9,7 @@ use crate::lean::{
   LeanIxonUnivPatch,
 };
 use ix_common::address::Address;
-use ix_common::env::{BinderInfo, ReducibilityHints};
+use ix_common::env::ReducibilityHints;
 use ixon::Comm;
 use ixon::env::{AuxLayout, Named};
 use ixon::metadata::{
@@ -323,14 +323,7 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
             .decode();
         let ty_child = self.get_num_64(0);
         let body_child = self.get_num_64(1);
-        let info_byte = self.get_num_8(0);
-        let info = match info_byte {
-          0 => BinderInfo::Default,
-          1 => BinderInfo::Implicit,
-          2 => BinderInfo::StrictImplicit,
-          3 => BinderInfo::InstImplicit,
-          _ => panic!("Invalid BinderInfo tag: {}", info_byte),
-        };
+        let info = LeanIxBinderInfo::from_u8(self.get_num_8(0));
         ExprMetaData::Binder { name, info, children: [ty_child, body_child] }
       },
 

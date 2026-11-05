@@ -9,12 +9,7 @@ crate-type = ["lib", "staticlib"]
 
 [dependencies]
 aiur = { workspace = true }
-anyhow = { workspace = true }
-bignat = { workspace = true }
 blake3 = { workspace = true }
-dashmap = { workspace = true, features = ["rayon"] }
-indexmap = { workspace = true, features = ["rayon"] }
-itertools = { workspace = true }
 ixvm-codegen = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
@@ -23,7 +18,6 @@ lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
 multi-stark = { workspace = true }
 mimalloc = { workspace = true }
-num-bigint = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 serde_json = { workspace = true }
@@ -34,10 +28,8 @@ tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
 
 # Iroh dependencies
-bytes = { version = "1.10.1", optional = true }
 tokio = { version = "1.44.1", optional = true }
 iroh = { version = "0.97", optional = true }
-iroh-base = { version = "0.97", optional = true }
 n0-error = { version = "0.1", optional = true }
 getrandom = { version = "0.3", optional = true }
 bincode = { version = "2.0.1", optional = true }
@@ -52,7 +44,7 @@ cuda-trace-codegen = ["cuda", "aiur/cuda-trace-codegen"]
 plonk = ["ix-proof-compression/plonk"]
 groth16 = ["ix-proof-compression/groth16"]
 test-ffi = []
-net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
+net = ["tokio", "iroh", "n0-error", "getrandom", "bincode", "serde"]
 
 [lints]
 workspace = true

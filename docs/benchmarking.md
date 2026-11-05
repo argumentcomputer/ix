@@ -526,9 +526,7 @@ For context, the retired union `ix catalog` peaked 35.3 GiB at spine
 scale (N=12) and OOM'd this box on its first full-corpus attempt; the
 piece pipeline's box pressure is `jobs × member`, never a union.
 Per-member kernel checking (`lake exe truthmines check`, suite
-`truthmines-check`) and metadata fidelity (`lake exe truthmines
-validate`, suite `truthmines-validate`) are the other two rungs over
-the same artifacts.
+`truthmines-check`) is the other rung over the same artifacts.
 
 ## Not yet covered
 
