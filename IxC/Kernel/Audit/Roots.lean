@@ -3,6 +3,9 @@ import IxC.Ixon.Types
 import IxC.Kernel.Admission.Theorems
 import IxC.Kernel.Admission.TierTheorems
 import IxC.Kernel.Admission.Reference
+import IxC.Kernel.Admission.UserAxioms
+import IxC.Kernel.Admission.UserAxioms.Model
+import IxC.Kernel.Verify.Cached.PolicyC
 import IxC.Kernel.Verify.Cached.PerBlock
 import IxC.Kernel.Audit.Axioms
 import IxC.Kernel.Audit.Imports
@@ -42,21 +45,30 @@ It fails elaboration when
 Expected values were measured before being frozen, and every change to a
 frozen value is a deliberate update whose cause is stated where it is made.
 The closures, as frozen below: the fold `Ix.Kernel.Cached.checkDecls`
-reaches 3663 compiled functions with 67 inherited externs, with 17
-computed-field overrides of `Level`, `Expr` and `Key` and 24 proved
+reaches 3677 compiled functions with 67 inherited externs, with 17
+computed-field overrides of `Level`, `Expr` and `Key` and 25 proved
 csimp rewrites; the Ixon reader (`readRecords` with `Admission.readStream`) reaches
 2338, adding `Name`'s computed-field overrides (21 in total) and the codec's
-TagN writer twin; the entry (the four `publicOperations`) reaches 6839 with
-113 inherited externs, 21 computed-field overrides and 27 proved csimp rewrites,
+TagN writer twin; the entry (the four `publicOperations`) reaches 6853 with
+113 inherited externs, 21 computed-field overrides and 28 proved csimp rewrites,
 adding the byte stage (`preflight`, `uniqueKeys`,
 `authenticate`, `decodeRecords`), the binding section's admission
 (`admitBinding`, `RoleTable.ofBytes`, `RoleTable.check`), the committed
 default table and prelude, and the codec's two TagN twins. The tiered
 entries (`checkBytesTiered`, `checkConstantsTiered`: the logical check, then
-the typing tier) are frozen apart: 6949 compiled functions (the entry's closure
-and the tier's functions), with 21 computed-field overrides, 27 proved csimp
+the typing tier) are frozen apart: 6963 compiled functions (the entry's closure
+and the tier's functions), with 21 computed-field overrides, 28 proved csimp
 rewrites, and nothing new to rule; the closures above do not reach the
-tier. The `.indDecl` shape guard (every inductive block's
+tier. The checks that admit user axioms (`userAxiomOperations`: the fold, the
+entries and the tiered entries under `AxiomPolicy.allowUser`, whose accepts are
+conditional on the user axioms they list) are frozen apart too: 6676 compiled
+functions, 112 inherited externs, under the same rulings; the certified
+closures above do not reach them, and their theorems (`userAxiomRoots`) are
+guarded and their statements frozen below. Indexing the shape guard's former membership and constructor uniqueness
+(`indShapeOkFast`, `indShapeKeysNodup`) adds 14 compiled functions net to each
+checker closure and one proved csimp, `indShapeOk_eq_indShapeOkFast`; the reader,
+externs, unsafe declarations and computed-field counts are unchanged.
+The `.indDecl` shape guard (every inductive block's
 declared former and constructor types resolve against the environment and
 the block's formers, and its constructor names are fresh, distinct from the
 formers and pairwise distinct, before the pinned-block recognition and the
@@ -338,6 +350,43 @@ def tierRoots : Array Lean.Name :=
     ``Ix.Kernel.Admission.checkBytesTieredUsing_ok, ``Ix.Kernel.Admission.checkBytesTiered_ok,
     ``Ix.Kernel.Admission.checkBytesTiered_has_model, ``Ix.Kernel.Admission.checkBytesTiered_typed]
 
+/-- The checks that admit user axioms (`Ix.Kernel.Cached.AxiomPolicy.allowUser`,
+`IxC/Kernel/Cached/Policy.lean`): the bytes, decoded-records and tiered
+user-axiom entries, the policy-parameterised entries they are the environments
+of, and the fold and the step a host's record-by-record driver runs. An accept
+is conditional on the user axioms the entry lists. Their closure is frozen
+apart, so the certified entries' closures are unchanged. -/
+def userAxiomOperations : Array Lean.Name :=
+  #[``Ix.Kernel.Admission.checkBytesWithUserAxioms, ``Ix.Kernel.Admission.checkConstantsWithUserAxioms,
+    ``Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms,
+    ``Ix.Kernel.Admission.checkConstantsTieredWithUserAxioms,
+    ``Ix.Kernel.Admission.checkBytesUnder, ``Ix.Kernel.Admission.checkConstantsUnder,
+    ``Ix.Kernel.Admission.checkBytesTieredUsingUnder, ``Ix.Kernel.Admission.checkConstantsTieredUnder,
+    ``Ix.Kernel.Cached.checkDeclsWithUserAxioms, ``Ix.Kernel.Cached.annotDeclStepWithUserAxioms]
+
+/-- The theorems of the checks that admit user axioms: at `strict` the
+policy-parameterised fold and entries are the certified ones; without user
+axioms (T1) every policy's accept is the certified accept, and conversely the
+certified fold accepts no user axiom (`checkDecls_iff_userAxioms`); hence the
+model, and no proof of `False`, for such an accept. -/
+def userAxiomRoots : Array Lean.Name :=
+  #[``Ix.Kernel.Cached.checkDeclsUnder_strict, ``Ix.Kernel.Cached.checkDeclsUnder_eq_checkDecls,
+    ``Ix.Kernel.Cached.checkDeclsWithUserAxioms_eq_checkDecls,
+    ``Ix.Kernel.Cached.checkDecls_userAxioms_nil, ``Ix.Kernel.Cached.checkDecls_iff_userAxioms,
+    ``Ix.Kernel.Cached.checkDeclsWithUserAxioms_sound,
+    ``Ix.Kernel.Cached.no_proof_of_False_cached_userAxioms, ``Ix.Kernel.model_exists_of_no_user_axioms,
+    ``Ix.Kernel.Admission.checkConstantsUnder_strict,
+    ``Ix.Kernel.Admission.checkConstantsUnder_strict_of_nil,
+    ``Ix.Kernel.Admission.checkConstantsWithUserAxioms_ok_iff,
+    ``Ix.Kernel.Admission.checkBytesUnder_strict, ``Ix.Kernel.Admission.checkBytesUnder_strict_of_nil,
+    ``Ix.Kernel.Admission.checkBytesWithUserAxioms_ok_iff,
+    ``Ix.Kernel.Admission.checkBytesUnder_has_model_of_nil,
+    ``Ix.Kernel.Admission.checkConstantsTieredUnder_strict,
+    ``Ix.Kernel.Admission.checkConstantsTieredUnder_strict_of_nil,
+    ``Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict,
+    ``Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict_of_nil,
+    ``Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms_ok_iff]
+
 /-- The certified entry's module, whose import closure is audited. -/
 def publicModules : Array Lean.Name := #[`IxC.Kernel.Admission]
 
@@ -383,7 +432,7 @@ def importAllowlist : Array Lean.Name :=
 closure may not use: the entry's theorems and audit. -/
 def importDenylist : Array Lean.Name :=
   #[`IxC.Kernel.Admission.Theorems, `IxC.Kernel.Admission.Bytes.Theorems, `IxC.Kernel.Admission.Audit,
-    `IxC.Kernel.Audit]
+    `IxC.Kernel.Admission.UserAxioms, `IxC.Kernel.Audit]
 
 /-- The proofs of the public theorems may additionally use the Ixon codec's
 proof modules (`Ix.Ixon.Verify`, `Ix.Ixon.Bounded.Size`, with their Lean
@@ -564,20 +613,69 @@ the executed fold and the certified entry. -/
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_strongModel [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.Admission.checkBytes_model_values [propext, Classical.choice, Quot.sound]
 
+/-! ### Checks that admit user axioms
+
+The fold and the entries under an axiom policy (`AxiomPolicy`,
+`IxC/Kernel/Cached/Policy.lean`, `IxC/Kernel/Admission/UserAxioms.lean`) and
+their theorems (`IxC/Kernel/Verify/Cached/PolicyC.lean`,
+`IxC/Kernel/Admission/UserAxioms{,/Model}.lean`) stand on the same three
+axioms. `UserAxioms.lean` is a `module`, so that the host's compiled code can
+use T1 (`checkBytesUnder_strict_of_nil` and its tiered form) to make the
+certified entry's receipt from an accept that lists no user axiom; it is
+denied to the certified import closure like the other theorem modules
+(`importDenylist`, which also covers `UserAxioms.Model`). Their statements are
+frozen below; their runtime closure is frozen with the others. -/
+
+run_cmd do
+  let env ← Lean.getEnv
+  for root in Ix.Kernel.Audit.userAxiomRoots ++ Ix.Kernel.Audit.userAxiomOperations do
+    unless env.contains root do throwError m!"required root is missing: {root}"
+
+#guard_kernel_axioms Ix.Kernel.Cached.checkDeclsUnder_strict [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDeclsUnder_eq_checkDecls [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDeclsWithUserAxioms_eq_checkDecls [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDecls_userAxioms_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDecls_iff_userAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDeclsWithUserAxioms_sound [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.no_proof_of_False_cached_userAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.model_exists_of_no_user_axioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsUnder_strict [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsUnder_strict_of_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsWithUserAxioms_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesUnder_strict [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesUnder_strict_of_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesWithUserAxioms_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesUnder_has_model_of_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTieredUnder_strict [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTieredUnder_strict_of_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict_of_nil [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms_ok_iff [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesWithUserAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsWithUserAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTieredWithUserAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesUnder [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsUnder [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkBytesTieredUsingUnder [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Admission.checkConstantsTieredUnder [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.checkDeclsWithUserAxioms [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms Ix.Kernel.Cached.annotDeclStepWithUserAxioms [propext, Classical.choice, Quot.sound]
+
 /-! ### Import and runtime closures
 
 The entry's import closure stays inside `importAllowlist`, below the ruled
 elaboration-time edges inside `elaborationImports.allowed`; the theorems'
 closure inside `proofImportAllowlist`. The runtime closures are frozen with
-the rulings they use: the fold (`checkDecls`, 3663 compiled functions) reaches
-the kernel's computed-field overrides of `Level`, `Expr` and `Key` (17) and 24
+the rulings they use: the fold (`checkDecls`, 3677 compiled functions) reaches
+the kernel's computed-field overrides of `Level`, `Expr` and `Key` (17) and 25
 proved project csimp rewrites; the reader (`readRecords`, `readStream`, 2338
 compiled functions) reaches 21 computed-field overrides (adding `Name`'s) and 8
 proved csimp rewrites (including the codec's TagN writer twin) and the prelude
 check (`State.keepsPrelude`: the state's keys and the decidable equality of its
-entries); the entry (`publicOperations`, 6839 compiled functions) and the tiered
-entries (`tierOperations`, 6949 compiled functions) reach 21 computed-field
-overrides and 27 proved csimp rewrites, adding the byte stage, the binding
+entries); the entry (`publicOperations`, 6853 compiled functions) and the tiered
+entries (`tierOperations`, 6963 compiled functions) reach 21 computed-field
+overrides and 28 proved csimp rewrites, adding the byte stage, the binding
 section's admission, the committed default table and prelude and the codec's
 TagN reader twin. -/
 
@@ -586,6 +684,13 @@ run_cmd Ix.Kernel.Audit.checkImportsWith Ix.Kernel.Audit.publicModules Ix.Kernel
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.UserAxioms] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+
+#guard_msgs (drop info) in
+run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.UserAxioms.Model] Ix.Kernel.Audit.proofImportAllowlist Ix.Kernel.Audit.elaborationImports
+#guard !Ix.Kernel.Audit.allowed Ix.Kernel.Audit.importAllowlist `IxC.Kernel.Admission.UserAxioms.Model Ix.Kernel.Audit.importDenylist
 
 -- The entry's byte stage is admitted; projection hashing, block order, the
 -- codec proofs and `kernelImportAllowlist` are not widened.
@@ -616,7 +721,9 @@ run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Theorems] Ix.Ke
 -- when scanning `val.getUsedConstants` records `Ix.Kernel.Cached.withChain_eq_impl`
 -- (`@[inline] def withChainImpl`) in `Ix.Kernel.Cached` (23 -> 24 for raw kernel
 -- entries, and 26 -> 27 in the public and tiered artifact entries below).
-/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3663 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 24 -/
+-- The indexed shape guard adds 14 compiled functions net and its proved
+-- indShapeOk_eq_indShapeOkFast replacement. All other census fields are unchanged.
+/-- info: runtime closure of [Ix.Kernel.Cached.checkDecls]: 3677 compiled functions; inherited externs 67, implemented_by 0, unsafe 21, csimp 5; ruled computed_field 17, csimp 25 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.kernelOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -660,7 +767,7 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.readerOperations Ix.Ker
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytes,
  Ix.Kernel.Admission.checkBytesWith,
  Ix.Kernel.Admission.checkConstantsWith,
- Ix.Kernel.Admission.checkConstants]: 6839 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 27 -/
+ Ix.Kernel.Admission.checkConstants]: 6853 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
@@ -711,12 +818,34 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.publicOperations Ix.Ker
 -- The tiered closure has the same 811 additions and eight removals as the
 -- logical entry above, with exactly the same execution-trust entries.
 /-- info: runtime closure of [Ix.Kernel.Admission.checkBytesTiered,
- Ix.Kernel.Admission.checkConstantsTiered]: 6949 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 27 -/
+ Ix.Kernel.Admission.checkConstantsTiered]: 6963 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.tierOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 #guard_msgs (drop info) in
 run_cmd Ix.Kernel.Audit.checkImportsWith #[`IxC.Kernel.Admission.Tier] Ix.Kernel.Audit.importAllowlist Ix.Kernel.Audit.elaborationImports Ix.Kernel.Audit.importDenylist
+
+-- The checks that admit user axioms (`userAxiomOperations`, `AxiomPolicy.allowUser`): the
+-- logical and tiered entries' closures with the fold under a policy (`Cached.checkDeclsUnder`,
+-- the axiom arm `checkAxiomDeclC` with the user arm's refusal of an axiom role's
+-- specification, `axiomRolePins`, `axiomRoleSpecHit?`), the table's admission under the
+-- policy (`admitAxiomPolicy`) and the listed user axioms (`preparedUserAxioms`). Frozen apart:
+-- the certified closures above do not reach them. Measured at 6676 compiled functions, fewer
+-- than the tiered entries' 6963 because none of these reaches the committed default table and
+-- prelude (each takes its prelude or table as an argument); inherited externs 112, and the
+-- same rulings admit it with the same unsafe, csimp and ruled counts.
+/-- info: runtime closure of [Ix.Kernel.Admission.checkBytesWithUserAxioms,
+ Ix.Kernel.Admission.checkConstantsWithUserAxioms,
+ Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms,
+ Ix.Kernel.Admission.checkConstantsTieredWithUserAxioms,
+ Ix.Kernel.Admission.checkBytesUnder,
+ Ix.Kernel.Admission.checkConstantsUnder,
+ Ix.Kernel.Admission.checkBytesTieredUsingUnder,
+ Ix.Kernel.Admission.checkConstantsTieredUnder,
+ Ix.Kernel.Cached.checkDeclsWithUserAxioms,
+ Ix.Kernel.Cached.annotDeclStepWithUserAxioms]: 6676 compiled functions; inherited externs 112, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
+#guard_msgs (whitespace := lax) in
+run_cmd Ix.Kernel.Audit.checkRuntimeWith Ix.Kernel.Audit.userAxiomOperations Ix.Kernel.Audit.runtimeAllowlist Ix.Kernel.Audit.runtimeRulings
 
 -- Without the rulings the entry's closure fails: they are what admits it.
 /-- error: project-level execution replacements reached from [Ix.Kernel.Cached.checkDecls] -/
@@ -947,6 +1076,131 @@ constructor:
   Ix.Kernel.Cached.checkDecls Ix.Kernel.CheckMode.verified ev ds = Except.ok env → Nonempty (Ix.Kernel.Model V env) -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Kernel.model_exists
+
+/-! ### Frozen statements: the checks that admit user axioms
+
+The entries' signatures, the bytes and tiered Ixon entries at `strict`, T1 at
+the fold and at the bytes and tiered entries, the converse, and the model
+without user axioms. -/
+
+/-- info: @Ix.Kernel.Admission.checkBytesWithUserAxioms : (ByteArray → Address) →
+  Ix.Kernel.Admission.Binding →
+    Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon →
+      Ix.Kernel.Admission.Limits →
+        Ix.Kernel.Admission.Records →
+          Ix.Kernel.Ingress.Blobs →
+            (optParam (Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) fun x => none) →
+              Except Ix.Kernel.Admission.Error (Ix.Kernel.Env Ix.Kernel.Mode.anon) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesWithUserAxioms
+
+/-- info: @Ix.Kernel.Admission.checkConstantsWithUserAxioms : (ByteArray → Address) →
+  Ix.Kernel.RoleTable →
+    Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon →
+      List (Address × Ixon.Constant) →
+        Ix.Kernel.Ingress.Blobs →
+          (optParam (Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) fun x => none) →
+            Except Ix.Kernel.Admission.Error (Ix.Kernel.Env Ix.Kernel.Mode.anon) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkConstantsWithUserAxioms
+
+/-- info: @Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms : (Ix.Kernel.RoleTable →
+    Except String (Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon)) →
+  (ByteArray → Address) →
+    Ix.Kernel.Admission.Binding →
+      Ix.Kernel.Admission.Limits →
+        Ix.Kernel.Admission.Records →
+          Ix.Kernel.Ingress.Blobs →
+            (optParam (Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) fun x => none) →
+              Except Ix.Kernel.Admission.TierError
+                (Ix.Kernel.Env Ix.Kernel.Mode.anon × List (Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon)) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesTieredUsingWithUserAxioms
+
+/-- info: @Ix.Kernel.Admission.checkBytesUnder : Ix.Kernel.Cached.AxiomPolicy →
+  (ByteArray → Address) →
+    Ix.Kernel.Admission.Binding →
+      Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon →
+        Ix.Kernel.Admission.Limits →
+          Ix.Kernel.Admission.Records →
+            Ix.Kernel.Ingress.Blobs →
+              (optParam (Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint) fun x => none) →
+                Except Ix.Kernel.Admission.Error
+                  (Ix.Kernel.Env Ix.Kernel.Mode.anon × List (Ix.Kernel.ConstantVal Ix.Kernel.Mode.anon)) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesUnder
+
+/-- info: Ix.Kernel.Admission.admitAxiomPolicy : Ix.Kernel.Cached.AxiomPolicy →
+  Ix.Kernel.RoleTable → Except Ix.Kernel.Admission.Error Unit -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.admitAxiomPolicy
+
+/-- info: Ix.Kernel.Cached.checkDeclsUnder_eq_checkDecls : ∀ (mode : Ix.Kernel.CheckMode) {md : Ix.Kernel.Mode}
+  (policy : Ix.Kernel.Cached.AxiomPolicy) (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md)),
+  Ix.Kernel.userAxiomsOfDecls ds.toList = [] →
+    Ix.Kernel.Cached.checkDeclsUnder mode policy ev ds = Ix.Kernel.Cached.checkDecls mode ev ds -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Cached.checkDeclsUnder_eq_checkDecls
+
+/-- info: @Ix.Kernel.Cached.checkDecls_iff_userAxioms : ∀ {md : Ix.Kernel.Mode} {ev : Ix.Kernel.Evidences md}
+  (mode : Ix.Kernel.CheckMode) (ds : Array (Ix.Kernel.Declaration md)) (env : Ix.Kernel.Env md),
+  Ix.Kernel.Cached.checkDecls mode ev ds = Except.ok env ↔
+    Ix.Kernel.Cached.checkDeclsWithUserAxioms mode ev ds = Except.ok env ∧ Ix.Kernel.userAxiomsOfDecls ds.toList = [] -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Cached.checkDecls_iff_userAxioms
+
+/-- info: Ix.Kernel.Admission.checkBytesUnder_strict : ∀ (hash : ByteArray → Address) (binding : Ix.Kernel.Admission.Binding)
+  (pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon) (limits : Ix.Kernel.Admission.Limits)
+  (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
+  (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint),
+  Prod.fst <$>
+      Ix.Kernel.Admission.checkBytesUnder Ix.Kernel.Cached.AxiomPolicy.strict hash binding pre limits records blobs
+        hint =
+    Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesUnder_strict
+
+/-- info: @Ix.Kernel.Admission.checkBytesUnder_strict_of_nil : ∀ {policy : Ix.Kernel.Cached.AxiomPolicy}
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding}
+  {pre : Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint} {env : Ix.Kernel.Env Ix.Kernel.Mode.anon},
+  Ix.Kernel.Admission.checkBytesUnder policy hash binding pre limits records blobs hint = Except.ok (env, []) →
+    Ix.Kernel.Admission.checkBytesWith hash binding pre limits records blobs hint = Except.ok env -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesUnder_strict_of_nil
+
+/-- info: Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict : ∀
+  (prelude : Ix.Kernel.RoleTable → Except String (Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon))
+  (hash : ByteArray → Address) (binding : Ix.Kernel.Admission.Binding) (limits : Ix.Kernel.Admission.Limits)
+  (records : Ix.Kernel.Admission.Records) (blobs : Ix.Kernel.Ingress.Blobs)
+  (hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint),
+  Prod.fst <$>
+      Ix.Kernel.Admission.checkBytesTieredUsingUnder Ix.Kernel.Cached.AxiomPolicy.strict prelude hash binding limits
+        records blobs hint =
+    Ix.Kernel.Admission.checkBytesTieredUsing prelude hash binding limits records blobs hint -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict
+
+/-- info: @Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict_of_nil : ∀ {policy : Ix.Kernel.Cached.AxiomPolicy}
+  {prelude : Ix.Kernel.RoleTable → Except String (Ix.Kernel.Reader.Prelude Ix.Kernel.Mode.anon)}
+  {hash : ByteArray → Address} {binding : Ix.Kernel.Admission.Binding} {limits : Ix.Kernel.Admission.Limits}
+  {records : Ix.Kernel.Admission.Records} {blobs : Ix.Kernel.Ingress.Blobs}
+  {hint : Ix.Kernel.ConstRef Address → Option Ix.Kernel.ReducibilityHint}
+  {r : Ix.Kernel.Env Ix.Kernel.Mode.anon × List (Ix.Kernel.Tier.TierConst Ix.Kernel.Mode.anon)},
+  Ix.Kernel.Admission.checkBytesTieredUsingUnder policy prelude hash binding limits records blobs hint =
+      Except.ok (r, []) →
+    Ix.Kernel.Admission.checkBytesTieredUsing prelude hash binding limits records blobs hint = Except.ok r -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict_of_nil
+
+/-- info: @Ix.Kernel.model_exists_of_no_user_axioms : ∀ {md : Ix.Kernel.Mode} [md.Certified] (V : Type u_1)
+  [inst : Ix.Kernel.SetTheory V] (ev : Ix.Kernel.Evidences md) (ds : Array (Ix.Kernel.Declaration md))
+  (env : Ix.Kernel.Env md),
+  Ix.Kernel.Cached.checkDeclsWithUserAxioms Ix.Kernel.CheckMode.verified ev ds = Except.ok env →
+    Ix.Kernel.userAxiomsOfDecls ds.toList = [] → Nonempty (Ix.Kernel.Model V env) -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Kernel.model_exists_of_no_user_axioms
 
 /-! ## The kernel-side modules and the import allowlists
 

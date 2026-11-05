@@ -17,8 +17,7 @@ workflows execute, so every CI number is reproducible on your machine.
 ## The row contract
 
 Every measured tool reports through one shape — the **benchmark results JSON** —
-and one exit-code convention (Rust: `crates/bench`; Lean:
-`Ix/Benchmark/Results.lean`):
+and one exit-code convention (`Ix/Benchmark/Results.lean`):
 
 ```json
 { "<name>": { "status": "ok", "<metric>": 123, "phase-<span>": 1.5 } }
@@ -28,8 +27,13 @@ and one exit-code convention (Rust: `crates/bench`; Lean:
 - `status` is `ok` or `rejected` (written by the tool) or `oom` (merged in by
   `ix bench run` after an abnormal exit — a process never observes its own
   OOM kill). An `oom` row keeps whatever metrics landed before the kill.
+  `ix check-lean` also writes `partial` (exit 4: every declaration passed, but
+  the whole artifact carries no role binding) and `conditional` (exit 5: it
+  passed only with user axioms admitted).
 - Exit codes: `0` all ok · `2` usage error · `3` the kernel **rejected** a
-  constant (its row is on disk) · anything else is an infrastructure failure.
+  constant (its row is on disk) · `4`/`5` `ix check-lean`'s partial and
+  conditional runs (their rows are on disk) · anything else is an
+  infrastructure failure.
 
 There is no output scraping anywhere: no marker lines, no log grepping, no
 sentinel-key jq. State flows through rows and exit codes only. A rejected or
@@ -103,12 +107,113 @@ The comparison renders the pair in its own table. A missing or incomplete
 successful join is a run failure; a watchdog kill preserves any execution
 measurements and marks the unfinished pair `OOM`.
 
+### Circuit cost profiling
+
+Use the same compiled artifact and claim scope for each comparison. The
+profiler records the artifact size, binding address, checked-constant count,
+per-function query heights, and actual AIR shapes:
+
+```shell
+lake exe proving-profile InitStd.ixe Nat.add_comm nat-profile.json
+lake exe function-grouping check ixvm
+lake exe function-grouping measure ixvm before-groups.json after-groups.json \
+  nat-profile.json grouping-comparison.json
+```
+
+Group files are JSON arrays of `[groupName, [functionName, ...]]`; `-` selects
+the production groups. The comparison validates the unchanged function
+library and complete circuit partition. A digest of the function bodies,
+layouts, flags and memory sizes rejects stale profiles, including changes
+that leave function indices or widths unchanged. It reports both raw-height
+and power-of-two padded function FFT cost, active committed width, and VK size.
+Memory and gadget circuits are
+unchanged by regrouping and excluded from those function-cost totals.
+
+`proving-profile` always uses generic bytecode execution, so its elapsed time
+is an iteration diagnostic. Compare FFT cost and proof size while changing
+source or grouping, then regenerate the native artifacts and use
+`bench-typecheck` for native timings. Proof measurements must retain the same
+FRI parameters, checked constants, binding and dependency scope.
+
+### PR #665 proving optimization measurement
+
+The 2026-11-03 pass compares against `09ee682af5b0a37ceaad6317683cb772a9cd8ad2`,
+the PR revision in [the benchmark comment](https://github.com/argumentcomputer/ix/pull/665#issuecomment-6608664380).
+The input is the 253,772,604-byte `InitStd.ixe` with 103 bound roles, 44 evidence
+entries and SHA-256
+`e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1`.
+All seven baseline FFT values reproduce the comment's PR column to its
+displayed precision. The same constants and admission checks are retained:
+
+| Constant | Checked constants | Baseline FFT cost, billions | Optimized | Reduction |
+|---|---:|---:|---:|---:|
+| `ByteArray.utf8DecodeChar?_utf8EncodeChar_append` | 3,638 | 126.785 | 121.610 | 4.08% |
+| `Char.ofOrdinal_le_of_le` | 3,596 | 91.741 | 87.742 | 4.36% |
+| `Array.extract_append` | 2,420 | 92.971 | 90.388 | 2.78% |
+| `Std.HashMap` | 2,968 | 63.338 | 60.522 | 4.45% |
+| `_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq` | 2,688 | 55.475 | 53.180 | 4.14% |
+| `String.append` | 781 | 4.576 | 4.373 | 4.44% |
+| `Nat.add_comm` | 52 | 0.390 | 0.376 | 3.68% |
+
+Paired inner and recursive proofs were generated and verified with 50 FRI
+queries, log blowup 2, log final polynomial length 0, max log arity 1 and
+zero proof-of-work bits. Each recursive run verifies the corresponding
+baseline or optimized inner proof:
+
+| Measure | `Nat.add_comm` | `String.append` |
+|---|---:|---:|
+| Inner proof bytes | 5,673,393 → 5,390,069 (−4.99%) | 6,450,356 → 6,153,240 (−4.61%) |
+| Recursive FFT cost, billions | 94.551 → 88.886 (−5.99%) | 109.191 → 100.616 (−7.85%) |
+| Outer proof bytes | 2,807,371 → 2,822,459 (+0.54%) | 2,811,979 → 2,833,115 (+0.75%) |
+
+The wider, four-byte BLAKE3 loop reduces recursive work with a small outer
+proof-size increase. These are improvements over the PR revision; some
+costs remain above main's figures with the PR's larger checked workload.
+Generic bytecode execution was used for source iteration. The regenerated
+native backend was checked for correctness with codegen compilation at
+optimization level 0; its wall times are not native CI speedup measurements.
+
+The host `IOBuffer.extend` change is separate from those circuit measurements.
+On frozen `HEq` and `String.append` fixture environments, old and new native
+witness builders produced identical 33,172,696-byte serializations, including
+arena and key-map order, offsets and lengths. Local witness construction took
+20,023/18,570 ms before and 129/121 ms after. These diagnostics isolate the
+arena-copy fix; they do not measure end-to-end proving or CI wall time.
+
+Caching the environment's role binding across constants in the benchmark
+runners (`assumeBinding := true` in `bench-typecheck`, matching the production
+claim tree where the binding is proven once and assumed by per-constant claims,
+and upfront `verdict_work` support checking in the Rust kernel's anonymous
+check, since retired) eliminates redundant per-constant role-table re-admission.
+The `ooc` column was measured when `ooc` ran the Rust kernel:
+
+| Constant | Checked constants (assumed binding) | Stage 1 FFT cost, billions (`09ee682` → assumed binding) | `ooc` check-time (s) |
+|---|---:|---:|---:|
+| `ByteArray.utf8DecodeChar?_utf8EncodeChar_append` | 2,697 | 126.785 → 121.304 (−4.32%) | 0.819 |
+| `Char.ofOrdinal_le_of_le` | 2,676 | 91.681 → 86.924 (−5.19%) | 0.153 |
+| `Array.extract_append` | 1,509 | 92.985 → 87.989 (−5.37%) | 0.383 |
+| `Std.HashMap` | 2,039 | 63.352 → 58.138 (−8.23%) | 0.087 |
+| `_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq` | 1,768 | 55.479 → 50.474 (−9.02%) | 0.086 |
+| `String.append` | 263 | 4.581 → 3.070 (−32.98%) | 0.015 |
+| `Nat.add_comm` | 34 | 0.390 → 0.377 (−3.33%) | 0.004 |
+
+With `assumeBinding := true` on the 32-vCPU benchmark host (`r8i.8xlarge`),
+inactive role-validation circuits drop out of per-constant proofs, reducing
+`Nat.add_comm` Stage 1 proof size from 6.08 MiB to 4.99 MiB (−17.9%), Stage 2
+`fri-verifier` FFT cost from 114.68B to 90.65B (−21.0%), and end-to-end
+recursive `total-time` from 64.47s to 31.38s (−51.3%); `String.append` Stage 1
+proof size drops from 6.18 MiB to 5.19 MiB (−16.0%), Stage 2 `fri-verifier`
+FFT cost from 115.65B to 99.33B (−14.1%), and `total-time` from 63.85s to
+34.42s (−46.1%).
+
+> **Follow-up note (recursive binding-proof discharge):** Today `bench-typecheck --recursive` proves per-constant claims with `assumeBinding := true` (`validator = 4`) and runs the 1-child `fri-verifier` over each constant's `IxVM` proof. A future refinement to mirror production toolchain role bindings end-to-end is to pre-generate the toolchain's `Ix.Claim.binding` proof (`ix prove-binding`) once per `.ixe` and recursively verify/discharge it via `ix_aggr` shape 13/14 (`aggr_discharge_binding`) so benchmarked proofs emit self-contained `validator = 3` (`bindingAssumed = false`) claims.
+
 ## Backends
 
 | backend | what it measures | tool |
 |---|---|---|
 | `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`). The direct `--recursive --join` diagnostic takes exactly two constants as singleton `CheckEnv` shards and appends one pair row carrying `join-{execute-time,fft-cost,prove-time,peak-rss,proof-size,verify-time}`; the InitStd prove cell schedules this pair in a separate process after the per-constant runs. | `bench-typecheck --recursive` |
-| `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
+| `ooc`     | out-of-circuit Lean kernel (`IxC`): whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-lean --anon --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
@@ -120,13 +225,10 @@ lines on the compile plots; they never enter the certified alert baseline.
 PR comparisons across the switch include the cost of certification and remain
 informational: the table displays the delta without failing on its size.
 Compiler failures, missing rows and kernel rejections still fail their jobs.
-For a separate Rust measurement, run
-`ix compile <env>.lean --rust --out rust.ixe --json rust-compile.json --json-name <env>`;
-keep that row separate from the certified series.
 
 The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
 reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
-and [kernel.md](kernel.md). It is separate from the compiler and Rust kernel benchmarks above;
+and [kernel.md](kernel.md). It is separate from the compiler and `ooc` benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
 ### Aggregate baselines
@@ -163,7 +265,7 @@ All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar. The ooc and Aiur cells share per-constant
 **full-closure** scope.
 
-With `--texray`, tools write per-phase span timings (`aiur/prove_ixvm`,
+With `--texray` or `IX_TEXRAY=1`, tools write per-phase span timings (`aiur/prove_ixvm`,
 `aiur/witness`, `stark/*`, …) to `<json>.spans`. The
 per-constant backends run **one process per constant**, so each spawn's
 window belongs wholly to its constant: `ix bench run` folds it into the
@@ -320,9 +422,13 @@ Benchmark jobs use exact `r8i` instance types; CI jobs request the
 `r7i+r8i+r7a+r8a` families so Spot has several pools to fill from. All use
 the `ubuntu26-full-x64` image with the default Spot policy. RunsOn can fall
 back to on-demand capacity and automatically retry interrupted jobs. There
-are no GPU benchmarks; future GPU benchmarks should use `spot=false`. The
-CUDA compile job runs its toolchain in an Ubuntu 26.04 container on a CPU
-runner. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners. See
+are no GPU benchmark jobs in CI; future GPU jobs should use `spot=false`.
+For manual measurements, follow the
+[Aiur proving guide](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run) or the
+[KZG benchmark recipe](../crates/proof-compression/README.md#kzg-benchmarking),
+which defines input boundaries, NVMe/cache placement, and cold/warm state.
+The CUDA compile job runs its toolchain in an Ubuntu 26.04
+container on a CPU runner. Jobs that use `ubuntu-latest` remain on GitHub-hosted runners. See
 [CI and merge queue configuration](ci.md) for the required checks and retry
 behavior.
 The [instance sizes](https://aws.amazon.com/ec2/instance-types/memory-optimized/)
@@ -420,9 +526,7 @@ For context, the retired union `ix catalog` peaked 35.3 GiB at spine
 scale (N=12) and OOM'd this box on its first full-corpus attempt; the
 piece pipeline's box pressure is `jobs × member`, never a union.
 Per-member kernel checking (`lake exe truthmines check`, suite
-`truthmines-check`) and metadata fidelity (`lake exe truthmines
-validate`, suite `truthmines-validate`) are the other two rungs over
-the same artifacts.
+`truthmines-check`) is the other rung over the same artifacts.
 
 ## Not yet covered
 

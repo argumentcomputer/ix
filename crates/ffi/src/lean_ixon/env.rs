@@ -43,14 +43,6 @@ impl LeanIxonRawConst<LeanOwned> {
     ctor.set_obj(1, LeanIxonConstant::build(&rc.constant));
     ctor
   }
-
-  /// Build from individual parts (used by compile.rs).
-  pub fn build_from_parts(addr: &Address, constant: &IxonConstant) -> Self {
-    let ctor = LeanIxonRawConst::alloc(0);
-    ctor.set_obj(0, LeanIxAddress::build(addr));
-    ctor.set_obj(1, LeanIxonConstant::build(constant));
-    ctor
-  }
 }
 
 impl<R: LeanRef> LeanIxonRawConst<R> {
@@ -151,24 +143,6 @@ impl LeanIxonRawNamed<LeanOwned> {
     ctor.set_obj(4, build_opt_hints(rn.hints));
     ctor
   }
-
-  /// Build from individual parts (used by compile.rs).
-  pub fn build_from_parts(
-    cache: &mut LeanBuildCache,
-    name: &Name,
-    addr: &Address,
-    meta: &ConstantMeta,
-    original: &Option<(Address, ConstantMeta)>,
-    hints: Option<ReducibilityHints>,
-  ) -> Self {
-    let ctor = LeanIxonRawNamed::alloc(0);
-    ctor.set_obj(0, LeanIxName::build(cache, name));
-    ctor.set_obj(1, LeanIxAddress::build(addr));
-    ctor.set_obj(2, LeanIxonConstantMeta::build(meta));
-    ctor.set_obj(3, build_opt_original(original));
-    ctor.set_obj(4, build_opt_hints(hints));
-    ctor
-  }
 }
 
 impl<R: LeanRef> LeanIxonRawNamed<R> {
@@ -205,7 +179,8 @@ impl LeanIxonRawBlob<LeanOwned> {
     ctor
   }
 
-  /// Build from individual parts (used by compile.rs).
+  /// Build from an address and borrowed bytes, without a [`DecodedRawBlob`]
+  /// (`build_raw_env_lazy`).
   pub fn build_from_parts(addr: &Address, bytes: &[u8]) -> Self {
     let ctor = LeanIxonRawBlob::alloc(0);
     ctor.set_obj(0, LeanIxAddress::build(addr));
@@ -242,14 +217,6 @@ impl LeanIxonRawComm<LeanOwned> {
     let ctor = LeanIxonRawComm::alloc(0);
     ctor.set_obj(0, LeanIxAddress::build(&rc.addr));
     ctor.set_obj(1, LeanIxonComm::build(&rc.comm));
-    ctor
-  }
-
-  /// Build from individual parts (used by compile.rs).
-  pub fn build_from_parts(addr: &Address, comm: &Comm) -> Self {
-    let ctor = LeanIxonRawComm::alloc(0);
-    ctor.set_obj(0, LeanIxAddress::build(addr));
-    ctor.set_obj(1, LeanIxonComm::build(comm));
     ctor
   }
 }
@@ -423,45 +390,6 @@ impl LeanIxonRawEnv<LeanOwned> {
     ctor.set_obj(8, build_opt_role_binding(&env.role_binding));
     ctor
   }
-}
-
-/// Populate the trailing constructor slots (5-8: main, assumptions,
-/// anonHints, roleBinding) of a `RawEnv` being built field-by-field —
-/// the compile FFI assembles its RawEnv manually instead of going
-/// through [`LeanIxonRawEnv::build`], and leaving these slots unset is
-/// uninitialized memory (segfault on GC). Set-shaped fields are sorted
-/// for a deterministic transfer.
-pub fn set_raw_env_bundle_fields(
-  ctor: &LeanIxonRawEnv<LeanOwned>,
-  env: &IxonEnv,
-) {
-  let main_obj: LeanOwned = match &env.main {
-    None => LeanOption::none().into(),
-    Some(addr) => LeanOption::some(LeanIxAddress::build(addr)).into(),
-  };
-  let mut assumptions: Vec<Address> = env.assumptions.iter().cloned().collect();
-  assumptions.sort_unstable();
-  let assumptions_arr = LeanArray::alloc(assumptions.len());
-  for (i, addr) in assumptions.iter().enumerate() {
-    assumptions_arr.set(i, LeanIxAddress::build(addr));
-  }
-  let mut hints: Vec<(Address, ReducibilityHints)> =
-    env.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
-  hints.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-  let hints_arr = LeanArray::alloc(hints.len());
-  for (i, (addr, hint)) in hints.iter().enumerate() {
-    hints_arr.set(
-      i,
-      LeanProd::new(
-        LeanIxAddress::build(addr),
-        LeanIxReducibilityHints::build(hint),
-      ),
-    );
-  }
-  ctor.set_obj(5, main_obj);
-  ctor.set_obj(6, assumptions_arr);
-  ctor.set_obj(7, hints_arr);
-  ctor.set_obj(8, build_opt_role_binding(&env.role_binding));
 }
 
 impl<R: LeanRef> LeanIxonRawEnv<R> {

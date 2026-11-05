@@ -96,4 +96,44 @@ def checkTieredAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (o
     | .error e => .error (.admission e)
     | .ok (logical,tier) => .ok ⟨prepared,logical,tier,fromArtifact,checked⟩
 
+/-- A receipt of preparation and of the tiered check that admits user axioms on
+the logical part (`Admission.checkBytesTieredUsingUnder .allowUser`), with the
+kernel's list of the user axioms among the logical declarations (`axioms`). Its
+accept holds only under them, unless the list is empty, when it is a receipt of
+the certified tiered entry (`TierReceiptConditional.toTierReceipt`). -/
+structure TierReceiptConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) where
+  prepared : Prepared
+  logical : Ix.Kernel.Env .anon
+  tier : List (Ix.Kernel.Tier.TierConst .anon)
+  axioms : List (Ix.Kernel.ConstantVal .anon)
+  preparedFrom : prepareTiered artifact limits = .ok prepared
+  checked : Ix.Kernel.Admission.checkBytesTieredUsingUnder .allowUser prepared.preludeFor
+    Address.admissionHash prepared.binding limits prepared.records prepared.blobs
+    prepared.hints.lookup = .ok ((logical, tier), axioms)
+
+def checkTieredConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
+    Except TierError (TierReceiptConditional artifact limits) :=
+  match fromArtifact : prepareTiered artifact limits with
+  | .error e => .error e
+  | .ok prepared =>
+    match checked : Ix.Kernel.Admission.checkBytesTieredUsingUnder .allowUser prepared.preludeFor
+        Address.admissionHash prepared.binding limits prepared.records prepared.blobs
+        prepared.hints.lookup with
+    | .error e => .error (.admission e)
+    | .ok ((logical, tier), axioms) => .ok ⟨prepared, logical, tier, axioms, fromArtifact, checked⟩
+
+/-- **A tiered conditional receipt that lists no user axiom is a receipt of the
+certified tiered entry**, with the same preparation, logical environment and
+tier (T1, `Admission.checkBytesTieredUsingUnder_strict_of_nil`). -/
+def TierReceiptConditional.toTierReceipt {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    (receipt : TierReceiptConditional artifact limits) (noAxioms : receipt.axioms = []) :
+    TierReceipt artifact limits where
+  prepared := receipt.prepared
+  logical := receipt.logical
+  tier := receipt.tier
+  preparedFrom := receipt.preparedFrom
+  checked := Ix.Kernel.Admission.checkBytesTieredUsingUnder_strict_of_nil (policy := .allowUser) (by
+    rw [← noAxioms]
+    exact receipt.checked)
+
 end Ix.RoleBinding.Artifact

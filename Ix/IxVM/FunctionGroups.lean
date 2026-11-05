@@ -13,13 +13,13 @@ public section
 
 namespace IxVM
 
--- Cost-aware greedy grouping over the String.split / Array.extract_append
--- kernel-check profiles and a 2^16384 big-nat reduction: merges are ranked
--- by active committed width saved (proof size) per unit of modelled prover
--- cost (FFT model plus a constraint-evaluation term, relative to each
--- workload), capped at 16 members and 40 selectors per group, within an
--- average 2% (max 4%) cost increase per workload. The original grouping had
--- 83 groups over 656 of 743 groupable circuits (744 -> 171 circuits).
+-- The original greedy groups use String.split / Array.extract_append and
+-- a 2^16384 big-nat reduction to balance committed width against FFT cost.
+-- Cold role tables and small helpers also share circuits, checked against
+-- full Nat.add_comm, String.append, Std.HashMap and Char.ofOrdinal_le_of_le
+-- claim profiles with Scripts/Performance/FunctionGrouping.lean. The role
+-- loaders use the wide ingress circuit so inference keeps its narrower
+-- layout. Large role-index case tables stay together in cold circuits.
 def functionGroups : Array (String × Array String) := #[
   ("ixvm_group_00", #[
     "memo_u32_less_than",
@@ -87,7 +87,10 @@ def functionGroups : Array (String × Array String) := #[
     "muts_member_at",
     "projection_addr",
     "build_flat_block",
-    "run_claim"
+    "run_claim",
+    "load_role_table",
+    "read_role_bindings",
+    "read_role_evidence"
   ]),
   ("ixvm_group_08", #[
     "blake3_compress_layer",
@@ -441,6 +444,58 @@ def functionGroups : Array (String × Array String) := #[
     "try_quot_lift",
     "k_synth_gate"
   ]),
+  ("ixvm_group_43", #[
+    "role_ctx_for_validator",
+    "role_ctx_validator",
+    "role_bound_addr",
+    "role_used_implicitly",
+    "validate_binding",
+    "assert_all_roles_bound",
+    "admit_all_groups",
+    "validate_group_roles",
+    "assert_type_meets",
+    "list_length.RoleEvidence",
+    "list_is_empty.U8",
+    "int_le_verdict"
+  ]),
+  ("ixvm_group_44", #[
+    "role_admission_checks",
+    "axiom_role_standing",
+    "role_ctor_of",
+    "role_ctor_count",
+    "read_evidence_entries",
+    "role_ctx_table",
+    "role_ctx_axioms",
+    "role_ctx_is_assumed",
+    "role_is_bound",
+    "group_admit",
+    "group_admit_needs",
+    "get_claim_context"
+  ]),
+  ("ixvm_group_45", #[
+    "mk_eq1",
+    "op_evidence_is_proof",
+    "eqns_conditional",
+    "assert_safe_role",
+    "assert_quot_kind",
+    "validate_anchor",
+    "validate_standard_axiom",
+    "validate_inert_axiom",
+    "validate_op",
+    "validate_eqns"
+  ]),
+  ("ixvm_group_46", #[
+    "load_role_ctx",
+    "role_ctx_binding",
+    "role_bound_addr_or_zero",
+    "role_addr",
+    "group_validation_limit",
+    "validate_role",
+    "role_evidence",
+    "validate_op_equations",
+    "validate_eqns_equations",
+    "dec_rewrite_int_lt_to_le"
+  ]),
   ("ixvm_group_47", #[
     "mk_nat_lit",
     "build_recur_addrs",
@@ -496,6 +551,14 @@ def functionGroups : Array (String × Array String) := #[
     "glist_cmp",
     "nl_add_const_go",
     "try_dec_dispatch"
+  ]),
+  ("ixvm_group_54", #[
+    "dec_nat",
+    "dec_int",
+    "dec_result",
+    "validate_user_axioms",
+    "role_of",
+    "validate_member"
   ]),
   ("ixvm_group_55", #[
     "utf8_validate",
@@ -655,11 +718,15 @@ def functionGroups : Array (String × Array String) := #[
     "whnf_nd_proj_head"
   ]),
   ("ixvm_group_77", #[
-    "prim_family"
+    "prim_family",
+    "op_equation_lhs",
+    "op_equation_rhs"
   ]),
   ("ixvm_group_78", #[
     "whnf_struct_core_const",
-    "k_is_def_eq_struct_spend"
+    "k_is_def_eq_struct_spend",
+    "op_equation_count",
+    "role_member_kind"
   ]),
   ("ixvm_group_79", #[
     "const_num_lvls",
@@ -680,6 +747,57 @@ def functionGroups : Array (String × Array String) := #[
     "assert_first_args_are_param_bvars",
     "check_field_universes_skip_params",
     "peel_n_foralls_with_types"
+  ]),
+  ("ixvm_group_83", #[
+    "role_group",
+    "role_spec_kind",
+    "role_levels",
+    "role_prim_family"
+  ]),
+  ("ixvm_group_84", #[
+    "group_roles",
+    "group_needs"
+  ]),
+  ("ixvm_group_85", #[
+    "klimbs_add_carry",
+    "role_addr_index"
+  ]),
+  ("ixvm_group_86", #[
+    "u64_is_zero",
+    "definition_hint"
+  ]),
+  ("ixvm_group_87", #[
+    "role_index_of",
+    "head_addr"
+  ]),
+  ("ixvm_group_88", #[
+    "types_lookup",
+    "k_infer_let_start",
+    "k_infer_let_env_rebase",
+    "expr_lower_let"
+  ]),
+  ("ixvm_group_89", #[
+    "infer_let_lookup_type",
+    "infer_let_lookup_value",
+    "infer_let_local_cutoff",
+    "infer_let_drop_unused"
+  ]),
+  ("ixvm_group_90", #[
+    "k_infer_let_env",
+    "infer_let_materialize",
+    "k_infer_let_env_core"
+  ]),
+  ("ixvm_group_91", #[
+    "walk_ctx",
+    "walk_covered",
+    "axiom_standing",
+    "assert_ref_allowed",
+    "has_bvar_in_range_bvar"
+  ]),
+  ("ixvm_group_92", #[
+    "value_contract_from_bits",
+    "binder_contract_from_bits",
+    "role_is"
   ])
 ]
 

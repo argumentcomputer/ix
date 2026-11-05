@@ -16,12 +16,19 @@ public import Ix.LeanExport.Compare
   This is how a library elaborated by another Lean toolchain, older or newer
   than ix's, is compiled without building ix on that toolchain: its
   `lean4export` writes the declarations, and this command reads them
-  (`Ix.LeanExport`) and runs the same pipeline as `ix compile-lean`:
-  `Ix.CompileM.compileCertified`, then the role binding (`finalize`), whose
-  support and certificate theorems come from the export itself, so from that
-  toolchain's `Init` and its `IxC.Kernel.PinGen.Certs`. With
-  `--certificates` they come from a second export of the same toolchain
-  instead, for an export that does not carry them.
+  (`Ix.LeanExport`) and runs the same pipeline as `ix compile-lean`
+  (`Ix.CompileM.compileAndFinalize`): the certified compile, then the role
+  binding (`finalize`), whose support and certificate theorems come from the
+  export itself, so from that toolchain's `Init` and its
+  `IxC.Kernel.PinGen.Certs`. With `--certificates` the certificate theorems
+  come from a second export of the same toolchain instead, for an export that
+  does not carry them.
+
+  The roles are bound where that toolchain's declarations put them, which can
+  differ from ix's default role table: 4.35.0's `Decidable` has one
+  constructor, so its `Int.decLt` sits elsewhere. So the compile does not check
+  the published role names against the default table (`defaultRoles := false`);
+  `finalize` checks them against the binding it generates from the export.
 
   The output matches the native compile of the same declarations in content
   (every constant, address and the role binding), not in metadata: an export
@@ -38,6 +45,7 @@ public import Ix.LeanExport.Compare
 public section
 
 open System (FilePath)
+open Ix.Cli (rootCausesFirst)
 
 namespace Ix.Cli.CompileExportCmd
 
@@ -77,24 +85,19 @@ def runCompileExportCmd (p : Cli.Parsed) : IO UInt32 := do
       let certEnv ← Ix.LeanExport.environment certs.constants
       pure (pure certEnv)
   let constList := env.constants.toList
-  let out ← match ← Ix.CompileM.compileCertified env constList (workers := workers) with
+  let (out, artifact, outBytes) ← match ← Ix.CompileM.compileAndFinalize env constList workers
+      (allowPartial := false) (certSource := certSource) (defaultRoles := false) with
     | .error e =>
       IO.println s!"[compile-export] FAILED: {e}"
       return 1
-    | .ok out => pure out
-  let failures := out.failures.toMap
-  let failed := failures.size
-  if failed > 0 then
-    IO.eprintln s!"[compile-export] error: {failed} constant(s) failed to compile; nothing written to {outPath}"
-    for (n, e) in failures.toList.take 8 do
-      IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
-    return 1
-  let artifact ← Ix.RoleBinding.Compile.finalize
-    (Ix.RoleBinding.Compile.certifiedBackend workers)
-    env certSource (.plain constList) out.env Ix.Resource.typingLimits
-    (existing? := out.existing?)
-  IO.ofExcept (Ix.CompileM.validateFinalized out.annotated artifact)
-  let outBytes ← IO.ofExcept (Ixon.serEnv artifact)
+    | .ok (out, .refused) =>
+      let failures := out.failures.toMap
+      IO.eprintln s!"[compile-export] error: {failures.size} constant(s) failed to compile; nothing written to {outPath}"
+      for (n, e) in (rootCausesFirst failures.toList).take 8 do
+        IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
+      return 1
+    | .ok (_, .failed e) => throw (IO.userError e)
+    | .ok (out, .done artifact bytes) => pure (out, artifact, bytes)
   Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) outBytes
   let binding := match artifact.roleBinding with
     | some b => s!"role binding {b.address}"

@@ -286,57 +286,7 @@ structure Model (V : Type w) [SetTheory V] (env : Env md) where
     A ∈ˢ univ (Level.eval φ u) → a ∈ˢ A → b ∈ˢ A →
     app (app (app E A) a) b = eqv a b
 
-/-! ## Custom user axiom realization, value models, and semantic consistency -/
-
-/-- A constant specification `cv` (such as a custom user axiom) is realized under
-`(cval, env)` in `V` when at every universe-parameter valuation `φ` and variable
-assignment `ρ`, `cv.type` denotes some set `T` containing `cval cv.name φ`. -/
-def AxiomRealized (V : Type w) [SetTheory V]
-    (cval : Key md → (LevelParam → Nat) → V) (env : Env md) (cv : ConstantVal md) : Prop :=
-  ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
-    ∃ T, Denotes cval env φ ρ cv.type T ∧ cval cv.name φ ∈ˢ T
-
-/-- A list of axiom specifications `axs` is realized under `(cval, env)` in `V`
-when every `cv ∈ axs` satisfies `AxiomRealized V cval env cv`. -/
-def AxiomSetRealized (V : Type w) [SetTheory V]
-    (cval : Key md → (LevelParam → Nat) → V) (env : Env md)
-    (axs : List (ConstantVal md)) : Prop :=
-  ∀ cv ∈ axs, AxiomRealized V cval env cv
-
-@[simp] theorem AxiomSetRealized_nil (V : Type w) [SetTheory V]
-    (cval : Key md → (LevelParam → Nat) → V) (env : Env md) :
-    AxiomSetRealized V cval env [] := by
-  intro cv hcv; exact nomatch hcv
-
-/-- Every `.axiomInfo cv` stored in a modeled environment `env` is realized by `M`. -/
-theorem Model.realizes_of_mem_consts {env : Env md} (M : Model V env) {cv : ConstantVal md}
-    (h : .axiomInfo cv ∈ env.consts) :
-    AxiomRealized V M.cval env cv :=
-  fun φ ρ => M.mem (.axiomInfo cv) h φ ρ
-
-/-- Construct a `Model V env` from a constant interpretation `cval` that satisfies
-`false_empty` and `eq_equality`, models all non-axiom constants of `env`, and
-realizes all `.axiomInfo` constants of `env` (`AxiomRealized`). -/
-def Model.ofUserAxioms {env : Env md}
-    (cval : Key md → (LevelParam → Nat) → V)
-    (hNonAxiom : ∀ c ∈ env.consts, (∀ cv, c ≠ .axiomInfo cv) →
-      ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
-        ∃ T, Denotes cval env φ ρ c.toConstantVal.type T ∧ cval c.name φ ∈ˢ T)
-    (hAxioms : ∀ cv, .axiomInfo cv ∈ env.consts → AxiomRealized V cval env cv)
-    (hFalse : ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V) (F : V),
-      Denotes cval env φ ρ (.const falseName []) F → F = empty)
-    (hEq : ∀ (u : Level) (φ : LevelParam → Nat) (ρ : BVarIdx → V) (E A a b : V),
-      Denotes cval env φ ρ (.const eqName [u]) E →
-      A ∈ˢ univ (Level.eval φ u) → a ∈ˢ A → b ∈ˢ A →
-      app (app (app E A) a) b = eqv a b) :
-    Model V env where
-  cval := cval
-  mem c hc φ ρ := by
-    cases c with
-    | axiomInfo cv => exact hAxioms cv hc φ ρ
-    | _ => exact hNonAxiom _ hc (fun _ h => nomatch h) φ ρ
-  false_empty := hFalse
-  eq_equality := hEq
+/-! ## Semantic consistency -/
 
 /-- Semantic consistency of an environment `env`: no accepted constant in
 `env.consts` has type `False` (`.const falseName []`). -/
@@ -357,33 +307,5 @@ theorem consistent_of_model (V : Type w) [SetTheory V] {env : Env md}
 /-- A model of `env` directly witnesses `Consistent env`. -/
 theorem Model.consistent {env : Env md} (M : Model V env) : Consistent env :=
   consistent_of_model V ⟨M⟩
-
-/-- A model `M : Model V env` together with the definitional value-denotation
-property (every stored `.defnInfo cv value hint` has `value` denoting
-`M.cval cv.name φ`) and realization of all custom user axioms in `axs`. -/
-structure ConditionalValueModel (V : Type w) [SetTheory V] (env : Env md)
-    (axs : List (ConstantVal md) := []) extends Model V env where
-  defn_values : ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
-    ConstantInfo.defnInfo cv value hint ∈ env.consts →
-    ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
-      Denotes cval env φ ρ value (cval cv.name φ)
-  axioms_realized : AxiomSetRealized V cval env axs
-
-/-- Construct a `ConditionalValueModel` from a `Model V env` that satisfies `defn_values`
-and realizes the user axioms `axs`. -/
-def ConditionalValueModel.ofUserAxioms {env : Env md} {axs : List (ConstantVal md)}
-    (M : Model V env)
-    (hDefn : ∀ (cv : ConstantVal md) (value : Expr md) (hint : ReducibilityHint),
-      ConstantInfo.defnInfo cv value hint ∈ env.consts →
-      ∀ (φ : LevelParam → Nat) (ρ : BVarIdx → V),
-        Denotes M.cval env φ ρ value (M.cval cv.name φ))
-    (hAx : AxiomSetRealized V M.cval env axs) :
-    ConditionalValueModel V env axs :=
-  { toModel := M, defn_values := hDefn, axioms_realized := hAx }
-
-/-- Every `ConditionalValueModel` of `env` witnesses semantic consistency (`Consistent env`). -/
-theorem ConditionalValueModel.consistent {env : Env md} {axs : List (ConstantVal md)}
-    (vm : ConditionalValueModel V env axs) : Consistent env :=
-  consistent_of_model V ⟨vm.toModel⟩
 
 end Ix.Kernel

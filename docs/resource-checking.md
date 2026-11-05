@@ -1,15 +1,15 @@
 # Ixon resource checking (resource-v1)
 
-The Lean and Rust resource validators consume the same canonical addressed
-environment and an explicit profile. Both production compilers run this
-validation, together with erased typechecking, before emitting annotated
-constants. Resource claims bind the complete constant set and profile address.
+The resource validator consumes a canonical addressed environment and an
+explicit profile. The certified compiler runs this validation, together with
+erased typechecking, on an input that carries semantic contracts, before and
+after finalizing its artifact (`Ix/CompileCertified.lean`). Resource claims bind
+the complete constant set and profile address. A Rust validator implemented the
+same transitions until PR #677 retired it ([retired Rust](retired-rust.md)).
 
 The executable modules are [Basic](../Ix/Resource/Basic.lean),
 [Check](../Ix/Resource/Check.lean), and [Admit](../Ix/Resource/Admit.lean).
-[Rust](../crates/ixon/src/resource.rs) implements the same transitions.
-The production boundaries are [Validate](../Ix/Resource/Validate.lean) and
-[the Rust kernel adapter](../crates/kernel/src/resource.rs).
+The production boundary is [Validate](../Ix/Resource/Validate.lean).
 
 Lean's [typing half](../Ix/Resource/Typing.lean) uses IxC's certified tiered
 admission entry for the part it admits. Unsafe inductives, safe assumption
@@ -152,9 +152,8 @@ required closure. Merely parsing a claim or proof wrapper validates no program.
 
 | Consumer | Advertised validation |
 | --- | --- |
-| Lean and Rust resource admission | Resources plus erased typing, with a committed profile |
+| Resource admission (`Ix.Resource.validate`) | Resources plus erased typing, with a committed profile |
 | IxC certified admission | Authenticated logical admission and the entry's stated partial/unsafe typing tier |
-| Rust ordinary kernel | Erased Lean typing |
 | IxVM `Check` and `CheckEnv` | Erased Lean typing, validator byte `1` |
 | IxVM `Reveal` and `Contains` | Structural validation, validator byte `0` |
 | IxVM `Resource` | Explicitly unsupported; native success is not a circuit proof |
@@ -183,8 +182,8 @@ These are executable-check and transition invariants. They do not replace the
 ordinary typechecking prerequisite or claim a proof of a machine backend's
 allocation behavior.
 
-[Shared resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
-accepted and rejected terms in both implementations. The suites also cover
+[Resource fixtures](../Tests/Fixtures/ixon-v4/resource.tsv) exercise
+accepted and rejected terms. The suites also cover
 all 64 input/result combinations, imported-interface aliases, mutual groups,
 profile omissions, constructor captures, and bounded rejection of cyclic
 sharing. Tests explicitly distinguish wire validity from resource admission.

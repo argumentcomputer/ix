@@ -60,8 +60,13 @@ def ofClaim (claim : Ix.Claim)
     | some assumptionRoot =>
       let some assumptionTree := trees.get? assumptionRoot
         | throw s!"aggr: missing assumption tree {assumptionRoot}"
-      pure (some (← canonicalizeAt "aggr assumptions"
-        assumptionRoot assumptionTree))
+      let canonicalAssumptions ← canonicalizeAt "aggr assumptions"
+        assumptionRoot assumptionTree
+      let subjectSet := subjects.leaves.foldl (fun set addr => set.insert addr)
+        ({} : Std.HashSet Address)
+      if canonicalAssumptions.leaves.any (fun addr => subjectSet.contains addr) then
+        throw "aggr: subject set overlaps assumption set"
+      pure (some canonicalAssumptions)
   pure { ctx, subjects, assumptions }
 
 private def assumptionLeaves (statement : CheckEnvTrees) : Array Address :=
@@ -75,41 +80,67 @@ def assumptionCandidates (left right : CheckEnvTrees) : Array Address :=
   | none => #[]
   | some tree => tree.leaves
 
-/-- Canonical pair fold:
+/-- True when `candidate` is discharged by the opposite child's subjects:
+a left-only assumption by `right.subjects`, or a right-only assumption by
+`left.subjects`. Shared assumptions (`candidate ∈ left.assumptions ∩ right.assumptions`)
+and self-assumptions cannot be discharged. -/
+private def isCrossDischarged (left right : CheckEnvTrees) (candidate : Address) : Bool :=
+  let inLeftAsm := left.assumptions.any (·.contains candidate)
+  let inRightAsm := right.assumptions.any (·.contains candidate)
+  if inLeftAsm && !inRightAsm then
+    right.subjects.contains candidate
+  else if inRightAsm && !inLeftAsm then
+    left.subjects.contains candidate
+  else
+    false
 
-`subjects = subjectsL ∪ subjectsR`
+/-- Canonical pair fold (`aggr_pair`):
 
-`assumptions = (assumptionsL ∪ assumptionsR) ∖ subjects`.
+`subjects = subjectsL ∪ subjectsR` (disjoint for flat canonical pairs)
 
-The circuit independently verifies this relation with sorted linear merges,
-and that both children and the output share one context (the left child's
-here); the host implementation uses a hash set only to construct the witness. -/
+`assumptions = ((assumptionsL ∖ subjectsR) ∪ (assumptionsR ∖ subjectsL))`.
+
+For flat canonical pairs (`aggr_pair`), the circuit verifies subject-set
+disjointness, the union, and the difference with sorted linear merges, and that
+both children and the output share one context (the left child's here).
+(Structural and cross-binding joins check `left_root != right_root` in-circuit
+without opening the subject trees, while the Rust host's shard check enforces
+subject disjointness out-of-circuit; `aggrDerivation_sound` does not depend on
+subject disjointness.) -/
 def join (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjectLeaves := left.subjects.leaves ++ right.subjects.leaves
   let subjects := (Ix.AssumptionTree.canonical subjectLeaves).get!
-  let subjectSet := subjects.leaves.foldl (fun set addr => set.insert addr)
-    ({} : Std.HashSet Address)
   let remaining := assumptionCandidates left right |>.filter
-    (fun addr => !subjectSet.contains addr)
+    (fun addr => !isCrossDischarged left right addr)
   { ctx := left.ctx, subjects, assumptions := Ix.AssumptionTree.canonical remaining }
 
 /-- Structural fold. Subjects are committed in O(1) as a free-form node over
 the two child roots. Assumptions retain canonical set semantics and drop
-precisely those candidates for which the resulting subject forest can produce
-a membership path. -/
+precisely those candidates discharged by the opposite child's subject tree. -/
 def joinStructural (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjects := Ix.AssumptionTree.join left.subjects right.subjects
   let remaining := assumptionCandidates left right |>.filter
-    (fun addr => !subjects.contains addr)
+    (fun addr => !isCrossDischarged left right addr)
   { ctx := left.ctx, subjects, assumptions := Ix.AssumptionTree.canonical remaining }
 
 /-- One channel-6 choice per structural-pair candidate. `some path` discharges
-the candidate against the structural output root; `none` carries it into the
-output assumption set. -/
-def structuralPathAdvice (left right output : CheckEnvTrees) :
+the candidate against the opposite child's subject root and steps into the
+structural output root; `none` carries it into the output assumption set. -/
+def structuralPathAdvice (left right _output : CheckEnvTrees) :
     Array (Address × Option Ix.Merkle.MerklePath) :=
   assumptionCandidates left right |>.map fun candidate =>
-    (candidate, output.subjects.merkleProof candidate)
+    let inLeftAsm := left.assumptions.any (·.contains candidate)
+    let inRightAsm := right.assumptions.any (·.contains candidate)
+    let path? :=
+      if inLeftAsm && !inRightAsm then
+        (right.subjects.merkleProof candidate).map fun p =>
+          p.push (left.subjects.root, true)
+      else if inRightAsm && !inLeftAsm then
+        (left.subjects.merkleProof candidate).map fun p =>
+          p.push (right.subjects.root, false)
+      else
+        none
+    (candidate, path?)
 
 /-- The present trees in channel-5 order for one pair fold. Optional empty
 assumption sets contribute no advice entry. -/

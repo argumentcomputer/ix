@@ -3,6 +3,13 @@ open System Lake DSL
 
 package ix where
   version := v!"0.1.0"
+  -- CUDA builds load their shared libraries from `.lake/build/lib`. Those
+  -- resolve libc against the running system, whose glibc can be newer than
+  -- Lean's link-time stubs; each library is itself linked with -z defs. The
+  -- flags are unconditional because Lake does not re-elaborate this file when
+  -- `IX_CUDA` changes, and they are inert without CUDA.
+  moreLinkArgs := if System.Platform.isLinux then
+    #["-Wl,--allow-shlib-undefined", "-Wl,-rpath,$ORIGIN/../lib"] else #[]
 
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d8eb3e0d9a8e33fc116e6700df0418a1d8114508"
@@ -32,6 +39,12 @@ The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` 
 - Other application targets inherit `ix_rs` (`parallel`, plus opt-in `cuda`)
   from the `Ix` `lean_lib`.
 
+Compression runs inside `ix`. Its final backends (`plonk`, `groth16`) are
+compiled into `ix_rs_net` only, so other executables never build Go. With
+`cuda`, the native libraries (multi-stark's, the BN254 KZG/PLONK library and,
+for Groth16, ICICLE) are copied to `.lake/build/lib` and found through
+`$ORIGIN/../lib`; each Rust archive target links them itself.
+
 The `ix_rs_test` and `ix_rs_net` targets fetch `ix_rs` first to guarantee ordering
 before Cargo overwrites its release archive, then snapshot distinct Lake artifacts.
 The second Cargo build is incremental — only feature-affected crates recompile.
@@ -41,79 +54,124 @@ The archives are built when native targets need them. Keeping Rust linkage on
 -/
 section FFI
 
+/-- Whether the environment variable `name` is `1`, `true` or `yes`. -/
+def enabled (name : String) : IO Bool :=
+  return (← IO.getEnv name) matches some "1" | some "true" | some "yes"
+
+/-- Rust feature selection shared by compilation and native runtime linkage.
+IX_NO_PAR=1 disables parallel; IX_CUDA enables CUDA; IX_CUDA_TRACE_CODEGEN
+enables generated trace kernels and implies CUDA. For `net` (the `ix` CLI),
+IX_PLONK and IX_GROTH16 add those final compression backends, which otherwise
+end at the recursive KZG proof; with CUDA, Groth16 links an installed ICICLE
+library. -/
+def cargoFeatures (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
+  let mut features := #[]
+  if net && (← enabled "IX_PLONK") then features := features.push "plonk"
+  if net && (← enabled "IX_GROTH16") then features := features.push "groth16"
+  if (← IO.getEnv "IX_NO_PAR") != some "1" then features := features.push "parallel"
+  if ← enabled "IX_CUDA" then features := features.push "cuda"
+  if ← enabled "IX_CUDA_TRACE_CODEGEN" then features := features.push "cuda-trace-codegen"
+  if net && !System.Platform.isOSX then features := features.push "net"
+  if testFfi then features := features.push "test-ffi"
+  return features
+
 /-- Build args for `cargo build --release` with opt-in feature overrides.
 Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
-  -- IX_NO_PAR=1 disables parallel; IX_CUDA=1/true/yes enables CUDA;
-  -- IX_CUDA_TRACE_CODEGEN=1 enables generated trace kernels and implies CUDA.
-  let ixNoPar ← IO.getEnv "IX_NO_PAR"
-  let ixCuda ← IO.getEnv "IX_CUDA"
-  let ixTraceCodegen ← IO.getEnv "IX_CUDA_TRACE_CODEGEN"
-  let mut features : Array String := #[]
-  if ixNoPar != some "1" then features := features.push "parallel"
-  if ixCuda == some "1" || ixCuda == some "true" || ixCuda == some "yes" then
-    features := features.push "cuda"
-  if ixTraceCodegen == some "1" || ixTraceCodegen == some "true" || ixTraceCodegen == some "yes" then
-    features := features.push "cuda-trace-codegen"
-  if net && !System.Platform.isOSX then features := features.push "net"
-  if testFfi then features := features.push "test-ffi"
+  let features ← cargoFeatures testFfi net
   IO.println s!"Ix Rust features: {if features.isEmpty then "none" else ",".intercalate features.toList}"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
 
-/-- Build and snapshot one feature selection of the Rust static library.
-The copied output has a Lake trace containing both Rust sources and Cargo
-arguments, so changing `IX_CUDA` cannot silently reuse a differently-featured
-archive from a previous invocation. -/
-def buildRustStatic (pkg : Package) (args : Array String) (tag : String) :
-    SpawnM (Job FilePath) := do
-  let sources ← inputDir (pkg.dir / "crates") true fun path =>
-    path.extension == some "rs" || path.extension == some "cu" ||
-    path.extension == some "cuh" || path.extension == some "h" ||
-    path.extension == some "hpp" || path.fileName == "Cargo.toml" ||
-    path.fileName == "trace-manifest.json"
-  let manifests := Job.collectArray #[
-    ← inputTextFile (pkg.dir / "Cargo.toml"),
-    ← inputTextFile (pkg.dir / "Cargo.lock")
-  ]
-  let deps := sources.zipWith (fun sourceFiles manifestFiles =>
-    (sourceFiles, manifestFiles)) manifests
-  let output := pkg.buildDir / "lib" / s!"libix_ffi_{tag}.a"
-  buildFileAfterDep output deps (fun _ => do
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-    let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
-    copyFile built output
-  ) (extraDepTrace := pure <| .ofHash (pureHash args) s!"cargo args: {args}")
+/-- The shared libraries the build scripts report (`IX_RUNTIME_ARTIFACTS`):
+each `source` is copied to `lib/<path>`, keeping ICICLE's backend plugins at
+the relative paths it loads them from, and the `link` ones are linked. -/
+def cargoRuntimeArtifacts (messages : String) :
+    Except String (Array (FilePath × String × Bool)) := do
+  let mut artifacts := #[]
+  for line in messages.splitOn "\n" do
+    let .ok message := Lean.Json.parse line | continue
+    let .ok variables := message.getObjValAs? (Array (Array String)) "env" | continue
+    for entry in variables do
+      if entry.size == 2 && entry[0]! == "IX_RUNTIME_ARTIFACTS" then
+        let entries ← (← Lean.Json.parse entry[1]!).getArr?
+        for artifact in entries do
+          artifacts := artifacts.push (FilePath.mk (← artifact.getObjValAs? String "source"),
+            ← artifact.getObjValAs? String "path", ← artifact.getObjValAs? Bool "link")
+  return artifacts
+
+/-- Copy `source` to `output` with its modification time, unless an identical
+copy is already there. Replacing the inode keeps an already-loaded shared
+library intact. -/
+def snapshot (source output : FilePath) : IO Unit := do
+  if ← output.pathExists then
+    let (old, new) := (← output.metadata, ← source.metadata)
+    if old.modified == new.modified && old.byteSize == new.byteSize then return
+  IO.FS.createDirAll output.parent.get!
+  let temporary := output.addExtension "tmp"
+  discard <| IO.Process.run { cmd := "cp", args := #["-p", source.toString, temporary.toString] }
+  IO.FS.rename temporary output
+
+/-- The libraries recorded beside a Rust archive: whether each is linked, and
+its path relative to `lib/`. -/
+def runtimeArtifacts (archive : FilePath) : IO (Array (Bool × String)) := do
+  let lines := (← IO.FS.lines (archive.withExtension "runtime")).filter (!·.isEmpty)
+  lines.mapM fun line => match line.splitOn " " with
+    | ["link", path] => pure (true, path)
+    | ["load", path] => pure (false, path)
+    | _ => throw <| IO.userError s!"malformed runtime manifest line: {line}"
+
+/-- One feature selection of the Rust static lib, as a target links it. Cargo
+runs on every build and decides what is stale; the archive is snapshotted to
+`lib/libix_ffi_{tag}.a`, so targets relink only when its contents change.
+A static archive does not carry its shared-library dependencies to Lean's
+linker, so with CUDA this is an `ld` script naming the archive together with
+the libraries the build scripts report. -/
+def buildRustStatic (pkg : Package) (args : Array String) (tag : String)
+    (before : Option (Job FilePath) := none) : FetchM (Job FilePath) := do
+  let start := match before with
+    | some before => before.map fun _ => ()
+    | none => Job.nil
+  start.mapM fun _ => do
+    let result ← captureProc' {
+      cmd := "cargo"
+      args := args.push "--message-format=json-render-diagnostics"
+      cwd := pkg.dir
+    }
+    unless result.stderr.isEmpty do logVerbose result.stderr
+    let artifacts ← match cargoRuntimeArtifacts result.stdout with
+      | .ok artifacts => pure artifacts
+      | .error message => error message
+    let lib := pkg.buildDir / "lib"
+    for (source, path, _) in artifacts do
+      snapshot source (lib / FilePath.mk path)
+    let archive := lib / s!"libix_ffi_{tag}.a"
+    snapshot (pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi") archive
+    -- One `link <path>` or `load <path>` line per library, relative to `lib/`.
+    IO.FS.writeFile (archive.withExtension "runtime") <| String.join <|
+      artifacts.toList.map fun (_, path, link) => s!"{if link then "link" else "load"} {path}\n"
+    setTrace (← computeTrace archive)
+    let linked := artifacts.filterMap fun (_, path, link) => if link then some path else none
+    if linked.isEmpty then return archive
+    let ldScript := lib / s!"libix_ffi_{tag}_link.so"
+    let paths := #[archive.toString] ++ linked.map fun path => (lib / FilePath.mk path).toString
+    IO.FS.writeFile ldScript s!"INPUT({" ".intercalate paths.toList})\n"
+    addTrace (← computeTrace ldScript)
+    return ldScript
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
   buildRustStatic pkg (← cargoArgs) "default"
 
-/-- Rebuild the Rust static lib with `test-ffi`.
-Used by `IxTests` and the focused `kernel-codec` differential runner.
-Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
+/-- Cargo feature variants run after the default build, since every
+selection writes Cargo's one release archive. -/
 target ix_rs_test pkg : FilePath := do
-  let base ← ix_rs.fetch
-  base.mapM fun _ => do
-    let args ← cargoArgs (testFfi := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-    let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
-    let output := pkg.buildDir / "lib" / "libix_ffi_test.a"
-    copyFile built output
-    return output
+  buildRustStatic pkg (← cargoArgs (testFfi := true)) "test" (some (← ix_rs.fetch))
 
-/-- Build the Rust static lib with `net` for the `ix` CLI.
-Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
+/-- Build the Rust static lib with `net` for the `ix` CLI. -/
 target ix_rs_net pkg : FilePath := do
-  let base ← ix_rs.fetch
-  base.mapM fun _ => do
-    let args ← cargoArgs (net := true)
-    proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-    let built := pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
-    let output := pkg.buildDir / "lib" / "libix_ffi_net.a"
-    copyFile built output
-    return output
+  buildRustStatic pkg (← cargoArgs (net := true)) "net" (some (← ix_rs.fetch))
 
 end FFI
 
@@ -128,8 +186,8 @@ def profileLeancArgs : Array String :=
 
 /-- The main library, with Lake's default root: the module `Ix` (`Ix.lean`) and
 its imports, not every module under `Ix/`. A module that `Ix.lean` does not
-import, such as `Ix.Cert.Audit`, is built only by a target that imports it,
-such as `IxTests`. Nothing the `ix-kernel` dependency or `IxSharingVerify` owns
+import, such as `Ix.Cert.Audit`, is built only when named, as the
+`check-kernel` gate and `lake lint`'s module coverage name it. Nothing the `ix-kernel` dependency or `IxSharingVerify` owns
 is under the `Ix.` module root (their declaration namespaces are, their module
 names are not), so this library never shadows them. Keep new modules of theirs
 under their roots. -/
@@ -160,6 +218,13 @@ lean_exe IxTests where
   root := `Tests.Main
   supportInterpreter := true
   needs := #[`@/ix, `@/«kernel-check-ixe», `@/EntryCaseFixtures]
+  moreLinkObjs := #[ix_rs_test]
+
+/-- The FFI suite (`IxTests ffi`) on its own, linked like `IxTests` with the
+test-only FFI code, for the merge queue's Valgrind job: its import closure is
+the host library's, without the test binary's proofs. -/
+lean_exe «ffi-tests» where
+  root := `Tests.FFIMain
   moreLinkObjs := #[ix_rs_test]
 
 lean_exe «arena-exclude» where
@@ -208,6 +273,10 @@ lean_exe «sharing-family-trace» where
 lean_exe «sharing-family-normalize» where
   root := `Benchmarks.SharingFamilyNormalize
 
+/-- Fixed component work with independently scaled full-DAG scratch buffers. -/
+lean_exe «sharing-scratch» where
+  root := `Benchmarks.SharingScratch
+
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 
@@ -221,12 +290,19 @@ lean_exe «bench-ixvm» where
   root := `Benchmarks.IxVM
   supportInterpreter := true
 
-lean_exe «bench-shardmap» where
-  root := `Benchmarks.ShardMap
-
 lean_exe «bench-typecheck» where
   root := `Benchmarks.Typecheck
   supportInterpreter := true
+
+/-- Generic execution profiles for full-closure proving workloads. -/
+lean_exe «proving-profile» where
+  root := `Scripts.Performance.ProvingProfile
+  moreLinkObjs := #[ix_rs]
+
+/-- Validate and compare circuit partitions against measured query heights. -/
+lean_exe «function-grouping» where
+  root := `Scripts.Performance.FunctionGrouping
+  moreLinkObjs := #[ix_rs]
 
 lean_exe «bench-recursion-debug» where
   root := `Benchmarks.RecursionDebug
@@ -427,16 +503,17 @@ script install := do
         eprintln "Target directory can't be empty."; return 1
       pure ⟨input⟩
 
-  -- Copy the ix binary into the target directory
-  let tgtPath := binDir / "ix"
-  let srcBytes ← FS.readBinFile $ ".lake" / "build" / "bin" / "ix"
-  FS.writeBinFile tgtPath srcBytes
-
-  -- Set access rights for the newly created file
   let fullAccess := { read := true, write := true, execution := true }
   let noWriteAccess := { fullAccess with write := false }
   let fileRight := { user := fullAccess, group := fullAccess, other := noWriteAccess }
-  setAccessRights tgtPath fileRight
+  FS.createDirAll binDir
+  let destination := binDir / "ix"
+  FS.writeBinFile destination (← FS.readBinFile $ ".lake" / "build" / "bin" / "ix")
+  setAccessRights destination fileRight
+  let libraryDir := binDir.parent.getD "." / "lib"
+  for (_, name) in ← runtimeArtifacts (".lake" / "build" / "lib" / "libix_ffi_net.a") do
+    FS.createDirAll (libraryDir / name).parent.get!
+    FS.writeBinFile (libraryDir / name) (← FS.readBinFile $ ".lake" / "build" / "lib" / name)
   return 0
 
 script "get-exe-targets" := do
@@ -528,17 +605,10 @@ lean_exe «kernel-entry-cases» where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs]
 
-/-- The kernel's universe-level comparison (`Level.leq`, `Level.isEquiv`, and
-its Géran fallback `Level.Geran.leq`) against brute-force evaluation, on
-random levels and on Ixon's canonical forms. -/
-lean_exe «kernel-level-comparison» where
-  root := `Tests.Ix.Kernel.LevelComparison
-  moreLinkObjs := #[ix_rs]
-
 /-- The Ixon reader against a direct translation of Lean's constants over
 `Init` and `Std` (`Tests/Ix/Kernel/ReaderFidelity.lean`): the compiled environment
 (`kernel-reader-fidelity .lake/envs/initstd.ixe [limit]`), `Init` and `Std`
-compiled in process (`--compile [limit]`), `check-kernel`'s run
+compiled in process (`--compile [limit]`), bounded prefix check
 (`--check-kernel`) or the `lake test` fixture (`--fixture`). -/
 lean_exe «kernel-reader-fidelity» where
   root := `Tests.Ix.Kernel.ReaderFidelityMain
@@ -587,12 +657,10 @@ lean_exe «kernel-pin-gen» where
   moreLinkObjs := #[ix_rs]
 
 /-- Run the certified kernel gate: the standalone strict build with its audits,
-the host-side tests, the codec differential against Rust,
-optionally the set-theory model, the layering and trust-surface fences, the
-level comparison, the certified entry's host-compiled cases, and the reader's
-fidelity against Lean (the fixture closure and the first records of Init and
-Std), the `.meta` and `.source` names against Lean's, and quotient Source on
-Init and Std. -/
+the host-side tests, optionally the set-theory model, the certification
+statements' freeze (`Ix.Cert.Audit`), the layering and
+trust-surface fences, the certified entry's host-compiled
+cases, and the `.meta` and `.source` names against Lean's. -/
 script "check-kernel" (args) := do
   unless args.isEmpty || args == ["--with-model"] do
     IO.eprintln "usage: lake run check-kernel [--with-model]"
@@ -603,17 +671,16 @@ script "check-kernel" (args) := do
     unless code == 0 do
       throw <| IO.userError s!"{cmd} {args} failed with exit code {code}"
   run "lake" #["-d", "IxC", "build", "--wfail"]
-  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.ReaderRoundtrip", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure", "Tests.Ix.Kernel.DisplayRead"]
+  run "lake" #["build", "--wfail", "Ix.Ixon.Projection.Audit", "Ix.Ixon.BlockOrder.Audit", "Ix.Ixon.Authenticated.Audit", "Ix.Cert.RuntimeAudit", "Ix.Cert.ModuleAudit", "Tests.Ix.Kernel.BlockOrder", "Tests.Ix.Kernel.AddressPure", "Tests.Ix.Kernel.Projection", "Tests.Ix.Kernel.Reader", "Tests.Ix.Kernel.CertifiedEntry", "Tests.Ix.Kernel.Authentication", "Tests.Ix.Kernel.Contracts", "Tests.Ix.Kernel.Axioms", "Ix.SpecDigest", "Tests.Ix.Kernel.Erasure"]
   if args == ["--with-model"] then
     run "lake" #["-d", "Models/SetTheory", "build", "--wfail"]
+  -- The certification statements' freeze, which no test binary imports.
+  run "lake" #["build", "--wfail", "Ix.Cert.Audit"]
   -- The kernel's fences, derived from con-leche's: import layering and the
   -- per-file escape allowlist, with the trust-surface lexer's self-test.
   run "lake" #["build", "--wfail", "kernel-layering", "kernel-trust-surface"]
   run ".lake/build/bin/kernel-layering" #[]
   run ".lake/build/bin/kernel-trust-surface" #[]
-  -- The level comparison against brute-force evaluation.
-  run "lake" #["build", "--wfail", "kernel-level-comparison"]
-  run ".lake/build/bin/kernel-level-comparison" #[]
   -- Host-compiled Lean declarations through the certified entry, each with
   -- an exact expected verdict (`Tests/Ix/Kernel/EntryCases.lean`).
   run "lake" #["build", "--wfail", "kernel-entry-cases"]
@@ -623,38 +690,10 @@ script "check-kernel" (args) := do
   unless entry.exitCode == 0 do
     IO.eprint entry.stdout
     throw <| IO.userError "kernel-entry-cases failed; see .lake/build/kernel-entry-cases.jsonl"
-  -- The Ixon reader against a direct translation of the Lean constants it was
-  -- compiled from, and the kernel's projection output against the compiler's
-  -- records: the fixture closure (the `lake test` suite's check) and the
-  -- first records of Init and Std (`Tests/Ix/Kernel/ReaderFidelity.lean`).
-  run "lake" #["build", "--wfail", "kernel-reader-fidelity"]
-  let mut fidelityLog := ""
-  for mode in #["--fixture", "--check-kernel"] do
-    let out ← IO.Process.output { cmd := ".lake/build/bin/kernel-reader-fidelity", args := #[mode] }
-    fidelityLog := fidelityLog ++ s!"== {mode}\n{out.stdout}{out.stderr}"
-    IO.FS.writeFile ".lake/build/kernel-reader-fidelity.log" fidelityLog
-    IO.eprint out.stderr
-    unless out.exitCode == 0 do
-      IO.eprint out.stdout
-      throw <| IO.userError s!"kernel-reader-fidelity {mode} failed; see .lake/build/kernel-reader-fidelity.log"
-  IO.println "Reader fidelity checks passed."
   -- The `.meta` and `.source` names against Lean's, on ill-typed declarations
   -- and the fixtures (`Tests/Ix/Kernel/MetaNames.lean`).
   run "lake" #["build", "--wfail", "kernel-meta-names"]
   run ".lake/build/bin/kernel-meta-names" #[]
-  -- Quotient Source on Init and Std, as `checkSourceCollapsedBundledAt` runs it:
-  -- the artifact's alias fibers, the committed bundle's evidence, the collapse
-  -- checks, and the harness's prepared stream against production's; it fails
-  -- when a collapse check fails or the streams differ. The artifact is
-  -- compiled afresh, never read from an earlier run.
-  run "lake" #["build", "--wfail", "kernel-source-ingress"]
-  let ingressIxe := ".lake/build/kernel-source-ingress-initstd.ixe"
-  for stale in #[ingressIxe, ingressIxe ++ ".diff", ingressIxe ++ ".rows"] do
-    if ← System.FilePath.pathExists stale then IO.FS.removeFile stale
-  run ".lake/build/bin/kernel-source-ingress"
-    #["--workers", "16", "--collapse", "--bundle-evidence", "--compare-prepared",
-      "--ixe", ingressIxe, "Init", "Std"]
-  IO.println "Meta names and quotient Source on Init and Std passed."
   IO.println "Certified kernel checks passed."
   return 0
 

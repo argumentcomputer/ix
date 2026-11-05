@@ -98,4 +98,13 @@ mod riscv_impl {
       self.0.next().map(|(k, v)| MapRef { k, v })
     }
   }
+
+  /// `for entry in &map`, as `DashMap` allows.
+  impl<'a, K: Eq + Hash, V> IntoIterator for &'a IxonMap<K, V> {
+    type Item = MapRef<'a, K, V>;
+    type IntoIter = Iter<'a, K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+      self.iter()
+    }
+  }
 }

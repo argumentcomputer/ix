@@ -146,8 +146,76 @@ def blake3 := ⟦
   -- Hot chunk loop. The 64-byte block buffer is NOT threaded here as a
   -- `[[U8; 4]; 16]` value — that cost 64 columns of `inputSize` plus a +64-aux
   -- `assign_block_value` call on every row. Instead bytes accumulate into a
-  -- reverse-ordered linked list (`byte_acc`); each hot row is a single `store`.
+  -- reverse-ordered linked list (`byte_acc`). Four byte steps share one hot
+  -- row. The inline continuations repeat the Nil/Cons and block_index == 63
+  -- checks at EACH byte, including unaligned entry states. Block compression
+  -- and finalization are called at exactly the original boundaries.
   fn blake3_compress_chunks(
+    input: ByteStream,
+    byte_acc: ByteStream,
+    block_index: G,
+    chunk_index: G,
+    chunk_count: &U64,
+    block_digest: &[[U8; 4]; 8],
+    layer: Layer
+  ) -> Layer {
+    match load(input) {
+      -- Input exhausted: hand off to the cold finalize circuit.
+      ListNode.Nil =>
+        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
+      ListNode.Cons(head, input) =>
+        let byte_acc = store(ListNode.Cons(head, byte_acc));
+        match block_index {
+          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
+          _ => @blake3_compress_chunks_step2(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
+        },
+    }
+  }
+  -- These helpers are always inlined: only the fourth step recurses through
+  -- the ordinary seven-input hot circuit. No helper adds a circuit.
+  fn blake3_compress_chunks_step2(
+    input: ByteStream,
+    byte_acc: ByteStream,
+    block_index: G,
+    chunk_index: G,
+    chunk_count: &U64,
+    block_digest: &[[U8; 4]; 8],
+    layer: Layer
+  ) -> Layer {
+    match load(input) {
+      -- Input exhausted: hand off to the cold finalize circuit.
+      ListNode.Nil =>
+        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
+      ListNode.Cons(head, input) =>
+        let byte_acc = store(ListNode.Cons(head, byte_acc));
+        match block_index {
+          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
+          _ => @blake3_compress_chunks_step3(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
+        },
+    }
+  }
+  fn blake3_compress_chunks_step3(
+    input: ByteStream,
+    byte_acc: ByteStream,
+    block_index: G,
+    chunk_index: G,
+    chunk_count: &U64,
+    block_digest: &[[U8; 4]; 8],
+    layer: Layer
+  ) -> Layer {
+    match load(input) {
+      -- Input exhausted: hand off to the cold finalize circuit.
+      ListNode.Nil =>
+        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
+      ListNode.Cons(head, input) =>
+        let byte_acc = store(ListNode.Cons(head, byte_acc));
+        match block_index {
+          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
+          _ => @blake3_compress_chunks_step4(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
+        },
+    }
+  }
+  fn blake3_compress_chunks_step4(
     input: ByteStream,
     byte_acc: ByteStream,
     block_index: G,

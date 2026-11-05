@@ -8,9 +8,8 @@ namespace IxVM
 
 /-! ## Level operations + literal equality + expr_inst_levels
 
-Mirror: crates/kernel/src/level.rs + literal-equality helpers from
-crates/kernel/src/expr.rs. Self-contained; new kernel modules
-(Subst/Whnf/Infer/DefEq/Check) import from here.
+Universe level operations and literal-equality helpers. Self-contained;
+kernel modules (`Subst`/`Whnf`/`Infer`/`DefEq`/`Check`) import from here.
 -/
 
 def levels := ⟦
@@ -58,10 +57,9 @@ def levels := ⟦
   }
 
   -- ============================================================================
-  -- Canonical level normalization (mirror: crates/kernel/src/level.rs
-  -- normalize_level / norm_level_eq / norm_level_le, itself a port of
-  -- Lean4Lean's Level.Normalize with the documented subsumption and
-  -- covers-split fixes).
+  -- Canonical level normalization (normalize_level / norm_level_eq /
+  -- norm_level_le, a port of Lean4Lean's Level.Normalize with the documented
+  -- subsumption and covers-split fixes).
   --
   -- Semantic level comparison via the recursive `Level.leq` with its
   -- two-way param-substitution split per Max/IMax-with-param is

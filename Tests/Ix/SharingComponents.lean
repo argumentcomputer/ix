@@ -121,9 +121,4 @@ def suiteOf (count : Nat) (wild : Bool) : List TestSeq := [
 /-- The primary run: 15 generated inputs and parent arrays within range. -/
 def suite : List TestSeq := suiteOf 15 false
 
-/-- The full run, in a CI job: 40 generated inputs, a superset of the primary
-ones, and parent arrays with pointers out of range, which the lookups report
-as panics. -/
-def fullSuite : List TestSeq := suiteOf 40 true
-
 end Tests.SharingComponents

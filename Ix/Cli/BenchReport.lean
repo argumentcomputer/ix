@@ -125,8 +125,7 @@ def human (v : Option Float) (metric : String) : String :=
 
 /-- Metrics where a LARGER value is the improvement; everything else is
     lower-is-better (times, RAM, cycles, sizes). `throughput` means
-    constants checked per second on EVERY backend (`ix_bench::throughput`
-    is the one calculator). -/
+    constants checked per second on EVERY backend. -/
 def higherIsBetter (metric : String) : Bool :=
   dropStagePrefix metric == "throughput"
 
@@ -725,12 +724,12 @@ def shardMeasure (k : String) : String :=
   else k
 
 /-- Rows JSON → Bencher Metric Format. Rows with `status ≠ ok` are dropped
-    whole — a rejected or OOM'd constant must never become a bencher data
-    point. Numeric fields (`phase-<span>` included) pass through as
-    measures. Nested per-shard objects (`shard-cycles: {"0": …}`) become
-    per-shard BENCHMARKS (`<name>/shard-0`) sharing the parent's measure
-    slugs — multiplicity belongs in bencher's benchmark dimension, not as
-    one measure per shard index. -/
+    whole — a rejected, OOM'd, partial or conditional run must never become
+    a bencher data point. Numeric fields (`phase-<span>` included) pass
+    through as measures. Nested per-shard objects (`shard-cycles: {"0": …}`)
+    become per-shard BENCHMARKS (`<name>/shard-0`) sharing the parent's
+    measure slugs — multiplicity belongs in bencher's benchmark dimension,
+    not as one measure per shard index. -/
 def toBmf (rows : Json) : Json := Id.run do
   let mut out : Array (String × Json) := #[]
   for name in rowNames rows do

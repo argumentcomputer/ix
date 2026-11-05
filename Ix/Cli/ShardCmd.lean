@@ -14,7 +14,7 @@ public import Ix.Cli.RefineCmd
   relation that generates each shard's thin frontier, i.e. its real
   ingress), then a global rebalance post-pass toward equal predicted
   Aiur FFT cost (fitted model — constants and provenance in
-  `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). `--shards N` fixes the
+  `ixon::shard::STATIC_OWNED_PER_BYTE`). `--shards N` fixes the
   count; `--max-ram G` seeds it from the same static block-shape score,
   mildly superlinear in both library scale and inverse RAM budget.
 
@@ -153,7 +153,7 @@ def shardCmd : Cli.Cmd := `[Cli|
   FLAGS:
     shards       : Nat;    "Fixed number of shards N (overrides --max-ram sizing)"
     "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term). A CUDA build seeds for the trace-shard prover by serialized block bytes, against one execution's share of the record budget (this budget less the prover's working set at AIUR_TRACE_SHARD_MAX_CELLS, over --exec-jobs + 2), anchored at the 78-shard Mathlib cut proven on four GPUs (execution records are close to linear in owned bytes); a CPU build seeds with the CPU prover's fitted scale and budget exponents anchored at Mathlib. The record cap or the execution gate corrects every boundary."
-    "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --lanes --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
+    "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     ordered;               "Lay the shards out as contiguous ranges of a dependency order instead of a min-cut, shard 0 at the top, so each shard's reference closure lies in its own shard and later ones. The layout `ix prove --distributed` wants, where each shard is one worker's chunk: the records then commit one at a time in chunk order."
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"

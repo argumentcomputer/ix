@@ -33,9 +33,9 @@ def check := ⟦
   -- Mirror is_unsafe_ci: 1 if a SAFE constant may not reference it, 0
   -- otherwise. Thm/Quot always safe.
   --
-  -- `Partial` counts alongside `Unsafe`, matching the reference's
+  -- `Partial` counts alongside `Unsafe`, matching the retired Rust kernel's
   -- "safe definition references partial definition" rejection
-  -- (crates/kernel/src/check.rs). This is load-bearing rather than
+  -- check. This is load-bearing rather than
   -- cosmetic: a partial definition may reference ITSELF (see the recur
   -- slot in Ingress), and `k_infer` discharges a `Const` against its
   -- declared type without checking it, so `partial def bad : False := bad`
@@ -93,7 +93,7 @@ def check := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/check.rs fn validate_univ_params_seen.
+  -- After the retired Rust kernel's `validate_univ_params_seen`.
   -- Walks a KLevel asserting `Param(i)` has `i < bound`. Aiur's `store`/
   -- `load` deduplication subsumes Rust's seen-set.
   fn validate_univ_params_seen(u: KLevel, bound: G) {
@@ -162,10 +162,10 @@ def check := ⟦
   -- quotient's iota rules apply to the specified constants only.
   fn check_quot(rc: RoleCtx, self_addr: Addr, kind: QuotKind) {
     let r = match kind {
-      QuotKind.Typ => role_quot(),
-      QuotKind.Ctor => role_quot_mk(),
-      QuotKind.Lift => role_quot_lift(),
-      QuotKind.Ind => role_quot_ind(),
+      QuotKind.Typ => @role_quot(),
+      QuotKind.Ctor => @role_quot_mk(),
+      QuotKind.Lift => @role_quot_lift(),
+      QuotKind.Ind => @role_quot_ind(),
     };
     assert_eq!(role_is(rc, self_addr, r), 1,
       "a quotient constant is not the binding's quotient role of its kind");
@@ -263,7 +263,7 @@ def check := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/inductive.rs check_ctor_return_type.
+  -- After the retired Rust kernel's `check_ctor_return_type`.
   -- Validates that a ctor's declared type, after peeling
   -- `n_params + n_fields` Foralls, is a syntactic `Indc(params, indices)`
   -- application:
@@ -667,7 +667,7 @@ def check := ⟦
   -- `Inner α | mk : (α → False) → Inner α` used as `Inner Host`, the
   -- negative occurrence of `Host` only appears once `α := Host`.
   --
-  -- Mirrors `check_nested_ctor_fields` (crates/kernel/src/inductive.rs):
+  -- As the retired Rust kernel's `check_nested_ctor_fields` did:
   -- strip `n_params` foralls, then simultaneously substitute at depth 0.
   -- After stripping, `BVar 0` is the LAST (innermost) parameter, so the
   -- argument list is reversed — `expr_inst_many` maps `substs[i]` to
@@ -708,7 +708,7 @@ def check := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/inductive.rs check_positivity.
+  -- After the retired Rust kernel's `check_positivity`.
   -- Strict positivity: each ctor field's domain must not have any inductive
   -- of `ind_idx`'s mutual block in a negative position (left of an arrow).
   -- For mutual blocks, the initial positivity context is the full set of
@@ -928,7 +928,7 @@ def check := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/inductive.rs large-elim check on Prop
+  -- After the retired Rust kernel's large-elim check on a Prop
   -- single-ctor inductive. Walk past `n_params` Foralls (skipping params),
   -- then walk `n_fields` Foralls collecting de Bruijn indices of data fields
   -- (those whose domain has sort != 0). Body after walk is the ctor's return
@@ -1809,7 +1809,7 @@ def check := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/inductive.rs (build_motive_type_flat, the
+  -- After the retired Rust kernel's `build_motive_type_flat` (the
   -- `for _ in 0..n_indices { whnf; All => push; _ => break }` loop):
   -- whnf before each peel, stop tolerantly when no binder remains.
   -- Index binders can hide under definitional wrappers (e.g. a result type
@@ -3352,8 +3352,7 @@ def check := ⟦
   -- For each rec field j, append IH_j applied to `head`.
   -- IH_j = `Const(target_rec, rec_lvls) (params...) (motives...) (minors...) (idx_args) field_j`.
   -- target_rec = peer_recs[mem_idx] — the recursor for the field's own type.
-  -- Mirror crates/kernel/src/inductive.rs fn build_rule_ih.
-  -- Mirror crates/kernel/src/inductive.rs fn build_rule_ih: WHNF the
+  -- After the retired Rust kernel's `build_rule_ih`: WHNF the
   -- field's lifted dom and the inner body so the head/args reflect the
   -- true inductive occurrence (after reducing wrappers like
   -- `constType (n α) (n α)` → `n α`).

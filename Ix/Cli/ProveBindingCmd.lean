@@ -6,7 +6,7 @@
   The claim depends only on the specification digest and the table's hash,
   so one proof serves every aggregate over that binding (in practice one per
   toolchain). Its claims assume the binding (`ix claim check --assume-binding`,
-  `ix prove --lanes --binding-proof`), and `ix aggregate --binding-proof`
+  `ix prove --ixe --ixes --binding-proof`), and `ix aggregate --binding-proof`
   verifies this proof once, at the root, to discharge that condition.
 -/
 module
@@ -79,7 +79,7 @@ end Ix.Cli.ProveBindingCmd
 open Ix.Cli.ProveBindingCmd in
 def proveBindingCmd : Cli.Cmd := `[Cli|
   "prove-binding" VIA runProveBinding;
-  "Prove the `binding` claim for the role binding an .ixe carries: the table binds every role and each bound constant meets its specification. One proof serves every aggregate over that binding; pass it to `ix aggregate --binding-proof` or `ix prove --lanes --binding-proof`."
+  "Prove the `binding` claim for the role binding an .ixe carries: the table binds every role and each bound constant meets its specification. One proof serves every aggregate over that binding; pass it to `ix aggregate --binding-proof` or `ix prove --ixe --ixes --binding-proof`."
 
   FLAGS:
     out : String; "Where to write the proof (an `Ixon.Proof`; default `binding-<binding hash>.proof`). It is also persisted to `~/.ix/store/`."

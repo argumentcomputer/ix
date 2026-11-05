@@ -89,12 +89,13 @@ def roles := ⟦
 
   type RoleTable = &RoleTableNode
 
-  -- A role context: a table, and the number of groups usable under it; or
-  -- a table assumed to meet the specifications (a claim that assumes its
-  -- binding), under which every bound role is usable and none is admitted.
+  -- A role context: a table, the number of groups usable under it, and the
+  -- claim's user axioms; or a table assumed to meet the specifications (a
+  -- claim that assumes its binding), under which every bound role is usable
+  -- and none is admitted.
   enum RoleCtxNode {
-    Mk(RoleTable, G),
-    Assumed(RoleTable)
+    Mk(RoleTable, G, RBTreeMap‹G›),
+    Assumed(RoleTable, RBTreeMap‹G›)
   }
 
   type RoleCtx = &RoleCtxNode
@@ -116,7 +117,7 @@ def roles := ⟦
     let (t1, s) = read_byte(s);
     assert_eq!(t1, 0x03u8, "role table: not a binding section");
     let (version, s) = read_byte(s);
-    assert_eq!(to_field(version), spec_version(),
+    assert_eq!(to_field(version), @spec_version(),
       "role table: made for another specification version");
     let (n, s) = read_byte(s);
     let (by_role, by_addr, _next, s) =
@@ -147,7 +148,7 @@ def roles := ⟦
         let (left, by_addr, next, s) = read_role_bindings(s, half, next, by_addr);
         let (rb, s) = read_byte(s);
         let r = to_field(rb);
-        assert_eq!(u32_less_than(r, role_count()), 1, "role table: unknown role");
+        assert_eq!(u32_less_than(r, @role_count()), 1, "role table: unknown role");
         assert_eq!(u32_less_than(r, next), 0, "role table: roles out of order");
         let (a, s) = get_address(s);
         assert_eq!(rbtree_map_lookup_or_default(ptr_val(a), by_addr, 0), 0,
@@ -170,7 +171,7 @@ def roles := ⟦
         let (left, next, s) = read_role_evidence(s, half, next);
         let (rb, s) = read_byte(s);
         let r = to_field(rb);
-        assert_eq!(u32_less_than(r, role_count()), 1, "role table: unknown role");
+        assert_eq!(u32_less_than(r, @role_count()), 1, "role table: unknown role");
         assert_eq!(u32_less_than(r, next), 0, "role table: evidence out of order");
         let (kb, s) = read_byte(s);
         let (entries, s) = read_evidence_entries(s, to_field(kb));
@@ -201,26 +202,58 @@ def roles := ⟦
   -- ==========================================================================
 
   -- The context a claim is checked under: its binding's table, every group
-  -- usable.
+  -- usable, and no user axioms.
   fn role_ctx_of_binding(binding: Addr) -> RoleCtx {
-    store(RoleCtxNode.Mk(load_role_table(binding), group_count()))
+    store(RoleCtxNode.Mk(load_role_table(binding), @group_count(), RBTreeMap.Nil))
   }
 
   -- The context of a claim that assumes its binding meets the
-  -- specifications: its binding's table, read but not validated.
+  -- specifications: its binding's table, read but not validated, and no user
+  -- axioms.
   fn role_ctx_assumed(binding: Addr) -> RoleCtx {
-    store(RoleCtxNode.Assumed(load_role_table(binding)))
+    store(RoleCtxNode.Assumed(load_role_table(binding), RBTreeMap.Nil))
   }
 
   -- The context of a claim, by its validator: 3 validates the binding, 4
-  -- assumes it.
+  -- assumes it (with no user axioms).
   fn role_ctx_for_validator(binding: Addr, validator: G) -> RoleCtx {
+    load_role_ctx(binding, validator, Option.None)
+  }
+
+  -- Validate every leaf in the claim's `axioms` tree: each must be a safe
+  -- `KConstantInfo.Axiom` not bound in `tbl`.
+  fn validate_user_axioms(tbl: RoleTable, leaves: List‹Addr›, acc: RBTreeMap‹G›)
+      -> RBTreeMap‹G› {
+    match load(leaves) {
+      ListNode.Nil => acc,
+      ListNode.Cons(a, rest) =>
+        assert_eq!(rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0), 0,
+          "claim: user axiom is bound in the role table");
+        match load(get_ci(a)) {
+          KConstantInfo.Axiom(_, _, u) =>
+            assert_eq!(u, 0, "claim: user axiom is unsafe");
+            validate_user_axioms(tbl, rest, rbtree_map_insert(ptr_val(a), 1, acc)),
+          _ =>
+            assert_eq!(0, 1, "claim: axioms tree entry is not an axiom");
+            acc,
+        },
+    }
+  }
+
+  -- Load the role context for `(binding, validator, axioms_opt)`.
+  fn load_role_ctx(binding: Addr, validator: G, axioms_opt: Option‹Addr›) -> RoleCtx {
+    let tbl = load_role_table(binding);
+    let axioms = match axioms_opt {
+      Option.None => RBTreeMap.Nil,
+      Option.Some(ax_root) =>
+        validate_user_axioms(tbl, load_assumption_tree(ax_root), RBTreeMap.Nil),
+    };
     match validator {
-      3 => role_ctx_of_binding(binding),
-      4 => role_ctx_assumed(binding),
+      3 => store(RoleCtxNode.Mk(tbl, @group_count(), axioms)),
+      4 => store(RoleCtxNode.Assumed(tbl, axioms)),
       _ =>
         assert_eq!(0, 1, "claim: wrong validator identity");
-        role_ctx_of_binding(binding),
+        store(RoleCtxNode.Mk(tbl, @group_count(), axioms)),
     }
   }
 
@@ -232,16 +265,23 @@ def roles := ⟦
 
   fn role_ctx_table(rc: RoleCtx) -> RoleTable {
     match load(rc) {
-      RoleCtxNode.Mk(tbl, _) => tbl,
-      RoleCtxNode.Assumed(tbl) => tbl,
+      RoleCtxNode.Mk(tbl, _, _) => tbl,
+      RoleCtxNode.Assumed(tbl, _) => tbl,
+    }
+  }
+
+  fn role_ctx_axioms(rc: RoleCtx) -> RBTreeMap‹G› {
+    match load(rc) {
+      RoleCtxNode.Mk(_, _, axioms) => axioms,
+      RoleCtxNode.Assumed(_, axioms) => axioms,
     }
   }
 
   -- 1 iff `rc` assumes its binding.
   fn role_ctx_is_assumed(rc: RoleCtx) -> G {
     match load(rc) {
-      RoleCtxNode.Mk(_, _) => 0,
-      RoleCtxNode.Assumed(_) => 1,
+      RoleCtxNode.Mk(_, _, _) => 0,
+      RoleCtxNode.Assumed(_, _) => 1,
     }
   }
 
@@ -291,7 +331,7 @@ def roles := ⟦
   -- the claim's condition does not cover.
   fn role_of(rc: RoleCtx, a: Addr) -> G {
     match load(rc) {
-      RoleCtxNode.Mk(tbl, limit) =>
+      RoleCtxNode.Mk(tbl, limit, _) =>
         let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
         match r1 {
           0 => 0,
@@ -303,7 +343,7 @@ def roles := ⟦
               _ => 0,
             },
         },
-      RoleCtxNode.Assumed(tbl) =>
+      RoleCtxNode.Assumed(tbl, _) =>
         rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0),
     }
   }
@@ -316,10 +356,15 @@ def roles := ⟦
   }
 
   -- 1 iff `a` is the bound address of role `r`, usable under `rc` (and so
-  -- admitted).
+  -- admitted). Checks `role_index_of` first so non-matching addresses never
+  -- call `role_of` or admit another role's group.
   fn role_is(rc: RoleCtx, a: Addr, r: G) -> G {
-    match role_of(rc, a) - (r + 1) {
-      0 => 1,
+    match role_index_of(rc, a) - (r + 1) {
+      0 =>
+        match role_of(rc, a) {
+          0 => 0,
+          _ => 1,
+        },
       _ => 0,
     }
   }
@@ -328,13 +373,13 @@ def roles := ⟦
   -- be usable under `rc`.
   fn role_addr(rc: RoleCtx, r: G) -> Addr {
     match load(rc) {
-      RoleCtxNode.Mk(tbl, limit) =>
+      RoleCtxNode.Mk(tbl, limit, _) =>
         assert_eq!(u32_less_than(role_group(r), limit), 1,
           "a role is used before its group is admitted");
         let a = role_bound_addr(tbl, r);
         group_admit(tbl, role_group(r));
         a,
-      RoleCtxNode.Assumed(tbl) => role_bound_addr(tbl, r),
+      RoleCtxNode.Assumed(tbl, _) => role_bound_addr(tbl, r),
     }
   }
 
@@ -350,14 +395,14 @@ def roles := ⟦
   -- 1 iff role `r` is bound and usable under `rc`; admits it when it is.
   fn role_usable(rc: RoleCtx, r: G) -> G {
     match load(rc) {
-      RoleCtxNode.Mk(tbl, limit) =>
+      RoleCtxNode.Mk(tbl, limit, _) =>
         match u32_less_than(role_group(r), limit) * role_is_bound(tbl, r) {
           0 => 0,
           _ =>
             group_admit(tbl, role_group(r));
             1,
         },
-      RoleCtxNode.Assumed(tbl) => role_is_bound(tbl, r),
+      RoleCtxNode.Assumed(tbl, _) => role_is_bound(tbl, r),
     }
   }
 
@@ -365,7 +410,7 @@ def roles := ⟦
   -- of its roles under a context that admits only the earlier groups.
   fn group_admit(tbl: RoleTable, g: G) {
     group_admit_needs(tbl, group_needs(g));
-    let rc = store(RoleCtxNode.Mk(tbl, group_validation_limit(g)));
+    let rc = store(RoleCtxNode.Mk(tbl, group_validation_limit(g), RBTreeMap.Nil));
     validate_group_roles(rc, tbl, group_roles(g))
   }
 
@@ -375,11 +420,11 @@ def roles := ⟦
   -- generator checks that the well-founded groups occupy exactly the block
   -- between these boundaries. Native lookup still admits every usable role.
   fn group_validation_limit(g: G) -> G {
-    let first_wf = first_well_founded_group();
+    let first_wf = @first_well_founded_group();
     match u32_less_than(g, first_wf) {
       1 => g,
       _ =>
-        let first_equation = first_equation_group();
+        let first_equation = @first_equation_group();
         match u32_less_than(g, first_equation) {
           1 => first_wf,
           _ => first_equation,
@@ -413,7 +458,7 @@ def roles := ⟦
   -- `rc`. Admits nothing.
   fn walk_ctx(rc: RoleCtx, a: Addr) -> RoleCtx {
     match load(rc) {
-      RoleCtxNode.Mk(tbl, limit) =>
+      RoleCtxNode.Mk(tbl, limit, _) =>
         let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
         match r1 {
           0 => rc,
@@ -421,10 +466,10 @@ def roles := ⟦
             let g = role_group(r1 - 1);
             match u32_less_than(g, limit) * role_admission_checks(r1 - 1) {
               0 => rc,
-              _ => store(RoleCtxNode.Mk(tbl, group_validation_limit(g))),
+              _ => store(RoleCtxNode.Mk(tbl, group_validation_limit(g), RBTreeMap.Nil)),
             },
         },
-      RoleCtxNode.Assumed(_) => rc,
+      RoleCtxNode.Assumed(_, _) => rc,
     }
   }
 
@@ -436,8 +481,8 @@ def roles := ⟦
   -- which are validated by type, are still checked as dependencies.
   fn walk_covered(rc: RoleCtx, a: Addr) -> G {
     match load(rc) {
-      RoleCtxNode.Mk(_, _) => 0,
-      RoleCtxNode.Assumed(tbl) =>
+      RoleCtxNode.Mk(_, _, _) => 0,
+      RoleCtxNode.Assumed(tbl, _) =>
         let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
         match r1 {
           0 => 0,
@@ -455,7 +500,7 @@ def roles := ⟦
   }
 
   fn assert_all_roles_bound(tbl: RoleTable, r: G) {
-    match r - role_count() {
+    match r - @role_count() {
       0 => (),
       _ =>
         assert_eq!(role_is_bound(tbl, r), 1, "binding claim: a role is unbound");
@@ -464,7 +509,7 @@ def roles := ⟦
   }
 
   fn admit_all_groups(tbl: RoleTable, g: G) {
-    match g - group_count() {
+    match g - @group_count() {
       0 => (),
       _ =>
         group_admit(tbl, g);
@@ -744,21 +789,25 @@ def roles := ⟦
 
   -- How a safe axiom at `a` stands in the claim's theory: 1 for a standard
   -- axiom (`propext`, `Classical.choice`, `Quot.sound`, as the binding binds
-  -- them), 2 for the binding's `sorryAx`, which may be declared but not
-  -- used, and 0 for any other, which is declined. The one place a standard
-  -- axiom is recognized. Recognition admits the axiom's group like any
+  -- them) or an axiom in the claim's `axioms` tree, 2 for the binding's
+  -- `sorryAx`, which may be declared but not used, and 0 for any other, which
+  -- is declined. Recognition of a standard axiom admits its group like any
   -- role's, under `rc`'s earlier-groups rule, and no other group: an
   -- address that binds no axiom role admits nothing.
   fn axiom_standing(rc: RoleCtx, a: Addr) -> G {
     let tbl = role_ctx_table(rc);
     let r1 = rbtree_map_lookup_or_default(ptr_val(a), role_addr_index(tbl), 0);
-    let standing = axiom_role_standing(r1);
-    match standing {
-      0 => 0,
+    match r1 {
+      0 => rbtree_map_lookup_or_default(ptr_val(a), role_ctx_axioms(rc), 0),
       _ =>
-        match role_of(rc, a) {
+        let standing = axiom_role_standing(r1);
+        match standing {
           0 => 0,
-          _ => standing,
+          _ =>
+            match role_of(rc, a) {
+              0 => 0,
+              _ => standing,
+            },
         },
     }
   }
@@ -769,16 +818,16 @@ def roles := ⟦
       0 => 0,
       _ =>
         let r = r1 - 1;
-        match r - role_propext() {
+        match r - @role_propext() {
           0 => 1,
           _ =>
-            match r - role_choice() {
+            match r - @role_choice() {
               0 => 1,
               _ =>
-                match r - role_quot_sound() {
+                match r - @role_quot_sound() {
                   0 => 1,
                   _ =>
-                    match r - role_sorry_ax() {
+                    match r - @role_sorry_ax() {
                       0 => 2,
                       _ => 0,
                     },

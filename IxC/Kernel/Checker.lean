@@ -424,41 +424,4 @@ def checkDeclsPure (ops : (CheckerOps md) m) (ev : Evidences md)
     (ds : List (Declaration md)) : m (Env md) :=
   ds.foldlM (checkDecl mode ops ev) Env.empty
 
-/-- Check an `.axiomDecl` declaration when custom user axioms are permitted:
-in addition to the pinned standard axioms (`propext`, `Classical.choice`,
-`Quot.sound`) and the tolerated `sorryAx`, any well-formed axiom whose key
-satisfies `Key.isCustomAxiomEligible` is admitted and installed as `.axiomInfo`. -/
-def checkAxiomDeclWithUserAxioms (ops : (CheckerOps md) m) (env : Env md)
-    (cv : ConstantVal md) : m (Env md) := do
-  if cv.name = quotSoundName then
-    if ConstantInfo.canonEq (.axiomInfo cv) (quotBasis.getD 4 (.axiomInfo default)) then
-      pure env
-    else
-      throw (.notImplemented "quotient soundness axiom mismatch")
-  else do
-    let cvA ← checkConstantVal ops env cv
-    if stdAxiomOk env cvA then
-      pure ⟨.axiomInfo cvA :: env.consts⟩
-    else if cvA.name = propextName ∨ cvA.name = choiceName then
-      throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
-    else if cvA.name = sorryAxName then
-      pure env
-    else if cvA.name.isCustomAxiomEligible then
-      pure ⟨.axiomInfo cvA :: env.consts⟩
-    else
-      throw (.notImplemented msg!"non-standard axiom ({cv.name})")
-
-/-- Check a single declaration, admitting custom user axioms (`Key.isCustomAxiomEligible`)
-at `.axiomDecl` and delegating all other declaration kinds to `checkDecl`. -/
-def checkDeclWithUserAxioms (ops : (CheckerOps md) m) (ev : Evidences md) (env : Env md)
-    (d : Declaration md) : m (Env md) :=
-  match d with
-  | .axiomDecl cv => checkAxiomDeclWithUserAxioms ops env cv
-  | _ => checkDecl mode ops ev env d
-
-/-- Check a list of declarations in order from `Env.empty`, admitting custom user axioms. -/
-def checkDeclsPureWithUserAxioms (ops : (CheckerOps md) m) (ev : Evidences md)
-    (ds : List (Declaration md)) : m (Env md) :=
-  ds.foldlM (checkDeclWithUserAxioms mode ops ev) Env.empty
-
 end Ix.Kernel

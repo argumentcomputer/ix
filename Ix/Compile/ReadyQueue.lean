@@ -56,10 +56,15 @@ def makePlan (blocks : Ix.CondensedBlocks) (sched : FoldSchedule) (st : FoldStat
   let descriptors := Ix.Compile.Parallel.map 256 (fun (key, representative, members) => Id.run do
     let dependencies := (sched.deps.getD representative {}).toArray
     let mut parents : Array Nat := #[]
+    -- Several names can belong to one parent. Preserve their first-occurrence
+    -- order without scanning the growing parent array for every dependency.
+    let mut seen : Std.HashSet Nat := {}
     for name in dependencies do
       if let some owner := blocks.lowLinks.get? name then
         if let some index := indices.get? owner then
-          if !parents.contains index then parents := parents.push index
+          if !seen.contains index then
+            seen := seen.insert index
+            parents := parents.push index
     return { key, representative, members, dependencies, parents : Descriptor }) rows
   return { descriptors, indices }
 
@@ -118,6 +123,8 @@ structure State (input : FixedInput) where
   ready : Array Nat := #[]
   active : List (Nat × Task (Nat × Candidate input)) := []
   bank : Std.HashMap Nat (Candidate input) := {}
+  /-- Published candidates not yet released (`Controller.published`). -/
+  released : Array (Candidate input) := #[]
   claims : AddressTable := {}
   sizes : Std.HashMap Nat Nat := {}
   edges : Nat := 0
@@ -319,6 +326,20 @@ def Controller.observe (controller : Controller input)
       | .blobMismatch => { state.metrics with blobFallbacks := state.metrics.blobFallbacks + 1 }
     { state with metrics }
 
+/-- Keep `x` alive until this call, wherever it runs. -/
+@[noinline] private def keepAlive (x : α) : IO α :=
+  pure x
+
+/-- Hand the published candidates, once there are enough of them, to a pool
+task that drops them, so that freeing them runs off the publication thread. -/
+def Controller.release (controller : Controller input) (batch : Nat := 1024) : IO Unit := do
+  let released ← controller.state.modifyGet fun st =>
+    if st.released.size < batch then (#[], st) else (st.released, { st with released := #[] })
+  unless released.isEmpty do
+    let _ ← IO.asTask do
+      let _ ← keepAlive released
+      pure ()
+
 def Controller.published (controller : Controller input) (rep : Ix.Name) : IO Unit := do
   let some i := controller.plan.indices.get? rep | return ()
   controller.state.modify fun st => Id.run do
@@ -326,17 +347,26 @@ def Controller.published (controller : Controller input) (rep : Ix.Name) : IO Un
     let admitted := st.admitted
     let bank := st.bank
     let sizes := st.sizes
+    let released := st.released
     let bytes := st.bytes - sizes.getD i 0
     let mut st := { st with
       published := {}
       admitted := {}
       bank := {}
       sizes := {}
+      released := #[]
       bytes }
+    -- The bank holds the last reference to a published candidate: dropping it
+    -- here would free its whole block state (expression caches included) on
+    -- this thread, which every publication waits for.
+    let released := match bank.get? i with
+      | some candidate => released.push candidate
+      | none => released
     st := { st with
       admitted := admitted.erase i
       bank := bank.erase i
-      sizes := sizes.erase i }
+      sizes := sizes.erase i
+      released }
     -- An unlaunched fallback has completed on the publication thread.
     -- A running speculation still owns its completion and is drained normally.
     if !st.active.any (·.1 == i) then st := wake i st
@@ -351,6 +381,7 @@ def Controller.published (controller : Controller input) (rep : Ix.Name) : IO Un
     else
       st := { st with published := published.insert i }
     return st
+  controller.release
   controller.pump
 
 /-- Consume every remaining task even on a terminal compiler refusal or IO
@@ -373,6 +404,8 @@ def Controller.drain (controller : Controller input) : IO Unit := do
     ready := #[]
     bytes := 0
     edges := 0 }
+  -- the last published candidates, fewer than a batch, go the same way
+  controller.release 0
 
 def run (config : Config) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule)
     (width : Nat) (dbg : Bool) (fuel : Nat) (st : FoldState) :

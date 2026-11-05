@@ -20,7 +20,7 @@ lake exe uniform-hard <corpus.ixe> --scan-k <bound>     # constants with more th
 ```
 The default run's limits can be overridden with `UNIFORM_STATES` /
 `UNIFORM_EVALS`. `--tiered` and `--work` run the compiler's construction under
-the compiler's limits, which `IX_SHARING_LIMITS` overrides.
+the compiler's limits.
 -/
 
 namespace Benchmarks.UniformHard

@@ -18,6 +18,10 @@ public section
 
 namespace TracingTexray
 
+/-- Enable TeXRay through a command-line flag or the process-wide switch. -/
+def enabled (flag : Bool := false) : IO Bool := do
+  return flag || (← IO.getEnv "IX_TEXRAY") == some "1"
+
 /-- Configuration for the tracing-texray subscriber. -/
 structure Settings where
   /-- Comma-separated span-name prefixes to keep

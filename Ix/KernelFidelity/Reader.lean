@@ -589,7 +589,7 @@ def InputAccess.ofInput (input : Input) : InputAccess := {
 /-- Decode each record transiently for its skeleton and literal edges. The
 insertion order is exactly `Input.ofEnv`'s, including colliding hash buckets.
 Metadata is decoded per requested source name, never as a whole named store.
-No `StreamState.take` raw-window copies are made. -/
+No decoded record is retained beyond its skeleton. -/
 def InputAccess.ofParts (lean : Lean.Environment) (parts : Ixon.LazyEnvParts) :
     Except String InputAccess := do
   let records := _root_.Ix.KernelFidelity.RecordAccess.ofParts parts

@@ -8,8 +8,6 @@ namespace IxVM
 
 /-! ## Substitution primitives over `KExpr`
 
-Mirror: crates/kernel/src/subst.rs (full file).
-
 Two core operations:
 
 * `expr_lift(e, shift, cutoff)` — shift `BVar(i)` to `BVar(i+shift)` when
@@ -42,8 +40,8 @@ def subst := ⟦
   -- O(1). First traversal cost matches a single subst walk; the payoff is
   -- short-circuiting subst that would otherwise re-walk closed subtrees.
   --
-  -- Mirror: crates/kernel/src/expr.rs::lbr field on KExprNode (precomputed at
-  -- intern time in Rust; computed on demand here, memoized via `store`).
+  -- The retired Rust kernel precomputed this (`lbr` on `KExprNode`) at
+  -- intern time; here it is computed on demand, memoized via `store`.
   -- ============================================================================
   fn expr_lbr(e: KExpr) -> G {
     match load(e) {
@@ -104,17 +102,13 @@ def subst := ⟦
   -- Used by the nested-occurrence spec_params validity check in
   -- `Kernel/Inductive.lean`: at extraction depth `d`, a spec_param with
   -- a loose BVar in `[0, d)` depends on a field/domain-local binder.
-  -- Mirror: `sp.has_fvars()` in `crates/kernel/src/inductive.rs:723-730`
+  -- The retired Rust kernel tested `sp.has_fvars()` instead
   -- (Rust opens field/domain binders as fvars; Aiur keeps de Bruijn, so
   -- the same references appear as loose BVars below the depth).
   -- ============================================================================
   fn has_bvar_in_range(e: KExpr, lo: G, hi: G) -> G {
     match load(e) {
-      KExprNode.BVar(i) =>
-        match u32_less_than(i, lo) {
-          1 => 0,
-          0 => u32_less_than(i, hi),
-        },
+      KExprNode.BVar(i) => has_bvar_in_range_bvar(i, lo, hi),
       KExprNode.Srt(_) => 0,
       KExprNode.Const(_, _) => 0,
       KExprNode.Lit(_) => 0,
@@ -127,6 +121,16 @@ def subst := ⟦
       KExprNode.Forall(ty, body) => has_bvar_in_range_binder(ty, body, lo, hi),
       KExprNode.Let(ty, val, body) => has_bvar_in_range_let(ty, val, body, lo, hi),
       KExprNode.Proj(_, _, e1) => has_bvar_in_range(e1, lo, hi),
+    }
+  }
+
+  -- The two range comparisons are wide, but only BVar rows need them.
+  -- Keep their order and short circuit, including refusal of out-of-range
+  -- fields, without charging their byte lookups to every compound node.
+  fn has_bvar_in_range_bvar(i: G, lo: G, hi: G) -> G {
+    match u32_less_than(i, lo) {
+      1 => 0,
+      0 => u32_less_than(i, hi),
     }
   }
 
@@ -294,7 +298,7 @@ def subst := ⟦
   -- Shift `BVar(i)` → `BVar(i + shift)` when `i ≥ cutoff`. Recursion bumps
   -- `cutoff` by 1 when crossing a binder (Lam/Forall/Let).
   --
-  -- Mirrors `crates/kernel/src/subst.rs::lift_no_intern` (line 364-415).
+  -- As the retired Rust kernel's `lift_no_intern`.
   -- Fast path: when `expr_lbr(e) <= cutoff`, no loose BVar at or above the
   -- cutoff exists, so `e` is unchanged.
   -- ============================================================================
@@ -385,12 +389,11 @@ def subst := ⟦
 
   fn expr_lower_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, cutoff);
-        match lt {
-          1 => e,
-          0 => store(KExprNode.BVar(i - shift)),
-        },
+      -- Only expr_lower calls this walk, after checking cutoff < expr_lbr(e).
+      -- For BVar(i), expr_lbr computes i + 1; that comparison range-checks
+      -- both operands, so i >= cutoff. The field-wrap case i + 1 = 0
+      -- cannot pass the guard. No second comparison is needed here.
+      KExprNode.BVar(i) => store(KExprNode.BVar(i - shift)),
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>
@@ -405,15 +408,20 @@ def subst := ⟦
         store(KExprNode.Forall(
           expr_lower(ty, shift, cutoff),
           expr_lower(body, shift, cutoff + 1))),
-      KExprNode.Let(ty, val, body) =>
-        store(KExprNode.Let(
-          expr_lower(ty, shift, cutoff),
-          expr_lower(val, shift, cutoff),
-          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Let(ty, val, body) => expr_lower_let(ty, val, body, shift, cutoff),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_lower(e1, shift, cutoff))),
     }
+  }
+
+  -- As in expr_lift_let, the three-child arm gets its own circuit so the
+  -- common App/Lam/Forall rows pay only for two recursive calls.
+  fn expr_lower_let(ty: KExpr, val: KExpr, body: KExpr, shift: G, cutoff: G) -> KExpr {
+    store(KExprNode.Let(
+      expr_lower(ty, shift, cutoff),
+      expr_lower(val, shift, cutoff),
+      expr_lower(body, shift, cutoff + 1)))
   }
 
   -- ============================================================================
@@ -422,7 +430,7 @@ def subst := ⟦
   -- Substitute `BVar(depth)` with `expr_lift(arg, depth, 0)` and decrement
   -- `BVar(i)` for `i > depth`. Crossing a binder bumps `depth`.
   --
-  -- Mirrors the single-arg form of `crates/kernel/src/subst.rs::instantiate_rev`
+  -- The single-arg form of `instantiate_rev`,
   -- with a list of one element. For the lambda-eta case in def_eq we want
   -- `body[BVar(0) := arg]` which is `expr_inst1(body, arg, 0)`.
   -- ============================================================================
@@ -529,7 +537,7 @@ def subst := ⟦
 
   -- ============================================================================
   -- expr_inst_many — simultaneous substitution of `substs` for the `n` binders
-  -- at `depth` in ONE walk (mirror `crates/kernel/src/subst.rs::simul_subst`). Used
+  -- at `depth` in ONE walk (as the retired Rust kernel's `simul_subst`). Used
   -- for multi-arg beta: `(λλλ. body) x y z` substitutes all three at once
   -- instead of three separate `expr_inst1` re-walks of the body.
   --

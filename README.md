@@ -179,8 +179,10 @@ consistency. It is Ix's own kernel, derived from the verified checker of
 [con-leche](https://github.com/leanprover/con-leche). Its entry,
 `Ix.Kernel.Admission.checkBytes`, takes canonical `ixon` bytes, and for every
 environment it accepts the theorems give a set-theoretic model and no proof of
-`False`, on the standard axioms only. It does not certify the compiler, the
-Rust kernel or IxVM. [docs/kernel.md](docs/kernel.md) states what is
+`False`, on the standard axioms only. This theorem does not by itself certify
+the compiler or IxVM: the compiler has its own theorem,
+`Ix.Cert.CompileCorrect` (see [Compiling Lean to Ixon](#compiling-lean-to-ixon)),
+and IxVM is outside both. [docs/kernel.md](docs/kernel.md) states what is
 proved, what is trusted and what the gate checks; `--with-model` also builds
 the Mathlib-based model package `Models/SetTheory`:
 
@@ -213,7 +215,7 @@ The backend requires an NVIDIA GPU and a CUDA toolkit with `nvcc`; build and
 architecture controls are documented in the multi-stark repository. It keeps
 the Goldilocks/BLAKE3 protocol and proof format unchanged, and GPU proofs remain
 verifiable by the CPU implementation. Proving a whole environment across
-several GPUs (`ix prove --lanes`), generating traces on the device, and
+several GPUs (`ix prove --gpus`), generating traces on the device, and
 benchmarking such runs are covered in
 [docs/aiur-gpu-proving.md](docs/aiur-gpu-proving.md). Dated hardware
 measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
@@ -235,12 +237,9 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 `ix compile <file>.lean --out <file>.ixe` (and `ix compile-lean`) runs the
 certified compiler, `Ix.Cert.compileReport`, which is proved correct
 (`Ix.Cert.CompileCorrect`), at the default sharing limits. `ix prove`, `ix check`
-and `ix addr-of` given a name and no `--ixe` compile its closure with the
-streamed Lean pipeline, which runs the same report checks but whose front end is
-tested, not proved; `--streamed` selects it for `ix compile`. `--rust` selects the
-Rust compiler instead: faster and lighter, but **uncertified**. It runs none
-of the report checks, and its output is held to the Lean compiler's only by
-byte equality on the reference corpora (`ix compile-lean --rust-check`). See
+and `ix addr-of` given a name and no `--ixe` compile its closure through the
+same certified compiler (`Ix.CompileM.compileCertified`). The uncertified
+streamed and Rust compilers have been retired. See
 [docs/kernel.md](docs/kernel.md) for what the theorem covers on these paths.
 
 ### Testing
@@ -249,13 +248,10 @@ byte equality on the reference corpora (`ix compile-lean --rust-check`). See
 
 Every test entry is registered once, with its tier, in `Tests/Main.lean`
 (the typed registry, `Tests/Registry.lean`). The tiers: `primary` (run by a
-bare `lake test`), `ci:<job>` (a CI partition: `cli` in the CI job,
-`compile-pipeline`, `compiler-closures`, `compile`, `decompile`, `misc`,
-`landing-compilers` and `landing-initstd` in the merge queue) and `manual`
-(with a reason, e.g. a Mathlib-sized input, or an entry expected to retire
-with the compiler's canonical rewriting). The two landing partitions hold
-the end-to-end checks of the compilers and of the certification, on the
-whole test environment and Init+Std; `--tier landing` selects both.
+bare `lake test`), `ci:<job>` (a CI partition: `cli` in the CI job, and
+`compiler-closures`, `misc` and `landing-initstd-cli` in the merge queue) and
+`manual` (with a reason, e.g. a Mathlib-sized input). The landing partition
+holds the end-to-end checks on Init+Std; `--tier landing` selects it.
 - `lake test` runs every primary entry. Every selected entry runs, even after
   a failure, with a result line each; the exit code is the first non-zero one.
 - `lake test -- <name>...` runs exactly the named entries, whatever their tier

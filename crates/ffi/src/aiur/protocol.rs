@@ -543,6 +543,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -553,8 +554,11 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   let env = &env_handle.get().env;
 
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
-    {
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_with(
+      env,
+      &addr,
+      assume_binding,
+    ) {
       Ok(t) => t,
       Err(e) => {
         return LeanExcept::error_string(&format!("witness build: {e}"));
@@ -895,43 +899,74 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
     );
   }
   let check_batch = || -> Vec<(String, usize, usize)> {
-    shards
-      .par_iter()
-      .zip(estimates.par_iter())
-      .map(|(owned, est)| {
-        gate.acquire(*est);
-        let result =
-          match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-            env, owned,
-          ) {
-            Err(e) => (format!("witness build: {e}"), 0, 1),
-            Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
-              &toplevel,
-              fun_idx,
-              input,
-              &mut io_buffer,
-              use_bytecode,
+    let (binding_err, mut shard_results) = rayon::join(
+      || -> Option<String> {
+        if shards.len() <= 1 {
+          return None;
+        }
+        let Ok((_claim, input, mut io_buffer)) =
+          ixvm_codegen::aiur_ixvm_witness::build_binding_witness(env)
+        else {
+          return None;
+        };
+        dispatch_execute(
+          &toplevel,
+          fun_idx,
+          input,
+          &mut io_buffer,
+          use_bytecode,
+        )
+        .err()
+        .map(|e| format!("binding check: {e}"))
+      },
+      || -> Vec<(String, usize, usize)> {
+        shards
+          .par_iter()
+          .zip(estimates.par_iter())
+          .map(|(owned, est)| {
+            gate.acquire(*est);
+            let result = match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+              env,
+              owned,
+              shards.len() > 1,
             ) {
-              Err(e) => (e, 0, 1),
-              // Both reductions happen here, while the record is
-              // still owned by this task: it is dropped before
-              // `gate.release`, so admission keeps bounding peak RSS by
-              // the shards in flight rather than by the whole partition.
-              Ok((record, _output)) => {
-                let peak = system.peak_prove_bytes(&record).peak;
-                let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
-                  system.suggested_split_parts(&record, max_ram_bytes)
-                } else {
-                  1
-                };
-                (String::new(), peak, parts)
+              Err(e) => (format!("witness build: {e}"), 0, 1),
+              Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
+                &toplevel,
+                fun_idx,
+                input,
+                &mut io_buffer,
+                use_bytecode,
+              ) {
+                Err(e) => (e, 0, 1),
+                // Both reductions happen here, while the record is
+                // still owned by this task: it is dropped before
+                // `gate.release`, so admission keeps bounding peak RSS by
+                // the shards in flight rather than by the whole partition.
+                Ok((record, _output)) => {
+                  let peak = system.peak_prove_bytes(&record).peak;
+                  let parts = if max_ram_bytes > 0 && peak > max_ram_bytes {
+                    system.suggested_split_parts(&record, max_ram_bytes)
+                  } else {
+                    1
+                  };
+                  (String::new(), peak, parts)
+                },
               },
-            },
-          };
-        gate.release(*est);
-        result
-      })
-      .collect()
+            };
+            gate.release(*est);
+            result
+          })
+          .collect()
+      },
+    );
+    if let Some(err) = binding_err
+      && let Some(first) = shard_results.first_mut()
+      && first.0.is_empty()
+    {
+      first.0 = err;
+    }
+    shard_results
   };
   let results = if jobs == 0 {
     check_batch()
@@ -968,6 +1003,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -981,8 +1017,10 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   // shard entrypoint builds the the kernel witness (thin frontier + wrapper
   // augmentation).
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned,
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_with(
+      env,
+      &owned,
+      assume_binding,
     ) {
       Ok(t) => t,
       Err(e) => {
@@ -1024,6 +1062,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  assume_binding: bool,
 ) -> LeanExcept<LeanOwned> {
   ffi_catch_unwind_except("AiurSystem.proveAddrWithEnv", || {
     let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1034,8 +1073,10 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
     let env = &env_handle.get().env;
 
     let (claim, input, mut io_buffer) =
-      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
-        env, &addr,
+      match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_with(
+        env,
+        &addr,
+        assume_binding,
       ) {
         Ok(t) => t,
         Err(e) => {
@@ -1413,9 +1454,9 @@ fn prove_shards_ahead(
     let mut next = 0usize;
     let mut in_flight = 0usize;
     let mut done = 0usize;
-    // Shards that outgrew their share, to rerun alone once the lane is
-    // empty; while one is pending, nothing new starts ahead, so the lane
-    // drains for it.
+    // Shards that outgrew their share, to rerun alone once nothing else
+    // is executing; while one is pending, nothing new starts ahead, so the
+    // running executions drain for it.
     let mut alone: std::collections::VecDeque<usize> =
       std::collections::VecDeque::new();
     let mut alone_running = false;
@@ -1429,8 +1470,9 @@ fn prove_shards_ahead(
         let _ = done_tx.send((k, is_alone, result));
       });
     };
-    // Admission: an alone rerun waits for an empty lane and runs by
-    // itself; otherwise up to `jobs` executions run ahead at their share.
+    // Admission: an alone rerun waits until nothing else is executing and
+    // runs by itself; otherwise up to `jobs` executions run ahead at their
+    // share.
     // Run before each proof as well as at the start, so a slot freed by a
     // record the prover takes is refilled while that record proves.
     macro_rules! admit {

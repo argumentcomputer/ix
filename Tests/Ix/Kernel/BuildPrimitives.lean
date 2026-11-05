@@ -8,14 +8,16 @@ import Ix.Ixon
 import LSpec
 
 /-!
-  Dump primitive constant names and content-addresses for hardcoding into the
-  Rust kernel (`crates/common/src/prim_addrs.rs`).
+  Dump primitive constant names and content-addresses for hardcoding into
+  `PrimAddrs::new` (`crates/common/src/prim_addrs.rs`), the table the IxVM
+  witness builder and the shard planner seed primitives from, and its Lean
+  mirror `Ix/PrimAddrs.lean`.
 
-  Run with: `lake test -- --ignored rust-kernel-build-primitives`. The test prints a
-  `(lean_name, content_address_hex)` line for every primitive the Rust
-  kernel expects to find in `PrimAddrs::new`. Paste the output over the
-  corresponding entries whenever Lean's stdlib changes and tests start
-  failing with `@<hex>@<hex>` / synthetic-KId fallbacks.
+  Run with: `lake test -- --ignored rust-kernel-build-primitives` (the suite
+  keeps its old name). The test prints a `(lean_name, content_address_hex)`
+  line for every primitive in `PrimAddrs::new`. Paste the output over the
+  corresponding entries whenever Lean's stdlib changes and
+  `primitive-address-parity` (`paritySuite` below) fails.
 
   Failure modes:
   - Missing: a primitive name isn't in the Lean env (likely renamed upstream).
@@ -28,9 +30,8 @@ open LSpec
 
 namespace Tests.Ix.Kernel.BuildPrimitives
 
-/-- The Lean names of every primitive the Rust kernel resolves in
-    `PrimAddrs::new`. Keep this in sync with the `Primitives<M>` struct in
-    `crates/kernel/src/primitive.rs`. -/
+/-- The Lean names of every primitive in `PrimAddrs::new`
+    (`crates/common/src/prim_addrs.rs`); keep the two in sync. -/
 def kernelPrimitives : Array String := #[
   "Nat", "Nat.zero", "Nat.succ",
   "Nat.add", "Nat.pred", "Nat.sub", "Nat.mul", "Nat.pow",

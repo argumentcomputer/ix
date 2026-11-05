@@ -1331,11 +1331,6 @@ def Declaration.anchorMismatch? : Declaration md → Option (Key md)
 
 /-! ## Custom user axiom eligibility and extraction -/
 
-/-- Whether `k` is one of the standard axioms (`propext`, `Classical.choice`,
-`Quot.sound`) or the tolerated `sorryAx` anchor. -/
-def Key.isStdOrAnchorAxiom (k : Key md) : Bool :=
-  k == propextName || k == choiceName || k == quotSoundName || k == sorryAxName
-
 /-- Whether `k` is eligible as a custom user axiom name: an `.id` key that is
 not in `reservedBasisNames`. Role keys (`.role`) and compiler/model auxiliary
 keys (`.aux`) are never eligible as custom user axioms. -/
@@ -1426,32 +1421,5 @@ theorem mem_userAxiomsOfDecls_iff {ds : List (Declaration md)} {cv : ConstantVal
   · rintro ⟨hd, helig⟩
     refine ⟨.axiomDecl cv, hd, ?_⟩
     simp only [Declaration.userAxiom?, helig, ↓reduceIte]
-
-/-- The custom user axioms stored as `.axiomInfo` entries in `env`. -/
-def Env.customAxiomInfos (env : Env md) : List (ConstantVal md) :=
-  env.consts.filterMap fun
-    | .axiomInfo cv => if cv.name.isCustomAxiomEligible then some cv else none
-    | _ => none
-
-theorem Env.mem_customAxiomInfos_iff {env : Env md} {cv : ConstantVal md} :
-    cv ∈ env.customAxiomInfos ↔
-      .axiomInfo cv ∈ env.consts ∧ cv.name.isCustomAxiomEligible = true := by
-  unfold Env.customAxiomInfos
-  rw [List.mem_filterMap]
-  constructor
-  · rintro ⟨ci, hci, hcv⟩
-    cases ci with
-    | axiomInfo cv' =>
-      dsimp only at hcv
-      split at hcv
-      · next helig =>
-        injection hcv with hcv'
-        subst hcv'
-        exact ⟨hci, helig⟩
-      · exact nomatch hcv
-    | _ => exact nomatch hcv
-  · rintro ⟨hci, helig⟩
-    refine ⟨.axiomInfo cv, hci, ?_⟩
-    simp only [helig, ↓reduceIte]
 
 end Ix.Kernel

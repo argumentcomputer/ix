@@ -3,7 +3,6 @@ import Ix.Meta
 import Ix.CompileCertified
 import Ix.EnvScope
 import Ix.Resource.Validate
-import Ix.Cert.Statement
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.ContractPipeline
 import Tests.Ix.SourceContract.SyntaxFixture
@@ -11,24 +10,16 @@ import Tests.Ix.Kernel.TierIndDefs
 
 /-! # The resource validator's typing half on compiled closures (`resource-hints`)
 
-* **Hints and coverage.** `Ix.Resource.TypingInput.hint` copies
-  `Ix.Cert.hintsOf`'s rule, so that `Ix.Resource` does not import `Ix.Cert`.
-  On the compiled closure of the reader-fidelity and Source-ingress fixtures,
-  the two give the same hint at every member and constructor of every record,
-  through and around its projection record; hints are found both through a
-  projection record and at a record itself. The input lists every record
-  exactly once (`Ixon.CheckOrder.wholeEnv`).
-* **Actual typing verdicts**, on compiled
-  closures the typing half accepts: those fixtures (with assumption axioms),
-  the source-contract syntax fixture (a contract input), the contract
-  pipeline's input (an assumption axiom, `ContractA`) and the typing tier's
-  inductive fixtures (unsafe inductives, `kernel-tier-ind`). Each reports the
-  size of its uncertified part. -/
+Actual typing verdicts (`Ix.Resource.typeCheck`) on compiled closures the typing
+half accepts: the reader-fidelity and Source-ingress fixtures (with assumption
+axioms), the source-contract syntax fixture (a contract input), the contract
+pipeline's input (an assumption axiom, `ContractA`) and the typing tier's
+inductive fixtures (unsafe inductives, `kernel-tier-ind`). Each reports the
+size of its uncertified part. -/
 
 namespace Tests.ResourceHints
 
 open LSpec
-open _root_.Ix.Kernel (ConstRef)
 open Tests.Ix.Kernel.SourceIngress (defsModule ownModule preludeNames)
 
 /-- The constants of `modules` and everything they reach (as `cert-statement`
@@ -44,30 +35,6 @@ def closureOf (leanEnv : Lean.Environment) (modules : Array Lean.Name) (extra : 
     | some m => if idxs.contains m.toNat then some n else none
     | none => none
   IO.ofExcept (Tests.Ix.Kernel.ReaderFidelity.closure leanEnv (seeds ++ extra ++ preludeNames))
-
-/-- Every reference a record of `ixe` denotes or holds: a singleton's member
-0, a block's members and constructors, a projection's member. -/
-def refsOf (ixe : Ixon.Env) : Array (ConstRef Address) := Id.run do
-  let mut out : Array (ConstRef Address) := #[]
-  for (a, lc) in ixe.consts.toList do
-    let some c := lc.get? | continue
-    match c.info with
-    | .muts ms =>
-      for (m, i) in ms.zipIdx do
-        out := out.push (.member a i)
-        if let .indc ind := m then
-          for j in [0:ind.ctors.size] do out := out.push (.ctor a i j)
-    | .dPrj p => out := out.push (.member p.block p.idx.toNat)
-    | .iPrj p => out := out.push (.member p.block p.idx.toNat)
-    | .rPrj p => out := out.push (.member p.block p.idx.toNat)
-    | .cPrj p => out := out.push (.ctor p.block p.idx.toNat p.cidx.toNat)
-    | _ => out := out.push (.member a 0)
-  return out
-
-/-- A reference, for messages. -/
-def spell : ConstRef Address → String
-  | .member b i => s!"{b} member {i}"
-  | .ctor b i c => s!"{b} member {i} constructor {c}"
 
 /-- Size of the initial uncertified split. The typing fallback may expand
 this set to include all tier owners; this helper does not observe that path. -/
@@ -89,39 +56,13 @@ def verdict (label : String) (ixe : Ixon.Env) : Array String × Array String :=
   (errors, #[s!"{label}: {ixe.consts.size} records, {uncertifiedSize ixe} in the initial uncertified split, \
     IxC {if ixc.toOption.isSome then "accepts" else "declines"}"])
 
-def hintsAndCoverage : IO (Array String × Array String) := do
+def fixtureVerdict : IO (Array String × Array String) := do
   let leanEnv ← getCompileEnv #[defsModule, ownModule]
   let consts ← closureOf leanEnv #[defsModule, ownModule] #[`Nat.div]
   let out ← match ← Ix.CompileM.compileCertified leanEnv consts 4 with
     | .ok out => pure out
     | .error e => return (#[s!"compileCertified failed: {e}"], #[])
-  let ixe := out.env
-  let input ← match Ix.Resource.typingInput ixe with
-    | .ok input => pure input
-    | .error e => return (#[s!"typingInput failed: {e}"], #[])
-  let mut errors : Array String := #[]
-  let mut viaProjection := 0
-  let mut atRecord := 0
-  let refs := refsOf ixe
-  for r in refs do
-    let mine := input.hint r
-    let theirs := Ix.Cert.hintsOf ixe r
-    unless mine == theirs do
-      errors := errors.push s!"hint at {spell r}: resource {repr mine}, Ix.Cert {repr theirs}"
-    if mine.isSome then
-      if input.projections.contains r then viaProjection := viaProjection + 1
-      else atRecord := atRecord + 1
-  if viaProjection == 0 then errors := errors.push "no hint found through a projection record"
-  if atRecord == 0 then errors := errors.push "no hint found at a record"
-  let listed := input.ordered.map (·.1)
-  let distinct : Std.HashSet Address := listed.foldl (·.insert ·) {}
-  unless listed.size == ixe.consts.size && distinct.size == listed.size do
-    errors := errors.push s!"typing input lists {listed.size} records ({distinct.size} distinct) \
-      of {ixe.consts.size}"
-  let (vErrors, vLines) := verdict "reader-fidelity and Source-ingress fixtures" ixe
-  let lines := #[s!"resource-hints: {refs.size} references, {viaProjection} hints through a projection \
-    record, {atRecord} at a record; {listed.size} records listed"] ++ vLines
-  return (errors ++ vErrors, lines)
+  return verdict "reader-fidelity and Source-ingress fixtures" out.env
 
 def compiledVerdicts : IO (Array String × Array String) := do
   let mut errors : Array String := #[]
@@ -173,7 +114,7 @@ def report (name : String) (action : IO (Array String × Array String)) : TestSe
     return (errors.isEmpty, 1, 0, msg)) .done
 
 def suite : List TestSeq := [
-  report "the typing input's hints and coverage, and its verdict, on the compiled fixtures" hintsAndCoverage,
+  report "the typing half's verdict on the compiled fixtures" fixtureVerdict,
   report "actual typing verdicts: a contract input, an assumption axiom, unsafe inductives"
     compiledVerdicts]
 

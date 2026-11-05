@@ -241,6 +241,63 @@ def checkBytesTiered (hash : ByteArray → Address) (binding : Binding) (limits 
     Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) :=
   checkBytesTieredUsing preludeFor hash binding limits records blobs hint
 
+/-- **The tiered entry over decoded records under an axiom policy**:
+`checkConstantsTiered` with the logical part checked by `checkConstantsUnder`
+at the policy; the user axioms the logical accept is conditional on come with
+the result. The tier itself has no axioms of its own (an unsafe axiom is a
+tier record, not a user axiom). -/
+def checkConstantsTieredUnder (policy : Ix.Kernel.Cached.AxiomPolicy) (hash : ByteArray → Address)
+    (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except TierError ((Ix.Kernel.Env .anon × List (TierConst .anon)) ×
+      List (Ix.Kernel.ConstantVal .anon)) := do
+  let (logical, tier) := partitionTier constants
+  if let some (a, r) := fenceOf logical tier then throw (.fence a r)
+  let (env, axs) ← (checkConstantsUnder policy hash t pre logical blobs hint).mapError .entry
+  let tds ← (readTier (streamContext hash t pre constants blobs hint) tier).mapError
+    fun (i, e) => .read i e
+  match Ix.Kernel.Tier.checkTierC (Ix.Kernel.mkFEnv env) (tds.toList.map (·.2)) with
+  | .ok (_, ts) => pure ((env, ts), axs)
+  | .error (e, k) => throw (.tier e ((tds[k]?.map (·.1)).getD k))
+
+/-- **The tiered Ixon entry under an axiom policy**: `checkBytesTieredUsing`'s
+byte stage, the role table's admission, the prelude and canonical decoding,
+then `checkConstantsTieredUnder`. -/
+def checkBytesTieredUsingUnder (policy : Ix.Kernel.Cached.AxiomPolicy)
+    (prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon))
+    (hash : ByteArray → Address) (binding : Binding) (limits : Limits)
+    (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except TierError ((Ix.Kernel.Env .anon × List (TierConst .anon)) ×
+      List (Ix.Kernel.ConstantVal .anon)) := do
+  (preflight limits records blobs).mapError (.entry ∘ Error.ofBytes)
+  (uniqueKeys records blobs).mapError (.entry ∘ Error.ofBytes)
+  (authenticate hash records blobs).mapError (.entry ∘ Error.ofBytes)
+  let t ← (admitBinding hash binding).mapError (.entry ∘ .binding)
+  let pre ← (prelude t).mapError (.entry ∘ .prelude)
+  let constants ← (decodeRecords limits records).mapError (.entry ∘ Error.ofBytes)
+  checkConstantsTieredUnder policy hash t pre constants blobs hint
+
+/-- `checkConstantsTiered` with user axioms admitted on the logical part: the
+result of `checkConstantsTieredUnder .allowUser`, without its list of user
+axioms. -/
+def checkConstantsTieredWithUserAxioms (hash : ByteArray → Address) (t : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (constants : List (Address × Ixon.Constant)) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) :=
+  Prod.fst <$> checkConstantsTieredUnder .allowUser hash t pre constants blobs hint
+
+/-- `checkBytesTieredUsing` with user axioms admitted on the logical part: the
+result of `checkBytesTieredUsingUnder .allowUser`, without its list of user
+axioms. -/
+def checkBytesTieredUsingWithUserAxioms (prelude : Ix.Kernel.RoleTable → Except String (Prelude .anon))
+    (hash : ByteArray → Address) (binding : Binding) (limits : Limits)
+    (records : Records) (blobs : Ix.Kernel.Ingress.Blobs)
+    (hint : ConstRef Address → Option Ix.Kernel.ReducibilityHint := fun _ => none) :
+    Except TierError (Ix.Kernel.Env .anon × List (TierConst .anon)) :=
+  Prod.fst <$> checkBytesTieredUsingUnder .allowUser prelude hash binding limits records blobs hint
+
 end Ix.Kernel.Admission
 
 end

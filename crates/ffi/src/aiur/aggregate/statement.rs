@@ -36,6 +36,11 @@ impl ShardSet {
       .get(index / 64)
       .is_some_and(|word| word & (1u64 << (index % 64)) != 0)
   }
+
+  pub(super) fn is_disjoint(&self, other: &Self) -> bool {
+    debug_assert_eq!(self.0.len(), other.0.len());
+    self.0.iter().zip(&other.0).all(|(a, b)| a & b == 0)
+  }
 }
 
 /// Canonical sorted tree whose expensive derivative representations are built
@@ -243,6 +248,11 @@ impl Statement {
     if left.ctx != right.ctx {
       return Err("aggregate children differ in claim context".into());
     }
+    if !left.subjects.shards.is_disjoint(&right.subjects.shards)
+      || left.subjects.root == right.subjects.root
+    {
+      return Err("aggregate subject sets overlap".into());
+    }
     let subjects = if structural {
       SubjectTree::structural(left.subjects.clone(), right.subjects.clone())
     } else {
@@ -257,6 +267,22 @@ impl Statement {
       let owner = owner_by_address.get(&candidate).ok_or_else(|| {
         format!("aggregate assumption {} has no owning shard", candidate.hex())
       })?;
+      let in_left_asm = left
+        .assumptions
+        .as_ref()
+        .is_some_and(|tree| tree.leaves.binary_search(&candidate).is_ok());
+      let in_right_asm = right
+        .assumptions
+        .as_ref()
+        .is_some_and(|tree| tree.leaves.binary_search(&candidate).is_ok());
+      if (in_left_asm && left.subjects.shards.contains(*owner))
+        || (in_right_asm && right.subjects.shards.contains(*owner))
+      {
+        return Err(format!(
+          "aggregate child assumes its own subject {}",
+          candidate.hex()
+        ));
+      }
       if !subjects.shards.contains(*owner) {
         remaining.push(candidate);
       }

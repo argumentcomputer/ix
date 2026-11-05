@@ -13,7 +13,7 @@
   symmetric difference: the smaller of that of `S_a, S_b` (the least
   first difference of the rank-adjacent sets between them) and that of
   `X, Y`; the set without it precedes. The chosen cell's set is rebuilt from
-  the entries taken. (Rust: `Knapsack`, `sharing_exact/uniform.rs`.)
+  the entries taken.
 
   `uniformKnapsack_eq_fast : @uniformKnapsack = @uniformKnapsackFast`
   (`@[csimp]`) holds for every input; the fast knapsack runs when every

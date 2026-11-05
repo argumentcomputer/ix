@@ -59,7 +59,7 @@ def infer := ⟦
   }
 
   -- k_infer
-  -- Mirror of `crates/kernel/src/infer.rs::infer`. Per-variant dispatch.
+  -- Per-variant dispatch.
   -- Lvls placed at outermost; level-params instantiation handled where
   -- the constant's declared type is fetched.
   -- Context-trimmed memo wrapper (mirror Rust `infer_key`): key inference on
@@ -381,9 +381,9 @@ def infer := ⟦
   -- the claim then depends on (`role_used_implicitly`).
   fn k_infer_lit(rc: RoleCtx, lit: KLiteral) -> KExpr {
     match lit {
-      KLiteral.Nat(_) => store(KExprNode.Const(role_addr(rc, role_nat()), store(ListNode.Nil))),
+      KLiteral.Nat(_) => store(KExprNode.Const(role_addr(rc, @role_nat()), store(ListNode.Nil))),
       KLiteral.Str(_) =>
-        store(KExprNode.Const(role_used_implicitly(rc, role_string()), store(ListNode.Nil))),
+        store(KExprNode.Const(role_used_implicitly(rc, @role_string()), store(ListNode.Nil))),
     }
   }
 
@@ -465,7 +465,7 @@ def infer := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/infer.rs dependent-data-field guard.
+  -- Dependent-data-field guard.
   -- For Prop structures: a preceding data field (sort != 0) whose body
   -- has any loose bvar (`body.lbr() > 0`) makes projection past it unsound.
   -- Matches Rust's `body.lbr() > 0` check exactly.
@@ -486,7 +486,7 @@ def infer := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/infer.rs ctor-field walk loop.
+  -- Ctor-field walk loop.
   -- For each preceding field i < target_field, substitute body[Var(0)
   -- := Proj(struct_idx, i, val)] before recursing. At i == target_field,
   -- return the field's domain type.
@@ -515,7 +515,6 @@ def infer := ⟦
 
   -- Cold-extracted Proj arm: the widest arm of `k_infer_core` by far
   -- (~10 call sites) on a rare node kind.
-  -- Mirror crates/kernel/src/infer.rs infer_proj.
   fn k_infer_proj(rc: RoleCtx, struct_addr: Addr, fidx: G, e1: KExpr,
                       types: List‹KExpr›) -> KExpr {
     let val_ty = k_infer(rc, e1, types);
@@ -590,35 +589,20 @@ def infer := ⟦
   -- Entry point. Whnf calls this on Const-headed apps of family 5, the
   -- decision roles. Returns
   -- (1, reduced) on success or (0, _) to fall through to Defn unfold.
-  fn try_dec_dispatch(rc: RoleCtx, head_addr: Addr, head_lvls: List‹KLevel›,
+  fn try_dec_dispatch(rc: RoleCtx, head_addr: Addr, op: G, head_lvls: List‹KLevel›,
                           spine: List‹KExpr›, types: List‹KExpr›)
                           -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
-        match role_is(rc, head_addr, role_nat_dec_lt()) {
+        match op {
           1 => dec_rewrite_lt_to_le(rc, spine, types),
-          _ =>
-        match role_is(rc, head_addr, role_nat_dec_le()) {
-          1 => dec_nat(rc, 1, head_addr, head_lvls, spine, types),
-          _ =>
-        match role_is(rc, head_addr, role_nat_dec_eq()) {
-          1 => dec_nat(rc, 0, head_addr, head_lvls, spine, types),
-          _ =>
-        match role_is(rc, head_addr, role_int_dec_lt()) {
-          1 => dec_rewrite_int_lt_to_le(rc, spine, types),
-          _ =>
-        match role_is(rc, head_addr, role_int_dec_le()) {
-          1 => dec_int(rc, 1, head_addr, head_lvls, spine, types),
-          _ =>
-        match role_is(rc, head_addr, role_int_dec_eq()) {
-          1 => dec_int(rc, 0, head_addr, head_lvls, spine, types),
+          2 => dec_nat(rc, 1, head_addr, head_lvls, spine, types),
+          3 => dec_nat(rc, 0, head_addr, head_lvls, spine, types),
+          4 => dec_rewrite_int_lt_to_le(rc, spine, types),
+          5 => dec_int(rc, 1, head_addr, head_lvls, spine, types),
+          6 => dec_int(rc, 0, head_addr, head_lvls, spine, types),
           _ => (0, store(KExprNode.BVar(0))),
-        },
-        },
-        },
-        },
-        },
         },
     }
   }
@@ -636,7 +620,7 @@ def infer := ⟦
       (1, n_klimbs) =>
         let succ_lit = mk_nat_lit(klimbs_succ(n_klimbs));
         let dec_le_head = store(KExprNode.Const(
-          role_addr(rc, role_nat_dec_le()), store(ListNode.Nil)));
+          role_addr(rc, @role_nat_dec_le()), store(ListNode.Nil)));
         let app1 = store(KExprNode.App(dec_le_head, succ_lit));
         let app2 = store(KExprNode.App(app1, m_e));
         let post = list_drop(spine, 2);
@@ -665,10 +649,10 @@ def infer := ⟦
             };
             let prop = match is_le {
               1 =>
-                let le_c = store(KExprNode.Const(role_used_implicitly(rc, role_nat_le()),
+                let le_c = store(KExprNode.Const(role_used_implicitly(rc, @role_nat_le()),
                   store(ListNode.Nil)));
                 store(KExprNode.App(store(KExprNode.App(le_c, n_e)), m_e)),
-              _ => mk_eq1(rc, store(KExprNode.Const(role_addr(rc, role_nat()),
+              _ => mk_eq1(rc, store(KExprNode.Const(role_addr(rc, @role_nat()),
                   store(ListNode.Nil))), n_e, m_e),
             };
             let call = store(KExprNode.App(store(KExprNode.App(
@@ -693,7 +677,7 @@ def infer := ⟦
           store(ListNode.Nil)));
         let succ_a = int_add_prim(rc, sa, na, 0, one);
         let dec_le_head = store(KExprNode.Const(
-          role_addr(rc, role_int_dec_le()), store(ListNode.Nil)));
+          role_addr(rc, @role_int_dec_le()), store(ListNode.Nil)));
         let app2 = store(KExprNode.App(store(KExprNode.App(dec_le_head, succ_a)), b_e));
         (1, apply_spine(app2, list_drop(spine, 2))),
     }
@@ -722,10 +706,10 @@ def infer := ⟦
             };
             let prop = match is_le {
               1 =>
-                let le_c = store(KExprNode.Const(role_used_implicitly(rc, role_int_le()),
+                let le_c = store(KExprNode.Const(role_used_implicitly(rc, @role_int_le()),
                   store(ListNode.Nil)));
                 store(KExprNode.App(store(KExprNode.App(le_c, a_e)), b_e)),
-              _ => mk_eq1(rc, store(KExprNode.Const(role_used_implicitly(rc, role_int()),
+              _ => mk_eq1(rc, store(KExprNode.Const(role_used_implicitly(rc, @role_int()),
                   store(ListNode.Nil))), a_e, b_e),
             };
             let call = store(KExprNode.App(store(KExprNode.App(
@@ -746,7 +730,7 @@ def infer := ⟦
   -- `@Eq.{1} ty a b`.
   fn mk_eq1(rc: RoleCtx, ty: KExpr, a: KExpr, b: KExpr) -> KExpr {
     let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
-    let eq_c = store(KExprNode.Const(role_addr(rc, role_eq()),
+    let eq_c = store(KExprNode.Const(role_addr(rc, @role_eq()),
       store(ListNode.Cons(one_lvl, store(ListNode.Nil)))));
     store(KExprNode.App(store(KExprNode.App(store(KExprNode.App(eq_c, ty)), a)), b))
   }
@@ -758,17 +742,17 @@ def infer := ⟦
   -- dependencies.
   fn dec_result(rc: RoleCtx, verdict: G, prop: KExpr, call: KExpr) -> KExpr {
     let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
-    let eq_refl_c = store(KExprNode.Const(role_addr(rc, role_eq_refl()),
+    let eq_refl_c = store(KExprNode.Const(role_addr(rc, @role_eq_refl()),
       store(ListNode.Cons(one_lvl, store(ListNode.Nil)))));
-    let bool_c = store(KExprNode.Const(role_addr(rc, role_bool()), store(ListNode.Nil)));
+    let bool_c = store(KExprNode.Const(role_addr(rc, @role_bool()), store(ListNode.Nil)));
     let refl = store(KExprNode.App(store(KExprNode.App(eq_refl_c, bool_c)), mk_bool(rc, verdict)));
     let of_decide = match verdict {
-      1 => role_used_implicitly(rc, role_of_decide_eq_true()),
-      _ => role_used_implicitly(rc, role_of_decide_eq_false()),
+      1 => role_used_implicitly(rc, @role_of_decide_eq_true()),
+      _ => role_used_implicitly(rc, @role_of_decide_eq_false()),
     };
     let ctor = match verdict {
-      1 => role_used_implicitly(rc, role_decidable_is_true()),
-      _ => role_used_implicitly(rc, role_decidable_is_false()),
+      1 => role_used_implicitly(rc, @role_decidable_is_true()),
+      _ => role_used_implicitly(rc, @role_decidable_is_false()),
     };
     let proof = store(KExprNode.App(store(KExprNode.App(store(KExprNode.App(
       store(KExprNode.Const(of_decide, store(ListNode.Nil))), prop)), call)), refl));
@@ -800,7 +784,7 @@ def infer := ⟦
                         match bytestream_eq(sa, sb) {
                           0 => (0, store(KExprNode.BVar(0))),
                           _ =>
-                            let str_c = store(KExprNode.Const(role_addr(rc, role_string()),
+                            let str_c = store(KExprNode.Const(role_addr(rc, @role_string()),
                               store(ListNode.Nil)));
                             let call = store(KExprNode.App(store(KExprNode.App(
                               store(KExprNode.Const(head_addr, store(ListNode.Nil))), a0)), a1));

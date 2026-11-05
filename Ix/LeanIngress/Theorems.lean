@@ -461,7 +461,8 @@ theorem checkSource_converts {env : Ix.Environment} {blocks : Ix.CondensedBlocks
 
 Pure characterizations of `canonExprM`, `canonValM`, `DefMember.canon`,
 `canonInfo`, `BlockRead.canon`, `Converted.canon`, and `canonDecl`, their
-key-preservation and idempotence properties, and their commutation with
+key-preservation and conditional idempotence properties (conditioned on the
+level-canonicalizer idempotence hypothesis `hf`), and their commutation with
 `substKeys` (`Converted.quotient`). -/
 
 theorem LevelMemoInv.empty (f : KLevel → KLevel) : LevelMemoInv f {} := by
@@ -901,6 +902,8 @@ theorem canonProjTable_idem {tbl : Ix.Kernel.ProjTable .source}
     exact List.map_congr_left fun e _ => mapLevels_idem hf e
   simp only [canonProjTable, hss, hgs, hbs]
 
+/-- Conditional idempotence of `canonInfo`, given level-canonicalizer
+idempotence `hf`. -/
 theorem canonInfo_idem
     (hf : ∀ lps l, canonLevelIn lps (canonLevelIn lps l) = canonLevelIn lps l)
     (ci : Ix.Kernel.ConstantInfo .source) :
@@ -926,6 +929,8 @@ theorem canonInfo_idem
   | projInfo tbl =>
     simp only [canonInfo_projInfo, canonProjTable_idem (hf tbl.levelParams)]
 
+/-- Conditional idempotence of `BlockRead.canon`, given level-canonicalizer
+idempotence `hf`. -/
 theorem BlockRead.canon_idem
     (hf : ∀ lps l, canonLevelIn lps (canonLevelIn lps l) = canonLevelIn lps l)
     (rb : BlockRead .source) :
@@ -958,6 +963,8 @@ theorem BlockRead.canon_idem
     exact List.map_congr_left fun r _ => canonRecRule_idem (hf c.levelParams) r
   simp only [BlockRead.canon_eq, htys, hcts, hrs]
 
+/-- Conditional idempotence of `Converted.canon`, given the level-canonicalizer
+idempotence hypothesis `hf : ∀ lps l, canonLevelIn lps (canonLevelIn lps l) = canonLevelIn lps l`. -/
 theorem Converted.canon_idem
     (hf : ∀ lps l, canonLevelIn lps (canonLevelIn lps l) = canonLevelIn lps l)
     (c : Converted) :
@@ -976,6 +983,8 @@ theorem Converted.canon_idem
   | quot k cv =>
     simp only [Converted.canon, canonValM_run', canonVal_idem (hf cv.levelParams)]
 
+/-- Conditional idempotence of `canonDecl`, given the level-canonicalizer
+idempotence hypothesis `hf : ∀ lps l, canonLevelIn lps (canonLevelIn lps l) = canonLevelIn lps l`. -/
 theorem canonDecl_idem
     (hf : ∀ lps l, canonLevelIn lps (canonLevelIn lps l) = canonLevelIn lps l)
     (d : CDecl .source) :

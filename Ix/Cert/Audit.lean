@@ -3462,9 +3462,13 @@ against the wave's snapshot, applied one by one (`applySeq`). The tasks a
 wave is split into are contiguous slices of the ready blocks and a spawned
 task's value is its function's, so the split (`width`) and the trace
 (`dbg`) change nothing (`compileEnvFold_width`); the IO pipeline's
-`IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Blocks of one wave
-being independent (the reference schedule) stays a test
-(`compile-schedule-identity`, `cert-compile-parity-initstd`).
+`IO.lazyPure` is `pure` of the value (`lazyPure_eq`). Wave-snapshot freshness
+and disjointness across blocks in a wave are proved in `Ix.Cert.FreshSnapshot`
+(feeding `Ix.Cert.RunOwnership`, which proves semantic correctness of the
+wave-snapshot fold directly; that the wave-snapshot fold also equals a
+one-block-at-a-time live-state fold is a property of block independence within
+a wave, not proved in `Ix.Cert.Schedule`), and `Ix.Compile.ReadyCompile.reportIO`
+proves by type that the IO worker-queue pipeline computes `Ix.Cert.compileReport`.
 
 The runtime projects each worker snapshot before spawning its tasks. The
 exact block read frame and task equality add two proof roots. The original
@@ -3855,9 +3859,9 @@ the same environment (`Ix.Cert.Evidence.acceptsRef_covers`). The roles agree
 when every published name whose ingress name is a role's Lean name sits at the
 role table's address for that role (`Ix.Cert.PublishedRolesBound`, decided by
 `publishedRolesBound`; the reading of a role's constant is then at the table's
-address, `Ix.Cert.publishedAddress_role`); `cert-statement`,
-`cert-compile-parity-initstd` and `cert-roles-initstd` run it on the fixtures and
-on Init+Std. `RolesBound` and
+address, `Ix.Cert.publishedAddress_role`); `cert-statement` runs it on the
+fixtures, while `Ix.Compile.ReadyCompile.reportIO` proves by type that the IO
+worker-queue compile returns `Ix.Cert.compileReport`. `RolesBound` and
 `RolesBound.of_closure` are removed; `RolesBound` trusts stored name hashes and is
 superseded by `PublishedRolesBound`. -/
 
@@ -6036,6 +6040,65 @@ fun ixe t cx envQ envA =>
                               Ix.Cert.Published ixe sub ∧ Ix.Cert.IxonCommutesCovering ixe sub t envQ -/
 #guard_msgs (whitespace := lax) in
 #check @Ix.Cert.CompileCorrect.nominal
+
+/-- info: @Ix.Cert.IxonCommutesCovering.nominalBridgeAt : ∀ {P : Ix.Kernel.Mode.source.Id → Prop} {ixe : Ixon.Env}
+  {sub : Ix.Environment} {t : Ix.Kernel.RoleTable} {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.IxonCommutesCovering ixe sub t envQ →
+    Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+      Ix.Cert.NominalModelBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.IxonCommutesCovering.nominalBridgeAt
+
+/-- info: @Ix.Cert.IxonCommutesCovering.nominalPullback : ∀ {ixe : Ixon.Env} {sub : Ix.Environment} {t : Ix.Kernel.RoleTable}
+  {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.IxonCommutesCovering ixe sub t envQ →
+    Ix.Cert.EnvSubstPullback (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+      Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.IxonCommutesCovering.nominalPullback
+
+/-- info: @Ix.Cert.NominalSemanticBridgeAt.of_covering : ∀ {P : Ix.Kernel.Mode.source.Id → Prop} {ixe : Ixon.Env}
+  {sub : Ix.Environment} {t : Ix.Kernel.RoleTable} {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+  Ix.Cert.IxonCommutesCovering ixe sub t envQ →
+    Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+      Ix.Cert.LawModel.Rel (Ix.LeanIngress.Key.subst (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)))
+          envS envQ →
+        Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.NominalSemanticBridgeAt.of_covering
+
+/-- info: Ix.Cert.CompileCorrect.nominalBridgeAt : Ix.Cert.CompileCorrect →
+  ∀ {P : Ix.Kernel.Mode.source.Id → Prop} {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment}
+    {ixe : Ixon.Env} {failures : Ix.Cert.Failures} {t : Ix.Kernel.RoleTable}
+    {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+    Ix.Kernel.Reader.defaultTable = Except.ok t →
+      Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
+        Ix.Cert.EnvSubstRel P (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+          Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+            Ix.Cert.NoFailure failures sub →
+              Ix.Cert.PublishedRolesBound t ixe →
+                Ix.Cert.PublishedAgree ixe →
+                  Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                    Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                      Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalModelBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CompileCorrect.nominalBridgeAt
+
+/-- info: Ix.Cert.CompileCorrect.nominalPullback : Ix.Cert.CompileCorrect →
+  ∀ {env : Ix.Environment} {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Ix.Cert.Failures}
+    {t : Ix.Kernel.RoleTable} {envS envQ : Ix.Kernel.Env Ix.Kernel.Mode.source},
+    Ix.Kernel.Reader.defaultTable = Except.ok t →
+      Ix.Cert.SourceAcceptsQ Ix.Cert.blocksOf env roots sub ixe t envQ →
+        Ix.Cert.EnvSubstPullback (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ →
+          Ix.Cert.compileReport env = Except.ok (ixe, failures) →
+            Ix.Cert.NoFailure failures sub →
+              Ix.Cert.PublishedRolesBound t ixe →
+                Ix.Cert.PublishedAgree ixe →
+                  Ix.Cert.EvidenceCheck.EvidenceAgrees t ixe →
+                    Ix.Cert.RoleClosure.RoleEvidenceChecks →
+                      Ix.Cert.Published ixe sub ∧ Ix.Cert.NominalSemanticBridgeAt ixe sub t envS envQ -/
+#guard_msgs (whitespace := lax) in
+#check @Ix.Cert.CompileCorrect.nominalPullback
 
 /-- info: [cert-audit] final statement: 40 roots; axioms used: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs (whitespace := lax) in

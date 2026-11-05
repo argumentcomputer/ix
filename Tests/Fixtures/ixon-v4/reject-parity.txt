@@ -1,5 +1,5 @@
 # Byte strings every reader of their kind must refuse, in Rust
-# (crates/ixon/tests/reject_parity.rs, crates/kernel/tests/reject_parity.rs)
+# (crates/ixon/tests/reject_parity.rs, every kind but ixes)
 # and in Lean (Tests/Ix/IxonRejectParity.lean, the `ixon-reject-parity`
 # suite), with accepted controls beside them.
 #

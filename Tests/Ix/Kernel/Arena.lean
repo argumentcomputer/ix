@@ -61,7 +61,7 @@ def knownIncompatible : Array (Lean.Name × String) := #[
   (`tut06_bad01,
    "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107"),
   -- AdvNat.rec is a malformed raw recursor payload. Tests.Ix.Kernel.Tutorial
-  -- checks it through a dedicated FFI (`rs_kernel_check_malformed_rec_rule_ixon`)
+  -- checks it through a dedicated path (`rsCheckMalformedRecRuleIxonFFI`)
   -- that injects the bad rule into Ixon.
   (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
    "malformed rec rule; Tutorial uses bespoke FFI"),
@@ -133,9 +133,10 @@ def arenaTests (env : Lean.Environment)
     rawConsts.foldl (fun m ci => m.insert ci.name ci)
       (Std.HashMap.emptyWithCapacity rawConsts.size)
   let (_, closed) := collectDepsWithExtras env rawMap
-    (checks.map (·.name)).toList
+    ((checks.map (·.name)).toList ++ (rawConsts.toList.map (·.name)))
   let allConsts := closed ++ rawConsts.toList.map fun ci => (ci.name, ci)
-  let (rawEnv, _) ← IO.ofExcept (Ix.Cert.compileReport (Ix.CompileM.canonInput allConsts.toArray 32))
+  let (rawEnv, _, _) ← IO.ofExcept <|
+    Ix.Cert.compileUnchecked (Ix.CompileM.canonInput allConsts.toArray 32)
   let ixonEnv ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding rawEnv)
   let mut tests : TestSeq := .done
   for c in checks do

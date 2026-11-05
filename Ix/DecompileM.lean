@@ -37,7 +37,7 @@ def resolveIxName (names : Std.HashMap Address Ix.Name) (addr : Address) : Optio
 
 /-! ## Error Type -/
 
-/-- Decompilation error type. Variant order matches Rust DecompileError (tags 0–11). -/
+/-- Decompilation error type. -/
 inductive DecompileError where
   | invalidRefIndex (idx : UInt64) (refsLen : Nat) (constant : String)
   | invalidUnivIndex (idx : UInt64) (univsLen : Nat) (constant : String)
@@ -49,7 +49,6 @@ inductive DecompileError where
   | blobNotFound (addr : Address)
   | badBlobFormat (addr : Address) (expected : String)
   | badConstantFormat (msg : String)
-  | serializeError (err : Ixon.SerializeError)
   /-- `share idx` occurring in `metaSharing[entry]` outside that entry's
       index space (`ConstantMeta.metaSharing`): with `primaryLen` primary
       and `metaLen` metadata entries, the valid indices are
@@ -70,7 +69,6 @@ def DecompileError.toString : DecompileError → String
   | .blobNotFound addr => s!"Blob not found at: {addr}"
   | .badBlobFormat addr expected => s!"Bad blob format at {addr}, expected {expected}"
   | .badConstantFormat msg => s!"Bad constant format: {msg}"
-  | .serializeError err => s!"Serialization error: {err}"
   | .invalidMetaShareIndex idx entry p q c =>
     if idx.toNat ≥ p + q then
       s!"Invalid metadata share index {idx} in metaSharing[{entry}] of '{c}': \

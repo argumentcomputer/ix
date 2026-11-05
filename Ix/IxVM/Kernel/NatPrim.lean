@@ -11,8 +11,7 @@ namespace IxVM
 
 /-! ## Nat primitive dispatch
 
-Nat/Str/BitVec/decidable reduction, mirroring
-crates/kernel/src/primitive.rs. Recognizes Const-headed applications of
+Nat/Str/BitVec/decidable reduction. Recognizes Const-headed applications of
 Nat.succ / Nat.pred / Nat.add / Nat.sub / Nat.mul / Nat.div / Nat.mod /
 Nat.pow / Nat.gcd / Nat.land / Nat.lor / Nat.xor / Nat.shl / Nat.shr /
 Nat.beq / Nat.ble on Nat literals (or on Nat.zero / App(Nat.succ, ...)
@@ -47,8 +46,8 @@ def natPrim := ⟦
   -- Bool value (0/1) → Const(Bool.false/Bool.true).
   fn mk_bool(rc: RoleCtx, g: G) -> KExpr {
     match g {
-      0 => store(KExprNode.Const(role_addr(rc, role_bool_false()), store(ListNode.Nil))),
-      _ => store(KExprNode.Const(role_addr(rc, role_bool_true()), store(ListNode.Nil))),
+      0 => store(KExprNode.Const(role_addr(rc, @role_bool_false()), store(ListNode.Nil))),
+      _ => store(KExprNode.Const(role_addr(rc, @role_bool_true()), store(ListNode.Nil))),
     }
   }
 
@@ -105,7 +104,7 @@ def natPrim := ⟦
       (head, args) =>
         match load(head) {
           KExprNode.Const(caddr, _) =>
-            match role_is(rc, caddr, role_bit_vec_of_nat()) {
+            match role_is(rc, caddr, @role_bit_vec_of_nat()) {
               1 =>
                 match list_length(args) - 2 {
                   0 => (1, list_lookup(args, 0), list_lookup(args, 1)),
@@ -118,13 +117,13 @@ def natPrim := ⟦
     }
   }
 
-  -- BitVec.toNat / BitVec.ult dispatch: both heads are functions, and the
-  -- spine is prepared (whnf inner (W, N) args first). The class methods
+  -- BitVec.toNat (op 1) / BitVec.ult (op 2) dispatch: both heads are functions,
+  -- and the spine is prepared (whnf inner (W, N) args first). The class methods
   -- `OfNat.ofNat (BitVec w) n inst` and `decide (@LT.lt (BitVec w) inst x
   -- y)` take their value from the instance, so neither is read here.
-  fn try_bitvec_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
+  fn try_bitvec_dispatch(rc: RoleCtx, op: G, spine: List‹KExpr›,
                               types: List‹KExpr›) -> (G, KExpr) {
-    match role_is(rc, head_addr, role_bit_vec_to_nat()) {
+    match op {
       1 =>
         match u32_less_than(list_length(spine), 2) {
           1 => (0, store(KExprNode.BVar(0))),
@@ -137,13 +136,10 @@ def natPrim := ⟦
               (1, kl) => (1, mk_nat_lit(kl)),
             },
         },
-      _ =>
-        match role_is(rc, head_addr, role_bit_vec_ult()) {
-          1 =>
-            let spine_p = bitvec_prep_spine_ult(rc, spine, types);
-            try_reduce_bit_vec_ult(rc, spine_p),
-          _ => (0, store(KExprNode.BVar(0))),
-        },
+      2 =>
+        let spine_p = bitvec_prep_spine_ult(rc, spine, types);
+        try_reduce_bit_vec_ult(rc, spine_p),
+      _ => (0, store(KExprNode.BVar(0))),
     }
   }
 
@@ -178,21 +174,19 @@ def natPrim := ⟦
     }
   }
 
-  -- Native string-value fast paths (mirror crates/kernel/src/primitive.rs
-  -- `string_append` / `string_dec_eq`): literal append and literal
-  -- decidable equality reduce natively in whnf, keeping evaluator-grade
+  -- Native string-value fast paths (`string_append` / `string_dec_eq`):
+  -- literal append and literal decidable equality reduce natively in
+  -- whnf, keeping evaluator-grade
   -- string values out of the structural ByteArray/UTF-8 model.
 
-  -- String primitive dispatch. Handles:
-  -- - String.utf8ByteSize (Lit(Str))          -> Lit(Nat len)
-  -- - String.append (Lit(Str), Lit(Str))      -> Lit(Str concat)
-  -- - String.ofList / String.mk (char-list)   -> Lit(Str) via UTF-8 fold
+  -- String primitive dispatch (`op`: 1 ofList, 2 utf8ByteSize, 3 back,
+  -- 4 toByteArray, 5 decEq, 6 append).
   -- Caller pre-whnfs spine's outermost args; the ofList arm recursively
   -- whnfs Cons tails to reach further literal-ctor nodes.
-  fn try_str_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
+  fn try_str_dispatch(rc: RoleCtx, head_addr: Addr, op: G, spine: List‹KExpr›,
                           types: List‹KExpr›) -> (G, KExpr) {
     let spine_len = list_length(spine);
-    match role_is(rc, head_addr, role_string_of_list()) {
+    match op {
       1 =>
         match spine_len {
           1 =>
@@ -202,9 +196,7 @@ def natPrim := ⟦
             },
           _ => (0, store(KExprNode.BVar(0))),
         },
-      _ =>
-    match role_is(rc, head_addr, role_string_utf8_byte_size()) {
-      1 =>
+      2 =>
         match u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
@@ -225,48 +217,35 @@ def natPrim := ⟦
               _ => (0, store(KExprNode.BVar(0))),
             },
         },
-      _ =>
-    match role_is(rc, head_addr, role_string_back()) {
-      1 => try_str_back(rc, spine),
-      _ =>
-    match role_is(rc, head_addr, role_string_to_byte_array()) {
-      1 => try_str_to_byte_array(rc, spine),
-      _ =>
-    match role_is(rc, head_addr, role_string_dec_eq()) {
-      1 => try_str_dec_eq(rc, head_addr, spine, types),
-      _ =>
-        match role_is(rc, head_addr, role_string_append()) {
-          1 =>
-            match u32_less_than(spine_len, 2) {
-              1 => (0, store(KExprNode.BVar(0))),
-              _ =>
-                let a0 = list_lookup(spine, 0);
-                let a1 = list_lookup(spine, 1);
-                match load(a0) {
-                  KExprNode.Lit(la) =>
-                    match la {
-                      KLiteral.Str(sa) =>
-                        match load(a1) {
-                          KExprNode.Lit(lb) =>
-                            match lb {
-                              KLiteral.Str(sb) =>
-                                let joined = list_concat(sa, sb);
-                                (1, store(KExprNode.Lit(KLiteral.Str(joined)))),
-                              _ => (0, store(KExprNode.BVar(0))),
-                            },
+      3 => try_str_back(rc, spine),
+      4 => try_str_to_byte_array(rc, spine),
+      5 => try_str_dec_eq(rc, head_addr, spine, types),
+      6 =>
+        match u32_less_than(spine_len, 2) {
+          1 => (0, store(KExprNode.BVar(0))),
+          _ =>
+            let a0 = list_lookup(spine, 0);
+            let a1 = list_lookup(spine, 1);
+            match load(a0) {
+              KExprNode.Lit(la) =>
+                match la {
+                  KLiteral.Str(sa) =>
+                    match load(a1) {
+                      KExprNode.Lit(lb) =>
+                        match lb {
+                          KLiteral.Str(sb) =>
+                            let joined = list_concat(sa, sb);
+                            (1, store(KExprNode.Lit(KLiteral.Str(joined)))),
                           _ => (0, store(KExprNode.BVar(0))),
                         },
                       _ => (0, store(KExprNode.BVar(0))),
                     },
                   _ => (0, store(KExprNode.BVar(0))),
                 },
+              _ => (0, store(KExprNode.BVar(0))),
             },
-          _ => (0, store(KExprNode.BVar(0))),
         },
-    },
-    },
-    },
-    },
+      _ => (0, store(KExprNode.BVar(0))),
     }
   }
 
@@ -283,7 +262,7 @@ def natPrim := ⟦
                 let cp = utf8_last_codepoint(bs);
                 let cp_limbs = klimbs_from_g(cp);
                 let cp_lit = store(KExprNode.Lit(KLiteral.Nat(cp_limbs)));
-                let con = store(KExprNode.Const(role_used_implicitly(rc, role_char_of_nat()),
+                let con = store(KExprNode.Const(role_used_implicitly(rc, @role_char_of_nat()),
                                                  store(ListNode.Nil)));
                 (1, store(KExprNode.App(con, cp_lit))),
               _ => (0, store(KExprNode.BVar(0))),
@@ -305,7 +284,7 @@ def natPrim := ⟦
               KLiteral.Str(bs) =>
                 match load(bs) {
                   ListNode.Nil =>
-                    (1, store(KExprNode.Const(role_used_implicitly(rc, role_byte_array_empty()),
+                    (1, store(KExprNode.Const(role_used_implicitly(rc, @role_byte_array_empty()),
                                                 store(ListNode.Nil)))),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
@@ -470,14 +449,14 @@ def natPrim := ⟦
   fn str_lit_to_ctor(rc: RoleCtx, bs: ByteStream) -> KExpr {
     let zero_lvl = store(KLevelNode.Zero);
     let ulvls = store(ListNode.Cons(zero_lvl, store(ListNode.Nil)));
-    let nil_const = store(KExprNode.Const(role_used_implicitly(rc, role_list_nil()), ulvls));
-    let cons_const = store(KExprNode.Const(role_used_implicitly(rc, role_list_cons()), ulvls));
+    let nil_const = store(KExprNode.Const(role_used_implicitly(rc, @role_list_nil()), ulvls));
+    let cons_const = store(KExprNode.Const(role_used_implicitly(rc, @role_list_cons()), ulvls));
     let char_const =
-      store(KExprNode.Const(role_used_implicitly(rc, role_char()), store(ListNode.Nil)));
+      store(KExprNode.Const(role_used_implicitly(rc, @role_char()), store(ListNode.Nil)));
     let con_const =
-      store(KExprNode.Const(role_used_implicitly(rc, role_char_of_nat()), store(ListNode.Nil)));
+      store(KExprNode.Const(role_used_implicitly(rc, @role_char_of_nat()), store(ListNode.Nil)));
     let str_const =
-      store(KExprNode.Const(role_used_implicitly(rc, role_string_of_list()), store(ListNode.Nil)));
+      store(KExprNode.Const(role_used_implicitly(rc, @role_string_of_list()), store(ListNode.Nil)));
     let nil_app = store(KExprNode.App(nil_const, char_const));
     let cons_partial = store(KExprNode.App(cons_const, char_const));
     let list_expr = build_char_list(bs, nil_app, cons_partial, con_const);
@@ -597,14 +576,14 @@ def natPrim := ⟦
       (head, args) =>
         match load(head) {
           KExprNode.Const(caddr, _) =>
-            match role_is(rc, caddr, role_list_nil()) {
+            match role_is(rc, caddr, @role_list_nil()) {
               1 =>
                 match list_length(args) {
                   1 => (1, store(ListNode.Nil)),
                   _ => (0, store(ListNode.Nil)),
                 },
               _ =>
-                match role_is(rc, caddr, role_list_cons()) {
+                match role_is(rc, caddr, @role_list_cons()) {
                   0 => (0, store(ListNode.Nil)),
                   _ =>
                     match list_length(args) {
@@ -643,7 +622,7 @@ def natPrim := ⟦
       KExprNode.App(f, arg) =>
         match load(f) {
           KExprNode.Const(caddr, _) =>
-            match role_is(rc, caddr, role_char_of_nat()) {
+            match role_is(rc, caddr, @role_char_of_nat()) {
               0 => (0, 0),
               _ =>
                 match load(arg) {
@@ -780,7 +759,7 @@ def natPrim := ⟦
           _ => (0, store(ListNode.Nil)),
         },
       KExprNode.Const(caddr, _) =>
-        match role_is(rc, caddr, role_nat_zero()) {
+        match role_is(rc, caddr, @role_nat_zero()) {
           1 => (1, store(ListNode.Nil)),
           _ => (0, store(ListNode.Nil)),
         },
@@ -795,7 +774,7 @@ def natPrim := ⟦
   fn try_extract_nat_app(rc: RoleCtx, f: KExpr, a: KExpr) -> (G, KLimbs) {
     match load(f) {
       KExprNode.Const(caddr, _) =>
-        match role_is(rc, caddr, role_nat_succ()) {
+        match role_is(rc, caddr, @role_nat_succ()) {
           1 =>
             match try_extract_nat(rc, a) {
               (1, pred_limbs) => (1, klimbs_succ(pred_limbs)),
@@ -817,9 +796,9 @@ def natPrim := ⟦
     match load(e) {
       KExprNode.App(f, a) => match load(f) {
         KExprNode.Const(caddr, _) => match try_extract_nat(rc, a) {
-          (1, n) => match role_is(rc, caddr, role_int_of_nat()) {
+          (1, n) => match role_is(rc, caddr, @role_int_of_nat()) {
             1 => (1, 0, klimbs_normalize(n)),
-            _ => match role_is(rc, caddr, role_int_neg_succ()) {
+            _ => match role_is(rc, caddr, @role_int_neg_succ()) {
               1 => (1, 1, klimbs_normalize(klimbs_succ(n))),
               _ => (0, 0, store(ListNode.Nil)),
             },
@@ -836,8 +815,8 @@ def natPrim := ⟦
     let mag = klimbs_normalize(magnitude);
     let neg = sign * (1 - klimbs_is_zero(mag));
     let caddr = match neg {
-      0 => role_used_implicitly(rc, role_int_of_nat()),
-      _ => role_used_implicitly(rc, role_int_neg_succ()),
+      0 => role_used_implicitly(rc, @role_int_of_nat()),
+      _ => role_used_implicitly(rc, @role_int_neg_succ()),
     };
     let arg = match neg { 0 => mag, _ => klimbs_normalize(klimbs_dec(mag)), };
     store(KExprNode.App(store(KExprNode.Const(caddr, store(ListNode.Nil))), mk_nat_lit(arg)))
@@ -921,18 +900,17 @@ def natPrim := ⟦
     }
   }
 
-  fn try_int_prim_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
+  fn try_int_prim_dispatch(rc: RoleCtx, op: G, spine: List‹KExpr›,
                                 types: List‹KExpr›) -> (G, KExpr) {
     let sw = whnf_spine(rc, spine, types);
     let n = list_length(sw);
-    let unary = role_is(rc, head_addr, role_int_neg()) + role_is(rc, head_addr, role_int_nat_abs());
-    match unary {
-      1 => match u32_less_than(n, 1) {
+    match op {
+      1 | 2 => match u32_less_than(n, 1) {
         1 => (0, store(KExprNode.BVar(0))),
         _ => match try_extract_int_prim(rc, list_lookup(sw, 0)) {
           (1, s, a) =>
-            let v = match role_is(rc, head_addr, role_int_nat_abs()) {
-              1 => mk_nat_lit(a),
+            let v = match op {
+              2 => mk_nat_lit(a),
               _ => mk_int_prim(rc, (1 - s) * (1 - klimbs_is_zero(a)), a),
             };
             (1, np_apply_spine(v, list_drop(sw, 1))),
@@ -942,48 +920,38 @@ def natPrim := ⟦
       _ => match u32_less_than(n, 2) {
         1 => (0, store(KExprNode.BVar(0))),
         _ => match try_extract_int_prim(rc, list_lookup(sw, 0)) {
-          (1, sa, a) => try_int_prim_second(rc, head_addr, sw, sa, a),
+          (1, sa, a) => try_int_prim_second(rc, op, sw, sa, a),
           _ => (0, store(KExprNode.BVar(0))),
         },
       },
     }
   }
 
-  fn try_int_prim_second(rc: RoleCtx, head_addr: Addr, sw: List‹KExpr›,
+  fn try_int_prim_second(rc: RoleCtx, op: G, sw: List‹KExpr›,
                               sa: G, a: KLimbs) -> (G, KExpr) {
-    let rhs_nat = role_is(rc, head_addr, role_int_bmod())
-      + role_is(rc, head_addr, role_int_bdiv()) + role_is(rc, head_addr, role_int_pow());
-    match rhs_nat {
-      1 => match try_extract_nat(rc, list_lookup(sw, 1)) {
+    match op {
+      3 | 4 | 5 => match try_extract_nat(rc, list_lookup(sw, 1)) {
         (1, b) =>
-          let v = match role_is(rc, head_addr, role_int_bmod()) {
-            1 => int_bmod_prim(rc, sa, a, b),
-            _ => match role_is(rc, head_addr, role_int_bdiv()) {
-              1 => int_bdiv_prim(rc, sa, a, b),
-              _ =>
-                let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
-                let odd = 1 - klimbs_is_zero(klimbs_mod(b, two));
-                mk_int_prim(rc, sa * odd, klimbs_pow(a, b)),
-            },
+          let v = match op {
+            3 => int_bmod_prim(rc, sa, a, b),
+            4 => int_bdiv_prim(rc, sa, a, b),
+            _ =>
+              let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+              let odd = 1 - klimbs_is_zero(klimbs_mod(b, two));
+              mk_int_prim(rc, sa * odd, klimbs_pow(a, b)),
           };
           (1, np_apply_spine(v, list_drop(sw, 2))),
         _ => (0, store(KExprNode.BVar(0))),
       },
       _ => match try_extract_int_prim(rc, list_lookup(sw, 1)) {
         (1, sb, b) =>
-          let v = match role_is(rc, head_addr, role_int_add()) {
-            1 => int_add_prim(rc, sa, a, sb, b),
-            _ => match role_is(rc, head_addr, role_int_sub()) {
-              1 => int_add_prim(rc, sa, a, (1 - sb) * (1 - klimbs_is_zero(b)), b),
-              _ => match role_is(rc, head_addr, role_int_mul()) {
-                1 => mk_int_prim(rc, (sa + sb - 2 * sa * sb)
-                  * (1 - klimbs_is_zero(a)) * (1 - klimbs_is_zero(b)), klimbs_mul(a, b)),
-                _ => match role_is(rc, head_addr, role_int_emod()) {
-                  1 => int_emod_prim(rc, sa, a, b),
-                  _ => int_ediv_prim(rc, sa, a, sb, b),
-                },
-              },
-            },
+          let v = match op {
+            6 => int_add_prim(rc, sa, a, sb, b),
+            7 => int_add_prim(rc, sa, a, (1 - sb) * (1 - klimbs_is_zero(b)), b),
+            8 => mk_int_prim(rc, (sa + sb - 2 * sa * sb)
+              * (1 - klimbs_is_zero(a)) * (1 - klimbs_is_zero(b)), klimbs_mul(a, b)),
+            9 => int_emod_prim(rc, sa, a, b),
+            _ => int_ediv_prim(rc, sa, a, sb, b),
           };
           (1, np_apply_spine(v, list_drop(sw, 2))),
         _ => (0, store(KExprNode.BVar(0))),
@@ -1003,64 +971,25 @@ def natPrim := ⟦
   }
 
   -- ============================================================================
-  -- Binop dispatch by head address on two literal args.
+  -- Binop dispatch by op code on two literal args.
   -- ============================================================================
-  fn try_nat_binop_addr(rc: RoleCtx, head_addr: Addr, a: KLimbs, b: KLimbs) -> (G, KExpr) {
-    match role_is(rc, head_addr, role_nat_add()) {
-      1 => (1, mk_nat_lit(klimbs_normalize(klimbs_add(a, b)))),
-      _ =>
-      match role_is(rc, head_addr, role_nat_sub()) {
-        1 => (1, mk_nat_lit(klimbs_normalize(klimbs_sub(a, b)))),
-        _ =>
-        match role_is(rc, head_addr, role_nat_mul()) {
-          1 => (1, mk_nat_lit(klimbs_normalize(klimbs_mul(a, b)))),
-          _ =>
-          match role_is(rc, head_addr, role_nat_div()) {
-            1 => (1, mk_nat_lit(klimbs_normalize(klimbs_div(a, b)))),
-            _ =>
-            match role_is(rc, head_addr, role_nat_mod()) {
-              1 => (1, mk_nat_lit(klimbs_normalize(klimbs_mod(a, b)))),
-              _ =>
-              match role_is(rc, head_addr, role_nat_gcd()) {
-                1 => (1, mk_nat_lit(klimbs_normalize(klimbs_gcd(a, b)))),
-                _ =>
-                match role_is(rc, head_addr, role_nat_pow()) {
-                  1 => (1, mk_nat_lit(klimbs_normalize(klimbs_pow(a, b)))),
-                  _ =>
-                  match role_is(rc, head_addr, role_nat_land()) {
-                    1 => (1, mk_nat_lit(klimbs_normalize(klimbs_land(a, b)))),
-                    _ =>
-                    match role_is(rc, head_addr, role_nat_lor()) {
-                      1 => (1, mk_nat_lit(klimbs_normalize(klimbs_lor(a, b)))),
-                      _ =>
-                      match role_is(rc, head_addr, role_nat_xor()) {
-                        1 => (1, mk_nat_lit(klimbs_normalize(klimbs_xor_op(a, b)))),
-                        _ =>
-                        match role_is(rc, head_addr, role_nat_shift_left()) {
-                          1 => (1, mk_nat_lit(klimbs_normalize(klimbs_shl(a, b)))),
-                          _ =>
-                          match role_is(rc, head_addr, role_nat_shift_right()) {
-                            1 => (1, mk_nat_lit(klimbs_normalize(klimbs_shr(a, b)))),
-                            _ =>
-                            match role_is(rc, head_addr, role_nat_beq()) {
-                              1 => (1, mk_bool(rc, klimbs_eq(a, b))),
-                              _ =>
-                              match role_is(rc, head_addr, role_nat_ble()) {
-                                1 => (1, mk_bool(rc, klimbs_le(a, b))),
-                                _ => (0, store(KExprNode.BVar(0))),
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+  fn try_nat_binop_addr(rc: RoleCtx, op: G, a: KLimbs, b: KLimbs) -> (G, KExpr) {
+    match op {
+      3 => (1, mk_nat_lit(klimbs_normalize(klimbs_add(a, b)))),
+      4 => (1, mk_nat_lit(klimbs_normalize(klimbs_sub(a, b)))),
+      5 => (1, mk_nat_lit(klimbs_normalize(klimbs_mul(a, b)))),
+      6 => (1, mk_nat_lit(klimbs_normalize(klimbs_div(a, b)))),
+      7 => (1, mk_nat_lit(klimbs_normalize(klimbs_mod(a, b)))),
+      8 => (1, mk_nat_lit(klimbs_normalize(klimbs_gcd(a, b)))),
+      9 => (1, mk_nat_lit(klimbs_normalize(klimbs_pow(a, b)))),
+      10 => (1, mk_nat_lit(klimbs_normalize(klimbs_land(a, b)))),
+      11 => (1, mk_nat_lit(klimbs_normalize(klimbs_lor(a, b)))),
+      12 => (1, mk_nat_lit(klimbs_normalize(klimbs_xor_op(a, b)))),
+      13 => (1, mk_nat_lit(klimbs_normalize(klimbs_shl(a, b)))),
+      14 => (1, mk_nat_lit(klimbs_normalize(klimbs_shr(a, b)))),
+      15 => (1, mk_bool(rc, klimbs_eq(a, b))),
+      16 => (1, mk_bool(rc, klimbs_le(a, b))),
+      _ => (0, store(KExprNode.BVar(0))),
     }
   }
 
@@ -1073,7 +1002,7 @@ def natPrim := ⟦
   fn try_match_nat_add(rc: RoleCtx, head: KExpr, args: List‹KExpr›) -> (G, KExpr, KLimbs) {
     match load(head) {
       KExprNode.Const(caddr, _) =>
-        match role_is(rc, caddr, role_nat_add()) {
+        match role_is(rc, caddr, @role_nat_add()) {
           0 => (0, head, store(ListNode.Nil)),
           _ =>
             match list_length(args) - 2 {
@@ -1101,11 +1030,11 @@ def natPrim := ⟦
     let one = store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
                                   store(ListNode.Nil)));
     let pred_lit_norm = klimbs_normalize(klimbs_sub(lit, one));
-    let succ_const = store(KExprNode.Const(role_addr(rc, role_nat_succ()), store(ListNode.Nil)));
+    let succ_const = store(KExprNode.Const(role_addr(rc, @role_nat_succ()), store(ListNode.Nil)));
     match klimbs_is_zero(pred_lit_norm) {
       1 => store(KExprNode.App(succ_const, base)),
       _ =>
-        let add_const = store(KExprNode.Const(role_addr(rc, role_nat_add()), store(ListNode.Nil)));
+        let add_const = store(KExprNode.Const(role_addr(rc, @role_nat_add()), store(ListNode.Nil)));
         let pred_lit_expr = store(KExprNode.Lit(KLiteral.Nat(pred_lit_norm)));
         let pred = store(KExprNode.App(
           store(KExprNode.App(add_const, base)),
@@ -1150,7 +1079,7 @@ def natPrim := ⟦
     match klimbs_is_zero(n) {
       1 => (1, np_apply_spine(base_w, post)),
       _ =>
-        let add_const = store(KExprNode.Const(role_addr(rc, role_nat_add()), store(ListNode.Nil)));
+        let add_const = store(KExprNode.Const(role_addr(rc, @role_nat_add()), store(ListNode.Nil)));
         let off = store(KExprNode.App(
           store(KExprNode.App(add_const, base_w)),
           mk_nat_lit(n)));
@@ -1168,7 +1097,7 @@ def natPrim := ⟦
               (head, args) =>
                 match load(head) {
                   KExprNode.Const(caddr, _) =>
-                    match role_is(rc, caddr, role_nat_succ()) {
+                    match role_is(rc, caddr, @role_nat_succ()) {
                       0 => 0,
                       _ =>
                         match list_length(args) - 1 {
@@ -1223,12 +1152,10 @@ def natPrim := ⟦
   -- Top-level nat dispatch: unary (succ/pred) then binop.
   -- Caller must whnf spine args before matching Ctor / Lit / literal.
   -- ============================================================================
-  fn try_nat_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
+  fn try_nat_dispatch(rc: RoleCtx, head_addr: Addr, op: G, spine: List‹KExpr›,
                           types: List‹KExpr›) -> (G, KExpr) {
     let spine_len = list_length(spine);
-    let is_pred = role_is(rc, head_addr, role_nat_pred());
-    let is_succ = role_is(rc, head_addr, role_nat_succ());
-    match is_succ {
+    match op {
       1 =>
         match u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
@@ -1241,22 +1168,19 @@ def natPrim := ⟦
               _ => (0, store(KExprNode.BVar(0))),
             },
         },
-      _ =>
-        match is_pred {
-          1 =>
-            match u32_less_than(spine_len, 1) {
-              1 => (0, store(KExprNode.BVar(0))),
-              _ =>
-                let a0 = list_lookup(spine, 0);
-                match try_extract_nat(rc, a0) {
-                  (1, na) =>
-                    let post = list_drop(spine, 1);
-                    (1, np_apply_spine(mk_nat_lit(klimbs_normalize(klimbs_dec(na))), post)),
-                  _ => (0, store(KExprNode.BVar(0))),
-                },
+      2 =>
+        match u32_less_than(spine_len, 1) {
+          1 => (0, store(KExprNode.BVar(0))),
+          _ =>
+            let a0 = list_lookup(spine, 0);
+            match try_extract_nat(rc, a0) {
+              (1, na) =>
+                let post = list_drop(spine, 1);
+                (1, np_apply_spine(mk_nat_lit(klimbs_normalize(klimbs_dec(na))), post)),
+              _ => (0, store(KExprNode.BVar(0))),
             },
-          _ => try_nat_binop_dispatch(rc, head_addr, spine, spine_len),
         },
+      _ => try_nat_binop_dispatch(rc, head_addr, op, spine, spine_len),
     }
   }
 
@@ -1266,7 +1190,7 @@ def natPrim := ⟦
   -- apply_spine) is the widest arm of try_nat_dispatch, taxing
   -- every Nat.succ/Nat.pred row when inlined. Its width now only
   -- charges rows that actually dispatch a binop.
-  fn try_nat_binop_dispatch(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
+  fn try_nat_binop_dispatch(rc: RoleCtx, head_addr: Addr, op: G, spine: List‹KExpr›,
                                  spine_len: G) -> (G, KExpr) {
     match u32_less_than(spine_len, 2) {
       1 => (0, store(KExprNode.BVar(0))),
@@ -1277,7 +1201,7 @@ def natPrim := ⟦
           (1, na) =>
             match try_extract_nat(rc, a1) {
               (1, nb) =>
-                match try_nat_binop_addr(rc, head_addr, na, nb) {
+                match try_nat_binop_addr(rc, op, na, nb) {
                   (1, result) =>
                     let post = list_drop(spine, 2);
                     (1, np_apply_spine(result, post)),
@@ -1290,7 +1214,7 @@ def natPrim := ⟦
             -- (mirror try_nat_binop_dispatch's fall-through).
             match try_extract_nat(rc, a1) {
               (1, nb) =>
-                try_nat_offset_dispatch(rc, head_addr, a0, nb, spine),
+                try_nat_offset_dispatch(rc, head_addr, op, a0, nb, spine),
               _ => (0, store(KExprNode.BVar(0))),
             },
         },
@@ -1304,30 +1228,27 @@ def natPrim := ⟦
   -- compact offset form" so whnf keeps it instead of delta-unfolding
   -- into a succ^nb tower / the division algorithm. Pairs with the
   -- offset-aware def_eq (try_def_eq_nat).
-  fn try_nat_offset_dispatch(rc: RoleCtx, head_addr: Addr, a0_w: KExpr, nb: KLimbs,
+  fn try_nat_offset_dispatch(rc: RoleCtx, head_addr: Addr, op: G, a0_w: KExpr, nb: KLimbs,
                                   spine: List‹KExpr›) -> (G, KExpr) {
-    let is_add = role_is(rc, head_addr, role_nat_add());
-    let is_divmod = role_is(rc, head_addr, role_nat_div())
-      + role_is(rc, head_addr, role_nat_mod());
-    let eligible =
-      is_add + is_divmod * (1 - klimbs_is_zero(nb))
-        * (1 - klimbs_is_zero(klimbs_normalize(klimbs_dec(nb))));
-    match eligible {
-      0 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        let post = list_drop(spine, 2);
-        -- `Nat.add` keeps the canonical add-offset shape (shared with
-        -- the linear-rec collapse). Div/mod MUST keep their own head:
-        -- routing them through the add builder rewrites `x / n` into
-        -- `x + n`.
-        match is_add {
-          1 =>
-            match mk_nat_offset_stuck(rc, a0_w, nb, post) {
-              (1, stuck) => (2, stuck),
-              _ => (0, store(KExprNode.BVar(0))),
-            },
+    let post = list_drop(spine, 2);
+    -- `Nat.add` keeps the canonical add-offset shape (shared with
+    -- the linear-rec collapse). Div/mod MUST keep their own head:
+    -- routing them through the add builder rewrites `x / n` into
+    -- `x + n`.
+    match op {
+      3 =>
+        match mk_nat_offset_stuck(rc, a0_w, nb, post) {
+          (1, stuck) => (2, stuck),
+          _ => (0, store(KExprNode.BVar(0))),
+        },
+      6 | 7 =>
+        let ge_two = (1 - klimbs_is_zero(nb))
+          * (1 - klimbs_is_zero(klimbs_normalize(klimbs_dec(nb))));
+        match ge_two {
+          0 => (0, store(KExprNode.BVar(0))),
           _ => (2, mk_nat_binop_stuck(head_addr, a0_w, nb, post)),
         },
+      _ => (0, store(KExprNode.BVar(0))),
     }
   }
 

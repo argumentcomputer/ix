@@ -1,25 +1,21 @@
 /-
   Ix.Ground: groundedness checking for Lean environment constants.
 
-  Pure-Lean port of Rust `crates/compile/src/ground.rs` (compiler
-  alignment). A constant is "grounded" if all its references resolve to
+  A constant is "grounded" if all its references resolve to
   known constants, all bound variables are in scope, and no metavariables
   remain. Ungroundedness propagates through the reference graph: if A
   references ungrounded B, then A is also ungrounded.
 
   Map types: the reverse-reference graph parameter uses `Map Name (Set
   Name)` — the `Ix.Common` aliases for `Std.HashMap` / `Std.HashSet` —
-  which is exactly the shape `Ix.GraphM` produces (`GraphM.env : ... →
-  Map Ix.Name (Set Ix.Name)`) and mirrors Rust `RefMap =
-  FxHashMap<Name, FxHashSet<Name>>` (crates/compile/src/graph.rs:30).
+  which is the shape `Ix.GraphM.envSerial` produces (`GraphM.envSerial :
+  Environment → Map Ix.Name (Set Ix.Name)`).
 
-  Determinism contract (vs Rust rayon parallelism): the immediate scan
-  checks each constant independently, so the RESULT SET of ungrounded
-  names (and the error kind of each immediately-ungrounded constant) is
-  independent of iteration order — in Rust (par_iter) and here
-  (sequential) alike. Transitive `ref` attribution payloads depend on
-  worklist pop order and are NOT contract-stable; see
-  `proliferateUngrounded`.
+  Determinism contract: the immediate scan checks each constant
+  independently, so the RESULT SET of ungrounded names (and the error kind
+  of each immediately-ungrounded constant) is independent of iteration
+  order. Transitive `ref` attribution payloads depend on worklist pop order
+  and are NOT contract-stable; see `proliferateUngrounded`.
 -/
 module
 

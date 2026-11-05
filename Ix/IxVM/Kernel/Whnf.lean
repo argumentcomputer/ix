@@ -53,7 +53,7 @@ def whnf := ⟦
     }
   }
 
-  -- Multi-arg beta (mirror crates/kernel/src/whnf.rs): peel the whole
+  -- Multi-arg beta: peel the whole
   -- telescope and substitute all consumed args in ONE `expr_inst_many` walk,
   -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
   -- stay on the cheap `expr_inst1` path (no list overhead).
@@ -154,10 +154,10 @@ def whnf := ⟦
   -- Pre-whnf wrapper for nat dispatch: whnfs unary/binop args first
   -- (2 first args or 1 first arg for succ/pred), then calls
   -- try_nat_dispatch.
-  fn try_nat_dispatch_prewhnf(rc: RoleCtx, head_addr: Addr, spine: List‹KExpr›,
+  fn try_nat_dispatch_prewhnf(rc: RoleCtx, head_addr: Addr, op: G, spine: List‹KExpr›,
                                     types: List‹KExpr›) -> (G, KExpr) {
     let spine_w = whnf_spine(rc, spine, types);
-    @try_nat_dispatch(rc, head_addr, spine_w, types)
+    @try_nat_dispatch(rc, head_addr, op, spine_w, types)
   }
 
   -- Address-keyed primitive dispatch. Runs BEFORE KConstantInfo
@@ -202,27 +202,27 @@ def whnf := ⟦
   -- Replaces running the is_* gauntlet from try_prim_dispatch, whose key
   -- includes the spine and context — 5 wide rows per Const-head whnf,
   -- almost all guaranteed misses.
-  fn prim_family(rc: RoleCtx, a: Addr) -> G {
+  fn prim_family(rc: RoleCtx, a: Addr) -> (G, G) {
     let r1 = role_index_of(rc, a);
-    let f = match r1 { 0 => 0, _ => role_prim_family(r1 - 1), };
+    let (f, op) = match r1 { 0 => (0, 0), _ => role_prim_family(r1 - 1), };
     match f {
-      0 => 0,
-      _ => match role_of(rc, a) { 0 => 0, _ => f, },
+      0 => (0, 0),
+      _ => match role_of(rc, a) { 0 => (0, 0), _ => (f, op), },
     }
   }
 
   fn try_prim_dispatch(rc: RoleCtx, addr: Addr, lvls: List‹KLevel›,
                             spine: List‹KExpr›,
                             types: List‹KExpr›) -> (G, KExpr) {
-    let fam = prim_family(rc, addr);
+    let (fam, op) = prim_family(rc, addr);
     match fam {
-      1 => try_nat_dispatch_prewhnf(rc, addr, spine, types),
+      1 => try_nat_dispatch_prewhnf(rc, addr, op, spine, types),
       2 =>
         let spine_w = whnf_spine(rc, spine, types);
-        try_str_dispatch(rc, addr, spine_w, types),
-      3 => try_bitvec_dispatch(rc, addr, spine, types),
-      5 => try_dec_dispatch(rc, addr, lvls, spine, types),
-      6 => try_int_prim_dispatch(rc, addr, spine, types),
+        try_str_dispatch(rc, addr, op, spine_w, types),
+      3 => try_bitvec_dispatch(rc, op, spine, types),
+      5 => try_dec_dispatch(rc, addr, op, lvls, spine, types),
+      6 => try_int_prim_dispatch(rc, op, spine, types),
       _ => (0, store(KExprNode.BVar(0))),
     }
   }
@@ -239,10 +239,10 @@ def whnf := ⟦
   -- decide by identity (lean4lean `quotReduceRec`, `Quot.lean:85-100`).
   fn try_quot_iota(rc: RoleCtx, addr: Addr, spine: List‹KExpr›,
                          types: List‹KExpr›) -> (G, KExpr) {
-    match role_is(rc, addr, role_quot_lift()) {
+    match role_is(rc, addr, @role_quot_lift()) {
       1 => try_quot_lift(rc, spine, types),
       _ =>
-        match role_is(rc, addr, role_quot_ind()) {
+        match role_is(rc, addr, @role_quot_ind()) {
           1 => try_quot_ind(rc, spine, types),
           _ => (0, store(KExprNode.BVar(0))),
         },
@@ -294,7 +294,7 @@ def whnf := ⟦
       (head, args) =>
         match load(head) {
           KExprNode.Const(caddr, _) =>
-            match role_is(rc, caddr, role_quot_mk()) {
+            match role_is(rc, caddr, @role_quot_mk()) {
               1 =>
                 match list_length(args) - 3 {
                   0 => (1, list_lookup(args, 2)),
@@ -421,8 +421,7 @@ def whnf := ⟦
   }
 
   -- Recognize `λ x_1 ... x_n → Prj S i (BVar k)` and rewrite an
-  -- application of the constant to a direct Prj. Mirrors the Rust
-  -- implementation in crates/kernel/src. Pure perf — standard
+  -- application of the constant to a direct Prj. Pure perf — standard
   -- delta+beta produces the same result — but keeps binder-type WHNF
   -- inside a proj scrutinee stuck at Const-inductive form rather than
   -- descending into the body and getting stuck at a partially-applied
@@ -464,24 +463,23 @@ def whnf := ⟦
     }
   }
 
-  -- Canonical Nat.zero / Nat.succ addrs. Mirror
-  -- crates/kernel/src, 490).
+  -- Canonical Nat.zero / Nat.succ addrs.
 
   -- Convert `Lit(Nat n)` to `Nat.zero` or `App(Nat.succ, Lit(n-1))`.
   -- Non-Lit inputs pass through unchanged. Enables iota to fire on
-  -- Lit majors.  Mirror crates/kernel/src.
+  -- Lit majors.
   fn nat_lit_to_ctor_or_self(rc: RoleCtx, e: KExpr) -> KExpr {
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
           KLiteral.Nat(klimbs) =>
             match klimbs_is_zero(klimbs) {
-              1 => store(KExprNode.Const(role_addr(rc, role_nat_zero()),
+              1 => store(KExprNode.Const(role_addr(rc, @role_nat_zero()),
                                           store(ListNode.Nil))),
               _ =>
                 let pred_limbs = klimbs_normalize(klimbs_dec(klimbs));
                 let pred = store(KExprNode.Lit(KLiteral.Nat(pred_limbs)));
-                let succ_const = store(KExprNode.Const(role_addr(rc, role_nat_succ()),
+                let succ_const = store(KExprNode.Const(role_addr(rc, @role_nat_succ()),
                                                        store(ListNode.Nil)));
                 store(KExprNode.App(succ_const, pred)),
             },
@@ -492,8 +490,7 @@ def whnf := ⟦
   }
 
   -- K-recursor synth: fire rule[0] assuming the nullary K-ctor, but only
-  -- when the toCtorWhenK gate holds (mirror try_synth_k_ctor,
-  -- crates/kernel/src: infer the major's type, require its
+  -- when the toCtorWhenK gate holds: infer the major's type, require its
   -- head to be this recursor's inductive, synthesize the ctor app from
   -- the type's params, and require def_eq(major_ty, ctor_ty). Without
   -- the gate, an Eq.rec transport whose endpoints differ symbolically
@@ -546,8 +543,7 @@ def whnf := ⟦
 
   -- The toCtorWhenK gate: 1 iff whnf(rc, infer(major)) is `I params indices`
   -- for this recursor's own inductive AND the synthesized ctor app
-  -- `I.ctor params` has type def-eq to the major's. Mirror
-  -- try_synth_k_ctor's verification step.
+  -- `I.ctor params` has type def-eq to the major's.
   fn k_synth_gate(rc: RoleCtx, raw_major: KExpr, cidx: G, nparams: G,
                       rec_parent: Addr, types: List‹KExpr›) -> G {
     let major_ty = k_infer(rc, raw_major, types);
@@ -587,8 +583,7 @@ def whnf := ⟦
   -- major argument. If it's a Ctor application matching one of the
   -- rules, apply the rule's rhs (Lam-wrapped) to
   -- params ++ motives ++ minors ++ ctor_fields ++ post_major via
-  -- apply_spine so that outer whnf beta-reduces. Mirror
-  -- crates/kernel/src.
+  -- apply_spine so that outer whnf beta-reduces.
   -- Rewrite spine with major (at major_idx) replaced by given whnf'd major.
   fn replace_spine_major(spine: List‹KExpr›, major_idx: G, major_w: KExpr)
                              -> List‹KExpr› {
@@ -1063,8 +1058,7 @@ def whnf := ⟦
   }
 
   -- ============================================================================
-  -- whnf_nd: WHNF without delta-unfolding. Mirror whnf_nd
-  -- crates/kernel/src / Rust whnf.rs::whnf_no_delta.
+  -- whnf_nd: WHNF without delta-unfolding.
   --
   -- Same dispatch tree as whnf, but the Defn/Thm arms of the const
   -- head return the stuck application instead of unfolding. Beta / zeta /
@@ -1164,7 +1158,9 @@ def whnf := ⟦
     -- This mirrors the reference kernel's `has_fvars` gate: closed primitive
     -- computations still reduce normally; open ones remain compact for lazy
     -- delta / offset comparison.
-    let prim = match prim_family(rc, addr) {
+    let (fam, _op) = prim_family(rc, addr);
+    let prim = match fam {
+      0 => (0, store(KExprNode.BVar(0))),
       1 =>
         let whole = apply_spine(head, spine);
         match expr_lbr(whole) {

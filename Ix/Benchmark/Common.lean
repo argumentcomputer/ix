@@ -163,7 +163,7 @@ Overrides config values with the corresponding `BENCH_*` env vars.
 - `BENCH_E2E`: `"1"` to emit an end-to-end total (sum of per-stage times) at the end of each group
 - `BENCH_VERBOSITY`: `q` (quiet) | `v` (verbose); omit for normal
 
-Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
+Example: `BENCH_VERBOSITY=v lake exe bench-blake3`
 -/
 def getConfigEnv (config : Config) : IO Config := do
   let serde : SerdeFormat := if (← IO.getEnv "BENCH_SERDE") == some "ixon" then .ixon else config.serde

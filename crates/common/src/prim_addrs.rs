@@ -1,18 +1,14 @@
 //! Hardcoded primitive content-addresses.
 //!
-//! Lives in `ix-common` rather than `ix-kernel` because several crates
-//! need this table and `ixon` (and everything above it) cannot depend on
-//! the kernel — `ix-kernel` already depends on `ixon`, so the edge would
-//! be a cycle. Witness builders need it to seed primitives the kernel
-//! FABRICATES during reduction rather than discovers by walking `refs`.
+//! Lives in `ix-common` because several crates need this table: witness
+//! builders need it to seed primitives the kernel FABRICATES during
+//! reduction rather than discovers by walking `refs`.
 //!
 //! Addresses are blake3 hashes of each primitive's Ixon-compiled form.
 //! Regenerate with `lake test -- --ignored rust-kernel-build-primitives`, which
 //! dumps the current `(name, hex)` pairs — paste the updated lines into
-//! `PrimAddrs::new`. `lake test -- prim-addrs` pins this table against
-//! the Lean mirror in `Ix/Tc/Primitive.lean`.
-
-use std::sync::LazyLock;
+//! `PrimAddrs::new`. The Lean mirror is `Ix/PrimAddrs.lean`, which the
+//! `prim-addrs` test compares with the live addresses.
 
 use crate::address::Address;
 
@@ -543,13 +539,4 @@ impl PrimAddrs {
       ("String.decEq", p.string_dec_eq.hex()),
     ]
   }
-}
-
-/// If `addr` is a reserved marker address, return its canonical marker name.
-pub fn reserved_marker_name(addr: &Address) -> Option<&'static str> {
-  static MARKERS: LazyLock<[(&'static str, Address); 1]> =
-    LazyLock::new(PrimAddrs::reserved_marker_addrs);
-  MARKERS
-    .iter()
-    .find_map(|(name, marker_addr)| (marker_addr == addr).then_some(*name))
 }

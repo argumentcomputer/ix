@@ -56,23 +56,23 @@ def blockOps (body : Bytecode.Block) : Array Bytecode.Op := Id.run do
   return ops
 
 /-- The functions that may read IO cells directly.
-* `read_byte_stream_unchecked` materializes a byte stream as advice, for the
-  checked reader to verify.
+* `read_checked_byte_stream` reads, range-checks, and materializes a byte stream
+  in a single constrained pass.
+* `read_byte_stream_unchecked` materializes an advisory stream as advice.
 * `read_u8_at` and `read_u64_at` read the multi-stark proof stream. The proof
   is advice read as field values; the transcript and the Merkle and FRI checks
   bind those values, so the stream is never hashed and re-parsed
   (`MultiStark/Deserialize.lean`). -/
 def ioReadAllowed : List String :=
-  ["read_byte_stream_unchecked", "read_u8_at", "read_u64_at"]
+  ["read_checked_byte_stream", "read_byte_stream_unchecked", "read_u8_at", "read_u64_at"]
 
 /-- The callers allowed to use the unchecked materializer.
-* `read_checked_byte_stream` checks every element it returns.
 * `read_byte_stream_unchecked` recurses.
 * `load_constant_hint` reads IxVM's channel-3 reducibility hint. It is
   advisory: the hint only selects a reduction heuristic and def-eq is sound
   under any value, so no content of it is unsafe. -/
 def uncheckedCallers : List String :=
-  ["read_checked_byte_stream", "read_byte_stream_unchecked", "load_constant_hint"]
+  ["read_byte_stream_unchecked", "load_constant_hint"]
 
 /-- The ingress violations of one compiled toplevel. -/
 def violations (label : String) (compiled : CompiledToplevel) : Array String := Id.run do
@@ -81,32 +81,30 @@ def violations (label : String) (compiled : CompiledToplevel) : Array String := 
       acc.insert index ((acc.getD index #[]).push (toString global))
   let nameOf (index : Nat) := ", ".intercalate (names.getD index #[s!"<fn {index}>"]).toList
   let isOneOf (index : Nat) (allowed : List String) := (names.getD index #[]).any allowed.contains
-  let some unchecked := compiled.getFuncIdx `read_byte_stream_unchecked
-    | return #[s!"{label}: no read_byte_stream_unchecked"]
+  let unchecked? := compiled.getFuncIdx `read_byte_stream_unchecked
   let some checked := compiled.getFuncIdx `read_checked_byte_stream
     | return #[s!"{label}: no read_checked_byte_stream"]
-  let some walk := compiled.getFuncIdx `assert_byte_stream
-    | return #[s!"{label}: no assert_byte_stream"]
   let mut found := #[]
-  let mut walkConstrained := false
+  let mut checkedRangeChecks := false
   for (function, index) in compiled.bytecode.functions.zipIdx do
     for op in blockOps function.body do
       match op with
       | .ioRead .. =>
         unless isOneOf index ioReadAllowed do
           found := found.push s!"{label}: {nameOf index} reads IO cells directly"
+      | .u8RangeCheck .. =>
+        if index == checked then
+          checkedRangeChecks := true
       | .call callee _ _ unconstrained =>
-        if callee == unchecked && !isOneOf index uncheckedCallers then
+        if some callee == unchecked? && !isOneOf index uncheckedCallers then
           found := found.push s!"{label}: {nameOf index} calls read_byte_stream_unchecked"
         if callee == checked && unconstrained then
           found := found.push
             s!"{label}: {nameOf index} calls read_checked_byte_stream unconstrained"
-        if index == checked && callee == walk && !unconstrained then
-          walkConstrained := true
       | _ => pure ()
-  unless walkConstrained do
+  unless checkedRangeChecks do
     found := found.push
-      s!"{label}: read_checked_byte_stream does not call assert_byte_stream constrained"
+      s!"{label}: read_checked_byte_stream does not range-check its bytes"
   return found
 
 /-- The toplevels whose IO reads must all be checked: IxVM with its test and

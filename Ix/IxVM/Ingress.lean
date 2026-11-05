@@ -231,11 +231,10 @@ def ingress := ⟦
           -- wherever addresses are compared; `canon_addr_cmp` orders a
           -- block's members by their external refs.
           --
-          -- The reference does not do this either: faulting a block
+          -- The retired Rust kernel did not do this either: faulting a block
           -- address ingresses the members under their PROJECTION KIds and
           -- the block under `kenv.blocks`, leaving nothing at the block
-          -- address itself, so asking for it errors
-          -- (`crates/kernel/src/ingress.rs:4539-4544`).
+          -- address itself, so asking for it errored.
           --
           -- Nothing in the kernel needed the fallback: `is_muts_block`
           -- and `check_block_peer_param_agreement` read blocks through

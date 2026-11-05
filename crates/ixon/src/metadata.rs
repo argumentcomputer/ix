@@ -203,10 +203,10 @@ pub struct ConstantMeta {
   /// before it; `i >= p + q` (out of range) and `p + j <= i < p + q` (a
   /// forward or self reference) are reader errors, so expansion is well
   /// founded. A `Share` in a primary expression always denotes a primary
-  /// entry: metadata never changes how primary bytes decode. Readers: the
-  /// Rust and Lean decompilers (`ix_compile::decompile::ShareScope`, Lean
-  /// `Ix.DecompileM.ShareScope`); kernel ingress never reads this table.
-  /// The compilers emit no `Share` here today.
+  /// entry: metadata never changes how primary bytes decode. Reader: the
+  /// Lean decompiler (`Ix.DecompileM.ShareScope`); kernel ingress never
+  /// reads this table.
+  /// The compiler emits no `Share` here today.
   pub meta_sharing: Vec<Arc<Expr>>,
   /// Extension refs table (addresses referenced by collapsed arg expressions).
   pub meta_refs: Vec<Address>,

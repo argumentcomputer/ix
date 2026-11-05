@@ -21,8 +21,8 @@ declarations are the ones the bytes encode, bounded resources), under which assu
 with which outcomes (accept, reject, decline; only an accept carries the
 theorems).
 
-This entry does not by itself certify the Lean-to-Ixon compiler, the Rust
-checker or IxVM. An accepted environment has a model; that it is the
+This entry does not by itself certify the Lean-to-Ixon compiler or IxVM.
+An accepted environment has a model; that it is the
 environment the original Lean source meant is outside this entry's claim;
 for the Lean compiler's output, the compiler theorem (next section) relates
 the two.
@@ -92,30 +92,24 @@ report check that reads the artifact alone) before it is written. The certified
 compiler runs at the default sharing limits, which `compileReport` fixes: a
 sharing-limit override is refused there.
 
-`ix compile --streamed` and `ix compile-lean --streamed` select the streamed
-Lean pipeline (`compileLeanInputValidated` in
-[`Ix/CompileResource.lean`](../Ix/CompileResource.lean)), which runs the same
-report checks on the compile. Name-only `ix prove`, `ix check` and
-`ix addr-of` use `Ix.Check.loadNamedIxonEnv` and its checked streamed loader,
-`compileLeanConstsValidated`. They do not call `compileReport` directly;
-supplying a `.ixe` uses the supplied artifact instead.
-
-The Rust compiler is opt-in and uncertified: `ix compile --rust` (and `--rust`
-on `prove`, `check` and `addr-of`). It has no counterpart of the report
-checks. The Rust path of `ix compile` checks its finalized artifact before
-writing it; this does not establish the compiler theorem for that backend.
-Bare compiler APIs remain unvalidated. `ix compile-lean --rust-check` compares the two
-serialized outputs for that input; byte parity is empirical evidence, not a
-compiler-refinement theorem for the Rust compiler. Metadata is outside the
+Name-only `ix prove`, `ix check` and `ix addr-of` use
+`Ix.Check.loadNamedIxonEnv`, which also compiles the closure through the
+certified compiler `Ix.CompileM.compileCertified` (`Ix.Cert.compileReport`);
+supplying a `.ixe` uses the supplied artifact instead. The uncertified
+streamed and Rust compiler paths have been retired
+([retired Rust](retired-rust.md)). Metadata is outside the
 certification claim.
 
 What the theorem covers on these paths: `CompileCorrect` is about the pure
-function `Ix.Cert.compileReport`, which `ix compile` and `ix compile-lean` run on
-the canonicalized input. The streamed pipeline's canonicalization, reference
-graph, ground filter and condensation are tested equal to the pure ones
-(`cert-compile-parity-init`), not proved; its fold over the hybrid environment
-is proved equal to the pure fold (`Ix/Cert/Hybrid.lean`). `finalize`'s additions
-are outside the theorem.
+function `Ix.Cert.compileReport`, which `ix compile`, `ix compile-lean` and
+`Ix.Check.loadNamedIxonEnv` run on the canonicalized input
+(`Ix.Compile.ReadyCompile.reportIO` proves by type that the IO worker-queue
+driver returns `Ix.Cert.compileReport`, and `Ix.Cert.FreshSnapshot` proves
+wave-snapshot freshness and disjointness across blocks in a wave, feeding the
+direct semantic proof on the wave-snapshot fold; equivalence between the
+wave-snapshot fold and a one-block-at-a-time live-state fold is not proved in
+`Ix.Cert.Schedule`).
+`finalize`'s additions are outside the theorem.
 
 ## The certified entry
 
@@ -386,8 +380,8 @@ increasing ω-chain of Grothendieck universes interpreting the universe
 tower. The Mathlib instance above supplies it from ω inaccessible
 cardinals, which its corollaries take as a hypothesis, not as an axiom.
 
-**Input policy.** The entry never falls back to the Rust checker, which is
-not in its closure ("Trust surface"). The certified theory
+**Input policy.** The entry has no fallback: what it declines stays declined,
+and no checker outside its closure ("Trust surface") is consulted. The certified theory
 uses Lean's three standard axioms: `propext`, `Classical.choice` and
 `Quot.sound`. The compiler-trust axioms `Lean.trustCompiler`,
 `Lean.ofReduceBool` and `Lean.ofReduceNat` are non-standard axioms here and
@@ -398,6 +392,35 @@ checking rules. Native evaluation is outside this certified theory.
 nothing; any use of it declines (`IxC/Kernel/Core.lean`). The well-founded `Nat`
 operations are admitted through the role table's evidence, which the
 checker checks itself ("Roles and the role table" below).
+
+**User axioms (uncertified).** Every other safe axiom, the three compiler-trust
+axioms among them, declines at the certified entry and in every host driver
+by default. A real Lean library therefore does not check whole: strict checking
+of Init+Std declines `Lean.trustCompiler` and blocks the four native-evaluation
+constants that depend on it, the other two axioms among them
+(`Tests/Fixtures/initstd-reference.txt`). The host drivers can opt in with
+`--allow-user-axioms` (`ix check-lean`, `kernel-check-ixe`): the declaration
+checks then install a safe axiom whose key is an input constant's
+(`Key.isCustomAxiomEligible`) as an axiom, and a whole `check-lean` run runs,
+once, the entry under the `allowUser` axiom policy
+(`Admission.checkBytesUnder .allowUser`, `checkBytesTieredUsingUnder .allowUser`,
+through `Ix.RoleBinding.Artifact.checkConditional` and
+`checkTieredConditional`). It returns the environment with the user axioms
+among the declarations it ran over. When that list is empty the accept is the
+certified entry's (T1, `Admission.checkBytesUnder_strict_of_nil`; the host
+turns the receipt into the certified one with `ReceiptConditional.toReceipt`),
+so the run issues the host statement as a strict run does. Otherwise no
+soundness theorem covers the accept and there is no host statement. A run that admits a user
+axiom prints `CONDITIONAL on K user axioms:` and lists them (the addresses the
+declarations key them by, with their names in meta mode), and `check-lean`
+exits with 5 rather than 0 ("`ix check-lean`" below). The binding must pass the
+kernel's role-table check for user axioms (`Admission.admitAxiomPolicy
+.allowUser`: `sorryAx`, `propext` and `Classical.choice` bound): a binding that
+leaves one out keys Lean's own constant as an input constant, which the checks
+would admit as a user axiom. The entries run that check themselves; the
+record-by-record drivers never reach admission, so the host runs it first
+(`Ix.RoleBinding.UserAxioms.requireAxiomRoles`), and such an artifact, like
+one with no binding, is refused before any checking.
 
 ## The typing tier
 
@@ -536,7 +559,8 @@ Lean, through δ, β and instantiation:
   implicit arguments hidden, no notation, full names); safe code cannot read
   a `Squash`, so it takes the read as a parameter, and the one display-only
   `unsafe` read is `Ix/KernelDisplay/Peek.lean` (trust-surface allowlisted;
-  no certified root reaches it, `Tests/Ix/Kernel/DisplayRead.lean`).
+  no certified root reaches it, `IxC/Kernel/Audit/Roots.lean` and
+  `Ix/Cert/RuntimeAudit.lean`).
 
 Known limits: `.meta` keys are addresses, so the members of an alias fiber
 (α-equivalent constants, such as `HAdd.hAdd` and `HMul.hMul`) print as its
@@ -624,9 +648,7 @@ names. A mismatch declines with `role specification mismatch`. The compiler
 also enforces `RoleRecordKinds` in its report checks. The equation checker
 used by pin generation validates actual definitions and checked evidence;
 it adds no native rule to IxC. IxVM validates the role specifications for
-its native operations. Rust constructs the same terms from generated data
-and validates their carried support before admission; its optional String
-and BitVec reductions are restricted to admitted heads and specified inputs.
+its native operations.
 
 **The role table** (`IxC/Kernel/Ixon/RoleTable.lean`) is input:
 `RoleTable` has the version of the specification set it was made for, the
@@ -932,9 +954,8 @@ re-records it states why the closure or the statement moved.
    fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
    (`IxC/Fixtures/*`, authenticated under a hasher-free fixture hash) were
    already built in step 1;
-3. `kernel-codec` (production codec against Rust);
-4. with `--with-model`, the `Models/SetTheory` build and its audit;
-5. `kernel-layering` (`Tests/Ix/Kernel/Layering.lean`, derived from
+3. with `--with-model`, the `Models/SetTheory` build and its audit;
+4. `kernel-layering` (`Tests/Ix/Kernel/Layering.lean`, derived from
    con-leche's `tests/layering.sh`): the kernel's import layering, each file
    of `IxC/Kernel/` classified by its path (`Tests/Ix/Kernel/KernelLayout.lean`;
    an unclassified file fails): the checker never imports the theory, the
@@ -945,7 +966,7 @@ re-records it states why the closure or the statement moved.
    `BinderMeta` carries (Ix's boundary modules `Admission`, `Ixon`, `Audit`,
    `Ingress`, `Egress`, `Ref` and `Search` import the kernel, not the
    reverse);
-6. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
+5. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
    checker, the theory, the admission hash (`Ix/Address/Admission.lean`) and
@@ -956,10 +977,7 @@ re-records it states why the closure or the statement moved.
    BasisGen}.lean`, `Ix/Address/Admission.lean`, and the display-only read
    `Ix/KernelDisplay/Peek.lean`) are permitted, each with its justification
    in the tool's header;
-7. `kernel-level-comparison`: the level comparison (`Level.leq`,
-   `Level.isEquiv` and its Géran fallback) against brute-force evaluation,
-   on random levels and on Ixon's canonical forms;
-8. `kernel-entry-cases`: Lean declarations of
+6. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
    submitted as canonical bytes to `Ixon.Authenticated.checkBytes`, each with
    an exact expected verdict (accepts: a definition, a theorem, an inductive
@@ -974,21 +992,10 @@ re-records it states why the closure or the statement moved.
    declines: a `partial` definition's `_unsafe_rec` body, a non-standard
    axiom, a theorem of `False`). Rows go to
    `.lake/build/kernel-entry-cases.jsonl`;
-9. `kernel-reader-fidelity --fixture` and `--check-kernel`: the Ixon reader
-   against a direct translation of the Lean constants it was compiled from,
-   and the projection output against the compiler's records, on the fixture
-   closure (the check the `lake test` suite `kernel-reader-roundtrip` runs)
-   and on the first records of Init and Std; the log goes to
-   `.lake/build/kernel-reader-fidelity.log`;
-10. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
-    ill-typed declarations and the fixtures;
-11. `kernel-source-ingress --collapse --bundle-evidence --compare-prepared`
-    on Init and Std: quotient Source, as `checkSourceCollapsedBundledAt` runs
-    it, on a freshly compiled artifact; it fails when a collapse check fails
-    or the harness's prepared stream differs from production's.
+7. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
+   ill-typed declarations and the fixtures.
 
-The CI job runs the same gate and keeps the codec, order, entry-case and
-reader-fidelity logs.
+The CI job runs the same gate and keeps the entry-case log.
 
 ### On a toolchain bump
 
@@ -1061,9 +1068,8 @@ interleaved:
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
    to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
    `lake exe ixon-v4-tests` validates them. If they moved, so did the
-   catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`)
-   and the environment-bytes hash (`crates/compile/src/graph.rs`); re-pin
-   them from the serializers' output. The independent expression vectors
+   catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`);
+   re-pin it from the serializers' output. The independent expression vectors
    (`Tests/Fixtures/ixon-v4/expressions.txt`) are written by hand from the
    specification.
 5. **The default role table**, as step 2 of a toolchain bump: the three commands under
@@ -1076,8 +1082,8 @@ interleaved:
    (`lTreeRecords`, `levelRecords`) with the names of the blocks they
    belong to; replace the lists and the owner addresses with the output. The
    byte vectors of `IxC/Fixtures/{Codec,ParserWork,ByteAdmission}.lean`
-   are the codec's: rewrite them for the new grammar (`kernel-codec`
-   compares the Lean codec with Rust's on them).
+   are the codec's: rewrite them for the new grammar (their `#guard`s run
+   when `lake -d IxC build --wfail` elaborates them).
 7. **IxVM costs.** `lake test --wfail -- --ignored ixvm` reports every
    kernel-check FFT-cost pin of `Tests/Ix/IxVM.lean` and the shard pin in
    `Tests/Main.lean` that moved; set each to the measured value.
@@ -1197,8 +1203,8 @@ CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max
 .lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
 ```
 
-Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
-<output.jsonl> [limit]`. The records are streamed by default
+Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms]
+<input.ixe> <output.jsonl> [limit]`. The records are streamed by default
 (`Ix/KernelCheck/Stream.lean`): the order and the record views
 are built over record skeletons, and each record is decoded in full at its
 turn and dropped once it is read. `--load eager` decodes and keeps the whole
@@ -1206,7 +1212,12 @@ environment up front. `--jobs <n>` installs every record first and then runs
 the recorded checks on `n` worker threads
 (`Ix/KernelCheck/Pool.lean`). All three write the same rows
 (`kernel-check-ixe --compare` shows it); with `--jobs`, a row's `micros` is
-its install plus its checks. A checker failure's reason is rendered by
+its install plus its checks. The check is strict: a safe axiom other than the
+standard three declines. `--allow-user-axioms` admits such axioms on every
+path, the read cache's included, after refusing (exit code 2) an artifact
+whose binding does not bind `sorryAx`, `propext` and `Classical.choice`, and
+ends its log with `CONDITIONAL on K user axioms:` and the axioms it admitted
+("User axioms (uncertified)" above). A checker failure's reason is rendered by
 `.meta`: its keys spelled with the names the `.ixe`'s metadata gives them and
 the first eight hexadecimal digits of their addresses, `Nat.add@a1b2c3d4`
 (`Reader.spellWith`); the verdict is the `.anon` run's.
@@ -1247,4 +1258,55 @@ Run one environment check at a time, under a memory cap, with no concurrent buil
 `--compare` and `--paired` compare runs (`Benchmarks/Kernel/README.md`).
 Mathlib's `.ixe` comes from `Benchmarks/Compile/CompileMathlib.lean`
 (`Benchmarks/Compile/README.md`).
+
+### `ix check-lean`
+
+`ix check-lean <input.ixe>` (`Ix/Cli/CheckLeanCmd.lean`) is the host checker
+behind the merge-queue gate `initstd-reference` and the `ooc` benchmark. It
+authenticates the bytes and checks every declaration, or a selection
+(`--consts`, `--consts-file`, `--max`), with the same incremental step as the
+environment check. When a whole run of a bound artifact passes, it runs the
+certified entry (`Ix.HostAdmission.certify`) and reports the host statement,
+which `--host-out` and `--host-store` persist (`docs/host-admission.md`). A
+whole bound run prints `bound roles: N admitted, M refused`: a role is refused
+when the run refused its record. In meta mode, the default, an artifact whose
+published role names disagree with its binding is refused before any check
+(`Ix.RoleBinding.Compile.roleBindingError`, as the compiler's `finalize`
+runs it).
+
+Checking is strict. With `--allow-user-axioms` a whole run runs the entry under
+the `allowUser` policy once ("User axioms (uncertified)" above), and the user
+axioms it lists choose the verdict. With none, its receipt is the certified
+entry's and the run reports and issues the host statement as without the flag.
+With some, the run prints
+
+```text
+[check-lean] whole artifact: CONDITIONAL on K user axioms:
+[check-lean]   <address> <name>
+```
+
+one line per axiom, the name in meta mode only, and never the `accepted all`
+line of a certified run. A selected run whose declaration checks read a user
+axiom prints the same list under `selected checking:`.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | everything asked for passed; for a whole bound run, through the certified entry |
+| 1 | an infrastructure failure |
+| 2 | a usage error: a bad flag or selector, a selected name that resolves to no declaration, or a host statement the run cannot issue (a selected, capped, unbound or conditional run) |
+| 3 | a declaration failed, or the artifact was refused |
+| 4 | partial: every declaration passed, but the whole artifact asked for carries no role binding, so its admission did not run |
+| 5 | conditional: everything passed, but only with the listed user axioms admitted |
+
+`--json <file>` writes benchmark results rows (`Ix.Benchmark.Results`). A run
+writes one row, keyed by `--json-name` (default `env`). With a selection it
+runs each name's full closure on its own and writes one row per name, keyed
+`<json-name>/<name>` when `--json-name` is given; a name that resolves to no
+declaration is reported, and the other names still run. In every row,
+`constants` is the number of records the run checked or read, and `throughput`
+is that number per second; `status` names the run's verdict as its exit does:
+`ok` (0), `rejected` (3), `partial` (4) or `conditional` (5). A host statement
+the run cannot issue (exit 2) leaves `status` at the verdict.
+`--per-const <file>` writes one CSV row per record for the same run or runs. A
+run exits with the same status with `--json` as without.
 

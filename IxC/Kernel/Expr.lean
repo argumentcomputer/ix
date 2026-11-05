@@ -378,8 +378,11 @@ layout is
 | 0 | `hasLP` | 1 |
 
 The two ranges **saturate** at `satRange = 2^15 - 1`: a node whose
-bound would not fit stores `satRange`, which reads as "*at least*
-`satRange`".  Saturation is a *representation* decision and costs
+raw stored field `bvarBRaw`/`fvarBRaw` reaches `satRange` marks the
+bound as saturated, so `bvarB`/`fvarB` recomputes the exact bound on
+demand (for leaf/constructor nodes it is at least `satRange`, while
+for binder nodes lowering a saturated body bound by 1 may drop below
+`satRange`).  Saturation is a *representation* decision and costs
 nothing logically — `Expr.bvarB`/`Expr.fvarB` remain the exact
 functions `Expr.bvarBound`/`Expr.fvarRange` (`bvarB_eq`, `fvarB_eq`),
 because the accessors fall back to a memoized exact walk on the
@@ -395,7 +398,7 @@ LLVM emits is the same shift-and-mask, and every roundtrip lemma
 below is then `omega` after `UInt64.toNat`. -/
 
 /-- Saturation value of the two 15-bit range fields: a stored
-`satRange` reads as "at least `satRange`". -/
+`satRange` triggers an on-demand exact recomputation in `bvarB`/`fvarB`. -/
 def satRange : Nat := 32767
 
 /-- Assemble the packed word from a 32-bit hash, two 15-bit ranges and
