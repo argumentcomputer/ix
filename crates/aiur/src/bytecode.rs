@@ -223,6 +223,7 @@ impl Layout {
       },
     }
   }
+  #[inline]
   pub(crate) fn has_shape_checks(&self) -> bool {
     match self {
       Self::Field | Self::Pointer => false,

@@ -471,7 +471,8 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       registers[reg] = value;
     }
     registers[..self.arguments.len()].copy_from_slice(&self.arguments);
-    let query = table.start(&self.arguments, hash)?;
+    let outputs = table.widths().1;
+    let query = table.start(&self.arguments, outputs, hash)?;
     budget.vector(&mut self.frames, 1)?;
     self.frames.push(Frame {
       function: function_id,
