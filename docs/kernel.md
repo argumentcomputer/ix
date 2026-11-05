@@ -92,30 +92,20 @@ report check that reads the artifact alone) before it is written. The certified
 compiler runs at the default sharing limits, which `compileReport` fixes: a
 sharing-limit override is refused there.
 
-`ix compile --streamed` and `ix compile-lean --streamed` select the streamed
-Lean pipeline (`compileLeanInputValidated` in
-[`Ix/CompileResource.lean`](../Ix/CompileResource.lean)), which runs the same
-report checks on the compile. Name-only `ix prove`, `ix check` and
-`ix addr-of` use `Ix.Check.loadNamedIxonEnv` and its checked streamed loader,
-`compileLeanConstsValidated`. They do not call `compileReport` directly;
-supplying a `.ixe` uses the supplied artifact instead.
-
-The Rust compiler is opt-in and uncertified: `ix compile --rust` (and `--rust`
-on `prove`, `check` and `addr-of`). It has no counterpart of the report
-checks. The Rust path of `ix compile` checks its finalized artifact before
-writing it; this does not establish the compiler theorem for that backend.
-Bare compiler APIs remain unvalidated. `ix compile-lean --rust-check` compares the two
-serialized outputs for that input; byte parity is empirical evidence, not a
-compiler-refinement theorem for the Rust compiler. Metadata is outside the
+Name-only `ix prove`, `ix check` and `ix addr-of` use
+`Ix.Check.loadNamedIxonEnv`, which also compiles the closure through the
+certified compiler `Ix.CompileM.compileCertified` (`Ix.Cert.compileReport`);
+supplying a `.ixe` uses the supplied artifact instead. The uncertified
+streamed and Rust compiler paths have been retired. Metadata is outside the
 certification claim.
 
 What the theorem covers on these paths: `CompileCorrect` is about the pure
-function `Ix.Cert.compileReport`, which `ix compile` and `ix compile-lean` run on
-the canonicalized input. The streamed pipeline's canonicalization, reference
-graph, ground filter and condensation are tested equal to the pure ones
-(`cert-compile-parity-init`), not proved; its fold over the hybrid environment
-is proved equal to the pure fold (`Ix/Cert/Hybrid.lean`). `finalize`'s additions
-are outside the theorem.
+function `Ix.Cert.compileReport`, which `ix compile`, `ix compile-lean` and
+`Ix.Check.loadNamedIxonEnv` run on the canonicalized input
+(`Ix.Compile.ReadyCompile.reportIO` proves by type that the IO worker-queue
+driver returns `Ix.Cert.compileReport`, and `Ix.Cert.FreshSnapshot` proves
+wave-snapshot freshness and disjointness across blocks in a wave).
+`finalize`'s additions are outside the theorem.
 
 ## The certified entry
 
@@ -536,7 +526,8 @@ Lean, through δ, β and instantiation:
   implicit arguments hidden, no notation, full names); safe code cannot read
   a `Squash`, so it takes the read as a parameter, and the one display-only
   `unsafe` read is `Ix/KernelDisplay/Peek.lean` (trust-surface allowlisted;
-  no certified root reaches it, `Tests/Ix/Kernel/DisplayRead.lean`).
+  no certified root reaches it, `IxC/Kernel/Audit/Roots.lean` and
+  `Ix/Cert/RuntimeAudit.lean`).
 
 Known limits: `.meta` keys are addresses, so the members of an alias fiber
 (α-equivalent constants, such as `HAdd.hAdd` and `HMul.hMul`) print as its
@@ -932,9 +923,8 @@ re-records it states why the closure or the statement moved.
    fixtures re-keyed to their BLAKE3 addresses; the certified fixtures
    (`IxC/Fixtures/*`, authenticated under a hasher-free fixture hash) were
    already built in step 1;
-3. `kernel-codec` (production codec against Rust);
-4. with `--with-model`, the `Models/SetTheory` build and its audit;
-5. `kernel-layering` (`Tests/Ix/Kernel/Layering.lean`, derived from
+3. with `--with-model`, the `Models/SetTheory` build and its audit;
+4. `kernel-layering` (`Tests/Ix/Kernel/Layering.lean`, derived from
    con-leche's `tests/layering.sh`): the kernel's import layering, each file
    of `IxC/Kernel/` classified by its path (`Tests/Ix/Kernel/KernelLayout.lean`;
    an unclassified file fails): the checker never imports the theory, the
@@ -945,7 +935,7 @@ re-records it states why the closure or the statement moved.
    `BinderMeta` carries (Ix's boundary modules `Admission`, `Ixon`, `Audit`,
    `Ingress`, `Egress`, `Ref` and `Search` import the kernel, not the
    reverse);
-6. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
+5. `kernel-trust-surface` (`Tests/Ix/Kernel/TrustSurface.lean`, derived from
    con-leche's `tests/trust-surface.sh`, with its lexer self-test on
    `Tests/Fixtures/trust-surface/lexer.lean`): a lexer-based scan of the
    checker, the theory, the admission hash (`Ix/Address/Admission.lean`) and
@@ -956,10 +946,7 @@ re-records it states why the closure or the statement moved.
    BasisGen}.lean`, `Ix/Address/Admission.lean`, and the display-only read
    `Ix/KernelDisplay/Peek.lean`) are permitted, each with its justification
    in the tool's header;
-7. `kernel-level-comparison`: the level comparison (`Level.leq`,
-   `Level.isEquiv` and its Géran fallback) against brute-force evaluation,
-   on random levels and on Ixon's canonical forms;
-8. `kernel-entry-cases`: Lean declarations of
+6. `kernel-entry-cases`: Lean declarations of
    `Tests/Ix/Kernel/EntryCaseDefs.lean` compiled by Ix's compiler and
    submitted as canonical bytes to `Ixon.Authenticated.checkBytes`, each with
    an exact expected verdict (accepts: a definition, a theorem, an inductive
@@ -974,21 +961,10 @@ re-records it states why the closure or the statement moved.
    declines: a `partial` definition's `_unsafe_rec` body, a non-standard
    axiom, a theorem of `False`). Rows go to
    `.lake/build/kernel-entry-cases.jsonl`;
-9. `kernel-reader-fidelity --fixture` and `--check-kernel`: the Ixon reader
-   against a direct translation of the Lean constants it was compiled from,
-   and the projection output against the compiler's records, on the fixture
-   closure (the check the `lake test` suite `kernel-reader-roundtrip` runs)
-   and on the first records of Init and Std; the log goes to
-   `.lake/build/kernel-reader-fidelity.log`;
-10. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
-    ill-typed declarations and the fixtures;
-11. `kernel-source-ingress --collapse --bundle-evidence --compare-prepared`
-    on Init and Std: quotient Source, as `checkSourceCollapsedBundledAt` runs
-    it, on a freshly compiled artifact; it fails when a collapse check fails
-    or the harness's prepared stream differs from production's.
+7. `kernel-meta-names`: the `.meta` and `.source` names against Lean's, on
+   ill-typed declarations and the fixtures.
 
-The CI job runs the same gate and keeps the codec, order, entry-case and
-reader-fidelity logs.
+The CI job runs the same gate and keeps the entry-case log.
 
 ### On a toolchain bump
 

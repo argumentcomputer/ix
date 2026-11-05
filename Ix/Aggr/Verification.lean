@@ -60,13 +60,16 @@ def auditAggregateConstants (env : Ixon.Env) (statement : Aggr.CheckEnvTrees) :
 
 /-! ## Set-discharge composition soundness
 
-Formalization of the set-discharge invariant across `CheckEnv` leaf claims and
-recursive `ix_aggr` pair folds (flat, structural, and cross-binding):
+Formalization of the abstract set-discharge invariant across `CheckEnv` leaf
+claims and recursive `ix_aggr` pair folds (flat, structural, and cross-binding):
 
-1. Every base leaf claim `(S, A)` verified by `IxVM` satisfies `S ∩ A = ∅`
+1. Every base leaf claim `(S, A)` in the abstract model satisfies `S ∩ A = ∅`
    (`disjoint`), checks every owned subject `x ∈ S` under its dependencies
    (`checked`), and ensures every direct dependency `y` of an owned subject
-   `x ∈ S` lies in `S ∪ A` (`closed`).
+   `x ∈ S` lies in `S ∪ A` (`closed`). (In the Aiur circuit, `env_walk_leaves`
+   guards `S ∩ A = ∅` by interned store pointer, which holds under honest
+   content-addressed interning; note that `aggrDerivation_sound`'s root closure
+   and validity conclusions use only `checked` and `closed`, not `disjoint`.)
 2. Every binary join `(S_L, A_L), (S_R, A_R) ↦ (S_out, A_out)` unions the
    subject sets (`S_out = S_L ∪ S_R`) and discharges an assumption only
    against the opposite child's subjects (`A_L ∖ A_out ⊆ S_R` and
@@ -79,11 +82,13 @@ recursive `ix_aggr` pair folds (flat, structural, and cross-binding):
    validity for every `x ∈ S`.
 -/
 
-/-- The base-leaf obligations established by `IxVM`'s `run_check_env` for a
+/-- The abstract base-leaf obligations modeled for `IxVM`'s `run_check_env` on a
 `CheckEnv` claim with subject set `S` and assumption set `A`. -/
 structure LeafValid (Checked : α → Prop) (Dep : α → α → Prop)
     (S A : α → Prop) : Prop where
-  /-- Owned subjects and assumptions are disjoint (`env_walk_leaves` guard). -/
+  /-- Owned subjects and assumptions are disjoint (modeled at the set level;
+  checked by interned store pointer in `env_walk_leaves` for honest provers, and
+  not required by `aggrDerivation_sound`'s root closure/validity proof). -/
   disjoint : ∀ x, S x → ¬ A x
   /-- Every owned subject is typechecked by `run_check` / `check_muts_all`. -/
   checked : ∀ x, S x → Checked x

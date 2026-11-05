@@ -4,7 +4,7 @@
 # `sha256` and `bytes` are the SHA-256 and the size of the file that
 # `ix compile-lean Benchmarks/Compile/CompileInitStd.lean` writes:
 # the certified compile with its report checks and the default role binding.
-# `rust-kernel-passed` of `rust-kernel-checked` constants pass
+# `lean-kernel-passed` of `lean-kernel-checked` constants pass
 # `ix check-lean <artifact> --anon`, which must also admit every role the default
 # table binds.
 #
@@ -12,5 +12,5 @@
 # this artifact, updates these lines in the same commit and says why.
 sha256	e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1
 bytes	253772604
-rust-kernel-passed	99514
-rust-kernel-checked	99519
+lean-kernel-passed	99514
+lean-kernel-checked	99519

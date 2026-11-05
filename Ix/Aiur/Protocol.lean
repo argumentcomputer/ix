@@ -395,7 +395,7 @@ opaque shardManifestFromPartition : @& EnvHandle →
 
 /-- Refine an existing `.ixes` manifest (`sourcePath`) by cutting some of
     its leaves into parts and write the result to `outPath`
-    (`ShardManifest::refine`, `crates/kernel/src/shard.rs`). Every other
+    (`ShardManifest::refine`, `crates/ixon/src/shard.rs`). Every other
     leaf keeps its block list, record, id and place in the aggregation
     tree; a refined leaf's place becomes a balanced subtree over its
     parts, part 0 keeps the leaf's id and later parts take fresh ids after

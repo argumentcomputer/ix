@@ -22,6 +22,7 @@ import Tests.Ix.RoleEquations
 import Tests.Ix.LeanExport
 import Tests.Ix.HostAdmissionCli
 import Tests.Ix.Compile.AuxiliaryClosureCanon
+import Tests.Ix.Compile.IndFlags
 import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.LeanReportTests
 import Tests.Ix.Compile.GroundRefusal
@@ -50,6 +51,7 @@ import Tests.Ix.Cert.Statement
 import Tests.Ix.InitStd
 import Tests.RoleTableWire
 import Tests.Ix.ResourceHints
+import Tests.Ix.Kernel.RecordCheck
 import Tests.Ix.Kernel.CheckLeanTargets
 import Tests.Ix.Kernel.CheckLeanCli
 import Tests.Ix.Kernel.ValidateReaderCli
@@ -152,6 +154,7 @@ def registry : List Entry := [
   -- the certification statements on the same fixtures: compile parity, and
   -- the per-root hypotheses and conclusion
   .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,
+  .suite "kernel-record-check" .primary Tests.Ix.Kernel.RecordCheck.suite,
   .suite "kernel-check-lean-targets" .primary Tests.Ix.Kernel.CheckLeanTargets.suite,
   .suite "primitive-address-parity" .primary Tests.Ix.Kernel.BuildPrimitives.paritySuite,
   .suite "decompile-unit" .primary Tests.Decompile.unitSuite,
@@ -216,6 +219,9 @@ def registry : List Entry := [
   .runner "ix-aggr" .primary Tests.Aggr.convergedSuite,
   -- `.ixes` manifest parser: trailing tree/peaks sections and strictness.
   .runner "ixes-manifest" .primary Tests.Ix.Ixes.suite,
+  -- Non-canonical stored inductive flags and mixed mutual safety: refused by
+  -- both Lean drivers and the pure compiler (Tests.Ix.Compile.IndFlags).
+  .runner "compile-ind-flags" .primary Tests.Ix.Compile.IndFlags.run,
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
@@ -397,6 +403,8 @@ def required : List (String × String) := [
   ("role-equations", "primary"),
   ("ixvm-tagn", "primary"),
   ("ixes-manifest", "primary"),
+  ("kernel-record-check", "primary"),
+  ("compile-ind-flags", "primary"),
   ("cli", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),

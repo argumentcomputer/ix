@@ -14,7 +14,7 @@ public import Ix.Cli.RefineCmd
   relation that generates each shard's thin frontier, i.e. its real
   ingress), then a global rebalance post-pass toward equal predicted
   Aiur FFT cost (fitted model — constants and provenance in
-  `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). `--shards N` fixes the
+  `ixon::shard::STATIC_OWNED_PER_BYTE`). `--shards N` fixes the
   count; `--max-ram G` seeds it from the same static block-shape score,
   mildly superlinear in both library scale and inverse RAM budget.
 

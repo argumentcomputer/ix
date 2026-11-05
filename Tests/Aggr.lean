@@ -42,6 +42,16 @@ namespace Tests.Aggr
 
 open Tests.ProofHelpers (expectOk expectErr recCommitParams innerFri)
 
+private def expectErrContains [ToString ε] (descr : String) (needle : String)
+    (e : Except ε α) : TestSeq :=
+  match e with
+  | .error msg =>
+    if (toString msg).contains needle then
+      test descr true
+    else
+      test s!"{descr} — rejected with unexpected error: {msg} (expected '{needle}')" false
+  | .ok _ => test s!"{descr} — expected a rejection but it was accepted" false
+
 /-- Cheap stand-in children. `fake_verify_claim` mirrors the IxVM
 `verify_claim` claim shape (10 words), `fake_aggr` mirrors the `ix_aggr` claim
 shape (18 words). Bodies touch memory so the proofs have a non-trivial trace. -/
@@ -811,7 +821,7 @@ def smokeSuite : IO UInt32 := do
   --    disjoint (`{a}` vs `{c}`), but left child assumes its own subject `a`.
   let selfDischargedCrossFlatOut : Aggr.CheckEnvTrees :=
     { ctx := testCtx, subjects := canonicalTree #[a, c]
-      assumptions := some (canonicalTree #[d]) }
+      assumptions := none }
   let selfDischargedCrossFlatBytes := Ix.Claim.ser selfDischargedCrossFlatOut.claim
   let selfAssumingFlatDisjointSubjects := run (pairShape .ixvm .ixvm)
     #[selfAssumingAIxvm, rightIxvm] selfDischargedCrossFlatBytes
@@ -848,7 +858,7 @@ def smokeSuite : IO UInt32 := do
   let selfDischargeLeftStructOut : Aggr.CheckEnvTrees :=
     { ctx := testCtx
       subjects := Ix.AssumptionTree.join leftSelfAssumingB.subjects rightStatement.subjects
-      assumptions := some (canonicalTree #[d]) }
+      assumptions := none }
   let selfDischargeLeftStructBytes := Ix.Claim.ser selfDischargeLeftStructOut.claim
   let selfAssumingStructuralSelfDischarge := run (Aggr.structuralShapeCode .ixvm .ixvm)
     #[leftSelfAssumingBIxvm, rightIxvm] selfDischargeLeftStructBytes
@@ -863,6 +873,11 @@ def smokeSuite : IO UInt32 := do
       (d, none)])
   -- 6. Structural pair where a right-only assumption (`c`) is discharged by a
   --    valid Merkle path into `right_root` instead of `left_root`.
+  let leftOnlyAssumingD : Aggr.CheckEnvTrees :=
+    { ctx := testCtx, subjects := canonicalTree #[a, b]
+      assumptions := some (canonicalTree #[d]) }
+  let leftOnlyAssumingDBytes := Ix.Claim.ser leftOnlyAssumingD.claim
+  let leftOnlyAssumingDIxvm ← IO.ofExcept (mkIxvmChild leftOnlyAssumingDBytes)
   let rightSelfAssumingC : Aggr.CheckEnvTrees :=
     { ctx := testCtx, subjects := canonicalTree #[c]
       assumptions := some (canonicalTree #[a, c]) }
@@ -870,19 +885,19 @@ def smokeSuite : IO UInt32 := do
   let rightSelfAssumingCIxvm ← IO.ofExcept (mkIxvmChild rightSelfAssumingCBytes)
   let selfDischargeRightStructOut : Aggr.CheckEnvTrees :=
     { ctx := testCtx
-      subjects := Ix.AssumptionTree.join leftStatement.subjects rightSelfAssumingC.subjects
+      subjects := Ix.AssumptionTree.join leftOnlyAssumingD.subjects rightSelfAssumingC.subjects
       assumptions := some (canonicalTree #[d]) }
   let selfDischargeRightStructBytes := Ix.Claim.ser selfDischargeRightStructOut.claim
   let selfAssumingStructuralRightSelfDischarge := run (Aggr.structuralShapeCode .ixvm .ixvm)
-    #[leftIxvm, rightSelfAssumingCIxvm] selfDischargeRightStructBytes
+    #[leftOnlyAssumingDIxvm, rightSelfAssumingCIxvm] selfDischargeRightStructBytes
     (outClaim? := some selfDischargeRightStructBytes)
-    (preimages := #[leftClaimBytes, rightSelfAssumingCBytes])
+    (preimages := #[leftOnlyAssumingDBytes, rightSelfAssumingCBytes])
     (trees := Aggr.CheckEnvTrees.structuralAdviceTrees
-      leftStatement rightSelfAssumingC selfDischargeRightStructOut)
+      leftOnlyAssumingD rightSelfAssumingC selfDischargeRightStructOut)
     (paths := #[
       (a, selfDischargeRightStructOut.subjects.merkleProof a),
       (c, (rightSelfAssumingC.subjects.merkleProof c).map fun p =>
-        p.push (leftStatement.subjects.root, true)),
+        p.push (leftOnlyAssumingD.subjects.root, true)),
       (d, none)])
   -- 7. Structural pair where an assumption shared by both children (`d`) is
   --    discharged instead of carried.
@@ -922,7 +937,7 @@ def smokeSuite : IO UInt32 := do
   let crossSelfDischargeOut : Aggr.CheckEnvTrees :=
     { ctx := { testCtx with binding := klass, bindingAssumed := false, literalClass := true }
       subjects := Ix.AssumptionTree.join crossSelfLeft.subjects crossRightHonest.subjects
-      assumptions := some (canonicalTree #[d]) }
+      assumptions := none }
   let crossSelfDischargeBytes := Ix.Claim.ser crossSelfDischargeOut.claim
   let selfAssumingCrossBindingSelfDischarge := run Aggr.crossBindingShapeCode
     #[childCrossSelfLeft, childCrossRightHonest] crossSelfDischargeBytes
@@ -1057,23 +1072,32 @@ def smokeSuite : IO UInt32 := do
     expectErr "catalog join rejects a binding claim as a member" catalogOfBinding,
     expectErr "catalog join rejects a catalog child without its members tree"
       catalogTampered,
-    expectErr "flat pair rejects duplicated self-assuming children join(q, q)"
+    expectErrContains "flat pair rejects duplicated self-assuming children join(q, q)"
+      "aggr: subject set overlaps assumption set"
       selfAssumingFlatDuplicate,
-    expectErr "flat pair rejects a child whose subject set overlaps its own assumptions"
+    expectErrContains "flat pair rejects a child whose subject set overlaps its own assumptions"
+      "aggr: subject set overlaps assumption set"
       selfAssumingFlatDisjointSubjects,
-    expectErr "flat pair rejects children with overlapping subject sets"
+    expectErrContains "flat pair rejects children with overlapping subject sets"
+      "aggr: child subject sets overlap"
       overlappingFlatSubjects,
-    expectErr "structural pair rejects duplicated self-assuming children join(q, q)"
+    expectErrContains "structural pair rejects duplicated self-assuming children join(q, q)"
+      "aggr structural: child subject roots must be distinct"
       selfAssumingStructuralDuplicate,
-    expectErr "structural pair rejects discharging a left assumption against the left subject tree"
+    expectErrContains "structural pair rejects discharging a left assumption against the left subject tree"
+      "aggr structural: left assumption must be discharged by right child"
       selfAssumingStructuralSelfDischarge,
-    expectErr "structural pair rejects discharging a right assumption against the right subject tree"
+    expectErrContains "structural pair rejects discharging a right assumption against the right subject tree"
+      "aggr structural: right assumption must be discharged by left child"
       selfAssumingStructuralRightSelfDischarge,
-    expectErr "structural pair rejects discharging an assumption shared by both children"
+    expectErrContains "structural pair rejects discharging an assumption shared by both children"
+      "aggr structural: shared assumption cannot be discharged"
       sharedStructuralAssumptionDischarged,
-    expectErr "cross-binding pair rejects children with identical subject roots"
+    expectErrContains "cross-binding pair rejects children with identical subject roots"
+      "aggr cross-binding: child subject roots must be distinct"
       selfAssumingCrossBindingDuplicate,
-    expectErr "cross-binding pair rejects discharging a left assumption against the left subject tree"
+    expectErrContains "cross-binding pair rejects discharging a left assumption against the left subject tree"
+      "aggr structural: left assumption must be discharged by right child"
       selfAssumingCrossBindingSelfDischarge,
   ])]) []
 

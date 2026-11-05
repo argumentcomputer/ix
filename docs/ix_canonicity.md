@@ -120,16 +120,11 @@ separate representation operations and remain part of compilation.
 5. Add the role-support closure, certificates and binding with `finalize`,
    then check the finalized artifact before writing it.
 
-`--streamed` selects the checked streamed Lean comparison path. `ix compile
---rust` selects the uncertified Rust compiler; `ix compile-lean --rust-check`
-compares its serialized result with the selected Lean path. Rust/Lean byte
-parity is differential evidence, not a universal refinement theorem.
-
 Name-only `prove`, `check` and `addr-of` use
-`Ix.Check.loadNamedIxonEnv`, whose Lean path is the checked streamed loader
-`compileLeanConstsValidated`. Supplying a `.ixe` uses that artifact instead.
-These commands do not acquire direct `compileReport` coverage merely by
-using the Lean loader. The precise boundary is described in
+`Ix.Check.loadNamedIxonEnv`, which also runs `Ix.CompileM.compileCertified`
+(`Ix.Cert.compileReport` via `Ix.Compile.ReadyCompile.reportIO`). Supplying a
+`.ixe` uses that artifact instead. The uncertified streamed and Rust compiler
+paths have been retired. The precise boundary is described in
 [the compiler theorem's scope](kernel.md#relation-to-compiler-certification).
 
 ## Canonical sharing (§6.7)

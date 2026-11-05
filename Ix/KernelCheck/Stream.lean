@@ -16,12 +16,15 @@ edges computed from stand-ins that keep each record's literal kinds
 (`literalStandIn`), so the order, the recursor index and the views are those
 of the eager load.
 
-Each record's serialized bytes are copied out of the file's buffer into the
-reading state (`StreamState`), the buffer is released, and the check loop
-(`CheckIxeStep.checkLoopWith`) decodes a record in full only when its turn
-comes and drops its bytes once it is read. What stays resident is the
-skeletons, the names, hints and blobs, the bytes of the records not yet read,
-and what the checker installs.
+In `loadEnv`, parallel worker chunks decode each record once to build its
+skeleton and literal flags (keeping full records in the skeleton store only
+for proof-evidence records and their owners), build `CheckIxeStep.setup` over
+the skeleton store, and then pre-read context-free records in parallel into
+`PreRead` (`Read .anon`) entries while retaining full decoded `Ixon.Constant`s
+only for context-dependent or tier records. During the check loop
+(`CheckIxeStep.checkLoopWith`), each record's pre-read `Read .anon` (or
+fallback decoded `Ixon.Constant`) is taken and dropped from `StreamState`
+once read.
 
 The rows are the eager load's: the same records in the same order, read by
 the same reader from the same decoded records. -/

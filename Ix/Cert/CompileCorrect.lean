@@ -611,7 +611,18 @@ theorem IxonCommutesCovering.nominalPullback {ixe : Ixon.Env} {sub : Ix.Environm
 
 /-- Construct `NominalSemanticBridgeAt` directly from `IxonCommutesCovering`,
 `EnvSubstRel`, and `LawModel.Rel`, discharging all intermediate lookup and
-membership premises in `envQ` and `envA` from `c ∈ envS.consts`. -/
+membership premises in `envQ` and `envA` from `c ∈ envS.consts`.
+
+Note: Quotient Source (`CompileCorrect` + `Ix.LeanIngress.prepareSourceCollapsedAt_trace`)
+is the primary unconditional security guarantee: quotient collapse only merges
+declarations that are structurally identical (`Declaration.beqF`, hence `=`)
+under the fiber-alias substitution `Key.subst ρ`, and `CompileCorrect` transports
+both `ValueModel` and `LawModel` unconditionally between `envQ` and `envA`.
+This theorem is a conditional model-theoretic corollary for pulling models of
+`envQ` back to a nominal environment `envS` satisfying `EnvSubstRel` and
+`LawModel.Rel`; deriving `LawModel.Rel` from `EnvSubstRel` and discharging
+`EnvSubstRel` from `Ix.LeanIngress.FiberAliasSafe` on closures whose alias
+fibers do not mix reducibility hints is left for future work. -/
 theorem NominalSemanticBridgeAt.of_covering {P : Ix.Kernel.Mode.Id .source → Prop}
     {ixe : Ixon.Env} {sub : Ix.Environment}
     {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
@@ -625,12 +636,24 @@ theorem NominalSemanticBridgeAt.of_covering {P : Ix.Kernel.Mode.Id .source → P
   hcov.nominalPullback (hrel.toPullback hlaw)
 
 /-- **Nominal value-model bridge corollary of `CompileCorrect`** (requiring only
-`EnvSubstRel`, without `LawModel.Rel`). -/
+`EnvSubstRel`, without `LawModel.Rel`).
+
+Quotient Source (`CompileCorrect` + `Ix.LeanIngress.prepareSourceCollapsedAt_trace`)
+is the primary unconditional security guarantee: quotient collapse only merges
+declarations that are structurally identical (`Declaration.beqF`, hence `=`)
+under the fiber-alias substitution `Key.subst ρ`, and `CompileCorrect` transports
+both `ValueModel` and `LawModel` unconditionally between `envQ` and `envA`.
+`nominalBridgeAt` is a conditional model-theoretic corollary for pulling
+`ValueModel`s of `envQ` back to a nominal environment `envS` accepted by nominal
+Source (`SourceAccepts`) and satisfying `EnvSubstRel`; discharging `EnvSubstRel`
+from `Ix.LeanIngress.FiberAliasSafe` on closures whose alias fibers do not mix
+reducibility hints is left for future work. -/
 theorem CompileCorrect.nominalBridgeAt (h : CompileCorrect.{w})
     {P : Ix.Kernel.Mode.Id .source → Prop} {env : Ix.Environment}
     {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
     (table : Ix.Kernel.Reader.defaultTable = .ok t)
+    (nominal : SourceAccepts blocksOf env roots sub envS)
     (quotient : SourceAcceptsQ blocksOf env roots sub ixe t envQ)
     (hrel : EnvSubstRel P
       (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ)
@@ -639,20 +662,33 @@ theorem CompileCorrect.nominalBridgeAt (h : CompileCorrect.{w})
     (evidenceAgrees : EvidenceCheck.EvidenceAgrees t ixe)
     (evidence : RoleClosure.RoleEvidenceChecks) :
     Published ixe sub ∧ NominalModelBridgeAt.{w} ixe sub t envS envQ := by
+  have _ := nominal
   obtain ⟨hpub, hcov⟩ :=
     h env roots sub ixe failures t envQ table quotient compiled none bound
       agree evidenceAgrees evidence
   exact ⟨hpub, hcov.nominalBridgeAt hrel⟩
 
 /-- **Nominal pullback corollary of `CompileCorrect`**: when `CompileCorrect`
-holds and nominal `envS` pulls back from quotient `envQ` along
-`Key.subst (fiberAliasAt ixe (roleAtMap t))`, both `LawModel` and `ValueModel`
-compose to relate nominal `envS` directly to the compiled Ixon environment
-`envA` (`NominalSemanticBridgeAt`). -/
+holds and nominal `envS` (accepted by `SourceAccepts`) pulls back from quotient
+`envQ` along `Key.subst (fiberAliasAt ixe (roleAtMap t))`, both `LawModel` and
+`ValueModel` compose to relate nominal `envS` directly to the compiled Ixon
+environment `envA` (`NominalSemanticBridgeAt`).
+
+Quotient Source (`CompileCorrect` + `Ix.LeanIngress.prepareSourceCollapsedAt_trace`)
+is the primary unconditional security guarantee: quotient collapse only merges
+declarations that are structurally identical (`Declaration.beqF`, hence `=`)
+under the fiber-alias substitution `Key.subst ρ`, and `CompileCorrect` transports
+both `ValueModel` and `LawModel` unconditionally between `envQ` and `envA`.
+`nominalPullback` is a conditional model-theoretic corollary for pulling models
+of `envQ` back to a nominal environment `envS` satisfying `EnvSubstRel` and
+`LawModel.Rel`; deriving `LawModel.Rel` from `EnvSubstRel` and discharging
+`EnvSubstRel` from `Ix.LeanIngress.FiberAliasSafe` on closures whose alias
+fibers do not mix reducibility hints is left for future work. -/
 theorem CompileCorrect.nominalPullback (h : CompileCorrect.{w}) {env : Ix.Environment}
     {roots : List Ix.Name} {sub : Ix.Environment} {ixe : Ixon.Env} {failures : Failures}
     {t : Ix.Kernel.RoleTable} {envS envQ : Env .source}
     (table : Ix.Kernel.Reader.defaultTable = .ok t)
+    (nominal : SourceAccepts blocksOf env roots sub envS)
     (quotient : SourceAcceptsQ blocksOf env roots sub ixe t envQ)
     (hpull : EnvSubstPullback.{w}
       (Ix.LeanIngress.fiberAliasAt ixe (Ix.LeanIngress.roleAtMap t)) envS envQ)
@@ -661,6 +697,7 @@ theorem CompileCorrect.nominalPullback (h : CompileCorrect.{w}) {env : Ix.Enviro
     (evidenceAgrees : EvidenceCheck.EvidenceAgrees t ixe)
     (evidence : RoleClosure.RoleEvidenceChecks) :
     Published ixe sub ∧ NominalSemanticBridgeAt.{w} ixe sub t envS envQ := by
+  have _ := nominal
   obtain ⟨hpub, hcov⟩ :=
     h env roots sub ixe failures t envQ table quotient compiled none bound
       agree evidenceAgrees evidence

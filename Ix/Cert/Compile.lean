@@ -69,9 +69,10 @@ inconsistency is an error, with no artifact. The
 statements' coverage and authenticity (`CompileCovers`, `CompileAuthentic`)
 therefore hold by construction, without an invariant of the driver's loop.
 
-`Tests.Ix.Cert.Statement` compares the serialized output of the two on the
-Source-mode fixtures (`cert-statement`) and on Init+Std
-(`cert-compile-parity-initstd`, in the merge queue). -/
+`Tests.Ix.Cert.Statement` compares the serialized output of `Ix.Cert.compile`
+and the certified IO pipeline on the Source-mode fixtures (`cert-statement`),
+while `Ix.Compile.ReadyCompile.reportIO` proves by type that the IO
+worker-queue compile returns `Ix.Cert.compileReport`. -/
 
 public section
 

@@ -24,7 +24,8 @@ import Tests.Ix.Cert.ExecutedChecks
   reference check (`Ix.Cert.referenceCycle`, Route A, B4) must find four
   planted reference cycles (two decoded, two stored as bytes), and its
   refs-only reader must agree with the decoder on every record.
-  `cert-compile-parity-initstd` (merge queue) does the same on Init+Std.
+  (`Ix.Compile.ReadyCompile.reportIO` proves by type that the IO worker-queue
+  driver computes `Ix.Cert.compileReport`.)
 * **The statements' hypotheses and conclusion, per root, on the accepted
   fixtures** (`Tests.Ix.Kernel.SourceIngress.acceptedSeeds` and the prelude's
   constants):

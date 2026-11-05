@@ -94,15 +94,19 @@ private def isCrossDischarged (left right : CheckEnvTrees) (candidate : Address)
   else
     false
 
-/-- Canonical pair fold:
+/-- Canonical pair fold (`aggr_pair`):
 
-`subjects = subjectsL ∪ subjectsR` (disjoint)
+`subjects = subjectsL ∪ subjectsR` (disjoint for flat canonical pairs)
 
 `assumptions = ((assumptionsL ∖ subjectsR) ∪ (assumptionsR ∖ subjectsL))`.
 
-The circuit independently verifies disjointness, the union, and the difference
-with sorted linear merges, and that both children and the output share one
-context (the left child's here). -/
+For flat canonical pairs (`aggr_pair`), the circuit verifies subject-set
+disjointness, the union, and the difference with sorted linear merges, and that
+both children and the output share one context (the left child's here).
+(Structural and cross-binding joins check `left_root != right_root` in-circuit
+without opening the subject trees, while the Rust host's shard check enforces
+subject disjointness out-of-circuit; `aggrDerivation_sound` does not depend on
+subject disjointness.) -/
 def join (left right : CheckEnvTrees) : CheckEnvTrees :=
   let subjectLeaves := left.subjects.leaves ++ right.subjects.leaves
   let subjects := (Ix.AssumptionTree.canonical subjectLeaves).get!

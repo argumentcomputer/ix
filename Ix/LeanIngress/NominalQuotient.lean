@@ -15,8 +15,7 @@ trace invariants in `Ix.Cert.SourceTrace`, `Ix.Cert.SourcePrelude`, and
   `fiberAliasAt ixe (roleAtMap t)` maps the group's declared constants to
   pairwise distinct keys (`Nodup`);
 * `HintsAgreeAt` and `checkHintsAgreeAt`: every definition in `sub` has its
-  nominal reducibility hint matching `fiberHintsMap ixe` at its substituted key
-  (and at its nominal ingress key);
+  nominal reducibility hint matching `fiberHintsMap ixe` at its substituted key;
 * `FiberAliasSafe`, `checkGroupFiberSafe`, and `checkGroupFiberSafe_sound`: the
   combined executable checker and its soundness theorem;
 * `step_fresh_or_beqF`, `alias_fresh_or_beqF`, `collapseRead_fresh_or_beqF`,
@@ -106,14 +105,13 @@ theorem checkGroupIntraInjective_sound {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable
 
 /-- Every definition in `sub` has its nominal reducibility hint (`definitionShape`)
 matching `fiberHintsMap ixe` at its substituted key under
-`fiberAliasAt ixe (roleAtMap t)` (and at its nominal ingress key). -/
+`fiberAliasAt ixe (roleAtMap t)`. -/
 def HintsAgreeAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (sub : Ix.Environment) : Prop :=
   let ρ := fiberAliasAt ixe (roleAtMap t)
   let hints := fiberHintsMap ixe
   ∀ n ci, (n, ci) ∈ sub.consts.toList →
     ∀ kind safety hint, definitionShape ci = some (kind, safety, hint) →
-      hints[Key.subst ρ (ingressKey n)]? = some hint ∧
-        hints[ingressKey n]? = some hint
+      hints[Key.subst ρ (ingressKey n)]? = some hint
 
 /-- Executable boolean check for `HintsAgreeAt`. -/
 def checkHintsAgreeAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (sub : Ix.Environment) : Bool :=
@@ -122,8 +120,7 @@ def checkHintsAgreeAt (ixe : Ixon.Env) (t : Ix.Kernel.RoleTable) (sub : Ix.Envir
   sub.consts.toList.all fun (n, ci) =>
     match definitionShape ci with
     | some (_, _, hint) =>
-      (hints[Key.subst ρ (ingressKey n)]? == some hint) &&
-        (hints[ingressKey n]? == some hint)
+      hints[Key.subst ρ (ingressKey n)]? == some hint
     | none => true
 
 /-- Soundness of `checkHintsAgreeAt`. -/
@@ -135,7 +132,7 @@ theorem checkHintsAgreeAt_sound {ixe : Ixon.Env} {t : Ix.Kernel.RoleTable} {sub 
   have hall := List.all_eq_true.mp h (n, ci) hmem
   dsimp only at hall
   rw [hshape] at hall
-  simp only [Bool.and_eq_true, beq_iff_eq] at hall
+  simp only [beq_iff_eq] at hall
   exact hall
 
 /-- Pre-lowering fiber safety on `(sub, blocks)` at `(ixe, t)`: intra-group

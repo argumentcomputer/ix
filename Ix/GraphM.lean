@@ -61,8 +61,7 @@ def graphExprAcc (expr : Ix.Expr) (acc : Set Ix.Name) : GraphM (Set Ix.Name) := 
       pure (acc.insert typeName)
     | _, acc => pure acc
 
-/-- Extract constant references from an Ix.Expr.
-    NOTE: Aligned with Rust's get_expr_references for cross-impl testing. -/
+/-- Extract constant references from an Ix.Expr. -/
 def graphExpr (expr : Ix.Expr) : GraphM (Set Ix.Name) :=
   graphExprAcc expr {}
 
@@ -77,7 +76,6 @@ def recursorFamilyNames (all : Array Ix.Name) (numMotives : Nat) : Array Ix.Name
   return out
 
 /-- Extract constant references from an Ix.ConstantInfo.
-    NOTE: Aligned with Rust's get_constant_info_references for cross-impl testing.
 
     An inductive refers to the other members of its Lean block (`all`) and a
     recursor to the other recursors of its family (`recursorFamilyNames`): the

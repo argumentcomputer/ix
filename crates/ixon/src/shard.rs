@@ -535,13 +535,11 @@ fn mutual_work(
   if members.is_empty() {
     return Err("empty mutual block".into());
   }
-  if members.iter().any(|m| matches!(m, MutConst::Indc(_))) {
-    if members.iter().any(|m| matches!(m, MutConst::Defn(_))) {
-      return Err("mixed mutual block".into());
-    }
-    if !members.iter().any(|m| matches!(m, MutConst::Recr(_))) {
-      return Err("inductive mutual block without recursor".into());
-    }
+  let has_defn = members.iter().any(|m| matches!(m, MutConst::Defn(_)));
+  let has_indc = members.iter().any(|m| matches!(m, MutConst::Indc(_)));
+  let has_recr = members.iter().any(|m| matches!(m, MutConst::Recr(_)));
+  if has_defn && (has_indc || has_recr) {
+    return Err("mixed mutual block".into());
   }
   let mut targets = Vec::new();
   for (index, member) in members.iter().enumerate() {

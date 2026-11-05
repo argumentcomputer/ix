@@ -235,12 +235,9 @@ measurements belong in [BENCHMARKS.md](BENCHMARKS.md) and
 `ix compile <file>.lean --out <file>.ixe` (and `ix compile-lean`) runs the
 certified compiler, `Ix.Cert.compileReport`, which is proved correct
 (`Ix.Cert.CompileCorrect`), at the default sharing limits. `ix prove`, `ix check`
-and `ix addr-of` given a name and no `--ixe` compile its closure with the
-streamed Lean pipeline, which runs the same report checks but whose front end is
-tested, not proved; `--streamed` selects it for `ix compile`. `--rust` selects the
-Rust compiler instead: faster and lighter, but **uncertified**. It runs none
-of the report checks, and its output is held to the Lean compiler's only by
-byte equality on the reference corpora (`ix compile-lean --rust-check`). See
+and `ix addr-of` given a name and no `--ixe` compile its closure through the
+same certified compiler (`Ix.CompileM.compileCertified`). The uncertified
+streamed and Rust compilers have been retired. See
 [docs/kernel.md](docs/kernel.md) for what the theorem covers on these paths.
 
 ### Testing
@@ -249,13 +246,10 @@ byte equality on the reference corpora (`ix compile-lean --rust-check`). See
 
 Every test entry is registered once, with its tier, in `Tests/Main.lean`
 (the typed registry, `Tests/Registry.lean`). The tiers: `primary` (run by a
-bare `lake test`), `ci:<job>` (a CI partition: `cli` in the CI job,
-`compile-pipeline`, `compiler-closures`, `compile`, `decompile`, `misc`,
-`landing-compilers` and `landing-initstd` in the merge queue) and `manual`
-(with a reason, e.g. a Mathlib-sized input, or an entry expected to retire
-with the compiler's canonical rewriting). The two landing partitions hold
-the end-to-end checks of the compilers and of the certification, on the
-whole test environment and Init+Std; `--tier landing` selects both.
+bare `lake test`), `ci:<job>` (a CI partition: `cli` in the CI job, and
+`compiler-closures`, `misc` and `landing-initstd-cli` in the merge queue) and
+`manual` (with a reason, e.g. a Mathlib-sized input). The landing partition
+holds the end-to-end checks on Init+Std; `--tier landing` selects it.
 - `lake test` runs every primary entry. Every selected entry runs, even after
   a failure, with a result line each; the exit code is the first non-zero one.
 - `lake test -- <name>...` runs exactly the named entries, whatever their tier

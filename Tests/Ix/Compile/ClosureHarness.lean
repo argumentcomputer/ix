@@ -135,8 +135,7 @@ def namedDiff (a b : Ixon.Named) : Option String :=
 /-! ## Decompile -/
 
 /-- Decompile fidelity: the output, decompiled by the full Lean decompiler
-(`decompileEnvFullParallel`, as `ix validate-lean --full-oracle` phase 5 and
-the `decompile-diff` suite run it), equals the canonicalized source constants
+(`decompileEnvFullParallel`), equals the canonicalized source constants
 of `closure` (`ConstantInfo` BEq), in both directions. A constant whose block
 failed to compile (`out.cenv.ungrounded`) is not expected. Returns the
 problems and a summary line. -/

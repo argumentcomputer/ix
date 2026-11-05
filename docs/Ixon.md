@@ -774,23 +774,21 @@ recorded but not limited on this path in either language: Rust's
 `candidates` limit (2^16) bounds only the exhaustive width-state search kept as
 a test oracle, which is also the only meter of `transitions`.
 
-`ix compile --sharing-limits SPEC` (also `ix compile-lean --sharing-limits`)
-overrides the defaults for the uncertified compilers (`--rust`, `--streamed`);
-the certified compiler, whose correctness theorem fixes the defaults, refuses an
-override. It sets the `IX_SHARING_LIMITS` environment variable,
-which both compilers read once per run: Rust once per compile or decompile
-entry point (`CompileState::sharing_limits`), Lean in the CLI's driver options (`Ix.Cli.driverOptionsFromEnv`)
-and `decompileEnvFullParallel`. An invalid value therefore fails the run once,
-before any block is shared. `SPEC` is a comma-separated list of items, each
-`key=value` or the word `unbounded` (every production limit at its maximum). A
-value is ASCII decimal digits (no sign, no `_` separator), `2^k` with
-`k ≤ 63`, or `max` (2^64 − 1). Items, keys and values are trimmed of spaces,
-tabs, line feeds and carriage returns only. The keys are the limit names of
-either implementation (for example `states`, `depth`, `materialize_work`,
-`distinct_nodes`); keys of the other language are accepted and ignored, so one
-string serves both compilers. One list of 35 specifications pins both parsers
-(`LIMIT_SPEC_PARITY` in `crates/ixon/src/sharing_exact/tests.rs`,
-`limitSpecParity` in `Tests/Ix/SharingExact.lean`).
+The certified compiler (`Ix.Cert.compileReport`) always runs at the default
+sharing limits (`Ix.CompileM.compilerSharingLimits`), which its correctness
+theorem fixes. For unit tests, benchmarks, and study tools,
+`Ix.Sharing.Exact.Limits.withOverrides` and
+`ExactSharingLimits::with_overrides` parse an override string `SPEC`: a
+comma-separated list of items, each `key=value` or the word `unbounded` (every
+production limit at its maximum). A value is ASCII decimal digits (no sign, no
+`_` separator), `2^k` with `k ≤ 63`, or `max` (2^64 − 1). Items, keys and
+values are trimmed of spaces, tabs, line feeds and carriage returns only. The
+keys are the limit names of either implementation (for example `states`,
+`depth`, `materialize_work`, `distinct_nodes`); keys of the other language are
+accepted and ignored, so one string serves both parsers. One list of 35
+specifications pins both parsers (`LIMIT_SPEC_PARITY` in
+`crates/ixon/src/sharing_exact/tests.rs`, `limitSpecParity` in
+`Tests/Ix/SharingExact.lean`).
 
 Exceeding a limit is a compile error (`CompileError.resourceLimit`) that
 names the limit's key and the override, for example `canonical sharing:

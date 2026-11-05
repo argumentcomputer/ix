@@ -26,12 +26,10 @@ This file proves that the schedule is only a schedule:
 
 "Sequential" is the fold's own order: within a wave every outcome is
 computed against the wave's snapshot (the state the previous wave left),
-then the outcomes are applied in key order. That this equals compiling each
-block against the live state in some dependency order (the reference
-schedule `Tests.Ix.Compile.ScheduleReference`) is a
-property of the blocks' independence within a wave, tested by
-`compile-schedule-identity` and `cert-compile-parity-initstd`, not proved
-here.
+then the outcomes are applied in key order. Wave-snapshot freshness and
+disjointness across blocks in a wave are proved in `Ix.Cert.FreshSnapshot`
+(feeding `Ix.Cert.RunOwnership`), while `Ix.Compile.ReadyCompile.reportIO`
+proves by type that the IO worker-queue driver computes `Ix.Cert.compileReport`.
 
 The driver is restated with its apply step as a parameter
 (`foldWaveWith`), by `rfl` (`foldWave_eq_with`): an edit of `foldWave`

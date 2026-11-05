@@ -6,7 +6,7 @@ public import Std.Data.HashSet
 /-!
 # The canonical primitive addresses (Address-only)
 
-Mirror: crates/kernel/src/primitive.rs (`PrimAddrs::new()`).
+Mirror: crates/common/src/prim_addrs.rs (`PrimAddrs::new()`).
 
 The primitive and reserved-marker content addresses, the Lean parity table,
 and their membership set are shared by the resource validator and IxVM claim
@@ -228,18 +228,10 @@ def canonical : PrimAddrs where
   stringAppend := h "0eae69f3f8b198d1ffac67b9e88d39526b1b039ff519cd87eec106f63974860c"
   stringDecEq := h "da7bb331e098f9bf5cdabcb9609a7e953dffc609ad9d90871a14c016c52a3011"
 
-/-- The synthetic kernel-only marker address used by the *original*
-    (LEON-addressed) environment's `PrimAddrs::new_orig()`. Only the marker is
-    ported — the full orig table belongs to the Lean→kernel ingress half,
-    which is out of scope. -/
-def origEagerReduce : Address :=
-  h "ff00000000000000000000000000000000000000000000000000000000000013"
-
 /-- Addresses reserved for kernel-only reduction markers. These are not Lean
     constants and must never be accepted as user environment entries. -/
 def reservedMarkerAddrs : Array (String × Address) :=
-  #[("eager_reduce", canonical.eagerReduce),
-    ("orig.eager_reduce", origEagerReduce)]
+  #[("eager_reduce", canonical.eagerReduce)]
 
 /-- `(lean_name, canonical_address_hex)` pairs in the same order as Rust's
     `PrimAddrs::lean_parity_table()` / the `kernelPrimitives` list. Used by

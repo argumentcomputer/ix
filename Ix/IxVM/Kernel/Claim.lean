@@ -388,10 +388,13 @@ def claim := ⟦
   -- Aiur memoizes per (addr, owned, asm, strict) — the list pointers
   -- are per-run constants, so shared subgraphs walk once.
   -- Addr-set membership via RBTreeMap keyed on the interned store
-  -- pointer: content-addressed interning makes ptr equality ⇔ 32-byte
-  -- equality in BOTH directions (each content has exactly one store
-  -- slot), so a u32 ptr key is an exact membership test. O(log n) per
-  -- query vs the O(n) list scan — the frontier list is the biggest
+  -- pointer: under honest host/VM content-addressed interning, each 32-byte
+  -- value has one store slot so pointer equality matches 32-byte equality
+  -- (while in the STARK constraint system a `Store` pointer is an auxiliary
+  -- column without value-deduplication constraints, so pointer-inequality
+  -- guards are honest-prover checks whereas positive membership still checks
+  -- a pointer loaded from the authenticated assumption/owned tree). O(log n)
+  -- per query vs the O(n) list scan — the frontier list is the biggest
   -- per-visit cost on fat-frontier shards (e.g. 1977 asm leaves).
   fn addr_set_build(leaves: List‹Addr›, acc: RBTreeMap‹G›) -> RBTreeMap‹G› {
     match load(leaves) {

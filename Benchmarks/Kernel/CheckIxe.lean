@@ -30,12 +30,15 @@ and compares the two (`Benchmarks.Kernel.CheckIxeMeta`).
 Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] <input.ixe>
 <output.jsonl> [limit]`.
 
-* `--load stream` (the default) streams the records
-  (`Benchmarks.Kernel.CheckIxeStream`): the `.ixe` is loaded metadata-light,
-  the setup is built over record skeletons, and a record is decoded in full
-  only at its turn and its bytes dropped once it is read. `--load eager`
-  decodes the whole environment up front (`Ixon.deEnv`) and keeps every
-  record. The rows are the same; the streaming load holds less.
+* `--load stream` (the default) uses the skeleton/pre-read loader
+  (`Benchmarks.Kernel.CheckIxeStream`): the `.ixe` is loaded metadata-light
+  (`Ixon.deEnvAnon`), parallel chunks decode each record to build the
+  skeleton store for `setup` and pre-read context-free records into `Read`
+  entries (retaining decoded `Ixon.Constant`s only for context-dependent or
+  tier records), and each pre-read or decoded entry is dropped as the check
+  loop consumes it. `--load eager` decodes the whole environment with full
+  metadata up front (`Ixon.deEnv`) and keeps every full record in the store.
+  The rows are the same.
 * `--jobs <n>` checks in two phases (`Benchmarks.Kernel.CheckIxePool`): every
   record installed in order, then the recorded checks on `n` worker threads.
   The rows are the per-record check's, each record's `micros` its install
@@ -128,7 +131,7 @@ longest-running check in the slots has run longer than `watchMs`, or the
 process's resident memory exceeds `watchKb` while a check runs, it appends
 that check's record to `runaway` and exits with code 3. -/
 def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs watchKb : Nat)
-    (runaway : String) : IO Unit := do
+    (runaway : String) (onExit : IO Unit := pure ()) : IO Unit := do
   while ← running.get do
     IO.sleep 500
     let mut oldest : Option (Address × Nat) := none
@@ -140,6 +143,7 @@ def watchdog (slots : Array CheckIxePool.Slot) (running : IO.Ref Bool) (watchMs 
       let rss ← statusKb "VmRSS:"
       if elapsed > watchMs || rss > watchKb then
         IO.eprintln s!"check-ixe: watchdog: {address} ran {elapsed} ms, RSS {rss / 1024} MB; exiting"
+        onExit
         let file ← IO.FS.Handle.mk runaway .append
         file.putStrLn (toString address)
         file.flush
@@ -187,13 +191,14 @@ def run (args : List String) : IO UInt32 := do
     (Array.range (options.jobs.getD 1 - 1)).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
   let slots := #[slot0] ++ others
   let running ← IO.mkRef true
-  let _ ← IO.asTask (prio := .dedicated)
-    (watchdog slots running watchMs watchKb (options.output.toString ++ ".runaway"))
   let handle ← IO.FS.Handle.mk options.output .write
   let emitBuf ← IO.mkRef ("", 0)
   let flushEmit : IO Unit := do
     let (buf, n) ← emitBuf.modifyGet fun s => (s, ("", 0))
     if n > 0 then handle.putStr buf
+    handle.flush
+  let _ ← IO.asTask (prio := .dedicated)
+    (watchdog slots running watchMs watchKb (options.output.toString ++ ".runaway") flushEmit)
   let emit := fun (row : Row) => do
     let line := row.jsonLine ++ "\n"
     let flushNow? ← emitBuf.modifyGet fun (buf, n) =>
@@ -202,6 +207,7 @@ def run (args : List String) : IO UInt32 := do
       if n' >= 512 then (some buf', ("", 0)) else (none, (buf', n'))
     if let some chunk := flushNow? then
       handle.putStr chunk
+      handle.flush
   let log := fun (line : String) => do
     IO.eprintln s!"check-ixe: {line}; at {(← IO.monoMsNow) - started} ms, \
       RSS {(← statusKb "VmRSS:") / 1024} MB, peak {(← statusKb "VmHWM:") / 1024} MB"

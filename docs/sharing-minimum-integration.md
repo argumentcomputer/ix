@@ -443,13 +443,11 @@ the per-prefix path; it is a fixture in both languages, 7,105 bytes). The cargo 
 digits, `2^k` or `max`; items and keys are trimmed of spaces, tabs, line feeds and carriage
 returns only; keys of the other language are accepted and ignored. One list of 35
 specifications pins both (`LIMIT_SPEC_PARITY` in `crates/ixon/src/sharing_exact/tests.rs`,
-`limitSpecParity` in `Tests/Ix/SharingExact.lean`). `ix compile --sharing-limits` and
-`ix compile-lean --sharing-limits` validate the override and publish it through
-`IX_SHARING_LIMITS`. The Lean compiler reads it through
-`Ix.Cli.driverOptionsFromEnv`, carried in `CompileEnv.sharingLimits`; the Rust
-compile and regeneration paths use `CompileState::sharing_limits`. Lean's
-`decompileEnvFullParallel` reads stored originals and ignores its historical
-sharing-limits parameter; it does not invoke the sharing construction.
+`limitSpecParity` in `Tests/Ix/SharingExact.lean`). The certified compiler
+(`Ix.Cert.compileReport`) always uses the default `Ix.CompileM.compilerSharingLimits`,
+carried in `CompileEnv.sharingLimits`. Lean's `decompileEnvFullParallel` reads
+stored originals and ignores its historical sharing-limits parameter; it does
+not invoke the sharing construction.
 
 **Test oracles.** The width-state search (`Ix.Sharing.Exact.Search`, `search.rs`, the `exact`
 corpus mode), the tiny exhaustive oracle (`Exact.Oracle`, `oracle.rs`), the subset-enumeration
@@ -501,14 +499,9 @@ and codec contracts. K16 evidence is recorded in
   ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile -- -D warnings`; `cargo check`
   with the same features; `cargo test --release --workspace` (1,716 passed, 20 ignored); `cargo
   deny check`.
-- Merge-queue partitions run locally: `tc-unit`; the compile-pipeline partition
-  (`--ignored rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip graph-cross
-  condense-cross rust-serialize ixon-corpus rust-decompile validate-aux aux-gen-diff
-  decompile-diff`); and `--ignored compile` (Lean and Rust compile all 237,295 constants of the
-  test environment; constants, metadata and serialized environments are identical), run on the
-  tree just before the final cleanup and documentation commits. The other ignored partitions
-  (`--ignored decompile`, the misc partition with the `ixvm` runner, the Tc ignored suites) are
-  run by the merge queue.
+- Merge-queue partitions run locally at that time (historical): `tc-unit`; the
+  historical `compile-pipeline` partition; and `--ignored compile` (all 237,295 constants of the
+  test environment), run on the tree just before the final cleanup and documentation commits.
 
 ## 9. Owner decisions on the questions of this map
 

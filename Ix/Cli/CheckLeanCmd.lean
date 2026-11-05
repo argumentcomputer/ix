@@ -124,6 +124,7 @@ inductive ArtifactAdmission where
 
 structure CheckReport where
   targets : Array TargetResult
+  rows : Array Row := #[]
   execution : Execution
   omitted : Array String
   records : Nat
@@ -134,6 +135,7 @@ structure CheckReport where
   supportMicros : Nat
   readMicros : Nat
   bound : Bool := false
+  boundRoles : Nat := 0
   artifactAdmission : Option ArtifactAdmission := none
   hostStatement : Option Ix.HostAdmission.Statement := none
   artifactMs : Nat := 0
@@ -175,7 +177,9 @@ def coverageNotice (report : CheckReport) (wholeRequested : Bool) : Option Strin
   match report.artifactAdmission with
   | some _ => none
   | none =>
-    if report.bound then some "[check-lean] selected checking only; no whole-artifact receipt"
+    if report.bound then
+      if wholeRequested then none
+      else some "[check-lean] selected checking only; no whole-artifact receipt"
     else if wholeRequested then
       some s!"[check-lean] partial check: the artifact carries no role binding, so the \
 whole-artifact admission did not run; only the per-declaration checks ran \
@@ -257,7 +261,7 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
     let reads := run.rows.foldl (fun n r => if actual.contains r.address then n + r.readMicros else n) 0
     let elapsedMs := (← IO.monoMsNow) - start
     return .ok {
-      targets, execution := run.execution, omitted := plan.omitted, records := actual.size
+      targets, rows := run.rows, execution := run.execution, omitted := plan.omitted, records := actual.size
       inputMs := p.prepareMs, prepareMs, elapsedMs, subjectMicros := subject
       supportMicros := total - subject, readMicros := reads }
   finally
@@ -300,16 +304,23 @@ def runPrepared (p : PreparedInput) (cfg : CheckCfg) (selection : Selection)
         (fun d => (nameTier nc d {}).1) (spellWith display) start failOut?)
     let diagnostics := job
     let job : IO (Except DriverError CheckReport) := do
-      let started ← IO.monoMsNow
-      let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
-      let elapsed := (← IO.monoMsNow) - started
-      match admitted with
+      if p.bound && (match selection with | .all => true | .only _ => false) && maxGroups.isNone && !p.parts.env.assumptions.isEmpty then
+        return .error (.artifact "artifact: decline: thin artifact assumptions require explicit resolution")
+      match ← diagnostics with
       | .error e => return .error e
-      | .ok admission =>
-        return (← diagnostics).map fun report => { report with
-          bound := p.bound, artifactAdmission := admission.map (·.1)
-          hostStatement := admission.map (·.2), artifactMs := elapsed
-          prepareMs := report.prepareMs - elapsed }
+      | .ok report =>
+        let boundRoles := if p.bound then p.setup.table.bound.size else 0
+        if !report.failures.isEmpty then
+          return .ok { report with bound := p.bound, boundRoles }
+        let started ← IO.monoMsNow
+        let admitted ← IO.lazyPure fun _ => checkWhole p selection maxGroups
+        let elapsed := (← IO.monoMsNow) - started
+        match admitted with
+        | .error e => return .error e
+        | .ok admission =>
+          return .ok { report with
+            bound := p.bound, boundRoles, artifactAdmission := admission.map (·.1)
+            hostStatement := admission.map (·.2), artifactMs := elapsed }
     if cfg.stackBytes != 0 then Ix.Runtime.setLeanThreadStackSize (USize.ofNat cfg.stackBytes)
     IO.ofExcept (← IO.wait (← IO.asTask (prio := .dedicated) job))
   catch e => return .error (.infrastructure e.toString)
@@ -351,20 +362,110 @@ def checkConfig (p : Cli.Parsed) : IO (Except DriverError CheckCfg) := do
   let slow ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
   return do pure { workers, verbose := p.hasFlag "verbose", progressMs := ← progress, slowMs := ← slow }
 
+private def csvField (s : String) : String :=
+  if s.any (fun c => c == ',' || c == '"')
+  then "\"" ++ s.replace "\"" "\"\"" ++ "\""
+  else s
+
+private def writePerConstCsv (p : PreparedInput) (rows : Array Row) (outCsv : String) : IO Unit := do
+  let mut named : Std.HashMap String String := {}
+  for r in p.parts.namedRows do
+    let key := toString r.addr
+    if !named.contains key then
+      named := named.insert key (toString r.name)
+  let mut viaPrj : Std.HashMap String String := {}
+  for (caddr, c) in p.setup.store do
+    let blk? := match c.info with
+      | .iPrj prj => some prj.block
+      | .cPrj prj => some prj.block
+      | .rPrj prj => some prj.block
+      | .dPrj prj => some prj.block
+      | _ => none
+    let some blk := blk? | continue
+    let key := toString blk
+    if !viaPrj.contains key then
+      if let some n := named[toString caddr]? then
+        viaPrj := viaPrj.insert key n
+  let mut out := "name,addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost\n"
+  for row in rows do
+    let addr := toString row.address
+    let name := match named[addr]? with
+      | some n => n
+      | none => match viaPrj[addr]? with
+        | some n => n
+        | none => s!"@{addr.take 16}"
+    let nanos := (row.micros + row.readMicros) * 1000
+    out := out ++ s!"{csvField name},{addr},1,{nanos},0,0,0,0,0,0,0\n"
+  IO.FS.writeFile outCsv out
+
+private def writeJsonReportRow (jsonPath key : String) (report : CheckReport) (count : Nat) : IO Unit := do
+  let secs := report.elapsedMs.toFloat / 1000.0
+  let tput := if report.elapsedMs > 0
+    then count.toFloat * 1000.0 / report.elapsedMs.toFloat else 0.0
+  let peakRss := (← statusKb "VmHWM:") * 1024
+  let status := if report.failures.isEmpty then "ok" else "rejected"
+  Ix.Benchmark.Results.writeRow jsonPath key status
+    [ ("constants", Lean.toJson count)
+    , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
+    , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
+    , ("peak-rss", Lean.toJson peakRss) ]
+
 def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let some path := p.positionalArg? "path" | p.printError "error: must specify <path>"; return 2
   let cfg ← match ← checkConfig p with
     | .ok c => pure c | .error e => IO.eprintln e.message; return e.exitCode
   try
     let only ← ConstsFile.gather p
-    let selection := if (p.flag? "consts").isSome || (p.flag? "consts-file").isSome then Selection.only only else .all
+    let hasConsts := (p.flag? "consts").isSome || (p.flag? "consts-file").isSome
+    let selection := if hasConsts then Selection.only only else .all
     let cap := (p.flag? "max").map (·.as! Nat)
     let wholeRequested := (match selection with | .all => true | .only _ => false) && cap.isNone
     let persistHost := p.hasFlag "host-out" || p.hasFlag "host-store"
-    if persistHost && ((match selection with | .all => false | .only _ => true) || cap.isSome) then
+    if persistHost && (hasConsts || cap.isSome) then
       IO.eprintln "[check-lean] host statement output requires a complete bound artifact check"
       return 2
+    if hasConsts && (p.flag? "json").isSome && (p.flag? "fail-out").isSome then
+      IO.eprintln "[check-lean] --json per-name rows and --fail-out cannot be combined"
+      return 2
     let bytes ← IO.FS.readBinFile (path.as! String)
+    if let some jsonFlag := p.flag? "json" then
+      if hasConsts then
+        if only.isEmpty then
+          IO.eprintln "[check-lean] explicit selector is empty"
+          return 2
+        IO.println s!"Running IxC record check ({if p.hasFlag "anon" then "anon" else "meta"} mode)"
+        let prepared ← match ← prepareInput bytes (p.hasFlag "anon") with
+          | .ok prep => pure prep
+          | .error e => IO.eprintln s!"[check-lean] {e.message}"; return e.exitCode
+        let namedInv := namedCandidates prepared.setup.store
+          (prepared.parts.namedRows.map fun (r : Ixon.NamedRow) => (toString r.name, r.addr))
+        let anonIdx := candidateIndex prepared.inventory
+        let namedIdx := candidateIndex namedInv
+        let mut passed := 0
+        let mut failed := 0
+        let startAll ← IO.monoMsNow
+        for name in only do
+          let c ← match findIndexed anonIdx name with
+            | .ok c => pure c
+            | .error e =>
+              if prepared.anon then
+                match findIndexed namedIdx name with
+                | .ok c => pure c
+                | .error e' => IO.eprintln s!"[check-lean] {(targetError e').message}"; return (targetError e').exitCode
+              else
+                IO.eprintln s!"[check-lean] {(targetError e).message}"; return (targetError e).exitCode
+          let single := { prepared with inventory := #[{ c with label := name, fileLabel := name }] }
+          match ← runPrepared single cfg (.only #[name]) cap none with
+          | .error e =>
+            IO.eprintln s!"[check-lean] {e.message}"
+            return e.exitCode
+          | .ok report =>
+            writeJsonReportRow (jsonFlag.as! String) name report report.records
+            if report.failures.isEmpty then passed := passed + 1 else failed := failed + 1
+        let elapsedAll := (← IO.monoMsNow) - startAll
+        IO.println s!"[check-lean] {passed}/{only.size} subjects passed"
+        IO.println s!"##check-lean## {elapsedAll} {passed} {failed} {only.size}"
+        return if failed == 0 then 0 else Ix.Benchmark.Results.exitRejected
     let out ← match p.flag? "fail-out" with
       | none => pure none
       | some f => do
@@ -372,7 +473,16 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
         h.putStrLn s!"# ix check-lean failures\n# env: {path.as! String}"
         pure (some h)
     IO.println s!"Running IxC record check ({if p.hasFlag "anon" then "anon" else "meta"} mode)"
-    let result ← if p.hasFlag "anon" then runAnonCheck bytes cfg selection cap out else runMetaCheck bytes cfg selection cap out
+    let prepared ← match ← prepareInput bytes (p.hasFlag "anon") with
+      | .ok prep => pure prep
+      | .error e =>
+        IO.eprintln s!"[check-lean] {e.message}"
+        if let some h := out then
+          h.putStrLn s!"# {e.message.replace "\n" " | "}"
+          if let .refused label _ := e then h.putStrLn (if label.startsWith "#" then (label.drop 1).toString else label)
+          h.flush
+        return e.exitCode
+    let result ← runPrepared prepared cfg selection cap out
     match result with
     | .error e =>
       IO.eprintln s!"[check-lean] {e.message}"
@@ -383,9 +493,15 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       return e.exitCode
     | .ok report =>
       if persistHost && report.hostStatement.isNone then
+        if !report.failures.isEmpty then
+          return Ix.Benchmark.Results.exitRejected
         IO.eprintln "[check-lean] host statement output requires a complete bound artifact check"
         return 2
       if let some h := out then h.putStrLn s!"\n# total failures: {report.failures.size}"; h.flush
+      if let some perConstFlag := p.flag? "per-const" then
+        writePerConstCsv prepared report.rows (perConstFlag.as! String)
+      if report.bound then
+        IO.println s!"[check-lean] bound roles: {report.boundRoles} admitted, 0 group(s) refused"
       match report.artifactAdmission with
       | some (.logical records) =>
         IO.println s!"[check-lean] whole artifact: logical entry accepted all {records} records ({report.artifactMs}ms)"
@@ -405,6 +521,10 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"[check-lean] {report.passed}/{report.targetsCovered} subjects passed ({report.typed} typed only), {report.records} checked/read records"
       IO.println s!"[check-lean] authenticated input {report.inputMs}ms; run preparation {report.prepareMs}ms; selected checker {report.subjectMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; reading {report.readMicros / 1000}ms; run {report.elapsedMs}ms"
       IO.println s!"##check-lean## {report.elapsedMs} {report.passed} {report.failures.size} {report.targetsCovered}"
+      if let some jsonFlag := p.flag? "json" then
+        let key := (p.flag? "json-name").map (·.as! String) |>.getD "env"
+        writeJsonReportRow (jsonFlag.as! String) key report report.targetsCovered
+        return if report.failures.isEmpty then 0 else Ix.Benchmark.Results.exitRejected
       return runExit report wholeRequested
   catch e => IO.eprintln s!"[check-lean] {e}"; return 1
 
@@ -423,6 +543,9 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
     consts : String; "Comma-separated selected names or anonymous addresses"
     "consts-file" : String; "Selected labels, one per line; # introduces comments"
     max : Nat; "Select the first N producer groups; all dependencies/prelude remain"
+    "per-const" : String; "Write a per-record attribution CSV (name, addr, consts, nanos, counters, cost) to this path"
+    json : String; "Write benchmark results rows to this path (whole-env row keyed by --json-name, or one full-closure row per selected constant)"
+    "json-name" : String; "Row key for the whole-env --json row (default: env)"
     "clear-every" : Nat; "Compatibility option: only 0 is supported by IxC"
     "no-verify"; "Unsupported: IxC requires byte authentication"
     verbose; "Print one outcome per selected subject"

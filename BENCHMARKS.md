@@ -1,20 +1,21 @@
 > Historical pipeline results (the refresh below is dated 2026-08-07).
 > The measurements and methodology describe that pipeline: its `Ix.Tc`
-> checker, regenerating Lean decompiler, canonical block order and
-> auxiliary regeneration, all since removed. Recorded agreement concerns
+> checker, regenerating Lean decompiler, canonical block order,
+> auxiliary regeneration, and the uncertified Rust compiler/checker crates
+> and CLI flags, all since removed. Recorded agreement concerns
 > the measured inputs.
 >
 > Current `ix check-lean` uses IxC and rejects nonzero `--clear-every`,
 > including the recorded `--clear-every 50`. The compiler now compiles
-> Lean verbatim. See the [current benchmark commands](docs/benchmarking.md#local-usage)
+> Lean verbatim through the certified Lean pipeline (`Ix.Cert.compileReport`).
+> See the [current benchmark commands](docs/benchmarking.md#local-usage)
 > and [checker contract and commands](docs/kernel.md#environment-check).
 
-# Ix pipeline benchmarks: pure-Lean vs Rust
+# Ix pipeline benchmarks: pure-Lean vs Rust (historical, 2026-08-07)
 
-Head-to-head timings for every stage of the Ix pipeline across three
-environments, comparing the pure-Lean implementation (`Ix.CompileM` /
-`Ix.DecompileM` / `Ix.Tc`) against the Rust implementation
-(`crates/compile` / `crates/kernel`).
+Head-to-head timings for every stage of the historical 2026-08-07 Ix pipeline
+across three environments, comparing the pure-Lean implementation (`Ix.CompileM` /
+`Ix.DecompileM` / retired `Ix.Tc`) against the retired Rust implementation.
 
 ## Methodology
 
@@ -26,10 +27,10 @@ environments, comparing the pure-Lean implementation (`Ix.CompileM` /
   gaps of interest).
 - Lean-file elaboration (`getFileEnv`) is excluded everywhere — both
   sides time their core operation after the environment is in memory.
-- The two implementations are **output-equivalent by construction**:
-  compilation is byte-identical (`ix compile-lean --rust-check` ALIGNED)
-  and decompilation is hash-identical against the canonicalized source,
-  so every row compares identical work.
+- At the time of measurement, the two implementations were **output-equivalent
+  by construction**: compilation was byte-identical (verified by the retired
+  Rust/Lean comparison mode) and decompilation was hash-identical against the
+  canonicalized source, so every row compares identical work.
 - The Lean implementation is the *correctness reference*; its
   performance is reported, not optimized (per the alignment ground
   rules, Lean-side performance work is out of scope).
@@ -113,9 +114,9 @@ compilation totals above.
 Lean: `ix validate-lean` phase 2 (`Ixon.deEnv` parse **plus** a
 byte-exactness re-serialization — the parse alone is not separately
 instrumented; the reported figure is parse + reser). Rust: `Env::get`
-is not separately reported either; the figure is derived as
-`ix check-rs` total wall time minus its reported check time (load +
-parse + ingress setup).
+was not separately reported either; the historical figure was derived as
+the retired Rust kernel checker's total wall time minus its reported check time
+(load + parse + ingress setup).
 
 | Environment | Lean deEnv (+reser) | Rust env load (derived) |
 |---|---|---|
@@ -142,12 +143,12 @@ kept for reference.
 | Lean | 268.7 s | 1,317 s | 12.68 s |
 | Mathlib | 3,926.3 s | — | 221.0 s |
 
-## Typechecking (`.ixe` through the kernel, meta mode)
+## Typechecking (`.ixe` through the historical 2026-08-07 kernel, meta mode)
 
-Rust: `ix check-rs`. Lean: `ix check-lean`. Same constants checked,
-full verdict parity.
+Historical Rust kernel checker vs historical Lean `ix check-lean` (`Ix.Tc`).
+Same constants checked, full verdict parity.
 
-| Environment | Constants | Lean `check-lean` | Rust `check-rs` | Ratio |
+| Environment | Constants | Lean `check-lean` (historical `Ix.Tc`) | Rust kernel (retired) | Ratio |
 |---|---|---|---|---|
 | InitStd | 105,492 | 64.8 s (~1,630/s) | 24.1 s (~4,380/s) | 2.7× |
 | Lean | 188,999 | 78.1 s (~2,420/s) | 35.0 s (~5,400/s) | 2.2× |
