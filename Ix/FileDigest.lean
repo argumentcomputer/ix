@@ -20,12 +20,13 @@ def lowerHex (bytes : ByteArray) : String :=
   bytes.foldl (fun s b => (s.push (digit (b >>> 4))).push (digit (b &&& 0xf))) ""
 
 /-- The Blake3 digest of the file at `path`, as 64 lowercase hexadecimal
-digits, read `chunk` bytes at a time. -/
+digits, read `chunk` bytes at a time (at least one: a read of zero bytes would
+end the loop at once, with the empty input's digest). -/
 def blake3File (path : System.FilePath) (chunk : USize := 1048576) : IO String := do
   let handle ← IO.FS.Handle.mk path .read
   let mut hasher := Blake3.HasherOps.init (H := Blake3.Rust.Hasher) ()
   repeat
-    let bytes ← handle.read chunk
+    let bytes ← handle.read (max chunk 1)
     if bytes.isEmpty then break
     hasher := Blake3.HasherOps.update hasher bytes
   return lowerHex (Blake3.HasherOps.finalize hasher 32).val
