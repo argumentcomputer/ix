@@ -283,9 +283,6 @@ lean_exe «bench-ixvm» where
   root := `Benchmarks.IxVM
   supportInterpreter := true
 
-lean_exe «bench-shardmap» where
-  root := `Benchmarks.ShardMap
-
 lean_exe «bench-typecheck» where
   root := `Benchmarks.Typecheck
   supportInterpreter := true

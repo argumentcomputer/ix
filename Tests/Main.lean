@@ -77,7 +77,6 @@ import Tests.AggrActivation
 import Tests.Cli
 import Tests.CompressionCli
 import Tests.Ix.Ixes
-import Tests.ShardMap
 import Tests.Ix.EnvBody
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
@@ -229,7 +228,6 @@ def registry : List Entry := [
   .runner "binding-proof-cli" (.ci .cli) Tests.Aggr.BindingReuse.cli,
 
   -- expensive suites and runners (these require significant RAM)
-  .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,
   .suite "catalog-dedup" (.ci .misc) Tests.Ix.CatalogDedup.suite,
   .suite "truthmines" (.manual "builds the whole TruthMines corpus (network, Mathlib, FLT)") Tests.Ix.TruthMines.buildSuite,
   .suite "truthmines-check" (.manual "checks the whole TruthMines corpus built by `truthmines`") Tests.Ix.TruthMines.checkSuite,
