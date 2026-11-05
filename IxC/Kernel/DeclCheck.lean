@@ -849,27 +849,6 @@ def checkDivModEvidenceF (ops : (CheckerOps md) m) (ev : Evidences md)
   else throw (.notImplemented
     msg!"unsupported Nat.div/mod environment ({c})")
 
-/-- `checkAxiomDeclWithUserAxioms` through the `FEnv` index, returning the pushed index. -/
-def checkAxiomDeclWithUserAxiomsF (ops : (CheckerOps md) m) (fe : FEnv md)
-    (cv : ConstantVal md) : m (FEnv md) := do
-  if cv.name = quotSoundName then
-    if ConstantInfo.canonEq (.axiomInfo cv) (quotBasis.getD 4 (.axiomInfo default)) then
-      pure fe
-    else
-      throw (.notImplemented "quotient soundness axiom mismatch")
-  else do
-    let cvA ← checkConstantValF ops fe cv
-    if stdAxiomOkF fe cvA then
-      pure (fe.push (.axiomInfo cvA))
-    else if cvA.name = propextName ∨ cvA.name = choiceName then
-      throw (.notImplemented msg!"standard axiom shape mismatch ({cv.name})")
-    else if cvA.name = sorryAxName then
-      pure fe
-    else if cvA.name.isCustomAxiomEligible then
-      pure (fe.push (.axiomInfo cvA))
-    else
-      throw (.notImplemented msg!"non-standard axiom ({cv.name})")
-
 end Mirrors
 
 end Ix.Kernel
