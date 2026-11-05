@@ -95,6 +95,7 @@ import Tests.AggrBindingReuse
 import Tests.AggrToolchains
 import Tests.AggrSemantics
 import Tests.Cli
+import Tests.CompressionCli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -219,6 +220,9 @@ def registry : List Entry := [
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates)
   .runner "binding-proof-cli" (.ci .cli) Tests.Aggr.BindingReuse.cli,
+  -- `ix compress` and compressed-proof verification: setup checks and the
+  -- rejection of invalid inputs, through the `ix` binary
+  .runner "compression-cli" (.manual "needs `lake build ix`") (do Tests.CompressionCli.run; return 0),
 
   -- expensive suites and runners (these require significant RAM)
   .suite "shard-map" (.ci .misc) Tests.ShardMap.suite,

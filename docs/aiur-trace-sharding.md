@@ -3,7 +3,7 @@
 Design for splitting one Aiur execution into K independently provable
 trace shards whose proofs form a batch of STARKs, so that each shard's
 STARK phases fit in GPU memory, then aggregating that batch with the
-`ix_aggr` recursion. Terminal compression of the final root is a
+`ix_aggr` recursion. Final compression of the aggregate root is a
 downstream consumer of this design's verifier contract, not part of it.
 
 The design is implemented: the batch protocol in multi-stark, the
@@ -56,8 +56,8 @@ on one or several GPUs is [aiur-gpu-proving.md](aiur-gpu-proving.md).
   is the `K = 1` vector and `verify_vector` is the verification routine
   for every Aiur proof. Anything that embeds an Aiur verifier — native
   Rust, the Lean in-circuit verifier, `ix verify`, and any downstream
-  consumer of the root such as a terminal compressor — adopts it.
-  Terminal compression itself is out of scope: it consumes a valid root
+  consumer of the root such as a final compressor — adopts it.
+  Final compression itself is out of scope: it consumes a valid root
   proof and is unchanged by how that root was aggregated.
 - **Byte tables** are present in every shard; one shard's copy carries
   the record's multiplicities and the others' carry zeros (deactivating
@@ -659,7 +659,7 @@ final accumulator rejects every honest proof. (A second, `MEMSEG`-free
 key arrangement for root proofs would put two verifying keys into the
 allowed blob and is not worth the identity complexity.)
 
-What happens to the root afterwards — native verification, or a terminal
+What happens to the root afterwards — native verification, or a final
 compressor that re-verifies it inside another proof system to shrink it
 — is outside this design and independent of how the root was
 aggregated. The only requirement this design places on such a consumer

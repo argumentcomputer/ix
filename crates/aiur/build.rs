@@ -4,20 +4,27 @@
 //! Goldilocks header, using multi-stark's stream and runtime conventions.
 
 use std::env;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
+
+/// Toolchain metadata from multi-stark's CUDA build, so the population
+/// kernels target the same compiler and GPUs as the backend they feed.
+fn multi_stark_cuda(key: &str) -> OsString {
+  env::var_os(format!("DEP_MULTI_STARK_CUDA_{key}"))
+    .unwrap_or_else(|| panic!("multi-stark's CUDA build did not report {key}"))
+}
 
 fn main() {
   println!("cargo:rerun-if-changed=build.rs");
   println!("cargo:rerun-if-changed=cuda/population.cu");
-  println!("cargo:rerun-if-env-changed=NVCC");
-  println!("cargo:rerun-if-env-changed=CUDA_HOME");
-  println!("cargo:rerun-if-env-changed=CUDA_PATH");
-  println!("cargo:rerun-if-env-changed=MULTI_STARK_CUDA_ARCHS");
+  println!("cargo:rerun-if-env-changed=NVCC_CCBIN");
+  println!("cargo:rerun-if-env-changed=NVCC_PREPEND_FLAGS");
+  println!("cargo:rerun-if-env-changed=NVCC_APPEND_FLAGS");
   if env::var_os("CARGO_FEATURE_CUDA").is_none() {
     return;
   }
-  let nvcc = nvcc_path();
+  let nvcc = multi_stark_cuda("NVCC");
   let out_dir =
     PathBuf::from(env::var_os("OUT_DIR").expect("Cargo did not set OUT_DIR"));
   let include = PathBuf::from(
@@ -39,7 +46,10 @@ fn main() {
     "-lineinfo",
     "--compiler-options=-fPIC",
   ]);
-  for architecture in architectures(&nvcc) {
+  let architectures = multi_stark_cuda("ARCHS")
+    .into_string()
+    .expect("CUDA architectures are ASCII");
+  for architecture in architectures.split(',') {
     compile.arg(format!(
       "-gencode=arch=compute_{architecture},code=sm_{architecture}"
     ));
@@ -62,68 +72,15 @@ fn main() {
   assert!(status.success(), "nvcc archive failed: {status}");
   println!("cargo:rustc-link-search=native={}", out_dir.display());
   println!("cargo:rustc-link-lib=static=aiur_population");
-  // As in multi-stark: bundle the CUDA runtime so staticlib consumers (Lean)
-  // resolve its registration symbols too.
+  // Bundle the CUDA runtime so staticlib consumers (Lean) also resolve the
+  // population kernels' registration symbols.
   println!("cargo:rustc-link-lib=static=cudart_static");
   for library in ["dl", "rt", "pthread", "stdc++"] {
     println!("cargo:rustc-link-lib=dylib={library}");
   }
-  let root = PathBuf::from(&nvcc)
-    .parent()
-    .and_then(|bin| bin.parent())
-    .map(PathBuf::from);
-  for directory in root.iter().flat_map(|root| {
-    [root.join("lib64"), root.join("targets/x86_64-linux/lib")]
-  }) {
+  for directory in env::split_paths(&multi_stark_cuda("LIB_DIRS")) {
     if directory.is_dir() {
       println!("cargo:rustc-link-search=native={}", directory.display());
     }
   }
-}
-
-fn nvcc_path() -> std::ffi::OsString {
-  if let Some(nvcc) = env::var_os("NVCC") {
-    return nvcc;
-  }
-  if let Some(root) =
-    env::var_os("CUDA_HOME").or_else(|| env::var_os("CUDA_PATH"))
-  {
-    let candidate = PathBuf::from(root).join("bin/nvcc");
-    if candidate.is_file() {
-      return candidate.into_os_string();
-    }
-  }
-  "nvcc".into()
-}
-
-/// `MULTI_STARK_CUDA_ARCHS` when set (multi-stark uses the same variable),
-/// otherwise the visible GPUs' architectures, otherwise sm_80.
-fn architectures(_nvcc: &std::ffi::OsStr) -> Vec<String> {
-  let configured = env::var("MULTI_STARK_CUDA_ARCHS").ok().or_else(|| {
-    let output = Command::new("nvidia-smi")
-      .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
-      .output()
-      .ok()?;
-    let text = String::from_utf8(output.stdout).ok()?;
-    let mut found: Vec<String> = text
-      .lines()
-      .map(|line| line.chars().filter(char::is_ascii_digit).collect())
-      .filter(|arch: &String| !arch.is_empty())
-      .collect();
-    found.sort();
-    found.dedup();
-    (!found.is_empty()).then(|| found.join(","))
-  });
-  let architectures: Vec<String> = configured
-    .unwrap_or_else(|| "80".into())
-    .split(',')
-    .map(str::trim)
-    .filter(|a| !a.is_empty())
-    .map(str::to_owned)
-    .collect();
-  assert!(
-    architectures.iter().all(|a| a.chars().all(|c| c.is_ascii_digit())),
-    "invalid MULTI_STARK_CUDA_ARCHS"
-  );
-  architectures
 }

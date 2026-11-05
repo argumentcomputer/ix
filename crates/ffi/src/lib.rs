@@ -22,6 +22,7 @@ pub mod texray;
 pub mod unsigned;
 
 pub mod catalog;
+mod compression;
 pub mod formal;
 pub mod lean_ixon;
 pub mod primitives;

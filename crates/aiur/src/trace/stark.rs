@@ -41,7 +41,8 @@ mod witness;
 #[cfg(test)]
 pub use batch::StageOne;
 pub use batch::{
-  ShardFeed, StreamPlan, Streamed, VerifyingKey, fri_parameter_bytes,
+  MEMSEG_CHANNEL, ShardFeed, StreamPlan, Streamed, VerifyingKey,
+  fri_parameter_bytes,
 };
 
 /// Conversion at this concrete proving adapter only. The native configuration

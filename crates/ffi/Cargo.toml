@@ -19,8 +19,10 @@ ix-bench = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
 ix-prover = { path = "../ix-prover", default-features = false }
+ix-proof-compression = { path = "../proof-compression", default-features = false }
 lean-ffi = { workspace = true }
 memmap2 = { workspace = true }
+multi-stark = { workspace = true }
 mimalloc = { workspace = true }
 num-bigint = { workspace = true }
 rayon = { workspace = true }
@@ -50,12 +52,15 @@ default = []
 # lakefile.lean). Without it the formal prover runs every job on the
 # interpreter, which produces identical records.
 formal-native = ["ix-prover/native"]
-parallel = ["ix-prover/parallel"]
-cuda = ["ix-prover/cuda"]
+parallel = ["ix-prover/parallel", "ix-proof-compression/parallel"]
+cuda = ["ix-prover/cuda", "ix-proof-compression/cuda"]
 # Compiled CUDA trace writers for the formal IxVM artifact; needs CUDA and
 # AIUR_IXVM_ARTIFACT, as formal-native does.
 formal-compiled-trace = ["cuda", "ix-prover/compiled-trace"]
 cuda-trace-codegen = ["cuda"]
+# Final proof systems, which link the gnark Go archive.
+plonk = ["ix-proof-compression/plonk"]
+groth16 = ["ix-proof-compression/groth16"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 

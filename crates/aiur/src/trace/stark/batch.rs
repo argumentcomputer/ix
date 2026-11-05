@@ -6,7 +6,7 @@ use multi_stark::system::Circuit;
 #[cfg(all(feature = "cuda", test))]
 use multi_stark::witness::TraceSource;
 use multi_stark::{
-  batch::{BatchMessage, Retention},
+  batch::{BatchMessage, BatchPreamble, Retention},
   witness::PreparedWitness,
 };
 #[cfg(all(feature = "cuda", test))]
@@ -196,6 +196,16 @@ impl VerifyingKey {
   pub fn to_bytes(&self) -> Vec<u8> {
     stark_key::to_bytes(&self.system, self.cp, self.fp)
   }
+  /// The constraint system, for recursive verifier construction.
+  pub fn system(&self) -> &System<GoldilocksBlake3Config> {
+    &self.system
+  }
+  pub const fn commitment_parameters(&self) -> CommitmentParameters {
+    self.cp
+  }
+  pub const fn fri_parameters(&self) -> FriParameters {
+    self.fp
+  }
   pub fn verify(
     &self,
     claims: &[Vec<Val>],
@@ -203,7 +213,21 @@ impl VerifyingKey {
   ) -> Result<(), String> {
     verify(&self.system, self.cp.log_blowup, claims, proof)
   }
+  /// The batch policy [`Self::verify`] applies before the STARK check:
+  /// claims, activation, trace heights, the lookup budget and memory
+  /// boundary messages. It reads no commitment, so a verifier circuit can
+  /// be checked against this policy before any proof exists.
+  pub fn validate_preamble(
+    &self,
+    claims: &[Vec<Val>],
+    preamble: &BatchPreamble<GoldilocksBlake3Config>,
+  ) -> Result<(), String> {
+    validate_preamble(&self.system, self.cp.log_blowup, claims, preamble)
+  }
 }
+
+/// The channel of memory boundary messages in batch preambles.
+pub const MEMSEG_CHANNEL: u64 = MEMSEG;
 
 fn verify(
   system: &System<GoldilocksBlake3Config>,
@@ -211,11 +235,23 @@ fn verify(
   claims: &[Vec<Val>],
   proof: &BatchProof,
 ) -> Result<(), String> {
-  let headers = &proof.preamble.headers;
-  if headers.is_empty()
-    || headers.len() > 65536
-    || headers.len() != proof.proofs.len()
-  {
+  if proof.preamble.headers.len() != proof.proofs.len() {
+    return Err("invalid batch shard count".into());
+  }
+  validate_preamble(system, log_blowup, claims, &proof.preamble)?;
+  system
+    .verify_batch(proof)
+    .map_err(|e| format!("STARK batch verification failed: {e:?}"))
+}
+
+fn validate_preamble(
+  system: &System<GoldilocksBlake3Config>,
+  log_blowup: usize,
+  claims: &[Vec<Val>],
+  preamble: &BatchPreamble<GoldilocksBlake3Config>,
+) -> Result<(), String> {
+  let headers = &preamble.headers;
+  if headers.is_empty() || headers.len() > 65536 {
     return Err("invalid batch shard count".into());
   }
   if !headers.iter().flat_map(|h| &h.claims).eq(claims) {
@@ -255,7 +291,7 @@ fn verify(
       return Err("extra trace heights".into());
     }
   }
-  let messages = &proof.preamble.messages;
+  let messages = &preamble.messages;
   if !messages.len().is_multiple_of(2) {
     return Err("unpaired memory boundaries".into());
   }
@@ -282,9 +318,7 @@ fn verify(
     }
     previous = Some((width, b));
   }
-  system
-    .verify_batch(proof)
-    .map_err(|e| format!("STARK batch verification failed: {e:?}"))
+  Ok(())
 }
 
 impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {

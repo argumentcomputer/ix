@@ -1,5 +1,6 @@
 module
 public import Ix.Cli.FormalAiur
+public import Ix.Cli.Compression
 public import Ix.Aggr.Verification
 
 /-! The formal recursive verifier's identity, its trusted acceptance check
@@ -241,9 +242,36 @@ def runPipeline (p : Cli.Parsed) : IO UInt32 := do
     throw (IO.userError "choose --lanes for GPU provers or --jobs for CPU provers")
   runController p
 
+/-- Verify a compressed aggregate proof. With `--compression-vk` and its
+independently trusted `--compression-vk-blake3`, the proof must verify under
+that key for the statement of the formal aggregation artifact `context`
+loads; otherwise under the bundled release keys, which belong to the retired
+legacy aggregation backend. -/
+def verifyCompressed (p : Cli.Parsed) (context : IO Context) (addr : Address)
+    (wrapper : Ixon.Proof) : IO Unit := do
+  let claim := Ix.Claim.ser wrapper.claim
+  let devSrs := p.hasFlag "dev-srs"
+  let setup ← match (p.flag? "compression-vk").map (·.as! String),
+      (p.flag? "compression-vk-blake3").map (·.as! String) with
+    | some path, some pin =>
+      let statement := MultiStark.serializeClaims #[outerClaim (← context) .aggr wrapper.claim]
+      Compression.verifyWithVk wrapper.proof claim statement (← IO.FS.readBinFile path) pin devSrs
+    | none, none =>
+      try Compression.verify wrapper.proof claim devSrs
+      catch e => throw (IO.userError s!"{e}; a compressed formal root verifies under the key \
+        `ix compress derive-vk` derives for its layout: pass --compression-vk and --compression-vk-blake3")
+    | _, _ => throw (IO.userError "--compression-vk and --compression-vk-blake3 must be supplied together")
+  Compression.reportVerified addr claim setup
+
 def verify (p : Cli.Parsed) : IO UInt32 := do
   rejectFlags p #["shard", "record"]
-  let ctx ← context p
+  -- Compressed proofs under the bundled keys need no artifact.
+  let loaded ← IO.mkRef (none : Option Context)
+  let getContext : IO Context := do
+    if let some ctx ← loaded.get then return ctx
+    let ctx ← context p
+    loaded.set (some ctx)
+    return ctx
   let expected ← match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
   | none, none => pure none
   | none, some _ => throw (IO.userError "--ixes requires --ixe")
@@ -266,8 +294,11 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let some addr := Address.fromString hex | throw (IO.userError "invalid aggregate address")
     let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read addr)))
     unless expected.all (· == wrapper.claim) do throw (IO.userError "aggregate does not match the requested environment/manifest")
-    verifyWrapper ctx .aggr wrapper
-    IO.println s!"ok: aggregate {addr} verifies {wrapper.claim}"
+    if Compression.isCompressed wrapper.proof then
+      verifyCompressed p getContext addr wrapper
+    else
+      verifyWrapper (← getContext) .aggr wrapper
+      IO.println s!"ok: aggregate {addr} verifies {wrapper.claim}"
   return 0
 
 end Ix.Cli.FormalAggregate
