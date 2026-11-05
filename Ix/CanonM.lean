@@ -22,7 +22,7 @@ module
   - `canonName` / `uncanonName`: Lean.Name <-> Ix.Name
   - `canonLevel` / `uncanonLevel`: Lean.Level <-> Ix.Level
   - `canonExpr` / `uncanonExpr`: Lean.Expr <-> Ix.Expr
-  - `canonEnv`: whole-environment conversion
+  - `canonChunk`: a slice of constants, through one memo
   - `compareEnvsParallel`: parallel structural equality check between environments
 -/
 
@@ -741,16 +741,6 @@ def uncanonConst : Ix.ConstantInfo → UncanonM Lean.ConstantInfo
       k := v.k
       isUnsafe := v.isUnsafe
     }
-
-/-- Canonicalize an entire Lean environment, sharing a single CanonState for
-    deduplication across all constants. -/
-def canonEnv (env : Lean.Environment) : CanonM Ix.Environment := do
-  let mut consts : HashMap Ix.Name Ix.ConstantInfo := {}
-  for (name, const) in env.constants do
-    let name' <- canonName name
-    let const' <- canonConst const
-    consts := consts.insert name' const'
-  return { consts := consts }
 
 /- ## Optimized equality with pointer-pair caching -/
 
