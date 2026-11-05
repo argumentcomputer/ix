@@ -1,6 +1,7 @@
 import LSpec
 import Ix.KernelCheck.Run
 import Ix.KernelCheck.Meta
+import Ix.RoleBinding.Generate
 import Tests.Ix.Kernel.ReaderRoundtrip
 
 /-! The normal record API returns verdicts, not mode-erasure agreement.
@@ -163,9 +164,144 @@ private def check : IO Nat := do
   IO.println s!"record checks: {a} anon + {m} meta fixture outcomes, {c} compiled records; serial/1/3 workers"
   return a + m + c
 
+/-! ## The host loader's record-store refusals
+
+`Ix.RoleBinding.recordStore` (and `checkedStore`, which role generation and
+emission reuse) authenticates and decodes every record of an artifact, named
+or not. Its parallel form is proved equal to the serial one
+(`recordStore_eq_parallel`, `RecordDecoding.parallel_eq`); no theorem says
+what it refuses. These cases pin it: an authenticated record that does not
+decode, or decodes only non-canonically (a trailing byte), refuses the whole
+store even when no name reaches it (an orphan), with the exact error of the
+first such record in address order; a record over a per-record bound is
+refused the same way; the batch limits come before authentication, and
+authentication before decoding; and a materialized cache beside the bytes
+cannot rescue them. -/
+
+namespace StoreRefusals
+
+open _root_.Ix.Kernel.Admission (Limits ByteError)
+
+private def need (label : String) (ok : Bool) : Except String Unit :=
+  if ok then .ok () else .error label
+
+private def storeLimits : Limits := ⟨2048, 8, 1 <<< 26, 1 <<< 20, 1 <<< 16⟩
+
+private def fixtureConstant (index : Nat) : Ixon.Constant := {
+  sharing := #[], refs := #[], univs := #[.zero, .succ .zero]
+  info := .defn {
+    kind := .defn, safety := .safe, lvls := index.toUInt64, typ := .sort 1, value := .sort 0 } }
+
+private def rawRecord (bytes : ByteArray) : Address × ByteArray :=
+  (Address.admissionHash bytes, bytes)
+
+private def canonicalRecords (count : Nat) : Array (Address × ByteArray) :=
+  (Array.range count).map fun i => rawRecord (Ixon.serConstant (fixtureConstant i))
+
+/-- An environment of these records and no names: every record is an orphan. -/
+private def orphanEnv (records : Array (Address × ByteArray)) : Ixon.Env :=
+  { consts := records.foldl (fun out (a, bytes) => out.insert a
+      { buf := bytes, len := bytes.size }) {} }
+
+/-- `recordStore` and `checkedStore` both refuse `env` with exactly `e`, as
+`byteError` renders it. -/
+private def refuses (label : String) (limits : Limits) (env : Ixon.Env) (e : ByteError) :
+    Except String Unit := do
+  let expected := _root_.Ix.RoleBinding.byteError e
+  match _root_.Ix.RoleBinding.recordStore limits env with
+  | .ok _ => throw s!"{label}: the store was built; expected the refusal {expected}"
+  | .error actual =>
+    need s!"{label}: refused with {actual}; expected {expected}" (actual == expected)
+  match _root_.Ix.RoleBinding.checkedStore limits env with
+  | .ok _ => throw s!"{label}: checkedStore built the store"
+  | .error actual => need s!"{label}: checkedStore refused with {actual}" (actual == expected)
+
+/-- The decoder's message for `bytes` under `limits`; an error if they decode. -/
+private def decodeReason (limits : Limits) (bytes : ByteArray) : Except String String :=
+  match Ixon.Canonical.deConstant limits.maxRecordBytes limits.maxRecordUnivNodes bytes with
+  | .ok _ => .error "a refusal fixture unexpectedly decodes"
+  | .error reason => .ok reason
+
+/-- The position of `address` in the store's address order. -/
+private def addressPosition (env : Ixon.Env) (address : Address) : Nat :=
+  let sorted := (env.consts.toArray.map (·.1)).qsort fun x y => x.cmpBytes y == .lt
+  (sorted.findIdx? (· == address)).getD sorted.size
+
+/-- The refusals, over `count` canonical records; the number of cases. -/
+def checks (count : Nat) : Except String Nat := do
+  let input := canonicalRecords count
+  let canonical := orphanEnv input
+  let .ok store := _root_.Ix.RoleBinding.recordStore storeLimits canonical
+    | throw "the canonical store is refused"
+  need "every canonical record is in the store" (store.size == count)
+  let malformed := rawRecord (ByteArray.mk #[255])
+  let noncanonical := rawRecord ((Ixon.serConstant (fixtureConstant (count + 1))).push 0)
+  let mut cases := 0
+  -- an authenticated orphan that does not decode, or decodes only with a trailing byte
+  for (label, orphan) in [("malformed", malformed), ("noncanonical", noncanonical)] do
+    let env := orphanEnv (input.push orphan)
+    need "orphan controls have no named roots" env.named.isEmpty
+    refuses s!"an authenticated {label} orphan" storeLimits env
+      (.decode (addressPosition env orphan.1) orphan.1 (← decodeReason storeLimits orphan.2))
+    cases := cases + 1
+  -- both: the first in address order is the one reported
+  let both := orphanEnv ((input.push malformed).push noncanonical)
+  let first := if malformed.1.cmpBytes noncanonical.1 == .lt then malformed else noncanonical
+  refuses "two authenticated orphans: the first in address order" storeLimits both
+    (.decode (addressPosition both first.1) first.1 (← decodeReason storeLimits first.2))
+  -- a record over a per-record bound
+  let oversized := rawRecord (ByteArray.mk (Array.replicate 65 0))
+  let manyUniverses :=
+    rawRecord (Ixon.serConstant { fixtureConstant (count + 2) with univs := Array.replicate 64 .zero })
+  for (label, tight, excessive) in [
+      ("bytes", { storeLimits with maxRecordBytes := 64 }, oversized),
+      ("universe nodes", { storeLimits with maxRecordUnivNodes := 8 }, manyUniverses)] do
+    need s!"the canonical records fit the tighter {label} bound"
+      (_root_.Ix.RoleBinding.recordStore tight canonical).isOk
+    let env := orphanEnv (input.push excessive)
+    refuses s!"an orphan over the per-record {label} bound" tight env
+      (.decode (addressPosition env excessive.1) excessive.1 (← decodeReason tight excessive.2))
+    cases := cases + 1
+  -- phase precedence: the batch limits, then authentication (records, then blobs), then decoding
+  let bad := orphanEnv #[malformed]
+  let wrong := Address.admissionHash (ByteArray.mk #[1, 2, 3])
+  need "the mismatch fixture has distinct addresses" (wrong != malformed.1)
+  let unauthenticated := orphanEnv #[(wrong, malformed.2)]
+  let badBlob := { bad with blobs := ({} : Std.HashMap Address ByteArray).insert wrong malformed.2 }
+  refuses "the record count precedes authentication and decoding"
+    { storeLimits with maxRecords := 0 } unauthenticated (.limit .records)
+  refuses "the blob count precedes decoding" { storeLimits with maxBlobs := 0 } badBlob (.limit .blobs)
+  refuses "the payload total precedes authentication and decoding"
+    { storeLimits with maxTotalBytes := 0 } unauthenticated (.limit .totalBytes)
+  refuses "record authentication precedes decoding" storeLimits unauthenticated
+    (.mismatch .records 0 wrong)
+  refuses "blob authentication precedes record decoding" storeLimits badBlob (.mismatch .blobs 0 wrong)
+  refuses "record authentication precedes blob authentication" storeLimits
+    { unauthenticated with blobs := badBlob.blobs } (.mismatch .records 0 wrong)
+  -- a materialized cache beside malformed bytes is not read
+  let reason ← decodeReason storeLimits malformed.2
+  refuses "a decode error keeps its address and position" storeLimits bad (.decode 0 malformed.1 reason)
+  let cachedRecord : Ixon.LazyConstant :=
+    { buf := malformed.2, len := malformed.2.size, cache := some (fixtureConstant 0) }
+  refuses "a valid materialized cache cannot rescue malformed bytes" storeLimits
+    { bad with consts := bad.consts.insert malformed.1 cachedRecord } (.decode 0 malformed.1 reason)
+  return cases + 9
+
+/-- `pure x`, opaque to the compiler, so that `checks` of it is not a closed term
+evaluated when the module initializes. -/
+@[noinline] def atRunTime (α : Type) (x : α) : IO α := pure x
+
+end StoreRefusals
+
 def suite : List TestSeq := [
   .individualIO "actual anon/meta outcomes, rollback, tiers and worker replay" none (do
     let n ← check
-    return (true, n, 0, none)) .done]
+    return (true, n, 0, none)) .done,
+  -- 769 records: at 256 tasks the parallel decoder's chunks are four records long
+  .individualIO "record store: orphan, noncanonical and oversized records, phase precedence, cache"
+    none (do
+      return match StoreRefusals.checks (← StoreRefusals.atRunTime Nat 769) with
+        | .ok n => (true, n, 0, none)
+        | .error message => (false, 0, 0, some message)) .done]
 
 end Tests.Ix.Kernel.RecordCheck

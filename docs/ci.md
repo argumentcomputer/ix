@@ -161,3 +161,40 @@ artifact under the same name so a recovered job cannot fail on a duplicate
 upload.
 
 See [RunsOn's merge queue guidance](https://runs-on.com/docs/costs/spot-pricing/#merge-queues).
+
+## Retired suites
+
+Two groups of suites were retired:
+
+- those that tested the deleted Rust compiler, Rust kernel and ShardMap;
+- those whose property the certified compiler and kernel now prove.
+
+The certification proves soundness, that what is accepted is correct. It does not prove completeness, that every valid input is accepted. Completeness, and behaviour at scale, are exercised by the real-corpus runs in the merge queue:
+
+- `initstd-reference` compiles Init+Std, pins its bytes, and checks every constant with `ix check-lean`.
+- `fidelity-initstd` reads back and decompiles every record of Init+Std.
+
+Each entry below says what replaced the suite, or why it was dropped.
+
+**Dropped, because the other side is deleted:**
+
+- **The Rust differentials:** `rust-compile`, `rust-decompile`, `rust-serialize`, the `*-cross` and `*-canon-roundtrip` checks, `kernel-check-const`, `kernel-check-env`, `kernel-ixon-roundtrip`, `exact-sharing-ffi`, `shard-map`, and `check-kernel`'s codec differential (`kernel-codec`).
+
+**Dropped, because a proof or a corpus run covers them:**
+
+- **`compile-schedule-identity`** (landing). It compared three things: the wave fold at several widths, a test-only live-state reference schedule, and the streamed pipeline at 1, 4 and 16 workers. None of these comparisons is needed now:
+  - The IO pipeline computes the fold by type: `reportIO` returns `{r // r = Ix.Cert.compileReport env}` (`Ix/Compile/ReadyCompile.lean`).
+  - The fold's value doesn't depend on its width (`Ix.Cert.Schedule.compileEnvFold_width`).
+  - No other path ran the reference schedule. It isn't proved that the wave-snapshot fold equals a fold that compiles one block at a time on live state (`Ix/Cert/Schedule.lean`), but nothing compiles that way.
+- **`cert-compile-parity-initstd`** (landing). It compared `Ix.Cert.compile` with the IO pipeline and with the Rust compiler on Init+Std. The first equality is `reportIO`'s type, and the Rust compiler is deleted. `initstd-reference` pins the bytes of the Init+Std artifact.
+- **The Batteries leg of `compile-determinism`.** `initstd-reference`'s pinned digest is the stronger check across processes at scale.
+- **`check-kernel`'s level comparison.** `leqCore_sound` proves soundness, and the corpus runs exercise completeness.
+- **`check-kernel`'s quotient Source on Init and Std.** The nominal-to-quotient Source bridge is proved (`Ix.LeanIngress.NominalQuotient`, `Ix.Cert.Quotient`), and `initstd-reference`'s compile runs the same ingress on Init+Std.
+- **`check-kernel`'s Init+Std reader fidelity** (the first 20,000 records). `fidelity-initstd`'s phases 3 and 4 compare every record of Init+Std and require full source coverage.
+- **`compile-claim-conflict`.** The compile is certified (`CompileCorrect`). The corpus compiles exercise its completeness.
+- **`decompile` and `decompile-diff`.** `fidelity-initstd`'s phase 5 is the decompile round trip on Init+Std.
+- **`kernel-read-cache`.** The read cache only serves `kernel-check-ixe`'s diagnostics. The user-axiom tests run its path.
+
+**Replaced:**
+
+- **`record-decoding`.** Its refusals moved into `kernel-record-check` (primary): orphan, noncanonical and oversized records, phase precedence, and a cache beside bad bytes. `kernel-check-ixe` passes host-decoded records straight to the certified step, so these refusals aren't covered by a proof. The parallel decoder's agreement with the serial one is proved (`Ix.RoleBinding.RecordDecoding.parallel_eq`, `recordStore_eq_parallel`).
