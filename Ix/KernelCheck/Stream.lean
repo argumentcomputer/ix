@@ -254,8 +254,15 @@ def decodeChunk (entries : Array (Address × Ixon.LazyConstant))
 /-- Load an already-parsed anonymous `.ixe` environment for streaming: decode
 every record once in parallel chunks for its skeleton, literal kinds, and
 streaming read state, build the setup over the skeletons, and pre-read
-state-independent expression DAGs in parallel. -/
-def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon) : IO Loaded := do
+state-independent expression DAGs in parallel.
+
+With `persistent`, the setup is marked persistent before the pre-read: the
+pre-read workers then read its reader context without thread-shared reference
+counting, and the setup is never freed. A caller that keeps the setup to the
+end of its process sets it (`kernel-check-ixe`); without it, the setup is
+freed as usual once its last reference is dropped. -/
+def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (persistent : Bool := false) : IO Loaded := do
   -- Input theorem records shadow fallback evidence at the same address.
   -- Preserve their real values, including a projected theorem's owner.
   let mut proofRecords : Std.HashSet Address := {}
@@ -291,12 +298,8 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
     if store.contains a then acc else acc.insert a
   let hints := Hints.ofStore store env.anonHints
   let s := setup store (env.blobs[·]?) table pre hints.lookup (literalFlags := some litFlags)
-  -- The pre-read workers all read the setup's reader context. Persistent, it
-  -- costs them no thread-shared reference counting; the run keeps the setup
-  -- to its end anyway (`kernel-check-ixe` marks it persistent before its loop).
-  -- Nothing else uses it yet. (`markPersistent` is `unsafe`: a persistent
-  -- object is never freed.)
-  let s ← unsafe Runtime.markPersistent s
+  -- `markPersistent` is `unsafe`: a persistent object is never freed.
+  let s ← if persistent then unsafe Runtime.markPersistent s else pure s
   let preTasks := chunks.map fun chunk => Task.spawn fun () => preReadChunk s.cx chunk
   let mut preReads : Std.HashMap Address PreRead := Std.HashMap.emptyWithCapacity entries.size
   let mut decoded : Std.HashMap Address Ixon.Constant := {}
@@ -316,10 +319,11 @@ def loadEnv (env : Ixon.Env) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
 
 /-- Load an `.ixe` for streaming: decode every record once in parallel chunks
 for its skeleton, literal kinds, and streaming read state, and build the setup
-over the skeletons. -/
-def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon) : IO Loaded := do
+over the skeletons (`loadEnv`, with `persistent`). -/
+def load (bytes : ByteArray) (table : Ix.Kernel.RoleTable) (pre : Prelude .anon)
+    (persistent : Bool := false) : IO Loaded := do
   let env ← IO.ofExcept (Ixon.deEnvAnon bytes)
-  loadEnv env table pre
+  loadEnv env table pre persistent
 
 /-! ## Reading -/
 
