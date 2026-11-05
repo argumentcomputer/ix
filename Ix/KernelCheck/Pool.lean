@@ -71,7 +71,9 @@ instance : Inhabited (Installer md) := ⟨{}⟩
 /-- A record's declarations installed in order from a fresh accumulator of
 recorded checks; the first failure ends it, rolled back as `Checker.step`
 rolls back (the index rebuilt from the constants before the declaration,
-the memo state reset), with the checks the declarations before it recorded. -/
+the memo state reset), with the checks the declarations before it recorded.
+`pendOffset` is the number of checks recorded before the record, so that the
+slices in `InstalledDecl` index the global accumulator. -/
 def installDecls (ev : Ix.Kernel.Evidences md) (pendOffset : Nat) (recordDecls : Bool := true)
     (allowUserAxioms : Bool := false) :
     Nat → Ix.Kernel.FEnv md → Array (Ix.Kernel.Cached.PendingCheck md) →
@@ -106,14 +108,17 @@ def Installer.stepRecord (ev : Ix.Kernel.Evidences md) (recordDecls : Bool := tr
     (c : Installer md) (address : Address) (rd : Read md) :
     Installer md × Option (Ix.Kernel.CheckError md) :=
   let ⟨fe, cs, pos, pend, owners, installErrors, installedDecls, installedCount, installedLog⟩ := c
-  let oldPendSize := pend.size
-  let (pos, fe, pend, decls, cs, err) :=
-    installDecls ev 0 recordDecls allowUserAxioms pos fe pend #[] cs rd.decls.toList
-  let addedPend := pend.size - oldPendSize
+  -- the record's checks go to a fresh accumulator, appended afterwards:
+  -- `installDecls` keeps the accumulator from before each declaration alive
+  -- across its step (its rollback), so a step pushing onto the global
+  -- accumulator would copy all of it once per declaration
+  let (pos, fe, recorded, decls, cs, err) :=
+    installDecls ev pend.size recordDecls allowUserAxioms pos fe #[] #[] cs rd.decls.toList
   let owners := Id.run do
     let mut o := owners
-    for _ in [0:addedPend] do o := o.push address
+    for _ in [0:recorded.size] do o := o.push address
     return o
+  let pend := pend ++ recorded
   let installErrors := match err with
     | some e => installErrors.insert address e
     | none => installErrors
