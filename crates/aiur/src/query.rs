@@ -179,14 +179,25 @@ impl<B: FieldBackend> QueryTable<B> {
   }
 
   /// A zero count marks a pending query, which must never supply an output.
+  /// `outputs` is the table's output width, passed by callers that know it
+  /// statically.
   #[inline(always)]
   pub(crate) fn start(
     &mut self,
     args: &[B::Element],
+    outputs: usize,
     hash: u64,
   ) -> Result<usize, crate::budget::BudgetError> {
     debug_assert!(self.static_map.is_none());
-    debug_assert_eq!(args.len(), self.input_width);
+    // Rows are written in place at the table's stride; a caller with other
+    // widths would misalign every later row.
+    assert!(
+      args.len() == self.input_width && outputs == self.output_width,
+      "query of widths ({}, {outputs}) started in a ({}, {}) table",
+      args.len(),
+      self.input_width,
+      self.output_width
+    );
     let row = self.len();
     let row_u32 = self.budget.row(
       row,
@@ -406,6 +417,13 @@ mod tests {
   use super::*;
 
   #[test]
+  #[should_panic(expected = "started in a (1, 1) table")]
+  fn rows_of_other_widths_are_rejected() {
+    let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
+    let _ = table.start(&[1], 2, 0);
+  }
+
+  #[test]
   fn fixed_tables_skip_unused_rows_and_compare_without_query_order() {
     let field = PrimeField::new(97).unwrap();
     let program: crate::Program = serde_json::from_value(serde_json::json!({
@@ -450,13 +468,18 @@ mod tests {
   #[test]
   fn dense_front_index_keeps_sparse_keys_and_arity_checks() {
     let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
-    let early = table.start(&[80], table.lookup(&[80]).0).unwrap();
+    let early =
+      table.start(&[80], table.widths().1, table.lookup(&[80]).0).unwrap();
     table.finish(early, &[5]);
-    let large = table.start(&[u64::MAX], table.lookup(&[u64::MAX]).0).unwrap();
+    let large = table
+      .start(&[u64::MAX], table.widths().1, table.lookup(&[u64::MAX]).0)
+      .unwrap();
     table.finish(large, &[6]);
     for key in 0..200 {
       if key != 80 {
-        let row = table.start(&[key], table.lookup(&[key]).0).unwrap();
+        let row = table
+          .start(&[key], table.widths().1, table.lookup(&[key]).0)
+          .unwrap();
         table.finish(row, &[key]);
       }
     }
@@ -468,13 +491,37 @@ mod tests {
   }
 
   #[test]
+  fn equal_tags_still_compare_keys() {
+    let mut table = QueryTable::new(2, 1, PrimeField::new(97).unwrap());
+    // Two keys whose hashes share a tag (here the whole hash): the index
+    // must tell them apart by their rows.
+    let hash = 0xdead_beef_0000_0001;
+    let first = table.start(&[1, 2], table.widths().1, hash).unwrap();
+    table.finish(first, &[3]);
+    let second = table.start(&[2, 1], table.widths().1, hash).unwrap();
+    table.finish(second, &[4]);
+    let t = tag(hash);
+    let find = |args: &[u64]| {
+      table
+        .index
+        .find(t, |row| table.row(row as usize)[..2] == *args)
+        .map(|row| row as usize)
+    };
+    assert_eq!(find(&[1, 2]), Some(first));
+    assert_eq!(find(&[2, 1]), Some(second));
+    assert_eq!(find(&[1, 1]), None);
+    assert_eq!(table.output(second).output, [4]);
+  }
+
+  #[test]
   fn pending_rows_survive_growth_and_counts_do_not_wrap() {
     let mut table = QueryTable::new(1, 1, PrimeField::new(97).unwrap());
-    let first = table.start(&[0], table.lookup(&[0]).0).unwrap();
+    let first =
+      table.start(&[0], table.widths().1, table.lookup(&[0]).0).unwrap();
     for i in 1..10_000 {
       let (hash, found) = table.lookup(&[i]);
       assert!(found.is_none());
-      let row = table.start(&[i], hash).unwrap();
+      let row = table.start(&[i], table.widths().1, hash).unwrap();
       table.finish(row, &[i + 1]);
     }
     assert_eq!(table.lookup(&[0]).1, Some(first));

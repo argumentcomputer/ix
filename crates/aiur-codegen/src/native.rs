@@ -69,7 +69,7 @@ fn call_wrapper(s: &mut String, id: usize, f: &NativeFunction) {
     "#[inline(never)]\n#[allow(non_snake_case, clippy::all)]\n\
      fn c_{id}<B: FieldBackend>(rt: &mut Runtime<'_, B>, caller: usize, pc: usize, \
      a: [B::Element; {n}]) -> Result<[B::Element; {m}], Failed> {{\n\
-     match rt.begin(caller, pc, {id}, &a)? {{\n\
+     match rt.begin::<{n}, {m}>(caller, pc, {id}, &a)? {{\n\
      Begin::Cached(row) => {{ let mut o = [rt.field().zero(); {m}]; \
      o.copy_from_slice(rt.output({id}, row)); Ok(o) }}\n\
      Begin::Started(row) => grow(65536 + 2 * {regs} * ::core::mem::size_of::<B::Element>(), \
@@ -353,14 +353,16 @@ fn body(
         NativeOp::Store { value, dest } => {
           let _ = writeln!(
             s,
-            "r[{dest}] = rt.store({id}, {pc}, &[{}])?;",
+            "r[{dest}] = rt.store::<{}>({id}, {pc}, &[{}])?;",
+            value.len(),
             regs(value)
           );
         },
         NativeOp::Load { pointer, dest } => {
           let _ = writeln!(
             s,
-            "{{ let mut o = [fd.zero(); {}]; rt.load({id}, {pc}, r[{pointer}], &mut o)?; {} }}",
+            "{{ let mut o = [fd.zero(); {}]; rt.load::<{}>({id}, {pc}, r[{pointer}], &mut o)?; {} }}",
+            dest.len(),
             dest.len(),
             writes(dest, "o")
           );
@@ -392,8 +394,9 @@ fn body(
         NativeOp::Return { values } => {
           let _ = writeln!(
             s,
-            "{{ let o = [{}]; rt.count(ic)?; rt.finish({id}, row, {pc}, &o)?; return Ok(o); }}",
-            regs(values)
+            "{{ let o = [{}]; rt.count(ic)?; rt.finish::<{}>({id}, row, {pc}, &o)?; return Ok(o); }}",
+            regs(values),
+            values.len()
           );
           terminated = true;
         },
