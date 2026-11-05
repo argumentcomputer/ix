@@ -8,8 +8,8 @@
   self-test (`ixtests-registry`) checks the registry against the workflows
   that name those jobs (comments removed), and checks that every required
   entry is registered once, in its tier, and that the required list names an
-  entry in every tier that runs in CI. The three landing jobs
-  hold the end-to-end checks of the compiler and of the certification, which
+  entry in every tier that runs in CI. The landing job
+  holds the end-to-end checks of the compiler and of the certification, which
   are too slow for every pull request and run in the merge queue.
 
   Command line (`lake test -- <args>`, `lake exe IxTests <args>`):
@@ -17,7 +17,7 @@
   - `<name>…`: exactly the named entries, whatever their tier (names match
     exactly; an unknown name is an error);
   - `--tier <tier>` (repeatable): every entry of that tier, where `<tier>`
-    is `primary`, `manual`, `ci:<job>`, or `landing` for the three landing jobs;
+    is `primary`, `manual`, `ci:<job>`, or `landing` for the landing job;
   - `--ignored`: with no name and no `--tier`, every entry that is not
     primary; with a name or a `--tier`, nothing more (kept so that
     `--ignored <name>…` works as before);
