@@ -15,8 +15,7 @@
   Exit codes are the failure channel (no stdout markers, no log grepping):
   0 = every row ok; `exitUsage` = bad invocation; `exitRejected` = the
   kernel rejected at least one constant (its row is on disk). Any other
-  exit is an infrastructure failure. The Rust mirror of this contract is
-  `crates/bench` (`ix-bench`); the constants must stay in lockstep.
+  exit is an infrastructure failure.
 -/
 module
 public import Lean.Data.Json

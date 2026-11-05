@@ -1,7 +1,6 @@
 [workspace]
 members = [
   "crates/aiur",
-  "crates/bench",
   "crates/common",
   "crates/proof-compression",
   "crates/ffi",
@@ -29,7 +28,6 @@ license = "MIT OR Apache-2.0"
 # Internal crates
 aiur = { path = "crates/aiur" }
 ixvm-codegen = { path = "crates/ixvm-codegen" }
-ix-bench = { path = "crates/bench" }
 ix-common = { path = "crates/common" }
 ixon = { path = "crates/ixon" }
 
@@ -45,7 +43,6 @@ hashbrown = "0.15"
 indexmap = "2"
 itertools = "0.14.0"
 libc = "0.2"
-log = "0.4"
 memmap2 = "0.9"
 # Bundle v3.5.1 to fix large-arena failures (microsoft/mimalloc#1309).
 mimalloc = { git = "https://github.com/argumentcomputer/mimalloc_rust.git", rev = "616cc1f130d9ea2a1111a46b4e98c140e078f882", default-features = false }
@@ -58,8 +55,6 @@ rayon = "1"
 rustc-hash = "2"
 serde_json = "1"
 sha2 = "0.10"
-smallvec = "1.15.1"
-stacker = "0.1"
 tiny-keccak = { version = "2", features = ["keccak"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -91,28 +91,6 @@ impl Address {
     }
   }
 
-  /// Build a synthetic `Name` for a mutual block's `Named` entry:
-  /// `Ix.<hex>.<first_member_name>`. Disambiguates alpha-equivalent blocks
-  /// that share an `addr` but have different member names.
-  ///
-  /// Used by `compile_mutual` to register each mutual block under a
-  /// Muts-tagged meta so kernel ingress can discover and process it via
-  /// `ingress_muts_block`.
-  pub fn muts_name(&self, first_member: &crate::env::Name) -> crate::env::Name {
-    use crate::env::{Name, NameData};
-    let base = Name::str(Name::str(Name::anon(), "Ix".to_string()), self.hex());
-    // Append each component of `first_member` to the base, preserving
-    // numeric vs string parts.
-    fn go(base: Name, name: &Name) -> Name {
-      match name.as_data() {
-        NameData::Anonymous(_) => base,
-        NameData::Str(parent, s, _) => Name::str(go(base, parent), s.clone()),
-        NameData::Num(parent, n, _) => Name::num(go(base, parent), n.clone()),
-      }
-    }
-    go(base, first_member)
-  }
-
   /// Constructs an address from a 64-character hexadecimal string.
   pub fn from_hex(hex: &str) -> Option<Self> {
     if hex.len() != 64 {

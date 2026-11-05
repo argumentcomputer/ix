@@ -425,45 +425,6 @@ impl LeanIxonRawEnv<LeanOwned> {
   }
 }
 
-/// Populate the trailing constructor slots (5-8: main, assumptions,
-/// anonHints, roleBinding) of a `RawEnv` being built field-by-field —
-/// the compile FFI assembles its RawEnv manually instead of going
-/// through [`LeanIxonRawEnv::build`], and leaving these slots unset is
-/// uninitialized memory (segfault on GC). Set-shaped fields are sorted
-/// for a deterministic transfer.
-pub fn set_raw_env_bundle_fields(
-  ctor: &LeanIxonRawEnv<LeanOwned>,
-  env: &IxonEnv,
-) {
-  let main_obj: LeanOwned = match &env.main {
-    None => LeanOption::none().into(),
-    Some(addr) => LeanOption::some(LeanIxAddress::build(addr)).into(),
-  };
-  let mut assumptions: Vec<Address> = env.assumptions.iter().cloned().collect();
-  assumptions.sort_unstable();
-  let assumptions_arr = LeanArray::alloc(assumptions.len());
-  for (i, addr) in assumptions.iter().enumerate() {
-    assumptions_arr.set(i, LeanIxAddress::build(addr));
-  }
-  let mut hints: Vec<(Address, ReducibilityHints)> =
-    env.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
-  hints.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-  let hints_arr = LeanArray::alloc(hints.len());
-  for (i, (addr, hint)) in hints.iter().enumerate() {
-    hints_arr.set(
-      i,
-      LeanProd::new(
-        LeanIxAddress::build(addr),
-        LeanIxReducibilityHints::build(hint),
-      ),
-    );
-  }
-  ctor.set_obj(5, main_obj);
-  ctor.set_obj(6, assumptions_arr);
-  ctor.set_obj(7, hints_arr);
-  ctor.set_obj(8, build_opt_role_binding(&env.role_binding));
-}
-
 impl<R: LeanRef> LeanIxonRawEnv<R> {
   /// Decode Ixon.RawEnv from Lean pointer.
   pub fn decode(&self) -> DecodedRawEnv {

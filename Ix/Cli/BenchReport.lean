@@ -125,8 +125,7 @@ def human (v : Option Float) (metric : String) : String :=
 
 /-- Metrics where a LARGER value is the improvement; everything else is
     lower-is-better (times, RAM, cycles, sizes). `throughput` means
-    constants checked per second on EVERY backend (`ix_bench::throughput`
-    is the one calculator). -/
+    constants checked per second on EVERY backend. -/
 def higherIsBetter (metric : String) : Bool :=
   dropStagePrefix metric == "throughput"
 

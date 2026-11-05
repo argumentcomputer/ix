@@ -16,7 +16,6 @@ dashmap = { workspace = true, features = ["rayon"] }
 indexmap = { workspace = true, features = ["rayon"] }
 itertools = { workspace = true }
 ixvm-codegen = { workspace = true }
-ix-bench = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
 ix-proof-compression = { path = "../proof-compression", default-features = false }

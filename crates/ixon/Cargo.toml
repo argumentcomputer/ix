@@ -14,7 +14,6 @@ memmap2 = { workspace = true }
 nom = { workspace = true }
 num-bigint = { workspace = true }
 rustc-hash = { workspace = true }
-sha2 = { workspace = true }
 tiny-keccak = { workspace = true }
 
 [target.'cfg(not(target_arch = "riscv64"))'.dependencies]
@@ -23,7 +22,6 @@ rayon = { workspace = true }
 
 [dev-dependencies]
 ix-common = { workspace = true, features = ["quickcheck"] }
-# The process allocator of the `ix` binary, for the `sharing_corpus` runner.
 quickcheck = { workspace = true }
 quickcheck_macros = { workspace = true }
 

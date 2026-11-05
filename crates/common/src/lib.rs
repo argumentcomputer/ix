@@ -65,54 +65,6 @@ pub mod env {
   }
 
   impl Name {
-    /// Component equality, independent of every cached digest.
-    pub fn same_structure(&self, other: &Self) -> bool {
-      let (mut a, mut b) = (self, other);
-      loop {
-        if Arc::ptr_eq(&a.0, &b.0) {
-          return true;
-        }
-        match (a.as_data(), b.as_data()) {
-          (NameData::Anonymous(_), NameData::Anonymous(_)) => return true,
-          (NameData::Str(ap, av, _), NameData::Str(bp, bv, _)) if av == bv => {
-            (a, b) = (ap, bp);
-          },
-          (NameData::Num(ap, av, _), NameData::Num(bp, bv, _)) if av == bv => {
-            (a, b) = (ap, bp);
-          },
-          _ => return false,
-        }
-      }
-    }
-
-    /// Raw equality: the same components and the same stored digest at every
-    /// node, which is the derived `==`, iteratively and pointer-first. The
-    /// exact cache keys (`expr_key`) and the inductive-flag transform memos
-    /// confirm hits with it: a stored digest is data of the compiled
-    /// metadata, so raw equality,
-    /// not the digest-blind [`Name::same_structure`], is what a hit must keep.
-    pub fn same_raw(&self, other: &Self) -> bool {
-      let (mut a, mut b) = (self, other);
-      loop {
-        if Arc::ptr_eq(&a.0, &b.0) {
-          return true;
-        }
-        if a.get_hash() != b.get_hash() {
-          return false;
-        }
-        match (a.as_data(), b.as_data()) {
-          (NameData::Anonymous(_), NameData::Anonymous(_)) => return true,
-          (NameData::Str(ap, av, _), NameData::Str(bp, bv, _)) if av == bv => {
-            (a, b) = (ap, bp);
-          },
-          (NameData::Num(ap, av, _), NameData::Num(bp, bv, _)) if av == bv => {
-            (a, b) = (ap, bp);
-          },
-          _ => return false,
-        }
-      }
-    }
-
     /// Returns a reference to the inner [`NameData`].
     pub fn as_data(&self) -> &NameData {
       &self.0

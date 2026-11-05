@@ -217,11 +217,6 @@ impl BlockProfile {
     (row, col)
   }
 
-  /// Total heartbeats across all blocks.
-  pub fn total_heartbeats(&self) -> u128 {
-    self.blocks.iter().map(|b| u128::from(b.heartbeats)).sum()
-  }
-
   /// Serialize to the `.ixprof` binary format.
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();

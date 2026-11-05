@@ -135,8 +135,7 @@ end Name
 /-- Synthetic name for a mutual block's `Muts` named entry:
     `Ix.<block-addr-hex>.<first-member components>` (numeric vs string
     components preserved). Kernel ingress discovers mutual blocks only
-    through entries under these names. Mirrors Rust `Address::muts_name`
-    (crates/common/src/address.rs:99). -/
+    through entries under these names. -/
 partial def _root_.Address.mutsName (addr : Address) (firstMember : Name) : Name :=
   let base := Name.mkStr (Name.mkStr .mkAnon "Ix") (toString addr)
   go base firstMember
