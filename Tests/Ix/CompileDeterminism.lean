@@ -37,7 +37,10 @@ private def compileOnce (source : String) (out : System.FilePath) :
   let exe ← IO.FS.realPath ixExe
   let r ← IO.Process.output {
     cmd := exe.toString
-    args := #["compile", source, "--out", out.toString] }
+    -- `--local`: the fixture's own declarations and their dependency
+    -- closure. The fixture is a `module` with `public import Lean`, whose
+    -- default scope is every public declaration of Init, Std and Lean.
+    args := #["compile", source, "--local", "--out", out.toString] }
   if r.exitCode != 0 then
     return .error s!"ix compile {source} failed ({r.exitCode}): \
 {r.stderr.take 300} … {(r.stdout.takeEnd 300).toString}"
