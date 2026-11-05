@@ -3044,39 +3044,6 @@ fn seal_and_write(
   Ok(())
 }
 
-/// Write a `.ixes` manifest for an EXPLICIT shard assignment — the
-/// partition a prove run actually produced (splits included) rather
-/// than a planner's output. Same manifest construction as
-/// [`shard_static`]'s tail: [`ShardManifest::build`] recomputes
-/// own sizes, foreign blocks and cross-ingress from the profile, and
-/// each shard's assumption root is the canonical merkle root of its
-/// foreign blocks. No aggregation tree is attached (consumers fall
-/// back to the flat tree-fold); heartbeat figures carry whatever proxy
-/// the profile was built with (serialized size, on the static path).
-/// `peaks` (empty, or one measured prover-peak per shard in order)
-/// fills each shard's `measured_peak_bytes` — the run's measurement
-/// riding along for schedulers to bin-pack on.
-pub fn shard_manifest_explicit(
-  profile: &BlockProfile,
-  shard_of: &[u32],
-  num_shards: usize,
-  peaks: &[u64],
-  out_path: &str,
-) -> Result<String, String> {
-  if peaks.len() != num_shards {
-    return Err(format!(
-      "measured peaks: {} values for {num_shards} shards",
-      peaks.len()
-    ));
-  }
-  let mut manifest = ShardManifest::build(profile, shard_of, num_shards);
-  for (shard, &peak) in manifest.shards.iter_mut().zip(peaks) {
-    shard.measured_peak_bytes = peak;
-  }
-  seal_and_write(&mut manifest, Some(out_path))?;
-  Ok(manifest.summary())
-}
-
 /// One leaf of a source manifest cut into parts: the parts' block lists in
 /// order (each a nonempty subset of the leaf's blocks) and, per part, the
 /// measured prover peak (`0` = unmeasured).
