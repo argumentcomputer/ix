@@ -44,8 +44,8 @@ def defsModule : Lean.Name := `Tests.Ix.Kernel.ReaderFidelityDefs
 
 def defs (n : String) : Lean.Name := defsModule ++ n.toName
 
-/-- The compiled closure of the fixture module's own declarations. -/
-def input : IO (Lean.Environment × Input) := do
+/-- The compiled closure of the fixture module's own declarations, compiled. -/
+def compileInput : IO (Lean.Environment × Input) := do
   let leanEnv ← getCompileEnv #[defsModule]
   let some idx := leanEnv.getModuleIdx? defsModule | throw (IO.userError "fixture module not loaded")
   let seeds := leanEnv.constants.toList.toArray.filterMap fun (n, _) =>
@@ -62,6 +62,18 @@ def input : IO (Lean.Environment × Input) := do
   let bytes ← IO.ofExcept (Ixon.serEnv compiled.env)
   let ixon ← IO.ofExcept (Ixon.deEnv bytes)
   return (leanEnv, ← Input.ofEnv leanEnv ixon)
+
+initialize inputCache : IO.Ref (Option (Lean.Environment × Input)) ← IO.mkRef none
+
+/-- `compileInput`, once per process: the suites that read this closure
+(`kernel-reader-roundtrip`, `kernel-fidelity-access`, `kernel-record-check`,
+`kernel-check-lean-targets`, `admission-hash-diff`, `kernel-check-lean-cli`)
+share one compile. The values are immutable, so sharing them is safe. -/
+def input : IO (Lean.Environment × Input) := do
+  if let some cached ← inputCache.get then return cached
+  let computed ← compileInput
+  inputCache.set (some computed)
+  return computed
 
 /-- The verdict each fixture declaration must get. -/
 def expected : List (Lean.Name × Verdict) := [
