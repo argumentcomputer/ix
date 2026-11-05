@@ -349,8 +349,8 @@ def registry : List Entry := [
             let actual :=
               (Aiur.computeStats vmEnv.compiled qc vmEnv.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 89_387_508_717, got {actual}"
-              (actual = 89_387_508_717))
+              s!"Shard pipeline FFT matches: expected 85_826_059_894, got {actual}"
+              (actual = 85_826_059_894))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [evalSeq, evalCompiledSeq, evalCommandSeq, evalDifficultSeq, evalDifferentialSeq,

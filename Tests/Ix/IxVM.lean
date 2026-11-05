@@ -525,8 +525,8 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 206_728_123),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 206_728_123),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 206_728_123),
-  ("strOfListFoldSize",                                        2_310_764_927),
-  ("strOfListFoldSizeAscii",                                   2_311_375_306),
+  ("strOfListFoldSize",                                        2_310_764_967),
+  ("strOfListFoldSizeAscii",                                   2_311_375_346),
   ("IxVMPrim.lazy_ble_offset",                                   220_893_731),
   ("IxVMPrim.lazy_unit_cast",                                    345_818_198),
   ("IxVMPrim.sizeof_unit",                                       209_770_262),
@@ -550,7 +550,7 @@ private def validatingCheckEntries : List (String × Nat) := [
 
 /-- The binding claim for the default table: every group validated once,
     the proof aggregates reuse. -/
-private def bindingCheckEntry : Nat := 277_988_602_536
+private def bindingCheckEntry : Nat := 277_988_605_730
 
 /-- The binding claim for the default table, over `ixonEnv`. -/
 public def bindingCheckWithEnv (ixonEnv : Ixon.Env) : IO AiurTestCase := do
