@@ -15,12 +15,11 @@ namespace Benchmarks.Kernel.CheckIxeStep
 open Ix.Kernel.Reader
 
 /-- Requested execution: `none` uses the incremental checker, `some n` the
-worker pool. Tier support defaults to the incremental checker unless `poolTier`
-is set. -/
+worker pool. With tier support, the incremental checker runs whatever
+`workers` asks for. -/
 structure RunConfig where
   workers : Option Nat := none
   tier : Bool := false
-  poolTier : Bool := false
   allowUserAxioms : Bool := false
   skip : Std.HashSet String := {}
 
@@ -47,10 +46,12 @@ structure RunReport where
   failed : Std.HashMap Address Address
   execution : Execution
 
-/-- Run the supplied record source at its mode. The logical-only pool keeps
-its install/check/replay protocol. Enabling tier support uses the existing
-serial loop so tier checks see the checked logical state, never phase A's
-unchecked installation environment. The returned execution path is explicit,
+/-- Run the supplied record source at its mode. Without tier support, `some n`
+workers run the pool (`CheckIxePool.runOutcome`) with its install/check/replay
+protocol. With tier support this harness always runs the serial loop, whose
+tier checks see the per-record checked state; the pool's own tier path
+(rebuilding the checked logical index after phase B) is used only by
+`kernel-check-ixe --jobs`. The returned execution path is explicit,
 even when a source happens to contain no tier records. Pool progress reports
 provisional phase-A install counts; only the returned report has the replayed
 verdicts. The report retains every emitted row, so its memory is linear in
@@ -64,15 +65,14 @@ def runRecords (src : LoopSource σ md) (ev : Ix.Kernel.Evidences md)
   if cfg.workers == some 0 then throw (IO.userError "record check: the pool needs a worker")
   let rows ← IO.mkRef (#[] : Array Row)
   let note := fun row => do rows.modify (·.push row); emit row
-  let execution := if cfg.tier && !cfg.poolTier then Execution.serialTier cfg.workers else
+  let execution := if cfg.tier then Execution.serialTier cfg.workers else
     match cfg.workers with
-    | none => if cfg.tier then .serialTier none else .serial
+    | none => .serial
     | some n => .pool n
   let out : LoopOutcome Unit ← match execution with
     | .pool n => do
       let slots ← (Array.range n).mapM fun _ => IO.mkRef (none : Option (Address × Nat))
       CheckIxePool.runOutcome src ev names addresses cfg.skip slots note log progress onRead spell
-        (tier := if cfg.tier then src.tierHook else none)
         (allowUserAxioms := cfg.allowUserAxioms)
     | .serial | .serialTier _ => do
       let out ← checkLoopWith src.view src.read src.commit (← src.init)
