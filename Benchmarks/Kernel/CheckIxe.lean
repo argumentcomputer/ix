@@ -167,12 +167,20 @@ def setupLine (s : Setup) (blobs roles hints : Nat) (pre : Prelude .anon) : Stri
   s!"{s.store.size} records, {s.ordered.size} primary, {blobs} blobs, {roles} roles bound, \
     {s.cx.index.recs.size} recursors indexed, prelude {pre.ix.decls.size} declarations, {hints} hints"
 
-/-- Mark a live run's read-only inputs persistent before the loop's thread
-takes them (`run`). `Runtime.markPersistent` is `unsafe` because a persistent
-object is never freed; these live to the end of the run. -/
+/-- Mark a live run's report names persistent before the loop's thread takes
+them (`run`). `Runtime.markPersistent` is `unsafe` because a persistent object
+is never freed; the names live to the end of the run. -/
+def markNames (names : Std.HashMap Address (Array String)) : IO Unit := do
+  let _ ← unsafe Runtime.markPersistent names
+
+/-- Mark a live run's read-only inputs, its setup and its names, persistent
+before the loop's thread takes them (`run`); as `markNames`, they live to the
+end of the run. The streaming load marks its setup itself (`loadEnv`'s
+`persistent`), before its pre-read workers share it, so that path marks only
+the names. -/
 def markInputs (s : Setup) (names : Std.HashMap Address (Array String)) : IO Unit := do
   let _ ← unsafe Runtime.markPersistent s
-  let _ ← unsafe Runtime.markPersistent names
+  markNames names
 
 /-- Counts of a run: outcomes and first causes. -/
 abbrev Counts := Std.HashMap String Nat × Std.HashMap String Nat
@@ -327,14 +335,17 @@ def run (args : List String) : IO UInt32 := do
       | .stream => do
         let contextEnv ← IO.ofExcept (Ixon.deEnvAnon bytes)
         let (table, pre) ← IO.ofExcept (Ix.KernelCheck.Binding.context contextEnv)
-        let l ← CheckIxeStream.loadEnv contextEnv table pre
+        -- the setup is marked persistent by the load itself, before its
+        -- pre-read workers share it, when the loop runs on its own thread
+        let l ← CheckIxeStream.loadEnv contextEnv table pre (persistent := thread)
         let s := l.setup
         let names := reportNames l.env s.store
         log s!"streaming load: {setupLine s l.env.blobs.size s.cx.roles.names.size l.env.anonHints.size pre}"
         let addresses := limited (← orderOf s l.env.named pre rootsEnv)
-        -- the setup and the names only: the records' windows go to the loop
-        -- unmarked, so that they are freed once it has taken their bytes
-        if thread then markInputs s names
+        -- the setup (marked by the load) and the names only: the records'
+        -- windows go to the loop unmarked, so that they are freed once it has
+        -- taken their bytes
+        if thread then markNames names
         onThread (live s l.source names addresses
           (Thunk.mk fun () => CheckIxeMeta.displayTable l.env s.cx))
   running.set false

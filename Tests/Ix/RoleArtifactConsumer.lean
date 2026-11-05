@@ -46,6 +46,15 @@ private def withCheat (env : Env) (falseAddress : Address) : Env × Address × A
   let (env, useAddress) := insert env useCheat
   (publish (publish env "cheat" cheatAddress) "useCheat" useAddress, cheatAddress, useAddress)
 
+/-- `axiom badCheat : False False`, published: a user axiom that reads, but
+whose type does not check (`False` is not a function). -/
+private def withBadCheat (env : Env) (falseAddress : Address) : Env × Address :=
+  let bad : Constant := {
+    info := .axio ⟨false, 0, .app (.ref 0 #[]) (.ref 0 #[])⟩, sharing := #[], refs := #[falseAddress]
+    univs := #[] }
+  let (env, address) := insert env bad
+  (publish env "badCheat" address, address)
+
 /-- The user-axiom path: strict by default, `--allow-user-axioms` conditional,
 listed and without a host statement, and a binding that leaves `sorryAx`
 unbound refused. Library entry points first, then the `ix` and
@@ -56,6 +65,7 @@ private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBindi
   let some falseAddress := generated.table.addressOf? .false | throw (IO.userError "fixture has no False")
   let (cheatEnv, cheatAddress, useAddress) := withCheat env falseAddress
   let (tierCheatEnv, _, _) := withCheat tierEnv falseAddress
+  let (badCheatEnv, badAddress) := withBadCheat cheatEnv falseAddress
   let table := generated.table
   let noSorryTable : _root_.Ix.Kernel.RoleTable :=
     { table with bound := table.bound.filter (·.1 != _root_.Ix.Kernel.Role.sorryAx) }
@@ -63,6 +73,7 @@ private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBindi
   let noSorryEnv := { cheatEnv with roleBinding := some ⟨Address.admissionHash noSorryBytes, noSorryBytes⟩ }
   let bytes ← IO.ofExcept (serEnv env)
   let cheatBytes ← IO.ofExcept (serEnv cheatEnv)
+  let badCheatBytes ← IO.ofExcept (serEnv badCheatEnv)
   let tierCheatBytes ← IO.ofExcept (serEnv tierCheatEnv)
   let noSorry ← IO.ofExcept (serEnv noSorryEnv)
   for anon in [false, true] do
@@ -75,11 +86,22 @@ private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBindi
     let r ← checked (← runPrepared p cfg .all)
     ensure (r.failures.isEmpty && r.hostStatement.isNone &&
       r.artifactAdmission == some (.conditional cheatEnv.consts.size none #[cheatAddress]) &&
-      runExit r true == exitConditional && runExit r true true == _root_.Ix.Benchmark.Results.exitUsage)
+      runExit r true == exitConditional && runExit r true true == _root_.Ix.Benchmark.Results.exitUsage &&
+      runStatus r true == "conditional")
       s!"the conditional whole run is not reported as conditional on cheat: {repr r.artifactAdmission}"
     let r ← checked (← runPrepared p cfg (.only #[if anon then toString useAddress else "useCheat"]))
-    ensure (r.failures.isEmpty && r.userAxioms == #[cheatAddress] && runExit r false == exitConditional)
+    ensure (r.failures.isEmpty && r.userAxioms == #[cheatAddress] && runExit r false == exitConditional &&
+      runStatus r false == "conditional")
       "a selected run through a user axiom is not conditional on it"
+    -- a user axiom the run reads and then rejects admits nothing: the run lists
+    -- only the user axioms whose records it accepted (`admittedUserAxioms`)
+    let pBad ← checked (← prepareInput badCheatBytes anon (allowUserAxioms := true))
+    let r ← checked (← runPrepared pBad cfg (.only (if anon then #[toString useAddress, toString badAddress]
+      else #["useCheat", "badCheat"])))
+    let bad := r.targets.filter (·.target.address == badAddress)
+    ensure (bad.size == 1 && bad.all (fun t => t.outcome == "reject" && !t.reason.startsWith "reader:") &&
+      r.failures.size == 1 && r.userAxioms == #[cheatAddress] && runStatus r false == "rejected")
+      s!"a rejected user axiom was listed as admitted: {r.userAxioms}, {bad.map (·.reason)}"
     let natDiv := if anon then toString (generated.table.addressOf? .natDiv).get! else "Nat.div"
     let r ← checked (← runPrepared p cfg (.only #[natDiv]))
     ensure (r.failures.isEmpty && r.userAxioms.isEmpty && runExit r false == 0)

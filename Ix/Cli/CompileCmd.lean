@@ -104,14 +104,17 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   if !constsSeeds.isEmpty && (p.flag? "module").isSome then
     p.printError "error: --consts/--consts-file and --module are mutually exclusive"
     return 1
-  let constList ←
+  -- With each list, whether it is the whole import environment (the default
+  -- scope, as `compile-lean` without `--local`), whose compile publishes every
+  -- role: that compile prefetches every role's certificates.
+  let (constList, wholeEnv) ←
     if p.hasFlag "local" then do
       if !constsSeeds.isEmpty || (p.flag? "module").isSome || !excludeSet.isEmpty then
         p.printError "error: --local excludes --consts/--consts-file, --module and --exclude"
         return 1
       let closed := localConstList fe
       IO.println s!"[compile] local: {closed.length} constants (the file's own and their dependencies)"
-      pure closed
+      pure (closed, false)
     else if !constsSeeds.isEmpty then do
       let mut seeds : List Lean.Name := []
       let mut missing : List String := []
@@ -136,10 +139,12 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"[compile] consts: {seeds.length} seed constant(s)"
       let closed := collectSelectedDeps leanEnv seeds
       IO.println s!"[compile] consts: {closed.length} constants after transitive-dep closure"
-      pure closed
+      pure (closed, false)
     else match p.flag? "module" with
     | none =>
-      if excludeSet.isEmpty then defaultConstList fe pathStr
+      if excludeSet.isEmpty then
+        let whole ← defaultConstList fe pathStr
+        pure (whole, true)
       else
         -- Exclusion applies on top of the default scope (full env for classic
         -- files, module-visible closure for module-mode files).
@@ -147,13 +152,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         let seeds := base.filterMap fun (n, _) =>
           if excludeSet.contains n then none else some n
         IO.println s!"[compile] exclude applied: {seeds.length} seed constants"
-        pure (collectSelectedDeps leanEnv seeds)
+        pure (collectSelectedDeps leanEnv seeds, false)
     | some flag =>
       let raw := flag.as! String
       let prefixes := parsePrefixes raw
       if prefixes.isEmpty then
         IO.println s!"[compile] warning: --module '{raw}' parsed to empty list; compiling full env"
-        pure leanEnv.constants.toList
+        pure (leanEnv.constants.toList, true)
       else
         let moduleNames := leanEnv.allImportedModuleNames
         let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
@@ -166,7 +171,7 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.println s!"[compile] filter: {prefixes.length} module-prefix(es), {seeds.length} seed constants"
         let closed := collectSelectedDeps leanEnv seeds
         IO.println s!"[compile] filter: {closed.length} constants after transitive-dep closure"
-        pure closed
+        pure (closed, false)
 
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
@@ -189,12 +194,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- The certified compile, finalized as `ix compile-lean` finalizes it
   -- (`Ix.CompileM.compileAndFinalize`: `Ix.Cert.compileReport` on the canonical
   -- input, then the support, certificates and binding, the finalized artifact
-  -- checked again), with the names stripped under `--anon`; published
+  -- checked again), with the names stripped under `--anon`, the certificates
+  -- prefetched for a whole-environment compile (`wholeEnv`); published
   -- atomically below.
   let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
     named := {}, names := {}, comms := {}, addrToName := {} } else artifact
   let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
-      allowPartial log (strip := strip) with
+      allowPartial log (strip := strip) (prefetch := wholeEnv) with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap

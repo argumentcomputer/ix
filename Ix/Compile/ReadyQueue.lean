@@ -404,6 +404,8 @@ def Controller.drain (controller : Controller input) : IO Unit := do
     ready := #[]
     bytes := 0
     edges := 0 }
+  -- the last published candidates, fewer than a batch, go the same way
+  controller.release 0
 
 def run (config : Config) (blocks : Ix.CondensedBlocks) (sched : FoldSchedule)
     (width : Nat) (dbg : Bool) (fuel : Nat) (st : FoldState) :
