@@ -330,6 +330,26 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     self.gpu_lookup_only && shards > 1
   }
 
+  /// The `(round, shard)` supplies of a streamed proof, in the order the
+  /// prover takes them. Round one commits the shards last to first, so it
+  /// ends on shard zero, which round two proves first: that commitment is
+  /// kept across the barrier instead of being regenerated, at no cost in
+  /// peak memory, and only the other shards are supplied again. Commitment
+  /// order does not enter the transcript, which sees the headers by shard.
+  pub(super) fn supply_order(
+    &self,
+    shards: usize,
+    retention: Retention,
+  ) -> Vec<(usize, usize)> {
+    let retain = !self.requires_regeneration(shards)
+      && matches!(retention, Retention::Retain);
+    let mut order: Vec<_> = (0..shards).rev().map(|shard| (0, shard)).collect();
+    if !retain {
+      order.extend((1..shards).map(|shard| (1, shard)));
+    }
+    order
+  }
+
   /// Fallible two-round streaming. The supplier may replay a record and keep
   /// only its current trace matrices; no whole-environment trace is retained.
   #[cfg(test)]
@@ -346,8 +366,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     })
   }
 
-  /// Each supplied witness owns only one shard. Regenerated commitments
-  /// must match the headers that fixed the batch transcript.
+  /// Each supplied witness owns only one shard; `supply` is called in
+  /// [`Self::supply_order`]. Regenerated commitments must match the headers
+  /// that fixed the batch transcript.
   pub fn prove_streamed(
     &self,
     entry: &str,
@@ -385,12 +406,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         Val::from_u64(end),
       ]));
     }
-    let mut headers = Vec::new();
-    let mut retained = Vec::new();
-    let retain = !self.requires_regeneration(plan.shards)
-      && matches!(plan.retention, Retention::Retain);
+    let order = self.supply_order(plan.shards, plan.retention);
+    let regenerated = order.len() - plan.shards;
+    let mut headers: Vec<_> = (0..plan.shards).map(|_| None).collect();
+    let mut retained: Vec<_> = (0..plan.shards).map(|_| None).collect();
     let mut lookup_budget = 1u128;
-    for shard in 0..plan.shards {
+    for &(_, shard) in &order[..plan.shards] {
       let witness = supply(shard)?;
       self.check_prepared_shape(&witness)?;
       for (trace, circuit) in witness.traces.iter().zip(&self.system.circuits) {
@@ -402,9 +423,12 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       }
       let stage = self.system.prove_stage_1(witness);
       let claims = if shard == 0 { vec![claim.as_slice()] } else { vec![] };
-      headers.push(stage.header(&claims));
-      retained.push(if retain { Some(stage) } else { None });
+      headers[shard] = Some(stage.header(&claims));
+      if regenerated == 0 || shard == 0 {
+        retained[shard] = Some(stage);
+      }
     }
+    let headers = headers.into_iter().map(Option::unwrap).collect();
     let preamble = multi_stark::batch::BatchPreamble { headers, messages };
     let mut proofs = Vec::new();
     for (shard, cached) in retained.into_iter().enumerate() {
@@ -435,7 +459,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   /// a producer thread on the feed's pool builds the next witness while the
   /// calling thread commits or proves the current one; a rendezvous channel
   /// keeps at most one finished witness ahead, and the producer stops at
-  /// its first error. Supplies happen in the serial order either way, so
+  /// its first error. Supplies follow [`Self::supply_order`] either way, so
   /// the proof bytes are the same.
   ///
   /// The producer makes no device calls: generated traces are descriptors
@@ -457,21 +481,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   where
     Self: Sync,
   {
-    let shards = plan.shards.max(1);
-    let rounds = if !self.requires_regeneration(plan.shards)
-      && matches!(plan.retention, Retention::Retain)
-    {
-      1
-    } else {
-      2
-    };
-    let Some(feed) = feed.filter(|_| rounds * plan.shards >= 2) else {
-      return self.supply_serially(entry, args, output, plan, shards, &supply);
+    let order = self.supply_order(plan.shards, plan.retention);
+    let Some(feed) = feed.filter(|_| order.len() >= 2) else {
+      return self.supply_serially(entry, args, output, plan, order, &supply);
     };
     let mut stall = std::time::Duration::ZERO;
-    let order: Vec<_> = (0..rounds)
-      .flat_map(|round| (0..plan.shards).map(move |shard| (round, shard)))
-      .collect();
     let (sender, receiver) = std::sync::mpsc::sync_channel(0);
     let supply = &supply;
     let produce = move || {
@@ -518,15 +532,21 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     args: &[B::Element],
     output: &[B::Element],
     plan: StreamPlan,
-    shards: usize,
+    order: Vec<(usize, usize)>,
     supply: &(impl Fn(usize, usize) -> Result<PreparedWitness<Val>, String> + Sync),
   ) -> Result<Streamed, String> {
     let mut stall = std::time::Duration::ZERO;
-    let mut calls = 0;
+    let mut order = order.into_iter();
     let proof = self.prove_streamed(entry, args, output, plan, |shard| {
       let start = std::time::Instant::now();
-      let witness = supply(calls / shards, shard);
-      calls += 1;
+      let (round, expected) =
+        order.next().ok_or("streamed prover took an unplanned supply")?;
+      if expected != shard {
+        return Err(format!(
+          "streamed prover took shard {shard}, not {expected}"
+        ));
+      }
+      let witness = supply(round, shard);
       stall += start.elapsed();
       witness
     })?;
