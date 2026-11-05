@@ -1,5 +1,11 @@
 # Exact sharing: production performance
 
+> **Historical record.** The Rust paths this log measures (the Rust port of the sharing
+> construction, its corpus example and FFI parity hooks, and the Rust compiler) were retired
+> in PR #677. Their commands no longer run, and the Lean/Rust differential no longer exists.
+> The numbers are kept as they were measured; [retired Rust](retired-rust.md) says what those
+> implementations were and links their code at the last commit that had them.
+
 This document covers the "Production viability measurements" deliverable of [`sharing-minimum.md`](sharing-minimum.md).
 It gathers in one place, for a PR reviewer, what has been measured on two corpora:
 

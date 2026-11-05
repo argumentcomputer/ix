@@ -642,16 +642,16 @@ table is part of the canonical definition of the constant. The canonical
 sharing of a constant is defined as a function of its anonymous
 expressions. Two constants with equal expanded roots, `ConstantInfo`
 fields, `refs`, `univs` and format must get identical bytes, whatever their
-in-memory pointer sharing, construction history, compiler (Lean or Rust) or
+in-memory pointer sharing, construction history, implementation or
 existing table. Metadata never influences it. Which parts of this the proofs
 cover, and which are checked at run time or by tests, is stated in
 [What is proved, and what is not](#what-is-proved-and-what-is-not).
 
-Both compilers build every table with this construction
-(`Ix.Sharing.Exact.canonicalSharingTiered .tagN`, Rust
-`canonical_sharing_tiered(ShareLayout::TagN, ..)`): single constants and
-mutual blocks, and in Rust also kernel egress. It is the only sharing
-construction.
+The compiler builds every table with this construction
+(`Ix.Sharing.Exact.canonicalSharingTiered .tagN`): single constants and
+mutual blocks. It is the only sharing construction, and Lean holds its only
+implementation; the Rust port was retired in PR #677
+([retired Rust](retired-rust.md)).
 
 ### Table rules
 
@@ -668,7 +668,8 @@ construction.
   Roots may reference any entry. Expanding each `Share(j)` to entry `j`,
   left to right, reproduces the roots exactly. No de Bruijn index is shifted
   at a `Share`. Readers reject a `Share` index outside the table; the
-  decompilers and kernel ingress do not yet check backwardness (see
+  decompiler does not yet check backwardness, and IxC's reader fails on a
+  self or forward reference only when it uses one (see
   [Sharing in metadata expressions](#sharing-in-metadata-expressions)). The
   canonical construction guarantees it for compiler output.
 - **Encoding.** A Share is `N4(0xB, idx)`: 1 byte for indices 0–7, 2 bytes
@@ -684,13 +685,11 @@ The adopted canonicalization revision is **`sharing-k16-greedy-v1`**, with K = 1
 It is recorded here and in [sharing-minimum §14](sharing-minimum.md#14-canonical-rule-revision-sharing-k16-greedy-v1).
 This is a change to the canonical choice of sharing, with no change to the wire grammar,
 checked-object/claim format 4, or the environment envelope versions (4 and 5).
-Both compilers implement this revision. It replaces the previous unbounded
+It replaces the previous unbounded
 phase-1 search; the table rules and phases 2 and 3 are unchanged.
 
 The canonical table is the output of `Ix.Sharing.Exact.canonicalSharingTiered
-.tagN` (Lean, `Ix/Sharing/Exact/Tiered.lean`) and of
-`canonical_sharing_tiered(ShareLayout::TagN, ..)` (Rust,
-`crates/ixon/src/sharing_exact/tiered.rs`). It runs on the roots with every
+.tagN` (`Ix/Sharing/Exact/Tiered.lean`). It runs on the roots with every
 existing `Share` expanded. A constant that already carries its canonical
 table normalizes to the same bytes (tested; proved under a hypothesis, see
 "Idempotence" below).
@@ -743,59 +742,51 @@ table normalizes to the same bytes (tested; proved under a hypothesis, see
    the lowest failing width.
 
 **Run-time checks.** Each candidate is checked as it is built, and a failed
-check is an internal error, never a different table. Lean builds and checks
-all three candidates. Phase 3's checks (`rematerialize`) are, in order: the
+check is an internal error, never a different table. All three candidates
+are built and checked under the same limits; none is exempt because another
+wins. Phase 3's checks (`rematerialize`) are, in order: the
 layout length equals the evaluated length; it is at most phase 1's layout
 length; the output re-expands, through the same interner, to the stored terms
 and to the input's root IDs; and every output expression is in the wire
-domain. On a DAG of at least 1,024 terms the three widths run as parallel
+domain. The serialized length is not measured at run time: it equals the
+layout length by theorem (`canonicalSharingTiered_serialized`, below). On a
+DAG of at least 1,024 terms the three widths run as parallel
 tasks (`tieredCandidates`; `tieredCandidates_eq` proves the result and the
-error order equal to the sequential run). Rust's default mode, which the
-compiler uses, applies every limit and every length check of phases 1 to 3
-to all three candidates, but builds only the returned candidate's expressions
-and checks those: their layout price, their re-expansion and node count, and
-their serialized length. Its checked mode (`ExactSharingLimits::full_check`,
-used by the unit tests, the FFI parity hooks and `sharing_corpus
---full-check`) builds and checks all three; over all of Init and all of
-Mathlib it returns the same output as the default mode. The exact list is the
-"Checks" section of the module documentation of
-`crates/ixon/src/sharing_exact/tiered.rs`.
+error order equal to the sequential run). Phase 3 evaluates the whole table
+once when the order is closed under stored descendants and once per prefix
+otherwise; `materializeTableOnePass_eq` proves the two paths equal on every
+input, errors and work charges included, so the limits meter the
+specification's work whichever path runs.
 
-**Limits.** The construction runs under explicit resource limits (Lean
-`Ix.Sharing.Exact.Limits`, Rust `ExactSharingLimits`). They are a safety net,
+**Limits.** The construction runs under explicit resource limits
+(`Ix.Sharing.Exact.Limits`). They are a safety net,
 not part of the definition: they decide whether a run succeeds, never which
 bytes a success produces. The defaults are far above every value observed on
-the Init and Mathlib corpora. Each limit is at least 2^6 (Lean) or 2^8 (Rust)
+the Init and Mathlib corpora. Each limit is at least 2^6
 times the earlier default under which those corpora were measured, for
-example `states` 2^40 and `materialize_work` 2^56. `knapsack_cells` is 2^28 in
-both languages, about 27 times the largest table-count knapsack of any width
+example `states` 2^40 and `materialize_work` 2^56. `knapsack_cells` is 2^28,
+about 27 times the largest table-count knapsack of any width
 on Init and Mathlib (9,959,424 cells). The number of sharing candidates is
-recorded but not limited on this path in either language: Rust's
-`candidates` limit (2^16) bounds only the exhaustive width-state search kept as
-a test oracle, which is also the only meter of `transitions`.
+recorded but not limited on this path. `transitions` meters only the
+exhaustive width-state search kept as a test oracle.
 
 The certified compiler (`Ix.Cert.compileReport`) always runs at the default
 sharing limits (`Ix.CompileM.compilerSharingLimits`), which its correctness
 theorem fixes. For unit tests, benchmarks, and study tools,
-`Ix.Sharing.Exact.Limits.withOverrides` and
-`ExactSharingLimits::with_overrides` parse an override string `SPEC`: a
+`Ix.Sharing.Exact.Limits.withOverrides` parses an override string `SPEC`: a
 comma-separated list of items, each `key=value` or the word `unbounded` (every
 production limit at its maximum). A value is ASCII decimal digits (no sign, no
 `_` separator), `2^k` with `k ≤ 63`, or `max` (2^64 − 1). Items, keys and
 values are trimmed of spaces, tabs, line feeds and carriage returns only. The
-keys are the limit names of either implementation (for example `states`,
-`depth`, `materialize_work`, `distinct_nodes`); keys of the other language are
-accepted and ignored, so one string serves both parsers. One list of 35
-specifications pins both parsers (`LIMIT_SPEC_PARITY` in
-`crates/ixon/src/sharing_exact/tests.rs`, `limitSpecParity` in
-`Tests/Ix/SharingExact.lean`).
+keys are the limit names (for example `states`, `depth`, `materialize_work`).
+The keys of the retired Rust implementation (`rustOnlyLimitKeys`, for example
+`distinct_nodes`) are still accepted and ignored. The 35 specifications of
+`limitSpecParity` (`Tests/Ix/SharingExact.lean`) pin the grammar.
 
 Exceeding a limit is a compile error (`CompileError.resourceLimit`) that
 names the limit's key and bound, for example `canonical sharing:
 resource exhausted: states (limit 1099511627776)`. Every other construction
-failure is `CompileError.sharingConstruction`. In Rust, kernel egress and the
-decompiler's recompile name the constant in the message (`egress '<name>':
-…`, `recompile of '<name>' (sharing): …`). The structural gate above fixes the
+failure is `CompileError.sharingConstruction`. The structural gate above fixes the
 exact or greedy family before search. A refusal never switches families or emits
 a partial or best-so-far table.
 
@@ -926,8 +917,7 @@ re-expansion to the stored terms and the input's root IDs, and the wire
 domain. The retained exact reference has its `phase3_le_phase1` proof; the
 family successful-run theorem obtains that inequality from the executed guard.
 Proving the guard unreachable for the entire family domain remains follow-up.
-Rust runs every check listed in the module documentation of
-`sharing_exact/tiered.rs`. The theorems are stated for successful runs, so a
+The theorems are stated for successful runs, so a
 failing check turns a run into an error, never into a different table.
 
 Not claimed:
@@ -946,32 +936,15 @@ Not claimed:
   Earlier exact-route tests re-ran every stored constant and reproduced its bytes for
   the Init and Init+Std files compiled on Lean 4.34.0 and for the Init and
   Mathlib files compiled on Lean 4.33.1.
-- **Rust.** The Rust implementation is not proved. It is checked against
-  Lean by differential tests (`exact-sharing-ffi`; with `IX_SHARING_CORPUS`
-  it runs over a whole `.ixe`). Its phase-1 search evaluates each
-  component's area under a truncated cost model, where Lean's specification
-  evaluates the component's whole closure; the outputs are equal on every
-  input tested. The following measurements are historical exact-route evidence;
-  §14.4 of sharing-minimum records the K16 prototype evidence, and the production
-  gates remain separate. On corpora compiled with `ix compile` on Lean 4.34.0, with
-  Rust in its checked mode, Lean and Rust produce the same bytes for all
-  56,783 stored constants of Init and all 100,277 of Init+Std, with no
-  resource exhaustion on either side; on Lean 4.33.1 the same held for
-  Init (56,622 stored constants; the 4.34.0 `Init` is a larger library) and
-  for all 20,284 constants of a Mathlib sample (every 50th constant, plus
-  every constant with more than 2,000 candidates). The merge-queue suite
-  `lake test -- --ignored compile` compiles every constant of its test
-  environment (238,574 on Lean 4.34.0) with the Lean and the Rust compiler
-  and requires identical serialized environments
-  ([performance](sharing-minimum-performance.md)).
-- **Length range in Rust.** Lean computes lengths with arbitrary-precision
-  `Nat`. Rust computes phase-1 costs and signed deltas in 128-bit integers
-  and, where a value leaves that range, again in exact integers, with the
-  same result wherever the 128-bit run succeeds (§12.18 of sharing-minimum),
-  so a long unshared length is no refusal. All 11 doubling fixtures,
-  including depths 127–256, have complete Rust/Lean byte parity, and the
-  Lean/Rust sharing suite compares four towers whose unshared length exceeds
-  `2^127` byte for byte.
+- **A second implementation.** Lean holds the only implementation. Until
+  PR #677 a Rust port, unproved, was held to it by differential tests: the
+  same bytes for every stored constant of Init and Init+Std, a Mathlib
+  sample, and every constant of the merge-queue test environment compiled by
+  both compilers (sharing-minimum §12.10, §14.4;
+  [performance](sharing-minimum-performance.md)). That evidence is history;
+  a new implementation would have to be held to the Lean one again.
+  Lengths are computed in arbitrary-precision `Nat`, so a long unshared
+  length is never a refusal.
 - **Failure.** A run that exceeds a limit returns an error. On the totality
   domain (fewer than `2^64` input nodes and universes per reference, implied by
   the framed constant-body bound) no guard is reachable under a sufficient
@@ -1011,10 +984,9 @@ D2 00 00                    -- N4(0xD, 2) Axiom, not unsafe, lvls = 0
 ```
 
 The bytes were produced by `normalizeConstantSharingTiered .tagN`, and the
-`exact-sharing` suite checks them. The compilers' sharing builders
-(`Ix.CompileM.buildConstantWithSharing`, Rust
-`apply_sharing_to_axiom_with_limits`) build the same bytes from the unshared
-constant (`exact-sharing-ffi`). Every integer here is below the first TagN
+`exact-sharing` suite checks them. The compiler's sharing builder
+(`Ix.CompileM.buildConstantWithSharing`) runs the same construction on the
+unshared constant's roots and writes them back in place. Every integer here is below the first TagN
 rung end, so v3's integer codes would write the same bytes for this table.
 
 ### Sharing in metadata expressions
@@ -1048,18 +1020,18 @@ The decompiler implements the rule (`Ix.DecompileM`: `ShareScope`,
 table first (`validateMetaSharing`): every `Share(i)`
 occurring in `metaSharing[j]` must have `i < p + j`. The first violation, in
 entry order and then left-to-right pre-order, is reported as
-`invalidMetaShareIndex` (Rust `DecompileError::InvalidMetaShareIndex`,
-error tag 11). An out-of-range index in a primary expression is
+`invalidMetaShareIndex`. An out-of-range index in a primary expression is
 `invalidShareIndex`; a record whose `_ix.inline` or arena root is out of
 range is a bad constant format. The semantic-contract scan
 (`Ix.SemanticContract.containsIxon`) expands Shares with the same scopes.
 Kernel ingress, the IxVM circuit and the resource validators do not read
 `metaSharing` contents. Two older gaps remain: a record nested inside a
 metadata expression may reference any `metaSharing` entry, including its own,
-and neither the decompiler nor kernel ingress checks that primary entries
-reference only earlier entries. A malformed table of either kind can make
-them loop instead of failing; hardening the readers against malformed input
-is follow-up work.
+and the decompiler does not check that primary entries reference only
+earlier entries. A malformed table of either kind can make it loop instead
+of failing; hardening it against malformed input is follow-up work. Kernel
+ingress (IxC's reader, `MemberReader.mk'`) builds each primary entry against
+the entries before it, so a self or forward reference it uses is an error.
 
 The primary table is built first and never depends on metadata. No compiler
 emits a `Share` in metadata expressions, and there is no canonical metadata
@@ -1841,7 +1813,7 @@ Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
 paths for Contains) is prover-side scratch consumed by the ZK circuit
 and NOT transmitted on the wire. Wrapper decoding alone proves nothing.
 IxVM supports Eval, Check, CheckEnv, Reveal, and Contains; Resource is currently
-validated by the native Lean/Rust boundary and is explicitly rejected as an
+validated natively (`Ix.Resource.validate`) and is explicitly rejected as an
 IxVM proof request. Aggregation folds only children whose contexts are equal,
 except for shape 15, which joins claims whose bindings share a literal class,
 and shape 16, which collects member claims under any contexts into a Catalog.
