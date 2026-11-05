@@ -25,10 +25,11 @@ passed.
 
 Checking is strict: a safe axiom other than Lean's standard three declines.
 `--allow-user-axioms` admits such axioms (`Key.isCustomAxiomEligible`) in the
-declaration checks, and a whole run whose declarations hold any runs the
-uncertified conditional entry instead of the certified one. Such a run lists
-the axioms, issues no host statement and exits with `exitConditional`; so does
-a selected run whose declaration checks read one. -/
+declaration checks, and a whole run runs the kernel's entry that admits them
+once, which lists the user axioms among the declarations. With none listed,
+that run is the certified entry's (T1) and the host statement is issued. With
+some, the run lists them, issues no host statement and exits with
+`exitConditional`; so does a selected run whose declaration checks read one. -/
 
 namespace Ix.Cli.CheckLeanCmd
 
@@ -77,7 +78,9 @@ structure PreparedInput where
   bound : Bool := false
   hasTier : Bool := false
   /-- `--allow-user-axioms`: the declaration checks admit user axioms, and a
-  whole run takes the conditional entry when the declarations hold any. -/
+  whole run takes the entry that admits them (`checkWhole`). Set only by
+  `prepareInput`, after the binding has passed the kernel's role-table check
+  (`UserAxioms.requireAxiomRoles`). -/
   allowUserAxioms : Bool := false
   prepareMs : Nat := 0
 
@@ -90,8 +93,11 @@ field is rebuilt through an incomplete Env literal. A bound artifact's binding
 is admitted with its records (`Artifact.prepareRecords`). In meta mode its
 published names must agree with the binding (`RoleBinding.Compile.roleBindingError`,
 which the compiler's `finalize` also runs). With `allowUserAxioms` the binding
-must bind `sorryAx`, `propext` and `Classical.choice`
-(`UserAxioms.requireAxiomRoles`); an artifact with no binding is refused. -/
+must pass the kernel's role-table check for user axioms
+(`Admission.admitAxiomPolicy .allowUser`, through `UserAxioms.requireAxiomRoles`:
+`sorryAx`, `propext` and `Classical.choice` bound) before any declaration is
+checked, since the record-by-record checks never reach admission; an artifact
+with no binding is refused. -/
 def prepareInput (bytes : ByteArray) (anon : Bool := false) (allowUserAxioms : Bool := false) :
     IO (Except DriverError PreparedInput) := do
   let start ← IO.monoMsNow
@@ -149,10 +155,10 @@ def PreparedInput.record (p : PreparedInput) (a : Address) : Except ReadError Ix
     | some c => .ok c | none => .error (.malformed "record is missing")
 
 /-- The whole-artifact entry that ran and what it accepted. `conditional` is
-the uncertified entry `--allow-user-axioms` runs when the artifact's
-declarations hold user axioms (`Artifact.checkConditional`, or
-`checkTieredConditional` with its tier census in `typed`): it has no theorem
-and issues no host statement, and its verdict holds only under `axioms`. -/
+the verdict of the entry `--allow-user-axioms` runs (`Artifact.checkConditional`,
+or `checkTieredConditional` with its tier census in `typed`) when the kernel
+lists user axioms among the declarations: no theorem covers it and it issues no
+host statement, and it holds only under `axioms`, those the kernel listed. -/
 inductive ArtifactAdmission where
   | logical (records : Nat)
   | tiered (records typed : Nat)
@@ -192,36 +198,55 @@ def wholeEntry (p : PreparedInput) (selection : Selection) (maxGroups : Option N
     throw (.artifact "artifact: decline: thin artifact assumptions require explicit resolution")
   return true
 
+/-- The verdict of a certified whole-artifact run. -/
+def ArtifactAdmission.ofRun {artifact : Ixon.Env} {limits : Admission.Limits} :
+    Ix.HostAdmission.Run artifact limits → ArtifactAdmission
+  | .logical receipt => .logical receipt.prepared.records.length
+  | .tiered receipt => .tiered receipt.prepared.records.length receipt.tier.length
+
+/-- A certified run's verdict and its host statement, derived from the run as
+`HostAdmission.certify` derives it (`HostAdmission.statementOf`). -/
+def certifiedVerdict (artifact : Ixon.Env) (run : Ix.HostAdmission.Run artifact artifactLimits) :
+    Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) := do
+  let statement ← (Ix.HostAdmission.statementOf artifact artifactLimits run).mapError
+    (DriverError.artifact ∘ toString)
+  return some (ArtifactAdmission.ofRun run, some statement)
+
 /-- Route from authenticated record headers before either entry runs. A
 failure never selects another checker. Selected/capped runs make no complete
 artifact claim. Without `allowUserAxioms` the certified entry runs
-(`HostAdmission.certify`). With it, the user axioms among the declarations the
-conditional entry reads (`UserAxioms.ofPrepared`) choose: with none, the
-certified entry runs; with some, the conditional entry runs and there is no
-statement. -/
+(`HostAdmission.certify`). With it, the entry that admits user axioms runs once
+(`Artifact.checkConditional`, `checkTieredConditional`: the kernel's
+`Admission.checkBytesUnder .allowUser` and its tiered form), and the kernel's
+list of the user axioms among the declarations it ran over chooses the verdict:
+with none, its receipt is the certified entry's (T1,
+`ReceiptConditional.toReceipt`, `TierReceiptConditional.toTierReceipt`) and the
+host statement is derived from it as `certify` derives it; with some, the
+verdict is conditional on them and there is no statement. -/
 def checkWhole (p : PreparedInput) (selection : Selection) (maxGroups : Option Nat) :
     Except DriverError (Option (ArtifactAdmission × Option Ix.HostAdmission.Statement)) := do
   unless (← wholeEntry p selection maxGroups) do return none
-  let userAxioms ← if p.allowUserAxioms then do
-      let input ← (Ix.RoleBinding.Artifact.prepareRecords p.parts.env artifactLimits).mapError
-        (DriverError.artifact ∘ toString)
-      (Ix.RoleBinding.UserAxioms.ofPrepared input).mapError fun e => DriverError.artifact s!"artifact: {e}"
-    else pure #[]
-  if userAxioms.isEmpty then
-    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify p.parts.env artifactLimits).mapError
+  let artifact := p.parts.env
+  unless p.allowUserAxioms do
+    let ⟨statement, checked⟩ ← (Ix.HostAdmission.certify artifact artifactLimits).mapError
       (DriverError.artifact ∘ toString)
-    let admission := match checked.run with
-      | .logical receipt => ArtifactAdmission.logical receipt.prepared.records.length
-      | .tiered receipt => .tiered receipt.prepared.records.length receipt.tier.length
-    return some (admission, some statement)
+    return some (ArtifactAdmission.ofRun checked.run, some statement)
   if p.hasTier then
-    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional p.parts.env artifactLimits).mapError
+    let receipt ← (Ix.RoleBinding.Artifact.checkTieredConditional artifact artifactLimits).mapError
       (DriverError.artifact ∘ toString)
-    return some (ArtifactAdmission.conditional receipt.prepared.records.length (some receipt.tier.length)
-      userAxioms, none)
-  let receipt ← (Ix.RoleBinding.Artifact.checkConditional p.parts.env artifactLimits).mapError
-    (DriverError.artifact ∘ toString)
-  return some (ArtifactAdmission.conditional receipt.prepared.records.length none userAxioms, none)
+    match noAxioms : receipt.axioms with
+    | [] => certifiedVerdict artifact (.tiered (receipt.toTierReceipt noAxioms))
+    | _ :: _ =>
+      return some (.conditional receipt.prepared.records.length (some receipt.tier.length)
+        (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none)
+  else
+    let receipt ← (Ix.RoleBinding.Artifact.checkConditional artifact artifactLimits).mapError
+      (DriverError.artifact ∘ toString)
+    match noAxioms : receipt.axioms with
+    | [] => certifiedVerdict artifact (.logical (receipt.toReceipt noAxioms))
+    | _ :: _ =>
+      return some (.conditional receipt.prepared.records.length none
+        (Ix.RoleBinding.UserAxioms.addresses receipt.axioms), none)
 
 def success (outcome : String) : Bool := outcome == "accept" || outcome == "typed"
 def CheckReport.targetsCovered (r : CheckReport) : Nat := r.targets.size

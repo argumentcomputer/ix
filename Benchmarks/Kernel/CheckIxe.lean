@@ -47,9 +47,11 @@ Usage: `kernel-check-ixe [--load stream|eager] [--jobs <n>] [--allow-user-axioms
 * `--allow-user-axioms` admits safe axioms beyond Lean's standard three
   (`Key.isCustomAxiomEligible`) on every path: streamed, eager, pooled and from
   the read cache. Without it the check is strict and such an axiom declines.
-  The artifact's role binding must bind `sorryAx`, `propext` and
-  `Classical.choice` (`Ix.RoleBinding.UserAxioms.requireAxiomRoles`), or the
-  run is refused with exit code 2; an accepted run lists the user axioms it
+  The artifact's role binding must pass the kernel's role-table check for user
+  axioms (`Admission.admitAxiomPolicy .allowUser`: `sorryAx`, `propext` and
+  `Classical.choice` bound; `Ix.RoleBinding.UserAxioms.requireAxiomRoles`),
+  which the per-record step never reaches, so it runs once before any path, or
+  the run is refused with exit code 2; an accepted run lists the user axioms it
   admitted (`CONDITIONAL on K user axioms`) after its counts.
 
 The watchdog (`CHECK_IXE_WATCH_MS`, default 60000; `CHECK_IXE_WATCH_MB`,
@@ -181,7 +183,9 @@ def run (args : List String) : IO UInt32 := do
   let started ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile options.input
   -- `--allow-user-axioms` is refused up front, whichever path runs, unless the
-  -- artifact's binding binds the axiom roles
+  -- artifact's binding passes the kernel's role-table check for user axioms
+  -- (`admitAxiomPolicy .allowUser`): the per-record step
+  -- (`annotDeclStepWithUserAxioms`) never reaches admission
   if options.allowUserAxioms then
     let binding := (← IO.ofExcept (Ixon.deEnvAnon bytes)).roleBinding
     if let .error e := Ix.RoleBinding.UserAxioms.requireAxiomRoles binding then

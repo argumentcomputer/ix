@@ -3,6 +3,7 @@ module
 public import Ix.RoleBinding.Publication
 public import Ix.Ixon.Authenticated
 public import Ix.KernelCheck.Step
+public import IxC.Kernel.Admission.UserAxioms
 
 /-! # Certified checking of an artifact's own binding and records
 
@@ -195,22 +196,43 @@ def checkAt (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) (order :
     | .error e => .error (.admission e)
     | .ok target => .ok ⟨prepared,target,fromArtifact,checked⟩
 
-/-- Conditional receipt of preparation and checking with custom user axioms enabled. -/
+/-- A receipt of preparation and of the check that admits user axioms
+(`Admission.checkBytesUnder .allowUser`), with the kernel's list of the user
+axioms among the declarations it ran over (`axioms`). Its accept holds only
+under them: no theorem covers it and no host statement is issued for it,
+unless the list is empty, when it is a receipt of the certified entry
+(`ReceiptConditional.toReceipt`). -/
 structure ReceiptConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) where
   prepared : Prepared
   target : Ix.Kernel.Env .anon
+  axioms : List (Ix.Kernel.ConstantVal .anon)
   preparedFrom : prepare artifact limits = .ok prepared
-  checked : Ix.Kernel.Admission.checkBytesWithUserAxioms Address.admissionHash prepared.binding prepared.pre
-    limits prepared.records prepared.blobs prepared.hints.lookup = .ok target
+  checked : Ix.Kernel.Admission.checkBytesUnder .allowUser Address.admissionHash prepared.binding
+    prepared.pre limits prepared.records prepared.blobs prepared.hints.lookup = .ok (target, axioms)
 
 def checkConditional (artifact : Ixon.Env) (limits : Ix.Kernel.Admission.Limits) :
     Except Error (ReceiptConditional artifact limits) :=
   match fromArtifact : prepare artifact limits with
   | .error e => .error e
   | .ok prepared =>
-    match checked : Ix.Kernel.Admission.checkBytesWithUserAxioms Address.admissionHash prepared.binding prepared.pre
-        limits prepared.records prepared.blobs prepared.hints.lookup with
+    match checked : Ix.Kernel.Admission.checkBytesUnder .allowUser Address.admissionHash prepared.binding
+        prepared.pre limits prepared.records prepared.blobs prepared.hints.lookup with
     | .error e => .error (.admission e)
-    | .ok target => .ok ⟨prepared, target, fromArtifact, checked⟩
+    | .ok (target, axioms) => .ok ⟨prepared, target, axioms, fromArtifact, checked⟩
+
+/-- **A conditional receipt that lists no user axiom is a receipt of the
+certified entry**, with the same preparation and environment (T1,
+`Admission.checkBytesUnder_strict_of_nil`). One run of the check that admits
+user axioms therefore also gives the certified receipt, and the host statement,
+of an artifact that declares none. -/
+def ReceiptConditional.toReceipt {artifact : Ixon.Env} {limits : Ix.Kernel.Admission.Limits}
+    (receipt : ReceiptConditional artifact limits) (noAxioms : receipt.axioms = []) :
+    Receipt artifact limits where
+  prepared := receipt.prepared
+  target := receipt.target
+  preparedFrom := receipt.preparedFrom
+  checked := Ix.Kernel.Admission.checkBytesUnder_strict_of_nil (policy := .allowUser) (by
+    rw [← noAxioms]
+    exact receipt.checked)
 
 end Ix.RoleBinding.Artifact
