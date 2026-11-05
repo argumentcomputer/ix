@@ -19,10 +19,16 @@ public import Ix.LeanExport.Compare
   (`Ix.LeanExport`) and runs the same pipeline as `ix compile-lean`
   (`Ix.CompileM.compileAndFinalize`): the certified compile, then the role
   binding (`finalize`), whose support and certificate theorems come from the
-  export itself, so from that
-  toolchain's `Init` and its `IxC.Kernel.PinGen.Certs`. With
-  `--certificates` they come from a second export of the same toolchain
-  instead, for an export that does not carry them.
+  export itself, so from that toolchain's `Init` and its
+  `IxC.Kernel.PinGen.Certs`. With `--certificates` the certificate theorems
+  come from a second export of the same toolchain instead, for an export that
+  does not carry them.
+
+  The roles are bound where that toolchain's declarations put them, which can
+  differ from ix's default role table: 4.35.0's `Decidable` has one
+  constructor, so its `Int.decLt` sits elsewhere. So the compile does not check
+  the published role names against the default table (`defaultRoles := false`);
+  `finalize` checks them against the binding it generates from the export.
 
   The output matches the native compile of the same declarations in content
   (every constant, address and the role binding), not in metadata: an export
@@ -80,7 +86,7 @@ def runCompileExportCmd (p : Cli.Parsed) : IO UInt32 := do
       pure (pure certEnv)
   let constList := env.constants.toList
   let (out, artifact, outBytes) ← match ← Ix.CompileM.compileAndFinalize env constList workers
-      (allowPartial := false) (certSource := certSource) with
+      (allowPartial := false) (certSource := certSource) (defaultRoles := false) with
     | .error e =>
       IO.println s!"[compile-export] FAILED: {e}"
       return 1
