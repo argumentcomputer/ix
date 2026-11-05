@@ -272,7 +272,7 @@ def compileAndFinalize (source : Lean.Environment)
   let certificates? ← if prefetch then
       some <$> Ix.RoleBinding.Compile.prefetchCertificates backend certSource
     else pure none
-  try
+  let run : IO (Except String (CertifiedOut × Finalization)) := do
     let out ← match ← compileCertified source constants workers log defaultRoles with
       | .ok out => pure out
       | .error e => return .error e
@@ -291,6 +291,7 @@ def compileAndFinalize (source : Lean.Environment)
       log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
       return .ok (out, .done artifact bytes)
     catch e => return .ok (out, .failed e.toString)
+  try run
   finally
     if let some (_, task) := certificates? then
       let _ ← IO.wait task
