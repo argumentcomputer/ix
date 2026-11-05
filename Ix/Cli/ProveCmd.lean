@@ -2,6 +2,7 @@ module
 public import Cli
 public import Ix.Cli.FormalAiur
 public import Ix.Cli.FormalAggregate
+public import Ix.Cli.CompressCmd
 
 /-!
   `ix prove`: generate a STARK proof against an `Ix.Claim`. Mirrors
@@ -14,8 +15,42 @@ namespace Ix.Cli.ProveCmd
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let _ ← FormalAiur.selected p
-  if p.hasFlag "lanes" || p.hasFlag "aggregate" then
-    FormalAggregate.runPipeline p
+  let fresh := p.hasFlag "fresh"
+  if fresh && p.hasFlag "skip-proven" then
+    IO.eprintln "--fresh cannot be combined with --skip-proven"
+    return 1
+  if fresh then IO.eprintln "[prove] fresh: bypassing earlier proof checkpoints"
+  let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
+  let canCompress := ixePath.isSome && p.hasFlag "ixes" && !p.hasFlag "shards-only"
+    && !p.hasFlag "shard" && !p.hasFlag "shards" && !p.hasFlag "distributed" && !p.hasFlag "exec-only"
+  let compress? ← match (p.flag? "compress").map (·.as! String) with
+    | none =>
+      if p.hasFlag "fixed-root" || p.hasFlag "dev-kzg-srs" || p.hasFlag "dev-final-srs" || p.hasFlag "compression-out" then
+        IO.eprintln "--fixed-root, --dev-kzg-srs, --dev-final-srs and --compression-out require --compress"; return 1
+      pure none
+    | some output =>
+      if !canCompress then
+        IO.eprintln "--compress requires aggregating a whole environment (--ixe and --ixes)"; return 1
+      match Ix.Cli.CompressCmd.finalOf output with
+      | .error e => IO.eprintln s!"--compress: {e}"; return 1
+      | .ok finalProof =>
+        let opts : Ix.Cli.CompressCmd.Options := {
+          finalProof
+          fresh
+          out := (p.flag? "compression-out").map (·.as! String)
+          devKzgSrs := p.hasFlag "dev-kzg-srs"
+          devFinalSrs := p.hasFlag "dev-final-srs"
+          fixedRoot := (p.flag? "fixed-root").map (·.as! String) }
+        try
+          IO.eprintln s!"Compression will use {← Ix.Cli.CompressCmd.preflight p opts}."
+          pure (some opts)
+        catch e => IO.eprintln s!"--compress: {e}"; return 1
+  if p.hasFlag "lanes" || p.hasFlag "aggregate" || compress?.isSome then
+    let onRoot : Address → IO Unit := match compress? with
+      | none => fun _ => pure ()
+      | some opts => fun addr => do
+        IO.println (toString (← Ix.Cli.CompressCmd.compressRoot p addr opts))
+    FormalAggregate.runPipeline p onRoot
   else
     FormalAiur.run p true
 
@@ -36,6 +71,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "structural-above" : Nat; "With --aggregate/--lanes: use structural joins above N subject leaves (default 4096; 0 means every join)."
     "range" : Nat; "With --aggregate/--lanes: wrap a leaf proof with more than N trace shards through a range-sum tree (default 0: wrap whole)."
     "no-cache"; "With --aggregate/--lanes: bypass aggregate cache reads and writes; leaf proofs still follow --no-index."
+    "fresh"; "Bypass prior leaf, aggregation and compression proofs, replacing their cache entries with newly verified results. Reuse parameters, proving keys and fixed preprocessing. Incompatible with --skip-proven."
     "jobs" : Nat; "Aiur: CPU prover lanes for manifest claims or --aggregate (default 1; 0 uses available cores). One shared execution pool; the RAM budget and prover threads are divided among lanes."
     "aggregate"; "Aiur: prove manifest leaves and ready recursive joins through one resident controller, then verify and print the root. Requires --ixe, --ixes and --trace-shards. --lanes selects this automatically on GPUs."
     "report" : String; "Aiur: write per-part plans, timings and persisted proof addresses to this JSON file."
@@ -44,14 +80,15 @@ def proveCmd : Cli.Cmd := `[Cli|
     "texray";           "Stream per-phase `[texray]` timing/RSS lines (execute, witness, STARK stages) to stderr as each span closes."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env. The file must carry a role binding: its claims are relative to it."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
-    "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."
+    "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). By default, prove every shard and aggregate them into one root, printing its address. With --shard K: prove shard K. With --shards-only: prove every shard without aggregating."
     "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
     "shards" : String;  "With --ixes and no --shard: prove only these leaves — `K`, `a-b`, or a comma list of those — in one process (one env load); every other leaf is carried over unchanged by --out-ixes."
+    "shards-only";      "With --ixe and --ixes: prove each shard's claim and stop, instead of aggregating the environment into one root."
     "out-ixes" : String; "Write the partition this run actually proved — splits included — as a `.ixes` manifest to this path: the manifest `ix verify --ixes` checks these proofs against, and the one the next run of this env should start from. Skipped if any shard failed."
     "binding-proof" : String; "With --lanes: a proof of the `binding` claim for the env's role binding (`ix prove-binding`). Every claim then assumes its binding instead of validating it, and the root discharges that condition once, so the binding's roles are validated once per aggregate rather than in every claim."
     "assume-binding";  "With --ixes: prove each shard's claim assuming the env's role binding meets the specifications (validator 4) instead of validating its roles in every shard proof; `ix aggregate --binding-proof` then discharges that condition once."
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
-    "trace-shards";     "Prove an over-budget shard as a batch of trace shards that each fit --max-ram, from one execution, instead of cutting it into parts; a shard no trace-shard count can fit stops the run rather than being cut. With --exec-only, reports the planned shard count and the heaviest shard's projected peak without proving."
+    "trace-shards";     "With --shards-only, --shard or --shards (always on when aggregating): prove an over-budget shard as a batch of trace shards that each fit --max-ram, from one execution, instead of cutting it into parts; a shard no trace-shard count can fit stops the run rather than being cut. With --exec-only, reports the planned shard count and the heaviest shard's projected peak without proving."
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
     "distributed";      "With --ixes and no --shard: prove the WHOLE environment as one `CheckEnv` claim, with one worker record per chunk — each shard of the manifest is one worker's chunk, the constants it owns — executing in parallel (calls into other workers' constants cross records through the lookup argument) and every record's trace shards in one batch. Writes one proof; no manifest is refined."
     "cells" : Nat;      "With --distributed: per-shard committed-cell budget each worker record is planned to (e.g. 1800000000 for a 96 GB device). 0 (default) proves each record as one shard."
@@ -60,6 +97,11 @@ def proveCmd : Cli.Cmd := `[Cli|
     "plan-only";        "Aiur: print selected manifest leaves and RAM reservations without execution."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
+    "compress" : String; "With --ixe and --ixes: compress the aggregate root to `kzg`, `plonk` or `groth16` and print the compressed proof's address after the root's. The setup is checked before proving."
+    "compression-out" : String; "With --compress: directory for compression stage files; --fresh replaces prior stages there."
+    "fixed-root" : String; "With --compress: override the bundled release normalization layout with a layout from `ix compress layout`."
+    "dev-kzg-srs";      "With --compress: generate local development inner KZG parameters. Final Groth16/PLONK proofs also require --dev-final-srs."
+    "dev-final-srs"; "With --compress groth16 or plonk: generate and cache local development final keys. With --dev-kzg-srs, no Ignition parameters are required."
     "max-ram" : Nat;    "Aiur: total RAM budget across --jobs in GiB, default 85% of available memory."
 
   ARGS:

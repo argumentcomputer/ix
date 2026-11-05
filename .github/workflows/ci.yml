@@ -155,9 +155,8 @@ jobs:
       image: nvidia/cuda:13.3.1-devel-ubuntu26.04
     env:
       # This job validates feature plumbing and the Rust-staticlib-to-Lean
-      # link without paying for a GPU runner. Multi-stark CI compiles the
-      # complete supported cubin set; one representative architecture is
-      # sufficient for this downstream integration gate.
+      # link without paying for a GPU runner. One explicit architecture
+      # is sufficient for this downstream integration gate.
       MULTI_STARK_CUDA_ARCHS: "80"
     steps:
       # No sccache here yet. Once the GPU benchmark lands after #644, wire
@@ -190,7 +189,7 @@ jobs:
           auto-config: false
           use-github-cache: false
       - name: Compile CUDA Rust targets
-        run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ixvm/cuda,stark-verifier/cuda,ix-prover/cuda
+        run: cargo check --release --locked --workspace --all-targets --features ix-ffi/parallel,ix-ffi/cuda,ix-proof-compression/cuda,ixvm/cuda,stark-verifier/cuda,ix-prover/cuda
       - name: Link separate Aiur CUDA hosts
         run: cargo build --release --locked --target-dir target/formal-cuda -p ixvm -p stark-verifier -p ix-prover --features parallel,cuda --bin ixvm-proof --bin stark-verifier --bin ix-prover
       - name: Link a CUDA-enabled Lean executable

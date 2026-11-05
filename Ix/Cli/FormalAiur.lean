@@ -5,6 +5,7 @@ public import Ix.Shard.Check
 public import Ix.Store
 public import Ix.Aggr.Reference
 public import Ix.Cli.ShardProofIndex
+public import Ix.Cli.Compression
 public import Aiur.SourceBundle
 
 /-! Application bridge to the separate Aiur/IxVM packages. This module reuses
@@ -567,7 +568,6 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
   rejectFlags p #["aggregate", "structural-above"]
   if p.hasFlag "distributed" && (p.hasFlag "shard" || !p.hasFlag "ixe" || !p.hasFlag "ixes") then
     throw (IO.userError "--distributed verification requires --ixe and --ixes, without --shard")
-  let artifactPath ← artifact p
   let proofs := p.variableArgsAs! String
   let ixe := (p.flag? "ixe").map (·.as! String)
   let manifest := (p.flag? "ixes").map (·.as! String)
@@ -604,6 +604,7 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     if expected.isEmpty then IO.eprintln "expected a proof address"; return 1
     for claim in expected do IO.println s!"CheckEnv claim digest: {Address.blake3 (Ix.Claim.ser claim)}"
     return 0
+  let mut artifactPath? : Option String := none
   if let some bPath := bindingProof? then
     let some ctx := envCtx? | throw (IO.userError "missing environment context for binding proof")
     let bWrapper ← readProofFileOrStore bPath
@@ -612,7 +613,10 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"binding proof {bPath} states {bWrapper.claim}, expected {expectedBindingClaim}"
       return 1
     try
-      verifyWrapper artifactPath bWrapper
+      let path ← match artifactPath? with
+        | some path => pure path
+        | none => let path ← artifact p; artifactPath? := some path; pure path
+      verifyWrapper path bWrapper
     catch e =>
       IO.eprintln s!"{bPath}: {e}"
       return 1
@@ -626,14 +630,22 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
         throw (IO.userError "proof does not match a requested manifest shard")
       if covered.contains wrapper.claim then throw (IO.userError "duplicate shard proof")
       let digest := Address.blake3 (Ix.Claim.ser wrapper.claim)
-      verifyWrapper artifactPath wrapper
-      covered := covered.push wrapper.claim
-      if p.hasFlag "record" then ShardProofIndex.writeAddress (← shardIndex) digest addr
-      IO.println s!"ok: proof {addr} verifies claim {digest}"
-      if expected.isEmpty then
-        if let some ctx := Ix.Claim.context? wrapper.claim then
-          if ctx.bindingAssumed then
-            IO.println s!"  note: claim assumes its role binding ({ctx.binding}) meets spec {ctx.spec}"
+      if Compression.isCompressed wrapper.proof then
+        let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")
+        if rc != 0 then result := 1
+        else covered := covered.push wrapper.claim
+      else
+        let path ← match artifactPath? with
+          | some path => pure path
+          | none => let path ← artifact p; artifactPath? := some path; pure path
+        verifyWrapper path wrapper
+        covered := covered.push wrapper.claim
+        if p.hasFlag "record" then ShardProofIndex.writeAddress (← shardIndex) digest addr
+        IO.println s!"ok: proof {addr} verifies claim {digest}"
+        if expected.isEmpty then
+          if let some ctx := Ix.Claim.context? wrapper.claim then
+            if ctx.bindingAssumed then
+              IO.println s!"  note: claim assumes its role binding ({ctx.binding}) meets spec {ctx.spec}"
     catch e => IO.eprintln s!"{hex}: {e}"; result := 1
   unless expected.all covered.contains do
     IO.eprintln "proofs do not cover every requested nonempty shard"

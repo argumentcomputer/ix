@@ -95,6 +95,7 @@ import Tests.AggrBindingReuse
 import Tests.AggrToolchains
 import Tests.AggrSemantics
 import Tests.Cli
+import Tests.CompressionCli
 import Tests.Ix.Ixes
 import Tests.ShardMap
 import Tests.Ix.EnvBody
@@ -212,6 +213,7 @@ def registry : List Entry := [
 
   -- CLI integration tests (ci.yml's lean-test job)
   .runner "cli" (.ci .cli) Tests.Cli.suite,
+  .runner "compression-cli" (.ci .cli) (do Tests.CompressionCli.run; return 0),
   .suite "kernel-check-lean-cli" (.ci .cli) Tests.Ix.Kernel.CheckLeanCli.suite,
   .suite "artifact-compile-cli" (.ci .cli) Tests.Ix.RoleCompile.suite,
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
@@ -315,6 +317,7 @@ def required : List (String × String) := [
   ("role-equations", "primary"),
   ("ixes-manifest", "primary"),
   ("cli", "ci:cli"),
+  ("compression-cli", "ci:cli"),
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),

@@ -199,10 +199,10 @@ impl LookupPlan {
       if multiplicity == Val::ZERO {
         continue;
       }
-      let (count, args) = lookup.slot_mut(slot);
-      *count = multiplicity;
-      debug_assert_eq!(args.len(), plan.args.width);
-      plan.args.fill(row, fixed, scratch, args);
+      worker.lookup_args.clear();
+      worker.lookup_args.resize(plan.args.width, Val::ZERO);
+      plan.args.fill(row, fixed, scratch, &mut worker.lookup_args);
+      lookup.push(slot, multiplicity, &worker.lookup_args);
     }
   }
 
@@ -215,14 +215,25 @@ impl LookupPlan {
     fixed: &[Val],
     mut emit: impl FnMut(usize, Val, &[Val]),
   ) {
-    let mut builder = LookupValues::builder(1, &self.widths);
-    let mut rows = builder.rows_mut();
-    let lookup = &mut rows[0];
-    self.fill(row, fixed, &mut Worker::<Val>::default(), lookup);
-    for slot in 0..self.slots.len() {
-      let (count, args) = lookup.slot_mut(slot);
-      if *count != Val::ZERO {
-        emit(slot, *count, args);
+    let mut scratch = Vec::with_capacity(self.arithmetic.len());
+    for op in &self.arithmetic {
+      let get = |value: Value| value.get(row, fixed, &scratch);
+      let value = match *op {
+        Arithmetic::Add(a, b) => get(a) + get(b),
+        Arithmetic::Sub(a, b) => get(a) - get(b),
+        Arithmetic::Mul(a, b) => get(a) * get(b),
+        Arithmetic::Neg(a) => -get(a),
+      };
+      scratch.push(value);
+    }
+    let mut args = Vec::new();
+    for (slot, plan) in self.slots.iter().enumerate() {
+      let multiplicity = plan.multiplicity.get(row, fixed, &scratch);
+      if multiplicity != Val::ZERO {
+        args.clear();
+        args.resize(plan.args.width, Val::ZERO);
+        plan.args.fill(row, fixed, &scratch, &mut args);
+        emit(slot, multiplicity, &args);
       }
     }
   }
@@ -232,6 +243,7 @@ struct Worker<F> {
   scratch: Vec<F>,
   buffer: Vec<F>,
   lookup_scratch: Vec<Val>,
+  lookup_args: Vec<Val>,
 }
 
 impl<F> Default for Worker<F> {
@@ -240,6 +252,7 @@ impl<F> Default for Worker<F> {
       scratch: Default::default(),
       buffer: Default::default(),
       lookup_scratch: Default::default(),
+      lookup_args: Default::default(),
     }
   }
 }

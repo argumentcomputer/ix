@@ -94,12 +94,29 @@ impl StageOne {
   }
 }
 
+/// Arguments for a memory-segment boundary message (`[MEMSEG, width, ptr]`).
+pub fn memseg_args(width: usize, ptr: Val) -> [Val; 3] {
+  [Val::from_u64(MEMSEG), Val::from_usize(width), ptr]
+}
+
 /// Decode only trusted compiler output (or compare its digest with a trusted
 /// key). A key is a statement, not evidence that its program is the intended one.
 pub struct VerifyingKey {
   system: System<GoldilocksBlake3Config>,
   cp: CommitmentParameters,
   fp: FriParameters,
+}
+impl Clone for VerifyingKey {
+  fn clone(&self) -> Self {
+    Self::from_bytes(&self.to_bytes()).expect("valid VerifyingKey")
+  }
+}
+impl std::fmt::Debug for VerifyingKey {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("VerifyingKey")
+      .field("num_circuits", &self.num_circuits())
+      .finish()
+  }
 }
 impl VerifyingKey {
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -117,6 +134,25 @@ impl VerifyingKey {
   pub fn to_bytes(&self) -> Vec<u8> {
     stark_key::to_bytes(&self.system, self.cp, self.fp)
   }
+  pub const fn commitment_parameters(&self) -> CommitmentParameters {
+    self.cp
+  }
+  pub const fn fri_parameters(&self) -> FriParameters {
+    self.fp
+  }
+  pub const fn system(&self) -> &System<GoldilocksBlake3Config> {
+    &self.system
+  }
+  pub fn num_circuits(&self) -> usize {
+    self.system.circuits.len()
+  }
+  pub fn validate_preamble(
+    &self,
+    claim: &[Val],
+    preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
+  ) -> Result<(), String> {
+    validate_preamble(&self.system, self.cp.log_blowup, &[claim], preamble)
+  }
   pub fn verify(
     &self,
     claims: &[Vec<Val>],
@@ -126,20 +162,21 @@ impl VerifyingKey {
   }
 }
 
-fn verify(
+fn validate_preamble<C: AsRef<[Val]>>(
   system: &System<GoldilocksBlake3Config>,
   log_blowup: usize,
-  claims: &[Vec<Val>],
-  proof: &BatchProof,
+  claims: &[C],
+  preamble: &multi_stark::batch::BatchPreamble<GoldilocksBlake3Config>,
 ) -> Result<(), String> {
-  let headers = &proof.preamble.headers;
-  if headers.is_empty()
-    || headers.len() > 65536
-    || headers.len() != proof.proofs.len()
-  {
+  let headers = &preamble.headers;
+  if headers.is_empty() || headers.len() > 65536 {
     return Err("invalid batch shard count".into());
   }
-  if !headers.iter().flat_map(|h| &h.claims).eq(claims) {
+  if !headers
+    .iter()
+    .flat_map(|h| h.claims.iter().map(Vec::as_slice))
+    .eq(claims.iter().map(C::as_ref))
+  {
     return Err("batch public claims mismatch".into());
   }
   let mut budget = claims.len() as u128;
@@ -176,7 +213,7 @@ fn verify(
       return Err("extra trace heights".into());
     }
   }
-  let messages = &proof.preamble.messages;
+  let messages = &preamble.messages;
   if !messages.len().is_multiple_of(2) {
     return Err("unpaired memory boundaries".into());
   }
@@ -203,6 +240,19 @@ fn verify(
     }
     previous = Some((width, b));
   }
+  Ok(())
+}
+
+fn verify(
+  system: &System<GoldilocksBlake3Config>,
+  log_blowup: usize,
+  claims: &[Vec<Val>],
+  proof: &BatchProof,
+) -> Result<(), String> {
+  if proof.preamble.headers.len() != proof.proofs.len() {
+    return Err("invalid batch shard count".into());
+  }
+  validate_preamble(system, log_blowup, claims, &proof.preamble)?;
   system
     .verify_batch(proof)
     .map_err(|e| format!("STARK batch verification failed: {e:?}"))
@@ -612,6 +662,185 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       &[self.claim(entry, args, output)?],
       proof,
     )
+  }
+
+  /// Unpadded row count for every circuit in `self.system.circuits` order:
+  /// function circuits (`0 .. self.members.len()`), fixed tables
+  /// (`self.members.len() .. self.members.len() + self.tables.len()`), and
+  /// ROM circuits (`self.members.len() + self.tables.len() ..`).
+  pub fn execution_rows(&self, record: &Execution<B>) -> Vec<usize> {
+    let mut rows = Vec::with_capacity(self.system.circuits.len());
+    for members in &self.members {
+      rows.push(
+        members
+          .iter()
+          .map(|&f| record.queries.tables[f].len())
+          .sum(),
+      );
+    }
+    for ci in self.members.len()..self.members.len() + self.tables.len() {
+      rows.push(self.system.circuits[ci].preprocessed_height);
+    }
+    for &width in &self.rom.widths {
+      rows.push(record.memory.indices_for_width(width).len());
+    }
+    rows
+  }
+
+  /// Target power-of-two log heights for a fixed-shape root proof.
+  pub fn normalized_log_heights(
+    &self,
+    rows: &[usize],
+    headroom: u8,
+  ) -> Result<Vec<u8>, String> {
+    if rows.len() != self.system.circuits.len() {
+      return Err(format!(
+        "expected {} circuit row counts, got {}",
+        self.system.circuits.len(),
+        rows.len()
+      ));
+    }
+    rows
+      .iter()
+      .zip(&self.system.circuits)
+      .enumerate()
+      .map(|(index, (&count, circuit))| {
+        if circuit.preprocessed_height != 0 {
+          if count != circuit.preprocessed_height {
+            return Err(format!(
+              "fixed circuit {index} has {count} rows, expected {}",
+              circuit.preprocessed_height
+            ));
+          }
+          return u8::try_from(circuit.preprocessed_height.ilog2())
+            .map_err(|_| format!("fixed circuit {index} log height overflow"));
+        }
+        let base = count
+          .max(2)
+          .checked_next_power_of_two()
+          .ok_or_else(|| {
+            format!("circuit {index} row count {count} overflows power of two")
+          })?
+          .ilog2();
+        let log = base
+          .checked_add(u32::from(headroom))
+          .and_then(|log| u8::try_from(log).ok())
+          .filter(|&log| log <= 26)
+          .ok_or_else(|| {
+            format!(
+              "circuit {index} normalized log height exceeds the 2^26 KZG limit (rows={count}, headroom={headroom})"
+            )
+          })?;
+        Ok(log)
+      })
+      .collect()
+  }
+
+  /// `(payload_width, circuit_index)` for every ROM circuit in ascending width
+  /// order.
+  pub fn memory_circuits(&self) -> Vec<(usize, usize)> {
+    let base = self.members.len() + self.tables.len();
+    self
+      .rom
+      .widths
+      .iter()
+      .enumerate()
+      .map(|(i, &width)| (width, base + i))
+      .collect()
+  }
+
+  /// Prove a single-shard root execution padded to `log_heights`, emitting
+  /// `[0, unpadded)` `MEMSEG` boundary messages for every ROM circuit (including
+  /// empty `0..0` intervals) to match the fixed-shape outer verifier.
+  pub fn prove_normalized(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+    record: Execution<B>,
+    log_heights: &[u8],
+  ) -> Result<(Vec<Val>, BatchProof), String> {
+    if !self.segmented_memory {
+      return Err("normalized proving requires Backend::for_batch".into());
+    }
+    if log_heights.len() != self.system.circuits.len() {
+      return Err(format!(
+        "expected {} normalized circuit log heights, got {}",
+        self.system.circuits.len(),
+        log_heights.len()
+      ));
+    }
+    for (index, (&log, circuit)) in
+      log_heights.iter().zip(&self.system.circuits).enumerate()
+    {
+      if !(1..=26).contains(&log) {
+        return Err(format!(
+          "circuit {index} normalized log height {log} must be in 1..=26"
+        ));
+      }
+      if circuit.preprocessed_height != 0
+        && circuit.preprocessed_height != (1usize << log)
+      {
+        return Err(format!(
+          "fixed circuit {index} requires height {}, got 2^{log}",
+          circuit.preprocessed_height
+        ));
+      }
+    }
+    let unpadded_rows = self.execution_rows(&record);
+    for (index, (&rows, &log)) in
+      unpadded_rows.iter().zip(log_heights).enumerate()
+    {
+      let capacity = 1usize << log;
+      if rows > capacity {
+        return Err(format!(
+          "circuit {index} has {rows} unpadded rows, exceeding normalized height 2^{log} ({capacity})"
+        ));
+      }
+    }
+    let active = vec![true; log_heights.len()];
+    self.check_shape(&active, log_heights)?;
+    let claim = self.claim(entry, args, output)?;
+    let mut traces = self.generate_stage_1(&record, entry, args)?;
+    drop(record);
+    for (index, (trace, &log)) in
+      traces.iter_mut().zip(log_heights).enumerate()
+    {
+      let target_height = 1usize << log;
+      if trace.height() > target_height {
+        return Err(format!(
+          "circuit {index} trace height {} exceeds normalized height {target_height}",
+          trace.height()
+        ));
+      }
+      let target_values = trace
+        .width
+        .checked_mul(target_height)
+        .ok_or_else(|| format!("circuit {index} padded trace size overflow"))?;
+      trace.values.resize(target_values, Val::ZERO);
+    }
+    let rom_base = self.members.len() + self.tables.len();
+    let mut messages = Vec::with_capacity(self.rom.widths.len() * 2);
+    for (i, &width) in self.rom.widths.iter().enumerate() {
+      let unpadded = unpadded_rows[rom_base + i];
+      messages.push(BatchMessage::pull(
+        memseg_args(width, Val::ZERO).to_vec(),
+      ));
+      messages.push(BatchMessage::push(
+        memseg_args(width, Val::from_usize(unpadded)).to_vec(),
+      ));
+    }
+    let witness = self.witness_from_main(traces);
+    let proof = self.system.prove_batch(
+      &self.key,
+      vec![multi_stark::batch::ShardInput {
+        claims: vec![claim.clone()],
+        witness,
+      }],
+      messages,
+    );
+    self.verify_batch(entry, args, output, &proof)?;
+    Ok((claim, proof))
   }
 }
 
