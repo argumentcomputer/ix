@@ -4,17 +4,10 @@
 //! interned hierarchical names and scalar binder/constant metadata ([`env`]),
 //! and primitive constant addresses ([`prim_addrs::PrimAddrs`]).
 
-#![cfg_attr(target_arch = "riscv64", no_std)]
-
-#[cfg(target_arch = "riscv64")]
-extern crate alloc;
-
 pub mod address;
-#[cfg(not(target_arch = "riscv64"))]
 pub mod prim_addrs;
 
 /// Hierarchical names and scalar metadata shared across crates.
-#[cfg(not(target_arch = "riscv64"))]
 pub mod env {
   use std::hash::{Hash as StdHash, Hasher};
   use std::sync::Arc;
@@ -44,8 +37,6 @@ pub mod env {
     }
   }
 
-  /// The underlying data for a [`Name`].
-  ///
   /// A single component of a hierarchical name.
   #[derive(Debug, Clone, PartialEq, Eq)]
   pub enum NameComponent {
@@ -53,6 +44,8 @@ pub mod env {
     Num(Nat),
   }
 
+  /// The underlying data for a [`Name`].
+  ///
   /// Each variant carries its precomputed Blake3 hash as the last field.
   #[derive(PartialEq, Eq, Debug)]
   pub enum NameData {
@@ -102,59 +95,6 @@ pub mod env {
       hasher.update(&n.to_le_bytes());
       let hash = hasher.finalize();
       Name(Arc::new(NameData::Num(pre, n, hash)))
-    }
-    /// Decompose this name into its components (from root to leaf).
-    pub fn components(&self) -> Vec<NameComponent> {
-      let mut components = Vec::new();
-      let mut current = self;
-      loop {
-        match current.as_data() {
-          NameData::Anonymous(_) => break,
-          NameData::Str(pre, s, _) => {
-            components.push(NameComponent::Str(s.clone()));
-            current = pre;
-          },
-          NameData::Num(pre, n, _) => {
-            components.push(NameComponent::Num(n.clone()));
-            current = pre;
-          },
-        }
-      }
-      components.reverse();
-      components
-    }
-
-    /// Strip a prefix from this name, returning the suffix components.
-    pub fn strip_prefix(&self, prefix: &Name) -> Option<Vec<NameComponent>> {
-      let self_components = self.components();
-      let prefix_components = prefix.components();
-      if self_components.len() < prefix_components.len() {
-        return None;
-      }
-      if self_components[..prefix_components.len()] != prefix_components[..] {
-        return None;
-      }
-      Some(self_components[prefix_components.len()..].to_vec())
-    }
-
-    /// Append suffix components to this name.
-    pub fn append_components(&self, suffix: &[NameComponent]) -> Name {
-      let mut result = self.clone();
-      for component in suffix {
-        match component {
-          NameComponent::Str(s) => result = Name::str(result, s.clone()),
-          NameComponent::Num(n) => result = Name::num(result, n.clone()),
-        }
-      }
-      result
-    }
-
-    /// Get the last string component of this name, if any.
-    pub fn last_str(&self) -> Option<&str> {
-      match self.as_data() {
-        NameData::Str(_, s, _) => Some(s.as_str()),
-        _ => None,
-      }
     }
 
     /// Returns a dot-separated human-readable representation of this name.
