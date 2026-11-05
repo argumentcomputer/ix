@@ -109,7 +109,8 @@ def registry : List Entry := [
   .suite "import-ixe" .primary Tests.Ix.ImportIxe.suite,
   .suite "lean-export" .primary Tests.Ix.LeanExport.suite,
   .suite "truthmines-spec" .primary Tests.Ix.TruthMinesRecords.suite,
-  .suite "ixon" .primary (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite),
+  -- `concurrently`: the long role and admission checks run at once
+  .suiteIO "ixon" .primary (concurrently (Tests.Ixon.suite ++ Tests.Ix.IxonUniverse.suite)),
   .suiteIO "ixon-reject-parity" .primary Tests.Ix.IxonRejectParity.suite,
   .suite "role-equations" .primary Tests.Ix.RoleEquations.suite,
   .suite "ixon-syntax" .primary Tests.IxonSyntax.suite,
@@ -118,7 +119,7 @@ def registry : List Entry := [
   .suite "assumption-tree" .primary Tests.AssumptionTree.suite,
   .suite "commit" .primary Tests.Commit.suite,
   .suite "keccak" .primary Tests.Keccak.suite,
-  .suite "exact-sharing" .primary (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite),
+  .suiteIO "exact-sharing" .primary (concurrently (Tests.SharingExact.suite ++ Tests.SharingUniform.suite ++ Tests.SharingTiered.suite)),
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
@@ -236,8 +237,10 @@ def registry : List Entry := [
   .suite "host-admission-cli" (.ci .cli) Tests.Ix.HostAdmissionCli.suite,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
-  -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates)
-  .runner "binding-proof-cli" (.ci .cli) Tests.Aggr.BindingReuse.cli,
+  -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).
+  -- Its 64 GiB proving budget would set lean-test's memory peak, so it runs
+  -- in the compiler-closures partition of the merge queue.
+  .runner "binding-proof-cli" (.ci .compilerClosures) Tests.Aggr.BindingReuse.cli,
 
   -- expensive suites and runners (these require significant RAM)
   .suite "catalog-dedup" (.ci .misc) Tests.Ix.CatalogDedup.suite,
@@ -257,6 +260,9 @@ def registry : List Entry := [
   -- (Tests/Fixtures/initstd-reference.txt), and `ix check-lean` on the artifact
   -- with every bound role admitted
   .runner "initstd-reference" (.ci .landingInitStdCli) Tests.Ix.InitStd.reference,
+  -- Address.blake3, Address.blake3Pure and Address.admissionHash on every
+  -- record, blob and the binding of the artifact `initstd-reference` leaves
+  .runner "admission-hash-diff-initstd" (.ci .landingInitStdCli) Tests.Ix.Kernel.AdmissionHashDiff.runInitStd,
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
   -- decompile fidelity
   .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
@@ -417,7 +423,7 @@ def required : List (String × String) := [
   ("kernel-check-lean-cli", "ci:cli"),
   ("artifact-compile-cli", "ci:cli"),
   ("host-admission-cli", "ci:cli"),
-  ("binding-proof-cli", "ci:cli"),
+  ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
   ("checker-support-regression", "ci:compiler-closures"),
@@ -426,6 +432,7 @@ def required : List (String × String) := [
   ("ixvm", "ci:misc"),
   ("kernel-tutorial", "ci:misc"),
   ("initstd-reference", "ci:landing-initstd-cli"),
+  ("admission-hash-diff-initstd", "ci:landing-initstd-cli"),
   ("fidelity-initstd", "ci:landing-initstd-cli")]
 
 def main (args : List String) : IO UInt32 :=

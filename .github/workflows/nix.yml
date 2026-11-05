@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # sccache serves only the `nix develop` build below: `nix build` and
+      # sccache serves only the `nix develop` build at the end: `nix build` and
       # `nix flake check` compile inside Nix's sandbox, which sees neither
       # the wrapper nor the network, and rely on Cachix instead. The dev
       # shell inherits RUSTC_WRAPPER and keeps the outer PATH, so the
@@ -60,10 +60,14 @@ jobs:
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#ix -- --help
-      # A single invocation lets Nix schedule independent checks concurrently.
+      # The flake's one check, `ix-tests`: the primary tier from the
+      # Nix-built test binary, in the sandbox, on a fresh copy of the
+      # tracked sources. CI Jobs' lean-test runs the same tier on its
+      # incremental sticky disk and its rust-test job runs clippy and
+      # nextest, so neither runs again here.
       - run: nix flake check --print-build-logs --accept-flake-config
-      # Run the real build and test commands inside the development environment.
-      - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"
+      # The development shell builds the library; the tests ran above.
+      - run: nix develop --accept-flake-config --command lake build
 
   nix-gate:
     if: ${{ always() }}

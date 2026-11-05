@@ -51,7 +51,7 @@ import Tests.Ix.Compile.ClosureHarness
      (the set observed is printed);
   7. **local scope** of a mutual-inductive fixture
      (`Tests/Ix/Compile/Fixtures/LocalCollapse.lean`): its selected closure
-     (the `--local` scope) compiles with no refusal, the Rust compile is
+     (the `--local` scope) compiles with no refusal, the certified compile is
      byte-identical, it decompiles to the source, its output introduces no
      reference, and `ix validate-lean --ns LocalCollapse` passes all
      five phases, including source/reader fidelity; the same closure with
@@ -187,7 +187,7 @@ def localPhaseProblems (exitCode : UInt32) (phases : Array (String × String × 
 
 /-- The local scope of a mutual-inductive fixture: the selected closure of
 the file's own constants (the scope of `ix compile --local`) compiles with
-no refusal through the harness, the Rust compile is byte-identical, it
+no refusal through the harness, the certified compile is byte-identical, it
 decompiles to the source, and its output introduces no reference. The closure
 with recursors only also compiles without refusal or added support.
 

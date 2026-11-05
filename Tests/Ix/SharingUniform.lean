@@ -285,32 +285,68 @@ def componentCountsAgree (w : Nat) (roots : Array Ixon.Expr) : Bool := Id.run do
   return actual.size == reference.size &&
     (actual.zip reference).all fun (a, b) => kept a.bySize == kept b.bySize
 
+/-- One generated input's outcome in `searchTests`. -/
+inductive SearchOutcome where
+  /-- No component of ≥ 2 uncertain terms: not counted. -/
+  | small
+  /-- Both searches agree; the size of the largest component. -/
+  | agree (component : Nat)
+  /-- The enumeration exceeded its 2^16 states. -/
+  | skipped
+  /-- The searches disagree on a counted input whose largest component has
+  size `component`, or (`none`) one of them failed. -/
+  | failed (component : Option Nat) (message : String)
+
+/-- Both searches on input `i`, `roots` at width `w`. -/
+def searchOutcome (i w : Nat) (roots : Array Ixon.Expr) : SearchOutcome :=
+  match optimizeSharingUniform w roots,
+      optimizeSharingUniform w roots { maxStates := 1 <<< 16, uniformSubsetSearch := true } with
+  | .ok u, .ok r =>
+    let comp := u.components.foldl (fun acc c => max acc c.size) 0
+    if comp < 2 then .small
+    else if u.stored == r.stored && u.result.modelBytes == r.result.modelBytes &&
+        u.lowerBracket == r.lowerBracket && componentCountsAgree w roots then .agree comp
+    else .failed (some comp) s!"case {i} w={w}: branch and bound stored {u.stored} model {u.result.modelBytes}, subset enumeration stored {r.stored} model {r.result.modelBytes} roots={reprStr roots}"
+  | .ok _, .error (.resourceExhausted ..) => .skipped
+  | .error e, _ => .failed none s!"case {i} w={w}: branch and bound error {reprStr e} roots={reprStr roots}"
+  | _, .error e => .failed none s!"case {i} w={w}: subset enumeration error {reprStr e}"
+
 /-- The reclassifying branch and bound returns exactly what the subset
 enumeration returns (same set, so the same tie-break), on inputs with larger
-uncertain components. -/
+uncertain components. The inputs are drawn in order from one seed; both
+searches run on batches of them in parallel, and the outcomes are read in
+draw order, so the inputs checked are the first 600 with a component of
+≥ 2 uncertain terms, as when the searches ran on one input at a time. -/
 def searchTests (_ : Unit) : TestSeq :=
-  let (checked, skipped, maxComp, err) := runGen 71 do
+  let inputs := runGen 71 do
+    let mut out : Array (Array Ixon.Expr × Nat) := #[]
+    for _ in [0:4000] do
+      let roots ← genSearchRoots
+      out := out.push (roots, [1, 2, 3, 5][← rand 4]!)
+    return out
+  let batch := 64
+  let (checked, skipped, maxComp, err) := Id.run do
     let mut checked := 0
     let mut skipped := 0
     let mut maxComp := 0
     let mut err : Option String := none
-    for i in [0:4000] do
+    for start in [0:inputs.size:batch] do
       if checked ≥ 600 || err.isSome then break
-      let roots ← genSearchRoots
-      let w := [1, 2, 3, 5][← rand 4]!
-      match optimizeSharingUniform w roots,
-          optimizeSharingUniform w roots { maxStates := 1 <<< 16, uniformSubsetSearch := true } with
-      | .ok u, .ok r =>
-        let comp := u.components.foldl (fun acc c => max acc c.size) 0
-        if comp < 2 then continue
-        checked := checked + 1
-        maxComp := max maxComp comp
-        unless u.stored == r.stored && u.result.modelBytes == r.result.modelBytes &&
-            u.lowerBracket == r.lowerBracket && componentCountsAgree w roots do
-          err := some s!"case {i} w={w}: branch and bound stored {u.stored} model {u.result.modelBytes}, subset enumeration stored {r.stored} model {r.result.modelBytes} roots={reprStr roots}"
-      | .ok _, .error (.resourceExhausted ..) => skipped := skipped + 1
-      | .error e, _ => err := some s!"case {i} w={w}: branch and bound error {reprStr e} roots={reprStr roots}"
-      | _, .error e => err := some s!"case {i} w={w}: subset enumeration error {reprStr e}"
+      let tasks := (inputs.extract start (start + batch)).zipIdx.map fun ((roots, w), k) =>
+        Task.spawn fun _ => searchOutcome (start + k) w roots
+      for task in tasks do
+        if checked ≥ 600 || err.isSome then break
+        match task.get with
+        | .small => pure ()
+        | .agree comp =>
+          checked := checked + 1
+          maxComp := max maxComp comp
+        | .skipped => skipped := skipped + 1
+        | .failed comp message =>
+          if let some comp := comp then
+            checked := checked + 1
+            maxComp := max maxComp comp
+          err := some message
     return (checked, skipped, maxComp, err)
   group "uniform branch and bound vs subset enumeration" <|
     test s!"{checked} generated inputs with a component of ≥ 2 uncertain terms (prefix chains, telescopes, App chains, long spines, prefixes, general; w ∈ 1,2,3,5; largest component {maxComp}; {skipped} skipped where the enumeration exceeded 2^16 states): identical retained per-count optima/ties, stored set, model length and bracket choice"

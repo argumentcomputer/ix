@@ -8,8 +8,8 @@
   self-test (`ixtests-registry`) checks the registry against the workflows
   that name those jobs (comments removed), and checks that every required
   entry is registered once, in its tier, and that the required list names an
-  entry in every tier that runs in CI. The three landing jobs
-  hold the end-to-end checks of the compiler and of the certification, which
+  entry in every tier that runs in CI. The landing job
+  holds the end-to-end checks of the compiler and of the certification, which
   are too slow for every pull request and run in the merge queue.
 
   Command line (`lake test -- <args>`, `lake exe IxTests <args>`):
@@ -17,7 +17,7 @@
   - `<name>…`: exactly the named entries, whatever their tier (names match
     exactly; an unknown name is an error);
   - `--tier <tier>` (repeatable): every entry of that tier, where `<tier>`
-    is `primary`, `manual`, `ci:<job>`, or `landing` for the three landing jobs;
+    is `primary`, `manual`, `ci:<job>`, or `landing` for the landing job;
   - `--ignored`: with no name and no `--tier`, every entry that is not
     primary; with a name or a `--tier`, nothing more (kept so that
     `--ignored <name>…` works as before);
@@ -116,6 +116,26 @@ def Entry.runner (name : String) (tier : Tier) (run : IO UInt32) : Entry :=
   ⟨name, tier, .runner run⟩
 def Entry.env (name : String) (tier : Tier) (run : Lean.Environment → IO UInt32) : Entry :=
   ⟨name, tier, .env run⟩
+
+/-- `tests` with every `individualIO` check started now, each on a thread of
+its own with its output captured; each check of the result waits for its
+thread and then prints that output, so results and output keep their order.
+For a suite of independent long checks, the suite takes as long as its
+longest check rather than their sum. -/
+def startChecks : LSpec.TestSeq → IO LSpec.TestSeq
+  | .individualIO descr shown check next => do
+    let task ← IO.asTask (IO.FS.withIsolatedStreams check) .dedicated
+    return .individualIO descr shown (do
+      let (output, result) ← IO.ofExcept (← IO.wait task)
+      IO.print output
+      return result) (← startChecks next)
+  | .individual descr p shown inst next => return .individual descr p shown inst (← startChecks next)
+  | .group descr tests next => return .group descr (← startChecks tests) (← startChecks next)
+  | .done => return .done
+
+/-- `suites`, their checks started at once (`startChecks`). -/
+def concurrently (suites : List LSpec.TestSeq) : IO (List LSpec.TestSeq) :=
+  suites.mapM startChecks
 
 /-- A workflow line without its YAML comment: from the first `#` at the line's
 start or after a space or a tab. A `#` inside a quoted string after a space is

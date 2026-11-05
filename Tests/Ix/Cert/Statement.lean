@@ -1,7 +1,9 @@
 import LSpec
 import Ix.Meta
 import Ix.CompileCertified
-import Ix.Cert.Audit
+import Ix.CompileCert.InductiveReading
+import Ix.Cert.Stream
+import Ix.Cert.Composition
 import Tests.Ix.Kernel.SourceIngress
 import Tests.Ix.SourceContract.SyntaxFixture
 import Ix.Ixon.CheckOrder
@@ -50,7 +52,9 @@ import Tests.Ix.Cert.ExecutedChecks
   the same contracts in Source mode as its reading does in the certified
   entry's environment of `Ix.Cert.compile`'s output.
 
-Importing `Ix.Cert.Audit` builds the statements' freeze with the tests. -/
+The statements' freeze, `Ix.Cert.Audit`, is not imported here: the certified
+kernel gate (`lake run check-kernel`) and `lake lint` build it, so the test
+binary does not carry its proof closure. -/
 
 namespace Tests.Ix.Cert.Statement
 

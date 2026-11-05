@@ -30,6 +30,12 @@ def source : String := "Benchmarks/Compile/CompileInitStd.lean"
 
 def referencePath : System.FilePath := "Tests" / "Fixtures" / "initstd-reference.txt"
 
+/-- Where `initstd-reference` leaves a copy of its artifact, for the later
+entries of its partition that read Init+Std (`admission-hash-diff-initstd`).
+A run removes the previous copy first, and writes one only when the compile
+passes. -/
+def keptArtifact : System.FilePath := ".lake" / "build" / "initstd-reference.ixe"
+
 /-- The reference artifact's digest and size, and the Lean kernel's verdicts on it. -/
 structure Reference where
   sha256 : String
@@ -141,6 +147,7 @@ def reportChecks (name : String) (checks : Array (String × Bool)) : IO UInt32 :
 def reference : IO UInt32 := do
   let expected ← IO.ofExcept ((parseReference (← IO.FS.readFile referencePath)).mapError
     fun e => s!"{referencePath}: {e}")
+  if ← keptArtifact.pathExists then IO.FS.removeFile keptArtifact
   let dir ← IO.FS.createTempDir
   try
     let artifact := dir / "initstd.ixe"
@@ -151,6 +158,8 @@ def reference : IO UInt32 := do
       IO.eprintln (tail compiled)
       return ← reportChecks "initstd-reference"
         #[("ix compile-lean on Init+Std passes its report checks", false)]
+    IO.FS.createDirAll (keptArtifact.parent.getD ".")
+    IO.FS.writeBinFile keptArtifact (← IO.FS.readBinFile artifact)
     let sha ← sha256File artifact
     let size := (← artifact.metadata).byteSize.toNat
     IO.println s!"[initstd] artifact sha256 {sha}, {size} bytes; reference {expected.sha256}, \
