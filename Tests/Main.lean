@@ -259,6 +259,9 @@ def registry : List Entry := [
   -- (Tests/Fixtures/initstd-reference.txt), and `ix check-lean` on the artifact
   -- with every bound role admitted
   .runner "initstd-reference" (.ci .landingInitStdCli) Tests.Ix.InitStd.reference,
+  -- Address.blake3, Address.blake3Pure and Address.admissionHash on every
+  -- record, blob and the binding of the artifact `initstd-reference` leaves
+  .runner "admission-hash-diff-initstd" (.ci .landingInitStdCli) Tests.Ix.Kernel.AdmissionHashDiff.runInitStd,
   -- `ix validate-lean` on Init+Std: compile, serde, projection, reader and
   -- decompile fidelity
   .runner "fidelity-initstd" (.ci .landingInitStdCli) Tests.Ix.InitStd.fidelity,
@@ -428,6 +431,7 @@ def required : List (String × String) := [
   ("ixvm", "ci:misc"),
   ("kernel-tutorial", "ci:misc"),
   ("initstd-reference", "ci:landing-initstd-cli"),
+  ("admission-hash-diff-initstd", "ci:landing-initstd-cli"),
   ("fidelity-initstd", "ci:landing-initstd-cli")]
 
 def main (args : List String) : IO UInt32 :=
