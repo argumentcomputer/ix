@@ -1149,18 +1149,53 @@ impl ClaimContext {
     })
   }
 
+  /// The custom user axioms of `env`: every safe `ConstantInfo::Axio` in
+  /// `env.consts` that is not bound in `env.role_binding`'s role table.
+  pub fn user_axioms(env: &Env) -> Vec<Address> {
+    let Some(binding) = &env.role_binding else {
+      return Vec::new();
+    };
+    let Ok(table) = crate::role_table::RoleTable::from_bytes(&binding.bytes)
+    else {
+      return Vec::new();
+    };
+    let bound: rustc_hash::FxHashSet<Address> =
+      table.bound.into_iter().map(|(_, a)| a).collect();
+    let mut out = Vec::new();
+    for entry in &env.consts {
+      if bound.contains(entry.key()) {
+        continue;
+      }
+      let bytes = entry.value().raw_bytes();
+      if bytes.len() >= 2 && bytes[0] == 0xD2 && bytes[1] == 0x00 {
+        out.push(entry.key().clone());
+      }
+    }
+    out
+  }
+
+  /// The canonical Merkle tree of `env`'s custom user axioms, or `None` when
+  /// `env` carries no custom user axioms.
+  pub fn user_axiom_tree(
+    env: &Env,
+  ) -> Option<crate::assumption_tree::AssumptionTree> {
+    let axioms = Self::user_axioms(env);
+    crate::assumption_tree::AssumptionTree::canonical(&axioms)
+  }
+
   /// The context of a claim made today over `env`'s own role binding: this
-  /// specification set ([`SPEC_DIGEST`]) and no axiom beyond the standard
-  /// three, validating the binding. Fails when the environment carries no
+  /// specification set ([`SPEC_DIGEST`]) and `env`'s custom user axioms (if
+  /// any), validating the binding. Fails when the environment carries no
   /// binding.
   pub fn for_env(env: &Env) -> Result<Self, String> {
     let binding = env.role_binding.as_ref().ok_or_else(|| {
       "claim context: the environment carries no role binding".to_string()
     })?;
+    let axioms = Self::user_axiom_tree(env).map(|t| t.root());
     Ok(ClaimContext {
       spec: spec_digest(),
       binding: binding.address.clone(),
-      axioms: None,
+      axioms,
       binding_assumed: false,
       literal_class: false,
     })

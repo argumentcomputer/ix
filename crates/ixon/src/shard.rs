@@ -217,11 +217,6 @@ impl BlockProfile {
     (row, col)
   }
 
-  /// Total heartbeats across all blocks.
-  pub fn total_heartbeats(&self) -> u128 {
-    self.blocks.iter().map(|b| u128::from(b.heartbeats)).sum()
-  }
-
   /// Serialize to the `.ixprof` binary format.
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();
@@ -535,13 +530,11 @@ fn mutual_work(
   if members.is_empty() {
     return Err("empty mutual block".into());
   }
-  if members.iter().any(|m| matches!(m, MutConst::Indc(_))) {
-    if members.iter().any(|m| matches!(m, MutConst::Defn(_))) {
-      return Err("mixed mutual block".into());
-    }
-    if !members.iter().any(|m| matches!(m, MutConst::Recr(_))) {
-      return Err("inductive mutual block without recursor".into());
-    }
+  let has_defn = members.iter().any(|m| matches!(m, MutConst::Defn(_)));
+  let has_indc = members.iter().any(|m| matches!(m, MutConst::Indc(_)));
+  let has_recr = members.iter().any(|m| matches!(m, MutConst::Recr(_)));
+  if has_defn && (has_indc || has_recr) {
+    return Err("mixed mutual block".into());
   }
   let mut targets = Vec::new();
   for (index, member) in members.iter().enumerate() {
@@ -710,7 +703,7 @@ fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
 /// `ConstantMeta`), because real metadata references name addresses
 /// throughout its tree and carrying it would require the full env's
 /// hash-consed name index. The extract serves the ANON pipeline
-/// (`check-rs --anon`, the zkVM hosts, `ix profile`/`ix shard`,
+/// (the zkVM hosts, `ix profile`/`ix shard`,
 /// `bench-typecheck`), where metadata is never read and reducibility hints
 /// travel in the `anon_hints` section instead. Meta-mode tools need the
 /// source env.
@@ -3049,39 +3042,6 @@ fn seal_and_write(
       .map_err(|e| format!("write {op}: {e}"))?;
   }
   Ok(())
-}
-
-/// Write a `.ixes` manifest for an EXPLICIT shard assignment — the
-/// partition a prove run actually produced (splits included) rather
-/// than a planner's output. Same manifest construction as
-/// [`shard_static`]'s tail: [`ShardManifest::build`] recomputes
-/// own sizes, foreign blocks and cross-ingress from the profile, and
-/// each shard's assumption root is the canonical merkle root of its
-/// foreign blocks. No aggregation tree is attached (consumers fall
-/// back to the flat tree-fold); heartbeat figures carry whatever proxy
-/// the profile was built with (serialized size, on the static path).
-/// `peaks` (empty, or one measured prover-peak per shard in order)
-/// fills each shard's `measured_peak_bytes` — the run's measurement
-/// riding along for schedulers to bin-pack on.
-pub fn shard_manifest_explicit(
-  profile: &BlockProfile,
-  shard_of: &[u32],
-  num_shards: usize,
-  peaks: &[u64],
-  out_path: &str,
-) -> Result<String, String> {
-  if peaks.len() != num_shards {
-    return Err(format!(
-      "measured peaks: {} values for {num_shards} shards",
-      peaks.len()
-    ));
-  }
-  let mut manifest = ShardManifest::build(profile, shard_of, num_shards);
-  for (shard, &peak) in manifest.shards.iter_mut().zip(peaks) {
-    shard.measured_peak_bytes = peak;
-  }
-  seal_and_write(&mut manifest, Some(out_path))?;
-  Ok(manifest.summary())
 }
 
 /// One leaf of a source manifest cut into parts: the parts' block lists in

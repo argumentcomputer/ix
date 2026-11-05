@@ -1,4 +1,5 @@
 import Benchmarks.Kernel.CheckIxeRows
+import Ix.FileDigest
 
 /-! # Paired environment-check runs (untrusted tooling)
 
@@ -15,7 +16,7 @@ two share. It exits 1 when the current rows lose a baseline acceptance.
 
 `kernel-check-ixe --paired --binary <b> --baseline-binary <b>
 --baseline-revision <rev> --input <ixe> --output-dir <new dir> [--revision
-<rev>] [--baseline-source-sha256 <h>] [--source <dir>] [--limit N] [--fuel N]
+<rev>] [--baseline-source-blake3 <h>] [--source <dir>] [--limit N] [--fuel N]
 [--runs N] [--warmups N] [--timeout s] [--time-binary <GNU time>] [--top N]`
 alternates fresh processes of the two binaries over the same `.ixe` (one
 warmup and three measured samples each by default, the order swapped every
@@ -30,7 +31,7 @@ source that changes during the run. It exits 1 when a pair loses a baseline
 acceptance, 2 on an error.
 
 The comparison's JSON is `Benchmarks.Kernel.CheckIxeRows`'s. The runner's own
-fingerprint (`runner_sha256`) is that of the executable running it, and
+fingerprint (`runner_blake3`) is that of the executable running it, and
 `--fuel`, which the current driver does not take, is passed only when
 given. -/
 
@@ -155,10 +156,8 @@ def writeJson (path : String) (v : Value) : IO Unit := do
   IO.FS.writeFile tmp (v.dumps 2 true ++ "\n")
   IO.FS.rename tmp path
 
-def sha256 (path : System.FilePath) : IO String := do
-  let out ← IO.Process.output { cmd := "sha256sum", args := #["--", path.toString] }
-  unless out.exitCode == 0 do throw <| IO.userError s!"sha256sum {path}: {out.stderr}"
-  return (out.stdout.splitOn " ").headD ""
+/-- The Blake3 digest of a file (`Ix.FileDigest.blake3File`). -/
+def blake3 (path : System.FilePath) : IO String := Ix.FileDigest.blake3File path
 
 /-- Python's `Path` order: component by component. -/
 def pathLt (a b : String) : Bool :=
@@ -190,7 +189,7 @@ def sourceFingerprint (root : System.FilePath) : IO String := do
       h.write ((p.drop prefix_.length).toString.toUTF8 ++ ⟨#[0]⟩)
       h.write ((← IO.FS.readBinFile p) ++ ⟨#[0]⟩)
     h.flush
-    sha256 tmp
+    blake3 tmp
 
 /-- `shutil.which`. -/
 def which (cmd : String) : IO (Option String) := do
@@ -239,7 +238,7 @@ structure Options where
   source : Option String := none
   revision : Option String := none
   baselineRevision : String := ""
-  baselineSourceSha : Option String := none
+  baselineSourceBlake3 : Option String := none
   limit : Nat := 4300
   fuel : Option Nat := none
   runs : Nat := 3
@@ -306,7 +305,7 @@ def sample (binary timer : String) (o : Options) (stem : String) : IO (Array (St
   | _ => result := result.push ("resources_error", .str s!"no resources in {metricsPath}")
   try
     let rows ← readRows rowsPath
-    result := result ++ rowSummary rows ++ #[("rows_sha256", .str (← sha256 rowsPath))]
+    result := result ++ rowSummary rows ++ #[("rows_blake3", .str (← blake3 rowsPath))]
   catch e => result := result.push ("rows_error", .str (toString e))
   return result
 
@@ -341,23 +340,23 @@ def run (o : Options) : IO UInt32 := do
       | some t => pure t
       | none => throw <| IO.userError "GNU time is required (or pass --time-binary)"
   let source := o.source.getD "."
-  let binaryShas ← binaries.mapM fun (_, p) => sha256 p
-  let inputSha ← sha256 o.input
-  let sourceSha ← sourceFingerprint source
+  let binaryDigests ← binaries.mapM fun (_, p) => blake3 p
+  let inputDigest ← blake3 o.input
+  let sourceDigest ← sourceFingerprint source
   let optStr (s : Option String) : Value := (s.map Value.str).getD .null
   let header : Array (String × Value) := #[("schema", .int 1),
     ("scope", .str "environment-check supported-profile coverage; not a certified whole-environment verdict"),
-    ("input", .obj #[("path", .str o.input), ("sha256", .str inputSha)]),
-    ("source_sha256", .str sourceSha),
+    ("input", .obj #[("path", .str o.input), ("blake3", .str inputDigest)]),
+    ("source_blake3", .str sourceDigest),
     ("source_note", .str "local source at invocation; caller must build the binary from this source"),
-    ("baseline_source_sha256", optStr o.baselineSourceSha),
+    ("baseline_source_blake3", optStr o.baselineSourceBlake3),
     ("toolchain", .str (← IO.FS.readFile (source ++ "/lean-toolchain")).trimAscii.toString),
-    ("runner_sha256", .str (← sha256 (← IO.appPath))),
+    ("runner_blake3", .str (← blake3 (← IO.appPath))),
     ("machine", ← uname),
     ("limit", .int o.limit), ("fuel", (o.fuel.map (Value.int ·)).getD .null), ("runs", .int o.runs),
     ("warmups", .int o.warmups), ("timeout_seconds", if o.timeoutGiven then .float o.timeout else .int 180),
-    ("binaries", .obj ((binaries.zip binaryShas).map fun ((side, path), sha) =>
-      (side, .obj #[("path", .str path), ("sha256", .str sha),
+    ("binaries", .obj ((binaries.zip binaryDigests).map fun ((side, path), digest) =>
+      (side, .obj #[("path", .str path), ("blake3", .str digest),
         ("revision", if side == "baseline" then .str o.baselineRevision else optStr o.revision)])))]
   let mut samples : Array Value := #[]
   let mut pairs : Array Value := #[]
@@ -401,9 +400,9 @@ def run (o : Options) : IO UInt32 := do
     if !warmup then
       pairs := pairs.push (compare (paired.getD "baseline" {}) (paired.getD "current" {}) o.top)
       writeJson summaryPath (report samples pairs false #[])
-  for ((side, path), sha) in binaries.zip binaryShas do
-    if (← sha256 path) != sha then throw <| IO.userError s!"{side} binary changed during the run"
-  if (← sha256 o.input) != inputSha || (← sourceFingerprint source) != sourceSha then
+  for ((side, path), digest) in binaries.zip binaryDigests do
+    if (← blake3 path) != digest then throw <| IO.userError s!"{side} binary changed during the run"
+  if (← blake3 o.input) != inputDigest || (← sourceFingerprint source) != sourceDigest then
     throw <| IO.userError "input or source changed during the run"
   let mut wall : Array (String × Value) := #[]
   let mut medians : Std.HashMap String Float := {}
@@ -433,7 +432,7 @@ def run (o : Options) : IO UInt32 := do
 def usage : String :=
   "usage: kernel-check-ixe --compare <baseline.jsonl> <current.jsonl> [--output <f>] [--top N]\n       \
    kernel-check-ixe --paired --binary <b> --baseline-binary <b> --baseline-revision <rev> \
-   --input <ixe> --output-dir <new dir> [--revision <rev>] [--baseline-source-sha256 <h>] \
+   --input <ixe> --output-dir <new dir> [--revision <rev>] [--baseline-source-blake3 <h>] \
    [--source <dir>] [--limit N] [--fuel N] [--runs N] [--warmups N] [--timeout s] \
    [--time-binary <path>] [--top N]"
 
@@ -470,7 +469,7 @@ def runPaired (args : List String) : IO UInt32 := do
     | "--source" :: v :: rest, o => parse rest { o with source := some v }
     | "--revision" :: v :: rest, o => parse rest { o with revision := some v }
     | "--baseline-revision" :: v :: rest, o => parse rest { o with baselineRevision := v }
-    | "--baseline-source-sha256" :: v :: rest, o => parse rest { o with baselineSourceSha := some v }
+    | "--baseline-source-blake3" :: v :: rest, o => parse rest { o with baselineSourceBlake3 := some v }
     | "--limit" :: v :: rest, o => v.toNat?.bind fun n => parse rest { o with limit := n }
     | "--fuel" :: v :: rest, o => v.toNat?.bind fun n => parse rest { o with fuel := some n }
     | "--runs" :: v :: rest, o => v.toNat?.bind fun n => parse rest { o with runs := n }

@@ -301,14 +301,17 @@ module KernelClaim {
                     strict: Field) -> () {
 
       match addr_set_member(addr, asm) {
-        1 => {  () } ,
+        1 => {
+          assert_eq!(Fields::is_zero(strict - 2), 0,
+            "Check: target is in the assumption set");
+          () } ,
         _ => {
-          match strict {
+          let next_strict = match strict {
             1 => {
               assert_eq!(addr_set_member(addr, owned), 1,
                 "CheckEnv: walk reached a constant outside the owned set");
-              () } ,
-            _ => {  () } ,
+              1 } ,
+            _ => {  0 } ,
           };
           let c = Ingress::load_verified_constant(addr);
           match c {
@@ -320,29 +323,29 @@ module KernelClaim {
                   match dprj {
                     Ixon::DefinitionProj::Mk(_, block_addr) => {
                       run_check(rc, addr);
-                      env_walk(rc, block_addr, owned, asm, strict) } ,
+                      env_walk(rc, block_addr, owned, asm, next_strict) } ,
                   } } ,
                 Ixon::ConstantInfo::IPrj(iprj) => {
                   match iprj {
                     Ixon::InductiveProj::Mk(_, block_addr) => {
                       run_check(rc, addr);
-                      env_walk(rc, block_addr, owned, asm, strict) } ,
+                      env_walk(rc, block_addr, owned, asm, next_strict) } ,
                   } } ,
                 Ixon::ConstantInfo::CPrj(cprj) => {
                   match cprj {
                     Ixon::ConstructorProj::Mk(_, _, block_addr) => {
                       run_check(rc, addr);
-                      env_walk(rc, block_addr, owned, asm, strict) } ,
+                      env_walk(rc, block_addr, owned, asm, next_strict) } ,
                   } } ,
                 Ixon::ConstantInfo::RPrj(rprj) => {
                   match rprj {
                     Ixon::RecursorProj::Mk(_, block_addr) => {
                       run_check(rc, addr);
-                      env_walk(rc, block_addr, owned, asm, strict) } ,
+                      env_walk(rc, block_addr, owned, asm, next_strict) } ,
                   } } ,
                 _ => {  run_check(rc, addr) } ,
               };
-              env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, strict) } ,
+              env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, next_strict) } ,
           } } ,
       }
     }
@@ -371,21 +374,37 @@ module KernelClaim {
       match (*(leaves)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(a, rest) => {
+
+          assert_eq!(addr_set_member(a, asm), 0,
+            "CheckEnv: owned constant is in the assumption set");
           env_walk(rc, a, owned, asm, 1);
           env_walk_leaves(rc, rest, owned, asm) } ,
       }
     }
 
   fn run_check_env(rc: KernelRoles::RoleCtx, env_root: Bytes::AddressRef, asm: Options::Option<Bytes::AddressRef>) -> () {
+      let owned = load_assumption_tree(env_root);
+      let Lists::Node::Cons(_, _) = (*(owned));
       match asm {
         Options::Option::None => {
 
-          walk_leaves_owned(rc, load_assumption_tree(env_root)) } ,
+          match KernelRoles::role_ctx_axioms(rc) {
+            RBTreeMap::RBTreeMap::Nil => {  walk_leaves_owned(rc, owned) } ,
+            RBTreeMap::RBTreeMap::Node(_, _, _, _, _) => {  walk_leaves_transitive(rc, owned) } ,
+          } } ,
         Options::Option::Some(r) => {
-          let owned = load_assumption_tree(env_root);
           let owned_set = addr_set_build(owned, RBTreeMap::RBTreeMap::Nil);
           let asm_set = addr_set_build(load_assumption_tree(r), RBTreeMap::RBTreeMap::Nil);
           env_walk_leaves(rc, owned, owned_set, asm_set) } ,
+      }
+    }
+
+  fn walk_leaves_transitive(rc: KernelRoles::RoleCtx, leaves: Lists::List<Bytes::AddressRef>) -> () {
+      match (*(leaves)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(a, rest) => {
+          run_check_transitive(rc, a);
+          walk_leaves_transitive(rc, rest) } ,
       }
     }
 
@@ -469,18 +488,13 @@ module KernelClaim {
       }
     }
 
-  fn get_claim_context(stream: Bytes::Stream) -> (Bytes::AddressRef, Bytes::Stream) {
+  fn get_claim_context(stream: Bytes::Stream) -> (Bytes::AddressRef, Options::Option<Bytes::AddressRef>, Bytes::Stream) {
       let (spec, s) = IxonDeserialize::get_address(stream);
       assert_eq!(Bytes::address_eq(spec, KernelRoleSpec::spec_digest()), 1,
         "claim: specification digest is not this circuit's");
       let (binding, s2) = IxonDeserialize::get_address(s);
       let (axioms, s3) = get_opt_addr(s2);
-      match axioms {
-        Options::Option::None => {  (binding, s3) } ,
-        Options::Option::Some(_) => {
-          assert_eq!(0, 1, "claim: axioms beyond the standard three are not admitted");
-          (binding, s3) } ,
-      }
+      (binding, axioms, s3)
     }
 
   fn get_opt_u64_masked(mb: Field, stream: Bytes::Stream)
@@ -1131,8 +1145,8 @@ module KernelClaim {
       match UInt8::to_field(variant) {
         3 => {
           assert_eq!(UInt8::to_field(validator), 3, "claim: wrong validator identity");
-          let (binding, s) = get_claim_context(s);
-          let rc = KernelRoles::role_ctx_of_binding(binding);
+          let (binding, axioms, s) = get_claim_context(s);
+          let rc = KernelRoles::load_role_ctx(binding, 3, axioms);
           let (input, s) = IxonDeserialize::get_address(s);
           let (output, s) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s);
@@ -1140,8 +1154,8 @@ module KernelClaim {
           KernelEval::run_eval(rc, input, output, asm) } ,
         4 => {
 
-          let (binding, s) = get_claim_context(s);
-          let rc = KernelRoles::role_ctx_for_validator(binding, UInt8::to_field(validator));
+          let (binding, axioms, s) = get_claim_context(s);
+          let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
           let (target, s2) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s2);
           let Lists::Node::Nil = (*(rest));
@@ -1150,11 +1164,12 @@ module KernelClaim {
             Options::Option::Some(r) => {
               let asm_leaves = load_assumption_tree(r);
               let asm_set = addr_set_build(asm_leaves, RBTreeMap::RBTreeMap::Nil);
-              env_walk(rc, target, RBTreeMap::RBTreeMap::Nil, asm_set, 0) } ,
+
+              env_walk(rc, target, RBTreeMap::RBTreeMap::Nil, asm_set, 2) } ,
           } } ,
         5 => {
-          let (binding, s) = get_claim_context(s);
-          let rc = KernelRoles::role_ctx_for_validator(binding, UInt8::to_field(validator));
+          let (binding, axioms, s) = get_claim_context(s);
+          let rc = KernelRoles::load_role_ctx(binding, UInt8::to_field(validator), axioms);
           let (root, s2) = IxonDeserialize::get_address(s);
           let (asm, rest) = get_opt_addr(s2);
           let Lists::Node::Nil = (*(rest));

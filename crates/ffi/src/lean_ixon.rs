@@ -121,25 +121,6 @@ fn available_ram_bytes() -> Option<usize> {
   Some(kib * 1024)
 }
 
-fn decode_addr_lists(bytes: &[u8]) -> Result<Vec<Vec<Address>>, String> {
-  let mut lists = Vec::new();
-  let mut off = 0usize;
-  while off < bytes.len() {
-    if off + 4 > bytes.len() {
-      return Err("addr lists: truncated count".into());
-    }
-    let n =
-      u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
-    off += 4;
-    if off + n * 32 > bytes.len() {
-      return Err("addr lists: truncated addresses".into());
-    }
-    lists.push(Address::unpack(&bytes[off..off + n * 32]).collect());
-    off += n * 32;
-  }
-  Ok(lists)
-}
-
 /// FFI: extract the named constants' dependency closure from a serialized
 /// env into a standalone `.ixe` — genuine constant bytes, blobs, and
 /// reducibility hints (via the anon view), plus every closure constant's
@@ -376,93 +357,6 @@ pub extern "C" fn rs_shard_env_static(
       LeanIOResult::ok(LeanOwned::box_usize(0))
     },
     Err(e) => LeanIOResult::error_string(&format!("rs_shard_env_static: {e}")),
-  }
-}
-
-/// FFI: write a `.ixes` manifest describing an EXPLICIT partition — the
-/// block lists a prove run actually produced (splits included), so the
-/// emitted manifest is the one `ix verify --ixes` can check the run's
-/// proofs against, and the one that seeds the next run with a
-/// partition that already fits.
-///
-/// `shards_blob` encodes, per shard, a 4-byte LE block count followed
-/// by that many 32-byte block addresses. Every profile block must
-/// appear in EXACTLY one shard: a prove partition covers the env by
-/// construction (splits partition their parent), so a gap or duplicate
-/// here is an input error, not a policy choice.
-///
-/// `peaks_blob`: one 8-byte LE measured prover peak per shard in shard
-/// order — the run's `peak_prove_bytes` measurements, recorded on each
-/// manifest shard for schedulers to bin-pack on.
-///
-/// Takes the caller's live `EnvHandle`: both call sites hold one for
-/// this env already, so the emit costs a profile build, not an env
-/// re-parse.
-#[allow(clippy::cast_possible_truncation)] // block/shard ids are u32 by construction
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_shard_manifest_from_partition(
-  env_handle: LeanExternal<EnvHandle, LeanBorrowed<'_>>,
-  shards_blob: LeanByteArray<LeanBorrowed<'_>>,
-  peaks_blob: LeanByteArray<LeanBorrowed<'_>>,
-  out_path: LeanString<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  let out = out_path.to_string();
-  let profile = ixon::shard::static_block_profile(&env_handle.get().env);
-  let block_id: FxHashMap<Address, u32> = profile
-    .blocks()
-    .iter()
-    .enumerate()
-    .map(|(i, b)| (b.addr.clone(), i as u32))
-    .collect();
-  let lists = match decode_addr_lists(shards_blob.as_bytes()) {
-    Ok(v) => v,
-    Err(e) => return LeanIOResult::error_string(&e),
-  };
-  let num_shards = lists.len();
-  let mut shard_of = vec![u32::MAX; profile.num_blocks()];
-  for (k, list) in lists.iter().enumerate() {
-    for addr in list {
-      let Some(&b) = block_id.get(addr) else {
-        return LeanIOResult::error_string(&format!(
-          "shard {k}: block {} not in the env's block profile",
-          addr.hex()
-        ));
-      };
-      if shard_of[b as usize] != u32::MAX {
-        return LeanIOResult::error_string(&format!(
-          "block {} appears in shards {} and {k}",
-          addr.hex(),
-          shard_of[b as usize]
-        ));
-      }
-      shard_of[b as usize] = k as u32;
-    }
-  }
-  let uncovered = shard_of.iter().filter(|&&s| s == u32::MAX).count();
-  if uncovered > 0 {
-    return LeanIOResult::error_string(&format!(
-      "partition covers {} of {} blocks ({uncovered} missing)",
-      profile.num_blocks() - uncovered,
-      profile.num_blocks()
-    ));
-  }
-  let peaks: Vec<u64> = peaks_blob
-    .as_bytes()
-    .as_chunks::<8>()
-    .0
-    .iter()
-    .map(|c| u64::from_le_bytes(*c))
-    .collect();
-  match ixon::shard::shard_manifest_explicit(
-    &profile, &shard_of, num_shards, &peaks, &out,
-  ) {
-    Ok(summary) => {
-      eprintln!("[shard-manifest] {out}: {summary}");
-      LeanIOResult::ok(LeanOwned::box_usize(0))
-    },
-    Err(e) => LeanIOResult::error_string(&format!(
-      "rs_shard_manifest_from_partition: {e}"
-    )),
   }
 }
 

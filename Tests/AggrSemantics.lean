@@ -49,15 +49,15 @@ private def envCtx : Ix.ClaimContext :=
 
 private def singletonIxonEnv : Ixon.Env × Address :=
   let constant : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let address := Address.blake3 (Ixon.serConstant constant)
   (bound (({} : Ixon.Env).storeConst address constant), address)
 
 private def pairIxonEnv : Ixon.Env × Address × Address :=
   let left : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.opaq, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let right : Ixon.Constant :=
-    ⟨.axio ⟨true, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let leftAddress := Address.blake3 (Ixon.serConstant left)
   let rightAddress := Address.blake3 (Ixon.serConstant right)
   let env := (({} : Ixon.Env).storeConst leftAddress left)
@@ -66,12 +66,12 @@ private def pairIxonEnv : Ixon.Env × Address × Address :=
 
 private def sharedClosureIxonEnv : Ixon.Env × Array Address × Address :=
   let shared : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.succ .zero]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .sort 0⟩, #[], #[], #[.zero, .succ .zero]⟩
   let sharedAddress := Address.blake3 (Ixon.serConstant shared)
   let left : Ixon.Constant :=
-    ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[sharedAddress], #[]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .sort 1, .ref 0 #[]⟩, #[], #[sharedAddress], #[.zero, .succ .zero]⟩
   let right : Ixon.Constant :=
-    ⟨.axio ⟨true, 0, .ref 0 #[]⟩, #[], #[sharedAddress], #[]⟩
+    ⟨.defn ⟨.opaq, .safe, 0, .sort 1, .ref 0 #[]⟩, #[], #[sharedAddress], #[.zero, .succ .zero]⟩
   let leftAddress := Address.blake3 (Ixon.serConstant left)
   let rightAddress := Address.blake3 (Ixon.serConstant right)
   let env := (({} : Ixon.Env).storeConst sharedAddress shared)
@@ -205,6 +205,18 @@ def semanticSuite : IO UInt32 := do
     structuralOutput.subjects.root ==
       Ix.Merkle.nodeHash left.subjects.root right.subjects.root &&
       structuralOutput.assumptions.map (·.leaves) == some #[d]
+  let selfAssumingClaim : Ix.Claim :=
+    .checkEnv envCtx (canonicalTree #[a]).root (some (canonicalTree #[a]).root)
+  let selfAssumingTrees : Std.HashMap Address Ix.AssumptionTree :=
+    ({} : Std.HashMap _ _).insert (canonicalTree #[a]).root (canonicalTree #[a])
+  let ofClaimRejectsSelfAssumption :=
+    (Aggr.CheckEnvTrees.ofClaim selfAssumingClaim selfAssumingTrees).isOk == false
+  let selfAssumingStmt : Aggr.CheckEnvTrees :=
+    { ctx := envCtx, subjects := canonicalTree #[a],
+      assumptions := some (canonicalTree #[a]) }
+  let hostJoinRejectsSelfDischarge :=
+    (selfAssumingStmt.join selfAssumingStmt).assumptions.map (·.leaves) == some #[a] &&
+    (selfAssumingStmt.joinStructural selfAssumingStmt).assumptions.map (·.leaves) == some #[a]
   let flatBytes := Ix.Claim.ser flatOutput.claim
   let leftOuter := Aggr.aggregateOuterClaim
     allowed fakeAggrIdx left.claim
@@ -489,6 +501,10 @@ def semanticSuite : IO UInt32 := do
     test "flat host fold constructs canonical union/discharge trees" flatHostCorrect,
     test "structural host fold constructs root-of-roots and survivors"
       structuralHostCorrect,
+    test "CheckEnvTrees.ofClaim rejects overlapping subjects and assumptions"
+      ofClaimRejectsSelfAssumption,
+    test "host join helpers do not self-discharge assumptions"
+      hostJoinRejectsSelfDischarge,
     test "manifest tree lowers to post-order binary slots"
       (manifestPlan == expectedPlan),
     test "manifest parser exposes its validated bisection tree" parsedManifestPlan,

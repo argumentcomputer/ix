@@ -21,7 +21,10 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     return 1
   if fresh then IO.eprintln "[prove] fresh: bypassing earlier proof checkpoints"
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
+  -- Compression continues from a whole environment's aggregate root. A root
+  -- whose leaves assume the role binding (`--assume-binding`) does not qualify.
   let canCompress := ixePath.isSome && p.hasFlag "ixes" && !p.hasFlag "shards-only"
+    && !p.hasFlag "assume-binding"
     && !p.hasFlag "shard" && !p.hasFlag "shards" && !p.hasFlag "distributed" && !p.hasFlag "exec-only"
   let compress? ← match (p.flag? "compress").map (·.as! String) with
     | none =>
@@ -85,7 +88,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "shards" : String;  "With --ixes and no --shard: prove only these leaves — `K`, `a-b`, or a comma list of those — in one process (one env load); every other leaf is carried over unchanged by --out-ixes."
     "shards-only";      "With --ixe and --ixes: prove each shard's claim and stop, instead of aggregating the environment into one root."
     "out-ixes" : String; "Write the partition this run actually proved — splits included — as a `.ixes` manifest to this path: the manifest `ix verify --ixes` checks these proofs against, and the one the next run of this env should start from. Skipped if any shard failed."
-    "binding-proof" : String; "With --lanes: a proof of the `binding` claim for the env's role binding (`ix prove-binding`). Every claim then assumes its binding instead of validating it, and the root discharges that condition once, so the binding's roles are validated once per aggregate rather than in every claim."
+    "binding-proof" : String; "With --ixe and --ixes: a proof of the `binding` claim for the env's role binding (`ix prove-binding`). Every claim then assumes its binding instead of validating it, and the root discharges that condition once, so the binding's roles are validated once per aggregate rather than in every claim."
     "assume-binding";  "With --ixes: prove each shard's claim assuming the env's role binding meets the specifications (validator 4) instead of validating its roles in every shard proof; `ix aggregate --binding-proof` then discharges that condition once."
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
     "trace-shards";     "With --shards-only, --shard or --shards (always on when aggregating): prove an over-budget shard as a batch of trace shards that each fit --max-ram, from one execution, instead of cutting it into parts; a shard no trace-shard count can fit stops the run rather than being cut. With --exec-only, reports the planned shard count and the heaviest shard's projected peak without proving."

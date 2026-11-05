@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   if samples == 0 {
     return Err("SAMPLES must be positive".into());
   }
-  let package: Package = serde_json::from_slice(&std::fs::read(path)?)?;
+  let package: Package = aiur::decode_artifact(&std::fs::read(path)?)?;
   let program = package.program.check_field::<multi_stark::types::Val>()?;
   let address = program.field().decode(&package.address)?;
   let hints = ixvm_hints::prepare(&program, &package.hints)?;

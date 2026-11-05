@@ -1,11 +1,12 @@
 # Kernel term identity vs. Ixon content addressing
 
 Ix has **two distinct identity layers**, and they serve different masters.
-This document records the boundary between them — in particular why the
-kernel's switch from per-node blake3 hashing to intern-assigned uids
-(`1e3029d`, 2026-06) does not affect the proof-carrying-code story, and
-what a future feature must do if it ever needs cryptographic identity at
-sub-constant granularity.
+This document records the boundary between them: why the checker's internal
+term identity does not affect the proof-carrying-code story, and what a
+future feature must do if it ever needs cryptographic identity at
+sub-constant granularity. The checker is the certified IxC kernel
+([kernel](kernel.md)); its executed term operations are in
+`IxC/Kernel/Expr.lean` and `IxC/Kernel/Cached/`.
 
 ## Layer 1: Ixon content addresses (external, cryptographic, in proofs)
 
@@ -16,22 +17,20 @@ are addressed the same way. Everything that leaves the kernel speaks
 this language:
 
 - `Constant.refs` point at constant and blob `Address`es.
-- `KId.addr` — the identity the typechecker certifies — is the Ixon
-  `Address`.
-- Kernel claim roots are built from `Address`es:
-  `subject_root` / `assumptions_root` use `merkle_root_canonical` over
-  the certified / assumed constant addresses
-  (`crates/kernel/src/claim.rs`).
-- Aggregation (`Claim::CheckEnv`, the `Contains` discharge) resolves
+- The checker reads every record and blob under its Ixon `Address`.
+- Claim roots are built from `Address`es: Merkle roots
+  (`Ix.Merkle.merkleRootCanonical`) over the certified and the assumed
+  constant addresses.
+- Aggregation (`CheckEnv` claims, the `Contains` discharge) resolves
   assumption leaves against subject roots **by address**, and the
   cross-run proof store is keyed by address (content-addressed: the same
   constant has the same address in every env).
-- Address↔bytes binding is enforced by `Address::hash(bytes) == addr`,
-  verified at first materialization (`ixon::lazy::LazyConstant::get`;
-  memoized — one hash per constant per load, not per call, and a
-  failure is never memoized). Every constant the kernel certifies is
-  necessarily materialized, so everything that can enter a subject
-  root has passed the check.
+- Address↔bytes binding is checked before anything is decoded: the
+  certified entry authenticates every record and every blob as the hash of
+  the bytes stored under it (`Admission.authenticate`; [kernel, "The
+  certified entry"](kernel.md#the-certified-entry)). Host tools that load an
+  `.ixe` lazily check the same binding at first materialization
+  (`ixon::lazy::LazyConstant::get_at`).
 
 **Merkle inclusion proofs for individual constants live entirely in this
 layer** and are unaffected by anything below: proving "address `A` is in
@@ -48,145 +47,97 @@ claim roots  ──Merkle──▶  constant Addresses
 
 ### Definition dependency admission
 
-`IxonChecker` consumes an already decoded `ixon::Env`. The path remains
-`.ixe → Ixon decoding → kernel ingress → typechecking`. Each worker owns
-a private `KEnv`, populated exclusively by anonymous Ixon ingress; callers
-cannot insert raw declarations into it.
-
-Ingress verifies each constant's binding to its map key with
-`LazyConstant::get_at`, including all projections admitted with a mutual
-block. External dependency addresses are pinned by the constant's bytes:
+External dependency addresses are pinned by the constant's bytes:
 constructing a cycle between blocks would require solving a hash preimage.
-Local `Rec` slots need an explicit check. Ingress collects those edges while
-converting definition types and values, follows shared expressions normally,
-and rejects cycles reachable from safe definitions before publishing any
-member of the block. Acyclic forward references remain valid.
+Cycles inside a block go through local `Rec` slots and need an explicit
+check. IxC's reader (`IxC/Kernel/Ixon/Reader.lean`) applies the safety
+policy to every member of a definition block first, then orders the block
+so that every member follows the members it names (`defOrder`). A safe
+block with no such order is declined as a mutually recursive definition
+block: like Lean's kernel, the checker has no safe mutual definitions. A
+member that names itself is checked before it is added, where the
+reference does not resolve.
 
 Consequently, checking one declaration need not traverse the expression
 trees of its entire external dependency closure. Those declarations remain
 assumptions until their own work items are checked, as in the proof claim
-model above. Callers constructing a raw `KEnv` do not have this ingress
-invariant; `TypeChecker` retains its defensive dependency traversal for them.
+model above.
 
 ## Layer 2: kernel node identity (internal, ephemeral, never serialized)
 
 Inside one checker run, the kernel needs cheap identity for the
-**in-memory expression/universe nodes** (`KExpr`/`KUniv`) churned out by
-substitution, WHNF, and def-eq — for the hash-consing intern table, the
-whnf/infer/def-eq cache keys, and quick equality. These objects are
-ephemeral: they are never serialized, never compared against Ixon
-addresses, and are torn down when the `KEnv` clears.
+in-memory expression nodes churned out by substitution, WHNF and def-eq:
+for memo keys, cache keys and quick equality. These objects are ephemeral:
+they are never serialized, never compared against Ixon addresses, and die
+with the run.
 
-Historically this layer ALSO used blake3: every constructed node hashed
-`(variant tag ‖ child hashes)`. That was a *separate scheme* from Ixon
-addressing (a Merkle-DAG over node tags, not blake3-of-serialization) —
-the two were never interchangeable — and repeated hashing added work
-for every constructed node.
+IxC has one expression type, `Ix.Kernel.Expr`, whose nodes carry derived
+data as Lean `@[computed_field]`s: a hash, the loose bound- and
+free-variable bounds and a level-parameter flag, packed into one word
+(`Expr.data`; `IxC/Kernel/Cached/ExprNodes.lean`). There is no hash-consing
+table. Terms are shared by Lean's own structure sharing: an operation
+returns unchanged children by reference, so a result shares every unchanged
+subterm with its input.
 
-Since `1e3029d`, layer-2 identity is an **intern-assigned `u64` uid**
-(`crates/kernel/src/env.rs::Addr`):
+- **Equality is decided, not assumed.** The executed equality follows the
+  official kernel: pointer equality first, then the computed hashes, then
+  structural descent (`IxC/Kernel/Expr.lean`). Every branch returns
+  `Decidable (a = b)`. Pointer equality is a fast path for equal terms and a
+  hash mismatch one for unequal terms; an equal hash decides nothing.
+- **The equality memo is verified.** An entry is the pair of objects a
+  completed descent proved equal, with the proof. A probe finds a
+  candidate by the packed address pair (`beqKey`) and then checks the
+  candidate by identity, so a key collision between distinct pairs costs an
+  entry, never an answer.
+- **Memo keys are terms.** The scope and definedness walks key their memos on
+  `Expr` itself (`Std.HashMap Expr α`: hashing off the cached field,
+  pointer-first equality); the substitution walks key theirs by address
+  (`IxC/Kernel/Cached/ExprOpsC.lean`).
+- **Trust.** That the stored word agrees with the function defining it is
+  the code generator's guarantee, not a theorem of this repository:
+  `@[computed_field]` is implemented with `implemented_by`. It is the one
+  entry of the trust census in `IxC/Kernel/Cached/ExprNodes.lean`.
 
-- Uids come from a process-global counter and are **never reused**, so
-  `uid(a) == uid(b)` implies "same construction event or same
-  intern-table canonical value" — i.e. structural equality. Stale cache
-  keys can only miss, never alias.
-- The intern table keys on **shallow structural keys**
-  (`ExprKey`/`UnivKey`: variant tag + child uids + semantic payload),
-  mirroring exactly what the old content hash covered — display names,
-  binder info, and mdata are excluded, so interning semantics are
-  unchanged.
-- `PartialEq` for `KExpr`/`KUniv` is structural with the uid fast path:
-  canonical-vs-canonical comparison is O(1), and completeness-critical
-  `==` sites are unaffected. `hash_eq` remains the fast-but-incomplete
-  uid check for cache/quick-path callers, where a false negative only
-  costs a fallback.
-- Soundness direction: caches and def-eq quick paths rely only on the
-  affirmative ("equal uid ⇒ equal term"), which holds by construction.
-  An imperfect intern hit-rate degrades performance, not correctness.
-
-Nat/Str literal nodes keep their blake3 **blob** `Address` (that is
-layer-1 data riding on the node, used by `refs`/assumption filtering).
+Before IxC, this layer belonged to the retired Rust kernel: per-node blake3
+hashes at first, then intern-assigned `u64` uids from a process-global
+counter, with a hash-consing intern table keyed by shallow structural keys
+([retired Rust](retired-rust.md)).
 
 ## The boundary rule
 
 > Anything that crosses the kernel boundary — claims, public values,
 > proof-store entries, assumption sets — is identified by Ixon
-> `Address`. Kernel uids must never escape into a serialized artifact.
+> `Address`. The checker's node hashes and object addresses must never
+> escape into a serialized artifact.
 
-This held before the change (nothing consumed the old expr hashes
-outside the kernel) and is now structurally enforced by the type split:
-`Address` (32-byte content hash) vs `Addr = u64` (kernel uid) vs
-`CtxAddr` (blake3 digests for local-context cache keys, fed by uids,
-also internal-only).
+## Adversarial model
 
-## Adversarial model: why uid identity cannot be cache-poisoned
+The natural worry about non-cryptographic internal identity is collision:
+*if two subterms had the same internal hash, a def-eq or WHNF cache hit
+could return a result for the wrong term.* Here a collision costs time,
+not soundness:
 
-The natural worry about replacing blake3 with `u64` identity is hash
-collision: *if two subterms had the same internal hash, a def-eq/whnf
-cache hit could return a result for the wrong term.* The design avoids
-this not by making collisions unlikely but by making them impossible —
-**uids are assigned, not computed**:
+- An equal hash never decides equality: the descent continues
+  structurally, so a collision makes a comparison slower, not wrong.
+- Hash maps keyed by `Expr` compare keys with that decided equality, so a
+  bucket collision causes an extra comparison, not a wrong hit.
+- The equality memo checks every candidate by identity before using it.
+- Object addresses are not content: an input cannot choose them, and
+  nothing serializes them.
 
-- A uid comes from a process-global sequential counter
-  (`expr.rs::fresh_uid`), never from hashing input content. There is no
-  function from term content to uid for an adversary to find collisions
-  in — and no birthday bound either: uids are handed out once each, not
-  sampled from a space two terms could land in. Two `KExpr` values share
-  a uid only if they are clones of one construction event or the
-  canonical node the intern table returned for the same shallow key.
-  `fresh_uid` aborts on counter exhaustion (which would require >2^67
-  guest cycles) rather than wrap, and the only constructors that accept
-  a caller-supplied uid (`*_mdata_with_addr`) are private to `expr.rs`,
-  so no code outside the module can copy one node's uid into a
-  different structure.
-- **Between shards** (separate guest processes), uid collisions are
-  certain — every process counts from 1 — and harmless by design: a uid
-  is meaningless outside its process. Nothing serializes a uid (the
-  committed publics are blake3 addresses and Merkle roots; intern tables
-  and caches die with the process; manifests and the proof store carry
-  `Address`es only), so there is no channel through which shard A's
-  uid 42 could meet shard B's. All cross-shard identity — claims,
-  assumption resolution, proof reuse — lives in the Ixon `Address`
-  layer. Any future feature that wants to persist or ship a
-  reduction/intern cache MUST re-key it by content (e.g. Ixon
-  serialization hashes) first; see the boundary rule above.
-- The intern table is keyed by [`ExprKey`]/[`UnivKey`] — exact
-  structural keys compared by full `Eq` (variant tag, child uids,
-  complete 32-byte payload addresses; never truncated, never a digest).
-  `FxHashMap` bucketing uses a weak hash, but a bucket collision only
-  causes an extra key comparison, not a wrong hit. Children in a key are
-  canonical by induction, so key equality ⇔ structural equality. Debug
-  builds assert structural equality on every intern hit.
-- Reduction caches key on `(uid, CtxAddr)`; a hit requires uid equality,
-  hence structural equality. `CtxAddr` (local-context digests) remains
-  blake3 — collision-resistant — fed with uid bytes.
-- An adversarial env cannot choose uids at all: deserialization never
-  produces a uid; every node built from input takes the next counter
-  value. Compared to the old scheme — where cache keys were blake3 over
-  attacker-chosen content, so an attacker could at least grind contents
-  to flood `FxHashMap` buckets of their choosing — sequential uids give
-  the adversary strictly *less* influence over key distribution.
-
-The one place adversarial content does enter identity is **literals**:
-`ExprKey::Nat/Str` and structural equality key on the blob `Address`
-(mirroring the old content hash, which also hashed only the address).
-That is sound only if an address is bound to its bytes — so all three
-env deserializers verify `Address::hash(bytes)` for every blob at load
-(the constants' equivalent check runs lazily at first materialization),
-and the literal arms of structural equality compare values as well as
-addresses as defense in depth. Residual exposure is limited to DoS
-(bucket flooding of maps keyed by attacker-chosen `Address`es slows the
-prover, which is spending its own cycles), not soundness.
+An adversarial environment can choose term contents, and so can grind
+contents to collide hashes and flood buckets. That slows the checker,
+which is spending its own cycles; it does not change an answer.
 
 ## Future: sub-constant commitments
 
 If a feature ever needs cryptographic identity for **subterms** (e.g.
 Merkle inclusion of a specific expression inside a constant's body,
-rather than inclusion of a constant in a claim), expression-level
-content hashes no longer exist precomputed. The right move is to compute
-them at that boundary: a one-time egress pass over the relevant term —
-either the old `(tag ‖ child hashes)` Merkle-DAG scheme or blake3 over
-the Ixon serialization of the subterm. That is cheap where it is needed
-and keeps the per-node cost out of the prover's hottest loop. No current
-artifact (claims, aggregation, reuse, inclusion proofs at constant
-granularity) needs it.
+rather than inclusion of a constant in a claim), the checker's node hashes
+are not it: they are not cryptographic, and no artifact carries them. The
+right move is to compute that identity at the boundary: a one-time egress
+pass over the relevant term, for example blake3 over the Ixon serialization
+of the subterm, or a `(tag ‖ child hashes)` Merkle-DAG. That is cheap where
+it is needed and keeps the per-node cost out of the prover's hottest loop.
+No current artifact (claims, aggregation, reuse, inclusion proofs at
+constant granularity) needs it.

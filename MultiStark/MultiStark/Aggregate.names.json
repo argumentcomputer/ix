@@ -43,6 +43,8 @@
   "MultiStark::aggr_address_order": "Aggregation::aggr_address_order",
   "MultiStark::aggr_assert_difference": "Aggregation::aggr_assert_difference",
   "MultiStark::aggr_assert_digest": "Aggregation::aggr_assert_digest",
+  "MultiStark::aggr_assert_disjoint": "Aggregation::aggr_assert_disjoint",
+  "MultiStark::aggr_assert_disjoint_union": "Aggregation::aggr_assert_disjoint_union",
   "MultiStark::aggr_assert_same_context": "Aggregation::aggr_assert_same_context",
   "MultiStark::aggr_assert_same_list": "Aggregation::aggr_assert_same_list",
   "MultiStark::aggr_assert_strict_sorted": "Aggregation::aggr_assert_strict_sorted",

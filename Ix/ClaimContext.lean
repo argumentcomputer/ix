@@ -1,6 +1,7 @@
 module
 
 public import Ix.Claim
+public import Ix.AssumptionTree
 public import Ix.SpecDigest
 public import IxC.Kernel.Ixon.Prelude
 public import IxC.Kernel.Ixon.RoleTable
@@ -42,11 +43,35 @@ open Ix.Kernel (Role RoleTable)
 def ofBinding (binding : Address) (bindingAssumed : Bool := false) : Except String ClaimContext := do
   return { spec := ← Ix.SpecDigest.specDigest, binding, axioms := none, bindingAssumed }
 
-/-- The context of a claim over an environment's own role binding. -/
-def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext :=
-  match env.roleBinding with
-  | some binding => ofBinding binding.address bindingAssumed
-  | none => throw "claim context: the environment carries no role binding"
+/-- Safe axioms in `env` not bound by its role binding (`propext`,
+    `Classical.choice` and `sorryAx` are role-bound; `Quot.sound` is a `.quot`
+    record). Mirrors `ClaimContext::user_axioms` in `crates/ixon/src/proof.rs`. -/
+def userAxioms (env : Ixon.Env) : Array Address := Id.run do
+  let some binding := env.roleBinding | return #[]
+  let some table := RoleTable.ofBytes binding.bytes | return #[]
+  let bound : Std.HashSet Address := table.bound.foldl (fun s (_, a) => s.insert a) {}
+  let mut out : Array Address := #[]
+  for (addr, lc) in env.consts do
+    let bytes := lc.rawBytes
+    if bytes.size >= 2 && bytes[0]! == 0xD2 && bytes[1]! == 0x00 && !bound.contains addr then
+      out := out.push addr
+  return out
+
+/-- The canonical assumption tree of safe user axioms in `env` (`none` when
+    there are none). Mirrors `ClaimContext::user_axiom_tree` in
+    `crates/ixon/src/proof.rs`. -/
+def userAxiomTree (env : Ixon.Env) : Option AssumptionTree :=
+  AssumptionTree.canonical (userAxioms env)
+
+/-- The context of a claim over an environment's own role binding and user
+    axioms. -/
+def ofEnv (env : Ixon.Env) (bindingAssumed : Bool := false) : Except String ClaimContext := do
+  let some binding := env.roleBinding
+    | throw "claim context: the environment carries no role binding"
+  return { spec := ← Ix.SpecDigest.specDigest
+           binding := binding.address
+           axioms := (userAxiomTree env).map (·.root)
+           bindingAssumed }
 
 /-- The context of a claim over the default role table
 (`Ix.Kernel.Reader.defaultTable`), the generated table of the compiled

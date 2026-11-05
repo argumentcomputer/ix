@@ -57,6 +57,30 @@ private def singletonTrees (tree : Ix.AssumptionTree) :
     Std.HashMap Address Ix.AssumptionTree :=
   ({} : Std.HashMap _ _).insert tree.root tree
 
+/-- No claim assumes its own subject, and a `CheckEnv` claim owns at least one
+constant. Each case pairs the ill-typed `Prop : Prop` with an assumption tree
+that would let the circuit skip checking it; the control shows the circuit
+rejects it when it is checked. -/
+private def assumptionCases : Except String (Array Json) := do
+  let prop : Ixon.Expr := .sort 0
+  let bad : Ixon.Constant := ⟨.defn ⟨.defn, .safe, 0, prop, prop⟩, #[], #[], #[.zero]⟩
+  let ba := Address.blake3 (Ixon.ser bad)
+  let env := ({} : Ixon.Env).storeConst ba bad
+  let env := { env with anonHints := env.anonHints.insert ba (.regular 0) }
+  let ctx ← Ix.ClaimContext.ofDefaultTable
+  let some self := Ix.AssumptionTree.canonical #[ba]
+    | .error "assumptionCases: no tree for the ill-typed constant"
+  let empty : Ix.AssumptionTree := .node .padding .padding
+  let control ← buildClaimWitness env (.check ctx ba none)
+  let selfCheck ← buildClaimWitness env (.check ctx ba (some self.root)) (singletonTrees self)
+  let selfEnv ← buildClaimWitness env (.checkEnv ctx self.root (some self.root))
+    (singletonTrees self)
+  let emptyEnv ← buildClaimWitness env (.checkEnv ctx empty.root none) (singletonTrees empty)
+  return #[caseJson "Check rejects the ill-typed constant (control)" control false,
+    caseJson "Check rejects a target in its own assumption set" selfCheck false,
+    caseJson "CheckEnv rejects an owned subject in its own assumption set" selfEnv false,
+    caseJson "CheckEnv rejects an owned tree with no leaves" emptyEnv false]
+
 private def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO (String × ClaimWitness) := do
   let target ← lookupAddr ixonEnv ``Nat.zero
   let closure := closureFrom ixonEnv target
@@ -156,7 +180,7 @@ def main (args : List String) : IO Unit := do
   let fixture ← loadIxonEnv ``Nat.add_comm env
   IO.FS.writeBinFile (path ++ ".ixe") (← IO.ofExcept (Ixon.serEnv fixture))
   IO.FS.writeBinFile (path ++ ".controller.ixe") (← IO.ofExcept (Ixon.serEnv controllerEnv))
-  let mut cases := ← IO.ofExcept evalCases
+  let mut cases := (← IO.ofExcept evalCases) ++ (← IO.ofExcept assumptionCases)
   for build in [claimCheckWithAsm,
       claimCheckEnvFull, claimCheckEnvFrontier,
       claimRevealDefnFields, claimRevealDefnExpr,

@@ -39,14 +39,17 @@ restatements, behaviour-identical). So:
   one condensation, under those premises.
 
 **What stays a premise, and why:** the group order is no longer one (the
-validations order groups by the first members' set). The IO layer's own steps are tested, not proved:
-that its loops build the hybrid environment's pieces as stated (`code`,
-`canon`, and `inductives`: the code constants hold exactly the input's
-inductives), that its streamed
-canonicalization, graph, ground filter and condensation are
-`Ix.Cert.groundSplit`'s and `blocksOf`'s (`cert-compile-parity-initstd`), and
-that the blocks of one wave are independent (`compile-schedule-identity`'s
-reference schedule). -/
+validations order groups by the first members' set). For the hybrid model,
+its premises record that the materialized code constants and fallback
+canonicalization match `Ix.Cert.Canon.constS` (`code`, `canon`, and
+`inductives`: the code constants hold exactly the input's inductives). In the
+certified production path, `Ix.Compile.ReadyCompile.reportIO` proves directly
+by type that the IO worker-queue pipeline returns `Ix.Cert.compileReport`, and
+`Ix.Cert.FreshSnapshot` proves wave-snapshot freshness and disjointness across
+blocks in a wave (used to prove semantic correctness of the wave-snapshot fold
+directly; equivalence between the wave-snapshot fold and a one-block-at-a-time
+live-state fold is a property of block independence within a wave, not proved
+in `Ix.Cert.Schedule`). -/
 
 namespace Ix.Cert.Hybrid
 

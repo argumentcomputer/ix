@@ -59,6 +59,14 @@ def suite : List TestSeq := [
     ((do
       let report ← parse (row addressA "blocked" addressB)
       pure (report[addressA]?.map Verdict.outcome)).toOption == some (some "blocked"))
+  ++ test "a tier record the typing tier typed is kept with its safety"
+    ((do
+      let report ← parse (row addressA "typed" "partial" ++ "\n" ++ row addressB "typed" "unsafe")
+      pure ([addressA, addressB].map fun a =>
+        report[a]?.map fun (v : Verdict) => (v.outcome, v.reason))).toOption ==
+        some [some ("typed", "partial"), some ("typed", "unsafe")])
+  ++ test "a typed row whose reason is not a tier safety fails"
+    (failsWith (parse (row addressA "typed" "")) "not a tier safety")
   ++ test "an incomplete process fails despite complete-looking rows"
     (failsWith (parse accepted 3) "exited with code 3")
   ++ test "empty successful output fails"

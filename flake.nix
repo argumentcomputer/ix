@@ -151,24 +151,10 @@
                   pkgs.libiconv
                 ];
             };
-          # Sources for the workspace checks, including the gnark test data
-          # the Rust tests embed.
-          testArgs = craneArgs // {
-            src = pkgs.lib.fileset.toSource {
-              root = ./.;
-              fileset = pkgs.lib.fileset.unions [
-                cargoSource
-                compressionData
-                ./Tests/Fixtures/ixon-v4
-                plonkSources
-                ./crates/proof-compression/cuda
-              ];
-            };
-          };
           # Build dependencies once with every host feature enabled so the
           # `net` stack (tokio/iroh) is compiled and cached here, then shared
-          # by the package builds and clippy. CUDA remains opt-in and is
-          # compiled separately in CI with the CUDA toolkit available.
+          # by the package builds. CUDA remains opt-in and is compiled
+          # separately in CI with the CUDA toolkit available.
           cargoArtifacts = craneLib.buildDepsOnly (
             craneArgs
             // {
@@ -177,8 +163,8 @@
           );
 
           # Test build: parallel + test-ffi (only used by ixTest).
-          # doCheck = false: the `nextest` check is the single place cargo
-          # tests run, so package builds only compile.
+          # doCheck = false: package builds only compile. Clippy and the
+          # cargo tests run in CI Jobs' rust-test job, not in the flake.
           rustPkgTest = craneLib.buildPackage (
             craneArgs
             // {
@@ -367,25 +353,10 @@
             };
           };
 
+          # The Nix packaging check. Clippy and the cargo tests are CI Jobs'
+          # rust-test job (`.github/workflows/ci.yml`), with the same
+          # features and profile; the flake does not repeat them.
           checks = {
-            # Lint the host workspace; warnings are errors.
-            clippy = craneLib.cargoClippy (
-              testArgs
-              // {
-                inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --workspace --features ix-ffi/parallel,ix-ffi/test-ffi,ix-ffi/net";
-                cargoClippyExtraArgs = "--all-targets -- -D warnings";
-              }
-            );
-            # Non-ignored Rust unit tests across the host workspace.
-            nextest = craneLib.cargoNextest (
-              testArgs
-              // {
-                inherit cargoArtifacts;
-                cargoExtraArgs = "--locked --workspace";
-                cargoNextestExtraArgs = "--profile ci";
-              }
-            );
             # Lean test suite. The suite reads fixtures and writes scratch
             # files by paths relative to the working dir, so run it from a
             # writable copy of the source tree, as if from a checkout.

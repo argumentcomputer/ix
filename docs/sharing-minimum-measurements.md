@@ -1,5 +1,9 @@
 # Sharing corpus measurements
 
+> **Historical record.** The corpus here was written by the Rust compiler, and some runs
+> compare against the Rust port of the sharing construction. Both were retired in PR #677
+> ([retired Rust](retired-rust.md)); the measurements are kept as they were taken.
+
 Corpus measurements for [`sharing-minimum.md`](sharing-minimum.md), taken on the
 `Init` corpus with the harness `Benchmarks/SharingStudy.lean` (`lake exe sharing-study`).
 These numbers inform the global exact search design. This document reports them and does not

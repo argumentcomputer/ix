@@ -126,9 +126,9 @@ jobs:
         if: github.event_name != 'push'
         uses: actions-rust-lang/rustfmt@4066006ec54a31931b9b1fddfd38f2fdf2d27143 # v1.1.2
       - name: Check clippy warnings
-        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile,aiur/parallel,ixvm/parallel -- -D warnings
+        run: cargo clippy --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,aiur/parallel,ixvm/parallel -- -D warnings
       - name: Check *everything* compiles
-        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,ixon/sharing-profile,aiur/parallel,ixvm/parallel
+        run: cargo check --release --workspace --all-targets --features ix-ffi/parallel,ix-ffi/net,ix-ffi/test-ffi,aiur/parallel,ixvm/parallel
       - name: Tests
         run: cargo nextest run --release --profile ci --workspace --features aiur/parallel,ixvm/parallel ${{ github.event_name == 'push' && '--no-run' || '' }}
       - name: Get Rust version

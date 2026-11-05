@@ -495,7 +495,7 @@ mod tests {
         }],
         messages,
       );
-      key.verify(&[expected.clone()], &proof).unwrap();
+      key.verify(std::slice::from_ref(&expected), &proof).unwrap();
       if small_end <= 2 && large_end <= 8 {
         let stage =
           fixed.prepare(&key, &proof, &expected, Default::default())?;

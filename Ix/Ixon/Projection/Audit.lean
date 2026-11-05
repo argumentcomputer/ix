@@ -133,9 +133,12 @@ from 5962, by the entry's change (38 in: the check, the state's keys and the der
 -- Auditing `@[csimp]` replacements whose target was inlined into its caller
 -- records `Ix.Kernel.Cached.withChain_eq_impl` (`@[inline] def withChainImpl`) in
 -- `Ix.Kernel.Cached` (26 -> 27; see `IxC/Kernel/Audit/Roots.lean`).
+-- The indexed inductive shape guard adds 14 compiled functions net and the
+-- proved indShapeOk_eq_indShapeOkFast replacement (27 -> 28 ruled csimps; see
+-- `IxC/Kernel/Audit/Roots.lean`).
 /-- info: runtime closure of [Ixon.Projection.address,
  Ixon.Projection.reconstruct,
- Ixon.Projection.checkBytes]: 6861 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 27 -/
+ Ixon.Projection.checkBytes]: 6875 compiled functions; inherited externs 113, implemented_by 0, unsafe 26, csimp 7; ruled computed_field 21, csimp 28 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Projection.Audit.operations #[`Init, `Std] Ix.Kernel.Audit.runtimeRulings
 

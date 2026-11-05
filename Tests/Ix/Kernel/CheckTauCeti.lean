@@ -39,7 +39,7 @@ def ixePath : System.FilePath := "tauceti.ixe"
 /-- Known failing / slow constants from a full `ix check-lean tauceti.ixe`
     run. Edit when bisecting a regression; grouped by root cause in order
     of discovery. Timings below are from the 2026-08-22 full-env run
-    (10M-fuel default, `MAX_REC_FUEL` in `crates/kernel/src/tc.rs`). -/
+    (10M-fuel default of the retired Rust kernel). -/
 def focusConsts : Array Lean.Name := #[
   -- 2026-08-22: recursive fuel exhausted (FAIL at ~800s/838s in the
   -- full-env sweep, def-eq peak depth 47/50). Not divergence: both pass

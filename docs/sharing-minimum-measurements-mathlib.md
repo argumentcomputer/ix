@@ -1,5 +1,8 @@
 # Sharing corpus measurements on Mathlib
 
+> **Historical record.** The corpus here was written by the Rust compiler, retired in
+> PR #677 ([retired Rust](retired-rust.md)); the measurements are kept as they were taken.
+
 This document reruns the corpus harness of [`sharing-minimum.md`](sharing-minimum.md),
 `Benchmarks/SharingStudy.lean` (`lake exe sharing-study`), on a Mathlib corpus instead of `Init`. The harness is a
 development version from before the heuristic was removed. The Init numbers quoted for comparison come from

@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     return Err("invalid mode or sample count".into());
   }
   let start = Instant::now();
-  let package: Package = serde_json::from_slice(&std::fs::read(&cli[1])?)?;
+  let package: Package = aiur::decode_artifact(&std::fs::read(&cli[1])?)?;
   let fixture: serde_json::Value =
     serde_json::from_slice(&std::fs::read(&cli[2])?)?;
   let args: Vec<u64> = serde_json::from_value(fixture["address"].clone())?;

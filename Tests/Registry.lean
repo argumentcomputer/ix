@@ -8,8 +8,8 @@
   self-test (`ixtests-registry`) checks the registry against the workflows
   that name those jobs (comments removed), and checks that every required
   entry is registered once, in its tier, and that the required list names an
-  entry in every tier that runs in CI. The three landing jobs
-  hold the end-to-end checks of the compiler and of the certification, which
+  entry in every tier that runs in CI. The landing job
+  holds the end-to-end checks of the compiler and of the certification, which
   are too slow for every pull request and run in the merge queue.
 
   Command line (`lake test -- <args>`, `lake exe IxTests <args>`):
@@ -17,7 +17,7 @@
   - `<name>…`: exactly the named entries, whatever their tier (names match
     exactly; an unknown name is an error);
   - `--tier <tier>` (repeatable): every entry of that tier, where `<tier>`
-    is `primary`, `manual`, `ci:<job>`, or `landing` for the three landing jobs;
+    is `primary`, `manual`, `ci:<job>`, or `landing` for the landing job;
   - `--ignored`: with no name and no `--tier`, every entry that is not
     primary; with a name or a `--tier`, nothing more (kept so that
     `--ignored <name>…` works as before);
@@ -41,46 +41,28 @@ namespace Tests.Registry
 `ci.yml`'s `lean-test` job; the others are `merge-tests.yml` partitions. -/
 inductive CiJob where
   | cli
-  | compilePipeline
   | compilerClosures
-  | compile
-  | decompile
   | misc
-  /-- The compilers on everything at once: the Lean compiler's output does
-  not depend on its schedule, and the Rust compiler's compile, serialize and
-  decompile roundtrip over the test environment. -/
-  | landingCompilers
-  /-- End-to-end checks on Init+Std, in process: the certified compile with
-  its report checks against the pipeline and the Rust compiler, role binding
-  and evidence, a reading premise on every inductive, and the admission hash. -/
-  | landingInitStd
   /-- Init+Std through the `ix` binary: `ix compile-lean` with its report
-  checks and the Rust comparison, whose artifact must match the reference
-  digest and which the Rust kernel checks with every bound role admitted, and
-  `ix validate-lean` fidelity. A job of its own, so that neither Init+Std
-  job approaches the merge queue's timeout. -/
+  checks, whose artifact must match the reference digest and which
+  `ix check-lean` checks with every bound role admitted, and
+  `ix validate-lean` fidelity. -/
   | landingInitStdCli
   deriving DecidableEq, Repr
 
 def CiJob.all : List CiJob :=
-  [.cli, .compilePipeline, .compilerClosures, .compile, .decompile, .misc,
-   .landingCompilers, .landingInitStd, .landingInitStdCli]
+  [.cli, .compilerClosures, .misc, .landingInitStdCli]
 
 /-- The jobs that `--tier landing` selects together. -/
 def CiJob.isLanding : CiJob → Bool
-  | .landingCompilers | .landingInitStd | .landingInitStdCli => true
+  | .landingInitStdCli => true
   | _ => false
 
 /-- The job's name on the command line (`--tier ci:<key>`) and in the workflows. -/
 def CiJob.key : CiJob → String
   | .cli => "cli"
-  | .compilePipeline => "compile-pipeline"
   | .compilerClosures => "compiler-closures"
-  | .compile => "compile"
-  | .decompile => "decompile"
   | .misc => "misc"
-  | .landingCompilers => "landing-compilers"
-  | .landingInitStd => "landing-initstd"
   | .landingInitStdCli => "landing-initstd-cli"
 
 /-- Where an entry runs. -/
@@ -134,6 +116,26 @@ def Entry.runner (name : String) (tier : Tier) (run : IO UInt32) : Entry :=
   ⟨name, tier, .runner run⟩
 def Entry.env (name : String) (tier : Tier) (run : Lean.Environment → IO UInt32) : Entry :=
   ⟨name, tier, .env run⟩
+
+/-- `tests` with every `individualIO` check started now, each on a thread of
+its own with its output captured; each check of the result waits for its
+thread and then prints that output, so results and output keep their order.
+For a suite of independent long checks, the suite takes as long as its
+longest check rather than their sum. -/
+def startChecks : LSpec.TestSeq → IO LSpec.TestSeq
+  | .individualIO descr shown check next => do
+    let task ← IO.asTask (IO.FS.withIsolatedStreams check) .dedicated
+    return .individualIO descr shown (do
+      let (output, result) ← IO.ofExcept (← IO.wait task)
+      IO.print output
+      return result) (← startChecks next)
+  | .individual descr p shown inst next => return .individual descr p shown inst (← startChecks next)
+  | .group descr tests next => return .group descr (← startChecks tests) (← startChecks next)
+  | .done => return .done
+
+/-- `suites`, their checks started at once (`startChecks`). -/
+def concurrently (suites : List LSpec.TestSeq) : IO (List LSpec.TestSeq) :=
+  suites.mapM startChecks
 
 /-- A workflow line without its YAML comment: from the first `#` at the line's
 start or after a space or a tab. A `#` inside a quoted string after a space is
@@ -347,8 +349,8 @@ def run (registry : List Entry) (required : List (String × String))
 
 private def demo : List Entry :=
   [.runner "a" .primary (pure 0), .runner "b" .primary (pure 0),
-   .runner "x" (.ci .compile) (pure 0), .runner "x-y" (.ci .compile) (pure 0),
-   .runner "g" (.ci .landingCompilers) (pure 0), .runner "m" (.manual "by hand") (pure 0)]
+   .runner "x" (.ci .misc) (pure 0), .runner "x-y" (.ci .misc) (pure 0),
+   .runner "g" (.ci .landingInitStdCli) (pure 0), .runner "m" (.manual "by hand") (pure 0)]
 
 private def picks (args : List String) : List String :=
   match parseArgs args {} >>= select demo with
@@ -365,29 +367,29 @@ private def picks (args : List String) : List String :=
 #guard picks ["--ignored", "--exclude=m"] == ["x", "x-y", "g"]
 #guard picks ["--include-ignored"] == ["a", "b", "x", "x-y", "g", "m"]
 #guard picks ["--include-ignored", "g"] == ["a", "b", "g"]
-#guard picks ["--tier", "ci:compile"] == ["x", "x-y"]
+#guard picks ["--tier", "ci:misc"] == ["x", "x-y"]
 #guard picks ["--ignored", "--tier", "landing", "a"] == ["a", "g"]
 #guard picks ["nope"] == ["error: no test entry named 'nope'"]
 #guard picks ["--tier", "ci:nope"] == ["error: unknown tier 'ci:nope' (primary, landing, manual, ci:<job>)"]
 #guard picks ["--tier", "ci:tc"] == ["error: unknown tier 'ci:tc' (primary, landing, manual, ci:<job>)"]
-#guard picks ["--tier", "ci:decompile"] == ["error: a --tier selects no entry"]
+#guard picks ["--tier", "ci:compiler-closures"] == ["error: a --tier selects no entry"]
 #guard picks ["--ignored", "--exclude=x,x-y,g,m"] == ["error: nothing selected"]
-#guard (problems demo [("w", "--tier ci:compile")]).length == CiJob.all.length - 2 + (CiJob.all.length - 1)
+#guard (problems demo [("w", "--tier ci:misc")]).length == CiJob.all.length - 2 + (CiJob.all.length - 1)
 
-#guard coverageProblems demo [("a", "primary"), ("x", "ci:compile")] == []
-#guard coverageProblems demo [("missing", "ci:compile")] ==
+#guard coverageProblems demo [("a", "primary"), ("x", "ci:misc")] == []
+#guard coverageProblems demo [("missing", "ci:misc")] ==
   ["required entry missing is registered 0 times"]
 #guard coverageProblems (demo ++ demo) [("a", "primary")] ==
   ["required entry a is registered 2 times"]
-#guard coverageProblems demo [("g", "ci:compile-pipeline")] ==
-  ["required entry g runs in ci:landing-compilers, expected ci:compile-pipeline"]
+#guard coverageProblems demo [("g", "ci:compiler-closures")] ==
+  ["required entry g runs in ci:landing-initstd-cli, expected ci:compiler-closures"]
 
 -- removing a required entry, or moving it to the manual tier, fails the coverage check
-#guard (coverageProblems (demo.filter (·.name != "x")) [("x", "ci:compile")]) ==
+#guard (coverageProblems (demo.filter (·.name != "x")) [("x", "ci:misc")]) ==
   ["required entry x is registered 0 times"]
 #guard (coverageProblems (demo.map fun e => if e.name == "x" then { e with tier := .manual "x" } else e)
-  [("x", "ci:compile")]) == ["required entry x runs in manual, expected ci:compile"]
-#guard mutationProblems demo [("a", "primary"), ("x", "ci:compile")] == []
+  [("x", "ci:misc")]) == ["required entry x runs in manual, expected ci:misc"]
+#guard mutationProblems demo [("a", "primary"), ("x", "ci:misc")] == []
 
 -- the required list names every tier that runs in CI, and only those
 #guard (requiredProblems []).length == ciTierKeys.length
@@ -396,14 +398,14 @@ private def picks (args : List String) : List String :=
   ["required entry m names manual, which is not a tier that runs in CI"]
 
 -- a commented-out step does not run a tier; a `#` inside a word is kept
-#guard stripComment "  # run: lake test -- --tier ci:compile" == "  "
-#guard stripComment "run: lake test -- --tier ci:compile  # the compile tier" ==
-  "run: lake test -- --tier ci:compile  "
+#guard stripComment "  # run: lake test -- --tier ci:misc" == "  "
+#guard stripComment "run: lake test -- --tier ci:misc  # the misc tier" ==
+  "run: lake test -- --tier ci:misc  "
 #guard stripComment "echo a#b" == "echo a#b"
-#guard (problems demo [("w", "#--tier ci:compile\n  # --tier ci:landing-compilers")]).length ==
+#guard (problems demo [("w", "#--tier ci:misc\n  # --tier ci:landing-initstd-cli")]).length ==
   CiJob.all.length - 2 + CiJob.all.length
 -- a longer key that a job's key is a prefix of does not run that job
-#guard (problems demo [("w", "--tier ci:compile-pipeline")]).contains
-  "no workflow runs '--tier ci:compile'"
+#guard (problems demo [("w", "--tier ci:misc-extra")]).contains
+  "no workflow runs '--tier ci:misc'"
 
 end Tests.Registry

@@ -9,8 +9,7 @@ Whole constants can share an address when their anonymous encodings agree.
 This page describes those representation rules. The compiler theorem and its
 premises are in [kernel.md](kernel.md#relation-to-compiler-certification);
 the byte grammar is in [Ixon.md](Ixon.md). The implementation entry points are
-[CompileM](../Ix/CompileM.lean), [CompileDriver](../Ix/CompileDriver.lean) and
-the [Rust compiler](../crates/compile/src/compile.rs).
+[CompileM](../Ix/CompileM.lean) and [CompileDriver](../Ix/CompileDriver.lean).
 
 ## What determines an address
 
@@ -46,8 +45,8 @@ blocks.
 ## Block contents (canonicity §6.0)
 
 The reference graph and its condensation determine dependency scheduling.
-[`sourceMembers`](../Ix/CompileM.lean) and Rust `source_members` order the
-members of each block from Lean's metadata:
+[`sourceMembers`](../Ix/CompileM.lean) orders the members of each block from
+Lean's metadata:
 
 - An inductive uses its position in Lean's `all` array.
 - A definition-like member uses its position in its Lean `all` array.
@@ -59,8 +58,7 @@ otherwise exact tie. Hash-map iteration is not the member-order rule.
 Constructors retain the order in the source inductive's constructor array.
 [`Ix.Cert.LeanOrder`](../Ix/Cert/LeanOrder.lean) proves the ordering facts.
 
-The compiler represents these members as a flat `List MutConst` in Lean and
-a flat vector of member references in Rust. Each member contributes one
+The compiler represents these members as a flat `List MutConst`. Each member contributes one
 payload and its metadata. There is no representative/equivalent-member fold.
 
 | Compiled content | Record layout |
@@ -120,24 +118,18 @@ separate representation operations and remain part of compilation.
 5. Add the role-support closure, certificates and binding with `finalize`,
    then check the finalized artifact before writing it.
 
-`--streamed` selects the checked streamed Lean comparison path. `ix compile
---rust` selects the uncertified Rust compiler; `ix compile-lean --rust-check`
-compares its serialized result with the selected Lean path. Rust/Lean byte
-parity is differential evidence, not a universal refinement theorem.
-
 Name-only `prove`, `check` and `addr-of` use
-`Ix.Check.loadNamedIxonEnv`, whose Lean path is the checked streamed loader
-`compileLeanConstsValidated`. Supplying a `.ixe` uses that artifact instead.
-These commands do not acquire direct `compileReport` coverage merely by
-using the Lean loader. The precise boundary is described in
+`Ix.Check.loadNamedIxonEnv`, which also runs `Ix.CompileM.compileCertified`
+(`Ix.Cert.compileReport` via `Ix.Compile.ReadyCompile.reportIO`). Supplying a
+`.ixe` uses that artifact instead. The uncertified streamed and Rust compiler
+paths have been retired ([retired Rust](retired-rust.md)). The precise boundary is described in
 [the compiler theorem's scope](kernel.md#relation-to-compiler-certification).
 
 ## Canonical sharing (§6.7)
 
 <a id="67-canonical-sharing"></a>
 Every compiled block is built with
-`Ix.Sharing.Exact.canonicalSharingTiered .tagN`, mirrored by Rust's
-`canonical_sharing_tiered`. Its roots are the payload expressions in the
+`Ix.Sharing.Exact.canonicalSharingTiered .tagN`. Its roots are the payload expressions in the
 order specified by `constantInfoRootExprs`. Existing `Share` occurrences are
 expanded before the construction chooses its representation.
 
@@ -156,7 +148,7 @@ On the stated totality domain, a sufficient budget prevents refusal and the
 output expands again. [`IxSharingVerify.SufficientBudget`](../IxSharingVerify/SufficientBudget.lean)
 provides a polynomial budget in the written input size for backward-referencing
 input tables. Larger budgets do not change an already successful result.
-This is not a global byte-minimum theorem or a Rust-refinement theorem.
+This is not a global byte-minimum theorem.
 
 The default compiler fixes its sharing limits. A limit failure refuses the
 block; it does not choose another sharing family or publish an intermediate
@@ -176,8 +168,7 @@ anonymous reducibility hints, still has the separate invariants checked by
 
 The [Lean decompiler](../Ix/DecompileDriver.lean) selects stored source records
 through `originalView`, decodes them, and recomputes inductive flags from the
-decoded declarations. The Rust decompiler follows the same source-record
-approach. A missing source record is an error; decompilation does not create
+decoded declarations. A missing source record is an error; decompilation does not create
 a replacement declaration by kernel regeneration. Tests state their fidelity
 criteria explicitly. There is no unrestricted compile/decompile bijection or
 total byte-fixed-point theorem for arbitrary metadata and artifacts.
@@ -204,8 +195,7 @@ especially important for alias-specific names and universe spellings.
 This is the universe contract cited as **canonicity §10.6** in compiler,
 codec, ingress and decompiler comments.
 
-[`Ixon.canonUniv`](../Ix/IxonUniv.lean), mirrored in
-[`crates/ixon/src/canon_univ.rs`](../crates/ixon/src/canon_univ.rs), is the
+[`Ixon.canonUniv`](../Ix/IxonUniv.lean) is the
 deterministic composition `linearize ∘ subsumption ∘ normalizeAux` on
 positional Ixon universes. It normalizes the spelling inside a universe
 expression. It does not reorder a declaration's universe-parameter list or
@@ -230,7 +220,7 @@ semantic-quotient proof.
 
 ### Primary universe tables
 
-Before compiling a block's members, both compilers collect its universe
+Before compiling a block's members, the compiler collects its universe
 expressions, apply `canonUniv`, sort by serialized key and deduplicate. The
 expression compiler lowers and normalizes each later occurrence through the
 same operation and interns its result in that primary table.
@@ -263,18 +253,14 @@ references are consumed by the decompiler and metadata reconstruction path.
 Anonymous admission and checking do not read them, so a patch cannot change
 the anonymous declaration being checked.
 
-Metadata-mode Rust ingress carries the spelling as an expression decoration
-and egress replays it. The decoration participates in metadata expression
-identity, rather than the semantic universe-node identity; otherwise an
-interned shared universe could overwrite another occurrence's spelling.
 Patchless readers retain the documented reconstruction fallback. Fidelity
 tests compare the reconstructed syntax under their stated policies.
 
 ### Universe regression controls (§17.9)
 
-[`Tests/Ix/IxonUniverse.lean`](../Tests/Ix/IxonUniverse.lean) and the Rust
-universe tests cover explicit witnesses, bounded exhaustive inputs, seeded
-inputs, normalization properties and mirror parity. The
+[`Tests/Ix/IxonUniverse.lean`](../Tests/Ix/IxonUniverse.lean) covers explicit
+witnesses, bounded exhaustive inputs, seeded inputs and normalization
+properties. The
 [level-spelling fixtures](../Tests/Ix/Compile/LevelSpellings.lean) exercise
 occurrence restoration through compilation and reconstruction.
 The unconditional value theorem remains separate from those finite tests.
@@ -286,9 +272,9 @@ quotient Source, under its artifact and role-evidence premises. It includes
 the installed environment's syntactic renaming relation and the value
 statement quantified over every strong model. It does not add model existence,
 total compilation, fixed-fuel checker success, metadata fidelity, general
-permutation invariance or universal Rust parity to its conclusion.
+permutation invariance to its conclusion.
 
-The compiler tests cover same-input Lean/Rust parity, schedule independence,
+The compiler tests cover schedule independence,
 source-order mutual blocks, refusal behavior and reconstruction cases.
 [CI tiers](ci.md#test-tiers) identify the suites; exact corpus digests,
 timings and final integration receipts belong with the corresponding test

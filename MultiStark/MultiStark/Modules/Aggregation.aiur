@@ -2,7 +2,7 @@
 module Aggregation {
   enum AggrNextAssumption {
       Done,
-      More(Bytes::AddressRef, Lists::List<Bytes::AddressRef>, Lists::List<Bytes::AddressRef>)
+      More(Bytes::AddressRef, Field, Lists::List<Bytes::AddressRef>, Lists::List<Bytes::AddressRef>)
     }
 
   fn aggr_read_byte(stream: Bytes::Stream) -> (UInt8::U8, Bytes::Stream) {
@@ -283,19 +283,55 @@ module Aggregation {
       }
     }
 
+  fn aggr_assert_disjoint_union(left: Lists::List<Bytes::AddressRef>, right: Lists::List<Bytes::AddressRef>,
+        output: Lists::List<Bytes::AddressRef>) -> () {
+      match ((*(left)), (*(right))) {
+        (Lists::Node::Nil, _) => {  aggr_assert_same_list(right, output) } ,
+        (_, Lists::Node::Nil) => {  aggr_assert_same_list(left, output) } ,
+        (Lists::Node::Cons(a, ar), Lists::Node::Cons(b, br)) => {
+          let Lists::Node::Cons(o, or) = (*(output));
+          match aggr_address_order(a, b) {
+            0 => {
+              assert_eq!(Bytes::address_eq(a, o), 1, "aggr: subject union mismatch");
+              aggr_assert_disjoint_union(ar, right, or) } ,
+            1 => {
+              assert_eq!(0, 1, "aggr: child subject sets overlap");
+              () } ,
+            _ => {
+              assert_eq!(Bytes::address_eq(b, o), 1, "aggr: subject union mismatch");
+              aggr_assert_disjoint_union(left, br, or) } ,
+          } } ,
+      }
+    }
+
+  fn aggr_assert_disjoint(left: Lists::List<Bytes::AddressRef>, right: Lists::List<Bytes::AddressRef>) -> () {
+      match ((*(left)), (*(right))) {
+        (Lists::Node::Nil, _) => {  () } ,
+        (_, Lists::Node::Nil) => {  () } ,
+        (Lists::Node::Cons(a, ar), Lists::Node::Cons(b, br)) => {
+          match aggr_address_order(a, b) {
+            0 => {  aggr_assert_disjoint(ar, right) } ,
+            1 => {
+              assert_eq!(0, 1, "aggr: subject set overlaps assumption set");
+              () } ,
+            _ => {  aggr_assert_disjoint(left, br) } ,
+          } } ,
+      }
+    }
+
   fn aggr_next_assumption(left: Lists::List<Bytes::AddressRef>, right: Lists::List<Bytes::AddressRef>)
         -> AggrNextAssumption {
       match ((*(left)), (*(right))) {
         (Lists::Node::Nil, Lists::Node::Nil) => {  AggrNextAssumption::Done } ,
         (Lists::Node::Cons(a, ar), Lists::Node::Nil) => {
-          AggrNextAssumption::More(a, ar, right) } ,
+          AggrNextAssumption::More(a, 0, ar, right) } ,
         (Lists::Node::Nil, Lists::Node::Cons(b, br)) => {
-          AggrNextAssumption::More(b, left, br) } ,
+          AggrNextAssumption::More(b, 2, left, br) } ,
         (Lists::Node::Cons(a, ar), Lists::Node::Cons(b, br)) => {
           match aggr_address_order(a, b) {
-            0 => {  AggrNextAssumption::More(a, ar, right) } ,
-            1 => {  AggrNextAssumption::More(a, ar, br) } ,
-            _ => {  AggrNextAssumption::More(b, left, br) } ,
+            0 => {  AggrNextAssumption::More(a, 0, ar, right) } ,
+            1 => {  AggrNextAssumption::More(a, 1, ar, br) } ,
+            _ => {  AggrNextAssumption::More(b, 2, left, br) } ,
           } } ,
       }
     }
@@ -319,7 +355,7 @@ module Aggregation {
         AggrNextAssumption::Done => {
           let Lists::Node::Nil = (*(output));
           () } ,
-        AggrNextAssumption::More(candidate, left_rest, right_rest) => {
+        AggrNextAssumption::More(candidate, _source, left_rest, right_rest) => {
           let (discharged, subject_rest) = aggr_seek_subject(candidate, subjects);
           match discharged {
             1 => {  aggr_assert_difference(left_rest, right_rest, subject_rest, output) } ,
@@ -349,7 +385,8 @@ module Aggregation {
       }
     }
 
-  fn aggr_discharge_choice(candidate: Bytes::AddressRef, root: Bytes::AddressRef) -> Field {
+  fn aggr_discharge_choice(candidate: Bytes::AddressRef, source: Field,
+        left_root: Bytes::AddressRef, right_root: Bytes::AddressRef) -> Field {
       let (idx, len) = hint::<(Field, Field)>("stark.io.address", (6, Blake3::address_to_fields((*(candidate)))));
       let bytes = StarkIO::read_byte_stream(6, idx, len);
       let (choice, rest) = aggr_read_byte(bytes);
@@ -361,33 +398,56 @@ module Aggregation {
           0 } ,
         _ => {
           let (count, path) = aggr_read_byte(rest);
+          assert_eq!(UInt8::less_than(UInt8::BYTE_0, count), 1,
+            "aggr structural: Merkle path must have at least 1 step");
           assert_eq!(UInt8::less_than(count, UInt8::BYTE_65), 1,
             "aggr structural: Merkle path exceeds 64 steps");
-          let (actual, stop) = aggr_fold_path(aggr_leaf_hash(candidate),
-            UInt8::to_field(count), path);
+          let (child_actual, last_step) = aggr_fold_path(aggr_leaf_hash(candidate),
+            UInt8::to_field(count) - 1, path);
+          let (last_side, s1) = aggr_read_byte(last_step);
+          let (last_sibling, stop) = aggr_read_address(s1);
           let Lists::Node::Nil = (*(stop));
-          assert_eq!(Bytes::address_eq(actual, root), 1,
-            "aggr structural: assumption path does not reach subject root");
-          1 } ,
+          match source {
+            0 => {
+              assert_eq!(UInt8::to_field(last_side), 0,
+                "aggr structural: left assumption must be discharged by right child");
+              assert_eq!(Bytes::address_eq(last_sibling, left_root), 1,
+                "aggr structural: final step sibling is not left subject root");
+              assert_eq!(Bytes::address_eq(child_actual, right_root), 1,
+                "aggr structural: assumption path does not reach right subject root");
+              1 } ,
+            2 => {
+              assert_eq!(UInt8::to_field(last_side), 1,
+                "aggr structural: right assumption must be discharged by left child");
+              assert_eq!(Bytes::address_eq(last_sibling, right_root), 1,
+                "aggr structural: final step sibling is not right subject root");
+              assert_eq!(Bytes::address_eq(child_actual, left_root), 1,
+                "aggr structural: assumption path does not reach left subject root");
+              1 } ,
+            _ => {
+              assert_eq!(0, 1,
+                "aggr structural: shared assumption cannot be discharged");
+              0 } ,
+          } } ,
       }
     }
 
   fn aggr_assert_structural_difference(left: Lists::List<Bytes::AddressRef>, right: Lists::List<Bytes::AddressRef>,
-        subject_root: Bytes::AddressRef, output: Lists::List<Bytes::AddressRef>) -> () {
+        left_root: Bytes::AddressRef, right_root: Bytes::AddressRef, output: Lists::List<Bytes::AddressRef>) -> () {
       match aggr_next_assumption(left, right) {
         AggrNextAssumption::Done => {
           let Lists::Node::Nil = (*(output));
           () } ,
-        AggrNextAssumption::More(candidate, left_rest, right_rest) => {
-          match aggr_discharge_choice(candidate, subject_root) {
+        AggrNextAssumption::More(candidate, source, left_rest, right_rest) => {
+          match aggr_discharge_choice(candidate, source, left_root, right_root) {
             1 => {  aggr_assert_structural_difference(left_rest, right_rest,
-              subject_root, output) } ,
+              left_root, right_root, output) } ,
             _ => {
               let Lists::Node::Cons(actual, output_rest) = (*(output));
               assert_eq!(Bytes::address_eq(candidate, actual), 1,
                 "aggr structural: outstanding assumption mismatch");
               aggr_assert_structural_difference(left_rest, right_rest,
-                subject_root, output_rest) } ,
+                left_root, right_root, output_rest) } ,
           } } ,
       }
     }
@@ -611,7 +671,9 @@ module Aggregation {
       let output_subjects = aggr_load_canonical_tree(output_root);
       let output_assumptions = aggr_load_optional_tree(output_asm);
 
-      aggr_assert_union(left_subjects, right_subjects, output_subjects);
+      aggr_assert_disjoint(left_subjects, left_assumptions);
+      aggr_assert_disjoint(right_subjects, right_assumptions);
+      aggr_assert_disjoint_union(left_subjects, right_subjects, output_subjects);
       aggr_assert_difference(left_assumptions, right_assumptions,
         output_subjects, output_assumptions);
       ()
@@ -638,6 +700,8 @@ module Aggregation {
       aggr_assert_same_context(left_ctx, right_ctx);
       aggr_assert_same_context(left_ctx, output_ctx);
 
+      assert_eq!(Bytes::address_eq(left_root, right_root), 0,
+        "aggr structural: child subject roots must be distinct");
       let expected_root = aggr_node_hash(left_root, right_root);
       assert_eq!(Bytes::address_eq(output_root, expected_root), 1,
         "aggr structural: output subject root is not nodeHash(left, right)");
@@ -646,7 +710,7 @@ module Aggregation {
       let right_assumptions = aggr_load_optional_tree(right_asm);
       let output_assumptions = aggr_load_optional_tree(output_asm);
       aggr_assert_structural_difference(left_assumptions, right_assumptions,
-        output_root, output_assumptions);
+        left_root, right_root, output_assumptions);
       ()
     }
 
@@ -775,6 +839,8 @@ module Aggregation {
       aggr_assert_same_context((left_spec, left_class, left_axioms, 5), output_ctx);
       aggr_assert_same_context((right_spec, right_class, right_axioms, 5), output_ctx);
 
+      assert_eq!(Bytes::address_eq(left_root, right_root), 0,
+        "aggr cross-binding: child subject roots must be distinct");
       let expected_root = aggr_node_hash(left_root, right_root);
       assert_eq!(Bytes::address_eq(output_root, expected_root), 1,
         "aggr cross-binding: output subject root is not nodeHash(left, right)");
@@ -782,7 +848,7 @@ module Aggregation {
       let right_assumptions = aggr_load_optional_tree(right_asm);
       let output_assumptions = aggr_load_optional_tree(output_asm);
       aggr_assert_structural_difference(left_assumptions, right_assumptions,
-        output_root, output_assumptions);
+        left_root, right_root, output_assumptions);
       ()
     }
 

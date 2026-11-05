@@ -38,10 +38,10 @@ opaque rsEnvExtractFFI :
 /-- FFI: partition a `.ixe` with the STATIC strategy (no out-of-circuit
     profiling). Layout `mincut`: byte-balanced min-cut over the static
     walk-edge nets + a predicted-FFT-cost rebalance post-pass
-    (`ix_kernel::shard::shard_static`; model constants documented there).
+    (`ixon::shard::shard_static`; model constants documented there).
     Layout `ordered`: contiguous ranges of a dependency order, shard 0 at
     the top, so a shard's reference closure lies in its own shard and later
-    ones (`ix_kernel::shard::shard_static_ordered`; what the distributed
+    ones (`ixon::shard::shard_static_ordered`; what the distributed
     prover wants). A nonzero `numShards` fixes the count; otherwise `ramGib`
     selects the static block-shape seed after the `.ixe` has been profiled.
     Writes a `.ixes` manifest; prints the report to stderr. -/

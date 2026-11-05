@@ -79,15 +79,15 @@ def driverIO (config : ReadyQueue.Config) (env : Ix.Environment)
     return (⟨validate env blocks, rfl⟩ : { result : Except String Unit // result = validate env blocks })
   let sched := FoldSchedule.of blocks
   let initSt := initialWith env blocks sched limits
-  let (state, metrics) ← ReadyQueue.run config blocks sched width dbg
-    (blocks.blocks.size + 1) initSt
   let validation ← IO.ofExcept validationTask.get
   match checked : validation.val with
   | .error message =>
     return (⟨.error message, by
       rw [driver_decomposition, ← validation.property, checked]
-      rfl⟩, metrics)
+      rfl⟩, {})
   | .ok _ =>
+    let (state, metrics) ← ReadyQueue.run config blocks sched width dbg
+      (blocks.blocks.size + 1) initSt
     let result ← IO.lazyPure fun _ =>
       (⟨finish env state.val, by
         rw [driver_decomposition, ← validation.property, checked]

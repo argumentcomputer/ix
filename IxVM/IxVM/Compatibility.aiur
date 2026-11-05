@@ -94,7 +94,7 @@ fn check_primitives() -> () {
       zero_addr,
       RoleMap::Node(1, role_nat_zero(), zero_addr, store(RoleMap::Nil), store(RoleMap::Nil)),
       RBTreeMap::Node(1, zero_addr, role_nat_zero() + 1, store(RBTreeMap::Nil), store(RBTreeMap::Nil)),
-      RoleMap::Nil))));
+      RoleMap::Nil)), RBTreeMap::Nil));
     let prop = store(KExprNode::Srt(store(KLevelNode::Zero)));
     let var = store(KExprNode::BVar(0));
     let ctx = store(ListNode::Cons(prop, empty));

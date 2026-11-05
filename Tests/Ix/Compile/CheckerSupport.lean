@@ -26,7 +26,8 @@ import Tests.Ix.Compile.ClosureHarness
       compile's. The raw compile's Named entries are unchanged by the
       support.
     - The certified checker accepts `Nat.land`, `Nat.mul` and the helpers.
-      Every fixture constant is accepted or declined in a documented class.
+      Every fixture constant is accepted, typed by the typing tier (the
+      partial `go._unsafe_rec`), or declined in a documented class.
     - The output decompiles to the source.
 
   Ported from 650500c2 and a9cf3607 `Tests/Ix/Compile/CheckerSupport.lean`:
@@ -128,7 +129,9 @@ def run : IO UInt32 := do
     require (row.outcome == "accept") s!"selected: {name}: {row.outcome}: {row.reason}"
   for name in seeds do
     let row ← verdict positive closed.env name
-    require (row.outcome == "accept" ||
+    -- `typed`: a partial or unsafe fixture constant (`go._unsafe_rec`) is a
+    -- tier record, which the typing tier types (`KernelReport.outcomes`)
+    require (row.outcome == "accept" || row.outcome == "typed" ||
         (row.outcome == "decline" && Tests.Ix.Compile.ClosureHarness.documentedDecline row.reason))
       s!"selected: fixture {name}: {row.outcome}: {row.reason}"
   -- the raw closure: the exact decline, and the helpers blocked

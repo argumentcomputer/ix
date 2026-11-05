@@ -29,7 +29,19 @@ the statements need around it:
   names sit at is a reference accept at the artifact's addresses. Its evidence is the
   bundle's renamed by `evAddr` (a bundle-only name goes to the bundle's address for it, the
   content address its records cite), not the Ixon run's; only injectivity is used,
-  and moving acceptance between evidences is `Ix.Cert.Evidence.acceptsRef_covers`'s. -/
+  and moving acceptance between evidences is `Ix.Cert.Evidence.acceptsRef_covers`'s;
+* `EnvSubstRel`, `EnvSubstModelPullback`, `EnvSubstPullback`: conditional model-theoretic
+  pullbacks from the quotient Source environment `envQ` to a nominal Source environment
+  `envS` along the fiber-alias substitution `Key.subst ρ`. Quotient Source (`CompileCorrect`
+  together with `Ix.LeanIngress.prepareSourceCollapsedAt_trace`) is the primary
+  unconditional security guarantee: quotient collapse only merges declarations that are
+  structurally identical (`Declaration.beqF`, hence `=`) under `Key.subst ρ`, and
+  `CompileCorrect` transports both `ValueModel` and `LawModel` unconditionally between
+  `envQ` and `envA`. Pulling models of `envQ` back to a nominal `envS` is conditioned on
+  `EnvSubstRel` (for `ValueModel`) and `LawModel.Rel` (for `LawModel`); deriving
+  `LawModel.Rel` from `EnvSubstRel` and discharging `EnvSubstRel` from
+  `Ix.LeanIngress.FiberAliasSafe` on closures whose alias fibers do not mix reducibility
+  hints is left for future work. -/
 
 namespace Ix.Cert
 
@@ -621,7 +633,18 @@ theorem EnvSubstModelPullback.comp_envRel_valueModel
 
 /-- **Nominal-to-quotient semantic pullback along `Key.subst ρ`**: every constant
 and lookup of `envS` maps into `envQ` under `ConstantInfo.substKeys ρ`, and both
-`ValueModel` and `LawModel` pull back from `envQ` to `envS` along `Key.subst ρ`. -/
+`ValueModel` and `LawModel` pull back from `envQ` to `envS` along `Key.subst ρ`.
+
+Note: Quotient Source (`CompileCorrect` + `Ix.LeanIngress.prepareSourceCollapsedAt_trace`)
+is the primary unconditional security guarantee, transporting `ValueModel` and
+`LawModel` unconditionally between `envQ` and `envA` while ensuring quotient
+collapse only merges declarations that are structurally identical (`Declaration.beqF`,
+hence `=`) under `Key.subst ρ`. `EnvSubstPullback` packages the hypotheses for
+conditional model-theoretic corollaries that pull models of `envQ` back to a
+nominal environment `envS` satisfying `EnvSubstRel` and `LawModel.Rel`. Deriving
+`LawModel.Rel` from `EnvSubstRel` and discharging `EnvSubstRel` from
+`Ix.LeanIngress.FiberAliasSafe` on closures whose alias fibers do not mix
+reducibility hints is left for future work. -/
 structure EnvSubstPullback (ρ : Ix.LeanIngress.FiberMap) (envS envQ : Env .source) : Prop
     extends EnvSubstModelPullback.{w} ρ envS envQ where
   lawModel : LawModel.Rel.{w} (Ix.LeanIngress.Key.subst ρ) envS envQ

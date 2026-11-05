@@ -87,6 +87,26 @@ def main (args : List String) : IO Unit := do
           let dropped := { output with assumptions := none }
           tests := tests.push (test ctx s!"shape {shape} rejects dropped assumption"
             (Ix.Claim.ser dropped.claim) (extendOutputClaim io (Ix.Claim.ser dropped.claim)) false)
+    -- No child assumes its own subject, the children's subjects are disjoint,
+    -- and a structural join discharges an assumption only against the other
+    -- child's subjects. `advice` derives trees and paths without these checks.
+    let selfA : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[a], assumptions := some (tree #[a]) }
+    let leftB : CheckEnvTrees := { ctx := claimCtx, subjects := tree #[a, b], assumptions := some (tree #[b, c]) }
+    let qi ← node ctx (dir / "q") .ixvm selfA
+    let lbi ← node ctx (dir / "lb") .ixvm leftB
+    let selfJoins : Array (String × Node × Node × CheckEnvTrees × Bool) := #[
+      ("flat pair rejects duplicated self-assuming children", qi, qi,
+        { ctx := claimCtx, subjects := tree #[a], assumptions := none }, false),
+      ("flat pair rejects a child that assumes its own subject", qi, ri,
+        { ctx := claimCtx, subjects := tree #[a, c], assumptions := none }, false),
+      ("flat pair rejects overlapping subject sets", li, li, left, false),
+      ("structural pair rejects duplicated self-assuming children", qi, qi,
+        { ctx := claimCtx, subjects := .join selfA.subjects selfA.subjects, assumptions := none }, true),
+      ("structural pair rejects discharging an assumption against its own subjects", lbi, ri,
+        { ctx := claimCtx, subjects := .join leftB.subjects right.subjects, assumptions := none }, true)]
+    for (label, l, r, output, structural) in selfJoins do
+      tests := tests.push (test ctx label (Ix.Claim.ser output.claim)
+        (← advice ctx l (some r) output structural) false)
     let wrap ← advice ctx li none left false
     tests := tests.push (test ctx "wrong output digest" (Ix.Claim.ser right.claim) wrap false)
     tests := tests.push (test ctx "wrong child kind" bytes (extendIdentity wrap ctx.allowed 1) false)

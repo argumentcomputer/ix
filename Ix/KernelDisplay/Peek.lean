@@ -24,8 +24,9 @@ trust-surface fence (`Tests/Ix/Kernel/TrustSurface.lean`) with this reason:
   entry points that print with names (`kernel-check-ixe --meta`, the
   `kernel-meta-names` oracle). The renderer itself (`Ix.KernelDisplay.Render`)
   is safe code that takes the read as a parameter (`Peek`), and this module
-  holds nothing else. `Tests.Ix.Kernel.DisplayRead` checks that the runtime
-  closures of the certified roots do not reach `peekSquash`. -/
+  holds nothing else. `IxC/Kernel/Audit/Roots.lean` and
+  `Ix/Cert/RuntimeAudit.lean` check that the runtime closures of the certified
+  roots do not reach `peekSquash`. -/
 
 namespace Ix.KernelDisplay
 

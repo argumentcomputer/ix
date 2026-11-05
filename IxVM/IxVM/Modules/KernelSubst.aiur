@@ -44,11 +44,7 @@ module KernelSubst {
 
   fn has_bvar_in_range(e: KernelTypes::KExpr, lo: Field, hi: Field) -> Field {
       match (*(e)) {
-        KernelTypes::KExprNode::BVar(i) => {
-          match UInt32::less_than_fields(i, lo) {
-            1 => {  0 } ,
-            0 => {  UInt32::less_than_fields(i, hi) } ,
-          } } ,
+        KernelTypes::KExprNode::BVar(i) => {  has_bvar_in_range_bvar(i, lo, hi) } ,
         KernelTypes::KExprNode::Srt(_) => {  0 } ,
         KernelTypes::KExprNode::Const(_, _) => {  0 } ,
         KernelTypes::KExprNode::Lit(_) => {  0 } ,
@@ -61,6 +57,13 @@ module KernelSubst {
         KernelTypes::KExprNode::Forall(ty, body) => {  has_bvar_in_range_binder(ty, body, lo, hi) } ,
         KernelTypes::KExprNode::Let(ty, val, body) => {  has_bvar_in_range_let(ty, val, body, lo, hi) } ,
         KernelTypes::KExprNode::Proj(_, _, e1) => {  has_bvar_in_range(e1, lo, hi) } ,
+      }
+    }
+
+  fn has_bvar_in_range_bvar(i: Field, lo: Field, hi: Field) -> Field {
+      match UInt32::less_than_fields(i, lo) {
+        1 => {  0 } ,
+        0 => {  UInt32::less_than_fields(i, hi) } ,
       }
     }
 
@@ -239,12 +242,8 @@ module KernelSubst {
 
   fn expr_lower_walk(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match (*(e)) {
-        KernelTypes::KExprNode::BVar(i) => {
-          let lt = UInt32::less_than_fields(i, cutoff);
-          match lt {
-            1 => {  e } ,
-            0 => {  (&(KernelTypes::KExprNode::BVar(i - shift))) } ,
-          } } ,
+
+        KernelTypes::KExprNode::BVar(i) => {  (&(KernelTypes::KExprNode::BVar(i - shift))) } ,
         KernelTypes::KExprNode::Srt(l) => {  (&(KernelTypes::KExprNode::Srt(l))) } ,
         KernelTypes::KExprNode::Const(idx, lvls) => {  (&(KernelTypes::KExprNode::Const(idx, lvls))) } ,
         KernelTypes::KExprNode::App(f, a) => {
@@ -259,15 +258,18 @@ module KernelSubst {
           (&(KernelTypes::KExprNode::Forall(
             expr_lower(ty, shift, cutoff),
             expr_lower(body, shift, cutoff + 1)))) } ,
-        KernelTypes::KExprNode::Let(ty, val, body) => {
-          (&(KernelTypes::KExprNode::Let(
-            expr_lower(ty, shift, cutoff),
-            expr_lower(val, shift, cutoff),
-            expr_lower(body, shift, cutoff + 1)))) } ,
+        KernelTypes::KExprNode::Let(ty, val, body) => {  expr_lower_let(ty, val, body, shift, cutoff) } ,
         KernelTypes::KExprNode::Lit(lit) => {  (&(KernelTypes::KExprNode::Lit(lit))) } ,
         KernelTypes::KExprNode::Proj(tidx, fidx, e1) => {
           (&(KernelTypes::KExprNode::Proj(tidx, fidx, expr_lower(e1, shift, cutoff)))) } ,
       }
+    }
+
+  fn expr_lower_let(ty: KernelTypes::KExpr, val: KernelTypes::KExpr, body: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
+      (&(KernelTypes::KExprNode::Let(
+        expr_lower(ty, shift, cutoff),
+        expr_lower(val, shift, cutoff),
+        expr_lower(body, shift, cutoff + 1))))
     }
 
   fn expr_has_bvar_at(e: KernelTypes::KExpr, depth: Field) -> Field {

@@ -66,9 +66,9 @@ module KernelNatPrim {
       }
     }
 
-  fn try_bitvec_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, spine: Lists::List<KernelTypes::KExpr>,
+  fn try_bitvec_dispatch(rc: KernelRoles::RoleCtx, op: Field, spine: Lists::List<KernelTypes::KExpr>,
                                 types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_bit_vec_to_nat()) {
+      match op {
         1 => {
           match UInt32::less_than_fields(Lists::length(spine), 2) {
             1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
@@ -81,13 +81,10 @@ module KernelNatPrim {
                 (1, kl) => {  (1, mk_nat_lit(kl)) } ,
               } } ,
           } } ,
-        _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_bit_vec_ult()) {
-            1 => {
-              let spine_p = bitvec_prep_spine_ult(rc, spine, types);
-              try_reduce_bit_vec_ult(rc, spine_p) } ,
-            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-          } } ,
+        2 => {
+          let spine_p = bitvec_prep_spine_ult(rc, spine, types);
+          try_reduce_bit_vec_ult(rc, spine_p) } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
 
@@ -119,10 +116,10 @@ module KernelNatPrim {
       }
     }
 
-  fn try_str_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, spine: Lists::List<KernelTypes::KExpr>,
+  fn try_str_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, op: Field, spine: Lists::List<KernelTypes::KExpr>,
                             types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       let spine_len = Lists::length(spine);
-      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_string_of_list()) {
+      match op {
         1 => {
           match spine_len {
             1 => {
@@ -132,9 +129,7 @@ module KernelNatPrim {
               } } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
-        _ => {
-      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_string_utf8_byte_size()) {
-        1 => {
+        2 => {
           match UInt32::less_than_fields(spine_len, 1) {
             1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
             _ => {
@@ -151,48 +146,35 @@ module KernelNatPrim {
                 _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
               } } ,
           } } ,
-        _ => {
-      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_string_back()) {
-        1 => {  try_str_back(rc, spine) } ,
-        _ => {
-      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_string_to_byte_array()) {
-        1 => {  try_str_to_byte_array(rc, spine) } ,
-        _ => {
-      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_string_dec_eq()) {
-        1 => {  KernelInfer::try_str_dec_eq(rc, head_addr, spine, types) } ,
-        _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_string_append()) {
-            1 => {
-              match UInt32::less_than_fields(spine_len, 2) {
-                1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                _ => {
-                  let a0 = Lists::lookup(spine, 0);
-                  let a1 = Lists::lookup(spine, 1);
-                  match (*(a0)) {
-                    KernelTypes::KExprNode::Lit(la) => {
-                      match la {
-                        KernelTypes::KLiteral::Str(sa) => {
-                          match (*(a1)) {
-                            KernelTypes::KExprNode::Lit(lb) => {
-                              match lb {
-                                KernelTypes::KLiteral::Str(sb) => {
-                                  let joined = Lists::concat(sa, sb);
-                                  (1, (&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Str(joined))))) } ,
-                                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                              } } ,
+        3 => {  try_str_back(rc, spine) } ,
+        4 => {  try_str_to_byte_array(rc, spine) } ,
+        5 => {  KernelInfer::try_str_dec_eq(rc, head_addr, spine, types) } ,
+        6 => {
+          match UInt32::less_than_fields(spine_len, 2) {
+            1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+            _ => {
+              let a0 = Lists::lookup(spine, 0);
+              let a1 = Lists::lookup(spine, 1);
+              match (*(a0)) {
+                KernelTypes::KExprNode::Lit(la) => {
+                  match la {
+                    KernelTypes::KLiteral::Str(sa) => {
+                      match (*(a1)) {
+                        KernelTypes::KExprNode::Lit(lb) => {
+                          match lb {
+                            KernelTypes::KLiteral::Str(sb) => {
+                              let joined = Lists::concat(sa, sb);
+                              (1, (&(KernelTypes::KExprNode::Lit(KernelTypes::KLiteral::Str(joined))))) } ,
                             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                           } } ,
                         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                       } } ,
                     _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
                   } } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
               } } ,
-            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
-      } } ,
-      } } ,
-      } } ,
-      } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
 
@@ -745,18 +727,17 @@ module KernelNatPrim {
       }
     }
 
-  fn try_int_prim_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, spine: Lists::List<KernelTypes::KExpr>,
+  fn try_int_prim_dispatch(rc: KernelRoles::RoleCtx, op: Field, spine: Lists::List<KernelTypes::KExpr>,
                                   types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       let sw = KernelWhnf::whnf_spine(rc, spine, types);
       let n = Lists::length(sw);
-      let unary = KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_neg()) + KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_nat_abs());
-      match unary {
-        1 => {  match UInt32::less_than_fields(n, 1) {
+      match op {
+        1 | 2 => {  match UInt32::less_than_fields(n, 1) {
           1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           _ => {  match try_extract_int_prim(rc, Lists::lookup(sw, 0)) {
             (1, s, a) => {
-              let v = match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_nat_abs()) {
-                1 => {  mk_nat_lit(a) } ,
+              let v = match op {
+                2 => {  mk_nat_lit(a) } ,
                 _ => {  mk_int_prim(rc, (1 - s) * (1 - KernelKlimbs::klimbs_is_zero(a)), a) } ,
               };
               (1, np_apply_spine(v, Lists::drop(sw, 1))) } ,
@@ -766,48 +747,38 @@ module KernelNatPrim {
         _ => {  match UInt32::less_than_fields(n, 2) {
           1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           _ => {  match try_extract_int_prim(rc, Lists::lookup(sw, 0)) {
-            (1, sa, a) => {  try_int_prim_second(rc, head_addr, sw, sa, a) } ,
+            (1, sa, a) => {  try_int_prim_second(rc, op, sw, sa, a) } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
           } } ,
         } } ,
       }
     }
 
-  fn try_int_prim_second(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, sw: Lists::List<KernelTypes::KExpr>,
+  fn try_int_prim_second(rc: KernelRoles::RoleCtx, op: Field, sw: Lists::List<KernelTypes::KExpr>,
                                 sa: Field, a: KernelTypes::KLimbs) -> (Field, KernelTypes::KExpr) {
-      let rhs_nat = KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_bmod())
-        + KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_bdiv()) + KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_pow());
-      match rhs_nat {
-        1 => {  match try_extract_nat(rc, Lists::lookup(sw, 1)) {
+      match op {
+        3 | 4 | 5 => {  match try_extract_nat(rc, Lists::lookup(sw, 1)) {
           (1, b) => {
-            let v = match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_bmod()) {
-              1 => {  int_bmod_prim(rc, sa, a, b) } ,
-              _ => {  match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_bdiv()) {
-                1 => {  int_bdiv_prim(rc, sa, a, b) } ,
-                _ => {
-                  let two = (&(Lists::Node::Cons([UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
-                  let odd = 1 - KernelKlimbs::klimbs_is_zero(KernelKlimbs::klimbs_mod(b, two));
-                  mk_int_prim(rc, sa * odd, KernelKlimbs::klimbs_pow(a, b)) } ,
-              } } ,
+            let v = match op {
+              3 => {  int_bmod_prim(rc, sa, a, b) } ,
+              4 => {  int_bdiv_prim(rc, sa, a, b) } ,
+              _ => {
+                let two = (&(Lists::Node::Cons([UInt8::BYTE_2, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], (&(Lists::Node::Nil)))));
+                let odd = 1 - KernelKlimbs::klimbs_is_zero(KernelKlimbs::klimbs_mod(b, two));
+                mk_int_prim(rc, sa * odd, KernelKlimbs::klimbs_pow(a, b)) } ,
             };
             (1, np_apply_spine(v, Lists::drop(sw, 2))) } ,
           _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
         } } ,
         _ => {  match try_extract_int_prim(rc, Lists::lookup(sw, 1)) {
           (1, sb, b) => {
-            let v = match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_add()) {
-              1 => {  int_add_prim(rc, sa, a, sb, b) } ,
-              _ => {  match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_sub()) {
-                1 => {  int_add_prim(rc, sa, a, (1 - sb) * (1 - KernelKlimbs::klimbs_is_zero(b)), b) } ,
-                _ => {  match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_mul()) {
-                  1 => {  mk_int_prim(rc, (sa + sb - 2 * sa * sb)
-                    * (1 - KernelKlimbs::klimbs_is_zero(a)) * (1 - KernelKlimbs::klimbs_is_zero(b)), KernelKlimbs::klimbs_mul(a, b)) } ,
-                  _ => {  match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_emod()) {
-                    1 => {  int_emod_prim(rc, sa, a, b) } ,
-                    _ => {  int_ediv_prim(rc, sa, a, sb, b) } ,
-                  } } ,
-                } } ,
-              } } ,
+            let v = match op {
+              6 => {  int_add_prim(rc, sa, a, sb, b) } ,
+              7 => {  int_add_prim(rc, sa, a, (1 - sb) * (1 - KernelKlimbs::klimbs_is_zero(b)), b) } ,
+              8 => {  mk_int_prim(rc, (sa + sb - 2 * sa * sb)
+                * (1 - KernelKlimbs::klimbs_is_zero(a)) * (1 - KernelKlimbs::klimbs_is_zero(b)), KernelKlimbs::klimbs_mul(a, b)) } ,
+              9 => {  int_emod_prim(rc, sa, a, b) } ,
+              _ => {  int_ediv_prim(rc, sa, a, sb, b) } ,
             };
             (1, np_apply_spine(v, Lists::drop(sw, 2))) } ,
           _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
@@ -823,62 +794,23 @@ module KernelNatPrim {
       }
     }
 
-  fn try_nat_binop_addr(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, a: KernelTypes::KLimbs, b: KernelTypes::KLimbs) -> (Field, KernelTypes::KExpr) {
-      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_add()) {
-        1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_add(a, b)))) } ,
-        _ => {
-        match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_sub()) {
-          1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_sub(a, b)))) } ,
-          _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_mul()) {
-            1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_mul(a, b)))) } ,
-            _ => {
-            match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_div()) {
-              1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_div(a, b)))) } ,
-              _ => {
-              match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_mod()) {
-                1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_mod(a, b)))) } ,
-                _ => {
-                match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_gcd()) {
-                  1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_gcd(a, b)))) } ,
-                  _ => {
-                  match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_pow()) {
-                    1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_pow(a, b)))) } ,
-                    _ => {
-                    match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_land()) {
-                      1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_land(a, b)))) } ,
-                      _ => {
-                      match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_lor()) {
-                        1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_lor(a, b)))) } ,
-                        _ => {
-                        match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_xor()) {
-                          1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_xor_op(a, b)))) } ,
-                          _ => {
-                          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_shift_left()) {
-                            1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_shl(a, b)))) } ,
-                            _ => {
-                            match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_shift_right()) {
-                              1 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_shr(a, b)))) } ,
-                              _ => {
-                              match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_beq()) {
-                                1 => {  (1, mk_bool(rc, KernelLevels::klimbs_eq(a, b))) } ,
-                                _ => {
-                                match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_ble()) {
-                                  1 => {  (1, mk_bool(rc, KernelKlimbs::klimbs_le(a, b))) } ,
-                                  _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                                } } ,
-                              } } ,
-                            } } ,
-                          } } ,
-                        } } ,
-                      } } ,
-                    } } ,
-                  } } ,
-                } } ,
-              } } ,
-            } } ,
-          } } ,
-        } } ,
+  fn try_nat_binop_addr(rc: KernelRoles::RoleCtx, op: Field, a: KernelTypes::KLimbs, b: KernelTypes::KLimbs) -> (Field, KernelTypes::KExpr) {
+      match op {
+        3 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_add(a, b)))) } ,
+        4 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_sub(a, b)))) } ,
+        5 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_mul(a, b)))) } ,
+        6 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_div(a, b)))) } ,
+        7 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_mod(a, b)))) } ,
+        8 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_gcd(a, b)))) } ,
+        9 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_pow(a, b)))) } ,
+        10 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_land(a, b)))) } ,
+        11 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_lor(a, b)))) } ,
+        12 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_xor_op(a, b)))) } ,
+        13 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_shl(a, b)))) } ,
+        14 => {  (1, mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_shr(a, b)))) } ,
+        15 => {  (1, mk_bool(rc, KernelLevels::klimbs_eq(a, b))) } ,
+        16 => {  (1, mk_bool(rc, KernelKlimbs::klimbs_le(a, b))) } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
 
@@ -1016,12 +948,10 @@ module KernelNatPrim {
       }
     }
 
-  inline fn try_nat_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, spine: Lists::List<KernelTypes::KExpr>,
+  inline fn try_nat_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, op: Field, spine: Lists::List<KernelTypes::KExpr>,
                             types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       let spine_len = Lists::length(spine);
-      let is_pred = KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_pred());
-      let is_succ = KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_succ());
-      match is_succ {
+      match op {
         1 => {
           match UInt32::less_than_fields(spine_len, 1) {
             1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
@@ -1034,26 +964,23 @@ module KernelNatPrim {
                 _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
               } } ,
           } } ,
-        _ => {
-          match is_pred {
-            1 => {
-              match UInt32::less_than_fields(spine_len, 1) {
-                1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                _ => {
-                  let a0 = Lists::lookup(spine, 0);
-                  match try_extract_nat(rc, a0) {
-                    (1, na) => {
-                      let post = Lists::drop(spine, 1);
-                      (1, np_apply_spine(mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_dec(na))), post)) } ,
-                    _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-                  } } ,
+        2 => {
+          match UInt32::less_than_fields(spine_len, 1) {
+            1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+            _ => {
+              let a0 = Lists::lookup(spine, 0);
+              match try_extract_nat(rc, a0) {
+                (1, na) => {
+                  let post = Lists::drop(spine, 1);
+                  (1, np_apply_spine(mk_nat_lit(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_dec(na))), post)) } ,
+                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
               } } ,
-            _ => {  try_nat_binop_dispatch(rc, head_addr, spine, spine_len) } ,
           } } ,
+        _ => {  try_nat_binop_dispatch(rc, head_addr, op, spine, spine_len) } ,
       }
     }
 
-  fn try_nat_binop_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, spine: Lists::List<KernelTypes::KExpr>,
+  fn try_nat_binop_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, op: Field, spine: Lists::List<KernelTypes::KExpr>,
                                    spine_len: Field) -> (Field, KernelTypes::KExpr) {
       match UInt32::less_than_fields(spine_len, 2) {
         1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
@@ -1064,7 +991,7 @@ module KernelNatPrim {
             (1, na) => {
               match try_extract_nat(rc, a1) {
                 (1, nb) => {
-                  match try_nat_binop_addr(rc, head_addr, na, nb) {
+                  match try_nat_binop_addr(rc, op, na, nb) {
                     (1, result) => {
                       let post = Lists::drop(spine, 2);
                       (1, np_apply_spine(result, post)) } ,
@@ -1076,34 +1003,31 @@ module KernelNatPrim {
 
               match try_extract_nat(rc, a1) {
                 (1, nb) => {
-                  try_nat_offset_dispatch(rc, head_addr, a0, nb, spine) } ,
+                  try_nat_offset_dispatch(rc, head_addr, op, a0, nb, spine) } ,
                 _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
               } } ,
           } } ,
       }
     }
 
-  fn try_nat_offset_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, a0_w: KernelTypes::KExpr, nb: KernelTypes::KLimbs,
+  fn try_nat_offset_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, op: Field, a0_w: KernelTypes::KExpr, nb: KernelTypes::KLimbs,
                                     spine: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      let is_add = KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_add());
-      let is_divmod = KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_div())
-        + KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_mod());
-      let eligible =
-        is_add + is_divmod * (1 - KernelKlimbs::klimbs_is_zero(nb))
-          * (1 - KernelKlimbs::klimbs_is_zero(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_dec(nb))));
-      match eligible {
-        0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-        _ => {
-          let post = Lists::drop(spine, 2);
+      let post = Lists::drop(spine, 2);
 
-          match is_add {
-            1 => {
-              match mk_nat_offset_stuck(rc, a0_w, nb, post) {
-                (1, stuck) => {  (2, stuck) } ,
-                _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-              } } ,
+      match op {
+        3 => {
+          match mk_nat_offset_stuck(rc, a0_w, nb, post) {
+            (1, stuck) => {  (2, stuck) } ,
+            _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
+          } } ,
+        6 | 7 => {
+          let ge_two = (1 - KernelKlimbs::klimbs_is_zero(nb))
+            * (1 - KernelKlimbs::klimbs_is_zero(KernelKlimbs::klimbs_normalize(KernelKlimbs::klimbs_dec(nb))));
+          match ge_two {
+            0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
             _ => {  (2, mk_nat_binop_stuck(head_addr, a0_w, nb, post)) } ,
           } } ,
+        _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
 

@@ -224,6 +224,29 @@ private def Tests.Cli.testPublishedEnvelopeVersion : IO Unit :=
     unless (← Ix.Cli.publishedEnvelopeVersion true path) == some 4 do
       throw <| IO.userError "published report did not read v4"
 
+/-- `ix compile-export` binds another toolchain's roles where its export puts
+them. The 4.35.0 fixture publishes `Int.decLt` at an address the default role
+table does not bind it at (its `Decidable` has one constructor); it compiles
+to an artifact with its own role binding. -/
+private def Tests.Cli.testCompileExportForeignRoles : IO Unit := do
+  let ix ← IO.FS.realPath ".lake/build/bin/ix"
+  IO.FS.withTempDir fun dir => do
+    let export_ := dir / "lean-4.35.0.ndjson"
+    let unpacked ← IO.Process.output { cmd := "zstd", args := #["-dc", "-q", "-o",
+      export_.toString, "Tests/Fixtures/toolchains/lean-4.35.0.ndjson.zst"] }
+    unless unpacked.exitCode == 0 do
+      throw <| IO.userError s!"zstd -dc lean-4.35.0.ndjson.zst: {unpacked.stderr}"
+    let output := dir / "lean-4.35.0.ixe"
+    let compiled ← IO.Process.output {
+      cmd := ix.toString
+      args := #["compile-export", export_.toString, "--out", output.toString, "--workers", "8"] }
+    unless compiled.exitCode == 0 do
+      throw <| IO.userError s!"compile-export of the 4.35.0 fixture failed:\n{compiled.stdout}\n{compiled.stderr}"
+    let env ← IO.ofExcept (Ixon.deEnv (← IO.FS.readBinFile output))
+    unless env.roleBinding.isSome do
+      throw <| IO.userError "compile-export of the 4.35.0 fixture wrote no role binding"
+    IO.println "compile-export: the 4.35.0 export compiles with its own role binding"
+
 public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.run "lake" (#["exe", "ix", "--help"]) none
   Tests.Cli.testCompileNoBuild
@@ -231,6 +254,7 @@ public def Tests.Cli.suite : IO UInt32 := do
   Tests.Cli.testCompileLocal
   Tests.Cli.testCompileReportAbort
   Tests.Cli.testPublishedEnvelopeVersion
+  Tests.Cli.testCompileExportForeignRoles
   --Tests.Cli.run "ix" (#["store", "ix_test/IxTest.lean"]) none
   --Tests.Cli.run "ix" (#["prove", "ix_test/IxTest.lean", "one"]) none
   return 0

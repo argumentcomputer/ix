@@ -18,4 +18,4 @@ cuda = ["aiur/cuda"]
 
 [dev-dependencies]
 ixvm = { path = "../ixvm" }
-ix-bench = { workspace = true }
+libc = { workspace = true }

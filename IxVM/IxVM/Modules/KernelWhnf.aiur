@@ -97,10 +97,10 @@ module KernelWhnf {
       }
     }
 
-  fn try_nat_dispatch_prewhnf(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, spine: Lists::List<KernelTypes::KExpr>,
+  fn try_nat_dispatch_prewhnf(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, op: Field, spine: Lists::List<KernelTypes::KExpr>,
                                       types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
       let spine_w = whnf_spine(rc, spine, types);
-      KernelNatPrim::try_nat_dispatch(rc, head_addr, spine_w, types)
+      KernelNatPrim::try_nat_dispatch(rc, head_addr, op, spine_w, types)
     }
 
   fn bitvec_prep_spine(rc: KernelRoles::RoleCtx, spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>)
@@ -124,27 +124,27 @@ module KernelWhnf {
       }
     }
 
-  fn prim_family(rc: KernelRoles::RoleCtx, a: Bytes::AddressRef) -> Field {
+  fn prim_family(rc: KernelRoles::RoleCtx, a: Bytes::AddressRef) -> (Field, Field) {
       let r1 = KernelRoles::role_index_of(rc, a);
-      let f = match r1 { 0 => {  0 } , _ => {  KernelRoleSpec::role_prim_family(r1 - 1) } , };
+      let (f, op) = match r1 { 0 => {  (0, 0) } , _ => {  KernelRoleSpec::role_prim_family(r1 - 1) } , };
       match f {
-        0 => {  0 } ,
-        _ => {  match KernelRoles::role_of(rc, a) { 0 => {  0 } , _ => {  f } , } } ,
+        0 => {  (0, 0) } ,
+        _ => {  match KernelRoles::role_of(rc, a) { 0 => {  (0, 0) } , _ => {  (f, op) } , } } ,
       }
     }
 
   fn try_prim_dispatch(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>,
                               spine: Lists::List<KernelTypes::KExpr>,
                               types: Lists::List<KernelTypes::KExpr>) -> (Field, KernelTypes::KExpr) {
-      let fam = prim_family(rc, addr);
+      let (fam, op) = prim_family(rc, addr);
       match fam {
-        1 => {  try_nat_dispatch_prewhnf(rc, addr, spine, types) } ,
+        1 => {  try_nat_dispatch_prewhnf(rc, addr, op, spine, types) } ,
         2 => {
           let spine_w = whnf_spine(rc, spine, types);
-          KernelNatPrim::try_str_dispatch(rc, addr, spine_w, types) } ,
-        3 => {  KernelNatPrim::try_bitvec_dispatch(rc, addr, spine, types) } ,
-        5 => {  KernelInfer::try_dec_dispatch(rc, addr, lvls, spine, types) } ,
-        6 => {  KernelNatPrim::try_int_prim_dispatch(rc, addr, spine, types) } ,
+          KernelNatPrim::try_str_dispatch(rc, addr, op, spine_w, types) } ,
+        3 => {  KernelNatPrim::try_bitvec_dispatch(rc, op, spine, types) } ,
+        5 => {  KernelInfer::try_dec_dispatch(rc, addr, op, lvls, spine, types) } ,
+        6 => {  KernelNatPrim::try_int_prim_dispatch(rc, op, spine, types) } ,
         _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
       }
     }
@@ -876,7 +876,9 @@ module KernelWhnf {
   fn whnf_nd_const_head(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, lvls: Lists::List<KernelTypes::KLevel>, head: KernelTypes::KExpr,
                               spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
 
-      let prim = match prim_family(rc, addr) {
+      let (fam, _op) = prim_family(rc, addr);
+      let prim = match fam {
+        0 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
         1 => {
           let whole = apply_spine(head, spine);
           match KernelSubst::expr_lbr(whole) {

@@ -141,16 +141,78 @@ def roleName (r : Role) : String :=
 def list (xs : List String) : String :=
   xs.foldr (fun x acc => s!"store(ListNode.Cons({x}, {acc}))") "store(ListNode.Nil)"
 
+/-- A structured pointer-valued circuit expression for per-arm DAG common
+subexpression elimination. -/
+inductive RVal where
+  | raw (s : String)
+  | node (pre : String) (args : List RVal) (suf : String)
+  deriving BEq, Hashable, Inhabited
+
+def rStore (ctor : String) (args : List RVal) : RVal :=
+  if args.isEmpty then .node s!"store({ctor})" [] ""
+  else .node s!"store({ctor}(" args "))"
+
+def rBoundAddr (r : Nat) : RVal :=
+  .node "role_bound_addr(" [.raw "tbl", .raw (toString r)] ")"
+
+def rNil : RVal := rStore "ListNode.Nil" []
+
+def rList (xs : List RVal) : RVal :=
+  xs.foldr (fun x acc => rStore "ListNode.Cons" [x, acc]) rNil
+
+partial def collectPostOrder (v : RVal) (seen : Std.HashSet RVal) (order : Array RVal) :
+    Std.HashSet RVal × Array RVal :=
+  match v with
+  | .raw _ => (seen, order)
+  | .node _ args _ =>
+    if seen.contains v then (seen, order)
+    else
+      let (seen, order) := args.foldl (fun (s, o) a => collectPostOrder a s o) (seen, order)
+      (seen.insert v, order.push v)
+
+/-- Render `root` as an Aiur match-arm body, hoisting any `.node` referenced
+at least twice in the arm's DAG into a local `let x_i = ...;` binding. -/
+def renderArm (root : RVal) : String := Id.run do
+  let (_, order) := collectPostOrder root {} #[]
+  let mut uses : Std.HashMap RVal Nat := ({} : Std.HashMap RVal Nat).insert root 1
+  for n in order do
+    if let .node _ args _ := n then
+      for a in args do
+        if let .node .. := a then
+          uses := uses.insert a (uses.getD a 0 + 1)
+  let mut env : Std.HashMap RVal String := {}
+  let mut lets : String := ""
+  let mut idx : Nat := 0
+  for n in order do
+    if let .node pre args suf := n then
+      let renderedArgs := args.map fun a =>
+        match a with
+        | .raw s => s
+        | _ => env.getD a ""
+      let exprStr := s!"{pre}{", ".intercalate renderedArgs}{suf}"
+      if uses.getD n 0 >= 2 && n != root then
+        let varName := s!"x{idx}"
+        idx := idx + 1
+        lets := lets ++ s!"        let {varName} = {exprStr};\n"
+        env := env.insert n varName
+      else
+        env := env.insert n exprStr
+  let rootStr := match root with
+    | .raw s => s
+    | _ => env.getD root ""
+  if lets.isEmpty then rootStr
+  else s!"\n{lets}        {rootStr}"
+
 /-- A level under the level parameters `ps`: IxC names a parameter by its id,
 the circuit by its position in the constant's list (`Eq.rec.{u_1, u}` lists
 `u_1` first). -/
-def level (ps : List LevelParam) : Level → Except String String
-  | .zero => pure "store(KLevelNode.Zero)"
-  | .succ u => do pure s!"store(KLevelNode.Succ({← level ps u}))"
-  | .max u v => do pure s!"store(KLevelNode.Max({← level ps u}, {← level ps v}))"
-  | .imax u v => do pure s!"store(KLevelNode.IMax({← level ps u}, {← level ps v}))"
+def level (ps : List LevelParam) : Level → Except String RVal
+  | .zero => pure (rStore "KLevelNode.Zero" [])
+  | .succ u => do pure (rStore "KLevelNode.Succ" [← level ps u])
+  | .max u v => do pure (rStore "KLevelNode.Max" [← level ps u, ← level ps v])
+  | .imax u v => do pure (rStore "KLevelNode.IMax" [← level ps u, ← level ps v])
   | .param i =>
-    if ps.contains i then pure s!"store(KLevelNode.Param({ps.idxOf i}))"
+    if ps.contains i then pure (rStore "KLevelNode.Param" [.raw (toString (ps.idxOf i))])
     else throw s!"level parameter {i} is not among {ps}"
 
 def roleKey : Key .anon → Except String Nat
@@ -160,43 +222,46 @@ def roleKey : Key .anon → Except String Nat
 /-- A term at `depth` enclosing binders. The open variables `fvar i` are the
 binders a caller closes over, outermost first, so `fvar i` is `BVar (depth - 1
 - i)`. -/
-def expr (ps : List LevelParam) (depth : Nat) : Expr .anon → Except String String
-  | .bvar i => pure s!"store(KExprNode.BVar({i}))"
+def expr (ps : List LevelParam) (depth : Nat) : Expr .anon → Except String RVal
+  | .bvar i => pure (rStore "KExprNode.BVar" [.raw (toString i)])
   | .fvar i _ =>
-    if i < depth then pure s!"store(KExprNode.BVar({depth - 1 - i}))"
+    if i < depth then pure (rStore "KExprNode.BVar" [.raw (toString (depth - 1 - i))])
     else throw s!"open variable {i} outside its binder"
-  | .sort u => do pure s!"store(KExprNode.Srt({← level ps u}))"
+  | .sort u => do pure (rStore "KExprNode.Srt" [← level ps u])
   | .const k us => do
-    pure s!"store(KExprNode.Const(role_bound_addr(tbl, {← roleKey k}), {list (← us.mapM (level ps))}))"
-  | .app f a => do pure s!"store(KExprNode.App({← expr ps depth f}, {← expr ps depth a}))"
-  | .lam t b _ => do pure s!"store(KExprNode.Lam({← expr ps depth t}, {← expr ps (depth + 1) b}))"
+    pure (rStore "KExprNode.Const" [rBoundAddr (← roleKey k), rList (← us.mapM (level ps))])
+  | .app f a => do pure (rStore "KExprNode.App" [← expr ps depth f, ← expr ps depth a])
+  | .lam t b _ => do pure (rStore "KExprNode.Lam" [← expr ps depth t, ← expr ps (depth + 1) b])
   | .forallE t b _ => do
-    pure s!"store(KExprNode.Forall({← expr ps depth t}, {← expr ps (depth + 1) b}))"
+    pure (rStore "KExprNode.Forall" [← expr ps depth t, ← expr ps (depth + 1) b])
   | .letE t v b _ => do
-    pure s!"store(KExprNode.Let({← expr ps depth t}, {← expr ps depth v}, {← expr ps (depth + 1) b}))"
+    pure (rStore "KExprNode.Let" [← expr ps depth t, ← expr ps depth v, ← expr ps (depth + 1) b])
   | .lit _ => throw "a literal in a specification"
   | .proj s i e => do
-    pure s!"store(KExprNode.Proj(role_bound_addr(tbl, {← roleKey s}), {i}, {← expr ps depth e}))"
+    pure (rStore "KExprNode.Proj" [rBoundAddr (← roleKey s), .raw (toString i), ← expr ps depth e])
 
 /-- `Nat`, through the binding. -/
-def natT : String := s!"store(KExprNode.Const(role_bound_addr(tbl, {roleIdx .nat}), store(ListNode.Nil)))"
+def natT : RVal := rStore "KExprNode.Const" [rBoundAddr (roleIdx .nat), rNil]
 
 /-- `λ (x y : Nat), side`. -/
 def closeEquationSide (side : Expr .anon) : Except String String := do
-  pure s!"store(KExprNode.Lam({natT}, store(KExprNode.Lam({natT}, {← expr [] 2 side}))))"
+  let root := rStore "KExprNode.Lam" [natT, rStore "KExprNode.Lam" [natT, ← expr [] 2 side]]
+  pure (renderArm root)
 
 /-- `Π (x y : Nat) (h₀ : hyp₀) …, @Eq.{1} Nat lhs rhs`. -/
 def closeCertificate (hyps : List (Expr .anon)) (lhs rhs : Expr .anon) :
     Except String String := do
   let depth := 2 + hyps.length
-  let eqHead := s!"store(KExprNode.Const(role_bound_addr(tbl, {roleIdx .eq}), \
-    store(ListNode.Cons(store(KLevelNode.Succ(store(KLevelNode.Zero))), store(ListNode.Nil)))))"
-  let eqn := s!"store(KExprNode.App(store(KExprNode.App(store(KExprNode.App({eqHead}, {natT})), \
-    {← expr [] depth lhs})), {← expr [] depth rhs}))"
+  let eqHead := rStore "KExprNode.Const"
+    [rBoundAddr (roleIdx .eq), rList [rStore "KLevelNode.Succ" [rStore "KLevelNode.Zero" []]]]
+  let eqn := rStore "KExprNode.App"
+    [rStore "KExprNode.App" [rStore "KExprNode.App" [eqHead, natT], ← expr [] depth lhs],
+     ← expr [] depth rhs]
   let mut body := eqn
   for (h, i) in hyps.zipIdx.reverse do
-    body := s!"store(KExprNode.Forall({← expr [] (2 + i) h}, {body}))"
-  pure s!"store(KExprNode.Forall({natT}, store(KExprNode.Forall({natT}, {body}))))"
+    body := rStore "KExprNode.Forall" [← expr [] (2 + i) h, body]
+  let root := rStore "KExprNode.Forall" [natT, rStore "KExprNode.Forall" [natT, body]]
+  pure (renderArm root)
 
 /-! ## Per-role data -/
 
@@ -277,12 +342,12 @@ def specType (r : Role) : Except String String := do
   match r.spec (md := .anon) with
   | .block _ =>
     let v := (← member r).1.toConstantVal
-    expr v.levelParams 0 v.type
-  | .anchor n t => expr (List.range n) 0 t
-  | .ops t _ => expr [] 0 t
-  | .axiom n (some t) => expr (List.range n) 0 t
+    pure (renderArm (← expr v.levelParams 0 v.type))
+  | .anchor n t => pure (renderArm (← expr (List.range n) 0 t))
+  | .ops t _ => pure (renderArm (← expr [] 0 t))
+  | .axiom n (some t) => pure (renderArm (← expr (List.range n) 0 t))
   | .axiom _ none => pure "store(KExprNode.Srt(store(KLevelNode.Zero)))"
-  | .eqns n t _ => expr (List.range n) 0 t
+  | .eqns n t _ => pure (renderArm (← expr (List.range n) 0 t))
 
 def equations (r : Role) : List (List (Expr .anon) × Expr .anon × Expr .anon) :=
   match r.spec (md := .anon) with
@@ -344,8 +409,8 @@ def closeEqnSide (r : Role) (e : Equation .anon) (side : Expr .anon) : Except St
   let ps := eqnLevels r
   let mut body ← expr ps e.vars.length side
   for (t, i) in e.vars.zipIdx.reverse do
-    body := s!"store(KExprNode.Lam({← expr ps i t}, {body}))"
-  pure body
+    body := rStore "KExprNode.Lam" [← expr ps i t, body]
+  pure (renderArm body)
 
 /-- `Π vars, Π hyps, @Eq.{level} carrier lhs rhs`: an equation's statement,
 which a proof's type must meet. -/
@@ -353,29 +418,65 @@ def closeEqnStatement (r : Role) (e : Equation .anon) : Except String String := 
   let ps := eqnLevels r
   let n := e.vars.length
   let depth := n + e.hyps.length
-  let eqHead := s!"store(KExprNode.Const(role_bound_addr(tbl, {roleIdx .eq}), \
-    {list [← level ps e.level]}))"
-  let mut body := s!"store(KExprNode.App(store(KExprNode.App(store(KExprNode.App({eqHead}, \
-    {← expr ps depth e.carrier})), {← expr ps depth e.lhs})), {← expr ps depth e.rhs}))"
+  let eqHead := rStore "KExprNode.Const" [rBoundAddr (roleIdx .eq), rList [← level ps e.level]]
+  let mut body := rStore "KExprNode.App"
+    [rStore "KExprNode.App"
+      [rStore "KExprNode.App" [eqHead, ← expr ps depth e.carrier],
+       ← expr ps depth e.lhs],
+     ← expr ps depth e.rhs]
   for (h, j) in e.hyps.zipIdx.reverse do
-    body := s!"store(KExprNode.Forall({← expr ps (n + j) h}, {body}))"
+    body := rStore "KExprNode.Forall" [← expr ps (n + j) h, body]
   for (t, i) in e.vars.zipIdx.reverse do
-    body := s!"store(KExprNode.Forall({← expr ps i t}, {body}))"
-  pure body
+    body := rStore "KExprNode.Forall" [← expr ps i t, body]
+  pure (renderArm body)
 
-/-- The family of native rules that fires on a role's constant: 1 `Nat`
-operations, 2 `String`, 3 `BitVec`, 5 decision procedures, 6 `Int`; 0 none. -/
-def primFamily : Role → Nat
-  | .natSucc | .natPred | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natPow
-  | .natGcd | .natBeq | .natBle | .natLand | .natLor | .natXor | .natShiftLeft
-  | .natShiftRight => 1
-  | .stringOfList | .stringUtf8ByteSize | .stringAppend | .stringBack | .stringToByteArray
-  | .stringDecEq => 2
-  | .bitVecToNat | .bitVecUlt => 3
-  | .natDecEq | .natDecLe | .natDecLt | .intDecEq | .intDecLe | .intDecLt => 5
-  | .intAdd | .intSub | .intMul | .intNeg | .intNatAbs | .intEdiv | .intEmod | .intBmod | .intBdiv
-  | .intPow => 6
-  | _ => 0
+/-- The family of native rules that fires on a role's constant (1 `Nat`
+operations, 2 `String`, 3 `BitVec`, 5 decision procedures, 6 `Int`; 0 none)
+together with the operation index within that family. -/
+def primFamilyOp : Role → Nat × Nat
+  | .natSucc => (1, 1)
+  | .natPred => (1, 2)
+  | .natAdd => (1, 3)
+  | .natSub => (1, 4)
+  | .natMul => (1, 5)
+  | .natDiv => (1, 6)
+  | .natMod => (1, 7)
+  | .natGcd => (1, 8)
+  | .natPow => (1, 9)
+  | .natLand => (1, 10)
+  | .natLor => (1, 11)
+  | .natXor => (1, 12)
+  | .natShiftLeft => (1, 13)
+  | .natShiftRight => (1, 14)
+  | .natBeq => (1, 15)
+  | .natBle => (1, 16)
+  | .stringOfList => (2, 1)
+  | .stringUtf8ByteSize => (2, 2)
+  | .stringBack => (2, 3)
+  | .stringToByteArray => (2, 4)
+  | .stringDecEq => (2, 5)
+  | .stringAppend => (2, 6)
+  | .bitVecToNat => (3, 1)
+  | .bitVecUlt => (3, 2)
+  | .natDecLt => (5, 1)
+  | .natDecLe => (5, 2)
+  | .natDecEq => (5, 3)
+  | .intDecLt => (5, 4)
+  | .intDecLe => (5, 5)
+  | .intDecEq => (5, 6)
+  | .intNeg => (6, 1)
+  | .intNatAbs => (6, 2)
+  | .intBmod => (6, 3)
+  | .intBdiv => (6, 4)
+  | .intPow => (6, 5)
+  | .intAdd => (6, 6)
+  | .intSub => (6, 7)
+  | .intMul => (6, 8)
+  | .intEmod => (6, 9)
+  | .intEdiv => (6, 10)
+  | _ => (0, 0)
+
+def primFamily (r : Role) : Nat := (primFamilyOp r).1
 
 /-! ## The file -/
 
@@ -406,11 +507,14 @@ end IxVM
 end
 "
 
-/-- A `match` on `r` over every role, with a final arm. -/
+/-- A `match` on `r` over every role whose value differs from `fallback`, with
+`fallback` as the final arm. -/
 def byRole (f : Role → Except String String) (fallback : String) : Except String String := do
   let mut arms := ""
   for r in Role.all do
-    arms := arms ++ s!"      {roleIdx r} => {← f r},\n"
+    let rhs ← f r
+    if rhs != fallback then
+      arms := arms ++ s!"      {roleIdx r} => {rhs},\n"
   pure s!"    match r \{\n{arms}      _ => {fallback},\n    }"
 
 def aiurFn (sig body : String) : String := s!"  {sig} \{\n{body}\n  }\n\n"
@@ -436,7 +540,9 @@ def render : Except String String := do
   let mut needArms := ""
   for (g, i) in groups.zipIdx do
     groupArms := groupArms ++ s!"      {i} => {list (g.map (toString ∘ roleIdx))},\n"
-    needArms := needArms ++ s!"      {i} => {list ((groupNeeds g).map (toString ∘ roleIdx))},\n"
+    let needs := groupNeeds g
+    unless needs.isEmpty do
+      needArms := needArms ++ s!"      {i} => {list (needs.map (toString ∘ roleIdx))},\n"
   out := out ++ aiurFn "fn group_roles(g: G) -> List‹G›"
     s!"    match g \{\n{groupArms}      _ => store(ListNode.Nil),\n    }"
   out := out ++ aiurFn "fn group_needs(g: G) -> List‹G›"
@@ -507,8 +613,10 @@ def render : Except String String := do
     s!"    match 64 * r + k \{\n{eRhsArms}      _ => {dummy},\n    }"
   out := out ++ aiurFn "fn eqns_statement(tbl: RoleTable, r: G, k: G) -> KExpr"
     s!"    match 64 * r + k \{\n{stmtArms}      _ => {dummy},\n    }"
-  out := out ++ aiurFn "fn role_prim_family(r: G) -> G"
-    (← byRole (fun r => pure (toString (primFamily r))) "0")
+  out := out ++ aiurFn "fn role_prim_family(r: G) -> (G, G)"
+    (← byRole (fun r => do
+      let (fam, op) := primFamilyOp r
+      pure s!"({fam}, {op})") "(0, 0)")
   pure (out ++ footer)
 
 /-! ## Formal Aiur renderer (`module KernelRoleSpec { ... }`)

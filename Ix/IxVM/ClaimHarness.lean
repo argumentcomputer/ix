@@ -77,11 +77,15 @@ def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
     constants needs no other support. -/
 def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env := do
   let (records, blobs, hints) ← defaultTableSupport
+  let table? := Ix.Kernel.RoleTable.ofBytes bytes
   let mut env := { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
   let wrapper (info : Ixon.ConstantInfo) : Address × Ixon.Constant :=
     let c : Ixon.Constant := ⟨info, #[], #[], #[]⟩
     (Address.blake3 (Ixon.ser c), c)
   for (a, c) in records do
+    if let .axio _ := c.info then
+      if let some table := table? then
+        if !table.bound.any (·.2 == a) then continue
     let mut entries : Array (Address × Ixon.Constant) := #[(a, c)]
     if let .muts members := c.info then
       for (m, i) in members.zipIdx do
@@ -110,22 +114,54 @@ def withDefaultRoleBinding (env : Ixon.Env) : Except String Ixon.Env := do
   if env.roleBinding.isSome then return env
   withRoleTable env (← Ix.Kernel.Reader.defaultTableBytes)
 
+/-- Close `roots` under `Lean.collectDependenciesMany` and every collected
+    inductive's recursors (`<ind>.rec` and nested `<all0>.rec_N`) so
+    `Ix.Cert.compileReport`'s `unownedRecursor` check sees every inductive
+    family's recursors when two families share an anonymous Ixon block
+    (e.g., `Lean.Doc.MathMode` and `Bool`). -/
+private def dedupConstList (entries : List (Lean.Name × Lean.ConstantInfo)) :
+    List (Lean.Name × Lean.ConstantInfo) := Id.run do
+  let mut seen : Lean.NameSet := {}
+  let mut out : Array (Lean.Name × Lean.ConstantInfo) := #[]
+  for entry in entries do
+    if !seen.contains entry.1 then
+      seen := seen.insert entry.1
+      out := out.push entry
+  return out.toList
+
+private def collectCertifiedClosure (roots : Array Lean.Name)
+    (leanEnv : Lean.Environment) : List (Lean.Name × Lean.ConstantInfo) := Id.run do
+  let mut seeds := roots.filter leanEnv.constants.contains
+  let mut deps := dedupConstList (Lean.collectDependenciesMany seeds leanEnv.constants)
+  for _ in [0:4] do
+    let mut seen : Lean.NameSet := {}
+    for (n, _) in deps do seen := seen.insert n
+    let recs := deps.foldl (init := #[]) fun acc (_, ci) =>
+      match ci with
+      | .inductInfo v =>
+        let names := (Lean.mkRecName v.name) ::
+          (List.range v.numNested).map fun i =>
+            Lean.Name.mkStr (v.all.headD v.name) s!"rec_{i + 1}"
+        acc ++ (names.filter fun r =>
+          leanEnv.constants.contains r && !seen.contains r && !acc.contains r).toArray
+      | _ => acc
+    if recs.isEmpty then break
+    seeds := seeds ++ recs
+    deps := dedupConstList (Lean.collectDependenciesMany seeds leanEnv.constants)
+  return deps
+
 /-- Variant of loadIxonEnv: also seeds the constants the kernel
     fabricates during reduction (Bool.true/false + Nat.zero/succ), so
     their bytes are always in ch 2 even when the target's proof body
     doesn't textually reference them. -/
 def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
-  let mut seen : Lean.NameSet := {}
-  let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  let names : Array Lean.Name := #[name] ++ synthesizedPrimNames ++ roleNames
-  for n in names do
-    if leanEnv.constants.contains n then
-      for entry in Lean.collectDependencies n leanEnv.constants do
-        if !seen.contains entry.fst then
-          seen := seen.insert entry.fst
-          deduped := deduped.push entry
-  match ← Ix.CompileM.compileCertified leanEnv deduped.toList 8 with
+  let roots := (#[name] ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains
+  let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
+  let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
+    | .ok out => pure (.ok out)
+    | .error _ => Ix.CompileM.compileCertified leanEnv (collectCertifiedClosure roots leanEnv) 32
+  match res with
   | .error e => throw (IO.userError s!"the certified Lean compile of {name}'s closure failed: {e}")
   | .ok out =>
     unless out.failures.isEmpty do
@@ -139,14 +175,12 @@ def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
     Ixon env. -/
 def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
     IO Ixon.Env := do
-  let mut seen : Lean.NameSet := {}
-  let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
-  for n in names ++ roleNames.filter leanEnv.constants.contains do
-    for entry in Lean.collectDependencies n leanEnv.constants do
-      if !seen.contains entry.fst then
-        seen := seen.insert entry.fst
-        deduped := deduped.push entry
-  match ← Ix.CompileM.compileCertified leanEnv deduped.toList 8 with
+  let roots := (names ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains
+  let initial := dedupConstList (Lean.collectDependenciesMany roots leanEnv.constants)
+  let res ← match ← Ix.CompileM.compileCertified leanEnv initial 32 with
+    | .ok out => pure (.ok out)
+    | .error _ => Ix.CompileM.compileCertified leanEnv (collectCertifiedClosure roots leanEnv) 32
+  match res with
   | .error e => throw (IO.userError s!"the certified Lean compile of shared closure failed: {e}")
   | .ok out =>
     unless out.failures.isEmpty do
@@ -298,15 +332,16 @@ private def seedTreeAt (root : Address)
     .ok (ioBuffer.extend 1 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
-/-- The constants the role binding names: every bound role and every proof
-    evidence theorem the environment carries. -/
-def bindingRoots (env : Ixon.Env) : Array Address := Id.run do
+/-- The constants the role binding names: every bound role and (when
+    `!assumeBinding`) every proof evidence theorem the environment carries. -/
+def bindingRoots (env : Ixon.Env) (assumeBinding : Bool := false) : Array Address := Id.run do
   let some binding := env.roleBinding | return #[]
   let some table := Ix.Kernel.RoleTable.ofBytes binding.bytes | return #[]
   let mut roots := table.bound.map (·.2)
-  for (_, entries) in table.evidence do
-    for e in entries do
-      if let .proof a := e then roots := roots.push a
+  unless assumeBinding do
+    for (_, entries) in table.evidence do
+      for e in entries do
+        if let .proof a := e then roots := roots.push a
   return roots.filter env.consts.contains
 
 /-- Seed the environment's role binding on channel 6, keyed by its hash: the
@@ -318,12 +353,13 @@ def seedBinding (env : Ixon.Env) (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer :=
   | none => ioBuffer
 
 /-- The full witness byte scope for `target`: the closure of `target`
-    together with every primitive address present in `env` and the role
-    binding's constants (`bindingRoots`), all as walk ROOTS. -/
-def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
+    together with every primitive address present in `env`, the role
+    binding's constants (`bindingRoots`) and user axioms, all as walk ROOTS. -/
+def closureFrom (env : Ixon.Env) (target : Address)
+    (assumeBinding : Bool := false) : Std.HashSet Address :=
   closureFromRoots env
     (#[target] ++ Ix.primAddrSet.toArray.filter env.consts.contains
-      ++ bindingRoots env)
+      ++ bindingRoots env assumeBinding ++ Ix.ClaimContext.userAxioms env)
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
@@ -341,19 +377,35 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   let seedAsm asm buf := match asm with
     | some r => seedTreeAt r trees buf
     | none => .ok buf
+  let seedAxioms (ctx : Ix.ClaimContext) (buf : Aiur.IOBuffer) : Except String Aiur.IOBuffer :=
+    match ctx.axioms with
+    | none => .ok buf
+    | some axRoot =>
+      if trees.contains axRoot then
+        seedTreeAt axRoot trees buf
+      else match Ix.ClaimContext.userAxiomTree env with
+      | some axTree =>
+        if axTree.root == axRoot then
+          let bytes := Ix.AssumptionTree.ser axTree
+          .ok (buf.extend 1 (addrKey axTree.root) (bytes.data.map .ofUInt8))
+        else .error s!"no assumption tree supplied for axioms root {axRoot}"
+      | none => .error s!"no assumption tree supplied for axioms root {axRoot}"
   match claim with
-  | .check _ addr asm =>
-    ioBuffer := addEntries env (closureFrom env addr).contains ioBuffer
+  | .check ctx addr asm =>
+    ioBuffer := addEntries env (closureFrom env addr ctx.bindingAssumed).contains ioBuffer
+    ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .eval _ input output asm =>
+  | .eval ctx input output asm =>
     let inputClosure := closureFrom env input
     let outputClosure := closureFrom env output
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
+    ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .checkEnv _ root asm =>
+  | .checkEnv ctx root asm =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
+    ioBuffer ← seedAxioms ctx ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
   | .resource root profile =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
@@ -414,6 +466,8 @@ def shardCheckEnvClaimTrees (env : Ixon.Env) (owned : Array Address)
   let claim := Ix.Claim.checkEnv ctx ownedTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
+  if let some axTree := Ix.ClaimContext.userAxiomTree env then
+    trees := trees.insert axTree.root axTree
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
@@ -427,7 +481,8 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address)
   let env ← withDefaultRoleBinding env
   let (claim, trees) ← shardCheckEnvClaimTrees env owned assumeBinding
   let primitiveRoots := Ix.primAddrSet.toArray.filter env.consts.contains
-  let closure := closureFromRoots env (owned ++ primitiveRoots ++ bindingRoots env)
+  let closure := closureFromRoots env
+    (owned ++ primitiveRoots ++ bindingRoots env assumeBinding ++ Ix.ClaimContext.userAxioms env)
   pure (claim, closure, trees)
 
 /-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see

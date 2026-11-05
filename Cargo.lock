@@ -1727,7 +1727,6 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.0",
- "rayon",
  "serde",
  "serde_core",
 ]
@@ -1952,23 +1951,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
-name = "ix-bench"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde_json",
- "tracing-texray",
-]
-
-[[package]]
 name = "ix-common"
 version = "0.1.0"
 dependencies = [
  "bignat",
  "blake3",
- "indexmap",
  "quickcheck",
- "quickcheck_macros",
  "rustc-hash",
 ]
 
@@ -1977,18 +1965,10 @@ name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
  "aiur",
- "anyhow",
- "bignat",
  "bincode",
  "blake3",
- "bytes",
- "dashmap",
  "getrandom 0.3.4",
- "indexmap",
  "iroh",
- "iroh-base",
- "itertools 0.14.0",
- "ix-bench",
  "ix-common",
  "ix-proof-compression",
  "ixon",
@@ -1997,7 +1977,6 @@ dependencies = [
  "mimalloc",
  "multi-stark",
  "n0-error",
- "num-bigint 0.4.6",
  "rayon",
  "rustc-hash",
  "serde",
@@ -2075,7 +2054,6 @@ dependencies = [
  "bignat",
  "blake3",
  "dashmap",
- "indexmap",
  "ix-common",
  "memmap2",
  "nom",
@@ -2084,8 +2062,6 @@ dependencies = [
  "quickcheck_macros",
  "rayon",
  "rustc-hash",
- "sha2 0.10.9",
- "tiny-keccak",
 ]
 
 [[package]]
@@ -3925,8 +3901,8 @@ version = "0.1.0"
 dependencies = [
  "aiur",
  "blake3",
- "ix-bench",
  "ixvm",
+ "libc",
  "multi-stark",
  "serde",
  "serde_json",

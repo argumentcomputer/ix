@@ -158,12 +158,6 @@ lean_ffi::lean_inductive! {
     { num_obj: 1 },                           // tag 8: muts
   ];
 
-  // --- Ix structures (single-constructor) ---
-
-  // Ix.CompileM.CompileEnvStatus: root (String), ungrounded
-  // (Array (String × String)), nonCanonical (Array (String × String)),
-  // then UInt64 scalars bytes/named/uniqueAnon
-
   // --- Ix multi-variant inductives ---
 
   LeanIxName [
@@ -177,23 +171,6 @@ lean_ffi::lean_inductive! {
     { },                                      // tag 1: abbrev (scalar)
     { num_32: 1 },                            // tag 2: regular
   ];
-
-  // --- Lean kernel inner val types (used in Ix.ConstantInfo decode) ---
-
-
-  // --- Error types ---
-
-  LeanIxSerializeError [
-    { num_obj: 1 },                           // tag 0: unexpectedEof
-    { num_obj: 1, num_8: 1 },                 // tag 1: invalidTag
-    { num_obj: 1, num_8: 1 },                 // tag 2: invalidFlag
-    { num_obj: 1, num_64: 1 },                // tag 3: invalidVariant
-    { num_8: 1 },                             // tag 4: invalidBool
-    { },                                      // tag 5: addressError
-    { num_obj: 1, num_64: 1 },                // tag 6: invalidShareIndex
-  ];
-
-  // Defined in `Ix/KernelCheck.lean`.
 
   // --- Iroh types ---
 
@@ -402,21 +379,6 @@ impl LeanIxBinderInfo<LeanOwned> {
       3 => BinderInfo::InstImplicit,
       _ => panic!("Invalid BinderInfo tag: {v}"),
     }
-  }
-
-  /// Construct a Lean `BinderInfo` scalar.
-  pub fn build(bi: &BinderInfo) -> Self {
-    Self::new(LeanOwned::box_usize(Self::to_u8(bi) as usize))
-  }
-}
-
-impl<R: LeanRef> LeanIxBinderInfo<R> {
-  /// Decode a Lean `BinderInfo` scalar.
-  pub fn decode(&self) -> BinderInfo {
-    let tag = (self.inner().as_raw() as usize) >> 1;
-    LeanIxBinderInfo::from_u8(
-      u8::try_from(tag).expect("BinderInfo tag fits in u8"),
-    )
   }
 }
 

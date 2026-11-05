@@ -7,13 +7,13 @@ import IxC.Kernel.Ingress.Records
 
 /-! # The reference graph's walk is exact
 
-`Ix.graphExpr` walks a term with a memo of each expression's references, keyed exactly
-(`Ix.Compile.ExactKey.ExprKey`). So the references it returns for a term are exactly the names
-the term mentions (`Refs`: a constant it applies, or a projection's structure), up to the names'
-hash (`graphExpr_refs`), and `Ix.graphConst` returns a constant's terms' mentions with the names
-its kind adds. The memo holds only correct entries (`MemoOK`): an entry is inserted once its
-expression's references are computed, and a hit returns the entry of an expression equal to the
-one asked. -/
+`Ix.graphExpr` walks a term into an accumulator `acc : Set Ix.Name` with a visited set of
+already-walked expressions (`GraphState.visited : Std.HashSet ExprKey`), keyed by structural
+equality (`Ix.Compile.ExactKey.ExprKey`). Under the invariant that every expression in `visited`
+already has all of its references recorded in `acc` (`VisitedOK`), the references `Ix.graphExpr`
+returns for a term from `GraphState.init` are exactly the names the term mentions (`Refs`: a
+constant it applies, or a projection's structure), up to the names' hash (`graphExpr_refs`), and
+`Ix.graphConst` returns a constant's terms' mentions with the names its kind adds. -/
 
 public section
 

@@ -13,6 +13,7 @@ import Ix.LeanIngress
 import Ix.Cert.RoleClosurePrepare
 import IxC.Kernel.Verify.Rename.Basic
 import IxC.Kernel.RoleEquations
+import Ix.FileDigest
 
 /-! # The default role table, its evidence and the Ixon prelude, from Ixon (untrusted)
 
@@ -108,10 +109,6 @@ def regenerate : List String :=
    "lake exe kernel-pin-gen .lake/envs/initstd.ixe .lake/envs/certs.ixe \\\n      \
     IxC/Kernel/Ixon/RoleData.lean",
    "lake exe IxTests cert-statement   # then: RoleEvidenceChecks on the committed file"]
-
-def sha256 (path : System.FilePath) : IO String := do
-  let out ← IO.Process.output { cmd := "sha256sum", args := #["--", path.toString] }
-  return (out.stdout.splitOn " ").headD ""
 
 /-- Separate large data initializers so elaboration does not keep every row
 on one recursion stack. The public array retains the entries in order. -/
@@ -757,8 +754,8 @@ def run (args : List String) : IO UInt32 := do
   IO.eprintln s!"pin-gen: quotient names: {qNames.size} names; reads back as the reader's proofs; \
     {(← IO.monoMsNow) - qStarted} ms"
   -- 5: output
-  let digest ← sha256 input
-  let certDigest ← sha256 certInput
+  let digest ← Ix.FileDigest.blake3File input
+  let certDigest ← Ix.FileDigest.blake3File certInput
   let rowTerms (xs : Array (Address × ByteArray)) : Array String :=
     xs.map fun (a, b) => s!"  ({(toString a).quote},\n   {(hexOfBytes b).quote})"
   let rowsOf (xs : Array (Address × ByteArray)) : String :=
@@ -776,9 +773,9 @@ To regenerate:
 {recipe}
 
 The default table binds every role (`Ix.Kernel.Role`) to the constant of the
-compiled Init (sha256 {digest}) under the role's Lean name, with the
+compiled Init (blake3 {digest}) under the role's Lean name, with the
 structural `Nat` operations' `defeq` evidence and, for each well-founded one,
-the theorems of `IxC/Kernel/PinGen/Certs.lean` (compiled, sha256 {certDigest})
+the theorems of `IxC/Kernel/PinGen/Certs.lean` (compiled, blake3 {certDigest})
 closed over the operation's dependency closure and written as theorem
 records. Every bound constant's record, the evidence and both literal
 capabilities were checked by the verified fold through the Ixon reader under
@@ -819,7 +816,7 @@ every regeneration. -/
 
 namespace Ix.Kernel.Reader.RoleData
 
-def source : String := {s!"sha256:{digest} sha256:{certDigest}".quote}
+def source : String := {s!"blake3:{digest} blake3:{certDigest}".quote}
 
 def table : String := {(hexOfBytes tableBytes).quote}
 

@@ -1,8 +1,8 @@
 //! Malformed inputs every Rust reader of their kind refuses: the Rust side of
 //! the shared fixture `Tests/Fixtures/ixon-v4/reject-parity.txt`, which the Lean suite
 //! `ixon-reject-parity` (`Tests/Ix/IxonRejectParity.lean`) reads too, so
-//! that both sides refuse the same byte strings. The `.ixes` cases are the
-//! kernel crate's (`crates/kernel/tests/reject_parity.rs`).
+//! that both sides refuse the same byte strings. Only the Lean suite reads
+//! the `.ixes` cases.
 
 use ixon::assumption_tree::AssumptionTree;
 use ixon::constant::Constant;

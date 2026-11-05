@@ -38,7 +38,7 @@ def source(aggregate=False):
                            ('aggr_catalog_part', 'tag'), ('ix_aggr', 'shape')]:
             raw = adapt.transform_body(raw, name, lambda s, byte=byte:
                 s.replace(f'match {byte} {{', f'match to_field({byte}) {{'))
-        raw = re.sub(r'assert_eq!\((tag\d*|format|validator|count), (0x[0-9a-fA-F]+|\d+)u8,',
+        raw = re.sub(r'assert_eq!\((tag\d*|format|validator|count|last_side), (0x[0-9a-fA-F]+|\d+)u8,',
                      r'assert_eq!(to_field(\1), \2,', raw)
         raw = raw.replace('assert_eq!(aggr_claim_field(claim, 0), 0,',
                           'assert_eq!(aggr_claim_field(claim, 0), 1,')

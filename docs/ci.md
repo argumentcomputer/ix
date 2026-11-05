@@ -52,23 +52,20 @@ the entry runs:
 | --- | --- | --- |
 | `primary` | `lake test` with no arguments: the `lean-test` job of CI Jobs, and Nix CI's `ix-tests` | the quick suites |
 | `ci:cli` | a step of the `lean-test` job | the command-line integration tests |
-| `ci:compile-pipeline` | a merge-tests partition | the Lean and Rust compilers against each other (input conversion, the reference graph and its condensation, serialization, decompilation, Lean's auxiliaries on closure-only environments) and the compilers' refusals |
-| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, checker-support grounding, packing, admission of selected targets, and the certified checker's pinned subjects and acceleration inputs |
-| `ci:compile`, `ci:decompile` | one merge-tests partition each | the whole test environment through the compiler, and back |
-| `ci:misc` | a merge-tests partition, with the ZK voting prover | the Rust kernel on the test environment and the tutorial, sharding, catalog and commit I/O, the primitives, and the IxVM suite |
-| `ci:landing-compilers` | a merge-tests partition | the Lean compiler's output independent of its schedule, on the fixture corpus; the Rust compiler's compile, serialize and decompile roundtrip over the test environment |
-| `ci:landing-initstd` | a merge-tests partition | end-to-end checks on Init+Std, in process: the certified compile with its report checks against the pipeline and the Rust compiler, role binding and evidence, a reading premise on every inductive, and the admission hash |
-| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks and the Rust comparison, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which the Rust kernel must check with every role of the default table admitted; and `ix validate-lean` fidelity |
+| `ci:compiler-closures` | a merge-tests partition | selected closures against the whole environment, auxiliary closure addresses, checker-support grounding, packing, the certified checker's pinned subjects and acceleration inputs, and the binding proof through the `ix` binary |
+| `ci:misc` | a merge-tests partition, with the ZK voting prover | the tutorial, sharding, catalog and commit I/O, and the IxVM suite |
+| `ci:landing-initstd-cli` | a merge-tests partition | Init+Std through the `ix` binary: `ix compile-lean` with its report checks, whose artifact must match the reference digest in `Tests/Fixtures/initstd-reference.txt` and which `ix check-lean` must check with every role of the default table admitted; the Rust, pure and admission BLAKE3 on every record, blob and binding of that artifact; and `ix validate-lean` fidelity |
 | `manual` | by hand only | entries that need inputs outside the repository, take minutes or hours, or are diagnostics; each states its reason |
 
 The manual runners that prove through the production `ix_aggr` circuit,
 `aggregate-proof` and `aggregate-binding-reuse`, take minutes of recursion and
 about 190 GB, three quarters of a 32-CPU merge-tests runner's memory, so they
-stay manual. `binding-proof-cli` (`ci:cli`) runs
+stay manual. `binding-proof-cli` (`ci:compiler-closures`) runs
 `aggregate-binding-reuse`'s flow without its two aggregates: the binding proof,
 the shard proofs that assume it, their composition with it, and the refusals
 without it; the aggregation circuit's handling of the binding is tested in
-`ix-aggr` (primary).
+`ix-aggr` (primary). Its proving budget is 64 GiB, so it runs in the merge
+queue, on a 32-CPU runner, rather than in every pull request's `lean-test`.
 
 `aggregate-toolchains` is also manual: it proves the committed library fixtures
 from Lean 4.29.0, 4.33.1, 4.34.1 and 4.35.0 with one IxVM key, discharges each
@@ -82,8 +79,8 @@ home directory. Its registration and manual-run reason live in
 `Tests/Main.lean`; its full flow is in
 [`Tests/AggrToolchains.lean`](../Tests/AggrToolchains.lean).
 
-`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the three
-landing partitions. The registry's primary self-test, `ixtests-registry`,
+`lake test -- --tier <tier>` runs one tier; `--tier landing` runs the landing
+partition. The registry's primary self-test, `ixtests-registry`,
 fails when a CI tier has no entry, when no workflow runs a CI tier (comments
 do not count), or when a workflow names a tier the registry does not define.
 It also fails when an entry of `required` in `Tests/Main.lean` is missing,
@@ -93,6 +90,17 @@ means editing the list in the same change. The check of the workflows is
 textual: a step disabled by an `if:` still counts. A merge-tests partition
 must finish well within the merge queue's status-check timeout: split a tier
 into two jobs before it approaches it.
+
+The primary tier runs in two places per event: incrementally in `lean-test`,
+and in Nix CI's sandbox from the Nix-built test binary on a fresh copy of the
+tracked sources (the flake's one check, `ix-tests`; the Rust lints and tests
+are `rust-test`'s). Nix CI's development shell only builds the library. In the
+merge queue, the `build` job of Merge tests builds the partitions' targets once
+on their sticky lineage, and the partitions start from its snapshot; each
+partition's log says whether it did. Valgrind runs `ffi-tests`, the `ffi`
+suite as an executable of its own, whose import closure leaves out the test
+binary's proofs. The certification statements' freeze, `Ix.Cert.Audit`, is
+built by `check-kernel` and `lake lint`, not by the test binary.
 
 ## Required checks
 
@@ -112,11 +120,12 @@ Do not require the gates' `interrupted` or `Detect Spot interruption` checks.
 Independent GitHub-hosted or security requirements can remain, provided they
 also report the checks the merge queue expects.
 
-CI Jobs and Nix CI run on both `pull_request` and `merge_group`. The ignored
-tests and the certified kernel gate (`lake run check-kernel --with-model`, a
-merge-tests partition) run against the merge group's synthetic commit, or on
-an authorized `!merge-tests` comment. The pull-request-only stub publishes
-`merge-gate / pass` so a PR can enter the queue before the ignored suites run.
+CI Jobs and Nix CI run on both `pull_request` and `merge_group`. The
+merge-queue test tiers and the certified kernel gate (`lake run check-kernel
+--with-model`, a merge-tests partition) run against the merge group's synthetic
+commit, or on an authorized `!merge-tests` comment. The pull-request-only stub
+publishes `merge-gate / pass` so a PR can enter the queue before the
+merge-queue suites run.
 It never runs on `merge_group`, and merge-tests.yml never runs on
 `pull_request`, so each commit shows one `merge-gate / pass` check under the
 shared workflow name.
@@ -160,3 +169,40 @@ artifact under the same name so a recovered job cannot fail on a duplicate
 upload.
 
 See [RunsOn's merge queue guidance](https://runs-on.com/docs/costs/spot-pricing/#merge-queues).
+
+## Retired suites
+
+Two groups of suites were retired:
+
+- those that tested the deleted Rust compiler, Rust kernel and ShardMap;
+- those whose property the certified compiler and kernel now prove.
+
+The certification proves soundness, that what is accepted is correct. It does not prove completeness, that every valid input is accepted. Completeness, and behaviour at scale, are exercised by the real-corpus runs in the merge queue:
+
+- `initstd-reference` compiles Init+Std, pins its bytes, and checks every constant with `ix check-lean`.
+- `fidelity-initstd` reads back and decompiles every record of Init+Std.
+
+Each entry below says what replaced the suite, or why it was dropped.
+
+**Dropped, because the other side is deleted:**
+
+- **The Rust differentials:** `rust-compile`, `rust-decompile`, `rust-serialize`, the `*-cross` and `*-canon-roundtrip` checks, `kernel-check-const`, `kernel-check-env`, `kernel-ixon-roundtrip`, `exact-sharing-ffi`, `shard-map`, and `check-kernel`'s codec differential (`kernel-codec`).
+
+**Dropped, because a proof or a corpus run covers them:**
+
+- **`compile-schedule-identity`** (landing). It compared three things: the wave fold at several widths, a test-only live-state reference schedule, and the streamed pipeline at 1, 4 and 16 workers. None of these comparisons is needed now:
+  - The IO pipeline computes the fold by type: `reportIO` returns `{r // r = Ix.Cert.compileReport env}` (`Ix/Compile/ReadyCompile.lean`).
+  - The fold's value doesn't depend on its width (`Ix.Cert.Schedule.compileEnvFold_width`).
+  - No other path ran the reference schedule. It isn't proved that the wave-snapshot fold equals a fold that compiles one block at a time on live state (`Ix/Cert/Schedule.lean`), but nothing compiles that way.
+- **`cert-compile-parity-initstd`** (landing). It compared `Ix.Cert.compile` with the IO pipeline and with the Rust compiler on Init+Std. The first equality is `reportIO`'s type, and the Rust compiler is deleted. `initstd-reference` pins the bytes of the Init+Std artifact.
+- **The Batteries leg of `compile-determinism`.** `initstd-reference`'s pinned digest is the stronger check across processes at scale.
+- **`check-kernel`'s level comparison.** `leqCore_sound` proves soundness, and the corpus runs exercise completeness.
+- **`check-kernel`'s quotient Source on Init and Std.** The nominal-to-quotient Source bridge is proved (`Ix.LeanIngress.NominalQuotient`, `Ix.Cert.Quotient`), and `initstd-reference`'s compile runs the same ingress on Init+Std.
+- **`check-kernel`'s Init+Std reader fidelity** (the first 20,000 records). `fidelity-initstd`'s phases 3 and 4 compare every record of Init+Std and require full source coverage.
+- **`compile-claim-conflict`.** The compile is certified (`CompileCorrect`). The corpus compiles exercise its completeness.
+- **`decompile` and `decompile-diff`.** `fidelity-initstd`'s phase 5 is the decompile round trip on Init+Std.
+- **`kernel-read-cache`.** The read cache only serves `kernel-check-ixe`'s diagnostics. The user-axiom tests run its path.
+
+**Replaced:**
+
+- **`record-decoding`.** Its refusals moved into `kernel-record-check` (primary): orphan, noncanonical and oversized records, phase precedence, and a cache beside bad bytes. `kernel-check-ixe` passes host-decoded records straight to the certified step, so these refusals aren't covered by a proof. The parallel decoder's agreement with the serial one is proved (`Ix.RoleBinding.RecordDecoding.parallel_eq`, `recordStore_eq_parallel`).

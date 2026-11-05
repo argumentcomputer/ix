@@ -440,35 +440,20 @@ module KernelInfer {
       assert_eq!(d, 1, "inferred type is not def-eq to the expected type");
     }
 
-  fn try_dec_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, head_lvls: Lists::List<KernelTypes::KLevel>,
+  fn try_dec_dispatch(rc: KernelRoles::RoleCtx, head_addr: Bytes::AddressRef, op: Field, head_lvls: Lists::List<KernelTypes::KLevel>,
                             spine: Lists::List<KernelTypes::KExpr>, types: Lists::List<KernelTypes::KExpr>)
                             -> (Field, KernelTypes::KExpr) {
       match UInt32::less_than_fields(Lists::length(spine), 2) {
         1 => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
         _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_dec_lt()) {
+          match op {
             1 => {  dec_rewrite_lt_to_le(rc, spine, types) } ,
-            _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_dec_le()) {
-            1 => {  dec_nat(rc, 1, head_addr, head_lvls, spine, types) } ,
-            _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_nat_dec_eq()) {
-            1 => {  dec_nat(rc, 0, head_addr, head_lvls, spine, types) } ,
-            _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_dec_lt()) {
-            1 => {  dec_rewrite_int_lt_to_le(rc, spine, types) } ,
-            _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_dec_le()) {
-            1 => {  dec_int(rc, 1, head_addr, head_lvls, spine, types) } ,
-            _ => {
-          match KernelRoles::role_is(rc, head_addr, KernelRoleSpec::role_int_dec_eq()) {
-            1 => {  dec_int(rc, 0, head_addr, head_lvls, spine, types) } ,
+            2 => {  dec_nat(rc, 1, head_addr, head_lvls, spine, types) } ,
+            3 => {  dec_nat(rc, 0, head_addr, head_lvls, spine, types) } ,
+            4 => {  dec_rewrite_int_lt_to_le(rc, spine, types) } ,
+            5 => {  dec_int(rc, 1, head_addr, head_lvls, spine, types) } ,
+            6 => {  dec_int(rc, 0, head_addr, head_lvls, spine, types) } ,
             _ => {  (0, (&(KernelTypes::KExprNode::BVar(0)))) } ,
-          } } ,
-          } } ,
-          } } ,
-          } } ,
-          } } ,
           } } ,
       }
     }

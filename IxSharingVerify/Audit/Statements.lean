@@ -7,7 +7,6 @@ import IxSharingVerify.FamilyFast
 import IxSharingVerify.FamilyNormalize
 import IxSharingVerify.FamilyNormalizeSpec
 import IxSharingVerify.FamilyWritingBound
-import IxSharingVerify.UniformCappedSize
 import Ix.LeanIngress.Expr
 import Ix.Sharing.FamilyContext
 
@@ -77,9 +76,13 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.Parallel.exactTable_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.Parallel.tableWithDepth_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.Parallel.table_eq, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.Parallel.tableSequential_eq, standardAxioms := noChoice },
+  { root := ``Ix.Sharing.Family.Parallel.areaParallel_copy_bound },
+  { root := ``Ix.Sharing.Family.Parallel.tableForArea_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.Parallel.table_eq_function, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.foldChoices_eq_fast, standardAxioms := noChoice },
   { root := ``Ix.Sharing.Family.LightContext.trace_eq_parallel, standardAxioms := standard },
+  { root := ``Ix.Sharing.Family.LightContext.traceForArea_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.trace_walk_eq, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.step_eq_area, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.LightContext.expanded_eq, standardAxioms := standard },
@@ -152,8 +155,7 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.familyUniform_eq_reference, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.familyAtWidth_eq_reference, standardAxioms := standard },
   -- Groundwork for an output-size bound (`FamilyFullWitness`, `FamilyResidual`,
-  -- `FamilyLocalWriting`, `FamilyWritingBound`) and the arithmetic contract of
-  -- Rust's capped classification cost (`UniformCappedSize`).
+  -- `FamilyLocalWriting`, `FamilyWritingBound`).
   { root := ``Ix.Sharing.Family.fullChoices_member, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.fullChoices_selected_mem, standardAxioms := noChoice },
   { root := ``Ix.Sharing.Family.initial_full_member, standardAxioms := standard },
@@ -190,19 +192,6 @@ def roots : Array RootAllowance := #[
   { root := ``Ix.Sharing.Family.residual_semantic_row, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.fullStored_ulen_le_residual, standardAxioms := standard },
   { root := ``Ix.Sharing.Family.fullStored_encoding_bound, standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.CappedSize.excluded_div, standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.CappedSize.excluded_fast, standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.CappedSize.excluded_size_lt_two, standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.CappedSize.cap_size, standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.CappedSize.cap_occ, standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.CappedSize.classification_capped, standardAxioms := standard },
-  { root := ``Ix.Sharing.Verify.CappedSize.cap_add_u128_safe, standardAxioms := noChoice },
-  { root := ``Ix.Sharing.Verify.CappedSize.cap_add, standardAxioms := noChoice },
-  { root := ``Ix.Sharing.Verify.CappedSize.cap_fold, standardAxioms := noChoice },
-  { root := ``Ix.Sharing.Verify.CappedSize.cap_empty_telescope, standardAxioms := noChoice },
-  { root := ``Ix.Sharing.Verify.CappedSize.empty_no_cuts, standardAxioms := noChoice },
-  { root := ``Ix.Sharing.Verify.CappedSize.empty_telescope_natural, standardAxioms := noChoice },
-  { root := ``Ix.Sharing.Verify.CappedSize.certainExcludedTest_contract, standardAxioms := #[] },
   -- The meaning of the canonical construction: the pointer cache, ingestion
   -- of the table and the roots, and canonical numbering preserve what each
   -- input expression denotes.

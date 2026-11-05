@@ -3,8 +3,6 @@
   the mutual, canonicity, level-spelling, IxVM and partial/well-founded
   fixture families, with the library inductive families their auxiliaries
   reference, closed over their dependencies (`collectDeps`).
-  `compile-schedule-identity`, `decompile-diff` and the kernel parity
-  environment compile it.
 -/
 import Ix.Common
 import Ix.Meta

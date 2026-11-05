@@ -17,10 +17,9 @@
   declaration's expressions as given, which is exactly the Mathlib
   WF-eq_def situation these fixtures reproduce.
 
-  Consumed by: `validateAuxClosure` (compile-schedule-identity /
-  decompile-diff), and — via the Tests binary env — the whole-env
-  tc-roundtrip and kernel-ixon-roundtrip suites, where the stage-1
-  spelling decorations (Lean `Ix.Tc` + Rust kernel) are load-bearing.
+  Consumed by: `validateAuxClosure` and the compiler/kernel test suites
+  over the Tests binary environment, where the stage-1 spelling decorations
+  are load-bearing.
 
   Import note: `Lean.Elab.BuiltinEvalCommand` (the `run_cmd` elab), NOT
   all of `Lean` — the roundtrip suites' envs are this file's module

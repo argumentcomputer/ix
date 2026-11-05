@@ -1966,11 +1966,9 @@ impl Env {
   }
 
   /// [`Env::put_file`] with the sorted const-address table and its
-  /// merkle root supplied by the caller. `rs_compile_env` needs the
-  /// root even on a fail-closed abort where no file is written, so it
-  /// computes both up front and hands them in here — previously the
-  /// table was collected+sorted and the ~2·N-node tree hashed twice
-  /// per compile. `const_addrs` MUST be exactly
+  /// merkle root supplied by a caller that already has them (the
+  /// catalog merge), so the table is not collected and sorted, nor the
+  /// ~2·N-node tree hashed, a second time. `const_addrs` MUST be exactly
   /// `self.consts` keys lex-sorted, and `root` their canonical merkle
   /// root; debug builds assert the former.
   #[cfg(not(target_arch = "riscv64"))]

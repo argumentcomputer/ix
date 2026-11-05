@@ -6,7 +6,7 @@ public import Ix.Address
 /-!
 Pure Lean protocol types (`IOBuffer`, `QueryCount`, `CommitmentParameters`,
 `FriParameters`, `ShardRetention`, `buildClaim`) and Rust-backed environment /
-manifest FFI (`EnvHandle`, `shardManifestFromPartition`, `shardManifestRefine`,
+manifest FFI (`EnvHandle`, `shardManifestRefine`,
 `detectedRamBudgetBytes`).
 -/
 
@@ -133,10 +133,6 @@ def ShardRetention.code : ShardRetention → Nat
   | .auto => 0
   | .retain => 1
   | .regenerate => 2
-
-@[extern "rs_shard_manifest_from_partition"]
-opaque shardManifestFromPartition : @& EnvHandle →
-  @& ByteArray → @& ByteArray → @& String → IO Unit
 
 @[extern "rs_shard_manifest_refine"]
 opaque shardManifestRefine : @& EnvHandle → @& String →
