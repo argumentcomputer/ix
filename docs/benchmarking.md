@@ -178,8 +178,9 @@ arena-copy fix; they do not measure end-to-end proving or CI wall time.
 Caching the environment's role binding across constants in the benchmark
 runners (`assumeBinding := true` in `bench-typecheck`, matching the production
 claim tree where the binding is proven once and assumed by per-constant claims,
-and upfront `verdict_work` support checking in `rs_kernel_check_anon_consts`)
-eliminates redundant per-constant role-table re-admission:
+and upfront `verdict_work` support checking in the Rust kernel's anonymous
+check, since retired) eliminates redundant per-constant role-table re-admission.
+The `ooc` column was measured when `ooc` ran the Rust kernel:
 
 | Constant | Checked constants (assumed binding) | Stage 1 FFT cost, billions (`09ee682` → assumed binding) | `ooc` check-time (s) |
 |---|---:|---:|---:|
@@ -222,7 +223,7 @@ Compiler failures, missing rows and kernel rejections still fail their jobs.
 
 The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
 reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
-and [kernel.md](kernel.md). It is separate from the compiler and Rust kernel benchmarks above;
+and [kernel.md](kernel.md). It is separate from the compiler and `ooc` benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
 ### Aggregate baselines
