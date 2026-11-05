@@ -315,6 +315,16 @@ def runExit (report : CheckReport) (wholeRequested : Bool) (hostRequested : Bool
   else if !report.conditionalOn.isEmpty then exitConditional
   else 0
 
+/-- The results-row status of a completed run (`Ix.Benchmark.Results`): its
+exit status (`runExit`, no host statement asked for) by name. `rejected` (3),
+`partial` (`exitPartial`), `conditional` (`exitConditional`), else `ok`. -/
+def runStatus (report : CheckReport) (wholeRequested : Bool) : String :=
+  let code := runExit report wholeRequested
+  if code == Ix.Benchmark.Results.exitRejected then "rejected"
+  else if code == exitPartial then "partial"
+  else if code == exitConditional then "conditional"
+  else "ok"
+
 /-- The user axioms a run's declaration checks admitted: of those they
 read (`read`), the ones whose records they accepted (`rows`), by address. A
 record read and then blocked, declined or rejected admits nothing; this is how
@@ -532,13 +542,15 @@ private def writePerConstCsv (p : PreparedInput) (rows : Array Row) (outCsv : St
 
 /-- A benchmark results row (`Ix.Benchmark.Results`) for one run. `constants`
 is the number of records the run checked or read, whole-artifact or per name;
-`throughput` is that count per second of `check-time`. -/
-private def writeJsonReportRow (jsonPath key : String) (report : CheckReport) : IO Unit := do
+`throughput` is that count per second of `check-time`. `status` is the run's
+exit status by name (`runStatus`): `rejected`, `partial`, `conditional` or `ok`. -/
+private def writeJsonReportRow (jsonPath key : String) (report : CheckReport)
+    (wholeRequested : Bool) : IO Unit := do
   let secs := report.elapsedMs.toFloat / 1000.0
   let tput := if report.elapsedMs > 0
     then report.records.toFloat * 1000.0 / report.elapsedMs.toFloat else 0.0
   let peakRss := (← statusKb "VmHWM:") * 1024
-  let status := if report.failures.isEmpty then "ok" else "rejected"
+  let status := runStatus report wholeRequested
   Ix.Benchmark.Results.writeRow jsonPath key status
     [ ("constants", Lean.toJson report.records)
     , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
@@ -647,7 +659,7 @@ def runPerName (o : Options) (p : PreparedInput) (json : String) :
         refused := refused.push name
       | .error e => return .error e
       | .ok report =>
-        writeJsonReportRow json (key name) report
+        writeJsonReportRow json (key name) report false
         userAxioms := report.userAxioms.foldl (·.insert ·) userAxioms
         merged := { merged with
           targets := merged.targets ++ report.targets, rows := merged.rows ++ report.rows
@@ -702,7 +714,7 @@ admission: this run is CONDITIONAL on {axioms.size} user axioms and issues no ho
   IO.println s!"[check-lean] authenticated input {report.inputMs}ms; run preparation {report.prepareMs}ms; selected checker {report.subjectMicros / 1000}ms; support checker {report.supportMicros / 1000}ms; reading {report.readMicros / 1000}ms; run {report.elapsedMs}ms"
   IO.println s!"##check-lean## {report.elapsedMs} {report.passed} {report.failures.size} {report.targetsCovered}"
   if let some json := o.json? then
-    writeJsonReportRow json (o.jsonName?.getD "env") report
+    writeJsonReportRow json (o.jsonName?.getD "env") report o.wholeRequested
 
 def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let some path := p.positionalArg? "path" | p.printError "error: must specify <path>"; return 2

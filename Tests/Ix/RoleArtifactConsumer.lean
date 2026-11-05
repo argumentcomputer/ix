@@ -86,10 +86,12 @@ private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBindi
     let r ← checked (← runPrepared p cfg .all)
     ensure (r.failures.isEmpty && r.hostStatement.isNone &&
       r.artifactAdmission == some (.conditional cheatEnv.consts.size none #[cheatAddress]) &&
-      runExit r true == exitConditional && runExit r true true == _root_.Ix.Benchmark.Results.exitUsage)
+      runExit r true == exitConditional && runExit r true true == _root_.Ix.Benchmark.Results.exitUsage &&
+      runStatus r true == "conditional")
       s!"the conditional whole run is not reported as conditional on cheat: {repr r.artifactAdmission}"
     let r ← checked (← runPrepared p cfg (.only #[if anon then toString useAddress else "useCheat"]))
-    ensure (r.failures.isEmpty && r.userAxioms == #[cheatAddress] && runExit r false == exitConditional)
+    ensure (r.failures.isEmpty && r.userAxioms == #[cheatAddress] && runExit r false == exitConditional &&
+      runStatus r false == "conditional")
       "a selected run through a user axiom is not conditional on it"
     -- a user axiom the run reads and then rejects admits nothing: the run lists
     -- only the user axioms whose records it accepted (`admittedUserAxioms`)
@@ -98,7 +100,7 @@ private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBindi
       else #["useCheat", "badCheat"])))
     let bad := r.targets.filter (·.target.address == badAddress)
     ensure (bad.size == 1 && bad.all (fun t => t.outcome == "reject" && !t.reason.startsWith "reader:") &&
-      r.failures.size == 1 && r.userAxioms == #[cheatAddress])
+      r.failures.size == 1 && r.userAxioms == #[cheatAddress] && runStatus r false == "rejected")
       s!"a rejected user axiom was listed as admitted: {r.userAxioms}, {bad.map (·.reason)}"
     let natDiv := if anon then toString (generated.table.addressOf? .natDiv).get! else "Nat.div"
     let r ← checked (← runPrepared p cfg (.only #[natDiv]))

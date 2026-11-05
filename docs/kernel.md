@@ -1304,7 +1304,8 @@ runs each name's full closure on its own and writes one row per name, keyed
 `<json-name>/<name>` when `--json-name` is given; a name that resolves to no
 declaration is reported, and the other names still run. In every row,
 `constants` is the number of records the run checked or read, and `throughput`
-is that number per second. `--per-const <file>` writes one CSV row per record
-for the same run or runs. A run exits with the same status with `--json` as
-without.
+is that number per second; `status` names the run's exit: `ok` (0), `rejected`
+(3), `partial` (4) or `conditional` (5). `--per-const <file>` writes one CSV
+row per record for the same run or runs. A run exits with the same status with
+`--json` as without.
 

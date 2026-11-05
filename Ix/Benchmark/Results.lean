@@ -4,17 +4,24 @@
   Every measured tool reports results as one JSON object per benchmark name
   in a single file:
 
-    { "<name>": { "status": "ok" | "rejected" | "oom",
+    { "<name>": { "status": "ok" | "rejected" | "partial" | "conditional"
+                            | "oom" | "crash",
                   "<metric>": <number>, ... } }
 
   Rows are flushed after every name, so a killed process still leaves a
   complete file of the rows measured so far. Tools write `ok` or `rejected`;
-  `oom` is merged in by the orchestrator (`ix bench run`) after an abnormal
-  exit — a tool never observes its own OOM kill.
+  `ix check-lean` also writes `partial` (every declaration passed, but the
+  whole artifact asked for carries no role binding) and `conditional` (it
+  passed only with user axioms admitted). `oom` and `crash` are merged in by
+  the orchestrator (`ix bench run`) after an abnormal exit — a tool never
+  observes its own OOM kill. Only `ok` rows become bencher data points
+  (`ix bench bmf`); a `rejected` row fails `ix bench run`'s gate, as a
+  missing row does.
 
   Exit codes are the failure channel (no stdout markers, no log grepping):
   0 = every row ok; `exitUsage` = bad invocation; `exitRejected` = the
-  kernel rejected at least one constant (its row is on disk). Any other
+  kernel rejected at least one constant (its row is on disk); `ix check-lean`
+  exits 4 with a `partial` row and 5 with a `conditional` one. Any other
   exit is an infrastructure failure.
 -/
 module

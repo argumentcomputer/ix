@@ -159,8 +159,8 @@ private def check : IO Nat := do
       "partial-check exit or notice changed"
     -- `--json`, `--json-name` and `--per-const`. A whole run writes one results row,
     -- keyed by --json-name, and the per-record CSV, and exits as the same run
-    -- without --json does: 3 with a failing subject, `exitPartial` for the clean
-    -- unbound artifact.
+    -- without --json does, the row's status naming the exit: 3 (`rejected`) with a
+    -- failing subject, `exitPartial` (`partial`) for the clean unbound artifact.
     let results := dir / "results.json"
     let csv := dir / "perconst.csv"
     let row := fun (key : String) => do
@@ -190,7 +190,7 @@ private def check : IO Nat := do
     let partialJson ← IO.Process.output {
       cmd := ix.toString, args := #["check-lean", cleanPath.toString, "--json", results.toString], env := neutral }
     expect partialJson exitPartial
-    ensure ((← status "env") == some "ok") "unbound whole --json row missing"
+    ensure ((← status "env") == some "partial") "unbound whole --json row missing or not partial"
     -- One full-closure row per selected name, keyed after `<json-name>/`, and one
     -- CSV over every per-name run; --json-name and --per-const are honoured.
     reset ()

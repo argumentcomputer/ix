@@ -27,8 +27,13 @@ and one exit-code convention (`Ix/Benchmark/Results.lean`):
 - `status` is `ok` or `rejected` (written by the tool) or `oom` (merged in by
   `ix bench run` after an abnormal exit — a process never observes its own
   OOM kill). An `oom` row keeps whatever metrics landed before the kill.
+  `ix check-lean` also writes `partial` (exit 4: every declaration passed, but
+  the whole artifact carries no role binding) and `conditional` (exit 5: it
+  passed only with user axioms admitted).
 - Exit codes: `0` all ok · `2` usage error · `3` the kernel **rejected** a
-  constant (its row is on disk) · anything else is an infrastructure failure.
+  constant (its row is on disk) · `4`/`5` `ix check-lean`'s partial and
+  conditional runs (their rows are on disk) · anything else is an
+  infrastructure failure.
 
 There is no output scraping anywhere: no marker lines, no log grepping, no
 sentinel-key jq. State flows through rows and exit codes only. A rejected or
