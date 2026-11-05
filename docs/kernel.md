@@ -412,8 +412,8 @@ exits with 5 rather than 0 ("`ix check-lean`" below). The binding must bind
 `sorryAx`, `propext` and `Classical.choice`
 (`Ix.RoleBinding.UserAxioms.requireAxiomRoles`): a binding that leaves one out
 keys Lean's own constant as an input constant, which the conditional checks
-would admit as a user axiom, so such an artifact is refused before any
-checking.
+would admit as a user axiom, so such an artifact, like one with no binding, is
+refused before any checking.
 
 ## The typing tier
 
