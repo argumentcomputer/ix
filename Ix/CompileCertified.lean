@@ -205,12 +205,6 @@ def compilePhasesOf (leanEnv : Lean.Environment)
 
 end Ix.CompileM
 
-namespace Ix.Cert.Compile
-
-abbrev compileCertified := Ix.CompileM.compileCertified
-
-end Ix.Cert.Compile
-
 namespace Ix.RoleBinding.Compile
 
 /-- The certified compiler as `finalize`'s backend: the role support and the
