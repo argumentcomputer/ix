@@ -117,6 +117,12 @@ private def outcomes (key : Nat → Key md) : IO Nat := do
     let _ ← runRecords src [] names addresses { workers := some 0 }
   catch e => refusedZero := e.toString == "record check: the pool needs a worker"
   ensure refusedZero "zero workers did not give the precise configuration error"
+  -- `kernel-check-ixe`'s hand-rolled row line is `Row.json`'s compressed
+  -- rendering, byte for byte (key order, escapes, numbers)
+  let escaped : Row := ⟨addr 0, #["a\"b", "c\\d\ne", "é\u0001"], "kind\t", "decline",
+    "reason: \"x\"\r\n", 12, 3⟩
+  for row in (baseline.rows ++ tiered.rows).push escaped do
+    ensure (row.jsonLine == row.json.compress) s!"Row.jsonLine is not Row.json: {row.jsonLine}"
   return baseline.rows.size + tiered.rows.size
 
 private def compiled : IO Nat := do
