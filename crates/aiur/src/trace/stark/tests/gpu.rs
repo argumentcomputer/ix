@@ -130,6 +130,43 @@ fn released_device_record_serves_identical_tiles() {
   assert_eq!(tiles(&device), before, "host copy outlives the record");
 }
 
+/// Tiles requested at once on a small pool after a release: one re-uploads
+/// the record under the state lock while the others wait for it, so the
+/// re-upload must not run queued tile jobs on its own thread.
+#[cfg(feature = "parallel")]
+#[test]
+fn concurrent_tiles_restore_a_released_record_once() {
+  use rayon::prelude::*;
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  let record = program.execute(ENTRY, vec![3]).unwrap();
+  let rows = backend.record_rows(&record).unwrap();
+  let plans = DevicePlans::new(&backend);
+  let device = DeviceRecord::upload(&backend, &plans, &record, 0).unwrap();
+  let circuits = device_circuits(&plans);
+  let tile = |ci: usize| {
+    let height = device.height(ci).unwrap();
+    device.tile_words(ci, 0, 0, height, height, rows[ci], GARBAGE).unwrap()
+  };
+  let before: Vec<_> = circuits.iter().map(|&ci| tile(ci)).collect();
+  let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+  for _ in 0..8 {
+    device.release(0);
+    assert!(!device.is_resident());
+    let jobs: Vec<_> = circuits.iter().cycle().take(16).copied().collect();
+    let tiles: Vec<_> =
+      pool.install(|| jobs.par_iter().map(|&ci| tile(ci)).collect());
+    for (ci, words) in jobs.iter().zip(tiles) {
+      let index = circuits.iter().position(|c| c == ci).unwrap();
+      assert_eq!(words, before[index]);
+    }
+    assert!(device.is_resident());
+  }
+}
+
 #[test]
 fn allowlist_selects_circuits_and_reports_causes() {
   let (program, artifact) = grouped();

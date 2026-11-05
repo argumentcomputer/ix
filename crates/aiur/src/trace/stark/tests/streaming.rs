@@ -251,14 +251,15 @@ fn streamed_supplier_rejects_a_changed_second_round() {
     &[3],
     &record.output,
     StreamPlan {
-      shards: 1,
+      shards: 2,
       memory_intervals: backend.record_shape(&record).unwrap().memory_intervals,
       retention: Retention::Regenerate,
     },
     |_| {
       calls += 1;
       let mut traces = backend.generate_stage_1(&record, "root", &[3])?;
-      if calls == 2 {
+      // Round one supplies shards one and zero; round two regenerates one.
+      if calls == 3 {
         traces[0].values[0] += Val::ONE;
       }
       Ok(traces)
@@ -596,12 +597,19 @@ fn pipelined_population_matches_serial_proofs() {
       assert!(!report.pipelined);
       let (pipelined, report) =
         prove_scheduled(&backend, &record, &layout, retention, true);
-      let supplies = layout.shards.len()
-        * if matches!(retention, Retention::Retain) { 1 } else { 2 };
+      let shards = layout.shards.len();
+      // Shard zero's commitment carries over the barrier; the others are
+      // supplied again when regenerated.
+      let supplies = if matches!(retention, Retention::Retain) {
+        shards
+      } else {
+        2 * shards - 1
+      };
+      assert_eq!(backend.supply_order(shards, retention).len(), supplies);
       assert_eq!(report.pipelined, supplies > 1);
       assert_eq!(pipelined, serial, "cap {rows}, {retention:?}");
       assert_eq!(report.shards.len(), supplies);
-      assert_eq!(report.rounds.len(), supplies / layout.shards.len());
+      assert_eq!(report.rounds.len(), if supplies > shards { 2 } else { 1 });
       assert!(!report.top_circuits.is_empty());
     }
   }
