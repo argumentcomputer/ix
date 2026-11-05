@@ -22,9 +22,10 @@ their input:
    (`Ix.CompileM.checkPreparedSource`: no binder contract left unresolved,
    every semantic contract inspects).
 2. **Canonicalization** (`canonInput`): `Ix.CanonM.canonChunk` on consecutive
-   slices, on tasks. A chunk's value is `(nameS, constS)` of each of its
-   constants (`Ix.Cert.Canon.canonChunkCorrect`), and the slices are joined in
-   order, so the environment does not depend on the worker count.
+   slices (`Ix.CanonM.chunks`), on tasks. A chunk's value is `(nameS, constS)`
+   of each of its constants (`Ix.Cert.Canon.canonChunkCorrect`), and the
+   slices are joined in order, so the environment does not depend on the
+   worker count.
 3. **The compile**: `Ix.Cert.compileReport`, with its checks, at the default
    sharing limits, which it fixes. Execution runs through the
    `Ix.Compile.ReadyCompile.reportIO` subtype bridge
@@ -34,13 +35,12 @@ their input:
    hypothesis of `Ix.Cert.checkReport_sound` and `Ix.Cert.CompileCorrect`
    directly from the parallel ready-queue execution without re-running
    sequential `compileEnv`.
-4. **Accounting**: every failure it reports is an input constant's. With
-   `compileReport`'s coverage check, every input constant is then published or
-   reported as failed, and never both (the streamed pipeline's source
-   accounting, `Ix.Compile.SourceGraph.Accounting`).
+4. **Accounting**: every failure it reports is an input constant's
+   (`failureOutside`). With `compileReport`'s coverage check, every input
+   constant is then published or reported as failed, and never both.
 5. **Resources**: an input with semantic contracts compiles completely, and its
-   artifact validates (`Ix.Resource.validate`), as the streamed pipeline's
-   resource post-step requires (`Ix.CompileM.resourcePostStep`).
+   artifact validates (`Ix.Resource.validate`), before `finalize` and after it
+   (`validateFinalized`).
 
 The artifact's role support and certificates are compiled the same way
 (`certifiedBackend`), by `Ix.RoleBinding.Compile.finalize`.
@@ -80,7 +80,8 @@ private def dropAsync (α : Type) (x : α) : IO (Task (Except IO.Error Unit)) :=
 list, canonicalized on `workers` tasks over consecutive slices, joined in order. -/
 def canonInput (consts : Array (Lean.Name × Lean.ConstantInfo)) (workers : Nat) :
     Ix.Environment :=
-  let tasks := (Ix.Compile.SourceGraph.Stream.partition consts workers).map fun part =>
+  let size := max 1 ((consts.size + workers - 1) / workers)
+  let tasks := (Ix.CanonM.chunks consts size).map fun part =>
     Task.spawn fun _ => Ix.CanonM.canonChunk part
   { consts := tasks.foldl (init := Std.HashMap.emptyWithCapacity consts.size) fun m t =>
       t.get.foldl (fun m (n, c) => m.insert n c) m }
@@ -176,7 +177,8 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
   compileCertifiedPrepared prepared annotated workers log
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
-validates too, as the streamed pipeline checks it after `finalize`. -/
+validates too: `compileCertifiedPrepared` validates the compiled artifact, this
+the finalized one. -/
 def validateFinalized (annotated : Bool) (artifact : Ixon.Env) : Except String Unit := do
   if annotated then
     let _ ← Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact)

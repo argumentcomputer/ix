@@ -14,8 +14,6 @@ import Std.Data.HashSet.Lemmas
 public import Ix.IndFlags
 public import Ix.Compile.Publication
 public import Ix.Compile.SourceContract.Transport
-public import Ix.Compile.SourceGraph.Prepass
-public import Ix.Compile.SourceInput
 public import Ix.Resource.Addressed
 
 /-!
