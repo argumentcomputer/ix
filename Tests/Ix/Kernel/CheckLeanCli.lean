@@ -82,9 +82,7 @@ private def check : IO Nat := do
     IO.FS.writeBinFile corrupt tampered
     IO.FS.writeFile empty "# only comments\n"
     let neutral : Array (String × Option String) :=
-      #["IX_TC_DEBUG_CONST", "IX_TC_STEP_TRACE", "IX_TC_STATS", "IX_TC_NO_ACCEL", "IX_MAX_REC_FUEL",
-        "IX_KERNEL_CHECK_ACTIVE_SLOW_MS", "IX_PROGRESS_MS"].map (·, none) ++
-        #[("IX_KERNEL_CHECK_PROGRESS_MS", some "0"), ("IX_KERNEL_CHECK_SLOW_MS", some "0")]
+      #[("IX_PROGRESS_MS", none), ("IX_KERNEL_CHECK_PROGRESS_MS", some "0"), ("IX_KERNEL_CHECK_SLOW_MS", some "0")]
     let calls ← IO.mkRef 0
     let call := fun (args : Array String) (vars : Array (String × Option String)) => do
       calls.modify (· + 1)
@@ -123,17 +121,12 @@ private def check : IO Nat := do
     expect replay 3
     checkRow replay (0 : Nat) (1 : Nat) (1 : Nat)
     for args in [#["--consts", "missing"], #["--consts", ""], #["--consts-file", empty.toString],
-        #["--max", "0"], #["--workers", "0"], #["--no-verify"], #["--clear-every", "1"]] do
+        #["--max", "0"], #["--workers", "0"]] do
       expect (← call args #[]) 2
-    for (name, value) in [("IX_TC_DEBUG_CONST", "x"), ("IX_TC_STEP_TRACE", "1"), ("IX_TC_STATS", "1"),
-        ("IX_TC_NO_ACCEL", "1"), ("IX_MAX_REC_FUEL", "0"), ("IX_KERNEL_CHECK_ACTIVE_SLOW_MS", "1"),
-        ("IX_TC_STATS", "bad"), ("IX_KERNEL_CHECK_PROGRESS_MS", "bad")] do
-      let out ← call #["--consts", "CliAlias0"] #[(name, some value)]
+    for name in ["IX_KERNEL_CHECK_PROGRESS_MS", "IX_KERNEL_CHECK_SLOW_MS"] do
+      let out ← call #["--consts", "CliAlias0"] #[(name, some "bad")]
       expect out 2
-      ensure (out.stderr.contains name) s!"unsupported setting {name} was silently ignored"
-    expect (← call #["--consts", "CliAlias0", "--clear-every", "0"]
-      #[("IX_TC_STEP_TRACE", some "0"), ("IX_TC_STATS", some "0"), ("IX_TC_NO_ACCEL", some "0"),
-        ("IX_KERNEL_CHECK_ACTIVE_SLOW_MS", some "0")]) 0
+      ensure (out.stderr.contains name) s!"malformed setting {name} was silently ignored"
     for mode in [#[], #["--anon"]] do
       calls.modify (· + 1)
       let args := #["check-lean", corrupt.toString] ++ mode
@@ -164,8 +157,64 @@ private def check : IO Nat := do
       runExit { wholeReport with targets := #[] } false == 0 &&
       (coverageNotice { wholeReport with targets := #[] } false).any (·.contains "selected checking only"))
       "partial-check exit or notice changed"
+    -- `--json`, `--json-name` and `--per-const`. A whole run writes one results row,
+    -- keyed by --json-name, and the per-record CSV, and exits as the same run
+    -- without --json does: 3 with a failing subject, `exitPartial` for the clean
+    -- unbound artifact.
+    let results := dir / "results.json"
+    let csv := dir / "perconst.csv"
+    let row := fun (key : String) => do
+      let rows ← _root_.Ix.Benchmark.Results.readRows results.toString
+      return (rows.getObjVal? key).toOption
+    let status := fun (key : String) => do
+      return (← row key).bind fun r => (r.getObjValAs? String "status").toOption
+    let constants := fun (key : String) => do
+      return (← row key).bind fun r => (r.getObjValAs? Nat "constants").toOption
+    let reset := fun () => do
+      if ← results.pathExists then IO.FS.removeFile results
+      if ← csv.pathExists then IO.FS.removeFile csv
+    let csvRows := fun () => do
+      let lines := ((← IO.FS.readFile csv).splitOn "\n").filter (!·.isEmpty)
+      ensure (lines.head? == some "name,addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost")
+        s!"per-const CSV header changed: {lines.head?}"
+      return lines.length - 1
+    reset ()
+    let jsonWhole ← call #["--json", results.toString, "--json-name", "fixture", "--per-const", csv.toString] #[]
+    expect jsonWhole 3
+    ensure ((← status "fixture") == some "rejected" && (← row "env").isNone &&
+      (← constants "fixture") == some wholeReport.records)
+      s!"whole --json row lost its key, status or record count: {← IO.FS.readFile results}"
+    ensure ((← csvRows ()) == wholeReport.rows.size) "whole --per-const CSV is not one row per record"
+    reset ()
+    calls.modify (· + 1)
+    let partialJson ← IO.Process.output {
+      cmd := ix.toString, args := #["check-lean", cleanPath.toString, "--json", results.toString], env := neutral }
+    expect partialJson exitPartial
+    ensure ((← status "env") == some "ok") "unbound whole --json row missing"
+    -- One full-closure row per selected name, keyed after `<json-name>/`, and one
+    -- CSV over every per-name run; --json-name and --per-const are honoured.
+    reset ()
+    let names := dir / "names.txt"
+    IO.FS.writeFile names "CliAlias0\nRejectedSubject\n"
+    let perName ← call #["--consts-file", names.toString, "--json", results.toString, "--json-name", "fx",
+      "--per-const", csv.toString] #[]
+    expect perName 3
+    ensure ((← status "fx/CliAlias0") == some "ok" && (← status "fx/RejectedSubject") == some "rejected" &&
+      (← row "CliAlias0").isNone && (← row "fx").isNone && ((← constants "fx/CliAlias0").getD 0) > 0)
+      s!"per-name rows lost their keys or statuses: {← IO.FS.readFile results}"
+    ensure ((← csvRows ()) > 0) "per-name --per-const CSV is empty"
+    ensure (perName.stdout.contains "1/2 subjects passed") s!"per-name summary changed\n{perName.stdout}"
+    -- An anonymous run resolves Lean names too; a name that resolves to nothing is
+    -- reported and the others still run, with the usage exit.
+    reset ()
+    let anonRows ← call #["--anon", "--consts", "CliAlias0,missing", "--json", results.toString] #[]
+    expect anonRows 2
+    ensure ((← status "CliAlias0") == some "ok" && (← row "missing").isNone &&
+      anonRows.stderr.contains "missing: unresolved")
+      s!"unresolved name aborted the per-name rows\n{anonRows.stderr}"
+    expect (← call #["--consts", "CliAlias0", "--json", results.toString, "--fail-out", failures.toString] #[]) 2
     let count ← calls.get
-    IO.println s!"check-lean CLI: {count} process controls; modes, exact aliases/cap, all five outcomes, fail-out, usage/infra exits and diagnostic flags passed"
+    IO.println s!"check-lean CLI: {count} process controls; modes, exact aliases/cap, all five outcomes, fail-out, usage/infra exits, --json/--json-name/--per-const rows passed"
     return count
   finally
     IO.FS.removeDirAll dir

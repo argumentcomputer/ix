@@ -29,6 +29,154 @@ private def withTier (env : Env) (proof : Constant) : Except String (Env × Addr
   let (env, address) := insert env projection
   return (env, owner, address)
 
+/-- Publish `name` at `address`. -/
+private def publish (env : Env) (name : String) (address : Address) : Env :=
+  let n := _root_.Ix.Name.mkStr _root_.Ix.Name.mkAnon name
+  { env with named := env.named.insert n { addr := address }, names := RawEnv.addNameComponents env.names n }
+
+/-- `axiom cheat : False` and `theorem useCheat : False := cheat`, both published:
+a user axiom, which strict checking declines, and a constant that depends on it. -/
+private def withCheat (env : Env) (falseAddress : Address) : Env × Address × Address :=
+  let cheat : Constant := {
+    info := .axio ⟨false, 0, .ref 0 #[]⟩, sharing := #[], refs := #[falseAddress], univs := #[] }
+  let (env, cheatAddress) := insert env cheat
+  let useCheat : Constant := {
+    info := .defn ⟨.thm, .safe, 0, .ref 0 #[], .ref 1 #[]⟩, sharing := #[]
+    refs := #[falseAddress, cheatAddress], univs := #[] }
+  let (env, useAddress) := insert env useCheat
+  (publish (publish env "cheat" cheatAddress) "useCheat" useAddress, cheatAddress, useAddress)
+
+/-- The user-axiom path: strict by default, `--allow-user-axioms` conditional,
+listed and without a host statement, and a binding that leaves `sorryAx`
+unbound refused. Library entry points first, then the `ix` and
+`kernel-check-ixe` binaries over every driver path, the read cache's included. -/
+private def userAxiomChecks (env tierEnv : Env) (generated : _root_.Ix.RoleBinding.Generated)
+    (ix kernel dir : System.FilePath) : IO Nat := do
+  let cfg : CheckCfg := { silent := true, progressMs := 0, slowMs := 0 }
+  let some falseAddress := generated.table.addressOf? .false | throw (IO.userError "fixture has no False")
+  let (cheatEnv, cheatAddress, useAddress) := withCheat env falseAddress
+  let (tierCheatEnv, _, _) := withCheat tierEnv falseAddress
+  let table := generated.table
+  let noSorryTable : _root_.Ix.Kernel.RoleTable :=
+    { table with bound := table.bound.filter (·.1 != _root_.Ix.Kernel.Role.sorryAx) }
+  let noSorryBytes := noSorryTable.toBytes
+  let noSorryEnv := { cheatEnv with roleBinding := some ⟨Address.admissionHash noSorryBytes, noSorryBytes⟩ }
+  let bytes ← IO.ofExcept (serEnv env)
+  let cheatBytes ← IO.ofExcept (serEnv cheatEnv)
+  let tierCheatBytes ← IO.ofExcept (serEnv tierCheatEnv)
+  let noSorry ← IO.ofExcept (serEnv noSorryEnv)
+  for anon in [false, true] do
+    let strict ← checked (← prepareInput cheatBytes anon)
+    let r ← checked (← runPrepared strict cfg .all)
+    ensure (!r.failures.isEmpty && r.artifactAdmission.isNone && r.conditionalOn.isEmpty &&
+      runExit r true == _root_.Ix.Benchmark.Results.exitRejected)
+      "strict checking admitted a user axiom"
+    let p ← checked (← prepareInput cheatBytes anon (allowUserAxioms := true))
+    let r ← checked (← runPrepared p cfg .all)
+    ensure (r.failures.isEmpty && r.hostStatement.isNone &&
+      r.artifactAdmission == some (.conditional cheatEnv.consts.size none #[cheatAddress]) &&
+      runExit r true == exitConditional && runExit r true true == _root_.Ix.Benchmark.Results.exitUsage)
+      s!"the conditional whole run is not reported as conditional on cheat: {repr r.artifactAdmission}"
+    let r ← checked (← runPrepared p cfg (.only #[if anon then toString useAddress else "useCheat"]))
+    ensure (r.failures.isEmpty && r.userAxioms == #[cheatAddress] && runExit r false == exitConditional)
+      "a selected run through a user axiom is not conditional on it"
+    let natDiv := if anon then toString (generated.table.addressOf? .natDiv).get! else "Nat.div"
+    let r ← checked (← runPrepared p cfg (.only #[natDiv]))
+    ensure (r.failures.isEmpty && r.userAxioms.isEmpty && runExit r false == 0)
+      "a selected run that reads no user axiom became conditional"
+    -- with no user axiom among the declarations, the flag keeps the certified entry
+    let p ← checked (← prepareInput bytes anon (allowUserAxioms := true))
+    let r ← checked (← runPrepared p cfg .all)
+    ensure (r.artifactAdmission == some (.logical env.consts.size) && r.hostStatement.isSome &&
+      runExit r true true == 0) "the flag replaced the certified entry on an artifact without user axioms"
+    match ← prepareInput noSorry anon (allowUserAxioms := true) with
+    | .error (.artifact message) =>
+      ensure (message.contains "leaves sorryAx unbound") s!"wrong refusal: {message}"
+    | _ => throw (IO.userError "a binding without sorryAx admitted user axioms")
+  let p ← checked (← prepareInput tierCheatBytes true (allowUserAxioms := true))
+  let r ← checked (← runPrepared p cfg .all)
+  ensure (r.artifactAdmission == some (.conditional tierCheatEnv.consts.size (some 1) #[cheatAddress]))
+    s!"the tiered conditional entry did not run: {repr r.artifactAdmission}"
+  -- meta mode checks the published names against the binding even when strict
+  match ← prepareInput noSorry with
+  | .error (.artifact message) =>
+    ensure (message.contains "role binding") s!"wrong meta refusal: {message}"
+  | _ => throw (IO.userError "a published sorryAx left unbound passed meta preparation")
+  let cheatPath := dir / "cheat.ixe"
+  let tierCheatPath := dir / "tier-cheat.ixe"
+  let noSorryPath := dir / "no-sorry.ixe"
+  let boundPath := dir / "bound-axioms.ixe"
+  let unused := dir / "conditional.ixhc"
+  IO.FS.writeBinFile cheatPath cheatBytes
+  IO.FS.writeBinFile tierCheatPath tierCheatBytes
+  IO.FS.writeBinFile noSorryPath noSorry
+  IO.FS.writeBinFile boundPath bytes
+  let vars := #[("IX_KERNEL_CHECK_PROGRESS_MS", some "0"), ("IX_KERNEL_CHECK_SLOW_MS", some "0")]
+  let listed := s!"[check-lean]   {cheatAddress}"
+  let mut calls := 0
+  for (file, args, code, texts) in [
+      (cheatPath, #[], 3, #[]),
+      (cheatPath, #["--anon"], 3, #[]),
+      (cheatPath, #["--allow-user-axioms"], exitConditional,
+        #["whole artifact: CONDITIONAL on 1 user axioms:", s!"{listed} cheat", "no host statement"]),
+      (cheatPath, #["--anon", "--allow-user-axioms"], exitConditional,
+        #["whole artifact: CONDITIONAL on 1 user axioms:", listed]),
+      (cheatPath, #["--allow-user-axioms", "--consts", "useCheat"], exitConditional,
+        #["selected checking: CONDITIONAL on 1 user axioms:", s!"{listed} cheat"]),
+      (tierCheatPath, #["--anon", "--allow-user-axioms"], exitConditional,
+        #["whole artifact: CONDITIONAL on 1 user axioms:", "conditional logical entry and typing tier"]),
+      (cheatPath, #["--allow-user-axioms", "--host-out", unused.toString], 2,
+        #["CONDITIONAL on 1 user axioms and issues no host statement"]),
+      (boundPath, #["--allow-user-axioms"], 0, #["whole artifact: logical entry accepted all"]),
+      (noSorryPath, #["--anon", "--allow-user-axioms"], 3, #["leaves sorryAx unbound"]),
+      (noSorryPath, #[], 3, #["role binding"])] do
+    calls := calls + 1
+    let out ← IO.Process.output { cmd := ix.toString, args := #["check-lean", file.toString] ++ args, env := vars }
+    let text := out.stdout ++ out.stderr
+    ensure (out.exitCode == code && texts.all (fun t => text.contains t) &&
+      (code == 0 || !out.stdout.contains "accepted all"))
+      s!"user-axiom CLI control {args} failed: {out.exitCode}\n{out.stdout}\n{out.stderr}"
+  ensure (!(← unused.pathExists)) "a conditional run wrote a host statement"
+  -- kernel-check-ixe: strict by default and conditional with the flag, on the
+  -- streamed, eager, pooled and read-cache paths alike
+  let rowsOf := fun (rowsPath : System.FilePath) => do
+    let mut rows : Std.HashMap String String := {}
+    for line in (← IO.FS.readFile rowsPath).splitOn "\n" do
+      if line.isEmpty then continue
+      let row ← IO.ofExcept (Lean.Json.parse line)
+      rows := rows.insert (← IO.ofExcept (row.getObjValAs? String "address"))
+        (← IO.ofExcept (row.getObjValAs? String "outcome"))
+    return rows
+  let cache := dir / "read-cache"
+  for (args, cached) in [(#["--load", "stream"], false), (#["--load", "eager", "--jobs", "2"], false),
+      (#["--jobs", "2"], true), (#[], true), (#["--load", "eager"], true)] do
+    for allow in [true, false] do
+      calls := calls + 1
+      let rowsPath := dir / "cheat.jsonl"
+      let result ← IO.Process.output {
+        cmd := kernel.toString
+        args := #[cheatPath.toString, rowsPath.toString] ++ args ++ (if allow then #["--allow-user-axioms"] else #[])
+        env := #[("CHECK_IXE_ROOTS", none), ("CHECK_IXE_SKIP", none),
+          ("CHECK_IXE_READ_CACHE", if cached then some cache.toString else none)] }
+      let rows ← rowsOf rowsPath
+      let label := s!"kernel-check-ixe {args} allow={allow}"
+      ensure (result.exitCode == 0 && rows.contains (toString cheatAddress) && rows.contains (toString useAddress))
+        s!"{label} failed: {result.exitCode}\n{result.stderr}"
+      if allow then
+        ensure (rows.toList.all (·.2 == "accept") &&
+          result.stderr.contains s!"CONDITIONAL on 1 user axioms:\n  {cheatAddress}")
+          s!"{label} did not admit and list the user axiom\n{result.stderr}"
+      else
+        ensure (rows[toString cheatAddress]? != some "accept" && rows[toString useAddress]? != some "accept" &&
+          !result.stderr.contains "CONDITIONAL")
+          s!"{label} admitted a user axiom while strict\n{result.stderr}"
+  ensure (← cache.pathExists) "the read cache was never written"
+  let refused ← IO.Process.output {
+    cmd := kernel.toString, args := #[noSorryPath.toString, (dir / "no-sorry.jsonl").toString, "--allow-user-axioms"] }
+  ensure (refused.exitCode == 2 && refused.stderr.contains "leaves sorryAx unbound")
+    s!"kernel-check-ixe admitted user axioms under a binding without sorryAx\n{refused.stderr}"
+  return calls + 1
+
 private def orderedChecks (env tierEnv badEnv : Env) : IO Unit := do
   let prepared ← IO.ofExcept ((prepareRecords env artifactLimits).mapError toString)
   let order := (prepared.prepared.records.map Prod.fst).toArray
@@ -193,12 +341,12 @@ private def checks : IO Nat := do
       let sorted := rows.qsort (fun a b => a.1 < b.1)
       if let some earlier := previous then ensure (earlier == sorted) "stream/eager bound diagnostic rows differ"
       previous := some sorted
-    return 7
+    return 7 + (← userAxiomChecks env tierEnv generated ix kernel dir)
   finally
     IO.FS.removeDirAll dir
 
 public def units : LSpec.TestSeq :=
-  .individualIO "bound artifact consumers: whole logical/tier entries and actual CLI routing" none (do
+  .individualIO "bound artifact consumers: whole logical/tier entries, the user-axiom path and actual CLI routing" none (do
     let count ← checks
     return (true, count, 0, none)) .done
 
