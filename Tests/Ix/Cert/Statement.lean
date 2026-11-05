@@ -722,8 +722,8 @@ def noCtorCases (label : String) (env : Ix.Environment) : IO (Array String × Ar
   else
     return (shown.toArray.push s!"{label}: {errors.size} failure(s)", #[])
 
-/-- `Ix.Cert.compile` against the IO pipeline and the Rust compiler on
-`consts`: errors, and lines for the report. `compile` is `compileReport`'s
+/-- `Ix.Cert.compile` on `consts`, against the statements it is proved to
+meet: errors, and lines for the report. `compile` is `compileReport`'s
 first component (`Ix.Cert.compile_eq_ok`), and `compileReport` is
 `compileUnchecked` followed by `checkReport` against the resolution map
 `compileUnchecked` returns, which `checkReportCases` runs (and times) here

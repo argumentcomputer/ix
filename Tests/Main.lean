@@ -124,7 +124,7 @@ def registry : List Entry := [
   .suite "sharing-components" .primary Tests.SharingComponents.suite,
   .suite "source-contract" .primary (Tests.Ix.SourceContract.suite ++ Tests.Ix.SourceContract.Driver.suite),
   .suite "bench-measures" .primary Tests.Ix.BenchMeasures.suite,
-  -- the compile's named refusal of ungrounded input (Lean and Rust)
+  -- the compile's named refusal of ungrounded input (the IO pipeline and the pure compile)
   .suite "ground-unit" .primary Tests.Ix.Compile.GroundRefusal.suite,
   -- the strict readers of the checkers' reports (Tests.Ix.Compile.KernelReport)
   .suite "compiler-reports" .primary Tests.Ix.Compile.KernelReportTests.suite,
@@ -155,7 +155,7 @@ def registry : List Entry := [
   -- Source mode's evidence from the committed bundle (`Ix.RoleEvidence.bundleEvidence`), on
   -- the well-founded operations' Init closure without the certificate theorems
   .suite "kernel-bundle-evidence" .primary Tests.Ix.Kernel.BundleEvidence.suite,
-  -- the certification statements on the same fixtures: compile parity, and
+  -- the certification statements on the same fixtures: the compile's checks, and
   -- the per-root hypotheses and conclusion
   .suite "cert-statement" .primary Tests.Ix.Cert.Statement.suite,
   .suite "kernel-record-check" .primary Tests.Ix.Kernel.RecordCheck.suite,
@@ -174,7 +174,7 @@ def registry : List Entry := [
   .runner "aiur-rust-syntax" .primary AiurTests.RustSyntax.run,
   -- Reductions no kernel may make beyond Lean's (class methods reduced
   -- without their instance, `numBits ≡ 64`, the `Fin.val` commute): every
-  -- probe's closure through the Rust kernel and IxC.
+  -- probe's closure through IxC.
   .runner "kernel-fast-paths" .primary Tests.Ix.Kernel.FastPaths.run,
   -- The circuit TagN codec against the host codec (about 16 s).
   .runner "ixvm-tagn" .primary Tests.Ix.IxVM.TagN.runSuite,

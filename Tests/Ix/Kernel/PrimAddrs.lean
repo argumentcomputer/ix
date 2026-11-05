@@ -1,32 +1,23 @@
 /-
-  Guards the kernel's hardcoded primitive addresses against the
-  canonical table.
+  Guards the IxVM's address literals.
 
-  The Aiur kernel hardcodes ~77 primitive constant addresses as 32-byte
-  literals (`fn nat_add_addr() -> Addr { store([0xd6u8, ...]) }`) so
-  reduction can recognize `Nat.add` etc. by address alone. Those bytes
-  are the kernel's entire notion of "this Const IS the primitive whose
-  semantics I am about to substitute", so a single wrong byte is a
-  soundness-relevant defect: the kernel either fails to recognize a
-  primitive (incompleteness) or — worse — recognizes the WRONG constant
-  and applies native semantics to it.
+  The IxVM kernel once hardcoded ~77 primitive constant addresses as
+  32-byte literals (`fn nat_add_addr() -> Addr { store([0xd6u8, ...]) }`)
+  so reduction could recognize `Nat.add` etc. by address alone. A single
+  wrong byte was a soundness-relevant defect, invisible to the FFT-pinned
+  suite and the arena fixtures; one shipped for months (`bool_false_addr`,
+  last 8 bytes wrong). Every constant a native rule recognizes or builds
+  is now a role, read through the claim's role binding and validated
+  against its specification, so the only literal left is the
+  specification digest.
 
-  Such a defect is invisible to the FFT-pinned suite and to the arena
-  fixtures: a corrupted literal simply never matches, so well-typed
-  targets still check and ill-typed ones still fail. One shipped for
-  months (`bool_false_addr`, last 8 bytes wrong) and only surfaced when
-  a new reduction path finally tried to emit `Bool.false`.
-
-  This test closes that class. It reads the byte arrays out of the
-  ELABORATED toplevel — not the source text — and compares each against
-  the address computed at test runtime from `Ix.PrimAddrs`, which is
-  the same table the host-side closure walker and ingress verifier use.
-  Any drift between the two sources of truth fails here.
-
-  Coverage is by construction: every `fn <name>() -> Addr` in the
-  toplevel whose body is a 32-byte literal must resolve to a canonical
-  address, and the test reports the count so a silent drop to zero
-  (e.g. an AST shape change) cannot pass unnoticed.
+  This test keeps it that way. It reads the byte arrays out of the
+  ELABORATED toplevel — not the source text — and requires the
+  specification digest, equal to `Ix.SpecDigest.specDigest`, to be the
+  only one: an address literal reappearing fails, and so does the
+  extractor finding nothing (e.g. an AST shape change). A literal that
+  did reappear must also resolve to the canonical address its name
+  claims, computed at test runtime from `Ix.PrimAddrs`.
 -/
 import Ix.Meta
 import Ix.Aiur.Compiler

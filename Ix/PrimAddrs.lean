@@ -12,9 +12,11 @@ The primitive and reserved-marker content addresses, the Lean parity table,
 and their membership set are shared by the resource validator and IxVM claim
 harness. They require only the address representation, independently of the
 kernel typechecker.
-The addresses are hardcoded BLAKE3 hashes matching Rust's `PrimAddrs::new()`;
-regenerate with `lake test -- --ignored rust-kernel-build-primitives` and
-update both tables. The ordered live comparison is
+The addresses are hardcoded BLAKE3 hashes matching `PrimAddrs::new()` in
+`ix-common`; regenerate them as `docs/kernel.md` describes (`lake exe
+ixon-v4-primitives`; `lake test -- --ignored rust-kernel-build-primitives`
+prints the table in `PrimAddrs::new` form) and update both tables. The ordered
+live comparison is
 `Tests.Ix.Kernel.PrimitiveTable` in the `prim-addrs` entry.
 
 `Lean.reduceBool` and `Lean.reduceNat` dispatch by their real content
@@ -344,18 +346,12 @@ def reservedMarkerName (addr : Address) : Option String :=
     address (built once at module init from `leanParityTable` +
     `reservedMarkerAddrs`).
 
-    Soundness note: the kernel substitutes native/GMP semantics for the
-    declarations at these addresses (`tryReduceNat*`/`tryReduceDecidable`/
-    …), so its verdicts are sound only if address = content holds exactly
-    here — which the blake3 integrity check at materialization
-    establishes. Ingress therefore verifies prim-addressed constants
-    UNCONDITIONALLY, even under `--no-verify` (`getConstVerified`): for
-    every other constant, skipping verification merely risks checking a
-    mislabeled-but-still-checked declaration; a mislabeled primitive
-    would be silently trusted with the wrong semantics. The Rust mirror
-    has no analogous hole — its integrity check is unconditional at
-    deserialize (`crates/ixon/src/serialize.rs` `Env::get`/`get_anon`,
-    plus the anon merkle-root check). -/
+    The IxVM claim harness (`IxVM.ClaimHarness.closureFrom` and its
+    siblings) seeds a claim's byte scope with the members an environment
+    carries: the kernel can reference them without any `Constant.refs`
+    naming them. Membership grants no semantics: every constant a native
+    rule recognizes or builds is a role, read through the claim's role
+    binding and validated against its specification. -/
 def primAddrSet : Std.HashSet Address := Id.run do
   let mut s : Std.HashSet Address :=
     Std.HashSet.emptyWithCapacity (PrimAddrs.leanParityTable.size + 4)

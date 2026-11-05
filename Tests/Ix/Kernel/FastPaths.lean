@@ -8,21 +8,18 @@ import Tests.Ix.Kernel.FastPathDefs
 /-! # Reductions beyond Lean's, per kernel (`kernel-fast-paths`)
 
 Each probe of `Tests.Ix.Kernel.FastPathDefs` is checked with its whole
-dependency closure (recursors included) by two kernels:
-
-* the Rust kernel (`rsCheckConstsFFI`, every closure member by name);
-* IxC on the Lean compiler's output, through the environment check
-  (`SourceIngressCompare.ixonVerdicts`:
-  the verified fold one record at a time, under the default role table and
-  its evidence).
+dependency closure (recursors included) by IxC on the Lean compiler's
+output, through the environment check (`SourceIngressCompare.ixonVerdicts`:
+the verified fold one record at a time, under the default role table and
+its evidence).
 
 A probe expected to be rejected names its culprit: the false or
 non-definitional equation itself, or, for a derivation of `False`, the
-equation it uses. Every kernel must reject the culprit, and nothing else in
-the closure may fail except the probe itself when it is a derivation (the
-Rust kernel checks it with its dependencies trusted and accepts it;
-IxC blocks it behind the culprit). A probe expected to be accepted must
-have every closure member accepted. So the test fails both when a kernel
+equation it uses. The kernel must reject the culprit, and nothing else in
+the closure may fail except the probe itself when it is a derivation
+(accepted with its dependencies trusted, or, as IxC does, blocked behind
+the culprit; never rejected on its own). A probe expected to be accepted must
+have every closure member accepted. So the test fails both when IxC
 accepts a proof of `False` and when a removed fast path's honest
 replacement stops reducing the canonical forms. -/
 
