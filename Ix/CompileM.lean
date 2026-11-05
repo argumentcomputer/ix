@@ -218,7 +218,7 @@ structure BlockEnv where
 
 /-! ## Compilation Error -/
 
-/-- Compilation error type. Variant order matches Rust CompileError (tags 0–7). -/
+/-- Compilation error type. -/
 inductive CompileError where
   | missingConstant (name : String)
   | missingAddress (addr : Address)

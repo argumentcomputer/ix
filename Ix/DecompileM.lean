@@ -37,7 +37,7 @@ def resolveIxName (names : Std.HashMap Address Ix.Name) (addr : Address) : Optio
 
 /-! ## Error Type -/
 
-/-- Decompilation error type. Variant order matches Rust DecompileError (tags 0–11). -/
+/-- Decompilation error type. -/
 inductive DecompileError where
   | invalidRefIndex (idx : UInt64) (refsLen : Nat) (constant : String)
   | invalidUnivIndex (idx : UInt64) (univsLen : Nat) (constant : String)
