@@ -42,7 +42,25 @@ impl std::fmt::Display for StorageError {
   }
 }
 
+/// Rows a query table or the ROM may hold: their hash indexes store 32-bit
+/// row numbers.
+pub(crate) const MAX_ROWS: usize = 1 << 32;
+
 impl Budget {
+  /// The index entry number of `row`, in a table whose rows take
+  /// `row_bytes` each. A table beyond [`MAX_ROWS`] rows is a resource error,
+  /// reservation or not, as if it had exceeded its record budget.
+  #[inline(always)]
+  pub fn row(&self, row: usize, row_bytes: usize) -> Result<u32, BudgetError> {
+    u32::try_from(row).map_err(|_| {
+      let row_bytes = row_bytes.max(1);
+      BudgetError::Exceeded {
+        bytes: row.saturating_add(1).saturating_mul(row_bytes),
+        cap: MAX_ROWS.saturating_mul(row_bytes),
+      }
+    })
+  }
+
   #[inline]
   pub fn reserve(&self, bytes: usize) -> Result<(), BudgetError> {
     if let Some(reservation) = &self.0 {
@@ -115,5 +133,27 @@ mod tests {
     assert!(pool.stats().peak_reserved >= (64 + 128) * 8);
     reservation.finish_execution();
     assert_eq!(pool.stats().reserved, 128 * 8);
+  }
+
+  #[test]
+  fn rows_beyond_the_index_width_are_resource_errors() {
+    for budget in [
+      Budget(None),
+      Budget(Some(RecordPool::new(64, 8).try_admit().unwrap().unwrap())),
+    ] {
+      assert_eq!(budget.row(0, 24), Ok(0));
+      assert_eq!(budget.row(MAX_ROWS - 1, 24), Ok(u32::MAX));
+      assert_eq!(
+        budget.row(MAX_ROWS, 24),
+        Err(BudgetError::Exceeded {
+          bytes: (MAX_ROWS + 1) * 24,
+          cap: MAX_ROWS * 24
+        })
+      );
+      assert!(matches!(
+        budget.row(usize::MAX, 0),
+        Err(BudgetError::Exceeded { .. })
+      ));
+    }
   }
 }

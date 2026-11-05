@@ -2,6 +2,7 @@
 //! pointers are indices within a width bucket. A representative store type is
 //! retained only for host diagnostics, never for interning or circuit lookups.
 use crate::bytecode::Type;
+use crate::query::Entry;
 use hashbrown::HashTable;
 use serde::{Serialize, Serializer};
 use std::hash::{Hash, Hasher};
@@ -37,9 +38,10 @@ pub struct Memory<F = u64> {
   widths: Vec<usize>,
   buckets: Vec<Vec<usize>>,
   type_buckets: Vec<usize>,
-  // Stable record indices and cached hashes, with no second payload copy.
-  // Retained after execution so trace population can resolve stores directly.
-  index: HashTable<(u64, usize)>,
+  // Stable record indices tagged with their hashes, with no second payload
+  // copy. Retained after execution so trace population can resolve stores
+  // directly.
+  index: HashTable<Entry>,
   index_bytes: usize,
   // Release the charge after the payload and indexes have been freed.
   pub(crate) budget: crate::budget::Budget,
@@ -87,7 +89,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
       0
     } else {
       self.index.capacity().next_power_of_two()
-        * (std::mem::size_of::<(u64, usize)>() + 1)
+        * (std::mem::size_of::<Entry>() + 1)
         + 16
     };
     (payload, vectors, index)
@@ -158,20 +160,26 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     self.words[slot.offset..slot.offset + self.types[slot.type_id].1] == *words
   }
 
-  // Keep this in the store/population hot loops, as QueryTable::lookup does.
-  // Otherwise returning the hash plus an optional index spills to the stack.
   #[inline(always)]
-  fn lookup(&self, words: &[F]) -> (u64, Option<usize>) {
+  fn hash(words: &[F]) -> u64 {
     let mut hasher = rustc_hash::FxHasher::default();
     hasher.write_usize(words.len());
     for word in words {
       word.hash(&mut hasher);
     }
-    let hash = hasher.finish();
-    let index = self
-      .index
-      .find(hash, |&(cached, i)| cached == hash && self.matches(i, words));
-    (hash, index.map(|&(_, i)| i))
+    hasher.finish()
+  }
+
+  // Keep this in the store/population hot loops, as QueryTable::lookup does.
+  // Otherwise returning the hash plus an optional index spills to the stack.
+  #[inline(always)]
+  fn lookup(&self, words: &[F]) -> (u64, Option<usize>) {
+    let hash = Self::hash(words);
+    let tag = Entry::tag(hash);
+    let index = self.index.find(Entry::index_hash(tag), |entry| {
+      entry.matches(tag) && self.matches(entry.row as usize, words)
+    });
+    (hash, index.map(|entry| entry.row as usize))
   }
 
   #[inline]
@@ -193,9 +201,17 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     if let Some(index) = found {
       return Ok(index);
     }
+    let index = self.slots.len();
+    let entry = Entry::new(
+      self.budget.row(
+        index,
+        std::mem::size_of_val(words) + std::mem::size_of::<Slot>(),
+      )?,
+      hash,
+    );
     self.budget.vector(&mut self.words, words.len())?;
     self.budget.vector(&mut self.slots, 1)?;
-    let replaced = self.budget.hash::<(u64, usize)>(
+    let replaced = self.budget.hash::<Entry>(
       self.index.len(),
       self.index.capacity(),
       &mut self.index_bytes,
@@ -209,8 +225,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     {
       return Err("ROM exceeds field capacity".into());
     }
-    let index = self.slots.len();
-    self.index.insert_unique(hash, (hash, index), |&(hash, _)| hash);
+    self.index.insert_unique(entry.rehash(), entry, Entry::rehash);
     drop(replaced);
     let offset = self.words.len();
     self.words.extend_from_slice(words);

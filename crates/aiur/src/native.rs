@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 /// Version of the interface between generated code and this runtime. A
 /// change to [`NativePlan`]'s meaning or to [`Runtime`]'s contract must bump it.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NativePlan {
@@ -626,18 +626,34 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
     }
   }
 
-  /// Request `function(args)` from `caller` at `pc`. A completed query is
-  /// counted and returned; a pending one is an error; a new one is inserted
-  /// before its body runs, exactly as the interpreter orders rows.
+  /// Request `function(args)` from `caller` at `pc`, for a function of `N`
+  /// inputs and `M` outputs. A completed query is counted and returned; a
+  /// pending one is an error; a new one is inserted before its body runs,
+  /// exactly as the interpreter orders rows. Fixed widths let the key's
+  /// hash, comparison and copy compile to straight-line code.
   #[inline(never)]
-  pub fn begin(
+  pub fn begin<const N: usize, const M: usize>(
+    &mut self,
+    caller: usize,
+    pc: usize,
+    function: usize,
+    args: &[B::Element; N],
+  ) -> Result<Begin, Failed> {
+    self.begin_slice(caller, pc, function, args, M)
+  }
+
+  /// [`Self::begin`] for widths known only at run time.
+  #[inline(always)]
+  fn begin_slice(
     &mut self,
     caller: usize,
     pc: usize,
     function: usize,
     args: &[B::Element],
+    outputs: usize,
   ) -> Result<Begin, Failed> {
     let table = &mut self.record.queries.tables[function];
+    debug_assert_eq!(table.widths(), (args.len(), outputs));
     let (hash, found) = table.lookup(args);
     if let Some(row) = found {
       if table.count(row) == 0 {
@@ -657,7 +673,7 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
       }
       return Ok(Begin::Cached(row));
     }
-    match table.start(args, hash) {
+    match table.start(args, outputs, hash) {
       Ok(row) => Ok(Begin::Started(row)),
       Err(e) => Err(self.raise(e.into())),
     }
@@ -670,17 +686,30 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
   }
 
   /// Validate and record the result of `function`'s pending `row`, returned
-  /// at `pc`.
+  /// at `pc`. Generated code has already proven field and pointer shapes;
+  /// only layouts with tags or padding are checked here.
   #[inline(never)]
-  pub fn finish(
+  pub fn finish<const M: usize>(
+    &mut self,
+    function: usize,
+    row: usize,
+    pc: usize,
+    output: &[B::Element; M],
+  ) -> Result<(), Failed> {
+    self.finish_slice(function, row, pc, output)
+  }
+
+  #[inline(always)]
+  fn finish_slice(
     &mut self,
     function: usize,
     row: usize,
     pc: usize,
     output: &[B::Element],
   ) -> Result<(), Failed> {
-    if let Err(e) = self.program.outputs[function]
-      .validate_registers(output, self.program.field)
+    let layout = &self.program.outputs[function];
+    if layout.has_shape_checks()
+      && let Err(e) = layout.validate_registers(output, self.program.field)
     {
       return Err(self.fail(function, pc, &e));
     }
@@ -748,17 +777,17 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
 
   /// Store `values` at the ROM type of `function`/`pc`; returns its pointer.
   #[inline(never)]
-  pub fn store(
+  pub fn store<const N: usize>(
     &mut self,
     function: usize,
     pc: usize,
-    values: &[B::Element],
+    values: &[B::Element; N],
   ) -> Result<B::Element, Failed> {
     let program = self.program;
     let memory_type = program.steps[function][pc].memory_type;
-    if let Err(e) = program.memory_types[memory_type]
-      .1
-      .validate_registers(values, program.field)
+    let layout = &program.memory_types[memory_type].1;
+    if layout.has_shape_checks()
+      && let Err(e) = layout.validate_registers(values, program.field)
     {
       return Err(self.fail(function, pc, &e));
     }
@@ -782,12 +811,12 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
 
   /// Load the ROM cell at `pointer` with the type of `function`/`pc`.
   #[inline(never)]
-  pub fn load(
+  pub fn load<const N: usize>(
     &mut self,
     function: usize,
     pc: usize,
     pointer: B::Element,
-    output: &mut [B::Element],
+    output: &mut [B::Element; N],
   ) -> Result<(), Failed> {
     let program = self.program;
     let memory_type = program.steps[function][pc].memory_type;
@@ -956,7 +985,8 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
         message: e,
       })?;
     } else {
-      let row = match rt.begin(root, 0, root, &args) {
+      let outputs = program.outputs[root].width();
+      let row = match rt.begin_slice(root, 0, root, &args, outputs) {
         Ok(Begin::Started(row)) => row,
         Ok(Begin::Cached(_)) => {
           unreachable!("a fresh session has no completed queries")
