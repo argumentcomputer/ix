@@ -10,8 +10,8 @@ public import LSpec
 /-! # Malformed inputs Lean's readers refuse, as Rust's do
 
 The Lean side of the shared fixture `Tests/Fixtures/ixon-v4/reject-parity.txt`,
-whose Rust side is `crates/ixon/tests/reject_parity.rs` and
-`crates/kernel/tests/reject_parity.rs`: every reader of a case's kind refuses
+whose Rust side is `crates/ixon/tests/reject_parity.rs` (every kind but
+`ixes`): every reader of a case's kind refuses
 it, and accepts the kind's controls. The kinds and the readers:
 
 * `record`: the canonical decoder of host admission (`Canonical.deConstant` at

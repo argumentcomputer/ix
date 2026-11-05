@@ -14,7 +14,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
-# Cross-crate inlining across the ixon/compile/ffi boundary — the hot
+# Cross-crate inlining across the ixon/ffi boundary — the hot
 # loops (blake3 digests, subterm sharing, serialization) span crates.
 # "thin" keeps build times tolerable vs "fat" for near-equal wins.
 lto = "thin"

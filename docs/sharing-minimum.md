@@ -119,7 +119,7 @@ functions in this table were removed by this work):
 | Lean codec and contracts | `Ix/Ixon.lean`: `putTag0`, `putTag4`, `putExpr`, `putConstant`, `Env.VERSION`; `Ix/IxonContract.lean`, `Ix/IxonMode.lean` |
 | Rust sharing/codec | `crates/ixon/src/sharing.rs`, `serialize.rs`, `expr.rs` |
 | Lean compiler integration | `Ix/CompileM.lean`: `constantInfoRootExprs`, `mutConstRootExprs`, `buildConstantWithSharing` |
-| Rust compiler integration | `crates/compile/src/compile.rs`: `apply_sharing_with_stats`, `apply_sharing_to_*`; `kernel_egress.rs`; `decompile.rs` |
+| Rust compiler integration | the Rust compiler, since retired: `apply_sharing_with_stats`, `apply_sharing_to_*`; `kernel_egress.rs`; `decompile.rs` |
 | Cross-language boundary | `crates/ffi/src/lean_ixon/sharing.rs`, existing sharing comparison FFI |
 | Metadata and ingress | `Ix/DecompileM.lean`, `Ix/Tc/Ingress.lean`, `Ix/Tc/IngressMeta.lean`, Rust `compile/decompile.rs` and kernel ingress consumers |
 | Proofs | `Ix/Compile/Verify/Sharing.lean`, `CompileSharingCodec.lean`, downstream compiler codec theorems and audit manifests |
@@ -731,7 +731,7 @@ The work splits into four parts with disjoint files. Their interfaces are the sp
 | Lean exact core | `Ix/Sharing/Exact.lean` (new; split as needed), `Tests/Ix/SharingExact.lean`, `Tests/Main.lean` suite entry | Structural IDs, bounded share expansion, exact serializer-length helpers checked against `putExpr`, tiny all-order/all-occurrence oracle, fixed-dictionary telescope DP with materialization, sparse width-state DP with LB pruning and resource errors; exact-search tests including every §2 fixture |
 | Rust exact core | `crates/ixon/src/sharing_exact.rs` (new), its tests, `crates/ffi` differential hook | Same algorithm and key, checked arithmetic, differential test against Lean bytes through the FFI parity harness |
 | Corpus measurement | `Benchmarks/SharingStudy.lean`, `lakefile.lean` exe entry, `docs/sharing-minimum-measurements.md` | Candidate-count numbers on `init.ixe`; once the Lean core lands, rerun with the exact optimizer under explicit limits and report success rate, byte savings vs heuristic, states/transitions and wall time |
-| Integration (after review of the other three) | `Ix/CompileM.lean`, `crates/compile`, metadata remap, version bump, proofs, docs | Compiler integration, migration and validation |
+| Integration (after review of the other three) | `Ix/CompileM.lean`, the Rust compiler, metadata remap, version bump, proofs, docs | Compiler integration, migration and validation |
 
 Integration starts after the corpus-measurement gate has been evaluated and the exact cores agree on all
 fixtures.
@@ -1118,19 +1118,18 @@ entries before it (`p ≤ i < p + j`); a reader expands `metaSharing` in order, 
 `sharing ++ metaSharing[0..j)`. No compiler writes metadata expressions now (§8.2); the
 readers keep the rule.
 
-Readers. Only the two decompilers read `metaSharing` contents, and both implement the rule:
+Readers. Only the decompiler reads `metaSharing` contents, and it implements the rule:
 Lean `Ix.DecompileM` (`ShareScope`, `resolveShareIn`; also the semantic-contract scan
-`Ix.SemanticContract.containsIxon`) and Rust `ix_compile::decompile` (`ShareScope`; also
-`semantic_contract::contains_ixon`). A primary `Share(i)` with `i ≥ p` is
+`Ix.SemanticContract.containsIxon`). A primary `Share(i)` with `i ≥ p` is
 `invalidShareIndex`; a metadata `Share(i)` outside `[0, p + j)` is `invalidMetaShareIndex`
 (Rust `InvalidMetaShareIndex`, error tag 11 in both languages), with `i ≥ p + q` out of range
 and `p + j ≤ i < p + q` a forward or self reference. When a constant's metadata is loaded, the
-whole table is checked first (`validateMetaSharing`, Rust `validate_meta_sharing`), reporting
+whole table is checked first (`validateMetaSharing`), reporting
 the first violation in entry order and then left-to-right pre-order. Kernel ingress
-(`Ix/Tc/IngressMeta.lean`, Rust `crates/kernel/src/ingress.rs`), the IxVM circuit and the
+(IxC's reader), the IxVM circuit and the
 resource validators do not read `metaSharing` contents. Two gaps of the readers predate this
 rule and are not addressed by it: a record nested inside a metadata expression may reference
-any `metaSharing` entry, including its own, and neither the decompilers nor kernel ingress check
+any `metaSharing` entry, including its own, and neither the decompiler nor kernel ingress checks
 that primary table entries reference only earlier entries. A malformed table of either kind can
 therefore make them loop instead of failing; hardening the readers is follow-up work.
 

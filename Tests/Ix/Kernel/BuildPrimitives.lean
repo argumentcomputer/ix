@@ -28,9 +28,8 @@ open LSpec
 
 namespace Tests.Ix.Kernel.BuildPrimitives
 
-/-- The Lean names of every primitive the Rust kernel resolves in
-    `PrimAddrs::new`. Keep this in sync with the `Primitives<M>` struct in
-    `crates/kernel/src/primitive.rs`. -/
+/-- The Lean names of every primitive in `PrimAddrs::new`
+    (`crates/common/src/prim_addrs.rs`); keep the two in sync. -/
 def kernelPrimitives : Array String := #[
   "Nat", "Nat.zero", "Nat.succ",
   "Nat.add", "Nat.pred", "Nat.sub", "Nat.mul", "Nat.pow",

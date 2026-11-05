@@ -1143,9 +1143,7 @@ def overrideFails (e : Except String Limits) : Bool :=
   | .ok _ => false
   | .error _ => true
 
-/-- Override specs and the `states` limit each sets (`none`: rejected). The
-Rust test list `LIMIT_SPEC_PARITY` (`crates/ixon/src/sharing_exact/tests.rs`)
-is the same list, so both parsers give every spec the same verdict. Values
+/-- Override specs and the `states` limit each sets (`none`: rejected). Values
 are ASCII digits, `2^k` or `max` (no sign, no `_` separator, no other
 spelling); items and keys are trimmed of space, tab, line feed and carriage
 return only. -/

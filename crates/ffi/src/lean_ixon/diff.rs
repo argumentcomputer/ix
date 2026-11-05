@@ -161,7 +161,7 @@ impl LeanIxonEnvDiff<LeanOwned> {
 }
 
 /// Inputs at least this large get incremental progress on stderr
-/// (`[rs_diff_envs] …` lines, matching the `[rs_compile_env]` idiom).
+/// (`[rs_diff_envs] …` lines).
 /// Small inputs — unit tests, property tests, tiny bundles — stay
 /// silent.
 const PROGRESS_MIN_BYTES: usize = 100 * 1024 * 1024;

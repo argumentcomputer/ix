@@ -703,7 +703,7 @@ fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
 /// `ConstantMeta`), because real metadata references name addresses
 /// throughout its tree and carrying it would require the full env's
 /// hash-consed name index. The extract serves the ANON pipeline
-/// (`check-rs --anon`, the zkVM hosts, `ix profile`/`ix shard`,
+/// (the zkVM hosts, `ix profile`/`ix shard`,
 /// `bench-typecheck`), where metadata is never read and reducibility hints
 /// travel in the `anon_hints` section instead. Meta-mode tools need the
 /// source env.

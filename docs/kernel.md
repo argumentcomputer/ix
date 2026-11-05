@@ -1040,9 +1040,8 @@ interleaved:
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
    to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after
    `lake exe ixon-v4-tests` validates them. If they moved, so did the
-   catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`)
-   and the environment-bytes hash (`crates/compile/src/graph.rs`); re-pin
-   them from the serializers' output. The independent expression vectors
+   catalog claim digest (`Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs`);
+   re-pin it from the serializers' output. The independent expression vectors
    (`Tests/Fixtures/ixon-v4/expressions.txt`) are written by hand from the
    specification.
 5. **The default role table**, as step 2 of a toolchain bump: the three commands under

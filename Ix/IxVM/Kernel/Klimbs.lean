@@ -9,7 +9,7 @@ namespace IxVM
 
 /-! ## KLimbs bignum arithmetic
 
-Bignum gadgets backing the Nat primitives (see crates/kernel/src/primitive.rs).
+Bignum gadgets backing the Nat primitives (`Ix/IxVM/Kernel/NatPrim.lean`).
 
 Kept in a module of its own, separate from the primitive dispatch that
 consumes it, so the arithmetic can be read and tested without the

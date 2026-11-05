@@ -161,9 +161,9 @@ Implicit encoding by node kind (Mathlib):
 **None.** The decoded `ExprMetaArena` / `ExprMeta` (absolute `u64` indices) is identical,
 so none of these change:
 
-- the compilers (`Ix/CompileM.lean`, `crates/compile/src/compile.rs`);
-- the decompilers (`Ix/DecompileM.lean`, `crates/compile/src/decompile.rs`);
-- kernel meta ingress (`Ix/Tc/IngressMeta.lean`, `crates/kernel/src/ingress.rs`);
+- the compiler (`Ix/CompileM.lean`);
+- the decompiler (`Ix/DecompileM.lean`);
+- kernel meta ingress (IxC's reader, `IxC/Kernel/Ixon/Reader.lean`);
 - the FFI marshalling (`crates/ffi/src/lean_ixon/meta.rs`);
 - the proofs (none is about the serialized arena; the sharing proofs in `IxSharingVerify`
   do not touch metadata);

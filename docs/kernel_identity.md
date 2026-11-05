@@ -20,8 +20,7 @@ this language:
   `Address`.
 - Kernel claim roots are built from `Address`es:
   `subject_root` / `assumptions_root` use `merkle_root_canonical` over
-  the certified / assumed constant addresses
-  (`crates/kernel/src/claim.rs`).
+  the certified / assumed constant addresses.
 - Aggregation (`Claim::CheckEnv`, the `Contains` discharge) resolves
   assumption leaves against subject roots **by address**, and the
   cross-run proof store is keyed by address (content-addressed: the same
@@ -83,8 +82,8 @@ addressing (a Merkle-DAG over node tags, not blake3-of-serialization) —
 the two were never interchangeable — and repeated hashing added work
 for every constructed node.
 
-Since `1e3029d`, layer-2 identity is an **intern-assigned `u64` uid**
-(`crates/kernel/src/env.rs::Addr`):
+Since `1e3029d`, layer-2 identity in the Rust kernel (since retired) is an
+**intern-assigned `u64` uid** (its `Addr`):
 
 - Uids come from a process-global counter and are **never reused**, so
   `uid(a) == uid(b)` implies "same construction event or same

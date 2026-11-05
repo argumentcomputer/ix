@@ -954,16 +954,15 @@ def compileConstExprRaw (name : Name) (lvls : Array Level) :
 
 /-! ## Table Preseeding
 
-Mirrors Rust `preseed_expr_tables` (crates/compile/src/compile.rs:576):
-before compiling a block, walk every expression the block will compile,
+Before compiling a block, walk every expression the block will compile,
 collect all external refs (consts, nat/str literal blobs, proj type
 addresses) and all universes, then intern them into the block tables in
 CANONICAL SORTED order — refs by address bytes, univs by their serialized
-encoding (`univ_sort_key`, compile.rs:476). Table indices thereby become
+encoding. Table indices thereby become
 traversal-order-independent; the on-the-fly interning during actual
 compilation then always finds the preseeded entries. Without this pass,
 ref/univ indices depend on compile traversal order and every nontrivial
-constant's serialized form (hence address) diverges from Rust's. -/
+constant's serialized form (hence address) would depend on it. -/
 
 /-- Blake3 key over a univ-param context: hash of the concatenated
     32-byte name hashes. Mirrors Rust `univ_params_key` (compile.rs:482). -/

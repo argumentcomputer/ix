@@ -100,8 +100,7 @@ end ExtensionAppend
 `metaSharing[i - p]` (`p ≤ i < p + j`); anything else is
 `invalidMetaShareIndex`. No compiler emits such a share today, so these
 hand-built tables are the only thing pinning the table check
-(`validateMetaSharing`, which every constant's block setup runs; Rust
-mirror: `meta_share_*` tests in `crates/compile/src/decompile.rs`).
+(`validateMetaSharing`, which every constant's block setup runs).
 
 Every fixture has one primary entry (`p = 1`), `prim0 = (#1 #2)`. -/
 

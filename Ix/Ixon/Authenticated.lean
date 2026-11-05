@@ -21,8 +21,8 @@ An Ixon address is BLAKE3 of exact bytes, with no tag or length prefix: a
 record's is BLAKE3 of its complete serialization (`Ixon.serConstant`, the
 bytes an `.ixe` stores for it after its length prefix), a projection
 record's likewise, and a blob's is BLAKE3 of its payload. This is how the
-compiler addresses them (`crates/compile`, `Address::hash` over
-`Constant::put`), how the `.ixe` loaders verify them (`Ixon.getEnv`,
+compiler addresses them (`Ix.CompileM`, `Address.blake3` over
+`Ixon.serConstant`), how the `.ixe` loaders verify them (`Ixon.getEnv`,
 `Ixon.getEnvVerifiedLazy`), and how the resource adapter commits them
 (`Ix.Resource.Addressed.commit`).
 

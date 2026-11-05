@@ -7,9 +7,7 @@ constants. Resource claims bind the complete constant set and profile address.
 
 The executable modules are [Basic](../Ix/Resource/Basic.lean),
 [Check](../Ix/Resource/Check.lean), and [Admit](../Ix/Resource/Admit.lean).
-[Rust](../crates/ixon/src/resource.rs) implements the same transitions.
-The production boundaries are [Validate](../Ix/Resource/Validate.lean) and
-[the Rust kernel adapter](../crates/kernel/src/resource.rs).
+The production boundary is [Validate](../Ix/Resource/Validate.lean).
 
 Lean's [typing half](../Ix/Resource/Typing.lean) uses IxC's certified tiered
 admission entry for the part it admits. Unsafe inductives, safe assumption

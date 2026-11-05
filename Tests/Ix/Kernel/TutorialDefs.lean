@@ -1260,7 +1260,7 @@ good_thm natBeqFalse : Nat.beq 42 43 = false := by native_decide
 (head `P` is an external inductive whose param args mention the block
 member `F`), but its first param arg `n` references the constructor's
 own field-local binder, so it is NOT a valid nested-inductive
-parameterization. Rust (`crates/kernel/src/inductive.rs:723-730`)
+parameterization. The kernel
 skips the occurrence: no `P` aux is synthesized, `F.rec` keeps the
 plain non-nested shape (no IH for the `P n F` field), and the env is
 accepted — this is a GOOD fixture.

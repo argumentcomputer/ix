@@ -61,7 +61,7 @@ def knownIncompatible : Array (Lean.Name × String) := #[
   (`tut06_bad01,
    "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107"),
   -- AdvNat.rec is a malformed raw recursor payload. Tests.Ix.Kernel.Tutorial
-  -- checks it through a dedicated FFI (`rs_kernel_check_malformed_rec_rule_ixon`)
+  -- checks it through a dedicated path (`rsCheckMalformedRecRuleIxonFFI`)
   -- that injects the bad rule into Ixon.
   (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
    "malformed rec rule; Tutorial uses bespoke FFI"),

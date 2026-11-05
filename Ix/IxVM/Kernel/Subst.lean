@@ -8,8 +8,6 @@ namespace IxVM
 
 /-! ## Substitution primitives over `KExpr`
 
-Mirror: crates/kernel/src/subst.rs (full file).
-
 Two core operations:
 
 * `expr_lift(e, shift, cutoff)` — shift `BVar(i)` to `BVar(i+shift)` when
@@ -42,8 +40,8 @@ def subst := ⟦
   -- O(1). First traversal cost matches a single subst walk; the payoff is
   -- short-circuiting subst that would otherwise re-walk closed subtrees.
   --
-  -- Mirror: crates/kernel/src/expr.rs::lbr field on KExprNode (precomputed at
-  -- intern time in Rust; computed on demand here, memoized via `store`).
+  -- The retired Rust kernel precomputed this (`lbr` on `KExprNode`) at
+  -- intern time; here it is computed on demand, memoized via `store`.
   -- ============================================================================
   fn expr_lbr(e: KExpr) -> G {
     match load(e) {
@@ -104,7 +102,7 @@ def subst := ⟦
   -- Used by the nested-occurrence spec_params validity check in
   -- `Kernel/Inductive.lean`: at extraction depth `d`, a spec_param with
   -- a loose BVar in `[0, d)` depends on a field/domain-local binder.
-  -- Mirror: `sp.has_fvars()` in `crates/kernel/src/inductive.rs:723-730`
+  -- The retired Rust kernel tested `sp.has_fvars()` instead
   -- (Rust opens field/domain binders as fvars; Aiur keeps de Bruijn, so
   -- the same references appear as loose BVars below the depth).
   -- ============================================================================
@@ -300,7 +298,7 @@ def subst := ⟦
   -- Shift `BVar(i)` → `BVar(i + shift)` when `i ≥ cutoff`. Recursion bumps
   -- `cutoff` by 1 when crossing a binder (Lam/Forall/Let).
   --
-  -- Mirrors `crates/kernel/src/subst.rs::lift_no_intern` (line 364-415).
+  -- As the retired Rust kernel's `lift_no_intern`.
   -- Fast path: when `expr_lbr(e) <= cutoff`, no loose BVar at or above the
   -- cutoff exists, so `e` is unchanged.
   -- ============================================================================
@@ -432,7 +430,7 @@ def subst := ⟦
   -- Substitute `BVar(depth)` with `expr_lift(arg, depth, 0)` and decrement
   -- `BVar(i)` for `i > depth`. Crossing a binder bumps `depth`.
   --
-  -- Mirrors the single-arg form of `crates/kernel/src/subst.rs::instantiate_rev`
+  -- The single-arg form of `instantiate_rev`,
   -- with a list of one element. For the lambda-eta case in def_eq we want
   -- `body[BVar(0) := arg]` which is `expr_inst1(body, arg, 0)`.
   -- ============================================================================
@@ -539,7 +537,7 @@ def subst := ⟦
 
   -- ============================================================================
   -- expr_inst_many — simultaneous substitution of `substs` for the `n` binders
-  -- at `depth` in ONE walk (mirror `crates/kernel/src/subst.rs::simul_subst`). Used
+  -- at `depth` in ONE walk (as the retired Rust kernel's `simul_subst`). Used
   -- for multi-arg beta: `(λλλ. body) x y z` substitutes all three at once
   -- instead of three separate `expr_inst1` re-walks of the body.
   --

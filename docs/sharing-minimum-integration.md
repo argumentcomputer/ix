@@ -153,7 +153,7 @@ through it:
 | `finishInductiveFamilyBlock` | standalone inductive families |
 | `finishMutualCompilation` → `buildCompiledMutualBlock` | mutual blocks |
 
-**Rust** (`crates/compile/src`). `share_roots` runs the construction on a block's ordered roots.
+**Rust** (the Rust compiler, since retired). `share_roots` ran the construction on a block's ordered roots.
 `apply_sharing_to_{definition,axiom,quotient,recursor,mutual_block}_with_limits` run it under
 the limits they are given and return the shared `Constant`. The compiler passes the limits it
 read once per run (`CompileState::sharing_limits`, from `compiler_sharing_limits`: the defaults
@@ -176,10 +176,8 @@ These expand `Share(i)` against the decoded table and need no change for TagN: L
 `Ix/DecompileM.lean` (`resolveShareIn`, `collectIxonTelescopeExpandingShares`),
 IxC's reader (`IxC/Kernel/Ixon/Reader.lean`),
 `Ix/SemanticContract.lean` (`containsIxon`), `Ix/Resource/Addressed.lean` (offsets Share into a
-program-wide table); Rust `crates/compile/src/decompile.rs`, `crates/kernel/src/ingress.rs`,
-`crates/compile/src/semantic_contract.rs`, `crates/ixon/src/resource.rs`,
-`resource/addressed.rs` and `diff.rs`. The IxVM ingress and conversion modules also consume the
-table logically.
+program-wide table); Rust `crates/ffi/src/lean_ixon/diff.rs`. The IxVM ingress and conversion
+modules also consume the table logically.
 
 ### 3.4 Pricing and tie-break bytes in the construction
 
@@ -242,7 +240,7 @@ codec, is retired (see [kernel](kernel.md)).
 - **Separate namespaces.** `ConstantMeta.metaSharing` is its own table, indexed from 0 per
   constant. No compiler writes it now: the call-site metadata and the decompile records that
   indexed it are retired.
-- **Kernel ingress ignores it.** Rust `crates/kernel/src/ingress.rs` and IxC's reader do not
+- **Kernel ingress ignores it.** IxC's reader does not
   read `metaSharing`.
 
 ### 5.2 Metadata payloads contain no primary Share references
@@ -329,11 +327,10 @@ the claim" ("catalog: …" likewise). The in-circuit claim readers require objec
 
 | Fixture or pin | Location | Checked by | Producer |
 |---|---|---|---|
-| handoff set | `Tests/Fixtures/ixon-v4/handoff/` (`accepted.ixe`, `rejected-local-escape.ixe`, `profile.bin`, `accepted.claim`, `manifest.json`) | `ixon-v4-tests` (byte equality); `ix-kernel` `resource::tests::cross_language_consumer_handoff` | `lake exe ixon-v4-tests --export-handoff` |
-| claims, addressed resources, resource cases | `Tests/Fixtures/ixon-v4/{claims,addressed,resource}.tsv` | `ixon-v4-tests` (whole files); `ixon` `proof::tests::v4_claim_fixtures_and_strict_scope`, `resource::addressed::tests::canonical_cross_language_fixtures` | `lake exe ixon-v4-tests --export-fixtures` |
+| handoff set | `Tests/Fixtures/ixon-v4/handoff/` (`accepted.ixe`, `rejected-local-escape.ixe`, `profile.bin`, `accepted.claim`, `manifest.json`) | `ixon-v4-tests` (byte equality) | `lake exe ixon-v4-tests --export-handoff` |
+| claims, addressed resources, resource cases | `Tests/Fixtures/ixon-v4/{claims,addressed,resource}.tsv` | `ixon-v4-tests` (whole files); `ixon` `proof::tests::v4_claim_fixtures_and_strict_scope` | `lake exe ixon-v4-tests --export-fixtures` |
 | canonical primitive addresses | `Tests/Fixtures/ixon-v4/primitives.tsv`, `crates/common/src/prim_addrs.rs` (`PrimAddrs::new`), `Ix/PrimAddrs.lean`, the IxVM literals in `Ix/IxVM/Kernel/*.lean` | `lake exe ixon-v4-primitives` (file equality), suites `primitive-address-parity` and `prim-addrs` (IxVM literals) | `lake exe ixon-v4-primitives` |
 | catalog claim digest | `Tests/Ix/Claim.lean`, `crates/ixon/src/proof.rs` (`catalog_claim_wire_bytes_pinned`) | `claim` suite, `ixon` tests | the serializers' output |
-| env-bytes hash | `crates/compile/src/graph.rs` | `ix-compile` `graph::tests::setup_scan_preserves_compiled_fixture_bytes` | rerun and pin |
 | independent expression bytes | `Tests/Fixtures/ixon-v4/expressions.txt` | `ixon-v4-tests`; `ixon` `v4_independent_golden_expressions` | written by hand from the specification (`text.tsv` holds no bytes) |
 | IxVM FFT-cost pins | `Tests/Ix/IxVM.lean` (kernel checks), the shard pin in `Tests/Main.lean` | ignored runner `ixvm` | rerun and pin |
 

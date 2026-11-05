@@ -9,8 +9,7 @@ Whole constants can share an address when their anonymous encodings agree.
 This page describes those representation rules. The compiler theorem and its
 premises are in [kernel.md](kernel.md#relation-to-compiler-certification);
 the byte grammar is in [Ixon.md](Ixon.md). The implementation entry points are
-[CompileM](../Ix/CompileM.lean), [CompileDriver](../Ix/CompileDriver.lean) and
-the [Rust compiler](../crates/compile/src/compile.rs).
+[CompileM](../Ix/CompileM.lean) and [CompileDriver](../Ix/CompileDriver.lean).
 
 ## What determines an address
 
@@ -199,8 +198,7 @@ especially important for alias-specific names and universe spellings.
 This is the universe contract cited as **canonicity §10.6** in compiler,
 codec, ingress and decompiler comments.
 
-[`Ixon.canonUniv`](../Ix/IxonUniv.lean), mirrored in
-[`crates/ixon/src/canon_univ.rs`](../crates/ixon/src/canon_univ.rs), is the
+[`Ixon.canonUniv`](../Ix/IxonUniv.lean) is the
 deterministic composition `linearize ∘ subsumption ∘ normalizeAux` on
 positional Ixon universes. It normalizes the spelling inside a universe
 expression. It does not reorder a declaration's universe-parameter list or

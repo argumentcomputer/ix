@@ -19,8 +19,7 @@ open LSpec
 
 namespace Tests.Ix.Kernel.Tutorial
 
--- Re-export the shared `CheckError` type so existing call sites
--- (e.g. `Tests/Ix/Kernel/CheckEnv.lean`) keep working unchanged.
+-- Re-export the shared `CheckError` type for the suites that use it.
 -- The single source of truth lives in `Ix/KernelCheck.lean`.
 export Ix.KernelCheck (CheckError)
 

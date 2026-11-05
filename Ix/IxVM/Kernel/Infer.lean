@@ -59,7 +59,7 @@ def infer := ⟦
   }
 
   -- k_infer
-  -- Mirror of `crates/kernel/src/infer.rs::infer`. Per-variant dispatch.
+  -- Per-variant dispatch.
   -- Lvls placed at outermost; level-params instantiation handled where
   -- the constant's declared type is fetched.
   -- Context-trimmed memo wrapper (mirror Rust `infer_key`): key inference on
@@ -465,7 +465,7 @@ def infer := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/infer.rs dependent-data-field guard.
+  -- Dependent-data-field guard.
   -- For Prop structures: a preceding data field (sort != 0) whose body
   -- has any loose bvar (`body.lbr() > 0`) makes projection past it unsound.
   -- Matches Rust's `body.lbr() > 0` check exactly.
@@ -486,7 +486,7 @@ def infer := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/infer.rs ctor-field walk loop.
+  -- Ctor-field walk loop.
   -- For each preceding field i < target_field, substitute body[Var(0)
   -- := Proj(struct_idx, i, val)] before recursing. At i == target_field,
   -- return the field's domain type.
@@ -515,7 +515,6 @@ def infer := ⟦
 
   -- Cold-extracted Proj arm: the widest arm of `k_infer_core` by far
   -- (~10 call sites) on a rare node kind.
-  -- Mirror crates/kernel/src/infer.rs infer_proj.
   fn k_infer_proj(rc: RoleCtx, struct_addr: Addr, fidx: G, e1: KExpr,
                       types: List‹KExpr›) -> KExpr {
     let val_ty = k_infer(rc, e1, types);

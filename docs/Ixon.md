@@ -1043,22 +1043,20 @@ table (for a projection, the table of its `Muts` block) and `q` the size of
   Every metadata-to-metadata step goes to a lower entry, so expansion
   terminates.
 
-Both decompilers implement the rule: Lean `Ix.DecompileM` (`ShareScope`,
-`resolveShareIn`) and Rust `ix_compile::decompile` (`ShareScope`). When a
-constant's metadata is loaded, they check the whole table first
-(`validateMetaSharing`, Rust `validate_meta_sharing`): every `Share(i)`
+The decompiler implements the rule (`Ix.DecompileM`: `ShareScope`,
+`resolveShareIn`). When a constant's metadata is loaded, it checks the whole
+table first (`validateMetaSharing`): every `Share(i)`
 occurring in `metaSharing[j]` must have `i < p + j`. The first violation, in
 entry order and then left-to-right pre-order, is reported as
 `invalidMetaShareIndex` (Rust `DecompileError::InvalidMetaShareIndex`,
 error tag 11). An out-of-range index in a primary expression is
 `invalidShareIndex`; a record whose `_ix.inline` or arena root is out of
 range is a bad constant format. The semantic-contract scan
-(`Ix.SemanticContract.containsIxon`, Rust `semantic_contract::contains_ixon`)
-expands Shares with the same scopes.
+(`Ix.SemanticContract.containsIxon`) expands Shares with the same scopes.
 Kernel ingress, the IxVM circuit and the resource validators do not read
 `metaSharing` contents. Two older gaps remain: a record nested inside a
 metadata expression may reference any `metaSharing` entry, including its own,
-and neither the decompilers nor kernel ingress check that primary entries
+and neither the decompiler nor kernel ingress checks that primary entries
 reference only earlier entries. A malformed table of either kind can make
 them loop instead of failing; hardening the readers against malformed input
 is follow-up work.

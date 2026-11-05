@@ -19,23 +19,18 @@ public import Ix.Resource.Addressed
 /-!
   Ix.CompileDriver: the compile-env driver.
 
-  Port of the production scheduler semantics of
-  `crates/compile/src/compile/env.rs` (`compile_env_with_options`) and the
-  per-block dispatch of `compile_const` (compile.rs), on top of the pure
-  block compiler (`Ix.CompileM`). Lean's declarations compile as given: each
+  The scheduler and the per-block dispatch, on top of the pure block
+  compiler (`Ix.CompileM`). Lean's declarations compile as given: each
   block of the condensation is compiled once, in Lean's order, and Lean's own
   auxiliaries (`rec`, `casesOn`, `below`, …) are blocks of their own.
 
-  Deliberate deviations from Rust, none output-visible:
-  - One schedule, a pure fold over waves of ready blocks applied in
-    block-key order (`compileEnvFold`), instead of work-stealing threads.
-    Output maps are keyed by name/address. Name claims (`nameToAddr`) are
-    insert-once: a second claim at a different address is the error Rust's
-    insert-once claims raise (`checkBlockClaims`, single ownership).
-    `Named` entries are last-wins overrides within one block's
-    registrations, and constants and blobs are content-keyed. So
-    scheduling order does not affect the result (Rust relies on the same
-    property for its nondeterministic work-stealing order).
+  One schedule, a pure fold over waves of ready blocks applied in block-key
+  order (`compileEnvFold`). Output maps are keyed by name/address. Name
+  claims (`nameToAddr`) are insert-once: a second claim at a different
+  address is an error (`checkBlockClaims`, single ownership). `Named`
+  entries are last-wins overrides within one block's registrations, and
+  constants and blobs are content-keyed. So scheduling order does not
+  affect the result.
 -/
 
 public section
