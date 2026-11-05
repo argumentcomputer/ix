@@ -181,8 +181,8 @@ structure CheckReport where
   /-- A whole run of a bound artifact: the binding's roles, `(admitted,
   refused)`, a role refused when this run refused its record. -/
   roles : Option (Nat × Nat) := none
-  /-- The user axioms the declaration checks read and admitted
-  (`--allow-user-axioms`). -/
+  /-- The user axioms whose records the declaration checks read and accepted
+  (`--allow-user-axioms`, `admittedUserAxioms`). -/
   userAxioms : Array Address := #[]
   artifactAdmission : Option ArtifactAdmission := none
   hostStatement : Option Ix.HostAdmission.Statement := none
@@ -256,7 +256,7 @@ def CheckReport.failures (r : CheckReport) : Array (String × String) :=
   (r.targets.filter (!success ·.outcome)).map fun t => (t.target.label, s!"{t.outcome}: {t.reason}")
 
 /-- The user axioms a run's verdict is conditional on: the conditional
-whole-artifact entry's, otherwise those its declaration checks read. -/
+whole-artifact entry's, otherwise those its declaration checks read and accepted. -/
 def CheckReport.conditionalOn (r : CheckReport) : Array Address :=
   match r.artifactAdmission with
   | some (.conditional _ _ axioms) => axioms
@@ -314,6 +314,15 @@ def runExit (report : CheckReport) (wholeRequested : Bool) (hostRequested : Bool
   else if wholeRequested && report.artifactAdmission.isNone then exitPartial
   else if !report.conditionalOn.isEmpty then exitConditional
   else 0
+
+/-- The user axioms a run's declaration checks admitted: of those they
+read (`read`), the ones whose records they accepted (`rows`), by address. A
+record read and then blocked, declined or rejected admits nothing; this is how
+`kernel-check-ixe` lists them. -/
+def admittedUserAxioms (read : Std.HashSet Address) (rows : Array Row) : Array Address :=
+  let accepted := rows.foldl (init := ({} : Std.HashSet Address)) fun s r =>
+    if r.outcome == "accept" then s.insert r.address else s
+  (read.toArray.filter accepted.contains).qsort (compare · · == .lt)
 
 /-- No persistent marking: each call owns fresh serial checker/reader state.
 The exact cached tier declarations and onRead values supply key observations. -/
@@ -390,7 +399,7 @@ def runMode (p : PreparedInput) (cfg : CheckCfg) (plan : Plan) (cx : Ctx md) (ev
       targets, rows := run.rows, execution := run.execution, omitted := plan.omitted, records := actual.size
       inputMs := p.prepareMs, prepareMs, elapsedMs, subjectMicros := subject
       supportMicros := total - subject, readMicros := reads
-      userAxioms := (← userAxioms.get).toArray.qsort (compare · · == .lt) }
+      userAxioms := admittedUserAxioms (← userAxioms.get) run.rows }
   finally
     stop.set true
     let _ ← IO.wait reporter
