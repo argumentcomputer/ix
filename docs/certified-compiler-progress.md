@@ -33,10 +33,11 @@ outputs. The certified compiler is the only compiler
 
 ## Workload performance
 
-**Current (2026-11-05).** On the development host, `ix compile-lean
-Benchmarks/Compile/CompileInitStd.lean` compiles Init+Std to the artifact above
-in about 35 s of total wall-clock time (target `< 10 s`). There is no current
-Mathlib measurement.
+**Current (2026-11-05).** On a 64-core test host under load (load average
+35 to 49), `ix compile-lean Benchmarks/Compile/CompileInitStd.lean` compiled
+Init+Std to the artifact above in 37.4 s of total wall-clock time (target
+`< 10 s`): 29.7 s in `compileReport` and 1.9 s in finalization. There is no
+current Mathlib measurement.
 
 **Last recorded Mathlib run (2026-10-29).** A run on an earlier compiler
 completed all 783,115 inputs with zero failures: 630.020 s for the full process
