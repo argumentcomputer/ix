@@ -220,6 +220,13 @@ lean_exe IxTests where
   needs := #[`@/ix, `@/«kernel-check-ixe», `@/EntryCaseFixtures]
   moreLinkObjs := #[ix_rs_test]
 
+/-- The FFI suite (`IxTests ffi`) on its own, linked like `IxTests` with the
+test-only FFI code, for the merge queue's Valgrind job: its import closure is
+the host library's, without the test binary's proofs. -/
+lean_exe «ffi-tests» where
+  root := `Tests.FFIMain
+  moreLinkObjs := #[ix_rs_test]
+
 lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true

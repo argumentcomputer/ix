@@ -261,8 +261,13 @@ jobs:
           auto-config: false
           use-github-cache: false
 
+      # `ffi-tests` is the primary tier's `ffi` suite as an executable of its
+      # own, whose import closure leaves out the test binary's proofs.
+      - name: Build the FFI suite
+        run: lake build --wfail ffi-tests
+
       - name: Run FFI tests normally
-        run: lake test --wfail -- ffi
+        run: .lake/build/bin/ffi-tests
 
       - name: Install valgrind
         run: |
@@ -278,7 +283,7 @@ jobs:
             --track-origins=yes \
             --error-exitcode=1 \
             --suppressions=.github/valgrind.supp \
-            .lake/build/bin/IxTests ffi
+            .lake/build/bin/ffi-tests
 
   merge-gate:
     if: ${{ always() && github.event_name != 'issue_comment' }}
