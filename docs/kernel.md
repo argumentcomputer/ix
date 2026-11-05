@@ -394,8 +394,9 @@ checker checks itself ("Roles and the role table" below).
 
 **User axioms (uncertified).** Every other safe axiom, the three compiler-trust
 axioms among them, declines at the certified entry and in every host driver
-by default. A real Lean library therefore does not check whole: Init+Std
-refuses exactly those three axioms and the two opaques that depend on them
+by default. A real Lean library therefore does not check whole: strict checking
+of Init+Std declines `Lean.trustCompiler` and blocks the four native-evaluation
+constants that depend on it, the other two axioms among them
 (`Tests/Fixtures/initstd-reference.txt`). The host drivers can opt in with
 `--allow-user-axioms` (`ix check-lean`, `kernel-check-ixe`): the declaration
 checks then install a safe axiom whose key is an input constant's
