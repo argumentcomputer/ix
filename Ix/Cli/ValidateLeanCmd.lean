@@ -21,11 +21,10 @@ public import Ix.SemanticContract
   Phases (all pure-Lean):
 
     1. Compile (Lean → Ixon)          — the certified pure-Lean pipeline
-                                        (`Ix.CompileM.compileCertified`), its
-                                        post-steps, and the role binding
-                                        `ix compile-lean` adds: the later
-                                        phases read the bytes compile-lean
-                                        writes
+                                        and the role binding `ix compile-lean`
+                                        adds (`Ix.CompileM.compileAndFinalize`):
+                                        the later phases read the bytes
+                                        compile-lean writes
     2. Serde gate (pure)              — verified lazy parsing, with exact
                                         writer bytes per serialized unit
     3. Projection/block-order fidelity — IxC reconstructs the projections;
@@ -194,26 +193,22 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"Total constants: {constList.length}"
     IO.println "[validate-lean] phase 1: compiling (pure-Lean pipeline)..."
     (← IO.getStdout).flush
-    -- Phase 1: compile through the certified PURE-LEAN pipeline
-    -- (`Ix.CompileM.compileCertified`), with its post-steps, then add the role
-    -- binding as `ix compile-lean` does (`Ix.RoleBinding.Compile.finalize`),
-    -- so that the later phases read the bytes compile-lean writes.
+    -- Phase 1: compile through the certified PURE-LEAN pipeline and add the
+    -- role binding as `ix compile-lean` does (`Ix.CompileM.compileAndFinalize`),
+    -- so that the later phases read the bytes compile-lean writes. A partial
+    -- compile is finalized too; its failures fail the phase below.
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
-    match ← Ix.CompileM.compileCertified leanEnv constList (workers := compileWorkers) with
+    match ← Ix.CompileM.compileAndFinalize leanEnv constList compileWorkers
+        (allowPartial := true) with
     | .error e =>
       phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")
-    | .ok out =>
-      let bound : Except String (Ixon.Env × ByteArray) ← try
-          let artifact ← Ix.RoleBinding.Compile.finalize
-            (Ix.RoleBinding.Compile.certifiedBackend compileWorkers) leanEnv
-            Ix.RoleBinding.Compile.nativeCertSource (.plain constList) out.env
-            Ix.Resource.typingLimits (existing? := out.existing?)
-          IO.ofExcept (Ix.CompileM.validateFinalized out.annotated artifact)
-          let finalizedBytes ← IO.ofExcept (Ixon.serEnv artifact)
-          pure (.ok (artifact, finalizedBytes))
-        catch e => pure (.error e.toString)
+    | .ok (out, finalization) =>
+      let bound : Except String (Ixon.Env × ByteArray) := match finalization with
+        | .done artifact finalizedBytes => .ok (artifact, finalizedBytes)
+        | .failed e => .error e
+        | .refused => .error "the compile was not finalized"
       let added : Array Ix.Name := match bound with
         | .ok (artifact, _) => artifact.named.fold (init := #[]) fun acc n _ =>
             if out.env.named.contains n then acc else acc.push n

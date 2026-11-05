@@ -184,39 +184,30 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let allowPartial := p.hasFlag "allow-partial"
   let strictAnon := p.hasFlag "anon"
   let start ← IO.monoMsNow
-  -- The requested constants, whose publications and failures `finalize` keeps.
-  let requested := Ix.Compile.CompileInput.plain constList
-  -- Finalize (support, certificates, binding; the finalized artifact is checked
-  -- again), strip names under `--anon`, serialize, publish atomically.
-  let publish (backend : Ix.RoleBinding.Compile.Backend) (original : Ixon.Env)
-      (status : Ix.CompileM.CompileEnvStatus) (postStep : Ixon.Env → Except String Unit)
-      (existing? : Option (Std.HashMap Ix.Kernel.Name Address) := none) :
-      IO Ix.CompileM.CompileEnvStatus := do
-    let artifact ← Ix.RoleBinding.Compile.finalize backend leanEnv
-      Ix.RoleBinding.Compile.nativeCertSource requested original Ix.Resource.typingLimits
-      (existing? := existing?)
-    IO.ofExcept (postStep artifact)
-    let artifact := if strictAnon then { artifact with
-      named := {}, names := {}, comms := {}, addrToName := {} } else artifact
-    let bytes ← IO.ofExcept (Ixon.serEnv artifact)
-    Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
-    return { status with
-      bytes := bytes.size.toUInt64
-      named := artifact.named.size.toUInt64
-      uniqueAnon := artifact.consts.size.toUInt64
-      root := rootOf artifact }
   let verbose := (← IO.getEnv "IX_VERBOSE").isSome || (← IO.getEnv "IX_COMPILE_DBG").isSome
-  -- The certified compiler (`Ix.CompileM.compileCertified`: `Ix.Cert.compileReport`
-  -- on the canonical input), as `ix compile-lean` runs it.
   let log (s : String) : IO Unit := if verbose then IO.eprintln s!"[compile] {s}" else pure ()
-  let out ← match ← Ix.CompileM.compileCertified leanEnv constList workers log with
-    | .ok out => pure out
+  -- The certified compile, finalized as `ix compile-lean` finalizes it
+  -- (`Ix.CompileM.compileAndFinalize`: `Ix.Cert.compileReport` on the canonical
+  -- input, then the support, certificates and binding, the finalized artifact
+  -- checked again), with the names stripped under `--anon`; published
+  -- atomically below.
+  let strip (artifact : Ixon.Env) : Ixon.Env := if strictAnon then { artifact with
+    named := {}, names := {}, comms := {}, addrToName := {} } else artifact
+  let (out, finalization) ← match ← Ix.CompileM.compileAndFinalize leanEnv constList workers
+      allowPartial log (strip := strip) with
+    | .ok r => pure r
     | .error e => throw (IO.userError s!"compile refused: {e}")
   let status := statusOf out.env out.failures.toMap
-  let status ← if !allowPartial && !status.ungrounded.isEmpty then pure status
-    else
-      publish (Ix.RoleBinding.Compile.certifiedBackend workers) out.env status
-        (Ix.CompileM.validateFinalized out.annotated) (existing? := out.existing?)
+  let status ← match finalization with
+    | .refused => pure status
+    | .failed e => throw (IO.userError e)
+    | .done artifact bytes =>
+      Ix.RoleBinding.Compile.writeAtomic (FilePath.mk outPath) bytes
+      pure { status with
+        bytes := bytes.size.toUInt64
+        named := artifact.named.size.toUInt64
+        uniqueAnon := artifact.consts.size.toUInt64
+        root := rootOf artifact }
   let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
 

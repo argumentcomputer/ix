@@ -3,17 +3,18 @@ public import Ix.Cert.Compile
 public import Ix.Compile.ReadyCompile
 public import Ix.Resource.Validate
 public import Ix.RoleBinding.Compile
+public import Ix.Cli.Common
 public section
 
 /-!
 # The certified compile of Lean source
 
-`ix compile` and `ix compile-lean` compile with `Ix.Cert.compileReport`, the
-function `Ix.Cert.CompileCorrect` is about, on the canonical environment of
-their input:
+`ix compile`, `ix compile-lean`, `ix compile-export` and `ix validate-lean`
+compile with `Ix.Cert.compileReport`, the function `Ix.Cert.CompileCorrect` is
+about, on the canonical environment of their input (`compileAndFinalize`):
 
-1. **Source contracts.** The selected constants are prepared as the streamed
-   pipeline prepares them (`prepareCertified`). A list with no contract
+1. **Source contracts.** The selected constants are prepared
+   (`prepareCertified`). A list with no contract
    registration and no contract metadata in either reserved namespace (a scan
    on tasks, `Ix.Compile.checkOrdinaryConstants`, which also checks that each
    constant is listed once, under its own name) is used as it is. Any other
@@ -183,13 +184,10 @@ def validateFinalized (annotated : Bool) (artifact : Ixon.Env) : Except String U
   if annotated then
     let _ ← Ix.Resource.validate artifact (Ix.Resource.standardProfile artifact)
 
-/-- Up to three recorded failures, root causes first: a failure that only names a
-missing constant is a dependent's, listed after the ones that name a cause. -/
+/-- Up to three recorded failures, root causes first (`Ix.Cli.rootCausesFirst`). -/
 def recordedFailures (failures : Std.HashMap Ix.Name String) : String :=
-  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
-  let all := failures.toList
-  let ordered := all.filter (!cascade ·.2) ++ all.filter (cascade ·.2)
-  "; ".intercalate (ordered.take 3 |>.map fun (n, e) => s!"{n.pretty}: {(e.replace "\n" " ").take 200}")
+  "; ".intercalate ((Ix.Cli.rootCausesFirst failures.toList).take 3 |>.map fun (n, e) =>
+    s!"{n.pretty}: {(e.replace "\n" " ").take 200}")
 
 /-- Compile `constList` with the certified Lean compiler and return its `CompilePhases`. -/
 def compilePhasesOf (leanEnv : Lean.Environment)
@@ -220,41 +218,49 @@ def certifiedBackend (workers : Nat) : Backend := fun _ input => do
 
 end Ix.RoleBinding.Compile
 
-namespace Ix.RoleBinding
+namespace Ix.CompileM
 
-abbrev certifiedBackend := Ix.RoleBinding.Compile.certifiedBackend
+/-- What `compileAndFinalize` made of a certified compile. -/
+inductive Finalization where
+  /-- Not finalized: a constant failed to compile, and a partial artifact was
+  not allowed. -/
+  | refused
+  /-- `finalize`, `validateFinalized` or `Ixon.serEnv` failed. -/
+  | failed (error : String)
+  /-- The finalized artifact, after `strip`, and its serialization. -/
+  | done (artifact : Ixon.Env) (bytes : ByteArray)
 
-end Ix.RoleBinding
-
-namespace Ix.Cli
-
-/-- The process's resident set size, from `/proc/self/status` (`?` where it
-    cannot be read). -/
-def residentSetSize : IO String := do
+/-- **The certified compile, finalized**, as the compile commands run it:
+`compileCertified`; then, unless a constant failed and `allowPartial` is false,
+the role support, certificates and binding (`Ix.RoleBinding.Compile.finalize`
+with `certifiedBackend`, the certificate theorems from `certSource`),
+`validateFinalized`, `strip` and `Ixon.serEnv`. The outer error is the
+compile's refusal. `log` receives each phase's time and the resident set size. -/
+def compileAndFinalize (source : Lean.Environment)
+    (constants : List (Lean.Name × Lean.ConstantInfo)) (workers : Nat) (allowPartial : Bool)
+    (log : String → IO Unit := fun _ => pure ())
+    (certSource : IO Lean.Environment := Ix.RoleBinding.Compile.nativeCertSource)
+    (strip : Ixon.Env → Ixon.Env := id) :
+    IO (Except String (CertifiedOut × Finalization)) := do
+  let out ← match ← compileCertified source constants workers log with
+    | .ok out => pure out
+    | .error e => return .error e
+  log s!"rss after the compile: {← Ix.Cli.residentSetSize}"
+  if !allowPartial && !out.failures.isEmpty then return .ok (out, .refused)
   try
-    let status ← IO.FS.readFile "/proc/self/status"
-    let rss := (status.splitOn "\n").findSome? fun l =>
-      if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
-    return (rss.getD "?").trimAscii.toString
-  catch _ => return "?"
+    let t0 ← IO.monoMsNow
+    let artifact ← Ix.RoleBinding.Compile.finalize
+      (Ix.RoleBinding.Compile.certifiedBackend workers) source certSource
+      (.plain constants) out.env Ix.Resource.typingLimits (existing? := out.existing?)
+    IO.ofExcept (validateFinalized out.annotated artifact)
+    let t1 ← IO.monoMsNow
+    log s!"finalize: {t1 - t0}ms, rss {← Ix.Cli.residentSetSize}"
+    let artifact := strip artifact
+    let bytes ← IO.ofExcept (Ixon.serEnv artifact)
+    log s!"serialize ({bytes.size} bytes): {(← IO.monoMsNow) - t1}ms"
+    return .ok (out, .done artifact bytes)
+  catch e => return .ok (out, .failed e.toString)
 
-/-- Failures listed root causes first: a constant that failed only because a
-    dependency is missing is a cascade, listed after the ones that name the
-    cause (a refusal's message must be visible in the bounded listing). -/
-def rootCausesFirst {α : Type} (xs : List (α × String)) : List (α × String) :=
-  let cascade (e : String) := e.startsWith "missingConstant" || e.startsWith "missing constant"
-  xs.filter (!cascade ·.2) ++ xs.filter (cascade ·.2)
-
-/-- The canonical Merkle root of `env`'s stored constants, formatted as a hex string. -/
-def rootOf (env : Ixon.Env) : String :=
-  toString ((Ix.Merkle.merkleRootCanonical (env.consts.toArray.map (·.1))).getD Ix.Merkle.zeroAddress)
-
-/-- Initial `CompileEnvStatus` for `original` and `failures` prior to finalization and serialization. -/
-def statusOf (original : Ixon.Env) (failures : Std.HashMap Ix.Name String) :
-    Ix.CompileM.CompileEnvStatus :=
-  let ungrounded := (failures.toArray.map fun (n, r) => (n.pretty, r)).qsort (fun a b => a.1 < b.1)
-  { root := rootOf original, ungrounded, nonCanonical := #[], bytes := 0, named := 0, uniqueAnon := 0 }
-
-end Ix.Cli
+end Ix.CompileM
 
 end
