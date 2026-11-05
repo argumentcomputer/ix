@@ -1,16 +1,24 @@
 # The Init+Std reference artifact, checked by the `initstd-reference` test
 # (`lake test -- initstd-reference`, merge queue tier `ci:landing-initstd-cli`).
 #
-# `sha256` and `bytes` are the SHA-256 and the size of the file that
+# `blake3` and `bytes` are the Blake3 digest and the size of the file that
 # `ix compile-lean Benchmarks/Compile/CompileInitStd.lean` writes:
 # the certified compile with its report checks and the default role binding.
-# `lean-kernel-passed` of `lean-kernel-checked` constants pass
-# `ix check-lean <artifact> --anon`, which must also admit every role the default
-# table binds.
+# `ix check-lean <artifact> --anon`, strict as every entry is by default, must
+# admit every role the default table binds and refuse none, pass
+# `lean-kernel-passed` of `lean-kernel-checked` constants, and refuse exactly the
+# `lean-kernel-refused` addresses (the names are for the reader): it declines
+# the non-standard axiom `Lean.trustCompiler` and blocks the four
+# native-evaluation constants that depend on it, so it exits 3.
 #
 # A change that moves the compiler's bytes, or the kernel's verdicts on
 # this artifact, updates these lines in the same commit and says why.
-sha256	e48adef624e70bcdd3f22e1d96251682ac046a088700ccf5cf512f1b49afcda1
+blake3	a24fd146fcf3c5ed6e6a4821f5f122a6d397270f7eb3106bd7b75ff23eeca9a3
 bytes	253772604
-lean-kernel-passed	99519
+lean-kernel-passed	99514
 lean-kernel-checked	99519
+lean-kernel-refused	78d8bc334c7fd622793102acbf33ef9e3cae52615dcf5a9d5d63a56520640af2	Lean.trustCompiler
+lean-kernel-refused	b6327d9a1bbb461a447f0c971e622dd9a35132bd7de75bf69e20794d7a0e8595	Lean.reduceNat
+lean-kernel-refused	1e8072e4aaed4cffe4f3199c07d92107b597a6271e7a0cd33723c675d748a05b	Lean.ofReduceNat
+lean-kernel-refused	bacc4c814a4572ddfd969a1857adfe18239eb6bd8b1627ee79744a6a9b23b030	Lean.reduceBool
+lean-kernel-refused	560ece8034077f8861254f5e330e608f84b2779413c4bc27442b25a0683dba3b	Lean.ofReduceBool

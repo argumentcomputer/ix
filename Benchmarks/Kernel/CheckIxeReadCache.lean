@@ -165,14 +165,4 @@ def Plan.source (plan : Plan) : LoopSource Unit :=
     commit := fun _ _ _ => ()
     init := pure () }
 
-/-- The check loop over a plan, with the per-record step. -/
-def checkLoopPlan (plan : Plan) (limit : Option Nat)
-    (skip : Std.HashSet String) (emit : Row → IO Unit)
-    (before : Address → IO Unit := fun _ => pure ()) (after : IO Unit := pure ())
-    (progress : Nat → Outcome → IO Unit := fun _ _ => pure ()) : IO Outcome := do
-  let src := plan.source
-  let names := plan.nameMap
-  checkLoopWith src.view src.read src.commit (← src.init) (Checker.stepRecord plan.evidence) {}
-    (names.getD · #[]) (plan.addresses limit) skip emit before after progress
-
 end Benchmarks.Kernel.CheckIxeReadCache
