@@ -13,10 +13,13 @@ monadic definitions from 4.29. Proof adaptations do not add axioms or `sorry`.
 | Generic language, compiler, proofs, libraries | `Aiur/` / `Aiur` | `crates/aiur` |
 | IxVM claim verifier and host | `IxVM/` / `IxVM` | `crates/ixvm` |
 | Recursive verifier and aggregation program | `MultiStark/` / `MultiStark` | `crates/stark-verifier` |
+| Resident execution and proving controller | — | `crates/ix-prover` |
+| Shared execution record reservation pool | — | `crates/record-pool` |
 | Shared verifying-key and range-advice codecs | — | `crates/stark-key` |
-| Existing language and prover | `LegacyAiur` | `crates/aiur-legacy` |
-| Existing IxVM and recursive verifier | `LegacyIxVM`, `LegacyMultiStark` | `crates/ixvm-legacy` |
-| Existing generated execution kernels | generator in `LegacyAiur` | `crates/ixvm-legacy-native` (optional) |
+
+The previous unverified `LegacyAiur`, `LegacyIxVM`, `LegacyMultiStark` packages
+and `crates/aiur-legacy`, `crates/ixvm-legacy`, `crates/ixvm-legacy-native`
+crates have been retired.
 
 The generic Aiur crate does not depend on IxVM, the legacy interpreter, or a
 Lean installation. The IxVM crate registers its hint channels and table
@@ -68,9 +71,8 @@ evaluation, environment checking, reveal and membership claims. It contains
 bytecode functions including shared libraries. The generic Aiur proofs have
 not changed in this update.
 
-The ordinary commands now select new Aiur. Pass `--legacy` to use the retained
-implementation. `--formal` remains a compatibility alias and conflicts with
-`--legacy`:
+The ordinary commands use the certified Formal Aiur backend (`--formal` remains
+a compatibility alias; `--legacy` has been retired):
 
 ```sh
 ix prepare --cuda   # once per source revision: hosts and certified artifacts
@@ -181,14 +183,15 @@ and proof/key/claims streams privately. The output directory contains
 `proof.bin`, `key.bin`, `claims.bin`, `public.json` for independent verification,
 and `input.json` for feeding the proof into another recursive-verifier run.
 
-## Legacy support and native builds
+## CUDA and native builds
 
-`--legacy` retains the old execution, proving and verification paths, including
-old proof formats and caches. The default backend now also has a resident
-execution/proving controller, CPU execution ahead of proving, GPU lanes,
-checkpointed leaf refinement, recursive aggregation, cross-record distributed
-execution, and texray. See [the orchestration guide](formal-aiur-orchestration.md)
-for commands, resource accounting, recovery, and validation results.
+The legacy `--legacy` execution, proving, verification, and generated-kernel
+paths have been retired. The certified Formal Aiur backend provides a resident
+execution/proving controller (`crates/ix-prover`), CPU execution ahead of
+proving, GPU lanes, checkpointed leaf refinement, recursive aggregation,
+cross-record distributed execution, and texray. See
+[the orchestration guide](formal-aiur-orchestration.md) for commands, resource
+accounting, recovery, and validation results.
 
 The new hosts select multi-stark's CUDA prover with `--gpu-device N` or
 `IX_CUDA=1` (device from `MULTI_STARK_CUDA_DEVICE`, otherwise zero). CPU binaries
@@ -266,20 +269,9 @@ The compiler correctness proofs remain intact. Neither those proofs nor the
 port tests constitute a new formal proof of the cryptographic backend or
 discharge the existing memo-acyclicity hypothesis of the semantic model.
 
-Normal builds leave generated native execution out of the dependency graph.
-The retained legacy path uses bytecode by default. To select its existing
-native kernels:
-
-```sh
-IX_NATIVE=1 lake build ix
-cargo build -p ix-ffi --features legacy-native,parallel
-```
-
-The three native kernels share one optional crate. `cargo --workspace` explicitly
-includes that crate; ordinary workspace default members exclude it. Legacy
-GPU flags (`IX_CUDA`, `IX_CUDA_TRACE_CODEGEN`) are retained independently.
-`ix codegen` and `trace-fixtures` still regenerate legacy artifacts at their
-new paths.
+The retired legacy native execution crate (`crates/ixvm-legacy-native`),
+`legacy-native` Cargo feature, `ix codegen`, and `trace-fixtures` have been
+removed along with the legacy backend.
 
 Function grouping is now enabled in the IxVM and recursive-verifier exports.
 The application policies translate legacy's measured groups; missing, inlined,

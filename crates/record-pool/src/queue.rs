@@ -48,13 +48,27 @@ impl<T> WorkQueue<T> {
   }
 
   pub fn pop(&self) -> Option<T> {
+    self.pop_matching(|_| true)
+  }
+
+  pub fn pop_matching(&self, mut accept: impl FnMut(&T) -> bool) -> Option<T> {
     let mut state = self.state.lock().unwrap();
     loop {
       if state.closed {
         return None;
       }
-      if let Some(item) =
-        state.priority.pop_front().or_else(|| state.ordinary.pop_front())
+      if let Some(item) = state
+        .priority
+        .iter()
+        .position(&mut accept)
+        .and_then(|i| state.priority.remove(i))
+        .or_else(|| {
+          state
+            .ordinary
+            .iter()
+            .position(&mut accept)
+            .and_then(|i| state.ordinary.remove(i))
+        })
       {
         self.changed.notify_all();
         return Some(item);
@@ -93,6 +107,31 @@ mod tests {
     assert_eq!(
       (queue.pop(), queue.pop(), queue.pop(), queue.pop()),
       (Some(2), Some(3), Some(1), Some(4))
+    );
+  }
+
+  #[test]
+  fn pop_matching_routes_items_to_compatible_lanes() {
+    let queue = WorkQueue::new(4);
+    queue.push((1, Some(1)), false).unwrap();
+    queue.push((2, None), false).unwrap();
+    queue.push((3, Some(1)), true).unwrap();
+    queue.push((4, Some(0)), true).unwrap();
+    assert_eq!(
+      queue.pop_matching(|(_, dev)| dev.is_none() || *dev == Some(0)),
+      Some((4, Some(0)))
+    );
+    assert_eq!(
+      queue.pop_matching(|(_, dev)| dev.is_none() || *dev == Some(0)),
+      Some((2, None))
+    );
+    assert_eq!(
+      queue.pop_matching(|(_, dev)| dev.is_none() || *dev == Some(1)),
+      Some((3, Some(1)))
+    );
+    assert_eq!(
+      queue.pop_matching(|(_, dev)| dev.is_none() || *dev == Some(1)),
+      Some((1, Some(1)))
     );
   }
 

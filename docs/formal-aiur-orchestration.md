@@ -1,8 +1,9 @@
 # Formal Aiur orchestration
 
-The default Ix backend uses `crates/ix-prover` for resident proving. The old
-backend remains available with `--legacy`. This changes runtime scheduling and
-witness construction; it adds no Aiur primitive, constraint, axiom, or `sorry`.
+The certified Formal Aiur backend uses `crates/ix-prover` for resident proving
+(the legacy `--legacy` backend has been retired). This governs runtime
+scheduling and witness construction; it adds no Aiur primitive, constraint,
+axiom, or `sorry`.
 
 ## Commands
 
@@ -59,8 +60,8 @@ atomic control files. Execution records stay in Rust memory; they are never
 serialized to those files. Ready recursive jobs have queue priority over new
 leaves. Workers refill as individual jobs finish, without a wave barrier.
 
-The shared `record-pool` crate is extracted from the legacy controller and used
-by both backends. New Aiur charges record arena, ROM, index, fixed-table count,
+The `record-pool` crate manages bounded execution-record memory across workers.
+Aiur charges record arena, ROM, index, fixed-table count,
 frame, and distributed dependency storage growth to reservations. Advice is
 charged conservatively before parsing. Reservations follow record storage and
 are released when it drops. When executions mutually block on growth, the pool

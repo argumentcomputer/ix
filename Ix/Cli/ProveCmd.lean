@@ -67,7 +67,7 @@ def proveCmd : Cli.Cmd := `[Cli|
   FLAGS:
     "gpu-device" : Nat; "Use this CUDA device with the Aiur host (requires a CUDA build)."
     "legacy"; "Retired legacy Aiur backend flag."
-    "formal"; "Compatibility alias for the default certified Aiur backend; conflicts with --legacy."
+    "formal"; "Compatibility alias for the default certified Aiur backend."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact for --aggregate/--lanes; otherwise compile/cache local sources."
     "direct-joins"; "With --aggregate/--lanes: join raw IxVM leaves directly instead of wrapping each leaf first (higher RAM)."

@@ -62,7 +62,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "legacy"; "Retired legacy Aiur backend flag."
-    "formal"; "Compatibility alias for the default certified Aiur backend; conflicts with --legacy."
+    "formal"; "Compatibility alias for the default certified Aiur backend."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "dev-srs"; "Allow development compressed proofs; these are not production-secure."
