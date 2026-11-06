@@ -1213,7 +1213,8 @@ reason, micros, readMicros`).
 ```sh
 lake build --wfail kernel-check-ixe
 lake exe ix compile Benchmarks/Compile/CompileInitStd.lean --out .lake/envs/initstd.ixe
-CHECK_IXE_WATCH_MB=12000 .lake/build/bin/kernel-check-ixe --guarded --memory-max 24 \
+CHECK_IXE_WATCH_MB=12000 systemd-run --user --scope -p MemoryMax=24G \
+  .lake/build/bin/kernel-check-ixe --guarded \
   .lake/envs/initstd.ixe .lake/envs/initstd.jsonl
 .lake/build/bin/kernel-check-ixe --report .lake/envs/initstd.jsonl
 ```
@@ -1260,8 +1261,8 @@ rows print a failure with its terms and Lean's names
   above that);
 - `CHECK_IXE_SKIP` (comma-separated addresses) declines those constants
   unchecked; `kernel-check-ixe --guarded` reruns with every recorded runaway
-  skipped until the run completes (`--memory-max <GB>` runs each attempt in
-  a memory-capped cgroup scope, `Ix.Watchdog`);
+  skipped until the run completes; wrap it in `systemd-run --user --scope
+  -p MemoryMax=<GB>G` to cap the whole run;
 - `CHECK_IXE_ROOTS` (comma-separated Lean names) restricts the run to the
   prelude and the dependency closure of those constants;
 - `CHECK_IXE_THREAD=0` runs the check on the main thread instead of a

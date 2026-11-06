@@ -16,8 +16,8 @@ the verified checker through the Ixon reader; see `Benchmarks.Kernel.CheckIxe` (
 * `--entry`: the certified entry at BLAKE3 over the same records, with or
   without authentication, or authentication alone
   (`Benchmarks.Kernel.CheckIxeEntry`);
-* `--guarded`: the check rerun past watchdog runaways, optionally under a
-  cgroup memory cap (`Benchmarks.Kernel.CheckIxeGuarded`);
+* `--guarded`: the check rerun past watchdog runaways
+  (`Benchmarks.Kernel.CheckIxeGuarded`);
 * `--report`, `--summary`: summaries of a run's rows
   (`Benchmarks.Kernel.CheckIxeReport`);
 * `--compare`, `--paired`: two row files compared, and paired runs of two

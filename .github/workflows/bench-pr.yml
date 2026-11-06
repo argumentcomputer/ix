@@ -437,7 +437,9 @@ jobs:
         if: steps.compile-source.outputs.rebuild == 'true'
         env:
           COMPILE_ENV: ${{ matrix.env }}
-        run: ix bench run --backend compile --env "$COMPILE_ENV" --out compile.json
+        run: >-
+          "$GITHUB_WORKSPACE/.github/scripts/memory-cap"
+          ix bench run --backend compile --env "$COMPILE_ENV" --out compile.json
       # The compile row is measured here, not in the benchmark job that
       # renders it, so its host travels with the row: same cache entry and
       # run artifact below.
@@ -566,6 +568,8 @@ jobs:
       # the shared set (Ix/BenchConstants.lean), and pr.json's row names
       # become the canonical name list this run measures — the base-side
       # fetch below asks bencher for exactly those names.
+      # memory-cap runs it in a cgroup capped at the runner's RAM minus 15 GiB,
+      # swap off: an OOM kill lands on the measured tool, not `ix bench run`.
       - name: Run backend on PR → pr.json
         id: pr-run
         # Exit 3 = the kernel rejected a constant on the PR side (rows are
@@ -583,7 +587,8 @@ jobs:
           fi
           flags=""
           [ -n "$CONSTS" ] && flags="$flags --consts $CONSTS"
-          ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+          "$GITHUB_WORKSPACE/.github/scripts/memory-cap" \
+            ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json" $flags
 
       # ---------- base side ----------
@@ -806,6 +811,8 @@ jobs:
       # carries the PR's compiled-in constant set, so the base side
       # selects them without any extra plumbing.
       # Full miss: run the normal selection (or the BENCH_CONSTS override).
+      # Like the PR side, the run goes through the PR head's memory-cap (the
+      # workspace root's checkout), never a script from the base tree.
       - name: Run backend on base → merge into main.json
         if: steps.decide.outputs.run-base == 'true'
         env:
@@ -826,7 +833,8 @@ jobs:
           # Cached base .ixe when the restore above hit; else the base run
           # compiles it fresh (no flag).
           [ -f "base/$BENV.ixe" ] && flags="$flags --ixe base/$BENV.ixe"
-          ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+          "$GITHUB_WORKSPACE/.github/scripts/memory-cap" \
+            ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --repo base \
             --out "$GITHUB_WORKSPACE/base.json" $flags
           echo "base-side ix bench run exit $?"

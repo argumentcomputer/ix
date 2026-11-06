@@ -199,7 +199,7 @@ jobs:
       # row to bencher's upload format.
       - name: Run ix compile benchmark
         run: |
-          ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
+          .github/scripts/memory-cap ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
           ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
       # Ask the registry for this env's metadata (instead of keeping
@@ -322,9 +322,11 @@ jobs:
       # If the kernel rejects a constant, `ix bench run` exits 3 and this
       # step fails — that is a correctness regression, not a benchmark
       # blip. The completed rows are already on disk for the upload below.
+      # memory-cap runs it in a cgroup capped at the runner's RAM minus 15 GiB,
+      # swap off: an OOM kill lands on the measured tool, not `ix bench run`.
       - name: Run ${{ matrix.params.label }} benchmark
         run: >-
-          ix bench run --backend ${{ matrix.params.backend }}
+          .github/scripts/memory-cap ix bench run --backend ${{ matrix.params.backend }}
           --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }}
           --ixe ${{ matrix.params.env }}.ixe --out bench.json
       # The ooc run writes a per-constant attribution CSV next to its
