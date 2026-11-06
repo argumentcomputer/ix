@@ -40,6 +40,8 @@ jobs:
       - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
+          # Merge tests owns the shared queue ref's snapshot.
+          sticky_save: ${{ github.event_name != 'merge_group' }}
           sticky_cache: |
             rust
             custom,path=.lake,path=Aiur/.lake,path=IxVM/.lake,path=MultiStark/.lake,path=target
