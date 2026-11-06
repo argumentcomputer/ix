@@ -59,16 +59,13 @@ def plotTitle (workload measure : String) : String :=
   | "ix-decompile", "decompile-time"     => "Ix Decompile Time"
   | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
-  | "formal-aiur-execute", "execute-time" => "Aiur Execute Time"
-  | "formal-aiur-execute", "check-time"   => "Aiur Check Time"
-  | "formal-aiur-execute", "peak-rss"     => "Aiur Check Peak RAM Usage"
-  | "formal-aiur-env-execute", "execute-time" => "Aiur Env Execute Time"
-  | "formal-aiur-env-execute", "check-time"   => "Aiur Env Check Time"
-  | "formal-aiur-env-execute", "peak-rss"     => "Aiur Env Check Peak RAM Usage"
-  | "formal-aiur-env-execute", "shards"       => "Aiur Env Shards"
-  | "ooc-check", "check-time"            => "OOC Check Time"
-  | "ooc-check", "throughput"            => "OOC Check Throughput"
-  | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
+  | "ixvm", "execute-time"     => "IxVM Execute Time"
+  | "ixvm", "check-time"       => "IxVM Check Time"
+  | "ixvm", "peak-rss"         => "IxVM Check Peak RAM Usage"
+  | "ixvm", "shards"           => "IxVM Env Shards"
+  | "ixvm-ooc", "check-time"   => "IxVM OOC Check Time"
+  | "ixvm-ooc", "throughput"   => "IxVM OOC Check Throughput"
+  | "ixvm-ooc", "peak-rss"     => "IxVM OOC Check Peak RAM Usage"
   | w, m => s!"{w}: {m}"
 
 /-- Tracked but not plotted solo. `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
@@ -82,59 +79,43 @@ def plotSkips : List (String × String) :=
     auto-creates a measure with placeholder units ("Measure (units)") on
     its first upload, leaving plots unitless — and a console edit would
     drift from this list, so the sync re-asserts it. Phase spans are
-    wall-clock seconds. A stage-qualified slug (`ixvm-prove-time`,
-    `pipeline-peak-rss`) carries its base measure's units, so only base
-    names are listed. -/
+    wall-clock seconds. -/
 def unitsFor (slug : String) : Option String :=
   if slug.startsWith "phase-" then some "seconds (s)" else
-  [("execute-peak-rss", "bytes (B)"),
-   ("compile-time", "seconds (s)"),
+  [("compile-time", "seconds (s)"),
    ("decompile-time", "seconds (s)"),
    ("execute-time", "seconds (s)"),
-   ("prove-time", "seconds (s)"),
-   ("verify-time", "seconds (s)"),
    ("check-time", "seconds (s)"),
-   ("total-time", "seconds (s)"),
    ("peak-rss", "bytes (B)"),
    ("file-size", "bytes (B)"),
-   ("proof-size", "bytes (B)"),
    ("constants", "constants"),
-   ("cycles", "cycles"),
-   ("max-shard-cycles", "cycles"),
    ("shards", "shards"),
-   ("fft-cost", "FFTs"),
-   ("throughput", "constants / second")].lookup
-     (BenchCmd.dropStagePrefix slug)
+   ("throughput", "constants / second")].lookup slug
 
-/-- Dashboard group order (compile first, then decompile, Aiur execution,
-    ooc); unranked workloads (a future backend) sort last. -/
+/-- Dashboard group order (compile first, then decompile, IxVM execution,
+    IxVM out-of-circuit checks); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile-certified", "ix-decompile", "formal-aiur-execute",
-   "formal-aiur-env-execute", "ooc-check"]
+  ["ix-compile-certified", "ix-decompile", "ixvm", "ixvm-ooc"]
 
 structure PlotSpec where
   testbed : String
-  measures : List String
-  benchmarks : Array String
+  /-- Each plotted measure with the benchmark rows that carry it. -/
+  measures : List (String × Array String)
 
 /-- One spec per bench-main workload: its measure slugs and the benchmark row
-    names uploaded there, both from the registry (`BackendSpec.benchmarkNames`,
-    keyed off `inputs`) — env-keyed backends (compile, decompile) key one row
-    per compiled env, the per-constant backends one row per primary, and ooc
-    adds a whole-env row. Dynamic
-    sub-rows (`<name>/shard-N`) are left out: their multiplicity shifts with the
-    shard manifest, and the parent row carries the headline trend. -/
+    names that carry each measure, both from the registry
+    (`BackendSpec.benchmarkNames`): the shared constants for a constant-row
+    measure, the envs for an env-row measure, both lines on one plot when
+    both kinds carry it. Dynamic sub-rows (`<name>/shard-N`) are left out: their
+    multiplicity shifts with the shard manifest, and the parent row carries
+    the headline trend. -/
 def plotSpecs : Array PlotSpec := Id.run do
   let mut specs : Array PlotSpec := #[]
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
-    for (mode, testbed) in b.testbeds do
-      -- On-demand modes upload nothing, so there's
-      -- nothing to plot — the registry marks them explicitly.
-      if b.unscheduled.contains mode then continue
-      specs := specs.push
-        { testbed, measures := b.metricsFor mode,
-          benchmarks := b.benchmarkNames mode }
+    specs := specs.push
+      { testbed := b.testbed,
+        measures := b.metrics.map fun m => (m, b.benchmarkNames m) }
   return specs.qsort fun a b =>
     workloadOrder.idxOf (workloadOf a.testbed)
       < workloadOrder.idxOf (workloadOf b.testbed)
@@ -300,16 +281,16 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     if testbedUuids.isEmpty then
       IO.eprintln s!"warn: no testbeds for '{spec.testbed}' on bencher yet — skipped"
       continue
-    -- Benchmark names → UUIDs, dropping the not-yet-uploaded ones loudly.
-    let mut benchUuids : Array String := #[]
-    for n in spec.benchmarks do
-      match findUuid benchmarks "name" n with
-      | some u => benchUuids := benchUuids.push u
-      | none => do
-        IO.eprintln
-          s!"warn: {spec.testbed}: benchmark '{n}' not on bencher yet — skipped"
-    for measure in spec.measures do
+    for (measure, names) in spec.measures do
       if plotSkips.contains (workload, measure) then continue
+      -- Benchmark names → UUIDs, dropping the not-yet-uploaded ones loudly.
+      let mut benchUuids : Array String := #[]
+      for n in names do
+        match findUuid benchmarks "name" n with
+        | some u => benchUuids := benchUuids.push u
+        | none => do
+          IO.eprintln
+            s!"warn: {spec.testbed}: benchmark '{n}' not on bencher yet — skipped"
       -- A measure bencher hasn't seen yet (first upload after a rename or
       -- a new tracked measure still pending) has no series to plot: warn
       -- and skip, like a not-yet-uploaded benchmark or testbed. Its
@@ -326,7 +307,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   -- capacity. Select only the shared constants, excluding whole-env rows.
   let overlay : Option DesiredPlot := do
     let oocTb ← BenchCmd.benchmarkMachines.findSome? fun machine =>
-      findUuid testbeds "slug" (BenchCmd.testbedOnMachine "ooc-check" machine)
+      findUuid testbeds "slug" (BenchCmd.testbedOnMachine "ixvm-ooc" machine)
     let consts ← findUuid measures "slug" "constants"
     let names := Ix.BenchConstants.benchConstants.filterMap fun c =>
       findUuid benchmarks "name" c.name

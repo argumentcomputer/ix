@@ -1278,7 +1278,7 @@ Mathlib's `.ixe` comes from `Benchmarks/Compile/CompileMathlib.lean`
 ### `ix check-lean`
 
 `ix check-lean <input.ixe>` (`Ix/Cli/CheckLeanCmd.lean`) is the host checker
-behind the merge-queue gate `initstd-reference` and the `ooc` benchmark. It
+behind the merge-queue gate `initstd-reference` and the `ixvm-ooc` benchmark. It
 authenticates the bytes and checks every declaration, or a selection
 (`--consts`, `--consts-file`, `--max`), with the same incremental step as the
 environment check. When a whole run of a bound artifact passes, it runs the

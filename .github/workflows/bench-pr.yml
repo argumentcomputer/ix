@@ -3,16 +3,12 @@
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
 #
-#   !benchmark ([aiur] [aiur-sharded-env] [ooc] [compile] [decompile] | all) [execute]
-#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
-#                                  #  defaults to every env for compile/decompile, InitStd
-#                                  #  for the rest)
-#   BENCH_CONSTS=Nat.gcd,Y        # bench exactly these constants on the per-constant
-#                                  #  backends (overrides the shared selection). Each name's
-#                                  #  env is found automatically — benchConstants entry first,
-#                                  #  else defining module, else Mathlib (FLT for FLT.* names)
-#                                  #  — so BENCH_ENVS is never required; a single-env
-#                                  #  BENCH_ENVS still forces placement
+#   !benchmark ([ixvm] [ixvm-ooc] [compile] [decompile] | all) [fresh]
+#   BENCH_CONSTANTS=all            # constant rows: all (default), none, or comma names. A
+#                                  #  shared constant runs in its own env; any other name
+#                                  #  needs a single-env BENCH_ENVS naming where it lives
+#   BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs (case-insensitive;
+#                                  #  default InitStd)
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
@@ -27,14 +23,17 @@
 #                                  # decompile Pass 2 cache limit; 0 disables clearing
 #                                  # (default: 131072)
 #
-# A backend is required (`all` selects every scheduled one). Each backend
-# runs its registry default mode; the bare `execute` token selects a
-# backend's execute mode where it has another default:
-#   - aiur: `ix check` per constant, execution only.
-#   - aiur-sharded-env: one `ix check --ixes` over the whole env.
-#   - ooc: `execute`.
+# A backend is required (`all` selects every one). A backend's rows are
+# constant rows (the shared constants, each in its env) and env rows (whole
+# envs); compile and decompile have env rows only:
+#   - ixvm: `ix check` per constant, execution only; env row: one
+#     `ix check --ixes` over the sharded env.
+#   - ixvm-ooc: `ix check-lean` over each constant's closure; env row: the
+#     whole env.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
+# Each matrix cell is (backend, env): the env's selected constant rows and,
+# if selected, its env row.
 # The bare `fresh` token skips the bencher fetch and prevents persistent
 # cached binaries, `.ixe` files, and compile rows from reaching measured jobs.
 # A cached head `ix` may bootstrap the canonical command parser, but the full
@@ -46,9 +45,9 @@
 #
 # For each matrix entry the job runs `ix bench run` twice: once on the PR
 # checkout, once for the base side. The base side comes from bencher.dev
-# (`ix bench fetch-main`) only on FULL coverage (and, for ooc, a cached
+# (`ix bench fetch-main`) only on FULL coverage (and, for an ixvm-ooc env row, a cached
 # attribution CSV); anything less — base SHA not uploaded, partial
-# coverage, an ooc attribution cache miss, or `fresh` — triggers a full
+# coverage, an ixvm-ooc attribution cache miss, or `fresh` — triggers a full
 # local base-SHA rerun whose rows take priority over bencher's.
 #
 # The issue_comment run only checks that the commenter is an org
@@ -78,7 +77,7 @@ on:
         description: Full head SHA to benchmark
         required: true
       comment-body:
-        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark ooc BENCH_ENVS=InitStd,Mathlib`"
+        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark ixvm-ooc BENCH_ENVS=InitStd,Mathlib`"
         required: true
 
 run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0} (r8i.8xlarge)', inputs.pr) || 'Relay benchmark comment' }}"
@@ -418,8 +417,8 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-          # Mathlib oleans for every env that imports Mathlib (FLT does).
-          use-mathlib-cache: ${{ (matrix.env == 'Mathlib' || matrix.env == 'FLT') && 'true' || 'false' }}
+          # Mathlib oleans for the env that imports Mathlib.
+          use-mathlib-cache: ${{ matrix.env == 'Mathlib' && 'true' || 'false' }}
       # The measured compile resolves the env's imports from these oleans;
       # bench-main builds the same target before its measured compile.
       - name: Build env oleans
@@ -493,8 +492,8 @@ jobs:
     env:
       BACKEND: ${{ matrix.params.backend }}
       BENV: ${{ matrix.params.env }}
-      MODE: ${{ matrix.params.mode }}
-      CONSTS: ${{ matrix.params.consts }}
+      CONSTANTS: ${{ matrix.params.constants }}
+      ENV_ROW: ${{ matrix.params['env-row'] }}
       LABEL: ${{ matrix.params.label }}
       BASE_SHA: ${{ inputs.base-sha }}
       BASE_REF: ${{ inputs.base-ref }}
@@ -580,11 +579,11 @@ jobs:
             cp "$GITHUB_WORKSPACE/compile.json" "$GITHUB_WORKSPACE/pr.json"
             exit 0
           fi
-          flags=""
-          [ -n "$CONSTS" ] && flags="$flags --consts $CONSTS"
+          rows=(--constants "$CONSTANTS")
+          [ "$ENV_ROW" = 1 ] || rows+=(--no-env-row)
           "$GITHUB_WORKSPACE/.github/scripts/memory-cap" \
-            ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
-            --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json" $flags
+            ix bench run --backend "$BACKEND" --env "$BENV" "${rows[@]}" \
+            --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json"
 
       # ---------- base side ----------
       # Try bencher.dev first (bench-main.yml uploads main's numbers).
@@ -592,7 +591,7 @@ jobs:
       #   3     = transient (base SHA not uploaded yet) — fall back to
       #           running the base SHA locally.
       #   other = permanent misconfiguration (e.g. no testbed for this
-      #           backend/mode) that a local run can never fix — fail
+      #           backend) that a local run can never fix — fail
       #           loudly instead of silently paying the fallback forever.
       # Partial miss (exit 0 with a non-empty missing.txt): bencher covers
       # some names but not all — typically constants this PR adds. Any
@@ -623,8 +622,8 @@ jobs:
           NAMES=$(jq -r 'keys | join(",")' "$GITHUB_WORKSPACE/pr.json" 2>/dev/null || true)
           set +e
           ix bench fetch-main \
-            --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" --env "$BENV" \
-            --consts "$NAMES" \
+            --sha "$BASE_SHA" --backend "$BACKEND" \
+            --rows "$NAMES" \
             --missing-out "$GITHUB_WORKSPACE/missing.txt" \
             --out "$GITHUB_WORKSPACE/main.json"
           rc=$?
@@ -641,19 +640,19 @@ jobs:
                echo "run-base=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::fetch-main: permanent config error (exit $rc) — check backendSpecs testbeds vs bench-main.yml"; exit "$rc" ;;
           esac
-      # Base-side attribution CSV for the ooc drill-down: bench-main cached
+      # Base-side attribution CSV for the ixvm-ooc drill-down: bench-main cached
       # the base SHA's CSV by (SHA, cell) — bencher itself stores metric
       # rows only. Restored BEFORE the base-run decision so a miss can
-      # force one (ooc's base run is the cheapest backend; a re-run beats
+      # force one (ixvm-ooc's base run is cheap; a re-run beats
       # a silently absent drill-down).
-      - name: Restore base-side attribution CSV (ooc)
+      - name: Restore base-side attribution CSV (ixvm-ooc)
         id: perconst
-        if: matrix.params.backend == 'ooc' && env.FRESH != '1'
+        if: matrix.params.backend == 'ixvm-ooc' && matrix.params['env-row'] == '1' && env.FRESH != '1'
         continue-on-error: true
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bench.json.perconst.csv
-          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # The host that measured the base SHA's rows on main, recorded by
       # bench-main next to its bencher upload. Only a bencher-sourced base side
       # uses it; a base run in this job is labelled with this runner instead.
@@ -663,10 +662,10 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: bench-hardware.txt
-          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+          key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}
       # The final base-run decision — every base-side step gates on THIS
       # step. A base run, whatever triggered it (bencher miss or partial,
-      # `fresh`, or an ooc attribution-CSV cache miss), is always a FULL
+      # `fresh`, or an ixvm-ooc attribution-CSV cache miss), is always a FULL
       # rerun whose rows take priority over bencher's.
       - name: Decide base run
         id: decide
@@ -677,12 +676,12 @@ jobs:
         run: |
           rb="$BENCHER_RUN_BASE"
           src="$BENCHER_SOURCE"
-          if [ "$BACKEND" = ooc ] \
+          if [ "$BACKEND" = ixvm-ooc ] && [ "$ENV_ROW" = 1 ] \
             && [ "$PERCONST_HIT" != "true" ] \
             && [ "$rb" != true ]; then
-            echo "ooc attribution CSV not cached — full fresh base run"
+            echo "ixvm-ooc attribution CSV not cached — full fresh base run"
             rb=true
-            src="base run @ ${BASE_SHA::7} (ooc attribution cache miss)"
+            src="base run @ ${BASE_SHA::7} (ixvm-ooc attribution cache miss)"
           fi
           echo "run-base=$rb" >> "$GITHUB_OUTPUT"
           echo "source=$src" >> "$GITHUB_OUTPUT"
@@ -779,7 +778,7 @@ jobs:
           build: true
           build-args: "ix"
           use-github-cache: false
-      # For a mathlib-importing env (Mathlib, FLT), the base-side compile
+      # For the mathlib-importing env (Mathlib), the base-side compile
       # resolves imports from the base tree's Benchmarks/Compile
       # subpackage — mathlib lives only there, so its cache fetch must run
       # from that directory. Compile runs need this even with cached
@@ -788,7 +787,7 @@ jobs:
       - name: Fetch base Mathlib oleans
         if: >-
           steps.decide.outputs.run-base == 'true' &&
-          (matrix.params.env == 'Mathlib' || matrix.params.env == 'FLT') &&
+          matrix.params.env == 'Mathlib' &&
           (matrix.params.backend == 'compile' || steps.base-src.outputs.cached != 'true')
         working-directory: base/Benchmarks/Compile
         run: |
@@ -800,11 +799,9 @@ jobs:
       # and every constant drops — the compare then shows a loud "base
       # produced no results" note instead of a silent all-n/a table.
       #
-      # Partial bencher miss: run just the uncovered names (via --consts).
-      # They are typically constants the PR itself adds; the PR's `ix`
-      # carries the PR's compiled-in constant set, so the base side
-      # selects them without any extra plumbing.
-      # Full miss: run the normal selection (or the BENCH_CONSTS override).
+      # The base side measures the same rows as the PR side (the cell's
+      # constants and, if selected, its env row); its rows take priority
+      # over bencher's.
       # Like the PR side, the run goes through the PR head's memory-cap (the
       # workspace root's checkout), never a script from the base tree.
       - name: Run backend on base → merge into main.json
@@ -815,22 +812,18 @@ jobs:
           if [ "$BASE_HAS_IXE" = true ]; then
             mv "$BENV.ixe" "base/$BENV.ixe"
           fi
-          flags=""
-          if [ -n "$CONSTS" ]; then
-            # BENCH_CONSTS override: the base side must measure the same
-            # explicit names, not the default selection.
-            flags="$flags --consts $CONSTS"
-          fi
+          args=(--constants "$CONSTANTS")
+          [ "$ENV_ROW" = 1 ] || args+=(--no-env-row)
           # A base-side failure must not fail the PR's job: whatever rows
           # landed get merged, and the table reports the rest.
           set +e
           # Cached base .ixe when the restore above hit; else the base run
           # compiles it fresh (no flag).
-          [ -f "base/$BENV.ixe" ] && flags="$flags --ixe base/$BENV.ixe"
+          [ -f "base/$BENV.ixe" ] && args+=(--ixe "base/$BENV.ixe")
           "$GITHUB_WORKSPACE/.github/scripts/memory-cap" \
-            ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+            ix bench run --backend "$BACKEND" --env "$BENV" "${args[@]}" \
             --repo base \
-            --out "$GITHUB_WORKSPACE/base.json" $flags
+            --out "$GITHUB_WORKSPACE/base.json"
           echo "base-side ix bench run exit $?"
           set -e
           # The rerun's rows win; bencher-fetched rows only fill anything
@@ -845,7 +838,7 @@ jobs:
             else
               mv "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json"
             fi
-            # The ooc run writes a per-constant attribution CSV next to its
+            # The ixvm-ooc env row writes a per-constant attribution CSV next to its
             # results file; carry it to the base-side main.json so `ix bench
             # compare` finds the pair and renders the drill-down (bencher
             # cannot supply it — it stores metric rows only).
@@ -859,7 +852,7 @@ jobs:
       # A base-run-produced attribution CSV (moved to main.json's side in
       # the merge step) wins; the cached one only fills the gap.
       - name: Place base-side attribution CSV
-        if: matrix.params.backend == 'ooc'
+        if: matrix.params.backend == 'ixvm-ooc'
         run: |
           if [ ! -f "$GITHUB_WORKSPACE/main.json.perconst.csv" ] \
             && [ -f bench.json.perconst.csv ]; then
@@ -873,7 +866,7 @@ jobs:
         run: |
           mkdir -p out
           ix bench compare \
-            --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+            --backend "$BACKEND" --env "$BENV" \
             --base "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
             --base-source "$BASE_SOURCE" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \

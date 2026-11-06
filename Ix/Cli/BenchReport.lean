@@ -21,8 +21,6 @@ public import Lean.Data.Json
 public import Ix.Benchmark.Results
 public import Ix.Cli.BenchCmd
 public import Ix.Cli.BenchPlots
-public import Ix.Cli.NameResolve
-public import Ix.Meta
 
 public section
 
@@ -33,20 +31,14 @@ namespace Ix.Cli.BenchReport
 
 /-! ## Metric formatting -/
 
-open Ix.Cli.BenchCmd (stagePrefixOf dropStagePrefix)
-
 /-- Per-metric formatting kind. Metric names are the results-JSON keys the
-    tools emit (see the registry in Ix.Cli.BenchCmd). A stage-qualified
-    metric formats like its base counterpart (`fri-verifier-peak-rss` and
-    `pipeline-peak-rss` like `peak-rss`, …). Unknown metrics fall through
-    to a generic decimal rendering. -/
+    tools emit (see the registry in Ix.Cli.BenchCmd). Unknown metrics fall
+    through to a generic decimal rendering. -/
 def metricKind (metric : String) : String :=
-  let metric := dropStagePrefix metric
   if ["peak-rss", "file-size", "proof-size"].contains metric
   then "bytes"
   else if metric.startsWith "phase-" then "seconds"
-  -- Every wall-clock measure is named `<what>-time`, the pipeline
-  -- ledger's `total-time` included.
+  -- Every wall-clock measure is named `<what>-time`.
   else if metric.endsWith "-time" then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
            "throughput"].contains metric then "count"
@@ -56,14 +48,12 @@ def metricKind (metric : String) : String :=
 /-- Display label for a metric column. Keys stay the bencher measure slugs
     (renaming one would orphan its threshold/history); only the table
     rendering differs. `file-size` is the serialized `.ixe` env — bencher
-    plots it as "Environment Size"; `peak-rss` reads better as plain RAM,
-    in every slug that embeds it (`fri-verifier-peak-rss` → …-peak-ram);
+    plots it as "Environment Size"; `peak-rss` reads better as plain RAM;
     `throughput` carries its unit here because the runs print bare
     magnitudes (matching `unitsFor`'s "constants / second" on bencher). -/
 def metricLabel (metric : String) : String :=
   if metric == "file-size" then "env-size"
-  else if dropStagePrefix metric == "throughput" then
-    metric.replace "throughput" "throughput (const/s)"
+  else if metric == "throughput" then "throughput (const/s)"
   else metric.replace "peak-rss" "peak-ram"
 
 /-- Group a digit string by thousands: `"105492"` → `"105,492"`. -/
@@ -127,7 +117,7 @@ def human (v : Option Float) (metric : String) : String :=
     lower-is-better (times, RAM, cycles, sizes). `throughput` means
     constants checked per second on EVERY backend. -/
 def higherIsBetter (metric : String) : Bool :=
-  dropStagePrefix metric == "throughput"
+  metric == "throughput"
 
 /-! ## Row access -/
 
@@ -175,44 +165,19 @@ def ratio (mainV prV : Float) (metric : String) : Option (Float × String) :=
       | _ => ("more", "fewer")
     some (factor, if grew then words.1 else words.2)
 
-/-- One table of a compare rendering. A single-table backend passes one
-    section with an empty `heading` (the cell title above already names
-    it); a pipeline backend passes one per stage. -/
-structure CompareSection where
-  heading : String := ""
-  metrics : Array String
-  /-- Restrict a stage to its workloads (e.g. aggregation pairs). `none`
-      retains every row, including failures with no measurements. -/
-  names : Option (Array String) := none
-  rowNoun : Option String := none
-
-/-- The stage qualifier shared by every one of a section's measures, if
-    they share one. A stage table's heading already says which stage it
-    is, so its columns read `prove-time`, not `ixvm-prove-time`. -/
-def sectionLabelDrop (metrics : Array String) : String :=
-  match metrics[0]?.bind stagePrefixOf with
-  | some p => if metrics.all (·.startsWith p) then p else ""
-  | none => ""
-
 structure CompareArgs where
   mainRows : Json
   prRows : Json
-  /-- The tables to render, in order. -/
-  sections : Array CompareSection
-  /-- Measure the rows sort on, shared by every section so a constant
-      keeps its position across a pipeline's stage tables. Defaults to
-      the first section's first measure. -/
-  sortMetric : String := ""
+  /-- The table's columns, in order; the head is the row sort key. -/
+  metrics : Array String
   threshold : Float
   title : String
   /-- Render the per-constant `phase-<span>` drill-downs (opt-in:
       `BENCH_PHASES=1`) — the spans are noisy and dynamically named, so
       the default table stays at the headline measures. -/
   phases : Bool := false
-  /-- What one table row is, for the header and summary: `constant` on
-      the per-constant backends, `env` on compile (whose rows are
-      env-keyed), `env/constant` on ooc (which mixes an env row with
-      per-constant rows). -/
+  /-- What one table row is, for the header and summary: `constant` or
+      `env`. -/
   rowNoun : String := "constant"
   /-- What to call the base side in headers and notes. `!benchmark`
       compares against the PR's own base branch, which is only `main` for
@@ -225,12 +190,8 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   if names.isEmpty then
     return a.title ++ "\n\n_No results were produced (every constant failed, \
       timed out, or was dropped). See the workflow logs._"
-  -- Sort by the primary metric, largest first (n/a rows last). Every
-  -- section sorts on the same one, so a pipeline's stage tables list
-  -- their rows in one order and read down the page.
-  let primary := if a.sortMetric.isEmpty
-    then (a.sections[0]?.bind (·.metrics[0]?)).getD ""
-    else a.sortMetric
+  -- Sort by the primary metric, largest first (n/a rows last).
+  let primary := (a.metrics[0]?).getD ""
   let key := fun n => (rowNum a.prRows n primary).orElse
     fun _ => rowNum a.mainRows n primary
   let names := names.qsort fun x y =>
@@ -246,69 +207,53 @@ def renderCompare (a : CompareArgs) : String := Id.run do
       failures := failures.push (n, a.baseLabel)
     if rowStatus a.prRows n == "rejected" then failures := failures.push (n, "PR")
 
-  -- One rendered table per section, plus the names that regressed or
-  -- improved ANYWHERE across them: the summary counts a constant once,
-  -- however many stages moved.
-  let mut blocks : Array (String × Array String × Nat × String) := #[]
-  let mut regressedNames : Array String := #[]
-  let mut improvedNames : Array String := #[]
-  for sec in a.sections do
-    let sectionNames := names.filter fun n => sec.names.all (·.contains n)
-    if sectionNames.isEmpty then continue
-    let rowNoun := sec.rowNoun.getD a.rowNoun
-    let drop := sectionLabelDrop sec.metrics
-    let label := fun (m : String) =>
-      metricLabel (if drop.isEmpty then m else (m.drop drop.length).toString)
-    let mut head := #[rowNoun]
-    for m in sec.metrics do
-      head := head ++ #[s!"{label m} ({a.baseLabel})", s!"{label m} (PR)", "Δ%"]
-    let mut lines := #[
-      "| " ++ " | ".intercalate head.toList ++ " |",
-      "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
-    for n in sectionNames do
-      let mainStatus := rowStatus a.mainRows n
-      let prStatus := rowStatus a.prRows n
-      let mut rowRegressed := false
-      let mut rowImproved := false
-      let mut cols := #[s!"`{n}`"]
-      for m in sec.metrics do
-        let mv := rowNum a.mainRows n m
-        let pv := rowNum a.prRows n m
-        -- An OOM/CRASH row may still carry real partial measurements; render
-        -- those, and the status only for the metrics the kill prevented. OOM
-        -- is a capacity kill; CRASH is a fault in the tool (e.g. a segfault)
-        -- and needs a bug hunt, not a bigger box. A REJECTED row is
-        -- spelled out — the constant was rejected, not benchmarked.
-        let renderSide := fun (status : String) (v : Option Float) =>
-          if status == "rejected" then "❌ failed typecheck"
-          else if status == "oom" && v.isNone then "OOM"
-          else if status == "crash" && v.isNone then "💥 CRASH"
-          else human v m
-        let mut delta := "n/a"
-        if let (some mvv, some pvv) := (mv, pv) then
-          if mvv != 0.0 then
-            let dp := (pvv - mvv) / mvv * 100.0
-            delta := (if dp >= 0.0 then "+" else "") ++ fmtF dp 1 ++ "%"
-            -- Ratio only when it adds signal beyond the percentage.
-            if let some (f, word) := ratio mvv pvv m then
-              if f >= 1.05 then delta := delta ++ s!" ({fmtF f 2}× {word})"
-            let bad := badness dp m
-            if bad > a.threshold then
-              delta := delta ++ " ⚠️"; rowRegressed := true
-            else if bad < -a.threshold then
-              delta := delta ++ " 🟢"; rowImproved := true
-        cols := cols ++ #[renderSide mainStatus mv, renderSide prStatus pv, delta]
-      -- Independent tallies: a row can regress on one metric and improve
-      -- on another (compile-time up, peak-ram down), and the summary must
-      -- not hide either side.
-      if rowRegressed && !regressedNames.contains n then
-        regressedNames := regressedNames.push n
-      if rowImproved && !improvedNames.contains n then
-        improvedNames := improvedNames.push n
-      lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
-    blocks := blocks.push (sec.heading, lines, sectionNames.size, rowNoun)
-  let regressed := regressedNames.size
-  let improved := improvedNames.size
+  let mut head := #[a.rowNoun]
+  for m in a.metrics do
+    head := head ++ #[s!"{metricLabel m} ({a.baseLabel})", s!"{metricLabel m} (PR)", "Δ%"]
+  let mut lines := #[
+    "| " ++ " | ".intercalate head.toList ++ " |",
+    "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
+  let mut regressed := 0
+  let mut improved := 0
+  for n in names do
+    let mainStatus := rowStatus a.mainRows n
+    let prStatus := rowStatus a.prRows n
+    let mut rowRegressed := false
+    let mut rowImproved := false
+    let mut cols := #[s!"`{n}`"]
+    for m in a.metrics do
+      let mv := rowNum a.mainRows n m
+      let pv := rowNum a.prRows n m
+      -- An OOM/CRASH row may still carry real partial measurements; render
+      -- those, and the status only for the metrics the kill prevented. OOM
+      -- is a capacity kill; CRASH is a fault in the tool (e.g. a segfault)
+      -- and needs a bug hunt, not a bigger box. A REJECTED row is
+      -- spelled out — the constant was rejected, not benchmarked.
+      let renderSide := fun (status : String) (v : Option Float) =>
+        if status == "rejected" then "❌ failed typecheck"
+        else if status == "oom" && v.isNone then "OOM"
+        else if status == "crash" && v.isNone then "💥 CRASH"
+        else human v m
+      let mut delta := "n/a"
+      if let (some mvv, some pvv) := (mv, pv) then
+        if mvv != 0.0 then
+          let dp := (pvv - mvv) / mvv * 100.0
+          delta := (if dp >= 0.0 then "+" else "") ++ fmtF dp 1 ++ "%"
+          -- Ratio only when it adds signal beyond the percentage.
+          if let some (f, word) := ratio mvv pvv m then
+            if f >= 1.05 then delta := delta ++ s!" ({fmtF f 2}× {word})"
+          let bad := badness dp m
+          if bad > a.threshold then
+            delta := delta ++ " ⚠️"; rowRegressed := true
+          else if bad < -a.threshold then
+            delta := delta ++ " 🟢"; rowImproved := true
+      cols := cols ++ #[renderSide mainStatus mv, renderSide prStatus pv, delta]
+    -- Independent tallies: a row can regress on one metric and improve
+    -- on another (compile-time up, peak-ram down), and the summary must
+    -- not hide either side.
+    if rowRegressed then regressed := regressed + 1
+    if rowImproved then improved := improved + 1
+    lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
 
   -- Assembly order puts the scannable verdict FIRST and collapses long
   -- tables: a multi-cell PR comment reads as one verdict line per cell,
@@ -335,17 +280,12 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
-  for (heading, lines, count, rowNoun) in blocks do
-    let caption := if heading.isEmpty then "comparison table" else heading
-    -- Keep stage tables collapsible even for a single aggregation pair.
-    if !heading.isEmpty || count > 5 then
-      out := out ++ #["",
-        s!"<details><summary>{caption} \
-          ({plural count rowNoun})</summary>", ""]
-        ++ lines ++ #["", "</details>"]
-    else
-      out := out ++ (if heading.isEmpty then #[""] else #["", s!"#### {heading}", ""])
-        ++ lines
+  if names.size > 5 then
+    out := out ++ #["",
+      s!"<details><summary>comparison table ({plural names.size a.rowNoun})</summary>", ""]
+      ++ lines ++ #["", "</details>"]
+  else
+    out := out ++ #[""] ++ lines
   -- Per-phase drill-down (only under `a.phases`): the tables above
   -- carry every constant's high-level row; below it, each constant with
   -- `phase-<span>` fields
@@ -378,7 +318,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     out := (out.push "" |>.push "**per-phase drill-down**") ++ detail
   return "\n".intercalate out.toList
 
-/-! ## Per-constant drill-down (ooc `--per-const` attribution CSVs) -/
+/-! ## Per-constant drill-down (ixvm-ooc `--per-const` attribution CSVs) -/
 
 /-- One entry of a `--per-const` attribution CSV: the
     aggregated measurements of one constant's (or Muts block's) check. -/
@@ -595,12 +535,16 @@ def renderPerConstMovers (mainCsv prCsv : String) (baseLabel : String := "main")
     (tSorted.extract 0 (min topN 5))
   return out ++ "</details>"
 
+/-- `rows` restricted to the names `keep` admits. -/
+def filterRows (rows : Json) (keep : String → Bool) : Json :=
+  match rows with
+  | .obj kvs => Json.mkObj (kvs.toArray.filter (keep ·.1)).toList
+  | other => other
+
 def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
   let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
-  let mode := (p.flag? "mode").map (·.as! String)
-    |>.getD (((Ix.Cli.BenchCmd.findBackend backend).map (·.defaultMode)).getD "execute")
-  let params := s!"{backend}-{env}-{mode}"
+  let params := s!"{backend}-{env}"
   -- Explicit paths win; otherwise the local baseline pair, so a bare
   -- `ix bench compare --backend …` after two runs reports the local delta.
   let benchDir ← Ix.Cli.BenchCmd.benchOutputDir
@@ -608,50 +552,42 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD s!"{benchDir}/{params}.prev.json"
   let prPath := (p.flag? "pr").map (·.as! String)
     |>.getD s!"{benchDir}/{params}.json"
-  -- An explicit `--metric` list is always one flat table; otherwise the
-  -- registry decides, splitting a pipeline mode into its stage tables.
-  let spec := Ix.Cli.BenchCmd.findBackend backend
-  let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
+  let some spec := Ix.Cli.BenchCmd.findBackend backend
+    | p.printError s!"error: unknown backend '{backend}' (see backendSpecs)"
+      return exitUsage
   let mainRows ← readRows mainPath
   let prRows ← readRows prPath
-  let sections : Array CompareSection :=
-    if !flagged.isEmpty then #[{ metrics := flagged }]
-    else match (spec.map (·.stagesFor mode)).getD [] with
-      | [] => #[{ metrics := ((spec.map (·.metricsFor mode)).getD []).toArray }]
-      | stages => (stages.map fun (heading, ms) =>
-          ({ heading, metrics := ms.toArray } : CompareSection)).toArray
-  if sections.all (·.metrics.isEmpty) then
-    p.printError s!"error: no metrics for {backend}/{mode}; pass --metric or fix backendSpecs"
-    return exitUsage
   let threshold := (p.flag? "threshold").map (fun f => (f.as! Nat).toFloat)
     |>.getD 3.0
   let mainSrc := (p.flag? "base-source").map (·.as! String) |>.getD mainPath
   let baseLabel := (p.flag? "base-label").map (·.as! String) |>.getD "main"
-  -- Name the mode only where a mode choice exists; a single-mode
-  -- backend's `· execute` is registry plumbing, not information.
-  let cellName :=
-    if ((Ix.Cli.BenchCmd.findBackend backend).map (·.testbeds.length)).getD 0 > 1
-    then s!"`{backend}` · `{env}` · `{mode}`"
-    else s!"`{backend}` · `{env}`"
   let title := (p.flag? "title").map (·.as! String)
-    |>.getD s!"### {cellName} — {baseLabel} from: {mainSrc}"
-  -- A staged mode sorts every table on its LEDGER's headline (the
-  -- closing section's first measure — `total-time`), so the stage tables
-  -- rank constants by what the whole pipeline costs rather than each by
-  -- its own stage.
-  let sortMetric := if sections.size > 1
-    then (sections.back?.bind (·.metrics[0]?)).getD "" else ""
-  let mut table := renderCompare {
-    mainRows, prRows
-    sections, sortMetric, threshold, title, baseLabel
-    phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
-    rowNoun :=
-      if backend == "compile" || backend == "aiur-sharded-env" then "env"
-      else if backend == "ooc" then "env/constant"
-      else "constant"
-  }
+    |>.getD s!"### `{backend}` · `{env}` — {baseLabel} from: {mainSrc}"
+  let phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
+  -- The env row and the constant rows measure different things, so each
+  -- kind gets its own table with its own columns. Either side having a
+  -- row of a kind renders that kind's table.
+  let isEnvRow := (· == env)
+  let has := fun (keep : String → Bool) =>
+    (rowNames mainRows ++ rowNames prRows).any keep
+  let mut tables : Array String := #[]
+  if has isEnvRow then
+    tables := tables.push <| renderCompare {
+      mainRows := filterRows mainRows isEnvRow, prRows := filterRows prRows isEnvRow
+      metrics := spec.envMetrics.toArray, threshold, title, baseLabel, phases
+      rowNoun := "env" }
+  if spec.hasConstants && has (!isEnvRow ·) then
+    tables := tables.push <| renderCompare {
+      mainRows := filterRows mainRows (!isEnvRow ·)
+      prRows := filterRows prRows (!isEnvRow ·)
+      metrics := spec.constantMetrics.toArray, threshold, baseLabel, phases
+      title := if tables.isEmpty then title else "#### constants"
+      rowNoun := "constant" }
+  let mut table := if tables.isEmpty
+    then renderCompare { mainRows, prRows, metrics := #[], threshold, title, baseLabel }
+    else "\n\n".intercalate tables.toList
   -- Per-constant attribution drill-down: rendered whenever an
-  -- attribution CSV (`--per-const`, written by the ooc whole-env run)
+  -- attribution CSV (`--per-const`, written by the ixvm-ooc env row)
   -- sits next to BOTH results files.
   let mainAttrib := mainPath ++ ".perconst.csv"
   let prAttrib := prPath ++ ".perconst.csv"
@@ -773,30 +709,23 @@ def curlJson (url : String) : IO (Except String Json) := do
 /-- Pull the base SHA's rows JSON from bencher.dev. Exit codes are
     load-bearing for the workflow: 3 = transient (no report at that hash
     yet, or the API failed) — the caller falls back to running main
-    locally; 2 = config error (unknown backend/mode) — the caller fails
+    locally; 2 = config error (unknown backend) — the caller fails
     the run loudly instead of paying the fallback forever. A PARTIAL miss
     still exits 0: `--missing-out` lists the uncovered names so the caller
     measures just those against the base checkout and merges. -/
 def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
   let sha := (p.flag? "sha").map (·.as! String) |>.getD ""
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
-  let mode := (p.flag? "mode").map (·.as! String) |>.getD ""
   let out := (p.flag? "out").map (·.as! String) |>.getD "main.json"
-  let some testbed := (Ix.Cli.BenchCmd.findBackend backend).bind
-      (·.testbedFor mode)
-    | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
+  let some testbed := (Ix.Cli.BenchCmd.findBackend backend).map (·.testbed)
+    | IO.println s!"fetch-main: no testbed for {backend}"
       return exitUsage
   let testbed := Ix.Cli.BenchCmd.testbedOnMachine testbed
     (← Ix.Cli.BenchCmd.benchmarkMachine)
   let wanted : Option (Array String) ← do
-    let names ← Ix.Cli.ConstsFile.gather p "consts" "names"
-    if (p.flag? "consts").isNone && (p.flag? "names").isNone then pure none
-    else
-      -- The env-keyed row (ooc whole-env, compile) isn't a benchmark
-      -- constant; admit it past the names filter explicitly.
-      match (p.flag? "env").map (·.as! String) with
-      | some env => pure (some (names.push env))
-      | none => pure (some names)
+    let names ← Ix.Cli.ConstsFile.gather p "rows" "names"
+    if (p.flag? "rows").isNone && (p.flag? "names").isNone then pure none
+    else pure (some names)
 
   -- Page newest-first until the SHA's reports are found; aggregate across
   -- reports (matrix envs upload separately to one testbed), NEWEST report
@@ -822,7 +751,7 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
       if reports.size < 255 then break
       page := page + 1
   if atSha.isEmpty then
-    IO.println s!"fetch-main: no reports for {backend}/{mode} @ {sha.take 8}"
+    IO.println s!"fetch-main: no reports for {backend} @ {sha.take 8}"
     return exitRejected
 
   -- The LIST endpoint stopped inlining each report's `results` (it now
@@ -879,9 +808,7 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println "fetch-main: reports found but no matching benchmarks in --names"
     return exitRejected
   if let some missingOut := (p.flag? "missing-out").map (·.as! String) then
-    -- Computed against the listed names verbatim: the env-keyed row is an
-    -- admit-filter, not a per-constant expectation.
-    let nameSet ← Ix.Cli.ConstsFile.gather p "consts" "names"
+    let nameSet ← Ix.Cli.ConstsFile.gather p "rows" "names"
     let missing := nameSet.filter fun n => !seen.contains n
     IO.FS.writeFile missingOut
       ("\n".intercalate missing.toList ++ (if missing.isEmpty then "" else "\n"))
@@ -889,42 +816,31 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"fetch-main: {missing.size} name(s) not on bencher @ \
         {sha.take 8} (base run will measure): {", ".intercalate missing.toList}"
   IO.FS.writeFile out (Json.mkObj rows.toList).compress
-  IO.println s!"fetch-main: {rows.size} constant(s) from bencher for {backend}/{mode}"
+  IO.println s!"fetch-main: {rows.size} row(s) from bencher for {backend}"
   return 0
 
 /-! ## matrix -/
 
 /-- Emit the benchmark matrix from the registry, so workflow matrices are
-    generated instead of hand-copied: each enabled backend fanned over its
-    env set (`BackendSpec.envNames`) × its scheduled modes — the one
-    fan-out every workflow matrix and gate derives from (any projection,
-    like an env list, is a jq away). Each entry carries the metadata its
-    job needs verbatim: the display label, the bencher testbed/workload
-    pair, and the rendered `--threshold-*` flags, so the workflow
-    hardcodes none of it. -/
+    generated instead of hand-copied: each enabled backend fanned over every
+    registry env, each cell running all its rows (the env's shared constants
+    and its env row) — the one fan-out every workflow
+    matrix and gate derives from (any projection, like an env list, is a
+    jq away). Each entry carries the metadata its job needs verbatim: the
+    display label, the bencher testbed/workload pair, and the rendered
+    `--threshold-*` flags, so the workflow hardcodes none of it. -/
 def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
   let machine ← Ix.Cli.BenchCmd.benchmarkMachine
   let mut entries : Array Json := #[]
   for b in Ix.Cli.BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
-    for (mode, testbed) in b.testbeds do
-      if b.unscheduled.contains mode then continue
-      for env in b.envNames do
-        -- Skip a per-constant cell whose selection is empty in THIS mode:
-        -- an env stays in `envNames` because some scheduled mode runs it,
-        -- but a constant excluded from one mode leaves that (env, mode)
-        -- cell empty — scheduling it would waste a job and expect a row
-        -- that never lands.
-        if b.inputs == .perConstant
-          && (Ix.Cli.BenchCmd.selectNames env b.name mode).isEmpty then
-          continue
-        let label := s!"{b.name}-{env}-{mode}"
-        entries := entries.push <| Json.mkObj
-          [("backend", Json.str b.name), ("env", Json.str env),
-           ("mode", Json.str mode), ("label", Json.str label),
-           ("testbed", Json.str (Ix.Cli.BenchCmd.testbedOnMachine testbed machine)),
-           ("workload", Json.str (Ix.Cli.BenchCmd.workloadOf testbed)),
-           ("thresholds", Json.str b.thresholdFlags)]
+    for env in Ix.Cli.BenchCmd.envSpecs.map (·.name) do
+      entries := entries.push <| Json.mkObj
+        [("backend", Json.str b.name), ("env", Json.str env),
+         ("label", Json.str s!"{b.name}-{env}"),
+         ("testbed", Json.str (Ix.Cli.BenchCmd.testbedOnMachine b.testbed machine)),
+         ("workload", Json.str (Ix.Cli.BenchCmd.workloadOf b.testbed)),
+         ("thresholds", Json.str b.thresholdFlags)]
   IO.println (Json.arr entries).compress
   return 0
 
@@ -942,7 +858,7 @@ def parseError (msg : String) : IO UInt32 := do
   return 2
 
 /-- Parse a `!benchmark` command into the runs it schedules — locally a
-    dry-run preview (`ix bench ci parse --comment "!benchmark ooc"` prints
+    dry-run preview (`ix bench ci parse --comment "!benchmark ixvm-ooc"` prints
     the summary and run list), in CI the matrix generator. The text comes
     from `--comment`, else the `COMMENT_BODY` env var (how the PR workflow
     passes the comment without inline shell interpolation). When
@@ -952,24 +868,15 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [aiur-sharded-env] [ooc] [compile] [decompile] | all)
-                 [execute] [fresh] [KEY=VALUE …]
-      (`all` covers the scheduled backends; at least one backend or
-      `all` is required)
-      BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
-                                    defaults to every env for the
-                                    env-keyed backends (compile,
-                                    decompile), InitStd for the rest)
-      BENCH_CONSTS=Nat.gcd,…       (bench exactly these constants on the
-                                    per-constant backends, overriding the
-                                    shared selection. Each name's env is
-                                    found automatically: its
-                                    `benchConstants` entry first, else its
-                                    defining module (Init/Std → InitStd,
-                                    Lean → Lean), else Mathlib — or FLT
-                                    for FLT.* names — so BENCH_ENVS is
-                                    never required. A single-env
-                                    BENCH_ENVS still forces placement.)
+      !benchmark ([ixvm] [ixvm-ooc] [compile] [decompile] | all)
+                 [fresh] [KEY=VALUE …]
+      (at least one backend or `all` is required)
+      BENCH_CONSTANTS=all|none|a,b (constant rows; default all. A shared
+                                    constant runs in its own env; any other
+                                    name needs a single-env BENCH_ENVS
+                                    naming where it lives.)
+      BENCH_ENVS=all|none|a,b      (env rows: case-insensitive registry
+                                    envs; default InitStd)
       BENCH_PHASES=1 / RUST_LOG=… /
       RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
       IX_COMPILE_WORKERS=… / IX_DECOMPILE_KENV_CLEAR_ENTRIES=…
@@ -980,17 +887,15 @@ def parseError (msg : String) : IO UInt32 := do
                                     same `.ixe`; caches are SHA-keyed, so add
                                     `fresh` to remeasure a knob on one SHA)
 
+    Each scheduled cell is (backend, env) for an env with a selected
+    constant row (on a backend with constant rows) or a selected env row;
+    the cell runs exactly those rows.
+
     The KEY=VALUE config may sit on its own lines below the command (the
     comment form) or inline on the command line, whitespace-separated
     (the single-line form — a workflow_dispatch input box can't hold
     newlines). Inline keys parse strictly: an unknown key rejects the
     command, like a typo'd backend.
-
-    The bare `execute` token flips a backend with an execute metrics entry
-    to its execute mode. Every registered backend already defaults to
-    `execute`, so the token currently changes nothing. An `unscheduled`
-    execute testbed has no bencher baseline — its base side comes from a
-    base-SHA run.
 
     The bare `fresh` token makes every run bypass its bencher baseline and
     keeps persistent cached benchmark binaries, compiled `.ixe` files, and
@@ -1018,19 +923,13 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
-  let mut executeFlag := false
   let mut freshFlag := false
   for t in toks.map (·.toLower) do
-    if t == "execute" then
-      executeFlag := true
-      continue
     if t == "fresh" then
       freshFlag := true
       continue
-    -- `all` includes the scheduled backends.
     let requested := if t == "all"
-      then Ix.Cli.BenchCmd.backendSpecs.filter fun b =>
-        b.disabled.isNone && b.scheduledModes.contains b.defaultMode
+      then Ix.Cli.BenchCmd.backendSpecs.filter (·.disabled.isNone)
       else (Ix.Cli.BenchCmd.findBackend t).toList
     -- Everything after `!benchmark` on the command line must parse: a
     -- typo'd backend silently running the default would report numbers
@@ -1040,7 +939,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
         (expected a backend — \
         {", ".intercalate ((Ix.Cli.BenchCmd.backendSpecs.filter
           (·.disabled.isNone)).map (·.name))} — \
-        or `all` / `execute` / `fresh`)"
+        or `all` / `fresh`)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
@@ -1059,8 +958,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   -- unknown key rejects, same as a typo'd backend), then the lines below
   -- the command (lenient — comments contain prose, and prose contains
   -- `=`, so only recognized keys are consulted there).
-  let mut envs : Array String := #[]
-  let mut consts : Array String := #[]
+  let mut envsVal : Option String := none
+  let mut constantsVal : Option String := none
   let mut passthrough : Array String := #[]
   let mut cfgEntries : Array (String × Bool) :=
     (cfgToks.map ((·, true))).toArray
@@ -1077,22 +976,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       if rest.isEmpty then continue
       let val := "=".intercalate rest |>.trimAscii.toString
       match key.trimAscii.toString with
-      | "BENCH_ENVS" =>
-        -- A recognized key makes intent unambiguous, so its VALUE must
-        -- parse fully too (unknown bare keys stay ignored — comments
-        -- contain prose, and prose contains `=`).
-        for tok in val.splitOn "," do
-          let tok := tok.trimAscii.toString
-          match Ix.Cli.BenchCmd.findEnv tok with
-          | some e =>
-            if !envs.contains e.name then envs := envs.push e.name
-          | none =>
-            return ← parseError s!"unknown env `{tok}` in BENCH_ENVS \
-              (registry: \
-              {", ".intercalate (Ix.Cli.BenchCmd.envSpecs.map (·.name))})"
-      | "BENCH_CONSTS" =>
-        for tok in Ix.Cli.ConstsFile.parseCommaList val do
-          if !consts.contains tok then consts := consts.push tok
+      | "BENCH_ENVS" => envsVal := some val
+      | "BENCH_CONSTANTS" => constantsVal := some val
       | k =>
         if ["BENCH_PHASES", "RUST_LOG",
             "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
@@ -1101,125 +986,75 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
-            benchmark command (expected BENCH_ENVS / BENCH_CONSTS, \
+            benchmark command (expected BENCH_ENVS / BENCH_CONSTANTS, \
             or passthrough: BENCH_PHASES, \
             RUST_LOG, RUSTFLAGS, \
             IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \
             BENCH_TRACE_SHARDS, IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
     | [] => continue
 
-  -- BENCH_CONSTS: bench exactly these constants on the per-constant
-  -- backends, overriding the shared selection (`ix bench run --consts`
-  -- downstream). Each name finds its own env — no BENCH_ENVS needed:
-  --   1. a `benchConstants` entry wins (curated attribution);
-  --   2. otherwise, locate the name by defining module: import the
-  --      `Lean` environment (toolchain oleans only — its closure IS the
-  --      Lean bench env, and it contains InitStd's) and map the module
-  --      root — Init/Std → InitStd, anything else found → Lean;
-  --   3. not found there means it lives above: FLT when the name's root
-  --      is `FLT`, else Mathlib (safe default — Mathlib ⊂ FLT, and a
-  --      wrong guess fails at run time with a clear name-not-found).
-  -- An explicit single-env BENCH_ENVS still overrides the attribution.
-  let mut constsByEnv : Array (String × Array String) := #[]
-  if !consts.isEmpty then
-    -- Loaded lazily, once, and only when some name has no curated entry.
-    let mut lookupEnv? : Option Lean.Environment := none
-    for n in consts do
-      let curatedOwners :=
-        ((Ix.BenchConstants.benchConstants.filter (·.name == n)).map
-          (·.env)).toList.eraseDups
-      let mut owners := curatedOwners
-      if owners.isEmpty then
-        let env ← match lookupEnv? with
-          | some e => pure e
-          | none => do
-            IO.eprintln
-              s!"[parse] locating uncurated constant(s) by module: importing Lean"
-            let e ← getCompileEnv #[`Lean]
-            lookupEnv? := some e
-            pure e
-        owners := match Ix.Cli.NameResolve.resolveName env n with
-          | some ln =>
-            let root := match env.getModuleIdxFor? ln with
-              | some idx => env.allImportedModuleNames[idx.toNat]!.getRoot
-              | none => Lean.Name.anonymous
-            if root == `Init || root == `Std then ["InitStd"] else ["Lean"]
-          | none =>
-            if (Ix.Cli.NameResolve.parseName n).getRoot == `FLT then ["FLT"]
-            else ["Mathlib"]
-      let resolvedOwners := owners
-      if !envs.isEmpty then
-        let inter := owners.filter envs.contains
-        owners := if inter.isEmpty && envs.size == 1 then envs.toList else inter
-      if owners.isEmpty then
-        return ← parseError s!"BENCH_CONSTS: `{n}` belongs to env \
-          `{", ".intercalate resolvedOwners}`, which BENCH_ENVS \
-          ({", ".intercalate envs.toList}) excludes — drop BENCH_ENVS, \
-          include that env, or name a single env to force placement"
-      for o in owners do
-        match constsByEnv.findIdx? (·.1 == o) with
-        | some i =>
-          constsByEnv := constsByEnv.set! i (o, constsByEnv[i]!.2.push n)
-        | none => constsByEnv := constsByEnv.push (o, #[n])
-  -- Registry order, so the entry order is stable.
-  let constEnvs := ((Ix.Cli.BenchCmd.envSpecs.map (·.name)).filter
-    (fun e => constsByEnv.any (·.1 == e))).toArray
+  -- BENCH_ENVS selects env rows: `all`, `none`, or registry env names
+  -- (case-insensitive). Default: InitStd.
+  let registryEnvs := Ix.Cli.BenchCmd.envSpecs.map (·.name)
+  let mut envRows : Array String := #[]
+  match (envsVal.getD "InitStd").toLower with
+  | "all" => envRows := registryEnvs.toArray
+  | "none" => pure ()
+  | _ =>
+    for tok in (envsVal.getD "InitStd").splitOn "," do
+      let tok := tok.trimAscii.toString
+      match Ix.Cli.BenchCmd.findEnv tok with
+      | some e =>
+        if !envRows.contains e.name then envRows := envRows.push e.name
+      | none =>
+        return ← parseError s!"unknown env `{tok}` in BENCH_ENVS \
+          (expected all, none, or a registry env: {", ".intercalate registryEnvs})"
 
-  -- Env defaults, per backend, when BENCH_ENVS is absent: the env-keyed
-  -- backends (`inputs := .perEnv` — compile, decompile, aiur-sharded-env) cover
-  -- their registry env set (the full set, or the spec's `envs`
-  -- restriction) — their row IS the env, so a compiler PR sees every
-  -- env's delta without asking — while the per-constant backends default
-  -- to the light InitStd (a Mathlib prove is too heavy for an unasked-for
-  -- default). An explicit BENCH_ENVS applies to every requested backend —
-  -- except under BENCH_CONSTS, where the per-constant backends fan over
-  -- exactly the envs owning a listed constant (no empty-selection
-  -- entries).
-  let envsFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
-    if !consts.isEmpty
-        && (b.inputs == .perConstant || b.inputs == .perConstantWithEnv) then
-      constEnvs
-    else if !envs.isEmpty then envs
-    else if b.inputs == .perEnv then
-      (b.envs.getD (Ix.Cli.BenchCmd.envSpecs.map (·.name))).toArray
-    else #["InitStd"]
+  -- BENCH_CONSTANTS selects constant rows: `all` (the default), `none`,
+  -- or names. A shared constant runs in its own env; any other name needs
+  -- BENCH_ENVS to name exactly one env, where it then runs.
+  let mut constantRows : Array (String × String) := #[]
+  match (constantsVal.getD "all").toLower with
+  | "all" => constantRows := Ix.BenchConstants.benchConstants.map fun c => (c.name, c.env)
+  | "none" => pure ()
+  | _ =>
+    for n in Ix.Cli.ConstsFile.parseCommaList (constantsVal.getD "") do
+      match Ix.BenchConstants.benchConstants.find? (·.name == n) with
+      | some c => constantRows := constantRows.push (n, c.env)
+      | none =>
+        if envRows.size != 1 then
+          return ← parseError s!"BENCH_CONSTANTS: `{n}` is not a shared \
+            benchmark constant; name the env it lives in with a single-env \
+            BENCH_ENVS"
+        constantRows := constantRows.push (n, envRows[0]!)
 
-  let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
-    if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
-    else b.defaultMode
+  -- One cell per (backend, env) with anything selected: the env's
+  -- constant rows (on a backend with constant rows) and its env row.
   let mut entries : Array Json := #[]
+  let mut allEnvs : Array String := #[]
   for b in backends do
-    for e in envsFor b do
-      -- The entry's `--consts` override: the listed names this env owns,
-      -- on the per-constant backends only (env-keyed backends measure
-      -- regardless of constant selection).
-      let entryConsts :=
-        if b.inputs == .perConstant || b.inputs == .perConstantWithEnv then
-          ",".intercalate
-            (((constsByEnv.find? (·.1 == e)).map (·.2.toList)).getD [])
-        else ""
+    for e in registryEnvs do
+      let cs := if b.hasConstants
+        then (constantRows.filter (·.2 == e)).map (·.1) else #[]
+      let envRow := envRows.contains e
+      if cs.isEmpty && !envRow then continue
+      if !allEnvs.contains e then allEnvs := allEnvs.push e
       entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
-         ("mode", Json.str (modeFor b)),
-         ("consts", Json.str entryConsts),
-         ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
+         ("constants", Json.str (if cs.isEmpty then "none" else ",".intercalate cs.toList)),
+         ("env-row", Json.str (if envRow then "1" else "0")),
+         ("label", Json.str s!"{b.name}-{e}")]
+  if entries.isEmpty then
+    return ← parseError "the command selects no rows: BENCH_CONSTANTS and \
+      BENCH_ENVS select nothing the requested backends measure"
+  -- Registry order for the compile stage's matrix.
+  allEnvs := registryEnvs.toArray.filter allEnvs.contains
 
-  -- The union of every backend's env set (first-seen order): the compile
-  -- stage's matrix — each env compiled exactly once — and the summary line.
-  let allEnvs := backends.foldl (init := #[]) fun acc b =>
-    (envsFor b).foldl (init := acc) fun acc e =>
-      if acc.contains e then acc else acc.push e
-
-  -- Annotate the mode only where a mode CHOICE exists (a backend with
-  -- several testbed modes); `ooc=execute` for a single-mode backend is
-  -- noise.
-  let modes := " ".intercalate
-    (backends.map (fun b =>
-      if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
-  let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}`"
+  let names := " ".intercalate (backends.map (·.name)).toList
+  let mut summary := s!"backends: `{names}` · envs: `{",".intercalate allEnvs.toList}`"
+  summary := summary ++ s!" · env rows: `{if envRows.isEmpty then "none" else ",".intercalate envRows.toList}`"
+  summary := summary ++ s!" · constants: `{constantsVal.getD "all"}`"
   summary := summary ++ s!" · machine: `{← Ix.Cli.BenchCmd.benchmarkMachine}`"
-  if !consts.isEmpty then
-    summary := summary ++ s!" · consts: `{",".intercalate consts.toList}`"
   if freshFlag then
     summary := summary ++
       " · baseline: `fresh` (benchmark products rebuilt, base-SHA run, bencher bypassed)"
@@ -1255,12 +1090,10 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
   "Render a Markdown base-vs-PR table from two results rows files. Defaults to the parameter combination's local baseline pair (<BENCH_OUTPUT_DIR or .lake/benches>/<params>{.prev,}.json), so a bare rerun compares against the previous local run."
 
   FLAGS:
-    backend       : String; "Run backend (metrics come from the registry)"
+    backend       : String; "Run backend (table columns come from the registry)"
     env           : String; "Run env (default: InitStd)"
-    mode          : String; "Run mode (default: the backend's default_mode)"
     base          : String; "Base-side rows JSON (default: the run baseline .prev.json)"
     pr            : String; "PR-side rows JSON (default: the run baseline .json)"
-    metric        : Array String; "Metric column(s), overriding the registry"
     threshold     : Nat;    "Flag |Δ| above this percentage (default: 3)"
     title         : String; "Table title (default: derived from the run)"
     "base-source" : String; "Where the base side came from, for the title"
@@ -1301,10 +1134,8 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
   FLAGS:
     sha           : String; "Base commit SHA to fetch reports for"
     backend       : String; "Run backend (testbed from the registry)"
-    env           : String; "Run env — admits the env-keyed row past --names"
-    mode          : String; "Run mode"
-    consts        : String; "Only fetch these comma-separated benchmark names"
-    names         : String; "Additionally read names from a file (one per line); unions with --consts"
+    rows          : String; "Only fetch these comma-separated row names (constants and envs)"
+    names         : String; "Additionally read row names from a file (one per line); unions with --rows"
     "missing-out" : String; "Write the --names entries bencher lacked (the caller measures just these on the base checkout)"
     out           : String; "Rows JSON output (default: main.json)"
 ]
@@ -1312,7 +1143,7 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchReport in
 def benchCiMatrixCmd : Cli.Cmd := `[Cli|
   "matrix" VIA runMatrixCmd;
-  "Emit the benchmark matrix from the registry: each enabled backend × its env set × scheduled modes, with per-entry testbed/workload/threshold metadata"
+  "Emit the benchmark matrix from the registry: each enabled backend × its env set, with per-entry testbed/workload/threshold metadata"
 ]
 
 open Ix.Cli.BenchReport in

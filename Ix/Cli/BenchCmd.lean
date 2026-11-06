@@ -11,27 +11,29 @@ public import Ix.TracingTexray
   `ix bench run`: the benchmark orchestrator — one command that
   reproduces a CI benchmark run locally, byte-for-byte on the same tools.
 
-  A run executes one parameter combination: (backend, env, mode). The
-  orchestrator:
+  A run executes one cell: (backend, env). Its rows are constant rows (the
+  env's shared constants, keyed by name) and the env row (the whole env,
+  keyed by the env name); `--constants` and `--no-env-row` select them.
+  The orchestrator:
 
-  1. selects the env's constants from the shared set
-     (`Ix.BenchConstants`), minus the `(backend, mode)` exclusions;
+  1. selects the env's constant rows from the shared set
+     (`Ix.BenchConstants`), for a backend with constant rows;
   2. resolves the env's `.ixe` (an explicit `--ixe` path, else `ix
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
-  3. spawns the run's measured tool — `ix check` (aiur,
-     aiur-sharded-env), `ix check-lean` (ooc), `ix compile` (compile),
-     `ix decompile` (decompile). The tools set no memory limit; CI runs
-     `ix bench run` in a capped cgroup, where the kernel OOM-kills the
-     largest process, the tool. The per-constant aiur backend spawns one
-     process per constant, so a kill costs exactly that constant (its row
-     is marked `status: oom`);
+  3. spawns the run's measured tool — `ix check` (ixvm), `ix check-lean`
+     (ixvm-ooc), `ix compile` (compile), `ix decompile` (decompile). The
+     tools set no memory limit; CI runs `ix bench run` in a capped cgroup,
+     where the kernel OOM-kills the largest process, the tool. The ixvm
+     constant rows spawn one process per constant, so a kill costs exactly
+     that constant (its row is marked `status: oom`);
   4. gates the run on the row contract (`Ix.Benchmark.Results`): exit 3
-     when any row is `rejected`, exit 1 when NO rows were produced, else 0.
+     when any row is `rejected`, exit 1 when a selected row is missing,
+     else 0.
 
   The compile-side tools self-report through the `--json` results-rows
   contract. `ix check` has no rows of its own, so the orchestrator writes
-  the aiur rows from the spawn's wall time, the texray tree sampler's peak,
+  the ixvm rows from the spawn's wall time, the texray tree sampler's peak,
   and the `aiur/execute` spans `ix check` writes to `IX_TEXRAY_JSON`.
   Registry data (envs, backends, testbeds) lives in this module
   (`envSpecs`/`backendSpecs`) — one language, one owner.
@@ -46,26 +48,10 @@ open Ix.BenchConstants
 
 namespace Ix.Cli.BenchCmd
 
-/-- Per-constant benchmark exclusions: `(name, backend, mode)` a constant
-    must NOT run for, `"*"` wildcarding a dimension. Applied on top of the
-    shared `benchConstants` set, for the constants that are hard-infeasible
-    in a cell — not merely expensive (a too-large prove records an honest
-    `oom` row instead). `--consts` runs bypass this: an explicit request
-    always runs. -/
-def benchExclusions : List (String × String × String) := []
-
-/-- Whether `benchExclusions` bars `name` from this `(backend, mode)`. -/
-def isExcluded (name backend mode : String) : Bool :=
-  benchExclusions.any fun (n, b, m) =>
-    n == name && (b == "*" || b == backend) && (m == "*" || m == mode)
-
-/-- The env's slice of the shared `benchConstants` set, minus the
-    `(backend, mode)` exclusions — the one selection every per-constant
-    backend runs. -/
-def selectNames (env : String) (backend : String) (mode : String) :
-    Array BenchConstant :=
-  benchConstants.filter fun c =>
-    c.env == env && !isExcluded c.name backend mode
+/-- The env's slice of the shared `benchConstants` set: the constant rows
+    a backend with constant rows runs over that env. -/
+def selectNames (env : String) : Array BenchConstant :=
+  benchConstants.filter (·.env == env)
 
 /-! ## The registry — single source of truth for the benchmark pipeline
 
@@ -87,34 +73,14 @@ structure EnvSpec where
 
 def envSpecs : List EnvSpec := [
   { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
-  { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
-  -- Init+Std+Lean+Batteries as ONE env (the union deduplicates — Lean
+  -- Init+Std+Lean+Batteries as one env (the union deduplicates: Lean
   -- already carries Init and Std).
   { name := "ISLB",    module := "Benchmarks/Compile/CompileISLB.lean" },
-  { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" },
-  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean" },
-  { name := "AnthropicFLT",
-    module := "Benchmarks/Compile/CompileAnthropicFLT.lean" }
+  { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" }
 ]
 
 def findEnv (token : String) : Option EnvSpec :=
   envSpecs.find? fun e => e.name.toLower == token.toLower
-
-/-- How a backend enumerates the inputs its runs measure over — the single
-    registry declaration every consumer (plot specs, CI job matrices, the
-    `.ixe` cache gate) reads, so none special-cases a backend by name.
-      · `perEnv` — one row per compiled env, keyed by the env name itself; runs
-        over EVERY compiled env. The env-keyed compile/decompile pair: a `.ixe`
-        producer and its consumer, both measuring the whole env.
-      · `perConstant` — one row per selected `benchConstants` entry, over
-        the envs whose entries select any — an env joins this fan-out by
-        gaining constants, not by a registry flag.
-      · `perConstantWithEnv` — `perConstant` plus a whole-env row (ooc). -/
-inductive BenchInputs
-  | perEnv
-  | perConstant
-  | perConstantWithEnv
-  deriving BEq
 
 /-- EC2 instance types with separate benchmark histories. -/
 def benchmarkMachines : List String := ["r8i.8xlarge"]
@@ -140,123 +106,70 @@ def workloadOf (testbed : String) : String :=
 def testbedOnMachine (testbed machine : String) : String :=
   workloadOf testbed ++ testbedSuffix machine
 
-/-- The stage qualifiers a pipeline measure may carry ahead of its base
-    name — one per pipeline stage, named for what the stage proves
-    (`ixvm-`: the IxVM typecheck; `fri-verifier-`: the in-circuit FRI
-    verifier over the previous proof; `join-`: the optional pair-wide
-    aggregate join; the KZG stages add their own entries as they land) —
-    plus `pipeline-` for the whole run. Stripped
-    wherever a measure is interpreted by its base name (formatting kind,
-    units) or labelled under a heading that already says the stage. -/
-def stagePrefixes : List String :=
-  ["ixvm-", "fri-verifier-", "join-", "pipeline-"]
-
-/-- The stage qualifier `metric` carries, if any. -/
-def stagePrefixOf (metric : String) : Option String :=
-  stagePrefixes.find? (metric.startsWith ·)
-
-/-- `metric` with its stage qualifier removed, if it has one. -/
-def dropStagePrefix (metric : String) : String :=
-  match stagePrefixOf metric with
-  | some p => (metric.drop p.length).toString
-  | none => metric
-
-/-- One benchmark backend. Backends with several modes schedule one bench-main
-    matrix entry per (mode, testbed); each mode's measures live on its own
-    testbed. -/
+/-- One benchmark backend. A backend's rows are of two kinds: constant
+    rows, one per shared constant (`Ix.BenchConstants`) run in its env and
+    keyed by the constant's name, and env rows, one per registry env and
+    keyed by the env's name. Both kinds upload to the backend's one
+    testbed, so they draw as lines of the same plot per measure. -/
 structure BackendSpec where
   name : String
-  defaultMode : String
-  /-- The inputs (envs and row names) this backend's runs fan over. -/
-  inputs : BenchInputs
-  /-- For a `perEnv` backend: restrict the fan-out to these registry env
-      names instead of every compiled env (`none` = all). Ignored for
-      the per-constant backends, whose env set comes from `Vectors.csv`
-      row selection. -/
-  envs : Option (List String) := none
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
-  /-- Modes present for local / on-demand runs only (`ix bench run --mode`,
-      an explicit `!benchmark` backend) — scheduled by no CI job, so they
-      carry a testbed for the compare surface but never upload to bencher
-      and get no dashboard plot. -/
-  unscheduled : List String := []
-  /-- (mode, bencher testbed stem). Hardware suffixes identify the measured host. -/
-  testbeds : List (String × String)
-  /-- (mode, compare-table columns), rendered in list order; the head is
-      the table's row sort key. Column convention: the mode's headline
-      wall-clock time, throughput, peak-rss, then detail (secondary times,
-      sizes, deterministic counters). For a mode listed in `stages` the
-      columns come from there, and this list instead names measures the
-      mode TRACKS without giving them a column — uploaded, thresholded,
-      and plotted like any other, just not tabled. -/
-  metrics : List (String × List String)
-  /-- (mode, [(stage title, that stage's measures)]) for a mode whose run
-      walks a multi-stage pipeline: the compare table splits into one
-      table per stage. A stage's measures carry their stage
-      qualifier (`ixvm-prove-time`) — the stage tables strip it for
-      display (`sectionLabelDrop`), so columns still read plain. List
-      order is render order, so the closing entry is the ledger over the
-      whole run. -/
-  stages : List (String × List (String × List String)) := []
+  /-- The bencher testbed stem; hardware suffixes identify the measured
+      host. -/
+  testbed : String
+  /-- Compare-table columns of the constant rows, in order (the head is
+      the row sort key); empty for a backend without constant rows. Column
+      convention: the headline wall-clock time, throughput, peak-rss, then
+      detail (secondary times, sizes, deterministic counters). -/
+  constantMetrics : List String := []
+  /-- Compare-table columns of the env rows, in the same convention. -/
+  envMetrics : List String
   /-- Regression bounds per tracked measure: (measure, upper, lower), each
       bound a percentage over the baseline as a decimal fraction ("0.10"),
       "0" for an exact pin, or "_" for unbounded on that side. Rendered by
       `thresholdFlags` into the bencher-track action's `--threshold-*`
-      triples. Shared across the backend's scheduled modes: a threshold
-      naming a measure absent from a mode's upload just sits empty on that
-      testbed. Bound conventions:
+      triples. Bound conventions:
         · deterministic counters (constants) pin exactly (0/0) — a drop
           means lost coverage, not an improvement;
-        · deterministic costs that only drop on a real win (cycles, shards,
-          fft-cost) take an upper-only bound — flag regressions, let wins
-          through;
+        · deterministic costs that only drop on a real win (shards) take
+          an upper-only bound — flag regressions, let wins through;
         · noisy wall-clock / RAM take ~10% upper bounds; throughput's
           regression is a drop, so its bound is the lower side;
-        · sizes are structural (fixed layout) and ride tight 1–5% bands.
-      The dynamically-named `phase-<span>` measures upload un-thresholded
-      (noisy; the PR-comment drill-down does the phase-level compare). -/
+        · sizes are structural (fixed layout) and ride tight 1–5% bands. -/
   thresholds : List (String × String × String) := []
 
 def backendSpecs : List BackendSpec := [
-  -- aiur: per-constant execution of the certified IxVM claim verifier
-  -- (`ix check --ixe <env>.ixe <name>`), no proving. `execute-time` is
-  -- the in-process `aiur/execute` span (bind + run); `check-time` is the
-  -- whole process, adding the env load, program load and claim
-  -- construction; `peak-rss` is the texray tree sampler's peak over it.
-  { name := "aiur", defaultMode := "execute", inputs := .perConstant,
-    testbeds := [("execute", "formal-aiur-execute")],
-    metrics := [("execute", ["execute-time", "check-time", "peak-rss"])],
-    thresholds := [("execute-time", "0.10", "_"), ("check-time", "0.10", "_"),
-                   ("peak-rss", "0.10", "_")] },
-  -- aiur-sharded-env: whole-env execution, one row per env. `ix shard
-  -- --max-ram 100` seeds the partition (setup, outside the measured
-  -- window), then one `ix check --ixes` executes every shard's claim
-  -- across all cores; `execute-time` sums the shards' spans. `shards` is
-  -- deterministic per (env block profile, budget), so it takes an
-  -- upper-only pin; re-pin on a justified seed change.
-  { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
-    envs := some ["ISLB"],
-    testbeds := [("execute", "formal-aiur-env-execute")],
-    metrics := [("execute", ["check-time", "peak-rss", "execute-time", "shards"])],
-    thresholds := [("shards", "0", "_"), ("check-time", "0.10", "_"),
-                   ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_")] },
-  { name := "ooc", defaultMode := "execute", inputs := .perConstantWithEnv,
-    testbeds := [("execute", "ooc-check")],
-    metrics := [("execute", ["check-time", "throughput", "peak-rss"])],
+  -- ixvm: execution of the certified IxVM claim verifier by `ix check`,
+  -- no proving. A constant row is one `ix check --ixe <env>.ixe <name>`:
+  -- `execute-time` is the in-process `aiur/execute` span (bind + run),
+  -- `check-time` the whole process (adding the env load, program load and
+  -- claim construction), `peak-rss` the texray tree sampler's peak over
+  -- it. The env row shards the env with `ix shard --max-ram 100` (setup,
+  -- outside the measured window), then one `ix check --ixes` executes
+  -- every shard's claim across all cores; its `execute-time` sums the
+  -- shards' spans. `shards` is deterministic per (env block profile,
+  -- budget), so it takes an upper-only pin; re-pin on a justified seed
+  -- change.
+  { name := "ixvm", testbed := "ixvm",
+    constantMetrics := ["execute-time", "check-time", "peak-rss"],
+    envMetrics := ["check-time", "peak-rss", "execute-time", "shards"],
+    thresholds := [("shards", "0", "_"), ("execute-time", "0.10", "_"),
+                   ("check-time", "0.10", "_"), ("peak-rss", "0.10", "_")] },
+  -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
+  -- constant rows check each constant's full closure in one process per
+  -- env; the env row checks the whole env and writes the per-constant
+  -- attribution CSV the compare drill-down reads.
+  { name := "ixvm-ooc", testbed := "ixvm-ooc",
+    constantMetrics := ["check-time", "throughput", "peak-rss"],
+    envMetrics := ["check-time", "throughput", "peak-rss"],
     thresholds := [("constants", "0", "0"), ("check-time", "0.10", "_"),
                    ("throughput", "_", "0.10"), ("peak-rss", "0.10", "_")] },
-  -- AnthropicFLT remains on-demand: its from-scratch upstream build needs
-  -- substantially more than the per-push workflow's one-hour budget. An
-  -- explicit `--env AnthropicFLT` or `BENCH_ENVS=AnthropicFLT` still runs it.
-  { name := "compile", defaultMode := "execute", inputs := .perEnv,
-    envs := some ["InitStd", "Lean", "ISLB", "Mathlib", "FLT"],
-    -- A distinct baseline keeps the cost of certification out of comparisons
-    -- against historical Rust compiler timings.
-    testbeds := [("execute", "ix-compile-certified")],
-    metrics := [("execute", ["compile-time", "throughput", "peak-rss",
-                             "file-size", "constants"])],
+  -- A distinct baseline keeps the cost of certification out of comparisons
+  -- against historical Rust compiler timings.
+  { name := "compile", testbed := "ix-compile-certified",
+    envMetrics := ["compile-time", "throughput", "peak-rss", "file-size", "constants"],
     -- file-size wiggles slightly run-to-run (the serialized env is not
     -- byte-reproducible — worth its own investigation for a
     -- content-addressed store) → a tight ±1% band instead of a pin.
@@ -264,16 +177,10 @@ def backendSpecs : List BackendSpec := [
                    ("file-size", "0.01", "0.01"), ("constants", "0", "0"),
                    ("peak-rss", "0.10", "_")] },
   -- The inverse of compile: decompiles the env's `.ixe` back to Lean
-  -- constants (roundtrip-verified). Env-keyed like compile, but a `.ixe`
-  -- CONSUMER — it reuses the compile run's fresh `.ixe` rather than
-  -- producing one.
-  { name := "decompile", defaultMode := "execute", inputs := .perEnv,
-    -- ISLB is excluded: its content is Lean + Batteries, so a decompile
-    -- row would mostly re-measure Lean's.
-    envs := some ["InitStd", "Lean", "Mathlib", "FLT"],
-    testbeds := [("execute", "ix-decompile")],
-    metrics := [("execute", ["decompile-time", "throughput", "peak-rss",
-                             "file-size", "constants"])],
+  -- constants (roundtrip-verified). A `.ixe` consumer: it reuses the
+  -- compile run's fresh `.ixe` rather than producing one.
+  { name := "decompile", testbed := "ix-decompile",
+    envMetrics := ["decompile-time", "throughput", "peak-rss", "file-size", "constants"],
     -- file-size (the input `.ixe`) duplicates the compile run's, so it
     -- uploads for the row's completeness but rides no threshold here.
     thresholds := [("constants", "0", "0"), ("decompile-time", "0.10", "_"),
@@ -283,24 +190,13 @@ def backendSpecs : List BackendSpec := [
 def findBackend (name : String) : Option BackendSpec :=
   backendSpecs.find? (·.name == name)
 
-def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
-  (b.testbeds.find? (·.1 == mode)).map (·.2)
+/-- Whether the backend has constant rows. -/
+def BackendSpec.hasConstants (b : BackendSpec) : Bool :=
+  !b.constantMetrics.isEmpty
 
-/-- The pipeline stages this mode's compare table splits into, empty for
-    the single-table modes. -/
-def BackendSpec.stagesFor (b : BackendSpec) (mode : String) :
-    List (String × List String) :=
-  ((b.stages.find? (·.1 == mode)).map (·.2)).getD []
-
-/-- Every measure the mode tracks — what the dashboard plots. For an
-    unstaged mode that is exactly its `metrics` columns; for a staged one
-    it is the stage tables' measures plus any `metrics` entry, which is
-    how a measure gets tracked and plotted without taking a column. -/
-def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
-  let extra := ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
-  match b.stagesFor mode with
-  | [] => extra
-  | stages => ((stages.map (·.2)).flatten ++ extra).eraseDups
+/-- Every measure the backend tracks: its constant and env columns. -/
+def BackendSpec.metrics (b : BackendSpec) : List String :=
+  (b.constantMetrics ++ b.envMetrics).eraseDups
 
 /-- `thresholds` rendered as the bencher-track action's `--threshold-*`
     flags, one percentage-test triple per measure. `__WINDOW__` is the
@@ -313,45 +209,16 @@ def BackendSpec.thresholdFlags (b : BackendSpec) : String :=
     s!"--threshold-max-sample-size __WINDOW__ --threshold-upper-boundary {upper}\n" ++
     s!"--threshold-lower-boundary {lower}"
 
-/-- The scheduled modes of this backend: its testbed modes minus the
-    `unscheduled` (local-only) ones. -/
-def BackendSpec.scheduledModes (b : BackendSpec) : List String :=
-  b.testbeds.filterMap fun (m, _) =>
-    if b.unscheduled.contains m then none else some m
-
-/-- The envs this backend's runs cover, from its `inputs`: `perEnv` covers
-    every registry env; the per-constant backends cover the envs where at
-    least one constant is selected in ANY scheduled mode — an env joins
-    their fan-out by gaining constants, not by a registry flag, and a
-    constant excluded from one mode still keeps its env if another
-    scheduled mode runs it. -/
-def BackendSpec.envNames (b : BackendSpec) : List String :=
-  let names := envSpecs.map (·.name)
-  match b.inputs with
-  | .perEnv => match b.envs with
-    | some restricted => names.filter restricted.contains
-    | none => names
-  | .perConstant | .perConstantWithEnv =>
-    names.filter fun env =>
-      b.scheduledModes.any fun m =>
-        !(selectNames env b.name m).isEmpty
-
-/-- The benchmark row names this backend uploads — the bencher slugs the
-    dashboard plots and compare table key on — from its `inputs`: env-keyed
-    backends key one row per compiled env; the per-constant backends select
-    from `benchConstants` over their env set (`perConstantWithEnv` prepends
-    a whole-env row). Dynamic shard sub-rows (`<name>/shard-N`) are
-    excluded — the parent row carries the headline trend. -/
-def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
-    Array String := Id.run do
-  match b.inputs with
-  | .perEnv => return b.envNames.toArray
-  | .perConstant | .perConstantWithEnv =>
-    let mut ns : Array String := #[]
-    for env in b.envNames do
-      if b.inputs == .perConstantWithEnv then ns := ns.push env
-      ns := ns ++ (selectNames env b.name mode).map (·.name)
-    return ns
+/-- The benchmark row names this backend uploads for a measure — the
+    bencher slugs the dashboard plots key on: the shared constants when the
+    measure is a constant column, then the envs when it is an env column.
+    Dynamic shard sub-rows (`<name>/shard-N`) are excluded — the parent row
+    carries the headline trend. -/
+def BackendSpec.benchmarkNames (b : BackendSpec) (measure : String) : Array String :=
+  (if b.constantMetrics.contains measure
+    then benchConstants.map (·.name) else #[])
+  ++ (if b.envMetrics.contains measure
+    then (envSpecs.map (·.name)).toArray else #[])
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
     checkout measures the base's code), else PATH. -/
@@ -505,6 +372,72 @@ def saveBaseline (out : String) (params : String) : IO Unit := do
     IO.FS.writeFile s!"{base}.perconst.csv"
       (← IO.FS.readFile s!"{out}.perconst.csv")
 
+/-- The `ixvm` constant rows: one `ix check` per constant, its
+    `aiur/execute` span written to the run's texray sink. The span closes
+    on a rejection too, so a failing exit with the span is a verdict;
+    without it the check never reached the claim. Execution runs inside
+    `ix check`, so an OOM kill takes that process (exit 137) and the row
+    records it. -/
+def runIxvmConstants (ix ixe out : String) (names : Array String) : IO Unit := do
+  let spans := out ++ ".spans"
+  runPerConstant out names fun name => do
+    let (exit, seconds, peak) ← runMeasured ix
+      #["check", "--ixe", ixe, name] #[("IX_TEXRAY_JSON", some spans)]
+    let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
+    if ← FilePath.pathExists spans then IO.FS.removeFile spans
+    let rejected := exit != 0 && !isKill exit && execute.isSome
+    if exit == 0 || rejected then
+      let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
+        ("peak-rss", Lean.toJson peak)]
+      let row := match execute with
+        | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
+        | none => row
+      writeEntry out name <|
+        if rejected then row.setObjVal! "status" (.str "rejected") else row
+    return if rejected then exitRejected else exit
+
+/-- The `ixvm` env row: seed the partition for the runner's RAM from the
+    env's static block-shape score (setup, outside the measured window),
+    then one `ix check` executes every shard's claim, one job per core,
+    writing every shard's `aiur/execute` span to the one sink. -/
+def runIxvmEnv (ix ixe out env : String) : IO Unit := do
+  let manifest := s!"{env}-exec.ixes"
+  let exit ← runTool ix #["shard", ixe, "--max-ram", "100", "--out", manifest]
+  if exit != 0 then
+    IO.eprintln s!"[bench] ix shard failed (exit {exit})"
+    return
+  let shards := match Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest) with
+    | .ok view => view.shards.size
+    | .error _ => 0
+  let spans := out ++ ".spans"
+  let (exit, seconds, peak) ← runMeasured ix
+    #["check", "--ixe", ixe, "--ixes", manifest, "--jobs", "0"]
+    #[("IX_TEXRAY_JSON", some spans)]
+  let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
+  if ← FilePath.pathExists spans then IO.FS.removeFile spans
+  if isKill exit then
+    markKilled out env (killStatus exit)
+  else if exit == 0 || execute.isSome then
+    let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
+      ("peak-rss", Lean.toJson peak), ("shards", Lean.toJson shards)]
+    let row := match execute with
+      | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
+      | none => row
+    writeEntry out env <|
+      if exit == 0 then row else row.setObjVal! "status" (.str "rejected")
+    if exit != 0 then
+      IO.eprintln s!"[bench] whole-env ixvm check rejected (exit {exit})"
+  else
+    IO.eprintln s!"[bench] whole-env ixvm check failed before execution (exit {exit})"
+
+/-- Parse `--constants`: `all` (the default) is the env's shared
+    constants, `none` is no constant rows, anything else a comma list. -/
+def parseConstants (env : String) (flag : Option String) : Array String :=
+  match flag with
+  | none | some "all" => (selectNames env).map (·.name)
+  | some "none" => #[]
+  | some list => Ix.Cli.ConstsFile.parseCommaList list
+
 def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
   let some spec := findBackend backend
@@ -514,140 +447,73 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     | p.printError "error: unknown env (see envSpecs)"
       return exitUsage
   let env := info.name
-  let mode := (p.flag? "mode").map (·.as! String) |>.getD spec.defaultMode
   let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
   let out := (p.flag? "out").map (·.as! String) |>.getD "bench.json"
-  -- `--consts` overrides the shared-set selection — a one-off local run,
-  -- or bench-pr's targeted base run over just the constants bencher
-  -- lacked.
-  let wanted := ((p.flag? "consts").map
-    (fun f => Ix.Cli.ConstsFile.parseCommaList (f.as! String))).getD #[]
-  let names :=
-    if wanted.isEmpty then (selectNames env backend mode).map (·.name)
-    else wanted
-  IO.eprintln s!"[bench] run {backend}-{env}-{mode}: {names.size} constant(s)"
+  let names := if spec.hasConstants
+    then parseConstants env ((p.flag? "constants").map (·.as! String)) else #[]
+  let envRow := !p.hasFlag "no-env-row"
+  IO.eprintln s!"[bench] run {backend}-{env}: {names.size} constant row(s){if envRow then " + env row" else ""}"
 
   -- Fresh accumulator per run.
   if ← FilePath.pathExists out then IO.FS.removeFile out
   let namesFile := out ++ ".names.txt"
+  let ix ← resolveBin repo "ix"
 
   match backend with
   | "compile" =>
     -- The compile IS the benchmark: always fresh, row keyed by the env name.
     -- Measure the default compiler, including its certification checks.
-    let ix ← resolveBin repo "ix"
-    let exit ← runTool ix
-      #["compile", s!"{repo}/{info.module}", "--out", s!"{repo}/{env}.ixe",
-        "--json", out, "--json-name", info.name]
-    if exit != 0 then
-      IO.eprintln s!"[bench] ix compile failed (exit {exit})"
-      return 1
+    if envRow then
+      let exit ← runTool ix
+        #["compile", s!"{repo}/{info.module}", "--out", s!"{repo}/{env}.ixe",
+          "--json", out, "--json-name", info.name]
+      if exit != 0 then
+        IO.eprintln s!"[bench] ix compile failed (exit {exit})"
+        return 1
   | "decompile" =>
     -- The inverse of compile: consume the env's `.ixe` (the compile run's
-    -- fresh artifact) and decompile it back to Lean constants. Env-keyed row,
-    -- like compile. A malformed decompile exits nonzero and fails the job;
-    -- deep roundtrip fidelity is gated by the canonical roundtrip checks
-    -- (`ix validate` / the roundtrip tests), not measured here.
+    -- fresh artifact) and decompile it back to Lean constants. A malformed
+    -- decompile exits nonzero and fails the job; deep roundtrip fidelity is
+    -- gated by the canonical roundtrip checks (`ix validate` / the
+    -- roundtrip tests), not measured here.
+    if envRow then
+      let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+      let exit ← runTool ix
+        #["decompile", ixe, "--json", out, "--json-name", info.name]
+      if exit != 0 then
+        IO.eprintln s!"[bench] ix decompile failed (exit {exit})"
+  | "ixvm-ooc" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-    let ix ← resolveBin repo "ix"
-    let exit ← runTool ix
-      #["decompile", ixe, "--json", out, "--json-name", info.name]
-    if exit != 0 then
-      IO.eprintln s!"[bench] ix decompile failed (exit {exit})"
-  | "ooc" =>
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-    let ix ← resolveBin repo "ix"
-    -- Whole-env row (keyed by the env name), plus the per-constant
-    -- attribution CSV the compare drill-down reads (top movers).
-    let exit ← runTool ix
-      #["check-lean", ixe, "--anon", "--json", out, "--json-name", info.name,
-        "--per-const", s!"{out}.perconst.csv"]
-    if exit != 0 && exit != exitRejected then
-      IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
-    -- … plus one full-closure row per constant. ONE process for all names:
+    if envRow then
+      -- Whole-env row, plus the per-constant attribution CSV the compare
+      -- drill-down reads (top movers).
+      let exit ← runTool ix
+        #["check-lean", ixe, "--anon", "--json", out, "--json-name", info.name,
+          "--per-const", s!"{out}.perconst.csv"]
+      if exit != 0 && exit != exitRejected then
+        IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
+    -- One full-closure row per constant, from ONE process for all names:
     -- the check-lean rows mode attributes per name internally with the env
-    -- loaded once — a per-constant process would re-pay the multi-minute
-    -- Mathlib env parse per name — and out-of-circuit checks stay small.
+    -- loaded once — a per-constant process would re-pay the env parse per
+    -- name — and out-of-circuit checks stay small.
     if !names.isEmpty then
       IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
       let exit ← runTool ix
         #["check-lean", ixe, "--anon", "--consts-file", namesFile, "--json", out]
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
-  | "aiur" =>
-    -- One `ix check` per constant, its `aiur/execute` span written to the
-    -- run's texray sink. The span closes on a rejection too, so a failing
-    -- exit with the span is a verdict; without it the check never reached
-    -- the claim. Execution runs inside `ix check`, so an OOM kill takes
-    -- that process (exit 137) and the row records it.
+  | "ixvm" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-    let ix ← resolveBin repo "ix"
-    let spans := out ++ ".spans"
-    runPerConstant out names fun name => do
-      let (exit, seconds, peak) ← runMeasured ix
-        #["check", "--ixe", ixe, name] #[("IX_TEXRAY_JSON", some spans)]
-      let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
-      if ← FilePath.pathExists spans then IO.FS.removeFile spans
-      let rejected := exit != 0 && !isKill exit && execute.isSome
-      if exit == 0 || rejected then
-        let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
-          ("peak-rss", Lean.toJson peak)]
-        let row := match execute with
-          | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
-          | none => row
-        writeEntry out name <|
-          if rejected then row.setObjVal! "status" (.str "rejected") else row
-      return if rejected then exitRejected else exit
-  | "aiur-sharded-env" =>
-    -- Seed the partition for the runner's RAM from the env's static
-    -- block-shape score (setup, outside the measured window), then one
-    -- `ix check` executes every shard's claim, one job per core, writing
-    -- every shard's `aiur/execute` span to the one sink.
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-    let ix ← resolveBin repo "ix"
-    let manifest := s!"{env}-exec.ixes"
-    let exit ← runTool ix #["shard", ixe, "--max-ram", "100", "--out", manifest]
-    if exit != 0 then
-      IO.eprintln s!"[bench] ix shard failed (exit {exit})"
-      return 1
-    let shards := match Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest) with
-      | .ok view => view.shards.size
-      | .error _ => 0
-    let spans := out ++ ".spans"
-    let (exit, seconds, peak) ← runMeasured ix
-      #["check", "--ixe", ixe, "--ixes", manifest, "--jobs", "0"]
-      #[("IX_TEXRAY_JSON", some spans)]
-    let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
-    if ← FilePath.pathExists spans then IO.FS.removeFile spans
-    if isKill exit then
-      markKilled out info.name (killStatus exit)
-    else if exit == 0 || execute.isSome then
-      let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
-        ("peak-rss", Lean.toJson peak), ("shards", Lean.toJson shards)]
-      let row := match execute with
-        | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
-        | none => row
-      writeEntry out info.name <|
-        if exit == 0 then row else row.setObjVal! "status" (.str "rejected")
-      if exit != 0 then
-        IO.eprintln s!"[bench] whole-env aiur check rejected (exit {exit})"
-    else
-      IO.eprintln s!"[bench] whole-env aiur check failed before execution (exit {exit})"
+    runIxvmConstants ix ixe out names
+    if envRow then runIxvmEnv ix ixe out env
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
 
-  -- Every selected name owes a row; the env-keyed backends owe the env
-  -- row too.
-  let expected := match backend with
-    | "compile" => #[info.name]
-    | "decompile" => #[info.name]
-    | "ooc" => #[info.name] ++ names
-    | "aiur-sharded-env" => #[info.name]
-    | _ => names
-  let code ← gate out expected
+  -- Every selected row owes a result.
+  let code ← gate out (if envRow then names.push env else names)
   if code == 0 || code == exitRejected then
-    saveBaseline out s!"{backend}-{env}-{mode}"
+    saveBaseline out s!"{backend}-{env}"
   return code
 
 end Ix.Cli.BenchCmd
@@ -655,14 +521,14 @@ end Ix.Cli.BenchCmd
 open Ix.Cli.BenchCmd in
 def benchRunCmd : Cli.Cmd := `[Cli|
   "run" VIA runBenchRunCmd;
-  "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
+  "Execute one benchmark cell (backend × env): the env's selected constant rows and its env row, writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when a selected row was not produced."
 
   FLAGS:
-    backend      : String; "aiur | aiur-sharded-env | ooc | compile | decompile"
+    backend      : String; "ixvm | ixvm-ooc | compile | decompile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
-    mode         : String; "Backend mode (default: the backend's defaultMode)"
+    constants    : String; "Constant rows: `all` (default: the env's shared constants), `none`, or comma-separated names (same grammar as the tools' --consts). Ignored by backends without constant rows."
+    "no-env-row";          "Skip the env row (the whole-env measurement)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
-    consts       : String; "Run exactly these comma-separated names instead of the shared benchConstants selection (same grammar as the tools' --consts)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
 ]

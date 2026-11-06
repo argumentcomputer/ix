@@ -1,7 +1,8 @@
 # Benchmarking
 
 One orchestrator — `ix bench` — runs every benchmark cell, locally and in CI.
-A **cell** is `(backend, env, mode)`, e.g. `ooc-InitStd-execute`. For backends
+A **cell** is `(backend, env)`, e.g. `ixvm-ooc-InitStd`. Each backend measures
+either the shared constants (each in its env) or the envs themselves. For backends
 scheduled in CI, the same `ix bench run` you type in a terminal is what both
 workflows execute, so every CI number is reproducible on your machine.
 
@@ -45,7 +46,7 @@ row** — an empty or quietly-partial cell can't be green.
 
 | subcommand | job |
 |---|---|
-| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool (one process per constant on aiur), read the aiur cells' execution spans into their rows, gate on the rows |
+| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool (one process per constant on ixvm), read the ixvm cells' execution spans into their rows, gate on the rows |
 | `compare`    | two rows files → Markdown base-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
@@ -57,14 +58,18 @@ row** — an empty or quietly-partial cell can't be green.
 ### Local usage
 
 ```shell
-# Run the ooc cell over InitStd's benchmark constants:
-ix bench run --backend ooc --env InitStd
+# Run the ixvm-ooc cell over InitStd: its shared constants and its env row:
+ix bench run --backend ixvm-ooc --env InitStd
+
+# Only some rows: --constants takes all (default), none, or comma names;
+# --no-env-row skips the whole-env measurement:
+ix bench run --backend ixvm --env InitStd --constants Nat.add_comm --no-env-row
 
 # Change something, run again, and diff against your previous run
 # (runs save baselines under .lake/benches/<cell>{,.prev}.json — the same
 # BENCH_OUTPUT_DIR root the Ix.Benchmark framework writes to):
-ix bench run --backend ooc --env InitStd --ixe InitStd.ixe
-ix bench compare --backend ooc --env InitStd
+ix bench run --backend ixvm-ooc --env InitStd --ixe InitStd.ixe
+ix bench compare --backend ixvm-ooc --env InitStd
 ```
 
 `--repo <dir>` points the run at another checkout: the *measured* tools
@@ -144,13 +149,27 @@ FFT cost from 115.65B to 99.33B (−14.1%), and `total-time` from 63.85s to
 
 ## Backends
 
-| backend | what it measures | tool |
-|---|---|---|
-| `aiur`    | formal Aiur execution of the certified IxVM claim verifier, per constant, no proving: `execute-time` (the texray `aiur/execute` span around binding and executing the claim), `check-time` (the whole `ix check` process, adding the env load, program load and claim construction), `peak-rss` (the texray tree sampler over that process) | `ix check --ixe <env>.ixe <name>` |
-| `aiur-sharded-env` | the same execution over a whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `check-time`, `peak-rss`, `execute-time` (summed over shards), `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
-| `ooc`     | out-of-circuit Lean kernel (`IxC`): whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-lean --anon --json` |
-| `compile` | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
-| `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
+A backend's rows are of two kinds. A **constant row** measures one shared
+constant (`Ix/BenchConstants.lean`) in its own env and is keyed by the
+constant's name; an **env row** measures a whole registry env (InitStd,
+ISLB, Mathlib) and is keyed by the env's name. `ixvm` and `ixvm-ooc` have
+both kinds; `compile` and `decompile` have env rows only. Both kinds upload
+to the backend's one testbed, so they draw as lines of the same plot per
+measure; a measure only one kind carries (e.g. `shards`) has no lines of
+the other. A cell `(backend, env)` runs the env's selected constant rows
+and, if selected, its env row.
+
+| backend | rows | what it measures | tool |
+|---|---|---|---|
+| `ixvm` | constant | formal Aiur execution of the certified IxVM claim verifier, no proving: `execute-time` (the texray `aiur/execute` span around binding and executing the claim), `check-time` (the whole `ix check` process, adding the env load, program load and claim construction), `peak-rss` (the texray tree sampler over that process) | `ix check --ixe <env>.ixe <name>` |
+| `ixvm` | env | the same execution over the whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `check-time`, `peak-rss`, `execute-time` (summed over shards), `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
+| `ixvm-ooc` | constant | out-of-circuit Lean kernel (`IxC`) over each constant's full closure (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-lean --anon --consts-file` |
+| `ixvm-ooc` | env | the same kernel over the whole env, plus the per-constant attribution CSV the compare drill-down reads | `ix check-lean --anon --per-const` |
+| `compile` | env | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
+| `decompile` | env | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
+
+The PR comment renders each cell's env row and constant rows as separate
+tables, each with its kind's columns.
 
 The `compile` benchmark switches from the uncertified Rust compiler to the
 certified default in this change. Certified uploads use the distinct
@@ -163,11 +182,11 @@ Compiler failures, missing rows and kernel rejections still fail their jobs.
 
 The certified checker's environment check (`kernel-check-ixe`, the verified checker behind the Ixon
 reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/README.md)
-and [kernel.md](kernel.md). It is separate from the compiler and `ooc` benchmarks above;
+and [kernel.md](kernel.md). It is separate from the compiler and `ixvm-ooc` benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
-Formal Aiur proving has no `ix bench` backend; `aiur` and `aiur-sharded-env`
-measure execution only. Whole-environment GPU proving runs are benchmarked by
+Formal Aiur proving has no `ix bench` backend; `ixvm` measures execution
+only. Whole-environment GPU proving runs are benchmarked by
 hand as described in
 [aiur-gpu-proving.md](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run).
 `ix check` reads its compiled programs from `IX_AIUR_CACHE` (default
@@ -176,10 +195,10 @@ cache is compiled inside the measured `ix check`, so warm the cache before
 measuring.
 
 All tools emit the same rows, and all the constant-driven ones take the same
-`--consts`/`--consts-file` grammar. The ooc and aiur cells use per-constant
+`--consts`/`--consts-file` grammar. Constant rows use per-constant
 **full-closure** scope.
 
-For the aiur cells, `ix bench run` points `IX_TEXRAY_JSON` at `<out>.spans`,
+For the `ixvm` cells, `ix bench run` points `IX_TEXRAY_JSON` at `<out>.spans`,
 where `ix check` writes each claim's `aiur/execute` span, and reads the
 execution time back from it. A failing `ix check` that wrote the span is a
 `rejected` verdict; one that failed before executing the claim writes no row.
@@ -191,28 +210,30 @@ through `.github/scripts/memory-cap`: a `systemd-run --user --scope` with
 cgroup-v2 `MemoryMax` at the runner's RAM minus 15 GiB and swap disabled.
 At the cap the kernel OOM-kills the largest process in the scope, the
 measured tool, with SIGKILL (exit 137), and `ix bench run` survives it. The
-per-constant `aiur` backend runs one `ix check` per constant, with the
-execution in that process, so a kill marks that constant's row
-`status: oom` and the loop continues: one constant's death costs one
-constant. An `aiur-sharded-env` kill marks the env row `oom`. ooc and
-compile run as single processes that write their own rows, so a kill there
-means missing rows and a red cell. Preparing a missing `.ixe` uses the
-default compiler, outside the consumer's timed window. Wrap a local run in
-the same script to get the same cap.
+`ixvm` constant rows run one `ix check` per constant, with the execution in
+that process, so a kill marks that constant's row `status: oom` and the loop
+continues: one constant's death costs one constant. An `ixvm` env-row kill
+marks the env row `oom`. The `ix check-lean` and `ix compile` backends run as
+single processes that write their own rows, so a kill there means missing
+rows and a red cell. Preparing a missing `.ixe` uses the default compiler,
+outside the consumer's timed window. Wrap a local run in the same script to
+get the same cap.
 There are **no per-constant timeouts**; the job-level `timeout-minutes` is
 the only clock.
 
 ## Registry and constant set
 
 - **`Ix/BenchConstants.lean`** — the shared constant set: one
-  `(name, env)` entry per benchmark constant, compiled into `ix`.
-  Every per-constant backend runs this same set (a constant whose prove
-  exceeds the host's RAM still runs; the row records the OOM), minus the
-  hard feasibility exclusions in `benchExclusions`
-  (`Ix/Cli/BenchCmd.lean`).
+  `(name, env)` entry per benchmark constant, compiled into `ix`. Every
+  backend with constant rows runs this same set: `Nat.add_comm`,
+  `Array.extract_append`, `ByteArray.utf8DecodeChar?_utf8EncodeChar_append`
+  and `Std.HashMap` in InitStd, and `Lean.Json` in ISLB. A constant whose
+  run exceeds the host's RAM still runs; the row records the OOM.
 - **The registry** (`envSpecs`/`backendSpecs` in `Ix/Cli/BenchCmd.lean`) —
-  everything else: env modules, backends (disabled reason, default mode,
-  bencher testbeds, compare columns). Typed Lean data with one owner: the
+  everything else: the envs (InitStd, ISLB, Mathlib) and their modules, and
+  the backends (disabled reason, bencher testbed, the constant-row and
+  env-row compare columns).
+  Typed Lean data with one owner: the
   workflows never read it directly — `ix bench ci matrix` serves the job
   matrices and `ix bench ci parse` the `!benchmark` cells, both post-build.
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
@@ -222,17 +243,21 @@ the only clock.
   benchmark runners have 256 GiB, leaving about 240 GiB under
   `memory-cap`.
 
+The other `Benchmarks/Compile` modules (e.g. `CompileLean`, `CompileFLT`,
+`CompileAnthropicFLT`) remain for local use; `ix compile` builds them
+directly, outside the registry.
+
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [aiur-sharded-env] [ooc] [compile] [decompile] | all)
-           [execute] [fresh] [KEY=VALUE …]
-BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
-                               # compile-only request may name any registry
-                               # env (Lean, FLT compile fine, just unbenched)
-BENCH_CONSTS=Nat.gcd,…         # bench exactly these constants on the
-                               # per-constant backends (each name's env is
-                               # found automatically)
+!benchmark ([ixvm] [ixvm-ooc] [compile] [decompile] | all)
+           [fresh] [KEY=VALUE …]
+BENCH_CONSTANTS=all            # constant rows: all (default), none, or
+                               # comma names; a shared constant runs in its
+                               # own env, any other name needs a single-env
+                               # BENCH_ENVS naming its env
+BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs
+                               # (case-insensitive; default InitStd)
 BENCH_PHASES=1                 # add the per-constant phase drill-downs
                                # to the comment (off by default)
 RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
@@ -249,7 +274,7 @@ The `KEY=VALUE` config works both as lines below the command (the comment
 form above) and inline on the command line, whitespace-separated — the
 single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
 input box can't hold newlines:
-`!benchmark ooc BENCH_ENVS=InitStd,Mathlib`.
+`!benchmark ixvm-ooc BENCH_ENVS=InitStd,Mathlib`.
 
 The allowlisted `IX_COMPILE_*` settings tune the Rust compiler used by older
 base checkouts; they do not tune the certified compiler. Normal `.ixe` and
@@ -258,8 +283,7 @@ a compile setting on an already benchmarked commit.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
-(and no Python remains). Mode defaults per backend from the registry, and
-every remaining backend has only its `execute` mode. The bare `fresh`
+(and no Python remains). The bare `fresh`
 token makes every cell bypass its bencher baseline and keeps persistent cached
 benchmark binaries, compiled `.ixe` files, and compile rows out of measured
 jobs. A cached head `ix` may bootstrap the canonical command parser, but the
@@ -274,7 +298,8 @@ untouched.
 **bench-main.yml**: `build` (compile `ix` once, cache by
 SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe`) →
-one `benchmark` job per remaining cell — aiur / aiur-sharded-env / ooc / decompile —
+one `benchmark` job per remaining cell — ixvm / ixvm-ooc / decompile, each
+running all of the env's rows —
 (each: restore caches, one `ix bench run … --ixe`, `ix bench bmf`,
 upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
@@ -284,7 +309,7 @@ run step while the clean rows still upload.
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
 lines on the historical Warp and native r8i testbeds, with a separate line
 per benchmark row and testbed so hardware changes preserve the visible history,
-plus the cross-kernel input-constants overlay, sourced from the native ooc
+plus the cross-kernel input-constants overlay, sourced from the native ixvm-ooc
 backend. Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally
@@ -344,7 +369,7 @@ same CPU, so the binary runs there, and nothing they do is timed. CI jobs pin
 the baseline shared by every family they may land on; Valgrind builds without
 AVX-512 into the S3-backed actions cache under its own key. Benchmark product caches and Cargo
 caches include the instance family and code generation. Bencher testbeds
-include both, such as `ooc-check-runs-on-r8i-8xlarge-native`, so old binaries
+include both, such as `ixvm-ooc-runs-on-r8i-8xlarge-native`, so old binaries
 and timings from different hardware or compiler flags stay separate.
 A hardware trial must change the runner labels, sticky cache lineages,
 `IX_BENCH_MACHINE`, `BENCH_CACHE`, the Rust action's cache key, and the allowed
