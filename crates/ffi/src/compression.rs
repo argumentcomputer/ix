@@ -260,57 +260,6 @@ extern "C" fn rs_compression_root_layout(
   }
 }
 
-/// Wrap and prove the root in `layout`'s fixed shape.
-#[unsafe(no_mangle)]
-extern "C" fn rs_compression_normalize_root(
-  aggr_artifact: LeanString<LeanBorrowed<'_>>,
-  invocation: LeanByteArray<LeanBorrowed<'_>>,
-  raw_proof: LeanByteArray<LeanBorrowed<'_>>,
-  layout: LeanByteArray<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  let result = (|| -> Result<Vec<u8>, String> {
-    let layout =
-      FixedRoot::from_bytes(layout.as_bytes()).map_err(|e| e.to_string())?;
-    let (program, trace) = aggregate(&aggr_artifact)?;
-    let plan = TracePlan::new(&program, trace)?;
-    let backend = Backend::for_batch(&plan, Parameters::default())?;
-    let invocation = stark_verifier::Invocation::decode(invocation.as_bytes())?;
-    let args = program.field().decode(&invocation.args)?;
-    let proof_bytes = raw_proof.as_bytes();
-    let proof = BatchProof::from_bytes(proof_bytes)
-      .map_err(|e| format!("root proof decode failed: {e}"))?;
-    if proof.to_bytes().map_err(|e| e.to_string())? != proof_bytes {
-      return Err("noncanonical or trailing root proof bytes".into());
-    }
-    backend.verify_batch(&invocation.entry, &args, &[], &proof)?;
-    let hints = stark_verifier::prepare(&program, &invocation.streams)?;
-    let record = hints
-      .execute(&invocation.entry, args.clone())
-      .map_err(|e| e.to_string())?;
-    if !record.output.is_empty() {
-      return Err("verifier returned a non-unit value".into());
-    }
-    let (claim, normalized) = backend.prove_normalized(
-      &invocation.entry,
-      &args,
-      &[],
-      record,
-      layout.log_heights(),
-    )?;
-    let expected = backend.claim(&invocation.entry, &args, &[])?;
-    if claim != expected {
-      return Err(
-        "normalized root claim differs from expected outer claim".into(),
-      );
-    }
-    normalized.to_bytes().map_err(|e| e.to_string())
-  })();
-  match result {
-    Ok(bytes) => LeanIOResult::ok(LeanByteArray::from_bytes(&bytes)),
-    Err(e) => LeanIOResult::error_string(&e),
-  }
-}
-
 /// Write the FRI stage's root input directory without compressing.
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_write_root(
