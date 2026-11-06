@@ -147,7 +147,7 @@ jobs:
             exit 1
           fi
 
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@284bff869d4a825f778ac7c38e50f1e31ef198fd # v2.6.0
         with:
           sccache: s3
           sticky_cache: |
@@ -158,7 +158,7 @@ jobs:
         with:
           codegen: portable
           use-github-cache: "false"
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@fe408643ea7367d8c0404a8be3975bb145f5fb64 # v1.7.0
         with:
           auto-config: false
           use-github-cache: false
@@ -236,7 +236,7 @@ jobs:
       # sccache keys rustc outputs by content, so the workspace crates, which
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits (see ci.yml).
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@284bff869d4a825f778ac7c38e50f1e31ef198fd # v2.6.0
         with:
           sccache: s3
           sticky_cache: |
@@ -247,7 +247,7 @@ jobs:
         with:
           codegen: portable
           use-github-cache: "false"
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@fe408643ea7367d8c0404a8be3975bb145f5fb64 # v1.7.0
         with:
           auto-config: false
           use-github-cache: false
@@ -316,7 +316,7 @@ jobs:
             exit 1
           fi
 
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@284bff869d4a825f778ac7c38e50f1e31ef198fd # v2.6.0
         with:
           sccache: s3
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -330,7 +330,7 @@ jobs:
           path: ./.lake
           key: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: lake-valgrind-x64-generic-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'rust-toolchain.toml') }}-
-      - uses: leanprover/lean-action@50fcf42d2e460296f1a34b402e990d1b24f8b596 # v1.6.0
+      - uses: leanprover/lean-action@fe408643ea7367d8c0404a8be3975bb145f5fb64 # v1.7.0
         with:
           auto-config: false
           use-github-cache: false
