@@ -56,14 +56,10 @@
 # coverage, an ooc attribution cache miss, or `fresh` — triggers a full
 # local base-SHA rerun whose rows take priority over bencher's.
 #
-# Why two trigger stages: GitHub gives issue_comment runs read-only cache
-# access (anti-poisoning; no token permission can override it), so cache
-# saves would all fail. The issue_comment run therefore only checks the
-# commenter is an org MEMBER/OWNER and re-dispatches this same file as
-# workflow_dispatch, which is allowed to save caches. The MEMBER/OWNER command
-# explicitly authorizes that PR head to run in the cache-writing context.
-# Manual dispatch already requires repo write access and may intentionally
-# compare loose commits.
+# The issue_comment run only checks that the commenter is an org
+# MEMBER/OWNER and re-dispatches this file as workflow_dispatch on the PR
+# branch, so the run uses that branch's copy of this workflow and files its
+# sticky-disk snapshots under the branch instead of `main`.
 name: Benchmark pull requests
 
 on:
@@ -196,7 +192,7 @@ jobs:
       # Lake and cargo artifacts live on the sticky disk; sccache serves the
       # workspace crates cargo rebuilds after every fresh checkout (see
       # ci.yml), under entries the native codegen flags keep apart from CI's.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -352,7 +348,7 @@ jobs:
           ref: ${{ needs.build.outputs.revision }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sticky_cache: |
             custom,path=Benchmarks/Compile/.lake
@@ -510,7 +506,7 @@ jobs:
     steps:
       # sccache for the from-scratch base build below: its workspace crates
       # are what the base's own bench-main run compiled (see ci.yml).
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -926,12 +922,13 @@ jobs:
     # Assemble even when benchmark runs failed — the tables carry the ❌
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
-    # The report command restores the build job's native r8i binary.
-    runs-on: runs-on=${{ github.run_id }}-assemble-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    # The native r8i `ix`; every r8i size has the same CPU, so the smallest
+    # one runs it.
+    runs-on: runs-on=${{ github.run_id }}-assemble-${{ github.run_attempt }}/cpu=2/family=r8i/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     permissions:
       contents: read
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.build.outputs.revision }}

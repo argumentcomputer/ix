@@ -414,7 +414,10 @@ offers the same shapes:
 | 32 | `8xlarge` | 256 GiB |
 
 Benchmark builds, compile measurements, and runs all use `r8i.8xlarge` with
-`-Ctarget-cpu=native`. CI jobs pin `x86-64-v4` plus `avx512vbmi2` and `gfni`,
+`-Ctarget-cpu=native`. Jobs that only run the native `ix` to report or sync
+plots use the smallest r8i size (`cpu=2/family=r8i`): every r8i size has the
+same CPU, so the binary runs there, and nothing they do is timed. CI jobs pin
+`x86-64-v4` plus `avx512vbmi2` and `gfni`,
 the baseline shared by every family they may land on; Valgrind builds without
 AVX-512 into the S3-backed actions cache under its own key. Benchmark product caches and Cargo
 caches include the instance family and code generation. Bencher testbeds

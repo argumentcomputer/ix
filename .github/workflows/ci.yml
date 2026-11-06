@@ -37,7 +37,7 @@ jobs:
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -147,7 +147,7 @@ jobs:
       # cargo rebuilds after every fresh checkout because their mtimes moved,
       # come back as cache hits. RunsOn configures it before anything can
       # start an sccache server.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
         with:
           sccache: s3
           sticky_cache: |
@@ -213,7 +213,7 @@ jobs:
       # instance role need checking first), and an `NVCC` wrapper running
       # `sccache nvcc` for the kernels, which multi-stark's build script
       # must compile with `-c` per source for sccache to cache them.
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
