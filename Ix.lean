@@ -20,7 +20,6 @@ public import Ix.Claim
 public import Ix.Merkle
 public import Ix.AssumptionTree
 public import Ix.Commit
-public import Ix.Watchdog
 public import Ix.Benchmark.Bench
 public import Ix.Aiur.Protocol
 public import Ix.IxVM.ClaimHarness

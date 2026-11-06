@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Run "$@" in a systemd user scope capped at the runner's RAM minus 15 GiB,
+# with swap off. A cgroup OOM kill lands on the largest process inside, the
+# tool `ix bench run` is measuring, so the run survives and records the kill.
+set -euo pipefail
+
+uid=$(id -u)
+export XDG_RUNTIME_DIR="/run/user/$uid"
+# Runners boot without a user manager; lingering starts and keeps one.
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+  sudo loginctl enable-linger "$uid"
+  sudo systemctl start "user@$uid.service"
+fi
+
+ram_gib=$(awk '/^MemTotal:/ { print int($2 / 1048576) }' /proc/meminfo)
+exec systemd-run --user --scope --quiet \
+  -p "MemoryMax=$((ram_gib - 15))G" -p MemorySwapMax=0 "$@"

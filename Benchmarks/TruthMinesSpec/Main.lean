@@ -1,7 +1,6 @@
 import Benchmarks.TruthMinesSpec.Projection
 import Ix.Catalog
 import Ix.Common
-import Ix.Watchdog
 
 /-!
   `lake exe truthmines` — the corpus driver: Mathlib-parity ergonomics for
@@ -13,13 +12,13 @@ import Ix.Watchdog
                     lean-toolchain, Drivers/<Q>.lean per member)
     spec [--mini]   print the member/driver table (qualifier, driver
                     module, roots) for the full or mini tier
-    build [--mini] [--out DIR.ixc] [--jobs N] [--ceiling-gb N]
-          [--no-watchdog] [--no-cache] [--palomar-ixc DIR.ixc]
+    build [--mini] [--out DIR.ixc] [--jobs N] [--no-cache]
+          [--palomar-ixc DIR.ixc]
                     gen-check, build the member root oleans (network +
                     `lake exe cache get` on first run), compile each
                     member's piece DIRECTLY INTO the self-contained
                     `.ixc` directory (`<out>/<Q>.ixe`) in a short-lived
-                    watchdogged `ix compile` process — `--jobs N`
+                    `ix compile` process — `--jobs N` (default 1)
                     members in flight, peak = max member, never a
                     union — then `ix catalog assemble` (manifest
                     in-place) + `ix catalog verify`. `--mini` targets
@@ -48,13 +47,10 @@ import Ix.Watchdog
                     only on rejection, with the solo repro command.
                     Exit-code gated, no artifacts.
 
-  The heavy steps run under the typed RAM watchdog (`Ix.Watchdog`,
-  shared with `ix bench`): a systemd user scope with cgroup MemoryMax
-  and swap off, whole-scope kill on breach (exit 137) — "an unenforced
-  ceiling is not a benchmark run". Piece compiles get a PER-MEMBER
-  ceiling (`--ceiling-gb`, default 25 GiB — the mathlib-class bound);
-  the box never sees more than jobs × ceiling. `--no-watchdog` opts out
-  explicitly (required on non-systemd platforms).
+  Memory: a member's piece compile peaks at ~19–20 GiB for the
+  Mathlib-class members, and `--jobs N` runs N of them at once, so size N
+  to the machine's RAM / 25 GiB. Nothing caps a run; wrap it in
+  `systemd-run --user --scope -p MemoryMax=<GB>G` to bound it.
 
   Run from the repo root; `build` needs `lake build ix` first.
 -/
@@ -63,7 +59,7 @@ open TruthMinesSpec
 
 private def usage : String :=
   "usage: lake exe truthmines <gen [--check] | spec [--mini] | build \
-[--mini] [--out DIR.ixc] [--jobs N] [--ceiling-gb N] [--no-watchdog] \
+[--mini] [--out DIR.ixc] [--jobs N] \
 [--no-cache] [--palomar-ixc DIR.ixc] | check [--mini] [--ixc DIR.ixc] \
 [--only Q[,Q…]] [--jobs N]>"
 
@@ -144,20 +140,12 @@ run `lake exe truthmines gen`"
 private structure BuildOptions where
   out? : Option String := none
   jobs? : Option Nat := none
-  /-- Per-member compile ceiling (GiB); the box-level pressure is
-      jobs × this, never a union. -/
-  ceilingGb : Option Nat := none
-  noWatchdog : Bool := false
   noCache : Bool := false
   /-- Build the mini tier (`catalogMiniSpec`) instead of the full corpus. -/
   mini : Bool := false
   /-- Verified standalone Palomar catalog whose members are appended to the
       full TruthMines manifest. The Palomar sources remain external. -/
   palomarIxc? : Option String := none
-
-/-- Per-member ceiling default: the mathlib-class piece peaks ~19–20
-    GiB; 25 leaves headroom without hiding a regression class. -/
-private def defaultMemberCeilingGb : Nat := 25
 
 private def parseBuild : List String → Except String BuildOptions
   | [] => .ok {}
@@ -166,11 +154,6 @@ private def parseBuild : List String → Except String BuildOptions
     let some n := value.toNat? | .error s!"--jobs needs a number, got `{value}`"
     if n == 0 then .error "--jobs must be at least 1" else
     pure { ← parseBuild rest with jobs? := some n }
-  | "--ceiling-gb" :: value :: rest => do
-    let some gb := value.toNat? | .error s!"--ceiling-gb needs a number, got `{value}`"
-    pure { ← parseBuild rest with ceilingGb := some gb }
-  | "--no-watchdog" :: rest => do
-    pure { ← parseBuild rest with noWatchdog := true }
   | "--no-cache" :: rest => do
     pure { ← parseBuild rest with noCache := true }
   | "--mini" :: rest => do
@@ -185,25 +168,8 @@ private def inherited (cmd : String) (args : Array String)
   child.wait
 
 /-- Flushed stage banner — long phases follow, and unflushed stdout is
-    lost to a watchdog kill under redirection. -/
+    lost to a kill under redirection. -/
 private def stageLine (line : String) : IO Unit := Ix.progressLine line
-
-/-- Run a heavy step under the typed watchdog's cgroup memory ceiling
-    (`Ix.Watchdog.run`: whole-scope kill on breach, exit 137); `none`
-    runs it bare (`--no-watchdog`). -/
-private def watched (ceiling? : Option Nat) (cmd : String)
-    (args : Array String) (cwd : System.FilePath) : IO UInt32 := do
-  match ceiling? with
-  | none => inherited cmd args cwd
-  | some ceiling => Ix.Watchdog.run ceiling cmd args (some cwd)
-
-private def reportOom (exit : UInt32) (ceiling? : Option Nat)
-    (step : String) : IO Unit := do
-  if exit == Ix.Watchdog.oomExitCode then
-    if let some ceiling := ceiling? then
-      IO.eprintln s!"{step} hit the {ceiling} GiB memory ceiling (cgroup \
-OOM kill, whole scope). Rerun with a higher --ceiling-gb, more RAM, or a \
-smaller corpus — the box itself was protected."
 
 /-- The member's catalog record; fail closed on a spec/records drift
     (the `truthmines-spec` suite pins coherence, but the driver must
@@ -258,11 +224,11 @@ private structure MemberOutcome where
   exit : UInt32
 
 /-- Compile one member's piece straight into the `.ixc` directory, in
-    a short-lived watchdogged `ix compile` subprocess. Fail-closed per
+    a short-lived `ix compile` subprocess. Fail-closed per
     member: `.tmp` + rename inside the FFI means no partial piece ever
     exists. Cache keys live under `<ixc>/.cache/` — build metadata
     inside the self-contained tree, ignored by verify. -/
-private def compileMember (exe : System.FilePath) (ceiling? : Option Nat)
+private def compileMember (exe : System.FilePath)
     (ixcDir : System.FilePath) (noCache : Bool) (lib : CatalogSpecLib) :
     IO MemberOutcome := do
   let q := lib.qualifier.toString (escape := false)
@@ -276,15 +242,15 @@ private def compileMember (exe : System.FilePath) (ceiling? : Option Nat)
   if ← keyPath.pathExists then IO.FS.removeFile keyPath
   let driver := driverModulePath lib.qualifier
   let args := #["compile", driver.toString, "--out", piece.toString]
-  let exit ← watched ceiling? exe.toString args (← IO.currentDir)
+  let exit ← inherited exe.toString args (← IO.currentDir)
   if exit == 0 then
     IO.FS.writeFile keyPath key
   return { qualifier := q, cached := false, exit }
 
 /-- Bounded-parallel member compiles: at most `jobs` subprocesses in
-    flight; each new member launches as a slot frees. Box-level
-    pressure = jobs × per-member ceiling, never a union. -/
-private def compileMembers (exe : System.FilePath) (ceiling? : Option Nat)
+    flight; each new member launches as a slot frees, so the box
+    holds at most `jobs` member peaks at once. -/
+private def compileMembers (exe : System.FilePath)
     (ixcDir : System.FilePath) (noCache : Bool) (jobs : Nat)
     (libs : Array CatalogSpecLib) : IO (Array MemberOutcome) := do
   let mut outcomes : Array MemberOutcome := #[]
@@ -297,7 +263,7 @@ private def compileMembers (exe : System.FilePath) (ceiling? : Option Nat)
       stageLine s!"[truthmines] ({next + 1}/{total}) \
 {lib.qualifier}: compiling piece…"
       inFlight := inFlight.push (← IO.asTask
-        (compileMember exe ceiling? ixcDir noCache lib))
+        (compileMember exe ixcDir noCache lib))
       next := next + 1
     -- Wait for the oldest in-flight member (bounded pool; completion
     -- order inside the pool does not matter for correctness).
@@ -390,28 +356,7 @@ run `lake exe truthmines gen` first"
               s!"external catalog label `{member.label}` collides with another member"
           seen := seen.push member.label
         pure (some (dir, external))
-  -- Resolve ceilings: per-member for piece compiles, box-level for the
-  -- workspace olean build. An unenforced ceiling is not a corpus run.
-  let ceilings? : Option (Option Nat × Option Nat) ←
-    if options.noWatchdog then
-      pure (some (none, none))
-    else if ← Ix.Watchdog.available then do
-      let member := options.ceilingGb.getD defaultMemberCeilingGb
-      pure (some (some member, some (← Ix.Watchdog.defaultCeilingGb)))
-    else do
-      IO.eprintln "RAM watchdog unavailable (systemd user scope with \
-cgroup memory.oom.group failed the probe) — pass --no-watchdog to run \
-unprotected"
-      pure none
-  let some (memberCeiling?, boxCeiling?) := ceilings? | return 1
-  -- Parallelism: fit jobs × per-member ceiling under the box ceiling.
-  let jobs := options.jobs?.getD <| match memberCeiling?, boxCeiling? with
-    | some member, some box => max 1 (box / member)
-    | _, _ => 1
-  if let some ceiling := memberCeiling? then
-    stageLine s!"[truthmines] {tier} build: {jobs} job(s) × {ceiling} GiB \
-per-member ceiling (cgroup scopes, swap off; --jobs / --ceiling-gb / \
---no-watchdog to change)"
+  let jobs := options.jobs?.getD 1
   -- Stage 1: member root oleans. First run needs network and pulls the
   -- mathlib olean cache; `cache get` failure is tolerated — the build
   -- below is authoritative.
@@ -421,22 +366,19 @@ per-member ceiling (cgroup scopes, swap off; --jobs / --ceiling-gb / \
 (lake exe cache get, then lake {" ".intercalate buildTarget.toList} in \
 {workspaceDir}) — lake output follows"
   let _ ← inherited "lake" #["exe", "cache", "get"] workspaceDir
-  let buildExit ← watched boxCeiling? "lake" buildTarget workspaceDir
+  let buildExit ← inherited "lake" buildTarget workspaceDir
   if buildExit != 0 then
-    reportOom buildExit boxCeiling? s!"{tier} workspace build"
     IO.eprintln s!"{tier} workspace build failed ({buildExit})"
     return buildExit
   -- Stage 2: per-member pieces, compiled straight into the
-  -- self-contained `.ixc` directory (parallel, watchdogged, cached).
+  -- self-contained `.ixc` directory (parallel, cached).
   IO.FS.createDirAll (ixcDir / ".cache")
   stageLine s!"[truthmines] stage 2/4: {spec.libs.size} member pieces → \
 {ixcDir} ({jobs} in flight; per-member `ix compile`, fail-closed)"
-  let outcomes ← compileMembers exe memberCeiling? ixcDir
+  let outcomes ← compileMembers exe ixcDir
     options.noCache jobs spec.libs
   let failures := outcomes.filter (·.exit != 0)
   unless failures.isEmpty do
-    for f in failures do
-      reportOom f.exit memberCeiling? s!"member {f.qualifier}"
     IO.eprintln s!"[truthmines] {failures.size} member(s) failed: \
 {failures.map (·.qualifier)}"
     return 1
@@ -528,7 +470,7 @@ private def parseCheck : List String → Except String CheckOptions
 /-- Per-piece kernel sweep: `ix check-lean --anon` over each member's
     piece in the `.ixc` directory. Every piece is a self-contained env
     checked in its own subprocess, so the pool's peak is one mmap'd
-    member (~4–6 GiB RSS), never a union — no watchdog needed. Output
+    member (~4–6 GiB RSS) per job, never a union. Output
     is captured per piece and surfaced only on rejection, with the
     solo repro command for triage. -/
 private def runCheck (options : CheckOptions) : IO UInt32 := do

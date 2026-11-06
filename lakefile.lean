@@ -399,7 +399,7 @@ lean_lib TruthMinesSpec where
 /- The corpus driver: `gen [--check]` projects `Benchmarks/TruthMines/`
 (lakefile, toolchain, per-member `Drivers/<Q>.lean`) from the typed
 records, `spec` prints the member/driver table, and `build` compiles
-per-member pieces (`pieces/<Q>.ixe`, one watchdogged `ix compile`
+per-member pieces (`pieces/<Q>.ixe`, one `ix compile`
 process each) and assembles + verifies the `truthmines.ixc` catalog
 manifest. Needs `lake build ix` first for the `build` verb. -/
 lean_exe truthmines where

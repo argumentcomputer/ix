@@ -6,7 +6,7 @@ public import Ix.Cli.CatalogCmd
 
 /-!
   The TruthMines corpus tiers over the piece pipeline: drive
-  `truthmines build` (per-member watchdogged `ix compile` straight
+  `truthmines build` (per-member `ix compile` straight
   into the self-contained `.ixc` directory → `ix catalog assemble` →
   `ix catalog verify`) and kernel-check what it produces.
 
@@ -28,7 +28,7 @@ public import Ix.Cli.CatalogCmd
     (fixtures + spine + Mathlib + FLT → `truthmines-mini.ixc/`), then
     the per-piece check sweep over its members.
 
-  All heavy steps run under the driver's `Ix.Watchdog` ceilings. Needs
+  The build runs one member compile at a time (~20 GiB peak). Needs
   `lake build ix truthmines` first; network + `lake exe cache get` on
   the first workspace build. Run
   `lake test -- --ignored truthmines-mini` (or `truthmines
