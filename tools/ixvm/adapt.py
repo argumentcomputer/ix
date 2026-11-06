@@ -12,7 +12,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_REVISION = '827550579ea660a4749c520968ad6f58be63acf4'
-REVISION = '075b49e0756af6afab049de1169c41fc38adc6d0'
+REVISION = '3d725c8c0accf8b71ae9ac6f70ccc83a4df225e5'
 FILES = ['Core', 'ByteStream', 'Blake3', 'RBTreeMap', 'Ixon', 'IxonSerialize',
          'IxonDeserialize', 'KernelTypes', 'Kernel/Klimbs', 'Kernel/NatPrim',
          'Convert', 'Ingress', 'Kernel/Levels', 'Kernel/Subst',
