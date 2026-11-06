@@ -261,7 +261,7 @@ directly, outside the registry.
 
 ```
 !benchmark ([ixvm] [ixvm-ooc] [compile] [decompile] | all)
-           [fresh] [KEY=VALUE …]
+           [KEY=VALUE …]
 BENCH_CONSTANTS=all            # constant rows: all (default), none, or
                                # comma names; a shared constant runs in its
                                # own env, any other name needs a single-env
@@ -273,13 +273,7 @@ BENCH_PROVE=1                  # ixvm: also prove each constant row end to
 BENCH_COMPRESS=kzg             # ixvm: also compress each root to KZG
                                # (implies BENCH_PROVE)
 RUST_LOG=info                  # passthrough env (allowlist:
-                               # RUST_LOG, RUSTFLAGS,
-                               # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,
-                               # IX_COMPILE_WORKERS, BENCH_TRACE_SHARDS,
-                               # IX_DECOMPILE_KENV_CLEAR_ENTRIES)
-IX_DECOMPILE_KENV_CLEAR_ENTRIES=0
-                               # decompile Pass 2 cache limit; 0 disables
-                               # clearing (default: 131072)
+                               # RUST_LOG, RUSTFLAGS, IX_COMPILE_DEMOTE)
 ```
 
 ### The PR comment
@@ -318,22 +312,15 @@ single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
 input box can't hold newlines:
 `!benchmark ixvm-ooc BENCH_ENVS=InitStd,Mathlib`.
 
-The allowlisted `IX_COMPILE_*` settings tune the Rust compiler used by older
-base checkouts; they do not tune the certified compiler. Normal `.ixe` and
-compile-row caches are keyed by commit and env. Add `fresh` when remeasuring
-a compile setting on an already benchmarked commit.
+The allowlisted `IX_COMPILE_DEMOTE` setting tunes the Rust compiler used by
+older base checkouts; it does not tune the certified compiler. The `.ixe` and
+compile-row caches are keyed by commit and env, so a compile setting on an
+already benchmarked commit replays the cached row.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
-(and no Python remains). The bare `fresh`
-token makes every cell bypass its bencher baseline and keeps persistent cached
-benchmark binaries, compiled `.ixe` files, and compile rows out of measured
-jobs. A cached head `ix` may bootstrap the canonical command parser, but the
-workflow replaces the full binary bundle before publishing it. Both the PR and
-base products are rebuilt; run-scoped artifacts carry them between jobs. Cargo
-and package dependency caches remain enabled. PR runs never upload to bencher,
-so the comparison prints in the comment and the canonical baseline is
-untouched.
+(and no Python remains). PR runs never upload to bencher, so the comparison
+prints in the comment and the canonical baseline is untouched.
 
 ## CI shape
 
@@ -386,10 +373,8 @@ main's numbers, with a base-checkout run covering what bencher lacked
 base, whose `.ixe` can be restored from its earlier PR run), then publishes
 the cell's rows and their sources as an artifact. `assemble` runs `ix bench
 report` over every cell without write privileges, and `comment` replaces the initial comment. Only `announce`
-and `comment` hold write tokens, and neither checks out or runs PR code. Normal
-runs may seed the run artifacts from persistent head/base-SHA caches. `fresh`
-bypasses those caches and rebuilds the measured products while retaining
-dependency caches.
+and `comment` hold write tokens, and neither checks out or runs PR code. Runs
+seed the run artifacts from persistent head/base-SHA caches when they hit.
 Every `ix bench run`, the base side's included, goes through the PR head's
 `.github/scripts/memory-cap`.
 
@@ -445,9 +430,7 @@ include both, such as `ixvm-ooc-runs-on-r8i-8xlarge-native`, so old binaries
 and timings from different hardware or compiler flags stay separate.
 A hardware trial must change the runner labels, sticky cache lineages,
 `IX_BENCH_MACHINE`, `BENCH_CACHE`, the Rust action's cache key, and the allowed
-`benchmarkMachines` in `Ix/Cli/BenchCmd.lean` together. Add `fresh` to a PR
-benchmark command to remeasure both commits while still reusing dependency
-caches.
+`benchmarkMachines` in `Ix/Cli/BenchCmd.lean` together.
 
 [RunsOn sticky disks](https://runs-on.com/docs/runners/capabilities/sticky-disks/)
 cache the Lake and Cargo directories for CI, merge tests, and Nix. Each CI
