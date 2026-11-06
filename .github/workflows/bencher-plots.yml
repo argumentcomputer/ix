@@ -29,10 +29,10 @@ permissions:
 jobs:
   sync-plots:
     # The restored `ix` contains native r8i code, so this job uses the same
-    # CPU family as the benchmark builds.
-    runs-on: runs-on=${{ github.run_id }}-sync-plots-${{ github.run_attempt }}/cpu=32/family=r8i.8xlarge/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
+    # CPU family as the benchmark builds, at its smallest size.
+    runs-on: runs-on=${{ github.run_id }}-sync-plots-${{ github.run_attempt }}/cpu=2/family=r8i/spot=false/image=ubuntu26-full-x64/volume=100gb/extras=s3-cache
     steps:
-      - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
+      - uses: runs-on/action@13fbb6a39310a0dac9ab4716da2c4e74a3326dfc # v2.7.0
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
