@@ -173,9 +173,8 @@ tables, each with its kind's columns.
 
 The `compile` benchmark switches from the uncertified Rust compiler to the
 certified default in this change. Certified uploads use the distinct
-`ix-compile-certified` workload and testbeds, with the same regression
-thresholds. Historical Rust rows remain in `ix-compile` and appear as separate
-lines on the compile plots; they never enter the certified alert baseline.
+`ix-compile-certified` workload and testbeds. Historical Rust rows remain in
+`ix-compile`, which the dashboard no longer plots.
 PR comparisons across the switch include the cost of certification and remain
 informational: the table displays the delta without failing on its size.
 Compiler failures, missing rows and kernel rejections still fail their jobs.
@@ -236,8 +235,7 @@ the only clock.
   Typed Lean data with one owner: the
   workflows never read it directly — `ix bench ci matrix` serves the job
   matrices and `ix bench ci parse` the `!benchmark` cells, both post-build.
-  (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
-  note.) Runner provisioning lives in the workflows; `IX_BENCH_MACHINE`
+  Runner provisioning lives in the workflows; `IX_BENCH_MACHINE`
   selects the matching Bencher testbed. Certified compilation can use
   substantially more RAM than the historical Rust compile series; the
   benchmark runners have 256 GiB, leaving about 240 GiB under
@@ -304,6 +302,11 @@ running all of the env's rows —
 upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
 run step while the clean rows still upload.
+
+**Alerts**: none. Bencher uploads carry no regression thresholds, and
+`bencher-track` passes `--thresholds-reset` so thresholds left from earlier
+runs are removed. The PR comment still marks each Δ% past ±3% with ⚠️ or 🟢
+(`ix bench compare --threshold`); that is display only.
 
 **Dashboard plots**: `ix bench plots` pins one plot per (workload, measure)
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend

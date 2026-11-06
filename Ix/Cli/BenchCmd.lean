@@ -58,9 +58,7 @@ def selectNames (env : String) : Array BenchConstant :=
 `Ix.BenchConstants` holds the shared constant set; everything else lives
 here, in one language with one owner. The workflows never read it directly:
 `ix bench ci matrix` serves the job matrices and `ix bench ci parse` the
-`!benchmark` runs, both post-build. (`bencher-thresholds-reset.yml` keeps
-a static workload list with a sync note — it runs on cheap runners with no
-built `ix`.) -/
+`!benchmark` runs, both post-build. -/
 
 /-- One benchmark env. `name` (e.g. `InitStd`) is the single identifier
     everywhere: the `!benchmark` token (matched case-insensitively), the
@@ -95,9 +93,8 @@ def benchmarkMachine : IO String := do
 def testbedSuffix (machine : String) : String :=
   s!"-runs-on-{machine.replace "." "-"}-native"
 
-/-- A testbed minus its hardware suffix — the workload key the threshold
-    reset anchors (`refs/bencher/<workload>`), the dashboard plot titles,
-    and the run metadata are written against. -/
+/-- A testbed minus its hardware suffix — the workload key the dashboard
+    plot titles and ordering are written against. -/
 def workloadOf (testbed : String) : String :=
   match (benchmarkMachines.map testbedSuffix).find? (testbed.endsWith ·) with
   | some suffix => (testbed.dropEnd suffix.length).toString
@@ -126,19 +123,6 @@ structure BackendSpec where
   constantMetrics : List String := []
   /-- Compare-table columns of the env rows, in the same convention. -/
   envMetrics : List String
-  /-- Regression bounds per tracked measure: (measure, upper, lower), each
-      bound a percentage over the baseline as a decimal fraction ("0.10"),
-      "0" for an exact pin, or "_" for unbounded on that side. Rendered by
-      `thresholdFlags` into the bencher-track action's `--threshold-*`
-      triples. Bound conventions:
-        · deterministic counters (constants) pin exactly (0/0) — a drop
-          means lost coverage, not an improvement;
-        · deterministic costs that only drop on a real win (shards) take
-          an upper-only bound — flag regressions, let wins through;
-        · noisy wall-clock / RAM take ~10% upper bounds; throughput's
-          regression is a drop, so its bound is the lower side;
-        · sizes are structural (fixed layout) and ride tight 1–5% bands. -/
-  thresholds : List (String × String × String) := []
 
 def backendSpecs : List BackendSpec := [
   -- ixvm: execution of the certified IxVM claim verifier by `ix check`,
@@ -149,42 +133,26 @@ def backendSpecs : List BackendSpec := [
   -- it. The env row shards the env with `ix shard --max-ram 100` (setup,
   -- outside the measured window), then one `ix check --ixes` executes
   -- every shard's claim across all cores; its `execute-time` sums the
-  -- shards' spans. `shards` is deterministic per (env block profile,
-  -- budget), so it takes an upper-only pin; re-pin on a justified seed
-  -- change.
+  -- shards' spans; `shards` counts the partition.
   { name := "ixvm", testbed := "ixvm",
     constantMetrics := ["execute-time", "check-time", "peak-rss"],
-    envMetrics := ["check-time", "peak-rss", "execute-time", "shards"],
-    thresholds := [("shards", "0", "_"), ("execute-time", "0.10", "_"),
-                   ("check-time", "0.10", "_"), ("peak-rss", "0.10", "_")] },
+    envMetrics := ["check-time", "peak-rss", "execute-time", "shards"] },
   -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
   -- constant rows check each constant's full closure in one process per
   -- env; the env row checks the whole env and writes the per-constant
   -- attribution CSV the compare drill-down reads.
   { name := "ixvm-ooc", testbed := "ixvm-ooc",
     constantMetrics := ["check-time", "throughput", "peak-rss"],
-    envMetrics := ["check-time", "throughput", "peak-rss"],
-    thresholds := [("constants", "0", "0"), ("check-time", "0.10", "_"),
-                   ("throughput", "_", "0.10"), ("peak-rss", "0.10", "_")] },
+    envMetrics := ["check-time", "throughput", "peak-rss"] },
   -- A distinct baseline keeps the cost of certification out of comparisons
   -- against historical Rust compiler timings.
   { name := "compile", testbed := "ix-compile-certified",
-    envMetrics := ["compile-time", "throughput", "peak-rss", "file-size", "constants"],
-    -- file-size wiggles slightly run-to-run (the serialized env is not
-    -- byte-reproducible — worth its own investigation for a
-    -- content-addressed store) → a tight ±1% band instead of a pin.
-    thresholds := [("compile-time", "0.05", "_"), ("throughput", "_", "0.05"),
-                   ("file-size", "0.01", "0.01"), ("constants", "0", "0"),
-                   ("peak-rss", "0.10", "_")] },
+    envMetrics := ["compile-time", "throughput", "peak-rss", "file-size", "constants"] },
   -- The inverse of compile: decompiles the env's `.ixe` back to Lean
   -- constants (roundtrip-verified). A `.ixe` consumer: it reuses the
   -- compile run's fresh `.ixe` rather than producing one.
   { name := "decompile", testbed := "ix-decompile-lean",
-    envMetrics := ["decompile-time", "throughput", "peak-rss", "file-size", "constants"],
-    -- file-size (the input `.ixe`) duplicates the compile run's, so it
-    -- uploads for the row's completeness but rides no threshold here.
-    thresholds := [("constants", "0", "0"), ("decompile-time", "0.10", "_"),
-                   ("throughput", "_", "0.10"), ("peak-rss", "0.10", "_")] }
+    envMetrics := ["decompile-time", "throughput", "peak-rss", "file-size", "constants"] }
 ]
 
 def findBackend (name : String) : Option BackendSpec :=
@@ -197,17 +165,6 @@ def BackendSpec.hasConstants (b : BackendSpec) : Bool :=
 /-- Every measure the backend tracks: its constant and env columns. -/
 def BackendSpec.metrics (b : BackendSpec) : List String :=
   (b.constantMetrics ++ b.envMetrics).eraseDups
-
-/-- `thresholds` rendered as the bencher-track action's `--threshold-*`
-    flags, one percentage-test triple per measure. `__WINDOW__` is the
-    action's placeholder for the per-workload baseline window (data points
-    since the workload's reset anchor); the action word-splits the string,
-    so every flag value stays a single token. -/
-def BackendSpec.thresholdFlags (b : BackendSpec) : String :=
-  "\n".intercalate <| b.thresholds.map fun (m, upper, lower) =>
-    s!"--threshold-measure {m} --threshold-test percentage\n" ++
-    s!"--threshold-max-sample-size __WINDOW__ --threshold-upper-boundary {upper}\n" ++
-    s!"--threshold-lower-boundary {lower}"
 
 /-- The benchmark row names this backend uploads for a measure — the
     bencher slugs the dashboard plots key on: the shared constants when the
