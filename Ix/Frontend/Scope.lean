@@ -357,6 +357,21 @@ def containsSymbol (idx : ModuleIndex) (name : Ix.Name) : Bool :=
 def isModuleCtor (idx : ModuleIndex) (name : Ix.Name) : Bool :=
   idx.ctorToInd.contains name
 
+/-- Return all conflict variants `(tag, variantFullName)` in `idx` for `origName`
+    (i.e. declarations named `origName.#merge.<tag>`). -/
+def findConflictVariants (idx : ModuleIndex) (origName : Ix.Name) : List (String × Ix.Name) :=
+  idx.decls.toList.filterMap fun d =>
+    match Name.splitMergeVariant? d.fullName with
+    | some (orig, tag, []) => if orig == origName then some (tag, d.fullName) else none
+    | _ => none
+
+/-- Return all conflicted original declaration names in `idx` in appearance order. -/
+def conflictedNames (idx : ModuleIndex) : List Ix.Name :=
+  (idx.decls.toList.filterMap fun d =>
+    match Name.splitMergeVariant? d.fullName with
+    | some (orig, _, []) => some orig
+    | _ => none).eraseDups
+
 end ModuleIndex
 
 /-! ## Pass 1: Extracting Declarations, Constructors, Fields, and Build Maps -/
@@ -537,6 +552,26 @@ def processCommandPass1 : Nat → Ix.Syntax → ScopePassState → Except String
       else if k == SyntaxKind.mutualDecl then
         let innerCmds := Syntax.getArgs (Syntax.getArg cmd 1)
         innerCmds.toList.foldlM (fun acc c => processCommandPass1 fuel c acc)
+          ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
+      -- 10b. `#merge | tag1 => cmd1 | tag2 => cmd2 ... end` (first-class conflict block)
+      else if k == SyntaxKind.mergeConflictDecl then
+        let arms := Syntax.getArgs (Syntax.getArg cmd 1)
+        arms.toList.foldlM (fun acc arm => do
+          let tagId := Syntax.getId (Syntax.getArg arm 1)
+          let tagStr := Name.toStringTotal tagId
+          let innerCmd := Syntax.getArg arm 3
+          let innerCmd' := match innerCmd with
+            | .node info ik iargs =>
+              match iargs.toList with
+              | a0 :: a1 :: a2 :: rest =>
+                let rawId := Syntax.getId a2
+                if !Name.isAnonymous rawId && !Name.isMergeConflict rawId then
+                  let mergedId := Name.mkMergeVariant rawId tagStr
+                  .node info ik (Array.mk (a0 :: a1 :: Syntax.mkSimpleIdent mergedId :: rest))
+                else innerCmd
+              | _ => innerCmd
+            | _ => innerCmd
+          processCommandPass1 fuel innerCmd' acc)
           ⟨currScope, frames, modIdx, revDecls, declCount, anonCount⟩
       -- 11. Top-level declarations (`def`, `abbrev`, `theorem`, `axiom`, `opaque`, `instance`, `inductive`, `structure`, `class`)
       else if k == SyntaxKind.defDecl || k == SyntaxKind.abbrevDecl || k == SyntaxKind.theoremDecl ||

@@ -235,6 +235,44 @@ def toStringTotal : Ix.Name → String
   | .num (.anonymous _) i _ => toString i
   | .num p i _ => toStringTotal p ++ "." ++ toString i
 
+/-- Reserved component marker for first-class `IxVCS` merge conflicts (`orig.#merge.<tag>`). -/
+def mergeMarker : String := "#merge"
+
+/-- Construct a first-class conflict variant name `orig.#merge.<tag>`
+    (e.g. `Acme.foobar.#merge._1` or `Acme.foobar.#merge.X`). -/
+def mkMergeVariant (orig : Ix.Name) (tag : String) : Ix.Name :=
+  mkStr (mkStr orig "#merge") tag
+
+/-- Structural helper for `splitMergeVariant?`. -/
+def splitMergeVariantAux : Ix.Name → List String → Option (Ix.Name × String × List String)
+  | .anonymous _, _ => none
+  | .str p tag _, trailing =>
+    match p with
+    | .str orig m _ =>
+      if strBeqPure m "#merge" then some (orig, tag, trailing)
+      else splitMergeVariantAux p (tag :: trailing)
+    | _ =>
+      splitMergeVariantAux p (tag :: trailing)
+  | .num p i _, trailing =>
+    splitMergeVariantAux p (toString i :: trailing)
+
+/-- Check if `n` contains a `.#merge.<tag>` segment, returning
+    `some (origBaseName, variantTag, trailingComponents)`.
+    - `Acme.foobar.#merge._1` ↦ `some (Acme.foobar, "_1", [])`
+    - `Acme.Expr.#merge._1.lit` ↦ `some (Acme.Expr, "_1", ["lit"])` -/
+def splitMergeVariant? (n : Ix.Name) : Option (Ix.Name × String × List String) :=
+  splitMergeVariantAux n []
+
+/-- True if `n` is a `.#merge.<tag>` conflict declaration or auxiliary. -/
+def isMergeConflict (n : Ix.Name) : Bool :=
+  (splitMergeVariant? n).isSome
+
+/-- If `n` is `orig.#merge.<tag>[.trailing...]`, return `some (orig[.trailing...])`. -/
+def conflictOrigName? (n : Ix.Name) : Option Ix.Name :=
+  match splitMergeVariant? n with
+  | some (orig, _, trailing) => some (trailing.foldl mkStr orig)
+  | none => none
+
 end Name
 
 /-! ## Pure `Ix.Level` & `Ix.Expr` Constructors -/
@@ -670,6 +708,8 @@ def openDecl          : Ix.Name := Name.mkStr2 "Ix" "openDecl"
 def variableDecl      : Ix.Name := Name.mkStr2 "Ix" "variableDecl"
 def universeDecl      : Ix.Name := Name.mkStr2 "Ix" "universeDecl"
 def mutualDecl        : Ix.Name := Name.mkStr2 "Ix" "mutualDecl"
+def mergeConflictDecl : Ix.Name := Name.mkStr2 "Ix" "mergeConflictDecl"
+def mergeArm          : Ix.Name := Name.mkStr2 "Ix" "mergeArm"
 def defDecl           : Ix.Name := Name.mkStr2 "Ix" "defDecl"
 def abbrevDecl        : Ix.Name := Name.mkStr2 "Ix" "abbrevDecl"
 def theoremDecl       : Ix.Name := Name.mkStr2 "Ix" "theoremDecl"

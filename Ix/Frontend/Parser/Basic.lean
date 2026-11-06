@@ -249,12 +249,20 @@ def scanEscapedIdentChars : List Char → Nat → List Char → Option (List Cha
   | ch :: cs, pos, revAcc  => scanEscapedIdentChars cs (pos + 1) (ch :: revAcc)
 
 /-- Scan a single identifier component on a `List Char` tail in $O(1)$ per char.
-    Returns `some (partChars, partString, remainingChars, nextPos)` or `none`. -/
+    Returns `some (partChars, partString, remainingChars, nextPos)` or `none`.
+    Also accepts the reserved `IxVCS` conflict marker `#merge` (`orig.#merge._1`). -/
 def scanOneIdentComponentChars : List Char → Nat → Option (List Char × String × List Char × Nat)
   | '«' :: cs, pos =>
     match scanEscapedIdentChars cs (pos + 1) [] with
     | some (rem, partCs, endPos) => some (partCs, String.ofList partCs, rem, endPos)
     | none => none
+  | '#' :: 'm' :: 'e' :: 'r' :: 'g' :: 'e' :: cs, pos =>
+    match cs with
+    | nextCh :: _ =>
+      if isIdRest nextCh then none
+      else some (['#', 'm', 'e', 'r', 'g', 'e'], "#merge", cs, pos + 6)
+    | [] =>
+      some (['#', 'm', 'e', 'r', 'g', 'e'], "#merge", [], pos + 6)
   | ch :: cs, pos =>
     if isIdFirst ch then
       let (rem, partCs, endPos) := scanIdentRestChars cs (pos + 1) [ch]
@@ -367,16 +375,17 @@ def scanNextToken (ctx : IxParserContext) (s : ParserState) : ParserState :=
         mkScannedState s leadStart trailStop tok
       | none =>
         s.setPos tokStart |>.mkUnexpectedError s!"invalid numeric literal '{rawNum}'"
-    -- 5. Identifier or keyword
-    else if isIdFirst ch || ch == '«' then
+    -- 5. Identifier or keyword (including `#merge` / `foo.#merge._1`)
+    else if isIdFirst ch || ch == '«' ||
+            (ch == '#' && (scanOneIdentComponentChars tokChars tokStart).isSome) then
       match scanHierarchicalIdentChars tokChars tokStart with
       | some (name, firstCs, firstPart, afterIdent, tokStop, isSinglePart) =>
         let trailStop := skipHorizontalWhitespaceChars afterIdent tokStop
         let info := mkOriginalSourceInfoFast hasNl tokStart tokStop
-        -- If it is a single unescaped component that matches a reserved keyword, emit an `.atom`
+        -- If it is a single unescaped component that matches a reserved keyword (or `#merge`), emit an `.atom`
         let isSingleUnescaped := ch != '«' && isSinglePart
         let tok :=
-          if isSingleUnescaped && isKeywordChars ctx.env firstCs then
+          if isSingleUnescaped && (firstPart == "#merge" || isKeywordChars ctx.env firstCs) then
             Syntax.mkAtom info firstPart
           else
             let rawSub : Ix.Substring := { str := firstPart, startPos := 0, stopPos := firstPart.utf8ByteSize }

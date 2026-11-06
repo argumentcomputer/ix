@@ -107,7 +107,7 @@ def isCommandStart (tok : Ix.Syntax) : Bool :=
     kw == "open" || kw == "export" || kw == "variable" || kw == "universe" ||
     kw == "import" || kw == "private" || kw == "protected" ||
     kw == "noncomputable" || kw == "partial" || kw == "unsafe" ||
-    kw == "deriving" || kw == "@"
+    kw == "deriving" || kw == "@" || kw == "#merge"
   | .ident _ _ (.str (.anonymous _) w _) _ =>
     w == "map" || w == "infixl" || w == "infixr" || w == "infix" ||
     w == "prefix" || w == "postfix" || w == "notation"
@@ -459,6 +459,22 @@ def commandStep : Nat → ParserFn
             (many1Fn notEnd ctx s).bindState fun s =>
             (symbolFn "end" ctx s).bindState fun s =>
               s.mkNode SyntaxKind.mutualDecl iniSz
+        | "#merge" =>
+          let iniSz := s.stackSize
+          (symbolFn "#merge" ctx s).bindState fun s =>
+            let mergeArmFn : ParserFn := fun c st =>
+              let armSz := st.stackSize
+              (symbolFn "|" c st).bindState fun st =>
+                if st.hasError then st else
+                (identFn c st).bindState fun st =>
+                  if st.hasError then st else
+                  (orelseFn (symbolFn "=>") (symbolFn "↦") c st).bindState fun st =>
+                    if st.hasError then st else
+                    (commandStep fuel c st).bindState fun st =>
+                      st.mkNode SyntaxKind.mergeArm armSz
+            (many1Fn mergeArmFn ctx s).bindState fun s =>
+            (symbolFn "end" ctx s).bindState fun s =>
+              s.mkNode SyntaxKind.mergeConflictDecl iniSz
         | _ =>
           -- Declaration with optional modifiers (`private`, `protected`, `noncomputable`, etc.)
           (declModifiersFn ctx s).bindState fun s =>

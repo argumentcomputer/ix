@@ -32,6 +32,7 @@ public import Ix.Frontend.AuxGen
 public import Ix.Frontend.Elab.Tactic
 public import Ix.Frontend.Elab.Term
 public import Ix.Frontend.Elab.Command
+public import Ix.Frontend.Merge
 public import Ix.Claim
 public import Ix.GraphM
 public import Ix.CondenseM

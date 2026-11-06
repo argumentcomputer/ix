@@ -1204,7 +1204,8 @@ def elabStructureFields (decl : ModuleDecl) (lvlParams : Array Ix.Name)
             let mut toParentDefs : Array Ix.DefinitionVal := #[]
             let selfBi : Lean.BinderInfo := if decl.kind == .cls then .instImplicit else .default
             for (pName, pUnivs, pArgs, pInfo) in parentSpecs do
-              let pShort := (Name.components pName).getLastD (Name.toStringTotal pName)
+              let basePName := (Name.conflictOrigName? pName).getD pName
+              let pShort := (Name.components basePName).getLastD (Name.toStringTotal basePName)
               let toParentName := Name.mkStr decl.fullName s!"to{pShort}"
               let pRetTy := Expr.mkAppN (Expr.mkConst pName pUnivs) pArgs
               let (tpTy, tpVal) ← withLocalDecl (Name.simple "self") retTy selfBi default fun selfFvId selfExpr => do

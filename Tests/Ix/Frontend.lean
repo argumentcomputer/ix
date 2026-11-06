@@ -757,12 +757,239 @@ run_meta do
       value := eqReflTrue
     })
 
-/-! ## 9. Step 1: Closure Certification Gate (`parseSource` & `elabSource`) -/
+/-! ## 8c. Test 11: `IxVCS` AST & Type-Aware Module Merge Engine (`Ix.Frontend.Merge`) -/
 
-/-- Pure transitive closure audit over `leanEnv` for `parseSource` and `elabSource`. -/
+def testIxVCSMergeEngineResult : Except String Bool := do
+  -- 11A. First-class `.#merge` identifiers and `#merge | _1 => ... | _2 => ... end` conflict block syntax
+  let surfaceConflictSrc := "
+    #merge
+      | _1 => def Acme.foobar : Nat := 42
+      | _2 => def Acme.foobar : String := \"hello\"
+    end
+    def Acme.use1 : Nat := Acme.foobar.#merge._1 + 8
+    def Acme.use2 : String := Acme.foobar.#merge._2
+    theorem Acme.use1_eq : Eq Acme.use1 50 := by rfl
+  "
+  let (stxSurf, _) ← parseSource surfaceConflictSrc "<surface_conflict>"
+  let modIdxSurf ← buildModuleIndex stxSurf
+  let variantsSurf := modIdxSurf.findConflictVariants (Name.mkStr2 "Acme" "foobar")
+  if variantsSurf.length != 2 then
+    throw s!"11A failed: expected 2 conflict variants for Acme.foobar, got {variantsSurf.length}"
+  let envSurf ← elabSource surfaceConflictSrc "<surface_conflict>"
+  let nFoobar1 := Name.mkMergeVariant (Name.mkStr2 "Acme" "foobar") "_1"
+  let nFoobar2 := Name.mkMergeVariant (Name.mkStr2 "Acme" "foobar") "_2"
+  if !envSurf.contains nFoobar1 || !envSurf.contains nFoobar2 || !envSurf.contains (Name.mkStr2 "Acme" "use1_eq") then
+    throw "11A failed: surface #merge block did not elaborate expected conflict variants"
+
+  -- 11B. 2-way disambiguating merge (`mergeSource2`) on conflicting `def Acme.foobar : Nat := 42` vs `String := "hello"`
+  let srcX := "
+    def Acme.sharedBase : Nat := 100
+    def Acme.foobar : Nat := 42
+    def Acme.useInX : Nat := Acme.foobar + Acme.sharedBase
+  "
+  let srcY := "
+    def Acme.sharedBase : Nat := 100
+    def Acme.foobar : String := \"hello\"
+    def Acme.useInY : String := Acme.foobar
+  "
+  -- Default `.mergeIndexed` mode (`Acme.foobar.#merge._1` and `Acme.foobar.#merge._2`)
+  let outXY ← mergeSource2 srcX srcY .mergeIndexed
+  let outYX ← mergeSource2 srcY srcX .mergeIndexed
+  if outXY.conflicts.size != 1 then
+    throw s!"11B failed: expected 1 conflict in outXY, got {outXY.conflicts.size}"
+  -- Verify strict commutativity: `mergeSource2 srcX srcY` and `mergeSource2 srcY srcX` produce identical schedules!
+  let namesXY := outXY.sched.modIdx.decls.toList.map (·.fullName)
+  let namesYX := outYX.sched.modIdx.decls.toList.map (·.fullName)
+  if namesXY != namesYX then
+    throw "11B failed: mergeSource2 is not commutative on declaration names"
+  let envXY ← outXY.elaborate
+  let envYX ← outYX.elaborate
+  if !envXY.contains nFoobar1 || !envXY.contains nFoobar2 ||
+     !envXY.contains (Name.mkStr2 "Acme" "useInX") || !envXY.contains (Name.mkStr2 "Acme" "useInY") ||
+     !envXY.contains (Name.mkStr2 "Acme" "sharedBase") then
+    throw "11B failed: merged module missing expected declarations"
+  for nm in namesXY do
+    match envXY.find? nm, envYX.find? nm with
+    | some ci1, some ci2 =>
+      let c1 := (Ix.Frontend.Expr.ConstantInfo.rehash ci1).getCnst
+      let c2 := (Ix.Frontend.Expr.ConstantInfo.rehash ci2).getCnst
+      if c1.name.getHash != c2.name.getHash || c1.type.getHash != c2.type.getHash then
+        throw s!"11B failed: constant {Name.toStringTotal nm} has different Merkle hash under XY vs YX"
+    | _, _ =>
+      throw s!"11B failed: constant {Name.toStringTotal nm} missing in elaborated env"
+
+  -- Verify idempotence: `mergeSource2 srcX srcX` produces 0 conflicts
+  let outXX ← mergeSource2 srcX srcX .mergeIndexed
+  if !outXX.conflicts.isEmpty then
+    throw "11B failed: mergeSource2 srcX srcX was not idempotent (produced conflicts)"
+
+  -- Verify `.namespacePrefix` mode (`X.Acme.foobar` and `Y.Acme.foobar`)
+  let outPref ← mergeSource2 srcX srcY (.namespacePrefix (Name.simple "X") (Name.simple "Y"))
+  let envPref ← outPref.elaborate
+  if !envPref.contains (Name.mkStr3 "X" "Acme" "foobar") ||
+     !envPref.contains (Name.mkStr3 "Y" "Acme" "foobar") then
+    throw "11B failed: namespacePrefix mode did not produce X.Acme.foobar and Y.Acme.foobar"
+
+  -- 11C. 2-way merge on conflicting `inductive Acme.Expr` + pattern-matching & recursive `Acme.eval`
+  let indX := "
+    namespace Acme
+    inductive Expr : Type
+      | lit (n : Nat) : Expr
+      | add (a b : Expr) : Expr
+    def eval (e : Expr) : Nat
+      | Expr.lit n => n
+      | Expr.add a b => eval a + eval b
+    def testEvalX : Nat := eval (Expr.add (Expr.lit 2) (Expr.lit 3))
+    end Acme
+  "
+  let indY := "
+    namespace Acme
+    inductive Expr : Type
+      | flag (b : Bool) : Expr
+    def eval (e : Expr) : Bool
+      | Expr.flag b => b
+    def testEvalY : Bool := eval (Expr.flag true)
+    end Acme
+  "
+  let outInd ← mergeSource2 indX indY .mergeIndexed
+  let envInd ← outInd.elaborate
+  let nExpr1 := Name.mkMergeVariant (Name.mkStr2 "Acme" "Expr") "_1"
+  let nExpr2 := Name.mkMergeVariant (Name.mkStr2 "Acme" "Expr") "_2"
+  let nEval1 := Name.mkMergeVariant (Name.mkStr2 "Acme" "eval") "_1"
+  let nEval2 := Name.mkMergeVariant (Name.mkStr2 "Acme" "eval") "_2"
+  if !envInd.contains nExpr1 || !envInd.contains nExpr2 ||
+     !envInd.contains nEval1 || !envInd.contains nEval2 ||
+     !envInd.contains (Name.mkStr2 "Acme" "testEvalX") ||
+     !envInd.contains (Name.mkStr2 "Acme" "testEvalY") then
+    throw "11C failed: inductive + pattern-matching merge missing expected declarations"
+
+  -- 11D. Intra-Declaration Proof Irrelevance Absorption (`Prop` theorems with different proofs unify with 0 conflicts)
+  let thmBranch1 := "
+    def Acme.double (n : Nat) : Nat := n + n
+    theorem Acme.double_two : Eq (Acme.double 2) 4 := by rfl
+  "
+  let thmBranch2 := "
+    def Acme.double (n : Nat) : Nat := n + n
+    theorem Acme.double_two : Eq (Acme.double 2) 4 := Eq.refl 4
+  "
+  let outThm ← mergeSource2 thmBranch1 thmBranch2 .mergeIndexed
+  if !outThm.conflicts.isEmpty then
+    throw s!"11D failed: proof-irrelevant theorem merge produced {outThm.conflicts.size} conflicts instead of 0"
+  let envThm ← outThm.elaborate
+  if !envThm.contains (Name.mkStr2 "Acme" "double_two") then
+    throw "11D failed: unified theorem Acme.double_two missing"
+
+  -- 11E. 3-Way Merge (`mergeSource3`) — Case B: 1-sided body update where Right's caller still typechecks (fast-forward!)
+  let base3 := "
+    def Acme.foobar : Nat := 1
+  "
+  let left3B := "
+    def Acme.foobar : Nat := 2
+    def Acme.leftCaller : Nat := Acme.foobar + 100
+  "
+  let right3B := "
+    def Acme.foobar : Nat := 1
+    def Acme.rightCaller : Nat := Acme.foobar + 10
+  "
+  let out3B ← mergeSource3 base3 left3B right3B .mergeIndexed
+  if !out3B.conflicts.isEmpty then
+    throw s!"11E (Case B) failed: expected 0 conflicts on fast-forward body update, got {out3B.conflicts.size}"
+  let env3B ← out3B.elaborate
+  if !env3B.contains (Name.mkStr2 "Acme" "foobar") ||
+     !env3B.contains (Name.mkStr2 "Acme" "leftCaller") ||
+     !env3B.contains (Name.mkStr2 "Acme" "rightCaller") then
+    throw "11E (Case B) failed: fast-forwarded module missing expected declarations"
+
+  -- 11F. 3-Way Merge (`mergeSource3`) — Case C: 1-sided body update that would break Right's `rfl` proof
+  -- Must be treated as a semantic conflict and split into `Acme.foobar.#merge._1` and `Acme.foobar.#merge._2`!
+  let right3C := "
+    def Acme.foobar : Nat := 1
+    theorem Acme.right_eq : Eq (Acme.foobar + 10) 11 := by rfl
+  "
+  let out3C ← mergeSource3 base3 left3B right3C .mergeIndexed
+  if out3C.conflicts.size != 1 || !(out3C.conflicts.getD 0 default).isSemanticConflict then
+    throw s!"11F (Case C) failed: expected 1 semantic conflict when body change breaks caller rfl proof, got {out3C.conflicts.size}"
+  let env3C ← out3C.elaborate
+  if !env3C.contains nFoobar1 || !env3C.contains nFoobar2 ||
+     !env3C.contains (Name.mkStr2 "Acme" "leftCaller") ||
+     !env3C.contains (Name.mkStr2 "Acme" "right_eq") then
+    throw "11F (Case C) failed: semantic conflict split did not preserve both leftCaller and right_eq"
+
+  -- 11G. 3-Way Merge (`mergeSource3`) — Case D: 1-sided type signature change that would break Right's caller
+  let left3D := "
+    def Acme.foobar : String := \"changed\"
+    def Acme.leftStr : String := Acme.foobar
+  "
+  let out3D ← mergeSource3 base3 left3D right3B .mergeIndexed
+  if out3D.conflicts.size != 1 || !(out3D.conflicts.getD 0 default).isSemanticConflict then
+    throw s!"11G (Case D) failed: expected 1 semantic conflict when type change breaks caller, got {out3D.conflicts.size}"
+  let env3D ← out3D.elaborate
+  if !env3D.contains nFoobar1 || !env3D.contains nFoobar2 ||
+     !env3D.contains (Name.mkStr2 "Acme" "leftStr") ||
+     !env3D.contains (Name.mkStr2 "Acme" "rightCaller") then
+    throw "11G (Case D) failed: type-change conflict split did not preserve both leftStr and rightCaller"
+
+  -- 11H. 3-Way Keyed AST Splice (`tryMergeDeclSyntax3` on disjoint `match` arms)
+  let baseMatch := "
+    inductive Tag : Type
+      | a : Tag
+      | b : Tag
+    def evalTag (t : Tag) : Nat
+      | Tag.a => 1
+      | Tag.b => 2
+  "
+  let leftMatch := "
+    inductive Tag : Type
+      | a : Tag
+      | b : Tag
+    def evalTag (t : Tag) : Nat
+      | Tag.a => 10
+      | Tag.b => 2
+  "
+  let rightMatch := "
+    inductive Tag : Type
+      | a : Tag
+      | b : Tag
+    def evalTag (t : Tag) : Nat
+      | Tag.a => 1
+      | Tag.b => 20
+  "
+  let outMatch ← mergeSource3 baseMatch leftMatch rightMatch .mergeIndexed
+  if !outMatch.conflicts.isEmpty then
+    throw s!"11H failed: expected 0 conflicts on disjoint match-arm 3-way splice, got {outMatch.conflicts.size}"
+  let envMatch ← outMatch.elaborate
+  if !envMatch.contains (Name.simple "evalTag") then
+    throw "11H failed: spliced evalTag missing in elaborated env"
+
+  -- 11I. Conflict Resolution (`resolveConflictVariant`)
+  let resolvedSched ← resolveConflictVariant out3C.sched (Name.mkStr2 "Acme" "foobar")
+    -- Pick whichever tag corresponds to `1` (`right3C`'s variant) so `Acme.right_eq` and `Acme.leftCaller` both typecheck!
+    (match out3C.rightRenaming.get? (Name.mkStr2 "Acme" "foobar") with
+     | some rName => match Name.splitMergeVariant? rName with
+       | some (_, tag, []) => tag
+       | _ => "_2"
+     | none => "_2")
+  let resolvedEnv ← match elabModuleSchedule resolvedSched IxElabEnv.empty true with
+    | .ok e => pure e
+    | .error err => throw s!"11I failed: resolved schedule failed to elaborate: {err}"
+  if !resolvedEnv.contains (Name.mkStr2 "Acme" "foobar") ||
+     resolvedEnv.contains nFoobar1 || resolvedEnv.contains nFoobar2 then
+    throw "11I failed: resolveConflictVariant did not collapse conflict variants back to Acme.foobar"
+
+  return true
+
+def testIxVCSMergeEngine : Bool :=
+  match testIxVCSMergeEngineResult with
+  | .ok b    => b
+  | .error _ => false
+
+/-! ## 9. Step 1: Closure Certification Gate (`parseSource`, `elabSource`, `mergeSource2`, `mergeSource3`) -/
+
+/-- Pure transitive closure audit over `leanEnv` for `parseSource`, `elabSource`, `mergeSource2`, and `mergeSource3`. -/
 def checkClosureCertification (leanEnv : Lean.Environment) : Bool × String := Id.run do
   let parseClosure : List (Lean.Name × Lean.ConstantInfo) := Ix.EnvScope.collectDeps leanEnv [``parseSource]
-  let elabClosure  : List (Lean.Name × Lean.ConstantInfo) := Ix.EnvScope.collectDeps leanEnv [``elabSource]
+  let elabClosure  : List (Lean.Name × Lean.ConstantInfo) :=
+    Ix.EnvScope.collectDeps leanEnv [``elabSource, ``mergeSource2, ``mergeSource3]
   let isBad (ci : Lean.ConstantInfo) : Option String :=
     match ci with
     | .defnInfo v =>
@@ -968,7 +1195,9 @@ def frontendSuite : TestSeq :=
     test "9. Fermat's Last Theorem proposition (`flt_pinned` & `FermatLastTheorem`) elaboration"
       (kernelFltPropCheck && testFltPropositionElab) ++
     test "10. Advanced Frontend (where, let rec, auto-implicits, deriving, extends, @[simp], Coe, prefix/postfix)"
-      testAdvancedFrontend
+      testAdvancedFrontend ++
+    test "11. IxVCS AST & Type-Aware Module Merge Engine (mergeSource2, mergeSource3, #merge, proof irrelevance)"
+      testIxVCSMergeEngine
   )
 
 def Tests.Ix.Frontend.suite : List TestSeq := [frontendSuite]
@@ -994,6 +1223,10 @@ run_meta do
   | .ok true => pure ()
   | .ok false => throwError "testAdvancedFrontend returned false"
   | .error msg => throwError s!"testAdvancedFrontend failed: {msg}"
+  match testIxVCSMergeEngineResult with
+  | .ok true => pure ()
+  | .ok false => throwError "testIxVCSMergeEngine returned false"
+  | .error msg => throwError s!"testIxVCSMergeEngine failed: {msg}"
   unless testImportMapAndElabClaim do
     throwError "testImportMapAndElabClaim failed"
   unless testFltPropositionElab do
@@ -1003,7 +1236,7 @@ run_meta do
   IO.println gateSummary
   unless gateOk do
     throwError "Closure Certification Gate failed!"
-  IO.println "✓ All 11 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
+  IO.println "✓ All 12 Ix.Frontend test suites + Step 1 Closure Certification Gate passed!"
 
 def Tests.Ix.Frontend.runBenchmarksWithEnv (env : Lean.Environment) : IO UInt32 := do
   let stdout ← IO.getStdout

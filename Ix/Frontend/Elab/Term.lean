@@ -151,7 +151,17 @@ def elabProjOnExpr (fuel : Nat) (baseExpr : Ix.Expr) (fieldStx : Ix.Syntax) : Ix
           return Expr.mkProj typeName fInfo.fieldIdx baseExpr
         | none =>
           -- Generalized dot-notation: `<TypeName>.<fieldId>` applied to `baseExpr`
-          let methodName := Name.append typeName fieldId
+          let methodName :=
+            let direct := Name.append typeName fieldId
+            if st.env.contains direct then direct
+            else match Name.splitMergeVariant? typeName with
+              | some (origType, tag, []) =>
+                let varMethod := Name.mkMergeVariant (Name.append origType fieldId) tag
+                if st.env.contains varMethod then varMethod
+                else
+                  let origMethod := Name.append origType fieldId
+                  if st.env.contains origMethod then origMethod else direct
+              | _ => direct
           if st.env.contains methodName then
             let (mConst, mTy) ← mkConstWithFreshMVarLevels methodName
             let (applied, instGoals, _) ← insertImplicitArgs 16 mConst mTy []
@@ -166,7 +176,8 @@ def elabProjOnExpr (fuel : Nat) (baseExpr : Ix.Expr) (fieldStx : Ix.Syntax) : Ix
               st.env.contains (Name.append pName fieldId)
             match foundParent? with
             | some pName =>
-              let pShort := (Name.components pName).getLastD (Name.toStringTotal pName)
+              let basePName := (Name.conflictOrigName? pName).getD pName
+              let pShort := (Name.components basePName).getLastD (Name.toStringTotal basePName)
               let toParentName := Name.mkStr typeName s!"to{pShort}"
               let coercedBase ←
                 if st.env.contains toParentName then
@@ -191,7 +202,17 @@ def elabProjOnExpr (fuel : Nat) (baseExpr : Ix.Expr) (fieldStx : Ix.Syntax) : Ix
               throwElabError s!"unknown field or method '{Name.toStringTotal fieldId}' on '{Name.toStringTotal typeName}'" (some fieldStx)
       | none =>
         -- Check if `<typeName>.<fieldId>` is a function/constructor
-        let methodName := Name.append typeName fieldId
+        let methodName :=
+          let direct := Name.append typeName fieldId
+          if st.env.contains direct then direct
+          else match Name.splitMergeVariant? typeName with
+            | some (origType, tag, []) =>
+              let varMethod := Name.mkMergeVariant (Name.append origType fieldId) tag
+              if st.env.contains varMethod then varMethod
+              else
+                let origMethod := Name.append origType fieldId
+                if st.env.contains origMethod then origMethod else direct
+            | _ => direct
         if st.env.contains methodName then
           let _ := typeUnivs
           let _ := headArgs
