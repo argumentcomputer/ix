@@ -39,9 +39,12 @@ jobs:
       actions: write
       pull-requests: write
     steps:
+      # There is no checkout, so `gh` cannot infer the repository from a git
+      # remote; GH_REPO supplies it to `gh workflow run` and `gh pr comment`.
       - name: Dispatch on the PR branch
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] \
