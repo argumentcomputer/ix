@@ -293,13 +293,13 @@ untouched.
 
 ## CI shape
 
-**bench-main.yml**: `build` (compile `ix` once, cache by
-SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
+**bench-main.yml**: `build` (compile `ix` once, warm the compiled-program
+cache, and cache both by SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe`) →
 one `benchmark` job per remaining cell — ixvm / ixvm-ooc / decompile, each
 running all of the env's rows —
-(each: restore caches, one `ix bench run … --ixe`, `ix bench bmf`,
-upload via `.github/actions/bencher-track`). A kernel
+(each: restore caches, one `ix bench run … --ixe` under `memory-cap`,
+`ix bench bmf`, upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
 run step while the clean rows still upload.
 
@@ -346,6 +346,23 @@ and `comment` hold write tokens, and neither checks out or runs PR code. Normal
 runs may seed the run artifacts from persistent head/base-SHA caches. `fresh`
 bypasses those caches and rebuilds the measured products while retaining
 dependency caches.
+Every `ix bench run`, the base side's included, goes through the PR head's
+`.github/scripts/memory-cap`.
+
+**Compiled programs**: `ix check` loads the certified Aiur programs from
+`IX_AIUR_CACHE`, which both workflows set to `<workspace>/.aiur-cache`. The
+jobs that build `ix` fill it (`lake build ix`, then
+`.github/scripts/warm-aiur-cache`, which runs `ix codegen --check --out` to
+compile any program `lake build` skipped) and ship it beside the binaries:
+bench-main as the `bench-aiur-<sha>` cache entry, bench-pr in the run's
+`benchmark-binaries` artifact and the same cache entry for its head. The
+compile and benchmark jobs restore it before `ix bench run`, so no measured
+run compiles a program. The base side's programs join the same directory:
+restored from the base SHA's `bench-aiur-<sha>` entry, compiled by a
+from-source base build, or warmed with the base `ix`. Programs are keyed by
+source and compiler, so both sides coexist. A base that predates the
+in-process formal Aiur check fails its ixvm cells and reports no base
+column.
 
 ### RunsOn machines and caching
 
