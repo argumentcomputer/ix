@@ -45,7 +45,7 @@ row** — an empty or quietly-partial cell can't be green.
 
 | subcommand | job |
 |---|---|
-| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool, fold each spawn's span window into its row, gate on the rows |
+| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool (one process per constant on aiur), read the aiur cells' execution spans into their rows, gate on the rows |
 | `compare`    | two rows files → Markdown base-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
@@ -146,6 +146,8 @@ FFT cost from 115.65B to 99.33B (−14.1%), and `total-time` from 63.85s to
 
 | backend | what it measures | tool |
 |---|---|---|
+| `aiur`    | formal Aiur execution of the certified IxVM claim verifier, per constant, no proving: `execute-time` (the texray `aiur/execute` span around binding and executing the claim), `check-time` (the whole `ix check` process, adding the env load, program load and claim construction), `peak-rss` (the texray tree sampler over that process) | `ix check --ixe <env>.ixe <name>` |
+| `aiur-sharded-env` | the same execution over a whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `check-time`, `peak-rss`, `execute-time` (summed over shards), `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
 | `ooc`     | out-of-circuit Lean kernel (`IxC`): whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-lean --anon --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
@@ -164,20 +166,23 @@ reader) is documented in [Benchmarks/Kernel/README.md](../Benchmarks/Kernel/READ
 and [kernel.md](kernel.md). It is separate from the compiler and `ooc` benchmarks above;
 the former Lean4Lean replay backend has been retired.
 
-Formal Aiur proving has no `ix bench` backend. Whole-environment GPU proving
-runs are benchmarked by hand as described in
+Formal Aiur proving has no `ix bench` backend; `aiur` and `aiur-sharded-env`
+measure execution only. Whole-environment GPU proving runs are benchmarked by
+hand as described in
 [aiur-gpu-proving.md](aiur-gpu-proving.md#6-benchmarking-a-multi-gpu-run).
+`ix check` reads its compiled programs from `IX_AIUR_CACHE` (default
+`~/.ix/cache/aiur`), which `lake build ix` fills. A program missing from the
+cache is compiled inside the measured `ix check`, so warm the cache before
+measuring.
 
 All tools emit the same rows, and all the constant-driven ones take the same
-`--consts`/`--consts-file` grammar. The ooc cells use per-constant
+`--consts`/`--consts-file` grammar. The ooc and aiur cells use per-constant
 **full-closure** scope.
 
-With `--texray` or `IX_TEXRAY=1`, tools write per-phase span timings to `<json>.spans`.
-`ix bench run` folds a spawn's window into its row as flat `phase-<span>` fields, which flow to bencher as independent
-measures (witness gen, stage commits, quotient, … each get a trend line)
-and render as a collapsible per-constant drill-down under `BENCH_PHASES=1`
-(a `!benchmark` config line, or the env var for a local `ix bench
-compare`; off by default — the spans are noisy and dynamically named).
+For the aiur cells, `ix bench run` points `IX_TEXRAY_JSON` at `<out>.spans`,
+where `ix check` writes each claim's `aiur/execute` span, and reads the
+execution time back from it. A failing `ix check` that wrote the span is a
+`rejected` verdict; one that failed before executing the claim writes no row.
 
 ## Memory: OOM rows
 
@@ -185,8 +190,12 @@ The tools set no memory limit of their own. CI runs every `ix bench run`
 through `.github/scripts/memory-cap`: a `systemd-run --user --scope` with
 cgroup-v2 `MemoryMax` at the runner's RAM minus 15 GiB and swap disabled.
 At the cap the kernel OOM-kills the largest process in the scope, the
-measured tool, with SIGKILL (exit 137), and `ix bench run` survives to
-gate on the rows. ooc and compile run as single processes, so a kill there
+measured tool, with SIGKILL (exit 137), and `ix bench run` survives it. The
+per-constant `aiur` backend runs one `ix check` per constant, with the
+execution in that process, so a kill marks that constant's row
+`status: oom` and the loop continues: one constant's death costs one
+constant. An `aiur-sharded-env` kill marks the env row `oom`. ooc and
+compile run as single processes that write their own rows, so a kill there
 means missing rows and a red cell. Preparing a missing `.ixe` uses the
 default compiler, outside the consumer's timed window. Wrap a local run in
 the same script to get the same cap.
@@ -216,7 +225,7 @@ the only clock.
 ## `!benchmark` grammar
 
 ```
-!benchmark ([ooc] [compile] [decompile] | all)
+!benchmark ([aiur] [aiur-sharded-env] [ooc] [compile] [decompile] | all)
            [execute] [fresh] [KEY=VALUE …]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
                                # compile-only request may name any registry
@@ -265,7 +274,7 @@ untouched.
 **bench-main.yml**: `build` (compile `ix` once, cache by
 SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe`) →
-one `benchmark` job per remaining cell — ooc / decompile —
+one `benchmark` job per remaining cell — aiur / aiur-sharded-env / ooc / decompile —
 (each: restore caches, one `ix bench run … --ixe`, `ix bench bmf`,
 upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
