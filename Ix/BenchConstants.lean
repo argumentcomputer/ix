@@ -1,10 +1,8 @@
 /-
   The shared benchmark constant set: the single source of truth for which
-  constants every per-constant benchmark backend (aiur, ooc) runs. Every
-  backend runs this same set — spanning the cheap →
-  heavy cost range across the registry envs — so their numbers stay
-  comparable per constant; the only per-backend carve-outs are the hard
-  feasibility exclusions in `Ix.Cli.BenchCmd.benchExclusions`.
+  constants every benchmark backend with constant rows (ixvm, ixvm-ooc) runs. Every
+  such backend runs this same set, so their numbers stay comparable per
+  constant.
 
   `env` names the registry env (`Ix.Cli.BenchCmd.envSpecs` /
   `<env>.ixe`) the constant resolves in.
@@ -22,24 +20,11 @@ structure BenchConstant where
   env : String
 
 def benchConstants : Array BenchConstant := #[
-  { name := "Nat.add_comm",                      env := "InitStd" },
-  { name := "String.append",                     env := "InitStd" },
-  { name := "Array.extract_append",              env := "InitStd" },
-  { name := "ByteArray.utf8DecodeChar?_utf8EncodeChar_append",
-    env := "InitStd" },
-  { name := "_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq",
-    env := "InitStd" },
-  { name := "Char.ofOrdinal_le_of_le",           env := "InitStd" },
-  { name := "Std.HashMap",                       env := "InitStd" },
-  -- TODO: re-add bitblast once a prover can carry it. Its ~18B-step
-  -- atomic mutual block exceeds the available RAM on the Aiur prove, so a
-  -- scheduled run could only re-document the same OOM every push. Until then it
-  -- runs on demand via `--consts` / BENCH_CONSTS, which bypass the
-  -- curated set.
-  -- { name := "Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual",
-  --   env := "InitStd" },
-  { name := "Lean.Json",                         env := "Lean" },
-  { name := "Multiset.sort",                     env := "Mathlib" }
+  { name := "Nat.add_comm",         env := "InitStd" },
+  { name := "Array.extract_append", env := "InitStd" },
+  { name := "ByteArray.utf8DecodeChar?_utf8EncodeChar_append", env := "InitStd" },
+  { name := "Std.HashMap",          env := "InitStd" },
+  { name := "Lean.Json",            env := "ISLB" }
 ]
 
 end Ix.BenchConstants
