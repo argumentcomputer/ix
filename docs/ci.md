@@ -20,7 +20,8 @@ alone had no Spot capacity. Their Rust builds use the `portable` codegen mode
 of the toolchain action, `x86-64-v4` plus `avx512vbmi2` and `gfni`, the
 feature set every listed family shares, and their sticky lineages carry that
 name so native artifacts never mix in. Valgrind builds `generic`, without
-AVX-512, into the S3-backed actions cache under its own key. Benchmarks stay on exact `r8i.8xlarge` with
+AVX-512, into the S3-backed actions cache under its own key, with S3-backed
+sccache for Rust compilation. Benchmarks stay on exact `r8i.8xlarge` with
 `native` codegen so their timings remain comparable.
 
 Runner labels include the workflow run ID, job ID, run attempt, and, for
@@ -97,12 +98,36 @@ The primary tier runs in two places per event: incrementally in `lean-test`,
 and in Nix CI's sandbox from the Nix-built test binary on a fresh copy of the
 tracked sources (the flake's one check, `ix-tests`; the Rust lints and tests
 are `rust-test`'s). Nix CI's development shell only builds the library. In the
-merge queue, the `build` job of Merge tests builds the partitions' targets once
-on their sticky lineage, and the partitions start from its snapshot; each
-partition's log says whether it did. Valgrind runs `ffi-tests`, the `ffi`
+merge queue, the `build` job of Merge tests builds the partitions' targets and
+the set-theory model using the CI sticky lineage and sccache. It records the
+revision in `.lake/merge-build-revision` and saves its sticky snapshot.
+Partitions use `sticky_save: false`, check the restored revision before any
+local builds, and report a hit or miss in their logs and job summaries. A miss
+warns and leaves Lake to build stale targets; it does not skip the tests.
+There is no separate S3 archive handoff for these build outputs.
+
+On `merge_group`, CI Jobs' `lean-test` also disables sticky saves so it cannot
+replace the merge build's snapshot for the same queue ref. Its `main` push
+runs still refresh the default-branch baseline. The workflows still duplicate
+some compilation; the [build and cache design](ci-build-cache-design.md)
+describes the proposed common producer.
+
+Pushes to `ix.ci-merge-tests` run Merge tests against the pushed commit to
+validate the upgraded RunsOn cache behavior. The branch filter does not enable
+merge tests on other pushes. PR result comments remain specific to authorized
+`!merge-tests` dispatches.
+
+Valgrind runs `ffi-tests`, the `ffi`
 suite as an executable of its own, whose import closure leaves out the test
 binary's proofs. The certification statements' freeze, `Ix.Cert.Audit`, is
 built by `check-kernel` and `lake lint`, not by the test binary.
+
+Valgrind's generic Rust and Lake artifacts use S3-backed archive caches.
+sccache also caches the Rust static libraries when a fresh checkout invalidates
+Cargo's workspace fingerprints. Its keys include the compiler flags, keeping
+generic and portable builds separate. A generic sticky cache would need its
+own lineage and a build on `main` to seed the default-branch snapshot; the
+portable CI lineage cannot supply compatible Rust artifacts.
 
 ## Required checks
 
