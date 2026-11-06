@@ -145,6 +145,9 @@ the gate finishes. It reports a pending Spot retry when the gate succeeds
 with unsuccessful test jobs, and updates the same comment after the retry.
 The report does not contribute to the gate's verdict and is not a required
 check. Gate failures, including detector errors, are reported as failures.
+A newer `!merge-tests` on the same PR cancels the older run, whose comment then
+reports it cancelled. A PR without a test merge commit, such as one that
+conflicts with its base, gets a comment saying so instead of a test run.
 
 ## Spot recovery
 
