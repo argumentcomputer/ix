@@ -53,7 +53,9 @@ executing ahead of the provers, default 1).
 
 `--lanes` selects CUDA, while `--aggregate --jobs N` runs the pipeline on
 CPU. `--texray` prints timings and RSS for execution, trace population and
-proving. The artifact cache (`.lake/aiur`) is resolved against the checkout
+proving. `ix check` with `IX_TEXRAY_JSON=<file>` writes each claim's
+`aiur/execute` time to that file as JSON Lines (`{"span","seconds"}`), every
+shard of a `--ixes` run included. The artifact cache (`.lake/aiur`) is resolved against the checkout
 `ix` was built in (or `IX_ROOT`), so `ix` runs from any directory; outside a
 checkout it fails unless the artifacts are supplied (see
 [Formal Aiur in Ix](formal-aiur-migration.md#current-port-and-cli-integration)).
