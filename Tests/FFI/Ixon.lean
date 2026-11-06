@@ -4,6 +4,7 @@ public import LSpec
 public import Tests.Gen.Ixon
 public import Ix.Ixon
 public import Ix.IxonUniv
+public import Ix.Cli.DiffCmd
 
 /-!
   Ixon.* type FFI roundtrip tests.
@@ -346,11 +347,13 @@ def envDiffTests : TestSeq :=
     let pb := dir / "b.ixe"
     IO.FS.writeBinFile pa (serEnv! envBase)
     IO.FS.writeBinFile pb (serEnv! envValueChanged)
-    let same ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pa.toString, "--meta"] }
-    let differ ← IO.Process.output { cmd := ".lake/build/bin/ix", args := #["diff", pa.toString, pb.toString, "--anon"] }
+    let (sameOut, sameCode) ← IO.FS.withIsolatedStreams
+      (diffCmd.validate [pa.toString, pa.toString, "--meta"])
+    let (_, differCode) ← IO.FS.withIsolatedStreams
+      (diffCmd.validate [pa.toString, pb.toString, "--anon"])
     IO.FS.removeDirAll dir
-    let ok := same.exitCode == 0 && same.stdout.contains "identical" && differ.exitCode == 1
-    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"CLI exits {same.exitCode}/{differ.exitCode}")) .done) ++
+    let ok := sameCode == 0 && sameOut.contains "identical" && differCode == 1
+    return (ok, if ok then 1 else 0, 1, if ok then none else some s!"CLI exits {sameCode}/{differCode}")) .done) ++
   test "EnvDiff: self-diff empty (anon)"
     ((runDiff envBase envBase).any (·.isEmpty)) ++
   test "EnvDiff: self-diff empty (meta)"
