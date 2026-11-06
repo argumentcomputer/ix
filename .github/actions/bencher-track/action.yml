@@ -1,19 +1,12 @@
 name: Track benchmarks on bencher
 description: >-
-  Run `bencher run` for the `ix` project. Every measure's baseline is windowed
-  to the data points recorded since the workload's
-  `refs/bencher/<workload>` anchor ref, so a toolchain bump
-  (or any permanent shift) is recalibrated by moving that one ref — via the
-  !bencher-thresholds-reset PR comment or the bencher-thresholds-reset
-  workflow. The ref lives outside refs/tags (fetched here directly), so it
-  never decorates `git log` and callers need no fetch-depth/fetch-tags.
+  Run `bencher run` for the `ix` project, uploading one Bencher Metric
+  Format file to a testbed on the current branch. No regression thresholds
+  are configured, so the upload raises no alerts.
 
 inputs:
   testbed:
     description: Bencher testbed slug.
-    required: true
-  workload:
-    description: Workload key for the `refs/bencher/<workload>` anchor (the backend testbed minus its hardware suffix, e.g. ixvm-ooc).
     required: true
   file:
     description: Bencher Metric Format JSON file to upload.
@@ -23,13 +16,6 @@ inputs:
     required: true
   github-token:
     description: GITHUB_TOKEN, for the --github-actions comment.
-    required: true
-  thresholds:
-    description: >-
-      `--threshold-*` flags for every tracked measure. Use the literal token
-      `__WINDOW__` in place of each `--threshold-max-sample-size` value; it is
-      replaced with the data-point count since the baseline anchor. Word-split,
-      so keep each flag a single token.
     required: true
 
 runs:
@@ -41,43 +27,10 @@ runs:
         BENCHER_KEY: ${{ inputs.key }}
         GH_TOKEN: ${{ inputs.github-token }}
         TESTBED: ${{ inputs.testbed }}
-        WORKLOAD: ${{ inputs.workload }}
         FILE: ${{ inputs.file }}
-        THRESHOLDS: ${{ inputs.thresholds }}
       run: |
-        # Baseline window: data points for this benchmark since the workload's
-        # `refs/bencher/<workload>` anchor ref (moved on a
-        # toolchain bump or any permanent shift). A custom namespace, NOT
-        # refs/tags: these are CI plumbing, and tags would decorate every
-        # user's bare `git log` at the anchor commit. The same window applies
-        # to every measure. We count actual data points, not commits, so the
-        # baseline never reaches past the anchor (a failed run produces no
-        # metric, so a commit count would overshoot). The matrix uploads one
-        # report per benchmark, so count this benchmark's reports (its name
-        # is the upload's top-level key). The ix project is public, so no
-        # token is needed. With no anchor yet, fall back to Bencher's
-        # 64-point window.
-        sample=64
-        git fetch --quiet --no-tags origin \
-          "+refs/bencher/*:refs/bencher/*" 2>/dev/null || true
-        if reset_epoch=$(git log -1 --format=%ct "refs/bencher/$WORKLOAD" 2>/dev/null); then
-          bench=$(jq -r '[keys[]][0]' "$FILE")
-          sample=$(curl -fsS "https://api.bencher.dev/v0/projects/ix/reports?branch=${GITHUB_REF_NAME}&testbed=${TESTBED}&start_time=$((reset_epoch * 1000))&per_page=255&expand=true" \
-            | jq --arg b "$bench" '[.[] | select([.results[]?[]?.benchmark.name] | index($b))] | length')
-        fi
-        sample=${sample:-0}
-        [ "$sample" -gt 64 ] && sample=64
-        echo "baseline window for '$WORKLOAD': $sample data point(s)"
-
-        # No data points since the reset → omit thresholds so the reset commit
-        # lands without an alert (--thresholds-reset clears stale models); they
-        # re-arm next run. Otherwise substitute the window into each measure.
-        # The input spans several lines, so read to end of input (`-d ''`)
-        # rather than to the first newline; `read` then reports end of input
-        # as a failure, hence `|| true`.
-        thresholds=()
-        [ "$sample" -gt 0 ] && read -r -d '' -a thresholds <<< "${THRESHOLDS//__WINDOW__/$sample}" || true
-
+        # `--thresholds-reset` with no `--threshold-*` flags removes any
+        # threshold earlier runs left on these measures, so nothing alerts.
         bencher run \
           --project ix \
           --key "$BENCHER_KEY" \
@@ -86,6 +39,5 @@ runs:
           --testbed "$TESTBED" \
           --adapter json \
           --github-actions "$GH_TOKEN" \
-          "${thresholds[@]}" \
           --thresholds-reset \
           --file "$FILE"

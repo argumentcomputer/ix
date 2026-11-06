@@ -9,16 +9,15 @@ name: Benchmark main
 #   2. plan      — `ix bench ci matrix` prints the list of parameter
 #                  combinations to run. The list comes from the registry
 #                  (Ix/Cli/BenchCmd.lean) and each entry already carries
-#                  its bencher testbed, workload, and threshold flags, so
-#                  this file hardcodes none of that.
+#                  its bencher testbed, so this file hardcodes none of that.
 #   3. compile   — compiles each Lean env to a `.ixe` file (this IS the
 #                  compile benchmark) and caches the file for `benchmark`.
 #   4. benchmark — one job per remaining entry: restore the `.ixe` and
 #                  run the entry's backend over it (ixvm, ixvm-ooc,
 #                  decompile): the env's constant rows and its env row.
 #
-# Each entry uploads to its own bencher testbed/workload, so a threshold
-# reset for one workload never touches another. When the kernel REJECTS a
+# Each entry uploads to its own bencher testbed. No regression thresholds
+# are configured, so uploads raise no alerts. When the kernel REJECTS a
 # constant, `ix bench run` exits 3 and that step fails visibly — but the
 # clean rows still upload, because `ix bench bmf` drops every non-ok row
 # (rejected or OOM) before the upload.
@@ -88,7 +87,7 @@ jobs:
 
   # Ask the registry which benchmarks to run. `ix bench ci matrix` prints
   # one JSON entry per (backend, env) combination, each carrying its
-  # own testbed, workload, and threshold flags — so nothing benchmark-
+  # own testbed — so nothing benchmark-
   # specific is written into this file. Runs in parallel with the compile
   # job; only the benchmark job waits on it.
   plan:
@@ -204,8 +203,7 @@ jobs:
       # hand-written env lists here):
       #   consumed — does any benchmark entry restore this env's `.ixe`?
       #              If yes, cache it below.
-      #   testbed / workload / thresholds — the upload metadata for this
-      #              env's own compile benchmark.
+      #   testbed  — the upload testbed for this env's own compile benchmark.
       - id: gates
         name: Read this env's registry metadata
         run: |
@@ -214,8 +212,6 @@ jobs:
           echo "consumed=$(gate '.backend == "compile" | not')" >> "$GITHUB_OUTPUT"
           meta() { jq -r --arg env "${{ matrix.env }}" "first(.[] | select(.backend == \"compile\" and .env == \$env)).$1" matrix.json; }
           echo "testbed=$(meta testbed)" >> "$GITHUB_OUTPUT"
-          echo "workload=$(meta workload)" >> "$GITHUB_OUTPUT"
-          { echo "thresholds<<EOF"; meta thresholds; echo "EOF"; } >> "$GITHUB_OUTPUT"
       # Cache the `.ixe` for the benchmark job. IMPORTANT: every restore of
       # this key must list the same paths — cache versions include the
       # entry by its path list, so a mismatched list is unreachable
@@ -243,21 +239,17 @@ jobs:
         with:
           path: bench-hardware.txt
           key: ${{ env.BENCH_CACHE }}-bench-hardware-${{ github.sha }}-compile-${{ matrix.env }}
-      # Upload the compile metrics. Testbed, workload, and threshold flags
-      # all come from the registry (the reasoning behind each bound lives
-      # next to `thresholds` in Ix/Cli/BenchCmd.lean).
+      # Upload the compile metrics to the testbed the registry names.
       - uses: $/.github/actions/bencher-track
         with:
           testbed: ${{ steps.gates.outputs.testbed }}
-          workload: ${{ steps.gates.outputs.workload }}
           file: benchmark.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ github.token }}
-          thresholds: ${{ steps.gates.outputs.thresholds }}
 
   # One job per remaining matrix entry, all sharing this one step list
   # (same shape as bench-pr.yml's benchmark job). Each entry brings its
-  # own label, testbed, workload, and threshold flags. Every entry restores
+  # own label and testbed. Every entry restores
   # the compile job's cached `.ixe` — nothing recompiles here.
   #
   # What each backend measures:
@@ -369,15 +361,11 @@ jobs:
             echo "nonempty=false" >> "$GITHUB_OUTPUT"
           fi
           cat bench-bmf.json
-      # Upload under this entry's testbed and workload. The threshold
-      # flags (and the reasoning behind each bound) live next to the
-      # backend in Ix/Cli/BenchCmd.lean.
+      # Upload under this entry's testbed.
       - uses: $/.github/actions/bencher-track
         if: ${{ !cancelled() && steps.bmf.outputs.nonempty == 'true' }}
         with:
           testbed: ${{ matrix.params.testbed }}
-          workload: ${{ matrix.params.workload }}
           file: bench-bmf.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ github.token }}
-          thresholds: ${{ matrix.params.thresholds }}

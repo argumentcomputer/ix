@@ -826,9 +826,9 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     registry env, each cell running all its rows (the env's shared constants
     and its env row) — the one fan-out every workflow
     matrix and gate derives from (any projection, like an env list, is a
-    jq away). Each entry carries the metadata its job needs verbatim: the
-    display label, the bencher testbed/workload pair, and the rendered
-    `--threshold-*` flags, so the workflow hardcodes none of it. -/
+    jq away). Each entry carries the metadata its job needs verbatim, the
+    display label and the bencher testbed, so the workflow hardcodes none
+    of it. -/
 def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
   let machine ← Ix.Cli.BenchCmd.benchmarkMachine
   let mut entries : Array Json := #[]
@@ -838,9 +838,7 @@ def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
       entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str env),
          ("label", Json.str s!"{b.name}-{env}"),
-         ("testbed", Json.str (Ix.Cli.BenchCmd.testbedOnMachine b.testbed machine)),
-         ("workload", Json.str (Ix.Cli.BenchCmd.workloadOf b.testbed)),
-         ("thresholds", Json.str b.thresholdFlags)]
+         ("testbed", Json.str (Ix.Cli.BenchCmd.testbedOnMachine b.testbed machine))]
   IO.println (Json.arr entries).compress
   return 0
 
@@ -1143,7 +1141,7 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchReport in
 def benchCiMatrixCmd : Cli.Cmd := `[Cli|
   "matrix" VIA runMatrixCmd;
-  "Emit the benchmark matrix from the registry: each enabled backend × its env set, with per-entry testbed/workload/threshold metadata"
+  "Emit the benchmark matrix from the registry: each enabled backend × its env set, with per-entry label and testbed"
 ]
 
 open Ix.Cli.BenchReport in
