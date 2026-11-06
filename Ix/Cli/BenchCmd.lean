@@ -4,6 +4,8 @@ public import Lean.Data.Json
 public import Ix.BenchConstants
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
+public import Ix.Shard.Manifest
+public import Ix.TracingTexray
 
 /-!
   `ix bench run`: the benchmark orchestrator — one command that
@@ -17,17 +19,22 @@ public import Ix.Cli.ConstsFile
   2. resolves the env's `.ixe` (an explicit `--ixe` path, else `ix
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
-  3. spawns the run's measured tool — `ix check-lean` (ooc),
-     `ix compile` (compile), `ix decompile` (decompile). The tools set no
-     memory limit; CI runs `ix bench run` in a capped cgroup, where the
-     kernel OOM-kills the largest process, the tool;
+  3. spawns the run's measured tool — `ix check` (aiur,
+     aiur-sharded-env), `ix check-lean` (ooc), `ix compile` (compile),
+     `ix decompile` (decompile). The tools set no memory limit; CI runs
+     `ix bench run` in a capped cgroup, where the kernel OOM-kills the
+     largest process, the tool. The per-constant aiur backend spawns one
+     process per constant, so a kill costs exactly that constant (its row
+     is marked `status: oom`);
   4. gates the run on the row contract (`Ix.Benchmark.Results`): exit 3
      when any row is `rejected`, exit 1 when NO rows were produced, else 0.
 
-  Every tool self-reports through the same `--json` results-rows contract,
-  so there is no output scraping anywhere: state flows through rows and
-  exit codes only. Registry data (envs, backends, testbeds) lives in this
-  module (`envSpecs`/`backendSpecs`) — one language, one owner.
+  The compile-side tools self-report through the `--json` results-rows
+  contract. `ix check` has no rows of its own, so the orchestrator writes
+  the aiur rows from the spawn's wall time, the texray tree sampler's peak,
+  and the `aiur/execute` spans `ix check` writes to `IX_TEXRAY_JSON`.
+  Registry data (envs, backends, testbeds) lives in this module
+  (`envSpecs`/`backendSpecs`) — one language, one owner.
 
 -/
 
@@ -213,6 +220,28 @@ structure BackendSpec where
   thresholds : List (String × String × String) := []
 
 def backendSpecs : List BackendSpec := [
+  -- aiur: per-constant execution of the certified IxVM claim verifier
+  -- (`ix check --ixe <env>.ixe <name>`), no proving. `execute-time` is
+  -- the in-process `aiur/execute` span (bind + run); `check-time` is the
+  -- whole process, adding the env load, program load and claim
+  -- construction; `peak-rss` is the texray tree sampler's peak over it.
+  { name := "aiur", defaultMode := "execute", inputs := .perConstant,
+    testbeds := [("execute", "formal-aiur-execute")],
+    metrics := [("execute", ["execute-time", "check-time", "peak-rss"])],
+    thresholds := [("execute-time", "0.10", "_"), ("check-time", "0.10", "_"),
+                   ("peak-rss", "0.10", "_")] },
+  -- aiur-sharded-env: whole-env execution, one row per env. `ix shard
+  -- --max-ram 100` seeds the partition (setup, outside the measured
+  -- window), then one `ix check --ixes` executes every shard's claim
+  -- across all cores; `execute-time` sums the shards' spans. `shards` is
+  -- deterministic per (env block profile, budget), so it takes an
+  -- upper-only pin; re-pin on a justified seed change.
+  { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
+    envs := some ["ISLB"],
+    testbeds := [("execute", "formal-aiur-env-execute")],
+    metrics := [("execute", ["check-time", "peak-rss", "execute-time", "shards"])],
+    thresholds := [("shards", "0", "_"), ("check-time", "0.10", "_"),
+                   ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_")] },
   { name := "ooc", defaultMode := "execute", inputs := .perConstantWithEnv,
     testbeds := [("execute", "ooc-check")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss"])],
@@ -341,6 +370,73 @@ def runTool (cmd : String) (args : Array String)
   IO.eprintln s!"[bench] run: {cmd} {" ".intercalate args.toList}"
   let child ← IO.Process.spawn { cmd, args, env }
   child.wait
+
+/-- `runTool` for a tool that writes no rows itself: also returns the
+    spawn's wall-clock seconds and the texray tree sampler's peak RSS over
+    it, which includes this process's own small resident set. -/
+def runMeasured (cmd : String) (args : Array String)
+    (env : Array (String × Option String) := #[]) : IO (UInt32 × Float × Nat) := do
+  TracingTexray.startSampler
+  TracingTexray.resetPeakTreeRss
+  let start ← IO.monoNanosNow
+  let exit ← runTool cmd args env
+  let seconds := ((← IO.monoNanosNow) - start).toFloat / 1e9
+  return (exit, seconds, ← TracingTexray.peakTreeRssBytes)
+
+/-- Merge a kill `status` (`oom` or `crash`) into a row, preserving any
+    metrics written before the kill. The compare surface renders the
+    status only for the metrics that are absent. -/
+def markKilled (out : String) (name : String) (status : String) : IO Unit := do
+  let rows ← readRows out
+  let row := (rows.getObjVal? name).toOption.getD (Lean.Json.mkObj [])
+  writeEntry out name (row.setObjVal! "status" (Lean.Json.str status))
+
+/-- Status for a 128+signal death: explicit kills (137 KILL, as from a
+    cgroup OOM kill; 143 TERM) and allocator aborts (134, e.g. Rust's OOM
+    abort) are capacity kills, `oom`. Everything else (139 SIGSEGV, 135
+    SIGBUS, …) is a fault in the tool, recorded as `crash`. -/
+def killStatus (exit : UInt32) : String :=
+  if exit == 137 || exit == 143 || exit == 134 then "oom" else "crash"
+
+/-- Whether `exit` is a signal death. 255 never is (the kills above exit
+    134/137/143): it is a failed exec or a tool exiting with -1. -/
+def isKill (exit : UInt32) : Bool := exit ≥ 128 && exit != 255
+
+/-- Sum a texray spans JSONL file (`{"span": s, "seconds": n}` per line)
+    by span name. Missing or unparseable content contributes nothing. -/
+def readSpans (path : String) : IO (Array (String × Float)) := do
+  if !(← FilePath.pathExists path) then return #[]
+  let mut acc : Array (String × Float) := #[]
+  for line in (← IO.FS.readFile path).splitOn "\n" do
+    if let .ok j := Lean.Json.parse line then
+      let span := (j.getObjVal? "span").toOption.bind (·.getStr?.toOption)
+      let secs := match (j.getObjVal? "seconds").toOption with
+        | some (.num n) => some n.toFloat
+        | _ => none
+      if let (some s, some v) := (span, secs) then
+        match acc.findIdx? (·.1 == s) with
+        | some i => acc := acc.set! i (s, acc[i]!.2 + v)
+        | none => acc := acc.push (s, v)
+  return acc
+
+/-- Run a per-constant tool: one process per constant, so a kill costs
+    exactly that constant, and each spawn's spans belong wholly to it. Per
+    exit: a signal death marks the row `oom`/`crash` per `killStatus`
+    (keeping whatever was written) and continues; `exitRejected` means the
+    rejected row is on disk, so continue (the final gate fails the run);
+    any other nonzero exit is deterministic (usage error, missing input,
+    unknown name) and would repeat for every remaining name, so abort. -/
+def runPerConstant (out : String) (names : Array String)
+    (spawn : String → IO UInt32) : IO Unit := do
+  for name in names do
+    let exit ← spawn name
+    if isKill exit then
+      let status := killStatus exit
+      IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording {status}"
+      markKilled out name status
+    else if exit != 0 && exit != exitRejected then
+      IO.eprintln s!"[bench] tool failed on '{name}' (exit {exit}, not a kill); aborting the remaining names"
+      return
 
 /-- Resolve the env's `.ixe`: an explicit `--ixe` path is used as-is (and
     must exist — no silent recompile of a mistyped path); otherwise the
@@ -478,6 +574,65 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         #["check-lean", ixe, "--anon", "--consts-file", namesFile, "--json", out]
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
+  | "aiur" =>
+    -- One `ix check` per constant, its `aiur/execute` span written to the
+    -- run's texray sink. The span closes on a rejection too, so a failing
+    -- exit with the span is a verdict; without it the check never reached
+    -- the claim. Execution runs inside `ix check`, so an OOM kill takes
+    -- that process (exit 137) and the row records it.
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ix ← resolveBin repo "ix"
+    let spans := out ++ ".spans"
+    runPerConstant out names fun name => do
+      let (exit, seconds, peak) ← runMeasured ix
+        #["check", "--ixe", ixe, name] #[("IX_TEXRAY_JSON", some spans)]
+      let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
+      if ← FilePath.pathExists spans then IO.FS.removeFile spans
+      let rejected := exit != 0 && !isKill exit && execute.isSome
+      if exit == 0 || rejected then
+        let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
+          ("peak-rss", Lean.toJson peak)]
+        let row := match execute with
+          | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
+          | none => row
+        writeEntry out name <|
+          if rejected then row.setObjVal! "status" (.str "rejected") else row
+      return if rejected then exitRejected else exit
+  | "aiur-sharded-env" =>
+    -- Seed the partition for the runner's RAM from the env's static
+    -- block-shape score (setup, outside the measured window), then one
+    -- `ix check` executes every shard's claim, one job per core, writing
+    -- every shard's `aiur/execute` span to the one sink.
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ix ← resolveBin repo "ix"
+    let manifest := s!"{env}-exec.ixes"
+    let exit ← runTool ix #["shard", ixe, "--max-ram", "100", "--out", manifest]
+    if exit != 0 then
+      IO.eprintln s!"[bench] ix shard failed (exit {exit})"
+      return 1
+    let shards := match Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest) with
+      | .ok view => view.shards.size
+      | .error _ => 0
+    let spans := out ++ ".spans"
+    let (exit, seconds, peak) ← runMeasured ix
+      #["check", "--ixe", ixe, "--ixes", manifest, "--jobs", "0"]
+      #[("IX_TEXRAY_JSON", some spans)]
+    let execute := ((← readSpans spans).find? (·.1 == "aiur/execute")).map (·.2)
+    if ← FilePath.pathExists spans then IO.FS.removeFile spans
+    if isKill exit then
+      markKilled out info.name (killStatus exit)
+    else if exit == 0 || execute.isSome then
+      let row := Lean.Json.mkObj [("check-time", jsonRound 6 seconds),
+        ("peak-rss", Lean.toJson peak), ("shards", Lean.toJson shards)]
+      let row := match execute with
+        | some t => row.setObjVal! "execute-time" (jsonRound 6 t)
+        | none => row
+      writeEntry out info.name <|
+        if exit == 0 then row else row.setObjVal! "status" (.str "rejected")
+      if exit != 0 then
+        IO.eprintln s!"[bench] whole-env aiur check rejected (exit {exit})"
+    else
+      IO.eprintln s!"[bench] whole-env aiur check failed before execution (exit {exit})"
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
@@ -488,6 +643,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     | "compile" => #[info.name]
     | "decompile" => #[info.name]
     | "ooc" => #[info.name] ++ names
+    | "aiur-sharded-env" => #[info.name]
     | _ => names
   let code ← gate out expected
   if code == 0 || code == exitRejected then
@@ -502,10 +658,11 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "ooc | compile | decompile"
+    backend      : String; "aiur | aiur-sharded-env | ooc | compile | decompile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "Backend mode (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     consts       : String; "Run exactly these comma-separated names instead of the shared benchConstants selection (same grammar as the tools' --consts)"
-    ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"]
+    ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
+]

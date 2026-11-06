@@ -14,7 +14,8 @@ name: Benchmark main
 #   3. compile   — compiles each Lean env to a `.ixe` file (this IS the
 #                  compile benchmark) and caches the file for `benchmark`.
 #   4. benchmark — one job per remaining entry: restore the `.ixe` and
-#                  run the entry's backend over it (aiur-sharded-env, ooc, decompile).
+#                  run the entry's backend over it (aiur, aiur-sharded-env,
+#                  ooc, decompile).
 #
 # Each entry uploads to its own bencher testbed/workload, so a threshold
 # reset for one workload never touches another. When the kernel REJECTS a
@@ -41,8 +42,8 @@ env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
-  # Build the `ix` binary once and cache it;
-  # every later job restores it instead of rebuilding. It is built
+  # Build the `ix` binary once and cache it; every later job restores it
+  # instead of rebuilding. It is built
   # with native code generation for r8i, with caches and measured results
   # isolated from other hardware and compiler flags.
   build:
@@ -151,9 +152,8 @@ jobs:
         include:
           - { env: InitStd }
           - { env: Lean }
-          # Init+Std+Lean+Batteries: the aiur-sharded-env (whole-env formal Aiur
-          # execution) benchmark's fast tier. Batteries builds from the
-          # shared Compile package; no mathlib cache needed.
+          # Init+Std+Lean+Batteries. Batteries builds from the shared
+          # Compile package; no mathlib cache needed.
           - { env: ISLB }
           - { env: Mathlib, mathlib: true }
           - { env: FLT, mathlib: true }
@@ -264,16 +264,15 @@ jobs:
   # the compile job's cached `.ixe` — nothing recompiles here.
   #
   # What each backend measures:
-  #   - aiur-sharded-env: whole-env formal Aiur execution over a sharded
-  #     manifest — every leaf executed and its proof planned against the
-  #     runner's RAM budget, over-budget leaves split. One row per env.
+  #   - aiur: the certified IxVM kernel executed in Aiur by `ix check`,
+  #     one process per constant, no proving.
+  #   - aiur-sharded-env: the same over a whole env, sharded and executed
+  #     by one `ix check --ixes` across all cores.
   #   - ooc: the same kernel run out-of-circuit and in parallel (much
   #     faster). One whole-env row plus one row per constant.
   #   - decompile: the inverse of compile. Roundtrip correctness is
   #     checked elsewhere (`ix validate` / roundtrip tests) — this only
   #     measures speed and memory.
-  # The per-constant proof pipeline (`aiur`) is disabled in the registry:
-  # its tool, `bench-typecheck`, was retired with the legacy backend.
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]

@@ -59,58 +59,24 @@ def plotTitle (workload measure : String) : String :=
   | "ix-decompile", "decompile-time"     => "Ix Decompile Time"
   | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
-  | "aiur", "total-time"             => "Aiur Total Time"
-  | "aiur", "pipeline-throughput"    => "Aiur Total Throughput"
-  | "aiur", "pipeline-peak-rss"      => "Aiur Total Peak RAM Usage"
-  | "aiur", "ixvm-prove-time"          => "Aiur IxVM Time"
-  | "aiur", "fri-verifier-prove-time"  => "Aiur FRI Verifier Time"
-  | "aiur", "ixvm-fft-cost"            => "Aiur IxVM FFT Cost"
-  | "aiur", "fri-verifier-fft-cost"    => "Aiur FRI Verifier FFT Cost"
-  | "aiur", "fri-verifier-verify-time" => "Aiur FRI Verifier Verify Time"
-  | "aiur", "fri-verifier-peak-rss"    => "Aiur FRI Verifier Peak RAM Usage"
-  | "aiur", "ixvm-proof-size"          => "Aiur IxVM Proof Size"
-  | "aiur", "fri-verifier-proof-size"  => "Aiur FRI Verifier Proof Size"
-  | "aiur", "join-prove-time"          => "Aiur Aggregate Join Time"
-  | "aiur", "join-fft-cost"            => "Aiur Aggregate Join FFT Cost"
-  | "aiur", "join-verify-time"         => "Aiur Aggregate Join Verify Time"
-  | "aiur", "join-peak-rss"            => "Aiur Aggregate Join Peak RAM Usage"
-  | "aiur", "join-proof-size"          => "Aiur Aggregate Join Proof Size"
+  | "formal-aiur-execute", "execute-time" => "Aiur Execute Time"
+  | "formal-aiur-execute", "check-time"   => "Aiur Check Time"
+  | "formal-aiur-execute", "peak-rss"     => "Aiur Check Peak RAM Usage"
+  | "formal-aiur-env-execute", "execute-time" => "Aiur Env Execute Time"
+  | "formal-aiur-env-execute", "check-time"   => "Aiur Env Check Time"
+  | "formal-aiur-env-execute", "peak-rss"     => "Aiur Env Check Peak RAM Usage"
+  | "formal-aiur-env-execute", "shards"       => "Aiur Env Shards"
   | "ooc-check", "check-time"            => "OOC Check Time"
   | "ooc-check", "throughput"            => "OOC Check Throughput"
   | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
-  | "aiur-sharded-env-check", "check-time" => "Aiur Env Check Time"
-  | "aiur-sharded-env-check", "throughput" => "Aiur Env Check Throughput"
-  | "aiur-sharded-env-check", "peak-rss"   => "Aiur Env Check Peak RAM Usage"
-  | "aiur-sharded-env-check", "constants"  => "Aiur Env Constants"
-  | "aiur-sharded-env-check", "fft-cost"   => "Aiur Env FFT Cost"
-  | "aiur-sharded-env-check", "shards"     => "Aiur Env Shards"
   | w, m => s!"{w}: {m}"
 
 /-- Tracked but not plotted solo. `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
     exactly — the decompile run tracks only its own decompile-time /
-    throughput / peak-rss trends. The aiur run's per-stage headline is
-    that stage's `prove-time` — a prove runs its own witness execution,
-    so it is the whole cost of producing the stage's proof, and the
-    standalone `execute-time` beside it is a second, instrumentation-only
-    run. The ixvm stage's peak-rss / verify-time are tracked for the
-    compare table but not plotted: their cost is inside `ixvm-prove-time`
-    and the deterministic `ixvm-fft-cost` trend, and that stage's proof
-    is an intermediate artifact consumed by the next stage. Its
-    `ixvm-proof-size` IS plotted: it sizes the next stage's in-circuit
-    verification workload. The whole-run `pipeline-peak-rss` too: which stage
-    sets the run's RAM ceiling can shift as pipeline stages are added,
-    so no per-stage peak plot stands in for it. The per-stage
-    throughputs are table columns only — over the exactly-pinned
-    `constants` they are the plotted stage times inverted — while the
-    end-to-end `pipeline-throughput` gets the backend's one throughput
-    plot, comparable with the other backends'. -/
+    throughput / peak-rss trends. -/
 def plotSkips : List (String × String) :=
-  [("ix-decompile", "file-size"), ("ix-decompile", "constants"),
-   ("aiur", "ixvm-peak-rss"), ("aiur", "ixvm-verify-time"),
-   ("aiur", "ixvm-execute-time"), ("aiur", "fri-verifier-execute-time"),
-   ("aiur", "join-execute-time"),
-   ("aiur", "ixvm-throughput"), ("aiur", "fri-verifier-throughput")]
+  [("ix-decompile", "file-size"), ("ix-decompile", "constants")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -140,10 +106,11 @@ def unitsFor (slug : String) : Option String :=
    ("throughput", "constants / second")].lookup
      (BenchCmd.dropStagePrefix slug)
 
-/-- Dashboard group order (compile first, then the aiur pipeline,
+/-- Dashboard group order (compile first, then decompile, Aiur execution,
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile-certified", "ix-decompile", "aiur", "ooc-check"]
+  ["ix-compile-certified", "ix-decompile", "formal-aiur-execute",
+   "formal-aiur-env-execute", "ooc-check"]
 
 structure PlotSpec where
   testbed : String
@@ -162,7 +129,7 @@ def plotSpecs : Array PlotSpec := Id.run do
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
     for (mode, testbed) in b.testbeds do
-      -- On-demand modes (e.g. aiur `execute`) upload nothing, so there's
+      -- On-demand modes upload nothing, so there's
       -- nothing to plot — the registry marks them explicitly.
       if b.unscheduled.contains mode then continue
       specs := specs.push

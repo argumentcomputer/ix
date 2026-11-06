@@ -3,7 +3,7 @@
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
 #
-#   !benchmark ([aiur-sharded-env] [ooc] [compile] [decompile] | all)
+#   !benchmark ([aiur] [aiur-sharded-env] [ooc] [compile] [decompile] | all) [execute]
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
@@ -14,10 +14,6 @@
 #                                  #  — so BENCH_ENVS is never required; a single-env
 #                                  #  BENCH_ENVS still forces placement
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
-#   BENCH_TRACE_SHARDS=<GiB>       # aiur prove (disabled): plan each constant's proof as trace shards
-#                                  #  within this per-constant RAM budget (0: detect) and
-#                                  #  report `ixvm-trace-shards`; a base checkout that
-#                                  #  predates the flag proves whole
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
 #                                  # IX_COMPILE_WORKERS): Rust compiler knobs for
@@ -31,12 +27,11 @@
 #                                  # decompile Pass 2 cache limit; 0 disables clearing
 #                                  # (default: 131072)
 #
-# Each backend runs its registry default mode:
-#   - aiur: disabled. Its per-constant proof pipeline ran on the retired
-#     legacy backend's `bench-typecheck`; a bare `!benchmark`, which
-#     requests it, is rejected until a formal Aiur pipeline replaces it.
-#   - aiur-sharded-env: `execute` — whole-env formal Aiur execution and
-#     proof planning over a sharded manifest (`ix check --ram-budget`).
+# A backend is required (`all` selects every scheduled one). Each backend
+# runs its registry default mode; the bare `execute` token selects a
+# backend's execute mode where it has another default:
+#   - aiur: `ix check` per constant, execution only.
+#   - aiur-sharded-env: one `ix check --ixes` over the whole env.
 #   - ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
@@ -147,7 +142,7 @@ jobs:
             See the [relay logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
 
   # Select or build the PR's `ix` once, then
-  # publish it as a run-scoped
+  # publish them as a run-scoped
   # artifact for every later job. Normal runs may select a persistent
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
   # replaces the full bundle before it is published to benchmark jobs.
@@ -751,8 +746,7 @@ jobs:
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
               mv ~/.local/bin/ix base/.lake/build/bin/ 2>/dev/null || true
-              [ -x base/.lake/build/bin/ix ] \
-                && cached=true
+              [ -x base/.lake/build/bin/ix ] && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
