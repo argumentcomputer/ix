@@ -21,7 +21,13 @@ permissions:
   contents: read
 
 # Each merge group must report its own result to the queue. A cancelled run
-# cannot satisfy the required check, so runs are never superseded here.
+# cannot satisfy the required check, so merge-group runs are never
+# superseded: every run outside workflow_dispatch gets a group of its own.
+# A newer `!merge-tests` on the same PR does cancel the older dispatched run,
+# whose result is moot.
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && format('{0}-pr-{1}', github.workflow, inputs.pr) || format('{0}-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
   relay:
@@ -39,28 +45,26 @@ jobs:
       actions: write
       pull-requests: write
     steps:
-      # There is no checkout, so `gh` cannot infer the repository from a git
-      # remote; GH_REPO supplies it to `gh workflow run` and `gh pr comment`.
+      # issue_comment doesn't carry the PR's head; this action looks it up.
+      - uses: xt0rted/pull-request-comment-branch@e8b8daa837e8ea7331c0003c9c316a64c6d8b0b1 # v3.0.0
+        id: comment-branch
       - name: Dispatch on the PR branch
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          HEAD_REF: ${{ steps.comment-branch.outputs.head_ref }}
           PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] \
-            || { echo "::error::PR number must be a positive integer"; exit 1; }
-          read -r head_ref head_repo < <(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
-            --jq '"\(.head.ref) \(.head.repo.full_name)"')
-          fail() {
-            printf '%s\n' "$1" > comment-body.md
-            gh pr comment "$PR_NUMBER" --body-file comment-body.md
-            echo "::error::$1"
-            exit 1
-          }
-          [ "$head_repo" = "$GITHUB_REPOSITORY" ] \
-            || fail "Merge tests run on branches of this repository only; \`$head_repo\` is a fork."
-          gh workflow run merge-tests.yml --ref "$head_ref" -f pr="$PR_NUMBER" 2> dispatch-error.txt \
-            || fail "Could not dispatch merge tests on \`$head_ref\`: $(cat dispatch-error.txt). The branch needs this workflow's \`workflow_dispatch\` trigger; merge \`main\` into it and comment again."
+        run: gh workflow run merge-tests.yml --ref "$HEAD_REF" -f pr="$PR_NUMBER"
+      - name: Report that merge tests could not start
+        if: failure()
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          token: ${{ github.token }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ❌ Merge tests could not start
+
+            See the [relay logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
 
   prepare:
     name: Prepare merge tests
@@ -119,6 +123,17 @@ jobs:
           issue-number: ${{ steps.target.outputs.pr }}
           body-path: comment-body.md
 
+      - name: Report that merge tests could not start
+        if: failure() && github.event_name == 'workflow_dispatch'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          token: ${{ github.token }}
+          issue-number: ${{ inputs.pr }}
+          body: |
+            ## ❌ Merge tests could not start
+
+            A PR that conflicts with its base has no test merge commit to run. See the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
   # One build of the test revision for the partitions below, in place of one
   # each. It uses their sticky disk (ci.yml's lean-test lineage, same paths)
   # and builds what they build: the test binary with the executables it
@@ -137,18 +152,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-
-      - name: Verify test revision
-        env:
-          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
-        run: |
-          checked_out=$(git rev-parse HEAD)
-          if [ "$checked_out" != "$TEST_REVISION" ]; then
-            echo "::error::PR merge ref changed before the run started; comment !merge-tests again"
-            exit 1
-          fi
 
       - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
@@ -223,18 +228,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-
-      - name: Verify test revision
-        env:
-          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
-        run: |
-          checked_out=$(git rev-parse HEAD)
-          if [ "$checked_out" != "$TEST_REVISION" ]; then
-            echo "::error::PR merge ref changed before the run started; comment !merge-tests again"
-            exit 1
-          fi
 
       # sccache keys rustc outputs by content, so the workspace crates, which
       # cargo rebuilds after every fresh checkout because their mtimes moved,
@@ -306,18 +301,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', needs.prepare.outputs.pr) || needs.prepare.outputs.revision }}
+          ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-
-      - name: Verify test revision
-        env:
-          TEST_REVISION: ${{ needs.prepare.outputs.revision }}
-        run: |
-          checked_out=$(git rev-parse HEAD)
-          if [ "$checked_out" != "$TEST_REVISION" ]; then
-            echo "::error::PR merge ref changed before the run started; comment !merge-tests again"
-            exit 1
-          fi
 
       - uses: runs-on/action@dfae4d98c5537a0dc7bbb7e6b9211f30ba240f6d # v2.4.0
         with:
@@ -399,9 +384,9 @@ jobs:
           elif [ "$GATE_RESULT" = success ]; then
             heading="## ⏳ Merge tests awaiting Spot retry"
             summary="RunsOn will retry the failed jobs"
-          elif [ "$GATE_RESULT" = cancelled ]; then
+          elif [ "$GATE_RESULT" = cancelled ] || [ "$BUILD_RESULT" = cancelled ] || [ "$TEST_RESULT" = cancelled ] || [ "$VALGRIND_RESULT" = cancelled ]; then
             heading="## ⚪ Merge tests cancelled"
-            summary="The merge-test gate was cancelled"
+            summary="Testing was cancelled (a newer \`!merge-tests\` supersedes an older run)"
           else
             heading="## ❌ Merge tests failed"
             summary="Tests failed or the merge-test gate could not verify their result"

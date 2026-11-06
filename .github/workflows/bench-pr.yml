@@ -120,11 +120,11 @@ jobs:
         id: comment-branch
       # Dispatched on the PR's branch, not the default branch: RunsOn files
       # each run's sticky-disk snapshot under its ref, so the build lands on
-      # the branch and only reads `main`'s (bench-main's) snapshot. A fork
-      # branch cannot be dispatched, and would write `main`'s otherwise.
+      # the branch and only reads `main`'s (bench-main's) snapshot.
       - name: Dispatch on the PR branch
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           PR_NUMBER: ${{ github.event.issue.number }}
           HEAD_REF: ${{ steps.comment-branch.outputs.head_ref }}
@@ -132,20 +132,23 @@ jobs:
           BASE_REF: ${{ steps.comment-branch.outputs.base_ref }}
           HEAD_SHA: ${{ steps.comment-branch.outputs.head_sha }}
         run: |
-          head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
-          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
-            printf '%s\n' "Benchmarks run on branches of this repository only; \`$head_repo\` is a fork." > comment-body.md
-            gh pr comment "$PR_NUMBER" --body-file comment-body.md
-            exit 1
-          fi
           gh workflow run bench-pr.yml \
-            --repo "$GITHUB_REPOSITORY" \
             --ref "$HEAD_REF" \
             -f pr="$PR_NUMBER" \
             -f base-sha="$BASE_SHA" \
             -f base-ref="$BASE_REF" \
             -f head-sha="$HEAD_SHA" \
             -f comment-body="$COMMENT_BODY"
+      - name: Report that the benchmark could not start
+        if: failure()
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          token: ${{ github.token }}
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ❌ Benchmark could not start
+
+            See the [relay logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
 
   # Select or build the PR's `ix` once, then
   # publish it as a run-scoped
