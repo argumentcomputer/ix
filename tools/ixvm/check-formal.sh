@@ -17,14 +17,6 @@ fi
 # poison its CPU-only witness generation. The hardware gate scopes them itself.
 export IX_CUDA=0 AIUR_TRACE_ONLY_LOOKUPS=0
 
-# The generators read their sources at pinned Ix revisions with `git show`. A
-# shallow checkout (CI's) lacks those commits, so fetch just them.
-for rev in $(sed -nE "s/^(LIBRARY_)?REVISION = '([0-9a-f]{40})'$/\2/p" tools/ixvm/adapt.py); do
-  git cat-file -e "$rev^{commit}" 2>/dev/null || git fetch --quiet --depth 1 origin "$rev"
-done
-python3 tools/ixvm/adapt.py --check
-python3 tools/ixvm/recursion.py --check
-python3 tools/ixvm/recursion.py --aggregate --check
 lake build ix ixvm/ixvm multiStark/stark-export formal-aiur-tests formal-aggregate-tests \
   aiur/grouping_example aiur/Aiur.Library.U8Facts
 lake env Aiur/.lake/build/bin/grouping_example crates/aiur/tests/fixtures/grouping.json --check

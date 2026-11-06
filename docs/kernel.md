@@ -1059,13 +1059,15 @@ interleaved:
    `prim-addrs` checks. The suites
    `prim-addrs` and `primitive-address-parity` and
    `lake exe ixon-v4-tests --primitives` must pass.
-3. **Generated IxVM `.aiur`.** `python3 tools/ixvm/adapt.py` regenerates
-   `IxVM/IxVM/Modules/*.aiur`, including `KernelRoleSpec.aiur`, the role
-   specifications rendered as circuit terms, which also changes with
-   `specVersion` or the specification digest. It reads the IxVM sources from
-   the pinned revisions in `tools/ixvm/adapt.py` (`REVISION`,
-   `LIBRARY_REVISION`) in git history, so it needs a checkout that has them;
-   `python3 tools/ixvm/adapt.py --check` must pass.
+3. **IxVM `.aiur`.** `IxVM/IxVM/Modules/*.aiur` are the canonical IxVM
+   sources and are edited directly. `KernelRoleSpec.aiur` holds the role
+   specifications rendered as circuit terms, and changes with `specVersion`
+   or the specification digest. `IxVM.RoleSpecGen.renderFormalAiur` renders
+   a reference form of that module from `Role.spec`. The checked-in module
+   computes the same values with fewer circuit columns: its constant
+   functions are `inline`, a `match` omits arms whose result equals the
+   fallback arm, and a specification term binds a repeated subterm once with
+   `let`.
 4. **Fixtures.** `lake exe ixon-v4-tests --export-fixtures --export-handoff`
    writes `claims.tsv`, `addressed.tsv`, `resource.tsv` and the handoff set
    to `$IX_IXON_V4_DIR`; copy them into `Tests/Fixtures/ixon-v4/` after

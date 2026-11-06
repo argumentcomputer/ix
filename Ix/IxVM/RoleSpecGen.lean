@@ -621,9 +621,8 @@ def render : Except String String := do
 
 /-! ## Formal Aiur renderer (`module KernelRoleSpec { ... }`)
 
-Direct emission of `KernelRoleSpec.aiur` in Formal Aiur module syntax from
-`Ix.Kernel.Role.all` and `Role.spec`, with no `adapt.py` or `LegacyIxVM`
-intermediary. -/
+Renders `module KernelRoleSpec` (`IxVM/IxVM/Modules/KernelRoleSpec.aiur`) in
+Formal Aiur module syntax directly from `Ix.Kernel.Role.all` and `Role.spec`. -/
 
 def listAiur (xs : List String) : String :=
   xs.foldr (fun x acc => s!"(&(Lists::Node::Cons({x}, {acc})))") "(&(Lists::Node::Nil))"

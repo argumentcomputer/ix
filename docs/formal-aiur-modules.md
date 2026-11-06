@@ -63,25 +63,19 @@ declarations. Both exporters and the CLI artifact cache consume the complete
 bundle, so editing a dependency invalidates the cache. Shared Lean libraries
 are linked into the exporter and covered by its binary digest.
 
-`tools/ixvm/adapt.py` and `recursion.py` reproduce the application modules from
-pinned source revisions (read with `git show`) and reviewed adapters. This is port
-maintenance tooling, not Rust code generation. `modules.py` changes global
-names and extracts shared bodies; it checks inverse renaming and exact helper
-bodies. The ordinary frontend then checks every cross-module reference. The
-`*.names.json` files map old port names to their new locations, including types
-inside monomorphized names. Existing tuned groups use the relocated names.
+The module files and manifests are the canonical sources: edit them directly.
+The ordinary frontend checks every cross-module reference. Function groups
+(`FunctionGroups.lean`) name functions by their module-qualified names.
 
 ## Refactor checks
 
 The programs keep their reviewed adaptations: no unconstrained pointer values,
 explicit raw hint channels, checked byte/word construction, and structural
 equality where equality is required. Optional pointer shortcuts are removed.
-The port audit (`tools/ixvm/audit.py`) distinguishes lexical translation,
-semantic adaptations, and library replacements.
 
 Historical record: the modularization was checked at `129c8056` against
-`44ea8742`. For the modularization itself, `tools/ixvm/check-refactor.py` compares complete
-compiled exports against the pre-refactor artifacts. It permits only declared
+`44ea8742`. A comparison script, since removed, compared complete
+compiled exports against the pre-refactor artifacts. It permitted only declared
 name changes and no-op removal: empty bytecode guards and trace assignments of
 each column to itself. Jump targets and hint instruction offsets are adjusted
 for removed guards. All other instructions, enum layouts, fixed-table rows,
@@ -105,9 +99,6 @@ hashes are saved in [the comparison record](benchmarks/formal-aiur-modules/summa
 From the repository root:
 
 ```sh
-python3 tools/ixvm/adapt.py --check
-python3 tools/ixvm/recursion.py --check
-python3 tools/ixvm/audit.py --out .lake/port-audit
 lake build ixvm/ixvm multiStark/stark-export aiur/library_tests aiur/u32_tests
 lake env Aiur/.lake/build/bin/library_tests .lake/libraries.json
 cargo run --release --locked -p aiur --features stark --example library_check -- .lake/libraries.json
