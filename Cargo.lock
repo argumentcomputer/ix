@@ -2034,7 +2034,6 @@ name = "ix-ffi"
 version = "0.1.0"
 dependencies = [
  "aggregate-controller",
- "aiur",
  "aiur-ffi",
  "bincode",
  "blake3",
@@ -2054,8 +2053,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "stark-key",
- "stark-verifier",
  "tiny-keccak",
  "tokio",
  "tracing",

@@ -9,7 +9,6 @@ crate-type = ["lib", "staticlib"]
 
 [dependencies]
 aggregate-controller = { workspace = true }
-aiur = { workspace = true, features = ["stark"] }
 blake3 = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
@@ -24,8 +23,6 @@ rayon = { workspace = true }
 rustc-hash = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-stark-key = { workspace = true }
-stark-verifier = { path = "../stark-verifier" }
 tiny-keccak = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -41,8 +38,8 @@ serde = { version = "1.0.219", features = ["derive"] }
 
 [features]
 default = []
-parallel = ["aiur/parallel", "ix-proof-compression/parallel", "ix-prover/parallel"]
-cuda = ["aiur/cuda", "ix-proof-compression/cuda", "ix-prover/cuda"]
+parallel = ["ix-proof-compression/parallel", "ix-prover/parallel"]
+cuda = ["ix-proof-compression/cuda", "ix-prover/cuda"]
 # The native executors that `lake build ix` generates from the certified
 # formal programs into .lake/build/formal-generated. Without it the formal
 # prover runs every job on the interpreter, which produces identical records.
