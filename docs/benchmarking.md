@@ -21,7 +21,7 @@ Every measured tool reports through one shape — the **benchmark results JSON**
 and one exit-code convention (`Ix/Benchmark/Results.lean`):
 
 ```json
-{ "<name>": { "status": "ok", "<metric>": 123, "phase-<span>": 1.5 } }
+{ "<name>": { "status": "ok", "<metric>": 123 } }
 ```
 
 - Rows are flushed after every name, so a killed run keeps its completed rows.
@@ -47,10 +47,10 @@ row** — an empty or quietly-partial cell can't be green.
 | subcommand | job |
 |---|---|
 | `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool (one process per constant on ixvm), read the ixvm cells' execution spans into their rows, gate on the rows |
-| `compare`    | two rows files → Markdown base-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
+| `compare`    | two rows files → one cell's Markdown base-vs-PR table, the renderer the PR comment uses (`base → PR (Δ%)` cells, ⚠️/🟢 past ±3%, OOM/❌ rows) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
-| `report`     | assemble per-cell tables into one Markdown report (CI posts it as the PR comment) |
+| `report`     | assemble per-cell results into one Markdown report, one table per backend (CI posts it as the PR comment) |
 | `plots`      | sync the bencher dashboard plots to the registry (via the bencher CLI; `--dry-run` previews) |
 | `ci matrix`  | emit the workflows' job matrices from the registry (CI adapter) |
 | `ci parse`   | `!benchmark` comment → job matrix (CI adapter; `--comment` pre-flights a comment locally) |
@@ -168,8 +168,8 @@ and, if selected, its env row.
 | `compile` | env | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | env | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
-The PR comment renders each cell's env row and constant rows as separate
-tables, each with its kind's columns.
+The PR comment shows each backend's env and constant rows in one table
+(see [The PR comment](#the-pr-comment)).
 
 The `compile` benchmark switches from the uncertified Rust compiler to the
 certified default in this change. Certified uploads use the distinct
@@ -256,9 +256,7 @@ BENCH_CONSTANTS=all            # constant rows: all (default), none, or
                                # BENCH_ENVS naming its env
 BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs
                                # (case-insensitive; default InitStd)
-BENCH_PHASES=1                 # add the per-constant phase drill-downs
-                               # to the comment (off by default)
-RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
+RUST_LOG=info                  # passthrough env (allowlist:
                                # RUST_LOG, RUSTFLAGS,
                                # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,
                                # IX_COMPILE_WORKERS, BENCH_TRACE_SHARDS,
@@ -266,6 +264,36 @@ RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
 IX_DECOMPILE_KENV_CLEAR_ENTRIES=0
                                # decompile Pass 2 cache limit; 0 disables
                                # clearing (default: 131072)
+```
+
+### The PR comment
+
+One comment per run. Its header line names the base and PR commits (linked),
+the machine, where the base side came from (bencher at the base SHA, or a
+base rerun), and the run's selection; the measuring hardware follows once,
+both sides only when they differ. Then one table per backend, its rows
+grouped by env: the env row in bold, the env's constant rows under it. Each
+headline metric (at most four) is one column whose cell reads
+`base → PR (Δ%)`, with ⚠️ for a regression and 🟢 for an improvement past
+±3%; the backend's other metrics sit in one collapsed block, and an
+`ixvm-ooc` env row adds its per-constant attribution drill-down. `ix bench
+compare` renders a single cell with the same table.
+
+```
+## `!benchmark` — main [`1a2b3c4`](…) ← PR [`5d6e7f8`](…)
+
+machine `r8i.8xlarge` · base: bencher @ 1a2b3c4 · backends `ixvm` · constants `all` · env rows `InitStd`
+
+Hardware: Intel Xeon 6975P-C, 32 vCPUs, 256 GiB
+
+### `ixvm`
+
+_6 rows · 1 with regressions · 0 with improvements (|Δ| > 3.0% on any metric)._
+
+| row | execute-time | check-time | peak-ram | shards |
+|---|---|---|---|---|
+| **InitStd** | 41.2 s → 43.9 s (+6.6%) ⚠️ | 52.0 s → 54.1 s (+4.0%) ⚠️ | 61.0 GiB → 61.2 GiB (+0.3%) | 12 → 12 (+0.0%) |
+| `Nat.add_comm` | 12.1 ms → 12.0 ms (-0.8%) | 3.112 s → 3.098 s (-0.4%) | 1.20 GiB → 1.20 GiB (+0.0%) |  |
 ```
 
 The `KEY=VALUE` config works both as lines below the command (the comment
@@ -339,9 +367,9 @@ per env and publishes a run-scoped `.ixe` + row artifact. The `benchmark`
 matrix downloads only those run artifacts, runs the PR side, and fetches
 main's numbers, with a base-checkout run covering what bencher lacked
 (including every non-`main`
-base, whose `.ixe` can be restored from its earlier PR run); `ix bench compare`
-then publishes a table artifact. `assemble` runs `ix bench report` without
-write privileges, and `comment` replaces the initial comment. Only `announce`
+base, whose `.ixe` can be restored from its earlier PR run), then publishes
+the cell's rows and their sources as an artifact. `assemble` runs `ix bench
+report` over every cell without write privileges, and `comment` replaces the initial comment. Only `announce`
 and `comment` hold write tokens, and neither checks out or runs PR code. Normal
 runs may seed the run artifacts from persistent head/base-SHA caches. `fresh`
 bypasses those caches and rebuilds the measured products while retaining
