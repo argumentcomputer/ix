@@ -1,5 +1,13 @@
 /-
-  `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
+    | "ixvm", "prove-time"       => "IxVM Prove Time (prove + aggregate)"
+  | "ixvm", "prove-peak-rss"   => "IxVM Prove Peak RAM Usage"
+  | "ixvm", "prove-proof-size" => "IxVM Aggregate Root Proof Size"
+  | "ixvm", "verify-time"      => "IxVM Root Verify Time"
+  | "ixvm", "compress-time"    => "IxVM KZG Compress Time"
+  | "ixvm", "compress-peak-rss" => "IxVM KZG Compress Peak RAM Usage"
+  | "ixvm", "compress-proof-size" => "IxVM KZG Proof Size"
+  | "ixvm", "compress-verify-time" => "IxVM KZG Verify Time"
+`ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (workload, measure) that bench-main.yml tracks,
   with one line per benchmark row (a constant or env name) on the current
   machine's testbed, plus the cross-cutting shared input-constants trend. The spec derives from the registry
@@ -80,12 +88,9 @@ def plotSkips : List (String × String) :=
     its first upload, leaving plots unitless — and a console edit would
     drift from this list, so the sync re-asserts it. -/
 def unitsFor (slug : String) : Option String :=
-  [("compile-time", "seconds (s)"),
-   ("decompile-time", "seconds (s)"),
-   ("execute-time", "seconds (s)"),
-   ("check-time", "seconds (s)"),
-   ("peak-rss", "bytes (B)"),
-   ("file-size", "bytes (B)"),
+  if slug.endsWith "-time" then some "seconds (s)"
+  else if slug.endsWith "peak-rss" || slug.endsWith "proof-size" then some "bytes (B)" else
+  [("file-size", "bytes (B)"),
    ("constants", "constants"),
    ("shards", "shards"),
    ("throughput", "constants / second")].lookup slug
@@ -113,7 +118,7 @@ def plotSpecs : Array PlotSpec := Id.run do
     if b.disabled.isSome then continue
     specs := specs.push
       { testbed := b.testbed,
-        measures := b.metrics.map fun m => (m, b.benchmarkNames m) }
+        measures := b.trackedMetrics.map fun m => (m, b.benchmarkNames m) }
   return specs.qsort fun a b =>
     workloadOrder.idxOf (workloadOf a.testbed)
       < workloadOrder.idxOf (workloadOf b.testbed)
