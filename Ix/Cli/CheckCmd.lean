@@ -1,17 +1,32 @@
 module
 public import Cli
 public import Ix.Cli.FormalAiur
+public import Ix.TracingTexray
 
 /-!
   `ix check`: execute the IxVM Aiur kernel over a Lean or `.ixe`
   environment, one constant at a time or over a `.ixes` shard manifest.
+
+  When `IX_TEXRAY_JSON` names a file, every claim execution's
+  `aiur/execute` span is written to it as JSON Lines
+  (`{"span","seconds"}`). Execution runs in this process, so a manifest
+  check with several jobs writes every shard's span to the one file.
 -/
 
 public section
 namespace Ix.Cli.CheckCmd
 
+/-- Install the texray subscriber with its JSON sink at `IX_TEXRAY_JSON`,
+    when that names a file. The sink truncates the file. -/
+def texraySink : IO Unit := do
+  let some path ← IO.getEnv "IX_TEXRAY_JSON" | return
+  if path.isEmpty then return
+  TracingTexray.init { namePrefixes := "aiur/", trackRam := false, streaming := false }
+  TracingTexray.jsonSink path
+
 def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let _ ← FormalAiur.selected p
+  texraySink
   FormalAiur.run p false
 
 end Ix.Cli.CheckCmd

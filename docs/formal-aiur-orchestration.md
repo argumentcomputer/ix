@@ -53,7 +53,9 @@ executing ahead of the provers, default 1).
 
 `--lanes` selects CUDA, while `--aggregate --jobs N` runs the pipeline on
 CPU. `--texray` prints timings and RSS for execution, trace population and
-proving. Sources and the frontend's build are resolved against the
+proving. `ix check` with `IX_TEXRAY_JSON=<file>` writes each claim's
+`aiur/execute` time to that file as JSON Lines (`{"span","seconds"}`), every
+shard of a `--ixes` run included. Sources and the frontend's build are resolved against the
 checkout `ix` was built in (or `IX_ROOT`), so `ix` runs from any directory.
 There is no setup command: `lake build ix` warms the shared cache
 `IX_AIUR_CACHE` (default `~/.ix/cache/aiur/`) while generating the native

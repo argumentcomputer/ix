@@ -316,10 +316,19 @@ pub fn execute(
   request: &Request,
 ) -> Result<Outcome, String> {
   let start = Instant::now();
-  let bound =
-    crate::request::bind(program.checked(), Kind::Ixvm, request, &Uncharged)
-      .map_err(bind_error)?;
-  let (result, ran) = run(program, &bound)?;
+  // The span also closes when binding or execution fails, so a rejected
+  // claim still records its time; a check that fails before reaching this
+  // call records no `aiur/execute` span at all.
+  let (bound, (result, ran)) = tracing_texray::examine(tracing::info_span!(
+    "aiur/execute"
+  ))
+  .in_scope(|| -> Result<_, String> {
+    let bound =
+      crate::request::bind(program.checked(), Kind::Ixvm, request, &Uncharged)
+        .map_err(bind_error)?;
+    let ran = run(program, &bound)?;
+    Ok((bound, ran))
+  })?;
   if !result.output.is_empty() {
     return Err("claim verifier returned a value".into());
   }
