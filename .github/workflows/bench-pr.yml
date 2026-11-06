@@ -7,6 +7,8 @@
 #   BENCH_CONSTANTS=all            # constant rows: all (default), none, or comma names. A
 #                                  #  shared constant runs in its own env; any other name
 #                                  #  needs a single-env BENCH_ENVS naming where it lives
+#   BENCH_PROVE=1                  # ixvm: also prove each constant row end to end
+#   BENCH_COMPRESS=kzg             # ixvm: also KZG-compress each root (implies BENCH_PROVE)
 #   BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs (case-insensitive;
 #                                  #  default InitStd)
 #   RUST_LOG=info                  # passthrough env (allowlisted)

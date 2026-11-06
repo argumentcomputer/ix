@@ -65,6 +65,9 @@ ix bench run --backend ixvm-ooc --env InitStd
 # --no-env-row skips the whole-env measurement:
 ix bench run --backend ixvm --env InitStd --constants Nat.add_comm --no-env-row
 
+# Also prove, aggregate, verify and KZG-compress the constant rows:
+ix bench run --backend ixvm --env InitStd --no-env-row --compress kzg
+
 # Change something, run again, and diff against your previous run
 # (runs save baselines under .lake/benches/<cell>{,.prev}.json — the same
 # BENCH_OUTPUT_DIR root the Ix.Benchmark framework writes to):
@@ -163,6 +166,8 @@ and, if selected, its env row.
 |---|---|---|---|
 | `ixvm` | constant | formal Aiur execution of the certified IxVM claim verifier, no proving: `execute-time` (the texray `aiur/execute` span around binding and executing the claim), `check-time` (the whole `ix check` process, adding the env load, program load and claim construction), `peak-rss` (the texray tree sampler over that process) | `ix check --ixe <env>.ixe <name>` |
 | `ixvm` | env | the same execution over the whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `check-time`, `peak-rss`, `execute-time` (summed over shards), `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
+| `ixvm` | constant, `BENCH_PROVE=1` | the constant proven end to end on the controller, after its execution: `ix shard extract` writes a one-constant env and `ix shard --shards 1` its manifest (setup, untimed), then `ix prove --aggregate --trace-shards --fresh` proves the shard and aggregates it into a root (`prove-time`, `prove-peak-rss`, `prove-proof-size`), and `ix verify --aggregate` checks the root (`verify-time`) | `ix prove --ixe <one>.ixe --ixes <one>.ixes --aggregate` |
+| `ixvm` | constant, `BENCH_COMPRESS=kzg` | also compresses the root to KZG with development parameters (`compress-time`, `compress-peak-rss`, `compress-proof-size`) and verifies it (`compress-verify-time`); implies `BENCH_PROVE=1` | `ix compress <root> --dev-kzg-srs` |
 | `ixvm-ooc` | constant | out-of-circuit Lean kernel (`IxC`) over each constant's full closure (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-lean --anon --consts-file` |
 | `ixvm-ooc` | env | the same kernel over the whole env, plus the per-constant attribution CSV the compare drill-down reads | `ix check-lean --anon --per-const` |
 | `compile` | env | `ix compile <env>.lean → <env>.ixe`, the default certified compiler: compile-time, file-size, constants, throughput | `ix compile --json` |
@@ -170,6 +175,13 @@ and, if selected, its env row.
 
 The PR comment shows each backend's env and constant rows in one table
 (see [The PR comment](#the-pr-comment)).
+
+Proving applies to constant rows only: an env row stays execution-only
+(whole-env proving is too slow for CI), and `ix bench run` says so when
+both are selected. Each stage's measures are stage-qualified bencher
+measures with their own plots, and the PR comment gives each stage its own
+table. `ix bench run --prove` and `--compress kzg` are the same switches as
+the variables. bench-main measures execution only.
 
 The `compile` benchmark switches from the uncertified Rust compiler to the
 certified default in this change. Certified uploads use the distinct
@@ -256,6 +268,10 @@ BENCH_CONSTANTS=all            # constant rows: all (default), none, or
                                # BENCH_ENVS naming its env
 BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs
                                # (case-insensitive; default InitStd)
+BENCH_PROVE=1                  # ixvm: also prove each constant row end to
+                               # end (env rows stay execution-only)
+BENCH_COMPRESS=kzg             # ixvm: also compress each root to KZG
+                               # (implies BENCH_PROVE)
 RUST_LOG=info                  # passthrough env (allowlist:
                                # RUST_LOG, RUSTFLAGS,
                                # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,

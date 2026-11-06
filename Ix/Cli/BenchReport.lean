@@ -36,7 +36,7 @@ namespace Ix.Cli.BenchReport
     tools emit (see the registry in Ix.Cli.BenchCmd). Unknown metrics fall
     through to a generic decimal rendering. -/
 def metricKind (metric : String) : String :=
-  if ["peak-rss", "file-size", "proof-size"].contains metric
+  if metric == "file-size" || metric.endsWith "peak-rss" || metric.endsWith "proof-size"
   then "bytes"
   -- Every wall-clock measure is named `<what>-time`.
   else if metric.endsWith "-time" then "seconds"
@@ -434,14 +434,21 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
   let cells := cells.qsort fun a b => order.idxOf a.env < order.idxOf b.env
   let label := fun (c : Cell) (name : String) (isEnv : Bool) =>
     if isEnv then s!"**{c.env}**" else s!"`{name}`"
-  let table := fun (metrics : List String) => Id.run do
-    let head := #["row"] ++ metrics.toArray.map metricLabel
+  let table := fun (metrics : List String) (stage : String) => Id.run do
+    let shown := fun (m : String) =>
+      metricLabel (if !stage.isEmpty && m.startsWith (stage ++ "-")
+        then (m.drop (stage.length + 1)).toString else m)
+    let head := #["row"] ++ metrics.toArray.map shown
     let mut lines := #[
       "| " ++ " | ".intercalate head.toList ++ " |",
       "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
     for c in cells do
       for (name, isEnv) in c.rows do
-        let cols := metrics.toArray.map fun m => (metricCell c.base c.pr name m threshold).1
+        -- A stage table holds constant rows only; their env keeps its label.
+        let blank := !stage.isEmpty && isEnv
+        if blank && c.rows.size == 1 then continue
+        let cols := metrics.toArray.map fun m =>
+          if blank then "" else (metricCell c.base c.pr name m threshold).1
         lines := lines.push ("| " ++ " | ".intercalate (label c name isEnv :: cols.toList) ++ " |")
     return lines
   let mut rows := 0
@@ -452,7 +459,7 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
     for (name, _) in c.rows do
       if !(rowNames c.base ++ rowNames c.pr).contains name then continue
       rows := rows + 1
-      let flags := spec.metrics.map fun m => (metricCell c.base c.pr name m threshold).2
+      let flags := spec.trackedMetrics.map fun m => (metricCell c.base c.pr name m threshold).2
       if flags.any (·.1) then regressed := regressed + 1
       if flags.any (·.2) then improved := improved + 1
       if rowStatus c.base name == "rejected" then
@@ -475,12 +482,18 @@ def renderBackend (spec : Ix.Cli.BenchCmd.BackendSpec) (cells : Array Cell)
       s!"_⚠️ no {baseLabel}-side results (base run failed — see the workflow logs)._"
   else if cells.all (fun c => (rowNames c.pr).isEmpty) then
     out := out.push "" |>.push "_⚠️ no PR-side results (see the workflow logs)._"
-  out := out.push "" ++ table headline
+  out := out.push "" ++ table headline ""
   let hasSecondary := cells.any fun c => c.rows.any fun (name, _) =>
     secondary.any fun m => (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
   if hasSecondary then
     out := out ++ #["", "<details><summary>more metrics</summary>", ""]
-      ++ table secondary ++ #["", "</details>"]
+      ++ table secondary "" ++ #["", "</details>"]
+  -- One table per proving stage the constant rows ran.
+  for (stage, metrics) in spec.stages do
+    let ran := cells.any fun c => c.rows.any fun (name, isEnv) =>
+      !isEnv && metrics.any fun m => (rowNum c.base name m).isSome || (rowNum c.pr name m).isSome
+    if ran then
+      out := out ++ #["", s!"#### `{spec.name}` · {stage}", ""] ++ table metrics stage
   for c in cells do
     if let some (baseCsv, prCsv) := c.attribution then
       out := out ++ #["", s!"**{c.env}**", "", ← renderPerConstMovers baseCsv prCsv baseLabel]
@@ -839,6 +852,11 @@ def parseError (msg : String) : IO UInt32 := do
                                     naming where it lives.)
       BENCH_ENVS=all|none|a,b      (env rows: case-insensitive registry
                                     envs; default InitStd)
+      BENCH_PROVE=1                (ixvm: also prove each constant row end
+                                    to end; env rows stay execution-only)
+      BENCH_COMPRESS=kzg           (ixvm: also compress each root to KZG
+                                    with development parameters; implies
+                                    BENCH_PROVE)
       RUST_LOG=… /
       RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
       IX_COMPILE_WORKERS=… / IX_DECOMPILE_KENV_CLEAR_ENTRIES=…
@@ -938,6 +956,14 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       match key.trimAscii.toString with
       | "BENCH_ENVS" => envsVal := some val
       | "BENCH_CONSTANTS" => constantsVal := some val
+      | "BENCH_PROVE" =>
+        if val != "1" && val != "0" then
+          return ← parseError s!"BENCH_PROVE must be 1 or 0, got `{val}`"
+        passthrough := passthrough.push s!"BENCH_PROVE={val}"
+      | "BENCH_COMPRESS" =>
+        if val != "kzg" then
+          return ← parseError s!"BENCH_COMPRESS supports only `kzg`, got `{val}`"
+        passthrough := passthrough.push s!"BENCH_COMPRESS={val}"
       | k =>
         if ["RUST_LOG",
             "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
@@ -946,7 +972,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
-            benchmark command (expected BENCH_ENVS / BENCH_CONSTANTS, \
+            benchmark command (expected BENCH_ENVS / BENCH_CONSTANTS / BENCH_PROVE / \
+            BENCH_COMPRESS, \
             or passthrough: \
             RUST_LOG, RUSTFLAGS, \
             IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \

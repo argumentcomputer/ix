@@ -6,6 +6,7 @@ public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Shard.Manifest
 public import Ix.TracingTexray
+public import Ix.Store
 
 /-!
   `ix bench run`: the benchmark orchestrator — one command that
@@ -125,6 +126,10 @@ structure BackendSpec where
   constantMetrics : List String := []
   /-- The measures of the env rows, in the same convention. -/
   envMetrics : List String
+  /-- Proving stages a constant row can add, each with its stage-qualified
+      measures (`prove-time`, …): uploaded as their own bencher measures,
+      plotted one graph per measure, and tabled one table per stage. -/
+  stages : List (String × List String) := []
 
 def backendSpecs : List BackendSpec := [
   -- ixvm: execution of the certified IxVM claim verifier by `ix check`,
@@ -135,10 +140,17 @@ def backendSpecs : List BackendSpec := [
   -- it. The env row shards the env with `ix shard --max-ram 100` (setup,
   -- outside the measured window), then one `ix check --ixes` executes
   -- every shard's claim across all cores; its `execute-time` sums the
-  -- shards' spans; `shards` counts the partition.
+  -- shards' spans; `shards` counts the partition. With BENCH_PROVE=1 a
+  -- constant row also proves the constant end to end (`runIxvmProve`), and
+  -- with BENCH_COMPRESS=kzg compresses the root; env rows stay
+  -- execution-only, since whole-env proving is too slow for CI.
   { name := "ixvm", testbed := "ixvm",
     constantMetrics := ["execute-time", "check-time", "peak-rss"],
-    envMetrics := ["check-time", "peak-rss", "execute-time", "shards"] },
+    envMetrics := ["check-time", "peak-rss", "execute-time", "shards"],
+    stages := [
+      ("prove", ["prove-time", "prove-peak-rss", "prove-proof-size", "verify-time"]),
+      ("compress", ["compress-time", "compress-peak-rss", "compress-proof-size",
+                    "compress-verify-time"])] },
   -- ixvm-ooc: the out-of-circuit IxC kernel (`ix check-lean --anon`). The
   -- constant rows check each constant's full closure in one process per
   -- env; the env row checks the whole env and writes the per-constant
@@ -168,13 +180,18 @@ def BackendSpec.hasConstants (b : BackendSpec) : Bool :=
 def BackendSpec.metrics (b : BackendSpec) : List String :=
   (b.constantMetrics ++ b.envMetrics).eraseDups
 
+/-- Every measure the backend uploads: its columns and its stages'
+    measures. -/
+def BackendSpec.trackedMetrics (b : BackendSpec) : List String :=
+  (b.metrics ++ (b.stages.map (·.2)).flatten).eraseDups
+
 /-- The benchmark row names this backend uploads for a measure — the
     bencher slugs the dashboard plots key on: the shared constants when the
     measure is a constant column, then the envs when it is an env column.
     Dynamic shard sub-rows (`<name>/shard-N`) are excluded — the parent row
     carries the headline trend. -/
 def BackendSpec.benchmarkNames (b : BackendSpec) (measure : String) : Array String :=
-  (if b.constantMetrics.contains measure
+  (if b.constantMetrics.contains measure || b.stages.any (·.2.contains measure)
     then benchConstants.map (·.name) else #[])
   ++ (if b.envMetrics.contains measure
     then (envSpecs.map (·.name)).toArray else #[])
@@ -389,6 +406,97 @@ def runIxvmEnv (ix ixe out env : String) : IO Unit := do
   else
     IO.eprintln s!"[bench] whole-env ixvm check failed before execution (exit {exit})"
 
+/-- `runMeasured` that also captures the tool's stdout, echoed to stderr
+    for the log: the proving commands print the addresses of the proofs
+    they persist there. -/
+def runCaptured (cmd : String) (args : Array String) :
+    IO (UInt32 × Float × Nat × String) := do
+  TracingTexray.startSampler
+  TracingTexray.resetPeakTreeRss
+  let start ← IO.monoNanosNow
+  IO.eprintln s!"[bench] run: {cmd} {" ".intercalate args.toList}"
+  let child ← IO.Process.spawn { cmd, args, stdout := .piped }
+  let stdout ← child.stdout.readToEnd
+  let exit ← child.wait
+  let seconds := ((← IO.monoNanosNow) - start).toFloat / 1e9
+  IO.eprint stdout
+  return (exit, seconds, ← TracingTexray.peakTreeRssBytes, stdout)
+
+/-- The last 64-hex-digit token of `text`: the proof address a proving
+    command printed last. -/
+def lastAddress (text : String) : Option String :=
+  let isHex := fun (c : Char) => c.isDigit || ('a' ≤ c && c ≤ 'f')
+  let tokens := ((text.replace "\t" " ").splitOn "\n").flatMap (·.splitOn " ")
+  (tokens.filter fun t => t.length == 64 && t.all isHex).getLast?
+
+/-- The byte size of the persisted proof at `hex`, when it is in the store. -/
+def proofSize (hex : String) : IO (Option Nat) := do
+  let some addr := Address.fromString hex | return none
+  let path ← StoreIO.toIO (Store.storePath addr)
+  if !(← path.pathExists) then return none
+  return some (← path.metadata).byteSize.toNat
+
+/-- Merge `fields` into `name`'s row. -/
+def addFields (out name : String) (fields : List (String × Lean.Json)) : IO Unit := do
+  let rows ← readRows out
+  let row := (rows.getObjVal? name).toOption.getD (Lean.Json.mkObj [])
+  writeEntry out name (fields.foldl (fun r (k, v) => r.setObjVal! k v) row)
+
+/-- The proving stages a constant row may add to its execution. -/
+structure Stages where
+  prove : Bool := false
+  /-- Compress the aggregate root to KZG (implies `prove`). -/
+  compress : Bool := false
+
+/-- Prove a constant end to end, after its execution row: extract it into
+    a one-constant env and shard that (setup, unmeasured), prove every
+    shard and aggregate them into a root on the controller (`prove-*`),
+    verify the root (`verify-time`), and with `compress` compress the root
+    to KZG with development parameters (`compress-*`) and verify that
+    (`compress-verify-time`). Each stage is its own spawn, timed by its
+    wall clock and the texray tree sampler. A kill marks the row `oom` or
+    `crash`, keeping what was measured; returns whether every stage
+    succeeded. -/
+def runIxvmProve (ix ixe out name : String) (stages : Stages) : IO Bool := do
+  let slug := String.ofList (name.toList.map fun c => if c.isAlphanum then c else '_')
+  let dir := s!"{out}.prove/{slug}"
+  IO.FS.createDirAll dir
+  let one := s!"{dir}/env.ixe"
+  let manifest := s!"{dir}/env.ixes"
+  let stage : String → UInt32 → IO Bool := fun what exit => do
+    if exit == 0 then return true
+    if isKill exit then markKilled out name (killStatus exit)
+    IO.eprintln s!"[bench] {what} failed on '{name}' (exit {exit})"
+    return false
+  if !(← stage "extract" (← runTool ix #["shard", "extract", ixe, "--consts", name, "--out", one])) then
+    return false
+  if !(← stage "shard" (← runTool ix #["shard", one, "--shards", "1", "--out", manifest])) then
+    return false
+  let (exit, seconds, peak, stdout) ← runCaptured ix
+    #["prove", "--ixe", one, "--ixes", manifest, "--aggregate", "--trace-shards",
+      "--jobs", "0", "--fresh"]
+  if !(← stage "prove" exit) then return false
+  let some root := lastAddress stdout
+    | IO.eprintln s!"[bench] prove printed no root address for '{name}'"; return false
+  addFields out name <| [("prove-time", jsonRound 6 seconds), ("prove-peak-rss", Lean.toJson peak)]
+    ++ ((← proofSize root).map fun n => ("prove-proof-size", Lean.toJson n)).toList
+  let (exit, seconds, _, _) ← runCaptured ix
+    #["verify", "--aggregate", "--ixe", one, "--ixes", manifest, root]
+  if !(← stage "verify" exit) then return false
+  addFields out name [("verify-time", jsonRound 6 seconds)]
+  if !stages.compress then return true
+  let (exit, seconds, peak, stdout) ← runCaptured ix
+    #["compress", root, "--dev-kzg-srs", "--fresh", "--out", s!"{dir}/compression"]
+  if !(← stage "compress" exit) then return false
+  let some compressed := lastAddress stdout
+    | IO.eprintln s!"[bench] compress printed no proof address for '{name}'"; return false
+  addFields out name <| [("compress-time", jsonRound 6 seconds), ("compress-peak-rss", Lean.toJson peak)]
+    ++ ((← proofSize compressed).map fun n => ("compress-proof-size", Lean.toJson n)).toList
+  let (exit, seconds, _, _) ← runCaptured ix #["verify", "--dev-srs", compressed]
+  if !(← stage "compressed verify" exit) then return false
+  addFields out name [("compress-verify-time", jsonRound 6 seconds)]
+  return true
+
 /-- Parse `--constants`: `all` (the default) is the env's shared
     constants, `none` is no constant rows, anything else a comma list. -/
 def parseConstants (env : String) (flag : Option String) : Array String :=
@@ -411,6 +519,18 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let names := if spec.hasConstants
     then parseConstants env ((p.flag? "constants").map (·.as! String)) else #[]
   let envRow := !p.hasFlag "no-env-row"
+  -- `--prove` / BENCH_PROVE=1 and `--compress kzg` / BENCH_COMPRESS=kzg
+  -- add proving stages to the ixvm constant rows; other backends ignore
+  -- them, so one BENCH_PROVE applies across a run's cells.
+  let compressWith := ((p.flag? "compress").map (·.as! String)).getD
+    ((← IO.getEnv "BENCH_COMPRESS").getD "")
+  if compressWith != "" && compressWith != "kzg" then
+    p.printError s!"error: --compress / BENCH_COMPRESS supports only `kzg`, got `{compressWith}`"
+    return exitUsage
+  let stages : Stages := {
+    compress := compressWith == "kzg"
+    prove := compressWith == "kzg" || p.hasFlag "prove" || (← IO.getEnv "BENCH_PROVE") == some "1" }
+  let mut proveFailures := 0
   IO.eprintln s!"[bench] run {backend}-{env}: {names.size} constant row(s){if envRow then " + env row" else ""}"
 
   -- Fresh accumulator per run.
@@ -464,6 +584,16 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   | "ixvm" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     runIxvmConstants ix ixe out names
+    if stages.prove then
+      if envRow then
+        IO.eprintln s!"[bench] proving covers constant rows only; the {env} env row stays execution-only"
+      for name in names do
+        -- A constant whose execution failed or was killed has nothing to prove.
+        let rows ← readRows out
+        let status := (rows.getObjVal? name).toOption.map fun row =>
+          ((row.getObjVal? "status").toOption.bind (·.getStr?.toOption)).getD "ok"
+        if status != some "ok" then continue
+        if !(← runIxvmProve ix ixe out name stages) then proveFailures := proveFailures + 1
     if envRow then runIxvmEnv ix ixe out env
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
@@ -473,6 +603,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let code ← gate out (if envRow then names.push env else names)
   if code == 0 || code == exitRejected then
     saveBaseline out s!"{backend}-{env}"
+  if code == 0 && proveFailures > 0 then
+    IO.eprintln s!"[bench] {proveFailures} constant(s) failed a proving stage"
+    return 1
   return code
 
 end Ix.Cli.BenchCmd
@@ -487,6 +620,8 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     env          : String; "Benchmark env from the registry (default: InitStd)"
     constants    : String; "Constant rows: `all` (default: the env's shared constants), `none`, or comma-separated names (same grammar as the tools' --consts). Ignored by backends without constant rows."
     "no-env-row";          "Skip the env row (the whole-env measurement)"
+    prove;                 "ixvm: also prove each constant row end to end (extract, shard, prove and aggregate, verify); same as BENCH_PROVE=1"
+    compress     : String; "ixvm: also compress each constant row's root (`kzg`, with development parameters) and verify it; implies --prove; same as BENCH_COMPRESS=kzg"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"

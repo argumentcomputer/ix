@@ -36,6 +36,11 @@ def testRows : TestSeq :=
     (["ixvm", "ixvm-ooc"].all fun n => ((findBackend n).map (·.hasConstants)).getD false)
   ++ test "compile and decompile have only env rows"
     (["compile", "decompile"].all fun n => ((findBackend n).map (!·.hasConstants)).getD false)
+  ++ test "a stage measure plots only the shared constants"
+    (backendSpecs.all fun b => b.stages.all fun (_, ms) => ms.all fun m =>
+      b.benchmarkNames m == constantNames)
+  ++ test "stage measures are tracked"
+    (backendSpecs.all fun b => b.stages.all fun (_, ms) => ms.all b.trackedMetrics.contains)
   ++ test "backend testbeds are distinct"
     ((backendSpecs.map (·.testbed)).eraseDups.length == backendSpecs.length)
 
