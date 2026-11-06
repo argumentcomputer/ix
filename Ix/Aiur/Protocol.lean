@@ -144,7 +144,7 @@ private opaque detectedRamBudgetFFI : IO UInt64
 def detectedRamBudgetBytes : IO Nat := do
   pure (← detectedRamBudgetFFI).toNat
 
-abbrev functionChannel : G := .ofNat 0
+abbrev functionChannel : G := .ofNat 1
 
 def buildClaim (funIdx : Nat) (input output : Array G) : Array G :=
   #[functionChannel, .ofNat funIdx] ++ input ++ output

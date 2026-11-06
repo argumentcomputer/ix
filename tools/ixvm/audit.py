@@ -63,18 +63,24 @@ def main():
     p.add_argument('--out', type=Path, required=True)
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    parts, files, origins = [], [], {}
+    raw_parts, parts, files, origins = [], [], [], {}
     for name in adapt.FILES:
-        path = adapt.source_path(name)
-        raw = subprocess.check_output(['git', '-C', str(args.ix), 'show', f'{adapt.REVISION}:{path}'], text=True)
+        ref = adapt.source_ref(name)
+        _, path = ref.split(':', 1)
+        raw = subprocess.check_output(['git', '-C', str(args.ix), 'show', ref], text=True)
         text = raw.split('⟦', 1)[1].split('⟧', 1)[0]
-        parts.append(text)
+        raw_parts.append(text)
         for fn in functions(text):
             if fn in origins:
                 raise ValueError(f'duplicate source function {fn}')
             origins[fn] = path
+        if name == 'RBTreeMap':
+            text += adapt.CANON_ADDR_CMP_HELPERS
+        elif name == 'Kernel/Roles':
+            text += adapt.ROLE_MAP_HELPERS
+        parts.append(text)
         files.append(dict(path=path, sha256=hashlib.sha256(raw.encode()).hexdigest()))
-    raw = '\n'.join(parts)
+    raw = '\n'.join(raw_parts)
     old = functions(raw)
     lexical = functions(adapt.adapt(raw, semantic=False))
     # Audit the semantic adaptation independently of namespace relocation.
@@ -84,7 +90,7 @@ def main():
     modules.emit(adapt.ROOT / 'IxVM/IxVM', groups, 'IxVM', 'Program', renames, check=True)
     modules.check_shared(port_text)
     port = functions(port_text)
-    rebuilt, _ = adapt.prune(adapt.adapt(raw) + (adapt.ROOT / 'IxVM/IxVM/Compatibility.aiur').read_text() + (adapt.ROOT / 'IxVM/IxVM/PortCases.aiur').read_text(),
+    rebuilt, _ = adapt.prune(adapt.adapt('\n'.join(parts)) + (adapt.ROOT / 'IxVM/IxVM/Compatibility.aiur').read_text() + (adapt.ROOT / 'IxVM/IxVM/PortCases.aiur').read_text(),
                             adapt.ROOTS)
     assert tokens(port_text) == tokens(rebuilt), 'generated source is stale'
     assert 'ptr_val(' not in port_text and not re.search(r'[#@]\w+\(', port_text)

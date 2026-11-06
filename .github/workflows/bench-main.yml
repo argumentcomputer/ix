@@ -80,9 +80,6 @@ jobs:
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
-          lake build bench-typecheck
-          cp .lake/build/bin/bench-typecheck ~/.local/bin/
-          chmod +x ~/.local/bin/bench-typecheck
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
