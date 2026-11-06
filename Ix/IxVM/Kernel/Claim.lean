@@ -507,9 +507,12 @@ def claim := ⟦
   -- reached by this walk or assumed via the frontier.
   fn run_check_env(rc: RoleCtx, env_root: Addr, asm: Option‹Addr›) {
     let owned = load_assumption_tree(env_root);
-    let empty_leaves: &ListNode‹&[U8; 32]› = store(ListNode.Nil);
-    assert_eq!(eq_zero(ptr_val(owned) - ptr_val(empty_leaves)), 0,
-      "CheckEnv: owned tree has no leaves");
+    match load(owned) {
+      ListNode.Nil =>
+        assert_eq!(0, 1, "CheckEnv: owned tree has no leaves");
+        (),
+      ListNode.Cons(_, _) => (),
+    };
     match asm {
       Option.None =>
         -- The whole environment: every constant under `env_root` is
