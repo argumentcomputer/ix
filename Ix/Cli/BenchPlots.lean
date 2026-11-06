@@ -78,10 +78,8 @@ def plotSkips : List (String × String) :=
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
     its first upload, leaving plots unitless — and a console edit would
-    drift from this list, so the sync re-asserts it. Phase spans are
-    wall-clock seconds. -/
+    drift from this list, so the sync re-asserts it. -/
 def unitsFor (slug : String) : Option String :=
-  if slug.startsWith "phase-" then some "seconds (s)" else
   [("compile-time", "seconds (s)"),
    ("decompile-time", "seconds (s)"),
    ("execute-time", "seconds (s)"),
@@ -247,8 +245,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let benchmarks ← fetchAll project "benchmark"
   let plots ← fetchAll project "plot"
 
-  -- Units first, so even a plotless measure (phase spans, PR-column-only
-  -- counters) renders with its unit everywhere bencher shows it.
+  -- Units first, so even a plotless measure renders with its unit everywhere bencher shows it.
   for m in measures do
     if let (some slug, some uuid) := (objStr m "slug", objStr m "uuid") then
       if let some want := unitsFor slug then

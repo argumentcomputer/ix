@@ -9,7 +9,6 @@
 #                                  #  needs a single-env BENCH_ENVS naming where it lives
 #   BENCH_ENVS=InitStd,Mathlib     # env rows: all, none, or registry envs (case-insensitive;
 #                                  #  default InitStd)
-#   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
 #                                  # IX_COMPILE_WORKERS): Rust compiler knobs for
@@ -588,9 +587,9 @@ jobs:
       - name: Run backend on PR → pr.json
         id: pr-run
         # Exit 3 = the kernel rejected a constant on the PR side (rows are
-        # on disk). Keep going: the compare table and PR comment must
+        # on disk). Keep going: the PR comment must
         # still show the ❌ row. The failure is re-raised at the end of
-        # the job, after the table upload.
+        # the job, after the results upload.
         continue-on-error: true
         run: |
           if [ "$BACKEND" = compile ]; then
@@ -886,7 +885,7 @@ jobs:
             fi
           fi
 
-      # ---------- compare ----------
+      # ---------- results ----------
       # A base-run-produced attribution CSV (moved to main.json's side in
       # the merge step) wins; the cached one only fills the gap.
       - name: Place base-side attribution CSV
@@ -896,19 +895,23 @@ jobs:
             && [ -f bench.json.perconst.csv ]; then
             mv bench.json.perconst.csv "$GITHUB_WORKSPACE/main.json.perconst.csv"
           fi
-      - name: Build comparison table
+      # The cell's rows, both sides, and where they came from; `assemble`
+      # renders every cell into the one comment.
+      - name: Bundle cell results
+        if: always()
         env:
           RUN_HARDWARE: ${{ steps.cpu.outputs.summary }}
           BASE_SOURCE: ${{ steps.decide.outputs.source }}
           RUN_BASE: ${{ steps.decide.outputs.run-base }}
         run: |
-          mkdir -p out
-          ix bench compare \
-            --backend "$BACKEND" --env "$BENV" \
-            --base "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
-            --base-source "$BASE_SOURCE" \
-            --base-label "${BASE_REF:-${BASE_SHA::7}}" \
-            --out "out/table-$LABEL.md"
+          cell="cells/$LABEL"
+          mkdir -p "$cell"
+          for side in main:base pr:pr; do
+            from="$GITHUB_WORKSPACE/${side%%:*}.json"
+            to="$cell/${side##*:}.json"
+            [ -f "$from" ] && cp "$from" "$to"
+            [ -f "$from.perconst.csv" ] && cp "$from.perconst.csv" "$to.perconst.csv"
+          done
           # Label each side with the host that measured it. The PR compile
           # row comes from the compile job, and a bencher-sourced base side
           # from bench-main's run at the base SHA. Every other side ran here.
@@ -922,23 +925,24 @@ jobs:
           else
             base_hw=$(cat bench-hardware.txt 2>/dev/null || true)
           fi
-          {
-            echo
-            echo "- Base hardware ($BASE_SOURCE): ${base_hw:-not recorded}"
-            echo "- PR hardware: ${pr_hw:-not recorded}"
-          } >> "out/table-$LABEL.md"
-          cat "out/table-$LABEL.md"
+          jq -n --arg backend "$BACKEND" --arg env "$BENV" \
+            --arg source "$BASE_SOURCE" --arg base_hw "$base_hw" --arg pr_hw "$pr_hw" \
+            '{backend: $backend, env: $env, "base-source": $source,
+              "base-hardware": $base_hw, "pr-hardware": $pr_hw}' > "$cell/meta.json"
+          ix bench compare --backend "$BACKEND" --env "$BENV" \
+            --base "$cell/base.json" --pr "$cell/pr.json" \
+            --base-source "$BASE_SOURCE" --base-label "${BASE_REF:-${BASE_SHA::7}}"
 
-      - name: Upload table
+      - name: Upload cell results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: table-${{ env.LABEL }}
-          path: out/table-${{ env.LABEL }}.md
+          name: cell-${{ env.LABEL }}
+          path: cells
           if-no-files-found: warn
           overwrite: true
       # A PR-side rejection is a correctness regression: re-raise the run
-      # step's failure now that the table is uploaded, so the job goes red
+      # step's failure now that the results are uploaded, so the job goes red
       # while the comment still posts with the constant's ❌ row.
       - name: Fail on PR-side benchmark failure
         if: steps.pr-run.outcome != 'success'
@@ -946,13 +950,13 @@ jobs:
           echo "::error::ix bench run failed on the PR side (kernel rejection or empty run) — see the 'Run backend on PR' step"
           exit 1
 
-  # Assemble the comment body from the per-run tables. Deliberately
+  # Assemble the comment body from the per-cell results. Deliberately
   # UNPRIVILEGED: this job runs PR-built code (`ix bench report`), so it
   # must never receive write permissions. The posting job below only downloads
   # the finished body and never touches PR code.
   assemble:
     needs: [build, benchmark]
-    # Assemble even when benchmark runs failed — the tables carry the ❌
+    # Assemble even when benchmark runs failed — the results carry the ❌
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
     # The native r8i `ix`; every r8i size has the same CPU, so the smallest
@@ -981,11 +985,11 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      - name: Download tables
+      - name: Download cell results
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: tables
-          pattern: table-*
+          path: cells
+          pattern: cell-*
           merge-multiple: true
       - name: Build comment body
         env:
@@ -994,10 +998,10 @@ jobs:
           BASE_SHA: ${{ inputs.base-sha }}
           BASE_REF: ${{ inputs.base-ref }}
         run: |
-          mkdir -p tables   # absent when no run uploaded a table
+          mkdir -p cells   # absent when no run uploaded results
           ix bench report \
-            --tables tables --summary "$SUMMARY" \
-            --head "$HEAD_SHA" \
+            --cells cells --summary "$SUMMARY" \
+            --head "$HEAD_SHA" --base-sha "$BASE_SHA" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
             --run-id "${{ github.run_id }}" --out comment-body.md

@@ -116,12 +116,14 @@ structure BackendSpec where
   /-- The bencher testbed stem; hardware suffixes identify the measured
       host. -/
   testbed : String
-  /-- Compare-table columns of the constant rows, in order (the head is
-      the row sort key); empty for a backend without constant rows. Column
-      convention: the headline wall-clock time, throughput, peak-rss, then
-      detail (secondary times, sizes, deterministic counters). -/
+  /-- The measures of the constant rows, in column order; empty for a
+      backend without constant rows. Column convention: the headline
+      wall-clock time, throughput, peak-rss, then detail (secondary times,
+      sizes, deterministic counters). The compare table shows the first
+      four measures of `metrics` as columns and the rest in a collapsed
+      block. -/
   constantMetrics : List String := []
-  /-- Compare-table columns of the env rows, in the same convention. -/
+  /-- The measures of the env rows, in the same convention. -/
   envMetrics : List String
 
 def backendSpecs : List BackendSpec := [
@@ -142,7 +144,7 @@ def backendSpecs : List BackendSpec := [
   -- env; the env row checks the whole env and writes the per-constant
   -- attribution CSV the compare drill-down reads.
   { name := "ixvm-ooc", testbed := "ixvm-ooc",
-    constantMetrics := ["check-time", "throughput", "peak-rss"],
+    constantMetrics := ["check-time", "peak-rss"],
     envMetrics := ["check-time", "throughput", "peak-rss"] },
   -- A distinct baseline keeps the cost of certification out of comparisons
   -- against historical Rust compiler timings.
