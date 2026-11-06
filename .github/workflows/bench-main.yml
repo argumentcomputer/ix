@@ -5,7 +5,8 @@ name: Benchmark main
 # parameter combination — the same command you can run locally, and the
 # same one the !benchmark PR workflow uses. Four job roles:
 #
-#   1. build     — compiles and caches `ix` once.
+#   1. build     — compiles and caches `ix` once, with the compiled
+#                  programs `ix check` loads (IX_AIUR_CACHE).
 #   2. plan      — `ix bench ci matrix` prints the list of parameter
 #                  combinations to run. The list comes from the registry
 #                  (Ix/Cli/BenchCmd.lean) and each entry already carries
@@ -39,6 +40,11 @@ env:
   IX_BENCH_MACHINE: r8i.8xlarge
   BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
   COMPILE_DIR: Benchmarks/Compile
+  # The compiled-program cache `ix check` loads the certified Aiur programs
+  # from. `lake build ix` and `ix codegen --out` fill it; it ships beside
+  # the binaries so no measured run compiles a program. Outside the sticky
+  # `.lake`, so it holds only this revision's programs.
+  IX_AIUR_CACHE: ${{ github.workspace }}/.aiur-cache
 
 jobs:
   # Build the `ix` binary once and cache it; every later job restores it
@@ -80,10 +86,18 @@ jobs:
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
+      - name: Warm the compiled-program cache
+        run: .github/scripts/warm-aiur-cache ~/.local/bin/ix
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
+      # Its own entry: bench-pr restores it by SHA next to a base's cached
+      # binaries.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ github.sha }}
 
   # Ask the registry which benchmarks to run. `ix bench ci matrix` prints
   # one JSON entry per (backend, env) combination, each carrying its
@@ -171,6 +185,10 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ github.sha }}
       - name: Log compile CPU
         id: cpu
         uses: $/.github/actions/log-cpu
@@ -285,6 +303,13 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ github.sha }}
+      # The build job's compiled programs, so `ix check` loads rather than
+      # compiles them inside the measured run.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ github.sha }}
+          fail-on-cache-miss: true
       - name: Log run CPU
         id: cpu
         uses: $/.github/actions/log-cpu

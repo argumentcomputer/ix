@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Fill $IX_AIUR_CACHE with the certified Aiur programs of the checkout the
+# given `ix` was built from, compiling any that are missing. `lake build ix`
+# fills it too, but skips that when its generated executors are already up
+# to date. `--check` keeps `ix codegen` from rewriting tracked fixtures.
+set -euo pipefail
+
+ix=$1
+: "${IX_AIUR_CACHE:?set IX_AIUR_CACHE to the compiled-program cache}"
+mkdir -p "$IX_AIUR_CACHE"
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
+
+# A stale role-spec fixture also exits 1; the programs are compiled either
+# way, so the cache listing below is the check that matters here.
+"$ix" codegen --check --out "$out" || echo "::warning::ix codegen --check exited $?"
+if ! compgen -G "$IX_AIUR_CACHE/*" >/dev/null; then
+  echo "::error::no compiled programs in $IX_AIUR_CACHE" >&2
+  exit 1
+fi
+ls -l "$IX_AIUR_CACHE"

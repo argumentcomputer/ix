@@ -85,6 +85,11 @@ run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR 
 env:
   IX_BENCH_MACHINE: r8i.8xlarge
   BENCH_CACHE: runs-on-r8i.8xlarge-native-v1
+  # The compiled-program cache `ix check` loads the certified Aiur programs
+  # from. Both sides' programs share it (they are keyed by source and
+  # compiler); it travels with the binaries so no measured run compiles a
+  # program.
+  IX_AIUR_CACHE: ${{ github.workspace }}/.aiur-cache
 
 permissions:
   contents: read
@@ -245,15 +250,29 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ steps.target.outputs.revision }}
+      # `lake build ix` fills IX_AIUR_CACHE only when it regenerates the
+      # native executors, so compile any program still missing here.
+      - name: Warm the compiled-program cache
+        run: .github/scripts/warm-aiur-cache ~/.local/bin/ix
+      # A stacked PR's base run restores this by the head SHA, like the
+      # bench-bins entry.
+      - if: steps.parse.outputs.fresh != '1'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ steps.target.outputs.revision }}
       - name: Package run binaries
-        run: >-
-          tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix
+        run: |
+          tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar ix
+          tar -C "$IX_AIUR_CACHE" -cf benchmark-aiur-cache.tar .
       - name: Upload run binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: benchmark-binaries
-          path: benchmark-binaries.tar
+          path: |
+            benchmark-binaries.tar
+            benchmark-aiur-cache.tar
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -397,8 +416,9 @@ jobs:
       - name: Unpack run binaries
         if: steps.compile-source.outputs.rebuild == 'true'
         run: |
-          mkdir -p "$HOME/.local/bin"
+          mkdir -p "$HOME/.local/bin" "$IX_AIUR_CACHE"
           tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
+          tar -C "$IX_AIUR_CACHE" -xf benchmark-aiur-cache.tar
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Log compile CPU
         if: steps.compile-source.outputs.rebuild == 'true'
@@ -534,8 +554,9 @@ jobs:
           name: benchmark-binaries
       - name: Place PR binaries
         run: |
-          mkdir -p .lake/build/bin
+          mkdir -p .lake/build/bin "$IX_AIUR_CACHE"
           tar -C .lake/build/bin -xf benchmark-binaries.tar
+          tar -C "$IX_AIUR_CACHE" -xf benchmark-aiur-cache.tar
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       - name: Log run CPU
         id: cpu
@@ -704,6 +725,15 @@ jobs:
         with:
           path: ~/.local/bin
           key: ${{ env.BENCH_CACHE }}-bench-bins-${{ env.BASE_SHA }}
+      # The base binaries' compiled programs, from the same producer as
+      # the bench-bins entry. They join the PR's programs in IX_AIUR_CACHE.
+      - name: Restore base programs (bench-aiur cache)
+        if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
+        id: base-aiur
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.IX_AIUR_CACHE }}
+          key: ${{ env.BENCH_CACHE }}-bench-aiur-${{ env.BASE_SHA }}
       # Two producers compile the env at a given SHA: bench-main for main
       # commits, this workflow's compile job for PR heads. A stacked PR's
       # base is the latter, so both keys are tried from one step. This works
@@ -778,6 +808,14 @@ jobs:
           build: true
           build-args: "ix"
           use-github-cache: false
+      # The base `ix` loads its programs from IX_AIUR_CACHE too: a fresh base
+      # build fills it, and so does a cached base's bench-aiur entry, but a
+      # base cached before that entry existed has none. A base without
+      # `ix codegen --out` predates the in-process formal Aiur check, so its
+      # ixvm cells fail and report no base column.
+      - name: Warm the base programs
+        if: steps.decide.outputs.run-base == 'true' && steps.base-aiur.outputs.cache-hit != 'true'
+        run: .github/scripts/warm-aiur-cache base/.lake/build/bin/ix || echo "::warning::could not warm the base programs"
       # For the mathlib-importing env (Mathlib), the base-side compile
       # resolves imports from the base tree's Benchmarks/Compile
       # subpackage — mathlib lives only there, so its cache fetch must run
