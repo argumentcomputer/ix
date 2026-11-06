@@ -179,7 +179,7 @@ def backendSpecs : List BackendSpec := [
   -- The inverse of compile: decompiles the env's `.ixe` back to Lean
   -- constants (roundtrip-verified). A `.ixe` consumer: it reuses the
   -- compile run's fresh `.ixe` rather than producing one.
-  { name := "decompile", testbed := "ix-decompile",
+  { name := "decompile", testbed := "ix-decompile-lean",
     envMetrics := ["decompile-time", "throughput", "peak-rss", "file-size", "constants"],
     -- file-size (the input `.ixe`) duplicates the compile run's, so it
     -- uploads for the row's completeness but rides no threshold here.

@@ -307,16 +307,24 @@ run step while the clean rows still upload.
 
 **Dashboard plots**: `ix bench plots` pins one plot per (workload, measure)
 to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
-lines on the historical Warp and native r8i testbeds, with a separate line
-per benchmark row and testbed so hardware changes preserve the visible history,
-plus the cross-kernel input-constants overlay, sourced from the native ixvm-ooc
-backend. Registry-derived like the job matrices (titles,
+lines on the current machine's native r8i testbed only, one line per
+benchmark row, labelled with the constant or env name, plus the IxC
+input-constants overlay over the `ixvm-ooc` constant rows. Each workload
+is the current implementation's own series: `ix-compile-certified` (the
+certified compiler), `ix-decompile-lean` (the Lean decompiler), `ixvm`
+(formal IxVM execution) and `ixvm-ooc` (the IxC out-of-circuit check). No
+plot draws a retired testbed (`ix-compile`, `ix-decompile`, `ooc-check`,
+the legacy Aiur ones, or the historical Warp `<workload>-x64-32x`). Titles
+name what is measured ("Certified Compile Time", "IxVM Execute Time",
+"IxVM OOC (IxC) Check Time", …). Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
 after changing the registry or the constant set — either locally
 (needs the bencher CLI and a user API key in `BENCHER_API_KEY`;
 `--dry-run` previews) or via the `bencher-plots.yml` workflow_dispatch
 (run it after bench-main has built the merged registry). Idempotent:
-matching plots are kept, stale ones replaced, hand-pinned ones untouched.
+matching plots are kept, stale ones replaced, and every plot whose title
+the registry no longer produces is deleted, so legacy plots go away on
+the next sync.
 The sync also asserts every measure's canonical units (bencher
 auto-creates measures with placeholder units on first upload).
 

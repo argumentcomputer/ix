@@ -1,8 +1,8 @@
 /-
   `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (workload, measure) that bench-main.yml tracks,
-  with separate lines per benchmark row on Warp and r8i, plus the cross-cutting
-  shared input-constants trend. The spec derives from the registry
+  with one line per benchmark row (a constant or env name) on the current
+  machine's testbed, plus the cross-cutting shared input-constants trend. The spec derives from the registry
   (`Ix.Cli.BenchCmd`) + the shared constant set (`Ix.BenchConstants`), so
   nothing is hand-listed, and
   every join is on the bencher SLUG (the row-key identity uploads use;
@@ -51,29 +51,29 @@ def workloadOf (testbed : String) : String :=
     nicer name here. -/
 def plotTitle (workload measure : String) : String :=
   match workload, measure with
-  | "ix-compile-certified", "compile-time" => "Ix Compile Time"
-  | "ix-compile-certified", "throughput"   => "Ix Compile Throughput"
-  | "ix-compile-certified", "peak-rss"     => "Ix Compile Peak RAM Usage"
-  | "ix-compile-certified", "file-size"    => "Ix Environment Size"
-  | "ix-compile-certified", "constants"    => "Ix Input Constants"
-  | "ix-decompile", "decompile-time"     => "Ix Decompile Time"
-  | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
-  | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
+  | "ix-compile-certified", "compile-time" => "Certified Compile Time"
+  | "ix-compile-certified", "throughput"   => "Certified Compile Throughput"
+  | "ix-compile-certified", "peak-rss"     => "Certified Compile Peak RAM Usage"
+  | "ix-compile-certified", "file-size"    => "Certified Compile Env Size"
+  | "ix-compile-certified", "constants"    => "Certified Compile Input Constants"
+  | "ix-decompile-lean", "decompile-time"     => "Ix Decompile Time"
+  | "ix-decompile-lean", "throughput"         => "Ix Decompile Throughput"
+  | "ix-decompile-lean", "peak-rss"           => "Ix Decompile Peak RAM Usage"
   | "ixvm", "execute-time"     => "IxVM Execute Time"
   | "ixvm", "check-time"       => "IxVM Check Time"
   | "ixvm", "peak-rss"         => "IxVM Check Peak RAM Usage"
   | "ixvm", "shards"           => "IxVM Env Shards"
-  | "ixvm-ooc", "check-time"   => "IxVM OOC Check Time"
-  | "ixvm-ooc", "throughput"   => "IxVM OOC Check Throughput"
-  | "ixvm-ooc", "peak-rss"     => "IxVM OOC Check Peak RAM Usage"
+  | "ixvm-ooc", "check-time"   => "IxVM OOC (IxC) Check Time"
+  | "ixvm-ooc", "throughput"   => "IxVM OOC (IxC) Check Throughput"
+  | "ixvm-ooc", "peak-rss"     => "IxVM OOC (IxC) Check Peak RAM Usage"
   | w, m => s!"{w}: {m}"
 
-/-- Tracked but not plotted solo. `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
-    `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
+/-- Tracked but not plotted solo. `ix-decompile-lean` reuses the compile run's `.ixe`, so its `file-size` /
+    `constants` duplicate "Certified Compile Env Size" / "Certified Compile Input Constants"
     exactly — the decompile run tracks only its own decompile-time /
     throughput / peak-rss trends. -/
 def plotSkips : List (String × String) :=
-  [("ix-decompile", "file-size"), ("ix-decompile", "constants")]
+  [("ix-decompile-lean", "file-size"), ("ix-decompile-lean", "constants")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -95,7 +95,7 @@ def unitsFor (slug : String) : Option String :=
 /-- Dashboard group order (compile first, then decompile, IxVM execution,
     IxVM out-of-circuit checks); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile-certified", "ix-decompile", "ixvm", "ixvm-ooc"]
+  ["ix-compile-certified", "ix-decompile-lean", "ixvm", "ixvm-ooc"]
 
 structure PlotSpec where
   testbed : String
@@ -173,16 +173,11 @@ def findUuid (items : Array Json) (key val : String) : Option String :=
   items.findSome? fun it =>
     if objStr it key == some val then objStr it "uuid" else none
 
-/-- Historical and current testbeds share a plot as separate series, so
-    changing benchmark hardware or compiler preserves the visible history.
-    Alert baselines still use only the registry's current testbed. -/
+/-- The workload's testbeds on the benchmark machines: only the current
+    implementation's series, never a retired testbed. -/
 def testbedsForPlot (testbeds : Array Json) (workload : String) : Array String :=
-  let workloads := if workload == "ix-compile-certified"
-    then #[workload, "ix-compile"] else #[workload]
-  let slugs := workloads.flatMap fun w =>
-    #[s!"{w}-x64-32x"] ++
-      BenchCmd.benchmarkMachines.toArray.map (BenchCmd.testbedOnMachine w)
-  slugs.filterMap (findUuid testbeds "slug" ·)
+  (BenchCmd.benchmarkMachines.toArray.map (BenchCmd.testbedOnMachine workload)).filterMap
+    (findUuid testbeds "slug" ·)
 
 /-! ## Sync -/
 
@@ -311,7 +306,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     let consts ← findUuid measures "slug" "constants"
     let names := Ix.BenchConstants.benchConstants.filterMap fun c =>
       findUuid benchmarks "name" c.name
-    return { title := "Kernel Input Constants",
+    return { title := "IxVM OOC (IxC) Input Constants",
              testbeds := #[oocTb], benchmarks := names,
              measure := consts, window }
   match overlay with
@@ -350,7 +345,7 @@ end Ix.Cli.BenchPlots
 open Ix.Cli.BenchPlots in
 def benchPlotsCmd : Cli.Cmd := `[Cli|
   plots VIA runPlotsCmd;
-  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure) across historical Warp and current testbeds, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
+  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (workload, measure) on the current machine's testbed, plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
 
   FLAGS:
     "dry-run";         "Print the create/replace/keep decisions without writing (no key needed)"
