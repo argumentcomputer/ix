@@ -844,7 +844,7 @@ def parseError (msg : String) : IO UInt32 := do
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
       !benchmark ([ixvm] [ixvm-ooc] [compile] [decompile] | all)
-                 [fresh] [KEY=VALUE …]
+                 [KEY=VALUE …]
       (at least one backend or `all` is required)
       BENCH_CONSTANTS=all|none|a,b (constant rows; default all. A shared
                                     constant runs in its own env; any other
@@ -857,13 +857,12 @@ def parseError (msg : String) : IO UInt32 := do
       BENCH_COMPRESS=kzg           (ixvm: also compress each root to KZG
                                     with development parameters; implies
                                     BENCH_PROVE)
-      RUST_LOG=… /
-      RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
-      IX_COMPILE_WORKERS=… / IX_DECOMPILE_KENV_CLEAR_ENTRIES=…
-                                    (passthrough; the IX_COMPILE_* knobs reach
-                                    the measured `ix compile`, but emit the
-                                    same `.ixe`; caches are SHA-keyed, so add
-                                    `fresh` to remeasure a knob on one SHA)
+      RUST_LOG=… / RUSTFLAGS=… / IX_COMPILE_DEMOTE=…
+                                    (passthrough; IX_COMPILE_DEMOTE reaches
+                                    the measured `ix compile`, but emits the
+                                    same `.ixe`; caches are SHA-keyed, so a
+                                    knob on an already measured SHA replays
+                                    the cached row)
 
     Each scheduled cell is (backend, env) for an env with a selected
     constant row (on a backend with constant rows) or a selected env row;
@@ -875,14 +874,8 @@ def parseError (msg : String) : IO UInt32 := do
     newlines). Inline keys parse strictly: an unknown key rejects the
     command, like a typo'd backend.
 
-    The bare `fresh` token makes every run bypass its bencher baseline and
-    keeps persistent cached benchmark binaries, compiled `.ixe` files, and
-    compile rows out of measured jobs. A cached head `ix` may bootstrap this
-    canonical parser, but the workflow replaces the full binary bundle before
-    publishing it. Both measured source trees are rebuilt, and run-scoped
-    artifacts carry their products between jobs. Dependency caches remain
-    enabled. The comparison prints in the comment only; PR runs never upload
-    to bencher, so the canonical baseline is untouched. -/
+    The comparison prints in the comment only; PR runs never upload to
+    bencher, so the canonical baseline is untouched. -/
 def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let body ← match p.flag? "comment" with
     | some f => pure (f.as! String)
@@ -901,11 +894,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
 
   let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
-  let mut freshFlag := false
   for t in toks.map (·.toLower) do
-    if t == "fresh" then
-      freshFlag := true
-      continue
     let requested := if t == "all"
       then Ix.Cli.BenchCmd.backendSpecs.filter (·.disabled.isNone)
       else (Ix.Cli.BenchCmd.findBackend t).toList
@@ -917,7 +906,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
         (expected a backend — \
         {", ".intercalate ((Ix.Cli.BenchCmd.backendSpecs.filter
           (·.disabled.isNone)).map (·.name))} — \
-        or `all` / `fresh`)"
+        or `all`)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
@@ -965,19 +954,13 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           return ← parseError s!"BENCH_COMPRESS supports only `kzg`, got `{val}`"
         passthrough := passthrough.push s!"BENCH_COMPRESS={val}"
       | k =>
-        if ["RUST_LOG",
-            "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
-            "IX_COMPILE_WORKERS", "BENCH_TRACE_SHARDS",
-            "IX_DECOMPILE_KENV_CLEAR_ENTRIES"].contains k then
+        if ["RUST_LOG", "RUSTFLAGS", "IX_COMPILE_DEMOTE"].contains k then
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
             benchmark command (expected BENCH_ENVS / BENCH_CONSTANTS / BENCH_PROVE / \
             BENCH_COMPRESS, \
-            or passthrough: \
-            RUST_LOG, RUSTFLAGS, \
-            IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \
-            BENCH_TRACE_SHARDS, IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
+            or passthrough: RUST_LOG, RUSTFLAGS, IX_COMPILE_DEMOTE)"
     | [] => continue
 
   -- BENCH_ENVS selects env rows: `all`, `none`, or registry env names
@@ -1054,7 +1037,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
     h.putStr <| s!"matrix={(Json.arr entries).compress}\n"
       ++ s!"envs={(Json.arr (allEnvs.map Json.str)).compress}\n"
-      ++ s!"fresh={if freshFlag then 1 else 0}\n"
       ++ s!"config-summary={summary}\n"
       ++ "passthrough-env<<PTENV\n"
       ++ "\n".intercalate passthrough.toList
